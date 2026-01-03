@@ -6,6 +6,7 @@
 #include <fitsio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <signal.h>
 
 #include "common.h"
 
@@ -36,6 +37,8 @@ char *fits_filename = NULL;
 char *user_outdir = NULL;
 int scandist_mode = 0;
 int progress_mode = 0;
+int average_mode = 0;
+volatile sig_atomic_t stop_requested = 0;
 
 Cluster *clusters;
 double *dccarray; // 1D array simulating 2D: [i*maxNcl + j]
@@ -69,6 +72,10 @@ int compare_doubles(const void *a, const void *b) {
     if (da < db) return -1;
     if (da > db) return 1;
     return 0;
+}
+
+void handle_sigint(int sig) {
+    stop_requested = 1;
 }
 
 // Helper to create output directory name based on input filename
@@ -119,6 +126,7 @@ void print_usage(char *progname) {
     printf("  -dprob <val>   Delta probability (default 0.01)\n");
     printf("  -maxcl <val>   Max number of clusters (default 1000)\n");
     printf("  -maxim <val>   Max number of frames (default 100000)\n");
+    printf("  -avg           Compute average frame per cluster\n");
     printf("  -outdir <name> Specify output directory name\n");
     printf("  -progress      Print real-time progress updates\n");
     printf("  -scandist      Measure distance between consecutive frames\n");
@@ -190,6 +198,8 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             maxnbfr = atol(argv[++arg_idx]);
+        } else if (strcmp(argv[arg_idx], "-avg") == 0) {
+            average_mode = 1;
         } else if (strcmp(argv[arg_idx], "-outdir") == 0) {
             if (arg_idx + 1 >= argc) {
                 fprintf(stderr, "Error: Missing value for option -outdir\n");
@@ -223,6 +233,11 @@ int main(int argc, char *argv[]) {
 
     if (init_frameread(fits_filename) != 0) {
         return 1;
+    }
+
+    if (!scandist_mode) {
+        signal(SIGINT, handle_sigint);
+        printf("CTRL+C to stop clustering and write results\n");
     }
 
     if (scandist_mode || auto_rlim_mode) {
@@ -327,20 +342,6 @@ int main(int argc, char *argv[]) {
         // Reset for clustering
         if (auto_rlim_mode) {
              reset_frameread();
-             // Reset counters
-             // framedist_calls = 0;
-             // total_frames_processed = 0;
-             // Note: These variables are global and initialized to 0.
-             // However, framedist_calls accumulates during scan which is fine (total calls).
-             // total_frames_processed is only used for assignment indexing in main loop,
-             // and since we are not assigning during scan, it remains 0.
-             // Wait, total_frames_processed IS NOT used during scan loop above.
-             // The scan loop uses 'count' and 'i'.
-             // So total_frames_processed is already 0.
-             // framedist_calls tracks total metrics, maybe we want to keep scan calls included?
-             // Or reset? Usually metrics include all work.
-             // Let's remove the explicit reset to be safe against scoping issues if any,
-             // and because it's already 0 for total_frames_processed.
         }
     }
 
@@ -380,11 +381,11 @@ int main(int argc, char *argv[]) {
     }
 
     char out_path[1024];
-    snprintf(out_path, sizeof(out_path), "%s/output.txt", out_dir);
+    snprintf(out_path, sizeof(out_path), "%s/frame_membership.txt", out_dir);
 
     FILE *ascii_out = fopen(out_path, "w");
     if (!ascii_out) {
-        perror("Failed to open output.txt in output directory");
+        perror("Failed to open frame_membership.txt in output directory");
         free(out_dir);
         return 1;
     }
@@ -394,6 +395,12 @@ int main(int argc, char *argv[]) {
 
     Frame *current_frame;
     while ((current_frame = getframe()) != NULL) {
+        if (stop_requested) {
+            printf(ANSI_COLOR_ORANGE "\nStopping clustering on user request (CTRL+C).\n" ANSI_COLOR_RESET);
+            free_frame(current_frame); // Current frame not processed
+            break;
+        }
+
         if (total_frames_processed >= maxnbfr) {
             free_frame(current_frame);
             break;
@@ -564,22 +571,47 @@ int main(int argc, char *argv[]) {
     }
     fits_close_file(afptr, &status);
 
-    // Write Cluster FITS cubes
+    // Write Cluster FITS cubes and optionally compute average
     // We need to group frames by cluster to write them effectively
     // To avoid too many file open/close, we iterate over clusters
     printf("Writing cluster FITS files...\n");
 
-    // We need to know how many frames per cluster to create the file (optional, but good for FITS)
-    // Actually, we can just create the file and append. But CFITSIO standardly wants dimensions.
-    // Let's just count first.
     int *cluster_counts = (int *)calloc(num_clusters, sizeof(int));
     for (long i = 0; i < total_frames_processed; i++) {
         if (assignments[i] >= 0 && assignments[i] < num_clusters)
             cluster_counts[assignments[i]]++;
     }
 
+    // Write cluster counts
+    snprintf(out_path, sizeof(out_path), "%s/cluster_counts.txt", out_dir);
+    FILE *count_out = fopen(out_path, "w");
+    if (count_out) {
+        for (int c = 0; c < num_clusters; c++) {
+            fprintf(count_out, "Cluster %d: %d frames\n", c, cluster_counts[c]);
+        }
+        fclose(count_out);
+    }
+
+    fitsfile *avg_ptr = NULL;
+    double *avg_buffer = NULL;
+    if (average_mode) {
+        snprintf(out_path, sizeof(out_path), "!%s/average.fits", out_dir);
+        fits_create_file(&avg_ptr, out_path, &status);
+        long anaxes[3] = { get_frame_width(), get_frame_height(), num_clusters };
+        fits_create_img(avg_ptr, DOUBLE_IMG, 3, anaxes, &status);
+        avg_buffer = (double *)calloc(nelements, sizeof(double));
+    }
+
     for (int c = 0; c < num_clusters; c++) {
-        if (cluster_counts[c] == 0) continue;
+        if (cluster_counts[c] == 0) {
+             if (average_mode) {
+                 // Write zeros if empty cluster (unlikely here)
+                 for (long k=0; k<nelements; k++) avg_buffer[k] = 0.0;
+                 long fpixel[3] = {1, 1, c + 1};
+                 fits_write_pix(avg_ptr, TDOUBLE, fpixel, nelements, avg_buffer, &status);
+             }
+             continue;
+        }
 
         char fname[1024];
         snprintf(fname, sizeof(fname), "!%s/cluster_%d.fits", out_dir, c);
@@ -589,6 +621,10 @@ int main(int argc, char *argv[]) {
         long cnaxes[3] = { get_frame_width(), get_frame_height(), cluster_counts[c] };
         fits_create_img(cfptr, DOUBLE_IMG, 3, cnaxes, &status);
 
+        if (average_mode) {
+             for (long k=0; k<nelements; k++) avg_buffer[k] = 0.0;
+        }
+
         // Find frames belonging to this cluster
         int frame_count_in_cluster = 0;
         for (long f = 0; f < total_frames_processed; f++) {
@@ -597,12 +633,28 @@ int main(int argc, char *argv[]) {
                 if (fr) {
                     long fpixel[3] = {1, 1, frame_count_in_cluster + 1};
                     fits_write_pix(cfptr, TDOUBLE, fpixel, nelements, fr->data, &status);
+
+                    if (average_mode) {
+                        for (long k=0; k<nelements; k++) avg_buffer[k] += fr->data[k];
+                    }
+
                     free_frame(fr);
                     frame_count_in_cluster++;
                 }
             }
         }
         fits_close_file(cfptr, &status);
+
+        if (average_mode) {
+            for (long k=0; k<nelements; k++) avg_buffer[k] /= cluster_counts[c];
+            long fpixel[3] = {1, 1, c + 1};
+            fits_write_pix(avg_ptr, TDOUBLE, fpixel, nelements, avg_buffer, &status);
+        }
+    }
+
+    if (average_mode) {
+        free(avg_buffer);
+        fits_close_file(avg_ptr, &status);
     }
 
     free(cluster_counts);
