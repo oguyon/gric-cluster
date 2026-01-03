@@ -49,6 +49,9 @@ make
   - The program stops if this limit is reached.
 - `-maxim <val>`: Maximum number of frames to cluster (default: `100000`).
   - The program stops if this limit is reached.
+- `-outdir <name>`: Specify output directory name.
+  - Defaults to `<basename>.clusterdat`.
+- `-progress`: Print real-time progress updates.
 
 ### Outputs
 
