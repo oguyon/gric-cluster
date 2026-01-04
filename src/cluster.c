@@ -562,7 +562,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (verbose_level >= 2) {
-            printf("\n  [VV] Processing Frame %ld\n", total_frames_processed);
+            printf("\n  [VV] Processing Frame %ld (Clusters: %d)\n", total_frames_processed, num_clusters);
         }
 
         int assigned_cluster = -1;
@@ -755,7 +755,7 @@ int main(int argc, char *argv[]) {
                      if (match_count > 0) match_count--; // Exclude current frame which was just added
 
                      if (verbose_level >= 2) {
-                         printf("  [VV] Distance > rlim. Found %d matches in distinfo for Cluster %d.\n", match_count, cj);
+                         printf("  [VV] Distance > rlim. Found %d matches in distinfo for Cluster %d (Frame %d).\n", match_count, cj, clusters[cj].anchor.id);
                      }
 
                      // For each frame k that visited cluster cj
