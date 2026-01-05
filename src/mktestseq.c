@@ -154,19 +154,44 @@ void gen_spiral(double *x, double *y, double *z, long index, long total_points, 
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
-        printf("Usage: %s <N> <filename> [pattern]\n", argv[0]);
+        printf("Usage: %s <N> <filename> [pattern] [options]\n", argv[0]);
         printf("Patterns:\n");
         printf("  [2D|3D]random   Uniform random in unit circle/sphere (default 2D)\n");
         printf("  [2D]circle[P]   Circle radius 1. P = period (default N)\n");
         printf("  [2D|3D]walk[S]  Random walk in unit circle/sphere. S = step size (default 0.1)\n");
         printf("  [2D|3D]spiral[L] Spiral. L = loops (default 3)\n");
         printf("  3Dsphere        Random points on unit sphere surface\n");
+        printf("Options:\n");
+        printf("  -repeat <M>     Repeat the pattern M times\n");
+        printf("  -noise <R>      Add random noise with radius R to each point\n");
+        printf("  -shuffle        Shuffle the order of generated points\n");
         return 1;
     }
 
     long n_points = atol(argv[1]);
     char *filename = argv[2];
-    char *pattern_str = (argc > 3) ? argv[3] : "2Drandom";
+    char *pattern_str = "2Drandom";
+
+    long repeats = 1;
+    double noise_radius = 0.0;
+    int shuffle = 0;
+
+    // Parse arguments
+    for (int i = 3; i < argc; i++) {
+        if (strcmp(argv[i], "-repeat") == 0) {
+            if (i + 1 < argc) {
+                repeats = atol(argv[++i]);
+            }
+        } else if (strcmp(argv[i], "-noise") == 0) {
+            if (i + 1 < argc) {
+                noise_radius = atof(argv[++i]);
+            }
+        } else if (strcmp(argv[i], "-shuffle") == 0) {
+            shuffle = 1;
+        } else {
+            pattern_str = argv[i];
+        }
+    }
 
     GeneratorConfig config;
     config.type = GEN_RANDOM;
@@ -234,40 +259,82 @@ int main(int argc, char *argv[]) {
 
     srand(time(NULL));
 
-    double x = 0.0, y = 0.0, z = 0.0; // State for walk
+    long total_points = n_points * repeats;
+    double *buffer = (double *)malloc(total_points * config.dim * sizeof(double));
+    if (!buffer) {
+        perror("Memory allocation failed for shuffle buffer");
+        fclose(f);
+        return 1;
+    }
 
-    for (long i = 0; i < n_points; i++) {
-        double out_x, out_y, out_z;
+    long p_idx = 0;
 
-        switch (config.type) {
-            case GEN_CIRCLE:
-                gen_circle(&out_x, &out_y, &out_z, i, config.param, config.dim);
-                break;
-            case GEN_WALK:
-                gen_walk(&x, &y, &z, config.param, config.dim); // Updates state
-                out_x = x;
-                out_y = y;
-                out_z = z;
-                break;
-            case GEN_SPIRAL:
-                gen_spiral(&out_x, &out_y, &out_z, i, n_points, config.param, config.dim);
-                break;
-            case GEN_SPHERE:
-                gen_sphere(&out_x, &out_y, &out_z, config.dim);
-                break;
-            case GEN_RANDOM:
-            default:
-                gen_random(&out_x, &out_y, &out_z, config.dim);
-                break;
-        }
+    for (long r = 0; r < repeats; r++) {
+        double x = 0.0, y = 0.0, z = 0.0; // Reset state for walk each repeat
 
-        if (config.dim == 3) {
-            fprintf(f, "%f %f %f\n", out_x, out_y, out_z);
-        } else {
-            fprintf(f, "%f %f\n", out_x, out_y);
+        for (long i = 0; i < n_points; i++) {
+            double out_x, out_y, out_z;
+
+            switch (config.type) {
+                case GEN_CIRCLE:
+                    gen_circle(&out_x, &out_y, &out_z, i, config.param, config.dim);
+                    break;
+                case GEN_WALK:
+                    gen_walk(&x, &y, &z, config.param, config.dim); // Updates state
+                    out_x = x;
+                    out_y = y;
+                    out_z = z;
+                    break;
+                case GEN_SPIRAL:
+                    gen_spiral(&out_x, &out_y, &out_z, i, n_points, config.param, config.dim);
+                    break;
+                case GEN_SPHERE:
+                    gen_sphere(&out_x, &out_y, &out_z, config.dim);
+                    break;
+                case GEN_RANDOM:
+                default:
+                    gen_random(&out_x, &out_y, &out_z, config.dim);
+                    break;
+            }
+
+            if (noise_radius > 0.0) {
+                double nx, ny, nz;
+                gen_random(&nx, &ny, &nz, config.dim);
+                out_x += nx * noise_radius;
+                out_y += ny * noise_radius;
+                out_z += nz * noise_radius;
+            }
+
+            buffer[p_idx * config.dim + 0] = out_x;
+            buffer[p_idx * config.dim + 1] = out_y;
+            if (config.dim == 3) {
+                buffer[p_idx * config.dim + 2] = out_z;
+            }
+            p_idx++;
         }
     }
 
+    if (shuffle) {
+        for (long i = total_points - 1; i > 0; i--) {
+            long j = (long)(rand_double() * (i + 1));
+            // Swap point i and j
+            for (int d = 0; d < config.dim; d++) {
+                double temp = buffer[i * config.dim + d];
+                buffer[i * config.dim + d] = buffer[j * config.dim + d];
+                buffer[j * config.dim + d] = temp;
+            }
+        }
+    }
+
+    for (long i = 0; i < total_points; i++) {
+        if (config.dim == 3) {
+            fprintf(f, "%f %f %f\n", buffer[i * 3 + 0], buffer[i * 3 + 1], buffer[i * 3 + 2]);
+        } else {
+            fprintf(f, "%f %f\n", buffer[i * 2 + 0], buffer[i * 2 + 1]);
+        }
+    }
+
+    free(buffer);
     fclose(f);
     return 0;
 }
