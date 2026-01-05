@@ -179,12 +179,15 @@ char* create_output_dir_name(const char* input_file) {
 }
 
 void print_usage(char *progname) {
-    printf("Usage: %s <rlim> [options] <fits_file>\n", progname);
-    printf("       %s -scandist <fits_file>\n", progname);
+    printf("Usage: %s <rlim> [options] <input_file>\n", progname);
+    printf("       %s -scandist <input_file>\n", progname);
     printf("Arguments:\n");
     printf("  <rlim>         Clustering radius limit. Can be:\n");
     printf("                 - A float value (e.g., 10.5)\n");
     printf("                 - Format 'a<val>' (e.g., a1.5) to set rlim = val * median_distance\n");
+    printf("  <input_file>   Input file. Can be:\n");
+    printf("                 - FITS file (2D image or 3D cube)\n");
+    printf("                 - ASCII .txt file (one sample per line, columns = dimensions)\n");
     printf("Options:\n");
     printf("  -dprob <val>   Delta probability (default 0.01)\n");
     printf("  -maxcl <val>   Max number of clusters (default 1000)\n");
@@ -247,7 +250,7 @@ int main(int argc, char *argv[]) {
         arg_idx = 1;
     }
 
-    // Second pass: Parse options and FITS file
+    // Second pass: Parse options and input file
     while (arg_idx < argc) {
         if (strcmp(argv[arg_idx], "-dprob") == 0) {
             if (arg_idx + 1 >= argc) {
@@ -304,9 +307,9 @@ int main(int argc, char *argv[]) {
             print_usage(argv[0]);
             return 1;
         } else {
-            // Positional argument: FITS file
+            // Positional argument: Input file
             if (fits_filename != NULL) {
-                fprintf(stderr, "Error: Too many arguments or multiple FITS files specified (already have '%s', found '%s')\n", fits_filename, argv[arg_idx]);
+                fprintf(stderr, "Error: Too many arguments or multiple input files specified (already have '%s', found '%s')\n", fits_filename, argv[arg_idx]);
                 return 1;
             }
             fits_filename = argv[arg_idx];
@@ -315,7 +318,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (!fits_filename) {
-        fprintf(stderr, "Error: Missing input FITS file.\n");
+        fprintf(stderr, "Error: Missing input file.\n");
         if (!scandist_mode) print_usage(argv[0]);
         return 1;
     }
