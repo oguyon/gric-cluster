@@ -24,9 +24,30 @@ double rand_double() {
     return (double)rand() / (double)RAND_MAX;
 }
 
+void print_args_on_error(int argc, char *argv[]) {
+    fprintf(stderr, "\nProgram arguments:\n");
+    for (int i = 0; i < argc; i++) {
+        fprintf(stderr, "  argv[%d] = \"%s\"\n", i, argv[i]);
+    }
+    fprintf(stderr, "\n");
+}
+
 int main(int argc, char *argv[]) {
+    // Check help
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            printf("Usage: %s <dcc_file> <dimensions> <output_file>\n", argv[0]);
+            printf("Arguments:\n");
+            printf("  <dcc_file>     Input distance matrix file (dcc.txt).\n");
+            printf("  <dimensions>   Target dimensionality (N).\n");
+            printf("  <output_file>  Output filename for coordinates.\n");
+            return 0;
+        }
+    }
+
     if (argc < 4) {
         fprintf(stderr, "Usage: %s <dcc_file> <dimensions> <output_file>\n", argv[0]);
+        print_args_on_error(argc, argv);
         return 1;
     }
 
@@ -36,6 +57,7 @@ int main(int argc, char *argv[]) {
 
     if (dimensions < 1) {
         fprintf(stderr, "Invalid dimensions: %d\n", dimensions);
+        print_args_on_error(argc, argv);
         return 1;
     }
 
@@ -43,6 +65,7 @@ int main(int argc, char *argv[]) {
     FILE *fin = fopen(input_file, "r");
     if (!fin) {
         perror("Error opening dcc file");
+        print_args_on_error(argc, argv);
         return 1;
     }
 
@@ -61,11 +84,13 @@ int main(int argc, char *argv[]) {
     if (num_clusters <= 0) {
         fprintf(stderr, "No valid data in dcc file\n");
         fclose(fin);
+        print_args_on_error(argc, argv);
         return 1;
     }
     if (num_clusters > MAX_CLUSTERS) {
         fprintf(stderr, "Too many clusters (%d), max is %d\n", num_clusters, MAX_CLUSTERS);
         fclose(fin);
+        print_args_on_error(argc, argv);
         return 1;
     }
 
@@ -119,6 +144,7 @@ int main(int argc, char *argv[]) {
         free(D);
         for(int i=0; i<num_clusters; i++) free(P[i].coords);
         free(P);
+        print_args_on_error(argc, argv);
         return 0;
     }
 

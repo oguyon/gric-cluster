@@ -4,42 +4,53 @@ project(image_cluster C)
 set(CMAKE_C_STANDARD 99)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(CFITSIO REQUIRED cfitsio)
-find_package(PNG REQUIRED)
 
-# FFmpeg libraries
-pkg_check_modules(AVFORMAT REQUIRED libavformat)
-pkg_check_modules(AVCODEC REQUIRED libavcodec)
-pkg_check_modules(SWSCALE REQUIRED libswscale)
-pkg_check_modules(AVUTIL REQUIRED libavutil)
+# Optional Dependencies
+pkg_check_modules(CFITSIO cfitsio)
+if (CFITSIO_FOUND)
+    add_definitions(-DUSE_CFITSIO)
+    message(STATUS "CFITSIO found. FITS format supported.")
+else()
+    message(WARNING "CFITSIO not found. FITS format disabled.")
+endif()
+
+find_package(PNG)
+if (PNG_FOUND)
+    add_definitions(-DUSE_PNG)
+    message(STATUS "PNG found. PNG output supported.")
+else()
+    message(WARNING "PNG not found. PNG output disabled.")
+endif()
+
+pkg_check_modules(FFMPEG libavformat libavcodec libswscale libavutil)
+if (FFMPEG_FOUND)
+    add_definitions(-DUSE_FFMPEG)
+    message(STATUS "FFmpeg found. Video input supported.")
+else()
+    message(WARNING "FFmpeg not found. Video input disabled.")
+endif()
 
 include_directories(
     ${CFITSIO_INCLUDE_DIRS}
     ${PNG_INCLUDE_DIRS}
-    ${AVFORMAT_INCLUDE_DIRS}
-    ${AVCODEC_INCLUDE_DIRS}
-    ${SWSCALE_INCLUDE_DIRS}
-    ${AVUTIL_INCLUDE_DIRS}
+    ${FFMPEG_INCLUDE_DIRS}
     src
 )
 
 link_directories(
     ${CFITSIO_LIBRARY_DIRS}
     ${PNG_LIBRARY_DIRS}
-    ${AVFORMAT_LIBRARY_DIRS}
-    ${AVCODEC_LIBRARY_DIRS}
-    ${SWSCALE_LIBRARY_DIRS}
-    ${AVUTIL_LIBRARY_DIRS}
+    ${FFMPEG_LIBRARY_DIRS}
 )
 
-add_executable(image-cluster src/main.c src/cluster_core.c src/cluster_io.c src/framedistance.c src/frameread.c src/png_io.c)
+# Sources
+set(CLUSTER_SRCS src/main.c src/cluster_core.c src/cluster_io.c src/framedistance.c src/frameread.c src/png_io.c)
+
+add_executable(image-cluster ${CLUSTER_SRCS})
 target_link_libraries(image-cluster
     ${CFITSIO_LIBRARIES}
     ${PNG_LIBRARIES}
-    ${AVFORMAT_LIBRARIES}
-    ${AVCODEC_LIBRARIES}
-    ${SWSCALE_LIBRARIES}
-    ${AVUTIL_LIBRARIES}
+    ${FFMPEG_LIBRARIES}
     m
 )
 
