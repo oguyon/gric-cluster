@@ -135,22 +135,24 @@ int main(int argc, char *argv[]) {
                         num_anchors++;
                     }
                 }
-            } else if (strncmp(line, "# Parameters:", 13) == 0 || strncmp(line, "# Stats:", 8) == 0) {
-                // Section headers, maybe store as bold or just store
+            }
+
+            // Collect header lines for display (Parameters, Stats, and key-values)
+            // Skip NEWCLUSTER here
+            if (strncmp(line, "# NEWCLUSTER", 12) != 0) {
                 if (num_headers < 100) {
                     // strip newline
                     size_t len = strlen(line);
                     if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-                    strncpy(headers[num_headers].text, line + 2, sizeof(headers[0].text)-1); // Skip "# "
-                    num_headers++;
-                }
-            } else if (line[1] != ' ') {
-                // Other parameters/stats usually follow format "# key value"
-                // Store them for display
-                if (num_headers < 100) {
-                    size_t len = strlen(line);
-                    if (len > 0 && line[len-1] == '\n') line[len-1] = '\0';
-                    strncpy(headers[num_headers].text, line + 2, sizeof(headers[0].text)-1);
+
+                    // Store line without the initial "# " if possible, or just the whole line?
+                    // Request says "Overlay on the plot... the clustering parameters... clustering stats".
+                    // The file has lines like "# Parameters:" and "# rlim 0.500".
+                    // We can just strip the leading "# ".
+                    char *text_start = line + 1;
+                    if (*text_start == ' ') text_start++;
+
+                    strncpy(headers[num_headers].text, text_start, sizeof(headers[0].text)-1);
                     num_headers++;
                 }
             }
@@ -216,9 +218,6 @@ int main(int argc, char *argv[]) {
 
     fprintf(fout, "<g font-family=\"monospace\" font-size=\"12\" text-anchor=\"end\">\n");
     for (int i = 0; i < num_headers; i++) {
-        // Skip NEWCLUSTER lines if they got into headers by accident (filtering logic above should prevent it)
-        if (strncmp(headers[i].text, "NEWCLUSTER", 10) == 0) continue;
-
         fprintf(fout, "<text x=\"%.2f\" y=\"%.2f\">%s</text>\n", text_x, text_y, headers[i].text);
         text_y += line_height;
     }
