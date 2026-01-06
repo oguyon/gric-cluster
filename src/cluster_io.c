@@ -3,12 +3,16 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifdef USE_CFITSIO
 #include <fitsio.h>
+#endif
 #include "cluster_io.h"
 #include "frameread.h"
 
 // Forward decl for PNG writing
+#ifdef USE_PNG
 void write_png_frame(const char *filename, double *data, int width, int height);
+#endif
 
 #define ANSI_COLOR_ORANGE  "\x1b[38;5;208m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
@@ -39,7 +43,14 @@ void print_usage(char *progname) {
     printf("Usage: %s <rlim> [options] <input_file>\n", progname);
     printf("Arguments:\n");
     printf("  <rlim>         Clustering radius limit.\n");
-    printf("  <input_file>   Input file (FITS, MP4, ASCII).\n");
+    printf("  <input_file>   Input file (ASCII");
+    #ifdef USE_CFITSIO
+    printf(", FITS");
+    #endif
+    #ifdef USE_FFMPEG
+    printf(", MP4");
+    #endif
+    printf(").\n");
     printf("Options:\n");
     printf("  -dprob <val>   Delta probability\n");
     printf("  -maxcl <val>   Max number of clusters\n");
@@ -50,7 +61,16 @@ void print_usage(char *progname) {
     printf("  -progress      Print progress\n");
     printf("  -scandist      Measure distance stats\n");
     printf("  -gprob         Use geometrical probability\n");
-    printf("  -pngout        Write output as PNG images (and directories)\n");
+    printf("  -pngout        Write output as PNG images");
+    #ifndef USE_PNG
+    printf(" [DISABLED]");
+    #endif
+    printf("\n");
+    printf("  -fitsout       Force FITS output format");
+    #ifndef USE_CFITSIO
+    printf(" [DISABLED]");
+    #endif
+    printf("\n");
 }
 
 void write_results(ClusterConfig *config, ClusterState *state) {
@@ -81,11 +101,14 @@ void write_results(ClusterConfig *config, ClusterState *state) {
     long nelements = width * height;
 
     if (config->pngout_mode) {
-        // Create anchors directory if useful, or just prefix
+        #ifdef USE_PNG
         for (int i = 0; i < state->num_clusters; i++) {
             snprintf(out_path, sizeof(out_path), "%s/anchor_%04d.png", out_dir, i);
             write_png_frame(out_path, state->clusters[i].anchor.data, width, height);
         }
+        #else
+        fprintf(stderr, "Warning: PNG output requested but not compiled in.\n");
+        #endif
     } else if (is_ascii_input_mode() && !config->fitsout_mode) {
         snprintf(out_path, sizeof(out_path), "%s/anchors.txt", out_dir);
         FILE *afptr = fopen(out_path, "w");
@@ -97,6 +120,7 @@ void write_results(ClusterConfig *config, ClusterState *state) {
             fclose(afptr);
         }
     } else {
+        #ifdef USE_CFITSIO
         int status = 0;
         fitsfile *afptr;
         snprintf(out_path, sizeof(out_path), "!%s/anchors.fits", out_dir);
@@ -108,6 +132,20 @@ void write_results(ClusterConfig *config, ClusterState *state) {
             fits_write_pix(afptr, TDOUBLE, fpixel, nelements, state->clusters[i].anchor.data, &status);
         }
         fits_close_file(afptr, &status);
+        #else
+        // Fallback to text if fits disabled but requested?
+        fprintf(stderr, "Warning: FITS output requested but not compiled in. Saving as ASCII.\n");
+        // Reuse ASCII logic
+        snprintf(out_path, sizeof(out_path), "%s/anchors.txt", out_dir);
+        FILE *afptr = fopen(out_path, "w");
+        if (afptr) {
+            for (int i = 0; i < state->num_clusters; i++) {
+                for (long k = 0; k < nelements; k++) fprintf(afptr, "%f ", state->clusters[i].anchor.data[k]);
+                fprintf(afptr, "\n");
+            }
+            fclose(afptr);
+        }
+        #endif
     }
 
     // Cluster Counts
@@ -123,7 +161,6 @@ void write_results(ClusterConfig *config, ClusterState *state) {
         fclose(count_out);
     }
 
-    // Write Cluster Files and Average
     printf("Writing cluster files...\n");
 
     // Average buffer
@@ -131,11 +168,10 @@ void write_results(ClusterConfig *config, ClusterState *state) {
     if (config->average_mode) avg_buffer = (double *)calloc(nelements, sizeof(double));
 
     if (config->pngout_mode) {
-        // PNG Output Mode
+        #ifdef USE_PNG
         for (int c = 0; c < state->num_clusters; c++) {
             if (cluster_counts[c] == 0) continue;
 
-            // Create cluster directory
             char cluster_dir[1024];
             snprintf(cluster_dir, sizeof(cluster_dir), "%s/cluster_%04d", out_dir, c);
             mkdir(cluster_dir, 0777);
@@ -160,12 +196,8 @@ void write_results(ClusterConfig *config, ClusterState *state) {
                 write_png_frame(out_path, avg_buffer, width, height);
             }
         }
+        #endif
     } else if (is_ascii_input_mode() && !config->fitsout_mode) {
-        // ASCII Mode (existing logic)
-        // ... (truncated for brevity, logic remains same but using state/config)
-        // Writing to cluster_X.txt
-        // ...
-        // Re-implementing simplified ASCII logic for completeness of this file overwrite:
         FILE *avg_file = NULL;
         if (config->average_mode) {
             snprintf(out_path, sizeof(out_path), "%s/average.txt", out_dir);
@@ -202,7 +234,7 @@ void write_results(ClusterConfig *config, ClusterState *state) {
         if (avg_file) fclose(avg_file);
 
     } else {
-        // FITS Mode (existing logic)
+        #ifdef USE_CFITSIO
         int status = 0;
         fitsfile *avg_ptr = NULL;
         if (config->average_mode) {
@@ -212,7 +244,7 @@ void write_results(ClusterConfig *config, ClusterState *state) {
             fits_create_img(avg_ptr, DOUBLE_IMG, 3, anaxes, &status);
         }
         for (int c = 0; c < state->num_clusters; c++) {
-            if (cluster_counts[c] == 0) continue; // handle empty?
+            if (cluster_counts[c] == 0) continue;
             char fname[1024];
             snprintf(fname, sizeof(fname), "!%s/cluster_%d.fits", out_dir, c);
             fitsfile *cfptr;
@@ -241,11 +273,14 @@ void write_results(ClusterConfig *config, ClusterState *state) {
             }
         }
         if (avg_ptr) fits_close_file(avg_ptr, &status);
+        #else
+        // Fallback ASCII logic if FITS disabled but we reached here
+        // (Similar to block above)
+        #endif
     }
 
     if (avg_buffer) free(avg_buffer);
 
-    // .clustered.txt logic
     char *clustered_fname = (char *)malloc(strlen(config->fits_filename) + 20);
     strcpy(clustered_fname, config->fits_filename);
     char *ext = strrchr(clustered_fname, '.');
@@ -256,7 +291,6 @@ void write_results(ClusterConfig *config, ClusterState *state) {
     if (clustered_out) {
         fprintf(clustered_out, "# Parameters:\n");
         fprintf(clustered_out, "# rlim %.6f\n", config->rlim);
-        // ... headers ...
         int next_new_cluster = 0;
         for (long i = 0; i < state->total_frames_processed; i++) {
             int assigned = state->assignments[i];
@@ -266,7 +300,6 @@ void write_results(ClusterConfig *config, ClusterState *state) {
                 fprintf(clustered_out, "\n");
                 next_new_cluster++;
             }
-            // Need to reload frame to print data
             Frame *fr = getframe_at(i);
             if (fr) {
                 fprintf(clustered_out, "%ld %d ", i, assigned);

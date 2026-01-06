@@ -2,8 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#ifdef USE_PNG
 #include <png.h>
 #include "simple_font.h"
+#endif
 
 #define SVG_WIDTH 800
 #define SVG_HEIGHT 800
@@ -31,6 +33,7 @@ typedef struct {
     char text[256];
 } HeaderLine;
 
+#ifdef USE_PNG
 typedef struct {
     unsigned char r, g, b;
 } ColorRGB;
@@ -40,6 +43,7 @@ typedef struct {
     int height;
     unsigned char *data; // RGB buffer
 } Canvas;
+#endif
 
 double map_x(double x) {
     return (x - VIEW_MIN) / VIEW_RANGE * SVG_WIDTH;
@@ -57,6 +61,7 @@ void print_args_on_error(int argc, char *argv[]) {
     fprintf(stderr, "\n");
 }
 
+#ifdef USE_PNG
 ColorRGB parse_color(const char *hex) {
     ColorRGB c = {0, 0, 0};
     if (hex[0] == '#') hex++;
@@ -156,7 +161,6 @@ void draw_char(Canvas *c, int x, int y, char ch, ColorRGB col, int scale, int bo
         unsigned char bits = font5x7[idx][col_idx];
         for (int row = 0; row < 7; row++) {
             if (bits & (1 << row)) {
-                // Scale up
                 for (int sy=0; sy<scale; sy++) {
                     for (int sx=0; sx<scale; sx++) {
                         set_pixel_opaque(c, x + col_idx*scale + sx, y + row*scale + sy, col);
@@ -171,7 +175,6 @@ void draw_char(Canvas *c, int x, int y, char ch, ColorRGB col, int scale, int bo
 }
 
 void draw_string(Canvas *c, int x, int y, const char *str, ColorRGB col, int align, int scale, int bold) {
-    // align: 0=left, 1=right
     int len = strlen(str);
     int char_width = 5 * scale;
     int space_width = 1 * scale;
@@ -213,8 +216,28 @@ int save_png(Canvas *c, const char *filename) {
     fclose(fp);
     return 0;
 }
+#endif
 
 int main(int argc, char *argv[]) {
+    // Check for help flag
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            printf("Usage: %s <clustered_file> [output] [-png] [-fs <size>]\n", argv[0]);
+            printf("Arguments:\n");
+            printf("  <clustered_file>  Input .clustered.txt file.\n");
+            printf("  [output]          Output filename (optional, defaults to .svg/.png).\n");
+            printf("Options:\n");
+            printf("  -png              Output PNG image instead of SVG.");
+            #ifndef USE_PNG
+            printf(" [DISABLED]\n");
+            #else
+            printf("\n");
+            #endif
+            printf("  -fs <size>        Font size (default 12.0).\n");
+            return 0;
+        }
+    }
+
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <clustered_file> [output] [-png] [-fs <size>]\n", argv[0]);
         print_args_on_error(argc, argv);
@@ -228,7 +251,11 @@ int main(int argc, char *argv[]) {
 
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-png") == 0) {
+            #ifdef USE_PNG
             png_mode = 1;
+            #else
+            fprintf(stderr, "Warning: PNG support is disabled. Ignoring -png.\n");
+            #endif
         } else if (strcmp(argv[i], "-fs") == 0) {
             if (i + 1 < argc) {
                 font_size = atof(argv[++i]);
@@ -255,12 +282,14 @@ int main(int argc, char *argv[]) {
 
     // Init output buffers
     FILE *svg_out = NULL;
+    #ifdef USE_PNG
     Canvas *canvas = NULL;
+    #endif
 
     if (png_mode) {
+        #ifdef USE_PNG
         canvas = init_canvas(SVG_WIDTH, SVG_HEIGHT);
-        // Draw grid
-        ColorRGB grid_col = {0, 0, 0}; // Black
+        ColorRGB grid_col = {0, 0, 0};
         int cx = (int)map_x(0);
         int cy = (int)map_y(0);
         draw_line(canvas, 0, cy, SVG_WIDTH, cy, grid_col);
@@ -273,6 +302,7 @@ int main(int argc, char *argv[]) {
         draw_line(canvas, bx2, by1, bx2, by2, gray);
         draw_line(canvas, bx2, by2, bx1, by2, gray);
         draw_line(canvas, bx1, by2, bx1, by1, gray);
+        #endif
     } else {
         svg_out = fopen(output_filename, "w");
         if (!svg_out) {
@@ -297,7 +327,6 @@ int main(int argc, char *argv[]) {
                 bx1, by1, bx2 - bx1, by2 - by1);
     }
 
-    // Storage for overlays
     Anchor anchors[1000];
     int num_anchors = 0;
 
@@ -399,24 +428,27 @@ int main(int argc, char *argv[]) {
         if (cluster_id < 0) hex = "#000000";
 
         if (png_mode) {
+            #ifdef USE_PNG
             ColorRGB col = parse_color(hex);
             draw_filled_circle(canvas, (int)sx, (int)sy, 3, col);
+            #endif
         } else {
             fprintf(svg_out, "<circle cx=\"%.2f\" cy=\"%.2f\" r=\"3\" fill=\"%s\" opacity=\"0.7\" />\n", sx, sy, hex);
         }
     }
 
-    // Draw Anchors
     double r_px = (rlim / VIEW_RANGE) * SVG_WIDTH;
     for (int i = 0; i < num_anchors; i++) {
         double ax = map_x(anchors[i].x);
         double ay = map_y(anchors[i].y);
 
         if (png_mode) {
+            #ifdef USE_PNG
             ColorRGB black = {0,0,0};
             draw_circle(canvas, (int)ax, (int)ay, (int)r_px, black);
             draw_line(canvas, (int)ax-5, (int)ay, (int)ax+5, (int)ay, black);
             draw_line(canvas, (int)ax, (int)ay-5, (int)ax, (int)ay+5, black);
+            #endif
         } else {
             fprintf(svg_out, "<circle cx=\"%.2f\" cy=\"%.2f\" r=\"%.2f\" stroke=\"black\" fill=\"none\" stroke-width=\"1.5\" />\n", ax, ay, r_px);
             fprintf(svg_out, "<line x1=\"%.2f\" y1=\"%.2f\" x2=\"%.2f\" y2=\"%.2f\" stroke=\"black\" stroke-width=\"2\" />\n",
@@ -426,13 +458,13 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Text Overlays
     int text_y = 20;
     int line_height = (int)(font_size * 1.5);
     int scale = (int)(font_size / 10.0);
     if (scale < 1) scale = 1;
 
     if (png_mode) {
+        #ifdef USE_PNG
         ColorRGB black = {0,0,0};
         int text_x = 10;
         for (int i = 0; i < num_params; i++) {
@@ -450,6 +482,7 @@ int main(int argc, char *argv[]) {
 
         save_png(canvas, output_filename);
         free_canvas(canvas);
+        #endif
     } else {
         double text_x = 10;
         fprintf(svg_out, "<g font-family=\"monospace\" font-size=\"%.1f\" text-anchor=\"start\">\n", font_size);

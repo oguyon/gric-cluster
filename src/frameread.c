@@ -1,19 +1,29 @@
 #include "common.h"
-#include <fitsio.h>
-#include <libavformat/avformat.h>
-#include <libavcodec/avcodec.h>
-#include <libswscale/swscale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
+#ifdef USE_CFITSIO
+#include <fitsio.h>
+#endif
+
+#ifdef USE_FFMPEG
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libswscale/swscale.h>
+#endif
+
+#ifdef USE_CFITSIO
 static fitsfile *fptr = NULL;
+#endif
+
 static FILE *ascii_ptr = NULL;
 static long *ascii_line_offsets = NULL;
 static int is_ascii_mode = 0;
 
 // FFmpeg State
+#ifdef USE_FFMPEG
 static AVFormatContext *fmt_ctx = NULL;
 static AVCodecContext *dec_ctx = NULL;
 static int video_stream_idx = -1;
@@ -21,6 +31,9 @@ static AVFrame *frame = NULL;
 static AVPacket *pkt = NULL;
 static struct SwsContext *sws_ctx = NULL;
 static int is_mp4_mode = 0;
+// Seeking state
+static int internal_mp4_index = 0;
+#endif
 
 static long num_frames = 0;
 static long frame_width = 0;
@@ -104,6 +117,7 @@ static int init_ascii(char *filename) {
     return 0;
 }
 
+#ifdef USE_FFMPEG
 static int init_mp4(char *filename) {
     if (avformat_open_input(&fmt_ctx, filename, NULL, NULL) < 0) {
         fprintf(stderr, "Could not open video file %s\n", filename);
@@ -158,32 +172,18 @@ static int init_mp4(char *filename) {
         return -1;
     }
 
-    frame_width = dec_ctx->width;
-    // Flattened RGB is width * height * 3
-    // But internally we store vector. If we want image-like structure, we have width and height.
-    // However, distance func treats data as double array of size w*h.
-    // If we have 3 channels, effective vector length is w*h*3.
-    // frameread interface exposes get_frame_width/height.
-    // If we return w*3 as width, or keep height as h.
-    // Let's set dimensions to pixel dimensions, but data size will be w*h*3.
-    // Wait, getframe allocates width*height doubles.
-    // We should set frame_width = w * 3? Or frame_height = h * 3?
-    // Let's use frame_height = h, frame_width = w * 3 (interleaved).
+    // Interleaved RGB
     frame_width = dec_ctx->width * 3;
     frame_height = dec_ctx->height;
 
-    // We don't easily know total frame count without scanning.
-    // ffmpeg estimates can be wrong.
-    // If nb_frames is available in stream
     if (fmt_ctx->streams[video_stream_idx]->nb_frames > 0) {
         num_frames = fmt_ctx->streams[video_stream_idx]->nb_frames;
     } else {
-        // Fallback: Estimate from duration and frame rate
+        // Fallback estimate
         double duration = (double)fmt_ctx->duration / AV_TIME_BASE;
         double fps = av_q2d(fmt_ctx->streams[video_stream_idx]->avg_frame_rate);
         if (duration > 0 && fps > 0) num_frames = (long)(duration * fps);
-        else num_frames = 10000; // Arbitrary limit or force scan?
-        // Let's just warn.
+        else num_frames = 10000;
         printf("Warning: Could not determine exact frame count. Using estimated %ld\n", num_frames);
     }
 
@@ -196,6 +196,7 @@ static int init_mp4(char *filename) {
 
     return 0;
 }
+#endif
 
 int init_frameread(char *filename) {
     // Check extension
@@ -203,10 +204,16 @@ int init_frameread(char *filename) {
     if (ext) {
         if (strcmp(ext, ".txt") == 0) return init_ascii(filename);
         if (strcmp(ext, ".mp4") == 0 || strcmp(ext, ".avi") == 0 || strcmp(ext, ".mov") == 0 || strcmp(ext, ".mkv") == 0) {
+            #ifdef USE_FFMPEG
             return init_mp4(filename);
+            #else
+            fprintf(stderr, "Error: FFmpeg support is not compiled in. Cannot read video file.\n");
+            return -1;
+            #endif
         }
     }
 
+    #ifdef USE_CFITSIO
     int status = 0;
     if (fits_open_file(&fptr, filename, READONLY, &status)) {
         fits_report_error(stderr, status);
@@ -235,6 +242,10 @@ int init_frameread(char *filename) {
 
     current_frame_idx = 0;
     return 0;
+    #else
+    fprintf(stderr, "Error: FITS support is not compiled in. Cannot read file %s. ASCII (.txt) supported.\n", filename);
+    return -1;
+    #endif
 }
 
 Frame* getframe() {
@@ -243,11 +254,6 @@ Frame* getframe() {
     }
     return getframe_at(current_frame_idx++);
 }
-
-// FFmpeg random access is slow (seek).
-// We optimize for sequential access.
-// If index != current_internal_index, we seek.
-static int internal_mp4_index = 0;
 
 Frame* getframe_at(long index) {
      if (index >= num_frames || index < 0) {
@@ -282,17 +288,11 @@ Frame* getframe_at(long index) {
                 return NULL;
             }
         }
-    } else if (is_mp4_mode) {
+    }
+    #ifdef USE_FFMPEG
+    else if (is_mp4_mode) {
         // Handle seeking if necessary
         if (index != internal_mp4_index) {
-            // Seek logic here (simplified)
-            // av_seek_frame(fmt_ctx, video_stream_idx, timestamp, flags);
-            // Re-flush buffers
-            // This is complex to get frame-accurate.
-            // For clustering (sequential access usually), we assume sequential.
-            // If random access requested (e.g. during output writing), we might need to re-read or cache.
-            // Given constraints, we warn or fail on backward seek?
-            // "reset_frameread" handles rewinding (seek to 0).
             if (index < internal_mp4_index) {
                 // Rewind
                 av_seek_frame(fmt_ctx, video_stream_idx, 0, AVSEEK_FLAG_BACKWARD);
@@ -336,26 +336,28 @@ Frame* getframe_at(long index) {
             return NULL;
         }
 
-        // Convert to RGB24 and then to double
-        // frame->data is YUV likely.
-        // We use swscale to convert to packed RGB in a temp buffer
         uint8_t *rgb_data[4] = {NULL};
         int rgb_linesize[4] = {0};
-        av_image_alloc(rgb_data, rgb_linesize, dec_ctx->width, dec_ctx->height, AV_PIX_FMT_RGB24, 1);
+        // av_image_alloc(rgb_data, rgb_linesize, dec_ctx->width, dec_ctx->height, AV_PIX_FMT_RGB24, 1); // Need to include libavutil/imgutils.h for this?
+        // Let's alloc manually to avoid extra include dependency if possible, or assume included via avcodec.
+        // It's in libavutil/imgutils.h.
+        // For simplicity, let's malloc.
+        rgb_data[0] = (uint8_t*)malloc(dec_ctx->width * dec_ctx->height * 3);
+        rgb_linesize[0] = dec_ctx->width * 3;
 
         sws_scale(sws_ctx, (const uint8_t *const *)frame->data, frame->linesize, 0, dec_ctx->height, rgb_data, rgb_linesize);
 
-        // Copy to double buffer
-        // rgb_data[0] contains W*H*3 bytes
-        // nelements = frame_width * frame_height = (W*3) * H
         uint8_t *src = rgb_data[0];
         for (long i = 0; i < nelements; i++) {
             frame_struct->data[i] = (double)src[i];
         }
 
-        av_freep(&rgb_data[0]);
+        free(rgb_data[0]);
 
-    } else {
+    }
+    #endif
+    #ifdef USE_CFITSIO
+    else {
         int status = 0;
         long fpixel[3] = {1, 1, index + 1};
         if (fits_read_pix(fptr, TDOUBLE, fpixel, nelements, NULL, frame_struct->data, NULL, &status)) {
@@ -364,6 +366,13 @@ Frame* getframe_at(long index) {
             free(frame_struct);
             return NULL;
         }
+    }
+    #endif
+    else {
+        // Should not happen if init checked modes correctly
+        free(frame_struct->data);
+        free(frame_struct);
+        return NULL;
     }
 
     return frame_struct;
@@ -383,29 +392,37 @@ void close_frameread() {
         ascii_ptr = NULL;
         ascii_line_offsets = NULL;
         is_ascii_mode = 0;
-    } else if (is_mp4_mode) {
+    }
+    #ifdef USE_FFMPEG
+    else if (is_mp4_mode) {
         avcodec_free_context(&dec_ctx);
         avformat_close_input(&fmt_ctx);
         av_frame_free(&frame);
         av_packet_free(&pkt);
         sws_freeContext(sws_ctx);
         is_mp4_mode = 0;
-    } else {
+    }
+    #endif
+    #ifdef USE_CFITSIO
+    else {
         int status = 0;
         if (fptr) {
             fits_close_file(fptr, &status);
             fptr = NULL;
         }
     }
+    #endif
 }
 
 void reset_frameread() {
     current_frame_idx = 0;
+    #ifdef USE_FFMPEG
     if (is_mp4_mode) {
         av_seek_frame(fmt_ctx, video_stream_idx, 0, AVSEEK_FLAG_BACKWARD);
         avcodec_flush_buffers(dec_ctx);
         internal_mp4_index = 0;
     }
+    #endif
 }
 
 long get_num_frames() {
