@@ -540,7 +540,7 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
     clock_gettime(CLOCK_MONOTONIC, &end);
     double elapsed_ms = (end.tv_sec - start.tv_sec) * 1000.0 + (end.tv_nsec - start.tv_nsec) / 1000000.0;
 
-    if (state->num_clusters < config->maxnbclust) {
+    if (state->num_clusters < config->maxnbclust && !stop_requested) {
         printf(ANSI_COLOR_GREEN "All frames clustered.\n" ANSI_COLOR_RESET);
     }
 
