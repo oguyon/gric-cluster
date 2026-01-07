@@ -58,7 +58,7 @@ void print_usage(char *progname) {
     printf("  -avg           Compute average frame per cluster\n");
     printf("  -distall       Save all computed distances\n");
     printf("  -outdir <name> Specify output directory (default: <filename>.clusterdat)\n");
-    printf("  -progress      Print progress\n");
+    printf("  -progress      Print progress (default: enabled)\n");
     printf("  -scandist      Measure distance stats\n");
     printf("  -gprob         Use geometrical probability\n");
     printf("  -fmatcha <val> Set fmatch parameter a (default: 2.0)\n");
