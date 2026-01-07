@@ -39,6 +39,7 @@ int main(int argc, char *argv[]) {
     config.maxnbfr = 100000;
     config.fmatch_a = 2.0;
     config.fmatch_b = 0.5;
+    config.progress_mode = 1;
 
     // First pass: Detect -scandist
     for (int i = 1; i < argc; i++) {
