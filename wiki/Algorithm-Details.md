@@ -15,6 +15,7 @@ The algorithm groups frames based on Euclidean distance. Each cluster `cj` is de
 For each frame `fi`:
 
 **Initialization**: If `Ncl = 0`, create Cluster 0 using `fi` as anchor. Set `prob(c0) = 1.0`.
+
 Then loop until all frames clustered:
 1.  **Normalize Probabilities**: Normalize `prob(cj)` so they sum to 1.0.
 2.  **Rank Candidates**: Sort clusters by total probability.
