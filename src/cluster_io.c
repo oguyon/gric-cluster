@@ -104,9 +104,11 @@ void write_results(ClusterConfig *config, ClusterState *state) {
         if (tm_out) {
             for (int i = 0; i < state->num_clusters; i++) {
                 for (int j = 0; j < state->num_clusters; j++) {
-                    fprintf(tm_out, "%ld ", state->transition_matrix[i * config->maxnbclust + j]);
+                    long val = state->transition_matrix[i * config->maxnbclust + j];
+                    if (val > 0) {
+                        fprintf(tm_out, "%d %d %ld\n", i, j, val);
+                    }
                 }
-                fprintf(tm_out, "\n");
             }
             fclose(tm_out);
         }
