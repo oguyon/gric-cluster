@@ -17,6 +17,8 @@ double framedist(Frame *a, Frame *b);
 #define ANSI_COLOR_BLACK   "\x1b[30m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
+#define MAX_GPROB_VISITORS 1000
+
 int compare_candidates(const void *a, const void *b) {
     Candidate *ca = (Candidate *)a;
     Candidate *cb = (Candidate *)b;
@@ -421,7 +423,11 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                         printf("  [VV] Distance > rlim. Found %d matches in distinfo for Cluster %4d (Frame %5d).\n", match_count, cj, state->clusters[cj].anchor.id);
                     }
 
-                    for (int i = 0; i < state->cluster_visitors[cj].count; i++) {
+                    int start_idx = 0;
+                    if (state->cluster_visitors[cj].count > MAX_GPROB_VISITORS) {
+                        start_idx = state->cluster_visitors[cj].count - MAX_GPROB_VISITORS;
+                    }
+                    for (int i = start_idx; i < state->cluster_visitors[cj].count; i++) {
                         int k_idx = state->cluster_visitors[cj].frames[i];
                         if (k_idx == state->total_frames_processed) continue;
 
@@ -540,7 +546,7 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
     clock_gettime(CLOCK_MONOTONIC, &end);
     double elapsed_ms = (end.tv_sec - start.tv_sec) * 1000.0 + (end.tv_nsec - start.tv_nsec) / 1000000.0;
 
-    if (state->num_clusters < config->maxnbclust) {
+    if (state->num_clusters < config->maxnbclust && !stop_requested) {
         printf(ANSI_COLOR_GREEN "All frames clustered.\n" ANSI_COLOR_RESET);
     }
 
