@@ -1,112 +1,48 @@
-#!/usr/bin/env bash
+#!/bin/bash
+set -e
 
-# BENCHMARKS
+# Build
+echo "Building project..."
+mkdir -p build
+cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+cd ..
 
+# Prepare benchmark dir
+mkdir -p benchmark
+DATA_FILE="benchmark/benchmark_data.txt"
 
-MKSEQEXEC="../build/image-cluster-mktxtseq"
-RNUCLEXEC="../build/image-cluster"
-CLPLOT="../build/image-cluster-plot"
+# Generate Data: 2000 points, repeated 5 times = 10000 frames
+echo "Generating synthetic data (10,000 frames)..."
+./build/image-cluster-mktxtseq 2000 $DATA_FILE 3Dwalk -repeat 5 -noise 0.5
 
-NBSAMPLE=1000000
-RLIM="0.10"
+# Function to run benchmark
+run_bench() {
+    MODE_NAME=$1
+    ARGS=$2
+    LOG_FILE="benchmark/result_${MODE_NAME}.txt"
+    echo "Running $MODE_NAME benchmark..."
 
-OPTIONS="-maxim $NBSAMPLE -outdir clusteroutdir"
+    # Use 1.5 radius limit as per benchmarks docs
+    ./build/image-cluster 1.5 $DATA_FILE -dprob 0.05 $ARGS > $LOG_FILE
 
-# SHORT TERM MEMORY FOR SLOW-MOVING POINT
+    TIME=$(grep "Processing time:" $LOG_FILE | awk '{print $3}')
+    DISTS=$(grep "Framedist calls:" $LOG_FILE | awk '{print $3}')
+    CLUSTERS=$(grep "Total clusters:" $LOG_FILE | awk '{print $3}')
 
-# Slow moving point on spiral
-# Demonstrates short-term memory, testing last cluster first
-# approximately 1.00 dist/frame
-# Should be ~1 dist/frame
-# > Validates short-term memory performance gain
-#
-$MKSEQEXEC $NBSAMPLE 2Dspiral.txt 2Dspiral
-$RNUCLEXEC $RLIM $OPTIONS 2Dspiral.txt
-$CLPLOT 2Dspiral.clustered.txt -png
+    echo "$MODE_NAME: Time=${TIME}ms, Dists=${DISTS}, Clusters=${CLUSTERS}"
+    echo "| $MODE_NAME | $TIME | $DISTS | $CLUSTERS |" >> benchmark/summary.md
+}
 
+# Initialize summary
+echo "| Mode | Time (ms) | Dist Calls | Clusters |" > benchmark/summary.md
+echo "|---|---|---|---| " >> benchmark/summary.md
 
+# Run scenarios
+run_bench "Standard" ""
+run_bench "GProb" "-gprob"
+run_bench "Prediction" "-pred[10,1000,2] -gprob"
 
-
-# TRIANGULATION / GEOMETRY
-
-# ON CURVE
-
-# Random point on circle
-# Demonstrates geometric solving
-# approximately 2.73 dist/frame
-# In 2D, we expect ~2.5, first 1 give 2 solution, then 50% prob next one gets it right (2 dists) otherwise 3 dists
-# > Validates short-term memory gain
-#
-$MKSEQEXEC $NBSAMPLE 2Dcircle-shuffle.txt 2Dcircle -shuffle
-$RNUCLEXEC $RLIM $OPTIONS 2Dcircle-shuffle.txt
-$CLPLOT 2Dcircle-shuffle.clustered.txt -png
-
-# Random points on spiral
-# Demonstrates geometric gain
-# r=0.1  3.01 dist/frame
-# r=0.05 2.95 dist/frame
-# r=0.02 3.03 dist/frame
-# r=0.02 3.03 dist/frame
-# In 2D, we expect ~3, first 1 give finite numb solution, then 2nd one nails it, and 3rd one is good
-#
-$MKSEQEXEC $NBSAMPLE 2Dspiral-shuffle.txt 2Dspiral -shuffle
-$RNUCLEXEC $RLIM $OPTIONS 2Dspiral-shuffle.txt
-$CLPLOT 2Dspiral-shuffle.clustered.txt -png
-
-
-# gprob option to learn the fine geometrical structure
-# 2.52 dist/frame
-# 
-$RNUCLEXEC $RLIM -maxim $NBSAMPLE -gprob -fmatcha 1.0 -fmatchb 0.0 2Dspiral-shuffle.txt
-
-
-
-
-# ON RANDOM POINTS
-
-RLIM="0.10"
-
-# Random pt in 2D
-# Expects > 3.2134
-# one -> thick arc, 2 -> square, 3 -> OK prob is PI/4, otherwise needs 1+ more dist
-# r=0.10 3.53 dist/frame
-# r=0.05 3.96 dist/frame
-#
-$MKSEQEXEC $NBSAMPLE 2Drand.txt 2Drand
-$RNUCLEXEC $RLIM $OPTIONS 2Drand.txt
-$CLPLOT 2Drand.clustered.txt -png
-
-
-
-# Random pt in 3D
-# Expects > ~5+
-# one -> thick sphere, 2 -> thick ring, 3 -> two cubes, 
-# 4 -> 50% off, 50% good side
-# if good side, OK prob is PI/6, otherwise 1+ more needed
-# r=0.10 9.78 dist/frame
-# 3000 clusters
-#
-$MKSEQEXEC $NBSAMPLE 3Drand.txt 3Drand
-$RNUCLEXEC $RLIM -maxcl 10000 $OPTIONS 3Drand.txt
-$CLPLOT 3Drand.clustered.txt -png
-
-
-
-# RECURRING SEQUENCE
-#
-# 3.00
-#
-$MKSEQEXEC $NBSAMPLE 2DcircleP10n.txt 2Dcircle10 -noise 0.04
-$RNUCLEXEC $RLIM $OPTIONS 2DcircleP10n.txt
-$CLPLOT 2DcircleP10n.clustered.txt -png
-
-# 1.0 
-#
-$RNUCLEXEC $RLIM -maxcl 10000 -pred[10,100,1] -maxim $NBSAMPLE 2DcircleP10n.txt
-
-
-
-
-
-
-
+echo "Benchmark complete. Summary:"
+cat benchmark/summary.md
