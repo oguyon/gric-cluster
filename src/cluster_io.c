@@ -52,19 +52,25 @@ void print_usage(char *progname) {
     #endif
     printf(").\n");
     printf("Options:\n");
+
+    printf("\n  [Clustering Control]\n");
     printf("  -dprob <val>   Delta probability (default: 0.01)\n");
     printf("  -maxcl <val>   Max number of clusters (default: 1000)\n");
     printf("  -maxim <val>   Max number of frames (default: 100000)\n");
-    printf("  -avg           Compute average frame per cluster\n");
-    printf("  -distall       Save all computed distances\n");
-    printf("  -outdir <name> Specify output directory (default: <filename>.clusterdat)\n");
-    printf("  -progress      Print progress (default: enabled)\n");
-    printf("  -scandist      Measure distance stats\n");
     printf("  -gprob         Use geometrical probability\n");
     printf("  -fmatcha <val> Set fmatch parameter a (default: 2.0)\n");
     printf("  -fmatchb <val> Set fmatch parameter b (default: 0.5)\n");
     printf("  -maxvis <val>  Max visitors for gprob history (default: 1000)\n");
     printf("  -pred[l,h,n]   Prediction with pattern detection (default: 10,1000,2)\n");
+
+    printf("\n  [Analysis & Debugging]\n");
+    printf("  -scandist      Measure distance stats\n");
+    printf("  -progress      Print progress (default: enabled)\n");
+
+    printf("\n  [Output]\n");
+    printf("  -outdir <name> Specify output directory (default: <filename>.clusterdat)\n");
+    printf("  -avg           Compute average frame per cluster\n");
+    printf("  -distall       Save all computed distances\n");
     printf("  -pngout        Write output as PNG images");
     #ifndef USE_PNG
     printf(" [DISABLED]");
