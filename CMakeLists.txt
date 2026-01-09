@@ -3,6 +3,12 @@ project(image_cluster C)
 
 set(CMAKE_C_STANDARD 99)
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -funroll-loops")
+
 find_package(PkgConfig REQUIRED)
 
 # Optional Dependencies
