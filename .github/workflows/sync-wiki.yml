@@ -1,0 +1,25 @@
+name: Sync to Wiki
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**' # Folder where Jules generates documentation
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Repo
+        uses: actions/checkout@v4
+
+      - name: Sync Docs to Wiki
+        uses: Andrew-Chen-Wang/github-wiki-action@v4
+        with:
+          # Directory containing markdown files from Jules
+          path: docs/ 
+          # Auto-generated token works if wiki is in same repo
+          token: ${{ github.token }} 
