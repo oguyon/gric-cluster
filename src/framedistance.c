@@ -11,8 +11,12 @@ double framedist(Frame *a, Frame *b) {
 
     double sum = 0.0;
     long size = a->width * a->height;
+
+    const double *restrict da = a->data;
+    const double *restrict db = b->data;
+
     for (long i = 0; i < size; i++) {
-        double diff = a->data[i] - b->data[i];
+        double diff = da[i] - db[i];
         sum += diff * diff;
     }
 
