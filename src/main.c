@@ -44,6 +44,8 @@ int main(int argc, char *argv[]) {
     config.pred_len = 10;
     config.pred_h = 1000;
     config.pred_n = 2;
+    config.maxcl_strategy = MAXCL_STOP;
+    config.discard_fraction = 0.5;
 
     // First pass: Detect -scandist
     for (int i = 1; i < argc; i++) {
@@ -122,6 +124,17 @@ int main(int argc, char *argv[]) {
             config.te5_mode = 1;
         } else if (strcmp(argv[arg_idx], "-tm") == 0) {
             config.tm_mixing_coeff = atof(argv[++arg_idx]);
+        } else if (strcmp(argv[arg_idx], "-maxcl_strategy") == 0) {
+            char *strategy = argv[++arg_idx];
+            if (strcmp(strategy, "stop") == 0) config.maxcl_strategy = MAXCL_STOP;
+            else if (strcmp(strategy, "discard") == 0) config.maxcl_strategy = MAXCL_DISCARD;
+            else if (strcmp(strategy, "merge") == 0) config.maxcl_strategy = MAXCL_MERGE;
+            else {
+                fprintf(stderr, "Error: Unknown maxcl_strategy '%s'. Use 'stop', 'discard', or 'merge'.\n", strategy);
+                return 1;
+            }
+        } else if (strcmp(argv[arg_idx], "-discard_frac") == 0) {
+            config.discard_fraction = atof(argv[++arg_idx]);
         } else if (strncmp(argv[arg_idx], "-pred", 5) == 0) {
             config.pred_mode = 1;
             char *params = argv[arg_idx] + 5;

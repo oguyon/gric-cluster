@@ -5,6 +5,13 @@
 #include <signal.h>
 #include "common.h"
 
+// Max Cluster Strategy Enum
+typedef enum {
+    MAXCL_STOP = 0,
+    MAXCL_DISCARD = 1,
+    MAXCL_MERGE = 2
+} MaxClustStrategy;
+
 // Configuration structure
 typedef struct {
     double rlim;
@@ -33,6 +40,8 @@ typedef struct {
     int te4_mode;
     int te5_mode;
     double tm_mixing_coeff;
+    MaxClustStrategy maxcl_strategy;
+    double discard_fraction;
 } ClusterConfig;
 
 // VisitorList structure
