@@ -25,20 +25,7 @@ int compare_candidates(const void *a, const void *b) {
     return 0;
 }
 
-int compare_probs(const void *a, const void *b) {
-    // We need access to clusters array, but this is qsort comparator.
-    // The indices are passed. But we need the `clusters` array.
-    // This is tricky without a global or context.
-    // However, probsortedclindex stores indices.
-    // We can't easily pass context to qsort comparator in standard C.
-    // We might need to make `clusters` available via a thread-local or static global in this file,
-    // or use `qsort_r` (GNU extension) or `qsort_s` (C11).
-    // Given the constraints and existing code using globals, we might need a workaround.
-    // Since we are refactoring to remove globals, this is a blocker for `qsort`.
-    // Let's use a static global pointer ONLY for this file and set it before qsort.
-    return 0; // Placeholder, see workaround below
-}
-
+// Global pointer for sorting wrapper (legacy workaround)
 static Cluster *g_clusters_ptr = NULL;
 
 int compare_probs_wrapper(const void *a, const void *b) {
@@ -128,9 +115,6 @@ void run_scandist(ClusterConfig *config, char *out_dir) {
         Frame *curr = getframe();
         if (!curr) break;
 
-        // framedist_calls++; // Should we count this? Original code did not use get_dist here so didn't count global calls, but did manual increment.
-        // But here we don't have access to global framedist_calls in main loop unless we pass state.
-        // Let's just calculate.
         double d = framedist(prev, curr);
         distances[count++] = d;
 
@@ -368,6 +352,167 @@ static void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int
     }
 }
 
+static void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_remove, int index_target) {
+    if (index_to_remove < 0 || index_to_remove >= state->num_clusters) return;
+
+    if (config->verbose_level >= 1) {
+        printf("Removing cluster %d (Count: %d). Target: %d\n",
+               index_to_remove, state->cluster_visitors[index_to_remove].count, index_target);
+    }
+
+    // 1. Log or Merge History
+    // If merging (index_target != -1), we could technically merge visitor history or reassign frames.
+    // However, reassigning frame history is complex because 'FrameInfo' stores exact distances to specific clusters.
+    // If we merge C_rem into C_targ, we might want to pretend frames assigned to C_rem are now C_targ.
+    // But distance d(f, C_rem) != d(f, C_targ).
+    // The simplest approach consistent with "reallocate frames" is to update the 'assignments' array for final output.
+    // For 'ClusterState' internal consistency (transition matrix, gprob), we accept that history for C_rem is gone.
+
+    // Log dropped frames if discard
+    if (index_target == -1) {
+        FILE *log = fopen("discarded_frames.txt", "a");
+        if (log) {
+            fprintf(log, "# Discarded Cluster %d\n", index_to_remove);
+            for (int i = 0; i < state->cluster_visitors[index_to_remove].count; i++) {
+                fprintf(log, "%d ", state->cluster_visitors[index_to_remove].frames[i]);
+            }
+            fprintf(log, "\n");
+            fclose(log);
+        }
+    }
+
+    // 2. Update assignments
+    // We scan all frames processed so far. This is O(N_frames).
+    for (long f = 0; f < state->total_frames_processed; f++) {
+        if (state->assignments[f] == index_to_remove) {
+            state->assignments[f] = (index_target != -1) ? index_target : -1;
+            // If target > index_to_remove, it will be shifted down later, so we handle that below.
+        }
+    }
+
+    // 3. Shift Clusters Array
+    if (state->clusters[index_to_remove].anchor.data) {
+        free(state->clusters[index_to_remove].anchor.data);
+    }
+    // Shift clusters down
+    for (int i = index_to_remove; i < state->num_clusters - 1; i++) {
+        state->clusters[i] = state->clusters[i+1];
+        state->clusters[i].id = i; // Update ID
+    }
+
+    // 4. Shift Visitor Lists
+    if (state->cluster_visitors[index_to_remove].frames) {
+        free(state->cluster_visitors[index_to_remove].frames);
+    }
+    for (int i = index_to_remove; i < state->num_clusters - 1; i++) {
+        state->cluster_visitors[i] = state->cluster_visitors[i+1];
+    }
+    // Zero out the last one (moved)
+    memset(&state->cluster_visitors[state->num_clusters - 1], 0, sizeof(VisitorList));
+
+    // 5. Shift DCC Array (Rows and Cols)
+    // Row shift: move rows i+1..N to i..N-1
+    // Col shift: for each row, move cols j+1..N to j..N-1
+    // Easier to just rebuild? No, expensive.
+    // Move rows:
+    int N = config->maxnbclust; // Stride is fixed maxnbclust
+
+    // Shift Rows up
+    for (int r = index_to_remove; r < state->num_clusters - 1; r++) {
+        // Copy row r+1 to r
+        // memcpy(dest, src, size)
+        // Dest: &dcc[r*N], Src: &dcc[(r+1)*N], Size: N doubles? No, we copy full width
+        memcpy(&state->dccarray[r * N], &state->dccarray[(r + 1) * N], config->maxnbclust * sizeof(double));
+    }
+    // Now rows are shifted. Row 'index_to_remove' is gone (overwritten).
+    // Now shift Columns left for ALL rows (including the ones we just moved)
+    // Actually we only care about rows 0..num_clusters-2
+    for (int r = 0; r < state->num_clusters - 1; r++) {
+        // Shift cols in row r
+        // Move &dcc[r*N + index_to_remove + 1] to &dcc[r*N + index_to_remove]
+        // Count: num_clusters - 1 - index_to_remove
+        int dest_idx = r * N + index_to_remove;
+        int src_idx = r * N + index_to_remove + 1;
+        int count = config->maxnbclust - 1 - index_to_remove; // safe upper bound
+        if (count > 0) {
+            memmove(&state->dccarray[dest_idx], &state->dccarray[src_idx], count * sizeof(double));
+        }
+    }
+
+    // 6. Shift Transition Matrix (Same logic as DCC)
+    // Shift Rows
+    for (int r = index_to_remove; r < state->num_clusters - 1; r++) {
+        memcpy(&state->transition_matrix[r * N], &state->transition_matrix[(r + 1) * N], config->maxnbclust * sizeof(long));
+    }
+    // Shift Cols
+    for (int r = 0; r < state->num_clusters - 1; r++) {
+        int dest_idx = r * N + index_to_remove;
+        int src_idx = r * N + index_to_remove + 1;
+        int count = config->maxnbclust - 1 - index_to_remove;
+        if (count > 0) {
+            memmove(&state->transition_matrix[dest_idx], &state->transition_matrix[src_idx], count * sizeof(long));
+        }
+    }
+
+    // 7. Update Assignments for Shifted Indices
+    // Any assignment pointing to old_idx > index_to_remove must be decremented
+    // Also handle the merge target if it was > index_to_remove
+    // We iterate frames again? Or combine with step 2?
+    // Combining:
+    // If ass == remove: handle remove/merge
+    // If ass > remove: ass--
+    // But step 2 used 'index_target'. If index_target > index_to_remove, it will now be index_target-1.
+    // So we need to be careful.
+
+    // Let's redo assignment update correctly here.
+    // First pass was just mapping remove->target.
+    // Now we need to shift everything > remove.
+    // Note: if target was > remove, it needs to be decremented too.
+
+    // Correct logic:
+    // If assignment == index_to_remove:
+    //    if discard: assignment = -1
+    //    if merge: assignment = index_target (original)
+    // If assignment > index_to_remove: assignment--
+    // Wait, if assignment was mapped to index_target, and index_target > index_to_remove, we must decrement it too.
+
+    for (long f = 0; f < state->total_frames_processed; f++) {
+        int a = state->assignments[f];
+        if (a == -1) continue; // Already discarded
+
+        // Was it the removed one? (We already mapped it in step 2? No, let's undo step 2 and do it all here)
+        // But wait, step 2 logic was:
+        // state->assignments[f] = (index_target != -1) ? index_target : -1;
+        // If we did that, 'a' is now 'index_target'.
+        // We can't distinguish frames that were originally 'index_target' vs 'index_to_remove'.
+        // Does it matter? No. Both need to shift if index_target > index_to_remove.
+
+        // So, let's look at logic from scratch (assuming step 2 didn't happen or we fix it):
+        // Actually, let's remove Step 2 code block and put it here.
+    }
+
+    // Correct Assignments Update Loop (Replace Step 2)
+    for (long f = 0; f < state->total_frames_processed; f++) {
+        int a = state->assignments[f];
+        if (a == index_to_remove) {
+            if (index_target == -1) {
+                state->assignments[f] = -1;
+            } else {
+                // Merging to target.
+                // If target > remove, the new target index is target-1
+                // If target < remove, the new target index is target
+                if (index_target > index_to_remove) state->assignments[f] = index_target - 1;
+                else state->assignments[f] = index_target;
+            }
+        } else if (a > index_to_remove) {
+            state->assignments[f] = a - 1;
+        }
+    }
+
+    // 8. Decrement Num Clusters
+    state->num_clusters--;
+}
+
 
 void run_clustering(ClusterConfig *config, ClusterState *state) {
     long actual_frames = get_num_frames();
@@ -399,24 +544,10 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
     Candidate *sorting_candidates = (Candidate *)malloc(config->maxnbclust * sizeof(Candidate));
 
     char *out_dir = NULL;
-    // We assume out_dir is created in main or we create it here?
-    // Use user_outdir or create from filename.
-    // Ideally main handles directory creation.
-    // Let's assume the directory exists if we are here.
-    // We need the path to write `frame_membership.txt`.
-    // We can recreate the name or pass it.
-    // Let's check config.user_outdir or recreate.
-    // But `create_output_dir_name` allocates.
-    // Let's assume we can use `config->user_outdir` if set.
-    // But if it wasn't set by user, main created it but maybe didn't store it back in config?
-    // We should probably have stored the effective output dir in config or state.
-    // Let's assume `config->user_outdir` holds the effective output directory path.
-
     char out_path[1024];
     if (config->user_outdir) {
         snprintf(out_path, sizeof(out_path), "%s/frame_membership.txt", config->user_outdir);
     } else {
-        // Fallback?
         snprintf(out_path, sizeof(out_path), "frame_membership.txt");
     }
 
@@ -520,7 +651,7 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
 
                     for (int p = 0; p < num_preds; p++) {
                         int cj = pred_candidates[p];
-                        if (!state->clmembflag[cj]) continue;
+                        if (cj >= state->num_clusters || !state->clmembflag[cj]) continue;
 
                         if (temp_count < state->max_steps_recorded && state->num_clusters > 0) {
                             int pruned_cnt = 0;
@@ -789,6 +920,7 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                         if (k_idx == state->total_frames_processed) continue;
 
                         int target_cl = state->frame_infos[k_idx].assignment;
+                        if (target_cl < 0 || target_cl >= state->num_clusters) continue; // Skip discarded/invalid
                         int is_active = state->clmembflag[target_cl];
 
                         if (config->verbose_level >= 2) {
@@ -861,10 +993,129 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                     state->num_clusters++;
                     free(current_frame);
                 } else {
-                    printf(ANSI_COLOR_ORANGE "Max clusters limit reached.\n" ANSI_COLOR_RESET);
-                    printf("Frames clustered: %ld\n", state->total_frames_processed);
-                    free_frame(current_frame);
-                    break;
+                    // Max clusters reached - apply strategy
+                    if (config->maxcl_strategy == MAXCL_STOP) {
+                        printf(ANSI_COLOR_ORANGE "Max clusters limit reached.\n" ANSI_COLOR_RESET);
+                        printf("Frames clustered: %ld\n", state->total_frames_processed);
+                        free_frame(current_frame);
+                        break;
+                    } else if (config->maxcl_strategy == MAXCL_DISCARD) {
+                        // Find oldest/smallest cluster to discard
+                        int scan_limit = (int)(state->num_clusters * config->discard_fraction);
+                        if (scan_limit < 1) scan_limit = state->num_clusters;
+
+                        int min_idx = -1;
+                        int min_count = -1;
+
+                        for (int i = 0; i < scan_limit; i++) {
+                            int count = state->cluster_visitors[i].count;
+                            if (min_idx == -1 || count < min_count) {
+                                min_count = count;
+                                min_idx = i;
+                            }
+                        }
+
+                        if (min_idx != -1) {
+                            remove_cluster(state, config, min_idx, -1);
+                            // Now try creating again (recursive call or goto)
+                            // Easier to just continue loop? No, we need to handle CURRENT frame.
+                            // We freed current_frame in the else block normally.
+                            // Here we want to RETRY assignment with the space we just made.
+                            // But wait, the current frame failed to match any existing cluster.
+                            // So we KNOW it should be a new cluster.
+                            // We just made space. So we can proceed to create it.
+                            // Fall through to creation logic?
+                            // No, creation logic is inside "if (state->num_clusters < config->maxnbclust)".
+                            // Now it IS true.
+                            // So we can goto "found = 0" logic?
+                            // Actually, just duplicate creation block or loop back?
+                            // Let's use a flag or simple recursion logic
+                            // Actually, simplest is:
+
+                            assigned_cluster = state->num_clusters;
+                            state->clusters[state->num_clusters].anchor = *current_frame;
+                            state->clusters[state->num_clusters].id = state->num_clusters;
+                            state->clusters[state->num_clusters].prob = 1.0;
+
+                            for (int i = 0; i < state->num_clusters; i++) {
+                                double d = get_dist(&state->clusters[state->num_clusters].anchor, &state->clusters[i].anchor, -1, -1.0, -1.0, config, state);
+                                state->dccarray[state->num_clusters * config->maxnbclust + i] = d;
+                                state->dccarray[i * config->maxnbclust + state->num_clusters] = d;
+                            }
+                            state->dccarray[state->num_clusters * config->maxnbclust + state->num_clusters] = 0.0;
+
+                            add_visitor(&state->cluster_visitors[state->num_clusters], state->total_frames_processed);
+
+                            if (temp_count < config->maxnbclust) {
+                                temp_indices[temp_count] = state->num_clusters;
+                                temp_dists[temp_count] = 0.0;
+                                temp_count++;
+                            }
+
+                            state->num_clusters++;
+                            free(current_frame);
+                        } else {
+                            // Should not happen
+                            free_frame(current_frame);
+                            break;
+                        }
+                    } else if (config->maxcl_strategy == MAXCL_MERGE) {
+                        // Find closest pair
+                        int best_i = -1, best_j = -1;
+                        double min_d = -1.0;
+
+                        for (int i = 0; i < state->num_clusters; i++) {
+                            for (int j = i + 1; j < state->num_clusters; j++) {
+                                double d = state->dccarray[i * config->maxnbclust + j];
+                                if (d >= 0 && (min_d < 0 || d < min_d)) {
+                                    min_d = d;
+                                    best_i = i;
+                                    best_j = j;
+                                }
+                            }
+                        }
+
+                        if (best_i != -1) {
+                            // Merge smaller into larger
+                            int count_i = state->cluster_visitors[best_i].count;
+                            int count_j = state->cluster_visitors[best_j].count;
+                            int target = (count_i >= count_j) ? best_i : best_j;
+                            int remove = (count_i >= count_j) ? best_j : best_i;
+
+                            if (config->verbose_level >= 1) {
+                                printf("Merging cluster %d into %d (dist %.4f)\n", remove, target, min_d);
+                            }
+
+                            remove_cluster(state, config, remove, target);
+
+                            // Now create new cluster for current frame
+                            assigned_cluster = state->num_clusters;
+                            state->clusters[state->num_clusters].anchor = *current_frame;
+                            state->clusters[state->num_clusters].id = state->num_clusters;
+                            state->clusters[state->num_clusters].prob = 1.0;
+
+                            for (int i = 0; i < state->num_clusters; i++) {
+                                double d = get_dist(&state->clusters[state->num_clusters].anchor, &state->clusters[i].anchor, -1, -1.0, -1.0, config, state);
+                                state->dccarray[state->num_clusters * config->maxnbclust + i] = d;
+                                state->dccarray[i * config->maxnbclust + state->num_clusters] = d;
+                            }
+                            state->dccarray[state->num_clusters * config->maxnbclust + state->num_clusters] = 0.0;
+
+                            add_visitor(&state->cluster_visitors[state->num_clusters], state->total_frames_processed);
+
+                            if (temp_count < config->maxnbclust) {
+                                temp_indices[temp_count] = state->num_clusters;
+                                temp_dists[temp_count] = 0.0;
+                                temp_count++;
+                            }
+
+                            state->num_clusters++;
+                            free(current_frame);
+                        } else {
+                            free_frame(current_frame);
+                            break;
+                        }
+                    }
                 }
             } else {
                 free_frame(current_frame);
@@ -872,7 +1123,7 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
         }
 
         // Update transition matrix
-        if (state->total_frames_processed > 0 && prev_assigned_cluster != -1) {
+        if (state->total_frames_processed > 0 && prev_assigned_cluster != -1 && assigned_cluster != -1) {
             state->transition_matrix[prev_assigned_cluster * config->maxnbclust + assigned_cluster]++;
         }
         prev_assigned_cluster = assigned_cluster;

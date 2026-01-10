@@ -1,0 +1,1784 @@
+# Discarded Cluster 3
+3 4
+# Discarded Cluster 3
+4 5
+# Discarded Cluster 3
+5 6
+# Discarded Cluster 2
+2 3 4
+# Discarded Cluster 4
+8 9
+# Discarded Cluster 2
+6 7 8
+# Discarded Cluster 4
+10 11
+# Discarded Cluster 3
+9 10 11
+# Discarded Cluster 4
+13 14
+# Discarded Cluster 4
+14 15
+# Discarded Cluster 0
+0 1 2 12
+# Discarded Cluster 4
+16 17
+# Discarded Cluster 3
+15 16 18 21
+# Discarded Cluster 4
+20 21 26
+# Discarded Cluster 4
+21 22
+# Discarded Cluster 4
+22 23 24
+# Discarded Cluster 4
+24 25 29
+# Discarded Cluster 4
+25 26 31
+# Discarded Cluster 4
+26 27
+# Discarded Cluster 4
+27 28
+# Discarded Cluster 4
+28 29
+# Discarded Cluster 4
+29 30
+# Discarded Cluster 4
+30 31 33
+# Discarded Cluster 4
+31 32
+# Discarded Cluster 4
+32 33
+# Discarded Cluster 4
+33 34 37
+# Discarded Cluster 4
+34 35 36
+# Discarded Cluster 4
+35 36
+# Discarded Cluster 4
+36 37
+# Discarded Cluster 4
+37 38
+# Discarded Cluster 4
+38 39
+# Discarded Cluster 4
+39 40 41
+# Discarded Cluster 4
+40 41
+# Discarded Cluster 4
+41 42 46
+# Discarded Cluster 4
+42 43
+# Discarded Cluster 4
+43 44
+# Discarded Cluster 4
+44 45 49
+# Discarded Cluster 4
+45 46
+# Discarded Cluster 4
+46 47 48 51
+# Discarded Cluster 4
+48 49 52 54
+# Discarded Cluster 4
+49 50
+# Discarded Cluster 4
+50 51
+# Discarded Cluster 4
+51 52 56
+# Discarded Cluster 4
+52 53 59
+# Discarded Cluster 4
+53 54 55
+# Discarded Cluster 4
+55 56
+# Discarded Cluster 4
+56 57 58
+# Discarded Cluster 4
+57 58
+# Discarded Cluster 4
+58 59
+# Discarded Cluster 4
+59 60
+# Discarded Cluster 4
+60 61
+# Discarded Cluster 4
+61 62 63
+# Discarded Cluster 1
+7 8 9 10 19
+# Discarded Cluster 4
+63 64
+# Discarded Cluster 4
+64 65 67 69
+# Discarded Cluster 4
+65 66 73
+# Discarded Cluster 4
+66 67 68 74
+# Discarded Cluster 4
+68 69 70
+# Discarded Cluster 4
+70 71
+# Discarded Cluster 4
+71 72
+# Discarded Cluster 4
+72 73
+# Discarded Cluster 4
+73 74 77
+# Discarded Cluster 4
+74 75
+# Discarded Cluster 4
+75 76 81
+# Discarded Cluster 4
+76 77
+# Discarded Cluster 4
+77 78 80 81
+# Discarded Cluster 4
+78 79
+# Discarded Cluster 4
+79 80
+# Discarded Cluster 4
+80 81 84
+# Discarded Cluster 4
+81 82 83
+# Discarded Cluster 4
+82 83
+# Discarded Cluster 4
+83 84 90
+# Discarded Cluster 4
+84 85 88
+# Discarded Cluster 4
+85 86
+# Discarded Cluster 4
+86 87 88
+# Discarded Cluster 4
+88 89
+# Discarded Cluster 4
+89 90 92 93 94 97
+# Discarded Cluster 4
+90 91
+# Discarded Cluster 4
+91 92 93 95
+# Discarded Cluster 4
+93 94 95 99
+# Discarded Cluster 4
+95 96 99
+# Discarded Cluster 4
+96 97 98
+# Discarded Cluster 4
+97 98 100 101
+# Discarded Cluster 4
+98 99 105
+# Discarded Cluster 4
+99 100 104
+# Discarded Cluster 4
+100 101 102 106
+# Discarded Cluster 4
+101 102 103
+# Discarded Cluster 4
+102 103
+# Discarded Cluster 4
+103 104 105
+# Discarded Cluster 4
+105 106
+# Discarded Cluster 4
+106 107
+# Discarded Cluster 4
+107 108 111 115
+# Discarded Cluster 4
+108 109 110 112
+# Discarded Cluster 4
+110 111 112
+# Discarded Cluster 4
+112 113
+# Discarded Cluster 4
+113 114
+# Discarded Cluster 4
+114 115
+# Discarded Cluster 4
+115 116 117 118 121
+# Discarded Cluster 4
+116 117 119
+# Discarded Cluster 4
+117 118
+# Discarded Cluster 4
+118 119 120 121 123
+# Discarded Cluster 4
+119 120 124 125
+# Discarded Cluster 4
+120 121 122
+# Discarded Cluster 4
+122 123 128
+# Discarded Cluster 4
+123 124
+# Discarded Cluster 4
+124 125 127
+# Discarded Cluster 4
+125 126
+# Discarded Cluster 4
+126 127
+# Discarded Cluster 4
+127 128 132 133
+# Discarded Cluster 4
+128 129
+# Discarded Cluster 4
+129 130
+# Discarded Cluster 4
+130 131
+# Discarded Cluster 4
+131 132
+# Discarded Cluster 4
+132 133 134 135 138
+# Discarded Cluster 4
+133 134
+# Discarded Cluster 4
+134 135 136
+# Discarded Cluster 4
+135 136
+# Discarded Cluster 4
+136 137
+# Discarded Cluster 4
+137 138
+# Discarded Cluster 4
+138 139 144
+# Discarded Cluster 4
+139 140
+# Discarded Cluster 4
+140 141 143 145
+# Discarded Cluster 4
+141 142
+# Discarded Cluster 4
+142 143 146
+# Discarded Cluster 4
+143 144
+# Discarded Cluster 4
+144 145
+# Discarded Cluster 4
+145 146
+# Discarded Cluster 4
+146 147
+# Discarded Cluster 4
+147 148
+# Discarded Cluster 4
+148 149 151
+# Discarded Cluster 4
+149 150
+# Discarded Cluster 4
+150 151
+# Discarded Cluster 4
+151 152
+# Discarded Cluster 4
+152 153 154 158
+# Discarded Cluster 4
+154 155 156
+# Discarded Cluster 4
+155 156
+# Discarded Cluster 4
+156 157 160
+# Discarded Cluster 4
+157 158 162
+# Discarded Cluster 4
+158 159
+# Discarded Cluster 4
+159 160
+# Discarded Cluster 4
+160 161
+# Discarded Cluster 4
+161 162 164
+# Discarded Cluster 4
+162 163
+# Discarded Cluster 4
+163 164 167
+# Discarded Cluster 4
+164 165 166
+# Discarded Cluster 4
+165 166
+# Discarded Cluster 4
+166 167
+# Discarded Cluster 4
+167 168 169
+# Discarded Cluster 4
+168 169 170 175
+# Discarded Cluster 4
+169 170 171
+# Discarded Cluster 4
+170 171 172
+# Discarded Cluster 4
+172 173
+# Discarded Cluster 4
+173 174 175
+# Discarded Cluster 4
+175 176 177
+# Discarded Cluster 4
+176 177
+# Discarded Cluster 4
+177 178
+# Discarded Cluster 4
+178 179 180 181
+# Discarded Cluster 4
+179 180
+# Discarded Cluster 4
+180 181 185
+# Discarded Cluster 4
+181 182
+# Discarded Cluster 4
+182 183 184
+# Discarded Cluster 4
+183 184 187
+# Discarded Cluster 4
+184 185
+# Discarded Cluster 4
+185 186 188 191 193
+# Discarded Cluster 4
+186 187 189
+# Discarded Cluster 4
+187 188 189
+# Discarded Cluster 4
+189 190 191
+# Discarded Cluster 4
+191 192
+# Discarded Cluster 4
+192 193 195 198
+# Discarded Cluster 4
+193 194
+# Discarded Cluster 4
+194 195 197 200
+# Discarded Cluster 4
+195 196 201
+# Discarded Cluster 4
+196 197
+# Discarded Cluster 4
+197 198 202
+# Discarded Cluster 4
+198 199 203
+# Discarded Cluster 4
+199 200
+# Discarded Cluster 4
+200 201
+# Discarded Cluster 4
+201 202
+# Discarded Cluster 4
+202 203 206 208
+# Discarded Cluster 4
+203 204
+# Discarded Cluster 4
+204 205 207 209
+# Discarded Cluster 4
+205 206
+# Discarded Cluster 4
+206 207 210
+# Discarded Cluster 4
+207 208 213
+# Discarded Cluster 4
+208 209 212
+# Discarded Cluster 4
+209 210 211
+# Discarded Cluster 4
+210 211 215
+# Discarded Cluster 4
+211 212 217
+# Discarded Cluster 4
+212 213
+# Discarded Cluster 4
+213 214 218
+# Discarded Cluster 4
+214 215 220
+# Discarded Cluster 4
+215 216
+# Discarded Cluster 4
+216 217 221 222
+# Discarded Cluster 4
+217 218 223
+# Discarded Cluster 4
+218 219
+# Discarded Cluster 4
+219 220 227
+# Discarded Cluster 4
+220 221 222 225
+# Discarded Cluster 4
+221 222 223 226 228
+# Discarded Cluster 4
+223 224
+# Discarded Cluster 4
+224 225 226
+# Discarded Cluster 4
+226 227
+# Discarded Cluster 4
+227 228
+# Discarded Cluster 4
+228 229
+# Discarded Cluster 4
+229 230 233 235
+# Discarded Cluster 4
+230 231
+# Discarded Cluster 4
+231 232
+# Discarded Cluster 4
+232 233 234
+# Discarded Cluster 4
+233 234 237
+# Discarded Cluster 4
+234 235
+# Discarded Cluster 4
+235 236
+# Discarded Cluster 4
+236 237 238
+# Discarded Cluster 4
+237 238
+# Discarded Cluster 4
+238 239 240 242 245 246
+# Discarded Cluster 4
+239 240 241 247
+# Discarded Cluster 4
+241 242 245
+# Discarded Cluster 4
+242 243
+# Discarded Cluster 4
+243 244
+# Discarded Cluster 4
+244 245 246 248 250
+# Discarded Cluster 4
+246 247
+# Discarded Cluster 4
+247 248 249 253
+# Discarded Cluster 4
+248 249 251
+# Discarded Cluster 4
+249 250 256
+# Discarded Cluster 4
+250 251 252
+# Discarded Cluster 4
+252 253 254 255 258 259
+# Discarded Cluster 4
+253 254 257
+# Discarded Cluster 4
+254 255 256 260
+# Discarded Cluster 4
+256 257
+# Discarded Cluster 4
+257 258
+# Discarded Cluster 4
+258 259
+# Discarded Cluster 4
+259 260 264
+# Discarded Cluster 4
+260 261 263 266
+# Discarded Cluster 4
+261 262 263
+# Discarded Cluster 4
+263 264
+# Discarded Cluster 4
+264 265 269
+# Discarded Cluster 4
+265 266
+# Discarded Cluster 4
+266 267
+# Discarded Cluster 4
+267 268
+# Discarded Cluster 4
+268 269 273 274
+# Discarded Cluster 4
+269 270 272
+# Discarded Cluster 4
+270 271
+# Discarded Cluster 4
+271 272
+# Discarded Cluster 4
+272 273
+# Discarded Cluster 4
+273 274
+# Discarded Cluster 4
+274 275
+# Discarded Cluster 4
+275 276 277 282
+# Discarded Cluster 4
+276 277 278
+# Discarded Cluster 4
+278 279 280
+# Discarded Cluster 4
+280 281 286
+# Discarded Cluster 4
+281 282 283
+# Discarded Cluster 4
+282 283 287
+# Discarded Cluster 4
+283 284 290
+# Discarded Cluster 4
+284 285
+# Discarded Cluster 4
+285 286
+# Discarded Cluster 4
+286 287
+# Discarded Cluster 4
+287 288 289
+# Discarded Cluster 4
+289 290 291 295
+# Discarded Cluster 4
+290 291 292
+# Discarded Cluster 4
+292 293
+# Discarded Cluster 4
+293 294 296
+# Discarded Cluster 4
+294 295
+# Discarded Cluster 4
+295 296 297
+# Discarded Cluster 4
+296 297
+# Discarded Cluster 4
+297 298 302
+# Discarded Cluster 4
+298 299
+# Discarded Cluster 4
+299 300 305
+# Discarded Cluster 4
+300 301
+# Discarded Cluster 4
+301 302 303 307
+# Discarded Cluster 4
+302 303 304
+# Discarded Cluster 4
+303 304
+# Discarded Cluster 4
+304 305 311
+# Discarded Cluster 4
+305 306 308
+# Discarded Cluster 4
+306 307
+# Discarded Cluster 4
+307 308 309
+# Discarded Cluster 4
+309 310
+# Discarded Cluster 4
+310 311 312 316
+# Discarded Cluster 4
+311 312
+# Discarded Cluster 4
+312 313 319
+# Discarded Cluster 4
+313 314
+# Discarded Cluster 4
+314 315
+# Discarded Cluster 4
+315 316 317 320 322 324
+# Discarded Cluster 4
+316 317 321
+# Discarded Cluster 4
+317 318 319 320 321
+# Discarded Cluster 4
+320 321 322
+# Discarded Cluster 4
+322 323 325
+# Discarded Cluster 4
+323 324
+# Discarded Cluster 4
+324 325 329
+# Discarded Cluster 4
+325 326
+# Discarded Cluster 4
+326 327 330
+# Discarded Cluster 4
+327 328 331
+# Discarded Cluster 4
+328 329
+# Discarded Cluster 4
+329 330
+# Discarded Cluster 4
+330 331 335
+# Discarded Cluster 4
+331 332
+# Discarded Cluster 4
+332 333 334
+# Discarded Cluster 4
+333 334
+# Discarded Cluster 4
+334 335 337
+# Discarded Cluster 4
+335 336
+# Discarded Cluster 4
+336 337
+# Discarded Cluster 4
+337 338
+# Discarded Cluster 4
+338 339 340
+# Discarded Cluster 4
+339 340
+# Discarded Cluster 4
+340 341
+# Discarded Cluster 4
+341 342
+# Discarded Cluster 4
+342 343
+# Discarded Cluster 4
+343 344 347
+# Discarded Cluster 4
+344 345
+# Discarded Cluster 4
+345 346
+# Discarded Cluster 4
+346 347 348 351
+# Discarded Cluster 4
+347 348
+# Discarded Cluster 4
+348 349 350
+# Discarded Cluster 4
+349 350 352
+# Discarded Cluster 4
+350 351 356
+# Discarded Cluster 4
+351 352 354
+# Discarded Cluster 4
+352 353 355
+# Discarded Cluster 4
+353 354
+# Discarded Cluster 4
+354 355
+# Discarded Cluster 4
+355 356
+# Discarded Cluster 4
+356 357 358 359
+# Discarded Cluster 4
+357 358
+# Discarded Cluster 4
+358 359 360 362
+# Discarded Cluster 4
+359 360
+# Discarded Cluster 4
+360 361 362 364
+# Discarded Cluster 4
+362 363 367
+# Discarded Cluster 4
+363 364 365 366
+# Discarded Cluster 4
+365 366
+# Discarded Cluster 4
+366 367 371 373
+# Discarded Cluster 4
+367 368 369
+# Discarded Cluster 4
+368 369 370
+# Discarded Cluster 4
+370 371 372 374
+# Discarded Cluster 4
+371 372
+# Discarded Cluster 4
+372 373
+# Discarded Cluster 4
+373 374
+# Discarded Cluster 4
+374 375
+# Discarded Cluster 4
+375 376
+# Discarded Cluster 4
+376 377 378 380
+# Discarded Cluster 4
+378 379
+# Discarded Cluster 4
+379 380
+# Discarded Cluster 4
+380 381 382 384 387
+# Discarded Cluster 4
+381 382
+# Discarded Cluster 4
+382 383
+# Discarded Cluster 4
+383 384 386
+# Discarded Cluster 4
+384 385 386 387 389
+# Discarded Cluster 4
+387 388
+# Discarded Cluster 4
+388 389
+# Discarded Cluster 4
+389 390
+# Discarded Cluster 4
+390 391
+# Discarded Cluster 4
+391 392
+# Discarded Cluster 4
+392 393
+# Discarded Cluster 4
+393 394
+# Discarded Cluster 4
+394 395 396
+# Discarded Cluster 4
+395 396
+# Discarded Cluster 4
+396 397
+# Discarded Cluster 4
+397 398
+# Discarded Cluster 4
+398 399
+# Discarded Cluster 4
+399 400
+# Discarded Cluster 4
+400 401 402
+# Discarded Cluster 4
+401 402
+# Discarded Cluster 4
+402 403 404
+# Discarded Cluster 4
+404 405 409
+# Discarded Cluster 4
+405 406 411
+# Discarded Cluster 4
+406 407 413
+# Discarded Cluster 4
+407 408 409 410 414
+# Discarded Cluster 4
+410 411
+# Discarded Cluster 4
+411 412 418
+# Discarded Cluster 4
+412 413 417
+# Discarded Cluster 4
+413 414 415 416
+# Discarded Cluster 4
+416 417 418
+# Discarded Cluster 4
+417 418 419
+# Discarded Cluster 4
+419 420
+# Discarded Cluster 4
+420 421
+# Discarded Cluster 4
+421 422 423 424 427
+# Discarded Cluster 4
+422 423
+# Discarded Cluster 4
+423 424 425
+# Discarded Cluster 4
+424 425 427
+# Discarded Cluster 4
+425 426
+# Discarded Cluster 4
+426 427 432
+# Discarded Cluster 4
+427 428
+# Discarded Cluster 4
+428 429
+# Discarded Cluster 4
+429 430 435
+# Discarded Cluster 4
+430 431 432 436
+# Discarded Cluster 4
+432 433
+# Discarded Cluster 4
+433 434 437
+# Discarded Cluster 4
+434 435
+# Discarded Cluster 4
+435 436
+# Discarded Cluster 4
+436 437 438
+# Discarded Cluster 4
+437 438 439
+# Discarded Cluster 4
+438 439
+# Discarded Cluster 4
+439 440 442 443
+# Discarded Cluster 4
+440 441 445 446
+# Discarded Cluster 4
+441 442
+# Discarded Cluster 4
+442 443 444 449
+# Discarded Cluster 4
+444 445
+# Discarded Cluster 4
+445 446 447 450
+# Discarded Cluster 4
+447 448
+# Discarded Cluster 4
+448 449
+# Discarded Cluster 4
+449 450 451
+# Discarded Cluster 4
+450 451
+# Discarded Cluster 4
+451 452 454 457
+# Discarded Cluster 4
+452 453 459
+# Discarded Cluster 4
+453 454 455
+# Discarded Cluster 4
+454 455
+# Discarded Cluster 4
+455 456
+# Discarded Cluster 4
+456 457 458 463
+# Discarded Cluster 4
+458 459 461
+# Discarded Cluster 4
+459 460 462
+# Discarded Cluster 4
+460 461
+# Discarded Cluster 4
+461 462 466
+# Discarded Cluster 4
+462 463 464 469
+# Discarded Cluster 4
+463 464
+# Discarded Cluster 4
+464 465
+# Discarded Cluster 4
+465 466
+# Discarded Cluster 4
+466 467 468 475
+# Discarded Cluster 4
+467 468 469
+# Discarded Cluster 4
+469 470 474
+# Discarded Cluster 4
+470 471 476 477 479
+# Discarded Cluster 4
+471 472 473 480
+# Discarded Cluster 4
+472 473 474 475 476
+# Discarded Cluster 4
+476 477
+# Discarded Cluster 4
+477 478
+# Discarded Cluster 4
+478 479 485
+# Discarded Cluster 4
+479 480 481 484
+# Discarded Cluster 4
+481 482 483 487
+# Discarded Cluster 4
+482 483
+# Discarded Cluster 4
+483 484
+# Discarded Cluster 4
+484 485 486 488
+# Discarded Cluster 4
+485 486
+# Discarded Cluster 4
+486 487 489
+# Discarded Cluster 4
+487 488 491
+# Discarded Cluster 4
+488 489
+# Discarded Cluster 4
+489 490
+# Discarded Cluster 4
+490 491
+# Discarded Cluster 4
+491 492
+# Discarded Cluster 4
+492 493 494
+# Discarded Cluster 4
+493 494 495
+# Discarded Cluster 4
+494 495
+# Discarded Cluster 4
+495 496 498
+# Discarded Cluster 4
+496 497
+# Discarded Cluster 4
+497 498
+# Discarded Cluster 4
+498 499 503
+# Discarded Cluster 4
+499 500 502
+# Discarded Cluster 4
+500 501
+# Discarded Cluster 4
+501 502
+# Discarded Cluster 4
+502 503
+# Discarded Cluster 4
+503 504
+# Discarded Cluster 4
+504 505 506
+# Discarded Cluster 4
+505 506 507 509
+# Discarded Cluster 4
+506 507
+# Discarded Cluster 4
+507 508
+# Discarded Cluster 4
+508 509
+# Discarded Cluster 4
+509 510
+# Discarded Cluster 4
+510 511 514
+# Discarded Cluster 4
+511 512 516
+# Discarded Cluster 4
+512 513
+# Discarded Cluster 4
+513 514
+# Discarded Cluster 4
+514 515
+# Discarded Cluster 4
+515 516 517
+# Discarded Cluster 4
+516 517
+# Discarded Cluster 4
+517 518
+# Discarded Cluster 4
+518 519 523
+# Discarded Cluster 4
+519 520 522
+# Discarded Cluster 4
+520 521
+# Discarded Cluster 4
+521 522
+# Discarded Cluster 4
+522 523 524
+# Discarded Cluster 4
+523 524 526
+# Discarded Cluster 4
+524 525 527
+# Discarded Cluster 4
+525 526 527 528
+# Discarded Cluster 4
+526 527 529
+# Discarded Cluster 4
+527 528 532
+# Discarded Cluster 4
+528 529 531 534
+# Discarded Cluster 4
+529 530 535
+# Discarded Cluster 4
+530 531 534
+# Discarded Cluster 4
+531 532
+# Discarded Cluster 4
+532 533 538
+# Discarded Cluster 4
+533 534 536 541
+# Discarded Cluster 4
+534 535
+# Discarded Cluster 4
+535 536 537 538 539
+# Discarded Cluster 4
+538 539
+# Discarded Cluster 4
+539 540 542
+# Discarded Cluster 4
+540 541 545
+# Discarded Cluster 4
+541 542
+# Discarded Cluster 4
+542 543
+# Discarded Cluster 4
+543 544 546
+# Discarded Cluster 4
+544 545 546
+# Discarded Cluster 4
+546 547 551 552
+# Discarded Cluster 4
+547 548 549 554
+# Discarded Cluster 4
+548 549 550 556
+# Discarded Cluster 4
+550 551 553
+# Discarded Cluster 4
+551 552 557
+# Discarded Cluster 4
+552 553 554
+# Discarded Cluster 4
+554 555
+# Discarded Cluster 4
+555 556 561
+# Discarded Cluster 4
+556 557 558 559
+# Discarded Cluster 4
+557 558
+# Discarded Cluster 4
+558 559 564
+# Discarded Cluster 4
+559 560
+# Discarded Cluster 4
+560 561 563 569
+# Discarded Cluster 4
+561 562
+# Discarded Cluster 4
+562 563 564 565 570
+# Discarded Cluster 4
+564 565 572
+# Discarded Cluster 4
+565 566 567 568
+# Discarded Cluster 4
+567 568 569
+# Discarded Cluster 4
+569 570
+# Discarded Cluster 4
+570 571
+# Discarded Cluster 4
+571 572 576
+# Discarded Cluster 4
+572 573
+# Discarded Cluster 4
+573 574
+# Discarded Cluster 4
+574 575
+# Discarded Cluster 4
+575 576 577 579
+# Discarded Cluster 4
+576 577 578 580
+# Discarded Cluster 4
+577 578
+# Discarded Cluster 4
+578 579
+# Discarded Cluster 4
+579 580 582
+# Discarded Cluster 4
+580 581 585
+# Discarded Cluster 4
+581 582 584
+# Discarded Cluster 4
+582 583 584
+# Discarded Cluster 4
+584 585
+# Discarded Cluster 4
+585 586
+# Discarded Cluster 4
+586 587
+# Discarded Cluster 4
+587 588 589
+# Discarded Cluster 4
+589 590 595 596
+# Discarded Cluster 4
+590 591
+# Discarded Cluster 4
+591 592 593 594
+# Discarded Cluster 4
+592 593 598
+# Discarded Cluster 4
+593 594 599
+# Discarded Cluster 4
+594 595 596 602
+# Discarded Cluster 4
+596 597 598
+# Discarded Cluster 4
+598 599 600
+# Discarded Cluster 4
+599 600
+# Discarded Cluster 4
+600 601 605
+# Discarded Cluster 4
+601 602
+# Discarded Cluster 4
+602 603 608
+# Discarded Cluster 4
+603 604
+# Discarded Cluster 4
+604 605
+# Discarded Cluster 4
+605 606
+# Discarded Cluster 4
+606 607
+# Discarded Cluster 4
+607 608
+# Discarded Cluster 4
+608 609
+# Discarded Cluster 4
+609 610 614
+# Discarded Cluster 4
+610 611 613
+# Discarded Cluster 4
+611 612 615
+# Discarded Cluster 4
+612 613
+# Discarded Cluster 4
+613 614
+# Discarded Cluster 4
+614 615 616 618
+# Discarded Cluster 4
+616 617
+# Discarded Cluster 4
+617 618
+# Discarded Cluster 4
+618 619 621
+# Discarded Cluster 4
+619 620 624
+# Discarded Cluster 4
+620 621
+# Discarded Cluster 4
+621 622
+# Discarded Cluster 4
+622 623 624 625 626 628
+# Discarded Cluster 4
+623 624
+# Discarded Cluster 4
+624 625 626 627
+# Discarded Cluster 4
+626 627 631
+# Discarded Cluster 4
+627 628 629 630
+# Discarded Cluster 4
+628 629
+# Discarded Cluster 4
+629 630 633
+# Discarded Cluster 4
+630 631
+# Discarded Cluster 4
+631 632
+# Discarded Cluster 4
+632 633
+# Discarded Cluster 4
+633 634 635
+# Discarded Cluster 4
+634 635 636
+# Discarded Cluster 4
+635 636 639
+# Discarded Cluster 4
+636 637
+# Discarded Cluster 4
+637 638
+# Discarded Cluster 4
+638 639
+# Discarded Cluster 4
+639 640 644 645
+# Discarded Cluster 4
+640 641 642
+# Discarded Cluster 4
+641 642
+# Discarded Cluster 4
+642 643
+# Discarded Cluster 4
+643 644 647
+# Discarded Cluster 4
+644 645
+# Discarded Cluster 4
+645 646 648
+# Discarded Cluster 4
+646 647 649
+# Discarded Cluster 4
+647 648 650 651
+# Discarded Cluster 4
+648 649
+# Discarded Cluster 4
+649 650 652 654
+# Discarded Cluster 4
+650 651
+# Discarded Cluster 4
+651 652 653
+# Discarded Cluster 4
+652 653
+# Discarded Cluster 4
+653 654 656
+# Discarded Cluster 4
+654 655
+# Discarded Cluster 4
+655 656 657
+# Discarded Cluster 4
+656 657 658
+# Discarded Cluster 4
+657 658
+# Discarded Cluster 4
+658 659 661
+# Discarded Cluster 4
+659 660 666
+# Discarded Cluster 4
+660 661
+# Discarded Cluster 4
+661 662 665
+# Discarded Cluster 4
+662 663 668
+# Discarded Cluster 4
+663 664 667
+# Discarded Cluster 4
+664 665 666
+# Discarded Cluster 4
+666 667 671
+# Discarded Cluster 4
+667 668 672 673
+# Discarded Cluster 4
+668 669 670
+# Discarded Cluster 4
+670 671
+# Discarded Cluster 4
+671 672 674
+# Discarded Cluster 4
+672 673
+# Discarded Cluster 4
+673 674 677
+# Discarded Cluster 4
+674 675 676
+# Discarded Cluster 4
+675 676 677
+# Discarded Cluster 4
+677 678
+# Discarded Cluster 4
+678 679
+# Discarded Cluster 4
+679 680
+# Discarded Cluster 4
+680 681
+# Discarded Cluster 4
+681 682 683 687
+# Discarded Cluster 4
+682 683
+# Discarded Cluster 4
+683 684
+# Discarded Cluster 4
+684 685 688
+# Discarded Cluster 4
+685 686 691
+# Discarded Cluster 4
+686 687
+# Discarded Cluster 4
+687 688 689
+# Discarded Cluster 4
+689 690
+# Discarded Cluster 4
+690 691 693
+# Discarded Cluster 4
+691 692
+# Discarded Cluster 4
+692 693 694 695
+# Discarded Cluster 4
+693 694
+# Discarded Cluster 4
+694 695 696 697 698 699
+# Discarded Cluster 4
+696 697
+# Discarded Cluster 4
+697 698 700
+# Discarded Cluster 4
+698 699
+# Discarded Cluster 4
+699 700
+# Discarded Cluster 4
+700 701 704
+# Discarded Cluster 4
+701 702
+# Discarded Cluster 4
+702 703
+# Discarded Cluster 4
+703 704 709
+# Discarded Cluster 4
+704 705
+# Discarded Cluster 4
+705 706 712
+# Discarded Cluster 4
+706 707 708 712
+# Discarded Cluster 4
+708 709 711 713 715
+# Discarded Cluster 4
+709 710 711
+# Discarded Cluster 4
+711 712
+# Discarded Cluster 4
+712 713 714
+# Discarded Cluster 4
+713 714 717
+# Discarded Cluster 4
+714 715 716 718 720
+# Discarded Cluster 4
+715 716 719
+# Discarded Cluster 4
+716 717
+# Discarded Cluster 4
+717 718
+# Discarded Cluster 4
+718 719 721 725
+# Discarded Cluster 4
+719 720 723 724
+# Discarded Cluster 4
+720 721 726 727
+# Discarded Cluster 4
+721 722
+# Discarded Cluster 4
+722 723 724
+# Discarded Cluster 4
+723 724 725
+# Discarded Cluster 4
+725 726
+# Discarded Cluster 4
+726 727
+# Discarded Cluster 4
+727 728
+# Discarded Cluster 4
+728 729
+# Discarded Cluster 4
+729 730 734
+# Discarded Cluster 4
+730 731
+# Discarded Cluster 4
+731 732 735 739
+# Discarded Cluster 4
+732 733 734
+# Discarded Cluster 4
+734 735 737
+# Discarded Cluster 4
+735 736
+# Discarded Cluster 4
+736 737 738
+# Discarded Cluster 4
+737 738 739
+# Discarded Cluster 4
+739 740
+# Discarded Cluster 4
+740 741 742
+# Discarded Cluster 4
+741 742
+# Discarded Cluster 4
+742 743 747
+# Discarded Cluster 4
+743 744
+# Discarded Cluster 4
+744 745 746
+# Discarded Cluster 4
+745 746 749
+# Discarded Cluster 4
+746 747 749
+# Discarded Cluster 4
+747 748
+# Discarded Cluster 4
+748 749 754 755
+# Discarded Cluster 4
+749 750 751
+# Discarded Cluster 4
+750 751
+# Discarded Cluster 4
+751 752
+# Discarded Cluster 4
+752 753
+# Discarded Cluster 4
+753 754 755 756 758
+# Discarded Cluster 4
+755 756
+# Discarded Cluster 4
+756 757
+# Discarded Cluster 4
+757 758
+# Discarded Cluster 4
+758 759 760
+# Discarded Cluster 4
+759 760 761
+# Discarded Cluster 4
+760 761 762
+# Discarded Cluster 4
+761 762
+# Discarded Cluster 4
+762 763
+# Discarded Cluster 4
+763 764 765
+# Discarded Cluster 4
+764 765 768
+# Discarded Cluster 4
+765 766
+# Discarded Cluster 4
+766 767
+# Discarded Cluster 4
+767 768 772
+# Discarded Cluster 4
+768 769 771 773 775
+# Discarded Cluster 4
+769 770
+# Discarded Cluster 4
+770 771 773
+# Discarded Cluster 4
+771 772
+# Discarded Cluster 4
+772 773 774
+# Discarded Cluster 4
+774 775 776 779
+# Discarded Cluster 4
+775 776 777 780
+# Discarded Cluster 4
+776 777 783
+# Discarded Cluster 4
+777 778
+# Discarded Cluster 4
+778 779
+# Discarded Cluster 4
+779 780 781 784
+# Discarded Cluster 4
+780 781 782
+# Discarded Cluster 4
+782 783
+# Discarded Cluster 4
+783 784 789
+# Discarded Cluster 4
+784 785 786 790
+# Discarded Cluster 4
+785 786 788
+# Discarded Cluster 4
+786 787 792
+# Discarded Cluster 4
+787 788 793
+# Discarded Cluster 4
+788 789
+# Discarded Cluster 4
+789 790
+# Discarded Cluster 4
+790 791
+# Discarded Cluster 4
+791 792 794
+# Discarded Cluster 4
+792 793 795
+# Discarded Cluster 4
+793 794 797
+# Discarded Cluster 4
+794 795 802
+# Discarded Cluster 4
+795 796 798
+# Discarded Cluster 4
+796 797 798 799 800 805
+# Discarded Cluster 4
+798 799
+# Discarded Cluster 4
+799 800 801 804
+# Discarded Cluster 4
+801 802 804
+# Discarded Cluster 4
+802 803 806 808
+# Discarded Cluster 4
+803 804 805 806
+# Discarded Cluster 4
+805 806 809 810
+# Discarded Cluster 4
+806 807 812
+# Discarded Cluster 4
+807 808
+# Discarded Cluster 4
+808 809
+# Discarded Cluster 4
+809 810 813
+# Discarded Cluster 4
+810 811 815
+# Discarded Cluster 4
+811 812 814
+# Discarded Cluster 4
+812 813
+# Discarded Cluster 4
+813 814 817
+# Discarded Cluster 4
+814 815
+# Discarded Cluster 4
+815 816 819
+# Discarded Cluster 4
+816 817
+# Discarded Cluster 4
+817 818
+# Discarded Cluster 4
+818 819 820 823
+# Discarded Cluster 4
+820 821
+# Discarded Cluster 4
+821 822 825
+# Discarded Cluster 4
+822 823
+# Discarded Cluster 4
+823 824 827
+# Discarded Cluster 4
+824 825 826
+# Discarded Cluster 4
+825 826
+# Discarded Cluster 4
+826 827
+# Discarded Cluster 4
+827 828 829
+# Discarded Cluster 4
+828 829 830 831
+# Discarded Cluster 4
+829 830 832
+# Discarded Cluster 4
+830 831
+# Discarded Cluster 4
+831 832 834 836
+# Discarded Cluster 4
+832 833
+# Discarded Cluster 4
+833 834
+# Discarded Cluster 4
+834 835 839
+# Discarded Cluster 4
+835 836 838
+# Discarded Cluster 4
+836 837
+# Discarded Cluster 4
+837 838
+# Discarded Cluster 4
+838 839 841
+# Discarded Cluster 4
+839 840
+# Discarded Cluster 4
+840 841 842
+# Discarded Cluster 4
+842 843
+# Discarded Cluster 4
+843 844 846 848
+# Discarded Cluster 4
+844 845 847 849
+# Discarded Cluster 4
+845 846
+# Discarded Cluster 4
+846 847 850 852
+# Discarded Cluster 4
+847 848
+# Discarded Cluster 4
+848 849 855
+# Discarded Cluster 4
+849 850
+# Discarded Cluster 4
+850 851
+# Discarded Cluster 4
+851 852 857
+# Discarded Cluster 4
+852 853 856 857
+# Discarded Cluster 4
+853 854 855
+# Discarded Cluster 4
+855 856 858
+# Discarded Cluster 4
+856 857 858 859 860
+# Discarded Cluster 4
+858 859 862 864
+# Discarded Cluster 4
+859 860 863
+# Discarded Cluster 4
+860 861
+# Discarded Cluster 4
+861 862
+# Discarded Cluster 4
+862 863 865 867
+# Discarded Cluster 4
+863 864 867
+# Discarded Cluster 4
+864 865
+# Discarded Cluster 4
+865 866
+# Discarded Cluster 4
+866 867
+# Discarded Cluster 4
+867 868 871 872
+# Discarded Cluster 4
+868 869
+# Discarded Cluster 4
+869 870 873
+# Discarded Cluster 4
+870 871
+# Discarded Cluster 4
+871 872
+# Discarded Cluster 4
+872 873 876
+# Discarded Cluster 4
+873 874
+# Discarded Cluster 4
+874 875 878
+# Discarded Cluster 4
+875 876
+# Discarded Cluster 4
+876 877
+# Discarded Cluster 4
+877 878
+# Discarded Cluster 4
+878 879
+# Discarded Cluster 4
+879 880
+# Discarded Cluster 4
+880 881
+# Discarded Cluster 4
+881 882 883 886
+# Discarded Cluster 4
+883 884
+# Discarded Cluster 4
+884 885
+# Discarded Cluster 4
+885 886 892
+# Discarded Cluster 4
+886 887 888
+# Discarded Cluster 4
+887 888 894
+# Discarded Cluster 4
+888 889 890
+# Discarded Cluster 4
+889 890 893
+# Discarded Cluster 4
+890 891 892
+# Discarded Cluster 4
+892 893 898
+# Discarded Cluster 4
+893 894
+# Discarded Cluster 4
+894 895 900
+# Discarded Cluster 4
+895 896 897
+# Discarded Cluster 4
+896 897
+# Discarded Cluster 4
+897 898 899
+# Discarded Cluster 4
+898 899
+# Discarded Cluster 4
+899 900
+# Discarded Cluster 4
+900 901 905
+# Discarded Cluster 4
+901 902
+# Discarded Cluster 4
+902 903
+# Discarded Cluster 4
+903 904
+# Discarded Cluster 4
+904 905
+# Discarded Cluster 4
+905 906 908
+# Discarded Cluster 4
+906 907 911
+# Discarded Cluster 4
+907 908
+# Discarded Cluster 4
+908 909
+# Discarded Cluster 4
+909 910
+# Discarded Cluster 4
+910 911
+# Discarded Cluster 4
+911 912 913
+# Discarded Cluster 4
+912 913 914
+# Discarded Cluster 4
+913 914 919
+# Discarded Cluster 4
+914 915
+# Discarded Cluster 4
+915 916 920
+# Discarded Cluster 4
+916 917
+# Discarded Cluster 4
+917 918 919
+# Discarded Cluster 4
+918 919 925
+# Discarded Cluster 4
+919 920 924 927
+# Discarded Cluster 4
+920 921 926
+# Discarded Cluster 4
+921 922 923
+# Discarded Cluster 4
+923 924 925 927
+# Discarded Cluster 4
+925 926 928
+# Discarded Cluster 4
+926 927
+# Discarded Cluster 4
+927 928 929 931
+# Discarded Cluster 4
+928 929 930
+# Discarded Cluster 4
+930 931 935
+# Discarded Cluster 4
+931 932
+# Discarded Cluster 4
+932 933 936
+# Discarded Cluster 4
+933 934 936
+# Discarded Cluster 4
+934 935
+# Discarded Cluster 4
+935 936
+# Discarded Cluster 4
+936 937 939
+# Discarded Cluster 4
+937 938 942 943
+# Discarded Cluster 4
+938 939
+# Discarded Cluster 4
+939 940
+# Discarded Cluster 4
+940 941 946
+# Discarded Cluster 4
+941 942
+# Discarded Cluster 4
+942 943
+# Discarded Cluster 4
+943 944
+# Discarded Cluster 4
+944 945
+# Discarded Cluster 4
+945 946 948
+# Discarded Cluster 4
+946 947
+# Discarded Cluster 4
+947 948
+# Discarded Cluster 4
+948 949 951
+# Discarded Cluster 4
+949 950
+# Discarded Cluster 4
+950 951
+# Discarded Cluster 4
+951 952
+# Discarded Cluster 4
+952 953 959
+# Discarded Cluster 4
+953 954 955
+# Discarded Cluster 4
+954 955
+# Discarded Cluster 4
+955 956 961 962
+# Discarded Cluster 4
+956 957
+# Discarded Cluster 4
+957 958 959 960
+# Discarded Cluster 4
+959 960 961
+# Discarded Cluster 4
+960 961
+# Discarded Cluster 4
+961 962
+# Discarded Cluster 4
+962 963
+# Discarded Cluster 4
+963 964
+# Discarded Cluster 4
+964 965
+# Discarded Cluster 4
+965 966 968
+# Discarded Cluster 4
+966 967 971
+# Discarded Cluster 4
+967 968
+# Discarded Cluster 4
+968 969
+# Discarded Cluster 4
+969 970
+# Discarded Cluster 4
+970 971
+# Discarded Cluster 4
+971 972 977
+# Discarded Cluster 4
+972 973 975 978
+# Discarded Cluster 4
+973 974
+# Discarded Cluster 4
+974 975
+# Discarded Cluster 4
+975 976
+# Discarded Cluster 4
+976 977 981 982
+# Discarded Cluster 4
+977 978
+# Discarded Cluster 4
+978 979
+# Discarded Cluster 4
+979 980 983
+# Discarded Cluster 4
+980 981 985
+# Discarded Cluster 4
+981 982
+# Discarded Cluster 4
+982 983 984
+# Discarded Cluster 4
+983 984
+# Discarded Cluster 4
+984 985
+# Discarded Cluster 4
+985 986 990
+# Discarded Cluster 4
+986 987
+# Discarded Cluster 4
+987 988 989
+# Discarded Cluster 4
+988 989 990 991
+# Discarded Cluster 4
+990 991 992
+# Discarded Cluster 4
+991 992 993
+# Discarded Cluster 4
+992 993 995
