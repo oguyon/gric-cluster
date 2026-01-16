@@ -5,6 +5,8 @@
 #include <ctype.h>
 #include <limits.h>
 #include <time.h>
+#include <semaphore.h>
+#include <errno.h>
 
 #ifdef USE_CFITSIO
 #include <fitsio.h>
@@ -55,6 +57,7 @@ static long current_write_slice = 0;
 static long stream_read_counter = 0;
 static int is_3d = 0;
 static double cumulative_wait_time_sec = 0.0;
+static int cnt2sync_enabled = 0;
 #endif
 
 static long num_frames = 0;
@@ -254,9 +257,10 @@ static int init_stream(char *stream_name) {
 }
 #endif
 
-int init_frameread(char *filename, int stream_mode) {
+int init_frameread(char *filename, int stream_mode, int cnt2sync_mode) {
     #ifdef USE_IMAGESTREAMIO
     if (stream_mode) {
+        cnt2sync_enabled = cnt2sync_mode;
         return init_stream(filename);
     }
     #else
@@ -367,19 +371,36 @@ Frame* getframe_at(long index) {
             return NULL;
         }
 
+        if (cnt2sync_enabled) {
+            stream_image.md[0].cnt2++;
+        }
+
         // Wait for new data if we caught up
         while (stream_image.md[0].cnt0 <= last_cnt0) {
             struct timespec t0, t1;
             clock_gettime(CLOCK_MONOTONIC, &t0);
-            int ret = ImageStreamIO_semwait(&stream_image, 0);
+
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += 1;
+
+            int ret = sem_timedwait(stream_image.semptr[0], &ts);
+
             clock_gettime(CLOCK_MONOTONIC, &t1);
             cumulative_wait_time_sec += (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
             
-            if (ret != 0) {
-                 // Wait failed or interrupt
-                 free(frame_struct->data);
-                 free(frame_struct);
-                 return NULL;
+            if (ret == -1) {
+                if (errno == ETIMEDOUT) {
+                    fprintf(stderr, "Stream timeout (1s). Ending.\n");
+                    free(frame_struct->data);
+                    free(frame_struct);
+                    return NULL;
+                }
+                if (errno == EINTR) continue;
+                perror("sem_timedwait");
+                free(frame_struct->data);
+                free(frame_struct);
+                return NULL;
             }
         }
         

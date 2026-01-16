@@ -13,7 +13,7 @@ VID_RLIM=$(echo "scale=4; 1000.0 * $FACTOR" | bc)
 
 echo "Using VID_RLIM=$VID_RLIM for VID_SIZE=$VID_SIZE"
 
-TXT2MP4="../build/txt2mp4"
+TXT2MP4="../build/ascii-spot-2-video"
 RNUCLEXEC="../build/image-cluster"
 OPTIONS="-maxim $VID_MAX_FRAMES -outdir clusteroutdir"
 

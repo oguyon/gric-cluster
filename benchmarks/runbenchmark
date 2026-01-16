@@ -97,8 +97,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate Input Type
-if [[ "$INPUT_TYPE" != "txt" && "$INPUT_TYPE" != "mp4" ]]; then
-    echo "Error: Invalid input type '$INPUT_TYPE'. Use 'txt' or 'mp4'."
+if [[ "$INPUT_TYPE" != "txt" && "$INPUT_TYPE" != "mp4" && "$INPUT_TYPE" != "stream" ]]; then
+    echo "Error: Invalid input type '$INPUT_TYPE'. Use 'txt', 'mp4', or 'stream'."
     exit 1
 fi
 
@@ -129,11 +129,14 @@ mkdir -p clusteroutdir
 MKSEQEXEC="../build/image-cluster-mktxtseq"
 RNUCLEXEC="../build/image-cluster"
 CLPLOT="../build/image-cluster-plot"
-TXT2MP4="../build/txt2mp4"
+TXT2MP4="../build/ascii-spot-2-video"
+
+# Set MAXIM to match NBSAMPLE
+MAXIM=$NBSAMPLE
 
 # Base Options
 # RLIM is set at the top
-OPTIONS="-maxcl $MAXCL -maxim $MAXIM -outdir clusteroutdir"
+OPTIONS="-maxcl $MAXCL -maxim $MAXIM"
 
 # Initialize Summary
 SUMMARY_FILE="benchmark_summary.md"
@@ -198,19 +201,25 @@ prepare_input() {
             $TXT2MP4 $VID_SIZE $VID_ALPHA "$txt_file" "$mp4_file" $VID_NOISE $NBSAMPLE
         fi
         echo "$mp4_file"
+    elif [[ "$type" == "stream" ]]; then
+        echo "$pat"
     fi
 }
 
 # Helper: Calculate Video RLIM (if needed)
 get_rlim() {
     local type="$1"
-    if [[ "$type" == "mp4" && "$RLIM_SET" == "0" ]]; then
-        # rlim = 1000 * (size/64)^2
-        # For size=64 -> 1000
-        # For size=256 -> 1000 * (4^2) = 16000
-        local ratio=$(echo "scale=4; $VID_SIZE / 64.0" | bc)
-        local factor=$(echo "scale=4; $ratio * $ratio" | bc)
-        echo $(echo "scale=4; 1000.0 * $factor" | bc)
+    if [[ "$type" == "mp4" || "$type" == "stream" ]]; then
+        if [[ "$RLIM_SET" == "0" ]]; then
+            # rlim = 1000 * (size/64)^2
+            # For size=64 -> 1000
+            # For size=256 -> 1000 * (4^2) = 16000
+            local ratio=$(echo "scale=4; $VID_SIZE / 64.0" | bc)
+            local factor=$(echo "scale=4; $ratio * $ratio" | bc)
+            echo $(echo "scale=4; 1000.0 * $factor" | bc)
+        else
+            echo "$RLIM"
+        fi
     else
         echo "$RLIM"
     fi
@@ -237,8 +246,16 @@ for pattern in "${SELECTED_PATTERNS[@]}"; do
     
     if [[ "$ALGORITHM" == "stream" ]]; then
         echo "Running image-cluster on $INPUT_FILE (rlim=$CUR_RLIM)..."
+        
+        # Add -stream flag if type is stream
+        EXTRA_FLAGS=""
+        if [[ "$INPUT_TYPE" == "stream" ]]; then
+            EXTRA_FLAGS="-stream"
+        fi
+        
         # Use /usr/bin/time -v to capture memory usage. Redirect stderr to stdout to capture it in LOG_FILE.
-        CMD="/usr/bin/time -v $RNUCLEXEC $CUR_RLIM $OPTIONS $EXTRA_OPTIONS $INPUT_FILE"
+        OUT_DIR="${pattern}.cluster.out"
+        CMD="/usr/bin/time -v $RNUCLEXEC $CUR_RLIM $OPTIONS -outdir $OUT_DIR -clustered $EXTRA_OPTIONS $EXTRA_FLAGS $INPUT_FILE"
         echo "CMD: $CMD"
         $CMD > "$LOG_FILE" 2>&1
         
@@ -250,7 +267,7 @@ for pattern in "${SELECTED_PATTERNS[@]}"; do
         
         # Plot if TXT and Stream (Optional)
         if [[ "$INPUT_TYPE" == "txt" ]]; then
-            $CLPLOT "${INPUT_FILE}.clustered.txt" -png > /dev/null 2>&1 || true
+            $CLPLOT "$OUT_DIR/${INPUT_FILE%.txt}.clustered.txt" -png > /dev/null 2>&1 || true
         fi
 
     elif [[ "$ALGORITHM" == "birch" ]]; then
@@ -267,14 +284,27 @@ for pattern in "${SELECTED_PATTERNS[@]}"; do
              # We assume they print "Time: ... ms" etc or we parse logic
              # The existing python scripts print results. Let's redirect to log.
              /usr/bin/time -v python3 run_birch.py "$INPUT_FILE" "$CUR_RLIM" > "$LOG_FILE" 2>&1
-        else
+        elif [[ "$INPUT_TYPE" == "mp4" ]]; then
              # run_birch_video.py <filename> <size> <rlim>
              /usr/bin/time -v python3 run_birch_video.py "$INPUT_FILE" "$VID_SIZE" "$CUR_RLIM" > "$LOG_FILE" 2>&1
+        elif [[ "$INPUT_TYPE" == "stream" ]]; then
+             # Use stream_to_pipe and run_birch_stream_pipe.py
+             if [ ! -f "../build/stream_to_pipe" ]; then
+                 echo "Error: stream_to_pipe not found. Is ImageStreamIO compiled?"
+                 continue
+             fi
+             
+             echo "Piping stream $INPUT_FILE to BIRCH..."
+             # We use VID_SIZE for width/height. This assumes square video for simplicity or we should pass W H
+             # run_birch_stream_pipe.py <width> <height> <threshold>
+             # We limit max frames to MAXIM
+             /usr/bin/time -v sh -c "../build/stream_to_pipe $INPUT_FILE $MAXIM | python3 run_birch_stream_pipe.py $VID_SIZE $VID_SIZE $CUR_RLIM" > "$LOG_FILE" 2>&1
         fi
         
         # Extract Metrics (Adapting to actual Python output)
         # Expected format: "BIRCH Result: Time=123.45ms, Clusters=10"
         # or "BIRCH (Pixels) Result: Time=123.45ms, Clusters=10"
+        # or "BIRCH (Pipe) Result: ..."
         
         RESULT_LINE=$(grep "Result: Time=" "$LOG_FILE" | tail -n 1)
         if [ ! -z "$RESULT_LINE" ]; then

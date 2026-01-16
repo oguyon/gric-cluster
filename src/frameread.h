@@ -3,7 +3,7 @@
 
 #include "common.h"
 
-int init_frameread(char *filename, int stream_mode);
+int init_frameread(char *filename, int stream_mode, int cnt2sync_mode);
 Frame* getframe();
 Frame* getframe_at(long index);
 void free_frame(Frame *frame);

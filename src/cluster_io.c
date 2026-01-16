@@ -53,23 +53,28 @@ void print_usage(char *progname) {
     printf(") or stream name.\n");
     printf("Options:\n");
 
-    printf("\n  [Clustering Control]\n");
-    printf("  -dprob <val>   Delta probability (default: 0.01)\n");
-    printf("  -maxcl <val>   Max number of clusters (default: 1000)\n");
-    printf("  -maxcl_strategy <stop|discard|merge> Strategy when maxcl reached (default: stop)\n");
-    printf("  -discard_frac <val> Fraction of oldest clusters to candidate for discard (default: 0.5)\n");
-    printf("  -maxim <val>   Max number of frames (default: 100000)\n");
-    printf("  -gprob         Use geometrical probability\n");
+    printf("\n  [Input]\n");
     printf("  -stream        Input is an ImageStreamIO stream");
     #ifndef USE_IMAGESTREAMIO
     printf(" [DISABLED]");
     #endif
     printf("\n");
+    printf("  -cnt2sync      Enable cnt2 synchronization (increment cnt2 after read)\n");
+
+    printf("\n  [Clustering Control]\n");
+    printf("  -dprob <val>   Delta probability (default: 0.01)\n");
+    printf("  -maxcl <val>   Max number of clusters (default: 1000)\n");
+    printf("  -ncpu <val>    Number of CPUs to use (default: 1)\n");
+    printf("  -maxcl_strategy <stop|discard|merge> Strategy when maxcl reached (default: stop)\n");
+    printf("  -discard_frac <val> Fraction of oldest clusters to candidate for discard (default: 0.5)\n");
+    printf("  -maxim <val>   Max number of frames (default: 100000)\n");
+    printf("  -gprob         Use geometrical probability\n");
     printf("  -fmatcha <val> Set fmatch parameter a (default: 2.0)\n");
     printf("  -fmatchb <val> Set fmatch parameter b (default: 0.5)\n");
     printf("  -maxvis <val>  Max visitors for gprob history (default: 1000)\n");
     printf("  -pred[l,h,n]   Prediction with pattern detection (default: 10,1000,2)\n");
     printf("  -te4           Use 4-point triangle inequality pruning\n");
+    printf("  -te5           Use 5-point triangle inequality pruning\n");
 
     printf("\n  [Analysis & Debugging]\n");
     printf("  -scandist      Measure distance stats\n");
@@ -89,14 +94,15 @@ void print_usage(char *progname) {
     printf(" [DISABLED]");
     #endif
     printf("\n");
-    printf("  -no_dcc        Disable dcc.txt output (default: enabled)\n");
-    printf("  -no_tm         Disable transition_matrix.txt output (default: enabled)\n");
-    printf("  -no_anchors    Disable anchors output (default: enabled)\n");
-    printf("  -no_counts     Disable cluster_counts.txt output (default: enabled)\n");
-    printf("  -no_membership Disable frame_membership.txt output (default: enabled)\n");
-    printf("  -no_discarded  Disable discarded_frames.txt output (default: enabled)\n");
-    printf("  -no_clustered  Disable *.clustered.txt output (default: enabled)\n");
-    printf("  -no_clusters   Disable individual cluster files (cluster_X) (default: enabled)\n");
+    printf("  -dcc           Enable dcc.txt output (default: disabled)\n");
+    printf("  -tm_out        Enable transition_matrix.txt output (default: disabled)\n");
+    printf("  -anchors       Enable anchors output (default: disabled)\n");
+    printf("  -counts        Enable cluster_counts.txt output (default: disabled)\n");
+    printf("  -no_membership Disable frame_membership.txt output\n");
+    printf("  -membership    Enable frame_membership.txt output (default: enabled)\n");
+    printf("  -discarded     Enable discarded_frames.txt output (default: disabled)\n");
+    printf("  -clustered     Enable *.clustered.txt output (default: disabled)\n");
+    printf("  -clusters      Enable individual cluster files (cluster_X) (default: disabled)\n");
 }
 
 void write_results(ClusterConfig *config, ClusterState *state) {
@@ -364,11 +370,18 @@ void write_results(ClusterConfig *config, ClusterState *state) {
 
     if (config->output_clustered) {
         printf("Writing clustered output file\n");
-        char *clustered_fname = (char *)malloc(strlen(config->fits_filename) + 20);
-        strcpy(clustered_fname, config->fits_filename);
-        char *ext = strrchr(clustered_fname, '.');
-        if (ext && strcmp(ext, ".txt") == 0) strcpy(ext, ".clustered.txt");
-        else strcat(clustered_fname, ".clustered.txt");
+        
+        const char *base_name_only = strrchr(config->fits_filename, '/');
+        if (base_name_only) base_name_only++;
+        else base_name_only = config->fits_filename;
+
+        char *temp_base = strdup(base_name_only);
+        char *ext = strrchr(temp_base, '.');
+        if (ext && strcmp(ext, ".txt") == 0) *ext = '\0';
+
+        char *clustered_fname = (char *)malloc(strlen(out_dir) + strlen(temp_base) + 30);
+        sprintf(clustered_fname, "%s/%s.clustered.txt", out_dir, temp_base);
+        free(temp_base);
 
         FILE *clustered_out = fopen(clustered_fname, "w");
         if (clustered_out) {

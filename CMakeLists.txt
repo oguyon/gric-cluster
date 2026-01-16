@@ -45,6 +45,14 @@ else()
     message(WARNING "ImageStreamIO not found. Streaming input disabled.")
 endif()
 
+find_package(OpenMP)
+if (OpenMP_C_FOUND)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    message(STATUS "OpenMP found.")
+else()
+    message(WARNING "OpenMP not found. Multithreading disabled.")
+endif()
+
 include_directories(
     ${CFITSIO_INCLUDE_DIRS}
     ${PNG_INCLUDE_DIRS}
@@ -64,6 +72,9 @@ link_directories(
 set(CLUSTER_SRCS src/main.c src/cluster_core.c src/cluster_io.c src/framedistance.c src/frameread.c src/png_io.c)
 
 add_executable(image-cluster ${CLUSTER_SRCS})
+if (OpenMP_C_FOUND)
+    target_link_libraries(image-cluster OpenMP::OpenMP_C)
+endif()
 target_link_libraries(image-cluster
     ${CFITSIO_LIBRARIES}
     ${PNG_LIBRARIES}
@@ -83,5 +94,10 @@ target_link_libraries(image-cluster-plot ${PNG_LIBRARIES} m)
 add_executable(image-cluster-NDmodel src/model_nd.c)
 target_link_libraries(image-cluster-NDmodel m)
 
-add_executable(txt2mp4 src/txt2mp4.c)
-target_link_libraries(txt2mp4 m)
+add_executable(ascii-spot-2-video src/ascii-spot-2-video.c)
+target_link_libraries(ascii-spot-2-video m ${IMAGESTREAMIO_LIBRARIES})
+
+if (IMAGESTREAMIO_FOUND)
+    add_executable(stream_to_pipe src/stream_to_pipe.c)
+    target_link_libraries(stream_to_pipe ${IMAGESTREAMIO_LIBRARIES} m)
+endif()

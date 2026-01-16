@@ -36,6 +36,7 @@ int main(int argc, char *argv[]) {
     // Set defaults
     config.deltaprob = 0.01;
     config.maxnbclust = 1000;
+    config.ncpu = 1;
     config.maxnbfr = 100000;
     config.fmatch_a = 2.0;
     config.fmatch_b = 0.5;
@@ -47,15 +48,15 @@ int main(int argc, char *argv[]) {
     config.maxcl_strategy = MAXCL_STOP;
     config.discard_fraction = 0.5;
 
-    // Output defaults (enabled by default)
-    config.output_dcc = 1;
-    config.output_tm = 1;
-    config.output_anchors = 1;
-    config.output_counts = 1;
+    // Output defaults (disabled by default, except membership)
+    config.output_dcc = 0;
+    config.output_tm = 0;
+    config.output_anchors = 0;
+    config.output_counts = 0;
     config.output_membership = 1;
-    config.output_discarded = 1;
-    config.output_clustered = 1;
-    config.output_clusters = 1;
+    config.output_discarded = 0;
+    config.output_clustered = 0;
+    config.output_clusters = 0;
 
     // First pass: Detect -scandist
     for (int i = 1; i < argc; i++) {
@@ -102,6 +103,8 @@ int main(int argc, char *argv[]) {
             config.deltaprob = atof(argv[++arg_idx]);
         } else if (strcmp(argv[arg_idx], "-maxcl") == 0) {
             config.maxnbclust = atoi(argv[++arg_idx]);
+        } else if (strcmp(argv[arg_idx], "-ncpu") == 0) {
+            config.ncpu = atoi(argv[++arg_idx]);
         } else if (strcmp(argv[arg_idx], "-maxim") == 0) {
             config.maxnbfr = atol(argv[++arg_idx]);
         } else if (strcmp(argv[arg_idx], "-avg") == 0) {
@@ -124,6 +127,8 @@ int main(int argc, char *argv[]) {
             config.pngout_mode = 1;
         } else if (strcmp(argv[arg_idx], "-stream") == 0) {
             config.stream_input_mode = 1;
+        } else if (strcmp(argv[arg_idx], "-cnt2sync") == 0) {
+            config.cnt2sync_mode = 1;
         } else if (strcmp(argv[arg_idx], "-fmatcha") == 0) {
             config.fmatch_a = atof(argv[++arg_idx]);
         } else if (strcmp(argv[arg_idx], "-fmatchb") == 0) {
@@ -147,22 +152,24 @@ int main(int argc, char *argv[]) {
             }
         } else if (strcmp(argv[arg_idx], "-discard_frac") == 0) {
             config.discard_fraction = atof(argv[++arg_idx]);
-        } else if (strcmp(argv[arg_idx], "-no_dcc") == 0) {
-            config.output_dcc = 0;
-        } else if (strcmp(argv[arg_idx], "-no_tm") == 0) {
-            config.output_tm = 0;
-        } else if (strcmp(argv[arg_idx], "-no_anchors") == 0) {
-            config.output_anchors = 0;
-        } else if (strcmp(argv[arg_idx], "-no_counts") == 0) {
-            config.output_counts = 0;
+        } else if (strcmp(argv[arg_idx], "-dcc") == 0) {
+            config.output_dcc = 1;
+        } else if (strcmp(argv[arg_idx], "-tm_out") == 0) {
+            config.output_tm = 1;
+        } else if (strcmp(argv[arg_idx], "-anchors") == 0) {
+            config.output_anchors = 1;
+        } else if (strcmp(argv[arg_idx], "-counts") == 0) {
+            config.output_counts = 1;
+        } else if (strcmp(argv[arg_idx], "-membership") == 0) {
+            config.output_membership = 1;
         } else if (strcmp(argv[arg_idx], "-no_membership") == 0) {
             config.output_membership = 0;
-        } else if (strcmp(argv[arg_idx], "-no_discarded") == 0) {
-            config.output_discarded = 0;
-        } else if (strcmp(argv[arg_idx], "-no_clustered") == 0) {
-            config.output_clustered = 0;
-        } else if (strcmp(argv[arg_idx], "-no_clusters") == 0) {
-            config.output_clusters = 0;
+        } else if (strcmp(argv[arg_idx], "-discarded") == 0) {
+            config.output_discarded = 1;
+        } else if (strcmp(argv[arg_idx], "-clustered") == 0) {
+            config.output_clustered = 1;
+        } else if (strcmp(argv[arg_idx], "-clusters") == 0) {
+            config.output_clusters = 1;
         } else if (strncmp(argv[arg_idx], "-pred", 5) == 0) {
             config.pred_mode = 1;
             char *params = argv[arg_idx] + 5;
@@ -197,7 +204,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (init_frameread(config.fits_filename, config.stream_input_mode) != 0) {
+    if (init_frameread(config.fits_filename, config.stream_input_mode, config.cnt2sync_mode) != 0) {
         print_args_on_error(argc, argv);
         return 1;
     }

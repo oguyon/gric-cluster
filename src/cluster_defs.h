@@ -19,6 +19,7 @@ typedef struct {
     double auto_rlim_factor;
     double deltaprob;
     int maxnbclust;
+    int ncpu; // Number of CPUs/threads
     long maxnbfr;
     char *fits_filename;
     char *user_outdir;
@@ -31,6 +32,7 @@ typedef struct {
     int fitsout_mode;
     int pngout_mode;
     int stream_input_mode; // Added for ImageStreamIO
+    int cnt2sync_mode; // Added for cnt2 sync
     double fmatch_a;
     double fmatch_b;
     int max_gprob_visitors;

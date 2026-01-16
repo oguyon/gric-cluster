@@ -9,9 +9,32 @@ void clamp(int *val) {
     if (*val > 255) *val = 255;
 }
 
+void print_help(const char *progname) {
+    printf("Usage: %s <pixel_size> <alpha> <input.txt> <output.mp4> [noise_level] [max_frames]\n\n", progname);
+    printf("Description:\n");
+    printf("  Converts a coordinate text file into an MP4 video sequence. Each line in the input\n");
+    printf("  file corresponds to one video frame. The program draws a Gaussian spot at the\n");
+    printf("  specified coordinates.\n\n");
+    printf("Arguments:\n");
+    printf("  <pixel_size>   Width and height of the square output video in pixels.\n");
+    printf("  <alpha>        Scaling factor for the Gaussian spot size relative to the frame size.\n");
+    printf("  <input.txt>    Input text file containing coordinates (x y [z]).\n");
+    printf("                 Coordinates are expected in the range [-1.5, 1.5].\n");
+    printf("  <output.mp4>   Output video file path.\n");
+    printf("  [noise_level]  (Optional) Amplitude of random noise to add to pixels (0-255). Default: 0.0\n");
+    printf("  [max_frames]   (Optional) Maximum number of frames to process. Default: all.\n\n");
+    printf("Options:\n");
+    printf("  -h, --help     Show this help message.\n");
+}
+
 int main(int argc, char *argv[]) {
+    if (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+        print_help(argv[0]);
+        return 0;
+    }
+
     if (argc < 5) {
-        fprintf(stderr, "Usage: %s <pixel_size> <alpha> <input.txt> <output.mp4> [noise_level] [max_frames]\n", argv[0]);
+        print_help(argv[0]);
         return 1;
     }
 

@@ -1,4 +1,23 @@
-#!/usr/bin/env bash
+
+# Overview
+
+This file compiles tests and benchmarks for the image-cluster program, with a short discussion of results in comments.
+
+
+
+# Simple 2D patterns
+
+
+## 2D spiral
+
+In this first test, a 2D point moves outward in a spiral pattern.
+```
+./runbenchmark -p 2Dspiral
+```
+
+
+
+
 
 # BENCHMARKS
 NBSAMPLE=10000

@@ -4,6 +4,9 @@
 #include <math.h>
 #include <string.h>
 #include <time.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include "cluster_core.h"
 #include "frameread.h"
 
@@ -65,6 +68,9 @@ void add_visitor(VisitorList *list, int frame_idx) {
 }
 
 double get_dist(Frame *a, Frame *b, int cluster_idx, double cluster_prob, double current_gprob, ClusterConfig *config, ClusterState *state) {
+    #ifdef _OPENMP
+    #pragma omp atomic
+    #endif
     state->framedist_calls++;
     double d = framedist(a, b);
     if (config->distall_mode && state->distall_out) {
@@ -313,6 +319,10 @@ static void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int
                     state->dccarray[c3 * config->maxnbclust + c2] = d_c2_c3;
             }
 
+            long local_pruned_te5 = 0;
+            #ifdef _OPENMP
+            #pragma omp parallel for reduction(+:local_pruned_te5)
+            #endif
             for (int k = 0; k < state->num_clusters; k++) {
                 if (!state->clmembflag[k]) continue;
                 if (k == c1 || k == c2 || k == c3) continue;
@@ -345,9 +355,10 @@ static void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int
 
                 if (min_d > config->rlim) {
                     state->clmembflag[k] = 0;
-                    state->clusters_pruned++;
+                    local_pruned_te5++;
                 }
             }
+            state->clusters_pruned += local_pruned_te5;
         }
     }
 }
@@ -515,6 +526,12 @@ static void remove_cluster(ClusterState *state, ClusterConfig *config, int index
 
 
 void run_clustering(ClusterConfig *config, ClusterState *state) {
+    #ifdef _OPENMP
+    if (config->ncpu > 1) {
+        omp_set_num_threads(config->ncpu);
+    }
+    #endif
+
     long actual_frames = get_num_frames();
     if (actual_frames > config->maxnbfr) actual_frames = config->maxnbfr;
 
@@ -527,6 +544,9 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
     state->step_counts = (long *)calloc(state->max_steps_recorded, sizeof(long));
     state->transition_matrix = (long *)calloc(config->maxnbclust * config->maxnbclust, sizeof(long));
     state->mixed_probs = (double *)calloc(config->maxnbclust, sizeof(double));
+
+    long *dist_counts = (long *)calloc(config->maxnbclust + 1, sizeof(long));
+    long *pruned_counts_by_dist = (long *)calloc(config->maxnbclust + 1, sizeof(long));
 
     int *temp_indices = (int *)malloc(config->maxnbclust * sizeof(int));
     double *temp_dists = (double *)malloc(config->maxnbclust * sizeof(double));
@@ -582,6 +602,7 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
 
         int assigned_cluster = -1;
         int temp_count = 0;
+        long start_pruned_val = state->clusters_pruned;
 
         if (state->num_clusters == 0) {
             // Step 0
@@ -683,6 +704,10 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                             break;
                         }
 
+                        long local_pruned = 0;
+                        #ifdef _OPENMP
+                        #pragma omp parallel for reduction(+:local_pruned)
+                        #endif
                         for (int cl = 0; cl < state->num_clusters; cl++) {
                             if (state->clmembflag[cl] == 0) continue;
 
@@ -695,13 +720,13 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
 
                             if (dcc - dfc > config->rlim) {
                                 state->clmembflag[cl] = 0;
-                                state->clusters_pruned++;
-                            }
-                            if (dfc - dcc > config->rlim) {
+                                local_pruned++;
+                            } else if (dfc - dcc > config->rlim) {
                                 state->clmembflag[cl] = 0;
-                                state->clusters_pruned++;
+                                local_pruned++;
                             }
                         }
+                        state->clusters_pruned += local_pruned;
 
                         // TE4 Pruning
                         if (config->te4_mode && temp_count > 1) {
@@ -716,6 +741,10 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                                      state->dccarray[cprev * config->maxnbclust + cj] = d_ci_cprev;
                                 }
 
+                                long local_pruned_te4 = 0;
+                                #ifdef _OPENMP
+                                #pragma omp parallel for reduction(+:local_pruned_te4)
+                                #endif
                                 for (int k = 0; k < state->num_clusters; k++) {
                                     if (!state->clmembflag[k]) continue;
                                     if (k == cj || k == cprev) continue;
@@ -737,9 +766,10 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                                     double min_d = calc_min_dist_4pt(dfc, d_m_cprev, d_ci_cprev, d_ci_ck, d_cprev_ck);
                                     if (min_d > config->rlim) {
                                         state->clmembflag[k] = 0;
-                                        state->clusters_pruned++;
+                                        local_pruned_te4++;
                                     }
                                 }
+                                state->clusters_pruned += local_pruned_te4;
                             }
                         }
 
@@ -832,6 +862,10 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                     break;
                 }
 
+                long local_pruned = 0;
+                #ifdef _OPENMP
+                #pragma omp parallel for reduction(+:local_pruned)
+                #endif
                 for (int cl = 0; cl < state->num_clusters; cl++) {
                     if (state->clmembflag[cl] == 0) continue;
 
@@ -844,13 +878,13 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
 
                     if (dcc - dfc > config->rlim) {
                         state->clmembflag[cl] = 0;
-                        state->clusters_pruned++;
-                    }
-                    if (dfc - dcc > config->rlim) {
+                        local_pruned++;
+                    } else if (dfc - dcc > config->rlim) {
                         state->clmembflag[cl] = 0;
-                        state->clusters_pruned++;
+                        local_pruned++;
                     }
                 }
+                state->clusters_pruned += local_pruned;
 
                 // TE4 Pruning
                 if (config->te4_mode && temp_count > 1) {
@@ -865,6 +899,10 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                              state->dccarray[cprev * config->maxnbclust + cj] = d_ci_cprev;
                         }
 
+                        long local_pruned_te4 = 0;
+                        #ifdef _OPENMP
+                        #pragma omp parallel for reduction(+:local_pruned_te4)
+                        #endif
                         for (int k = 0; k < state->num_clusters; k++) {
                             if (!state->clmembflag[k]) continue;
                             if (k == cj || k == cprev) continue;
@@ -886,9 +924,10 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                             double min_d = calc_min_dist_4pt(dfc, d_m_cprev, d_ci_cprev, d_ci_ck, d_cprev_ck);
                             if (min_d > config->rlim) {
                                 state->clmembflag[k] = 0;
-                                state->clusters_pruned++;
+                                local_pruned_te4++;
                             }
                         }
+                        state->clusters_pruned += local_pruned_te4;
                     }
                 }
 
@@ -1150,11 +1189,16 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
 
         state->total_frames_processed++;
 
+        if (temp_count <= config->maxnbclust) {
+            dist_counts[temp_count]++;
+            pruned_counts_by_dist[temp_count] += (state->clusters_pruned - start_pruned_val);
+        }
+
         if (config->progress_mode && (state->total_frames_processed % 10 == 0 || state->total_frames_processed == actual_frames)) {
             state->total_missed_frames = get_missed_frames();
             double avg_dists = (state->total_frames_processed > 0) ? (double)state->framedist_calls / state->total_frames_processed : 0.0;
             
-            printf("\rProcessing frame %ld / %ld (Clusters: %d, Dists: %ld, Avg Dists/Frame: %.1f, Pruned: %ld, ",
+            printf("\rProcessing frame %ld / %ld (Clusters: %d, Dists: %ld, Avg Dists/Frame: %.3f, Pruned: %ld, ",
                    state->total_frames_processed, actual_frames, state->num_clusters, state->framedist_calls, avg_dists, state->clusters_pruned);
             
             if (state->total_missed_frames > prev_missed_frames) {
@@ -1208,6 +1252,15 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
             break;
         }
     }
+
+    printf("Samples resolved per distance count:\n");
+    for (int k = 0; k <= config->maxnbclust; k++) {
+        if (dist_counts[k] > 0) {
+            printf("  Count %4d: %8ld samples, %12ld samples pruned away\n", k, dist_counts[k], pruned_counts_by_dist[k]);
+        }
+    }
+    free(dist_counts);
+    free(pruned_counts_by_dist);
 
     free(temp_indices);
     free(temp_dists);
