@@ -88,6 +88,9 @@ target_link_libraries(image-cluster
 add_executable(image-cluster-mktxtseq src/mktestseq.c)
 target_link_libraries(image-cluster-mktxtseq m)
 
+add_executable(image-cluster-mkclusteredfile src/mkclusteredfile.c)
+target_link_libraries(image-cluster-mkclusteredfile m)
+
 add_executable(image-cluster-plot src/plot_clusters.c)
 target_link_libraries(image-cluster-plot ${PNG_LIBRARIES} m)
 

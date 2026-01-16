@@ -5,11 +5,18 @@
 #include <time.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <signal.h>
 
 #ifdef USE_IMAGESTREAMIO
 #include <ImageStreamIO/ImageStruct.h>
 #include <ImageStreamIO/ImageStreamIO.h>
 #endif
+
+volatile sig_atomic_t stop_requested = 0;
+
+void handle_sigint(int sig) {
+    stop_requested = 1;
+}
 
 void clamp(int *val) {
     if (*val < 0) *val = 0;
@@ -48,6 +55,8 @@ void print_help(const char *progname) {
     printf("  -isio          Write to an ImageStreamIO stream instead of MP4.\n");
     printf("  -fps <val>     Set frame rate (frames per second). Controls wait time in stream mode.\n");
     printf("  -cnt2sync      Enable PROCESSINFO_TRIGGERMODE_CNT2 synchronization (wait for cnt0 < cnt2).\n");
+    printf("  -loop          Loop input file content forever until CTRL+C.\n");
+    printf("  -repeat <N>    Repeat the input file content N times (default: 1).\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -66,6 +75,8 @@ int main(int argc, char *argv[]) {
     int isio_mode = 0;
     double fps = 0.0;
     int cnt2sync = 0;
+    int loop_mode = 0;
+    int repeats = 1;
 
     // Parse Arguments
     int positional_idx = 0;
@@ -74,6 +85,15 @@ int main(int argc, char *argv[]) {
             isio_mode = 1;
         } else if (strcmp(argv[i], "-cnt2sync") == 0) {
             cnt2sync = 1;
+        } else if (strcmp(argv[i], "-loop") == 0) {
+            loop_mode = 1;
+        } else if (strcmp(argv[i], "-repeat") == 0) {
+            if (i + 1 < argc) {
+                repeats = atoi(argv[++i]);
+            } else {
+                fprintf(stderr, "Error: -repeat requires an argument.\n");
+                return 1;
+            }
         } else if (strcmp(argv[i], "-fps") == 0) {
             if (i + 1 < argc) {
                 fps = atof(argv[++i]);
@@ -180,8 +200,21 @@ int main(int argc, char *argv[]) {
     struct timespec last_time, now;
     clock_gettime(CLOCK_MONOTONIC, &last_time);
 
-    while (fgets(line, sizeof(line), fin)) {
+    signal(SIGINT, handle_sigint);
+
+    int current_repeat = 0;
+    while (!stop_requested) {
         if (max_frames > 0 && frame_count >= max_frames) break;
+        
+        if (!fgets(line, sizeof(line), fin)) {
+            current_repeat++;
+            if (loop_mode || current_repeat < repeats) {
+                rewind(fin);
+                continue;
+            }
+            break;
+        }
+
         if (line[0] == '#' || line[0] == '\n' || strlen(line) == 0) continue;
 
         double v1, v2, v3;
@@ -242,7 +275,7 @@ int main(int argc, char *argv[]) {
 
             // Sync
             if (cnt2sync) {
-                while (1) {
+                while (!stop_requested) {
                     uint64_t c0 = stream_image.md[0].cnt0;
                     uint64_t c2 = stream_image.md[0].cnt2;
                     if (c0 < c2) break;

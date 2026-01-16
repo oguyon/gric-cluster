@@ -21,34 +21,42 @@ In this first test, a 2D point slowly oves outward in a spiral pattern.
 
 
 ### txt output (2D)
+
+Run clustering:
 ```
 ./image-cluster 0.1 2Dspiral.txt
 # OUTPUT:
-
+# 2Dspiral.clusterdat/frame_membership.txt
+# 2Dspiral.clusterdat/cluster_run.log
 ```
 
-
+Plot result:
+```
+./image-cluster-plot 2Dspiral.txt 2Dspiral.clusterdat/cluster_run.log plot.png
+```
 
 
 ### Image output 
 
 Write 2D spot to stream, with cnt2sync:
 ```
-ascii-spot-2-video 256 0.1 2Dspiral.txt spot2d -isio -cnt2sync
+ascii-spot-2-video 256 0.4 2Dspiral.txt spot2d -isio -cnt2sync
 ```
 
 Then run clustering:
 ```
-image-cluster 0.1 -stream -cmt2sync spot2d
+image-cluster 1450 -stream -cmt2sync spot2d
 ```
 
+To get approximatly 100 clusters, use this mapping between sigma and rlim:
+```
 0.1 2600
 0.2 2370
 0.4 1450
 0.8  520
 1.0  350
 1.2  250
-
+```
 
 
 # BENCHMARKS
