@@ -1,4 +1,4 @@
-![GRIC Logo](gric.png)
+<img src="gric.png" alt="GRIC Logo" width="700">
 
 # High-speed distance-based clustering
 
