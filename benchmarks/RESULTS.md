@@ -54,7 +54,7 @@ We use the `gric-ascii-spot-2-video` to convert the 2D input (2Dspiral.txt file)
 Writer: write 2D spot to stream, with cnt2sync:
 ```
 # Will write as many frames as there are lines in file 2Dspiral.txt (20000)
-./gric-ascii-spot-2-video 256 0.1 2Dspiral.txt spot2d -isio -cnt2sync
+./gric-ascii-spot-2-video -isio -cnt2sync 256 0.1 2Dspiral.txt spot2d
 ```
 
 Then we run clustering (reader):

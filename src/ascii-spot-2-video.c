@@ -29,6 +29,12 @@ void print_help(const char *progname) {
     printf("Options:\n  -h, --help     Show this help\n  -isio          Write to ImageStreamIO stream\n  -fps <val>     Set frame rate\n  -cnt2sync      Enable cnt2 synchronization\n  -loop          Loop content forever\n  -repeat <N>    Repeat content N times\n");
 }
 
+typedef struct {
+    double v1;
+    double v2;
+    double v3;
+} SamplePoint;
+
 int main(int argc, char *argv[]) {
     if (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) { print_help(argv[0]); return 0; }
     int size = 0; double alpha = 0.0; char *input_file = NULL, *output_file = NULL; double noise_level = 0.0; int max_frames = -1;
@@ -52,10 +58,12 @@ int main(int argc, char *argv[]) {
     }
     if (positional_idx < 4) { print_help(argv[0]); return 1; }
     FILE *fin = fopen(input_file, "r"); if (!fin) return 1;
+    
     #ifdef USE_IMAGESTREAMIO
     IMAGE stream_image; float *stream_buffer = NULL;
     #endif
     unsigned char *frame_rgb = NULL; FILE *pipe = NULL;
+    
     if (isio_mode) {
         #ifdef USE_IMAGESTREAMIO
         uint32_t dims[2] = {(uint32_t)size, (uint32_t)size};
@@ -68,9 +76,16 @@ int main(int argc, char *argv[]) {
         char cmd[1024]; snprintf(cmd, 1023, "ffmpeg -y -f rawvideo -vcodec rawvideo -pix_fmt rgb24 -s %dx%d -r 30 -i - -c:v libx264 -pix_fmt yuv420p -crf 10 -preset slow \"%s\"", size, size, output_file);
         pipe = popen(cmd, "w"); frame_rgb = (unsigned char *)malloc(size * size * 3);
     }
+    
     srand(time(NULL)); char line[1024]; int frame_count = 0; long long us_per_frame = (fps > 0) ? (long long)(1000000.0 / fps) : 0;
     struct timespec last_time, now; clock_gettime(CLOCK_MONOTONIC, &last_time);
     signal(SIGINT, handle_sigint); int current_repeat = 0;
+    
+    // Sample collection
+    SamplePoint *samples = NULL;
+    size_t sample_count = 0;
+    size_t sample_capacity = 0;
+
     while (!stop_requested) {
         if (max_frames > 0 && frame_count >= max_frames) break;
         if (!fgets(line, 1023, fin)) {
@@ -79,7 +94,21 @@ int main(int argc, char *argv[]) {
             break;
         }
         if (line[0] == '#' || line[0] == '\n') continue;
-        double v1, v2, v3; if (sscanf(line, "%lf %lf %lf", &v1, &v2, &v3) < 2) continue;
+        
+        double v1, v2, v3 = 0.0; 
+        int items = sscanf(line, "%lf %lf %lf", &v1, &v2, &v3);
+        if (items < 2) continue;
+        
+        // Store sample
+        if (sample_count >= sample_capacity) {
+            sample_capacity = (sample_capacity == 0) ? 1024 : sample_capacity * 2;
+            samples = (SamplePoint *)realloc(samples, sample_capacity * sizeof(SamplePoint));
+        }
+        samples[sample_count].v1 = v1;
+        samples[sample_count].v2 = v2;
+        samples[sample_count].v3 = v3;
+        sample_count++;
+
         if (isio_mode) {
             #ifdef USE_IMAGESTREAMIO
             memset(stream_buffer, 0, size * size * sizeof(float));
@@ -96,10 +125,50 @@ int main(int argc, char *argv[]) {
             #endif
         } else {
             memset(frame_rgb, 0, size*size*3);
-            // ... (MP4 logic omitted for brevity in rewrite, should restore properly if needed but following user's most recent focus)
+            double cx = (v1+1.5)/3.0*size, cy = (1.0-(v2+1.5)/3.0)*size, sigma = size*alpha*(v3+1.5)/2.0, ts2 = 2.0*sigma*sigma;
+            int r = (int)ceil(4.0*sigma), mx = (int)cx-r, Mx = (int)cx+r, my = (int)cy-r, My = (int)cy+r;
+            if (mx<0) mx=0; if (Mx>=size) Mx=size-1; if (my<0) my=0; if (My>=size) My=size-1;
+            for (int y=my; y<=My; y++) {
+                for (int x=mx; x<=Mx; x++) {
+                    double d2 = (x-cx)*(x-cx)+(y-cy)*(y-cy);
+                    unsigned char v = (unsigned char)(255.0*exp(-d2/ts2));
+                    if (v > 0) {
+                        int idx = (y*size + x) * 3;
+                        frame_rgb[idx] = v;
+                        frame_rgb[idx+1] = v;
+                        frame_rgb[idx+2] = v;
+                    }
+                }
+            }
+            if (pipe) fwrite(frame_rgb, 1, size*size*3, pipe);
+            
+            if (us_per_frame > 0) { 
+                 clock_gettime(CLOCK_MONOTONIC, &now); 
+                 long long el = (now.tv_sec-last_time.tv_sec)*1000000LL+(now.tv_nsec-last_time.tv_nsec)/1000; 
+                 if (el<us_per_frame) usleep(us_per_frame-el); 
+                 clock_gettime(CLOCK_MONOTONIC, &last_time); 
+            }
         }
         frame_count++;
     }
+    
+    // Write samples to text file
+    if (sample_count > 0 && output_file) {
+        char txt_out_name[2048];
+        snprintf(txt_out_name, sizeof(txt_out_name), "%s.txt", output_file);
+        FILE *ftxt = fopen(txt_out_name, "w");
+        if (ftxt) {
+            for (size_t i = 0; i < sample_count; i++) {
+                fprintf(ftxt, "%f %f %f\n", samples[i].v1, samples[i].v2, samples[i].v3);
+            }
+            fclose(ftxt);
+            printf("Written %zu samples to %s\n", sample_count, txt_out_name);
+        } else {
+            fprintf(stderr, "Error: Could not write to %s\n", txt_out_name);
+        }
+    }
+    if (samples) free(samples);
+
     if (isio_mode) {
 #ifdef USE_IMAGESTREAMIO
         if (stream_buffer) free(stream_buffer);

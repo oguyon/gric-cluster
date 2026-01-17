@@ -73,6 +73,9 @@ void print_usage(char *progname) {
     printf("  -fmatchb <val> Set fmatch parameter b (default: 0.5)\n");
     printf("  -maxvis <val>  Max visitors for gprob history (default: 1000)\n");
     printf("  -pred[l,h,n]   Prediction with pattern detection (default: 10,1000,2)\n");
+    printf("                 l: length of pattern to match (recent cluster history)\n");
+    printf("                 h: history size (how far back to search for pattern)\n");
+    printf("                 n: number of prediction candidates to return\n");
     printf("  -te4           Use 4-point triangle inequality pruning\n");
     printf("  -te5           Use 5-point triangle inequality pruning\n");
 
