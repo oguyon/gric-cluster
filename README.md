@@ -14,19 +14,49 @@ A high-speed image clustering tool written in C, optimized for performance. It g
 - **Plotting**: Includes `gric-plot` to visualize clusters (SVG/PNG).
 - **Modeling**: Includes `gric-NDmodel` to reconstruct N-dimensional models from distance matrices.
 
+## Programs
+
+The project builds several executables, each serving a specific role:
+
+| Program | Role | Description |
+| :--- | :--- | :--- |
+| **gric-cluster** | Core Tool | Main clustering executable. Groups frames from files or streams based on Euclidean distance. |
+| **gric-info** | Info | Displays status, versions, and paths of optional libraries (CFITSIO, PNG, FFmpeg, etc.). |
+| **gric-plot** | Visualization | Generates summary plots (PNG/SVG) of clustering results, including scatter plots and histograms. |
+| **gric-ascii-spot-2-video** | Simulation | Converts coordinate text files into MP4 video or ImageStreamIO streams (simulating a moving spot). |
+| **gric-mktxtseq** | Test Data | Generates synthetic coordinate sequences (random, walk, spiral, etc.) for testing. |
+| **gric-mkclusteredfile** | Post-processing | Reconstructs a full clustered file from input data and a membership list. |
+| **gric-NDmodel** | Modeling | Reconstructs N-dimensional coordinates from a cluster distance matrix (`dcc.txt`) using Simulated Annealing. |
+| **gric-stream-to-pipe** | Utility | (ImageStreamIO only) Pipes raw data from a shared memory stream to stdout. |
+
 ## Dependencies
 
-Required packages (Debian/Ubuntu):
+### Mandatory
+*   **CMake** (Build system)
+*   **C Compiler** (GCC/Clang) with C17 support
+*   **pkg-config**
+
+### Optional
+The build system automatically detects these libraries. If missing, the corresponding features are disabled.
+
+*   **CFITSIO** (`libcfitsio-dev`): Required for FITS file input/output.
+*   **LibPNG** (`libpng-dev`): Required for PNG output in `gric-plot` and `gric-cluster`.
+*   **FFmpeg** (`libav*-dev`): Required for processing MP4 video files.
+*   **ImageStreamIO**: Required for low-latency shared memory streaming.
+*   **OpenMP**: Enables multi-threading support for faster processing.
+
+### Installation (Debian/Ubuntu)
 
 ```bash
+# Mandatory
 sudo apt update
-sudo apt install build-essential cmake pkg-config \
-    libcfitsio-dev \
-    libpng-dev \
-    libavformat-dev libavcodec-dev libswscale-dev libavutil-dev
-```
+sudo apt install build-essential cmake pkg-config
 
-If libraries are missing, the build system will automatically disable the corresponding features (e.g., FITS support, MP4 support, PNG output).
+# Recommended (for full features)
+sudo apt install libcfitsio-dev libpng-dev \
+    libavformat-dev libavcodec-dev libswscale-dev libavutil-dev \
+    libomp-dev
+```
 
 ## Build
 
@@ -39,6 +69,12 @@ make
 
 ## Usage
 
+Check installed features:
+```bash
+./gric-info
+```
+
+Run clustering:
 ```bash
 ./gric-cluster [options] <rlim> <input_file>
 ```

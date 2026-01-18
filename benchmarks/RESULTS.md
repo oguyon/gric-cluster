@@ -9,7 +9,7 @@ This file compiles tests and benchmarks for the gric-cluster program, with a sho
 
 ## 2D spiral
 
-In this first test, a 2D point slowly oves outward in a spiral pattern.
+In this first test, a 2D point slowly moves outward in a spiral pattern.
 
 The pattern is written to a text file with:
 ```
@@ -49,7 +49,7 @@ With 100 clusters, 4950 inter-cluster distances are computed: this is the main c
 ### High Dimension input
 
 
-Here we operate in high dimension (256x256 pixel images = 65536 dimensions), but with the high dimensional image derived from a low-dimension input. This is reprentative of high-dimension clustering where there exists an (unknown at clustering time) relationship between a small number of input variables and the high-dimension observable. Clustering is deployed to reveal this relationship, grouping high-D samples to they can be related to the low-D variables.
+Here we operate in high dimension (256x256 pixel images = 65536 dimensions), but with the high dimensional image derived from a low-dimension input. This is representative of high-dimension clustering where there exists an (unknown at clustering time) relationship between a small number of input variables and the high-dimension observable. Clustering is deployed to reveal this relationship, grouping high-D samples so they can be related to the low-D variables.
 
 We use the `gric-ascii-spot-2-video` to convert the 2D input (2Dspiral.txt file) into a high-D image. The 2 coordinates encode the centroid position of a gaussian spot. We use here the streaming output mode with the cnt2 synchronization to avoid writing a large video file on the filesystem. This program will produce images on demand (one image per line in the 2Dspiral.txt), waiting for the clustering program to process frames to deliver the next frame. This synchronization is done with ImageStreamIO's cnt2 entry, with the writer waiting for cnt2 to be incremented above cnt0, and the reader incrementing cnt2 to request a new frame.
 
@@ -75,7 +75,7 @@ And results are plotted with:
 
 The 20000 samples are clustered in 100 clusters with 25145 distance computations (average: 1.257 dist computations per sample). Most samples are resolved with a single distance computation thanks to the slow-evolving input.
 
-The cluster radius has been adjusted to yield 100 clusters, but there is no simple direct relationship between distance in the 2D space and distance in this high-D (images) space. The 2D cluster-to-cluster distance matrix shows that the high-D distance saturates when the spots do not overlap. With increased the spot size (sigma) there is more overlap, and the clustering radius should be reduced to still yield the same number of clusters. Empirically, the following pairs of (sigma, rlim) values yield 100 clusters with this 2Dspiral pattern: (0.1 2560), (0.2 2370), (0.4 1450), (0.8 520), (1.0 350) and (1.2 250).
+The cluster radius has been adjusted to yield 100 clusters, but there is no simple direct relationship between distance in the 2D space and distance in this high-D (images) space. The 2D cluster-to-cluster distance matrix shows that the high-D distance saturates when the spots do not overlap. With increased spot size (sigma) there is more overlap, and the clustering radius should be reduced to still yield the same number of clusters. Empirically, the following pairs of (sigma, rlim) values yield 100 clusters with this 2Dspiral pattern: (0.1 2560), (0.2 2370), (0.4 1450), (0.8 520), (1.0 350) and (1.2 250).
 
 
 

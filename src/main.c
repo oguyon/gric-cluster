@@ -6,10 +6,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/resource.h>
+#include <ctype.h>
 #include "cluster_defs.h"
 #include "cluster_core.h"
 #include "cluster_io.h"
 #include "frameread.h"
+#include "config_utils.h"
 
 volatile sig_atomic_t stop_requested = 0;
 
@@ -35,6 +37,19 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < argc; i++) {
             strcat(cmdline, argv[i]);
             if (i < argc - 1) strcat(cmdline, " ");
+        }
+    }
+
+    // Check for help option early
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            if (i + 1 < argc) {
+                print_help_keyword(argv[i+1]);
+            } else {
+                print_help(argv[0]);
+            }
+            if (cmdline) free(cmdline);
+            return 0;
         }
     }
 
@@ -73,129 +88,102 @@ int main(int argc, char *argv[]) {
 
     int arg_idx = 1;
     int rlim_set = 0;
+    const char *confw_filename = NULL;
 
     while (arg_idx < argc) {
-        if (strcmp(argv[arg_idx], "-dprob") == 0) {
-            config.deltaprob = atof(argv[++arg_idx]);
-        } else if (strcmp(argv[arg_idx], "-maxcl") == 0) {
-            config.maxnbclust = atoi(argv[++arg_idx]);
-        } else if (strcmp(argv[arg_idx], "-ncpu") == 0) {
-            config.ncpu = atoi(argv[++arg_idx]);
-        } else if (strcmp(argv[arg_idx], "-maxim") == 0) {
-            config.maxnbfr = atol(argv[++arg_idx]);
-        } else if (strcmp(argv[arg_idx], "-avg") == 0) {
-            config.average_mode = 1;
-        } else if (strcmp(argv[arg_idx], "-distall") == 0) {
-            config.distall_mode = 1;
-        } else if (strcmp(argv[arg_idx], "-outdir") == 0) {
-            config.user_outdir = argv[++arg_idx];
-        } else if (strcmp(argv[arg_idx], "-progress") == 0) {
-            config.progress_mode = 1;
-        } else if (strcmp(argv[arg_idx], "-gprob") == 0) {
-            config.gprob_mode = 1;
-        } else if (strcmp(argv[arg_idx], "-verbose") == 0) {
-            config.verbose_level = 1;
-        } else if (strcmp(argv[arg_idx], "-veryverbose") == 0) {
-            config.verbose_level = 2;
-        } else if (strcmp(argv[arg_idx], "-fitsout") == 0) {
-            config.fitsout_mode = 1;
-        } else if (strcmp(argv[arg_idx], "-pngout") == 0) {
-            config.pngout_mode = 1;
-        } else if (strcmp(argv[arg_idx], "-stream") == 0) {
-            config.stream_input_mode = 1;
-        } else if (strcmp(argv[arg_idx], "-cnt2sync") == 0) {
-            config.cnt2sync_mode = 1;
-        } else if (strcmp(argv[arg_idx], "-fmatcha") == 0) {
-            config.fmatch_a = atof(argv[++arg_idx]);
-        } else if (strcmp(argv[arg_idx], "-fmatchb") == 0) {
-            config.fmatch_b = atof(argv[++arg_idx]);
-        } else if (strcmp(argv[arg_idx], "-maxvis") == 0) {
-            config.max_gprob_visitors = atoi(argv[++arg_idx]);
-        } else if (strcmp(argv[arg_idx], "-te4") == 0) {
-            config.te4_mode = 1;
-        } else if (strcmp(argv[arg_idx], "-te5") == 0) {
-            config.te5_mode = 1;
-        } else if (strcmp(argv[arg_idx], "-tm") == 0) {
-            config.tm_mixing_coeff = atof(argv[++arg_idx]);
-        } else if (strcmp(argv[arg_idx], "-maxcl_strategy") == 0) {
-            char *strategy = argv[++arg_idx];
-            if (strcmp(strategy, "stop") == 0) config.maxcl_strategy = MAXCL_STOP;
-            else if (strcmp(strategy, "discard") == 0) config.maxcl_strategy = MAXCL_DISCARD;
-            else if (strcmp(strategy, "merge") == 0) config.maxcl_strategy = MAXCL_MERGE;
-            else {
-                fprintf(stderr, "Error: Unknown maxcl_strategy '%s'. Use 'stop', 'discard', or 'merge'.\n", strategy);
+        char *key = argv[arg_idx];
+        char *val = (arg_idx + 1 < argc) ? argv[arg_idx + 1] : NULL;
+
+        // Check for -conf and -confw explicitly or handle via apply_option?
+        // apply_option handles config-specific logic mostly, but -conf is meta.
+        
+        if (strcmp(key, "-conf") == 0) {
+            if (!val) {
+                fprintf(stderr, "Error: -conf requires a filename\n");
                 if (cmdline) free(cmdline);
                 return 1;
             }
-        } else if (strcmp(argv[arg_idx], "-discard_frac") == 0) {
-            config.discard_fraction = atof(argv[++arg_idx]);
-        } else if (strcmp(argv[arg_idx], "-tm_out") == 0) {
-            config.output_tm = 1;
-        } else if (strcmp(argv[arg_idx], "-anchors") == 0) {
-            config.output_anchors = 1;
-        } else if (strcmp(argv[arg_idx], "-counts") == 0) {
-            config.output_counts = 1;
-        } else if (strcmp(argv[arg_idx], "-membership") == 0) {
-            config.output_membership = 1;
-        } else if (strcmp(argv[arg_idx], "-no_membership") == 0) {
-            config.output_membership = 0;
-        } else if (strcmp(argv[arg_idx], "-discarded") == 0) {
-            config.output_discarded = 1;
-        } else if (strcmp(argv[arg_idx], "-clustered") == 0) {
-            config.output_clustered = 1;
-        } else if (strcmp(argv[arg_idx], "-clusters") == 0) {
-            config.output_clusters = 1;
-        } else if (strncmp(argv[arg_idx], "-pred", 5) == 0) {
-            config.pred_mode = 1;
-            char *params = argv[arg_idx] + 5;
-            if (*params == '[') {
-                params++; // Skip [
-                char *end = strchr(params, ']');
-                if (end) *end = '\0';
-                sscanf(params, "%d,%d,%d", &config.pred_len, &config.pred_h, &config.pred_n);
+            if (read_config_file(val, &config) != 0) {
+                fprintf(stderr, "Error: Could not read config file %s\n", val);
+                if (cmdline) free(cmdline);
+                return 1;
             }
-        } else if (strcmp(argv[arg_idx], "-scandist") == 0) {
-            config.scandist_mode = 1;
-        } else if (argv[arg_idx][0] == '-') {
-            fprintf(stderr, "Error: Unknown option: %s\n", argv[arg_idx]);
-            print_usage(argv[0]);
-            if (cmdline) free(cmdline);
-            print_args_on_error(argc, argv);
-            return 1;
-        } else {
-            if (!config.scandist_mode && !rlim_set) {
-                if (argv[arg_idx][0] == 'a') {
-                    char *endptr;
-                    config.auto_rlim_factor = strtod(argv[arg_idx] + 1, &endptr);
-                    if (*endptr != '\0') {
-                         fprintf(stderr, "Error: Invalid format for auto-rlim. Expected 'a<float>', got '%s'\n", argv[arg_idx]);
-                         if (cmdline) free(cmdline);
-                         print_args_on_error(argc, argv);
-                         return 1;
-                    }
-                    config.auto_rlim_mode = 1;
-                } else {
-                    char *endptr;
-                    config.rlim = strtod(argv[arg_idx], &endptr);
-                    if (*endptr != '\0') {
-                         fprintf(stderr, "Error: Invalid rlim value: %s\n", argv[arg_idx]);
-                         if (cmdline) free(cmdline);
-                         print_args_on_error(argc, argv);
-                         return 1;
-                    }
-                }
+            // If config loaded rlim, we can consider it set?
+            // But we don't know for sure if it was set in config.
+            // However, our smart positional logic below handles this.
+            arg_idx += 2;
+            continue;
+        }
+
+        if (strcmp(key, "-confw") == 0) {
+            if (!val) {
+                fprintf(stderr, "Error: -confw requires a filename\n");
+                if (cmdline) free(cmdline);
+                return 1;
+            }
+            confw_filename = val;
+            arg_idx += 2;
+            continue;
+        }
+
+        int res = apply_option(&config, key, val);
+        if (res >= 0) {
+            arg_idx += (1 + res);
+            // If explicit -rlim was used, mark it
+            if (strcmp(key, "-rlim") == 0 || strcmp(key, "rlim") == 0) rlim_set = 1;
+            continue;
+        }
+
+        // Positional or Unknown
+        if (key[0] == '-' && !isdigit(key[1])) {
+             fprintf(stderr, "Error: Unknown option: %s\n", key);
+             print_usage(argv[0]);
+             if (cmdline) free(cmdline);
+             print_args_on_error(argc, argv);
+             return 1;
+        }
+
+        // Positional logic
+        if (!config.scandist_mode && !rlim_set) {
+            // Try parse as rlim
+            char *endptr;
+            double v = strtod(key, &endptr);
+            if (*endptr == '\0') {
+                config.rlim = v;
+                rlim_set = 1;
+            } else if (key[0] == 'a' && isdigit(key[1])) {
+                config.auto_rlim_factor = atof(key+1);
+                config.auto_rlim_mode = 1;
                 rlim_set = 1;
             } else {
+                // Not a number, assume filename
                 if (config.fits_filename != NULL) {
-                    fprintf(stderr, "Error: Too many arguments or multiple input files specified (already have '%s', found '%s')\n", config.fits_filename, argv[arg_idx]);
+                    fprintf(stderr, "Error: Too many arguments or multiple input files specified (already have '%s', found '%s')\n", config.fits_filename, key);
                     if (cmdline) free(cmdline);
                     print_args_on_error(argc, argv);
                     return 1;
                 }
-                config.fits_filename = argv[arg_idx];
+                config.fits_filename = key;
             }
+        } else {
+            if (config.fits_filename != NULL) {
+                fprintf(stderr, "Error: Too many arguments or multiple input files specified (already have '%s', found '%s')\n", config.fits_filename, key);
+                if (cmdline) free(cmdline);
+                print_args_on_error(argc, argv);
+                return 1;
+            }
+            config.fits_filename = key;
         }
         arg_idx++;
+    }
+
+    if (confw_filename) {
+        if (write_config_file(confw_filename, &config) != 0) {
+             fprintf(stderr, "Error: Could not write config file %s\n", confw_filename);
+             if (cmdline) free(cmdline);
+             return 1;
+        }
+        printf("Configuration written to %s\n", confw_filename);
     }
 
     if (!config.fits_filename) {

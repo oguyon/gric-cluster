@@ -69,7 +69,7 @@ link_directories(
 )
 
 # Sources
-set(CLUSTER_SRCS src/main.c src/cluster_core.c src/cluster_io.c src/framedistance.c src/frameread.c src/png_io.c)
+set(CLUSTER_SRCS src/main.c src/cluster_core.c src/cluster_io.c src/framedistance.c src/frameread.c src/png_io.c src/config_utils.c)
 
 add_executable(gric-cluster ${CLUSTER_SRCS})
 if (OpenMP_C_FOUND)
@@ -101,4 +101,48 @@ target_link_libraries(gric-ascii-spot-2-video m ${IMAGESTREAMIO_LIBRARIES})
 if (IMAGESTREAMIO_FOUND)
     add_executable(gric-stream-to-pipe src/stream_to_pipe.c)
     target_link_libraries(gric-stream-to-pipe ${IMAGESTREAMIO_LIBRARIES} m)
+endif()
+
+# gric-info tool
+add_executable(gric-info src/gric-info.c)
+
+if (CFITSIO_FOUND)
+    target_compile_definitions(gric-info PRIVATE USE_CFITSIO)
+    target_compile_definitions(gric-info PRIVATE CFITSIO_VERSION_STR=\"${CFITSIO_VERSION}\")
+    target_compile_definitions(gric-info PRIVATE CFITSIO_LOCATION_STR=\"${CFITSIO_LIBDIR}\")
+endif()
+
+if (PNG_FOUND)
+    target_compile_definitions(gric-info PRIVATE USE_PNG)
+    target_compile_definitions(gric-info PRIVATE PNG_VERSION_STR=\"${PNG_VERSION_STRING}\")
+    # PNG_LIBRARIES is often a list, assume first item is main lib
+    list(GET PNG_LIBRARIES 0 PNG_MAIN_LIB)
+    target_compile_definitions(gric-info PRIVATE PNG_LOCATION_STR=\"${PNG_MAIN_LIB}\")
+endif()
+
+if (FFMPEG_FOUND)
+    target_compile_definitions(gric-info PRIVATE USE_FFMPEG)
+    
+    set(MY_FFMPEG_VER "${FFMPEG_VERSION}")
+    if ("${MY_FFMPEG_VER}" STREQUAL "" AND FFMPEG_libavformat_VERSION)
+        set(MY_FFMPEG_VER "${FFMPEG_libavformat_VERSION}")
+    endif()
+    target_compile_definitions(gric-info PRIVATE FFMPEG_VERSION_STR=\"${MY_FFMPEG_VER}\")
+
+    set(MY_FFMPEG_LOC "${FFMPEG_LIBDIR}")
+    if ("${MY_FFMPEG_LOC}" STREQUAL "")
+         set(MY_FFMPEG_LOC "System Default")
+    endif()
+    target_compile_definitions(gric-info PRIVATE FFMPEG_LOCATION_STR=\"${MY_FFMPEG_LOC}\")
+endif()
+
+if (IMAGESTREAMIO_FOUND)
+    target_compile_definitions(gric-info PRIVATE USE_IMAGESTREAMIO)
+    target_compile_definitions(gric-info PRIVATE IMAGESTREAMIO_VERSION_STR=\"${IMAGESTREAMIO_VERSION}\")
+    target_compile_definitions(gric-info PRIVATE IMAGESTREAMIO_LOCATION_STR=\"${IMAGESTREAMIO_LIBDIR}\")
+endif()
+
+if (OpenMP_C_FOUND)
+    target_compile_definitions(gric-info PRIVATE USE_OPENMP)
+    target_compile_definitions(gric-info PRIVATE OPENMP_VERSION_STR=\"${OpenMP_C_VERSION}\")
 endif()
