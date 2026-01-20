@@ -280,7 +280,11 @@ int main(int argc, char *argv[]) {
 
             if (cnt2sync) { while (!stop_requested) { if (stream_image.md[0].cnt0 < stream_image.md[0].cnt2) break; usleep(10); } } 
             else if (us_per_frame > 0) { clock_gettime(CLOCK_MONOTONIC, &now); long long el = (now.tv_sec-last_time.tv_sec)*1000000LL+(now.tv_nsec-last_time.tv_nsec)/1000; if (el<us_per_frame) usleep(us_per_frame-el); clock_gettime(CLOCK_MONOTONIC, &last_time); } 
+            
+            stream_image.md[0].write = 1;
             memcpy(stream_image.array.F, stream_buffer, size*size*sizeof(float));
+            stream_image.md[0].write = 0;
+            
             struct timespec tw; clock_gettime(CLOCK_REALTIME, &tw);
             stream_image.md[0].writetime = tw; stream_image.md[0].atime = tw; stream_image.md[0].lastaccesstime = tw;
             stream_image.md[0].cnt0++; ImageStreamIO_sempost(&stream_image, -1);
