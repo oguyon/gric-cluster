@@ -42,7 +42,7 @@ The build system automatically detects these libraries. If missing, the correspo
 *   **CFITSIO** (`libcfitsio-dev`): Required for FITS file input/output.
 *   **LibPNG** (`libpng-dev`): Required for PNG output in `gric-plot` and `gric-cluster`.
 *   **FFmpeg** (`libav*-dev`): Required for processing MP4 video files.
-*   **ImageStreamIO**: Required for low-latency shared memory streaming.
+*   **ImageStreamIO** ([GitHub](https://github.com/milk-org/ImageStreamIO)): Required for low-latency shared memory streaming.
 *   **OpenMP**: Enables multi-threading support for faster processing.
 
 ### Installation (Debian/Ubuntu)
@@ -56,6 +56,21 @@ sudo apt install build-essential cmake pkg-config
 sudo apt install libcfitsio-dev libpng-dev \
     libavformat-dev libavcodec-dev libswscale-dev libavutil-dev \
     libomp-dev
+```
+
+### ImageStreamIO Installation (Optional)
+
+ImageStreamIO is required for shared memory streaming. It is not available in standard repositories and must be built from source.
+
+```bash
+git clone https://github.com/milk-org/ImageStreamIO.git
+cd ImageStreamIO
+mkdir build
+cd build
+cmake ..
+make
+sudo make install
+sudo ldconfig
 ```
 
 ## Build
