@@ -57,6 +57,9 @@ int apply_option(ClusterConfig *config, const char *key, const char *value) {
     } else if (matches(key, "-pngout")) {
         config->pngout_mode = 1;
         return 0;
+    } else if (matches(key, "-filelist")) {
+        config->filelist_mode = 1;
+        return 0;
     } else if (matches(key, "-stream")) {
         config->stream_input_mode = 1;
         return 0;
@@ -207,6 +210,7 @@ int write_config_file(const char *filename, ClusterConfig *config) {
     if (config->verbose_level == 2) fprintf(f, "veryverbose\n");
     if (config->fitsout_mode) fprintf(f, "fitsout\n");
     if (config->pngout_mode) fprintf(f, "pngout\n");
+    if (config->filelist_mode) fprintf(f, "filelist\n");
     if (config->stream_input_mode) fprintf(f, "stream\n");
     if (config->cnt2sync_mode) fprintf(f, "cnt2sync\n");
     

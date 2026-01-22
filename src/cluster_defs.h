@@ -31,6 +31,7 @@ typedef struct {
     int verbose_level;
     int fitsout_mode;
     int pngout_mode;
+    int filelist_mode; // Added for reading list of files
     int stream_input_mode; // Added for ImageStreamIO
     int cnt2sync_mode; // Added for cnt2 sync
     double fmatch_a;

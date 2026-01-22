@@ -194,7 +194,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (init_frameread(config.fits_filename, config.stream_input_mode, config.cnt2sync_mode) != 0) {
+    if (init_frameread(config.fits_filename, config.stream_input_mode, config.cnt2sync_mode, config.filelist_mode) != 0) {
         if (cmdline) free(cmdline);
         print_args_on_error(argc, argv);
         return 1;

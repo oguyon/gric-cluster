@@ -7,6 +7,7 @@
 #include <time.h>
 #include <semaphore.h>
 #include <errno.h>
+#include "png_io.h"
 
 #ifdef USE_CFITSIO
 #include <fitsio.h>
@@ -30,6 +31,9 @@ static fitsfile *fptr = NULL;
 static FILE *ascii_ptr = NULL;
 static long *ascii_line_offsets = NULL;
 static int is_ascii_mode = 0;
+
+static char **file_list = NULL;
+static int is_filelist_mode = 0;
 
 // FFmpeg State
 #ifdef USE_FFMPEG
@@ -139,6 +143,57 @@ static int init_ascii(char *filename) {
     }
 
     rewind(ascii_ptr);
+    return 0;
+}
+
+static int init_filelist(char *filename) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) {
+        perror("Failed to open file list");
+        return -1;
+    }
+
+    is_filelist_mode = 1;
+    num_frames = 0;
+    size_t capacity = 1024;
+    file_list = (char **)malloc(capacity * sizeof(char *));
+    
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    while ((read = getline(&line, &len, fp)) != -1) {
+        // Trim newline
+        if (read > 0 && line[read-1] == '\n') line[read-1] = '\0';
+        if (strlen(line) == 0) continue;
+
+        if (num_frames >= capacity) {
+            capacity *= 2;
+            file_list = (char **)realloc(file_list, capacity * sizeof(char *));
+        }
+        file_list[num_frames] = strdup(line);
+        num_frames++;
+    }
+    free(line);
+    fclose(fp);
+
+    if (num_frames == 0) {
+        fprintf(stderr, "Error: Empty file list.\n");
+        return -1;
+    }
+
+    // Read first frame to get dimensions
+    int w, h;
+    double *tmp = read_png_frame(file_list[0], &w, &h);
+    if (!tmp) {
+        fprintf(stderr, "Failed to read first frame from list: %s\n", file_list[0]);
+        return -1;
+    }
+    frame_width = w;
+    frame_height = h;
+    free(tmp);
+
+    printf("File list mode initialized. %ld frames, %ldx%ld\n", num_frames, frame_width, frame_height);
     return 0;
 }
 
@@ -257,7 +312,11 @@ static int init_stream(char *stream_name) {
 }
 #endif
 
-int init_frameread(char *filename, int stream_mode, int cnt2sync_mode) {
+int init_frameread(char *filename, int stream_mode, int cnt2sync_mode, int filelist_mode) {
+    if (filelist_mode) {
+        return init_filelist(filename);
+    }
+
     #ifdef USE_IMAGESTREAMIO
     if (stream_mode) {
         cnt2sync_enabled = cnt2sync_mode;
@@ -342,18 +401,41 @@ Frame* getframe_at(long index) {
     frame_struct->width = frame_width;
     frame_struct->height = frame_height;
     frame_struct->id = index;
-    frame_struct->data = (double *)malloc(nelements * sizeof(double));
-
-    if (!frame_struct->data) {
-        free(frame_struct);
-        return NULL;
+    // We allocate data in switch or below
+    // Actually, other modes allocate it manually or read into it.
+    // Let's allocate it here for consistency if needed, but read_png_frame allocates it.
+    
+    // For file list mode, read_png_frame allocates. For others, we allocate.
+    if (!is_filelist_mode) {
+        frame_struct->data = (double *)malloc(nelements * sizeof(double));
+        if (!frame_struct->data) {
+            free(frame_struct);
+            return NULL;
+        }
+    } else {
+        frame_struct->data = NULL; // Will be set by read_png_frame
     }
 
     frame_struct->cnt0 = 0;
     frame_struct->atime.tv_sec = 0;
     frame_struct->atime.tv_nsec = 0;
 
-    if (is_ascii_mode) {
+    if (is_filelist_mode) {
+        int w, h;
+        frame_struct->data = read_png_frame(file_list[index], &w, &h);
+        if (!frame_struct->data) {
+            fprintf(stderr, "Error reading frame %ld: %s\n", index, file_list[index]);
+            free(frame_struct);
+            return NULL;
+        }
+        if (w != frame_width || h != frame_height) {
+            fprintf(stderr, "Error: Frame dimension mismatch in file list. Expected %ldx%ld, got %dx%d\n", frame_width, frame_height, w, h);
+            free(frame_struct->data);
+            free(frame_struct);
+            return NULL;
+        }
+    }
+    else if (is_ascii_mode) {
         if (fseek(ascii_ptr, ascii_line_offsets[index], SEEK_SET) != 0) {
             perror("fseek failed");
             free(frame_struct->data);
@@ -580,6 +662,16 @@ void free_frame(Frame *frame) {
 }
 
 void close_frameread() {
+    if (is_filelist_mode) {
+        if (file_list) {
+            for (long i = 0; i < num_frames; i++) {
+                if (file_list[i]) free(file_list[i]);
+            }
+            free(file_list);
+            file_list = NULL;
+        }
+        is_filelist_mode = 0;
+    }
     if (is_ascii_mode) {
         if (ascii_ptr) fclose(ascii_ptr);
         if (ascii_line_offsets) free(ascii_line_offsets);
