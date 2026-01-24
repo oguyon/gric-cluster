@@ -80,6 +80,58 @@ The 20000 samples are clustered in 100 clusters with 25145 distance computations
 The cluster radius has been adjusted to yield 100 clusters, but there is no simple direct relationship between distance in the 2D space and distance in this high-D (images) space. The 2D cluster-to-cluster distance matrix shows that the high-D distance saturates when the spots do not overlap. With increased spot size (sigma) there is more overlap, and the clustering radius should be reduced to still yield the same number of clusters. Empirically, the following pairs of (sigma, rlim) values yield 100 clusters with this 2Dspiral pattern: (0.1 2560), (0.2 2370), (0.4 1450), (0.8 520), (1.0 350) and (1.2 250).
 
 
+## `gric-locate` and `gric-locate-plot` Tools
+
+These tools are designed for efficiently classifying new data points against an existing cluster map and visualizing the efficiency of this process.
+
+**Purpose:**
+After a cluster map has been created by `gric-cluster` (generating `anchors.fits` and `dcc.txt`), `gric-locate` can be used to determine which pre-existing clusters best represent new, unseen data frames. This is useful for real-time classification or analyzing new streams of data without re-clustering the entire dataset. The `gric-locate-plot` tool then visualizes the performance of `gric-locate`.
+
+**Key Features of `gric-locate`:**
+-   **Efficiency:** Employs geometric pruning to reduce the number of distance computations needed to find nearest neighbors.
+-   **Output to Log:** Generates a `locate_run.log` file containing detailed statistics on the location process, including the distribution of distance computations per frame.
+-   **Output to STDOUT:** Prints the association of each new input frame with its closest cluster(s) directly to standard output.
+
+**Example `gric-locate` STDOUT:**
+When `gric-locate` is run, its standard output will look similar to this, mapping each frame index to its closest cluster(s) and their respective distances:
+```
+0: 6 (0.0032)
+1: 0 (0.0028)
+2: 0 (0.0028)
+3: 6 (0.0014)
+4: 0 (0.0030)
+...
+```
+
+**Usage Example:**
+
+First, run `gric-cluster` to create a reference cluster map:
+```bash
+./build/gric-cluster 0.005 -anchors -avg -outdir out_benchmark/cube_test.clusterdat gric/cube.fits
+# OUTPUT:
+# out_benchmark/cube_test.clusterdat/anchors.fits
+# out_benchmark/cube_test.clusterdat/dcc.txt
+# out_benchmark/cube_test.clusterdat/cluster_run.log
+```
+Then, use `gric-locate` to classify new data frames (`gric/imgsci.fits`) against the created cluster map. The results, including performance statistics, are written to `locate_run.log` within the output directory.
+```bash
+./build/gric-locate out_benchmark/cube_test.clusterdat/anchors.fits out_benchmark/cube_test.clusterdat/dcc.txt gric/imgsci.fits 1 out_benchmark/cube_test.clusterdat
+# OUTPUT:
+# (stdout will show frame mappings as shown above)
+# out_benchmark/cube_test.clusterdat/locate_run.log
+```
+Finally, visualize the distribution of distance computations using `gric-locate-plot`:
+```bash
+./build/gric-locate-plot out_benchmark/cube_test.clusterdat/locate_run.log benchmarks/locate_benchmark_histogram.png
+# OUTPUT:
+# benchmarks/locate_benchmark_histogram.png
+```
+
+## gric-locate Distance Computation Histogram
+
+This plot shows the distribution of distance computations performed by `gric-locate` for each frame during the location process. It's a key indicator of the efficiency of the pruning strategy.
+
+![gric-locate Distance Computation Histogram](./plots/locate_results.png)```
 
 ### Large number of frames in high dimension
 
@@ -262,3 +314,4 @@ $CLPLOT 2DcircleP10n.txt clusteroutdir/cluster_run.log
 # 1.0 
 #
 $RNUCLEXEC $RLIM -maxcl 10000 -pred[10,100,1] -maxim $NBSAMPLE 2DcircleP10n.txt
+

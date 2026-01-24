@@ -7,7 +7,11 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -funroll-loops")
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin" AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "arm64")
+    set(CMAKE_C_FLAGS_RELEASE "-O3 -funroll-loops -arch arm64")
+else()
+    set(CMAKE_C_FLAGS_RELEASE "-O3 -funroll-loops")
+endif()
 
 find_package(PkgConfig REQUIRED)
 
@@ -89,6 +93,9 @@ target_link_libraries(gric-mktxtseq m)
 add_executable(gric-plot src/plot_clusters.c)
 target_link_libraries(gric-plot ${PNG_LIBRARIES} m)
 
+add_executable(gric-locate-plot src/gric-locate-plot.c)
+target_link_libraries(gric-locate-plot ${PNG_LIBRARIES} m)
+
 add_executable(gric-mkclusteredfile src/mkclusteredfile.c)
 target_link_libraries(gric-mkclusteredfile m)
 
@@ -146,3 +153,8 @@ if (OpenMP_C_FOUND)
     target_compile_definitions(gric-info PRIVATE USE_OPENMP)
     target_compile_definitions(gric-info PRIVATE OPENMP_VERSION_STR=\"${OpenMP_C_VERSION}\")
 endif()
+
+# gric-locate tool
+add_executable(gric-locate src/gric-locate.c src/frameread.c src/png_io.c)
+target_link_libraries(gric-locate m ${CFITSIO_LIBRARIES} ${FFMPEG_LIBRARIES} ${PNG_LIBRARIES})
+
