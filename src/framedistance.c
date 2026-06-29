@@ -1,4 +1,5 @@
 #include "common.h"
+#include "framedistance.h"
 #include <math.h>
 #include <stddef.h>
 
