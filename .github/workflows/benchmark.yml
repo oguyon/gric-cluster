@@ -20,11 +20,14 @@ jobs:
 
     - name: Run Benchmarks
       run: |
-        chmod +x benchmarks.bash
-        ./benchmarks.bash
+        cd benchmarks
+        chmod +x runbenchmark
+        ./runbenchmark
 
     - name: Upload Results
       uses: actions/upload-artifact@v4
       with:
         name: benchmark-results
-        path: benchmark/
+        path: |
+          benchmarks/benchmark_out/
+          benchmarks/benchmark_summary.md
