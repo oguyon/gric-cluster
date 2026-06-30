@@ -92,6 +92,17 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
         }
     }
 
+    // Clear the now-unused last row/col so newly created clusters don't inherit stale cache/state.
+    int last = state->num_clusters - 1;
+    for (int r = 0; r < N; r++) {
+        state->transition_matrix[last * N + r] = 0;
+        state->transition_matrix[r * N + last] = 0;
+        state->dccarray[last * N + r] = -1.0;
+        state->dccarray[r * N + last] = -1.0;
+    }
+    state->dccarray[last * N + last] = 0.0;
+    memset(&state->clusters[last], 0, sizeof(Cluster));
+
     // 6. Correct Assignments Update Loop
     for (long f = 0; f < state->total_frames_processed; f++) {
         int a = state->assignments[f];
