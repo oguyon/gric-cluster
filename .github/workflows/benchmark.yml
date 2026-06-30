@@ -31,3 +31,4 @@ jobs:
         path: |
           benchmarks/benchmark_out/
           benchmarks/benchmark_summary.md
+          benchmarks/*.png
