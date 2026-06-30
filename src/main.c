@@ -303,7 +303,6 @@ int main(int argc, char *argv[])
     {
         free(out_dir);
         out_dir = NULL;
-        out_dir_alloc = 0;
     }
 
     ClusterState state;
