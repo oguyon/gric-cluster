@@ -15,7 +15,8 @@
 double fmatch(double dr, double a, double b);
 
 /**
- * @brief Computes minimum distance between a point and a candidate point using 4-point configuration.
+ * @brief Computes minimum distance between a point and a candidate point using
+ * 4-point configuration.
  *
  * Calculates the Euclidean distance from a new 4th point to a candidate 3rd point,
  * using known distances to two base points (1 and 2). This utilizes 2D triangulation.
@@ -30,10 +31,12 @@ double fmatch(double dr, double a, double b);
 double calc_min_dist_4pt(double d14, double d24, double d12, double d13, double d23);
 
 /**
- * @brief Computes minimum distance between a point and a candidate point using 5-point configuration.
+ * @brief Computes minimum distance between a point and a candidate point using
+ * 5-point configuration.
  *
- * Solves 3D triangulation coordinates for a point F (current frame) and T (target candidate cluster anchor)
- * using their known Euclidean distances to 3 fixed anchors (C1, C2, C3). Reconstructs their coordinates
+ * Solves 3D triangulation coordinates for a point F (current frame) and T (target
+ * candidate cluster anchor) using their known Euclidean distances to 3 fixed anchors
+ * (C1, C2, C3). Reconstructs their coordinates
  * in a local 3D coordinate system and returns the Euclidean distance between F and T.
  *
  * @param d_f_c1 Distance from frame F to C1.
@@ -45,10 +48,10 @@ double calc_min_dist_4pt(double d14, double d24, double d12, double d13, double 
  * @param d_c1_c2 Distance between C1 and C2.
  * @param d_c1_c3 Distance between C1 and C3.
  * @param d_c2_c3 Distance between C2 and C3.
- * @return The computed distance between F and T in reconstructed 3D space, or 0.0 if singular geometry.
+ * @return The computed distance between F and T in reconstructed 3D space, or 0.0 if
+ * singular geometry.
  */
-double calc_min_dist_5pt(double d_f_c1, double d_f_c2, double d_f_c3,
-                         double d_t_c1, double d_t_c2, double d_t_c3,
-                         double d_c1_c2, double d_c1_c3, double d_c2_c3);
+double calc_min_dist_5pt(double d_f_c1, double d_f_c2, double d_f_c3, double d_t_c1, double d_t_c2,
+                         double d_t_c3, double d_c1_c2, double d_c1_c3, double d_c2_c3);
 
 #endif // CLUSTER_MATH_H

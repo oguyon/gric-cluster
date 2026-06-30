@@ -4,8 +4,8 @@
 #include "common.h"
 
 int init_frameread(char *filename, int stream_mode, int cnt2sync_mode, int filelist_mode);
-Frame* getframe();
-Frame* getframe_at(long index);
+Frame *getframe();
+Frame *getframe_at(long index);
 void free_frame(Frame *frame);
 void close_frameread();
 void reset_frameread();

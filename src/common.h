@@ -1,11 +1,12 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include <stdlib.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <time.h>
 
-typedef struct {
+typedef struct
+{
     double *data;
     long width;
     long height;
@@ -14,13 +15,15 @@ typedef struct {
     struct timespec atime;
 } Frame;
 
-typedef struct {
+typedef struct
+{
     Frame anchor;
     int id;
     double prob;
 } Cluster;
 
-typedef struct {
+typedef struct
+{
     int assignment;
     int num_dists;
     int *cluster_indices;

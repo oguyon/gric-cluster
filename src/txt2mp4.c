@@ -1,45 +1,57 @@
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include <time.h>
 
-void clamp(int *val) {
-    if (*val < 0) *val = 0;
-    if (*val > 255) *val = 255;
+void clamp(int *val)
+{
+    if (*val < 0)
+        *val = 0;
+    if (*val > 255)
+        *val = 255;
 }
 
-void print_help(const char *progname) {
-    printf("Usage: %s <pixel_size> <alpha> <input.txt> <output.mp4> [noise_level] [max_frames]\n\n", progname);
+void print_help(const char *progname)
+{
+    printf("Usage: %s <pixel_size> <alpha> <input.txt> <output.mp4> [noise_level] [max_frames]\n\n",
+           progname);
     printf("Description:\n");
-    printf("  Converts a coordinate text file into an MP4 video sequence. Each line in the input\n");
+    printf(
+        "  Converts a coordinate text file into an MP4 video sequence. Each line in the input\n");
     printf("  file corresponds to one video frame. The program draws a Gaussian spot at the\n");
     printf("  specified coordinates.\n\n");
     printf("Arguments:\n");
     printf("  <pixel_size>   Width and height of the square output video in pixels.\n");
-    printf("  <alpha>        Scaling factor for the Gaussian spot size relative to the frame size.\n");
+    printf(
+        "  <alpha>        Scaling factor for the Gaussian spot size relative to the frame size.\n");
     printf("  <input.txt>    Input text file containing coordinates (x y [z]).\n");
     printf("                 Coordinates are expected in the range [-1.5, 1.5].\n");
     printf("  <output.mp4>   Output video file path.\n");
-    printf("  [noise_level]  (Optional) Amplitude of random noise to add to pixels (0-255). Default: 0.0\n");
+    printf("  [noise_level]  (Optional) Amplitude of random noise to add to pixels (0-255). "
+           "Default: 0.0\n");
     printf("  [max_frames]   (Optional) Maximum number of frames to process. Default: all.\n\n");
     printf("Options:\n");
     printf("  -h, --help     Show this help message.\n");
 }
 
-int main(int argc, char *argv[]) {
-    if (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+int main(int argc, char *argv[])
+{
+    if (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0))
+    {
         print_help(argv[0]);
         return 0;
     }
 
-    if (argc < 5) {
+    if (argc < 5)
+    {
         print_help(argv[0]);
         return 1;
     }
 
     int size = atoi(argv[1]);
-    if (size <= 0) {
+    if (size <= 0)
+    {
         fprintf(stderr, "Error: pixel_size must be positive.\n");
         return 1;
     }
@@ -48,17 +60,20 @@ int main(int argc, char *argv[]) {
     char *input_file = argv[3];
     char *output_file = argv[4];
     double noise_level = 0.0;
-    if (argc > 5) {
+    if (argc > 5)
+    {
         noise_level = atof(argv[5]);
     }
-    
+
     int max_frames = -1;
-    if (argc > 6) {
+    if (argc > 6)
+    {
         max_frames = atoi(argv[6]);
     }
 
     FILE *fin = fopen(input_file, "r");
-    if (!fin) {
+    if (!fin)
+    {
         fprintf(stderr, "Error: Cannot open input file %s\n", input_file);
         return 1;
     }
@@ -75,20 +90,23 @@ int main(int argc, char *argv[]) {
     // -crf 10: high quality (lower is better, 0 is lossless)
     // -preset slow: better compression/quality trade-off
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), 
-        "ffmpeg -y -f rawvideo -vcodec rawvideo -pix_fmt rgb24 -s %dx%d -r 30 -i - -c:v libx264 -pix_fmt yuv420p -crf 10 -preset slow \"%s\"", 
-        size, size, output_file);
+    snprintf(cmd, sizeof(cmd),
+             "ffmpeg -y -f rawvideo -vcodec rawvideo -pix_fmt rgb24 -s %dx%d -r 30 -i - -c:v "
+             "libx264 -pix_fmt yuv420p -crf 10 -preset slow \"%s\"",
+             size, size, output_file);
 
     fprintf(stderr, "Running: %s\n", cmd);
     FILE *pipe = popen(cmd, "w");
-    if (!pipe) {
+    if (!pipe)
+    {
         fprintf(stderr, "Error: Cannot open pipe to ffmpeg.\n");
         fclose(fin);
         return 1;
     }
 
     unsigned char *frame = (unsigned char *)malloc(size * size * 3);
-    if (!frame) {
+    if (!frame)
+    {
         fprintf(stderr, "Error: Memory allocation failed.\n");
         fclose(fin);
         pclose(pipe);
@@ -100,18 +118,23 @@ int main(int argc, char *argv[]) {
     char line[1024];
     int frame_count = 0;
 
-    while (fgets(line, sizeof(line), fin)) {
-        if (max_frames > 0 && frame_count >= max_frames) break;
-        
+    while (fgets(line, sizeof(line), fin))
+    {
+        if (max_frames > 0 && frame_count >= max_frames)
+            break;
+
         // Skip comments and empty lines
-        if (line[0] == '#' || line[0] == '\n' || strlen(line) == 0) continue;
+        if (line[0] == '#' || line[0] == '\n' || strlen(line) == 0)
+            continue;
 
         double v1, v2, v3;
         int parsed = sscanf(line, "%lf %lf %lf", &v1, &v2, &v3);
-        if (parsed < 2) {
+        if (parsed < 2)
+        {
             continue; // parsing failed
         }
-        if (parsed == 2) {
+        if (parsed == 2)
+        {
             v3 = 1.0;
         }
 
@@ -121,7 +144,7 @@ int main(int argc, char *argv[]) {
         // Coordinates
         // x: -1.5 (left) to 1.5 (right)
         // y: -1.5 (bottom) to 1.5 (top)
-        
+
         double cx_rel = (v1 + 1.5) / 3.0; // 0 to 1
         double cy_rel = (v2 + 1.5) / 3.0; // 0 to 1
 
@@ -140,44 +163,54 @@ int main(int argc, char *argv[]) {
         int min_y = (int)(cy - radius_bound);
         int max_y = (int)(cy + radius_bound);
 
-        if (min_x < 0) min_x = 0;
-        if (max_x >= size) max_x = size - 1;
-        if (min_y < 0) min_y = 0;
-        if (max_y >= size) max_y = size - 1;
+        if (min_x < 0)
+            min_x = 0;
+        if (max_x >= size)
+            max_x = size - 1;
+        if (min_y < 0)
+            min_y = 0;
+        if (max_y >= size)
+            max_y = size - 1;
 
         // Draw Gaussian Spot
-        for (int y = min_y; y <= max_y; y++) {
-            for (int x = min_x; x <= max_x; x++) {
+        for (int y = min_y; y <= max_y; y++)
+        {
+            for (int x = min_x; x <= max_x; x++)
+            {
                 double dx = x - cx;
                 double dy = y - cy;
-                double dist2 = dx*dx + dy*dy;
-                
+                double dist2 = dx * dx + dy * dy;
+
                 // Gaussian function: I = I_peak * exp(-dist^2 / (2*sigma^2))
                 double val_f = 255.0 * exp(-dist2 / two_sigma2);
-                
+
                 int val = (int)(val_f + 0.5);
-                if (val > 255) val = 255; // Should not happen with 255 peak, but safety
-                
-                if (val > 0) {
+                if (val > 255)
+                    val = 255; // Should not happen with 255 peak, but safety
+
+                if (val > 0)
+                {
                     int idx = (y * size + x) * 3;
-                    frame[idx] = (unsigned char)val;   // R
-                    frame[idx+1] = (unsigned char)val; // G
-                    frame[idx+2] = (unsigned char)val; // B
+                    frame[idx] = (unsigned char)val;     // R
+                    frame[idx + 1] = (unsigned char)val; // G
+                    frame[idx + 2] = (unsigned char)val; // B
                 }
             }
         }
 
         // Apply Noise
-        if (noise_level > 0.0) {
-            for (int i = 0; i < size * size * 3; i++) {
+        if (noise_level > 0.0)
+        {
+            for (int i = 0; i < size * size * 3; i++)
+            {
                 // Random float -0.5 to 0.5
-                double r = ((double)rand() / RAND_MAX) - 0.5; 
+                double r = ((double)rand() / RAND_MAX) - 0.5;
                 // Scale by noise level (assuming noise_level is 0-255 range or 0-1 range?)
                 // "amount of random noise". Let's assume it's pixel value delta magnitude.
                 // If user passes 50, we add random -50 to +50.
                 // But typically noise is sigma.
                 // Let's interpret "amount" as the amplitude.
-                
+
                 int noise_val = (int)(r * 2.0 * noise_level); // range [-noise, +noise]
                 int val = frame[i] + noise_val;
                 clamp(&val);

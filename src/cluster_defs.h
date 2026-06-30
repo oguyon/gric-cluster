@@ -1,19 +1,21 @@
 #ifndef CLUSTER_DEFS_H
 #define CLUSTER_DEFS_H
 
-#include <stdio.h>
-#include <signal.h>
 #include "common.h"
+#include <signal.h>
+#include <stdio.h>
 
 // Max Cluster Strategy Enum
-typedef enum {
+typedef enum
+{
     MAXCL_STOP = 0,
     MAXCL_DISCARD = 1,
     MAXCL_MERGE = 2
 } MaxClustStrategy;
 
 // Configuration structure
-typedef struct {
+typedef struct
+{
     double rlim;
     int auto_rlim_mode;
     double auto_rlim_factor;
@@ -31,9 +33,9 @@ typedef struct {
     int verbose_level;
     int fitsout_mode;
     int pngout_mode;
-    int filelist_mode; // Added for reading list of files
+    int filelist_mode;     // Added for reading list of files
     int stream_input_mode; // Added for ImageStreamIO
-    int cnt2sync_mode; // Added for cnt2 sync
+    int cnt2sync_mode;     // Added for cnt2 sync
     double fmatch_a;
     double fmatch_b;
     int max_gprob_visitors;
@@ -46,7 +48,7 @@ typedef struct {
     double tm_mixing_coeff;
     MaxClustStrategy maxcl_strategy;
     double discard_fraction;
-    
+
     // Output control flags
     int output_dcc;
     int output_tm;
@@ -59,14 +61,16 @@ typedef struct {
 } ClusterConfig;
 
 // VisitorList structure
-typedef struct {
+typedef struct
+{
     int *frames;
     int count;
     int capacity;
 } VisitorList;
 
 // State structure
-typedef struct {
+typedef struct
+{
     Cluster *clusters;
     VisitorList *cluster_visitors;
     double *current_gprobs;
@@ -86,12 +90,13 @@ typedef struct {
     int max_steps_recorded;
     long *transition_matrix;
     double *mixed_probs;
-    long *dist_counts; // Histogram of distance counts
+    long *dist_counts;           // Histogram of distance counts
     long *pruned_counts_by_dist; // Histogram of pruned counts
 } ClusterState;
 
 // Candidate structure for sorting
-typedef struct {
+typedef struct
+{
     int id;
     double p;
 } Candidate;

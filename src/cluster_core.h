@@ -20,6 +20,7 @@ int compare_doubles(const void *a, const void *b);
  * Wraps the raw `framedist` call, records statistics, writes to the distance log if configured,
  * and prints verbose traces if requested.
  */
-double get_dist(Frame *a, Frame *b, int cluster_idx, double cluster_prob, double current_gprob, ClusterConfig *config, ClusterState *state);
+double get_dist(Frame *a, Frame *b, int cluster_idx, double cluster_prob, double current_gprob,
+                ClusterConfig *config, ClusterState *state);
 
 #endif // CLUSTER_CORE_H
