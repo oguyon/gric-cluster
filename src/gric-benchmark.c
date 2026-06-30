@@ -492,6 +492,15 @@ int main(
                             config.extra_options[config.extra_options_count++] = merged;
                             optind++;
                         }
+                        else
+                        {
+                            config.extra_options[config.extra_options_count++] = optarg;
+                            if (config.extra_options_count < MAX_OPTIONS)
+                            {
+                                config.extra_options[config.extra_options_count++] = argv[optind];
+                                optind++;
+                            }
+                        }
                     }
                     else
                     {
@@ -527,7 +536,7 @@ int main(
 
             if (strcmp(config.extra_options[ii], "-maxcl") == 0)
             {
-                if (ii + 1 < config.extra_options_count)
+                if (ii + 1 < config.extra_options_count && config.extra_options[ii + 1][0] != '-')
                 {
                     config.maxcl = atoi(config.extra_options[ii + 1]);
                     /* Free if dynamically allocated */
@@ -598,7 +607,7 @@ int main(
             }
             else if (strcmp(config.extra_options[ii], "-maxim") == 0)
             {
-                if (ii + 1 < config.extra_options_count)
+                if (ii + 1 < config.extra_options_count && config.extra_options[ii + 1][0] != '-')
                 {
                     config.maxim = atoi(config.extra_options[ii + 1]);
                     config.maxim_set = 1;
