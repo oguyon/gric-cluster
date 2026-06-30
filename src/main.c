@@ -46,7 +46,10 @@ int main(int argc, char *argv[])
                                    "%s%s", argv[arg_idx],
                                    (arg_idx < argc - 1) ? " " : "");
             if (written < 0 || (size_t)written >= cmdline_remaining)
+            {
+                fprintf(stderr, "Warning: command line string truncated\n");
                 break;
+            }
             cmdline_pos += (size_t)written;
             cmdline_remaining -= (size_t)written;
         }
