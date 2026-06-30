@@ -15,7 +15,8 @@
  * @param max_candidates Maximum size of candidates to return.
  * @return Number of valid candidates found.
  */
-int get_prediction_candidates(ClusterState *state, ClusterConfig *config, int *candidates, int max_candidates);
+int get_prediction_candidates(ClusterState *state, ClusterConfig *config, int *candidates,
+                              int max_candidates);
 
 /**
  * @brief Uses 5-point configuration math to prune non-matching cluster candidates.
@@ -28,6 +29,7 @@ int get_prediction_candidates(ClusterState *state, ClusterConfig *config, int *c
  * @param temp_dists Array of computed distances corresponding to indices.
  * @param temp_count Number of entries in temp_indices and temp_dists.
  */
-void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int *temp_indices, double *temp_dists, int temp_count);
+void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int *temp_indices,
+                          double *temp_dists, int temp_count);
 
 #endif // CLUSTER_PRUNE_H

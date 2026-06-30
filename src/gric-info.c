@@ -1,27 +1,34 @@
 #include <stdio.h>
 
-#define ANSI_COLOR_GREEN   "\x1b[32m"
-#define ANSI_COLOR_RED     "\x1b[31m"
-#define ANSI_COLOR_RESET   "\x1b[0m"
-#define ANSI_BOLD          "\x1b[1m"
+#define ANSI_COLOR_GREEN "\x1b[32m"
+#define ANSI_COLOR_RED "\x1b[31m"
+#define ANSI_COLOR_RESET "\x1b[0m"
+#define ANSI_BOLD "\x1b[1m"
 
-void print_module_info(const char *name, int enabled, const char *version, const char *location) {
+void print_module_info(const char *name, int enabled, const char *version, const char *location)
+{
     printf("%-20s: ", name);
-    if (enabled) {
+    if (enabled)
+    {
         printf("%sENABLED%s", ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
-        if (version && version[0] != '\0') {
+        if (version && version[0] != '\0')
+        {
             printf(" (Version: %s)", version);
         }
-        if (location && location[0] != '\0') {
+        if (location && location[0] != '\0')
+        {
             printf("\n%22s Location: %s", "", location);
         }
-    } else {
+    }
+    else
+    {
         printf("%sDISABLED%s", ANSI_COLOR_RED, ANSI_COLOR_RESET);
     }
     printf("\n");
 }
 
-int main() {
+int main()
+{
     printf("%sGRIC-CLUSTER Optional Modules Information%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
     printf("=========================================\n\n");
 
