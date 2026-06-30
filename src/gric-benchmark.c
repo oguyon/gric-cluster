@@ -166,6 +166,10 @@ static void print_help(
            ANSI_BOLD_GREEN, progname, ANSI_COLOR_RESET);
     printf("  %s$%s %s%s%s -p 2Dspiral-shuffle -o \"-gprob\" -o \"-fmatcha 1.0\"\n",
            ANSI_COLOR_GREY, ANSI_COLOR_RESET, ANSI_BOLD_GREEN, progname, ANSI_COLOR_RESET);
+
+    printf("\n%sCOLOR MODE%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+    printf("  ANSI colors are enabled by default.\n");
+    printf("  Set the NO_COLOR environment variable to disable colored output.\n");
 } // print_help
 
 /**
@@ -335,6 +339,10 @@ static void split_args(
     while (token != NULL && *argc < max_args - 1)
     {
         argv[*argc] = strdup(token);
+        if (argv[*argc] == NULL)
+        {
+            break;
+        }
         (*argc)++;
         token = strtok(NULL, " \t\r\n");
     }
@@ -380,7 +388,8 @@ static void parse_metrics(
             char val[128] = "";
             if (sscanf(line, "Processing time: %127s", val) == 1)
             {
-                strcpy(out_time, val);
+                strncpy(out_time, val, 63);
+                out_time[63] = '\0';
             }
         }
         else if (strstr(line, "Framedist calls:") != NULL)
@@ -388,7 +397,8 @@ static void parse_metrics(
             char val[128] = "";
             if (sscanf(line, "Framedist calls: %127s", val) == 1)
             {
-                strcpy(out_dists, val);
+                strncpy(out_dists, val, 63);
+                out_dists[63] = '\0';
             }
         }
         else if (strstr(line, "Total clusters:") != NULL)
@@ -396,7 +406,8 @@ static void parse_metrics(
             char val[128] = "";
             if (sscanf(line, "Total clusters: %127s", val) == 1)
             {
-                strcpy(out_clusters, val);
+                strncpy(out_clusters, val, 63);
+                out_clusters[63] = '\0';
             }
         }
         else if (strstr(line, "Maximum resident set size") != NULL)
@@ -407,7 +418,8 @@ static void parse_metrics(
                 char val[128] = "";
                 if (sscanf(colon + 1, "%127s", val) == 1)
                 {
-                    strcpy(out_mem, val);
+                    strncpy(out_mem, val, 63);
+                    out_mem[63] = '\0';
                 }
             }
         }
@@ -432,12 +444,15 @@ int main(
         {"type",     required_argument, 0, 't'},
         {"options",  required_argument, 0, 'o'},
         {"build",    no_argument,       0, 'b'},
+        {"mp4r",     no_argument,       0, 1001},
+        {"maxcl",    required_argument, 0, 1002},
+        {"maxim",    required_argument, 0, 1003},
         {0, 0, 0, 0}
     };
 
     int opt;
     int option_index = 0;
-    while ((opt = getopt_long(argc, argv, "hn:r:p:t:o:b", long_options, &option_index)) != -1)
+    while ((opt = getopt_long_only(argc, argv, "hn:r:p:t:o:b", long_options, &option_index)) != -1)
     {
         switch (opt)
         {
@@ -471,39 +486,20 @@ int main(
             case 'b':
                 config.build_first = 1;
                 break;
-            default:
-                /* Handle extra flags matching the legacy runbenchmark script */
+            case 1001: /* -mp4r */
+                config.reuse_mp4 = 1;
                 break;
-        }
-    }
-
-    /* Handle remaining options without short equivalents (like -mp4r, -maxcl, -maxim) */
-    for (int ii = optind; ii < argc; ii++)
-    {
-        if (strcmp(argv[ii], "-mp4r") == 0)
-        {
-            config.reuse_mp4 = 1;
-        }
-        else if (strcmp(argv[ii], "-maxcl") == 0)
-        {
-            if (ii + 1 < argc)
-            {
-                config.maxcl = atoi(argv[++ii]);
-            }
-        }
-        else if (strcmp(argv[ii], "-maxim") == 0)
-        {
-            if (ii + 1 < argc)
-            {
-                config.maxim = atoi(argv[++ii]);
+            case 1002: /* -maxcl */
+                config.maxcl = atoi(optarg);
+                break;
+            case 1003: /* -maxim */
+                config.maxim = atoi(optarg);
                 config.maxim_set = 1;
-            }
-        }
-        else if (argv[ii][0] == '-')
-        {
-            fprintf(stderr, "Error: Unknown option %s\n", argv[ii]);
-            print_help(argv[0]);
-            return 1;
+                break;
+            default:
+                fprintf(stderr, "Error: Unknown option\n");
+                print_help(argv[0]);
+                return 1;
         }
     }
 
@@ -558,10 +554,6 @@ int main(
     {
         size_t len = strlen(cwd);
         if (len >= 11 && strcmp(cwd + len - 11, "/benchmarks") == 0)
-        {
-            in_benchmarks_dir = 1;
-        }
-        else if (strcmp(cwd, "benchmarks") == 0)
         {
             in_benchmarks_dir = 1;
         }
@@ -801,7 +793,8 @@ int main(
 
         for (int jj = 0; jj < config.extra_options_count; jj++)
         {
-            split_args(config.extra_options[jj], cluster_args, &cluster_argc, 256);
+            /* Reserve 3 slots for -stream, input_file, and the NULL terminator */
+            split_args(config.extra_options[jj], cluster_args, &cluster_argc, 256 - 3);
         }
 
         if (strcmp(config.type, "stream") == 0)
