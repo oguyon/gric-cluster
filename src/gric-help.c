@@ -28,7 +28,7 @@ static const char *ansi_color_grey = "";
 #define ANSI_COLOR_GREY    ansi_color_grey
 
 /**
- * @brief Initializes the dynamic colors unless NO_COLOR is set.
+ * @brief Initializes the dynamic colors when NO_COLOR is not present.
  */
 static void init_colors(void)
 {
