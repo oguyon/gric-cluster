@@ -480,7 +480,23 @@ int main(
             case 'o':
                 if (config.extra_options_count < MAX_OPTIONS)
                 {
-                    config.extra_options[config.extra_options_count++] = optarg;
+                    /* Merge option flag and its value if passed separately */
+                    if (optarg[0] == '-' && optind < argc && argv[optind][0] != '-')
+                    {
+                        size_t len = strlen(optarg) + 2 + strlen(argv[optind]);
+                        char *merged = malloc(len);
+
+                        if (merged != NULL)
+                        {
+                            snprintf(merged, len, "%s %s", optarg, argv[optind]);
+                            config.extra_options[config.extra_options_count++] = merged;
+                            optind++;
+                        }
+                    }
+                    else
+                    {
+                        config.extra_options[config.extra_options_count++] = optarg;
+                    }
                 }
                 break;
             case 'b':
@@ -500,6 +516,164 @@ int main(
                 fprintf(stderr, "Error: Unknown option\n");
                 print_help(argv[0]);
                 return 1;
+        }
+    }
+
+    /* Process and filter extra options to override native configuration */
+    {
+        for (int ii = 0; ii < config.extra_options_count; )
+        {
+            int processed = 0;
+
+            if (strcmp(config.extra_options[ii], "-maxcl") == 0)
+            {
+                if (ii + 1 < config.extra_options_count)
+                {
+                    config.maxcl = atoi(config.extra_options[ii + 1]);
+                    /* Free if dynamically allocated */
+                    {
+                        int is_argv_1 = 0;
+                        int is_argv_2 = 0;
+
+                        for (int jj = 0; jj < argc; jj++)
+                        {
+                            if (config.extra_options[ii] == argv[jj])
+                            {
+                                is_argv_1 = 1;
+                            }
+                            if (config.extra_options[ii + 1] == argv[jj])
+                            {
+                                is_argv_2 = 1;
+                            }
+                        }
+
+                        if (!is_argv_1)
+                        {
+                            free(config.extra_options[ii]);
+                        }
+                        if (!is_argv_2)
+                        {
+                            free(config.extra_options[ii + 1]);
+                        }
+                    }
+
+                    /* Shift elements */
+                    for (int jj = ii; jj < config.extra_options_count - 2; jj++)
+                    {
+                        config.extra_options[jj] = config.extra_options[jj + 2];
+                    }
+                    config.extra_options_count -= 2;
+                    processed = 1;
+                }
+            }
+            else if (strncmp(config.extra_options[ii], "-maxcl ", 7) == 0)
+            {
+                config.maxcl = atoi(config.extra_options[ii] + 7);
+                /* Free if dynamically allocated */
+                {
+                    int is_argv = 0;
+
+                    for (int jj = 0; jj < argc; jj++)
+                    {
+                        if (config.extra_options[ii] == argv[jj])
+                        {
+                            is_argv = 1;
+                            break;
+                        }
+                    }
+
+                    if (!is_argv)
+                    {
+                        free(config.extra_options[ii]);
+                    }
+                }
+
+                /* Shift elements */
+                for (int jj = ii; jj < config.extra_options_count - 1; jj++)
+                {
+                    config.extra_options[jj] = config.extra_options[jj + 1];
+                }
+                config.extra_options_count -= 1;
+                processed = 1;
+            }
+            else if (strcmp(config.extra_options[ii], "-maxim") == 0)
+            {
+                if (ii + 1 < config.extra_options_count)
+                {
+                    config.maxim = atoi(config.extra_options[ii + 1]);
+                    config.maxim_set = 1;
+                    /* Free if dynamically allocated */
+                    {
+                        int is_argv_1 = 0;
+                        int is_argv_2 = 0;
+
+                        for (int jj = 0; jj < argc; jj++)
+                        {
+                            if (config.extra_options[ii] == argv[jj])
+                            {
+                                is_argv_1 = 1;
+                            }
+                            if (config.extra_options[ii + 1] == argv[jj])
+                            {
+                                is_argv_2 = 1;
+                            }
+                        }
+
+                        if (!is_argv_1)
+                        {
+                            free(config.extra_options[ii]);
+                        }
+                        if (!is_argv_2)
+                        {
+                            free(config.extra_options[ii + 1]);
+                        }
+                    }
+
+                    /* Shift elements */
+                    for (int jj = ii; jj < config.extra_options_count - 2; jj++)
+                    {
+                        config.extra_options[jj] = config.extra_options[jj + 2];
+                    }
+                    config.extra_options_count -= 2;
+                    processed = 1;
+                }
+            }
+            else if (strncmp(config.extra_options[ii], "-maxim ", 7) == 0)
+            {
+                config.maxim = atoi(config.extra_options[ii] + 7);
+                config.maxim_set = 1;
+                /* Free if dynamically allocated */
+                {
+                    int is_argv = 0;
+
+                    for (int jj = 0; jj < argc; jj++)
+                    {
+                        if (config.extra_options[ii] == argv[jj])
+                        {
+                            is_argv = 1;
+                            break;
+                        }
+                    }
+
+                    if (!is_argv)
+                    {
+                        free(config.extra_options[ii]);
+                    }
+                }
+
+                /* Shift elements */
+                for (int jj = ii; jj < config.extra_options_count - 1; jj++)
+                {
+                    config.extra_options[jj] = config.extra_options[jj + 1];
+                }
+                config.extra_options_count -= 1;
+                processed = 1;
+            }
+
+            if (!processed)
+            {
+                ii++;
+            }
         }
     }
 
@@ -846,6 +1020,26 @@ int main(
             fprintf(sum_fp, "| %s | %s | gric | %s | %s | %s | %s |\n",
                     pattern, config.type, m_time, m_dists, m_clusters, m_mem);
             fclose(sum_fp);
+        }
+    }
+
+    /* Clean up allocated extra options */
+    for (int ii = 0; ii < config.extra_options_count; ii++)
+    {
+        int is_argv = 0;
+
+        for (int jj = 0; jj < argc; jj++)
+        {
+            if (config.extra_options[ii] == argv[jj])
+            {
+                is_argv = 1;
+                break;
+            }
+        }
+
+        if (!is_argv)
+        {
+            free(config.extra_options[ii]);
         }
     }
 
