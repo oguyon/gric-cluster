@@ -104,26 +104,50 @@ void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int *temp_
                 if (!state->clmembflag[k]) continue;
                 if (k == c1 || k == c2 || k == c3) continue;
 
-                // Lazy load k distances
+                // Lazy load k distances (thread-safe cache fill)
                 double d_k_c1 = state->dccarray[k * config->maxnbclust + c1];
                 if (d_k_c1 < 0) {
-                        d_k_c1 = get_dist(&state->clusters[k].anchor, &state->clusters[c1].anchor, -1, -1.0, -1.0, config, state);
-                        state->dccarray[k * config->maxnbclust + c1] = d_k_c1;
-                        state->dccarray[c1 * config->maxnbclust + k] = d_k_c1;
+                    #ifdef _OPENMP
+                    #pragma omp critical(dcc_cache)
+                    #endif
+                    {
+                        d_k_c1 = state->dccarray[k * config->maxnbclust + c1];
+                        if (d_k_c1 < 0) {
+                            d_k_c1 = get_dist(&state->clusters[k].anchor, &state->clusters[c1].anchor, -1, -1.0, -1.0, config, state);
+                            state->dccarray[k * config->maxnbclust + c1] = d_k_c1;
+                            state->dccarray[c1 * config->maxnbclust + k] = d_k_c1;
+                        }
+                    }
                 }
 
                 double d_k_c2 = state->dccarray[k * config->maxnbclust + c2];
                 if (d_k_c2 < 0) {
-                        d_k_c2 = get_dist(&state->clusters[k].anchor, &state->clusters[c2].anchor, -1, -1.0, -1.0, config, state);
-                        state->dccarray[k * config->maxnbclust + c2] = d_k_c2;
-                        state->dccarray[c2 * config->maxnbclust + k] = d_k_c2;
+                    #ifdef _OPENMP
+                    #pragma omp critical(dcc_cache)
+                    #endif
+                    {
+                        d_k_c2 = state->dccarray[k * config->maxnbclust + c2];
+                        if (d_k_c2 < 0) {
+                            d_k_c2 = get_dist(&state->clusters[k].anchor, &state->clusters[c2].anchor, -1, -1.0, -1.0, config, state);
+                            state->dccarray[k * config->maxnbclust + c2] = d_k_c2;
+                            state->dccarray[c2 * config->maxnbclust + k] = d_k_c2;
+                        }
+                    }
                 }
 
                 double d_k_c3 = state->dccarray[k * config->maxnbclust + c3];
                 if (d_k_c3 < 0) {
-                        d_k_c3 = get_dist(&state->clusters[k].anchor, &state->clusters[c3].anchor, -1, -1.0, -1.0, config, state);
-                        state->dccarray[k * config->maxnbclust + c3] = d_k_c3;
-                        state->dccarray[c3 * config->maxnbclust + k] = d_k_c3;
+                    #ifdef _OPENMP
+                    #pragma omp critical(dcc_cache)
+                    #endif
+                    {
+                        d_k_c3 = state->dccarray[k * config->maxnbclust + c3];
+                        if (d_k_c3 < 0) {
+                            d_k_c3 = get_dist(&state->clusters[k].anchor, &state->clusters[c3].anchor, -1, -1.0, -1.0, config, state);
+                            state->dccarray[k * config->maxnbclust + c3] = d_k_c3;
+                            state->dccarray[c3 * config->maxnbclust + k] = d_k_c3;
+                        }
+                    }
                 }
 
                 double min_d = calc_min_dist_5pt(d_f_c1, d_f_c2, d_f_c3,
