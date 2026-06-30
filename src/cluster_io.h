@@ -9,6 +9,8 @@ char *create_output_dir_name(const char *input_file);
 // Print usage information
 void print_usage(char *progname);
 
+void init_colors_io(void);
+
 // Print detailed help for a specific keyword
 void print_help_keyword(const char *keyword);
 

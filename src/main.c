@@ -32,6 +32,7 @@ void print_args_on_error(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
+    init_colors_io();
     struct timespec prog_start;
     clock_gettime(CLOCK_REALTIME, &prog_start);
 

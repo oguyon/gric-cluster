@@ -14,14 +14,62 @@
 void write_png_frame(const char *filename, double *data, int width, int height);
 #endif
 
-#define ANSI_COLOR_ORANGE "\x1b[38;5;208m"
-#define ANSI_COLOR_GREEN "\x1b[32m"
-#define ANSI_COLOR_BLUE "\x1b[34m"
-#define ANSI_BG_GREEN "\x1b[42m"
-#define ANSI_COLOR_BLACK "\x1b[30m"
-#define ANSI_COLOR_RESET "\x1b[0m"
-#define ANSI_BOLD "\x1b[1m"
-#define ANSI_UNDERLINE "\x1b[4m"
+#include <unistd.h>
+
+static const char *ansi_color_orange = "";
+static const char *ansi_color_green = "";
+static const char *ansi_color_red = "";
+static const char *ansi_color_blue = "";
+static const char *ansi_bg_green = "";
+static const char *ansi_color_black = "";
+static const char *ansi_color_reset = "";
+static const char *ansi_bold = "";
+static const char *ansi_underline = "";
+static const char *ansi_bold_cyan = "";
+static const char *ansi_bold_green = "";
+static const char *ansi_color_magenta = "";
+static const char *ansi_color_yellow = "";
+static const char *ansi_color_grey = "";
+static const char *ansi_color_cyan = "";
+
+#define ANSI_COLOR_ORANGE  ansi_color_orange
+#define ANSI_COLOR_GREEN   ansi_color_green
+#define ANSI_COLOR_RED     ansi_color_red
+#define ANSI_COLOR_BLUE    ansi_color_blue
+#define ANSI_BG_GREEN      ansi_bg_green
+#define ANSI_COLOR_BLACK   ansi_color_black
+#define ANSI_COLOR_RESET   ansi_color_reset
+#define ANSI_BOLD          ansi_bold
+#define ANSI_UNDERLINE     ansi_underline
+#define ANSI_BOLD_CYAN     ansi_bold_cyan
+#define ANSI_BOLD_GREEN    ansi_bold_green
+#define ANSI_COLOR_MAGENTA ansi_color_magenta
+#define ANSI_COLOR_YELLOW  ansi_color_yellow
+#define ANSI_COLOR_GREY    ansi_color_grey
+#define ANSI_COLOR_CYAN    ansi_color_cyan
+void init_colors_io(void)
+{
+    const char *no_color = getenv("NO_COLOR");
+
+    if (no_color == NULL)
+    {
+        ansi_color_orange = "\x1b[38;5;208m";
+        ansi_color_green = "\x1b[32m";
+        ansi_color_red = "\x1b[31m";
+        ansi_color_blue = "\x1b[34m";
+        ansi_bg_green = "\x1b[42m";
+        ansi_color_black = "\x1b[30m";
+        ansi_color_reset = "\x1b[0m";
+        ansi_bold = "\x1b[1m";
+        ansi_underline = "\x1b[4m";
+        ansi_bold_cyan = "\x1b[1;36m";
+        ansi_bold_green = "\x1b[1;32m";
+        ansi_color_magenta = "\x1b[35m";
+        ansi_color_yellow = "\x1b[33m";
+        ansi_color_grey = "\x1b[90m";
+        ansi_color_cyan = "\x1b[36m";
+    }
+} // init_colors_io
 
 char *create_output_dir_name(const char *input_file)
 {
@@ -452,121 +500,257 @@ void print_help_keyword(const char *keyword)
     }
 }
 
+static void print_colored_usage(const char *usage)
+{
+    printf("  ");
+    const char *p = usage;
+    while (*p == ' ' || *p == '\t')
+    {
+        p++;
+    }
+
+    const char *cmd_start = p;
+    while (*p && *p != ' ' && *p != '\t' && *p != '\n')
+    {
+        p++;
+    }
+    printf("%s%.*s%s", ANSI_BOLD_GREEN, (int)(p - cmd_start), cmd_start, ANSI_COLOR_RESET);
+
+    while (*p)
+    {
+        if (*p == '<')
+        {
+            const char *end = strchr(p, '>');
+            if (end)
+            {
+                printf("%s%.*s%s", ANSI_COLOR_MAGENTA, (int)(end - p + 1), p, ANSI_COLOR_RESET);
+                p = end + 1;
+                continue;
+            }
+        }
+        if (*p == '[')
+        {
+            const char *end = strchr(p, ']');
+            if (end)
+            {
+                printf("%s%.*s%s", ANSI_COLOR_GREY, (int)(end - p + 1), p, ANSI_COLOR_RESET);
+                p = end + 1;
+                continue;
+            }
+        }
+        putchar(*p);
+        p++;
+    }
+    printf("\n");
+}
+
+static void print_colored_line(const char *line)
+{
+    const char *start = line;
+    while (*start == ' ' || *start == '\t')
+    {
+        start++;
+    }
+    if (*start == '-')
+    {
+        printf("%.*s", (int)(start - line), line);
+
+        const char *end = start;
+        while (*end && *end != '\n')
+        {
+            if ((*end == ' ' && *(end + 1) == ' ') || *end == '\t')
+            {
+                break;
+            }
+            end++;
+        }
+
+        const char *p = start;
+        while (p < end)
+        {
+            if (*p == '-')
+            {
+                const char *f_end = p;
+                while (f_end < end && *f_end != ' ' && *f_end != '\t' && *f_end != ',' && *f_end != '<' && *f_end != '[')
+                {
+                    f_end++;
+                }
+                printf("%s%.*s%s", ANSI_COLOR_GREEN, (int)(f_end - p), p, ANSI_COLOR_RESET);
+                p = f_end;
+            }
+            else if (*p == '<')
+            {
+                const char *v_end = p;
+                while (v_end < end && *v_end != '>')
+                {
+                    v_end++;
+                }
+                if (v_end < end)
+                {
+                    printf("%s%.*s%s", ANSI_COLOR_MAGENTA, (int)(v_end - p + 1), p, ANSI_COLOR_RESET);
+                    p = v_end + 1;
+                }
+                else
+                {
+                    putchar(*p);
+                    p++;
+                }
+            }
+            else
+            {
+                putchar(*p);
+                p++;
+            }
+        }
+
+        const char *desc = end;
+        while (*desc)
+        {
+            if (strncmp(desc, "default:", 8) == 0 || strncmp(desc, "Default:", 8) == 0)
+            {
+                printf("%sdefault:%s", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
+                desc += 8;
+                const char *val_end = desc;
+                while (*val_end && *val_end != ')' && *val_end != ',')
+                {
+                    val_end++;
+                }
+                printf("%s%.*s%s", ANSI_COLOR_CYAN, (int)(val_end - desc), desc, ANSI_COLOR_RESET);
+                desc = val_end;
+            }
+            else if (strncmp(desc, "caution", 7) == 0 || strncmp(desc, "Caution", 7) == 0)
+            {
+                printf("%scaution%s", ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
+                desc += 7;
+            }
+            else if (strncmp(desc, "[DISABLED]", 10) == 0)
+            {
+                printf("%s[DISABLED]%s", ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
+                desc += 10;
+            }
+            else
+            {
+                putchar(*desc);
+                desc++;
+            }
+        }
+        printf("\n");
+    }
+    else
+    {
+        int leading_spaces = 0;
+        while (line[leading_spaces] == ' ')
+        {
+            leading_spaces++;
+        }
+        if (leading_spaces == 2 && line[leading_spaces] != '\0')
+        {
+            printf("  %s%s%s\n", ANSI_BOLD, line + 2, ANSI_COLOR_RESET);
+        }
+        else
+        {
+            printf("%s\n", line);
+        }
+    }
+}
+
+static void print_color_mode(void)
+{
+    const char *no_color = getenv("NO_COLOR");
+    printf("\n%sCOLOR MODE%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+    if (no_color == NULL)
+    {
+        printf("  %sENABLED%s (color escape codes are active; disable by setting NO_COLOR=1)\n",
+               ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
+    }
+    else
+    {
+        printf("  %sDISABLED%s (NO_COLOR environment variable is present)\n",
+               ANSI_COLOR_RED, ANSI_COLOR_RESET);
+    }
+} // print_color_mode
+
 void print_help(char *progname)
 {
-    printf("%sNAME%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
+    printf("%sNAME%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  gric-cluster - Clustering tool for image streams and sequences\n\n");
 
-    printf("%sSYNOPSIS%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
-    printf("  %s [options] <rlim> <input_file|stream_name>\n\n", progname);
+    printf("%sUSAGE%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+    char usage[256];
+    snprintf(usage, sizeof(usage), "%s [options] <rlim> <input_file|stream_name>", progname);
+    print_colored_usage(usage);
+    printf("\n");
 
-    printf("%sDESCRIPTION%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
+    printf("%sDESCRIPTION%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  Perform clustering on a stream of images or a pre-recorded file.\n");
-    printf("  Supports FITS, MP4 (via ffmpeg), and raw text input.\n");
+    printf("  Supports FITS, MP4 (via ffmpeg), and raw text input.\n\n");
 
-    printf("\n%sOPTIONS%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
+    printf("%sOPTIONS%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  (Use '%s -h <option>%s' for detailed help on a specific option)\n", progname,
            ANSI_COLOR_RESET);
 
-    printf("\n  %sInput%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
-    printf("    %s%s-stream%s                  Input is an ImageStreamIO stream", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-#ifndef USE_IMAGESTREAMIO
-    printf(" [DISABLED]");
+    print_colored_line("  Input");
+#ifdef USE_IMAGESTREAMIO
+    print_colored_line("    -stream                  Input is an ImageStreamIO stream");
+#else
+    print_colored_line("    -stream                  Input is an ImageStreamIO stream [DISABLED]");
 #endif
-    printf("\n");
-    printf("    %s%s-cnt2sync%s                Enable cnt2 synchronization (increment cnt2 after "
-           "read)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
+    print_colored_line("    -cnt2sync                Enable cnt2 synchronization (increment cnt2 after read)");
 
-    printf("\n  %sClustering Control%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
-    printf("    %s%s-dprob <val>%s             Delta probability (default: 0.01)\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-maxcl <val>%s             Max number of clusters (default: 1000)\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-ncpu <val>%s              Number of CPUs to use (default: 1)\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-maxcl_strategy <str>%s    Strategy when maxcl reached (stop|discard|merge) "
-           "(default: stop)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-discard_frac <val>%s      Fraction of oldest clusters to candidate for "
-           "discard (default: 0.5)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-maxim <val>%s             Max number of frames (default: 100000)\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-gprob%s                   Use geometrical probability\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-fmatcha <val>%s           Set fmatch parameter a (default: 2.0)\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-fmatchb <val>%s           Set fmatch parameter b (default: 0.5)\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-maxvis <val>%s            Max visitors for gprob history (default: 1000)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-pred[l,h,n]%s             Prediction with pattern detection (default: "
-           "10,1000,2)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("                            l: length of pattern to match (recent cluster history)\n");
-    printf("                            h: history size (how far back to search for pattern)\n");
-    printf("                            n: number of prediction candidates to return\n");
-    printf("    %s%s-te4%s                     Use 4-point triangle inequality pruning\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-te5%s                     Use 5-point triangle inequality pruning\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-conf <file>%s             Read options from configuration file\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-confw <file>%s            Write current options to configuration file\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
+    print_colored_line("  Clustering Control");
+    print_colored_line("    -dprob <val>             Delta probability (default: 0.01)");
+    print_colored_line("    -maxcl <val>             Max number of clusters (default: 1000)");
+    print_colored_line("    -ncpu <val>              Number of CPUs to use (default: 1)");
+    print_colored_line("    -maxcl_strategy <str>    Strategy when maxcl reached (stop|discard|merge) (default: stop)");
+    print_colored_line("    -discard_frac <val>      Fraction of oldest clusters to candidate for discard (default: 0.5)");
+    print_colored_line("    -maxim <val>             Max number of frames (default: 100000)");
+    print_colored_line("    -gprob                   Use geometrical probability");
+    print_colored_line("    -fmatcha <val>           Set fmatch parameter a (default: 2.0)");
+    print_colored_line("    -fmatchb <val>           Set fmatch parameter b (default: 0.5)");
+    print_colored_line("    -maxvis <val>            Max visitors for gprob history (default: 1000)");
+    print_colored_line("    -pred[l,h,n]             Prediction with pattern detection (default: 10,1000,2)");
+    print_colored_line("                            l: length of pattern to match (recent cluster history)");
+    print_colored_line("                            h: history size (how far back to search for pattern)");
+    print_colored_line("                            n: number of prediction candidates to return");
+    print_colored_line("    -te4                     Use 4-point triangle inequality pruning");
+    print_colored_line("    -te5                     Use 5-point triangle inequality pruning");
+    print_colored_line("    -conf <file>             Read options from configuration file");
+    print_colored_line("    -confw <file>            Write current options to configuration file");
 
-    printf("\n  %sAnalysis & Debugging%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
-    printf("    %s%s-scandist%s                Measure distance stats\n", ANSI_BOLD, ANSI_UNDERLINE,
-           ANSI_COLOR_RESET);
-    printf("    %s%s-progress%s                Print progress (default: enabled)\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
+    print_colored_line("  Analysis & Debugging");
+    print_colored_line("    -scandist                Measure distance stats");
+    print_colored_line("    -progress                Print progress (default: enabled)");
 
-    printf("\n  %sOutput%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
-    printf("    %s%s-outdir <name>%s           Specify output directory (default: "
-           "<filename>.clusterdat)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-avg%s                     Compute average frame per cluster\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-distall%s                 Save all computed distances\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-pngout%s                  Write output as PNG images", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-#ifndef USE_PNG
-    printf(" [DISABLED]");
+    print_colored_line("  Output");
+    print_colored_line("    -outdir <name>           Specify output directory (default: <filename>.clusterdat)");
+    print_colored_line("    -avg                     Compute average frame per cluster");
+    print_colored_line("    -distall                 Save all computed distances");
+#ifdef USE_PNG
+    print_colored_line("    -pngout                  Write output as PNG images");
+#else
+    print_colored_line("    -pngout                  Write output as PNG images [DISABLED]");
 #endif
-    printf("\n");
-    printf("    %s%s-fitsout%s                 Force FITS output format", ANSI_BOLD, ANSI_UNDERLINE,
-           ANSI_COLOR_RESET);
-#ifndef USE_CFITSIO
-    printf(" [DISABLED]");
+#ifdef USE_CFITSIO
+    print_colored_line("    -fitsout                 Force FITS output format");
+#else
+    print_colored_line("    -fitsout                 Force FITS output format [DISABLED]");
 #endif
-    printf("\n");
-    printf("    %s%s-dcc%s                     Enable dcc.txt output (default: disabled)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-tm_out%s                  Enable transition_matrix.txt output (default: "
-           "disabled)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-anchors%s                 Enable anchors output (default: disabled)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf(
-        "    %s%s-counts%s                  Enable cluster_counts.txt output (default: disabled)\n",
-        ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-no_membership%s           Disable frame_membership.txt output\n", ANSI_BOLD,
-           ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-membership%s              Enable frame_membership.txt output (default: "
-           "enabled)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-discarded%s               Enable discarded_frames.txt output (default: "
-           "disabled)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-clustered%s               Enable *.clustered.txt output (default: disabled)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("    %s%s-clusters%s                Enable individual cluster files (cluster_X) "
-           "(default: disabled)\n",
-           ANSI_BOLD, ANSI_UNDERLINE, ANSI_COLOR_RESET);
-    printf("\n");
+    print_colored_line("    -dcc                     Enable dcc.txt output (default: disabled)");
+    print_colored_line("    -tm_out                  Enable transition_matrix.txt output (default: disabled)");
+    print_colored_line("    -anchors                 Enable anchors output (default: disabled)");
+    print_colored_line("    -counts                  Enable cluster_counts.txt output (default: disabled)");
+    print_colored_line("    -no_membership           Disable frame_membership.txt output");
+    print_colored_line("    -membership              Enable frame_membership.txt output (default: enabled)");
+    print_colored_line("    -discarded               Enable discarded_frames.txt output (default: disabled)");
+    print_colored_line("    -clustered               Enable *.clustered.txt output (default: disabled)");
+    print_colored_line("    -clusters                Enable individual cluster files (cluster_X) (default: disabled)\n");
+
+    printf("%sEXAMPLES%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+    printf("  %s$%s %sgric-cluster%s -scandist test_walk.txt\n", ANSI_COLOR_GREY, ANSI_COLOR_RESET,
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
+    printf("  %s$%s %sgric-cluster%s a1.5 test_walk.txt -clustered %s>%s run.log\n", ANSI_COLOR_GREY, ANSI_COLOR_RESET,
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET, ANSI_COLOR_GREY, ANSI_COLOR_RESET);
+    print_color_mode();
 }
 
 void write_results(ClusterConfig *config, ClusterState *state)

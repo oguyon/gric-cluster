@@ -2,25 +2,96 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+
+static const char *ansi_bold = "";
+static const char *ansi_reset = "";
+static const char *ansi_color_green = "";
+static const char *ansi_bold_cyan = "";
+static const char *ansi_bold_green = "";
+static const char *ansi_color_magenta = "";
+static const char *ansi_color_cyan = "";
+static const char *ansi_color_grey = "";
+static const char *ansi_color_yellow = "";
+static const char *ansi_color_red = "";
+
+static void init_colors(void)
+{
+    const char *no_color = getenv("NO_COLOR");
+
+    if (no_color == NULL)
+    {
+        ansi_bold = "\x1b[1m";
+        ansi_reset = "\x1b[0m";
+        ansi_color_green = "\x1b[32m";
+        ansi_bold_cyan = "\x1b[1;36m";
+        ansi_bold_green = "\x1b[1;32m";
+        ansi_color_magenta = "\x1b[35m";
+        ansi_color_cyan = "\x1b[36m";
+        ansi_color_grey = "\x1b[90m";
+        ansi_color_yellow = "\x1b[33m";
+        ansi_color_red = "\x1b[31m";
+    }
+} // init_colors
+
+static void print_usage(const char *progname)
+{
+    fprintf(stderr, "Usage: %s <input_file> <membership_file> <output_file> [options]\n",
+            progname);
+} // print_usage
+
+static void print_color_mode(void)
+{
+    const char *no_color = getenv("NO_COLOR");
+    printf("\n%sCOLOR MODE%s\n", ansi_bold_cyan, ansi_reset);
+    if (no_color == NULL)
+    {
+        printf("  %sENABLED%s (color escape codes are active; disable by setting NO_COLOR=1)\n",
+               ansi_color_green, ansi_reset);
+    }
+    else
+    {
+        printf("  %sDISABLED%s (NO_COLOR environment variable is present)\n",
+               ansi_color_red, ansi_reset);
+    }
+} // print_color_mode
 
 void print_help(const char *progname)
 {
-    printf("Usage: %s <input_file> <membership_file> <output_file> [options]\n", progname);
-    printf("Description:\n");
+    printf("%sNAME%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  gric-mkclusteredfile - Reconstructs clustered files from membership lists\n\n");
+
+    printf("%sUSAGE%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  %s%s%s %s<input_file>%s %s<membership_file>%s %s<output_file>%s %s[options]%s\n\n",
+           ansi_bold_green, progname, ansi_reset, ansi_color_magenta, ansi_reset,
+           ansi_color_magenta, ansi_reset, ansi_color_magenta, ansi_reset, ansi_color_grey,
+           ansi_reset);
+
+    printf("%sDESCRIPTION%s\n", ansi_bold_cyan, ansi_reset);
     printf("  Reconstructs a clustered output file from the original input coordinates\n");
     printf("  and a frame_membership.txt file.\n");
     printf("  It infers anchors as the first frame encountered for each cluster ID.\n\n");
-    printf("Arguments:\n");
-    printf("  <input_file>       Original input text file (coordinates).\n");
-    printf("  <membership_file>  Frame membership file (index cluster_id).\n");
-    printf("  <output_file>      Output clustered filename.\n\n");
-    printf("Options:\n");
-    printf("  -rlim <val>        Specify radius limit to write to header (useful for plotting).\n");
-    printf("  -h, --help         Show this help message.\n");
-}
+
+    printf("%sOPTIONS%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  %s-rlim%s %s<val>%s          Specify radius limit to write to header\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-h, --help%s           Show this help message\n\n", ansi_color_green, ansi_reset);
+    printf("  Arguments:\n");
+    printf("    %s<input_file>%s       Original input text file (coordinates)\n", ansi_color_magenta,
+           ansi_reset);
+    printf("    %s<membership_file>%s  Frame membership file (index cluster_id)\n", ansi_color_magenta,
+           ansi_reset);
+    printf("    %s<output_file>%s      Output clustered filename\n\n", ansi_color_magenta, ansi_reset);
+
+    printf("%sEXAMPLES%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  %s$%s %s%s%s input.txt membership.txt output_clustered.txt\n", ansi_color_grey,
+           ansi_reset, ansi_bold_green, progname, ansi_reset);
+    print_color_mode();
+} // print_help
 
 int main(int argc, char *argv[])
 {
+    init_colors();
     char *input_fname = NULL;
     char *memb_fname = NULL;
     char *out_fname = NULL;
@@ -49,7 +120,7 @@ int main(int argc, char *argv[])
         else if (argv[arg_idx][0] == '-')
         {
             fprintf(stderr, "Error: Unknown option %s\n", argv[arg_idx]);
-            print_help(argv[0]);
+            print_usage(argv[0]);
             return 1;
         }
         else
@@ -63,7 +134,7 @@ int main(int argc, char *argv[])
             else
             {
                 fprintf(stderr, "Error: Too many arguments.\n");
-                print_help(argv[0]);
+                print_usage(argv[0]);
                 return 1;
             }
         }
@@ -73,7 +144,7 @@ int main(int argc, char *argv[])
     if (!input_fname || !memb_fname || !out_fname)
     {
         fprintf(stderr, "Error: Missing required arguments.\n");
-        print_help(argv[0]);
+        print_usage(argv[0]);
         return 1;
     }
 

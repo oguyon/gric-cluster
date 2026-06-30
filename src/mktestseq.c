@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -207,21 +208,115 @@ void print_args_on_error(int argc, char *argv[])
     fprintf(stderr, "\n");
 }
 
+static const char *ansi_bold = "";
+static const char *ansi_reset = "";
+static const char *ansi_color_green = "";
+static const char *ansi_bold_cyan = "";
+static const char *ansi_bold_green = "";
+static const char *ansi_color_magenta = "";
+static const char *ansi_color_cyan = "";
+static const char *ansi_color_grey = "";
+static const char *ansi_color_yellow = "";
+static const char *ansi_color_red = "";
+
+static void init_colors(void)
+{
+    const char *no_color = getenv("NO_COLOR");
+
+    if (no_color == NULL)
+    {
+        ansi_bold = "\x1b[1m";
+        ansi_reset = "\x1b[0m";
+        ansi_color_green = "\x1b[32m";
+        ansi_bold_cyan = "\x1b[1;36m";
+        ansi_bold_green = "\x1b[1;32m";
+        ansi_color_magenta = "\x1b[35m";
+        ansi_color_cyan = "\x1b[36m";
+        ansi_color_grey = "\x1b[90m";
+        ansi_color_yellow = "\x1b[33m";
+        ansi_color_red = "\x1b[31m";
+    }
+} // init_colors
+
+static void print_usage(const char *progname)
+{
+    fprintf(stderr, "Usage: %s <N> <output_file> <pattern> [options]\n", progname);
+} // print_usage
+
+static void print_color_mode(void)
+{
+    const char *no_color = getenv("NO_COLOR");
+    printf("\n%sCOLOR MODE%s\n", ansi_bold_cyan, ansi_reset);
+    if (no_color == NULL)
+    {
+        printf("  %sENABLED%s (color escape codes are active; disable by setting NO_COLOR=1)\n",
+               ansi_color_green, ansi_reset);
+    }
+    else
+    {
+        printf("  %sDISABLED%s (NO_COLOR environment variable is present)\n",
+               ansi_color_red, ansi_reset);
+    }
+} // print_color_mode
+
+static void print_help(const char *progname)
+{
+    printf("%sNAME%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  gric-mktxtseq - Synthetic sequence generator for testing\n\n");
+
+    printf("%sUSAGE%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  %s%s%s %s<N>%s %s<output_file>%s %s<pattern>%s %s[options]%s\n\n", ansi_bold_green,
+           progname, ansi_reset, ansi_color_magenta, ansi_reset, ansi_color_magenta, ansi_reset,
+           ansi_color_magenta, ansi_reset, ansi_color_grey, ansi_reset);
+
+    printf("%sDESCRIPTION%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  Generates synthetic coordinate sequences (walk, spiral, circle, etc.) for testing.\n\n");
+
+    printf("%sOPTIONS%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  %s-repeat%s %s<M>%s          Repeat the pattern M times\n", ansi_color_green,
+           ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-noise%s %s<R>%s           Add random noise with radius R to each point\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-shuffle%s             Shuffle the order of generated points\n\n",
+           ansi_color_green, ansi_reset);
+    printf("  Patterns:\n");
+    printf("    %s[ND]random%s         Uniform random in unit hypercube/sphere (%sdefault:%s%s 2D%s)\n",
+           ansi_color_green, ansi_reset, ansi_color_cyan, ansi_reset, ansi_color_cyan, ansi_reset);
+    printf("    %s[ND]sphere%s         Random points on unit hypersphere surface\n",
+           ansi_color_green, ansi_reset);
+    printf("    %s[ND]walk[S]%s        Random walk (%sS = step size%s, %sdefault:%s%s 0.1%s)\n",
+           ansi_color_green, ansi_reset, ansi_color_grey, ansi_reset, ansi_color_cyan, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("    %s[ND]spiral[L]%s      Spiral (%sL = loops%s, %sdefault:%s%s 3.0%s)\n",
+           ansi_color_green, ansi_reset, ansi_color_grey, ansi_reset, ansi_color_cyan, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("    %s[ND]circle[P]%s      Circle (%sP = period%s)\n\n",
+           ansi_color_green, ansi_reset, ansi_color_grey, ansi_reset);
+
+    printf("%sEXAMPLES%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  %s$%s %s%s%s 1000 test_walk.txt 2Dwalk\n", ansi_color_grey, ansi_reset,
+           ansi_bold_green, progname, ansi_reset);
+    print_color_mode();
+} // print_help
+
 int main(int argc, char *argv[])
 {
+    init_colors();
+
+    // Check for help option early
+    for (int i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
+        {
+            print_help(argv[0]);
+            return 0;
+        }
+    }
+
     if (argc < 4)
     {
-        printf("Usage: gric-mktxtseq <N> <output_file> <pattern> [options]\n");
-        printf("Patterns:\n");
-        printf("  [ND]random      Uniform random in unit hypercube/sphere (default 2D)\n");
-        printf("  [ND]sphere      Random points on unit hypersphere surface\n");
-        printf("  [ND]walk[S]     Random walk. S = step size (default 0.1)\n");
-        printf("  [ND]spiral[L]   Spiral. L = loops (default 3.0)\n");
-        printf("  [ND]circle[P]   Circle. P = period\n");
-        printf("Options:\n");
-        printf("  -repeat <M>     Repeat the pattern M times\n");
-        printf("  -noise <R>      Add random noise with radius R to each point\n");
-        printf("  -shuffle        Shuffle the order of generated points\n");
+        fprintf(stderr, "Error: Missing required arguments.\n");
+        print_usage(argv[0]);
         print_args_on_error(argc, argv);
         return 1;
     }
