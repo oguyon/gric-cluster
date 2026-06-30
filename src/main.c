@@ -38,12 +38,17 @@ int main(int argc, char *argv[])
     char *cmdline = (char *)malloc(8192);
     if (cmdline)
     {
-        cmdline[0] = '\0';
+        size_t cmdline_pos = 0;
+        size_t cmdline_remaining = 8192;
         for (int arg_idx = 0; arg_idx < argc; arg_idx++)
         {
-            strcat(cmdline, argv[arg_idx]);
-            if (arg_idx < argc - 1)
-                strcat(cmdline, " ");
+            int written = snprintf(cmdline + cmdline_pos, cmdline_remaining,
+                                   "%s%s", argv[arg_idx],
+                                   (arg_idx < argc - 1) ? " " : "");
+            if (written < 0 || (size_t)written >= cmdline_remaining)
+                break;
+            cmdline_pos += (size_t)written;
+            cmdline_remaining -= (size_t)written;
         }
     }
 
