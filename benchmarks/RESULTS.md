@@ -78,7 +78,7 @@ The 20000 samples are clustered in 100 clusters with 25145 distance computations
 
 The cluster radius has been adjusted to yield 100 clusters, but there is no simple direct relationship between distance in the 2D space and distance in this high-D (images) space. The 2D cluster-to-cluster distance matrix shows that the high-D distance saturates when the spots do not overlap. With increased spot size (sigma) there is more overlap, and the clustering radius should be reduced to still yield the same number of clusters. Empirically, the following pairs of (sigma, rlim) values yield 100 clusters with this 2Dspiral pattern: (0.1 2560), (0.2 2370), (0.4 1450), (0.8 520), (1.0 350) and (1.2 250).
 
-*** GRIC's efficiency (number of distcomps required for solving) is preserved in high dimension if a manifold embedding to lower dimension exists. GRIC is able to leverage such embeddings by tracking cluster-to-cluster distances, and operates at the efficiency of the lower dimension manifold embedding.***
+***GRIC's efficiency (number of distcomps required for solving) is preserved in high dimension if a manifold embedding to lower dimension exists. GRIC is able to leverage such embeddings by tracking cluster-to-cluster distances, and operates at the efficiency of the lower dimension manifold embedding.***
 
 
 ### Clustering large number of frames in high dimension in streaming mode
