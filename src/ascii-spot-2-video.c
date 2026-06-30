@@ -12,8 +12,6 @@
 #include <ImageStreamIO/ImageStruct.h>
 #endif
 
-#include <unistd.h>
-
 static const char *ansi_color_orange = "";
 static const char *ansi_color_green = "";
 static const char *ansi_color_red = "";
@@ -45,8 +43,6 @@ static const char *ansi_color_yellow = "";
 #define ANSI_COLOR_CYAN    ansi_color_cyan
 #define ANSI_COLOR_GREY    ansi_color_grey
 #define ANSI_COLOR_YELLOW  ansi_color_yellow
-#define FLAG_COLORS        "", ANSI_COLOR_GREEN, ANSI_COLOR_RESET
-
 static void init_colors(void)
 {
     const char *no_color = getenv("NO_COLOR");

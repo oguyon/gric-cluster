@@ -47,8 +47,6 @@ static const char *ansi_color_cyan = "";
 #define ANSI_COLOR_YELLOW  ansi_color_yellow
 #define ANSI_COLOR_GREY    ansi_color_grey
 #define ANSI_COLOR_CYAN    ansi_color_cyan
-#define FLAG_COLORS        "", ANSI_COLOR_GREEN, ANSI_COLOR_RESET
-
 void init_colors_io(void)
 {
     const char *no_color = getenv("NO_COLOR");
@@ -750,7 +748,7 @@ void print_help(char *progname)
     printf("%sEXAMPLES%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  %s$%s %sgric-cluster%s -scandist test_walk.txt\n", ANSI_COLOR_GREY, ANSI_COLOR_RESET,
            ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
-    printf("  %s%s%s %sgric-cluster%s a1.5 test_walk.txt -clustered %s>%s run.log\n", ANSI_COLOR_GREY, "$ ", ANSI_COLOR_RESET,
+    printf("  %s$%s %sgric-cluster%s a1.5 test_walk.txt -clustered %s>%s run.log\n", ANSI_COLOR_GREY, ANSI_COLOR_RESET,
            ANSI_BOLD_GREEN, ANSI_COLOR_RESET, ANSI_COLOR_GREY, ANSI_COLOR_RESET);
     print_color_mode();
 }

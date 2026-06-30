@@ -28,7 +28,7 @@ static const char *ansi_color_grey = "";
 #define ANSI_COLOR_GREY    ansi_color_grey
 
 /**
- * @brief Initializes the dynamic colors if stdout is a TTY.
+ * @brief Initializes the dynamic colors unless NO_COLOR is set.
  */
 static void init_colors(void)
 {
@@ -471,7 +471,7 @@ static void print_general_help(void)
  *
  * @param prog Name of the program to show help for.
  */
-static void print_program_help(
+static int print_program_help(
     const char *prog)
 {
     const char *target = prog;
@@ -532,6 +532,7 @@ static void print_program_help(
             "  $ gric-cluster a1.5 test_walk.txt -clustered > run.log";
 
         print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
     }
     else if (strcmp(target, "gric-plot") == 0)
     {
@@ -547,6 +548,7 @@ static void print_program_help(
             "  $ gric-plot input_points.txt gric_run_log.txt summary_plot.png";
 
         print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
     }
     else if (strcmp(target, "gric-info") == 0)
     {
@@ -559,6 +561,7 @@ static void print_program_help(
         const char *ex = "  $ gric-info";
 
         print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
     }
     else if (strcmp(target, "gric-mktxtseq") == 0)
     {
@@ -580,6 +583,7 @@ static void print_program_help(
         const char *ex = "  $ gric-mktxtseq 1000 test_walk.txt 2Dwalk";
 
         print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
     }
     else if (strcmp(target, "gric-NDmodel") == 0)
     {
@@ -595,6 +599,7 @@ static void print_program_help(
         const char *ex = "  $ gric-NDmodel dcc.txt 3 coordinates.txt";
 
         print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
     }
     else if (strcmp(target, "gric-ascii-spot-2-video") == 0)
     {
@@ -612,6 +617,7 @@ static void print_program_help(
         const char *ex = "  $ gric-ascii-spot-2-video 256 2.0 input.txt output.mp4";
 
         print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
     }
     else if (strcmp(target, "gric-mkclusteredfile") == 0)
     {
@@ -626,6 +632,7 @@ static void print_program_help(
             "  $ gric-mkclusteredfile input.txt membership.txt output_clustered.txt";
 
         print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
     }
     else if (strcmp(target, "gric-stream-to-pipe") == 0)
     {
@@ -638,11 +645,13 @@ static void print_program_help(
         const char *ex = "  $ gric-stream-to-pipe mystream 500";
 
         print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
     }
     else
     {
-        printf("%sError: Unknown program '%s'.%s\n", ANSI_COLOR_RED, prog, ANSI_COLOR_RESET);
-        printf("Run 'gric-help' to see the list of valid programs.\n");
+        fprintf(stderr, "%sError: Unknown program '%s'.%s\n", ANSI_COLOR_RED, prog, ANSI_COLOR_RESET);
+        fprintf(stderr, "Run 'gric-help' to see the list of valid programs.\n");
+        return 1;
     } // if (strcmp(target, "gric-cluster") == 0)...
 } // print_program_help
 
@@ -666,6 +675,5 @@ int main(
         return 0;
     } // if (strcmp(argv[1], "-h") == 0 ...)
 
-    print_program_help(argv[1]);
-    return 0;
+    return print_program_help(argv[1]);
 } // main
