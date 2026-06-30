@@ -48,6 +48,12 @@ void write_png_frame(const char *filename, double *data, int width, int height)
 
     png_bytep row_pointers[height];
     unsigned char *row_data = (unsigned char *)malloc(width);
+    if (!row_data)
+    {
+        png_destroy_write_struct(&png, &info);
+        fclose(fp);
+        return;
+    }
 
     for (int y = 0; y < height; y++)
     {
