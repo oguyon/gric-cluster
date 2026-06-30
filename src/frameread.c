@@ -554,6 +554,8 @@ Frame *getframe_at(long index)
         // Prevent random access / rewinding in stream mode
         if (index != stream_read_counter)
         {
+            free(frame_struct->data);
+            free(frame_struct);
             return NULL;
         }
 
