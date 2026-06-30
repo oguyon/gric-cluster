@@ -267,7 +267,7 @@ for pattern in "${SELECTED_PATTERNS[@]}"; do
         
         # Plot if TXT and Stream (Optional)
         if [[ "$INPUT_TYPE" == "txt" ]]; then
-            $CLPLOT "$INPUT_FILE" "$LOG_FILE" > /dev/null 2>&1 || true
+            $CLPLOT "$INPUT_FILE" "${OUT_DIR}/cluster_run.log" > /dev/null 2>&1 || true
         fi
 
     elif [[ "$ALGORITHM" == "birch" ]]; then

@@ -69,7 +69,18 @@ link_directories(
 )
 
 # Sources
-set(CLUSTER_SRCS src/main.c src/cluster_core.c src/cluster_io.c src/framedistance.c src/frameread.c src/png_io.c src/config_utils.c)
+set(CLUSTER_SRCS
+    src/main.c
+    src/cluster_core.c
+    src/cluster_io.c
+    src/framedistance.c
+    src/frameread.c
+    src/png_io.c
+    src/config_utils.c
+    src/cluster_math.c
+    src/cluster_mgmt.c
+    src/cluster_prune.c
+)
 
 add_executable(gric-cluster ${CLUSTER_SRCS})
 if (OpenMP_C_FOUND)

@@ -9,9 +9,7 @@
 #endif
 #include "cluster_core.h"
 #include "frameread.h"
-
-// Forward declaration
-double framedist(Frame *a, Frame *b);
+#include "framedistance.h"
 
 #define ANSI_COLOR_ORANGE  "\x1b[38;5;208m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
@@ -28,43 +26,12 @@ int compare_candidates(const void *a, const void *b) {
     return 0;
 }
 
-// Global pointer for sorting wrapper (legacy workaround)
-static Cluster *g_clusters_ptr = NULL;
-
-int compare_probs_wrapper(const void *a, const void *b) {
-    int idx_a = *(const int *)a;
-    int idx_b = *(const int *)b;
-    if (g_clusters_ptr[idx_a].prob > g_clusters_ptr[idx_b].prob) return -1;
-    if (g_clusters_ptr[idx_a].prob < g_clusters_ptr[idx_b].prob) return 1;
-    return 0;
-}
-
 int compare_doubles(const void *a, const void *b) {
     double da = *(const double *)a;
     double db = *(const double *)b;
     if (da < db) return -1;
     if (da > db) return 1;
     return 0;
-}
-
-double fmatch(double dr, double a, double b) {
-    if (dr > 2.0) return 0.0;
-    return a - (a - b) * dr / 2.0;
-}
-
-void add_visitor(VisitorList *list, int frame_idx) {
-    if (list->count >= list->capacity) {
-        int new_capacity = (list->capacity == 0) ? 16 : list->capacity * 2;
-        int *new_frames = (int *)realloc(list->frames, new_capacity * sizeof(int));
-        if (new_frames) {
-            list->frames = new_frames;
-            list->capacity = new_capacity;
-        } else {
-            perror("Failed to realloc visitor list");
-            return;
-        }
-    }
-    list->frames[list->count++] = frame_idx;
 }
 
 double get_dist(Frame *a, Frame *b, int cluster_idx, double cluster_prob, double current_gprob, ClusterConfig *config, ClusterState *state) {
@@ -188,342 +155,6 @@ void run_scandist(ClusterConfig *config, char *out_dir) {
 
     free(distances);
 }
-
-double calc_min_dist_4pt(double d14, double d24, double d12, double d13, double d23) {
-    if (d12 < 1e-9) return fabs(d14 - d13);
-
-    double x3 = (d13*d13 + d12*d12 - d23*d23) / (2.0 * d12);
-    double y3_sq = d13*d13 - x3*x3;
-    double y3 = (y3_sq > 0.0) ? sqrt(y3_sq) : 0.0;
-
-    double x4 = (d14*d14 + d12*d12 - d24*d24) / (2.0 * d12);
-    double y4_sq = d14*d14 - x4*x4;
-    double y4 = (y4_sq > 0.0) ? sqrt(y4_sq) : 0.0;
-
-    return sqrt((x3 - x4)*(x3 - x4) + (y3 - y4)*(y3 - y4));
-}
-
-double calc_min_dist_5pt(double d_f_c1, double d_f_c2, double d_f_c3,
-                         double d_t_c1, double d_t_c2, double d_t_c3,
-                         double d_c1_c2, double d_c1_c3, double d_c2_c3) {
-    if (d_c1_c2 < 1e-9) return 0.0;
-
-    double x3 = (d_c1_c3*d_c1_c3 + d_c1_c2*d_c1_c2 - d_c2_c3*d_c2_c3) / (2.0 * d_c1_c2);
-    double y3_sq = d_c1_c3*d_c1_c3 - x3*x3;
-    if (y3_sq < 1e-9) return 0.0;
-    double y3 = sqrt(y3_sq);
-
-    double xF = (d_f_c1*d_f_c1 + d_c1_c2*d_c1_c2 - d_f_c2*d_f_c2) / (2.0 * d_c1_c2);
-    double yF = (d_f_c1*d_f_c1 + d_c1_c3*d_c1_c3 - d_f_c3*d_f_c3 - 2.0 * xF * x3) / (2.0 * y3);
-    double zF_sq = d_f_c1*d_f_c1 - xF*xF - yF*yF;
-    double zF = (zF_sq > 0.0) ? sqrt(zF_sq) : 0.0;
-
-    double xT = (d_t_c1*d_t_c1 + d_c1_c2*d_c1_c2 - d_t_c2*d_t_c2) / (2.0 * d_c1_c2);
-    double yT = (d_t_c1*d_t_c1 + d_c1_c3*d_c1_c3 - d_t_c3*d_t_c3 - 2.0 * xT * x3) / (2.0 * y3);
-    double zT_sq = d_t_c1*d_t_c1 - xT*xT - yT*yT;
-    double zT = (zT_sq > 0.0) ? sqrt(zT_sq) : 0.0;
-
-    return sqrt((xF - xT)*(xF - xT) + (yF - yT)*(yF - yT) + (zF - zT)*(zF - zT));
-}
-
-int get_prediction_candidates(ClusterState *state, ClusterConfig *config, int *candidates, int max_candidates) {
-    long total = state->total_frames_processed;
-    int len = config->pred_len;
-    int h = config->pred_h;
-
-    if (total < len) return 0;
-
-    long search_limit = total - len;
-    long search_start = (total > h) ? total - h : 0;
-    if (search_start > search_limit) search_start = search_limit;
-
-    int *pattern = &state->assignments[total - len];
-
-    int *counts = (int *)calloc(state->num_clusters, sizeof(int));
-    if (!counts) return 0;
-
-    for (long i = search_start; i < search_limit; i++) {
-        if (state->assignments[i] == pattern[0]) {
-            if (memcmp(&state->assignments[i], pattern, len * sizeof(int)) == 0) {
-                int next_cluster = state->assignments[i + len];
-                if (next_cluster >= 0 && next_cluster < state->num_clusters) {
-                    counts[next_cluster]++;
-                }
-            }
-        }
-    }
-
-    int count_non_zero = 0;
-    for(int i=0; i<state->num_clusters; i++) if (counts[i] > 0) count_non_zero++;
-
-    if (count_non_zero == 0) {
-        free(counts);
-        return 0;
-    }
-
-    Candidate *cand_list = (Candidate *)malloc(count_non_zero * sizeof(Candidate));
-    int idx = 0;
-    for(int i=0; i<state->num_clusters; i++) {
-        if (counts[i] > 0) {
-            cand_list[idx].id = i;
-            cand_list[idx].p = (double)counts[i];
-            idx++;
-        }
-    }
-
-    qsort(cand_list, count_non_zero, sizeof(Candidate), compare_candidates);
-
-    int n_out = (count_non_zero < max_candidates) ? count_non_zero : max_candidates;
-    for(int i=0; i<n_out; i++) {
-        candidates[i] = cand_list[i].id;
-    }
-
-    free(cand_list);
-    free(counts);
-    return n_out;
-}
-
-
-static void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int *temp_indices, double *temp_dists, int temp_count) {
-    if (!config->te5_mode || temp_count < 3) return;
-
-    int c3 = temp_indices[temp_count - 1]; // Current cluster (newest anchor)
-    double d_f_c3 = temp_dists[temp_count - 1];
-
-    for (int p = 0; p < temp_count - 2; p++) {
-        for (int q = p + 1; q < temp_count - 1; q++) {
-            int c1 = temp_indices[p];
-            double d_f_c1 = temp_dists[p];
-            int c2 = temp_indices[q];
-            double d_f_c2 = temp_dists[q];
-
-            // Get inter-cluster distances (lazy load)
-            double d_c1_c2 = state->dccarray[c1 * config->maxnbclust + c2];
-            if (d_c1_c2 < 0) {
-                 d_c1_c2 = get_dist(&state->clusters[c1].anchor, &state->clusters[c2].anchor, -1, -1.0, -1.0, config, state);
-                 state->dccarray[c1 * config->maxnbclust + c2] = d_c1_c2;
-                 state->dccarray[c2 * config->maxnbclust + c1] = d_c1_c2;
-            }
-
-            double d_c1_c3 = state->dccarray[c1 * config->maxnbclust + c3];
-            if (d_c1_c3 < 0) {
-                    d_c1_c3 = get_dist(&state->clusters[c1].anchor, &state->clusters[c3].anchor, -1, -1.0, -1.0, config, state);
-                    state->dccarray[c1 * config->maxnbclust + c3] = d_c1_c3;
-                    state->dccarray[c3 * config->maxnbclust + c1] = d_c1_c3;
-            }
-
-            double d_c2_c3 = state->dccarray[c2 * config->maxnbclust + c3];
-            if (d_c2_c3 < 0) {
-                    d_c2_c3 = get_dist(&state->clusters[c2].anchor, &state->clusters[c3].anchor, -1, -1.0, -1.0, config, state);
-                    state->dccarray[c2 * config->maxnbclust + c3] = d_c2_c3;
-                    state->dccarray[c3 * config->maxnbclust + c2] = d_c2_c3;
-            }
-
-            long local_pruned_te5 = 0;
-            #ifdef _OPENMP
-            #pragma omp parallel for reduction(+:local_pruned_te5)
-            #endif
-            for (int k = 0; k < state->num_clusters; k++) {
-                if (!state->clmembflag[k]) continue;
-                if (k == c1 || k == c2 || k == c3) continue;
-
-                // Lazy load k distances
-                double d_k_c1 = state->dccarray[k * config->maxnbclust + c1];
-                if (d_k_c1 < 0) {
-                        d_k_c1 = get_dist(&state->clusters[k].anchor, &state->clusters[c1].anchor, -1, -1.0, -1.0, config, state);
-                        state->dccarray[k * config->maxnbclust + c1] = d_k_c1;
-                        state->dccarray[c1 * config->maxnbclust + k] = d_k_c1;
-                }
-
-                double d_k_c2 = state->dccarray[k * config->maxnbclust + c2];
-                if (d_k_c2 < 0) {
-                        d_k_c2 = get_dist(&state->clusters[k].anchor, &state->clusters[c2].anchor, -1, -1.0, -1.0, config, state);
-                        state->dccarray[k * config->maxnbclust + c2] = d_k_c2;
-                        state->dccarray[c2 * config->maxnbclust + k] = d_k_c2;
-                }
-
-                double d_k_c3 = state->dccarray[k * config->maxnbclust + c3];
-                if (d_k_c3 < 0) {
-                        d_k_c3 = get_dist(&state->clusters[k].anchor, &state->clusters[c3].anchor, -1, -1.0, -1.0, config, state);
-                        state->dccarray[k * config->maxnbclust + c3] = d_k_c3;
-                        state->dccarray[c3 * config->maxnbclust + k] = d_k_c3;
-                }
-
-                double min_d = calc_min_dist_5pt(d_f_c1, d_f_c2, d_f_c3,
-                                                 d_k_c1, d_k_c2, d_k_c3,
-                                                 d_c1_c2, d_c1_c3, d_c2_c3);
-
-                if (min_d > config->rlim) {
-                    state->clmembflag[k] = 0;
-                    local_pruned_te5++;
-                }
-            }
-            state->clusters_pruned += local_pruned_te5;
-        }
-    }
-}
-
-static void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_remove, int index_target) {
-    if (index_to_remove < 0 || index_to_remove >= state->num_clusters) return;
-
-    if (config->verbose_level >= 1) {
-        printf("Removing cluster %d (Count: %d). Target: %d\n",
-               index_to_remove, state->cluster_visitors[index_to_remove].count, index_target);
-    }
-
-    // 1. Log or Merge History
-    // If merging (index_target != -1), we could technically merge visitor history or reassign frames.
-    // However, reassigning frame history is complex because 'FrameInfo' stores exact distances to specific clusters.
-    // If we merge C_rem into C_targ, we might want to pretend frames assigned to C_rem are now C_targ.
-    // But distance d(f, C_rem) != d(f, C_targ).
-    // The simplest approach consistent with "reallocate frames" is to update the 'assignments' array for final output.
-    // For 'ClusterState' internal consistency (transition matrix, gprob), we accept that history for C_rem is gone.
-
-    // Log dropped frames if discard
-    if (index_target == -1 && config->output_discarded) {
-        FILE *log = fopen("discarded_frames.txt", "a");
-        if (log) {
-            fprintf(log, "# Discarded Cluster %d\n", index_to_remove);
-            for (int i = 0; i < state->cluster_visitors[index_to_remove].count; i++) {
-                fprintf(log, "%d ", state->cluster_visitors[index_to_remove].frames[i]);
-            }
-            fprintf(log, "\n");
-            fclose(log);
-        }
-    }
-
-    // 2. Update assignments
-    // We scan all frames processed so far. This is O(N_frames).
-    for (long f = 0; f < state->total_frames_processed; f++) {
-        if (state->assignments[f] == index_to_remove) {
-            state->assignments[f] = (index_target != -1) ? index_target : -1;
-            // If target > index_to_remove, it will be shifted down later, so we handle that below.
-        }
-    }
-
-    // 3. Shift Clusters Array
-    if (state->clusters[index_to_remove].anchor.data) {
-        free(state->clusters[index_to_remove].anchor.data);
-    }
-    // Shift clusters down
-    for (int i = index_to_remove; i < state->num_clusters - 1; i++) {
-        state->clusters[i] = state->clusters[i+1];
-        state->clusters[i].id = i; // Update ID
-    }
-
-    // 4. Shift Visitor Lists
-    if (state->cluster_visitors[index_to_remove].frames) {
-        free(state->cluster_visitors[index_to_remove].frames);
-    }
-    for (int i = index_to_remove; i < state->num_clusters - 1; i++) {
-        state->cluster_visitors[i] = state->cluster_visitors[i+1];
-    }
-    // Zero out the last one (moved)
-    memset(&state->cluster_visitors[state->num_clusters - 1], 0, sizeof(VisitorList));
-
-    // 5. Shift DCC Array (Rows and Cols)
-    // Row shift: move rows i+1..N to i..N-1
-    // Col shift: for each row, move cols j+1..N to j..N-1
-    // Easier to just rebuild? No, expensive.
-    // Move rows:
-    int N = config->maxnbclust; // Stride is fixed maxnbclust
-
-    // Shift Rows up
-    for (int r = index_to_remove; r < state->num_clusters - 1; r++) {
-        // Copy row r+1 to r
-        // memcpy(dest, src, size)
-        // Dest: &dcc[r*N], Src: &dcc[(r+1)*N], Size: N doubles? No, we copy full width
-        memcpy(&state->dccarray[r * N], &state->dccarray[(r + 1) * N], config->maxnbclust * sizeof(double));
-    }
-    // Now rows are shifted. Row 'index_to_remove' is gone (overwritten).
-    // Now shift Columns left for ALL rows (including the ones we just moved)
-    // Actually we only care about rows 0..num_clusters-2
-    for (int r = 0; r < state->num_clusters - 1; r++) {
-        // Shift cols in row r
-        // Move &dcc[r*N + index_to_remove + 1] to &dcc[r*N + index_to_remove]
-        // Count: num_clusters - 1 - index_to_remove
-        int dest_idx = r * N + index_to_remove;
-        int src_idx = r * N + index_to_remove + 1;
-        int count = config->maxnbclust - 1 - index_to_remove; // safe upper bound
-        if (count > 0) {
-            memmove(&state->dccarray[dest_idx], &state->dccarray[src_idx], count * sizeof(double));
-        }
-    }
-
-    // 6. Shift Transition Matrix (Same logic as DCC)
-    // Shift Rows
-    for (int r = index_to_remove; r < state->num_clusters - 1; r++) {
-        memcpy(&state->transition_matrix[r * N], &state->transition_matrix[(r + 1) * N], config->maxnbclust * sizeof(long));
-    }
-    // Shift Cols
-    for (int r = 0; r < state->num_clusters - 1; r++) {
-        int dest_idx = r * N + index_to_remove;
-        int src_idx = r * N + index_to_remove + 1;
-        int count = config->maxnbclust - 1 - index_to_remove;
-        if (count > 0) {
-            memmove(&state->transition_matrix[dest_idx], &state->transition_matrix[src_idx], count * sizeof(long));
-        }
-    }
-
-    // 7. Update Assignments for Shifted Indices
-    // Any assignment pointing to old_idx > index_to_remove must be decremented
-    // Also handle the merge target if it was > index_to_remove
-    // We iterate frames again? Or combine with step 2?
-    // Combining:
-    // If ass == remove: handle remove/merge
-    // If ass > remove: ass--
-    // But step 2 used 'index_target'. If index_target > index_to_remove, it will now be index_target-1.
-    // So we need to be careful.
-
-    // Let's redo assignment update correctly here.
-    // First pass was just mapping remove->target.
-    // Now we need to shift everything > remove.
-    // Note: if target was > remove, it needs to be decremented too.
-
-    // Correct logic:
-    // If assignment == index_to_remove:
-    //    if discard: assignment = -1
-    //    if merge: assignment = index_target (original)
-    // If assignment > index_to_remove: assignment--
-    // Wait, if assignment was mapped to index_target, and index_target > index_to_remove, we must decrement it too.
-
-    for (long f = 0; f < state->total_frames_processed; f++) {
-        int a = state->assignments[f];
-        if (a == -1) continue; // Already discarded
-
-        // Was it the removed one? (We already mapped it in step 2? No, let's undo step 2 and do it all here)
-        // But wait, step 2 logic was:
-        // state->assignments[f] = (index_target != -1) ? index_target : -1;
-        // If we did that, 'a' is now 'index_target'.
-        // We can't distinguish frames that were originally 'index_target' vs 'index_to_remove'.
-        // Does it matter? No. Both need to shift if index_target > index_to_remove.
-
-        // So, let's look at logic from scratch (assuming step 2 didn't happen or we fix it):
-        // Actually, let's remove Step 2 code block and put it here.
-    }
-
-    // Correct Assignments Update Loop (Replace Step 2)
-    for (long f = 0; f < state->total_frames_processed; f++) {
-        int a = state->assignments[f];
-        if (a == index_to_remove) {
-            if (index_target == -1) {
-                state->assignments[f] = -1;
-            } else {
-                // Merging to target.
-                // If target > remove, the new target index is target-1
-                // If target < remove, the new target index is target
-                if (index_target > index_to_remove) state->assignments[f] = index_target - 1;
-                else state->assignments[f] = index_target;
-            }
-        } else if (a > index_to_remove) {
-            state->assignments[f] = a - 1;
-        }
-    }
-
-    // 8. Decrement Num Clusters
-    state->num_clusters--;
-}
-
 
 void run_clustering(ClusterConfig *config, ClusterState *state) {
     #ifdef _OPENMP
@@ -1059,21 +690,8 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
 
                         if (min_idx != -1) {
                             remove_cluster(state, config, min_idx, -1);
-                            // Now try creating again (recursive call or goto)
-                            // Easier to just continue loop? No, we need to handle CURRENT frame.
-                            // We freed current_frame in the else block normally.
-                            // Here we want to RETRY assignment with the space we just made.
-                            // But wait, the current frame failed to match any existing cluster.
-                            // So we KNOW it should be a new cluster.
-                            // We just made space. So we can proceed to create it.
-                            // Fall through to creation logic?
-                            // No, creation logic is inside "if (state->num_clusters < config->maxnbclust)".
-                            // Now it IS true.
-                            // So we can goto "found = 0" logic?
-                            // Actually, just duplicate creation block or loop back?
-                            // Let's use a flag or simple recursion logic
-                            // Actually, simplest is:
-
+                            if (prev_assigned_cluster == min_idx) prev_assigned_cluster = -1;
+                            else if (prev_assigned_cluster > min_idx) prev_assigned_cluster--;
                             assigned_cluster = state->num_clusters;
                             state->clusters[state->num_clusters].anchor = *current_frame;
                             state->clusters[state->num_clusters].id = state->num_clusters;
@@ -1097,7 +715,6 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                             state->num_clusters++;
                             free(current_frame);
                         } else {
-                            // Should not happen
                             free_frame(current_frame);
                             break;
                         }
@@ -1129,6 +746,12 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                             }
 
                             remove_cluster(state, config, remove, target);
+                            if (prev_assigned_cluster == remove) {
+                                if (target > remove) prev_assigned_cluster = target - 1;
+                                else prev_assigned_cluster = target;
+                            } else if (prev_assigned_cluster > remove) {
+                                prev_assigned_cluster--;
+                            }
 
                             // Now create new cluster for current frame
                             assigned_cluster = state->num_clusters;

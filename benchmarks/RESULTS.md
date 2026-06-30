@@ -18,7 +18,7 @@ The pattern is written to a text file with:
 # 2Dspiral.txt (20000 samples)
 ```
 
-### Clustering from the 2D txt input
+### Simple Example: Clustering from the 2D txt input
 
 The samples are clustered with:
 ```
@@ -44,14 +44,13 @@ The only samples requiring more than one distance computation occur when the poi
 
 With 100 clusters, 4950 inter-cluster distances are computed: this is the main contributor to the extra distcomps over the number of samples. This overhead is inherent to GRIC, and becomes proportionally smaller as the number of samples increases.
 
-[!NOTE]
-GRIC first tests if the frame belongs to the same cluster as the previous frame. With slow-moving input, most samples are resolved/confirmed with a single distcomp.
+**GRIC first tests if the current frame belongs to the same cluster as the previous frame. With slow-moving input, as is often the case in video streams, most samples are quickly resolved/confirmed with a single distcomp.**
 
 
-### High Dimension input
+### High Dimension input (manifold embeddings)
 
 
-Here we operate in high dimension (256x256 pixel images = 65536 dimensions), but with the high dimensional image derived from a low-dimension input. This is representative of high-dimension clustering where there exists an (unknown at clustering time) relationship between a small number of input variables and the high-dimension observable. Clustering is deployed to reveal this relationship, grouping high-D samples so they can be related to the low-D variables.
+Here we operate in high dimension (256x256 pixel images = 65536 dimensions), but with the high-D image derived from a low-D input. This is representative of high-D clustering where there exists an (unknown at clustering time) relationship between a small number of input variables and the high-D observable. Clustering is deployed to reveal this relationship, grouping high-D samples so they can be related to the low-D variables.
 
 We use the `gric-ascii-spot-2-video` to convert the 2D input (2Dspiral.txt file) into a high-D image. The 2 coordinates encode the centroid position of a gaussian spot. We use here the streaming output mode with the cnt2 synchronization to avoid writing a large video file on the filesystem. This program will produce images on demand (one image per line in the 2Dspiral.txt), waiting for the clustering program to process frames to deliver the next frame. This synchronization is done with ImageStreamIO's cnt2 entry, with the writer waiting for cnt2 to be incremented above cnt0, and the reader incrementing cnt2 to request a new frame.
 
@@ -79,9 +78,12 @@ The 20000 samples are clustered in 100 clusters with 25145 distance computations
 
 The cluster radius has been adjusted to yield 100 clusters, but there is no simple direct relationship between distance in the 2D space and distance in this high-D (images) space. The 2D cluster-to-cluster distance matrix shows that the high-D distance saturates when the spots do not overlap. With increased spot size (sigma) there is more overlap, and the clustering radius should be reduced to still yield the same number of clusters. Empirically, the following pairs of (sigma, rlim) values yield 100 clusters with this 2Dspiral pattern: (0.1 2560), (0.2 2370), (0.4 1450), (0.8 520), (1.0 350) and (1.2 250).
 
+***GRIC's efficiency (number of distcomps required for solving) is preserved in high dimension if a manifold embedding to lower dimension exists. GRIC is able to leverage such embeddings by tracking cluster-to-cluster distances, and operates at the efficiency of the lower dimension manifold embedding.***
 
 
-### Large number of frames in high dimension
+### Clustering large number of frames in high dimension in streaming mode
+
+
 
 
 
