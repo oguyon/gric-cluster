@@ -20,9 +20,12 @@ jobs:
 
     - name: Run Benchmarks
       run: |
-        cd benchmarks
-        chmod +x runbenchmark
-        ./runbenchmark
+        mkdir -p build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        make -j$(nproc)
+        cd ../benchmarks
+        ../build/gric-benchmark
 
     - name: Upload Results
       uses: actions/upload-artifact@v4

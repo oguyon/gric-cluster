@@ -120,6 +120,9 @@ add_executable(gric-info src/gric-info.c)
 # gric-help tool
 add_executable(gric-help src/gric-help.c)
 
+# gric-benchmark tool
+add_executable(gric-benchmark src/gric-benchmark.c)
+
 if (CFITSIO_FOUND)
     target_compile_definitions(gric-info PRIVATE USE_CFITSIO)
     target_compile_definitions(gric-info PRIVATE CFITSIO_VERSION_STR=\"${CFITSIO_VERSION}\")
