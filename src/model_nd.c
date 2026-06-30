@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #define MAX_CLUSTERS 2000
 
@@ -38,29 +39,113 @@ void print_args_on_error(int argc, char *argv[])
     fprintf(stderr, "\n");
 }
 
+static const char *ansi_bold = "";
+static const char *ansi_reset = "";
+static const char *ansi_color_green = "";
+static const char *ansi_bold_cyan = "";
+static const char *ansi_bold_green = "";
+static const char *ansi_color_magenta = "";
+static const char *ansi_color_cyan = "";
+static const char *ansi_color_grey = "";
+static const char *ansi_color_yellow = "";
+static const char *ansi_color_red = "";
+
+static void init_colors(void)
+{
+    const char *no_color = getenv("NO_COLOR");
+
+    if (no_color == NULL)
+    {
+        ansi_bold = "\x1b[1m";
+        ansi_reset = "\x1b[0m";
+        ansi_color_green = "\x1b[32m";
+        ansi_bold_cyan = "\x1b[1;36m";
+        ansi_bold_green = "\x1b[1;32m";
+        ansi_color_magenta = "\x1b[35m";
+        ansi_color_cyan = "\x1b[36m";
+        ansi_color_grey = "\x1b[90m";
+        ansi_color_yellow = "\x1b[33m";
+        ansi_color_red = "\x1b[31m";
+    }
+} // init_colors
+
+static void print_usage(const char *progname)
+{
+    fprintf(stderr, "Usage: %s <dcc_file> <dimensions> <output_file> [options]\n", progname);
+} // print_usage
+
+static void print_color_mode(void)
+{
+    const char *no_color = getenv("NO_COLOR");
+    printf("\n%sCOLOR MODE%s\n", ansi_bold_cyan, ansi_reset);
+    if (no_color == NULL)
+    {
+        printf("  %sENABLED%s (color escape codes are active; disable by setting NO_COLOR=1)\n",
+               ansi_color_green, ansi_reset);
+    }
+    else
+    {
+        printf("  %sDISABLED%s (NO_COLOR environment variable is present)\n",
+               ansi_color_red, ansi_reset);
+    }
+} // print_color_mode
+
+static void print_help(const char *progname)
+{
+    printf("%sNAME%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  gric-NDmodel - N-Dimensional space reconstruction from distance matrix\n\n");
+
+    printf("%sUSAGE%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  %s%s%s %s<dcc_file>%s %s<dimensions>%s %s<output_file>%s %s[options]%s\n\n",
+           ansi_bold_green, progname, ansi_reset, ansi_color_magenta, ansi_reset,
+           ansi_color_magenta, ansi_reset, ansi_color_magenta, ansi_reset, ansi_color_grey,
+           ansi_reset);
+
+    printf("%sDESCRIPTION%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  Reconstructs N-dimensional coordinates from a cluster distance matrix\n");
+    printf("  (dcc.txt) using Simulated Annealing optimization.\n\n");
+
+    printf("%sOPTIONS%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  %s-temp%s %s<val>%s          Initial temperature (%sdefault:%s%s 10.0%s)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset, ansi_color_cyan,
+           ansi_reset, ansi_color_cyan, ansi_reset);
+    printf("  %s-rate%s %s<val>%s          Cooling rate (%sdefault:%s%s 0.995%s)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset, ansi_color_cyan,
+           ansi_reset, ansi_color_cyan, ansi_reset);
+    printf("  %s-iter%s %s<val>%s          Number of iterations (%sdefault:%s%s 100000%s)\n\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset, ansi_color_cyan,
+           ansi_reset, ansi_color_cyan, ansi_reset);
+    printf("  Arguments:\n");
+    printf("    %s<dcc_file>%s         Input distance matrix file (dcc.txt)\n", ansi_color_magenta,
+           ansi_reset);
+    printf("    %s<dimensions>%s       Target dimensionality (N)\n", ansi_color_magenta, ansi_reset);
+    printf("    %s<output_file>%s      Output filename for coordinates\n\n", ansi_color_magenta,
+           ansi_reset);
+
+    printf("%sEXAMPLES%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  %s$%s %s%s%s dcc.txt 3 coordinates.txt\n", ansi_color_grey, ansi_reset,
+           ansi_bold_green, progname, ansi_reset);
+    print_color_mode();
+} // print_help
+
 int main(int argc, char *argv[])
 {
-    // Check help
+    init_colors();
+
+    // Check help option early
     for (int i = 1; i < argc; i++)
     {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
         {
-            printf("Usage: gric-NDmodel <dcc_file> <dimensions> <output_file> [options]\n");
-            printf("Arguments:\n");
-            printf("  <dcc_file>     Input distance matrix file (dcc.txt).\n");
-            printf("  <dimensions>   Target dimensionality (N).\n");
-            printf("  <output_file>  Output filename for coordinates.\n");
-            printf("Options:\n");
-            printf("  -temp <val>    Initial temperature (default 10.0)\n");
-            printf("  -rate <val>    Cooling rate (default 0.995)\n");
-            printf("  -iter <val>    Number of iterations (default 100000)\n");
+            print_help(argv[0]);
             return 0;
         }
     }
 
     if (argc < 4)
     {
-        fprintf(stderr, "Usage: gric-NDmodel <dcc_file> <dimensions> <output_file> [options]\n");
+        fprintf(stderr, "Error: Missing required arguments.\n");
+        print_usage(argv[0]);
         print_args_on_error(argc, argv);
         return 1;
     }
