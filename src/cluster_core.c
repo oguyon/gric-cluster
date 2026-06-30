@@ -690,6 +690,8 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
 
                         if (min_idx != -1) {
                             remove_cluster(state, config, min_idx, -1);
+                            if (prev_assigned_cluster == min_idx) prev_assigned_cluster = -1;
+                            else if (prev_assigned_cluster > min_idx) prev_assigned_cluster--;
                             assigned_cluster = state->num_clusters;
                             state->clusters[state->num_clusters].anchor = *current_frame;
                             state->clusters[state->num_clusters].id = state->num_clusters;
@@ -744,6 +746,12 @@ void run_clustering(ClusterConfig *config, ClusterState *state) {
                             }
 
                             remove_cluster(state, config, remove, target);
+                            if (prev_assigned_cluster == remove) {
+                                if (target > remove) prev_assigned_cluster = target - 1;
+                                else prev_assigned_cluster = target;
+                            } else if (prev_assigned_cluster > remove) {
+                                prev_assigned_cluster--;
+                            }
 
                             // Now create new cluster for current frame
                             assigned_cluster = state->num_clusters;
