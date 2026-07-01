@@ -330,6 +330,12 @@ static double calculate_sequence_match_metric(
         double dA = seq_A_d[j];
         double dB = seq_B_d[j];
 
+        if (clA < 0 || clA >= state->num_clusters ||
+            clB < 0 || clB >= state->num_clusters)
+        {
+            continue;
+        }
+
         double dcc = state->scratch.dccarray[clA * config->algo.maxnbclust + clB];
         if (dcc < 0.0)
         {
@@ -382,16 +388,20 @@ void compute_priors_and_mixing(
         double rc = config->algo.rlim;
 
         double *p_seq = (double *)malloc(K * sizeof(double));
-        if (p_seq)
+        if (!p_seq)
         {
-            if (t < np)
+            for (int i = 0; i < K; i++)
             {
-                for (int i = 0; i < K; i++)
-                {
-                    p_seq[i] = 1.0 / K;
-                }
+                state->scratch.mixed_probs[i] = 1.0 / K;
             }
-            else
+        }
+        else
+        {
+            for (int i = 0; i < K; i++)
+            {
+                p_seq[i] = 1.0 / K;
+            }
+            if (t >= np)
             {
                 double *match_scores = (double *)calloc(K, sizeof(double));
                 if (match_scores)

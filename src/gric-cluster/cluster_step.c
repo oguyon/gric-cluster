@@ -23,6 +23,7 @@
 #include "cluster_math.h"
 #include "cluster_prune.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 int cluster_frame(
     ClusterConfig *config,
