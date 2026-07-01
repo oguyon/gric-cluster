@@ -169,6 +169,13 @@ int cluster_frame(
                 found = 1;
                 break;
             }
+            else
+            {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+                state->telemetry.cluster_query_counts[cj]++;
+            }
 
             last_cj = cj;
         }

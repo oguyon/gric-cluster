@@ -26,6 +26,7 @@
 #define SVG_WIDTH 2400
 #define PLOT_WIDTH 1600
 #define SVG_HEIGHT 1600
+#define Q_HEIGHT 1800
 #define SCALE_X(x) ((int)((x) * (SVG_WIDTH / 1200.0)))
 #define SCALE_Y(y) ((int)((y) * (SVG_HEIGHT / 800.0)))
 #define VIEW_MIN -1.1
@@ -37,6 +38,29 @@ const char *colors[] = {"#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "
                         "#9a6324", "#fffac8", "#800000", "#aaffc3", "#808000", "#ffd8b1",
                         "#000075", "#808080", "#ffffff", "#000000"};
 #define NUM_COLORS (sizeof(colors) / sizeof(colors[0]))
+
+static long get_rounded_count(long val)
+{
+    if (val <= 10)
+    {
+        return 10;
+    }
+    long p = 1;
+    while (p * 10 <= val)
+    {
+        p *= 10;
+    }
+    long mult = val / p;
+    if (mult >= 5)
+    {
+        return 5 * p;
+    }
+    if (mult >= 2)
+    {
+        return 2 * p;
+    }
+    return p;
+}
 
 typedef struct
 {
@@ -62,6 +86,16 @@ double map_x(double x)
 double map_y(double y)
 {
     return (VIEW_MAX - y) / VIEW_RANGE * SVG_HEIGHT;
+}
+
+double map_q_x(double x)
+{
+    return (x - (-1.2)) / 2.4 * PLOT_WIDTH;
+}
+
+double map_q_y(double y)
+{
+    return (1.5 - y) / 2.7 * Q_HEIGHT;
 }
 
 #ifdef USE_PNG
@@ -229,6 +263,9 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error: Could not open log file %s\n", log_filename);
         return 1;
     }
+    int queries_parsing = 0;
+    long *cluster_query_counts = (long *)calloc(10000, sizeof(long));
+
     char line[4096];
     while (fgets(line, sizeof(line), flog))
     {
@@ -242,6 +279,19 @@ int main(int argc, char *argv[])
                 long c, p;
                 if (sscanf(line, "%d %ld %ld", &k, &c, &p) >= 2 && k < 10000)
                     hist_data[k] = c;
+            }
+            continue;
+        }
+        if (queries_parsing)
+        {
+            if (strncmp(line, "STATS_CLUSTER_QUERIES_END", 25) == 0)
+                queries_parsing = 0;
+            else
+            {
+                int k;
+                long q;
+                if (sscanf(line, "%d %ld", &k, &q) == 2 && k < 10000)
+                    cluster_query_counts[k] = q;
             }
             continue;
         }
@@ -280,6 +330,8 @@ int main(int argc, char *argv[])
             sscanf(line + 11, "%d", &te5);
         else if (strncmp(line, "STATS_DIST_HIST_START", 21) == 0)
             hist_parsing = 1;
+        else if (strncmp(line, "STATS_CLUSTER_QUERIES_START", 27) == 0)
+            queries_parsing = 1;
         else if (strncmp(line, "STATS_", 6) == 0)
         {
             char *k = line + 6, *v = strchr(k, ':');
@@ -322,6 +374,22 @@ int main(int argc, char *argv[])
         strcat(output_filename, png_mode ? ".png" : ".svg");
     }
 
+    char queries_output_filename[1024];
+    strncpy(queries_output_filename, output_filename, sizeof(queries_output_filename) - 1);
+    queries_output_filename[sizeof(queries_output_filename) - 1] = '\0';
+    char *ext_q = strrchr(queries_output_filename, '.');
+    if (ext_q != NULL)
+    {
+        char temp_ext[64];
+        strcpy(temp_ext, ext_q);
+        strcpy(ext_q, ".queries");
+        strcat(queries_output_filename, temp_ext);
+    }
+    else
+    {
+        strcat(queries_output_filename, ".queries");
+    }
+
     char memb_filename[4096];
     if (output_dir[0])
         snprintf(memb_filename, sizeof(memb_filename), "%s/frame_membership.txt", output_dir);
@@ -345,9 +413,11 @@ int main(int argc, char *argv[])
     }
 
     FILE *svg_out = png_mode ? NULL : fopen(output_filename, "w");
+    FILE *q_svg_out = png_mode ? NULL : fopen(queries_output_filename, "w");
 #ifdef USE_PNG
     canvas_set_svg_output(svg_out);
     Canvas *canvas = png_mode ? init_canvas(SVG_WIDTH, SVG_HEIGHT) : NULL;
+    Canvas *q_canvas = png_mode ? init_canvas(PLOT_WIDTH, Q_HEIGHT) : NULL;
 #endif
     if (!png_mode && svg_out)
     {
@@ -360,6 +430,18 @@ int main(int argc, char *argv[])
                 "<line x1=\"0\" y1=\"%.2f\" x2=\"%d\" y2=\"%.2f\" stroke=\"black\" /><line "
                 "x1=\"%.2f\" y1=\"0\" x2=\"%.2f\" y2=\"%d\" stroke=\"black\" />",
                 cy, PLOT_WIDTH, cy, cx, cx, SVG_HEIGHT);
+    }
+    if (!png_mode && q_svg_out)
+    {
+        fprintf(q_svg_out,
+                "<svg width=\"%d\" height=\"%d\" xmlns=\"http://www.w3.org/2000/svg\"><rect "
+                "width=\"100%%\" height=\"100%%\" fill=\"white\" />",
+                PLOT_WIDTH, Q_HEIGHT);
+        double cx = map_q_x(0), cy = map_q_y(0);
+        fprintf(q_svg_out,
+                "<line x1=\"0\" y1=\"%.2f\" x2=\"%d\" y2=\"%.2f\" stroke=\"black\" /><line "
+                "x1=\"%.2f\" y1=\"0\" x2=\"%.2f\" y2=\"%d\" stroke=\"black\" />",
+                cy, PLOT_WIDTH, cy, cx, cx, Q_HEIGHT);
     }
     Anchor anchors[10000];
     int num_anchors = 0;
@@ -390,22 +472,25 @@ int main(int argc, char *argv[])
         const char *hex = colors[abs(cid) % NUM_COLORS];
         if (cid < 0)
             hex = "#000000";
-        if (png_mode)
+        if (sx >= 0 && sx <= PLOT_WIDTH && sy >= 0 && sy <= SVG_HEIGHT)
         {
-#ifdef USE_PNG
-            ColorRGB c = parse_color(hex);
-            int pt_size = (int)(3.0 * ((double)SVG_HEIGHT / 800.0));
-            if (pt_size < 1)
+            if (png_mode)
             {
-                pt_size = 1;
-            }
-            draw_filled_rect(canvas, (int)sx - pt_size / 2, (int)sy - pt_size / 2, pt_size, pt_size, c);
+#ifdef USE_PNG
+                ColorRGB c = parse_color(hex);
+                int pt_size = (int)(3.0 * ((double)SVG_HEIGHT / 800.0));
+                if (pt_size < 1)
+                {
+                    pt_size = 1;
+                }
+                draw_filled_rect(canvas, (int)sx - pt_size / 2, (int)sy - pt_size / 2, pt_size, pt_size, c);
 #endif
-        }
-        else
-        {
-            double pt_r = 2.0 * ((double)SVG_HEIGHT / 800.0);
-            fprintf(svg_out, "<circle cx=\"%.2f\" cy=\"%.2f\" r=\"%.2f\" fill=\"%s\" />", sx, sy, pt_r, hex);
+            }
+            else
+            {
+                double pt_r = 2.0 * ((double)SVG_HEIGHT / 800.0);
+                fprintf(svg_out, "<circle cx=\"%.2f\" cy=\"%.2f\" r=\"%.2f\" fill=\"%s\" />", sx, sy, pt_r, hex);
+            }
         }
 
         frame_count++;
@@ -421,24 +506,190 @@ int main(int argc, char *argv[])
     for (int i = 0; i < num_anchors; i++)
     {
         double ax = map_x(anchors[i].x), ay = map_y(anchors[i].y);
-        if (png_mode)
+
+        if (ax >= 0 && ax <= PLOT_WIDTH && ay >= 0 && ay <= SVG_HEIGHT)
         {
-#ifdef USE_PNG
-            ColorRGB b = {0, 0, 0};
-            int thickness = (int)(3.0 * ((double)SVG_HEIGHT / 800.0));
-            if (thickness < 1)
+            if (png_mode)
             {
-                thickness = 1;
-            }
-            draw_circle(canvas, (int)ax, (int)ay, (int)r_px, thickness, b);
+#ifdef USE_PNG
+                ColorRGB b = {0, 0, 0};
+                int thickness = (int)(3.0 * ((double)SVG_HEIGHT / 800.0));
+                if (thickness < 1)
+                {
+                    thickness = 1;
+                }
+                draw_circle(canvas, (int)ax, (int)ay, (int)r_px, thickness, b);
 #endif
+            }
+            else
+            {
+                double stroke_w = 3.0 * ((double)SVG_HEIGHT / 800.0);
+                fprintf(svg_out,
+                        "<circle cx=\"%.2f\" cy=\"%.2f\" r=\"%.2f\" stroke=\"black\" fill=\"none\" stroke-width=\"%.1f\" />",
+                        ax, ay, r_px, stroke_w);
+            }
         }
-        else
+    }
+
+    long total_queries = 0;
+    long max_q = 0;
+    for (int i = 0; i < num_anchors; i++)
+    {
+        long q_c = cluster_query_counts[anchors[i].id];
+        total_queries += q_c;
+        if (q_c > max_q)
         {
-            double stroke_w = 3.0 * ((double)SVG_HEIGHT / 800.0);
-            fprintf(svg_out,
-                    "<circle cx=\"%.2f\" cy=\"%.2f\" r=\"%.2f\" stroke=\"black\" fill=\"none\" stroke-width=\"%.1f\" />",
-                    ax, ay, r_px, stroke_w);
+            max_q = q_c;
+        }
+    }
+    double q_coeff = 0.0;
+    if (total_queries > 0)
+    {
+        q_coeff = sqrt((0.10 * PLOT_WIDTH * Q_HEIGHT) / (M_PI * total_queries));
+    }
+
+    // --- Draw proportional query disks in the separate queries file ---
+    if (png_mode)
+    {
+#ifdef USE_PNG
+        ColorRGB border_color = {180, 180, 180};
+        ColorRGB axis_color = {220, 220, 220};
+        ColorRGB text_color = {0, 0, 0};
+
+        // Draw border
+        draw_line(q_canvas, 0, 0, PLOT_WIDTH - 1, 0, border_color);
+        draw_line(q_canvas, PLOT_WIDTH - 1, 0, PLOT_WIDTH - 1, Q_HEIGHT - 1, border_color);
+        draw_line(q_canvas, PLOT_WIDTH - 1, Q_HEIGHT - 1, 0, Q_HEIGHT - 1, border_color);
+        draw_line(q_canvas, 0, Q_HEIGHT - 1, 0, 0, border_color);
+
+        // Draw axes (origin 0,0)
+        double cx = map_q_x(0.0);
+        double cy = map_q_y(0.0);
+        draw_line(q_canvas, 0, (int)cy, PLOT_WIDTH - 1, (int)cy, axis_color);
+        draw_line(q_canvas, (int)cx, 0, (int)cx, Q_HEIGHT - 1, axis_color);
+
+        // Draw Title
+        draw_string(q_canvas, 20, 40, "Query Count Proportional Circles (Total Area = 10%)", text_color, 0, png_font_scale, 1);
+#endif
+    }
+    else if (q_svg_out)
+    {
+        double cx = map_q_x(0.0);
+        double cy = map_q_y(0.0);
+        fprintf(q_svg_out,
+                "<text x=\"20\" y=\"40\" font-family=\"monospace\" font-size=\"20\" fill=\"black\" font-weight=\"bold\">Query Count Proportional Circles (Total Area = 10%%)</text>");
+    }
+
+    for (int i = 0; i < num_anchors; i++)
+    {
+        double ax = map_q_x(anchors[i].x);
+        double ay = map_q_y(anchors[i].y);
+
+        if (ax >= 0 && ax <= PLOT_WIDTH && ay >= 0 && ay <= Q_HEIGHT)
+        {
+            long q_count = cluster_query_counts[anchors[i].id];
+            double r_val = 0.0;
+            if (q_count > 0)
+            {
+                r_val = q_coeff * sqrt((double)q_count);
+                if (r_val < 1.0)
+                {
+                    r_val = 1.0;
+                }
+            }
+
+            char label[64];
+            if (q_count > 0)
+            {
+                snprintf(label, sizeof(label), "C%d(q:%ld)", anchors[i].id, q_count);
+            }
+            else
+            {
+                snprintf(label, sizeof(label), "C%d", anchors[i].id);
+            }
+
+            if (png_mode)
+            {
+#ifdef USE_PNG
+                ColorRGB black = {0, 0, 0};
+
+                if (q_count > 0)
+                {
+                    draw_circle(q_canvas, (int)ax, (int)ay, (int)r_val, 2, black);
+                }
+#endif
+            }
+            else if (q_svg_out)
+            {
+                if (q_count > 0)
+                {
+                    fprintf(q_svg_out,
+                            "<circle cx=\"%.2f\" cy=\"%.2f\" r=\"%.2f\" fill=\"none\" stroke=\"black\" stroke-width=\"2\" />",
+                            ax, ay, r_val);
+                }
+            }
+        }
+    }
+
+    // Draw caption legend in the top right corner
+    if (png_mode)
+    {
+#ifdef USE_PNG
+        if (total_queries > 0)
+        {
+            ColorRGB gray = {150, 150, 150};
+            ColorRGB text_color = {50, 50, 50};
+            long c_large = get_rounded_count(max_q);
+            long c_medium = c_large / 2;
+            long c_small = c_large >= 10 ? c_large / 10 : 1;
+
+            double r_large = q_coeff * sqrt((double)c_large);
+            double r_medium = q_coeff * sqrt((double)c_medium);
+            double r_small = q_coeff * sqrt((double)c_small);
+
+            int lx = 1250, ly = 120;
+            draw_circle(q_canvas, lx, ly, (int)r_large, 2, gray);
+            draw_circle(q_canvas, lx, ly, (int)r_medium, 2, gray);
+            draw_circle(q_canvas, lx, ly, (int)r_small, 2, gray);
+
+            int text_x = lx + (int)r_large + 15;
+            char l_str[128];
+            snprintf(l_str, sizeof(l_str), "%ld queries", c_large);
+            draw_string(q_canvas, text_x, ly - 35, l_str, text_color, 0, png_font_scale * 0.8, 0);
+            snprintf(l_str, sizeof(l_str), "%ld queries", c_medium);
+            draw_string(q_canvas, text_x, ly - 5, l_str, text_color, 0, png_font_scale * 0.8, 0);
+            snprintf(l_str, sizeof(l_str), "%ld queries", c_small);
+            draw_string(q_canvas, text_x, ly + 25, l_str, text_color, 0, png_font_scale * 0.8, 0);
+        }
+#endif
+    }
+    else if (q_svg_out)
+    {
+        if (total_queries > 0)
+        {
+            long c_large = get_rounded_count(max_q);
+            long c_medium = c_large / 2;
+            long c_small = c_large >= 10 ? c_large / 10 : 1;
+
+            double r_large = q_coeff * sqrt((double)c_large);
+            double r_medium = q_coeff * sqrt((double)c_medium);
+            double r_small = q_coeff * sqrt((double)c_small);
+
+            int lx = 1250, ly = 120;
+            fprintf(q_svg_out,
+                    "<circle cx=\"%d\" cy=\"%d\" r=\"%.2f\" fill=\"none\" stroke=\"#969696\" stroke-width=\"2\" />"
+                    "<circle cx=\"%d\" cy=\"%d\" r=\"%.2f\" fill=\"none\" stroke=\"#969696\" stroke-width=\"2\" />"
+                    "<circle cx=\"%d\" cy=\"%d\" r=\"%.2f\" fill=\"none\" stroke=\"#969696\" stroke-width=\"2\" />",
+                    lx, ly, r_large, lx, ly, r_medium, lx, ly, r_small);
+
+            double text_x = lx + r_large + 15.0;
+            fprintf(q_svg_out,
+                    "<text x=\"%.2f\" y=\"%d\" font-family=\"monospace\" font-size=\"14\" fill=\"#323232\">%ld queries</text>"
+                    "<text x=\"%.2f\" y=\"%d\" font-family=\"monospace\" font-size=\"14\" fill=\"#323232\">%ld queries</text>"
+                    "<text x=\"%.2f\" y=\"%d\" font-family=\"monospace\" font-size=\"14\" fill=\"#323232\">%ld queries</text>",
+                    text_x, ly - 30, c_large,
+                    text_x, ly, c_medium,
+                    text_x, ly + 30, c_small);
         }
     }
 #ifdef USE_PNG
@@ -462,6 +713,10 @@ int main(int argc, char *argv[])
         printf("Saving PNG output: %s\n", output_filename);
         save_png(canvas, output_filename);
         free_canvas(canvas);
+
+        printf("Saving queries PNG output: %s\n", queries_output_filename);
+        save_png(q_canvas, queries_output_filename);
+        free_canvas(q_canvas);
 #endif
     }
     else
@@ -469,11 +724,19 @@ int main(int argc, char *argv[])
         printf("Saving SVG output: %s\n", output_filename);
         fprintf(svg_out, "</svg>");
         fclose(svg_out);
+
+        if (q_svg_out)
+        {
+            printf("Saving queries SVG output: %s\n", queries_output_filename);
+            fprintf(q_svg_out, "</svg>");
+            fclose(q_svg_out);
+        }
     }
     fclose(f_pts);
     fclose(f_memb);
     free(cluster_seen);
     free(samples_per_cluster);
     free(hist_data);
+    free(cluster_query_counts);
     return 0;
 }

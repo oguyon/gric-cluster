@@ -51,6 +51,9 @@ typedef struct
     int    pred_n;
     int    te4_mode;
     int    te5_mode;
+    int    entropy_mode;
+    int    entropy_max_targets;
+    double entropy_min_prob;
 } ConfigOptim;
 
 // Output configuration
@@ -94,6 +97,8 @@ typedef struct
 typedef struct
 {
     long    framedist_calls;
+    long    framedist_calls_sample;
+    long    framedist_calls_intercluster;
     long    clusters_pruned;
     long    total_frames_processed;
     long    total_missed_frames;
@@ -102,7 +107,15 @@ typedef struct
     int     max_steps_recorded;
     long   *dist_counts;
     long   *pruned_counts_by_dist;
+    long   *cluster_query_counts;
 } ClusterTelemetry;
+
+// Candidate structure for sorting
+typedef struct
+{
+    int id;
+    double p;
+} Candidate;
 
 // Scratch/Calculation structure
 typedef struct
@@ -112,6 +125,9 @@ typedef struct
     int    *probsortedclindex;  /**< Cluster indices sorted by descending prior probability */
     int    *clmembflag;         /**< Flag indicating if a cluster is still an active candidate */
     double *mixed_probs;        /**< Prior predictive probabilities (frequency * sequence) */
+    uint64_t *consistency_mask; /**< Precomputed 3D geometric consistency bitmask */
+    double *entropy_p_current;  /**< Pre-allocated scratch buffer for entropy search probabilities */
+    Candidate *entropy_candidates; /**< Pre-allocated scratch buffer for sorting candidates */
 } ClusterScratch;
 
 // State structure
@@ -127,13 +143,6 @@ typedef struct
     ClusterTelemetry  telemetry;
     ClusterScratch    scratch;
 } ClusterState;
-
-// Candidate structure for sorting
-typedef struct
-{
-    int id;
-    double p;
-} Candidate;
 
 #define OMP_MIN_CLUSTERS 256
 

@@ -40,6 +40,20 @@ double get_dist(
 #pragma omp atomic
 #endif
     state->telemetry.framedist_calls++;
+    if (cluster_idx >= 0)
+    {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        state->telemetry.framedist_calls_sample++;
+    }
+    else
+    {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+        state->telemetry.framedist_calls_intercluster++;
+    }
     double d = framedist(a, b);
 
     if (config->output.distall_mode && state->distall_out)
@@ -93,6 +107,8 @@ void run_clustering(
         (long *)calloc(config->algo.maxnbclust + 1, sizeof(long));
     state->telemetry.pruned_counts_by_dist =
         (long *)calloc(config->algo.maxnbclust + 1, sizeof(long));
+    state->telemetry.cluster_query_counts =
+        (long *)calloc(config->algo.maxnbclust, sizeof(long));
 
     int    *temp_indices = (int *)malloc(config->algo.maxnbclust * sizeof(int));
     double *temp_dists = (double *)malloc(config->algo.maxnbclust * sizeof(double));
@@ -227,7 +243,10 @@ void run_clustering(
     printf("Analysis complete.\n");
     printf("Total clusters: %d\n", state->num_clusters);
     printf("Processing time: %.3f ms\n", elapsed_ms);
-    printf("Framedist calls: %ld\n", state->telemetry.framedist_calls);
+    printf("Framedist calls: %ld (sample-to-cluster: %ld, inter-cluster: %ld)\n",
+           state->telemetry.framedist_calls,
+           state->telemetry.framedist_calls_sample,
+           state->telemetry.framedist_calls_intercluster);
 
     if (ascii_out)
     {

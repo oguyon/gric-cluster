@@ -96,6 +96,7 @@ set(CLUSTER_SRCS
     src/gric-cluster/steps/update_geometric_probabilities.c
     src/gric-cluster/steps/handle_new_cluster_creation.c
     src/gric-cluster/steps/record_step_assignment.c
+    src/gric-cluster/steps/update_consistency_mask.c
 )
 
 add_executable(gric-cluster ${CLUSTER_SRCS})

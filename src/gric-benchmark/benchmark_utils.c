@@ -38,9 +38,13 @@ static const char *known_patterns[] =
     "2Drand",
     "3Drand",
     "2DcircleP10n",
-    "3Dspiral"
+    "3Dspiral",
+    "3Dstar",
+    "3Dconcentric",
+    "5Dtree",
+    "3Dconcentric_dense"
 };
-#define KNOWN_PATTERNS_COUNT 7
+#define KNOWN_PATTERNS_COUNT 11
 
 /**
  * @brief Initialize colors if NO_COLOR environment variable is not present.
@@ -120,7 +124,9 @@ void print_help(
            "(%sDefault:%s%s 100000%s)\n",
            ANSI_COLOR_GREEN, ANSI_COLOR_RESET, ANSI_COLOR_MAGENTA, ANSI_COLOR_RESET,
            ANSI_COLOR_CYAN, ANSI_COLOR_RESET, ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
-    printf("  %s-b, --build%s           Rebuild project before running benchmarks\n\n",
+    printf("  %s-b, --build%s           Rebuild project before running benchmarks\n",
+           ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
+    printf("  %s-entropy%s              Enable Shannon entropy-reduction target selection\n\n",
            ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
 
     printf("%sEXAMPLES%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
@@ -327,6 +333,8 @@ void parse_metrics(
     const char  *log_path,
     char        *out_time,
     char        *out_dists,
+    char        *out_dists_sample,
+    char        *out_dists_intercluster,
     char        *out_clusters,
     char        *out_mem)
 {
@@ -335,6 +343,8 @@ void parse_metrics(
     {
         strcpy(out_time, "N/A");
         strcpy(out_dists, "N/A");
+        strcpy(out_dists_sample, "N/A");
+        strcpy(out_dists_intercluster, "N/A");
         strcpy(out_clusters, "N/A");
         strcpy(out_mem, "N/A");
         return;
@@ -342,6 +352,8 @@ void parse_metrics(
 
     strcpy(out_time, "N/A");
     strcpy(out_dists, "N/A");
+    strcpy(out_dists_sample, "N/A");
+    strcpy(out_dists_intercluster, "N/A");
     strcpy(out_clusters, "N/A");
     strcpy(out_mem, "N/A");
 
@@ -359,11 +371,25 @@ void parse_metrics(
         }
         else if (strstr(line, "Framedist calls:") != NULL)
         {
-            char val[128] = "";
-            if (sscanf(line, "Framedist calls: %127s", val) == 1)
+            char val_tot[64] = "";
+            char val_sample[64] = "";
+            char val_inter[64] = "";
+            int parsed = sscanf(line, "Framedist calls: %63s (sample-to-cluster: %63[^,], inter-cluster: %63[^)])",
+                                val_tot, val_sample, val_inter);
+            if (parsed >= 1)
             {
-                strncpy(out_dists, val, 63);
+                strncpy(out_dists, val_tot, 63);
                 out_dists[63] = '\0';
+                if (parsed >= 2 && val_sample[0])
+                {
+                    strncpy(out_dists_sample, val_sample, 63);
+                    out_dists_sample[63] = '\0';
+                }
+                if (parsed >= 3 && val_inter[0])
+                {
+                    strncpy(out_dists_intercluster, val_inter, 63);
+                    out_dists_intercluster[63] = '\0';
+                }
             }
         }
         else if (strstr(line, "Total clusters:") != NULL)

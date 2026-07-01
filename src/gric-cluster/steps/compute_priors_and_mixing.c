@@ -5,6 +5,21 @@
 #include <math.h>
 #include <stdlib.h>
 
+/**
+ * calculate_sequence_match_metric - Compute match metric mAB between two cluster histories.
+ * @seq_A_cl: Array of cluster assignments for sequence A.
+ * @seq_A_d: Array of anchor distances for sequence A.
+ * @seq_B_cl: Array of cluster assignments for sequence B.
+ * @seq_B_d: Array of anchor distances for sequence B.
+ * @n_p: Sequence length (pattern length).
+ * @r_c: Cluster radius threshold.
+ * @state: Running state of the clustering execution.
+ * @config: Config parameters of the clustering execution.
+ *
+ * Implements the sequence matching formula comparing historical transitions to predict priors.
+ *
+ * Return: Double value representing the match probability metric mAB.
+ */
 static double calculate_sequence_match_metric(
     const int     *seq_A_cl,
     const double  *seq_A_d,
@@ -46,6 +61,16 @@ static double calculate_sequence_match_metric(
     return exp(-sum_dmax / ((double)n_p * 0.63212055882855767));
 }
 
+/**
+ * compute_priors_and_mixing - Compute mixed priors using frequency and sequence transitions.
+ * @config: Config parameters of the clustering execution.
+ * @state: Running state of the clustering execution.
+ * @prev_assigned_cluster: The cluster index assigned to the previous frame (-1 if none).
+ * @sorting_candidates: Scratch memory array used to sort candidates.
+ *
+ * Normalizes prior probabilities so they sum to 1. If sequence prediction or transition matrix
+ * mixing is enabled, blends normalized priors with temporal transition statistics.
+ */
 void compute_priors_and_mixing(
     ClusterConfig *config,
     ClusterState  *state,
@@ -169,16 +194,6 @@ void compute_priors_and_mixing(
                             free(seq_B_cl);
                             free(seq_B_d);
                         }
-                        else
-                        {
-                            free(seq_B_cl);
-                            free(seq_B_d);
-                        }
-                        free(seq_A_cl);
-                        free(seq_A_d);
-                    }
-                    else
-                    {
                         free(seq_A_cl);
                         free(seq_A_d);
                     }

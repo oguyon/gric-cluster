@@ -6,6 +6,19 @@
 
 #define OMP_MIN_CLUSTERS 256
 
+/**
+ * update_probabilities_and_pruning - Prune search space and update geometric priorities.
+ * @cj: Cluster index measured in the last step.
+ * @dfc: Computed distance to cluster index cj.
+ * @config: Config parameters of the clustering execution.
+ * @state: Running state of the clustering execution.
+ * @temp_indices: Array of cluster indices measured in this frame.
+ * @temp_dists: Array of computed distances in this frame.
+ * @temp_count: Total count of measurements recorded in this frame.
+ *
+ * Employs Multi-Point Triangle Inequality heuristics (TE4/TE5) to prune distant
+ * cluster candidates (setting clmembflag[cl] = 0). Updates geometric probabilities.
+ */
 void update_probabilities_and_pruning(
     int            cj,
     double         dfc,

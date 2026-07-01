@@ -316,6 +316,17 @@ void print_help_keyword(
                ANSI_COLOR_RESET);
         found = 1;
     }
+    else if (strcmp(key, "entropy") == 0)
+    {
+        printf("%sRole:%s Target Selection Option\n", ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("%sFunction:%s Selects distance measurements minimizing expected entropy.\n", ANSI_BOLD,
+               ANSI_COLOR_RESET);
+        printf("%sAlgorithm:%s Evaluates information gain for all candidates by testing hypotheses\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("           under triangle inequality constraints and selecting the one\n");
+        printf("           producing the largest expected Shannon entropy drop.\n");
+        found = 1;
+    }
     else if (strcmp(key, "scandist") == 0)
     {
         printf("%sRole:%s Data Analysis (Pre-run)\n", ANSI_BOLD, ANSI_COLOR_RESET);
@@ -707,6 +718,7 @@ void print_help(
                        "to return");
     print_colored_line("    -te4                     Use 4-point triangle inequality pruning");
     print_colored_line("    -te5                     Use 5-point triangle inequality pruning");
+    print_colored_line("    -entropy                 Use entropy-based target cluster selection");
     print_colored_line("    -conf <file>             Read options from configuration file");
     print_colored_line("    -confw <file>            Write current options to configuration file");
 

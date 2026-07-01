@@ -112,6 +112,8 @@ int main(int argc, char *argv[])
     config.optim.pred_n = 2;
     config.algo.maxcl_strategy = MAXCL_STOP;
     config.algo.discard_fraction = 0.5;
+    config.optim.entropy_max_targets = 15;
+    config.optim.entropy_min_prob = 0.001;
 
     // Output defaults (disabled by default, except membership and dcc)
     config.output.output_dcc = 1;
@@ -380,6 +382,10 @@ int main(int argc, char *argv[])
     state.cluster_visitors = (VisitorList *)calloc(config.algo.maxnbclust, sizeof(VisitorList));
     state.scratch.probsortedclindex = (int *)malloc(config.algo.maxnbclust * sizeof(int));
     state.scratch.clmembflag = (int *)malloc(config.algo.maxnbclust * sizeof(int));
+    int words = (config.algo.maxnbclust + 63) / 64;
+    state.scratch.consistency_mask = (uint64_t *)calloc(config.algo.maxnbclust * config.algo.maxnbclust * words, sizeof(uint64_t));
+    state.scratch.entropy_p_current = (double *)malloc(config.algo.maxnbclust * sizeof(double));
+    state.scratch.entropy_candidates = (Candidate *)malloc(config.algo.maxnbclust * sizeof(Candidate));
 
     // Run Clustering
     struct timespec clust_start, clust_end;
@@ -439,6 +445,9 @@ int main(int argc, char *argv[])
     free(state.scratch.dccarray);
     free(state.scratch.probsortedclindex);
     free(state.scratch.clmembflag);
+    free(state.scratch.consistency_mask);
+    free(state.scratch.entropy_p_current);
+    free(state.scratch.entropy_candidates);
     free(state.assignments);
 
     if (state.telemetry.pruned_fraction_sum)
@@ -453,6 +462,8 @@ int main(int argc, char *argv[])
         free(state.telemetry.dist_counts);
     if (state.telemetry.pruned_counts_by_dist)
         free(state.telemetry.pruned_counts_by_dist);
+    if (state.telemetry.cluster_query_counts)
+        free(state.telemetry.cluster_query_counts);
 
     if (config.output.user_outdir && out_dir_alloc)
         free(config.output.user_outdir);

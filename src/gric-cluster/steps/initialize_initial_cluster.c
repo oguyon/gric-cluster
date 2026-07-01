@@ -6,6 +6,16 @@
 #define ANSI_COLOR_ORANGE "\x1b[38;5;208m"
 #define ANSI_COLOR_RESET  "\x1b[0m"
 
+/**
+ * initialize_initial_cluster - Set up the first cluster in the search space.
+ * @config: Config parameters of the clustering execution.
+ * @state: Running state of the clustering execution.
+ * @current_frame: The very first frame ingested in the video sequence.
+ * @assigned_cluster: Pointer to output destination storing the assigned cluster index (always 0).
+ *
+ * Configures the first ingested frame as the anchor for cluster index 0,
+ * and sets up its initial frequency probability to 1.0. Registers the frame visitor.
+ */
 void initialize_initial_cluster(
     ClusterConfig *config,
     ClusterState  *state,

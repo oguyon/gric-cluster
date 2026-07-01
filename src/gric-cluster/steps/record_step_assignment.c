@@ -6,6 +6,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * record_step_assignment - Record telemetry and write cluster results.
+ * @config: Config parameters of the clustering execution.
+ * @state: Running state of the clustering execution.
+ * @current_frame: The frame being clustered.
+ * @assigned_cluster: The final cluster index assigned to the current frame.
+ * @prev_assigned_cluster: Pointer tracking the previous frame's cluster assignment.
+ * @ascii_out: Output file stream for writing frame membership info (NULL if disabled).
+ * @temp_indices: Array of measured indices in this step.
+ * @temp_dists: Array of computed distances in this step.
+ * @temp_count: Number of measurements recorded in this step.
+ * @start_pruned_val: Pruning counter before beginning this step.
+ *
+ * Increments the transition matrix count, saves assignments, logs distance outputs,
+ * applies predictive probability reward/decay functions, and frees current_frame.
+ */
 void record_step_assignment(
     ClusterConfig *config,
     ClusterState  *state,
@@ -58,14 +74,6 @@ void record_step_assignment(
                    temp_indices, temp_count * sizeof(int));
             memcpy(state->frame_infos[state->telemetry.total_frames_processed].distances,
                    temp_dists, temp_count * sizeof(double));
-        }
-        else
-        {
-            free(state->frame_infos[state->telemetry.total_frames_processed].cluster_indices);
-            free(state->frame_infos[state->telemetry.total_frames_processed].distances);
-            state->frame_infos[state->telemetry.total_frames_processed].cluster_indices = NULL;
-            state->frame_infos[state->telemetry.total_frames_processed].distances = NULL;
-            state->frame_infos[state->telemetry.total_frames_processed].num_dists = 0;
         }
     }
     else

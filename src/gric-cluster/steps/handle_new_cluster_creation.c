@@ -9,6 +9,21 @@
 #define ANSI_COLOR_RESET  "\x1b[0m"
 #define ANSI_COLOR_ORANGE "\x1b[38;5;208m"
 
+/**
+ * handle_new_cluster_creation - Manage cluster creation and eviction limits.
+ * @config: Config parameters of the clustering execution.
+ * @state: Running state of the clustering execution.
+ * @current_frame: The frame being clustered.
+ * @prev_assigned_cluster: The previous frame's cluster index assignment.
+ * @temp_indices: Array tracking measured indices in this step.
+ * @temp_dists: Array tracking computed distances in this step.
+ * @temp_count: Pointer to total measurement count in this step.
+ *
+ * Checks if cluster capacity maxnbclust is reached. If not, instantiates a new cluster.
+ * If reached, executes the configured eviction strategy (Stop, Discard, or Merge).
+ *
+ * Return: Cluster index assigned to the new frame, or -2 if stop signal is triggered.
+ */
 int handle_new_cluster_creation(
     ClusterConfig *config,
     ClusterState  *state,
@@ -58,6 +73,7 @@ int handle_new_cluster_creation(
             temp_dists[*temp_count] = 0.0;
             (*temp_count)++;
         }
+        update_consistency_mask_for_new_cluster(config, state, state->num_clusters);
         state->num_clusters++;
         return assigned_cluster;
     }
@@ -129,6 +145,7 @@ int handle_new_cluster_creation(
                 temp_dists[*temp_count] = 0.0;
                 (*temp_count)++;
             }
+            update_consistency_mask_for_new_cluster(config, state, state->num_clusters);
             state->num_clusters++;
             return assigned_cluster;
         }
@@ -213,6 +230,7 @@ int handle_new_cluster_creation(
                 temp_dists[*temp_count] = 0.0;
                 (*temp_count)++;
             }
+            update_consistency_mask_for_new_cluster(config, state, state->num_clusters);
             state->num_clusters++;
             return assigned_cluster;
         }

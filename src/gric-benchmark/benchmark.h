@@ -41,6 +41,7 @@ typedef struct
     char *extra_options[MAX_OPTIONS];
     int   extra_options_count;
     int   build_first;
+    int   use_entropy;
 } BenchmarkConfig;
 
 /* Utilities Prototypes */
@@ -74,6 +75,8 @@ void parse_metrics(
     const char  *log_path,
     char        *out_time,
     char        *out_dists,
+    char        *out_dists_sample,
+    char        *out_dists_intercluster,
     char        *out_clusters,
     char        *out_mem);
 
