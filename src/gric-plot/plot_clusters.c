@@ -413,6 +413,13 @@ int main(int argc, char *argv[])
     }
 
     FILE *svg_out = png_mode ? NULL : fopen(output_filename, "w");
+    if (!png_mode && !svg_out)
+    {
+        fprintf(stderr, "Error: Could not open output file %s\n", output_filename);
+        fclose(f_pts);
+        fclose(f_memb);
+        return 1;
+    }
     FILE *q_svg_out = png_mode ? NULL : fopen(queries_output_filename, "w");
     if (!png_mode && !svg_out)
     {
