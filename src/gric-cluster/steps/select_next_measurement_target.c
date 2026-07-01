@@ -201,10 +201,12 @@ static int select_next_measurement_target_entropy(
     while (num_targets < limit && prune_idx < state->num_clusters)
     {
         int id = prune_scores[prune_idx].id;
-        if (!visited[id])
+        if (state->scratch.clmembflag[id] && !visited[id])
         {
+            double p = state->scratch.mixed_probs[id] *
+                       state->scratch.current_gprobs[id];
             candidates[num_targets].id = id;
-            candidates[num_targets].p = prob_scores[id].score;
+            candidates[num_targets].p = p;
             visited[id] = 1;
             num_targets++;
         }

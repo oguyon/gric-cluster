@@ -19,7 +19,8 @@ void recompute_consistency_mask(
     int words = (N + 63) / 64;
     double rc = config->algo.rlim;
 
-    memset(state->scratch.consistency_mask, 0, N * N * words * sizeof(uint64_t));
+    size_t clear_bytes = (size_t)N * (size_t)N * (size_t)words * sizeof(uint64_t);
+    memset(state->scratch.consistency_mask, 0, clear_bytes);
 
     for (int i = 0; i < state->num_clusters; i++)
     {

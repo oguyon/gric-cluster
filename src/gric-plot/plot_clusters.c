@@ -290,7 +290,7 @@ int main(int argc, char *argv[])
             {
                 int k;
                 long q;
-                if (sscanf(line, "%d %ld", &k, &q) == 2 && k < 10000)
+                if (sscanf(line, "%d %ld", &k, &q) == 2 && k >= 0 && k < 10000)
                     cluster_query_counts[k] = q;
             }
             continue;
@@ -414,6 +414,17 @@ int main(int argc, char *argv[])
 
     FILE *svg_out = png_mode ? NULL : fopen(output_filename, "w");
     FILE *q_svg_out = png_mode ? NULL : fopen(queries_output_filename, "w");
+    if (!png_mode && !svg_out)
+    {
+        fprintf(stderr, "Error: Could not open output file %s\n", output_filename);
+        if (q_svg_out)
+            fclose(q_svg_out);
+        fclose(f_pts);
+        fclose(f_memb);
+        free(hist_data);
+        free(cluster_query_counts);
+        return 1;
+    }
 #ifdef USE_PNG
     canvas_set_svg_output(svg_out);
     Canvas *canvas = png_mode ? init_canvas(SVG_WIDTH, SVG_HEIGHT) : NULL;

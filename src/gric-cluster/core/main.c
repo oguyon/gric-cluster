@@ -373,19 +373,23 @@ int main(int argc, char *argv[])
     }
 
     // Allocate State
-    state.clusters = (Cluster *)malloc(config.algo.maxnbclust * sizeof(Cluster));
-    state.scratch.dccarray = (double *)malloc(config.algo.maxnbclust * config.algo.maxnbclust * sizeof(double));
-    for (int ii = 0; ii < config.algo.maxnbclust * config.algo.maxnbclust; ii++)
+    size_t max_clusters = (size_t)config.algo.maxnbclust;
+    size_t cluster_pairs = max_clusters * max_clusters;
+    int words = (config.algo.maxnbclust + 63) / 64;
+    size_t consistency_words = cluster_pairs * (size_t)words;
+
+    state.clusters = (Cluster *)malloc(max_clusters * sizeof(Cluster));
+    state.scratch.dccarray = (double *)malloc(cluster_pairs * sizeof(double));
+    for (size_t ii = 0; ii < cluster_pairs; ii++)
         state.scratch.dccarray[ii] = -1.0;
 
-    state.scratch.current_gprobs = (double *)malloc(config.algo.maxnbclust * sizeof(double));
-    state.cluster_visitors = (VisitorList *)calloc(config.algo.maxnbclust, sizeof(VisitorList));
-    state.scratch.probsortedclindex = (int *)malloc(config.algo.maxnbclust * sizeof(int));
-    state.scratch.clmembflag = (int *)malloc(config.algo.maxnbclust * sizeof(int));
-    int words = (config.algo.maxnbclust + 63) / 64;
-    state.scratch.consistency_mask = (uint64_t *)calloc(config.algo.maxnbclust * config.algo.maxnbclust * words, sizeof(uint64_t));
-    state.scratch.entropy_p_current = (double *)malloc(config.algo.maxnbclust * sizeof(double));
-    state.scratch.entropy_candidates = (Candidate *)malloc(config.algo.maxnbclust * sizeof(Candidate));
+    state.scratch.current_gprobs = (double *)malloc(max_clusters * sizeof(double));
+    state.cluster_visitors = (VisitorList *)calloc(max_clusters, sizeof(VisitorList));
+    state.scratch.probsortedclindex = (int *)malloc(max_clusters * sizeof(int));
+    state.scratch.clmembflag = (int *)malloc(max_clusters * sizeof(int));
+    state.scratch.consistency_mask = (uint64_t *)calloc(consistency_words, sizeof(uint64_t));
+    state.scratch.entropy_p_current = (double *)malloc(max_clusters * sizeof(double));
+    state.scratch.entropy_candidates = (Candidate *)malloc(max_clusters * sizeof(Candidate));
 
     // Run Clustering
     struct timespec clust_start, clust_end;
