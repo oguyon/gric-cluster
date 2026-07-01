@@ -25,28 +25,32 @@ void compute_priors_and_mixing(
     int            prev_assigned_cluster,
     Candidate     *sorting_candidates);
 
-int evaluate_prediction_candidates(
+int select_next_measurement_target(
     ClusterConfig *config,
     ClusterState  *state,
-    Frame         *current_frame,
-    int           *temp_indices,
-    double        *temp_dists,
-    int           *temp_count,
-    int           *assigned_cluster,
-    int           *found);
-
-int evaluate_standard_candidates(
-    ClusterConfig *config,
-    ClusterState  *state,
-    Frame         *current_frame,
-    int           *temp_indices,
-    double        *temp_dists,
-    int           *temp_count,
-    int           *assigned_cluster,
-    int           *found,
-    double        *out_dfc,
     int           *k_search,
-    Candidate     *verbose_candidates);
+    const int     *pred_candidates,
+    int            num_preds,
+    int           *current_pred_idx);
+
+double measure_distance_to_cluster(
+    int            cj,
+    Frame         *current_frame,
+    ClusterConfig *config,
+    ClusterState  *state,
+    int           *temp_indices,
+    double        *temp_dists,
+    int           *temp_count,
+    int            is_prediction);
+
+void update_probabilities_and_pruning(
+    int            cj,
+    double         dfc,
+    ClusterConfig *config,
+    ClusterState  *state,
+    int           *temp_indices,
+    double        *temp_dists,
+    int            temp_count);
 
 void update_geometric_probabilities(
     ClusterConfig *config,

@@ -20,7 +20,10 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_step.h"
 #include "cluster_step_helpers.h"
+#include "cluster_math.h"
+#include "cluster_prune.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 int cluster_frame(
     ClusterConfig *config,
@@ -40,8 +43,8 @@ int cluster_frame(
     // Step 1: Base case setup.
     // If no clusters exist yet, the very first ingested frame serves as the anchor frame
     // for Cluster 0, initializing our clustering space.
-    // Output: Sets state->num_clusters to 1, sets state->clusters[0], and assigns
-    // assigned_cluster = 0.
+    // Output: Sets state->num_clusters to 1, sets state->clusters[0], assigns
+    // assigned_cluster = 0, and updates temp_indices, temp_dists, and temp_count.
     if (state->num_clusters == 0)
     {
         initialize_initial_cluster(config, state, current_frame, &assigned_cluster);
@@ -54,38 +57,125 @@ int cluster_frame(
         int found = 0;
         int k_search = 0;
         double dfc = 0.0;
+        int first_iter = 1;
+        int last_cj = -1;
 
-        // Step 2: Probability normalization and mixing.
-        // Cluster priors are normalized so they sum to 1. If sequence mixing is enabled,
-        // we blend the normalized priors with transition matrix statistics based on the
-        // previous frame's assignment, helping exploit temporal cluster transition sequences.
-        // Output: Updates normalized state->clusters[i].prob, state->scratch.mixed_probs,
-        // and state->scratch.probsortedclindex.
-        compute_priors_and_mixing(config, state, *prev_assigned_cluster, sorting_candidates);
+        int *pred_candidates = NULL;
+        int num_preds = 0;
+        int current_pred_idx = 0;
 
-        // Step 3: Trajectory prediction shortcut.
-        // Evaluates a set of predicted candidates derived from temporal transitions first.
-        // If a candidate matches within the threshold 'rlim', we assign immediately and skip
-        // the remaining search steps.
-        // Distance evaluation: Measures distance to predicted cluster anchors to test for a match.
-        // Output: Sets found = 1 and assigned_cluster to matched ID if found; updates
-        // state->telemetry.clusters_pruned.
-        evaluate_prediction_candidates(config, state, current_frame, temp_indices, temp_dists,
-                                       &temp_count, &assigned_cluster, &found);
-
-        // Step 4: Standard candidate evaluation and pruning.
-        // If prediction matching failed, we search the cluster database ordered by descending
-        // mixed probability. We compute distances and leverage Multi-Point Triangle Inequality
-        // heuristics (TE4/TE5) to prune distant clusters, avoiding redundant calculations.
-        // Distance evaluation: Measures distance to candidate cluster anchors. On mismatch,
-        // measures/caches pairwise cluster-to-cluster distances to prune remaining candidates.
-        // Output: Sets found = 1 and assigned_cluster to matched ID if found; updates
-        // state->telemetry.clusters_pruned and state->scratch.current_gprobs.
-        if (!found)
+        // Retrieve prediction candidates at the very start of processing the frame
+        if (config->optim.pred_mode &&
+            state->telemetry.total_frames_processed >= config->optim.pred_len)
         {
-            evaluate_standard_candidates(config, state, current_frame, temp_indices, temp_dists,
-                                         &temp_count, &assigned_cluster, &found, &dfc,
-                                         &k_search, verbose_candidates);
+            pred_candidates = (int *)malloc(config->optim.pred_n * sizeof(int));
+            if (pred_candidates)
+            {
+                num_preds = get_prediction_candidates(state, config, pred_candidates,
+                                                      config->optim.pred_n);
+            }
+        }
+
+        while (!found)
+        {
+            // Step A: Compute/update probabilities and candidate pruning.
+            // On first iteration, computes the base mixed prior probabilities.
+            // On subsequent iterations, prunes inconsistent candidate clusters and updates
+            // geometric probabilities using the last measured target and distance.
+            if (first_iter)
+            {
+                compute_priors_and_mixing(config, state, *prev_assigned_cluster, sorting_candidates);
+                first_iter = 0;
+            }
+            else
+            {
+                update_probabilities_and_pruning(last_cj, dfc, config, state, temp_indices,
+                                                 temp_dists, temp_count);
+            }
+
+            if (config->output.verbose_level >= 2 && verbose_candidates)
+            {
+                int vcount = 0;
+                for (int i = 0; i < state->num_clusters; i++)
+                {
+                    if (state->scratch.clmembflag[i])
+                    {
+                        double p = state->scratch.mixed_probs[i];
+                        if (config->optim.gprob_mode)
+                        {
+                            p *= state->scratch.current_gprobs[i];
+                        }
+                        verbose_candidates[vcount].id = i;
+                        verbose_candidates[vcount].p = p;
+                        vcount++;
+                    }
+                }
+
+                if (vcount > 0)
+                {
+                    qsort(verbose_candidates, vcount, sizeof(Candidate), compare_candidates);
+                    printf("  [VV] Cluster ranking:");
+                    for (int i = 0; i < vcount; i++)
+                    {
+                        printf(" [%4d %12.5e]", verbose_candidates[i].id,
+                               verbose_candidates[i].p);
+                        if (i < vcount - 1)
+                        {
+                            printf(" >");
+                        }
+                    }
+                    printf("\n");
+                }
+            }
+
+            // Step B: Select next measurement target.
+            // Output: Returns the cluster index cj of the next target, or -1 if all
+            // candidates are pruned/exhausted.
+            int cj = select_next_measurement_target(config, state, &k_search,
+                                                    pred_candidates, num_preds,
+                                                    &current_pred_idx);
+            if (cj == -1)
+            {
+                break;
+            }
+
+            // Check if we are measuring a prediction candidate
+            int is_prediction = 0;
+            if (pred_candidates)
+            {
+                for (int p = 0; p < num_preds; p++)
+                {
+                    if (pred_candidates[p] == cj)
+                    {
+                        is_prediction = 1;
+                        break;
+                    }
+                }
+            }
+
+            // Step C: Measure distance to target.
+            // Output: Returns computed distance dfc; updates temp_indices/temp_dists and
+            // increments temp_count.
+            dfc = measure_distance_to_cluster(cj, current_frame, config, state,
+                                              temp_indices, temp_dists, &temp_count,
+                                              is_prediction);
+
+            // Step D: Check if solved.
+            // Output: If dfc < rlim, resolves assignment and exits loop. Otherwise, records
+            // last_cj/dfc for Step A update.
+            if (dfc < config->algo.rlim)
+            {
+                assigned_cluster = cj;
+                found = 1;
+                break;
+            }
+
+            last_cj = cj;
+        }
+
+        if (pred_candidates)
+        {
+            free(pred_candidates);
         }
 
         // Step 5: Handling of new cluster creation and cache limits.
