@@ -185,6 +185,16 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->output.output_tm = 1;
         return 0;
     }
+    else if (matches(key, "-dcc"))
+    {
+        config->output.output_dcc = 1;
+        return 0;
+    }
+    else if (matches(key, "-no_dcc"))
+    {
+        config->output.output_dcc = 0;
+        return 0;
+    }
     else if (matches(key, "-anchors"))
     {
         config->output.output_anchors = 1;
@@ -373,6 +383,10 @@ int write_config_file(const char *filename, ClusterConfig *config)
     fprintf(f, "maxcl_strategy %s\n", strat);
     fprintf(f, "discard_frac %f\n", config->algo.discard_fraction);
 
+    if (config->output.output_dcc)
+        fprintf(f, "dcc\n");
+    if (!config->output.output_dcc)
+        fprintf(f, "no_dcc\n");
     if (config->output.output_tm)
         fprintf(f, "tm_out\n");
     if (config->output.output_anchors)

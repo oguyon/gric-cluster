@@ -197,6 +197,7 @@ void initialize_initial_cluster(
     int           *assigned_cluster)
 {
     state->clusters[0].anchor = *current_frame;
+    current_frame->data = NULL;
     state->clusters[0].id = 0;
     state->clusters[0].prob = 1.0;
     state->num_clusters = 1;
@@ -554,6 +555,7 @@ int handle_new_cluster_creation(
     {
         int assigned_cluster = state->num_clusters;
         state->clusters[state->num_clusters].anchor = *current_frame;
+        current_frame->data = NULL;
         state->clusters[state->num_clusters].id = state->num_clusters;
         state->clusters[state->num_clusters].prob = 1.0;
 
@@ -589,9 +591,7 @@ int handle_new_cluster_creation(
             temp_dists[*temp_count] = 0.0;
             (*temp_count)++;
         }
-
         state->num_clusters++;
-        free(current_frame);
         return assigned_cluster;
     }
 
@@ -636,6 +636,7 @@ int handle_new_cluster_creation(
             }
             int assigned_cluster = state->num_clusters;
             state->clusters[state->num_clusters].anchor = *current_frame;
+            current_frame->data = NULL;
             state->clusters[state->num_clusters].id = state->num_clusters;
             state->clusters[state->num_clusters].prob = 1.0;
 
@@ -661,9 +662,7 @@ int handle_new_cluster_creation(
                 temp_dists[*temp_count] = 0.0;
                 (*temp_count)++;
             }
-
             state->num_clusters++;
-            free(current_frame);
             return assigned_cluster;
         }
 
@@ -721,6 +720,7 @@ int handle_new_cluster_creation(
 
             int assigned_cluster = state->num_clusters;
             state->clusters[state->num_clusters].anchor = *current_frame;
+            current_frame->data = NULL;
             state->clusters[state->num_clusters].id = state->num_clusters;
             state->clusters[state->num_clusters].prob = 1.0;
 
@@ -746,9 +746,7 @@ int handle_new_cluster_creation(
                 temp_dists[*temp_count] = 0.0;
                 (*temp_count)++;
             }
-
             state->num_clusters++;
-            free(current_frame);
             return assigned_cluster;
         }
 
@@ -828,4 +826,6 @@ void record_step_assignment(
         state->telemetry.pruned_counts_by_dist[temp_count] +=
             (state->telemetry.clusters_pruned - start_pruned_val);
     }
+
+    free_frame(current_frame);
 }

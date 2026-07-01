@@ -92,11 +92,13 @@ if (OpenMP_C_FOUND)
 endif()
 target_link_libraries(gric-cluster
     ${CFITSIO_LIBRARIES}
-    ${PNG_LIBRARIES}
     ${FFMPEG_LIBRARIES}
     ${IMAGESTREAMIO_LIBRARIES}
     m
 )
+if (PNG_FOUND)
+    target_link_libraries(gric-cluster ${PNG_LIBRARIES})
+endif()
 
 add_executable(gric-mktxtseq src/gric-mktxtseq/mktestseq.c)
 target_link_libraries(gric-mktxtseq m)
@@ -105,7 +107,11 @@ add_executable(gric-plot
     src/gric-plot/plot_clusters.c
     src/gric-plot/canvas/canvas.c
 )
-target_link_libraries(gric-plot ${PNG_LIBRARIES} m)
+if (PNG_FOUND)
+    target_link_libraries(gric-plot ${PNG_LIBRARIES} m)
+else()
+    target_link_libraries(gric-plot m)
+endif()
 
 add_executable(gric-mkclusteredfile src/gric-mkclusteredfile/mkclusteredfile.c)
 target_link_libraries(gric-mkclusteredfile m)

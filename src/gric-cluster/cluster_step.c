@@ -45,6 +45,9 @@ int cluster_frame(
     if (state->num_clusters == 0)
     {
         initialize_initial_cluster(config, state, current_frame, &assigned_cluster);
+        temp_indices[0] = 0;
+        temp_dists[0] = 0.0;
+        temp_count = 1;
     }
     else
     {

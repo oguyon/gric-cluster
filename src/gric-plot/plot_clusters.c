@@ -195,6 +195,9 @@ int main(int argc, char *argv[])
         }
         arg_idx++;
     }
+#ifndef USE_PNG
+    png_mode = 0;
+#endif
     if (!points_filename || !log_filename)
     {
         print_help(argv[0]);
@@ -389,6 +392,7 @@ int main(int argc, char *argv[])
             hex = "#000000";
         if (png_mode)
         {
+#ifdef USE_PNG
             ColorRGB c = parse_color(hex);
             int pt_size = (int)(3.0 * ((double)SVG_HEIGHT / 800.0));
             if (pt_size < 1)
@@ -396,6 +400,7 @@ int main(int argc, char *argv[])
                 pt_size = 1;
             }
             draw_filled_rect(canvas, (int)sx - pt_size / 2, (int)sy - pt_size / 2, pt_size, pt_size, c);
+#endif
         }
         else
         {
@@ -418,6 +423,7 @@ int main(int argc, char *argv[])
         double ax = map_x(anchors[i].x), ay = map_y(anchors[i].y);
         if (png_mode)
         {
+#ifdef USE_PNG
             ColorRGB b = {0, 0, 0};
             int thickness = (int)(3.0 * ((double)SVG_HEIGHT / 800.0));
             if (thickness < 1)
@@ -425,6 +431,7 @@ int main(int argc, char *argv[])
                 thickness = 1;
             }
             draw_circle(canvas, (int)ax, (int)ay, (int)r_px, thickness, b);
+#endif
         }
         else
         {
