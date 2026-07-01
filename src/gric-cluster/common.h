@@ -17,9 +17,9 @@ typedef struct
 
 typedef struct
 {
-    Frame anchor;
-    int id;
-    double prob;
+    Frame  anchor; /**< Frame serving as the cluster anchor point */
+    int    id;     /**< Unique cluster index identifier */
+    double prob;   /**< Prior frequency probability distribution (CFPD/DFPD) */
 } Cluster;
 
 typedef struct

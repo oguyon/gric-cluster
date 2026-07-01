@@ -12,6 +12,7 @@
 #include "cluster_math.h"
 #include "cluster_mgmt.h"
 #include "cluster_prune.h"
+#include "framedistance.h"
 #include "frameread.h"
 #include <math.h>
 #include <stdio.h>
@@ -28,18 +29,72 @@
 
 #define OMP_MIN_CLUSTERS 256
 
-static void evaluate_and_pruning_candidate(
-    int             cj,
-    Frame          *current_frame,
-    ClusterConfig  *config,
-    ClusterState   *state,
-    int            *temp_indices,
-    double         *temp_dists,
-    int            *temp_count,
-    int            *assigned_cluster,
-    int            *found,
-    double         *out_dfc,
-    int             is_prediction)
+int select_next_measurement_target(
+    ClusterConfig *config,
+    ClusterState  *state,
+    int           *k_search,
+    const int     *pred_candidates,
+    int            num_preds,
+    int           *current_pred_idx)
+{
+    if (pred_candidates && *current_pred_idx < num_preds)
+    {
+        while (*current_pred_idx < num_preds)
+        {
+            int cj = pred_candidates[*current_pred_idx];
+            (*current_pred_idx)++;
+            if (cj >= 0 && cj < state->num_clusters && state->scratch.clmembflag[cj])
+            {
+                return cj;
+            }
+        }
+    }
+
+    if (!config->optim.gprob_mode)
+    {
+        while (*k_search < state->num_clusters &&
+               state->scratch.clmembflag[state->scratch.probsortedclindex[*k_search]] == 0)
+        {
+            (*k_search)++;
+        }
+        if (*k_search >= state->num_clusters)
+        {
+            return -1;
+        }
+        int cj = state->scratch.probsortedclindex[*k_search];
+        (*k_search)++;
+        return cj;
+    }
+    else
+    {
+        double max_p = -1.0;
+        int cj = -1;
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            if (state->scratch.clmembflag[i])
+            {
+                double p = state->scratch.mixed_probs[i] *
+                           state->scratch.current_gprobs[i];
+                if (p > max_p)
+                {
+                    max_p = p;
+                    cj = i;
+                }
+            }
+        }
+        return cj;
+    }
+}
+
+double measure_distance_to_cluster(
+    int            cj,
+    Frame         *current_frame,
+    ClusterConfig *config,
+    ClusterState  *state,
+    int           *temp_indices,
+    double        *temp_dists,
+    int           *temp_count,
+    int            is_prediction)
 {
     if (*temp_count < state->telemetry.max_steps_recorded && state->num_clusters > 0)
     {
@@ -60,11 +115,6 @@ static void evaluate_and_pruning_candidate(
                           state->clusters[cj].id, state->clusters[cj].prob,
                           state->scratch.current_gprobs[cj], config, state);
 
-    if (out_dfc)
-    {
-        *out_dfc = dfc;
-    }
-
     if (*temp_count < config->algo.maxnbclust)
     {
         temp_indices[*temp_count] = cj;
@@ -76,18 +126,30 @@ static void evaluate_and_pruning_candidate(
 
     if (dfc < config->algo.rlim)
     {
-        *assigned_cluster = cj;
-        state->clusters[cj].prob += config->algo.deltaprob;
-        *found = 1;
+        if (!config->optim.pred_mode)
+        {
+            state->clusters[cj].prob += config->algo.deltaprob;
+        }
         if (config->output.verbose_level >= 2)
         {
             printf(ANSI_COLOR_GREEN "  [VV] Frame %ld assigned to Cluster %d%s\n" ANSI_COLOR_RESET,
-                   state->telemetry.total_frames_processed, *assigned_cluster,
+                   state->telemetry.total_frames_processed, cj,
                    is_prediction ? " (Prediction)" : "");
         }
-        return;
     }
 
+    return dfc;
+}
+
+void update_probabilities_and_pruning(
+    int            cj,
+    double         dfc,
+    ClusterConfig *config,
+    ClusterState  *state,
+    int           *temp_indices,
+    double        *temp_dists,
+    int            temp_count)
+{
     long local_pruned = 0;
 #ifdef _OPENMP
 #pragma omp parallel for reduction(+ : local_pruned) if(state->num_clusters >= OMP_MIN_CLUSTERS)
@@ -121,9 +183,9 @@ static void evaluate_and_pruning_candidate(
     }
     state->telemetry.clusters_pruned += local_pruned;
 
-    if (config->optim.te4_mode && *temp_count > 1)
+    if (config->optim.te4_mode && temp_count > 1)
     {
-        for (int p = 0; p < *temp_count - 1; p++)
+        for (int p = 0; p < temp_count - 1; p++)
         {
             int    cprev = temp_indices[p];
             double d_m_cprev = temp_dists[p];
@@ -184,10 +246,26 @@ static void evaluate_and_pruning_candidate(
 
     if (config->optim.te5_mode)
     {
-        prune_candidates_te5(config, state, temp_indices, temp_dists, *temp_count);
+        prune_candidates_te5(config, state, temp_indices, temp_dists, temp_count);
     }
 
     state->scratch.clmembflag[cj] = 0;
+
+    int active_cluster_count = 0;
+    for (int i = 0; i < state->num_clusters; i++)
+    {
+        if (state->scratch.clmembflag[i])
+        {
+            active_cluster_count++;
+        }
+    }
+
+    if ((config->optim.gprob_mode || (config->output.distall_mode && state->distall_out) ||
+         config->output.verbose_level >= 2) &&
+        active_cluster_count > 1)
+    {
+        update_geometric_probabilities(config, state, cj, dfc);
+    }
 }
 
 void initialize_initial_cluster(
@@ -212,6 +290,59 @@ void initialize_initial_cluster(
                "  [VV] Frame %5ld created initial Cluster    0\n" ANSI_COLOR_RESET,
                state->telemetry.total_frames_processed);
     }
+}
+
+/**
+ * @brief Computes the matching metric mAB between two cluster history sequences.
+ *
+ * This function implements the sequence match metric formula from the Google Doc:
+ * mAB = exp(-sum(a^j * dmax_j / rc) / (np * (1 - 1/e)))
+ * where dmax_j is the maximum possible distance between samples A_j and B_j.
+ *
+ * @param[in] seq_A_cl Array of cluster assignments for sequence A.
+ * @param[in] seq_A_d  Array of anchor distances for sequence A.
+ * @param[in] seq_B_cl Array of cluster assignments for sequence B.
+ * @param[in] seq_B_d  Array of anchor distances for sequence B.
+ * @param[in] n_p      Sequence length (pattern length).
+ * @param[in] r_c      Cluster radius.
+ * @param[in] state    Pointer to the current ClusterState.
+ * @param[in] config   Pointer to the current ClusterConfig.
+ *
+ * @return Double value representing the match probability metric mAB.
+ */
+static double calculate_sequence_match_metric(
+    const int     *seq_A_cl,
+    const double  *seq_A_d,
+    const int     *seq_B_cl,
+    const double  *seq_B_d,
+    int            n_p,
+    double         r_c,
+    ClusterState  *state,
+    ClusterConfig *config)
+{
+    double sum_dmax = 0.0;
+    double a_param = 1.0 - 1.0 / n_p;
+
+    for (int j = 0; j < n_p; j++)
+    {
+        int clA = seq_A_cl[j];
+        int clB = seq_B_cl[j];
+        double dA = seq_A_d[j];
+        double dB = seq_B_d[j];
+
+        double dcc = state->scratch.dccarray[clA * config->algo.maxnbclust + clB];
+        if (dcc < 0.0)
+        {
+            dcc = framedist(&state->clusters[clA].anchor, &state->clusters[clB].anchor);
+            state->scratch.dccarray[clA * config->algo.maxnbclust + clB] = dcc;
+            state->scratch.dccarray[clB * config->algo.maxnbclust + clA] = dcc;
+        }
+
+        double dmax = dA + dB + dcc;
+        sum_dmax += pow(a_param, j) * (dmax / r_c);
+    }
+
+    return exp(-sum_dmax / ((double)n_p * 0.63212055882855767));
 }
 
 void compute_priors_and_mixing(
@@ -242,32 +373,188 @@ void compute_priors_and_mixing(
         state->scratch.clmembflag[i] = 1;
     }
 
-    double trans_prob_sum = 0.0;
-    if (config->algo.tm_mixing_coeff > 0.0 && prev_assigned_cluster != -1)
+    if (config->optim.pred_mode)
     {
-        for (int i = 0; i < state->num_clusters; i++)
+        int np = config->optim.pred_len;
+        int nl = config->optim.pred_h;
+        long t = state->telemetry.total_frames_processed;
+        int K = state->num_clusters;
+        double rc = config->algo.rlim;
+
+        double *p_seq = (double *)malloc(K * sizeof(double));
+        if (p_seq)
         {
-            trans_prob_sum += (double)state->transition_matrix[
-                prev_assigned_cluster * config->algo.maxnbclust + i];
+            if (t < np)
+            {
+                for (int i = 0; i < K; i++)
+                {
+                    p_seq[i] = 1.0 / K;
+                }
+            }
+            else
+            {
+                double *match_scores = (double *)calloc(K, sizeof(double));
+                if (match_scores)
+                {
+                    int *seq_A_cl = (int *)malloc(np * sizeof(int));
+                    double *seq_A_d = (double *)malloc(np * sizeof(double));
+                    if (seq_A_cl && seq_A_d)
+                    {
+                        for (int j = 0; j < np; j++)
+                        {
+                            long idxA = t - 1 - j;
+                            seq_A_cl[j] = state->assignments[idxA];
+                            double d = -1.0;
+                            for (int d_idx = 0;
+                                 d_idx < state->frame_infos[idxA].num_dists;
+                                 d_idx++)
+                            {
+                                if (state->frame_infos[idxA].cluster_indices[d_idx] ==
+                                    seq_A_cl[j])
+                                {
+                                    d = state->frame_infos[idxA].distances[d_idx];
+                                    break;
+                                }
+                            }
+                            seq_A_d[j] = (d >= 0.0) ? d : 0.0;
+                        }
+
+                        long start_s = t - nl;
+                        if (start_s < np)
+                        {
+                            start_s = np;
+                        }
+
+                        int *seq_B_cl = (int *)malloc(np * sizeof(int));
+                        double *seq_B_d = (double *)malloc(np * sizeof(double));
+                        if (seq_B_cl && seq_B_d)
+                        {
+                            for (long s = start_s; s < t; s++)
+                            {
+                                int target_cl = state->assignments[s];
+                                if (target_cl < 0 || target_cl >= K)
+                                {
+                                    continue;
+                                }
+
+                                for (int j = 0; j < np; j++)
+                                {
+                                    long idxB = s - 1 - j;
+                                    seq_B_cl[j] = state->assignments[idxB];
+                                    double d = -1.0;
+                                    for (int d_idx = 0;
+                                         d_idx < state->frame_infos[idxB].num_dists;
+                                         d_idx++)
+                                    {
+                                        if (state->frame_infos[idxB].cluster_indices[d_idx] ==
+                                            seq_B_cl[j])
+                                        {
+                                            d = state->frame_infos[idxB].distances[d_idx];
+                                            break;
+                                        }
+                                    }
+                                    seq_B_d[j] = (d >= 0.0) ? d : 0.0;
+                                }
+
+                                double mAB = calculate_sequence_match_metric(
+                                    seq_A_cl, seq_A_d, seq_B_cl, seq_B_d,
+                                    np, rc, state, config);
+                                match_scores[target_cl] += mAB;
+                            }
+                            free(seq_B_cl);
+                            free(seq_B_d);
+                        }
+                        free(seq_A_cl);
+                        free(seq_A_d);
+                    }
+
+                    double total_score = 0.0;
+                    for (int i = 0; i < K; i++)
+                    {
+                        total_score += match_scores[i];
+                    }
+                    if (total_score > 0.0)
+                    {
+                        for (int i = 0; i < K; i++)
+                        {
+                            p_seq[i] = match_scores[i] / total_score;
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0; i < K; i++)
+                        {
+                            p_seq[i] = 1.0 / K;
+                        }
+                    }
+                    free(match_scores);
+                }
+            }
+
+            double sum_freq = 0.0;
+            for (int i = 0; i < K; i++)
+            {
+                sum_freq += state->clusters[i].prob;
+            }
+            if (sum_freq <= 0.0)
+            {
+                sum_freq = 1.0;
+            }
+
+            double sum_final = 0.0;
+            for (int i = 0; i < K; i++)
+            {
+                double p_freq = state->clusters[i].prob / sum_freq;
+                state->scratch.mixed_probs[i] = p_freq * p_seq[i];
+                sum_final += state->scratch.mixed_probs[i];
+            }
+
+            if (sum_final > 0.0)
+            {
+                for (int i = 0; i < K; i++)
+                {
+                    state->scratch.mixed_probs[i] /= sum_final;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < K; i++)
+                {
+                    state->scratch.mixed_probs[i] = 1.0 / K;
+                }
+            }
+            free(p_seq);
         }
     }
-
-    for (int i = 0; i < state->num_clusters; i++)
+    else
     {
-        double prior = state->clusters[i].prob;
-        double tp = 0.0;
-        if (config->algo.tm_mixing_coeff > 0.0 && prev_assigned_cluster != -1 &&
-            trans_prob_sum > 0.0)
+        double trans_prob_sum = 0.0;
+        if (config->algo.tm_mixing_coeff > 0.0 && prev_assigned_cluster != -1)
         {
-            tp = (double)state->transition_matrix[
-                prev_assigned_cluster * config->algo.maxnbclust + i] / trans_prob_sum;
-            state->scratch.mixed_probs[i] =
-                (1.0 - config->algo.tm_mixing_coeff) * prior +
-                config->algo.tm_mixing_coeff * tp;
+            for (int i = 0; i < state->num_clusters; i++)
+            {
+                trans_prob_sum += (double)state->transition_matrix[
+                    prev_assigned_cluster * config->algo.maxnbclust + i];
+            }
         }
-        else
+
+        for (int i = 0; i < state->num_clusters; i++)
         {
-            state->scratch.mixed_probs[i] = prior;
+            double prior = state->clusters[i].prob;
+            double tp = 0.0;
+            if (config->algo.tm_mixing_coeff > 0.0 && prev_assigned_cluster != -1 &&
+                trans_prob_sum > 0.0)
+            {
+                tp = (double)state->transition_matrix[
+                    prev_assigned_cluster * config->algo.maxnbclust + i] / trans_prob_sum;
+                state->scratch.mixed_probs[i] =
+                    (1.0 - config->algo.tm_mixing_coeff) * prior +
+                    config->algo.tm_mixing_coeff * tp;
+            }
+            else
+            {
+                state->scratch.mixed_probs[i] = prior;
+            }
         }
     }
 
@@ -287,164 +574,7 @@ void compute_priors_and_mixing(
     }
 }
 
-int evaluate_prediction_candidates(
-    ClusterConfig *config,
-    ClusterState  *state,
-    Frame         *current_frame,
-    int           *temp_indices,
-    double         *temp_dists,
-    int           *temp_count,
-    int           *assigned_cluster,
-    int           *found)
-{
-    if (config->optim.pred_mode &&
-        state->telemetry.total_frames_processed >= config->optim.pred_len)
-    {
-        int *pred_candidates = (int *)malloc(config->optim.pred_n * sizeof(int));
-        if (pred_candidates)
-        {
-            int num_preds =
-                get_prediction_candidates(state, config, pred_candidates,
-                                           config->optim.pred_n);
 
-            for (int p = 0; p < num_preds; p++)
-            {
-                int cj = pred_candidates[p];
-                if (cj >= state->num_clusters || !state->scratch.clmembflag[cj])
-                {
-                    continue;
-                }
-
-                evaluate_and_pruning_candidate(cj, current_frame, config, state,
-                                               temp_indices, temp_dists, temp_count,
-                                               assigned_cluster, found, NULL, 1);
-                if (*found)
-                {
-                    break;
-                }
-            }
-            free(pred_candidates);
-        }
-    }
-    return *found;
-}
-
-int evaluate_standard_candidates(
-    ClusterConfig *config,
-    ClusterState  *state,
-    Frame         *current_frame,
-    int           *temp_indices,
-    double         *temp_dists,
-    int           *temp_count,
-    int           *assigned_cluster,
-    int           *found,
-    double        *out_dfc,
-    int           *k_search,
-    Candidate     *verbose_candidates)
-{
-    while (!(*found))
-    {
-        if (config->output.verbose_level >= 2 && verbose_candidates)
-        {
-            int vcount = 0;
-            for (int i = 0; i < state->num_clusters; i++)
-            {
-                if (state->scratch.clmembflag[i])
-                {
-                    double p = state->scratch.mixed_probs[i];
-                    if (config->optim.gprob_mode)
-                    {
-                        p *= state->scratch.current_gprobs[i];
-                    }
-                    verbose_candidates[vcount].id = i;
-                    verbose_candidates[vcount].p = p;
-                    vcount++;
-                }
-            }
-
-            if (vcount > 0)
-            {
-                qsort(verbose_candidates, vcount, sizeof(Candidate), compare_candidates);
-                printf("  [VV] Cluster ranking:");
-                for (int i = 0; i < vcount; i++)
-                {
-                    printf(" [%4d %12.5e]", verbose_candidates[i].id,
-                           verbose_candidates[i].p);
-                    if (i < vcount - 1)
-                    {
-                        printf(" >");
-                    }
-                }
-                printf("\n");
-            }
-        }
-
-        int cj = -1;
-
-        if (!config->optim.gprob_mode)
-        {
-            while (*k_search < state->num_clusters &&
-                   state->scratch.clmembflag[state->scratch.probsortedclindex[*k_search]] == 0)
-            {
-                (*k_search)++;
-            }
-            if (*k_search >= state->num_clusters)
-            {
-                break;
-            }
-            cj = state->scratch.probsortedclindex[*k_search];
-            (*k_search)++;
-        }
-        else
-        {
-            double max_p = -1.0;
-            cj = -1;
-            for (int i = 0; i < state->num_clusters; i++)
-            {
-                if (state->scratch.clmembflag[i])
-                {
-                    double p = state->scratch.mixed_probs[i] *
-                               state->scratch.current_gprobs[i];
-                    if (p > max_p)
-                    {
-                        max_p = p;
-                        cj = i;
-                    }
-                }
-            }
-            if (cj == -1)
-            {
-                break;
-            }
-        }
-
-        evaluate_and_pruning_candidate(cj, current_frame, config, state,
-                                       temp_indices, temp_dists, temp_count,
-                                       assigned_cluster, found, out_dfc, 0);
-        if (*found)
-        {
-            break;
-        }
-
-        int active_cluster_count = 0;
-        for (int i = 0; i < state->num_clusters; i++)
-        {
-            if (state->scratch.clmembflag[i])
-            {
-                active_cluster_count++;
-            }
-        }
-
-        if ((config->optim.gprob_mode ||
-             (config->output.distall_mode && state->distall_out) ||
-             config->output.verbose_level >= 2) &&
-            active_cluster_count > 1)
-        {
-            update_geometric_probabilities(config, state, cj, *out_dfc);
-        }
-    }
-    return *found;
-}
 
 void update_geometric_probabilities(
     ClusterConfig *config,
@@ -816,6 +946,43 @@ void record_step_assignment(
     {
         state->frame_infos[state->telemetry.total_frames_processed].cluster_indices = NULL;
         state->frame_infos[state->telemetry.total_frames_processed].distances = NULL;
+    }
+
+    if (config->optim.pred_mode)
+    {
+        state->clusters[assigned_cluster].prob += 0.3;
+
+        double sum_p = 0.0;
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            sum_p += state->clusters[i].prob;
+        }
+        if (sum_p > 0.0)
+        {
+            for (int i = 0; i < state->num_clusters; i++)
+            {
+                state->clusters[i].prob /= sum_p;
+            }
+        }
+
+        double floor_val = 0.2 / state->num_clusters;
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            state->clusters[i].prob += floor_val;
+        }
+
+        sum_p = 0.0;
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            sum_p += state->clusters[i].prob;
+        }
+        if (sum_p > 0.0)
+        {
+            for (int i = 0; i < state->num_clusters; i++)
+            {
+                state->clusters[i].prob /= sum_p;
+            }
+        }
     }
 
     state->telemetry.total_frames_processed++;

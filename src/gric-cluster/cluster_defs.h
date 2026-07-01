@@ -107,11 +107,11 @@ typedef struct
 // Scratch/Calculation structure
 typedef struct
 {
-    double *current_gprobs;
-    double *dccarray;
-    int    *probsortedclindex;
-    int    *clmembflag;
-    double *mixed_probs;
+    double *current_gprobs;     /**< Geometric probabilities computed during search */
+    double *dccarray;           /**< Pairwise inter-cluster distances cache */
+    int    *probsortedclindex;  /**< Cluster indices sorted by descending prior probability */
+    int    *clmembflag;         /**< Flag indicating if a cluster is still an active candidate */
+    double *mixed_probs;        /**< Prior predictive probabilities (frequency * sequence) */
 } ClusterScratch;
 
 // State structure
