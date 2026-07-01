@@ -729,7 +729,8 @@ void print_help(
 #else
     print_colored_line("    -fitsout                 Force FITS output format [DISABLED]");
 #endif
-    print_colored_line("    -dcc                     Enable dcc.txt output (default: disabled)");
+    print_colored_line("    -dcc                     Enable dcc.txt output (default: enabled)");
+    print_colored_line("    -no_dcc                  Disable dcc.txt output");
     print_colored_line("    -tm_out                  Enable transition_matrix.txt output "
                        "(default: disabled)");
     print_colored_line("    -anchors                 Enable anchors output (default: disabled)");

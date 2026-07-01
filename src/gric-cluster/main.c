@@ -113,8 +113,8 @@ int main(int argc, char *argv[])
     config.algo.maxcl_strategy = MAXCL_STOP;
     config.algo.discard_fraction = 0.5;
 
-    // Output defaults (disabled by default, except membership)
-    config.output.output_dcc = 0;
+    // Output defaults (disabled by default, except membership and dcc)
+    config.output.output_dcc = 1;
     config.output.output_tm = 0;
     config.output.output_anchors = 0;
     config.output.output_counts = 0;
