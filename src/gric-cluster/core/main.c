@@ -112,6 +112,8 @@ int main(int argc, char *argv[])
     config.optim.pred_n = 2;
     config.algo.maxcl_strategy = MAXCL_STOP;
     config.algo.discard_fraction = 0.5;
+    config.optim.entropy_max_targets = 15;
+    config.optim.entropy_min_prob = 0.001;
 
     // Output defaults (disabled by default, except membership and dcc)
     config.output.output_dcc = 1;
@@ -371,15 +373,23 @@ int main(int argc, char *argv[])
     }
 
     // Allocate State
-    state.clusters = (Cluster *)malloc(config.algo.maxnbclust * sizeof(Cluster));
-    state.scratch.dccarray = (double *)malloc(config.algo.maxnbclust * config.algo.maxnbclust * sizeof(double));
-    for (int ii = 0; ii < config.algo.maxnbclust * config.algo.maxnbclust; ii++)
+    size_t max_clusters = (size_t)config.algo.maxnbclust;
+    size_t cluster_pairs = max_clusters * max_clusters;
+    int words = (config.algo.maxnbclust + 63) / 64;
+    size_t consistency_words = cluster_pairs * (size_t)words;
+
+    state.clusters = (Cluster *)malloc(max_clusters * sizeof(Cluster));
+    state.scratch.dccarray = (double *)malloc(cluster_pairs * sizeof(double));
+    for (size_t ii = 0; ii < cluster_pairs; ii++)
         state.scratch.dccarray[ii] = -1.0;
 
-    state.scratch.current_gprobs = (double *)malloc(config.algo.maxnbclust * sizeof(double));
-    state.cluster_visitors = (VisitorList *)calloc(config.algo.maxnbclust, sizeof(VisitorList));
-    state.scratch.probsortedclindex = (int *)malloc(config.algo.maxnbclust * sizeof(int));
-    state.scratch.clmembflag = (int *)malloc(config.algo.maxnbclust * sizeof(int));
+    state.scratch.current_gprobs = (double *)malloc(max_clusters * sizeof(double));
+    state.cluster_visitors = (VisitorList *)calloc(max_clusters, sizeof(VisitorList));
+    state.scratch.probsortedclindex = (int *)malloc(max_clusters * sizeof(int));
+    state.scratch.clmembflag = (int *)malloc(max_clusters * sizeof(int));
+    state.scratch.consistency_mask = (uint64_t *)calloc(consistency_words, sizeof(uint64_t));
+    state.scratch.entropy_p_current = (double *)malloc(max_clusters * sizeof(double));
+    state.scratch.entropy_candidates = (Candidate *)malloc(max_clusters * sizeof(Candidate));
 
     // Run Clustering
     struct timespec clust_start, clust_end;
@@ -439,6 +449,9 @@ int main(int argc, char *argv[])
     free(state.scratch.dccarray);
     free(state.scratch.probsortedclindex);
     free(state.scratch.clmembflag);
+    free(state.scratch.consistency_mask);
+    free(state.scratch.entropy_p_current);
+    free(state.scratch.entropy_candidates);
     free(state.assignments);
 
     if (state.telemetry.pruned_fraction_sum)
@@ -453,6 +466,8 @@ int main(int argc, char *argv[])
         free(state.telemetry.dist_counts);
     if (state.telemetry.pruned_counts_by_dist)
         free(state.telemetry.pruned_counts_by_dist);
+    if (state.telemetry.cluster_query_counts)
+        free(state.telemetry.cluster_query_counts);
 
     if (config.output.user_outdir && out_dir_alloc)
         free(config.output.user_outdir);

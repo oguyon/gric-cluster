@@ -40,6 +40,7 @@ static void init_config(
     config->pattern_count = 0;
     config->extra_options_count = 0;
     config->build_first = 0;
+    config->use_entropy = 0;
 } // init_config
 
 int main(
@@ -63,6 +64,7 @@ int main(
         {"mp4r",     no_argument,       0, 1001},
         {"maxcl",    required_argument, 0, 1002},
         {"maxim",    required_argument, 0, 1003},
+        {"entropy",  no_argument,       0, 1004},
         {0, 0, 0, 0}
     };
 
@@ -141,6 +143,9 @@ int main(
             case 1003: /* -maxim */
                 config.maxim = atoi(optarg);
                 config.maxim_set = 1;
+                break;
+            case 1004: /* -entropy */
+                config.use_entropy = 1;
                 break;
             default:
                 fprintf(stderr, "Error: Unknown option\n");
@@ -370,9 +375,13 @@ int main(
                     "2Drand",
                     "3Drand",
                     "2DcircleP10n",
-                    "3Dspiral"
+                    "3Dspiral",
+                    "3Dstar",
+                    "3Dconcentric",
+                    "5Dtree",
+                    "3Dconcentric_dense"
                 };
-                for (int ii = 0; ii < 7; ii++)
+                for (int ii = 0; ii < 11; ii++)
                 {
                     config.patterns[config.pattern_count++] = strdup(fallback_patterns[ii]);
                 }
@@ -480,8 +489,18 @@ int main(
     for (int ii = 0; ii < config.pattern_count; ii++)
     {
         const char *pattern = config.patterns[ii];
+        int is_entropy = config.use_entropy;
+        for (int jj = 0; jj < config.extra_options_count; jj++)
+        {
+            if (config.extra_options[jj] != NULL && strstr(config.extra_options[jj], "-entropy") != NULL)
+            {
+                is_entropy = 1;
+                break;
+            }
+        }
         printf("========================================================\n");
-        printf("Benchmark: Pattern=%s Type=%s Algo=gric\n", pattern, config.type);
+        printf("Benchmark: Pattern=%s Type=%s Algo=%s\n",
+               pattern, config.type, is_entropy ? "gric-entropy" : "gric-greedy");
 
         /* 1. Generate text data */
         char txt_file[512];
@@ -534,6 +553,34 @@ int main(
             else if (strcmp(pattern, "3Dspiral") == 0)
             {
                 gen_args[gen_argc++] = "3Dspiral";
+            }
+            else if (strcmp(pattern, "3Dstar") == 0)
+            {
+                gen_args[gen_argc++] = "3Dstar30";
+                gen_args[gen_argc++] = "-noise";
+                gen_args[gen_argc++] = "0.02";
+                gen_args[gen_argc++] = "-shuffle";
+            }
+            else if (strcmp(pattern, "3Dconcentric") == 0)
+            {
+                gen_args[gen_argc++] = "3Dconcentric5";
+                gen_args[gen_argc++] = "-noise";
+                gen_args[gen_argc++] = "0.02";
+                gen_args[gen_argc++] = "-shuffle";
+            }
+            else if (strcmp(pattern, "5Dtree") == 0)
+            {
+                gen_args[gen_argc++] = "5Dtree";
+                gen_args[gen_argc++] = "-noise";
+                gen_args[gen_argc++] = "0.02";
+                gen_args[gen_argc++] = "-shuffle";
+            }
+            else if (strcmp(pattern, "3Dconcentric_dense") == 0)
+            {
+                gen_args[gen_argc++] = "3Dconcentric_dense10";
+                gen_args[gen_argc++] = "-noise";
+                gen_args[gen_argc++] = "0.05";
+                gen_args[gen_argc++] = "-shuffle";
             }
             else
             {
@@ -609,7 +656,24 @@ int main(
         }
         else
         {
-            strcpy(cur_rlim, config.rlim);
+            if (!config.rlim_set && strcmp(pattern, "3Dconcentric_dense") == 0)
+            {
+                strcpy(cur_rlim, "0.40");
+            }
+            else if (!config.rlim_set && strcmp(pattern, "3Dspiral") == 0)
+            {
+                strcpy(cur_rlim, "0.02");
+            }
+            else if (!config.rlim_set && (strcmp(pattern, "3Drand") == 0 ||
+                                          strcmp(pattern, "3Dconcentric") == 0 ||
+                                          strcmp(pattern, "5Dtree") == 0))
+            {
+                strcpy(cur_rlim, "0.20");
+            }
+            else
+            {
+                strcpy(cur_rlim, config.rlim);
+            }
         }
 
         /* 4. Construct and Run gric-cluster Command */
@@ -637,7 +701,12 @@ int main(
         cluster_args[cluster_argc++] = "-outdir";
         cluster_args[cluster_argc++] = out_dir;
         cluster_args[cluster_argc++] = "-clustered";
+        if (config.use_entropy)
+        {
+            cluster_args[cluster_argc++] = "-entropy";
+        }
 
+        int first_extra_arg_idx = cluster_argc;
         for (int jj = 0; jj < config.extra_options_count; jj++)
         {
             /* Reserve 3 slots for -stream, input_file, and the NULL terminator */
@@ -659,8 +728,7 @@ int main(
         }
 
         /* Clean up split arguments memory */
-        /* Start checking from index 11 which is the start of split args */
-        for (int jj = 11; jj < cluster_argc; jj++)
+        for (int jj = first_extra_arg_idx; jj < cluster_argc; jj++)
         {
             /* Only free if it's not one of static args or input_file */
             if (cluster_args[jj] != NULL &&
@@ -681,17 +749,50 @@ int main(
         }
 
         /* 6. Extract Metrics and Log to Summary */
-        char m_time[64], m_dists[64], m_clusters[64], m_mem[64];
-        parse_metrics(log_file, m_time, m_dists, m_clusters, m_mem);
+        char m_time[64], m_dists[64], m_dists_sample[64], m_dists_inter[64], m_clusters[64], m_mem[64];
+        parse_metrics(log_file, m_time, m_dists, m_dists_sample, m_dists_inter, m_clusters, m_mem);
 
-        printf("Result: Time=%sms, Dists=%s, Clusters=%s, Mem=%sKB\n",
-               m_time, m_dists, m_clusters, m_mem);
+        printf("Result: Time=%sms, Clusters=%s, Mem=%sKB\n",
+               m_time, m_clusters, m_mem);
+        
+        double total_dists = atof(m_dists);
+        double sample_dists = atof(m_dists_sample);
+        double inter_dists = atof(m_dists_inter);
+
+        double avg_dists = (config.nsamples > 0) ? (total_dists / config.nsamples) : 0.0;
+        double avg_sample_dists = (config.nsamples > 0) ? (sample_dists / config.nsamples) : 0.0;
+        double avg_inter_dists = (config.nsamples > 0) ? (inter_dists / config.nsamples) : 0.0;
+
+        if (strcmp(m_dists_sample, "N/A") != 0)
+        {
+            printf("%sDistances (sum): %s%s (%.3f per sample)%s\n",
+                   ANSI_BOLD_CYAN, ANSI_BOLD_GREEN, m_dists, avg_dists, ANSI_COLOR_RESET);
+            printf("%s  -> Sample-to-cluster: %s%s (%.3f per sample)%s\n",
+                   ANSI_BOLD_CYAN, ANSI_BOLD_GREEN, m_dists_sample, avg_sample_dists, ANSI_COLOR_RESET);
+            printf("%s  -> Cluster-to-cluster: %s%s (%.3f per sample)%s\n",
+                   ANSI_BOLD_CYAN, ANSI_BOLD_GREEN, m_dists_inter, avg_inter_dists, ANSI_COLOR_RESET);
+        }
+        else
+        {
+            printf("%sDistances: %s%s (%.3f per sample)%s\n",
+                   ANSI_BOLD_CYAN, ANSI_BOLD_GREEN, m_dists, avg_dists, ANSI_COLOR_RESET);
+        }
 
         sum_fp = fopen(summary_path, "a");
         if (sum_fp != NULL)
         {
-            fprintf(sum_fp, "| %s | %s | gric | %s | %s | %s | %s |\n",
-                    pattern, config.type, m_time, m_dists, m_clusters, m_mem);
+            char dist_str[256];
+            if (strcmp(m_dists_sample, "N/A") != 0)
+            {
+                snprintf(dist_str, sizeof(dist_str), "%s (S:%s, C:%s)", m_dists, m_dists_sample, m_dists_inter);
+            }
+            else
+            {
+                snprintf(dist_str, sizeof(dist_str), "%s", m_dists);
+            }
+            fprintf(sum_fp, "| %s | %s | %s | %s | %s | %s | %s |\n",
+                    pattern, config.type, is_entropy ? "gric-entropy" : "gric-greedy",
+                    m_time, dist_str, m_clusters, m_mem);
             fclose(sum_fp);
         }
     }

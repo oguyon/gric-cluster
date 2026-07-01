@@ -8,6 +8,16 @@
 #define ANSI_BG_GREEN     "\x1b[42m"
 #define ANSI_COLOR_BLACK  "\x1b[30m"
 
+/**
+ * update_geometric_probabilities - Update geometric priorities of candidate clusters.
+ * @config: Config parameters of the clustering execution.
+ * @state: Running state of the clustering execution.
+ * @cj: Cluster index measured in the last step.
+ * @dfc: Computed distance to cluster index cj.
+ *
+ * Loops through visitor history to retrieve co-measured frames. Multiplies
+ * the running geometric match probabilities with match metric scaling factor.
+ */
 void update_geometric_probabilities(
     ClusterConfig *config,
     ClusterState  *state,

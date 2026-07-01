@@ -626,6 +626,8 @@ void write_run_log(ClusterConfig *config, ClusterState *state, const char *cmdli
         fprintf(f, "STATS_CLUSTERS: %d\n", state->num_clusters);
         fprintf(f, "STATS_FRAMES: %ld\n", state->telemetry.total_frames_processed);
         fprintf(f, "STATS_DISTS: %ld\n", state->telemetry.framedist_calls);
+        fprintf(f, "STATS_DISTS_SAMPLE: %ld\n", state->telemetry.framedist_calls_sample);
+        fprintf(f, "STATS_DISTS_INTERCLUSTER: %ld\n", state->telemetry.framedist_calls_intercluster);
         fprintf(f, "STATS_PRUNED: %ld\n", state->telemetry.clusters_pruned);
         fprintf(f, "STATS_MAX_RSS_KB: %ld\n", max_rss);
 
@@ -639,6 +641,16 @@ void write_run_log(ClusterConfig *config, ClusterState *state, const char *cmdli
             }
         }
         fprintf(f, "STATS_DIST_HIST_END\n");
+
+        fprintf(f, "STATS_CLUSTER_QUERIES_START\n");
+        for (int k = 0; k < state->num_clusters; k++)
+        {
+            if (state->telemetry.cluster_query_counts && state->telemetry.cluster_query_counts[k] > 0)
+            {
+                fprintf(f, "%d %ld\n", k, state->telemetry.cluster_query_counts[k]);
+            }
+        }
+        fprintf(f, "STATS_CLUSTER_QUERIES_END\n");
 
         fclose(f);
         printf("Log written to %s\n", log_path);

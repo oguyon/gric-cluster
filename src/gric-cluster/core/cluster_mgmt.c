@@ -11,6 +11,7 @@
  */
 #include "cluster_mgmt.h"
 #include "cluster_core.h"
+#include "cluster_steps.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,4 +167,7 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
 
     // 7. Decrement Num Clusters
     state->num_clusters--;
+
+    // 8. Recompute Geometric Consistency Mask
+    recompute_consistency_mask(config, state);
 }

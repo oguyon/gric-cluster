@@ -7,6 +7,22 @@
 #define ANSI_COLOR_GREEN  "\x1b[32m"
 #define ANSI_COLOR_RESET  "\x1b[0m"
 
+/**
+ * measure_distance_to_cluster - Calculate distance from current frame to target cluster.
+ * @cj: Cluster index being targeted.
+ * @current_frame: The frame being clustered.
+ * @config: Config parameters of the clustering execution.
+ * @state: Running state of the clustering execution.
+ * @temp_indices: Array tracking measured indices in this step.
+ * @temp_dists: Array tracking computed distances in this step.
+ * @temp_count: Pointer to total measurement count in this step.
+ * @is_prediction: Flag indicating if this candidate is a prediction shortcut.
+ *
+ * Computes distance via get_dist(), increments telemetry counts, adds visitor entries,
+ * and increments cluster probability if matched within the threshold `rlim`.
+ *
+ * Return: Calculated distance to the target cluster.
+ */
 double measure_distance_to_cluster(
     int            cj,
     Frame         *current_frame,

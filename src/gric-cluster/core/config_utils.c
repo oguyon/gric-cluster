@@ -152,6 +152,25 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->optim.te5_mode = 1;
         return 0;
     }
+    else if (matches(key, "-entropy"))
+    {
+        config->optim.entropy_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-entropy_max_targets"))
+    {
+        if (!value)
+            return -1;
+        config->optim.entropy_max_targets = atoi(value);
+        return 1;
+    }
+    else if (matches(key, "-entropy_min_prob"))
+    {
+        if (!value)
+            return -1;
+        config->optim.entropy_min_prob = atof(value);
+        return 1;
+    }
     else if (matches(key, "-tm"))
     {
         if (!value)
@@ -372,6 +391,12 @@ int write_config_file(const char *filename, ClusterConfig *config)
         fprintf(f, "te4\n");
     if (config->optim.te5_mode)
         fprintf(f, "te5\n");
+    if (config->optim.entropy_mode)
+    {
+        fprintf(f, "entropy\n");
+        fprintf(f, "entropy_max_targets %d\n", config->optim.entropy_max_targets);
+        fprintf(f, "entropy_min_prob %f\n", config->optim.entropy_min_prob);
+    }
 
     fprintf(f, "tm %f\n", config->algo.tm_mixing_coeff);
 

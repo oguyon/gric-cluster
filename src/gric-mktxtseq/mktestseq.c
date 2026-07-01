@@ -33,7 +33,11 @@ typedef enum
     GEN_CIRCLE,
     GEN_WALK,
     GEN_SPIRAL,
-    GEN_SPHERE
+    GEN_SPHERE,
+    GEN_STAR,
+    GEN_CONCENTRIC,
+    GEN_TREE,
+    GEN_CONCENTRIC_DENSE
 } GenType;
 
 typedef struct
@@ -131,10 +135,27 @@ void gen_spiral_point(double *out, long index, long total_points, double loops, 
     double t = (double)index / (double)total_points;
     if (dim == 3)
     {
-        // 3D Spiral (Conical)
-        out[0] = t * cos(2.0 * M_PI * loops * t);
-        out[1] = t * sin(2.0 * M_PI * loops * t);
-        out[2] = 2.0 * t - 1.0; // z from -1 to 1
+        // Conical raw coordinates scaled to fit in unit bounds
+        double raw_x = 0.15 * t * cos(2.0 * M_PI * loops * t);
+        double raw_y = 0.15 * t * sin(2.0 * M_PI * loops * t);
+        double raw_z = 2.0 * t - 1.0;
+
+        // Rotation angles: 60 degrees around Y, 30 degrees around X
+        double cos60 = 0.5000000000000000;
+        double sin60 = 0.8660254037844386;
+        double cos30 = 0.8660254037844386;
+        double sin30 = 0.5000000000000000;
+
+        // Y-axis rotation
+        double x1 = raw_x * cos60 + raw_z * sin60;
+        double z1 = -raw_x * sin60 + raw_z * cos60;
+        double y1 = raw_y;
+
+        // X-axis rotation
+        out[0] = x1;
+        out[1] = y1 * cos30 - z1 * sin30;
+        out[2] = y1 * sin30 + z1 * cos30;
+
         for (int d = 3; d < dim; d++)
             out[d] = 0.0;
     }
@@ -148,7 +169,148 @@ void gen_spiral_point(double *out, long index, long total_points, double loops, 
             out[d] = 0.0;
     }
 }
+void gen_star_point(double *out, long index, long total_points, double spokes, int dim)
+{
+    int num_spokes = (spokes > 0.0) ? (int)spokes : 20;
+    int spoke_idx = index % num_spokes;
 
+    if (spoke_idx == 0)
+    {
+        for (int d = 0; d < dim; d++)
+            out[d] = 0.0;
+        return;
+    }
+
+    double phi = acos(1.0 - 2.0 * (double)spoke_idx / (double)num_spokes);
+    double theta = M_PI * (1.0 + sqrt(5.0)) * (double)spoke_idx;
+
+    double ux = sin(phi) * cos(theta);
+    double uy = sin(phi) * sin(theta);
+    double uz = cos(phi);
+
+    double R = 1.0 + 0.5 * (double)spoke_idx;
+
+    out[0] = R * ux;
+    out[1] = R * uy;
+    if (dim >= 3)
+    {
+        out[2] = R * uz;
+    }
+    for (int d = (dim >= 3 ? 3 : 2); d < dim; d++)
+    {
+        out[d] = 0.0;
+    }
+}
+void gen_concentric_point(double *out, long index, long total_points, double shells, int dim)
+{
+    int num_shells = (shells > 0.0) ? (int)shells : 5;
+    int clusters_per_shell = 10;
+    int total_clusters = num_shells * clusters_per_shell + 1;
+
+    int cluster_idx = index % total_clusters;
+
+    if (cluster_idx == 0)
+    {
+        for (int d = 0; d < dim; d++)
+            out[d] = 0.0;
+        return;
+    }
+
+    int shell_idx = (cluster_idx - 1) / clusters_per_shell;
+    int in_shell_idx = (cluster_idx - 1) % clusters_per_shell;
+
+    double R = 1.5 + 1.0 * (double)shell_idx;
+    double theta = 2.0 * M_PI * (double)in_shell_idx / (double)clusters_per_shell;
+
+    out[0] = R * cos(theta);
+    out[1] = R * sin(theta);
+    if (dim >= 3)
+    {
+        out[2] = 0.0;
+    }
+    for (int d = (dim >= 3 ? 3 : 2); d < dim; d++)
+    {
+        out[d] = 0.0;
+    }
+}
+void gen_tree_point(double *out, long index, long total_points, double unused_param, int dim)
+{
+    if (index % 100 == 0)
+    {
+        int parent_idx = (index / 100) % 31;
+        int L = 0;
+        int level_start = 0;
+        while (L < 4 && parent_idx >= level_start + (1 << L))
+        {
+            level_start += (1 << L);
+            L++;
+        }
+        int path_val = parent_idx - level_start;
+
+        for (int d = 0; d < 5; d++)
+        {
+            if (d < L)
+            {
+                int bit = (path_val >> (L - 1 - d)) & 1;
+                out[d] = (bit == 0 ? -2.0 : 2.0);
+            }
+            else if (d == L)
+            {
+                out[d] = -1.0;
+            }
+            else
+            {
+                out[d] = 0.0;
+            }
+        }
+    }
+    else
+    {
+        int leaf_idx = index % 32;
+        for (int d = 0; d < 5; d++)
+        {
+            int bit = (leaf_idx >> (4 - d)) & 1;
+            out[d] = (bit == 0 ? -2.0 : 2.0);
+        }
+    }
+
+    for (int d = 5; d < dim; d++)
+    {
+        out[d] = 0.0;
+    }
+}
+void gen_concentric_dense_point(double *out, long index, long total_points, double shells, int dim)
+{
+    int num_shells = (shells > 0.0) ? (int)shells : 10;
+    int clusters_per_shell = 30;
+    int total_clusters = num_shells * clusters_per_shell + 1;
+
+    int cluster_idx = index % total_clusters;
+
+    if (cluster_idx == 0)
+    {
+        for (int d = 0; d < dim; d++)
+            out[d] = 0.0;
+        return;
+    }
+
+    int shell_idx = (cluster_idx - 1) / clusters_per_shell;
+    int in_shell_idx = (cluster_idx - 1) % clusters_per_shell;
+
+    double R = 1.5 + 1.0 * (double)shell_idx;
+    double theta = 2.0 * M_PI * (double)in_shell_idx / (double)clusters_per_shell;
+
+    out[0] = R * cos(theta);
+    out[1] = R * sin(theta);
+    if (dim >= 3)
+    {
+        out[2] = 0.0;
+    }
+    for (int d = (dim >= 3 ? 3 : 2); d < dim; d++)
+    {
+        out[d] = 0.0;
+    }
+}
 void gen_walk_point(double *current, double step_size, int dim)
 {
     double *next = (double *)malloc(dim * sizeof(double));
@@ -302,7 +464,7 @@ static void print_help(const char *progname)
     printf("    %s[ND]walk[S]%s        Random walk (%sS = step size%s, %sdefault:%s%s 0.1%s)\n",
            ansi_color_green, ansi_reset, ansi_color_grey, ansi_reset, ansi_color_cyan, ansi_reset,
            ansi_color_cyan, ansi_reset);
-    printf("    %s[ND]spiral[L]%s      Spiral (%sL = loops%s, %sdefault:%s%s 3.0%s)\n",
+    printf("    %s[ND]spiral[L]%s      Spiral (%sL = loops%s, %sdefault:%s%s 2.0%s)\n",
            ansi_color_green, ansi_reset, ansi_color_grey, ansi_reset, ansi_color_cyan, ansi_reset,
            ansi_color_cyan, ansi_reset);
     printf("    %s[ND]circle[P]%s      Circle (%sP = period%s)\n\n",
@@ -431,9 +593,49 @@ int main(int argc, char *argv[])
         if (*p)
             config.param = atof(p);
         else
-            config.param = 3.0;
+            config.param = 2.0;
     }
-
+    else if (strncmp(pattern_str, "star", 4) == 0)
+    {
+        config.type = GEN_STAR;
+        char *p = pattern_str + 4;
+        if (*p)
+            config.param = atof(p);
+        else
+            config.param = 20.0;
+    }
+    else if (strncmp(pattern_str, "concentric_dense", 16) == 0)
+    {
+        config.type = GEN_CONCENTRIC_DENSE;
+        char *p = pattern_str + 16;
+        if (*p)
+            config.param = atof(p);
+        else
+            config.param = 10.0;
+    }
+    else if (strncmp(pattern_str, "concentric", 10) == 0)
+    {
+        config.type = GEN_CONCENTRIC;
+        char *p = pattern_str + 10;
+        if (*p)
+            config.param = atof(p);
+        else
+            config.param = 5.0;
+    }
+    else if (strncmp(pattern_str, "tree", 4) == 0)
+    {
+        config.type = GEN_TREE;
+        char *p = pattern_str + 4;
+        if (*p)
+            config.param = atof(p);
+        else
+            config.param = 0.0;
+        // The tree pattern requires at least 5 dimensions!
+        if (config.dim < 5)
+        {
+            config.dim = 5;
+        }
+    }
     FILE *f = fopen(filename, "w");
     if (!f)
     {
@@ -465,6 +667,18 @@ int main(int argc, char *argv[])
             break;
         case GEN_SPHERE:
             gen_sphere_point(pt, config.dim);
+            break;
+        case GEN_STAR:
+            gen_star_point(pt, i, n_points, config.param, config.dim);
+            break;
+        case GEN_CONCENTRIC:
+            gen_concentric_point(pt, i, n_points, config.param, config.dim);
+            break;
+        case GEN_TREE:
+            gen_tree_point(pt, i, n_points, config.param, config.dim);
+            break;
+        case GEN_CONCENTRIC_DENSE:
+            gen_concentric_dense_point(pt, i, n_points, config.param, config.dim);
             break;
         case GEN_RANDOM:
         default:
