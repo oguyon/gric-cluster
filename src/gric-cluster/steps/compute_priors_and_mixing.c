@@ -169,6 +169,16 @@ void compute_priors_and_mixing(
                             free(seq_B_cl);
                             free(seq_B_d);
                         }
+                        else
+                        {
+                            free(seq_B_cl);
+                            free(seq_B_d);
+                        }
+                        free(seq_A_cl);
+                        free(seq_A_d);
+                    }
+                    else
+                    {
                         free(seq_A_cl);
                         free(seq_A_d);
                     }

@@ -59,6 +59,14 @@ void record_step_assignment(
             memcpy(state->frame_infos[state->telemetry.total_frames_processed].distances,
                    temp_dists, temp_count * sizeof(double));
         }
+        else
+        {
+            free(state->frame_infos[state->telemetry.total_frames_processed].cluster_indices);
+            free(state->frame_infos[state->telemetry.total_frames_processed].distances);
+            state->frame_infos[state->telemetry.total_frames_processed].cluster_indices = NULL;
+            state->frame_infos[state->telemetry.total_frames_processed].distances = NULL;
+            state->frame_infos[state->telemetry.total_frames_processed].num_dists = 0;
+        }
     }
     else
     {
