@@ -101,4 +101,6 @@ typedef struct
     double p;
 } Candidate;
 
+#define OMP_MIN_CLUSTERS 256
+
 #endif // CLUSTER_DEFS_H

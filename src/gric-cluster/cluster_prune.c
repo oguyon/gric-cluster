@@ -124,7 +124,7 @@ void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int *temp_
 
             long local_pruned_te5 = 0;
 #ifdef _OPENMP
-#pragma omp parallel for reduction(+ : local_pruned_te5)
+#pragma omp parallel for reduction(+ : local_pruned_te5) if(state->num_clusters > OMP_MIN_CLUSTERS)
 #endif
             for (int cl_idx = 0; cl_idx < state->num_clusters; cl_idx++)
             {
