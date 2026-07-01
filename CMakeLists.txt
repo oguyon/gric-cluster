@@ -59,6 +59,11 @@ include_directories(
     ${FFMPEG_INCLUDE_DIRS}
     ${IMAGESTREAMIO_INCLUDE_DIRS}
     src
+    src/gric-cluster/core
+    src/gric-cluster/math
+    src/gric-cluster/io
+    src/gric-cluster/help
+    src/gric-cluster/steps
 )
 
 link_directories(
@@ -70,20 +75,27 @@ link_directories(
 
 # Sources
 set(CLUSTER_SRCS
-    src/gric-cluster/main.c
-    src/gric-cluster/cluster_core.c
-    src/gric-cluster/cluster_io.c
-    src/gric-cluster/cluster_help.c
-    src/gric-cluster/cluster_scandist.c
-    src/gric-cluster/cluster_step.c
-    src/gric-cluster/cluster_step_helpers.c
-    src/gric-cluster/framedistance.c
-    src/gric-cluster/frameread.c
-    src/gric-cluster/png_io.c
-    src/gric-cluster/config_utils.c
-    src/gric-cluster/cluster_math.c
-    src/gric-cluster/cluster_mgmt.c
-    src/gric-cluster/cluster_prune.c
+    src/gric-cluster/core/main.c
+    src/gric-cluster/core/cluster_core.c
+    src/gric-cluster/core/cluster_step.c
+    src/gric-cluster/core/cluster_mgmt.c
+    src/gric-cluster/core/config_utils.c
+    src/gric-cluster/math/cluster_math.c
+    src/gric-cluster/math/cluster_prune.c
+    src/gric-cluster/math/cluster_scandist.c
+    src/gric-cluster/math/framedistance.c
+    src/gric-cluster/io/cluster_io.c
+    src/gric-cluster/io/frameread.c
+    src/gric-cluster/io/png_io.c
+    src/gric-cluster/help/cluster_help.c
+    src/gric-cluster/steps/initialize_initial_cluster.c
+    src/gric-cluster/steps/compute_priors_and_mixing.c
+    src/gric-cluster/steps/select_next_measurement_target.c
+    src/gric-cluster/steps/measure_distance_to_cluster.c
+    src/gric-cluster/steps/update_probabilities_and_pruning.c
+    src/gric-cluster/steps/update_geometric_probabilities.c
+    src/gric-cluster/steps/handle_new_cluster_creation.c
+    src/gric-cluster/steps/record_step_assignment.c
 )
 
 add_executable(gric-cluster ${CLUSTER_SRCS})

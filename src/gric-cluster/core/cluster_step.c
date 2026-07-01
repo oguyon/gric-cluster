@@ -19,7 +19,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_step.h"
-#include "cluster_step_helpers.h"
+#include "cluster_steps.h"
 #include "cluster_math.h"
 #include "cluster_prune.h"
 #include <stdio.h>
