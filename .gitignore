@@ -1,5 +1,6 @@
 # Benchmarks
 benchmarks/*.txt
+!benchmarks/default_tests.txt
 benchmarks/*.mp4
 benchmarks/*.png
 benchmarks/benchmark_out/

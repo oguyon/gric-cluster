@@ -70,16 +70,16 @@ link_directories(
 
 # Sources
 set(CLUSTER_SRCS
-    src/main.c
-    src/cluster_core.c
-    src/cluster_io.c
-    src/framedistance.c
-    src/frameread.c
-    src/png_io.c
-    src/config_utils.c
-    src/cluster_math.c
-    src/cluster_mgmt.c
-    src/cluster_prune.c
+    src/gric-cluster/main.c
+    src/gric-cluster/cluster_core.c
+    src/gric-cluster/cluster_io.c
+    src/gric-cluster/framedistance.c
+    src/gric-cluster/frameread.c
+    src/gric-cluster/png_io.c
+    src/gric-cluster/config_utils.c
+    src/gric-cluster/cluster_math.c
+    src/gric-cluster/cluster_mgmt.c
+    src/gric-cluster/cluster_prune.c
 )
 
 add_executable(gric-cluster ${CLUSTER_SRCS})
@@ -94,34 +94,38 @@ target_link_libraries(gric-cluster
     m
 )
 
-add_executable(gric-mktxtseq src/mktestseq.c)
+add_executable(gric-mktxtseq src/gric-mktxtseq/mktestseq.c)
 target_link_libraries(gric-mktxtseq m)
 
-add_executable(gric-plot src/plot_clusters.c)
+add_executable(gric-plot src/gric-plot/plot_clusters.c)
 target_link_libraries(gric-plot ${PNG_LIBRARIES} m)
 
-add_executable(gric-mkclusteredfile src/mkclusteredfile.c)
+add_executable(gric-mkclusteredfile src/gric-mkclusteredfile/mkclusteredfile.c)
 target_link_libraries(gric-mkclusteredfile m)
 
-add_executable(gric-NDmodel src/model_nd.c)
+add_executable(gric-NDmodel src/gric-NDmodel/model_nd.c)
 target_link_libraries(gric-NDmodel m)
 
-add_executable(gric-ascii-spot-2-video src/ascii-spot-2-video.c)
+add_executable(gric-ascii-spot-2-video src/gric-ascii-spot-2-video/ascii-spot-2-video.c)
 target_link_libraries(gric-ascii-spot-2-video m ${IMAGESTREAMIO_LIBRARIES})
 
 if (IMAGESTREAMIO_FOUND)
-    add_executable(gric-stream-to-pipe src/stream_to_pipe.c)
+    add_executable(gric-stream-to-pipe src/gric-stream-to-pipe/stream_to_pipe.c)
     target_link_libraries(gric-stream-to-pipe ${IMAGESTREAMIO_LIBRARIES} m)
 endif()
 
 # gric-info tool
-add_executable(gric-info src/gric-info.c)
+add_executable(gric-info src/gric-info/gric-info.c)
 
 # gric-help tool
-add_executable(gric-help src/gric-help.c)
+add_executable(gric-help src/gric-help/gric-help.c)
 
 # gric-benchmark tool
-add_executable(gric-benchmark src/gric-benchmark.c)
+add_executable(gric-benchmark
+    src/gric-benchmark/gric-benchmark.c
+    src/gric-benchmark/benchmark_utils.c
+    src/gric-benchmark/test_list.c
+)
 
 if (CFITSIO_FOUND)
     target_compile_definitions(gric-info PRIVATE USE_CFITSIO)
