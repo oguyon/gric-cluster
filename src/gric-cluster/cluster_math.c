@@ -1,3 +1,15 @@
+/**
+ * @file cluster_math.c
+ * @brief High-performance math routines for distance calculation.
+ *
+ * Implements float matching logic and optimized multi-point triangle-inequality distance
+ * calculation heuristics.
+ *
+ * Main Functions:
+ * - fmatch: Checks if a value is close to a target within a small threshold.
+ * - calc_min_dist_4pt: Computes the lower distance bound using a 4-point inequality.
+ * - calc_min_dist_5pt: Computes the lower distance bound using a 5-point inequality.
+ */
 #include "cluster_math.h"
 #include <math.h>
 
@@ -49,4 +61,31 @@ double calc_min_dist_5pt(double d_f_c1, double d_f_c2, double d_f_c3, double d_t
     double zT = (zT_sq > 0.0) ? sqrt(zT_sq) : 0.0;
 
     return sqrt((xF - xT) * (xF - xT) + (yF - yT) * (yF - yT) + (zF - zT) * (zF - zT));
+}
+
+/**
+ * @brief Comparison helper function for candidate sorting.
+ *
+ * Compares two Candidates by their probability values in descending order.
+ *
+ * @param a Pointer to the first Candidate.
+ * @param b Pointer to the second Candidate.
+ * @return 1 if first has lower probability, -1 if first has higher, 0 if equal.
+ */
+int compare_candidates(
+    const void *a,
+    const void *b)
+{
+    const Candidate *ca = (const Candidate *)a;
+    const Candidate *cb = (const Candidate *)b;
+
+    if (ca->p < cb->p)
+    {
+        return 1;
+    }
+    if (ca->p > cb->p)
+    {
+        return -1;
+    }
+    return 0;
 }

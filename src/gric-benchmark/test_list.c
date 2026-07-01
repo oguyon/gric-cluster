@@ -1,3 +1,13 @@
+/**
+ * @file test_list.c
+ * @brief Benchmark test list loader.
+ *
+ * Handles reading and parsing test specification configurations and lists of
+ * input coordinate files for automated benchmarking runs.
+ *
+ * Main Functions:
+ * - load_test_file: Parses and loads test files and parameters from a benchmark list.
+ */
 #include "benchmark.h"
 #include <ctype.h>
 #include <stdio.h>

@@ -1,3 +1,14 @@
+/**
+ * @file gric-benchmark.c
+ * @brief Main runner for the GRIC suite auto-benchmarking utility.
+ *
+ * Orchestrates clustering benchmarks by running tests against different parameters
+ * and configurations, tracking execution timings and result metrics.
+ *
+ * Main Functions:
+ * - init_config: Initializes benchmark configurations.
+ * - main: Entry point of the benchmarking runner.
+ */
 #include "benchmark.h"
 #include <fcntl.h>
 #include <getopt.h>

@@ -1,6 +1,18 @@
+/**
+ * @file main.c
+ * @brief Entry point for the gric-cluster application.
+ *
+ * Parses initial CLI arguments, configures signal handlers, loads inputs, and invokes
+ * the main clustering runner.
+ *
+ * Main Functions:
+ * - main: High-level orchestrator of the clustering pipeline.
+ */
 #include "cluster_core.h"
 #include "cluster_defs.h"
+#include "cluster_help.h"
 #include "cluster_io.h"
+#include "cluster_scandist.h"
 #include "config_utils.h"
 #include "frameread.h"
 #include <ctype.h>
@@ -33,6 +45,7 @@ void print_args_on_error(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
     init_colors_io();
+    init_colors_help();
     struct timespec prog_start;
     clock_gettime(CLOCK_REALTIME, &prog_start);
 
@@ -86,29 +99,29 @@ int main(int argc, char *argv[])
     ClusterConfig config;
     memset(&config, 0, sizeof(ClusterConfig));
     // Set defaults
-    config.deltaprob = 0.01;
-    config.maxnbclust = 1000;
-    config.ncpu = 1;
-    config.maxnbfr = 100000;
-    config.fmatch_a = 2.0;
-    config.fmatch_b = 0.5;
-    config.max_gprob_visitors = 1000;
-    config.progress_mode = 1;
-    config.pred_len = 10;
-    config.pred_h = 1000;
-    config.pred_n = 2;
-    config.maxcl_strategy = MAXCL_STOP;
-    config.discard_fraction = 0.5;
+    config.algo.deltaprob = 0.01;
+    config.algo.maxnbclust = 1000;
+    config.optim.ncpu = 1;
+    config.input.maxnbfr = 100000;
+    config.optim.fmatch_a = 2.0;
+    config.optim.fmatch_b = 0.5;
+    config.optim.max_gprob_visitors = 1000;
+    config.output.progress_mode = 1;
+    config.optim.pred_len = 10;
+    config.optim.pred_h = 1000;
+    config.optim.pred_n = 2;
+    config.algo.maxcl_strategy = MAXCL_STOP;
+    config.algo.discard_fraction = 0.5;
 
     // Output defaults (disabled by default, except membership and dcc)
-    config.output_dcc = 1;
-    config.output_tm = 0;
-    config.output_anchors = 0;
-    config.output_counts = 0;
-    config.output_membership = 1;
-    config.output_discarded = 0;
-    config.output_clustered = 0;
-    config.output_clusters = 0;
+    config.output.output_dcc = 1;
+    config.output.output_tm = 0;
+    config.output.output_anchors = 0;
+    config.output.output_counts = 0;
+    config.output.output_membership = 1;
+    config.output.output_discarded = 0;
+    config.output.output_clustered = 0;
+    config.output.output_clusters = 0;
 
     int arg_idx = 1;
     int rlim_set = 0;
@@ -181,53 +194,53 @@ int main(int argc, char *argv[])
         }
 
         // Positional logic
-        if (!config.scandist_mode && !rlim_set)
+        if (!config.input.scandist_mode && !rlim_set)
         {
             // Try parse as rlim
             char *endptr;
             double v = strtod(key, &endptr);
             if (*endptr == '\0')
             {
-                config.rlim = v;
+                config.algo.rlim = v;
                 rlim_set = 1;
             }
             else if (key[0] == 'a' && isdigit(key[1]))
             {
-                config.auto_rlim_factor = atof(key + 1);
-                config.auto_rlim_mode = 1;
+                config.algo.auto_rlim_factor = atof(key + 1);
+                config.algo.auto_rlim_mode = 1;
                 rlim_set = 1;
             }
             else
             {
                 // Not a number, assume filename
-                if (config.fits_filename != NULL)
+                if (config.input.fits_filename != NULL)
                 {
                     fprintf(stderr,
                             "Error: Too many arguments or multiple input files specified (already "
                             "have '%s', found '%s')\n",
-                            config.fits_filename, key);
+                            config.input.fits_filename, key);
                     if (cmdline)
                         free(cmdline);
                     print_args_on_error(argc, argv);
                     return 1;
                 }
-                config.fits_filename = key;
+                config.input.fits_filename = key;
             }
         }
         else
         {
-            if (config.fits_filename != NULL)
+            if (config.input.fits_filename != NULL)
             {
                 fprintf(stderr,
                         "Error: Too many arguments or multiple input files specified (already have "
                         "'%s', found '%s')\n",
-                        config.fits_filename, key);
+                        config.input.fits_filename, key);
                 if (cmdline)
                     free(cmdline);
                 print_args_on_error(argc, argv);
                 return 1;
             }
-            config.fits_filename = key;
+            config.input.fits_filename = key;
         }
         arg_idx++;
     }
@@ -244,10 +257,10 @@ int main(int argc, char *argv[])
         printf("Configuration written to %s\n", confw_filename);
     }
 
-    if (!config.fits_filename)
+    if (!config.input.fits_filename)
     {
         fprintf(stderr, "Error: Missing input file or stream name.\n");
-        if (!config.scandist_mode)
+        if (!config.input.scandist_mode)
             print_usage(argv[0]);
         if (cmdline)
             free(cmdline);
@@ -255,8 +268,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (init_frameread(config.fits_filename, config.stream_input_mode, config.cnt2sync_mode,
-                       config.filelist_mode) != 0)
+    if (init_frameread(config.input.fits_filename, config.input.stream_input_mode, config.input.cnt2sync_mode,
+                       config.input.filelist_mode) != 0)
     {
         if (cmdline)
             free(cmdline);
@@ -267,14 +280,14 @@ int main(int argc, char *argv[])
     // Determine output directory
     char *out_dir = NULL;
     int out_dir_alloc = 0; // Flag to track if out_dir was malloced locally
-    if (config.user_outdir)
+    if (config.output.user_outdir)
     {
-        out_dir = strdup(config.user_outdir);
+        out_dir = strdup(config.output.user_outdir);
         out_dir_alloc = 1;
     }
     else
     {
-        out_dir = create_output_dir_name(config.fits_filename);
+        out_dir = create_output_dir_name(config.input.fits_filename);
         out_dir_alloc = 1;
     }
 
@@ -299,9 +312,9 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (!config.user_outdir)
+    if (!config.output.user_outdir)
     {
-        config.user_outdir = out_dir;
+        config.output.user_outdir = out_dir;
     }
     else
     {
@@ -312,14 +325,14 @@ int main(int argc, char *argv[])
     ClusterState state;
     memset(&state, 0, sizeof(ClusterState));
 
-    if (config.distall_mode)
+    if (config.output.distall_mode)
     {
         char out_path[1024];
-        if (config.user_outdir)
-            snprintf(out_path, sizeof(out_path), "%s/distall.txt", config.user_outdir);
+        if (config.output.user_outdir)
+            snprintf(out_path, sizeof(out_path), "%s/distall.txt", config.output.user_outdir);
         else
         {
-            char *tmp = create_output_dir_name(config.fits_filename);
+            char *tmp = create_output_dir_name(config.input.fits_filename);
             snprintf(out_path, sizeof(out_path), "%s/distall.txt", tmp);
             free(tmp);
         }
@@ -334,22 +347,22 @@ int main(int argc, char *argv[])
         // ... (header printing)
     }
 
-    if (!config.scandist_mode)
+    if (!config.input.scandist_mode)
     {
         signal(SIGINT, handle_sigint);
         printf("CTRL+C to stop clustering and write results\n");
     }
 
-    if (config.scandist_mode || config.auto_rlim_mode)
+    if (config.input.scandist_mode || config.algo.auto_rlim_mode)
     {
-        run_scandist(&config, config.user_outdir);
-        if (config.scandist_mode)
+        run_scandist(&config, config.output.user_outdir);
+        if (config.input.scandist_mode)
         {
             if (state.distall_out)
                 fclose(state.distall_out);
             close_frameread();
-            if (config.user_outdir && out_dir_alloc)
-                free(config.user_outdir);
+            if (config.output.user_outdir && out_dir_alloc)
+                free(config.output.user_outdir);
             if (cmdline)
                 free(cmdline);
             return 0;
@@ -358,15 +371,15 @@ int main(int argc, char *argv[])
     }
 
     // Allocate State
-    state.clusters = (Cluster *)malloc(config.maxnbclust * sizeof(Cluster));
-    state.dccarray = (double *)malloc(config.maxnbclust * config.maxnbclust * sizeof(double));
-    for (int ii = 0; ii < config.maxnbclust * config.maxnbclust; ii++)
-        state.dccarray[ii] = -1.0;
+    state.clusters = (Cluster *)malloc(config.algo.maxnbclust * sizeof(Cluster));
+    state.scratch.dccarray = (double *)malloc(config.algo.maxnbclust * config.algo.maxnbclust * sizeof(double));
+    for (int ii = 0; ii < config.algo.maxnbclust * config.algo.maxnbclust; ii++)
+        state.scratch.dccarray[ii] = -1.0;
 
-    state.current_gprobs = (double *)malloc(config.maxnbclust * sizeof(double));
-    state.cluster_visitors = (VisitorList *)calloc(config.maxnbclust, sizeof(VisitorList));
-    state.probsortedclindex = (int *)malloc(config.maxnbclust * sizeof(int));
-    state.clmembflag = (int *)malloc(config.maxnbclust * sizeof(int));
+    state.scratch.current_gprobs = (double *)malloc(config.algo.maxnbclust * sizeof(double));
+    state.cluster_visitors = (VisitorList *)calloc(config.algo.maxnbclust, sizeof(VisitorList));
+    state.scratch.probsortedclindex = (int *)malloc(config.algo.maxnbclust * sizeof(int));
+    state.scratch.clmembflag = (int *)malloc(config.algo.maxnbclust * sizeof(int));
 
     // Run Clustering
     struct timespec clust_start, clust_end;
@@ -406,7 +419,7 @@ int main(int argc, char *argv[])
     }
     free(state.clusters);
 
-    for (long frame_idx = 0; frame_idx < state.total_frames_processed; frame_idx++)
+    for (long frame_idx = 0; frame_idx < state.telemetry.total_frames_processed; frame_idx++)
     {
         if (state.frame_infos[frame_idx].cluster_indices)
             free(state.frame_infos[frame_idx].cluster_indices);
@@ -415,34 +428,34 @@ int main(int argc, char *argv[])
     }
     free(state.frame_infos);
 
-    for (int cl_idx = 0; cl_idx < config.maxnbclust; cl_idx++)
+    for (int cl_idx = 0; cl_idx < config.algo.maxnbclust; cl_idx++)
     {
         if (state.cluster_visitors[cl_idx].frames)
             free(state.cluster_visitors[cl_idx].frames);
     }
     free(state.cluster_visitors);
-    free(state.current_gprobs);
+    free(state.scratch.current_gprobs);
 
-    free(state.dccarray);
-    free(state.probsortedclindex);
-    free(state.clmembflag);
+    free(state.scratch.dccarray);
+    free(state.scratch.probsortedclindex);
+    free(state.scratch.clmembflag);
     free(state.assignments);
 
-    if (state.pruned_fraction_sum)
-        free(state.pruned_fraction_sum);
-    if (state.step_counts)
-        free(state.step_counts);
+    if (state.telemetry.pruned_fraction_sum)
+        free(state.telemetry.pruned_fraction_sum);
+    if (state.telemetry.step_counts)
+        free(state.telemetry.step_counts);
     if (state.transition_matrix)
         free(state.transition_matrix);
-    if (state.mixed_probs)
-        free(state.mixed_probs);
-    if (state.dist_counts)
-        free(state.dist_counts);
-    if (state.pruned_counts_by_dist)
-        free(state.pruned_counts_by_dist);
+    if (state.scratch.mixed_probs)
+        free(state.scratch.mixed_probs);
+    if (state.telemetry.dist_counts)
+        free(state.telemetry.dist_counts);
+    if (state.telemetry.pruned_counts_by_dist)
+        free(state.telemetry.pruned_counts_by_dist);
 
-    if (config.user_outdir && out_dir_alloc)
-        free(config.user_outdir);
+    if (config.output.user_outdir && out_dir_alloc)
+        free(config.output.user_outdir);
 
     close_frameread();
 

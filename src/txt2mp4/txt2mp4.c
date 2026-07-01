@@ -1,3 +1,13 @@
+/**
+ * @file txt2mp4.c
+ * @brief Simple raw data text sequence to MP4 video encoder.
+ *
+ * Reads 2D coordinate/pixel values from text stream and pipes raw frames to an external
+ * FFmpeg process to produce an MP4 video file.
+ *
+ * Main Functions:
+ * - main: Entry point of the txt2mp4 tool.
+ */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

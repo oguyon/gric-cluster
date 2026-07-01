@@ -1,3 +1,16 @@
+/**
+ * @file frameread.c
+ * @brief Comprehensive image and coordinate frame reader.
+ *
+ * Implements unified frame ingestion from coordinate text files, video sequences (MP4 via
+ * FFmpeg), FITS files, file lists, or live ImageStreamIO shared memory.
+ *
+ * Main Functions:
+ * - init_frameread: Initializes the reader based on input type and options.
+ * - getframe: Retrieves the next frame from the configured source.
+ * - close_frameread: Releases reader resources and closes open files or streams.
+ * - reset_frameread: Resets stream/file position to the beginning.
+ */
 #include "common.h"
 #include "png_io.h"
 #include <ctype.h>

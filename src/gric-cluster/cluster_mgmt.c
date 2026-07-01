@@ -1,3 +1,14 @@
+/**
+ * @file cluster_mgmt.c
+ * @brief Active cluster tracking and lifecycle management.
+ *
+ * Provides functions to register visitors to clusters and to prune or delete empty
+ * clusters during the clustering process.
+ *
+ * Main Functions:
+ * - add_visitor: Records that a frame index has visited/been assigned to a cluster.
+ * - remove_cluster: Prunes and completely deletes a cluster from the active set.
+ */
 #include "cluster_mgmt.h"
 #include "cluster_core.h"
 #include <stdio.h>
@@ -30,14 +41,14 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
     if (index_to_remove < 0 || index_to_remove >= state->num_clusters)
         return;
 
-    if (config->verbose_level >= 1)
+    if (config->output.verbose_level >= 1)
     {
         printf("Removing cluster %d (Count: %d). Target: %d\n", index_to_remove,
                state->cluster_visitors[index_to_remove].count, index_target);
     }
 
     // 1. Log or Merge History
-    if (index_target == -1 && config->output_discarded)
+    if (index_target == -1 && config->output.output_discarded)
     {
         FILE *log = fopen("discarded_frames.txt", "a");
         if (log)
@@ -77,23 +88,23 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
     memset(&state->cluster_visitors[state->num_clusters - 1], 0, sizeof(VisitorList));
 
     // 4. Shift DCC Array (Rows and Cols)
-    int N = config->maxnbclust; // Stride is fixed maxnbclust
+    int N = config->algo.maxnbclust; // Stride is fixed maxnbclust
 
     // Shift Rows up
     for (int r = index_to_remove; r < state->num_clusters - 1; r++)
     {
-        memcpy(&state->dccarray[r * N], &state->dccarray[(r + 1) * N],
-               config->maxnbclust * sizeof(double));
+        memcpy(&state->scratch.dccarray[r * N], &state->scratch.dccarray[(r + 1) * N],
+               config->algo.maxnbclust * sizeof(double));
     }
     // Shift Columns left for ALL rows
     for (int r = 0; r < state->num_clusters - 1; r++)
     {
         int dest_idx = r * N + index_to_remove;
         int src_idx = r * N + index_to_remove + 1;
-        int count = config->maxnbclust - 1 - index_to_remove;
+        int count = config->algo.maxnbclust - 1 - index_to_remove;
         if (count > 0)
         {
-            memmove(&state->dccarray[dest_idx], &state->dccarray[src_idx], count * sizeof(double));
+            memmove(&state->scratch.dccarray[dest_idx], &state->scratch.dccarray[src_idx], count * sizeof(double));
         }
     }
 
@@ -102,14 +113,14 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
     for (int r = index_to_remove; r < state->num_clusters - 1; r++)
     {
         memcpy(&state->transition_matrix[r * N], &state->transition_matrix[(r + 1) * N],
-               config->maxnbclust * sizeof(long));
+               config->algo.maxnbclust * sizeof(long));
     }
     // Shift Cols
     for (int r = 0; r < state->num_clusters - 1; r++)
     {
         int dest_idx = r * N + index_to_remove;
         int src_idx = r * N + index_to_remove + 1;
-        int count = config->maxnbclust - 1 - index_to_remove;
+        int count = config->algo.maxnbclust - 1 - index_to_remove;
         if (count > 0)
         {
             memmove(&state->transition_matrix[dest_idx], &state->transition_matrix[src_idx],
@@ -123,14 +134,14 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
     {
         state->transition_matrix[last * N + r] = 0;
         state->transition_matrix[r * N + last] = 0;
-        state->dccarray[last * N + r] = -1.0;
-        state->dccarray[r * N + last] = -1.0;
+        state->scratch.dccarray[last * N + r] = -1.0;
+        state->scratch.dccarray[r * N + last] = -1.0;
     }
-    state->dccarray[last * N + last] = 0.0;
+    state->scratch.dccarray[last * N + last] = 0.0;
     memset(&state->clusters[last], 0, sizeof(Cluster));
 
     // 6. Correct Assignments Update Loop
-    for (long f = 0; f < state->total_frames_processed; f++)
+    for (long f = 0; f < state->telemetry.total_frames_processed; f++)
     {
         int a = state->assignments[f];
         if (a == index_to_remove)

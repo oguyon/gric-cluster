@@ -1,3 +1,17 @@
+/**
+ * @file gric-help.c
+ * @brief Onboarding/orientation helper utility for the GRIC suite.
+ *
+ * This file contains the implementation of the gric-help utility, which provides
+ * general onboarding orientation, indexes suite tools, and displays formatted
+ * help pages for specific programs in the GRIC suite.
+ *
+ * Main Functions:
+ * - print_formatted_help: Helper to output unified usage/description screens.
+ * - print_general_help: Displays suite overview, core concepts, program index, and workflows.
+ * - print_program_help: Dispatches and displays detailed help for a specific program.
+ * - main: Entry point of the help utility.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

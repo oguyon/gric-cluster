@@ -1,3 +1,14 @@
+/**
+ * @file gric-info.c
+ * @brief System diagnostic and build info utility for the GRIC suite.
+ *
+ * Queries and prints the compile-time configuration and optional dependencies
+ * (CFITSIO, PNG, FFmpeg, ImageStreamIO, OpenMP) of the build.
+ *
+ * Main Functions:
+ * - print_module_info: Detects and displays support status for optional libraries.
+ * - main: Entry point of the diagnostic utility.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

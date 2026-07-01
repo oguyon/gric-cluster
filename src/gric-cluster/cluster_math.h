@@ -1,6 +1,12 @@
 #ifndef CLUSTER_MATH_H
 #define CLUSTER_MATH_H
 
+#include "cluster_defs.h"
+
+int compare_candidates(
+    const void *a,
+    const void *b);
+
 /**
  * @brief Evaluates match probability weight based on normalized distance.
  *
