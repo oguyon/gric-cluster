@@ -1,14 +1,10 @@
 /**
- * @file cluster_step_helpers.h
- * @brief Helper procedures for processing a single image frame.
- *
- * Provides prototype definitions for single frame clustering steps,
- * including sorting, predictions, standard matching, geometry probability
- * calculations, and cluster eviction handling.
+ * @file cluster_steps.h
+ * @brief Prototype definitions for single frame clustering steps.
  */
 
-#ifndef CLUSTER_STEP_HELPERS_H
-#define CLUSTER_STEP_HELPERS_H
+#ifndef CLUSTER_STEPS_H
+#define CLUSTER_STEPS_H
 
 #include "cluster_defs.h"
 #include <stdio.h>
@@ -79,4 +75,4 @@ void record_step_assignment(
     int            temp_count,
     long           start_pruned_val);
 
-#endif // CLUSTER_STEP_HELPERS_H
+#endif // CLUSTER_STEPS_H
