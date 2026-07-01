@@ -1,3 +1,14 @@
+/**
+ * @file png_io.c
+ * @brief PNG image file reading and writing interface.
+ *
+ * Links raw image buffers with libpng to support reading input frames and writing
+ * diagnostic outputs as PNG files.
+ *
+ * Main Functions:
+ * - write_png_frame: Encodes a 2D float/byte buffer and writes it as a PNG file.
+ * - read_png_frame: Decodes a PNG file into a 2D float/byte buffer.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

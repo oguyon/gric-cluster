@@ -1,3 +1,13 @@
+/**
+ * @file mkclusteredfile.c
+ * @brief Clustered output file reconstruction utility.
+ *
+ * Reconstructs a full clustered file by matching the original frame coordinates with
+ * their cluster membership assignments.
+ *
+ * Main Functions:
+ * - main: Entry point of the reconstruction tool.
+ */
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>

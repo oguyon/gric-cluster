@@ -9,10 +9,6 @@
 extern volatile sig_atomic_t stop_requested;
 
 void run_clustering(ClusterConfig *config, ClusterState *state);
-void run_scandist(ClusterConfig *config, char *out_dir);
-
-int compare_candidates(const void *a, const void *b);
-int compare_doubles(const void *a, const void *b);
 
 /**
  * @brief High-level distance evaluation between a frame and a cluster anchor.

@@ -1,3 +1,15 @@
+/**
+ * @file model_nd.c
+ * @brief N-Dimensional coordinate reconstruction utility.
+ *
+ * Implements a simulated annealing optimizer to reconstruct N-dimensional coordinate
+ * matrices from pairwise distance matrices (dcc.txt).
+ *
+ * Main Functions:
+ * - dist_nd: Computes distance in N-dimensional space between two points.
+ * - rand_double: Helper to generate a random double-precision floating-point number.
+ * - main: Entry point of the reconstruction utility.
+ */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

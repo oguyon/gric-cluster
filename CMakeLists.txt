@@ -73,6 +73,10 @@ set(CLUSTER_SRCS
     src/gric-cluster/main.c
     src/gric-cluster/cluster_core.c
     src/gric-cluster/cluster_io.c
+    src/gric-cluster/cluster_help.c
+    src/gric-cluster/cluster_scandist.c
+    src/gric-cluster/cluster_step.c
+    src/gric-cluster/cluster_step_helpers.c
     src/gric-cluster/framedistance.c
     src/gric-cluster/frameread.c
     src/gric-cluster/png_io.c
@@ -97,7 +101,10 @@ target_link_libraries(gric-cluster
 add_executable(gric-mktxtseq src/gric-mktxtseq/mktestseq.c)
 target_link_libraries(gric-mktxtseq m)
 
-add_executable(gric-plot src/gric-plot/plot_clusters.c)
+add_executable(gric-plot
+    src/gric-plot/plot_clusters.c
+    src/gric-plot/canvas/canvas.c
+)
 target_link_libraries(gric-plot ${PNG_LIBRARIES} m)
 
 add_executable(gric-mkclusteredfile src/gric-mkclusteredfile/mkclusteredfile.c)

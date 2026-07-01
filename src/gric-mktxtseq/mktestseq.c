@@ -1,3 +1,18 @@
+/**
+ * @file mktestseq.c
+ * @brief Synthetic sequence coordinate generator.
+ *
+ * Generates structured 2D/3D coordinate walks (spiral, circle, walk, sphere, unit random)
+ * to produce text test datasets.
+ *
+ * Main Functions:
+ * - gen_random_point: Generates a uniform random coordinate.
+ * - gen_sphere_point: Generates a point on the surface of a hypersphere.
+ * - gen_circle_point: Generates a circular path coordinate.
+ * - gen_spiral_point: Generates a spiral path coordinate.
+ * - gen_walk_point: Generates a random walk step.
+ * - main: Entry point of the coordinate generator.
+ */
 #define _POSIX_C_SOURCE 200809L
 #include <ctype.h>
 #include <math.h>

@@ -1,3 +1,16 @@
+/**
+ * @file benchmark_utils.c
+ * @brief Utility helper functions for the benchmarking tool.
+ *
+ * Provides functions to run commands with output redirection, rebuild the
+ * project, parse performance metrics, and handle CLI arguments for benchmarks.
+ *
+ * Main Functions:
+ * - run_command_redirect: Safely executes shell commands and redirects stdout/stderr.
+ * - rebuild_project: Programmatically runs CMake and Make to rebuild the suite.
+ * - split_args: Helper to parse and split command line arguments.
+ * - parse_metrics: Extracts and parses clustering performance metrics from log outputs.
+ */
 #include "benchmark.h"
 #include <fcntl.h>
 #include <stdio.h>

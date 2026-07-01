@@ -1,3 +1,15 @@
+/**
+ * @file config_utils.c
+ * @brief Configuration parsing and management for the clustering engine.
+ *
+ * Handles reading, writing, and applying configurations, command-line arguments, and
+ * configuration files for the clustering process.
+ *
+ * Main Functions:
+ * - apply_option: Parses and applies a single command line or configuration option.
+ * - read_config_file: Reads options from a key-value configuration file.
+ * - write_config_file: Dumps the active configuration to a file.
+ */
 #include "config_utils.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -22,129 +34,129 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
     {
         if (!value)
             return -1;
-        config->deltaprob = atof(value);
+        config->algo.deltaprob = atof(value);
         return 1;
     }
     else if (matches(key, "-maxcl"))
     {
         if (!value)
             return -1;
-        config->maxnbclust = atoi(value);
+        config->algo.maxnbclust = atoi(value);
         return 1;
     }
     else if (matches(key, "-ncpu"))
     {
         if (!value)
             return -1;
-        config->ncpu = atoi(value);
+        config->optim.ncpu = atoi(value);
         return 1;
     }
     else if (matches(key, "-maxim"))
     {
         if (!value)
             return -1;
-        config->maxnbfr = atol(value);
+        config->input.maxnbfr = atol(value);
         return 1;
     }
     else if (matches(key, "-avg"))
     {
-        config->average_mode = 1;
+        config->output.average_mode = 1;
         return 0;
     }
     else if (matches(key, "-distall"))
     {
-        config->distall_mode = 1;
+        config->output.distall_mode = 1;
         return 0;
     }
     else if (matches(key, "-outdir"))
     {
         if (!value)
             return -1;
-        config->user_outdir =
+        config->output.user_outdir =
             strdup(value); // We strdup here to manage memory consistent with config file reading
         return 1;
     }
     else if (matches(key, "-progress"))
     {
-        config->progress_mode = 1;
+        config->output.progress_mode = 1;
         return 0;
     }
     else if (matches(key, "-gprob"))
     {
-        config->gprob_mode = 1;
+        config->optim.gprob_mode = 1;
         return 0;
     }
     else if (matches(key, "-verbose"))
     {
-        config->verbose_level = 1;
+        config->output.verbose_level = 1;
         return 0;
     }
     else if (matches(key, "-veryverbose"))
     {
-        config->verbose_level = 2;
+        config->output.verbose_level = 2;
         return 0;
     }
     else if (matches(key, "-fitsout"))
     {
-        config->fitsout_mode = 1;
+        config->output.fitsout_mode = 1;
         return 0;
     }
     else if (matches(key, "-pngout"))
     {
-        config->pngout_mode = 1;
+        config->output.pngout_mode = 1;
         return 0;
     }
     else if (matches(key, "-filelist"))
     {
-        config->filelist_mode = 1;
+        config->input.filelist_mode = 1;
         return 0;
     }
     else if (matches(key, "-stream"))
     {
-        config->stream_input_mode = 1;
+        config->input.stream_input_mode = 1;
         return 0;
     }
     else if (matches(key, "-cnt2sync"))
     {
-        config->cnt2sync_mode = 1;
+        config->input.cnt2sync_mode = 1;
         return 0;
     }
     else if (matches(key, "-fmatcha"))
     {
         if (!value)
             return -1;
-        config->fmatch_a = atof(value);
+        config->optim.fmatch_a = atof(value);
         return 1;
     }
     else if (matches(key, "-fmatchb"))
     {
         if (!value)
             return -1;
-        config->fmatch_b = atof(value);
+        config->optim.fmatch_b = atof(value);
         return 1;
     }
     else if (matches(key, "-maxvis"))
     {
         if (!value)
             return -1;
-        config->max_gprob_visitors = atoi(value);
+        config->optim.max_gprob_visitors = atoi(value);
         return 1;
     }
     else if (matches(key, "-te4"))
     {
-        config->te4_mode = 1;
+        config->optim.te4_mode = 1;
         return 0;
     }
     else if (matches(key, "-te5"))
     {
-        config->te5_mode = 1;
+        config->optim.te5_mode = 1;
         return 0;
     }
     else if (matches(key, "-tm"))
     {
         if (!value)
             return -1;
-        config->tm_mixing_coeff = atof(value);
+        config->algo.tm_mixing_coeff = atof(value);
         return 1;
     }
     else if (matches(key, "-maxcl_strategy"))
@@ -152,11 +164,11 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         if (!value)
             return -1;
         if (strcmp(value, "stop") == 0)
-            config->maxcl_strategy = MAXCL_STOP;
+            config->algo.maxcl_strategy = MAXCL_STOP;
         else if (strcmp(value, "discard") == 0)
-            config->maxcl_strategy = MAXCL_DISCARD;
+            config->algo.maxcl_strategy = MAXCL_DISCARD;
         else if (strcmp(value, "merge") == 0)
-            config->maxcl_strategy = MAXCL_MERGE;
+            config->algo.maxcl_strategy = MAXCL_MERGE;
         else
             fprintf(stderr, "Warning: Unknown maxcl_strategy '%s'\n", value);
         return 1;
@@ -165,52 +177,52 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
     {
         if (!value)
             return -1;
-        config->discard_fraction = atof(value);
+        config->algo.discard_fraction = atof(value);
         return 1;
     }
     else if (matches(key, "-tm_out"))
     {
-        config->output_tm = 1;
+        config->output.output_tm = 1;
         return 0;
     }
     else if (matches(key, "-anchors"))
     {
-        config->output_anchors = 1;
+        config->output.output_anchors = 1;
         return 0;
     }
     else if (matches(key, "-counts"))
     {
-        config->output_counts = 1;
+        config->output.output_counts = 1;
         return 0;
     }
     else if (matches(key, "-membership"))
     {
-        config->output_membership = 1;
+        config->output.output_membership = 1;
         return 0;
     }
     else if (matches(key, "-no_membership"))
     {
-        config->output_membership = 0;
+        config->output.output_membership = 0;
         return 0;
     }
     else if (matches(key, "-discarded"))
     {
-        config->output_discarded = 1;
+        config->output.output_discarded = 1;
         return 0;
     }
     else if (matches(key, "-clustered"))
     {
-        config->output_clustered = 1;
+        config->output.output_clustered = 1;
         return 0;
     }
     else if (matches(key, "-clusters"))
     {
-        config->output_clusters = 1;
+        config->output.output_clusters = 1;
         return 0;
     }
     else if (strncmp(key, "-pred", 5) == 0 || strncmp(key, "pred", 4) == 0)
     {
-        config->pred_mode = 1;
+        config->optim.pred_mode = 1;
         const char *params = strchr(key, '[');
         if (params)
         {
@@ -218,16 +230,16 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
             int l, h, n;
             if (sscanf(params, "%d,%d,%d", &l, &h, &n) == 3)
             {
-                config->pred_len = l;
-                config->pred_h = h;
-                config->pred_n = n;
+                config->optim.pred_len = l;
+                config->optim.pred_h = h;
+                config->optim.pred_n = n;
             }
         }
         return 0;
     }
     else if (matches(key, "-scandist"))
     {
-        config->scandist_mode = 1;
+        config->input.scandist_mode = 1;
         return 0;
     }
     else if (matches(key, "-rlim"))
@@ -236,12 +248,12 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
             return -1;
         if (value[0] == 'a')
         {
-            config->auto_rlim_factor = atof(value + 1);
-            config->auto_rlim_mode = 1;
+            config->algo.auto_rlim_factor = atof(value + 1);
+            config->algo.auto_rlim_mode = 1;
         }
         else
         {
-            config->rlim = atof(value);
+            config->algo.rlim = atof(value);
         }
         return 1;
     }
@@ -249,7 +261,7 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
     { // Explicit input
         if (!value)
             return -1;
-        config->fits_filename = strdup(value);
+        config->input.fits_filename = strdup(value);
         return 1;
     }
 
@@ -307,87 +319,87 @@ int write_config_file(const char *filename, ClusterConfig *config)
         return 1;
 
     fprintf(f, "# gric-cluster configuration file\n");
-    fprintf(f, "rlim %f\n", config->rlim);
-    if (config->auto_rlim_mode)
-        fprintf(f, "# auto_rlim enabled (factor %f)\n", config->auto_rlim_factor);
-    if (config->fits_filename)
-        fprintf(f, "input %s\n", config->fits_filename);
-    if (config->user_outdir)
-        fprintf(f, "outdir %s\n", config->user_outdir);
-    fprintf(f, "dprob %f\n", config->deltaprob);
-    fprintf(f, "maxcl %d\n", config->maxnbclust);
-    fprintf(f, "maxim %ld\n", config->maxnbfr);
-    fprintf(f, "ncpu %d\n", config->ncpu);
+    fprintf(f, "rlim %f\n", config->algo.rlim);
+    if (config->algo.auto_rlim_mode)
+        fprintf(f, "# auto_rlim enabled (factor %f)\n", config->algo.auto_rlim_factor);
+    if (config->input.fits_filename)
+        fprintf(f, "input %s\n", config->input.fits_filename);
+    if (config->output.user_outdir)
+        fprintf(f, "outdir %s\n", config->output.user_outdir);
+    fprintf(f, "dprob %f\n", config->algo.deltaprob);
+    fprintf(f, "maxcl %d\n", config->algo.maxnbclust);
+    fprintf(f, "maxim %ld\n", config->input.maxnbfr);
+    fprintf(f, "ncpu %d\n", config->optim.ncpu);
 
-    if (config->average_mode)
+    if (config->output.average_mode)
         fprintf(f, "avg\n");
-    if (config->distall_mode)
+    if (config->output.distall_mode)
         fprintf(f, "distall\n");
-    if (config->progress_mode)
+    if (config->output.progress_mode)
         fprintf(f, "progress\n");
-    if (config->gprob_mode)
+    if (config->optim.gprob_mode)
         fprintf(f, "gprob\n");
-    if (config->verbose_level == 1)
+    if (config->output.verbose_level == 1)
         fprintf(f, "verbose\n");
-    if (config->verbose_level == 2)
+    if (config->output.verbose_level == 2)
         fprintf(f, "veryverbose\n");
-    if (config->fitsout_mode)
+    if (config->output.fitsout_mode)
         fprintf(f, "fitsout\n");
-    if (config->pngout_mode)
+    if (config->output.pngout_mode)
         fprintf(f, "pngout\n");
-    if (config->filelist_mode)
+    if (config->input.filelist_mode)
         fprintf(f, "filelist\n");
-    if (config->stream_input_mode)
+    if (config->input.stream_input_mode)
         fprintf(f, "stream\n");
-    if (config->cnt2sync_mode)
+    if (config->input.cnt2sync_mode)
         fprintf(f, "cnt2sync\n");
 
-    fprintf(f, "fmatcha %f\n", config->fmatch_a);
-    fprintf(f, "fmatchb %f\n", config->fmatch_b);
-    fprintf(f, "maxvis %d\n", config->max_gprob_visitors);
+    fprintf(f, "fmatcha %f\n", config->optim.fmatch_a);
+    fprintf(f, "fmatchb %f\n", config->optim.fmatch_b);
+    fprintf(f, "maxvis %d\n", config->optim.max_gprob_visitors);
 
-    if (config->te4_mode)
+    if (config->optim.te4_mode)
         fprintf(f, "te4\n");
-    if (config->te5_mode)
+    if (config->optim.te5_mode)
         fprintf(f, "te5\n");
 
-    fprintf(f, "tm %f\n", config->tm_mixing_coeff);
+    fprintf(f, "tm %f\n", config->algo.tm_mixing_coeff);
 
     const char *strat = "stop";
-    if (config->maxcl_strategy == MAXCL_DISCARD)
+    if (config->algo.maxcl_strategy == MAXCL_DISCARD)
         strat = "discard";
-    else if (config->maxcl_strategy == MAXCL_MERGE)
+    else if (config->algo.maxcl_strategy == MAXCL_MERGE)
         strat = "merge";
     fprintf(f, "maxcl_strategy %s\n", strat);
-    fprintf(f, "discard_frac %f\n", config->discard_fraction);
+    fprintf(f, "discard_frac %f\n", config->algo.discard_fraction);
 
-    if (config->output_tm)
+    if (config->output.output_tm)
         fprintf(f, "tm_out\n");
-    if (config->output_anchors)
+    if (config->output.output_anchors)
         fprintf(f, "anchors\n");
-    if (config->output_counts)
+    if (config->output.output_counts)
         fprintf(f, "counts\n");
-    if (config->output_membership)
+    if (config->output.output_membership)
         fprintf(f, "membership\n");
-    if (!config->output_membership)
+    if (!config->output.output_membership)
         fprintf(f, "no_membership\n");
-    if (config->output_discarded)
+    if (config->output.output_discarded)
         fprintf(f, "discarded\n");
-    if (config->output_clustered)
+    if (config->output.output_clustered)
         fprintf(f, "clustered\n");
-    if (config->output_clusters)
+    if (config->output.output_clusters)
         fprintf(f, "clusters\n");
 
-    if (config->pred_mode)
+    if (config->optim.pred_mode)
     {
-        fprintf(f, "# Prediction mode enabled: pred[%d,%d,%d]\n", config->pred_len, config->pred_h,
-                config->pred_n);
+        fprintf(f, "# Prediction mode enabled: pred[%d,%d,%d]\n", config->optim.pred_len, config->optim.pred_h,
+                config->optim.pred_n);
         // Writing as -pred is weird, maybe write separate params?
         // But the parser handles -pred[...]. Let's write it as such.
-        fprintf(f, "-pred[%d,%d,%d]\n", config->pred_len, config->pred_h, config->pred_n);
+        fprintf(f, "-pred[%d,%d,%d]\n", config->optim.pred_len, config->optim.pred_h, config->optim.pred_n);
     }
 
-    if (config->scandist_mode)
+    if (config->input.scandist_mode)
         fprintf(f, "scandist\n");
 
     fclose(f);

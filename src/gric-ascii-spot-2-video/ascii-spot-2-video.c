@@ -1,3 +1,15 @@
+/**
+ * @file ascii-spot-2-video.c
+ * @brief Coordinate to video or ImageStreamIO generator.
+ *
+ * Translates point coordinate lists into 2D image matrices of a Gaussian spot, outputting
+ * them as MP4 files (via FFmpeg pipe) or a live ImageStreamIO stream.
+ *
+ * Main Functions:
+ * - compute_centroid_float: Calculates the centroid of a floating-point frame.
+ * - compute_centroid_u8: Calculates the centroid of an 8-bit unsigned frame.
+ * - main: Entry point of the spot video generator.
+ */
 #include <ctype.h>
 #include <math.h>
 #include <signal.h>

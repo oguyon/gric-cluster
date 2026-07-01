@@ -1,3 +1,13 @@
+/**
+ * @file framedistance.c
+ * @brief Euclidean distance calculation between frames.
+ *
+ * Implements the standard Euclidean distance metric between two multi-dimensional
+ * frame coordinate vectors.
+ *
+ * Main Functions:
+ * - framedist: Computes the Euclidean distance between two frames.
+ */
 #include "framedistance.h"
 #include "common.h"
 #include <math.h>

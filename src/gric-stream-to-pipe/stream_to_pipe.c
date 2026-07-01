@@ -1,3 +1,13 @@
+/**
+ * @file stream_to_pipe.c
+ * @brief ImageStreamIO tap and stdout redirection utility.
+ *
+ * Connects to a live ImageStreamIO shared memory buffer and pipes its raw image data
+ * frames directly to stdout.
+ *
+ * Main Functions:
+ * - main: Entry point of the stream piping tool.
+ */
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
