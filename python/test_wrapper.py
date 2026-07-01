@@ -11,7 +11,7 @@ class TestImageCluster(unittest.TestCase):
         ]
 
         # rlim 0.5 should separate them
-        ic = ImageCluster(rlim=0.5, binary_path="../build/image-cluster", maxcl=5)
+        ic = ImageCluster(rlim=0.5, binary_path="../build/gric-cluster", maxcl=5)
         res = ic.run_sequence(data)
 
         print("Stdout:", res.get('stdout'))

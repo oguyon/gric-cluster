@@ -1,0 +1,8 @@
+# Default test patterns to be run by gric-benchmark
+2Dspiral
+2Dcircle-shuffle
+2Dspiral-shuffle
+2Drand
+3Drand
+2DcircleP10n
+3Dspiral

@@ -24,12 +24,18 @@ class ImageCluster:
         cmd = [self.binary_path, str(self.rlim)]
 
         # Add options
+        has_clustered = False
         for k, v in self.options.items():
+            if k == 'clustered':
+                has_clustered = True
             if v is True:
                 cmd.append(f"-{k}")
             elif v is not False and v is not None:
                 cmd.append(f"-{k}")
                 cmd.append(str(v))
+
+        if not has_clustered:
+            cmd.append("-clustered")
 
         if output_dir:
             cmd.append("-outdir")
@@ -46,12 +52,16 @@ class ImageCluster:
         res = self._parse_stdout(result.stdout)
 
         # Locate output file to parse assignments
-        # The C binary writes clustered.txt adjacent to the input file, regardless of -outdir
-        clustered_path = None
-        if input_file.endswith('.txt'):
-            clustered_path = input_file.replace('.txt', '.clustered.txt')
+        base = os.path.basename(input_file)
+        for ext in ('.fits.fz', '.fits', '.mp4', '.txt'):
+            if base.endswith(ext):
+                base = base[:-len(ext)]
+                break
+
+        if output_dir:
+            clustered_path = os.path.join(output_dir, base + ".clustered.txt")
         else:
-            clustered_path = input_file + '.clustered.txt'
+            clustered_path = os.path.join(base + ".clusterdat", base + ".clustered.txt")
 
         if clustered_path and os.path.exists(clustered_path):
             res.update(self._read_clustered_file(clustered_path))
