@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
+
+#define ENTROPY_PRUNE_SAMPLE_LIMIT 32
 
 /**
  * fast_log2 - Fast piecewise linear approximation of base-2 logarithm.
@@ -57,6 +60,9 @@ static int select_next_measurement_target_entropy(
     ClusterConfig *config,
     ClusterState  *state)
 {
+    struct timespec start_score;
+    clock_gettime(CLOCK_MONOTONIC, &start_score);
+
     int active_count = 0;
     double sum_probs = 0.0;
 
@@ -137,12 +143,55 @@ static int select_next_measurement_target_entropy(
         limit = state->num_clusters;
     }
 
-    TargetScore prob_scores[state->num_clusters];
-    TargetScore prune_scores[state->num_clusters];
+    int nc = state->num_clusters;
+    TargetScore *prob_scores  = (TargetScore *)malloc(nc * sizeof(TargetScore));
+    TargetScore *prune_scores = (TargetScore *)malloc(nc * sizeof(TargetScore));
+    int         *active_indices = (int *)malloc(nc * sizeof(int));
+    if (prob_scores == NULL || prune_scores == NULL || active_indices == NULL)
+    {
+        free(prob_scores);
+        free(prune_scores);
+        free(active_indices);
+        return -1;
+    }
 
+    int active_idx_count = 0;
+    for (int j = 0; j < state->num_clusters; j++)
+    {
+        if (state->scratch.clmembflag[j])
+        {
+            active_indices[active_idx_count++] = j;
+        }
+    }
+
+    double *plog2p = (double *)malloc(nc * sizeof(double));
+    if (plog2p == NULL)
+    {
+        free(prob_scores);
+        free(prune_scores);
+        free(active_indices);
+        return -1;
+    }
+    for (int idx = 0; idx < active_idx_count; idx++)
+    {
+        int k = active_indices[idx];
+        if (p_current[k] > 1e-15)
+        {
+            plog2p[k] = p_current[k] * fast_log2(p_current[k]);
+        }
+        else
+        {
+            plog2p[k] = 0.0;
+        }
+    }
+
+    /* Initialize all scores */
     for (int i = 0; i < state->num_clusters; i++)
     {
         prob_scores[i].id = i;
+        prune_scores[i].id = i;
+        prune_scores[i].score = 1e30; // Default large score
+
         if (state->scratch.clmembflag[i])
         {
             prob_scores[i].score = state->scratch.mixed_probs[i] * state->scratch.current_gprobs[i];
@@ -151,29 +200,86 @@ static int select_next_measurement_target_entropy(
         {
             prob_scores[i].score = 0.0;
         }
-
-        prune_scores[i].id = i;
-        double total_pop = 0.0;
-        for (int cj = 0; cj < state->num_clusters; cj++)
-        {
-            if (state->scratch.clmembflag[cj])
-            {
-                uint64_t *mask = &state->scratch.consistency_mask[(i * N + cj) * words];
-                for (int w = 0; w < words; w++)
-                {
-                    total_pop += (double)__builtin_popcountll(mask[w] & active_mask[w]);
-                }
-            }
-        }
-        prune_scores[i].score = total_pop;
     }
 
+    /* Sort prob_scores descending to find highest probability candidates */
     qsort(prob_scores, state->num_clusters, sizeof(TargetScore), compare_prob_scores);
+
+    /* Pre-compile a sampled list of active clusters for fast heuristic estimation */
+    int sampled_indices[ENTROPY_PRUNE_SAMPLE_LIMIT];
+    int sampled_count = 0;
+    if (active_idx_count <= ENTROPY_PRUNE_SAMPLE_LIMIT)
+    {
+        sampled_count = active_idx_count;
+        for (int idx = 0; idx < active_idx_count; idx++)
+        {
+            sampled_indices[idx] = active_indices[idx];
+        }
+    }
+    else
+    {
+        sampled_count = ENTROPY_PRUNE_SAMPLE_LIMIT;
+        double step = (double)active_idx_count / (double)ENTROPY_PRUNE_SAMPLE_LIMIT;
+        for (int idx = 0; idx < ENTROPY_PRUNE_SAMPLE_LIMIT; idx++)
+        {
+            sampled_indices[idx] = active_indices[(int)(idx * step)];
+        }
+    }
+
+    /* Compute pruning scores only for top M candidates */
+    int M = limit * 2;
+    if (M > state->num_clusters)
+    {
+        M = state->num_clusters;
+    }
+
+    #pragma omp parallel for if(M >= OMP_MIN_CLUSTERS)
+    for (int idx_p = 0; idx_p < M; idx_p++)
+    {
+        int i = prob_scores[idx_p].id;
+        if (state->scratch.clmembflag[i])
+        {
+            if (p_current[i] >= config->optim.entropy_min_prob)
+            {
+                double total_pop = 0.0;
+                uint64_t *base_mask_i = &state->scratch.consistency_mask[i * N * words];
+                for (int idx = 0; idx < sampled_count; idx++)
+                {
+                    int cj = sampled_indices[idx];
+                    uint64_t *mask = base_mask_i + cj * words;
+                    for (int w = 0; w < words; w++)
+                    {
+                        if (active_mask[w] > 0)
+                        {
+                            total_pop += (double)__builtin_popcountll(mask[w] & active_mask[w]);
+                        }
+                    }
+                }
+                prune_scores[i].score = total_pop;
+            }
+        }
+    }
+
+    /* Sort prune_scores ascending based on pruning scores */
     qsort(prune_scores, state->num_clusters, sizeof(TargetScore), compare_prune_scores);
 
+    struct timespec end_score, start_filter;
+    clock_gettime(CLOCK_MONOTONIC, &end_score);
+    state->telemetry.time_step_3b_score += (end_score.tv_sec - start_score.tv_sec) * 1000.0 +
+                                           (end_score.tv_nsec - start_score.tv_nsec) / 1000000.0;
+    clock_gettime(CLOCK_MONOTONIC, &start_filter);
+
     Candidate *candidates = state->scratch.entropy_candidates;
-    uint8_t visited[state->num_clusters];
-    memset(visited, 0, state->num_clusters * sizeof(uint8_t));
+    uint8_t *visited = (uint8_t *)malloc(nc * sizeof(uint8_t));
+    if (visited == NULL)
+    {
+        free(plog2p);
+        free(active_indices);
+        free(prune_scores);
+        free(prob_scores);
+        return -1;
+    }
+    memset(visited, 0, nc * sizeof(uint8_t));
 
     int num_targets = 0;
     int prob_idx = 0;
@@ -213,32 +319,63 @@ static int select_next_measurement_target_entropy(
         prune_idx++;
     }
 
+    struct timespec end_filter, start_eval;
+    clock_gettime(CLOCK_MONOTONIC, &end_filter);
+    state->telemetry.time_step_3b_filter += (end_filter.tv_sec - start_filter.tv_sec) * 1000.0 +
+                                            (end_filter.tv_nsec - start_filter.tv_nsec) / 1000000.0;
+    clock_gettime(CLOCK_MONOTONIC, &start_eval);
+
     int best_target_ci = -1;
     double min_expected_entropy = 1e30;
 
-    for (int tc_idx = 0; tc_idx < num_targets; tc_idx++)
+    #pragma omp parallel
     {
+        int *matched_indices = (int *)malloc(nc * sizeof(int));
+        if (matched_indices != NULL)
+        {
+        #pragma omp for
+        for (int tc_idx = 0; tc_idx < num_targets; tc_idx++)
+        {
         int target_ci = candidates[tc_idx].id;
         double expected_entropy_for_ci = 0.0;
 
-        for (int hypothesis_cj = 0; hypothesis_cj < state->num_clusters; hypothesis_cj++)
+        uint64_t *base_mask_tc = &state->scratch.consistency_mask[target_ci * N * words];
+
+        int early_exit = 0;
+        for (int h_idx = 0; h_idx < active_idx_count; h_idx++)
         {
+            double cur_min;
+            #pragma omp atomic read
+            cur_min = min_expected_entropy;
+            if (expected_entropy_for_ci >= cur_min)
+            {
+                early_exit = 1;
+                break;
+            }
+
+            int hypothesis_cj = active_indices[h_idx];
             if (p_current[hypothesis_cj] < config->optim.entropy_min_prob)
             {
                 continue;
             }
 
             double hypo_sum = 0.0;
-            uint64_t *mask = &state->scratch.consistency_mask[(target_ci * N + hypothesis_cj) * words];
+            uint64_t *mask = base_mask_tc + hypothesis_cj * words;
 
             int word_limit = (state->num_clusters + 63) / 64;
+            int matched_count = 0;
             for (int w = 0; w < word_limit; w++)
             {
+                if (active_mask[w] == 0)
+                {
+                    continue;
+                }
                 uint64_t mask_val = mask[w] & active_mask[w];
                 while (mask_val > 0)
                 {
                     int bit = __builtin_ctzll(mask_val);
                     int k = w * 64 + bit;
+                    matched_indices[matched_count++] = k;
                     hypo_sum += p_current[k];
                     mask_val &= (mask_val - 1);
                 }
@@ -247,28 +384,41 @@ static int select_next_measurement_target_entropy(
             double entropy = 0.0;
             if (hypo_sum > 0.0)
             {
-                for (int w = 0; w < word_limit; w++)
+                double plogp_sum = 0.0;
+                for (int m = 0; m < matched_count; m++)
                 {
-                    uint64_t mask_val = mask[w] & active_mask[w];
-                    while (mask_val > 0)
-                    {
-                        int bit = __builtin_ctzll(mask_val);
-                        int k = w * 64 + bit;
-                        double p_hypo = p_current[k] / hypo_sum;
-                        entropy -= p_hypo * fast_log2(p_hypo);
-                        mask_val &= (mask_val - 1);
-                    }
+                    plogp_sum += plog2p[matched_indices[m]];
                 }
+                entropy = fast_log2(hypo_sum) - plogp_sum / hypo_sum;
             }
             expected_entropy_for_ci += p_current[hypothesis_cj] * entropy;
         }
 
-        if (expected_entropy_for_ci < min_expected_entropy)
+        if (!early_exit)
         {
-            min_expected_entropy = expected_entropy_for_ci;
-            best_target_ci = target_ci;
+            #pragma omp critical
+            {
+                if (expected_entropy_for_ci < min_expected_entropy)
+                {
+                    min_expected_entropy = expected_entropy_for_ci;
+                    best_target_ci = target_ci;
+                }
+            }
         }
+        }
+        free(matched_indices);
+        } /* if (matched_indices != NULL) */
     }
+    struct timespec end_eval;
+    clock_gettime(CLOCK_MONOTONIC, &end_eval);
+    state->telemetry.time_step_3b_eval += (end_eval.tv_sec - start_eval.tv_sec) * 1000.0 +
+                                          (end_eval.tv_nsec - start_eval.tv_nsec) / 1000000.0;
+
+    free(visited);
+    free(plog2p);
+    free(active_indices);
+    free(prune_scores);
+    free(prob_scores);
 
     return best_target_ci;
 }

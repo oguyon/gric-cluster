@@ -120,43 +120,113 @@ void refine_sparse_bounds(
         return;
     }
 
-    int max_pairs = state->num_clusters * (state->num_clusters - 1) / 2;
-    Candidate *unmeasured_pairs = (Candidate *)malloc(max_pairs * sizeof(Candidate));
-    if (!unmeasured_pairs)
+    Candidate *best_pairs = (Candidate *)malloc(E * sizeof(Candidate));
+    if (best_pairs == NULL)
     {
         return;
     }
-
-    int pair_count = 0;
-    for (int i = 0; i < state->num_clusters; i++)
+    for (int k = 0; k < E; k++)
     {
-        for (int j = i + 1; j < state->num_clusters; j++)
+        best_pairs[k].id = -1;
+        best_pairs[k].p = -1e30;
+    }
+
+    #pragma omp parallel
+    {
+        Candidate *local_best = (Candidate *)malloc(E * sizeof(Candidate));
+        if (local_best != NULL)
         {
-            if (!state->scratch.dcc_measured[i * N + j])
+        for (int k = 0; k < E; k++)
+        {
+            local_best[k].id = -1;
+            local_best[k].p = -1e30;
+        }
+
+        #pragma omp for nowait
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            char *measured_row = &state->scratch.dcc_measured[i * N];
+            double *dcc_min_row = &state->scratch.dcc_min[i * N];
+            for (int j = i + 1; j < state->num_clusters; j++)
             {
-                unmeasured_pairs[pair_count].id = (i << 16) | j;
-                unmeasured_pairs[pair_count].p = -state->scratch.dcc_min[i * N + j];
-                pair_count++;
+                if (!measured_row[j])
+                {
+                    double dcc_val = dcc_min_row[j];
+                    double score = -dcc_val;
+
+                    if (score > local_best[E - 1].p)
+                    {
+                        int k = E - 2;
+                        while (k >= 0 && score > local_best[k].p)
+                        {
+                            local_best[k + 1] = local_best[k];
+                            k--;
+                        }
+                        local_best[k + 1].id = (i << 16) | j;
+                        local_best[k + 1].p = score;
+                    }
+                }
             }
         }
+
+        #pragma omp critical
+        {
+            for (int idx = 0; idx < E; idx++)
+            {
+                if (local_best[idx].id == -1)
+                {
+                    continue;
+                }
+                double score = local_best[idx].p;
+                if (score > best_pairs[E - 1].p)
+                {
+                    int k = E - 2;
+                    while (k >= 0 && score > best_pairs[k].p)
+                    {
+                        best_pairs[k + 1] = best_pairs[k];
+                        k--;
+                    }
+                    best_pairs[k + 1] = local_best[idx];
+                }
+            }
+        }
+        free(local_best);
+        } /* if (local_best != NULL) */
     }
 
-    if (pair_count > 0)
+    int found = 0;
+    for (int k = 0; k < E; k++)
     {
-        qsort(unmeasured_pairs, pair_count, sizeof(Candidate), compare_candidates);
-
-        int limit = (E < pair_count) ? E : pair_count;
-        for (int idx = 0; idx < limit; idx++)
+        if (best_pairs[k].id != -1)
         {
-            int i = unmeasured_pairs[idx].id >> 16;
-            int j = unmeasured_pairs[idx].id & 0xFFFF;
-
-            double d = get_dist(&state->clusters[i].anchor,
-                                &state->clusters[j].anchor, -1, -1.0, -1.0,
-                                config, state);
-            update_dcc_bounds(state, config, i, j, d);
+            found++;
         }
     }
 
-    free(unmeasured_pairs);
+    double *distances = (double *)malloc(E * sizeof(double));
+    if (distances == NULL)
+    {
+        free(best_pairs);
+        return;
+    }
+    #pragma omp parallel for if(found >= 2)
+    for (int idx = 0; idx < found; idx++)
+    {
+        int i = best_pairs[idx].id >> 16;
+        int j = best_pairs[idx].id & 0xFFFF;
+
+        distances[idx] = get_dist(&state->clusters[i].anchor,
+                                  &state->clusters[j].anchor, -1, -1.0, -1.0,
+                                  config, state);
+    }
+
+    for (int idx = 0; idx < found; idx++)
+    {
+        int i = best_pairs[idx].id >> 16;
+        int j = best_pairs[idx].id & 0xFFFF;
+        update_dcc_bounds(state, config, i, j, distances[idx]);
+    }
+
+    free(distances);
+    free(best_pairs);
 }

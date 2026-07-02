@@ -5,6 +5,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_shm.h"
+#include "frameread.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,37 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+/**
+ * @brief Query current process Resident Set Size (RSS) in KB.
+ *
+ * @return Current RSS in KB, or 0 on error.
+ */
+static uint64_t get_current_rss_kb(void)
+{
+    FILE *f = fopen("/proc/self/statm", "r");
+    if (!f)
+    {
+        return 0;
+    }
+    long pages = 0;
+    if (fscanf(f, "%*d %ld", &pages) != 1)
+    {
+        fclose(f);
+        return 0;
+    }
+    fclose(f);
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size < 0)
+    {
+        page_size = 4096;
+    }
+    return (uint64_t)pages * (uint64_t)page_size / 1024ULL;
+}
 
 /**
  * @brief Initialize the file-mapped shared memory file.
@@ -77,6 +109,22 @@ int gric_shm_init(
     clock_gettime(CLOCK_REALTIME, &now);
     status->last_update_time = (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
 
+    /* Version 3 Configuration Parameters */
+    status->config_rlim = config->algo.rlim;
+    status->config_maxnbclust = (uint32_t)config->algo.maxnbclust;
+    status->config_dprob = config->algo.deltaprob;
+    status->config_maxcl_strategy = (uint32_t)config->algo.maxcl_strategy;
+    status->config_te4_mode = (uint32_t)config->optim.te4_mode;
+    status->config_te5_mode = (uint32_t)config->optim.te5_mode;
+    status->config_gprob_mode = (uint32_t)config->optim.gprob_mode;
+    status->config_sparse_dcc = (uint32_t)config->optim.sparse_dcc_mode;
+    status->config_entropy_mode = (uint32_t)config->optim.entropy_mode;
+
+    if (getcwd(status->config_cwd, sizeof(status->config_cwd)) == NULL)
+    {
+        strcpy(status->config_cwd, "N/A");
+    }
+
     state->shm_ptr = ptr;
     return 0;
 }
@@ -108,6 +156,39 @@ void gric_shm_update(
     status->clusters_pruned = (uint64_t)state->telemetry.clusters_pruned;
     status->total_missed_frames = (uint64_t)state->telemetry.total_missed_frames;
     status->elapsed_ms = elapsed_ms;
+
+    /* Version 2 Telemetry fields */
+    status->stream_wait_time_sec = get_stream_wait_time();
+    status->stream_read_slice = get_stream_read_slice();
+    status->stream_write_slice = get_stream_write_slice();
+    status->stream_lag = get_stream_lag();
+    status->last_assignment_dist = state->telemetry.last_assignment_dist;
+    status->num_new_clusters = (uint64_t)state->telemetry.num_new_clusters;
+
+    /* Update memory RSS and OpenMP thread count */
+    status->memory_rss_kb = get_current_rss_kb();
+#ifdef _OPENMP
+    status->active_threads = (uint32_t)omp_get_max_threads();
+#else
+    status->active_threads = 1;
+#endif
+
+    /* Version 3 Telemetry fields */
+    status->last_frame_dists = (uint64_t)state->telemetry.last_frame_dists;
+    status->last_frame_dfc = (uint64_t)state->telemetry.last_frame_dfc;
+    status->last_frame_dcc = (uint64_t)state->telemetry.last_frame_dcc;
+    status->time_io_ms = state->telemetry.time_io_ms;
+    status->time_step_1 = state->telemetry.time_step_1;
+    status->time_step_2 = state->telemetry.time_step_2;
+    status->time_step_3a = state->telemetry.time_step_3a;
+    status->time_step_3b = state->telemetry.time_step_3b;
+    status->time_step_3b_score = state->telemetry.time_step_3b_score;
+    status->time_step_3b_filter = state->telemetry.time_step_3b_filter;
+    status->time_step_3b_eval = state->telemetry.time_step_3b_eval;
+    status->time_step_3c = state->telemetry.time_step_3c;
+    status->time_step_4 = state->telemetry.time_step_4;
+    status->time_step_5 = state->telemetry.time_step_5;
+    status->time_step_refine = state->telemetry.time_step_refine;
 
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);

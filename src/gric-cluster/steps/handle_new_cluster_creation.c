@@ -6,6 +6,7 @@
 #include "cluster_bounds.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define ANSI_COLOR_GREEN  "\x1b[32m"
 #define ANSI_COLOR_RESET  "\x1b[0m"
@@ -39,6 +40,9 @@ static void init_new_cluster_distances(
         state->scratch.dcc_measured[new_cl * N + new_cl] = 1;
 
         // 2. Populate exact distances from the search loop
+        char is_temp_index[new_cl];
+        memset(is_temp_index, 0, new_cl * sizeof(char));
+
         for (int idx = 0; idx < temp_count; idx++)
         {
             int j = temp_indices[idx];
@@ -51,22 +55,15 @@ static void init_new_cluster_distances(
                 state->scratch.dcc_max[j * N + new_cl] = d;
                 state->scratch.dcc_measured[new_cl * N + j] = 1;
                 state->scratch.dcc_measured[j * N + new_cl] = 1;
+                is_temp_index[j] = 1;
             }
         }
 
         // 3. Propagate bounds to unvisited clusters
+        #pragma omp parallel for if(new_cl >= OMP_MIN_CLUSTERS)
         for (int k = 0; k < new_cl; k++)
         {
-            int visited = 0;
-            for (int idx = 0; idx < temp_count; idx++)
-            {
-                if (temp_indices[idx] == k)
-                {
-                    visited = 1;
-                    break;
-                }
-            }
-            if (visited)
+            if (is_temp_index[k])
             {
                 continue;
             }
@@ -184,6 +181,7 @@ int handle_new_cluster_creation(
             (*temp_count)++;
         }
         update_consistency_mask_for_new_cluster(config, state, state->num_clusters);
+        state->telemetry.num_new_clusters++;
         state->num_clusters++;
         return assigned_cluster;
     }
@@ -246,6 +244,7 @@ int handle_new_cluster_creation(
                 (*temp_count)++;
             }
             update_consistency_mask_for_new_cluster(config, state, state->num_clusters);
+            state->telemetry.num_new_clusters++;
             state->num_clusters++;
             return assigned_cluster;
         }
@@ -322,6 +321,7 @@ int handle_new_cluster_creation(
                 (*temp_count)++;
             }
             update_consistency_mask_for_new_cluster(config, state, state->num_clusters);
+            state->telemetry.num_new_clusters++;
             state->num_clusters++;
             return assigned_cluster;
         }
