@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_steps.h"
 #include "cluster_core.h"
+#include <stdlib.h>
 #include <string.h>
 
 /**
@@ -97,7 +98,8 @@ void update_consistency_mask_for_new_cluster(
     double rc = config->algo.rlim;
 
     // 1. Clear new rows/cols of the consistency mask
-    memset(&state->scratch.consistency_mask[new_cl * N * words], 0, (new_cl + 1) * words * sizeof(uint64_t));
+    memset(&state->scratch.consistency_mask[(size_t)new_cl * (size_t)N * (size_t)words], 0,
+           (size_t)(new_cl + 1) * (size_t)words * sizeof(uint64_t));
 
     #pragma omp parallel for if(new_cl >= OMP_MIN_CLUSTERS)
     for (int j = 0; j <= new_cl; j++)
@@ -105,9 +107,15 @@ void update_consistency_mask_for_new_cluster(
         memset(&state->scratch.consistency_mask[(j * N + new_cl) * words], 0, words * sizeof(uint64_t));
     }
 
-    // Pre-load the row of new_cl into local stack arrays to maximize L1 cache usage
-    double d_min_new_k[new_cl + 1];
-    double d_max_new_k[new_cl + 1];
+    // Pre-load the row of new_cl into heap-allocated arrays to avoid stack overflow
+    double *d_min_new_k = (double *)malloc((new_cl + 1) * sizeof(double));
+    double *d_max_new_k = (double *)malloc((new_cl + 1) * sizeof(double));
+    if (d_min_new_k == NULL || d_max_new_k == NULL)
+    {
+        free(d_min_new_k);
+        free(d_max_new_k);
+        return;
+    }
     for (int k = 0; k <= new_cl; k++)
     {
         d_min_new_k[k] = state->scratch.dcc_min[new_cl * N + k];
@@ -256,4 +264,7 @@ void update_consistency_mask_for_new_cluster(
             }
         }
     }
+
+    free(d_min_new_k);
+    free(d_max_new_k);
 }

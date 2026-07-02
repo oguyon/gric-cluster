@@ -40,8 +40,8 @@ static void init_new_cluster_distances(
         state->scratch.dcc_measured[new_cl * N + new_cl] = 1;
 
         // 2. Populate exact distances from the search loop
-        char is_temp_index[N];
-        memset(is_temp_index, 0, N * sizeof(char));
+        char is_temp_index[new_cl];
+        memset(is_temp_index, 0, new_cl * sizeof(char));
 
         for (int idx = 0; idx < temp_count; idx++)
         {

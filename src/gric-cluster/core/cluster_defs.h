@@ -112,10 +112,10 @@ typedef struct
     long   *pruned_counts_by_dist;
     long   *cluster_query_counts;
     double  last_assignment_dist;
-    long    num_new_clusters;
-    long    last_frame_dists;
-    long    last_frame_dfc;
-    long    last_frame_dcc;
+    uint64_t num_new_clusters;
+    uint64_t last_frame_dists;
+    uint64_t last_frame_dfc;
+    uint64_t last_frame_dcc;
     double  time_io_ms;
     double  time_step_1;
     double  time_step_2;

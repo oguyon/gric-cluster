@@ -25,6 +25,7 @@
 #include "cluster_bounds.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 int cluster_frame(
     ClusterConfig *config,

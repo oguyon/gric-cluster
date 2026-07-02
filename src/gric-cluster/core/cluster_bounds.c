@@ -120,7 +120,11 @@ void refine_sparse_bounds(
         return;
     }
 
-    Candidate best_pairs[E];
+    Candidate *best_pairs = (Candidate *)malloc(E * sizeof(Candidate));
+    if (best_pairs == NULL)
+    {
+        return;
+    }
     for (int k = 0; k < E; k++)
     {
         best_pairs[k].id = -1;
@@ -129,7 +133,9 @@ void refine_sparse_bounds(
 
     #pragma omp parallel
     {
-        Candidate local_best[E];
+        Candidate *local_best = (Candidate *)malloc(E * sizeof(Candidate));
+        if (local_best != NULL)
+        {
         for (int k = 0; k < E; k++)
         {
             local_best[k].id = -1;
@@ -184,6 +190,8 @@ void refine_sparse_bounds(
                 }
             }
         }
+        free(local_best);
+        } /* if (local_best != NULL) */
     }
 
     int found = 0;
@@ -195,7 +203,12 @@ void refine_sparse_bounds(
         }
     }
 
-    double distances[E];
+    double *distances = (double *)malloc(E * sizeof(double));
+    if (distances == NULL)
+    {
+        free(best_pairs);
+        return;
+    }
     #pragma omp parallel for if(found >= 2)
     for (int idx = 0; idx < found; idx++)
     {
@@ -213,4 +226,7 @@ void refine_sparse_bounds(
         int j = best_pairs[idx].id & 0xFFFF;
         update_dcc_bounds(state, config, i, j, distances[idx]);
     }
+
+    free(distances);
+    free(best_pairs);
 }

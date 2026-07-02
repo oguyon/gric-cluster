@@ -7,6 +7,7 @@
 #include "gric-cluster/core/cluster_shm.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -95,7 +96,7 @@ enum
 
 typedef struct
 {
-    char utf8[4];
+    char utf8[5]; /* 4-byte UTF-8 sequence + NUL terminator */
     int  fg;
     int  bg;
     int  bold;
@@ -180,6 +181,11 @@ static void ov_detect_color_level(
     int help_mono)
 {
     if (help_mono)
+    {
+        ov__color_level = 0;
+        return;
+    }
+    if (getenv("NO_COLOR") != NULL)
     {
         ov__color_level = 0;
         return;
@@ -359,13 +365,10 @@ static void tui_draw_string(
         int i;
         for (i = 0; i < len && *p; i++)
         {
-            if (i < 3)
-            {
-                cell->utf8[i] = *p;
-            }
+            cell->utf8[i] = *p;
             p++;
         }
-        cell->utf8[i < 3 ? i : 3] = '\0';
+        cell->utf8[i] = '\0';
         col++;
     }
 }
@@ -625,22 +628,24 @@ static int get_state_color(
 static void print_status_classic(
     const GricClusterShmStatus *status)
 {
-    printf("\n%s--- gric-cluster telemetry status ---%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
+    int use_color = (ov__color_level > 0 && isatty(STDOUT_FILENO));
+    printf("\n%s--- gric-cluster telemetry status ---%s\n",
+           use_color ? ANSI_BOLD : "", use_color ? ANSI_COLOR_RESET : "");
     printf("PID:                  %u\n", status->pid);
     printf("CWD:                  %s\n", status->config_cwd);
     printf("State:                %s\n", get_state_string(status->status_state, (pid_t)status->pid));
     printf("Input Source:         %s\n", status->input_source);
-    printf("Samples Processed:    %lu / %lu\n",
+    printf("Samples Processed:    %" PRIu64 " / %" PRIu64 "\n",
            status->total_frames_processed, status->total_frames);
     printf("Active Clusters:      %u\n", status->num_clusters);
     printf("Elapsed Time:         %.2f ms (%.3f s)\n",
            status->elapsed_ms, status->elapsed_ms / 1000.0);
-    printf("Distance Computations:%lu (sample: %lu, inter-cluster: %lu)\n",
+    printf("Distance Computations:%" PRIu64 " (sample: %" PRIu64 ", inter-cluster: %" PRIu64 ")\n",
            status->framedist_calls,
            status->framedist_calls_sample,
            status->framedist_calls_intercluster);
-    printf("Candidates Pruned:    %lu\n", status->clusters_pruned);
-    printf("Missed Frames:        %lu\n", status->total_missed_frames);
+    printf("Candidates Pruned:    %" PRIu64 "\n", status->clusters_pruned);
+    printf("Missed Frames:        %" PRIu64 "\n", status->total_missed_frames);
 
     double avg_dists = (status->total_frames_processed > 0)
                            ? (double)status->framedist_calls / status->total_frames_processed
@@ -654,7 +659,7 @@ static void print_status_classic(
     printf("Optimizations:        te4=%u, te5=%u, gprob=%u, sparse=%u, entropy=%u\n",
            status->config_te4_mode, status->config_te5_mode, status->config_gprob_mode,
            status->config_sparse_dcc, status->config_entropy_mode);
-    printf("Last Frame Dists:     %lu\n", status->last_frame_dists);
+    printf("Last Frame Dists:     %" PRIu64 "\n", status->last_frame_dists);
     printf("Step-by-step Timers:  IO=%.2f ms, S1=%.2f ms, S2=%.2f ms, S3a=%.2f ms, S3b=%.2f ms,\n"
            "                      S3c=%.2f ms, S4=%.2f ms, S5=%.2f ms, Ref=%.2f ms\n",
            status->time_io_ms, status->time_step_1, status->time_step_2, status->time_step_3a,
@@ -675,9 +680,17 @@ static void print_help_standard(
 {
     #define C_STR(code, txt) (color ? (code txt MH_RST) : (txt))
 
-    printf("\n%s\n", C_STR(MH_TITLE, "gric-status - Monitor shared-memory telemetry from gric-cluster"));
+    /* Build a colored progname string since C_STR requires string literals */
+    char pn_colored[512];
+    if (color)
+        snprintf(pn_colored, sizeof(pn_colored), MH_CMD "%s" MH_RST, progname);
+    else
+        snprintf(pn_colored, sizeof(pn_colored), "%s", progname);
+
+    printf("\n%s\n", C_STR(MH_TITLE, "NAME"));
+    printf("  %s\n", C_STR(MH_CMD, "gric-status - Monitor shared-memory telemetry from gric-cluster"));
     printf("\n%s\n", C_STR(MH_HDR, "USAGE"));
-    printf("  %s %s [%s]\n", C_STR(MH_CMD, "gric-status"), C_STR(MH_ARG, "<shm_file_path>"), C_STR(MH_OPT, "[options]"));
+    printf("  %s %s [%s]\n", pn_colored, C_STR(MH_ARG, "<shm_file_path>"), C_STR(MH_OPT, "[options]"));
 
     printf("\n%s\n", C_STR(MH_HDR, "DESCRIPTION"));
     printf("  Connects to a file-mapped shared memory telemetry file produced by a running\n");
@@ -699,7 +712,26 @@ static void print_help_standard(
     printf("  %-30s %s\n", C_STR(MH_BOLD, "[-]"), "Decrease refresh rate by 1 Hz");
     printf("  %-30s %s\n", C_STR(MH_BOLD, "[q], [Esc]"), "Cleanly quit the utility and restore terminal settings");
 
-    printf("\n%s\n", C_STR(MH_NOTE, "NOTE: The watch mode uses raw terminal non-blocking updates with low latency."));
+    printf("\n%s\n", C_STR(MH_HDR, "EXAMPLES"));
+    printf("  %s %s\n", pn_colored, C_STR(MH_ARG, "/tmp/gric_status.shm"));
+    printf("    Print a one-shot telemetry snapshot to stdout.\n");
+    printf("  %s %s %s\n", pn_colored, C_STR(MH_ARG, "/tmp/gric_status.shm"), C_STR(MH_OPT, "-w"));
+    printf("    Launch interactive TUI dashboard at the default 15 Hz refresh rate.\n");
+    printf("  %s %s %s %s\n", pn_colored, C_STR(MH_ARG, "/tmp/gric_status.shm"),
+           C_STR(MH_OPT, "-w -r"), C_STR(MH_ARG, "30"));
+    printf("    Launch interactive TUI dashboard at 30 Hz refresh rate.\n");
+
+    printf("\n%s\n", C_STR(MH_HDR, "COLOR MODE"));
+    if (color)
+    {
+        printf("  Color output is %s.\n", C_STR(MH_CMD, "enabled"));
+    }
+    else
+    {
+        printf("  Color output is disabled (monochrome mode or NO_COLOR set).\n");
+    }
+    printf("  Set the %s environment variable to disable all ANSI color output.\n",
+           C_STR(MH_OPT, "NO_COLOR"));
     printf("\n");
 }
 
@@ -730,7 +762,8 @@ int main(int argc, char *argv[])
 
     if (argc < 2)
     {
-        print_help_standard(argv[0], isatty(STDOUT_FILENO));
+        fprintf(stderr, "Error: missing required argument <shm_file_path>\n");
+        fprintf(stderr, "Usage: %s <shm_file_path> [options]\n", argv[0]);
         return 1;
     }
 
@@ -837,6 +870,14 @@ int main(int argc, char *argv[])
         print_status_classic(status);
         munmap(ptr, sizeof(GricClusterShmStatus));
         return 0;
+    }
+
+    /* Watch TUI Mode: require an interactive terminal */
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
+    {
+        fprintf(stderr, "Error: watch mode requires an interactive terminal.\n");
+        munmap(ptr, sizeof(GricClusterShmStatus));
+        return 1;
     }
 
     /* Watch TUI Mode */
@@ -1155,7 +1196,7 @@ int main(int argc, char *argv[])
             tui_draw_box(0, w_left, w_right, h_top, "FRAME STATS", COLOR_CYAN, COLOR_DEFAULT, 1);
             
             uint64_t total = status->total_frames;
-            snprintf(buf, sizeof(buf), "Frame Index:      %lu / %lu", processed, total);
+            snprintf(buf, sizeof(buf), "Frame Index:      %" PRIu64 " / %" PRIu64, processed, total);
             tui_draw_string(2, w_left + 2, buf, COLOR_WHITE, COLOR_DEFAULT, 0);
 
             /* Solve DFC rolling history list (newest on left, oldest on right) */
@@ -1218,7 +1259,7 @@ int main(int argc, char *argv[])
             snprintf(buf, sizeof(buf), "Active Clusters:   %u", status->num_clusters);
             tui_draw_string(h_top + 2, 2, buf, COLOR_WHITE, COLOR_DEFAULT, 0);
 
-            snprintf(buf, sizeof(buf), "Spawned Clusters:  %lu", status->num_new_clusters);
+            snprintf(buf, sizeof(buf), "Spawned Clusters:  %" PRIu64, status->num_new_clusters);
             tui_draw_string(h_top + 3, 2, buf, COLOR_WHITE, COLOR_DEFAULT, 0);
 
             double avg_dists = (processed > 0)
@@ -1241,10 +1282,10 @@ int main(int argc, char *argv[])
             snprintf(buf, sizeof(buf), "Pruning Ratio:     %.2f%%", prune_ratio);
             tui_draw_string(h_top + 5, 2, buf, COLOR_GREEN, COLOR_DEFAULT, 1);
 
-            snprintf(buf, sizeof(buf), "Pruned Telemetry:  %lu", status->clusters_pruned);
+            snprintf(buf, sizeof(buf), "Pruned Telemetry:  %" PRIu64, status->clusters_pruned);
             tui_draw_string(h_top + 6, 2, buf, COLOR_WHITE, COLOR_DEFAULT, 0);
 
-            snprintf(buf, sizeof(buf), "Total Solve Dists: %lu", status->framedist_calls);
+            snprintf(buf, sizeof(buf), "Total Solve Dists: %" PRIu64, status->framedist_calls);
             tui_draw_string(h_top + 7, 2, buf, COLOR_WHITE, COLOR_DEFAULT, 0);
 
             /* Progress Bar displaying current sample index (processed / total) */
@@ -1259,7 +1300,7 @@ int main(int argc, char *argv[])
             }
 
             char prog_lbl[128];
-            snprintf(prog_lbl, sizeof(prog_lbl), "Progress (%lu/%lu): ", processed, total);
+            snprintf(prog_lbl, sizeof(prog_lbl), "Progress (%" PRIu64 "/%" PRIu64 "): ", processed, total);
             tui_draw_string(h_top + 8, 2, prog_lbl, COLOR_WHITE, COLOR_DEFAULT, 0);
 
             int start_col = 2 + strlen(prog_lbl);
