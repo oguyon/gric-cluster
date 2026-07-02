@@ -80,6 +80,8 @@ set(CLUSTER_SRCS
     src/gric-cluster/core/cluster_step.c
     src/gric-cluster/core/cluster_mgmt.c
     src/gric-cluster/core/config_utils.c
+    src/gric-cluster/core/cluster_bounds.c
+    src/gric-cluster/core/cluster_shm.c
     src/gric-cluster/math/cluster_math.c
     src/gric-cluster/math/cluster_prune.c
     src/gric-cluster/math/cluster_scandist.c
@@ -139,6 +141,9 @@ if (IMAGESTREAMIO_FOUND)
     add_executable(gric-stream-to-pipe src/gric-stream-to-pipe/stream_to_pipe.c)
     target_link_libraries(gric-stream-to-pipe ${IMAGESTREAMIO_LIBRARIES} m)
 endif()
+
+# gric-status tool
+add_executable(gric-status src/gric-status/gric-status.c)
 
 # gric-info tool
 add_executable(gric-info src/gric-info/gric-info.c)

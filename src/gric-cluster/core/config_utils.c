@@ -171,6 +171,18 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->optim.entropy_min_prob = atof(value);
         return 1;
     }
+    else if (matches(key, "-sparse_dcc"))
+    {
+        config->optim.sparse_dcc_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-sparse_dcc_extra_evals"))
+    {
+        if (!value)
+            return -1;
+        config->optim.sparse_dcc_extra_evals = atoi(value);
+        return 1;
+    }
     else if (matches(key, "-tm"))
     {
         if (!value)
@@ -293,6 +305,13 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->input.fits_filename = strdup(value);
         return 1;
     }
+    else if (matches(key, "-shm") || matches(key, "-shm-file"))
+    {
+        if (!value)
+            return -1;
+        config->output.shm_filename = strdup(value);
+        return 1;
+    }
 
     return -1; // Unknown option
 }
@@ -397,6 +416,11 @@ int write_config_file(const char *filename, ClusterConfig *config)
         fprintf(f, "entropy_max_targets %d\n", config->optim.entropy_max_targets);
         fprintf(f, "entropy_min_prob %f\n", config->optim.entropy_min_prob);
     }
+    if (config->optim.sparse_dcc_mode)
+    {
+        fprintf(f, "sparse_dcc\n");
+        fprintf(f, "sparse_dcc_extra_evals %d\n", config->optim.sparse_dcc_extra_evals);
+    }
 
     fprintf(f, "tm %f\n", config->algo.tm_mixing_coeff);
 
@@ -440,6 +464,9 @@ int write_config_file(const char *filename, ClusterConfig *config)
 
     if (config->input.scandist_mode)
         fprintf(f, "scandist\n");
+
+    if (config->output.shm_filename)
+        fprintf(f, "shm %s\n", config->output.shm_filename);
 
     fclose(f);
     return 0;

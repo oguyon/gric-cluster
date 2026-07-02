@@ -14,6 +14,7 @@
 #include "cluster_io.h"
 #include "cluster_scandist.h"
 #include "config_utils.h"
+#include "cluster_shm.h"
 #include "frameread.h"
 #include <ctype.h>
 #include <signal.h>
@@ -114,6 +115,8 @@ int main(int argc, char *argv[])
     config.algo.discard_fraction = 0.5;
     config.optim.entropy_max_targets = 15;
     config.optim.entropy_min_prob = 0.001;
+    config.optim.sparse_dcc_mode = 0;
+    config.optim.sparse_dcc_extra_evals = 0;
 
     // Output defaults (disabled by default, except membership and dcc)
     config.output.output_dcc = 1;
@@ -379,9 +382,41 @@ int main(int argc, char *argv[])
     size_t consistency_words = cluster_pairs * (size_t)words;
 
     state.clusters = (Cluster *)malloc(max_clusters * sizeof(Cluster));
-    state.scratch.dccarray = (double *)malloc(cluster_pairs * sizeof(double));
-    for (size_t ii = 0; ii < cluster_pairs; ii++)
-        state.scratch.dccarray[ii] = -1.0;
+    state.scratch.dcc_min = (double *)malloc(cluster_pairs * sizeof(double));
+    state.scratch.dcc_max = (double *)malloc(cluster_pairs * sizeof(double));
+    state.scratch.dcc_measured = (char *)malloc(cluster_pairs * sizeof(char));
+
+    if (config.optim.sparse_dcc_mode)
+    {
+        for (size_t r = 0; r < max_clusters; r++)
+        {
+            for (size_t c = 0; c < max_clusters; c++)
+            {
+                size_t idx = r * max_clusters + c;
+                if (r == c)
+                {
+                    state.scratch.dcc_min[idx] = 0.0;
+                    state.scratch.dcc_max[idx] = 0.0;
+                    state.scratch.dcc_measured[idx] = 1;
+                }
+                else
+                {
+                    state.scratch.dcc_min[idx] = 0.0;
+                    state.scratch.dcc_max[idx] = 1e19;
+                    state.scratch.dcc_measured[idx] = 0;
+                }
+            }
+        }
+    }
+    else
+    {
+        for (size_t ii = 0; ii < cluster_pairs; ii++)
+        {
+            state.scratch.dcc_min[ii] = -1.0;
+            state.scratch.dcc_max[ii] = -1.0;
+            state.scratch.dcc_measured[ii] = 0;
+        }
+    }
 
     state.scratch.current_gprobs = (double *)malloc(max_clusters * sizeof(double));
     state.cluster_visitors = (VisitorList *)calloc(max_clusters, sizeof(VisitorList));
@@ -392,12 +427,20 @@ int main(int argc, char *argv[])
     state.scratch.entropy_candidates = (Candidate *)malloc(max_clusters * sizeof(Candidate));
 
     // Run Clustering
+    if (gric_shm_init(&config, &state) != 0)
+    {
+        fprintf(stderr, "Warning: Failed to initialize shared memory status tracking.\n");
+    }
+
     struct timespec clust_start, clust_end;
     clock_gettime(CLOCK_MONOTONIC, &clust_start);
     run_clustering(&config, &state);
     clock_gettime(CLOCK_MONOTONIC, &clust_end);
     double clust_ms = (clust_end.tv_sec - clust_start.tv_sec) * 1000.0 +
                       (clust_end.tv_nsec - clust_start.tv_nsec) / 1000000.0;
+
+    int final_status = stop_requested ? GRIC_STATUS_ABORTED : GRIC_STATUS_SUCCESS;
+    gric_shm_update(&state, final_status, clust_ms);
 
     if (state.distall_out)
         fclose(state.distall_out);
@@ -446,7 +489,9 @@ int main(int argc, char *argv[])
     free(state.cluster_visitors);
     free(state.scratch.current_gprobs);
 
-    free(state.scratch.dccarray);
+    free(state.scratch.dcc_min);
+    free(state.scratch.dcc_max);
+    free(state.scratch.dcc_measured);
     free(state.scratch.probsortedclindex);
     free(state.scratch.clmembflag);
     free(state.scratch.consistency_mask);
@@ -471,6 +516,10 @@ int main(int argc, char *argv[])
 
     if (config.output.user_outdir && out_dir_alloc)
         free(config.output.user_outdir);
+
+    gric_shm_cleanup(&state);
+    if (config.output.shm_filename)
+        free(config.output.shm_filename);
 
     close_frameread();
 

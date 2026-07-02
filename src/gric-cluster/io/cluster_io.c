@@ -140,8 +140,8 @@ void write_results(ClusterConfig *config, ClusterState *state)
             {
                 for (int j = 0; j < state->num_clusters; j++)
                 {
-                    double d = state->scratch.dccarray[i * config->algo.maxnbclust + j];
-                    if (d >= 0)
+                    double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                    if (state->scratch.dcc_measured[i * config->algo.maxnbclust + j] && d >= 0)
                         fprintf(dcc_out, "%d %d %.6f\n", i, j, d);
                 }
             }

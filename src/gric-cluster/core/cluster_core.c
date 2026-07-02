@@ -11,6 +11,7 @@
 #include "cluster_step.h"
 #include "framedistance.h"
 #include "frameread.h"
+#include "cluster_shm.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -183,6 +184,15 @@ void run_clustering(
         if (res == -2)
         {
             break;
+        }
+
+        if (state->shm_ptr != NULL)
+        {
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            double elapsed = (now.tv_sec - start.tv_sec) * 1000.0 +
+                             (now.tv_nsec - start.tv_nsec) / 1000000.0;
+            gric_shm_update(state, GRIC_STATUS_RUNNING, elapsed);
         }
 
         // Periodically print progress, telemetry stats, and streaming frame rates (fps)

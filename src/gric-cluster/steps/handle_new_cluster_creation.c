@@ -3,11 +3,131 @@
 #include "cluster_mgmt.h"
 #include "cluster_core.h"
 #include "frameread.h"
+#include "cluster_bounds.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 #define ANSI_COLOR_GREEN  "\x1b[32m"
 #define ANSI_COLOR_RESET  "\x1b[0m"
 #define ANSI_COLOR_ORANGE "\x1b[38;5;208m"
+
+static void init_new_cluster_distances(
+    ClusterConfig *config,
+    ClusterState  *state,
+    int            new_cl,
+    int           *temp_indices,
+    double        *temp_dists,
+    int            temp_count)
+{
+    int N = config->algo.maxnbclust;
+
+    if (config->optim.sparse_dcc_mode)
+    {
+        // 1. Initialize bounds to [0, infinity] and measured flag to 0
+        for (int r = 0; r < new_cl; r++)
+        {
+            state->scratch.dcc_min[new_cl * N + r] = 0.0;
+            state->scratch.dcc_min[r * N + new_cl] = 0.0;
+            state->scratch.dcc_max[new_cl * N + r] = 1e19;
+            state->scratch.dcc_max[r * N + new_cl] = 1e19;
+            state->scratch.dcc_measured[new_cl * N + r] = 0;
+            state->scratch.dcc_measured[r * N + new_cl] = 0;
+        }
+
+        state->scratch.dcc_min[new_cl * N + new_cl] = 0.0;
+        state->scratch.dcc_max[new_cl * N + new_cl] = 0.0;
+        state->scratch.dcc_measured[new_cl * N + new_cl] = 1;
+
+        // 2. Populate exact distances from the search loop
+        for (int idx = 0; idx < temp_count; idx++)
+        {
+            int j = temp_indices[idx];
+            if (j >= 0 && j < new_cl)
+            {
+                double d = temp_dists[idx];
+                state->scratch.dcc_min[new_cl * N + j] = d;
+                state->scratch.dcc_min[j * N + new_cl] = d;
+                state->scratch.dcc_max[new_cl * N + j] = d;
+                state->scratch.dcc_max[j * N + new_cl] = d;
+                state->scratch.dcc_measured[new_cl * N + j] = 1;
+                state->scratch.dcc_measured[j * N + new_cl] = 1;
+            }
+        }
+
+        // 3. Propagate bounds to unvisited clusters
+        for (int k = 0; k < new_cl; k++)
+        {
+            int visited = 0;
+            for (int idx = 0; idx < temp_count; idx++)
+            {
+                if (temp_indices[idx] == k)
+                {
+                    visited = 1;
+                    break;
+                }
+            }
+            if (visited)
+            {
+                continue;
+            }
+
+            for (int idx = 0; idx < temp_count; idx++)
+            {
+                int j = temp_indices[idx];
+                if (j < 0 || j >= new_cl)
+                {
+                    continue;
+                }
+
+                double d_new_j = temp_dists[idx];
+
+                if (state->scratch.dcc_max[j * N + k] < 1e18)
+                {
+                    double new_max = d_new_j + state->scratch.dcc_max[j * N + k];
+                    if (new_max < state->scratch.dcc_max[new_cl * N + k])
+                    {
+                        state->scratch.dcc_max[new_cl * N + k] = new_max;
+                        state->scratch.dcc_max[k * N + new_cl] = new_max;
+                    }
+                }
+
+                if (state->scratch.dcc_max[j * N + k] < 1e18)
+                {
+                    double l1 = d_new_j - state->scratch.dcc_max[j * N + k];
+                    if (l1 > state->scratch.dcc_min[new_cl * N + k])
+                    {
+                        state->scratch.dcc_min[new_cl * N + k] = l1;
+                        state->scratch.dcc_min[k * N + new_cl] = l1;
+                    }
+                }
+                double l2 = state->scratch.dcc_min[j * N + k] - d_new_j;
+                if (l2 > state->scratch.dcc_min[new_cl * N + k])
+                {
+                    state->scratch.dcc_min[new_cl * N + k] = l2;
+                    state->scratch.dcc_min[k * N + new_cl] = l2;
+                }
+            }
+        }
+    }
+    else
+    {
+        for (int i = 0; i < new_cl; i++)
+        {
+            double d = get_dist(&state->clusters[new_cl].anchor,
+                                &state->clusters[i].anchor, -1, -1.0, -1.0,
+                                config, state);
+            state->scratch.dcc_min[new_cl * N + i] = d;
+            state->scratch.dcc_min[i * N + new_cl] = d;
+            state->scratch.dcc_max[new_cl * N + i] = d;
+            state->scratch.dcc_max[i * N + new_cl] = d;
+            state->scratch.dcc_measured[new_cl * N + i] = 1;
+            state->scratch.dcc_measured[i * N + new_cl] = 1;
+        }
+        state->scratch.dcc_min[new_cl * N + new_cl] = 0.0;
+        state->scratch.dcc_max[new_cl * N + new_cl] = 0.0;
+        state->scratch.dcc_measured[new_cl * N + new_cl] = 1;
+    }
+}
 
 /**
  * handle_new_cluster_creation - Manage cluster creation and eviction limits.
@@ -41,18 +161,8 @@ int handle_new_cluster_creation(
         state->clusters[state->num_clusters].id = state->num_clusters;
         state->clusters[state->num_clusters].prob = 1.0;
 
-        for (int i = 0; i < state->num_clusters; i++)
-        {
-            double d =
-                get_dist(&state->clusters[state->num_clusters].anchor,
-                         &state->clusters[i].anchor, -1, -1.0, -1.0, config, state);
-            state->scratch.dccarray[
-                state->num_clusters * config->algo.maxnbclust + i] = d;
-            state->scratch.dccarray[
-                i * config->algo.maxnbclust + state->num_clusters] = d;
-        }
-        state->scratch.dccarray[
-            state->num_clusters * config->algo.maxnbclust + state->num_clusters] = 0.0;
+        init_new_cluster_distances(config, state, state->num_clusters,
+                                   temp_indices, temp_dists, *temp_count);
 
         if (config->output.verbose_level >= 2)
         {
@@ -123,18 +233,8 @@ int handle_new_cluster_creation(
             state->clusters[state->num_clusters].id = state->num_clusters;
             state->clusters[state->num_clusters].prob = 1.0;
 
-            for (int i = 0; i < state->num_clusters; i++)
-            {
-                double d = get_dist(&state->clusters[state->num_clusters].anchor,
-                                    &state->clusters[i].anchor, -1, -1.0, -1.0,
-                                    config, state);
-                state->scratch.dccarray[
-                    state->num_clusters * config->algo.maxnbclust + i] = d;
-                state->scratch.dccarray[
-                    i * config->algo.maxnbclust + state->num_clusters] = d;
-            }
-            state->scratch.dccarray[state->num_clusters * config->algo.maxnbclust +
-                            state->num_clusters] = 0.0;
+            init_new_cluster_distances(config, state, state->num_clusters,
+                                       temp_indices, temp_dists, *temp_count);
 
             add_visitor(&state->cluster_visitors[state->num_clusters],
                         state->telemetry.total_frames_processed);
@@ -162,8 +262,9 @@ int handle_new_cluster_creation(
         {
             for (int j = i + 1; j < state->num_clusters; j++)
             {
-                double d = state->scratch.dccarray[i * config->algo.maxnbclust + j];
-                if (d >= 0 && (min_d < 0 || d < min_d))
+                double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                if (state->scratch.dcc_measured[i * config->algo.maxnbclust + j] &&
+                    d >= 0.0 && (min_d < 0.0 || d < min_d))
                 {
                     min_d = d;
                     best_i = i;
@@ -208,18 +309,8 @@ int handle_new_cluster_creation(
             state->clusters[state->num_clusters].id = state->num_clusters;
             state->clusters[state->num_clusters].prob = 1.0;
 
-            for (int i = 0; i < state->num_clusters; i++)
-            {
-                double d = get_dist(&state->clusters[state->num_clusters].anchor,
-                                    &state->clusters[i].anchor, -1, -1.0, -1.0,
-                                    config, state);
-                state->scratch.dccarray[
-                    state->num_clusters * config->algo.maxnbclust + i] = d;
-                state->scratch.dccarray[
-                    i * config->algo.maxnbclust + state->num_clusters] = d;
-            }
-            state->scratch.dccarray[state->num_clusters * config->algo.maxnbclust +
-                            state->num_clusters] = 0.0;
+            init_new_cluster_distances(config, state, state->num_clusters,
+                                       temp_indices, temp_dists, *temp_count);
 
             add_visitor(&state->cluster_visitors[state->num_clusters],
                         state->telemetry.total_frames_processed);
