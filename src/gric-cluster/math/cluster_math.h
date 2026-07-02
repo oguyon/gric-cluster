@@ -18,7 +18,10 @@ int compare_candidates(
  * @param b End threshold weight.
  * @return Probability factor in range [0.0, a].
  */
-double fmatch(double dr, double a, double b);
+double fmatch(
+    double dr,
+    double a,
+    double b);
 
 /**
  * @brief Computes minimum distance between a point and a candidate point using
@@ -34,7 +37,12 @@ double fmatch(double dr, double a, double b);
  * @param d23 Distance between point 2 and 3.
  * @return Min distance between point 3 and 4 in the reconstructed space.
  */
-double calc_min_dist_4pt(double d14, double d24, double d12, double d13, double d23);
+double calc_min_dist_4pt(
+    double d14,
+    double d24,
+    double d12,
+    double d13,
+    double d23);
 
 /**
  * @brief Computes minimum distance between a point and a candidate point using
@@ -57,7 +65,15 @@ double calc_min_dist_4pt(double d14, double d24, double d12, double d13, double 
  * @return The computed distance between F and T in reconstructed 3D space, or 0.0 if
  * singular geometry.
  */
-double calc_min_dist_5pt(double d_f_c1, double d_f_c2, double d_f_c3, double d_t_c1, double d_t_c2,
-                         double d_t_c3, double d_c1_c2, double d_c1_c3, double d_c2_c3);
+double calc_min_dist_5pt(
+    double d_f_c1,
+    double d_f_c2,
+    double d_f_c3,
+    double d_t_c1,
+    double d_t_c2,
+    double d_t_c3,
+    double d_c1_c2,
+    double d_c1_c3,
+    double d_c2_c3);
 
 #endif // CLUSTER_MATH_H

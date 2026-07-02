@@ -9,8 +9,9 @@ char *create_output_dir_name(const char *input_file);
 
 void init_colors_io(void);
 
-// Write results to disk
-void write_results(ClusterConfig *config, ClusterState *state);
+void write_results(
+    ClusterConfig *config,
+    ClusterState  *state);
 void write_run_log(
     ClusterConfig  *config,
     ClusterState   *state,

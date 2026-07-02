@@ -16,7 +16,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-void add_visitor(VisitorList *list, int frame_idx)
+/**
+ * add_visitor() - Safely adds a frame index to a cluster's visitor history.
+ * @list:      Pointer to the VisitorList structure.
+ * @frame_idx: Index of the frame to append.
+ *
+ * Dynamically resizes the integer list capacity as needed (doubles capacity,
+ * starting at 16). Prints an error using `perror` if memory reallocation fails.
+ */
+void add_visitor(
+    VisitorList *list,
+    int          frame_idx)
 {
     if (list->count >= list->capacity)
     {
@@ -36,8 +46,26 @@ void add_visitor(VisitorList *list, int frame_idx)
     list->frames[list->count++] = frame_idx;
 }
 
-void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_remove,
-                    int index_target)
+/**
+ * remove_cluster() - Deletes a cluster from state, optionally merging its history.
+ * @state:           Pointer to the active ClusterState.
+ * @config:          Pointer to the active ClusterConfig.
+ * @index_to_remove: The index of the cluster being deleted.
+ * @index_target:    The merge target index, or -1 to discard completely.
+ *
+ * Reorganizes the active clusters list:
+ * 1. Shifts cluster structs, updating cluster IDs.
+ * 2. Shifts visitor history arrays.
+ * 3. Compacts and shifts the inter-cluster distance matrix (dccarray).
+ * 4. Compacts and shifts the inter-cluster transition probability matrix.
+ * 5. Rewrites the assignments logs and maps the deleted cluster assignment
+ *    either to a new target cluster index (if merging) or -1 (if discarding).
+ */
+void remove_cluster(
+    ClusterState  *state,
+    ClusterConfig *config,
+    int            index_to_remove,
+    int            index_target)
 {
     if (index_to_remove < 0 || index_to_remove >= state->num_clusters)
         return;
@@ -62,7 +90,7 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
             fprintf(log, "\n");
             fclose(log);
         }
-    }
+    } // if (index_target == -1 && config->output.output_discarded)
 
     // 2. Shift Clusters Array
     if (state->clusters[index_to_remove].anchor.data)
@@ -116,7 +144,7 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
             memmove(&state->scratch.dcc_measured[dest_idx], &state->scratch.dcc_measured[src_idx],
                     count * sizeof(char));
         }
-    }
+    } // for (int r = 0; r < state->num_clusters - 1; r++)
 
     // 5. Shift Transition Matrix (Same logic as DCC)
     // Shift Rows
@@ -162,7 +190,7 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
             state->scratch.dcc_measured[last * N + r] = 0;
             state->scratch.dcc_measured[r * N + last] = 0;
         }
-    }
+    } // for (int r = 0; r < N; r++)
     state->scratch.dcc_min[last * N + last] = 0.0;
     state->scratch.dcc_max[last * N + last] = 0.0;
     state->scratch.dcc_measured[last * N + last] = 1;
@@ -190,7 +218,7 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
         {
             state->assignments[f] = a - 1;
         }
-    }
+    } // for (long f = 0; f < state->telemetry.total_frames_processed; f++)
 
     // 7. Decrement Num Clusters
     state->num_clusters--;

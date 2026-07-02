@@ -8,7 +8,9 @@
 
 extern volatile sig_atomic_t stop_requested;
 
-void run_clustering(ClusterConfig *config, ClusterState *state);
+void run_clustering(
+    ClusterConfig *config,
+    ClusterState  *state);
 
 /**
  * @brief High-level distance evaluation between a frame and a cluster anchor.

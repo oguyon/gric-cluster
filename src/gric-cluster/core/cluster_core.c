@@ -28,6 +28,21 @@
 #define ANSI_BG_GREEN    "\x1b[42m"
 #define ANSI_COLOR_BLACK "\x1b[30m"
 
+/**
+ * get_dist() - High-level distance evaluation between a frame and a cluster anchor.
+ * @a:            Pointer to the first Frame.
+ * @b:            Pointer to the second Frame (cluster anchor).
+ * @cluster_idx:  Index of the cluster.
+ * @cluster_prob: Prior predictive probability of matching the cluster.
+ * @current_gprob: Geometric consistency probability.
+ * @config:       Pointer to the active ClusterConfig.
+ * @state:        Pointer to the active ClusterState.
+ *
+ * Wraps the raw `framedist` call, records statistics, writes to the distance log
+ * if configured, and prints verbose traces if requested.
+ *
+ * Return: The Euclidean distance between frames.
+ */
 double get_dist(
     Frame         *a,
     Frame         *b,
@@ -74,6 +89,15 @@ double get_dist(
     return d;
 }
 
+/**
+ * run_clustering() - Main entry point to perform the clustering algorithm.
+ * @config: Pointer to the active ClusterConfig.
+ * @state:  Pointer to the active ClusterState.
+ *
+ * Reads frames sequentially from the configured source, initializes the first
+ * cluster, and assigns frames to matching clusters, handling new cluster creation
+ * and eviction policies.
+ */
 void run_clustering(
     ClusterConfig *config,
     ClusterState  *state)
@@ -94,40 +118,50 @@ void run_clustering(
     state->assignments = (int *)malloc(actual_frames * sizeof(int));
     state->frame_infos = (FrameInfo *)calloc(actual_frames, sizeof(FrameInfo));
 
-    state->telemetry.max_steps_recorded = config->algo.maxnbclust;
-    state->telemetry.pruned_fraction_sum =
-        (double *)calloc(state->telemetry.max_steps_recorded, sizeof(double));
-    state->telemetry.step_counts =
-        (long *)calloc(state->telemetry.max_steps_recorded, sizeof(long));
-
-    state->transition_matrix =
-        (long *)calloc(config->algo.maxnbclust * config->algo.maxnbclust, sizeof(long));
-    state->scratch.mixed_probs = (double *)calloc(config->algo.maxnbclust, sizeof(double));
-
-    state->telemetry.dist_counts =
-        (long *)calloc(config->algo.maxnbclust + 1, sizeof(long));
-    state->telemetry.pruned_counts_by_dist =
-        (long *)calloc(config->algo.maxnbclust + 1, sizeof(long));
-    state->telemetry.cluster_query_counts =
-        (long *)calloc(config->algo.maxnbclust, sizeof(long));
-
-    int    *temp_indices = (int *)malloc(config->algo.maxnbclust * sizeof(int));
-    double *temp_dists = (double *)malloc(config->algo.maxnbclust * sizeof(double));
-
-    if (!temp_indices || !temp_dists)
+    // Allocate telemetry and scratch tracking matrices
     {
-        perror("Memory allocation failed for temp buffers");
-        return;
-    }
+        state->telemetry.max_steps_recorded = config->algo.maxnbclust;
+        state->telemetry.pruned_fraction_sum =
+            (double *)calloc(state->telemetry.max_steps_recorded, sizeof(double));
+        state->telemetry.step_counts =
+            (long *)calloc(state->telemetry.max_steps_recorded, sizeof(long));
 
+        state->transition_matrix =
+            (long *)calloc(config->algo.maxnbclust * config->algo.maxnbclust, sizeof(long));
+        state->scratch.mixed_probs = (double *)calloc(config->algo.maxnbclust, sizeof(double));
+
+        state->telemetry.dist_counts =
+            (long *)calloc(config->algo.maxnbclust + 1, sizeof(long));
+        state->telemetry.pruned_counts_by_dist =
+            (long *)calloc(config->algo.maxnbclust + 1, sizeof(long));
+        state->telemetry.cluster_query_counts =
+            (long *)calloc(config->algo.maxnbclust, sizeof(long));
+    } // Allocate telemetry and scratch tracking matrices
+
+    int       *temp_indices = NULL;
+    double    *temp_dists = NULL;
     Candidate *verbose_candidates = NULL;
-    if (config->output.verbose_level >= 2)
-    {
-        verbose_candidates = (Candidate *)malloc(config->algo.maxnbclust * sizeof(Candidate));
-    }
+    Candidate *sorting_candidates = NULL;
 
-    Candidate *sorting_candidates =
-        (Candidate *)malloc(config->algo.maxnbclust * sizeof(Candidate));
+    // Allocate reusable query and candidate buffers
+    {
+        temp_indices = (int *)malloc(config->algo.maxnbclust * sizeof(int));
+        temp_dists = (double *)malloc(config->algo.maxnbclust * sizeof(double));
+
+        if (!temp_indices || !temp_dists)
+        {
+            perror("Memory allocation failed for temp buffers");
+            return;
+        }
+
+        if (config->output.verbose_level >= 2)
+        {
+            verbose_candidates = (Candidate *)malloc(config->algo.maxnbclust * sizeof(Candidate));
+        }
+
+        sorting_candidates =
+            (Candidate *)malloc(config->algo.maxnbclust * sizeof(Candidate));
+    } // Allocate reusable query and candidate buffers
 
     FILE *ascii_out = NULL;
     if (config->output.output_membership)

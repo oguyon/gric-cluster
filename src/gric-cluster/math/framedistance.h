@@ -14,6 +14,8 @@
  * @param b Pointer to the second Frame.
  * @return The Euclidean distance, or -1.0 if the frame dimensions mismatch.
  */
-double framedist(Frame *a, Frame *b);
+double framedist(
+    Frame *a,
+    Frame *b);
 
 #endif // FRAMEDISTANCE_H
