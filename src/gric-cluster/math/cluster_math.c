@@ -13,14 +13,40 @@
 #include "cluster_math.h"
 #include <math.h>
 
-double fmatch(double dr, double a, double b)
+/**
+ * fmatch() - Evaluates match probability weight based on normalized distance.
+ * @dr: Normalized distance ratio.
+ * @a:  Start threshold weight.
+ * @b:  End threshold weight.
+ *
+ * Return: Probability factor in range [0.0, a].
+ */
+double fmatch(
+    double dr,
+    double a,
+    double b)
 {
     if (dr > 2.0)
         return 0.0;
     return a - (a - b) * dr / 2.0;
 }
 
-double calc_min_dist_4pt(double d14, double d24, double d12, double d13, double d23)
+/**
+ * calc_min_dist_4pt() - Computes minimum distance using a 4-point configuration.
+ * @d14: Distance between point 1 and 4.
+ * @d24: Distance between point 2 and 4.
+ * @d12: Distance between point 1 and 2.
+ * @d13: Distance between point 1 and 3.
+ * @d23: Distance between point 2 and 3.
+ *
+ * Return: Min distance between point 3 and 4 in reconstructed 2D space.
+ */
+double calc_min_dist_4pt(
+    double d14,
+    double d24,
+    double d12,
+    double d13,
+    double d23)
 {
     if (d12 < 1e-9)
         return fabs(d14 - d13);
@@ -36,8 +62,30 @@ double calc_min_dist_4pt(double d14, double d24, double d12, double d13, double 
     return sqrt((x3 - x4) * (x3 - x4) + (y3 - y4) * (y3 - y4));
 }
 
-double calc_min_dist_5pt(double d_f_c1, double d_f_c2, double d_f_c3, double d_t_c1, double d_t_c2,
-                         double d_t_c3, double d_c1_c2, double d_c1_c3, double d_c2_c3)
+/**
+ * calc_min_dist_5pt() - Computes minimum distance using a 5-point configuration.
+ * @d_f_c1:  Distance from frame F to C1.
+ * @d_f_c2:  Distance from frame F to C2.
+ * @d_f_c3:  Distance from frame F to C3.
+ * @d_t_c1:  Distance from target T to C1.
+ * @d_t_c2:  Distance from target T to C2.
+ * @d_t_c3:  Distance from target T to C3.
+ * @d_c1_c2: Distance between C1 and C2.
+ * @d_c1_c3: Distance between C1 and C3.
+ * @d_c2_c3: Distance between C2 and C3.
+ *
+ * Return: The computed distance between F and T in reconstructed 3D space.
+ */
+double calc_min_dist_5pt(
+    double d_f_c1,
+    double d_f_c2,
+    double d_f_c3,
+    double d_t_c1,
+    double d_t_c2,
+    double d_t_c3,
+    double d_c1_c2,
+    double d_c1_c3,
+    double d_c2_c3)
 {
     if (d_c1_c2 < 1e-9)
         return 0.0;

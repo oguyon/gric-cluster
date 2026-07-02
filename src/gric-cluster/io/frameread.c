@@ -373,7 +373,20 @@ static int init_stream(char *stream_name)
 }
 #endif
 
-int init_frameread(char *filename, int stream_mode, int cnt2sync_mode, int filelist_mode)
+/**
+ * init_frameread() - Initializes the reader based on input type and options.
+ * @filename:      Path to the FITS file, stream directory, or file list.
+ * @stream_mode:   Boolean flag indicating if shared memory streaming mode is active.
+ * @cnt2sync_mode: Boolean flag to enable/disable synchronized frame index reading.
+ * @filelist_mode: Boolean flag indicating if filename points to a text file list.
+ *
+ * Return: 0 on success, or non-zero error code on failure.
+ */
+int init_frameread(
+    char *filename,
+    int   stream_mode,
+    int   cnt2sync_mode,
+    int   filelist_mode)
 {
     if (filelist_mode)
     {

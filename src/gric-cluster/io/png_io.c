@@ -20,7 +20,18 @@
 #include <sys/stat.h>
 
 #ifdef USE_PNG
-void write_png_frame(const char *filename, double *data, int width, int height)
+/**
+ * write_png_frame() - Encodes a 2D double/byte buffer and writes it as a PNG file.
+ * @filename: Output PNG file name.
+ * @data:     Pointer to the 2D image data buffer.
+ * @width:    Width of the image.
+ * @height:   Height of the image.
+ */
+void write_png_frame(
+    const char *filename,
+    double     *data,
+    int         width,
+    int         height)
 {
     FILE *fp = fopen(filename, "wb");
     if (!fp)
@@ -87,7 +98,18 @@ void write_png_frame(const char *filename, double *data, int width, int height)
     fclose(fp);
 }
 
-double *read_png_frame(const char *filename, int *width, int *height)
+/**
+ * read_png_frame() - Decodes a PNG file into a 2D double/byte buffer.
+ * @filename: Input PNG file name.
+ * @width:    Pointer to integer where width will be stored.
+ * @height:   Pointer to integer where height will be stored.
+ *
+ * Return: Pointer to allocated double data buffer, or NULL on error.
+ */
+double *read_png_frame(
+    const char *filename,
+    int        *width,
+    int        *height)
 {
     FILE *fp = fopen(filename, "rb");
     if (!fp)
@@ -208,11 +230,19 @@ double *read_png_frame(const char *filename, int *width, int *height)
 }
 #else
 // stubs if no png support
-void write_png_frame(const char *filename, double *data, int width, int height)
+void write_png_frame(
+    const char *filename,
+    double     *data,
+    int         width,
+    int         height)
 {
     fprintf(stderr, "PNG support not compiled in.\n");
 }
-double *read_png_frame(const char *filename, int *width, int *height)
+
+double *read_png_frame(
+    const char *filename,
+    int        *width,
+    int        *height)
 {
     fprintf(stderr, "PNG support not compiled in.\n");
     return NULL;

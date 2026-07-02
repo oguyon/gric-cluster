@@ -115,7 +115,17 @@ char *create_output_dir_name(const char *input_file)
     return out_dir;
 }
 
-void write_results(ClusterConfig *config, ClusterState *state)
+/**
+ * write_results() - Outputs the clustered coordinate and membership files.
+ * @config: Pointer to the active ClusterConfig.
+ * @state:  Pointer to the active ClusterState.
+ *
+ * Saves final clusters configuration and visitor tracking data onto files
+ * in the configured results directory.
+ */
+void write_results(
+    ClusterConfig *config,
+    ClusterState  *state)
 {
     char *out_dir = NULL;
     if (config->output.user_outdir)
@@ -561,8 +571,24 @@ void write_results(ClusterConfig *config, ClusterState *state)
     free(out_dir);
 }
 
-void write_run_log(ClusterConfig *config, ClusterState *state, const char *cmdline,
-                   struct timespec start_ts, double clust_ms, double out_ms, long max_rss)
+/**
+ * write_run_log() - Dumps step-by-step diagnostic information of the execution.
+ * @config:   Pointer to the active ClusterConfig.
+ * @state:    Pointer to the active ClusterState.
+ * @cmdline:  The command line string used to invoke the process.
+ * @start_ts: Real-time clock timestamp of program launch.
+ * @clust_ms: Duration of the clustering loop in milliseconds.
+ * @out_ms:   Duration of results serialization in milliseconds.
+ * @max_rss:  Maximum resident set size in KB.
+ */
+void write_run_log(
+    ClusterConfig  *config,
+    ClusterState   *state,
+    const char     *cmdline,
+    struct timespec start_ts,
+    double          clust_ms,
+    double          out_ms,
+    long            max_rss)
 {
     char *out_dir = NULL;
     if (config->output.user_outdir)

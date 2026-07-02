@@ -12,7 +12,9 @@
  * @param list Pointer to the VisitorList structure.
  * @param frame_idx Index of the frame to append.
  */
-void add_visitor(VisitorList *list, int frame_idx);
+void add_visitor(
+    VisitorList *list,
+    int          frame_idx);
 
 /**
  * @brief Deletes a cluster from state, optionally merging its history.
@@ -30,7 +32,10 @@ void add_visitor(VisitorList *list, int frame_idx);
  * @param index_to_remove The index of the cluster being deleted.
  * @param index_target The merge target index, or -1 to discard completely.
  */
-void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_remove,
-                    int index_target);
+void remove_cluster(
+    ClusterState  *state,
+    ClusterConfig *config,
+    int            index_to_remove,
+    int            index_target);
 
 #endif // CLUSTER_MGMT_H

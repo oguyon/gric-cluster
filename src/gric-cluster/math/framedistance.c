@@ -17,7 +17,20 @@
 #include <immintrin.h>
 #endif
 
-double framedist(Frame *a, Frame *b)
+/**
+ * framedist() - Computes the Euclidean distance between two frames.
+ * @a: Pointer to the first Frame.
+ * @b: Pointer to the second Frame.
+ *
+ * Checks that the frames have matching dimensions (width and height),
+ * and then computes the L2 Euclidean distance between their pixel data.
+ * Utilizes SIMD/AVX2 vectorization when compiled on supporting x86 architectures.
+ *
+ * Return: The Euclidean distance, or -1.0 if the frame dimensions mismatch.
+ */
+double framedist(
+    Frame *a,
+    Frame *b)
 {
     if (a->width != b->width || a->height != b->height)
     {
@@ -33,7 +46,7 @@ double framedist(Frame *a, Frame *b)
     long i = 0;
 
 // Use AVX2 if supported and on x86
-#if defined(__AVX__) &&                                                                            \
+#if defined(__AVX__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     // Process 4 doubles at a time
     if (size >= 4)
