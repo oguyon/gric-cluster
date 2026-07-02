@@ -7,6 +7,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "gric-cluster/core/cluster_shm.h"
+#include <inttypes.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,17 +79,17 @@ static void print_status(
     printf("PID:                  %u\n", status->pid);
     printf("State:                %s\n", get_state_string(status->status_state, (pid_t)status->pid));
     printf("Input Source:         %s\n", status->input_source);
-    printf("Samples Processed:    %lu / %lu\n",
+    printf("Samples Processed:    %" PRIu64 " / %" PRIu64 "\n",
            status->total_frames_processed, status->total_frames);
     printf("Active Clusters:      %u\n", status->num_clusters);
     printf("Elapsed Time:         %.2f ms (%.3f s)\n",
            status->elapsed_ms, status->elapsed_ms / 1000.0);
-    printf("Distance Computations:%lu (sample: %lu, inter-cluster: %lu)\n",
+    printf("Distance Computations:%" PRIu64 " (sample: %" PRIu64 ", inter-cluster: %" PRIu64 ")\n",
            status->framedist_calls,
            status->framedist_calls_sample,
            status->framedist_calls_intercluster);
-    printf("Candidates Pruned:    %lu\n", status->clusters_pruned);
-    printf("Missed Frames:        %lu\n", status->total_missed_frames);
+    printf("Candidates Pruned:    %" PRIu64 "\n", status->clusters_pruned);
+    printf("Missed Frames:        %" PRIu64 "\n", status->total_missed_frames);
 
     double avg_dists = (status->total_frames_processed > 0)
                            ? (double)status->framedist_calls / status->total_frames_processed
@@ -155,6 +156,13 @@ int main(int argc, char *argv[])
     if (status->magic != GRIC_SHM_MAGIC)
     {
         fprintf(stderr, "Error: Invalid magic bytes. Not a gric status file.\n");
+        munmap(ptr, sizeof(GricClusterShmStatus));
+        return 1;
+    }
+    if (status->version != GRIC_SHM_VERSION)
+    {
+        fprintf(stderr, "Error: Unsupported SHM version %u (expected %u).\n",
+                status->version, GRIC_SHM_VERSION);
         munmap(ptr, sizeof(GricClusterShmStatus));
         return 1;
     }

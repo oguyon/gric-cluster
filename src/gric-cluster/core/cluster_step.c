@@ -10,10 +10,11 @@
  * - Step 3c (Distance measurement during search loop):
  *   - For predicted cluster anchors (if targeting a prediction candidate).
  *   - For standard search candidates (measured in sequence of mixed probability). If a candidate
- *     does not match, distances between cluster anchors are computed (and cached in
- *     state->scratch.dccarray) to prune other candidate clusters via triangle inequalities.
+ *     does not match, distances between cluster anchors are computed to tighten DCC
+ *     bounds (dcc_min/dcc_max, tracked by dcc_measured) and prune other candidate
+ *     clusters via triangle inequalities.
  * - Step 4 (New cluster creation): Pairwise distances between the new cluster anchor and all
- *   existing cluster anchors are measured and cached to maintain the dccarray matrix.
+ *   existing cluster anchors are measured and cached to maintain DCC bounds.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -193,7 +194,7 @@ int cluster_frame(
         // If the max cluster capacity 'maxnbclust' is reached, we execute the configured
         // eviction strategy (Stop, Discard the oldest/smallest, or Merge the closest pair).
         // Distance evaluation: Measures and caches pairwise distances between the new
-        // cluster anchor and all existing cluster anchors to populate the dccarray cache.
+        // cluster anchor and all existing cluster anchors to populate DCC bounds.
         // Output: Returns assigned_cluster for new cluster (or -2 to stop); increments
         // state->num_clusters, updates state->clusters, and updates prev_assigned_cluster.
         if (!found)

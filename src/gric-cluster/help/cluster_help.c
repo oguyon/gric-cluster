@@ -750,6 +750,8 @@ void print_help(
     print_colored_line("    -anchors                 Enable anchors output (default: disabled)");
     print_colored_line("    -counts                  Enable cluster_counts.txt output "
                        "(default: disabled)");
+    print_colored_line("    -shm <file>              Enable shared-memory status output file");
+    print_colored_line("    -shm-file <file>         Alias for -shm");
     print_colored_line("    -no_membership           Disable frame_membership.txt output");
     print_colored_line("    -membership              Enable frame_membership.txt output "
                        "(default: enabled)");
