@@ -137,6 +137,12 @@ typedef struct
     double p;
 } Candidate;
 
+typedef struct
+{
+    int    id;
+    double score;
+} TargetScore;
+
 // Scratch/Calculation structure
 typedef struct
 {
@@ -150,6 +156,11 @@ typedef struct
     uint64_t *consistency_mask; /**< Precomputed 3D geometric consistency bitmask */
     double *entropy_p_current;  /**< Pre-allocated scratch buffer for entropy search probabilities */
     Candidate *entropy_candidates; /**< Pre-allocated scratch buffer for sorting candidates */
+    TargetScore *entropy_prob_scores;  /**< Pre-allocated scratch buffer for target scores */
+    TargetScore *entropy_prune_scores; /**< Pre-allocated scratch buffer for prune scores */
+    int         *entropy_active_indices; /**< Pre-allocated active indices array */
+    double      *entropy_plog2p;       /**< Pre-allocated plog2p probabilities array */
+    uint8_t     *entropy_visited;      /**< Pre-allocated visited boolean array */
 } ClusterScratch;
 
 // State structure

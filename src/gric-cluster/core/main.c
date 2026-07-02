@@ -425,6 +425,11 @@ int main(int argc, char *argv[])
     state.scratch.consistency_mask = (uint64_t *)calloc(consistency_words, sizeof(uint64_t));
     state.scratch.entropy_p_current = (double *)malloc(max_clusters * sizeof(double));
     state.scratch.entropy_candidates = (Candidate *)malloc(max_clusters * sizeof(Candidate));
+    state.scratch.entropy_prob_scores = (TargetScore *)malloc(max_clusters * sizeof(TargetScore));
+    state.scratch.entropy_prune_scores = (TargetScore *)malloc(max_clusters * sizeof(TargetScore));
+    state.scratch.entropy_active_indices = (int *)malloc(max_clusters * sizeof(int));
+    state.scratch.entropy_plog2p = (double *)malloc(max_clusters * sizeof(double));
+    state.scratch.entropy_visited = (uint8_t *)malloc(max_clusters * sizeof(uint8_t));
 
     // Run Clustering
     if (gric_shm_init(&config, &state) != 0)
@@ -497,6 +502,11 @@ int main(int argc, char *argv[])
     free(state.scratch.consistency_mask);
     free(state.scratch.entropy_p_current);
     free(state.scratch.entropy_candidates);
+    free(state.scratch.entropy_prob_scores);
+    free(state.scratch.entropy_prune_scores);
+    free(state.scratch.entropy_active_indices);
+    free(state.scratch.entropy_plog2p);
+    free(state.scratch.entropy_visited);
     free(state.assignments);
 
     if (state.telemetry.pruned_fraction_sum)
