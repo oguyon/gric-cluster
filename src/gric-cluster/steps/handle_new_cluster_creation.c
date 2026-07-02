@@ -60,6 +60,23 @@ static void init_new_cluster_distances(
         }
 
         // 3. Propagate bounds to unvisited clusters
+        double *dcc_max_rows[temp_count];
+        double *dcc_min_rows[temp_count];
+        double  d_new_j_arr[temp_count];
+        int     valid_count = 0;
+
+        for (int idx = 0; idx < temp_count; idx++)
+        {
+            int j = temp_indices[idx];
+            if (j >= 0 && j < new_cl)
+            {
+                dcc_max_rows[valid_count] = &state->scratch.dcc_max[j * N];
+                dcc_min_rows[valid_count] = &state->scratch.dcc_min[j * N];
+                d_new_j_arr[valid_count] = temp_dists[idx];
+                valid_count++;
+            }
+        }
+
         #pragma omp parallel for if(new_cl >= OMP_MIN_CLUSTERS)
         for (int k = 0; k < new_cl; k++)
         {
@@ -68,39 +85,38 @@ static void init_new_cluster_distances(
                 continue;
             }
 
-            for (int idx = 0; idx < temp_count; idx++)
+            double *max_new_row = &state->scratch.dcc_max[new_cl * N];
+            double *min_new_row = &state->scratch.dcc_min[new_cl * N];
+
+            for (int idx = 0; idx < valid_count; idx++)
             {
-                int j = temp_indices[idx];
-                if (j < 0 || j >= new_cl)
-                {
-                    continue;
-                }
+                double  d_new_j = d_new_j_arr[idx];
+                double *max_j_row = dcc_max_rows[idx];
+                double *min_j_row = dcc_min_rows[idx];
 
-                double d_new_j = temp_dists[idx];
-
-                if (state->scratch.dcc_max[j * N + k] < 1e18)
+                if (max_j_row[k] < 1e18)
                 {
-                    double new_max = d_new_j + state->scratch.dcc_max[j * N + k];
-                    if (new_max < state->scratch.dcc_max[new_cl * N + k])
+                    double new_max = d_new_j + max_j_row[k];
+                    if (new_max < max_new_row[k])
                     {
-                        state->scratch.dcc_max[new_cl * N + k] = new_max;
+                        max_new_row[k] = new_max;
                         state->scratch.dcc_max[k * N + new_cl] = new_max;
                     }
                 }
 
-                if (state->scratch.dcc_max[j * N + k] < 1e18)
+                if (max_j_row[k] < 1e18)
                 {
-                    double l1 = d_new_j - state->scratch.dcc_max[j * N + k];
-                    if (l1 > state->scratch.dcc_min[new_cl * N + k])
+                    double l1 = d_new_j - max_j_row[k];
+                    if (l1 > min_new_row[k])
                     {
-                        state->scratch.dcc_min[new_cl * N + k] = l1;
+                        min_new_row[k] = l1;
                         state->scratch.dcc_min[k * N + new_cl] = l1;
                     }
                 }
-                double l2 = state->scratch.dcc_min[j * N + k] - d_new_j;
-                if (l2 > state->scratch.dcc_min[new_cl * N + k])
+                double l2 = min_j_row[k] - d_new_j;
+                if (l2 > min_new_row[k])
                 {
-                    state->scratch.dcc_min[new_cl * N + k] = l2;
+                    min_new_row[k] = l2;
                     state->scratch.dcc_min[k * N + new_cl] = l2;
                 }
             }
