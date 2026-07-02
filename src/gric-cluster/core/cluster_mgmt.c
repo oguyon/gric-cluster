@@ -94,8 +94,12 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
     // Shift Rows up
     for (int r = index_to_remove; r < state->num_clusters - 1; r++)
     {
-        memcpy(&state->scratch.dccarray[r * N], &state->scratch.dccarray[(r + 1) * N],
+        memcpy(&state->scratch.dcc_min[r * N], &state->scratch.dcc_min[(r + 1) * N],
                config->algo.maxnbclust * sizeof(double));
+        memcpy(&state->scratch.dcc_max[r * N], &state->scratch.dcc_max[(r + 1) * N],
+               config->algo.maxnbclust * sizeof(double));
+        memcpy(&state->scratch.dcc_measured[r * N], &state->scratch.dcc_measured[(r + 1) * N],
+               config->algo.maxnbclust * sizeof(char));
     }
     // Shift Columns left for ALL rows
     for (int r = 0; r < state->num_clusters - 1; r++)
@@ -105,7 +109,12 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
         int count = config->algo.maxnbclust - 1 - index_to_remove;
         if (count > 0)
         {
-            memmove(&state->scratch.dccarray[dest_idx], &state->scratch.dccarray[src_idx], count * sizeof(double));
+            memmove(&state->scratch.dcc_min[dest_idx], &state->scratch.dcc_min[src_idx],
+                    count * sizeof(double));
+            memmove(&state->scratch.dcc_max[dest_idx], &state->scratch.dcc_max[src_idx],
+                    count * sizeof(double));
+            memmove(&state->scratch.dcc_measured[dest_idx], &state->scratch.dcc_measured[src_idx],
+                    count * sizeof(char));
         }
     }
 
@@ -135,10 +144,28 @@ void remove_cluster(ClusterState *state, ClusterConfig *config, int index_to_rem
     {
         state->transition_matrix[last * N + r] = 0;
         state->transition_matrix[r * N + last] = 0;
-        state->scratch.dccarray[last * N + r] = -1.0;
-        state->scratch.dccarray[r * N + last] = -1.0;
+        if (config->optim.sparse_dcc_mode)
+        {
+            state->scratch.dcc_min[last * N + r] = 0.0;
+            state->scratch.dcc_min[r * N + last] = 0.0;
+            state->scratch.dcc_max[last * N + r] = 1e19;
+            state->scratch.dcc_max[r * N + last] = 1e19;
+            state->scratch.dcc_measured[last * N + r] = 0;
+            state->scratch.dcc_measured[r * N + last] = 0;
+        }
+        else
+        {
+            state->scratch.dcc_min[last * N + r] = -1.0;
+            state->scratch.dcc_min[r * N + last] = -1.0;
+            state->scratch.dcc_max[last * N + r] = -1.0;
+            state->scratch.dcc_max[r * N + last] = -1.0;
+            state->scratch.dcc_measured[last * N + r] = 0;
+            state->scratch.dcc_measured[r * N + last] = 0;
+        }
     }
-    state->scratch.dccarray[last * N + last] = 0.0;
+    state->scratch.dcc_min[last * N + last] = 0.0;
+    state->scratch.dcc_max[last * N + last] = 0.0;
+    state->scratch.dcc_measured[last * N + last] = 1;
     memset(&state->clusters[last], 0, sizeof(Cluster));
 
     // 6. Correct Assignments Update Loop

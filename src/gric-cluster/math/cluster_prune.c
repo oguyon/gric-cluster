@@ -106,31 +106,62 @@ void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int *temp_
             double d_f_c2 = temp_dists[q];
 
             // Get inter-cluster distances (lazy load)
-            double d_c1_c2 = state->scratch.dccarray[c1 * config->algo.maxnbclust + c2];
-            if (d_c1_c2 < 0)
-            {
-                d_c1_c2 = get_dist(&state->clusters[c1].anchor, &state->clusters[c2].anchor, -1,
-                                   -1.0, -1.0, config, state);
-                state->scratch.dccarray[c1 * config->algo.maxnbclust + c2] = d_c1_c2;
-                state->scratch.dccarray[c2 * config->algo.maxnbclust + c1] = d_c1_c2;
-            }
+            double d_c1_c2 = 0.0;
+            double d_c1_c3 = 0.0;
+            double d_c2_c3 = 0.0;
 
-            double d_c1_c3 = state->scratch.dccarray[c1 * config->algo.maxnbclust + c3];
-            if (d_c1_c3 < 0)
+            if (config->optim.sparse_dcc_mode)
             {
-                d_c1_c3 = get_dist(&state->clusters[c1].anchor, &state->clusters[c3].anchor, -1,
-                                   -1.0, -1.0, config, state);
-                state->scratch.dccarray[c1 * config->algo.maxnbclust + c3] = d_c1_c3;
-                state->scratch.dccarray[c3 * config->algo.maxnbclust + c1] = d_c1_c3;
+                if (!state->scratch.dcc_measured[c1 * config->algo.maxnbclust + c2] ||
+                    !state->scratch.dcc_measured[c1 * config->algo.maxnbclust + c3] ||
+                    !state->scratch.dcc_measured[c2 * config->algo.maxnbclust + c3])
+                {
+                    continue;
+                }
+                d_c1_c2 = state->scratch.dcc_min[c1 * config->algo.maxnbclust + c2];
+                d_c1_c3 = state->scratch.dcc_min[c1 * config->algo.maxnbclust + c3];
+                d_c2_c3 = state->scratch.dcc_min[c2 * config->algo.maxnbclust + c3];
             }
-
-            double d_c2_c3 = state->scratch.dccarray[c2 * config->algo.maxnbclust + c3];
-            if (d_c2_c3 < 0)
+            else
             {
-                d_c2_c3 = get_dist(&state->clusters[c2].anchor, &state->clusters[c3].anchor, -1,
-                                   -1.0, -1.0, config, state);
-                state->scratch.dccarray[c2 * config->algo.maxnbclust + c3] = d_c2_c3;
-                state->scratch.dccarray[c3 * config->algo.maxnbclust + c2] = d_c2_c3;
+                d_c1_c2 = state->scratch.dcc_min[c1 * config->algo.maxnbclust + c2];
+                if (d_c1_c2 < 0.0)
+                {
+                    d_c1_c2 = get_dist(&state->clusters[c1].anchor, &state->clusters[c2].anchor, -1,
+                                       -1.0, -1.0, config, state);
+                    state->scratch.dcc_min[c1 * config->algo.maxnbclust + c2] = d_c1_c2;
+                    state->scratch.dcc_min[c2 * config->algo.maxnbclust + c1] = d_c1_c2;
+                    state->scratch.dcc_max[c1 * config->algo.maxnbclust + c2] = d_c1_c2;
+                    state->scratch.dcc_max[c2 * config->algo.maxnbclust + c1] = d_c1_c2;
+                    state->scratch.dcc_measured[c1 * config->algo.maxnbclust + c2] = 1;
+                    state->scratch.dcc_measured[c2 * config->algo.maxnbclust + c1] = 1;
+                }
+
+                d_c1_c3 = state->scratch.dcc_min[c1 * config->algo.maxnbclust + c3];
+                if (d_c1_c3 < 0.0)
+                {
+                    d_c1_c3 = get_dist(&state->clusters[c1].anchor, &state->clusters[c3].anchor, -1,
+                                       -1.0, -1.0, config, state);
+                    state->scratch.dcc_min[c1 * config->algo.maxnbclust + c3] = d_c1_c3;
+                    state->scratch.dcc_min[c3 * config->algo.maxnbclust + c1] = d_c1_c3;
+                    state->scratch.dcc_max[c1 * config->algo.maxnbclust + c3] = d_c1_c3;
+                    state->scratch.dcc_max[c3 * config->algo.maxnbclust + c1] = d_c1_c3;
+                    state->scratch.dcc_measured[c1 * config->algo.maxnbclust + c3] = 1;
+                    state->scratch.dcc_measured[c3 * config->algo.maxnbclust + c1] = 1;
+                }
+
+                d_c2_c3 = state->scratch.dcc_min[c2 * config->algo.maxnbclust + c3];
+                if (d_c2_c3 < 0.0)
+                {
+                    d_c2_c3 = get_dist(&state->clusters[c2].anchor, &state->clusters[c3].anchor, -1,
+                                       -1.0, -1.0, config, state);
+                    state->scratch.dcc_min[c2 * config->algo.maxnbclust + c3] = d_c2_c3;
+                    state->scratch.dcc_min[c3 * config->algo.maxnbclust + c2] = d_c2_c3;
+                    state->scratch.dcc_max[c2 * config->algo.maxnbclust + c3] = d_c2_c3;
+                    state->scratch.dcc_max[c3 * config->algo.maxnbclust + c2] = d_c2_c3;
+                    state->scratch.dcc_measured[c2 * config->algo.maxnbclust + c3] = 1;
+                    state->scratch.dcc_measured[c3 * config->algo.maxnbclust + c2] = 1;
+                }
             }
 
             long local_pruned_te5 = 0;
@@ -144,63 +175,93 @@ void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int *temp_
                 if (cl_idx == c1 || cl_idx == c2 || cl_idx == c3)
                     continue;
 
-                // Lazy load k distances (thread-safe cache fill)
-                double d_k_c1 = state->scratch.dccarray[cl_idx * config->algo.maxnbclust + c1];
-                if (d_k_c1 < 0)
+                double d_k_c1 = 0.0;
+                double d_k_c2 = 0.0;
+                double d_k_c3 = 0.0;
+
+                if (config->optim.sparse_dcc_mode)
                 {
+                    if (!state->scratch.dcc_measured[cl_idx * config->algo.maxnbclust + c1] ||
+                        !state->scratch.dcc_measured[cl_idx * config->algo.maxnbclust + c2] ||
+                        !state->scratch.dcc_measured[cl_idx * config->algo.maxnbclust + c3])
+                    {
+                        continue;
+                    }
+                    d_k_c1 = state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c1];
+                    d_k_c2 = state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c2];
+                    d_k_c3 = state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c3];
+                }
+                else
+                {
+                    d_k_c1 = state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c1];
+                    if (d_k_c1 < 0.0)
+                    {
 #ifdef _OPENMP
 #pragma omp critical(dcc_cache)
 #endif
-                    {
-                        d_k_c1 = state->scratch.dccarray[cl_idx * config->algo.maxnbclust + c1];
-                        if (d_k_c1 < 0)
                         {
-                            d_k_c1 = get_dist(
-                                &state->clusters[cl_idx].anchor,
-                                &state->clusters[c1].anchor, -1, -1.0, -1.0,
-                                config, state);
-                            state->scratch.dccarray[cl_idx * config->algo.maxnbclust + c1] = d_k_c1;
-                            state->scratch.dccarray[c1 * config->algo.maxnbclust + cl_idx] = d_k_c1;
+                            d_k_c1 = state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c1];
+                            if (d_k_c1 < 0.0)
+                            {
+                                d_k_c1 = get_dist(
+                                    &state->clusters[cl_idx].anchor,
+                                    &state->clusters[c1].anchor, -1, -1.0, -1.0,
+                                    config, state);
+                                state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c1] = d_k_c1;
+                                state->scratch.dcc_min[c1 * config->algo.maxnbclust + cl_idx] = d_k_c1;
+                                state->scratch.dcc_max[cl_idx * config->algo.maxnbclust + c1] = d_k_c1;
+                                state->scratch.dcc_max[c1 * config->algo.maxnbclust + cl_idx] = d_k_c1;
+                                state->scratch.dcc_measured[cl_idx * config->algo.maxnbclust + c1] = 1;
+                                state->scratch.dcc_measured[c1 * config->algo.maxnbclust + cl_idx] = 1;
+                            }
                         }
                     }
-                }
 
-                double d_k_c2 = state->scratch.dccarray[cl_idx * config->algo.maxnbclust + c2];
-                if (d_k_c2 < 0)
-                {
+                    d_k_c2 = state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c2];
+                    if (d_k_c2 < 0.0)
+                    {
 #ifdef _OPENMP
 #pragma omp critical(dcc_cache)
 #endif
-                    {
-                        d_k_c2 = state->scratch.dccarray[cl_idx * config->algo.maxnbclust + c2];
-                        if (d_k_c2 < 0)
                         {
-                            d_k_c2 = get_dist(
-                                &state->clusters[cl_idx].anchor,
-                                &state->clusters[c2].anchor, -1, -1.0, -1.0,
-                                config, state);
-                            state->scratch.dccarray[cl_idx * config->algo.maxnbclust + c2] = d_k_c2;
-                            state->scratch.dccarray[c2 * config->algo.maxnbclust + cl_idx] = d_k_c2;
+                            d_k_c2 = state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c2];
+                            if (d_k_c2 < 0.0)
+                            {
+                                d_k_c2 = get_dist(
+                                    &state->clusters[cl_idx].anchor,
+                                    &state->clusters[c2].anchor, -1, -1.0, -1.0,
+                                    config, state);
+                                state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c2] = d_k_c2;
+                                state->scratch.dcc_min[c2 * config->algo.maxnbclust + cl_idx] = d_k_c2;
+                                state->scratch.dcc_max[cl_idx * config->algo.maxnbclust + c2] = d_k_c2;
+                                state->scratch.dcc_max[c2 * config->algo.maxnbclust + cl_idx] = d_k_c2;
+                                state->scratch.dcc_measured[cl_idx * config->algo.maxnbclust + c2] = 1;
+                                state->scratch.dcc_measured[c2 * config->algo.maxnbclust + cl_idx] = 1;
+                            }
                         }
                     }
-                }
 
-                double d_k_c3 = state->scratch.dccarray[cl_idx * config->algo.maxnbclust + c3];
-                if (d_k_c3 < 0)
-                {
+                    d_k_c3 = state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c3];
+                    if (d_k_c3 < 0.0)
+                    {
 #ifdef _OPENMP
 #pragma omp critical(dcc_cache)
 #endif
-                    {
-                        d_k_c3 = state->scratch.dccarray[cl_idx * config->algo.maxnbclust + c3];
-                        if (d_k_c3 < 0)
                         {
-                            d_k_c3 = get_dist(
-                                &state->clusters[cl_idx].anchor,
-                                &state->clusters[c3].anchor, -1, -1.0, -1.0,
-                                config, state);
-                            state->scratch.dccarray[cl_idx * config->algo.maxnbclust + c3] = d_k_c3;
-                            state->scratch.dccarray[c3 * config->algo.maxnbclust + cl_idx] = d_k_c3;
+                            d_k_c3 = state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c3];
+                            if (d_k_c3 < 0.0)
+                            {
+                                d_k_c3 = get_dist(
+                                    &state->clusters[cl_idx].anchor,
+                                    &state->clusters[c3].anchor, -1, -1.0, -1.0,
+                                    config, state);
+                                state->scratch.dcc_min[cl_idx * config->algo.maxnbclust + c3] = d_k_c3;
+                                state->scratch.dcc_min[c3 * config->algo.maxnbclust + cl_idx] = d_k_c3;
+                                state->scratch.dcc_max[cl_idx * config->algo.maxnbclust + c3] = d_k_c3;
+                                state->scratch.dcc_max[c3 * config->algo.maxnbclust + cl_idx] = d_k_c3;
+                                state->scratch.dcc_measured[cl_idx * config->algo.maxnbclust + c3] = 1;
+                                state->scratch.dcc_measured[c3 * config->algo.maxnbclust + cl_idx] = 1;
+                            }
                         }
                     }
                 }

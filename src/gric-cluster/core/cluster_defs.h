@@ -54,6 +54,8 @@ typedef struct
     int    entropy_mode;
     int    entropy_max_targets;
     double entropy_min_prob;
+    int    sparse_dcc_mode;        /**< 1 to enable bounded sparse distance matrix, 0 for dense */
+    int    sparse_dcc_extra_evals; /**< Number of extra inter-cluster measurements (E) per new cluster */
 } ConfigOptim;
 
 // Output configuration
@@ -74,6 +76,7 @@ typedef struct
     int   output_discarded;
     int   output_clustered;
     int   output_clusters;
+    char *shm_filename;
 } ConfigOutput;
 
 // Configuration structure
@@ -121,7 +124,9 @@ typedef struct
 typedef struct
 {
     double *current_gprobs;     /**< Geometric probabilities computed during search */
-    double *dccarray;           /**< Pairwise inter-cluster distances cache */
+    double *dcc_min;            /**< Pairwise inter-cluster minimum distance bounds */
+    double *dcc_max;            /**< Pairwise inter-cluster maximum distance bounds */
+    char   *dcc_measured;       /**< 1 if exactly measured, 0 if estimated/unmeasured */
     int    *probsortedclindex;  /**< Cluster indices sorted by descending prior probability */
     int    *clmembflag;         /**< Flag indicating if a cluster is still an active candidate */
     double *mixed_probs;        /**< Prior predictive probabilities (frequency * sequence) */
@@ -142,6 +147,7 @@ typedef struct
     long             *transition_matrix;
     ClusterTelemetry  telemetry;
     ClusterScratch    scratch;
+    void             *shm_ptr;
 } ClusterState;
 
 #define OMP_MIN_CLUSTERS 256

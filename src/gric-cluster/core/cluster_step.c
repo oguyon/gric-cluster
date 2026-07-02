@@ -7,14 +7,14 @@
  * and eviction strategy resolution.
  *
  * Distance measurements (calls to get_dist()) are performed at:
- * - Step 3 (Trajectory prediction): distance of current frame to predicted cluster anchors
- *   is measured to test for a match.
- * - Step 4 (Standard search): distance of current frame to candidates is measured in sequence
- *   of mixed probability. If the candidate does not match, distances between cluster anchors
- *   are computed (and cached in state->scratch.dccarray) to prune other candidate clusters
- *   via triangle inequalities.
- * - Step 5 (New cluster creation): pairwise distances between the new cluster anchor and all
- *   existing cluster anchors are measured and cached to maintain the dccarray matrix.
+ * - Step 3c (Distance measurement during search loop):
+ *   - For predicted cluster anchors (if targeting a prediction candidate).
+ *   - For standard search candidates (measured in sequence of mixed probability). If a candidate
+ *     does not match, distances between cluster anchors are computed to tighten DCC
+ *     bounds (dcc_min/dcc_max, tracked by dcc_measured) and prune other candidate
+ *     clusters via triangle inequalities.
+ * - Step 4 (New cluster creation): Pairwise distances between the new cluster anchor and all
+ *   existing cluster anchors are measured and cached to maintain DCC bounds.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -22,6 +22,7 @@
 #include "cluster_steps.h"
 #include "cluster_math.h"
 #include "cluster_prune.h"
+#include "cluster_bounds.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -64,7 +65,9 @@ int cluster_frame(
         int num_preds = 0;
         int current_pred_idx = 0;
 
-        // Retrieve prediction candidates at the very start of processing the frame
+        // Step 2: Retrieve prediction candidates.
+        // Retrieves prediction candidates at the very start of processing the frame if
+        // prediction mode is active.
         if (config->optim.pred_mode &&
             state->telemetry.total_frames_processed >= config->optim.pred_len)
         {
@@ -76,9 +79,10 @@ int cluster_frame(
             }
         }
 
+        // Step 3: Iterative search loop (Prediction & Standard search).
         while (!found)
         {
-            // Step A: Compute/update probabilities and candidate pruning.
+            // Step 3a: Compute/update probabilities and candidate pruning.
             // On first iteration, computes the base mixed prior probabilities.
             // On subsequent iterations, prunes inconsistent candidate clusters and updates
             // geometric probabilities using the last measured target and distance.
@@ -128,7 +132,7 @@ int cluster_frame(
                 }
             }
 
-            // Step B: Select next measurement target.
+            // Step 3b: Select next measurement target.
             // Output: Returns the cluster index cj of the next target, or -1 if all
             // candidates are pruned/exhausted.
             int cj = select_next_measurement_target(config, state, &k_search,
@@ -153,16 +157,16 @@ int cluster_frame(
                 }
             }
 
-            // Step C: Measure distance to target.
+            // Step 3c: Measure distance to target.
             // Output: Returns computed distance dfc; updates temp_indices/temp_dists and
             // increments temp_count.
             dfc = measure_distance_to_cluster(cj, current_frame, config, state,
                                               temp_indices, temp_dists, &temp_count,
                                               is_prediction);
 
-            // Step D: Check if solved.
+            // Step 3d: Check if solved.
             // Output: If dfc < rlim, resolves assignment and exits loop. Otherwise, records
-            // last_cj/dfc for Step A update.
+            // last_cj/dfc for Step 3a update.
             if (dfc < config->algo.rlim)
             {
                 assigned_cluster = cj;
@@ -185,12 +189,12 @@ int cluster_frame(
             free(pred_candidates);
         }
 
-        // Step 5: Handling of new cluster creation and cache limits.
+        // Step 4: Handling of new cluster creation and cache limits.
         // If no existing cluster matches within 'rlim', we must create a new cluster.
         // If the max cluster capacity 'maxnbclust' is reached, we execute the configured
         // eviction strategy (Stop, Discard the oldest/smallest, or Merge the closest pair).
         // Distance evaluation: Measures and caches pairwise distances between the new
-        // cluster anchor and all existing cluster anchors to populate the dccarray cache.
+        // cluster anchor and all existing cluster anchors to populate DCC bounds.
         // Output: Returns assigned_cluster for new cluster (or -2 to stop); increments
         // state->num_clusters, updates state->clusters, and updates prev_assigned_cluster.
         if (!found)
@@ -205,7 +209,7 @@ int cluster_frame(
         }
     }
 
-    // Step 6: Telemetry and file serialization.
+    // Step 5: Telemetry and file serialization.
     // Record final assignment outcomes, update distance statistics, update the transition matrix,
     // and write the results to the frame membership log files if configured.
     // Output: Updates state->assignments, state->transition_matrix, ascii_out,
@@ -215,6 +219,11 @@ int cluster_frame(
         record_step_assignment(config, state, current_frame, assigned_cluster,
                                prev_assigned_cluster, ascii_out, temp_indices,
                                temp_dists, temp_count, start_pruned_val);
+    }
+
+    if (config->optim.sparse_dcc_mode && config->optim.sparse_dcc_extra_evals > 0)
+    {
+        refine_sparse_bounds(config, state);
     }
 
     return assigned_cluster;

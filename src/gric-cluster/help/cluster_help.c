@@ -719,6 +719,8 @@ void print_help(
     print_colored_line("    -te4                     Use 4-point triangle inequality pruning");
     print_colored_line("    -te5                     Use 5-point triangle inequality pruning");
     print_colored_line("    -entropy                 Use entropy-based target cluster selection");
+    print_colored_line("    -sparse_dcc              Enable sparse cluster-to-cluster distance matrix");
+    print_colored_line("    -sparse_dcc_extra_evals  Set number of extra DCC evaluations (default: 0)");
     print_colored_line("    -conf <file>             Read options from configuration file");
     print_colored_line("    -confw <file>            Write current options to configuration file");
 
@@ -748,6 +750,8 @@ void print_help(
     print_colored_line("    -anchors                 Enable anchors output (default: disabled)");
     print_colored_line("    -counts                  Enable cluster_counts.txt output "
                        "(default: disabled)");
+    print_colored_line("    -shm <file>              Enable shared-memory status output file");
+    print_colored_line("    -shm-file <file>         Alias for -shm");
     print_colored_line("    -no_membership           Disable frame_membership.txt output");
     print_colored_line("    -membership              Enable frame_membership.txt output "
                        "(default: enabled)");

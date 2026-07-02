@@ -46,12 +46,32 @@ static double calculate_sequence_match_metric(
             continue;
         }
 
-        double dcc = state->scratch.dccarray[clA * config->algo.maxnbclust + clB];
-        if (dcc < 0.0)
+        int idx = clA * config->algo.maxnbclust + clB;
+        double dcc = 0.0;
+        if (config->optim.sparse_dcc_mode)
         {
-            dcc = framedist(&state->clusters[clA].anchor, &state->clusters[clB].anchor);
-            state->scratch.dccarray[clA * config->algo.maxnbclust + clB] = dcc;
-            state->scratch.dccarray[clB * config->algo.maxnbclust + clA] = dcc;
+            if (state->scratch.dcc_measured[idx])
+            {
+                dcc = state->scratch.dcc_min[idx];
+            }
+            else
+            {
+                dcc = state->scratch.dcc_max[idx];
+            }
+        }
+        else
+        {
+            dcc = state->scratch.dcc_min[idx];
+            if (dcc < 0.0)
+            {
+                dcc = framedist(&state->clusters[clA].anchor, &state->clusters[clB].anchor);
+                state->scratch.dcc_min[idx] = dcc;
+                state->scratch.dcc_min[clB * config->algo.maxnbclust + clA] = dcc;
+                state->scratch.dcc_max[idx] = dcc;
+                state->scratch.dcc_max[clB * config->algo.maxnbclust + clA] = dcc;
+                state->scratch.dcc_measured[idx] = 1;
+                state->scratch.dcc_measured[clB * config->algo.maxnbclust + clA] = 1;
+            }
         }
 
         double dmax = dA + dB + dcc;
