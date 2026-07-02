@@ -321,7 +321,9 @@ static int select_next_measurement_target_entropy(
         int early_exit = 0;
         for (int h_idx = 0; h_idx < active_idx_count; h_idx++)
         {
-            double cur_min = min_expected_entropy;
+            double cur_min;
+            #pragma omp atomic read
+            cur_min = min_expected_entropy;
             if (expected_entropy_for_ci >= cur_min)
             {
                 early_exit = 1;
