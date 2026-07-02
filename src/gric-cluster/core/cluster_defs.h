@@ -111,6 +111,23 @@ typedef struct
     long   *dist_counts;
     long   *pruned_counts_by_dist;
     long   *cluster_query_counts;
+    double  last_assignment_dist;
+    long    num_new_clusters;
+    long    last_frame_dists;
+    long    last_frame_dfc;
+    long    last_frame_dcc;
+    double  time_io_ms;
+    double  time_step_1;
+    double  time_step_2;
+    double  time_step_3a;
+    double  time_step_3b;
+    double  time_step_3b_score;
+    double  time_step_3b_filter;
+    double  time_step_3b_eval;
+    double  time_step_3c;
+    double  time_step_4;
+    double  time_step_5;
+    double  time_step_refine;
 } ClusterTelemetry;
 
 // Candidate structure for sorting

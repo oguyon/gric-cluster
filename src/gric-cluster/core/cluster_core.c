@@ -168,7 +168,12 @@ void run_clustering(
         }
 
         // Fetch the next frame from the configured input source (FITS, MP4, or Stream)
+        struct timespec io_start, io_end;
+        clock_gettime(CLOCK_MONOTONIC, &io_start);
         Frame *current_frame = getframe();
+        clock_gettime(CLOCK_MONOTONIC, &io_end);
+        state->telemetry.time_io_ms += (io_end.tv_sec - io_start.tv_sec) * 1000.0 +
+                                       (io_end.tv_nsec - io_start.tv_nsec) / 1000000.0;
         if (!current_frame)
         {
             break;
