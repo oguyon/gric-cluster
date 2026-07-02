@@ -263,6 +263,58 @@ void run_clustering(
            state->telemetry.framedist_calls_sample,
            state->telemetry.framedist_calls_intercluster);
 
+    double total_steps_ms = state->telemetry.time_step_1 +
+                            state->telemetry.time_step_2 +
+                            state->telemetry.time_step_3a +
+                            state->telemetry.time_step_3b +
+                            state->telemetry.time_step_3c +
+                            state->telemetry.time_step_4 +
+                            state->telemetry.time_step_5 +
+                            state->telemetry.time_step_refine;
+
+    if (total_steps_ms > 0.0)
+    {
+        printf("\nDetailed Step Timing Breakdown:\n");
+        printf("  Step 1 (Base case):      %9.3f ms (%5.1f%%)\n",
+               state->telemetry.time_step_1,
+               100.0 * state->telemetry.time_step_1 / total_steps_ms);
+        printf("  Step 2 (Prediction):     %9.3f ms (%5.1f%%)\n",
+               state->telemetry.time_step_2,
+               100.0 * state->telemetry.time_step_2 / total_steps_ms);
+        printf("  Step 3a (Priors/Prune):  %9.3f ms (%5.1f%%)\n",
+               state->telemetry.time_step_3a,
+               100.0 * state->telemetry.time_step_3a / total_steps_ms);
+        printf("  Step 3b (Select Target): %9.3f ms (%5.1f%%)\n",
+               state->telemetry.time_step_3b,
+               100.0 * state->telemetry.time_step_3b / total_steps_ms);
+        if (state->telemetry.time_step_3b > 0.0)
+        {
+            printf("    - Score & Sort:        %9.3f ms (%5.1f%% of 3b)\n",
+                   state->telemetry.time_step_3b_score,
+                   100.0 * state->telemetry.time_step_3b_score / state->telemetry.time_step_3b);
+            printf("    - Filter & Select:     %9.3f ms (%5.1f%% of 3b)\n",
+                   state->telemetry.time_step_3b_filter,
+                   100.0 * state->telemetry.time_step_3b_filter / state->telemetry.time_step_3b);
+            printf("    - Entropy Eval:        %9.3f ms (%5.1f%% of 3b)\n",
+                   state->telemetry.time_step_3b_eval,
+                   100.0 * state->telemetry.time_step_3b_eval / state->telemetry.time_step_3b);
+        }
+        printf("  Step 3c (Measure Dist):  %9.3f ms (%5.1f%%)\n",
+               state->telemetry.time_step_3c,
+               100.0 * state->telemetry.time_step_3c / total_steps_ms);
+        printf("  Step 4 (Create/Evict):   %9.3f ms (%5.1f%%)\n",
+               state->telemetry.time_step_4,
+               100.0 * state->telemetry.time_step_4 / total_steps_ms);
+        printf("  Step 5 (Serialization):  %9.3f ms (%5.1f%%)\n",
+               state->telemetry.time_step_5,
+               100.0 * state->telemetry.time_step_5 / total_steps_ms);
+        printf("  DCC Bounds Refinement:   %9.3f ms (%5.1f%%)\n",
+               state->telemetry.time_step_refine,
+               100.0 * state->telemetry.time_step_refine / total_steps_ms);
+        printf("  -------------------------------------------\n");
+        printf("  Total Timed Steps:       %9.3f ms (100.0%%)\n\n", total_steps_ms);
+    }
+
     if (ascii_out)
     {
         fclose(ascii_out);
