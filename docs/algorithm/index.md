@@ -11,8 +11,8 @@ For every new frame `fi` in a sequence, the algorithm performs the following ove
 ```mermaid
 flowchart TD
     classDef startEnd fill:#e1f5fe,stroke:#0288D1,stroke-width:2px,color:#01579B;
-    classDef process fill:#f5f5f5,stroke:#424242,stroke-width:1.5px;
-    classDef decision fill:#fffde7,stroke:#fbc02d,stroke-width:1.5px;
+    classDef process fill:#f5f5f5,stroke:#424242,stroke-width:1.5px,color:#212121;
+    classDef decision fill:#fffde7,stroke:#fbc02d,stroke-width:1.5px,color:#212121;
     classDef action fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
 
     Start([New Frame fi]):::startEnd --> Step1[1. Normalize Probabilities]:::process
