@@ -430,6 +430,11 @@ int main(int argc, char *argv[])
     state.scratch.entropy_active_indices = (int *)malloc(max_clusters * sizeof(int));
     state.scratch.entropy_plog2p = (double *)malloc(max_clusters * sizeof(double));
     state.scratch.entropy_visited = (uint8_t *)malloc(max_clusters * sizeof(uint8_t));
+    state.scratch.refine_queue = (Candidate *)malloc(1024 * sizeof(Candidate));
+    state.scratch.refine_queue_size = 0;
+    state.scratch.refine_queue_idx = 0;
+    state.scratch.refine_queue_capacity = 1024;
+    state.scratch.refine_queue_last_num_clusters = 0;
 
     // Run Clustering
     if (gric_shm_init(&config, &state) != 0)
@@ -507,6 +512,7 @@ int main(int argc, char *argv[])
     free(state.scratch.entropy_active_indices);
     free(state.scratch.entropy_plog2p);
     free(state.scratch.entropy_visited);
+    free(state.scratch.refine_queue);
     free(state.assignments);
 
     if (state.telemetry.pruned_fraction_sum)
