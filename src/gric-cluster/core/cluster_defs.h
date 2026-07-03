@@ -161,6 +161,11 @@ typedef struct
     int         *entropy_active_indices; /**< Pre-allocated active indices array */
     double      *entropy_plog2p;       /**< Pre-allocated plog2p probabilities array */
     uint8_t     *entropy_visited;      /**< Pre-allocated visited boolean array */
+    Candidate   *refine_queue;                  /**< Pre-allocated queue of closest unmeasured pairs */
+    int          refine_queue_size;             /**< Number of active items in the queue */
+    int          refine_queue_idx;              /**< Current index in the queue */
+    int          refine_queue_capacity;         /**< Capacity of the queue */
+    int          refine_queue_last_num_clusters;/**< Number of clusters during last queue rebuild */
 } ClusterScratch;
 
 // State structure

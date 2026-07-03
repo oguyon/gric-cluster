@@ -37,7 +37,8 @@ typedef enum
     GEN_STAR,
     GEN_CONCENTRIC,
     GEN_TREE,
-    GEN_CONCENTRIC_DENSE
+    GEN_CONCENTRIC_DENSE,
+    GEN_RAND_EXP
 } GenType;
 
 typedef struct
@@ -79,6 +80,45 @@ void gen_random_point(double *out, int dim)
         {
             out[d] = 2.0 * rand_double() - 1.0;
         }
+    }
+}
+
+void gen_randexp_point(
+    double *out,
+    int     dim)
+{
+    if (dim == 3)
+    {
+        double sigma = 1.0 / sqrt(-2.0 * log(0.01));
+        double r;
+        do
+        {
+            double u1, u2, u3, u4;
+            do
+            {
+                u1 = rand_double();
+            } while (u1 <= 1e-15);
+            u2 = rand_double();
+            do
+            {
+                u3 = rand_double();
+            } while (u3 <= 1e-15);
+            u4 = rand_double();
+
+            double z0 = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
+            double z1 = sqrt(-2.0 * log(u1)) * sin(2.0 * M_PI * u2);
+            double z2 = sqrt(-2.0 * log(u3)) * cos(2.0 * M_PI * u4);
+
+            out[0] = z0 * sigma;
+            out[1] = z1 * sigma;
+            out[2] = z2 * sigma;
+
+            r = sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2]);
+        } while (r > 1.0);
+    }
+    else
+    {
+        gen_random_point(out, dim);
     }
 }
 
@@ -560,7 +600,11 @@ int main(int argc, char *argv[])
         config.dim = 2;
 
     // Parse pattern name
-    if (strncmp(pattern_str, "random", 6) == 0)
+    if (strncmp(pattern_str, "randexp", 7) == 0 || strncmp(pattern_str, "randExp", 7) == 0)
+    {
+        config.type = GEN_RAND_EXP;
+    }
+    else if (strncmp(pattern_str, "random", 6) == 0)
     {
         config.type = GEN_RANDOM;
     }
@@ -679,6 +723,9 @@ int main(int argc, char *argv[])
             break;
         case GEN_CONCENTRIC_DENSE:
             gen_concentric_dense_point(pt, i, n_points, config.param, config.dim);
+            break;
+        case GEN_RAND_EXP:
+            gen_randexp_point(pt, config.dim);
             break;
         case GEN_RANDOM:
         default:
