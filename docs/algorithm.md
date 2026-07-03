@@ -24,8 +24,9 @@ Then loop over frame index `fi` until all frames clustered:
 1.  **Normalize Probabilities**: Normalize `prob(cj)` so they sum to 1.0.
 2.  **Calculate Mixed Probabilities**:
     - If `-tm <coeff>` is used (coeff > 0):
-      - Compute transition probability `P_trans(cj) = tm(prev_cluster, cj) / sum(tm(prev_cluster, *))`.
-      - Mix: `P_mixed(cj) = (1 - coeff) * prob(cj) + coeff * P_trans(cj)`.
+        - Compute transition probability:
+          `P_trans(cj) = tm(prev_cluster, cj) / sum(tm(prev_cluster, *))`.
+        - Mix: `P_mixed(cj) = (1 - coeff) * prob(cj) + coeff * P_trans(cj)`.
     - Otherwise, `P_mixed(cj) = prob(cj)`.
 3.  **Rank Candidates**: Sort clusters by total probability.
     - If `-gprob` is used, rank derived from sorting `P_mixed(cj) * gprob(fi, cj)`
@@ -39,12 +40,12 @@ Then loop over frame index `fi` until all frames clustered:
         - Update `gprob` history.
         - Proceed to next frame.
     - If `dfc > rlim` (not in cluster):
-        - **Prune (Triangle Inequality)**: If `|dcc(cj, cl) - dfc(fi, cj)| > rlim`, cluster
-          `cl` cannot contain `fi`.
-        - **Prune (4-Point / -te4)**: If enabled, use 2 previous anchors + current anchor
-          + candidate to prune.
-        - **Prune (5-Point / -te5)**: If enabled, use 3 previous anchors + current anchor
-          + candidate to prune.
+        - **Prune (Triangle Inequality)**: If `|dcc(cj, cl) - dfc(fi, cj)| > rlim`,
+          cluster `cl` cannot contain `fi`.
+        - **Prune (4-Point / -te4)**: If enabled, use 2 previous anchors + current
+          anchor + candidate to prune.
+        - **Prune (5-Point / -te5)**: If enabled, use 3 previous anchors + current
+          anchor + candidate to prune.
         - If number of possible members is strictly greater than zero, go to step 3.
         - Otherwise, go to step 5.
 5.  **Create New Cluster**: If no existing cluster matches:
