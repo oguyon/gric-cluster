@@ -81,6 +81,25 @@ or noisy datasets where simple greedy paths struggle.
 
 ---
 
+### Synergy and Complementarity
+
+`gprob` (Geometrical Probability) and `-entropy` (Shannon Entropy Optimization) are highly
+complementary because they handle different roles in the target selection process:
+
+- **`gprob` acts as a probability generator**: It calculates the spatial probability distribution
+  based on geometric similarity and historical co-measurements. It answer the question:
+  *Where is the frame likely located in space?*
+- **`-entropy` acts as a decision-theoretic scheduler**: It utilizes the probability distribution
+  provided by `gprob` to calculate the expected Shannon information gain. It answers the question:
+  *Which cluster anchor should I measure next to minimize search ambiguity as fast as possible?*
+
+When both are enabled, `gprob` dynamically updates and refines the candidates' likelihoods after
+each distance calculation, and `-entropy` uses this fresh distribution to schedule the next optimal
+anchor to query. This synergistic relationship reduces the number of expensive metric evaluations
+to a theoretical minimum.
+
+---
+
 ## Detailed Components
 
 Explore the technical details of the sub-components:
