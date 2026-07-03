@@ -46,6 +46,9 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Algorithm Details: algorithm.md
+  - Algorithm:
+      - Overview & Modes: algorithm/index.md
+      - Pruning Mechanisms: algorithm/pruning.md
+      - Probability & Prediction: algorithm/prediction.md
   - Benchmarks: benchmarks.md
   - Practical Use Cases: practical-use.md

@@ -9,8 +9,8 @@ data (images, sensor logs, etc.).
     datasets.
 *   **[Practical Use Cases](practical-use.md)**: Real-world scenarios, workflows, and tips
     for getting the most out of the tool.
-*   **[Algorithm Details](algorithm.md)**: Detailed description of the clustering algorithm
-    and optimizations.
+*   **[Algorithm Overview & Modes](algorithm/index.md)**: High-level overview, steps, and
+    modes (Greedy vs. Entropy).
 
 ## Quick Start
 
