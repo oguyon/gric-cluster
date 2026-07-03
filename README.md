@@ -94,4 +94,4 @@ Run clustering:
 ./gric-cluster [options] <rlim> <input_file>
 ```
 
-See [Wiki](https://github.com/oguyon/stream-cluster/wiki) for detailed documentation.
+See [Documentation](https://oguyon.github.io/gric-cluster/) for detailed documentation.

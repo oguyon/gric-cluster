@@ -34,3 +34,7 @@ data/
 # Temp
 test_birch_stream.py
 test_strat.clustered.txt
+
+# MkDocs
+site/
+.cache/
