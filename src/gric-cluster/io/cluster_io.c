@@ -83,6 +83,17 @@ void init_colors_io(void)
     }
 } // init_colors_io
 
+/**
+ * create_output_dir_name() - Build output directory path from input filename.
+ * @input_file: Path to the input file (FITS, MP4, or text).
+ *
+ * Strips the directory prefix and recognized extensions
+ * (.fits.fz, .fits, .mp4, .txt) from @input_file, then
+ * appends ".clusterdat" to form the output directory name.
+ *
+ * Return: Heap-allocated directory name string, or NULL on
+ *         allocation failure.  Caller must free().
+ */
 char *create_output_dir_name(const char *input_file)
 {
     const char *base = strrchr(input_file, '/');
@@ -622,6 +633,18 @@ void write_run_log(
         fprintf(f, "PARAM_FMATCHB: %f\n", config->optim.fmatch_b);
         fprintf(f, "PARAM_TE4: %d\n", config->optim.te4_mode);
         fprintf(f, "PARAM_TE5: %d\n", config->optim.te5_mode);
+        fprintf(f, "PARAM_ENTROPY: %d\n",
+                config->optim.entropy_mode);
+        fprintf(f, "PARAM_ENTROPY_FAST: %d\n",
+                config->optim.entropy_fast_mode);
+        fprintf(f, "PARAM_ENTROPY_GATE: %f\n",
+                config->optim.entropy_gate_bits);
+        fprintf(f, "PARAM_ENTROPY_FIRST_GATE: %f\n",
+                config->optim.entropy_first_gate_bits);
+        fprintf(f, "PARAM_ENTROPY_MAX_TARGETS: %d\n",
+                config->optim.entropy_max_targets);
+        fprintf(f, "PARAM_ENTROPY_MIN_PROB: %f\n",
+                config->optim.entropy_min_prob);
 
         if (config->output.output_dcc)
             fprintf(f, "OUTPUT_FILE: %s/dcc.txt\n", out_dir);

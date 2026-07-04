@@ -1,3 +1,8 @@
+/**
+ * @file handle_new_cluster_creation.c
+ * @brief New cluster creation and inter-cluster
+ *        distance initialization.
+ */
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_steps.h"
 #include "cluster_mgmt.h"
@@ -12,6 +17,20 @@
 #define ANSI_COLOR_RESET  "\x1b[0m"
 #define ANSI_COLOR_ORANGE "\x1b[38;5;208m"
 
+/**
+ * init_new_cluster_distances - Initialize distance entries for a newly created cluster.
+ * @config: Config parameters of the clustering execution.
+ * @state: Running state of the clustering execution.
+ * @new_cl: Index of the newly created cluster.
+ * @temp_indices: Array of cluster indices measured during the current frame search.
+ * @temp_dists: Corresponding measured distances for each temp_indices entry.
+ * @temp_count: Number of valid entries in temp_indices / temp_dists.
+ *
+ * Uses exact distance computations for clusters that were visited
+ * during the search (recorded in temp_indices/temp_dists), and
+ * triangle-inequality bound propagation for the remaining
+ * unvisited clusters.
+ */
 static void init_new_cluster_distances(
     ClusterConfig *config,
     ClusterState  *state,

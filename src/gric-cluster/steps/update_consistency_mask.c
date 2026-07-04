@@ -1,3 +1,8 @@
+/**
+ * @file update_consistency_mask.c
+ * @brief Consistency mask maintenance using
+ *        triangle inequality bounds.
+ */
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_steps.h"
 #include "cluster_core.h"
@@ -46,6 +51,17 @@ void recompute_consistency_mask(
                     if (diff1 > delta_min) delta_min = diff1;
                     if (diff2 > delta_min) delta_min = diff2;
 
+                    /*
+                     * Geometric consistency criterion:
+                     * a target-hypothesis pair is
+                     * consistent if the minimum possible
+                     * distance between them (from
+                     * triangle inequality bounds) is
+                     * within twice the radius limit,
+                     * meaning the measurement could
+                     * still change the cluster
+                     * assignment.
+                     */
                     if (delta_min <= 2.0 * rc)
                     {
                         mask[k / 64] |= (1ULL << (k % 64));
@@ -86,7 +102,7 @@ void recompute_consistency_mask(
  * @new_cl: Index of the newly added cluster.
  *
  * Computes and sets consistency bitmask flags involving the new cluster, avoiding full recalculations.
- * Handles cases where the new cluster is the target target_ci, hypothesis hypothesis_cj, or candidate k.
+ * Handles cases where the new cluster is the target (target_ci), hypothesis (hypothesis_cj), or candidate k.
  */
 void update_consistency_mask_for_new_cluster(
     ClusterConfig *config,

@@ -1,3 +1,8 @@
+/**
+ * @file compute_priors_and_mixing.c
+ * @brief Prior probability computation with geometric,
+ *        transition-matrix, and prediction mixing.
+ */
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_steps.h"
 #include "cluster_math.h"
@@ -78,6 +83,7 @@ static double calculate_sequence_match_metric(
         sum_dmax += pow(a_param, j) * (dmax / r_c);
     }
 
+    /* 1 - 1/e : exponential CDF complement at the mean */
     return exp(-sum_dmax / ((double)n_p * 0.63212055882855767));
 }
 
@@ -323,6 +329,12 @@ void compute_priors_and_mixing(
         }
     }
 
+    /*
+     * Initialize the posterior distribution for
+     * entropy-based target selection.  This becomes
+     * the starting point that the entropy search
+     * progressively refines as measurements are taken.
+     */
     for (int i = 0; i < state->num_clusters; i++)
     {
         state->scratch.entropy_p_current[i] = state->scratch.mixed_probs[i];

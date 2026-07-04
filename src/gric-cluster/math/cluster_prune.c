@@ -15,8 +15,30 @@
 #include <stdlib.h>
 #include <string.h>
 
-int get_prediction_candidates(ClusterState *state, ClusterConfig *config, int *candidates,
-                              int max_candidates)
+/**
+ * get_prediction_candidates() - Produce a ranked list of
+ *     predicted next-cluster candidates.
+ * @state:          Current clustering state (assignments,
+ *                  telemetry).
+ * @config:         Clustering configuration (pred_len,
+ *                  pred_h, pred_n).
+ * @candidates:     Output array of cluster indices, sorted
+ *                  by descending match count.
+ * @max_candidates: Maximum number of candidates to return.
+ *
+ * Uses transition history and trajectory matching: searches
+ * recent assignment history for subsequences matching the
+ * last @config->optim.pred_len assignments, then tallies
+ * which cluster followed each match.  The top candidates
+ * are returned sorted by frequency.
+ *
+ * Return: Number of candidates written (0 if none found).
+ */
+int get_prediction_candidates(
+    ClusterState  *state,
+    ClusterConfig *config,
+    int           *candidates,
+    int            max_candidates)
 {
     long total = state->telemetry.total_frames_processed;
     int len = config->optim.pred_len;
@@ -87,8 +109,34 @@ int get_prediction_candidates(ClusterState *state, ClusterConfig *config, int *c
     return n_out;
 }
 
-void prune_candidates_te5(ClusterConfig *config, ClusterState *state, int *temp_indices,
-                          double *temp_dists, int temp_count)
+/**
+ * prune_candidates_te5() - Prune candidates using the
+ *     5-point triangle inequality.
+ * @config:       Clustering configuration (rlim, te5_mode,
+ *                maxnbclust, sparse_dcc_mode).
+ * @state:        Clustering state (clusters, scratch,
+ *                telemetry).
+ * @temp_indices: Array of cluster indices measured so far.
+ * @temp_dists:   Array of frame-to-cluster distances
+ *                corresponding to @temp_indices.
+ * @temp_count:   Number of entries in @temp_indices /
+ *                @temp_dists.
+ *
+ * For every triplet of already-measured reference clusters
+ * (c1, c2, c3), computes a lower bound on the distance
+ * from the current frame to each remaining candidate
+ * cluster using the 5-point triangle inequality.  If the
+ * bound exceeds rlim the candidate is pruned (clmembflag
+ * set to 0).
+ *
+ * Requires at least 3 measured clusters (temp_count >= 3).
+ */
+void prune_candidates_te5(
+    ClusterConfig *config,
+    ClusterState  *state,
+    int           *temp_indices,
+    double        *temp_dists,
+    int            temp_count)
 {
     if (!config->optim.te5_mode || temp_count < 3)
         return;

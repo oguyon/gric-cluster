@@ -1,3 +1,8 @@
+/**
+ * @file select_next_measurement_target.c
+ * @brief Entropy-based and greedy target selection
+ *        for cluster measurement scheduling.
+ */
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_steps.h"
 #include "cluster_core.h"
@@ -7,6 +12,10 @@
 #include <stdint.h>
 #include <time.h>
 
+/*
+ * Max hypotheses sampled per candidate during
+ * popcount scoring (limits inner loop cost).
+ */
 #define ENTROPY_PRUNE_SAMPLE_LIMIT 32
 
 /**
@@ -572,6 +581,7 @@ static int select_next_measurement_target_entropy(
  * @pred_candidates: Int array of predicted shortcut candidate indices.
  * @num_preds: Total number of prediction candidates retrieved.
  * @current_pred_idx: Progression index inside the prediction candidates array.
+ * @param meas_idx: Measurement depth within the current frame (0 = first attempt).
  *
  * Chooses the next target candidate. Evaluates active trajectory prediction
  * candidates first, and standard candidates next ordered by probability.
