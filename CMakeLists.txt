@@ -88,6 +88,10 @@ set(CLUSTER_SRCS
     src/gric-cluster/math/framedistance.c
     src/gric-cluster/io/cluster_io.c
     src/gric-cluster/io/frameread.c
+    src/gric-cluster/io/frameread_ascii.c
+    src/gric-cluster/io/frameread_fits.c
+    src/gric-cluster/io/frameread_ffmpeg.c
+    src/gric-cluster/io/frameread_stream.c
     src/gric-cluster/io/png_io.c
     src/gric-cluster/help/cluster_help.c
     src/gric-cluster/steps/initialize_initial_cluster.c
