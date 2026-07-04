@@ -27,6 +27,31 @@
 #include <stdlib.h>
 #include <time.h>
 
+/**
+ * cluster_frame() - Process one frame through the full clustering
+ *                   pipeline (Steps 1-5).
+ * @config:              Clustering configuration (algorithm, optim, I/O).
+ * @state:               Mutable clustering state (clusters, telemetry,
+ *                       scratch buffers).
+ * @current_frame:       Pixel data of the frame to assign.
+ * @prev_assigned_cluster: In/out pointer to the previously assigned
+ *                       cluster index; updated on new assignment.
+ * @ascii_out:           Open file handle for membership text log
+ *                       (may be NULL).
+ * @temp_indices:        Scratch array recording cluster indices
+ *                       measured this frame.
+ * @temp_dists:          Scratch array recording distances measured
+ *                       this frame.
+ * @sorting_candidates:  Scratch array for candidate sorting.
+ * @verbose_candidates:  Scratch array for verbose-mode ranking
+ *                       (may be NULL).
+ *
+ * Executes the sequential steps: base-case setup, prediction
+ * retrieval, iterative search with pruning and measurement,
+ * new-cluster creation / eviction, and telemetry recording.
+ *
+ * Return: Assigned cluster index (>= 0), or -2 to signal stop.
+ */
 int cluster_frame(
     ClusterConfig *config,
     ClusterState  *state,

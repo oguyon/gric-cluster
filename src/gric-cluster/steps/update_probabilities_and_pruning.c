@@ -1,3 +1,8 @@
+/**
+ * @file update_probabilities_and_pruning.c
+ * @brief Bayesian probability updates and candidate
+ *        pruning after distance measurements.
+ */
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_steps.h"
 #include "cluster_core.h"
@@ -5,7 +10,7 @@
 #include "cluster_math.h"
 #include <math.h>
 
-#define OMP_MIN_CLUSTERS 256
+/* OMP_MIN_CLUSTERS — defined in cluster_defs.h */
 
 /**
  * update_probabilities_and_pruning - Prune search space and update geometric priorities.
@@ -243,6 +248,12 @@ void update_probabilities_and_pruning(
                 double diff = dfc - dcc;
                 double x = (diff * diff) / two_sigma_sq;
                 double likelihood = 0.0;
+                /*
+                 * Minimax polynomial approximation of
+                 * exp(-x) on [0, 2], accurate to ~1e-4.
+                 * Avoids expensive exp() in the inner
+                 * loop.
+                 */
                 if (x <= 2.0)
                 {
                     likelihood = 1.0 - x * (0.978371 - x * (0.419481 - x * 0.073231));

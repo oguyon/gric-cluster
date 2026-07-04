@@ -28,6 +28,17 @@ static int matches(const char *key, const char *opt)
     return 0;
 }
 
+/**
+ * apply_option() - Parse a single CLI flag and apply it
+ *                  to the configuration.
+ * @config: Configuration struct to modify.
+ * @key:    Option key string (with or without leading dash).
+ * @value:  Option value string, or NULL for boolean flags.
+ *
+ * Return: 0 if a boolean flag was consumed (no value),
+ *         1 if a flag + value pair was consumed,
+ *        -1 if the flag is unknown.
+ */
 int apply_option(ClusterConfig *config, const char *key, const char *value)
 {
     if (matches(key, "-dprob"))
@@ -347,6 +358,18 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
     return -1; // Unknown option
 }
 
+/**
+ * read_config_file() - Read a config file and apply each line
+ *                      as a key-value option pair.
+ * @filename: Path to the configuration file.
+ * @config:   Configuration struct to populate.
+ *
+ * Lines starting with '#' or empty lines are skipped.
+ * Each non-comment line is split into a key and optional
+ * value, then forwarded to apply_option().
+ *
+ * Return: 0 on success, 1 if the file cannot be opened.
+ */
 int read_config_file(const char *filename, ClusterConfig *config)
 {
     FILE *f = fopen(filename, "r");
@@ -391,6 +414,17 @@ int read_config_file(const char *filename, ClusterConfig *config)
     return 0;
 }
 
+/**
+ * write_config_file() - Serialize the current config to a file
+ *                       for reproducibility.
+ * @filename: Output file path.
+ * @config:   Configuration struct to serialize.
+ *
+ * Writes all active configuration parameters in a format
+ * readable by read_config_file().
+ *
+ * Return: 0 on success, 1 if the file cannot be opened.
+ */
 int write_config_file(const char *filename, ClusterConfig *config)
 {
     FILE *f = fopen(filename, "w");
