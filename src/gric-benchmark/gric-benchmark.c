@@ -66,7 +66,7 @@ int main(
 {
     BenchmarkConfig config;
     init_config(&config);
-    init_colors();
+    cli_colors_init();
 
     static struct option long_options[] =
     {

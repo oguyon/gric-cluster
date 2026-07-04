@@ -99,6 +99,7 @@ set(CLUSTER_SRCS
     src/gric-cluster/steps/handle_new_cluster_creation.c
     src/gric-cluster/steps/record_step_assignment.c
     src/gric-cluster/steps/update_consistency_mask.c
+    src/shared/cli_colors.c
 )
 
 add_executable(gric-cluster ${CLUSTER_SRCS})
@@ -115,12 +116,13 @@ if (PNG_FOUND)
     target_link_libraries(gric-cluster ${PNG_LIBRARIES})
 endif()
 
-add_executable(gric-mktxtseq src/gric-mktxtseq/mktestseq.c)
+add_executable(gric-mktxtseq src/gric-mktxtseq/mktestseq.c src/shared/cli_colors.c)
 target_link_libraries(gric-mktxtseq m)
 
 add_executable(gric-plot
     src/gric-plot/plot_clusters.c
     src/gric-plot/canvas/canvas.c
+    src/shared/cli_colors.c
 )
 if (PNG_FOUND)
     target_link_libraries(gric-plot ${PNG_LIBRARIES} m)
@@ -128,34 +130,35 @@ else()
     target_link_libraries(gric-plot m)
 endif()
 
-add_executable(gric-mkclusteredfile src/gric-mkclusteredfile/mkclusteredfile.c)
+add_executable(gric-mkclusteredfile src/gric-mkclusteredfile/mkclusteredfile.c src/shared/cli_colors.c)
 target_link_libraries(gric-mkclusteredfile m)
 
-add_executable(gric-NDmodel src/gric-NDmodel/model_nd.c)
+add_executable(gric-NDmodel src/gric-NDmodel/model_nd.c src/shared/cli_colors.c)
 target_link_libraries(gric-NDmodel m)
 
-add_executable(gric-ascii-spot-2-video src/gric-ascii-spot-2-video/ascii-spot-2-video.c)
+add_executable(gric-ascii-spot-2-video src/gric-ascii-spot-2-video/ascii-spot-2-video.c src/shared/cli_colors.c)
 target_link_libraries(gric-ascii-spot-2-video m ${IMAGESTREAMIO_LIBRARIES})
 
 if (IMAGESTREAMIO_FOUND)
-    add_executable(gric-stream-to-pipe src/gric-stream-to-pipe/stream_to_pipe.c)
+    add_executable(gric-stream-to-pipe src/gric-stream-to-pipe/stream_to_pipe.c src/shared/cli_colors.c)
     target_link_libraries(gric-stream-to-pipe ${IMAGESTREAMIO_LIBRARIES} m)
 endif()
 
 # gric-status tool
-add_executable(gric-status src/gric-status/gric-status.c)
+add_executable(gric-status src/gric-status/gric-status.c src/shared/cli_colors.c)
 
 # gric-info tool
-add_executable(gric-info src/gric-info/gric-info.c)
+add_executable(gric-info src/gric-info/gric-info.c src/shared/cli_colors.c)
 
 # gric-help tool
-add_executable(gric-help src/gric-help/gric-help.c)
+add_executable(gric-help src/gric-help/gric-help.c src/shared/cli_colors.c)
 
 # gric-benchmark tool
 add_executable(gric-benchmark
     src/gric-benchmark/gric-benchmark.c
     src/gric-benchmark/benchmark_utils.c
     src/gric-benchmark/test_list.c
+    src/shared/cli_colors.c
 )
 
 if (CFITSIO_FOUND)

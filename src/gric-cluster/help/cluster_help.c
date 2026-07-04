@@ -12,60 +12,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *ansi_color_orange = "";
-static const char *ansi_color_green = "";
-static const char *ansi_color_red = "";
-static const char *ansi_color_blue = "";
-static const char *ansi_bg_green = "";
-static const char *ansi_color_black = "";
-static const char *ansi_color_reset = "";
-static const char *ansi_bold = "";
-static const char *ansi_underline = "";
-static const char *ansi_bold_cyan = "";
-static const char *ansi_bold_green = "";
-static const char *ansi_color_magenta = "";
-static const char *ansi_color_yellow = "";
-static const char *ansi_color_grey = "";
-static const char *ansi_color_cyan = "";
-
-#define ANSI_COLOR_ORANGE  ansi_color_orange
-#define ANSI_COLOR_GREEN   ansi_color_green
-#define ANSI_COLOR_RED     ansi_color_red
-#define ANSI_COLOR_BLUE    ansi_color_blue
-#define ANSI_BG_GREEN      ansi_bg_green
-#define ANSI_COLOR_BLACK   ansi_color_black
-#define ANSI_COLOR_RESET   ansi_color_reset
-#define ANSI_BOLD          ansi_bold
-#define ANSI_UNDERLINE     ansi_underline
-#define ANSI_BOLD_CYAN     ansi_bold_cyan
-#define ANSI_BOLD_GREEN    ansi_bold_green
-#define ANSI_COLOR_MAGENTA ansi_color_magenta
-#define ANSI_COLOR_YELLOW  ansi_color_yellow
-#define ANSI_COLOR_GREY    ansi_color_grey
-#define ANSI_COLOR_CYAN    ansi_color_cyan
+#include "shared/cli_colors.h"
 
 void init_colors_help(void)
 {
-    const char *no_color = getenv("NO_COLOR");
-
-    if (no_color == NULL)
-    {
-        ansi_color_orange = "\x1b[38;5;208m";
-        ansi_color_green = "\x1b[32m";
-        ansi_color_red = "\x1b[31m";
-        ansi_color_blue = "\x1b[34m";
-        ansi_bg_green = "\x1b[42m";
-        ansi_color_black = "\x1b[30m";
-        ansi_color_reset = "\x1b[0m";
-        ansi_bold = "\x1b[1m";
-        ansi_underline = "\x1b[4m";
-        ansi_bold_cyan = "\x1b[1;36m";
-        ansi_bold_green = "\x1b[1;32m";
-        ansi_color_magenta = "\x1b[35m";
-        ansi_color_yellow = "\x1b[33m";
-        ansi_color_grey = "\x1b[2m";
-        ansi_color_cyan = "\x1b[36m";
-    }
+    cli_colors_init();
 }
 
 void print_usage(
@@ -79,9 +30,7 @@ static void print_see_also_option(
     const char *option,
     const char *desc)
 {
-    printf("  %s%-24s%s %s\n",
-           ANSI_BOLD_GREEN, option,
-           ANSI_COLOR_RESET, desc);
+    cli_print_see_also_option(option, desc);
 }
 
 /**
@@ -2099,183 +2048,18 @@ void print_help_keyword(
 static void print_colored_usage(
     const char *usage)
 {
-    printf("  ");
-    const char *p = usage;
-
-    while (*p == ' ' || *p == '\t')
-    {
-        p++;
-    }
-
-    const char *cmd_start = p;
-    while (*p && *p != ' ' && *p != '\t' && *p != '\n')
-    {
-        p++;
-    }
-    printf("%s%.*s%s",
-           ANSI_COLOR_YELLOW,
-           (int)(p - cmd_start), cmd_start,
-           ANSI_COLOR_RESET);
-
-    while (*p)
-    {
-        if (*p == '<')
-        {
-            const char *end = strchr(p, '>');
-            if (end)
-            {
-                printf("%s%.*s%s", ANSI_COLOR_MAGENTA, (int)(end - p + 1), p, ANSI_COLOR_RESET);
-                p = end + 1;
-                continue;
-            }
-        }
-        if (*p == '[')
-        {
-            const char *end = strchr(p, ']');
-            if (end)
-            {
-                printf("%s%.*s%s", ANSI_COLOR_GREY, (int)(end - p + 1), p, ANSI_COLOR_RESET);
-                p = end + 1;
-                continue;
-            }
-        }
-        putchar(*p);
-        p++;
-    }
-    printf("\n");
+    cli_print_colored_usage(usage);
 }
 
 static void print_colored_line(
     const char *line)
 {
-    const char *start = line;
-
-    while (*start == ' ' || *start == '\t')
-    {
-        start++;
-    }
-
-    if (*start == '-')
-    {
-        printf("%.*s", (int)(start - line), line);
-
-        const char *end = start;
-        while (*end && *end != '\n')
-        {
-            if ((*end == ' ' && *(end + 1) == ' ') || *end == '\t')
-            {
-                break;
-            }
-            end++;
-        }
-
-        const char *p = start;
-        while (p < end)
-        {
-            if (*p == '-')
-            {
-                const char *f_end = p;
-                while (f_end < end && *f_end != ' ' && *f_end != '\t' && *f_end != ',' &&
-                       *f_end != '<' && *f_end != '[')
-                {
-                    f_end++;
-                }
-                printf("%s%.*s%s", ANSI_COLOR_GREEN, (int)(f_end - p), p, ANSI_COLOR_RESET);
-                p = f_end;
-            }
-            else if (*p == '<')
-            {
-                const char *v_end = p;
-                while (v_end < end && *v_end != '>')
-                {
-                    v_end++;
-                }
-                if (v_end < end)
-                {
-                    printf("%s%.*s%s", ANSI_COLOR_MAGENTA, (int)(v_end - p + 1), p,
-                           ANSI_COLOR_RESET);
-                    p = v_end + 1;
-                }
-                else
-                {
-                    putchar(*p);
-                    p++;
-                }
-            }
-            else
-            {
-                putchar(*p);
-                p++;
-            }
-        }
-
-        const char *desc = end;
-        while (*desc)
-        {
-            if (strncmp(desc, "default:", 8) == 0 || strncmp(desc, "Default:", 8) == 0)
-            {
-                printf("%sdefault:%s", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
-                desc += 8;
-                const char *val_end = desc;
-                while (*val_end && *val_end != ')' && *val_end != ',')
-                {
-                    val_end++;
-                }
-                printf("%s%.*s%s", ANSI_COLOR_CYAN, (int)(val_end - desc), desc,
-                       ANSI_COLOR_RESET);
-                desc = val_end;
-            }
-            else if (strncmp(desc, "caution", 7) == 0 || strncmp(desc, "Caution", 7) == 0)
-            {
-                printf("%scaution%s", ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
-                desc += 7;
-            }
-            else if (strncmp(desc, "[DISABLED]", 10) == 0)
-            {
-                printf("%s[DISABLED]%s", ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
-                desc += 10;
-            }
-            else
-            {
-                putchar(*desc);
-                desc++;
-            }
-        }
-        printf("\n");
-    }
-    else
-    {
-        int leading_spaces = 0;
-        while (line[leading_spaces] == ' ')
-        {
-            leading_spaces++;
-        }
-        if (leading_spaces == 2 && line[leading_spaces] != '\0')
-        {
-            printf("  %s%s%s\n", ANSI_BOLD, line + 2, ANSI_COLOR_RESET);
-        }
-        else
-        {
-            printf("%s\n", line);
-        }
-    }
+    cli_print_colored_line(line);
 }
 
 static void print_color_mode(void)
 {
-    const char *no_color = getenv("NO_COLOR");
-
-    printf("\n%sCOLOR MODE%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
-    if (no_color == NULL)
-    {
-        printf("  %sENABLED%s (color escape codes are active; disable by setting NO_COLOR=1)\n",
-               ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
-    }
-    else
-    {
-        printf("  %sDISABLED%s (NO_COLOR environment variable is present)\n",
-               ANSI_COLOR_RED, ANSI_COLOR_RESET);
-    }
+    cli_print_color_mode();
 }
 
 void print_help(

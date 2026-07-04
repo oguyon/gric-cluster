@@ -7,24 +7,7 @@
 #define MAX_PATTERNS 32
 #define MAX_OPTIONS  64
 
-/* Color escape variables declared as extern */
-extern const char *ansi_color_green;
-extern const char *ansi_color_reset;
-extern const char *ansi_bold;
-extern const char *ansi_bold_cyan;
-extern const char *ansi_bold_green;
-extern const char *ansi_color_magenta;
-extern const char *ansi_color_cyan;
-extern const char *ansi_color_grey;
-
-#define ANSI_COLOR_GREEN   ansi_color_green
-#define ANSI_COLOR_RESET   ansi_color_reset
-#define ANSI_BOLD          ansi_bold
-#define ANSI_BOLD_CYAN     ansi_bold_cyan
-#define ANSI_BOLD_GREEN    ansi_bold_green
-#define ANSI_COLOR_MAGENTA ansi_color_magenta
-#define ANSI_COLOR_CYAN    ansi_color_cyan
-#define ANSI_COLOR_GREY    ansi_color_grey
+#include "shared/cli_colors.h"
 
 typedef struct
 {
@@ -46,8 +29,7 @@ typedef struct
 
 /* Utilities Prototypes */
 
-/* Initialize ANSI colors based on environment. */
-void init_colors(void);
+
 
 /* Print help/usage screen. */
 void print_help(

@@ -21,15 +21,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-const char *ansi_color_green = "";
-const char *ansi_color_reset = "";
-const char *ansi_bold = "";
-const char *ansi_bold_cyan = "";
-const char *ansi_bold_green = "";
-const char *ansi_color_magenta = "";
-const char *ansi_color_cyan = "";
-const char *ansi_color_grey = "";
-
 static const char *known_patterns[] =
 {
     "2Dspiral",
@@ -45,26 +36,6 @@ static const char *known_patterns[] =
     "3Dconcentric_dense"
 };
 #define KNOWN_PATTERNS_COUNT 11
-
-/**
- * @brief Initialize colors if NO_COLOR environment variable is not present.
- */
-void init_colors(void)
-{
-    const char *no_color = getenv("NO_COLOR");
-
-    if (no_color == NULL)
-    {
-        ansi_color_green = "\x1b[32m";
-        ansi_color_reset = "\x1b[0m";
-        ansi_bold = "\x1b[1m";
-        ansi_bold_cyan = "\x1b[1;36m";
-        ansi_bold_green = "\x1b[1;32m";
-        ansi_color_magenta = "\x1b[35m";
-        ansi_color_cyan = "\x1b[36m";
-        ansi_color_grey = "\x1b[90m";
-    }
-} // init_colors
 
 /**
  * @brief Print usage/help information.

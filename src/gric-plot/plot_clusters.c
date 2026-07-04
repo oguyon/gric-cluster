@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "shared/cli_colors.h"
 #ifdef USE_PNG
 #include "canvas/canvas.h"
 #endif
@@ -112,51 +113,7 @@ static void draw_scale(Canvas *c, int x, int y)
 }
 #endif
 
-static const char *ansi_bold = "";
-static const char *ansi_reset = "";
-static const char *ansi_color_green = "";
-static const char *ansi_bold_cyan = "";
-static const char *ansi_bold_green = "";
-static const char *ansi_color_magenta = "";
-static const char *ansi_color_cyan = "";
-static const char *ansi_color_grey = "";
-static const char *ansi_color_yellow = "";
-static const char *ansi_color_red = "";
 
-static void init_colors(void)
-{
-    const char *no_color = getenv("NO_COLOR");
-
-    if (no_color == NULL)
-    {
-        ansi_bold = "\x1b[1m";
-        ansi_reset = "\x1b[0m";
-        ansi_color_green = "\x1b[32m";
-        ansi_bold_cyan = "\x1b[1;36m";
-        ansi_bold_green = "\x1b[1;32m";
-        ansi_color_magenta = "\x1b[35m";
-        ansi_color_cyan = "\x1b[36m";
-        ansi_color_grey = "\x1b[90m";
-        ansi_color_yellow = "\x1b[33m";
-        ansi_color_red = "\x1b[31m";
-    }
-} // init_colors
-
-static void print_color_mode(void)
-{
-    const char *no_color = getenv("NO_COLOR");
-    printf("\n%sCOLOR MODE%s\n", ansi_bold_cyan, ansi_reset);
-    if (no_color == NULL)
-    {
-        printf("  %sENABLED%s (color escape codes are active; disable by setting NO_COLOR=1)\n",
-               ansi_color_green, ansi_reset);
-    }
-    else
-    {
-        printf("  %sDISABLED%s (NO_COLOR environment variable is present)\n",
-               ansi_color_red, ansi_reset);
-    }
-} // print_color_mode
 
 void print_help(const char *progname)
 {
@@ -189,12 +146,12 @@ void print_help(const char *progname)
     printf("%sEXAMPLES%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s$%s %s%s%s input_points.txt gric_run_log.txt summary_plot.png\n", ansi_color_grey,
            ansi_reset, ansi_bold_green, progname, ansi_reset);
-    print_color_mode();
+    cli_print_color_mode();
 }
 
 int main(int argc, char *argv[])
 {
-    init_colors();
+    cli_colors_init();
     char *points_filename = NULL, *log_filename = NULL, output_filename[1024] = {0};
     int png_mode = 1;
     double font_size = 18.0;
