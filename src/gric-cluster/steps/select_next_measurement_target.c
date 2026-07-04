@@ -609,7 +609,8 @@ int select_next_measurement_target(
         int cj = -1;
         for (int i = 0; i < state->num_clusters; i++)
         {
-            if (state->scratch.entropy_p_current[i] > max_p)
+            if (state->scratch.clmembflag[i] &&
+                state->scratch.entropy_p_current[i] > max_p)
             {
                 max_p = state->scratch.entropy_p_current[i];
                 cj = i;
