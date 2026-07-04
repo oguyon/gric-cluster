@@ -87,7 +87,13 @@ set(CLUSTER_SRCS
     src/gric-cluster/math/cluster_scandist.c
     src/gric-cluster/math/framedistance.c
     src/gric-cluster/io/cluster_io.c
+    src/gric-cluster/io/cluster_io_log.c
+    src/gric-cluster/io/cluster_io_results.c
     src/gric-cluster/io/frameread.c
+    src/gric-cluster/io/frameread_ascii.c
+    src/gric-cluster/io/frameread_fits.c
+    src/gric-cluster/io/frameread_ffmpeg.c
+    src/gric-cluster/io/frameread_stream.c
     src/gric-cluster/io/png_io.c
     src/gric-cluster/help/cluster_help.c
     src/gric-cluster/steps/initialize_initial_cluster.c
@@ -121,6 +127,8 @@ target_link_libraries(gric-mktxtseq m)
 
 add_executable(gric-plot
     src/gric-plot/plot_clusters.c
+    src/gric-plot/plot_log_parser.c
+    src/gric-plot/plot_render.c
     src/gric-plot/canvas/canvas.c
     src/shared/cli_colors.c
 )
@@ -145,7 +153,13 @@ if (IMAGESTREAMIO_FOUND)
 endif()
 
 # gric-status tool
-add_executable(gric-status src/gric-status/gric-status.c src/shared/cli_colors.c)
+add_executable(gric-status
+    src/gric-status/gric-status.c
+    src/gric-status/status_terminal.c
+    src/gric-status/status_shm.c
+    src/gric-status/status_tui.c
+    src/shared/cli_colors.c)
+
 
 # gric-info tool
 add_executable(gric-info src/gric-info/gric-info.c src/shared/cli_colors.c)

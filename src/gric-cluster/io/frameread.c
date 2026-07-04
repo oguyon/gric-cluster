@@ -1,18 +1,12 @@
 /**
  * @file frameread.c
- * @brief Comprehensive image and coordinate frame reader.
- *
- * Implements unified frame ingestion from coordinate text files, video sequences (MP4 via
- * FFmpeg), FITS files, file lists, or live ImageStreamIO shared memory.
- *
- * Main Functions:
- * - init_frameread: Initializes the reader based on input type and options.
- * - getframe: Retrieves the next frame from the configured source.
- * - close_frameread: Releases reader resources and closes open files or streams.
- * - reset_frameread: Resets stream/file position to the beginning.
+ * @brief Dispatcher for coordinate and image frame reader formats.
  */
+
 #include "common.h"
+#include "frameread.h"
 #include "png_io.h"
+#include "frameread_internal.h"
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -23,164 +17,64 @@
 #include <time.h>
 
 #ifdef USE_CFITSIO
-#include <fitsio.h>
+fitsfile *fptr = NULL;
 #endif
 
+FILE *ascii_ptr = NULL;
+long *ascii_line_offsets = NULL;
+int is_ascii_mode = 0;
+
+char **file_list = NULL;
+int is_filelist_mode = 0;
+
 #ifdef USE_FFMPEG
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libswscale/swscale.h>
+AVFormatContext *fmt_ctx = NULL;
+AVCodecContext *dec_ctx = NULL;
+int video_stream_idx = -1;
+AVFrame *frame = NULL;
+AVPacket *pkt = NULL;
+struct SwsContext *sws_ctx = NULL;
+int is_mp4_mode = 0;
+int internal_mp4_index = 0;
 #endif
 
 #ifdef USE_IMAGESTREAMIO
-#include <ImageStreamIO/ImageStreamIO.h>
-#include <ImageStreamIO/ImageStruct.h>
+IMAGE stream_image;
+int is_stream_mode = 0;
+uint64_t last_cnt0 = 0;
+int first_stream_frame = 1;
+long cumulative_missed_frames = 0;
+long stream_depth = 1;
+long current_read_slice = 0;
+long current_write_slice = 0;
+long stream_read_counter = 0;
+int is_3d = 0;
+double cumulative_wait_time_sec = 0.0;
+int cnt2sync_enabled = 0;
 #endif
 
-#ifdef USE_CFITSIO
-static fitsfile *fptr = NULL;
-#endif
+long num_frames = 0;
+long frame_width = 0;
+long frame_height = 0;
+int current_frame_idx = 0;
 
-static FILE *ascii_ptr = NULL;
-static long *ascii_line_offsets = NULL;
-static int is_ascii_mode = 0;
+double *frame_data_pool[FRAME_DATA_POOL_SIZE];
+int frame_data_pool_count = 0;
 
-static char **file_list = NULL;
-static int is_filelist_mode = 0;
-
-// FFmpeg State
-#ifdef USE_FFMPEG
-static AVFormatContext *fmt_ctx = NULL;
-static AVCodecContext *dec_ctx = NULL;
-static int video_stream_idx = -1;
-static AVFrame *frame = NULL;
-static AVPacket *pkt = NULL;
-static struct SwsContext *sws_ctx = NULL;
-static int is_mp4_mode = 0;
-// Seeking state
-static int internal_mp4_index = 0;
-#endif
-
-// ImageStreamIO State
-#ifdef USE_IMAGESTREAMIO
-static IMAGE stream_image;
-static int is_stream_mode = 0;
-static uint64_t last_cnt0 = 0;
-static int first_stream_frame = 1;
-static long cumulative_missed_frames = 0;
-static long stream_depth = 1;
-static long current_read_slice = 0;
-static long current_write_slice = 0;
-static long stream_read_counter = 0;
-static int is_3d = 0;
-static double cumulative_wait_time_sec = 0.0;
-static int cnt2sync_enabled = 0;
-#endif
-
-static long num_frames = 0;
-static long frame_width = 0;
-static long frame_height = 0;
-static int current_frame_idx = 0;
-
-#define FRAME_DATA_POOL_SIZE 64
-static double *frame_data_pool[FRAME_DATA_POOL_SIZE];
-static int frame_data_pool_count = 0;
-
-Frame *getframe_at(long index);
-
-int is_ascii_input_mode()
-{
-    return is_ascii_mode;
-}
-
-static int init_ascii(char *filename)
-{
-    ascii_ptr = fopen(filename, "r");
-    if (!ascii_ptr)
-    {
-        perror("Failed to open ASCII file");
-        return -1;
-    }
-
-    is_ascii_mode = 1;
-    num_frames = 0;
-
-    size_t capacity = 1024;
-    ascii_line_offsets = (long *)malloc(capacity * sizeof(long));
-    if (!ascii_line_offsets)
-    {
-        perror("Memory allocation failed");
-        return -1;
-    }
-
-    char *line = NULL;
-    size_t len = 0;
-    long offset = ftell(ascii_ptr);
-
-    int first_line = 1;
-
-    while (getline(&line, &len, ascii_ptr) != -1)
-    {
-        if (num_frames >= capacity)
-        {
-            capacity *= 2;
-            long *new_offsets = (long *)realloc(ascii_line_offsets, capacity * sizeof(long));
-            if (!new_offsets)
-            {
-                perror("Memory reallocation failed");
-                free(line);
-                return -1;
-            }
-            ascii_line_offsets = new_offsets;
-        }
-        ascii_line_offsets[num_frames] = offset;
-        num_frames++;
-
-        if (first_line)
-        {
-            int cols = 0;
-            char *p = line;
-            int in_num = 0;
-            while (*p)
-            {
-                if (!isspace((unsigned char)*p))
-                {
-                    if (!in_num)
-                    {
-                        cols++;
-                        in_num = 1;
-                    }
-                }
-                else
-                {
-                    in_num = 0;
-                }
-                p++;
-            }
-            frame_width = cols;
-            frame_height = 1;
-            first_line = 0;
-        }
-
-        offset = ftell(ascii_ptr);
-    }
-
-    free(line);
-
-    if (num_frames == 0)
-    {
-        fprintf(stderr, "Error: Empty ASCII file.\n");
-        return -1;
-    }
-
-    rewind(ascii_ptr);
-    return 0;
-}
-
-static int init_filelist(char *filename)
+/**
+ * init_filelist() - Initialize the frame reader in file list (PNG sequence) mode.
+ * @filename: Path to the text file listing PNG paths (one per line).
+ *
+ * Reads filenames into memory, queries the first frame to discover width and height,
+ * and sets up list-based frame ingestion.
+ *
+ * Return: 0 on success, or -1 on failure.
+ */
+static int init_filelist(
+    char *filename)
 {
     FILE *fp = fopen(filename, "r");
-    if (!fp)
+    if (fp == NULL)
     {
         perror("Failed to open file list");
         return -1;
@@ -190,28 +84,48 @@ static int init_filelist(char *filename)
     num_frames = 0;
     size_t capacity = 1024;
     file_list = (char **)malloc(capacity * sizeof(char *));
-
-    char *line = NULL;
-    size_t len = 0;
-    ssize_t read;
-
-    while ((read = getline(&line, &len, fp)) != -1)
+    if (file_list == NULL)
     {
-        // Trim newline
-        if (read > 0 && line[read - 1] == '\n')
-            line[read - 1] = '\0';
-        if (strlen(line) == 0)
-            continue;
-
-        if (num_frames >= capacity)
-        {
-            capacity *= 2;
-            file_list = (char **)realloc(file_list, capacity * sizeof(char *));
-        }
-        file_list[num_frames] = strdup(line);
-        num_frames++;
+        perror("Memory allocation failed");
+        fclose(fp);
+        return -1;
     }
-    free(line);
+
+    {
+        /* Read line entries */
+        char *line = NULL;
+        size_t len = 0;
+        ssize_t read_bytes;
+
+        while ((read_bytes = getline(&line, &len, fp)) != -1)
+        {
+            if (read_bytes > 0 && line[read_bytes - 1] == '\n')
+            {
+                line[read_bytes - 1] = '\0';
+            }
+            if (strlen(line) == 0)
+            {
+                continue;
+            }
+
+            if (num_frames >= capacity)
+            {
+                capacity *= 2;
+                char **new_list = (char **)realloc(file_list, capacity * sizeof(char *));
+                if (new_list == NULL)
+                {
+                    perror("Memory reallocation failed");
+                    free(line);
+                    fclose(fp);
+                    return -1;
+                }
+                file_list = new_list;
+            }
+            file_list[num_frames] = strdup(line);
+            num_frames++;
+        }
+        free(line);
+    }
     fclose(fp);
 
     if (num_frames == 0)
@@ -220,165 +134,35 @@ static int init_filelist(char *filename)
         return -1;
     }
 
-    // Read first frame to get dimensions
-    int w, h;
-    double *tmp = read_png_frame(file_list[0], &w, &h);
-    if (!tmp)
     {
-        fprintf(stderr, "Failed to read first frame from list: %s\n", file_list[0]);
-        return -1;
+        /* Read first PNG frame to get dimensions */
+        int w = 0;
+        int h = 0;
+        double *tmp = read_png_frame(file_list[0], &w, &h);
+        if (tmp == NULL)
+        {
+            fprintf(stderr, "Failed to read first frame from list: %s\n", file_list[0]);
+            return -1;
+        }
+        frame_width = w;
+        frame_height = h;
+        free(tmp);
     }
-    frame_width = w;
-    frame_height = h;
-    free(tmp);
 
     printf("File list mode initialized. %ld frames, %ldx%ld\n", num_frames, frame_width,
            frame_height);
     return 0;
 }
 
-#ifdef USE_FFMPEG
-static int init_mp4(char *filename)
-{
-    if (avformat_open_input(&fmt_ctx, filename, NULL, NULL) < 0)
-    {
-        fprintf(stderr, "Could not open video file %s\n", filename);
-        return -1;
-    }
-
-    if (avformat_find_stream_info(fmt_ctx, NULL) < 0)
-    {
-        fprintf(stderr, "Could not find stream information\n");
-        return -1;
-    }
-
-    video_stream_idx = -1;
-    for (unsigned int i = 0; i < fmt_ctx->nb_streams; i++)
-    {
-        if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
-        {
-            video_stream_idx = i;
-            break;
-        }
-    }
-
-    if (video_stream_idx == -1)
-    {
-        fprintf(stderr, "Could not find video stream\n");
-        return -1;
-    }
-
-    AVCodecParameters *codecpar = fmt_ctx->streams[video_stream_idx]->codecpar;
-    const AVCodec *codec = avcodec_find_decoder(codecpar->codec_id);
-    if (!codec)
-    {
-        fprintf(stderr, "Codec not found\n");
-        return -1;
-    }
-
-    dec_ctx = avcodec_alloc_context3(codec);
-    if (!dec_ctx)
-    {
-        fprintf(stderr, "Could not allocate video codec context\n");
-        return -1;
-    }
-
-    if (avcodec_parameters_to_context(dec_ctx, codecpar) < 0)
-    {
-        fprintf(stderr, "Failed to copy codec parameters to decoder context\n");
-        return -1;
-    }
-
-    if (avcodec_open2(dec_ctx, codec, NULL) < 0)
-    {
-        fprintf(stderr, "Could not open codec\n");
-        return -1;
-    }
-
-    frame = av_frame_alloc();
-    pkt = av_packet_alloc();
-    if (!frame || !pkt)
-    {
-        fprintf(stderr, "Could not allocate frame or packet\n");
-        return -1;
-    }
-
-    // Interleaved RGB
-    frame_width = dec_ctx->width * 3;
-    frame_height = dec_ctx->height;
-
-    if (fmt_ctx->streams[video_stream_idx]->nb_frames > 0)
-    {
-        num_frames = fmt_ctx->streams[video_stream_idx]->nb_frames;
-    }
-    else
-    {
-        // Fallback estimate
-        double duration = (double)fmt_ctx->duration / AV_TIME_BASE;
-        double fps = av_q2d(fmt_ctx->streams[video_stream_idx]->avg_frame_rate);
-        if (duration > 0 && fps > 0)
-            num_frames = (long)(duration * fps);
-        else
-            num_frames = 10000;
-        printf("Warning: Could not determine exact frame count. Using estimated %ld\n", num_frames);
-    }
-
-    is_mp4_mode = 1;
-
-    // Prepare scaler for RGB24
-    sws_ctx = sws_getContext(dec_ctx->width, dec_ctx->height, dec_ctx->pix_fmt, dec_ctx->width,
-                             dec_ctx->height, AV_PIX_FMT_RGB24, SWS_BILINEAR, NULL, NULL, NULL);
-
-    return 0;
-}
-#endif
-
-#ifdef USE_IMAGESTREAMIO
-static int init_stream(char *stream_name)
-{
-    if (ImageStreamIO_read_sharedmem_image_toIMAGE(stream_name, &stream_image) != 0)
-    {
-        fprintf(stderr, "Error connecting to stream %s\n", stream_name);
-        return -1;
-    }
-
-    frame_width = stream_image.md[0].size[0];
-    frame_height = stream_image.md[0].size[1];
-
-    if (stream_image.md[0].naxis > 2)
-    {
-        stream_depth = stream_image.md[0].size[2];
-        is_3d = 1;
-    }
-    else
-    {
-        stream_depth = 1;
-        is_3d = 0;
-    }
-
-    num_frames = LONG_MAX; // Stream is effectively infinite
-    is_stream_mode = 1;
-
-    // Initialize state to current stream head
-    last_cnt0 = stream_image.md[0].cnt0;
-    current_read_slice = stream_image.md[0].cnt1;
-    current_write_slice = stream_image.md[0].cnt1;
-    first_stream_frame = 1;
-    stream_read_counter = 0;
-
-    printf("Connected to stream %s (%ld x %ld x %ld)\n", stream_name, frame_width, frame_height,
-           stream_depth);
-
-    return 0;
-}
-#endif
-
 /**
- * init_frameread() - Initializes the reader based on input type and options.
- * @filename:      Path to the FITS file, stream directory, or file list.
- * @stream_mode:   Boolean flag indicating if shared memory streaming mode is active.
- * @cnt2sync_mode: Boolean flag to enable/disable synchronized frame index reading.
- * @filelist_mode: Boolean flag indicating if filename points to a text file list.
+ * init_frameread() - Public entrypoint to initialize the frame reader.
+ * @filename:      Path to the file or stream name.
+ * @stream_mode:   Whether to use shared memory streaming mode.
+ * @cnt2sync_mode: Synchronization mode flag.
+ * @filelist_mode: Whether the filename is a list of image filepaths.
+ *
+ * Directs execution to the specific initialization logic based on input mode flags
+ * and file extension.
  *
  * Return: 0 on success, or non-zero error code on failure.
  */
@@ -407,70 +191,47 @@ int init_frameread(
     }
 #endif
 
-    // Check extension
-    char *ext = strrchr(filename, '.');
-    if (ext)
     {
-        if (strcmp(ext, ".txt") == 0)
-            return init_ascii(filename);
-        if (strcmp(ext, ".mp4") == 0 || strcmp(ext, ".avi") == 0 || strcmp(ext, ".mov") == 0 ||
-            strcmp(ext, ".mkv") == 0)
+        /* Check file extension for TXT or video formats */
+        char *ext = strrchr(filename, '.');
+        if (ext != NULL)
         {
+            if (strcmp(ext, ".txt") == 0)
+            {
+                return init_ascii(filename);
+            }
+            if (strcmp(ext, ".mp4") == 0 || strcmp(ext, ".avi") == 0 ||
+                strcmp(ext, ".mov") == 0 || strcmp(ext, ".mkv") == 0)
+            {
 #ifdef USE_FFMPEG
-            return init_mp4(filename);
+                return init_mp4(filename);
 #else
-            fprintf(stderr, "Error: FFmpeg support is not compiled in. Cannot read video file.\n");
-            return -1;
+                fprintf(stderr,
+                        "Error: FFmpeg support is not compiled in. Cannot read video file.\n");
+                return -1;
 #endif
+            }
         }
     }
 
 #ifdef USE_CFITSIO
-    int status = 0;
-    if (fits_open_file(&fptr, filename, READONLY, &status))
-    {
-        fits_report_error(stderr, status);
-        return -1;
-    }
-
-    int naxis;
-    long naxes[3];
-    if (fits_get_img_dim(fptr, &naxis, &status) || fits_get_img_size(fptr, 3, naxes, &status))
-    {
-        fits_report_error(stderr, status);
-        return -1;
-    }
-
-    if (naxis == 3)
-    {
-        frame_width = naxes[0];
-        frame_height = naxes[1];
-        num_frames = naxes[2];
-    }
-    else if (naxis == 2)
-    {
-        frame_width = naxes[0];
-        frame_height = naxes[1];
-        num_frames = 1;
-    }
-    else
-    {
-        fprintf(stderr, "Error: Input FITS must be 2D or 3D.\n");
-        return -1;
-    }
-
-    current_frame_idx = 0;
-    return 0;
+    return init_fits(filename);
 #else
-    fprintf(
-        stderr,
-        "Error: FITS support is not compiled in. Cannot read file %s. ASCII (.txt) supported.\n",
-        filename);
+    fprintf(stderr,
+            "Error: FITS support is not compiled in. Cannot read file %s. ASCII (.txt) "
+            "supported.\n", filename);
     return -1;
 #endif
 }
 
-Frame *getframe()
+/**
+ * getframe() - Retrieve the next sequential frame.
+ *
+ * Calls getframe_at with the current frame index.
+ *
+ * Return: Pointer to the populated Frame struct, or NULL on error or EOF.
+ */
+Frame *getframe(void)
 {
 #ifndef USE_IMAGESTREAMIO
     if (current_frame_idx >= num_frames)
@@ -478,12 +239,21 @@ Frame *getframe()
         return NULL;
     }
 #endif
-    // In stream mode, num_frames is LONG_MAX, so this check passes until limits are hit elsewhere
 
     return getframe_at(current_frame_idx++);
 }
 
-Frame *getframe_at(long index)
+/**
+ * getframe_at() - Retrieve the frame at the specified index.
+ * @index: Zero-based index of the frame.
+ *
+ * Allocates or reuses a Frame struct, dispatches file/stream-specific reading logic,
+ * and handles error cleanups.
+ *
+ * Return: Pointer to the populated Frame struct, or NULL on error.
+ */
+Frame *getframe_at(
+    long index)
 {
     if (index >= num_frames || index < 0)
     {
@@ -492,17 +262,15 @@ Frame *getframe_at(long index)
 
     long nelements = frame_width * frame_height;
     Frame *frame_struct = (Frame *)malloc(sizeof(Frame));
-    if (!frame_struct)
+    if (frame_struct == NULL)
+    {
         return NULL;
+    }
 
     frame_struct->width = frame_width;
     frame_struct->height = frame_height;
     frame_struct->id = index;
-    // We allocate data in switch or below
-    // Actually, other modes allocate it manually or read into it.
-    // Let's allocate it here for consistency if needed, but read_png_frame allocates it.
 
-    // For file list mode, read_png_frame allocates. For others, we allocate.
     if (!is_filelist_mode)
     {
         int got_from_pool = 0;
@@ -520,7 +288,7 @@ Frame *getframe_at(long index)
         {
             frame_struct->data = (double *)malloc(nelements * sizeof(double));
         }
-        if (!frame_struct->data)
+        if (frame_struct->data == NULL)
         {
             free(frame_struct);
             return NULL;
@@ -528,7 +296,7 @@ Frame *getframe_at(long index)
     }
     else
     {
-        frame_struct->data = NULL; // Will be set by read_png_frame
+        frame_struct->data = NULL;
     }
 
     frame_struct->cnt0 = 0;
@@ -537,9 +305,10 @@ Frame *getframe_at(long index)
 
     if (is_filelist_mode)
     {
-        int w, h;
+        int w = 0;
+        int h = 0;
         frame_struct->data = read_png_frame(file_list[index], &w, &h);
-        if (!frame_struct->data)
+        if (frame_struct->data == NULL)
         {
             fprintf(stderr, "Error reading frame %ld: %s\n", index, file_list[index]);
             free(frame_struct);
@@ -557,160 +326,18 @@ Frame *getframe_at(long index)
     }
     else if (is_ascii_mode)
     {
-        if (fseek(ascii_ptr, ascii_line_offsets[index], SEEK_SET) != 0)
+        if (getframe_ascii(frame_struct, index) != 0)
         {
-            perror("fseek failed");
             free(frame_struct->data);
             free(frame_struct);
             return NULL;
-        }
-        for (long i = 0; i < nelements; i++)
-        {
-            if (fscanf(ascii_ptr, "%lf", &frame_struct->data[i]) != 1)
-            {
-                free(frame_struct->data);
-                free(frame_struct);
-                return NULL;
-            }
         }
     }
 #ifdef USE_IMAGESTREAMIO
     else if (is_stream_mode)
     {
-        // Prevent random access / rewinding in stream mode
-        if (index != stream_read_counter)
+        if (getframe_stream(frame_struct, index) != 0)
         {
-            free(frame_struct->data);
-            free(frame_struct);
-            return NULL;
-        }
-
-        if (cnt2sync_enabled)
-        {
-            stream_image.md[0].cnt2++;
-        }
-
-        // Wait for new data if we caught up
-        while (stream_image.md[0].cnt0 <= last_cnt0)
-        {
-            struct timespec t0, t1;
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-
-            struct timespec ts;
-            clock_gettime(CLOCK_REALTIME, &ts);
-            ts.tv_sec += 1;
-
-            int ret = sem_timedwait(stream_image.semptr[0], &ts);
-
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            cumulative_wait_time_sec += (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
-
-            if (ret == -1)
-            {
-                if (errno == ETIMEDOUT)
-                {
-                    fprintf(stderr, "Stream timeout (1s). Ending.\n");
-                    free(frame_struct->data);
-                    free(frame_struct);
-                    return NULL;
-                }
-                if (errno == EINTR)
-                    continue;
-                perror("sem_timedwait");
-                free(frame_struct->data);
-                free(frame_struct);
-                return NULL;
-            }
-        }
-
-        // We process one frame forward
-        last_cnt0++;
-        stream_read_counter++;
-
-        frame_struct->cnt0 = stream_image.md[0].cnt0;
-        frame_struct->atime = stream_image.md[0].atime;
-
-        if (is_3d)
-        {
-            current_read_slice = (current_read_slice + 1) % stream_depth;
-        }
-        else
-        {
-            // In 2D stream, data is always at 0 (or updated in place)
-            current_read_slice = 0;
-        }
-
-        // Update stats
-        uint64_t actual_stream_cnt0 = stream_image.md[0].cnt0;
-        current_write_slice = stream_image.md[0].cnt1;
-
-        // Check for circular buffer overrun
-        if (is_3d)
-        {
-            long lag = (long)(actual_stream_cnt0 - last_cnt0);
-            if (lag >= stream_depth)
-            {
-                fprintf(
-                    stderr,
-                    "\nError: Circular buffer overrun. Lag (%ld) exceeds depth (%ld). Stopping.\n",
-                    lag, stream_depth);
-                free(frame_struct->data);
-                free(frame_struct);
-                return NULL;
-            }
-        }
-
-        // Pointer offset
-        long offset = current_read_slice * nelements;
-
-        int dtype = stream_image.md[0].datatype;
-
-        // DATATYPE definitions from ImageStruct.h usually:
-        // ... (same as before)
-
-#define _DATATYPE_UINT8 1
-#define _DATATYPE_INT8 2
-#define _DATATYPE_UINT16 3
-#define _DATATYPE_INT16 4
-#define _DATATYPE_UINT32 5
-#define _DATATYPE_INT32 6
-#define _DATATYPE_UINT64 7
-#define _DATATYPE_INT64 8
-#define _DATATYPE_FLOAT 9
-#define _DATATYPE_DOUBLE 10
-
-        switch (dtype)
-        {
-        case _DATATYPE_FLOAT:
-            for (long i = 0; i < nelements; i++)
-                frame_struct->data[i] = (double)((float *)stream_image.array.F)[offset + i];
-            break;
-        case _DATATYPE_DOUBLE:
-            for (long i = 0; i < nelements; i++)
-                frame_struct->data[i] = ((double *)stream_image.array.D)[offset + i];
-            break;
-        case _DATATYPE_UINT8:
-            for (long i = 0; i < nelements; i++)
-                frame_struct->data[i] = (double)((uint8_t *)stream_image.array.UI8)[offset + i];
-            break;
-        case _DATATYPE_UINT16:
-            for (long i = 0; i < nelements; i++)
-                frame_struct->data[i] = (double)((uint16_t *)stream_image.array.UI16)[offset + i];
-            break;
-        case _DATATYPE_INT16:
-            for (long i = 0; i < nelements; i++)
-                frame_struct->data[i] = (double)((int16_t *)stream_image.array.SI16)[offset + i];
-            break;
-        case _DATATYPE_UINT32:
-            for (long i = 0; i < nelements; i++)
-                frame_struct->data[i] = (double)((uint32_t *)stream_image.array.UI32)[offset + i];
-            break;
-        case _DATATYPE_INT32:
-            for (long i = 0; i < nelements; i++)
-                frame_struct->data[i] = (double)((int32_t *)stream_image.array.SI32)[offset + i];
-            break;
-        default:
-            fprintf(stderr, "Unsupported stream datatype: %d\n", dtype);
             free(frame_struct->data);
             free(frame_struct);
             return NULL;
@@ -720,91 +347,19 @@ Frame *getframe_at(long index)
 #ifdef USE_FFMPEG
     else if (is_mp4_mode)
     {
-        // Handle seeking if necessary
-        if (index != internal_mp4_index)
-        {
-            if (index < internal_mp4_index)
-            {
-                // Rewind
-                av_seek_frame(fmt_ctx, video_stream_idx, 0, AVSEEK_FLAG_BACKWARD);
-                avcodec_flush_buffers(dec_ctx);
-                internal_mp4_index = 0;
-            }
-            // Fast forward
-            while (internal_mp4_index < index)
-            {
-                if (av_read_frame(fmt_ctx, pkt) < 0)
-                    break;
-                if (pkt->stream_index == video_stream_idx)
-                {
-                    if (avcodec_send_packet(dec_ctx, pkt) == 0)
-                    {
-                        while (avcodec_receive_frame(dec_ctx, frame) == 0)
-                        {
-                            internal_mp4_index++;
-                        }
-                    }
-                }
-                av_packet_unref(pkt);
-            }
-        }
-
-        // Read next frame
-        int ret = 0;
-        int frame_decoded = 0;
-        while (ret >= 0 && !frame_decoded)
-        {
-            ret = av_read_frame(fmt_ctx, pkt);
-            if (ret < 0)
-                break;
-            if (pkt->stream_index == video_stream_idx)
-            {
-                if (avcodec_send_packet(dec_ctx, pkt) == 0)
-                {
-                    if (avcodec_receive_frame(dec_ctx, frame) == 0)
-                    {
-                        frame_decoded = 1;
-                        internal_mp4_index++;
-                    }
-                }
-            }
-            av_packet_unref(pkt);
-        }
-
-        if (!frame_decoded)
+        if (getframe_mp4(frame_struct, index) != 0)
         {
             free(frame_struct->data);
             free(frame_struct);
             return NULL;
         }
-
-        uint8_t *rgb_data[4] = {NULL};
-        int rgb_linesize[4] = {0};
-
-        rgb_data[0] = (uint8_t *)malloc(dec_ctx->width * dec_ctx->height * 3);
-        rgb_linesize[0] = dec_ctx->width * 3;
-
-        sws_scale(sws_ctx, (const uint8_t *const *)frame->data, frame->linesize, 0, dec_ctx->height,
-                  rgb_data, rgb_linesize);
-
-        uint8_t *src = rgb_data[0];
-        for (long i = 0; i < nelements; i++)
-        {
-            frame_struct->data[i] = (double)src[i];
-        }
-
-        free(rgb_data[0]);
     }
 #endif
 #ifdef USE_CFITSIO
-    else if (fptr)
-    { // Check if fptr is valid, implying FITS mode
-        int status = 0;
-        long fpixel[3] = {1, 1, index + 1};
-        if (fits_read_pix(fptr, TDOUBLE, fpixel, nelements, NULL, frame_struct->data, NULL,
-                          &status))
+    else if (fptr != NULL)
+    {
+        if (getframe_fits(frame_struct, index) != 0)
         {
-            fits_report_error(stderr, status);
             free(frame_struct->data);
             free(frame_struct);
             return NULL;
@@ -813,7 +368,6 @@ Frame *getframe_at(long index)
 #endif
     else
     {
-        // Should not happen if init checked modes correctly
         free(frame_struct->data);
         free(frame_struct);
         return NULL;
@@ -822,11 +376,16 @@ Frame *getframe_at(long index)
     return frame_struct;
 }
 
-void free_frame(Frame *frame)
+/**
+ * free_frame() - Return a frame structure and buffer to the reuse pool or release memory.
+ * @frame_ptr: Pointer to the Frame struct to free.
+ */
+void free_frame(
+    Frame *frame_ptr)
 {
-    if (frame)
+    if (frame_ptr != NULL)
     {
-        if (frame->data)
+        if (frame_ptr->data != NULL)
         {
             int returned_to_pool = 0;
 #ifdef _OPENMP
@@ -835,20 +394,23 @@ void free_frame(Frame *frame)
             {
                 if (frame_data_pool_count < FRAME_DATA_POOL_SIZE)
                 {
-                    frame_data_pool[frame_data_pool_count++] = frame->data;
+                    frame_data_pool[frame_data_pool_count++] = frame_ptr->data;
                     returned_to_pool = 1;
                 }
             }
             if (!returned_to_pool)
             {
-                free(frame->data);
+                free(frame_ptr->data);
             }
         }
-        free(frame);
+        free(frame_ptr);
     }
 }
 
-void close_frameread()
+/**
+ * close_frameread() - Finalize the frame reader, freeing all global state and format readers.
+ */
+void close_frameread(void)
 {
 #ifdef _OPENMP
 #pragma omp critical(frame_pool)
@@ -859,92 +421,94 @@ void close_frameread()
             free(frame_data_pool[--frame_data_pool_count]);
         }
     }
+
     if (is_filelist_mode)
     {
-        if (file_list)
+        if (file_list != NULL)
         {
-            for (long i = 0; i < num_frames; i++)
+            for (long ii = 0; ii < num_frames; ii++)
             {
-                if (file_list[i])
-                    free(file_list[i]);
+                if (file_list[ii] != NULL)
+                {
+                    free(file_list[ii]);
+                }
             }
             free(file_list);
             file_list = NULL;
         }
         is_filelist_mode = 0;
     }
-    if (is_ascii_mode)
+    else if (is_ascii_mode)
     {
-        if (ascii_ptr)
-            fclose(ascii_ptr);
-        if (ascii_line_offsets)
-            free(ascii_line_offsets);
-        ascii_ptr = NULL;
-        ascii_line_offsets = NULL;
-        is_ascii_mode = 0;
+        close_ascii();
     }
 #ifdef USE_IMAGESTREAMIO
     else if (is_stream_mode)
     {
-        // Detach logic if necessary, though ImageStreamIO typically just unmaps or stays connected.
-        // There isn't a strict "close" that destroys the stream, just detach?
-        // Usually: free(image.array.pointer) if we mapped it manually, but ImageStreamIO
-        // manages SHM.
-        // We can just leave it or checking API... ImageStreamIO_closeIm seems not standard.
-        // Usually we just stop using it.
-        is_stream_mode = 0;
+        close_stream();
     }
 #endif
 #ifdef USE_FFMPEG
     else if (is_mp4_mode)
     {
-        avcodec_free_context(&dec_ctx);
-        avformat_close_input(&fmt_ctx);
-        av_frame_free(&frame);
-        av_packet_free(&pkt);
-        sws_freeContext(sws_ctx);
-        is_mp4_mode = 0;
+        close_mp4();
     }
 #endif
 #ifdef USE_CFITSIO
-    else
+    else if (fptr != NULL)
     {
-        int status = 0;
-        if (fptr)
-        {
-            fits_close_file(fptr, &status);
-            fptr = NULL;
-        }
+        close_fits();
     }
 #endif
 }
 
-void reset_frameread()
+/**
+ * reset_frameread() - Reset frame reading to the start index/frame.
+ */
+void reset_frameread(void)
 {
     current_frame_idx = 0;
-#ifdef USE_FFMPEG
-    if (is_mp4_mode)
+
+    if (is_ascii_mode)
     {
-        av_seek_frame(fmt_ctx, video_stream_idx, 0, AVSEEK_FLAG_BACKWARD);
-        avcodec_flush_buffers(dec_ctx);
-        internal_mp4_index = 0;
+        reset_ascii();
+    }
+#ifdef USE_IMAGESTREAMIO
+    else if (is_stream_mode)
+    {
+        reset_stream();
     }
 #endif
-#ifdef USE_IMAGESTREAMIO
-    if (is_stream_mode)
+#ifdef USE_FFMPEG
+    else if (is_mp4_mode)
     {
-        // Resetting stream read is not typical (it's real time),
-        // but we can just reset our counter.
+        reset_mp4();
+    }
+#endif
+#ifdef USE_CFITSIO
+    else if (fptr != NULL)
+    {
+        reset_fits();
     }
 #endif
 }
 
-long get_num_frames()
+/**
+ * get_num_frames() - Get the total number of frames in the source.
+ *
+ * Return: Total number of frames.
+ */
+long get_num_frames(void)
 {
     return num_frames;
 }
 
-long get_missed_frames()
+/**
+ * get_missed_frames() - Get the number of missed frames in ImageStreamIO stream mode.
+ *
+ * Return: Cumulative count of missed frames.
+ */
+long get_missed_frames(void)
 {
 #ifdef USE_IMAGESTREAMIO
     return cumulative_missed_frames;
@@ -953,28 +517,63 @@ long get_missed_frames()
 #endif
 }
 
-long get_frame_width()
+/**
+ * get_frame_width() - Get width of the frame.
+ *
+ * Return: Width in pixels.
+ */
+long get_frame_width(void)
 {
     return frame_width;
 }
 
-long get_frame_height()
+/**
+ * get_frame_height() - Get height of the frame.
+ *
+ * Return: Height in pixels.
+ */
+long get_frame_height(void)
 {
     return frame_height;
 }
 
+/**
+ * is_ascii_input_mode() - Query if the reader is reading an ASCII coordinate file.
+ *
+ * Return: 1 if ASCII mode is active, 0 otherwise.
+ */
+int is_ascii_input_mode(void)
+{
+    return is_ascii_mode;
+}
+
 #ifdef USE_IMAGESTREAMIO
-long get_stream_read_slice()
+/**
+ * get_stream_read_slice() - Query the active read slice index for 3D streams.
+ *
+ * Return: The slice index.
+ */
+long get_stream_read_slice(void)
 {
     return current_read_slice;
 }
 
-long get_stream_write_slice()
+/**
+ * get_stream_write_slice() - Query the active write slice index for 3D streams.
+ *
+ * Return: The slice index.
+ */
+long get_stream_write_slice(void)
 {
     return current_write_slice;
 }
 
-long get_stream_lag()
+/**
+ * get_stream_lag() - Query the lagging frame count between write and read heads in a stream.
+ *
+ * Return: Lag in frame count.
+ */
+long get_stream_lag(void)
 {
     if (is_stream_mode)
     {
@@ -983,33 +582,47 @@ long get_stream_lag()
     return 0;
 }
 
-int is_3d_stream_mode()
+/**
+ * is_3d_stream_mode() - Query if the active stream is in 3D mode.
+ *
+ * Return: 1 if 3D mode is active, 0 otherwise.
+ */
+int is_3d_stream_mode(void)
 {
     return is_3d;
 }
 
-double get_stream_wait_time()
+/**
+ * get_stream_wait_time() - Get cumulative time spent waiting for stream frames.
+ *
+ * Return: Wait duration in seconds.
+ */
+double get_stream_wait_time(void)
 {
     return cumulative_wait_time_sec;
 }
 #else
-long get_stream_read_slice()
+long get_stream_read_slice(void)
 {
     return 0;
 }
-long get_stream_write_slice()
+
+long get_stream_write_slice(void)
 {
     return 0;
 }
-long get_stream_lag()
+
+long get_stream_lag(void)
 {
     return 0;
 }
-int is_3d_stream_mode()
+
+int is_3d_stream_mode(void)
 {
     return 0;
 }
-double get_stream_wait_time()
+
+double get_stream_wait_time(void)
 {
     return 0.0;
 }
