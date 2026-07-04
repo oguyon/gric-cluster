@@ -115,8 +115,12 @@ int main(int argc, char *argv[])
     config.algo.discard_fraction = 0.5;
     config.optim.entropy_max_targets = 15;
     config.optim.entropy_min_prob = 0.001;
+    config.optim.entropy_gate_bits = 2.0;
+    config.optim.entropy_first_gate_bits = 4.0;
     config.optim.sparse_dcc_mode = 0;
     config.optim.sparse_dcc_extra_evals = 0;
+    config.optim.soft_bayesian_mode = 0;
+    config.optim.soft_bayesian_sigma_coeff = 1.0;
 
     // Output defaults (disabled by default, except membership and dcc)
     config.output.output_dcc = 1;

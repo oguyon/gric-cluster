@@ -24,22 +24,36 @@ static inline __attribute__((always_inline)) double fast_log2(double val)
     vx.i = (vx.i & 0x000FFFFFFFFFFFFFULL) | 0x3FF0000000000000ULL;
     return exp + (vx.d - 1.0);
 }
+/*
+ * Comparators for qsort of TargetScore arrays.
+ *
+ * Note: inline shellsort was benchmarked as a
+ * replacement to eliminate function-pointer overhead,
+ * but different sort stability altered the candidate
+ * set, causing chaotic degradation of the OMP parallel
+ * early-exit in the eval loop (2× regression on
+ * high-K patterns).  qsort's particular tie-breaking
+ * order produces favorable early-exit convergence.
+ */
 
-
-
-static int compare_prob_scores(const void *a, const void *b)
+static int compare_prob_scores(
+    const void *a,
+    const void *b)
 {
     double sa = ((const TargetScore *)a)->score;
     double sb = ((const TargetScore *)b)->score;
     return (sa < sb) - (sa > sb);
 }
 
-static int compare_prune_scores(const void *a, const void *b)
+static int compare_prune_scores(
+    const void *a,
+    const void *b)
 {
     double sa = ((const TargetScore *)a)->score;
     double sb = ((const TargetScore *)b)->score;
     return (sa > sb) - (sa < sb);
 }
+
 
 /**
  * select_next_measurement_target_entropy - Select target based on expected Shannon entropy.
@@ -54,20 +68,18 @@ static int compare_prune_scores(const void *a, const void *b)
  */
 static int select_next_measurement_target_entropy(
     ClusterConfig *config,
-    ClusterState  *state)
+    ClusterState  *state,
+    int            meas_idx)
 {
     struct timespec start_score;
     clock_gettime(CLOCK_MONOTONIC, &start_score);
 
     int active_count = 0;
-    double sum_probs = 0.0;
-
     for (int i = 0; i < state->num_clusters; i++)
     {
         if (state->scratch.clmembflag[i])
         {
             active_count++;
-            sum_probs += state->scratch.mixed_probs[i] * state->scratch.current_gprobs[i];
         }
     }
 
@@ -89,22 +101,12 @@ static int select_next_measurement_target_entropy(
 
     double *p_current = state->scratch.entropy_p_current;
 
-    if (sum_probs > 0.0)
-    {
-        for (int i = 0; i < state->num_clusters; i++)
-        {
-            p_current[i] = state->scratch.clmembflag[i] ?
-                ((state->scratch.mixed_probs[i] * state->scratch.current_gprobs[i]) / sum_probs) : 0.0;
-        }
-    }
-    else
-    {
-        for (int i = 0; i < state->num_clusters; i++)
-        {
-            p_current[i] = state->scratch.clmembflag[i] ? (1.0 / active_count) : 0.0;
-        }
-    }
-
+    /*
+     * Find the cluster with the highest posterior
+     * probability.  This argmax is also the greedy
+     * fallback target if the entropy gate decides the
+     * distribution is sharp enough to skip evaluation.
+     */
     double max_p = -1.0;
     int argmax_p = -1;
     for (int i = 0; i < state->num_clusters; i++)
@@ -116,10 +118,68 @@ static int select_next_measurement_target_entropy(
         }
     }
 
-    if (max_p > 0.5 && argmax_p != -1)
+    /*
+     * Proposal 1 — Adaptive entropy gating.
+     *
+     * Proposal 3 — Two-phase greedy→entropy per frame.
+     *
+     * The gate threshold is depth-dependent:
+     *
+     * depth 0 (first measurement in frame): use
+     *   entropy_first_gate_bits (default 6.0 bits ≈
+     *   64 effective candidates).  At depth 0, gprob
+     *   has not yet been updated by any failed
+     *   measurement, so the distribution is still
+     *   dominated by the static prior.  The greedy
+     *   argmax is near-optimal in this phase, and
+     *   entropy evaluation is expensive waste.
+     *
+     * depth >= 1 (after at least one failed measure):
+     *   use entropy_gate_bits (default 2.0 bits ≈ 4
+     *   effective candidates).  gprob has begun
+     *   narrowing the distribution; entropy is now
+     *   genuinely useful when the space remains
+     *   ambiguous.
+     */
+    double gate_bits = (meas_idx == 0)
+        ? config->optim.entropy_first_gate_bits
+        : config->optim.entropy_gate_bits;
+    double H_current = 0.0;
     {
-        return argmax_p;
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            if (p_current[i] > 1e-15)
+            {
+                H_current -=
+                    p_current[i]
+                    * fast_log2(p_current[i]);
+            }
+        }
+
+        if (H_current < gate_bits)
+        {
+            return argmax_p;
+        }
     }
+
+    /*
+     * Proposal 2 — Dynamic entropy_min_prob threshold.
+     *
+     * Raise the hypothesis skip threshold to 1% of the
+     * leader's probability, floored by the static value.
+     */
+    double dynamic_min_prob = max_p * 0.01;
+    if (dynamic_min_prob < config->optim.entropy_min_prob)
+    {
+        dynamic_min_prob = config->optim.entropy_min_prob;
+    }
+
+    /*
+     * Optimization D — All setup below is deferred to
+     * after the entropy gate check (above).  Gated frames
+     * return immediately from argmax_p and never execute
+     * the O(K) mask construction, scoring, or evaluation.
+     */
 
     int N = config->algo.maxnbclust;
     int words = (N + 63) / 64;
@@ -133,15 +193,7 @@ static int select_next_measurement_target_entropy(
         }
     }
 
-    int active_words[words];
-    int active_word_cnt = 0;
-    for (int w = 0; w < words; w++)
-    {
-        if (active_mask[w] > 0)
-        {
-            active_words[active_word_cnt++] = w;
-        }
-    }
+
 
     int limit = config->optim.entropy_max_targets;
     if (limit <= 0 || limit > state->num_clusters)
@@ -149,10 +201,24 @@ static int select_next_measurement_target_entropy(
         limit = state->num_clusters;
     }
 
+    /* Scale limit dynamically based on Shannon entropy */
+    int dynamic_limit = (int)(H_current * 2.0 + 1.0);
+    if (dynamic_limit < 2)
+    {
+        dynamic_limit = 2;
+    }
+    if (dynamic_limit < limit)
+    {
+        limit = dynamic_limit;
+    }
+
     int nc = state->num_clusters;
-    TargetScore *prob_scores  = state->scratch.entropy_prob_scores;
-    TargetScore *prune_scores = state->scratch.entropy_prune_scores;
-    int         *active_indices = state->scratch.entropy_active_indices;
+    TargetScore *prob_scores =
+        state->scratch.entropy_prob_scores;
+    TargetScore *prune_scores =
+        state->scratch.entropy_prune_scores;
+    int *active_indices =
+        state->scratch.entropy_active_indices;
 
     int active_idx_count = 0;
     for (int j = 0; j < state->num_clusters; j++)
@@ -169,7 +235,8 @@ static int select_next_measurement_target_entropy(
         int k = active_indices[idx];
         if (p_current[k] > 1e-15)
         {
-            plog2p[k] = p_current[k] * fast_log2(p_current[k]);
+            plog2p[k] =
+                p_current[k] * fast_log2(p_current[k]);
         }
         else
         {
@@ -177,27 +244,23 @@ static int select_next_measurement_target_entropy(
         }
     }
 
-    /* Initialize all scores */
+    /* Initialize prob_scores for active clusters only */
+    int prob_count = 0;
     for (int i = 0; i < state->num_clusters; i++)
     {
-        prob_scores[i].id = i;
-        prune_scores[i].id = i;
-        prune_scores[i].score = 1e30; // Default large score
-
         if (state->scratch.clmembflag[i])
         {
-            prob_scores[i].score = state->scratch.mixed_probs[i] * state->scratch.current_gprobs[i];
-        }
-        else
-        {
-            prob_scores[i].score = 0.0;
+            prob_scores[prob_count].id = i;
+            prob_scores[prob_count].score = p_current[i];
+            prob_count++;
         }
     }
 
-    /* Sort prob_scores descending to find highest probability candidates */
-    qsort(prob_scores, state->num_clusters, sizeof(TargetScore), compare_prob_scores);
+    /* Sort prob_scores descending */
+    qsort(prob_scores, prob_count,
+          sizeof(TargetScore), compare_prob_scores);
 
-    /* Pre-compile a sampled list of active clusters for fast heuristic estimation */
+    /* Sampled list for heuristic pruning scores */
     int sampled_indices[ENTROPY_PRUNE_SAMPLE_LIMIT];
     int sampled_count = 0;
     if (active_idx_count <= ENTROPY_PRUNE_SAMPLE_LIMIT)
@@ -211,56 +274,85 @@ static int select_next_measurement_target_entropy(
     else
     {
         sampled_count = ENTROPY_PRUNE_SAMPLE_LIMIT;
-        double step = (double)active_idx_count / (double)ENTROPY_PRUNE_SAMPLE_LIMIT;
-        for (int idx = 0; idx < ENTROPY_PRUNE_SAMPLE_LIMIT; idx++)
+        double step = (double)active_idx_count
+                    / (double)ENTROPY_PRUNE_SAMPLE_LIMIT;
+        for (int idx = 0;
+             idx < ENTROPY_PRUNE_SAMPLE_LIMIT; idx++)
         {
-            sampled_indices[idx] = active_indices[(int)(idx * step)];
+            sampled_indices[idx] =
+                active_indices[(int)(idx * step)];
         }
     }
 
-    /* Compute pruning scores only for top M candidates */
+    /* Compute pruning scores for top M candidates */
     int M = limit * 2;
-    if (M > state->num_clusters)
+    if (M > prob_count)
     {
-        M = state->num_clusters;
+        M = prob_count;
     }
+
+    uint8_t *visited = state->scratch.entropy_visited;
+    memset(visited, 0, nc * sizeof(uint8_t));
 
     #pragma omp parallel for if(M >= 16)
     for (int idx_p = 0; idx_p < M; idx_p++)
     {
         int i = prob_scores[idx_p].id;
-        if (state->scratch.clmembflag[i])
+        prune_scores[idx_p].id = i;
+        prune_scores[idx_p].score = 1e30;
+        visited[i] = 1;
+
+        if (p_current[i] >= dynamic_min_prob)
         {
-            if (p_current[i] >= config->optim.entropy_min_prob)
+            uint64_t total_pop = 0;
+            uint64_t *base_mask_i =
+                &state->scratch.consistency_mask[
+                    i * N * words];
+            for (int idx = 0;
+                 idx < sampled_count; idx++)
             {
-                uint64_t total_pop = 0;
-                uint64_t *base_mask_i = &state->scratch.consistency_mask[i * N * words];
-                for (int idx = 0; idx < sampled_count; idx++)
+                int cj = sampled_indices[idx];
+                uint64_t *mask =
+                    base_mask_i + cj * words;
+                for (int w = 0; w < words; w++)
                 {
-                    int cj = sampled_indices[idx];
-                    uint64_t *mask = base_mask_i + cj * words;
-                    for (int wc = 0; wc < active_word_cnt; wc++)
-                    {
-                        int w = active_words[wc];
-                        total_pop += __builtin_popcountll(mask[w] & active_mask[w]);
-                    }
+                    total_pop +=
+                        __builtin_popcountll(
+                            mask[w]
+                            & active_mask[w]);
                 }
-                prune_scores[i].score = (double)total_pop;
             }
+            prune_scores[idx_p].score =
+                (double)total_pop;
         }
     }
 
-    /* Sort prune_scores ascending based on pruning scores */
-    qsort(prune_scores, state->num_clusters, sizeof(TargetScore), compare_prune_scores);
+    /* Sort only the M evaluated elements ascending */
+    qsort(prune_scores, M,
+          sizeof(TargetScore), compare_prune_scores);
+
+    /* Append the remaining non-evaluated active clusters in index order */
+    int prune_count = M;
+    for (int i = 0; i < state->num_clusters; i++)
+    {
+        if (state->scratch.clmembflag[i] && !visited[i])
+        {
+            prune_scores[prune_count].id = i;
+            prune_scores[prune_count].score = 1e30;
+            prune_count++;
+        }
+    }
 
     struct timespec end_score, start_filter;
     clock_gettime(CLOCK_MONOTONIC, &end_score);
-    state->telemetry.time_step_3b_score += (end_score.tv_sec - start_score.tv_sec) * 1000.0 +
-                                           (end_score.tv_nsec - start_score.tv_nsec) / 1000000.0;
+    state->telemetry.time_step_3b_score +=
+        (end_score.tv_sec - start_score.tv_sec) * 1000.0
+        + (end_score.tv_nsec - start_score.tv_nsec)
+            / 1000000.0;
     clock_gettime(CLOCK_MONOTONIC, &start_filter);
 
-    Candidate *candidates = state->scratch.entropy_candidates;
-    uint8_t *visited = state->scratch.entropy_visited;
+    Candidate *candidates =
+        state->scratch.entropy_candidates;
     memset(visited, 0, nc * sizeof(uint8_t));
 
     int num_targets = 0;
@@ -268,17 +360,22 @@ static int select_next_measurement_target_entropy(
     int prune_idx = 0;
 
     int p_limit = limit / 2;
-    if (p_limit < 1) p_limit = 1;
+    if (p_limit < 1)
+    {
+        p_limit = 1;
+    }
 
-    while (num_targets < p_limit && prob_idx < state->num_clusters)
+    while (num_targets < p_limit &&
+           prob_idx < prob_count)
     {
         int id = prob_scores[prob_idx].id;
-        if (state->scratch.clmembflag[id] && prob_scores[prob_idx].score > 0.0)
+        if (prob_scores[prob_idx].score > 0.0)
         {
             if (!visited[id])
             {
                 candidates[num_targets].id = id;
-                candidates[num_targets].p = prob_scores[prob_idx].score;
+                candidates[num_targets].p =
+                    prob_scores[prob_idx].score;
                 visited[id] = 1;
                 num_targets++;
             }
@@ -286,15 +383,14 @@ static int select_next_measurement_target_entropy(
         prob_idx++;
     }
 
-    while (num_targets < limit && prune_idx < state->num_clusters)
+    while (num_targets < limit &&
+           prune_idx < prune_count)
     {
         int id = prune_scores[prune_idx].id;
-        if (state->scratch.clmembflag[id] && !visited[id])
+        if (!visited[id])
         {
-            double p = state->scratch.mixed_probs[id] *
-                       state->scratch.current_gprobs[id];
             candidates[num_targets].id = id;
-            candidates[num_targets].p = p;
+            candidates[num_targets].p = p_current[id];
             visited[id] = 1;
             num_targets++;
         }
@@ -303,9 +399,41 @@ static int select_next_measurement_target_entropy(
 
     struct timespec end_filter, start_eval;
     clock_gettime(CLOCK_MONOTONIC, &end_filter);
-    state->telemetry.time_step_3b_filter += (end_filter.tv_sec - start_filter.tv_sec) * 1000.0 +
-                                            (end_filter.tv_nsec - start_filter.tv_nsec) / 1000000.0;
+    state->telemetry.time_step_3b_filter +=
+        (end_filter.tv_sec - start_filter.tv_sec)
+            * 1000.0
+        + (end_filter.tv_nsec - start_filter.tv_nsec)
+            / 1000000.0;
     clock_gettime(CLOCK_MONOTONIC, &start_eval);
+
+    /*
+     * Filter active_indices in-place to contain only
+     * hypotheses that are above the dynamic threshold.
+     * This avoids branch checks inside the main OMP loop
+     * and eliminates stack VLA/OMP pointer overhead.
+     */
+    int eval_hypo_count = 0;
+    for (int idx = 0; idx < active_idx_count; idx++)
+    {
+        int j = active_indices[idx];
+        if (p_current[j] >= dynamic_min_prob)
+        {
+            active_indices[eval_hypo_count++] = j;
+        }
+    }
+    active_idx_count = eval_hypo_count;
+
+    /*
+     * Option 1 — Dynamic Target Capping.
+     *
+     * Cap num_targets at the number of hypotheses above
+     * the dynamic threshold.  If only a few clusters are
+     * viable, evaluating 15 targets is wasted work.
+     */
+    if (num_targets > active_idx_count && active_idx_count > 0)
+    {
+        num_targets = active_idx_count;
+    }
 
     int best_target_ci = -1;
     double min_expected_entropy = 1e30;
@@ -316,14 +444,20 @@ static int select_next_measurement_target_entropy(
         int target_ci = candidates[tc_idx].id;
         double expected_entropy_for_ci = 0.0;
 
-        uint64_t *base_mask_tc = &state->scratch.consistency_mask[target_ci * N * words];
+        uint64_t *base_mask_tc =
+            &state->scratch.consistency_mask[
+                target_ci * N * words];
 
+        double cur_min = 1e30;
         int early_exit = 0;
-        for (int h_idx = 0; h_idx < active_idx_count; h_idx++)
+        for (int h_idx = 0;
+             h_idx < active_idx_count; h_idx++)
         {
-            double cur_min;
-            #pragma omp atomic read
-            cur_min = min_expected_entropy;
+            if ((h_idx & 15) == 0)
+            {
+                #pragma omp atomic read
+                cur_min = min_expected_entropy;
+            }
             if (expected_entropy_for_ci >= cur_min)
             {
                 early_exit = 1;
@@ -331,22 +465,20 @@ static int select_next_measurement_target_entropy(
             }
 
             int hypothesis_cj = active_indices[h_idx];
-            if (p_current[hypothesis_cj] < config->optim.entropy_min_prob)
-            {
-                continue;
-            }
 
             double hypo_sum = 0.0;
             double plogp_sum = 0.0;
-            uint64_t *mask = base_mask_tc + hypothesis_cj * words;
+            uint64_t *mask =
+                base_mask_tc + hypothesis_cj * words;
 
-            for (int wc = 0; wc < active_word_cnt; wc++)
+            for (int w = 0; w < words; w++)
             {
-                int w = active_words[wc];
-                uint64_t mask_val = mask[w] & active_mask[w];
+                uint64_t mask_val =
+                    mask[w] & active_mask[w];
                 while (mask_val > 0)
                 {
-                    int bit = __builtin_ctzll(mask_val);
+                    int bit =
+                        __builtin_ctzll(mask_val);
                     int k = w * 64 + bit;
                     hypo_sum += p_current[k];
                     plogp_sum += plog2p[k];
@@ -357,29 +489,34 @@ static int select_next_measurement_target_entropy(
             double entropy = 0.0;
             if (hypo_sum > 0.0)
             {
-                entropy = fast_log2(hypo_sum) - plogp_sum / hypo_sum;
+                entropy = fast_log2(hypo_sum)
+                        - plogp_sum / hypo_sum;
             }
-            expected_entropy_for_ci += p_current[hypothesis_cj] * entropy;
-        }
+            expected_entropy_for_ci +=
+                p_current[hypothesis_cj] * entropy;
+        } // for h_idx
 
         if (!early_exit)
         {
             #pragma omp critical
             {
-                if (expected_entropy_for_ci < min_expected_entropy)
+                if (expected_entropy_for_ci <
+                    min_expected_entropy)
                 {
-                    min_expected_entropy = expected_entropy_for_ci;
+                    min_expected_entropy =
+                        expected_entropy_for_ci;
                     best_target_ci = target_ci;
                 }
             }
         }
-    }
+    } // for tc_idx
+
     struct timespec end_eval;
     clock_gettime(CLOCK_MONOTONIC, &end_eval);
-    state->telemetry.time_step_3b_eval += (end_eval.tv_sec - start_eval.tv_sec) * 1000.0 +
-                                          (end_eval.tv_nsec - start_eval.tv_nsec) / 1000000.0;
-
-
+    state->telemetry.time_step_3b_eval +=
+        (end_eval.tv_sec - start_eval.tv_sec) * 1000.0 +
+        (end_eval.tv_nsec - start_eval.tv_nsec)
+            / 1000000.0;
 
     return best_target_ci;
 }
@@ -404,7 +541,8 @@ int select_next_measurement_target(
     int           *k_search,
     const int     *pred_candidates,
     int            num_preds,
-    int           *current_pred_idx)
+    int           *current_pred_idx,
+    int            meas_idx)
 {
     /*
      * 1. Prioritize trajectory prediction shortcut candidates.
@@ -431,7 +569,8 @@ int select_next_measurement_target(
      */
     if (config->optim.entropy_mode)
     {
-        return select_next_measurement_target_entropy(config, state);
+        return select_next_measurement_target_entropy(
+            config, state, meas_idx);
     }
 
     /*
@@ -470,15 +609,10 @@ int select_next_measurement_target(
         int cj = -1;
         for (int i = 0; i < state->num_clusters; i++)
         {
-            if (state->scratch.clmembflag[i])
+            if (state->scratch.entropy_p_current[i] > max_p)
             {
-                double p = state->scratch.mixed_probs[i] *
-                           state->scratch.current_gprobs[i];
-                if (p > max_p)
-                {
-                    max_p = p;
-                    cj = i;
-                }
+                max_p = state->scratch.entropy_p_current[i];
+                cj = i;
             }
         }
         return cj;

@@ -54,8 +54,12 @@ typedef struct
     int    entropy_mode;
     int    entropy_max_targets;
     double entropy_min_prob;
+    double entropy_gate_bits;       /**< Entropy gating threshold (bits) */
+    double entropy_first_gate_bits; /**< Gate threshold at meas depth 0 (bits) */
     int    sparse_dcc_mode;        /**< 1 to enable bounded sparse distance matrix, 0 for dense */
     int    sparse_dcc_extra_evals; /**< Number of extra inter-cluster measurements (E) per new cluster */
+    int    soft_bayesian_mode;     /**< 1 to enable soft Bayesian updates, 0 for binary only */
+    double soft_bayesian_sigma_coeff; /**< Coefficient multiplying rlim to compute sigma */
 } ConfigOptim;
 
 // Output configuration

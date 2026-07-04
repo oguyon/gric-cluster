@@ -322,4 +322,9 @@ void compute_priors_and_mixing(
             state->scratch.probsortedclindex[i] = sorting_candidates[i].id;
         }
     }
+
+    for (int i = 0; i < state->num_clusters; i++)
+    {
+        state->scratch.entropy_p_current[i] = state->scratch.mixed_probs[i];
+    }
 }

@@ -36,7 +36,8 @@ int select_next_measurement_target(
     int           *k_search,
     const int     *pred_candidates,
     int            num_preds,
-    int           *current_pred_idx);
+    int           *current_pred_idx,
+    int            meas_idx);
 
 /**
  * @brief Recompute the consistency bitmask for all cluster pairs.

@@ -70,6 +70,7 @@ int cluster_frame(
         double dfc = 0.0;
         int first_iter = 1;
         int last_cj = -1;
+        int meas_idx = 0;  /* measurement depth within this frame */
 
         int *pred_candidates = NULL;
         int num_preds = 0;
@@ -164,7 +165,9 @@ int cluster_frame(
             clock_gettime(CLOCK_MONOTONIC, &s3b_start);
             int cj = select_next_measurement_target(config, state, &k_search,
                                                     pred_candidates, num_preds,
-                                                    &current_pred_idx);
+                                                    &current_pred_idx,
+                                                    meas_idx);
+            meas_idx++;
             clock_gettime(CLOCK_MONOTONIC, &s3b_end);
             state->telemetry.time_step_3b += (s3b_end.tv_sec - s3b_start.tv_sec) * 1000.0 +
                                              (s3b_end.tv_nsec - s3b_start.tv_nsec) / 1000000.0;

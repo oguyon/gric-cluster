@@ -22,6 +22,23 @@
 #include <unistd.h>
 
 /**
+ * @brief Per-test result for the final summary table.
+ */
+typedef struct
+{
+    char   pattern[64];
+    char   algo[32];
+    char   time_ms[64];
+    double dist_total;
+    double dist_sample;
+    double dist_inter;
+    double avg_dist;
+    int    clusters;
+    char   mem_kb[64];
+    int    nsamples;
+} TestResult;
+
+/**
  * @brief Initialize configuration with default values.
  *
  * @param config Pointer to the BenchmarkConfig struct.
@@ -485,6 +502,11 @@ int main(
         fclose(sum_fp);
     }
 
+    /* Allocate result storage for the summary table */
+    TestResult *results = calloc(
+        config.pattern_count, sizeof(TestResult));
+    int result_count = 0;
+
     /* Run selected benchmarks */
     for (int ii = 0; ii < config.pattern_count; ii++)
     {
@@ -784,16 +806,44 @@ int main(
             char dist_str[256];
             if (strcmp(m_dists_sample, "N/A") != 0)
             {
-                snprintf(dist_str, sizeof(dist_str), "%s (S:%s, C:%s)", m_dists, m_dists_sample, m_dists_inter);
+                snprintf(dist_str, sizeof(dist_str),
+                         "%s (S:%s, C:%s)",
+                         m_dists, m_dists_sample,
+                         m_dists_inter);
             }
             else
             {
-                snprintf(dist_str, sizeof(dist_str), "%s", m_dists);
+                snprintf(dist_str, sizeof(dist_str),
+                         "%s", m_dists);
             }
-            fprintf(sum_fp, "| %s | %s | %s | %s | %s | %s | %s |\n",
-                    pattern, config.type, is_entropy ? "gric-entropy" : "gric-greedy",
+            fprintf(sum_fp,
+                    "| %s | %s | %s | %s | %s | %s | %s |\n",
+                    pattern, config.type,
+                    is_entropy ? "gric-entropy" : "gric-greedy",
                     m_time, dist_str, m_clusters, m_mem);
             fclose(sum_fp);
+        }
+
+        /* Store result for the final stdout summary table */
+        if (results != NULL &&
+            result_count < config.pattern_count)
+        {
+            TestResult *r = &results[result_count];
+            snprintf(r->pattern, sizeof(r->pattern),
+                     "%s", pattern);
+            snprintf(r->algo, sizeof(r->algo), "%s",
+                     is_entropy ? "entropy" : "greedy");
+            snprintf(r->time_ms, sizeof(r->time_ms),
+                     "%s", m_time);
+            r->dist_total = total_dists;
+            r->dist_sample = sample_dists;
+            r->dist_inter = inter_dists;
+            r->avg_dist = avg_dists;
+            r->clusters = atoi(m_clusters);
+            snprintf(r->mem_kb, sizeof(r->mem_kb),
+                     "%s", m_mem);
+            r->nsamples = config.nsamples;
+            result_count++;
         }
     }
 
@@ -823,8 +873,64 @@ int main(
         }
     }
 
-    printf("========================================================\n");
-    printf("Benchmarks Complete. Summary appended to %s\n", summary_path);
+    /*
+     * Print the stdout summary table.
+     *
+     * One row per test, with key metrics in fixed-width
+     * columns for easy visual comparison.
+     */
+    printf("\n");
+    printf("========================================"
+           "========================================"
+           "================================\n");
+    printf("%sSUMMARY%s\n",
+           ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+    printf("========================================"
+           "========================================"
+           "================================\n");
+
+    if (results != NULL && result_count > 0)
+    {
+        /* Header */
+        printf("%s%-22s %-8s %10s %10s %8s "
+               "%8s %6s %10s%s\n",
+               ANSI_BOLD,
+               "Pattern", "Algo", "Time(ms)",
+               "DistTot", "d/frm",
+               "dS/frm", "Clust", "Mem(KB)",
+               ANSI_COLOR_RESET);
+        printf("---------------------- -------- "
+               "---------- ---------- -------- "
+               "-------- ------ ----------\n");
+
+        /* One row per test */
+        for (int ii = 0; ii < result_count; ii++)
+        {
+            TestResult *r = &results[ii];
+            printf("%-22s %-8s %10s %10.0f %8.2f "
+                   "%8.2f %6d %10s\n",
+                   r->pattern,
+                   r->algo,
+                   r->time_ms,
+                   r->dist_total,
+                   r->avg_dist,
+                   (r->nsamples > 0)
+                       ? (r->dist_sample / r->nsamples)
+                       : 0.0,
+                   r->clusters,
+                   r->mem_kb);
+        }
+
+        printf("========================================"
+               "========================================"
+               "================================\n");
+    }
+
+    free(results);
+
+    printf("Benchmarks complete. "
+           "Summary also appended to %s\n",
+           summary_path);
 
     return 0;
 } // main

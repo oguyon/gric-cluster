@@ -3,6 +3,7 @@
 #include "cluster_core.h"
 #include "cluster_prune.h"
 #include "cluster_math.h"
+#include <math.h>
 
 #define OMP_MIN_CLUSTERS 256
 
@@ -208,5 +209,90 @@ void update_probabilities_and_pruning(
         active_cluster_count > 1)
     {
         update_geometric_probabilities(config, state, cj, dfc);
+    }
+
+    /* Apply pruning and soft Bayesian updates to the posterior */
+    double sum_p = 0.0;
+
+    if (config->optim.soft_bayesian_mode)
+    {
+        double sigma = config->optim.soft_bayesian_sigma_coeff * config->algo.rlim;
+        double two_sigma_sq = 2.0 * sigma * sigma;
+        int N = config->algo.maxnbclust;
+
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            if (state->scratch.clmembflag[i] == 0)
+            {
+                state->scratch.entropy_p_current[i] = 0.0;
+            }
+            else
+            {
+                double dcc = state->scratch.dcc_min[cj * N + i];
+                if (dcc < 0.0)
+                {
+                    dcc = get_dist(&state->clusters[cj].anchor, &state->clusters[i].anchor, -1,
+                                   -1.0, -1.0, config, state);
+                    state->scratch.dcc_min[cj * N + i] = dcc;
+                    state->scratch.dcc_min[i * N + cj] = dcc;
+                    state->scratch.dcc_max[cj * N + i] = dcc;
+                    state->scratch.dcc_max[i * N + cj] = dcc;
+                    state->scratch.dcc_measured[cj * N + i] = 1;
+                    state->scratch.dcc_measured[i * N + cj] = 1;
+                }
+                double diff = dfc - dcc;
+                double x = (diff * diff) / two_sigma_sq;
+                double likelihood = 0.0;
+                if (x <= 2.0)
+                {
+                    likelihood = 1.0 - x * (0.978371 - x * (0.419481 - x * 0.073231));
+                }
+                state->scratch.entropy_p_current[i] *= likelihood;
+                sum_p += state->scratch.entropy_p_current[i];
+            }
+        }
+    }
+    else
+    {
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            if (state->scratch.clmembflag[i] == 0)
+            {
+                state->scratch.entropy_p_current[i] = 0.0;
+            }
+            else
+            {
+                sum_p += state->scratch.entropy_p_current[i];
+            }
+        }
+    }
+
+    /* Renormalize posterior */
+    if (sum_p > 0.0)
+    {
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            state->scratch.entropy_p_current[i] /= sum_p;
+        }
+    }
+    else
+    {
+        /* Fallback: flat distribution over remaining active clusters */
+        int active_cnt = 0;
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            if (state->scratch.clmembflag[i])
+            {
+                active_cnt++;
+            }
+        }
+        if (active_cnt > 0)
+        {
+            for (int i = 0; i < state->num_clusters; i++)
+            {
+                state->scratch.entropy_p_current[i] =
+                    state->scratch.clmembflag[i] ? (1.0 / active_cnt) : 0.0;
+            }
+        }
     }
 }
