@@ -87,6 +87,8 @@ set(CLUSTER_SRCS
     src/gric-cluster/math/cluster_scandist.c
     src/gric-cluster/math/framedistance.c
     src/gric-cluster/io/cluster_io.c
+    src/gric-cluster/io/cluster_io_log.c
+    src/gric-cluster/io/cluster_io_results.c
     src/gric-cluster/io/frameread.c
     src/gric-cluster/io/frameread_ascii.c
     src/gric-cluster/io/frameread_fits.c

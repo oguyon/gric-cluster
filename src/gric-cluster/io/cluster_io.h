@@ -7,11 +7,14 @@
 
 char *create_output_dir_name(const char *input_file);
 
+int safe_mkdir(const char *path);
+
 void init_colors_io(void);
 
 void write_results(
     ClusterConfig *config,
     ClusterState  *state);
+
 void write_run_log(
     ClusterConfig  *config,
     ClusterState   *state,
