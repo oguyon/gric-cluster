@@ -149,7 +149,13 @@ if (IMAGESTREAMIO_FOUND)
 endif()
 
 # gric-status tool
-add_executable(gric-status src/gric-status/gric-status.c src/shared/cli_colors.c)
+add_executable(gric-status
+    src/gric-status/gric-status.c
+    src/gric-status/status_terminal.c
+    src/gric-status/status_shm.c
+    src/gric-status/status_tui.c
+    src/shared/cli_colors.c)
+
 
 # gric-info tool
 add_executable(gric-info src/gric-info/gric-info.c src/shared/cli_colors.c)
