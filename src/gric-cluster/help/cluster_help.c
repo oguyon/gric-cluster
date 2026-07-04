@@ -318,13 +318,52 @@ void print_help_keyword(
     }
     else if (strcmp(key, "entropy") == 0)
     {
-        printf("%sRole:%s Target Selection Option\n", ANSI_BOLD, ANSI_COLOR_RESET);
-        printf("%sFunction:%s Selects distance measurements minimizing expected entropy.\n", ANSI_BOLD,
-               ANSI_COLOR_RESET);
-        printf("%sAlgorithm:%s Evaluates information gain for all candidates by testing hypotheses\n",
+        printf("%sRole:%s Target Selection Option\n",
                ANSI_BOLD, ANSI_COLOR_RESET);
-        printf("           under triangle inequality constraints and selecting the one\n");
-        printf("           producing the largest expected Shannon entropy drop.\n");
+        printf("%sFunction:%s Selects distance measurements "
+               "minimizing expected entropy.\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("%sAlgorithm:%s Evaluates information gain "
+               "for all candidates by testing hypotheses\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("           under triangle inequality "
+               "constraints and selecting the one\n");
+        printf("           producing the largest expected "
+               "Shannon entropy drop.\n");
+        printf("%sAdaptive gating:%s When the current "
+               "distribution entropy (in bits) is below\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("           -entropy_gate (default: 2.0), "
+               "the full entropy evaluation is\n");
+        printf("           skipped and greedy selection is "
+               "used instead. This makes\n");
+        printf("           entropy's cost proportional to "
+               "actual ambiguity.\n");
+        found = 1;
+    }
+    else if (strcmp(key, "entropy_gate") == 0)
+    {
+        printf("%sRole:%s Entropy Adaptive Gating\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("%sFunction:%s Shannon entropy threshold "
+               "(in bits) below which entropy\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("          mode falls back to greedy "
+               "selection (default: 2.0).\n");
+        printf("%sRationale:%s Full entropy evaluation "
+               "is O(T*H*W) per target selection.\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("           When gprob has already "
+               "concentrated the probability on a\n");
+        printf("           few clusters, greedy selection "
+               "is near-optimal and the\n");
+        printf("           expensive evaluation can be "
+               "skipped. A threshold of 2.0\n");
+        printf("           means roughly <=4 effective "
+               "candidates.\n");
+        printf("%sUse:%s -entropy_gate 1.5 "
+               "(more aggressive gating)\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
         found = 1;
     }
     else if (strcmp(key, "scandist") == 0)
@@ -719,6 +758,8 @@ void print_help(
     print_colored_line("    -te4                     Use 4-point triangle inequality pruning");
     print_colored_line("    -te5                     Use 5-point triangle inequality pruning");
     print_colored_line("    -entropy                 Use entropy-based target cluster selection");
+    print_colored_line("    -entropy_gate <val>       Entropy gating threshold in bits "
+                       "(default: 2.0)");
     print_colored_line("    -sparse_dcc              Enable sparse cluster-to-cluster distance matrix");
     print_colored_line("    -sparse_dcc_extra_evals  Set number of extra DCC evaluations (default: 0)");
     print_colored_line("    -conf <file>             Read options from configuration file");

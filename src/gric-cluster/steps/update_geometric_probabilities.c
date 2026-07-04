@@ -110,6 +110,7 @@ void update_geometric_probabilities(
             }
 
             state->scratch.current_gprobs[target_cl] *= val;
+            state->scratch.entropy_p_current[target_cl] *= val;
         }
     }
 }

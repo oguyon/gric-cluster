@@ -171,6 +171,20 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->optim.entropy_min_prob = atof(value);
         return 1;
     }
+    else if (matches(key, "-entropy_gate"))
+    {
+        if (!value)
+            return -1;
+        config->optim.entropy_gate_bits = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-entropy_first_gate"))
+    {
+        if (!value)
+            return -1;
+        config->optim.entropy_first_gate_bits = atof(value);
+        return 1;
+    }
     else if (matches(key, "-sparse_dcc"))
     {
         config->optim.sparse_dcc_mode = 1;
@@ -181,6 +195,18 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         if (!value)
             return -1;
         config->optim.sparse_dcc_extra_evals = atoi(value);
+        return 1;
+    }
+    else if (matches(key, "-soft_bayesian"))
+    {
+        config->optim.soft_bayesian_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-soft_bayesian_sigma"))
+    {
+        if (!value)
+            return -1;
+        config->optim.soft_bayesian_sigma_coeff = atof(value);
         return 1;
     }
     else if (matches(key, "-tm"))
@@ -413,13 +439,24 @@ int write_config_file(const char *filename, ClusterConfig *config)
     if (config->optim.entropy_mode)
     {
         fprintf(f, "entropy\n");
-        fprintf(f, "entropy_max_targets %d\n", config->optim.entropy_max_targets);
-        fprintf(f, "entropy_min_prob %f\n", config->optim.entropy_min_prob);
+        fprintf(f, "entropy_max_targets %d\n",
+                config->optim.entropy_max_targets);
+        fprintf(f, "entropy_min_prob %f\n",
+                config->optim.entropy_min_prob);
+        fprintf(f, "entropy_gate %f\n",
+                config->optim.entropy_gate_bits);
+        fprintf(f, "entropy_first_gate %f\n",
+                config->optim.entropy_first_gate_bits);
     }
     if (config->optim.sparse_dcc_mode)
     {
         fprintf(f, "sparse_dcc\n");
         fprintf(f, "sparse_dcc_extra_evals %d\n", config->optim.sparse_dcc_extra_evals);
+    }
+    if (config->optim.soft_bayesian_mode)
+    {
+        fprintf(f, "soft_bayesian\n");
+        fprintf(f, "soft_bayesian_sigma %f\n", config->optim.soft_bayesian_sigma_coeff);
     }
 
     fprintf(f, "tm %f\n", config->algo.tm_mixing_coeff);
