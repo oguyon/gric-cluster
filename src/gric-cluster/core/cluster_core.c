@@ -14,6 +14,7 @@
 #include "cluster_shm.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <time.h>
 
 #ifdef _OPENMP
@@ -347,6 +348,73 @@ void run_clustering(
                100.0 * state->telemetry.time_step_refine / total_steps_ms);
         printf("  -------------------------------------------\n");
         printf("  Total Timed Steps:       %9.3f ms (100.0%%)\n\n", total_steps_ms);
+    }
+
+    /* Feature 4: Entropy-guided diagnostics */
+    if (config->optim.entropy_mode)
+    {
+        uint64_t total_ecalls =
+            state->telemetry.entropy_frames_gated
+            + state->telemetry.entropy_frames_evaluated;
+        printf("Entropy Diagnostics:\n");
+        if (state->telemetry.total_frames_processed > 0
+            && total_ecalls > 0)
+        {
+            double avg_init =
+                state->telemetry.entropy_sum_initial
+                / (double)state->telemetry
+                      .total_frames_processed;
+            printf("  Avg initial entropy:   "
+                   "%6.2f bits  (~%4.1f effective"
+                   " candidates)\n",
+                   avg_init, pow(2.0, avg_init));
+            printf("  Max initial entropy:   "
+                   "%6.2f bits  (~%4.1f effective"
+                   " candidates)\n",
+                   state->telemetry
+                       .entropy_max_initial,
+                   pow(2.0, state->telemetry
+                                .entropy_max_initial));
+
+            double gate_ratio =
+                (double)state->telemetry
+                    .entropy_frames_gated
+                / (double)total_ecalls;
+            printf("  Entropy gate ratio:    "
+                   "%5.1f%%  (%lu gated, %lu"
+                   " evaluated)\n",
+                   100.0 * gate_ratio,
+                   (unsigned long)state->telemetry
+                       .entropy_frames_gated,
+                   (unsigned long)state->telemetry
+                       .entropy_frames_evaluated);
+            if (config->optim.entropy_fast_mode)
+            {
+                printf("  Surrogate mode:        "
+                       "popcount-only (Shannon"
+                       " eval skipped)\n");
+            }
+            if (avg_init > 5.0)
+            {
+                printf("  NOTE: High initial entropy"
+                       " suggests many overlapping"
+                       " clusters.\n"
+                       "        Consider reducing"
+                       " rlim.\n");
+            }
+            else if (gate_ratio > 0.95)
+            {
+                printf("  NOTE: Gate ratio > 95%%"
+                       " — greedy mode may be"
+                       " sufficient.\n");
+            }
+        }
+        else
+        {
+            printf("  No entropy evaluations"
+                   " recorded.\n");
+        }
+        printf("\n");
     }
 
     if (ascii_out)

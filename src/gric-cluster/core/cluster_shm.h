@@ -85,6 +85,11 @@ typedef struct
     double   time_step_4;              // Step 4: Handle new cluster creation & eviction (ms)
     double   time_step_5;              // Step 5: Telemetry & file serialization (ms)
     double   time_step_refine;         // DCC bounds refinement (ms)
+
+    /* Entropy telemetry fields */
+    double   entropy_last_initial;     // H at meas_idx==0 for last frame
+    double   entropy_avg_initial;      // Running average H at meas_idx==0
+    double   entropy_gate_ratio;       // Fraction of calls gated
 } GricClusterShmStatus;
 
 /**

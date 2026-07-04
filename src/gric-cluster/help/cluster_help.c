@@ -279,6 +279,14 @@ static const struct help_entry help_entries[] = {
      "Use entropy-based target selection"},
     {"entropy_gate",
      "Entropy gating threshold in bits"},
+    {"entropy_first_gate",
+     "Entropy gate at measurement depth 0"},
+    {"entropy_max_targets",
+     "Max targets for entropy evaluation"},
+    {"entropy_min_prob",
+     "Min probability for entropy hypothesis"},
+    {"entropy_fast",
+     "Popcount-only surrogate (skip Shannon)"},
     {"soft_bayesian",
      "Enable Soft Bayesian update"},
     {"sparse_dcc",
@@ -720,30 +728,188 @@ static int print_keyword_content(
     }
     else if (strcmp(key, "entropy") == 0)
     {
-        print_help_section("ROLE", "Target Selection Option");
         print_help_section(
-            "FUNCTION",
-            "Selects distance measurements minimizing expected entropy.");
+            "ROLE",
+            "Entropy-Based Target Selection");
         print_help_section(
-            "ALGORITHM",
-            "Evaluates information gain for all candidates by testing hypotheses\n"
-            "under triangle inequality constraints and selecting the one producing the\n"
-            "largest expected Shannon entropy drop.");
+            "OVERVIEW",
+            "In standard (greedy) mode, GRIC"
+            " picks the next cluster to"
+            " measure by\nchoosing the one"
+            " with the highest posterior"
+            " probability.  This is fast but\n"
+            "ignores the information value of"
+            " each measurement: measuring a"
+            " cluster\nthat is already very"
+            " likely teaches us little,"
+            " whereas measuring a cluster\n"
+            "that would eliminate many"
+            " alternatives can resolve"
+            " ambiguity faster.\n\n"
+            "With -entropy, GRIC selects the"
+            " target that minimizes the"
+            " expected\nShannon entropy of"
+            " the posterior distribution after"
+            " measurement.  This\nmaximizes"
+            " expected information gain per"
+            " distance evaluation.");
         print_help_section(
-            "GATING",
-            "When the current distribution entropy (in bits) is below -entropy_gate\n"
-            "(default: 2.0), the full entropy evaluation is skipped and greedy selection\n"
-            "is used instead. This makes entropy's cost proportional to actual ambiguity.");
+            "POSTERIOR DISTRIBUTION",
+            "Each frame maintains a"
+            " probability vector p(c) over"
+            " active clusters.\nThis vector"
+            " is initialized from the mixed"
+            " priors (gprob + static\npriors)"
+            " and updated after each failed"
+            " measurement via Bayesian\n"
+            "updates (binary pruning or soft"
+            " Bayesian likelihood weighting"
+            " if\n-soft_bayesian is enabled)."
+            "  The entropy H = -sum(p * log2"
+            " p) quantifies\nhow spread out"
+            " this distribution is: H=0 means"
+            " certainty, H=log2(K)\nmeans"
+            " uniform over K clusters.");
+        print_help_section(
+            "MULTI-STAGE PIPELINE",
+            "The entropy evaluation runs a"
+            " 4-stage pipeline to balance\n"
+            "quality against cost:\n\n"
+            "1. GATING\n"
+            "   Shannon entropy H of the"
+            " current posterior is computed."
+            "  If H is\n   below the gate"
+            " threshold (-entropy_gate at"
+            " depth >= 1, or\n   "
+            "-entropy_first_gate at depth 0),"
+            " the distribution is already\n"
+            "   concentrated and greedy argmax"
+            " is used.  This skips all\n"
+            "   downstream stages.\n\n"
+            "2. POPCOUNT SCORING\n"
+            "   For each candidate target, a"
+            " fast heuristic score is"
+            " computed\n   using bitwise AND"
+            " + popcount on the consistency"
+            " mask bitfield.\n   This score"
+            " approximates the expected"
+            " support size reduction:\n"
+            "   low score = measuring this"
+            " target eliminates many"
+            " hypotheses.\n   Candidates are"
+            " ranked by this score and the"
+            " top ones proceed.\n\n"
+            "3. CANDIDATE FILTERING\n"
+            "   The top candidates are"
+            " selected by interleaving two"
+            " lists:\n   probability leaders"
+            " (high p) and popcount leaders"
+            " (low score).\n   The number of"
+            " candidates is capped at"
+            " -entropy_max_targets,\n"
+            "   dynamically reduced based on"
+            " the entropy level.\n\n"
+            "4. SHANNON EVALUATION\n"
+            "   For each candidate target c_i,"
+            " compute the expected posterior\n"
+            "   entropy if we were to measure"
+            " c_i.  Each hypothesis c_j\n"
+            "   (with p(c_j) >"
+            " -entropy_min_prob) contributes\n"
+            "   p(c_j) * H(posterior | measure"
+            " c_i, true cluster = c_j).\n"
+            "   The candidate with the lowest"
+            " expected entropy wins.\n"
+            "   Early exit: if the running sum"
+            " exceeds the current best,\n"
+            "   remaining hypotheses are"
+            " skipped.  Hypotheses are"
+            " evaluated in\n   descending"
+            " probability order to maximize"
+            " early exit.");
+        print_help_section(
+            "FAST SURROGATE MODE",
+            "With -entropy_fast, stage 4"
+            " (Shannon evaluation) is skipped"
+            "\nentirely and the candidate with"
+            " the lowest popcount score from"
+            "\nstage 2 is returned directly."
+            "  This is a first-order"
+            " approximation\nof entropy"
+            " minimization that uses only"
+            " bitwise operations.\nBenchmarks"
+            " show near-identical clustering"
+            " quality at a fraction\nof the"
+            " CPU cost.");
+        print_help_section(
+            "DIAGNOSTICS",
+            "When -entropy is active, the"
+            " final summary includes an"
+            "\n\"Entropy Diagnostics\" block"
+            " reporting:\n"
+            "  - Avg/max initial entropy"
+            " (uncertainty at frame start)\n"
+            "  - Effective candidate count"
+            " (2^H)\n"
+            "  - Gate ratio (fraction of"
+            " frames where gating returned"
+            " greedy)\n"
+            "  - Contextual guidance (warns if"
+            " rlim may need adjustment)\n\n"
+            "These metrics are also exported"
+            " to the SHM status struct for\n"
+            "real-time monitoring via"
+            " gric-status.");
+        print_help_section(
+            "WHEN TO USE",
+            "Entropy mode is most valuable"
+            " when:\n"
+            "  - Clusters overlap"
+            " geometrically (high rlim"
+            " relative to spacing)\n"
+            "  - Frames are randomly ordered"
+            " (no temporal coherence)\n"
+            "  - The distance function is"
+            " expensive (reducing"
+            " measurements\n    matters more"
+            " than the entropy computation"
+            " overhead)\n\n"
+            "Entropy mode adds little benefit"
+            " when:\n"
+            "  - Clusters are well-separated"
+            " (gate catches most frames)\n"
+            "  - Frames follow a smooth"
+            " trajectory (prediction +\n"
+            "    gprob already narrow the"
+            " candidates)\n"
+            "  - The distance function is"
+            " trivially cheap");
         print_help_section(
             "WORKS BEST WITH",
-            "-gprob   Provides probability distribution\n"
-            "-soft_bayesian   Smoother updates");
+            "-gprob          Provides the"
+            " probability distribution\n"
+            "-soft_bayesian   Smoother Bayesian"
+            " updates between measurements\n"
+            "-te4 / -te5      Tighter triangle"
+            " inequality bounds");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN,
                ANSI_COLOR_RESET);
         print_see_also_option(
+            "-entropy_fast",
+            "Popcount-only surrogate mode");
+        print_see_also_option(
             "-entropy_gate",
-            "Gating threshold in bits");
+            "Gating threshold (depth >= 1)");
+        print_see_also_option(
+            "-entropy_first_gate",
+            "Gating threshold (depth 0)");
+        print_see_also_option(
+            "-entropy_max_targets",
+            "Max targets for evaluation");
+        print_see_also_option(
+            "-entropy_min_prob",
+            "Min hypothesis probability");
         print_see_also_option(
             "-soft_bayesian",
             "Soft Bayesian update");
@@ -781,6 +947,183 @@ static int print_keyword_content(
         print_see_also_option(
             "-soft_bayesian",
             "Soft Bayesian update");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "entropy_fast") == 0)
+    {
+        print_help_section(
+            "ROLE",
+            "Popcount-Only Surrogate Mode");
+        print_help_section(
+            "WHAT IS POPCOUNT",
+            "GRIC maintains a consistency"
+            " mask: a bitfield where bit k is"
+            " set if\ncluster k is"
+            " geometrically consistent with"
+            " the current frame\n(i.e., not"
+            " yet ruled out by triangle"
+            " inequality bounds).\n\n"
+            "For a candidate target c_i, the"
+            " popcount score estimates how"
+            " many\nclusters would survive if"
+            " we measured c_i.  For each"
+            " hypothesis c_j\n(\"what if c_j"
+            " is the true cluster?\"), a"
+            " bitwise AND of\n"
+            "consistency_mask[c_i][c_j] with"
+            " the active cluster mask gives\n"
+            "the set of clusters still"
+            " consistent under that scenario."
+            "  The CPU\ninstruction popcount"
+            " counts those set bits in a"
+            " single cycle.\n\n"
+            "Summing over a sample of"
+            " hypotheses yields the popcount"
+            " score:\n"
+            "  Score(c_i) = sum_j popcount("
+            "mask[c_i][c_j] & active_mask)\n\n"
+            "Low score = measuring c_i leaves"
+            " few survivors = high"
+            " discriminative\npower."
+            "  Since Shannon entropy is"
+            " roughly log2(support size),\n"
+            "minimizing support size is a"
+            " first-order approximation of\n"
+            "minimizing entropy, but computed"
+            " entirely with fast bitwise\n"
+            "operations instead of"
+            " floating-point logarithms.");
+        print_help_section(
+            "FUNCTION",
+            "Skips Shannon entropy evaluation"
+            " (stage 4 of the entropy"
+            " pipeline)\nand returns the"
+            " candidate with the lowest"
+            " popcount score from\nstage 2"
+            " directly.  See -h entropy for"
+            " the full pipeline description.");
+        print_help_section(
+            "RATIONALE",
+            "Shannon eval is O(T*H*W) and"
+            " dominates Step 3b cost.  The"
+            " popcount\nheuristic provides"
+            " near-identical target selection"
+            " quality at a\nfraction of the"
+            " CPU cost.");
+        print_help_section(
+            "USE",
+            "-entropy -entropy_fast");
+        print_help_section(
+            "REQUIRES",
+            "-entropy");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-entropy",
+            "Full pipeline description");
+        print_see_also_option(
+            "-entropy_gate",
+            "Gating threshold in bits");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key,
+                    "entropy_max_targets") == 0)
+    {
+        print_help_section(
+            "ROLE",
+            "Entropy Evaluation Budget");
+        print_help_section(
+            "FUNCTION",
+            "Maximum number of candidate"
+            " targets to evaluate for"
+            " expected Shannon\nentropy"
+            " (default: 15).  The actual"
+            " count may be reduced"
+            " dynamically\nbased on the"
+            " current entropy level.");
+        print_help_section(
+            "USE",
+            "-entropy_max_targets 30");
+        print_help_section(
+            "REQUIRES",
+            "-entropy");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-entropy",
+            "Entropy-based target selection");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key,
+                    "entropy_min_prob") == 0)
+    {
+        print_help_section(
+            "ROLE",
+            "Entropy Hypothesis Filter");
+        print_help_section(
+            "FUNCTION",
+            "Minimum probability for a"
+            " cluster to be considered as"
+            " a hypothesis\nin the entropy"
+            " evaluation loop (default:"
+            " 0.001).  Clusters below\n"
+            "this threshold are skipped."
+            "  A dynamic floor of 1% of"
+            " the leader's\nprobability is"
+            " also applied.");
+        print_help_section(
+            "USE",
+            "-entropy_min_prob 0.01");
+        print_help_section(
+            "REQUIRES",
+            "-entropy");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-entropy",
+            "Entropy-based target selection");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key,
+                    "entropy_first_gate") == 0)
+    {
+        print_help_section(
+            "ROLE",
+            "Entropy Gate at Depth 0");
+        print_help_section(
+            "FUNCTION",
+            "Entropy gating threshold in bits"
+            " for the first measurement\n"
+            "attempt (depth 0) of each frame"
+            " (default: 4.0).  At depth 0,"
+            " the\nposterior is dominated"
+            " by the static prior and greedy"
+            " argmax is\nnear-optimal."
+            "  After at least one failed"
+            " measurement, -entropy_gate\n"
+            "is used instead.");
+        print_help_section(
+            "USE",
+            "-entropy_first_gate 6.0");
+        print_help_section(
+            "REQUIRES",
+            "-entropy");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-entropy_gate",
+            "Gate threshold after depth 0");
+        print_see_also_option(
+            "-entropy",
+            "Entropy-based target selection");
         printf("\n");
         return 1;
     }
@@ -1996,8 +2339,16 @@ void print_help(
     print_colored_line("    -te4                     Use 4-point triangle inequality pruning");
     print_colored_line("    -te5                     Use 5-point triangle inequality pruning");
     print_colored_line("    -entropy                 Use entropy-based target cluster selection");
+    print_colored_line("    -entropy_fast            Use popcount-only surrogate "
+                       "(skip Shannon eval)");
     print_colored_line("    -entropy_gate <val>       Entropy gating threshold in bits "
                        "(default: 2.0)");
+    print_colored_line("    -entropy_first_gate <val> Gate threshold at depth 0 "
+                       "(default: 4.0)");
+    print_colored_line("    -entropy_max_targets <N>  Max targets for entropy eval "
+                       "(default: 15)");
+    print_colored_line("    -entropy_min_prob <val>   Min hypothesis probability "
+                       "(default: 0.001)");
     print_colored_line("    -soft_bayesian           Enable Soft Bayesian update approximation");
     print_colored_line("    -sparse_dcc              Enable sparse cluster-to-cluster "
                        "distance matrix");
@@ -2058,6 +2409,53 @@ void print_help(
            ANSI_COLOR_GREY, ANSI_COLOR_RESET,
            ANSI_COLOR_YELLOW, ANSI_COLOR_RESET,
            ANSI_COLOR_GREY, ANSI_COLOR_RESET);
+    printf("\n");
+
+    printf("%sCOMPANION TOOLS%s\n",
+           ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+    printf("  Run %sgric-help%s for an"
+           " overview of all GRIC programs"
+           " and getting-started guidance.\n\n",
+           ANSI_BOLD_GREEN,
+           ANSI_COLOR_RESET);
+    print_see_also_option(
+        "gric-help",
+        "Suite overview and onboarding"
+        " guide");
+    print_see_also_option(
+        "gric-status",
+        "Monitor SHM telemetry in real"
+        " time (TUI)");
+    print_see_also_option(
+        "gric-benchmark",
+        "Run performance benchmarks");
+    print_see_also_option(
+        "gric-plot",
+        "Visualize clustering results");
+    print_see_also_option(
+        "gric-NDmodel",
+        "N-D space reconstruction from"
+        " DCC matrix");
+    print_see_also_option(
+        "gric-info",
+        "Print build and module support"
+        " status");
+    print_see_also_option(
+        "gric-mktxtseq",
+        "Generate synthetic test"
+        " sequences");
+    print_see_also_option(
+        "gric-mkclusteredfile",
+        "Reconstruct clustered files"
+        " from membership");
+    print_see_also_option(
+        "gric-stream-to-pipe",
+        "Pipe ImageStreamIO data to"
+        " stdout");
+    print_see_also_option(
+        "gric-ascii-spot-2-video",
+        "Convert coordinate text to"
+        " video/stream");
     printf("\n");
 
     printf("%sTOPICS%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);

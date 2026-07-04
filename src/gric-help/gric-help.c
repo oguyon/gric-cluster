@@ -427,8 +427,16 @@ static void print_general_help(void)
     printf("    - Transition Matrix (-tm): Models sequence transition behaviors.\n\n");
 
     printf("  %sTriangle Inequality Pruning (TE4/TE5)%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
-    printf("    Accelerates clustering of high-dimensional vectors by skipping expensive distance\n");
-    printf("    calculations using geometric constraints.\n");
+    printf("    Accelerates clustering by skipping expensive distance calculations\n");
+    printf("    using geometric constraints on cluster-to-cluster distances.\n\n");
+
+    printf("  %sEntropy-Based Target Selection (-entropy)%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
+    printf("    Instead of greedily measuring the most probable cluster, selects the\n");
+    printf("    target that maximizes expected information gain (minimizes posterior\n");
+    printf("    Shannon entropy).  Uses a multi-stage pipeline: gating, popcount\n");
+    printf("    scoring, candidate filtering, and Shannon evaluation.  A lightweight\n");
+    printf("    surrogate mode (-entropy_fast) skips the Shannon evaluation entirely.\n");
+    printf("    Run 'gric-cluster -h entropy' for a detailed description.\n");
 
     print_header("3. PROGRAM INDEX", 1);
     printf("  %sCore Tool%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
@@ -450,6 +458,11 @@ static void print_general_help(void)
            ANSI_BOLD, "gric-mkclusteredfile", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Pipes raw data from live ImageStreamIO shared memory to stdout.\n",
            ANSI_BOLD, "gric-stream-to-pipe", ANSI_COLOR_RESET);
+    printf("  %sMonitoring & Benchmarking%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Real-time SHM telemetry monitor (TUI dashboard).\n",
+           ANSI_BOLD, "gric-status", ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Performance benchmarking across patterns and options.\n",
+           ANSI_BOLD, "gric-benchmark", ANSI_COLOR_RESET);
 
     print_header("4. TYPICAL ONBOARDING WORKFLOW", 1);
     printf("  Follow these steps to familiarize yourself with GRIC:\n\n");
@@ -519,9 +532,18 @@ static int print_program_help(
     {
         target = "gric-mkclusteredfile";
     }
-    else if (strcmp(prog, "stream-to-pipe") == 0 || strcmp(prog, "stream_to_pipe") == 0)
+    else if (strcmp(prog, "stream-to-pipe") == 0 ||
+             strcmp(prog, "stream_to_pipe") == 0)
     {
         target = "gric-stream-to-pipe";
+    }
+    else if (strcmp(prog, "status") == 0)
+    {
+        target = "gric-status";
+    }
+    else if (strcmp(prog, "benchmark") == 0)
+    {
+        target = "gric-benchmark";
     } // if (strcmp(prog, "cluster") == 0)...
 
     if (strcmp(target, "gric-cluster") == 0)
@@ -539,8 +561,13 @@ static int print_program_help(
             "  -avg                 Compute and output average frame for each cluster\n"
             "  -gprob               Enable geometric probability path-based clustering\n"
             "  -maxcl_strategy <S>  Strategy when maxcl is hit (stop|discard|merge)\n"
-            "  -te5                 Enable 5-point triangle inequality pruning\n"
-            "  -scandist            Analyze frame-to-frame distances without clustering";
+            "  -te4 / -te5          Triangle inequality pruning (4-pt / 5-pt)\n"
+            "  -entropy             Entropy-based target selection\n"
+            "  -entropy_fast        Popcount-only surrogate (skip Shannon eval)\n"
+            "  -soft_bayesian       Smooth Bayesian updates between measurements\n"
+            "  -ncpu <N>            Number of OpenMP threads\n"
+            "  -scandist            Analyze frame-to-frame distances without clustering\n"
+            "  -h <topic>           Detailed help (e.g. -h entropy, -h performance)";
         const char *ex =
             "  $ gric-cluster -scandist test_walk.txt\n"
             "  $ gric-cluster a1.5 test_walk.txt -clustered > run.log";
@@ -651,14 +678,88 @@ static int print_program_help(
     else if (strcmp(target, "gric-stream-to-pipe") == 0)
     {
         /* Help definitions for gric-stream-to-pipe */
-        const char *banner = "gric-stream-to-pipe - Pipes raw ImageStreamIO stream data";
-        const char *usage = "gric-stream-to-pipe <stream_name> [max_frames]";
+        const char *banner =
+            "gric-stream-to-pipe - Pipes raw"
+            " ImageStreamIO stream data";
+        const char *usage =
+            "gric-stream-to-pipe"
+            " <stream_name> [max_frames]";
         const char *desc =
-            "Pipes raw floating-point data from an ImageStreamIO stream directly to stdout.";
+            "Pipes raw floating-point data"
+            " from an ImageStreamIO stream"
+            " directly to stdout.";
         const char *opts = "  (None)";
-        const char *ex = "  $ gric-stream-to-pipe mystream 500";
+        const char *ex =
+            "  $ gric-stream-to-pipe"
+            " mystream 500";
 
-        print_formatted_help(banner, usage, desc, opts, ex);
+        print_formatted_help(
+            banner, usage, desc, opts, ex);
+        return 0;
+    }
+    else if (strcmp(target, "gric-status") == 0)
+    {
+        const char *banner =
+            "gric-status - Monitor"
+            " shared-memory telemetry"
+            " from gric-cluster";
+        const char *usage =
+            "gric-status [options]"
+            " <shm_file>";
+        const char *desc =
+            "Real-time TUI dashboard that"
+            " reads the SHM status struct\n"
+            "  written by gric-cluster"
+            " (via -shm).  Displays cluster"
+            " count,\n  frame rate, entropy"
+            " telemetry, and convergence"
+            " metrics.";
+        const char *opts =
+            "  -r <Hz>              "
+            "Refresh rate (default: 10)\n"
+            "  -1                   "
+            "Print once and exit";
+        const char *ex =
+            "  $ gric-status"
+            " /tmp/gric_status.shm";
+
+        print_formatted_help(
+            banner, usage, desc, opts, ex);
+        return 0;
+    }
+    else if (strcmp(target,
+                    "gric-benchmark") == 0)
+    {
+        const char *banner =
+            "gric-benchmark - Run"
+            " performance benchmarks on"
+            " gric-cluster";
+        const char *usage =
+            "gric-benchmark [options]";
+        const char *desc =
+            "Generates synthetic datasets"
+            " and benchmarks gric-cluster\n"
+            "  across different patterns,"
+            " dimensions, and option"
+            " combinations.\n  Reports"
+            " timing, distance call counts,"
+            " and cluster quality.";
+        const char *opts =
+            "  -patterns <list>     "
+            "Comma-separated pattern"
+            " names\n"
+            "  -maxim <N>           "
+            "Maximum number of frames\n"
+            "  -maxcl <N>           "
+            "Maximum number of clusters";
+        const char *ex =
+            "  $ gric-benchmark\n"
+            "  $ gric-benchmark"
+            " -patterns 3Drand,3Dwalk"
+            " -maxim 10000";
+
+        print_formatted_help(
+            banner, usage, desc, opts, ex);
         return 0;
     }
     else

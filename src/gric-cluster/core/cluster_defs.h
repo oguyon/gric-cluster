@@ -56,6 +56,7 @@ typedef struct
     double entropy_min_prob;
     double entropy_gate_bits;       /**< Entropy gating threshold (bits) */
     double entropy_first_gate_bits; /**< Gate threshold at meas depth 0 (bits) */
+    int    entropy_fast_mode;       /**< 1 to use popcount-only surrogate */
     int    sparse_dcc_mode;        /**< 1 to enable bounded sparse distance matrix, 0 for dense */
     int    sparse_dcc_extra_evals; /**< Number of extra inter-cluster measurements (E) per new cluster */
     int    soft_bayesian_mode;     /**< 1 to enable soft Bayesian updates, 0 for binary only */
@@ -131,7 +132,12 @@ typedef struct
     double  time_step_3c;
     double  time_step_4;
     double  time_step_5;
-    double  time_step_refine;
+    double   time_step_refine;
+    double   entropy_sum_initial;      /**< Accumulated H at meas_idx==0 */
+    double   entropy_max_initial;      /**< Maximum H at meas_idx==0 */
+    double   entropy_last_initial;     /**< H at meas_idx==0 for last frame */
+    uint64_t entropy_frames_gated;     /**< Calls where gate returned greedy */
+    uint64_t entropy_frames_evaluated; /**< Calls where full eval ran */
 } ClusterTelemetry;
 
 // Candidate structure for sorting

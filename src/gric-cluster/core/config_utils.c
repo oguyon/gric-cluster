@@ -185,6 +185,11 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->optim.entropy_first_gate_bits = atof(value);
         return 1;
     }
+    else if (matches(key, "-entropy_fast"))
+    {
+        config->optim.entropy_fast_mode = 1;
+        return 0;
+    }
     else if (matches(key, "-sparse_dcc"))
     {
         config->optim.sparse_dcc_mode = 1;
@@ -447,6 +452,10 @@ int write_config_file(const char *filename, ClusterConfig *config)
                 config->optim.entropy_gate_bits);
         fprintf(f, "entropy_first_gate %f\n",
                 config->optim.entropy_first_gate_bits);
+        if (config->optim.entropy_fast_mode)
+        {
+            fprintf(f, "entropy_fast\n");
+        }
     }
     if (config->optim.sparse_dcc_mode)
     {
