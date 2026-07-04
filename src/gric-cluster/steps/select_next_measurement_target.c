@@ -156,11 +156,29 @@ static int select_next_measurement_target_entropy(
             }
         }
 
+        /* Feature 3: accumulate entropy telemetry */
+        if (meas_idx == 0)
+        {
+            state->telemetry.entropy_sum_initial +=
+                H_current;
+            state->telemetry.entropy_last_initial =
+                H_current;
+            if (H_current >
+                state->telemetry.entropy_max_initial)
+            {
+                state->telemetry.entropy_max_initial =
+                    H_current;
+            }
+        }
+
         if (H_current < gate_bits)
         {
+            state->telemetry.entropy_frames_gated++;
             return argmax_p;
         }
     }
+
+    state->telemetry.entropy_frames_evaluated++;
 
     /*
      * Proposal 2 — Dynamic entropy_min_prob threshold.
@@ -349,6 +367,29 @@ static int select_next_measurement_target_entropy(
         (end_score.tv_sec - start_score.tv_sec) * 1000.0
         + (end_score.tv_nsec - start_score.tv_nsec)
             / 1000000.0;
+
+    /*
+     * Feature 2: Popcount-only surrogate mode.
+     *
+     * When entropy_fast_mode is enabled, skip the
+     * expensive Shannon entropy evaluation and
+     * return the target with the lowest popcount
+     * score (most discriminative by support size
+     * reduction).  The popcount score is a
+     * first-order approximation of entropy.
+     */
+    if (config->optim.entropy_fast_mode)
+    {
+        for (int idx = 0; idx < M; idx++)
+        {
+            if (prune_scores[idx].score < 1e30)
+            {
+                return prune_scores[idx].id;
+            }
+        }
+        return argmax_p;
+    }
+
     clock_gettime(CLOCK_MONOTONIC, &start_filter);
 
     Candidate *candidates =
@@ -407,15 +448,17 @@ static int select_next_measurement_target_entropy(
     clock_gettime(CLOCK_MONOTONIC, &start_eval);
 
     /*
-     * Filter active_indices in-place to contain only
-     * hypotheses that are above the dynamic threshold.
-     * This avoids branch checks inside the main OMP loop
-     * and eliminates stack VLA/OMP pointer overhead.
+     * Feature 1: Rebuild active_indices in
+     * descending probability order from the
+     * pre-sorted prob_scores array.  This makes
+     * the early-exit accumulator in the Shannon
+     * eval loop grow faster, triggering the bound
+     * check sooner.
      */
     int eval_hypo_count = 0;
-    for (int idx = 0; idx < active_idx_count; idx++)
+    for (int idx = 0; idx < prob_count; idx++)
     {
-        int j = active_indices[idx];
+        int j = prob_scores[idx].id;
         if (p_current[j] >= dynamic_min_prob)
         {
             active_indices[eval_hypo_count++] = j;

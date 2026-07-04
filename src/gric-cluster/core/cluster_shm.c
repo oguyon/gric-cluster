@@ -190,6 +190,40 @@ void gric_shm_update(
     status->time_step_5 = state->telemetry.time_step_5;
     status->time_step_refine = state->telemetry.time_step_refine;
 
+    /* Entropy telemetry */
+    status->entropy_last_initial =
+        state->telemetry.entropy_last_initial;
+    {
+        long nfp =
+            state->telemetry.total_frames_processed;
+        if (nfp > 0)
+        {
+            status->entropy_avg_initial =
+                state->telemetry.entropy_sum_initial
+                / (double)nfp;
+        }
+        else
+        {
+            status->entropy_avg_initial = 0.0;
+        }
+    }
+    {
+        uint64_t total_ecalls =
+            state->telemetry.entropy_frames_gated
+            + state->telemetry.entropy_frames_evaluated;
+        if (total_ecalls > 0)
+        {
+            status->entropy_gate_ratio =
+                (double)state->telemetry
+                    .entropy_frames_gated
+                / (double)total_ecalls;
+        }
+        else
+        {
+            status->entropy_gate_ratio = 0.0;
+        }
+    }
+
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
     status->last_update_time = (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
