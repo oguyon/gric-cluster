@@ -125,6 +125,8 @@ target_link_libraries(gric-mktxtseq m)
 
 add_executable(gric-plot
     src/gric-plot/plot_clusters.c
+    src/gric-plot/plot_log_parser.c
+    src/gric-plot/plot_render.c
     src/gric-plot/canvas/canvas.c
     src/shared/cli_colors.c
 )
