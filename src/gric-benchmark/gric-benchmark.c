@@ -432,11 +432,20 @@ int main(
         }
     }
 
-    char prefix[256] = "";
-    if (!in_benchmarks_dir)
+    char read_prefix[256] = "";
+    char write_prefix[256] = "";
+    if (in_benchmarks_dir)
     {
-        strcpy(prefix, "benchmarks/");
+        strcpy(read_prefix, "");
+        strcpy(write_prefix, "../benchmarks-out/");
+        mkdir("../benchmarks-out", 0755);
+    }
+    else
+    {
+        strcpy(read_prefix, "benchmarks/");
+        strcpy(write_prefix, "benchmarks-out/");
         mkdir("benchmarks", 0755);
+        mkdir("benchmarks-out", 0755);
     }
 
     char mkseq_path[1024];
@@ -460,11 +469,11 @@ int main(
 
     /* Create target output directories */
     char log_dir[512];
-    snprintf(log_dir, sizeof(log_dir), "%sbenchmark_out", prefix);
+    snprintf(log_dir, sizeof(log_dir), "%sbenchmark_out", write_prefix);
     mkdir(log_dir, 0755);
 
     char cluster_out_dir_parent[512];
-    snprintf(cluster_out_dir_parent, sizeof(cluster_out_dir_parent), "%sclusteroutdir", prefix);
+    snprintf(cluster_out_dir_parent, sizeof(cluster_out_dir_parent), "%sclusteroutdir", write_prefix);
     mkdir(cluster_out_dir_parent, 0755);
 
     /* Sync MAXIM with nsamples if not explicitly configured */
@@ -482,7 +491,7 @@ int main(
 
     /* Initialize summary file header if missing */
     char summary_path[512];
-    snprintf(summary_path, sizeof(summary_path), "%sbenchmark_summary.md", prefix);
+    snprintf(summary_path, sizeof(summary_path), "%sbenchmark_summary.md", write_prefix);
 
     FILE *sum_fp = fopen(summary_path, "r");
     if (sum_fp == NULL)
@@ -526,7 +535,7 @@ int main(
 
         /* 1. Generate text data */
         char txt_file[512];
-        snprintf(txt_file, sizeof(txt_file), "%s%s.txt", prefix, pattern);
+        snprintf(txt_file, sizeof(txt_file), "%s%s.txt", read_prefix, pattern);
 
         int skip_gen = 0;
         if (config.reuse_mp4 && access(txt_file, F_OK) == 0)
@@ -627,7 +636,7 @@ int main(
         }
         else if (strcmp(config.type, "mp4") == 0)
         {
-            snprintf(input_file, sizeof(input_file), "%s%s.mp4", prefix, pattern);
+            snprintf(input_file, sizeof(input_file), "%s%s.mp4", read_prefix, pattern);
             int skip_vid = 0;
             if (config.reuse_mp4 && access(input_file, F_OK) == 0)
             {
@@ -702,10 +711,10 @@ int main(
         char log_file[512];
         snprintf(log_file, sizeof(log_file),
                  "%sbenchmark_out/%s_%s_gric.log",
-                 prefix, pattern, config.type);
+                 write_prefix, pattern, config.type);
 
         char out_dir[512];
-        snprintf(out_dir, sizeof(out_dir), "%s%s.cluster.out", prefix, pattern);
+        snprintf(out_dir, sizeof(out_dir), "%s%s.cluster.out", write_prefix, pattern);
 
         printf("Running gric-cluster on %s (rlim=%s)...\n", input_file, cur_rlim);
 

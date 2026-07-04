@@ -83,9 +83,9 @@ void print_help(
 
     printf("%sDESCRIPTION%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  Runs performance benchmarks on the gric-cluster algorithm.\n");
-    printf("  All output files (txt points files, mp4 videos, logs, png plots, and the\n");
-    printf("  benchmark summary md file) are written to the 'benchmarks' subdirectory,\n");
-    printf("  which is created automatically if it does not exist.\n\n");
+    printf("  All input files (txt points files, mp4 videos) are read/generated in 'benchmarks'.\n");
+    printf("  All output files (logs, png plots, and the benchmark summary md file) are written\n");
+    printf("  to 'benchmarks-out', which is created automatically if it does not exist.\n\n");
 
     printf("%sOPTIONS%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  %s-h, --help%s            Show this help message\n",
