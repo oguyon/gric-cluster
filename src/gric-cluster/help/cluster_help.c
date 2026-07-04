@@ -366,6 +366,44 @@ void print_help_keyword(
                ANSI_BOLD, ANSI_COLOR_RESET);
         found = 1;
     }
+    else if (strcmp(key, "soft_bayesian") == 0)
+    {
+        printf("%sRole:%s Target Selection Option\n", ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("%sFunction:%s Performs smooth Bayesian updates on candidates rather than\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("           hard pruning on distance threshold failure.\n");
+        printf("%sAlgorithm:%s When a distance evaluation fails (dist > rlim), we update\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("           the target's probability by multiplying it with a sigmoid-like\n");
+        printf("           likelihood function approximated using a minimax polynomial.\n");
+        printf("           This retains potential matching candidates under noisy distances\n");
+        printf("           and leads to faster information gain convergence.\n");
+        found = 1;
+    }
+    else if (strcmp(key, "sparse_dcc") == 0)
+    {
+        printf("%sRole:%s Cluster-to-Cluster Distance Optimization\n", ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("%sFunction:%s Enables bounded sparse inter-cluster distance matrix\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("           tracking to avoid dense O(K^2) anchor distance calls.\n");
+        printf("%sAlgorithm:%s Reuses ongoing sample-to-anchor measurements to calculate\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("           triangle inequality bounds, maintaining lower/upper bounds for\n");
+        printf("           unmeasured anchor distances. Highly recommended for video input.\n");
+        found = 1;
+    }
+    else if (strcmp(key, "sparse_dcc_extra_evals") == 0)
+    {
+        printf("%sRole:%s Sparse DCC Parameter\n", ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("%sFunction:%s Sets the number of extra inter-cluster distance evaluations\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("          to perform when creating a new cluster (default: 0).\n");
+        printf("%sRationale:%s Evaluating a small number of extra distances (e.g. 2 or 5)\n",
+               ANSI_BOLD, ANSI_COLOR_RESET);
+        printf("           helps tighten the lower/upper bounds of the sparse DCC matrix,\n");
+        printf("           improving subsequent triangle inequality pruning efficiency.\n");
+        found = 1;
+    }
     else if (strcmp(key, "scandist") == 0)
     {
         printf("%sRole:%s Data Analysis (Pre-run)\n", ANSI_BOLD, ANSI_COLOR_RESET);
@@ -760,6 +798,7 @@ void print_help(
     print_colored_line("    -entropy                 Use entropy-based target cluster selection");
     print_colored_line("    -entropy_gate <val>       Entropy gating threshold in bits "
                        "(default: 2.0)");
+    print_colored_line("    -soft_bayesian           Enable Soft Bayesian update approximation");
     print_colored_line("    -sparse_dcc              Enable sparse cluster-to-cluster distance matrix");
     print_colored_line("    -sparse_dcc_extra_evals  Set number of extra DCC evaluations (default: 0)");
     print_colored_line("    -conf <file>             Read options from configuration file");
