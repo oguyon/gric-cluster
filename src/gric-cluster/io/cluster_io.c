@@ -656,6 +656,17 @@ void write_run_log(
         fprintf(f, "STATS_DISTS_INTERCLUSTER: %ld\n", state->telemetry.framedist_calls_intercluster);
         fprintf(f, "STATS_PRUNED: %ld\n", state->telemetry.clusters_pruned);
         fprintf(f, "STATS_MAX_RSS_KB: %ld\n", max_rss);
+        fprintf(f, "STATS_TIME_STEP_1_MS: %.3f\n", state->telemetry.time_step_1);
+        fprintf(f, "STATS_TIME_STEP_2_MS: %.3f\n", state->telemetry.time_step_2);
+        fprintf(f, "STATS_TIME_STEP_3A_MS: %.3f\n", state->telemetry.time_step_3a);
+        fprintf(f, "STATS_TIME_STEP_3B_MS: %.3f\n", state->telemetry.time_step_3b);
+        fprintf(f, "STATS_TIME_STEP_3B_SCORE_MS: %.3f\n", state->telemetry.time_step_3b_score);
+        fprintf(f, "STATS_TIME_STEP_3B_FILTER_MS: %.3f\n", state->telemetry.time_step_3b_filter);
+        fprintf(f, "STATS_TIME_STEP_3B_EVAL_MS: %.3f\n", state->telemetry.time_step_3b_eval);
+        fprintf(f, "STATS_TIME_STEP_3C_MS: %.3f\n", state->telemetry.time_step_3c);
+        fprintf(f, "STATS_TIME_STEP_4_MS: %.3f\n", state->telemetry.time_step_4);
+        fprintf(f, "STATS_TIME_STEP_5_MS: %.3f\n", state->telemetry.time_step_5);
+        fprintf(f, "STATS_TIME_STEP_REFINE_MS: %.3f\n", state->telemetry.time_step_refine);
 
         fprintf(f, "STATS_DIST_HIST_START\n");
         for (int k = 0; k <= config->algo.maxnbclust; k++)
