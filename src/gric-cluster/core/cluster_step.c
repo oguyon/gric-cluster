@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 
 /**
  * cluster_frame() - Process one frame through the full clustering
@@ -109,11 +110,73 @@ int cluster_frame(
         if (config->optim.pred_mode &&
             state->telemetry.total_frames_processed >= config->optim.pred_len)
         {
-            pred_candidates = (int *)malloc(config->optim.pred_n * sizeof(int));
-            if (pred_candidates)
+            int *local_candidates = (int *)malloc((size_t)config->optim.pred_n * sizeof(int));
+            int num_local = 0;
+            if (local_candidates != NULL)
             {
-                num_preds = get_prediction_candidates(state, config, pred_candidates,
+                num_local = get_prediction_candidates(state, config, local_candidates,
                                                       config->optim.pred_n);
+            }
+
+            pred_candidates = (int *)malloc((size_t)config->optim.pred_n * sizeof(int));
+            if (pred_candidates != NULL)
+            {
+                if (num_local == 1)
+                {
+                    /* Unambiguous local prediction: prioritize it first */
+                    pred_candidates[num_preds++] = local_candidates[0];
+
+                    /* Append joint predictions as fallback */
+                    if (state->scratch.tuple_pred_count > 0)
+                    {
+                        for (int j = 0; j < state->scratch.tuple_pred_count &&
+                             num_preds < config->optim.pred_n; j++)
+                        {
+                            int jc = state->scratch.tuple_pred_candidates[j];
+                            if (jc != local_candidates[0])
+                            {
+                                pred_candidates[num_preds++] = jc;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    /* Ambiguous or no local match: prioritize joint predictions to resolve it */
+                    if (state->scratch.tuple_pred_count > 0)
+                    {
+                        int n_out = (state->scratch.tuple_pred_count < config->optim.pred_n) ?
+                                    state->scratch.tuple_pred_count : config->optim.pred_n;
+                        for (int i = 0; i < n_out; i++)
+                        {
+                            pred_candidates[num_preds++] = state->scratch.tuple_pred_candidates[i];
+                        }
+                    }
+                    if (num_preds < config->optim.pred_n && num_local > 0)
+                    {
+                        for (int i = 0; i < num_local && num_preds < config->optim.pred_n; i++)
+                        {
+                            int lc = local_candidates[i];
+                            int dup = 0;
+                            for (int k = 0; k < num_preds; k++)
+                            {
+                                if (pred_candidates[k] == lc)
+                                {
+                                    dup = 1;
+                                    break;
+                                }
+                            }
+                            if (!dup)
+                            {
+                                pred_candidates[num_preds++] = lc;
+                            }
+                        }
+                    }
+                }
+            }
+            if (local_candidates != NULL)
+            {
+                free(local_candidates);
             }
         }
         clock_gettime(CLOCK_MONOTONIC, &s2_end);

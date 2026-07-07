@@ -20,7 +20,8 @@
 void print_help(const char *progname)
 {
     printf("%sNAME%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  gric-plot - Visualization tool for clustering results\n\n");
+    printf("  %sgric-plot%s - Visualization tool for clustering results\n\n",
+           ansi_bold_green, ansi_reset);
 
     printf("%sUSAGE%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s%s%s %s[options]%s %s<points_file>%s %s<log_file>%s %s[output_file]%s\n\n",

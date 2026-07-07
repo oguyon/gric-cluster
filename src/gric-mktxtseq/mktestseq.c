@@ -432,7 +432,8 @@ void print_args_on_error(int argc, char *argv[])
 static void print_help(const char *progname)
 {
     printf("%sNAME%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  gric-mktxtseq - Synthetic sequence generator for testing\n\n");
+    printf("  %sgric-mktxtseq%s - Synthetic sequence generator for testing\n\n",
+           ansi_bold_green, ansi_reset);
 
     printf("%sUSAGE%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s%s%s %s<N>%s %s<output_file>%s %s<pattern>%s %s[options]%s\n\n", ansi_bold_green,

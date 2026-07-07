@@ -40,7 +40,28 @@ static void print_formatted_help(
     const char *examples)
 {
     printf("%sNAME%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
-    printf("  %s\n\n", banner);
+    /* Parse the banner to style the executable name in Bold Green */
+    {
+        const char *b = banner;
+        while (*b == ' ' || *b == '\t')
+        {
+            b++;
+        }
+        const char *cmd_start = b;
+        while (*b && *b != ' ' && *b != '\t' && *b != '\n' && *b != '-')
+        {
+            b++;
+        }
+        if (b > cmd_start)
+        {
+            printf("  %s%.*s%s", ANSI_BOLD_GREEN, (int)(b - cmd_start), cmd_start, ANSI_COLOR_RESET);
+        }
+        else
+        {
+            printf("  ");
+        }
+        printf("%s\n\n", b);
+    }
 
     printf("%sUSAGE%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     cli_print_colored_usage(usage);
@@ -127,55 +148,59 @@ static void print_general_help(void)
     print_header("3. PROGRAM INDEX", 1);
     printf("  %sCore Tool%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("    %s%-24s%s Main clustering executable (offline files or live streams).\n",
-           ANSI_BOLD, "gric-cluster", ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, "gric-cluster", ANSI_COLOR_RESET);
     printf("  %sVisualization%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("    %s%-24s%s Generates SVG/PNG diagnostic and summary plots.\n",
-           ANSI_BOLD, "gric-plot", ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, "gric-plot", ANSI_COLOR_RESET);
     printf("  %sUtility & Simulation%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("    %s%-24s%s Prints build info, library paths, and enabled features.\n",
-           ANSI_BOLD, "gric-info", ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, "gric-info", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Reconstructs N-dimensional coordinates from dcc.txt.\n",
-           ANSI_BOLD, "gric-NDmodel", ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, "gric-NDmodel", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Generates synthetic coordinate sequences (walk, spiral, etc.).\n",
-           ANSI_BOLD, "gric-mktxtseq", ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, "gric-mktxtseq", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Converts 3D coordinates into MP4 video/ImageStreamIO streams.\n",
-           ANSI_BOLD, "gric-ascii-spot-2-video", ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, "gric-ascii-spot-2-video", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Reconstructs a full clustered file from input and membership list.\n",
-           ANSI_BOLD, "gric-mkclusteredfile", ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, "gric-mkclusteredfile", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Pipes raw data from live ImageStreamIO shared memory to stdout.\n",
-           ANSI_BOLD, "gric-stream-to-pipe", ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, "gric-stream-to-pipe", ANSI_COLOR_RESET);
     printf("  %sMonitoring & Benchmarking%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("    %s%-24s%s Real-time SHM telemetry monitor (TUI dashboard).\n",
-           ANSI_BOLD, "gric-status", ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, "gric-status", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Performance benchmarking across patterns and options.\n",
-           ANSI_BOLD, "gric-benchmark", ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, "gric-benchmark", ANSI_COLOR_RESET);
 
     print_header("4. TYPICAL ONBOARDING WORKFLOW", 1);
     printf("  Follow these steps to familiarize yourself with GRIC:\n\n");
     printf("  %sStep 1: Check Optional Dependencies%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
     printf("    Check which input/output formats are enabled (FITS, PNG, FFmpeg, ImageStreamIO):\n");
-    printf("      $ %sgric-info%s\n\n", ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
+    printf("      $ %sgric-info%s\n\n", ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
 
     printf("  %sStep 2: Generate Synthetic Data%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
     printf("    Generate a 2D random walk sequence of 1000 points to act as fake coordinates:\n");
-    printf("      $ %sgric-mktxtseq%s 1000 test_walk.txt 2Dwalk\n\n", ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
+    printf("      $ %sgric-mktxtseq%s 1000 test_walk.txt 2Dwalk\n\n", ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
 
     printf("  %sStep 3: Scan the Sequence Distances%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
     printf("    Measure distance statistics to choose a reasonable radius limit (rlim):\n");
-    printf("      $ %sgric-cluster%s -scandist test_walk.txt\n", ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
+    printf("      $ %sgric-cluster%s -scandist test_walk.txt\n", ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
     printf("    Take note of the \"Median distance\" output from the scan.\n\n");
 
     printf("  %sStep 4: Run the Clustering%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
     printf("    Cluster the points using a radius limit of 1.5x the median distance:\n");
-    printf("      $ %sgric-cluster%s a1.5 test_walk.txt -clustered > run.log\n", ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
+    printf("      $ %sgric-cluster%s a1.5 test_walk.txt -clustered > run.log\n", ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
     printf("    This generates an output directory: `test_walk.clusterdat/`.\n\n");
 
     printf("  %sStep 5: Plot results%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
     printf("    Visualize the clusters and centroids using the plotting tool:\n");
-    printf("      $ %sgric-plot%s test_walk.txt run.log plot.png\n\n", ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
+    printf("      $ %sgric-plot%s test_walk.txt run.log plot.png\n\n", ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
 
     printf("  For detailed guide on a specific program, run:\n");
-    printf("    $ %sgric-help%s <program-name>   (e.g. gric-help gric-cluster)\n", ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
+    printf("    $ %sgric-help%s %s<program-name>%s   (e.g. %sgric-help%s %sgric-cluster%s)\n",
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET,
+           ANSI_COLOR_MAGENTA, ANSI_COLOR_RESET,
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET,
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
     cli_print_color_mode();
 } // print_general_help
 

@@ -21,7 +21,8 @@ static void print_help(
     const char *progname)
 {
     printf("%sNAME%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
-    printf("  gric-info - Prints support and build status of optional modules\n\n");
+    printf("  %sgric-info%s - Prints support and build status of optional modules\n\n",
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
 
     printf("%sUSAGE%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  %s%s%s %s[options]%s\n\n", ANSI_BOLD_GREEN, progname, ANSI_COLOR_RESET,

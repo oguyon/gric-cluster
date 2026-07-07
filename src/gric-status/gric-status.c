@@ -128,9 +128,9 @@ static void print_help_standard(
     }
 
     printf("\n%s\n", C_STR(MH_TITLE, "NAME"));
-    printf("  %s\n",
-           C_STR(MH_CMD,
-                 "gric-status - Monitor shared-memory telemetry from gric-cluster"));
+    printf("  %s - Monitor shared-memory telemetry from %s\n",
+           C_STR(MH_CMD, "gric-status"),
+           C_STR(MH_CMD, "gric-cluster"));
     printf("\n%s\n", C_STR(MH_HDR, "USAGE"));
     printf("  %s %s [%s]\n",
            pn_colored,

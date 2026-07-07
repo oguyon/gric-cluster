@@ -47,7 +47,8 @@ void clamp(int *val)
 void print_help(const char *progname)
 {
     printf("%sNAME%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
-    printf("  gric-ascii-spot-2-video - Convert coordinate text file to video/stream\n\n");
+    printf("  %sgric-ascii-spot-2-video%s - Convert coordinate text file to video/stream\n\n",
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
 
     printf("%sUSAGE%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  %s%s%s %s[options]%s %s<pixel_size>%s %s<alpha>%s %s<input.txt>%s %s<output>%s\n\n",

@@ -54,15 +54,31 @@ int get_prediction_candidates(
 
     int *pattern = &state->assignments[total - len];
 
-    int *counts = (int *)calloc(state->num_clusters, sizeof(int));
-    if (!counts)
+    /* Thread-local pre-allocated buffers to avoid heap allocations inside the loop */
+    static __thread int *counts = NULL;
+    static __thread Candidate *cand_list = NULL;
+    static __thread int allocated_size = 0;
+
+    int maxcl = config->algo.maxnbclust;
+    if (counts == NULL || allocated_size < maxcl)
+    {
+        free(counts);
+        free(cand_list);
+        counts = (int *)malloc((size_t)maxcl * sizeof(int));
+        cand_list = (Candidate *)malloc((size_t)maxcl * sizeof(Candidate));
+        allocated_size = maxcl;
+    }
+
+    if (counts == NULL || cand_list == NULL)
         return 0;
+
+    memset(counts, 0, (size_t)state->num_clusters * sizeof(int));
 
     for (long i = search_start; i < search_limit; i++)
     {
         if (state->assignments[i] == pattern[0])
         {
-            if (memcmp(&state->assignments[i], pattern, len * sizeof(int)) == 0)
+            if (memcmp(&state->assignments[i], pattern, (size_t)len * sizeof(int)) == 0)
             {
                 int next_cluster = state->assignments[i + len];
                 if (next_cluster >= 0 && next_cluster < state->num_clusters)
@@ -80,11 +96,9 @@ int get_prediction_candidates(
 
     if (count_non_zero == 0)
     {
-        free(counts);
         return 0;
     }
 
-    Candidate *cand_list = (Candidate *)malloc(count_non_zero * sizeof(Candidate));
     int idx = 0;
     for (int cl_idx = 0; cl_idx < state->num_clusters; cl_idx++)
     {
@@ -96,7 +110,7 @@ int get_prediction_candidates(
         }
     }
 
-    qsort(cand_list, count_non_zero, sizeof(Candidate), compare_candidates);
+    qsort(cand_list, (size_t)count_non_zero, sizeof(Candidate), compare_candidates);
 
     int n_out = (count_non_zero < max_candidates) ? count_non_zero : max_candidates;
     for (int cand_idx = 0; cand_idx < n_out; cand_idx++)
@@ -104,8 +118,6 @@ int get_prediction_candidates(
         candidates[cand_idx] = cand_list[cand_idx].id;
     }
 
-    free(cand_list);
-    free(counts);
     return n_out;
 }
 

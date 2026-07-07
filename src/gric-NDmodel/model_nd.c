@@ -62,7 +62,8 @@ static void print_usage(const char *progname)
 static void print_help(const char *progname)
 {
     printf("%sNAME%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  gric-NDmodel - N-Dimensional space reconstruction from distance matrix\n\n");
+    printf("  %sgric-NDmodel%s - N-Dimensional space reconstruction from distance matrix\n\n",
+           ansi_bold_green, ansi_reset);
 
     printf("%sUSAGE%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s%s%s %s<dcc_file>%s %s<dimensions>%s %s<output_file>%s %s[options]%s\n\n",

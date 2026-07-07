@@ -8,10 +8,13 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_core.h"
+#include "cluster_core_multitile.h"
 #include "cluster_step.h"
 #include "framedistance.h"
 #include "frameread.h"
 #include "cluster_shm.h"
+#include "tile_map.h"
+#include "tile_state.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -109,6 +112,79 @@ void run_clustering(
         omp_set_num_threads(config->optim.ncpu);
     }
 #endif
+
+    /* Check for multi-tile mode and dispatch if needed */
+    {
+        int num_tiles = 1;
+        if (config->input.tile_grid_x > 0
+            && config->input.tile_grid_y > 0)
+        {
+            num_tiles =
+                config->input.tile_grid_x
+                * config->input.tile_grid_y;
+        }
+        else if (config->input.tile_map_file != NULL)
+        {
+            num_tiles = 2; /* actual count from FITS */
+        }
+
+        if (num_tiles > 1)
+        {
+            long w = get_frame_width();
+            long h = get_frame_height();
+
+            TileMap *tm = NULL;
+            if (config->input.tile_map_file != NULL)
+            {
+                tm = tilemap_load_fits(
+                    config->input.tile_map_file,
+                    w, h);
+            }
+            else
+            {
+                tm = tilemap_create_grid(
+                    w, h,
+                    config->input.tile_grid_x,
+                    config->input.tile_grid_y);
+            }
+            if (tm == NULL)
+            {
+                fprintf(stderr,
+                        "ERROR: tile map creation "
+                        "failed\n");
+                return;
+            }
+
+            printf("Multi-tile mode: %d tiles "
+                   "(%ldx%ld image)\n",
+                   tm->num_tiles, w, h);
+
+            MultiTileState *mts = multitile_init(
+                config, tm, config->input.maxnbfr);
+            if (mts == NULL)
+            {
+                fprintf(stderr,
+                        "ERROR: multitile_init "
+                        "failed\n");
+                tilemap_free(tm);
+                return;
+            }
+
+            /* Load per-tile config overrides */
+            if (config->input.tile_config_file)
+            {
+                multitile_load_tile_config(
+                    mts,
+                    config->input.tile_config_file);
+            }
+
+            run_clustering_multitile(config, mts);
+
+            multitile_free(mts);
+            tilemap_free(tm);
+            return;
+        }
+    } // Check for multi-tile mode
 
     long actual_frames = get_num_frames();
     if (actual_frames > config->input.maxnbfr)
@@ -417,6 +493,9 @@ void run_clustering(
         printf("\n");
     }
 
+    print_clustering_metrics(state, -1);
+    printf("\n");
+
     if (ascii_out)
     {
         fclose(ascii_out);
@@ -442,4 +521,151 @@ void run_clustering(
     }
     free(temp_indices);
     free(temp_dists);
+}
+
+/**
+ * print_clustering_metrics() - Computes and prints quality metrics of clustering.
+ * @state:   Pointer to the active ClusterState.
+ * @tile_id: ID of the tile (-1 for single-tile).
+ */
+void print_clustering_metrics(
+    const ClusterState *state,
+    int                 tile_id)
+{
+    int K = state->num_clusters;
+    if (K <= 0)
+    {
+        return;
+    }
+
+    long total_frames = state->telemetry.total_frames_processed;
+    if (total_frames <= 0)
+    {
+        return;
+    }
+
+    long *counts = (long *)calloc((size_t)K, sizeof(long));
+    double *sum_sq_dist = (double *)calloc((size_t)K, sizeof(double));
+    double *min_dist = (double *)malloc((size_t)K * sizeof(double));
+    double *max_dist = (double *)malloc((size_t)K * sizeof(double));
+
+    if (!counts || !sum_sq_dist || !min_dist || !max_dist)
+    {
+        if (counts) free(counts);
+        if (sum_sq_dist) free(sum_sq_dist);
+        if (min_dist) free(min_dist);
+        if (max_dist) free(max_dist);
+        return;
+    }
+
+    for (int k = 0; k < K; k++)
+    {
+        min_dist[k] = 1e19;
+        max_dist[k] = -1.0;
+    }
+
+    long assigned_count = 0;
+    for (long t = 0; t < total_frames; t++)
+    {
+        int assigned_cl = state->frame_infos[t].assignment;
+        if (assigned_cl < 0 || assigned_cl >= K)
+        {
+            continue;
+        }
+
+        double d = 0.0;
+        for (int i = 0; i < state->frame_infos[t].num_dists; i++)
+        {
+            if (state->frame_infos[t].cluster_indices[i] == assigned_cl)
+            {
+                d = state->frame_infos[t].distances[i];
+                break;
+            }
+        }
+
+        counts[assigned_cl]++;
+        sum_sq_dist[assigned_cl] += d * d;
+        if (d < min_dist[assigned_cl])
+        {
+            min_dist[assigned_cl] = d;
+        }
+        if (d > max_dist[assigned_cl])
+        {
+            max_dist[assigned_cl] = d;
+        }
+        assigned_count++;
+    }
+
+    if (assigned_count <= 0)
+    {
+        free(counts);
+        free(sum_sq_dist);
+        free(min_dist);
+        free(max_dist);
+        return;
+    }
+
+    double total_sum_sq = 0.0;
+    long min_size = -1;
+    long max_size = 0;
+    double entropy = 0.0;
+    int active_clusters = 0;
+    double sum_rms = 0.0;
+
+    for (int k = 0; k < K; k++)
+    {
+        if (counts[k] > 0)
+        {
+            active_clusters++;
+            total_sum_sq += sum_sq_dist[k];
+            if (min_size == -1 || counts[k] < min_size)
+            {
+                min_size = counts[k];
+            }
+            if (counts[k] > max_size)
+            {
+                max_size = counts[k];
+            }
+
+            double p = (double)counts[k] / (double)assigned_count;
+            entropy -= p * log2(p);
+
+            double rms = sqrt(sum_sq_dist[k] / (double)counts[k]);
+            sum_rms += rms;
+        }
+    }
+
+    double global_rms = sqrt(total_sum_sq / (double)assigned_count);
+    double avg_cluster_rms = (active_clusters > 0) ? (sum_rms / (double)active_clusters) : 0.0;
+    double avg_size = (double)assigned_count / (double)active_clusters;
+
+    double global_max_dist = 0.0;
+    for (int k = 0; k < K; k++)
+    {
+        if (counts[k] > 0 && max_dist[k] > global_max_dist)
+        {
+            global_max_dist = max_dist[k];
+        }
+    }
+
+    if (tile_id >= 0)
+    {
+        printf("  Tile %3d Clustering Metrics:\n", tile_id);
+    }
+    else
+    {
+        printf("Clustering Metrics:\n");
+    }
+    printf("    Clusters:            %d (%d active)\n", K, active_clusters);
+    printf("    Assigned Frames:     %ld / %ld\n", assigned_count, total_frames);
+    printf("    RMS Distance:        %.4f  (Avg cluster RMS: %.4f, Max: %.4f)\n",
+           global_rms, avg_cluster_rms, global_max_dist);
+    printf("    Cluster Sizes:       Min=%ld, Max=%ld, Mean=%.1f\n",
+           min_size, max_size, avg_size);
+    printf("    Cluster Entropy:     %.4f bits\n", entropy);
+
+    free(counts);
+    free(sum_sq_dist);
+    free(min_dist);
+    free(max_dist);
 }

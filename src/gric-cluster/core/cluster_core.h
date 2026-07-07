@@ -27,4 +27,8 @@ double get_dist(
     ClusterConfig *config,
     ClusterState  *state);
 
+void print_clustering_metrics(
+    const ClusterState *state,
+    int                 tile_id);
+
 #endif // CLUSTER_CORE_H
