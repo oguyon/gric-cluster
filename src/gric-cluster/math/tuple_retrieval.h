@@ -3,8 +3,8 @@
 
 /**
  * @file tuple_retrieval.h
- * @brief Unified tuple-list retrieval and Pass 2
- *        Bayesian fusion for multi-tile GRIC.
+ * @brief Unified tuple-list retrieval and Joint Trajectory Fusion (Pass 2)
+ *        for multi-tile GRIC.
  */
 
 #include "tile_state.h"
@@ -26,12 +26,12 @@ void tuple_retrieve(
     int                   max_clusters);
 
 /**
- * @brief Run Pass 2 Bayesian fusion for one tile.
+ * @brief Run Joint Trajectory Fusion (Pass 2) for one tile.
  *
  * Builds spatial and temporal keys from the current
- * pass1 assignments, retrieves matching tuples, and
- * fuses the match scores with the pass1 posterior.
- * Updates pass1_assignment in place if the fused
+ * Independent Spatial Clustering (Pass 1) assignments, retrieves matching tuples, and
+ * fuses the match scores with the Pass 1 posterior.
+ * Updates the assignment in place if the fused
  * argmax differs.
  */
 void pass2_fuse(
@@ -39,7 +39,7 @@ void pass2_fuse(
     int             tile_idx);
 
 /**
- * @brief Predict joint transitions for all tiles before Pass 1.
+ * @brief Predict joint transitions for all tiles before Independent Spatial Clustering (Pass 1).
  *
  * Scans tuple history using a fuzzy joint pattern similarity
  * metric, then populates scratch mixed_probs and tuple_pred_candidates
