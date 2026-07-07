@@ -122,6 +122,14 @@ int main(int argc, char *argv[])
     config.optim.sparse_dcc_extra_evals = 0;
     config.optim.soft_bayesian_mode = 0;
     config.optim.soft_bayesian_sigma_coeff = 1.0;
+    config.optim.disable_pass2 = 0;
+
+    // Tiling defaults (M=1, no tiling)
+    config.input.tile_grid_x = 0;
+    config.input.tile_grid_y = 0;
+    config.input.tile_map_file = NULL;
+    config.input.tile_config_file = NULL;
+    config.input.retrieval_window = 1000;
 
     // Output defaults (disabled by default, except membership and dcc)
     config.output.output_dcc = 1;
@@ -442,6 +450,8 @@ int main(int argc, char *argv[])
     state.scratch.refine_queue_idx = 0;
     state.scratch.refine_queue_capacity = 1024;
     state.scratch.refine_queue_last_num_clusters = 0;
+    state.scratch.tuple_pred_candidates = (int *)malloc(max_clusters * sizeof(int));
+    state.scratch.tuple_pred_count = 0;
 
     // Run Clustering
     if (gric_shm_init(&config, &state) != 0)
@@ -520,6 +530,7 @@ int main(int argc, char *argv[])
     free(state.scratch.entropy_plog2p);
     free(state.scratch.entropy_visited);
     free(state.scratch.refine_queue);
+    free(state.scratch.tuple_pred_candidates);
     free(state.assignments);
 
     if (state.telemetry.pruned_fraction_sum)

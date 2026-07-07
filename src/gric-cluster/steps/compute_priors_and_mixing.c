@@ -127,6 +127,11 @@ void compute_priors_and_mixing(
 
     if (config->optim.pred_mode)
     {
+        if (config->input.tile_grid_x > 0 || config->input.tile_grid_y > 0)
+        {
+            goto skip_local_pred;
+        }
+
         int np = config->optim.pred_len;
         int nl = config->optim.pred_h;
         long t = state->telemetry.total_frames_processed;
@@ -313,6 +318,7 @@ void compute_priors_and_mixing(
             }
         }
     }
+skip_local_pred:
 
     if (!config->optim.gprob_mode)
     {

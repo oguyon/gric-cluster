@@ -90,7 +90,7 @@ static void print_rich_segment(
                 we++;
             }
             printf("%s%.*s%s",
-                   ANSI_COLOR_YELLOW,
+                   ANSI_BOLD_GREEN,
                    (int)(we - p), p,
                    ANSI_COLOR_RESET);
             if (is_bold)
@@ -120,7 +120,7 @@ static void print_rich_segment(
                 oe++;
             }
             printf("%s%.*s%s",
-                   ANSI_BOLD_GREEN,
+                   ANSI_COLOR_GREEN,
                    (int)(oe - p), p,
                    ANSI_COLOR_RESET);
             if (is_bold)
@@ -281,6 +281,12 @@ static const struct help_entry help_entries[] = {
      "How to pick options for best performance"},
     {"tuning",
      "(alias for performance)"},
+    {"tiling",
+     "Image partitioning and multi-tile processing"},
+    {"compression",
+     "State space compression and trajectory fusion"},
+    {"statespace",
+     "(alias for compression)"},
 };
 
 #define N_HELP_ENTRIES \
@@ -1966,6 +1972,115 @@ static int print_keyword_content(
         printf("\n");
         return 1;
     }
+    else if (strcmp(key, "tiling") == 0)
+    {
+        print_help_section(
+            "WHAT IS TILING?",
+            "Tiling partitions large input images into a grid of independent\n"
+            "sub-images (tiles). Each tile runs its own independent GRIC\n"
+            "clustering instance in parallel.\n"
+            "\n"
+            "This yields three major benefits:\n"
+            "1. Arithmetic Speedup: Distance metrics check smaller sub-frames\n"
+            "   (e.g., a 2x2 tile distance call is 4x cheaper to compute).\n"
+            "   Search complexity drops from O(K) to O(K_tile).\n"
+            "2. Parallelization: Dispatches tile tasks across OpenMP threads.\n"
+            "3. Memory Footprint Reduction: Cluster anchors only store the\n"
+            "   pixels of their respective tile (e.g. 1/4 the size for 2x2).\n"
+            "   Because local tile environments are simpler, the number of\n"
+            "   clusters per tile (K_tile) is much smaller than the monolithic\n"
+            "   system. This reduces anchor storage by 10-100x and quadratic\n"
+            "   DCC distance matrices by 100-1000x.");
+        print_help_section(
+            "TILING OPTIONS",
+            "-tiles <NxM>\n"
+            "  Specify the grid size (e.g. -tiles 2x2).\n"
+            "\n"
+            "-tileconf <file.txt>\n"
+            "  Define per-tile configurations (tile_id rlim maxcl).\n"
+            "\n"
+            "-retrieval_window <N>\n"
+            "  Joint Trajectory Fusion lookback horizon (default: 1000).");
+        print_help_section(
+            "TUNING GUIDELINES",
+            "1. Grid Resolution (The Sweet Spot):\n"
+            "   Avoid partitioning too finely (e.g. 4x4 on a 32x32 image).\n"
+            "   As grid size M increases, the joint state combinations grow\n"
+            "   exponentially (k^M), resulting in combinatorial state explosion\n"
+            "   and high OpenMP task scheduling overhead.\n"
+            "   * Recommend 2x2 tiling for small/medium scientific sensors.\n"
+            "\n"
+            "2. Calibrating rlim:\n"
+            "   As tile size shrinks, the maximum distance between sub-frames\n"
+            "   drops. Scaling rlim proportionally to the square root of the\n"
+            "   sub-frame pixel count is a good rule of thumb.\n"
+            "\n"
+            "3. Joint Trajectory Fusion (Cross-Tile Correction):\n"
+            "   When tiling is active, trajectory fusion resolves tile boundary noise\n"
+            "   by looking back at global transition history. Use -retrieval_window\n"
+            "   to tune memory depth (typically 1,000 to 10,000 frames).");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "performance",
+            "How to pick options for best performance");
+        print_see_also_option(
+            "algorithm",
+            "Overview of the GRIC algorithm");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "compression") == 0
+          || strcmp(key, "statespace") == 0)
+    {
+        print_help_section(
+            "WHAT IS STATE SPACE COMPRESSION?",
+            "State space compression measures how efficiently GRIC represents\n"
+            "the joint spatial-temporal states of a multi-tile system.\n"
+            "\n"
+            "When clustering tiles independently, local noise near boundaries\n"
+            "frequently causes tiles to assign frames to mismatched clusters,\n"
+            "creating a massive number of spurious joint state combinations\n"
+            "(tuples). State space compression resolves these noisy states\n"
+            "by fusing boundary assignments into physically consistent paths.");
+        print_help_section(
+            "HOW TRAJECTORY FUSION WORKS",
+            "1. Independent Spatial Clustering (Pass 1): Each tile clusters\n"
+            "   its sub-frame, yielding a raw joint state tuple U = (c_0, c_1, ...).\n"
+            "2. Joint Trajectory Fusion (Pass 2): Scans the global history of\n"
+            "   resolved states within a lookback window (H). It identifies\n"
+            "   frames with spatially similar trajectory patterns.\n"
+            "3. Bayesian Correction: Computes transition priors by accumulating\n"
+            "   historical transition evidence. A high-contrast prior overrides\n"
+            "   local boundary noise, collapsing fragmented assignments\n"
+            "   into the same clean physical trajectories.");
+        print_help_section(
+            "TUNING GUIDELINES",
+            "1. Tuning lookback horizon (-retrieval_window <H>):\n"
+            "   - Small H (e.g. < 200): Small sample size yields weak transition\n"
+            "     statistics, leading to poor error correction and low compression.\n"
+            "   - Optimal H (typically 1,000 to 10,000): Collects robust joint\n"
+            "     evidence, filtering out random boundary fluctuations.\n"
+            "   - Excessive H (e.g. > 20,000): Concepts/clusters undergo drift\n"
+            "     and recycling over very long horizons. Stale memory acts as\n"
+            "     noise, degrading the compression quality.\n"
+            "\n"
+            "2. Impact of Tiling Grid (-tiles <NxM>):\n"
+            "   Keep grid resolution balanced (recommend 2x2). High grid sizes\n"
+            "   (e.g., 4x4) treat ball motion as independent variables, causing\n"
+            "   a combinatorial state explosion (k^M unique tuples) that completely\n"
+            "   destroys spatial correlations and prevents compression.");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "tiling",
+            "Image partitioning and multi-tile processing");
+        print_see_also_option(
+            "performance",
+            "How to pick options for best performance");
+        printf("\n");
+        return 1;
+    }
     return 0;
 }
 
@@ -2062,6 +2177,21 @@ static void print_color_mode(void)
     cli_print_color_mode();
 }
 
+/**
+ * @brief Print a "See Also" topic reference line in Magenta.
+ *
+ * @param topic Topic name.
+ * @param desc  Description text.
+ */
+static void print_see_also_topic(
+    const char *topic,
+    const char *desc)
+{
+    printf("  %s%-24s%s %s\n",
+           ANSI_COLOR_MAGENTA, topic,
+           ANSI_COLOR_RESET, desc);
+} // print_see_also_topic
+
 void print_help(
     char *progname)
 {
@@ -2069,7 +2199,7 @@ void print_help(
     printf("  %sgric-cluster%s"
            " - Clustering tool for image"
            " streams and sequences\n\n",
-           ANSI_COLOR_YELLOW,
+           ANSI_BOLD_GREEN,
            ANSI_COLOR_RESET);
 
     printf("%sUSAGE%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
@@ -2083,8 +2213,10 @@ void print_help(
     printf("  Supports FITS, MP4 (via ffmpeg), and raw text input.\n\n");
 
     printf("%sOPTIONS%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
-    printf("  (Use '%s -h <option>%s' for detailed help on a specific option)\n", progname,
-           ANSI_COLOR_RESET);
+    printf("  (Use '%s%s%s %s-h%s %s<option>%s' for detailed help on a specific option)\n",
+           ANSI_BOLD_GREEN, progname, ANSI_COLOR_RESET,
+           ANSI_COLOR_GREEN, ANSI_COLOR_RESET,
+           ANSI_COLOR_MAGENTA, ANSI_COLOR_RESET);
 
     printf("  Input %s(use '-h input' for details)%s\n",
            ANSI_COLOR_GREY, ANSI_COLOR_RESET);
@@ -2182,16 +2314,31 @@ void print_help(
     print_colored_line("    -clusters                Enable individual cluster files (cluster_X) "
                        "(default: disabled)\n");
 
+    printf("  %sTiling:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
+    print_colored_line(
+        "    -tiles <NxM>             "
+        "Split image into NxM tile grid");
+    print_colored_line(
+        "    -tilemap <file.fits>     "
+        "Load tile map from integer FITS file");
+    print_colored_line(
+        "    -tileconf <file.txt>     "
+        "Per-tile config (tile_id rlim maxcl)");
+    print_colored_line(
+        "    -retrieval_window <N>    "
+        "Tuple lookback horizon (default: 1000)\n");
+
     printf("%sEXAMPLES%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  %s$%s %sgric-cluster%s"
            " -scandist test_walk.txt\n",
            ANSI_COLOR_GREY, ANSI_COLOR_RESET,
-           ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
     printf("  %s$%s %sgric-cluster%s"
            " a1.5 test_walk.txt"
            " -clustered %s>%s run.log\n",
            ANSI_COLOR_GREY, ANSI_COLOR_RESET,
-           ANSI_COLOR_YELLOW, ANSI_COLOR_RESET,
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET,
            ANSI_COLOR_GREY, ANSI_COLOR_RESET);
     printf("\n");
 
@@ -2243,30 +2390,37 @@ void print_help(
     printf("\n");
 
     printf("%sTOPICS%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
-    printf("  (Use '%s -h <topic>'"
-           " for more information)\n",
-           progname);
-    print_see_also_option(
+    printf("  (Use '%s%s%s %s-h%s %s<topic>%s' for more information)\n",
+           ANSI_BOLD_GREEN, progname, ANSI_COLOR_RESET,
+           ANSI_COLOR_GREEN, ANSI_COLOR_RESET,
+           ANSI_COLOR_MAGENTA, ANSI_COLOR_RESET);
+    print_see_also_topic(
         "intro",
         "Getting started with GRIC");
-    print_see_also_option(
+    print_see_also_topic(
         "algorithm",
         "Overview of the GRIC clustering algorithm");
-    print_see_also_option(
+    print_see_also_topic(
         "performance",
         "How to pick options for best performance");
-    print_see_also_option(
+    print_see_also_topic(
         "input",
         "Input formats and options");
-    print_see_also_option(
+    print_see_also_topic(
         "output",
         "Output files and options");
-    print_see_also_option(
+    print_see_also_topic(
         "clustering",
         "Clustering control options");
-    print_see_also_option(
+    print_see_also_topic(
         "analysis",
         "Analysis and debugging options");
+    print_see_also_topic(
+        "tiling",
+        "Image partitioning and multi-tile processing");
+    print_see_also_topic(
+        "compression",
+        "State space compression and trajectory fusion");
     printf("\n");
 
     print_color_mode();

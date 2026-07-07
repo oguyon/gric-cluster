@@ -41,7 +41,8 @@ static void print_usage(const char *progname)
 static void print_help(const char *progname)
 {
     printf("%sNAME%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  gric-stream-to-pipe - Pipes raw ImageStreamIO stream data to stdout\n\n");
+    printf("  %sgric-stream-to-pipe%s - Pipes raw ImageStreamIO stream data to stdout\n\n",
+           ansi_bold_green, ansi_reset);
 
     printf("%sUSAGE%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s%s%s %s<stream_name>%s %s[max_frames]%s\n\n", ansi_bold_green, progname, ansi_reset,

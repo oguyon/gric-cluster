@@ -82,10 +82,16 @@ set(CLUSTER_SRCS
     src/gric-cluster/core/config_utils.c
     src/gric-cluster/core/cluster_bounds.c
     src/gric-cluster/core/cluster_shm.c
+    src/gric-cluster/core/tile_state.c
+    src/gric-cluster/core/cluster_core_multitile.c
+    src/gric-cluster/core/tile_map.c
+    src/gric-cluster/io/frame_scatter.c
+    src/gric-cluster/io/cluster_io_multitile.c
     src/gric-cluster/math/cluster_math.c
     src/gric-cluster/math/cluster_prune.c
     src/gric-cluster/math/cluster_scandist.c
     src/gric-cluster/math/framedistance.c
+    src/gric-cluster/math/tuple_retrieval.c
     src/gric-cluster/io/cluster_io.c
     src/gric-cluster/io/cluster_io_log.c
     src/gric-cluster/io/cluster_io_results.c
@@ -144,6 +150,12 @@ target_link_libraries(gric-mkclusteredfile m)
 add_executable(gric-NDmodel src/gric-NDmodel/model_nd.c src/shared/cli_colors.c)
 target_link_libraries(gric-NDmodel m)
 
+if (CFITSIO_FOUND)
+    add_executable(gric-gen-balls tools/gen_bouncing_balls.c)
+    target_link_libraries(gric-gen-balls m ${CFITSIO_LIBRARIES})
+    target_include_directories(gric-gen-balls PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+
 add_executable(gric-ascii-spot-2-video src/gric-ascii-spot-2-video/ascii-spot-2-video.c src/shared/cli_colors.c)
 target_link_libraries(gric-ascii-spot-2-video m ${IMAGESTREAMIO_LIBRARIES})
 
@@ -174,6 +186,13 @@ add_executable(gric-benchmark
     src/gric-benchmark/test_list.c
     src/shared/cli_colors.c
 )
+
+# gric-tune tool
+add_executable(gric-tune
+    src/gric-tune/gric-tune.c
+    src/shared/cli_colors.c
+)
+target_link_libraries(gric-tune m)
 
 if (CFITSIO_FOUND)
     target_compile_definitions(gric-info PRIVATE USE_CFITSIO)

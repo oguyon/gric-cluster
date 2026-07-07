@@ -40,7 +40,7 @@ void cli_colors_init(void)
         ansi_bold = "\x1b[1m";
         ansi_underline = "\x1b[4m";
         ansi_bold_cyan = "\x1b[1;36m";
-        ansi_bold_green = "\x1b[1;32m";
+        ansi_bold_green = "\x1b[1;38;5;154m";
         ansi_color_magenta = "\x1b[35m";
         ansi_color_yellow = "\x1b[33m";
         ansi_color_grey = "\x1b[90m";
@@ -82,7 +82,7 @@ void cli_print_colored_usage(
         p++;
     }
     printf("%s%.*s%s",
-           ANSI_COLOR_YELLOW,
+           ANSI_BOLD_GREEN,
            (int)(p - cmd_start), cmd_start,
            ANSI_COLOR_RESET);
 

@@ -225,6 +225,11 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->optim.soft_bayesian_sigma_coeff = atof(value);
         return 1;
     }
+    else if (matches(key, "-no_pass2") || matches(key, "-no-pass2"))
+    {
+        config->optim.disable_pass2 = 1;
+        return 0;
+    }
     else if (matches(key, "-tm"))
     {
         if (!value)
@@ -352,6 +357,51 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         if (!value)
             return -1;
         config->output.shm_filename = strdup(value);
+        return 1;
+    }
+    else if (matches(key, "-tiles"))
+    {
+        if (!value)
+            return -1;
+        if (sscanf(value, "%dx%d",
+                   &config->input.tile_grid_x,
+                   &config->input.tile_grid_y) == 2)
+        {
+            return 1;
+        }
+        int n = atoi(value);
+        if (n > 0)
+        {
+            int side = 1;
+            while (side * side < n)
+            {
+                side++;
+            }
+            config->input.tile_grid_x = side;
+            config->input.tile_grid_y =
+                (n + side - 1) / side;
+        }
+        return 1;
+    }
+    else if (matches(key, "-tilemap"))
+    {
+        if (!value)
+            return -1;
+        config->input.tile_map_file = strdup(value);
+        return 1;
+    }
+    else if (matches(key, "-tileconf"))
+    {
+        if (!value)
+            return -1;
+        config->input.tile_config_file = strdup(value);
+        return 1;
+    }
+    else if (matches(key, "-retrieval_window"))
+    {
+        if (!value)
+            return -1;
+        config->input.retrieval_window = atoi(value);
         return 1;
     }
 
@@ -547,6 +597,30 @@ int write_config_file(const char *filename, ClusterConfig *config)
 
     if (config->output.shm_filename)
         fprintf(f, "shm %s\n", config->output.shm_filename);
+
+    // Tiling configuration
+    if (config->input.tile_grid_x > 0
+        && config->input.tile_grid_y > 0)
+    {
+        fprintf(f, "tiles %dx%d\n",
+                config->input.tile_grid_x,
+                config->input.tile_grid_y);
+    }
+    if (config->input.tile_map_file)
+    {
+        fprintf(f, "tilemap %s\n",
+                config->input.tile_map_file);
+    }
+    if (config->input.tile_config_file)
+    {
+        fprintf(f, "tileconf %s\n",
+                config->input.tile_config_file);
+    }
+    if (config->input.retrieval_window != 1000)
+    {
+        fprintf(f, "retrieval_window %d\n",
+                config->input.retrieval_window);
+    }
 
     fclose(f);
     return 0;

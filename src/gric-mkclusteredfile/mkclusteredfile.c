@@ -28,7 +28,8 @@ static void print_usage(const char *progname)
 void print_help(const char *progname)
 {
     printf("%sNAME%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  gric-mkclusteredfile - Reconstructs clustered files from membership lists\n\n");
+    printf("  %sgric-mkclusteredfile%s - Reconstructs clustered files from membership lists\n\n",
+           ansi_bold_green, ansi_reset);
 
     printf("%sUSAGE%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s%s%s %s<input_file>%s %s<membership_file>%s %s<output_file>%s %s[options]%s\n\n",

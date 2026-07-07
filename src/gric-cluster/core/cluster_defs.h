@@ -35,12 +35,17 @@ typedef struct
 /** Input configuration. */
 typedef struct
 {
-    long  maxnbfr;           /**< Maximum number of frames to process */
-    char *fits_filename;     /**< Path to input FITS file or stream name */
-    int   scandist_mode;     /**< 1 to run scandist-only (no clustering) */
-    int   filelist_mode;     /**< 1 if input is a list of FITS files */
-    int   stream_input_mode; /**< 1 to read from shared-memory stream */
-    int   cnt2sync_mode;     /**< 1 to use cnt2 semaphore for stream sync */
+    long  maxnbfr;           /**< Max frames to process */
+    char *fits_filename;     /**< Path to input FITS or stream */
+    int   scandist_mode;     /**< 1 = scandist-only */
+    int   filelist_mode;     /**< 1 = input is file list */
+    int   stream_input_mode; /**< 1 = shared-memory stream */
+    int   cnt2sync_mode;     /**< 1 = cnt2 semaphore sync */
+    int   tile_grid_x;       /**< Tile grid columns (0=tilemap) */
+    int   tile_grid_y;       /**< Tile grid rows (0=tilemap) */
+    char *tile_map_file;     /**< Path to integer FITS tile map */
+    char *tile_config_file;  /**< Per-tile ASCII config file */
+    int   retrieval_window;  /**< Tuple retrieval lookback */
 } ConfigInput;
 
 /** Optimization and acceleration parameters. */
@@ -67,6 +72,7 @@ typedef struct
     int    sparse_dcc_extra_evals;  /**< Extra inter-cluster measurements per new cluster */
     int    soft_bayesian_mode;      /**< 1 to enable soft Bayesian updates */
     double soft_bayesian_sigma_coeff; /**< Coefficient multiplying rlim for sigma */
+    int    disable_pass2;           /**< 1 to disable Pass 2 fusion (tuple prediction) */
 } ConfigOptim;
 
 /** Output configuration. */
@@ -183,6 +189,8 @@ typedef struct
     int          refine_queue_idx;              /**< Current index in the queue */
     int          refine_queue_capacity;         /**< Capacity of the queue */
     int          refine_queue_last_num_clusters;/**< Number of clusters during last queue rebuild */
+    int         *tuple_pred_candidates;         /**< Pre-populated candidates from joint prediction */
+    int          tuple_pred_count;              /**< Number of candidates pre-populated */
 } ClusterScratch;
 
 // State structure
