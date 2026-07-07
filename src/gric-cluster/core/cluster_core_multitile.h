@@ -16,7 +16,7 @@
  * @brief Run multi-tile clustering with OpenMP task parallelism.
  *
  * Reads full-image frames, scatters them into per-tile
- * sub-frames, dispatches parallel Pass 1 clustering tasks,
+ * sub-frames, dispatches parallel Independent Spatial Clustering (Pass 1) tasks,
  * and records the resulting assignment tuples.
  */
 void run_clustering_multitile(

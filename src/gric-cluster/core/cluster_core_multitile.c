@@ -3,9 +3,9 @@
  * @brief Multi-tile clustering orchestrator using OpenMP tasks.
  *
  * Reads full-image frames, scatters pixels into per-tile
- * sub-frames, dispatches parallel Pass 1 clustering tasks
+ * sub-frames, dispatches parallel Independent Spatial Clustering (Pass 1) tasks
  * via cluster_frame(), and records the assignment tuple for
- * each frame. Pass 2 (Bayesian fusion) is deferred to Phase 6.
+ * each frame. Joint Trajectory Fusion (Pass 2) is deferred to Phase 6.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -121,15 +121,16 @@ static Frame *make_task_frame(const Frame *tile_frame)
  *
  * Outer loop reads full-image frames sequentially, scatters
  * each into per-tile sub-frames, then dispatches M independent
- * OpenMP tasks for Pass 1 clustering.  Each task calls
+ * OpenMP tasks for Independent Spatial Clustering (Pass 1).  Each task calls
  * cluster_frame() on a freshly copied Frame so the internal
  * free_frame() does not touch the reusable scatter buffers.
  *
  * After all tasks complete (taskwait barrier), the per-tile
  * assignments are recorded in mts->tuple_history.
  *
- * Pass 2 (tuple retrieval and Bayesian fusion) is not yet
- * implemented — that is Phase 6.
+ * After all frames are processed, Joint Trajectory Fusion (Pass 2)
+ * is executed to resolve tile boundary noise using global
+ * historical sequence transitions.
  */
 void run_clustering_multitile(
     ClusterConfig  *global_config,
@@ -382,7 +383,7 @@ void run_clustering_multitile(
 #pragma omp taskwait
 #endif
 
-        /* ---- Pass 2: tuple retrieval + fusion ---- */
+        /* ---- Joint Trajectory Fusion (Pass 2) ---- */
         if (mts->tuple_count > 0 && num_tiles > 1 && !global_config->optim.disable_pass2)
         {
             for (int m = 0; m < num_tiles; m++)
