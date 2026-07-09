@@ -223,8 +223,36 @@ void write_results_multitile(
 
         if (config->output.output_anchors)
         {
-            printf("  Tile %d: writing anchors\n", m);
-            write_tile_anchors(tile_dir, ts);
+            if (is_ascii_input_mode() && !config->output.fitsout_mode)
+            {
+                printf("  Tile %d: writing anchors.txt\n", m);
+                write_tile_anchors(tile_dir, ts);
+            }
+            else
+            {
+#ifdef USE_CFITSIO
+                printf("  Tile %d: writing anchors.fits\n", m);
+                int status = 0;
+                fitsfile *afptr;
+                char out_path[2048];
+                snprintf(out_path, sizeof(out_path), "!%s/anchors.fits", tile_dir);
+                fits_create_file(&afptr, out_path, &status);
+                long naxes[3] = {ts->tile_frame.width, ts->tile_frame.height, ts->state.num_clusters};
+                fits_create_img(afptr, DOUBLE_IMG, 3, naxes, &status);
+
+                long nelements = ts->tile_frame.width * ts->tile_frame.height;
+                for (int i = 0; i < ts->state.num_clusters; i++)
+                {
+                    long fpixel[3] = {1, 1, i + 1};
+                    fits_write_pix(afptr, TDOUBLE, fpixel, nelements,
+                                   ts->state.clusters[i].anchor.data, &status);
+                }
+                fits_close_file(afptr, &status);
+#else
+                printf("  Tile %d: writing anchors.txt (FITS disabled)\n", m);
+                write_tile_anchors(tile_dir, ts);
+#endif
+            }
         }
 
         if (config->output.output_counts)
@@ -268,10 +296,6 @@ void write_results_multitile(
                 fclose(dcc_fp);
             } // if dcc_fp
         } // if output_dcc
-
-#ifdef USE_CFITSIO
-        /* TODO: per-tile anchor FITS cube output */
-#endif
     } // for each tile m
 
     /* Write global tuple history */
