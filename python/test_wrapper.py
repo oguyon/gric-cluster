@@ -1,5 +1,4 @@
 import unittest
-import os
 from image_cluster import ImageCluster
 
 class TestImageCluster(unittest.TestCase):
