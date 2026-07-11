@@ -194,6 +194,13 @@ add_executable(gric-tune
 )
 target_link_libraries(gric-tune m)
 
+# gric-cluster-analysis tool
+add_executable(gric-cluster-analysis
+    src/gric-cluster-analysis/gric-cluster-analysis.c
+    src/shared/cli_colors.c
+)
+target_link_libraries(gric-cluster-analysis m)
+
 if (CFITSIO_FOUND)
     target_compile_definitions(gric-info PRIVATE USE_CFITSIO)
     target_compile_definitions(gric-info PRIVATE CFITSIO_VERSION_STR=\"${CFITSIO_VERSION}\")
