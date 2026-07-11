@@ -389,6 +389,18 @@ static int is_verbatim_line(
         {
             return 1;
         }
+        /*
+         * Alignment padding: 2+ consecutive spaces
+         * after a non-space character means the line
+         * is column-aligned (table, label: value).
+         */
+        if (content[i] != ' '
+            && i + 2 < clen
+            && content[i + 1] == ' '
+            && content[i + 2] == ' ')
+        {
+            return 1;
+        }
     }
     return 0;
 }
@@ -2664,8 +2676,9 @@ static int print_keyword_content(
             "  candidates via triangle inequality. The next\n"
             "  target is chosen to maximally reduce remaining\n"
             "  ambiguity (entropy-based selection). Together,\n"
-            "  these reduce average measurements to O(log K)\n"
-            "  per frame instead of O(K).\n"
+            "  these dramatically reduce the number of\n"
+            "  measurements per frame — often to just a few,\n"
+            "  regardless of how many clusters exist.\n"
             "\n"
             "The key insight: you don't need to measure every\n"
             "cluster to know which one matches. One measurement\n"
@@ -2849,10 +2862,15 @@ static int print_keyword_content(
         print_help_section(
             "COMPLEXITY",
             "Measurements per frame (K = number of clusters):\n"
-            "  Greedy only:          O(sqrt(K)) average\n"
-            "  Greedy + pruning:     O(sqrt(K)) tighter\n"
-            "  Entropy + pruning:    O(log K) average\n"
-            "  Entropy + gprob:      O(log K) tighter\n"
+            "  Naive (no pruning):   O(K) -- measure every cluster\n"
+            "  Greedy + pruning:     substantially fewer; data-dependent\n"
+            "  Entropy + pruning:    fewer still; data-dependent\n"
+            "  Entropy + gprob:      often just a few measurements\n"
+            "\n"
+            "  The actual count depends on data structure: highly\n"
+            "  structured data (well-separated clusters) can\n"
+            "  require as few as 1-2 measurements per frame.\n"
+            "  Worst case (overlapping clusters) approaches O(K).\n"
             "\n"
             "Memory:\n"
             "  DCC matrix (dense):   O(K^2)\n"
