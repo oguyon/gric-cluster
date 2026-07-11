@@ -291,14 +291,14 @@ static int count_indent(
 
 /**
  * is_verbatim_line - detect lines that should not reflow
- * @content: pointer to line content (after indent stripped)
+ * @content: pointer to line content (indent stripped)
  * @clen:    length of content
  *
  * Return: 1 if the line must be printed as-is:
  *   - Bullet items:    "- text"
  *   - Numbered items:  "N. text"
- *   - ASCII diagrams:  contains |, +, -->, ^
- *   - Formulas:        "name = expression"
+ *   - Diagram pipes:   starts with |
+ *   - Diagram arrows:  contains -->, <--, --+, ---
  */
 static int is_verbatim_line(
     const char *content,
@@ -316,7 +316,7 @@ static int is_verbatim_line(
         return 1;
     }
 
-    /* Numbered item: "N. text" (N is digit) */
+    /* Numbered item: "N. text" (N is one or more digits) */
     if (content[0] >= '0' && content[0] <= '9')
     {
         for (int i = 1; i < clen; i++)
@@ -335,69 +335,32 @@ static int is_verbatim_line(
         }
     }
 
-    /* Scan for diagram/formula characters */
+    /* Diagram pipe at start of line */
+    if (content[0] == '|')
+    {
+        return 1;
+    }
+
+    /* Scan for diagram arrows / connectors */
     for (int i = 0; i < clen; i++)
     {
-        /*
-         * Diagram: | (pipe) — must have space or
-         * boundary on BOTH sides to be structural.
-         * This avoids matching |d(x)| (abs value).
-         */
-        if (content[i] == '|')
-        {
-            int left_sp = (i == 0
-                || content[i - 1] == ' ');
-            int right_sp = (i + 1 >= clen
-                || content[i + 1] == ' ');
-            if (left_sp && right_sp)
-            {
-                return 1;
-            }
-        }
-        /* Diagram: + (connector) at start of line */
-        if (content[i] == '+' && i == 0)
-        {
-            return 1;
-        }
-        /* Diagram: ^ (arrow up, but only standalone) */
-        if (content[i] == '^'
-            && (i == 0 || content[i - 1] == ' ')
-            && (i + 1 >= clen
-                || content[i + 1] == ' '))
-        {
-            return 1;
-        }
-        /* Diagram: --> or --+ (arrow/connector) */
+        /* --> or --+ or <-- */
         if (content[i] == '-' && i + 1 < clen
             && (content[i + 1] == '>'
                 || content[i + 1] == '+'))
         {
             return 1;
         }
-        /* Diagram: --- (3+ dashes = horizontal rule) */
+        if (content[i] == '<' && i + 1 < clen
+            && content[i + 1] == '-')
+        {
+            return 1;
+        }
+        /* --- (3+ dashes = horizontal rule/connector) */
         if (content[i] == '-'
             && i + 2 < clen
             && content[i + 1] == '-'
             && content[i + 2] == '-')
-        {
-            return 1;
-        }
-        /* Formula: "= " pattern (assignment/equation) */
-        if (content[i] == '='
-            && i > 0 && content[i - 1] == ' '
-            && i + 1 < clen && content[i + 1] == ' ')
-        {
-            return 1;
-        }
-        /*
-         * Alignment padding: 2+ consecutive spaces
-         * after a non-space character means the line
-         * is column-aligned (table, label: value).
-         */
-        if (content[i] != ' '
-            && i + 2 < clen
-            && content[i + 1] == ' '
-            && content[i + 2] == ' ')
         {
             return 1;
         }
@@ -808,8 +771,8 @@ static int print_keyword_content(
         print_help_section("USE", "-maxcl 5000");
         print_help_section(
             "INTERACTS WITH",
-            "-maxcl_strategy  What happens at the limit\n"
-            "-sparse_dcc      Avoids O(maxcl^2) DCC");
+            "- -maxcl_strategy: What happens at the limit\n"
+            "- -sparse_dcc: Avoids O(maxcl^2) DCC");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN,
                ANSI_COLOR_RESET);
@@ -932,13 +895,13 @@ static int print_keyword_content(
             "-gprob (Highly recommended for continuous drift/trajectory data)");
         print_help_section(
             "TUNED BY",
-            "-fmatcha <val>   Match reward (default: 2.0)\n"
-            "-fmatchb <val>   Pruning factor (default: 0.5)\n"
-            "-maxvis <val>    History depth (default: 1000)");
+            "- -fmatcha <val>: Match reward (default: 2.0)\n"
+            "- -fmatchb <val>: Pruning factor (default: 0.5)\n"
+            "- -maxvis <val>: History depth (default: 1000)");
         print_help_section(
             "ENHANCED BY",
-            "-entropy         Optimal measurement scheduling\n"
-            "-soft_bayesian   Smoother probability updates");
+            "- -entropy: Optimal measurement scheduling\n"
+            "- -soft_bayesian: Smoother probability updates");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN,
                ANSI_COLOR_RESET);
@@ -1052,9 +1015,9 @@ static int print_keyword_content(
             "-pred[5,500,1] (For repeating patterns/loops)");
         print_help_section(
             "INTERACTS WITH",
-            "-gprob   Both contribute to cluster\n"
+            "- -gprob: Both contribute to cluster\n"
             "  probability distribution\n"
-            "-tm      Transition matrix complements\n"
+            "- -tm: Transition matrix complements\n"
             "  pattern detection");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN,
@@ -1269,12 +1232,12 @@ static int print_keyword_content(
             " trivially cheap");
         print_help_section(
             "WORKS BEST WITH",
-            "-gprob          Provides the"
-            " probability distribution\n"
-            "-soft_bayesian   Smoother Bayesian"
-            " updates between measurements\n"
-            "-te4 / -te5      Tighter triangle"
-            " inequality bounds");
+            "- -gprob: Provides the probability\n"
+            "  distribution\n"
+            "- -soft_bayesian: Smoother Bayesian updates\n"
+            "  between measurements\n"
+            "- -te4 / -te5: Tighter triangle inequality\n"
+            "  bounds");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN,
                ANSI_COLOR_RESET);
@@ -1579,7 +1542,7 @@ static int print_keyword_content(
             "  Higher = tighter bounds, more CPU.");
         print_help_section(
             "INTERACTS WITH",
-            "-maxcl   DCC matrix is O(maxcl^2);\n"
+            "- -maxcl: DCC matrix is O(maxcl^2);\n"
             "  sparse DCC most beneficial when\n"
             "  maxcl is large.");
         printf("%sSEE ALSO%s\n",
@@ -2864,30 +2827,33 @@ static int print_keyword_content(
             "  -soft_bayesian --> Likelihood Fading\n"
             "\n"
             "Synergies:\n"
-            "  -gprob + -entropy: gprob builds the posterior,\n"
-            "    entropy schedules measurements to resolve it.\n"
-            "  -sparse_dcc + large -maxcl: avoids the O(K^2)\n"
-            "    cost of dense cluster-to-cluster distances.\n"
-            "  -pred + -tm: pattern detection for multi-step\n"
-            "    sequences; transition matrix for pairwise.");
+            "  - -gprob + -entropy: gprob builds the\n"
+            "    posterior, entropy schedules measurements\n"
+            "    to resolve it.\n"
+            "  - -sparse_dcc + large -maxcl: avoids the\n"
+            "    O(K^2) cost of dense cluster-to-cluster\n"
+            "    distances.\n"
+            "  - -pred + -tm: pattern detection for\n"
+            "    multi-step sequences; transition matrix\n"
+            "    for pairwise.");
         print_help_section(
             "COMPLEXITY",
             "Measurements per frame (K = number of clusters):\n"
-            "  Naive (no pruning):   O(K) -- measure every cluster\n"
-            "  Greedy + pruning:     substantially fewer; data-dependent\n"
-            "  Entropy + pruning:    fewer still; data-dependent\n"
-            "  Entropy + gprob:      often just a few measurements\n"
+            "  - Naive (no pruning): O(K), measure every cluster\n"
+            "  - Greedy + pruning: substantially fewer; data-dependent\n"
+            "  - Entropy + pruning: fewer still; data-dependent\n"
+            "  - Entropy + gprob: often just a few measurements\n"
             "\n"
-            "  The actual count depends on data structure: highly\n"
-            "  structured data (well-separated clusters) can\n"
-            "  require as few as 1-2 measurements per frame.\n"
-            "  Worst case (overlapping clusters) approaches O(K).\n"
+            "The actual count depends on data structure: highly\n"
+            "structured data (well-separated clusters) can\n"
+            "require as few as 1-2 measurements per frame.\n"
+            "Worst case (overlapping clusters) approaches O(K).\n"
             "\n"
             "Memory:\n"
-            "  DCC matrix (dense):   O(K^2)\n"
-            "  DCC matrix (sparse):  O(K)\n"
-            "  Assignment history:   O(N) (N = frames seen)\n"
-            "  Gprob visitor lists:  O(K x maxvis)");
+            "  - DCC matrix (dense): O(K^2)\n"
+            "  - DCC matrix (sparse): O(K)\n"
+            "  - Assignment history: O(N), N = frames seen\n"
+            "  - Gprob visitor lists: O(K x maxvis)");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
         print_see_also_option(
@@ -3272,8 +3238,8 @@ static int print_keyword_content(
         print_help_section(
             "REDUCING I/O OVERHEAD",
             "Disable outputs you don't need:\n"
-            "  -no_membership   Skip frame_membership.txt\n"
-            "  -no_dcc          Skip dcc.txt\n"
+            "  - -no_membership: Skip frame_membership.txt\n"
+            "  - -no_dcc: Skip dcc.txt\n"
             "\n"
             "For batch processing, redirect stdout:\n"
             "  gric-cluster ... > run.log");
