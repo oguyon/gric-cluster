@@ -80,4 +80,43 @@ void cli_print_colored_examples(const char *examples);
  */
 void cli_print_see_also_option(const char *option, const char *desc);
 
+void cli_colors_init_force(
+    int force_color);
+
+int cli_get_terminal_width(
+    void);
+
+int cli_get_terminal_height(
+    void);
+
+int cli_is_color_enabled(
+    void);
+
+void cli_print_wrapped_line(
+    const char *text,
+    int         len,
+    int         indent,
+    int         width);
+
+void cli_print_rich_segment(
+    const char *text,
+    int         len,
+    int         is_bold);
+
+void cli_print_help_section(
+    const char *label,
+    const char *value);
+
+void cli_print_header_box(
+    const char *title);
+
+void cli_print_pager(
+    const char *content);
+
+void cli_suggest_similar_topic(
+    const char         *topic,
+    const char *const  *topics,
+    int                 ntopics);
+
 #endif // CLI_COLORS_H
+

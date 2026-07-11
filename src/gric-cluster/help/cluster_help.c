@@ -9,6 +9,8 @@
 #include "cluster_help_content.h"
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+#include <stdlib.h>
 
 #include "shared/cli_colors.h"
 
@@ -161,7 +163,7 @@ void print_usage(
     printf("Try '%s -h' for more information.\n", progname);
 }
 
-void print_help_keyword(
+static void print_help_keyword_raw(
     const char *keyword)
 {
     // Normalize keyword (remove leading dashes)
@@ -229,6 +231,14 @@ void print_help_keyword(
 
     // No match at all
     printf("No help available for '%s'.\n", keyword);
+    {
+        const char *topics[N_HELP_ENTRIES];
+        for (size_t i = 0; i < N_HELP_ENTRIES; i++)
+        {
+            topics[i] = help_entries[i].keyword;
+        }
+        cli_suggest_similar_topic(key, topics, (int)N_HELP_ENTRIES);
+    }
     printf(
         "Try '%s -h' to see all options,\n"
         "or  '%s -h <topic>' where topic is:\n"
@@ -264,7 +274,7 @@ static void print_see_also_topic(
            ANSI_COLOR_RESET, desc);
 } // print_see_also_topic
 
-void print_help(
+static void print_help_raw(
     char *progname)
 {
     printf("\n%sNAME%s\n",
@@ -546,4 +556,76 @@ void print_help(
     printf("\n");
 
     printf("\n");
+}
+
+void print_help_keyword(
+    const char *keyword)
+{
+    FILE *tmp = tmpfile();
+    if (tmp != NULL)
+    {
+        int saved_stdout = dup(STDOUT_FILENO);
+        int tmp_fd = fileno(tmp);
+        dup2(tmp_fd, STDOUT_FILENO);
+
+        print_help_keyword_raw(keyword);
+        fflush(stdout);
+
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
+
+        fseek(tmp, 0, SEEK_END);
+        long sz = ftell(tmp);
+        fseek(tmp, 0, SEEK_SET);
+
+        char *buf = malloc((size_t)sz + 1);
+        if (buf != NULL)
+        {
+            size_t read_bytes = fread(buf, 1, (size_t)sz, tmp);
+            buf[read_bytes] = '\0';
+            cli_print_pager(buf);
+            free(buf);
+        }
+        fclose(tmp);
+    }
+    else
+    {
+        print_help_keyword_raw(keyword);
+    }
+}
+
+void print_help(
+    char *progname)
+{
+    FILE *tmp = tmpfile();
+    if (tmp != NULL)
+    {
+        int saved_stdout = dup(STDOUT_FILENO);
+        int tmp_fd = fileno(tmp);
+        dup2(tmp_fd, STDOUT_FILENO);
+
+        print_help_raw(progname);
+        fflush(stdout);
+
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
+
+        fseek(tmp, 0, SEEK_END);
+        long sz = ftell(tmp);
+        fseek(tmp, 0, SEEK_SET);
+
+        char *buf = malloc((size_t)sz + 1);
+        if (buf != NULL)
+        {
+            size_t read_bytes = fread(buf, 1, (size_t)sz, tmp);
+            buf[read_bytes] = '\0';
+            cli_print_pager(buf);
+            free(buf);
+        }
+        fclose(tmp);
+    }
+    else
+    {
+        print_help_raw(progname);
+    }
 }

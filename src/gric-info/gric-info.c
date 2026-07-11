@@ -17,7 +17,7 @@
 
 
 
-static void print_help(
+static void print_help_raw(
     const char *progname)
 {
     printf("%sNAME%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
@@ -39,7 +39,43 @@ static void print_help(
     printf("  %s$%s %s%s%s\n", ANSI_COLOR_GREY, ANSI_COLOR_RESET, ANSI_BOLD_GREEN, progname,
            ANSI_COLOR_RESET);
     cli_print_color_mode();
-} // print_help
+}
+
+static void print_help(
+    const char *progname)
+{
+    FILE *tmp = tmpfile();
+    if (tmp != NULL)
+    {
+        int saved_stdout = dup(STDOUT_FILENO);
+        int tmp_fd = fileno(tmp);
+        dup2(tmp_fd, STDOUT_FILENO);
+
+        print_help_raw(progname);
+        fflush(stdout);
+
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
+
+        fseek(tmp, 0, SEEK_END);
+        long sz = ftell(tmp);
+        fseek(tmp, 0, SEEK_SET);
+
+        char *buf = malloc((size_t)sz + 1);
+        if (buf != NULL)
+        {
+            size_t read_bytes = fread(buf, 1, (size_t)sz, tmp);
+            buf[read_bytes] = '\0';
+            cli_print_pager(buf);
+            free(buf);
+        }
+        fclose(tmp);
+    }
+    else
+    {
+        print_help_raw(progname);
+    }
+}
 
 /**
  * @brief Prints details for a specific optional build module.
@@ -91,8 +127,8 @@ int main(
         }
     }
 
-    printf("%sGRIC-CLUSTER Optional Modules Information%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
-    printf("=========================================\n\n");
+    cli_print_header_box("GRIC-CLUSTER Optional Modules Information");
+    printf("\n");
 
 #ifdef USE_CFITSIO
     print_module_info("CFITSIO", 1, CFITSIO_VERSION_STR, CFITSIO_LOCATION_STR);
