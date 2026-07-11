@@ -11,8 +11,121 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #include "shared/cli_colors.h"
+
+/**
+ * get_terminal_width - detect terminal column count
+ *
+ * Tries ioctl(TIOCGWINSZ) first, falls back to the
+ * COLUMNS environment variable, then defaults to 80.
+ *
+ * Return: terminal width in columns.
+ */
+static int get_terminal_width(void)
+{
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0
+        && ws.ws_col > 0)
+    {
+        return ws.ws_col;
+    }
+    const char *env = getenv("COLUMNS");
+    if (env)
+    {
+        int c = atoi(env);
+        if (c > 0)
+        {
+            return c;
+        }
+    }
+    return 80;
+}
+
+/* Forward declaration */
+static void print_rich_segment(
+    const char *text,
+    int         len,
+    int         is_bold);
+
+/**
+ * print_wrapped_line - word-wrap a prose line to width
+ * @text:   pointer to start of line text
+ * @len:    length of the text (no trailing newline)
+ * @indent: number of spaces for first and continuation
+ * @width:  terminal width in columns
+ *
+ * Breaks text at word boundaries so that no output line
+ * exceeds @width columns. Each output line starts with
+ * @indent spaces. The text is rendered through
+ * print_rich_segment for syntax highlighting.
+ */
+static void print_wrapped_line(
+    const char *text,
+    int         len,
+    int         indent,
+    int         width)
+{
+    int usable = width - indent;
+    if (usable < 20)
+    {
+        usable = 20;
+    }
+
+    const char *p = text;
+    const char *end = text + len;
+
+    while (p < end)
+    {
+        /* Skip leading spaces on continuation lines */
+        if (p != text)
+        {
+            while (p < end && *p == ' ')
+            {
+                p++;
+            }
+            if (p >= end)
+            {
+                break;
+            }
+        }
+
+        int remaining = (int)(end - p);
+        if (remaining <= usable)
+        {
+            /* Fits on one line */
+            for (int i = 0; i < indent; i++)
+            {
+                putchar(' ');
+            }
+            print_rich_segment(p, remaining, 0);
+            putchar('\n');
+            break;
+        }
+
+        /* Find break point: last space at or before usable */
+        int brk = usable;
+        while (brk > 0 && p[brk] != ' ')
+        {
+            brk--;
+        }
+        if (brk == 0)
+        {
+            /* No space found; break at usable */
+            brk = usable;
+        }
+
+        for (int i = 0; i < indent; i++)
+        {
+            putchar(' ');
+        }
+        print_rich_segment(p, brk, 0);
+        putchar('\n');
+        p += brk;
+    }
+}
 
 void init_colors_help(void)
 {
@@ -22,7 +135,8 @@ void init_colors_help(void)
 void print_usage(
     char *progname)
 {
-    printf("Usage: %s [options] <rlim> <input_file|stream_name>\n", progname);
+    printf("Usage: %s [options] <rlim> <input_file|stream_name>\n",
+           progname);
     printf("Try '%s -h' for more information.\n", progname);
 }
 
@@ -156,58 +270,165 @@ static void print_rich_segment(
     }
 }
 
+/**
+ * print_help_section - print a labelled help section
+ * @label: section heading (printed in bold cyan)
+ * @value: body text with embedded newlines
+ *
+ * Lines starting with whitespace (indented content:
+ * lists, diagrams, formulas, code) are printed verbatim.
+ *
+ * Prose lines (starting with non-whitespace) that are
+ * separated only by soft newlines are joined into a
+ * paragraph and word-wrapped to the terminal width.
+ *
+ * Empty lines produce a blank line and flush any
+ * accumulated paragraph.
+ *
+ * Sub-headers are detected when a non-indented line is
+ * followed by an indented line; they are rendered bold.
+ */
 static void print_help_section(
     const char *label,
     const char *value)
 {
-    // Print the colored section label on its own line
+    int width = get_terminal_width();
+
     printf("%s%s%s\n",
            ANSI_BOLD_CYAN, label, ANSI_COLOR_RESET);
 
-    // Print each line of value, indented by 2 spaces.
-    // A line is a bold sub-header if it starts with
-    // non-whitespace AND the next line starts with a
-    // space (indented content follows it).
-    const char *line_start = value;
-    const char *p = value;
+    /*
+     * Collect lines into an array so we can look ahead
+     * to detect sub-headers (non-indented line followed
+     * by an indented line).
+     */
+    const char *lines[512];
+    int lens[512];
+    int nlines = 0;
 
-    while (*p != '\0')
     {
-        if (*p == '\n')
+        const char *ls = value;
+        const char *p = value;
+        while (*p != '\0')
         {
-            int ll = (int)(p - line_start);
-            const char *next = p + 1;
-            int next_indented = (*next == ' ');
-            int is_sub = (ll > 0
-                          && line_start[0] != ' '
-                          && next_indented);
-            printf("  ");
-            if (is_sub)
+            if (*p == '\n')
             {
-                printf("%s", ANSI_BOLD);
+                if (nlines < 512)
+                {
+                    lines[nlines] = ls;
+                    lens[nlines] = (int)(p - ls);
+                    nlines++;
+                }
+                ls = p + 1;
             }
-            print_rich_segment(
-                line_start, ll, is_sub);
-            if (is_sub)
-            {
-                printf("%s", ANSI_COLOR_RESET);
-            }
-            printf("\n");
-            line_start = p + 1;
+            p++;
         }
-        p++;
+        /* Trailing text without final newline */
+        if (p > ls && nlines < 512)
+        {
+            lines[nlines] = ls;
+            lens[nlines] = (int)(p - ls);
+            nlines++;
+        }
     }
 
-    // Print the last line if there's no trailing newline
-    if (p > line_start)
+    /*
+     * Paragraph buffer: accumulates consecutive prose
+     * words for wrapping.  Flushed on empty lines, on
+     * indented lines, and at the end.
+     */
+    char para[4096];
+    int plen = 0;
+
+    for (int li = 0; li < nlines; li++)
     {
-        int ll = (int)(p - line_start);
-        printf("  ");
-        print_rich_segment(line_start, ll, 0);
-        printf("\n");
+        const char *line = lines[li];
+        int ll = lens[li];
+
+        /* Empty line: flush paragraph, emit blank */
+        if (ll == 0)
+        {
+            if (plen > 0)
+            {
+                print_wrapped_line(
+                    para, plen, 2, width);
+                plen = 0;
+            }
+            putchar('\n');
+            continue;
+        }
+
+        int indented = (line[0] == ' ');
+
+        if (indented)
+        {
+            /* Flush any pending paragraph first */
+            if (plen > 0)
+            {
+                print_wrapped_line(
+                    para, plen, 2, width);
+                plen = 0;
+            }
+            /* Print indented line verbatim */
+            printf("  ");
+            print_rich_segment(line, ll, 0);
+            putchar('\n');
+        }
+        else
+        {
+            /*
+             * Non-indented line. Check if it is a
+             * sub-header (next line is indented).
+             */
+            int next_indented = 0;
+            if (li + 1 < nlines && lens[li + 1] > 0
+                && lines[li + 1][0] == ' ')
+            {
+                next_indented = 1;
+            }
+
+            if (next_indented)
+            {
+                /* Sub-header: flush para, print bold */
+                if (plen > 0)
+                {
+                    print_wrapped_line(
+                        para, plen, 2, width);
+                    plen = 0;
+                }
+                printf("  %s", ANSI_BOLD);
+                print_rich_segment(line, ll, 1);
+                printf("%s\n", ANSI_COLOR_RESET);
+            }
+            else
+            {
+                /*
+                 * Prose line: append to paragraph
+                 * buffer with a space separator.
+                 */
+                if (plen > 0
+                    && plen + 1 + ll
+                        < (int)sizeof(para) - 1)
+                {
+                    para[plen++] = ' ';
+                }
+                if (plen + ll
+                    < (int)sizeof(para) - 1)
+                {
+                    memcpy(para + plen, line, ll);
+                    plen += ll;
+                }
+            }
+        }
+    } /* for each line */
+
+    /* Flush any remaining paragraph */
+    if (plen > 0)
+    {
+        print_wrapped_line(para, plen, 2, width);
     }
 
-    // Print a trailing blank line to separate sections
+    /* Trailing blank line to separate sections */
     printf("\n");
 }
 
@@ -2332,8 +2553,8 @@ static int print_keyword_content(
             "  distance-to-cluster = distance-to-anchor\n"
             "\n"
             "This is different from k-means (which uses centroids)\n"
-            "or DBSCAN (which uses density neighborhoods). The\n"
-            "anchor representation means:\n"
+            "or DBSCAN (which uses density neighborhoods).\n"
+            "The anchor representation means:\n"
             "  - No centroid recomputation as members are added\n"
             "  - Cluster identity is a concrete data sample\n"
             "  - Distance computations are always frame-to-frame");
