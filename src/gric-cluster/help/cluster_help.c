@@ -74,6 +74,26 @@ static void print_rich_segment(
             }
         }
 
+        /* `code` → yellow */
+        if (*p == '`')
+        {
+            const char *close = memchr(
+                p + 1, '`', (size_t)(end - (p + 1)));
+            if (close != NULL)
+            {
+                printf("%s%.*s%s",
+                       ANSI_COLOR_YELLOW,
+                       (int)(close - (p + 1)), p + 1,
+                       ANSI_COLOR_RESET);
+                if (is_bold)
+                {
+                    printf("%s", ANSI_BOLD);
+                }
+                p = close + 1;
+                continue;
+            }
+        }
+
         /* gric-* executable → yellow */
         if ((p + 5 <= end)
             && memcmp(p, "gric-", 5) == 0
@@ -206,6 +226,11 @@ static const struct help_entry help_entries[] = {
     /* Input */
     {"stream",     "Input is an ImageStreamIO stream"},
     {"cnt2sync",   "Enable cnt2 synchronization"},
+    /* Core */
+    {"rlim",
+     "Distance threshold for cluster membership"},
+    {"auto_rlim",
+     "Auto-scaled rlim (a<factor> syntax)"},
     /* Clustering control */
     {"dprob",      "Delta probability"},
     {"maxcl",      "Max number of clusters"},
@@ -242,6 +267,8 @@ static const struct help_entry help_entries[] = {
      "Sparse cluster-to-cluster distance matrix"},
     {"sparse_dcc_extra_evals",
      "Extra DCC evaluations per step"},
+    {"soft_bayesian_sigma",
+     "Sigma coefficient for soft Bayesian update"},
     {"tm",         "Transition matrix mixing"},
     /* Analysis */
     {"scandist",   "Measure distance stats"},
@@ -267,6 +294,27 @@ static const struct help_entry help_entries[] = {
      "Enable *.clustered.txt output"},
     {"clusters",
      "Enable individual cluster files"},
+    {"no_dcc",
+     "Disable dcc.txt output"},
+    {"shm",
+     "Enable shared-memory status output"},
+    {"progress",   "Print progress information"},
+    {"conf",       "Read options from configuration file"},
+    {"confw",
+     "Write options to configuration file"},
+    /* Tiling */
+    {"tiles",
+     "Split image into NxM tile grid"},
+    {"tilemap",
+     "Load tile map from integer FITS file"},
+    {"tileconf",
+     "Per-tile configuration overrides"},
+    {"retrieval_window",
+     "Tuple lookback horizon for trajectory fusion"},
+    {"no_xtile",
+     "Disable cross-tile trajectory correction"},
+    {"no_pass2",
+     "(alias for no_xtile)"},
     /* Topics */
     {"intro",      "Getting started with GRIC"},
     {"input",      "Input formats and options"},
@@ -277,6 +325,18 @@ static const struct help_entry help_entries[] = {
      "Overview of the GRIC clustering algorithm"},
     {"algorithms",
      "(alias for algorithm)"},
+    {"algorithm/gating",
+     "Details on the adaptive entropy gating optimization"},
+    {"algorithm/gprob",
+     "Details on geometric probability learning and visitors"},
+    {"algorithm/entropy",
+     "Details on Shannon entropy target selection"},
+    {"algorithm/pruning",
+     "Details on triangle inequality pruning (TE4/TE5)"},
+    {"algorithm/sparse_dcc",
+     "Details on sparse cluster distance matrix bounds"},
+    {"algorithm/soft_bayesian",
+     "Details on soft Bayesian updates and gradual fading"},
     {"performance",
      "How to pick options for best performance"},
     {"tuning",
@@ -461,12 +521,14 @@ static int print_keyword_content(
         print_help_section("ROLE", "Discard Strategy Parameter");
         print_help_section(
             "FUNCTION",
-            "Fraction of oldest clusters to consider for discarding (Default: 0.5).");
+            "Fraction of clusters to consider for discarding (Default: 0.5).");
         print_help_section(
             "IMPLEMENTATION",
-            "When discarding, we don't want to kill a brand new cluster that hasn't had time\n"
-            "to accumulate visitors. This options limits the search to the first\n"
-            "N * discard_frac clusters (the 'oldest' ones by index).");
+            "When discarding, we don't want to kill a brand new cluster that\n"
+            "hasn't had time to accumulate visitors. This limits the search\n"
+            "to the first N * discard_frac clusters by index (i.e. the\n"
+            "oldest by creation order). Among those, the one with the\n"
+            "fewest total visitors is removed.");
         print_help_section("USE", "-discard_frac 0.2 (Only consider oldest 20%)");
         print_help_section(
             "REQUIRES",
@@ -538,8 +600,13 @@ static int print_keyword_content(
             "Reward factor for exact geometric matches in gprob (Default: 2.0).");
         print_help_section(
             "EQUATION",
-            "factor = a - (a - b) * (delta_dist / rlim) / 2\n"
-            "If delta_dist is 0 (perfect match), factor = a.");
+            "ratio  = |delta_dist| / rlim\n"
+            "factor = a - (a - b) * min(ratio, 2) / 2\n"
+            "         Returns 0.0 if ratio > 2.0 (hard cutoff).\n\n"
+            "This is a multiplicative scaling factor (not a probability):\n"
+            "  ratio=0 (perfect match)   -> factor = a (2.0 = boost)\n"
+            "  ratio=2 (max separation)  -> factor = b (0.5 = penalty)\n"
+            "  ratio>2                   -> factor = 0 (kills candidate)");
         print_help_section(
             "REQUIRES",
             "-gprob (has no effect without it)");
@@ -563,7 +630,9 @@ static int print_keyword_content(
             "Factor at the pruning limit for gprob (Default: 0.5).");
         print_help_section(
             "EQUATION",
-            "If delta_dist is 2*rlim (limit of triangle inequality), factor = b.");
+            "See -h fmatcha for the full equation. When delta_dist\n"
+            "reaches 2*rlim, factor = b (default 0.5 = halve\n"
+            "probability). Beyond 2*rlim, factor drops to 0.");
         print_help_section(
             "REQUIRES",
             "-gprob (has no effect without it)");
@@ -1066,7 +1135,7 @@ static int print_keyword_content(
             "is used instead.");
         print_help_section(
             "USE",
-            "-entropy_first_gate 6.0");
+            "-entropy_first_gate 3.0 (more aggressive gating at depth 0)");
         print_help_section(
             "REQUIRES",
             "-entropy");
@@ -1091,11 +1160,32 @@ static int print_keyword_content(
             "distance threshold failure.");
         print_help_section(
             "ALGORITHM",
-            "When a distance evaluation fails (dist > rlim), we update the target's\n"
-            "probability by multiplying it with a sigmoid-like likelihood function\n"
-            "approximated using a minimax polynomial. This retains potential matching\n"
-            "candidates under noisy distances and leads to faster information gain\n"
-            "convergence.");
+            "When a distance evaluation fails (dist > rlim),\n"
+            "we update the target's probability by multiplying\n"
+            "it with a Gaussian-like likelihood function:\n\n"
+            "  likelihood = exp( -(d_measured - d_anchor)^2\n"
+            "                    / (2 * sigma^2) )\n\n"
+            "where sigma = rlim * sigma_coeff (default 1.0,\n"
+            "tunable via -soft_bayesian_sigma).\n\n"
+            "The exponential is approximated using a minimax\n"
+            "polynomial on [0, 2] for speed, returning 0.0 for\n"
+            "large deviations.\n\n"
+            "This retains near-miss candidates that hard binary\n"
+            "pruning would discard prematurely, leading to faster\n"
+            "information gain convergence.");
+        print_help_section(
+            "RATIONALE",
+            "Hard pruning is binary: a candidate is either alive\n"
+            "or dead. When clusters are close together, a small\n"
+            "measurement error can wrongly eliminate the true\n"
+            "cluster. Soft Bayesian gradually fades candidates,\n"
+            "making the algorithm robust to near-boundary\n"
+            "measurements.\n\n"
+            "Most beneficial when:\n"
+            "  - Clusters overlap geometrically\n"
+            "  - Distance measurements are noisy\n"
+            "  - rlim is close to inter-cluster spacing\n\n"
+            "Less useful when clusters are well-separated.");
         print_help_section(
             "REQUIRES",
             "-gprob (has no effect without it)");
@@ -1169,18 +1259,118 @@ static int print_keyword_content(
         printf("\n");
         return 1;
     }
-    else if (strcmp(key, "scandist") == 0)
+    else if (strcmp(key, "rlim") == 0)
     {
-        print_help_section("ROLE", "Data Analysis (Pre-run)");
+        print_help_section("ROLE",
+            "Distance Threshold");
         print_help_section(
             "FUNCTION",
-            "Measures distance statistics without clustering.");
+            "Maximum Euclidean distance between a frame\n"
+            "and a cluster anchor for the frame to be\n"
+            "assigned to that cluster.\n"
+            "\n"
+            "rlim is the first positional argument:\n"
+            "  gric-cluster 0.5 input.txt\n"
+            "\n"
+            "Prefix with 'a' for auto-scaling:\n"
+            "  gric-cluster a1.5 input.txt\n"
+            "  (rlim = 1.5 x median sequential distance)");
         print_help_section(
-            "IMPLEMENTATION",
-            "Computes distances between sequential frames (or random pairs) to build\n"
-            "a histogram. It reports Min, Max, Median, 20%, 80% percentiles.\n"
-            "Use the Median or 20% value to choose a good 'rlim'.");
-        print_help_section("USE", "gric-cluster -scandist input.txt");
+            "CHOOSING RLIM",
+            "Too small: every frame creates its own cluster\n"
+            "  (over-fragmentation).\n"
+            "Too large: distinct states merge into one cluster\n"
+            "  (under-segmentation).\n"
+            "\n"
+            "Recommended workflow:\n"
+            "  1. gric-cluster -scandist input.txt\n"
+            "     Inspect the distance histogram.\n"
+            "  2. Start with rlim = 0.5 x median distance\n"
+            "     and adjust based on cluster count.\n"
+            "  3. Or use auto-mode: gric-cluster a1.0 input.txt");
+        print_help_section(
+            "ROLE IN PRUNING",
+            "rlim also defines the pruning radius. Triangle\n"
+            "inequality eliminates cluster B after measuring A\n"
+            "when |d(frame,A) - d(A,B)| > rlim. A smaller rlim\n"
+            "makes pruning more aggressive (fewer measurements\n"
+            "per frame).");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "auto_rlim",
+            "Auto-scaled rlim syntax");
+        print_see_also_option(
+            "-scandist",
+            "Measure distance stats");
+        print_see_also_option(
+            "algorithm",
+            "Algorithm overview");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "auto_rlim") == 0)
+    {
+        print_help_section("ROLE",
+            "Automatic Distance Threshold");
+        print_help_section(
+            "FUNCTION",
+            "When the first positional argument starts with\n"
+            "'a', gric-cluster runs a scandist pass first,\n"
+            "then sets rlim = factor x median distance.\n"
+            "\n"
+            "  gric-cluster a1.5 input.txt\n"
+            "  equivalent to:\n"
+            "    1. gric-cluster -scandist input.txt\n"
+            "    2. rlim = 1.5 x reported median\n"
+            "    3. gric-cluster <rlim> input.txt");
+        print_help_section(
+            "GUIDELINES",
+            "a0.5   Tight:  many small clusters\n"
+            "a1.0   Medium: balanced segmentation\n"
+            "a1.5   Loose:  fewer, broader clusters\n"
+            "a2.0+  Very loose: coarse grouping only");
+        print_help_section("USE",
+            "gric-cluster a1.2 input.txt");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "rlim",
+            "Distance threshold details");
+        print_see_also_option(
+            "-scandist",
+            "Measure distance stats");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "scandist") == 0)
+    {
+        print_help_section("ROLE",
+            "Data Analysis (Pre-run)");
+        print_help_section(
+            "FUNCTION",
+            "Measures distance statistics without\n"
+            "clustering. Reports Min, Max, Median,\n"
+            "20th and 80th percentile distances.\n"
+            "Use this to calibrate rlim.");
+        print_help_section(
+            "AUTO-RLIM",
+            "Instead of running -scandist manually,\n"
+            "use the 'a' prefix for auto-scaling:\n"
+            "  gric-cluster a1.5 input.txt\n"
+            "This runs scandist internally and sets\n"
+            "rlim = 1.5 x median distance.");
+        print_help_section("USE",
+            "gric-cluster -scandist input.txt");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "rlim",
+            "Distance threshold details");
+        print_see_also_option(
+            "auto_rlim",
+            "Auto-scaled rlim syntax");
+        printf("\n");
         return 1;
     }
     else if (strcmp(key, "outdir") == 0)
@@ -1445,6 +1635,336 @@ static int print_keyword_content(
         print_see_also_option(
             "-tm_out",
             "Enable transition_matrix.txt output");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "tiles") == 0)
+    {
+        print_help_section("ROLE",
+            "Image Partitioning");
+        print_help_section(
+            "FUNCTION",
+            "Splits the input image into a regular NxM\n"
+            "grid of tiles. Each tile runs its own\n"
+            "independent GRIC clustering instance in\n"
+            "parallel via OpenMP.");
+        print_help_section(
+            "RATIONALE",
+            "Tiling provides three benefits:\n"
+            "  1. Arithmetic speedup: smaller sub-frames\n"
+            "     make distance calls cheaper.\n"
+            "  2. Parallelization: tiles dispatch across\n"
+            "     OpenMP threads.\n"
+            "  3. Memory reduction: each tile's cluster\n"
+            "     set is smaller, shrinking DCC matrices.\n"
+            "\n"
+            "Avoid partitioning too finely (e.g. 4x4 on a\n"
+            "32x32 image). As grid size M increases, the\n"
+            "joint state combinations grow exponentially\n"
+            "(k^M). Recommend 2x2 for small/medium\n"
+            "sensors.");
+        print_help_section("USE",
+            "-tiles 2x2");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-tilemap",
+            "Load custom tile map");
+        print_see_also_option(
+            "-tileconf",
+            "Per-tile configuration overrides");
+        print_see_also_option(
+            "-retrieval_window",
+            "Tuple lookback horizon");
+        print_see_also_option(
+            "tiling",
+            "Tiling topic overview");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "tilemap") == 0)
+    {
+        print_help_section("ROLE",
+            "Custom Tile Map");
+        print_help_section(
+            "FUNCTION",
+            "Loads a tile map from an integer FITS image.\n"
+            "Each pixel value specifies which tile that\n"
+            "pixel belongs to (0-indexed). This allows\n"
+            "irregular (non-rectangular) tile partitions.");
+        print_help_section(
+            "FORMAT",
+            "A 2D integer FITS image with the same\n"
+            "width and height as the input frames.\n"
+            "Pixel values are zero-based tile indices.\n"
+            "Number of tiles = max(pixel value) + 1.");
+        print_help_section("USE",
+            "-tilemap my_tiles.fits");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-tiles",
+            "Regular NxM grid partitioning");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "tileconf") == 0)
+    {
+        print_help_section("ROLE",
+            "Per-Tile Configuration");
+        print_help_section(
+            "FUNCTION",
+            "Loads per-tile overrides for rlim and maxcl\n"
+            "from an ASCII file. Only rlim and maxcl can\n"
+            "be overridden per tile; all other options\n"
+            "use the global configuration.");
+        print_help_section(
+            "FORMAT",
+            "One line per tile:\n"
+            "  tile_id  rlim  maxcl\n"
+            "Lines starting with '#' are comments.");
+        print_help_section(
+            "RATIONALE",
+            "Different regions of an image may have\n"
+            "different noise levels or feature densities.\n"
+            "Per-tile rlim adapts the distance threshold\n"
+            "to each region's characteristics.");
+        print_help_section("USE",
+            "-tileconf tile_params.txt");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-tiles",
+            "Regular NxM grid partitioning");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "retrieval_window") == 0)
+    {
+        print_help_section("ROLE",
+            "Trajectory Fusion Lookback");
+        print_help_section(
+            "FUNCTION",
+            "Sets the lookback horizon (in frames) for\n"
+            "Joint Trajectory Fusion in multi-tile mode\n"
+            "(Default: 1000).");
+        print_help_section(
+            "RATIONALE",
+            "Trajectory fusion corrects noisy per-tile\n"
+            "assignments by comparing the current joint\n"
+            "tuple against recent history. The window\n"
+            "controls how far back to look:\n"
+            "  - Too small (<200): weak statistics,\n"
+            "    poor error correction.\n"
+            "  - Optimal (1000-10000): robust evidence,\n"
+            "    filters boundary fluctuations.\n"
+            "  - Too large (>20000): stale memory from\n"
+            "    drifted/recycled clusters acts as noise.");
+        print_help_section("USE",
+            "-retrieval_window 5000");
+        print_help_section(
+            "REQUIRES",
+            "-tiles NxM (only active in multi-tile mode)");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-tiles",
+            "Enable tiling");
+        print_see_also_option(
+            "tiling",
+            "Tiling topic overview");
+        print_see_also_option(
+            "compression",
+            "State space compression");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "no_xtile") == 0
+          || strcmp(key, "no_pass2") == 0)
+    {
+        print_help_section("ROLE",
+            "Trajectory Fusion Control");
+        print_help_section(
+            "FUNCTION",
+            "Disables cross-tile trajectory correction\n"
+            "in multi-tile mode. Each tile's assignment\n"
+            "stands on its own, with no joint correction\n"
+            "from neighboring tiles' history.");
+        print_help_section(
+            "RATIONALE",
+            "Useful for debugging tile boundary effects\n"
+            "or when tiles are fully independent and\n"
+            "cross-tile correction is not desired.");
+        print_help_section("USE",
+            "-no_xtile");
+        print_help_section(
+            "REQUIRES",
+            "-tiles NxM (only meaningful in multi-tile\n"
+            " mode)");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-retrieval_window",
+            "Fusion lookback horizon");
+        print_see_also_option(
+            "tiling",
+            "Tiling topic overview");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "no_dcc") == 0)
+    {
+        print_help_section("ROLE",
+            "Output Control");
+        print_help_section(
+            "FUNCTION",
+            "Disables writing the inter-cluster distance\n"
+            "matrix to 'dcc.txt'. DCC output is enabled\n"
+            "by default.");
+        print_help_section(
+            "RATIONALE",
+            "DCC output can be large for many clusters.\n"
+            "Disable it to reduce disk I/O when the\n"
+            "inter-cluster distance matrix is not needed.");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-dcc",
+            "Enable dcc.txt output");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "shm") == 0
+          || strcmp(key, "shm-file") == 0)
+    {
+        print_help_section("ROLE",
+            "Real-Time Monitoring");
+        print_help_section(
+            "FUNCTION",
+            "Exports clustering telemetry to a shared\n"
+            "memory status file for real-time monitoring\n"
+            "by gric-status or other consumers.");
+        print_help_section(
+            "DETAILS",
+            "The SHM file contains counters, timing data,\n"
+            "entropy diagnostics, and per-frame statistics\n"
+            "updated continuously during the clustering\n"
+            "run.");
+        print_help_section("USE",
+            "-shm /tmp/gric_status.shm");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "gric-status",
+            "Monitor SHM telemetry (TUI)");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "progress") == 0)
+    {
+        print_help_section("ROLE",
+            "Runtime Feedback");
+        print_help_section(
+            "FUNCTION",
+            "Prints periodic progress information during\n"
+            "the clustering run (Default: enabled).");
+        print_help_section(
+            "DETAILS",
+            "Reports frames processed, clusters created,\n"
+            "distance evaluations, and measurements per\n"
+            "frame at regular intervals.");
+        return 1;
+    }
+    else if (strcmp(key, "conf") == 0)
+    {
+        print_help_section("ROLE",
+            "Configuration Management");
+        print_help_section(
+            "FUNCTION",
+            "Reads clustering options from a configuration\n"
+            "file. Options in the file use the same names\n"
+            "as command-line flags (without the leading\n"
+            "dash).");
+        print_help_section(
+            "FORMAT",
+            "One option per line:\n"
+            "  dprob 0.02\n"
+            "  maxcl 500\n"
+            "  gprob\n"
+            "  entropy\n"
+            "Lines starting with '#' are comments.\n"
+            "Command-line options override file values.");
+        print_help_section("USE",
+            "-conf my_run.conf");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-confw",
+            "Write current options to file");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "confw") == 0)
+    {
+        print_help_section("ROLE",
+            "Configuration Management");
+        print_help_section(
+            "FUNCTION",
+            "Writes the current effective configuration\n"
+            "to a file. Useful for reproducibility: save\n"
+            "the exact options of a successful run and\n"
+            "reload them later with -conf.");
+        print_help_section("USE",
+            "-confw saved_config.conf");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-conf",
+            "Read options from configuration file");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "soft_bayesian_sigma") == 0)
+    {
+        print_help_section("ROLE",
+            "Soft Bayesian Parameter");
+        print_help_section(
+            "FUNCTION",
+            "Sets the sigma coefficient for the Gaussian\n"
+            "likelihood in soft Bayesian mode\n"
+            "(Default: 1.0).");
+        print_help_section(
+            "EQUATION",
+            "sigma = rlim * sigma_coeff\n\n"
+            "Larger sigma_coeff = wider Gaussian =\n"
+            "slower probability decay = more tolerant\n"
+            "of distance mismatches.\n\n"
+            "Smaller sigma_coeff = narrower Gaussian =\n"
+            "faster elimination of non-matching\n"
+            "candidates, closer to hard pruning.");
+        print_help_section("USE",
+            "-soft_bayesian_sigma 0.5 (narrower)");
+        print_help_section(
+            "REQUIRES",
+            "-soft_bayesian (has no effect without it)");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-soft_bayesian",
+            "Enable Soft Bayesian update");
+        print_see_also_option(
+            "algorithm/soft_bayesian",
+            "Soft Bayesian deep dive");
         printf("\n");
         return 1;
     }
@@ -1787,13 +2307,55 @@ static int print_keyword_content(
             "within a maximum Euclidean distance rlim. If no\n"
             "cluster matches, a new one is created.");
         print_help_section(
+            "WHY GRIC IS FAST",
+            "Naively assigning a frame to one of K clusters\n"
+            "requires computing K distances -- O(K) work per\n"
+            "frame. GRIC uses active learning to identify the\n"
+            "matching cluster in far fewer measurements:\n"
+            "\n"
+            "  Each distance measurement eliminates multiple\n"
+            "  candidates via triangle inequality. The next\n"
+            "  target is chosen to maximally reduce remaining\n"
+            "  ambiguity (entropy-based selection). Together,\n"
+            "  these reduce average measurements to O(log K)\n"
+            "  per frame instead of O(K).\n"
+            "\n"
+            "The key insight: you don't need to measure every\n"
+            "cluster to know which one matches. One measurement\n"
+            "against cluster A tells you about clusters B, C, D\n"
+            "through their known inter-cluster distances.");
+        print_help_section(
+            "WHAT IS A CLUSTER",
+            "A cluster is represented by a single anchor frame:\n"
+            "the first frame that created the cluster.\n"
+            "\n"
+            "  distance-to-cluster = distance-to-anchor\n"
+            "\n"
+            "This is different from k-means (which uses centroids)\n"
+            "or DBSCAN (which uses density neighborhoods). The\n"
+            "anchor representation means:\n"
+            "  - No centroid recomputation as members are added\n"
+            "  - Cluster identity is a concrete data sample\n"
+            "  - Distance computations are always frame-to-frame");
+        print_help_section(
             "DISTANCE METRIC",
             "Euclidean (L2) distance between frame vectors:\n"
             "  d(a, b) = sqrt( sum( (a[i] - b[i])^2 ) )\n"
-            "Computed with AVX2/FMA SIMD when available.");
+            "Uses AVX2/FMA SIMD intrinsics when the CPU\n"
+            "supports them, with a scalar fallback.");
         print_help_section(
-            "PER-FRAME ALGORITHM",
-            "For each new frame, GRIC executes:\n"
+            "PER-FRAME PIPELINE",
+            "  Frame\n"
+            "    |                    (each measurement\n"
+            "    v                     eliminates candidates)\n"
+            "  Priors   +-----------------------------+\n"
+            "    |      |                             |\n"
+            "    v      v                             |\n"
+            "  Select Target --> Measure --> Match? --+\n"
+            "                                  |\n"
+            "                                  v\n"
+            "                         Yes: Assign to cluster\n"
+            "                         All exhausted: New cluster\n"
             "\n"
             "1. PREDICT (optional)\n"
             "   If -pred or -tm is active, generate a ranked\n"
@@ -1801,25 +2363,26 @@ static int print_keyword_content(
             "   history or transition counts.\n"
             "\n"
             "2. SELECT TARGET\n"
-            "   Pick the cluster to measure next, using one of:\n"
-            "   - Greedy: highest prior probability\n"
-            "   - Geometric: highest gprob score (-gprob)\n"
-            "   - Entropy: max information gain (-entropy)\n"
+            "   Pick the cluster to measure next:\n"
+            "   - Greedy: highest posterior probability\n"
+            "   - Entropy (-entropy): min expected posterior\n"
+            "     entropy after measurement\n"
+            "   The posterior is built from static priors,\n"
+            "   optionally refined by -gprob (geometric\n"
+            "   probability) and -tm (transition matrix).\n"
             "\n"
             "3. MEASURE DISTANCE\n"
-            "   Compute d(frame, anchor) via framedist().\n"
-            "   This is the expensive step to minimize.\n"
+            "   Compute d(frame, anchor). This is the\n"
+            "   expensive operation the algorithm minimizes.\n"
             "\n"
-            "4. CHECK MATCH\n"
-            "   If d < rlim: assign frame to this cluster.\n"
-            "   Otherwise: continue to step 5.\n"
+            "4. UPDATE & PRUNE\n"
+            "   Use the measured distance to:\n"
+            "   - Eliminate incompatible clusters (pruning)\n"
+            "   - Update geometric probabilities (-gprob)\n"
+            "   - Fade unlikely candidates (-soft_bayesian)\n"
+            "   If d < rlim: assign frame. Otherwise: go to 2.\n"
             "\n"
-            "5. PRUNE CANDIDATES\n"
-            "   Use the measured distance to eliminate clusters\n"
-            "   that cannot match (triangle inequality, gprob,\n"
-            "   soft Bayesian). Go to step 2.\n"
-            "\n"
-            "6. CREATE NEW CLUSTER\n"
+            "5. CREATE NEW CLUSTER\n"
             "   If all candidates are exhausted, the frame\n"
             "   becomes the anchor of a new cluster.");
         print_help_section(
@@ -1856,24 +2419,348 @@ static int print_keyword_content(
             "  Recently active clusters rise in the search\n"
             "  priority, reducing average search depth.");
         print_help_section(
-            "SYNERGIES",
-            "The optimizations are designed to layer together:\n"
-            "  -gprob + -entropy: gprob builds the probability\n"
-            "    distribution, entropy schedules measurements\n"
-            "    to maximally resolve it.\n"
-            "  -sparse_dcc + large -maxcl: sparse DCC avoids\n"
-            "    the quadratic cost of dense DCC.\n"
-            "  -pred + -tm: pattern detection covers multi-step\n"
-            "    sequences; transition matrix handles pairwise\n"
-            "    transitions.");
+            "OPTION INTERACTIONS",
+            "Options feed into each other along the pipeline:\n"
+            "\n"
+            "  -pred / -tm ----> Priors\n"
+            "                      |\n"
+            "                      v\n"
+            "  -entropy -------> Target Selection\n"
+            "                      |\n"
+            "                      v\n"
+            "  -te4/-te5 ------> Pruning\n"
+            "  -sparse_dcc --/     |\n"
+            "                      v\n"
+            "  -gprob ---------> Probability Update\n"
+            "                      |\n"
+            "                      v\n"
+            "  -soft_bayesian --> Likelihood Fading\n"
+            "\n"
+            "Synergies:\n"
+            "  -gprob + -entropy: gprob builds the posterior,\n"
+            "    entropy schedules measurements to resolve it.\n"
+            "  -sparse_dcc + large -maxcl: avoids the O(K^2)\n"
+            "    cost of dense cluster-to-cluster distances.\n"
+            "  -pred + -tm: pattern detection for multi-step\n"
+            "    sequences; transition matrix for pairwise.");
+        print_help_section(
+            "COMPLEXITY",
+            "Measurements per frame (K = number of clusters):\n"
+            "  Greedy only:          O(sqrt(K)) average\n"
+            "  Greedy + pruning:     O(sqrt(K)) tighter\n"
+            "  Entropy + pruning:    O(log K) average\n"
+            "  Entropy + gprob:      O(log K) tighter\n"
+            "\n"
+            "Memory:\n"
+            "  DCC matrix (dense):   O(K^2)\n"
+            "  DCC matrix (sparse):  O(K)\n"
+            "  Assignment history:   O(N) (N = frames seen)\n"
+            "  Gprob visitor lists:  O(K x maxvis)");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
         print_see_also_option(
+            "rlim",
+            "Distance threshold (the key parameter)");
+        print_see_also_option(
+            "algorithm/gating",
+            "Adaptive entropy gating");
+        print_see_also_option(
+            "algorithm/gprob",
+            "Geometric probability learning");
+        print_see_also_option(
+            "algorithm/entropy",
+            "Shannon entropy target selection");
+        print_see_also_option(
+            "algorithm/pruning",
+            "Triangle inequality pruning (TE4/TE5)");
+        print_see_also_option(
+            "algorithm/sparse_dcc",
+            "Sparse cluster distance matrix bounds");
+        print_see_also_option(
+            "algorithm/soft_bayesian",
+            "Soft Bayesian likelihood updates");
+        print_see_also_option(
             "performance",
             "How to pick options for best speed");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "algorithm/gating") == 0)
+    {
+        print_help_section(
+            "ADAPTIVE ENTROPY GATING",
+            "Adaptive entropy gating dynamically decides whether to execute the\n"
+            "computationally intensive expected Shannon entropy calculation or\n"
+            "greedily select the highest-probability candidate. This is controlled\n"
+            "by comparing the current Shannon entropy `H_current` against a\n"
+            "depth-dependent threshold.");
+        print_help_section(
+            "THRESHOLD LOGIC",
+            "The gating threshold depends on the measurement depth `meas_idx`:\n"
+            "\n"
+            "1. First Measurement (`meas_idx == 0`)\n"
+            "   Uses `entropy_first_gate_bits` (default 4.0 bits).\n"
+            "   Since no measurements have been attempted yet, the distribution\n"
+            "   is dominated by static priors. The greedy `argmax_p` is\n"
+            "   near-optimal, and entropy calculation is bypassed.\n"
+            "\n"
+            "2. Subsequent Measurements (`meas_idx >= 1`)\n"
+            "   Uses `entropy_gate_bits` (default 2.0 bits).\n"
+            "   If uncertainty drops below this limit (fewer than ~4 effective\n"
+            "   candidates), the scheduler falls back to the greedy target.");
+        print_help_section(
+            "RATIONALE",
+            "Full entropy evaluation is expensive but only\n"
+            "valuable when uncertainty is high. When the\n"
+            "posterior is already concentrated (e.g., gprob has\n"
+            "identified a strong match), greedy selection is\n"
+            "near-optimal. Gating avoids paying the entropy\n"
+            "cost in these easy cases, typically 60-80%% of all\n"
+            "target selections.");
+        print_help_section(
+            "SOURCE IMPLEMENTATION",
+            "Implemented in `select_next_measurement_target_entropy()` inside\n"
+            "src/gric-cluster/steps/select_next_measurement_target.c.");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
         print_see_also_option(
-            "clustering",
-            "All clustering control options");
+            "algorithm/entropy",
+            "Details on Shannon entropy target selection");
+        print_see_also_option(
+            "algorithm",
+            "Overview of the GRIC algorithm");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "algorithm/gprob") == 0)
+    {
+        print_help_section(
+            "GEOMETRIC PROBABILITY",
+            "Geometric probability learns spatial transition patterns dynamically\n"
+            "from measurement history. When a distance measurement to cluster\n"
+            "anchor `C_j` is taken, the scheduler refines the probabilities of all\n"
+            "other active candidate clusters based on past transition correlation.");
+        print_help_section(
+            "VISITOR HISTORY & MATCHING",
+            "1. Retrieve History\n"
+            "   Look up past frames (visitors) that measured\n"
+            "   distance to `C_j`.\n"
+            "\n"
+            "2. Distance Correlation\n"
+            "   For each visitor, get its assigned cluster `target_cl` and distance\n"
+            "   to `C_j` (`dist_k`). Compare it to the current distance `dfc`.\n"
+            "\n"
+            "3. Matching Function\n"
+            "   Scale the candidate's posterior probability and geometric\n"
+            "   probability score using the fmatch() linear ramp\n"
+            "   based on distance similarity:\n"
+            "     dr = |d_current - d_visitor| / rlim\n"
+            "   Close match (dr~0) boosts probability, large\n"
+            "   mismatch (dr>2) kills it. See -h fmatcha.");
+        print_help_section(
+            "RATIONALE",
+            "If frame F has a similar distance to anchor A as\n"
+            "a past visitor V of cluster C, then F and V occupy\n"
+            "a similar region of the original space — so F is\n"
+            "likely near C. This geometric correlation transfers\n"
+            "knowledge from past measurements to reduce future\n"
+            "ones.");
+        print_help_section(
+            "SOURCE IMPLEMENTATION",
+            "Updates are performed in `update_geometric_probabilities()` inside\n"
+            "src/gric-cluster/steps/update_geometric_probabilities.c.");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "algorithm/gating",
+            "Details on adaptive entropy gating");
+        print_see_also_option(
+            "algorithm",
+            "Overview of the GRIC algorithm");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "algorithm/entropy") == 0)
+    {
+        print_help_section(
+            "SHANNON ENTROPY TARGET SELECTION",
+            "Entropy-based target selection schedules measurements to maximize\n"
+            "information gain by choosing the target cluster that minimizes expected\n"
+            "Shannon entropy in the next step.");
+        print_help_section(
+            "MATHEMATICAL MECHANISM",
+            "For each candidate target `T`, the scheduler computes:\n"
+            "  E[H(T)] = sum_cj( p_current[cj] * H(T | cj) )\n"
+            "\n"
+            "Where `H(T | cj)` is the hypothetical entropy if `cj` is the true\n"
+            "cluster. The scheduler uses the precomputed `consistency_mask` to identify\n"
+            "which clusters survive triangle inequality pruning. The target `T` that\n"
+            "minimizes `E[H(T)]` is selected.\n"
+            "\n"
+            "Options include target capping (`entropy_max_targets`), skip thresholds\n"
+            "(`entropy_min_prob`), and popcount-only surrogate mode (`entropy_fast`).\n\n"
+            "Each hypothesis considers two outcomes: match (frame\n"
+            "assigned, search ends) or miss (posterior updated,\n"
+            "search continues). The conditional posterior after a\n"
+            "miss is computed from the consistency mask which\n"
+            "encodes which clusters survive triangle inequality\n"
+            "pruning.");
+        print_help_section(
+            "RATIONALE",
+            "Greedy selection always measures the likeliest cluster.\n"
+            "But if that cluster has 90%% probability, measuring it\n"
+            "teaches us little — we already know it's likely.\n"
+            "Entropy selection measures the cluster whose outcome\n"
+            "would split the remaining hypotheses most evenly,\n"
+            "resolving ambiguity faster. This minimizes the average\n"
+            "number of distance evaluations needed to find the\n"
+            "correct cluster.");
+        print_help_section(
+            "SOURCE IMPLEMENTATION",
+            "Implemented in `select_next_measurement_target_entropy()` inside\n"
+            "src/gric-cluster/steps/select_next_measurement_target.c.");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "algorithm/gating",
+            "Details on adaptive entropy gating");
+        print_see_also_option(
+            "algorithm",
+            "Overview of the GRIC algorithm");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "algorithm/pruning") == 0)
+    {
+        print_help_section(
+            "TRIANGLE INEQUALITY PRUNING",
+            "Pruning eliminates distant cluster candidates to avoid computing their\n"
+            "full Euclidean distances. GRIC implements 3-point, 4-point, and 5-point\n"
+            "pruning modes.");
+        print_help_section(
+            "PRUNING MODES",
+            "1. 3-Point Pruning (Standard)\n"
+            "   After measuring `d(frame, A)`, eliminate candidate `B` if:\n"
+            "     |d(frame, A) - d(A, B)| > rlim\n"
+            "\n"
+            "2. 4-Point Pruning (`-te4` mode)\n"
+            "   Uses two previously measured reference clusters to project points into\n"
+            "   a local coordinate system, deriving tighter pruning bounds via\n"
+            "   `calc_min_dist_4pt()`.\n"
+            "\n"
+            "3. 5-Point Pruning (`-te5` mode)\n"
+            "   Uses three reference clusters for multi-dimensional bound refinement\n"
+            "   via `prune_candidates_te5()`.");
+        print_help_section(
+            "RATIONALE",
+            "Standard 3-point pruning constrains distance along\n"
+            "one dimension. Each additional reference point\n"
+            "constrains an extra dimension, exponentially\n"
+            "shrinking the volume of possible positions for the\n"
+            "candidate. In high-dimensional spaces, this\n"
+            "tightening compensates for the looseness of simple\n"
+            "triangle inequality bounds.\n\n"
+            "TE4 and TE5 compute lower bounds on the true\n"
+            "distance by embedding points into 2D or 3D\n"
+            "coordinate systems via distance geometry. Since\n"
+            "the reconstructed coordinates use non-negative\n"
+            "components, the result is always a valid lower\n"
+            "bound, safe for pruning.");
+        print_help_section(
+            "SOURCE IMPLEMENTATION",
+            "Implemented in `update_probabilities_and_pruning()` inside\n"
+            "src/gric-cluster/steps/update_probabilities_and_pruning.c.");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "algorithm/sparse_dcc",
+            "Details on sparse cluster distance matrix bounds");
+        print_see_also_option(
+            "algorithm",
+            "Overview of the GRIC algorithm");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "algorithm/sparse_dcc") == 0)
+    {
+        print_help_section(
+            "SPARSE DCC",
+            "Sparse DCC avoids the quadratic `O(K^2)` cost of maintaining a dense\n"
+            "cluster-to-cluster distance matrix (DCC). Instead of keeping exact\n"
+            "distances, it tracks dynamic interval bounds for each cluster pair.");
+        print_help_section(
+            "BOUNDS MAINTENANCE",
+            "1. Interval Bounds\n"
+            "   Stores lower bounds in `dcc_min` and upper bounds in `dcc_max`.\n"
+            "\n"
+            "2. On-demand Updates\n"
+            "   Distance bounds are updated lazily. If a bound is too loose, additional\n"
+            "   DCC evaluations are executed to refine the interval.\n"
+            "\n"
+            "3. Consistency Mask\n"
+            "   The `recompute_consistency_mask()` function constructs the bitmask using\n"
+            "   interval overlaps, ensuring correctness even with sparse bounds.");
+        print_help_section(
+            "SOURCE IMPLEMENTATION",
+            "Implemented in `recompute_consistency_mask()` inside\n"
+            "src/gric-cluster/steps/update_consistency_mask.c.");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "algorithm/pruning",
+            "Details on triangle inequality pruning (TE4/TE5)");
+        print_see_also_option(
+            "algorithm",
+            "Overview of the GRIC algorithm");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "algorithm/soft_bayesian") == 0)
+    {
+        print_help_section(
+            "SOFT BAYESIAN LIKELIHOOD UPDATES",
+            "Soft Bayesian mode replaces binary candidate pruning with soft probability\n"
+            "likelihood updates. Candidates fade out gradually over multiple steps\n"
+            "instead of being eliminated instantly.");
+        print_help_section(
+            "GAUSSIAN LIKELIHOOD",
+            "The posterior probabilities are scaled by a\n"
+            "Gaussian likelihood factor:\n"
+            "  likelihood = exp(-(d_measured - d_anchor)^2\n"
+            "                   / (2 * sigma^2))\n"
+            "\n"
+            "where sigma = rlim * sigma_coeff (default 1.0,\n"
+            "tunable via -soft_bayesian_sigma).\n"
+            "\n"
+            "The exponential is approximated using a minimax\n"
+            "polynomial on the interval [0, 2], avoiding slow\n"
+            "library exp() calls. Returns 0.0 for large\n"
+            "deviations (hard cutoff).");
+        print_help_section(
+            "RATIONALE",
+            "Hard pruning is binary: a candidate is either\n"
+            "alive or dead. When clusters are close together,\n"
+            "a small measurement error can wrongly eliminate\n"
+            "the true cluster. Soft Bayesian gradually fades\n"
+            "candidates, making the algorithm robust to\n"
+            "near-boundary measurements.\n\n"
+            "Most beneficial when:\n"
+            "  - Clusters overlap geometrically\n"
+            "  - Distance measurements are noisy\n"
+            "  - rlim is close to inter-cluster spacing\n\n"
+            "Less useful when clusters are well-separated.");
+        print_help_section(
+            "SOURCE IMPLEMENTATION",
+            "Implemented in `update_probabilities_and_pruning()` inside\n"
+            "src/gric-cluster/steps/update_probabilities_and_pruning.c.");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "algorithm/entropy",
+            "Details on Shannon entropy target selection");
+        print_see_also_option(
+            "algorithm",
+            "Overview of the GRIC algorithm");
         printf("\n");
         return 1;
     }
@@ -2101,7 +2988,7 @@ void print_help_keyword(
     {
         if (strcmp(key, help_entries[i].keyword) == 0)
         {
-            printf("%sGRIC HELP: %s%s\n\n",
+            printf("\n%sGRIC HELP: %s%s\n\n",
                    ANSI_BOLD_CYAN, key,
                    ANSI_COLOR_RESET);
             print_keyword_content(key);
@@ -2129,7 +3016,7 @@ void print_help_keyword(
     {
         const char *resolved =
             help_entries[matches[0]].keyword;
-        printf("%sGRIC HELP: %s%s\n\n",
+        printf("\n%sGRIC HELP: %s%s\n\n",
                ANSI_BOLD_CYAN, resolved,
                ANSI_COLOR_RESET);
         print_keyword_content(resolved);
@@ -2172,11 +3059,6 @@ static void print_colored_line(
     cli_print_colored_line(line);
 }
 
-static void print_color_mode(void)
-{
-    cli_print_color_mode();
-}
-
 /**
  * @brief Print a "See Also" topic reference line in Magenta.
  *
@@ -2195,7 +3077,8 @@ static void print_see_also_topic(
 void print_help(
     char *progname)
 {
-    printf("%sNAME%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+    printf("\n%sNAME%s\n",
+           ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  %sgric-cluster%s"
            " - Clustering tool for image"
            " streams and sequences\n\n",
@@ -2231,47 +3114,89 @@ void print_help(
     printf("  Clustering Control %s(use '-h clustering'"
            " for details)%s\n",
            ANSI_COLOR_GREY, ANSI_COLOR_RESET);
+
+    printf("    %sCore:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
     print_colored_line("    -dprob <val>             Delta probability (default: 0.01)");
     print_colored_line("    -maxcl <val>             Max number of clusters (default: 1000)");
-    print_colored_line("    -ncpu <val>              Number of CPUs to use (default: 1)");
-    print_colored_line("    -maxcl_strategy <str>    Strategy when maxcl reached "
-                       "(stop|discard|merge) (default: stop)");
-    print_colored_line("    -discard_frac <val>      Fraction of oldest clusters to candidate "
-                       "for discard (default: 0.5)");
     print_colored_line("    -maxim <val>             Max number of frames (default: 100000)");
-    print_colored_line("    -gprob                   Use geometrical probability");
-    print_colored_line("    -fmatcha <val>           Set fmatch parameter a (default: 2.0)");
-    print_colored_line("    -fmatchb <val>           Set fmatch parameter b (default: 0.5)");
-    print_colored_line("    -maxvis <val>            Max visitors for gprob history "
+    print_colored_line("    -ncpu <val>              Number of CPUs to use (default: 1)");
+
+    printf("    %sTiling:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
+    print_colored_line("    -tiles <NxM>             Split image into NxM tile grid");
+    print_colored_line("      -tilemap <file.fits>   Load tile map from integer FITS file");
+    print_colored_line("      -tileconf <file.txt>   Per-tile config "
+                       "(tile_id rlim maxcl)");
+    print_colored_line("      -retrieval_window <N>  Tuple lookback horizon "
                        "(default: 1000)");
-    print_colored_line("    -pred[l,h,n]             Prediction with pattern detection "
+    print_colored_line("      -no_xtile              Disable cross-tile trajectory correction");
+
+    printf("    %sPrediction:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
+    print_colored_line("    -pred[l,h,n]             Pattern detection "
                        "(default: 10,1000,2)");
-    print_colored_line("                            l: length of pattern to match "
-                       "(recent cluster history)");
-    print_colored_line("                            h: history size (how far back to search "
-                       "for pattern)");
-    print_colored_line("                            n: number of prediction candidates "
-                       "to return");
+    print_colored_line("                            l: pattern length  "
+                       "h: history size  n: candidates");
+    print_colored_line("    -tm <coeff>              Transition matrix mixing "
+                       "(0.0 to 1.0)");
+
+    printf("    %sTarget Selection:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
+    print_colored_line("    -entropy                 Use entropy-based target cluster selection");
+    print_colored_line("      -entropy_fast          Popcount-only surrogate "
+                       "(skip Shannon eval)");
+    print_colored_line("      -entropy_gate <val>    Gating threshold in bits "
+                       "(default: 2.0)");
+    print_colored_line("      -entropy_first_gate <val>"
+                       " Gate at depth 0 "
+                       "(default: 4.0)");
+    print_colored_line("      -entropy_max_targets <N>"
+                       " Max targets for entropy eval "
+                       "(default: 15)");
+    print_colored_line("      -entropy_min_prob <val>"
+                       " Min hypothesis probability "
+                       "(default: 0.001)");
+
+    printf("    %sPruning:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
     print_colored_line("    -te4                     Use 4-point triangle inequality pruning");
     print_colored_line("    -te5                     Use 5-point triangle inequality pruning");
-    print_colored_line("    -entropy                 Use entropy-based target cluster selection");
-    print_colored_line("    -entropy_fast            Use popcount-only surrogate "
-                       "(skip Shannon eval)");
-    print_colored_line("    -entropy_gate <val>       Entropy gating threshold in bits "
-                       "(default: 2.0)");
-    print_colored_line("    -entropy_first_gate <val> Gate threshold at depth 0 "
-                       "(default: 4.0)");
-    print_colored_line("    -entropy_max_targets <N>  Max targets for entropy eval "
-                       "(default: 15)");
-    print_colored_line("    -entropy_min_prob <val>   Min hypothesis probability "
-                       "(default: 0.001)");
-    print_colored_line("    -soft_bayesian           Enable Soft Bayesian update approximation");
     print_colored_line("    -sparse_dcc              Enable sparse cluster-to-cluster "
                        "distance matrix");
-    print_colored_line("    -sparse_dcc_extra_evals  Set number of extra DCC evaluations "
+    print_colored_line("      -sparse_dcc_extra_evals  Extra DCC evals per step "
                        "(default: 0)");
+
+    printf("    %sGeometric Probability:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
+    print_colored_line("    -gprob                   Use geometrical probability");
+    print_colored_line("      -fmatcha <val>         Set fmatch parameter a "
+                       "(default: 2.0)");
+    print_colored_line("      -fmatchb <val>         Set fmatch parameter b "
+                       "(default: 0.5)");
+    print_colored_line("      -maxvis <val>          Max visitors for gprob history "
+                       "(default: 1000)");
+
+    printf("    %sSoft Bayesian:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
+    print_colored_line("    -soft_bayesian           Enable Soft Bayesian update approximation");
+    print_colored_line("      -soft_bayesian_sigma <val>"
+                       " Sigma coefficient "
+                       "(default: 1.0)");
+
+    printf("    %sCluster Eviction:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
+    print_colored_line("    -maxcl_strategy <str>    Strategy when maxcl reached "
+                       "(stop|discard|merge) (default: stop)");
+    print_colored_line("      -discard_frac <val>    Fraction of clusters to "
+                       "candidate (default: 0.5)");
+
+    printf("    %sConfiguration:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
     print_colored_line("    -conf <file>             Read options from configuration file");
-    print_colored_line("    -confw <file>            Write current options to configuration file");
+    print_colored_line("    -confw <file>            Write current options to "
+                       "configuration file\n");
+
 
     printf("  Analysis & Debugging %s(use '-h analysis'"
            " for details)%s\n",
@@ -2313,21 +3238,6 @@ void print_help(
                        "(default: disabled)");
     print_colored_line("    -clusters                Enable individual cluster files (cluster_X) "
                        "(default: disabled)\n");
-
-    printf("  %sTiling:%s\n",
-           ANSI_BOLD, ANSI_COLOR_RESET);
-    print_colored_line(
-        "    -tiles <NxM>             "
-        "Split image into NxM tile grid");
-    print_colored_line(
-        "    -tilemap <file.fits>     "
-        "Load tile map from integer FITS file");
-    print_colored_line(
-        "    -tileconf <file.txt>     "
-        "Per-tile config (tile_id rlim maxcl)");
-    print_colored_line(
-        "    -retrieval_window <N>    "
-        "Tuple lookback horizon (default: 1000)\n");
 
     printf("%sEXAMPLES%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  %s$%s %sgric-cluster%s"
@@ -2423,5 +3333,27 @@ void print_help(
         "State space compression and trajectory fusion");
     printf("\n");
 
-    print_color_mode();
+    printf("  %sAlgorithm Deep Dives:%s\n",
+           ANSI_BOLD, ANSI_COLOR_RESET);
+    print_see_also_topic(
+        "algorithm/gating",
+        "Adaptive entropy gating optimization");
+    print_see_also_topic(
+        "algorithm/gprob",
+        "Geometric probability learning");
+    print_see_also_topic(
+        "algorithm/entropy",
+        "Shannon entropy target selection");
+    print_see_also_topic(
+        "algorithm/pruning",
+        "Triangle inequality pruning (TE4/TE5)");
+    print_see_also_topic(
+        "algorithm/sparse_dcc",
+        "Sparse cluster distance matrix bounds");
+    print_see_also_topic(
+        "algorithm/soft_bayesian",
+        "Soft Bayesian likelihood updates");
+    printf("\n");
+
+    printf("\n");
 }

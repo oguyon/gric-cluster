@@ -225,7 +225,9 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->optim.soft_bayesian_sigma_coeff = atof(value);
         return 1;
     }
-    else if (matches(key, "-no_pass2") || matches(key, "-no-pass2"))
+    else if (matches(key, "-no_xtile")
+          || matches(key, "-no_pass2")
+          || matches(key, "-no-pass2"))
     {
         config->optim.disable_pass2 = 1;
         return 0;
