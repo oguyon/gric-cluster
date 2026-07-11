@@ -135,8 +135,8 @@ static int select_next_measurement_target_entropy(
      * The gate threshold is depth-dependent:
      *
      * depth 0 (first measurement in frame): use
-     *   entropy_first_gate_bits (default 6.0 bits ≈
-     *   64 effective candidates).  At depth 0, gprob
+     *   entropy_first_gate_bits (default 4.0 bits ≈
+     *   16 effective candidates).  At depth 0, gprob
      *   has not yet been updated by any failed
      *   measurement, so the distribution is still
      *   dominated by the static prior.  The greedy
