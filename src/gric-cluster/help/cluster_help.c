@@ -464,7 +464,81 @@ static void print_help_section(
         int clen = ll - indent;
 
         /*
-         * ASCII diagram: flush and print verbatim.
+         * Sub-header detection: a line followed by
+         * a more-indented line is rendered bold.
+         *
+         * Checked BEFORE verbatim so numbered
+         * sub-headers like "1. PREDICT PRIORS" get
+         * bold.  Bullets and diagram lines are
+         * excluded unless they are numbered items
+         * with ALL-CAPS text (section headers).
+         *
+         * Skipped when mid-paragraph at the same
+         * indent (continuation prose).
+         */
+        if (indent == 0
+            && !(plen > 0 && para_indent == 0))
+        {
+            /* Check if verbatim but allow numbered headers */
+            int skip_subheader = 0;
+            if (is_verbatim_line(content, clen))
+            {
+                skip_subheader = 1;
+                /* Exception: numbered item with ALLCAPS text */
+                if (content[0] >= '0'
+                    && content[0] <= '9')
+                {
+                    int allcaps = 1;
+                    int saw_alpha = 0;
+                    for (int k = 0; k < clen; k++)
+                    {
+                        char c = content[k];
+                        if (c >= 'a' && c <= 'z')
+                        {
+                            allcaps = 0;
+                            break;
+                        }
+                        if (c >= 'A' && c <= 'Z')
+                        {
+                            saw_alpha = 1;
+                        }
+                    }
+                    if (allcaps && saw_alpha)
+                    {
+                        skip_subheader = 0;
+                    }
+                }
+            }
+
+            if (!skip_subheader)
+            {
+                int next_indented = 0;
+                if (li + 1 < nlines
+                    && lens[li + 1] > 0)
+                {
+                    int next_indent =
+                        count_indent(
+                            lines[li + 1],
+                            lens[li + 1]);
+                    if (next_indent > indent)
+                    {
+                        next_indented = 1;
+                    }
+                }
+                if (next_indented)
+                {
+                    FLUSH_PARA();
+                    printf("  %s", ANSI_BOLD);
+                    print_rich_segment(line, ll, 1);
+                    printf("%s\n",
+                           ANSI_COLOR_RESET);
+                    continue;
+                }
+            }
+        }
+
+        /*
+         * Verbatim line: flush and print as-is.
          */
         if (is_verbatim_line(content, clen))
         {
@@ -473,33 +547,6 @@ static void print_help_section(
             print_rich_segment(line, ll, 0);
             putchar('\n');
             continue;
-        }
-
-        /*
-         * Sub-header detection: a non-indented line
-         * followed by an indented line, but ONLY when
-         * we are not mid-paragraph at indent 0 (i.e.
-         * the line is not a continuation of ongoing
-         * prose).
-         */
-        if (indent == 0
-            && !(plen > 0 && para_indent == 0))
-        {
-            int next_indented = 0;
-            if (li + 1 < nlines
-                && lens[li + 1] > 0
-                && lines[li + 1][0] == ' ')
-            {
-                next_indented = 1;
-            }
-            if (next_indented)
-            {
-                FLUSH_PARA();
-                printf("  %s", ANSI_BOLD);
-                print_rich_segment(line, ll, 1);
-                printf("%s\n", ANSI_COLOR_RESET);
-                continue;
-            }
         }
 
         /*
