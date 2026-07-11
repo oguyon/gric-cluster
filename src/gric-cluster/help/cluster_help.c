@@ -271,22 +271,143 @@ static void print_rich_segment(
 }
 
 /**
+ * count_indent - count leading spaces in a line
+ * @line: pointer to start of line
+ * @len:  length of line
+ *
+ * Return: number of leading space characters.
+ */
+static int count_indent(
+    const char *line,
+    int         len)
+{
+    int n = 0;
+    while (n < len && line[n] == ' ')
+    {
+        n++;
+    }
+    return n;
+}
+
+/**
+ * is_verbatim_line - detect lines that should not reflow
+ * @content: pointer to line content (after indent stripped)
+ * @clen:    length of content
+ *
+ * Return: 1 if the line must be printed as-is:
+ *   - Bullet items:    "- text"
+ *   - Numbered items:  "N. text"
+ *   - ASCII diagrams:  contains |, +, -->, ^
+ *   - Formulas:        "name = expression"
+ */
+static int is_verbatim_line(
+    const char *content,
+    int         clen)
+{
+    if (clen <= 0)
+    {
+        return 0;
+    }
+
+    /* Bullet item: "- text" */
+    if (content[0] == '-' && clen > 1
+        && content[1] == ' ')
+    {
+        return 1;
+    }
+
+    /* Numbered item: "N. text" (N is digit) */
+    if (content[0] >= '0' && content[0] <= '9')
+    {
+        for (int i = 1; i < clen; i++)
+        {
+            if (content[i] == '.'
+                && i + 1 < clen
+                && content[i + 1] == ' ')
+            {
+                return 1;
+            }
+            if (content[i] < '0'
+                || content[i] > '9')
+            {
+                break;
+            }
+        }
+    }
+
+    /* Scan for diagram/formula characters */
+    for (int i = 0; i < clen; i++)
+    {
+        /*
+         * Diagram: | (pipe) — must have space or
+         * boundary on BOTH sides to be structural.
+         * This avoids matching |d(x)| (abs value).
+         */
+        if (content[i] == '|')
+        {
+            int left_sp = (i == 0
+                || content[i - 1] == ' ');
+            int right_sp = (i + 1 >= clen
+                || content[i + 1] == ' ');
+            if (left_sp && right_sp)
+            {
+                return 1;
+            }
+        }
+        /* Diagram: + (connector) at start of line */
+        if (content[i] == '+' && i == 0)
+        {
+            return 1;
+        }
+        /* Diagram: ^ (arrow up, but only standalone) */
+        if (content[i] == '^'
+            && (i == 0 || content[i - 1] == ' ')
+            && (i + 1 >= clen
+                || content[i + 1] == ' '))
+        {
+            return 1;
+        }
+        /* Diagram: --> or --+ (arrow/connector) */
+        if (content[i] == '-' && i + 1 < clen
+            && (content[i + 1] == '>'
+                || content[i + 1] == '+'))
+        {
+            return 1;
+        }
+        /* Diagram: --- (3+ dashes = horizontal rule) */
+        if (content[i] == '-'
+            && i + 2 < clen
+            && content[i + 1] == '-'
+            && content[i + 2] == '-')
+        {
+            return 1;
+        }
+        /* Formula: "= " pattern (assignment/equation) */
+        if (content[i] == '='
+            && i > 0 && content[i - 1] == ' '
+            && i + 1 < clen && content[i + 1] == ' ')
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
  * print_help_section - print a labelled help section
  * @label: section heading (printed in bold cyan)
  * @value: body text with embedded newlines
  *
- * Lines starting with whitespace (indented content:
- * lists, diagrams, formulas, code) are printed verbatim.
+ * All text is word-wrapped to the terminal width.
+ * Indentation is preserved: consecutive lines at the
+ * same indent level are joined into paragraphs and
+ * reflowed.
  *
- * Prose lines (starting with non-whitespace) that are
- * separated only by soft newlines are joined into a
- * paragraph and word-wrapped to the terminal width.
+ * ASCII diagram lines (containing |, +, -->, etc.)
+ * are printed verbatim to preserve alignment.
  *
- * Empty lines produce a blank line and flush any
- * accumulated paragraph.
- *
- * Sub-headers are detected when a non-indented line is
- * followed by an indented line; they are rendered bold.
+ * Sub-headers (non-indented line followed by an
+ * indented line) are rendered in bold.
  */
 static void print_help_section(
     const char *label,
@@ -298,9 +419,8 @@ static void print_help_section(
            ANSI_BOLD_CYAN, label, ANSI_COLOR_RESET);
 
     /*
-     * Collect lines into an array so we can look ahead
-     * to detect sub-headers (non-indented line followed
-     * by an indented line).
+     * Collect lines into an array for look-ahead
+     * (sub-header detection).
      */
     const char *lines[512];
     int lens[512];
@@ -323,7 +443,6 @@ static void print_help_section(
             }
             p++;
         }
-        /* Trailing text without final newline */
         if (p > ls && nlines < 512)
         {
             lines[nlines] = ls;
@@ -333,12 +452,24 @@ static void print_help_section(
     }
 
     /*
-     * Paragraph buffer: accumulates consecutive prose
-     * words for wrapping.  Flushed on empty lines, on
-     * indented lines, and at the end.
+     * Paragraph buffer with tracked indent level.
+     * Consecutive lines at the same indent are joined
+     * into a paragraph and word-wrapped together.
      */
     char para[4096];
     int plen = 0;
+    int para_indent = 0;  /* indent of current paragraph */
+
+    /* Helper macro: flush the pending paragraph */
+    #define FLUSH_PARA() do {                          \
+        if (plen > 0)                                  \
+        {                                              \
+            print_wrapped_line(                        \
+                para, plen,                            \
+                2 + para_indent, width);               \
+            plen = 0;                                  \
+        }                                              \
+    } while (0)
 
     for (int li = 0; li < nlines; li++)
     {
@@ -348,85 +479,80 @@ static void print_help_section(
         /* Empty line: flush paragraph, emit blank */
         if (ll == 0)
         {
-            if (plen > 0)
-            {
-                print_wrapped_line(
-                    para, plen, 2, width);
-                plen = 0;
-            }
+            FLUSH_PARA();
             putchar('\n');
             continue;
         }
 
-        int indented = (line[0] == ' ');
+        int indent = count_indent(line, ll);
+        const char *content = line + indent;
+        int clen = ll - indent;
 
-        if (indented)
+        /*
+         * ASCII diagram: flush and print verbatim.
+         */
+        if (is_verbatim_line(content, clen))
         {
-            /* Flush any pending paragraph first */
-            if (plen > 0)
-            {
-                print_wrapped_line(
-                    para, plen, 2, width);
-                plen = 0;
-            }
-            /* Print indented line verbatim */
+            FLUSH_PARA();
             printf("  ");
             print_rich_segment(line, ll, 0);
             putchar('\n');
+            continue;
         }
-        else
+
+        /*
+         * Sub-header detection: a non-indented line
+         * followed by an indented line, but ONLY when
+         * we are not mid-paragraph at indent 0 (i.e.
+         * the line is not a continuation of ongoing
+         * prose).
+         */
+        if (indent == 0
+            && !(plen > 0 && para_indent == 0))
         {
-            /*
-             * Non-indented line. Check if it is a
-             * sub-header (next line is indented).
-             */
             int next_indented = 0;
-            if (li + 1 < nlines && lens[li + 1] > 0
+            if (li + 1 < nlines
+                && lens[li + 1] > 0
                 && lines[li + 1][0] == ' ')
             {
                 next_indented = 1;
             }
-
             if (next_indented)
             {
-                /* Sub-header: flush para, print bold */
-                if (plen > 0)
-                {
-                    print_wrapped_line(
-                        para, plen, 2, width);
-                    plen = 0;
-                }
+                FLUSH_PARA();
                 printf("  %s", ANSI_BOLD);
                 print_rich_segment(line, ll, 1);
                 printf("%s\n", ANSI_COLOR_RESET);
+                continue;
             }
-            else
-            {
-                /*
-                 * Prose line: append to paragraph
-                 * buffer with a space separator.
-                 */
-                if (plen > 0
-                    && plen + 1 + ll
-                        < (int)sizeof(para) - 1)
-                {
-                    para[plen++] = ' ';
-                }
-                if (plen + ll
-                    < (int)sizeof(para) - 1)
-                {
-                    memcpy(para + plen, line, ll);
-                    plen += ll;
-                }
-            }
+        }
+
+        /*
+         * Normal line: accumulate into paragraph.
+         * Flush if indent level changed.
+         */
+        if (plen > 0 && indent != para_indent)
+        {
+            FLUSH_PARA();
+        }
+        para_indent = indent;
+
+        /* Append content (stripped of leading indent) */
+        if (plen > 0
+            && plen + 1 + clen
+                < (int)sizeof(para) - 1)
+        {
+            para[plen++] = ' ';
+        }
+        if (plen + clen < (int)sizeof(para) - 1)
+        {
+            memcpy(para + plen, content, clen);
+            plen += clen;
         }
     } /* for each line */
 
-    /* Flush any remaining paragraph */
-    if (plen > 0)
-    {
-        print_wrapped_line(para, plen, 2, width);
-    }
+    FLUSH_PARA();
+    #undef FLUSH_PARA
 
     /* Trailing blank line to separate sections */
     printf("\n");
@@ -2575,8 +2701,8 @@ static int print_keyword_content(
             "  Select Target --> Measure --> Match? --+\n"
             "                                  |\n"
             "                                  v\n"
-            "                         Yes: Assign to cluster\n"
-            "                         All exhausted: New cluster\n"
+            "                         --> Assign to cluster\n"
+            "                         --> New cluster (all exhausted)\n"
             "\n"
             "1. PREDICT (optional)\n"
             "   If -pred or -tm is active, generate a ranked\n"
