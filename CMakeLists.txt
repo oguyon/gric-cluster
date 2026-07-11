@@ -102,6 +102,8 @@ set(CLUSTER_SRCS
     src/gric-cluster/io/frameread_stream.c
     src/gric-cluster/io/png_io.c
     src/gric-cluster/help/cluster_help.c
+    src/gric-cluster/help/cluster_help_format.c
+    src/gric-cluster/help/cluster_help_content.c
     src/gric-cluster/steps/initialize_initial_cluster.c
     src/gric-cluster/steps/compute_priors_and_mixing.c
     src/gric-cluster/steps/select_next_measurement_target.c
