@@ -16,8 +16,12 @@
 #define FPS_SAMPLES 10
 #define FRAME_HISTORY_SIZE 100
 
+#ifndef ANSI_BOLD
 #define ANSI_BOLD        "\033[1m"
+#endif
+#ifndef ANSI_COLOR_RESET
 #define ANSI_COLOR_RESET "\033[0m"
+#endif
 
 #define MH_RST   "\033[0m"
 #define MH_BOLD  "\033[1m"

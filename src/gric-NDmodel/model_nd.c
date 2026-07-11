@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include "shared/cli_colors.h"
 #define MAX_CLUSTERS 2000
 
@@ -59,7 +60,7 @@ static void print_usage(const char *progname)
 
 
 
-static void print_help(const char *progname)
+static void print_help_raw(const char *progname)
 {
     printf("%sNAME%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %sgric-NDmodel%s - N-Dimensional space reconstruction from distance matrix\n\n",
@@ -96,7 +97,42 @@ static void print_help(const char *progname)
     printf("  %s$%s %s%s%s dcc.txt 3 coordinates.txt\n", ansi_color_grey, ansi_reset,
            ansi_bold_green, progname, ansi_reset);
     cli_print_color_mode();
-} // print_help
+} // print_help_raw
+
+static void print_help(const char *progname)
+{
+    FILE *tmp = tmpfile();
+    if (tmp != NULL)
+    {
+        int saved_stdout = dup(STDOUT_FILENO);
+        int tmp_fd = fileno(tmp);
+        dup2(tmp_fd, STDOUT_FILENO);
+
+        print_help_raw(progname);
+        fflush(stdout);
+
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
+
+        fseek(tmp, 0, SEEK_END);
+        long sz = ftell(tmp);
+        fseek(tmp, 0, SEEK_SET);
+
+        char *buf = malloc((size_t)sz + 1);
+        if (buf != NULL)
+        {
+            size_t read_bytes = fread(buf, 1, (size_t)sz, tmp);
+            buf[read_bytes] = '\0';
+            cli_print_pager(buf);
+            free(buf);
+        }
+        fclose(tmp);
+    }
+    else
+    {
+        print_help_raw(progname);
+    }
+}
 
 int main(int argc, char *argv[])
 {

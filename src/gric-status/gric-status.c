@@ -4,6 +4,7 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
+#include "shared/cli_colors.h"
 #include "status_internal.h"
 #include <fcntl.h>
 #include <inttypes.h>
@@ -110,7 +111,7 @@ static void print_status_classic(
  * @progname: Name of the executable.
  * @color:    Flag indicating whether color output should be enabled.
  */
-static void print_help_standard(
+static void print_help_standard_raw(
     const char *progname,
     int         color)
 {
@@ -195,6 +196,43 @@ static void print_help_standard(
     printf("  Set the %s environment variable to disable all ANSI color output.\n",
            C_STR(MH_OPT, "NO_COLOR"));
     printf("\n");
+}
+
+static void print_help_standard(
+    const char *progname,
+    int         color)
+{
+    FILE *tmp = tmpfile();
+    if (tmp != NULL)
+    {
+        int saved_stdout = dup(STDOUT_FILENO);
+        int tmp_fd = fileno(tmp);
+        dup2(tmp_fd, STDOUT_FILENO);
+
+        print_help_standard_raw(progname, color);
+        fflush(stdout);
+
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
+
+        fseek(tmp, 0, SEEK_END);
+        long sz = ftell(tmp);
+        fseek(tmp, 0, SEEK_SET);
+
+        char *buf = malloc((size_t)sz + 1);
+        if (buf != NULL)
+        {
+            size_t read_bytes = fread(buf, 1, (size_t)sz, tmp);
+            buf[read_bytes] = '\0';
+            cli_print_pager(buf);
+            free(buf);
+        }
+        fclose(tmp);
+    }
+    else
+    {
+        print_help_standard_raw(progname, color);
+    }
 }
 
 /**

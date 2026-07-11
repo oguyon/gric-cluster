@@ -22,14 +22,9 @@ static void print_header(
     const char *title,
     int         use_color)
 {
-    if (use_color)
-    {
-        printf("\n%s--- %s ---%s\n", ANSI_BOLD_CYAN, title, ANSI_COLOR_RESET);
-    }
-    else
-    {
-        printf("\n--- %s ---\n", title);
-    }
+    (void)use_color;
+    printf("\n");
+    cli_print_header_box(title);
 } // print_header
 
 static void print_formatted_help(
@@ -107,12 +102,7 @@ static void print_help_utility_self(void)
  */
 static void print_general_help(void)
 {
-    printf("%s====================================================================%s\n",
-           ANSI_BOLD, ANSI_COLOR_RESET);
-    printf("%s                GRIC CLUSTER SUITE - ONBOARDING GUIDE               %s\n",
-           ANSI_BOLD, ANSI_COLOR_RESET);
-    printf("%s====================================================================%s\n",
-           ANSI_BOLD, ANSI_COLOR_RESET);
+    cli_print_header_box("GRIC CLUSTER SUITE - ONBOARDING GUIDE");
 
     print_header("1. OVERVIEW", 1);
     printf("  GRIC is a high-speed, distance-based clustering suite designed for processing\n");
@@ -481,12 +471,10 @@ static int print_program_help(
     } // if (strcmp(target, "gric-cluster") == 0)...
 } // print_program_help
 
-int main(
+static int run_help(
     int   argc,
     char *argv[])
 {
-    cli_colors_init();
-
     if (argc < 2)
     {
         print_general_help();
@@ -502,4 +490,44 @@ int main(
     } // if (strcmp(argv[1], "-h") == 0 ...)
 
     return print_program_help(argv[1]);
+}
+
+int main(
+    int   argc,
+    char *argv[])
+{
+    cli_colors_init();
+
+    FILE *tmp = tmpfile();
+    if (tmp != NULL)
+    {
+        int saved_stdout = dup(STDOUT_FILENO);
+        int tmp_fd = fileno(tmp);
+        dup2(tmp_fd, STDOUT_FILENO);
+
+        int res = run_help(argc, argv);
+        fflush(stdout);
+
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
+
+        fseek(tmp, 0, SEEK_END);
+        long sz = ftell(tmp);
+        fseek(tmp, 0, SEEK_SET);
+
+        char *buf = malloc((size_t)sz + 1);
+        if (buf != NULL)
+        {
+            size_t read_bytes = fread(buf, 1, (size_t)sz, tmp);
+            buf[read_bytes] = '\0';
+            cli_print_pager(buf);
+            free(buf);
+        }
+        fclose(tmp);
+        return res;
+    }
+    else
+    {
+        return run_help(argc, argv);
+    }
 } // main
