@@ -51,7 +51,7 @@ int init_ascii(
 
         while (getline(&line, &len, ascii_ptr) != -1)
         {
-            if (num_frames >= capacity)
+            if ((size_t)num_frames >= capacity)
             {
                 capacity *= 2;
                 long *new_offsets = (long *)realloc(ascii_line_offsets, capacity * sizeof(long));

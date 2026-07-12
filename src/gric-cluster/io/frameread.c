@@ -108,7 +108,7 @@ static int init_filelist(
                 continue;
             }
 
-            if (num_frames >= capacity)
+            if ((size_t)num_frames >= capacity)
             {
                 capacity *= 2;
                 char **new_list = (char **)realloc(file_list, capacity * sizeof(char *));
