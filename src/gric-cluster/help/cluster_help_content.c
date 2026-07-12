@@ -2093,8 +2093,8 @@ int print_keyword_content(
             "  TARGET SELECTION (using the probability distribution):\n"
             "    The target selection strategy determines how P is used to pick the next candidate:\n"
             "    - Greedy (default): Pick the candidate with the highest posterior probability P(i).\n"
-            "    - Entropy (-entropy): Pick the candidate minimizing expected Shannon entropy of P\n"
-            "      after the measurement, maximizing information gain.");
+            "    - Entropy (-entropy): Pick the candidate minimizing expected Shannon entropy of P "
+            "after the measurement, maximizing information gain.");
         print_help_section(
             "KEY OPTIMIZATIONS",
             "Triangle inequality (always active)\n"
