@@ -2088,8 +2088,10 @@ int print_keyword_content(
             "  The options combine as layers:\n"
             "  1. Frequency prior (always active)\n"
             "  2. + -pred OR -tm (mix temporal information)\n"
-            "  3. + -gprob (refine during search loop)\n"
-            "  4. + -entropy (select targets optimally)");
+            "  3. + -gprob (refine during the search loop - the iterative process of measuring\n"
+            "       distances to candidates until a match is found or all are exhausted)\n"
+            "  4. + -entropy (select targets to minimize expected Shannon entropy, maximizing\n"
+            "       information gain per measurement)");
         print_help_section(
             "KEY OPTIMIZATIONS",
             "Triangle inequality (always active)\n"
