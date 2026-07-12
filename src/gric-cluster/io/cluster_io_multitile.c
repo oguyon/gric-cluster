@@ -57,7 +57,7 @@ static void write_tile_anchors(
     const char      *tile_dir,
     const TileState *ts)
 {
-    char path[1024];
+    char path[2048];
     snprintf(path, sizeof(path),
              "%s/anchors.txt", tile_dir);
 
@@ -95,7 +95,7 @@ static void write_tile_counts(
     const char      *tile_dir,
     const TileState *ts)
 {
-    char path[1024];
+    char path[2048];
     snprintf(path, sizeof(path),
              "%s/cluster_counts.txt", tile_dir);
 
@@ -150,7 +150,7 @@ static void write_tuple_history(
     const char           *out_dir,
     const MultiTileState *mts)
 {
-    char path[1024];
+    char path[2048];
     snprintf(path, sizeof(path),
              "%s/tuple_history.txt", out_dir);
 

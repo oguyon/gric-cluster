@@ -290,8 +290,6 @@ void run_clustering(
             break;
         }
 
-        long start_pruned_val = state->telemetry.clusters_pruned;
-
         // Perform assignment logic: match to existing clusters, prune, or create a new cluster
         int res = cluster_frame(config, state, current_frame, &prev_assigned_cluster,
                                 ascii_out, temp_indices, temp_dists, sorting_candidates,
