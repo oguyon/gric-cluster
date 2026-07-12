@@ -385,6 +385,14 @@ int cli_get_terminal_width(
     {
         return ws.ws_col;
     }
+    if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+    {
+        return ws.ws_col;
+    }
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+    {
+        return ws.ws_col;
+    }
     const char *env = getenv("COLUMNS");
     if (env != NULL)
     {
@@ -402,6 +410,14 @@ int cli_get_terminal_height(
 {
     struct winsize ws;
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0)
+    {
+        return ws.ws_row;
+    }
+    if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0)
+    {
+        return ws.ws_row;
+    }
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0)
     {
         return ws.ws_row;
     }
