@@ -2210,6 +2210,10 @@ int print_keyword_content(
             "by comparing the current Shannon entropy `H_current` against a\n"
             "depth-dependent threshold.");
         print_help_section(
+            "REQUIRES",
+            "-entropy (gating is a sub-mechanism of entropy-based\n"
+            "target selection; has no effect without it)");
+        print_help_section(
             "THRESHOLD LOGIC",
             "The gating threshold depends on the measurement depth `meas_idx`:\n"
             "\n"
