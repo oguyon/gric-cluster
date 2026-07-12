@@ -541,34 +541,21 @@ int print_keyword_content(
             "WHEN TO USE",
             "Entropy mode is most valuable"
             " when:\n"
-            "  - Clusters overlap"
-            " geometrically (high rlim"
-            " relative to spacing)\n"
-            "  - Frames are randomly ordered"
-            " (no temporal coherence)\n"
-            "  - The distance function is"
-            " expensive (reducing"
-            " measurements\n    matters more"
-            " than the entropy computation"
-            " overhead)\n\n"
+            "  - Clusters overlap geometrically (high rlim relative to spacing)\n"
+            "  - Frames are randomly ordered (no temporal coherence)\n"
+            "  - The distance function is expensive (reducing measurements "
+            "matters more than the entropy computation overhead)\n\n"
             "Entropy mode adds little benefit"
             " when:\n"
-            "  - Clusters are well-separated"
-            " (gate catches most frames)\n"
-            "  - Frames follow a smooth"
-            " trajectory (prediction +\n"
-            "    gprob already narrow the"
-            " candidates)\n"
-            "  - The distance function is"
-            " trivially cheap");
+            "  - Clusters are well-separated (gate catches most frames)\n"
+            "  - Frames follow a smooth trajectory (prediction + gprob already "
+            "narrow the candidates)\n"
+            "  - The distance function is trivially cheap");
         print_help_section(
             "WORKS BEST WITH",
-            "- -gprob: Provides the probability\n"
-            "  distribution\n"
-            "- -soft_bayesian: Smoother Bayesian updates\n"
-            "  between measurements\n"
-            "- -te4 / -te5: Tighter triangle inequality\n"
-            "  bounds");
+                        "- -gprob: Provides the probability distribution\n"
+            "- -soft_bayesian: Smoother Bayesian updates between measurements\n"
+            "- -te4 / -te5: Tighter triangle inequality bounds");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN,
                ANSI_COLOR_RESET);
@@ -1410,12 +1397,9 @@ int print_keyword_content(
             "assignments by comparing the current joint\n"
             "tuple against recent history. The window\n"
             "controls how far back to look:\n"
-            "  - Too small (<200): weak statistics,\n"
-            "    poor error correction.\n"
-            "  - Optimal (1000-10000): robust evidence,\n"
-            "    filters boundary fluctuations.\n"
-            "  - Too large (>20000): stale memory from\n"
-            "    drifted/recycled clusters acts as noise.");
+            "  - Too small (<200): weak statistics, poor error correction.\n"
+            "  - Optimal (1000-10000): robust evidence, filters boundary fluctuations.\n"
+            "  - Too large (>20000): stale memory from drifted/recycled clusters acts as noise.");
         print_help_section("USE",
             "-retrieval_window 5000");
         print_help_section(
@@ -2027,9 +2011,8 @@ int print_keyword_content(
             "\n"
             "2. SELECT TARGET\n"
             "   Pick the cluster to measure next:\n"
-            "   - Greedy: highest posterior probability\n"
-            "   - Entropy (-entropy): min expected posterior\n"
-            "     entropy after measurement\n"
+                        "   - Greedy: highest posterior probability\n"
+            "   - Entropy (-entropy): min expected posterior entropy after measurement\n"
             "\n"
             "3. MEASURE DISTANCE\n"
             "   Compute d(frame, anchor). This is the\n"
@@ -2158,15 +2141,12 @@ int print_keyword_content(
             "  -soft_bayesian --> Likelihood Fading\n"
             "\n"
             "Synergies:\n"
-            "  - -gprob + -entropy: gprob builds the\n"
-            "    posterior, entropy schedules measurements\n"
-            "    to resolve it.\n"
-            "  - -sparse_dcc + large -maxcl: avoids the\n"
-            "    O(K^2) cost of dense cluster-to-cluster\n"
-            "    distances.\n"
-            "  - -pred + -tm: pattern detection for\n"
-            "    multi-step sequences; transition matrix\n"
-            "    for pairwise.");
+                        "  - -gprob + -entropy: gprob builds the posterior, entropy "
+            "schedules measurements to resolve it.\n"
+            "  - -sparse_dcc + large -maxcl: avoids the O(K^2) cost of "
+            "dense cluster-to-cluster distances.\n"
+            "  - -pred + -tm: pattern detection for multi-step sequences; "
+            "transition matrix for pairwise.");
         print_help_section(
             "COMPLEXITY",
             "Measurements per frame (K = number of clusters):\n"
@@ -2673,13 +2653,13 @@ int print_keyword_content(
         print_help_section(
             "TUNING GUIDELINES",
             "1. Tuning lookback horizon (-retrieval_window <H>):\n"
-            "   - Small H (e.g. < 200): Small sample size yields weak transition\n"
-            "     statistics, leading to poor error correction and low compression.\n"
-            "   - Optimal H (typically 1,000 to 10,000): Collects robust joint\n"
-            "     evidence, filtering out random boundary fluctuations.\n"
-            "   - Excessive H (e.g. > 20,000): Concepts/clusters undergo drift\n"
-            "     and recycling over very long horizons. Stale memory acts as\n"
-            "     noise, degrading the compression quality.\n"
+                        "   - Small H (e.g. < 200): Small sample size yields weak transition "
+            "statistics, leading to poor error correction and low compression.\n"
+            "   - Optimal H (typically 1,000 to 10,000): Collects robust joint "
+            "evidence, filtering out random boundary fluctuations.\n"
+            "   - Excessive H (e.g. > 20,000): Concepts/clusters undergo drift "
+            "and recycling over very long horizons. Stale memory acts as "
+            "noise, degrading the compression quality.\n"
             "\n"
             "2. Impact of Tiling Grid (-tiles <NxM>):\n"
             "   Keep grid resolution balanced (recommend 2x2). High grid sizes\n"
