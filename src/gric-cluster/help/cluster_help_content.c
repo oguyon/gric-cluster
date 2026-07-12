@@ -2323,13 +2323,14 @@ int print_keyword_content(
         print_help_section(
             "RATIONALE",
             "Greedy selection always measures the likeliest cluster.\n"
-            "But if that cluster has 90%% probability, measuring it\n"
-            "teaches us little — we already know it's likely.\n"
-            "Entropy selection measures the cluster whose outcome\n"
-            "would split the remaining hypotheses most evenly,\n"
-            "resolving ambiguity faster. This minimizes the average\n"
-            "number of distance evaluations needed to find the\n"
-            "correct cluster.");
+            "When probability is spread across many candidates\n"
+            "(e.g. 20 clusters each near 5%%), greedy picks one\n"
+            "with a low chance of an early match. Entropy instead\n"
+            "picks the measurement whose outcome — whether match\n"
+            "or miss — eliminates the most alternatives, resolving\n"
+            "ambiguity faster. This minimizes the average number\n"
+            "of distance evaluations needed to find the correct\n"
+            "cluster.");
         print_help_section(
             "SOURCE IMPLEMENTATION",
             "Implemented in `select_next_measurement_target_entropy()` inside\n"
