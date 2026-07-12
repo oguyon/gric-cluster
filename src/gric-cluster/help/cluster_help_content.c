@@ -2084,14 +2084,17 @@ int print_keyword_content(
             "  correlations learned from visitor history.\n"
             "  See '-h algorithm/gprob' for details.\n"
             "\n"
-            "LAYERING:\n"
-            "  The options combine as layers:\n"
-            "  1. Frequency prior (always active)\n"
-            "  2. + -pred OR -tm (mix temporal information)\n"
-            "  3. + -gprob (refine during the search loop - the iterative process of measuring\n"
-            "       distances to candidates until a match is found or all are exhausted)\n"
-            "  4. + -entropy (select targets to minimize expected Shannon entropy, maximizing\n"
-            "       information gain per measurement)");
+            "PROBABILITY LAYERING:\n"
+            "    The probability distribution P is constructed and refined in layers:\n"
+            "    1. Baseline: Frequency prior (always active; recency-weighted)\n"
+            "    2. Temporal: + -pred OR -tm (blends in temporal sequence patterns at frame start)\n"
+            "    3. Spatial:  + -gprob (refines dynamically during the search loop using visitor history)\n"
+            "\n"
+            "  TARGET SELECTION (using the probability distribution):\n"
+            "    The target selection strategy determines how P is used to pick the next candidate:\n"
+            "    - Greedy (default): Pick the candidate with the highest posterior probability P(i).\n"
+            "    - Entropy (-entropy): Pick the candidate minimizing expected Shannon entropy of P\n"
+            "      after the measurement, maximizing information gain.");
         print_help_section(
             "KEY OPTIMIZATIONS",
             "Triangle inequality (always active)\n"
