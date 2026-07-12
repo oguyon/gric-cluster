@@ -177,7 +177,7 @@ int print_keyword_content(
             "Fraction of clusters to consider for discarding (Default: 0.5).");
         print_help_section(
             "IMPLEMENTATION",
-            "When discarding, we don't want to kill a brand new cluster that\n"
+            "Discarding avoids killing a brand new cluster that\n"
             "hasn't had time to accumulate visitors. This limits the search\n"
             "to the first N * discard_frac clusters by index (i.e. the\n"
             "oldest by creation order). Among those, the one with the\n"
@@ -309,7 +309,7 @@ int print_keyword_content(
             "Max number of recent visitors to track per cluster (Default: 1000).");
         print_help_section(
             "DETAILS",
-            "To compute gprob, we scan past frames ('visitors') of candidate clusters.\n"
+            "To compute gprob, the algorithm scans past frames ('visitors') of candidate clusters.\n"
             "This limits how many past frames are stored/scanned to maintain performance.");
         print_help_section(
             "REQUIRES",
@@ -418,7 +418,7 @@ int print_keyword_content(
             "ignores the information value of"
             " each measurement: measuring a"
             " cluster\nthat is already very"
-            " likely teaches us little,"
+            " likely yields little information,"
             " whereas measuring a cluster\n"
             "that would eliminate many"
             " alternatives can resolve"
@@ -489,7 +489,7 @@ int print_keyword_content(
             "4. SHANNON EVALUATION\n"
             "   For each candidate target c_i,"
             " compute the expected posterior\n"
-            "   entropy if we were to measure"
+            "   entropy after measuring"
             " c_i.  Each hypothesis c_j\n"
             "   (with p(c_j) >"
             " -entropy_min_prob) contributes\n"
@@ -630,8 +630,8 @@ int print_keyword_content(
             " inequality bounds).\n\n"
             "For a candidate target c_i, the"
             " popcount score estimates how"
-            " many\nclusters would survive if"
-            " we measured c_i.  For each"
+            " many\nclusters would survive after"
+            " measuring c_i.  For each"
             " hypothesis c_j\n(\"what if c_j"
             " is the true cluster?\"), a"
             " bitwise AND of\n"
@@ -801,7 +801,7 @@ int print_keyword_content(
         print_help_section(
             "ALGORITHM",
             "When a distance evaluation fails (dist > rlim),\n"
-            "we update the target's probability by multiplying\n"
+            "the target's probability is updated by multiplying\n"
             "it with a Gaussian-like likelihood function:\n\n"
             "  likelihood = exp( -(d_measured - d_anchor)^2\n"
             "                    / (2 * sigma^2) )\n\n"
@@ -1884,7 +1884,7 @@ int print_keyword_content(
             "2. Calibrate the distance threshold\n"
             "     gric-cluster -scandist input.txt\n"
             "   Use the reported median distance as\n"
-            "   your rlim value.\n"
+            "   the rlim value.\n"
             "\n"
             "3. Run clustering\n"
             "     gric-cluster a1.5 input.txt\n"
@@ -1958,9 +1958,9 @@ int print_keyword_content(
             "  measurements per frame — often to just a few,\n"
             "  regardless of how many clusters exist.\n"
             "\n"
-            "The key insight: you don't need to measure every\n"
-            "cluster to know which one matches. One measurement\n"
-            "against cluster A tells you about clusters B, C, D\n"
+            "Key insight: not every cluster needs to be measured\n"
+            "to identify the match. One measurement against\n"
+            "cluster A reveals information about clusters B, C, D\n"
             "through their known inter-cluster distances.");
         print_help_section(
             "WHAT IS A CLUSTER",
@@ -2555,7 +2555,7 @@ int print_keyword_content(
             "  Reduces peak DCC computation cost.");
         print_help_section(
             "REDUCING I/O OVERHEAD",
-            "Disable outputs you don't need:\n"
+            "Disable unnecessary outputs:\n"
             "  - -no_membership: Skip frame_membership.txt\n"
             "  - -no_dcc: Skip dcc.txt\n"
             "\n"
