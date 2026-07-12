@@ -247,7 +247,7 @@ void cli_print_colored_options(
         {
             len = sizeof(buf) - 1;
         }
-        strncpy(buf, line, len);
+        memcpy(buf, line, len);
         buf[len] = '\0';
 
         cli_print_colored_line(buf);
@@ -270,7 +270,7 @@ void cli_print_colored_examples(
         {
             len = sizeof(buf) - 1;
         }
-        strncpy(buf, line, len);
+        memcpy(buf, line, len);
         buf[len] = '\0';
 
         const char *dollar = strstr(buf, "$ ");

@@ -212,6 +212,7 @@ void gen_spiral_point(double *out, long index, long total_points, double loops, 
 }
 void gen_star_point(double *out, long index, long total_points, double spokes, int dim)
 {
+    (void)total_points;
     int num_spokes = (spokes > 0.0) ? (int)spokes : 20;
     int spoke_idx = index % num_spokes;
 
@@ -244,6 +245,7 @@ void gen_star_point(double *out, long index, long total_points, double spokes, i
 }
 void gen_concentric_point(double *out, long index, long total_points, double shells, int dim)
 {
+    (void)total_points;
     int num_shells = (shells > 0.0) ? (int)shells : 5;
     int clusters_per_shell = 10;
     int total_clusters = num_shells * clusters_per_shell + 1;
@@ -276,6 +278,8 @@ void gen_concentric_point(double *out, long index, long total_points, double she
 }
 void gen_tree_point(double *out, long index, long total_points, double unused_param, int dim)
 {
+    (void)total_points;
+    (void)unused_param;
     if (index % 100 == 0)
     {
         int parent_idx = (index / 100) % 31;
@@ -322,6 +326,7 @@ void gen_tree_point(double *out, long index, long total_points, double unused_pa
 }
 void gen_concentric_dense_point(double *out, long index, long total_points, double shells, int dim)
 {
+    (void)total_points;
     int num_shells = (shells > 0.0) ? (int)shells : 10;
     int clusters_per_shell = 30;
     int total_clusters = num_shells * clusters_per_shell + 1;
