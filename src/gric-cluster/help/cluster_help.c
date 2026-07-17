@@ -118,6 +118,10 @@ static const struct help_entry help_entries[] = {
      "Disable cross-tile trajectory correction"},
     {"no_pass2",
      "(alias for no_xtile)"},
+    {"jtf",
+     "Enable Joint Trajectory Fusion (Pass 2) to correct tile-boundary noise"},
+    {"pass2",
+     "(alias for jtf)"},
     /* Topics */
     {"intro",      "Getting started with GRIC"},
     {"input",      "Input formats and options"},

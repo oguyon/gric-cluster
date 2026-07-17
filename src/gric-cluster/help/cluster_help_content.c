@@ -1420,6 +1420,35 @@ int print_keyword_content(
         printf("\n");
         return 1;
     }
+    else if (strcmp(key, "jtf") == 0
+          || strcmp(key, "pass2") == 0)
+    {
+        print_help_section("ROLE",
+            "Joint Trajectory Fusion");
+        print_help_section(
+            "FUNCTION",
+            "Enables Joint Trajectory Fusion (Pass 2) in multi-tile mode.\n"
+            "By default, JTF is disabled. Enabling JTF allows correcting\n"
+            "tile-boundary noise by comparing raw assignments against\n"
+            "recent spatial-temporal assignment history.");
+        print_help_section(
+            "USE",
+            "-jtf");
+        print_help_section(
+            "REQUIRES",
+            "-tiles NxM (only meaningful in multi-tile mode)");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "tiling",
+            "Tiling topic overview");
+        print_see_also_option(
+            "-retrieval_window",
+            "Fusion lookback horizon");
+        printf("\n");
+        return 1;
+    }
     else if (strcmp(key, "no_xtile") == 0
           || strcmp(key, "no_pass2") == 0)
     {
@@ -1428,9 +1457,8 @@ int print_keyword_content(
         print_help_section(
             "FUNCTION",
             "Disables cross-tile trajectory correction\n"
-            "in multi-tile mode. Each tile's assignment\n"
-            "stands on its own, with no joint correction\n"
-            "from neighboring tiles' history.");
+            "in multi-tile mode (this is the default behavior\n"
+            "unless -jtf is set).");
         print_help_section(
             "RATIONALE",
             "Useful for debugging tile boundary effects\n"
@@ -2602,7 +2630,7 @@ int print_keyword_content(
             "Joint Trajectory Fusion (Pass 2) detects and corrects these misassignments by comparing each frame's per-tile assignment tuple against recent history. If the observed tuple has never (or rarely) occurred before but is one tile-flip away from a common historical pattern, JTF overrides the outlier tile's assignment to match the known pattern.");
         print_help_section(
             "TWO-PASS PIPELINE",
-            "Each frame goes through two passes:\n"
+            "Each frame goes through two passes (Pass 2 is optional and enabled via the -jtf option):\n"
             "\n"
             "Pass 1: Independent Spatial Clustering (ISC)\n"
             "  The full-image frame is scattered into per-tile sub-frames (pixel extraction, not interpolation). Each tile independently runs the standard GRIC clustering pipeline (predict priors, select target, measure distance, update & prune, assign). All tile tasks execute in parallel via OpenMP. Result: one cluster assignment per tile.\n"
@@ -2671,6 +2699,9 @@ int print_keyword_content(
             "\n"
             "-tileconf <file.txt>\n"
             "  Per-tile configuration overrides. ASCII file, one line per tile, 3 space-separated fields: tile_id rlim maxnbclust. Lines starting with '#' are comments. Example: '0 0.8 500' sets tile 0 to rlim=0.8 with maxnbclust=500.\n"
+            "\n"
+            "-jtf\n"
+            "  Enable Joint Trajectory Fusion (Pass 2) to correct tile-boundary noise. Disabled by default.\n"
             "\n"
             "-retrieval_window <N>\n"
             "  Number of recent frames to scan during JTF pattern matching (default: 1000). Larger values improve accuracy but increase scan cost linearly.");

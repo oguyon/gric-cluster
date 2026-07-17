@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
     config.optim.sparse_dcc_extra_evals = 0;
     config.optim.soft_bayesian_mode = 0;
     config.optim.soft_bayesian_sigma_coeff = 1.0;
-    config.optim.disable_pass2 = 0;
+    config.optim.disable_pass2 = 1;
 
     // Tiling defaults (M=1, no tiling)
     config.input.tile_grid_x = 0;
