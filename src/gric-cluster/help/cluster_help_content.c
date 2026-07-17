@@ -2637,7 +2637,7 @@ int print_keyword_content(
             "  JTF processes tile 2:\n"
             "  - Spatial key: the other tiles' Pass 1 results = (0, 3, -, 1)\n"
             "  - Temporal key: previous frame's tuple = (0, 3, 2, 1)\n"
-            "  - Scans history for tuples where tiles 0, 1, 3 matched (0, -, -, 1) spatially and the predecessor matched (0, 3, 2, 1) temporally.\n"
+            "  - Scans history for tuples where tiles 0, 1, 3 matched (0, 3, -, 1) spatially and the predecessor matched (0, 3, 2, 1) temporally.\n"
             "  - Finds frames 998 and 999 match. Both had tile 2 = cluster 2.\n"
             "  - Match scores (from history): cluster 2 = 0.95, cluster 5 = 0.01, all others ~0.\n"
             "  - Element-wise multiply: for each cluster k, fused[k] = pass1_posterior[k] * match_score[k]. Pass 1 gave cluster 5 a posterior of 0.6 and cluster 2 a posterior of 0.3. After multiplication: fused[5] = 0.6 * 0.01 = 0.006, fused[2] = 0.3 * 0.95 = 0.285.\n"
