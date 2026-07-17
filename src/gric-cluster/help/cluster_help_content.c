@@ -2592,6 +2592,15 @@ int print_keyword_content(
             "2. Parallelization: OpenMP dispatches one task per tile, running them concurrently.\n"
             "3. Memory Reduction: Anchors store only tile pixels (e.g. 1/4 the size for 2x2). Simpler local environments mean fewer clusters per tile (K_tile << K), reducing anchor storage by 10-100x and DCC matrices by 100-1000x.");
         print_help_section(
+            "TILE-BOUNDARY NOISE",
+            "The main cost of tiling is tile-boundary noise.\n"
+            "\n"
+            "Each tile clusters its sub-frame independently, with no knowledge of what happens in neighboring tiles. When a physical change straddles a tile border (e.g. a moving object crossing from tile 0 into tile 1), one tile may see just enough pixel change to switch clusters while the other does not. The result is a spurious joint state: the per-tile assignments are individually plausible but globally inconsistent.\n"
+            "\n"
+            "This manifests as rapid cluster flickering in tiles near the boundary of a physical event, inflating the number of distinct joint states far beyond the true number of physical configurations.\n"
+            "\n"
+            "Joint Trajectory Fusion (Pass 2) detects and corrects these misassignments by comparing each frame's per-tile assignment tuple against recent history. If the observed tuple has never (or rarely) occurred before but is one tile-flip away from a common historical pattern, JTF overrides the outlier tile's assignment to match the known pattern.");
+        print_help_section(
             "TWO-PASS PIPELINE",
             "Each frame goes through two passes:\n"
             "\n"
