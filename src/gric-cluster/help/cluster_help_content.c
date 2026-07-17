@@ -2702,7 +2702,7 @@ int print_keyword_content(
             "SEQUENCE PREDICTION (-pred)",
             "The sequence prediction option (-pred) is a proactive search optimization.\n"
             "\n"
-            "Before Pass 1 begins, the system scans recent joint assignment tuple history using the previous frames' tuples (up to -pred_len steps) as a query sequence. It retrieves historical matching joint trajectories and assigns transitions a similarity score.\n"
+            "Before Pass 1 begins, the system scans recent joint assignment tuple history using the previous frames' tuples (up to len steps, configured via -pred[len,h,n]) as a query sequence. It retrieves historical matching joint trajectories and assigns transitions a similarity score.\n"
             "\n"
             "For each tile, these joint scores are used to:\n"
             "1. Bias the search priors by seeding state.scratch.mixed_probs.\n"
