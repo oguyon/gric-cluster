@@ -345,6 +345,13 @@ int print_keyword_content(
             "USE",
             "-pred[5,500,1] (For repeating patterns/loops)");
         print_help_section(
+            "WITH AND WITHOUT TILING",
+            "Without Tiling (Single-Tile Mode):\n"
+            "  Matches the history of scalar cluster assignments. For a query sequence of cluster IDs, the scanner searches the frame assignment history for matching transitions to return predicted candidates for the single tile.\n"
+            "\n"
+            "With Tiling (Multi-Tile Mode):\n"
+            "  Operates at the joint tuple level. The query sequence represents the recent history of joint assignment tuples (assignments across all tiles). It scans the joint tuple history using a fuzzy spatial-temporal kernel, then maps the joint predictions back to seed the individual tiles' priors and candidate lists before Pass 1 begins.");
+        print_help_section(
             "INTERACTS WITH",
             "- -gprob: Both contribute to cluster\n"
             "  probability distribution\n"
@@ -359,6 +366,9 @@ int print_keyword_content(
         print_see_also_option(
             "-tm",
             "Transition matrix mixing");
+        print_see_also_option(
+            "tiling",
+            "Tiling topic overview");
         printf("\n");
         return 1;
     }
