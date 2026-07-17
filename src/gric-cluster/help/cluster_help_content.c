@@ -2693,6 +2693,24 @@ int print_keyword_content(
             "                                     v\n"
             "                        Record assignment tuple");
         print_help_section(
+            "SEQUENCE PREDICTION (-pred)",
+            "The sequence prediction option (-pred) is a proactive search optimization.\n"
+            "\n"
+            "Before Pass 1 begins, the system scans recent joint assignment tuple history using the previous frames' tuples (up to -pred_len steps) as a query sequence. It retrieves historical matching joint trajectories and assigns transitions a similarity score.\n"
+            "\n"
+            "For each tile, these joint scores are used to:\n"
+            "1. Bias the search priors by seeding state.scratch.mixed_probs.\n"
+            "2. Prioritize search order by placing predicted clusters on the shortcut list (tuple_pred_candidates).\n"
+            "\n"
+            "This proactive optimization guides the individual search loops before clustering starts, speeding up execution without altering the final spatial clustering boundaries.");
+        print_help_section(
+            "JOINT TRAJECTORY FUSION (-jtf)",
+            "The Joint Trajectory Fusion option (-jtf) is a reactive trajectory-smoothing correction.\n"
+            "\n"
+            "After all tiles complete Pass 1 independent clustering, JTF builds a spatial query key from the current frame's preliminary Pass 1 tile assignments. It scans history for similar joint layout patterns across recent frames, computing a global spatial-temporal match score for each candidate.\n"
+            "\n"
+            "If an individual tile's Pass 1 assignment is noisy (e.g. boundary flickering) but is one tile-flip away from a highly probable historical pattern, JTF overrides the noisy assignment in favor of the globally consistent joint trajectory. The override is accepted only if the distance to the target cluster anchor satisfies the rlim hard threshold constraint.");
+        print_help_section(
             "TILING OPTIONS",
             "-tiles <NxM>\n"
             "  Grid size. N columns, M rows. Example: -tiles 2x2 creates 4 tiles.\n"
