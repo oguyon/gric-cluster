@@ -353,10 +353,8 @@ int print_keyword_content(
             "  Operates at the joint tuple level. The query sequence represents the recent history of joint assignment tuples (assignments across all tiles). It scans the joint tuple history using a fuzzy spatial-temporal kernel, then maps the joint predictions back to seed the individual tiles' priors and candidate lists before Pass 1 begins.");
         print_help_section(
             "INTERACTS WITH",
-            "- -gprob: Both contribute to cluster\n"
-            "  probability distribution\n"
-            "- -tm: Transition matrix complements\n"
-            "  pattern detection");
+            "- -gprob: Both contribute to cluster probability distribution\n"
+            "- -tm: Transition matrix complements pattern detection");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN,
                ANSI_COLOR_RESET);
@@ -870,9 +868,7 @@ int print_keyword_content(
             "  Higher = tighter bounds, more CPU.");
         print_help_section(
             "INTERACTS WITH",
-            "- -maxcl: DCC matrix is O(maxcl^2);\n"
-            "  sparse DCC most beneficial when\n"
-            "  maxcl is large.");
+            "- -maxcl: DCC matrix is O(maxcl^2); sparse DCC most beneficial when maxcl is large.");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN,
                ANSI_COLOR_RESET);
