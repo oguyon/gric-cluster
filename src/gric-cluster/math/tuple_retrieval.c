@@ -185,7 +185,8 @@ void tuple_retrieve(
  */
 void pass2_fuse(
     MultiTileState *mts,
-    int             tile_idx)
+    int             tile_idx,
+    Frame          *tile_frame)
 {
     int M = mts->num_tiles;
     TileState *ts = &mts->tile_states[tile_idx];
@@ -250,6 +251,7 @@ void pass2_fuse(
     {
         double best_val = 0.0;
         int    best_k   = ts->pass1_assignment;
+        int    orig_k   = ts->pass1_assignment;
 
         for (int k = 0; k < maxcl; k++)
         {
@@ -261,7 +263,46 @@ void pass2_fuse(
             }
         }
 
-        ts->pass1_assignment = best_k;
+        if (best_k != orig_k && best_k >= 0 && best_k < ts->state.num_clusters)
+        {
+            double dist = -1.0;
+            int    found_dist = 0;
+
+            /* Scan cached Pass 1 measurements to find if best_k's distance is known */
+            for (int ii = 0; ii < maxcl; ii++)
+            {
+                if (ts->temp_indices[ii] == -1)
+                {
+                    break;
+                }
+                if (ts->temp_indices[ii] == best_k)
+                {
+                    dist = ts->temp_dists[ii];
+                    found_dist = 1;
+                    break;
+                }
+            }
+
+            /* If not measured, compute distance on-demand */
+            if (!found_dist)
+            {
+                dist = framedist(tile_frame, &ts->state.clusters[best_k].anchor);
+            }
+
+            /* Enforce rlim limit check */
+            if (dist <= ts->config.algo.rlim)
+            {
+                ts->pass1_assignment = best_k;
+            }
+            else
+            {
+                ts->pass1_assignment = orig_k;
+            }
+        }
+        else
+        {
+            ts->pass1_assignment = best_k;
+        }
     } // fuse block
 
 cleanup:

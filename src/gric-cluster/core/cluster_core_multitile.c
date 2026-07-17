@@ -277,6 +277,10 @@ void run_clustering_multitile(
 {
 #endif
             ts->pass1_old_ncl = ts->state.num_clusters;
+            for (int i = 0; i < ts->config.algo.maxnbclust; i++)
+            {
+                ts->temp_indices[i] = -1;
+            }
             int res = cluster_frame(
                 &ts->config,
                 &ts->state,
@@ -392,7 +396,7 @@ void run_clustering_multitile(
 #pragma omp task firstprivate(m)
 {
 #endif
-                pass2_fuse(mts, m);
+                pass2_fuse(mts, m, &scatter_buf[m]);
 #ifdef _OPENMP
 } // omp task
 #endif

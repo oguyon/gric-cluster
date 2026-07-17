@@ -36,7 +36,8 @@ void tuple_retrieve(
  */
 void pass2_fuse(
     MultiTileState *mts,
-    int             tile_idx);
+    int             tile_idx,
+    Frame          *tile_frame);
 
 /**
  * @brief Predict joint transitions for all tiles before Independent Spatial Clustering (Pass 1).
