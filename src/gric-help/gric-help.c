@@ -23,8 +23,8 @@ static void print_header(
     int         use_color)
 {
     (void)use_color;
-    printf("\n");
-    cli_print_header_box(title);
+    printf("\n%s%s%s\n",
+           ANSI_BOLD_CYAN, title, ANSI_COLOR_RESET);
 } // print_header
 
 static void print_formatted_help(
@@ -102,7 +102,8 @@ static void print_help_utility_self(void)
  */
 static void print_general_help(void)
 {
-    cli_print_header_box("GRIC CLUSTER SUITE - ONBOARDING GUIDE");
+    printf("\n%sGRIC CLUSTER SUITE - ONBOARDING GUIDE%s\n",
+           ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
 
     print_header("1. OVERVIEW", 1);
     printf("  GRIC is a high-speed, distance-based clustering suite designed for processing\n");

@@ -127,7 +127,8 @@ int main(
         }
     }
 
-    cli_print_header_box("GRIC-CLUSTER Optional Modules Information");
+    printf("\n%sGRIC-CLUSTER Optional Modules Information%s\n",
+           ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("\n");
 
 #ifdef USE_CFITSIO
