@@ -662,3 +662,359 @@ void predict_joint_tuples(
     free(accum_scores);
     free(recent_seq);
 }
+
+/**
+ * cpt_update_incremental() - Update the Conditional Probability Table incrementally with decay.
+ * @cpt:           The shared flat CPT array.
+ * @tuple_history: The flat tuple history buffer.
+ * @tuple_count:   The index of the tuple that was just recorded (0-based).
+ * @num_tiles:     Number of tiles in the grid (M).
+ * @max_clusters:  Maximum number of clusters per tile.
+ * @decay:         Decay coefficient (0.0 to 1.0].
+ *
+ * Employs multiplicative decay to all historical CPT rows, then adds the new frame's
+ * assignment co-occurrences as frequency count updates.
+ */
+void cpt_update_incremental(
+    double           *cpt,
+    double           *cpt_scale,
+    const int        *tuple_history,
+    long              tuple_count,
+    int               num_tiles,
+    int               max_clusters,
+    double            decay)
+{
+    if (cpt == NULL || cpt_scale == NULL || tuple_history == NULL || tuple_count < 0)
+    {
+        return;
+    }
+
+    if (decay < 1.0 && decay > 0.0)
+    {
+        /* Scale decay incrementally in O(1) */
+        *cpt_scale *= decay;
+
+        /* If scale becomes extremely small, multiply it back to prevent double overflow */
+        if (*cpt_scale < 1e-15)
+        {
+            size_t total_entries =
+                (size_t) num_tiles * max_clusters * num_tiles * max_clusters;
+            for (size_t i = 0; i < total_entries; i++)
+            {
+                cpt[i] *= *cpt_scale;
+            }
+            *cpt_scale = 1.0;
+        }
+    }
+
+    /* Increment counts using scaled step */
+    double add_val = 1.0 / (*cpt_scale);
+    const int *tuple = &tuple_history[tuple_count * num_tiles];
+    for (int ms = 0; ms < num_tiles; ms++)
+    {
+        int j = tuple[ms];
+        if (j < 0 || j >= max_clusters)
+        {
+            continue;
+        }
+
+        for (int mt = 0; mt < num_tiles; mt++)
+        {
+            if (mt == ms)
+            {
+                continue;
+            }
+            int k = tuple[mt];
+            if (k < 0 || k >= max_clusters)
+            {
+                continue;
+            }
+
+            size_t idx =
+                ((size_t)(ms * max_clusters + j) * num_tiles + mt)
+                * max_clusters + k;
+            cpt[idx] += add_val;
+        }
+    } // for ms
+}
+
+/**
+ * inject_cross_tile_priors() - Callback hook to dynamically inject cross-tile priors.
+ * @state: Running state of the clustering execution.
+ * @ctx:   Opaque callback context (pointer to the current TileState).
+ *
+ * Reads neighbor tile assignments from the shared board. If a neighbor tile has resolved
+ * to a cluster index (>= 0), extracts the conditional row from the CPT and multiplies it
+ * into entropy_p_current. Renormalizes entropy_p_current.
+ */
+void inject_cross_tile_priors(
+    void *state_ptr,
+    void *ctx)
+{
+    ClusterState *state = (ClusterState *) state_ptr;
+    TileState *ts = (TileState *) ctx;
+    if (ts == NULL)
+    {
+        return;
+    }
+
+    volatile int *board = ts->xtile_board;
+    double *cpt = ts->cpt;
+    int *last_injected = ts->last_injected_assignment;
+    int M = ts->num_tiles;
+    int max_clusters = ts->config.algo.maxnbclust;
+    int tile_m = ts->tile_id;
+    int num_clusters = state->num_clusters;
+    int any_resolved = 0;
+    double scale = *ts->cpt_scale;
+    double alpha = 0.01 / scale; /* Laplace smoothing adjusted for scaling */
+
+    for (int mp = 0; mp < M; mp++)
+    {
+        if (mp == tile_m)
+        {
+            continue;
+        }
+
+        int j = __atomic_load_n(&board[mp], __ATOMIC_ACQUIRE);
+        if (j < 0 || j >= max_clusters)
+        {
+            continue;
+        }
+
+        /* Check if we already injected this exact assignment from neighbor mp */
+        if (last_injected[mp] == j)
+        {
+            continue;
+        }
+
+        any_resolved = 1;
+
+        /* Pointer to conditional row: P(c_m = k | c_mp = j) */
+        size_t idx_base =
+            ((size_t)(mp * max_clusters + j) * M + tile_m)
+            * max_clusters;
+        const double *cond_counts = &cpt[idx_base];
+
+        /* Compute row sum with Laplace smoothing for normalization */
+        double sum = 0.0;
+        for (int k = 0; k < num_clusters; k++)
+        {
+            sum += cond_counts[k];
+        }
+
+        /* Modulate entropy_p_current */
+        for (int k = 0; k < num_clusters; k++)
+        {
+            double cond_prob = (cond_counts[k] + alpha)
+                             / (sum + (double) num_clusters * alpha);
+            state->scratch.entropy_p_current[k] *= cond_prob;
+        }
+
+        /* Record that we have injected this assignment */
+        last_injected[mp] = j;
+    } // for mp
+
+    if (any_resolved)
+    {
+        /* Renormalize entropy_p_current */
+        double sum_p = 0.0;
+        for (int k = 0; k < num_clusters; k++)
+        {
+            sum_p += state->scratch.entropy_p_current[k];
+        }
+
+        if (sum_p > 0.0)
+        {
+            for (int k = 0; k < num_clusters; k++)
+            {
+                state->scratch.entropy_p_current[k] /= sum_p;
+            }
+        }
+        else
+        {
+            /* Fallback: flat distribution over active (unpruned) candidates */
+            int active_cnt = 0;
+            for (int k = 0; k < num_clusters; k++)
+            {
+                if (state->scratch.clmembflag[k])
+                {
+                    active_cnt++;
+                }
+            }
+            if (active_cnt > 0)
+            {
+                for (int k = 0; k < num_clusters; k++)
+                {
+                    state->scratch.entropy_p_current[k] =
+                        state->scratch.clmembflag[k] ? (1.0 / active_cnt) : 0.0;
+                }
+            }
+        } // else
+    } // if (any_resolved)
+}
+
+/**
+ * inject_cross_tile_priors_st() - Callback hook for Strategy C live spatial-temporal priors.
+ * @state_ptr:  Running state of the clustering execution.
+ * @ctx:        Opaque callback context (pointer to the current TileState).
+ */
+void inject_cross_tile_priors_st(
+    void *state_ptr,
+    void *ctx)
+{
+    ClusterState *state = (ClusterState *) state_ptr;
+    TileState *ts = (TileState *) ctx;
+    if (ts == NULL || ts->mts == NULL)
+    {
+        return;
+    }
+
+    MultiTileState *mts = (MultiTileState *) ts->mts;
+    int M = ts->num_tiles;
+    int max_clusters = ts->config.algo.maxnbclust;
+    int tile_m = ts->tile_id;
+    int num_clusters = state->num_clusters;
+
+    /* Check if there are any new neighbor tile assignments on the board */
+    int any_new = 0;
+    for (int mp = 0; mp < M; mp++)
+    {
+        if (mp == tile_m)
+        {
+            continue;
+        }
+        int j = __atomic_load_n(&ts->xtile_board[mp], __ATOMIC_ACQUIRE);
+        if (j >= 0 && j < max_clusters)
+        {
+            if (ts->last_injected_assignment[mp] != j)
+            {
+                any_new = 1;
+                break;
+            }
+        }
+    }
+
+    if (!any_new)
+    {
+        return;
+    }
+
+    /* Allocate scratch keys and score arrays */
+    int *spatial_key = malloc((size_t) M * sizeof(int));
+    int *spatial_mask = malloc((size_t) M * sizeof(int));
+    int *temporal_key = malloc((size_t) M * sizeof(int));
+    double *scores = malloc((size_t) max_clusters * sizeof(double));
+
+    if (spatial_key == NULL || spatial_mask == NULL ||
+        temporal_key == NULL || scores == NULL)
+    {
+        free(spatial_key);
+        free(spatial_mask);
+        free(temporal_key);
+        free(scores);
+        return;
+    }
+
+    /* Build spatial key: only resolved tiles on the board participate */
+    for (int mp = 0; mp < M; mp++)
+    {
+        if (mp == tile_m)
+        {
+            spatial_key[mp] = -1;
+            spatial_mask[mp] = 0;
+            continue;
+        }
+
+        int j = __atomic_load_n(&ts->xtile_board[mp], __ATOMIC_ACQUIRE);
+        if (j >= 0 && j < max_clusters)
+        {
+            spatial_key[mp] = j;
+            spatial_mask[mp] = 1;
+        }
+        else
+        {
+            spatial_key[mp] = -1;
+            spatial_mask[mp] = 0;
+        }
+    }
+
+    /* Build temporal key from previous tuple */
+    if (mts->tuple_count > 0)
+    {
+        long prev_idx = (mts->tuple_count - 1) * M;
+        for (int m = 0; m < M; m++)
+        {
+            temporal_key[m] = mts->tuple_history[prev_idx + m];
+        }
+    }
+    else
+    {
+        for (int m = 0; m < M; m++)
+        {
+            temporal_key[m] = -1;
+        }
+    }
+
+    /* Query matching tuples from history */
+    tuple_retrieve(
+        mts, tile_m,
+        spatial_key, spatial_mask,
+        temporal_key, scores, max_clusters);
+
+    /* Modulate entropy_p_current: Naive Bayes combination */
+    for (int k = 0; k < num_clusters; k++)
+    {
+        state->scratch.entropy_p_current[k] *= scores[k];
+    }
+
+    /* Renormalize entropy_p_current */
+    double sum = 0.0;
+    for (int k = 0; k < num_clusters; k++)
+    {
+        sum += state->scratch.entropy_p_current[k];
+    }
+
+    if (sum > 0.0)
+    {
+        for (int k = 0; k < num_clusters; k++)
+        {
+            state->scratch.entropy_p_current[k] /= sum;
+        }
+    }
+    else
+    {
+        /* Fallback: flat distribution over active (unpruned) candidates */
+        int active_cnt = 0;
+        for (int k = 0; k < num_clusters; k++)
+        {
+            if (state->scratch.clmembflag[k])
+            {
+                active_cnt++;
+            }
+        }
+        if (active_cnt > 0)
+        {
+            for (int k = 0; k < num_clusters; k++)
+            {
+                state->scratch.entropy_p_current[k] =
+                    state->scratch.clmembflag[k] ? (1.0 / active_cnt) : 0.0;
+            }
+        }
+    }
+
+    /* Update the local injected assignment trackers */
+    for (int mp = 0; mp < M; mp++)
+    {
+        if (mp != tile_m)
+        {
+            int j = __atomic_load_n(&ts->xtile_board[mp], __ATOMIC_ACQUIRE);
+            ts->last_injected_assignment[mp] = j;
+        }
+    }
+
+    free(spatial_key);
+    free(spatial_mask);
+    free(temporal_key);
+    free(scores);
+}

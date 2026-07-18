@@ -56,13 +56,27 @@ MultiTileState *multitile_init(
 
     int maxnbc = global->algo.maxnbclust;
 
+    /* Allocate cross-tile shared structures */
+    mts->xtile_board = calloc(
+        (size_t) mts->num_tiles, sizeof(volatile int));
+    size_t cpt_entries =
+        (size_t) mts->num_tiles * maxnbc * mts->num_tiles * maxnbc;
+    mts->cpt = calloc(cpt_entries, sizeof(double));
+
+    if (mts->xtile_board == NULL || mts->cpt == NULL)
+    {
+        multitile_free(mts);
+        return NULL;
+    }
+
     /* Initialise each tile state */
     for (int m = 0; m < mts->num_tiles; m++)
     {
         TileState *ts = &mts->tile_states[m];
 
-        ts->tile_id  = m;
-        ts->tile_def = &tm->tiles[m];
+        ts->tile_id   = m;
+        ts->num_tiles = mts->num_tiles;
+        ts->tile_def  = &tm->tiles[m];
 
         /* Per-tile copy of global config */
         ts->config = *global;
@@ -165,10 +179,18 @@ MultiTileState *multitile_init(
         ts->sorting_candidates = malloc(
             (size_t) maxnbc * sizeof(Candidate));
 
+        ts->xtile_board = mts->xtile_board;
+        ts->cpt = mts->cpt;
+        ts->cpt_scale = &mts->cpt_scale;
+        ts->mts = mts;
+        ts->last_injected_assignment = calloc(
+            (size_t) mts->num_tiles, sizeof(int));
+
         if (ts->pass1_posterior == NULL
             || ts->temp_indices == NULL
             || ts->temp_dists == NULL
-            || ts->sorting_candidates == NULL)
+            || ts->sorting_candidates == NULL
+            || ts->last_injected_assignment == NULL)
         {
             multitile_free(mts);
             return NULL;
@@ -189,6 +211,7 @@ MultiTileState *multitile_init(
         return NULL;
     }
 
+    mts->cpt_scale        = 1.0;
     mts->tuple_count      = 0;
     mts->retrieval_window = global->input.retrieval_window;
 
@@ -238,6 +261,7 @@ void multitile_free(MultiTileState *mts)
             free(ts->temp_dists);
             free(ts->sorting_candidates);
             free(ts->verbose_candidates);
+            free(ts->last_injected_assignment);
             if (ts->state.scratch.tuple_pred_candidates)
             {
                 free(ts->state.scratch.tuple_pred_candidates);
@@ -250,6 +274,8 @@ void multitile_free(MultiTileState *mts)
     free(mts->tuple_history);
     free(mts->occurrence_head);
     free(mts->occurrence_prev);
+    free((void *) mts->xtile_board);
+    free(mts->cpt);
     free(mts);
 }
 

@@ -14,6 +14,7 @@
 typedef struct
 {
     int            tile_id;
+    int            num_tiles;          /**< Total number of tiles in the partition */
     TileDef       *tile_def;           /**< Ptr into TileMap */
     ClusterConfig  config;             /**< Per-tile copy */
     ClusterState   state;              /**< Independent state */
@@ -27,19 +28,27 @@ typedef struct
     FILE          *ascii_out;
     int            prev_assigned_cluster;
     int            pass1_old_ncl;      /**< Number of clusters before Pass 1 */
+    volatile int  *xtile_board;        /**< Shared cross-tile assignment board */
+    double        *cpt;                /**< Shared Conditional Probability Table */
+    double        *cpt_scale;          /**< Shared CPT scale factor pointer */
+    int           *last_injected_assignment; /**< Resolved neighbor track list */
+    void          *mts;                /**< Ptr to parent MultiTileState (forward declared void* to avoid circular header dependencies) */
 } TileState;
 
 /** Top-level multi-tile state. */
 typedef struct
 {
-    TileMap   *tile_map;
-    TileState *tile_states;      /**< Array of M TileStates */
-    int        num_tiles;
-    int       *tuple_history;    /**< [maxnbfr × M] flat */
-    long       tuple_count;      /**< Frames recorded */
-    int        retrieval_window; /**< Lookback horizon */
-    int       *occurrence_head;  /**< [M × max_clusters] flat */
-    int       *occurrence_prev;  /**< [maxnbfr × M] flat */
+    TileMap       *tile_map;
+    TileState     *tile_states;      /**< Array of M TileStates */
+    int            num_tiles;
+    int           *tuple_history;    /**< [maxnbfr × M] flat */
+    long           tuple_count;      /**< Frames recorded */
+    int            retrieval_window; /**< Lookback horizon */
+    int           *occurrence_head;  /**< [M × max_clusters] flat */
+    int           *occurrence_prev;  /**< [maxnbfr × M] flat */
+    volatile int  *xtile_board;      /**< Shared board flat [M] */
+    double        *cpt;              /**< Shared CPT flat [M * Kmax * M * Kmax] */
+    double         cpt_scale;        /**< Shared CPT scale factor */
 } MultiTileState;
 
 /** Allocate and initialise multi-tile state. */

@@ -52,4 +52,30 @@ void predict_joint_tuples(
     int             pred_h,
     int             pred_n);
 
+/**
+ * @brief Update the Conditional Probability Table incrementally with decay.
+ */
+void cpt_update_incremental(
+    double           *cpt,
+    double           *cpt_scale,
+    const int        *tuple_history,
+    long              tuple_count,
+    int               num_tiles,
+    int               max_clusters,
+    double            decay);
+
+/**
+ * @brief Hook callback to inject cross-tile prior probabilities.
+ */
+void inject_cross_tile_priors(
+    void *state,
+    void *ctx);
+
+/**
+ * @brief Hook callback to inject spatial-temporal cross-tile prior probabilities (Strategy C).
+ */
+void inject_cross_tile_priors_st(
+    void *state,
+    void *ctx);
+
 #endif // TUPLE_RETRIEVAL_H

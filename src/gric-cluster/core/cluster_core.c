@@ -491,6 +491,29 @@ void run_clustering(
         printf("\n");
     }
 
+    /* Prediction diagnostics */
+    if (config->optim.pred_mode
+        && state->telemetry.pred_attempts > 0)
+    {
+        uint64_t att  = state->telemetry.pred_attempts;
+        uint64_t hits = state->telemetry.pred_hits;
+        uint64_t same = state->telemetry.pred_same_as_last;
+        double hit_pct  = 100.0 * (double)hits / (double)att;
+        double same_pct = 100.0 * (double)same / (double)att;
+
+        printf("Prediction Diagnostics:\n");
+        printf("  Attempts:       %8lu\n",
+               (unsigned long)att);
+        printf("  Hits (1st ok):  %8lu  (%5.1f%%)\n",
+               (unsigned long)hits, hit_pct);
+        printf("  Misses:         %8lu  (%5.1f%%)\n",
+               (unsigned long)(att - hits),
+               100.0 - hit_pct);
+        printf("  Same as last:   %8lu  (%5.1f%%)\n",
+               (unsigned long)same, same_pct);
+        printf("\n");
+    }
+
     print_clustering_metrics(state, -1);
     printf("\n");
 

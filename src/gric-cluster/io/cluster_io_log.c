@@ -138,6 +138,24 @@ void write_run_log(
         fprintf(f, "STATS_TIME_STEP_4_MS: %.3f\n", state->telemetry.time_step_4);
         fprintf(f, "STATS_TIME_STEP_5_MS: %.3f\n", state->telemetry.time_step_5);
         fprintf(f, "STATS_TIME_STEP_REFINE_MS: %.3f\n", state->telemetry.time_step_refine);
+        {
+            const char *pmode = "off";
+            if (config->optim.pred_mode == 1)
+            {
+                pmode = "binary";
+            }
+            else if (config->optim.pred_mode == 2)
+            {
+                pmode = "fuzzy";
+            }
+            fprintf(f, "STATS_PRED_MODE: %s\n", pmode);
+        }
+        fprintf(f, "STATS_PRED_ATTEMPTS: %lu\n",
+                (unsigned long)state->telemetry.pred_attempts);
+        fprintf(f, "STATS_PRED_HITS: %lu\n",
+                (unsigned long)state->telemetry.pred_hits);
+        fprintf(f, "STATS_PRED_SAME_AS_LAST: %lu\n",
+                (unsigned long)state->telemetry.pred_same_as_last);
 
         fprintf(f, "STATS_DIST_HIST_START\n");
         for (int k = 0; k <= config->algo.maxnbclust; k++)

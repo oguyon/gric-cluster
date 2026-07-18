@@ -80,6 +80,10 @@ static double calculate_sequence_match_metric(
         }
 
         double dmax = dA + dB + dcc;
+        if (dmax > r_c)
+        {
+            return 0.0;
+        }
         sum_dmax += pow(a_param, j) * (dmax / r_c);
     }
 
@@ -125,13 +129,8 @@ void compute_priors_and_mixing(
         state->scratch.clmembflag[i] = 1;
     }
 
-    if (config->optim.pred_mode)
+    if (config->optim.pred_mode == 2)
     {
-        if (config->input.tile_grid_x > 0 || config->input.tile_grid_y > 0)
-        {
-            goto skip_local_pred;
-        }
-
         int np = config->optim.pred_len;
         int nl = config->optim.pred_h;
         long t = state->telemetry.total_frames_processed;
@@ -318,7 +317,6 @@ void compute_priors_and_mixing(
             }
         }
     }
-skip_local_pred:
 
     if (!config->optim.gprob_mode)
     {

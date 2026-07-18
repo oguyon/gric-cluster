@@ -323,38 +323,75 @@ int print_keyword_content(
         printf("\n");
         return 1;
     }
-    else if (strcmp(key, "pred") == 0 || strncmp(key, "pred", 4) == 0)
+    else if (strcmp(key, "pred") == 0
+             || strcmp(key, "predf") == 0
+             || strncmp(key, "pred", 4) == 0)
     {
-        print_help_section("ROLE", "Time-Series Prediction");
+        print_help_section("ROLE",
+            "Time-Series Prediction");
         print_help_section(
             "FUNCTION",
-            "Predicts next cluster based on sequence history.");
+            "Predicts next cluster based on"
+            " sequence history.\n"
+            "Two modes are available: binary"
+            " (fast, exact) and fuzzy"
+            " (slow, geometric).");
         print_help_section(
             "FORMAT",
-            "-pred[len,h,n]\n"
-            "  len: Length of recent sequence to match (Default: 10).\n"
-            "  h  : History size to search (Default: 1000).\n"
-            "  n  : Number of predicted candidates to test first (Default: 2).");
+            "-pred[len,h,n]   Binary prediction"
+            " (default)\n"
+            "-predf[len,h,n]  Fuzzy prediction\n"
+            "\n"
+            "  len: Length of recent sequence to"
+            " match (Default: 10).\n"
+            "  h  : History size to search"
+            " (Default: 1000).\n"
+            "  n  : Number of predicted candidates"
+            " to test first (Default: 2).");
         print_help_section(
-            "ALGORITHM",
-            "Matches the last 'len' cluster assignments against the last 'h' frames.\n"
-            "If the sequence [A, B, C] is found in history followed by D, then D is\n"
-            "predicted as a candidate. Predicted candidates are checked *before*\n"
-            "standard sorting.");
+            "BINARY MODE (-pred)",
+            "Exact pattern match on cluster IDs."
+            " Scans the last h assignments for"
+            " subsequences matching the most recent"
+            " len cluster IDs. If the sequence"
+            " [A, B, C] appears in history followed"
+            " by D, then D is predicted.\n"
+            "\n"
+            "Cost: O(h) integer comparisons per"
+            " frame. Very fast.");
+        print_help_section(
+            "FUZZY MODE (-predf)",
+            "Geometric sequence similarity using"
+            " distances and inter-cluster bounds."
+            " For every position in the lookback"
+            " window, computes a continuous"
+            " similarity metric between the"
+            " current trajectory and the"
+            " historical trajectory using"
+            " frame-to-cluster distances and DCC"
+            " triangle inequality bounds.\n"
+            "\n"
+            "Produces a full probability"
+            " distribution over all clusters,"
+            " handling soft matches where"
+            " trajectories pass through"
+            " nearby but different clusters.\n"
+            "\n"
+            "Cost: O(h x len) with distance"
+            " lookups, pow(), exp() per entry."
+            " Much slower than binary mode.");
         print_help_section(
             "USE",
-            "-pred[5,500,1] (For repeating patterns/loops)");
-        print_help_section(
-            "WITH AND WITHOUT TILING",
-            "Without Tiling (Single-Tile Mode):\n"
-            "  Matches the history of scalar cluster assignments. For a query sequence of cluster IDs, the scanner searches the frame assignment history for matching transitions to return predicted candidates for the single tile.\n"
-            "\n"
-            "With Tiling (Multi-Tile Mode):\n"
-            "  Operates at the joint tuple level. The query sequence represents the recent history of joint assignment tuples (assignments across all tiles). It scans the joint tuple history using a fuzzy spatial-temporal kernel, then maps the joint predictions back to seed the individual tiles' priors and candidate lists before Pass 1 begins.");
+            "-pred[5,500,1]   (Fast, repeating"
+            " patterns)\n"
+            "-predf[5,500,1]  (Noisy/drifting"
+            " trajectories)");
         print_help_section(
             "INTERACTS WITH",
-            "- -gprob: Both contribute to cluster probability distribution\n"
-            "- -tm: Transition matrix complements pattern detection");
+            "- -gprob: Both contribute to cluster"
+            " probability distribution\n"
+            "- -tm: Transition matrix complements"
+            " pattern detection");
         printf("%sSEE ALSO%s\n",
                ANSI_BOLD_CYAN,
                ANSI_COLOR_RESET);
@@ -1488,6 +1525,68 @@ int print_keyword_content(
         printf("\n");
         return 1;
     }
+    else if (strcmp(key, "xtile") == 0)
+    {
+        print_help_section("ROLE",
+            "Live Cross-Tile Prior Injection");
+        print_help_section(
+            "FUNCTION",
+            "Enables dynamic constraint propagation between tiles\n"
+            "during the solving of a frame. Once one tile resolves\n"
+            "its assignment, its state is broadcast to neighbor tiles,\n"
+            "shifting their target priors.\n"
+            "\n"
+            "Modes:\n"
+            "1: Pure spatial CPT prior injection.\n"
+            "2: Hybrid spatial-temporal prior injection (Strategy C, default).");
+        print_help_section(
+            "RATIONALE",
+            "Drastically reduces redundant distance calculations\n"
+            "and enforces spatial/temporal coherency on moving bodies.");
+        print_help_section("USE",
+            "-xtile [1|2] (default: 2)");
+        print_help_section(
+            "REQUIRES",
+            "-tiles NxM (only meaningful in multi-tile mode)");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-xtile_decay",
+            "CPT decay parameter");
+        print_see_also_option(
+            "tiling",
+            "Tiling topic overview");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "xtile_decay") == 0)
+    {
+        print_help_section("ROLE",
+            "CPT Trajectory Decay Control");
+        print_help_section(
+            "FUNCTION",
+            "Sets the decay coefficient for historical co-occurrences\n"
+            "in the CPT table. Values should be in range (0.0 to 1.0].\n"
+            "1.0 means no decay (full memory).");
+        print_help_section(
+            "RATIONALE",
+            "Allows the system to discount old history and adjust to\n"
+            "transient trajectories or evolving target behavior.");
+        print_help_section("USE",
+            "-xtile_decay <val>");
+        print_help_section(
+            "REQUIRES",
+            "-tiles NxM -xtile");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN,
+               ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-xtile",
+            "Cross-tile prior injection");
+        printf("\n");
+        return 1;
+    }
     else if (strcmp(key, "no_dcc") == 0)
     {
         print_help_section("ROLE",
@@ -1828,9 +1927,13 @@ int print_keyword_content(
         print_help_section(
             "PREDICTION",
             "-pred[l,h,n]   (default: 10,1000,2)\n"
-            "  Pattern matching in assignment history.\n"
-            "  Tests predicted clusters before standard\n"
-            "  ranking. Good for periodic/cyclic data.\n"
+            "  Binary: exact pattern match on\n"
+            "  cluster IDs. Fast.\n"
+            "\n"
+            "-predf[l,h,n]  (default: 10,1000,2)\n"
+            "  Fuzzy: geometric sequence similarity\n"
+            "  using distances and DCC bounds.\n"
+            "  Much slower. Use for noisy data.\n"
             "\n"
             "-tm <coeff>    (0.0 to 1.0)\n"
             "  Transition matrix mixing. Blends prior\n"
@@ -2722,13 +2825,24 @@ int print_keyword_content(
             "  Grid size. N columns, M rows. Example: -tiles 2x2 creates 4 tiles.\n"
             "\n"
             "-tileconf <file.txt>\n"
-            "  Per-tile configuration overrides. ASCII file, one line per tile, 3 space-separated fields: tile_id rlim maxnbclust. Lines starting with '#' are comments. Example: '0 0.8 500' sets tile 0 to rlim=0.8 with maxnbclust=500.\n"
+            "  Per-tile configuration overrides. ASCII file, one line per tile,\n"
+            "  3 space-separated fields: tile_id rlim maxnbclust. Example: '0 0.8 500'\n"
+            "  sets tile 0 to rlim=0.8 with maxnbclust=500.\n"
+            "\n"
+            "-xtile [mode]\n"
+            "  Enable live cross-tile prior injection. Mode 1: spatial-only CPT.\n"
+            "  Mode 2: hybrid spatial-temporal (Strategy C, default). Disabled by default.\n"
+            "\n"
+            "-xtile_decay <val>\n"
+            "  Exponential decay coefficient for CPT history (default: 1.0).\n"
             "\n"
             "-jtf\n"
-            "  Enable Joint Trajectory Fusion (Pass 2) to correct tile-boundary noise. Disabled by default.\n"
+            "  Enable Joint Trajectory Fusion (Pass 2) to correct tile-boundary noise.\n"
+            "  Disabled by default.\n"
             "\n"
             "-retrieval_window <N>\n"
-            "  Number of recent frames to scan during JTF pattern matching (default: 1000). Larger values improve accuracy but increase scan cost linearly.");
+            "  Number of recent frames to scan during JTF pattern matching (default: 1000).\n"
+            "  Larger values improve accuracy but increase scan cost linearly.");
         print_help_section(
             "OPTION INTERACTIONS",
             "All per-tile options (-gprob, -entropy, -soft_bayesian, -sparse_dcc, -te4/-te5) work independently within each tile during Pass 1. Each tile has its own ClusterState, DCC matrix, visitor history, and entropy scheduler.\n"
@@ -2807,6 +2921,47 @@ int print_keyword_content(
         print_see_also_option(
             "performance",
             "How to pick options for best performance");
+        printf("\n");
+        return 1;
+    }
+    else if (strcmp(key, "cpt") == 0)
+    {
+        print_help_section(
+            "WHAT IS THE CPT?",
+            "CPT stands for Conditional Probability Table.\n"
+            "\n"
+            "In GRIC's multi-tile mode, the CPT is a shared co-occurrence table\n"
+            "that learns spatial dependencies between tiles in real-time. It tracks\n"
+            "the joint assignments of recently solved frames. If tile A was assigned\n"
+            "to cluster c_A and tile B was assigned to cluster c_B, this co-occurrence\n"
+            "is recorded in the table.");
+        print_help_section(
+            "CROSS-TILE PRIOR INJECTION (-xtile)",
+            "During the clustering of a frame, once any tile resolves its local assignment,\n"
+            "it writes its cluster ID to a shared board. Subsequent tiles query the CPT\n"
+            "using the known assignments of already-resolved tiles to extract target\n"
+            "prediction vectors (conditional probabilities).\n"
+            "\n"
+            "These probabilities are injected as live priors for unresolved tiles, biasing\n"
+            "their candidate search order and dynamically pruning distant clusters.");
+        print_help_section(
+            "CPT TRAJECTORY DECAY (-xtile_decay)",
+            "By default, co-occurrence statistics are accumulated with equal weight\n"
+            "(full memory). By setting -xtile_decay <val> (e.g. 0.999), historical counts\n"
+            "are exponentially decayed over time. This helps the CPT adapt to transient\n"
+            "trajectories or non-stationary patterns (e.g. moving targets) while discounting\n"
+            "stale historical evidence.");
+        printf("%sSEE ALSO%s\n",
+               ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+        print_see_also_option(
+            "-xtile",
+            "Cross-tile prior injection");
+        print_see_also_option(
+            "-xtile_decay",
+            "CPT history decay coefficient");
+        print_see_also_option(
+            "tiling",
+            "Image partitioning and multi-tile processing");
         printf("\n");
         return 1;
     }

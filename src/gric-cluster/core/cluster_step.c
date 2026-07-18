@@ -101,6 +101,7 @@ int cluster_frame(
         int *pred_candidates = NULL;
         int num_preds = 0;
         int current_pred_idx = 0;
+        int first_pred = -1;  /* first prediction candidate */
 
         // Step 2: Retrieve prediction candidates.
         // Retrieves prediction candidates at the very start of processing the frame if
@@ -183,6 +184,17 @@ int cluster_frame(
         state->telemetry.time_step_2 += (s2_end.tv_sec - s2_start.tv_sec) * 1000.0 +
                                         (s2_end.tv_nsec - s2_start.tv_nsec) / 1000000.0;
 
+        /* Record prediction telemetry baseline */
+        if (num_preds > 0)
+        {
+            first_pred = pred_candidates[0];
+            state->telemetry.pred_attempts++;
+            if (first_pred == *prev_assigned_cluster)
+            {
+                state->telemetry.pred_same_as_last++;
+            }
+        }
+
         // Step 3: Iterative search loop (Prediction & Standard search).
         while (!found)
         {
@@ -209,6 +221,11 @@ int cluster_frame(
                 clock_gettime(CLOCK_MONOTONIC, &step_end);
                 state->telemetry.time_step_3a += (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
                                                  (step_end.tv_nsec - step_start.tv_nsec) / 1000000.0;
+            }
+
+            if (state->cross_tile_hook != NULL)
+            {
+                state->cross_tile_hook(state, state->cross_tile_ctx);
             }
 
             if (config->output.verbose_level >= 2 && verbose_candidates)
@@ -309,6 +326,12 @@ int cluster_frame(
             }
 
             last_cj = cj;
+        }
+
+        /* Record prediction hit if 1st candidate was assigned */
+        if (first_pred >= 0 && assigned_cluster == first_pred)
+        {
+            state->telemetry.pred_hits++;
         }
 
         if (pred_candidates)
