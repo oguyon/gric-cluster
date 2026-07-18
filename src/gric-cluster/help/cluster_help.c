@@ -114,14 +114,20 @@ static const struct help_entry help_entries[] = {
      "Per-tile configuration overrides"},
     {"retrieval_window",
      "Tuple lookback horizon for trajectory fusion"},
+    {"xtile",
+     "Enable live cross-tile prior injection (1: spatial, 2: hybrid)"},
+    {"xtile_decay",
+     "Decay coefficient for CPT history co-occurrence table"},
     {"no_xtile",
-     "Disable cross-tile trajectory correction"},
+     "Disable cross-tile trajectory correction (and live prior injection)"},
     {"no_pass2",
      "(alias for no_xtile)"},
     {"jtf",
      "Enable Joint Trajectory Fusion (Pass 2) to correct tile-boundary noise"},
     {"pass2",
      "(alias for jtf)"},
+    {"cpt",
+     "Conditional Probability Table (CPT) for cross-tile dependencies"},
     /* Topics */
     {"intro",      "Getting started with GRIC"},
     {"input",      "Input formats and options"},
@@ -334,7 +340,9 @@ static void print_help_raw(
                        "(tile_id rlim maxcl)");
     print_colored_line("      -retrieval_window <N>  Tuple lookback horizon "
                        "(default: 1000)");
-    print_colored_line("      -no_xtile              Disable cross-tile trajectory correction");
+    print_colored_line("      -xtile [mode]          Enable live cross-tile prior injection (1: spatial, 2: hybrid, default: 2)");
+    print_colored_line("      -xtile_decay <val>     Decay coefficient for CPT history (0.0 to 1.0]");
+    print_colored_line("      -no_xtile              Disable cross-tile Trajectory Fusion & prior injection");
 
     printf("    %sPrediction:%s\n",
            ANSI_BOLD, ANSI_COLOR_RESET);

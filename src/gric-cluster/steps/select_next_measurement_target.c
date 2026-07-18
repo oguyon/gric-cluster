@@ -633,7 +633,7 @@ int select_next_measurement_target(
      * we can sequentially return candidates from the pre-sorted list (probsortedclindex)
      * and skip any that have been pruned.
      */
-    if (!config->optim.gprob_mode)
+    if (!config->optim.gprob_mode && state->cross_tile_hook == NULL)
     {
         while (*k_search < state->num_clusters &&
                state->scratch.clmembflag[state->scratch.probsortedclindex[*k_search]] == 0)

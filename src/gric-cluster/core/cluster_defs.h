@@ -56,7 +56,7 @@ typedef struct
     double fmatch_a;                /**< gprob exponential decay parameter a */
     double fmatch_b;                /**< gprob exponential decay parameter b */
     int    max_gprob_visitors;      /**< Max visitor entries per cluster */
-    int    pred_mode;               /**< 1 to enable trajectory prediction */
+    int    pred_mode;               /**< 0=off, 1=binary (-pred), 2=fuzzy (-predf) */
     int    pred_len;                /**< Pattern length for prediction matching */
     int    pred_h;                  /**< History horizon for pattern search */
     int    pred_n;                  /**< Max prediction candidates returned */
@@ -73,7 +73,14 @@ typedef struct
     int    soft_bayesian_mode;      /**< 1 to enable soft Bayesian updates */
     double soft_bayesian_sigma_coeff; /**< Coefficient multiplying rlim for sigma */
     int    disable_pass2;           /**< 1 to disable Pass 2 fusion (tuple prediction) */
+    int    xtile_mode;              /**< 1 to enable live cross-tile prior injection */
+    double xtile_decay;             /**< Decay coefficient for CPT history (0.0 to 1.0] */
 } ConfigOptim;
+
+/** Cross-tile injection callback signature. */
+typedef void (*CrossTileHookFn)(
+    void *state,
+    void *ctx);
 
 /** Output configuration. */
 typedef struct
@@ -150,6 +157,9 @@ typedef struct
     double   entropy_last_initial;     /**< H at meas_idx==0 for last frame */
     uint64_t entropy_frames_gated;     /**< Calls where gate returned greedy */
     uint64_t entropy_frames_evaluated; /**< Calls where full eval ran */
+    uint64_t pred_attempts;     /**< Frames where pred returned >= 1 candidate */
+    uint64_t pred_hits;         /**< Frames where 1st pred candidate was assigned */
+    uint64_t pred_same_as_last; /**< Frames where 1st pred == previous cluster */
 } ClusterTelemetry;
 
 // Candidate structure for sorting
@@ -206,6 +216,8 @@ typedef struct
     ClusterTelemetry  telemetry;
     ClusterScratch    scratch;
     void             *shm_ptr;
+    CrossTileHookFn   cross_tile_hook;  /**< Hook callback for cross-tile updates */
+    void             *cross_tile_ctx;   /**< Callback context */
 } ClusterState;
 
 /** Minimum cluster count for OpenMP parallelization of pruning loops. */

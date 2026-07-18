@@ -248,6 +248,12 @@ void run_clustering_multitile(
         /* ---- Scatter into per-tile buffers ---- */
         frame_scatter(src, mts->tile_map, scatter_buf);
 
+        /* ---- Initialize cross-tile board for this frame ---- */
+        for (int m = 0; m < num_tiles; m++)
+        {
+            mts->xtile_board[m] = -1;
+        }
+
         /* ---- Predict joint transitions for Pass 1 priors & candidates ---- */
         if (global_config->optim.pred_mode)
         {
@@ -281,6 +287,25 @@ void run_clustering_multitile(
             {
                 ts->temp_indices[i] = -1;
             }
+            for (int i = 0; i < num_tiles; i++)
+            {
+                ts->last_injected_assignment[i] = -1;
+            }
+            if (global_config->optim.xtile_mode == 1)
+            {
+                ts->state.cross_tile_hook = inject_cross_tile_priors;
+                ts->state.cross_tile_ctx = ts;
+            }
+            else if (global_config->optim.xtile_mode == 2)
+            {
+                ts->state.cross_tile_hook = inject_cross_tile_priors_st;
+                ts->state.cross_tile_ctx = ts;
+            }
+            else
+            {
+                ts->state.cross_tile_hook = NULL;
+                ts->state.cross_tile_ctx = NULL;
+            }
             int res = cluster_frame(
                 &ts->config,
                 &ts->state,
@@ -300,6 +325,7 @@ void run_clustering_multitile(
             {
                 ts->pass1_assignment = -1;
             }
+            __atomic_store_n(&ts->xtile_board[m], res, __ATOMIC_RELEASE);
 
             /* Copy or construct posterior for Pass 2 fusion */
             if (ts->pass1_posterior)
@@ -424,6 +450,17 @@ void run_clustering_multitile(
                     mts->occurrence_head[m * maxcl + ass] = (int)t;
                 }
             }
+            if (global_config->optim.xtile_mode)
+            {
+                cpt_update_incremental(
+                    mts->cpt,
+                    &mts->cpt_scale,
+                    mts->tuple_history,
+                    mts->tuple_count,
+                    num_tiles,
+                    maxcl,
+                    global_config->optim.xtile_decay);
+            }
             mts->tuple_count++;
         }
 
@@ -510,6 +547,43 @@ void run_clustering_multitile(
                "(dfc=%ld, dcc=%ld)\n",
                total_dfc + total_dcc,
                total_dfc, total_dcc);
+
+        /* Aggregate prediction diagnostics across tiles */
+        if (global_config->optim.pred_mode)
+        {
+            uint64_t att  = 0;
+            uint64_t hits = 0;
+            uint64_t same = 0;
+            for (int m = 0; m < num_tiles; m++)
+            {
+                ClusterTelemetry *t =
+                    &mts->tile_states[m].state.telemetry;
+                att  += t->pred_attempts;
+                hits += t->pred_hits;
+                same += t->pred_same_as_last;
+            }
+            if (att > 0)
+            {
+                double hit_pct =
+                    100.0 * (double)hits / (double)att;
+                double same_pct =
+                    100.0 * (double)same / (double)att;
+                printf("Prediction Diagnostics"
+                       " (all tiles):\n");
+                printf("  Attempts:       %8lu\n",
+                       (unsigned long)att);
+                printf("  Hits (1st ok):  %8lu"
+                       "  (%5.1f%%)\n",
+                       (unsigned long)hits, hit_pct);
+                printf("  Misses:         %8lu"
+                       "  (%5.1f%%)\n",
+                       (unsigned long)(att - hits),
+                       100.0 - hit_pct);
+                printf("  Same as last:   %8lu"
+                       "  (%5.1f%%)\n",
+                       (unsigned long)same, same_pct);
+            }
+        }
 
         if (mts->tuple_count > 0)
         {

@@ -124,6 +124,8 @@ int main(int argc, char *argv[])
     config.optim.soft_bayesian_mode = 0;
     config.optim.soft_bayesian_sigma_coeff = 1.0;
     config.optim.disable_pass2 = 1;
+    config.optim.xtile_mode = 0;
+    config.optim.xtile_decay = 1.0;
 
     // Tiling defaults (M=1, no tiling)
     config.input.tile_grid_x = 0;

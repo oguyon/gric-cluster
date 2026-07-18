@@ -238,6 +238,26 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->optim.disable_pass2 = 1;
         return 0;
     }
+    else if (matches(key, "-xtile"))
+    {
+        if (value && (strcmp(value, "1") == 0 || strcmp(value, "2") == 0))
+        {
+            config->optim.xtile_mode = atoi(value);
+            return 1;
+        }
+        else
+        {
+            config->optim.xtile_mode = 2;
+            return 0;
+        }
+    }
+    else if (matches(key, "-xtile_decay"))
+    {
+        if (!value)
+            return -1;
+        config->optim.xtile_decay = atof(value);
+        return 1;
+    }
     else if (matches(key, "-tm"))
     {
         if (!value)
@@ -316,15 +336,36 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->output.output_clusters = 1;
         return 0;
     }
-    else if (strncmp(key, "-pred", 5) == 0 || strncmp(key, "pred", 4) == 0)
+    else if (strncmp(key, "-predf", 6) == 0
+             || strncmp(key, "predf", 5) == 0)
+    {
+        config->optim.pred_mode = 2;
+        const char *params = strchr(key, '[');
+        if (params)
+        {
+            params++;
+            int l, h, n;
+            if (sscanf(params, "%d,%d,%d",
+                       &l, &h, &n) == 3)
+            {
+                config->optim.pred_len = l;
+                config->optim.pred_h = h;
+                config->optim.pred_n = n;
+            }
+        }
+        return 0;
+    }
+    else if (strncmp(key, "-pred", 5) == 0
+             || strncmp(key, "pred", 4) == 0)
     {
         config->optim.pred_mode = 1;
         const char *params = strchr(key, '[');
         if (params)
         {
-            params++; // Skip [
+            params++;
             int l, h, n;
-            if (sscanf(params, "%d,%d,%d", &l, &h, &n) == 3)
+            if (sscanf(params, "%d,%d,%d",
+                       &l, &h, &n) == 3)
             {
                 config->optim.pred_len = l;
                 config->optim.pred_h = h;
@@ -593,11 +634,16 @@ int write_config_file(const char *filename, ClusterConfig *config)
 
     if (config->optim.pred_mode)
     {
-        fprintf(f, "# Prediction mode enabled: pred[%d,%d,%d]\n", config->optim.pred_len, config->optim.pred_h,
+        const char *tag =
+            (config->optim.pred_mode == 2) ? "predf" : "pred";
+        fprintf(f, "# Prediction mode: -%s[%d,%d,%d]\n",
+                tag, config->optim.pred_len,
+                config->optim.pred_h,
                 config->optim.pred_n);
-        // Writing as -pred is weird, maybe write separate params?
-        // But the parser handles -pred[...]. Let's write it as such.
-        fprintf(f, "-pred[%d,%d,%d]\n", config->optim.pred_len, config->optim.pred_h, config->optim.pred_n);
+        fprintf(f, "-%s[%d,%d,%d]\n",
+                tag, config->optim.pred_len,
+                config->optim.pred_h,
+                config->optim.pred_n);
     }
 
     if (config->input.scandist_mode)
@@ -628,6 +674,16 @@ int write_config_file(const char *filename, ClusterConfig *config)
     {
         fprintf(f, "retrieval_window %d\n",
                 config->input.retrieval_window);
+    }
+    if (config->optim.xtile_mode)
+    {
+        fprintf(f, "xtile %d\n",
+                config->optim.xtile_mode);
+    }
+    if (config->optim.xtile_decay != 1.0)
+    {
+        fprintf(f, "xtile_decay %f\n",
+                config->optim.xtile_decay);
     }
 
     fclose(f);
