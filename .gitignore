@@ -40,3 +40,4 @@ test_strat.clustered.txt
 site/
 .cache/
 python/__pycache__
+benchmark/

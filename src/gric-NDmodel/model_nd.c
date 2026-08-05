@@ -280,7 +280,7 @@ int main(int argc, char *argv[])
             if (target >= 0.0)
             {
                 double curr = dist_nd(P[i], P[j]);
-                E += pow(curr - target, 2);
+                E += (curr - target) * (curr - target);
                 pair_count++;
             }
         }
@@ -329,7 +329,7 @@ int main(int argc, char *argv[])
             {
                 double old_dist = dist_nd(P[idx], P[j]);
                 double new_dist = dist_nd(new_p, P[j]);
-                dE += pow(new_dist - target, 2) - pow(old_dist - target, 2);
+                dE += (new_dist - target) * (new_dist - target) - (old_dist - target) * (old_dist - target);
             }
         }
 
