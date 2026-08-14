@@ -143,23 +143,33 @@ def read_netcdf_variable(data_bytes, channel):
             with netCDF4.Dataset(mem_name, memory=data_bytes) as nc:
                 if channel not in nc.variables:
                     return None, f"Channel {channel} not found in NetCDF"
-                var = np.array(nc.variables[channel][:], dtype=np.float32)
+                raw_var = nc.variables[channel][:]
         elif HAVE_H5PY:
             with h5py.File(io.BytesIO(data_bytes), 'r') as h5f:
                 if channel not in h5f:
                     return None, f"Channel {channel} not found in HDF5"
-                var = np.array(h5f[channel][:], dtype=np.float32)
+                raw_var = h5f[channel][:]
         else:
             return None, "Missing NetCDF library. Please run: pip install netCDF4"
 
-    valid_mask = ~np.isnan(var) & (var > -999.0)
-    if not np.any(valid_mask):
+    # Distinguish Earth pixels from masked space background
+    if hasattr(raw_var, 'mask') and np.ma.is_masked(raw_var):
+        earth_mask = ~raw_var.mask
+        earth_data = np.array(raw_var.data, dtype=np.float32)
+    else:
+        earth_mask = ~np.isnan(raw_var) & (raw_var > 0.0)
+        earth_data = np.array(raw_var, dtype=np.float32)
+
+    valid_vals = earth_data[earth_mask]
+    if len(valid_vals) == 0:
         return np.zeros((128, 128), dtype=np.float32), None
 
-    v_min, v_max = np.percentile(var[valid_mask], (1.0, 99.0))
+    v_min, v_max = np.percentile(valid_vals, (1.0, 99.0))
     denom = max(1e-5, (v_max - v_min))
-    norm = np.clip((var - v_min) / denom, 0.0, 1.0)
-    norm[~valid_mask] = 0.0
+
+    # Earth disk normalized to [0.05, 1.0], space background is 0.0
+    norm = np.zeros(earth_data.shape, dtype=np.float32)
+    norm[earth_mask] = np.clip((valid_vals - v_min) / denom, 0.05, 1.0)
     return norm, None
 
 
