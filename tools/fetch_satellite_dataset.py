@@ -117,22 +117,6 @@ def parse_args():
         "--dry-run", action="store_true",
         help="Inspect date list and frame counts without downloading"
     )
-    parser.add_argument(
-        "--run-demo", action="store_true",
-        help="Execute gric-cluster on the generated FITS cube after creation"
-    )
-    parser.add_argument(
-        "--rlim", type=str, default="2.5",
-        help="Radius threshold rlim for the demo clustering run"
-    )
-    parser.add_argument(
-        "--tiles", type=str, default="2x2",
-        help="Multi-tile layout for the demo clustering run (e.g. '2x2' or '1x1')"
-    )
-    parser.add_argument(
-        "--ncpu", type=str, default="4",
-        help="OpenMP thread count for the demo clustering run"
-    )
     return parser.parse_args()
 
 
@@ -492,27 +476,8 @@ def main():
     file_size_mb = out_path.stat().st_size / (1024 * 1024)
     print(f"Successfully generated FITS file: {out_path} ({file_size_mb:.2f} MB)")
 
-    # Optional Auto-Demo Run
-    if args.run_demo:
-        gric_exe = Path(__file__).resolve().parent.parent / "build" / "gric-cluster"
-        if not gric_exe.exists():
-            print_warning(f"Warning: Executable not found at {gric_exe}. Skipping demo run.")
-            return
-
-        cmd = [
-            str(gric_exe), args.rlim,
-            "-maxcl", "5000",
-            "-maxim", str(n_frames),
-            "-tiles", args.tiles,
-            "-ncpu", args.ncpu,
-            "-clustered",
-            str(out_path)
-        ]
-        print("\n==================================================")
-        print(" Launching GRIC-Cluster Demo Run")
-        print(f" Command: {' '.join(cmd)}")
-        print("==================================================")
-        subprocess.run(cmd, check=True)
+    print("\nNext step: Run gric-cluster on this dataset:")
+    print(f"  ./build/gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 4 -clustered {args.output}")
 
 
 if __name__ == "__main__":

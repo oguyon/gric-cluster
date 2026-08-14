@@ -44,7 +44,6 @@ ready for clustering.
 | `--step` | `1` | Decimation step (e.g. 1 = all frames, 2 = every 2nd frame) |
 | `--output`, `-o` | `earth_128x128.fits` | Output 3D FITS cube filepath |
 | `--dry-run` | `false` | Inspect catalog counts and dates without downloading |
-| `--run-demo` | `false` | Automatically launch `gric-cluster` on the output cube |
 
 ---
 
@@ -132,12 +131,15 @@ In isolated environments or without internet access, `tools/fetch_satellite_data
 provides a procedural 3D rotating planetary Earth generator (`--source synthetic`):
 
 ```bash
+# 1. Generate 10,000-frame synthetic Earth FITS cube
 python3 tools/fetch_satellite_dataset.py \
     --source synthetic \
     --size 128 \
     --max-frames 10000 \
-    --output earth_synthetic_128x128.fits \
-    --run-demo
+    --output earth_synthetic_128x128.fits
+
+# 2. Run clustering with 2x2 spatial tiling
+gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 4 -clustered earth_synthetic_128x128.fits
 ```
 
 This generates realistic rotating Earth disks featuring spherical geometry, continental
