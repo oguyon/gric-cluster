@@ -3,52 +3,90 @@
 Detailed reference manual for the `gric-cluster` command line interface, options, and algorithmic concepts.
 All topics here are also available directly on the terminal using `gric-cluster --help <topic>`.
 
-## Core & Clustering Control
-* [`rlim`](rlim.md): Radius threshold for cluster membership
-* [`auto_rlim`](auto_rlim.md): Auto-scaled rlim syntax (`a<factor>`)
-* [`dprob`](dprob.md): Delta probability recency update bias
-* [`maxcl`](maxcl.md): Maximum number of clusters
-* [`ncpu`](ncpu.md): Number of OpenMP threads
-* [`maxcl_strategy`](maxcl_strategy.md): Strategy when `maxcl` limit is reached
-* [`discard_frac`](discard_frac.md): Fraction of oldest clusters to discard
-* [`maxim`](maxim.md): Maximum number of input frames to process
-* [`pred`](pred.md): Temporal pattern prediction and velocity extrapolation
-
-## Pruning & Search Optimizations
-* [`te4`](te4.md): 4-point triangle inequality pruning
-* [`te5`](te5.md): 5-point triangle inequality pruning
-* [`gprob`](gprob.md): Geometric probability learning from visitor history
-* [`entropy`](entropy.md): Shannon entropy-guided candidate selection
-* [`entropy_gate`](entropy_gate.md): Adaptive entropy gating threshold
-* [`entropy_fast`](entropy_fast.md): Popcount-only surrogate gating
-* [`soft_bayesian`](soft_bayesian.md): Soft Bayesian candidate likelihood updates
-* [`sparse_dcc`](sparse_dcc.md): Sparse cluster-to-cluster distance matrix
-
-## Input & Output Formats
-* [`stream`](stream.md): ImageStreamIO shared-memory stream input
-* [`cnt2sync`](cnt2sync.md): Read synchronization counter for ImageStreamIO
-* [`outdir`](outdir.md): Output directory for clustering logs and models
-* [`avg`](avg.md): Compute average frame per cluster
-* [`distall`](distall.md): Save all computed pairwise distances
-* [`pngout`](pngout.md): Export cluster centers as PNG images
-* [`fitsout`](fitsout.md): Force FITS format for multi-dimensional images
-* [`clustered`](clustered.md): Generate clustered output dataset file
-* [`shm`](shm.md): Shared memory status stream
-
-## Multi-Tile Processing
-* [`tiles`](tiles.md): Spatial NxM tile grid partitioning
-* [`tilemap`](tilemap.md): Integer FITS mask for custom tiling
-* [`tileconf`](tileconf.md): Per-tile configuration overrides
-* [`jtf`](jtf.md): Joint Trajectory Fusion (Pass 2)
-* [`xtile`](xtile.md): Live cross-tile prior injection
-* [`cpt`](cpt.md): Conditional Probability Table for tile dependencies
-* [`retrieval_window`](retrieval_window.md): Tuple lookback horizon for trajectory fusion
-
-## Conceptual Deep Dives
-* [`intro`](intro.md): Getting started with GRIC
-* [`algorithm`](algorithm.md): Complete algorithmic overview
-* [`algorithm/pruning`](algorithm_pruning.md): Multi-point distance geometry pruning
-* [`algorithm/gating`](algorithm_gating.md): Entropy gating details
-* [`algorithm/entropy`](algorithm_entropy.md): Information-theoretic target selection
+## Overviews & Architectural Guides
+* [`intro`](intro.md): Getting started with GRIC architecture and basic principles
+* [`performance`](performance.md): Performance tuning guide and optimization decision matrix
+* [`algorithm`](algorithm.md): Complete algorithmic overview and execution pipeline
+* [`clustering`](clustering.md): Core clustering loop and step assignment workflow
+* [`compression`](compression.md): Information compression principles and model extraction
 * [`tiling`](tiling.md): Multi-tile distributed processing architecture
-* [`performance`](performance.md): Performance tuning and optimization guide
+
+## Core Clustering Options
+* [`rlim`](rlim.md): Radius threshold for cluster membership (`<val>`)
+* [`auto_rlim`](auto_rlim.md): Auto-scaled rlim syntax (`a<factor>`) based on nearest-neighbor distance
+* [`scandist`](scandist.md): Pre-clustering sample distance scan (`-scandist <N>`)
+* [`maxcl`](maxcl.md): Maximum cluster capacity limit (`-maxcl <N>`)
+* [`maxcl_strategy`](maxcl_strategy.md): Strategy when `maxcl` limit is reached (`discard` vs `merge`)
+* [`discard_frac`](discard_frac.md): Fraction of oldest clusters to discard on limit (`-discard_frac <f>`)
+* [`discarded`](discarded.md): Discarded cluster trajectory log file (`-discarded <fname>`)
+* [`maxim`](maxim.md): Maximum number of input frames to process (`-maxim <N>`)
+* [`ncpu`](ncpu.md): Number of OpenMP worker threads (`-ncpu <N>`)
+* [`progress`](progress.md): Progress report interval (`-progress <N>`)
+* [`conf`](conf.md): Load clustering configuration file (`-conf <file>`)
+* [`confw`](confw.md): Save active runtime configuration to file (`-confw <file>`)
+
+## Pruning & Distance Geometry
+* [`te4`](te4.md): 4-point triangle inequality pruning (`-te4`)
+* [`te5`](te5.md): 5-point triangle inequality pruning (`-te5`)
+* [`algorithm/pruning`](algorithm_pruning.md): Multi-point distance geometry pruning theory
+* [`sparse_dcc`](sparse_dcc.md): Sparse cluster-to-cluster distance matrix (`-sparse_dcc`)
+* [`sparse_dcc_extra_evals`](sparse_dcc_extra_evals.md): Bound tightening evaluations (`-sparse_dcc_extra_evals <N>`)
+* [`algorithm/sparse_dcc`](algorithm_sparse_dcc.md): Sparse DCC lower/upper bound theory
+* [`no_dcc`](no_dcc.md): Disable inter-cluster distance matrix completely (`-no_dcc`)
+* [`dcc`](dcc.md): Write full pairwise cluster distance matrix (`-dcc <fname>`)
+
+## Entropy Engine & Candidate Gating
+* [`entropy`](entropy.md): Shannon entropy-guided candidate selection mode (`-entropy`)
+* [`entropy_fast`](entropy_fast.md): Popcount-only fast surrogate gating (`-entropy_fast`)
+* [`entropy_gate`](entropy_gate.md): Adaptive entropy gating threshold (`-entropy_gate <thresh>`)
+* [`entropy_first_gate`](entropy_first_gate.md): Minimum evaluations before gating (`-entropy_first_gate <N>`)
+* [`entropy_max_targets`](entropy_max_targets.md): Maximum candidate targets evaluated (`-entropy_max_targets <N>`)
+* [`entropy_min_prob`](entropy_min_prob.md): Minimum cluster probability threshold (`-entropy_min_prob <p>`)
+* [`algorithm/entropy`](algorithm_entropy.md): Information-theoretic target selection theory
+* [`algorithm/gating`](algorithm_gating.md): Adaptive entropy gating mathematics
+
+## Priors, Transitions & Prediction
+* [`gprob`](gprob.md): Geometric probability learning from visitor history (`-gprob`)
+* [`algorithm/gprob`](algorithm_gprob.md): Topology and transition graph learning theory
+* [`dprob`](dprob.md): Delta probability recency update bias (`-dprob <val>`)
+* [`fmatcha`](fmatcha.md): Prior match scaling factor (`-fmatcha <val>`)
+* [`fmatchb`](fmatchb.md): Prior distance falloff exponent (`-fmatchb <val>`)
+* [`soft_bayesian`](soft_bayesian.md): Soft Bayesian candidate likelihood updates (`-soft_bayesian`)
+* [`soft_bayesian_sigma`](soft_bayesian_sigma.md): Gaussian standard deviation for likelihoods (`-soft_bayesian_sigma <val>`)
+* [`algorithm/soft_bayesian`](algorithm_soft_bayesian.md): Soft Bayesian update equations
+* [`tm`](tm.md): Temporal transition matrix weight (`-tm <val>`)
+* [`tm_out`](tm_out.md): Export learned transition matrix to file (`-tm_out <file>`)
+* [`pred`](pred.md): Temporal pattern prediction and velocity extrapolation (`-pred`)
+
+## Multi-Tile Architecture & Joint Trajectory Fusion
+* [`tiles`](tiles.md): Spatial NxM tile grid partitioning (`-tiles <NxM>`)
+* [`tilemap`](tilemap.md): Integer FITS mask for arbitrary custom tiling (`-tilemap <file>`)
+* [`tileconf`](tileconf.md): Per-tile configuration overrides (`-tileconf <file>`)
+* [`jtf`](jtf.md): Joint Trajectory Fusion Pass 2 (`-jtf`)
+* [`retrieval_window`](retrieval_window.md): Lookback window horizon for trajectory fusion (`-retrieval_window <N>`)
+* [`xtile`](xtile.md): Live cross-tile prior injection (`-xtile`)
+* [`no_xtile`](no_xtile.md): Disable live cross-tile prior updates (`-no_xtile`)
+* [`xtile_decay`](xtile_decay.md): Cross-tile weight decay rate (`-xtile_decay <rate>`)
+* [`cpt`](cpt.md): Conditional Probability Table for inter-tile dependencies (`-cpt`)
+
+## Input & Stream Ingestion
+* [`input`](input.md): Supported input formats (FITS cubes, text sequences, binary streams)
+* [`stream`](stream.md): ImageStreamIO shared-memory stream input (`-stream <name>`)
+* [`cnt2sync`](cnt2sync.md): Read synchronization counter for ImageStreamIO (`-cnt2sync <N>`)
+* [`shm`](shm.md): Shared memory status stream publication (`-shm <name>`)
+
+## Output, Analysis & Diagnostics
+* [`outdir`](outdir.md): Output directory for clustering logs and models (`-outdir <dir>`)
+* [`output`](output.md): Overview of all clustering artifact files
+* [`clustered`](clustered.md): Generate clustered output dataset file (`-clustered`)
+* [`membership`](membership.md): Write per-frame cluster assignment log (`-membership <fname>`)
+* [`no_membership`](no_membership.md): Disable cluster membership logging (`-no_membership`)
+* [`avg`](avg.md): Compute average frame per cluster (`-avg`)
+* [`fitsout`](fitsout.md): Force FITS format for multi-dimensional images (`-fitsout`)
+* [`pngout`](pngout.md): Export cluster centers as PNG images (`-pngout`)
+* [`clusters`](clusters.md): Export cluster centroid coordinate file (`-clusters <fname>`)
+* [`anchors`](anchors.md): Export exemplar anchor frame references (`-anchors <fname>`)
+* [`counts`](counts.md): Export cluster visitor counts (`-counts <fname>`)
+* [`maxvis`](maxvis.md): Maximum visitor frames saved per cluster (`-maxvis <N>`)
+* [`distall`](distall.md): Save all computed pairwise distances to file (`-distall <fname>`)
+* [`analysis`](analysis.md): Offline cluster log and performance analysis tool (`gric-cluster-analysis`)
