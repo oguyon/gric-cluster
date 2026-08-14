@@ -11,6 +11,12 @@
 Multi-body elastic collision dynamics between 3 balls in a 32x32 image. Stresses high-
 dimensional combinatorial joint state spaces.
 
+## Physical Simulation Frames & 2x2 Spatial Tiling
+
+Sample 32x32 frames illustrating ball kinematics, wall collisions, and quadrant tile boundaries:
+
+![balls_coll Sample Frames](images/balls_coll.frames.png)
+
 ## Online Stream Clustering Animation
 
 The looping animation below traces online cluster discovery and sample streaming over time:
@@ -72,8 +78,8 @@ gric-cluster 7.0 -maxcl 2500 -maxim 20000 -outdir out_balls_coll -clustered -til
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `266.730 ms` | Total wall-clock runtime |
-| **Throughput** | `74,982 fps` | Frames processed per second |
+| **Execution Time** | `241.861 ms` | Total wall-clock runtime |
+| **Throughput** | `82,692 fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `1175` | Total distinct clusters created |
 | **Sample Distances ($d_S$)** | `36,765` | Sample-to-cluster evaluations |
 | **Search Calls ($d_S$ / frame)** | **`1.84`** | Search calls per frame |

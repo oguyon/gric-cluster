@@ -82,8 +82,8 @@ gric-plot 3Dspiral.txt out_3Dspiral/cluster_run.log docs/benchmarks/images/3Dspi
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `141.257 ms` | Total wall-clock runtime |
-| **Throughput** | `141,585 fps` | Frames processed per second |
+| **Execution Time** | `148.305 ms` | Total wall-clock runtime |
+| **Throughput** | `134,857 fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `114` | Total distinct clusters created |
 | **Sample Distances ($d_S$)** | `20,115` | Sample-to-cluster evaluations |
 | **Search Calls ($d_S$ / frame)** | **`1.01`** | Search calls per frame |
