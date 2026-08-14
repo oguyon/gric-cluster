@@ -16,6 +16,7 @@ import argparse
 import io
 import os
 import sys
+import threading
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -30,6 +31,9 @@ COLOR_YELLOW = "\033[93m"
 COLOR_CYAN = "\033[96m"
 COLOR_BOLD = "\033[1m"
 COLOR_RESET = "\033[0m"
+
+# Mutex to ensure non-thread-safe C NetCDF4 / HDF5 libraries do not corrupt heap
+NETCDF_C_LOCK = threading.Lock()
 
 
 def print_error(msg):
@@ -86,7 +90,7 @@ def parse_args():
     )
     parser.add_argument(
         "--size", type=int, default=128,
-        help="Image size in pixels (e.g. 128 for 128x128)"
+        help="Image size in pixels (e.g. 128 for 128x128, or 512 for 512x512)"
     )
     parser.add_argument(
         "--max-frames", type=int, default=10000,
@@ -130,19 +134,23 @@ def list_s3_keys_for_hour(bucket, year, day_of_year, hour):
 
 
 def read_netcdf_variable(data_bytes, channel):
-    """Extract and normalize 2D array from in-memory NetCDF bytes."""
-    if HAVE_NETCDF4:
-        with netCDF4.Dataset("inmemory.nc", memory=data_bytes) as nc:
-            if channel not in nc.variables:
-                return None, f"Channel {channel} not found in NetCDF"
-            var = np.array(nc.variables[channel][:], dtype=np.float32)
-    elif HAVE_H5PY:
-        with h5py.File(io.BytesIO(data_bytes), 'r') as h5f:
-            if channel not in h5f:
-                return None, f"Channel {channel} not found in HDF5"
-            var = np.array(h5f[channel][:], dtype=np.float32)
-    else:
-        return None, "Missing NetCDF library. Please run: pip install netCDF4"
+    """Extract and normalize 2D array from in-memory NetCDF bytes (mutex-protected)."""
+    tid = threading.get_ident()
+    mem_name = f"mem_{tid}_{int(time.time() * 1000)}.nc"
+
+    with NETCDF_C_LOCK:
+        if HAVE_NETCDF4:
+            with netCDF4.Dataset(mem_name, memory=data_bytes) as nc:
+                if channel not in nc.variables:
+                    return None, f"Channel {channel} not found in NetCDF"
+                var = np.array(nc.variables[channel][:], dtype=np.float32)
+        elif HAVE_H5PY:
+            with h5py.File(io.BytesIO(data_bytes), 'r') as h5f:
+                if channel not in h5f:
+                    return None, f"Channel {channel} not found in HDF5"
+                var = np.array(h5f[channel][:], dtype=np.float32)
+        else:
+            return None, "Missing NetCDF library. Please run: pip install netCDF4"
 
     valid_mask = ~np.isnan(var) & (var > -999.0)
     if not np.any(valid_mask):
@@ -181,7 +189,7 @@ def main():
     args = parse_args()
     if not (HAVE_NETCDF4 or HAVE_H5PY) and not args.dry_run:
         print_error("Error: Python package 'netCDF4' (or 'h5py') is required to read GOES data.")
-        print("Please install it with: pip install netCDF4")
+        print("Please install it with: pip install --user --break-system-packages netCDF4")
         sys.exit(1)
 
     bucket = f"noaa-{args.satellite}"
