@@ -695,32 +695,55 @@ def generate_pruning_breakdown_gp(membership_file, d_sample_avg, k_total, out_pn
         """
         run_gnuplot_script(gp_script)
 
-# 6. Multi-Tile Cluster Centroid Gallery
-def generate_centroid_gallery_gp(membership_file, out_png, title):
+# 6. Multi-Tile Cluster Centroid Image Gallery (4x4 Thumbnail Grid of Real Images)
+def generate_centroid_gallery_gp(points_file, membership_file, out_png, title):
     frames, clusters = load_membership(membership_file, is_tile=True)
-    if not clusters:
+    if not clusters or not points_file.exists():
         return
 
-    top_tuples = [t for t, _ in Counter(clusters).most_common(16)]
-    with tempfile.TemporaryDirectory() as tmpdir:
-        g_dat = Path(tmpdir) / "gallery.dat"
-        with open(g_dat, 'w') as f:
-            for idx, tup in enumerate(top_tuples):
-                r, c = idx // 4, idx % 4
-                f.write(f"{c} {r} {tup[0]} {tup[1]} {tup[2]} {tup[3]}\n")
+    try:
+        with fits.open(points_file) as hdul:
+            cube = hdul[0].data
+    except Exception:
+        return
 
+    counts = Counter(clusters)
+    top_tuples = [t for t, _ in counts.most_common(16)]
+
+    state_frames = []
+    for tup in top_tuples:
+        for fr_idx, cl in enumerate(clusters):
+            if cl == tup:
+                state_frames.append((tup, counts[tup], fr_idx))
+                break
+
+    if not state_frames:
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
         gp_script = f"""
-        set terminal pngcairo size 700,500 enhanced font 'Arial,10'
+        set terminal pngcairo size 820,820 enhanced font 'Arial,9'
         set output '{out_png}'
-        set title "Top 16 Reconstructed Joint States: {title}" \\
-            font 'Arial-Bold,11' textcolor rgb '#1e293b'
-        set xrange [-0.5:3.5]; set yrange [-0.5:3.5]
-        set xtics ("Col 0" 0, "Col 1" 1, "Col 2" 2, "Col 3" 3)
-        set ytics ("Row 0" 0, "Row 1" 1, "Row 2" 2, "Row 3" 3)
-        plot '{g_dat}' using 1:2:(sprintf("[%d,%d,%d,%d]", $3, $4, $5, $6)) \\
-             with labels font 'Arial-Bold,9' textcolor rgb '#4338ca' notitle, \\
-             '{g_dat}' using 1:2 with points pt 6 ps 4.5 lc rgb '#cbd5e1' notitle
+        set multiplot layout 4,4 title "Top 16 Reconstructed Multi-Tile Joint States: {title}" \\
+            font 'Arial-Bold,12' textcolor rgb '#1e293b'
+        set palette defined (0 '#0f172a', 0.2 '#1e3a8a', 0.6 '#0284c7', 1 '#ffffff')
+        unset colorbox
         """
+        for idx, (tup, count, fr_idx) in enumerate(state_frames):
+            dat_p = Path(tmpdir) / f"state_{idx}.dat"
+            np.savetxt(dat_p, cube[fr_idx], fmt='%.2f')
+            tup_str = f"[{tup[0]},{tup[1]},{tup[2]},{tup[3]}]"
+            gp_script += f"""
+            set title "Rank #{idx+1}: {tup_str} ({count:,} f)" \\
+                font 'Arial-Bold,8' textcolor rgb '#1e293b'
+            set size ratio 1
+            set xrange [0:31]; set yrange [0:31]
+            set format x ""; set format y ""
+            set arrow 1 from 15.5,0 to 15.5,31 nohead lc rgb '#e11d48' lw 1.2 dt 2
+            set arrow 2 from 0,15.5 to 31,15.5 nohead lc rgb '#e11d48' lw 1.2 dt 2
+            plot '{dat_p}' matrix with image notitle
+            """
+        gp_script += "unset multiplot\n"
         run_gnuplot_script(gp_script)
 
 # 7. Pairwise Inter-Cluster Metric Distance Matrix Heatmap (D_CC)
@@ -1162,7 +1185,7 @@ def run_benchmarks():
         # Diagnostic 5: Multi-Tile Centroid Gallery
         if is_tile:
             centroids_png = IMAGES_DIR / f"{cid}.centroids.png"
-            generate_centroid_gallery_gp(membership_file, centroids_png, cfg['name'])
+            generate_centroid_gallery_gp(points_file, membership_file, centroids_png, cfg['name'])
 
         # Diagnostic 6: Inter-Cluster Distance Matrix Heatmap D_CC
         if cfg["type"] == "txt":
