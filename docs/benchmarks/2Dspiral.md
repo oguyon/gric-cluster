@@ -60,8 +60,8 @@ gric-plot 2Dspiral.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `104.439 ms` | Total wall-clock runtime |
-| **Throughput** | `191,500 fps` | Frames processed per second |
+| **Execution Time** | `110.824 ms` | Total wall-clock runtime |
+| **Throughput** | `180,466 fps` | Frames processed per second |
 | **Active Clusters / States** | `64` | Total distinct clusters created |
 | **Total Distance Calls ($d$)** | `22,118` | All distance calls ($d_S + d_C$) |
 | **Sample Distances ($d_S$)** | `20,102` | Sample-to-cluster evaluations |

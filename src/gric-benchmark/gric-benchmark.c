@@ -825,8 +825,8 @@ int main(
                 }
                 else
                 {
-                    /* 3 balls in 32x32: 2x2 tiles -> rlim = 4.0, 1 tile -> rlim = 8.0 */
-                    strcpy(cur_rlim, has_tiles_opt ? "4.0" : "4.0");
+                    /* 3 balls in 32x32: 2x2 tiles -> rlim = 7.0 (yields ~1000-2000 states) */
+                    strcpy(cur_rlim, has_tiles_opt ? "7.0" : "7.0");
                 }
             }
             else

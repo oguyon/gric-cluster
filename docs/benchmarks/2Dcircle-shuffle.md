@@ -61,13 +61,13 @@ gric-plot 2Dcircle-shuffle.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `161.286 ms` | Total wall-clock runtime |
-| **Throughput** | `124,003 fps` | Frames processed per second |
-| **Active Clusters / States** | `46` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `55,403` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `54,368` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**2.72**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**2.77**` | Total distance ops per frame |
+| **Execution Time** | `150.512 ms` | Total wall-clock runtime |
+| **Throughput** | `132,879 fps` | Frames processed per second |
+| **Active Clusters / States** | `43` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `55,517` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `54,614` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**2.73**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**2.78**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---
