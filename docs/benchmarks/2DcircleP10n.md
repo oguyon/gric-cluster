@@ -91,14 +91,14 @@ docs/benchmarks/images/2DcircleP10n.png
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `119.190 ms` | Total wall-clock runtime |
-| **Throughput** | `167,798 fps` | Frames processed per second |
-| **Active Clusters / States ($K$)** | `13` | Total distinct clusters created |
-| **Sample Distances ($d_S$)** | `58,220` | Sample-to-cluster evaluations |
-| **Search Calls ($d_S$ / frame)** | **`2.91`** | Search calls per frame |
-| **Total Ops ($d$ / frame)** | **`2.91`** | Total distance ops per frame |
-| **Pruning Speedup Factor** | **`4.5x`** | Acceleration over exhaustive search |
-| **Distance Ops Saved** | **`77.6%`** | Percentage of pairwise calls pruned away |
+| **Execution Time** | `130.132 ms` | Total wall-clock runtime |
+| **Throughput** | `153,690 fps` | Frames processed per second |
+| **Active Clusters / States ($K$)** | `11` | Total distinct clusters created |
+| **Sample Distances ($d_S$)** | `57,710` | Sample-to-cluster evaluations |
+| **Search Calls ($d_S$ / frame)** | **`2.89`** | Search calls per frame |
+| **Total Ops ($d$ / frame)** | **`2.89`** | Total distance ops per frame |
+| **Pruning Speedup Factor** | **`3.8x`** | Acceleration over exhaustive search |
+| **Distance Ops Saved** | **`73.7%`** | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

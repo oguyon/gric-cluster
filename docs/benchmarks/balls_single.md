@@ -11,6 +11,12 @@
 A 2D physical ball bouncing elastically inside a 32x32 pixel domain, processed with 2x2 spatial
 tiling and 4 OpenMP worker threads.
 
+## Physical Simulation Frames & 2x2 Spatial Tiling
+
+Sample 32x32 frames illustrating ball kinematics, wall collisions, and quadrant tile boundaries:
+
+![balls_single Sample Frames](images/balls_single.frames.png)
+
 ## Online Stream Clustering Animation
 
 The looping animation below traces online cluster discovery and sample streaming over time:
@@ -72,8 +78,8 @@ gric-cluster 1.5 -maxcl 2500 -maxim 20000 -outdir out_balls_single -clustered -t
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `497.740 ms` | Total wall-clock runtime |
-| **Throughput** | `40,181 fps` | Frames processed per second |
+| **Execution Time** | `485.094 ms` | Total wall-clock runtime |
+| **Throughput** | `41,229 fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `695` | Total distinct clusters created |
 | **Sample Distances ($d_S$)** | `57,640` | Sample-to-cluster evaluations |
 | **Search Calls ($d_S$ / frame)** | **`2.88`** | Search calls per frame |

@@ -3,17 +3,18 @@
 tools/gen_benchmark_docs.py
 Automates running the benchmark suite with 20,000 frames, invoking gric-plot for
 spatial visuals, generating rich diagnostic charts via gnuplot and ffmpeg:
-1. Online Clustering Dynamic Animated GIFs (<id>.anim.gif)
-2. Interactive Mermaid Markov State Flow Diagrams
-3. Voronoi Metric Space Tessellation Maps (<id>.voronoi.png)
-4. Candidate Pruning Breakdown Stacked Area Charts (<id>.pruning_breakdown.png)
-5. Multi-Tile Image Cluster Centroid Galleries (<id>.centroids.png)
-6. Pairwise Inter-Cluster Metric Distance Matrix Heatmaps (D_CC, <id>.dcc.png)
-7. Discovery Timelines (<id>.timeline.png)
-8. Markov Transition Probability Matrices (<id>.transitions.png)
-9. Pruning Efficiency Scaling Curves (<id>.efficiency.png)
-10. Multi-Tile Joint State Frequency Spectra (<id>.tuples.png)
-11. Master Overview Comparison Charts (overview_*.png)
+1. Online Clustering Dynamic Animated GIFs (<id>.anim.gif) with preserved 1:1 aspect ratio
+2. FITS Image Frame Montage (<id>.frames.png) showing physical ball motion and 2x2 tiling
+3. Interactive Mermaid Markov State Flow Diagrams
+4. Voronoi Metric Space Tessellation Maps (<id>.voronoi.png)
+5. Candidate Pruning Breakdown Stacked Area Charts (<id>.pruning_breakdown.png)
+6. Multi-Tile Image Cluster Centroid Galleries (<id>.centroids.png)
+7. Pairwise Inter-Cluster Metric Distance Matrix Heatmaps (D_CC, <id>.dcc.png)
+8. Discovery Timelines (<id>.timeline.png)
+9. Markov Transition Probability Matrices (<id>.transitions.png)
+10. Pruning Efficiency Scaling Curves (<id>.efficiency.png)
+11. Multi-Tile Joint State Frequency Spectra (<id>.tuples.png)
+12. Master Overview Comparison Charts (overview_*.png)
 """
 
 import os
@@ -27,6 +28,7 @@ import textwrap
 from pathlib import Path
 from collections import Counter, defaultdict
 import numpy as np
+from astropy.io import fits
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BUILD_DIR = ROOT_DIR / "build"
@@ -401,13 +403,21 @@ def compute_centroids(pts, clusters):
         centroids[c] = avg
     return centroids
 
-# 1. Animated GIF of Online Clustering Dynamics
+# 1. Animated GIF of Online Clustering Dynamics (Preserving 1:1 Aspect Ratio)
 def generate_clustering_animation(cfg, points_file, membership_file, out_gif):
     is_tile = (cfg["type"] == "fits")
     frames, clusters = load_membership(membership_file, is_tile=is_tile)
     if not frames:
         return
     pts = load_points(points_file) if not is_tile else []
+
+    fits_cube = None
+    if is_tile and points_file.exists():
+        try:
+            with fits.open(points_file) as hdul:
+                fits_cube = hdul[0].data
+        except Exception:
+            fits_cube = None
 
     with tempfile.TemporaryDirectory() as tmpdir:
         frame_dir = Path(tmpdir) / "frames"
@@ -429,6 +439,7 @@ def generate_clustering_animation(cfg, points_file, membership_file, out_gif):
             sub_dat = Path(tmpdir) / f"sub_{k_idx}.dat"
             cur_pt_dat = Path(tmpdir) / f"cur_{k_idx}.dat"
             cum_dat = Path(tmpdir) / f"cum_{k_idx}.dat"
+            img_dat = Path(tmpdir) / f"img_{k_idx}.dat"
 
             with open(cum_dat, 'w') as f_cum:
                 for fr_i in range(0, cur_fr + 1, max(1, cur_fr // 30)):
@@ -444,20 +455,22 @@ def generate_clustering_animation(cfg, points_file, membership_file, out_gif):
                     f_cur.write(f"{pts[cur_fr][0]} {pts[cur_fr][1]}\n")
 
                 gp_script = f"""
-                set terminal pngcairo size 520,400 enhanced font 'Arial,9'
+                set terminal pngcairo size 520,520 enhanced font 'Arial,9'
                 set output '{frame_dir}/f_{k_idx:04d}.png'
                 set multiplot layout 2,1
-                set tmargin 2; set bmargin 1; set lmargin 8; set rmargin 3
+                set tmargin 2; set bmargin 1; set lmargin 8; set rmargin 4
                 set grid lc rgb '#e2e8f0'
                 set border lc rgb '#64748b'
-                set title "Online Stream Clustering (Frame {cur_fr:,} / {NUM_FRAMES:,})" \\
+                set title "Online Clustering Stream (Frame {cur_fr:,} / {NUM_FRAMES:,})" \\
                     font 'Arial-Bold,10' textcolor rgb '#1e293b'
+                set size ratio 1
                 set xrange [-1.15:1.15]; set yrange [-1.15:1.15]
                 plot '{sub_dat}' using 1:2 with dots lc rgb '#94a3b8' notitle, \\
                      '{cur_pt_dat}' using 1:2 with points pt 7 ps 1.8 lc rgb '#ef4444' \\
                      title 'Active Sample'
 
                 set tmargin 1; set bmargin 3
+                set size noratio
                 set xrange [0:{NUM_FRAMES}]
                 set yrange [0:{max(10, cum_k_hist[-1] * 1.1)}]
                 set xlabel "Stream Frames" font 'Arial-Bold,9'
@@ -466,18 +479,46 @@ def generate_clustering_animation(cfg, points_file, membership_file, out_gif):
                      title 'Clusters Discovered'
                 unset multiplot
                 """
+            elif is_tile and fits_cube is not None and len(fits_cube) > cur_fr:
+                np.savetxt(img_dat, fits_cube[cur_fr], fmt='%.2f')
+                t_state = clusters[cur_fr] if cur_fr < len(clusters) else (0, 0, 0, 0)
+                gp_script = f"""
+                set terminal pngcairo size 520,520 enhanced font 'Arial,9'
+                set output '{frame_dir}/f_{k_idx:04d}.png'
+                set multiplot layout 2,1
+                set tmargin 2; set bmargin 1; set lmargin 8; set rmargin 4
+                set title "Frame {cur_fr:,}: 32x32 Image & 2x2 Tiling State {t_state}" \\
+                    font 'Arial-Bold,10' textcolor rgb '#1e293b'
+                set size ratio 1
+                set xrange [0:31]; set yrange [0:31]
+                set palette defined (0 '#0f172a', 0.2 '#1e3a8a', 0.6 '#0284c7', 1 '#ffffff')
+                unset colorbox
+                set arrow 1 from 15.5,0 to 15.5,31 nohead lc rgb '#e11d48' lw 1.5 dt 2
+                set arrow 2 from 0,15.5 to 31,15.5 nohead lc rgb '#e11d48' lw 1.5 dt 2
+                plot '{img_dat}' matrix with image notitle
+
+                set tmargin 1; set bmargin 3
+                set size noratio
+                set xrange [0:{NUM_FRAMES}]
+                set yrange [0:{max(10, cum_k_hist[-1] * 1.1)}]
+                set xlabel "Frames Processed" font 'Arial-Bold,9'
+                set ylabel "Unique States" font 'Arial-Bold,8'
+                plot '{cum_dat}' using 1:2 with lines lw 2.2 lc rgb '#6366f1' \\
+                     title 'Reconstructed Joint States'
+                unset multiplot
+                """
             else:
                 gp_script = f"""
                 set terminal pngcairo size 520,380 enhanced font 'Arial,9'
                 set output '{frame_dir}/f_{k_idx:04d}.png'
                 set grid lc rgb '#e2e8f0'
                 set border lc rgb '#64748b'
-                set title "Multi-Tile State Discovery ({cur_fr:,} / {NUM_FRAMES:,})" \\
+                set title "State Discovery: Frame {cur_fr:,} / {NUM_FRAMES:,}" \\
                     font 'Arial-Bold,10' textcolor rgb '#1e293b'
                 set xrange [0:{NUM_FRAMES}]
                 set yrange [0:{max(10, cum_k_hist[-1] * 1.1)}]
                 set xlabel "Frames Processed" font 'Arial-Bold,9'
-                set ylabel "Unique Reconstructed States" font 'Arial-Bold,9'
+                set ylabel "Unique States" font 'Arial-Bold,9'
                 plot '{cum_dat}' using 1:2 with lines lw 2.2 lc rgb '#6366f1' \\
                      title 'Joint States'
                 """
@@ -491,7 +532,50 @@ def generate_clustering_animation(cfg, points_file, membership_file, out_gif):
         ]
         subprocess.run(cmd_gif, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
-# 2. Interactive Mermaid Markov State Flow Graph
+# 2. FITS Image Frame Montage (2x4 Grid with 1:1 Aspect Ratio)
+def generate_fits_frame_montage_gp(fits_file, out_png, title):
+    if not fits_file.exists():
+        return
+    try:
+        with fits.open(fits_file) as hdul:
+            cube = hdul[0].data
+    except Exception:
+        return
+
+    n_f = len(cube)
+    if n_f < 8:
+        return
+
+    sample_indices = [0, 20, 50, 100, 150, 220, 310, 450]
+    sample_indices = [idx for idx in sample_indices if idx < n_f]
+    while len(sample_indices) < 8:
+        sample_indices.append(min(n_f - 1, sample_indices[-1] + 50))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        gp_script = f"""
+        set terminal pngcairo size 880,460 enhanced font 'Arial,9'
+        set output '{out_png}'
+        set multiplot layout 2,4 title "{title}: Sample 32x32 Frames (2x2 Tiled)" \\
+            font 'Arial-Bold,11' textcolor rgb '#1e293b'
+        set palette defined (0 '#0f172a', 0.2 '#1e3a8a', 0.6 '#0284c7', 1 '#ffffff')
+        unset colorbox
+        """
+        for i, f_idx in enumerate(sample_indices):
+            dat_p = Path(tmpdir) / f"sample_{i}.dat"
+            np.savetxt(dat_p, cube[f_idx], fmt='%.2f')
+            gp_script += f"""
+            set title "Frame {f_idx}" font 'Arial-Bold,9' textcolor rgb '#1e293b'
+            set size ratio 1
+            set xrange [0:31]; set yrange [0:31]
+            set format x ""; set format y ""
+            set arrow 1 from 15.5,0 to 15.5,31 nohead lc rgb '#e11d48' lw 1.2 dt 2
+            set arrow 2 from 0,15.5 to 31,15.5 nohead lc rgb '#e11d48' lw 1.2 dt 2
+            plot '{dat_p}' matrix with image notitle
+            """
+        gp_script += "unset multiplot\n"
+        run_gnuplot_script(gp_script)
+
+# 3. Interactive Mermaid Markov State Flow Graph
 def generate_mermaid_flow_diagram(membership_file, max_nodes=10, is_tile=False):
     frames, clusters = load_membership(membership_file, is_tile=is_tile)
     if not clusters:
@@ -522,7 +606,7 @@ def generate_mermaid_flow_diagram(membership_file, max_nodes=10, is_tile=False):
     lines.append("```")
     return '\n'.join(lines)
 
-# 3. Voronoi Metric Space Tessellation & Receptive Field Map
+# 4. Voronoi Metric Space Tessellation & Receptive Field Map
 def generate_voronoi_map_gp(points_file, membership_file, rlim_val, out_png, title):
     pts = load_points(points_file)
     frames, clusters = load_membership(membership_file, is_tile=False)
@@ -561,6 +645,7 @@ def generate_voronoi_map_gp(points_file, membership_file, rlim_val, out_png, tit
         set title "Voronoi Metric Partition: {title}" font 'Arial-Bold,11' textcolor '#1e293b'
         set xlabel "X Coordinate" font 'Arial-Bold,10' textcolor '#1e293b'
         set ylabel "Y Coordinate" font 'Arial-Bold,10' textcolor '#1e293b'
+        set size ratio 1
         set xrange [-1.1:1.1]; set yrange [-1.1:1.1]
         set palette defined (0 '#bae6fd', 1 '#bbf7d0', 2 '#fef08a', 3 '#fed7aa', 4 '#fbcfe8', \\
                              5 '#e2e8f0', 6 '#c7d2fe', 7 '#ddd6fe', 8 '#fecdd3', 9 '#fed7aa')
@@ -573,7 +658,7 @@ def generate_voronoi_map_gp(points_file, membership_file, rlim_val, out_png, tit
         """
         run_gnuplot_script(gp_script)
 
-# 4. Candidate Pruning Stacked Area Breakdown Chart
+# 5. Candidate Pruning Stacked Area Breakdown Chart
 def generate_pruning_breakdown_gp(membership_file, d_sample_avg, k_total, out_png, title):
     frames, clusters = load_membership(membership_file)
     if not frames:
@@ -610,7 +695,7 @@ def generate_pruning_breakdown_gp(membership_file, d_sample_avg, k_total, out_pn
         """
         run_gnuplot_script(gp_script)
 
-# 5. Multi-Tile Cluster Centroid Gallery
+# 6. Multi-Tile Cluster Centroid Gallery
 def generate_centroid_gallery_gp(membership_file, out_png, title):
     frames, clusters = load_membership(membership_file, is_tile=True)
     if not clusters:
@@ -638,7 +723,7 @@ def generate_centroid_gallery_gp(membership_file, out_png, title):
         """
         run_gnuplot_script(gp_script)
 
-# 6. Pairwise Inter-Cluster Metric Distance Matrix Heatmap (D_CC)
+# 7. Pairwise Inter-Cluster Metric Distance Matrix Heatmap (D_CC)
 def generate_dcc_heatmap_gp(points_file, membership_file, out_png, title):
     pts = load_points(points_file)
     frames, clusters = load_membership(membership_file, is_tile=False)
@@ -1049,37 +1134,42 @@ def run_benchmarks():
             if scratch_queries.exists():
                 shutil.copy(scratch_queries, IMAGES_DIR / f"{cid}.queries.png")
 
-        # 4. Generate All 6 Visual Diagnostics via Gnuplot & ffmpeg
+        # 4. Generate Visual Diagnostics via Gnuplot & ffmpeg
         membership_file = out_dir / "frame_membership.txt"
         points_file = SCRATCH_DIR / cfg["input_file"]
         is_tile = (cfg["type"] == "fits")
         
-        # Diagnostic 1: Animated GIF
+        # Diagnostic 1: Animated GIF (aspect ratio preserved)
         anim_gif = IMAGES_DIR / f"{cid}.anim.gif"
         generate_clustering_animation(cfg, points_file, membership_file, anim_gif)
 
-        # Diagnostic 2: Voronoi Metric Map (for 2D)
+        # Diagnostic 2: FITS Image Frame Montage (for image datasets)
+        if is_tile:
+            frames_png = IMAGES_DIR / f"{cid}.frames.png"
+            generate_fits_frame_montage_gp(points_file, frames_png, cfg['name'])
+
+        # Diagnostic 3: Voronoi Metric Map (for 2D datasets)
         if cfg["type"] == "txt" and "2D" in cfg["category"]:
             voronoi_png = IMAGES_DIR / f"{cid}.voronoi.png"
             generate_voronoi_map_gp(points_file, membership_file, cfg["rlim_val"],
                                     voronoi_png, cfg['name'])
 
-        # Diagnostic 3: Pruning Resolution Breakdown
+        # Diagnostic 4: Pruning Resolution Breakdown
         pruning_bd_png = IMAGES_DIR / f"{cid}.pruning_breakdown.png"
         generate_pruning_breakdown_gp(membership_file, metrics['avg_sample_dist'],
                                       metrics['clusters'], pruning_bd_png, cfg['name'])
 
-        # Diagnostic 4: Multi-Tile Centroid Gallery
+        # Diagnostic 5: Multi-Tile Centroid Gallery
         if is_tile:
             centroids_png = IMAGES_DIR / f"{cid}.centroids.png"
             generate_centroid_gallery_gp(membership_file, centroids_png, cfg['name'])
 
-        # Diagnostic 5: Inter-Cluster Distance Matrix Heatmap D_CC
+        # Diagnostic 6: Inter-Cluster Distance Matrix Heatmap D_CC
         if cfg["type"] == "txt":
             dcc_png = IMAGES_DIR / f"{cid}.dcc.png"
             generate_dcc_heatmap_gp(points_file, membership_file, dcc_png, cfg['name'])
 
-        # Existing diagnostics (Timeline, Transitions, Efficiency, Tuples)
+        # Standard diagnostics (Timeline, Transitions, Efficiency, Tuples)
         timeline_png = IMAGES_DIR / f"{cid}.timeline.png"
         generate_timeline_plot_gp(membership_file, timeline_png, cfg['name'], is_tile=is_tile)
 
@@ -1177,6 +1267,7 @@ def generate_markdown_pages(results):
         has_plot = (IMAGES_DIR / f"{cid}.png").exists()
         has_queries = (IMAGES_DIR / f"{cid}.queries.png").exists()
         has_anim = (IMAGES_DIR / f"{cid}.anim.gif").exists()
+        has_frames = (IMAGES_DIR / f"{cid}.frames.png").exists()
         has_voronoi = (IMAGES_DIR / f"{cid}.voronoi.png").exists()
         has_pruning_bd = (IMAGES_DIR / f"{cid}.pruning_breakdown.png").exists()
         has_centroids = (IMAGES_DIR / f"{cid}.centroids.png").exists()
@@ -1210,6 +1301,15 @@ def generate_markdown_pages(results):
 {desc_wrapped}
 
 """
+        if has_frames:
+            content += f"""## Physical Simulation Frames & 2x2 Spatial Tiling
+
+Sample 32x32 frames illustrating ball kinematics, wall collisions, and quadrant tile boundaries:
+
+![{cid} Sample Frames](images/{cid}.frames.png)
+
+"""
+
         if has_anim:
             content += f"""## Online Stream Clustering Animation
 
