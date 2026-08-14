@@ -11,6 +11,31 @@
 Multi-body elastic collision dynamics between 3 balls in a 32x32 image. Stresses high-
 dimensional combinatorial joint state spaces.
 
+## Temporal Dynamics & Cluster Discovery
+
+The timeline below traces active cluster assignments across the 20,000-frame sequence alongside
+the cumulative discovery rate ($K(t)$):
+
+![balls_coll Discovery Timeline](images/balls_coll.timeline.png)
+
+## Markov State Transition Matrix ($P(c_t \mid c_{t-1})$)
+
+The transition probability matrix shows the probability flow between states:
+
+![balls_coll Transition Heatmap](images/balls_coll.transitions.png)
+
+## Metric Pruning Efficiency Scaling
+
+The chart below demonstrates how candidate distance operations stay flat despite growth in $K$:
+
+![balls_coll Pruning Efficiency](images/balls_coll.efficiency.png)
+
+## Multi-Tile Joint State Frequency Spectrum
+
+Log-log rank-frequency distribution of the 1,175 reconstructed joint states:
+
+![balls_coll Tuple Spectrum](images/balls_coll.tuples.png)
+
 ## Execution Commands
 
 ### 1. Data Generation
@@ -29,21 +54,23 @@ gric-cluster 7.0 -maxcl 2500 -maxim 20000 -outdir out_balls_coll -clustered -til
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `278.338 ms` | Total wall-clock runtime |
-| **Throughput** | `71,855 fps` | Frames processed per second |
-| **Active Clusters / States** | `1175` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `159,358` | All distance calls ($d_S + d_C$) |
+| **Execution Time** | `285.814 ms` | Total wall-clock runtime |
+| **Throughput** | `69,975 fps` | Frames processed per second |
+| **Active Clusters / States ($K$)** | `1175` | Total distinct clusters created |
 | **Sample Distances ($d_S$)** | `36,765` | Sample-to-cluster evaluations |
 | **$d_S / \text{frame}$** | `**1.84**` | Search calls per frame |
 | **Total $d / \text{frame}$** | `**7.97**` | Total distance ops per frame |
+| **Pruning Speedup Factor** | `**638.6x**` | Acceleration over exhaustive search ($K / d_S$) |
+| **Distance Ops Saved** | `**99.8%**` | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---
 
 ## Algorithmic Insights
 
-2x2 spatial tiling converts combinatorial state explosion into 4 compact sub-problems of 30-40
-clusters per tile, running in **~260 ms** (>75,000 fps) with ~1,175 joint states reconstructed.
+2x2 spatial tiling converts combinatorial state explosion into 4 compact sub-problems of ~30-40
+clusters per tile, running in **~285 ms** (>70,000 fps) with 1,175 joint states reconstructed
+and **1.84 distance calls per frame** (a **638.6x speedup**).
 
 ---
 
