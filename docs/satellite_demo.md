@@ -1,24 +1,24 @@
 # Satellite Earth Observation Clustering Demo
 
 This guide demonstrates how to download, prepare, and cluster long-term satellite image
-time series of planet Earth (e.g. from **NASA DSCOVR/EPIC**) using `gric-cluster`.
+time series of planet Earth (e.g. from **NASA Worldview / MODIS** or **NASA DSCOVR**)
+using `gric-cluster`.
 
 ---
 
 ## 1. Overview & Objectives
 
-Satellite Earth observations from geostationary orbit or the Sun-Earth $L_1$ Lagrange point
-provide continuous multi-year image streams of Earth's rotating disk.
+Satellite Earth observations from low Earth orbit (MODIS / VIIRS) and geostationary orbit
+provide continuous multi-year image streams of Earth's surface and atmosphere.
 
 Clustering satellite Earth imagery with `gric-cluster` demonstrates several key capabilities:
 
-1. **Continuous Manifold & Periodic Recurrence**:
-   As Earth rotates every 24 hours, continents (Americas, Pacific, Asia, Europe, Africa)
-   periodically rotate through the field of view. `gric-cluster` discovers these rotational
-   phase states and reconstructs the periodic Markov state transition graph.
+1. **Continuous Seasonal & Rotational Recurrence**:
+   Tracks 365-day annual seasonal cycles, vegetation greening, polar ice expansion/retreat,
+   and cloud weather systems across the globe.
 2. **Multi-Tile Spatial Decomposition**:
    By subdividing the $128 \times 128$ image into $2 \times 2$ or $4 \times 4$ spatial tiles,
-   the engine tracks Northern vs Southern hemisphere weather systems and equatorial cloud bands
+   the engine clusters Northern vs Southern hemisphere weather systems and regional continents
    in parallel across CPU cores.
 3. **Metric Triangle Inequality Pruning**:
    Eliminates $>95\%$ of distance calculations during image classification, enabling processing
@@ -36,13 +36,13 @@ ready for clustering.
 
 | Argument | Default | Description |
 | :--- | :--- | :--- |
+| `--source` | `worldview` | `worldview` (NASA Worldview/MODIS), `epic`, or `synthetic` |
 | `--start` | `2023-01-01` | Start date in `YYYY-MM-DD` format |
 | `--end` | `2023-12-31` | End date in `YYYY-MM-DD` format (1-year default) |
 | `--size` | `128` | Target image size in pixels ($W \times H$) |
 | `--max-frames` | `10000` | Maximum number of frames to download/generate |
 | `--step` | `1` | Decimation step (e.g. 1 = all frames, 2 = every 2nd frame) |
 | `--output`, `-o` | `earth_128x128.fits` | Output 3D FITS cube filepath |
-| `--source` | `epic` | `epic` (NASA DSCOVR) or `synthetic` (offline simulation) |
 | `--dry-run` | `false` | Inspect catalog counts and dates without downloading |
 | `--run-demo` | `false` | Automatically launch `gric-cluster` on the output cube |
 
@@ -50,29 +50,29 @@ ready for clustering.
 
 ## 3. Step-by-Step Workflow
 
-### Step 1: Inspect Available Frames (Dry Run)
+### Step 1: Inspect Available Dates (Dry Run)
 
 Run `--dry-run` to inspect catalog dates and estimated file sizes before downloading:
 
 ```bash
 python3 tools/fetch_satellite_dataset.py \
+    --source worldview \
     --start 2023-01-01 \
     --end 2023-12-31 \
     --size 128 \
-    --max-frames 10000 \
     --dry-run
 ```
 
 ### Step 2: Download & Build FITS Cube
 
-Download the 1-year time series and generate a $128 \times 128$ FITS cube:
+Download the 1-year daily global time series and generate a $128 \times 128$ FITS cube:
 
 ```bash
 python3 tools/fetch_satellite_dataset.py \
+    --source worldview \
     --start 2023-01-01 \
     --end 2023-12-31 \
     --size 128 \
-    --max-frames 10000 \
     --output earth_2023_128x128.fits
 ```
 
