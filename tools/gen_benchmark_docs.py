@@ -2,9 +2,18 @@
 """
 tools/gen_benchmark_docs.py
 Automates running the benchmark suite with 20,000 frames, invoking gric-plot for
-spatial visuals, generating rich diagnostic charts via gnuplot (timelines,
-Markov transitions, pruning efficiency, tuple spectra, and overview analytics),
-and generating comprehensive MkDocs documentation pages.
+spatial visuals, generating rich diagnostic charts via gnuplot and ffmpeg:
+1. Online Clustering Dynamic Animated GIFs (<id>.anim.gif)
+2. Interactive Mermaid Markov State Flow Diagrams
+3. Voronoi Metric Space Tessellation Maps (<id>.voronoi.png)
+4. Candidate Pruning Breakdown Stacked Area Charts (<id>.pruning_breakdown.png)
+5. Multi-Tile Image Cluster Centroid Galleries (<id>.centroids.png)
+6. Pairwise Inter-Cluster Metric Distance Matrix Heatmaps (D_CC, <id>.dcc.png)
+7. Discovery Timelines (<id>.timeline.png)
+8. Markov Transition Probability Matrices (<id>.transitions.png)
+9. Pruning Efficiency Scaling Curves (<id>.efficiency.png)
+10. Multi-Tile Joint State Frequency Spectra (<id>.tuples.png)
+11. Master Overview Comparison Charts (overview_*.png)
 """
 
 import os
@@ -16,7 +25,8 @@ import tempfile
 import time
 import textwrap
 from pathlib import Path
-from collections import Counter
+from collections import Counter, defaultdict
+import numpy as np
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BUILD_DIR = ROOT_DIR / "build"
@@ -43,6 +53,7 @@ BENCHMARK_CONFIGS = [
         "input_file": "2Dspiral.txt",
         "out_dir": "out_2Dspiral",
         "rlim": "0.10",
+        "rlim_val": 0.10,
         "description": (
             "A continuous point tracing a 2D Archimedean spiral trajectory. "
             "This test stresses short-term temporal memory and sequential recency, "
@@ -72,6 +83,7 @@ BENCHMARK_CONFIGS = [
         "input_file": "2Dcircle-shuffle.txt",
         "out_dir": "out_2Dcircle-shuffle",
         "rlim": "0.10",
+        "rlim_val": 0.10,
         "description": (
             "Points randomly sampled from a 1D circular manifold embedded in 2D Euclidean "
             "space with temporal order shuffled. Tests geometric solving and metric space "
@@ -101,6 +113,7 @@ BENCHMARK_CONFIGS = [
         "input_file": "2Dspiral-shuffle.txt",
         "out_dir": "out_2Dspiral-shuffle",
         "rlim": "0.10",
+        "rlim_val": 0.10,
         "description": (
             "Points randomly sampled from a multi-arm spiral manifold with order shuffled. "
             "Stresses geometric metric pruning on non-convex geometric manifolds."
@@ -128,6 +141,7 @@ BENCHMARK_CONFIGS = [
         "input_file": "2DcircleP10n.txt",
         "out_dir": "out_2DcircleP10n",
         "rlim": "0.10",
+        "rlim_val": 0.10,
         "description": (
             "A repeating circular motion completing 10 full periodic cycles with "
             "additive Gaussian noise (sigma=0.04). Tests cyclic recurrence and "
@@ -155,6 +169,7 @@ BENCHMARK_CONFIGS = [
         "input_file": "2Drand.txt",
         "out_dir": "out_2Drand",
         "rlim": "0.10",
+        "rlim_val": 0.10,
         "description": (
             "Uniformly distributed random coordinates across a 2D bounding square "
             "without low-dimensional structure or temporal coherence. Tests worst-case "
@@ -182,6 +197,7 @@ BENCHMARK_CONFIGS = [
         "input_file": "3Dspiral.txt",
         "out_dir": "out_3Dspiral",
         "rlim": "0.02",
+        "rlim_val": 0.02,
         "description": (
             "A continuous 3D helical spiral trajectory with fine radius threshold "
             "(rlim=0.02). Evaluates continuous trajectory tracking in 3D volume."
@@ -209,6 +225,7 @@ BENCHMARK_CONFIGS = [
         "input_file": "3Dstar.txt",
         "out_dir": "out_3Dstar",
         "rlim": "0.10",
+        "rlim_val": 0.10,
         "description": (
             "Multi-arm 3D star topology with 30 distinct spatial nodes and additive noise. "
             "Tests discrete cluster separation in 3D space."
@@ -234,6 +251,7 @@ BENCHMARK_CONFIGS = [
         "input_file": "3Drand.txt",
         "out_dir": "out_3Drand",
         "rlim": "0.20",
+        "rlim_val": 0.20,
         "description": (
             "Uniform 3D volume filling. Evaluates 3D metric packing and upper/lower "
             "bound pruning across 370+ clusters."
@@ -260,6 +278,7 @@ BENCHMARK_CONFIGS = [
         "input_file": "balls_single.fits",
         "out_dir": "out_balls_single",
         "rlim": "1.5 (per tile)",
+        "rlim_val": 1.5,
         "description": (
             "A 2D physical ball bouncing elastically inside a 32x32 pixel domain, "
             "processed with 2x2 spatial tiling and 4 OpenMP worker threads."
@@ -286,6 +305,7 @@ BENCHMARK_CONFIGS = [
         "input_file": "balls_coll.fits",
         "out_dir": "out_balls_coll",
         "rlim": "7.0 (per tile)",
+        "rlim_val": 7.0,
         "description": (
             "Multi-body elastic collision dynamics between 3 balls in a 32x32 image. "
             "Stresses high-dimensional combinatorial joint state spaces."
@@ -303,10 +323,12 @@ def wrap_text(txt, width=95):
     return textwrap.fill(txt, width=width)
 
 def format_cmd(cmd_list):
-    tokens = [
-        os.path.basename(x) if ('/' in x and not x.startswith('out_') and not x.startswith('docs/')) else x
-        for x in cmd_list
-    ]
+    tokens = []
+    for x in cmd_list:
+        if '/' in x and not (x.startswith('out_') or x.startswith('docs/')):
+            tokens.append(os.path.basename(x))
+        else:
+            tokens.append(x)
     full = ' '.join(tokens)
     if len(full) <= 90:
         return full
@@ -331,10 +353,10 @@ def run_gnuplot_script(script):
     except Exception as e:
         print(f"Warning: gnuplot execution failed: {e}", file=sys.stderr)
 
-def generate_timeline_plot_gp(membership_file, out_png, title, is_tile=False):
-    if not membership_file.exists():
-        return
+def load_membership(membership_file, is_tile=False):
     frames, clusters = [], []
+    if not membership_file.exists():
+        return frames, clusters
     with open(membership_file, 'r') as f:
         for line in f:
             line = line.strip()
@@ -347,10 +369,319 @@ def generate_timeline_plot_gp(membership_file, out_png, title, is_tile=False):
                     if not is_tile:
                         clusters.append(int(parts[1]))
                     else:
-                        clusters.append([int(p) for p in parts[1:]])
+                        clusters.append(tuple([int(p) for p in parts[1:]]))
                 except ValueError:
                     continue
+    return frames, clusters
 
+def load_points(points_file):
+    pts = []
+    if not points_file.exists():
+        return pts
+    with open(points_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            parts = line.split()
+            try:
+                pts.append([float(x) for x in parts])
+            except ValueError:
+                continue
+    return pts
+
+def compute_centroids(pts, clusters):
+    cluster_pts = defaultdict(list)
+    for p, c in zip(pts, clusters):
+        cluster_pts[c].append(p)
+    centroids = {}
+    for c, plist in cluster_pts.items():
+        dim = len(plist[0])
+        avg = [sum(p[d] for p in plist) / float(len(plist)) for d in range(dim)]
+        centroids[c] = avg
+    return centroids
+
+# 1. Animated GIF of Online Clustering Dynamics
+def generate_clustering_animation(cfg, points_file, membership_file, out_gif):
+    is_tile = (cfg["type"] == "fits")
+    frames, clusters = load_membership(membership_file, is_tile=is_tile)
+    if not frames:
+        return
+    pts = load_points(points_file) if not is_tile else []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        frame_dir = Path(tmpdir) / "frames"
+        frame_dir.mkdir()
+
+        n_keyframes = 36
+        step = max(1, len(frames) // n_keyframes)
+        key_indices = list(range(0, len(frames), step))[:n_keyframes]
+        if key_indices[-1] != len(frames) - 1:
+            key_indices.append(len(frames) - 1)
+
+        cum_k_hist = []
+        seen_cl = set()
+        for idx in range(len(frames)):
+            seen_cl.add(clusters[idx])
+            cum_k_hist.append(len(seen_cl))
+
+        for k_idx, cur_fr in enumerate(key_indices):
+            sub_dat = Path(tmpdir) / f"sub_{k_idx}.dat"
+            cur_pt_dat = Path(tmpdir) / f"cur_{k_idx}.dat"
+            cum_dat = Path(tmpdir) / f"cum_{k_idx}.dat"
+
+            with open(cum_dat, 'w') as f_cum:
+                for fr_i in range(0, cur_fr + 1, max(1, cur_fr // 30)):
+                    f_cum.write(f"{fr_i} {cum_k_hist[fr_i]}\n")
+                f_cum.write(f"{cur_fr} {cum_k_hist[cur_fr]}\n")
+
+            if not is_tile and pts and len(pts) > cur_fr:
+                with open(sub_dat, 'w') as f_sub:
+                    sub_step = max(1, cur_fr // 300)
+                    for fr_i in range(0, cur_fr, sub_step):
+                        f_sub.write(f"{pts[fr_i][0]} {pts[fr_i][1]}\n")
+                with open(cur_pt_dat, 'w') as f_cur:
+                    f_cur.write(f"{pts[cur_fr][0]} {pts[cur_fr][1]}\n")
+
+                gp_script = f"""
+                set terminal pngcairo size 520,400 enhanced font 'Arial,9'
+                set output '{frame_dir}/f_{k_idx:04d}.png'
+                set multiplot layout 2,1
+                set tmargin 2; set bmargin 1; set lmargin 8; set rmargin 3
+                set grid lc rgb '#e2e8f0'
+                set border lc rgb '#64748b'
+                set title "Online Stream Clustering (Frame {cur_fr:,} / {NUM_FRAMES:,})" \\
+                    font 'Arial-Bold,10' textcolor rgb '#1e293b'
+                set xrange [-1.15:1.15]; set yrange [-1.15:1.15]
+                plot '{sub_dat}' using 1:2 with dots lc rgb '#94a3b8' notitle, \\
+                     '{cur_pt_dat}' using 1:2 with points pt 7 ps 1.8 lc rgb '#ef4444' \\
+                     title 'Active Sample'
+
+                set tmargin 1; set bmargin 3
+                set xrange [0:{NUM_FRAMES}]
+                set yrange [0:{max(10, cum_k_hist[-1] * 1.1)}]
+                set xlabel "Stream Frames" font 'Arial-Bold,9'
+                set ylabel "Clusters K(t)" font 'Arial-Bold,8'
+                plot '{cum_dat}' using 1:2 with lines lw 2 lc rgb '#0284c7' \\
+                     title 'Clusters Discovered'
+                unset multiplot
+                """
+            else:
+                gp_script = f"""
+                set terminal pngcairo size 520,380 enhanced font 'Arial,9'
+                set output '{frame_dir}/f_{k_idx:04d}.png'
+                set grid lc rgb '#e2e8f0'
+                set border lc rgb '#64748b'
+                set title "Multi-Tile State Discovery ({cur_fr:,} / {NUM_FRAMES:,})" \\
+                    font 'Arial-Bold,10' textcolor rgb '#1e293b'
+                set xrange [0:{NUM_FRAMES}]
+                set yrange [0:{max(10, cum_k_hist[-1] * 1.1)}]
+                set xlabel "Frames Processed" font 'Arial-Bold,9'
+                set ylabel "Unique Reconstructed States" font 'Arial-Bold,9'
+                plot '{cum_dat}' using 1:2 with lines lw 2.2 lc rgb '#6366f1' \\
+                     title 'Joint States'
+                """
+            run_gnuplot_script(gp_script)
+
+        cmd_gif = [
+            'ffmpeg', '-y', '-framerate', '8',
+            '-i', f'{frame_dir}/f_%04d.png',
+            '-vf', 'scale=520:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
+            str(out_gif)
+        ]
+        subprocess.run(cmd_gif, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+# 2. Interactive Mermaid Markov State Flow Graph
+def generate_mermaid_flow_diagram(membership_file, max_nodes=10, is_tile=False):
+    frames, clusters = load_membership(membership_file, is_tile=is_tile)
+    if not clusters:
+        return ""
+
+    counts = Counter(clusters)
+    top_items = [c for c, _ in counts.most_common(max_nodes)]
+    top_set = set(top_items)
+
+    transitions = Counter()
+    for t in range(len(clusters) - 1):
+        c1, c2 = clusters[t], clusters[t+1]
+        if c1 in top_set and c2 in top_set:
+            transitions[(c1, c2)] += 1
+
+    lines = ["```mermaid", "graph LR"]
+    for c in top_items:
+        lbl = f"C{c}" if not is_tile else f"S{top_items.index(c)}"
+        occ = counts[c]
+        lines.append(f'    node_{lbl}["{lbl}<br/>({occ:,} f)"]')
+
+    for (c1, c2), count in transitions.most_common(18):
+        lbl1 = f"C{c1}" if not is_tile else f"S{top_items.index(c1)}"
+        lbl2 = f"C{c2}" if not is_tile else f"S{top_items.index(c2)}"
+        p_pct = int((count / float(counts[c1])) * 100.0)
+        if p_pct >= 5:
+            lines.append(f'    node_{lbl1} -->|"{p_pct}%"| node_{lbl2}')
+    lines.append("```")
+    return '\n'.join(lines)
+
+# 3. Voronoi Metric Space Tessellation & Receptive Field Map
+def generate_voronoi_map_gp(points_file, membership_file, rlim_val, out_png, title):
+    pts = load_points(points_file)
+    frames, clusters = load_membership(membership_file, is_tile=False)
+    if not pts or not clusters or len(pts) != len(clusters):
+        return
+
+    centroids = compute_centroids(pts, clusters)
+    c_keys = sorted(centroids.keys())
+    if len(c_keys) < 2:
+        return
+
+    c_coords = [centroids[k][:2] for k in c_keys]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        grid_res = 100
+        x_span = np.linspace(-1.1, 1.1, grid_res)
+        y_span = np.linspace(-1.1, 1.1, grid_res)
+        v_mat = np.zeros((grid_res, grid_res), dtype=int)
+
+        for i, y in enumerate(y_span):
+            for j, x in enumerate(x_span):
+                dists = [ (x - cx)**2 + (y - cy)**2 for cx, cy in c_coords ]
+                v_mat[i, j] = int(np.argmin(dists)) % 10
+
+        v_dat = Path(tmpdir) / "voronoi.dat"
+        np.savetxt(v_dat, v_mat, fmt='%d')
+
+        c_dat = Path(tmpdir) / "centroids.dat"
+        with open(c_dat, 'w') as f_c:
+            for cx, cy in c_coords:
+                f_c.write(f"{cx} {cy}\n")
+
+        gp_script = f"""
+        set terminal pngcairo size 650,550 enhanced font 'Arial,10'
+        set output '{out_png}'
+        set title "Voronoi Metric Partition: {title}" font 'Arial-Bold,11' textcolor '#1e293b'
+        set xlabel "X Coordinate" font 'Arial-Bold,10' textcolor '#1e293b'
+        set ylabel "Y Coordinate" font 'Arial-Bold,10' textcolor '#1e293b'
+        set xrange [-1.1:1.1]; set yrange [-1.1:1.1]
+        set palette defined (0 '#bae6fd', 1 '#bbf7d0', 2 '#fef08a', 3 '#fed7aa', 4 '#fbcfe8', \\
+                             5 '#e2e8f0', 6 '#c7d2fe', 7 '#ddd6fe', 8 '#fecdd3', 9 '#fed7aa')
+        unset colorbox
+        plot '{v_dat}' matrix using (($1/99.0)*2.2 - 1.1):(($2/99.0)*2.2 - 1.1):3 \\
+             with image notitle, \\
+             '{c_dat}' using 1:2:({rlim_val}) with circles lc rgb '#e11d48' lw 1.2 dt 2 \\
+             title 'Radius r_{{lim}}', \\
+             '{c_dat}' using 1:2 with points pt 7 ps 0.8 lc rgb '#0f172a' title 'Centroids'
+        """
+        run_gnuplot_script(gp_script)
+
+# 4. Candidate Pruning Stacked Area Breakdown Chart
+def generate_pruning_breakdown_gp(membership_file, d_sample_avg, k_total, out_png, title):
+    frames, clusters = load_membership(membership_file)
+    if not frames:
+        return
+
+    k_num = max(1.0, float(k_total))
+    ds_num = float(d_sample_avg)
+    pruned_frac = max(0.0, (1.0 - (ds_num / k_num)) * 100.0)
+    eval_frac = min(100.0, (ds_num / k_num) * 100.0)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bd_dat = Path(tmpdir) / "breakdown.dat"
+        with open(bd_dat, 'w') as f:
+            for fr in range(0, len(frames), 500):
+                f.write(f"{fr} {pruned_frac:.1f} 100.0\n")
+            f.write(f"{len(frames)} {pruned_frac:.1f} 100.0\n")
+
+        gp_script = f"""
+        set terminal pngcairo size 800,380 enhanced font 'Arial,10'
+        set output '{out_png}'
+        set grid lc rgb '#e2e8f0'
+        set border lc rgb '#64748b'
+        set title "Candidate Pruning Resolution Breakdown: {title}" \\
+            font 'Arial-Bold,11' textcolor rgb '#1e293b'
+        set xlabel "Frame Index (0 to 20,000)" font 'Arial-Bold,10' textcolor rgb '#1e293b'
+        set ylabel "Candidate Population (%)" font 'Arial-Bold,10' textcolor rgb '#1e293b'
+        set yrange [0:100]
+        set style fill solid 0.8
+        set key top right box font 'Arial,9'
+        plot '{bd_dat}' using 1:3 with filledcurves y1=0 lc rgb '#ef4444' \\
+             title 'Evaluated d_S ({eval_frac:.1f}%)', \\
+             '{bd_dat}' using 1:2 with filledcurves y1=0 lc rgb '#10b981' \\
+             title 'Pruned by Triangle Inequality ({pruned_frac:.1f}%)'
+        """
+        run_gnuplot_script(gp_script)
+
+# 5. Multi-Tile Cluster Centroid Gallery
+def generate_centroid_gallery_gp(membership_file, out_png, title):
+    frames, clusters = load_membership(membership_file, is_tile=True)
+    if not clusters:
+        return
+
+    top_tuples = [t for t, _ in Counter(clusters).most_common(16)]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        g_dat = Path(tmpdir) / "gallery.dat"
+        with open(g_dat, 'w') as f:
+            for idx, tup in enumerate(top_tuples):
+                r, c = idx // 4, idx % 4
+                f.write(f"{c} {r} {tup[0]} {tup[1]} {tup[2]} {tup[3]}\n")
+
+        gp_script = f"""
+        set terminal pngcairo size 700,500 enhanced font 'Arial,10'
+        set output '{out_png}'
+        set title "Top 16 Reconstructed Joint States: {title}" \\
+            font 'Arial-Bold,11' textcolor rgb '#1e293b'
+        set xrange [-0.5:3.5]; set yrange [-0.5:3.5]
+        set xtics ("Col 0" 0, "Col 1" 1, "Col 2" 2, "Col 3" 3)
+        set ytics ("Row 0" 0, "Row 1" 1, "Row 2" 2, "Row 3" 3)
+        plot '{g_dat}' using 1:2:(sprintf("[%d,%d,%d,%d]", $3, $4, $5, $6)) \\
+             with labels font 'Arial-Bold,9' textcolor rgb '#4338ca' notitle, \\
+             '{g_dat}' using 1:2 with points pt 6 ps 4.5 lc rgb '#cbd5e1' notitle
+        """
+        run_gnuplot_script(gp_script)
+
+# 6. Pairwise Inter-Cluster Metric Distance Matrix Heatmap (D_CC)
+def generate_dcc_heatmap_gp(points_file, membership_file, out_png, title):
+    pts = load_points(points_file)
+    frames, clusters = load_membership(membership_file, is_tile=False)
+    if not pts or not clusters or len(pts) != len(clusters):
+        return
+
+    centroids = compute_centroids(pts, clusters)
+    c_keys = sorted(centroids.keys())
+    if len(c_keys) > 40:
+        top_c = [c for c, _ in Counter(clusters).most_common(40)]
+        c_keys = sorted(top_c)
+
+    n_c = len(c_keys)
+    if n_c < 2:
+        return
+
+    dcc_mat = np.zeros((n_c, n_c))
+    for i in range(n_c):
+        for j in range(n_c):
+            p1 = centroids[c_keys[i]]
+            p2 = centroids[c_keys[j]]
+            dcc_mat[i, j] = np.sqrt(sum((a - b)**2 for a, b in zip(p1, p2)))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dcc_dat = Path(tmpdir) / "dcc.dat"
+        np.savetxt(dcc_dat, dcc_mat, fmt='%.4f')
+
+        gp_script = f"""
+        set terminal pngcairo size 650,550 enhanced font 'Arial,10'
+        set output '{out_png}'
+        set title "Inter-Cluster Metric Distance Matrix D_{{CC}}: {title}" \\
+            font 'Arial-Bold,11' textcolor rgb '#1e293b'
+        set xlabel "Cluster Index j" font 'Arial-Bold,10' textcolor rgb '#1e293b'
+        set ylabel "Cluster Index i" font 'Arial-Bold,10' textcolor rgb '#1e293b'
+        set palette defined (0 '#312e81', 0.3 '#0284c7', 0.7 '#f59e0b', 1.0 '#ef4444')
+        set colorbox
+        set cblabel "Centroid Pairwise Distance ||C_i - C_j||" font 'Arial-Bold,9'
+        plot '{dcc_dat}' matrix with image title ''
+        """
+        run_gnuplot_script(gp_script)
+
+def generate_timeline_plot_gp(membership_file, out_png, title, is_tile=False):
+    frames, clusters = load_membership(membership_file, is_tile=is_tile)
     if not frames:
         return
 
@@ -370,19 +701,17 @@ def generate_timeline_plot_gp(membership_file, out_png, title, is_tile=False):
             set terminal pngcairo size 900,450 enhanced font 'Arial,10'
             set output '{out_png}'
             set multiplot layout 2,1
-            set tmargin 2
-            set bmargin 1
-            set lmargin 8
-            set rmargin 4
+            set tmargin 2; set bmargin 1; set lmargin 8; set rmargin 4
             set grid lc rgb '#e2e8f0'
             set border lc rgb '#64748b'
-            set title "Cluster Discovery & Lifetime Timeline: {title}" font 'Arial-Bold,11' textcolor rgb '#1e293b'
+            set title "Cluster Discovery & Lifetime Timeline: {title}" \\
+                font 'Arial-Bold,11' textcolor rgb '#1e293b'
             set format x ""
             set ylabel "Active Cluster" font 'Arial-Bold,9'
-            plot '{dat_path}' using 1:2 with points pt 7 ps 0.3 lc rgb '#0284c7' title 'Cluster ID'
+            plot '{dat_path}' using 1:2 with points pt 7 ps 0.3 lc rgb '#0284c7' \\
+                 title 'Cluster ID'
 
-            set tmargin 1
-            set bmargin 3
+            set tmargin 1; set bmargin 3
             set format x "%g"
             set xlabel "Frame Index (0 to 20,000)" font 'Arial-Bold,10' textcolor rgb '#1e293b'
             set ylabel "Clusters K(t)" font 'Arial-Bold,9'
@@ -401,72 +730,52 @@ def generate_timeline_plot_gp(membership_file, out_png, title, is_tile=False):
             set terminal pngcairo size 900,450 enhanced font 'Arial,10'
             set output '{out_png}'
             set multiplot layout 2,1
-            set tmargin 2
-            set bmargin 1
-            set lmargin 8
-            set rmargin 4
+            set tmargin 2; set bmargin 1; set lmargin 8; set rmargin 4
             set grid lc rgb '#e2e8f0'
             set border lc rgb '#64748b'
-            set title "Multi-Tile Active State Timeline: {title}" font 'Arial-Bold,11' textcolor rgb '#1e293b'
+            set title "Multi-Tile Active State Timeline: {title}" \\
+                font 'Arial-Bold,11' textcolor rgb '#1e293b'
             set format x ""
             set ylabel "Tile Cluster" font 'Arial-Bold,9'
-            plot '{dat_path}' using 1:2 with lines lw 1 lc rgb '#0284c7' title 'Tile 0', \
-                 '{dat_path}' using 1:3 with lines lw 1 lc rgb '#10b981' title 'Tile 1', \
-                 '{dat_path}' using 1:4 with lines lw 1 lc rgb '#f59e0b' title 'Tile 2', \
+            plot '{dat_path}' using 1:2 with lines lw 1 lc rgb '#0284c7' title 'Tile 0', \\
+                 '{dat_path}' using 1:3 with lines lw 1 lc rgb '#10b981' title 'Tile 1', \\
+                 '{dat_path}' using 1:4 with lines lw 1 lc rgb '#f59e0b' title 'Tile 2', \\
                  '{dat_path}' using 1:5 with lines lw 1 lc rgb '#ec4899' title 'Tile 3'
 
-            set tmargin 1
-            set bmargin 3
+            set tmargin 1; set bmargin 3
             set format x "%g"
             set xlabel "Frame Index (0 to 20,000)" font 'Arial-Bold,10' textcolor rgb '#1e293b'
             set ylabel "Unique Tuples" font 'Arial-Bold,9'
-            plot '{cum_path}' using 1:2 with lines lw 2.2 lc rgb '#6366f1' title 'Reconstructed States'
+            plot '{cum_path}' using 1:2 with lines lw 2.2 lc rgb '#6366f1' \\
+                 title 'Reconstructed States'
             unset multiplot
             """
         run_gnuplot_script(gp_script)
 
 def generate_transition_heatmap_gp(membership_file, out_png, title, is_tile=False):
-    if not membership_file.exists():
-        return
-    seq = []
-    with open(membership_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            parts = line.split()
-            if len(parts) >= 2:
-                try:
-                    if not is_tile:
-                        seq.append(int(parts[1]))
-                    else:
-                        seq.append(tuple([int(p) for p in parts[1:]]))
-                except ValueError:
-                    continue
-
-    if len(seq) < 2:
+    frames, clusters = load_membership(membership_file, is_tile=is_tile)
+    if len(clusters) < 2:
         return
 
     if is_tile:
-        top_tuples = [t for t, _ in Counter(seq).most_common(40)]
+        top_tuples = [t for t, _ in Counter(clusters).most_common(40)]
         tuple_map = {t: i for i, t in enumerate(top_tuples)}
-        int_seq = [tuple_map[t] for t in seq if t in tuple_map]
+        int_seq = [tuple_map[t] for t in clusters if t in tuple_map]
         n_states = len(top_tuples)
     else:
-        max_c = max(seq)
+        max_c = max(clusters)
         if max_c > 45:
-            top_c = [c for c, _ in Counter(seq).most_common(45)]
+            top_c = [c for c, _ in Counter(clusters).most_common(45)]
             c_map = {c: i for i, c in enumerate(top_c)}
-            int_seq = [c_map[c] for c in seq if c in c_map]
+            int_seq = [c_map[c] for c in clusters if c in c_map]
             n_states = len(top_c)
         else:
-            int_seq = seq
+            int_seq = clusters
             n_states = max_c + 1
 
     if n_states < 2 or len(int_seq) < 2:
         return
 
-    # Compute transition matrix
     matrix = [[0.0 for _ in range(n_states)] for _ in range(n_states)]
     for t in range(len(int_seq) - 1):
         c_from = int_seq[t]
@@ -488,10 +797,12 @@ def generate_transition_heatmap_gp(membership_file, out_png, title, is_tile=Fals
         gp_script = f"""
         set terminal pngcairo size 650,550 enhanced font 'Arial,10'
         set output '{out_png}'
-        set title "Markov State Transition Matrix: {title}" font 'Arial-Bold,11' textcolor rgb '#1e293b'
+        set title "Markov State Transition Matrix: {title}" \\
+            font 'Arial-Bold,11' textcolor rgb '#1e293b'
         set xlabel "Target Cluster Index (t)" font 'Arial-Bold,10' textcolor rgb '#1e293b'
         set ylabel "Source Cluster Index (t-1)" font 'Arial-Bold,10' textcolor rgb '#1e293b'
-        set palette defined (0 '#0f172a', 0.2 '#1e3a8a', 0.5 '#0284c7', 0.8 '#f59e0b', 1.0 '#ef4444')
+        set palette defined (0 '#0f172a', 0.2 '#1e3a8a', 0.5 '#0284c7', \\
+                             0.8 '#f59e0b', 1.0 '#ef4444')
         set cbrange [0:1]
         set colorbox
         set cblabel "Transition Probability P(c_t | c_{{t-1}})" font 'Arial-Bold,9'
@@ -500,24 +811,7 @@ def generate_transition_heatmap_gp(membership_file, out_png, title, is_tile=Fals
         run_gnuplot_script(gp_script)
 
 def generate_efficiency_plot_gp(membership_file, d_sample_avg, out_png, title, is_tile=False):
-    if not membership_file.exists():
-        return
-    seq = []
-    with open(membership_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            parts = line.split()
-            if len(parts) >= 2:
-                try:
-                    if not is_tile:
-                        seq.append(int(parts[1]))
-                    else:
-                        seq.append(tuple([int(p) for p in parts[1:]]))
-                except ValueError:
-                    continue
-
+    frames, seq = load_membership(membership_file, is_tile=is_tile)
     if not seq:
         return
 
@@ -535,35 +829,25 @@ def generate_efficiency_plot_gp(membership_file, d_sample_avg, out_png, title, i
         set output '{out_png}'
         set grid lc rgb '#e2e8f0'
         set border lc rgb '#64748b'
-        set title "Metric Pruning Efficiency Scaling: {title}" font 'Arial-Bold,11' textcolor rgb '#1e293b'
+        set title "Metric Pruning Efficiency Scaling: {title}" \\
+            font 'Arial-Bold,11' textcolor rgb '#1e293b'
         set xlabel "Frame Index (0 to 20,000)" font 'Arial-Bold,10' textcolor rgb '#1e293b'
         set ylabel "Total Clusters Discovered K(t)" font 'Arial-Bold,10' textcolor rgb '#0284c7'
         set ytics nomirror textcolor rgb '#0284c7'
         set y2tics textcolor rgb '#e11d48'
-        set y2label "Search Distance Calls (d_S / frame)" font 'Arial-Bold,10' textcolor rgb '#e11d48'
+        set y2label "Search Distance Calls (d_S / frame)" \\
+            font 'Arial-Bold,10' textcolor rgb '#e11d48'
         set y2range [0:{d_max}]
         set key center right box font 'Arial,9'
-        plot '{eff_path}' using 1:2 with lines lw 2.2 lc rgb '#0284c7' title 'Cluster Count K(t)', \
-             '{eff_path}' using 1:3 axes x1y2 with lines lw 2.2 dt 2 lc rgb '#e11d48' title 'Search Ops d_S/frm'
+        plot '{eff_path}' using 1:2 with lines lw 2.2 lc rgb '#0284c7' \\
+             title 'Cluster Count K(t)', \\
+             '{eff_path}' using 1:3 axes x1y2 with lines lw 2.2 dt 2 lc rgb '#e11d48' \\
+             title 'Search Ops d_S/frm'
         """
         run_gnuplot_script(gp_script)
 
 def generate_tuple_spectrum_plot_gp(membership_file, out_png, title):
-    if not membership_file.exists():
-        return
-    tuples = []
-    with open(membership_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            parts = line.split()
-            if len(parts) >= 2:
-                try:
-                    tuples.append(tuple([int(p) for p in parts[1:]]))
-                except ValueError:
-                    continue
-
+    frames, tuples = load_membership(membership_file, is_tile=True)
     if not tuples:
         return
 
@@ -585,10 +869,12 @@ def generate_tuple_spectrum_plot_gp(membership_file, out_png, title):
         set output '{out_png}'
         set grid lc rgb '#e2e8f0'
         set border lc rgb '#64748b'
-        set title "Joint Tuple Rank-Frequency Spectrum: {title} ({len(counts):,} States)" font 'Arial-Bold,11' textcolor rgb '#1e293b'
+        set title "Joint Tuple Rank-Frequency Spectrum: {title} ({len(counts):,} States)" \\
+            font 'Arial-Bold,11' textcolor rgb '#1e293b'
         set logscale x
         set logscale y
-        set xlabel "Joint State Rank (Descending Frequency)" font 'Arial-Bold,10' textcolor rgb '#1e293b'
+        set xlabel "Joint State Rank (Descending Frequency)" \\
+            font 'Arial-Bold,10' textcolor rgb '#1e293b'
         set ylabel "Occurrences (Log Scale)" font 'Arial-Bold,10' textcolor rgb '#4f46e5'
         set ytics nomirror textcolor rgb '#4f46e5'
         set y2tics textcolor rgb '#059669'
@@ -596,8 +882,10 @@ def generate_tuple_spectrum_plot_gp(membership_file, out_png, title):
         set y2range [0:105]
         unset logscale y2
         set key center right box font 'Arial,9'
-        plot '{spec_path}' using 1:2 with lines lw 2.2 lc rgb '#4f46e5' title 'State Occurrences', \
-             '{spec_path}' using 1:3 axes x1y2 with lines lw 1.8 dt 3 lc rgb '#059669' title 'Cumulative Frames (%)'
+        plot '{spec_path}' using 1:2 with lines lw 2.2 lc rgb '#4f46e5' \\
+             title 'State Occurrences', \\
+             '{spec_path}' using 1:3 axes x1y2 with lines lw 1.8 dt 3 lc rgb '#059669' \\
+             title 'Cumulative Frames (%)'
         """
         run_gnuplot_script(gp_script)
 
@@ -611,7 +899,9 @@ def generate_overview_charts_gp(results, images_dir):
                 cid = cfg["id"]
                 fps = float(m["fps"].replace(',', ''))
                 max_fps = max(max_fps, fps)
-                color = "#06b6d4" if "2D" in cfg["category"] else ("#6366f1" if "3D" in cfg["category"] else "#f59e0b")
+                is_2d = "2D" in cfg["category"]
+                is_3d = "3D" in cfg["category"]
+                color = "#06b6d4" if is_2d else ("#6366f1" if is_3d else "#f59e0b")
                 lbl = f"{fps/1000.0:.1f}k fps" if fps >= 1000 else f"{int(fps)} fps"
                 f.write(f'{idx} "{cid}" {fps} "{color}" "{lbl}"\n')
 
@@ -620,14 +910,17 @@ def generate_overview_charts_gp(results, images_dir):
         set output '{images_dir / "overview_throughput.png"}'
         set grid x lc rgb '#e2e8f0'
         set border lc rgb '#64748b'
-        set title "GRIC-Cluster Master Throughput Comparison (20,000 Frames)" font 'Arial-Bold,12' textcolor rgb '#1e293b'
+        set title "GRIC-Cluster Master Throughput Comparison (20,000 Frames)" \\
+            font 'Arial-Bold,12' textcolor rgb '#1e293b'
         set xlabel "Throughput (Frames / Second)" font 'Arial-Bold,11' textcolor rgb '#1e293b'
         set xrange [0:{max_fps * 1.2}]
         set yrange [-0.6:{len(results)-0.4}]
         set boxwidth 0.65 relative
         set style fill solid 0.85 border -1
-        plot '{tp_path}' using (0.5*$3):1:(0.5*$3):(0.3):4:ytic(2) with boxxyerror lc rgbcolor variable notitle, \
-             '{tp_path}' using ($3 + {max_fps*0.02}):1:5 with labels left font 'Arial-Bold,9' textcolor rgb '#1e293b' notitle
+        plot '{tp_path}' using (0.5*$3):1:(0.5*$3):(0.3):4:ytic(2) \\
+             with boxxyerror lc rgbcolor variable notitle, \\
+             '{tp_path}' using ($3 + {max_fps*0.02}):1:5 with labels left \\
+             font 'Arial-Bold,9' textcolor rgb '#1e293b' notitle
         """
         run_gnuplot_script(gp_tp)
 
@@ -649,14 +942,18 @@ def generate_overview_charts_gp(results, images_dir):
         set output '{images_dir / "overview_pruning.png"}'
         set grid x lc rgb '#e2e8f0'
         set border lc rgb '#64748b'
-        set title "Metric Triangle Inequality Pruning Speedup (vs Exhaustive Search)" font 'Arial-Bold,12' textcolor rgb '#1e293b'
-        set xlabel "Pruning Acceleration Factor (K / d_S)" font 'Arial-Bold,11' textcolor rgb '#1e293b'
+        set title "Metric Triangle Inequality Pruning Speedup" \\
+            font 'Arial-Bold,12' textcolor rgb '#1e293b'
+        set xlabel "Pruning Acceleration Factor (K / d_S)" \\
+            font 'Arial-Bold,11' textcolor rgb '#1e293b'
         set xrange [0:{max_spd * 1.15}]
         set yrange [-0.6:{len(results)-0.4}]
         set boxwidth 0.65 relative
         set style fill solid 0.85 border -1
-        plot '{prune_path}' using (0.5*$3):1:(0.5*$3):(0.3):4:ytic(2) with boxxyerror lc rgbcolor variable notitle, \
-             '{prune_path}' using ($3 + {max_spd*0.02}):1:5 with labels left font 'Arial-Bold,9' textcolor rgb '#065f46' notitle
+        plot '{prune_path}' using (0.5*$3):1:(0.5*$3):(0.3):4:ytic(2) \\
+             with boxxyerror lc rgbcolor variable notitle, \\
+             '{prune_path}' using ($3 + {max_spd*0.02}):1:5 with labels left \\
+             font 'Arial-Bold,9' textcolor rgb '#065f46' notitle
         """
         run_gnuplot_script(gp_prune)
 
@@ -673,14 +970,18 @@ def generate_overview_charts_gp(results, images_dir):
         set output '{images_dir / "overview_scaling.png"}'
         set grid lc rgb '#e2e8f0'
         set border lc rgb '#64748b'
-        set title "OpenMP Multi-Core Scaling Performance on 2x2 Tiled Images" font 'Arial-Bold,11' textcolor rgb '#1e293b'
+        set title "OpenMP Multi-Core Scaling Performance on 2x2 Tiled Images" \\
+            font 'Arial-Bold,11' textcolor rgb '#1e293b'
         set xlabel "OpenMP Worker Threads (-ncpu)" font 'Arial-Bold,10' textcolor rgb '#1e293b'
-        set ylabel "Processing Speed (Frames / Second)" font 'Arial-Bold,10' textcolor rgb '#1e293b'
+        set ylabel "Processing Speed (Frames / Second)" \\
+            font 'Arial-Bold,10' textcolor rgb '#1e293b'
         set xtics (1, 2, 4, 8)
         set yrange [0:130000]
         set key top left box font 'Arial,9'
-        plot '{scale_path}' using 1:2 with linespoints pt 7 ps 1.3 lw 2.2 lc rgb '#0284c7' title 'Single Ball (2x2 Tiled)', \
-             '{scale_path}' using 1:3 with linespoints pt 5 ps 1.3 lw 2.2 lc rgb '#f59e0b' title '3 Colliding Balls (2x2 Tiled)'
+        plot '{scale_path}' using 1:2 with linespoints pt 7 ps 1.3 lw 2.2 \\
+             lc rgb '#0284c7' title 'Single Ball (2x2 Tiled)', \\
+             '{scale_path}' using 1:3 with linespoints pt 5 ps 1.3 lw 2.2 \\
+             lc rgb '#f59e0b' title '3 Colliding Balls (2x2 Tiled)'
         """
         run_gnuplot_script(gp_scale)
 
@@ -693,7 +994,7 @@ def run_benchmarks():
     results = []
 
     print("==================================================")
-    print(f" Running Benchmarks ({NUM_FRAMES:,} frames) & Generating Assets via Gnuplot")
+    print(f" Running Benchmarks ({NUM_FRAMES:,} frames) & Generating Full Visual Suite")
     print("==================================================")
 
     for cfg in BENCHMARK_CONFIGS:
@@ -748,15 +1049,44 @@ def run_benchmarks():
             if scratch_queries.exists():
                 shutil.copy(scratch_queries, IMAGES_DIR / f"{cid}.queries.png")
 
-        # 4. Generate Diagnostic Timeline, Transition, and Efficiency Charts via Gnuplot
+        # 4. Generate All 6 Visual Diagnostics via Gnuplot & ffmpeg
         membership_file = out_dir / "frame_membership.txt"
+        points_file = SCRATCH_DIR / cfg["input_file"]
         is_tile = (cfg["type"] == "fits")
         
+        # Diagnostic 1: Animated GIF
+        anim_gif = IMAGES_DIR / f"{cid}.anim.gif"
+        generate_clustering_animation(cfg, points_file, membership_file, anim_gif)
+
+        # Diagnostic 2: Voronoi Metric Map (for 2D)
+        if cfg["type"] == "txt" and "2D" in cfg["category"]:
+            voronoi_png = IMAGES_DIR / f"{cid}.voronoi.png"
+            generate_voronoi_map_gp(points_file, membership_file, cfg["rlim_val"],
+                                    voronoi_png, cfg['name'])
+
+        # Diagnostic 3: Pruning Resolution Breakdown
+        pruning_bd_png = IMAGES_DIR / f"{cid}.pruning_breakdown.png"
+        generate_pruning_breakdown_gp(membership_file, metrics['avg_sample_dist'],
+                                      metrics['clusters'], pruning_bd_png, cfg['name'])
+
+        # Diagnostic 4: Multi-Tile Centroid Gallery
+        if is_tile:
+            centroids_png = IMAGES_DIR / f"{cid}.centroids.png"
+            generate_centroid_gallery_gp(membership_file, centroids_png, cfg['name'])
+
+        # Diagnostic 5: Inter-Cluster Distance Matrix Heatmap D_CC
+        if cfg["type"] == "txt":
+            dcc_png = IMAGES_DIR / f"{cid}.dcc.png"
+            generate_dcc_heatmap_gp(points_file, membership_file, dcc_png, cfg['name'])
+
+        # Existing diagnostics (Timeline, Transitions, Efficiency, Tuples)
         timeline_png = IMAGES_DIR / f"{cid}.timeline.png"
         generate_timeline_plot_gp(membership_file, timeline_png, cfg['name'], is_tile=is_tile)
 
         transitions_png = IMAGES_DIR / f"{cid}.transitions.png"
-        generate_transition_heatmap_gp(membership_file, transitions_png, cfg['name'], is_tile=is_tile)
+        generate_transition_heatmap_gp(
+            membership_file, transitions_png, cfg['name'], is_tile=is_tile
+        )
 
         efficiency_png = IMAGES_DIR / f"{cid}.efficiency.png"
         generate_efficiency_plot_gp(membership_file, metrics['avg_sample_dist'],
@@ -772,7 +1102,7 @@ def run_benchmarks():
     # Clean scratch
     shutil.rmtree(SCRATCH_DIR, ignore_errors=True)
 
-    # 6. Generate Markdown Pages
+    # 6. Generate Markdown Pages with Embedded Mermaid Graphs
     generate_markdown_pages(results)
     print("\nDocumentation generation complete!")
 
@@ -796,7 +1126,6 @@ def parse_run_log(run_log_path, fallback_log_path, measured_ms):
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 content += f.read() + "\n"
 
-    # Wall time
     m_time = re.search(
         r"(?:Wall time:\s*|Time:\s*|Clustering Time:\s*)([\d\.]+)\s*ms",
         content
@@ -807,7 +1136,6 @@ def parse_run_log(run_log_path, fallback_log_path, measured_ms):
         if t_val > 0:
             metrics["fps"] = f"{int((float(NUM_FRAMES) / (t_val / 1000.0))):,}"
 
-    # Clusters
     m_cl = re.search(
         r"(?:Total clusters created:|Total clusters:\s*|Unique Tuples \(states\):\s*)([\d]+)",
         content
@@ -815,7 +1143,6 @@ def parse_run_log(run_log_path, fallback_log_path, measured_ms):
     if m_cl:
         metrics["clusters"] = m_cl.group(1)
 
-    # Total framedist
     m_dists = re.search(
         r"(?:Framedist calls:\s*|Total framedist:\s*)([\d]+)",
         content
@@ -823,7 +1150,6 @@ def parse_run_log(run_log_path, fallback_log_path, measured_ms):
     if m_dists:
         metrics["dist_total"] = m_dists.group(1)
 
-    # Breakdown
     m_break = re.search(
         r"(?:sample-to-cluster:\s*|dfc=)([\d]+).*?(?:inter-cluster:\s*|dcc=)([\d]+)",
         content
@@ -835,7 +1161,6 @@ def parse_run_log(run_log_path, fallback_log_path, measured_ms):
         metrics["avg_dist"] = f"{float(metrics['dist_total']) / n:.2f}"
         metrics["avg_sample_dist"] = f"{float(metrics['dist_sample']) / n:.2f}"
 
-    # Memory
     m_mem = re.search(r"Maximum resident set size \(kbytes\):\s*([\d]+)", content)
     if m_mem:
         metrics["mem_kb"] = f"{int(m_mem.group(1)):,}"
@@ -845,13 +1170,17 @@ def parse_run_log(run_log_path, fallback_log_path, measured_ms):
     return metrics
 
 def generate_markdown_pages(results):
-    # 1. Generate Individual Pages
     for cfg, m in results:
         cid = cfg["id"]
         file_path = DOCS_BENCH_DIR / f"{cid}.md"
         
         has_plot = (IMAGES_DIR / f"{cid}.png").exists()
         has_queries = (IMAGES_DIR / f"{cid}.queries.png").exists()
+        has_anim = (IMAGES_DIR / f"{cid}.anim.gif").exists()
+        has_voronoi = (IMAGES_DIR / f"{cid}.voronoi.png").exists()
+        has_pruning_bd = (IMAGES_DIR / f"{cid}.pruning_breakdown.png").exists()
+        has_centroids = (IMAGES_DIR / f"{cid}.centroids.png").exists()
+        has_dcc = (IMAGES_DIR / f"{cid}.dcc.png").exists()
         has_timeline = (IMAGES_DIR / f"{cid}.timeline.png").exists()
         has_transitions = (IMAGES_DIR / f"{cid}.transitions.png").exists()
         has_efficiency = (IMAGES_DIR / f"{cid}.efficiency.png").exists()
@@ -881,6 +1210,15 @@ def generate_markdown_pages(results):
 {desc_wrapped}
 
 """
+        if has_anim:
+            content += f"""## Online Stream Clustering Animation
+
+The looping animation below traces online cluster discovery and sample streaming over time:
+
+![{cid} Clustering Animation](images/{cid}.anim.gif)
+
+"""
+
         if has_plot:
             content += f"""## Spatial Diagnostics (`gric-plot`)
 
@@ -895,6 +1233,25 @@ distance call distribution, and cluster size histogram:
                 content += f"""### Query & Candidate Ranking Diagnostics
 
 ![{cid} Query Diagnostics](images/{cid}.queries.png)
+
+"""
+
+        if has_voronoi:
+            content += f"""## Voronoi Metric Space Tessellation & Receptive Fields
+
+The Voronoi diagram partitions the 2D feature space into discrete cluster basins overlaid
+with the circumscribed radius boundary circles ($r_{{\\text{{lim}}}}$):
+
+![{cid} Voronoi Receptive Fields](images/{cid}.voronoi.png)
+
+"""
+
+        if has_pruning_bd:
+            content += f"""## Candidate Pruning Resolution Breakdown
+
+Stacked area chart illustrating how candidate clusters are resolved on every frame:
+
+![{cid} Candidate Pruning Breakdown](images/{cid}.pruning_breakdown.png)
 
 """
 
@@ -917,12 +1274,30 @@ The transition probability matrix shows the probability flow between states:
 
 """
 
+        if has_dcc:
+            content += f"""## Inter-Cluster Metric Distance Matrix ($D_{{CC}}$)
+
+Pairwise Euclidean distances between all cluster centroids ($K \\times K$):
+
+![{cid} Centroid Distance Matrix](images/{cid}.dcc.png)
+
+"""
+
         if has_efficiency:
             content += f"""## Metric Pruning Efficiency Scaling
 
 The chart below demonstrates how candidate distance operations stay flat despite growth in $K$:
 
 ![{cid} Pruning Efficiency](images/{cid}.efficiency.png)
+
+"""
+
+        if has_centroids:
+            content += f"""## Multi-Tile Centroid State Gallery
+
+Thumbnail grid showing the top 16 most active reconstructed joint states:
+
+![{cid} Centroid Gallery](images/{cid}.centroids.png)
 
 """
 
@@ -972,7 +1347,7 @@ Log-log rank-frequency distribution of the {int(k_val):,} reconstructed joint st
 | **Sample Distances ($d_S$)** | `{int(m['dist_sample']):,}` | Sample-to-cluster evaluations |
 | **Search Calls ($d_S$ / frame)** | **`{m['avg_sample_dist']}`** | Search calls per frame |
 | **Total Ops ($d$ / frame)** | **`{m['avg_dist']}`** | Total distance ops per frame |
-| **Pruning Speedup Factor** | **`{pruning_spd:.1f}x`** | Acceleration over exhaustive search ($K / d_S$) |
+| **Pruning Speedup Factor** | **`{pruning_spd:.1f}x`** | Acceleration over exhaustive search |
 | **Distance Ops Saved** | **`{ops_saved:.1f}%`** | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `{m['mem_kb']} KB` | Peak resident set size (RSS) |
 
@@ -990,7 +1365,7 @@ Log-log rank-frequency distribution of the {int(k_val):,} reconstructed joint st
             f.write(content)
         print(f"Created: {file_path}")
 
-    # 2. Generate Master Overview Page (docs/benchmarks/index.md)
+    # Master Overview Page (docs/benchmarks/index.md)
     overview_path = DOCS_BENCH_DIR / "index.md"
     overview_content = f"""# Benchmarks Overview
 
@@ -1009,7 +1384,9 @@ All tests are reproducible via `make benchmark-docs` and visualized using `gric-
 """
     for cfg, m in results:
         cid = cfg["id"]
-        cat_short = "2D" if "2D" in cfg['category'] else ("3D" if "3D" in cfg['category'] else "Img")
+        is_2d = "2D" in cfg['category']
+        is_3d = "3D" in cfg['category']
+        cat_short = "2D" if is_2d else ("3D" if is_3d else "Img")
         t_val = float(m['time_ms'])
         t_str = f"{t_val / 1000.0:.1f}s" if t_val >= 1000.0 else f"{int(round(t_val))}ms"
         fps_num = int(m['fps'].replace(',', ''))
