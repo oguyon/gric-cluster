@@ -332,9 +332,10 @@ int main(
     /* Validate type */
     if (strcmp(config.type, "txt") != 0 &&
         strcmp(config.type, "mp4") != 0 &&
-        strcmp(config.type, "stream") != 0)
+        strcmp(config.type, "stream") != 0 &&
+        strcmp(config.type, "fits") != 0)
     {
-        fprintf(stderr, "Error: Invalid type '%s'. Use 'txt', 'mp4', or 'stream'.\n", config.type);
+        fprintf(stderr, "Error: Invalid type '%s'. Use 'txt', 'mp4', 'stream', or 'fits'.\n", config.type);
         return 1;
     }
 
@@ -396,9 +397,11 @@ int main(
                     "3Dstar",
                     "3Dconcentric",
                     "5Dtree",
-                    "3Dconcentric_dense"
+                    "3Dconcentric_dense",
+                    "balls_single",
+                    "balls_coll"
                 };
-                for (int ii = 0; ii < 11; ii++)
+                for (int ii = 0; ii < 13; ii++)
                 {
                     config.patterns[config.pattern_count++] = strdup(fallback_patterns[ii]);
                 }
@@ -452,11 +455,13 @@ int main(
     char rnuc_path[1024];
     char clplot_path[1024];
     char txt2mp4_path[1024];
+    char genballs_path[1024];
 
     snprintf(mkseq_path, sizeof(mkseq_path), "%sgric-mktxtseq", bin_dir);
     snprintf(rnuc_path, sizeof(rnuc_path), "%sgric-cluster", bin_dir);
     snprintf(clplot_path, sizeof(clplot_path), "%sgric-plot", bin_dir);
     snprintf(txt2mp4_path, sizeof(txt2mp4_path), "%sgric-ascii-spot-2-video", bin_dir);
+    snprintf(genballs_path, sizeof(genballs_path), "%sgric-gen-balls", bin_dir);
 
     /* Verify that required binaries exist */
     if (access(mkseq_path, X_OK) != 0 || access(rnuc_path, X_OK) != 0)
@@ -529,112 +534,225 @@ int main(
                 break;
             }
         }
+
+        int is_balls = (strncmp(pattern, "balls", 5) == 0 ||
+                        strstr(pattern, "bouncing") != NULL);
+        const char *effective_type = (is_balls || strcmp(config.type, "fits") == 0)
+                                     ? "fits" : config.type;
+
         printf("========================================================\n");
         printf("Benchmark: Pattern=%s Type=%s Algo=%s\n",
-               pattern, config.type, is_entropy ? "gric-entropy" : "gric-greedy");
+               pattern, effective_type, is_entropy ? "gric-entropy" : "gric-greedy");
 
-        /* 1. Generate text data */
         char txt_file[512];
+        char fits_file[512];
         snprintf(txt_file, sizeof(txt_file), "%s%s.txt", read_prefix, pattern);
+        snprintf(fits_file, sizeof(fits_file), "%s%s.fits", read_prefix, pattern);
 
-        int skip_gen = 0;
-        if (config.reuse_mp4 && access(txt_file, F_OK) == 0)
+        /* 1. Generate data */
+        if (strcmp(effective_type, "fits") == 0)
         {
-            printf("Re-using existing data file: %s\n", txt_file);
-            skip_gen = 1;
+            int skip_gen = 0;
+            if (config.reuse_mp4 && access(fits_file, F_OK) == 0)
+            {
+                printf("Re-using existing data file: %s\n", fits_file);
+                skip_gen = 1;
+            }
+
+            if (!skip_gen)
+            {
+                if (access(genballs_path, X_OK) != 0)
+                {
+                    fprintf(stderr,
+                            "Error: %s not found or executable. Skipping pattern '%s'.\n",
+                            genballs_path, pattern);
+                    continue;
+                }
+
+                printf("Generating bouncing balls data for pattern: %s\n", pattern);
+                char *gen_args[16];
+                int gen_argc = 0;
+                gen_args[gen_argc++] = genballs_path;
+
+                if (strcmp(pattern, "balls_single") == 0)
+                {
+                    gen_args[gen_argc++] = "-n";
+                    gen_args[gen_argc++] = "1";
+                    gen_args[gen_argc++] = "-r";
+                    gen_args[gen_argc++] = "5.0";
+                    gen_args[gen_argc++] = "-W";
+                    gen_args[gen_argc++] = "32";
+                    gen_args[gen_argc++] = "-H";
+                    gen_args[gen_argc++] = "32";
+                    gen_args[gen_argc++] = "-f";
+                    gen_args[gen_argc++] = nbsample_str;
+                    gen_args[gen_argc++] = "-s";
+                    gen_args[gen_argc++] = "42";
+                }
+                else if (strcmp(pattern, "balls_coll") == 0 ||
+                         strcmp(pattern, "balls_3_collisions") == 0)
+                {
+                    gen_args[gen_argc++] = "-n";
+                    gen_args[gen_argc++] = "3";
+                    gen_args[gen_argc++] = "-r";
+                    gen_args[gen_argc++] = "5.0";
+                    gen_args[gen_argc++] = "-W";
+                    gen_args[gen_argc++] = "32";
+                    gen_args[gen_argc++] = "-H";
+                    gen_args[gen_argc++] = "32";
+                    gen_args[gen_argc++] = "-f";
+                    gen_args[gen_argc++] = nbsample_str;
+                    gen_args[gen_argc++] = "-s";
+                    gen_args[gen_argc++] = "42";
+                }
+                else if (strcmp(pattern, "balls_nocoll") == 0 ||
+                         strcmp(pattern, "balls_3_nocoll") == 0)
+                {
+                    gen_args[gen_argc++] = "-n";
+                    gen_args[gen_argc++] = "3";
+                    gen_args[gen_argc++] = "-r";
+                    gen_args[gen_argc++] = "5.0";
+                    gen_args[gen_argc++] = "-W";
+                    gen_args[gen_argc++] = "32";
+                    gen_args[gen_argc++] = "-H";
+                    gen_args[gen_argc++] = "32";
+                    gen_args[gen_argc++] = "-f";
+                    gen_args[gen_argc++] = nbsample_str;
+                    gen_args[gen_argc++] = "-s";
+                    gen_args[gen_argc++] = "42";
+                    gen_args[gen_argc++] = "-no-ball-collision";
+                }
+                else
+                {
+                    gen_args[gen_argc++] = "-n";
+                    gen_args[gen_argc++] = "1";
+                    gen_args[gen_argc++] = "-r";
+                    gen_args[gen_argc++] = "5.0";
+                    gen_args[gen_argc++] = "-W";
+                    gen_args[gen_argc++] = "32";
+                    gen_args[gen_argc++] = "-H";
+                    gen_args[gen_argc++] = "32";
+                    gen_args[gen_argc++] = "-f";
+                    gen_args[gen_argc++] = nbsample_str;
+                    gen_args[gen_argc++] = "-s";
+                    gen_args[gen_argc++] = "42";
+                }
+                gen_args[gen_argc++] = fits_file;
+                gen_args[gen_argc] = NULL;
+
+                int gen_status = run_command_redirect(genballs_path, gen_args, "/dev/null");
+                if (gen_status != 0)
+                {
+                    fprintf(stderr, "Error: FITS generation failed (exit code %d)\n", gen_status);
+                    continue;
+                }
+            }
+        }
+        else
+        {
+            int skip_gen = 0;
+            if (config.reuse_mp4 && access(txt_file, F_OK) == 0)
+            {
+                printf("Re-using existing data file: %s\n", txt_file);
+                skip_gen = 1;
+            }
+
+            if (!skip_gen)
+            {
+                printf("Generating data for pattern: %s\n", pattern);
+                char *gen_args[16];
+                int gen_argc = 0;
+                gen_args[gen_argc++] = mkseq_path;
+                gen_args[gen_argc++] = nbsample_str;
+                gen_args[gen_argc++] = txt_file;
+
+                if (strcmp(pattern, "2Dspiral") == 0)
+                {
+                    gen_args[gen_argc++] = "2Dspiral";
+                }
+                else if (strcmp(pattern, "2Dcircle-shuffle") == 0)
+                {
+                    gen_args[gen_argc++] = "2Dcircle";
+                    gen_args[gen_argc++] = "-shuffle";
+                }
+                else if (strcmp(pattern, "2Dspiral-shuffle") == 0)
+                {
+                    gen_args[gen_argc++] = "2Dspiral";
+                    gen_args[gen_argc++] = "-shuffle";
+                }
+                else if (strcmp(pattern, "2Drand") == 0)
+                {
+                    gen_args[gen_argc++] = "2Drand";
+                }
+                else if (strcmp(pattern, "3Drand") == 0)
+                {
+                    gen_args[gen_argc++] = "3Drand";
+                }
+                else if (strcmp(pattern, "2DcircleP10n") == 0)
+                {
+                    gen_args[gen_argc++] = "2Dcircle10";
+                    gen_args[gen_argc++] = "-noise";
+                    gen_args[gen_argc++] = "0.04";
+                }
+                else if (strcmp(pattern, "3Dspiral") == 0)
+                {
+                    gen_args[gen_argc++] = "3Dspiral";
+                }
+                else if (strcmp(pattern, "3Dstar") == 0)
+                {
+                    gen_args[gen_argc++] = "3Dstar30";
+                    gen_args[gen_argc++] = "-noise";
+                    gen_args[gen_argc++] = "0.02";
+                    gen_args[gen_argc++] = "-shuffle";
+                }
+                else if (strcmp(pattern, "3Dconcentric") == 0)
+                {
+                    gen_args[gen_argc++] = "3Dconcentric5";
+                    gen_args[gen_argc++] = "-noise";
+                    gen_args[gen_argc++] = "0.02";
+                    gen_args[gen_argc++] = "-shuffle";
+                }
+                else if (strcmp(pattern, "5Dtree") == 0)
+                {
+                    gen_args[gen_argc++] = "5Dtree";
+                    gen_args[gen_argc++] = "-noise";
+                    gen_args[gen_argc++] = "0.02";
+                    gen_args[gen_argc++] = "-shuffle";
+                }
+                else if (strcmp(pattern, "3Dconcentric_dense") == 0)
+                {
+                    gen_args[gen_argc++] = "3Dconcentric_dense10";
+                    gen_args[gen_argc++] = "-noise";
+                    gen_args[gen_argc++] = "0.05";
+                    gen_args[gen_argc++] = "-shuffle";
+                }
+                else
+                {
+                    fprintf(stderr, "Error: Unknown pattern '%s'\n", pattern);
+                    continue;
+                }
+                gen_args[gen_argc] = NULL;
+
+                int gen_status = run_command_redirect(mkseq_path, gen_args, "/dev/null");
+                if (gen_status != 0)
+                {
+                    fprintf(stderr, "Error: Data generation failed (exit code %d)\n", gen_status);
+                    continue;
+                }
+            }
         }
 
-        if (!skip_gen)
-        {
-            printf("Generating data for pattern: %s\n", pattern);
-            char *gen_args[16];
-            int gen_argc = 0;
-            gen_args[gen_argc++] = mkseq_path;
-            gen_args[gen_argc++] = nbsample_str;
-            gen_args[gen_argc++] = txt_file;
-
-            if (strcmp(pattern, "2Dspiral") == 0)
-            {
-                gen_args[gen_argc++] = "2Dspiral";
-            }
-            else if (strcmp(pattern, "2Dcircle-shuffle") == 0)
-            {
-                gen_args[gen_argc++] = "2Dcircle";
-                gen_args[gen_argc++] = "-shuffle";
-            }
-            else if (strcmp(pattern, "2Dspiral-shuffle") == 0)
-            {
-                gen_args[gen_argc++] = "2Dspiral";
-                gen_args[gen_argc++] = "-shuffle";
-            }
-            else if (strcmp(pattern, "2Drand") == 0)
-            {
-                gen_args[gen_argc++] = "2Drand";
-            }
-            else if (strcmp(pattern, "3Drand") == 0)
-            {
-                gen_args[gen_argc++] = "3Drand";
-            }
-            else if (strcmp(pattern, "2DcircleP10n") == 0)
-            {
-                gen_args[gen_argc++] = "2Dcircle10";
-                gen_args[gen_argc++] = "-noise";
-                gen_args[gen_argc++] = "0.04";
-            }
-            else if (strcmp(pattern, "3Dspiral") == 0)
-            {
-                gen_args[gen_argc++] = "3Dspiral";
-            }
-            else if (strcmp(pattern, "3Dstar") == 0)
-            {
-                gen_args[gen_argc++] = "3Dstar30";
-                gen_args[gen_argc++] = "-noise";
-                gen_args[gen_argc++] = "0.02";
-                gen_args[gen_argc++] = "-shuffle";
-            }
-            else if (strcmp(pattern, "3Dconcentric") == 0)
-            {
-                gen_args[gen_argc++] = "3Dconcentric5";
-                gen_args[gen_argc++] = "-noise";
-                gen_args[gen_argc++] = "0.02";
-                gen_args[gen_argc++] = "-shuffle";
-            }
-            else if (strcmp(pattern, "5Dtree") == 0)
-            {
-                gen_args[gen_argc++] = "5Dtree";
-                gen_args[gen_argc++] = "-noise";
-                gen_args[gen_argc++] = "0.02";
-                gen_args[gen_argc++] = "-shuffle";
-            }
-            else if (strcmp(pattern, "3Dconcentric_dense") == 0)
-            {
-                gen_args[gen_argc++] = "3Dconcentric_dense10";
-                gen_args[gen_argc++] = "-noise";
-                gen_args[gen_argc++] = "0.05";
-                gen_args[gen_argc++] = "-shuffle";
-            }
-            else
-            {
-                fprintf(stderr, "Error: Unknown pattern '%s'\n", pattern);
-                continue;
-            }
-            gen_args[gen_argc] = NULL;
-
-            int gen_status = run_command_redirect(mkseq_path, gen_args, "/dev/null");
-            if (gen_status != 0)
-            {
-                fprintf(stderr, "Error: Data generation failed (exit code %d)\n", gen_status);
-                continue;
-            }
-        }
-
-        /* 2. Prepare Input File (TXT or MP4 conversion) */
+        /* 2. Prepare Input File (TXT, FITS, or MP4 conversion) */
         char input_file[512];
-        if (strcmp(config.type, "txt") == 0)
+        if (strcmp(effective_type, "fits") == 0)
+        {
+            strcpy(input_file, fits_file);
+        }
+        else if (strcmp(effective_type, "txt") == 0)
         {
             strcpy(input_file, txt_file);
         }
-        else if (strcmp(config.type, "mp4") == 0)
+        else if (strcmp(effective_type, "mp4") == 0)
         {
             snprintf(input_file, sizeof(input_file), "%s%s.mp4", read_prefix, pattern);
             int skip_vid = 0;
@@ -666,19 +784,31 @@ int main(
                 }
             }
         }
-        else if (strcmp(config.type, "stream") == 0)
+        else if (strcmp(effective_type, "stream") == 0)
         {
             strcpy(input_file, pattern);
         }
 
         /* 3. Determine Radius Limit */
         char cur_rlim[32];
-        if (strcmp(config.type, "mp4") == 0 || strcmp(config.type, "stream") == 0)
+        if (strcmp(effective_type, "mp4") == 0 || strcmp(effective_type, "stream") == 0)
         {
             if (!config.rlim_set)
             {
                 /* Default rlim for video/stream is 1000.0 */
                 strcpy(cur_rlim, "1000.0");
+            }
+            else
+            {
+                strcpy(cur_rlim, config.rlim);
+            }
+        }
+        else if (strcmp(effective_type, "fits") == 0 || is_balls)
+        {
+            if (!config.rlim_set)
+            {
+                /* Default rlim for 32x32 bouncing balls is 3.0 */
+                strcpy(cur_rlim, "3.0");
             }
             else
             {
@@ -711,7 +841,7 @@ int main(
         char log_file[512];
         snprintf(log_file, sizeof(log_file),
                  "%sbenchmark_out/%s_%s_gric.log",
-                 write_prefix, pattern, config.type);
+                 write_prefix, pattern, effective_type);
 
         char out_dir[512];
         snprintf(out_dir, sizeof(out_dir), "%s%s.cluster.out", write_prefix, pattern);
@@ -744,7 +874,7 @@ int main(
             split_args(config.extra_options[jj], cluster_args, &cluster_argc, 256 - 3);
         }
 
-        if (strcmp(config.type, "stream") == 0)
+        if (strcmp(effective_type, "stream") == 0)
         {
             cluster_args[cluster_argc++] = "-stream";
         }
@@ -771,7 +901,7 @@ int main(
         }
 
         /* 5. Optional: Plot result for txt inputs */
-        if (strcmp(config.type, "txt") == 0 && access(clplot_path, X_OK) == 0)
+        if (strcmp(effective_type, "txt") == 0 && access(clplot_path, X_OK) == 0)
         {
             char cluster_log[1024];
             snprintf(cluster_log, sizeof(cluster_log), "%s/cluster_run.log", out_dir);
@@ -827,7 +957,7 @@ int main(
             }
             fprintf(sum_fp,
                     "| %s | %s | %s | %s | %s | %s | %s |\n",
-                    pattern, config.type,
+                    pattern, effective_type,
                     is_entropy ? "gric-entropy" : "gric-greedy",
                     m_time, dist_str, m_clusters, m_mem);
             fclose(sum_fp);

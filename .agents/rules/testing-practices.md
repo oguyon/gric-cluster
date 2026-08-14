@@ -14,7 +14,7 @@ After making changes to source or CMake configuration:
    ```
 2. Verify by running the clustering on test coordinate datasets:
    ```bash
-   ./gric-cluster 0.5 ../test_strat.txt
+   ./gric-cluster 0.5 ../tests/test_strat.txt
    ```
 3. Run test data generators to verify formatting is correct:
    ```bash
