@@ -93,7 +93,7 @@ void print_help(
     printf("  %s-mp4r%s                 Re-use mp4/txt files if they already exist\n",
            ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
     printf("  %s-maxcl%s %s<N>%s            Set max number of clusters "
-           "(%sDefault:%s%s 1000%s)\n",
+           "(%sDefault:%s%s 2500%s)\n",
            ANSI_COLOR_GREEN, ANSI_COLOR_RESET, ANSI_COLOR_MAGENTA, ANSI_COLOR_RESET,
            ANSI_COLOR_CYAN, ANSI_COLOR_RESET, ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("  %s-maxim%s %s<N>%s            Set max number of frames to process "
@@ -112,6 +112,13 @@ void print_help(
            ANSI_BOLD_GREEN, progname, ANSI_COLOR_RESET);
     printf("  %s$%s %s%s%s -f custom_tests.txt -o \"-gprob\"\n",
            ANSI_COLOR_GREY, ANSI_COLOR_RESET, ANSI_BOLD_GREEN, progname, ANSI_COLOR_RESET);
+
+    printf("\n%sDOCUMENTATION & PLOT GENERATION%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+    printf("  To recreate all benchmark figures and MkDocs documentation pages:\n");
+    printf("    %s$ make benchmark-docs%s          (from build/ directory)\n",
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
+    printf("    %s$ python3 tools/gen_benchmark_docs.py%s  (from repository root)\n",
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
 
     printf("\n%sCOLOR MODE%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  ANSI colors are enabled by default.\n");
