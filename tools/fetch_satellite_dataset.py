@@ -7,14 +7,14 @@ Downloads real satellite Earth observation image time series from:
 3. Synthetic planetary Earth simulation (offline / test mode)
 
 Usage:
-  # 1-year daily global true color maps
+  # 1-year daily global true color maps (native cadence = 1d)
   python3 tools/fetch_satellite_dataset.py --source worldview \
       --start 2023-01-01 --end 2023-12-31 --size 128 --output earth_2023.fits
 
-  # 1-month hourly geostationary satellite imagery
+  # Geostationary satellite imagery (native cadence = 10m)
   python3 tools/fetch_satellite_dataset.py --source worldview \
-      --layer GOES-East_ABI_GeoColor --cadence 1h --bbox -80,-140,80,-20 \
-      --start 2023-06-01 --end 2023-06-30 --size 128 --output goes_hourly.fits
+      --layer GOES-East_ABI_GeoColor \
+      --start 2023-06-01 --end 2023-06-07 --size 128 --output goes_east.fits
 """
 
 import argparse
@@ -86,8 +86,9 @@ def parse_args():
         help="End date/time (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ)"
     )
     parser.add_argument(
-        "--cadence", type=str, default="1d",
-        help="Temporal sampling step (e.g. '1d' = 1 day, '1h' = 1 hour, '10m' = 10 minutes)"
+        "--cadence", type=str, default="auto",
+        help="Temporal sampling step (default 'auto' uses the dataset's native cadence: "
+             "'1d' for MODIS/VIIRS global mosaics, '10m' for GOES/Himawari geostationary disks)"
     )
     parser.add_argument(
         "--layer", type=str, default="MODIS_Terra_CorrectedReflectance_TrueColor",
@@ -97,8 +98,8 @@ def parse_args():
              "MODIS_Terra_CorrectedReflectance_Bands721, GOES-East_ABI_GeoColor)"
     )
     parser.add_argument(
-        "--bbox", type=str, default="-90,-180,90,180",
-        help="Geographic bounding box in minLat,minLon,maxLat,maxLon coordinates"
+        "--bbox", type=str, default="auto",
+        help="Geographic bounding box (minLat,minLon,maxLat,maxLon or 'auto')"
     )
     parser.add_argument(
         "--size", type=str, default="128",
@@ -133,6 +134,46 @@ def parse_args():
         help="Inspect date list and frame counts without downloading"
     )
     return parser.parse_args()
+
+
+def resolve_native_cadence_and_bbox(source, layer, cadence, bbox):
+    """Resolve native cadence and geographic bounding box based on satellite layer."""
+    resolved_cadence = cadence
+    resolved_bbox = bbox
+
+    if source == "worldview":
+        layer_upper = layer.upper()
+        # Geostationary layers (GOES, Himawari, Meteosat)
+        if any(kw in layer_upper for kw in ("GOES", "ABI", "AHI", "HIMAWARI", "METEOSAT")):
+            if cadence.lower() == "auto":
+                resolved_cadence = "10m"
+            if bbox.lower() == "auto":
+                if "EAST" in layer_upper:
+                    resolved_bbox = "-80,-140,80,-20"
+                elif "WEST" in layer_upper:
+                    resolved_bbox = "-80,-180,80,-60"
+                elif "HIMAWARI" in layer_upper:
+                    resolved_bbox = "-80,60,80,180"
+                else:
+                    resolved_bbox = "-80,-180,80,180"
+        else:
+            # Low Earth Orbit daily global mosaics (MODIS, VIIRS, etc.)
+            if cadence.lower() == "auto":
+                resolved_cadence = "1d"
+            if bbox.lower() == "auto":
+                resolved_bbox = "-90,-180,90,180"
+    elif source == "epic":
+        if cadence.lower() == "auto":
+            resolved_cadence = "1h"
+        if bbox.lower() == "auto":
+            resolved_bbox = "-90,-180,90,180"
+    elif source == "synthetic":
+        if cadence.lower() == "auto":
+            resolved_cadence = "1h"
+        if bbox.lower() == "auto":
+            resolved_bbox = "-90,-180,90,180"
+
+    return resolved_cadence, resolved_bbox
 
 
 def parse_size(size_str):
@@ -320,17 +361,20 @@ def generate_synthetic_earth_cube(n_frames, size, start_date="2023-01-01"):
 def main():
     args = parse_args()
     w, h = parse_size(args.size)
-    dt_delta, is_subdaily = parse_cadence(args.cadence)
+    cadence_str, bbox_str = resolve_native_cadence_and_bbox(
+        args.source, args.layer, args.cadence, args.bbox
+    )
+    dt_delta, is_subdaily = parse_cadence(cadence_str)
 
     print("==================================================")
     print(" GRIC Satellite Earth Observation Dataset Builder")
     print("==================================================")
     print(f"Source Mode:   {args.source.upper()}")
     print(f"Time Window:   {args.start} to {args.end}")
-    print(f"Cadence:       {args.cadence} ({dt_delta})")
+    print(f"Cadence:       {cadence_str} ({dt_delta})")
     if args.source == "worldview":
         print(f"Layer Name:    {args.layer}")
-        print(f"Bounding Box:  {args.bbox}")
+        print(f"Bounding Box:  {bbox_str}")
     print(f"Image Size:    {w} x {h} pixels (grayscale normalized [0, 1])")
     print(f"Max Frames:    {args.max_frames:,} (step: {args.step})")
     print(f"Target Output: {args.output}")
@@ -377,7 +421,7 @@ def main():
             with ThreadPoolExecutor(max_workers=args.workers) as executor:
                 future_to_idx = {
                     executor.submit(download_worldview_frame, t_str, (w, h),
-                                    args.layer, args.bbox, args.timeout): i
+                                    args.layer, bbox_str, args.timeout): i
                     for i, t_str in enumerate(selected_times)
                 }
                 last_report = time.time()

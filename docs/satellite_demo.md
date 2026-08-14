@@ -40,8 +40,8 @@ ready for clustering.
 | `--layer` | `MODIS_Terra...` | Imagery layer name in NASA Worldview / GIBS |
 | `--start` | `2023-01-01` | Start timestamp (`YYYY-MM-DD` or ISO-8601) |
 | `--end` | `2023-12-31` | End timestamp (`YYYY-MM-DD` or ISO-8601) |
-| `--cadence` | `1d` | Step size (`1d` = 1 day, `1h` = 1 hr, `10m` = 10 min) |
-| `--bbox` | `-90,-180,90,180` | Bounding box (`minLat,minLon,maxLat,maxLon`) |
+| `--cadence` | `auto` | Step size (`auto` = native dataset cadence, or `1d`, `1h`, `10m`) |
+| `--bbox` | `auto` | Bounding box (`auto` = native framing, or `minLat,minLon,maxLat,maxLon`) |
 | `--size` | `128` | Target image size in pixels ($W \times H$) |
 | `--max-frames` | `10000` | Maximum number of frames to download/generate |
 | `--output`, `-o` | `earth_128x128.fits` | Output 3D FITS cube filepath |
