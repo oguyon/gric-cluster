@@ -243,3 +243,35 @@ if (OpenMP_C_FOUND)
     target_compile_definitions(gric-info PRIVATE USE_OPENMP)
     target_compile_definitions(gric-info PRIVATE OPENMP_VERSION_STR=\"${OpenMP_C_VERSION}\")
 endif()
+
+# ==============================================================================
+# Testing & CTest Integration
+# ==============================================================================
+enable_testing()
+
+add_test(NAME test_coordinate_clustering
+    COMMAND gric-cluster 0.5 "${CMAKE_SOURCE_DIR}/tests/test_strat.txt" -maxim 1000 -outdir /tmp/ctest_strat_out)
+
+add_test(NAME test_sequence_generator
+    COMMAND gric-mktxtseq 1000 /tmp/ctest_spiral.txt 2Dspiral)
+
+add_test(NAME test_spiral_clustering
+    COMMAND gric-cluster 0.1 /tmp/ctest_spiral.txt -maxim 1000 -outdir /tmp/ctest_spiral_out)
+
+if (CFITSIO_FOUND)
+    add_test(NAME test_bouncing_balls_single_gen
+        COMMAND gric-gen-balls -n 1 -r 5.0 -W 32 -H 32 -f 500 -s 42 /tmp/ctest_balls_1.fits)
+    add_test(NAME test_bouncing_balls_single_cluster
+        COMMAND gric-cluster 3.0 /tmp/ctest_balls_1.fits -outdir /tmp/ctest_balls_1_out)
+    set_tests_properties(test_bouncing_balls_single_cluster PROPERTIES DEPENDS test_bouncing_balls_single_gen)
+
+    add_test(NAME test_bouncing_balls_coll_gen
+        COMMAND gric-gen-balls -n 3 -r 5.0 -W 32 -H 32 -f 500 -s 42 /tmp/ctest_balls_3.fits)
+    add_test(NAME test_bouncing_balls_coll_cluster
+        COMMAND gric-cluster 3.0 /tmp/ctest_balls_3.fits -outdir /tmp/ctest_balls_3_out)
+    set_tests_properties(test_bouncing_balls_coll_cluster PROPERTIES DEPENDS test_bouncing_balls_coll_gen)
+endif()
+
+add_test(NAME test_benchmark_smoke
+    COMMAND gric-benchmark -p 2Dspiral -n 500)
+

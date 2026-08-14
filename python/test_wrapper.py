@@ -1,4 +1,8 @@
+import os
+import sys
 import unittest
+
+sys.path.insert(0, os.path.dirname(__file__))
 from image_cluster import ImageCluster
 
 class TestImageCluster(unittest.TestCase):
@@ -9,11 +13,15 @@ class TestImageCluster(unittest.TestCase):
             [10.0, 10.0], [10.1, 10.0], [10.0, 10.1] # Cluster 1
         ]
 
-        # rlim 0.5 should separate them
-        ic = ImageCluster(rlim=0.5, binary_path="../build/gric-cluster", maxcl=5)
-        res = ic.run_sequence(data)
+        # Locate binary
+        bin_dir = os.path.join(os.path.dirname(__file__), '..', 'build')
+        bin_path = os.path.join(bin_dir, 'gric-cluster')
+        if not os.path.exists(bin_path):
+            bin_path = 'gric-cluster'
 
-        print("Stdout:", res.get('stdout'))
+        # rlim 0.5 should separate them
+        ic = ImageCluster(rlim=0.5, binary_path=bin_path, maxcl=5)
+        res = ic.run_sequence(data)
 
         self.assertEqual(res['total_clusters'], 2)
         self.assertEqual(len(res['assignments']), 6)
@@ -28,3 +36,4 @@ class TestImageCluster(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
