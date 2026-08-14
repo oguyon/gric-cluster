@@ -23,13 +23,33 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# ANSI Color Codes
+COLOR_RED = "\033[91m"
+COLOR_GREEN = "\033[92m"
+COLOR_YELLOW = "\033[93m"
+COLOR_CYAN = "\033[96m"
+COLOR_BOLD = "\033[1m"
+COLOR_RESET = "\033[0m"
+
+
+def print_error(msg):
+    """Print an error message formatted in bright red."""
+    print(f"{COLOR_RED}{msg}{COLOR_RESET}", file=sys.stderr)
+
+
+def print_warning(msg):
+    """Print a warning message formatted in yellow."""
+    print(f"{COLOR_YELLOW}{msg}{COLOR_RESET}", file=sys.stderr)
+
+
 try:
     import numpy as np
     from PIL import Image
     from astropy.io import fits
 except ImportError as e:
-    sys.exit(f"Error: Missing required Python packages ({e}). "
-             f"Please run: pip install numpy pillow astropy")
+    print_error(f"Error: Missing required Python packages ({e}). "
+                f"Please run: pip install numpy pillow astropy")
+    sys.exit(1)
 
 EPIC_API_DATES_URL = "https://epic.gsfc.nasa.gov/api/natural/all"
 EPIC_API_DATE_URL = "https://epic.gsfc.nasa.gov/api/natural/date/{date_str}"
@@ -78,6 +98,10 @@ def parse_args():
         help="Image quality format from EPIC archive ('jpg', 'png', or 'thumbs')"
     )
     parser.add_argument(
+        "--timeout", type=int, default=15,
+        help="HTTP request timeout in seconds"
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Inspect date list and frame counts without downloading"
     )
@@ -120,9 +144,9 @@ def fetch_url_json(url, timeout=15, max_retries=3):
             time.sleep(0.3 * (attempt + 1))
 
 
-def fetch_epic_catalog(start_date, end_date):
+def fetch_epic_catalog(start_date, end_date, timeout=15):
     print("Querying NASA EPIC date catalog...")
-    all_dates_meta = fetch_url_json(EPIC_API_DATES_URL)
+    all_dates_meta = fetch_url_json(EPIC_API_DATES_URL, timeout=timeout)
     all_dates = {item["date"] for item in all_dates_meta}
 
     cur_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -139,17 +163,17 @@ def fetch_epic_catalog(start_date, end_date):
     return target_dates
 
 
-def fetch_day_metadata(date_str):
+def fetch_day_metadata(date_str, timeout=15):
     url = EPIC_API_DATE_URL.format(date_str=date_str)
     try:
-        items = fetch_url_json(url, timeout=15, max_retries=3)
+        items = fetch_url_json(url, timeout=timeout, max_retries=3)
         return date_str, items
     except Exception as e:
-        print(f"Warning: Failed to fetch metadata for {date_str}: {e}", file=sys.stderr)
+        print_error(f"Error: Failed to fetch metadata for {date_str}: {e}")
         return date_str, []
 
 
-def download_epic_frame(item, target_size, img_format):
+def download_epic_frame(item, target_size, img_format, timeout=20):
     img_id = item["image"]
     date_str = item["date"].split()[0]
     date_path = date_str.replace("-", "/")
@@ -169,15 +193,17 @@ def download_epic_frame(item, target_size, img_format):
     req = urllib.request.Request(img_url, headers={'User-Agent': 'Mozilla/5.0 (gric-cluster)'})
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = resp.read()
                 img = Image.open(io.BytesIO(data)).convert('L')
                 img_resized = img.resize(target_size, Image.Resampling.BILINEAR)
                 arr = np.array(img_resized, dtype=np.float32) / 255.0
-                return arr, item["date"]
-        except Exception:
+                return arr, item["date"], None
+        except Exception as e:
+            if attempt == 2:
+                return None, item.get("date", ""), str(e)
             time.sleep(0.5 * (attempt + 1))
-    return None, item.get("date", "")
+    return None, item.get("date", ""), "Unknown error"
 
 
 def generate_synthetic_earth_cube(n_frames, size, start_date="2023-01-01"):
@@ -255,10 +281,13 @@ def main():
 
     if args.source == "epic":
         try:
-            dates = fetch_epic_catalog(args.start, args.end)
+            dates = fetch_epic_catalog(args.start, args.end, timeout=args.timeout)
         except Exception as e:
-            print(f"\nWarning: Could not connect to NASA EPIC API ({e}).")
-            print("Falling back to high-fidelity synthetic planetary Earth simulation...")
+            print_error(f"\nWarning: Could not connect to NASA EPIC API ({e}).")
+            print(f"{COLOR_YELLOW}Network note: Direct outbound connection to NASA was blocked "
+                  f"or unreachable.{COLOR_RESET}")
+            print(f"{COLOR_CYAN}Falling back to high-fidelity synthetic planetary Earth "
+                  f"simulation...{COLOR_RESET}")
             args.source = "synthetic"
             dates = []
 
@@ -266,7 +295,7 @@ def main():
         print(f"\nQuerying metadata for {len(dates)} dates in parallel...")
         all_images = []
         with ThreadPoolExecutor(max_workers=min(16, args.workers)) as executor:
-            futures = [executor.submit(fetch_day_metadata, d) for d in dates]
+            futures = [executor.submit(fetch_day_metadata, d, args.timeout) for d in dates]
             for f in as_completed(futures):
                 d_str, items = f.result()
                 all_images.extend(items)
@@ -297,16 +326,19 @@ def main():
 
             with ThreadPoolExecutor(max_workers=args.workers) as executor:
                 future_to_idx = {
-                    executor.submit(download_epic_frame, itm, (w, h), args.format): i
+                    executor.submit(download_epic_frame, itm, (w, h), args.format,
+                                    args.timeout): i
                     for i, itm in enumerate(selected_images)
                 }
                 last_report = time.time()
                 for future in as_completed(future_to_idx):
                     idx = future_to_idx[future]
-                    arr, ts = future.result()
+                    arr, ts, err = future.result()
                     if arr is not None:
                         cube[idx] = arr
                         downloaded_count += 1
+                    else:
+                        print_error(f"\nWarning: Frame {idx} failed to download: {err}")
 
                     now = time.time()
                     if now - last_report > 1.0 or downloaded_count == n_frames:
@@ -362,7 +394,7 @@ def main():
     if args.run_demo:
         gric_exe = Path(__file__).resolve().parent.parent / "build" / "gric-cluster"
         if not gric_exe.exists():
-            print(f"Warning: Executable not found at {gric_exe}. Skipping demo run.")
+            print_warning(f"Warning: Executable not found at {gric_exe}. Skipping demo run.")
             return
 
         cmd = [
