@@ -1,7 +1,7 @@
 # Uniform 3D Random Distribution
 
 **Category**: 3D Manifolds  
-**Data Type**: `txt` (2,000 frames)  
+**Data Type**: `txt` (20,000 frames)  
 **Clustering Parameter**: `rlim = 0.20`
 
 ---
@@ -28,7 +28,7 @@ distance call distribution, and cluster size histogram:
 ### 1. Data Generation
 ```bash
 gric-mktxtseq \
-    2000 \
+    20000 \
     3Drand.txt \
     3Drand
 ```
@@ -40,7 +40,7 @@ gric-cluster \
     -maxcl \
     2500 \
     -maxim \
-    2000 \
+    20000 \
     -outdir \
     out_3Drand \
     -clustered \
@@ -58,14 +58,14 @@ gric-plot 3Drand.txt \
 
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
-| **Total Frames** | `2,000` | Number of sequential frames processed |
-| **Execution Time** | `284.723 ms` | Total wall-clock runtime |
-| **Throughput** | `7,024 fps` | Frames processed per second |
-| **Active Clusters / States** | `281` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `49,149` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `9,809` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**4.90**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**24.57**` | Total distance ops per frame |
+| **Total Frames** | `20,000` | Number of sequential frames processed |
+| **Execution Time** | `3482.977 ms` | Total wall-clock runtime |
+| **Throughput** | `5,742 fps` | Frames processed per second |
+| **Active Clusters / States** | `374` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `171,575` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `101,824` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**5.09**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**8.58**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

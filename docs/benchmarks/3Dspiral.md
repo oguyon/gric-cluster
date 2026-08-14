@@ -1,7 +1,7 @@
 # Continuous Point on 3D Helical Spiral
 
 **Category**: 3D Manifolds  
-**Data Type**: `txt` (2,000 frames)  
+**Data Type**: `txt` (20,000 frames)  
 **Clustering Parameter**: `rlim = 0.02`
 
 ---
@@ -28,7 +28,7 @@ distance call distribution, and cluster size histogram:
 ### 1. Data Generation
 ```bash
 gric-mktxtseq \
-    2000 \
+    20000 \
     3Dspiral.txt \
     3Dspiral
 ```
@@ -40,7 +40,7 @@ gric-cluster \
     -maxcl \
     2500 \
     -maxim \
-    2000 \
+    20000 \
     -outdir \
     out_3Dspiral \
     -clustered \
@@ -58,14 +58,14 @@ gric-plot 3Dspiral.txt \
 
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
-| **Total Frames** | `2,000` | Number of sequential frames processed |
-| **Execution Time** | `70.943 ms` | Total wall-clock runtime |
-| **Throughput** | `28,191 fps` | Frames processed per second |
-| **Active Clusters / States** | `111` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `8,214` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `2,109` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**1.05**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**4.11**` | Total distance ops per frame |
+| **Total Frames** | `20,000` | Number of sequential frames processed |
+| **Execution Time** | `138.024 ms` | Total wall-clock runtime |
+| **Throughput** | `144,902 fps` | Frames processed per second |
+| **Active Clusters / States** | `114` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `26,556` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `20,115` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**1.01**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**1.33**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

@@ -1,7 +1,7 @@
 # Uniform 2D Random Distribution
 
 **Category**: 2D Trajectories  
-**Data Type**: `txt` (2,000 frames)  
+**Data Type**: `txt` (20,000 frames)  
 **Clustering Parameter**: `rlim = 0.10`
 
 ---
@@ -28,7 +28,7 @@ distance call distribution, and cluster size histogram:
 ### 1. Data Generation
 ```bash
 gric-mktxtseq \
-    2000 \
+    20000 \
     2Drand.txt \
     2Drand
 ```
@@ -40,7 +40,7 @@ gric-cluster \
     -maxcl \
     2500 \
     -maxim \
-    2000 \
+    20000 \
     -outdir \
     out_2Drand \
     -clustered \
@@ -58,14 +58,14 @@ gric-plot 2Drand.txt \
 
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
-| **Total Frames** | `2,000` | Number of sequential frames processed |
-| **Execution Time** | `111.140 ms` | Total wall-clock runtime |
-| **Throughput** | `17,995 fps` | Frames processed per second |
-| **Active Clusters / States** | `188` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `24,406` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `6,828` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**3.41**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**12.20**` | Total distance ops per frame |
+| **Total Frames** | `20,000` | Number of sequential frames processed |
+| **Execution Time** | `418.238 ms` | Total wall-clock runtime |
+| **Throughput** | `47,819 fps` | Frames processed per second |
+| **Active Clusters / States** | `221` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `94,126` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `69,816` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**3.49**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**4.71**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

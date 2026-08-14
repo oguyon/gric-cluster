@@ -1,7 +1,7 @@
 # Shuffled Points on 2D Circle
 
 **Category**: 2D Trajectories  
-**Data Type**: `txt` (2,000 frames)  
+**Data Type**: `txt` (20,000 frames)  
 **Clustering Parameter**: `rlim = 0.10`
 
 ---
@@ -29,7 +29,7 @@ distance call distribution, and cluster size histogram:
 ### 1. Data Generation
 ```bash
 gric-mktxtseq \
-    2000 \
+    20000 \
     2Dcircle-shuffle.txt \
     2Dcircle \
     -shuffle
@@ -42,7 +42,7 @@ gric-cluster \
     -maxcl \
     2500 \
     -maxim \
-    2000 \
+    20000 \
     -outdir \
     out_2Dcircle-shuffle \
     -clustered \
@@ -60,14 +60,14 @@ gric-plot 2Dcircle-shuffle.txt \
 
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
-| **Total Frames** | `2,000` | Number of sequential frames processed |
-| **Execution Time** | `64.024 ms` | Total wall-clock runtime |
-| **Throughput** | `31,238 fps` | Frames processed per second |
-| **Active Clusters / States** | `47` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `6,546` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `5,465` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**2.73**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**3.27**` | Total distance ops per frame |
+| **Total Frames** | `20,000` | Number of sequential frames processed |
+| **Execution Time** | `161.286 ms` | Total wall-clock runtime |
+| **Throughput** | `124,003 fps` | Frames processed per second |
+| **Active Clusters / States** | `46` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `55,403` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `54,368` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**2.72**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**2.77**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

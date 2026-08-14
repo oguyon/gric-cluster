@@ -1,7 +1,7 @@
 # Slow Moving Point on 2D Spiral
 
 **Category**: 2D Trajectories  
-**Data Type**: `txt` (2,000 frames)  
+**Data Type**: `txt` (20,000 frames)  
 **Clustering Parameter**: `rlim = 0.10`
 
 ---
@@ -29,7 +29,7 @@ distance call distribution, and cluster size histogram:
 ### 1. Data Generation
 ```bash
 gric-mktxtseq \
-    2000 \
+    20000 \
     2Dspiral.txt \
     2Dspiral
 ```
@@ -41,7 +41,7 @@ gric-cluster \
     -maxcl \
     2500 \
     -maxim \
-    2000 \
+    20000 \
     -outdir \
     out_2Dspiral \
     -clustered \
@@ -59,14 +59,14 @@ gric-plot 2Dspiral.txt \
 
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
-| **Total Frames** | `2,000` | Number of sequential frames processed |
-| **Execution Time** | `57.973 ms` | Total wall-clock runtime |
-| **Throughput** | `34,499 fps` | Frames processed per second |
-| **Active Clusters / States** | `63` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `4,023` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `2,070` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**1.03**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**2.01**` | Total distance ops per frame |
+| **Total Frames** | `20,000` | Number of sequential frames processed |
+| **Execution Time** | `104.439 ms` | Total wall-clock runtime |
+| **Throughput** | `191,500 fps` | Frames processed per second |
+| **Active Clusters / States** | `64` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `22,118` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `20,102` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**1.01**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**1.11**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

@@ -1,7 +1,7 @@
 # Single Bouncing Ball (2x2 Tiled FITS Image)
 
 **Category**: Physics & Multi-Tile Images  
-**Data Type**: `fits` (2,000 frames)  
+**Data Type**: `fits` (20,000 frames)  
 **Clustering Parameter**: `rlim = 1.5 (per tile)`
 
 ---
@@ -25,7 +25,7 @@ gric-gen-balls \
     -H \
     32 \
     -f \
-    2000 \
+    20000 \
     -s \
     42 \
     balls_single.fits
@@ -38,7 +38,7 @@ gric-cluster \
     -maxcl \
     2500 \
     -maxim \
-    2000 \
+    20000 \
     -outdir \
     out_balls_single \
     -clustered \
@@ -53,22 +53,22 @@ gric-cluster \
 
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
-| **Total Frames** | `2,000` | Number of sequential frames processed |
-| **Execution Time** | `105.202 ms` | Total wall-clock runtime |
-| **Throughput** | `19,011 fps` | Frames processed per second |
-| **Active Clusters / States** | `692` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `58,316` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `6,039` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**3.02**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**29.16**` | Total distance ops per frame |
+| **Total Frames** | `20,000` | Number of sequential frames processed |
+| **Execution Time** | `482.788 ms` | Total wall-clock runtime |
+| **Throughput** | `41,426 fps` | Frames processed per second |
+| **Active Clusters / States** | `695` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `273,422` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `57,640` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**2.88**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**13.67**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---
 
 ## Algorithmic Insights
 
-Spatial decomposition into 4 parallel 16x16 quadrants processes 2,000 frames in **~74 ms**
-(>27,000 fps) on CPU with high spatial accuracy.
+Spatial decomposition into 4 parallel 16x16 quadrants processes 20,000 frames in **~700 ms**
+(>28,000 fps) on CPU with high spatial accuracy.
 
 ---
 

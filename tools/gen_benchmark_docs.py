@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 tools/gen_benchmark_docs.py
-Automates running the benchmark suite, invoking gric-plot for visuals,
-and generating rich MkDocs documentation pages for each benchmark test.
+Automates running the benchmark suite with 20,000 frames, invoking gric-plot for
+visuals, and generating rich MkDocs documentation pages for each benchmark test.
 """
 
 import os
@@ -19,6 +19,8 @@ BUILD_DIR = ROOT_DIR / "build"
 DOCS_BENCH_DIR = ROOT_DIR / "docs" / "benchmarks"
 IMAGES_DIR = DOCS_BENCH_DIR / "images"
 SCRATCH_DIR = ROOT_DIR / "benchmarks-scratch"
+NUM_FRAMES = 20000
+NUM_FRAMES_STR = "20000"
 
 BENCHMARK_CONFIGS = [
     {
@@ -27,11 +29,11 @@ BENCHMARK_CONFIGS = [
         "category": "2D Trajectories",
         "type": "txt",
         "gen_cmd": [
-            str(BUILD_DIR / "gric-mktxtseq"), "2000", "2Dspiral.txt", "2Dspiral"
+            str(BUILD_DIR / "gric-mktxtseq"), NUM_FRAMES_STR, "2Dspiral.txt", "2Dspiral"
         ],
         "cluster_cmd": [
             str(BUILD_DIR / "gric-cluster"), "0.10", "-maxcl", "2500",
-            "-maxim", "2000", "-outdir", "out_2Dspiral", "-clustered",
+            "-maxim", NUM_FRAMES_STR, "-outdir", "out_2Dspiral", "-clustered",
             "2Dspiral.txt"
         ],
         "input_file": "2Dspiral.txt",
@@ -54,12 +56,12 @@ BENCHMARK_CONFIGS = [
         "category": "2D Trajectories",
         "type": "txt",
         "gen_cmd": [
-            str(BUILD_DIR / "gric-mktxtseq"), "2000", "2Dcircle-shuffle.txt",
+            str(BUILD_DIR / "gric-mktxtseq"), NUM_FRAMES_STR, "2Dcircle-shuffle.txt",
             "2Dcircle", "-shuffle"
         ],
         "cluster_cmd": [
             str(BUILD_DIR / "gric-cluster"), "0.10", "-maxcl", "2500",
-            "-maxim", "2000", "-outdir", "out_2Dcircle-shuffle", "-clustered",
+            "-maxim", NUM_FRAMES_STR, "-outdir", "out_2Dcircle-shuffle", "-clustered",
             "2Dcircle-shuffle.txt"
         ],
         "input_file": "2Dcircle-shuffle.txt",
@@ -83,12 +85,12 @@ BENCHMARK_CONFIGS = [
         "category": "2D Trajectories",
         "type": "txt",
         "gen_cmd": [
-            str(BUILD_DIR / "gric-mktxtseq"), "2000", "2Dspiral-shuffle.txt",
+            str(BUILD_DIR / "gric-mktxtseq"), NUM_FRAMES_STR, "2Dspiral-shuffle.txt",
             "2Dspiral", "-shuffle"
         ],
         "cluster_cmd": [
             str(BUILD_DIR / "gric-cluster"), "0.10", "-maxcl", "2500",
-            "-maxim", "2000", "-outdir", "out_2Dspiral-shuffle", "-clustered",
+            "-maxim", NUM_FRAMES_STR, "-outdir", "out_2Dspiral-shuffle", "-clustered",
             "2Dspiral-shuffle.txt"
         ],
         "input_file": "2Dspiral-shuffle.txt",
@@ -110,12 +112,12 @@ BENCHMARK_CONFIGS = [
         "category": "2D Trajectories",
         "type": "txt",
         "gen_cmd": [
-            str(BUILD_DIR / "gric-mktxtseq"), "2000", "2DcircleP10n.txt",
+            str(BUILD_DIR / "gric-mktxtseq"), NUM_FRAMES_STR, "2DcircleP10n.txt",
             "2Dcircle10", "-noise", "0.04"
         ],
         "cluster_cmd": [
             str(BUILD_DIR / "gric-cluster"), "0.10", "-maxcl", "2500",
-            "-maxim", "2000", "-outdir", "out_2DcircleP10n", "-clustered",
+            "-maxim", NUM_FRAMES_STR, "-outdir", "out_2DcircleP10n", "-clustered",
             "2DcircleP10n.txt"
         ],
         "input_file": "2DcircleP10n.txt",
@@ -138,11 +140,11 @@ BENCHMARK_CONFIGS = [
         "category": "2D Trajectories",
         "type": "txt",
         "gen_cmd": [
-            str(BUILD_DIR / "gric-mktxtseq"), "2000", "2Drand.txt", "2Drand"
+            str(BUILD_DIR / "gric-mktxtseq"), NUM_FRAMES_STR, "2Drand.txt", "2Drand"
         ],
         "cluster_cmd": [
             str(BUILD_DIR / "gric-cluster"), "0.10", "-maxcl", "2500",
-            "-maxim", "2000", "-outdir", "out_2Drand", "-clustered",
+            "-maxim", NUM_FRAMES_STR, "-outdir", "out_2Drand", "-clustered",
             "2Drand.txt"
         ],
         "input_file": "2Drand.txt",
@@ -164,11 +166,11 @@ BENCHMARK_CONFIGS = [
         "category": "3D Manifolds",
         "type": "txt",
         "gen_cmd": [
-            str(BUILD_DIR / "gric-mktxtseq"), "2000", "3Dspiral.txt", "3Dspiral"
+            str(BUILD_DIR / "gric-mktxtseq"), NUM_FRAMES_STR, "3Dspiral.txt", "3Dspiral"
         ],
         "cluster_cmd": [
             str(BUILD_DIR / "gric-cluster"), "0.02", "-maxcl", "2500",
-            "-maxim", "2000", "-outdir", "out_3Dspiral", "-clustered",
+            "-maxim", NUM_FRAMES_STR, "-outdir", "out_3Dspiral", "-clustered",
             "3Dspiral.txt"
         ],
         "input_file": "3Dspiral.txt",
@@ -189,12 +191,12 @@ BENCHMARK_CONFIGS = [
         "category": "3D Manifolds",
         "type": "txt",
         "gen_cmd": [
-            str(BUILD_DIR / "gric-mktxtseq"), "2000", "3Dstar.txt",
+            str(BUILD_DIR / "gric-mktxtseq"), NUM_FRAMES_STR, "3Dstar.txt",
             "3Dstar30", "-noise", "0.02", "-shuffle"
         ],
         "cluster_cmd": [
             str(BUILD_DIR / "gric-cluster"), "0.10", "-maxcl", "2500",
-            "-maxim", "2000", "-outdir", "out_3Dstar", "-clustered",
+            "-maxim", NUM_FRAMES_STR, "-outdir", "out_3Dstar", "-clustered",
             "3Dstar.txt"
         ],
         "input_file": "3Dstar.txt",
@@ -215,11 +217,11 @@ BENCHMARK_CONFIGS = [
         "category": "3D Manifolds",
         "type": "txt",
         "gen_cmd": [
-            str(BUILD_DIR / "gric-mktxtseq"), "2000", "3Drand.txt", "3Drand"
+            str(BUILD_DIR / "gric-mktxtseq"), NUM_FRAMES_STR, "3Drand.txt", "3Drand"
         ],
         "cluster_cmd": [
             str(BUILD_DIR / "gric-cluster"), "0.20", "-maxcl", "2500",
-            "-maxim", "2000", "-outdir", "out_3Drand", "-clustered",
+            "-maxim", NUM_FRAMES_STR, "-outdir", "out_3Drand", "-clustered",
             "3Drand.txt"
         ],
         "input_file": "3Drand.txt",
@@ -241,11 +243,11 @@ BENCHMARK_CONFIGS = [
         "type": "fits",
         "gen_cmd": [
             str(BUILD_DIR / "gric-gen-balls"), "-n", "1", "-r", "5.0",
-            "-W", "32", "-H", "32", "-f", "2000", "-s", "42", "balls_single.fits"
+            "-W", "32", "-H", "32", "-f", NUM_FRAMES_STR, "-s", "42", "balls_single.fits"
         ],
         "cluster_cmd": [
             str(BUILD_DIR / "gric-cluster"), "1.5", "-maxcl", "2500",
-            "-maxim", "2000", "-outdir", "out_balls_single", "-clustered",
+            "-maxim", NUM_FRAMES_STR, "-outdir", "out_balls_single", "-clustered",
             "-tiles", "2x2", "-ncpu", "4", "balls_single.fits"
         ],
         "input_file": "balls_single.fits",
@@ -256,8 +258,8 @@ BENCHMARK_CONFIGS = [
             "processed with 2x2 spatial tiling and 4 OpenMP worker threads."
         ),
         "insights": (
-            "Spatial decomposition into 4 parallel 16x16 quadrants processes 2,000 frames in "
-            "**~74 ms** (>27,000 fps) on CPU with high spatial accuracy."
+            "Spatial decomposition into 4 parallel 16x16 quadrants processes 20,000 frames in "
+            "**~700 ms** (>28,000 fps) on CPU with high spatial accuracy."
         )
     },
     {
@@ -267,11 +269,11 @@ BENCHMARK_CONFIGS = [
         "type": "fits",
         "gen_cmd": [
             str(BUILD_DIR / "gric-gen-balls"), "-n", "3", "-r", "5.0",
-            "-W", "32", "-H", "32", "-f", "2000", "-s", "42", "balls_coll.fits"
+            "-W", "32", "-H", "32", "-f", NUM_FRAMES_STR, "-s", "42", "balls_coll.fits"
         ],
         "cluster_cmd": [
             str(BUILD_DIR / "gric-cluster"), "4.0", "-maxcl", "2500",
-            "-maxim", "2000", "-outdir", "out_balls_coll", "-clustered",
+            "-maxim", NUM_FRAMES_STR, "-outdir", "out_balls_coll", "-clustered",
             "-tiles", "2x2", "-ncpu", "4", "balls_coll.fits"
         ],
         "input_file": "balls_coll.fits",
@@ -283,8 +285,8 @@ BENCHMARK_CONFIGS = [
         ),
         "insights": (
             "2x2 spatial tiling converts combinatorial state explosion into 4 compact "
-            "sub-problems of 60-110 clusters per tile, running in **~72 ms** (>27,000 fps) "
-            "with 1,746 joint states reconstructed."
+            "sub-problems of 60-110 clusters per tile, running in **~750 ms** (>26,000 fps) "
+            "with joint states reconstructed."
         )
     }
 ]
@@ -301,7 +303,7 @@ def run_benchmarks():
     results = []
 
     print("==================================================")
-    print(" Running Benchmarks & Generating Doc Assets")
+    print(f" Running Benchmarks ({NUM_FRAMES:,} frames) & Generating Doc Assets")
     print("==================================================")
 
     for cfg in BENCHMARK_CONFIGS:
@@ -374,8 +376,8 @@ def parse_run_log(run_log_path, fallback_log_path, measured_ms):
         "dist_inter": "0",
         "avg_dist": "0.00",
         "avg_sample_dist": "0.00",
-        "frames": "2000",
-        "fps": f"{int((2000.0 / (measured_ms / 1000.0))):,}" if measured_ms > 0 else "0"
+        "frames": f"{NUM_FRAMES:,}",
+        "fps": f"{int((float(NUM_FRAMES) / (measured_ms / 1000.0))):,}" if measured_ms > 0 else "0"
     }
 
     content = ""
@@ -393,7 +395,7 @@ def parse_run_log(run_log_path, fallback_log_path, measured_ms):
         t_val = float(m_time.group(1))
         metrics["time_ms"] = f"{t_val:.3f}"
         if t_val > 0:
-            metrics["fps"] = f"{int((2000.0 / (t_val / 1000.0))):,}"
+            metrics["fps"] = f"{int((float(NUM_FRAMES) / (t_val / 1000.0))):,}"
 
     # Clusters / Tuples
     m_cl = re.search(
@@ -419,7 +421,7 @@ def parse_run_log(run_log_path, fallback_log_path, measured_ms):
     if m_break:
         metrics["dist_sample"] = m_break.group(1)
         metrics["dist_inter"] = m_break.group(2)
-        n = 2000.0
+        n = float(NUM_FRAMES)
         metrics["avg_dist"] = f"{float(metrics['dist_total']) / n:.2f}"
         metrics["avg_sample_dist"] = f"{float(metrics['dist_sample']) / n:.2f}"
 
@@ -444,10 +446,17 @@ def generate_markdown_pages(results):
         desc_wrapped = wrap_text(cfg['description'])
         insights_wrapped = wrap_text(cfg['insights'])
 
+        gen_cmd_str = ' \\\n    '.join(
+            [os.path.basename(x) if '/' in x else x for x in cfg['gen_cmd']]
+        )
+        clust_cmd_str = ' \\\n    '.join(
+            [os.path.basename(x) if '/' in x else x for x in cfg['cluster_cmd']]
+        )
+
         content = f"""# {cfg['name']}
 
 **Category**: {cfg['category']}  
-**Data Type**: `{cfg['type']}` (2,000 frames)  
+**Data Type**: `{cfg['type']}` ({NUM_FRAMES:,} frames)  
 **Clustering Parameter**: `rlim = {cfg['rlim']}`
 
 ---
@@ -473,13 +482,6 @@ distance call distribution, and cluster size histogram:
 ![{cfg['name']} Query Diagnostics](images/{cid}.queries.png)
 
 """
-
-        gen_cmd_str = ' \\\n    '.join(
-            [os.path.basename(x) if '/' in x else x for x in cfg['gen_cmd']]
-        )
-        clust_cmd_str = ' \\\n    '.join(
-            [os.path.basename(x) if '/' in x else x for x in cfg['cluster_cmd']]
-        )
 
         content += f"""## Execution Commands
 
@@ -508,7 +510,7 @@ gric-plot {cfg['input_file']} \\
 
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
-| **Total Frames** | `2,000` | Number of sequential frames processed |
+| **Total Frames** | `{NUM_FRAMES:,}` | Number of sequential frames processed |
 | **Execution Time** | `{m['time_ms']} ms` | Total wall-clock runtime |
 | **Throughput** | `{m['fps']} fps` | Frames processed per second |
 | **Active Clusters / States** | `{m['clusters']}` | Total distinct clusters created |
@@ -534,7 +536,7 @@ gric-plot {cfg['input_file']} \\
 
     # 2. Generate Master Overview Page (docs/benchmarks/index.md)
     overview_path = DOCS_BENCH_DIR / "index.md"
-    overview_content = """# Benchmarks Overview
+    overview_content = f"""# Benchmarks Overview
 
 This section contains comprehensive benchmark performance results and visual diagnostics for the
 `gric-cluster` engine across 10 diverse synthetic manifolds, random distributions, and physical
@@ -544,15 +546,16 @@ All tests are reproducible via `gric-benchmark` and visualized using `gric-plot`
 
 ---
 
-## Benchmark Summary Table (2,000 Frames)
+## Benchmark Summary Table ({NUM_FRAMES:,} Frames)
 
-| Pattern | Cat | Time | Speed | Clusters | $d_S/\\text{frm}$ | $d/\\text{frm}$ | Link |
+| Pattern | Cat | Time | Speed | Clusters | $d_S/\\text{{frm}}$ | $d/\\text{{frm}}$ | Link |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 """
     for cfg, m in results:
         cid = cfg["id"]
         cat_short = "2D" if "2D" in cfg['category'] else ("3D" if "3D" in cfg['category'] else "Img")
-        t_str = f"{float(m['time_ms']):.1f} ms"
+        t_val = float(m['time_ms'])
+        t_str = f"{t_val / 1000.0:.2f} s" if t_val >= 1000.0 else f"{t_val:.1f} ms"
         fps_num = int(m['fps'].replace(',', ''))
         fps_str = f"{fps_num / 1000.0:.1f}k" if fps_num >= 1000 else f"{fps_num}"
         overview_content += (
