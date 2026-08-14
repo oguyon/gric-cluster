@@ -33,9 +33,12 @@ static const char *known_patterns[] =
     "3Dstar",
     "3Dconcentric",
     "5Dtree",
-    "3Dconcentric_dense"
+    "3Dconcentric_dense",
+    "balls_single",
+    "balls_coll",
+    "balls_nocoll"
 };
-#define KNOWN_PATTERNS_COUNT 11
+#define KNOWN_PATTERNS_COUNT 14
 
 /**
  * @brief Print usage/help information.
@@ -55,7 +58,7 @@ void print_help(
 
     printf("%sDESCRIPTION%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  Runs performance benchmarks on the gric-cluster algorithm.\n");
-    printf("  All input files (txt points files, mp4 videos) are read/generated in 'benchmarks'.\n");
+    printf("  All input files (txt points files, mp4 videos, fits cubes) are read/generated in 'benchmarks'.\n");
     printf("  All output files (logs, png plots, and the benchmark summary md file) are written\n");
     printf("  to 'benchmarks-out', which is created automatically if it does not exist.\n\n");
 
@@ -80,7 +83,7 @@ void print_help(
     printf("  %s-f, --file%s %s<file>%s     Load test patterns from the specified file.\n",
            ANSI_COLOR_GREEN, ANSI_COLOR_RESET, ANSI_COLOR_MAGENTA, ANSI_COLOR_RESET);
     printf("  %s-t, --type%s %s<type>%s     Select input type: txt (%sDefault%s), "
-           "mp4, or stream\n",
+           "mp4, stream, or fits\n",
            ANSI_COLOR_GREEN, ANSI_COLOR_RESET, ANSI_COLOR_MAGENTA, ANSI_COLOR_RESET,
            ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("  %s-o, --options%s %s<str>%s   Pass additional options to gric-cluster.\n",
