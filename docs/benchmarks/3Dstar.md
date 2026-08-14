@@ -62,11 +62,11 @@ gric-plot 3Dstar.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `150.724 ms` | Total wall-clock runtime |
-| **Throughput** | `132,692 fps` | Frames processed per second |
+| **Execution Time** | `140.227 ms` | Total wall-clock runtime |
+| **Throughput** | `142,625 fps` | Frames processed per second |
 | **Active Clusters / States** | `30` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `42,614` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `42,179` | Sample-to-cluster evaluations |
+| **Total Distance Calls ($d$)** | `42,618` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `42,183` | Sample-to-cluster evaluations |
 | **$d_S / \text{frame}$** | `**2.11**` | Search calls per frame |
 | **Total $d / \text{frame}$** | `**2.13**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |

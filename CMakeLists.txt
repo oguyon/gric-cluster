@@ -291,3 +291,12 @@ endif()
 add_test(NAME test_benchmark_smoke
     COMMAND gric-benchmark -p 2Dspiral -n 500)
 
+# Target to regenerate benchmark figures and documentation pages
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_custom_target(benchmark-docs
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/gen_benchmark_docs.py"
+    DEPENDS gric-cluster gric-mktxtseq gric-plot gric-gen-balls
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Generating benchmark figures with gric-plot and updating MkDocs benchmark pages"
+)
+

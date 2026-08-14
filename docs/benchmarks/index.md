@@ -12,16 +12,16 @@ All tests are reproducible via `gric-benchmark` and visualized using `gric-plot`
 
 | Pattern | Cat | Time | Speed | Clusters | $d_S/\text{frm}$ | $d/\text{frm}$ | Link |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `2Dspiral` | 2D | 104.4 ms | 191.5k | 64 | **1.01** | 1.11 | [View](2Dspiral.md) |
-| `2Dcircle-shuffle` | 2D | 161.3 ms | 124.0k | 46 | **2.72** | 2.77 | [View](2Dcircle-shuffle.md) |
-| `2Dspiral-shuffle` | 2D | 161.8 ms | 123.6k | 49 | **2.80** | 2.86 | [View](2Dspiral-shuffle.md) |
-| `2DcircleP10n` | 2D | 114.4 ms | 174.8k | 11 | **2.84** | 2.84 | [View](2DcircleP10n.md) |
-| `2Drand` | 2D | 418.2 ms | 47.8k | 221 | **3.49** | 4.71 | [View](2Drand.md) |
-| `3Dspiral` | 3D | 138.0 ms | 144.9k | 114 | **1.01** | 1.33 | [View](3Dspiral.md) |
-| `3Dstar` | 3D | 150.7 ms | 132.7k | 30 | **2.11** | 2.13 | [View](3Dstar.md) |
-| `3Drand` | 3D | 3.48 s | 5.7k | 374 | **5.09** | 8.58 | [View](3Drand.md) |
-| `balls_single` | Img | 482.8 ms | 41.4k | 695 | **2.88** | 13.67 | [View](balls_single.md) |
-| `balls_coll` | Img | 838.2 ms | 23.9k | 16383 | **6.92** | 35.73 | [View](balls_coll.md) |
+| `2Dspiral` | 2D | 110.8 ms | 180.5k | 64 | **1.01** | 1.11 | [View](2Dspiral.md) |
+| `2Dcircle-shuffle` | 2D | 150.5 ms | 132.9k | 43 | **2.73** | 2.78 | [View](2Dcircle-shuffle.md) |
+| `2Dspiral-shuffle` | 2D | 157.9 ms | 126.6k | 48 | **2.81** | 2.87 | [View](2Dspiral-shuffle.md) |
+| `2DcircleP10n` | 2D | 120.3 ms | 166.2k | 12 | **2.88** | 2.88 | [View](2DcircleP10n.md) |
+| `2Drand` | 2D | 413.0 ms | 48.4k | 216 | **3.51** | 4.67 | [View](2Drand.md) |
+| `3Dspiral` | 3D | 136.8 ms | 146.2k | 114 | **1.01** | 1.33 | [View](3Dspiral.md) |
+| `3Dstar` | 3D | 140.2 ms | 142.6k | 30 | **2.11** | 2.13 | [View](3Dstar.md) |
+| `3Drand` | 3D | 3.82 s | 5.2k | 371 | **5.11** | 8.54 | [View](3Drand.md) |
+| `balls_single` | Img | 499.3 ms | 40.1k | 695 | **2.88** | 13.67 | [View](balls_single.md) |
+| `balls_coll` | Img | 284.6 ms | 70.3k | 1175 | **1.84** | 7.97 | [View](balls_coll.md) |
 
 ---
 

@@ -54,8 +54,8 @@ gric-cluster \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `482.788 ms` | Total wall-clock runtime |
-| **Throughput** | `41,426 fps` | Frames processed per second |
+| **Execution Time** | `499.318 ms` | Total wall-clock runtime |
+| **Throughput** | `40,054 fps` | Frames processed per second |
 | **Active Clusters / States** | `695` | Total distinct clusters created |
 | **Total Distance Calls ($d$)** | `273,422` | All distance calls ($d_S + d_C$) |
 | **Sample Distances ($d_S$)** | `57,640` | Sample-to-cluster evaluations |

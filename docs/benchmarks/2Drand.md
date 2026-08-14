@@ -59,13 +59,13 @@ gric-plot 2Drand.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `418.238 ms` | Total wall-clock runtime |
-| **Throughput** | `47,819 fps` | Frames processed per second |
-| **Active Clusters / States** | `221` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `94,126` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `69,816` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**3.49**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**4.71**` | Total distance ops per frame |
+| **Execution Time** | `412.992 ms` | Total wall-clock runtime |
+| **Throughput** | `48,427 fps` | Frames processed per second |
+| **Active Clusters / States** | `216` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `93,353` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `70,133` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**3.51**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**4.67**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

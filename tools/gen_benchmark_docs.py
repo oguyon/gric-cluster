@@ -272,21 +272,21 @@ BENCHMARK_CONFIGS = [
             "-W", "32", "-H", "32", "-f", NUM_FRAMES_STR, "-s", "42", "balls_coll.fits"
         ],
         "cluster_cmd": [
-            str(BUILD_DIR / "gric-cluster"), "4.0", "-maxcl", "2500",
+            str(BUILD_DIR / "gric-cluster"), "7.0", "-maxcl", "2500",
             "-maxim", NUM_FRAMES_STR, "-outdir", "out_balls_coll", "-clustered",
             "-tiles", "2x2", "-ncpu", "4", "balls_coll.fits"
         ],
         "input_file": "balls_coll.fits",
         "out_dir": "out_balls_coll",
-        "rlim": "4.0 (per tile)",
+        "rlim": "7.0 (per tile)",
         "description": (
             "Multi-body elastic collision dynamics between 3 balls in a 32x32 image. "
             "Stresses high-dimensional combinatorial joint state spaces."
         ),
         "insights": (
             "2x2 spatial tiling converts combinatorial state explosion into 4 compact "
-            "sub-problems of 60-110 clusters per tile, running in **~750 ms** (>26,000 fps) "
-            "with joint states reconstructed."
+            "sub-problems of 30-40 clusters per tile, running in **~260 ms** (>75,000 fps) "
+            "with ~1,175 joint states reconstructed."
         )
     }
 ]

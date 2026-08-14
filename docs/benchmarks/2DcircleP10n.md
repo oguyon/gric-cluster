@@ -61,13 +61,13 @@ gric-plot 2DcircleP10n.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `114.419 ms` | Total wall-clock runtime |
-| **Throughput** | `174,796 fps` | Frames processed per second |
-| **Active Clusters / States** | `11` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `56,782` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `56,727` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**2.84**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**2.84**` | Total distance ops per frame |
+| **Execution Time** | `120.320 ms` | Total wall-clock runtime |
+| **Throughput** | `166,223 fps` | Frames processed per second |
+| **Active Clusters / States** | `12` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `57,654` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `57,588` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**2.88**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**2.88**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---
