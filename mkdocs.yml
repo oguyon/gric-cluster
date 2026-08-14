@@ -53,7 +53,88 @@ nav:
       - Overview & Modes: algorithm/index.md
       - Pruning Mechanisms: algorithm/pruning.md
       - Probability & Prediction: algorithm/prediction.md
-  - CLI Reference: help/index.md
+  - CLI Reference:
+      - Index: help/index.md
+      - Overviews & Guides:
+          - Introduction: help/intro.md
+          - Performance Tuning: help/performance.md
+          - Algorithm Architecture: help/algorithm.md
+          - Clustering Workflow: help/clustering.md
+          - Compression Concepts: help/compression.md
+          - Tiling Architecture: help/tiling.md
+      - Core Options:
+          - rlim (Threshold): help/rlim.md
+          - auto_rlim: help/auto_rlim.md
+          - scandist: help/scandist.md
+          - maxcl (Limit): help/maxcl.md
+          - maxcl_strategy: help/maxcl_strategy.md
+          - discard_frac: help/discard_frac.md
+          - discarded: help/discarded.md
+          - maxim: help/maxim.md
+          - ncpu (Threads): help/ncpu.md
+          - progress: help/progress.md
+          - conf: help/conf.md
+          - confw: help/confw.md
+      - Pruning & Geometry:
+          - te4 (4-Point): help/te4.md
+          - te5 (5-Point): help/te5.md
+          - Distance Geometry: help/algorithm_pruning.md
+          - sparse_dcc: help/sparse_dcc.md
+          - sparse_dcc_extra_evals: help/sparse_dcc_extra_evals.md
+          - Sparse DCC Bounds: help/algorithm_sparse_dcc.md
+          - no_dcc: help/no_dcc.md
+          - dcc: help/dcc.md
+      - Entropy & Gating:
+          - entropy: help/entropy.md
+          - entropy_fast: help/entropy_fast.md
+          - entropy_gate: help/entropy_gate.md
+          - entropy_first_gate: help/entropy_first_gate.md
+          - entropy_max_targets: help/entropy_max_targets.md
+          - entropy_min_prob: help/entropy_min_prob.md
+          - Target Selection: help/algorithm_entropy.md
+          - Adaptive Gating: help/algorithm_gating.md
+      - Priors & Prediction:
+          - gprob: help/gprob.md
+          - Topology Learning: help/algorithm_gprob.md
+          - dprob: help/dprob.md
+          - fmatcha: help/fmatcha.md
+          - fmatchb: help/fmatchb.md
+          - soft_bayesian: help/soft_bayesian.md
+          - soft_bayesian_sigma: help/soft_bayesian_sigma.md
+          - Bayesian Updates: help/algorithm_soft_bayesian.md
+          - tm (Transitions): help/tm.md
+          - tm_out: help/tm_out.md
+          - pred (Predictor): help/pred.md
+      - Multi-Tile & JTF:
+          - tiles: help/tiles.md
+          - tilemap: help/tilemap.md
+          - tileconf: help/tileconf.md
+          - jtf (Trajectory Fusion): help/jtf.md
+          - retrieval_window: help/retrieval_window.md
+          - xtile: help/xtile.md
+          - no_xtile: help/no_xtile.md
+          - xtile_decay: help/xtile_decay.md
+          - cpt: help/cpt.md
+      - Input & Streams:
+          - input (Formats): help/input.md
+          - stream (ImageStreamIO): help/stream.md
+          - cnt2sync: help/cnt2sync.md
+          - shm: help/shm.md
+      - Output & Analysis:
+          - outdir: help/outdir.md
+          - output (Overview): help/output.md
+          - clustered: help/clustered.md
+          - membership: help/membership.md
+          - no_membership: help/no_membership.md
+          - avg: help/avg.md
+          - fitsout: help/fitsout.md
+          - pngout: help/pngout.md
+          - clusters: help/clusters.md
+          - anchors: help/anchors.md
+          - counts: help/counts.md
+          - maxvis: help/maxvis.md
+          - distall: help/distall.md
+          - analysis: help/analysis.md
   - Benchmarks: benchmarks.md
   - Practical Use Cases: practical-use.md
 
