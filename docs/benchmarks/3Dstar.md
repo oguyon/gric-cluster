@@ -27,34 +27,17 @@ distance call distribution, and cluster size histogram:
 
 ### 1. Data Generation
 ```bash
-gric-mktxtseq \
-    20000 \
-    3Dstar.txt \
-    3Dstar30 \
-    -noise \
-    0.02 \
-    -shuffle
+gric-mktxtseq 20000 3Dstar.txt 3Dstar30 -noise 0.02 -shuffle
 ```
 
 ### 2. Clustering Execution
 ```bash
-gric-cluster \
-    0.10 \
-    -maxcl \
-    2500 \
-    -maxim \
-    20000 \
-    -outdir \
-    out_3Dstar \
-    -clustered \
-    3Dstar.txt
+gric-cluster 0.10 -maxcl 2500 -maxim 20000 -outdir out_3Dstar -clustered 3Dstar.txt
 ```
 
 ### 3. Diagnostic Visualization
 ```bash
-gric-plot 3Dstar.txt \
-    out_3Dstar/cluster_run.log \
-    docs/benchmarks/images/3Dstar.png
+gric-plot 3Dstar.txt out_3Dstar/cluster_run.log docs/benchmarks/images/3Dstar.png
 ```
 
 ## Performance Measurements
@@ -62,13 +45,13 @@ gric-plot 3Dstar.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `140.227 ms` | Total wall-clock runtime |
-| **Throughput** | `142,625 fps` | Frames processed per second |
+| **Execution Time** | `147.219 ms` | Total wall-clock runtime |
+| **Throughput** | `135,852 fps` | Frames processed per second |
 | **Active Clusters / States** | `30` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `42,618` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `42,183` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**2.11**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**2.13**` | Total distance ops per frame |
+| **Total Distance Calls ($d$)** | `42,744` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `42,309` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**2.12**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**2.14**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

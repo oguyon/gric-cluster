@@ -27,31 +27,17 @@ distance call distribution, and cluster size histogram:
 
 ### 1. Data Generation
 ```bash
-gric-mktxtseq \
-    20000 \
-    2Drand.txt \
-    2Drand
+gric-mktxtseq 20000 2Drand.txt 2Drand
 ```
 
 ### 2. Clustering Execution
 ```bash
-gric-cluster \
-    0.10 \
-    -maxcl \
-    2500 \
-    -maxim \
-    20000 \
-    -outdir \
-    out_2Drand \
-    -clustered \
-    2Drand.txt
+gric-cluster 0.10 -maxcl 2500 -maxim 20000 -outdir out_2Drand -clustered 2Drand.txt
 ```
 
 ### 3. Diagnostic Visualization
 ```bash
-gric-plot 2Drand.txt \
-    out_2Drand/cluster_run.log \
-    docs/benchmarks/images/2Drand.png
+gric-plot 2Drand.txt out_2Drand/cluster_run.log docs/benchmarks/images/2Drand.png
 ```
 
 ## Performance Measurements
@@ -59,12 +45,12 @@ gric-plot 2Drand.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `412.992 ms` | Total wall-clock runtime |
-| **Throughput** | `48,427 fps` | Frames processed per second |
-| **Active Clusters / States** | `216` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `93,353` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `70,133` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**3.51**` | Search calls per frame |
+| **Execution Time** | `407.459 ms` | Total wall-clock runtime |
+| **Throughput** | `49,084 fps` | Frames processed per second |
+| **Active Clusters / States** | `218` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `93,490` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `69,837` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**3.49**` | Search calls per frame |
 | **Total $d / \text{frame}$** | `**4.67**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 

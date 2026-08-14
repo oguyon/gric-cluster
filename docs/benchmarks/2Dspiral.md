@@ -28,31 +28,17 @@ distance call distribution, and cluster size histogram:
 
 ### 1. Data Generation
 ```bash
-gric-mktxtseq \
-    20000 \
-    2Dspiral.txt \
-    2Dspiral
+gric-mktxtseq 20000 2Dspiral.txt 2Dspiral
 ```
 
 ### 2. Clustering Execution
 ```bash
-gric-cluster \
-    0.10 \
-    -maxcl \
-    2500 \
-    -maxim \
-    20000 \
-    -outdir \
-    out_2Dspiral \
-    -clustered \
-    2Dspiral.txt
+gric-cluster 0.10 -maxcl 2500 -maxim 20000 -outdir out_2Dspiral -clustered 2Dspiral.txt
 ```
 
 ### 3. Diagnostic Visualization
 ```bash
-gric-plot 2Dspiral.txt \
-    out_2Dspiral/cluster_run.log \
-    docs/benchmarks/images/2Dspiral.png
+gric-plot 2Dspiral.txt out_2Dspiral/cluster_run.log docs/benchmarks/images/2Dspiral.png
 ```
 
 ## Performance Measurements
@@ -60,8 +46,8 @@ gric-plot 2Dspiral.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `110.824 ms` | Total wall-clock runtime |
-| **Throughput** | `180,466 fps` | Frames processed per second |
+| **Execution Time** | `108.379 ms` | Total wall-clock runtime |
+| **Throughput** | `184,538 fps` | Frames processed per second |
 | **Active Clusters / States** | `64` | Total distinct clusters created |
 | **Total Distance Calls ($d$)** | `22,118` | All distance calls ($d_S + d_C$) |
 | **Sample Distances ($d_S$)** | `20,102` | Sample-to-cluster evaluations |

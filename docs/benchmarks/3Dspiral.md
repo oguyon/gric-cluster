@@ -27,31 +27,17 @@ distance call distribution, and cluster size histogram:
 
 ### 1. Data Generation
 ```bash
-gric-mktxtseq \
-    20000 \
-    3Dspiral.txt \
-    3Dspiral
+gric-mktxtseq 20000 3Dspiral.txt 3Dspiral
 ```
 
 ### 2. Clustering Execution
 ```bash
-gric-cluster \
-    0.02 \
-    -maxcl \
-    2500 \
-    -maxim \
-    20000 \
-    -outdir \
-    out_3Dspiral \
-    -clustered \
-    3Dspiral.txt
+gric-cluster 0.02 -maxcl 2500 -maxim 20000 -outdir out_3Dspiral -clustered 3Dspiral.txt
 ```
 
 ### 3. Diagnostic Visualization
 ```bash
-gric-plot 3Dspiral.txt \
-    out_3Dspiral/cluster_run.log \
-    docs/benchmarks/images/3Dspiral.png
+gric-plot 3Dspiral.txt out_3Dspiral/cluster_run.log docs/benchmarks/images/3Dspiral.png
 ```
 
 ## Performance Measurements
@@ -59,8 +45,8 @@ gric-plot 3Dspiral.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `136.758 ms` | Total wall-clock runtime |
-| **Throughput** | `146,243 fps` | Frames processed per second |
+| **Execution Time** | `139.934 ms` | Total wall-clock runtime |
+| **Throughput** | `142,924 fps` | Frames processed per second |
 | **Active Clusters / States** | `114` | Total distinct clusters created |
 | **Total Distance Calls ($d$)** | `26,556` | All distance calls ($d_S + d_C$) |
 | **Sample Distances ($d_S$)** | `20,115` | Sample-to-cluster evaluations |

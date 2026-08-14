@@ -27,33 +27,19 @@ distance call distribution, and cluster size histogram:
 
 ### 1. Data Generation
 ```bash
-gric-mktxtseq \
-    20000 \
-    2DcircleP10n.txt \
-    2Dcircle10 \
-    -noise \
-    0.04
+gric-mktxtseq 20000 2DcircleP10n.txt 2Dcircle10 -noise 0.04
 ```
 
 ### 2. Clustering Execution
 ```bash
-gric-cluster \
-    0.10 \
-    -maxcl \
-    2500 \
-    -maxim \
-    20000 \
-    -outdir \
-    out_2DcircleP10n \
-    -clustered \
-    2DcircleP10n.txt
+gric-cluster 0.10 -maxcl 2500 -maxim 20000 -outdir out_2DcircleP10n -clustered \
+2DcircleP10n.txt
 ```
 
 ### 3. Diagnostic Visualization
 ```bash
-gric-plot 2DcircleP10n.txt \
-    out_2DcircleP10n/cluster_run.log \
-    docs/benchmarks/images/2DcircleP10n.png
+gric-plot 2DcircleP10n.txt out_2DcircleP10n/cluster_run.log \
+docs/benchmarks/images/2DcircleP10n.png
 ```
 
 ## Performance Measurements
@@ -61,13 +47,13 @@ gric-plot 2DcircleP10n.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `120.320 ms` | Total wall-clock runtime |
-| **Throughput** | `166,223 fps` | Frames processed per second |
+| **Execution Time** | `122.557 ms` | Total wall-clock runtime |
+| **Throughput** | `163,189 fps` | Frames processed per second |
 | **Active Clusters / States** | `12` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `57,654` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `57,588` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**2.88**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**2.88**` | Total distance ops per frame |
+| **Total Distance Calls ($d$)** | `58,348` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `58,282` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**2.91**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**2.92**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

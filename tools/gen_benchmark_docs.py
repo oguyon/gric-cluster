@@ -434,6 +434,29 @@ def parse_run_log(run_log_path, fallback_log_path, measured_ms):
 
     return metrics
 
+def format_cmd(cmd_list):
+    tokens = [
+        os.path.basename(x) if ('/' in x and not x.startswith('out_') and not x.startswith('docs/')) else x
+        for x in cmd_list
+    ]
+    full = ' '.join(tokens)
+    if len(full) <= 90:
+        return full
+    lines = []
+    curr = []
+    curr_len = 0
+    for tok in tokens:
+        if curr_len + len(tok) + 1 > 85 and curr:
+            lines.append(' '.join(curr) + ' \\')
+            curr = ['   ', tok]
+            curr_len = 4 + len(tok)
+        else:
+            curr.append(tok)
+            curr_len += len(tok) + 1
+    if curr:
+        lines.append(' '.join(curr).lstrip())
+    return '\n'.join(lines)
+
 def generate_markdown_pages(results):
     # 1. Generate Individual Pages
     for cfg, m in results:
@@ -446,12 +469,8 @@ def generate_markdown_pages(results):
         desc_wrapped = wrap_text(cfg['description'])
         insights_wrapped = wrap_text(cfg['insights'])
 
-        gen_cmd_str = ' \\\n    '.join(
-            [os.path.basename(x) if '/' in x else x for x in cfg['gen_cmd']]
-        )
-        clust_cmd_str = ' \\\n    '.join(
-            [os.path.basename(x) if '/' in x else x for x in cfg['cluster_cmd']]
-        )
+        gen_cmd_str = format_cmd(cfg['gen_cmd'])
+        clust_cmd_str = format_cmd(cfg['cluster_cmd'])
 
         content = f"""# {cfg['name']}
 
@@ -497,11 +516,14 @@ distance call distribution, and cluster size histogram:
 
 """
         if cfg['type'] == 'txt':
+            plot_cmd_str = format_cmd([
+                "gric-plot", cfg['input_file'],
+                f"{cfg['out_dir']}/cluster_run.log",
+                f"docs/benchmarks/images/{cid}.png"
+            ])
             content += f"""### 3. Diagnostic Visualization
 ```bash
-gric-plot {cfg['input_file']} \\
-    {cfg['out_dir']}/cluster_run.log \\
-    docs/benchmarks/images/{cid}.png
+{plot_cmd_str}
 ```
 
 """

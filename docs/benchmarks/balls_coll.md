@@ -15,38 +15,13 @@ dimensional combinatorial joint state spaces.
 
 ### 1. Data Generation
 ```bash
-gric-gen-balls \
-    -n \
-    3 \
-    -r \
-    5.0 \
-    -W \
-    32 \
-    -H \
-    32 \
-    -f \
-    20000 \
-    -s \
-    42 \
-    balls_coll.fits
+gric-gen-balls -n 3 -r 5.0 -W 32 -H 32 -f 20000 -s 42 balls_coll.fits
 ```
 
 ### 2. Clustering Execution
 ```bash
-gric-cluster \
-    7.0 \
-    -maxcl \
-    2500 \
-    -maxim \
-    20000 \
-    -outdir \
-    out_balls_coll \
-    -clustered \
-    -tiles \
-    2x2 \
-    -ncpu \
-    4 \
-    balls_coll.fits
+gric-cluster 7.0 -maxcl 2500 -maxim 20000 -outdir out_balls_coll -clustered -tiles \
+2x2 -ncpu 4 balls_coll.fits
 ```
 
 ## Performance Measurements
@@ -54,8 +29,8 @@ gric-cluster \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `284.609 ms` | Total wall-clock runtime |
-| **Throughput** | `70,271 fps` | Frames processed per second |
+| **Execution Time** | `278.338 ms` | Total wall-clock runtime |
+| **Throughput** | `71,855 fps` | Frames processed per second |
 | **Active Clusters / States** | `1175` | Total distinct clusters created |
 | **Total Distance Calls ($d$)** | `159,358` | All distance calls ($d_S + d_C$) |
 | **Sample Distances ($d_S$)** | `36,765` | Sample-to-cluster evaluations |

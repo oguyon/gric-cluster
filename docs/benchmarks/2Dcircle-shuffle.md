@@ -28,32 +28,19 @@ distance call distribution, and cluster size histogram:
 
 ### 1. Data Generation
 ```bash
-gric-mktxtseq \
-    20000 \
-    2Dcircle-shuffle.txt \
-    2Dcircle \
-    -shuffle
+gric-mktxtseq 20000 2Dcircle-shuffle.txt 2Dcircle -shuffle
 ```
 
 ### 2. Clustering Execution
 ```bash
-gric-cluster \
-    0.10 \
-    -maxcl \
-    2500 \
-    -maxim \
-    20000 \
-    -outdir \
-    out_2Dcircle-shuffle \
-    -clustered \
-    2Dcircle-shuffle.txt
+gric-cluster 0.10 -maxcl 2500 -maxim 20000 -outdir out_2Dcircle-shuffle -clustered \
+2Dcircle-shuffle.txt
 ```
 
 ### 3. Diagnostic Visualization
 ```bash
-gric-plot 2Dcircle-shuffle.txt \
-    out_2Dcircle-shuffle/cluster_run.log \
-    docs/benchmarks/images/2Dcircle-shuffle.png
+gric-plot 2Dcircle-shuffle.txt out_2Dcircle-shuffle/cluster_run.log \
+docs/benchmarks/images/2Dcircle-shuffle.png
 ```
 
 ## Performance Measurements
@@ -61,12 +48,12 @@ gric-plot 2Dcircle-shuffle.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `150.512 ms` | Total wall-clock runtime |
-| **Throughput** | `132,879 fps` | Frames processed per second |
-| **Active Clusters / States** | `43` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `55,517` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `54,614` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**2.73**` | Search calls per frame |
+| **Execution Time** | `159.190 ms` | Total wall-clock runtime |
+| **Throughput** | `125,636 fps` | Frames processed per second |
+| **Active Clusters / States** | `46` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `55,518` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `54,483` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**2.72**` | Search calls per frame |
 | **Total $d / \text{frame}$** | `**2.78**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 

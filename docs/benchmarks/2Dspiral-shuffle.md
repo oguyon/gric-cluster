@@ -27,32 +27,19 @@ distance call distribution, and cluster size histogram:
 
 ### 1. Data Generation
 ```bash
-gric-mktxtseq \
-    20000 \
-    2Dspiral-shuffle.txt \
-    2Dspiral \
-    -shuffle
+gric-mktxtseq 20000 2Dspiral-shuffle.txt 2Dspiral -shuffle
 ```
 
 ### 2. Clustering Execution
 ```bash
-gric-cluster \
-    0.10 \
-    -maxcl \
-    2500 \
-    -maxim \
-    20000 \
-    -outdir \
-    out_2Dspiral-shuffle \
-    -clustered \
-    2Dspiral-shuffle.txt
+gric-cluster 0.10 -maxcl 2500 -maxim 20000 -outdir out_2Dspiral-shuffle -clustered \
+2Dspiral-shuffle.txt
 ```
 
 ### 3. Diagnostic Visualization
 ```bash
-gric-plot 2Dspiral-shuffle.txt \
-    out_2Dspiral-shuffle/cluster_run.log \
-    docs/benchmarks/images/2Dspiral-shuffle.png
+gric-plot 2Dspiral-shuffle.txt out_2Dspiral-shuffle/cluster_run.log \
+docs/benchmarks/images/2Dspiral-shuffle.png
 ```
 
 ## Performance Measurements
@@ -60,13 +47,13 @@ gric-plot 2Dspiral-shuffle.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `157.929 ms` | Total wall-clock runtime |
-| **Throughput** | `126,639 fps` | Frames processed per second |
-| **Active Clusters / States** | `48` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `57,345` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `56,217` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**2.81**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**2.87**` | Total distance ops per frame |
+| **Execution Time** | `154.017 ms` | Total wall-clock runtime |
+| **Throughput** | `129,856 fps` | Frames processed per second |
+| **Active Clusters / States** | `47` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `56,537` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `55,456` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**2.77**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**2.83**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

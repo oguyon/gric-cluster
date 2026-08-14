@@ -27,31 +27,17 @@ distance call distribution, and cluster size histogram:
 
 ### 1. Data Generation
 ```bash
-gric-mktxtseq \
-    20000 \
-    3Drand.txt \
-    3Drand
+gric-mktxtseq 20000 3Drand.txt 3Drand
 ```
 
 ### 2. Clustering Execution
 ```bash
-gric-cluster \
-    0.20 \
-    -maxcl \
-    2500 \
-    -maxim \
-    20000 \
-    -outdir \
-    out_3Drand \
-    -clustered \
-    3Drand.txt
+gric-cluster 0.20 -maxcl 2500 -maxim 20000 -outdir out_3Drand -clustered 3Drand.txt
 ```
 
 ### 3. Diagnostic Visualization
 ```bash
-gric-plot 3Drand.txt \
-    out_3Drand/cluster_run.log \
-    docs/benchmarks/images/3Drand.png
+gric-plot 3Drand.txt out_3Drand/cluster_run.log docs/benchmarks/images/3Drand.png
 ```
 
 ## Performance Measurements
@@ -59,13 +45,13 @@ gric-plot 3Drand.txt \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `3815.136 ms` | Total wall-clock runtime |
-| **Throughput** | `5,242 fps` | Frames processed per second |
-| **Active Clusters / States** | `371` | Total distinct clusters created |
-| **Total Distance Calls ($d$)** | `170,756` | All distance calls ($d_S + d_C$) |
-| **Sample Distances ($d_S$)** | `102,121` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**5.11**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**8.54**` | Total distance ops per frame |
+| **Execution Time** | `4784.233 ms` | Total wall-clock runtime |
+| **Throughput** | `4,180 fps` | Frames processed per second |
+| **Active Clusters / States** | `360` | Total distinct clusters created |
+| **Total Distance Calls ($d$)** | `166,512` | All distance calls ($d_S + d_C$) |
+| **Sample Distances ($d_S$)** | `101,892` | Sample-to-cluster evaluations |
+| **$d_S / \text{frame}$** | `**5.09**` | Search calls per frame |
+| **Total $d / \text{frame}$** | `**8.33**` | Total distance ops per frame |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

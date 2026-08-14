@@ -15,38 +15,13 @@ tiling and 4 OpenMP worker threads.
 
 ### 1. Data Generation
 ```bash
-gric-gen-balls \
-    -n \
-    1 \
-    -r \
-    5.0 \
-    -W \
-    32 \
-    -H \
-    32 \
-    -f \
-    20000 \
-    -s \
-    42 \
-    balls_single.fits
+gric-gen-balls -n 1 -r 5.0 -W 32 -H 32 -f 20000 -s 42 balls_single.fits
 ```
 
 ### 2. Clustering Execution
 ```bash
-gric-cluster \
-    1.5 \
-    -maxcl \
-    2500 \
-    -maxim \
-    20000 \
-    -outdir \
-    out_balls_single \
-    -clustered \
-    -tiles \
-    2x2 \
-    -ncpu \
-    4 \
-    balls_single.fits
+gric-cluster 1.5 -maxcl 2500 -maxim 20000 -outdir out_balls_single -clustered -tiles \
+2x2 -ncpu 4 balls_single.fits
 ```
 
 ## Performance Measurements
@@ -54,8 +29,8 @@ gric-cluster \
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `499.318 ms` | Total wall-clock runtime |
-| **Throughput** | `40,054 fps` | Frames processed per second |
+| **Execution Time** | `501.213 ms` | Total wall-clock runtime |
+| **Throughput** | `39,903 fps` | Frames processed per second |
 | **Active Clusters / States** | `695` | Total distinct clusters created |
 | **Total Distance Calls ($d$)** | `273,422` | All distance calls ($d_S + d_C$) |
 | **Sample Distances ($d_S$)** | `57,640` | Sample-to-cluster evaluations |
