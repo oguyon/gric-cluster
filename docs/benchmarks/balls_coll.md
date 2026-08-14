@@ -11,6 +11,18 @@
 Multi-body elastic collision dynamics between 3 balls in a 32x32 image. Stresses high-
 dimensional combinatorial joint state spaces.
 
+## Online Stream Clustering Animation
+
+The looping animation below traces online cluster discovery and sample streaming over time:
+
+![balls_coll Clustering Animation](images/balls_coll.anim.gif)
+
+## Candidate Pruning Resolution Breakdown
+
+Stacked area chart illustrating how candidate clusters are resolved on every frame:
+
+![balls_coll Candidate Pruning Breakdown](images/balls_coll.pruning_breakdown.png)
+
 ## Temporal Dynamics & Cluster Discovery
 
 The timeline below traces active cluster assignments across the 20,000-frame sequence alongside
@@ -29,6 +41,12 @@ The transition probability matrix shows the probability flow between states:
 The chart below demonstrates how candidate distance operations stay flat despite growth in $K$:
 
 ![balls_coll Pruning Efficiency](images/balls_coll.efficiency.png)
+
+## Multi-Tile Centroid State Gallery
+
+Thumbnail grid showing the top 16 most active reconstructed joint states:
+
+![balls_coll Centroid Gallery](images/balls_coll.centroids.png)
 
 ## Multi-Tile Joint State Frequency Spectrum
 
@@ -54,13 +72,13 @@ gric-cluster 7.0 -maxcl 2500 -maxim 20000 -outdir out_balls_coll -clustered -til
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `264.517 ms` | Total wall-clock runtime |
-| **Throughput** | `75,609 fps` | Frames processed per second |
+| **Execution Time** | `266.730 ms` | Total wall-clock runtime |
+| **Throughput** | `74,982 fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `1175` | Total distinct clusters created |
 | **Sample Distances ($d_S$)** | `36,765` | Sample-to-cluster evaluations |
 | **Search Calls ($d_S$ / frame)** | **`1.84`** | Search calls per frame |
 | **Total Ops ($d$ / frame)** | **`7.97`** | Total distance ops per frame |
-| **Pruning Speedup Factor** | **`638.6x`** | Acceleration over exhaustive search ($K / d_S$) |
+| **Pruning Speedup Factor** | **`638.6x`** | Acceleration over exhaustive search |
 | **Distance Ops Saved** | **`99.8%`** | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
