@@ -12,16 +12,16 @@ All tests are reproducible via `make benchmark-docs` and visualized using `gric-
 
 | Pattern | Cat | Time | Speed | Clusters | $d_S$ / frm | Total $d$ | Speedup | Link |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `2Dspiral` | 2D | 119ms | 169k | 64 | 1.01 | 1.11 | 63.4x | [Page](2Dspiral.md) |
-| `2Dcircle-shuffle` | 2D | 156ms | 128k | 50 | 2.73 | 2.79 | 18.3x | [Page](2Dcircle-shuffle.md) |
-| `2Dspiral-shuffle` | 2D | 158ms | 126k | 49 | 2.80 | 2.86 | 17.5x | [Page](2Dspiral-shuffle.md) |
-| `2DcircleP10n` | 2D | 130ms | 154k | 11 | 2.89 | 2.89 | 3.8x | [Page](2DcircleP10n.md) |
-| `2Drand` | 2D | 420ms | 48k | 219 | 3.50 | 4.70 | 62.6x | [Page](2Drand.md) |
-| `3Dspiral` | 3D | 148ms | 135k | 114 | 1.01 | 1.33 | 112.9x | [Page](3Dspiral.md) |
-| `3Dstar` | 3D | 143ms | 140k | 30 | 2.11 | 2.13 | 14.2x | [Page](3Dstar.md) |
-| `3Drand` | 3D | 3.8s | 5k | 370 | 5.11 | 8.52 | 72.4x | [Page](3Drand.md) |
-| `balls_single` | Img | 485ms | 41k | 695 | 2.88 | 13.67 | 241.3x | [Page](balls_single.md) |
-| `balls_coll` | Img | 242ms | 83k | 1175 | 1.84 | 7.97 | 638.6x | [Page](balls_coll.md) |
+| `2Dspiral` | 2D | 114ms | 176k | 64 | 1.01 | 1.11 | 63.4x | [Page](2Dspiral.md) |
+| `2Dcircle-shuffle` | 2D | 168ms | 119k | 47 | 2.72 | 2.78 | 17.3x | [Page](2Dcircle-shuffle.md) |
+| `2Dspiral-shuffle` | 2D | 161ms | 125k | 49 | 2.79 | 2.85 | 17.6x | [Page](2Dspiral-shuffle.md) |
+| `2DcircleP10n` | 2D | 124ms | 162k | 12 | 2.95 | 2.95 | 4.1x | [Page](2DcircleP10n.md) |
+| `2Drand` | 2D | 403ms | 50k | 214 | 3.48 | 4.62 | 61.5x | [Page](2Drand.md) |
+| `3Dspiral` | 3D | 138ms | 145k | 114 | 1.01 | 1.33 | 112.9x | [Page](3Dspiral.md) |
+| `3Dstar` | 3D | 147ms | 136k | 30 | 2.11 | 2.13 | 14.2x | [Page](3Dstar.md) |
+| `3Drand` | 3D | 3.4s | 6k | 371 | 5.08 | 8.51 | 73.0x | [Page](3Drand.md) |
+| `balls_single` | Img | 506ms | 40k | 695 | 2.88 | 13.67 | 241.3x | [Page](balls_single.md) |
+| `balls_coll` | Img | 281ms | 71k | 1175 | 1.84 | 7.97 | 638.6x | [Page](balls_coll.md) |
 
 ---
 

@@ -78,8 +78,8 @@ gric-cluster 1.5 -maxcl 2500 -maxim 20000 -outdir out_balls_single -clustered -t
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `485.094 ms` | Total wall-clock runtime |
-| **Throughput** | `41,229 fps` | Frames processed per second |
+| **Execution Time** | `505.953 ms` | Total wall-clock runtime |
+| **Throughput** | `39,529 fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `695` | Total distinct clusters created |
 | **Sample Distances ($d_S$)** | `57,640` | Sample-to-cluster evaluations |
 | **Search Calls ($d_S$ / frame)** | **`2.88`** | Search calls per frame |

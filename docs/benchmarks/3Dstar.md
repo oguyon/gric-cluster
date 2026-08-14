@@ -82,10 +82,10 @@ gric-plot 3Dstar.txt out_3Dstar/cluster_run.log docs/benchmarks/images/3Dstar.pn
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `142.882 ms` | Total wall-clock runtime |
-| **Throughput** | `139,975 fps` | Frames processed per second |
+| **Execution Time** | `146.841 ms` | Total wall-clock runtime |
+| **Throughput** | `136,202 fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `30` | Total distinct clusters created |
-| **Sample Distances ($d_S$)** | `42,204` | Sample-to-cluster evaluations |
+| **Sample Distances ($d_S$)** | `42,250` | Sample-to-cluster evaluations |
 | **Search Calls ($d_S$ / frame)** | **`2.11`** | Search calls per frame |
 | **Total Ops ($d$ / frame)** | **`2.13`** | Total distance ops per frame |
 | **Pruning Speedup Factor** | **`14.2x`** | Acceleration over exhaustive search |
