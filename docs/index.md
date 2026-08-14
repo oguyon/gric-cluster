@@ -7,7 +7,7 @@ data (images, sensor logs, etc.).
 
 ## Sections
 
-*   **[Benchmarks](benchmarks.md)**: Performance analysis and timing results on synthetic
+*   **[Benchmarks](benchmarks/index.md)**: Performance analysis and timing results on synthetic
     datasets.
 *   **[Practical Use Cases](practical-use.md)**: Real-world scenarios, workflows, and tips
     for getting the most out of the tool.
