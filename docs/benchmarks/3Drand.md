@@ -64,14 +64,14 @@ gric-plot 3Drand.txt out_3Drand/cluster_run.log docs/benchmarks/images/3Drand.pn
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `3923.430 ms` | Total wall-clock runtime |
-| **Throughput** | `5,097 fps` | Frames processed per second |
-| **Active Clusters / States ($K$)** | `373` | Total distinct clusters created |
-| **Sample Distances ($d_S$)** | `101,674` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**5.08**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**8.55**` | Total distance ops per frame |
-| **Pruning Speedup Factor** | `**73.4x**` | Acceleration over exhaustive search ($K / d_S$) |
-| **Distance Ops Saved** | `**98.6%**` | Percentage of pairwise calls pruned away |
+| **Execution Time** | `4437.228 ms` | Total wall-clock runtime |
+| **Throughput** | `4,507 fps` | Frames processed per second |
+| **Active Clusters / States ($K$)** | `368` | Total distinct clusters created |
+| **Sample Distances ($d_S$)** | `101,787` | Sample-to-cluster evaluations |
+| **Search Calls ($d_S$ / frame)** | **`5.09`** | Search calls per frame |
+| **Total Ops ($d$ / frame)** | **`8.47`** | Total distance ops per frame |
+| **Pruning Speedup Factor** | **`72.3x`** | Acceleration over exhaustive search ($K / d_S$) |
+| **Distance Ops Saved** | **`98.6%`** | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

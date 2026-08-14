@@ -65,14 +65,14 @@ gric-plot 2Dspiral.txt out_2Dspiral/cluster_run.log docs/benchmarks/images/2Dspi
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `110.648 ms` | Total wall-clock runtime |
-| **Throughput** | `180,753 fps` | Frames processed per second |
+| **Execution Time** | `108.748 ms` | Total wall-clock runtime |
+| **Throughput** | `183,911 fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `64` | Total distinct clusters created |
 | **Sample Distances ($d_S$)** | `20,102` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**1.01**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**1.11**` | Total distance ops per frame |
-| **Pruning Speedup Factor** | `**63.4x**` | Acceleration over exhaustive search ($K / d_S$) |
-| **Distance Ops Saved** | `**98.4%**` | Percentage of pairwise calls pruned away |
+| **Search Calls ($d_S$ / frame)** | **`1.01`** | Search calls per frame |
+| **Total Ops ($d$ / frame)** | **`1.11`** | Total distance ops per frame |
+| **Pruning Speedup Factor** | **`63.4x`** | Acceleration over exhaustive search ($K / d_S$) |
+| **Distance Ops Saved** | **`98.4%`** | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

@@ -66,14 +66,14 @@ docs/benchmarks/images/2Dspiral-shuffle.png
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `150.295 ms` | Total wall-clock runtime |
-| **Throughput** | `133,071 fps` | Frames processed per second |
-| **Active Clusters / States ($K$)** | `47` | Total distinct clusters created |
-| **Sample Distances ($d_S$)** | `55,688` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**2.78**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**2.84**` | Total distance ops per frame |
-| **Pruning Speedup Factor** | `**16.9x**` | Acceleration over exhaustive search ($K / d_S$) |
-| **Distance Ops Saved** | `**94.1%**` | Percentage of pairwise calls pruned away |
+| **Execution Time** | `154.338 ms` | Total wall-clock runtime |
+| **Throughput** | `129,585 fps` | Frames processed per second |
+| **Active Clusters / States ($K$)** | `48` | Total distinct clusters created |
+| **Sample Distances ($d_S$)** | `55,685` | Sample-to-cluster evaluations |
+| **Search Calls ($d_S$ / frame)** | **`2.78`** | Search calls per frame |
+| **Total Ops ($d$ / frame)** | **`2.84`** | Total distance ops per frame |
+| **Pruning Speedup Factor** | **`17.3x`** | Acceleration over exhaustive search ($K / d_S$) |
+| **Distance Ops Saved** | **`94.2%`** | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---
