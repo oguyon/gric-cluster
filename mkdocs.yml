@@ -135,6 +135,20 @@ nav:
           - maxvis: help/maxvis.md
           - distall: help/distall.md
           - analysis: help/analysis.md
-  - Benchmarks: benchmarks.md
+  - Benchmarks:
+      - Overview: benchmarks/index.md
+      - 2D Trajectories:
+          - 2D Spiral: benchmarks/2Dspiral.md
+          - 2D Circle (Shuffled): benchmarks/2Dcircle-shuffle.md
+          - 2D Spiral (Shuffled): benchmarks/2Dspiral-shuffle.md
+          - 2D Circle P10 (Periodic + Noise): benchmarks/2DcircleP10n.md
+          - 2D Uniform Random: benchmarks/2Drand.md
+      - 3D Manifolds:
+          - 3D Spiral: benchmarks/3Dspiral.md
+          - 3D Star: benchmarks/3Dstar.md
+          - 3D Uniform Random: benchmarks/3Drand.md
+      - Physics & Image Tiling:
+          - Single Bouncing Ball: benchmarks/balls_single.md
+          - 3 Colliding Balls: benchmarks/balls_coll.md
   - Practical Use Cases: practical-use.md
 
