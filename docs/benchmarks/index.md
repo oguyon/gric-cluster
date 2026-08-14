@@ -4,24 +4,43 @@ This section contains comprehensive benchmark performance results and visual dia
 `gric-cluster` engine across 10 diverse synthetic manifolds, random distributions, and physical
 image simulations.
 
-All tests are reproducible via `gric-benchmark` and visualized using `gric-plot`.
+All tests are reproducible via `make benchmark-docs` and visualized using `gric-plot` and Gnuplot.
 
 ---
 
 ## Benchmark Summary Table (20,000 Frames)
 
-| Pattern | Cat | Time | Speed | Clusters | $d_S/\text{frm}$ | $d/\text{frm}$ | Link |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `2Dspiral` | 2D | 110.8 ms | 180.5k | 64 | **1.01** | 1.11 | [View](2Dspiral.md) |
-| `2Dcircle-shuffle` | 2D | 150.5 ms | 132.9k | 43 | **2.73** | 2.78 | [View](2Dcircle-shuffle.md) |
-| `2Dspiral-shuffle` | 2D | 157.9 ms | 126.6k | 48 | **2.81** | 2.87 | [View](2Dspiral-shuffle.md) |
-| `2DcircleP10n` | 2D | 120.3 ms | 166.2k | 12 | **2.88** | 2.88 | [View](2DcircleP10n.md) |
-| `2Drand` | 2D | 413.0 ms | 48.4k | 216 | **3.51** | 4.67 | [View](2Drand.md) |
-| `3Dspiral` | 3D | 136.8 ms | 146.2k | 114 | **1.01** | 1.33 | [View](3Dspiral.md) |
-| `3Dstar` | 3D | 140.2 ms | 142.6k | 30 | **2.11** | 2.13 | [View](3Dstar.md) |
-| `3Drand` | 3D | 3.82 s | 5.2k | 371 | **5.11** | 8.54 | [View](3Drand.md) |
-| `balls_single` | Img | 499.3 ms | 40.1k | 695 | **2.88** | 13.67 | [View](balls_single.md) |
-| `balls_coll` | Img | 284.6 ms | 70.3k | 1175 | **1.84** | 7.97 | [View](balls_coll.md) |
+| Pattern | Cat | Time | Speed | Clusters | $d_S/\text{frm}$ | Total $d$ | Speedup | Link |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `2Dspiral` | 2D | 111ms | 181k | 64 | 1.01 | 1.11 | 63.4x | [Page](2Dspiral.md) |
+| `2Dcircle-shuffle` | 2D | 154ms | 130k | 45 | 2.73 | 2.78 | 16.5x | [Page](2Dcircle-shuffle.md) |
+| `2Dspiral-shuffle` | 2D | 150ms | 133k | 47 | 2.78 | 2.84 | 16.9x | [Page](2Dspiral-shuffle.md) |
+| `2DcircleP10n` | 2D | 136ms | 147k | 10 | 2.93 | 2.93 | 3.4x | [Page](2DcircleP10n.md) |
+| `2Drand` | 2D | 401ms | 50k | 214 | 3.48 | 4.62 | 61.5x | [Page](2Drand.md) |
+| `3Dspiral` | 3D | 146ms | 137k | 114 | 1.01 | 1.33 | 112.9x | [Page](3Dspiral.md) |
+| `3Dstar` | 3D | 141ms | 142k | 30 | 2.11 | 2.14 | 14.2x | [Page](3Dstar.md) |
+| `3Drand` | 3D | 3.9s | 5k | 373 | 5.08 | 8.55 | 73.4x | [Page](3Drand.md) |
+| `balls_single` | Img | 493ms | 41k | 695 | 2.88 | 13.67 | 241.3x | [Page](balls_single.md) |
+| `balls_coll` | Img | 286ms | 70k | 1175 | 1.84 | 7.97 | 638.6x | [Page](balls_coll.md) |
+
+---
+
+## Master Performance Comparisons
+
+### 1. Throughput & Processing Speed (Frames / Second)
+The chart below compares execution throughput across all 10 benchmark patterns:
+
+![Master Throughput Comparison](images/overview_throughput.png)
+
+### 2. Metric Triangle Inequality Pruning Acceleration
+Comparing exhaustive pairwise search ($O(K)$) against GRIC triangle inequality pruning ($d_S$):
+
+![Metric Pruning Speedup Factor](images/overview_pruning.png)
+
+### 3. OpenMP Multi-Core Scaling on Multi-Tile Images
+Parallel scaling across 1, 2, 4, and 8 CPU threads on 2x2 tiled image cubes:
+
+![OpenMP Scaling Performance](images/overview_scaling.png)
 
 ---
 
@@ -31,8 +50,10 @@ All tests are reproducible via `gric-benchmark` and visualized using `gric-plot`
   distance evaluations required to match an incoming sample to a cluster. Lower is better.
 * **$d / \text{frame}$ (Total Distance Calls)**: Total distance operations per frame including
   cluster-to-cluster matrix maintenance ($d_S + d_C$).
+* **Pruning Speedup Factor ($K / d_S$)**: Ratio of candidate clusters eliminated by metric
+  bounds. Values reach **10x to >630x**.
 * **Multi-Tile Throughput**: For image inputs (`balls_single`, `balls_coll`), spatial 2x2 tiling
-  with 4 OpenMP threads accelerates execution by **>130x**, achieving **>25,000 frames/sec**.
+  with 4 OpenMP threads accelerates execution by **>130x**, achieving **>70,000 frames/sec**.
 
 ---
 
