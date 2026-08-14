@@ -1,14 +1,14 @@
 # Satellite Earth Observation Clustering Demo
 
 This guide demonstrates how to download, prepare, and cluster long-term satellite image
-time series of planet Earth (e.g. from **NASA Worldview / MODIS** or **NASA DSCOVR**)
+time series of planet Earth (e.g. from **NASA Worldview / MODIS / VIIRS / GOES**)
 using `gric-cluster`.
 
 ---
 
 ## 1. Overview & Objectives
 
-Satellite Earth observations from low Earth orbit (MODIS / VIIRS) and geostationary orbit
+Satellite Earth observations from low Earth orbit (MODIS / VIIRS) and geostationary orbit (GOES)
 provide continuous multi-year image streams of Earth's surface and atmosphere.
 
 Clustering satellite Earth imagery with `gric-cluster` demonstrates several key capabilities:
@@ -36,58 +36,73 @@ ready for clustering.
 
 | Argument | Default | Description |
 | :--- | :--- | :--- |
-| `--source` | `worldview` | `worldview` (NASA Worldview/MODIS), `epic`, or `synthetic` |
-| `--start` | `2023-01-01` | Start date in `YYYY-MM-DD` format |
-| `--end` | `2023-12-31` | End date in `YYYY-MM-DD` format (1-year default) |
+| `--source` | `worldview` | `worldview` (NASA Worldview/GIBS), `epic`, or `synthetic` |
+| `--layer` | `MODIS_Terra...` | Imagery layer name in NASA Worldview / GIBS |
+| `--start` | `2023-01-01` | Start timestamp (`YYYY-MM-DD` or ISO-8601) |
+| `--end` | `2023-12-31` | End timestamp (`YYYY-MM-DD` or ISO-8601) |
+| `--cadence` | `auto` | Step size (`auto` = native dataset cadence, or `1d`, `1h`, `10m`) |
+| `--bbox` | `auto` | Bounding box (`auto` = native framing, or `minLat,minLon,maxLat,maxLon`) |
 | `--size` | `128` | Target image size in pixels ($W \times H$) |
 | `--max-frames` | `10000` | Maximum number of frames to download/generate |
-| `--step` | `1` | Decimation step (e.g. 1 = all frames, 2 = every 2nd frame) |
 | `--output`, `-o` | `earth_128x128.fits` | Output 3D FITS cube filepath |
 | `--dry-run` | `false` | Inspect catalog counts and dates without downloading |
-| `--run-demo` | `false` | Automatically launch `gric-cluster` on the output cube |
 
 ---
 
-## 3. Step-by-Step Workflow
+## 3. Supported Satellite Layers (`--layer`)
 
-### Step 1: Inspect Available Dates (Dry Run)
+The `--layer` option gives direct access to hundreds of public NASA Earthdata / GIBS products:
 
-Run `--dry-run` to inspect catalog dates and estimated file sizes before downloading:
+| Layer Identifier | Satellite | Cadence | Details |
+| :--- | :--- | :--- | :--- |
+| `MODIS_Terra_CorrectedReflectance_TrueColor` | Terra | Daily | 2000–present global true color |
+| `MODIS_Aqua_CorrectedReflectance_TrueColor` | Aqua | Daily | 2002–present afternoon color |
+| `VIIRS_SNPP_CorrectedReflectance_TrueColor` | Suomi NPP | Daily | 2012–present high resolution |
+| `MODIS_Terra_CorrectedReflectance_Bands721` | Terra | Daily | False color (snow, ice, fires) |
+| `GOES-East_ABI_GeoColor` | GOES-16 | 10m / 1h | Americas full-disk true color |
+| `GOES-West_ABI_GeoColor` | GOES-18 | 10m / 1h | Pacific full-disk true color |
+
+---
+
+## 4. Step-by-Step Workflow
+
+### Example A: 1-Year Daily Global Time Series (MODIS Terra)
 
 ```bash
+# 1. Download 365 daily global maps (128x128)
 python3 tools/fetch_satellite_dataset.py \
     --source worldview \
-    --start 2023-01-01 \
-    --end 2023-12-31 \
-    --size 128 \
-    --dry-run
-```
-
-### Step 2: Download & Build FITS Cube
-
-Download the 1-year daily global time series and generate a $128 \times 128$ FITS cube:
-
-```bash
-python3 tools/fetch_satellite_dataset.py \
-    --source worldview \
+    --layer MODIS_Terra_CorrectedReflectance_TrueColor \
     --start 2023-01-01 \
     --end 2023-12-31 \
     --size 128 \
     --output earth_2023_128x128.fits
+
+# 2. Run multi-tile clustering
+./build/gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 4 -clustered earth_2023_128x128.fits
 ```
 
-### Step 3: Run Multi-Tile Streaming Clustering
-
-Execute `gric-cluster` on the generated FITS cube with $2 \times 2$ spatial tiling and
-4 OpenMP worker threads:
+### Example B: 1-Month Hourly Geostationary Time Series (GOES-East)
 
 ```bash
-gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 4 -clustered earth_2023_128x128.fits
+# 1. Download ~720 hourly frames of Americas geostationary full-disk
+python3 tools/fetch_satellite_dataset.py \
+    --source worldview \
+    --layer GOES-East_ABI_GeoColor \
+    --cadence 1h \
+    --bbox -80,-140,80,-20 \
+    --start 2023-06-01 \
+    --end 2023-06-30 \
+    --size 128 \
+    --output goes_east_hourly.fits
+
+# 2. Run multi-tile clustering
+./build/gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 4 -clustered goes_east_hourly.fits
 ```
 
 ---
 
-## 4. Analyzing Clustering Results
+## 5. Analyzing Clustering Results
 
 Clustering produces structured outputs in the `<filename>.clusterdat/` directory:
 
@@ -96,50 +111,21 @@ Clustering produces structured outputs in the `<filename>.clusterdat/` directory
 * `dcc.txt`: Inter-cluster pairwise metric distance matrix ($D_{CC}$).
 * `cluster_run.log`: Execution metrics including throughput (fps), RMS fit, and distance calls.
 
-### Visualizing Discovered States
-
-Generate spatial diagnostics and Markov transition matrices using Gnuplot:
-
-```bash
-# Plot cluster discovery timeline and transition probability matrix
-python3 -c "
-from tools.gen_benchmark_docs import (
-    generate_timeline_plot_gp,
-    generate_transition_heatmap_gp
-)
-from pathlib import Path
-out_dir = Path('earth_2023_128x128.clusterdat')
-generate_timeline_plot_gp(
-    out_dir / 'frame_membership.txt',
-    Path('earth_timeline.png'),
-    'Earth 2023',
-    is_tile=True
-)
-generate_transition_heatmap_gp(
-    out_dir / 'frame_membership.txt',
-    Path('earth_transitions.png'),
-    'Earth 2023',
-    is_tile=True
-)
-"
-```
-
 ---
 
-## 5. Offline & Synthetic Planet Generation Mode
+## 6. Offline & Synthetic Planet Generation Mode
 
 In isolated environments or without internet access, `tools/fetch_satellite_dataset.py`
 provides a procedural 3D rotating planetary Earth generator (`--source synthetic`):
 
 ```bash
+# 1. Generate 10,000-frame synthetic Earth FITS cube
 python3 tools/fetch_satellite_dataset.py \
     --source synthetic \
     --size 128 \
     --max-frames 10000 \
-    --output earth_synthetic_128x128.fits \
-    --run-demo
-```
+    --output earth_synthetic_128x128.fits
 
-This generates realistic rotating Earth disks featuring spherical geometry, continental
-landmasses, dynamic rotating cloud bands, solar day/night illumination terminators, and
-seasonal axial tilt variation.
+# 2. Run clustering with 2x2 spatial tiling
+./build/gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 4 -clustered earth_synthetic_128x128.fits
+```
