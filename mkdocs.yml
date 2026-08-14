@@ -157,4 +157,5 @@ nav:
           - Single Bouncing Ball: benchmarks/balls_single.md
           - 3 Colliding Balls: benchmarks/balls_coll.md
   - Practical Use Cases: practical-use.md
+  - Satellite Earth Demo: satellite_demo.md
 
