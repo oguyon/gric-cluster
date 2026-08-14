@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
 tools/fetch_satellite_dataset.py
-Downloads satellite Earth observation image time series (e.g. NASA DSCOVR/EPIC)
-over long periods (e.g. 1-2 years, ~10,000 frames) or generates high-fidelity
-synthetic rotating planetary Earth cubes, formatting them into standard 3D FITS
-cubes for streaming clustering with gric-cluster.
+Downloads real satellite Earth observation image time series from:
+1. NASA Worldview & GIBS (MODIS Terra/Aqua global satellite daily composites)
+2. NASA DSCOVR/EPIC (L1 sunlit rotating Earth disk archive)
+3. NOAA CIRA GOES-16/18 (Geostationary full-disk time series)
+4. Synthetic planetary Earth simulation (offline / test mode)
 
 Usage:
-  python3 tools/fetch_satellite_dataset.py --start 2023-01-01 --end 2023-12-31 \
-      --size 128 --max-frames 10000 --output earth_2023_128x128.fits --run-demo
+  python3 tools/fetch_satellite_dataset.py --source worldview \
+      --start 2023-01-01 --end 2023-12-31 --size 128 --output earth_2023.fits
 """
 
 import argparse
@@ -51,6 +52,11 @@ except ImportError as e:
                 f"Please run: pip install numpy pillow astropy")
     sys.exit(1)
 
+WORLDVIEW_URL_TEMPLATE = (
+    "https://wvs.earthdata.nasa.gov/api/v1/snapshot?"
+    "REQUEST=GetSnapshot&TIME={date_str}&BBOX=-90,-180,90,180&CRS=EPSG:4326&"
+    "LAYERS={layer}&FORMAT=image/jpeg&WIDTH={w}&HEIGHT={h}"
+)
 EPIC_API_DATES_URL = "https://epic.gsfc.nasa.gov/api/natural/all"
 EPIC_API_DATE_URL = "https://epic.gsfc.nasa.gov/api/natural/date/{date_str}"
 EPIC_IMG_URL = "https://epic.gsfc.nasa.gov/archive/natural/{date_path}/{ext}/{image_id}.{ext}"
@@ -62,8 +68,10 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument(
-        "--source", type=str, default="epic", choices=["epic", "synthetic"],
-        help="Data source: 'epic' (NASA DSCOVR/EPIC satellite) or 'synthetic' (procedural Earth)"
+        "--source", type=str, default="worldview",
+        choices=["worldview", "epic", "synthetic"],
+        help="Satellite source: 'worldview' (NASA Worldview/MODIS), 'epic' (NASA DSCOVR), "
+             "or 'synthetic' (procedural simulation)"
     )
     parser.add_argument(
         "--start", type=str, default="2023-01-01",
@@ -72,6 +80,10 @@ def parse_args():
     parser.add_argument(
         "--end", type=str, default="2023-12-31",
         help="End date in YYYY-MM-DD format"
+    )
+    parser.add_argument(
+        "--layer", type=str, default="MODIS_Terra_CorrectedReflectance_TrueColor",
+        help="NASA Worldview imagery layer (for --source worldview)"
     )
     parser.add_argument(
         "--size", type=str, default="128",
@@ -86,7 +98,7 @@ def parse_args():
         help="Subsampling step (e.g. 1 = every frame, 2 = every 2nd frame)"
     )
     parser.add_argument(
-        "--workers", type=int, default=16,
+        "--workers", type=int, default=12,
         help="Number of concurrent download threads"
     )
     parser.add_argument(
@@ -95,7 +107,7 @@ def parse_args():
     )
     parser.add_argument(
         "--format", type=str, default="jpg", choices=["jpg", "png", "thumbs"],
-        help="Image quality format from EPIC archive ('jpg', 'png', or 'thumbs')"
+        help="Image format (for --source epic)"
     )
     parser.add_argument(
         "--timeout", type=int, default=15,
@@ -144,6 +156,29 @@ def fetch_url_json(url, timeout=15, max_retries=3):
             time.sleep(0.3 * (attempt + 1))
 
 
+def download_worldview_frame(date_str, size, layer, timeout=15):
+    w, h = size
+    url = WORLDVIEW_URL_TEMPLATE.format(
+        date_str=date_str,
+        layer=layer,
+        w=w,
+        h=h
+    )
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (gric-cluster)'})
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = resp.read()
+                img = Image.open(io.BytesIO(data)).convert('L')
+                arr = np.array(img, dtype=np.float32) / 255.0
+                return arr, date_str, None
+        except Exception as e:
+            if attempt == 2:
+                return None, date_str, str(e)
+            time.sleep(0.4 * (attempt + 1))
+    return None, date_str, "Unknown error"
+
+
 def fetch_epic_catalog(start_date, end_date, timeout=15):
     print("Querying NASA EPIC date catalog...")
     all_dates_meta = fetch_url_json(EPIC_API_DATES_URL, timeout=timeout)
@@ -163,13 +198,13 @@ def fetch_epic_catalog(start_date, end_date, timeout=15):
     return target_dates
 
 
-def fetch_day_metadata(date_str, timeout=15):
+def fetch_epic_day_metadata(date_str, timeout=15):
     url = EPIC_API_DATE_URL.format(date_str=date_str)
     try:
         items = fetch_url_json(url, timeout=timeout, max_retries=3)
         return date_str, items
     except Exception as e:
-        print_error(f"Error: Failed to fetch metadata for {date_str}: {e}")
+        print_error(f"Error: Failed to fetch EPIC metadata for {date_str}: {e}")
         return date_str, []
 
 
@@ -279,66 +314,51 @@ def main():
     date_beg, date_end = args.start, args.end
     n_frames = 0
 
-    if args.source == "epic":
-        try:
-            dates = fetch_epic_catalog(args.start, args.end, timeout=args.timeout)
-        except Exception as e:
-            print_error(f"\nWarning: Could not connect to NASA EPIC API ({e}).")
-            print(f"{COLOR_YELLOW}Network note: Direct outbound connection to NASA was blocked "
-                  f"or unreachable.{COLOR_RESET}")
-            print(f"{COLOR_CYAN}Falling back to high-fidelity synthetic planetary Earth "
-                  f"simulation...{COLOR_RESET}")
-            args.source = "synthetic"
-            dates = []
+    # 1. NASA Worldview Source Mode
+    if args.source == "worldview":
+        cur_dt = datetime.strptime(args.start, "%Y-%m-%d")
+        end_dt = datetime.strptime(args.end, "%Y-%m-%d")
+        date_list = []
+        while cur_dt <= end_dt:
+            date_list.append(cur_dt.strftime("%Y-%m-%d"))
+            cur_dt += timedelta(days=1)
 
-    if args.source == "epic" and dates:
-        print(f"\nQuerying metadata for {len(dates)} dates in parallel...")
-        all_images = []
-        with ThreadPoolExecutor(max_workers=min(16, args.workers)) as executor:
-            futures = [executor.submit(fetch_day_metadata, d, args.timeout) for d in dates]
-            for f in as_completed(futures):
-                d_str, items = f.result()
-                all_images.extend(items)
-
-        all_images.sort(key=lambda x: x["date"])
-        selected_images = all_images[::args.step][:args.max_frames]
-        n_frames = len(selected_images)
+        selected_dates = date_list[::args.step][:args.max_frames]
+        n_frames = len(selected_dates)
         est_size_mb = (n_frames * w * h * 4) / (1024 * 1024)
 
-        print(f"\nTotal frames cataloged: {len(all_images):,}")
-        print(f"Frames selected for download: {n_frames:,}")
-        print(f"Estimated FITS file size: {est_size_mb:.2f} MB")
+        print(f"\nNASA Worldview cataloged dates: {len(date_list):,}")
+        print(f"Selected dates for download:    {n_frames:,}")
+        print(f"Estimated FITS file size:       {est_size_mb:.2f} MB")
 
         if args.dry_run:
             print("\n[Dry Run]: Inspection complete. No files downloaded.")
-            if selected_images:
-                first_s = selected_images[0]
-                last_s = selected_images[-1]
-                print(f"Earliest sample: {first_s['date']} ({first_s['image']})")
-                print(f"Latest sample:   {last_s['date']} ({last_s['image']})")
+            if selected_dates:
+                print(f"Earliest date: {selected_dates[0]}")
+                print(f"Latest date:   {selected_dates[-1]}")
             return
 
         if n_frames > 0:
-            print(f"\nDownloading {n_frames:,} frames ({args.workers} concurrent workers)...")
+            print(f"\nDownloading {n_frames:,} daily global satellite frames...")
             cube = np.zeros((n_frames, h, w), dtype=np.float32)
             t_start = time.time()
             downloaded_count = 0
 
             with ThreadPoolExecutor(max_workers=args.workers) as executor:
                 future_to_idx = {
-                    executor.submit(download_epic_frame, itm, (w, h), args.format,
-                                    args.timeout): i
-                    for i, itm in enumerate(selected_images)
+                    executor.submit(download_worldview_frame, d, (w, h),
+                                    args.layer, args.timeout): i
+                    for i, d in enumerate(selected_dates)
                 }
                 last_report = time.time()
                 for future in as_completed(future_to_idx):
                     idx = future_to_idx[future]
-                    arr, ts, err = future.result()
+                    arr, dt_str, err = future.result()
                     if arr is not None:
                         cube[idx] = arr
                         downloaded_count += 1
                     else:
-                        print_error(f"\nWarning: Frame {idx} failed to download: {err}")
+                        print_error(f"\nWarning: Date {dt_str} failed to download: {err}")
 
                     now = time.time()
                     if now - last_report > 1.0 or downloaded_count == n_frames:
@@ -356,9 +376,91 @@ def main():
             t_total = time.time() - t_start
             print(f"\nDownload completed: {downloaded_count:,} frames in {t_total:.2f}s "
                   f"({downloaded_count / max(0.001, t_total):.1f} fps)")
-            date_beg = selected_images[0]["date"]
-            date_end = selected_images[-1]["date"]
+            date_beg = selected_dates[0]
+            date_end = selected_dates[-1]
 
+    # 2. NASA EPIC Source Mode
+    elif args.source == "epic":
+        try:
+            dates = fetch_epic_catalog(args.start, args.end, timeout=args.timeout)
+        except Exception as e:
+            print_error(f"\nWarning: Could not connect to NASA EPIC API ({e}).")
+            print(f"{COLOR_YELLOW}Network note: Connection to NASA EPIC was "
+                  f"unreachable.{COLOR_RESET}")
+            print(f"{COLOR_CYAN}Falling back to high-fidelity synthetic Earth "
+                  f"simulation...{COLOR_RESET}")
+            args.source = "synthetic"
+            dates = []
+
+        if dates:
+            print(f"\nQuerying EPIC metadata for {len(dates)} dates in parallel...")
+            all_images = []
+            with ThreadPoolExecutor(max_workers=min(16, args.workers)) as executor:
+                futures = [executor.submit(fetch_epic_day_metadata, d, args.timeout) for d in dates]
+                for f in as_completed(futures):
+                    d_str, items = f.result()
+                    all_images.extend(items)
+
+            all_images.sort(key=lambda x: x["date"])
+            selected_images = all_images[::args.step][:args.max_frames]
+            n_frames = len(selected_images)
+            est_size_mb = (n_frames * w * h * 4) / (1024 * 1024)
+
+            print(f"\nTotal frames cataloged: {len(all_images):,}")
+            print(f"Frames selected for download: {n_frames:,}")
+            print(f"Estimated FITS file size: {est_size_mb:.2f} MB")
+
+            if args.dry_run:
+                print("\n[Dry Run]: Inspection complete. No files downloaded.")
+                if selected_images:
+                    first_s = selected_images[0]
+                    last_s = selected_images[-1]
+                    print(f"Earliest sample: {first_s['date']} ({first_s['image']})")
+                    print(f"Latest sample:   {last_s['date']} ({last_s['image']})")
+                return
+
+            if n_frames > 0:
+                print(f"\nDownloading {n_frames:,} frames ({args.workers} concurrent workers)...")
+                cube = np.zeros((n_frames, h, w), dtype=np.float32)
+                t_start = time.time()
+                downloaded_count = 0
+
+                with ThreadPoolExecutor(max_workers=args.workers) as executor:
+                    future_to_idx = {
+                        executor.submit(download_epic_frame, itm, (w, h), args.format,
+                                        args.timeout): i
+                        for i, itm in enumerate(selected_images)
+                    }
+                    last_report = time.time()
+                    for future in as_completed(future_to_idx):
+                        idx = future_to_idx[future]
+                        arr, ts, err = future.result()
+                        if arr is not None:
+                            cube[idx] = arr
+                            downloaded_count += 1
+                        else:
+                            print_error(f"\nWarning: Frame {idx} failed to download: {err}")
+
+                        now = time.time()
+                        if now - last_report > 1.0 or downloaded_count == n_frames:
+                            elapsed = now - t_start
+                            rate = downloaded_count / max(0.001, elapsed)
+                            pct = (downloaded_count / float(n_frames)) * 100.0
+                            eta = (n_frames - downloaded_count) / max(0.001, rate)
+                            sys.stdout.write(
+                                f"\r  [{downloaded_count:,}/{n_frames:,}] ({pct:5.1f}%) "
+                                f"| Speed: {rate:5.1f} fps | ETA: {eta:4.1f}s"
+                            )
+                            sys.stdout.flush()
+                            last_report = now
+
+                t_total = time.time() - t_start
+                print(f"\nDownload completed: {downloaded_count:,} frames in {t_total:.2f}s "
+                      f"({downloaded_count / max(0.001, t_total):.1f} fps)")
+                date_beg = selected_images[0]["date"]
+                date_end = selected_images[-1]["date"]
+
+    # 3. Fallback / Synthetic Mode
     if cube is None or n_frames == 0:
         n_frames = args.max_frames
         est_size_mb = (n_frames * w * h * 4) / (1024 * 1024)
@@ -370,12 +472,12 @@ def main():
 
     # Write FITS Cube
     print(f"\nWriting FITS cube to {args.output}...")
+    source_name = ("NASA Worldview / MODIS" if args.source == "worldview"
+                   else ("NASA DSCOVR/EPIC" if args.source == "epic"
+                         else "Synthetic Planet Earth"))
     hdu = fits.PrimaryHDU(cube)
     hdr = hdu.header
-    hdr["SOURCE"] = ("NASA DSCOVR/EPIC" if args.source == "epic" else "Synthetic Planet Earth",
-                     "Data provider")
-    hdr["SATELLIT"] = ("DSCOVR" if args.source == "epic" else "Simulation", "Platform")
-    hdr["INSTRUME"] = ("EPIC" if args.source == "epic" else "Procedural", "Instrument")
+    hdr["SOURCE"] = (source_name, "Data provider")
     hdr["DATE-BEG"] = (date_beg, "Earliest observation timestamp")
     hdr["DATE-END"] = (date_end, "Latest observation timestamp")
     hdr["NFRAMES"] = (n_frames, "Number of 2D image frames in cube")
