@@ -64,14 +64,14 @@ gric-plot 3Dspiral.txt out_3Dspiral/cluster_run.log docs/benchmarks/images/3Dspi
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `146.392 ms` | Total wall-clock runtime |
-| **Throughput** | `136,619 fps` | Frames processed per second |
+| **Execution Time** | `138.486 ms` | Total wall-clock runtime |
+| **Throughput** | `144,419 fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `114` | Total distinct clusters created |
 | **Sample Distances ($d_S$)** | `20,115` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**1.01**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**1.33**` | Total distance ops per frame |
-| **Pruning Speedup Factor** | `**112.9x**` | Acceleration over exhaustive search ($K / d_S$) |
-| **Distance Ops Saved** | `**99.1%**` | Percentage of pairwise calls pruned away |
+| **Search Calls ($d_S$ / frame)** | **`1.01`** | Search calls per frame |
+| **Total Ops ($d$ / frame)** | **`1.33`** | Total distance ops per frame |
+| **Pruning Speedup Factor** | **`112.9x`** | Acceleration over exhaustive search ($K / d_S$) |
+| **Distance Ops Saved** | **`99.1%`** | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

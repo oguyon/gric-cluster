@@ -970,10 +970,10 @@ Log-log rank-frequency distribution of the {int(k_val):,} reconstructed joint st
 | **Throughput** | `{m['fps']} fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `{m['clusters']}` | Total distinct clusters created |
 | **Sample Distances ($d_S$)** | `{int(m['dist_sample']):,}` | Sample-to-cluster evaluations |
-| **$d_S / \\text{{frame}}$** | `**{m['avg_sample_dist']}**` | Search calls per frame |
-| **Total $d / \\text{{frame}}$** | `**{m['avg_dist']}**` | Total distance ops per frame |
-| **Pruning Speedup Factor** | `**{pruning_spd:.1f}x**` | Acceleration over exhaustive search ($K / d_S$) |
-| **Distance Ops Saved** | `**{ops_saved:.1f}%**` | Percentage of pairwise calls pruned away |
+| **Search Calls ($d_S$ / frame)** | **`{m['avg_sample_dist']}`** | Search calls per frame |
+| **Total Ops ($d$ / frame)** | **`{m['avg_dist']}`** | Total distance ops per frame |
+| **Pruning Speedup Factor** | **`{pruning_spd:.1f}x`** | Acceleration over exhaustive search ($K / d_S$) |
+| **Distance Ops Saved** | **`{ops_saved:.1f}%`** | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `{m['mem_kb']} KB` | Peak resident set size (RSS) |
 
 ---
@@ -1004,7 +1004,7 @@ All tests are reproducible via `make benchmark-docs` and visualized using `gric-
 
 ## Benchmark Summary Table ({NUM_FRAMES:,} Frames)
 
-| Pattern | Cat | Time | Speed | Clusters | $d_S/\\text{{frm}}$ | Total $d$ | Speedup | Link |
+| Pattern | Cat | Time | Speed | Clusters | $d_S$ / frm | Total $d$ | Speedup | Link |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 """
     for cfg, m in results:
@@ -1048,9 +1048,9 @@ Parallel scaling across 1, 2, 4, and 8 CPU threads on 2x2 tiled image cubes:
 
 ## Metric Definitions
 
-* **$d_S / \\text{frame}$ (Sample-to-Cluster Search Calls)**: The average number of candidate
+* **$d_S$ / frame (Sample-to-Cluster Search Calls)**: The average number of candidate
   distance evaluations required to match an incoming sample to a cluster. Lower is better.
-* **$d / \\text{frame}$ (Total Distance Calls)**: Total distance operations per frame including
+* **$d$ / frame (Total Distance Calls)**: Total distance operations per frame including
   cluster-to-cluster matrix maintenance ($d_S + d_C$).
 * **Pruning Speedup Factor ($K / d_S$)**: Ratio of candidate clusters eliminated by metric
   bounds. Values reach **10x to >630x**.

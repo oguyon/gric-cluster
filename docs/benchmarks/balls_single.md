@@ -54,14 +54,14 @@ gric-cluster 1.5 -maxcl 2500 -maxim 20000 -outdir out_balls_single -clustered -t
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `492.805 ms` | Total wall-clock runtime |
-| **Throughput** | `40,584 fps` | Frames processed per second |
+| **Execution Time** | `468.244 ms` | Total wall-clock runtime |
+| **Throughput** | `42,712 fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `695` | Total distinct clusters created |
 | **Sample Distances ($d_S$)** | `57,640` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**2.88**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**13.67**` | Total distance ops per frame |
-| **Pruning Speedup Factor** | `**241.3x**` | Acceleration over exhaustive search ($K / d_S$) |
-| **Distance Ops Saved** | `**99.6%**` | Percentage of pairwise calls pruned away |
+| **Search Calls ($d_S$ / frame)** | **`2.88`** | Search calls per frame |
+| **Total Ops ($d$ / frame)** | **`13.67`** | Total distance ops per frame |
+| **Pruning Speedup Factor** | **`241.3x`** | Acceleration over exhaustive search ($K / d_S$) |
+| **Distance Ops Saved** | **`99.6%`** | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---

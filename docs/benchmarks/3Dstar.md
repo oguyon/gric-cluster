@@ -64,14 +64,14 @@ gric-plot 3Dstar.txt out_3Dstar/cluster_run.log docs/benchmarks/images/3Dstar.pn
 | Metric | Measured Value | Description |
 | :--- | :--- | :--- |
 | **Total Frames** | `20,000` | Number of sequential frames processed |
-| **Execution Time** | `141.187 ms` | Total wall-clock runtime |
-| **Throughput** | `141,656 fps` | Frames processed per second |
+| **Execution Time** | `151.613 ms` | Total wall-clock runtime |
+| **Throughput** | `131,915 fps` | Frames processed per second |
 | **Active Clusters / States ($K$)** | `30` | Total distinct clusters created |
-| **Sample Distances ($d_S$)** | `42,287` | Sample-to-cluster evaluations |
-| **$d_S / \text{frame}$** | `**2.11**` | Search calls per frame |
-| **Total $d / \text{frame}$** | `**2.14**` | Total distance ops per frame |
-| **Pruning Speedup Factor** | `**14.2x**` | Acceleration over exhaustive search ($K / d_S$) |
-| **Distance Ops Saved** | `**93.0%**` | Percentage of pairwise calls pruned away |
+| **Sample Distances ($d_S$)** | `42,259` | Sample-to-cluster evaluations |
+| **Search Calls ($d_S$ / frame)** | **`2.11`** | Search calls per frame |
+| **Total Ops ($d$ / frame)** | **`2.13`** | Total distance ops per frame |
+| **Pruning Speedup Factor** | **`14.2x`** | Acceleration over exhaustive search ($K / d_S$) |
+| **Distance Ops Saved** | **`93.0%`** | Percentage of pairwise calls pruned away |
 | **Peak Memory** | `135,000 KB` | Peak resident set size (RSS) |
 
 ---
