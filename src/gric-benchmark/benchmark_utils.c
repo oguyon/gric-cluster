@@ -58,7 +58,8 @@ void print_help(
 
     printf("%sDESCRIPTION%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  Runs performance benchmarks on the gric-cluster algorithm.\n");
-    printf("  All input files (txt points files, mp4 videos, fits cubes) are read/generated in 'benchmarks'.\n");
+    printf("  All input files (txt points files, mp4 videos, fits cubes) "
+           "are read/generated in 'benchmarks'.\n");
     printf("  All output files (logs, png plots, and the benchmark summary md file) are written\n");
     printf("  to 'benchmarks-out', which is created automatically if it does not exist.\n\n");
 
@@ -344,13 +345,49 @@ void parse_metrics(
                 out_time[63] = '\0';
             }
         }
+        else if (strstr(line, "Wall time:") != NULL)
+        {
+            char val[128] = "";
+            if (sscanf(line, "Wall time: %127s", val) == 1)
+            {
+                strncpy(out_time, val, 63);
+                out_time[63] = '\0';
+            }
+        }
         else if (strstr(line, "Framedist calls:") != NULL)
         {
             char val_tot[64] = "";
             char val_sample[64] = "";
             char val_inter[64] = "";
-            int parsed = sscanf(line, "Framedist calls: %63s (sample-to-cluster: %63[^,], inter-cluster: %63[^)])",
-                                val_tot, val_sample, val_inter);
+            int parsed = sscanf(
+                line,
+                "Framedist calls: %63s (sample-to-cluster: %63[^,], inter-cluster: %63[^)])",
+                val_tot, val_sample, val_inter);
+            if (parsed >= 1)
+            {
+                strncpy(out_dists, val_tot, 63);
+                out_dists[63] = '\0';
+                if (parsed >= 2 && val_sample[0])
+                {
+                    strncpy(out_dists_sample, val_sample, 63);
+                    out_dists_sample[63] = '\0';
+                }
+                if (parsed >= 3 && val_inter[0])
+                {
+                    strncpy(out_dists_intercluster, val_inter, 63);
+                    out_dists_intercluster[63] = '\0';
+                }
+            }
+        }
+        else if (strstr(line, "Total framedist:") != NULL)
+        {
+            char val_tot[64] = "";
+            char val_sample[64] = "";
+            char val_inter[64] = "";
+            int parsed = sscanf(
+                line,
+                "Total framedist: %63s (dfc=%63[^,], dcc=%63[^)])",
+                val_tot, val_sample, val_inter);
             if (parsed >= 1)
             {
                 strncpy(out_dists, val_tot, 63);
@@ -369,8 +406,19 @@ void parse_metrics(
         }
         else if (strstr(line, "Total clusters:") != NULL)
         {
+            char *p = strstr(line, "Total clusters:");
             char val[128] = "";
-            if (sscanf(line, "Total clusters: %127s", val) == 1)
+            if (sscanf(p + 15, "%127s", val) == 1)
+            {
+                strncpy(out_clusters, val, 63);
+                out_clusters[63] = '\0';
+            }
+        }
+        else if (strstr(line, "Unique Tuples (states):") != NULL)
+        {
+            char *p = strstr(line, "Unique Tuples (states):");
+            char val[128] = "";
+            if (sscanf(p + 23, "%127s", val) == 1)
             {
                 strncpy(out_clusters, val, 63);
                 out_clusters[63] = '\0';

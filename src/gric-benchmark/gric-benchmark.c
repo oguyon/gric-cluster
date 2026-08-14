@@ -49,7 +49,7 @@ static void init_config(
     config->nsamples = 20000;
     strcpy(config->rlim, "0.10");
     config->rlim_set = 0;
-    config->maxcl = 1000;
+    config->maxcl = 2500;
     config->maxim = 100000;
     config->maxim_set = 0;
     strcpy(config->type, "txt");
@@ -335,7 +335,9 @@ int main(
         strcmp(config.type, "stream") != 0 &&
         strcmp(config.type, "fits") != 0)
     {
-        fprintf(stderr, "Error: Invalid type '%s'. Use 'txt', 'mp4', 'stream', or 'fits'.\n", config.type);
+        fprintf(stderr,
+                "Error: Invalid type '%s'. Use 'txt', 'mp4', 'stream', or 'fits'.\n",
+                config.type);
         return 1;
     }
 
@@ -478,7 +480,8 @@ int main(
     mkdir(log_dir, 0755);
 
     char cluster_out_dir_parent[512];
-    snprintf(cluster_out_dir_parent, sizeof(cluster_out_dir_parent), "%sclusteroutdir", write_prefix);
+    snprintf(cluster_out_dir_parent, sizeof(cluster_out_dir_parent),
+             "%sclusteroutdir", write_prefix);
     mkdir(cluster_out_dir_parent, 0755);
 
     /* Sync MAXIM with nsamples if not explicitly configured */
@@ -505,9 +508,9 @@ int main(
         if (sum_fp != NULL)
         {
             fprintf(sum_fp,
-                    "| Pattern | Type | Algo | Time (ms) | "
+                    "| Pattern | Type | Algo | Frames | Time (ms) | "
                     "Dist Calls | Clusters | Memory (KB) |\n");
-            fprintf(sum_fp, "|---|---|---|---|---|---|---|\n");
+            fprintf(sum_fp, "|---|---|---|---|---|---|---|---|\n");
             fclose(sum_fp);
         }
     }
@@ -526,12 +529,19 @@ int main(
     {
         const char *pattern = config.patterns[ii];
         int is_entropy = config.use_entropy;
+        int has_tiles_opt = 0;
         for (int jj = 0; jj < config.extra_options_count; jj++)
         {
-            if (config.extra_options[jj] != NULL && strstr(config.extra_options[jj], "-entropy") != NULL)
+            if (config.extra_options[jj] != NULL)
             {
-                is_entropy = 1;
-                break;
+                if (strstr(config.extra_options[jj], "-entropy") != NULL)
+                {
+                    is_entropy = 1;
+                }
+                if (strstr(config.extra_options[jj], "-tiles") != NULL)
+                {
+                    has_tiles_opt = 1;
+                }
             }
         }
 
@@ -807,8 +817,17 @@ int main(
         {
             if (!config.rlim_set)
             {
-                /* Default rlim for 32x32 bouncing balls is 3.0 */
-                strcpy(cur_rlim, "3.0");
+                if (strcmp(pattern, "balls_single") == 0 ||
+                    strcmp(pattern, "balls_1") == 0)
+                {
+                    /* 1 ball in 32x32: 2x2 tiles -> rlim = 1.5, 1 tile -> rlim = 3.0 */
+                    strcpy(cur_rlim, has_tiles_opt ? "1.5" : "1.5");
+                }
+                else
+                {
+                    /* 3 balls in 32x32: 2x2 tiles -> rlim = 4.0, 1 tile -> rlim = 8.0 */
+                    strcpy(cur_rlim, has_tiles_opt ? "4.0" : "4.0");
+                }
             }
             else
             {
@@ -867,6 +886,14 @@ int main(
             cluster_args[cluster_argc++] = "-entropy";
         }
 
+        if ((strcmp(effective_type, "fits") == 0 || is_balls) && !has_tiles_opt)
+        {
+            cluster_args[cluster_argc++] = "-tiles";
+            cluster_args[cluster_argc++] = "2x2";
+            cluster_args[cluster_argc++] = "-ncpu";
+            cluster_args[cluster_argc++] = "4";
+        }
+
         int first_extra_arg_idx = cluster_argc;
         for (int jj = 0; jj < config.extra_options_count; jj++)
         {
@@ -910,8 +937,12 @@ int main(
         }
 
         /* 6. Extract Metrics and Log to Summary */
-        char m_time[64], m_dists[64], m_dists_sample[64], m_dists_inter[64], m_clusters[64], m_mem[64];
-        parse_metrics(log_file, m_time, m_dists, m_dists_sample, m_dists_inter, m_clusters, m_mem);
+        char m_time[64], m_dists[64], m_dists_sample[64];
+        char m_dists_inter[64], m_clusters[64], m_mem[64];
+        parse_metrics(
+            log_file, m_time, m_dists,
+            m_dists_sample, m_dists_inter,
+            m_clusters, m_mem);
 
         printf("Result: Time=%sms, Clusters=%s, Mem=%sKB\n",
                m_time, m_clusters, m_mem);
@@ -929,9 +960,11 @@ int main(
             printf("%sDistances (sum): %s%s (%.3f per sample)%s\n",
                    ANSI_BOLD_CYAN, ANSI_BOLD_GREEN, m_dists, avg_dists, ANSI_COLOR_RESET);
             printf("%s  -> Sample-to-cluster: %s%s (%.3f per sample)%s\n",
-                   ANSI_BOLD_CYAN, ANSI_BOLD_GREEN, m_dists_sample, avg_sample_dists, ANSI_COLOR_RESET);
+                   ANSI_BOLD_CYAN, ANSI_BOLD_GREEN,
+                   m_dists_sample, avg_sample_dists, ANSI_COLOR_RESET);
             printf("%s  -> Cluster-to-cluster: %s%s (%.3f per sample)%s\n",
-                   ANSI_BOLD_CYAN, ANSI_BOLD_GREEN, m_dists_inter, avg_inter_dists, ANSI_COLOR_RESET);
+                   ANSI_BOLD_CYAN, ANSI_BOLD_GREEN,
+                   m_dists_inter, avg_inter_dists, ANSI_COLOR_RESET);
         }
         else
         {
@@ -956,9 +989,10 @@ int main(
                          "%s", m_dists);
             }
             fprintf(sum_fp,
-                    "| %s | %s | %s | %s | %s | %s | %s |\n",
+                    "| %s | %s | %s | %d | %s | %s | %s | %s |\n",
                     pattern, effective_type,
                     is_entropy ? "gric-entropy" : "gric-greedy",
+                    config.nsamples,
                     m_time, dist_str, m_clusters, m_mem);
             fclose(sum_fp);
         }
@@ -1031,14 +1065,14 @@ int main(
     if (results != NULL && result_count > 0)
     {
         /* Header */
-        printf("%s%-22s %-8s %10s %10s %8s "
+        printf("%s%-20s %-8s %7s %10s %10s %8s "
                "%8s %6s %10s%s\n",
                ANSI_BOLD,
-               "Pattern", "Algo", "Time(ms)",
+               "Pattern", "Algo", "Frames", "Time(ms)",
                "DistTot", "d/frm",
                "dS/frm", "Clust", "Mem(KB)",
                ANSI_COLOR_RESET);
-        printf("---------------------- -------- "
+        printf("-------------------- -------- ------- "
                "---------- ---------- -------- "
                "-------- ------ ----------\n");
 
@@ -1046,10 +1080,11 @@ int main(
         for (int ii = 0; ii < result_count; ii++)
         {
             TestResult *r = &results[ii];
-            printf("%-22s %-8s %10s %10.0f %8.2f "
+            printf("%-20s %-8s %7d %10s %10.0f %8.2f "
                    "%8.2f %6d %10s\n",
                    r->pattern,
                    r->algo,
+                   r->nsamples,
                    r->time_ms,
                    r->dist_total,
                    r->avg_dist,
@@ -1061,8 +1096,8 @@ int main(
         }
 
         printf("========================================"
-               "========================================"
-               "================================\n");
+           "========================================"
+           "================================\n");
     }
 
     free(results);

@@ -44,11 +44,16 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
 
+hooks:
+  - docs/hooks/build_timestamp.py
+
 nav:
   - Home: index.md
   - Algorithm:
       - Overview & Modes: algorithm/index.md
       - Pruning Mechanisms: algorithm/pruning.md
       - Probability & Prediction: algorithm/prediction.md
+  - CLI Reference: help/index.md
   - Benchmarks: benchmarks.md
   - Practical Use Cases: practical-use.md
+

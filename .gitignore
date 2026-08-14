@@ -55,6 +55,9 @@ test_birch_stream.py
 # MkDocs
 site/
 .cache/
-python/__pycache__
+**/__pycache__/
+*.pyc
 benchmark/
+scratch/
+.vscode/
 

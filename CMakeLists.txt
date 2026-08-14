@@ -53,11 +53,25 @@ else()
     message(WARNING "OpenMP not found. Multithreading disabled.")
 endif()
 
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+file(GLOB HELP_TOPIC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/help/*.md")
+set(HELP_TOPICS_GEN_C "${CMAKE_CURRENT_BINARY_DIR}/help_topics_gen.c")
+add_custom_command(
+    OUTPUT "${HELP_TOPICS_GEN_C}"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_help_c.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/docs/help"
+            "${HELP_TOPICS_GEN_C}"
+    DEPENDS ${HELP_TOPIC_FILES} "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_help_c.py"
+    COMMENT "Generating embedded Markdown help topics database"
+)
+
 include_directories(
     ${CFITSIO_INCLUDE_DIRS}
     ${PNG_INCLUDE_DIRS}
     ${FFMPEG_INCLUDE_DIRS}
     ${IMAGESTREAMIO_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_BINARY_DIR}
     src
     src/gric-cluster/core
     src/gric-cluster/math
@@ -104,6 +118,8 @@ set(CLUSTER_SRCS
     src/gric-cluster/help/cluster_help.c
     src/gric-cluster/help/cluster_help_format.c
     src/gric-cluster/help/cluster_help_content.c
+    src/gric-cluster/help/help_md_render.c
+    ${HELP_TOPICS_GEN_C}
     src/gric-cluster/steps/initialize_initial_cluster.c
     src/gric-cluster/steps/compute_priors_and_mixing.c
     src/gric-cluster/steps/select_next_measurement_target.c

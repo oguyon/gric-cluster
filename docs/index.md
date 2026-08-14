@@ -1,5 +1,7 @@
 # Welcome to the GRIC Documentation
 
+<!-- BUILD_TIMESTAMP -->
+
 This project provides a high-speed, distance-based clustering tool optimized for sequential
 data (images, sensor logs, etc.).
 
