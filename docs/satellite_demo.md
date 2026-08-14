@@ -105,6 +105,23 @@ python3 tools/fetch_satellite_dataset.py \
 ./build/gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 4 -clustered goes_east_hourly.fits
 ```
 
+### Example C: >10,000 Historical Frames from NOAA AWS S3 (NODD)
+
+```bash
+# 1. Download ~70 days of 10-minute continuous thermal infrared (10,000 frames)
+python3 tools/fetch_goes_s3.py \
+    --satellite goes16 \
+    --start 2023-06-01 \
+    --end 2023-08-10 \
+    --channel CMI_C13 \
+    --size 128 \
+    --max-frames 10000 \
+    --output goes16_10k_128x128.fits
+
+# 2. Run multi-tile clustering
+./build/gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 8 -clustered goes16_10k_128x128.fits
+```
+
 ---
 
 ## 5. Analyzing Clustering Results
