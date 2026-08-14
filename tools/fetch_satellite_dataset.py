@@ -7,14 +7,14 @@ Downloads real satellite Earth observation image time series from:
 3. Synthetic planetary Earth simulation (offline / test mode)
 
 Usage:
-  # 1-year daily global true color maps (native cadence = 1d)
+  # 1-year daily global true color maps (native cadence = 1d, 2000–present)
   python3 tools/fetch_satellite_dataset.py --source worldview \
       --start 2023-01-01 --end 2023-12-31 --size 128 --output earth_2023.fits
 
-  # Geostationary satellite imagery (native cadence = 10m)
+  # Geostationary satellite imagery (native cadence = 10m, rolling last 90 days)
   python3 tools/fetch_satellite_dataset.py --source worldview \
       --layer GOES-East_ABI_GeoColor \
-      --start 2023-06-01 --end 2023-06-07 --size 128 --output goes_east.fits
+      --start 2026-08-01 --end 2026-08-07 --size 128 --output goes_east.fits
 """
 
 import argparse
@@ -25,7 +25,7 @@ import sys
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ANSI Color Codes
@@ -381,6 +381,22 @@ def main():
     print(f"Workers:       {args.workers} threads")
     print("==================================================")
 
+    # Pre-flight check for geostationary 90-day retention cache in NASA Worldview
+    if args.source == "worldview":
+        layer_upper = args.layer.upper()
+        if any(kw in layer_upper for kw in ("GOES", "ABI", "AHI", "HIMAWARI", "METEOSAT")):
+            cur_start_dt = parse_datetime(args.start)
+            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+            days_ago = (now_utc - cur_start_dt).days
+            if days_ago > 90:
+                print_warning(
+                    f"\n[Retention Notice]: Start date {args.start} is {days_ago} days old.\n"
+                    f"NASA Worldview/GIBS only caches geostationary layers ({args.layer})\n"
+                    f"for the rolling last 90 days. Older dates return blank (zero) pixels.\n"
+                    f"Tip: For historical dates (2000–present), use daily polar-orbiting layers\n"
+                    f"like --layer MODIS_Terra_CorrectedReflectance_TrueColor, or use recent dates."
+                )
+
     cube = None
     date_beg, date_end = args.start, args.end
     n_frames = 0
@@ -545,14 +561,31 @@ def main():
             return
         cube, date_beg, date_end = generate_synthetic_earth_cube(n_frames, (w, h), args.start)
 
+    # Post-download content verification
+    blank_count = int(np.sum([np.max(cube[i]) == 0.0 for i in range(n_frames)]))
+    if blank_count > 0:
+        if blank_count == n_frames:
+            print_error(f"\nWarning: All {n_frames} downloaded frames are blank (all zeros).")
+            if any(kw in args.layer.upper() for kw in ("GOES", "ABI", "AHI", "HIMAWARI")):
+                print_warning(
+                    "Reason: Geostationary layers in NASA Worldview/GIBS are only cached for\n"
+                    "the rolling last 90 days. Older historical dates return 0-byte images.\n"
+                    "Solutions:\n"
+                    "  1. For GOES/Himawari: Specify recent dates within the last 90 days.\n"
+                    "  2. For historical years (2000–present): Use daily MODIS/VIIRS layers\n"
+                    "     (--layer MODIS_Terra_CorrectedReflectance_TrueColor)."
+                )
+        else:
+            print_warning(f"\nWarning: {blank_count}/{n_frames} frames are blank (all zeros).")
+
     # Write FITS Cube
     print(f"\nWriting FITS cube to {args.output}...")
-    source_name = (f"NASA Worldview ({args.layer})" if args.source == "worldview"
+    source_name = (args.layer if args.source == "worldview"
                    else ("NASA DSCOVR/EPIC" if args.source == "epic"
                          else "Synthetic Planet Earth"))
     hdu = fits.PrimaryHDU(cube)
     hdr = hdu.header
-    hdr["SOURCE"] = (source_name, "Data provider")
+    hdr["SOURCE"] = (source_name[:68], "Data provider")
     hdr["DATE-BEG"] = (date_beg, "Earliest observation timestamp")
     hdr["DATE-END"] = (date_end, "Latest observation timestamp")
     hdr["NFRAMES"] = (n_frames, "Number of 2D image frames in cube")
