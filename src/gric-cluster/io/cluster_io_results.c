@@ -205,6 +205,48 @@ void write_results(
         } // if (count_out)
     }
 
+    // Write Cluster Radii
+    {
+        double *cluster_max_radii = (double *)calloc(state->num_clusters, sizeof(double));
+        if (cluster_max_radii)
+        {
+            for (long f = 0; f < state->telemetry.total_frames_processed; f++)
+            {
+                int c = state->assignments[f];
+                if (c >= 0 && c < state->num_clusters && state->frame_infos)
+                {
+                    double d = 0.0;
+                    for (int i = 0; i < state->frame_infos[f].num_dists; i++)
+                    {
+                        if (state->frame_infos[f].cluster_indices[i] == c)
+                        {
+                            d = state->frame_infos[f].distances[i];
+                            break;
+                        }
+                    }
+                    if (d > cluster_max_radii[c])
+                    {
+                        cluster_max_radii[c] = d;
+                    }
+                }
+            } // for (long f = 0; ...)
+
+            snprintf(out_path, sizeof(out_path), "%s/cluster_radii.txt", out_dir);
+            FILE *radii_out = fopen(out_path, "w");
+            if (radii_out)
+            {
+                fprintf(radii_out, "# cluster_id member_count max_radius\n");
+                for (int c = 0; c < state->num_clusters; c++)
+                {
+                    fprintf(radii_out, "%d %d %.6f\n",
+                            c, cluster_counts[c], cluster_max_radii[c]);
+                }
+                fclose(radii_out);
+            } // if (radii_out)
+            free(cluster_max_radii);
+        } // if (cluster_max_radii)
+    } // Write Cluster Radii
+
     // Average buffer
     double *avg_buffer = NULL;
 
