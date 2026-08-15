@@ -57,6 +57,7 @@ nav:
   - Home: index.md
   - Algorithm:
       - Overview & Modes: algorithm/index.md
+      - Visual Guide & Architecture: algorithm/visual_guide.md
       - Pruning Mechanisms: algorithm/pruning.md
       - Probability & Prediction: algorithm/prediction.md
   - CLI Reference:

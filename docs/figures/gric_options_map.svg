@@ -1,0 +1,194 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 820" width="100%" height="100%" style="background:#ffffff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <linearGradient id="gradHeadOpt" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#18181b"/>
+      <stop offset="100%" stop-color="#27272a"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="1100" height="820" fill="#f8fafc"/>
+
+  <!-- Header -->
+  <rect x="30" y="20" width="1040" height="70" rx="12" fill="url(#gradHeadOpt)" filter="url(#shadow)"/>
+  <text x="60" y="52" fill="#ffffff" font-size="22" font-weight="700">GRIC CLI Options &amp; Tuning Matrix Cheatsheet</text>
+  <text x="60" y="74" fill="#a1a1aa" font-size="13">Complete reference map organized by functional domain and recommended presets</text>
+  <rect x="910" y="40" width="135" height="30" rx="15" fill="#3b82f6"/>
+  <text x="977" y="60" fill="#ffffff" font-size="12" font-weight="600" text-anchor="middle">CLI Reference</text>
+
+  <!-- 6 Grid Category Boxes -->
+
+  <!-- 1. Core Clustering & Thresholds -->
+  <g transform="translate(40, 110)">
+    <rect width="325" height="305" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="12" y="12" width="24" height="24" rx="4" fill="#ea580c"/>
+    <text x="24" y="28" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">C</text>
+    <text x="44" y="29" fill="#9a3412" font-size="14" font-weight="700">Core &amp; Thresholds</text>
+
+    <g transform="translate(15, 50)">
+      <text x="0" y="15" font-size="12" font-family="monospace" font-weight="700" fill="#ea580c">rlim &lt;val&gt;</text>
+      <text x="0" y="30" font-size="11" fill="#475569">Max Euclidean radius threshold for cluster match.</text>
+
+      <text x="0" y="55" font-size="12" font-family="monospace" font-weight="700" fill="#ea580c">a&lt;factor&gt; / -auto_rlim</text>
+      <text x="0" y="70" font-size="11" fill="#475569">Auto-scales rlim from NN sample scan.</text>
+
+      <text x="0" y="95" font-size="12" font-family="monospace" font-weight="700" fill="#ea580c">-maxcl &lt;N&gt;</text>
+      <text x="0" y="110" font-size="11" fill="#475569">Maximum cluster capacity limit (default 10,000).</text>
+
+      <text x="0" y="135" font-size="12" font-family="monospace" font-weight="700" fill="#ea580c">-discard_frac &lt;f&gt;</text>
+      <text x="0" y="150" font-size="11" fill="#475569">Fraction of inactive clusters to discard on limit.</text>
+
+      <text x="0" y="175" font-size="12" font-family="monospace" font-weight="700" fill="#ea580c">-ncpu &lt;N&gt;</text>
+      <text x="0" y="190" font-size="11" fill="#475569">Worker threads for OpenMP parallelism.</text>
+
+      <text x="0" y="215" font-size="12" font-family="monospace" font-weight="700" fill="#ea580c">-scandist &lt;N&gt;</text>
+      <text x="0" y="230" font-size="11" fill="#475569">Pre-scan first N frames for distance statistics.</text>
+    </g>
+  </g>
+
+  <!-- 2. Pruning & Distance Geometry -->
+  <g transform="translate(385, 110)">
+    <rect width="325" height="305" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="12" y="12" width="24" height="24" rx="4" fill="#059669"/>
+    <text x="24" y="28" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">P</text>
+    <text x="44" y="29" fill="#064e3b" font-size="14" font-weight="700">Pruning &amp; Geometry</text>
+
+    <g transform="translate(15, 50)">
+      <text x="0" y="15" font-size="12" font-family="monospace" font-weight="700" fill="#059669">-te4</text>
+      <text x="0" y="30" font-size="11" fill="#475569">4-point pruning using 2 measured anchors.</text>
+
+      <text x="0" y="55" font-size="12" font-family="monospace" font-weight="700" fill="#059669">-te5</text>
+      <text x="0" y="70" font-size="11" fill="#475569">5-point pruning using 3D simplex bounds.</text>
+
+      <text x="0" y="95" font-size="12" font-family="monospace" font-weight="700" fill="#059669">-sparse_dcc</text>
+      <text x="0" y="110" font-size="11" fill="#475569">Maintains interval bounds instead of dense DCC.</text>
+
+      <text x="0" y="135" font-size="12" font-family="monospace" font-weight="700" fill="#059669">-sparse_dcc_extra_evals &lt;N&gt;</text>
+      <text x="0" y="150" font-size="11" fill="#475569">Tightens sparse DCC bounds on demand.</text>
+
+      <text x="0" y="175" font-size="12" font-family="monospace" font-weight="700" fill="#059669">-no_dcc</text>
+      <text x="0" y="190" font-size="11" fill="#475569">Disables inter-cluster distance matrix storage.</text>
+
+      <text x="0" y="215" font-size="12" font-family="monospace" font-weight="700" fill="#059669">-dcc &lt;file&gt;</text>
+      <text x="0" y="230" font-size="11" fill="#475569">Exports complete pairwise cluster distance matrix.</text>
+    </g>
+  </g>
+
+  <!-- 3. Entropy Scheduling -->
+  <g transform="translate(730, 110)">
+    <rect width="325" height="305" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="12" y="12" width="24" height="24" rx="4" fill="#9333ea"/>
+    <text x="24" y="28" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">E</text>
+    <text x="44" y="29" fill="#581c87" font-size="14" font-weight="700">Entropy &amp; Gating</text>
+
+    <g transform="translate(15, 50)">
+      <text x="0" y="15" font-size="12" font-family="monospace" font-weight="700" fill="#9333ea">-entropy</text>
+      <text x="0" y="30" font-size="11" fill="#475569">Shannon entropy target selection scheduling.</text>
+
+      <text x="0" y="55" font-size="12" font-family="monospace" font-weight="700" fill="#9333ea">-entropy_fast</text>
+      <text x="0" y="70" font-size="11" fill="#475569">Fast popcount bitmask entropy surrogate.</text>
+
+      <text x="0" y="95" font-size="12" font-family="monospace" font-weight="700" fill="#9333ea">-entropy_gate &lt;t&gt;</text>
+      <text x="0" y="110" font-size="11" fill="#475569">Bypasses entropy if max candidate prob &gt; t.</text>
+
+      <text x="0" y="135" font-size="12" font-family="monospace" font-weight="700" fill="#9333ea">-entropy_first_gate</text>
+      <text x="0" y="150" font-size="11" fill="#475569">Forces greedy probe on 1st step of each frame.</text>
+
+      <text x="0" y="175" font-size="12" font-family="monospace" font-weight="700" fill="#9333ea">-entropy_max_targets &lt;N&gt;</text>
+      <text x="0" y="190" font-size="11" fill="#475569">Limits entropy evaluation to top N candidates.</text>
+
+      <text x="0" y="215" font-size="12" font-family="monospace" font-weight="700" fill="#9333ea">-entropy_min_prob &lt;p&gt;</text>
+      <text x="0" y="230" font-size="11" fill="#475569">Ignores candidate clusters with prob &lt; p.</text>
+    </g>
+  </g>
+
+  <!-- 4. Priors & Prediction -->
+  <g transform="translate(40, 435)">
+    <rect width="325" height="340" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="12" y="12" width="24" height="24" rx="4" fill="#2563eb"/>
+    <text x="24" y="28" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">L</text>
+    <text x="44" y="29" fill="#1e3a8a" font-size="14" font-weight="700">Priors &amp; Prediction</text>
+
+    <g transform="translate(15, 50)">
+      <text x="0" y="15" font-size="12" font-family="monospace" font-weight="700" fill="#2563eb">-gprob</text>
+      <text x="0" y="30" font-size="11" fill="#475569">Learns geometric probabilities from visitors.</text>
+
+      <text x="0" y="55" font-size="12" font-family="monospace" font-weight="700" fill="#2563eb">-tm &lt;coeff&gt;</text>
+      <text x="0" y="70" font-size="11" fill="#475569">Markov transition matrix mixing weight.</text>
+
+      <text x="0" y="95" font-size="12" font-family="monospace" font-weight="700" fill="#2563eb">-pred [len,h,n]</text>
+      <text x="0" y="110" font-size="11" fill="#475569">Multi-step trajectory sequence predictor.</text>
+
+      <text x="0" y="135" font-size="12" font-family="monospace" font-weight="700" fill="#2563eb">-dprob &lt;val&gt;</text>
+      <text x="0" y="150" font-size="11" fill="#475569">Recency score increment upon cluster match.</text>
+
+      <text x="0" y="175" font-size="12" font-family="monospace" font-weight="700" fill="#2563eb">-soft_bayesian</text>
+      <text x="0" y="190" font-size="11" fill="#475569">Gaussian likelihood fading instead of hard cut.</text>
+
+      <text x="0" y="215" font-size="12" font-family="monospace" font-weight="700" fill="#2563eb">-soft_bayesian_sigma &lt;s&gt;</text>
+      <text x="0" y="230" font-size="11" fill="#475569">Standard deviation for soft likelihood decay.</text>
+    </g>
+  </g>
+
+  <!-- 5. Spatial Tiling & JTF -->
+  <g transform="translate(385, 435)">
+    <rect width="325" height="340" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="12" y="12" width="24" height="24" rx="4" fill="#0d9488"/>
+    <text x="24" y="28" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">T</text>
+    <text x="44" y="29" fill="#115e59" font-size="14" font-weight="700">Tiling &amp; Multi-Tile</text>
+
+    <g transform="translate(15, 50)">
+      <text x="0" y="15" font-size="12" font-family="monospace" font-weight="700" fill="#0d9488">-tiles &lt;NxM&gt;</text>
+      <text x="0" y="30" font-size="11" fill="#475569">Partitions image into NxM independent sub-tiles.</text>
+
+      <text x="0" y="55" font-size="12" font-family="monospace" font-weight="700" fill="#0d9488">-tilemap &lt;file.fits&gt;</text>
+      <text x="0" y="70" font-size="11" fill="#475569">Custom integer mask for non-rectangular tiles.</text>
+
+      <text x="0" y="95" font-size="12" font-family="monospace" font-weight="700" fill="#0d9488">-tileconf &lt;file&gt;</text>
+      <text x="0" y="110" font-size="11" fill="#475569">Per-tile configuration overrides (rlim, maxcl).</text>
+
+      <text x="0" y="135" font-size="12" font-family="monospace" font-weight="700" fill="#0d9488">-jtf</text>
+      <text x="0" y="150" font-size="11" fill="#475569">Joint Trajectory Fusion Pass 2 for boundary noise.</text>
+
+      <text x="0" y="175" font-size="12" font-family="monospace" font-weight="700" fill="#0d9488">-retrieval_window &lt;N&gt;</text>
+      <text x="0" y="190" font-size="11" fill="#475569">Lookback window size for JTF matching (1000).</text>
+
+      <text x="0" y="215" font-size="12" font-family="monospace" font-weight="700" fill="#0d9488">-xtile / -cpt</text>
+      <text x="0" y="230" font-size="11" fill="#475569">Live cross-tile prior conditional probability table.</text>
+    </g>
+  </g>
+
+  <!-- 6. Recommended Preset Recipes -->
+  <g transform="translate(730, 435)">
+    <rect width="325" height="340" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="12" y="12" width="24" height="24" rx="4" fill="#475569"/>
+    <text x="24" y="28" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">R</text>
+    <text x="44" y="29" fill="#1e293b" font-size="14" font-weight="700">Recommended Presets</text>
+
+    <g transform="translate(15, 50)">
+      <!-- Preset 1 -->
+      <rect width="295" height="65" rx="6" fill="#eff6ff" stroke="#bfdbfe"/>
+      <text x="10" y="18" font-size="11.5" font-weight="700" fill="#1e3a8a">1. Smooth Video / High FPS:</text>
+      <text x="10" y="35" font-family="monospace" font-size="10.5" fill="#2563eb">./gric-cluster a1.5 -tm 0.8 -pred</text>
+      <text x="10" y="52" font-size="10.5" fill="#475569">Leverages temporal continuity &amp; greedy bypass.</text>
+
+      <!-- Preset 2 -->
+      <g transform="translate(0, 75)">
+        <rect width="295" height="65" rx="6" fill="#faf5ff" stroke="#e9d5ff"/>
+        <text x="10" y="18" font-size="11.5" font-weight="700" fill="#581c87">2. Complex / High-Dim Manifolds:</text>
+        <text x="10" y="35" font-family="monospace" font-size="10.5" fill="#7e22ce">-entropy -gprob -te5 -sparse_dcc</text>
+        <text x="10" y="52" font-size="10.5" fill="#475569">Maximizes pruning &amp; information gain.</text>
+      </g>
+
+      <!-- Preset 3 -->
+      <g transform="translate(0, 150)">
+        <rect width="295" height="65" rx="6" fill="#f0fdf4" stroke="#86efac"/>
+        <text x="10" y="18" font-size="11.5" font-weight="700" fill="#14532d">3. Large Images (512x512+):</text>
+        <text x="10" y="35" font-family="monospace" font-size="10.5" fill="#15803d">-tiles 2x2 -jtf -ncpu 8</text>
+        <text x="10" y="52" font-size="10.5" fill="#475569">Spatial sub-division + fusion for speed &amp; low RAM.</text>
+      </g>
+    </g>
+  </g>
+</svg>

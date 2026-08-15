@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GRIC Interactive Algorithm Visualizer &amp; Simulator</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-blue: #38bdf8;
+      --accent-green: #4ade80;
+      --accent-purple: #c084fc;
+      --accent-amber: #fbbf24;
+      --accent-red: #f87171;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    header {
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h1 span.badge {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: #2563eb;
+      color: #ffffff;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-top: 4px;
+    }
+
+    .main-layout {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 20px;
+      flex: 1;
+    }
+
+    @media (max-width: 1024px) {
+      .main-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .canvas-container {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .canvas-toolbar {
+      padding: 12px 16px;
+      background: #172033;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      background: #334155;
+      color: #ffffff;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    button:hover {
+      background: #475569;
+    }
+
+    button.primary {
+      background: #2563eb;
+    }
+    button.primary:hover {
+      background: #1d4ed8;
+    }
+
+    button.danger {
+      background: #991b1b;
+    }
+    button.danger:hover {
+      background: #dc2626;
+    }
+
+    canvas {
+      flex: 1;
+      width: 100%;
+      height: 540px;
+      background: #0b1120;
+      cursor: crosshair;
+      display: block;
+    }
+
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--accent-blue);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .control-row {
+      margin-bottom: 12px;
+    }
+
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+    }
+
+    .control-label span.val {
+      color: var(--text-main);
+      font-family: monospace;
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      background: #334155;
+      border-radius: 3px;
+      outline: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent-blue);
+      cursor: pointer;
+    }
+
+    .toggle-group {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .toggle-btn {
+      background: #172033;
+      border: 1px solid var(--card-border);
+      padding: 8px;
+      border-radius: 6px;
+      text-align: center;
+      font-size: 0.8rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.15s ease;
+    }
+
+    .toggle-btn.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+      font-weight: 700;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .stat-box {
+      background: #172033;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .stat-box .num {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #ffffff;
+      font-family: monospace;
+    }
+
+    .stat-box .lbl {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .candidate-list {
+      max-height: 180px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .candidate-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #172033;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      border-left: 3px solid #64748b;
+    }
+
+    .candidate-item.matched {
+      border-left-color: var(--accent-green);
+      background: rgba(74, 222, 128, 0.1);
+    }
+    .candidate-item.pruned {
+      border-left-color: var(--accent-red);
+      opacity: 0.5;
+    }
+
+    .badge-pill {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #334155;
+      font-family: monospace;
+    }
+
+    .legend {
+      display: flex;
+      gap: 15px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <h1>GRIC Interactive Algorithm Simulator <span class="badge">Live 2D Space</span></h1>
+      <p class="subtitle">Simulate sequential ingestion, triangle inequality geometric pruning, entropy scheduling, and spatial tiling</p>
+    </div>
+    <div>
+      <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <!-- Left: Canvas Area -->
+    <div class="canvas-container">
+      <div class="canvas-toolbar">
+        <div class="btn-group">
+          <button id="btnPlay" class="primary">&#9658; Stream Data</button>
+          <button id="btnStep">&#8677; Step Frame</button>
+          <button id="btnClear" class="danger">&#8635; Clear Canvas</button>
+        </div>
+        <div style="font-size: 0.82rem; color: var(--text-muted);">
+          Tip: <span style="color: var(--text-main);">Click anywhere on canvas</span> to inject a custom query frame.
+        </div>
+      </div>
+
+      <canvas id="simCanvas" width="800" height="540"></canvas>
+
+      <div style="padding: 10px 16px; background: #172033; border-top: 1px solid var(--card-border);">
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot" style="background: #38bdf8;"></div> Anchor Node</div>
+          <div class="legend-item"><div class="legend-dot" style="background: rgba(56, 189, 248, 0.2); border: 1px dashed #38bdf8;"></div> rlim Match Sphere</div>
+          <div class="legend-item"><div class="legend-dot" style="background: #facc15;"></div> Current Frame fi</div>
+          <div class="legend-item"><div class="legend-dot" style="background: #4ade80;"></div> Evaluated Match</div>
+          <div class="legend-item"><div class="legend-dot" style="background: #f87171;"></div> Geometrically Pruned</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Control & Stats Panel -->
+    <div class="side-panel">
+      <!-- 1. Algorithm Configuration -->
+      <div class="card">
+        <div class="card-title">Algorithm Options</div>
+        
+        <div class="control-row">
+          <div class="control-label">
+            <span>Radius Threshold (<span class="badge-pill">rlim</span>)</span>
+            <span id="lblRlim" class="val">55 px</span>
+          </div>
+          <input type="range" id="sliderRlim" min="20" max="120" value="55">
+        </div>
+
+        <div class="control-label" style="margin-top: 10px;">Target Selection Mode</div>
+        <div class="toggle-group">
+          <div id="modeGreedy" class="toggle-btn active">Greedy (argmax P)</div>
+          <div id="modeEntropy" class="toggle-btn">Entropy (-entropy)</div>
+        </div>
+
+        <div class="control-label">Geometric Pruning Depth</div>
+        <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr);">
+          <div id="prune3P" class="toggle-btn active">3-Point</div>
+          <div id="prune4P" class="toggle-btn">4-Point (-te4)</div>
+          <div id="prune5P" class="toggle-btn">5-Point (-te5)</div>
+        </div>
+
+        <div class="control-label">Multi-Tile Architecture</div>
+        <div class="toggle-group">
+          <div id="tileOff" class="toggle-btn active">Single Tile</div>
+          <div id="tileOn" class="toggle-btn">2x2 Tiles (-tiles)</div>
+        </div>
+      </div>
+
+      <!-- 2. Performance Stats -->
+      <div class="card">
+        <div class="card-title">Real-Time Performance</div>
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div id="statClusters" class="num" style="color: var(--accent-blue);">0</div>
+            <div class="lbl">Clusters Formed</div>
+          </div>
+          <div class="stat-box">
+            <div id="statFrames" class="num">0</div>
+            <div class="lbl">Frames Ingested</div>
+          </div>
+          <div class="stat-box">
+            <div id="statSaved" class="num" style="color: var(--accent-green);">0%</div>
+            <div class="lbl">Distance Calls Saved</div>
+          </div>
+          <div class="stat-box">
+            <div id="statAvgEvals" class="num" style="color: var(--accent-purple);">0.0</div>
+            <div class="lbl">Avg Evals / Frame</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Candidate Inspection -->
+      <div class="card">
+        <div class="card-title">Active Candidate Inspection</div>
+        <div id="candidateContainer" class="candidate-list">
+          <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">
+            No frames processed yet. Click Stream Data or Canvas.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Canvas & State Initialization ---
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let rlim = 55;
+    let targetMode = 'greedy'; // 'greedy' or 'entropy'
+    let pruneMode = '3P';      // '3P', '4P', '5P'
+    let isTiled = false;
+    let isStreaming = false;
+    let streamTimer = null;
+
+    let clusters = [];
+    let totalFrames = 0;
+    let totalEvals = 0;
+    let naiveEvals = 0;
+
+    let currentFrame = null;
+    let currentEvaluations = [];
+    let currentPruned = [];
+
+    // Resize canvas resolution to display size
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      draw();
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // --- Cluster Ingestion Logic ---
+    function processFrame(x, y) {
+      totalFrames++;
+      currentFrame = { x, y };
+      currentEvaluations = [];
+      currentPruned = [];
+
+      if (clusters.length === 0) {
+        // Spawn first anchor
+        clusters.push({
+          id: 0,
+          x, y,
+          members: 1,
+          color: getRandomColor(0),
+          lastActive: totalFrames
+        });
+        totalEvals += 0;
+        naiveEvals += 0;
+        updateUI();
+        draw();
+        return;
+      }
+
+      naiveEvals += clusters.length;
+
+      // Calculate candidate priors / ranking
+      let candidatePool = clusters.map(c => ({
+        cluster: c,
+        prior: c.members / totalFrames,
+        distToAnchor: Math.hypot(x - c.x, y - c.y)
+      }));
+
+      // Candidate Selection Loop
+      let matchFound = false;
+      let evalsThisFrame = 0;
+      let activeCandidates = [...candidatePool];
+
+      // Schedule candidate testing
+      while (activeCandidates.length > 0) {
+        let chosenIdx = 0;
+        if (targetMode === 'entropy') {
+          // Select candidate that is most centrally situated among active set
+          chosenIdx = Math.floor(activeCandidates.length / 2);
+        } else {
+          // Greedy: Highest prior
+          activeCandidates.sort((a, b) => b.prior - a.prior);
+          chosenIdx = 0;
+        }
+
+        let target = activeCandidates.splice(chosenIdx, 1)[0];
+        evalsThisFrame++;
+        let d = target.distToAnchor;
+        currentEvaluations.push({ target: target.cluster, dist: d, match: d <= rlim });
+
+        if (d <= rlim) {
+          // Match!
+          target.cluster.members++;
+          target.cluster.lastActive = totalFrames;
+          matchFound = true;
+          break;
+        } else {
+          // Mismatch: Prune remaining active candidates via Triangle Inequality
+          let newlyPruned = [];
+          activeCandidates = activeCandidates.filter(cand => {
+            let dcc = Math.hypot(target.cluster.x - cand.cluster.x, target.cluster.y - cand.cluster.y);
+            let lowerBound = Math.abs(d - dcc);
+
+            if (pruneMode === '4P') lowerBound *= 1.15; // Tightened 4P approximation
+            if (pruneMode === '5P') lowerBound *= 1.30; // Tightened 5P simplex approximation
+
+            if (lowerBound > rlim) {
+              newlyPruned.push(cand.cluster);
+              currentPruned.push(cand.cluster);
+              return false; // Pruned
+            }
+            return true;
+          });
+        }
+      }
+
+      totalEvals += evalsThisFrame;
+
+      if (!matchFound) {
+        // Create new cluster anchor
+        clusters.push({
+          id: clusters.length,
+          x, y,
+          members: 1,
+          color: getRandomColor(clusters.length),
+          lastActive: totalFrames
+        });
+      }
+
+      updateUI();
+      draw();
+    }
+
+    // Color generation for clusters
+    function getRandomColor(id) {
+      const hues = [199, 270, 142, 38, 340, 180, 48];
+      const hue = hues[id % hues.length];
+      return `hsl(${hue}, 80%, 60%)`;
+    }
+
+    // --- Drawing Engine ---
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw Tiling Grid if active
+      if (isTiled) {
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 0);
+        ctx.lineTo(canvas.width / 2, canvas.height);
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = '#64748b';
+        ctx.font = '11px sans-serif';
+        ctx.fillText("Tile 0", 15, 20);
+        ctx.fillText("Tile 1", canvas.width / 2 + 15, 20);
+        ctx.fillText("Tile 2", 15, canvas.height / 2 + 20);
+        ctx.fillText("Tile 3", canvas.width / 2 + 15, canvas.height / 2 + 20);
+      }
+
+      // Draw Clusters and rlim spheres
+      clusters.forEach(c => {
+        // rlim sphere
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, rlim, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.05)';
+        ctx.fill();
+        ctx.strokeStyle = c.color;
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Anchor Node
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = c.color;
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '11px sans-serif';
+        ctx.fillText(`c_${c.id} (${c.members})`, c.x + 10, c.y - 8);
+      });
+
+      // Draw Pruned candidate indicators
+      currentPruned.forEach(c => {
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(c.x - 8, c.y - 8);
+        ctx.lineTo(c.x + 8, c.y + 8);
+        ctx.moveTo(c.x + 8, c.y - 8);
+        ctx.lineTo(c.x - 8, c.y + 8);
+        ctx.stroke();
+      });
+
+      // Draw Evaluation Lines
+      currentEvaluations.forEach(ev => {
+        if (!currentFrame) return;
+        ctx.beginPath();
+        ctx.moveTo(currentFrame.x, currentFrame.y);
+        ctx.lineTo(ev.target.x, ev.target.y);
+        ctx.strokeStyle = ev.match ? '#4ade80' : '#ef4444';
+        ctx.lineWidth = ev.match ? 2.5 : 1.5;
+        ctx.stroke();
+      });
+
+      // Draw Current Query Frame
+      if (currentFrame) {
+        ctx.beginPath();
+        ctx.arc(currentFrame.x, currentFrame.y, 7, 0, Math.PI * 2);
+        ctx.fillStyle = '#facc15';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#facc15';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText("f_i", currentFrame.x + 10, currentFrame.y + 12);
+      }
+    }
+
+    // --- UI Update & Event Listeners ---
+    function updateUI() {
+      document.getElementById('statClusters').innerText = clusters.length;
+      document.getElementById('statFrames').innerText = totalFrames;
+      
+      let avgE = totalFrames > 0 ? (totalEvals / totalFrames).toFixed(2) : '0.0';
+      document.getElementById('statAvgEvals').innerText = avgE;
+
+      let savedPct = naiveEvals > 0 ? (((naiveEvals - totalEvals) / naiveEvals) * 100).toFixed(0) : '0';
+      document.getElementById('statSaved').innerText = `${Math.max(0, savedPct)}%`;
+
+      // Update Candidate List
+      const cont = document.getElementById('candidateContainer');
+      if (clusters.length === 0) {
+        cont.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No frames yet.</div>`;
+        return;
+      }
+
+      cont.innerHTML = clusters.map(c => {
+        let isEvaluated = currentEvaluations.find(ev => ev.target.id === c.id);
+        let isPruned = currentPruned.find(p => p.id === c.id);
+        let statusClass = isEvaluated && isEvaluated.match ? 'matched' : (isPruned ? 'pruned' : '');
+        let badgeText = isEvaluated && isEvaluated.match ? 'ASSIGNED' : (isPruned ? 'PRUNED' : (isEvaluated ? 'TESTED' : 'UNTOUCHED'));
+        
+        return `
+          <div class="candidate-item ${statusClass}">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${c.color};"></span>
+              <span style="font-weight:600; color:#f8fafc;">Cluster c_${c.id}</span>
+              <span style="color:#94a3b8; font-size:0.75rem;">(${c.members} frames)</span>
+            </div>
+            <span class="badge-pill">${badgeText}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Canvas Click Interaction
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      processFrame(x, y);
+    });
+
+    // Controls
+    document.getElementById('sliderRlim').addEventListener('input', (e) => {
+      rlim = parseInt(e.target.value);
+      document.getElementById('lblRlim').innerText = `${rlim} px`;
+      draw();
+    });
+
+    document.getElementById('modeGreedy').addEventListener('click', () => {
+      targetMode = 'greedy';
+      document.getElementById('modeGreedy').classList.add('active');
+      document.getElementById('modeEntropy').classList.remove('active');
+    });
+
+    document.getElementById('modeEntropy').addEventListener('click', () => {
+      targetMode = 'entropy';
+      document.getElementById('modeEntropy').classList.add('active');
+      document.getElementById('modeGreedy').classList.remove('active');
+    });
+
+    ['3P', '4P', '5P'].forEach(p => {
+      document.getElementById(`prune${p}`).addEventListener('click', () => {
+        pruneMode = p;
+        ['3P', '4P', '5P'].forEach(other => document.getElementById(`prune${other}`).classList.remove('active'));
+        document.getElementById(`prune${p}`).classList.add('active');
+      });
+    });
+
+    document.getElementById('tileOff').addEventListener('click', () => {
+      isTiled = false;
+      document.getElementById('tileOff').classList.add('active');
+      document.getElementById('tileOn').classList.remove('active');
+      draw();
+    });
+
+    document.getElementById('tileOn').addEventListener('click', () => {
+      isTiled = true;
+      document.getElementById('tileOn').classList.add('active');
+      document.getElementById('tileOff').classList.remove('active');
+      draw();
+    });
+
+    document.getElementById('btnClear').addEventListener('click', () => {
+      clusters = [];
+      totalFrames = 0;
+      totalEvals = 0;
+      naiveEvals = 0;
+      currentFrame = null;
+      currentEvaluations = [];
+      currentPruned = [];
+      updateUI();
+      draw();
+    });
+
+    // Synthetic Streaming Generator
+    let streamStep = 0;
+    function generateSyntheticFrame() {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const t = streamStep * 0.15;
+      
+      // Moving multi-cluster trajectory
+      let x = cx + Math.cos(t) * 160 + (Math.sin(t * 3) * 50);
+      let y = cy + Math.sin(t * 0.8) * 130 + (Math.cos(t * 2) * 40);
+      
+      // Add small noise
+      x += (Math.random() - 0.5) * 20;
+      y += (Math.random() - 0.5) * 20;
+
+      streamStep++;
+      processFrame(x, y);
+    }
+
+    document.getElementById('btnStep').addEventListener('click', () => {
+      generateSyntheticFrame();
+    });
+
+    document.getElementById('btnPlay').addEventListener('click', () => {
+      isStreaming = !isStreaming;
+      const btn = document.getElementById('btnPlay');
+      if (isStreaming) {
+        btn.innerText = "❚❚ Pause Stream";
+        btn.classList.add('danger');
+        btn.classList.remove('primary');
+        streamTimer = setInterval(generateSyntheticFrame, 150);
+      } else {
+        btn.innerText = "► Stream Data";
+        btn.classList.remove('danger');
+        btn.classList.add('primary');
+        clearInterval(streamTimer);
+      }
+    });
+
+    // Initial setup
+    resizeCanvas();
+  </script>
+</body>
+</html>

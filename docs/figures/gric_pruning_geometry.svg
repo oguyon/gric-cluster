@@ -1,0 +1,320 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 880" width="100%" height="100%" style="background:#ffffff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <linearGradient id="gradHeadPrune" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+
+    <marker id="m-blue" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#2563eb"/>
+    </marker>
+    <marker id="m-red" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#dc2626"/>
+    </marker>
+    <marker id="m-gray" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="880" fill="#f8fafc"/>
+
+  <!-- Header -->
+  <rect x="40" y="20" width="1120" height="72" rx="12" fill="url(#gradHeadPrune)" filter="url(#shadow)"/>
+  <text x="70" y="52" fill="#ffffff" font-size="22" font-weight="700">GRIC Multi-Point Geometric Pruning Architecture</text>
+  <text x="70" y="74" fill="#94a3b8" font-size="13">Exploiting metric space properties to eliminate impossible candidate clusters without computing distances</text>
+  <rect x="990" y="40" width="145" height="32" rx="16" fill="#10b981"/>
+  <text x="1062" y="61" fill="#ffffff" font-size="12" font-weight="600" text-anchor="middle">Distance Geometry</text>
+
+  <!-- Quadrant 1: 3-Point Triangle Inequality & 1D Baseline Projection -->
+  <g transform="translate(40, 110)">
+    <rect width="540" height="355" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="16" y="16" width="30" height="30" rx="6" fill="#2563eb"/>
+    <text x="31" y="36" fill="#ffffff" font-size="13" font-weight="700" text-anchor="middle">3P</text>
+    <text x="56" y="36" fill="#1e3a8a" font-size="16" font-weight="700">3-Point Pruning: 1D Baseline Projection</text>
+    
+    <!-- Legend Status Bar -->
+    <g transform="translate(20, 52)">
+      <rect width="105" height="20" rx="10" fill="#dbeafe" stroke="#bfdbfe"/>
+      <circle cx="10" cy="10" r="4.5" fill="#2563eb"/>
+      <text x="20" y="14" fill="#1e40af" font-size="10" font-weight="700">MEASURED</text>
+
+      <rect x="115" width="85" height="20" rx="10" fill="#f1f5f9" stroke="#cbd5e1"/>
+      <circle cx="125" cy="10" r="4.5" fill="#64748b"/>
+      <text x="135" y="14" fill="#334155" font-size="10" font-weight="700">KNOWN</text>
+
+      <rect x="210" width="95" height="20" rx="10" fill="#f3e8ff" stroke="#d8b4fe"/>
+      <circle cx="220" cy="10" r="4.5" fill="#9333ea"/>
+      <text x="230" y="14" fill="#6b21a8" font-size="10" font-weight="700">UNKNOWN</text>
+
+      <rect x="315" width="185" height="20" rx="10" fill="#fee2e2" stroke="#fca5a5"/>
+      <circle cx="325" cy="10" r="4.5" fill="#dc2626"/>
+      <text x="335" y="14" fill="#991b1b" font-size="10" font-weight="700">DERIVED MIN DISTANCE</text>
+    </g>
+
+    <!-- Geometry Canvas -->
+    <g transform="translate(20, 85)">
+      <!-- Baseline Line connecting cA and cX -->
+      <line x1="50" y1="105" x2="450" y2="105" stroke="#cbd5e1" stroke-width="2"/>
+      
+      <!-- Known Distance Bracket: d(cA, cX) -->
+      <line x1="50" y1="88" x2="450" y2="88" stroke="#64748b" stroke-width="1.5"/>
+      <line x1="50" y1="82" x2="50" y2="94" stroke="#64748b" stroke-width="1.5"/>
+      <line x1="450" y1="82" x2="450" y2="94" stroke="#64748b" stroke-width="1.5"/>
+      <text x="250" y="80" font-size="11.5" font-weight="700" fill="#475569" text-anchor="middle">d(cA, cX) = 5.40  [KNOWN in DCC Matrix]</text>
+
+      <!-- Frame f -->
+      <circle cx="130" cy="25" r="7" fill="#facc15" stroke="#0f172a" stroke-width="2"/>
+      <text x="130" y="12" font-size="12.5" font-weight="700" fill="#0f172a" text-anchor="middle">f (Incoming Frame)</text>
+
+      <!-- Anchor cA (Pivot) -->
+      <circle cx="50" cy="105" r="7" fill="#2563eb" stroke="#ffffff" stroke-width="2"/>
+      <text x="50" y="127" font-size="12" font-weight="700" fill="#1e40af" text-anchor="middle">cA (Pivot)</text>
+
+      <!-- Anchor cX (Candidate) -->
+      <circle cx="450" cy="105" r="32" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.7"/>
+      <circle cx="450" cy="105" r="7" fill="#dc2626" stroke="#ffffff" stroke-width="2"/>
+      <text x="450" y="127" font-size="12" font-weight="700" fill="#991b1b" text-anchor="middle">cX (Candidate)</text>
+      <text x="450" y="148" font-size="10" fill="#ef4444" font-weight="600" text-anchor="middle">r_lim sphere</text>
+
+      <!-- Measured Distance Edge: d(f, cA) -->
+      <line x1="50" y1="105" x2="130" y2="25" stroke="#2563eb" stroke-width="3"/>
+      <text x="65" y="52" font-size="11.5" font-weight="700" fill="#1d4ed8" transform="rotate(-47 65,52)">d(f, cA) = 2.20 [MEASURED]</text>
+
+      <!-- Arc projecting d(f, cA) down to the baseline cA -> cX -->
+      <path d="M 130 25 A 113.1 113.1 0 0 1 163.1 105" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="4,4"/>
+
+      <!-- Projected Measured Segment on Baseline (cA to Proj) -->
+      <line x1="50" y1="105" x2="163.1" y2="105" stroke="#2563eb" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="163.1" cy="105" r="4" fill="#2563eb"/>
+      <text x="106" y="124" font-size="10" font-weight="700" fill="#2563eb" text-anchor="middle">d(f, cA) (Proj)</text>
+
+      <!-- Remaining Difference Segment (Proj to cX) = MIN POSSIBLE DISTANCE -->
+      <line x1="163.1" y1="105" x2="450" y2="105" stroke="#dc2626" stroke-width="5" stroke-linecap="round"/>
+      
+      <!-- Difference Bracket -->
+      <line x1="163.1" y1="150" x2="450" y2="150" stroke="#dc2626" stroke-width="2"/>
+      <line x1="163.1" y1="144" x2="163.1" y2="156" stroke="#dc2626" stroke-width="2"/>
+      <line x1="450" y1="144" x2="450" y2="156" stroke="#dc2626" stroke-width="2"/>
+      <text x="306" y="167" font-size="11.5" font-weight="700" fill="#dc2626" text-anchor="middle">d_min = d(cA, cX) - d(f, cA) = 3.20 &gt; r_lim</text>
+
+      <!-- Unknown Distance d(f, cX) -->
+      <line x1="130" y1="25" x2="450" y2="105" stroke="#9333ea" stroke-width="2" stroke-dasharray="5,4"/>
+      <text x="295" y="48" font-size="11" font-weight="700" fill="#9333ea" transform="rotate(14 295,48)">d(f, cX) [UNKNOWN] &gt;= d_min</text>
+
+      <!-- Pruned Badge Stamp -->
+      <rect x="380" y="15" width="115" height="24" rx="12" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5"/>
+      <text x="437.5" y="31" font-size="11" font-weight="700" fill="#991b1b" text-anchor="middle">&#x2718; PRUNED (0 Evals)</text>
+    </g>
+
+    <!-- Formula Box -->
+    <rect x="16" y="295" width="508" height="46" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="26" y="314" font-size="11.5" font-weight="600" fill="#334155">3-Point Pruning Rule:</text>
+    <text x="160" y="314" font-family="monospace" font-size="12" font-weight="700" fill="#dc2626">d(f, cX) &gt;= | d(cA, cX) - d(f, cA) | &gt; r_lim</text>
+    <text x="26" y="331" font-size="11" fill="#64748b">1D projection along baseline cA &#x2192; cX eliminates impossible candidate cX without metric evaluations.</text>
+  </g>
+
+  <!-- Quadrant 2: 4-Point Pruning (-te4: 2 Measured Anchors, 2D Triangulation Projection) -->
+  <g transform="translate(620, 110)">
+    <rect width="540" height="355" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="16" y="16" width="30" height="30" rx="6" fill="#7c3aed"/>
+    <text x="31" y="36" fill="#ffffff" font-size="13" font-weight="700" text-anchor="middle">4P</text>
+    <text x="56" y="36" fill="#581c87" font-size="16" font-weight="700">4-Point Pruning: 2D Triangulation Projection</text>
+    
+    <!-- Legend Status Bar -->
+    <g transform="translate(20, 52)">
+      <rect width="140" height="20" rx="10" fill="#f3e8ff" stroke="#d8b4fe"/>
+      <circle cx="10" cy="10" r="4.5" fill="#7c3aed"/>
+      <text x="20" y="14" fill="#6b21a8" font-size="10" font-weight="700">2 MEASURED (cA, cB)</text>
+
+      <rect x="150" width="130" height="20" rx="10" fill="#dbeafe" stroke="#bfdbfe"/>
+      <circle cx="160" cy="10" r="4.5" fill="#0284c7"/>
+      <text x="170" y="14" fill="#0369a1" font-size="10" font-weight="700">ORTHOGONAL h_f</text>
+
+      <rect x="290" width="200" height="20" rx="10" fill="#fee2e2" stroke="#fca5a5"/>
+      <circle cx="300" cy="10" r="4.5" fill="#dc2626"/>
+      <text x="310" y="14" fill="#991b1b" font-size="10" font-weight="700">TIGHTER 2D BOUND</text>
+    </g>
+
+    <!-- Geometry Canvas -->
+    <g transform="translate(20, 85)">
+      <!-- Baseline Line connecting cA, cB and extending to cX -->
+      <line x1="40" y1="105" x2="450" y2="105" stroke="#cbd5e1" stroke-width="2"/>
+
+      <!-- Frame f -->
+      <circle cx="140" cy="25" r="7" fill="#facc15" stroke="#0f172a" stroke-width="2"/>
+      <text x="140" y="12" font-size="12.5" font-weight="700" fill="#0f172a" text-anchor="middle">f (Incoming Frame)</text>
+
+      <!-- Measured Anchors cA and cB -->
+      <circle cx="40" cy="105" r="7" fill="#7c3aed" stroke="#ffffff" stroke-width="2"/>
+      <text x="40" y="127" font-size="12" font-weight="700" fill="#581c87" text-anchor="middle">cA (Meas)</text>
+
+      <circle cx="210" cy="105" r="7" fill="#7c3aed" stroke="#ffffff" stroke-width="2"/>
+      <text x="210" y="127" font-size="12" font-weight="700" fill="#581c87" text-anchor="middle">cB (Meas)</text>
+
+      <!-- Candidate Anchor cX -->
+      <circle cx="450" cy="105" r="32" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.7"/>
+      <circle cx="450" cy="105" r="7" fill="#dc2626" stroke="#ffffff" stroke-width="2"/>
+      <text x="450" y="127" font-size="12" font-weight="700" fill="#991b1b" text-anchor="middle">cX (Candidate)</text>
+
+      <!-- Measured Distance Edges: d(f, cA) & d(f, cB) -->
+      <line x1="40" y1="105" x2="140" y2="25" stroke="#7c3aed" stroke-width="2.5"/>
+      <text x="70" y="55" font-size="10.5" font-weight="700" fill="#7c3aed">d(f, cA)</text>
+
+      <line x1="210" y1="105" x2="140" y2="25" stroke="#7c3aed" stroke-width="2.5"/>
+      <text x="185" y="55" font-size="10.5" font-weight="700" fill="#7c3aed">d(f, cB)</text>
+
+      <!-- Orthogonal Height Projection h_f down to Baseline at (140, 105) -->
+      <line x1="140" y1="25" x2="140" y2="105" stroke="#0284c7" stroke-width="2" stroke-dasharray="4,3"/>
+      <circle cx="140" cy="105" r="4" fill="#0284c7"/>
+      <!-- Right angle marker -->
+      <rect x="140" y="95" width="10" height="10" fill="none" stroke="#0284c7" stroke-width="1.2"/>
+      <text x="125" y="70" font-size="11" font-weight="700" fill="#0284c7" text-anchor="end">h_f (Height)</text>
+
+      <!-- Longitudinal Distance along baseline from projection (140) to cX (450) -->
+      <line x1="140" y1="148" x2="450" y2="148" stroke="#64748b" stroke-width="1.5"/>
+      <line x1="140" y1="142" x2="140" y2="154" stroke="#64748b" stroke-width="1.5"/>
+      <line x1="450" y1="142" x2="450" y2="154" stroke="#64748b" stroke-width="1.5"/>
+      <text x="295" y="165" font-size="11" font-weight="700" fill="#475569" text-anchor="middle">&#x394;x = | x_cX - x_f |</text>
+
+      <!-- 2D Triangulated Hypotenuse Bound to cX -->
+      <line x1="140" y1="25" x2="450" y2="105" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="5,4"/>
+      <text x="315" y="55" font-size="11" font-weight="700" fill="#dc2626" transform="rotate(14 315,55)">d_min = &#x221A;(h_f&#178; + &#x394;x&#178;) &gt; r_lim</text>
+
+      <!-- Pruned Badge Stamp -->
+      <rect x="375" y="15" width="125" height="24" rx="12" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5"/>
+      <text x="437.5" y="31" font-size="11" font-weight="700" fill="#991b1b" text-anchor="middle">&#x2718; PRUNED by -te4</text>
+    </g>
+
+    <!-- Formula Box -->
+    <rect x="16" y="295" width="508" height="46" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="26" y="314" font-size="11.5" font-weight="600" fill="#334155">4-Point Triangulation Rule:</text>
+    <text x="180" y="314" font-family="monospace" font-size="11.5" font-weight="700" fill="#7c3aed">d_min = sqrt( h_f^2 + (x_cX - x_f)^2 ) &gt; r_lim</text>
+    <text x="26" y="331" font-size="11" fill="#64748b">Triangulating between 2 measured pivots computes orthogonal height h_f, strictly tightening the bound.</text>
+  </g>
+
+  <!-- Quadrant 3: 5-Point Pruning (-te5: 3 Measured Anchors, 3D Simplex Height Projection) -->
+  <g transform="translate(40, 490)">
+    <rect width="540" height="355" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="16" y="16" width="30" height="30" rx="6" fill="#059669"/>
+    <text x="31" y="36" fill="#ffffff" font-size="13" font-weight="700" text-anchor="middle">5P</text>
+    <text x="56" y="36" fill="#064e3b" font-size="16" font-weight="700">5-Point Pruning: 3D Simplex Height Projection</text>
+    
+    <!-- Legend Status Bar -->
+    <g transform="translate(20, 52)">
+      <rect width="160" height="20" rx="10" fill="#ecfdf5" stroke="#a7f3d0"/>
+      <circle cx="10" cy="10" r="4.5" fill="#059669"/>
+      <text x="20" y="14" fill="#065f46" font-size="10" font-weight="700">3 MEASURED (cA, cB, cC)</text>
+
+      <rect x="190" width="135" height="20" rx="10" fill="#dbeafe" stroke="#bfdbfe"/>
+      <circle cx="200" cy="10" r="4.5" fill="#0284c7"/>
+      <text x="210" y="14" fill="#0369a1" font-size="10" font-weight="700">3D HEIGHT h_3D</text>
+
+      <rect x="335" width="175" height="20" rx="10" fill="#fee2e2" stroke="#fca5a5"/>
+      <circle cx="345" cy="10" r="4.5" fill="#dc2626"/>
+      <text x="355" y="14" fill="#991b1b" font-size="10" font-weight="700">3D PROJECTION BOUND</text>
+    </g>
+
+    <!-- Geometry Canvas -->
+    <g transform="translate(20, 85)">
+      <!-- 3D Simplex Base Plane (Triangle cA-cB-cC) -->
+      <polygon points="50,135 190,155 125,85" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+      <text x="120" y="130" font-size="10.5" fill="#059669" font-weight="600" text-anchor="middle">Simplex Base</text>
+
+      <!-- Frame f elevated in 3D -->
+      <circle cx="140" cy="22" r="7" fill="#facc15" stroke="#0f172a" stroke-width="2"/>
+      <text x="140" y="10" font-size="12.5" font-weight="700" fill="#0f172a" text-anchor="middle">f (Incoming Frame)</text>
+
+      <!-- 3 Measured Anchors -->
+      <circle cx="50" cy="135" r="6" fill="#059669"/>
+      <text x="35" y="145" font-size="11" font-weight="700" fill="#065f46">cA</text>
+
+      <circle cx="190" cy="155" r="6" fill="#059669"/>
+      <text x="200" y="165" font-size="11" font-weight="700" fill="#065f46">cB</text>
+
+      <circle cx="125" cy="85" r="6" fill="#059669"/>
+      <text x="125" y="75" font-size="11" font-weight="700" fill="#065f46">cC</text>
+
+      <!-- Orthogonal projection height h_3D down to plane at (135, 125) -->
+      <line x1="140" y1="22" x2="135" y2="125" stroke="#0284c7" stroke-width="2" stroke-dasharray="4,3"/>
+      <circle cx="135" cy="125" r="4" fill="#0284c7"/>
+      <text x="130" y="65" font-size="11" font-weight="700" fill="#0284c7" text-anchor="end">h_3D</text>
+
+      <!-- Connection Lines from f to cA, cB, cC -->
+      <line x1="140" y1="22" x2="50" y2="135" stroke="#10b981" stroke-width="1.5"/>
+      <line x1="140" y1="22" x2="190" y2="155" stroke="#10b981" stroke-width="1.5"/>
+      <line x1="140" y1="22" x2="125" y2="85" stroke="#10b981" stroke-width="1.5"/>
+
+      <!-- Candidate cX -->
+      <circle cx="450" cy="100" r="32" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.7"/>
+      <circle cx="450" cy="100" r="7" fill="#dc2626" stroke="#ffffff" stroke-width="2"/>
+      <text x="450" y="122" font-size="12" font-weight="700" fill="#991b1b" text-anchor="middle">cX (Candidate)</text>
+
+      <!-- Planar offset from projection (135, 125) to cX (450, 100) -->
+      <line x1="135" y1="125" x2="450" y2="100" stroke="#64748b" stroke-width="1.5" stroke-dasharray="2,2"/>
+      <text x="290" y="130" font-size="11" font-weight="600" fill="#475569">&#x394;r_plane</text>
+
+      <!-- Hypotenuse Bound to cX -->
+      <line x1="140" y1="22" x2="450" y2="100" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="5,4"/>
+      <text x="310" y="50" font-size="11" font-weight="700" fill="#dc2626" transform="rotate(14 310,50)">d_min = &#x221A;(h_3D&#178; + &#x394;r&#178;) &gt; r_lim</text>
+
+      <!-- Pruned Badge Stamp -->
+      <rect x="375" y="15" width="125" height="24" rx="12" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5"/>
+      <text x="437.5" y="31" font-size="11" font-weight="700" fill="#991b1b" text-anchor="middle">&#x2718; PRUNED by -te5</text>
+    </g>
+
+    <!-- Formula Box -->
+    <rect x="16" y="295" width="508" height="46" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="26" y="314" font-size="11.5" font-weight="600" fill="#334155">5-Point Simplex Rule:</text>
+    <text x="160" y="314" font-family="monospace" font-size="11.5" font-weight="700" fill="#059669">d_min = sqrt( h_3D^2 + ||proj(f) - proj(cX)||^2 ) &gt; r_lim</text>
+    <text x="26" y="331" font-size="11" fill="#64748b">3D orthogonal projection yields the tightest mathematical metric bound on curved manifolds.</text>
+  </g>
+
+  <!-- Quadrant 4: Sparse DCC Bounds (-sparse_dcc) -->
+  <g transform="translate(620, 490)">
+    <rect width="540" height="355" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="16" y="16" width="30" height="30" rx="6" fill="#d97706"/>
+    <text x="31" y="36" fill="#ffffff" font-size="13" font-weight="700" text-anchor="middle">SD</text>
+    <text x="56" y="36" fill="#78350f" font-size="16" font-weight="700">Sparse DCC Distance Bounding (-sparse_dcc)</text>
+    
+    <!-- Geometry Canvas -->
+    <g transform="translate(20, 55)">
+      <!-- Dense vs Sparse comparison cards -->
+      <rect x="15" y="10" width="220" height="90" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.2"/>
+      <text x="25" y="32" font-size="12" font-weight="700" fill="#991b1b">Dense DCC Matrix:</text>
+      <text x="25" y="52" font-size="11.5" fill="#7f1d1d">O(K^2) memory &amp; evals</text>
+      <text x="25" y="70" font-size="11.5" fill="#7f1d1d">10,000 clusters = 50M pairs</text>
+      <text x="25" y="88" font-size="11" fill="#b91c1c" font-weight="600">&#x26A0; High initialization &amp; RAM cost</text>
+
+      <rect x="255" y="10" width="230" height="90" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+      <text x="265" y="32" font-size="12" font-weight="700" fill="#14532d">Sparse DCC Matrix:</text>
+      <text x="265" y="52" font-size="11.5" fill="#14532d">O(K) active bound intervals</text>
+      <text x="265" y="70" font-size="11.5" font-family="monospace" font-weight="600" fill="#15803d">[dcc_min(cA,cX), dcc_max(cA,cX)]</text>
+      <text x="265" y="88" font-size="11" fill="#16a34a" font-weight="600">&#x2714; Scales seamlessly to 100k+ clusters</text>
+
+      <!-- Bound Interval Line -->
+      <g transform="translate(15, 120)">
+        <line x1="20" y1="35" x2="450" y2="35" stroke="#cbd5e1" stroke-width="4" stroke-linecap="round"/>
+        <line x1="120" y1="35" x2="340" y2="35" stroke="#f59e0b" stroke-width="7" stroke-linecap="round"/>
+        
+        <!-- Markers -->
+        <circle cx="120" cy="35" r="5" fill="#d97706"/>
+        <text x="120" y="18" font-size="11" font-weight="700" fill="#b45309" text-anchor="middle">dcc_min(cA, cX)</text>
+
+        <circle cx="340" cy="35" r="5" fill="#d97706"/>
+        <text x="340" y="18" font-size="11" font-weight="700" fill="#b45309" text-anchor="middle">dcc_max(cA, cX)</text>
+
+        <text x="230" y="62" font-size="11.5" font-weight="700" fill="#334155" text-anchor="middle">Dynamic Interval Bound Range</text>
+      </g>
+    </g>
+
+    <!-- Formula Box -->
+    <rect x="16" y="295" width="508" height="46" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="26" y="314" font-size="11.5" font-weight="600" fill="#334155">Sparse Pruning Rule:</text>
+    <text x="165" y="314" font-family="monospace" font-size="11.5" font-weight="700" fill="#d97706">d(f, cA) - dcc_max(cA, cX) &gt; r_lim</text>
+    <text x="26" y="331" font-size="11" fill="#64748b">Tightened on demand with -sparse_dcc_extra_evals &lt;N&gt; without dense O(K^2) memory.</text>
+  </g>
+</svg>
