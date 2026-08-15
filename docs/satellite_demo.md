@@ -53,20 +53,26 @@ ready for clustering.
 
 The `--layer` option gives direct access to hundreds of public NASA Earthdata / GIBS products:
 
-| Layer Identifier | Satellite | Cadence | Details |
+| Layer Identifier | Satellite | Cadence | Retention Archive |
 | :--- | :--- | :--- | :--- |
-| `MODIS_Terra_CorrectedReflectance_TrueColor` | Terra | Daily | 2000–present global true color |
-| `MODIS_Aqua_CorrectedReflectance_TrueColor` | Aqua | Daily | 2002–present afternoon color |
-| `VIIRS_SNPP_CorrectedReflectance_TrueColor` | Suomi NPP | Daily | 2012–present high resolution |
-| `MODIS_Terra_CorrectedReflectance_Bands721` | Terra | Daily | False color (snow, ice, fires) |
-| `GOES-East_ABI_GeoColor` | GOES-16 | 10m / 1h | Americas full-disk true color |
-| `GOES-West_ABI_GeoColor` | GOES-18 | 10m / 1h | Pacific full-disk true color |
+| `MODIS_Terra_CorrectedReflectance_TrueColor` | Terra | Daily (`1d`) | 2000–present (Permanent) |
+| `MODIS_Aqua_CorrectedReflectance_TrueColor` | Aqua | Daily (`1d`) | 2002–present (Permanent) |
+| `VIIRS_SNPP_CorrectedReflectance_TrueColor` | Suomi NPP | Daily (`1d`) | 2012–present (Perm.) |
+| `MODIS_Terra_CorrectedReflectance_Bands721` | Terra | Daily (`1d`) | 2000–present (Permanent) |
+| `GOES-East_ABI_GeoColor` | GOES-16 | 10m / 1h | Last 90 days (Rolling) |
+| `GOES-West_ABI_GeoColor` | GOES-18 | 10m / 1h | Last 90 days (Rolling) |
+
+> **Note on Geostationary Retention**: Geostationary layers (GOES-East/West, Himawari) produce
+> massive data volumes at 10-minute cadence, so NASA GIBS retains them for the **rolling last
+> 90 days**. For dates within the last 90 days, real high-rate images are returned; older dates
+> return blank placeholders. For historical multi-year time series (2000–present), use daily
+> polar-orbiting layers (MODIS Terra/Aqua or VIIRS).
 
 ---
 
 ## 4. Step-by-Step Workflow
 
-### Example A: 1-Year Daily Global Time Series (MODIS Terra)
+### Example A: 1-Year Daily Global Time Series (MODIS Terra, Historical 2023)
 
 ```bash
 # 1. Download 365 daily global maps (128x128)
@@ -82,22 +88,38 @@ python3 tools/fetch_satellite_dataset.py \
 ./build/gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 4 -clustered earth_2023_128x128.fits
 ```
 
-### Example B: 1-Month Hourly Geostationary Time Series (GOES-East)
+### Example B: 1-Week Hourly Geostationary Time Series (GOES-East, Recent Date)
 
 ```bash
-# 1. Download ~720 hourly frames of Americas geostationary full-disk
+# 1. Download 168 hourly frames of Americas geostationary full-disk
 python3 tools/fetch_satellite_dataset.py \
     --source worldview \
     --layer GOES-East_ABI_GeoColor \
     --cadence 1h \
-    --bbox -80,-140,80,-20 \
-    --start 2023-06-01 \
-    --end 2023-06-30 \
+    --start 2026-08-01 \
+    --end 2026-08-07 \
     --size 128 \
     --output goes_east_hourly.fits
 
 # 2. Run multi-tile clustering
 ./build/gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 4 -clustered goes_east_hourly.fits
+```
+
+### Example C: >10,000 Historical Frames from NOAA AWS S3 (NODD)
+
+```bash
+# 1. Download ~70 days of 10-minute continuous thermal infrared (10,000 frames)
+python3 tools/fetch_goes_s3.py \
+    --satellite goes16 \
+    --start 2023-06-01 \
+    --end 2023-08-10 \
+    --channel CMI_C13 \
+    --size 128 \
+    --max-frames 10000 \
+    --output goes16_10k_128x128.fits
+
+# 2. Run multi-tile clustering
+./build/gric-cluster 2.5 -maxcl 5000 -tiles 2x2 -ncpu 8 -clustered goes16_10k_128x128.fits
 ```
 
 ---
