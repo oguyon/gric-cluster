@@ -1,0 +1,281 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 860" width="100%" height="100%" style="background:#ffffff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <linearGradient id="gradHeader" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#334155"/>
+    </linearGradient>
+    <linearGradient id="gradStep1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#eff6ff"/>
+      <stop offset="100%" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="gradStep2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fdf4ff"/>
+      <stop offset="100%" stop-color="#fae8ff"/>
+    </linearGradient>
+    <linearGradient id="gradStep3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="100%" stop-color="#ffedd5"/>
+    </linearGradient>
+    <linearGradient id="gradStep4" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f0fdf4"/>
+      <stop offset="100%" stop-color="#dcfce7"/>
+    </linearGradient>
+    <linearGradient id="gradStep5" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fef2f2"/>
+      <stop offset="100%" stop-color="#fee2e2"/>
+    </linearGradient>
+    
+    <filter id="cardShadow" x="-5%" y="-5%" width="110%" height="115%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+
+    <marker id="arr" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#475569"/>
+    </marker>
+    <marker id="arr-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="arr-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <marker id="arr-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#0284c7"/>
+    </marker>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1200" height="860" fill="#f8fafc"/>
+
+  <!-- Title Header Bar -->
+  <rect x="50" y="24" width="1100" height="72" rx="12" fill="url(#gradHeader)" filter="url(#cardShadow)"/>
+  <text x="80" y="54" fill="#ffffff" font-size="21" font-weight="700" letter-spacing="0.4">GRIC Sequential Frame Ingestion &amp; Clustering Pipeline</text>
+  <text x="80" y="76" fill="#94a3b8" font-size="13" font-weight="400">High-speed distance-based geometric clustering with active pruning and target scheduling</text>
+  <rect x="990" y="44" width="135" height="32" rx="16" fill="#3b82f6"/>
+  <text x="1057" y="65" fill="#ffffff" font-size="12" font-weight="600" text-anchor="middle">5-Stage Pipeline</text>
+
+  <!-- Left Column: Sequential Stages 1 to 4 -->
+
+  <!-- STAGE 1: Incoming Frame & Priors -->
+  <g transform="translate(60, 120)">
+    <rect width="470" height="112" rx="10" fill="url(#gradStep1)" stroke="#bfdbfe" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <rect x="14" y="14" width="28" height="28" rx="6" fill="#2563eb"/>
+    <text x="28" y="33" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">1</text>
+    <text x="52" y="33" fill="#1e3a8a" font-size="16" font-weight="700">Frame Ingestion &amp; Prior Modeling</text>
+    <text x="52" y="55" fill="#334155" font-size="12.5">Ingests frame <tspan font-family="monospace" font-weight="600">f_i</tspan>. Normalizes recency frequency score.</text>
+    <text x="52" y="73" fill="#334155" font-size="12.5">Blends Markov transitions and multi-step trajectory sequences.</text>
+    
+    <!-- Option Badges -->
+    <g transform="translate(52, 84)">
+      <rect width="68" height="18" rx="9" fill="#2563eb"/>
+      <text x="34" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-dprob</text>
+      
+      <rect x="74" width="48" height="18" rx="9" fill="#7c3aed"/>
+      <text x="98" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-tm</text>
+      
+      <rect x="128" width="55" height="18" rx="9" fill="#9333ea"/>
+      <text x="155.5" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-pred</text>
+      
+      <rect x="189" width="70" height="18" rx="9" fill="#0284c7"/>
+      <text x="224" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-stream</text>
+    </g>
+  </g>
+
+  <!-- Flow 1 -> 2 -->
+  <line x1="295" y1="232" x2="295" y2="258" stroke="#475569" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- STAGE 2: Target Selection (Greedy vs Entropy) -->
+  <g transform="translate(60, 258)">
+    <rect width="470" height="114" rx="10" fill="url(#gradStep2)" stroke="#f5d0fe" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <rect x="14" y="14" width="28" height="28" rx="6" fill="#a855f7"/>
+    <text x="28" y="33" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">2</text>
+    <text x="52" y="33" fill="#581c87" font-size="16" font-weight="700">Target Candidate Selection</text>
+    <text x="52" y="55" fill="#334155" font-size="12.5"><tspan font-weight="600">Greedy:</tspan> Select highest posterior probability <tspan font-family="monospace">P(c_j)</tspan>.</text>
+    <text x="52" y="73" fill="#334155" font-size="12.5"><tspan font-weight="600">Entropy:</tspan> Minimize expected posterior Shannon entropy <tspan font-family="monospace">H(X)</tspan>.</text>
+    
+    <!-- Option Badges -->
+    <g transform="translate(52, 85)">
+      <rect width="70" height="18" rx="9" fill="#9333ea"/>
+      <text x="35" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-entropy</text>
+      
+      <rect x="76" width="95" height="18" rx="9" fill="#a855f7"/>
+      <text x="123.5" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-entropy_fast</text>
+      
+      <rect x="177" width="95" height="18" rx="9" fill="#c026d3"/>
+      <text x="224.5" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-entropy_gate</text>
+      
+      <rect x="278" width="95" height="18" rx="9" fill="#7c3aed"/>
+      <text x="325.5" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-entropy_max</text>
+    </g>
+  </g>
+
+  <!-- Flow 2 -> 3 -->
+  <line x1="295" y1="372" x2="295" y2="398" stroke="#475569" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- STAGE 3: Distance Metric Computation -->
+  <g transform="translate(60, 398)">
+    <rect width="470" height="112" rx="10" fill="url(#gradStep3)" stroke="#fed7aa" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <rect x="14" y="14" width="28" height="28" rx="6" fill="#ea580c"/>
+    <text x="28" y="33" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">3</text>
+    <text x="52" y="33" fill="#7c2d12" font-size="16" font-weight="700">Distance Metric Computation</text>
+    <text x="52" y="55" fill="#334155" font-size="12.5">Compute Euclidean distance <tspan font-family="monospace" font-weight="600">d = ||f_i - anchor(c_j)||_2</tspan>.</text>
+    <text x="52" y="73" fill="#334155" font-size="12.5">Optimized with AVX2 SIMD intrinsics &amp; OpenMP threads.</text>
+    
+    <!-- Option Badges -->
+    <g transform="translate(52, 84)">
+      <rect width="52" height="18" rx="9" fill="#ea580c"/>
+      <text x="26" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">rlim</text>
+      
+      <rect x="58" width="80" height="18" rx="9" fill="#f97316"/>
+      <text x="98" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-auto_rlim</text>
+      
+      <rect x="144" width="60" height="18" rx="9" fill="#c2410c"/>
+      <text x="174" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-ncpu</text>
+      
+      <rect x="210" width="75" height="18" rx="9" fill="#d97706"/>
+      <text x="247.5" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-scandist</text>
+    </g>
+  </g>
+
+  <!-- Flow 3 -> 4 Decision Junction -->
+  <line x1="295" y1="510" x2="295" y2="538" stroke="#475569" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- STAGE 4: Match / Prune Decision & Geometry -->
+  <g transform="translate(60, 538)">
+    <rect width="470" height="135" rx="10" fill="url(#gradStep4)" stroke="#bbf7d0" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <rect x="14" y="14" width="28" height="28" rx="6" fill="#16a34a"/>
+    <text x="28" y="33" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">4</text>
+    <text x="52" y="33" fill="#14532d" font-size="16" font-weight="700">Distance Check &amp; Geometric Pruning</text>
+    <text x="52" y="56" fill="#334155" font-size="12.5">If <tspan font-family="monospace" font-weight="700" fill="#16a34a">d &lt;= rlim</tspan>: <tspan font-weight="600">Match Found!</tspan> Stop search &amp; assign to cluster.</text>
+    <text x="52" y="74" fill="#334155" font-size="12.5">If <tspan font-family="monospace" font-weight="700" fill="#dc2626">d &gt; rlim</tspan>: Prune remaining candidates via triangle inequality</text>
+    <text x="52" y="92" fill="#334155" font-size="12.5">(3-point, 4-point, 5-point, and Sparse DCC bounds).</text>
+    
+    <!-- Option Badges -->
+    <g transform="translate(52, 104)">
+      <rect width="48" height="18" rx="9" fill="#16a34a"/>
+      <text x="24" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-te4</text>
+      
+      <rect x="54" width="48" height="18" rx="9" fill="#15803d"/>
+      <text x="78" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-te5</text>
+      
+      <rect x="108" width="92" height="18" rx="9" fill="#047857"/>
+      <text x="154" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-sparse_dcc</text>
+      
+      <rect x="206" width="58" height="18" rx="9" fill="#0d9488"/>
+      <text x="235" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-gprob</text>
+
+      <rect x="270" width="105" height="18" rx="9" fill="#0891b2"/>
+      <text x="322.5" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-soft_bayesian</text>
+    </g>
+  </g>
+
+  <!-- Left Loop-Back Arrow: Mismatch -> Re-schedule Candidate -->
+  <path d="M 60 610 L 25 610 L 25 315 L 60 315" fill="none" stroke="#ea580c" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#arr)"/>
+  <rect x="8" y="445" width="34" height="60" rx="4" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="25" y="475" fill="#ea580c" font-size="10.5" font-weight="700" text-anchor="middle" transform="rotate(-90 25,475)">Prune &amp; Next</text>
+
+  <!-- Right Column: Stage 5 (Top) & Multi-Tile JTF (Bottom) -->
+
+  <!-- STAGE 5: Assignment or New Anchor (Right Column Top) -->
+  <g transform="translate(660, 120)">
+    <rect width="490" height="255" rx="10" fill="url(#gradStep5)" stroke="#fecaca" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <rect x="14" y="14" width="28" height="28" rx="6" fill="#dc2626"/>
+    <text x="28" y="33" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">5</text>
+    <text x="52" y="33" fill="#7f1d1d" font-size="16" font-weight="700">Cluster Assignment &amp; Topology Updates</text>
+    
+    <!-- Sub-branch A: Match -->
+    <rect x="52" y="48" width="422" height="78" rx="8" fill="#ffffff" stroke="#86efac" stroke-width="1.2"/>
+    <circle cx="70" cy="70" r="8" fill="#16a34a"/>
+    <text x="70" y="74" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">A</text>
+    <text x="88" y="70" fill="#14532d" font-size="13.5" font-weight="700">Match Confirmed: Assign to Cluster c_j</text>
+    <text x="88" y="90" fill="#475569" font-size="11.5">Increment frequency score (+dprob), update Markov matrix (+tm),</text>
+    <text x="88" y="108" fill="#475569" font-size="11.5">and record frame visitor measurements for spatial learning (-gprob).</text>
+
+    <!-- Sub-branch B: New Anchor -->
+    <rect x="52" y="136" width="422" height="102" rx="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.2"/>
+    <circle cx="70" cy="158" r="8" fill="#dc2626"/>
+    <text x="70" y="162" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">B</text>
+    <text x="88" y="158" fill="#7f1d1d" font-size="13.5" font-weight="700">All Candidates Excluded: Spawn Anchor c_{K+1}</text>
+    <text x="88" y="178" fill="#475569" font-size="11.5">Current frame becomes the exemplar anchor for a new cluster.</text>
+    <text x="88" y="196" fill="#475569" font-size="11.5">Compute row in DCC matrix (or sparse bounds).</text>
+    
+    <!-- Capacity Options Inside Card B -->
+    <g transform="translate(88, 208)">
+      <rect width="60" height="18" rx="9" fill="#dc2626"/>
+      <text x="30" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-maxcl</text>
+      
+      <rect x="66" width="90" height="18" rx="9" fill="#b91c1c"/>
+      <text x="111" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-discard_frac</text>
+      <text x="165" y="13" fill="#64748b" font-size="10.5">(Prunes oldest inactive clusters)</text>
+    </g>
+  </g>
+
+  <!-- Multi-Tile & JTF Sub-Architecture Card (Right Column Bottom) -->
+  <g transform="translate(660, 400)">
+    <rect width="490" height="273" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#cardShadow)"/>
+    <rect x="14" y="14" width="28" height="28" rx="6" fill="#0284c7"/>
+    <text x="28" y="33" fill="#ffffff" font-size="14" font-weight="700" text-anchor="middle">T</text>
+    <text x="52" y="33" fill="#0369a1" font-size="16" font-weight="700">Multi-Tile Architecture &amp; JTF (Pass 2)</text>
+    
+    <text x="52" y="56" fill="#334155" font-size="12.5"><tspan font-weight="600">Pass 1 (ISC):</tspan> Scatter frame into <tspan font-family="monospace">NxM</tspan> sub-tiles. Cluster independently.</text>
+    <text x="52" y="74" fill="#334155" font-size="12.5"><tspan font-weight="600">Pass 2 (JTF):</tspan> Joint Trajectory Fusion eliminates boundary flicker</text>
+    <text x="52" y="92" fill="#334155" font-size="12.5">by matching multi-tile tuple keys against recent history.</text>
+
+    <!-- Mini diagram of tiles -->
+    <g transform="translate(52, 106)">
+      <!-- 2x2 Grid -->
+      <rect x="0" y="0" width="46" height="46" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="2,2"/>
+      <rect x="46" y="0" width="46" height="46" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="2,2"/>
+      <rect x="0" y="46" width="46" height="46" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="2,2"/>
+      <rect x="46" y="46" width="46" height="46" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="2,2"/>
+      <text x="23" y="28" font-size="10.5" fill="#64748b" text-anchor="middle">Tile 0</text>
+      <text x="69" y="28" font-size="10.5" fill="#64748b" text-anchor="middle">Tile 1</text>
+      <text x="23" y="74" font-size="10.5" fill="#64748b" text-anchor="middle">Tile 2</text>
+      <text x="69" y="74" font-size="10.5" fill="#64748b" text-anchor="middle">Tile 3</text>
+
+      <!-- JTF Arrow -->
+      <line x1="108" y1="46" x2="148" y2="46" stroke="#0284c7" stroke-width="2.5" marker-end="url(#arr-blue)"/>
+
+      <!-- Fusion Box -->
+      <rect x="158" y="10" width="248" height="74" rx="6" fill="#f0f9ff" stroke="#bae6fd" stroke-width="1.2"/>
+      <text x="170" y="32" fill="#0369a1" font-size="12" font-weight="700">Joint Trajectory Tuple</text>
+      <text x="170" y="50" fill="#334155" font-size="11.5">Raw: (0, 3, <tspan fill="#dc2626" font-weight="700">5</tspan>, 1) &#x2192; Flickered Seam</text>
+      <text x="170" y="68" fill="#15803d" font-size="11.5" font-weight="600">JTF: (0, 3, 2, 1) &#x2714; Corrected</text>
+    </g>
+
+    <!-- Option Badges -->
+    <g transform="translate(52, 236)">
+      <rect width="52" height="18" rx="9" fill="#0284c7"/>
+      <text x="26" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-tiles</text>
+      
+      <rect x="58" width="45" height="18" rx="9" fill="#0369a1"/>
+      <text x="80.5" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-jtf</text>
+      
+      <rect x="109" width="115" height="18" rx="9" fill="#0284c7"/>
+      <text x="166.5" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-retrieval_window</text>
+      
+      <rect x="230" width="55" height="18" rx="9" fill="#075985"/>
+      <text x="257.5" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-xtile</text>
+      
+      <rect x="291" width="48" height="18" rx="9" fill="#0c4a6e"/>
+      <text x="315" y="13" fill="#ffffff" font-size="10.5" font-weight="600" text-anchor="middle">-cpt</text>
+    </g>
+  </g>
+
+  <!-- Clear Connector Channels in Central Gutter (x=530 to 660) -->
+  <!-- MATCH -> Step 5A (Green Channel) -->
+  <path d="M 530 580 L 570 580 L 570 200 L 660 200" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#arr-green)"/>
+  <rect x="542" y="360" width="102" height="24" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="1.2"/>
+  <text x="593" y="376" fill="#15803d" font-size="11" font-weight="700" text-anchor="middle">d &lt;= rlim (Match)</text>
+
+  <!-- EXHAUSTED -> Step 5B (Red Channel) -->
+  <path d="M 530 635 L 610 635 L 610 300 L 660 300" fill="none" stroke="#dc2626" stroke-width="2.5" marker-end="url(#arr-red)"/>
+  <rect x="548" y="475" width="115" height="24" rx="12" fill="#fee2e2" stroke="#dc2626" stroke-width="1.2"/>
+  <text x="605.5" y="491" fill="#991b1b" font-size="11" font-weight="700" text-anchor="middle">All Candidates Pruned</text>
+
+  <!-- Bottom Key Takeaway Bar -->
+  <g transform="translate(50, 792)">
+    <rect width="1100" height="44" rx="8" fill="#ffffff" stroke="#cbd5e1" filter="url(#cardShadow)"/>
+    <text x="24" y="27" fill="#475569" font-size="13" font-weight="700">Core GRIC Invariant:</text>
+    <text x="175" y="27" fill="#1e293b" font-size="13">Triangle inequality pruning + active target scheduling reduces distance calls from <tspan font-family="monospace" font-weight="700" fill="#dc2626">O(K)</tspan> down to <tspan font-family="monospace" font-weight="700" fill="#16a34a">O(1 ~ 3)</tspan> per frame on high-D streams.</text>
+  </g>
+</svg>

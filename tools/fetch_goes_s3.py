@@ -1,26 +1,35 @@
 #!/usr/bin/env python3
 """
 tools/fetch_goes_s3.py
-Downloads NOAA GOES-16/18 Full-Disk NetCDF observation files from public
-unauthenticated AWS S3 buckets (NOAA Open Data Dissemination - NODD),
-extracts thermal infrared (Channel 13) or visible (Channel 2) bands,
-and builds a 128x128 3D FITS cube with >10,000 frames for gric-cluster.
+High-performance downloader for NOAA GOES-16/18 Full-Disk NetCDF observation files
+from public unauthenticated AWS S3 buckets (NOAA Open Data Dissemination - NODD).
+Extracts thermal infrared (e.g. Channel 13) or visible (e.g. Channel 2) bands,
+normalizes frames, and builds a 3D FITS cube for gric-cluster.
+
+Optimizations:
+  1. Single-Channel S3 Targeting (ABI-L2-CMIPF): ~22 MB/file vs ~267 MB (12x less data).
+  2. Multi-Process Parallelism: Bypasses NetCDF/HDF5 C-library locks and GIL.
+  3. Persistent HTTP Sessions: Eliminates TCP/TLS handshake overhead per request.
+  4. Direct Strided NetCDF Slicing: Subsamples during read for fast resizing.
+  5. Fast Percentile Estimation: Subsampled percentile computation on valid Earth pixels.
+  6. Filtered S3 Catalog Indexing: Queries hourly folders with specific channel prefix.
 
 Usage:
   python3 tools/fetch_goes_s3.py --satellite goes16 \
-      --start 2023-06-01 --end 2023-08-10 --size 128 --max-frames 10000 \
-      --output goes16_10k_128x128.fits
+      --start 2023-06-01 --end 2023-07-01 --channel CMI_C13 --size 512 \
+      --max-frames 10000 --output goes16_512.fits --workers 16
 """
 
 import argparse
 import io
+import multiprocessing as mp
 import os
+import re
 import sys
-import threading
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -31,9 +40,6 @@ COLOR_YELLOW = "\033[93m"
 COLOR_CYAN = "\033[96m"
 COLOR_BOLD = "\033[1m"
 COLOR_RESET = "\033[0m"
-
-# Mutex to ensure non-thread-safe C NetCDF4 / HDF5 libraries do not corrupt heap
-NETCDF_C_LOCK = threading.Lock()
 
 
 def print_error(msg):
@@ -53,6 +59,14 @@ except ImportError as e:
                 f"Please run: pip install numpy pillow astropy")
     sys.exit(1)
 
+# Check for requests
+HAVE_REQUESTS = False
+try:
+    import requests
+    HAVE_REQUESTS = True
+except ImportError:
+    pass
+
 # Check for NetCDF loader (netCDF4 or h5py)
 HAVE_NETCDF4 = False
 HAVE_H5PY = False
@@ -66,10 +80,47 @@ except ImportError:
     except ImportError:
         pass
 
+# Global session variable for worker processes
+WORKER_SESSION = None
+
+
+def init_worker_session():
+    """Initialize a persistent HTTP session for each worker process."""
+    global WORKER_SESSION
+    if HAVE_REQUESTS:
+        WORKER_SESSION = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=2)
+        WORKER_SESSION.mount("https://", adapter)
+        WORKER_SESSION.mount("http://", adapter)
+
+
+def parse_channel_config(channel_str, product_override=None):
+    """
+    Parse channel identifier (e.g. 'CMI_C13', 'C13', '13', 'CMI_C02')
+    into channel number, channel string, variable name, and product prefix.
+    """
+    m = re.search(r"(\d+)", channel_str)
+    if m:
+        ch_num = int(m.group(1))
+    else:
+        ch_num = 13  # Default to Channel 13 (Clean IR Longwave Window 10.3 um)
+
+    ch_str = f"C{ch_num:02d}"
+    var_mcmip = f"CMI_{ch_str}"
+
+    if product_override:
+        prod = product_override.upper()
+    else:
+        # Default to single-channel CMIPF (Full Disk) for 12x smaller downloads
+        prod = "CMIPF"
+
+    return ch_num, ch_str, var_mcmip, prod
+
 
 def parse_args():
+    default_workers = min(24, max(4, (os.cpu_count() or 8)))
     parser = argparse.ArgumentParser(
-        description="Download historical NOAA GOES-16/18 data from public AWS S3 buckets.",
+        description="Download historical NOAA GOES-16/18 data from public AWS S3 buckets (accelerated).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument(
@@ -86,7 +137,11 @@ def parse_args():
     )
     parser.add_argument(
         "--channel", default="CMI_C13",
-        help="Spectral band (CMI_C13: Clean Thermal IR 10.3um 24/7, CMI_C02: Red Visible 0.64um)"
+        help="Spectral band (e.g. CMI_C13 for Clean Thermal IR 10.3um, CMI_C02 for Red 0.64um)"
+    )
+    parser.add_argument(
+        "--product", default="auto", choices=["auto", "CMIPF", "MCMIPF", "CMIPC"],
+        help="S3 product: auto (CMIPF for single channel, ~22MB/file), CMIPF, MCMIPF (~267MB/file), CMIPC (CONUS)"
     )
     parser.add_argument(
         "--size", type=int, default=128,
@@ -101,8 +156,8 @@ def parse_args():
         help="Subsampling step (1 = all files, 2 = every 2nd file)"
     )
     parser.add_argument(
-        "--workers", type=int, default=8,
-        help="Concurrent download threads"
+        "--workers", type=int, default=default_workers,
+        help="Concurrent download and decoding worker processes"
     )
     parser.add_argument(
         "--output", "-o", default="goes16_10k_128x128.fits",
@@ -115,45 +170,70 @@ def parse_args():
     return parser.parse_args()
 
 
-def list_s3_keys_for_hour(bucket, year, day_of_year, hour):
-    prefix = f"ABI-L2-MCMIPF/{year}/{day_of_year:03d}/{hour:02d}/"
+def list_s3_keys_for_hour(args):
+    """Query AWS S3 REST API for NetCDF keys in a given hour slot."""
+    bucket, year, day_of_year, hour, prod, ch_str = args
+    if prod == "MCMIPF":
+        prefix = f"ABI-L2-MCMIPF/{year}/{day_of_year:03d}/{hour:02d}/"
+    else:
+        prefix = f"ABI-L2-{prod}/{year}/{day_of_year:03d}/{hour:02d}/OR_ABI-L2-{prod}-M6{ch_str}"
+
     url = f"https://{bucket}.s3.amazonaws.com/?prefix={prefix}"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (gric-cluster)'})
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (gric-cluster)"})
     for attempt in range(3):
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 tree = ET.fromstring(resp.read())
-                ns = {'s3': 'http://s3.amazonaws.com/doc/2006-03-01/'}
+                ns = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
                 return [
-                    elem.text for elem in tree.findall('.//s3:Key', ns)
-                    if elem.text and elem.text.endswith('.nc')
+                    elem.text for elem in tree.findall(".//s3:Key", ns)
+                    if elem.text and elem.text.endswith(".nc")
                 ]
         except Exception:
-            time.sleep(0.3 * (attempt + 1))
+            time.sleep(0.2 * (attempt + 1))
     return []
 
 
-def read_netcdf_variable(data_bytes, channel):
-    """Extract and normalize 2D array from in-memory NetCDF bytes (mutex-protected)."""
-    tid = threading.get_ident()
+def decode_and_normalize_frame(data_bytes, channel_mcmip, target_size):
+    """Extract, normalize, and resize NetCDF image array from memory bytes."""
+    tid = mp.current_process().pid
     mem_name = f"mem_{tid}_{int(time.time() * 1000)}.nc"
 
-    with NETCDF_C_LOCK:
-        if HAVE_NETCDF4:
-            with netCDF4.Dataset(mem_name, memory=data_bytes) as nc:
-                if channel not in nc.variables:
-                    return None, f"Channel {channel} not found in NetCDF"
-                raw_var = nc.variables[channel][:]
-        elif HAVE_H5PY:
-            with h5py.File(io.BytesIO(data_bytes), 'r') as h5f:
-                if channel not in h5f:
-                    return None, f"Channel {channel} not found in HDF5"
-                raw_var = h5f[channel][:]
-        else:
-            return None, "Missing NetCDF library. Please run: pip install netCDF4"
+    if HAVE_NETCDF4:
+        with netCDF4.Dataset(mem_name, memory=data_bytes) as nc:
+            # Single-channel files use 'CMI', multi-channel files use 'CMI_C13'
+            if "CMI" in nc.variables:
+                var = nc.variables["CMI"]
+            elif channel_mcmip in nc.variables:
+                var = nc.variables[channel_mcmip]
+            else:
+                cmi_candidates = [v for v in nc.variables if v.startswith("CMI")]
+                if cmi_candidates:
+                    var = nc.variables[cmi_candidates[0]]
+                else:
+                    return None, f"Channel variable '{channel_mcmip}' not found in NetCDF"
 
-    # Distinguish Earth pixels from masked space background
-    if hasattr(raw_var, 'mask') and np.ma.is_masked(raw_var):
+            shape = var.shape
+            # Efficient strided read if raw resolution is much larger than target size
+            step = max(1, shape[0] // (target_size * 2))
+            raw_var = var[::step, ::step]
+    elif HAVE_H5PY:
+        with h5py.File(io.BytesIO(data_bytes), "r") as h5f:
+            if "CMI" in h5f:
+                var = h5f["CMI"]
+            elif channel_mcmip in h5f:
+                var = h5f[channel_mcmip]
+            else:
+                return None, f"Channel variable '{channel_mcmip}' not found in HDF5"
+
+            shape = var.shape
+            step = max(1, shape[0] // (target_size * 2))
+            raw_var = var[::step, ::step]
+    else:
+        return None, "Missing NetCDF library. Please run: pip install netCDF4"
+
+    # Distinguish valid Earth pixels from masked space background
+    if hasattr(raw_var, "mask") and np.ma.is_masked(raw_var):
         earth_mask = ~raw_var.mask
         earth_data = np.array(raw_var.data, dtype=np.float32)
     else:
@@ -162,37 +242,53 @@ def read_netcdf_variable(data_bytes, channel):
 
     valid_vals = earth_data[earth_mask]
     if len(valid_vals) == 0:
-        return np.zeros((128, 128), dtype=np.float32), None
+        return np.zeros((target_size, target_size), dtype=np.float32), None
 
-    v_min, v_max = np.percentile(valid_vals, (1.0, 99.0))
+    # Subsampled fast percentile estimation for performance
+    sample_vals = valid_vals[::4] if len(valid_vals) > 10000 else valid_vals
+    v_min, v_max = np.percentile(sample_vals, (1.0, 99.0))
     denom = max(1e-5, (v_max - v_min))
 
     # Earth disk normalized to [0.05, 1.0], space background is 0.0
     norm = np.zeros(earth_data.shape, dtype=np.float32)
     norm[earth_mask] = np.clip((valid_vals - v_min) / denom, 0.05, 1.0)
-    return norm, None
+
+    # High-quality bilinear resize to target resolution
+    im = Image.fromarray((norm * 255.0).astype(np.uint8))
+    im_res = im.resize((target_size, target_size), Image.Resampling.BILINEAR)
+    arr = np.array(im_res, dtype=np.float32) / 255.0
+    return arr, None
 
 
-def process_s3_file(bucket, key, channel, target_size):
+def process_s3_task(args):
+    """Worker task: Download NetCDF from S3 and decompress/resize in parallel."""
+    global WORKER_SESSION
+    bucket, key, channel_mcmip, target_size = args
     url = f"https://{bucket}.s3.amazonaws.com/{key}"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (gric-cluster)'})
+
+    data_bytes = None
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data_bytes = resp.read()
-                raw_norm, err = read_netcdf_variable(data_bytes, channel)
-                if raw_norm is None:
-                    return None, key, err
-
-                im = Image.fromarray((raw_norm * 255.0).astype(np.uint8))
-                im_res = im.resize((target_size, target_size), Image.Resampling.BILINEAR)
-                arr = np.array(im_res, dtype=np.float32) / 255.0
-                return arr, key, None
-        except Exception as e:
+            if WORKER_SESSION is not None:
+                resp = WORKER_SESSION.get(url, timeout=30)
+                if resp.status_code == 200:
+                    data_bytes = resp.content
+                    break
+            else:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (gric-cluster)"})
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data_bytes = resp.read()
+                    break
+        except Exception:
             if attempt == 2:
-                return None, key, str(e)
-            time.sleep(0.5 * (attempt + 1))
-    return None, key, "Download failed"
+                return None, key, "HTTP download failed after 3 attempts"
+            time.sleep(0.3 * (attempt + 1))
+
+    if data_bytes is None:
+        return None, key, "Empty data received"
+
+    arr, err = decode_and_normalize_frame(data_bytes, channel_mcmip, target_size)
+    return arr, key, err
 
 
 def main():
@@ -202,20 +298,22 @@ def main():
         print("Please install it with: pip install --user --break-system-packages netCDF4")
         sys.exit(1)
 
+    product_override = None if args.product == "auto" else args.product
+    ch_num, ch_str, var_mcmip, prod = parse_channel_config(args.channel, product_override)
     bucket = f"noaa-{args.satellite}"
     cur_dt = datetime.strptime(args.start, "%Y-%m-%d")
     end_dt = datetime.strptime(args.end, "%Y-%m-%d")
 
     print("==================================================")
-    print(" NOAA GOES-16/18 AWS S3 Downloader & FITS Builder")
+    print(" NOAA GOES-16/18 AWS S3 Downloader & FITS Builder ")
     print("==================================================")
     print(f"Bucket:        s3://{bucket}/ (NOAA Open Data Dissemination)")
     print(f"Time Window:   {args.start} to {args.end}")
-    print(f"Channel:       {args.channel}")
+    print(f"Channel:       {args.channel} (Channel {ch_num:02d} -> S3 Product: ABI-L2-{prod})")
     print(f"Image Size:    {args.size} x {args.size} pixels")
     print(f"Max Frames:    {args.max_frames:,} (step: {args.step})")
     print(f"Target Output: {args.output}")
-    print(f"Workers:       {args.workers} threads")
+    print(f"Workers:       {args.workers} parallel processes (multi-process accelerated)")
     print("==================================================")
 
     print("Querying NOAA AWS S3 catalog across hourly folders...")
@@ -223,14 +321,22 @@ def main():
     while cur_dt <= end_dt:
         doy = cur_dt.timetuple().tm_yday
         for h in range(24):
-            hour_slots.append((cur_dt.year, doy, h))
+            hour_slots.append((bucket, cur_dt.year, doy, h, prod, ch_str))
         cur_dt += timedelta(days=1)
 
     all_keys = []
-    with ThreadPoolExecutor(max_workers=min(16, args.workers * 2)) as ex:
-        futures = [ex.submit(list_s3_keys_for_hour, bucket, y, d, h) for y, d, h in hour_slots]
-        for f in as_completed(futures):
-            all_keys.extend(f.result())
+    with ThreadPoolExecutor(max_workers=min(32, max(8, args.workers * 2))) as ex:
+        for keys in ex.map(list_s3_keys_for_hour, hour_slots):
+            all_keys.extend(keys)
+
+    # Fallback to MCMIPF if CMIPF had 0 files
+    if len(all_keys) == 0 and prod == "CMIPF":
+        print_warning("No single-channel files found under CMIPF, trying MCMIPF...")
+        prod = "MCMIPF"
+        hour_slots = [(bucket, y, d, h, prod, ch_str) for (bucket, y, d, h, _, ch_str) in hour_slots]
+        with ThreadPoolExecutor(max_workers=min(32, max(8, args.workers * 2))) as ex:
+            for keys in ex.map(list_s3_keys_for_hour, hour_slots):
+                all_keys.extend(keys)
 
     all_keys.sort()
     selected_keys = all_keys[::args.step][:args.max_frames]
@@ -257,10 +363,20 @@ def main():
     t_start = time.time()
     downloaded_count = 0
 
-    with ThreadPoolExecutor(max_workers=args.workers) as ex:
+    # Multi-Process Pool to decompress NetCDF in parallel across all CPU cores
+    mp_ctx = mp.get_context("fork") if "fork" in mp.get_all_start_methods() else None
+    with ProcessPoolExecutor(
+        max_workers=args.workers,
+        mp_context=mp_ctx,
+        initializer=init_worker_session
+    ) as ex:
+        tasks = [
+            (bucket, k, var_mcmip, args.size)
+            for k in selected_keys
+        ]
         future_to_idx = {
-            ex.submit(process_s3_file, bucket, k, args.channel, args.size): i
-            for i, k in enumerate(selected_keys)
+            ex.submit(process_s3_task, task): i
+            for i, task in enumerate(tasks)
         }
         last_report = time.time()
         for f in as_completed(future_to_idx):
@@ -273,7 +389,7 @@ def main():
                 print_error(f"\nWarning: Failed to process {k}: {err}")
 
             now = time.time()
-            if now - last_report > 1.0 or downloaded_count == n_frames:
+            if now - last_report > 0.5 or downloaded_count == n_frames:
                 elapsed = now - t_start
                 rate = downloaded_count / max(0.001, elapsed)
                 pct = (downloaded_count / float(n_frames)) * 100.0
@@ -293,7 +409,9 @@ def main():
     print(f"\nWriting FITS cube to {args.output}...")
     hdu = fits.PrimaryHDU(cube)
     hdr = hdu.header
-    hdr["SOURCE"] = (f"NOAA {args.satellite.upper()} ({args.channel})", "Data provider")
+    hdr["SOURCE"] = (f"NOAA {args.satellite.upper()} (Channel {ch_num:02d})", "Data provider")
+    hdr["CHANNEL"] = (args.channel, "Requested spectral channel")
+    hdr["PRODUCT"] = (f"ABI-L2-{prod}", "S3 product type")
     hdr["DATE-BEG"] = (args.start, "Start date")
     hdr["DATE-END"] = (args.end, "End date")
     hdr["NFRAMES"] = (n_frames, "Number of 2D image frames in cube")

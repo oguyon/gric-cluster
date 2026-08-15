@@ -1,5 +1,8 @@
 # Algorithm Overview & Modes
 
+> [!TIP]
+> For detailed visual diagrams, animated video explanations, and an interactive 2D simulator, see the **[Visual Architecture & Options Guide](visual_guide.md)**.
+
 The GRIC clustering algorithm is designed for high-speed, sequential distance-based clustering. It
 processes incoming data frames one by one, grouping them into clusters defined by **anchor frames**
 under a maximum distance constraint (`rlim`).

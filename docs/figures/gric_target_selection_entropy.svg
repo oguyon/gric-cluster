@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 780" width="100%" height="100%" style="background:#ffffff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <linearGradient id="gradHeadEntropy" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#4a044e"/>
+      <stop offset="100%" stop-color="#701a75"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="1100" height="780" fill="#f8fafc"/>
+
+  <!-- Header -->
+  <rect x="30" y="20" width="1040" height="70" rx="12" fill="url(#gradHeadEntropy)" filter="url(#shadow)"/>
+  <text x="60" y="52" fill="#ffffff" font-size="22" font-weight="700">Target Candidate Selection: Greedy vs Shannon Entropy</text>
+  <text x="60" y="74" fill="#e879f9" font-size="13">Active decision-theoretic scheduling to minimize search ambiguity per distance measurement</text>
+  <rect x="890" y="40" width="155" height="30" rx="15" fill="#c026d3"/>
+  <text x="967.5" y="60" fill="#ffffff" font-size="12" font-weight="600" text-anchor="middle">Information Theory</text>
+
+  <!-- Left Card: Greedy Selection -->
+  <g transform="translate(40, 110)">
+    <rect width="490" height="630" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="15" y="15" width="28" height="28" rx="6" fill="#3b82f6"/>
+    <text x="29" y="34" fill="#ffffff" font-size="13" font-weight="700" text-anchor="middle">G</text>
+    <text x="52" y="34" fill="#1e3a8a" font-size="17" font-weight="700">Greedy Mode (Default)</text>
+    <text x="52" y="54" fill="#64748b" font-size="12">Tests candidate with highest posterior likelihood first</text>
+
+    <!-- Visual Bars of Probability -->
+    <g transform="translate(30, 80)">
+      <text x="0" y="15" font-size="12" font-weight="600" fill="#334155">Posterior Probabilities P(c_j):</text>
+      
+      <!-- Cluster 1 (0.35) -->
+      <text x="0" y="45" font-size="12" font-family="monospace" fill="#334155">c_1 (35%)</text>
+      <rect x="80" y="32" width="180" height="18" rx="4" fill="#3b82f6"/>
+      <rect x="270" y="32" width="75" height="18" rx="9" fill="#dbeafe"/>
+      <text x="307" y="45" font-size="11" font-weight="700" fill="#1d4ed8" text-anchor="middle">1st Pick &#x2794;</text>
+
+      <!-- Cluster 2 (0.25) -->
+      <text x="0" y="75" font-size="12" font-family="monospace" fill="#334155">c_2 (25%)</text>
+      <rect x="80" y="62" width="130" height="18" rx="4" fill="#93c5fd"/>
+      <text x="270" y="75" font-size="11" fill="#64748b">2nd Pick</text>
+
+      <!-- Cluster 3 (0.20) -->
+      <text x="0" y="105" font-size="12" font-family="monospace" fill="#334155">c_3 (20%)</text>
+      <rect x="80" y="92" width="105" height="18" rx="4" fill="#bfdbfe"/>
+      <text x="270" y="105" font-size="11" fill="#64748b">3rd Pick</text>
+
+      <!-- Cluster 4 (0.12) -->
+      <text x="0" y="135" font-size="12" font-family="monospace" fill="#334155">c_4 (12%)</text>
+      <rect x="80" y="122" width="65" height="18" rx="4" fill="#dbeafe"/>
+
+      <!-- Cluster 5 (0.08) -->
+      <text x="0" y="165" font-size="12" font-family="monospace" fill="#334155">c_5 ( 8%)</text>
+      <rect x="80" y="152" width="40" height="18" rx="4" fill="#eff6ff"/>
+    </g>
+
+    <!-- Strategy Breakdown Box -->
+    <rect x="20" y="280" width="450" height="175" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="35" y="305" font-size="13" font-weight="700" fill="#1e293b">Mechanism &amp; Properties:</text>
+    <text x="35" y="330" font-size="12" fill="#334155">&#x2022; <tspan font-weight="600">Decision rule:</tspan> <tspan font-family="monospace">target = argmax P(c_j)</tspan></text>
+    <text x="35" y="355" font-size="12" fill="#334155">&#x2022; <tspan font-weight="600">Computation Overhead:</tspan> Zero overhead (simple sort/heap).</text>
+    <text x="35" y="380" font-size="12" fill="#334155">&#x2022; <tspan font-weight="600">Best for:</tspan> High-frame-rate video or continuous streams</text>
+    <text x="47" y="398" font-size="12" fill="#334155">with extreme temporal persistence (<tspan font-family="monospace">P(c_last) &gt; 0.7</tspan>).</text>
+    <text x="35" y="425" font-size="12" fill="#dc2626">&#x2022; <tspan font-weight="600">Weakness:</tspan> Suboptimal in high-entropy / noisy distributions;</text>
+    <text x="47" y="443" font-size="12" fill="#dc2626">may test 10+ candidates before finding match.</text>
+
+    <!-- Evaluation Box -->
+    <rect x="20" y="475" width="450" height="135" rx="8" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="35" y="500" font-size="13" font-weight="700" fill="#1e3a8a">Greedy In Action:</text>
+    <text x="35" y="525" font-size="12" fill="#1e3a8a">Frame arrives &#x2192; Checks c_1 (Mismatch!) &#x2192; Checks c_2 (Mismatch!) &#x2192;</text>
+    <text x="35" y="545" font-size="12" fill="#1e3a8a">Checks c_3 (Mismatch!) &#x2192; Checks c_4 (Match!).</text>
+    <text x="35" y="575" font-size="12.5" font-weight="700" fill="#b91c1c">Total Cost: 4 Expensive Metric Computations</text>
+    <text x="35" y="595" font-size="11" fill="#64748b">Each mismatch only eliminated 1 cluster because c_1, c_2 were uninformative.</text>
+  </g>
+
+  <!-- Right Card: Entropy Minimization Mode -->
+  <g transform="translate(570, 110)">
+    <rect width="490" height="630" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+    <rect x="15" y="15" width="28" height="28" rx="6" fill="#a855f7"/>
+    <text x="29" y="34" fill="#ffffff" font-size="13" font-weight="700" text-anchor="middle">E</text>
+    <text x="52" y="34" fill="#581c87" font-size="17" font-weight="700">Entropy Optimization (-entropy)</text>
+    <text x="52" y="54" fill="#64748b" font-size="12">Information-Theoretic Active Search Scheduling</text>
+
+    <!-- Information Gain Concept Graphic -->
+    <g transform="translate(30, 80)">
+      <rect width="430" height="90" rx="6" fill="#faf5ff" stroke="#e9d5ff"/>
+      <text x="15" y="22" font-size="12" font-weight="700" fill="#6b21a8">Expected Shannon Posterior Entropy:</text>
+      <text x="15" y="44" font-family="monospace" font-size="12" font-weight="700" fill="#7e22ce">H(X | measure c_j) = P_m * 0 + (1 - P_m) * H(X | mismatch)</text>
+      <text x="15" y="65" font-size="11.5" fill="#4c1d95"><tspan font-weight="600">Goal:</tspan> Select target anchor that bisects / prunes the largest</text>
+      <text x="15" y="80" font-size="11.5" fill="#4c1d95">fraction of candidate probability mass upon mismatch.</text>
+    </g>
+
+    <!-- Option Subsystem Grid -->
+    <g transform="translate(20, 280)">
+      <rect width="450" height="175" rx="8" fill="#fdf4ff" stroke="#f0abfc"/>
+      <text x="15" y="22" font-size="13" font-weight="700" fill="#701a75">Entropy Engine Parameters:</text>
+
+      <text x="15" y="48" font-size="12" font-weight="600" fill="#86198f">-entropy_fast</text>
+      <text x="120" y="48" font-size="11.5" fill="#4a044e">Replaces float entropy math with popcount bitmask.</text>
+
+      <text x="15" y="75" font-size="12" font-weight="600" fill="#86198f">-entropy_gate &lt;t&gt;</text>
+      <text x="120" y="75" font-size="11.5" fill="#4a044e">Bypasses entropy calculation if max prob &gt; threshold.</text>
+
+      <text x="15" y="102" font-size="12" font-weight="600" fill="#86198f">-entropy_first_gate</text>
+      <text x="140" y="102" font-size="11.5" fill="#4a044e">Enforces greedy probe on 1st step, entropy thereafter.</text>
+
+      <text x="15" y="129" font-size="12" font-weight="600" fill="#86198f">-entropy_max_targets</text>
+      <text x="155" y="129" font-size="11.5" fill="#4a044e">Limits evaluation to top N candidate anchors (default 15).</text>
+
+      <text x="15" y="156" font-size="12" font-weight="600" fill="#86198f">-entropy_min_prob</text>
+      <text x="140" y="156" font-size="11.5" fill="#4a044e">Ignores clusters with negligible probability (&lt; 0.001).</text>
+    </g>
+
+    <!-- Entropy in Action Box -->
+    <rect x="20" y="475" width="450" height="135" rx="8" fill="#f0fdf4" stroke="#86efac"/>
+    <text x="35" y="500" font-size="13" font-weight="700" fill="#14532d">Entropy Optimization In Action:</text>
+    <text x="35" y="525" font-size="12" fill="#14532d">Picks central pivot anchor c_pivot (Mismatch!) &#x2192; Geometric bounds</text>
+    <text x="35" y="545" font-size="12" fill="#14532d">immediately prune c_1, c_2, c_3 and c_5 at once &#x2192; Checks c_4 (Match!).</text>
+    <text x="35" y="575" font-size="12.5" font-weight="700" fill="#15803d">Total Cost: 2 Distance Computations (50% Speedup!)</text>
+    <text x="35" y="595" font-size="11" fill="#166534">Maximal Information Gain: 1 test resolved entire search space.</text>
+  </g>
+</svg>
