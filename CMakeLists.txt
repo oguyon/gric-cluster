@@ -219,6 +219,26 @@ add_executable(gric-cluster-analysis
 )
 target_link_libraries(gric-cluster-analysis m)
 
+# gric-knn tool
+add_executable(gric-knn
+    src/gric-knn/main.c
+    src/gric-knn/knn_heap.c
+    src/gric-knn/knn_loader.c
+    src/gric-knn/knn_reader.c
+    src/gric-knn/knn_engine.c
+    src/gric-knn/knn_writer.c
+    src/shared/cli_colors.c
+)
+target_include_directories(gric-knn PRIVATE src/gric-knn src)
+target_link_libraries(gric-knn m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(gric-knn OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(gric-knn ${CFITSIO_LIBRARIES})
+    target_include_directories(gric-knn PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+
 if (CFITSIO_FOUND)
     target_compile_definitions(gric-info PRIVATE USE_CFITSIO)
     target_compile_definitions(gric-info PRIVATE CFITSIO_VERSION_STR=\"${CFITSIO_VERSION}\")
@@ -274,12 +294,20 @@ add_test(NAME test_sequence_generator
 add_test(NAME test_spiral_clustering
     COMMAND gric-cluster 0.1 /tmp/ctest_spiral.txt -maxim 1000 -outdir /tmp/ctest_spiral_out)
 
+add_test(NAME test_knn_spiral
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_out -k 10 -dtmin 5 -o /tmp/ctest_knn_spiral.txt)
+set_tests_properties(test_knn_spiral PROPERTIES DEPENDS test_spiral_clustering)
+
 if (CFITSIO_FOUND)
     add_test(NAME test_bouncing_balls_single_gen
         COMMAND gric-gen-balls -n 1 -r 5.0 -W 32 -H 32 -f 500 -s 42 /tmp/ctest_balls_1.fits)
     add_test(NAME test_bouncing_balls_single_cluster
         COMMAND gric-cluster 3.0 /tmp/ctest_balls_1.fits -outdir /tmp/ctest_balls_1_out)
     set_tests_properties(test_bouncing_balls_single_cluster PROPERTIES DEPENDS test_bouncing_balls_single_gen)
+
+    add_test(NAME test_knn_balls
+        COMMAND gric-knn /tmp/ctest_balls_1.fits /tmp/ctest_balls_1_out -k 5 -dtmin 2 -o /tmp/ctest_knn_balls.fits)
+    set_tests_properties(test_knn_balls PROPERTIES DEPENDS test_bouncing_balls_single_cluster)
 
     add_test(NAME test_bouncing_balls_coll_gen
         COMMAND gric-gen-balls -n 3 -r 5.0 -W 32 -H 32 -f 500 -s 42 /tmp/ctest_balls_3.fits)

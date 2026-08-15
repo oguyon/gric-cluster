@@ -134,11 +134,11 @@ int main(int argc, char *argv[])
     config.input.tile_config_file = NULL;
     config.input.retrieval_window = 1000;
 
-    // Output defaults (disabled by default, except membership and dcc)
+    // Output defaults (enabled by default: dcc, anchors, counts, membership)
     config.output.output_dcc = 1;
     config.output.output_tm = 0;
-    config.output.output_anchors = 0;
-    config.output.output_counts = 0;
+    config.output.output_anchors = 1;
+    config.output.output_counts = 1;
     config.output.output_membership = 1;
     config.output.output_discarded = 0;
     config.output.output_clustered = 0;
@@ -289,7 +289,9 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (init_frameread(config.input.fits_filename, config.input.stream_input_mode, config.input.cnt2sync_mode,
+    if (init_frameread(config.input.fits_filename,
+                       config.input.stream_input_mode,
+                       config.input.cnt2sync_mode,
                        config.input.filelist_mode) != 0)
     {
         if (cmdline)

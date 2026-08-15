@@ -306,9 +306,19 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->output.output_anchors = 1;
         return 0;
     }
+    else if (matches(key, "-no_anchors"))
+    {
+        config->output.output_anchors = 0;
+        return 0;
+    }
     else if (matches(key, "-counts"))
     {
         config->output.output_counts = 1;
+        return 0;
+    }
+    else if (matches(key, "-no_counts"))
+    {
+        config->output.output_counts = 0;
         return 0;
     }
     else if (matches(key, "-membership"))
