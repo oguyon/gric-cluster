@@ -12,6 +12,9 @@ benchmarks/clusteroutdir/
 benchmarks/*.clusterdat/
 benchmarks/benchmark_summary.md
 
+# Data & datasets
+data/
+
 # Tests & temporary outputs
 *.clusterdat/
 *.fits

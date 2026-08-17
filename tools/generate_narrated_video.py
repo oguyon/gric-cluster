@@ -42,43 +42,93 @@ SCENES = [
         "id": "scene1_intro",
         "title": "1. Introduction: High-Speed Sequential Stream Clustering",
         "subtitle": "Sequential streaming on high-D datasets: Minimizing distance measurements per frame",
-        "text": "Welcome to Gric, Geometric Real-Time Image Clustering. Gric is optimized to cluster data frames sequentially as they arrive from high-speed streams using distance measurements. When processing high-dimensional datasets, computing Euclidean distance between high-dimensional frames is the primary computational bottleneck. Therefore, the core objective of Gric is to strictly minimize the number of distance measurements evaluated per frame. As incoming frames travel along continuous paths, like our benchmark 2D spiral, every frame is strictly situated within an active cluster sphere under distance threshold R-lim, and the instant a frame leaves a cluster boundary, a new anchor is spawned immediately."
+        "text": "Welcome to Gric, Geometric Real-Time Image Clustering. Gric is optimized to cluster data frames sequentially as they arrive from high-speed streams using distance measurements. When processing high-dimensional datasets, computing Euclidean distance between high-dimensional frames is the primary computational bottleneck. Therefore, the core objective of Gric is to strictly minimize the number of distance measurements evaluated per frame. As incoming frames travel along continuous paths, like our benchmark 2D spiral, every frame is strictly situated within an active cluster sphere under distance threshold R-lim, and the instant a frame leaves a cluster boundary, a new anchor is spawned immediately.",
+        "subtitles": [
+            (0.00, 0.14, "Welcome to GRIC: Geometric Real-Time Image Clustering."),
+            (0.14, 0.32, "GRIC clusters frames sequentially from high-speed streams using distance metrics."),
+            (0.32, 0.50, "In high dimensions, evaluating Euclidean distance is the primary computational bottleneck."),
+            (0.50, 0.68, "Therefore, GRIC's central objective is strictly minimizing distance calls per frame."),
+            (0.68, 0.85, "Along continuous paths (e.g. 2D spiral), frames are situated inside active cluster spheres."),
+            (0.85, 1.00, "The instant a frame leaves a cluster boundary (d > rlim), a new anchor is spawned!")
+        ]
     },
     {
         "id": "scene2_anchors",
         "title": "2. Anchor Formation & Distance Threshold (rlim)",
         "subtitle": "Testing existing clusters before spawning new anchors on boundaries",
-        "text": "Here is how Gric forms clusters. When the very first frame arrives, it establishes Anchor C-zero, surrounded by its R-lim radius. When subsequent incoming frames arrive, Gric will always first try to allocate each new frame to existing clusters by checking if its distance is within R-lim. If a match is found, the frame is assigned to that cluster without creating anything new. Only if the frame does not belong to any existing cluster, having crossed beyond all existing R-lim boundaries, does Gric create a new cluster anchor on the boundary. This leads to the critical question: how can Gric test existing clusters quickly without computing distances to every single one?"
+        "text": "Here is how Gric forms clusters. When the very first frame arrives, it establishes Anchor C-zero, surrounded by its R-lim radius. When subsequent incoming frames arrive, Gric will always first try to allocate each new frame to existing clusters by checking if its distance is within R-lim. If a match is found, the frame is assigned to that cluster without creating anything new. Only if the frame does not belong to any existing cluster, having crossed beyond all existing R-lim boundaries, does Gric create a new cluster anchor on the boundary. This leads to the critical question: how can Gric test existing clusters quickly without computing distances to every single one?",
+        "subtitles": [
+            (0.00, 0.16, "When the first frame arrives, it establishes Anchor c0 with radius rlim."),
+            (0.16, 0.36, "For subsequent frames, GRIC ALWAYS tests existing clusters first (checking d <= rlim)."),
+            (0.36, 0.54, "If matched, the frame is assigned to that cluster with 0 new clusters created!"),
+            (0.54, 0.78, "Only when crossing outside all existing boundaries does GRIC spawn a new anchor on the boundary."),
+            (0.78, 1.00, "Key question: How to test existing clusters without calculating distances to all of them?")
+        ]
     },
     {
         "id": "scene3_pruning",
         "title": "3. Geometric Pruning via the Triangle Inequality",
         "subtitle": "Eliminating impossible candidate clusters without computing distances",
-        "text": "The answer is geometric pruning using the triangle inequality. Consider three points: an incoming query frame f, a pivot Anchor A whose distance we measure, and a candidate Anchor B whose distance to Anchor A is precomputed. These three points form a triangle. By the triangle inequality, the distance from our frame to Anchor B must be at least the known distance between A and B, minus the measured distance to Anchor A. If this calculated lower bound exceeds R-lim, the frame cannot belong to Anchor B, and Anchor B is pruned with zero distance computations. A single measurement can thus eliminate dozens of candidate clusters simultaneously across the dataset. Furthermore, Gric extends this distance geometry from sets of three points to higher-order bounds with sets of four and five points."
+        "text": "The answer is geometric pruning using the triangle inequality. Consider three points: an incoming query frame f, a pivot Anchor A whose distance we measure, and a candidate Anchor B whose distance to Anchor A is precomputed. These three points form a triangle. By the triangle inequality, the distance from our frame to Anchor B must be at least the known distance between A and B, minus the measured distance to Anchor A. If this calculated lower bound exceeds R-lim, the frame cannot belong to Anchor B, and Anchor B is pruned with zero distance computations. A single measurement can thus eliminate dozens of candidate clusters simultaneously across the dataset. Furthermore, Gric extends this distance geometry from sets of three points to higher-order bounds with sets of four and five points.",
+        "subtitles": [
+            (0.00, 0.16, "The answer is geometric pruning using the metric triangle inequality."),
+            (0.16, 0.34, "Consider 3 points: query frame f, measured pivot cA, and candidate cB with known distance d(cA, cB)."),
+            (0.34, 0.54, "By triangle inequality: lower bound d(f, cB) >= | d(cA, cB) - d(f, cA) |."),
+            (0.54, 0.74, "If lower bound > rlim, candidate cB is pruned with 0 distance computations!"),
+            (0.74, 0.88, "1 pivot measurement simultaneously eliminates dozens of candidates across the dataset."),
+            (0.88, 1.00, "GRIC extends this geometry from 3 points to 4-point (-te4) and 5-point (-te5) simplex bounds.")
+        ]
     },
     {
         "id": "scene4_entropy",
         "title": "4. Target Selection: Greedy vs Shannon Entropy (-entropy)",
         "subtitle": "Information-theoretic active search scheduling to maximize information gain",
-        "text": "Target selection determines which cluster anchor to evaluate next. In default Greedy mode, Gric hopes for early success by testing the most likely candidates first. In contrast, Entropy mode seeks to maximize information gain. Consider our 2D spiral manifold. Measuring the distance to the center of the spiral maximizes information gain, because the measured radius unambiguously resolves where on the spiral the incoming frame is located with a single measurement. Entropy mode computes the expected Shannon entropy of the candidate distribution to schedule such highly informative pivots. To support this, Gric maintains and dynamically updates a probability distribution in memory based on recent patterns and frame allocations."
+        "text": "Target selection determines which cluster anchor to evaluate next. In default Greedy mode, Gric hopes for early success by testing the most likely candidates first. In contrast, Entropy mode seeks to maximize information gain. Consider our 2D spiral manifold. Measuring the distance to the center of the spiral maximizes information gain, because the measured radius unambiguously resolves where on the spiral the incoming frame is located with a single measurement. Entropy mode computes the expected Shannon entropy of the candidate distribution to schedule such highly informative pivots. To support this, Gric maintains and dynamically updates a probability distribution in memory based on recent patterns and frame allocations.",
+        "subtitles": [
+            (0.00, 0.15, "Target selection determines which cluster anchor to evaluate next."),
+            (0.15, 0.32, "Greedy mode tests the most likely candidates first, hoping for early success."),
+            (0.32, 0.48, "In contrast, Entropy mode (-entropy) seeks to maximize Shannon information gain."),
+            (0.48, 0.72, "On a spiral, measuring distance to center (radius) unambiguously resolves position in 1 call!"),
+            (0.72, 0.88, "Entropy mode computes expected posterior entropy to schedule highly informative pivots."),
+            (0.88, 1.00, "To support this, GRIC dynamically updates an in-memory probability distribution.")
+        ]
     },
     {
         "id": "scene5_priors",
         "title": "5. Prior Modeling & Topological Learning (-tm, -pred, -gprob)",
         "subtitle": "Fusing Markov transitions, sequence forecasting, and visitor geometry",
-        "text": "Gric layers multiple prior probability models to accelerate search order. The transition matrix option, T M, learns Markov transition probabilities between clusters over time. The sequence predictor, pred, scans historical assignment logs to forecast multi-step trajectories. Simultaneously, G-prob dynamically updates spatial probabilities by comparing visitor measurement history, while soft-bayesian prevents false exclusions in noisy streams with smooth Gaussian likelihood decay."
+        "text": "Gric layers multiple prior probability models to accelerate search order. The transition matrix option, T M, learns Markov transition probabilities between clusters over time. The sequence predictor, pred, scans historical assignment logs to forecast multi-step trajectories. Simultaneously, G-prob dynamically updates spatial probabilities by comparing visitor measurement history, while soft-bayesian prevents false exclusions in noisy streams with smooth Gaussian likelihood decay.",
+        "subtitles": [
+            (0.00, 0.18, "GRIC layers multiple prior probability models to accelerate search order."),
+            (0.18, 0.38, "Transition matrix (-tm) learns Markov transition probabilities between clusters over time."),
+            (0.38, 0.58, "Sequence predictor (-pred) scans historical assignment logs to forecast multi-step paths."),
+            (0.58, 0.80, "Visitor geometry (-gprob) dynamically updates spatial probabilities from visitor history."),
+            (0.80, 1.00, "Soft Bayesian (-soft_bayesian) handles noisy data with smooth Gaussian likelihood decay.")
+        ]
     },
     {
         "id": "scene6_tiling",
         "title": "6. Spatial Tiling & Joint Trajectory Fusion (-tiles, -jtf)",
         "subtitle": "Sub-image OpenMP parallelism with Pass 2 boundary noise correction",
-        "text": "For high-dimension images, Gric provides a multi-tile architecture. Partitioning the frame into an N by M grid of sub-tiles provides major benefits: it drastically accelerates compute speed through OpenMP parallelism, maximizes CPU cache locality, and unlocks cross-entropy information across spatial regions. Instead of assigning a single global cluster index, tiling produces a joint cluster tuple, such as tuple 0, 3, 2, 1, representing the simultaneous state of all sub-regions. This tuple is vastly richer in information than a single scalar cluster index. In Pass 2, Joint Trajectory Fusion leverages these rich tuple keys against recent history to eliminate boundary noise and seam flickering, while strictly preserving the hard distance threshold."
+        "text": "For high-dimension images, Gric provides a multi-tile architecture. Partitioning the frame into an N by M grid of sub-tiles provides major benefits: it drastically accelerates compute speed through OpenMP parallelism, maximizes CPU cache locality, and unlocks cross-entropy information across spatial regions. Instead of assigning a single global cluster index, tiling produces a joint cluster tuple, such as tuple 0, 3, 2, 1, representing the simultaneous state of all sub-regions. This tuple is vastly richer in information than a single scalar cluster index. In Pass 2, Joint Trajectory Fusion leverages these rich tuple keys against recent history to eliminate boundary noise and seam flickering, while strictly preserving the hard distance threshold.",
+        "subtitles": [
+            (0.00, 0.16, "For high-dimension images, GRIC provides a multi-tile architecture (-tiles NxM)."),
+            (0.16, 0.36, "Tiling accelerates OpenMP threads, maximizes CPU L1/L2 cache locality, and captures cross-entropy."),
+            (0.36, 0.56, "Instead of 1 scalar index, tiling produces a rich joint tuple (e.g. 0, 3, 2, 1) across all tiles."),
+            (0.56, 0.76, "This joint tuple is vastly richer in spatial-temporal information than a single scalar index."),
+            (0.76, 1.00, "Pass 2 Joint Trajectory Fusion (-jtf) eliminates seam flicker while verifying d <= rlim.")
+        ]
     },
     {
         "id": "scene7_summary",
         "title": "7. Summary & CLI Tuning Matrix",
         "subtitle": "Ultra-fast geometric clustering optimized for real-time sensor streams",
-        "text": "From adaptive geometric pruning to information-theoretic entropy scheduling and multi-tile trajectory fusion, Gric delivers ultra-fast, robust, distance-based clustering for high-throughput scientific data. Check out the documentation and interactive simulator to tune the optimal parameters for your application."
+        "text": "From adaptive geometric pruning to information-theoretic entropy scheduling and multi-tile trajectory fusion, Gric delivers ultra-fast, robust, distance-based clustering for high-throughput scientific data. Check out the documentation and interactive simulator to tune the optimal parameters for your application.",
+        "subtitles": [
+            (0.00, 0.30, "From geometric pruning to entropy scheduling and multi-tile trajectory fusion..."),
+            (0.30, 0.65, "...GRIC delivers ultra-fast, robust distance-based clustering for high-throughput streams."),
+            (0.65, 1.00, "Explore the documentation and interactive simulator to tune parameters for your application!")
+        ]
     }
 ]
 
@@ -131,11 +181,16 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
     fig.patch.set_facecolor('#0f172a')
     
     gs = GridSpec(2, 2, width_ratios=[1.35, 1], height_ratios=[1, 1], figure=fig,
-                  left=0.05, right=0.95, bottom=0.07, top=0.88, wspace=0.22, hspace=0.30)
+                  left=0.05, right=0.95, bottom=0.095, top=0.91, wspace=0.22, hspace=0.30)
     
     ax_main = fig.add_subplot(gs[:, 0])
     ax_top = fig.add_subplot(gs[0, 1])
     ax_bot = fig.add_subplot(gs[1, 1])
+
+    # Bottom Subtitle Banner (Synchronized with narration for video and GIF)
+    sub_artist = fig.text(0.50, 0.040, "", ha='center', va='center',
+                          fontsize=12, fontweight='bold', color='#f8fafc',
+                          bbox=dict(boxstyle="round,pad=0.5", facecolor="#020617", edgecolor="#38bdf8", lw=1.8, alpha=0.96))
 
     # Preset anchors for scenes 1, 3, 4, 5
     anchors = np.array([
@@ -163,7 +218,17 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
 
         # Supertitle
         fig.suptitle(f"GRIC: {scene['title']}", 
-                     fontsize=18, fontweight='bold', color='#38bdf8', y=0.96)
+                     fontsize=18, fontweight='bold', color='#38bdf8', y=0.965)
+
+        # Update Subtitle Banner
+        current_sub = ""
+        for t_start, t_end, txt in scene.get("subtitles", []):
+            if t_start <= prog < t_end or (prog >= t_end and t_end == 1.0):
+                current_sub = txt
+                break
+        if not current_sub and scene.get("subtitles"):
+            current_sub = scene["subtitles"][-1][2]
+        sub_artist.set_text(f'"{current_sub}"')
 
         # -------------------------------------------------------------
         # SCENE 1: Introduction & 2D Spiral Benchmark Sequential Stream
