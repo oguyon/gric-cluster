@@ -751,6 +751,22 @@
           <input type="range" id="sliderFocus" min="0" max="100" step="1" value="50">
         </div>
 
+        <div class="control-row">
+          <div class="control-label">
+            <span>Sample Noise (<span class="badge-pill">σ</span>)</span>
+            <span id="lblNoiseSigma" class="val">0.000 (Off)</span>
+          </div>
+          <input type="range" id="sliderNoiseSigma" min="0.00" max="0.15" step="0.002" value="0.00">
+        </div>
+
+        <div class="control-row">
+          <div class="control-label">
+            <span>Noise Truncation Limit (<span class="badge-pill">trunc</span>)</span>
+            <span id="lblNoiseTrunc" class="val">0.050</span>
+          </div>
+          <input type="range" id="sliderNoiseTrunc" min="0.01" max="0.30" step="0.005" value="0.050">
+        </div>
+
         <div class="control-label" style="margin-top: 8px;">Target Selection Mode</div>
         <div class="toggle-group">
           <div id="modeGreedy" class="toggle-btn active">Greedy (argmax P)</div>
@@ -1213,15 +1229,72 @@
     let isExplainMode = false;
     let currentActiveTab = 'narrative';
 
-    // Algorithm Config
+    // Algorithm & Display Config
     let rlim = 0.100;
     let visualFocus = 50; // 0 (Points Only) to 100 (Clusters Only)
+    let noiseSigma = 0.000; // Truncated Gaussian noise std dev (0 = off)
+    let noiseTruncLimit = 0.050; // Truncation radius limit
     let targetMode = 'greedy';
     let pruneMode = '3P';
     let useTM = false;
     let usePred = false;
     let useGprob = false;
     let useTiles = false;
+
+    // Truncated Gaussian Random Noise Generator (2D / 3D)
+    function generateTruncatedGaussianNoise(dim = 3) {
+      if (noiseSigma <= 1e-6) return { dx: 0, dy: 0, dz: 0 };
+
+      const maxRadius = noiseTruncLimit;
+      const sigma = noiseSigma;
+
+      for (let attempt = 0; attempt < 50; attempt++) {
+        // Box-Muller transform
+        const u1 = Math.max(1e-12, Math.random());
+        const u2 = Math.random();
+        const mag1 = sigma * Math.sqrt(-2.0 * Math.log(u1));
+        const z0 = mag1 * Math.cos(2.0 * Math.PI * u2);
+        const z1 = mag1 * Math.sin(2.0 * Math.PI * u2);
+
+        let z2 = 0;
+        if (dim === 3) {
+          const u3 = Math.max(1e-12, Math.random());
+          const u4 = Math.random();
+          const mag2 = sigma * Math.sqrt(-2.0 * Math.log(u3));
+          z2 = mag2 * Math.cos(2.0 * Math.PI * u4);
+        }
+
+        const r = Math.sqrt(z0 * z0 + z1 * z1 + z2 * z2);
+        if (r <= maxRadius) {
+          return { dx: z0, dy: z1, dz: z2 };
+        }
+      }
+
+      // Rejection limit reached: project to boundary
+      const u1 = Math.max(1e-12, Math.random());
+      const u2 = Math.random();
+      const z0 = sigma * Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+      const z1 = sigma * Math.sqrt(-2.0 * Math.log(u1)) * Math.sin(2.0 * Math.PI * u2);
+      let z2 = 0;
+      if (dim === 3) {
+        const u3 = Math.max(1e-12, Math.random());
+        const u4 = Math.random();
+        z2 = sigma * Math.sqrt(-2.0 * Math.log(u3)) * Math.cos(2.0 * Math.PI * u4);
+      }
+      const r = Math.sqrt(z0 * z0 + z1 * z1 + z2 * z2) || 1.0;
+      const scale = maxRadius / r;
+      return { dx: z0 * scale, dy: z1 * scale, dz: z2 * scale };
+    }
+
+    function applyNoiseToPoint(x, y, z = 0.0) {
+      if (noiseSigma <= 1e-6) return { x, y, z };
+      const noise = generateTruncatedGaussianNoise(currentDim);
+      return {
+        x: x + noise.dx,
+        y: y + noise.dy,
+        z: currentDim === 3 ? (z + noise.dz) : 0.0
+      };
+    }
 
     // Simulation & Benchmark State
     let currentBenchmark = "3Dspiral";
@@ -2500,9 +2573,10 @@
     function stepNextFrame() {
       if (currentBenchmark === "stream") {
         const t = totalFrames * 0.15;
-        const x = 0.70 * Math.cos(t) + 0.18 * Math.sin(t * 3.0) + (Math.random() - 0.5) * 0.05;
-        const y = 0.60 * Math.sin(t * 0.8) + 0.15 * Math.cos(t * 2.0) + (Math.random() - 0.5) * 0.05;
-        clusterFrame(x, y, 0.0);
+        const rawX = 0.70 * Math.cos(t) + 0.18 * Math.sin(t * 3.0);
+        const rawY = 0.60 * Math.sin(t * 0.8) + 0.15 * Math.cos(t * 2.0);
+        const pt = applyNoiseToPoint(rawX, rawY, 0.0);
+        clusterFrame(pt.x, pt.y, 0.0);
       } else if (currentBenchmark === "3Dlorenz") {
         const dt = 0.009;
         const sigma = 10.0, rho = 28.0, beta = 8.0 / 3.0;
@@ -2516,24 +2590,27 @@
         lorenzState.y += dy * dt;
         lorenzState.z += dz * dt;
 
-        const px = (lorenzState.x / 20.0) * 0.82;
-        const py = (lorenzState.y / 28.0) * 0.82;
-        const pz = ((lorenzState.z - 25.0) / 25.0) * 0.82;
+        const rawX = (lorenzState.x / 20.0) * 0.82;
+        const rawY = (lorenzState.y / 28.0) * 0.82;
+        const rawZ = ((lorenzState.z - 25.0) / 25.0) * 0.82;
 
-        clusterFrame(px, py, pz);
+        const pt = applyNoiseToPoint(rawX, rawY, rawZ);
+        clusterFrame(pt.x, pt.y, pt.z);
       } else if (benchmarkDataset.length > 0) {
         if (currentFrameIdx >= benchmarkDataset.length) {
           pauseSimulation();
           return;
         }
-        const pt = benchmarkDataset[currentFrameIdx++];
+        const rawPt = benchmarkDataset[currentFrameIdx++];
+        const pt = applyNoiseToPoint(rawPt.x, rawPt.y, rawPt.z || 0.0);
         clusterFrame(pt.x, pt.y, pt.z || 0.0);
       }
     }
 
     function runBatchInstant() {
       while (currentFrameIdx < benchmarkDataset.length) {
-        const pt = benchmarkDataset[currentFrameIdx++];
+        const rawPt = benchmarkDataset[currentFrameIdx++];
+        const pt = applyNoiseToPoint(rawPt.x, rawPt.y, rawPt.z || 0.0);
         clusterFrame(pt.x, pt.y, pt.z || 0.0);
       }
       pauseSimulation();
@@ -2960,6 +3037,24 @@
         }
       }
       draw();
+    });
+
+    const sliderNoiseSigma = document.getElementById('sliderNoiseSigma');
+    sliderNoiseSigma.addEventListener('input', (e) => {
+      noiseSigma = parseFloat(e.target.value);
+      const lbl = document.getElementById('lblNoiseSigma');
+      if (lbl) {
+        lbl.innerText = noiseSigma <= 1e-6 ? "0.000 (Off)" : noiseSigma.toFixed(3);
+      }
+    });
+
+    const sliderNoiseTrunc = document.getElementById('sliderNoiseTrunc');
+    sliderNoiseTrunc.addEventListener('input', (e) => {
+      noiseTruncLimit = parseFloat(e.target.value);
+      const lbl = document.getElementById('lblNoiseTrunc');
+      if (lbl) {
+        lbl.innerText = noiseTruncLimit.toFixed(3);
+      }
     });
 
     document.getElementById('modeGreedy').addEventListener('click', () => {
