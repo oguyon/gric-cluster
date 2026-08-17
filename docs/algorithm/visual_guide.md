@@ -4,13 +4,13 @@ This guide provides a comprehensive visual walkthrough of the **GRIC** (Geometri
 
 ---
 
-## 1. Interactive 2D Simulator & Narrated Video Explainer
+## 1. Interactive 2D & 3D Simulator & Narrated Video Explainer
 
-Experience GRIC in real-time in your browser or watch the in-depth narrated video walkthrough:
+Experience GRIC in real-time in your browser (featuring live 2D and 3D quad-split multi-view projections with interactive drag rotation) or watch the in-depth narrated video walkthrough:
 
 <div style="display: flex; gap: 15px; margin: 20px 0; flex-wrap: wrap;">
   <a href="../visual_simulator.html" target="_blank" style="background: #2563eb; color: #ffffff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;">
-    &#9658; Launch Interactive 2D Simulator
+    &#9658; Launch Interactive 2D &amp; 3D Simulator
   </a>
   <a href="../figures/gric_explainer.mp4" target="_blank" style="background: #0d9488; color: #ffffff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;">
     &#9654; Download / Watch HD Video with Voiceover (MP4)
