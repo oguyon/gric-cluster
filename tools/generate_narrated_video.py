@@ -181,7 +181,7 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
     fig.patch.set_facecolor('#0f172a')
     
     gs = GridSpec(2, 2, width_ratios=[1.35, 1], height_ratios=[1, 1], figure=fig,
-                  left=0.05, right=0.95, bottom=0.095, top=0.91, wspace=0.22, hspace=0.30)
+                  left=0.05, right=0.95, bottom=0.10, top=0.91, wspace=0.22, hspace=0.30)
     
     ax_main = fig.add_subplot(gs[:, 0])
     ax_top = fig.add_subplot(gs[0, 1])
@@ -189,8 +189,8 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
 
     # Bottom Subtitle Banner (Synchronized with narration for video and GIF)
     sub_artist = fig.text(0.50, 0.040, "", ha='center', va='center',
-                          fontsize=12, fontweight='bold', color='#f8fafc',
-                          bbox=dict(boxstyle="round,pad=0.5", facecolor="#020617", edgecolor="#38bdf8", lw=1.8, alpha=0.96))
+                          fontsize=15, fontweight='bold', color='#f8fafc',
+                          bbox=dict(boxstyle="round,pad=0.6", facecolor="#020617", edgecolor="#38bdf8", lw=2.0, alpha=0.98))
 
     # Preset anchors for scenes 1, 3, 4, 5
     anchors = np.array([
@@ -214,11 +214,11 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
             ax.set_facecolor('#1e293b')
             for spine in ax.spines.values():
                 spine.set_color('#334155')
-            ax.tick_params(colors='#94a3b8', labelsize=9)
+            ax.tick_params(colors='#94a3b8', labelsize=11)
 
         # Supertitle
         fig.suptitle(f"GRIC: {scene['title']}", 
-                     fontsize=18, fontweight='bold', color='#38bdf8', y=0.965)
+                     fontsize=21, fontweight='bold', color='#38bdf8', y=0.968)
 
         # Update Subtitle Banner
         current_sub = ""
@@ -235,7 +235,7 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
         # -------------------------------------------------------------
         if scene_idx == 0:
             ax_main.set_xlim(0, 10); ax_main.set_ylim(0, 10)
-            ax_main.set_title("2D Spiral Benchmark Stream: Never Cluster-Less", color='#38bdf8', fontsize=12, fontweight='bold')
+            ax_main.set_title("2D Spiral Benchmark Stream: Never Cluster-Less", color='#38bdf8', fontsize=15, fontweight='bold')
             
             s1_rlim = 1.65
             # Precompute the exact 2D Archimedean spiral benchmark path
@@ -250,7 +250,7 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
             y_grid = 5.0 + r_grid * np.sin(theta_grid)
 
             # Draw faint background spiral guide curve
-            ax_main.plot(x_grid, y_grid, color='#475569', linestyle=':', linewidth=1.5, alpha=0.6, zorder=2)
+            ax_main.plot(x_grid, y_grid, color='#475569', linestyle=':', linewidth=2.0, alpha=0.6, zorder=2)
 
             # Build exact anchor spawn history online along spiral
             s1_anchors = [np.array([x_grid[0], y_grid[0]])]
@@ -279,51 +279,48 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
             # Draw all spawned anchors along spiral
             for i, anc in enumerate(active_anchors):
                 c_col = cols[i % len(cols)]
-                ax_main.scatter(anc[0], anc[1], s=140, color=c_col, edgecolors='#fff', linewidth=1.5, zorder=5)
-                c_patch = Circle(anc, s1_rlim, fill=True, facecolor=c_col, alpha=0.12, edgecolor=c_col, linewidth=1.5, linestyle='--')
+                ax_main.scatter(anc[0], anc[1], s=300, color=c_col, edgecolors='#fff', linewidth=2.5, zorder=5)
+                c_patch = Circle(anc, s1_rlim, fill=True, facecolor=c_col, alpha=0.15, edgecolor=c_col, linewidth=2.0, linestyle='--')
                 ax_main.add_patch(c_patch)
-                ax_main.text(anc[0] + 0.15, anc[1] + 0.15, f"c_{i}", color=c_col, fontweight='bold', fontsize=9.5)
+                ax_main.text(anc[0] + 0.18, anc[1] + 0.18, f"c_{i}", color=c_col, fontweight='bold', fontsize=13)
 
             # Draw EXACTLY ONE yellow incoming frame traveling along spiral
-            ax_main.scatter(cur_x, cur_y, s=160, color='#facc15', edgecolors='#ffffff', linewidth=2.5, zorder=8)
-            ax_main.text(cur_x + 0.25, cur_y - 0.35, "f_i (Incoming Frame)", color='#facc15', fontweight='bold', fontsize=10.5)
+            ax_main.scatter(cur_x, cur_y, s=380, color='#facc15', edgecolors='#ffffff', linewidth=3.5, zorder=8)
+            ax_main.text(cur_x + 0.30, cur_y - 0.40, "f_i (Incoming Frame)", color='#facc15', fontweight='bold', fontsize=13.5)
 
             # Distance line to active matching anchor (strictly <= rlim)
-            ax_main.plot([ca[0], cur_x], [ca[1], cur_y], color='#4ade80', linewidth=2.5, zorder=6)
+            ax_main.plot([ca[0], cur_x], [ca[1], cur_y], color='#4ade80', linewidth=3.5, zorder=6)
             
             # Status banner
             ax_main.text(5.0, 0.7, f"Inside Cluster c_{active_idx} (d = {dist_to_cur:.2f} <= rlim) — Continuous Manifold Coverage", 
-                         color='#ffffff', fontweight='bold', fontsize=11.0, ha='center',
-                         bbox=dict(boxstyle="round,pad=0.4", facecolor="#1e1b4b", edgecolor="#38bdf8", lw=2))
+                         color='#ffffff', fontweight='bold', fontsize=13.0, ha='center',
+                         bbox=dict(boxstyle="round,pad=0.45", facecolor="#1e1b4b", edgecolor="#38bdf8", lw=2))
 
             # Top Right: Distance Evaluation Workload in High-D
-            ax_top.set_title("Distance Calls per Frame (High-D Stream)", color='#94a3b8', fontsize=11, fontweight='bold')
+            ax_top.set_title("Distance Calls per Frame (High-D Stream)", color='#94a3b8', fontsize=14, fontweight='bold')
             k_vals = np.linspace(10, 1000, 50)
             naive_cost = k_vals
             gric_cost = 2.0 + np.log2(k_vals) * 0.4
-            ax_top.plot(k_vals, naive_cost, color='#ef4444', linewidth=2.5, label="Naive Scan: K Calls (Heavy in High-D)")
-            ax_top.plot(k_vals, gric_cost, color='#22c55e', linewidth=3.0, label="Gric: 1 ~ 3 Calls (Minimized)")
-            ax_top.set_xlabel("Clusters (K)", color='#94a3b8', fontsize=8)
-            ax_top.set_ylabel("Distance Calls / Frame", color='#94a3b8', fontsize=8)
-            ax_top.legend(loc="upper left", facecolor='#0f172a', edgecolor='#334155', fontsize=8.5, labelcolor='#f8fafc')
+            ax_top.plot(k_vals, naive_cost, color='#ef4444', linewidth=3.5, label="Naive Scan: K Calls (Heavy in High-D)")
+            ax_top.plot(k_vals, gric_cost, color='#22c55e', linewidth=4.0, label="Gric: 1 ~ 3 Calls (Minimized)")
+            ax_top.set_xlabel("Clusters (K)", color='#94a3b8', fontsize=11, fontweight='bold')
+            ax_top.set_ylabel("Distance Calls / Frame", color='#94a3b8', fontsize=11, fontweight='bold')
+            ax_top.legend(loc="upper left", facecolor='#0f172a', edgecolor='#334155', fontsize=10.5, labelcolor='#f8fafc')
 
             # Bottom Right: High-D Streaming Objectives
             ax_bot.axis('off')
-            ax_bot.text(0.05, 0.88, "HIGH-D STREAMING OBJECTIVES:", color='#38bdf8', fontweight='bold', fontsize=11.5)
-            ax_bot.text(0.05, 0.70, "• Online sequential clustering as frames arrive in real time.", color='#f8fafc', fontsize=10)
-            ax_bot.text(0.05, 0.52, "• High-D Datasets: Distance calls are computationally heavy.", color='#facc15', fontweight='bold', fontsize=10)
-            ax_bot.text(0.05, 0.34, "• Central Goal: Strictly MINIMIZE distance calls per frame.", color='#4ade80', fontweight='bold', fontsize=10)
-            ax_bot.text(0.05, 0.16, "• C17 Engine: AVX2 SIMD intrinsics + OpenMP parallelism.", color='#38bdf8', fontweight='bold', fontsize=10)
+            ax_bot.text(0.05, 0.88, "HIGH-D STREAMING OBJECTIVES:", color='#38bdf8', fontweight='bold', fontsize=14)
+            ax_bot.text(0.05, 0.68, "• Online sequential clustering as frames arrive in real time.", color='#f8fafc', fontsize=12)
+            ax_bot.text(0.05, 0.48, "• High-D Datasets: Distance calls are computationally heavy.", color='#facc15', fontweight='bold', fontsize=12)
+            ax_bot.text(0.05, 0.28, "• Central Goal: Strictly MINIMIZE distance calls per frame.", color='#4ade80', fontweight='bold', fontsize=12)
+            ax_bot.text(0.05, 0.08, "• C17 Engine: AVX2 SIMD intrinsics + OpenMP parallelism.", color='#38bdf8', fontweight='bold', fontsize=12)
 
-        # -------------------------------------------------------------
-        # SCENE 2: ANCHOR CREATION EXACTLY ON CLUSTER BOUNDARY
-        # -------------------------------------------------------------
         # -------------------------------------------------------------
         # SCENE 2: ANCHOR CREATION & DYNAMIC ALLOCATION STREAM
         # -------------------------------------------------------------
         elif scene_idx == 1:
             ax_main.set_xlim(0, 10); ax_main.set_ylim(0, 10)
-            ax_main.set_title("Online Allocation Stream & Boundary Anchor Formation", color='#38bdf8', fontsize=12, fontweight='bold')
+            ax_main.set_title("Online Allocation Stream & Boundary Anchor Formation", color='#38bdf8', fontsize=15, fontweight='bold')
             
             rlim_val = 1.8
             c_anchors = [
@@ -335,8 +332,6 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
             c_colors = ['#38bdf8', '#a855f7', '#10b981', '#f59e0b']
 
             # Continuous motion BACK AND FORTH across x
-            # Forward leg: prog in [0, 0.50] -> cur_x goes from 1.8 to 8.0
-            # Return leg: prog in [0.50, 1.0] -> cur_x travels back from 8.0 down to 1.8
             if prog <= 0.50:
                 is_return = False
                 fwd_p = prog / 0.50
@@ -357,8 +352,6 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
             c3_active = max_x >= 7.2
 
             # Determine active cluster assignment:
-            # On forward leg: starts in c0, switches to c1 at 3.6, c2 at 5.4, c3 at 7.2
-            # On return leg: starts at 8.0 in c3 (c3 covers down to 5.4!), stays in c3 until x < 5.4!
             if not is_return:
                 if cur_x < 3.6:
                     active_idx = 0
@@ -370,11 +363,11 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
                     active_idx = 3
             else:
                 if cur_x >= 5.4:
-                    active_idx = 3  # Last active cluster until boundary exit at 5.4
+                    active_idx = 3
                 elif cur_x >= 3.6:
-                    active_idx = 2  # Allocated to c2 until boundary exit at 3.6
+                    active_idx = 2
                 elif cur_x >= 1.8:
-                    active_idx = 1  # Allocated to c1 until boundary exit at 1.8
+                    active_idx = 1
                 else:
                     active_idx = 0
 
@@ -394,83 +387,79 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
                     pos = c_anchors[i]
                     col = c_colors[i]
                     is_cur_active = (i == active_idx)
-                    lw_edge = 3.0 if is_cur_active else 1.5
-                    alpha_fill = 0.25 if is_cur_active else 0.10
-                    ax_main.scatter(pos[0], pos[1], s=180, color=col, edgecolors='#fff', linewidth=2, zorder=6)
+                    lw_edge = 3.5 if is_cur_active else 1.8
+                    alpha_fill = 0.28 if is_cur_active else 0.10
+                    ax_main.scatter(pos[0], pos[1], s=360, color=col, edgecolors='#fff', linewidth=2.8, zorder=6)
                     c_patch = Circle(pos, rlim_val, fill=True, facecolor=col, alpha=alpha_fill, edgecolor=col, linewidth=lw_edge, linestyle='--' if not is_cur_active else '-')
                     ax_main.add_patch(c_patch)
-                    ax_main.text(pos[0], pos[1] + 2.1, f"Anchor c_{i}", color=col, fontweight='bold', fontsize=11, ha='center')
+                    ax_main.text(pos[0], pos[1] + 2.1, f"Anchor c_{i}", color=col, fontweight='bold', fontsize=14, ha='center')
 
             # Boundary Spawning Lines
             if c1_active:
-                ax_main.plot([3.6, 3.6], [3.2, 6.8], color='#a855f7', linestyle=':', linewidth=1.5)
-                ax_main.text(3.6, 2.9, "c_1 spawned at c_0 boundary", color='#a855f7', fontsize=9, ha='center', fontweight='bold')
+                ax_main.plot([3.6, 3.6], [3.2, 6.8], color='#a855f7', linestyle=':', linewidth=2.2)
+                ax_main.text(3.6, 2.8, "c_1 spawned at c_0 boundary", color='#a855f7', fontsize=11.5, ha='center', fontweight='bold')
             if c2_active:
-                ax_main.plot([5.4, 5.4], [3.2, 6.8], color='#10b981', linestyle=':', linewidth=1.5)
-                ax_main.text(5.4, 2.6, "c_2 spawned at c_1 boundary", color='#10b981', fontsize=9, ha='center', fontweight='bold')
+                ax_main.plot([5.4, 5.4], [3.2, 6.8], color='#10b981', linestyle=':', linewidth=2.2)
+                ax_main.text(5.4, 2.5, "c_2 spawned at c_1 boundary", color='#10b981', fontsize=11.5, ha='center', fontweight='bold')
             if c3_active:
-                ax_main.plot([7.2, 7.2], [3.2, 6.8], color='#f59e0b', linestyle=':', linewidth=1.5)
-                ax_main.text(7.2, 2.3, "c_3 spawned at c_2 boundary", color='#f59e0b', fontsize=9, ha='center', fontweight='bold')
+                ax_main.plot([7.2, 7.2], [3.2, 6.8], color='#f59e0b', linestyle=':', linewidth=2.2)
+                ax_main.text(7.2, 2.2, "c_3 spawned at c_2 boundary", color='#f59e0b', fontsize=11.5, ha='center', fontweight='bold')
 
             # Direction Arrow
             dir_x = 0.5 if not is_return else -0.5
-            ax_main.annotate('', xy=(cur_x + dir_x, cur_y + 0.6), xytext=(cur_x, cur_y + 0.6),
-                             arrowprops=dict(facecolor='#facc15', edgecolor='#ffffff', width=2, headwidth=6))
-            ax_main.text(cur_x, cur_y + 0.9, "Trajectory Direction", color='#facc15', fontsize=8.5, ha='center', fontweight='bold')
+            ax_main.annotate('', xy=(cur_x + dir_x, cur_y + 0.65), xytext=(cur_x, cur_y + 0.65),
+                             arrowprops=dict(facecolor='#facc15', edgecolor='#ffffff', width=3.5, headwidth=9))
+            ax_main.text(cur_x, cur_y + 1.0, "Trajectory Direction", color='#facc15', fontsize=11.5, ha='center', fontweight='bold')
 
             # Draw Current Incoming Frame (Single Yellow Dot)
-            ax_main.scatter(cur_x, cur_y, s=160, color='#facc15', edgecolors='#ffffff', linewidth=2.5, zorder=8)
-            ax_main.text(cur_x, cur_y - 0.45, "f_i (Incoming Frame)", color='#facc15', fontweight='bold', fontsize=10.5, ha='center')
+            ax_main.scatter(cur_x, cur_y, s=380, color='#facc15', edgecolors='#ffffff', linewidth=3.5, zorder=8)
+            ax_main.text(cur_x, cur_y - 0.55, "f_i (Incoming Frame)", color='#facc15', fontweight='bold', fontsize=13.5, ha='center')
 
             # Distance line to active anchor
-            ax_main.plot([act_pos[0], cur_x], [act_pos[1], cur_y], color='#4ade80', linewidth=3.0, zorder=7)
+            ax_main.plot([act_pos[0], cur_x], [act_pos[1], cur_y], color='#4ade80', linewidth=4.0, zorder=7)
 
             # Status Banner
-            ax_main.text(5.0, 0.8, state_text, color='#ffffff', fontweight='bold', fontsize=11.5, ha='center',
-                         bbox=dict(boxstyle="round,pad=0.4", facecolor="#1e1b4b", edgecolor=state_col, lw=2))
+            ax_main.text(5.0, 0.7, state_text, color='#ffffff', fontweight='bold', fontsize=13.0, ha='center',
+                         bbox=dict(boxstyle="round,pad=0.45", facecolor="#1e1b4b", edgecolor=state_col, lw=2))
 
             # Dynamically Growing Member Count Bar Chart (Top Right)
-            # Compute exact cumulative frames ingested for each cluster up to current progress
-            ax_top.set_title("Frames Ingested per Cluster (Growing)", color='#94a3b8', fontsize=11, fontweight='bold')
+            ax_top.set_title("Frames Ingested per Cluster (Growing)", color='#94a3b8', fontsize=14, fontweight='bold')
             n_clusters = sum(active_flags)
             counts = [0.0, 0.0, 0.0, 0.0]
             if prog <= 0.50:
-                # Forward leg progression
                 counts[0] = min(1.0, fwd_p / (1.8/6.2)) * 25.0 if fwd_p > 0 else 0
                 counts[1] = min(1.0, max(0.0, (cur_x - 3.6) / 1.8)) * 25.0 if cur_x >= 3.6 else 0
                 counts[2] = min(1.0, max(0.0, (cur_x - 5.4) / 1.8)) * 25.0 if cur_x >= 5.4 else 0
                 counts[3] = min(1.0, max(0.0, (cur_x - 7.2) / 0.8)) * 15.0 if cur_x >= 7.2 else 0
             else:
-                # Return leg: base forward counts + return accumulation
                 counts[0] = 25.0 + (min(1.0, max(0.0, (1.8 - cur_x) / 1.8)) * 30.0 if cur_x < 1.8 else 0)
                 counts[1] = 25.0 + (min(1.0, max(0.0, (3.6 - cur_x) / 1.8)) * 30.0 if cur_x < 3.6 else 0)
                 counts[2] = 25.0 + (min(1.0, max(0.0, (5.4 - cur_x) / 1.8)) * 30.0 if cur_x < 5.4 else 0)
                 counts[3] = 15.0 + min(1.0, (8.0 - cur_x) / 2.6) * 30.0
             
             bars = ax_top.bar([f"c_{i}" for i in range(n_clusters)], [int(counts[i]) for i in range(n_clusters)], 
-                       color=c_colors[:n_clusters], width=0.5)
-            ax_top.set_ylabel("Frames Assigned", color='#94a3b8', fontsize=8)
+                       color=c_colors[:n_clusters], width=0.55)
+            ax_top.set_ylabel("Frames Assigned", color='#94a3b8', fontsize=11, fontweight='bold')
             ax_top.set_ylim(0, 65)
             for b in bars:
                 h = b.get_height()
                 if h > 0:
-                    ax_top.text(b.get_x() + b.get_width()/2.0, h + 1.2, f"{int(h)}", ha='center', color='#fff', fontweight='bold', fontsize=9)
+                    ax_top.text(b.get_x() + b.get_width()/2.0, h + 1.5, f"{int(h)}", ha='center', color='#fff', fontweight='bold', fontsize=11.5)
 
             # Bottom Right: Exact Boundary Ingestion & Revisit Rule
             ax_bot.axis('off')
-            ax_bot.text(0.05, 0.88, "CLUSTER ALLOCATION & REVISIT RULE:", color='#38bdf8', fontweight='bold', fontsize=12)
-            ax_bot.text(0.05, 0.70, "1. Incoming frame first tests existing clusters (d <= rlim).", color='#4ade80', fontsize=10)
-            ax_bot.text(0.05, 0.52, "2. Matched frames assigned directly to existing clusters.", color='#f8fafc', fontsize=10)
-            ax_bot.text(0.05, 0.34, "3. Reversing direction: Point remains in last active cluster", color='#fbbf24', fontweight='bold', fontsize=10)
-            ax_bot.text(0.05, 0.18, "   until it crosses boundary (x < 5.4), then switches!", color='#fbbf24', fontweight='bold', fontsize=10)
-            ax_bot.text(0.05, 0.04, "4. New anchors ONLY created when all existing tests fail.", color='#f87171', fontfamily='monospace', fontsize=10)
+            ax_bot.text(0.05, 0.88, "CLUSTER ALLOCATION & REVISIT RULE:", color='#38bdf8', fontweight='bold', fontsize=14)
+            ax_bot.text(0.05, 0.68, "1. Incoming frame first tests existing clusters (d <= rlim).", color='#4ade80', fontsize=12)
+            ax_bot.text(0.05, 0.48, "2. Matched frames assigned directly to existing clusters.", color='#f8fafc', fontsize=12)
+            ax_bot.text(0.05, 0.28, "3. Reversing: Stays in active cluster until boundary (x < 5.4)!", color='#fbbf24', fontweight='bold', fontsize=12)
+            ax_bot.text(0.05, 0.08, "4. New anchors ONLY created when all existing tests fail.", color='#f87171', fontfamily='monospace', fontsize=12)
 
         # -------------------------------------------------------------
         # SCENE 3: Geometric Pruning via the Triangle Inequality
         # -------------------------------------------------------------
         elif scene_idx == 2:
             ax_main.set_xlim(0, 10); ax_main.set_ylim(0, 10)
-            ax_main.set_title("Triangle Inequality Metric Pruning (3-Point, -te4, -te5)", color='#10b981', fontsize=12, fontweight='bold')
+            ax_main.set_title("Triangle Inequality Metric Pruning (3-Point, -te4, -te5)", color='#10b981', fontsize=15, fontweight='bold')
             
             s3_rlim = 1.50
             p_f = np.array([2.2, 3.2])    # Query frame f
@@ -485,65 +474,65 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
             bound_C = d_AC - d_meas                                       # 3.45
 
             # 1. Pivot Anchor cA and Query Frame f (Always visible)
-            ax_main.scatter(p_cA[0], p_cA[1], s=190, color='#38bdf8', edgecolors='#fff', linewidth=2, zorder=6)
-            ax_main.text(p_cA[0] - 0.2, p_cA[1] + 0.35, "Anchor cA (Pivot)", color='#38bdf8', fontweight='bold', fontsize=11)
-            c_patch_A = Circle(p_cA, s3_rlim, fill=True, facecolor='#38bdf8', alpha=0.10, edgecolor='#38bdf8', linestyle=':')
+            ax_main.scatter(p_cA[0], p_cA[1], s=360, color='#38bdf8', edgecolors='#fff', linewidth=2.8, zorder=6)
+            ax_main.text(p_cA[0] - 0.2, p_cA[1] + 0.40, "Anchor cA (Pivot)", color='#38bdf8', fontweight='bold', fontsize=14)
+            c_patch_A = Circle(p_cA, s3_rlim, fill=True, facecolor='#38bdf8', alpha=0.12, edgecolor='#38bdf8', linestyle=':')
             ax_main.add_patch(c_patch_A)
 
-            ax_main.scatter(p_f[0], p_f[1], s=170, color='#facc15', edgecolors='#fff', linewidth=2.5, zorder=8)
-            ax_main.text(p_f[0] - 0.3, p_f[1] - 0.45, "f (Query Frame)", color='#facc15', fontweight='bold', fontsize=11)
+            ax_main.scatter(p_f[0], p_f[1], s=380, color='#facc15', edgecolors='#fff', linewidth=3.5, zorder=8)
+            ax_main.text(p_f[0] - 0.3, p_f[1] - 0.50, "f (Query Frame)", color='#facc15', fontweight='bold', fontsize=14)
 
             # Measured distance edge (f to cA)
-            ax_main.plot([p_f[0], p_cA[0]], [p_f[1], p_cA[1]], color='#facc15', linewidth=3.0, zorder=5)
-            ax_main.text(1.7, 4.3, f"d(f, cA) = {d_meas:.2f}\n[MEASURED]", color='#facc15', fontweight='bold', fontsize=10)
+            ax_main.plot([p_f[0], p_cA[0]], [p_f[1], p_cA[1]], color='#facc15', linewidth=4.0, zorder=5)
+            ax_main.text(1.5, 4.3, f"d(f, cA) = {d_meas:.2f}\n[MEASURED]", color='#facc15', fontweight='bold', fontsize=12.5)
 
             # 2. Single Triangle (f, cA, cB) during main explanation (prog >= 0.20)
             if prog >= 0.20:
-                ax_main.scatter(p_cB[0], p_cB[1], s=180, color='#a855f7', edgecolors='#fff', linewidth=2, zorder=6)
-                ax_main.text(p_cB[0] + 0.25, p_cB[1] + 0.2, "Anchor cB (Candidate)", color='#a855f7', fontweight='bold', fontsize=10.5)
-                c_patch_B = Circle(p_cB, s3_rlim, fill=True, facecolor='#a855f7', alpha=0.10, edgecolor='#a855f7', linestyle='--')
+                ax_main.scatter(p_cB[0], p_cB[1], s=360, color='#a855f7', edgecolors='#fff', linewidth=2.8, zorder=6)
+                ax_main.text(p_cB[0] + 0.25, p_cB[1] + 0.2, "Anchor cB (Candidate)", color='#a855f7', fontweight='bold', fontsize=13.5)
+                c_patch_B = Circle(p_cB, s3_rlim, fill=True, facecolor='#a855f7', alpha=0.12, edgecolor='#a855f7', linestyle='--')
                 ax_main.add_patch(c_patch_B)
 
                 # Known DCC edge (cA to cB)
-                ax_main.plot([p_cA[0], p_cB[0]], [p_cA[1], p_cB[1]], color='#38bdf8', linewidth=2.5, linestyle='-', zorder=4)
-                ax_main.text(5.2, 7.0, f"d(cA, cB) = {d_AB:.2f} (KNOWN)", color='#38bdf8', fontweight='bold', fontsize=10)
+                ax_main.plot([p_cA[0], p_cB[0]], [p_cA[1], p_cB[1]], color='#38bdf8', linewidth=3.5, linestyle='-', zorder=4)
+                ax_main.text(5.0, 7.1, f"d(cA, cB) = {d_AB:.2f} (KNOWN)", color='#38bdf8', fontweight='bold', fontsize=13)
 
                 # Shaded Triangle (f, cA, cB)
-                tri_B = Polygon([p_f, p_cA, p_cB], closed=True, facecolor='#818cf8', alpha=0.12, edgecolor='#818cf8', linestyle=':')
+                tri_B = Polygon([p_f, p_cA, p_cB], closed=True, facecolor='#818cf8', alpha=0.15, edgecolor='#818cf8', linestyle=':')
                 ax_main.add_patch(tri_B)
 
                 # Lower bound line (f to cB)
-                ax_main.plot([p_f[0], p_cB[0]], [p_f[1], p_cB[1]], color='#ef4444', linewidth=2.0, linestyle='--', zorder=4)
-                ax_main.text(4.2, 5.2, f"d(f, cB) >= |{d_AB:.2f} - {d_meas:.2f}| = {bound_B:.2f}", 
-                             color='#f87171', fontweight='bold', fontsize=9.5, rotation=40)
+                ax_main.plot([p_f[0], p_cB[0]], [p_f[1], p_cB[1]], color='#ef4444', linewidth=3.0, linestyle='--', zorder=4)
+                ax_main.text(4.0, 5.3, f"d(f, cB) >= |{d_AB:.2f} - {d_meas:.2f}| = {bound_B:.2f}", 
+                             color='#f87171', fontweight='bold', fontsize=12.5, rotation=40)
 
             # Pruning trigger for cB (prog >= 0.50)
             if prog >= 0.50:
-                ax_main.scatter(p_cB[0], p_cB[1], s=260, color='#dc2626', marker='x', linewidth=3.5, zorder=9)
-                ax_main.text(p_cB[0] - 1.6, p_cB[1] - 0.55, f"PRUNED! ({bound_B:.2f} > rlim {s3_rlim:.2f})", 
-                             color='#f87171', fontweight='bold', fontsize=10.5,
-                             bbox=dict(boxstyle="round,pad=0.2", facecolor="#450a0a", edgecolor="#ef4444", lw=1.5))
+                ax_main.scatter(p_cB[0], p_cB[1], s=550, color='#dc2626', marker='x', linewidth=5.0, zorder=9)
+                ax_main.text(p_cB[0] - 1.8, p_cB[1] - 0.65, f"PRUNED! ({bound_B:.2f} > rlim {s3_rlim:.2f})", 
+                             color='#f87171', fontweight='bold', fontsize=13.0,
+                             bbox=dict(boxstyle="round,pad=0.3", facecolor="#450a0a", edgecolor="#ef4444", lw=1.8))
 
             # 3. Second Triangle (f, cA, cC) at end when showing dozens pruned (prog >= 0.75)
             if prog >= 0.75:
-                ax_main.scatter(p_cC[0], p_cC[1], s=180, color='#10b981', edgecolors='#fff', linewidth=2, zorder=6)
-                ax_main.text(p_cC[0] + 0.25, p_cC[1] - 0.2, "Anchor cC (Candidate 2)", color='#10b981', fontweight='bold', fontsize=10.5)
-                c_patch_C = Circle(p_cC, s3_rlim, fill=True, facecolor='#10b981', alpha=0.10, edgecolor='#10b981', linestyle='--')
+                ax_main.scatter(p_cC[0], p_cC[1], s=360, color='#10b981', edgecolors='#fff', linewidth=2.8, zorder=6)
+                ax_main.text(p_cC[0] + 0.25, p_cC[1] - 0.2, "Anchor cC (Candidate 2)", color='#10b981', fontweight='bold', fontsize=13.5)
+                c_patch_C = Circle(p_cC, s3_rlim, fill=True, facecolor='#10b981', alpha=0.12, edgecolor='#10b981', linestyle='--')
                 ax_main.add_patch(c_patch_C)
 
                 # Known DCC edge (cA to cC)
-                ax_main.plot([p_cA[0], p_cC[0]], [p_cA[1], p_cC[1]], color='#38bdf8', linewidth=2.5, linestyle='-', zorder=4)
-                ax_main.text(5.5, 3.4, f"d(cA, cC) = {d_AC:.2f} (KNOWN)", color='#38bdf8', fontweight='bold', fontsize=10)
+                ax_main.plot([p_cA[0], p_cC[0]], [p_cA[1], p_cC[1]], color='#38bdf8', linewidth=3.5, linestyle='-', zorder=4)
+                ax_main.text(5.5, 3.4, f"d(cA, cC) = {d_AC:.2f} (KNOWN)", color='#38bdf8', fontweight='bold', fontsize=13)
 
                 # Shaded Triangle (f, cA, cC)
-                tri_C = Polygon([p_f, p_cA, p_cC], closed=True, facecolor='#34d399', alpha=0.10, edgecolor='#34d399', linestyle=':')
+                tri_C = Polygon([p_f, p_cA, p_cC], closed=True, facecolor='#34d399', alpha=0.15, edgecolor='#34d399', linestyle=':')
                 ax_main.add_patch(tri_C)
 
                 # Pruning trigger for cC
-                ax_main.scatter(p_cC[0], p_cC[1], s=260, color='#dc2626', marker='x', linewidth=3.5, zorder=9)
-                ax_main.text(p_cC[0] - 1.6, p_cC[1] - 0.55, f"PRUNED! ({bound_C:.2f} > rlim {s3_rlim:.2f})", 
-                             color='#f87171', fontweight='bold', fontsize=10.5,
-                             bbox=dict(boxstyle="round,pad=0.2", facecolor="#450a0a", edgecolor="#ef4444", lw=1.5))
+                ax_main.scatter(p_cC[0], p_cC[1], s=550, color='#dc2626', marker='x', linewidth=5.0, zorder=9)
+                ax_main.text(p_cC[0] - 1.8, p_cC[1] - 0.65, f"PRUNED! ({bound_C:.2f} > rlim {s3_rlim:.2f})", 
+                             color='#f87171', fontweight='bold', fontsize=13.0,
+                             bbox=dict(boxstyle="round,pad=0.3", facecolor="#450a0a", edgecolor="#ef4444", lw=1.8))
 
             # Bottom Status Banner
             if prog >= 0.75:
@@ -552,43 +541,43 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
                 status_prune = "Lower Bound (3.16) > rlim (1.50) -> Candidate cB is Mathematically Excluded!"
             else:
                 status_prune = "Forming Triangle (f, cA, cB): Bound = | d(cA, cB) - d(f, cA) |"
-            ax_main.text(5.0, 0.7, status_prune, color='#ffffff', fontweight='bold', fontsize=11.0, ha='center',
-                         bbox=dict(boxstyle="round,pad=0.4", facecolor="#1e1b4b", edgecolor="#10b981", lw=2))
+            ax_main.text(5.0, 0.7, status_prune, color='#ffffff', fontweight='bold', fontsize=13.0, ha='center',
+                         bbox=dict(boxstyle="round,pad=0.45", facecolor="#1e1b4b", edgecolor="#10b981", lw=2))
 
             # Top Right: Triangle Inequality Formulation
-            ax_top.set_title("Triangle Inequality Formulation", color='#94a3b8', fontsize=11, fontweight='bold')
+            ax_top.set_title("Triangle Inequality Formulation", color='#94a3b8', fontsize=14, fontweight='bold')
             ax_top.axis('off')
-            ax_top.text(0.05, 0.82, "TRIANGLE THEOREM:", color='#38bdf8', fontweight='bold', fontsize=11)
-            ax_top.text(0.05, 0.60, "d(f, cX) >= | d(cA, cX) - d(f, cA) |", color='#facc15', fontfamily='monospace', fontweight='bold', fontsize=10.5)
-            ax_top.text(0.05, 0.38, "• d(f, cA) = 2.24  [MEASURED from stream]", color='#4ade80', fontsize=10)
-            ax_top.text(0.05, 0.20, "• d(cA, cB) = 5.40  [PRECOMPUTED in DCC]", color='#38bdf8', fontsize=10)
-            ax_top.text(0.05, 0.02, "• Bound = 3.16 > rlim (1.50) -> PRUNED!", color='#f87171', fontweight='bold', fontsize=10)
+            ax_top.text(0.05, 0.82, "TRIANGLE THEOREM:", color='#38bdf8', fontweight='bold', fontsize=13.5)
+            ax_top.text(0.05, 0.60, "d(f, cX) >= | d(cA, cX) - d(f, cA) |", color='#facc15', fontfamily='monospace', fontweight='bold', fontsize=12.5)
+            ax_top.text(0.05, 0.38, "• d(f, cA) = 2.24  [MEASURED from stream]", color='#4ade80', fontsize=12)
+            ax_top.text(0.05, 0.20, "• d(cA, cB) = 5.40  [PRECOMPUTED in DCC]", color='#38bdf8', fontsize=12)
+            ax_top.text(0.05, 0.02, "• Bound = 3.16 > rlim (1.50) -> PRUNED!", color='#f87171', fontweight='bold', fontsize=12.5)
 
             # Bottom Right: Extension to 4-Point & 5-Point
             ax_bot.axis('off')
-            ax_bot.text(0.05, 0.88, "MULTI-POINT EXTENSIONS:", color='#10b981', fontweight='bold', fontsize=12)
-            ax_bot.text(0.05, 0.70, "• 3-Point (Default): 1 pivot measurement prunes candidate sets.", color='#f8fafc', fontsize=10)
-            ax_bot.text(0.05, 0.52, "• 4-Point (-te4): 2 measured pivots triangulate 2D orthogonal height.", color='#c084fc', fontsize=10)
-            ax_bot.text(0.05, 0.34, "• 5-Point (-te5): 3 measured pivots project 3D simplex bounds.", color='#4ade80', fontsize=10)
-            ax_bot.text(0.05, 0.16, "• -sparse_dcc: Dynamic interval bounding without dense O(K^2) memory.", color='#fbbf24', fontfamily='monospace', fontsize=10)
+            ax_bot.text(0.05, 0.88, "MULTI-POINT EXTENSIONS:", color='#10b981', fontweight='bold', fontsize=14)
+            ax_bot.text(0.05, 0.68, "• 3-Point (Default): 1 pivot measurement prunes candidate sets.", color='#f8fafc', fontsize=12)
+            ax_bot.text(0.05, 0.48, "• 4-Point (-te4): 2 measured pivots triangulate 2D orthogonal height.", color='#c084fc', fontsize=12)
+            ax_bot.text(0.05, 0.28, "• 5-Point (-te5): 3 measured pivots project 3D simplex bounds.", color='#4ade80', fontsize=12)
+            ax_bot.text(0.05, 0.08, "• -sparse_dcc: Dynamic interval bounds without O(K^2) memory.", color='#fbbf24', fontfamily='monospace', fontsize=12)
 
         # -------------------------------------------------------------
         # SCENE 4: Greedy vs Shannon Entropy on 2D Spiral
         # -------------------------------------------------------------
         elif scene_idx == 3:
             ax_main.set_xlim(0, 10); ax_main.set_ylim(0, 10)
-            ax_main.set_title("Target Selection: Greedy vs Shannon Entropy (-entropy)", color='#c084fc', fontsize=12, fontweight='bold')
+            ax_main.set_title("Target Selection: Greedy vs Shannon Entropy (-entropy)", color='#c084fc', fontsize=15, fontweight='bold')
             
             # Draw Archimedean Spiral Manifold
             sp_theta = np.linspace(0.4, 4.2 * np.pi, 200)
             sp_r = 0.35 + 0.30 * sp_theta
             sp_x = 5.0 + sp_r * np.cos(sp_theta)
             sp_y = 5.0 + sp_r * np.sin(sp_theta)
-            ax_main.plot(sp_x, sp_y, color='#334155', linewidth=3, linestyle='--', zorder=2)
+            ax_main.plot(sp_x, sp_y, color='#334155', linewidth=3.5, linestyle='--', zorder=2)
             
             # Spiral Center Pivot
-            ax_main.scatter(5.0, 5.0, s=220, color='#38bdf8', edgecolors='#ffffff', linewidth=2.5, zorder=7)
-            ax_main.text(5.0, 4.4, "Spiral Center Pivot (c_center)\n[Maximum Info Gain!]", color='#38bdf8', fontweight='bold', fontsize=10, ha='center')
+            ax_main.scatter(5.0, 5.0, s=450, color='#38bdf8', edgecolors='#ffffff', linewidth=3.0, zorder=7)
+            ax_main.text(5.0, 4.3, "Spiral Center Pivot (c_center)\n[Maximum Info Gain!]", color='#38bdf8', fontweight='bold', fontsize=12.5, ha='center')
 
             # Spiral Cluster Anchors
             th_anchors = [1.2, 2.8, 4.6, 6.8, 9.2, 11.5]
@@ -598,106 +587,106 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
                 ax = 5.0 + r_a * np.cos(th)
                 ay = 5.0 + r_a * np.sin(th)
                 cl_anchors.append((ax, ay))
-                ax_main.scatter(ax, ay, s=140, color='#64748b', edgecolors='#ffffff', linewidth=1.5, zorder=5)
-                ax_main.text(ax + 0.2, ay + 0.2, f"c_{i}", color='#94a3b8', fontweight='bold', fontsize=10)
+                ax_main.scatter(ax, ay, s=260, color='#64748b', edgecolors='#ffffff', linewidth=2.0, zorder=5)
+                ax_main.text(ax + 0.25, ay + 0.25, f"c_{i}", color='#94a3b8', fontweight='bold', fontsize=12.5)
 
             # Query Frame f on outer winding
             f_th = 8.5
             f_r = 0.35 + 0.30 * f_th
             fx = 5.0 + f_r * np.cos(f_th)
             fy = 5.0 + f_r * np.sin(f_th)
-            ax_main.scatter(fx, fy, s=180, color='#facc15', edgecolors='#ffffff', linewidth=2.5, zorder=9)
-            ax_main.text(fx + 0.3, fy - 0.4, "f (Incoming Frame)", color='#facc15', fontweight='bold', fontsize=11)
+            ax_main.scatter(fx, fy, s=380, color='#facc15', edgecolors='#ffffff', linewidth=3.5, zorder=9)
+            ax_main.text(fx + 0.35, fy - 0.45, "f (Incoming Frame)", color='#facc15', fontweight='bold', fontsize=14)
 
             # 1. Greedy Choice (prog < 0.45): Tests c_5 on outer winding
             if prog < 0.45:
                 greedy_ax, greedy_ay = cl_anchors[5]
-                ax_main.plot([fx, greedy_ax], [fy, greedy_ay], color='#ef4444', linewidth=2.5, linestyle=':', zorder=6)
-                ax_main.text(7.2, 2.0, "Greedy Mode: Tests most likely candidate c_5\nMismatch only eliminates neighbor clusters on 1 winding!", 
-                             color='#f87171', fontweight='bold', fontsize=10,
-                             bbox=dict(boxstyle="round,pad=0.3", facecolor="#450a0a", edgecolor="#ef4444", lw=1.5))
+                ax_main.plot([fx, greedy_ax], [fy, greedy_ay], color='#ef4444', linewidth=3.5, linestyle=':', zorder=6)
+                ax_main.text(7.2, 2.0, "Greedy Mode: Tests candidate c_5\nMismatch only eliminates 1 winding!", 
+                             color='#f87171', fontweight='bold', fontsize=12.5,
+                             bbox=dict(boxstyle="round,pad=0.35", facecolor="#450a0a", edgecolor="#ef4444", lw=1.8))
             else:
                 # 2. Entropy Choice (prog >= 0.45): Measures distance to Spiral Center!
-                ax_main.plot([fx, 5.0], [fy, 5.0], color='#22c55e', linewidth=3.5, zorder=8)
-                ax_main.text(4.0, 6.2, f"d(f, c_center) = {f_r:.2f} (Radius)\nUnambiguously resolves exact winding!", 
-                             color='#4ade80', fontweight='bold', fontsize=10.5,
-                             bbox=dict(boxstyle="round,pad=0.3", facecolor="#064e3b", edgecolor="#22c55e", lw=1.5))
+                ax_main.plot([fx, 5.0], [fy, 5.0], color='#22c55e', linewidth=4.0, zorder=8)
+                ax_main.text(3.8, 6.2, f"d(f, c_center) = {f_r:.2f} (Radius)\nUnambiguously resolves exact winding!", 
+                             color='#4ade80', fontweight='bold', fontsize=13.0,
+                             bbox=dict(boxstyle="round,pad=0.35", facecolor="#064e3b", edgecolor="#22c55e", lw=1.8))
                 
                 # Highlight all wrong windings eliminated simultaneously
                 for prune_id in [0, 1, 2, 5]:
-                    ax_main.scatter(cl_anchors[prune_id][0], cl_anchors[prune_id][1], s=200, color='#dc2626', marker='x', linewidth=3, zorder=10)
-                ax_main.text(5.0, 0.8, "Entropy Pivot to Center Solves Manifold in 1 Single Measurement!", 
-                             color='#ffffff', fontweight='bold', fontsize=11.5, ha='center',
-                             bbox=dict(boxstyle="round,pad=0.4", facecolor="#1e1b4b", edgecolor="#c084fc", lw=2))
+                    ax_main.scatter(cl_anchors[prune_id][0], cl_anchors[prune_id][1], s=450, color='#dc2626', marker='x', linewidth=4.5, zorder=10)
+                ax_main.text(5.0, 0.7, "Entropy Pivot to Center Solves Manifold in 1 Single Measurement!", 
+                             color='#ffffff', fontweight='bold', fontsize=13.5, ha='center',
+                             bbox=dict(boxstyle="round,pad=0.45", facecolor="#1e1b4b", edgecolor="#c084fc", lw=2))
 
             # Top Right: Probability Distribution Collapse
-            ax_top.set_title("In-Memory Probability Distribution", color='#94a3b8', fontsize=11, fontweight='bold')
+            ax_top.set_title("In-Memory Probability Distribution", color='#94a3b8', fontsize=14, fontweight='bold')
             if prog < 0.45:
                 probs = [0.15, 0.20, 0.25, 0.18, 0.12, 0.10]
             else:
                 probs = [0.0, 0.0, 0.0, 0.05, 0.95, 0.0]
-            bars = ax_top.bar([f"c_{i}" for i in range(6)], probs, color=['#38bdf8' if p < 0.5 else '#22c55e' for p in probs], width=0.5)
-            ax_top.set_ylabel("Posterior P(c_i)", color='#94a3b8', fontsize=8)
+            bars = ax_top.bar([f"c_{i}" for i in range(6)], probs, color=['#38bdf8' if p < 0.5 else '#22c55e' for p in probs], width=0.55)
+            ax_top.set_ylabel("Posterior P(c_i)", color='#94a3b8', fontsize=11, fontweight='bold')
             ax_top.set_ylim(0, 1.1)
 
             # Bottom Right: Entropy vs Greedy Logic
             ax_bot.axis('off')
-            ax_bot.text(0.05, 0.88, "INFORMATION-THEORETIC SCHEDULING:", color='#c084fc', fontweight='bold', fontsize=12)
-            ax_bot.text(0.05, 0.70, "• Greedy Mode: Hopes for early match (tries highest prior).", color='#f87171', fontsize=10)
-            ax_bot.text(0.05, 0.52, "• Entropy Mode: Maximizes Shannon information gain.", color='#4ade80', fontweight='bold', fontsize=10)
-            ax_bot.text(0.05, 0.34, "• Center Pivot: 1 measurement solves spiral radius & cuts entropy.", color='#38bdf8', fontsize=10)
-            ax_bot.text(0.05, 0.16, "• In-Memory Priors: Dynamically updated from recent allocations.", color='#fbbf24', fontfamily='monospace', fontsize=10)
+            ax_bot.text(0.05, 0.88, "INFORMATION-THEORETIC SCHEDULING:", color='#c084fc', fontweight='bold', fontsize=14)
+            ax_bot.text(0.05, 0.68, "• Greedy Mode: Hopes for early match (tries highest prior).", color='#f87171', fontsize=12)
+            ax_bot.text(0.05, 0.48, "• Entropy Mode: Maximizes Shannon information gain.", color='#4ade80', fontweight='bold', fontsize=12)
+            ax_bot.text(0.05, 0.28, "• Center Pivot: 1 call solves spiral radius & cuts entropy.", color='#38bdf8', fontsize=12)
+            ax_bot.text(0.05, 0.08, "• In-Memory Priors: Dynamically updated from allocations.", color='#fbbf24', fontfamily='monospace', fontsize=12)
 
         # -------------------------------------------------------------
         # SCENE 5: Priors & Topological Learning
         # -------------------------------------------------------------
         elif scene_idx == 4:
             ax_main.set_xlim(0, 10); ax_main.set_ylim(0, 10)
-            ax_main.set_title("Priors, Markov Transitions & Topology Learning", color='#38bdf8', fontsize=12, fontweight='bold')
+            ax_main.set_title("Priors, Markov Transitions & Topology Learning", color='#38bdf8', fontsize=15, fontweight='bold')
             
             c_pos = [[2.5, 7.5], [7.5, 7.5], [5.0, 2.5]]
             c_labels = ["c_1", "c_2", "c_3"]
             for i in range(3):
-                ax_main.scatter(c_pos[i][0], c_pos[i][1], s=250, color='#4f46e5', edgecolors='#fff', linewidth=2, zorder=5)
-                ax_main.text(c_pos[i][0], c_pos[i][1]-0.1, c_labels[i], color='#fff', fontweight='bold', fontsize=12, ha='center', va='center')
+                ax_main.scatter(c_pos[i][0], c_pos[i][1], s=500, color='#4f46e5', edgecolors='#fff', linewidth=3.0, zorder=5)
+                ax_main.text(c_pos[i][0], c_pos[i][1]-0.1, c_labels[i], color='#fff', fontweight='bold', fontsize=16, ha='center', va='center')
 
-            ax_main.annotate("", xy=(6.5, 7.5), xytext=(3.5, 7.5), arrowprops=dict(arrowstyle="->", color="#38bdf8", lw=3))
-            ax_main.text(5.0, 7.9, "T(1 -> 2) = 85% (-tm)", color='#38bdf8', fontweight='bold', fontsize=11, ha='center')
+            ax_main.annotate("", xy=(6.3, 7.5), xytext=(3.7, 7.5), arrowprops=dict(arrowstyle="->", color="#38bdf8", lw=4.5))
+            ax_main.text(5.0, 7.9, "T(1 -> 2) = 85% (-tm)", color='#38bdf8', fontweight='bold', fontsize=13.5, ha='center')
 
-            ax_main.annotate("", xy=(5.5, 3.5), xytext=(7.0, 6.5), arrowprops=dict(arrowstyle="->", color="#c084fc", lw=3))
-            ax_main.text(6.8, 4.8, "T(2 -> 3) = 80%", color='#c084fc', fontweight='bold', fontsize=10)
+            ax_main.annotate("", xy=(5.5, 3.5), xytext=(7.0, 6.5), arrowprops=dict(arrowstyle="->", color="#c084fc", lw=4.5))
+            ax_main.text(6.8, 4.8, "T(2 -> 3) = 80%", color='#c084fc', fontweight='bold', fontsize=13)
 
-            ax_main.annotate("", xy=(3.0, 6.5), xytext=(4.5, 3.5), arrowprops=dict(arrowstyle="->", color="#10b981", lw=3))
-            ax_main.text(3.1, 4.8, "T(3 -> 1) = 75%", color='#10b981', fontweight='bold', fontsize=10)
+            ax_main.annotate("", xy=(3.0, 6.5), xytext=(4.5, 3.5), arrowprops=dict(arrowstyle="->", color="#10b981", lw=4.5))
+            ax_main.text(3.1, 4.8, "T(3 -> 1) = 75%", color='#10b981', fontweight='bold', fontsize=13)
 
-            ax_main.text(5.0, 1.0, "Predictor: [4 -> 1 -> 7 -> 2] -> 92% Conf Next is c_9 (-pred)", 
-                         color='#facc15', fontweight='bold', fontsize=10.5, ha='center',
-                         bbox=dict(boxstyle="round,pad=0.5", facecolor="#1e1b4b", edgecolor="#9333ea", lw=1.5))
+            ax_main.text(5.0, 0.7, "Predictor: [4 -> 1 -> 7 -> 2] -> 92% Conf Next is c_9 (-pred)", 
+                         color='#facc15', fontweight='bold', fontsize=13.0, ha='center',
+                         bbox=dict(boxstyle="round,pad=0.45", facecolor="#1e1b4b", edgecolor="#9333ea", lw=2.0))
 
             # Top Right: Markov Mixing Equation
-            ax_top.set_title("Probability Mixing Distribution", color='#94a3b8', fontsize=11, fontweight='bold')
-            ax_top.bar(["P_freq", "P_trans (-tm)", "P_mixed"], [0.25, 0.85, 0.73], color=['#38bdf8', '#4f46e5', '#22c55e'], width=0.5)
-            ax_top.set_ylabel("Probability", color='#94a3b8', fontsize=8)
+            ax_top.set_title("Probability Mixing Distribution", color='#94a3b8', fontsize=14, fontweight='bold')
+            ax_top.bar(["P_freq", "P_trans (-tm)", "P_mixed"], [0.25, 0.85, 0.73], color=['#38bdf8', '#4f46e5', '#22c55e'], width=0.55)
+            ax_top.set_ylabel("Probability", color='#94a3b8', fontsize=11, fontweight='bold')
             ax_top.set_ylim(0, 1.0)
 
             # Bottom Right: Prior Options
             ax_bot.axis('off')
-            ax_bot.text(0.05, 0.88, "PRIOR & TOPOLOGY OPTIONS:", color='#38bdf8', fontweight='bold', fontsize=12)
-            ax_bot.text(0.05, 0.70, "• -tm <coeff>: Blends Markov transition history into prior.", color='#f8fafc', fontfamily='monospace', fontsize=10)
-            ax_bot.text(0.05, 0.52, "• -pred [len,h,n]: Scans history to forecast multi-step paths.", color='#f8fafc', fontfamily='monospace', fontsize=10)
-            ax_bot.text(0.05, 0.34, "• -gprob: Learns spatial correlations from visitor history.", color='#f8fafc', fontfamily='monospace', fontsize=10)
-            ax_bot.text(0.05, 0.16, "• -soft_bayesian: Gaussian likelihood decay for noisy data.", color='#4ade80', fontfamily='monospace', fontsize=10)
+            ax_bot.text(0.05, 0.88, "PRIOR & TOPOLOGY OPTIONS:", color='#38bdf8', fontweight='bold', fontsize=14)
+            ax_bot.text(0.05, 0.68, "• -tm <coeff>: Blends Markov transition history into prior.", color='#f8fafc', fontfamily='monospace', fontsize=12)
+            ax_bot.text(0.05, 0.48, "• -pred [len,h,n]: Scans history to forecast multi-step paths.", color='#f8fafc', fontfamily='monospace', fontsize=12)
+            ax_bot.text(0.05, 0.28, "• -gprob: Learns spatial correlations from visitor history.", color='#f8fafc', fontfamily='monospace', fontsize=12)
+            ax_bot.text(0.05, 0.08, "• -soft_bayesian: Gaussian likelihood decay for noisy data.", color='#4ade80', fontfamily='monospace', fontsize=12)
 
         # -------------------------------------------------------------
         # SCENE 6: Spatial Tiling & Joint Trajectory Fusion
         # -------------------------------------------------------------
         elif scene_idx == 5:
             ax_main.set_xlim(0, 10); ax_main.set_ylim(0, 10)
-            ax_main.set_title("Multi-Tile Architecture (-tiles 2x2) & Rich Joint Tuples (-jtf)", color='#0d9488', fontsize=12, fontweight='bold')
+            ax_main.set_title("Multi-Tile Architecture (-tiles 2x2) & Rich Joint Tuples (-jtf)", color='#0d9488', fontsize=15, fontweight='bold')
             
             # Draw Tile Partition Grid
-            ax_main.plot([5, 5], [0, 10], color='#0d9488', linewidth=2.5, linestyle='--')
-            ax_main.plot([0, 10], [5, 5], color='#0d9488', linewidth=2.5, linestyle='--')
+            ax_main.plot([5, 5], [0, 10], color='#0d9488', linewidth=3.5, linestyle='--')
+            ax_main.plot([0, 10], [5, 5], color='#0d9488', linewidth=3.5, linestyle='--')
 
             # Sub-tile boxes and thread assignment
             t_data = [
@@ -707,44 +696,44 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
                 (7.5, 2.5, "Tile 3 (Thread 3)", "Sub-Cluster c_1", "#f59e0b"),
             ]
             for tx, ty, t_title, t_sub, t_col in t_data:
-                ax_main.text(tx, ty + 0.6, t_title, color='#94a3b8', ha='center', va='center', fontsize=11, fontweight='bold')
-                ax_main.text(tx, ty - 0.4, t_sub, color=t_col, ha='center', va='center', fontsize=11.5, fontweight='bold',
-                             bbox=dict(boxstyle="round,pad=0.3", facecolor="#0f172a", edgecolor=t_col, lw=1.5))
+                ax_main.text(tx, ty + 0.65, t_title, color='#94a3b8', ha='center', va='center', fontsize=13.0, fontweight='bold')
+                ax_main.text(tx, ty - 0.40, t_sub, color=t_col, ha='center', va='center', fontsize=14.0, fontweight='bold',
+                             bbox=dict(boxstyle="round,pad=0.35", facecolor="#0f172a", edgecolor=t_col, lw=1.8))
 
             # Seam crossing feature
             obj_x = 5.0 + 0.35 * np.sin(prog * 4 * np.pi)
             obj_y = 5.0 + 0.35 * np.cos(prog * 4 * np.pi)
-            ax_main.scatter(obj_x, obj_y, s=300, color='#f43f5e', edgecolors='#fff', linewidth=2, zorder=6)
-            ax_main.text(obj_x + 0.4, obj_y + 0.4, "Seam Crossing", color='#fb7185', fontweight='bold', fontsize=10.5)
+            ax_main.scatter(obj_x, obj_y, s=450, color='#f43f5e', edgecolors='#fff', linewidth=3.0, zorder=6)
+            ax_main.text(obj_x + 0.45, obj_y + 0.45, "Seam Crossing", color='#fb7185', fontweight='bold', fontsize=13.0)
 
             # Joint Tuple Banner
-            ax_main.text(5.0, 0.75, "Forming Joint Cluster Tuple:  ( c_0, c_3, c_2, c_1 )  ->  Key: (0, 3, 2, 1)", 
-                         color='#ffffff', fontweight='bold', fontsize=11.5, ha='center',
-                         bbox=dict(boxstyle="round,pad=0.4", facecolor="#134e4a", edgecolor="#2dd4bf", lw=2))
+            ax_main.text(5.0, 0.7, "Forming Joint Cluster Tuple:  ( c_0, c_3, c_2, c_1 )  ->  Key: (0, 3, 2, 1)", 
+                         color='#ffffff', fontweight='bold', fontsize=13.0, ha='center',
+                         bbox=dict(boxstyle="round,pad=0.45", facecolor="#134e4a", edgecolor="#2dd4bf", lw=2))
 
             # Top Right: Rich Tuple vs Scalar Index
-            ax_top.set_title("Joint Tuple vs Scalar Cluster Index", color='#94a3b8', fontsize=11, fontweight='bold')
+            ax_top.set_title("Joint Tuple vs Scalar Cluster Index", color='#94a3b8', fontsize=14, fontweight='bold')
             ax_top.axis('off')
-            ax_top.text(0.05, 0.85, "• Scalar Index: c_7", color='#f87171', fontweight='bold', fontsize=11)
-            ax_top.text(0.08, 0.68, "  -> 1 index loses local spatial context", color='#94a3b8', fontsize=9.5)
-            ax_top.text(0.05, 0.45, "• Joint Tuple: ( 0, 3, 2, 1 )", color='#4ade80', fontweight='bold', fontsize=11)
-            ax_top.text(0.08, 0.28, "  -> Encodes simultaneous sub-region states", color='#f8fafc', fontsize=9.5)
-            ax_top.text(0.08, 0.10, "  -> Cross-entropy across spatial tiles", color='#38bdf8', fontsize=9.5)
+            ax_top.text(0.05, 0.85, "• Scalar Index: c_7", color='#f87171', fontweight='bold', fontsize=13.5)
+            ax_top.text(0.08, 0.68, "  -> 1 index loses local spatial context", color='#94a3b8', fontsize=11.5)
+            ax_top.text(0.05, 0.45, "• Joint Tuple: ( 0, 3, 2, 1 )", color='#4ade80', fontweight='bold', fontsize=13.5)
+            ax_top.text(0.08, 0.28, "  -> Encodes simultaneous sub-region states", color='#f8fafc', fontsize=11.5)
+            ax_top.text(0.08, 0.10, "  -> Cross-entropy across spatial tiles", color='#38bdf8', fontsize=11.5)
 
             # Bottom Right: Benefits of Tiling & JTF
             ax_bot.axis('off')
-            ax_bot.text(0.05, 0.88, "TILING & JTF BENEFITS:", color='#0d9488', fontweight='bold', fontsize=12)
-            ax_bot.text(0.05, 0.70, "• Speed: Sub-tiles fit in L1/L2 cache; parallel OpenMP threads.", color='#f8fafc', fontsize=10)
-            ax_bot.text(0.05, 0.52, "• Memory: Local cluster counts K_tile << K_global.", color='#f8fafc', fontsize=10)
-            ax_bot.text(0.05, 0.34, "• Cross-Entropy: Tuples capture multi-region spatial correlation.", color='#38bdf8', fontsize=10)
-            ax_bot.text(0.05, 0.16, "• Pass 2 JTF (-jtf): Fixes seam flicker while verifying d <= rlim.", color='#4ade80', fontfamily='monospace', fontsize=10)
+            ax_bot.text(0.05, 0.88, "TILING & JTF BENEFITS:", color='#0d9488', fontweight='bold', fontsize=14)
+            ax_bot.text(0.05, 0.68, "• Speed: Sub-tiles fit in L1/L2 cache; parallel OpenMP threads.", color='#f8fafc', fontsize=12)
+            ax_bot.text(0.05, 0.48, "• Memory: Local cluster counts K_tile << K_global.", color='#f8fafc', fontsize=12)
+            ax_bot.text(0.05, 0.28, "• Cross-Entropy: Tuples capture multi-region spatial correlation.", color='#38bdf8', fontsize=12)
+            ax_bot.text(0.05, 0.08, "• Pass 2 JTF (-jtf): Fixes seam flicker while verifying d <= rlim.", color='#4ade80', fontfamily='monospace', fontsize=12)
 
         # -------------------------------------------------------------
         # SCENE 7: Architecture Summary & CLI Presets
         # -------------------------------------------------------------
         else:
             ax_main.set_xlim(0, 10); ax_main.set_ylim(0, 10)
-            ax_main.set_title("GRIC Architectural Pipeline Summary", color='#38bdf8', fontsize=12, fontweight='bold')
+            ax_main.set_title("GRIC Architectural Pipeline Summary", color='#38bdf8', fontsize=15, fontweight='bold')
             
             boxes = [
                 ("1. Priors", "-dprob, -tm, -pred", 8.2, "#2563eb"),
@@ -754,26 +743,26 @@ def render_scene_video(scene_idx, scene, duration, audio_wav):
                 ("5. Assign / Anchor", "-maxcl, -discard_frac", 0.5, "#dc2626")
             ]
             for name, opts, y_pos, b_col in boxes:
-                ax_main.text(5.0, y_pos+0.5, f"{name}:  {opts}", color='#ffffff', fontweight='bold', fontsize=11, ha='center',
-                             bbox=dict(boxstyle="round,pad=0.4", facecolor=b_col, alpha=0.85, edgecolor="#fff", lw=1))
+                ax_main.text(5.0, y_pos+0.5, f"{name}:  {opts}", color='#ffffff', fontweight='bold', fontsize=13.5, ha='center',
+                             bbox=dict(boxstyle="round,pad=0.45", facecolor=b_col, alpha=0.85, edgecolor="#fff", lw=1.5))
 
-            ax_top.set_title("Recommended Presets", color='#94a3b8', fontsize=11, fontweight='bold')
+            ax_top.set_title("Recommended Presets", color='#94a3b8', fontsize=14, fontweight='bold')
             ax_top.axis('off')
-            ax_top.text(0.05, 0.85, "1. Video Tracking:", color='#38bdf8', fontweight='bold', fontsize=10)
-            ax_top.text(0.05, 0.68, "./gric-cluster a1.5 -tm 0.8 -pred", color='#f8fafc', fontfamily='monospace', fontsize=9.5)
-            ax_top.text(0.05, 0.45, "2. High-Dim Manifolds:", color='#c084fc', fontweight='bold', fontsize=10)
-            ax_top.text(0.05, 0.28, "./gric-cluster 0.5 -entropy -te5 -gprob", color='#f8fafc', fontfamily='monospace', fontsize=9.5)
+            ax_top.text(0.05, 0.85, "1. Video Tracking:", color='#38bdf8', fontweight='bold', fontsize=13)
+            ax_top.text(0.05, 0.68, "./gric-cluster a1.5 -tm 0.8 -pred", color='#f8fafc', fontfamily='monospace', fontsize=12)
+            ax_top.text(0.05, 0.45, "2. High-Dim Manifolds:", color='#c084fc', fontweight='bold', fontsize=13)
+            ax_top.text(0.05, 0.28, "./gric-cluster 0.5 -entropy -te5 -gprob", color='#f8fafc', fontfamily='monospace', fontsize=12)
 
             ax_bot.axis('off')
-            ax_bot.text(0.05, 0.88, "GETTING STARTED:", color='#38bdf8', fontweight='bold', fontsize=12)
-            ax_bot.text(0.05, 0.68, "• Explore docs/algorithm/visual_guide.md", color='#f8fafc', fontsize=10.5)
-            ax_bot.text(0.05, 0.48, "• Test real-time scenarios in docs/visual_simulator.html", color='#4ade80', fontsize=10.5)
-            ax_bot.text(0.05, 0.28, "• Check features: ./gric-info", color='#f8fafc', fontfamily='monospace', fontsize=10.5)
+            ax_bot.text(0.05, 0.88, "GETTING STARTED:", color='#38bdf8', fontweight='bold', fontsize=14)
+            ax_bot.text(0.05, 0.68, "• Explore docs/algorithm/visual_guide.md", color='#f8fafc', fontsize=12.5)
+            ax_bot.text(0.05, 0.48, "• Test real-time scenarios in docs/visual_simulator.html", color='#4ade80', fontsize=12.5)
+            ax_bot.text(0.05, 0.28, "• Check features: ./gric-info", color='#f8fafc', fontfamily='monospace', fontsize=12.5)
 
     print(f"Rendering Scene {scene_idx+1}/{len(SCENES)}: {scene['title']} ({num_frames} frames)...")
     anim = animation.FuncAnimation(fig, draw_frame, frames=num_frames, interval=1000/FPS)
     
-    writer = animation.FFMpegWriter(fps=FPS, bitrate=2500)
+    writer = animation.FFMpegWriter(fps=FPS, bitrate=3000)
     anim.save(video_raw_path, writer=writer)
     plt.close(fig)
     
@@ -814,10 +803,10 @@ def main():
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"Final Narrated Video created: {FINAL_MP4}")
 
-    print("Generating animated GIF preview...")
+    print("Generating high-resolution animated GIF preview for README...")
     subprocess.run([
         "ffmpeg", "-y", "-i", FINAL_MP4,
-        "-vf", "fps=10,scale=800:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
+        "-vf", "fps=10,scale=1000:-1:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3",
         FINAL_GIF
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"Final GIF created: {FINAL_GIF}")
