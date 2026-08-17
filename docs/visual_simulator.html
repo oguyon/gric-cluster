@@ -31,12 +31,12 @@
       display: flex;
       flex-direction: column;
       min-height: 100vh;
-      padding: 20px;
+      padding: 16px 20px;
     }
 
     header {
-      margin-bottom: 20px;
-      padding-bottom: 15px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
       border-bottom: 1px solid var(--card-border);
       display: flex;
       justify-content: space-between;
@@ -46,7 +46,7 @@
     }
 
     h1 {
-      font-size: 1.6rem;
+      font-size: 1.5rem;
       font-weight: 700;
       letter-spacing: -0.5px;
       color: #ffffff;
@@ -56,29 +56,30 @@
     }
 
     h1 span.badge {
-      font-size: 0.75rem;
-      padding: 4px 10px;
+      font-size: 0.72rem;
+      padding: 3px 8px;
       border-radius: 20px;
       background: #2563eb;
       color: #ffffff;
       font-weight: 600;
       text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     p.subtitle {
       color: var(--text-muted);
-      font-size: 0.9rem;
-      margin-top: 4px;
+      font-size: 0.86rem;
+      margin-top: 3px;
     }
 
     .main-layout {
       display: grid;
-      grid-template-columns: 1fr 380px;
-      gap: 20px;
+      grid-template-columns: 1fr 400px;
+      gap: 16px;
       flex: 1;
     }
 
-    @media (max-width: 1024px) {
+    @media (max-width: 1100px) {
       .main-layout {
         grid-template-columns: 1fr;
       }
@@ -95,34 +96,41 @@
     }
 
     .canvas-toolbar {
-      padding: 12px 16px;
+      padding: 10px 14px;
       background: #172033;
       border-bottom: 1px solid var(--card-border);
       display: flex;
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 8px;
+    }
+
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     .btn-group {
       display: flex;
-      gap: 8px;
+      gap: 6px;
     }
 
     button {
       background: #334155;
       color: #ffffff;
       border: none;
-      padding: 6px 14px;
+      padding: 6px 12px;
       border-radius: 6px;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s ease;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
     }
 
     button:hover {
@@ -143,10 +151,60 @@
       background: #dc2626;
     }
 
+    button.secondary {
+      background: #0f766e;
+    }
+    button.secondary:hover {
+      background: #0d9488;
+    }
+
+    select {
+      background: #1e293b;
+      color: #f8fafc;
+      border: 1px solid var(--card-border);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+    }
+
+    select:focus {
+      border-color: var(--accent-blue);
+    }
+
+    .benchmark-info {
+      padding: 8px 14px;
+      background: rgba(15, 23, 42, 0.6);
+      border-bottom: 1px solid var(--card-border);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .progress-bar-container {
+      width: 100%;
+      height: 4px;
+      background: #1e293b;
+      position: relative;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent-blue);
+      width: 0%;
+      transition: width 0.05s ease;
+    }
+
     canvas {
       flex: 1;
       width: 100%;
-      height: 540px;
+      height: 520px;
       background: #0b1120;
       cursor: crosshair;
       display: block;
@@ -155,36 +213,36 @@
     .side-panel {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
     }
 
     .card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 12px;
-      padding: 16px;
+      padding: 14px;
     }
 
     .card-title {
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       font-weight: 700;
       color: var(--accent-blue);
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
 
     .control-row {
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
     .control-label {
       display: flex;
       justify-content: space-between;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       color: var(--text-muted);
-      margin-bottom: 5px;
+      margin-bottom: 4px;
     }
 
     .control-label span.val {
@@ -195,7 +253,7 @@
 
     input[type="range"] {
       width: 100%;
-      height: 6px;
+      height: 5px;
       background: #334155;
       border-radius: 3px;
       outline: none;
@@ -204,8 +262,8 @@
 
     input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
+      width: 14px;
+      height: 14px;
       border-radius: 50%;
       background: var(--accent-blue);
       cursor: pointer;
@@ -214,20 +272,21 @@
     .toggle-group {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      margin-bottom: 12px;
+      gap: 6px;
+      margin-bottom: 10px;
     }
 
     .toggle-btn {
       background: #172033;
       border: 1px solid var(--card-border);
-      padding: 8px;
+      padding: 6px;
       border-radius: 6px;
       text-align: center;
-      font-size: 0.8rem;
+      font-size: 0.76rem;
       cursor: pointer;
       color: var(--text-muted);
       transition: all 0.15s ease;
+      user-select: none;
     }
 
     .toggle-btn.active {
@@ -240,37 +299,37 @@
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
+      gap: 8px;
     }
 
     .stat-box {
       background: #172033;
       border: 1px solid var(--card-border);
       border-radius: 8px;
-      padding: 10px;
+      padding: 8px;
       text-align: center;
     }
 
     .stat-box .num {
-      font-size: 1.3rem;
+      font-size: 1.2rem;
       font-weight: 700;
       color: #ffffff;
       font-family: monospace;
     }
 
     .stat-box .lbl {
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       color: var(--text-muted);
       margin-top: 2px;
     }
 
     .candidate-list {
-      max-height: 180px;
+      max-height: 160px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      margin-top: 8px;
+      gap: 5px;
+      margin-top: 6px;
     }
 
     .candidate-item {
@@ -278,9 +337,9 @@
       align-items: center;
       justify-content: space-between;
       background: #172033;
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-size: 0.8rem;
+      padding: 5px 8px;
+      border-radius: 5px;
+      font-size: 0.78rem;
       border-left: 3px solid #64748b;
     }
 
@@ -290,12 +349,16 @@
     }
     .candidate-item.pruned {
       border-left-color: var(--accent-red);
-      opacity: 0.5;
+      opacity: 0.6;
+    }
+    .candidate-item.predicted {
+      border-left-color: var(--accent-purple);
+      background: rgba(192, 132, 252, 0.1);
     }
 
     .badge-pill {
-      font-size: 0.7rem;
-      padding: 2px 6px;
+      font-size: 0.68rem;
+      padding: 2px 5px;
       border-radius: 4px;
       background: #334155;
       font-family: monospace;
@@ -303,10 +366,10 @@
 
     .legend {
       display: flex;
-      gap: 15px;
-      font-size: 0.75rem;
+      gap: 12px;
+      font-size: 0.73rem;
       color: var(--text-muted);
-      margin-top: 10px;
+      margin-top: 6px;
       flex-wrap: wrap;
     }
 
@@ -317,9 +380,25 @@
     }
 
     .legend-dot {
-      width: 10px;
-      height: 10px;
+      width: 9px;
+      height: 9px;
       border-radius: 50%;
+    }
+
+    .dropzone-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.85);
+      border: 2px dashed var(--accent-blue);
+      border-radius: 12px;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--accent-blue);
+      z-index: 10;
+      pointer-events: none;
     }
   </style>
 </head>
@@ -327,8 +406,8 @@
 
   <header>
     <div>
-      <h1>GRIC Interactive Algorithm Simulator <span class="badge">Live 2D Space</span></h1>
-      <p class="subtitle">Simulate sequential ingestion, triangle inequality geometric pruning, entropy scheduling, and spatial tiling</p>
+      <h1>GRIC Interactive Algorithm Simulator <span class="badge">Exact C-Match</span></h1>
+      <p class="subtitle">Live 2D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, and spatial tiling</p>
     </div>
     <div>
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
@@ -337,68 +416,112 @@
 
   <div class="main-layout">
     <!-- Left: Canvas Area -->
-    <div class="canvas-container">
+    <div class="canvas-container" id="canvasBox">
+      <div id="dropzone" class="dropzone-overlay">Drop 2D Coordinate File (.txt, .csv, .dat) Here</div>
+      
       <div class="canvas-toolbar">
-        <div class="btn-group">
-          <button id="btnPlay" class="primary">&#9658; Stream Data</button>
-          <button id="btnStep">&#8677; Step Frame</button>
-          <button id="btnClear" class="danger">&#8635; Clear Canvas</button>
+        <div class="toolbar-row">
+          <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Benchmark / Dataset:</label>
+          <select id="selectBenchmark">
+            <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
+            <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
+            <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
+            <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
+            <option value="2Drand">2Drand — 2D Uniform Random</option>
+            <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
+            <option value="stream">Dynamic Continuous Orbit (Lissajous)</option>
+            <option value="custom">📁 Upload Custom Dataset (.txt / .csv)...</option>
+          </select>
+          <input type="file" id="fileUpload" accept=".txt,.csv,.dat" style="display: none;">
+          <button id="btnUpload" class="secondary" title="Upload custom coordinate file">📁 Upload</button>
         </div>
-        <div style="font-size: 0.82rem; color: var(--text-muted);">
-          Tip: <span style="color: var(--text-main);">Click anywhere on canvas</span> to inject a custom query frame.
+
+        <div class="toolbar-row">
+          <div class="btn-group">
+            <button id="btnPlay" class="primary">&#9658; Run / Play</button>
+            <button id="btnStep" title="Ingest 1 Frame">&#8677; Step</button>
+            <button id="btnReset" title="Reload dataset from beginning">&#8635; Reset</button>
+          </div>
         </div>
       </div>
 
-      <canvas id="simCanvas" width="800" height="540"></canvas>
+      <div class="benchmark-info">
+        <div id="benchmarkDesc"><b>2Dspiral</b>: 1,000 continuous samples tracing an Archimedean spiral. Tests sequential recency prior.</div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <span>Speed:</span>
+          <select id="selectSpeed" style="padding: 2px 6px; font-size: 0.75rem;">
+            <option value="150">1x (150ms)</option>
+            <option value="50" selected>3x (50ms)</option>
+            <option value="15">10x (15ms)</option>
+            <option value="0">Instant (Batch)</option>
+          </select>
+          <span id="frameCounter">0 / 1000</span>
+        </div>
+      </div>
 
-      <div style="padding: 10px 16px; background: #172033; border-top: 1px solid var(--card-border);">
+      <div class="progress-bar-container">
+        <div id="progressFill" class="progress-bar-fill"></div>
+      </div>
+
+      <canvas id="simCanvas" width="800" height="520"></canvas>
+
+      <div style="padding: 8px 14px; background: #172033; border-top: 1px solid var(--card-border);">
         <div class="legend">
           <div class="legend-item"><div class="legend-dot" style="background: #38bdf8;"></div> Anchor Node</div>
-          <div class="legend-item"><div class="legend-dot" style="background: rgba(56, 189, 248, 0.2); border: 1px dashed #38bdf8;"></div> rlim Match Sphere</div>
+          <div class="legend-item"><div class="legend-dot" style="background: rgba(56, 189, 248, 0.2); border: 1px dashed #38bdf8;"></div> rlim Receptive Field</div>
           <div class="legend-item"><div class="legend-dot" style="background: #facc15;"></div> Current Frame fi</div>
           <div class="legend-item"><div class="legend-dot" style="background: #4ade80;"></div> Evaluated Match</div>
-          <div class="legend-item"><div class="legend-dot" style="background: #f87171;"></div> Geometrically Pruned</div>
+          <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div> Evaluated Mismatch</div>
+          <div class="legend-item"><div class="legend-dot" style="background: #f87171; border: 1px solid #ffffff;"></div> Geometrically Pruned (3P/4P/5P)</div>
         </div>
       </div>
     </div>
 
-    <!-- Right: Control & Stats Panel -->
+    <!-- Right: Control & Telemetry Panel -->
     <div class="side-panel">
       <!-- 1. Algorithm Configuration -->
       <div class="card">
-        <div class="card-title">Algorithm Options</div>
+        <div class="card-title">
+          <span>Algorithm Configuration</span>
+          <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">CLI Parity</span>
+        </div>
         
         <div class="control-row">
           <div class="control-label">
             <span>Radius Threshold (<span class="badge-pill">rlim</span>)</span>
-            <span id="lblRlim" class="val">55 px</span>
+            <span id="lblRlim" class="val">0.100</span>
           </div>
-          <input type="range" id="sliderRlim" min="20" max="120" value="55">
+          <input type="range" id="sliderRlim" min="0.02" max="0.30" step="0.005" value="0.100">
         </div>
 
-        <div class="control-label" style="margin-top: 10px;">Target Selection Mode</div>
+        <div class="control-label" style="margin-top: 8px;">Target Selection Mode</div>
         <div class="toggle-group">
           <div id="modeGreedy" class="toggle-btn active">Greedy (argmax P)</div>
           <div id="modeEntropy" class="toggle-btn">Entropy (-entropy)</div>
         </div>
 
-        <div class="control-label">Geometric Pruning Depth</div>
+        <div class="control-label">Geometric Pruning Heuristics</div>
         <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr);">
-          <div id="prune3P" class="toggle-btn active">3-Point</div>
+          <div id="prune3P" class="toggle-btn active">3-Point (3P)</div>
           <div id="prune4P" class="toggle-btn">4-Point (-te4)</div>
           <div id="prune5P" class="toggle-btn">5-Point (-te5)</div>
         </div>
 
-        <div class="control-label">Multi-Tile Architecture</div>
-        <div class="toggle-group">
-          <div id="tileOff" class="toggle-btn active">Single Tile</div>
-          <div id="tileOn" class="toggle-btn">2x2 Tiles (-tiles)</div>
+        <div class="control-label">Advanced Prior &amp; Acceleration Options</div>
+        <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 0;">
+          <div id="optTM" class="toggle-btn" title="Transition matrix mixing (-tm 0.5)">-tm (Markov)</div>
+          <div id="optPred" class="toggle-btn" title="Pattern sequence prediction (-pred)">-pred (Predictor)</div>
+          <div id="optGprob" class="toggle-btn" title="Visitor co-measurement geometry (-gprob)">-gprob (Visitors)</div>
+          <div id="optTiles" class="toggle-btn" title="2x2 Multi-Tile Partition (-tiles 2 2)">-tiles (2x2 Grid)</div>
         </div>
       </div>
 
       <!-- 2. Performance Stats -->
       <div class="card">
-        <div class="card-title">Real-Time Performance</div>
+        <div class="card-title">
+          <span>Real-Time Telemetry</span>
+          <span id="entropyBadge" class="badge-pill" style="color: var(--accent-purple);">H: 0.00 bits</span>
+        </div>
         <div class="stats-grid">
           <div class="stat-box">
             <div id="statClusters" class="num" style="color: var(--accent-blue);">0</div>
@@ -410,10 +533,10 @@
           </div>
           <div class="stat-box">
             <div id="statSaved" class="num" style="color: var(--accent-green);">0%</div>
-            <div class="lbl">Distance Calls Saved</div>
+            <div class="lbl">Dist Calls Saved</div>
           </div>
           <div class="stat-box">
-            <div id="statAvgEvals" class="num" style="color: var(--accent-purple);">0.0</div>
+            <div id="statAvgEvals" class="num" style="color: var(--accent-purple);">0.00</div>
             <div class="lbl">Avg Evals / Frame</div>
           </div>
         </div>
@@ -421,10 +544,13 @@
 
       <!-- 3. Candidate Inspection -->
       <div class="card">
-        <div class="card-title">Active Candidate Inspection</div>
+        <div class="card-title">
+          <span>Active Search Candidate Trace</span>
+          <span id="measCountBadge" class="badge-pill">0 measured</span>
+        </div>
         <div id="candidateContainer" class="candidate-list">
           <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">
-            No frames processed yet. Click Stream Data or Canvas.
+            No frames processed yet. Click Run or Step.
           </div>
         </div>
       </div>
@@ -432,27 +558,588 @@
   </div>
 
   <script>
-    // --- Canvas & State Initialization ---
+    // =========================================================================
+    //  1. EXACT C-ALGORITHM MATH ROUTINES (Replicated from src/gric-cluster/math)
+    // =========================================================================
+
+    /**
+     * Exact 4-point triangle inequality minimum distance bound (calc_min_dist_4pt).
+     * Reconstructs 2D Cartesian coordinates using baseline d12.
+     */
+    function calc_min_dist_4pt(d1f, d2f, d12, d1k, d2k) {
+      if (d12 < 1e-9) return Math.abs(d1f - d1k);
+
+      const xk = (d1k * d1k + d12 * d12 - d2k * d2k) / (2.0 * d12);
+      const yk_sq = d1k * d1k - xk * xk;
+      const yk = yk_sq > 0.0 ? Math.sqrt(yk_sq) : 0.0;
+
+      const xf = (d1f * d1f + d12 * d12 - d2f * d2f) / (2.0 * d12);
+      const yf_sq = d1f * d1f - xf * xf;
+      const yf = yf_sq > 0.0 ? Math.sqrt(yf_sq) : 0.0;
+
+      return Math.sqrt((xf - xk) * (xf - xk) + (yf - yk) * (yf - yk));
+    }
+
+    /**
+     * Exact 5-point triangle inequality minimum distance bound (calc_min_dist_5pt).
+     * Reconstructs 3D simplex coordinates using triangle (c1, c2, c3).
+     */
+    function calc_min_dist_5pt(d_f_c1, d_f_c2, d_f_c3, d_t_c1, d_t_c2, d_t_c3, d_c1_c2, d_c1_c3, d_c2_c3) {
+      if (d_c1_c2 < 1e-9) return 0.0;
+
+      const x3 = (d_c1_c3 * d_c1_c3 + d_c1_c2 * d_c1_c2 - d_c2_c3 * d_c2_c3) / (2.0 * d_c1_c2);
+      const y3_sq = d_c1_c3 * d_c1_c3 - x3 * x3;
+      if (y3_sq < 1e-9) return 0.0;
+      const y3 = Math.sqrt(y3_sq);
+
+      const xF = (d_f_c1 * d_f_c1 + d_c1_c2 * d_c1_c2 - d_f_c2 * d_f_c2) / (2.0 * d_c1_c2);
+      const yF = (d_f_c1 * d_f_c1 + d_c1_c3 * d_c1_c3 - d_f_c3 * d_f_c3 - 2.0 * xF * x3) / (2.0 * y3);
+      const zF_sq = d_f_c1 * d_f_c1 - xF * xF - yF * yF;
+      const zF = zF_sq > 0.0 ? Math.sqrt(zF_sq) : 0.0;
+
+      const xT = (d_t_c1 * d_t_c1 + d_c1_c2 * d_c1_c2 - d_t_c2 * d_t_c2) / (2.0 * d_c1_c2);
+      const yT = (d_t_c1 * d_t_c1 + d_c1_c3 * d_t_c3 - d_t_c3 * d_t_c3 - 2.0 * xT * x3) / (2.0 * y3);
+      const zT_sq = d_t_c1 * d_t_c1 - xT * xT - yT * yT;
+      const zT = zT_sq > 0.0 ? Math.sqrt(zT_sq) : 0.0;
+
+      return Math.sqrt((xF - xT) * (xF - xT) + (yF - yT) * (yF - yT) + (zF - zT) * (zF - zT));
+    }
+
+    /**
+     * Geometric match factor function (fmatch from cluster_math.c).
+     */
+    function fmatch(dr, a = 2.0, b = 0.5) {
+      if (dr > 2.0) return 0.0;
+      return a - (a - b) * dr / 2.0;
+    }
+
+    // =========================================================================
+    //  2. 2D BENCHMARK DATASET GENERATORS (Replicated from src/gric-mktxtseq)
+    // =========================================================================
+
+    const BENCHMARK_DESCS = {
+      "2Dspiral": "<b>2Dspiral</b>: 1,000 continuous samples tracing an Archimedean spiral. Demonstrates near 1.0 eval/frame via sequential recency prior.",
+      "2Dspiral-shuffle": "<b>2Dspiral-shuffle</b>: 1,000 samples on spiral with randomized temporal order. Stresses multi-point metric pruning on non-convex manifolds.",
+      "2Dcircle-shuffle": "<b>2Dcircle-shuffle</b>: 1,000 samples on a 1D circle manifold in 2D with shuffled order. Tests pure distance geometry without temporal correlation.",
+      "2DcircleP10n": "<b>2DcircleP10n</b>: 10 periodic circular cycles with additive Gaussian noise (sigma=0.04). Tests cyclic Markov transition matrix (-tm) and sequence predictor (-pred).",
+      "2Drand": "<b>2Drand</b>: 1,000 uniform random points across the 2D plane. Stresses worst-case spatial coverage scaling.",
+      "2Dwalk": "<b>2Dwalk</b>: 1,000 steps of bounded Brownian random walk. Tests localized drift and dynamic cluster reuse.",
+      "stream": "<b>Dynamic Stream</b>: Continuous Lissajous orbital trajectory with real-time parameter streaming.",
+      "custom": "<b>Custom Dataset</b>: User-uploaded 2D coordinate dataset."
+    };
+
+    function generateBenchmark(type, N = 1000) {
+      const points = [];
+      if (type === "2Dspiral") {
+        const loops = 2.0;
+        for (let i = 0; i < N; i++) {
+          const t = i / N;
+          const r = t * 0.92;
+          const theta = 2.0 * Math.PI * loops * t;
+          points.push({ x: r * Math.cos(theta), y: r * Math.sin(theta) });
+        }
+      } else if (type === "2Dspiral-shuffle") {
+        const pts = generateBenchmark("2Dspiral", N);
+        // Fisher-Yates shuffle
+        for (let i = pts.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pts[i], pts[j]] = [pts[j], pts[i]];
+        }
+        return pts;
+      } else if (type === "2Dcircle-shuffle") {
+        for (let i = 0; i < N; i++) {
+          const theta = 2.0 * Math.PI * (i / N);
+          points.push({ x: 0.85 * Math.cos(theta), y: 0.85 * Math.sin(theta) });
+        }
+        for (let i = points.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [points[i], points[j]] = [points[j], points[i]];
+        }
+      } else if (type === "2DcircleP10n") {
+        const periods = 10.0;
+        for (let i = 0; i < N; i++) {
+          const theta = 2.0 * Math.PI * periods * (i / N);
+          // Box-Muller Gaussian noise
+          const u1 = Math.max(1e-12, Math.random());
+          const u2 = Math.random();
+          const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2) * 0.04;
+          const z1 = Math.sqrt(-2.0 * Math.log(u1)) * Math.sin(2.0 * Math.PI * u2) * 0.04;
+          points.push({
+            x: 0.80 * Math.cos(theta) + z0,
+            y: 0.80 * Math.sin(theta) + z1
+          });
+        }
+      } else if (type === "2Drand") {
+        for (let i = 0; i < N; i++) {
+          const r = Math.sqrt(Math.random()) * 0.92;
+          const theta = 2.0 * Math.PI * Math.random();
+          points.push({ x: r * Math.cos(theta), y: r * Math.sin(theta) });
+        }
+      } else if (type === "2Dwalk") {
+        let cx = 0, cy = 0;
+        const step = 0.04;
+        for (let i = 0; i < N; i++) {
+          const theta = 2.0 * Math.PI * Math.random();
+          cx = Math.max(-0.9, Math.min(0.9, cx + step * Math.cos(theta)));
+          cy = Math.max(-0.9, Math.min(0.9, cy + step * Math.sin(theta)));
+          points.push({ x: cx, y: cy });
+        }
+      }
+      return points;
+    }
+
+    // =========================================================================
+    //  3. STATE & CLUSTERING ENGINE (Exact Match to GRIC C Architecture)
+    // =========================================================================
+
     const canvas = document.getElementById('simCanvas');
     const ctx = canvas.getContext('2d');
 
-    let rlim = 55;
+    // Algorithm Config
+    let rlim = 0.100;
     let targetMode = 'greedy'; // 'greedy' or 'entropy'
     let pruneMode = '3P';      // '3P', '4P', '5P'
-    let isTiled = false;
-    let isStreaming = false;
-    let streamTimer = null;
+    let useTM = false;
+    let usePred = false;
+    let useGprob = false;
+    let useTiles = false;
 
-    let clusters = [];
+    // Simulation & Benchmark State
+    let currentBenchmark = "2Dspiral";
+    let benchmarkDataset = [];
+    let currentFrameIdx = 0;
+    let isRunning = false;
+    let playTimer = null;
+    let playSpeed = 50; // ms per step
+
+    // Clustering Engine State
+    let clusters = [];               // { id, x, y, members, lastActive, color, tile }
+    let dcc = [];                    // Pairwise inter-cluster distances dcc[i][j]
+    let transitionCounts = [];       // K x K transition count matrix
+    let prevAssignedCluster = -1;
+    let assignmentHistory = [];      // Array of assigned cluster IDs
+    let frameHistory = [];           // Array of { indices: [], dists: [], assignment: id }
     let totalFrames = 0;
     let totalEvals = 0;
     let naiveEvals = 0;
-
     let currentFrame = null;
-    let currentEvaluations = [];
-    let currentPruned = [];
+    let currentEvaluations = [];     // Array of { target, dist, match }
+    let currentPruned = [];          // Array of { cluster, reason }
+    let currentPredicted = [];       // Array of cluster IDs tested via -pred
+    let currentEntropyBits = 0;
 
-    // Resize canvas resolution to display size
+    // Color palette for clusters
+    function getClusterColor(id) {
+      const hues = [199, 142, 270, 38, 340, 180, 48, 220, 110, 300, 15, 160];
+      const hue = hues[id % hues.length];
+      return `hsl(${hue}, 82%, 58%)`;
+    }
+
+    // Viewport Transform (Metric Coordinates [-1.1, 1.1] -> Canvas Pixels)
+    function toCanvasX(x) {
+      const scale = Math.min(canvas.width, canvas.height) / 2.3;
+      return canvas.width / 2 + x * scale;
+    }
+    function toCanvasY(y) {
+      const scale = Math.min(canvas.width, canvas.height) / 2.3;
+      return canvas.height / 2 - y * scale;
+    }
+    function toMetricX(px) {
+      const scale = Math.min(canvas.width, canvas.height) / 2.3;
+      return (px - canvas.width / 2) / scale;
+    }
+    function toMetricY(py) {
+      const scale = Math.min(canvas.width, canvas.height) / 2.3;
+      return (canvas.height / 2 - py) / scale;
+    }
+    function toCanvasRadius(r) {
+      const scale = Math.min(canvas.width, canvas.height) / 2.3;
+      return r * scale;
+    }
+
+    // --- SEQUENTIAL STEP EXECUTION (Exact 1:1 match with cluster_step.c) ---
+    function clusterFrame(x, y) {
+      totalFrames++;
+      currentFrame = { x, y };
+      currentEvaluations = [];
+      currentPruned = [];
+      currentPredicted = [];
+
+      const K = clusters.length;
+
+      // Base Case: First Frame
+      if (K === 0) {
+        const c0 = {
+          id: 0,
+          x, y,
+          members: 1,
+          prob: 1.0,
+          lastActive: totalFrames,
+          color: getClusterColor(0),
+          tile: getTileId(x, y)
+        };
+        clusters.push(c0);
+        dcc = [[0.0]];
+        transitionCounts = [[0]];
+        prevAssignedCluster = 0;
+        assignmentHistory.push(0);
+        frameHistory.push({ indices: [0], dists: [0.0], assignment: 0 });
+        updateUI();
+        draw();
+        return;
+      }
+
+      naiveEvals += K;
+
+      // Track active candidates (clmembflag array in C)
+      const clmembflag = new Array(K).fill(true);
+
+      // Multi-tile grid filtering (-tiles)
+      if (useTiles) {
+        const frameTile = getTileId(x, y);
+        for (let i = 0; i < K; i++) {
+          if (clusters[i].tile !== frameTile) {
+            clmembflag[i] = false; // Isolated search domain
+          }
+        }
+      }
+
+      // Step 2: Retrieve trajectory prediction shortcut candidates (-pred)
+      let predCandidates = [];
+      if (usePred && assignmentHistory.length >= 5) {
+        const predLen = 4;
+        const pattern = assignmentHistory.slice(-predLen);
+        const matchCounts = new Array(K).fill(0);
+
+        for (let i = 0; i <= assignmentHistory.length - predLen - 1; i++) {
+          let matched = true;
+          for (let j = 0; j < predLen; j++) {
+            if (assignmentHistory[i + j] !== pattern[j]) {
+              matched = false;
+              break;
+            }
+          }
+          if (matched) {
+            const nextCl = assignmentHistory[i + predLen];
+            if (nextCl >= 0 && nextCl < K) matchCounts[nextCl]++;
+          }
+        }
+
+        const candList = [];
+        for (let i = 0; i < K; i++) {
+          if (matchCounts[i] > 0 && clmembflag[i]) {
+            candList.push({ id: i, count: matchCounts[i] });
+          }
+        }
+        candList.sort((a, b) => b.count - a.count);
+        predCandidates = candList.map(c => c.id).slice(0, 2);
+      }
+
+      // Step 3a: Base Prior Probability Calculation (compute_priors_and_mixing.c)
+      let sumProb = 0;
+      for (let i = 0; i < K; i++) sumProb += (clusters[i].prob || 1.0);
+
+      const pBase = new Array(K).fill(0);
+      for (let i = 0; i < K; i++) pBase[i] = (clusters[i].prob || 1.0) / sumProb;
+
+      // Transition matrix mixing (-tm)
+      if (useTM && prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
+        let tSum = 0;
+        for (let i = 0; i < K; i++) tSum += transitionCounts[prevAssignedCluster][i] || 0;
+        if (tSum > 0) {
+          const alpha = 0.5; // tm_mixing_coeff
+          for (let i = 0; i < K; i++) {
+            const pTrans = (transitionCounts[prevAssignedCluster][i] || 0) / tSum;
+            pBase[i] = (1.0 - alpha) * pBase[i] + alpha * pTrans;
+          }
+        }
+      }
+
+      // Geometric visitor probabilities (-gprob)
+      const currentGprobs = new Array(K).fill(1.0);
+
+      // Active posterior tracking for Shannon entropy
+      const pCurrent = [...pBase];
+
+      // Measured in this frame: temp_indices and temp_dists in C
+      const measuredIndices = [];
+      const measuredDists = [];
+
+      let assignedCluster = -1;
+      let evalsThisFrame = 0;
+      let measDepth = 0;
+
+      // Step 3: Iterative Search Loop
+      while (true) {
+        // Renormalize active probabilities
+        let activeSum = 0;
+        let activeCount = 0;
+        for (let i = 0; i < K; i++) {
+          if (clmembflag[i]) {
+            pCurrent[i] = pBase[i] * (useGprob ? currentGprobs[i] : 1.0);
+            activeSum += pCurrent[i];
+            activeCount++;
+          } else {
+            pCurrent[i] = 0;
+          }
+        }
+
+        if (activeCount === 0) {
+          // All existing candidates pruned/exhausted -> spawn new anchor
+          break;
+        }
+
+        if (activeSum > 0) {
+          for (let i = 0; i < K; i++) {
+            if (clmembflag[i]) pCurrent[i] /= activeSum;
+          }
+        }
+
+        // Calculate Shannon Entropy: H = -sum(p * log2(p))
+        let H = 0.0;
+        for (let i = 0; i < K; i++) {
+          if (clmembflag[i] && pCurrent[i] > 1e-12) {
+            H -= pCurrent[i] * Math.log2(pCurrent[i]);
+          }
+        }
+        if (measDepth === 0) currentEntropyBits = H;
+
+        // Step 3b: Select Next Measurement Target
+        let chosenTarget = -1;
+
+        // 1. Prediction shortcuts first (-pred)
+        while (predCandidates.length > 0) {
+          const cand = predCandidates.shift();
+          if (clmembflag[cand]) {
+            chosenTarget = cand;
+            currentPredicted.push(cand);
+            break;
+          }
+        }
+
+        // 2. Entropy Selection (-entropy) or Greedy Prioritization
+        if (chosenTarget === -1) {
+          if (targetMode === 'entropy' && H > (measDepth === 0 ? 3.0 : 1.5)) {
+            // Shannon Information Gain Minimization
+            let minExpectedH = 1e9;
+            let bestCi = -1;
+
+            for (let i = 0; i < K; i++) {
+              if (!clmembflag[i]) continue;
+
+              const pMatch = pCurrent[i];
+              if (pMatch > 0.5) {
+                bestCi = i;
+                break;
+              }
+
+              // Evaluate hypothetical mismatch: estimate unpruned mass
+              let hypActiveSum = 0;
+              for (let j = 0; j < K; j++) {
+                if (!clmembflag[j] || j === i) continue;
+                const dInter = dcc[i][j];
+                // 3P lower bound hypothesis: if candidate j would be pruned upon mismatch at i
+                if (Math.abs(dInter - rlim) <= rlim) {
+                  hypActiveSum += pCurrent[j];
+                }
+              }
+
+              let hMismatch = 0;
+              if (hypActiveSum > 0) {
+                for (let j = 0; j < K; j++) {
+                  if (!clmembflag[j] || j === i) continue;
+                  const dInter = dcc[i][j];
+                  if (Math.abs(dInter - rlim) <= rlim) {
+                    const pj = pCurrent[j] / hypActiveSum;
+                    if (pj > 1e-12) hMismatch -= pj * Math.log2(pj);
+                  }
+                }
+              }
+
+              const expectedH = (1.0 - pMatch) * hMismatch;
+              if (expectedH < minExpectedH) {
+                minExpectedH = expectedH;
+                bestCi = i;
+              }
+            }
+            chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag);
+          } else {
+            // Greedy Mode: Argmax P
+            chosenTarget = getArgMaxP(pCurrent, clmembflag);
+          }
+        }
+
+        if (chosenTarget === -1) break;
+
+        // Step 3c: Distance Measurement
+        evalsThisFrame++;
+        measDepth++;
+        const targetCl = clusters[chosenTarget];
+        const dfc = Math.hypot(x - targetCl.x, y - targetCl.y);
+        const isMatch = dfc < rlim;
+
+        measuredIndices.push(chosenTarget);
+        measuredDists.push(dfc);
+        currentEvaluations.push({ target: targetCl, dist: dfc, match: isMatch });
+
+        // Step 3d: Check if solved
+        if (isMatch) {
+          assignedCluster = chosenTarget;
+          targetCl.members++;
+          targetCl.prob = (targetCl.prob || 1.0) + 0.05;
+          targetCl.lastActive = totalFrames;
+          break;
+        }
+
+        // Target Mismatch -> Prune chosen target and update geometric bounds
+        clmembflag[chosenTarget] = false;
+
+        // 1. Triangle Inequality (3-Point Pruning)
+        for (let cl = 0; cl < K; cl++) {
+          if (!clmembflag[cl]) continue;
+          const d_cc = dcc[chosenTarget][cl];
+          if (Math.abs(dfc - d_cc) > rlim) {
+            clmembflag[cl] = false;
+            currentPruned.push({ cluster: clusters[cl], reason: '3P' });
+          }
+        }
+
+        // 2. 4-Point Pruning (-te4)
+        if (pruneMode === '4P' || pruneMode === '5P') {
+          const mCount = measuredIndices.length;
+          if (mCount >= 2) {
+            const cPrev = measuredIndices[mCount - 2];
+            const dPrev = measuredDists[mCount - 2];
+            const d12 = dcc[cPrev][chosenTarget];
+
+            for (let cl = 0; cl < K; cl++) {
+              if (!clmembflag[cl]) continue;
+              const d1k = dcc[cPrev][cl];
+              const d2k = dcc[chosenTarget][cl];
+              const minD4 = calc_min_dist_4pt(dPrev, dfc, d12, d1k, d2k);
+              if (minD4 > rlim) {
+                clmembflag[cl] = false;
+                currentPruned.push({ cluster: clusters[cl], reason: '4P' });
+              }
+            }
+          }
+        }
+
+        // 3. 5-Point Pruning (-te5)
+        if (pruneMode === '5P') {
+          const mCount = measuredIndices.length;
+          if (mCount >= 3) {
+            const c1 = measuredIndices[mCount - 3];
+            const d1 = measuredDists[mCount - 3];
+            const c2 = measuredIndices[mCount - 2];
+            const d2 = measuredDists[mCount - 2];
+            const c3 = chosenTarget;
+            const d3 = dfc;
+
+            const d12 = dcc[c1][c2];
+            const d13 = dcc[c1][c3];
+            const d23 = dcc[c2][c3];
+
+            for (let cl = 0; cl < K; cl++) {
+              if (!clmembflag[cl]) continue;
+              const dk1 = dcc[cl][c1];
+              const dk2 = dcc[cl][c2];
+              const dk3 = dcc[cl][c3];
+              const minD5 = calc_min_dist_5pt(d1, d2, d3, dk1, dk2, dk3, d12, d13, d23);
+              if (minD5 > rlim) {
+                clmembflag[cl] = false;
+                currentPruned.push({ cluster: clusters[cl], reason: '5P' });
+              }
+            }
+          }
+        }
+
+        // 4. Update Geometric Probabilities (-gprob)
+        if (useGprob) {
+          for (let f = 0; f < frameHistory.length; f++) {
+            const fh = frameHistory[f];
+            const dIdx = fh.indices.indexOf(chosenTarget);
+            if (dIdx !== -1 && clmembflag[fh.assignment]) {
+              const distK = fh.dists[dIdx];
+              const dr = Math.abs(dfc - distK) / rlim;
+              currentGprobs[fh.assignment] *= fmatch(dr);
+            }
+          }
+        }
+      }
+
+      totalEvals += evalsThisFrame;
+
+      // Step 4: Handle New Cluster Creation
+      if (assignedCluster === -1) {
+        assignedCluster = clusters.length;
+        const newAnchor = {
+          id: assignedCluster,
+          x, y,
+          members: 1,
+          prob: 1.0,
+          lastActive: totalFrames,
+          color: getClusterColor(assignedCluster),
+          tile: getTileId(x, y)
+        };
+
+        // Measure & cache pairwise DCC distances to all existing clusters
+        const newDccRow = [];
+        for (let i = 0; i < clusters.length; i++) {
+          const d_inter = Math.hypot(x - clusters[i].x, y - clusters[i].y);
+          dcc[i].push(d_inter);
+          newDccRow.push(d_inter);
+        }
+        newDccRow.push(0.0);
+        dcc.push(newDccRow);
+
+        // Extend transition count matrix
+        for (let i = 0; i < clusters.length; i++) transitionCounts[i].push(0);
+        transitionCounts.push(new Array(clusters.length + 1).fill(0));
+
+        clusters.push(newAnchor);
+      }
+
+      // Step 5: Record Assignments and History
+      if (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
+        transitionCounts[prevAssignedCluster][assignedCluster] =
+          (transitionCounts[prevAssignedCluster][assignedCluster] || 0) + 1;
+      }
+      prevAssignedCluster = assignedCluster;
+      assignmentHistory.push(assignedCluster);
+      frameHistory.push({
+        indices: [...measuredIndices],
+        dists: [...measuredDists],
+        assignment: assignedCluster
+      });
+
+      updateUI();
+      draw();
+    }
+
+    function getArgMaxP(probs, activeMask) {
+      let maxP = -1;
+      let argMax = -1;
+      for (let i = 0; i < probs.length; i++) {
+        if (activeMask[i] && probs[i] > maxP) {
+          maxP = probs[i];
+          argMax = i;
+        }
+      }
+      return argMax;
+    }
+
+    function getTileId(x, y) {
+      if (x < 0 && y >= 0) return 0;
+      if (x >= 0 && y >= 0) return 1;
+      if (x < 0 && y < 0) return 2;
+      return 3;
+    }
+
+    // =========================================================================
+    //  4. CANVAS RENDERING ENGINE
+    // =========================================================================
+
     function resizeCanvas() {
       const rect = canvas.getBoundingClientRect();
       canvas.width = rect.width;
@@ -461,117 +1148,22 @@
     }
     window.addEventListener('resize', resizeCanvas);
 
-    // --- Cluster Ingestion Logic ---
-    function processFrame(x, y) {
-      totalFrames++;
-      currentFrame = { x, y };
-      currentEvaluations = [];
-      currentPruned = [];
-
-      if (clusters.length === 0) {
-        // Spawn first anchor
-        clusters.push({
-          id: 0,
-          x, y,
-          members: 1,
-          color: getRandomColor(0),
-          lastActive: totalFrames
-        });
-        totalEvals += 0;
-        naiveEvals += 0;
-        updateUI();
-        draw();
-        return;
-      }
-
-      naiveEvals += clusters.length;
-
-      // Calculate candidate priors / ranking
-      let candidatePool = clusters.map(c => ({
-        cluster: c,
-        prior: c.members / totalFrames,
-        distToAnchor: Math.hypot(x - c.x, y - c.y)
-      }));
-
-      // Candidate Selection Loop
-      let matchFound = false;
-      let evalsThisFrame = 0;
-      let activeCandidates = [...candidatePool];
-
-      // Schedule candidate testing
-      while (activeCandidates.length > 0) {
-        let chosenIdx = 0;
-        if (targetMode === 'entropy') {
-          // Select candidate that is most centrally situated among active set
-          chosenIdx = Math.floor(activeCandidates.length / 2);
-        } else {
-          // Greedy: Highest prior
-          activeCandidates.sort((a, b) => b.prior - a.prior);
-          chosenIdx = 0;
-        }
-
-        let target = activeCandidates.splice(chosenIdx, 1)[0];
-        evalsThisFrame++;
-        let d = target.distToAnchor;
-        currentEvaluations.push({ target: target.cluster, dist: d, match: d <= rlim });
-
-        if (d <= rlim) {
-          // Match!
-          target.cluster.members++;
-          target.cluster.lastActive = totalFrames;
-          matchFound = true;
-          break;
-        } else {
-          // Mismatch: Prune remaining active candidates via Triangle Inequality
-          let newlyPruned = [];
-          activeCandidates = activeCandidates.filter(cand => {
-            let dcc = Math.hypot(target.cluster.x - cand.cluster.x, target.cluster.y - cand.cluster.y);
-            let lowerBound = Math.abs(d - dcc);
-
-            if (pruneMode === '4P') lowerBound *= 1.15; // Tightened 4P approximation
-            if (pruneMode === '5P') lowerBound *= 1.30; // Tightened 5P simplex approximation
-
-            if (lowerBound > rlim) {
-              newlyPruned.push(cand.cluster);
-              currentPruned.push(cand.cluster);
-              return false; // Pruned
-            }
-            return true;
-          });
-        }
-      }
-
-      totalEvals += evalsThisFrame;
-
-      if (!matchFound) {
-        // Create new cluster anchor
-        clusters.push({
-          id: clusters.length,
-          x, y,
-          members: 1,
-          color: getRandomColor(clusters.length),
-          lastActive: totalFrames
-        });
-      }
-
-      updateUI();
-      draw();
-    }
-
-    // Color generation for clusters
-    function getRandomColor(id) {
-      const hues = [199, 270, 142, 38, 340, 180, 48];
-      const hue = hues[id % hues.length];
-      return `hsl(${hue}, 80%, 60%)`;
-    }
-
-    // --- Drawing Engine ---
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw Tiling Grid if active
-      if (isTiled) {
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+      // Coordinate axes & grid
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(toCanvasX(-1.0), toCanvasY(0));
+      ctx.lineTo(toCanvasX(1.0), toCanvasY(0));
+      ctx.moveTo(toCanvasX(0), toCanvasY(-1.0));
+      ctx.lineTo(toCanvasX(0), toCanvasY(1.0));
+      ctx.stroke();
+
+      // Draw Tiling Grid if active (-tiles)
+      if (useTiles) {
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([6, 6]);
         ctx.beginPath();
@@ -584,18 +1176,22 @@
 
         ctx.fillStyle = '#64748b';
         ctx.font = '11px sans-serif';
-        ctx.fillText("Tile 0", 15, 20);
-        ctx.fillText("Tile 1", canvas.width / 2 + 15, 20);
-        ctx.fillText("Tile 2", 15, canvas.height / 2 + 20);
-        ctx.fillText("Tile 3", canvas.width / 2 + 15, canvas.height / 2 + 20);
+        ctx.fillText("Tile 0 (-X, +Y)", 15, 20);
+        ctx.fillText("Tile 1 (+X, +Y)", canvas.width / 2 + 15, 20);
+        ctx.fillText("Tile 2 (-X, -Y)", 15, canvas.height / 2 + 20);
+        ctx.fillText("Tile 3 (+X, -Y)", canvas.width / 2 + 15, canvas.height / 2 + 20);
       }
 
       // Draw Clusters and rlim spheres
       clusters.forEach(c => {
+        const cx = toCanvasX(c.x);
+        const cy = toCanvasY(c.y);
+        const cr = toCanvasRadius(rlim);
+
         // rlim sphere
         ctx.beginPath();
-        ctx.arc(c.x, c.y, rlim, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.05)';
+        ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.04)';
         ctx.fill();
         ctx.strokeStyle = c.color;
         ctx.lineWidth = 1.2;
@@ -605,7 +1201,7 @@
 
         // Anchor Node
         ctx.beginPath();
-        ctx.arc(c.x, c.y, 6, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
         ctx.fillStyle = c.color;
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
@@ -614,36 +1210,48 @@
 
         ctx.fillStyle = '#f8fafc';
         ctx.font = '11px sans-serif';
-        ctx.fillText(`c_${c.id} (${c.members})`, c.x + 10, c.y - 8);
+        ctx.fillText(`c_${c.id} (${c.members})`, cx + 9, cy - 6);
       });
 
-      // Draw Pruned candidate indicators
-      currentPruned.forEach(c => {
+      // Draw Pruned candidate indicators (Cross markers with prune reason)
+      currentPruned.forEach(p => {
+        const px = toCanvasX(p.cluster.x);
+        const py = toCanvasY(p.cluster.y);
+
         ctx.strokeStyle = '#ef4444';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(c.x - 8, c.y - 8);
-        ctx.lineTo(c.x + 8, c.y + 8);
-        ctx.moveTo(c.x + 8, c.y - 8);
-        ctx.lineTo(c.x - 8, c.y + 8);
+        ctx.moveTo(px - 7, py - 7);
+        ctx.lineTo(px + 7, py + 7);
+        ctx.moveTo(px + 7, py - 7);
+        ctx.lineTo(px - 7, py + 7);
         ctx.stroke();
+
+        ctx.fillStyle = '#f87171';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.fillText(p.reason, px + 8, py + 10);
       });
 
-      // Draw Evaluation Lines
-      currentEvaluations.forEach(ev => {
-        if (!currentFrame) return;
-        ctx.beginPath();
-        ctx.moveTo(currentFrame.x, currentFrame.y);
-        ctx.lineTo(ev.target.x, ev.target.y);
-        ctx.strokeStyle = ev.match ? '#4ade80' : '#ef4444';
-        ctx.lineWidth = ev.match ? 2.5 : 1.5;
-        ctx.stroke();
-      });
-
-      // Draw Current Query Frame
+      // Draw Distance Evaluation Rays
       if (currentFrame) {
+        const fx = toCanvasX(currentFrame.x);
+        const fy = toCanvasY(currentFrame.y);
+
+        currentEvaluations.forEach(ev => {
+          const tx = toCanvasX(ev.target.x);
+          const ty = toCanvasY(ev.target.y);
+
+          ctx.beginPath();
+          ctx.moveTo(fx, fy);
+          ctx.lineTo(tx, ty);
+          ctx.strokeStyle = ev.match ? '#4ade80' : '#ef4444';
+          ctx.lineWidth = ev.match ? 2.5 : 1.5;
+          ctx.stroke();
+        });
+
+        // Draw Current Query Frame fi
         ctx.beginPath();
-        ctx.arc(currentFrame.x, currentFrame.y, 7, 0, Math.PI * 2);
+        ctx.arc(fx, fy, 7, 0, Math.PI * 2);
         ctx.fillStyle = '#facc15';
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
@@ -652,40 +1260,69 @@
 
         ctx.fillStyle = '#facc15';
         ctx.font = 'bold 11px sans-serif';
-        ctx.fillText("f_i", currentFrame.x + 10, currentFrame.y + 12);
+        ctx.fillText("f_i", fx + 10, fy + 12);
       }
     }
 
-    // --- UI Update & Event Listeners ---
+    // =========================================================================
+    //  5. UI UPDATES & TELEMETRY
+    // =========================================================================
+
     function updateUI() {
       document.getElementById('statClusters').innerText = clusters.length;
       document.getElementById('statFrames').innerText = totalFrames;
       
-      let avgE = totalFrames > 0 ? (totalEvals / totalFrames).toFixed(2) : '0.0';
+      const avgE = totalFrames > 0 ? (totalEvals / totalFrames).toFixed(2) : '0.00';
       document.getElementById('statAvgEvals').innerText = avgE;
 
-      let savedPct = naiveEvals > 0 ? (((naiveEvals - totalEvals) / naiveEvals) * 100).toFixed(0) : '0';
+      const savedPct = naiveEvals > 0 ? (((naiveEvals - totalEvals) / naiveEvals) * 100).toFixed(0) : '0';
       document.getElementById('statSaved').innerText = `${Math.max(0, savedPct)}%`;
+
+      document.getElementById('entropyBadge').innerText = `H: ${currentEntropyBits.toFixed(2)} bits`;
+      document.getElementById('measCountBadge').innerText = `${currentEvaluations.length} evals`;
+
+      // Progress bar update
+      if (benchmarkDataset.length > 0) {
+        const pct = Math.min(100, (currentFrameIdx / benchmarkDataset.length) * 100);
+        document.getElementById('progressFill').style.width = `${pct}%`;
+        document.getElementById('frameCounter').innerText = `${currentFrameIdx} / ${benchmarkDataset.length}`;
+      } else {
+        document.getElementById('progressFill').style.width = '100%';
+        document.getElementById('frameCounter').innerText = `${totalFrames} live`;
+      }
 
       // Update Candidate List
       const cont = document.getElementById('candidateContainer');
       if (clusters.length === 0) {
-        cont.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No frames yet.</div>`;
+        cont.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No clusters formed yet.</div>`;
         return;
       }
 
       cont.innerHTML = clusters.map(c => {
-        let isEvaluated = currentEvaluations.find(ev => ev.target.id === c.id);
-        let isPruned = currentPruned.find(p => p.id === c.id);
-        let statusClass = isEvaluated && isEvaluated.match ? 'matched' : (isPruned ? 'pruned' : '');
-        let badgeText = isEvaluated && isEvaluated.match ? 'ASSIGNED' : (isPruned ? 'PRUNED' : (isEvaluated ? 'TESTED' : 'UNTOUCHED'));
-        
+        const isEval = currentEvaluations.find(ev => ev.target.id === c.id);
+        const isPruned = currentPruned.find(p => p.cluster.id === c.id);
+        const isPred = currentPredicted.includes(c.id);
+
+        let statusClass = '';
+        let badgeText = 'UNTOUCHED';
+
+        if (isEval && isEval.match) {
+          statusClass = 'matched';
+          badgeText = isPred ? 'PRED MATCH' : 'ASSIGNED';
+        } else if (isPruned) {
+          statusClass = 'pruned';
+          badgeText = `PRUNED (${isPruned.reason})`;
+        } else if (isEval) {
+          statusClass = isPred ? 'predicted' : '';
+          badgeText = isPred ? 'PRED MISMATCH' : 'TESTED MISMATCH';
+        }
+
         return `
           <div class="candidate-item ${statusClass}">
             <div style="display:flex; align-items:center; gap:6px;">
               <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${c.color};"></span>
               <span style="font-weight:600; color:#f8fafc;">Cluster c_${c.id}</span>
-              <span style="color:#94a3b8; font-size:0.75rem;">(${c.members} frames)</span>
+              <span style="color:#94a3b8; font-size:0.72rem;">(${c.members} frames)</span>
             </div>
             <span class="badge-pill">${badgeText}</span>
           </div>
@@ -693,21 +1330,243 @@
       }).join('');
     }
 
-    // Canvas Click Interaction
-    canvas.addEventListener('click', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      processFrame(x, y);
+    function resetSimulation() {
+      clusters = [];
+      dcc = [];
+      transitionCounts = [];
+      prevAssignedCluster = -1;
+      assignmentHistory = [];
+      frameHistory = [];
+      totalFrames = 0;
+      totalEvals = 0;
+      naiveEvals = 0;
+      currentFrame = null;
+      currentEvaluations = [];
+      currentPruned = [];
+      currentPredicted = [];
+      currentEntropyBits = 0;
+      currentFrameIdx = 0;
+      updateUI();
+      draw();
+    }
+
+    function loadSelectedBenchmark() {
+      resetSimulation();
+      currentBenchmark = document.getElementById('selectBenchmark').value;
+      document.getElementById('benchmarkDesc').innerHTML = BENCHMARK_DESCS[currentBenchmark] || "";
+
+      if (currentBenchmark === "custom") {
+        document.getElementById('fileUpload').click();
+      } else if (currentBenchmark !== "stream") {
+        benchmarkDataset = generateBenchmark(currentBenchmark, 1000);
+      } else {
+        benchmarkDataset = [];
+      }
+      updateUI();
+    }
+
+    function stepNextFrame() {
+      if (currentBenchmark === "stream") {
+        const t = totalFrames * 0.15;
+        const x = 0.70 * Math.cos(t) + 0.18 * Math.sin(t * 3.0) + (Math.random() - 0.5) * 0.05;
+        const y = 0.60 * Math.sin(t * 0.8) + 0.15 * Math.cos(t * 2.0) + (Math.random() - 0.5) * 0.05;
+        clusterFrame(x, y);
+      } else if (benchmarkDataset.length > 0) {
+        if (currentFrameIdx >= benchmarkDataset.length) {
+          pauseSimulation();
+          return;
+        }
+        const pt = benchmarkDataset[currentFrameIdx++];
+        clusterFrame(pt.x, pt.y);
+      }
+    }
+
+    function runBatchInstant() {
+      while (currentFrameIdx < benchmarkDataset.length) {
+        const pt = benchmarkDataset[currentFrameIdx++];
+        clusterFrame(pt.x, pt.y);
+      }
+      pauseSimulation();
+    }
+
+    function startSimulation() {
+      isRunning = true;
+      const btn = document.getElementById('btnPlay');
+      btn.innerText = "❚❚ Pause";
+      btn.classList.add('danger');
+      btn.classList.remove('primary');
+
+      if (playSpeed === 0 && benchmarkDataset.length > 0) {
+        runBatchInstant();
+        return;
+      }
+
+      playTimer = setInterval(() => {
+        stepNextFrame();
+        if (benchmarkDataset.length > 0 && currentFrameIdx >= benchmarkDataset.length) {
+          pauseSimulation();
+        }
+      }, playSpeed);
+    }
+
+    function pauseSimulation() {
+      isRunning = false;
+      const btn = document.getElementById('btnPlay');
+      btn.innerText = "► Run / Play";
+      btn.classList.remove('danger');
+      btn.classList.add('primary');
+      if (playTimer) clearInterval(playTimer);
+      playTimer = null;
+    }
+
+    // =========================================================================
+    //  6. FILE UPLOAD & PARSING (Local FileReader API)
+    // =========================================================================
+
+    function parseCoordinateFile(text, filename = "dataset") {
+      const lines = text.split(/\r?\n/);
+      const rawPoints = [];
+
+      for (let line of lines) {
+        line = line.trim();
+        if (!line || line.startsWith('#')) continue;
+
+        // Split by space, tab, or comma
+        const tokens = line.split(/[,\s\t]+/).filter(t => t.length > 0);
+        if (tokens.length >= 2) {
+          const x = parseFloat(tokens[0]);
+          const y = parseFloat(tokens[1]);
+          if (!isNaN(x) && !isNaN(y)) {
+            rawPoints.push({ x, y });
+          }
+        }
+      }
+
+      if (rawPoints.length === 0) {
+        alert("Error: No valid 2D coordinates found in file. Expected 'x y' or 'x,y' per line.");
+        return;
+      }
+
+      // Normalize coordinates to [-0.92, 0.92] preserving aspect ratio
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const p of rawPoints) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+
+      const spanX = maxX - minX || 1.0;
+      const spanY = maxY - minY || 1.0;
+      const maxSpan = Math.max(spanX, spanY);
+      const midX = (minX + maxX) / 2;
+      const midY = (minY + maxY) / 2;
+
+      benchmarkDataset = rawPoints.map(p => ({
+        x: ((p.x - midX) / maxSpan) * 1.84,
+        y: ((p.y - midY) / maxSpan) * 1.84
+      }));
+
+      BENCHMARK_DESCS["custom"] = `<b>Custom File (${filename})</b>: ${benchmarkDataset.length} frames loaded from upload.`;
+      document.getElementById('selectBenchmark').value = 'custom';
+      document.getElementById('benchmarkDesc').innerHTML = BENCHMARK_DESCS["custom"];
+
+      resetSimulation();
+    }
+
+    const fileInput = document.getElementById('fileUpload');
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => parseCoordinateFile(evt.target.result, file.name);
+      reader.readAsText(file);
+      fileInput.value = '';
     });
 
-    // Controls
-    document.getElementById('sliderRlim').addEventListener('input', (e) => {
-      rlim = parseInt(e.target.value);
-      document.getElementById('lblRlim').innerText = `${rlim} px`;
+    document.getElementById('btnUpload').addEventListener('click', () => fileInput.click());
+
+    // Drag & Drop handlers on canvas container
+    const canvasBox = document.getElementById('canvasBox');
+    const dropzone = document.getElementById('dropzone');
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      canvasBox.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.style.display = 'flex';
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      canvasBox.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.style.display = 'none';
+      });
+    });
+
+    canvasBox.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        const reader = new FileReader();
+        reader.onload = (evt) => parseCoordinateFile(evt.target.result, files[0].name);
+        reader.readAsText(files[0]);
+      }
+    });
+
+    // =========================================================================
+    //  7. CONTROLS & EVENT LISTENERS
+    // =========================================================================
+
+    // Benchmark Selector
+    document.getElementById('selectBenchmark').addEventListener('change', loadSelectedBenchmark);
+
+    // Speed Selector
+    document.getElementById('selectSpeed').addEventListener('change', (e) => {
+      playSpeed = parseInt(e.target.value);
+      if (isRunning) {
+        pauseSimulation();
+        startSimulation();
+      }
+    });
+
+    // Play/Pause & Step Buttons
+    document.getElementById('btnPlay').addEventListener('click', () => {
+      if (isRunning) pauseSimulation();
+      else startSimulation();
+    });
+
+    document.getElementById('btnStep').addEventListener('click', () => {
+      if (isRunning) pauseSimulation();
+      stepNextFrame();
+    });
+
+    document.getElementById('btnReset').addEventListener('click', () => {
+      pauseSimulation();
+      loadSelectedBenchmark();
+    });
+
+    // Canvas click to inject query frame
+    canvas.addEventListener('click', (e) => {
+      if (isRunning) pauseSimulation();
+      const rect = canvas.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const mx = toMetricX(px);
+      const my = toMetricY(py);
+      clusterFrame(mx, my);
+    });
+
+    // Radius Slider
+    const sliderRlim = document.getElementById('sliderRlim');
+    sliderRlim.addEventListener('input', (e) => {
+      rlim = parseFloat(e.target.value);
+      document.getElementById('lblRlim').innerText = rlim.toFixed(3);
       draw();
     });
 
+    // Target Mode Toggles
     document.getElementById('modeGreedy').addEventListener('click', () => {
       targetMode = 'greedy';
       document.getElementById('modeGreedy').classList.add('active');
@@ -720,6 +1579,7 @@
       document.getElementById('modeGreedy').classList.remove('active');
     });
 
+    // Pruning Depth Toggles (3P / 4P / 5P)
     ['3P', '4P', '5P'].forEach(p => {
       document.getElementById(`prune${p}`).addEventListener('click', () => {
         pruneMode = p;
@@ -728,73 +1588,31 @@
       });
     });
 
-    document.getElementById('tileOff').addEventListener('click', () => {
-      isTiled = false;
-      document.getElementById('tileOff').classList.add('active');
-      document.getElementById('tileOn').classList.remove('active');
+    // Advanced Option Toggles
+    document.getElementById('optTM').addEventListener('click', () => {
+      useTM = !useTM;
+      document.getElementById('optTM').classList.toggle('active', useTM);
+    });
+
+    document.getElementById('optPred').addEventListener('click', () => {
+      usePred = !usePred;
+      document.getElementById('optPred').classList.toggle('active', usePred);
+    });
+
+    document.getElementById('optGprob').addEventListener('click', () => {
+      useGprob = !useGprob;
+      document.getElementById('optGprob').classList.toggle('active', useGprob);
+    });
+
+    document.getElementById('optTiles').addEventListener('click', () => {
+      useTiles = !useTiles;
+      document.getElementById('optTiles').classList.toggle('active', useTiles);
       draw();
     });
 
-    document.getElementById('tileOn').addEventListener('click', () => {
-      isTiled = true;
-      document.getElementById('tileOn').classList.add('active');
-      document.getElementById('tileOff').classList.remove('active');
-      draw();
-    });
-
-    document.getElementById('btnClear').addEventListener('click', () => {
-      clusters = [];
-      totalFrames = 0;
-      totalEvals = 0;
-      naiveEvals = 0;
-      currentFrame = null;
-      currentEvaluations = [];
-      currentPruned = [];
-      updateUI();
-      draw();
-    });
-
-    // Synthetic Streaming Generator
-    let streamStep = 0;
-    function generateSyntheticFrame() {
-      const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
-      const t = streamStep * 0.15;
-      
-      // Moving multi-cluster trajectory
-      let x = cx + Math.cos(t) * 160 + (Math.sin(t * 3) * 50);
-      let y = cy + Math.sin(t * 0.8) * 130 + (Math.cos(t * 2) * 40);
-      
-      // Add small noise
-      x += (Math.random() - 0.5) * 20;
-      y += (Math.random() - 0.5) * 20;
-
-      streamStep++;
-      processFrame(x, y);
-    }
-
-    document.getElementById('btnStep').addEventListener('click', () => {
-      generateSyntheticFrame();
-    });
-
-    document.getElementById('btnPlay').addEventListener('click', () => {
-      isStreaming = !isStreaming;
-      const btn = document.getElementById('btnPlay');
-      if (isStreaming) {
-        btn.innerText = "❚❚ Pause Stream";
-        btn.classList.add('danger');
-        btn.classList.remove('primary');
-        streamTimer = setInterval(generateSyntheticFrame, 150);
-      } else {
-        btn.innerText = "► Stream Data";
-        btn.classList.remove('danger');
-        btn.classList.add('primary');
-        clearInterval(streamTimer);
-      }
-    });
-
-    // Initial setup
+    // Initial Load
     resizeCanvas();
+    loadSelectedBenchmark();
   </script>
 </body>
 </html>
