@@ -743,6 +743,14 @@
           <input type="range" id="sliderRlim" min="0.02" max="0.30" step="0.005" value="0.100">
         </div>
 
+        <div class="control-row">
+          <div class="control-label">
+            <span>Visual Focus (Samples ⟷ Clusters)</span>
+            <span id="lblFocus" class="val">Balanced (50%)</span>
+          </div>
+          <input type="range" id="sliderFocus" min="0" max="100" step="1" value="50">
+        </div>
+
         <div class="control-label" style="margin-top: 8px;">Target Selection Mode</div>
         <div class="toggle-group">
           <div id="modeGreedy" class="toggle-btn active">Greedy (argmax P)</div>
@@ -1207,6 +1215,7 @@
 
     // Algorithm Config
     let rlim = 0.100;
+    let visualFocus = 50; // 0 (Points Only) to 100 (Clusters Only)
     let targetMode = 'greedy';
     let pruneMode = '3P';
     let useTM = false;
@@ -1953,18 +1962,37 @@
         ctx.setLineDash([]);
       }
 
+      // Visual Focus / Opacity calculations
+      const tFocus = visualFocus / 100.0;
+      let pointAlpha = 0.38;
+      let ptSizeScale = 1.0;
+      if (tFocus < 0.5) {
+        const ratio = (0.5 - tFocus) / 0.5; // 0.0 at 0.5, 1.0 at 0.0
+        pointAlpha = 0.38 + ratio * 0.57; // 0.38 -> 0.95
+        ptSizeScale = 1.0 + ratio * 0.6; // 1.0 -> 1.6
+      } else {
+        const ratio = (tFocus - 0.5) / 0.5; // 0.0 at 0.5, 1.0 at 1.0
+        pointAlpha = 0.38 * (1.0 - ratio); // 0.38 -> 0.0
+        ptSizeScale = 1.0;
+      }
+
+      let clusterAlpha = 1.0;
+      if (tFocus < 0.5) {
+        clusterAlpha = tFocus / 0.5; // 0.0 at t=0.0, 1.0 at t=0.5
+      }
+
       // 2. Past Samples Point Cloud
-      if (pastSamples.length > 0) {
-        ctx.fillStyle = 'rgba(148, 163, 184, 0.38)';
+      if (pastSamples.length > 0 && pointAlpha > 0.001) {
+        ctx.fillStyle = `rgba(148, 163, 184, ${pointAlpha.toFixed(3)})`;
         for (let i = 0; i < pastSamples.length; i++) {
           const pr = getProjectedCoord(pastSamples[i]);
           const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
           if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 || pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) continue;
           
-          let ptRad = 1.5;
+          let ptRad = 1.5 * ptSizeScale;
           if (is3DCustom) {
             // Depth cueing
-            ptRad = Math.max(0.8, Math.min(2.5, 1.6 + pr.depth * 0.8));
+            ptRad = Math.max(0.8, Math.min(3.5, (1.6 + pr.depth * 0.8) * ptSizeScale));
           }
           ctx.beginPath();
           ctx.arc(pos.px, pos.py, ptRad, 0, Math.PI * 2);
@@ -1974,137 +2002,147 @@
 
       // 3. Multi-Tile Mode Rendering
       if (useTiles) {
-        if (viewType === "ALONG_X") {
-          // Horizontal Y, Vertical Z
-          tileEngineY.clusters.forEach(cy => {
-            const p = mapMetricToQuad(cy.val, 0, qIdx, rect);
-            ctx.fillStyle = 'rgba(45, 212, 191, 0.03)';
-            ctx.fillRect(p.px - rlim * scale, rect.y, 2 * rlim * scale, rect.h);
-          });
-          tileEngineZ.clusters.forEach(cz => {
-            const p = mapMetricToQuad(0, cz.val, qIdx, rect);
-            ctx.fillStyle = 'rgba(192, 132, 252, 0.03)';
-            ctx.fillRect(rect.x, p.py - rlim * scale, rect.w, 2 * rlim * scale);
-          });
-        } else if (viewType === "ALONG_Y") {
-          // Horizontal X, Vertical Z
-          tileEngineX.clusters.forEach(cx => {
-            const p = mapMetricToQuad(cx.val, 0, qIdx, rect);
-            ctx.fillStyle = 'rgba(56, 189, 248, 0.03)';
-            ctx.fillRect(p.px - rlim * scale, rect.y, 2 * rlim * scale, rect.h);
-          });
-          tileEngineZ.clusters.forEach(cz => {
-            const p = mapMetricToQuad(0, cz.val, qIdx, rect);
-            ctx.fillStyle = 'rgba(192, 132, 252, 0.03)';
-            ctx.fillRect(rect.x, p.py - rlim * scale, rect.w, 2 * rlim * scale);
-          });
-        } else if (viewType === "ALONG_Z" || viewType === "2D") {
-          // Horizontal X, Vertical Y
-          tileEngineX.clusters.forEach(cx => {
-            const p = mapMetricToQuad(cx.val, 0, qIdx, rect);
-            ctx.fillStyle = 'rgba(56, 189, 248, 0.03)';
-            ctx.fillRect(p.px - rlim * scale, rect.y, 2 * rlim * scale, rect.h);
-          });
-          tileEngineY.clusters.forEach(cy => {
-            const p = mapMetricToQuad(0, cy.val, qIdx, rect);
-            ctx.fillStyle = 'rgba(45, 212, 191, 0.03)';
-            ctx.fillRect(rect.x, p.py - rlim * scale, rect.w, 2 * rlim * scale);
-          });
-        }
-
-        // Draw Joint Tuples
-        jointTuplesMap.forEach(entry => {
-          const clX = tileEngineX.clusters[entry.cx];
-          const clY = tileEngineY.clusters[entry.cy];
-          const clZ = currentDim === 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
-          if (!clX || !clY || (currentDim === 3 && !clZ)) return;
-
-          const pr = getProjectedCoord({ x: clX.val, y: clY.val, z: clZ.val });
-          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-
-          ctx.beginPath();
-          ctx.arc(pos.px, pos.py, 5, 0, Math.PI * 2);
-          ctx.fillStyle = '#c084fc';
-          ctx.fill();
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        });
-      } else {
-        // 4. Monolithic Mode: Cluster Spheres & Anchors
-        clusters.forEach(c => {
-          const pr = getProjectedCoord(c);
-          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-          const rPx = rlim * scale;
-
-          if (!is3DCustom) {
-            // 2D Circle outline for receptive field
-            ctx.beginPath();
-            ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(56, 189, 248, 0.04)';
-            ctx.fill();
-            ctx.strokeStyle = c.color;
-            ctx.lineWidth = 1.2;
-            ctx.setLineDash([3, 3]);
-            ctx.stroke();
-            ctx.setLineDash([]);
-          } else {
-            // 3D Custom: Wireframe Equatorial Rings (XY, XZ, YZ)
-            const az = orbitCamera.azimuth, el = orbitCamera.elevation;
-            
-            // Sphere boundary halo
-            ctx.beginPath();
-            ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(56, 189, 248, 0.03)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            // XY ring
-            ctx.strokeStyle = c.color;
-            ctx.lineWidth = 0.9;
-            ctx.beginPath();
-            for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 8) {
-              const rx = c.x + rlim * Math.cos(a);
-              const ry = c.y + rlim * Math.sin(a);
-              const rz = c.z;
-              const rp = project3D(rx, ry, rz, az, el);
-              const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
-              if (a === 0) ctx.moveTo(ppos.px, ppos.py);
-              else ctx.lineTo(ppos.px, ppos.py);
-            }
-            ctx.stroke();
+        if (clusterAlpha > 0.001) {
+          ctx.save();
+          ctx.globalAlpha = clusterAlpha;
+          if (viewType === "ALONG_X") {
+            // Horizontal Y, Vertical Z
+            tileEngineY.clusters.forEach(cy => {
+              const p = mapMetricToQuad(cy.val, 0, qIdx, rect);
+              ctx.fillStyle = 'rgba(45, 212, 191, 0.03)';
+              ctx.fillRect(p.px - rlim * scale, rect.y, 2 * rlim * scale, rect.h);
+            });
+            tileEngineZ.clusters.forEach(cz => {
+              const p = mapMetricToQuad(0, cz.val, qIdx, rect);
+              ctx.fillStyle = 'rgba(192, 132, 252, 0.03)';
+              ctx.fillRect(rect.x, p.py - rlim * scale, rect.w, 2 * rlim * scale);
+            });
+          } else if (viewType === "ALONG_Y") {
+            // Horizontal X, Vertical Z
+            tileEngineX.clusters.forEach(cx => {
+              const p = mapMetricToQuad(cx.val, 0, qIdx, rect);
+              ctx.fillStyle = 'rgba(56, 189, 248, 0.03)';
+              ctx.fillRect(p.px - rlim * scale, rect.y, 2 * rlim * scale, rect.h);
+            });
+            tileEngineZ.clusters.forEach(cz => {
+              const p = mapMetricToQuad(0, cz.val, qIdx, rect);
+              ctx.fillStyle = 'rgba(192, 132, 252, 0.03)';
+              ctx.fillRect(rect.x, p.py - rlim * scale, rect.w, 2 * rlim * scale);
+            });
+          } else if (viewType === "ALONG_Z" || viewType === "2D") {
+            // Horizontal X, Vertical Y
+            tileEngineX.clusters.forEach(cx => {
+              const p = mapMetricToQuad(cx.val, 0, qIdx, rect);
+              ctx.fillStyle = 'rgba(56, 189, 248, 0.03)';
+              ctx.fillRect(p.px - rlim * scale, rect.y, 2 * rlim * scale, rect.h);
+            });
+            tileEngineY.clusters.forEach(cy => {
+              const p = mapMetricToQuad(0, cy.val, qIdx, rect);
+              ctx.fillStyle = 'rgba(45, 212, 191, 0.03)';
+              ctx.fillRect(rect.x, p.py - rlim * scale, rect.w, 2 * rlim * scale);
+            });
           }
 
-          // Anchor Core Node
-          ctx.beginPath();
-          ctx.arc(pos.px, pos.py, 5.5, 0, Math.PI * 2);
-          ctx.fillStyle = c.color;
-          ctx.fill();
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
+          // Draw Joint Tuples
+          jointTuplesMap.forEach(entry => {
+            const clX = tileEngineX.clusters[entry.cx];
+            const clY = tileEngineY.clusters[entry.cy];
+            const clZ = currentDim === 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
+            if (!clX || !clY || (currentDim === 3 && !clZ)) return;
 
-          ctx.fillStyle = '#f8fafc';
-          ctx.font = '10px sans-serif';
-          ctx.fillText(`c_${c.id}`, pos.px + 7, pos.py - 5);
-        });
+            const pr = getProjectedCoord({ x: clX.val, y: clY.val, z: clZ.val });
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
 
-        // Pruned Crosshairs
-        currentPruned.forEach(p => {
-          const pr = getProjectedCoord(p.cluster);
-          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#c084fc';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          });
+          ctx.restore();
+        }
+      } else {
+        // 4. Monolithic Mode: Cluster Spheres & Anchors
+        if (clusterAlpha > 0.001) {
+          ctx.save();
+          ctx.globalAlpha = clusterAlpha;
+          clusters.forEach(c => {
+            const pr = getProjectedCoord(c);
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+            const rPx = rlim * scale;
 
-          ctx.strokeStyle = '#ef4444';
-          ctx.lineWidth = 1.8;
-          ctx.beginPath();
-          ctx.moveTo(pos.px - 6, pos.py - 6);
-          ctx.lineTo(pos.px + 6, pos.py + 6);
-          ctx.moveTo(pos.px + 6, pos.py - 6);
-          ctx.lineTo(pos.px - 6, pos.py + 6);
-          ctx.stroke();
-        });
+            if (!is3DCustom) {
+              // 2D Circle outline for receptive field
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(56, 189, 248, 0.04)';
+              ctx.fill();
+              ctx.strokeStyle = c.color;
+              ctx.lineWidth = 1.2;
+              ctx.setLineDash([3, 3]);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            } else {
+              // 3D Custom: Wireframe Equatorial Rings (XY, XZ, YZ)
+              const az = orbitCamera.azimuth, el = orbitCamera.elevation;
+              
+              // Sphere boundary halo
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(56, 189, 248, 0.03)';
+              ctx.fill();
+              ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
+              ctx.lineWidth = 1;
+              ctx.stroke();
+
+              // XY ring
+              ctx.strokeStyle = c.color;
+              ctx.lineWidth = 0.9;
+              ctx.beginPath();
+              for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 8) {
+                const rx = c.x + rlim * Math.cos(a);
+                const ry = c.y + rlim * Math.sin(a);
+                const rz = c.z;
+                const rp = project3D(rx, ry, rz, az, el);
+                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                else ctx.lineTo(ppos.px, ppos.py);
+              }
+              ctx.stroke();
+            }
+
+            // Anchor Core Node
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, 5.5, 0, Math.PI * 2);
+            ctx.fillStyle = c.color;
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = '10px sans-serif';
+            ctx.fillText(`c_${c.id}`, pos.px + 7, pos.py - 5);
+          });
+
+          // Pruned Crosshairs
+          currentPruned.forEach(p => {
+            const pr = getProjectedCoord(p.cluster);
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(pos.px - 6, pos.py - 6);
+            ctx.lineTo(pos.px + 6, pos.py + 6);
+            ctx.moveTo(pos.px + 6, pos.py - 6);
+            ctx.lineTo(pos.px - 6, pos.py + 6);
+            ctx.stroke();
+          });
+          ctx.restore();
+        }
 
         // Current Evaluated Rays
         if (currentFrame) {
@@ -2901,6 +2939,26 @@
     sliderRlim.addEventListener('input', (e) => {
       rlim = parseFloat(e.target.value);
       document.getElementById('lblRlim').innerText = rlim.toFixed(3);
+      draw();
+    });
+
+    const sliderFocus = document.getElementById('sliderFocus');
+    sliderFocus.addEventListener('input', (e) => {
+      visualFocus = parseInt(e.target.value);
+      const lbl = document.getElementById('lblFocus');
+      if (lbl) {
+        if (visualFocus === 0) {
+          lbl.innerText = "Points Only (0%)";
+        } else if (visualFocus < 45) {
+          lbl.innerText = `Points Emphasis (${visualFocus}%)`;
+        } else if (visualFocus <= 55) {
+          lbl.innerText = `Balanced (${visualFocus}%)`;
+        } else if (visualFocus === 100) {
+          lbl.innerText = "Clusters Only (100%)";
+        } else {
+          lbl.innerText = `Clusters Emphasis (${visualFocus}%)`;
+        }
+      }
       draw();
     });
 
