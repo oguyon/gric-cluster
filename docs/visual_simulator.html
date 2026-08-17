@@ -75,14 +75,16 @@
 
     .main-layout {
       display: grid;
-      grid-template-columns: 1fr 420px;
+      grid-template-columns: 1fr 440px;
       gap: 16px;
       flex: 1;
+      min-height: calc(100vh - 110px);
     }
 
     @media (max-width: 1100px) {
       .main-layout {
         grid-template-columns: 1fr;
+        min-height: auto;
       }
     }
 
@@ -94,6 +96,8 @@
       flex-direction: column;
       overflow: hidden;
       position: relative;
+      height: 100%;
+      min-height: 520px;
     }
 
     .canvas-toolbar {
@@ -233,6 +237,7 @@
       display: flex;
       flex-direction: column;
       gap: 14px;
+      height: 100%;
     }
 
     .card {
@@ -240,6 +245,17 @@
       border: 1px solid var(--card-border);
       border-radius: 12px;
       padding: 14px;
+    }
+
+    .card.fixed-height {
+      flex-shrink: 0;
+    }
+
+    .card.flexible-height {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 260px;
     }
 
     .card-title {
@@ -364,12 +380,20 @@
     }
 
     .narrative-list {
-      max-height: 220px;
+      flex: 1;
+      min-height: 180px;
+      max-height: calc(100vh - 540px);
       overflow-y: auto;
       display: flex;
       flex-direction: column;
       gap: 8px;
       padding-right: 4px;
+    }
+
+    @media (max-height: 800px) {
+      .narrative-list {
+        max-height: 240px;
+      }
     }
 
     .narrative-step {
@@ -422,11 +446,14 @@
     }
 
     .candidate-list {
-      max-height: 220px;
+      flex: 1;
+      min-height: 180px;
+      max-height: calc(100vh - 540px);
       overflow-y: auto;
       display: flex;
       flex-direction: column;
       gap: 5px;
+      padding-right: 4px;
     }
 
     .candidate-item {
@@ -586,7 +613,7 @@
     <!-- Right: Control & Telemetry Panel -->
     <div class="side-panel">
       <!-- 1. Algorithm Configuration -->
-      <div class="card">
+      <div class="card fixed-height">
         <div class="card-title">
           <span>Algorithm Configuration</span>
           <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">CLI Parity</span>
@@ -623,7 +650,7 @@
       </div>
 
       <!-- 2. Performance Stats -->
-      <div class="card">
+      <div class="card fixed-height">
         <div class="card-title">
           <span>Real-Time Telemetry</span>
           <span id="entropyBadge" class="badge-pill" style="color: var(--accent-purple);">H: 0.00 bits</span>
@@ -648,8 +675,8 @@
         </div>
       </div>
 
-      <!-- 3. Decision Narrative & Candidate Trace -->
-      <div class="card">
+      <!-- 3. Flexible Decision Narrative & Candidate Trace -->
+      <div class="card flexible-height">
         <div class="card-title" style="margin-bottom: 6px;">
           <span id="traceTitle">Decisions &amp; Search Trace</span>
           <span id="measCountBadge" class="badge-pill">0 measured</span>
@@ -815,7 +842,7 @@
         this.naiveEvals = 0;
       }
 
-      cluster1D(val, rThreshold) {
+      cluster1D(val, rThreshold, isExplain) {
         const K = this.clusters.length;
         if (K === 0) {
           this.clusters.push({ id: 0, val, members: 1, prob: 1.0 });
@@ -843,11 +870,13 @@
           const isMatch = d < rThreshold;
           evaluated.push({ target, dist: d, match: isMatch });
 
-          steps.push({
-            type: isMatch ? 'match' : 'mismatch',
-            title: `Tile ${this.axisName}: Test c_${target}`,
-            text: `1D distance |${val.toFixed(3)} - ${targetCl.val.toFixed(3)}| = ${d.toFixed(4)} ${isMatch ? '<=' : '>'} rlim (${rThreshold.toFixed(3)})`
-          });
+          if (isExplain) {
+            steps.push({
+              type: isMatch ? 'match' : 'mismatch',
+              title: `Tile ${this.axisName}: Test c_${target}`,
+              text: `1D distance |${val.toFixed(3)} - ${targetCl.val.toFixed(3)}| = ${d.toFixed(4)} ${isMatch ? '<=' : '>'} rlim (${rThreshold.toFixed(3)})`
+            });
+          }
 
           if (isMatch) {
             assigned = target;
@@ -867,7 +896,7 @@
               prunedCount++;
             }
           }
-          if (prunedCount > 0) {
+          if (isExplain && prunedCount > 0) {
             steps.push({
               type: 'prune',
               title: `Tile ${this.axisName}: 1D-3P Pruning`,
@@ -890,11 +919,14 @@
           newRow.push(0.0);
           this.dcc.push(newRow);
           this.clusters.push(newAnchor);
-          steps.push({
-            type: 'new-cluster',
-            title: `Tile ${this.axisName}: New 1D Anchor c_${assigned}`,
-            text: `Spawned new 1D anchor at coordinate ${val.toFixed(3)}.`
-          });
+
+          if (isExplain) {
+            steps.push({
+              type: 'new-cluster',
+              title: `Tile ${this.axisName}: New 1D Anchor c_${assigned}`,
+              text: `Spawned new 1D anchor at coordinate ${val.toFixed(3)}.`
+            });
+          }
           return { assigned, evals, isNew: true, evaluated, pruned, steps };
         }
 
@@ -916,8 +948,8 @@
     let isDragging = false;
     let dragStartX = 0, dragStartY = 0;
     let isAddPointMode = false;
-    let isExplainMode = true;
-    let currentActiveTab = 'narrative'; // 'narrative' or 'candidates'
+    let isExplainMode = false;
+    let currentActiveTab = 'narrative';
 
     // Algorithm Config
     let rlim = 0.100;
@@ -995,6 +1027,12 @@
       return c;
     }
 
+    function logExplainStep(step) {
+      if (isExplainMode) {
+        currentExplanation.push(step);
+      }
+    }
+
     // --- SEQUENTIAL FRAME INGESTION & DECISION LOGGING ---
     function clusterFrame(x, y) {
       totalFrames++;
@@ -1004,37 +1042,35 @@
 
       // Multi-Tile Mode
       if (useTiles) {
-        currentExplanation.push({
+        logExplainStep({
           type: 'target',
           title: `📍 Ingesting Frame #${totalFrames}`,
           text: `Input coordinates (x=${x.toFixed(3)}, y=${y.toFixed(3)}) partitioned into 1D Subspaces (Tile X and Tile Y).`
         });
 
-        tileTraceX = tileEngineX.cluster1D(x, rlim);
-        tileTraceY = tileEngineY.cluster1D(y, rlim);
+        tileTraceX = tileEngineX.cluster1D(x, rlim, isExplainMode);
+        tileTraceY = tileEngineY.cluster1D(y, rlim, isExplainMode);
 
         totalEvals += (tileTraceX.evals + tileTraceY.evals);
         naiveEvals += (tileEngineX.clusters.length + tileEngineY.clusters.length);
 
-        if (tileTraceX.steps) currentExplanation.push(...tileTraceX.steps);
-        if (tileTraceY.steps) currentExplanation.push(...tileTraceY.steps);
+        if (isExplainMode && tileTraceX.steps) currentExplanation.push(...tileTraceX.steps);
+        if (isExplainMode && tileTraceY.steps) currentExplanation.push(...tileTraceY.steps);
 
         const cx = tileTraceX.assigned;
         const cy = tileTraceY.assigned;
         currentJointTuple = { cx, cy };
 
         const tupleKey = `${cx}_${cy}`;
-        let isNewTuple = false;
         if (!jointTuplesMap.has(tupleKey)) {
           jointTuplesMap.set(tupleKey, { cx, cy, count: 1, lastActive: totalFrames });
-          isNewTuple = true;
         } else {
           const entry = jointTuplesMap.get(tupleKey);
           entry.count++;
           entry.lastActive = totalFrames;
         }
 
-        currentExplanation.push({
+        logExplainStep({
           type: 'match',
           title: `🎯 Joint Tuple Assigned: (${cx}, ${cy})`,
           text: `Combined 1D assignments into Joint State (${cx}, ${cy}). Total unique joint states: ${jointTuplesMap.size}.`
@@ -1070,7 +1106,7 @@
         assignmentHistory.push(0);
         frameHistory.push({ indices: [0], dists: [0.0], assignment: 0 });
 
-        currentExplanation.push({
+        logExplainStep({
           type: 'new-cluster',
           title: '✨ Initial Cluster Anchor Created',
           text: `First frame ingested at (${x.toFixed(3)}, ${y.toFixed(3)}). Initialized cluster c_0 with anchor at origin.`
@@ -1144,7 +1180,7 @@
       let evalsThisFrame = 0;
       let measDepth = 0;
 
-      currentExplanation.push({
+      logExplainStep({
         type: 'target',
         title: `📍 Ingesting Frame #${totalFrames}`,
         text: `Query frame at (${x.toFixed(3)}, ${y.toFixed(3)}) against ${K} candidate clusters (rlim=${rlim.toFixed(3)}).`
@@ -1261,7 +1297,7 @@
           targetCl.prob = (targetCl.prob || 1.0) + 0.05;
           targetCl.lastActive = totalFrames;
 
-          currentExplanation.push({
+          logExplainStep({
             type: 'match',
             title: `🎯 Match Found on c_${chosenTarget}`,
             text: `Measuring distance to cluster c_${chosenTarget} -> d=${dfc.toFixed(4)} <= rlim (${rlim.toFixed(3)}). Assigned to c_${chosenTarget} in ${evalsThisFrame} eval(s), saving ${K - evalsThisFrame} distance calls.`
@@ -1269,7 +1305,7 @@
           break;
         }
 
-        currentExplanation.push({
+        logExplainStep({
           type: 'mismatch',
           title: `❌ Mismatch on c_${chosenTarget}`,
           text: `Measuring distance to cluster c_${chosenTarget} (${selectionReason}) -> d=${dfc.toFixed(4)} > rlim (${rlim.toFixed(3)}). Cluster c_${chosenTarget} excluded.`
@@ -1290,7 +1326,7 @@
         const after3P = countActive(clmembflag);
         const pruned3P = before3P - after3P;
 
-        currentExplanation.push({
+        logExplainStep({
           type: 'prune',
           title: '📐 3-Point Triangle Inequality Pruning',
           text: `3-pt pruning: ${after3P} clusters kept, ${pruned3P} excluded (${((pruned3P / (before3P || 1)) * 100).toFixed(0)}% pruned).`
@@ -1318,7 +1354,7 @@
             const after4P = countActive(clmembflag);
             const pruned4P = before4P - after4P;
             if (pruned4P > 0) {
-              currentExplanation.push({
+              logExplainStep({
                 type: 'prune',
                 title: '📐 4-Point Pruning (-te4)',
                 text: `4-pt pruning: ${after4P} clusters kept, ${pruned4P} additional excluded via 2D baseline triangulation.`
@@ -1357,7 +1393,7 @@
             const after5P = countActive(clmembflag);
             const pruned5P = before5P - after5P;
             if (pruned5P > 0) {
-              currentExplanation.push({
+              logExplainStep({
                 type: 'prune',
                 title: '📐 5-Point Pruning (-te5)',
                 text: `5-pt pruning: ${after5P} clusters kept, ${pruned5P} additional excluded via 3D simplex heights.`
@@ -1408,7 +1444,7 @@
 
         clusters.push(newAnchor);
 
-        currentExplanation.push({
+        logExplainStep({
           type: 'new-cluster',
           title: `✨ New Cluster Created: c_${assignedCluster}`,
           text: `Frame fell outside all ${K} candidate clusters (min distance > rlim). Spawned new anchor c_${assignedCluster} at (${x.toFixed(3)}, ${y.toFixed(3)}) and computed ${K} inter-cluster distances.`
@@ -1750,8 +1786,15 @@
 
       // --- Render Explanation Narrative ---
       const contNarrative = document.getElementById('narrativeContainer');
-      if (currentExplanation.length === 0) {
-        contNarrative.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No decisions logged yet. Click Step or Add Point to inspect decisions.</div>`;
+      if (!isExplainMode) {
+        contNarrative.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 30px 12px; line-height: 1.6;">
+          <b>💬 Explain Mode is OFF</b><br>
+          Click <b>💬 Explain</b> in the top toolbar to enable real-time step-by-step decision tracking.
+        </div>`;
+      } else if (currentExplanation.length === 0) {
+        contNarrative.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 30px 12px; line-height: 1.5;">
+          No decisions logged for the current frame yet.<br>Click <b>➔ Step</b> or <b>＋ Add Point</b> to inspect algorithm decisions.
+        </div>`;
       } else {
         contNarrative.innerHTML = currentExplanation.map(step => `
           <div class="narrative-step ${step.type}">
@@ -1948,7 +1991,9 @@
         setTab('narrative');
       } else {
         btn.classList.remove('toggle-active');
+        currentExplanation = [];
       }
+      updateUI();
     }
 
     // =========================================================================
@@ -2212,7 +2257,7 @@
     resizeCanvas();
     loadSelectedBenchmark();
     updateZoomBadge();
-    setExplainMode(true);
+    setExplainMode(false);
   </script>
 </body>
 </html>
