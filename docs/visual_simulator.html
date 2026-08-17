@@ -688,13 +688,13 @@
         GRIC Interactive Algorithm Simulator
         <span class="badge">Exact C-Match</span>
         <span id="dimBadge" class="dim-badge">2D Mode</span>
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.17 (08:05 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.17 (08:50 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-17 08:05:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-17 08:50:00 HST</span>
     </div>
   </header>
 
@@ -762,6 +762,20 @@
             <option value="-1">⚡ As fast as possible</option>
             <option value="0">Instant (Batch)</option>
           </select>
+          <span style="display:flex; align-items:center; gap:4px;">
+            <span>Loop:</span>
+            <select id="selectLoop" style="padding: 2px 6px; font-size: 0.75rem;">
+              <option value="1" selected>1 pass (N=1)</option>
+              <option value="2">2 passes (N=2)</option>
+              <option value="3">3 passes (N=3)</option>
+              <option value="5">5 passes (N=5)</option>
+              <option value="10">10 passes (N=10)</option>
+              <option value="20">20 passes (N=20)</option>
+              <option value="50">50 passes (N=50)</option>
+              <option value="100">100 passes (N=100)</option>
+              <option value="0">∞ Infinite (N=0)</option>
+            </select>
+          </span>
           <span id="frameCounter">0 / 1000</span>
         </div>
       </div>
@@ -1599,6 +1613,8 @@
     let isRunning = false;
     let playTimer = null;
     let playSpeed = 50;
+    let loopCount = 1; // 1 = 1 pass (default), 0 = Infinite, N = N passes
+    let currentLoop = 1;
 
     // Dynamic 3D Lorenz state
     let lorenzState = { x: 0.1, y: 0.0, z: 0.0 };
@@ -3025,9 +3041,20 @@
       document.getElementById('statSaved').innerText = `${Math.max(0, savedPct)}%`;
 
       if (benchmarkDataset.length > 0) {
-        const pct = Math.min(100, (currentFrameIdx / benchmarkDataset.length) * 100);
-        document.getElementById('progressFill').style.width = `${pct}%`;
-        document.getElementById('frameCounter').innerText = `${currentFrameIdx} / ${benchmarkDataset.length}`;
+        if (loopCount === 0) {
+          const loopPct = ((currentFrameIdx % benchmarkDataset.length) / benchmarkDataset.length) * 100;
+          document.getElementById('progressFill').style.width = `${loopPct}%`;
+          document.getElementById('frameCounter').innerText = `${totalFrames} frames (Loop ${currentLoop} • ∞)`;
+        } else if (loopCount === 1) {
+          const pct = Math.min(100, (currentFrameIdx / benchmarkDataset.length) * 100);
+          document.getElementById('progressFill').style.width = `${pct}%`;
+          document.getElementById('frameCounter').innerText = `${currentFrameIdx} / ${benchmarkDataset.length}`;
+        } else {
+          const totalTarget = loopCount * benchmarkDataset.length;
+          const pct = Math.min(100, (totalFrames / totalTarget) * 100);
+          document.getElementById('progressFill').style.width = `${pct}%`;
+          document.getElementById('frameCounter').innerText = `${totalFrames} / ${totalTarget} (Loop ${currentLoop}/${loopCount})`;
+        }
       } else {
         document.getElementById('progressFill').style.width = '100%';
         document.getElementById('frameCounter').innerText = `${totalFrames} live`;
@@ -3146,6 +3173,7 @@
       currentPredicted = [];
       currentEntropyBits = 0;
       currentFrameIdx = 0;
+      currentLoop = 1;
       currentExplanation = [];
       lorenzState = { x: 0.1, y: 0.0, z: 0.0 };
 
@@ -3160,6 +3188,14 @@
 
       updateUI();
       draw();
+    }
+
+    function hasMoreFrames() {
+      if (currentBenchmark === "stream" || currentBenchmark === "3Dlorenz") return true;
+      if (benchmarkDataset.length === 0) return false;
+      if (currentFrameIdx < benchmarkDataset.length) return true;
+      if (loopCount === 0 || currentLoop < loopCount) return true;
+      return false;
     }
 
     function loadSelectedBenchmark() {
@@ -3207,8 +3243,13 @@
         clusterFrame(pt.x, pt.y, pt.z, skipRender);
       } else if (benchmarkDataset.length > 0) {
         if (currentFrameIdx >= benchmarkDataset.length) {
-          pauseSimulation();
-          return;
+          if (loopCount === 0 || currentLoop < loopCount) {
+            currentLoop++;
+            currentFrameIdx = 0;
+          } else {
+            pauseSimulation();
+            return;
+          }
         }
         const rawPt = benchmarkDataset[currentFrameIdx++];
         const pt = applyNoiseToPoint(rawPt.x, rawPt.y, rawPt.z || 0.0);
@@ -3217,7 +3258,26 @@
     }
 
     function runBatchInstant() {
-      while (currentFrameIdx < benchmarkDataset.length) {
+      if (currentBenchmark === "stream" || currentBenchmark === "3Dlorenz") {
+        for (let i = 0; i < 1000; i++) stepNextFrame(true);
+        updateUI();
+        draw();
+        pauseSimulation();
+        return;
+      }
+      while (hasMoreFrames()) {
+        if (currentFrameIdx >= benchmarkDataset.length) {
+          if (loopCount === 0 || currentLoop < loopCount) {
+            currentLoop++;
+            currentFrameIdx = 0;
+          } else {
+            break;
+          }
+        }
+        if (loopCount === 0 && totalFrames >= 100000) {
+          showToast("Infinite batch capped at 100,000 frames");
+          break;
+        }
         const rawPt = benchmarkDataset[currentFrameIdx++];
         const pt = applyNoiseToPoint(rawPt.x, rawPt.y, rawPt.z || 0.0);
         clusterFrame(pt.x, pt.y, pt.z || 0.0, true);
@@ -3247,7 +3307,7 @@
           if (!isRunning) return;
           const chunk = 25; // 25 frames processed per animation tick
           for (let i = 0; i < chunk; i++) {
-            if (benchmarkDataset.length > 0 && currentFrameIdx >= benchmarkDataset.length) {
+            if (!hasMoreFrames()) {
               updateUI();
               draw();
               pauseSimulation();
@@ -3266,10 +3326,11 @@
       }
 
       playTimer = setInterval(() => {
-        stepNextFrame(false);
-        if (benchmarkDataset.length > 0 && currentFrameIdx >= benchmarkDataset.length) {
+        if (!hasMoreFrames()) {
           pauseSimulation();
+          return;
         }
+        stepNextFrame(false);
       }, playSpeed);
     }
 
@@ -3623,6 +3684,14 @@
         startSimulation();
       }
     });
+
+    const selectLoop = document.getElementById('selectLoop');
+    if (selectLoop) {
+      selectLoop.addEventListener('change', (e) => {
+        loopCount = parseInt(e.target.value);
+        updateUI();
+      });
+    }
 
     document.getElementById('btnPlay').addEventListener('click', () => {
       if (isRunning) pauseSimulation();
