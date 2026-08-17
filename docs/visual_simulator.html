@@ -546,10 +546,24 @@
       align-items: center;
       justify-content: space-between;
       background: #172033;
-      padding: 5px 8px;
-      border-radius: 5px;
+      padding: 6px 9px;
+      border-radius: 6px;
       font-size: 0.78rem;
       border-left: 3px solid #64748b;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .candidate-item:hover {
+      background: #1e293b;
+      transform: translateX(2px);
+    }
+
+    .candidate-item.selected {
+      border-left-color: #facc15 !important;
+      background: rgba(250, 204, 21, 0.14) !important;
+      box-shadow: 0 0 10px rgba(250, 204, 21, 0.2);
     }
 
     .candidate-item.matched {
@@ -1240,6 +1254,30 @@
     let usePred = false;
     let useGprob = false;
     let useTiles = false;
+
+    // Interactive Selection State
+    let selectedClusterId = -1;
+    let selectedTupleKey = null;
+
+    function toggleSelectCluster(clusterId) {
+      if (selectedClusterId === clusterId) {
+        selectedClusterId = -1;
+      } else {
+        selectedClusterId = clusterId;
+      }
+      updateUI();
+      draw();
+    }
+
+    function toggleSelectTuple(tupleKey) {
+      if (selectedTupleKey === tupleKey) {
+        selectedTupleKey = null;
+      } else {
+        selectedTupleKey = tupleKey;
+      }
+      updateUI();
+      draw();
+    }
 
     // Truncated Gaussian Random Noise Generator (2D / 3D)
     function generateTruncatedGaussianNoise(dim = 3) {
@@ -2117,7 +2155,7 @@
           }
 
           // Draw Joint Tuples
-          jointTuplesMap.forEach(entry => {
+          jointTuplesMap.forEach((entry, key) => {
             const clX = tileEngineX.clusters[entry.cx];
             const clY = tileEngineY.clusters[entry.cy];
             const clZ = currentDim === 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
@@ -2135,6 +2173,51 @@
             ctx.stroke();
           });
           ctx.restore();
+        }
+
+        // Highlight Selected Joint Tuple
+        if (selectedTupleKey && jointTuplesMap.has(selectedTupleKey)) {
+          const entry = jointTuplesMap.get(selectedTupleKey);
+          const clX = tileEngineX.clusters[entry.cx];
+          const clY = tileEngineY.clusters[entry.cy];
+          const clZ = currentDim === 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
+          if (clX && clY && (currentDim === 2 || clZ)) {
+            const pr = getProjectedCoord({ x: clX.val, y: clY.val, z: clZ.val });
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, 10, 0, Math.PI * 2);
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#facc15';
+            ctx.fill();
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            const tagText = `Tuple (${entry.cx}, ${entry.cy}${currentDim === 3 ? `, ${entry.cz}` : ''}) [${entry.count} frames]`;
+            ctx.font = 'bold 11px monospace';
+            const textWidth = ctx.measureText(tagText).width;
+            const tagX = Math.min(pos.px + 12, rect.x + rect.w - textWidth - 14);
+            const tagY = Math.max(pos.py - 12, rect.y + 20);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.roundRect(tagX - 4, tagY - 12, textWidth + 8, 16, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#facc15';
+            ctx.fillText(tagText, tagX, tagY);
+            ctx.restore();
+          }
         }
       } else {
         // 4. Monolithic Mode: Cluster Spheres & Anchors
@@ -2215,6 +2298,122 @@
             ctx.stroke();
           });
           ctx.restore();
+        }
+
+        // Prominently Highlight Selected Monolithic Cluster
+        if (selectedClusterId !== -1) {
+          const selC = clusters.find(c => c.id === selectedClusterId);
+          if (selC) {
+            const pr = getProjectedCoord(selC);
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+            const rPx = rlim * scale;
+
+            ctx.save();
+            if (!is3DCustom) {
+              // Glowing receptive circle
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
+              ctx.fill();
+              ctx.strokeStyle = '#facc15';
+              ctx.lineWidth = 2.4;
+              ctx.stroke();
+
+              // Outer dashed accent ring
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rPx + 4, 0, Math.PI * 2);
+              ctx.strokeStyle = 'rgba(250, 204, 21, 0.6)';
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([4, 4]);
+              ctx.stroke();
+            } else {
+              // 3D Custom: Glowing equatorial rings & halo
+              const az = orbitCamera.azimuth, el = orbitCamera.elevation;
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(250, 204, 21, 0.12)';
+              ctx.fill();
+              ctx.strokeStyle = '#facc15';
+              ctx.lineWidth = 2.0;
+              ctx.stroke();
+
+              // Highlight XY ring
+              ctx.strokeStyle = '#facc15';
+              ctx.lineWidth = 2.2;
+              ctx.beginPath();
+              for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 12) {
+                const rx = selC.x + rlim * Math.cos(a);
+                const ry = selC.y + rlim * Math.sin(a);
+                const rz = selC.z;
+                const rp = project3D(rx, ry, rz, az, el);
+                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                else ctx.lineTo(ppos.px, ppos.py);
+              }
+              ctx.stroke();
+
+              // Highlight XZ ring
+              ctx.strokeStyle = 'rgba(250, 204, 21, 0.7)';
+              ctx.lineWidth = 1.4;
+              ctx.setLineDash([3, 3]);
+              ctx.beginPath();
+              for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 12) {
+                const rx = selC.x + rlim * Math.cos(a);
+                const ry = selC.y;
+                const rz = selC.z + rlim * Math.sin(a);
+                const rp = project3D(rx, ry, rz, az, el);
+                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                else ctx.lineTo(ppos.px, ppos.py);
+              }
+              ctx.stroke();
+            }
+
+            // Highlight Anchor Node with Target Reticle
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, 10, 0, Math.PI * 2);
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 2.0;
+            ctx.stroke();
+
+            // Crosshair tick marks
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(pos.px - 14, pos.py); ctx.lineTo(pos.px - 9, pos.py);
+            ctx.moveTo(pos.px + 9, pos.py); ctx.lineTo(pos.px + 14, pos.py);
+            ctx.moveTo(pos.px, pos.py - 14); ctx.lineTo(pos.px, pos.py - 9);
+            ctx.moveTo(pos.px, pos.py + 9); ctx.lineTo(pos.px, pos.py + 14);
+            ctx.stroke();
+
+            // Center gold core
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, 6, 0, Math.PI * 2);
+            ctx.fillStyle = '#facc15';
+            ctx.fill();
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Callout Badge with coordinates and member count
+            const tagText = `c_${selC.id} [${selC.members}f] (${selC.x.toFixed(2)}, ${selC.y.toFixed(2)}${currentDim === 3 ? `, ${selC.z.toFixed(2)}` : ''})`;
+            ctx.font = 'bold 11px monospace';
+            const textWidth = ctx.measureText(tagText).width;
+            const tagX = Math.min(pos.px + 12, rect.x + rect.w - textWidth - 14);
+            const tagY = Math.max(pos.py - 14, rect.y + 20);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.roundRect(tagX - 4, tagY - 12, textWidth + 8, 16, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#facc15';
+            ctx.fillText(tagText, tagX, tagY);
+            ctx.restore();
+          }
         }
 
         // Current Evaluated Rays
@@ -2468,16 +2667,20 @@
               currentJointTuple.cx === item.cx && 
               currentJointTuple.cy === item.cy && 
               (currentDim === 2 || currentJointTuple.cz === item.cz);
+            const isSelected = selectedTupleKey === key;
             const statusClass = isCurrent ? 'matched' : '';
             const badgeText = isCurrent ? 'ACTIVE TUPLE' : `${item.count} frames`;
 
             return `
-              <div class="candidate-item ${statusClass}">
+              <div class="candidate-item ${statusClass} ${isSelected ? 'selected' : ''}" onclick="toggleSelectTuple('${key}')">
                 <div style="display:flex; align-items:center; gap:6px;">
                   <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#c084fc;"></span>
-                  <span style="font-weight:600; color:#f8fafc;">Joint Tuple ${currentDim === 3 ? `(${item.cx}, ${item.cy}, ${item.cz})` : `(${item.cx}, ${item.cy})`}</span>
+                  <span style="font-weight:600; color:${isSelected ? '#facc15' : '#f8fafc'};">Joint Tuple ${currentDim === 3 ? `(${item.cx}, ${item.cy}, ${item.cz})` : `(${item.cx}, ${item.cy})`}</span>
                 </div>
-                <span class="badge-pill">${badgeText}</span>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  ${isSelected ? '<span class="badge-pill" style="background:#facc15; color:#0f172a; font-weight:bold;">SELECTED</span>' : ''}
+                  <span class="badge-pill">${badgeText}</span>
+                </div>
               </div>
             `;
           }).join('');
@@ -2490,6 +2693,7 @@
             const isEval = currentEvaluations.find(ev => ev.target.id === c.id);
             const isPruned = currentPruned.find(p => p.cluster.id === c.id);
             const isPred = currentPredicted.includes(c.id);
+            const isSelected = selectedClusterId === c.id;
 
             let statusClass = '';
             let badgeText = 'UNTOUCHED';
@@ -2506,13 +2710,16 @@
             }
 
             return `
-              <div class="candidate-item ${statusClass}">
+              <div class="candidate-item ${statusClass} ${isSelected ? 'selected' : ''}" onclick="toggleSelectCluster(${c.id})">
                 <div style="display:flex; align-items:center; gap:6px;">
                   <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${c.color};"></span>
-                  <span style="font-weight:600; color:#f8fafc;">Cluster c_${c.id}</span>
+                  <span style="font-weight:600; color:${isSelected ? '#facc15' : '#f8fafc'};">Cluster c_${c.id}</span>
                   <span style="color:#94a3b8; font-size:0.72rem;">(${c.members} frames)</span>
                 </div>
-                <span class="badge-pill">${badgeText}</span>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  ${isSelected ? '<span class="badge-pill" style="background:#facc15; color:#0f172a; font-weight:bold;">SELECTED</span>' : ''}
+                  <span class="badge-pill">${badgeText}</span>
+                </div>
               </div>
             `;
           }).join('');
@@ -2521,6 +2728,8 @@
     }
 
     function resetSimulation() {
+      selectedClusterId = -1;
+      selectedTupleKey = null;
       clusters = [];
       dcc = [];
       transitionCounts = [];
