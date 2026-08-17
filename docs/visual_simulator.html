@@ -579,6 +579,61 @@
       background: rgba(192, 132, 252, 0.1);
     }
 
+    .config-tab-bar {
+      display: flex;
+      background: #0f172a;
+      border-radius: 6px;
+      padding: 2px;
+      margin-bottom: 10px;
+      border: 1px solid var(--card-border);
+    }
+
+    .config-tab-btn {
+      flex: 1;
+      text-align: center;
+      padding: 5px 8px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.15s ease;
+    }
+
+    .config-tab-btn.active {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-blue);
+      font-weight: 700;
+    }
+
+    .btn-mini {
+      padding: 2px 7px;
+      font-size: 0.70rem;
+      font-weight: 600;
+      border-radius: 4px;
+      border: 1px solid var(--card-border);
+      background: #1e293b;
+      color: var(--accent-blue);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-mini:hover {
+      background: var(--accent-blue);
+      color: #0f172a;
+    }
+
+    .sub-control-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 8px;
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
     .badge-pill {
       font-size: 0.68rem;
       padding: 2px 5px;
@@ -748,58 +803,190 @@
           <span>Algorithm Configuration</span>
           <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">CLI Parity</span>
         </div>
+
+        <div class="config-tab-bar">
+          <div id="tabCfgCore" class="config-tab-btn active">🎯 Core Options</div>
+          <div id="tabCfgAdvanced" class="config-tab-btn">⚙️ Advanced Tuning</div>
+        </div>
         
-        <div class="control-row">
-          <div class="control-label">
-            <span>Radius Threshold (<span class="badge-pill">rlim</span>)</span>
-            <span id="lblRlim" class="val">0.100</span>
+        <!-- Tab 1: Core Options -->
+        <div id="cfgCorePanel">
+          <div class="control-row">
+            <div class="control-label">
+              <span>Radius Threshold (<span class="badge-pill">rlim</span>)</span>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button id="btnAutoRlim" class="btn-mini" title="Compute auto-rlim from dataset median distance (-scandist)">⚡ Auto</button>
+                <span id="lblRlim" class="val">0.100</span>
+              </div>
+            </div>
+            <input type="range" id="sliderRlim" min="0.02" max="0.30" step="0.005" value="0.100">
           </div>
-          <input type="range" id="sliderRlim" min="0.02" max="0.30" step="0.005" value="0.100">
-        </div>
 
-        <div class="control-row">
-          <div class="control-label">
-            <span>Visual Focus (Samples ⟷ Clusters)</span>
-            <span id="lblFocus" class="val">Balanced (50%)</span>
+          <div class="control-row">
+            <div class="control-label">
+              <span>Visual Focus (Samples ⟷ Clusters)</span>
+              <span id="lblFocus" class="val">Balanced (50%)</span>
+            </div>
+            <input type="range" id="sliderFocus" min="0" max="100" step="1" value="50">
           </div>
-          <input type="range" id="sliderFocus" min="0" max="100" step="1" value="50">
-        </div>
 
-        <div class="control-row">
-          <div class="control-label">
-            <span>Sample Noise (<span class="badge-pill">σ</span>)</span>
-            <span id="lblNoiseSigma" class="val">0.000 (Off)</span>
+          <div class="control-label" style="margin-top: 8px;">Target Selection Mode</div>
+          <div class="toggle-group">
+            <div id="modeGreedy" class="toggle-btn active">Greedy (argmax P)</div>
+            <div id="modeEntropy" class="toggle-btn">Entropy (-entropy)</div>
           </div>
-          <input type="range" id="sliderNoiseSigma" min="0.00" max="0.15" step="0.002" value="0.00">
-        </div>
 
-        <div class="control-row">
-          <div class="control-label">
-            <span>Noise Truncation Limit (<span class="badge-pill">trunc</span>)</span>
-            <span id="lblNoiseTrunc" class="val">0.050</span>
+          <div class="control-label">Geometric Pruning Heuristics</div>
+          <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr);">
+            <div id="prune3P" class="toggle-btn active">3-Point (3P)</div>
+            <div id="prune4P" class="toggle-btn">4-Point (-te4)</div>
+            <div id="prune5P" class="toggle-btn">5-Point (-te5)</div>
           </div>
-          <input type="range" id="sliderNoiseTrunc" min="0.01" max="0.30" step="0.005" value="0.050">
+
+          <div class="control-label">Prior &amp; Subspace Acceleration</div>
+          <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 0;">
+            <div id="optTM" class="toggle-btn" title="Transition matrix mixing (-tm)">-tm (Markov)</div>
+            <div id="optPred" class="toggle-btn" title="Pattern sequence prediction (-pred)">-pred (Predictor)</div>
+            <div id="optGprob" class="toggle-btn" title="Visitor co-measurement geometry (-gprob)">-gprob (Visitors)</div>
+            <div id="optTiles" class="toggle-btn" title="Input Subspace Partition (-tiles: 1D X/Y/Z Tiles -> Joint Tuple)">-tiles (Subspaces)</div>
+          </div>
         </div>
 
-        <div class="control-label" style="margin-top: 8px;">Target Selection Mode</div>
-        <div class="toggle-group">
-          <div id="modeGreedy" class="toggle-btn active">Greedy (argmax P)</div>
-          <div id="modeEntropy" class="toggle-btn">Entropy (-entropy)</div>
-        </div>
+        <!-- Tab 2: Advanced Tuning & CLI Parity -->
+        <div id="cfgAdvancedPanel" style="display: none; max-height: 380px; overflow-y: auto; padding-right: 2px;">
+          <!-- Cluster Budget -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+              <span>Cluster Budget &amp; Eviction (<span class="badge-pill">-maxcl</span>)</span>
+            </div>
+            <div class="control-row">
+              <div class="control-label">
+                <span>Max Clusters (<span class="badge-pill">maxcl</span>)</span>
+                <span id="lblMaxcl" class="val">Unlimited (0)</span>
+              </div>
+              <input type="range" id="sliderMaxcl" min="0" max="40" step="1" value="0">
+            </div>
 
-        <div class="control-label">Geometric Pruning Heuristics</div>
-        <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr);">
-          <div id="prune3P" class="toggle-btn active">3-Point (3P)</div>
-          <div id="prune4P" class="toggle-btn">4-Point (-te4)</div>
-          <div id="prune5P" class="toggle-btn">5-Point (-te5)</div>
-        </div>
+            <div class="control-label" style="font-size: 0.72rem;">Eviction Strategy (-maxcl_strategy)</div>
+            <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 4px;">
+              <div id="stratStop" class="toggle-btn active" title="Refuse new clusters when budget reached">stop</div>
+              <div id="stratDiscard" class="toggle-btn" title="Evict least active / lowest frequency cluster">discard</div>
+              <div id="stratMerge" class="toggle-btn" title="Merge two closest cluster nodes">merge</div>
+            </div>
 
-        <div class="control-label">Advanced Prior &amp; Acceleration Options</div>
-        <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 0;">
-          <div id="optTM" class="toggle-btn" title="Transition matrix mixing (-tm 0.5)">-tm (Markov)</div>
-          <div id="optPred" class="toggle-btn" title="Pattern sequence prediction (-pred)">-pred (Predictor)</div>
-          <div id="optGprob" class="toggle-btn" title="Visitor co-measurement geometry (-gprob)">-gprob (Visitors)</div>
-          <div id="optTiles" class="toggle-btn" title="Input Subspace Partition (-tiles: 1D X/Y/Z Tiles -> Joint Tuple)">-tiles (1D Subspaces)</div>
+            <div class="control-row" id="rowDiscardFrac" style="display: none;">
+              <div class="control-label">
+                <span>Discard Fraction (<span class="badge-pill">-discard_frac</span>)</span>
+                <span id="lblDiscardFrac" class="val">0.10</span>
+              </div>
+              <input type="range" id="sliderDiscardFrac" min="0.05" max="0.30" step="0.05" value="0.10">
+            </div>
+          </div>
+
+          <!-- Prior Parameters -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
+              <span>Prior &amp; Acceleration Tuning</span>
+            </div>
+            <div class="control-row">
+              <div class="control-label">
+                <span>Markov Mixing Coeff (<span class="badge-pill">-tm</span>)</span>
+                <span id="lblTmMix" class="val">0.50</span>
+              </div>
+              <input type="range" id="sliderTmMix" min="0.00" max="1.00" step="0.05" value="0.50">
+            </div>
+
+            <div class="control-row">
+              <div class="control-label">
+                <span>Predictor Horizon (<span class="badge-pill">-pred [N]</span>)</span>
+                <span id="lblPredHorizon" class="val">2 frames</span>
+              </div>
+              <input type="range" id="sliderPredHorizon" min="1" max="5" step="1" value="2">
+            </div>
+
+            <div class="control-row">
+              <div class="control-label">
+                <span>Visitor History Depth (<span class="badge-pill">-maxvis</span>)</span>
+                <span id="lblMaxVis" class="val">20 frames</span>
+              </div>
+              <input type="range" id="sliderMaxVis" min="5" max="50" step="5" value="20">
+            </div>
+          </div>
+
+          <!-- Entropy & Bayesian -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+              <span>Entropy &amp; Bayesian Likelihood</span>
+            </div>
+            <div class="control-row">
+              <div class="control-label">
+                <span>Entropy First Gate (<span class="badge-pill">-entropy_first_gate</span>)</span>
+                <span id="lblEntropyFirstGate" class="val">3.00 bits</span>
+              </div>
+              <input type="range" id="sliderEntropyFirstGate" min="1.0" max="5.0" step="0.25" value="3.00">
+            </div>
+
+            <div class="control-row">
+              <div class="control-label">
+                <span>Entropy Refine Gate (<span class="badge-pill">-entropy_gate</span>)</span>
+                <span id="lblEntropyGate" class="val">1.50 bits</span>
+              </div>
+              <input type="range" id="sliderEntropyGate" min="0.5" max="3.0" step="0.25" value="1.50">
+            </div>
+
+            <div style="display:flex; gap:6px; margin-top:4px;">
+              <div id="optEntropyFast" class="toggle-btn" style="flex:1;" title="Fast top-candidate entropy approximation (-entropy_fast)">-entropy_fast</div>
+              <div id="optSoftBayesian" class="toggle-btn" style="flex:1;" title="Continuous Gaussian likelihood decay on mismatch (-soft_bayesian)">-soft_bayesian</div>
+            </div>
+
+            <div class="control-row" id="rowBayesSigma" style="display: none; margin-top: 4px;">
+              <div class="control-label">
+                <span>Bayes Sigma (<span class="badge-pill">-soft_bayesian_sigma</span>)</span>
+                <span id="lblBayesSigma" class="val">1.0 × rlim</span>
+              </div>
+              <input type="range" id="sliderBayesSigma" min="0.5" max="3.0" step="0.1" value="1.0">
+            </div>
+          </div>
+
+          <!-- Cross-Tile Subspace Prior -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: #c084fc;">
+              <span>Subspace &amp; Cross-Tile Priors</span>
+            </div>
+            <div class="toggle-group" style="grid-template-columns: 1fr; margin-bottom: 4px;">
+              <div id="optXTile" class="toggle-btn" title="Cross-tile joint tuple prior transfer (-xtile 2)">-xtile (Cross-Tile Prior Sharing)</div>
+            </div>
+
+            <div class="control-row" id="rowXTileDecay" style="display: none;">
+              <div class="control-label">
+                <span>Cross-Tile Decay (<span class="badge-pill">-xtile_decay</span>)</span>
+                <span id="lblXTileDecay" class="val">0.70</span>
+              </div>
+              <input type="range" id="sliderXTileDecay" min="0.10" max="1.00" step="0.05" value="0.70">
+            </div>
+          </div>
+
+          <!-- Sample Noise -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: #f87171;">
+              <span>Sample Truncated Gaussian Noise</span>
+            </div>
+            <div class="control-row">
+              <div class="control-label">
+                <span>Noise Amplitude (<span class="badge-pill">σ</span>)</span>
+                <span id="lblNoiseSigma" class="val">0.000 (Off)</span>
+              </div>
+              <input type="range" id="sliderNoiseSigma" min="0.00" max="0.15" step="0.002" value="0.00">
+            </div>
+
+            <div class="control-row">
+              <div class="control-label">
+                <span>Truncation Cutoff (<span class="badge-pill">trunc</span>)</span>
+                <span id="lblNoiseTrunc" class="val">0.050</span>
+              </div>
+              <input type="range" id="sliderNoiseTrunc" min="0.01" max="0.30" step="0.005" value="0.050">
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1132,7 +1319,19 @@
 
         const order = [];
         for (let i = 0; i < K; i++) order.push(i);
-        order.sort((a, b) => (this.clusters[b].prob || 1.0) - (this.clusters[a].prob || 1.0));
+        order.sort((a, b) => {
+          let probA = this.clusters[a].prob || 1.0;
+          let probB = this.clusters[b].prob || 1.0;
+          if (useXTile && currentJointTuple) {
+            const keyA = this.axisName === 'X' ? `${a}_${currentJointTuple.cy}` : `${currentJointTuple.cx}_${a}`;
+            const keyB = this.axisName === 'X' ? `${b}_${currentJointTuple.cy}` : `${currentJointTuple.cx}_${b}`;
+            const cntA = jointTuplesMap.has(keyA) ? jointTuplesMap.get(keyA).count : 0;
+            const cntB = jointTuplesMap.has(keyB) ? jointTuplesMap.get(keyB).count : 0;
+            probA += cntA * xtileDecay;
+            probB += cntB * xtileDecay;
+          }
+          return probB - probA;
+        });
 
         for (let target of order) {
           if (!clmembflag[target]) continue;
@@ -1250,10 +1449,34 @@
     let noiseTruncLimit = 0.050; // Truncation radius limit
     let targetMode = 'greedy';
     let pruneMode = '3P';
+
+    // Prior Acceleration Options
     let useTM = false;
+    let tmMixingCoeff = 0.50; // -tm <val> (0.00 to 1.00)
     let usePred = false;
+    let predHorizon = 2; // -pred [L,H,N] (1 to 5)
     let useGprob = false;
-    let useTiles = false;
+    let maxVisitors = 20; // -maxvis <int> (5 to 50)
+    let fmatchA = 1.0, fmatchB = 2.0;
+
+    // Subspace Partitioning
+    let useTiles = false; // -tiles
+    let useXTile = false; // -xtile
+    let xtileDecay = 0.70; // -xtile_decay (0.1 to 1.0)
+
+    // Cluster Capacity & Eviction Policy
+    let maxcl = 0; // -maxcl <int> (0 = Unlimited)
+    let maxclStrategy = 'stop'; // -maxcl_strategy (stop, discard, merge)
+    let discardFraction = 0.10; // -discard_frac
+
+    // Entropy Advanced Gating
+    let entropyFirstGate = 3.00; // -entropy_first_gate (bits)
+    let entropyGate = 1.50; // -entropy_gate (bits)
+    let entropyFastMode = false; // -entropy_fast
+
+    // Soft Bayesian Mode
+    let useSoftBayesian = false; // -soft_bayesian
+    let softBayesianSigmaCoeff = 1.0; // -soft_bayesian_sigma (multiplier of rlim)
 
     // Interactive Selection State
     let selectedClusterId = -1;
@@ -1276,6 +1499,37 @@
         selectedTupleKey = tupleKey;
       }
       updateUI();
+      draw();
+    }
+
+    // Auto-rlim Computation (-scandist parity)
+    function computeAutoRlim() {
+      let pts = benchmarkDataset;
+      if (!pts || pts.length === 0) {
+        if (currentBenchmark === "stream" || currentBenchmark === "3Dlorenz") {
+          pts = generateBenchmark(currentBenchmark === "3Dlorenz" ? "3Dspiral" : "2Dspiral", 250);
+        } else {
+          pts = generateBenchmark(currentBenchmark, 250);
+        }
+      }
+      const N = Math.min(pts.length, 300);
+      const dists = [];
+      for (let i = 0; i < N; i += 2) {
+        for (let j = i + 1; j < N; j += 2) {
+          const dx = pts[i].x - pts[j].x;
+          const dy = pts[i].y - pts[j].y;
+          const dz = currentDim === 3 ? (pts[i].z - pts[j].z) : 0;
+          dists.push(Math.sqrt(dx*dx + dy*dy + dz*dz));
+        }
+      }
+      if (dists.length === 0) return;
+      dists.sort((a, b) => a - b);
+      const median = dists[Math.floor(dists.length * 0.5)];
+      const autoR = Math.max(0.02, Math.min(0.28, median * 0.35));
+      rlim = parseFloat(autoR.toFixed(3));
+      document.getElementById('sliderRlim').value = rlim;
+      document.getElementById('lblRlim').innerText = rlim.toFixed(3);
+      showToast(`⚡ Auto-rlim (-scandist): Median=${median.toFixed(3)} ➔ rlim=${rlim.toFixed(3)}`);
       draw();
     }
 
@@ -1535,8 +1789,10 @@
             }
           }
           if (matched) {
-            const nextCl = assignmentHistory[i + predLen];
-            if (nextCl >= 0 && nextCl < K) matchCounts[nextCl]++;
+            for (let h = 1; h <= predHorizon; h++) {
+              const nextCl = assignmentHistory[i + predLen + h - 1];
+              if (nextCl >= 0 && nextCl < K) matchCounts[nextCl] += (predHorizon - h + 1);
+            }
           }
         }
 
@@ -1547,7 +1803,7 @@
           }
         }
         candList.sort((a, b) => b.count - a.count);
-        predCandidates = candList.map(c => c.id).slice(0, 2);
+        predCandidates = candList.map(c => c.id).slice(0, Math.min(3, predHorizon + 1));
       }
 
       // Step 3a: Prior Probability Calculation
@@ -1557,12 +1813,12 @@
       const pBase = new Array(K).fill(0);
       for (let i = 0; i < K; i++) pBase[i] = (clusters[i].prob || 1.0) / sumProb;
 
-      // Transition matrix mixing (-tm)
+      // Transition matrix mixing (-tm <val>)
       if (useTM && prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
         let tSum = 0;
         for (let i = 0; i < K; i++) tSum += transitionCounts[prevAssignedCluster][i] || 0;
         if (tSum > 0) {
-          const alpha = 0.5;
+          const alpha = tmMixingCoeff;
           for (let i = 0; i < K; i++) {
             const pTrans = (transitionCounts[prevAssignedCluster][i] || 0) / tSum;
             pBase[i] = (1.0 - alpha) * pBase[i] + alpha * pTrans;
@@ -1630,13 +1886,21 @@
 
         // Entropy or Greedy Selection
         if (chosenTarget === -1) {
-          if (targetMode === 'entropy' && H > (measDepth === 0 ? 3.0 : 1.5)) {
+          const currentGate = (measDepth === 0) ? entropyFirstGate : entropyGate;
+          if (targetMode === 'entropy' && H > currentGate) {
             let minExpectedH = 1e9;
             let bestCi = -1;
 
+            const candidateIndices = [];
             for (let i = 0; i < K; i++) {
-              if (!clmembflag[i]) continue;
+              if (clmembflag[i]) candidateIndices.push(i);
+            }
+            if (entropyFastMode && candidateIndices.length > 6) {
+              candidateIndices.sort((a, b) => pCurrent[b] - pCurrent[a]);
+              candidateIndices.length = 6;
+            }
 
+            for (let i of candidateIndices) {
               const pMatch = pCurrent[i];
               if (pMatch > 0.5) {
                 bestCi = i;
@@ -1671,7 +1935,7 @@
               }
             }
             chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag);
-            selectionReason = `Shannon entropy minimization (E[H]=${minExpectedH.toFixed(2)} bits)`;
+            selectionReason = `Shannon entropy minimization (E[H]=${minExpectedH.toFixed(2)} bits, gate=${currentGate.toFixed(1)})`;
           } else {
             chosenTarget = getArgMaxP(pCurrent, clmembflag);
             selectionReason = `highest active prior probability P=${(pCurrent[chosenTarget] || 0).toFixed(3)}`;
@@ -1716,6 +1980,20 @@
         });
 
         clmembflag[chosenTarget] = false;
+
+        // Soft Bayesian continuous likelihood decay (-soft_bayesian)
+        if (useSoftBayesian) {
+          const sigmaBayes = softBayesianSigmaCoeff * rlim;
+          for (let cl = 0; cl < K; cl++) {
+            if (!clmembflag[cl]) continue;
+            const d_cc = dcc[chosenTarget][cl];
+            const dr = Math.abs(dfc - d_cc);
+            if (dr > rlim) {
+              const decay = Math.exp(-((dr - rlim) ** 2) / (2.0 * sigmaBayes * sigmaBayes));
+              pCurrent[cl] *= decay;
+            }
+          }
+        }
 
         // 1. Triangle Inequality (3-Point Pruning)
         const before3P = countActive(clmembflag);
@@ -1806,9 +2084,10 @@
           }
         }
 
-        // 4. Geometric Probabilities (-gprob)
+        // 4. Geometric Probabilities (-gprob, -maxvis)
         if (useGprob) {
-          for (let f = 0; f < frameHistory.length; f++) {
+          const startF = Math.max(0, frameHistory.length - maxVisitors);
+          for (let f = startF; f < frameHistory.length; f++) {
             const fh = frameHistory[f];
             const dIdx = fh.indices.indexOf(chosenTarget);
             if (dIdx !== -1 && clmembflag[fh.assignment]) {
@@ -1822,42 +2101,121 @@
 
       totalEvals += evalsThisFrame;
 
-      // Handle New Cluster Creation
+      // Handle New Cluster Creation & Eviction (-maxcl, -maxcl_strategy)
       if (assignedCluster === -1) {
-        assignedCluster = clusters.length;
-        const newAnchor = {
-          id: assignedCluster,
-          x, y, z,
-          members: 1,
-          prob: 1.0,
-          lastActive: totalFrames,
-          color: getClusterColor(assignedCluster)
-        };
+        if (maxcl > 0 && clusters.length >= maxcl) {
+          if (maxclStrategy === 'stop') {
+            logExplainStep({
+              type: 'mismatch',
+              title: '🛑 Max Clusters Limit Reached (-maxcl stop)',
+              text: `Cluster budget (${maxcl}) reached. Frame at ${coordStr} cannot form a new cluster and remains unassigned.`
+            });
+          } else if (maxclStrategy === 'discard') {
+            let victimIdx = 0;
+            let minMembers = Infinity;
+            for (let i = 0; i < clusters.length; i++) {
+              if (clusters[i].members < minMembers) {
+                minMembers = clusters[i].members;
+                victimIdx = i;
+              }
+            }
+            logExplainStep({
+              type: 'mismatch',
+              title: '♻️ Cluster Eviction (-maxcl discard)',
+              text: `Cluster budget (${maxcl}) reached. Evicted lowest-frequency cluster c_${clusters[victimIdx].id} (${minMembers} frames) to allocate new anchor.`
+            });
+            clusters[victimIdx] = {
+              id: clusters[victimIdx].id,
+              x, y, z,
+              members: 1,
+              prob: 1.0,
+              lastActive: totalFrames,
+              color: getClusterColor(clusters[victimIdx].id)
+            };
+            for (let i = 0; i < clusters.length; i++) {
+              if (i === victimIdx) {
+                dcc[victimIdx][i] = 0.0;
+              } else {
+                const cO = clusters[i];
+                const d = Math.sqrt((x - cO.x)**2 + (y - cO.y)**2 + (z - cO.z)**2);
+                dcc[victimIdx][i] = d;
+                dcc[i][victimIdx] = d;
+              }
+            }
+            assignedCluster = victimIdx;
+          } else if (maxclStrategy === 'merge') {
+            let minD = Infinity, mergeI = 0, mergeJ = 1;
+            for (let i = 0; i < clusters.length; i++) {
+              for (let j = i + 1; j < clusters.length; j++) {
+                if (dcc[i][j] < minD) {
+                  minD = dcc[i][j];
+                  mergeI = i;
+                  mergeJ = j;
+                }
+              }
+            }
+            logExplainStep({
+              type: 'mismatch',
+              title: '🤝 Cluster Merge (-maxcl merge)',
+              text: `Cluster budget (${maxcl}) reached. Merged closest pair (c_${clusters[mergeI].id}, c_${clusters[mergeJ].id}, d=${minD.toFixed(3)}) and reused slot.`
+            });
+            clusters[mergeI].members += clusters[mergeJ].members;
+            clusters[mergeJ] = {
+              id: clusters[mergeJ].id,
+              x, y, z,
+              members: 1,
+              prob: 1.0,
+              lastActive: totalFrames,
+              color: getClusterColor(clusters[mergeJ].id)
+            };
+            for (let i = 0; i < clusters.length; i++) {
+              if (i === mergeJ) {
+                dcc[mergeJ][i] = 0.0;
+              } else {
+                const cO = clusters[i];
+                const d = Math.sqrt((x - cO.x)**2 + (y - cO.y)**2 + (z - cO.z)**2);
+                dcc[mergeJ][i] = d;
+                dcc[i][mergeJ] = d;
+              }
+            }
+            assignedCluster = mergeJ;
+          }
+        } else {
+          assignedCluster = clusters.length;
+          const newAnchor = {
+            id: assignedCluster,
+            x, y, z,
+            members: 1,
+            prob: 1.0,
+            lastActive: totalFrames,
+            color: getClusterColor(assignedCluster)
+          };
 
-        const newDccRow = [];
-        for (let i = 0; i < clusters.length; i++) {
-          const cOther = clusters[i];
-          const d_inter = Math.sqrt(
-            (x - cOther.x) ** 2 +
-            (y - cOther.y) ** 2 +
-            (z - cOther.z) ** 2
-          );
-          dcc[i].push(d_inter);
-          newDccRow.push(d_inter);
+          const newDccRow = [];
+          for (let i = 0; i < clusters.length; i++) {
+            const cOther = clusters[i];
+            const d_inter = Math.sqrt(
+              (x - cOther.x) ** 2 +
+              (y - cOther.y) ** 2 +
+              (z - cOther.z) ** 2
+            );
+            dcc[i].push(d_inter);
+            newDccRow.push(d_inter);
+          }
+          newDccRow.push(0.0);
+          dcc.push(newDccRow);
+
+          for (let i = 0; i < clusters.length; i++) transitionCounts[i].push(0);
+          transitionCounts.push(new Array(clusters.length + 1).fill(0));
+
+          clusters.push(newAnchor);
+
+          logExplainStep({
+            type: 'new-cluster',
+            title: `✨ New Cluster Created: c_${assignedCluster}`,
+            text: `Frame fell outside all ${K} candidates (distance > rlim). Spawned new anchor c_${assignedCluster} at ${coordStr} and computed ${K} inter-cluster distances.`
+          });
         }
-        newDccRow.push(0.0);
-        dcc.push(newDccRow);
-
-        for (let i = 0; i < clusters.length; i++) transitionCounts[i].push(0);
-        transitionCounts.push(new Array(clusters.length + 1).fill(0));
-
-        clusters.push(newAnchor);
-
-        logExplainStep({
-          type: 'new-cluster',
-          title: `✨ New Cluster Created: c_${assignedCluster}`,
-          text: `Frame fell outside all ${K} candidates (distance > rlim). Spawned new anchor c_${assignedCluster} at ${coordStr} and computed ${K} inter-cluster distances.`
-        });
       }
 
       if (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
@@ -3310,6 +3668,108 @@
       }
       updateUI();
       draw();
+    });
+
+    // Configuration Tab Switching
+    document.getElementById('tabCfgCore').addEventListener('click', () => {
+      document.getElementById('tabCfgCore').classList.add('active');
+      document.getElementById('tabCfgAdvanced').classList.remove('active');
+      document.getElementById('cfgCorePanel').style.display = 'block';
+      document.getElementById('cfgAdvancedPanel').style.display = 'none';
+    });
+
+    document.getElementById('tabCfgAdvanced').addEventListener('click', () => {
+      document.getElementById('tabCfgAdvanced').classList.add('active');
+      document.getElementById('tabCfgCore').classList.remove('active');
+      document.getElementById('cfgCorePanel').style.display = 'none';
+      document.getElementById('cfgAdvancedPanel').style.display = 'block';
+    });
+
+    // Auto-rlim (-scandist)
+    document.getElementById('btnAutoRlim').addEventListener('click', computeAutoRlim);
+
+    // Max Clusters & Eviction Policy (-maxcl)
+    const sliderMaxcl = document.getElementById('sliderMaxcl');
+    sliderMaxcl.addEventListener('input', (e) => {
+      maxcl = parseInt(e.target.value);
+      document.getElementById('lblMaxcl').innerText = maxcl === 0 ? "Unlimited (0)" : `${maxcl} clusters`;
+    });
+
+    ['stratStop', 'stratDiscard', 'stratMerge'].forEach(id => {
+      document.getElementById(id).addEventListener('click', () => {
+        ['stratStop', 'stratDiscard', 'stratMerge'].forEach(other => document.getElementById(other).classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        maxclStrategy = id.replace('strat', '').toLowerCase();
+        document.getElementById('rowDiscardFrac').style.display = (maxclStrategy === 'discard') ? 'flex' : 'none';
+      });
+    });
+
+    const sliderDiscardFrac = document.getElementById('sliderDiscardFrac');
+    sliderDiscardFrac.addEventListener('input', (e) => {
+      discardFraction = parseFloat(e.target.value);
+      document.getElementById('lblDiscardFrac').innerText = discardFraction.toFixed(2);
+    });
+
+    // Prior & Acceleration Tuning (-tm, -pred, -maxvis)
+    const sliderTmMix = document.getElementById('sliderTmMix');
+    sliderTmMix.addEventListener('input', (e) => {
+      tmMixingCoeff = parseFloat(e.target.value);
+      document.getElementById('lblTmMix').innerText = tmMixingCoeff.toFixed(2);
+    });
+
+    const sliderPredHorizon = document.getElementById('sliderPredHorizon');
+    sliderPredHorizon.addEventListener('input', (e) => {
+      predHorizon = parseInt(e.target.value);
+      document.getElementById('lblPredHorizon').innerText = `${predHorizon} frames`;
+    });
+
+    const sliderMaxVis = document.getElementById('sliderMaxVis');
+    sliderMaxVis.addEventListener('input', (e) => {
+      maxVisitors = parseInt(e.target.value);
+      document.getElementById('lblMaxVis').innerText = `${maxVisitors} frames`;
+    });
+
+    // Entropy & Soft Bayesian Likelihood (-entropy_first_gate, -entropy_gate, -entropy_fast, -soft_bayesian)
+    const sliderEntropyFirstGate = document.getElementById('sliderEntropyFirstGate');
+    sliderEntropyFirstGate.addEventListener('input', (e) => {
+      entropyFirstGate = parseFloat(e.target.value);
+      document.getElementById('lblEntropyFirstGate').innerText = `${entropyFirstGate.toFixed(2)} bits`;
+    });
+
+    const sliderEntropyGate = document.getElementById('sliderEntropyGate');
+    sliderEntropyGate.addEventListener('input', (e) => {
+      entropyGate = parseFloat(e.target.value);
+      document.getElementById('lblEntropyGate').innerText = `${entropyGate.toFixed(2)} bits`;
+    });
+
+    document.getElementById('optEntropyFast').addEventListener('click', () => {
+      entropyFastMode = !entropyFastMode;
+      document.getElementById('optEntropyFast').classList.toggle('active', entropyFastMode);
+    });
+
+    document.getElementById('optSoftBayesian').addEventListener('click', () => {
+      useSoftBayesian = !useSoftBayesian;
+      document.getElementById('optSoftBayesian').classList.toggle('active', useSoftBayesian);
+      document.getElementById('rowBayesSigma').style.display = useSoftBayesian ? 'flex' : 'none';
+    });
+
+    const sliderBayesSigma = document.getElementById('sliderBayesSigma');
+    sliderBayesSigma.addEventListener('input', (e) => {
+      softBayesianSigmaCoeff = parseFloat(e.target.value);
+      document.getElementById('lblBayesSigma').innerText = `${softBayesianSigmaCoeff.toFixed(1)} × rlim`;
+    });
+
+    // Cross-Tile Subspace Prior Transfer (-xtile, -xtile_decay)
+    document.getElementById('optXTile').addEventListener('click', () => {
+      useXTile = !useXTile;
+      document.getElementById('optXTile').classList.toggle('active', useXTile);
+      document.getElementById('rowXTileDecay').style.display = useXTile ? 'flex' : 'none';
+    });
+
+    const sliderXTileDecay = document.getElementById('sliderXTileDecay');
+    sliderXTileDecay.addEventListener('input', (e) => {
+      xtileDecay = parseFloat(e.target.value);
+      document.getElementById('lblXTileDecay').innerText = xtileDecay.toFixed(2);
     });
 
     // Initial Startup
