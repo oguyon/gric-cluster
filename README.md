@@ -15,7 +15,7 @@
 
 Experience GRIC through our narrated HD explainer video or explore algorithms in real-time in your browser:
 
-- 🌐 **[Launch Interactive 2D Simulator](https://oguyon.github.io/gric-cluster/visual_simulator.html)**
+- 🌐 **[Launch Interactive 2D & 3D Simulator](https://oguyon.github.io/gric-cluster/visual_simulator.html)**
 - 📖 **[Read Full MkDocs Documentation](https://oguyon.github.io/gric-cluster/)**
 - 📐 **[Visual Architecture & Algorithm Guide](https://oguyon.github.io/gric-cluster/algorithm/visual_guide/)**
 - 🎥 **[Download / Watch Full Narrated HD Video (MP4)](docs/figures/gric_explainer.mp4)**

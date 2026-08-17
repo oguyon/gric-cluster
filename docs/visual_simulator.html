@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GRIC Interactive Algorithm Visualizer &amp; Simulator</title>
+  <title>GRIC Interactive Algorithm Visualizer &amp; Simulator (2D &amp; 3D)</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -67,6 +67,17 @@
       letter-spacing: 0.5px;
     }
 
+    h1 span.dim-badge {
+      font-size: 0.72rem;
+      padding: 3px 8px;
+      border-radius: 20px;
+      background: #7c3aed;
+      color: #ffffff;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
     p.subtitle {
       color: var(--text-muted);
       font-size: 0.86rem;
@@ -81,7 +92,7 @@
       min-height: calc(100vh - 110px);
     }
 
-    @media (max-width: 1100px) {
+    @media (max-width: 1150px) {
       .main-layout {
         grid-template-columns: 1fr;
         min-height: auto;
@@ -97,7 +108,7 @@
       overflow: hidden;
       position: relative;
       height: 100%;
-      min-height: 520px;
+      min-height: 540px;
     }
 
     .canvas-toolbar {
@@ -189,6 +200,18 @@
       border-color: var(--accent-blue);
     }
 
+    optgroup {
+      background: #0f172a;
+      color: #38bdf8;
+      font-weight: 700;
+    }
+
+    option {
+      background: #1e293b;
+      color: #f8fafc;
+      font-weight: normal;
+    }
+
     .benchmark-info {
       padding: 8px 14px;
       background: rgba(15, 23, 42, 0.6);
@@ -216,13 +239,19 @@
       transition: width 0.05s ease;
     }
 
-    canvas {
+    .canvas-wrapper {
+      position: relative;
       flex: 1;
       width: 100%;
-      height: 520px;
+      min-height: 520px;
       background: #0b1120;
-      cursor: grab;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
       display: block;
+      cursor: default;
     }
 
     canvas.crosshair {
@@ -231,6 +260,62 @@
 
     canvas.grabbing {
       cursor: grabbing !important;
+    }
+
+    canvas.orbit-cursor {
+      cursor: grab !important;
+    }
+
+    .toast-overlay {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid var(--accent-blue);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      color: #f8fafc;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-family: monospace;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      z-index: 20;
+    }
+
+    .toast-overlay.show {
+      opacity: 1;
+    }
+
+    .view-preset-bar {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      gap: 4px;
+      background: rgba(15, 23, 42, 0.85);
+      padding: 4px 6px;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+      z-index: 10;
+      backdrop-filter: blur(4px);
+    }
+
+    .preset-btn {
+      background: #334155;
+      color: #cbd5e1;
+      border: none;
+      padding: 3px 7px;
+      font-size: 0.72rem;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .preset-btn:hover {
+      background: #475569;
+      color: #ffffff;
     }
 
     .side-panel {
@@ -512,7 +597,7 @@
     .dropzone-overlay {
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(15, 23, 42, 0.85);
+      background: rgba(15, 23, 42, 0.88);
       border: 2px dashed var(--accent-blue);
       border-radius: 12px;
       display: none;
@@ -521,7 +606,7 @@
       font-size: 1.1rem;
       font-weight: 600;
       color: var(--accent-blue);
-      z-index: 10;
+      z-index: 30;
       pointer-events: none;
     }
   </style>
@@ -530,8 +615,12 @@
 
   <header>
     <div>
-      <h1>GRIC Interactive Algorithm Simulator <span class="badge">Exact C-Match</span></h1>
-      <p class="subtitle">Live 2D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, and input-subspace tiling</p>
+      <h1>
+        GRIC Interactive Algorithm Simulator
+        <span class="badge">Exact C-Match</span>
+        <span id="dimBadge" class="dim-badge">2D Mode</span>
+      </h1>
+      <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div>
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
@@ -541,20 +630,34 @@
   <div class="main-layout">
     <!-- Left: Canvas Area -->
     <div class="canvas-container" id="canvasBox">
-      <div id="dropzone" class="dropzone-overlay">Drop 2D Coordinate File (.txt, .csv, .dat) Here</div>
+      <div id="dropzone" class="dropzone-overlay">Drop 2D/3D Coordinate File (.txt, .csv, .dat) Here</div>
       
       <div class="canvas-toolbar">
         <div class="toolbar-row">
-          <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Benchmark / Dataset:</label>
+          <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Dataset:</label>
           <select id="selectBenchmark">
-            <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
-            <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
-            <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
-            <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
-            <option value="2Drand">2Drand — 2D Uniform Random</option>
-            <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
-            <option value="stream">Dynamic Continuous Orbit (Lissajous)</option>
-            <option value="custom">📁 Upload Custom Dataset (.txt / .csv)...</option>
+            <optgroup label="2D Benchmark Datasets">
+              <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
+              <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
+              <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
+              <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
+              <option value="2Drand">2Drand — 2D Uniform Random</option>
+              <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
+              <option value="stream">Dynamic 2D Continuous Orbit (Lissajous)</option>
+            </optgroup>
+            <optgroup label="3D Benchmark Datasets (Quad-Split View)">
+              <option value="3Dspiral" selected>3Dspiral — 3D Helical/Conical Spiral</option>
+              <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
+              <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
+              <option value="3Dtorus">3Dtorus — 3D Torus Manifold Knot</option>
+              <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
+              <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
+              <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
+              <option value="3Dlorenz">Dynamic 3D Lorenz Attractor (Chaotic Stream)</option>
+            </optgroup>
+            <optgroup label="Custom Dataset">
+              <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
+            </optgroup>
           </select>
           <input type="file" id="fileUpload" accept=".txt,.csv,.dat" style="display: none;">
           <button id="btnUpload" class="secondary" title="Upload custom coordinate file">📁 Upload</button>
@@ -573,7 +676,7 @@
       </div>
 
       <div class="benchmark-info">
-        <div id="benchmarkDesc"><b>2Dspiral</b>: 1,000 continuous samples tracing an Archimedean spiral. Tests sequential recency prior.</div>
+        <div id="benchmarkDesc"><b>3Dspiral</b>: 1,000 continuous 3D samples on a rotating helical manifold. Shows quad-split X/Y/Z projections &amp; custom 3D drag rotation.</div>
         <div style="display: flex; gap: 12px; align-items: center;">
           <span style="display:flex; align-items:center; gap:4px;">
             <span>Zoom:</span>
@@ -594,18 +697,31 @@
         <div id="progressFill" class="progress-bar-fill"></div>
       </div>
 
-      <canvas id="simCanvas" width="800" height="520"></canvas>
+      <div class="canvas-wrapper" id="canvasWrapper">
+        <div id="toastFeedback" class="toast-overlay">Point Injected: (0.000, 0.000, 0.000)</div>
+        
+        <!-- 3D Camera Quick Presets (Visible in 3D Mode) -->
+        <div id="viewPresetBar" class="view-preset-bar" style="display: flex;">
+          <button class="preset-btn" id="presetIso" title="Isometric Perspective (θ=-35°, φ=25°)">Isometric</button>
+          <button class="preset-btn" id="presetFront" title="Front Projection (θ=0°, φ=0°)">Front</button>
+          <button class="preset-btn" id="presetTop" title="Top Projection (θ=0°, φ=89°)">Top</button>
+          <button class="preset-btn" id="presetSide" title="Side Projection (θ=90°, φ=0°)">Side</button>
+          <button class="preset-btn" id="presetReset3D" title="Reset 3D Orbit Camera">↺ Reset 3D</button>
+        </div>
+
+        <canvas id="simCanvas" width="800" height="520"></canvas>
+      </div>
 
       <div style="padding: 8px 14px; background: #172033; border-top: 1px solid var(--card-border);">
         <div class="legend">
           <div class="legend-item"><div class="legend-dot" style="background: rgba(148, 163, 184, 0.6);"></div> Past Samples Point Cloud</div>
           <div class="legend-item"><div class="legend-dot" style="background: #38bdf8;"></div> Anchor Node</div>
-          <div class="legend-item"><div class="legend-dot" style="background: rgba(56, 189, 248, 0.2); border: 1px dashed #38bdf8;"></div> rlim Receptive Field</div>
+          <div class="legend-item"><div class="legend-dot" style="background: rgba(56, 189, 248, 0.2); border: 1px dashed #38bdf8;"></div> rlim Receptive Sphere/Circle</div>
           <div class="legend-item"><div class="legend-dot" style="background: #facc15;"></div> Current Frame fi</div>
           <div class="legend-item"><div class="legend-dot" style="background: #4ade80;"></div> Evaluated Match</div>
           <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div> Evaluated Mismatch</div>
           <div class="legend-item"><div class="legend-dot" style="background: #f87171; border: 1px solid #ffffff;"></div> Pruned (3P/4P/5P)</div>
-          <div class="legend-item" style="margin-left: auto; color: #64748b;">[Drag: Pan &bull; Scroll: Zoom &bull; ＋ Add Point: Inject]</div>
+          <div class="legend-item" style="margin-left: auto; color: #64748b;" id="legendHint">[3D Mode: Drag Quad 4 to Rotate • Drag Quads 1-3 to Pan • ⛶ to Maximize]</div>
         </div>
       </div>
     </div>
@@ -645,7 +761,7 @@
           <div id="optTM" class="toggle-btn" title="Transition matrix mixing (-tm 0.5)">-tm (Markov)</div>
           <div id="optPred" class="toggle-btn" title="Pattern sequence prediction (-pred)">-pred (Predictor)</div>
           <div id="optGprob" class="toggle-btn" title="Visitor co-measurement geometry (-gprob)">-gprob (Visitors)</div>
-          <div id="optTiles" class="toggle-btn" title="Input Subspace Partition (-tiles: 1D X-Tile + 1D Y-Tile -> Joint Tuple)">-tiles (1D Subspaces)</div>
+          <div id="optTiles" class="toggle-btn" title="Input Subspace Partition (-tiles: 1D X/Y/Z Tiles -> Joint Tuple)">-tiles (1D Subspaces)</div>
         </div>
       </div>
 
@@ -750,29 +866,49 @@
     }
 
     // =========================================================================
-    //  2. 2D BENCHMARK DATASET GENERATORS
+    //  2. 2D & 3D BENCHMARK DATASET GENERATORS
     // =========================================================================
 
     const BENCHMARK_DESCS = {
-      "2Dspiral": "<b>2Dspiral</b>: 1,000 continuous samples tracing an Archimedean spiral. Demonstrates near 1.0 eval/frame via sequential recency prior.",
+      // 2D Benchmarks
+      "2Dspiral": "<b>2Dspiral</b>: 1,000 continuous 2D samples tracing an Archimedean spiral. Demonstrates ~1.0 eval/frame via sequential recency prior.",
       "2Dspiral-shuffle": "<b>2Dspiral-shuffle</b>: 1,000 samples on spiral with randomized temporal order. Stresses multi-point metric pruning on non-convex manifolds.",
       "2Dcircle-shuffle": "<b>2Dcircle-shuffle</b>: 1,000 samples on a 1D circle manifold in 2D with shuffled order. Tests pure distance geometry without temporal correlation.",
       "2DcircleP10n": "<b>2DcircleP10n</b>: 10 periodic circular cycles with additive Gaussian noise (sigma=0.04). Tests cyclic Markov transition matrix (-tm) and sequence predictor (-pred).",
-      "2Drand": "<b>2Drand</b>: 1,000 uniform random points across the 2D plane. Stresses worst-case spatial coverage scaling.",
-      "2Dwalk": "<b>2Dwalk</b>: 1,000 steps of bounded Brownian random walk. Tests localized drift and dynamic cluster reuse.",
-      "stream": "<b>Dynamic Stream</b>: Continuous Lissajous orbital trajectory with real-time parameter streaming.",
-      "custom": "<b>Custom Dataset</b>: User-uploaded 2D coordinate dataset."
+      "2Drand": "<b>2Drand</b>: 1,000 uniform random points across the 2D plane. Stresses spatial coverage scaling.",
+      "2Dwalk": "<b>2Dwalk</b>: 1,000 steps of bounded Brownian random walk in 2D. Tests localized drift and dynamic cluster reuse.",
+      "stream": "<b>Dynamic 2D Stream</b>: Continuous Lissajous orbital trajectory with real-time parameter streaming.",
+      
+      // 3D Benchmarks
+      "3Dspiral": "<b>3Dspiral</b>: 1,000 continuous 3D samples on a rotating helical manifold. Shows quad-split X/Y/Z projections &amp; custom 3D drag rotation.",
+      "3Dspiral-shuffle": "<b>3Dspiral-shuffle</b>: 1,000 3D helical spiral points with shuffled temporal order. Stresses 3D metric pruning (3P/4P/5P) without temporal prior.",
+      "3Dsphere": "<b>3Dsphere</b>: 1,000 points uniformly distributed on the surface of a 3D sphere manifold (S²). Tests non-Euclidean intrinsic 2D manifold embedded in 3D.",
+      "3Dtorus": "<b>3Dtorus</b>: 1,000 points tracing a continuous knot trajectory around a 3D torus manifold (R=0.60, r=0.24).",
+      "3Dstar": "<b>3Dstar</b>: 1,000 points distributed across 20 3D radial star branches extending from origin.",
+      "3Drand": "<b>3Drand</b>: 1,000 uniform random points distributed throughout a 3D spherical volume.",
+      "3Dwalk": "<b>3Dwalk</b>: 1,000 steps of bounded 3D Brownian random walk. Tests localized 3D spatial drift and anchor reuse.",
+      "3Dlorenz": "<b>Dynamic 3D Lorenz</b>: Continuous dynamic integration of the chaotic Lorenz attractor (σ=10, ρ=28, β=8/3) with real-time 3D orbit streaming.",
+      
+      // Custom
+      "custom": "<b>Custom Dataset</b>: User-uploaded 2D or 3D coordinate dataset."
     };
+
+    function is3DBenchmark(type) {
+      if (type.startsWith("3D") || type === "3Dlorenz") return true;
+      return false;
+    }
 
     function generateBenchmark(type, N = 1000) {
       const points = [];
+      
+      // --- 2D BENCHMARKS ---
       if (type === "2Dspiral") {
         const loops = 2.0;
         for (let i = 0; i < N; i++) {
           const t = i / N;
           const r = t * 0.92;
           const theta = 2.0 * Math.PI * loops * t;
-          points.push({ x: r * Math.cos(theta), y: r * Math.sin(theta) });
+          points.push({ x: r * Math.cos(theta), y: r * Math.sin(theta), z: 0.0 });
         }
       } else if (type === "2Dspiral-shuffle") {
         const pts = generateBenchmark("2Dspiral", N);
@@ -784,7 +920,7 @@
       } else if (type === "2Dcircle-shuffle") {
         for (let i = 0; i < N; i++) {
           const theta = 2.0 * Math.PI * (i / N);
-          points.push({ x: 0.85 * Math.cos(theta), y: 0.85 * Math.sin(theta) });
+          points.push({ x: 0.85 * Math.cos(theta), y: 0.85 * Math.sin(theta), z: 0.0 });
         }
         for (let i = points.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
@@ -800,14 +936,15 @@
           const z1 = Math.sqrt(-2.0 * Math.log(u1)) * Math.sin(2.0 * Math.PI * u2) * 0.04;
           points.push({
             x: 0.80 * Math.cos(theta) + z0,
-            y: 0.80 * Math.sin(theta) + z1
+            y: 0.80 * Math.sin(theta) + z1,
+            z: 0.0
           });
         }
       } else if (type === "2Drand") {
         for (let i = 0; i < N; i++) {
           const r = Math.sqrt(Math.random()) * 0.92;
           const theta = 2.0 * Math.PI * Math.random();
-          points.push({ x: r * Math.cos(theta), y: r * Math.sin(theta) });
+          points.push({ x: r * Math.cos(theta), y: r * Math.sin(theta), z: 0.0 });
         }
       } else if (type === "2Dwalk") {
         let cx = 0, cy = 0;
@@ -816,9 +953,106 @@
           const theta = 2.0 * Math.PI * Math.random();
           cx = Math.max(-0.9, Math.min(0.9, cx + step * Math.cos(theta)));
           cy = Math.max(-0.9, Math.min(0.9, cy + step * Math.sin(theta)));
-          points.push({ x: cx, y: cy });
+          points.push({ x: cx, y: cy, z: 0.0 });
+        }
+      } 
+      
+      // --- 3D BENCHMARKS ---
+      else if (type === "3Dspiral") {
+        const loops = 4.0;
+        const cos45 = 0.70710678, sin45 = 0.70710678;
+        const cos30 = 0.86602540, sin30 = 0.50000000;
+        
+        for (let i = 0; i < N; i++) {
+          const t = (i + 1) / N;
+          const raw_x = 0.68 * t * Math.cos(2.0 * Math.PI * loops * t);
+          const raw_y = 0.68 * t * Math.sin(2.0 * Math.PI * loops * t);
+          const raw_z = 1.68 * t - 0.84;
+          
+          // Rotation around Y (45 deg)
+          const x1 = raw_x * cos45 + raw_z * sin45;
+          const z1 = -raw_x * sin45 + raw_z * cos45;
+          const y1 = raw_y;
+          
+          // Rotation around X (30 deg)
+          const fx = x1;
+          const fy = y1 * cos30 - z1 * sin30;
+          const fz = y1 * sin30 + z1 * cos30;
+          
+          points.push({ x: fx, y: fy, z: fz });
+        }
+      } else if (type === "3Dspiral-shuffle") {
+        const pts = generateBenchmark("3Dspiral", N);
+        for (let i = pts.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pts[i], pts[j]] = [pts[j], pts[i]];
+        }
+        return pts;
+      } else if (type === "3Dsphere") {
+        // Fibonacci spherical distribution on S2
+        const R = 0.84;
+        for (let i = 0; i < N; i++) {
+          const y = 1.0 - (i / (N - 1.0 || 1)) * 2.0;
+          const radius = Math.sqrt(Math.max(0, 1.0 - y * y)) * R;
+          const theta = Math.PI * (1.0 + Math.sqrt(5.0)) * i;
+          const x = Math.cos(theta) * radius;
+          const z = Math.sin(theta) * radius;
+          points.push({ x, y: y * R, z });
+        }
+      } else if (type === "3Dtorus") {
+        const R = 0.58;
+        const r = 0.24;
+        for (let i = 0; i < N; i++) {
+          const u = 2.0 * Math.PI * 3.0 * (i / N);
+          const v = 2.0 * Math.PI * 8.0 * (i / N);
+          const x = (R + r * Math.cos(v)) * Math.cos(u);
+          const y = (R + r * Math.cos(v)) * Math.sin(u);
+          const z = r * Math.sin(v);
+          points.push({ x, y, z });
+        }
+      } else if (type === "3Dstar") {
+        const numSpokes = 20;
+        const ptsPerSpoke = Math.floor(N / numSpokes);
+        const spokeDirs = [];
+        for (let s = 0; s < numSpokes; s++) {
+          const y = 1.0 - (s / (numSpokes - 1.0 || 1)) * 2.0;
+          const r = Math.sqrt(Math.max(0, 1.0 - y * y));
+          const theta = Math.PI * (1.0 + Math.sqrt(5.0)) * s;
+          spokeDirs.push({ x: r * Math.cos(theta), y, z: r * Math.sin(theta) });
+        }
+        for (let i = 0; i < N; i++) {
+          const s = i % numSpokes;
+          const inSpokeIdx = Math.floor(i / numSpokes);
+          const rad = 0.15 + 0.72 * (inSpokeIdx / ptsPerSpoke);
+          const dir = spokeDirs[s];
+          points.push({ x: dir.x * rad, y: dir.y * rad, z: dir.z * rad });
+        }
+      } else if (type === "3Drand") {
+        for (let i = 0; i < N; i++) {
+          const rad = 0.88 * Math.cbrt(Math.random());
+          const costheta = 1.0 - 2.0 * Math.random();
+          const sintheta = Math.sqrt(Math.max(0, 1.0 - costheta * costheta));
+          const phi = 2.0 * Math.PI * Math.random();
+          points.push({
+            x: rad * sintheta * Math.cos(phi),
+            y: rad * sintheta * Math.sin(phi),
+            z: rad * costheta
+          });
+        }
+      } else if (type === "3Dwalk") {
+        let cx = 0, cy = 0, cz = 0;
+        const step = 0.04;
+        for (let i = 0; i < N; i++) {
+          const costheta = 1.0 - 2.0 * Math.random();
+          const sintheta = Math.sqrt(Math.max(0, 1.0 - costheta * costheta));
+          const phi = 2.0 * Math.PI * Math.random();
+          cx = Math.max(-0.85, Math.min(0.85, cx + step * sintheta * Math.cos(phi)));
+          cy = Math.max(-0.85, Math.min(0.85, cy + step * sintheta * Math.sin(phi)));
+          cz = Math.max(-0.85, Math.min(0.85, cz + step * costheta));
+          points.push({ x: cx, y: cy, z: cz });
         }
       }
+
       return points;
     }
 
@@ -941,11 +1175,31 @@
     const canvas = document.getElementById('simCanvas');
     const ctx = canvas.getContext('2d');
 
-    // Pan & Zoom Camera State
-    let panX = 0;
-    let panY = 0;
-    let zoom = 1.0;
+    // Dimensionality & Quadrant Layout State
+    let currentDim = 3; // 2 or 3
+    let maximizedQuad = null; // null (all 4 quads) or 0, 1, 2, 3
+
+    // 3D Orbit Camera State (Spherical Orbit: Azimuth θ, Elevation φ)
+    const orbitCamera = {
+      azimuth: -35 * (Math.PI / 180),  // θ
+      elevation: 25 * (Math.PI / 180), // φ
+      zoom: 1.0,
+      panX: 0,
+      panY: 0
+    };
+
+    // 2D Pan & Zoom per Quadrant [0: Along X, 1: Along Y, 2: Along Z, 3: Custom]
+    const quadViews = [
+      { panX: 0, panY: 0, zoom: 1.0 },
+      { panX: 0, panY: 0, zoom: 1.0 },
+      { panX: 0, panY: 0, zoom: 1.0 },
+      { panX: 0, panY: 0, zoom: 1.0 }
+    ];
+
+    // Mouse Interaction State
     let isDragging = false;
+    let dragMode = null; // 'orbit' or 'pan'
+    let activeDragQuad = 0;
     let dragStartX = 0, dragStartY = 0;
     let isAddPointMode = false;
     let isExplainMode = false;
@@ -961,17 +1215,20 @@
     let useTiles = false;
 
     // Simulation & Benchmark State
-    let currentBenchmark = "2Dspiral";
+    let currentBenchmark = "3Dspiral";
     let benchmarkDataset = [];
     let currentFrameIdx = 0;
     let isRunning = false;
     let playTimer = null;
     let playSpeed = 50;
 
-    // Past sample history for point cloud building
+    // Dynamic 3D Lorenz state
+    let lorenzState = { x: 0.1, y: 0.0, z: 0.0 };
+
+    // Past sample history for point cloud building (x, y, z)
     let pastSamples = [];
 
-    // Monolithic 2D Engine State
+    // Monolithic Clustering Engine State (2D / 3D)
     let clusters = [];
     let dcc = [];
     let transitionCounts = [];
@@ -981,7 +1238,7 @@
     let totalFrames = 0;
     let totalEvals = 0;
     let naiveEvals = 0;
-    let currentFrame = null;
+    let currentFrame = null; // { x, y, z }
     let currentEvaluations = [];
     let currentPruned = [];
     let currentPredicted = [];
@@ -991,40 +1248,27 @@
     // Multi-Tile 1D Subspace Engines
     const tileEngineX = new Tile1D("X");
     const tileEngineY = new Tile1D("Y");
+    const tileEngineZ = new Tile1D("Z");
     let jointTuplesMap = new Map();
     let currentJointTuple = null;
     let tileTraceX = null;
     let tileTraceY = null;
+    let tileTraceZ = null;
 
     function getClusterColor(id) {
-      const hues = [199, 142, 270, 38, 340, 180, 48, 220, 110, 300, 15, 160];
+      const hues = [199, 142, 270, 38, 340, 180, 48, 220, 110, 300, 15, 160, 205, 80, 320];
       const hue = hues[id % hues.length];
-      return `hsl(${hue}, 82%, 58%)`;
+      return `hsl(${hue}, 85%, 58%)`;
     }
 
-    function getScale() {
-      return (Math.min(canvas.width, canvas.height) / 2.3) * zoom;
-    }
-    function toCanvasX(x) {
-      return canvas.width / 2 + (x - panX) * getScale();
-    }
-    function toCanvasY(y) {
-      return canvas.height / 2 - (y - panY) * getScale();
-    }
-    function toMetricX(px) {
-      return (px - canvas.width / 2) / getScale() + panX;
-    }
-    function toMetricY(py) {
-      return (canvas.height / 2 - py) / getScale() + panY;
-    }
-    function toCanvasRadius(r) {
-      return r * getScale();
-    }
-
-    function countActive(mask) {
-      let c = 0;
-      for (let i = 0; i < mask.length; i++) if (mask[i]) c++;
-      return c;
+    function showToast(msg) {
+      const toast = document.getElementById('toastFeedback');
+      if (toast) {
+        toast.innerText = msg;
+        toast.classList.add('show');
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => toast.classList.remove('show'), 2200);
+      }
     }
 
     function logExplainStep(step) {
@@ -1033,37 +1277,72 @@
       }
     }
 
-    // --- SEQUENTIAL FRAME INGESTION & DECISION LOGGING ---
-    function clusterFrame(x, y) {
+    function countActive(mask) {
+      let c = 0;
+      for (let i = 0; i < mask.length; i++) if (mask[i]) c++;
+      return c;
+    }
+
+    function getArgMaxP(probs, activeMask) {
+      let maxP = -1;
+      let argMax = -1;
+      for (let i = 0; i < probs.length; i++) {
+        if (activeMask[i] && probs[i] > maxP) {
+          maxP = probs[i];
+          argMax = i;
+        }
+      }
+      return argMax;
+    }
+
+    // =========================================================================
+    //  5. CORE 2D / 3D CLUSTERING ENGINE
+    // =========================================================================
+
+    function clusterFrame(x, y, z = 0.0) {
       totalFrames++;
-      currentFrame = { x, y };
-      pastSamples.push({ x, y });
+      currentFrame = { x, y, z };
+      pastSamples.push({ x, y, z });
       currentExplanation = [];
 
-      // Multi-Tile Mode
+      const coordStr = currentDim === 3 
+        ? `(x=${x.toFixed(3)}, y=${y.toFixed(3)}, z=${z.toFixed(3)})`
+        : `(x=${x.toFixed(3)}, y=${y.toFixed(3)})`;
+
+      // MULTI-TILE SUBSPACE MODE
       if (useTiles) {
         logExplainStep({
           type: 'target',
           title: `📍 Ingesting Frame #${totalFrames}`,
-          text: `Input coordinates (x=${x.toFixed(3)}, y=${y.toFixed(3)}) partitioned into 1D Subspaces (Tile X and Tile Y).`
+          text: `Coordinates ${coordStr} partitioned into ${currentDim === 3 ? '3' : '2'} 1D Subspaces.`
         });
 
         tileTraceX = tileEngineX.cluster1D(x, rlim, isExplainMode);
         tileTraceY = tileEngineY.cluster1D(y, rlim, isExplainMode);
+        if (currentDim === 3) {
+          tileTraceZ = tileEngineZ.cluster1D(z, rlim, isExplainMode);
+        }
 
-        totalEvals += (tileTraceX.evals + tileTraceY.evals);
-        naiveEvals += (tileEngineX.clusters.length + tileEngineY.clusters.length);
+        const evalsThis = tileTraceX.evals + tileTraceY.evals + (currentDim === 3 ? tileTraceZ.evals : 0);
+        const naiveThis = tileEngineX.clusters.length + tileEngineY.clusters.length + (currentDim === 3 ? tileEngineZ.clusters.length : 0);
 
-        if (isExplainMode && tileTraceX.steps) currentExplanation.push(...tileTraceX.steps);
-        if (isExplainMode && tileTraceY.steps) currentExplanation.push(...tileTraceY.steps);
+        totalEvals += evalsThis;
+        naiveEvals += naiveThis;
+
+        if (isExplainMode) {
+          if (tileTraceX.steps) currentExplanation.push(...tileTraceX.steps);
+          if (tileTraceY.steps) currentExplanation.push(...tileTraceY.steps);
+          if (currentDim === 3 && tileTraceZ.steps) currentExplanation.push(...tileTraceZ.steps);
+        }
 
         const cx = tileTraceX.assigned;
         const cy = tileTraceY.assigned;
-        currentJointTuple = { cx, cy };
+        const cz = currentDim === 3 ? tileTraceZ.assigned : 0;
+        currentJointTuple = { cx, cy, cz };
 
-        const tupleKey = `${cx}_${cy}`;
+        const tupleKey = currentDim === 3 ? `${cx}_${cy}_${cz}` : `${cx}_${cy}`;
         if (!jointTuplesMap.has(tupleKey)) {
-          jointTuplesMap.set(tupleKey, { cx, cy, count: 1, lastActive: totalFrames });
+          jointTuplesMap.set(tupleKey, { cx, cy, cz, count: 1, lastActive: totalFrames });
         } else {
           const entry = jointTuplesMap.get(tupleKey);
           entry.count++;
@@ -1072,8 +1351,8 @@
 
         logExplainStep({
           type: 'match',
-          title: `🎯 Joint Tuple Assigned: (${cx}, ${cy})`,
-          text: `Combined 1D assignments into Joint State (${cx}, ${cy}). Total unique joint states: ${jointTuplesMap.size}.`
+          title: `🎯 Joint Tuple Assigned: ${currentDim === 3 ? `(${cx}, ${cy}, ${cz})` : `(${cx}, ${cy})`}`,
+          text: `Combined 1D assignments into Joint State. Total unique joint states: ${jointTuplesMap.size}.`
         });
 
         assignmentHistory.push(tupleKey);
@@ -1082,7 +1361,7 @@
         return;
       }
 
-      // Monolithic 2D Pipeline
+      // MONOLITHIC PIPELINE (2D or 3D)
       currentEvaluations = [];
       currentPruned = [];
       currentPredicted = [];
@@ -1093,7 +1372,7 @@
       if (K === 0) {
         const c0 = {
           id: 0,
-          x, y,
+          x, y, z,
           members: 1,
           prob: 1.0,
           lastActive: totalFrames,
@@ -1109,7 +1388,7 @@
         logExplainStep({
           type: 'new-cluster',
           title: '✨ Initial Cluster Anchor Created',
-          text: `First frame ingested at (${x.toFixed(3)}, ${y.toFixed(3)}). Initialized cluster c_0 with anchor at origin.`
+          text: `First frame ingested at ${coordStr}. Initialized cluster c_0 with anchor.`
         });
 
         updateUI();
@@ -1183,7 +1462,7 @@
       logExplainStep({
         type: 'target',
         title: `📍 Ingesting Frame #${totalFrames}`,
-        text: `Query frame at (${x.toFixed(3)}, ${y.toFixed(3)}) against ${K} candidate clusters (rlim=${rlim.toFixed(3)}).`
+        text: `Query frame at ${coordStr} against ${K} candidate clusters (rlim=${rlim.toFixed(3)}).`
       });
 
       while (true) {
@@ -1284,7 +1563,12 @@
         evalsThisFrame++;
         measDepth++;
         const targetCl = clusters[chosenTarget];
-        const dfc = Math.hypot(x - targetCl.x, y - targetCl.y);
+        
+        // Exact Euclidean distance in 2D or 3D
+        const dx = x - targetCl.x;
+        const dy = y - targetCl.y;
+        const dz = currentDim === 3 ? (z - targetCl.z) : 0.0;
+        const dfc = Math.sqrt(dx * dx + dy * dy + dz * dz);
         const isMatch = dfc < rlim;
 
         measuredIndices.push(chosenTarget);
@@ -1300,7 +1584,7 @@
           logExplainStep({
             type: 'match',
             title: `🎯 Match Found on c_${chosenTarget}`,
-            text: `Measuring distance to cluster c_${chosenTarget} -> d=${dfc.toFixed(4)} <= rlim (${rlim.toFixed(3)}). Assigned to c_${chosenTarget} in ${evalsThisFrame} eval(s), saving ${K - evalsThisFrame} distance calls.`
+            text: `Distance to cluster c_${chosenTarget} -> d=${dfc.toFixed(4)} <= rlim (${rlim.toFixed(3)}). Assigned in ${evalsThisFrame} eval(s), saving ${K - evalsThisFrame} distance calls.`
           });
           break;
         }
@@ -1308,7 +1592,7 @@
         logExplainStep({
           type: 'mismatch',
           title: `❌ Mismatch on c_${chosenTarget}`,
-          text: `Measuring distance to cluster c_${chosenTarget} (${selectionReason}) -> d=${dfc.toFixed(4)} > rlim (${rlim.toFixed(3)}). Cluster c_${chosenTarget} excluded.`
+          text: `Distance to cluster c_${chosenTarget} (${selectionReason}) -> d=${dfc.toFixed(4)} > rlim (${rlim.toFixed(3)}). Candidate c_${chosenTarget} excluded.`
         });
 
         clmembflag[chosenTarget] = false;
@@ -1357,7 +1641,7 @@
               logExplainStep({
                 type: 'prune',
                 title: '📐 4-Point Pruning (-te4)',
-                text: `4-pt pruning: ${after4P} clusters kept, ${pruned4P} additional excluded via 2D baseline triangulation.`
+                text: `4-pt pruning: ${after4P} clusters kept, ${pruned4P} additional excluded via triangulation bounds.`
               });
             }
           }
@@ -1396,7 +1680,7 @@
               logExplainStep({
                 type: 'prune',
                 title: '📐 5-Point Pruning (-te5)',
-                text: `5-pt pruning: ${after5P} clusters kept, ${pruned5P} additional excluded via 3D simplex heights.`
+                text: `5-pt pruning: ${after5P} clusters kept, ${pruned5P} additional excluded via 3D simplex height bounds.`
               });
             }
           }
@@ -1423,7 +1707,7 @@
         assignedCluster = clusters.length;
         const newAnchor = {
           id: assignedCluster,
-          x, y,
+          x, y, z,
           members: 1,
           prob: 1.0,
           lastActive: totalFrames,
@@ -1432,7 +1716,12 @@
 
         const newDccRow = [];
         for (let i = 0; i < clusters.length; i++) {
-          const d_inter = Math.hypot(x - clusters[i].x, y - clusters[i].y);
+          const cOther = clusters[i];
+          const d_inter = Math.sqrt(
+            (x - cOther.x) ** 2 +
+            (y - cOther.y) ** 2 +
+            (z - cOther.z) ** 2
+          );
           dcc[i].push(d_inter);
           newDccRow.push(d_inter);
         }
@@ -1447,7 +1736,7 @@
         logExplainStep({
           type: 'new-cluster',
           title: `✨ New Cluster Created: c_${assignedCluster}`,
-          text: `Frame fell outside all ${K} candidate clusters (min distance > rlim). Spawned new anchor c_${assignedCluster} at (${x.toFixed(3)}, ${y.toFixed(3)}) and computed ${K} inter-cluster distances.`
+          text: `Frame fell outside all ${K} candidates (distance > rlim). Spawned new anchor c_${assignedCluster} at ${coordStr} and computed ${K} inter-cluster distances.`
         });
       }
 
@@ -1467,133 +1756,331 @@
       draw();
     }
 
-    function getArgMaxP(probs, activeMask) {
-      let maxP = -1;
-      let argMax = -1;
-      for (let i = 0; i < probs.length; i++) {
-        if (activeMask[i] && probs[i] > maxP) {
-          maxP = probs[i];
-          argMax = i;
-        }
-      }
-      return argMax;
-    }
-
     // =========================================================================
-    //  5. CANVAS RENDERING ENGINE
+    //  6. QUAD-SCREEN VIEWPORT MANAGER & 3D RENDERING
     // =========================================================================
 
     function resizeCanvas() {
       const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width;
-      canvas.height = rect.height;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       draw();
     }
     window.addEventListener('resize', resizeCanvas);
 
+    // Coordinate Transforms for Sub-Viewports
+    function project3D(x, y, z, az, el) {
+      const cosT = Math.cos(az), sinT = Math.sin(az);
+      const cosP = Math.cos(el), sinP = Math.sin(el);
+      
+      const u = x * cosT + y * sinT;
+      const v = -x * sinT * sinP + y * cosT * sinP + z * cosP;
+      const depth = -x * sinT * cosP + y * cosT * cosP - z * sinP;
+      return { u, v, depth };
+    }
+
+    function getQuadRect(qIdx, W, H) {
+      if (maximizedQuad !== null) {
+        return { x: 0, y: 0, w: W, h: H };
+      }
+      if (currentDim === 2) {
+        return { x: 0, y: 0, w: W, h: H };
+      }
+      const halfW = W / 2;
+      const halfH = H / 2;
+      switch (qIdx) {
+        case 0: return { x: 0, y: 0, w: halfW, h: halfH };        // Top-Left: Along X
+        case 1: return { x: halfW, y: 0, w: halfW, h: halfH };    // Top-Right: Along Y
+        case 2: return { x: 0, y: halfH, w: halfW, h: halfH };    // Bottom-Left: Along Z
+        case 3: return { x: halfW, y: halfH, w: halfW, h: halfH };// Bottom-Right: Custom 3D
+        default: return { x: 0, y: 0, w: W, h: H };
+      }
+    }
+
+    function getQuadScale(qIdx, rect) {
+      const view = quadViews[qIdx];
+      const baseScale = Math.min(rect.w, rect.h) / 2.35;
+      return baseScale * (view.zoom || 1.0);
+    }
+
+    function mapMetricToQuad(u, v, qIdx, rect) {
+      const view = quadViews[qIdx];
+      const scale = getQuadScale(qIdx, rect);
+      const cx = rect.x + rect.w / 2;
+      const cy = rect.y + rect.h / 2;
+      return {
+        px: cx + (u - view.panX) * scale,
+        py: cy - (v - view.panY) * scale
+      };
+    }
+
+    function mapQuadToMetric(px, py, qIdx, rect) {
+      const view = quadViews[qIdx];
+      const scale = getQuadScale(qIdx, rect);
+      const cx = rect.x + rect.w / 2;
+      const cy = rect.y + rect.h / 2;
+      return {
+        u: (px - cx) / scale + view.panX,
+        v: (cy - py) / scale + view.panY
+      };
+    }
+
     function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const dpr = window.devicePixelRatio || 1;
+      const W = canvas.width / dpr;
+      const H = canvas.height / dpr;
 
-      ctx.strokeStyle = '#1e293b';
-      ctx.lineWidth = 1;
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = '#0b1120';
+      ctx.fillRect(0, 0, W, H);
 
-      // Coordinate axes
+      // --- 2D MODE: Single Screen ---
+      if (currentDim === 2) {
+        renderSubViewport(2, "2D", { x: 0, y: 0, w: W, h: H });
+        return;
+      }
+
+      // --- 3D MODE: Quad-Split or Maximized View ---
+      if (maximizedQuad !== null) {
+        const types = ["ALONG_X", "ALONG_Y", "ALONG_Z", "CUSTOM_3D"];
+        renderSubViewport(maximizedQuad, types[maximizedQuad], { x: 0, y: 0, w: W, h: H });
+        return;
+      }
+
+      // Render 4 Quadrants
+      renderSubViewport(0, "ALONG_X", getQuadRect(0, W, H));
+      renderSubViewport(1, "ALONG_Y", getQuadRect(1, W, H));
+      renderSubViewport(2, "ALONG_Z", getQuadRect(2, W, H));
+      renderSubViewport(3, "CUSTOM_3D", getQuadRect(3, W, H));
+
+      // Draw Viewport Divider Lines
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1.5;
+      
       ctx.beginPath();
-      ctx.moveTo(0, toCanvasY(0));
-      ctx.lineTo(canvas.width, toCanvasY(0));
-      ctx.moveTo(toCanvasX(0), 0);
-      ctx.lineTo(toCanvasX(0), canvas.height);
+      ctx.moveTo(W / 2, 0);
+      ctx.lineTo(W / 2, H);
+      ctx.moveTo(0, H / 2);
+      ctx.lineTo(W, H / 2);
       ctx.stroke();
+    }
 
-      // Metric reference circles
-      ctx.strokeStyle = '#172554';
-      ctx.setLineDash([2, 4]);
-      [0.5, 1.0].forEach(rad => {
+    function renderSubViewport(qIdx, viewType, rect) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(rect.x, rect.y, rect.w, rect.h);
+      ctx.clip();
+
+      const scale = getQuadScale(qIdx, rect);
+      const is3DCustom = (viewType === "CUSTOM_3D");
+
+      // Projection point helper
+      function getProjectedCoord(p) {
+        if (viewType === "ALONG_X") return { u: p.y, v: p.z, depth: p.x };
+        if (viewType === "ALONG_Y") return { u: p.x, v: p.z, depth: p.y };
+        if (viewType === "ALONG_Z" || viewType === "2D") return { u: p.x, v: p.y, depth: p.z };
+        // CUSTOM_3D
+        return project3D(p.x, p.y, p.z, orbitCamera.azimuth, orbitCamera.elevation);
+      }
+
+      // 1. Grid & Axes
+      if (!is3DCustom) {
+        // Orthogonal 2D Projection Grids
+        const center = mapMetricToQuad(0, 0, qIdx, rect);
+        
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(toCanvasX(0), toCanvasY(0), toCanvasRadius(rad), 0, Math.PI * 2);
+        ctx.moveTo(rect.x, center.py);
+        ctx.lineTo(rect.x + rect.w, center.py);
+        ctx.moveTo(center.px, rect.y);
+        ctx.lineTo(center.px, rect.y + rect.h);
         ctx.stroke();
-      });
-      ctx.setLineDash([]);
 
-      // Past Samples Point Cloud
-      if (pastSamples.length > 0) {
-        ctx.fillStyle = 'rgba(148, 163, 184, 0.40)';
-        for (let i = 0; i < pastSamples.length; i++) {
-          const sx = toCanvasX(pastSamples[i].x);
-          const sy = toCanvasY(pastSamples[i].y);
-          if (sx < -10 || sx > canvas.width + 10 || sy < -10 || sy > canvas.height + 10) continue;
+        // Reference Circles (radius 0.5, 0.85)
+        ctx.strokeStyle = '#172554';
+        ctx.setLineDash([2, 4]);
+        [0.5, 0.85].forEach(rad => {
           ctx.beginPath();
-          ctx.arc(sx, sy, Math.max(1.2, 1.8 * Math.sqrt(zoom)), 0, Math.PI * 2);
+          ctx.arc(center.px, center.py, rad * scale, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+      } else {
+        // 3D Custom Projection: Bounding Cube & Grid Floor
+        const az = orbitCamera.azimuth, el = orbitCamera.elevation;
+        
+        // 3D Bounding Box [-0.85, 0.85]^3
+        const b = 0.85;
+        const boxCorners = [
+          {x:-b, y:-b, z:-b}, {x: b, y:-b, z:-b}, {x: b, y: b, z:-b}, {x:-b, y: b, z:-b},
+          {x:-b, y:-b, z: b}, {x: b, y:-b, z: b}, {x: b, y: b, z: b}, {x:-b, y: b, z: b}
+        ];
+        const boxPx = boxCorners.map(pt => {
+          const pr = project3D(pt.x, pt.y, pt.z, az, el);
+          return mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+        });
+
+        // Floor Grid at z = -b
+        ctx.strokeStyle = 'rgba(30, 41, 59, 0.6)';
+        ctx.lineWidth = 1;
+        [-0.85, -0.425, 0, 0.425, 0.85].forEach(val => {
+          const p1 = mapMetricToQuad(project3D(val, -b, -b, az, el).u, project3D(val, -b, -b, az, el).v, qIdx, rect);
+          const p2 = mapMetricToQuad(project3D(val,  b, -b, az, el).u, project3D(val,  b, -b, az, el).v, qIdx, rect);
+          ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(p2.px, p2.py); ctx.stroke();
+
+          const p3 = mapMetricToQuad(project3D(-b, val, -b, az, el).u, project3D(-b, val, -b, az, el).v, qIdx, rect);
+          const p4 = mapMetricToQuad(project3D( b, val, -b, az, el).u, project3D( b, val, -b, az, el).v, qIdx, rect);
+          ctx.beginPath(); ctx.moveTo(p3.px, p3.py); ctx.lineTo(p4.px, p4.py); ctx.stroke();
+        });
+
+        // Bounding Box Edges
+        const edges = [
+          [0,1],[1,2],[2,3],[3,0],
+          [4,5],[5,6],[6,7],[7,4],
+          [0,4],[1,5],[2,6],[3,7]
+        ];
+        ctx.strokeStyle = 'rgba(51, 65, 85, 0.5)';
+        ctx.setLineDash([2, 3]);
+        edges.forEach(([i, j]) => {
+          ctx.beginPath();
+          ctx.moveTo(boxPx[i].px, boxPx[i].py);
+          ctx.lineTo(boxPx[j].px, boxPx[j].py);
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+      }
+
+      // 2. Past Samples Point Cloud
+      if (pastSamples.length > 0) {
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.38)';
+        for (let i = 0; i < pastSamples.length; i++) {
+          const pr = getProjectedCoord(pastSamples[i]);
+          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+          if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 || pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) continue;
+          
+          let ptRad = 1.5;
+          if (is3DCustom) {
+            // Depth cueing
+            ptRad = Math.max(0.8, Math.min(2.5, 1.6 + pr.depth * 0.8));
+          }
+          ctx.beginPath();
+          ctx.arc(pos.px, pos.py, ptRad, 0, Math.PI * 2);
           ctx.fill();
         }
       }
 
-      // MULTI-TILE MODE RENDERING
+      // 3. Multi-Tile Mode Rendering
       if (useTiles) {
-        tileEngineX.clusters.forEach(cx => {
-          const px = toCanvasX(cx.val);
-          const pLeft = toCanvasX(cx.val - rlim);
-          const pRight = toCanvasX(cx.val + rlim);
+        if (viewType === "ALONG_X") {
+          // Horizontal Y, Vertical Z
+          tileEngineY.clusters.forEach(cy => {
+            const p = mapMetricToQuad(cy.val, 0, qIdx, rect);
+            ctx.fillStyle = 'rgba(45, 212, 191, 0.03)';
+            ctx.fillRect(p.px - rlim * scale, rect.y, 2 * rlim * scale, rect.h);
+          });
+          tileEngineZ.clusters.forEach(cz => {
+            const p = mapMetricToQuad(0, cz.val, qIdx, rect);
+            ctx.fillStyle = 'rgba(192, 132, 252, 0.03)';
+            ctx.fillRect(rect.x, p.py - rlim * scale, rect.w, 2 * rlim * scale);
+          });
+        } else if (viewType === "ALONG_Y") {
+          // Horizontal X, Vertical Z
+          tileEngineX.clusters.forEach(cx => {
+            const p = mapMetricToQuad(cx.val, 0, qIdx, rect);
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.03)';
+            ctx.fillRect(p.px - rlim * scale, rect.y, 2 * rlim * scale, rect.h);
+          });
+          tileEngineZ.clusters.forEach(cz => {
+            const p = mapMetricToQuad(0, cz.val, qIdx, rect);
+            ctx.fillStyle = 'rgba(192, 132, 252, 0.03)';
+            ctx.fillRect(rect.x, p.py - rlim * scale, rect.w, 2 * rlim * scale);
+          });
+        } else if (viewType === "ALONG_Z" || viewType === "2D") {
+          // Horizontal X, Vertical Y
+          tileEngineX.clusters.forEach(cx => {
+            const p = mapMetricToQuad(cx.val, 0, qIdx, rect);
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.03)';
+            ctx.fillRect(p.px - rlim * scale, rect.y, 2 * rlim * scale, rect.h);
+          });
+          tileEngineY.clusters.forEach(cy => {
+            const p = mapMetricToQuad(0, cy.val, qIdx, rect);
+            ctx.fillStyle = 'rgba(45, 212, 191, 0.03)';
+            ctx.fillRect(rect.x, p.py - rlim * scale, rect.w, 2 * rlim * scale);
+          });
+        }
 
-          ctx.fillStyle = 'rgba(56, 189, 248, 0.02)';
-          ctx.fillRect(pLeft, 0, pRight - pLeft, canvas.height);
-
-          ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath();
-          ctx.moveTo(px, 0);
-          ctx.lineTo(px, canvas.height);
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          ctx.beginPath();
-          ctx.arc(px, toCanvasY(0), 4.5 * Math.sqrt(zoom), 0, Math.PI * 2);
-          ctx.fillStyle = '#38bdf8';
-          ctx.fill();
-        });
-
-        tileEngineY.clusters.forEach(cy => {
-          const py = toCanvasY(cy.val);
-          const pTop = toCanvasY(cy.val + rlim);
-          const pBottom = toCanvasY(cy.val - rlim);
-
-          ctx.fillStyle = 'rgba(45, 212, 191, 0.02)';
-          ctx.fillRect(0, pTop, canvas.width, pBottom - pTop);
-
-          ctx.strokeStyle = 'rgba(45, 212, 191, 0.15)';
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath();
-          ctx.moveTo(0, py);
-          ctx.lineTo(canvas.width, py);
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          ctx.beginPath();
-          ctx.arc(toCanvasX(0), py, 4.5 * Math.sqrt(zoom), 0, Math.PI * 2);
-          ctx.fillStyle = '#2dd4bf';
-          ctx.fill();
-        });
-
-        jointTuplesMap.forEach((entry) => {
+        // Draw Joint Tuples
+        jointTuplesMap.forEach(entry => {
           const clX = tileEngineX.clusters[entry.cx];
           const clY = tileEngineY.clusters[entry.cy];
-          if (!clX || !clY) return;
+          const clZ = currentDim === 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
+          if (!clX || !clY || (currentDim === 3 && !clZ)) return;
 
-          const jx = toCanvasX(clX.val);
-          const jy = toCanvasY(clY.val);
-
-          const bLeft = toCanvasX(clX.val - rlim);
-          const bRight = toCanvasX(clX.val + rlim);
-          const bTop = toCanvasY(clY.val + rlim);
-          const bBottom = toCanvasY(clY.val - rlim);
-
-          ctx.strokeStyle = 'rgba(192, 132, 252, 0.35)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(bLeft, bTop, bRight - bLeft, bBottom - bTop);
+          const pr = getProjectedCoord({ x: clX.val, y: clY.val, z: clZ.val });
+          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
 
           ctx.beginPath();
-          ctx.arc(jx, jy, 5.5 * Math.sqrt(zoom), 0, Math.PI * 2);
+          ctx.arc(pos.px, pos.py, 5, 0, Math.PI * 2);
           ctx.fillStyle = '#c084fc';
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        });
+      } else {
+        // 4. Monolithic Mode: Cluster Spheres & Anchors
+        clusters.forEach(c => {
+          const pr = getProjectedCoord(c);
+          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+          const rPx = rlim * scale;
+
+          if (!is3DCustom) {
+            // 2D Circle outline for receptive field
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.04)';
+            ctx.fill();
+            ctx.strokeStyle = c.color;
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([3, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          } else {
+            // 3D Custom: Wireframe Equatorial Rings (XY, XZ, YZ)
+            const az = orbitCamera.azimuth, el = orbitCamera.elevation;
+            
+            // Sphere boundary halo
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.03)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // XY ring
+            ctx.strokeStyle = c.color;
+            ctx.lineWidth = 0.9;
+            ctx.beginPath();
+            for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 8) {
+              const rx = c.x + rlim * Math.cos(a);
+              const ry = c.y + rlim * Math.sin(a);
+              const rz = c.z;
+              const rp = project3D(rx, ry, rz, az, el);
+              const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+              if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+              else ctx.lineTo(ppos.px, ppos.py);
+            }
+            ctx.stroke();
+          }
+
+          // Anchor Core Node
+          ctx.beginPath();
+          ctx.arc(pos.px, pos.py, 5.5, 0, Math.PI * 2);
+          ctx.fillStyle = c.color;
           ctx.fill();
           ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 1.2;
@@ -1601,135 +2088,164 @@
 
           ctx.fillStyle = '#f8fafc';
           ctx.font = '10px sans-serif';
-          ctx.fillText(`(${entry.cx}, ${entry.cy})`, jx + 8, jy - 5);
+          ctx.fillText(`c_${c.id}`, pos.px + 7, pos.py - 5);
         });
 
-        if (currentFrame && currentJointTuple) {
-          const clX = tileEngineX.clusters[currentJointTuple.cx];
-          const clY = tileEngineY.clusters[currentJointTuple.cy];
+        // Pruned Crosshairs
+        currentPruned.forEach(p => {
+          const pr = getProjectedCoord(p.cluster);
+          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
 
-          if (clX && clY) {
-            const bLeft = toCanvasX(clX.val - rlim);
-            const bRight = toCanvasX(clX.val + rlim);
-            const bTop = toCanvasY(clY.val + rlim);
-            const bBottom = toCanvasY(clY.val - rlim);
-
-            ctx.fillStyle = 'rgba(74, 222, 128, 0.12)';
-            ctx.fillRect(bLeft, bTop, bRight - bLeft, bBottom - bTop);
-            ctx.strokeStyle = '#4ade80';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(bLeft, bTop, bRight - bLeft, bBottom - bTop);
-          }
-
-          const fx = toCanvasX(currentFrame.x);
-          const fy = toCanvasY(currentFrame.y);
-
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = 1.8;
           ctx.beginPath();
-          ctx.arc(fx, fy, 7, 0, Math.PI * 2);
+          ctx.moveTo(pos.px - 6, pos.py - 6);
+          ctx.lineTo(pos.px + 6, pos.py + 6);
+          ctx.moveTo(pos.px + 6, pos.py - 6);
+          ctx.lineTo(pos.px - 6, pos.py + 6);
+          ctx.stroke();
+        });
+
+        // Current Evaluated Rays
+        if (currentFrame) {
+          const prFrame = getProjectedCoord(currentFrame);
+          const posFrame = mapMetricToQuad(prFrame.u, prFrame.v, qIdx, rect);
+
+          currentEvaluations.forEach(ev => {
+            const prTarget = getProjectedCoord(ev.target);
+            const posTarget = mapMetricToQuad(prTarget.u, prTarget.v, qIdx, rect);
+
+            ctx.beginPath();
+            ctx.moveTo(posFrame.px, posFrame.py);
+            ctx.lineTo(posTarget.px, posTarget.py);
+            ctx.strokeStyle = ev.match ? '#4ade80' : '#ef4444';
+            ctx.lineWidth = ev.match ? 2.2 : 1.2;
+            ctx.stroke();
+          });
+
+          // Active Query Frame Node (f_i)
+          ctx.beginPath();
+          ctx.arc(posFrame.px, posFrame.py, 6.5, 0, Math.PI * 2);
           ctx.fillStyle = '#facc15';
           ctx.fill();
           ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 1.8;
           ctx.stroke();
 
           ctx.fillStyle = '#facc15';
-          ctx.font = 'bold 11px sans-serif';
-          ctx.fillText(`fi -> (${currentJointTuple.cx}, ${currentJointTuple.cy})`, fx + 10, fy + 12);
+          ctx.font = 'bold 10px sans-serif';
+          ctx.fillText("fi", posFrame.px + 8, posFrame.py + 10);
         }
-
-        return;
       }
 
-      // MONOLITHIC 2D MODE RENDERING
-      clusters.forEach(c => {
-        const cx = toCanvasX(c.x);
-        const cy = toCanvasY(c.y);
-        const cr = toCanvasRadius(rlim);
+      // 5. 3D Coordinate RGB Triad Gizmo (for Custom 3D Viewport)
+      if (is3DCustom) {
+        const gizmoOrigin = { px: rect.x + 36, py: rect.y + rect.h - 36 };
+        const gLen = 24;
+        const az = orbitCamera.azimuth, el = orbitCamera.elevation;
 
-        ctx.beginPath();
-        ctx.arc(cx, cy, cr, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.04)';
-        ctx.fill();
-        ctx.strokeStyle = c.color;
-        ctx.lineWidth = 1.2;
-        ctx.setLineDash([3, 3]);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        const gx = project3D(1, 0, 0, az, el);
+        const gy = project3D(0, 1, 0, az, el);
+        const gz = project3D(0, 0, 1, az, el);
 
-        ctx.beginPath();
-        ctx.arc(cx, cy, 6 * Math.sqrt(zoom), 0, Math.PI * 2);
-        ctx.fillStyle = c.color;
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+        const axes = [
+          { name: 'X', u: gx.u, v: gx.v, color: '#f87171' },
+          { name: 'Y', u: gy.u, v: gy.v, color: '#4ade80' },
+          { name: 'Z', u: gz.u, v: gz.v, color: '#38bdf8' }
+        ];
 
-        ctx.fillStyle = '#f8fafc';
-        ctx.font = '11px sans-serif';
-        ctx.fillText(`c_${c.id} (${c.members})`, cx + 9, cy - 6);
-      });
+        axes.forEach(ax => {
+          const endPx = gizmoOrigin.px + ax.u * gLen;
+          const endPy = gizmoOrigin.py - ax.v * gLen;
 
-      currentPruned.forEach(p => {
-        const px = toCanvasX(p.cluster.x);
-        const py = toCanvasY(p.cluster.y);
-
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(px - 7, py - 7);
-        ctx.lineTo(px + 7, py + 7);
-        ctx.moveTo(px + 7, py - 7);
-        ctx.lineTo(px - 7, py + 7);
-        ctx.stroke();
-
-        ctx.fillStyle = '#f87171';
-        ctx.font = 'bold 9px sans-serif';
-        ctx.fillText(p.reason, px + 8, py + 10);
-      });
-
-      if (currentFrame) {
-        const fx = toCanvasX(currentFrame.x);
-        const fy = toCanvasY(currentFrame.y);
-
-        currentEvaluations.forEach(ev => {
-          const tx = toCanvasX(ev.target.x);
-          const ty = toCanvasY(ev.target.y);
-
+          ctx.strokeStyle = ax.color;
+          ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.moveTo(fx, fy);
-          ctx.lineTo(tx, ty);
-          ctx.strokeStyle = ev.match ? '#4ade80' : '#ef4444';
-          ctx.lineWidth = ev.match ? 2.5 : 1.5;
+          ctx.moveTo(gizmoOrigin.px, gizmoOrigin.py);
+          ctx.lineTo(endPx, endPy);
           ctx.stroke();
+
+          ctx.fillStyle = ax.color;
+          ctx.font = 'bold 9px sans-serif';
+          ctx.fillText(ax.name, endPx + 3, endPy + 3);
         });
 
+        // Center hub
         ctx.beginPath();
-        ctx.arc(fx, fy, 7, 0, Math.PI * 2);
-        ctx.fillStyle = '#facc15';
+        ctx.arc(gizmoOrigin.px, gizmoOrigin.py, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
         ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        ctx.fillStyle = '#facc15';
-        ctx.font = 'bold 11px sans-serif';
-        ctx.fillText("f_i", fx + 10, fy + 12);
       }
+
+      // 6. Viewport Header Overlay & Maximize Button
+      let title = "";
+      let subtitle = "";
+      if (viewType === "ALONG_X") {
+        title = "📐 Along X (Y-Z Plane)";
+        subtitle = "H: +Y ➔ | V: +Z ⬆";
+      } else if (viewType === "ALONG_Y") {
+        title = "📐 Along Y (X-Z Plane)";
+        subtitle = "H: +X ➔ | V: +Z ⬆";
+      } else if (viewType === "ALONG_Z") {
+        title = "📐 Along Z (X-Y Plane)";
+        subtitle = "H: +X ➔ | V: +Y ⬆";
+      } else if (viewType === "2D") {
+        title = "📐 2D Standard View (X-Y Plane)";
+        subtitle = "H: +X ➔ | V: +Y ⬆";
+      } else if (viewType === "CUSTOM_3D") {
+        const degAz = Math.round(orbitCamera.azimuth * 180 / Math.PI);
+        const degEl = Math.round(orbitCamera.elevation * 180 / Math.PI);
+        title = `🌐 3D Orbit View [θ: ${degAz}°, φ: ${degEl}°]`;
+        subtitle = "Drag to Rotate Camera";
+      }
+
+      // Header background
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+      ctx.fillRect(rect.x, rect.y, rect.w, 24);
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+      ctx.beginPath();
+      ctx.moveTo(rect.x, rect.y + 24);
+      ctx.lineTo(rect.x + rect.w, rect.y + 24);
+      ctx.stroke();
+
+      // Title text
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillText(title, rect.x + 8, rect.y + 16);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '10px monospace';
+      ctx.fillText(subtitle, rect.x + rect.w - 180, rect.y + 16);
+
+      // Maximize / Restore Icon
+      if (currentDim === 3) {
+        ctx.fillStyle = maximizedQuad === qIdx ? '#38bdf8' : '#94a3b8';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(maximizedQuad === qIdx ? '🗗' : '⛶', rect.x + rect.w - 20, rect.y + 16);
+      }
+
+      ctx.restore();
     }
 
     // =========================================================================
-    //  6. UI UPDATES & EXPLANATION LOGGING
+    //  7. UI UPDATES & TELEMETRY
     // =========================================================================
 
     function updateZoomBadge() {
       const badge = document.getElementById('zoomBadge');
-      if (badge) badge.innerText = `${Math.round(zoom * 100)}%`;
+      if (badge) {
+        const view = quadViews[0];
+        badge.innerText = `${Math.round((view.zoom || 1.0) * 100)}%`;
+      }
     }
 
     function resetView() {
-      panX = 0;
-      panY = 0;
-      zoom = 1.0;
+      quadViews.forEach(v => { v.panX = 0; v.panY = 0; v.zoom = 1.0; });
+      orbitCamera.azimuth = -35 * (Math.PI / 180);
+      orbitCamera.elevation = 25 * (Math.PI / 180);
+      orbitCamera.panX = 0;
+      orbitCamera.panY = 0;
+      orbitCamera.zoom = 1.0;
       updateZoomBadge();
       draw();
     }
@@ -1755,11 +2271,34 @@
     }
 
     function updateUI() {
+      const dimBadge = document.getElementById('dimBadge');
+      if (dimBadge) {
+        dimBadge.innerText = currentDim === 3 ? "3D Quad-Split" : "2D Single View";
+        dimBadge.style.background = currentDim === 3 ? "#7c3aed" : "#2563eb";
+      }
+
+      const presetBar = document.getElementById('viewPresetBar');
+      if (presetBar) {
+        presetBar.style.display = (currentDim === 3) ? 'flex' : 'none';
+      }
+
+      const legendHint = document.getElementById('legendHint');
+      if (legendHint) {
+        legendHint.innerText = currentDim === 3
+          ? "[3D Mode: Drag Quad 4 to Orbit • Drag Quads 1-3 to Pan • ⛶ to Maximize]"
+          : "[2D Mode: Drag to Pan • Scroll to Zoom • ＋ Add Point: Inject]";
+      }
+
       if (useTiles) {
         document.getElementById('statClusters').innerText = `${jointTuplesMap.size}`;
-        document.getElementById('lblStatClusters').innerText = `Joint Tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length})`;
-        document.getElementById('measCountBadge').innerText = currentJointTuple ? `Tuple: (${currentJointTuple.cx}, ${currentJointTuple.cy})` : `0 tuples`;
-        document.getElementById('entropyBadge').innerText = `Tiles: 2 Subspaces`;
+        document.getElementById('lblStatClusters').innerText = currentDim === 3 
+          ? `3D Tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length}, Kz=${tileEngineZ.clusters.length})`
+          : `2D Tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length})`;
+        
+        document.getElementById('measCountBadge').innerText = currentJointTuple 
+          ? `Tuple: ${currentDim === 3 ? `(${currentJointTuple.cx},${currentJointTuple.cy},${currentJointTuple.cz})` : `(${currentJointTuple.cx},${currentJointTuple.cy})`}` 
+          : `0 tuples`;
+        document.getElementById('entropyBadge').innerText = `Tiles: ${currentDim} Subspaces`;
       } else {
         document.getElementById('statClusters').innerText = clusters.length;
         document.getElementById('lblStatClusters').innerText = `Clusters Formed`;
@@ -1784,7 +2323,7 @@
         document.getElementById('frameCounter').innerText = `${totalFrames} live`;
       }
 
-      // --- Render Explanation Narrative ---
+      // Render Narrative Log
       const contNarrative = document.getElementById('narrativeContainer');
       if (!isExplainMode) {
         contNarrative.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 30px 12px; line-height: 1.6;">
@@ -1806,7 +2345,7 @@
         `).join('');
       }
 
-      // --- Render Candidate Table ---
+      // Render Candidate Table
       const contCandidates = document.getElementById('candidateContainer');
       if (useTiles) {
         if (jointTuplesMap.size === 0) {
@@ -1814,7 +2353,10 @@
         } else {
           const entries = Array.from(jointTuplesMap.entries());
           contCandidates.innerHTML = entries.map(([key, item]) => {
-            const isCurrent = currentJointTuple && currentJointTuple.cx === item.cx && currentJointTuple.cy === item.cy;
+            const isCurrent = currentJointTuple && 
+              currentJointTuple.cx === item.cx && 
+              currentJointTuple.cy === item.cy && 
+              (currentDim === 2 || currentJointTuple.cz === item.cz);
             const statusClass = isCurrent ? 'matched' : '';
             const badgeText = isCurrent ? 'ACTIVE TUPLE' : `${item.count} frames`;
 
@@ -1822,8 +2364,7 @@
               <div class="candidate-item ${statusClass}">
                 <div style="display:flex; align-items:center; gap:6px;">
                   <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#c084fc;"></span>
-                  <span style="font-weight:600; color:#f8fafc;">Joint Tuple (${item.cx}, ${item.cy})</span>
-                  <span style="color:#94a3b8; font-size:0.72rem;">[Tile 0: c_${item.cx}, Tile 1: c_${item.cy}]</span>
+                  <span style="font-weight:600; color:#f8fafc;">Joint Tuple ${currentDim === 3 ? `(${item.cx}, ${item.cy}, ${item.cz})` : `(${item.cx}, ${item.cy})`}</span>
                 </div>
                 <span class="badge-pill">${badgeText}</span>
               </div>
@@ -1886,13 +2427,16 @@
       currentEntropyBits = 0;
       currentFrameIdx = 0;
       currentExplanation = [];
+      lorenzState = { x: 0.1, y: 0.0, z: 0.0 };
 
       tileEngineX.reset();
       tileEngineY.reset();
+      tileEngineZ.reset();
       jointTuplesMap.clear();
       currentJointTuple = null;
       tileTraceX = null;
       tileTraceY = null;
+      tileTraceZ = null;
 
       updateUI();
       draw();
@@ -1903,9 +2447,11 @@
       currentBenchmark = document.getElementById('selectBenchmark').value;
       document.getElementById('benchmarkDesc').innerHTML = BENCHMARK_DESCS[currentBenchmark] || "";
 
+      currentDim = is3DBenchmark(currentBenchmark) ? 3 : 2;
+
       if (currentBenchmark === "custom") {
         document.getElementById('fileUpload').click();
-      } else if (currentBenchmark !== "stream") {
+      } else if (currentBenchmark !== "stream" && currentBenchmark !== "3Dlorenz") {
         benchmarkDataset = generateBenchmark(currentBenchmark, 1000);
       } else {
         benchmarkDataset = [];
@@ -1918,21 +2464,39 @@
         const t = totalFrames * 0.15;
         const x = 0.70 * Math.cos(t) + 0.18 * Math.sin(t * 3.0) + (Math.random() - 0.5) * 0.05;
         const y = 0.60 * Math.sin(t * 0.8) + 0.15 * Math.cos(t * 2.0) + (Math.random() - 0.5) * 0.05;
-        clusterFrame(x, y);
+        clusterFrame(x, y, 0.0);
+      } else if (currentBenchmark === "3Dlorenz") {
+        const dt = 0.009;
+        const sigma = 10.0, rho = 28.0, beta = 8.0 / 3.0;
+        const lx = lorenzState.x, ly = lorenzState.y, lz = lorenzState.z;
+
+        const dx = sigma * (ly - lx);
+        const dy = lx * (rho - lz) - ly;
+        const dz = lx * ly - beta * lz;
+
+        lorenzState.x += dx * dt;
+        lorenzState.y += dy * dt;
+        lorenzState.z += dz * dt;
+
+        const px = (lorenzState.x / 20.0) * 0.82;
+        const py = (lorenzState.y / 28.0) * 0.82;
+        const pz = ((lorenzState.z - 25.0) / 25.0) * 0.82;
+
+        clusterFrame(px, py, pz);
       } else if (benchmarkDataset.length > 0) {
         if (currentFrameIdx >= benchmarkDataset.length) {
           pauseSimulation();
           return;
         }
         const pt = benchmarkDataset[currentFrameIdx++];
-        clusterFrame(pt.x, pt.y);
+        clusterFrame(pt.x, pt.y, pt.z || 0.0);
       }
     }
 
     function runBatchInstant() {
       while (currentFrameIdx < benchmarkDataset.length) {
         const pt = benchmarkDataset[currentFrameIdx++];
-        clusterFrame(pt.x, pt.y);
+        clusterFrame(pt.x, pt.y, pt.z || 0.0);
       }
       pauseSimulation();
     }
@@ -1976,6 +2540,7 @@
         if (isRunning) pauseSimulation();
         btn.classList.add('toggle-active');
         canvas.classList.add('crosshair');
+        canvas.classList.remove('orbit-cursor');
         canvas.classList.remove('grabbing');
       } else {
         btn.classList.remove('toggle-active');
@@ -1997,52 +2562,70 @@
     }
 
     // =========================================================================
-    //  7. FILE UPLOAD & PARSING
+    //  8. FILE UPLOAD & 2D / 3D PARSING
     // =========================================================================
 
     function parseCoordinateFile(text, filename = "dataset") {
       const lines = text.split(/\r?\n/);
       const rawPoints = [];
+      let detected3D = false;
 
       for (let line of lines) {
         line = line.trim();
         if (!line || line.startsWith('#')) continue;
 
         const tokens = line.split(/[,\s\t]+/).filter(t => t.length > 0);
-        if (tokens.length >= 2) {
+        if (tokens.length >= 3) {
+          const x = parseFloat(tokens[0]);
+          const y = parseFloat(tokens[1]);
+          const z = parseFloat(tokens[2]);
+          if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+            rawPoints.push({ x, y, z });
+            detected3D = true;
+          }
+        } else if (tokens.length >= 2) {
           const x = parseFloat(tokens[0]);
           const y = parseFloat(tokens[1]);
           if (!isNaN(x) && !isNaN(y)) {
-            rawPoints.push({ x, y });
+            rawPoints.push({ x, y, z: 0.0 });
           }
         }
       }
 
       if (rawPoints.length === 0) {
-        alert("Error: No valid 2D coordinates found in file. Expected 'x y' or 'x,y' per line.");
+        alert("Error: No valid 2D or 3D coordinates found in file. Expected 'x y [z]' or 'x,y[,z]' per line.");
         return;
       }
 
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      let minX = Infinity, maxX = -Infinity;
+      let minY = Infinity, maxY = -Infinity;
+      let minZ = Infinity, maxZ = -Infinity;
+
       for (const p of rawPoints) {
         if (p.x < minX) minX = p.x;
         if (p.x > maxX) maxX = p.x;
         if (p.y < minY) minY = p.y;
         if (p.y > maxY) maxY = p.y;
+        if (p.z < minZ) minZ = p.z;
+        if (p.z > maxZ) maxZ = p.z;
       }
 
       const spanX = maxX - minX || 1.0;
       const spanY = maxY - minY || 1.0;
-      const maxSpan = Math.max(spanX, spanY);
+      const spanZ = detected3D ? (maxZ - minZ || 1.0) : 1.0;
+      const maxSpan = Math.max(spanX, spanY, detected3D ? spanZ : 0);
       const midX = (minX + maxX) / 2;
       const midY = (minY + maxY) / 2;
+      const midZ = (minZ + maxZ) / 2;
 
       benchmarkDataset = rawPoints.map(p => ({
-        x: ((p.x - midX) / maxSpan) * 1.84,
-        y: ((p.y - midY) / maxSpan) * 1.84
+        x: ((p.x - midX) / maxSpan) * 1.76,
+        y: ((p.y - midY) / maxSpan) * 1.76,
+        z: detected3D ? (((p.z - midZ) / maxSpan) * 1.76) : 0.0
       }));
 
-      BENCHMARK_DESCS["custom"] = `<b>Custom File (${filename})</b>: ${benchmarkDataset.length} frames loaded from upload.`;
+      currentDim = detected3D ? 3 : 2;
+      BENCHMARK_DESCS["custom"] = `<b>Custom File (${filename})</b>: ${benchmarkDataset.length} ${detected3D ? '3D' : '2D'} frames loaded from upload.`;
       document.getElementById('selectBenchmark').value = 'custom';
       document.getElementById('benchmarkDesc').innerHTML = BENCHMARK_DESCS["custom"];
 
@@ -2091,9 +2674,188 @@
     });
 
     // =========================================================================
-    //  8. CONTROLS, PAN/ZOOM & INTERACTION LISTENERS
+    //  9. MOUSE, ORBIT, PAN/ZOOM & INTERACTION LISTENERS
     // =========================================================================
 
+    function getQuadrantAt(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      const px = clientX - rect.left;
+      const py = clientY - rect.top;
+      const W = rect.width;
+      const H = rect.height;
+
+      if (currentDim === 2 || maximizedQuad !== null) {
+        return maximizedQuad !== null ? maximizedQuad : 2;
+      }
+
+      if (px < W / 2 && py < H / 2) return 0; // Along X
+      if (px >= W / 2 && py < H / 2) return 1; // Along Y
+      if (px < W / 2 && py >= H / 2) return 2; // Along Z
+      return 3; // Custom 3D
+    }
+
+    canvas.addEventListener('mousedown', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const W = rect.width;
+      const H = rect.height;
+      const qIdx = getQuadrantAt(e.clientX, e.clientY);
+      const qRect = getQuadRect(qIdx, W, H);
+
+      // Check if clicking Maximize / Restore Icon in top-right of quadrant
+      if (currentDim === 3 && px >= qRect.x + qRect.w - 30 && px <= qRect.x + qRect.w - 4 && py >= qRect.y && py <= qRect.y + 24) {
+        maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
+        draw();
+        return;
+      }
+
+      // Point Injection Mode
+      if (isAddPointMode) {
+        if (isRunning) pauseSimulation();
+        const m = mapQuadToMetric(px, py, qIdx, qRect);
+        let injX = 0, injY = 0, injZ = 0;
+
+        if (qIdx === 0) {
+          // Along X: horizontal is Y, vertical is Z
+          injY = m.u;
+          injZ = m.v;
+          injX = currentFrame ? currentFrame.x : 0.0;
+        } else if (qIdx === 1) {
+          // Along Y: horizontal is X, vertical is Z
+          injX = m.u;
+          injZ = m.v;
+          injY = currentFrame ? currentFrame.y : 0.0;
+        } else if (qIdx === 2) {
+          // Along Z / 2D: horizontal is X, vertical is Y
+          injX = m.u;
+          injY = m.v;
+          injZ = currentFrame ? currentFrame.z : 0.0;
+        } else if (qIdx === 3) {
+          // Custom 3D: inject at projected point with depth=0
+          const cosT = Math.cos(orbitCamera.azimuth), sinT = Math.sin(orbitCamera.azimuth);
+          injX = m.u * cosT;
+          injY = m.u * sinT;
+          injZ = m.v;
+        }
+
+        clusterFrame(injX, injY, injZ);
+        showToast(`Injected: (${injX.toFixed(3)}, ${injY.toFixed(3)}, ${injZ.toFixed(3)})`);
+        return;
+      }
+
+      // Normal Navigation / Drag Mode
+      isDragging = true;
+      activeDragQuad = qIdx;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+
+      if (qIdx === 3 && currentDim === 3 && maximizedQuad === null) {
+        dragMode = 'orbit';
+        canvas.classList.add('grabbing');
+      } else {
+        dragMode = 'pan';
+        canvas.classList.add('grabbing');
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging || isAddPointMode) return;
+
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+
+      if (dragMode === 'orbit') {
+        // Orbit camera in 3D (Azimuth and Elevation)
+        orbitCamera.azimuth += dx * 0.008;
+        orbitCamera.elevation = Math.max(-1.52, Math.min(1.52, orbitCamera.elevation - dy * 0.008));
+        draw();
+      } else if (dragMode === 'pan') {
+        // Pan 2D Sub-viewport
+        const rect = canvas.getBoundingClientRect();
+        const qRect = getQuadRect(activeDragQuad, rect.width, rect.height);
+        const scale = getQuadScale(activeDragQuad, qRect);
+
+        const v = quadViews[activeDragQuad];
+        v.panX -= dx / scale;
+        v.panY += dy / scale;
+        draw();
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        dragMode = null;
+        canvas.classList.remove('grabbing');
+      }
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const qIdx = getQuadrantAt(e.clientX, e.clientY);
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+
+      if (qIdx === 3 && currentDim === 3 && maximizedQuad === null) {
+        orbitCamera.zoom = Math.max(0.2, Math.min(25.0, (orbitCamera.zoom || 1.0) * zoomFactor));
+      } else {
+        const v = quadViews[qIdx];
+        v.zoom = Math.max(0.2, Math.min(25.0, (v.zoom || 1.0) * zoomFactor));
+      }
+
+      updateZoomBadge();
+      draw();
+    }, { passive: false });
+
+    canvas.addEventListener('dblclick', (e) => {
+      if (isAddPointMode) return;
+      const qIdx = getQuadrantAt(e.clientX, e.clientY);
+      if (qIdx === 3 && currentDim === 3) {
+        orbitCamera.azimuth = -35 * (Math.PI / 180);
+        orbitCamera.elevation = 25 * (Math.PI / 180);
+        draw();
+      } else {
+        resetView();
+      }
+    });
+
+    // 3D Camera Presets
+    document.getElementById('presetIso').addEventListener('click', () => {
+      orbitCamera.azimuth = -35 * (Math.PI / 180);
+      orbitCamera.elevation = 25 * (Math.PI / 180);
+      draw();
+    });
+
+    document.getElementById('presetFront').addEventListener('click', () => {
+      orbitCamera.azimuth = 0;
+      orbitCamera.elevation = 0;
+      draw();
+    });
+
+    document.getElementById('presetTop').addEventListener('click', () => {
+      orbitCamera.azimuth = 0;
+      orbitCamera.elevation = 89 * (Math.PI / 180);
+      draw();
+    });
+
+    document.getElementById('presetSide').addEventListener('click', () => {
+      orbitCamera.azimuth = 90 * (Math.PI / 180);
+      orbitCamera.elevation = 0;
+      draw();
+    });
+
+    document.getElementById('presetReset3D').addEventListener('click', () => {
+      orbitCamera.azimuth = -35 * (Math.PI / 180);
+      orbitCamera.elevation = 25 * (Math.PI / 180);
+      orbitCamera.panX = 0;
+      orbitCamera.panY = 0;
+      orbitCamera.zoom = 1.0;
+      draw();
+    });
+
+    // Select Benchmark Handler
     document.getElementById('selectBenchmark').addEventListener('change', () => {
       loadSelectedBenchmark();
       resetView();
@@ -2134,71 +2896,6 @@
     });
 
     document.getElementById('btnResetView').addEventListener('click', resetView);
-
-    // Pan & Zoom Event Listeners
-    canvas.addEventListener('mousedown', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const px = e.clientX - rect.left;
-      const py = e.clientY - rect.top;
-
-      if (isAddPointMode) {
-        if (isRunning) pauseSimulation();
-        const mx = toMetricX(px);
-        const my = toMetricY(py);
-        clusterFrame(mx, my);
-      } else {
-        isDragging = true;
-        dragStartX = e.clientX;
-        dragStartY = e.clientY;
-        canvas.classList.add('grabbing');
-      }
-    });
-
-    window.addEventListener('mousemove', (e) => {
-      if (isDragging && !isAddPointMode) {
-        const scale = getScale();
-        const dx = (e.clientX - dragStartX) / scale;
-        const dy = (e.clientY - dragStartY) / scale;
-        panX -= dx;
-        panY += dy;
-        dragStartX = e.clientX;
-        dragStartY = e.clientY;
-        draw();
-      }
-    });
-
-    window.addEventListener('mouseup', () => {
-      if (isDragging) {
-        isDragging = false;
-        canvas.classList.remove('grabbing');
-      }
-    });
-
-    canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const mousePx = e.clientX - rect.left;
-      const mousePy = e.clientY - rect.top;
-
-      const mxBefore = toMetricX(mousePx);
-      const myBefore = toMetricY(mousePy);
-
-      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-      const newZoom = Math.max(0.2, Math.min(30.0, zoom * zoomFactor));
-
-      zoom = newZoom;
-      const newScale = getScale();
-
-      panX = mxBefore - (mousePx - canvas.width / 2) / newScale;
-      panY = myBefore - (canvas.height / 2 - mousePy) / newScale;
-
-      updateZoomBadge();
-      draw();
-    }, { passive: false });
-
-    canvas.addEventListener('dblclick', (e) => {
-      if (!isAddPointMode) resetView();
-    });
 
     const sliderRlim = document.getElementById('sliderRlim');
     sliderRlim.addEventListener('input', (e) => {
@@ -2246,14 +2943,14 @@
       useTiles = !useTiles;
       document.getElementById('optTiles').classList.toggle('active', useTiles);
       resetSimulation();
-      if (currentBenchmark !== "stream" && currentBenchmark !== "custom") {
+      if (currentBenchmark !== "stream" && currentBenchmark !== "3Dlorenz" && currentBenchmark !== "custom") {
         benchmarkDataset = generateBenchmark(currentBenchmark, 1000);
       }
       updateUI();
       draw();
     });
 
-    // Initial Load
+    // Initial Startup
     resizeCanvas();
     loadSelectedBenchmark();
     updateZoomBadge();
