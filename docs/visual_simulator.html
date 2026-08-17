@@ -16,6 +16,7 @@
       --accent-purple: #c084fc;
       --accent-amber: #fbbf24;
       --accent-red: #f87171;
+      --accent-teal: #2dd4bf;
     }
 
     * {
@@ -407,7 +408,7 @@
   <header>
     <div>
       <h1>GRIC Interactive Algorithm Simulator <span class="badge">Exact C-Match</span></h1>
-      <p class="subtitle">Live 2D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, and spatial tiling</p>
+      <p class="subtitle">Live 2D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, and input-subspace tiling</p>
     </div>
     <div>
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
@@ -467,12 +468,13 @@
 
       <div style="padding: 8px 14px; background: #172033; border-top: 1px solid var(--card-border);">
         <div class="legend">
+          <div class="legend-item"><div class="legend-dot" style="background: rgba(148, 163, 184, 0.6);"></div> Past Samples Point Cloud</div>
           <div class="legend-item"><div class="legend-dot" style="background: #38bdf8;"></div> Anchor Node</div>
           <div class="legend-item"><div class="legend-dot" style="background: rgba(56, 189, 248, 0.2); border: 1px dashed #38bdf8;"></div> rlim Receptive Field</div>
           <div class="legend-item"><div class="legend-dot" style="background: #facc15;"></div> Current Frame fi</div>
           <div class="legend-item"><div class="legend-dot" style="background: #4ade80;"></div> Evaluated Match</div>
           <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div> Evaluated Mismatch</div>
-          <div class="legend-item"><div class="legend-dot" style="background: #f87171; border: 1px solid #ffffff;"></div> Geometrically Pruned (3P/4P/5P)</div>
+          <div class="legend-item"><div class="legend-dot" style="background: #f87171; border: 1px solid #ffffff;"></div> Pruned (3P/4P/5P)</div>
         </div>
       </div>
     </div>
@@ -512,7 +514,7 @@
           <div id="optTM" class="toggle-btn" title="Transition matrix mixing (-tm 0.5)">-tm (Markov)</div>
           <div id="optPred" class="toggle-btn" title="Pattern sequence prediction (-pred)">-pred (Predictor)</div>
           <div id="optGprob" class="toggle-btn" title="Visitor co-measurement geometry (-gprob)">-gprob (Visitors)</div>
-          <div id="optTiles" class="toggle-btn" title="2x2 Multi-Tile Partition (-tiles 2 2)">-tiles (2x2 Grid)</div>
+          <div id="optTiles" class="toggle-btn" title="Input Subspace Partition (-tiles: 1D X-Tile + 1D Y-Tile -> Joint Tuple)">-tiles (1D Subspaces)</div>
         </div>
       </div>
 
@@ -525,7 +527,7 @@
         <div class="stats-grid">
           <div class="stat-box">
             <div id="statClusters" class="num" style="color: var(--accent-blue);">0</div>
-            <div class="lbl">Clusters Formed</div>
+            <div id="lblStatClusters" class="lbl">Clusters Formed</div>
           </div>
           <div class="stat-box">
             <div id="statFrames" class="num">0</div>
@@ -545,7 +547,7 @@
       <!-- 3. Candidate Inspection -->
       <div class="card">
         <div class="card-title">
-          <span>Active Search Candidate Trace</span>
+          <span id="candidateTitle">Active Search Candidate Trace</span>
           <span id="measCountBadge" class="badge-pill">0 measured</span>
         </div>
         <div id="candidateContainer" class="candidate-list">
@@ -598,7 +600,7 @@
       const zF = zF_sq > 0.0 ? Math.sqrt(zF_sq) : 0.0;
 
       const xT = (d_t_c1 * d_t_c1 + d_c1_c2 * d_c1_c2 - d_t_c2 * d_t_c2) / (2.0 * d_c1_c2);
-      const yT = (d_t_c1 * d_t_c1 + d_c1_c3 * d_t_c3 - d_t_c3 * d_t_c3 - 2.0 * xT * x3) / (2.0 * y3);
+      const yT = (d_t_c1 * d_t_c1 + d_c1_c3 * d_c1_c3 - d_t_c3 * d_t_c3 - 2.0 * xT * x3) / (2.0 * y3);
       const zT_sq = d_t_c1 * d_t_c1 - xT * xT - yT * yT;
       const zT = zT_sq > 0.0 ? Math.sqrt(zT_sq) : 0.0;
 
@@ -689,7 +691,95 @@
     }
 
     // =========================================================================
-    //  3. STATE & CLUSTERING ENGINE (Exact Match to GRIC C Architecture)
+    //  3. 1D SUBSPACE TILE ENGINE (Exact Input-Coordinate Tiling Architecture)
+    // =========================================================================
+
+    class Tile1D {
+      constructor(axisName) {
+        this.axisName = axisName;
+        this.clusters = []; // { id, val, members, prob }
+        this.dcc = [];      // 1D pairwise distance matrix
+        this.totalEvals = 0;
+        this.naiveEvals = 0;
+      }
+
+      reset() {
+        this.clusters = [];
+        this.dcc = [];
+        this.totalEvals = 0;
+        this.naiveEvals = 0;
+      }
+
+      cluster1D(val, rThreshold) {
+        const K = this.clusters.length;
+        if (K === 0) {
+          this.clusters.push({ id: 0, val, members: 1, prob: 1.0 });
+          this.dcc = [[0.0]];
+          return { assigned: 0, evals: 0, isNew: true, evaluated: [], pruned: [] };
+        }
+
+        this.naiveEvals += K;
+        const clmembflag = new Array(K).fill(true);
+        const evaluated = [];
+        const pruned = [];
+        let assigned = -1;
+        let evals = 0;
+
+        // Rank by prior probability
+        const order = [];
+        for (let i = 0; i < K; i++) order.push(i);
+        order.sort((a, b) => (this.clusters[b].prob || 1.0) - (this.clusters[a].prob || 1.0));
+
+        for (let target of order) {
+          if (!clmembflag[target]) continue;
+          evals++;
+          const targetCl = this.clusters[target];
+          const d = Math.abs(val - targetCl.val);
+          const isMatch = d < rThreshold;
+          evaluated.push({ target, dist: d, match: isMatch });
+
+          if (isMatch) {
+            assigned = target;
+            targetCl.members++;
+            targetCl.prob = (targetCl.prob || 1.0) + 0.05;
+            break;
+          }
+
+          clmembflag[target] = false;
+          // 1D Triangle inequality pruning
+          for (let cl = 0; cl < K; cl++) {
+            if (!clmembflag[cl]) continue;
+            const d_inter = this.dcc[target][cl];
+            if (Math.abs(d - d_inter) > rThreshold) {
+              clmembflag[cl] = false;
+              pruned.push({ target: cl, reason: '1D-3P' });
+            }
+          }
+        }
+
+        this.totalEvals += evals;
+
+        if (assigned === -1) {
+          assigned = this.clusters.length;
+          const newAnchor = { id: assigned, val, members: 1, prob: 1.0 };
+          const newRow = [];
+          for (let i = 0; i < this.clusters.length; i++) {
+            const d_inter = Math.abs(val - this.clusters[i].val);
+            this.dcc[i].push(d_inter);
+            newRow.push(d_inter);
+          }
+          newRow.push(0.0);
+          this.dcc.push(newRow);
+          this.clusters.push(newAnchor);
+          return { assigned, evals, isNew: true, evaluated, pruned };
+        }
+
+        return { assigned, evals, isNew: false, evaluated, pruned };
+      }
+    }
+
+    // =========================================================================
+    //  4. STATE & CLUSTERING ENGINE (Monolithic 2D & Multi-Tile Subspace Modes)
     // =========================================================================
 
     const canvas = document.getElementById('simCanvas');
@@ -702,7 +792,7 @@
     let useTM = false;
     let usePred = false;
     let useGprob = false;
-    let useTiles = false;
+    let useTiles = false;      // Input-coordinate subspace partitioning
 
     // Simulation & Benchmark State
     let currentBenchmark = "2Dspiral";
@@ -712,8 +802,11 @@
     let playTimer = null;
     let playSpeed = 50; // ms per step
 
-    // Clustering Engine State
-    let clusters = [];               // { id, x, y, members, lastActive, color, tile }
+    // Past sample history for point cloud building
+    let pastSamples = []; // Array of { x, y }
+
+    // Monolithic 2D Engine State
+    let clusters = [];               // { id, x, y, members, prob, lastActive, color }
     let dcc = [];                    // Pairwise inter-cluster distances dcc[i][j]
     let transitionCounts = [];       // K x K transition count matrix
     let prevAssignedCluster = -1;
@@ -727,6 +820,14 @@
     let currentPruned = [];          // Array of { cluster, reason }
     let currentPredicted = [];       // Array of cluster IDs tested via -pred
     let currentEntropyBits = 0;
+
+    // Multi-Tile 1D Subspace Engines
+    const tileEngineX = new Tile1D("X");
+    const tileEngineY = new Tile1D("Y");
+    let jointTuplesMap = new Map(); // key "cx_cy" -> { cx, cy, count, lastActive }
+    let currentJointTuple = null;    // { cx, cy }
+    let tileTraceX = null;
+    let tileTraceY = null;
 
     // Color palette for clusters
     function getClusterColor(id) {
@@ -757,10 +858,40 @@
       return r * scale;
     }
 
-    // --- SEQUENTIAL STEP EXECUTION (Exact 1:1 match with cluster_step.c) ---
+    // --- SEQUENTIAL FRAME INGESTION ---
     function clusterFrame(x, y) {
       totalFrames++;
       currentFrame = { x, y };
+      pastSamples.push({ x, y });
+
+      if (useTiles) {
+        // Multi-Tile Input Subspace Partitioning (Tile 0 = X, Tile 1 = Y)
+        tileTraceX = tileEngineX.cluster1D(x, rlim);
+        tileTraceY = tileEngineY.cluster1D(y, rlim);
+
+        totalEvals += (tileTraceX.evals + tileTraceY.evals);
+        naiveEvals += (tileEngineX.clusters.length + tileEngineY.clusters.length);
+
+        const cx = tileTraceX.assigned;
+        const cy = tileTraceY.assigned;
+        currentJointTuple = { cx, cy };
+
+        const tupleKey = `${cx}_${cy}`;
+        if (!jointTuplesMap.has(tupleKey)) {
+          jointTuplesMap.set(tupleKey, { cx, cy, count: 1, lastActive: totalFrames });
+        } else {
+          const entry = jointTuplesMap.get(tupleKey);
+          entry.count++;
+          entry.lastActive = totalFrames;
+        }
+
+        assignmentHistory.push(tupleKey);
+        updateUI();
+        draw();
+        return;
+      }
+
+      // --- Monolithic 2D Sequential Pipeline ---
       currentEvaluations = [];
       currentPruned = [];
       currentPredicted = [];
@@ -775,8 +906,7 @@
           members: 1,
           prob: 1.0,
           lastActive: totalFrames,
-          color: getClusterColor(0),
-          tile: getTileId(x, y)
+          color: getClusterColor(0)
         };
         clusters.push(c0);
         dcc = [[0.0]];
@@ -790,19 +920,7 @@
       }
 
       naiveEvals += K;
-
-      // Track active candidates (clmembflag array in C)
       const clmembflag = new Array(K).fill(true);
-
-      // Multi-tile grid filtering (-tiles)
-      if (useTiles) {
-        const frameTile = getTileId(x, y);
-        for (let i = 0; i < K; i++) {
-          if (clusters[i].tile !== frameTile) {
-            clmembflag[i] = false; // Isolated search domain
-          }
-        }
-      }
 
       // Step 2: Retrieve trajectory prediction shortcut candidates (-pred)
       let predCandidates = [];
@@ -855,13 +973,9 @@
         }
       }
 
-      // Geometric visitor probabilities (-gprob)
       const currentGprobs = new Array(K).fill(1.0);
-
-      // Active posterior tracking for Shannon entropy
       const pCurrent = [...pBase];
 
-      // Measured in this frame: temp_indices and temp_dists in C
       const measuredIndices = [];
       const measuredDists = [];
 
@@ -871,7 +985,6 @@
 
       // Step 3: Iterative Search Loop
       while (true) {
-        // Renormalize active probabilities
         let activeSum = 0;
         let activeCount = 0;
         for (let i = 0; i < K; i++) {
@@ -884,10 +997,7 @@
           }
         }
 
-        if (activeCount === 0) {
-          // All existing candidates pruned/exhausted -> spawn new anchor
-          break;
-        }
+        if (activeCount === 0) break;
 
         if (activeSum > 0) {
           for (let i = 0; i < K; i++) {
@@ -895,7 +1005,7 @@
           }
         }
 
-        // Calculate Shannon Entropy: H = -sum(p * log2(p))
+        // Calculate Shannon Entropy
         let H = 0.0;
         for (let i = 0; i < K; i++) {
           if (clmembflag[i] && pCurrent[i] > 1e-12) {
@@ -920,7 +1030,6 @@
         // 2. Entropy Selection (-entropy) or Greedy Prioritization
         if (chosenTarget === -1) {
           if (targetMode === 'entropy' && H > (measDepth === 0 ? 3.0 : 1.5)) {
-            // Shannon Information Gain Minimization
             let minExpectedH = 1e9;
             let bestCi = -1;
 
@@ -933,12 +1042,10 @@
                 break;
               }
 
-              // Evaluate hypothetical mismatch: estimate unpruned mass
               let hypActiveSum = 0;
               for (let j = 0; j < K; j++) {
                 if (!clmembflag[j] || j === i) continue;
                 const dInter = dcc[i][j];
-                // 3P lower bound hypothesis: if candidate j would be pruned upon mismatch at i
                 if (Math.abs(dInter - rlim) <= rlim) {
                   hypActiveSum += pCurrent[j];
                 }
@@ -964,7 +1071,6 @@
             }
             chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag);
           } else {
-            // Greedy Mode: Argmax P
             chosenTarget = getArgMaxP(pCurrent, clmembflag);
           }
         }
@@ -991,7 +1097,6 @@
           break;
         }
 
-        // Target Mismatch -> Prune chosen target and update geometric bounds
         clmembflag[chosenTarget] = false;
 
         // 1. Triangle Inequality (3-Point Pruning)
@@ -1079,11 +1184,9 @@
           members: 1,
           prob: 1.0,
           lastActive: totalFrames,
-          color: getClusterColor(assignedCluster),
-          tile: getTileId(x, y)
+          color: getClusterColor(assignedCluster)
         };
 
-        // Measure & cache pairwise DCC distances to all existing clusters
         const newDccRow = [];
         for (let i = 0; i < clusters.length; i++) {
           const d_inter = Math.hypot(x - clusters[i].x, y - clusters[i].y);
@@ -1093,7 +1196,6 @@
         newDccRow.push(0.0);
         dcc.push(newDccRow);
 
-        // Extend transition count matrix
         for (let i = 0; i < clusters.length; i++) transitionCounts[i].push(0);
         transitionCounts.push(new Array(clusters.length + 1).fill(0));
 
@@ -1129,15 +1231,8 @@
       return argMax;
     }
 
-    function getTileId(x, y) {
-      if (x < 0 && y >= 0) return 0;
-      if (x >= 0 && y >= 0) return 1;
-      if (x < 0 && y < 0) return 2;
-      return 3;
-    }
-
     // =========================================================================
-    //  4. CANVAS RENDERING ENGINE
+    //  5. CANVAS RENDERING ENGINE
     // =========================================================================
 
     function resizeCanvas() {
@@ -1161,27 +1256,142 @@
       ctx.lineTo(toCanvasX(0), toCanvasY(1.0));
       ctx.stroke();
 
-      // Draw Tiling Grid if active (-tiles)
-      if (useTiles) {
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([6, 6]);
-        ctx.beginPath();
-        ctx.moveTo(canvas.width / 2, 0);
-        ctx.lineTo(canvas.width / 2, canvas.height);
-        ctx.moveTo(0, canvas.height / 2);
-        ctx.lineTo(canvas.width, canvas.height / 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = '#64748b';
-        ctx.font = '11px sans-serif';
-        ctx.fillText("Tile 0 (-X, +Y)", 15, 20);
-        ctx.fillText("Tile 1 (+X, +Y)", canvas.width / 2 + 15, 20);
-        ctx.fillText("Tile 2 (-X, -Y)", 15, canvas.height / 2 + 20);
-        ctx.fillText("Tile 3 (+X, -Y)", canvas.width / 2 + 15, canvas.height / 2 + 20);
+      // --- 1. Draw Past Samples Point Cloud (Light Grey) ---
+      if (pastSamples.length > 0) {
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.40)'; // Light slate grey
+        for (let i = 0; i < pastSamples.length; i++) {
+          const sx = toCanvasX(pastSamples[i].x);
+          const sy = toCanvasY(pastSamples[i].y);
+          ctx.beginPath();
+          ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
+      // --- 2. MULTI-TILE MODE RENDERING (1D Subspaces & Joint Tuples) ---
+      if (useTiles) {
+        // Draw 1D X-Axis Anchors and vertical strip guidelines
+        tileEngineX.clusters.forEach(cx => {
+          const px = toCanvasX(cx.val);
+          const pLeft = toCanvasX(cx.val - rlim);
+          const pRight = toCanvasX(cx.val + rlim);
+
+          // Vertical boundary strip
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.02)';
+          ctx.fillRect(pLeft, 0, pRight - pLeft, canvas.height);
+
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(px, 0);
+          ctx.lineTo(px, canvas.height);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // 1D X-Anchor mark on X-axis
+          ctx.beginPath();
+          ctx.arc(px, toCanvasY(0), 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#38bdf8';
+          ctx.fill();
+        });
+
+        // Draw 1D Y-Axis Anchors and horizontal strip guidelines
+        tileEngineY.clusters.forEach(cy => {
+          const py = toCanvasY(cy.val);
+          const pTop = toCanvasY(cy.val + rlim);
+          const pBottom = toCanvasY(cy.val - rlim);
+
+          // Horizontal boundary strip
+          ctx.fillStyle = 'rgba(45, 212, 191, 0.02)';
+          ctx.fillRect(0, pTop, canvas.width, pBottom - pTop);
+
+          ctx.strokeStyle = 'rgba(45, 212, 191, 0.15)';
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(0, py);
+          ctx.lineTo(canvas.width, py);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // 1D Y-Anchor mark on Y-axis
+          ctx.beginPath();
+          ctx.arc(toCanvasX(0), py, 4.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#2dd4bf';
+          ctx.fill();
+        });
+
+        // Draw Observed Joint Tuples (Intersection Nodes)
+        jointTuplesMap.forEach((entry, key) => {
+          const clX = tileEngineX.clusters[entry.cx];
+          const clY = tileEngineY.clusters[entry.cy];
+          if (!clX || !clY) return;
+
+          const jx = toCanvasX(clX.val);
+          const jy = toCanvasY(clY.val);
+
+          // Joint Tuple Bounding Box
+          const bLeft = toCanvasX(clX.val - rlim);
+          const bRight = toCanvasX(clX.val + rlim);
+          const bTop = toCanvasY(clY.val + rlim);
+          const bBottom = toCanvasY(clY.val - rlim);
+
+          ctx.strokeStyle = 'rgba(192, 132, 252, 0.35)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(bLeft, bTop, bRight - bLeft, bBottom - bTop);
+
+          // Joint Tuple Anchor Center
+          ctx.beginPath();
+          ctx.arc(jx, jy, 5.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#c084fc';
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          ctx.fillStyle = '#f8fafc';
+          ctx.font = '10px sans-serif';
+          ctx.fillText(`(${entry.cx}, ${entry.cy})`, jx + 8, jy - 5);
+        });
+
+        // Highlight Active Frame & Active Joint Tuple
+        if (currentFrame && currentJointTuple) {
+          const clX = tileEngineX.clusters[currentJointTuple.cx];
+          const clY = tileEngineY.clusters[currentJointTuple.cy];
+
+          if (clX && clY) {
+            const bLeft = toCanvasX(clX.val - rlim);
+            const bRight = toCanvasX(clX.val + rlim);
+            const bTop = toCanvasY(clY.val + rlim);
+            const bBottom = toCanvasY(clY.val - rlim);
+
+            // Active Intersection Box Highlight
+            ctx.fillStyle = 'rgba(74, 222, 128, 0.12)';
+            ctx.fillRect(bLeft, bTop, bRight - bLeft, bBottom - bTop);
+            ctx.strokeStyle = '#4ade80';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(bLeft, bTop, bRight - bLeft, bBottom - bTop);
+          }
+
+          const fx = toCanvasX(currentFrame.x);
+          const fy = toCanvasY(currentFrame.y);
+
+          ctx.beginPath();
+          ctx.arc(fx, fy, 7, 0, Math.PI * 2);
+          ctx.fillStyle = '#facc15';
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.fillStyle = '#facc15';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.fillText(`fi -> (${currentJointTuple.cx}, ${currentJointTuple.cy})`, fx + 10, fy + 12);
+        }
+
+        return;
+      }
+
+      // --- 3. MONOLITHIC 2D MODE RENDERING ---
       // Draw Clusters and rlim spheres
       clusters.forEach(c => {
         const cx = toCanvasX(c.x);
@@ -1265,11 +1475,26 @@
     }
 
     // =========================================================================
-    //  5. UI UPDATES & TELEMETRY
+    //  6. UI UPDATES & TELEMETRY
     // =========================================================================
 
     function updateUI() {
-      document.getElementById('statClusters').innerText = clusters.length;
+      if (useTiles) {
+        document.getElementById('statClusters').innerText = `${jointTuplesMap.size}`;
+        document.getElementById('lblStatClusters').innerText = `Joint Tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length})`;
+
+        document.getElementById('candidateTitle').innerText = "Multi-Tile Subspace Assignments";
+        document.getElementById('measCountBadge').innerText = currentJointTuple ? `Tuple: (${currentJointTuple.cx}, ${currentJointTuple.cy})` : `0 tuples`;
+        document.getElementById('entropyBadge').innerText = `Tiles: 2 Subspaces`;
+      } else {
+        document.getElementById('statClusters').innerText = clusters.length;
+        document.getElementById('lblStatClusters').innerText = `Clusters Formed`;
+
+        document.getElementById('candidateTitle').innerText = "Active Search Candidate Trace";
+        document.getElementById('measCountBadge').innerText = `${currentEvaluations.length} evals`;
+        document.getElementById('entropyBadge').innerText = `H: ${currentEntropyBits.toFixed(2)} bits`;
+      }
+
       document.getElementById('statFrames').innerText = totalFrames;
       
       const avgE = totalFrames > 0 ? (totalEvals / totalFrames).toFixed(2) : '0.00';
@@ -1277,9 +1502,6 @@
 
       const savedPct = naiveEvals > 0 ? (((naiveEvals - totalEvals) / naiveEvals) * 100).toFixed(0) : '0';
       document.getElementById('statSaved').innerText = `${Math.max(0, savedPct)}%`;
-
-      document.getElementById('entropyBadge').innerText = `H: ${currentEntropyBits.toFixed(2)} bits`;
-      document.getElementById('measCountBadge').innerText = `${currentEvaluations.length} evals`;
 
       // Progress bar update
       if (benchmarkDataset.length > 0) {
@@ -1291,8 +1513,36 @@
         document.getElementById('frameCounter').innerText = `${totalFrames} live`;
       }
 
-      // Update Candidate List
+      // Update Candidate List / Tile Inspection List
       const cont = document.getElementById('candidateContainer');
+
+      if (useTiles) {
+        if (jointTuplesMap.size === 0) {
+          cont.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No tiles processed yet.</div>`;
+          return;
+        }
+
+        const entries = Array.from(jointTuplesMap.entries());
+        cont.innerHTML = entries.map(([key, item]) => {
+          const isCurrent = currentJointTuple && currentJointTuple.cx === item.cx && currentJointTuple.cy === item.cy;
+          const statusClass = isCurrent ? 'matched' : '';
+          const badgeText = isCurrent ? 'ACTIVE TUPLE' : `${item.count} frames`;
+
+          return `
+            <div class="candidate-item ${statusClass}">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#c084fc;"></span>
+                <span style="font-weight:600; color:#f8fafc;">Joint Tuple (${item.cx}, ${item.cy})</span>
+                <span style="color:#94a3b8; font-size:0.72rem;">[Tile 0: c_${item.cx}, Tile 1: c_${item.cy}]</span>
+              </div>
+              <span class="badge-pill">${badgeText}</span>
+            </div>
+          `;
+        }).join('');
+        return;
+      }
+
+      // Monolithic Candidate List
       if (clusters.length === 0) {
         cont.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No clusters formed yet.</div>`;
         return;
@@ -1337,6 +1587,7 @@
       prevAssignedCluster = -1;
       assignmentHistory = [];
       frameHistory = [];
+      pastSamples = [];
       totalFrames = 0;
       totalEvals = 0;
       naiveEvals = 0;
@@ -1346,6 +1597,14 @@
       currentPredicted = [];
       currentEntropyBits = 0;
       currentFrameIdx = 0;
+
+      tileEngineX.reset();
+      tileEngineY.reset();
+      jointTuplesMap.clear();
+      currentJointTuple = null;
+      tileTraceX = null;
+      tileTraceY = null;
+
       updateUI();
       draw();
     }
@@ -1420,7 +1679,7 @@
     }
 
     // =========================================================================
-    //  6. FILE UPLOAD & PARSING (Local FileReader API)
+    //  7. FILE UPLOAD & PARSING (Local FileReader API)
     // =========================================================================
 
     function parseCoordinateFile(text, filename = "dataset") {
@@ -1431,7 +1690,6 @@
         line = line.trim();
         if (!line || line.startsWith('#')) continue;
 
-        // Split by space, tab, or comma
         const tokens = line.split(/[,\s\t]+/).filter(t => t.length > 0);
         if (tokens.length >= 2) {
           const x = parseFloat(tokens[0]);
@@ -1447,7 +1705,6 @@
         return;
       }
 
-      // Normalize coordinates to [-0.92, 0.92] preserving aspect ratio
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const p of rawPoints) {
         if (p.x < minX) minX = p.x;
@@ -1486,7 +1743,6 @@
 
     document.getElementById('btnUpload').addEventListener('click', () => fileInput.click());
 
-    // Drag & Drop handlers on canvas container
     const canvasBox = document.getElementById('canvasBox');
     const dropzone = document.getElementById('dropzone');
 
@@ -1516,13 +1772,11 @@
     });
 
     // =========================================================================
-    //  7. CONTROLS & EVENT LISTENERS
+    //  8. CONTROLS & EVENT LISTENERS
     // =========================================================================
 
-    // Benchmark Selector
     document.getElementById('selectBenchmark').addEventListener('change', loadSelectedBenchmark);
 
-    // Speed Selector
     document.getElementById('selectSpeed').addEventListener('change', (e) => {
       playSpeed = parseInt(e.target.value);
       if (isRunning) {
@@ -1531,7 +1785,6 @@
       }
     });
 
-    // Play/Pause & Step Buttons
     document.getElementById('btnPlay').addEventListener('click', () => {
       if (isRunning) pauseSimulation();
       else startSimulation();
@@ -1547,7 +1800,6 @@
       loadSelectedBenchmark();
     });
 
-    // Canvas click to inject query frame
     canvas.addEventListener('click', (e) => {
       if (isRunning) pauseSimulation();
       const rect = canvas.getBoundingClientRect();
@@ -1558,7 +1810,6 @@
       clusterFrame(mx, my);
     });
 
-    // Radius Slider
     const sliderRlim = document.getElementById('sliderRlim');
     sliderRlim.addEventListener('input', (e) => {
       rlim = parseFloat(e.target.value);
@@ -1566,7 +1817,6 @@
       draw();
     });
 
-    // Target Mode Toggles
     document.getElementById('modeGreedy').addEventListener('click', () => {
       targetMode = 'greedy';
       document.getElementById('modeGreedy').classList.add('active');
@@ -1579,7 +1829,6 @@
       document.getElementById('modeGreedy').classList.remove('active');
     });
 
-    // Pruning Depth Toggles (3P / 4P / 5P)
     ['3P', '4P', '5P'].forEach(p => {
       document.getElementById(`prune${p}`).addEventListener('click', () => {
         pruneMode = p;
@@ -1588,7 +1837,6 @@
       });
     });
 
-    // Advanced Option Toggles
     document.getElementById('optTM').addEventListener('click', () => {
       useTM = !useTM;
       document.getElementById('optTM').classList.toggle('active', useTM);
@@ -1607,6 +1855,11 @@
     document.getElementById('optTiles').addEventListener('click', () => {
       useTiles = !useTiles;
       document.getElementById('optTiles').classList.toggle('active', useTiles);
+      resetSimulation();
+      if (currentBenchmark !== "stream" && currentBenchmark !== "custom") {
+        benchmarkDataset = generateBenchmark(currentBenchmark, 1000);
+      }
+      updateUI();
       draw();
     });
 
