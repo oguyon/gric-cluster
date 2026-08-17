@@ -117,12 +117,13 @@
     .btn-group {
       display: flex;
       gap: 6px;
+      align-items: center;
     }
 
     button {
       background: #334155;
       color: #ffffff;
-      border: none;
+      border: 1px solid transparent;
       padding: 6px 12px;
       border-radius: 6px;
       font-size: 0.82rem;
@@ -132,6 +133,7 @@
       display: inline-flex;
       align-items: center;
       gap: 5px;
+      user-select: none;
     }
 
     button:hover {
@@ -157,6 +159,14 @@
     }
     button.secondary:hover {
       background: #0d9488;
+    }
+
+    button.toggle-active {
+      background: rgba(56, 189, 248, 0.2) !important;
+      border-color: var(--accent-blue) !important;
+      color: var(--accent-blue) !important;
+      font-weight: 700;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.35);
     }
 
     select {
@@ -207,8 +217,16 @@
       width: 100%;
       height: 520px;
       background: #0b1120;
-      cursor: crosshair;
+      cursor: grab;
       display: block;
+    }
+
+    canvas.crosshair {
+      cursor: crosshair !important;
+    }
+
+    canvas.grabbing {
+      cursor: grabbing !important;
     }
 
     .side-panel {
@@ -440,8 +458,10 @@
         <div class="toolbar-row">
           <div class="btn-group">
             <button id="btnPlay" class="primary">&#9658; Run / Play</button>
-            <button id="btnStep" title="Ingest 1 Frame">&#8677; Step</button>
+            <button id="btnStep" title="Ingest next frame from dataset">&#8677; Step</button>
+            <button id="btnAddPoint" title="Toggle manual click to inject points on canvas">＋ Add Point</button>
             <button id="btnReset" title="Reload dataset from beginning">&#8635; Reset</button>
+            <button id="btnResetView" title="Reset pan &amp; zoom view">🔍 1:1</button>
           </div>
         </div>
       </div>
@@ -449,6 +469,10 @@
       <div class="benchmark-info">
         <div id="benchmarkDesc"><b>2Dspiral</b>: 1,000 continuous samples tracing an Archimedean spiral. Tests sequential recency prior.</div>
         <div style="display: flex; gap: 12px; align-items: center;">
+          <span style="display:flex; align-items:center; gap:4px;">
+            <span>Zoom:</span>
+            <span id="zoomBadge" class="badge-pill" style="color: var(--accent-blue);">100%</span>
+          </span>
           <span>Speed:</span>
           <select id="selectSpeed" style="padding: 2px 6px; font-size: 0.75rem;">
             <option value="150">1x (150ms)</option>
@@ -475,6 +499,7 @@
           <div class="legend-item"><div class="legend-dot" style="background: #4ade80;"></div> Evaluated Match</div>
           <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div> Evaluated Mismatch</div>
           <div class="legend-item"><div class="legend-dot" style="background: #f87171; border: 1px solid #ffffff;"></div> Pruned (3P/4P/5P)</div>
+          <div class="legend-item" style="margin-left: auto; color: #64748b;">[Drag: Pan &bull; Scroll: Zoom &bull; ＋ Add Point: Inject]</div>
         </div>
       </div>
     </div>
@@ -564,10 +589,6 @@
     //  1. EXACT C-ALGORITHM MATH ROUTINES (Replicated from src/gric-cluster/math)
     // =========================================================================
 
-    /**
-     * Exact 4-point triangle inequality minimum distance bound (calc_min_dist_4pt).
-     * Reconstructs 2D Cartesian coordinates using baseline d12.
-     */
     function calc_min_dist_4pt(d1f, d2f, d12, d1k, d2k) {
       if (d12 < 1e-9) return Math.abs(d1f - d1k);
 
@@ -582,10 +603,6 @@
       return Math.sqrt((xf - xk) * (xf - xk) + (yf - yk) * (yf - yk));
     }
 
-    /**
-     * Exact 5-point triangle inequality minimum distance bound (calc_min_dist_5pt).
-     * Reconstructs 3D simplex coordinates using triangle (c1, c2, c3).
-     */
     function calc_min_dist_5pt(d_f_c1, d_f_c2, d_f_c3, d_t_c1, d_t_c2, d_t_c3, d_c1_c2, d_c1_c3, d_c2_c3) {
       if (d_c1_c2 < 1e-9) return 0.0;
 
@@ -600,16 +617,13 @@
       const zF = zF_sq > 0.0 ? Math.sqrt(zF_sq) : 0.0;
 
       const xT = (d_t_c1 * d_t_c1 + d_c1_c2 * d_c1_c2 - d_t_c2 * d_t_c2) / (2.0 * d_c1_c2);
-      const yT = (d_t_c1 * d_t_c1 + d_c1_c3 * d_c1_c3 - d_t_c3 * d_t_c3 - 2.0 * xT * x3) / (2.0 * y3);
+      const yT = (d_t_c1 * d_t_c1 + d_c1_c3 * d_t_c3 - d_t_c3 * d_t_c3 - 2.0 * xT * x3) / (2.0 * y3);
       const zT_sq = d_t_c1 * d_t_c1 - xT * xT - yT * yT;
       const zT = zT_sq > 0.0 ? Math.sqrt(zT_sq) : 0.0;
 
       return Math.sqrt((xF - xT) * (xF - xT) + (yF - yT) * (yF - yT) + (zF - zT) * (zF - zT));
     }
 
-    /**
-     * Geometric match factor function (fmatch from cluster_math.c).
-     */
     function fmatch(dr, a = 2.0, b = 0.5) {
       if (dr > 2.0) return 0.0;
       return a - (a - b) * dr / 2.0;
@@ -642,7 +656,6 @@
         }
       } else if (type === "2Dspiral-shuffle") {
         const pts = generateBenchmark("2Dspiral", N);
-        // Fisher-Yates shuffle
         for (let i = pts.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [pts[i], pts[j]] = [pts[j], pts[i]];
@@ -661,7 +674,6 @@
         const periods = 10.0;
         for (let i = 0; i < N; i++) {
           const theta = 2.0 * Math.PI * periods * (i / N);
-          // Box-Muller Gaussian noise
           const u1 = Math.max(1e-12, Math.random());
           const u2 = Math.random();
           const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2) * 0.04;
@@ -697,8 +709,8 @@
     class Tile1D {
       constructor(axisName) {
         this.axisName = axisName;
-        this.clusters = []; // { id, val, members, prob }
-        this.dcc = [];      // 1D pairwise distance matrix
+        this.clusters = [];
+        this.dcc = [];
         this.totalEvals = 0;
         this.naiveEvals = 0;
       }
@@ -725,7 +737,6 @@
         let assigned = -1;
         let evals = 0;
 
-        // Rank by prior probability
         const order = [];
         for (let i = 0; i < K; i++) order.push(i);
         order.sort((a, b) => (this.clusters[b].prob || 1.0) - (this.clusters[a].prob || 1.0));
@@ -746,7 +757,6 @@
           }
 
           clmembflag[target] = false;
-          // 1D Triangle inequality pruning
           for (let cl = 0; cl < K; cl++) {
             if (!clmembflag[cl]) continue;
             const d_inter = this.dcc[target][cl];
@@ -779,20 +789,28 @@
     }
 
     // =========================================================================
-    //  4. STATE & CLUSTERING ENGINE (Monolithic 2D & Multi-Tile Subspace Modes)
+    //  4. STATE & ENGINE INITIALIZATION
     // =========================================================================
 
     const canvas = document.getElementById('simCanvas');
     const ctx = canvas.getContext('2d');
 
+    // Pan & Zoom Camera State
+    let panX = 0;
+    let panY = 0;
+    let zoom = 1.0;
+    let isDragging = false;
+    let dragStartX = 0, dragStartY = 0;
+    let isAddPointMode = false;
+
     // Algorithm Config
     let rlim = 0.100;
-    let targetMode = 'greedy'; // 'greedy' or 'entropy'
-    let pruneMode = '3P';      // '3P', '4P', '5P'
+    let targetMode = 'greedy';
+    let pruneMode = '3P';
     let useTM = false;
     let usePred = false;
     let useGprob = false;
-    let useTiles = false;      // Input-coordinate subspace partitioning
+    let useTiles = false;
 
     // Simulation & Benchmark State
     let currentBenchmark = "2Dspiral";
@@ -800,62 +818,62 @@
     let currentFrameIdx = 0;
     let isRunning = false;
     let playTimer = null;
-    let playSpeed = 50; // ms per step
+    let playSpeed = 50;
 
     // Past sample history for point cloud building
-    let pastSamples = []; // Array of { x, y }
+    let pastSamples = [];
 
     // Monolithic 2D Engine State
-    let clusters = [];               // { id, x, y, members, prob, lastActive, color }
-    let dcc = [];                    // Pairwise inter-cluster distances dcc[i][j]
-    let transitionCounts = [];       // K x K transition count matrix
+    let clusters = [];
+    let dcc = [];
+    let transitionCounts = [];
     let prevAssignedCluster = -1;
-    let assignmentHistory = [];      // Array of assigned cluster IDs
-    let frameHistory = [];           // Array of { indices: [], dists: [], assignment: id }
+    let assignmentHistory = [];
+    let frameHistory = [];
     let totalFrames = 0;
     let totalEvals = 0;
     let naiveEvals = 0;
     let currentFrame = null;
-    let currentEvaluations = [];     // Array of { target, dist, match }
-    let currentPruned = [];          // Array of { cluster, reason }
-    let currentPredicted = [];       // Array of cluster IDs tested via -pred
+    let currentEvaluations = [];
+    let currentPruned = [];
+    let currentPredicted = [];
     let currentEntropyBits = 0;
 
     // Multi-Tile 1D Subspace Engines
     const tileEngineX = new Tile1D("X");
     const tileEngineY = new Tile1D("Y");
-    let jointTuplesMap = new Map(); // key "cx_cy" -> { cx, cy, count, lastActive }
-    let currentJointTuple = null;    // { cx, cy }
+    let jointTuplesMap = new Map();
+    let currentJointTuple = null;
     let tileTraceX = null;
     let tileTraceY = null;
 
-    // Color palette for clusters
     function getClusterColor(id) {
       const hues = [199, 142, 270, 38, 340, 180, 48, 220, 110, 300, 15, 160];
       const hue = hues[id % hues.length];
       return `hsl(${hue}, 82%, 58%)`;
     }
 
-    // Viewport Transform (Metric Coordinates [-1.1, 1.1] -> Canvas Pixels)
+    // Viewport Transform (Metric Coordinates -> Screen Pixels with Pan & Zoom)
+    function getBaseScale() {
+      return Math.min(canvas.width, canvas.height) / 2.3;
+    }
+    function getScale() {
+      return getBaseScale() * zoom;
+    }
     function toCanvasX(x) {
-      const scale = Math.min(canvas.width, canvas.height) / 2.3;
-      return canvas.width / 2 + x * scale;
+      return canvas.width / 2 + (x - panX) * getScale();
     }
     function toCanvasY(y) {
-      const scale = Math.min(canvas.width, canvas.height) / 2.3;
-      return canvas.height / 2 - y * scale;
+      return canvas.height / 2 - (y - panY) * getScale();
     }
     function toMetricX(px) {
-      const scale = Math.min(canvas.width, canvas.height) / 2.3;
-      return (px - canvas.width / 2) / scale;
+      return (px - canvas.width / 2) / getScale() + panX;
     }
     function toMetricY(py) {
-      const scale = Math.min(canvas.width, canvas.height) / 2.3;
-      return (canvas.height / 2 - py) / scale;
+      return (canvas.height / 2 - py) / getScale() + panY;
     }
     function toCanvasRadius(r) {
-      const scale = Math.min(canvas.width, canvas.height) / 2.3;
-      return r * scale;
+      return r * getScale();
     }
 
     // --- SEQUENTIAL FRAME INGESTION ---
@@ -865,7 +883,6 @@
       pastSamples.push({ x, y });
 
       if (useTiles) {
-        // Multi-Tile Input Subspace Partitioning (Tile 0 = X, Tile 1 = Y)
         tileTraceX = tileEngineX.cluster1D(x, rlim);
         tileTraceY = tileEngineY.cluster1D(y, rlim);
 
@@ -891,7 +908,6 @@
         return;
       }
 
-      // --- Monolithic 2D Sequential Pipeline ---
       currentEvaluations = [];
       currentPruned = [];
       currentPredicted = [];
@@ -922,7 +938,7 @@
       naiveEvals += K;
       const clmembflag = new Array(K).fill(true);
 
-      // Step 2: Retrieve trajectory prediction shortcut candidates (-pred)
+      // Retrieve trajectory prediction shortcut candidates (-pred)
       let predCandidates = [];
       if (usePred && assignmentHistory.length >= 5) {
         const predLen = 4;
@@ -953,7 +969,7 @@
         predCandidates = candList.map(c => c.id).slice(0, 2);
       }
 
-      // Step 3a: Base Prior Probability Calculation (compute_priors_and_mixing.c)
+      // Base Prior Probability Calculation
       let sumProb = 0;
       for (let i = 0; i < K; i++) sumProb += (clusters[i].prob || 1.0);
 
@@ -965,7 +981,7 @@
         let tSum = 0;
         for (let i = 0; i < K; i++) tSum += transitionCounts[prevAssignedCluster][i] || 0;
         if (tSum > 0) {
-          const alpha = 0.5; // tm_mixing_coeff
+          const alpha = 0.5;
           for (let i = 0; i < K; i++) {
             const pTrans = (transitionCounts[prevAssignedCluster][i] || 0) / tSum;
             pBase[i] = (1.0 - alpha) * pBase[i] + alpha * pTrans;
@@ -975,7 +991,6 @@
 
       const currentGprobs = new Array(K).fill(1.0);
       const pCurrent = [...pBase];
-
       const measuredIndices = [];
       const measuredDists = [];
 
@@ -983,7 +998,6 @@
       let evalsThisFrame = 0;
       let measDepth = 0;
 
-      // Step 3: Iterative Search Loop
       while (true) {
         let activeSum = 0;
         let activeCount = 0;
@@ -1005,7 +1019,6 @@
           }
         }
 
-        // Calculate Shannon Entropy
         let H = 0.0;
         for (let i = 0; i < K; i++) {
           if (clmembflag[i] && pCurrent[i] > 1e-12) {
@@ -1014,10 +1027,8 @@
         }
         if (measDepth === 0) currentEntropyBits = H;
 
-        // Step 3b: Select Next Measurement Target
         let chosenTarget = -1;
 
-        // 1. Prediction shortcuts first (-pred)
         while (predCandidates.length > 0) {
           const cand = predCandidates.shift();
           if (clmembflag[cand]) {
@@ -1027,7 +1038,6 @@
           }
         }
 
-        // 2. Entropy Selection (-entropy) or Greedy Prioritization
         if (chosenTarget === -1) {
           if (targetMode === 'entropy' && H > (measDepth === 0 ? 3.0 : 1.5)) {
             let minExpectedH = 1e9;
@@ -1077,7 +1087,6 @@
 
         if (chosenTarget === -1) break;
 
-        // Step 3c: Distance Measurement
         evalsThisFrame++;
         measDepth++;
         const targetCl = clusters[chosenTarget];
@@ -1088,7 +1097,6 @@
         measuredDists.push(dfc);
         currentEvaluations.push({ target: targetCl, dist: dfc, match: isMatch });
 
-        // Step 3d: Check if solved
         if (isMatch) {
           assignedCluster = chosenTarget;
           targetCl.members++;
@@ -1175,7 +1183,6 @@
 
       totalEvals += evalsThisFrame;
 
-      // Step 4: Handle New Cluster Creation
       if (assignedCluster === -1) {
         assignedCluster = clusters.length;
         const newAnchor = {
@@ -1202,7 +1209,6 @@
         clusters.push(newAnchor);
       }
 
-      // Step 5: Record Assignments and History
       if (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
         transitionCounts[prevAssignedCluster][assignedCluster] =
           (transitionCounts[prevAssignedCluster][assignedCluster] || 0) + 1;
@@ -1232,7 +1238,7 @@
     }
 
     // =========================================================================
-    //  5. CANVAS RENDERING ENGINE
+    //  5. CANVAS RENDERING ENGINE (PAN & ZOOM READY)
     // =========================================================================
 
     function resizeCanvas() {
@@ -1246,24 +1252,37 @@
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Coordinate axes & grid
+      // --- Subtle Grid & Coordinate Axes ---
       ctx.strokeStyle = '#1e293b';
       ctx.lineWidth = 1;
+
+      // Coordinate axes
       ctx.beginPath();
-      ctx.moveTo(toCanvasX(-1.0), toCanvasY(0));
-      ctx.lineTo(toCanvasX(1.0), toCanvasY(0));
-      ctx.moveTo(toCanvasX(0), toCanvasY(-1.0));
-      ctx.lineTo(toCanvasX(0), toCanvasY(1.0));
+      ctx.moveTo(0, toCanvasY(0));
+      ctx.lineTo(canvas.width, toCanvasY(0));
+      ctx.moveTo(toCanvasX(0), 0);
+      ctx.lineTo(toCanvasX(0), canvas.height);
       ctx.stroke();
+
+      // Metric reference circles & ticks
+      ctx.strokeStyle = '#172554';
+      ctx.setLineDash([2, 4]);
+      [0.5, 1.0].forEach(rad => {
+        ctx.beginPath();
+        ctx.arc(toCanvasX(0), toCanvasY(0), toCanvasRadius(rad), 0, Math.PI * 2);
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
 
       // --- 1. Draw Past Samples Point Cloud (Light Grey) ---
       if (pastSamples.length > 0) {
-        ctx.fillStyle = 'rgba(148, 163, 184, 0.40)'; // Light slate grey
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.40)';
         for (let i = 0; i < pastSamples.length; i++) {
           const sx = toCanvasX(pastSamples[i].x);
           const sy = toCanvasY(pastSamples[i].y);
+          if (sx < -10 || sx > canvas.width + 10 || sy < -10 || sy > canvas.height + 10) continue;
           ctx.beginPath();
-          ctx.arc(sx, sy, 1.8, 0, Math.PI * 2);
+          ctx.arc(sx, sy, Math.max(1.2, 1.8 * Math.sqrt(zoom)), 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -1276,7 +1295,6 @@
           const pLeft = toCanvasX(cx.val - rlim);
           const pRight = toCanvasX(cx.val + rlim);
 
-          // Vertical boundary strip
           ctx.fillStyle = 'rgba(56, 189, 248, 0.02)';
           ctx.fillRect(pLeft, 0, pRight - pLeft, canvas.height);
 
@@ -1288,9 +1306,8 @@
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // 1D X-Anchor mark on X-axis
           ctx.beginPath();
-          ctx.arc(px, toCanvasY(0), 4.5, 0, Math.PI * 2);
+          ctx.arc(px, toCanvasY(0), 4.5 * Math.sqrt(zoom), 0, Math.PI * 2);
           ctx.fillStyle = '#38bdf8';
           ctx.fill();
         });
@@ -1301,7 +1318,6 @@
           const pTop = toCanvasY(cy.val + rlim);
           const pBottom = toCanvasY(cy.val - rlim);
 
-          // Horizontal boundary strip
           ctx.fillStyle = 'rgba(45, 212, 191, 0.02)';
           ctx.fillRect(0, pTop, canvas.width, pBottom - pTop);
 
@@ -1313,15 +1329,14 @@
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // 1D Y-Anchor mark on Y-axis
           ctx.beginPath();
-          ctx.arc(toCanvasX(0), py, 4.5, 0, Math.PI * 2);
+          ctx.arc(toCanvasX(0), py, 4.5 * Math.sqrt(zoom), 0, Math.PI * 2);
           ctx.fillStyle = '#2dd4bf';
           ctx.fill();
         });
 
-        // Draw Observed Joint Tuples (Intersection Nodes)
-        jointTuplesMap.forEach((entry, key) => {
+        // Draw Observed Joint Tuples
+        jointTuplesMap.forEach((entry) => {
           const clX = tileEngineX.clusters[entry.cx];
           const clY = tileEngineY.clusters[entry.cy];
           if (!clX || !clY) return;
@@ -1329,7 +1344,6 @@
           const jx = toCanvasX(clX.val);
           const jy = toCanvasY(clY.val);
 
-          // Joint Tuple Bounding Box
           const bLeft = toCanvasX(clX.val - rlim);
           const bRight = toCanvasX(clX.val + rlim);
           const bTop = toCanvasY(clY.val + rlim);
@@ -1339,9 +1353,8 @@
           ctx.lineWidth = 1;
           ctx.strokeRect(bLeft, bTop, bRight - bLeft, bBottom - bTop);
 
-          // Joint Tuple Anchor Center
           ctx.beginPath();
-          ctx.arc(jx, jy, 5.5, 0, Math.PI * 2);
+          ctx.arc(jx, jy, 5.5 * Math.sqrt(zoom), 0, Math.PI * 2);
           ctx.fillStyle = '#c084fc';
           ctx.fill();
           ctx.strokeStyle = '#ffffff';
@@ -1364,7 +1377,6 @@
             const bTop = toCanvasY(clY.val + rlim);
             const bBottom = toCanvasY(clY.val - rlim);
 
-            // Active Intersection Box Highlight
             ctx.fillStyle = 'rgba(74, 222, 128, 0.12)';
             ctx.fillRect(bLeft, bTop, bRight - bLeft, bBottom - bTop);
             ctx.strokeStyle = '#4ade80';
@@ -1392,13 +1404,11 @@
       }
 
       // --- 3. MONOLITHIC 2D MODE RENDERING ---
-      // Draw Clusters and rlim spheres
       clusters.forEach(c => {
         const cx = toCanvasX(c.x);
         const cy = toCanvasY(c.y);
         const cr = toCanvasRadius(rlim);
 
-        // rlim sphere
         ctx.beginPath();
         ctx.arc(cx, cy, cr, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(56, 189, 248, 0.04)';
@@ -1409,9 +1419,8 @@
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Anchor Node
         ctx.beginPath();
-        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 6 * Math.sqrt(zoom), 0, Math.PI * 2);
         ctx.fillStyle = c.color;
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
@@ -1423,7 +1432,6 @@
         ctx.fillText(`c_${c.id} (${c.members})`, cx + 9, cy - 6);
       });
 
-      // Draw Pruned candidate indicators (Cross markers with prune reason)
       currentPruned.forEach(p => {
         const px = toCanvasX(p.cluster.x);
         const py = toCanvasY(p.cluster.y);
@@ -1442,7 +1450,6 @@
         ctx.fillText(p.reason, px + 8, py + 10);
       });
 
-      // Draw Distance Evaluation Rays
       if (currentFrame) {
         const fx = toCanvasX(currentFrame.x);
         const fy = toCanvasY(currentFrame.y);
@@ -1459,7 +1466,6 @@
           ctx.stroke();
         });
 
-        // Draw Current Query Frame fi
         ctx.beginPath();
         ctx.arc(fx, fy, 7, 0, Math.PI * 2);
         ctx.fillStyle = '#facc15';
@@ -1477,6 +1483,19 @@
     // =========================================================================
     //  6. UI UPDATES & TELEMETRY
     // =========================================================================
+
+    function updateZoomBadge() {
+      const badge = document.getElementById('zoomBadge');
+      if (badge) badge.innerText = `${Math.round(zoom * 100)}%`;
+    }
+
+    function resetView() {
+      panX = 0;
+      panY = 0;
+      zoom = 1.0;
+      updateZoomBadge();
+      draw();
+    }
 
     function updateUI() {
       if (useTiles) {
@@ -1503,7 +1522,6 @@
       const savedPct = naiveEvals > 0 ? (((naiveEvals - totalEvals) / naiveEvals) * 100).toFixed(0) : '0';
       document.getElementById('statSaved').innerText = `${Math.max(0, savedPct)}%`;
 
-      // Progress bar update
       if (benchmarkDataset.length > 0) {
         const pct = Math.min(100, (currentFrameIdx / benchmarkDataset.length) * 100);
         document.getElementById('progressFill').style.width = `${pct}%`;
@@ -1513,7 +1531,6 @@
         document.getElementById('frameCounter').innerText = `${totalFrames} live`;
       }
 
-      // Update Candidate List / Tile Inspection List
       const cont = document.getElementById('candidateContainer');
 
       if (useTiles) {
@@ -1542,7 +1559,6 @@
         return;
       }
 
-      // Monolithic Candidate List
       if (clusters.length === 0) {
         cont.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No clusters formed yet.</div>`;
         return;
@@ -1649,6 +1665,11 @@
     }
 
     function startSimulation() {
+      // Mutual Exclusivity: Turn off Add Point Mode when Running
+      if (isAddPointMode) {
+        setAddPointMode(false);
+      }
+
       isRunning = true;
       const btn = document.getElementById('btnPlay');
       btn.innerText = "❚❚ Pause";
@@ -1678,8 +1699,22 @@
       playTimer = null;
     }
 
+    function setAddPointMode(enabled) {
+      isAddPointMode = enabled;
+      const btn = document.getElementById('btnAddPoint');
+      if (isAddPointMode) {
+        if (isRunning) pauseSimulation();
+        btn.classList.add('toggle-active');
+        canvas.classList.add('crosshair');
+        canvas.classList.remove('grabbing');
+      } else {
+        btn.classList.remove('toggle-active');
+        canvas.classList.remove('crosshair');
+      }
+    }
+
     // =========================================================================
-    //  7. FILE UPLOAD & PARSING (Local FileReader API)
+    //  7. FILE UPLOAD & PARSING
     // =========================================================================
 
     function parseCoordinateFile(text, filename = "dataset") {
@@ -1729,6 +1764,7 @@
       document.getElementById('benchmarkDesc').innerHTML = BENCHMARK_DESCS["custom"];
 
       resetSimulation();
+      resetView();
     }
 
     const fileInput = document.getElementById('fileUpload');
@@ -1772,10 +1808,13 @@
     });
 
     // =========================================================================
-    //  8. CONTROLS & EVENT LISTENERS
+    //  8. CONTROLS, PAN/ZOOM & INTERACTION LISTENERS
     // =========================================================================
 
-    document.getElementById('selectBenchmark').addEventListener('change', loadSelectedBenchmark);
+    document.getElementById('selectBenchmark').addEventListener('change', () => {
+      loadSelectedBenchmark();
+      resetView();
+    });
 
     document.getElementById('selectSpeed').addEventListener('change', (e) => {
       playSpeed = parseInt(e.target.value);
@@ -1795,19 +1834,81 @@
       stepNextFrame();
     });
 
+    document.getElementById('btnAddPoint').addEventListener('click', () => {
+      setAddPointMode(!isAddPointMode);
+    });
+
     document.getElementById('btnReset').addEventListener('click', () => {
       pauseSimulation();
       loadSelectedBenchmark();
     });
 
-    canvas.addEventListener('click', (e) => {
-      if (isRunning) pauseSimulation();
+    document.getElementById('btnResetView').addEventListener('click', resetView);
+
+    // Pan & Zoom Event Listeners
+    canvas.addEventListener('mousedown', (e) => {
       const rect = canvas.getBoundingClientRect();
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
-      const mx = toMetricX(px);
-      const my = toMetricY(py);
-      clusterFrame(mx, my);
+
+      if (isAddPointMode) {
+        if (isRunning) pauseSimulation();
+        const mx = toMetricX(px);
+        const my = toMetricY(py);
+        clusterFrame(mx, my);
+      } else {
+        isDragging = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        canvas.classList.add('grabbing');
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (isDragging && !isAddPointMode) {
+        const scale = getScale();
+        const dx = (e.clientX - dragStartX) / scale;
+        const dy = (e.clientY - dragStartY) / scale;
+        panX -= dx;
+        panY += dy;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        draw();
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        canvas.classList.remove('grabbing');
+      }
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mousePx = e.clientX - rect.left;
+      const mousePy = e.clientY - rect.top;
+
+      const mxBefore = toMetricX(mousePx);
+      const myBefore = toMetricY(mousePy);
+
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+      const newZoom = Math.max(0.2, Math.min(30.0, zoom * zoomFactor));
+
+      zoom = newZoom;
+      const newScale = getScale();
+
+      panX = mxBefore - (mousePx - canvas.width / 2) / newScale;
+      panY = myBefore - (canvas.height / 2 - mousePy) / newScale;
+
+      updateZoomBadge();
+      draw();
+    }, { passive: false });
+
+    // Double-click to reset view
+    canvas.addEventListener('dblclick', (e) => {
+      if (!isAddPointMode) resetView();
     });
 
     const sliderRlim = document.getElementById('sliderRlim');
@@ -1866,6 +1967,7 @@
     // Initial Load
     resizeCanvas();
     loadSelectedBenchmark();
+    updateZoomBadge();
   </script>
 </body>
 </html>
