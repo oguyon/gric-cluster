@@ -2599,23 +2599,17 @@
               ctx.stroke();
               ctx.setLineDash([]);
             } else {
-              // 3D Custom: Wireframe Equatorial Rings (XY, XZ, YZ)
+              // 3D Custom: 3 Orthogonal Wireframe Rings (perpendicular to Z, Y, X axes)
               const az = orbitCamera.azimuth, el = orbitCamera.elevation;
               
-              // Sphere boundary halo
-              ctx.beginPath();
-              ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
-              ctx.fillStyle = 'rgba(56, 189, 248, 0.03)';
-              ctx.fill();
-              ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
-              ctx.lineWidth = 1;
-              ctx.stroke();
-
-              // XY ring
+              ctx.save();
               ctx.strokeStyle = c.color;
-              ctx.lineWidth = 0.9;
+              ctx.globalAlpha = clusterAlpha * 0.35; // Fainter, subtle wireframe
+              ctx.lineWidth = 0.75;
+
+              // 1. Circle perpendicular to Z-axis (XY plane)
               ctx.beginPath();
-              for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 8) {
+              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
                 const rx = c.x + rlim * Math.cos(a);
                 const ry = c.y + rlim * Math.sin(a);
                 const rz = c.z;
@@ -2625,6 +2619,33 @@
                 else ctx.lineTo(ppos.px, ppos.py);
               }
               ctx.stroke();
+
+              // 2. Circle perpendicular to Y-axis (XZ plane)
+              ctx.beginPath();
+              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
+                const rx = c.x + rlim * Math.cos(a);
+                const ry = c.y;
+                const rz = c.z + rlim * Math.sin(a);
+                const rp = project3D(rx, ry, rz, az, el);
+                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                else ctx.lineTo(ppos.px, ppos.py);
+              }
+              ctx.stroke();
+
+              // 3. Circle perpendicular to X-axis (YZ plane)
+              ctx.beginPath();
+              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
+                const rx = c.x;
+                const ry = c.y + rlim * Math.cos(a);
+                const rz = c.z + rlim * Math.sin(a);
+                const rp = project3D(rx, ry, rz, az, el);
+                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                else ctx.lineTo(ppos.px, ppos.py);
+              }
+              ctx.stroke();
+              ctx.restore();
             }
 
             // Anchor Core Node
@@ -2685,21 +2706,18 @@
               ctx.setLineDash([4, 4]);
               ctx.stroke();
             } else {
-              // 3D Custom: Glowing equatorial rings & halo
+              // 3D Custom: 3 Highlighted Equatorial Rings & halo
               const az = orbitCamera.azimuth, el = orbitCamera.elevation;
               ctx.beginPath();
               ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
-              ctx.fillStyle = 'rgba(250, 204, 21, 0.12)';
+              ctx.fillStyle = 'rgba(250, 204, 21, 0.08)';
               ctx.fill();
-              ctx.strokeStyle = '#facc15';
-              ctx.lineWidth = 2.0;
-              ctx.stroke();
 
-              // Highlight XY ring
+              // 1. Highlight XY ring (perpendicular to Z)
               ctx.strokeStyle = '#facc15';
-              ctx.lineWidth = 2.2;
+              ctx.lineWidth = 1.8;
               ctx.beginPath();
-              for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 12) {
+              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
                 const rx = selC.x + rlim * Math.cos(a);
                 const ry = selC.y + rlim * Math.sin(a);
                 const rz = selC.z;
@@ -2710,14 +2728,28 @@
               }
               ctx.stroke();
 
-              // Highlight XZ ring
-              ctx.strokeStyle = 'rgba(250, 204, 21, 0.7)';
+              // 2. Highlight XZ ring (perpendicular to Y)
+              ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)';
               ctx.lineWidth = 1.4;
-              ctx.setLineDash([3, 3]);
               ctx.beginPath();
-              for (let a = 0; a <= Math.PI * 2 + 0.1; a += Math.PI / 12) {
+              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
                 const rx = selC.x + rlim * Math.cos(a);
                 const ry = selC.y;
+                const rz = selC.z + rlim * Math.sin(a);
+                const rp = project3D(rx, ry, rz, az, el);
+                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                else ctx.lineTo(ppos.px, ppos.py);
+              }
+              ctx.stroke();
+
+              // 3. Highlight YZ ring (perpendicular to X)
+              ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)';
+              ctx.lineWidth = 1.4;
+              ctx.beginPath();
+              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
+                const rx = selC.x;
+                const ry = selC.y + rlim * Math.cos(a);
                 const rz = selC.z + rlim * Math.sin(a);
                 const rp = project3D(rx, ry, rz, az, el);
                 const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
