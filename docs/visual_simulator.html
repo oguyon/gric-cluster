@@ -339,7 +339,8 @@
       flex-direction: column;
       gap: 0;
       width: 440px;
-      min-width: 440px;
+      min-width: 280px;
+      max-width: 850px;
       flex-shrink: 0;
       height: 100%;
       max-height: 100%;
@@ -349,10 +350,44 @@
       box-sizing: border-box;
     }
 
-    @media (max-width: 1150px) {
+    .layout-resizer {
+      width: 8px;
+      min-width: 8px;
+      cursor: col-resize;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin: 0 1px;
+      z-index: 25;
+      user-select: none;
+      background: transparent;
+    }
+
+    .layout-resizer::after {
+      content: '';
+      width: 3px;
+      height: 52px;
+      border-radius: 2px;
+      background: #334155;
+      transition: background 0.15s ease, height 0.15s ease;
+    }
+
+    .layout-resizer:hover::after,
+    .layout-resizer.dragging::after {
+      background: var(--accent-blue);
+      height: 80px;
+    }
+
+    @media (max-width: 1050px) {
+      .layout-resizer {
+        display: none !important;
+      }
       .side-panel {
-        width: 100%;
-        min-width: 100%;
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
         height: auto;
         max-height: none;
         overflow: visible;
@@ -764,6 +799,94 @@
       background: rgba(192, 132, 252, 0.1);
     }
 
+    /* =========================================================================
+       RICH HOVER TOOLTIP POPUP
+       ========================================================================= */
+    .rich-tooltip {
+      position: fixed;
+      z-index: 99999;
+      pointer-events: none;
+      background: rgba(11, 19, 41, 0.96);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.8), 0 0 1px rgba(56, 189, 248, 0.6);
+      border-radius: 8px;
+      padding: 9px 13px;
+      max-width: 330px;
+      min-width: 220px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      transition: opacity 0.12s ease, transform 0.12s ease;
+      opacity: 0;
+      transform: translateY(4px);
+      line-height: 1.35;
+      font-size: 0.75rem;
+    }
+
+    .rich-tooltip.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .rich-tooltip-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 5px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.65);
+    }
+
+    .rich-tooltip-title {
+      font-weight: 700;
+      font-size: 0.81rem;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rich-tooltip-title.cyan { color: #38bdf8; }
+    .rich-tooltip-title.amber { color: #fbbf24; }
+    .rich-tooltip-title.purple { color: #c084fc; }
+    .rich-tooltip-title.green { color: #4ade80; }
+    .rich-tooltip-title.teal { color: #2dd4bf; }
+    .rich-tooltip-title.red { color: #f87171; }
+
+    .rich-tooltip-badge {
+      display: inline-flex;
+      align-items: center;
+      background: rgba(56, 189, 248, 0.15);
+      color: #93c5fd;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.66rem;
+      font-family: monospace;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .rich-tooltip-desc {
+      color: #cbd5e1;
+      font-size: 0.73rem;
+      line-height: 1.45;
+    }
+
+    .rich-tooltip-desc b {
+      color: #f8fafc;
+    }
+
+    .rich-tooltip-desc code {
+      background: rgba(15, 23, 42, 0.8);
+      color: #facc15;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 0.70rem;
+    }
+
     .config-tab-bar {
       display: flex;
       background: #0f172a;
@@ -881,7 +1004,7 @@
     </div>
   </header>
 
-  <div class="main-layout">
+  <div class="main-layout" id="mainLayout">
     <!-- Left: Canvas Area -->
     <div class="canvas-container" id="canvasBox">
       <div id="dropzone" class="dropzone-overlay">Drop 2D/3D Coordinate File (.txt, .csv, .dat) Here</div>
@@ -914,17 +1037,45 @@
             </optgroup>
           </select>
           <input type="file" id="fileUpload" accept=".txt,.csv,.dat" style="display: none;">
-          <button id="btnUpload" class="secondary" title="Upload custom coordinate file">📁 Upload</button>
+          <button id="btnUpload" class="secondary" 
+                  data-tooltip-title="Upload Custom Coordinate Dataset" 
+                  data-tooltip-badge="File: .txt / .csv" 
+                  data-tooltip-color="cyan" 
+                  data-tooltip-desc="Load custom 2D or 3D coordinate streams formatted as space- or comma-delimited columns (X, Y[, Z]). Normalizes and centers coordinate bounds.">📁 Upload</button>
         </div>
 
         <div class="toolbar-row">
           <div class="btn-group">
-            <button id="btnPlay" class="primary">&#9658; Run / Play</button>
-            <button id="btnStep" title="Ingest next frame from dataset">&#8677; Step</button>
-            <button id="btnAddPoint" title="Toggle manual click to inject points on canvas">＋ Add Point</button>
-            <button id="btnExplain" title="Toggle step-by-step algorithmic decision explanations">💬 Explain</button>
-            <button id="btnReset" title="Reload dataset from beginning">&#8635; Reset</button>
-            <button id="btnResetView" title="Reset pan &amp; zoom view">🔍 1:1</button>
+            <button id="btnPlay" class="primary" 
+                    data-tooltip-title="Run / Pause Continuous Simulation" 
+                    data-tooltip-badge="Shortcut: Space" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Start or pause sequential frame ingestion through the GRIC clustering pipeline at the selected playback speed.">&#9658; Run / Play</button>
+            <button id="btnStep" 
+                    data-tooltip-title="Step Ingest Single Frame" 
+                    data-tooltip-badge="Shortcut: S / ➔" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Pushes exactly one coordinate vector from the stream, evaluating distance bounds, updating priors, and advancing the frame index.">&#8677; Step</button>
+            <button id="btnAddPoint" 
+                    data-tooltip-title="Toggle Interactive Point Injection" 
+                    data-tooltip-badge="Shortcut: Click Canvas" 
+                    data-tooltip-color="amber" 
+                    data-tooltip-desc="Click anywhere on the 2D canvas or 3D orthogonal projection planes to inject custom query points into the active clustering model.">＋ Add Point</button>
+            <button id="btnExplain" 
+                    data-tooltip-title="Toggle Decision Narrative Explanations" 
+                    data-tooltip-badge="Shortcut: E" 
+                    data-tooltip-color="green" 
+                    data-tooltip-desc="Enables rich step-by-step diagnostic telemetry explaining anchor choices, triangle inequality bounds, entropy calculations, and prunings.">💬 Explain</button>
+            <button id="btnReset" 
+                    data-tooltip-title="Reset Simulation &amp; Clear Model" 
+                    data-tooltip-badge="Shortcut: R" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Clears all established cluster centroids, distance matrices D_cc, transition counts, frame histories, and restarts the dataset from frame 0.">&#8635; Reset</button>
+            <button id="btnResetView" 
+                    data-tooltip-title="Reset Pan &amp; Zoom Calibration (1:1)" 
+                    data-tooltip-badge="Shortcut: Z" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Restores canvas viewport pan coordinates to origin (0, 0) and resets magnification scale to 100% (1:1 aspect ratio).">🔍 1:1</button>
           </div>
         </div>
       </div>
@@ -937,7 +1088,11 @@
             <span id="zoomBadge" class="badge-pill" style="color: var(--accent-blue);">100%</span>
           </span>
           <span>Speed:</span>
-          <select id="selectSpeed" style="padding: 2px 6px; font-size: 0.75rem;">
+          <select id="selectSpeed" style="padding: 2px 6px; font-size: 0.75rem;" 
+                  data-tooltip-title="Simulation Playback Speed" 
+                  data-tooltip-badge="Rate Control" 
+                  data-tooltip-color="cyan" 
+                  data-tooltip-desc="Adjusts the interval delay between ingested frames, from step-by-step (150ms) to instant batch processing.">
             <option value="150">1x (150ms)</option>
             <option value="50" selected>3x (50ms)</option>
             <option value="15">10x (15ms)</option>
@@ -947,7 +1102,11 @@
           </select>
           <span style="display:flex; align-items:center; gap:4px;">
             <span>Loop:</span>
-            <select id="selectLoop" style="padding: 2px 6px; font-size: 0.75rem;">
+            <select id="selectLoop" style="padding: 2px 6px; font-size: 0.75rem;" 
+                    data-tooltip-title="Dataset Loop Iterations" 
+                    data-tooltip-badge="Multi-Pass" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Sets the number of sequential passes over the dataset. Multiple passes demonstrate Markov matrix convergence and steady-state cluster stabilization.">
               <option value="1" selected>1 pass (N=1)</option>
               <option value="2">2 passes (N=2)</option>
               <option value="3">3 passes (N=3)</option>
@@ -972,11 +1131,31 @@
         
         <!-- 3D Camera Quick Presets (Visible in 3D Mode) -->
         <div id="viewPresetBar" class="view-preset-bar" style="display: flex;">
-          <button class="preset-btn" id="presetIso" title="Isometric Perspective (θ=-35°, φ=25°)">Isometric</button>
-          <button class="preset-btn" id="presetFront" title="Front Projection (θ=0°, φ=0°)">Front</button>
-          <button class="preset-btn" id="presetTop" title="Top Projection (θ=0°, φ=89°)">Top</button>
-          <button class="preset-btn" id="presetSide" title="Side Projection (θ=90°, φ=0°)">Side</button>
-          <button class="preset-btn" id="presetReset3D" title="Reset 3D Orbit Camera">↺ Reset 3D</button>
+          <button class="preset-btn" id="presetIso" 
+                  data-tooltip-title="Isometric 3D Camera Perspective" 
+                  data-tooltip-badge="θ=-35°, φ=25°" 
+                  data-tooltip-color="teal" 
+                  data-tooltip-desc="Rotates 3D orbit camera to isometric perspective for balanced 3D spatial depth visualization.">Isometric</button>
+          <button class="preset-btn" id="presetFront" 
+                  data-tooltip-title="Front Elevation Projection (XZ Plane)" 
+                  data-tooltip-badge="Front View" 
+                  data-tooltip-color="teal" 
+                  data-tooltip-desc="Aligns perspective along the Y-axis (θ = 0°, φ = 0°) looking directly at the orthogonal X-Z plane.">Front</button>
+          <button class="preset-btn" id="presetTop" 
+                  data-tooltip-title="Top Planar Projection (XY Plane)" 
+                  data-tooltip-badge="Top View" 
+                  data-tooltip-color="teal" 
+                  data-tooltip-desc="Aligns perspective along the Z-axis (θ = 0°, φ = 89°) looking directly down onto the X-Y ground plane.">Top</button>
+          <button class="preset-btn" id="presetSide" 
+                  data-tooltip-title="Lateral Side Projection (YZ Plane)" 
+                  data-tooltip-badge="Side View" 
+                  data-tooltip-color="teal" 
+                  data-tooltip-desc="Aligns perspective along the X-axis (θ = 90°, φ = 0°) looking directly at the orthogonal Y-Z plane.">Side</button>
+          <button class="preset-btn" id="presetReset3D" 
+                  data-tooltip-title="Reset 3D Orbit Camera" 
+                  data-tooltip-badge="Reset Camera" 
+                  data-tooltip-color="teal" 
+                  data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">↺ Reset 3D</button>
         </div>
 
         <canvas id="simCanvas" width="800" height="520"></canvas>
@@ -996,13 +1175,25 @@
       </div>
     </div>
 
+    <!-- Horizontal Layout Resizer (between Left Side View and Right Side Panels) -->
+    <div class="layout-resizer" id="layoutResizer" 
+         data-tooltip-title="Drag to Resize Sidebar" 
+         data-tooltip-badge="Horizontal Split" 
+         data-tooltip-color="cyan" 
+         data-tooltip-desc="Click and drag horizontally to adjust the width split between the canvas view area and sidebar panels."></div>
+
     <!-- Right: Control & Telemetry Panel -->
-    <div class="side-panel">
+    <div class="side-panel" id="sidePanel">
       <!-- 1. Simulator Settings -->
       <div id="cardSettings" class="card expanded" style="flex: 1.1 1 0px;">
         <div class="card-title" onclick="togglePanelCollapse('cardSettings')">
           <div style="display: flex; align-items: center; gap: 6px;">
-            <button class="card-collapse-btn" id="btnCollapseSettings" title="Collapse / Expand Simulator Settings" onclick="event.stopPropagation(); togglePanelCollapse('cardSettings');">▾</button>
+            <button class="card-collapse-btn" id="btnCollapseSettings" 
+                    data-tooltip-title="Collapse / Expand Simulator Settings" 
+                    data-tooltip-badge="Card Toggle" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Toggles visibility of Algorithm, Input Stream, and Display panels. Open sibling panels auto-expand vertically." 
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardSettings');">▾</button>
             <span>Simulator Settings</span>
           </div>
           <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">CLI Parity</span>
@@ -1010,9 +1201,21 @@
 
         <div class="card-body">
           <div class="config-tab-bar">
-            <div id="tabCfgAlgo" class="config-tab-btn active">🎯 Algorithm</div>
-            <div id="tabCfgInput" class="config-tab-btn">📥 Input Stream</div>
-            <div id="tabCfgDisplay" class="config-tab-btn">🎨 Display &amp; View</div>
+            <div id="tabCfgAlgo" class="config-tab-btn active" 
+                 data-tooltip-title="Algorithm Tuning Tab" 
+                 data-tooltip-badge="Settings" 
+                 data-tooltip-color="cyan" 
+                 data-tooltip-desc="Configure cluster radius threshold (rlim), candidate selection heuristics, geometric pruning (3P/4P/5P), and priors.">🎯 Algorithm</div>
+            <div id="tabCfgInput" class="config-tab-btn" 
+                 data-tooltip-title="Input Stream &amp; Dataset Tab" 
+                 data-tooltip-badge="Settings" 
+                 data-tooltip-color="cyan" 
+                 data-tooltip-desc="Select 2D/3D benchmarks (spirals, spheres, Lorenz attractor), custom files, noise amplitude, and looping.">📥 Input Stream</div>
+            <div id="tabCfgDisplay" class="config-tab-btn" 
+                 data-tooltip-title="Display &amp; View Controls Tab" 
+                 data-tooltip-badge="Settings" 
+                 data-tooltip-color="cyan" 
+                 data-tooltip-desc="Adjust visual focus balance between raw samples and clusters, 3D camera presets, and pan/zoom reset.">🎨 Display &amp; View</div>
           </div>
           
           <div class="card-body-scroll">
@@ -1023,7 +1226,11 @@
                 <div class="control-label">
                   <span>Radius Threshold (<span class="badge-pill">rlim</span>)</span>
                   <div style="display:flex; align-items:center; gap:6px;">
-                    <button id="btnAutoRlim" class="btn-mini" title="Compute auto-rlim from dataset median distance (-scandist)">⚡ Auto</button>
+                    <button id="btnAutoRlim" class="btn-mini" 
+                            data-tooltip-title="Auto-Compute Radius (-scandist)" 
+                            data-tooltip-badge="CLI: -scandist" 
+                            data-tooltip-color="green" 
+                            data-tooltip-desc="Scans initial dataset points to compute median sample distance, setting rlim = 0.20 × d_med for optimal density coverage.">⚡ Auto</button>
                     <span id="lblRlim" class="val">0.100</span>
                   </div>
                 </div>
@@ -1033,16 +1240,36 @@
               <!-- Target Selection Mode -->
               <div class="control-label" style="margin-top: 8px;">Target Selection Mode</div>
               <div class="toggle-group">
-                <div id="modeGreedy" class="toggle-btn active">Greedy (argmax P)</div>
-                <div id="modeEntropy" class="toggle-btn">Entropy (-entropy)</div>
+                <div id="modeGreedy" class="toggle-btn active" 
+                     data-tooltip-title="Greedy Prior Target Selection" 
+                     data-tooltip-badge="Default Mode" 
+                     data-tooltip-color="cyan" 
+                     data-tooltip-desc="Selects candidate cluster anchors by prioritizing the highest active prior probability P(c_i) in descending order.">Greedy (argmax P)</div>
+                <div id="modeEntropy" class="toggle-btn" 
+                     data-tooltip-title="Shannon Entropy Target Selection" 
+                     data-tooltip-badge="CLI: -entropy" 
+                     data-tooltip-color="green" 
+                     data-tooltip-desc="Minimizes expected residual information entropy E[H], querying anchors that maximize expected geometric pruning.">Entropy (-entropy)</div>
               </div>
 
               <!-- Geometric Pruning Heuristics -->
               <div class="control-label">Geometric Pruning Heuristics</div>
               <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr);">
-                <div id="prune3P" class="toggle-btn active" title="Triangle inequality 3-Point pruning">3-Point (3P)</div>
-                <div id="prune4P" class="toggle-btn" title="4-Point tetrahedral distance bound (-te4)">4-Point (-te4)</div>
-                <div id="prune5P" class="toggle-btn" title="5-Point Cayley-Menger determinant bound (-te5)">5-Point (-te5)</div>
+                <div id="prune3P" class="toggle-btn active" 
+                     data-tooltip-title="3-Point Triangle Inequality Pruning" 
+                     data-tooltip-badge="Heuristic: 3P" 
+                     data-tooltip-color="red" 
+                     data-tooltip-desc="Excludes candidates without computing distances when |d(f, c_i) - d(c_i, c_k)| > rlim using triangle inequality.">3-Point (3P)</div>
+                <div id="prune4P" class="toggle-btn" 
+                     data-tooltip-title="4-Point Tetrahedral Bounding" 
+                     data-tooltip-badge="CLI: -te4" 
+                     data-tooltip-color="red" 
+                     data-tooltip-desc="Uses 2 measured anchors to compute Euclidean 4-point tetrahedral embeddability bounds, pruning unviable candidates.">4-Point (-te4)</div>
+                <div id="prune5P" class="toggle-btn" 
+                     data-tooltip-title="5-Point Cayley-Menger Bounding" 
+                     data-tooltip-badge="CLI: -te5" 
+                     data-tooltip-color="red" 
+                     data-tooltip-desc="Evaluates 5-point Cayley-Menger metric determinant geometry across 3 measured anchors for highest pruning power.">5-Point (-te5)</div>
               </div>
 
               <!-- Prior & Subspace Acceleration -->
@@ -1051,10 +1278,26 @@
                   <span>Prior &amp; Subspace Acceleration</span>
                 </div>
                 <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 6px;">
-                  <div id="optTM" class="toggle-btn" title="Transition matrix mixing (-tm)">-tm (Markov)</div>
-                  <div id="optPred" class="toggle-btn" title="Pattern sequence prediction (-pred)">-pred (Predictor)</div>
-                  <div id="optGprob" class="toggle-btn" title="Visitor co-measurement geometry (-gprob)">-gprob (Visitors)</div>
-                  <div id="optTiles" class="toggle-btn" title="Input Subspace Partition (-tiles: 1D X/Y/Z Tiles -> Joint Tuple)">-tiles (Subspaces)</div>
+                  <div id="optTM" class="toggle-btn" 
+                       data-tooltip-title="Markov Transition Matrix Mixing" 
+                       data-tooltip-badge="CLI: -tm" 
+                       data-tooltip-color="purple" 
+                       data-tooltip-desc="Learns temporal transition matrix P(c_t | c_{t-1}) and mixes temporal likelihood with spatial cluster priors.">-tm (Markov)</div>
+                  <div id="optPred" class="toggle-btn" 
+                       data-tooltip-title="Pattern Sequence Predictor" 
+                       data-tooltip-badge="CLI: -pred [N]" 
+                       data-tooltip-color="purple" 
+                       data-tooltip-desc="Forecasts upcoming cluster candidates across an N-frame horizon using learned empirical sequence trajectories.">-pred (Predictor)</div>
+                  <div id="optGprob" class="toggle-btn" 
+                       data-tooltip-title="Visitor Co-Measurement Geometry" 
+                       data-tooltip-badge="CLI: -gprob" 
+                       data-tooltip-color="purple" 
+                       data-tooltip-desc="Boosts cluster candidate likelihood when recent visitor frames have co-measured the same cluster neighborhood.">-gprob (Visitors)</div>
+                  <div id="optTiles" class="toggle-btn" 
+                       data-tooltip-title="1D Subspace Tile Partitioning" 
+                       data-tooltip-badge="CLI: -tiles" 
+                       data-tooltip-color="purple" 
+                       data-tooltip-desc="Partitions high-dimensional space into independent 1D orthogonal tiles (X, Y, Z) and resolves clusters as joint tuples.">-tiles (Subspaces)</div>
                 </div>
 
                 <div class="control-row">
@@ -1082,7 +1325,11 @@
                 </div>
 
                 <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 4px;">
-                  <div id="optXTile" class="toggle-btn" title="Cross-tile joint tuple prior transfer (-xtile 2)">-xtile (Cross-Tile Prior Sharing)</div>
+                  <div id="optXTile" class="toggle-btn" 
+                       data-tooltip-title="Cross-Tile Prior Sharing" 
+                       data-tooltip-badge="CLI: -xtile" 
+                       data-tooltip-color="purple" 
+                       data-tooltip-desc="Transfers temporal transition distributions across orthogonal subspace tiles to accelerate joint tuple convergence.">-xtile (Cross-Tile Prior Sharing)</div>
                 </div>
                 <div class="control-row" id="rowXTileDecay" style="display: none;">
                   <div class="control-label">
@@ -1115,8 +1362,16 @@
                 </div>
 
                 <div style="display:flex; gap:6px; margin-top:4px;">
-                  <div id="optEntropyFast" class="toggle-btn" style="flex:1;" title="Fast top-candidate entropy approximation (-entropy_fast)">-entropy_fast</div>
-                  <div id="optSoftBayesian" class="toggle-btn" style="flex:1;" title="Continuous Gaussian likelihood decay on mismatch (-soft_bayesian)">-soft_bayesian</div>
+                  <div id="optEntropyFast" class="toggle-btn" style="flex:1;" 
+                       data-tooltip-title="Fast Top-Candidate Entropy Approx" 
+                       data-tooltip-badge="CLI: -entropy_fast" 
+                       data-tooltip-color="green" 
+                       data-tooltip-desc="Calculates expected entropy using only top high-probability candidate anchors, speeding up frame processing throughput.">-entropy_fast</div>
+                  <div id="optSoftBayesian" class="toggle-btn" style="flex:1;" 
+                       data-tooltip-title="Continuous Soft Bayesian Decay" 
+                       data-tooltip-badge="CLI: -soft_bayesian" 
+                       data-tooltip-color="green" 
+                       data-tooltip-desc="Applies continuous Gaussian likelihood attenuation on distance mismatch rather than strict binary pruning.">-soft_bayesian</div>
                 </div>
 
                 <div class="control-row" id="rowBayesSigma" style="display: none; margin-top: 4px;">
@@ -1143,9 +1398,21 @@
 
                 <div class="control-label" style="font-size: 0.72rem;">Eviction Strategy (-maxcl_strategy)</div>
                 <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 4px;">
-                  <div id="stratStop" class="toggle-btn active" title="Refuse new clusters when budget reached">stop</div>
-                  <div id="stratDiscard" class="toggle-btn" title="Evict least active / lowest frequency cluster">discard</div>
-                  <div id="stratMerge" class="toggle-btn" title="Merge two closest cluster nodes">merge</div>
+                  <div id="stratStop" class="toggle-btn active" 
+                       data-tooltip-title="Refuse New Clusters on Limit" 
+                       data-tooltip-badge="Strategy: stop" 
+                       data-tooltip-color="amber" 
+                       data-tooltip-desc="When max cluster limit is reached, incoming samples that do not match existing anchors remain unassigned.">stop</div>
+                  <div id="stratDiscard" class="toggle-btn" 
+                       data-tooltip-title="Evict Least-Active Cluster Slot" 
+                       data-tooltip-badge="Strategy: discard" 
+                       data-tooltip-color="amber" 
+                       data-tooltip-desc="When max cluster limit is reached, evicts the cluster with lowest cumulative membership to allocate new anchors.">discard</div>
+                  <div id="stratMerge" class="toggle-btn" 
+                       data-tooltip-title="Merge Closest Pair of Clusters" 
+                       data-tooltip-badge="Strategy: merge" 
+                       data-tooltip-color="amber" 
+                       data-tooltip-desc="When max cluster limit is reached, finds the two closest clusters in D_cc, merges them, and reuses the vacated slot.">merge</div>
                 </div>
 
                 <div class="control-row" id="rowDiscardFrac" style="display: none;">
@@ -1195,7 +1462,11 @@
                   </div>
 
                   <div style="display: flex; gap: 6px;">
-                    <button id="btnUploadSide" class="secondary" style="flex: 1; padding: 4px 8px; font-size: 0.76rem;" title="Upload custom coordinate file">📁 Upload Custom File</button>
+                    <button id="btnUploadSide" class="secondary" style="flex: 1; padding: 4px 8px; font-size: 0.76rem;" 
+                            data-tooltip-title="Upload Custom Coordinate Dataset" 
+                            data-tooltip-badge="File: .txt / .csv" 
+                            data-tooltip-color="cyan" 
+                            data-tooltip-desc="Load custom 2D or 3D coordinate streams formatted as space- or comma-delimited columns (X, Y[, Z]). Normalizes and centers coordinate bounds.">📁 Upload Custom File</button>
                   </div>
                 </div>
               </div>
@@ -1208,7 +1479,11 @@
                 <div style="display: flex; flex-direction: column; gap: 8px;">
                   <div style="display: flex; justify-content: space-between; align-items: center;">
                     <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Playback Speed:</label>
-                    <select id="selectSpeedSide" style="padding: 3px 8px; font-size: 0.76rem;">
+                    <select id="selectSpeedSide" style="padding: 3px 8px; font-size: 0.76rem;" 
+                            data-tooltip-title="Simulation Playback Speed" 
+                            data-tooltip-badge="Rate Control" 
+                            data-tooltip-color="cyan" 
+                            data-tooltip-desc="Adjusts the interval delay between ingested frames, from step-by-step (150ms) to instant batch processing.">
                       <option value="150">1x (150ms)</option>
                       <option value="50" selected>3x (50ms)</option>
                       <option value="15">10x (15ms)</option>
@@ -1220,7 +1495,11 @@
 
                   <div style="display: flex; justify-content: space-between; align-items: center;">
                     <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Loop Iterations:</label>
-                    <select id="selectLoopSide" style="padding: 3px 8px; font-size: 0.76rem;">
+                    <select id="selectLoopSide" style="padding: 3px 8px; font-size: 0.76rem;" 
+                            data-tooltip-title="Dataset Loop Iterations" 
+                            data-tooltip-badge="Multi-Pass" 
+                            data-tooltip-color="cyan" 
+                            data-tooltip-desc="Sets the number of sequential passes over the dataset. Multiple passes demonstrate Markov matrix convergence and steady-state cluster stabilization.">
                       <option value="1" selected>1 pass (N=1)</option>
                       <option value="2">2 passes (N=2)</option>
                       <option value="3">3 passes (N=3)</option>
@@ -1265,7 +1544,11 @@
                 <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 6px;">
                   Click on any canvas quadrant to inject custom query points directly into the clustering model.
                 </p>
-                <button id="btnAddPointSide" style="width: 100%; justify-content: center; font-size: 0.78rem;">＋ Toggle Add Point Mode</button>
+                <button id="btnAddPointSide" style="width: 100%; justify-content: center; font-size: 0.78rem;" 
+                        data-tooltip-title="Toggle Point Injection Mode" 
+                        data-tooltip-badge="Point Injection" 
+                        data-tooltip-color="amber" 
+                        data-tooltip-desc="Click on any canvas quadrant to inject custom coordinates directly into the clustering model.">＋ Toggle Add Point Mode</button>
               </div>
             </div>
 
@@ -1296,14 +1579,38 @@
                   <span>3D Camera Presets &amp; Reset</span>
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 6px;">
-                  <button class="preset-btn" id="presetIsoSide" style="padding: 6px; font-size: 0.74rem;">Isometric Perspective</button>
-                  <button class="preset-btn" id="presetFrontSide" style="padding: 6px; font-size: 0.74rem;">Front (θ=0°, φ=0°)</button>
-                  <button class="preset-btn" id="presetTopSide" style="padding: 6px; font-size: 0.74rem;">Top (θ=0°, φ=89°)</button>
-                  <button class="preset-btn" id="presetSideSide" style="padding: 6px; font-size: 0.74rem;">Side (θ=90°, φ=0°)</button>
+                  <button class="preset-btn" id="presetIsoSide" style="padding: 6px; font-size: 0.74rem;" 
+                          data-tooltip-title="Isometric 3D Camera Perspective" 
+                          data-tooltip-badge="θ=-35°, φ=25°" 
+                          data-tooltip-color="teal" 
+                          data-tooltip-desc="Rotates 3D orbit camera to isometric perspective for balanced 3D spatial depth visualization.">Isometric Perspective</button>
+                  <button class="preset-btn" id="presetFrontSide" style="padding: 6px; font-size: 0.74rem;" 
+                          data-tooltip-title="Front Elevation Projection (XZ Plane)" 
+                          data-tooltip-badge="Front View" 
+                          data-tooltip-color="teal" 
+                          data-tooltip-desc="Aligns perspective along the Y-axis (θ = 0°, φ = 0°) looking directly at the orthogonal X-Z plane.">Front (θ=0°, φ=0°)</button>
+                  <button class="preset-btn" id="presetTopSide" style="padding: 6px; font-size: 0.74rem;" 
+                          data-tooltip-title="Top Planar Projection (XY Plane)" 
+                          data-tooltip-badge="Top View" 
+                          data-tooltip-color="teal" 
+                          data-tooltip-desc="Aligns perspective along the Z-axis (θ = 0°, φ = 89°) looking directly down onto the X-Y ground plane.">Top (θ=0°, φ=89°)</button>
+                  <button class="preset-btn" id="presetSideSide" style="padding: 6px; font-size: 0.74rem;" 
+                          data-tooltip-title="Lateral Side Projection (YZ Plane)" 
+                          data-tooltip-badge="Side View" 
+                          data-tooltip-color="teal" 
+                          data-tooltip-desc="Aligns perspective along the X-axis (θ = 90°, φ = 0°) looking directly at the orthogonal Y-Z plane.">Side (θ=90°, φ=0°)</button>
                 </div>
                 <div style="display: flex; gap: 6px;">
-                  <button class="preset-btn" id="presetReset3DSide" style="flex: 1; padding: 6px; font-size: 0.74rem;">↺ Reset 3D Camera</button>
-                  <button id="btnResetViewSide" class="preset-btn" style="flex: 1; padding: 6px; font-size: 0.74rem;">🔍 Reset Pan/Zoom (1:1)</button>
+                  <button class="preset-btn" id="presetReset3DSide" style="flex: 1; padding: 6px; font-size: 0.74rem;" 
+                          data-tooltip-title="Reset 3D Orbit Camera" 
+                          data-tooltip-badge="Reset Camera" 
+                          data-tooltip-color="teal" 
+                          data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">↺ Reset 3D Camera</button>
+                  <button id="btnResetViewSide" class="preset-btn" style="flex: 1; padding: 6px; font-size: 0.74rem;" 
+                          data-tooltip-title="Reset Pan &amp; Zoom View (1:1)" 
+                          data-tooltip-badge="1:1 Zoom" 
+                          data-tooltip-color="cyan" 
+                          data-tooltip-desc="Restores 2D / orthogonal quad pan offsets to (0, 0) and resets canvas zoom to 100%.">🔍 Reset Pan/Zoom (1:1)</button>
                 </div>
               </div>
 
@@ -1326,13 +1633,22 @@
       </div>
 
       <!-- Resizer 1 (between Settings and Resources) -->
-      <div class="panel-resizer" id="resizer1" title="Drag to resize panels"></div>
+      <div class="panel-resizer" id="resizer1" 
+           data-tooltip-title="Vertical Panel Resizer" 
+           data-tooltip-badge="Drag Handle" 
+           data-tooltip-color="cyan" 
+           data-tooltip-desc="Click and drag vertically to adjust the proportional height distribution between Simulator Settings and Resource Tracker."></div>
 
       <!-- 2. Real-Time Resource & Performance Tracker -->
       <div id="cardResources" class="card expanded" style="flex: 1.0 1 0px;">
         <div class="card-title" onclick="togglePanelCollapse('cardResources')">
           <div style="display: flex; align-items: center; gap: 6px;">
-            <button class="card-collapse-btn" id="btnCollapseResources" title="Collapse / Expand Resource Tracker" onclick="event.stopPropagation(); togglePanelCollapse('cardResources');">▾</button>
+            <button class="card-collapse-btn" id="btnCollapseResources" 
+                    data-tooltip-title="Collapse / Expand Resource Tracker" 
+                    data-tooltip-badge="Card Toggle" 
+                    data-tooltip-color="amber" 
+                    data-tooltip-desc="Toggles visibility of CPU execution telemetry, distance evaluation ratios, memory footprints, and pruning diagnostics." 
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardResources');">▾</button>
             <span>⚡ Resource Tracker</span>
           </div>
           <div style="display: flex; gap: 5px; align-items: center;">
@@ -1344,10 +1660,26 @@
 
         <div class="card-body">
           <div class="config-tab-bar" style="margin-bottom: 8px;">
-            <div id="tabResOverview" class="config-tab-btn active">📊 Overview</div>
-            <div id="tabResDistances" class="config-tab-btn">📏 Distances</div>
-            <div id="tabResMemory" class="config-tab-btn">💾 Memory</div>
-            <div id="tabResCompute" class="config-tab-btn">⚙️ Compute</div>
+            <div id="tabResOverview" class="config-tab-btn active" 
+                 data-tooltip-title="Resource Overview Dashboard" 
+                 data-tooltip-badge="Tracker" 
+                 data-tooltip-color="amber" 
+                 data-tooltip-desc="Real-time dashboard showing total clusters, ingested frames, CPU load, distance throughput, and latency sparkline.">📊 Overview</div>
+            <div id="tabResDistances" class="config-tab-btn" 
+                 data-tooltip-title="Distance Evaluation Breakdown" 
+                 data-tooltip-badge="Tracker" 
+                 data-tooltip-color="amber" 
+                 data-tooltip-desc="Compares Sample-to-Cluster d(f,c) vs Cluster-to-Cluster d(c_i,c_j) evaluations and geometric pruning distance savings.">📏 Distances</div>
+            <div id="tabResMemory" class="config-tab-btn" 
+                 data-tooltip-title="Model &amp; JS Heap Memory Footprint" 
+                 data-tooltip-badge="Tracker" 
+                 data-tooltip-color="purple" 
+                 data-tooltip-desc="Detailed memory footprint estimation for centroid vectors, D_cc distance matrices, transition tables, and browser JS heap.">💾 Memory</div>
+            <div id="tabResCompute" class="config-tab-btn" 
+                 data-tooltip-title="CPU Compute &amp; Pruning Statistics" 
+                 data-tooltip-badge="Tracker" 
+                 data-tooltip-color="amber" 
+                 data-tooltip-desc="Instantaneous and mean latency per frame with breakdown counters for 3P, 4P, 5P prunings and predictor hits.">⚙️ Compute</div>
           </div>
 
           <div class="card-body-scroll">
@@ -1540,13 +1872,22 @@
       </div>
 
       <!-- Resizer 2 (between Resources and Decisions) -->
-      <div class="panel-resizer" id="resizer2" title="Drag to resize panels"></div>
+      <div class="panel-resizer" id="resizer2" 
+           data-tooltip-title="Vertical Panel Resizer" 
+           data-tooltip-badge="Drag Handle" 
+           data-tooltip-color="amber" 
+           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between Resource Tracker and Decisions / Search Trace."></div>
 
       <!-- 3. Flexible Decision Narrative & Candidate Trace -->
       <div id="cardTrace" class="card expanded" style="flex: 1.2 1 0px;">
         <div class="card-title" style="margin-bottom: 6px;" onclick="togglePanelCollapse('cardTrace')">
           <div style="display: flex; align-items: center; gap: 6px;">
-            <button class="card-collapse-btn" id="btnCollapseTrace" title="Collapse / Expand Search Trace" onclick="event.stopPropagation(); togglePanelCollapse('cardTrace');">▾</button>
+            <button class="card-collapse-btn" id="btnCollapseTrace" 
+                    data-tooltip-title="Collapse / Expand Decisions &amp; Trace" 
+                    data-tooltip-badge="Card Toggle" 
+                    data-tooltip-color="purple" 
+                    data-tooltip-desc="Toggles visibility of algorithmic decision narrative logs and the real-time interactive Cluster Table." 
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardTrace');">▾</button>
             <span id="traceTitle">Decisions &amp; Search Trace</span>
           </div>
           <span id="measCountBadge" class="badge-pill">0 measured</span>
@@ -1554,8 +1895,16 @@
 
         <div class="card-body">
           <div class="tab-switch">
-            <div id="tabNarrative" class="tab-btn active">💬 Decision Narrative</div>
-            <div id="tabCandidates" class="tab-btn">📋 Cluster Table</div>
+            <div id="tabNarrative" class="tab-btn active" 
+                 data-tooltip-title="Decision Narrative Log" 
+                 data-tooltip-badge="Trace" 
+                 data-tooltip-color="purple" 
+                 data-tooltip-desc="Live textual walkthrough explaining algorithm decisions, bounding checks, and cluster assignments for each frame.">💬 Decision Narrative</div>
+            <div id="tabCandidates" class="tab-btn" 
+                 data-tooltip-title="Cluster Table" 
+                 data-tooltip-badge="Trace" 
+                 data-tooltip-color="purple" 
+                 data-tooltip-desc="Structured data table displaying cluster coordinates, frame counts, cumulative #SC distance evaluations, and status.">📋 Cluster Table</div>
           </div>
 
           <div class="card-body-scroll" style="display: flex; flex-direction: column;">
@@ -1579,6 +1928,109 @@
   </div>
 
   <script>
+    // =========================================================================
+    //  0. RICH HOVER TOOLTIP HELP POPUP CONTROLLER
+    // =========================================================================
+    const richTooltipEl = document.createElement('div');
+    richTooltipEl.id = 'richTooltip';
+    richTooltipEl.className = 'rich-tooltip';
+    document.body.appendChild(richTooltipEl);
+
+    let activeTooltipTarget = null;
+    let tooltipTimeout = null;
+
+    function showRichTooltip(target, e) {
+      const title = target.getAttribute('data-tooltip-title') || target.getAttribute('title');
+      const desc = target.getAttribute('data-tooltip-desc');
+      const badge = target.getAttribute('data-tooltip-badge');
+      const color = target.getAttribute('data-tooltip-color') || 'cyan';
+
+      if (!title && !desc) return;
+
+      activeTooltipTarget = target;
+      if (tooltipTimeout) clearTimeout(tooltipTimeout);
+
+      richTooltipEl.innerHTML = `
+        <div class="rich-tooltip-header">
+          <span class="rich-tooltip-title ${color}">${title || ''}</span>
+          ${badge ? `<span class="rich-tooltip-badge">${badge}</span>` : ''}
+        </div>
+        ${desc ? `<div class="rich-tooltip-desc">${desc}</div>` : ''}
+      `;
+
+      richTooltipEl.style.display = 'block';
+      positionRichTooltip(e);
+      requestAnimationFrame(() => {
+        richTooltipEl.classList.add('visible');
+      });
+    }
+
+    function positionRichTooltip(e) {
+      if (!richTooltipEl || richTooltipEl.style.display === 'none') return;
+
+      const offset = 14;
+      const tooltipRect = richTooltipEl.getBoundingClientRect();
+      const winW = window.innerWidth;
+      const winH = window.innerHeight;
+
+      let left = e.clientX + offset;
+      let top = e.clientY + offset;
+
+      // Flip left if overflowing right edge
+      if (left + tooltipRect.width > winW - 12) {
+        left = e.clientX - tooltipRect.width - offset;
+      }
+
+      // Flip up if overflowing bottom edge
+      if (top + tooltipRect.height > winH - 12) {
+        top = e.clientY - tooltipRect.height - offset;
+      }
+
+      // Safe screen boundary clamps
+      if (left < 10) left = 10;
+      if (top < 10) top = 10;
+
+      richTooltipEl.style.left = `${left}px`;
+      richTooltipEl.style.top = `${top}px`;
+    }
+
+    function hideRichTooltip() {
+      if (tooltipTimeout) clearTimeout(tooltipTimeout);
+      activeTooltipTarget = null;
+      richTooltipEl.classList.remove('visible');
+      tooltipTimeout = setTimeout(() => {
+        if (!activeTooltipTarget) {
+          richTooltipEl.style.display = 'none';
+        }
+      }, 120);
+    }
+
+    document.addEventListener('mouseover', (e) => {
+      const target = e.target.closest('[data-tooltip-title], [data-tooltip-desc]');
+      if (target) {
+        showRichTooltip(target, e);
+      }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (activeTooltipTarget) {
+        positionRichTooltip(e);
+      }
+    });
+
+    document.addEventListener('mouseout', (e) => {
+      if (activeTooltipTarget) {
+        const target = e.target.closest('[data-tooltip-title], [data-tooltip-desc]');
+        if (!target || target !== activeTooltipTarget) {
+          hideRichTooltip();
+        }
+      }
+    });
+
+    document.addEventListener('click', () => {
+      hideRichTooltip();
+    });
+
     // =========================================================================
     //  1. EXACT C-ALGORITHM MATH ROUTINES (Replicated from src/gric-cluster/math)
     // =========================================================================
@@ -5204,8 +5656,58 @@
       updateResizersVisibility();
     }
 
+    function initLayoutResizer() {
+      const layoutResizer = document.getElementById('layoutResizer');
+      const sidePanel = document.getElementById('sidePanel');
+      const mainLayout = document.getElementById('mainLayout');
+      if (!layoutResizer || !sidePanel || !mainLayout) return;
+
+      let isDragging = false;
+      let startX = 0;
+      let startWidth = 0;
+
+      layoutResizer.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        startWidth = sidePanel.getBoundingClientRect().width;
+        layoutResizer.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+
+        function onMouseMove(moveEvent) {
+          if (!isDragging) return;
+          const deltaX = startX - moveEvent.clientX; // Moving left expands sidebar
+          const layoutRect = mainLayout.getBoundingClientRect();
+          const minW = 280;
+          const maxW = Math.max(minW, layoutRect.width - 320);
+          const newWidth = Math.round(Math.max(minW, Math.min(maxW, startWidth + deltaX)));
+
+          sidePanel.style.width = `${newWidth}px`;
+          sidePanel.style.minWidth = `${newWidth}px`;
+          resizeCanvas();
+        }
+
+        function onMouseUp() {
+          if (isDragging) {
+            isDragging = false;
+            layoutResizer.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+            resizeCanvas();
+          }
+        }
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+      });
+    }
+
     // Initial Startup
     initSidebarResizers();
+    initLayoutResizer();
     resizeCanvas();
     loadSelectedBenchmark();
     updateZoomBadge();
