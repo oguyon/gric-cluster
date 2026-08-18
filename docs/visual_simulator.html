@@ -337,16 +337,16 @@
     .side-panel {
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 0;
       width: 440px;
       min-width: 440px;
       flex-shrink: 0;
       height: 100%;
       max-height: 100%;
       min-height: 0;
-      overflow-y: auto;
-      overflow-x: hidden;
+      overflow: hidden;
       padding-right: 2px;
+      box-sizing: border-box;
     }
 
     @media (max-width: 1150px) {
@@ -363,30 +363,121 @@
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 12px;
-      padding: 14px;
-    }
-
-    .card.fixed-height {
-      flex-shrink: 0;
-    }
-
-    .card.flexible-height {
-      flex: 1;
+      padding: 12px 14px;
       display: flex;
       flex-direction: column;
-      min-height: 180px;
-      max-height: 380px;
+      min-height: 0;
       overflow: hidden;
+      box-sizing: border-box;
+      transition: flex-grow 0.15s ease, min-height 0.15s ease, padding 0.15s ease;
+    }
+
+    .card.expanded {
+      flex: 1 1 0px;
+      min-height: 70px;
+    }
+
+    .card.collapsed {
+      flex: 0 0 auto !important;
+      min-height: auto !important;
+      padding-top: 8px !important;
+      padding-bottom: 8px !important;
+    }
+
+    .card.collapsed .card-body {
+      display: none !important;
+    }
+
+    .card.collapsed .card-title {
+      margin-bottom: 0 !important;
     }
 
     .card-title {
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       font-weight: 700;
       color: var(--accent-blue);
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      cursor: pointer;
+      user-select: none;
+      flex-shrink: 0;
+    }
+
+    .card-title:hover {
+      filter: brightness(1.12);
+    }
+
+    .card-collapse-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.92rem;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s ease, color 0.15s ease;
+    }
+
+    .card-collapse-btn:hover {
+      color: #ffffff;
+    }
+
+    .card.collapsed .card-collapse-btn {
+      transform: rotate(-90deg);
+    }
+
+    .card-body {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .card-body-scroll {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      overflow-x: hidden;
+      min-height: 0;
+      padding-right: 2px;
+    }
+
+    .panel-resizer {
+      height: 8px;
+      min-height: 8px;
+      cursor: row-resize;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin: 2px 0;
+      z-index: 10;
+      user-select: none;
+    }
+
+    .panel-resizer::after {
+      content: '';
+      width: 38px;
+      height: 3px;
+      border-radius: 2px;
+      background: #334155;
+      transition: background 0.15s ease, width 0.15s ease;
+    }
+
+    .panel-resizer:hover::after,
+    .panel-resizer.dragging::after {
+      background: var(--accent-blue);
+      width: 58px;
+    }
+
+    .panel-resizer.hidden {
+      display: none !important;
     }
 
     .control-row {
@@ -501,9 +592,9 @@
     }
 
     .narrative-list {
-      flex: 1;
-      min-height: 120px;
-      max-height: 280px;
+      flex: 1 1 0px;
+      min-height: 0;
+      max-height: none;
       overflow-y: auto;
       overflow-x: hidden;
       display: flex;
@@ -511,12 +602,6 @@
       gap: 8px;
       padding-right: 4px;
       contain: content;
-    }
-
-    @media (max-height: 800px) {
-      .narrative-list {
-        max-height: 200px;
-      }
     }
 
     .narrative-step {
@@ -569,9 +654,9 @@
     }
 
     .candidate-list {
-      flex: 1;
-      min-height: 120px;
-      max-height: 280px;
+      flex: 1 1 0px;
+      min-height: 0;
+      max-height: none;
       overflow-y: auto;
       overflow-x: hidden;
       display: flex;
@@ -854,329 +939,342 @@
     <!-- Right: Control & Telemetry Panel -->
     <div class="side-panel">
       <!-- 1. Simulator Settings -->
-      <div class="card fixed-height">
-        <div class="card-title">
-          <span>Simulator Settings</span>
+      <div id="cardSettings" class="card expanded" style="flex: 1.1 1 0px;">
+        <div class="card-title" onclick="togglePanelCollapse('cardSettings')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseSettings" title="Collapse / Expand Simulator Settings" onclick="event.stopPropagation(); togglePanelCollapse('cardSettings');">▾</button>
+            <span>Simulator Settings</span>
+          </div>
           <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">CLI Parity</span>
         </div>
 
-        <div class="config-tab-bar">
-          <div id="tabCfgAlgo" class="config-tab-btn active">🎯 Algorithm</div>
-          <div id="tabCfgInput" class="config-tab-btn">📥 Input Stream</div>
-          <div id="tabCfgDisplay" class="config-tab-btn">🎨 Display &amp; View</div>
-        </div>
-        
-        <!-- Tab 1: Algorithm Parameters -->
-        <div id="cfgAlgoPanel" style="max-height: 380px; overflow-y: auto; padding-right: 2px;">
-          <!-- Radius Threshold -->
-          <div class="control-row">
-            <div class="control-label">
-              <span>Radius Threshold (<span class="badge-pill">rlim</span>)</span>
-              <div style="display:flex; align-items:center; gap:6px;">
-                <button id="btnAutoRlim" class="btn-mini" title="Compute auto-rlim from dataset median distance (-scandist)">⚡ Auto</button>
-                <span id="lblRlim" class="val">0.100</span>
-              </div>
-            </div>
-            <input type="range" id="sliderRlim" min="0.02" max="0.30" step="0.005" value="0.100">
+        <div class="card-body">
+          <div class="config-tab-bar">
+            <div id="tabCfgAlgo" class="config-tab-btn active">🎯 Algorithm</div>
+            <div id="tabCfgInput" class="config-tab-btn">📥 Input Stream</div>
+            <div id="tabCfgDisplay" class="config-tab-btn">🎨 Display &amp; View</div>
           </div>
-
-          <!-- Target Selection Mode -->
-          <div class="control-label" style="margin-top: 8px;">Target Selection Mode</div>
-          <div class="toggle-group">
-            <div id="modeGreedy" class="toggle-btn active">Greedy (argmax P)</div>
-            <div id="modeEntropy" class="toggle-btn">Entropy (-entropy)</div>
-          </div>
-
-          <!-- Geometric Pruning Heuristics -->
-          <div class="control-label">Geometric Pruning Heuristics</div>
-          <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr);">
-            <div id="prune3P" class="toggle-btn active" title="Triangle inequality 3-Point pruning">3-Point (3P)</div>
-            <div id="prune4P" class="toggle-btn" title="4-Point tetrahedral distance bound (-te4)">4-Point (-te4)</div>
-            <div id="prune5P" class="toggle-btn" title="5-Point Cayley-Menger determinant bound (-te5)">5-Point (-te5)</div>
-          </div>
-
-          <!-- Prior & Subspace Acceleration -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
-              <span>Prior &amp; Subspace Acceleration</span>
-            </div>
-            <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 6px;">
-              <div id="optTM" class="toggle-btn" title="Transition matrix mixing (-tm)">-tm (Markov)</div>
-              <div id="optPred" class="toggle-btn" title="Pattern sequence prediction (-pred)">-pred (Predictor)</div>
-              <div id="optGprob" class="toggle-btn" title="Visitor co-measurement geometry (-gprob)">-gprob (Visitors)</div>
-              <div id="optTiles" class="toggle-btn" title="Input Subspace Partition (-tiles: 1D X/Y/Z Tiles -> Joint Tuple)">-tiles (Subspaces)</div>
-            </div>
-
-            <div class="control-row">
-              <div class="control-label">
-                <span>Markov Mixing Coeff (<span class="badge-pill">-tm</span>)</span>
-                <span id="lblTmMix" class="val">0.50</span>
-              </div>
-              <input type="range" id="sliderTmMix" min="0.00" max="1.00" step="0.05" value="0.50">
-            </div>
-
-            <div class="control-row">
-              <div class="control-label">
-                <span>Predictor Horizon (<span class="badge-pill">-pred [N]</span>)</span>
-                <span id="lblPredHorizon" class="val">2 frames</span>
-              </div>
-              <input type="range" id="sliderPredHorizon" min="1" max="5" step="1" value="2">
-            </div>
-
-            <div class="control-row">
-              <div class="control-label">
-                <span>Visitor History Depth (<span class="badge-pill">-maxvis</span>)</span>
-                <span id="lblMaxVis" class="val">20 frames</span>
-              </div>
-              <input type="range" id="sliderMaxVis" min="5" max="50" step="5" value="20">
-            </div>
-
-            <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 4px;">
-              <div id="optXTile" class="toggle-btn" title="Cross-tile joint tuple prior transfer (-xtile 2)">-xtile (Cross-Tile Prior Sharing)</div>
-            </div>
-            <div class="control-row" id="rowXTileDecay" style="display: none;">
-              <div class="control-label">
-                <span>Cross-Tile Decay (<span class="badge-pill">-xtile_decay</span>)</span>
-                <span id="lblXTileDecay" class="val">0.70</span>
-              </div>
-              <input type="range" id="sliderXTileDecay" min="0.10" max="1.00" step="0.05" value="0.70">
-            </div>
-          </div>
-
-          <!-- Entropy & Soft Bayesian Likelihood -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-              <span>Shannon Entropy &amp; Bayesian Likelihood</span>
-            </div>
-            <div class="control-row">
-              <div class="control-label">
-                <span>Entropy First Gate (<span class="badge-pill">-entropy_first_gate</span>)</span>
-                <span id="lblEntropyFirstGate" class="val">3.00 bits</span>
-              </div>
-              <input type="range" id="sliderEntropyFirstGate" min="1.0" max="5.0" step="0.25" value="3.00">
-            </div>
-
-            <div class="control-row">
-              <div class="control-label">
-                <span>Entropy Refine Gate (<span class="badge-pill">-entropy_gate</span>)</span>
-                <span id="lblEntropyGate" class="val">1.50 bits</span>
-              </div>
-              <input type="range" id="sliderEntropyGate" min="0.5" max="3.0" step="0.25" value="1.50">
-            </div>
-
-            <div style="display:flex; gap:6px; margin-top:4px;">
-              <div id="optEntropyFast" class="toggle-btn" style="flex:1;" title="Fast top-candidate entropy approximation (-entropy_fast)">-entropy_fast</div>
-              <div id="optSoftBayesian" class="toggle-btn" style="flex:1;" title="Continuous Gaussian likelihood decay on mismatch (-soft_bayesian)">-soft_bayesian</div>
-            </div>
-
-            <div class="control-row" id="rowBayesSigma" style="display: none; margin-top: 4px;">
-              <div class="control-label">
-                <span>Bayes Sigma (<span class="badge-pill">-soft_bayesian_sigma</span>)</span>
-                <span id="lblBayesSigma" class="val">1.0 × rlim</span>
-              </div>
-              <input type="range" id="sliderBayesSigma" min="0.5" max="3.0" step="0.1" value="1.0">
-            </div>
-          </div>
-
-          <!-- Cluster Budget & Eviction -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-              <span>Cluster Budget &amp; Eviction (<span class="badge-pill">-maxcl</span>)</span>
-            </div>
-            <div class="control-row">
-              <div class="control-label">
-                <span>Max Clusters (<span class="badge-pill">maxcl</span>)</span>
-                <span id="lblMaxcl" class="val">Unlimited (0)</span>
-              </div>
-              <input type="range" id="sliderMaxcl" min="0" max="40" step="1" value="0">
-            </div>
-
-            <div class="control-label" style="font-size: 0.72rem;">Eviction Strategy (-maxcl_strategy)</div>
-            <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 4px;">
-              <div id="stratStop" class="toggle-btn active" title="Refuse new clusters when budget reached">stop</div>
-              <div id="stratDiscard" class="toggle-btn" title="Evict least active / lowest frequency cluster">discard</div>
-              <div id="stratMerge" class="toggle-btn" title="Merge two closest cluster nodes">merge</div>
-            </div>
-
-            <div class="control-row" id="rowDiscardFrac" style="display: none;">
-              <div class="control-label">
-                <span>Discard Fraction (<span class="badge-pill">-discard_frac</span>)</span>
-                <span id="lblDiscardFrac" class="val">0.10</span>
-              </div>
-              <input type="range" id="sliderDiscardFrac" min="0.05" max="0.30" step="0.05" value="0.10">
-            </div>
-          </div>
-        </div>
-
-        <!-- Tab 2: Input Stream Parameters -->
-        <div id="cfgInputPanel" style="display: none; max-height: 380px; overflow-y: auto; padding-right: 2px;">
-          <!-- Dataset & Generation -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-              <span>Dataset &amp; Input Source</span>
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 8px;">
-              <div style="display: flex; gap: 6px; align-items: center;">
-                <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600; width: 60px;">Select:</label>
-                <select id="selectBenchmarkSide" style="flex: 1; padding: 5px 8px; font-size: 0.78rem;">
-                  <optgroup label="2D Benchmark Datasets">
-                    <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
-                    <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
-                    <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
-                    <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
-                    <option value="2Drand">2Drand — 2D Uniform Random</option>
-                    <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
-                    <option value="stream">Dynamic 2D Continuous Orbit (Lissajous)</option>
-                  </optgroup>
-                  <optgroup label="3D Benchmark Datasets (Quad-Split View)">
-                    <option value="3Dspiral" selected>3Dspiral — 3D Helical/Conical Spiral</option>
-                    <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
-                    <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
-                    <option value="3Dtorus">3Dtorus — 3D Torus Manifold Knot</option>
-                    <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
-                    <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
-                    <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
-                    <option value="3Dlorenz">Dynamic 3D Lorenz Attractor (Chaotic Stream)</option>
-                  </optgroup>
-                  <optgroup label="Custom Dataset">
-                    <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
-                  </optgroup>
-                </select>
+          
+          <div class="card-body-scroll">
+            <!-- Tab 1: Algorithm Parameters -->
+            <div id="cfgAlgoPanel">
+              <!-- Radius Threshold -->
+              <div class="control-row">
+                <div class="control-label">
+                  <span>Radius Threshold (<span class="badge-pill">rlim</span>)</span>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <button id="btnAutoRlim" class="btn-mini" title="Compute auto-rlim from dataset median distance (-scandist)">⚡ Auto</button>
+                    <span id="lblRlim" class="val">0.100</span>
+                  </div>
+                </div>
+                <input type="range" id="sliderRlim" min="0.02" max="0.30" step="0.005" value="0.100">
               </div>
 
-              <div style="display: flex; gap: 6px;">
-                <button id="btnUploadSide" class="secondary" style="flex: 1; padding: 4px 8px; font-size: 0.76rem;" title="Upload custom coordinate file">📁 Upload Custom File</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Stream Ingestion & Looping -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-              <span>Stream Ingestion &amp; Loop Control</span>
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 8px;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Playback Speed:</label>
-                <select id="selectSpeedSide" style="padding: 3px 8px; font-size: 0.76rem;">
-                  <option value="150">1x (150ms)</option>
-                  <option value="50" selected>3x (50ms)</option>
-                  <option value="15">10x (15ms)</option>
-                  <option value="5">30x (5ms)</option>
-                  <option value="-1">⚡ As fast as possible</option>
-                  <option value="0">Instant (Batch)</option>
-                </select>
+              <!-- Target Selection Mode -->
+              <div class="control-label" style="margin-top: 8px;">Target Selection Mode</div>
+              <div class="toggle-group">
+                <div id="modeGreedy" class="toggle-btn active">Greedy (argmax P)</div>
+                <div id="modeEntropy" class="toggle-btn">Entropy (-entropy)</div>
               </div>
 
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Loop Iterations:</label>
-                <select id="selectLoopSide" style="padding: 3px 8px; font-size: 0.76rem;">
-                  <option value="1" selected>1 pass (N=1)</option>
-                  <option value="2">2 passes (N=2)</option>
-                  <option value="3">3 passes (N=3)</option>
-                  <option value="5">5 passes (N=5)</option>
-                  <option value="10">10 passes (N=10)</option>
-                  <option value="20">20 passes (N=20)</option>
-                  <option value="50">50 passes (N=50)</option>
-                  <option value="100">100 passes (N=100)</option>
-                  <option value="0">∞ Infinite (N=0)</option>
-                </select>
+              <!-- Geometric Pruning Heuristics -->
+              <div class="control-label">Geometric Pruning Heuristics</div>
+              <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr);">
+                <div id="prune3P" class="toggle-btn active" title="Triangle inequality 3-Point pruning">3-Point (3P)</div>
+                <div id="prune4P" class="toggle-btn" title="4-Point tetrahedral distance bound (-te4)">4-Point (-te4)</div>
+                <div id="prune5P" class="toggle-btn" title="5-Point Cayley-Menger determinant bound (-te5)">5-Point (-te5)</div>
+              </div>
+
+              <!-- Prior & Subspace Acceleration -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
+                  <span>Prior &amp; Subspace Acceleration</span>
+                </div>
+                <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 6px;">
+                  <div id="optTM" class="toggle-btn" title="Transition matrix mixing (-tm)">-tm (Markov)</div>
+                  <div id="optPred" class="toggle-btn" title="Pattern sequence prediction (-pred)">-pred (Predictor)</div>
+                  <div id="optGprob" class="toggle-btn" title="Visitor co-measurement geometry (-gprob)">-gprob (Visitors)</div>
+                  <div id="optTiles" class="toggle-btn" title="Input Subspace Partition (-tiles: 1D X/Y/Z Tiles -> Joint Tuple)">-tiles (Subspaces)</div>
+                </div>
+
+                <div class="control-row">
+                  <div class="control-label">
+                    <span>Markov Mixing Coeff (<span class="badge-pill">-tm</span>)</span>
+                    <span id="lblTmMix" class="val">0.50</span>
+                  </div>
+                  <input type="range" id="sliderTmMix" min="0.00" max="1.00" step="0.05" value="0.50">
+                </div>
+
+                <div class="control-row">
+                  <div class="control-label">
+                    <span>Predictor Horizon (<span class="badge-pill">-pred [N]</span>)</span>
+                    <span id="lblPredHorizon" class="val">2 frames</span>
+                  </div>
+                  <input type="range" id="sliderPredHorizon" min="1" max="5" step="1" value="2">
+                </div>
+
+                <div class="control-row">
+                  <div class="control-label">
+                    <span>Visitor History Depth (<span class="badge-pill">-maxvis</span>)</span>
+                    <span id="lblMaxVis" class="val">20 frames</span>
+                  </div>
+                  <input type="range" id="sliderMaxVis" min="5" max="50" step="5" value="20">
+                </div>
+
+                <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 4px;">
+                  <div id="optXTile" class="toggle-btn" title="Cross-tile joint tuple prior transfer (-xtile 2)">-xtile (Cross-Tile Prior Sharing)</div>
+                </div>
+                <div class="control-row" id="rowXTileDecay" style="display: none;">
+                  <div class="control-label">
+                    <span>Cross-Tile Decay (<span class="badge-pill">-xtile_decay</span>)</span>
+                    <span id="lblXTileDecay" class="val">0.70</span>
+                  </div>
+                  <input type="range" id="sliderXTileDecay" min="0.10" max="1.00" step="0.05" value="0.70">
+                </div>
+              </div>
+
+              <!-- Entropy & Soft Bayesian Likelihood -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+                  <span>Shannon Entropy &amp; Bayesian Likelihood</span>
+                </div>
+                <div class="control-row">
+                  <div class="control-label">
+                    <span>Entropy First Gate (<span class="badge-pill">-entropy_first_gate</span>)</span>
+                    <span id="lblEntropyFirstGate" class="val">3.00 bits</span>
+                  </div>
+                  <input type="range" id="sliderEntropyFirstGate" min="1.0" max="5.0" step="0.25" value="3.00">
+                </div>
+
+                <div class="control-row">
+                  <div class="control-label">
+                    <span>Entropy Refine Gate (<span class="badge-pill">-entropy_gate</span>)</span>
+                    <span id="lblEntropyGate" class="val">1.50 bits</span>
+                  </div>
+                  <input type="range" id="sliderEntropyGate" min="0.5" max="3.0" step="0.25" value="1.50">
+                </div>
+
+                <div style="display:flex; gap:6px; margin-top:4px;">
+                  <div id="optEntropyFast" class="toggle-btn" style="flex:1;" title="Fast top-candidate entropy approximation (-entropy_fast)">-entropy_fast</div>
+                  <div id="optSoftBayesian" class="toggle-btn" style="flex:1;" title="Continuous Gaussian likelihood decay on mismatch (-soft_bayesian)">-soft_bayesian</div>
+                </div>
+
+                <div class="control-row" id="rowBayesSigma" style="display: none; margin-top: 4px;">
+                  <div class="control-label">
+                    <span>Bayes Sigma (<span class="badge-pill">-soft_bayesian_sigma</span>)</span>
+                    <span id="lblBayesSigma" class="val">1.0 × rlim</span>
+                  </div>
+                  <input type="range" id="sliderBayesSigma" min="0.5" max="3.0" step="0.1" value="1.0">
+                </div>
+              </div>
+
+              <!-- Cluster Budget & Eviction -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                  <span>Cluster Budget &amp; Eviction (<span class="badge-pill">-maxcl</span>)</span>
+                </div>
+                <div class="control-row">
+                  <div class="control-label">
+                    <span>Max Clusters (<span class="badge-pill">maxcl</span>)</span>
+                    <span id="lblMaxcl" class="val">Unlimited (0)</span>
+                  </div>
+                  <input type="range" id="sliderMaxcl" min="0" max="40" step="1" value="0">
+                </div>
+
+                <div class="control-label" style="font-size: 0.72rem;">Eviction Strategy (-maxcl_strategy)</div>
+                <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 4px;">
+                  <div id="stratStop" class="toggle-btn active" title="Refuse new clusters when budget reached">stop</div>
+                  <div id="stratDiscard" class="toggle-btn" title="Evict least active / lowest frequency cluster">discard</div>
+                  <div id="stratMerge" class="toggle-btn" title="Merge two closest cluster nodes">merge</div>
+                </div>
+
+                <div class="control-row" id="rowDiscardFrac" style="display: none;">
+                  <div class="control-label">
+                    <span>Discard Fraction (<span class="badge-pill">-discard_frac</span>)</span>
+                    <span id="lblDiscardFrac" class="val">0.10</span>
+                  </div>
+                  <input type="range" id="sliderDiscardFrac" min="0.05" max="0.30" step="0.05" value="0.10">
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- Truncated Gaussian Noise -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: #f87171;">
-              <span>Sample Truncated Gaussian Noise</span>
-            </div>
-            <div class="control-row">
-              <div class="control-label">
-                <span>Noise Amplitude (<span class="badge-pill">σ</span>)</span>
-                <span id="lblNoiseSigma" class="val">0.000 (Off)</span>
+            <!-- Tab 2: Input Stream Parameters -->
+            <div id="cfgInputPanel" style="display: none;">
+              <!-- Dataset & Generation -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                  <span>Dataset &amp; Input Source</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <div style="display: flex; gap: 6px; align-items: center;">
+                    <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600; width: 60px;">Select:</label>
+                    <select id="selectBenchmarkSide" style="flex: 1; padding: 5px 8px; font-size: 0.78rem;">
+                      <optgroup label="2D Benchmark Datasets">
+                        <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
+                        <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
+                        <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
+                        <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
+                        <option value="2Drand">2Drand — 2D Uniform Random</option>
+                        <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
+                        <option value="stream">Dynamic 2D Continuous Orbit (Lissajous)</option>
+                      </optgroup>
+                      <optgroup label="3D Benchmark Datasets (Quad-Split View)">
+                        <option value="3Dspiral" selected>3Dspiral — 3D Helical/Conical Spiral</option>
+                        <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
+                        <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
+                        <option value="3Dtorus">3Dtorus — 3D Torus Manifold Knot</option>
+                        <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
+                        <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
+                        <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
+                        <option value="3Dlorenz">Dynamic 3D Lorenz Attractor (Chaotic Stream)</option>
+                      </optgroup>
+                      <optgroup label="Custom Dataset">
+                        <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  <div style="display: flex; gap: 6px;">
+                    <button id="btnUploadSide" class="secondary" style="flex: 1; padding: 4px 8px; font-size: 0.76rem;" title="Upload custom coordinate file">📁 Upload Custom File</button>
+                  </div>
+                </div>
               </div>
-              <input type="range" id="sliderNoiseSigma" min="0.00" max="0.15" step="0.002" value="0.00">
-            </div>
 
-            <div class="control-row">
-              <div class="control-label">
-                <span>Truncation Cutoff (<span class="badge-pill">trunc</span>)</span>
-                <span id="lblNoiseTrunc" class="val">0.050</span>
+              <!-- Stream Ingestion & Looping -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+                  <span>Stream Ingestion &amp; Loop Control</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Playback Speed:</label>
+                    <select id="selectSpeedSide" style="padding: 3px 8px; font-size: 0.76rem;">
+                      <option value="150">1x (150ms)</option>
+                      <option value="50" selected>3x (50ms)</option>
+                      <option value="15">10x (15ms)</option>
+                      <option value="5">30x (5ms)</option>
+                      <option value="-1">⚡ As fast as possible</option>
+                      <option value="0">Instant (Batch)</option>
+                    </select>
+                  </div>
+
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Loop Iterations:</label>
+                    <select id="selectLoopSide" style="padding: 3px 8px; font-size: 0.76rem;">
+                      <option value="1" selected>1 pass (N=1)</option>
+                      <option value="2">2 passes (N=2)</option>
+                      <option value="3">3 passes (N=3)</option>
+                      <option value="5">5 passes (N=5)</option>
+                      <option value="10">10 passes (N=10)</option>
+                      <option value="20">20 passes (N=20)</option>
+                      <option value="50">50 passes (N=50)</option>
+                      <option value="100">100 passes (N=100)</option>
+                      <option value="0">∞ Infinite (N=0)</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-              <input type="range" id="sliderNoiseTrunc" min="0.01" max="0.30" step="0.005" value="0.050">
-            </div>
-          </div>
 
-          <!-- Manual Point Injection -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-amber);">
-              <span>Manual Point Injection</span>
-            </div>
-            <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 6px;">
-              Click on any canvas quadrant to inject custom query points directly into the clustering model.
-            </p>
-            <button id="btnAddPointSide" style="width: 100%; justify-content: center; font-size: 0.78rem;">＋ Toggle Add Point Mode</button>
-          </div>
-        </div>
+              <!-- Truncated Gaussian Noise -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: #f87171;">
+                  <span>Sample Truncated Gaussian Noise</span>
+                </div>
+                <div class="control-row">
+                  <div class="control-label">
+                    <span>Noise Amplitude (<span class="badge-pill">σ</span>)</span>
+                    <span id="lblNoiseSigma" class="val">0.000 (Off)</span>
+                  </div>
+                  <input type="range" id="sliderNoiseSigma" min="0.00" max="0.15" step="0.002" value="0.00">
+                </div>
 
-        <!-- Tab 3: Display & View Parameters -->
-        <div id="cfgDisplayPanel" style="display: none; max-height: 380px; overflow-y: auto; padding-right: 2px;">
-          <!-- Visual Focus -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-              <span>Visual Balance &amp; Focus</span>
-            </div>
-            <div class="control-row">
-              <div class="control-label">
-                <span>Visual Focus (Samples ⟷ Clusters)</span>
-                <span id="lblFocus" class="val">Balanced (50%)</span>
+                <div class="control-row">
+                  <div class="control-label">
+                    <span>Truncation Cutoff (<span class="badge-pill">trunc</span>)</span>
+                    <span id="lblNoiseTrunc" class="val">0.050</span>
+                  </div>
+                  <input type="range" id="sliderNoiseTrunc" min="0.01" max="0.30" step="0.005" value="0.050">
+                </div>
               </div>
-              <input type="range" id="sliderFocus" min="0" max="100" step="1" value="50">
-            </div>
-            <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
-              <span>0%: Points Only</span>
-              <span>50%: Balanced</span>
-              <span>100%: Clusters Only</span>
-            </div>
-          </div>
 
-          <!-- 3D Camera Presets -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
-              <span>3D Camera Presets &amp; Reset</span>
+              <!-- Manual Point Injection -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-amber);">
+                  <span>Manual Point Injection</span>
+                </div>
+                <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 6px;">
+                  Click on any canvas quadrant to inject custom query points directly into the clustering model.
+                </p>
+                <button id="btnAddPointSide" style="width: 100%; justify-content: center; font-size: 0.78rem;">＋ Toggle Add Point Mode</button>
+              </div>
             </div>
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 6px;">
-              <button class="preset-btn" id="presetIsoSide" style="padding: 6px; font-size: 0.74rem;">Isometric Perspective</button>
-              <button class="preset-btn" id="presetFrontSide" style="padding: 6px; font-size: 0.74rem;">Front (θ=0°, φ=0°)</button>
-              <button class="preset-btn" id="presetTopSide" style="padding: 6px; font-size: 0.74rem;">Top (θ=0°, φ=89°)</button>
-              <button class="preset-btn" id="presetSideSide" style="padding: 6px; font-size: 0.74rem;">Side (θ=90°, φ=0°)</button>
-            </div>
-            <div style="display: flex; gap: 6px;">
-              <button class="preset-btn" id="presetReset3DSide" style="flex: 1; padding: 6px; font-size: 0.74rem;">↺ Reset 3D Camera</button>
-              <button id="btnResetViewSide" class="preset-btn" style="flex: 1; padding: 6px; font-size: 0.74rem;">🔍 Reset Pan/Zoom (1:1)</button>
-            </div>
-          </div>
 
-          <!-- Multi-View Guide -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-teal);">
-              <span>Multi-View Projections Guide</span>
+            <!-- Tab 3: Display & View Parameters -->
+            <div id="cfgDisplayPanel" style="display: none;">
+              <!-- Visual Focus -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                  <span>Visual Balance &amp; Focus</span>
+                </div>
+                <div class="control-row">
+                  <div class="control-label">
+                    <span>Visual Focus (Samples ⟷ Clusters)</span>
+                    <span id="lblFocus" class="val">Balanced (50%)</span>
+                  </div>
+                  <input type="range" id="sliderFocus" min="0" max="100" step="1" value="50">
+                </div>
+                <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
+                  <span>0%: Points Only</span>
+                  <span>50%: Balanced</span>
+                  <span>100%: Clusters Only</span>
+                </div>
+              </div>
+
+              <!-- 3D Camera Presets -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
+                  <span>3D Camera Presets &amp; Reset</span>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 6px;">
+                  <button class="preset-btn" id="presetIsoSide" style="padding: 6px; font-size: 0.74rem;">Isometric Perspective</button>
+                  <button class="preset-btn" id="presetFrontSide" style="padding: 6px; font-size: 0.74rem;">Front (θ=0°, φ=0°)</button>
+                  <button class="preset-btn" id="presetTopSide" style="padding: 6px; font-size: 0.74rem;">Top (θ=0°, φ=89°)</button>
+                  <button class="preset-btn" id="presetSideSide" style="padding: 6px; font-size: 0.74rem;">Side (θ=90°, φ=0°)</button>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <button class="preset-btn" id="presetReset3DSide" style="flex: 1; padding: 6px; font-size: 0.74rem;">↺ Reset 3D Camera</button>
+                  <button id="btnResetViewSide" class="preset-btn" style="flex: 1; padding: 6px; font-size: 0.74rem;">🔍 Reset Pan/Zoom (1:1)</button>
+                </div>
+              </div>
+
+              <!-- Multi-View Guide -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-teal);">
+                  <span>Multi-View Projections Guide</span>
+                </div>
+                <ul style="font-size: 0.72rem; color: var(--text-muted); margin-left: 16px; line-height: 1.45;">
+                  <li><b>Quad 1 (Top-Left):</b> Along X (Y-Z Orthogonal Plane)</li>
+                  <li><b>Quad 2 (Top-Right):</b> Along Y (X-Z Orthogonal Plane)</li>
+                  <li><b>Quad 3 (Bottom-Left):</b> Along Z (X-Y Orthogonal Plane)</li>
+                  <li><b>Quad 4 (Bottom-Right):</b> Interactive 3D Orbit Camera</li>
+                  <li><b>Controls:</b> Drag Quad 4 to orbit; drag Quads 1-3 to pan; wheel to zoom; click ⛶ to maximize.</li>
+                </ul>
+              </div>
             </div>
-            <ul style="font-size: 0.72rem; color: var(--text-muted); margin-left: 16px; line-height: 1.45;">
-              <li><b>Quad 1 (Top-Left):</b> Along X (Y-Z Orthogonal Plane)</li>
-              <li><b>Quad 2 (Top-Right):</b> Along Y (X-Z Orthogonal Plane)</li>
-              <li><b>Quad 3 (Bottom-Left):</b> Along Z (X-Y Orthogonal Plane)</li>
-              <li><b>Quad 4 (Bottom-Right):</b> Interactive 3D Orbit Camera</li>
-              <li><b>Controls:</b> Drag Quad 4 to orbit; drag Quads 1-3 to pan; wheel to zoom; click ⛶ to maximize.</li>
-            </ul>
           </div>
         </div>
       </div>
 
+      <!-- Resizer 1 (between Settings and Resources) -->
+      <div class="panel-resizer" id="resizer1" title="Drag to resize panels"></div>
+
       <!-- 2. Real-Time Resource & Performance Tracker -->
-      <div class="card fixed-height">
-        <div class="card-title">
-          <span>⚡ Resource Tracker</span>
+      <div id="cardResources" class="card expanded" style="flex: 1.0 1 0px;">
+        <div class="card-title" onclick="togglePanelCollapse('cardResources')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseResources" title="Collapse / Expand Resource Tracker" onclick="event.stopPropagation(); togglePanelCollapse('cardResources');">▾</button>
+            <span>⚡ Resource Tracker</span>
+          </div>
           <div style="display: flex; gap: 5px; align-items: center;">
             <span id="clusterBadge" class="badge-pill" style="background: rgba(192, 132, 252, 0.12); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.35); font-weight: 600;">0 clusters</span>
             <span id="cpuBadge" class="badge-pill" style="background: rgba(251, 191, 36, 0.12); color: var(--accent-amber); border: 1px solid rgba(251, 191, 36, 0.35); font-weight: 600;">CPU: 0.0%</span>
@@ -1184,222 +1282,236 @@
           </div>
         </div>
 
-        <div class="config-tab-bar" style="margin-bottom: 8px;">
-          <div id="tabResOverview" class="config-tab-btn active">📊 Overview</div>
-          <div id="tabResDistances" class="config-tab-btn">📏 Distances</div>
-          <div id="tabResMemory" class="config-tab-btn">💾 Memory</div>
-          <div id="tabResCompute" class="config-tab-btn">⚙️ Compute</div>
-        </div>
-
-        <!-- Sub-Tab 1: Overview Panel -->
-        <div id="resOverviewPanel">
-          <div class="stats-grid">
-            <div class="stat-box">
-              <div id="statClusters" class="num" style="color: #c084fc;">0</div>
-              <div class="lbl" id="lblStatClusters">Clusters Formed</div>
-            </div>
-            <div class="stat-box">
-              <div id="statFrames" class="num" style="color: #f8fafc;">0</div>
-              <div class="lbl" id="lblStatFrames">Frames Ingested</div>
-            </div>
-            <div class="stat-box">
-              <div id="statCpuLoad" class="num" style="color: var(--accent-amber);">0.0%</div>
-              <div class="lbl" id="lblStatCpu">CPU Load (<span id="statComputeMs">0.00 ms</span>/fr)</div>
-            </div>
-            <div class="stat-box">
-              <div id="statTotalDists" class="num" style="color: var(--accent-blue);">0</div>
-              <div class="lbl" id="lblStatTotalDists">Distances (<span id="statDistRate">0</span>/s)</div>
-            </div>
-            <div class="stat-box">
-              <div id="statDistRatio" class="num" style="color: var(--accent-green); font-size: 1.05rem;">0 / 0</div>
-              <div class="lbl">SC (Eval) / CC (Matrix)</div>
-            </div>
-            <div class="stat-box">
-              <div id="statMemoryTotal" class="num" style="color: var(--accent-purple); font-size: 1.05rem;">0 KB</div>
-              <div class="lbl" id="lblStatMemory">Model Memory Footprint</div>
-            </div>
+        <div class="card-body">
+          <div class="config-tab-bar" style="margin-bottom: 8px;">
+            <div id="tabResOverview" class="config-tab-btn active">📊 Overview</div>
+            <div id="tabResDistances" class="config-tab-btn">📏 Distances</div>
+            <div id="tabResMemory" class="config-tab-btn">💾 Memory</div>
+            <div id="tabResCompute" class="config-tab-btn">⚙️ Compute</div>
           </div>
 
-          <!-- Mini Sparkline for CPU Compute Latency -->
-          <div style="margin-top: 8px; background: #172033; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px;">
-            <div style="display: flex; justify-content: space-between; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
-              <span>Frame Compute Latency (last 60 frames)</span>
-              <span id="sparklineVal" style="color: var(--accent-blue); font-family: monospace; font-weight: 600;">0.00 ms</span>
-            </div>
-            <canvas id="sparklineCanvas" width="380" height="34" style="width: 100%; height: 34px; display: block; border-radius: 4px;"></canvas>
-          </div>
-        </div>
+          <div class="card-body-scroll">
+            <!-- Sub-Tab 1: Overview Panel -->
+            <div id="resOverviewPanel">
+              <div class="stats-grid">
+                <div class="stat-box">
+                  <div id="statClusters" class="num" style="color: #c084fc;">0</div>
+                  <div class="lbl" id="lblStatClusters">Clusters Formed</div>
+                </div>
+                <div class="stat-box">
+                  <div id="statFrames" class="num" style="color: #f8fafc;">0</div>
+                  <div class="lbl" id="lblStatFrames">Frames Ingested</div>
+                </div>
+                <div class="stat-box">
+                  <div id="statCpuLoad" class="num" style="color: var(--accent-amber);">0.0%</div>
+                  <div class="lbl" id="lblStatCpu">CPU Load (<span id="statComputeMs">0.00 ms</span>/fr)</div>
+                </div>
+                <div class="stat-box">
+                  <div id="statTotalDists" class="num" style="color: var(--accent-blue);">0</div>
+                  <div class="lbl" id="lblStatTotalDists">Distances (<span id="statDistRate">0</span>/s)</div>
+                </div>
+                <div class="stat-box">
+                  <div id="statDistRatio" class="num" style="color: var(--accent-green); font-size: 1.05rem;">0 / 0</div>
+                  <div class="lbl">SC (Eval) / CC (Matrix)</div>
+                </div>
+                <div class="stat-box">
+                  <div id="statMemoryTotal" class="num" style="color: var(--accent-purple); font-size: 1.05rem;">0 KB</div>
+                  <div class="lbl" id="lblStatMemory">Model Memory Footprint</div>
+                </div>
+              </div>
 
-        <!-- Sub-Tab 2: Distance Breakdown Panel (Sample-Cluster vs Cluster-Cluster) -->
-        <div id="resDistancesPanel" style="display: none; max-height: 250px; overflow-y: auto; padding-right: 2px;">
-          <!-- Sample-to-Cluster -->
-          <div class="sub-control-card" style="margin-top: 0;">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-              <span>Sample-to-Cluster (<span class="badge-pill">d(f, c)</span>)</span>
-              <span id="statDistSC" class="val" style="color: var(--accent-blue); font-size: 0.88rem;">0</span>
+              <!-- Mini Sparkline for CPU Compute Latency -->
+              <div style="margin-top: 8px; background: #172033; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
+                  <span>Frame Compute Latency (last 60 frames)</span>
+                  <span id="sparklineVal" style="color: var(--accent-blue); font-family: monospace; font-weight: 600;">0.00 ms</span>
+                </div>
+                <canvas id="sparklineCanvas" width="380" height="34" style="width: 100%; height: 34px; display: block; border-radius: 4px;"></canvas>
+              </div>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Avg Evaluations / Frame:</span>
-              <span id="statAvgSCEvals" class="val">0.00</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Pruning Distance Savings:</span>
-              <span id="statSavedPct" class="val" style="color: var(--accent-green);">0%</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Theoretical Naive Evals:</span>
-              <span id="statNaiveEvals" class="val">0</span>
-            </div>
-          </div>
 
-          <!-- Cluster-to-Cluster -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
-              <span>Cluster-to-Cluster (<span class="badge-pill">d(c_i, c_j)</span>)</span>
-              <span id="statDistCC" class="val" style="color: var(--accent-purple); font-size: 0.88rem;">0</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Total Clusters Formed:</span>
-              <span id="statDistTotalClusters" class="val" style="color: #c084fc; font-weight: 600;">0</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Inter-Cluster Matrix D_cc:</span>
-              <span id="statDccDim" class="val">0 × 0 (0 cells)</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Avg CC Cost / Frame:</span>
-              <span id="statAvgCCEvals" class="val">0.00</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Active Cluster Anchors:</span>
-              <span id="statActiveClusters" class="val">0</span>
-            </div>
-          </div>
+            <!-- Sub-Tab 2: Distance Breakdown Panel (Sample-Cluster vs Cluster-Cluster) -->
+            <div id="resDistancesPanel" style="display: none;">
+              <!-- Sample-to-Cluster -->
+              <div class="sub-control-card" style="margin-top: 0;">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                  <span>Sample-to-Cluster (<span class="badge-pill">d(f, c)</span>)</span>
+                  <span id="statDistSC" class="val" style="color: var(--accent-blue); font-size: 0.88rem;">0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Avg Evaluations / Frame:</span>
+                  <span id="statAvgSCEvals" class="val">0.00</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Pruning Distance Savings:</span>
+                  <span id="statSavedPct" class="val" style="color: var(--accent-green);">0%</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Theoretical Naive Evals:</span>
+                  <span id="statNaiveEvals" class="val">0</span>
+                </div>
+              </div>
 
-          <!-- Ratio & Throughput -->
-          <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; padding: 0 4px;">
-            <span>Evaluation Rate: <b id="statDistThroughput" style="color: var(--text-main); font-family: monospace;">0 dist/s</b></span>
-            <span>Total Distances: <b id="statDistGrandTotal" style="color: var(--text-main); font-family: monospace;">0</b></span>
-          </div>
-        </div>
+              <!-- Cluster-to-Cluster -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
+                  <span>Cluster-to-Cluster (<span class="badge-pill">d(c_i, c_j)</span>)</span>
+                  <span id="statDistCC" class="val" style="color: var(--accent-purple); font-size: 0.88rem;">0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Total Clusters Formed:</span>
+                  <span id="statDistTotalClusters" class="val" style="color: #c084fc; font-weight: 600;">0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Inter-Cluster Matrix D_cc:</span>
+                  <span id="statDccDim" class="val">0 × 0 (0 cells)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Avg CC Cost / Frame:</span>
+                  <span id="statAvgCCEvals" class="val">0.00</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Active Cluster Anchors:</span>
+                  <span id="statActiveClusters" class="val">0</span>
+                </div>
+              </div>
 
-        <!-- Sub-Tab 3: Memory Footprint Panel -->
-        <div id="resMemoryPanel" style="display: none; max-height: 250px; overflow-y: auto; padding-right: 2px;">
-          <!-- Model Footprint -->
-          <div class="sub-control-card" style="margin-top: 0;">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
-              <span>GRIC Model Footprint</span>
-              <span id="statModelTotalBytes" class="val" style="color: var(--accent-purple); font-size: 0.88rem;">0 KB</span>
+              <!-- Ratio & Throughput -->
+              <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; padding: 0 4px;">
+                <span>Evaluation Rate: <b id="statDistThroughput" style="color: var(--text-main); font-family: monospace;">0 dist/s</b></span>
+                <span>Total Distances: <b id="statDistGrandTotal" style="color: var(--text-main); font-family: monospace;">0</b></span>
+              </div>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Centroids &amp; Metadata:</span>
-              <span id="statCentroidsMem" class="val">0 B</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>D_cc Distance Matrix:</span>
-              <span id="statDccMem" class="val">0 B</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Transition Matrix (TM):</span>
-              <span id="statTmMem" class="val">0 B</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Point Cloud &amp; History:</span>
-              <span id="statPastSamplesMem" class="val">0 B</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Subspace Tiles &amp; Tuples:</span>
-              <span id="statTuplesMem" class="val">0 B</span>
-            </div>
-          </div>
 
-          <!-- JS Engine Heap -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-              <span>Browser JS Heap Memory</span>
-              <span id="statHeapUsed" class="val" style="color: var(--accent-green); font-size: 0.88rem;">N/A</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Allocated Heap Size:</span>
-              <span id="statHeapTotal" class="val">N/A</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Heap Size Limit:</span>
-              <span id="statHeapLimit" class="val">N/A</span>
-            </div>
-          </div>
-        </div>
+            <!-- Sub-Tab 3: Memory Footprint Panel -->
+            <div id="resMemoryPanel" style="display: none;">
+              <!-- Model Footprint -->
+              <div class="sub-control-card" style="margin-top: 0;">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
+                  <span>GRIC Model Footprint</span>
+                  <span id="statModelTotalBytes" class="val" style="color: var(--accent-purple); font-size: 0.88rem;">0 KB</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Centroids &amp; Metadata:</span>
+                  <span id="statCentroidsMem" class="val">0 B</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>D_cc Distance Matrix:</span>
+                  <span id="statDccMem" class="val">0 B</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Transition Matrix (TM):</span>
+                  <span id="statTmMem" class="val">0 B</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Point Cloud &amp; History:</span>
+                  <span id="statPastSamplesMem" class="val">0 B</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Subspace Tiles &amp; Tuples:</span>
+                  <span id="statTuplesMem" class="val">0 B</span>
+                </div>
+              </div>
 
-        <!-- Sub-Tab 4: Compute & Pruning Breakdown Panel -->
-        <div id="resComputePanel" style="display: none; max-height: 250px; overflow-y: auto; padding-right: 2px;">
-          <!-- Engine CPU Stats -->
-          <div class="sub-control-card" style="margin-top: 0;">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-amber);">
-              <span>CPU Execution Stats</span>
-              <span id="statComputeThroughput" class="val" style="color: var(--accent-amber); font-size: 0.88rem;">0 FPS</span>
+              <!-- JS Engine Heap -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+                  <span>Browser JS Heap Memory</span>
+                  <span id="statHeapUsed" class="val" style="color: var(--accent-green); font-size: 0.88rem;">N/A</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Allocated Heap Size:</span>
+                  <span id="statHeapTotal" class="val">N/A</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Heap Size Limit:</span>
+                  <span id="statHeapLimit" class="val">N/A</span>
+                </div>
+              </div>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Instantaneous Latency:</span>
-              <span id="statInstComputeMs" class="val">0.00 ms</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Mean Latency / Frame:</span>
-              <span id="statAvgComputeMs" class="val">0.00 ms</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Cumulative Compute Time:</span>
-              <span id="statTotalComputeMs" class="val">0.00 s</span>
-            </div>
-          </div>
 
-          <!-- Pruning Exclusions Breakdown -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-              <span>Pruning &amp; Prior Breakdown</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>3-Point (Triangle Ineq):</span>
-              <span id="statPrune3P" class="val" style="color: var(--accent-blue);">0</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>4-Point (Tetrahedral):</span>
-              <span id="statPrune4P" class="val" style="color: var(--accent-purple);">0</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>5-Point (Cayley-Menger):</span>
-              <span id="statPrune5P" class="val" style="color: #f43f5e);">0</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-              <span>Predictor / TM Hits:</span>
-              <span id="statPredHits" class="val" style="color: var(--accent-green);">0</span>
+            <!-- Sub-Tab 4: Compute & Pruning Breakdown Panel -->
+            <div id="resComputePanel" style="display: none;">
+              <!-- Engine CPU Stats -->
+              <div class="sub-control-card" style="margin-top: 0;">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-amber);">
+                  <span>CPU Execution Stats</span>
+                  <span id="statComputeThroughput" class="val" style="color: var(--accent-amber); font-size: 0.88rem;">0 FPS</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Instantaneous Latency:</span>
+                  <span id="statInstComputeMs" class="val">0.00 ms</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Mean Latency / Frame:</span>
+                  <span id="statAvgComputeMs" class="val">0.00 ms</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Cumulative Compute Time:</span>
+                  <span id="statTotalComputeMs" class="val">0.00 s</span>
+                </div>
+              </div>
+
+              <!-- Pruning Exclusions Breakdown -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                  <span>Pruning &amp; Prior Breakdown</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>3-Point (Triangle Ineq):</span>
+                  <span id="statPrune3P" class="val" style="color: var(--accent-blue);">0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>4-Point (Tetrahedral):</span>
+                  <span id="statPrune4P" class="val" style="color: var(--accent-purple);">0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>5-Point (Cayley-Menger):</span>
+                  <span id="statPrune5P" class="val" style="color: #f43f5e);">0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Predictor / TM Hits:</span>
+                  <span id="statPredHits" class="val" style="color: var(--accent-green);">0</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
+      <!-- Resizer 2 (between Resources and Decisions) -->
+      <div class="panel-resizer" id="resizer2" title="Drag to resize panels"></div>
+
       <!-- 3. Flexible Decision Narrative & Candidate Trace -->
-      <div class="card flexible-height">
-        <div class="card-title" style="margin-bottom: 6px;">
-          <span id="traceTitle">Decisions &amp; Search Trace</span>
+      <div id="cardTrace" class="card expanded" style="flex: 1.2 1 0px;">
+        <div class="card-title" style="margin-bottom: 6px;" onclick="togglePanelCollapse('cardTrace')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseTrace" title="Collapse / Expand Search Trace" onclick="event.stopPropagation(); togglePanelCollapse('cardTrace');">▾</button>
+            <span id="traceTitle">Decisions &amp; Search Trace</span>
+          </div>
           <span id="measCountBadge" class="badge-pill">0 measured</span>
         </div>
 
-        <div class="tab-switch">
-          <div id="tabNarrative" class="tab-btn active">💬 Decision Narrative</div>
-          <div id="tabCandidates" class="tab-btn">📋 Candidate Table</div>
-        </div>
-
-        <!-- Narrative Log Container -->
-        <div id="narrativeContainer" class="narrative-list">
-          <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">
-            No decisions logged yet. Click Step or Add Point to inspect decisions.
+        <div class="card-body">
+          <div class="tab-switch">
+            <div id="tabNarrative" class="tab-btn active">💬 Decision Narrative</div>
+            <div id="tabCandidates" class="tab-btn">📋 Candidate Table</div>
           </div>
-        </div>
 
-        <!-- Candidate Table Container -->
-        <div id="candidateContainer" class="candidate-list" style="display: none;">
-          <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">
-            No active candidates.
+          <div class="card-body-scroll" style="display: flex; flex-direction: column;">
+            <!-- Narrative Log Container -->
+            <div id="narrativeContainer" class="narrative-list">
+              <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">
+                No decisions logged yet. Click Step or Add Point to inspect decisions.
+              </div>
+            </div>
+
+            <!-- Candidate Table Container -->
+            <div id="candidateContainer" class="candidate-list" style="display: none;">
+              <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">
+                No active candidates.
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -4805,7 +4917,149 @@
       document.getElementById('lblXTileDecay').innerText = xtileDecay.toFixed(2);
     });
 
+    // =========================================================================
+    //  SIDEBAR PANELS RESIZING & COLLAPSE CONTROLLER
+    // =========================================================================
+    const panelConfigs = [
+      { id: 'cardSettings', btnId: 'btnCollapseSettings', defaultFlex: 1.1, savedFlex: 1.1 },
+      { id: 'cardResources', btnId: 'btnCollapseResources', defaultFlex: 1.0, savedFlex: 1.0 },
+      { id: 'cardTrace', btnId: 'btnCollapseTrace', defaultFlex: 1.2, savedFlex: 1.2 }
+    ];
+
+    function updateResizersVisibility() {
+      const isSettingsExp = !document.getElementById('cardSettings').classList.contains('collapsed');
+      const isResourcesExp = !document.getElementById('cardResources').classList.contains('collapsed');
+      const isTraceExp = !document.getElementById('cardTrace').classList.contains('collapsed');
+
+      const resizer1 = document.getElementById('resizer1');
+      const resizer2 = document.getElementById('resizer2');
+
+      // Resizer 1 is between Settings and whatever is expanded below it
+      if (resizer1) {
+        const show1 = isSettingsExp && (isResourcesExp || isTraceExp);
+        resizer1.classList.toggle('hidden', !show1);
+      }
+
+      // Resizer 2 is between Resources (or Settings if Resources is collapsed) and Trace
+      if (resizer2) {
+        const show2 = isTraceExp && (isResourcesExp || isSettingsExp);
+        resizer2.classList.toggle('hidden', !show2);
+      }
+    }
+
+    function togglePanelCollapse(cardId) {
+      const card = document.getElementById(cardId);
+      if (!card) return;
+
+      const isCurrentlyCollapsed = card.classList.contains('collapsed');
+      const shouldCollapse = !isCurrentlyCollapsed;
+
+      card.classList.toggle('collapsed', shouldCollapse);
+      card.classList.toggle('expanded', !shouldCollapse);
+
+      if (shouldCollapse) {
+        card.style.flex = '0 0 auto';
+      } else {
+        const cfg = panelConfigs.find(p => p.id === cardId);
+        const flexVal = (cfg && cfg.savedFlex) ? cfg.savedFlex : (cfg ? cfg.defaultFlex : 1.0);
+        card.style.flex = `${flexVal} 1 0px`;
+      }
+
+      updateResizersVisibility();
+    }
+
+    function initSidebarResizers() {
+      function setupResizer(resizerId, getTopCard, getBottomCard) {
+        const resizer = document.getElementById(resizerId);
+        if (!resizer) return;
+
+        resizer.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const topCard = getTopCard();
+          const bottomCard = getBottomCard();
+          if (!topCard || !bottomCard) return;
+          if (topCard.classList.contains('collapsed') || bottomCard.classList.contains('collapsed')) return;
+
+          resizer.classList.add('dragging');
+          document.body.style.cursor = 'row-resize';
+          document.body.style.userSelect = 'none';
+
+          const startY = e.clientY;
+          const topRect = topCard.getBoundingClientRect();
+          const bottomRect = bottomCard.getBoundingClientRect();
+          const totalHeight = topRect.height + bottomRect.height;
+          const minH = 65;
+
+          const topCfg = panelConfigs.find(p => p.id === topCard.id);
+          const botCfg = panelConfigs.find(p => p.id === bottomCard.id);
+          const initialCombinedFlex = (topCfg ? topCfg.savedFlex : 1.0) + (botCfg ? botCfg.savedFlex : 1.0);
+
+          function onMouseMove(moveEvent) {
+            const deltaY = moveEvent.clientY - startY;
+            let newTopH = topRect.height + deltaY;
+            let newBottomH = bottomRect.height - deltaY;
+
+            if (newTopH < minH) {
+              newTopH = minH;
+              newBottomH = totalHeight - minH;
+            } else if (newBottomH < minH) {
+              newBottomH = minH;
+              newTopH = totalHeight - minH;
+            }
+
+            const topRatio = newTopH / totalHeight;
+            const bottomRatio = newBottomH / totalHeight;
+
+            const flexTop = (topRatio * initialCombinedFlex).toFixed(3);
+            const flexBottom = (bottomRatio * initialCombinedFlex).toFixed(3);
+
+            topCard.style.flex = `${flexTop} 1 0px`;
+            bottomCard.style.flex = `${flexBottom} 1 0px`;
+
+            if (topCfg) topCfg.savedFlex = parseFloat(flexTop);
+            if (botCfg) botCfg.savedFlex = parseFloat(flexBottom);
+          }
+
+          function onMouseUp() {
+            resizer.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+          }
+
+          window.addEventListener('mousemove', onMouseMove);
+          window.addEventListener('mouseup', onMouseUp);
+        });
+      }
+
+      setupResizer('resizer1',
+        () => document.getElementById('cardSettings'),
+        () => {
+          const res = document.getElementById('cardResources');
+          if (!res.classList.contains('collapsed')) return res;
+          const trace = document.getElementById('cardTrace');
+          if (!trace.classList.contains('collapsed')) return trace;
+          return null;
+        }
+      );
+
+      setupResizer('resizer2',
+        () => {
+          const res = document.getElementById('cardResources');
+          if (!res.classList.contains('collapsed')) return res;
+          const set = document.getElementById('cardSettings');
+          if (!set.classList.contains('collapsed')) return set;
+          return null;
+        },
+        () => document.getElementById('cardTrace')
+      );
+
+      updateResizersVisibility();
+    }
+
     // Initial Startup
+    initSidebarResizers();
     resizeCanvas();
     loadSelectedBenchmark();
     updateZoomBadge();
