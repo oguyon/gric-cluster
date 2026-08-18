@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:16 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:18 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:16:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:18:00 HST</span>
     </div>
   </header>
 
@@ -1302,7 +1302,7 @@
           <div class="legend-item"><div class="legend-dot" style="background: #f87171; border: 1px solid #ffffff;"></div> Pruned (3P/4P/5P)</div>
           <div class="legend-item" id="legendCircleMembers" style="display: none;"><div class="legend-dot" style="background: rgba(16, 185, 129, 0.2); border: 1.5px solid #10b981;"></div> Points Circle (Area ∝ Points)</div>
           <div class="legend-item" id="legendCircleSCDists" style="display: none;"><div class="legend-dot" style="background: rgba(245, 158, 11, 0.2); border: 1.5px dashed #f59e0b;"></div> #SC Dists Circle (Area ∝ #SC Dists)</div>
-          <div class="legend-item" style="margin-left: auto; color: #64748b;" id="legendHint">[3D Mode: Drag Quad 4 to Rotate • Drag Quads 1-3 to Pan • ⛶ to Maximize]</div>
+          <div class="legend-item" style="margin-left: auto; color: #64748b;" id="legendHint">[3D Mode: Drag Quad 4 to Orbit • Shift+Drag to Pan • Wheel to Zoom • ⛶ to Maximize]</div>
         </div>
       </div>
     </div>
@@ -4753,7 +4753,7 @@
       const legendHint = document.getElementById('legendHint');
       if (legendHint) {
         legendHint.innerText = currentDim === 3
-          ? "[3D Mode: Drag Quad 4 to Orbit • Drag Quads 1-3 to Pan • ⛶ to Maximize]"
+          ? "[3D Mode: Drag Quad 4 to Orbit • Shift+Drag to Pan • Wheel to Zoom • ⛶ to Maximize]"
           : "[2D Mode: Drag to Pan • Scroll to Zoom • ＋ Add Point: Inject]";
       }
 
@@ -5678,8 +5678,11 @@
       dragStartX = e.clientX;
       dragStartY = e.clientY;
 
-      if (qIdx === 3 && currentDim === 3 && maximizedQuad === null) {
-        dragMode = 'orbit';
+      const is3DTarget = (qIdx === 3 || maximizedQuad === 3) && currentDim === 3;
+      if (is3DTarget) {
+        // Shift + Drag in 3D: pan the 3D viewport
+        // Normal Drag in 3D: orbit the 3D camera
+        dragMode = e.shiftKey ? 'pan' : 'orbit';
         canvas.classList.add('grabbing');
       } else {
         dragMode = 'pan';
@@ -5695,11 +5698,26 @@
       dragStartX = e.clientX;
       dragStartY = e.clientY;
 
-      if (dragMode === 'orbit') {
-        // Orbit camera in 3D (Azimuth and Elevation)
-        orbitCamera.azimuth += dx * 0.008;
-        orbitCamera.elevation = Math.max(-1.52, Math.min(1.52, orbitCamera.elevation - dy * 0.008));
-        draw();
+      const is3DTarget = (activeDragQuad === 3 || maximizedQuad === 3) && currentDim === 3;
+
+      if (is3DTarget) {
+        if (e.shiftKey || dragMode === 'pan') {
+          // SHIFT + Drag: Pan 3D subpanel
+          const targetQuad = maximizedQuad !== null ? maximizedQuad : 3;
+          const rect = canvas.getBoundingClientRect();
+          const qRect = getQuadRect(targetQuad, rect.width, rect.height);
+          const scale = getQuadScale(targetQuad, qRect);
+
+          const v = quadViews[targetQuad];
+          v.panX -= dx / scale;
+          v.panY += dy / scale;
+          draw();
+        } else {
+          // Normal Drag: Orbit camera in 3D (Azimuth and Elevation)
+          orbitCamera.azimuth += dx * 0.008;
+          orbitCamera.elevation = Math.max(-1.52, Math.min(1.52, orbitCamera.elevation - dy * 0.008));
+          draw();
+        }
       } else if (dragMode === 'pan') {
         // Pan 2D Sub-viewport
         const rect = canvas.getBoundingClientRect();
