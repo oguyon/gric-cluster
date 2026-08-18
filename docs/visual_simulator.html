@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:45 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (11:00 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:45:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 11:00:00 HST</span>
     </div>
   </header>
 
@@ -1477,7 +1477,9 @@
                     <span style="font-weight: 700; color: var(--accent-purple);">Live Markov Matrix P(c_t | c_{t-1})</span>
                     <span id="badgeTMLast" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; font-family: monospace; font-size: 0.65rem;">Last: None</span>
                   </div>
-                  <canvas id="tmSettingsCanvas" width="340" height="150" style="width: 100%; height: 150px; display: block; border-radius: 4px; background: #0b1120; cursor: crosshair;"></canvas>
+                  <div id="tmSettingsWrapper" style="width: 100%; height: 210px; display: flex; justify-content: center; align-items: center; overflow: hidden; margin: 4px 0;">
+                    <canvas id="tmSettingsCanvas" style="display: block; border-radius: 4px; background: #0b1120; cursor: crosshair;"></canvas>
+                  </div>
                   <div style="display: flex; justify-content: space-between; font-size: 0.66rem; color: var(--text-muted); margin-top: 4px;">
                     <span id="lblTMTooltip">Hover over matrix for details</span>
                     <span id="lblTMStats">0 transitions</span>
@@ -2171,15 +2173,17 @@
             </div>
 
             <!-- Transition Matrix Container -->
-            <div id="tmContainer" class="candidate-list" style="display: none; flex-direction: column; gap: 8px;">
+            <div id="tmContainer" class="candidate-list" style="display: none; flex-direction: column; gap: 8px; flex: 1; min-height: 0;">
               <!-- Live TM Heatmap Card -->
-              <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+              <div id="tmHeatmapCard" style="flex: 1; display: flex; flex-direction: column; min-height: 320px; background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                   <span style="font-size: 0.76rem; font-weight: 700; color: var(--accent-purple);">Live Markov Heatmap \(P(c_t \mid c_{t-1})\)</span>
-                  <span id="badgeLastTrans" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; font-family: monospace; font-size: 0.68rem;">Last: None</span>
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span id="badgeLastTrans" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; font-family: monospace; font-size: 0.68rem;">Last: None</span>
+                  </div>
                 </div>
-                <div style="display: flex; justify-content: center; align-items: center; overflow: auto; padding: 4px 0;">
-                  <canvas id="tmHeatmapCanvas" width="340" height="240" style="display: block; border-radius: 4px; background: #0b1120; cursor: pointer;"></canvas>
+                <div id="tmHeatmapWrapper" style="flex: 1; min-height: 240px; width: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative; padding: 4px 0;">
+                  <canvas id="tmHeatmapCanvas" style="display: block; border-radius: 4px; background: #0b1120; cursor: crosshair;"></canvas>
                 </div>
                 <div id="tmCellTooltip" style="font-size: 0.72rem; color: var(--text-muted); text-align: center; min-height: 16px; margin-top: 4px; font-family: monospace;">
                   Hover over any cell to inspect transition details
@@ -3559,8 +3563,19 @@
       const cvs = document.getElementById(canvasId);
       if (!cvs) return;
       const ctx = cvs.getContext('2d');
-      const w = cvs.width;
-      const h = cvs.height;
+      const wrapper = cvs.parentElement;
+
+      // Dynamically fit available container dimensions
+      const availParentW = wrapper ? Math.floor(wrapper.clientWidth) : (isMini ? 340 : 420);
+      const availParentH = wrapper ? Math.floor(wrapper.clientHeight) : (isMini ? 210 : 320);
+
+      const w = Math.max(isMini ? 240 : 280, availParentW);
+      const h = Math.max(isMini ? 150 : 200, availParentH);
+
+      if (cvs.width !== w || cvs.height !== h) {
+        cvs.width = w;
+        cvs.height = h;
+      }
 
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#0b1120';
@@ -3569,22 +3584,35 @@
       const K = clusters.length;
       if (K === 0 || transitionCounts.length === 0) {
         ctx.fillStyle = '#64748b';
-        ctx.font = isMini ? '9px monospace' : '11px monospace';
+        ctx.font = isMini ? '10px monospace' : '12px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('Awaiting clusters & transitions...', w / 2, h / 2 + 3);
+        ctx.fillText('Awaiting clusters & transitions...', w / 2, h / 2 + 4);
         return;
       }
 
-      // Margins
-      const ml = isMini ? 26 : 34; // Left margin for row headers
-      const mt = isMini ? 20 : 26; // Top margin for col headers
-      const mr = isMini ? 6 : 10;
-      const mb = isMini ? 6 : 10;
+      // Layout Margins
+      const ml = isMini ? 28 : 36; // Left margin for row headers
+      const mt = isMini ? 24 : 30; // Top margin for col headers
+      const mb = isMini ? 8 : 12;  // Bottom margin
 
-      const availW = w - ml - mr;
-      const availH = h - mt - mb;
-      const cw = availW / K;
-      const ch = availH / K;
+      // Colorbar space on the right
+      const cbarW = isMini ? 10 : 13;
+      const cbarGap = isMini ? 10 : 14;
+      const cbarLblW = isMini ? 28 : 34;
+      const mr = cbarGap + cbarW + cbarLblW + 6;
+
+      // Available space for the square heatmap grid
+      const maxGridW = Math.max(20, w - ml - mr);
+      const maxGridH = Math.max(20, h - mt - mb);
+
+      // Strict 1:1 Aspect Ratio: S x S square grid
+      const S = Math.min(maxGridW, maxGridH);
+      const cw = S / K;
+      const ch = S / K;
+
+      // Centering offset for 1:1 grid within available space
+      const gridX = ml + Math.max(0, Math.floor((maxGridW - S) / 2));
+      const gridY = mt + Math.max(0, Math.floor((maxGridH - S) / 2));
 
       // Row totals for probability normalization P(j | i) = count(i, j) / rowTotal
       const rowTotals = new Float64Array(K);
@@ -3604,37 +3632,51 @@
         rowTotals[i] = sum;
       }
 
-      // 1. Draw Grid Cells
+      // Helper: Map probability [0, 1] to multi-hue RGBA color
+      function getHeatmapColor(prob) {
+        if (prob === 0) return '#0f172a';
+        if (prob < 0.25) {
+          const t = prob / 0.25;
+          const r = Math.round(15 + t * (139 - 15));
+          const g = Math.round(23 + t * (92 - 23));
+          const b = Math.round(42 + t * (246 - 42));
+          return `rgba(${r}, ${g}, ${b}, ${(0.30 + t * 0.25).toFixed(2)})`;
+        } else if (prob < 0.60) {
+          const t = (prob - 0.25) / 0.35;
+          const r = Math.round(139 - t * (139 - 56));
+          const g = Math.round(92 + t * (189 - 92));
+          const b = Math.round(246 + t * (248 - 246));
+          return `rgba(${r}, ${g}, ${b}, ${(0.55 + t * 0.20).toFixed(2)})`;
+        } else {
+          const t = (prob - 0.60) / 0.40;
+          const r = Math.round(56 + t * (245 - 56));
+          const g = Math.round(189 - t * (189 - 158));
+          const b = Math.round(248 - t * (248 - 11));
+          return `rgba(${r}, ${g}, ${b}, ${(0.75 + t * 0.23).toFixed(2)})`;
+        }
+      }
+
+      // 1. Draw 1:1 Aspect Ratio Grid Cells
       for (let i = 0; i < K; i++) {
         const sum = rowTotals[i];
         for (let j = 0; j < K; j++) {
           const count = (transitionCounts[i] && transitionCounts[i][j]) ? transitionCounts[i][j] : 0;
           const prob = sum > 0 ? (count / sum) : 0.0;
-          const x = ml + j * cw;
-          const y = mt + i * ch;
+          const x = gridX + j * cw;
+          const y = gridY + i * ch;
 
-          // Color scale
-          if (prob === 0) {
-            ctx.fillStyle = '#0f172a';
-          } else {
-            // Gradient: Low (Purple) -> Med (Cyan) -> High (Amber/Gold)
-            const r = Math.round(56 + prob * (245 - 56));
-            const g = Math.round(189 - prob * 31);
-            const b = Math.round(248 - prob * 237);
-            const alpha = 0.25 + prob * 0.70;
-            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`;
-          }
+          ctx.fillStyle = getHeatmapColor(prob);
           ctx.fillRect(x, y, cw, ch);
 
           // Cell Border
-          ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+          ctx.strokeStyle = 'rgba(51, 65, 85, 0.45)';
           ctx.lineWidth = 0.5;
           ctx.strokeRect(x, y, cw, ch);
 
-          // Value inside cell if cell is large enough
-          if (!isMini && cw >= 24 && ch >= 16 && prob > 0) {
-            ctx.fillStyle = prob > 0.4 ? '#ffffff' : '#94a3b8';
-            ctx.font = `${Math.min(10, Math.floor(ch * 0.65))}px monospace`;
+          // Value inside cell if cell size is large enough
+          if (!isMini && cw >= 26 && ch >= 16 && prob > 0) {
+            ctx.fillStyle = prob > 0.4 ? '#ffffff' : '#cbd5e1';
+            ctx.font = `bold ${Math.min(10, Math.floor(ch * 0.55))}px monospace`;
             ctx.textAlign = 'center';
             ctx.fillText(`${(prob * 100).toFixed(0)}%`, x + cw / 2, y + ch / 2 + 3);
           }
@@ -3643,55 +3685,62 @@
           if (lastTransitionFrom === i && lastTransitionTo === j) {
             ctx.save();
             ctx.strokeStyle = '#fbbf24';
-            ctx.lineWidth = 2.0;
+            ctx.lineWidth = Math.min(3.0, Math.max(1.5, cw * 0.15));
             ctx.shadowColor = '#fbbf24';
-            ctx.shadowBlur = 6;
+            ctx.shadowBlur = 8;
             ctx.strokeRect(x + 1, y + 1, cw - 2, ch - 2);
             ctx.restore();
           }
 
           // Hover Highlight (White Outline)
           if (hoveredTMCell && hoveredTMCell.i === i && hoveredTMCell.j === j) {
+            ctx.save();
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 2.0;
             ctx.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
+            ctx.restore();
           }
         }
       }
 
+      // Outer Heatmap Border
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(gridX, gridY, S, S);
+
       // 2. Draw Column Headers (Target Clusters c_t)
       for (let j = 0; j < K; j++) {
-        const x = ml + j * cw + cw / 2;
+        const x = gridX + j * cw + cw / 2;
         const color = getClusterColor(j);
         
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc(x, mt - (isMini ? 8 : 10), isMini ? 2.5 : 3.5, 0, Math.PI * 2);
+        ctx.arc(x, gridY - (isMini ? 8 : 11), isMini ? 2.5 : 3.5, 0, Math.PI * 2);
         ctx.fill();
 
         if (!isMini || K <= 10) {
           ctx.fillStyle = '#94a3b8';
           ctx.font = `${isMini ? 7 : 8}px monospace`;
           ctx.textAlign = 'center';
-          ctx.fillText(`c${j}`, x, mt - (isMini ? 2 : 3));
+          ctx.fillText(`c${j}`, x, gridY - (isMini ? 2 : 3));
         }
       }
 
       // 3. Draw Row Headers (Source Clusters c_{t-1})
       for (let i = 0; i < K; i++) {
-        const y = mt + i * ch + ch / 2;
+        const y = gridY + i * ch + ch / 2;
         const color = getClusterColor(i);
 
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc(ml - (isMini ? 8 : 12), y, isMini ? 2.5 : 3.5, 0, Math.PI * 2);
+        ctx.arc(gridX - (isMini ? 8 : 12), y, isMini ? 2.5 : 3.5, 0, Math.PI * 2);
         ctx.fill();
 
         if (!isMini || K <= 10) {
           ctx.fillStyle = '#94a3b8';
           ctx.font = `${isMini ? 7 : 8}px monospace`;
           ctx.textAlign = 'right';
-          ctx.fillText(`c${i}`, ml - (isMini ? 13 : 18), y + 3);
+          ctx.fillText(`c${i}`, gridX - (isMini ? 13 : 18), y + 3);
         }
       }
 
@@ -3699,11 +3748,68 @@
       ctx.fillStyle = '#64748b';
       ctx.font = '7px monospace';
       ctx.textAlign = 'left';
-      ctx.fillText('c(t-1)↓', 2, mt - 2);
+      ctx.fillText('c(t-1)↓', Math.max(2, gridX - ml), gridY - 2);
       ctx.textAlign = 'center';
-      ctx.fillText('Target c(t) →', ml + availW / 2, isMini ? 7 : 9);
+      ctx.fillText('Target c(t) →', gridX + S / 2, Math.max(8, gridY - (isMini ? 14 : 18)));
 
-      // 5. Update Status & Badges
+      // 5. Draw Colorbar Next to Heatmap
+      const cbarX = gridX + S + cbarGap;
+      const cbarY = gridY;
+      const cbarH = S;
+
+      const cbarGrad = ctx.createLinearGradient(0, cbarY + cbarH, 0, cbarY);
+      cbarGrad.addColorStop(0.00, '#0f172a');                     // 0%
+      cbarGrad.addColorStop(0.25, 'rgba(139, 92, 246, 0.50)');   // 25% Purple
+      cbarGrad.addColorStop(0.50, 'rgba(56, 189, 248, 0.70)');   // 50% Cyan
+      cbarGrad.addColorStop(0.75, 'rgba(16, 185, 129, 0.85)');   // 75% Emerald
+      cbarGrad.addColorStop(1.00, 'rgba(245, 158, 11, 0.95)');   // 100% Gold
+      ctx.fillStyle = cbarGrad;
+      ctx.fillRect(cbarX, cbarY, cbarW, cbarH);
+
+      ctx.strokeStyle = 'rgba(71, 85, 105, 0.7)';
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(cbarX, cbarY, cbarW, cbarH);
+
+      // Colorbar Ticks and Labels
+      const ticks = isMini ? [0.0, 0.5, 1.0] : [0.0, 0.25, 0.5, 0.75, 1.0];
+      ticks.forEach(t => {
+        const ty = cbarY + cbarH - t * cbarH;
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(cbarX + cbarW, ty);
+        ctx.lineTo(cbarX + cbarW + 3, ty);
+        ctx.stroke();
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = `${isMini ? 7 : 8}px monospace`;
+        ctx.textAlign = 'left';
+        ctx.fillText(`${(t * 100).toFixed(0)}%`, cbarX + cbarW + 5, ty + 2.5);
+      });
+
+      // Colorbar Title
+      ctx.fillStyle = '#c084fc';
+      ctx.font = `bold ${isMini ? 7 : 8}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText('P(j|i)', cbarX + cbarW / 2, cbarY - 6);
+
+      // Hover Pointer on Colorbar
+      if (hoveredTMCell && hoveredTMCell.i >= 0 && hoveredTMCell.i < K && hoveredTMCell.j >= 0 && hoveredTMCell.j < K) {
+        const hSum = rowTotals[hoveredTMCell.i];
+        const hCnt = (transitionCounts[hoveredTMCell.i] && transitionCounts[hoveredTMCell.i][hoveredTMCell.j]) || 0;
+        const hProb = hSum > 0 ? (hCnt / hSum) : 0.0;
+        const pointerY = cbarY + cbarH - hProb * cbarH;
+
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath();
+        ctx.moveTo(cbarX - 1, pointerY);
+        ctx.lineTo(cbarX - 5, pointerY - 3.5);
+        ctx.lineTo(cbarX - 5, pointerY + 3.5);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // 6. Update Status & Badges
       const densityPct = K > 0 ? ((nonZeroCount / (K * K)) * 100).toFixed(0) : '0';
       const badgeLast = document.getElementById('badgeTMLast');
       const badgeLastTrans = document.getElementById('badgeLastTrans');
@@ -3715,6 +3821,9 @@
 
       const lblStats = document.getElementById('lblTMStats');
       if (lblStats) lblStats.innerText = `${totalTransCount} trans (${densityPct}% dense)`;
+
+      // Save geometry for mouse events
+      cvs._tmLayout = { gridX, gridY, S, cw, ch, K };
     }
 
     function updateTMTopPaths() {
@@ -4467,6 +4576,13 @@
       canvas.height = Math.round(squareSize * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       draw();
+
+      if (useTM) {
+        drawTransitionMatrix('tmSettingsCanvas', true);
+      }
+      if (typeof currentActiveTab !== 'undefined' && currentActiveTab === 'tm') {
+        drawTransitionMatrix('tmHeatmapCanvas', false);
+      }
     }
     window.addEventListener('resize', resizeCanvas);
     window.addEventListener('load', resizeCanvas);
@@ -4474,6 +4590,10 @@
       const ro = new ResizeObserver(() => resizeCanvas());
       const cWrap = document.getElementById('canvasWrapper');
       if (cWrap) ro.observe(cWrap);
+      const tmHeatWrap = document.getElementById('tmHeatmapWrapper');
+      if (tmHeatWrap) ro.observe(tmHeatWrap);
+      const tmSetWrap = document.getElementById('tmSettingsWrapper');
+      if (tmSetWrap) ro.observe(tmSetWrap);
       if (document.body) ro.observe(document.body);
     }
 
@@ -7078,25 +7198,18 @@
       if (!cvs) return;
 
       cvs.addEventListener('mousemove', (e) => {
-        const K = clusters.length;
-        if (K === 0 || transitionCounts.length === 0) return;
+        const layout = cvs._tmLayout;
+        if (!layout || layout.K === 0 || transitionCounts.length === 0) return;
         const rect = cvs.getBoundingClientRect();
-        const ml = isMini ? 26 : 34;
-        const mt = isMini ? 20 : 26;
-        const mr = isMini ? 6 : 10;
-        const mb = isMini ? 6 : 10;
-        const availW = cvs.width - ml - mr;
-        const availH = cvs.height - mt - mb;
-        const cw = availW / K;
-        const ch = availH / K;
-
         const mouseX = (e.clientX - rect.left) * (cvs.width / rect.width);
         const mouseY = (e.clientY - rect.top) * (cvs.height / rect.height);
 
-        const col = Math.floor((mouseX - ml) / cw);
-        const row = Math.floor((mouseY - mt) / ch);
+        const { gridX, gridY, S, cw, ch, K } = layout;
 
-        if (row >= 0 && row < K && col >= 0 && col < K) {
+        if (mouseX >= gridX && mouseX < gridX + S && mouseY >= gridY && mouseY < gridY + S) {
+          const col = Math.max(0, Math.min(K - 1, Math.floor((mouseX - gridX) / cw)));
+          const row = Math.max(0, Math.min(K - 1, Math.floor((mouseY - gridY) / ch)));
+
           hoveredTMCell = { i: row, j: col };
           let sum = 0;
           if (transitionCounts[row]) {
@@ -7109,6 +7222,13 @@
           const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
           if (tipEl) tipEl.innerText = desc;
           drawTransitionMatrix(canvasId, isMini);
+        } else {
+          if (hoveredTMCell !== null) {
+            hoveredTMCell = null;
+            const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
+            if (tipEl) tipEl.innerText = isMini ? 'Hover over matrix for details' : 'Hover over any cell to inspect transition details';
+            drawTransitionMatrix(canvasId, isMini);
+          }
         }
       });
 
