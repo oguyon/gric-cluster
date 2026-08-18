@@ -5418,11 +5418,12 @@
       const qIdx = getQuadrantAt(e.clientX, e.clientY);
       const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
 
-      if (qIdx === 3 && currentDim === 3 && maximizedQuad === null) {
-        orbitCamera.zoom = Math.max(0.2, Math.min(25.0, (orbitCamera.zoom || 1.0) * zoomFactor));
-      } else {
-        const v = quadViews[qIdx];
+      const v = quadViews[qIdx];
+      if (v) {
         v.zoom = Math.max(0.2, Math.min(25.0, (v.zoom || 1.0) * zoomFactor));
+        if (qIdx === 3) {
+          orbitCamera.zoom = v.zoom;
+        }
       }
 
       updateZoomBadge();
@@ -5435,6 +5436,13 @@
       if (qIdx === 3 && currentDim === 3) {
         orbitCamera.azimuth = -35 * (Math.PI / 180);
         orbitCamera.elevation = 25 * (Math.PI / 180);
+        orbitCamera.panX = 0;
+        orbitCamera.panY = 0;
+        orbitCamera.zoom = 1.0;
+        quadViews[3].zoom = 1.0;
+        quadViews[3].panX = 0;
+        quadViews[3].panY = 0;
+        updateZoomBadge();
         draw();
       } else {
         resetView();
@@ -5472,6 +5480,10 @@
       orbitCamera.panX = 0;
       orbitCamera.panY = 0;
       orbitCamera.zoom = 1.0;
+      quadViews[3].zoom = 1.0;
+      quadViews[3].panX = 0;
+      quadViews[3].panY = 0;
+      updateZoomBadge();
       draw();
     });
 
@@ -5746,6 +5758,10 @@
         orbitCamera.panX = 0;
         orbitCamera.panY = 0;
         orbitCamera.zoom = 1.0;
+        quadViews[3].zoom = 1.0;
+        quadViews[3].panX = 0;
+        quadViews[3].panY = 0;
+        updateZoomBadge();
         draw();
       });
     }
