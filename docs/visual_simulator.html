@@ -1178,6 +1178,7 @@
         <div class="card-title">
           <span>⚡ Resource Tracker</span>
           <div style="display: flex; gap: 5px; align-items: center;">
+            <span id="clusterBadge" class="badge-pill" style="background: rgba(192, 132, 252, 0.12); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.35); font-weight: 600;">0 clusters</span>
             <span id="cpuBadge" class="badge-pill" style="background: rgba(251, 191, 36, 0.12); color: var(--accent-amber); border: 1px solid rgba(251, 191, 36, 0.35); font-weight: 600;">CPU: 0.0%</span>
             <span id="entropyBadge" class="badge-pill" style="color: var(--accent-purple);">H: 0.00 bits</span>
           </div>
@@ -1193,6 +1194,14 @@
         <!-- Sub-Tab 1: Overview Panel -->
         <div id="resOverviewPanel">
           <div class="stats-grid">
+            <div class="stat-box">
+              <div id="statClusters" class="num" style="color: #c084fc;">0</div>
+              <div class="lbl" id="lblStatClusters">Clusters Formed</div>
+            </div>
+            <div class="stat-box">
+              <div id="statFrames" class="num" style="color: #f8fafc;">0</div>
+              <div class="lbl" id="lblStatFrames">Frames Ingested</div>
+            </div>
             <div class="stat-box">
               <div id="statCpuLoad" class="num" style="color: var(--accent-amber);">0.0%</div>
               <div class="lbl" id="lblStatCpu">CPU Load (<span id="statComputeMs">0.00 ms</span>/fr)</div>
@@ -1248,6 +1257,10 @@
             <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
               <span>Cluster-to-Cluster (<span class="badge-pill">d(c_i, c_j)</span>)</span>
               <span id="statDistCC" class="val" style="color: var(--accent-purple); font-size: 0.88rem;">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Total Clusters Formed:</span>
+              <span id="statDistTotalClusters" class="val" style="color: #c084fc; font-weight: 600;">0</span>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
               <span>Inter-Cluster Matrix D_cc:</span>
@@ -3640,7 +3653,33 @@
       const memStats = getMemoryStats();
       drawSparkline();
 
-      // Top Badges
+      // Top Badges & Clusters Count
+      const clusterBadge = document.getElementById('clusterBadge');
+      const statClusters = document.getElementById('statClusters');
+      const lblStatClusters = document.getElementById('lblStatClusters');
+      const statFrames = document.getElementById('statFrames');
+      const statDistTotalClusters = document.getElementById('statDistTotalClusters');
+
+      if (useTiles) {
+        const tupleCount = jointTuplesMap.size;
+        if (clusterBadge) clusterBadge.innerText = `${tupleCount} tuples`;
+        if (statClusters) statClusters.innerText = `${tupleCount}`;
+        if (statDistTotalClusters) statDistTotalClusters.innerText = `${tupleCount} joint tuples`;
+        if (lblStatClusters) {
+          lblStatClusters.innerText = currentDim === 3 
+            ? `3D Tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length}, Kz=${tileEngineZ.clusters.length})`
+            : `2D Tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length})`;
+        }
+      } else {
+        const kCount = clusters.length;
+        if (clusterBadge) clusterBadge.innerText = `${kCount} clusters`;
+        if (statClusters) statClusters.innerText = `${kCount}`;
+        if (statDistTotalClusters) statDistTotalClusters.innerText = `${kCount} clusters`;
+        if (lblStatClusters) lblStatClusters.innerText = `Clusters Formed`;
+      }
+
+      if (statFrames) statFrames.innerText = formatNumber(totalFrames);
+
       const cpuBadge = document.getElementById('cpuBadge');
       if (cpuBadge) {
         cpuBadge.innerText = `CPU: ${currentCpuLoadPct.toFixed(1)}%`;
