@@ -15,8 +15,6 @@
       --accent-green: #4ade80;
       --accent-purple: #c084fc;
       --accent-amber: #fbbf24;
-      --accent-red: #f87171;
-      --accent-teal: #2dd4bf;
     }
 
     * {
@@ -26,76 +24,74 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
 
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
     body {
       background-color: var(--bg);
       color: var(--text-main);
       display: flex;
       flex-direction: column;
-      min-height: 100vh;
-      padding: 16px 20px;
+      height: 100vh;
+      width: 100vw;
+      padding: 10px 14px;
+      box-sizing: border-box;
+      overflow: hidden;
     }
 
     header {
-      margin-bottom: 16px;
-      padding-bottom: 12px;
+      flex-shrink: 0;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
       border-bottom: 1px solid var(--card-border);
       display: flex;
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 8px;
     }
 
     h1 {
-      font-size: 1.5rem;
+      font-size: 1.35rem;
       font-weight: 700;
       letter-spacing: -0.5px;
       color: #ffffff;
       display: flex;
       align-items: center;
-      gap: 10px;
-    }
-
-    h1 span.badge {
-      font-size: 0.72rem;
-      padding: 3px 8px;
-      border-radius: 20px;
-      background: #2563eb;
-      color: #ffffff;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    h1 span.dim-badge {
-      font-size: 0.72rem;
-      padding: 3px 8px;
-      border-radius: 20px;
-      background: #7c3aed;
-      color: #ffffff;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      gap: 8px;
     }
 
     p.subtitle {
       color: var(--text-muted);
-      font-size: 0.86rem;
-      margin-top: 3px;
+      font-size: 0.82rem;
+      margin-top: 2px;
     }
 
     .main-layout {
       display: flex;
       flex-direction: row;
-      gap: 16px;
+      gap: 12px;
       flex: 1;
-      height: calc(100vh - 90px);
-      min-height: 520px;
+      min-height: 0;
+      height: 100%;
       align-items: stretch;
       overflow: hidden;
     }
 
-    @media (max-width: 1150px) {
+    @media (max-width: 1050px) {
+      html, body {
+        overflow: auto;
+        height: auto;
+        min-height: 100%;
+      }
+      body {
+        height: auto;
+        overflow-y: auto;
+      }
       .main-layout {
         flex-direction: column;
         height: auto;
@@ -118,15 +114,16 @@
       height: 100%;
     }
 
-    @media (max-width: 1150px) {
+    @media (max-width: 1050px) {
       .canvas-container {
-        height: 70vh;
-        min-height: 420px;
+        height: 75vh;
+        min-height: 460px;
       }
     }
 
     .canvas-toolbar {
-      padding: 10px 14px;
+      flex-shrink: 0;
+      padding: 8px 12px;
       background: #172033;
       border-bottom: 1px solid var(--card-border);
       display: flex;
@@ -729,13 +726,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.17 (15:45 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.17 (15:55 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-17 15:45:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-17 15:55:00 HST</span>
     </div>
   </header>
 
@@ -2329,9 +2326,10 @@
     function resizeCanvas() {
       const canvasWrapper = document.getElementById('canvasWrapper');
       if (!canvasWrapper) return;
-      const wrapperRect = canvasWrapper.getBoundingClientRect();
-      const availableW = wrapperRect.width;
-      const availableH = wrapperRect.height;
+      const availableW = canvasWrapper.clientWidth;
+      const availableH = canvasWrapper.clientHeight;
+      if (availableW <= 0 || availableH <= 0) return;
+
       const squareSize = Math.max(100, Math.floor(Math.min(availableW, availableH)));
 
       canvas.style.width = `${squareSize}px`;
@@ -2344,10 +2342,12 @@
       draw();
     }
     window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('load', resizeCanvas);
     if (typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(() => resizeCanvas());
       const cWrap = document.getElementById('canvasWrapper');
       if (cWrap) ro.observe(cWrap);
+      if (document.body) ro.observe(document.body);
     }
 
     // Coordinate Transforms for Sub-Viewports
@@ -3989,6 +3989,8 @@
     loadSelectedBenchmark();
     updateZoomBadge();
     setExplainMode(false);
+    setTimeout(() => resizeCanvas(), 50);
+    setTimeout(() => resizeCanvas(), 250);
   </script>
 </body>
 </html>
