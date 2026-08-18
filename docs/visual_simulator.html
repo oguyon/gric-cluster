@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (11:25 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (12:00 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 11:25:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 12:00:00 HST</span>
     </div>
   </header>
 
@@ -4041,7 +4041,7 @@
         const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
         recordFrameTelemetry(frameComputeMs);
 
-        if (!skipRender) {
+        if (!skipRender && !isRunning) {
           updateUI();
           draw();
         }
@@ -4083,7 +4083,7 @@
         const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
         recordFrameTelemetry(frameComputeMs);
 
-        if (!skipRender) {
+        if (!skipRender && !isRunning) {
           updateUI();
           draw();
         }
@@ -4590,7 +4590,7 @@
       const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
       recordFrameTelemetry(frameComputeMs);
 
-      if (!skipRender) {
+      if (!skipRender && !isRunning) {
         updateUI();
         draw();
       }
@@ -6336,6 +6336,33 @@
       }
     }
 
+    // =========================================================================
+    //  ASYNC PRODUCER-CONSUMER DISPLAY LOOP & COMPUTE ENGINE
+    // =========================================================================
+    let displayLoopId = null;
+
+    function startDisplayLoop() {
+      if (displayLoopId !== null) return;
+      function displayTick() {
+        if (!isRunning && displayLoopId === null) return;
+        updateUI();
+        draw();
+        if (isRunning) {
+          displayLoopId = requestAnimationFrame(displayTick);
+        } else {
+          displayLoopId = null;
+        }
+      }
+      displayLoopId = requestAnimationFrame(displayTick);
+    }
+
+    function stopDisplayLoop() {
+      if (displayLoopId !== null) {
+        cancelAnimationFrame(displayLoopId);
+        displayLoopId = null;
+      }
+    }
+
     function runBatchInstant() {
       if (currentBenchmark === "stream" || currentBenchmark === "3Dlorenz") {
         for (let i = 0; i < 1000; i++) stepNextFrame(true);
@@ -6375,42 +6402,86 @@
       btn.classList.add('danger');
       btn.classList.remove('primary');
 
+      // Start independent asynchronous 60 FPS display render loop
+      startDisplayLoop();
+
       if (playSpeed === 0 && benchmarkDataset.length > 0) {
-        runBatchInstant();
+        // Instant Batch Mode: Compute as fast as possible in non-blocking time-slices
+        function batchChunk() {
+          if (!isRunning) return;
+          const sliceStart = performance.now();
+          while (hasMoreFrames() && (performance.now() - sliceStart < 14)) {
+            if (currentFrameIdx >= benchmarkDataset.length) {
+              if (loopCount === 0 || currentLoop < loopCount) {
+                currentLoop++;
+                currentFrameIdx = 0;
+              } else {
+                break;
+              }
+            }
+            if (loopCount === 0 && totalFrames >= 100000) {
+              showToast("Infinite batch capped at 100,000 frames");
+              break;
+            }
+            const rawPt = benchmarkDataset[currentFrameIdx++];
+            const pt = applyNoiseToPoint(rawPt.x, rawPt.y, rawPt.z || 0.0);
+            clusterFrame(pt.x, pt.y, pt.z || 0.0, true);
+          }
+          if (!hasMoreFrames() || (loopCount > 0 && currentLoop >= loopCount && currentFrameIdx >= benchmarkDataset.length)) {
+            pauseSimulation();
+            return;
+          }
+          playTimer = setTimeout(batchChunk, 0);
+        }
+        playTimer = setTimeout(batchChunk, 0);
         return;
       }
 
-      if (playSpeed === -1) {
-        // As fast as possible: high-throughput requestAnimationFrame loop
-        function loopFastest() {
+      if (playSpeed <= 0) {
+        // "⚡ As fast as possible" Mode:
+        // Pure mathematical compute loop runs continuously without waiting for display
+        function pumpCompute() {
           if (!isRunning) return;
-          const chunk = 25; // 25 frames processed per animation tick
-          for (let i = 0; i < chunk; i++) {
+          const sliceStart = performance.now();
+          while (hasMoreFrames() && (performance.now() - sliceStart < 12)) {
+            stepNextFrame(true);
+          }
+          if (!hasMoreFrames()) {
+            pauseSimulation();
+            return;
+          }
+          playTimer = setTimeout(pumpCompute, 0);
+        }
+        playTimer = setTimeout(pumpCompute, 0);
+        return;
+      }
+
+      // Paced playback modes (150ms, 50ms, 15ms, 5ms):
+      let lastPacedTime = performance.now();
+      let frameAccumulator = 0;
+      function pacedCompute() {
+        if (!isRunning) return;
+        const now = performance.now();
+        const delta = now - lastPacedTime;
+        lastPacedTime = now;
+        frameAccumulator += delta;
+
+        const interval = playSpeed;
+        let framesToProcess = Math.floor(frameAccumulator / interval);
+        if (framesToProcess > 0) {
+          frameAccumulator -= framesToProcess * interval;
+          framesToProcess = Math.min(framesToProcess, 100);
+          for (let f = 0; f < framesToProcess; f++) {
             if (!hasMoreFrames()) {
-              updateUI();
-              draw();
               pauseSimulation();
               return;
             }
             stepNextFrame(true);
           }
-          updateUI();
-          draw();
-          if (isRunning) {
-            playTimer = requestAnimationFrame(loopFastest);
-          }
         }
-        playTimer = requestAnimationFrame(loopFastest);
-        return;
+        playTimer = setTimeout(pacedCompute, Math.max(0, Math.min(interval, 4)));
       }
-
-      playTimer = setInterval(() => {
-        if (!hasMoreFrames()) {
-          pauseSimulation();
-          return;
-        }
-        stepNextFrame(false);
-      }, playSpeed);
+      playTimer = setTimeout(pacedCompute, 0);
     }
 
     function pauseSimulation() {
@@ -6420,12 +6491,16 @@
       btn.classList.remove('danger');
       btn.classList.add('primary');
       if (playTimer) {
+        clearTimeout(playTimer);
         clearInterval(playTimer);
         if (typeof cancelAnimationFrame !== 'undefined') {
           cancelAnimationFrame(playTimer);
         }
         playTimer = null;
       }
+      stopDisplayLoop();
+      updateUI();
+      draw();
     }
 
     function setAddPointMode(enabled) {
@@ -6817,7 +6892,9 @@
 
     document.getElementById('btnStep').addEventListener('click', () => {
       if (isRunning) pauseSimulation();
-      stepNextFrame();
+      stepNextFrame(true);
+      updateUI();
+      draw();
     });
 
     document.getElementById('btnAddPoint').addEventListener('click', () => {
