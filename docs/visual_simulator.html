@@ -726,13 +726,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.17 (16:45 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (07:56 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-17 16:45:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 07:56:00 HST</span>
     </div>
   </header>
 
@@ -1173,28 +1173,193 @@
         </div>
       </div>
 
-      <!-- 2. Performance Stats -->
+      <!-- 2. Real-Time Resource & Performance Tracker -->
       <div class="card fixed-height">
         <div class="card-title">
-          <span>Real-Time Telemetry</span>
-          <span id="entropyBadge" class="badge-pill" style="color: var(--accent-purple);">H: 0.00 bits</span>
+          <span>⚡ Resource Tracker</span>
+          <div style="display: flex; gap: 5px; align-items: center;">
+            <span id="cpuBadge" class="badge-pill" style="background: rgba(251, 191, 36, 0.12); color: var(--accent-amber); border: 1px solid rgba(251, 191, 36, 0.35); font-weight: 600;">CPU: 0.0%</span>
+            <span id="entropyBadge" class="badge-pill" style="color: var(--accent-purple);">H: 0.00 bits</span>
+          </div>
         </div>
-        <div class="stats-grid">
-          <div class="stat-box">
-            <div id="statClusters" class="num" style="color: var(--accent-blue);">0</div>
-            <div id="lblStatClusters" class="lbl">Clusters Formed</div>
+
+        <div class="config-tab-bar" style="margin-bottom: 8px;">
+          <div id="tabResOverview" class="config-tab-btn active">📊 Overview</div>
+          <div id="tabResDistances" class="config-tab-btn">📏 Distances</div>
+          <div id="tabResMemory" class="config-tab-btn">💾 Memory</div>
+          <div id="tabResCompute" class="config-tab-btn">⚙️ Compute</div>
+        </div>
+
+        <!-- Sub-Tab 1: Overview Panel -->
+        <div id="resOverviewPanel">
+          <div class="stats-grid">
+            <div class="stat-box">
+              <div id="statCpuLoad" class="num" style="color: var(--accent-amber);">0.0%</div>
+              <div class="lbl" id="lblStatCpu">CPU Load (<span id="statComputeMs">0.00 ms</span>/fr)</div>
+            </div>
+            <div class="stat-box">
+              <div id="statTotalDists" class="num" style="color: var(--accent-blue);">0</div>
+              <div class="lbl" id="lblStatTotalDists">Distances (<span id="statDistRate">0</span>/s)</div>
+            </div>
+            <div class="stat-box">
+              <div id="statDistRatio" class="num" style="color: var(--accent-green); font-size: 1.05rem;">0 / 0</div>
+              <div class="lbl">SC (Eval) / CC (Matrix)</div>
+            </div>
+            <div class="stat-box">
+              <div id="statMemoryTotal" class="num" style="color: var(--accent-purple); font-size: 1.05rem;">0 KB</div>
+              <div class="lbl" id="lblStatMemory">Model Memory Footprint</div>
+            </div>
           </div>
-          <div class="stat-box">
-            <div id="statFrames" class="num">0</div>
-            <div class="lbl">Frames Ingested</div>
+
+          <!-- Mini Sparkline for CPU Compute Latency -->
+          <div style="margin-top: 8px; background: #172033; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
+              <span>Frame Compute Latency (last 60 frames)</span>
+              <span id="sparklineVal" style="color: var(--accent-blue); font-family: monospace; font-weight: 600;">0.00 ms</span>
+            </div>
+            <canvas id="sparklineCanvas" width="380" height="34" style="width: 100%; height: 34px; display: block; border-radius: 4px;"></canvas>
           </div>
-          <div class="stat-box">
-            <div id="statSaved" class="num" style="color: var(--accent-green);">0%</div>
-            <div class="lbl">Dist Calls Saved</div>
+        </div>
+
+        <!-- Sub-Tab 2: Distance Breakdown Panel (Sample-Cluster vs Cluster-Cluster) -->
+        <div id="resDistancesPanel" style="display: none; max-height: 250px; overflow-y: auto; padding-right: 2px;">
+          <!-- Sample-to-Cluster -->
+          <div class="sub-control-card" style="margin-top: 0;">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+              <span>Sample-to-Cluster (<span class="badge-pill">d(f, c)</span>)</span>
+              <span id="statDistSC" class="val" style="color: var(--accent-blue); font-size: 0.88rem;">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Avg Evaluations / Frame:</span>
+              <span id="statAvgSCEvals" class="val">0.00</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Pruning Distance Savings:</span>
+              <span id="statSavedPct" class="val" style="color: var(--accent-green);">0%</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Theoretical Naive Evals:</span>
+              <span id="statNaiveEvals" class="val">0</span>
+            </div>
           </div>
-          <div class="stat-box">
-            <div id="statAvgEvals" class="num" style="color: var(--accent-purple);">0.00</div>
-            <div class="lbl">Avg Evals / Frame</div>
+
+          <!-- Cluster-to-Cluster -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
+              <span>Cluster-to-Cluster (<span class="badge-pill">d(c_i, c_j)</span>)</span>
+              <span id="statDistCC" class="val" style="color: var(--accent-purple); font-size: 0.88rem;">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Inter-Cluster Matrix D_cc:</span>
+              <span id="statDccDim" class="val">0 × 0 (0 cells)</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Avg CC Cost / Frame:</span>
+              <span id="statAvgCCEvals" class="val">0.00</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Active Cluster Anchors:</span>
+              <span id="statActiveClusters" class="val">0</span>
+            </div>
+          </div>
+
+          <!-- Ratio & Throughput -->
+          <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; padding: 0 4px;">
+            <span>Evaluation Rate: <b id="statDistThroughput" style="color: var(--text-main); font-family: monospace;">0 dist/s</b></span>
+            <span>Total Distances: <b id="statDistGrandTotal" style="color: var(--text-main); font-family: monospace;">0</b></span>
+          </div>
+        </div>
+
+        <!-- Sub-Tab 3: Memory Footprint Panel -->
+        <div id="resMemoryPanel" style="display: none; max-height: 250px; overflow-y: auto; padding-right: 2px;">
+          <!-- Model Footprint -->
+          <div class="sub-control-card" style="margin-top: 0;">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
+              <span>GRIC Model Footprint</span>
+              <span id="statModelTotalBytes" class="val" style="color: var(--accent-purple); font-size: 0.88rem;">0 KB</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Centroids &amp; Metadata:</span>
+              <span id="statCentroidsMem" class="val">0 B</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>D_cc Distance Matrix:</span>
+              <span id="statDccMem" class="val">0 B</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Transition Matrix (TM):</span>
+              <span id="statTmMem" class="val">0 B</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Point Cloud &amp; History:</span>
+              <span id="statPastSamplesMem" class="val">0 B</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Subspace Tiles &amp; Tuples:</span>
+              <span id="statTuplesMem" class="val">0 B</span>
+            </div>
+          </div>
+
+          <!-- JS Engine Heap -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+              <span>Browser JS Heap Memory</span>
+              <span id="statHeapUsed" class="val" style="color: var(--accent-green); font-size: 0.88rem;">N/A</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Allocated Heap Size:</span>
+              <span id="statHeapTotal" class="val">N/A</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Heap Size Limit:</span>
+              <span id="statHeapLimit" class="val">N/A</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sub-Tab 4: Compute & Pruning Breakdown Panel -->
+        <div id="resComputePanel" style="display: none; max-height: 250px; overflow-y: auto; padding-right: 2px;">
+          <!-- Engine CPU Stats -->
+          <div class="sub-control-card" style="margin-top: 0;">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-amber);">
+              <span>CPU Execution Stats</span>
+              <span id="statComputeThroughput" class="val" style="color: var(--accent-amber); font-size: 0.88rem;">0 FPS</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Instantaneous Latency:</span>
+              <span id="statInstComputeMs" class="val">0.00 ms</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Mean Latency / Frame:</span>
+              <span id="statAvgComputeMs" class="val">0.00 ms</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Cumulative Compute Time:</span>
+              <span id="statTotalComputeMs" class="val">0.00 s</span>
+            </div>
+          </div>
+
+          <!-- Pruning Exclusions Breakdown -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+              <span>Pruning &amp; Prior Breakdown</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>3-Point (Triangle Ineq):</span>
+              <span id="statPrune3P" class="val" style="color: var(--accent-blue);">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>4-Point (Tetrahedral):</span>
+              <span id="statPrune4P" class="val" style="color: var(--accent-purple);">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>5-Point (Cayley-Menger):</span>
+              <span id="statPrune5P" class="val" style="color: #f43f5e);">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+              <span>Predictor / TM Hits:</span>
+              <span id="statPredHits" class="val" style="color: var(--accent-green);">0</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1519,6 +1684,8 @@
         for (let target of order) {
           if (!clmembflag[target]) continue;
           evals++;
+          distSampleCluster++;
+          distSampleClusterLast++;
           const targetCl = this.clusters[target];
           const d = Math.abs(val - targetCl.val);
           const isMatch = d < rThreshold;
@@ -1560,12 +1727,15 @@
               prunedCount++;
             }
           }
-          if (isExplain && prunedCount > 0) {
-            steps.push({
-              type: 'prune',
-              title: `Tile ${this.axisName}: 1D-3P Pruning`,
-              text: `1D triangle inequality pruned ${prunedCount} candidate(s).`
-            });
+          if (prunedCount > 0) {
+            pruneCount3P += prunedCount;
+            if (isExplain) {
+              steps.push({
+                type: 'prune',
+                title: `Tile ${this.axisName}: 1D-3P Pruning`,
+                text: `1D triangle inequality pruned ${prunedCount} candidate(s).`
+              });
+            }
           }
         }
 
@@ -1577,6 +1747,8 @@
           const newRow = [];
           for (let i = 0; i < this.clusters.length; i++) {
             const d_inter = Math.abs(val - this.clusters[i].val);
+            distClusterCluster++;
+            distClusterClusterLast++;
             this.dcc[i].push(d_inter);
             newRow.push(d_inter);
           }
@@ -1713,6 +1885,8 @@
           const dy = pts[i].y - pts[j].y;
           const dz = currentDim === 3 ? (pts[i].z - pts[j].z) : 0;
           dists.push(Math.sqrt(dx*dx + dy*dy + dz*dz));
+          distClusterCluster++;
+          distClusterClusterLast++;
         }
       }
       if (dists.length === 0) return;
@@ -1814,6 +1988,183 @@
     let currentEntropyBits = 0;
     let currentExplanation = [];
 
+    // =========================================================================
+    //  RESOURCE & PERFORMANCE TRACKER STATE & TELEMETRY
+    // =========================================================================
+    let distSampleCluster = 0;      // Total Sample-to-Cluster evaluations d(f, c)
+    let distClusterCluster = 0;     // Total Cluster-to-Cluster evaluations d(ci, cj)
+    let distSampleClusterLast = 0;  // Last frame SC evaluations
+    let distClusterClusterLast = 0; // Last frame CC evaluations
+    let pruneCount3P = 0;           // Pruned candidates via 3-Point
+    let pruneCount4P = 0;           // Pruned candidates via 4-Point
+    let pruneCount5P = 0;           // Pruned candidates via 5-Point
+    let predHitCount = 0;           // Successful sequence/TM predictor hits
+
+    // High-Resolution Execution Profiling
+    let totalComputeTimeMs = 0.0;
+    let lastComputeTimeMs = 0.0;
+    let avgComputeTimeMs = 0.0;
+    let sparklineHistory = new Array(60).fill(0.0);
+    let rollingHistory = [];        // [{ time, computeMs, frames, dists }] in rolling 1-sec window
+    let currentCpuLoadPct = 0.0;
+    let currentFps = 0.0;
+    let currentDistRate = 0.0;
+
+    function formatNumber(num) {
+      if (num === null || num === undefined || isNaN(num)) return "0";
+      return Math.round(num).toLocaleString();
+    }
+
+    function formatBytes(bytes) {
+      if (bytes === 0 || isNaN(bytes)) return "0 B";
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    }
+
+    function getMemoryStats() {
+      let heapUsedMB = null;
+      let heapTotalMB = null;
+      let heapLimitMB = null;
+
+      if (typeof performance !== 'undefined' && performance.memory) {
+        heapUsedMB = performance.memory.usedJSHeapSize / (1024 * 1024);
+        heapTotalMB = performance.memory.totalJSHeapSize / (1024 * 1024);
+        heapLimitMB = performance.memory.jsHeapSizeLimit / (1024 * 1024);
+      }
+
+      const K = useTiles 
+        ? (tileEngineX.clusters.length + tileEngineY.clusters.length + (currentDim === 3 ? tileEngineZ.clusters.length : 0)) 
+        : clusters.length;
+
+      // Centroids & metadata: ~64 bytes per cluster centroid
+      const centroidsBytes = K * 64;
+
+      // Inter-cluster distance matrix Dcc: Float64 (8 bytes) per cell
+      let dccCells = 0;
+      if (useTiles) {
+        dccCells = (tileEngineX.clusters.length ** 2) + 
+                   (tileEngineY.clusters.length ** 2) + 
+                   (currentDim === 3 ? (tileEngineZ.clusters.length ** 2) : 0);
+      } else {
+        dccCells = clusters.length * clusters.length;
+      }
+      const dccBytes = dccCells * 8;
+
+      // Markov Transition Matrix: 4 bytes per cell
+      const tmBytes = (clusters.length * clusters.length) * 4;
+
+      // Past samples point cloud: 3 doubles (24 bytes) per coordinate
+      const pastSamplesBytes = pastSamples.length * 24;
+
+      // History buffers: sequence history (4B) + frame telemetry structures (~32B)
+      const historyBytes = (assignmentHistory.length * 4) + (frameHistory.length * 32);
+
+      // Subspace Tiles & Joint Tuple Map entries: ~48B per entry
+      const tuplesBytes = jointTuplesMap.size * 48;
+
+      const totalModelBytes = centroidsBytes + dccBytes + tmBytes + pastSamplesBytes + historyBytes + tuplesBytes;
+
+      return {
+        heapUsedMB,
+        heapTotalMB,
+        heapLimitMB,
+        centroidsBytes,
+        dccBytes,
+        dccCells,
+        tmBytes,
+        pastSamplesBytes,
+        historyBytes,
+        tuplesBytes,
+        totalModelBytes
+      };
+    }
+
+    function updateResourceMetrics() {
+      const now = performance.now();
+      const cutoff = now - 1000;
+      while (rollingHistory.length > 0 && rollingHistory[0].time < cutoff) {
+        rollingHistory.shift();
+      }
+
+      if (rollingHistory.length > 0) {
+        let windowComputeMs = 0;
+        let windowFrames = 0;
+        let windowDists = 0;
+        for (let i = 0; i < rollingHistory.length; i++) {
+          windowComputeMs += rollingHistory[i].computeMs;
+          windowFrames += rollingHistory[i].frames;
+          windowDists += rollingHistory[i].dists;
+        }
+        const wallSpanMs = Math.max(16, now - rollingHistory[0].time);
+        const wallSpanSec = wallSpanMs / 1000.0;
+
+        currentCpuLoadPct = Math.min(100.0, (windowComputeMs / wallSpanMs) * 100.0);
+        currentFps = windowFrames / wallSpanSec;
+        currentDistRate = windowDists / wallSpanSec;
+      } else {
+        currentCpuLoadPct = 0.0;
+        currentFps = 0.0;
+        currentDistRate = 0.0;
+      }
+    }
+
+    function drawSparkline() {
+      const spCanvas = document.getElementById('sparklineCanvas');
+      if (!spCanvas) return;
+      const spCtx = spCanvas.getContext('2d');
+      const w = spCanvas.width;
+      const h = spCanvas.height;
+
+      spCtx.clearRect(0, 0, w, h);
+      spCtx.fillStyle = '#0f172a';
+      spCtx.fillRect(0, 0, w, h);
+
+      const maxVal = Math.max(0.05, ...sparklineHistory);
+      const n = sparklineHistory.length;
+      if (n < 2) return;
+
+      // Draw middle guideline
+      spCtx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+      spCtx.lineWidth = 1;
+      spCtx.beginPath();
+      spCtx.moveTo(0, h / 2);
+      spCtx.lineTo(w, h / 2);
+      spCtx.stroke();
+
+      // Sparkline fill gradient
+      spCtx.beginPath();
+      spCtx.moveTo(0, h);
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - (sparklineHistory[i] / maxVal) * (h - 4) - 2;
+        spCtx.lineTo(x, y);
+      }
+      spCtx.lineTo(w, h);
+      spCtx.closePath();
+      spCtx.fillStyle = 'rgba(56, 189, 248, 0.18)';
+      spCtx.fill();
+
+      // Sparkline stroke
+      spCtx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - (sparklineHistory[i] / maxVal) * (h - 4) - 2;
+        if (i === 0) spCtx.moveTo(x, y);
+        else spCtx.lineTo(x, y);
+      }
+      spCtx.strokeStyle = '#38bdf8';
+      spCtx.lineWidth = 1.5;
+      spCtx.stroke();
+
+      // Latest value indicator dot
+      const lastY = h - (sparklineHistory[n - 1] / maxVal) * (h - 4) - 2;
+      spCtx.fillStyle = '#fbbf24';
+      spCtx.beginPath();
+      spCtx.arc(w - 2, lastY, 2.5, 0, Math.PI * 2);
+      spCtx.fill();
+    }
+
     // Multi-Tile 1D Subspace Engines
     const tileEngineX = new Tile1D("X");
     const tileEngineY = new Tile1D("Y");
@@ -1869,6 +2220,10 @@
     // =========================================================================
 
     function clusterFrame(x, y, z = 0.0, skipRender = false) {
+      const tComputeStart = performance.now();
+      distSampleClusterLast = 0;
+      distClusterClusterLast = 0;
+
       totalFrames++;
       currentFrame = { x, y, z };
       pastSamples.push({ x, y, z });
@@ -1925,6 +2280,24 @@
         });
 
         assignmentHistory.push(tupleKey);
+
+        const tComputeEnd = performance.now();
+        const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
+        lastComputeTimeMs = frameComputeMs;
+        totalComputeTimeMs += frameComputeMs;
+        avgComputeTimeMs = totalFrames > 0 ? (totalComputeTimeMs / totalFrames) : 0.0;
+
+        sparklineHistory.push(frameComputeMs);
+        if (sparklineHistory.length > 60) sparklineHistory.shift();
+
+        const nowTime = performance.now();
+        rollingHistory.push({
+          time: nowTime,
+          computeMs: frameComputeMs,
+          frames: 1,
+          dists: distSampleClusterLast + distClusterClusterLast
+        });
+
         if (!skipRender) {
           updateUI();
           draw();
@@ -1960,6 +2333,23 @@
           type: 'new-cluster',
           title: '✨ Initial Cluster Anchor Created',
           text: `First frame ingested at ${coordStr}. Initialized cluster c_0 with anchor.`
+        });
+
+        const tComputeEnd = performance.now();
+        const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
+        lastComputeTimeMs = frameComputeMs;
+        totalComputeTimeMs += frameComputeMs;
+        avgComputeTimeMs = totalFrames > 0 ? (totalComputeTimeMs / totalFrames) : 0.0;
+
+        sparklineHistory.push(frameComputeMs);
+        if (sparklineHistory.length > 60) sparklineHistory.shift();
+
+        const nowTime = performance.now();
+        rollingHistory.push({
+          time: nowTime,
+          computeMs: frameComputeMs,
+          frames: 1,
+          dists: distSampleClusterLast + distClusterClusterLast
         });
 
         if (!skipRender) {
@@ -2150,6 +2540,9 @@
 
         evalsThisFrame++;
         measDepth++;
+        distSampleCluster++;
+        distSampleClusterLast++;
+
         const targetCl = clusters[chosenTarget];
         
         // Exact Euclidean distance in 2D or 3D
@@ -2174,6 +2567,10 @@
           targetCl.members++;
           targetCl.prob = (targetCl.prob || 1.0) + 0.05;
           targetCl.lastActive = totalFrames;
+
+          if (currentPredicted.includes(chosenTarget) || (useTM && prevAssignedCluster >= 0 && (transitionCounts[prevAssignedCluster][chosenTarget] || 0) > 0)) {
+            predHitCount++;
+          }
 
           logExplainStep({
             type: 'match',
@@ -2217,6 +2614,7 @@
         }
         const after3P = countActive(clmembflag);
         const pruned3P = before3P - after3P;
+        if (pruned3P > 0) pruneCount3P += pruned3P;
 
         logExplainStep({
           type: 'prune',
@@ -2246,6 +2644,7 @@
             const after4P = countActive(clmembflag);
             const pruned4P = before4P - after4P;
             if (pruned4P > 0) {
+              pruneCount4P += pruned4P;
               logExplainStep({
                 type: 'prune',
                 title: '📐 4-Point Pruning (-te4)',
@@ -2285,6 +2684,7 @@
             const after5P = countActive(clmembflag);
             const pruned5P = before5P - after5P;
             if (pruned5P > 0) {
+              pruneCount5P += pruned5P;
               logExplainStep({
                 type: 'prune',
                 title: '📐 5-Point Pruning (-te5)',
@@ -2348,6 +2748,8 @@
               } else {
                 const cO = clusters[i];
                 const d = Math.sqrt((x - cO.x)**2 + (y - cO.y)**2 + (z - cO.z)**2);
+                distClusterCluster++;
+                distClusterClusterLast++;
                 dcc[victimIdx][i] = d;
                 dcc[i][victimIdx] = d;
               }
@@ -2384,6 +2786,8 @@
               } else {
                 const cO = clusters[i];
                 const d = Math.sqrt((x - cO.x)**2 + (y - cO.y)**2 + (z - cO.z)**2);
+                distClusterCluster++;
+                distClusterClusterLast++;
                 dcc[mergeJ][i] = d;
                 dcc[i][mergeJ] = d;
               }
@@ -2409,6 +2813,8 @@
               (y - cOther.y) ** 2 +
               (z - cOther.z) ** 2
             );
+            distClusterCluster++;
+            distClusterClusterLast++;
             dcc[i].push(d_inter);
             newDccRow.push(d_inter);
           }
@@ -2438,6 +2844,23 @@
         indices: [...measuredIndices],
         dists: [...measuredDists],
         assignment: assignedCluster
+      });
+
+      const tComputeEnd = performance.now();
+      const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
+      lastComputeTimeMs = frameComputeMs;
+      totalComputeTimeMs += frameComputeMs;
+      avgComputeTimeMs = totalFrames > 0 ? (totalComputeTimeMs / totalFrames) : 0.0;
+
+      sparklineHistory.push(frameComputeMs);
+      if (sparklineHistory.length > 60) sparklineHistory.shift();
+
+      const nowTime = performance.now();
+      rollingHistory.push({
+        time: nowTime,
+        computeMs: frameComputeMs,
+        frames: 1,
+        dists: distSampleClusterLast + distClusterClusterLast
       });
 
       if (!skipRender) {
@@ -3212,31 +3635,126 @@
           : "[2D Mode: Drag to Pan • Scroll to Zoom • ＋ Add Point: Inject]";
       }
 
+      // 1. Refresh Resource Metrics, Heap Memory, and Latency Sparkline
+      updateResourceMetrics();
+      const memStats = getMemoryStats();
+      drawSparkline();
+
+      // Top Badges
+      const cpuBadge = document.getElementById('cpuBadge');
+      if (cpuBadge) {
+        cpuBadge.innerText = `CPU: ${currentCpuLoadPct.toFixed(1)}%`;
+      }
+
       if (useTiles) {
-        document.getElementById('statClusters').innerText = `${jointTuplesMap.size}`;
-        document.getElementById('lblStatClusters').innerText = currentDim === 3 
-          ? `3D Tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length}, Kz=${tileEngineZ.clusters.length})`
-          : `2D Tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length})`;
-        
         document.getElementById('measCountBadge').innerText = currentJointTuple 
           ? `Tuple: ${currentDim === 3 ? `(${currentJointTuple.cx},${currentJointTuple.cy},${currentJointTuple.cz})` : `(${currentJointTuple.cx},${currentJointTuple.cy})`}` 
           : `0 tuples`;
         document.getElementById('entropyBadge').innerText = `Tiles: ${currentDim} Subspaces`;
       } else {
-        document.getElementById('statClusters').innerText = clusters.length;
-        document.getElementById('lblStatClusters').innerText = `Clusters Formed`;
         document.getElementById('measCountBadge').innerText = `${currentEvaluations.length} evals`;
         document.getElementById('entropyBadge').innerText = `H: ${currentEntropyBits.toFixed(2)} bits`;
       }
 
-      document.getElementById('statFrames').innerText = totalFrames;
-      
-      const avgE = totalFrames > 0 ? (totalEvals / totalFrames).toFixed(2) : '0.00';
-      document.getElementById('statAvgEvals').innerText = avgE;
+      // 2. Resource Tracker - Tab 1: Overview
+      const statCpuLoad = document.getElementById('statCpuLoad');
+      if (statCpuLoad) statCpuLoad.innerText = `${currentCpuLoadPct.toFixed(1)}%`;
+      const statComputeMs = document.getElementById('statComputeMs');
+      if (statComputeMs) statComputeMs.innerText = `${avgComputeTimeMs.toFixed(2)} ms`;
 
-      const savedPct = naiveEvals > 0 ? (((naiveEvals - totalEvals) / naiveEvals) * 100).toFixed(0) : '0';
-      document.getElementById('statSaved').innerText = `${Math.max(0, savedPct)}%`;
+      const statTotalDists = document.getElementById('statTotalDists');
+      if (statTotalDists) statTotalDists.innerText = formatNumber(distSampleCluster + distClusterCluster);
+      const statDistRate = document.getElementById('statDistRate');
+      if (statDistRate) statDistRate.innerText = formatNumber(Math.round(currentDistRate));
 
+      const statDistRatio = document.getElementById('statDistRatio');
+      if (statDistRatio) statDistRatio.innerText = `${formatNumber(distSampleCluster)} / ${formatNumber(distClusterCluster)}`;
+
+      const statMemoryTotal = document.getElementById('statMemoryTotal');
+      if (statMemoryTotal) statMemoryTotal.innerText = formatBytes(memStats.totalModelBytes);
+
+      const sparklineVal = document.getElementById('sparklineVal');
+      if (sparklineVal) sparklineVal.innerText = `${lastComputeTimeMs.toFixed(2)} ms`;
+
+      // 3. Resource Tracker - Tab 2: Distance Breakdown
+      const statDistSC = document.getElementById('statDistSC');
+      if (statDistSC) statDistSC.innerText = formatNumber(distSampleCluster);
+      const statAvgSCEvals = document.getElementById('statAvgSCEvals');
+      if (statAvgSCEvals) statAvgSCEvals.innerText = totalFrames > 0 ? (distSampleCluster / totalFrames).toFixed(2) : "0.00";
+
+      const savedPct = naiveEvals > 0 ? (((naiveEvals - distSampleCluster) / naiveEvals) * 100).toFixed(0) : '0';
+      const statSavedPct = document.getElementById('statSavedPct');
+      if (statSavedPct) statSavedPct.innerText = `${Math.max(0, savedPct)}%`;
+
+      const statNaiveEvals = document.getElementById('statNaiveEvals');
+      if (statNaiveEvals) statNaiveEvals.innerText = formatNumber(naiveEvals);
+
+      const statDistCC = document.getElementById('statDistCC');
+      if (statDistCC) statDistCC.innerText = formatNumber(distClusterCluster);
+      const statDccDim = document.getElementById('statDccDim');
+      if (statDccDim) {
+        if (useTiles) {
+          statDccDim.innerText = `1D Tiles (${formatNumber(memStats.dccCells)} cells)`;
+        } else {
+          statDccDim.innerText = `${clusters.length} × ${clusters.length} (${formatNumber(memStats.dccCells)} cells)`;
+        }
+      }
+      const statAvgCCEvals = document.getElementById('statAvgCCEvals');
+      if (statAvgCCEvals) statAvgCCEvals.innerText = totalFrames > 0 ? (distClusterCluster / totalFrames).toFixed(2) : "0.00";
+
+      const statActiveClusters = document.getElementById('statActiveClusters');
+      if (statActiveClusters) {
+        statActiveClusters.innerText = useTiles 
+          ? `${jointTuplesMap.size} tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length}${currentDim===3 ? `, Kz=${tileEngineZ.clusters.length}` : ''})`
+          : `${clusters.length} anchors`;
+      }
+
+      const statDistThroughput = document.getElementById('statDistThroughput');
+      if (statDistThroughput) statDistThroughput.innerText = `${formatNumber(Math.round(currentDistRate))} dist/s`;
+      const statDistGrandTotal = document.getElementById('statDistGrandTotal');
+      if (statDistGrandTotal) statDistGrandTotal.innerText = formatNumber(distSampleCluster + distClusterCluster);
+
+      // 4. Resource Tracker - Tab 3: Memory
+      const statModelTotalBytes = document.getElementById('statModelTotalBytes');
+      if (statModelTotalBytes) statModelTotalBytes.innerText = formatBytes(memStats.totalModelBytes);
+      const statCentroidsMem = document.getElementById('statCentroidsMem');
+      if (statCentroidsMem) statCentroidsMem.innerText = formatBytes(memStats.centroidsBytes);
+      const statDccMem = document.getElementById('statDccMem');
+      if (statDccMem) statDccMem.innerText = formatBytes(memStats.dccBytes);
+      const statTmMem = document.getElementById('statTmMem');
+      if (statTmMem) statTmMem.innerText = formatBytes(memStats.tmBytes);
+      const statPastSamplesMem = document.getElementById('statPastSamplesMem');
+      if (statPastSamplesMem) statPastSamplesMem.innerText = formatBytes(memStats.pastSamplesBytes + memStats.historyBytes);
+      const statTuplesMem = document.getElementById('statTuplesMem');
+      if (statTuplesMem) statTuplesMem.innerText = formatBytes(memStats.tuplesBytes);
+
+      const statHeapUsed = document.getElementById('statHeapUsed');
+      if (statHeapUsed) statHeapUsed.innerText = memStats.heapUsedMB !== null ? `${memStats.heapUsedMB.toFixed(2)} MB` : "N/A (Chromium)";
+      const statHeapTotal = document.getElementById('statHeapTotal');
+      if (statHeapTotal) statHeapTotal.innerText = memStats.heapTotalMB !== null ? `${memStats.heapTotalMB.toFixed(2)} MB` : "N/A";
+      const statHeapLimit = document.getElementById('statHeapLimit');
+      if (statHeapLimit) statHeapLimit.innerText = memStats.heapLimitMB !== null ? `${memStats.heapLimitMB.toFixed(0)} MB` : "N/A";
+
+      // 5. Resource Tracker - Tab 4: Compute & Pruning
+      const statComputeThroughput = document.getElementById('statComputeThroughput');
+      if (statComputeThroughput) statComputeThroughput.innerText = `${currentFps.toFixed(1)} FPS`;
+      const statInstComputeMs = document.getElementById('statInstComputeMs');
+      if (statInstComputeMs) statInstComputeMs.innerText = `${lastComputeTimeMs.toFixed(3)} ms`;
+      const statAvgComputeMs = document.getElementById('statAvgComputeMs');
+      if (statAvgComputeMs) statAvgComputeMs.innerText = `${avgComputeTimeMs.toFixed(3)} ms`;
+      const statTotalComputeMs = document.getElementById('statTotalComputeMs');
+      if (statTotalComputeMs) statTotalComputeMs.innerText = `${(totalComputeTimeMs / 1000).toFixed(3)} s`;
+
+      const statPrune3P = document.getElementById('statPrune3P');
+      if (statPrune3P) statPrune3P.innerText = formatNumber(pruneCount3P);
+      const statPrune4P = document.getElementById('statPrune4P');
+      if (statPrune4P) statPrune4P.innerText = formatNumber(pruneCount4P);
+      const statPrune5P = document.getElementById('statPrune5P');
+      if (statPrune5P) statPrune5P.innerText = formatNumber(pruneCount5P);
+      const statPredHits = document.getElementById('statPredHits');
+      if (statPredHits) statPredHits.innerText = formatNumber(predHitCount);
+
+      // Progress bar and frame counter
       if (benchmarkDataset.length > 0) {
         if (loopCount === 0) {
           const loopPct = ((currentFrameIdx % benchmarkDataset.length) / benchmarkDataset.length) * 100;
@@ -3373,6 +3891,24 @@
       currentLoop = 1;
       currentExplanation = [];
       lorenzState = { x: 0.1, y: 0.0, z: 0.0 };
+
+      // Resource Tracker reset
+      distSampleCluster = 0;
+      distClusterCluster = 0;
+      distSampleClusterLast = 0;
+      distClusterClusterLast = 0;
+      pruneCount3P = 0;
+      pruneCount4P = 0;
+      pruneCount5P = 0;
+      predHitCount = 0;
+      totalComputeTimeMs = 0.0;
+      lastComputeTimeMs = 0.0;
+      avgComputeTimeMs = 0.0;
+      sparklineHistory = new Array(60).fill(0.0);
+      rollingHistory = [];
+      currentCpuLoadPct = 0.0;
+      currentFps = 0.0;
+      currentDistRate = 0.0;
 
       tileEngineX.reset();
       tileEngineY.reset();
@@ -4032,6 +4568,28 @@
       if (tabBtn) {
         tabBtn.addEventListener('click', () => {
           configTabs.forEach(other => {
+            const btnEl = document.getElementById(other.id);
+            const panelEl = document.getElementById(other.panel);
+            if (btnEl) btnEl.classList.toggle('active', other.id === t.id);
+            if (panelEl) panelEl.style.display = (other.id === t.id) ? 'block' : 'none';
+          });
+        });
+      }
+    });
+
+    // Resource Tracker 4-Tab Switching
+    const resourceTabs = [
+      { id: 'tabResOverview', panel: 'resOverviewPanel' },
+      { id: 'tabResDistances', panel: 'resDistancesPanel' },
+      { id: 'tabResMemory', panel: 'resMemoryPanel' },
+      { id: 'tabResCompute', panel: 'resComputePanel' }
+    ];
+
+    resourceTabs.forEach(t => {
+      const tabBtn = document.getElementById(t.id);
+      if (tabBtn) {
+        tabBtn.addEventListener('click', () => {
+          resourceTabs.forEach(other => {
             const btnEl = document.getElementById(other.id);
             const panelEl = document.getElementById(other.panel);
             if (btnEl) btnEl.classList.toggle('active', other.id === t.id);
