@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:18 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:25 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:18:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:25:00 HST</span>
     </div>
   </header>
 
@@ -1921,7 +1921,7 @@
                   </div>
                 </div>
 
-                <!-- Trace Curves Canvas -->
+                <!-- Instantaneous Trace Curves Canvas -->
                 <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px;">
                   <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
                     <span>Evaluations / Frame (<span id="lblDistCurveFrames" style="color: var(--text-main); font-family: monospace;">Frame 0 → 0</span>)</span>
@@ -1935,6 +1935,22 @@
                     </div>
                   </div>
                   <canvas id="distCurvesCanvas" width="380" height="70" style="width: 100%; height: 70px; display: block; border-radius: 4px;"></canvas>
+                </div>
+
+                <!-- Cumulative Average Distance Curve Canvas (Since Sample 0) -->
+                <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px; margin-top: 6px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
+                    <span>Cumulative Avg / Frame (<span id="lblDistAvgCurveFrames" style="color: var(--text-main); font-family: monospace;">Since Sample 0</span>)</span>
+                    <div style="display: flex; gap: 8px; font-size: 0.68rem;">
+                      <span style="display: flex; align-items: center; gap: 3px; color: #38bdf8;">
+                        <span style="display: inline-block; width: 8px; height: 2px; background: #38bdf8;"></span> avg d(f,c) (<b id="lblLiveMeanDFC">0.00</b>)
+                      </span>
+                      <span style="display: flex; align-items: center; gap: 3px; color: #c084fc;">
+                        <span style="display: inline-block; width: 8px; height: 2px; background: #c084fc;"></span> avg d(c,c) (<b id="lblLiveMeanDCC">0.00</b>)
+                      </span>
+                    </div>
+                  </div>
+                  <canvas id="distAvgCurvesCanvas" width="380" height="70" style="width: 100%; height: 70px; display: block; border-radius: 4px;"></canvas>
                 </div>
               </div>
 
@@ -3209,6 +3225,149 @@
       ctx.stroke();
 
       const lastY_dcc = h - (distHistoryDCC[n - 1] / maxVal) * (h - 6) - 3;
+      ctx.fillStyle = '#c084fc';
+      ctx.beginPath();
+      ctx.arc(w - 2, lastY_dcc, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawDistAvgCurves() {
+      const cvs = document.getElementById('distAvgCurvesCanvas');
+      if (!cvs) return;
+      const ctx = cvs.getContext('2d');
+      const w = cvs.width;
+      const h = cvs.height;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, w, h);
+
+      const n = distHistoryDFC.length;
+
+      const lblFrames = document.getElementById('lblDistAvgCurveFrames');
+      if (lblFrames) {
+        lblFrames.innerText = n > 0 ? `f=0 → ${n - 1} (${n} frames)` : `Since Sample 0`;
+      }
+
+      if (n === 0) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Awaiting frame stream data...', w / 2, h / 2 + 3);
+        return;
+      }
+
+      // Compute cumulative running averages since frame 0
+      const avgDFC = new Float64Array(n);
+      const avgDCC = new Float64Array(n);
+      let sumDFC = 0, sumDCC = 0;
+      for (let i = 0; i < n; i++) {
+        sumDFC += distHistoryDFC[i];
+        sumDCC += distHistoryDCC[i];
+        avgDFC[i] = sumDFC / (i + 1);
+        avgDCC[i] = sumDCC / (i + 1);
+      }
+
+      const finalAvgDFC = avgDFC[n - 1];
+      const finalAvgDCC = avgDCC[n - 1];
+
+      const lblMeanDFC = document.getElementById('lblLiveMeanDFC');
+      if (lblMeanDFC) lblMeanDFC.innerText = finalAvgDFC.toFixed(2);
+      const lblMeanDCC = document.getElementById('lblLiveMeanDCC');
+      if (lblMeanDCC) lblMeanDCC.innerText = finalAvgDCC.toFixed(2);
+
+      // Max value for Y scaling
+      let maxVal = Math.max(1.0, ...avgDFC, ...avgDCC);
+      maxVal = Math.ceil(maxVal * 1.2 * 10) / 10;
+
+      // Grid horizontal lines (50%)
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(0, h * 0.5); ctx.lineTo(w, h * 0.5);
+      ctx.stroke();
+
+      // Scale indicator labels
+      ctx.fillStyle = '#64748b';
+      ctx.font = '8px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`max: ${maxVal.toFixed(1)}`, 3, 9);
+      ctx.fillText(`f=0`, 3, h - 2);
+      ctx.textAlign = 'right';
+      ctx.fillText(`f=${n - 1}`, w - 3, h - 2);
+
+      if (n === 1) {
+        // Single frame point
+        const y_dfc = h - (avgDFC[0] / maxVal) * (h - 6) - 3;
+        const y_dcc = h - (avgDCC[0] / maxVal) * (h - 6) - 3;
+        
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(10, y_dfc, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#c084fc';
+        ctx.beginPath();
+        ctx.arc(10, y_dcc, 3, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+
+      // 1. Draw Running Avg d(f,c) Shaded Area and Stroke (Cyan #38bdf8)
+      ctx.beginPath();
+      ctx.moveTo(0, h);
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - (avgDFC[i] / maxVal) * (h - 6) - 3;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, h);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+      ctx.fill();
+
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - (avgDFC[i] / maxVal) * (h - 6) - 3;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+
+      const lastY_dfc = h - (finalAvgDFC / maxVal) * (h - 6) - 3;
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(w - 2, lastY_dfc, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. Draw Running Avg d(c,c) Shaded Area and Stroke (Purple #c084fc)
+      ctx.beginPath();
+      ctx.moveTo(0, h);
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - (avgDCC[i] / maxVal) * (h - 6) - 3;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, h);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(192, 132, 252, 0.12)';
+      ctx.fill();
+
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - (avgDCC[i] / maxVal) * (h - 6) - 3;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#c084fc';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+
+      const lastY_dcc = h - (finalAvgDCC / maxVal) * (h - 6) - 3;
       ctx.fillStyle = '#c084fc';
       ctx.beginPath();
       ctx.arc(w - 2, lastY_dcc, 2.5, 0, Math.PI * 2);
@@ -4769,6 +4928,7 @@
       const memStats = getMemoryStats();
       drawSparkline();
       drawDistCurves();
+      drawDistAvgCurves();
 
       // Top Badges & Clusters Count
       const clusterBadge = document.getElementById('clusterBadge');
