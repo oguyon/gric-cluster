@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (12:00 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (12:15 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 12:00:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 12:15:00 HST</span>
     </div>
   </header>
 
@@ -1469,21 +1469,6 @@
                     <span id="lblXTileDecay" class="val">0.70</span>
                   </div>
                   <input type="range" id="sliderXTileDecay" min="0.10" max="1.00" step="0.05" value="0.70">
-                </div>
-
-                <!-- Live Transition Matrix Subcard (-tm) -->
-                <div id="tmSettingsSubcard" style="display: none; background: #0f172a; border: 1px solid rgba(192, 132, 252, 0.4); border-radius: 6px; padding: 6px 8px; margin-top: 6px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
-                    <span style="font-weight: 700; color: var(--accent-purple);">Live Markov Matrix P(c_t | c_{t-1})</span>
-                    <span id="badgeTMLast" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; font-family: monospace; font-size: 0.65rem;">Last: None</span>
-                  </div>
-                  <div id="tmSettingsWrapper" style="width: 100%; height: 210px; display: flex; justify-content: center; align-items: center; overflow: hidden; margin: 4px 0;">
-                    <canvas id="tmSettingsCanvas" style="display: block; border-radius: 4px; background: #0b1120; cursor: crosshair;"></canvas>
-                  </div>
-                  <div style="display: flex; justify-content: space-between; font-size: 0.66rem; color: var(--text-muted); margin-top: 4px;">
-                    <span id="lblTMTooltip">Hover over matrix for details</span>
-                    <span id="lblTMStats">0 transitions</span>
-                  </div>
                 </div>
               </div>
 
@@ -2179,6 +2164,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                   <span style="font-size: 0.76rem; font-weight: 700; color: var(--accent-purple);">Live Markov Heatmap \(P(c_t \mid c_{t-1})\)</span>
                   <div style="display: flex; align-items: center; gap: 6px;">
+                    <span id="lblTMStats" style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">0 trans</span>
                     <span id="badgeLastTrans" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; font-family: monospace; font-size: 0.68rem;">Last: None</span>
                   </div>
                 </div>
@@ -2951,7 +2937,6 @@
     let lastTMRenderTimestamp = 0;
     let lastTMTopPathsTimestamp = 0;
     const tmCanvasDimensions = {
-      tmSettingsCanvas: { w: 340, h: 210 },
       tmHeatmapCanvas: { w: 420, h: 320 }
     };
     let assignmentHistory = [];
@@ -3848,12 +3833,10 @@
 
       // 6. Update Status & Badges
       const densityPct = K > 0 ? ((nonZeroCount / (K * K)) * 100).toFixed(0) : '0';
-      const badgeLast = document.getElementById('badgeTMLast');
       const badgeLastTrans = document.getElementById('badgeLastTrans');
       const lastStr = (lastTransitionFrom >= 0 && lastTransitionTo >= 0) 
         ? `Last: c${lastTransitionFrom} → c${lastTransitionTo}` 
         : `Last: None`;
-      if (badgeLast) badgeLast.innerText = lastStr;
       if (badgeLastTrans) badgeLastTrans.innerText = lastStr;
 
       const lblStats = document.getElementById('lblTMStats');
@@ -3911,9 +3894,6 @@
         hoveredTMCell = null;
         const tipEl = document.getElementById('tmCellTooltip');
         if (tipEl) tipEl.innerText = 'Hover over any cell to inspect transition details';
-      }
-      if (useTM) {
-        drawTransitionMatrix('tmSettingsCanvas', true);
       }
       if (typeof currentActiveTab !== 'undefined' && currentActiveTab === 'tm') {
         drawTransitionMatrix('tmHeatmapCanvas', false);
@@ -4619,22 +4599,12 @@
       draw();
 
       updateTMCanvasDimensions();
-      if (useTM) {
-        drawTransitionMatrix('tmSettingsCanvas', true);
-      }
       if (typeof currentActiveTab !== 'undefined' && currentActiveTab === 'tm') {
         drawTransitionMatrix('tmHeatmapCanvas', false);
       }
     }
 
     function updateTMCanvasDimensions() {
-      const setWrap = document.getElementById('tmSettingsWrapper');
-      if (setWrap && setWrap.clientWidth > 0 && setWrap.clientHeight > 0) {
-        tmCanvasDimensions.tmSettingsCanvas = {
-          w: Math.floor(setWrap.clientWidth),
-          h: Math.floor(setWrap.clientHeight)
-        };
-      }
       const heatWrap = document.getElementById('tmHeatmapWrapper');
       if (heatWrap && heatWrap.clientWidth > 0 && heatWrap.clientHeight > 0) {
         tmCanvasDimensions.tmHeatmapCanvas = {
@@ -4651,8 +4621,6 @@
       if (cWrap) ro.observe(cWrap);
       const tmHeatWrap = document.getElementById('tmHeatmapWrapper');
       if (tmHeatWrap) ro.observe(tmHeatWrap);
-      const tmSetWrap = document.getElementById('tmSettingsWrapper');
-      if (tmSetWrap) ro.observe(tmSetWrap);
       if (document.body) ro.observe(document.body);
     }
 
@@ -5715,21 +5683,14 @@
       drawDistCurves();
       drawDistAvgCurves();
 
-      // 2. Refresh Live Transition Matrix (-tm)
-      const tmSub = document.getElementById('tmSettingsSubcard');
-      if (tmSub) tmSub.style.display = useTM ? 'block' : 'none';
-      if (useTM) {
+      // 2. Refresh Live Transition Matrix (-tm) in Decision & Search Trace panel
+      if (useTM && typeof currentActiveTab !== 'undefined' && currentActiveTab === 'tm') {
         const now = performance.now();
         const shouldRenderTM = !isRunning || (totalFrames % 4 === 0) || (now - lastTMRenderTimestamp > 80);
         if (shouldRenderTM) {
           lastTMRenderTimestamp = now;
-          if (tmSub && tmSub.offsetParent !== null) {
-            drawTransitionMatrix('tmSettingsCanvas', true);
-          }
-          if (typeof currentActiveTab !== 'undefined' && currentActiveTab === 'tm') {
-            drawTransitionMatrix('tmHeatmapCanvas', false);
-            updateTMTopPaths();
-          }
+          drawTransitionMatrix('tmHeatmapCanvas', false);
+          updateTMTopPaths();
         }
       }
 
@@ -7497,8 +7458,8 @@
     }
 
     // Transition Matrix Heatmap Hover Handlers
-    function setupTMCanvasListeners(canvasId, isMini) {
-      const cvs = document.getElementById(canvasId);
+    function setupTMCanvasListeners() {
+      const cvs = document.getElementById('tmHeatmapCanvas');
       if (!cvs) return;
 
       cvs.addEventListener('mousemove', (e) => {
@@ -7523,16 +7484,16 @@
           const prob = sum > 0 ? (cnt / sum) : 0.0;
 
           const desc = `C${row} → C${col}: Count=${cnt}, P=${(prob * 100).toFixed(1)}% (Row total: ${sum})`;
-          const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
+          const tipEl = document.getElementById('tmCellTooltip');
           if (tipEl) tipEl.innerText = desc;
-          drawTransitionMatrix(canvasId, isMini);
+          drawTransitionMatrix('tmHeatmapCanvas', false);
           draw();
         } else {
           if (hoveredTMCell !== null) {
             hoveredTMCell = null;
-            const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
-            if (tipEl) tipEl.innerText = isMini ? 'Hover over matrix for details' : 'Hover over any cell to inspect transition details';
-            drawTransitionMatrix(canvasId, isMini);
+            const tipEl = document.getElementById('tmCellTooltip');
+            if (tipEl) tipEl.innerText = 'Hover over any cell to inspect transition details';
+            drawTransitionMatrix('tmHeatmapCanvas', false);
             draw();
           }
         }
@@ -7541,16 +7502,15 @@
       cvs.addEventListener('mouseleave', () => {
         if (hoveredTMCell !== null) {
           hoveredTMCell = null;
-          const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
-          if (tipEl) tipEl.innerText = isMini ? 'Hover over matrix for details' : 'Hover over any cell to inspect transition details';
-          drawTransitionMatrix(canvasId, isMini);
+          const tipEl = document.getElementById('tmCellTooltip');
+          if (tipEl) tipEl.innerText = 'Hover over any cell to inspect transition details';
+          drawTransitionMatrix('tmHeatmapCanvas', false);
           draw();
         }
       });
     }
 
-    setupTMCanvasListeners('tmSettingsCanvas', true);
-    setupTMCanvasListeners('tmHeatmapCanvas', false);
+    setupTMCanvasListeners();
 
     // Initial Startup
     initSidebarResizers();
