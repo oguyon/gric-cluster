@@ -90,6 +90,7 @@
       gap: 16px;
       flex: 1;
       min-height: calc(100vh - 110px);
+      align-items: start;
     }
 
     @media (max-width: 1150px) {
@@ -107,8 +108,10 @@
       flex-direction: column;
       overflow: hidden;
       position: relative;
-      height: 100%;
-      min-height: 540px;
+      height: calc(100vh - 110px);
+      min-height: 560px;
+      max-height: 940px;
+      align-self: start;
     }
 
     .canvas-toolbar {
@@ -243,8 +246,9 @@
       position: relative;
       flex: 1;
       width: 100%;
-      min-height: 520px;
+      min-height: 0;
       background: #0b1120;
+      overflow: hidden;
     }
 
     canvas {
@@ -322,7 +326,10 @@
       display: flex;
       flex-direction: column;
       gap: 14px;
-      height: 100%;
+      align-self: start;
+      max-height: calc(100vh - 110px);
+      min-height: 0;
+      overflow: hidden;
     }
 
     .card {
@@ -340,7 +347,9 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      min-height: 260px;
+      min-height: 180px;
+      max-height: 380px;
+      overflow: hidden;
     }
 
     .card-title {
@@ -466,18 +475,20 @@
 
     .narrative-list {
       flex: 1;
-      min-height: 180px;
-      max-height: calc(100vh - 540px);
+      min-height: 120px;
+      max-height: 280px;
       overflow-y: auto;
+      overflow-x: hidden;
       display: flex;
       flex-direction: column;
       gap: 8px;
       padding-right: 4px;
+      contain: content;
     }
 
     @media (max-height: 800px) {
       .narrative-list {
-        max-height: 240px;
+        max-height: 200px;
       }
     }
 
@@ -532,13 +543,15 @@
 
     .candidate-list {
       flex: 1;
-      min-height: 180px;
-      max-height: calc(100vh - 540px);
+      min-height: 120px;
+      max-height: 280px;
       overflow-y: auto;
+      overflow-x: hidden;
       display: flex;
       flex-direction: column;
       gap: 5px;
       padding-right: 4px;
+      contain: content;
     }
 
     .candidate-item {
@@ -686,15 +699,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span class="badge">Exact C-Match</span>
-        <span id="dimBadge" class="dim-badge">2D Mode</span>
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.17 (08:50 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.17 (15:35 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-17 08:50:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-17 15:35:00 HST</span>
     </div>
   </header>
 
@@ -1359,11 +1370,21 @@
           const isMatch = d < rThreshold;
           evaluated.push({ target, dist: d, match: isMatch });
 
+          let selectionReason = "";
+          if (useXTile && (this.axisName === 'X' || this.axisName === 'Y' || this.axisName === 'Z') && currentJointTuple) {
+            selectionReason = `Cross-tile subspace prior transferred from orthogonal axes (-xtile)`;
+          } else if (useTM && this.prevAssigned >= 0 && this.transitionCounts[this.prevAssigned] && this.transitionCounts[this.prevAssigned][target] > 0) {
+            const transP = this.transitionCounts[this.prevAssigned][target] / (this.clusters[this.prevAssigned].members || 1);
+            selectionReason = `1D Markov transition prior from c_${this.prevAssigned} (P=${transP.toFixed(3)})`;
+          } else {
+            selectionReason = `Highest 1D membership weight (prob=${(targetCl.prob || 1.0).toFixed(2)}, ${targetCl.members} members)`;
+          }
+
           if (isExplain) {
             steps.push({
               type: isMatch ? 'match' : 'mismatch',
-              title: `Tile ${this.axisName}: Test c_${target}`,
-              text: `1D distance |${val.toFixed(3)} - ${targetCl.val.toFixed(3)}| = ${d.toFixed(4)} ${isMatch ? '<=' : '>'} rlim (${rThreshold.toFixed(3)})`
+              title: `Tile ${this.axisName}: ${isMatch ? 'Match' : 'Mismatch'} on Anchor c_${target}`,
+              text: `1D distance |${val.toFixed(3)} - ${targetCl.val.toFixed(3)}| = ${d.toFixed(4)} ${isMatch ? '<=' : '>'} rlim (${rThreshold.toFixed(3)}).<br><b>Selection reason:</b> ${selectionReason}.`
             });
           }
 
@@ -1903,7 +1924,7 @@
           if (clmembflag[cand]) {
             chosenTarget = cand;
             currentPredicted.push(cand);
-            selectionReason = `trajectory prediction pattern shortcut`;
+            selectionReason = `Trajectory pattern predictor (-pred): matched recent temporal cluster transition history`;
             break;
           }
         }
@@ -1959,10 +1980,15 @@
               }
             }
             chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag);
-            selectionReason = `Shannon entropy minimization (E[H]=${minExpectedH.toFixed(2)} bits, gate=${currentGate.toFixed(1)})`;
+            selectionReason = `Shannon entropy minimization (-entropy): candidate provides lowest expected residual uncertainty E[H]=${minExpectedH.toFixed(2)} bits (current H=${H.toFixed(2)} > gate ${currentGate.toFixed(1)}) to maximize anticipated pruning`;
           } else {
             chosenTarget = getArgMaxP(pCurrent, clmembflag);
-            selectionReason = `highest active prior probability P=${(pCurrent[chosenTarget] || 0).toFixed(3)}`;
+            const tCount = (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) ? (transitionCounts[prevAssignedCluster][chosenTarget] || 0) : 0;
+            if (useTM && tCount > 0) {
+              selectionReason = `Markov transition prior (-tm): transition probability P(c_${chosenTarget} | c_${prevAssignedCluster}) = ${(pCurrent[chosenTarget] || 0).toFixed(3)} (${tCount} observed transitions from previous anchor c_${prevAssignedCluster})`;
+            } else {
+              selectionReason = `Maximum active prior probability: highest likelihood P=${(pCurrent[chosenTarget] || 0).toFixed(3)} (${clusters[chosenTarget].members} historical members)`;
+            }
           }
         }
 
@@ -1983,6 +2009,12 @@
         measuredDists.push(dfc);
         currentEvaluations.push({ target: targetCl, dist: dfc, match: isMatch });
 
+        logExplainStep({
+          type: 'target',
+          title: `🔍 Measuring Distance: Anchor c_${chosenTarget}`,
+          text: `<b>Reason for choice:</b> ${selectionReason}.<br>Anchor coordinates: (${targetCl.x.toFixed(3)}, ${targetCl.y.toFixed(3)}${currentDim === 3 ? `, ${targetCl.z.toFixed(3)}` : ''}).`
+        });
+
         if (isMatch) {
           assignedCluster = chosenTarget;
           targetCl.members++;
@@ -1991,16 +2023,16 @@
 
           logExplainStep({
             type: 'match',
-            title: `🎯 Match Found on c_${chosenTarget}`,
-            text: `Distance to cluster c_${chosenTarget} -> d=${dfc.toFixed(4)} <= rlim (${rlim.toFixed(3)}). Assigned in ${evalsThisFrame} eval(s), saving ${K - evalsThisFrame} distance calls.`
+            title: `🎯 Match Found on Anchor c_${chosenTarget}`,
+            text: `Distance to anchor c_${chosenTarget} is d = ${dfc.toFixed(4)} <= rlim (${rlim.toFixed(3)}). Query frame assigned to cluster c_${chosenTarget}.<br><b>Anchor choice reason:</b> ${selectionReason}.<br>Resolved in ${evalsThisFrame} distance calculation(s), saving ${K - evalsThisFrame} distance calls.`
           });
           break;
         }
 
         logExplainStep({
           type: 'mismatch',
-          title: `❌ Mismatch on c_${chosenTarget}`,
-          text: `Distance to cluster c_${chosenTarget} (${selectionReason}) -> d=${dfc.toFixed(4)} > rlim (${rlim.toFixed(3)}). Candidate c_${chosenTarget} excluded.`
+          title: `❌ Mismatch on Anchor c_${chosenTarget}`,
+          text: `Distance to anchor c_${chosenTarget} is d = ${dfc.toFixed(4)} > rlim (${rlim.toFixed(3)}). Anchor c_${chosenTarget} excluded.<br><b>Anchor choice reason:</b> ${selectionReason}.`
         });
 
         clmembflag[chosenTarget] = false;
@@ -2997,12 +3029,6 @@
     }
 
     function updateUI() {
-      const dimBadge = document.getElementById('dimBadge');
-      if (dimBadge) {
-        dimBadge.innerText = currentDim === 3 ? "3D Quad-Split" : "2D Single View";
-        dimBadge.style.background = currentDim === 3 ? "#7c3aed" : "#2563eb";
-      }
-
       const presetBar = document.getElementById('viewPresetBar');
       if (presetBar) {
         presetBar.style.display = (currentDim === 3) ? 'flex' : 'none';
