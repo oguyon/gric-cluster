@@ -843,6 +843,15 @@
       font-family: monospace;
     }
 
+    .cluster-table th.num-col,
+    .cluster-table td.num-col {
+      text-align: right;
+    }
+
+    .cluster-table th.num-col .th-content {
+      justify-content: flex-end;
+    }
+
     .cluster-table tr.cluster-row {
       transition: background 0.12s ease;
       cursor: pointer;
@@ -1661,10 +1670,10 @@
 
             <!-- Tab 3: Display & View Parameters -->
             <div id="cfgDisplayPanel" style="display: none;">
-              <!-- Visual Focus -->
+              <!-- Visual Balance & Point Sizing -->
               <div class="sub-control-card">
                 <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-                  <span>Visual Balance &amp; Focus</span>
+                  <span>Visual Balance &amp; Point Sizing</span>
                 </div>
                 <div class="control-row">
                   <div class="control-label">
@@ -1673,10 +1682,27 @@
                   </div>
                   <input type="range" id="sliderFocus" min="0" max="100" step="1" value="50">
                 </div>
-                <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
+                <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px; margin-bottom: 10px;">
                   <span>0%: Points Only</span>
                   <span>50%: Balanced</span>
                   <span>100%: Clusters Only</span>
+                </div>
+
+                <div class="control-row">
+                  <div class="control-label">
+                    <span>Sample Point Size (<span class="badge-pill">radius</span>)</span>
+                    <span id="lblPointSize" class="val">1.5 px</span>
+                  </div>
+                  <input type="range" id="sliderPointSize" min="0.5" max="8.0" step="0.25" value="1.5" 
+                         data-tooltip-title="Sample Point Size" 
+                         data-tooltip-badge="Display: Radius" 
+                         data-tooltip-color="teal" 
+                         data-tooltip-desc="Adjusts rendering radius of past ingested sample points (0.5px to 8.0px) across all 2D and 3D viewports.">
+                </div>
+                <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
+                  <span>0.5 px (Fine)</span>
+                  <span>1.5 px (Default)</span>
+                  <span>8.0 px (Large)</span>
                 </div>
               </div>
 
@@ -2554,6 +2580,7 @@
     // Algorithm & Display Config
     let rlim = 0.100;
     let visualFocus = 50; // 0 (Points Only) to 100 (Clusters Only)
+    let samplePointSize = 1.5; // Ingested sample points render radius in px (0.5 to 8.0)
     let noiseSigma = 0.000; // Truncated Gaussian noise std dev (0 = off)
     let noiseTruncLimit = 0.050; // Truncation radius limit
     let targetMode = 'greedy';
@@ -3904,15 +3931,17 @@
       // 2. Past Samples Point Cloud
       if (pastSamples.length > 0 && pointAlpha > 0.001) {
         ctx.fillStyle = `rgba(148, 163, 184, ${pointAlpha.toFixed(3)})`;
+        const basePtRad = samplePointSize;
         for (let i = 0; i < pastSamples.length; i++) {
           const pr = getProjectedCoord(pastSamples[i]);
           const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
           if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 || pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) continue;
           
-          let ptRad = 1.5 * ptSizeScale;
+          let ptRad = basePtRad * ptSizeScale;
           if (is3DCustom) {
-            // Depth cueing
-            ptRad = Math.max(0.8, Math.min(3.5, (1.6 + pr.depth * 0.8) * ptSizeScale));
+            // Depth cueing with samplePointSize scaling
+            const depthFactor = Math.max(0.4, Math.min(2.2, 1.0 + pr.depth * 0.5));
+            ptRad = Math.max(0.3, basePtRad * depthFactor * ptSizeScale);
           }
           ctx.beginPath();
           ctx.arc(pos.px, pos.py, ptRad, 0, Math.PI * 2);
@@ -4661,7 +4690,7 @@
         `;
       }
 
-      function renderColHeader(colKey, label) {
+      function renderColHeader(colKey, label, isNum = false) {
         if (!clusterTableCols[colKey] || !clusterTableCols[colKey].visible) return '';
         const isSorted = clusterSortKey === colKey;
         const sortIcon = isSorted ? (clusterSortDir === 'asc' ? '▲' : '▼') : '<span class="sort-icon">⇅</span>';
@@ -4671,7 +4700,7 @@
           : `Click to sort table by ${label} ascending. Click '−' to minimize column.`;
 
         return `
-          <th class="${isSorted ? 'sorted' : ''}" 
+          <th class="${isSorted ? 'sorted' : ''} ${isNum ? 'num-col' : ''}" 
               onclick="setClusterSort('${colKey}')" 
               data-tooltip-title="Sort by ${label}" 
               data-tooltip-badge="${sortBadge}" 
@@ -4717,11 +4746,11 @@
             <table class="cluster-table">
               <thead>
                 <tr>
-                  ${renderColHeader('cluster', 'Joint Tuple')}
-                  ${renderColHeader('centroid', 'Indices')}
-                  ${renderColHeader('frames', 'Frames')}
-                  ${renderColHeader('scDists', '#SC dists')}
-                  ${renderColHeader('status', 'Status')}
+                  ${renderColHeader('cluster', 'Joint Tuple', false)}
+                  ${renderColHeader('centroid', 'Indices', false)}
+                  ${renderColHeader('frames', 'Frames', true)}
+                  ${renderColHeader('scDists', '#SC dists', true)}
+                  ${renderColHeader('status', 'Status', false)}
                 </tr>
               </thead>
               <tbody>
@@ -4749,10 +4778,10 @@
                   <td style="color:#94a3b8;">(${item.cx}, ${item.cy}${currentDim === 3 ? `, ${item.cz}` : ''})</td>
                 ` : ''}
                 ${clusterTableCols.frames.visible ? `
-                  <td><span style="color:#f8fafc; font-weight:600;">${item.count}</span> <span style="color:#64748b; font-size:0.68rem;">(${((item.count / Math.max(1, totalFrames)) * 100).toFixed(1)}%)</span></td>
+                  <td class="num-col"><span style="color:#f8fafc; font-weight:600;">${item.count}</span> <span style="color:#64748b; font-size:0.68rem;">(${((item.count / Math.max(1, totalFrames)) * 100).toFixed(1)}%)</span></td>
                 ` : ''}
                 ${clusterTableCols.scDists.visible ? `
-                  <td style="color:var(--accent-blue); font-weight:600;">${item.scDists || item.count}</td>
+                  <td class="num-col" style="color:var(--accent-blue); font-weight:600;">${item.scDists || item.count}</td>
                 ` : ''}
                 ${clusterTableCols.status.visible ? `
                   <td><span class="badge-pill" style="font-size:0.65rem; ${isCurrent ? 'background:rgba(74,222,128,0.2); color:var(--accent-green);' : ''}">${badgeText}</span></td>
@@ -4807,12 +4836,12 @@
             <table class="cluster-table">
               <thead>
                 <tr>
-                  ${renderColHeader('cluster', 'Cluster')}
-                  ${renderColHeader('centroid', 'Centroid')}
-                  ${renderColHeader('frames', 'Frames')}
-                  ${renderColHeader('scDists', '#SC dists')}
-                  ${renderColHeader('dist', 'Dist d(f,c)')}
-                  ${renderColHeader('status', 'Status')}
+                  ${renderColHeader('cluster', 'Cluster', false)}
+                  ${renderColHeader('centroid', 'Centroid', false)}
+                  ${renderColHeader('frames', 'Frames', true)}
+                  ${renderColHeader('scDists', '#SC dists', true)}
+                  ${renderColHeader('dist', 'Dist d(f,c)', true)}
+                  ${renderColHeader('status', 'Status', false)}
                 </tr>
               </thead>
               <tbody>
@@ -4878,13 +4907,13 @@
                   <td style="color:#cbd5e1; font-size:0.70rem;">${coordStr}</td>
                 ` : ''}
                 ${clusterTableCols.frames.visible ? `
-                  <td><span style="color:#f8fafc; font-weight:600;">${c.members}</span> <span style="color:#64748b; font-size:0.66rem;">(${framePct}%)</span></td>
+                  <td class="num-col"><span style="color:#f8fafc; font-weight:600;">${c.members}</span> <span style="color:#64748b; font-size:0.66rem;">(${framePct}%)</span></td>
                 ` : ''}
                 ${clusterTableCols.scDists.visible ? `
-                  <td style="color:var(--accent-blue); font-weight:600;">${scCount}</td>
+                  <td class="num-col" style="color:var(--accent-blue); font-weight:600;">${scCount}</td>
                 ` : ''}
                 ${clusterTableCols.dist.visible ? `
-                  <td style="color:${distColor}; font-weight:600;">${distText}</td>
+                  <td class="num-col" style="color:${distColor}; font-weight:600;">${distText}</td>
                 ` : ''}
                 ${clusterTableCols.status.visible ? `
                   <td><span class="badge-pill" style="font-size:0.65rem; ${badgeStyle}">${badgeText}</span></td>
@@ -5522,6 +5551,18 @@
       }
       draw();
     });
+
+    const sliderPointSize = document.getElementById('sliderPointSize');
+    if (sliderPointSize) {
+      sliderPointSize.addEventListener('input', (e) => {
+        samplePointSize = parseFloat(e.target.value);
+        const lbl = document.getElementById('lblPointSize');
+        if (lbl) {
+          lbl.innerText = `${samplePointSize.toFixed(2).replace(/\.?0+$/, '')} px`;
+        }
+        draw();
+      });
+    }
 
     const sliderNoiseSigma = document.getElementById('sliderNoiseSigma');
     sliderNoiseSigma.addEventListener('input', (e) => {
