@@ -339,7 +339,8 @@
       flex-direction: column;
       gap: 0;
       width: 440px;
-      min-width: 440px;
+      min-width: 280px;
+      max-width: 850px;
       flex-shrink: 0;
       height: 100%;
       max-height: 100%;
@@ -349,10 +350,44 @@
       box-sizing: border-box;
     }
 
-    @media (max-width: 1150px) {
+    .layout-resizer {
+      width: 8px;
+      min-width: 8px;
+      cursor: col-resize;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin: 0 1px;
+      z-index: 25;
+      user-select: none;
+      background: transparent;
+    }
+
+    .layout-resizer::after {
+      content: '';
+      width: 3px;
+      height: 52px;
+      border-radius: 2px;
+      background: #334155;
+      transition: background 0.15s ease, height 0.15s ease;
+    }
+
+    .layout-resizer:hover::after,
+    .layout-resizer.dragging::after {
+      background: var(--accent-blue);
+      height: 80px;
+    }
+
+    @media (max-width: 1050px) {
+      .layout-resizer {
+        display: none !important;
+      }
       .side-panel {
-        width: 100%;
-        min-width: 100%;
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
         height: auto;
         max-height: none;
         overflow: visible;
@@ -969,7 +1004,7 @@
     </div>
   </header>
 
-  <div class="main-layout">
+  <div class="main-layout" id="mainLayout">
     <!-- Left: Canvas Area -->
     <div class="canvas-container" id="canvasBox">
       <div id="dropzone" class="dropzone-overlay">Drop 2D/3D Coordinate File (.txt, .csv, .dat) Here</div>
@@ -1140,8 +1175,15 @@
       </div>
     </div>
 
+    <!-- Horizontal Layout Resizer (between Left Side View and Right Side Panels) -->
+    <div class="layout-resizer" id="layoutResizer" 
+         data-tooltip-title="Drag to Resize Sidebar" 
+         data-tooltip-badge="Horizontal Split" 
+         data-tooltip-color="cyan" 
+         data-tooltip-desc="Click and drag horizontally to adjust the width split between the canvas view area and sidebar panels."></div>
+
     <!-- Right: Control & Telemetry Panel -->
-    <div class="side-panel">
+    <div class="side-panel" id="sidePanel">
       <!-- 1. Simulator Settings -->
       <div id="cardSettings" class="card expanded" style="flex: 1.1 1 0px;">
         <div class="card-title" onclick="togglePanelCollapse('cardSettings')">
@@ -5614,8 +5656,58 @@
       updateResizersVisibility();
     }
 
+    function initLayoutResizer() {
+      const layoutResizer = document.getElementById('layoutResizer');
+      const sidePanel = document.getElementById('sidePanel');
+      const mainLayout = document.getElementById('mainLayout');
+      if (!layoutResizer || !sidePanel || !mainLayout) return;
+
+      let isDragging = false;
+      let startX = 0;
+      let startWidth = 0;
+
+      layoutResizer.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        startWidth = sidePanel.getBoundingClientRect().width;
+        layoutResizer.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+
+        function onMouseMove(moveEvent) {
+          if (!isDragging) return;
+          const deltaX = startX - moveEvent.clientX; // Moving left expands sidebar
+          const layoutRect = mainLayout.getBoundingClientRect();
+          const minW = 280;
+          const maxW = Math.max(minW, layoutRect.width - 320);
+          const newWidth = Math.round(Math.max(minW, Math.min(maxW, startWidth + deltaX)));
+
+          sidePanel.style.width = `${newWidth}px`;
+          sidePanel.style.minWidth = `${newWidth}px`;
+          resizeCanvas();
+        }
+
+        function onMouseUp() {
+          if (isDragging) {
+            isDragging = false;
+            layoutResizer.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+            resizeCanvas();
+          }
+        }
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+      });
+    }
+
     // Initial Startup
     initSidebarResizers();
+    initLayoutResizer();
     resizeCanvas();
     loadSelectedBenchmark();
     updateZoomBadge();
