@@ -653,17 +653,77 @@
       font-size: 0.74rem;
     }
 
-    .candidate-list {
+    .candidate-list, .cluster-table-wrapper {
       flex: 1 1 0px;
       min-height: 0;
       max-height: none;
       overflow-y: auto;
-      overflow-x: hidden;
+      overflow-x: auto;
       display: flex;
       flex-direction: column;
       gap: 5px;
-      padding-right: 4px;
+      padding-right: 2px;
       contain: content;
+    }
+
+    .cluster-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.72rem;
+      text-align: left;
+      line-height: 1.35;
+      background: #111827;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .cluster-table th {
+      position: sticky;
+      top: 0;
+      background: #0b1120;
+      color: var(--text-muted);
+      font-weight: 700;
+      padding: 6px 7px;
+      border-bottom: 1px solid var(--card-border);
+      white-space: nowrap;
+      z-index: 2;
+      font-size: 0.69rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .cluster-table td {
+      padding: 4px 7px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.35);
+      white-space: nowrap;
+      vertical-align: middle;
+      font-family: monospace;
+    }
+
+    .cluster-table tr.cluster-row {
+      transition: background 0.12s ease;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .cluster-table tr.cluster-row:hover,
+    .cluster-table tr.cluster-row.hovered {
+      background: rgba(56, 189, 248, 0.18) !important;
+    }
+
+    .cluster-table tr.cluster-row.selected {
+      background: rgba(250, 204, 21, 0.20) !important;
+      outline: 1px solid #facc15;
+    }
+
+    .cluster-table tr.cluster-row.matched {
+      background: rgba(74, 222, 128, 0.09);
+    }
+
+    .cluster-table tr.cluster-row.pruned {
+      background: rgba(248, 113, 113, 0.06);
+      opacity: 0.75;
     }
 
     .candidate-item {
@@ -1495,7 +1555,7 @@
         <div class="card-body">
           <div class="tab-switch">
             <div id="tabNarrative" class="tab-btn active">💬 Decision Narrative</div>
-            <div id="tabCandidates" class="tab-btn">📋 Candidate Table</div>
+            <div id="tabCandidates" class="tab-btn">📋 Cluster Table</div>
           </div>
 
           <div class="card-body-scroll" style="display: flex; flex-direction: column;">
@@ -1821,7 +1881,7 @@
             selectionReason = `Cross-tile subspace prior transferred from orthogonal axes (-xtile)`;
           } else if (useTM && this.prevAssigned >= 0 && this.transitionCounts[this.prevAssigned] && this.transitionCounts[this.prevAssigned][target] > 0) {
             const transP = this.transitionCounts[this.prevAssigned][target] / (this.clusters[this.prevAssigned].members || 1);
-            selectionReason = `1D Markov transition prior from c_${this.prevAssigned} (P=${transP.toFixed(3)})`;
+            selectionReason = `1D Markov transition prior from C${this.prevAssigned} (P=${transP.toFixed(3)})`;
           } else {
             selectionReason = `Highest 1D membership weight (prob=${(targetCl.prob || 1.0).toFixed(2)}, ${targetCl.members} members)`;
           }
@@ -1829,7 +1889,7 @@
           if (isExplain) {
             steps.push({
               type: isMatch ? 'match' : 'mismatch',
-              title: `Tile ${this.axisName}: ${isMatch ? 'Match' : 'Mismatch'} on Anchor c_${target}`,
+              title: `Tile ${this.axisName}: ${isMatch ? 'Match' : 'Mismatch'} on Anchor C${target}`,
               text: `1D distance |${val.toFixed(3)} - ${targetCl.val.toFixed(3)}| = ${d.toFixed(4)} ${isMatch ? '<=' : '>'} rlim (${rThreshold.toFixed(3)}).<br><b>Selection reason:</b> ${selectionReason}.`
             });
           }
@@ -1884,7 +1944,7 @@
           if (isExplain) {
             steps.push({
               type: 'new-cluster',
-              title: `Tile ${this.axisName}: New 1D Anchor c_${assigned}`,
+              title: `Tile ${this.axisName}: New 1D Anchor C${assigned}`,
               text: `Spawned new 1D anchor at coordinate ${val.toFixed(3)}.`
             });
           }
@@ -1968,9 +2028,17 @@
     let useSoftBayesian = false; // -soft_bayesian
     let softBayesianSigmaCoeff = 1.0; // -soft_bayesian_sigma (multiplier of rlim)
 
-    // Interactive Selection State
+    // Interactive Selection & Hover State
     let selectedClusterId = -1;
     let selectedTupleKey = null;
+    let hoveredClusterId = -1;
+
+    function setHoveredCluster(clusterId) {
+      if (hoveredClusterId !== clusterId) {
+        hoveredClusterId = clusterId;
+        draw();
+      }
+    }
 
     function toggleSelectCluster(clusterId) {
       if (selectedClusterId === clusterId) {
@@ -2444,6 +2512,7 @@
           x, y, z,
           members: 1,
           prob: 1.0,
+          scDists: 1,
           lastActive: totalFrames,
           color: getClusterColor(0)
         };
@@ -2457,7 +2526,7 @@
         logExplainStep({
           type: 'new-cluster',
           title: '✨ Initial Cluster Anchor Created',
-          text: `First frame ingested at ${coordStr}. Initialized cluster c_0 with anchor.`
+          text: `First frame ingested at ${coordStr}. Initialized cluster C0 with anchor.`
         });
 
         const tComputeEnd = performance.now();
@@ -2654,7 +2723,7 @@
             chosenTarget = getArgMaxP(pCurrent, clmembflag);
             const tCount = (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) ? (transitionCounts[prevAssignedCluster][chosenTarget] || 0) : 0;
             if (useTM && tCount > 0) {
-              selectionReason = `Markov transition prior (-tm): transition probability P(c_${chosenTarget} | c_${prevAssignedCluster}) = ${(pCurrent[chosenTarget] || 0).toFixed(3)} (${tCount} observed transitions from previous anchor c_${prevAssignedCluster})`;
+              selectionReason = `Markov transition prior (-tm): transition probability P(C${chosenTarget} | C${prevAssignedCluster}) = ${(pCurrent[chosenTarget] || 0).toFixed(3)} (${tCount} observed transitions from previous anchor C${prevAssignedCluster})`;
             } else {
               selectionReason = `Maximum active prior probability: highest likelihood P=${(pCurrent[chosenTarget] || 0).toFixed(3)} (${clusters[chosenTarget].members} historical members)`;
             }
@@ -2669,6 +2738,7 @@
         distSampleClusterLast++;
 
         const targetCl = clusters[chosenTarget];
+        targetCl.scDists = (targetCl.scDists || 0) + 1;
         
         // Exact Euclidean distance in 2D or 3D
         const dx = x - targetCl.x;
@@ -2683,7 +2753,7 @@
 
         logExplainStep({
           type: 'target',
-          title: `🔍 Measuring Distance: Anchor c_${chosenTarget}`,
+          title: `🔍 Measuring Distance: Anchor C${chosenTarget}`,
           text: `<b>Reason for choice:</b> ${selectionReason}.<br>Anchor coordinates: (${targetCl.x.toFixed(3)}, ${targetCl.y.toFixed(3)}${currentDim === 3 ? `, ${targetCl.z.toFixed(3)}` : ''}).`
         });
 
@@ -2699,16 +2769,16 @@
 
           logExplainStep({
             type: 'match',
-            title: `🎯 Match Found on Anchor c_${chosenTarget}`,
-            text: `Distance to anchor c_${chosenTarget} is d = ${dfc.toFixed(4)} <= rlim (${rlim.toFixed(3)}). Query frame assigned to cluster c_${chosenTarget}.<br><b>Anchor choice reason:</b> ${selectionReason}.<br>Resolved in ${evalsThisFrame} distance calculation(s), saving ${K - evalsThisFrame} distance calls.`
+            title: `🎯 Match Found on Anchor C${chosenTarget}`,
+            text: `Distance to anchor C${chosenTarget} is d = ${dfc.toFixed(4)} <= rlim (${rlim.toFixed(3)}). Query frame assigned to cluster C${chosenTarget}.<br><b>Anchor choice reason:</b> ${selectionReason}.<br>Resolved in ${evalsThisFrame} distance calculation(s), saving ${K - evalsThisFrame} distance calls.`
           });
           break;
         }
 
         logExplainStep({
           type: 'mismatch',
-          title: `❌ Mismatch on Anchor c_${chosenTarget}`,
-          text: `Distance to anchor c_${chosenTarget} is d = ${dfc.toFixed(4)} > rlim (${rlim.toFixed(3)}). Anchor c_${chosenTarget} excluded.<br><b>Anchor choice reason:</b> ${selectionReason}.`
+          title: `❌ Mismatch on Anchor C${chosenTarget}`,
+          text: `Distance to anchor C${chosenTarget} is d = ${dfc.toFixed(4)} > rlim (${rlim.toFixed(3)}). Anchor C${chosenTarget} excluded.<br><b>Anchor choice reason:</b> ${selectionReason}.`
         });
 
         clmembflag[chosenTarget] = false;
@@ -2857,13 +2927,14 @@
             logExplainStep({
               type: 'mismatch',
               title: '♻️ Cluster Eviction (-maxcl discard)',
-              text: `Cluster budget (${maxcl}) reached. Evicted lowest-frequency cluster c_${clusters[victimIdx].id} (${minMembers} frames) to allocate new anchor.`
+              text: `Cluster budget (${maxcl}) reached. Evicted lowest-frequency cluster C${clusters[victimIdx].id} (${minMembers} frames) to allocate new anchor.`
             });
             clusters[victimIdx] = {
               id: clusters[victimIdx].id,
               x, y, z,
               members: 1,
               prob: 1.0,
+              scDists: 0,
               lastActive: totalFrames,
               color: getClusterColor(clusters[victimIdx].id)
             };
@@ -2894,7 +2965,7 @@
             logExplainStep({
               type: 'mismatch',
               title: '🤝 Cluster Merge (-maxcl merge)',
-              text: `Cluster budget (${maxcl}) reached. Merged closest pair (c_${clusters[mergeI].id}, c_${clusters[mergeJ].id}, d=${minD.toFixed(3)}) and reused slot.`
+              text: `Cluster budget (${maxcl}) reached. Merged closest pair (C${clusters[mergeI].id}, C${clusters[mergeJ].id}, d=${minD.toFixed(3)}) and reused slot.`
             });
             clusters[mergeI].members += clusters[mergeJ].members;
             clusters[mergeJ] = {
@@ -2902,6 +2973,7 @@
               x, y, z,
               members: 1,
               prob: 1.0,
+              scDists: 0,
               lastActive: totalFrames,
               color: getClusterColor(clusters[mergeJ].id)
             };
@@ -2926,6 +2998,7 @@
             x, y, z,
             members: 1,
             prob: 1.0,
+            scDists: 0,
             lastActive: totalFrames,
             color: getClusterColor(assignedCluster)
           };
@@ -2953,8 +3026,8 @@
 
           logExplainStep({
             type: 'new-cluster',
-            title: `✨ New Cluster Created: c_${assignedCluster}`,
-            text: `Frame fell outside all ${K} candidates (distance > rlim). Spawned new anchor c_${assignedCluster} at ${coordStr} and computed ${K} inter-cluster distances.`
+            title: `✨ New Cluster Created: C${assignedCluster}`,
+            text: `Frame fell outside all ${K} candidates (distance > rlim). Spawned new anchor C${assignedCluster} at ${coordStr} and computed ${K} inter-cluster distances.`
           });
         }
       }
@@ -3436,7 +3509,7 @@
 
             ctx.fillStyle = '#f8fafc';
             ctx.font = '10px sans-serif';
-            ctx.fillText(`c_${c.id}`, pos.px + 7, pos.py - 5);
+            ctx.fillText(`C${c.id}`, pos.px + 7, pos.py - 5);
           });
 
           // Pruned Crosshairs
@@ -3456,131 +3529,140 @@
           ctx.restore();
         }
 
-        // Prominently Highlight Selected Monolithic Cluster
-        if (selectedClusterId !== -1) {
-          const selC = clusters.find(c => c.id === selectedClusterId);
-          if (selC) {
-            const pr = getProjectedCoord(selC);
-            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-            const rPx = rlim * scale;
+        // Helper to draw highlighted cluster (selected in gold #facc15, hovered in cyan #38bdf8)
+        function renderClusterHighlight(clObj, color, isSelected) {
+          const pr = getProjectedCoord(clObj);
+          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+          const rPx = rlim * scale;
 
-            ctx.save();
-            if (!is3DCustom) {
-              // Glowing receptive circle
-              ctx.beginPath();
-              ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
-              ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
-              ctx.fill();
-              ctx.strokeStyle = '#facc15';
-              ctx.lineWidth = 2.4;
-              ctx.stroke();
-
-              // Outer dashed accent ring
-              ctx.beginPath();
-              ctx.arc(pos.px, pos.py, rPx + 4, 0, Math.PI * 2);
-              ctx.strokeStyle = 'rgba(250, 204, 21, 0.6)';
-              ctx.lineWidth = 1.5;
-              ctx.setLineDash([4, 4]);
-              ctx.stroke();
-            } else {
-              // 3D Custom: 3 Highlighted Equatorial Rings & halo
-              const az = orbitCamera.azimuth, el = orbitCamera.elevation;
-              ctx.beginPath();
-              ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
-              ctx.fillStyle = 'rgba(250, 204, 21, 0.08)';
-              ctx.fill();
-
-              // 1. Highlight XY ring (perpendicular to Z)
-              ctx.strokeStyle = '#facc15';
-              ctx.lineWidth = 1.8;
-              ctx.beginPath();
-              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
-                const rx = selC.x + rlim * Math.cos(a);
-                const ry = selC.y + rlim * Math.sin(a);
-                const rz = selC.z;
-                const rp = project3D(rx, ry, rz, az, el);
-                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
-                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
-                else ctx.lineTo(ppos.px, ppos.py);
-              }
-              ctx.stroke();
-
-              // 2. Highlight XZ ring (perpendicular to Y)
-              ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)';
-              ctx.lineWidth = 1.4;
-              ctx.beginPath();
-              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
-                const rx = selC.x + rlim * Math.cos(a);
-                const ry = selC.y;
-                const rz = selC.z + rlim * Math.sin(a);
-                const rp = project3D(rx, ry, rz, az, el);
-                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
-                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
-                else ctx.lineTo(ppos.px, ppos.py);
-              }
-              ctx.stroke();
-
-              // 3. Highlight YZ ring (perpendicular to X)
-              ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)';
-              ctx.lineWidth = 1.4;
-              ctx.beginPath();
-              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
-                const rx = selC.x;
-                const ry = selC.y + rlim * Math.cos(a);
-                const rz = selC.z + rlim * Math.sin(a);
-                const rp = project3D(rx, ry, rz, az, el);
-                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
-                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
-                else ctx.lineTo(ppos.px, ppos.py);
-              }
-              ctx.stroke();
-            }
-
-            // Highlight Anchor Node with Target Reticle
+          ctx.save();
+          if (!is3DCustom) {
+            // Glowing receptive circle
             ctx.beginPath();
-            ctx.arc(pos.px, pos.py, 10, 0, Math.PI * 2);
-            ctx.strokeStyle = '#facc15';
-            ctx.lineWidth = 2.0;
+            ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+            ctx.fillStyle = isSelected ? 'rgba(250, 204, 21, 0.16)' : 'rgba(56, 189, 248, 0.16)';
+            ctx.fill();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = isSelected ? 2.4 : 2.0;
             ctx.stroke();
 
-            // Crosshair tick marks
-            ctx.strokeStyle = '#facc15';
+            // Outer dashed accent ring
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, rPx + 4, 0, Math.PI * 2);
+            ctx.strokeStyle = isSelected ? 'rgba(250, 204, 21, 0.6)' : 'rgba(56, 189, 248, 0.6)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+          } else {
+            // 3D Custom: 3 Highlighted Equatorial Rings & halo
+            const az = orbitCamera.azimuth, el = orbitCamera.elevation;
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+            ctx.fillStyle = isSelected ? 'rgba(250, 204, 21, 0.08)' : 'rgba(56, 189, 248, 0.08)';
+            ctx.fill();
+
+            // 1. Highlight XY ring (perpendicular to Z)
+            ctx.strokeStyle = color;
             ctx.lineWidth = 1.8;
             ctx.beginPath();
-            ctx.moveTo(pos.px - 14, pos.py); ctx.lineTo(pos.px - 9, pos.py);
-            ctx.moveTo(pos.px + 9, pos.py); ctx.lineTo(pos.px + 14, pos.py);
-            ctx.moveTo(pos.px, pos.py - 14); ctx.lineTo(pos.px, pos.py - 9);
-            ctx.moveTo(pos.px, pos.py + 9); ctx.lineTo(pos.px, pos.py + 14);
+            for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
+              const rx = clObj.x + rlim * Math.cos(a);
+              const ry = clObj.y + rlim * Math.sin(a);
+              const rz = clObj.z;
+              const rp = project3D(rx, ry, rz, az, el);
+              const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+              if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+              else ctx.lineTo(ppos.px, ppos.py);
+            }
             ctx.stroke();
 
-            // Center gold core
+            // 2. Highlight XZ ring (perpendicular to Y)
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.4;
             ctx.beginPath();
-            ctx.arc(pos.px, pos.py, 6, 0, Math.PI * 2);
-            ctx.fillStyle = '#facc15';
-            ctx.fill();
-            ctx.strokeStyle = '#0f172a';
-            ctx.lineWidth = 1.5;
+            for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
+              const rx = clObj.x + rlim * Math.cos(a);
+              const ry = clObj.y;
+              const rz = clObj.z + rlim * Math.sin(a);
+              const rp = project3D(rx, ry, rz, az, el);
+              const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+              if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+              else ctx.lineTo(ppos.px, ppos.py);
+            }
             ctx.stroke();
 
-            // Callout Badge with coordinates and member count
-            const tagText = `c_${selC.id} [${selC.members}f] (${selC.x.toFixed(2)}, ${selC.y.toFixed(2)}${currentDim === 3 ? `, ${selC.z.toFixed(2)}` : ''})`;
-            ctx.font = 'bold 11px monospace';
-            const textWidth = ctx.measureText(tagText).width;
-            const tagX = Math.min(pos.px + 12, rect.x + rect.w - textWidth - 14);
-            const tagY = Math.max(pos.py - 14, rect.y + 20);
-
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-            ctx.strokeStyle = '#facc15';
-            ctx.lineWidth = 1.2;
+            // 3. Highlight YZ ring (perpendicular to X)
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.4;
             ctx.beginPath();
-            ctx.roundRect(tagX - 4, tagY - 12, textWidth + 8, 16, 4);
-            ctx.fill();
+            for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
+              const rx = clObj.x;
+              const ry = clObj.y + rlim * Math.cos(a);
+              const rz = clObj.z + rlim * Math.sin(a);
+              const rp = project3D(rx, ry, rz, az, el);
+              const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+              if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+              else ctx.lineTo(ppos.px, ppos.py);
+            }
             ctx.stroke();
-
-            ctx.fillStyle = '#facc15';
-            ctx.fillText(tagText, tagX, tagY);
-            ctx.restore();
           }
+
+          // Highlight Anchor Node with Target Reticle
+          ctx.beginPath();
+          ctx.arc(pos.px, pos.py, 10, 0, Math.PI * 2);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.0;
+          ctx.stroke();
+
+          // Crosshair tick marks
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.8;
+          ctx.beginPath();
+          ctx.moveTo(pos.px - 14, pos.py); ctx.lineTo(pos.px - 9, pos.py);
+          ctx.moveTo(pos.px + 9, pos.py); ctx.lineTo(pos.px + 14, pos.py);
+          ctx.moveTo(pos.px, pos.py - 14); ctx.lineTo(pos.px, pos.py - 9);
+          ctx.moveTo(pos.px, pos.py + 9); ctx.lineTo(pos.px, pos.py + 14);
+          ctx.stroke();
+
+          // Center core
+          ctx.beginPath();
+          ctx.arc(pos.px, pos.py, 6, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Callout Badge with short name C0, coordinates and member count
+          const tagText = `C${clObj.id} [${clObj.members}f] (${clObj.x.toFixed(2)}, ${clObj.y.toFixed(2)}${currentDim === 3 ? `, ${clObj.z.toFixed(2)}` : ''})`;
+          ctx.font = 'bold 11px monospace';
+          const textWidth = ctx.measureText(tagText).width;
+          const tagX = Math.min(pos.px + 12, rect.x + rect.w - textWidth - 14);
+          const tagY = Math.max(pos.py - 14, rect.y + 20);
+
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.roundRect(tagX - 4, tagY - 12, textWidth + 8, 16, 4);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = color;
+          ctx.fillText(tagText, tagX, tagY);
+          ctx.restore();
+        }
+
+        // Draw Hovered Cluster (Cyan)
+        if (hoveredClusterId !== -1 && hoveredClusterId !== selectedClusterId) {
+          const hovC = clusters.find(c => c.id === hoveredClusterId);
+          if (hovC) renderClusterHighlight(hovC, '#38bdf8', false);
+        }
+
+        // Draw Selected Cluster (Gold)
+        if (selectedClusterId !== -1) {
+          const selC = clusters.find(c => c.id === selectedClusterId);
+          if (selC) renderClusterHighlight(selC, '#facc15', true);
         }
 
         // Current Evaluated Rays
@@ -3948,80 +4030,144 @@
         `).join('');
       }
 
-      // Render Candidate Table
+      // Render Cluster Table
       const contCandidates = document.getElementById('candidateContainer');
       if (useTiles) {
         if (jointTuplesMap.size === 0) {
           contCandidates.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No tiles processed yet.</div>`;
         } else {
           const entries = Array.from(jointTuplesMap.entries());
-          contCandidates.innerHTML = entries.map(([key, item]) => {
+          let html = `
+            <table class="cluster-table">
+              <thead>
+                <tr>
+                  <th>Joint Tuple</th>
+                  <th>Indices</th>
+                  <th>Frames</th>
+                  <th>#SC dists</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+          `;
+          entries.forEach(([key, item]) => {
             const isCurrent = currentJointTuple && 
               currentJointTuple.cx === item.cx && 
               currentJointTuple.cy === item.cy && 
               (currentDim === 2 || currentJointTuple.cz === item.cz);
             const isSelected = selectedTupleKey === key;
             const statusClass = isCurrent ? 'matched' : '';
-            const badgeText = isCurrent ? 'ACTIVE TUPLE' : `${item.count} frames`;
+            const badgeText = isCurrent ? 'ACTIVE' : 'IDLE';
 
-            return `
-              <div class="candidate-item ${statusClass} ${isSelected ? 'selected' : ''}" onclick="toggleSelectTuple('${key}')">
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#c084fc;"></span>
-                  <span style="font-weight:600; color:${isSelected ? '#facc15' : '#f8fafc'};">Joint Tuple ${currentDim === 3 ? `(${item.cx}, ${item.cy}, ${item.cz})` : `(${item.cx}, ${item.cy})`}</span>
-                </div>
-                <div style="display:flex; align-items:center; gap:4px;">
-                  ${isSelected ? '<span class="badge-pill" style="background:#facc15; color:#0f172a; font-weight:bold;">SELECTED</span>' : ''}
-                  <span class="badge-pill">${badgeText}</span>
-                </div>
-              </div>
+            html += `
+              <tr class="cluster-row ${statusClass} ${isSelected ? 'selected' : ''}" onclick="toggleSelectTuple('${key}')">
+                <td>
+                  <div style="display:flex; align-items:center; gap:5px;">
+                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#c084fc;"></span>
+                    <span style="font-weight:700; color:${isSelected ? '#facc15' : '#f8fafc'};">T_${item.cx}_${item.cy}${currentDim === 3 ? `_${item.cz}` : ''}</span>
+                  </div>
+                </td>
+                <td style="color:#94a3b8;">(${item.cx}, ${item.cy}${currentDim === 3 ? `, ${item.cz}` : ''})</td>
+                <td><span style="color:#f8fafc; font-weight:600;">${item.count}</span> <span style="color:#64748b; font-size:0.68rem;">(${((item.count / Math.max(1, totalFrames)) * 100).toFixed(1)}%)</span></td>
+                <td style="color:var(--accent-blue); font-weight:600;">${item.scDists || item.count}</td>
+                <td><span class="badge-pill" style="font-size:0.65rem; ${isCurrent ? 'background:rgba(74,222,128,0.2); color:var(--accent-green);' : ''}">${badgeText}</span></td>
+              </tr>
             `;
-          }).join('');
+          });
+          html += `</tbody></table>`;
+          contCandidates.innerHTML = html;
         }
       } else {
         if (clusters.length === 0) {
           contCandidates.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No clusters formed yet.</div>`;
         } else {
-          contCandidates.innerHTML = clusters.map(c => {
+          let html = `
+            <table class="cluster-table">
+              <thead>
+                <tr>
+                  <th>Cluster</th>
+                  <th>Centroid</th>
+                  <th>Frames</th>
+                  <th>#SC dists</th>
+                  <th>Dist d(f,c)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+          `;
+
+          clusters.forEach(c => {
             const isEval = currentEvaluations.find(ev => ev.target.id === c.id);
             const isPruned = currentPruned.find(p => p.cluster.id === c.id);
             const isPred = currentPredicted.includes(c.id);
             const isSelected = selectedClusterId === c.id;
+            const isHovered = hoveredClusterId === c.id;
 
             let statusClass = '';
-            let badgeText = 'UNTOUCHED';
+            let badgeText = 'IDLE';
+            let badgeStyle = 'color: #94a3b8;';
+            let distText = '—';
+            let distColor = '#64748b';
 
-            if (isEval && isEval.match) {
-              statusClass = 'matched';
-              badgeText = isPred ? 'PRED MATCH' : 'ASSIGNED';
+            if (isEval) {
+              distText = isEval.dist.toFixed(3);
+              if (isEval.match) {
+                statusClass = 'matched';
+                badgeText = isPred ? 'PRED MATCH' : 'ASSIGNED';
+                badgeStyle = 'background: rgba(74,222,128,0.2); color: var(--accent-green); font-weight:700;';
+                distColor = 'var(--accent-green)';
+              } else {
+                badgeText = isPred ? 'PRED MISMATCH' : 'MISMATCH';
+                badgeStyle = 'background: rgba(248,113,113,0.15); color: var(--accent-red);';
+                distColor = 'var(--accent-red)';
+              }
             } else if (isPruned) {
               statusClass = 'pruned';
               badgeText = `PRUNED (${isPruned.reason})`;
-            } else if (isEval) {
-              statusClass = isPred ? 'predicted' : '';
-              badgeText = isPred ? 'PRED MISMATCH' : 'TESTED MISMATCH';
+              badgeStyle = 'background: rgba(192,132,252,0.15); color: var(--accent-purple);';
+              distText = 'Pruned';
+              distColor = 'var(--accent-purple)';
+            } else if (isPred) {
+              badgeText = 'PREDICTED';
+              badgeStyle = 'background: rgba(56,189,248,0.15); color: var(--accent-blue);';
             }
 
-            return `
-              <div class="candidate-item ${statusClass} ${isSelected ? 'selected' : ''}" onclick="toggleSelectCluster(${c.id})">
-                <div style="display:flex; align-items:center; gap:6px;">
-                  <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${c.color};"></span>
-                  <span style="font-weight:600; color:${isSelected ? '#facc15' : '#f8fafc'};">Cluster c_${c.id}</span>
-                  <span style="color:#94a3b8; font-size:0.72rem;">(${c.members} frames)</span>
-                </div>
-                <div style="display:flex; align-items:center; gap:4px;">
-                  ${isSelected ? '<span class="badge-pill" style="background:#facc15; color:#0f172a; font-weight:bold;">SELECTED</span>' : ''}
-                  <span class="badge-pill">${badgeText}</span>
-                </div>
-              </div>
+            const coordStr = currentDim === 3
+              ? `(${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)})`
+              : `(${c.x.toFixed(2)}, ${c.y.toFixed(2)})`;
+
+            const framePct = totalFrames > 0 ? ((c.members / totalFrames) * 100).toFixed(1) : '100.0';
+            const scCount = c.scDists || 0;
+
+            html += `
+              <tr class="cluster-row ${statusClass} ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''}" 
+                  onmouseenter="setHoveredCluster(${c.id})" 
+                  onmouseleave="setHoveredCluster(-1)" 
+                  onclick="toggleSelectCluster(${c.id})">
+                <td>
+                  <div style="display:flex; align-items:center; gap:5px;">
+                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:${c.color};"></span>
+                    <span style="font-weight:700; color:${isSelected ? '#facc15' : (isHovered ? '#38bdf8' : '#f8fafc')};">C${c.id}</span>
+                  </div>
+                </td>
+                <td style="color:#cbd5e1; font-size:0.70rem;">${coordStr}</td>
+                <td><span style="color:#f8fafc; font-weight:600;">${c.members}</span> <span style="color:#64748b; font-size:0.66rem;">(${framePct}%)</span></td>
+                <td style="color:var(--accent-blue); font-weight:600;">${scCount}</td>
+                <td style="color:${distColor}; font-weight:600;">${distText}</td>
+                <td><span class="badge-pill" style="font-size:0.65rem; ${badgeStyle}">${badgeText}</span></td>
+              </tr>
             `;
-          }).join('');
+          });
+
+          html += `</tbody></table>`;
+          contCandidates.innerHTML = html;
         }
       }
     }
 
     function resetSimulation() {
       selectedClusterId = -1;
+      hoveredClusterId = -1;
       selectedTupleKey = null;
       clusters = [];
       dcc = [];
