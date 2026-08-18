@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:10 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:16 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:10:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:16:00 HST</span>
     </div>
   </header>
 
@@ -1924,7 +1924,7 @@
                 <!-- Trace Curves Canvas -->
                 <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px;">
                   <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
-                    <span>Evaluations per Frame (last 80 frames)</span>
+                    <span>Evaluations / Frame (<span id="lblDistCurveFrames" style="color: var(--text-main); font-family: monospace;">Frame 0 → 0</span>)</span>
                     <div style="display: flex; gap: 8px; font-size: 0.68rem;">
                       <span style="display: flex; align-items: center; gap: 3px; color: #38bdf8;">
                         <span style="display: inline-block; width: 8px; height: 2px; background: #38bdf8;"></span> d(f,c) (<b id="lblLastDFC">0</b>)
@@ -2909,8 +2909,8 @@
     let lastComputeTimeMs = 0.0;
     let avgComputeTimeMs = 0.0;
     let sparklineHistory = new Array(60).fill(0.0);
-    let distHistoryDFC = new Array(80).fill(0);
-    let distHistoryDCC = new Array(80).fill(0);
+    let distHistoryDFC = [];
+    let distHistoryDCC = [];
     let rollingHistory = [];        // [{ time, computeMs, frames, dists }] in rolling 1-sec window
     let currentCpuLoadPct = 0.0;
     let currentFps = 0.0;
@@ -3080,10 +3080,7 @@
       if (sparklineHistory.length > 60) sparklineHistory.shift();
 
       distHistoryDFC.push(distSampleClusterLast);
-      if (distHistoryDFC.length > 80) distHistoryDFC.shift();
-
       distHistoryDCC.push(distClusterClusterLast);
-      if (distHistoryDCC.length > 80) distHistoryDCC.shift();
 
       const nowTime = performance.now();
       rollingHistory.push({
@@ -3106,7 +3103,13 @@
       ctx.fillRect(0, 0, w, h);
 
       const n = distHistoryDFC.length;
-      if (n < 2) {
+
+      const lblFrames = document.getElementById('lblDistCurveFrames');
+      if (lblFrames) {
+        lblFrames.innerText = n > 0 ? `Frame 0 → ${n - 1} (${n} frames)` : `Frame 0 → 0`;
+      }
+
+      if (n === 0) {
         ctx.fillStyle = '#64748b';
         ctx.font = '10px monospace';
         ctx.textAlign = 'center';
@@ -3129,8 +3132,27 @@
       ctx.fillStyle = '#64748b';
       ctx.font = '8px monospace';
       ctx.textAlign = 'left';
-      ctx.fillText(`${maxVal}`, 3, 9);
-      ctx.fillText(`0`, 3, h - 2);
+      ctx.fillText(`max: ${maxVal}`, 3, 9);
+      ctx.fillText(`f=0`, 3, h - 2);
+      ctx.textAlign = 'right';
+      ctx.fillText(`f=${n - 1}`, w - 3, h - 2);
+
+      if (n === 1) {
+        // Single frame point
+        const y_dfc = h - (distHistoryDFC[0] / maxVal) * (h - 6) - 3;
+        const y_dcc = h - (distHistoryDCC[0] / maxVal) * (h - 6) - 3;
+        
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(10, y_dfc, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#c084fc';
+        ctx.beginPath();
+        ctx.arc(10, y_dcc, 3, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
 
       // 1. Draw d(f,c) Shaded Area and Stroke (Cyan #38bdf8)
       ctx.beginPath();
@@ -5253,8 +5275,8 @@
       lastComputeTimeMs = 0.0;
       avgComputeTimeMs = 0.0;
       sparklineHistory = new Array(60).fill(0.0);
-      distHistoryDFC = new Array(80).fill(0);
-      distHistoryDCC = new Array(80).fill(0);
+      distHistoryDFC = [];
+      distHistoryDCC = [];
       rollingHistory = [];
       currentCpuLoadPct = 0.0;
       currentFps = 0.0;
