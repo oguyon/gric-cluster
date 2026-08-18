@@ -701,6 +701,52 @@
       contain: content;
     }
 
+    .table-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 4px 6px;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      margin-bottom: 5px;
+      flex-wrap: wrap;
+    }
+
+    .table-col-chips {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .col-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.68rem;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.12s ease;
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid var(--card-border);
+      color: #94a3b8;
+    }
+
+    .col-chip.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      font-weight: 600;
+    }
+
+    .col-chip:hover {
+      filter: brightness(1.2);
+    }
+
     .cluster-table {
       width: 100%;
       border-collapse: collapse;
@@ -719,17 +765,78 @@
       background: #0b1120;
       color: var(--text-muted);
       font-weight: 700;
-      padding: 6px 7px;
+      padding: 5px 6px;
       border-bottom: 1px solid var(--card-border);
       white-space: nowrap;
       z-index: 2;
       font-size: 0.69rem;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.12s ease, color 0.12s ease;
+    }
+
+    .cluster-table th:hover {
+      background: #172554;
+      color: #38bdf8;
+    }
+
+    .cluster-table th.sorted {
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.12);
+    }
+
+    .cluster-table th .th-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .cluster-table th .sort-icon {
+      font-size: 0.70rem;
+      color: #64748b;
+      margin-left: 2px;
+    }
+
+    .cluster-table th.sorted .sort-icon {
+      color: #38bdf8;
+      font-weight: bold;
+    }
+
+    .cluster-table th .btn-min-col {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      padding: 0;
+      margin-left: 3px;
+      border-radius: 3px;
+      font-size: 0.70rem;
+      line-height: 1;
+      background: transparent;
+      border: 1px solid transparent;
+      color: #64748b;
+      cursor: pointer;
+      opacity: 0.6;
+      transition: all 0.12s ease;
+    }
+
+    .cluster-table th:hover .btn-min-col {
+      opacity: 1;
+      border-color: rgba(148, 163, 184, 0.3);
+    }
+
+    .cluster-table th .btn-min-col:hover {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: #ef4444;
+      color: #ef4444;
     }
 
     .cluster-table td {
-      padding: 4px 7px;
+      padding: 4px 6px;
       border-bottom: 1px solid rgba(51, 65, 85, 0.35);
       white-space: nowrap;
       vertical-align: middle;
@@ -2484,6 +2591,48 @@
     let selectedClusterId = -1;
     let selectedTupleKey = null;
     let hoveredClusterId = -1;
+
+    // Cluster Table Column Visibility & Sorting State
+    const clusterTableCols = {
+      cluster: { label: 'Cluster', visible: true },
+      centroid: { label: 'Centroid', visible: true },
+      frames: { label: 'Frames', visible: true },
+      scDists: { label: '#SC dists', visible: true },
+      dist: { label: 'Dist d(f,c)', visible: true },
+      status: { label: 'Status', visible: true }
+    };
+
+    let clusterSortKey = 'cluster'; // 'cluster', 'centroid', 'frames', 'scDists', 'dist', 'status'
+    let clusterSortDir = 'asc'; // 'asc' or 'desc'
+
+    function toggleClusterColumn(colKey) {
+      if (clusterTableCols[colKey]) {
+        const visibleCount = Object.values(clusterTableCols).filter(c => c.visible).length;
+        if (clusterTableCols[colKey].visible && visibleCount <= 1) return;
+        clusterTableCols[colKey].visible = !clusterTableCols[colKey].visible;
+        updateUI();
+      }
+    }
+
+    function setClusterSort(key) {
+      if (key === 'id') key = 'cluster';
+      if (key === 'members') key = 'frames';
+
+      if (clusterSortKey === key) {
+        clusterSortDir = (clusterSortDir === 'asc' ? 'desc' : 'asc');
+      } else {
+        clusterSortKey = key;
+        clusterSortDir = (key === 'frames' || key === 'scDists') ? 'desc' : 'asc';
+      }
+      updateUI();
+    }
+
+    function resetClusterTableColumns() {
+      Object.keys(clusterTableCols).forEach(k => clusterTableCols[k].visible = true);
+      clusterSortKey = 'cluster';
+      clusterSortDir = 'asc';
+      updateUI();
+    }
 
     function setHoveredCluster(clusterId) {
       if (hoveredClusterId !== clusterId) {
@@ -4484,20 +4633,95 @@
 
       // Render Cluster Table
       const contCandidates = document.getElementById('candidateContainer');
+      
+      function renderTableToolbar() {
+        const isModified = clusterSortKey !== 'cluster' || clusterSortDir !== 'asc' || Object.values(clusterTableCols).some(c => !c.visible);
+        return `
+          <div class="table-toolbar">
+            <div style="display:flex; align-items:center; gap:5px;">
+              <span style="font-size:0.68rem; color:var(--text-muted); font-weight:700;">Columns:</span>
+              <div class="table-col-chips">
+                <span class="col-chip ${clusterTableCols.cluster.visible ? 'active' : ''}" onclick="toggleClusterColumn('cluster')" data-tooltip-title="Toggle Cluster ID Column" data-tooltip-badge="${clusterTableCols.cluster.visible ? 'Visible' : 'Minimized'}" data-tooltip-color="cyan" data-tooltip-desc="Click to ${clusterTableCols.cluster.visible ? 'minimize (hide)' : 'restore (show)'} the Cluster ID column.">${clusterTableCols.cluster.visible ? '✓' : '+'} Cluster</span>
+                <span class="col-chip ${clusterTableCols.centroid.visible ? 'active' : ''}" onclick="toggleClusterColumn('centroid')" data-tooltip-title="Toggle Centroid Column" data-tooltip-badge="${clusterTableCols.centroid.visible ? 'Visible' : 'Minimized'}" data-tooltip-color="cyan" data-tooltip-desc="Click to ${clusterTableCols.centroid.visible ? 'minimize (hide)' : 'restore (show)'} the Centroid Coordinates column.">${clusterTableCols.centroid.visible ? '✓' : '+'} Centroid</span>
+                <span class="col-chip ${clusterTableCols.frames.visible ? 'active' : ''}" onclick="toggleClusterColumn('frames')" data-tooltip-title="Toggle Frames Column" data-tooltip-badge="${clusterTableCols.frames.visible ? 'Visible' : 'Minimized'}" data-tooltip-color="cyan" data-tooltip-desc="Click to ${clusterTableCols.frames.visible ? 'minimize (hide)' : 'restore (show)'} the Ingested Frames Count column.">${clusterTableCols.frames.visible ? '✓' : '+'} Frames</span>
+                <span class="col-chip ${clusterTableCols.scDists.visible ? 'active' : ''}" onclick="toggleClusterColumn('scDists')" data-tooltip-title="Toggle #SC Dists Column" data-tooltip-badge="${clusterTableCols.scDists.visible ? 'Visible' : 'Minimized'}" data-tooltip-color="cyan" data-tooltip-desc="Click to ${clusterTableCols.scDists.visible ? 'minimize (hide)' : 'restore (show)'} the Sample-Cluster Distance Evaluation Count column.">${clusterTableCols.scDists.visible ? '✓' : '+'} #SC dists</span>
+                <span class="col-chip ${clusterTableCols.dist.visible ? 'active' : ''}" onclick="toggleClusterColumn('dist')" data-tooltip-title="Toggle Distance Column" data-tooltip-badge="${clusterTableCols.dist.visible ? 'Visible' : 'Minimized'}" data-tooltip-color="cyan" data-tooltip-desc="Click to ${clusterTableCols.dist.visible ? 'minimize (hide)' : 'restore (show)'} the Real-time Query Distance column.">${clusterTableCols.dist.visible ? '✓' : '+'} Dist</span>
+                <span class="col-chip ${clusterTableCols.status.visible ? 'active' : ''}" onclick="toggleClusterColumn('status')" data-tooltip-title="Toggle Status Column" data-tooltip-badge="${clusterTableCols.status.visible ? 'Visible' : 'Minimized'}" data-tooltip-color="cyan" data-tooltip-desc="Click to ${clusterTableCols.status.visible ? 'minimize (hide)' : 'restore (show)'} the Decision Status / Prior badge column.">${clusterTableCols.status.visible ? '✓' : '+'} Status</span>
+              </div>
+            </div>
+            ${isModified ? `
+              <span style="font-size:0.67rem; color:var(--accent-blue); cursor:pointer; text-decoration:underline; font-weight:600;" 
+                    onclick="resetClusterTableColumns()" 
+                    data-tooltip-title="Reset Columns &amp; Sort" 
+                    data-tooltip-badge="Reset Table" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Restores all minimized columns to visible and resets sorting back to Cluster ID ascending.">↺ Reset</span>
+            ` : ''}
+          </div>
+        `;
+      }
+
+      function renderColHeader(colKey, label) {
+        if (!clusterTableCols[colKey] || !clusterTableCols[colKey].visible) return '';
+        const isSorted = clusterSortKey === colKey;
+        const sortIcon = isSorted ? (clusterSortDir === 'asc' ? '▲' : '▼') : '<span class="sort-icon">⇅</span>';
+        const sortBadge = isSorted ? (clusterSortDir === 'asc' ? 'Ascending (▲)' : 'Descending (▼)') : 'Click to Sort';
+        const sortDesc = isSorted 
+          ? `Currently sorted ${clusterSortDir === 'asc' ? 'Ascending' : 'Descending'}. Click to toggle sort direction. Click '−' to minimize column.` 
+          : `Click to sort table by ${label} ascending. Click '−' to minimize column.`;
+
+        return `
+          <th class="${isSorted ? 'sorted' : ''}" 
+              onclick="setClusterSort('${colKey}')" 
+              data-tooltip-title="Sort by ${label}" 
+              data-tooltip-badge="${sortBadge}" 
+              data-tooltip-color="cyan" 
+              data-tooltip-desc="${sortDesc}">
+            <div class="th-content">
+              <span>${label} ${sortIcon}</span>
+              <span class="btn-min-col" 
+                    onclick="event.stopPropagation(); toggleClusterColumn('${colKey}');" 
+                    title="Minimize ${label} column">−</span>
+            </div>
+          </th>
+        `;
+      }
+
       if (useTiles) {
         if (jointTuplesMap.size === 0) {
           contCandidates.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No tiles processed yet.</div>`;
         } else {
-          const entries = Array.from(jointTuplesMap.entries());
-          let html = `
+          let entries = Array.from(jointTuplesMap.entries());
+
+          // Sort entries
+          entries.sort(([keyA, itemA], [keyB, itemB]) => {
+            let res = 0;
+            if (clusterSortKey === 'cluster') {
+              res = keyA.localeCompare(keyB);
+            } else if (clusterSortKey === 'centroid') {
+              res = (itemA.cx - itemB.cx) || (itemA.cy - itemB.cy) || ((itemA.cz || 0) - (itemB.cz || 0));
+            } else if (clusterSortKey === 'frames') {
+              res = itemA.count - itemB.count;
+            } else if (clusterSortKey === 'scDists') {
+              res = (itemA.scDists || itemA.count) - (itemB.scDists || itemB.count);
+            } else if (clusterSortKey === 'status') {
+              const isCurrA = currentJointTuple && currentJointTuple.cx === itemA.cx && currentJointTuple.cy === itemA.cy && (currentDim === 2 || currentJointTuple.cz === itemA.cz);
+              const isCurrB = currentJointTuple && currentJointTuple.cx === itemB.cx && currentJointTuple.cy === itemB.cy && (currentDim === 2 || currentJointTuple.cz === itemB.cz);
+              res = (isCurrA ? 1 : 0) - (isCurrB ? 1 : 0);
+            }
+            if (res === 0) res = keyA.localeCompare(keyB);
+            return clusterSortDir === 'asc' ? res : -res;
+          });
+
+          let html = renderTableToolbar() + `
             <table class="cluster-table">
               <thead>
                 <tr>
-                  <th>Joint Tuple</th>
-                  <th>Indices</th>
-                  <th>Frames</th>
-                  <th>#SC dists</th>
-                  <th>Status</th>
+                  ${renderColHeader('cluster', 'Joint Tuple')}
+                  ${renderColHeader('centroid', 'Indices')}
+                  ${renderColHeader('frames', 'Frames')}
+                  ${renderColHeader('scDists', '#SC dists')}
+                  ${renderColHeader('status', 'Status')}
                 </tr>
               </thead>
               <tbody>
@@ -4513,16 +4737,26 @@
 
             html += `
               <tr class="cluster-row ${statusClass} ${isSelected ? 'selected' : ''}" onclick="toggleSelectTuple('${key}')">
-                <td>
-                  <div style="display:flex; align-items:center; gap:5px;">
-                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#c084fc;"></span>
-                    <span style="font-weight:700; color:${isSelected ? '#facc15' : '#f8fafc'};">T_${item.cx}_${item.cy}${currentDim === 3 ? `_${item.cz}` : ''}</span>
-                  </div>
-                </td>
-                <td style="color:#94a3b8;">(${item.cx}, ${item.cy}${currentDim === 3 ? `, ${item.cz}` : ''})</td>
-                <td><span style="color:#f8fafc; font-weight:600;">${item.count}</span> <span style="color:#64748b; font-size:0.68rem;">(${((item.count / Math.max(1, totalFrames)) * 100).toFixed(1)}%)</span></td>
-                <td style="color:var(--accent-blue); font-weight:600;">${item.scDists || item.count}</td>
-                <td><span class="badge-pill" style="font-size:0.65rem; ${isCurrent ? 'background:rgba(74,222,128,0.2); color:var(--accent-green);' : ''}">${badgeText}</span></td>
+                ${clusterTableCols.cluster.visible ? `
+                  <td>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                      <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#c084fc;"></span>
+                      <span style="font-weight:700; color:${isSelected ? '#facc15' : '#f8fafc'};">T_${item.cx}_${item.cy}${currentDim === 3 ? `_${item.cz}` : ''}</span>
+                    </div>
+                  </td>
+                ` : ''}
+                ${clusterTableCols.centroid.visible ? `
+                  <td style="color:#94a3b8;">(${item.cx}, ${item.cy}${currentDim === 3 ? `, ${item.cz}` : ''})</td>
+                ` : ''}
+                ${clusterTableCols.frames.visible ? `
+                  <td><span style="color:#f8fafc; font-weight:600;">${item.count}</span> <span style="color:#64748b; font-size:0.68rem;">(${((item.count / Math.max(1, totalFrames)) * 100).toFixed(1)}%)</span></td>
+                ` : ''}
+                ${clusterTableCols.scDists.visible ? `
+                  <td style="color:var(--accent-blue); font-weight:600;">${item.scDists || item.count}</td>
+                ` : ''}
+                ${clusterTableCols.status.visible ? `
+                  <td><span class="badge-pill" style="font-size:0.65rem; ${isCurrent ? 'background:rgba(74,222,128,0.2); color:var(--accent-green);' : ''}">${badgeText}</span></td>
+                ` : ''}
               </tr>
             `;
           });
@@ -4533,22 +4767,58 @@
         if (clusters.length === 0) {
           contCandidates.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">No clusters formed yet.</div>`;
         } else {
-          let html = `
+          // Sort clusters copy according to clusterSortKey and clusterSortDir
+          let displayClusters = clusters.slice();
+
+          displayClusters.sort((a, b) => {
+            let res = 0;
+            if (clusterSortKey === 'cluster') {
+              res = a.id - b.id;
+            } else if (clusterSortKey === 'centroid') {
+              const normA = Math.sqrt(a.x * a.x + a.y * a.y + (currentDim === 3 ? a.z * a.z : 0));
+              const normB = Math.sqrt(b.x * b.x + b.y * b.y + (currentDim === 3 ? b.z * b.z : 0));
+              res = normA - normB;
+            } else if (clusterSortKey === 'frames') {
+              res = a.members - b.members;
+            } else if (clusterSortKey === 'scDists') {
+              res = (a.scDists || 0) - (b.scDists || 0);
+            } else if (clusterSortKey === 'dist') {
+              const evA = currentEvaluations.find(ev => ev.target.id === a.id);
+              const evB = currentEvaluations.find(ev => ev.target.id === b.id);
+              const distA = evA ? evA.dist : (currentPruned.find(p => p.cluster.id === a.id) ? 9998 : 9999);
+              const distB = evB ? evB.dist : (currentPruned.find(p => p.cluster.id === b.id) ? 9998 : 9999);
+              res = distA - distB;
+            } else if (clusterSortKey === 'status') {
+              function getStatusRank(cObj) {
+                const ev = currentEvaluations.find(e => e.target.id === cObj.id);
+                if (ev && ev.match) return 5;
+                if (ev && !ev.match) return 3;
+                if (currentPredicted.includes(cObj.id)) return 4;
+                if (currentPruned.find(p => p.cluster.id === cObj.id)) return 1;
+                return 0; // IDLE
+              }
+              res = getStatusRank(a) - getStatusRank(b);
+            }
+            if (res === 0) res = a.id - b.id;
+            return clusterSortDir === 'asc' ? res : -res;
+          });
+
+          let html = renderTableToolbar() + `
             <table class="cluster-table">
               <thead>
                 <tr>
-                  <th>Cluster</th>
-                  <th>Centroid</th>
-                  <th>Frames</th>
-                  <th>#SC dists</th>
-                  <th>Dist d(f,c)</th>
-                  <th>Status</th>
+                  ${renderColHeader('cluster', 'Cluster')}
+                  ${renderColHeader('centroid', 'Centroid')}
+                  ${renderColHeader('frames', 'Frames')}
+                  ${renderColHeader('scDists', '#SC dists')}
+                  ${renderColHeader('dist', 'Dist d(f,c)')}
+                  ${renderColHeader('status', 'Status')}
                 </tr>
               </thead>
               <tbody>
           `;
 
-          clusters.forEach(c => {
+          displayClusters.forEach(c => {
             const isEval = currentEvaluations.find(ev => ev.target.id === c.id);
             const isPruned = currentPruned.find(p => p.cluster.id === c.id);
             const isPred = currentPredicted.includes(c.id);
@@ -4596,17 +4866,29 @@
                   onmouseenter="setHoveredCluster(${c.id})" 
                   onmouseleave="setHoveredCluster(-1)" 
                   onclick="toggleSelectCluster(${c.id})">
-                <td>
-                  <div style="display:flex; align-items:center; gap:5px;">
-                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:${c.color};"></span>
-                    <span style="font-weight:700; color:${isSelected ? '#facc15' : (isHovered ? '#38bdf8' : '#f8fafc')};">C${c.id}</span>
-                  </div>
-                </td>
-                <td style="color:#cbd5e1; font-size:0.70rem;">${coordStr}</td>
-                <td><span style="color:#f8fafc; font-weight:600;">${c.members}</span> <span style="color:#64748b; font-size:0.66rem;">(${framePct}%)</span></td>
-                <td style="color:var(--accent-blue); font-weight:600;">${scCount}</td>
-                <td style="color:${distColor}; font-weight:600;">${distText}</td>
-                <td><span class="badge-pill" style="font-size:0.65rem; ${badgeStyle}">${badgeText}</span></td>
+                ${clusterTableCols.cluster.visible ? `
+                  <td>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                      <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:${c.color};"></span>
+                      <span style="font-weight:700; color:${isSelected ? '#facc15' : (isHovered ? '#38bdf8' : '#f8fafc')};">C${c.id}</span>
+                    </div>
+                  </td>
+                ` : ''}
+                ${clusterTableCols.centroid.visible ? `
+                  <td style="color:#cbd5e1; font-size:0.70rem;">${coordStr}</td>
+                ` : ''}
+                ${clusterTableCols.frames.visible ? `
+                  <td><span style="color:#f8fafc; font-weight:600;">${c.members}</span> <span style="color:#64748b; font-size:0.66rem;">(${framePct}%)</span></td>
+                ` : ''}
+                ${clusterTableCols.scDists.visible ? `
+                  <td style="color:var(--accent-blue); font-weight:600;">${scCount}</td>
+                ` : ''}
+                ${clusterTableCols.dist.visible ? `
+                  <td style="color:${distColor}; font-weight:600;">${distText}</td>
+                ` : ''}
+                ${clusterTableCols.status.visible ? `
+                  <td><span class="badge-pill" style="font-size:0.65rem; ${badgeStyle}">${badgeText}</span></td>
+                ` : ''}
               </tr>
             `;
           });
