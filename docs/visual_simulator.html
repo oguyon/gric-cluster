@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:00 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:06 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:00:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:06:00 HST</span>
     </div>
   </header>
 
@@ -1295,7 +1295,7 @@
         <div class="legend">
           <div class="legend-item"><div class="legend-dot" style="background: rgba(148, 163, 184, 0.6);"></div> Past Samples Point Cloud</div>
           <div class="legend-item"><div class="legend-dot" style="background: #38bdf8;"></div> Anchor Node</div>
-          <div class="legend-item"><div class="legend-dot" style="background: rgba(56, 189, 248, 0.2); border: 1px dashed #38bdf8;"></div> rlim Receptive Sphere/Circle</div>
+          <div class="legend-item" id="legendRlim"><div class="legend-dot" style="background: rgba(56, 189, 248, 0.2); border: 1px dashed #38bdf8;"></div> rlim Receptive Sphere/Circle</div>
           <div class="legend-item"><div class="legend-dot" style="background: #facc15;"></div> Current Frame fi</div>
           <div class="legend-item"><div class="legend-dot" style="background: #4ade80;"></div> Evaluated Match</div>
           <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div> Evaluated Mismatch</div>
@@ -4164,65 +4164,67 @@
             const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
             const rPx = rlim * scale;
 
-            if (!is3DCustom) {
-              // 2D Circle outline for receptive field
-              ctx.beginPath();
-              ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
-              ctx.fillStyle = 'rgba(56, 189, 248, 0.04)';
-              ctx.fill();
-              ctx.strokeStyle = c.color;
-              ctx.lineWidth = 1.2;
-              ctx.setLineDash([3, 3]);
-              ctx.stroke();
-              ctx.setLineDash([]);
-            } else {
-              // 3D Custom: 3 Orthogonal Wireframe Rings (perpendicular to Z, Y, X axes)
-              const az = orbitCamera.azimuth, el = orbitCamera.elevation;
-              
-              ctx.save();
-              ctx.strokeStyle = c.color;
-              ctx.globalAlpha = clusterAlpha * 0.35; // Fainter, subtle wireframe
-              ctx.lineWidth = 0.75;
+            if (!showCircleMembers && !showCircleSCDists) {
+              if (!is3DCustom) {
+                // 2D Circle outline for receptive field
+                ctx.beginPath();
+                ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.04)';
+                ctx.fill();
+                ctx.strokeStyle = c.color;
+                ctx.lineWidth = 1.2;
+                ctx.setLineDash([3, 3]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+              } else {
+                // 3D Custom: 3 Orthogonal Wireframe Rings (perpendicular to Z, Y, X axes)
+                const az = orbitCamera.azimuth, el = orbitCamera.elevation;
+                
+                ctx.save();
+                ctx.strokeStyle = c.color;
+                ctx.globalAlpha = clusterAlpha * 0.35; // Fainter, subtle wireframe
+                ctx.lineWidth = 0.75;
 
-              // 1. Circle perpendicular to Z-axis (XY plane)
-              ctx.beginPath();
-              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
-                const rx = c.x + rlim * Math.cos(a);
-                const ry = c.y + rlim * Math.sin(a);
-                const rz = c.z;
-                const rp = project3D(rx, ry, rz, az, el);
-                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
-                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
-                else ctx.lineTo(ppos.px, ppos.py);
-              }
-              ctx.stroke();
+                // 1. Circle perpendicular to Z-axis (XY plane)
+                ctx.beginPath();
+                for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
+                  const rx = c.x + rlim * Math.cos(a);
+                  const ry = c.y + rlim * Math.sin(a);
+                  const rz = c.z;
+                  const rp = project3D(rx, ry, rz, az, el);
+                  const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+                  if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                  else ctx.lineTo(ppos.px, ppos.py);
+                }
+                ctx.stroke();
 
-              // 2. Circle perpendicular to Y-axis (XZ plane)
-              ctx.beginPath();
-              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
-                const rx = c.x + rlim * Math.cos(a);
-                const ry = c.y;
-                const rz = c.z + rlim * Math.sin(a);
-                const rp = project3D(rx, ry, rz, az, el);
-                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
-                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
-                else ctx.lineTo(ppos.px, ppos.py);
-              }
-              ctx.stroke();
+                // 2. Circle perpendicular to Y-axis (XZ plane)
+                ctx.beginPath();
+                for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
+                  const rx = c.x + rlim * Math.cos(a);
+                  const ry = c.y;
+                  const rz = c.z + rlim * Math.sin(a);
+                  const rp = project3D(rx, ry, rz, az, el);
+                  const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+                  if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                  else ctx.lineTo(ppos.px, ppos.py);
+                }
+                ctx.stroke();
 
-              // 3. Circle perpendicular to X-axis (YZ plane)
-              ctx.beginPath();
-              for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
-                const rx = c.x;
-                const ry = c.y + rlim * Math.cos(a);
-                const rz = c.z + rlim * Math.sin(a);
-                const rp = project3D(rx, ry, rz, az, el);
-                const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
-                if (a === 0) ctx.moveTo(ppos.px, ppos.py);
-                else ctx.lineTo(ppos.px, ppos.py);
+                // 3. Circle perpendicular to X-axis (YZ plane)
+                ctx.beginPath();
+                for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
+                  const rx = c.x;
+                  const ry = c.y + rlim * Math.cos(a);
+                  const rz = c.z + rlim * Math.sin(a);
+                  const rp = project3D(rx, ry, rz, az, el);
+                  const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
+                  if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                  else ctx.lineTo(ppos.px, ppos.py);
+                }
+                ctx.stroke();
+                ctx.restore();
               }
-              ctx.stroke();
-              ctx.restore();
             }
 
             // 1. Proportional Area Circle: Points in Cluster (Emerald Green #10b981)
@@ -4609,6 +4611,8 @@
           : "[2D Mode: Drag to Pan • Scroll to Zoom • ＋ Add Point: Inject]";
       }
 
+      const legRlim = document.getElementById('legendRlim');
+      if (legRlim) legRlim.style.display = (showCircleMembers || showCircleSCDists) ? 'none' : 'inline-flex';
       const legMem = document.getElementById('legendCircleMembers');
       if (legMem) legMem.style.display = showCircleMembers ? 'inline-flex' : 'none';
       const legSC = document.getElementById('legendCircleSCDists');
