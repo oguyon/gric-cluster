@@ -4441,6 +4441,9 @@
 
     function setTab(tab) {
       currentActiveTab = tab;
+      if (tab === 'narrative') {
+        setHoveredCluster(-1);
+      }
       const tabNarrative = document.getElementById('tabNarrative');
       const tabCandidates = document.getElementById('tabCandidates');
       const contNarrative = document.getElementById('narrativeContainer');
@@ -4892,6 +4895,7 @@
 
             html += `
               <tr class="cluster-row ${statusClass} ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''}" 
+                  data-cluster-id="${c.id}" 
                   onmouseenter="setHoveredCluster(${c.id})" 
                   onmouseleave="setHoveredCluster(-1)" 
                   onclick="toggleSelectCluster(${c.id})">
@@ -6027,6 +6031,23 @@
         window.addEventListener('mouseup', onMouseUp);
       });
     }
+
+    // Ensure hovered cluster highlight is strictly active only when mouse pointer is over the cluster table
+    const candidateContainerEl = document.getElementById('candidateContainer');
+    if (candidateContainerEl) {
+      candidateContainerEl.addEventListener('mouseleave', () => {
+        setHoveredCluster(-1);
+      });
+    }
+
+    document.addEventListener('mousemove', (e) => {
+      if (hoveredClusterId !== -1) {
+        const inClusterRow = e.target && e.target.closest && e.target.closest('#candidateContainer .cluster-row');
+        if (!inClusterRow) {
+          setHoveredCluster(-1);
+        }
+      }
+    });
 
     // Initial Startup
     initSidebarResizers();
