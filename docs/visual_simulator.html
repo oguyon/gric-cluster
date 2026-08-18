@@ -578,6 +578,20 @@
       font-weight: 700;
     }
 
+    .toggle-btn.active.toggle-green {
+      background: rgba(16, 185, 129, 0.18);
+      border-color: #10b981;
+      color: #34d399;
+      font-weight: 700;
+    }
+
+    .toggle-btn.active.toggle-amber {
+      background: rgba(245, 158, 11, 0.18);
+      border-color: #f59e0b;
+      color: #fbbf24;
+      font-weight: 700;
+    }
+
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -1286,6 +1300,8 @@
           <div class="legend-item"><div class="legend-dot" style="background: #4ade80;"></div> Evaluated Match</div>
           <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div> Evaluated Mismatch</div>
           <div class="legend-item"><div class="legend-dot" style="background: #f87171; border: 1px solid #ffffff;"></div> Pruned (3P/4P/5P)</div>
+          <div class="legend-item" id="legendCircleMembers" style="display: none;"><div class="legend-dot" style="background: rgba(16, 185, 129, 0.2); border: 1.5px solid #10b981;"></div> Points Circle (Area ∝ Points)</div>
+          <div class="legend-item" id="legendCircleSCDists" style="display: none;"><div class="legend-dot" style="background: rgba(245, 158, 11, 0.2); border: 1.5px dashed #f59e0b;"></div> #SC Dists Circle (Area ∝ #SC Dists)</div>
           <div class="legend-item" style="margin-left: auto; color: #64748b;" id="legendHint">[3D Mode: Drag Quad 4 to Rotate • Drag Quads 1-3 to Pan • ⛶ to Maximize]</div>
         </div>
       </div>
@@ -1703,6 +1719,32 @@
                   <span>0.5 px (Fine)</span>
                   <span>1.5 px (Default)</span>
                   <span>8.0 px (Large)</span>
+                </div>
+              </div>
+
+              <!-- Cluster Metric Enclosing Circles -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+                  <span>Cluster Metric Enclosing Circles</span>
+                </div>
+                <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 8px;">
+                  Draw enclosing circles around each cluster with area strictly proportional to points or distance computations. Both options can be simultaneously active.
+                </p>
+                <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 4px;">
+                  <div id="optCircleMembers" class="toggle-btn toggle-green" 
+                       data-tooltip-title="Circle: Member Points Count" 
+                       data-tooltip-badge="Area ∝ Points (Green)" 
+                       data-tooltip-color="green" 
+                       data-tooltip-desc="Draws an emerald green circle around each cluster where the interior circle area is strictly proportional to the number of points (member frames) in that cluster.">
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; margin-right:4px;"></span>Points Circle
+                  </div>
+                  <div id="optCircleSCDists" class="toggle-btn toggle-amber" 
+                       data-tooltip-title="Circle: #SC Distance Computations" 
+                       data-tooltip-badge="Area ∝ #SC Dists (Amber)" 
+                       data-tooltip-color="amber" 
+                       data-tooltip-desc="Draws an amber/orange dashed circle around each cluster where the interior circle area is strictly proportional to cumulative cluster-to-frame distances computed to that cluster.">
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f59e0b; margin-right:4px;"></span>#SC Dists Circle
+                  </div>
                 </div>
               </div>
 
@@ -2581,6 +2623,8 @@
     let rlim = 0.100;
     let visualFocus = 50; // 0 (Points Only) to 100 (Clusters Only)
     let samplePointSize = 1.5; // Ingested sample points render radius in px (0.5 to 8.0)
+    let showCircleMembers = false; // Area proportional to points in cluster
+    let showCircleSCDists = false; // Area proportional to #SC distances
     let noiseSigma = 0.000; // Truncated Gaussian noise std dev (0 = off)
     let noiseTruncLimit = 0.050; // Truncation radius limit
     let targetMode = 'greedy';
@@ -3993,6 +4037,16 @@
           }
 
           // Draw Joint Tuples
+          let maxTupleCount = 1;
+          let maxTupleSCDists = 1;
+          if (showCircleMembers || showCircleSCDists) {
+            jointTuplesMap.forEach(entry => {
+              if (entry.count > maxTupleCount) maxTupleCount = entry.count;
+              const sc = entry.scDists || entry.count;
+              if (sc > maxTupleSCDists) maxTupleSCDists = sc;
+            });
+          }
+
           jointTuplesMap.forEach((entry, key) => {
             const clX = tileEngineX.clusters[entry.cx];
             const clY = tileEngineY.clusters[entry.cy];
@@ -4001,6 +4055,38 @@
 
             const pr = getProjectedCoord({ x: clX.val, y: clY.val, z: clZ.val });
             const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+
+            // 1. Proportional Circle: Member Points (Green)
+            if (showCircleMembers && entry.count > 0) {
+              const rMetric = rlim * Math.sqrt(entry.count / maxTupleCount);
+              const rPx = Math.max(2, rMetric * scale);
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+              ctx.fill();
+              ctx.strokeStyle = '#10b981';
+              ctx.lineWidth = 1.6;
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            // 2. Proportional Circle: #SC Distances (Amber)
+            const scCount = entry.scDists || entry.count;
+            if (showCircleSCDists && scCount > 0) {
+              const rMetric = rlim * Math.sqrt(scCount / maxTupleSCDists);
+              const rPx = Math.max(2, rMetric * scale);
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rPx, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(245, 158, 11, 0.08)';
+              ctx.fill();
+              ctx.strokeStyle = '#f59e0b';
+              ctx.lineWidth = 1.6;
+              ctx.setLineDash([4, 3]);
+              ctx.stroke();
+              ctx.restore();
+            }
 
             ctx.beginPath();
             ctx.arc(pos.px, pos.py, 5, 0, Math.PI * 2);
@@ -4062,6 +4148,17 @@
         if (clusterAlpha > 0.001) {
           ctx.save();
           ctx.globalAlpha = clusterAlpha;
+
+          let maxClusterMembers = 1;
+          let maxClusterSCDists = 1;
+          if (showCircleMembers || showCircleSCDists) {
+            clusters.forEach(cl => {
+              if (cl.members > maxClusterMembers) maxClusterMembers = cl.members;
+              const sc = cl.scDists || 0;
+              if (sc > maxClusterSCDists) maxClusterSCDists = sc;
+            });
+          }
+
           clusters.forEach(c => {
             const pr = getProjectedCoord(c);
             const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
@@ -4124,6 +4221,43 @@
                 if (a === 0) ctx.moveTo(ppos.px, ppos.py);
                 else ctx.lineTo(ppos.px, ppos.py);
               }
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            // 1. Proportional Area Circle: Points in Cluster (Emerald Green #10b981)
+            // Area within circle is strictly proportional to c.members => Radius is proportional to sqrt(c.members)
+            if (showCircleMembers && c.members > 0) {
+              const rMetricMem = rlim * Math.sqrt(c.members / maxClusterMembers);
+              const rPxMem = Math.max(2, rMetricMem * scale);
+
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rPxMem, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+              ctx.fill();
+              ctx.strokeStyle = '#10b981';
+              ctx.lineWidth = 1.6;
+              ctx.setLineDash([]);
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            // 2. Proportional Area Circle: #SC Distances (Amber #f59e0b)
+            // Area within circle is strictly proportional to c.scDists => Radius is proportional to sqrt(c.scDists)
+            const scCount = c.scDists || 0;
+            if (showCircleSCDists && scCount > 0) {
+              const rMetricDist = rlim * Math.sqrt(scCount / maxClusterSCDists);
+              const rPxDist = Math.max(2, rMetricDist * scale);
+
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rPxDist, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(245, 158, 11, 0.08)';
+              ctx.fill();
+              ctx.strokeStyle = '#f59e0b';
+              ctx.lineWidth = 1.6;
+              ctx.setLineDash([4, 3]);
               ctx.stroke();
               ctx.restore();
             }
@@ -4474,6 +4608,11 @@
           ? "[3D Mode: Drag Quad 4 to Orbit • Drag Quads 1-3 to Pan • ⛶ to Maximize]"
           : "[2D Mode: Drag to Pan • Scroll to Zoom • ＋ Add Point: Inject]";
       }
+
+      const legMem = document.getElementById('legendCircleMembers');
+      if (legMem) legMem.style.display = showCircleMembers ? 'inline-flex' : 'none';
+      const legSC = document.getElementById('legendCircleSCDists');
+      if (legSC) legSC.style.display = showCircleSCDists ? 'inline-flex' : 'none';
 
       // 1. Refresh Resource Metrics, Heap Memory, and Latency Sparkline
       updateResourceMetrics();
@@ -5576,6 +5715,26 @@
         if (lbl) {
           lbl.innerText = `${samplePointSize.toFixed(2).replace(/\.?0+$/, '')} px`;
         }
+        draw();
+      });
+    }
+
+    const optCircleMembers = document.getElementById('optCircleMembers');
+    if (optCircleMembers) {
+      optCircleMembers.addEventListener('click', () => {
+        showCircleMembers = !showCircleMembers;
+        optCircleMembers.classList.toggle('active', showCircleMembers);
+        updateUI();
+        draw();
+      });
+    }
+
+    const optCircleSCDists = document.getElementById('optCircleSCDists');
+    if (optCircleSCDists) {
+      optCircleSCDists.addEventListener('click', () => {
+        showCircleSCDists = !showCircleSCDists;
+        optCircleSCDists.classList.toggle('active', showCircleSCDists);
+        updateUI();
         draw();
       });
     }
