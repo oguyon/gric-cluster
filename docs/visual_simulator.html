@@ -726,13 +726,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.17 (15:55 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.17 (16:45 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-17 15:55:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-17 16:45:00 HST</span>
     </div>
   </header>
 
@@ -853,20 +853,22 @@
 
     <!-- Right: Control & Telemetry Panel -->
     <div class="side-panel">
-      <!-- 1. Algorithm Configuration -->
+      <!-- 1. Simulator Settings -->
       <div class="card fixed-height">
         <div class="card-title">
-          <span>Algorithm Configuration</span>
+          <span>Simulator Settings</span>
           <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">CLI Parity</span>
         </div>
 
         <div class="config-tab-bar">
-          <div id="tabCfgCore" class="config-tab-btn active">🎯 Core Options</div>
-          <div id="tabCfgAdvanced" class="config-tab-btn">⚙️ Advanced Tuning</div>
+          <div id="tabCfgAlgo" class="config-tab-btn active">🎯 Algorithm</div>
+          <div id="tabCfgInput" class="config-tab-btn">📥 Input Stream</div>
+          <div id="tabCfgDisplay" class="config-tab-btn">🎨 Display &amp; View</div>
         </div>
         
-        <!-- Tab 1: Core Options -->
-        <div id="cfgCorePanel">
+        <!-- Tab 1: Algorithm Parameters -->
+        <div id="cfgAlgoPanel" style="max-height: 380px; overflow-y: auto; padding-right: 2px;">
+          <!-- Radius Threshold -->
           <div class="control-row">
             <div class="control-label">
               <span>Radius Threshold (<span class="badge-pill">rlim</span>)</span>
@@ -878,72 +880,33 @@
             <input type="range" id="sliderRlim" min="0.02" max="0.30" step="0.005" value="0.100">
           </div>
 
-          <div class="control-row">
-            <div class="control-label">
-              <span>Visual Focus (Samples ⟷ Clusters)</span>
-              <span id="lblFocus" class="val">Balanced (50%)</span>
-            </div>
-            <input type="range" id="sliderFocus" min="0" max="100" step="1" value="50">
-          </div>
-
+          <!-- Target Selection Mode -->
           <div class="control-label" style="margin-top: 8px;">Target Selection Mode</div>
           <div class="toggle-group">
             <div id="modeGreedy" class="toggle-btn active">Greedy (argmax P)</div>
             <div id="modeEntropy" class="toggle-btn">Entropy (-entropy)</div>
           </div>
 
+          <!-- Geometric Pruning Heuristics -->
           <div class="control-label">Geometric Pruning Heuristics</div>
           <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr);">
-            <div id="prune3P" class="toggle-btn active">3-Point (3P)</div>
-            <div id="prune4P" class="toggle-btn">4-Point (-te4)</div>
-            <div id="prune5P" class="toggle-btn">5-Point (-te5)</div>
+            <div id="prune3P" class="toggle-btn active" title="Triangle inequality 3-Point pruning">3-Point (3P)</div>
+            <div id="prune4P" class="toggle-btn" title="4-Point tetrahedral distance bound (-te4)">4-Point (-te4)</div>
+            <div id="prune5P" class="toggle-btn" title="5-Point Cayley-Menger determinant bound (-te5)">5-Point (-te5)</div>
           </div>
 
-          <div class="control-label">Prior &amp; Subspace Acceleration</div>
-          <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 0;">
-            <div id="optTM" class="toggle-btn" title="Transition matrix mixing (-tm)">-tm (Markov)</div>
-            <div id="optPred" class="toggle-btn" title="Pattern sequence prediction (-pred)">-pred (Predictor)</div>
-            <div id="optGprob" class="toggle-btn" title="Visitor co-measurement geometry (-gprob)">-gprob (Visitors)</div>
-            <div id="optTiles" class="toggle-btn" title="Input Subspace Partition (-tiles: 1D X/Y/Z Tiles -> Joint Tuple)">-tiles (Subspaces)</div>
-          </div>
-        </div>
-
-        <!-- Tab 2: Advanced Tuning & CLI Parity -->
-        <div id="cfgAdvancedPanel" style="display: none; max-height: 380px; overflow-y: auto; padding-right: 2px;">
-          <!-- Cluster Budget -->
-          <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-              <span>Cluster Budget &amp; Eviction (<span class="badge-pill">-maxcl</span>)</span>
-            </div>
-            <div class="control-row">
-              <div class="control-label">
-                <span>Max Clusters (<span class="badge-pill">maxcl</span>)</span>
-                <span id="lblMaxcl" class="val">Unlimited (0)</span>
-              </div>
-              <input type="range" id="sliderMaxcl" min="0" max="40" step="1" value="0">
-            </div>
-
-            <div class="control-label" style="font-size: 0.72rem;">Eviction Strategy (-maxcl_strategy)</div>
-            <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 4px;">
-              <div id="stratStop" class="toggle-btn active" title="Refuse new clusters when budget reached">stop</div>
-              <div id="stratDiscard" class="toggle-btn" title="Evict least active / lowest frequency cluster">discard</div>
-              <div id="stratMerge" class="toggle-btn" title="Merge two closest cluster nodes">merge</div>
-            </div>
-
-            <div class="control-row" id="rowDiscardFrac" style="display: none;">
-              <div class="control-label">
-                <span>Discard Fraction (<span class="badge-pill">-discard_frac</span>)</span>
-                <span id="lblDiscardFrac" class="val">0.10</span>
-              </div>
-              <input type="range" id="sliderDiscardFrac" min="0.05" max="0.30" step="0.05" value="0.10">
-            </div>
-          </div>
-
-          <!-- Prior Parameters -->
+          <!-- Prior & Subspace Acceleration -->
           <div class="sub-control-card">
             <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
-              <span>Prior &amp; Acceleration Tuning</span>
+              <span>Prior &amp; Subspace Acceleration</span>
             </div>
+            <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 6px;">
+              <div id="optTM" class="toggle-btn" title="Transition matrix mixing (-tm)">-tm (Markov)</div>
+              <div id="optPred" class="toggle-btn" title="Pattern sequence prediction (-pred)">-pred (Predictor)</div>
+              <div id="optGprob" class="toggle-btn" title="Visitor co-measurement geometry (-gprob)">-gprob (Visitors)</div>
+              <div id="optTiles" class="toggle-btn" title="Input Subspace Partition (-tiles: 1D X/Y/Z Tiles -> Joint Tuple)">-tiles (Subspaces)</div>
+            </div>
+
             <div class="control-row">
               <div class="control-label">
                 <span>Markov Mixing Coeff (<span class="badge-pill">-tm</span>)</span>
@@ -967,12 +930,23 @@
               </div>
               <input type="range" id="sliderMaxVis" min="5" max="50" step="5" value="20">
             </div>
+
+            <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 4px;">
+              <div id="optXTile" class="toggle-btn" title="Cross-tile joint tuple prior transfer (-xtile 2)">-xtile (Cross-Tile Prior Sharing)</div>
+            </div>
+            <div class="control-row" id="rowXTileDecay" style="display: none;">
+              <div class="control-label">
+                <span>Cross-Tile Decay (<span class="badge-pill">-xtile_decay</span>)</span>
+                <span id="lblXTileDecay" class="val">0.70</span>
+              </div>
+              <input type="range" id="sliderXTileDecay" min="0.10" max="1.00" step="0.05" value="0.70">
+            </div>
           </div>
 
-          <!-- Entropy & Bayesian -->
+          <!-- Entropy & Soft Bayesian Likelihood -->
           <div class="sub-control-card">
             <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-              <span>Entropy &amp; Bayesian Likelihood</span>
+              <span>Shannon Entropy &amp; Bayesian Likelihood</span>
             </div>
             <div class="control-row">
               <div class="control-label">
@@ -1004,25 +978,114 @@
             </div>
           </div>
 
-          <!-- Cross-Tile Subspace Prior -->
+          <!-- Cluster Budget & Eviction -->
           <div class="sub-control-card">
-            <div class="control-label" style="font-weight: 700; color: #c084fc;">
-              <span>Subspace &amp; Cross-Tile Priors</span>
+            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+              <span>Cluster Budget &amp; Eviction (<span class="badge-pill">-maxcl</span>)</span>
             </div>
-            <div class="toggle-group" style="grid-template-columns: 1fr; margin-bottom: 4px;">
-              <div id="optXTile" class="toggle-btn" title="Cross-tile joint tuple prior transfer (-xtile 2)">-xtile (Cross-Tile Prior Sharing)</div>
+            <div class="control-row">
+              <div class="control-label">
+                <span>Max Clusters (<span class="badge-pill">maxcl</span>)</span>
+                <span id="lblMaxcl" class="val">Unlimited (0)</span>
+              </div>
+              <input type="range" id="sliderMaxcl" min="0" max="40" step="1" value="0">
             </div>
 
-            <div class="control-row" id="rowXTileDecay" style="display: none;">
+            <div class="control-label" style="font-size: 0.72rem;">Eviction Strategy (-maxcl_strategy)</div>
+            <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 4px;">
+              <div id="stratStop" class="toggle-btn active" title="Refuse new clusters when budget reached">stop</div>
+              <div id="stratDiscard" class="toggle-btn" title="Evict least active / lowest frequency cluster">discard</div>
+              <div id="stratMerge" class="toggle-btn" title="Merge two closest cluster nodes">merge</div>
+            </div>
+
+            <div class="control-row" id="rowDiscardFrac" style="display: none;">
               <div class="control-label">
-                <span>Cross-Tile Decay (<span class="badge-pill">-xtile_decay</span>)</span>
-                <span id="lblXTileDecay" class="val">0.70</span>
+                <span>Discard Fraction (<span class="badge-pill">-discard_frac</span>)</span>
+                <span id="lblDiscardFrac" class="val">0.10</span>
               </div>
-              <input type="range" id="sliderXTileDecay" min="0.10" max="1.00" step="0.05" value="0.70">
+              <input type="range" id="sliderDiscardFrac" min="0.05" max="0.30" step="0.05" value="0.10">
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Input Stream Parameters -->
+        <div id="cfgInputPanel" style="display: none; max-height: 380px; overflow-y: auto; padding-right: 2px;">
+          <!-- Dataset & Generation -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+              <span>Dataset &amp; Input Source</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600; width: 60px;">Select:</label>
+                <select id="selectBenchmarkSide" style="flex: 1; padding: 5px 8px; font-size: 0.78rem;">
+                  <optgroup label="2D Benchmark Datasets">
+                    <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
+                    <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
+                    <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
+                    <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
+                    <option value="2Drand">2Drand — 2D Uniform Random</option>
+                    <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
+                    <option value="stream">Dynamic 2D Continuous Orbit (Lissajous)</option>
+                  </optgroup>
+                  <optgroup label="3D Benchmark Datasets (Quad-Split View)">
+                    <option value="3Dspiral" selected>3Dspiral — 3D Helical/Conical Spiral</option>
+                    <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
+                    <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
+                    <option value="3Dtorus">3Dtorus — 3D Torus Manifold Knot</option>
+                    <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
+                    <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
+                    <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
+                    <option value="3Dlorenz">Dynamic 3D Lorenz Attractor (Chaotic Stream)</option>
+                  </optgroup>
+                  <optgroup label="Custom Dataset">
+                    <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              <div style="display: flex; gap: 6px;">
+                <button id="btnUploadSide" class="secondary" style="flex: 1; padding: 4px 8px; font-size: 0.76rem;" title="Upload custom coordinate file">📁 Upload Custom File</button>
+              </div>
             </div>
           </div>
 
-          <!-- Sample Noise -->
+          <!-- Stream Ingestion & Looping -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+              <span>Stream Ingestion &amp; Loop Control</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Playback Speed:</label>
+                <select id="selectSpeedSide" style="padding: 3px 8px; font-size: 0.76rem;">
+                  <option value="150">1x (150ms)</option>
+                  <option value="50" selected>3x (50ms)</option>
+                  <option value="15">10x (15ms)</option>
+                  <option value="5">30x (5ms)</option>
+                  <option value="-1">⚡ As fast as possible</option>
+                  <option value="0">Instant (Batch)</option>
+                </select>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Loop Iterations:</label>
+                <select id="selectLoopSide" style="padding: 3px 8px; font-size: 0.76rem;">
+                  <option value="1" selected>1 pass (N=1)</option>
+                  <option value="2">2 passes (N=2)</option>
+                  <option value="3">3 passes (N=3)</option>
+                  <option value="5">5 passes (N=5)</option>
+                  <option value="10">10 passes (N=10)</option>
+                  <option value="20">20 passes (N=20)</option>
+                  <option value="50">50 passes (N=50)</option>
+                  <option value="100">100 passes (N=100)</option>
+                  <option value="0">∞ Infinite (N=0)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Truncated Gaussian Noise -->
           <div class="sub-control-card">
             <div class="control-label" style="font-weight: 700; color: #f87171;">
               <span>Sample Truncated Gaussian Noise</span>
@@ -1042,6 +1105,70 @@
               </div>
               <input type="range" id="sliderNoiseTrunc" min="0.01" max="0.30" step="0.005" value="0.050">
             </div>
+          </div>
+
+          <!-- Manual Point Injection -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-amber);">
+              <span>Manual Point Injection</span>
+            </div>
+            <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 6px;">
+              Click on any canvas quadrant to inject custom query points directly into the clustering model.
+            </p>
+            <button id="btnAddPointSide" style="width: 100%; justify-content: center; font-size: 0.78rem;">＋ Toggle Add Point Mode</button>
+          </div>
+        </div>
+
+        <!-- Tab 3: Display & View Parameters -->
+        <div id="cfgDisplayPanel" style="display: none; max-height: 380px; overflow-y: auto; padding-right: 2px;">
+          <!-- Visual Focus -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+              <span>Visual Balance &amp; Focus</span>
+            </div>
+            <div class="control-row">
+              <div class="control-label">
+                <span>Visual Focus (Samples ⟷ Clusters)</span>
+                <span id="lblFocus" class="val">Balanced (50%)</span>
+              </div>
+              <input type="range" id="sliderFocus" min="0" max="100" step="1" value="50">
+            </div>
+            <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
+              <span>0%: Points Only</span>
+              <span>50%: Balanced</span>
+              <span>100%: Clusters Only</span>
+            </div>
+          </div>
+
+          <!-- 3D Camera Presets -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
+              <span>3D Camera Presets &amp; Reset</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 6px;">
+              <button class="preset-btn" id="presetIsoSide" style="padding: 6px; font-size: 0.74rem;">Isometric Perspective</button>
+              <button class="preset-btn" id="presetFrontSide" style="padding: 6px; font-size: 0.74rem;">Front (θ=0°, φ=0°)</button>
+              <button class="preset-btn" id="presetTopSide" style="padding: 6px; font-size: 0.74rem;">Top (θ=0°, φ=89°)</button>
+              <button class="preset-btn" id="presetSideSide" style="padding: 6px; font-size: 0.74rem;">Side (θ=90°, φ=0°)</button>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button class="preset-btn" id="presetReset3DSide" style="flex: 1; padding: 6px; font-size: 0.74rem;">↺ Reset 3D Camera</button>
+              <button id="btnResetViewSide" class="preset-btn" style="flex: 1; padding: 6px; font-size: 0.74rem;">🔍 Reset Pan/Zoom (1:1)</button>
+            </div>
+          </div>
+
+          <!-- Multi-View Guide -->
+          <div class="sub-control-card">
+            <div class="control-label" style="font-weight: 700; color: var(--accent-teal);">
+              <span>Multi-View Projections Guide</span>
+            </div>
+            <ul style="font-size: 0.72rem; color: var(--text-muted); margin-left: 16px; line-height: 1.45;">
+              <li><b>Quad 1 (Top-Left):</b> Along X (Y-Z Orthogonal Plane)</li>
+              <li><b>Quad 2 (Top-Right):</b> Along Y (X-Z Orthogonal Plane)</li>
+              <li><b>Quad 3 (Bottom-Left):</b> Along Z (X-Y Orthogonal Plane)</li>
+              <li><b>Quad 4 (Bottom-Right):</b> Interactive 3D Orbit Camera</li>
+              <li><b>Controls:</b> Drag Quad 4 to orbit; drag Quads 1-3 to pan; wheel to zoom; click ⛶ to maximize.</li>
+            </ul>
           </div>
         </div>
       </div>
@@ -3270,7 +3397,10 @@
 
     function loadSelectedBenchmark() {
       resetSimulation();
-      currentBenchmark = document.getElementById('selectBenchmark').value;
+      const selMain = document.getElementById('selectBenchmark');
+      const selSide = document.getElementById('selectBenchmarkSide');
+      if (selMain) currentBenchmark = selMain.value;
+      if (selSide && selMain) selSide.value = selMain.value;
       document.getElementById('benchmarkDesc').innerHTML = BENCHMARK_DESCS[currentBenchmark] || "";
 
       currentDim = is3DBenchmark(currentBenchmark) ? 3 : 2;
@@ -3422,14 +3552,18 @@
     function setAddPointMode(enabled) {
       isAddPointMode = enabled;
       const btn = document.getElementById('btnAddPoint');
+      const btnSide = document.getElementById('btnAddPointSide');
+      if (btn) btn.classList.toggle('toggle-active', isAddPointMode);
+      if (btnSide) {
+        btnSide.classList.toggle('toggle-active', isAddPointMode);
+        btnSide.innerText = isAddPointMode ? "✓ Point Injection Active (Click Canvas)" : "＋ Toggle Add Point Mode";
+      }
       if (isAddPointMode) {
         if (isRunning) pauseSimulation();
-        btn.classList.add('toggle-active');
         canvas.classList.add('crosshair');
         canvas.classList.remove('orbit-cursor');
         canvas.classList.remove('grabbing');
       } else {
-        btn.classList.remove('toggle-active');
         canvas.classList.remove('crosshair');
       }
     }
@@ -3749,6 +3883,8 @@
 
     document.getElementById('selectSpeed').addEventListener('change', (e) => {
       playSpeed = parseInt(e.target.value);
+      const side = document.getElementById('selectSpeedSide');
+      if (side) side.value = e.target.value;
       if (isRunning) {
         pauseSimulation();
         startSimulation();
@@ -3759,6 +3895,8 @@
     if (selectLoop) {
       selectLoop.addEventListener('change', (e) => {
         loopCount = parseInt(e.target.value);
+        const side = document.getElementById('selectLoopSide');
+        if (side) side.value = e.target.value;
         updateUI();
       });
     }
@@ -3882,20 +4020,106 @@
       draw();
     });
 
-    // Configuration Tab Switching
-    document.getElementById('tabCfgCore').addEventListener('click', () => {
-      document.getElementById('tabCfgCore').classList.add('active');
-      document.getElementById('tabCfgAdvanced').classList.remove('active');
-      document.getElementById('cfgCorePanel').style.display = 'block';
-      document.getElementById('cfgAdvancedPanel').style.display = 'none';
+    // Simulator Settings 3-Tab Switching
+    const configTabs = [
+      { id: 'tabCfgAlgo', panel: 'cfgAlgoPanel' },
+      { id: 'tabCfgInput', panel: 'cfgInputPanel' },
+      { id: 'tabCfgDisplay', panel: 'cfgDisplayPanel' }
+    ];
+
+    configTabs.forEach(t => {
+      const tabBtn = document.getElementById(t.id);
+      if (tabBtn) {
+        tabBtn.addEventListener('click', () => {
+          configTabs.forEach(other => {
+            const btnEl = document.getElementById(other.id);
+            const panelEl = document.getElementById(other.panel);
+            if (btnEl) btnEl.classList.toggle('active', other.id === t.id);
+            if (panelEl) panelEl.style.display = (other.id === t.id) ? 'block' : 'none';
+          });
+        });
+      }
     });
 
-    document.getElementById('tabCfgAdvanced').addEventListener('click', () => {
-      document.getElementById('tabCfgAdvanced').classList.add('active');
-      document.getElementById('tabCfgCore').classList.remove('active');
-      document.getElementById('cfgCorePanel').style.display = 'none';
-      document.getElementById('cfgAdvancedPanel').style.display = 'block';
+    // Sync Side Panel Input Stream Selectors
+    const selBenchSide = document.getElementById('selectBenchmarkSide');
+    if (selBenchSide) {
+      selBenchSide.addEventListener('change', (e) => {
+        document.getElementById('selectBenchmark').value = e.target.value;
+        loadSelectedBenchmark();
+        resetView();
+      });
+    }
+
+    const btnUploadSide = document.getElementById('btnUploadSide');
+    if (btnUploadSide) {
+      btnUploadSide.addEventListener('click', () => {
+        document.getElementById('fileUpload').click();
+      });
+    }
+
+    const selSpeedSide = document.getElementById('selectSpeedSide');
+    if (selSpeedSide) {
+      selSpeedSide.addEventListener('change', (e) => {
+        document.getElementById('selectSpeed').value = e.target.value;
+        playSpeed = parseInt(e.target.value);
+        if (isRunning) {
+          pauseSimulation();
+          startSimulation();
+        }
+      });
+    }
+
+    const selLoopSide = document.getElementById('selectLoopSide');
+    if (selLoopSide) {
+      selLoopSide.addEventListener('change', (e) => {
+        document.getElementById('selectLoop').value = e.target.value;
+        loopCount = parseInt(e.target.value);
+        updateUI();
+      });
+    }
+
+    const btnAddPtSide = document.getElementById('btnAddPointSide');
+    if (btnAddPtSide) {
+      btnAddPtSide.addEventListener('click', () => {
+        setAddPointMode(!isAddPointMode);
+      });
+    }
+
+    // Side Display & 3D Camera Controls
+    const sidePresets = [
+      { id: 'presetIsoSide', az: -35, el: 25 },
+      { id: 'presetFrontSide', az: 0, el: 0 },
+      { id: 'presetTopSide', az: 0, el: 89 },
+      { id: 'presetSideSide', az: 90, el: 0 }
+    ];
+    sidePresets.forEach(p => {
+      const el = document.getElementById(p.id);
+      if (el) {
+        el.addEventListener('click', () => {
+          orbitCamera.azimuth = p.az * (Math.PI / 180);
+          orbitCamera.elevation = p.el * (Math.PI / 180);
+          draw();
+        });
+      }
     });
+
+    const presetReset3DSide = document.getElementById('presetReset3DSide');
+    if (presetReset3DSide) {
+      presetReset3DSide.addEventListener('click', () => {
+        orbitCamera.azimuth = -35 * (Math.PI / 180);
+        orbitCamera.elevation = 25 * (Math.PI / 180);
+        orbitCamera.panX = 0;
+        orbitCamera.panY = 0;
+        orbitCamera.zoom = 1.0;
+        draw();
+      });
+    }
+
+    const btnResetViewSide = document.getElementById('btnResetViewSide');
+    if (btnResetViewSide) {
+      btnResetViewSide.addEventListener('click', resetView);
+    }
 
     // Auto-rlim (-scandist)
     document.getElementById('btnAutoRlim').addEventListener('click', computeAutoRlim);
