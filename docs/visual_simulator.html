@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:30 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:45 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:30:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:45:00 HST</span>
     </div>
   </header>
 
@@ -1469,6 +1469,19 @@
                     <span id="lblXTileDecay" class="val">0.70</span>
                   </div>
                   <input type="range" id="sliderXTileDecay" min="0.10" max="1.00" step="0.05" value="0.70">
+                </div>
+
+                <!-- Live Transition Matrix Subcard (-tm) -->
+                <div id="tmSettingsSubcard" style="display: none; background: #0f172a; border: 1px solid rgba(192, 132, 252, 0.4); border-radius: 6px; padding: 6px 8px; margin-top: 6px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
+                    <span style="font-weight: 700; color: var(--accent-purple);">Live Markov Matrix P(c_t | c_{t-1})</span>
+                    <span id="badgeTMLast" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; font-family: monospace; font-size: 0.65rem;">Last: None</span>
+                  </div>
+                  <canvas id="tmSettingsCanvas" width="340" height="150" style="width: 100%; height: 150px; display: block; border-radius: 4px; background: #0b1120; cursor: crosshair;"></canvas>
+                  <div style="display: flex; justify-content: space-between; font-size: 0.66rem; color: var(--text-muted); margin-top: 4px;">
+                    <span id="lblTMTooltip">Hover over matrix for details</span>
+                    <span id="lblTMStats">0 transitions</span>
+                  </div>
                 </div>
               </div>
 
@@ -2135,6 +2148,11 @@
                  data-tooltip-badge="Trace" 
                  data-tooltip-color="purple" 
                  data-tooltip-desc="Structured data table displaying cluster coordinates, frame counts, cumulative #SC distance evaluations, and status.">📋 Cluster Table</div>
+            <div id="tabTM" class="tab-btn" 
+                 data-tooltip-title="Markov Transition Matrix" 
+                 data-tooltip-badge="-tm" 
+                 data-tooltip-color="purple" 
+                 data-tooltip-desc="Real-time visualization of learned cluster-to-cluster Markov transition matrix P(c_t | c_{t-1}) and transition probabilities.">🔀 Transition Matrix</div>
           </div>
 
           <div class="card-body-scroll" style="display: flex; flex-direction: column;">
@@ -2149,6 +2167,31 @@
             <div id="candidateContainer" class="candidate-list" style="display: none;">
               <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">
                 No active candidates.
+              </div>
+            </div>
+
+            <!-- Transition Matrix Container -->
+            <div id="tmContainer" class="candidate-list" style="display: none; flex-direction: column; gap: 8px;">
+              <!-- Live TM Heatmap Card -->
+              <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <span style="font-size: 0.76rem; font-weight: 700; color: var(--accent-purple);">Live Markov Heatmap \(P(c_t \mid c_{t-1})\)</span>
+                  <span id="badgeLastTrans" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; font-family: monospace; font-size: 0.68rem;">Last: None</span>
+                </div>
+                <div style="display: flex; justify-content: center; align-items: center; overflow: auto; padding: 4px 0;">
+                  <canvas id="tmHeatmapCanvas" width="340" height="240" style="display: block; border-radius: 4px; background: #0b1120; cursor: pointer;"></canvas>
+                </div>
+                <div id="tmCellTooltip" style="font-size: 0.72rem; color: var(--text-muted); text-align: center; min-height: 16px; margin-top: 4px; font-family: monospace;">
+                  Hover over any cell to inspect transition details
+                </div>
+              </div>
+
+              <!-- Top Transition Paths Card -->
+              <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+                <div style="font-size: 0.74rem; font-weight: 700; color: var(--accent-blue); margin-bottom: 4px;">Top Learned Transition Paths</div>
+                <div id="tmTopPathsList" style="display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem;">
+                  <div style="color: var(--text-muted); text-align: center; padding: 6px 0;">Awaiting transitions...</div>
+                </div>
               </div>
             </div>
           </div>
@@ -2896,6 +2939,9 @@
     let dcc = [];
     let transitionCounts = [];
     let prevAssignedCluster = -1;
+    let lastTransitionFrom = -1;
+    let lastTransitionTo = -1;
+    let hoveredTMCell = null;
     let assignmentHistory = [];
     let frameHistory = [];
     let totalFrames = 0;
@@ -3507,6 +3553,222 @@
         if (lblMeanDFC) lblMeanDFC.innerText = finalAvgDFC.toFixed(2);
         if (lblMeanDCC) lblMeanDCC.innerText = finalAvgDCC.toFixed(2);
       }
+    }
+
+    function drawTransitionMatrix(canvasId, isMini) {
+      const cvs = document.getElementById(canvasId);
+      if (!cvs) return;
+      const ctx = cvs.getContext('2d');
+      const w = cvs.width;
+      const h = cvs.height;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#0b1120';
+      ctx.fillRect(0, 0, w, h);
+
+      const K = clusters.length;
+      if (K === 0 || transitionCounts.length === 0) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = isMini ? '9px monospace' : '11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Awaiting clusters & transitions...', w / 2, h / 2 + 3);
+        return;
+      }
+
+      // Margins
+      const ml = isMini ? 26 : 34; // Left margin for row headers
+      const mt = isMini ? 20 : 26; // Top margin for col headers
+      const mr = isMini ? 6 : 10;
+      const mb = isMini ? 6 : 10;
+
+      const availW = w - ml - mr;
+      const availH = h - mt - mb;
+      const cw = availW / K;
+      const ch = availH / K;
+
+      // Row totals for probability normalization P(j | i) = count(i, j) / rowTotal
+      const rowTotals = new Float64Array(K);
+      let totalTransCount = 0;
+      let nonZeroCount = 0;
+
+      for (let i = 0; i < K; i++) {
+        let sum = 0;
+        if (transitionCounts[i]) {
+          for (let j = 0; j < K; j++) {
+            const cnt = transitionCounts[i][j] || 0;
+            sum += cnt;
+            totalTransCount += cnt;
+            if (cnt > 0) nonZeroCount++;
+          }
+        }
+        rowTotals[i] = sum;
+      }
+
+      // 1. Draw Grid Cells
+      for (let i = 0; i < K; i++) {
+        const sum = rowTotals[i];
+        for (let j = 0; j < K; j++) {
+          const count = (transitionCounts[i] && transitionCounts[i][j]) ? transitionCounts[i][j] : 0;
+          const prob = sum > 0 ? (count / sum) : 0.0;
+          const x = ml + j * cw;
+          const y = mt + i * ch;
+
+          // Color scale
+          if (prob === 0) {
+            ctx.fillStyle = '#0f172a';
+          } else {
+            // Gradient: Low (Purple) -> Med (Cyan) -> High (Amber/Gold)
+            const r = Math.round(56 + prob * (245 - 56));
+            const g = Math.round(189 - prob * 31);
+            const b = Math.round(248 - prob * 237);
+            const alpha = 0.25 + prob * 0.70;
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`;
+          }
+          ctx.fillRect(x, y, cw, ch);
+
+          // Cell Border
+          ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+          ctx.lineWidth = 0.5;
+          ctx.strokeRect(x, y, cw, ch);
+
+          // Value inside cell if cell is large enough
+          if (!isMini && cw >= 24 && ch >= 16 && prob > 0) {
+            ctx.fillStyle = prob > 0.4 ? '#ffffff' : '#94a3b8';
+            ctx.font = `${Math.min(10, Math.floor(ch * 0.65))}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.fillText(`${(prob * 100).toFixed(0)}%`, x + cw / 2, y + ch / 2 + 3);
+          }
+
+          // Active Last Transition Glow (Golden Outline)
+          if (lastTransitionFrom === i && lastTransitionTo === j) {
+            ctx.save();
+            ctx.strokeStyle = '#fbbf24';
+            ctx.lineWidth = 2.0;
+            ctx.shadowColor = '#fbbf24';
+            ctx.shadowBlur = 6;
+            ctx.strokeRect(x + 1, y + 1, cw - 2, ch - 2);
+            ctx.restore();
+          }
+
+          // Hover Highlight (White Outline)
+          if (hoveredTMCell && hoveredTMCell.i === i && hoveredTMCell.j === j) {
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.0;
+            ctx.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
+          }
+        }
+      }
+
+      // 2. Draw Column Headers (Target Clusters c_t)
+      for (let j = 0; j < K; j++) {
+        const x = ml + j * cw + cw / 2;
+        const color = getClusterColor(j);
+        
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, mt - (isMini ? 8 : 10), isMini ? 2.5 : 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (!isMini || K <= 10) {
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = `${isMini ? 7 : 8}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.fillText(`c${j}`, x, mt - (isMini ? 2 : 3));
+        }
+      }
+
+      // 3. Draw Row Headers (Source Clusters c_{t-1})
+      for (let i = 0; i < K; i++) {
+        const y = mt + i * ch + ch / 2;
+        const color = getClusterColor(i);
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(ml - (isMini ? 8 : 12), y, isMini ? 2.5 : 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (!isMini || K <= 10) {
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = `${isMini ? 7 : 8}px monospace`;
+          ctx.textAlign = 'right';
+          ctx.fillText(`c${i}`, ml - (isMini ? 13 : 18), y + 3);
+        }
+      }
+
+      // 4. Axis Labels
+      ctx.fillStyle = '#64748b';
+      ctx.font = '7px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('c(t-1)↓', 2, mt - 2);
+      ctx.textAlign = 'center';
+      ctx.fillText('Target c(t) →', ml + availW / 2, isMini ? 7 : 9);
+
+      // 5. Update Status & Badges
+      const densityPct = K > 0 ? ((nonZeroCount / (K * K)) * 100).toFixed(0) : '0';
+      const badgeLast = document.getElementById('badgeTMLast');
+      const badgeLastTrans = document.getElementById('badgeLastTrans');
+      const lastStr = (lastTransitionFrom >= 0 && lastTransitionTo >= 0) 
+        ? `Last: c${lastTransitionFrom} → c${lastTransitionTo}` 
+        : `Last: None`;
+      if (badgeLast) badgeLast.innerText = lastStr;
+      if (badgeLastTrans) badgeLastTrans.innerText = lastStr;
+
+      const lblStats = document.getElementById('lblTMStats');
+      if (lblStats) lblStats.innerText = `${totalTransCount} trans (${densityPct}% dense)`;
+    }
+
+    function updateTMTopPaths() {
+      const cont = document.getElementById('tmTopPathsList');
+      if (!cont) return;
+
+      const K = clusters.length;
+      if (K === 0 || transitionCounts.length === 0) {
+        cont.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 6px 0;">Awaiting transitions...</div>`;
+        return;
+      }
+
+      const paths = [];
+      for (let i = 0; i < K; i++) {
+        if (!transitionCounts[i]) continue;
+        let sum = 0;
+        for (let j = 0; j < K; j++) sum += transitionCounts[i][j] || 0;
+        for (let j = 0; j < K; j++) {
+          const cnt = transitionCounts[i][j] || 0;
+          if (cnt > 0) {
+            const prob = sum > 0 ? cnt / sum : 0;
+            paths.push({ from: i, to: j, count: cnt, prob });
+          }
+        }
+      }
+
+      paths.sort((a, b) => b.count - a.count);
+
+      if (paths.length === 0) {
+        cont.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 6px 0;">No transitions recorded yet.</div>`;
+        return;
+      }
+
+      let html = '';
+      paths.slice(0, 8).forEach(p => {
+        const colFrom = getClusterColor(p.from);
+        const colTo = getClusterColor(p.to);
+        const isCurrent = (lastTransitionFrom === p.from && lastTransitionTo === p.to);
+        html += `
+          <div style="display: flex; justify-content: space-between; align-items: center; background: ${isCurrent ? 'rgba(251, 191, 36, 0.12)' : '#172033'}; border: 1px solid ${isCurrent ? '#fbbf24' : 'var(--card-border)'}; border-radius: 4px; padding: 3px 6px;">
+            <span style="display: flex; align-items: center; gap: 4px;">
+              <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${colFrom};"></span>
+              <b>C${p.from}</b>
+              <span style="color: var(--text-muted);">→</span>
+              <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${colTo};"></span>
+              <b>C${p.to}</b>
+            </span>
+            <span style="font-family: monospace; color: ${isCurrent ? '#fbbf24' : '#38bdf8'}; font-weight: 700;">
+              ${p.count} (${(p.prob * 100).toFixed(1)}%)
+            </span>
+          </div>
+        `;
+      });
+      cont.innerHTML = html;
     }
 
     // Multi-Tile 1D Subspace Engines
@@ -4160,6 +4422,11 @@
       if (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
         transitionCounts[prevAssignedCluster][assignedCluster] =
           (transitionCounts[prevAssignedCluster][assignedCluster] || 0) + 1;
+        lastTransitionFrom = prevAssignedCluster;
+        lastTransitionTo = assignedCluster;
+      } else {
+        lastTransitionFrom = -1;
+        lastTransitionTo = -1;
       }
       prevAssignedCluster = assignedCluster;
       assignmentHistory.push(assignedCluster);
@@ -4703,6 +4970,44 @@
               ctx.stroke();
               ctx.restore();
             }
+          });
+
+          // Draw Learned Markov Transition Vector Arcs (-tm)
+          if (useTM && transitionCounts.length > 0 && clusters.length > 1) {
+            ctx.save();
+            const K = clusters.length;
+            for (let i = 0; i < K; i++) {
+              if (!transitionCounts[i]) continue;
+              let rowSum = 0;
+              for (let j = 0; j < K; j++) rowSum += transitionCounts[i][j] || 0;
+              if (rowSum === 0) continue;
+
+              for (let j = 0; j < K; j++) {
+                if (i === j) continue;
+                const count = transitionCounts[i][j] || 0;
+                const prob = count / rowSum;
+                if (prob < 0.05) continue;
+
+                const prA = getProjectedCoord(clusters[i]);
+                const prB = getProjectedCoord(clusters[j]);
+                const posA = mapMetricToQuad(prA.u, prA.v, qIdx, rect);
+                const posB = mapMetricToQuad(prB.u, prB.v, qIdx, rect);
+
+                const isCurrent = (lastTransitionFrom === i && lastTransitionTo === j);
+                ctx.beginPath();
+                ctx.moveTo(posA.px, posA.py);
+                ctx.lineTo(posB.px, posB.py);
+                ctx.strokeStyle = isCurrent ? '#fbbf24' : `rgba(192, 132, 252, ${(0.15 + prob * 0.65).toFixed(2)})`;
+                ctx.lineWidth = isCurrent ? 2.5 : Math.max(1.0, prob * 3.5);
+                ctx.stroke();
+              }
+            }
+            ctx.restore();
+          }
+
+          clusters.forEach(c => {
+            const pr = getProjectedCoord(c);
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
 
             // Anchor Core Node
             ctx.beginPath();
@@ -5017,24 +5322,32 @@
 
     function setTab(tab) {
       currentActiveTab = tab;
-      if (tab === 'narrative') {
+      if (tab === 'narrative' || tab === 'tm') {
         setHoveredCluster(-1);
       }
       const tabNarrative = document.getElementById('tabNarrative');
       const tabCandidates = document.getElementById('tabCandidates');
+      const tabTM = document.getElementById('tabTM');
       const contNarrative = document.getElementById('narrativeContainer');
       const contCandidates = document.getElementById('candidateContainer');
+      const contTM = document.getElementById('tmContainer');
+
+      [tabNarrative, tabCandidates, tabTM].forEach(t => t && t.classList.remove('active'));
+      if (contNarrative) contNarrative.style.display = 'none';
+      if (contCandidates) contCandidates.style.display = 'none';
+      if (contTM) contTM.style.display = 'none';
 
       if (tab === 'narrative') {
-        tabNarrative.classList.add('active');
-        tabCandidates.classList.remove('active');
-        contNarrative.style.display = 'flex';
-        contCandidates.style.display = 'none';
-      } else {
-        tabCandidates.classList.add('active');
-        tabNarrative.classList.remove('active');
-        contCandidates.style.display = 'flex';
-        contNarrative.style.display = 'none';
+        if (tabNarrative) tabNarrative.classList.add('active');
+        if (contNarrative) contNarrative.style.display = 'flex';
+      } else if (tab === 'candidates') {
+        if (tabCandidates) tabCandidates.classList.add('active');
+        if (contCandidates) contCandidates.style.display = 'flex';
+      } else if (tab === 'tm') {
+        if (tabTM) tabTM.classList.add('active');
+        if (contTM) contTM.style.display = 'flex';
+        drawTransitionMatrix('tmHeatmapCanvas', false);
+        updateTMTopPaths();
       }
     }
 
@@ -5064,6 +5377,17 @@
       drawSparkline();
       drawDistCurves();
       drawDistAvgCurves();
+
+      // 2. Refresh Live Transition Matrix (-tm)
+      const tmSub = document.getElementById('tmSettingsSubcard');
+      if (tmSub) tmSub.style.display = useTM ? 'block' : 'none';
+      if (useTM) {
+        drawTransitionMatrix('tmSettingsCanvas', true);
+      }
+      if (currentActiveTab === 'tm') {
+        drawTransitionMatrix('tmHeatmapCanvas', false);
+        updateTMTopPaths();
+      }
 
       // Top Badges & Clusters Count
       const clusterBadge = document.getElementById('clusterBadge');
@@ -5574,6 +5898,9 @@
       distHistoryDCC = [];
       hoverDistIndex = null;
       hoverDistAvgIndex = null;
+      lastTransitionFrom = -1;
+      lastTransitionTo = -1;
+      hoveredTMCell = null;
       rollingHistory = [];
       currentCpuLoadPct = 0.0;
       currentFps = 0.0;
@@ -6156,6 +6483,8 @@
 
     document.getElementById('tabNarrative').addEventListener('click', () => setTab('narrative'));
     document.getElementById('tabCandidates').addEventListener('click', () => setTab('candidates'));
+    const tabTMEl = document.getElementById('tabTM');
+    if (tabTMEl) tabTMEl.addEventListener('click', () => setTab('tm'));
 
     document.getElementById('btnReset').addEventListener('click', () => {
       pauseSimulation();
@@ -6264,6 +6593,8 @@
     document.getElementById('optTM').addEventListener('click', () => {
       useTM = !useTM;
       document.getElementById('optTM').classList.toggle('active', useTM);
+      updateUI();
+      draw();
     });
 
     document.getElementById('optPred').addEventListener('click', () => {
@@ -6740,6 +7071,57 @@
         drawDistAvgCurves();
       });
     }
+
+    // Transition Matrix Heatmap Hover Handlers
+    function setupTMCanvasListeners(canvasId, isMini) {
+      const cvs = document.getElementById(canvasId);
+      if (!cvs) return;
+
+      cvs.addEventListener('mousemove', (e) => {
+        const K = clusters.length;
+        if (K === 0 || transitionCounts.length === 0) return;
+        const rect = cvs.getBoundingClientRect();
+        const ml = isMini ? 26 : 34;
+        const mt = isMini ? 20 : 26;
+        const mr = isMini ? 6 : 10;
+        const mb = isMini ? 6 : 10;
+        const availW = cvs.width - ml - mr;
+        const availH = cvs.height - mt - mb;
+        const cw = availW / K;
+        const ch = availH / K;
+
+        const mouseX = (e.clientX - rect.left) * (cvs.width / rect.width);
+        const mouseY = (e.clientY - rect.top) * (cvs.height / rect.height);
+
+        const col = Math.floor((mouseX - ml) / cw);
+        const row = Math.floor((mouseY - mt) / ch);
+
+        if (row >= 0 && row < K && col >= 0 && col < K) {
+          hoveredTMCell = { i: row, j: col };
+          let sum = 0;
+          if (transitionCounts[row]) {
+            for (let k = 0; k < K; k++) sum += transitionCounts[row][k] || 0;
+          }
+          const cnt = (transitionCounts[row] && transitionCounts[row][col]) ? transitionCounts[row][col] : 0;
+          const prob = sum > 0 ? (cnt / sum) : 0.0;
+
+          const desc = `C${row} → C${col}: Count=${cnt}, P=${(prob * 100).toFixed(1)}% (Row total: ${sum})`;
+          const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
+          if (tipEl) tipEl.innerText = desc;
+          drawTransitionMatrix(canvasId, isMini);
+        }
+      });
+
+      cvs.addEventListener('mouseleave', () => {
+        hoveredTMCell = null;
+        const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
+        if (tipEl) tipEl.innerText = isMini ? 'Hover over matrix for details' : 'Hover over any cell to inspect transition details';
+        drawTransitionMatrix(canvasId, isMini);
+      });
+    }
+
+    setupTMCanvasListeners('tmSettingsCanvas', true);
+    setupTMCanvasListeners('tmHeatmapCanvas', false);
 
     // Initial Startup
     initSidebarResizers();
