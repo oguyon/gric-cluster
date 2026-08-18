@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:06 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:10 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:06:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:10:00 HST</span>
     </div>
   </header>
 
@@ -1899,8 +1899,47 @@
 
             <!-- Sub-Tab 2: Distance Breakdown Panel (Sample-Cluster vs Cluster-Cluster) -->
             <div id="resDistancesPanel" style="display: none;">
+              <!-- Live Distance Computation Curves & Live Averages -->
+              <div class="sub-control-card" style="margin-top: 0; border-color: rgba(56, 189, 248, 0.35);">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                  <span>Live Distance Computation Curves</span>
+                  <span class="badge-pill" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; font-weight:700;">Live #Dist / Frame</span>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0 10px 0;">
+                  <div style="background: #172033; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 5px; padding: 5px 6px; text-align: center;">
+                    <div id="statLiveAvgDFC" style="font-size: 1.05rem; font-weight: 800; color: #38bdf8; font-family: monospace;">0.00</div>
+                    <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Avg d(f,c)/frame</div>
+                  </div>
+                  <div style="background: #172033; border: 1px solid rgba(192, 132, 252, 0.3); border-radius: 5px; padding: 5px 6px; text-align: center;">
+                    <div id="statLiveAvgDCC" style="font-size: 1.05rem; font-weight: 800; color: #c084fc; font-family: monospace;">0.00</div>
+                    <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Avg d(c,c)/frame</div>
+                  </div>
+                  <div style="background: #172033; border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 5px; padding: 5px 6px; text-align: center;">
+                    <div id="statLiveAvgTotal" style="font-size: 1.05rem; font-weight: 800; color: #4ade80; font-family: monospace;">0.00</div>
+                    <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Total Dist/frame</div>
+                  </div>
+                </div>
+
+                <!-- Trace Curves Canvas -->
+                <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
+                    <span>Evaluations per Frame (last 80 frames)</span>
+                    <div style="display: flex; gap: 8px; font-size: 0.68rem;">
+                      <span style="display: flex; align-items: center; gap: 3px; color: #38bdf8;">
+                        <span style="display: inline-block; width: 8px; height: 2px; background: #38bdf8;"></span> d(f,c) (<b id="lblLastDFC">0</b>)
+                      </span>
+                      <span style="display: flex; align-items: center; gap: 3px; color: #c084fc;">
+                        <span style="display: inline-block; width: 8px; height: 2px; background: #c084fc;"></span> d(c,c) (<b id="lblLastDCC">0</b>)
+                      </span>
+                    </div>
+                  </div>
+                  <canvas id="distCurvesCanvas" width="380" height="70" style="width: 100%; height: 70px; display: block; border-radius: 4px;"></canvas>
+                </div>
+              </div>
+
               <!-- Sample-to-Cluster -->
-              <div class="sub-control-card" style="margin-top: 0;">
+              <div class="sub-control-card">
                 <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
                   <span>Sample-to-Cluster (<span class="badge-pill">d(f, c)</span>)</span>
                   <span id="statDistSC" class="val" style="color: var(--accent-blue); font-size: 0.88rem;">0</span>
@@ -2870,6 +2909,8 @@
     let lastComputeTimeMs = 0.0;
     let avgComputeTimeMs = 0.0;
     let sparklineHistory = new Array(60).fill(0.0);
+    let distHistoryDFC = new Array(80).fill(0);
+    let distHistoryDCC = new Array(80).fill(0);
     let rollingHistory = [];        // [{ time, computeMs, frames, dists }] in rolling 1-sec window
     let currentCpuLoadPct = 0.0;
     let currentFps = 0.0;
@@ -3030,6 +3071,128 @@
       spCtx.fill();
     }
 
+    function recordFrameTelemetry(frameComputeMs) {
+      lastComputeTimeMs = frameComputeMs;
+      totalComputeTimeMs += frameComputeMs;
+      avgComputeTimeMs = totalFrames > 0 ? (totalComputeTimeMs / totalFrames) : 0.0;
+
+      sparklineHistory.push(frameComputeMs);
+      if (sparklineHistory.length > 60) sparklineHistory.shift();
+
+      distHistoryDFC.push(distSampleClusterLast);
+      if (distHistoryDFC.length > 80) distHistoryDFC.shift();
+
+      distHistoryDCC.push(distClusterClusterLast);
+      if (distHistoryDCC.length > 80) distHistoryDCC.shift();
+
+      const nowTime = performance.now();
+      rollingHistory.push({
+        time: nowTime,
+        computeMs: frameComputeMs,
+        frames: 1,
+        dists: distSampleClusterLast + distClusterClusterLast
+      });
+    }
+
+    function drawDistCurves() {
+      const cvs = document.getElementById('distCurvesCanvas');
+      if (!cvs) return;
+      const ctx = cvs.getContext('2d');
+      const w = cvs.width;
+      const h = cvs.height;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, w, h);
+
+      const n = distHistoryDFC.length;
+      if (n < 2) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Awaiting frame stream data...', w / 2, h / 2 + 3);
+        return;
+      }
+
+      // Max value for Y scaling
+      let maxVal = Math.max(4, ...distHistoryDFC, ...distHistoryDCC);
+      maxVal = Math.ceil(maxVal * 1.15);
+
+      // Grid horizontal lines (50%)
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(0, h * 0.5); ctx.lineTo(w, h * 0.5);
+      ctx.stroke();
+
+      // Scale indicator labels
+      ctx.fillStyle = '#64748b';
+      ctx.font = '8px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${maxVal}`, 3, 9);
+      ctx.fillText(`0`, 3, h - 2);
+
+      // 1. Draw d(f,c) Shaded Area and Stroke (Cyan #38bdf8)
+      ctx.beginPath();
+      ctx.moveTo(0, h);
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - (distHistoryDFC[i] / maxVal) * (h - 6) - 3;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, h);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+      ctx.fill();
+
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - (distHistoryDFC[i] / maxVal) * (h - 6) - 3;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+
+      const lastY_dfc = h - (distHistoryDFC[n - 1] / maxVal) * (h - 6) - 3;
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(w - 2, lastY_dfc, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. Draw d(c,c) Shaded Area and Stroke (Purple #c084fc)
+      ctx.beginPath();
+      ctx.moveTo(0, h);
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - (distHistoryDCC[i] / maxVal) * (h - 6) - 3;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, h);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(192, 132, 252, 0.12)';
+      ctx.fill();
+
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - (distHistoryDCC[i] / maxVal) * (h - 6) - 3;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = '#c084fc';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+
+      const lastY_dcc = h - (distHistoryDCC[n - 1] / maxVal) * (h - 6) - 3;
+      ctx.fillStyle = '#c084fc';
+      ctx.beginPath();
+      ctx.arc(w - 2, lastY_dcc, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     // Multi-Tile 1D Subspace Engines
     const tileEngineX = new Tile1D("X");
     const tileEngineY = new Tile1D("Y");
@@ -3148,20 +3311,7 @@
 
         const tComputeEnd = performance.now();
         const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
-        lastComputeTimeMs = frameComputeMs;
-        totalComputeTimeMs += frameComputeMs;
-        avgComputeTimeMs = totalFrames > 0 ? (totalComputeTimeMs / totalFrames) : 0.0;
-
-        sparklineHistory.push(frameComputeMs);
-        if (sparklineHistory.length > 60) sparklineHistory.shift();
-
-        const nowTime = performance.now();
-        rollingHistory.push({
-          time: nowTime,
-          computeMs: frameComputeMs,
-          frames: 1,
-          dists: distSampleClusterLast + distClusterClusterLast
-        });
+        recordFrameTelemetry(frameComputeMs);
 
         if (!skipRender) {
           updateUI();
@@ -3203,20 +3353,7 @@
 
         const tComputeEnd = performance.now();
         const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
-        lastComputeTimeMs = frameComputeMs;
-        totalComputeTimeMs += frameComputeMs;
-        avgComputeTimeMs = totalFrames > 0 ? (totalComputeTimeMs / totalFrames) : 0.0;
-
-        sparklineHistory.push(frameComputeMs);
-        if (sparklineHistory.length > 60) sparklineHistory.shift();
-
-        const nowTime = performance.now();
-        rollingHistory.push({
-          time: nowTime,
-          computeMs: frameComputeMs,
-          frames: 1,
-          dists: distSampleClusterLast + distClusterClusterLast
-        });
+        recordFrameTelemetry(frameComputeMs);
 
         if (!skipRender) {
           updateUI();
@@ -3718,20 +3855,7 @@
 
       const tComputeEnd = performance.now();
       const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
-      lastComputeTimeMs = frameComputeMs;
-      totalComputeTimeMs += frameComputeMs;
-      avgComputeTimeMs = totalFrames > 0 ? (totalComputeTimeMs / totalFrames) : 0.0;
-
-      sparklineHistory.push(frameComputeMs);
-      if (sparklineHistory.length > 60) sparklineHistory.shift();
-
-      const nowTime = performance.now();
-      rollingHistory.push({
-        time: nowTime,
-        computeMs: frameComputeMs,
-        frames: 1,
-        dists: distSampleClusterLast + distClusterClusterLast
-      });
+      recordFrameTelemetry(frameComputeMs);
 
       if (!skipRender) {
         updateUI();
@@ -4622,6 +4746,7 @@
       updateResourceMetrics();
       const memStats = getMemoryStats();
       drawSparkline();
+      drawDistCurves();
 
       // Top Badges & Clusters Count
       const clusterBadge = document.getElementById('clusterBadge');
@@ -4686,10 +4811,26 @@
       if (sparklineVal) sparklineVal.innerText = `${lastComputeTimeMs.toFixed(2)} ms`;
 
       // 3. Resource Tracker - Tab 2: Distance Breakdown
+      const avgDFC = totalFrames > 0 ? (distSampleCluster / totalFrames) : 0.0;
+      const avgDCC = totalFrames > 0 ? (distClusterCluster / totalFrames) : 0.0;
+      const avgTotal = avgDFC + avgDCC;
+
+      const statLiveAvgDFC = document.getElementById('statLiveAvgDFC');
+      if (statLiveAvgDFC) statLiveAvgDFC.innerText = avgDFC.toFixed(2);
+      const statLiveAvgDCC = document.getElementById('statLiveAvgDCC');
+      if (statLiveAvgDCC) statLiveAvgDCC.innerText = avgDCC.toFixed(2);
+      const statLiveAvgTotal = document.getElementById('statLiveAvgTotal');
+      if (statLiveAvgTotal) statLiveAvgTotal.innerText = avgTotal.toFixed(2);
+
+      const lblLastDFC = document.getElementById('lblLastDFC');
+      if (lblLastDFC) lblLastDFC.innerText = distSampleClusterLast;
+      const lblLastDCC = document.getElementById('lblLastDCC');
+      if (lblLastDCC) lblLastDCC.innerText = distClusterClusterLast;
+
       const statDistSC = document.getElementById('statDistSC');
       if (statDistSC) statDistSC.innerText = formatNumber(distSampleCluster);
       const statAvgSCEvals = document.getElementById('statAvgSCEvals');
-      if (statAvgSCEvals) statAvgSCEvals.innerText = totalFrames > 0 ? (distSampleCluster / totalFrames).toFixed(2) : "0.00";
+      if (statAvgSCEvals) statAvgSCEvals.innerText = avgDFC.toFixed(2);
 
       const savedPct = naiveEvals > 0 ? (((naiveEvals - distSampleCluster) / naiveEvals) * 100).toFixed(0) : '0';
       const statSavedPct = document.getElementById('statSavedPct');
@@ -5112,6 +5253,8 @@
       lastComputeTimeMs = 0.0;
       avgComputeTimeMs = 0.0;
       sparklineHistory = new Array(60).fill(0.0);
+      distHistoryDFC = new Array(80).fill(0);
+      distHistoryDCC = new Array(80).fill(0);
       rollingHistory = [];
       currentCpuLoadPct = 0.0;
       currentFps = 0.0;
