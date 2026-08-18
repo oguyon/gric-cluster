@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (11:00 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (11:15 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 11:00:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 11:15:00 HST</span>
     </div>
   </header>
 
@@ -2946,6 +2946,14 @@
     let lastTransitionFrom = -1;
     let lastTransitionTo = -1;
     let hoveredTMCell = null;
+    let topLearnedPathsCache = [];
+    let cachedTMRowTotals = null;
+    let lastTMRenderTimestamp = 0;
+    let lastTMTopPathsTimestamp = 0;
+    const tmCanvasDimensions = {
+      tmSettingsCanvas: { w: 340, h: 210 },
+      tmHeatmapCanvas: { w: 420, h: 320 }
+    };
     let assignmentHistory = [];
     let frameHistory = [];
     let totalFrames = 0;
@@ -3559,18 +3567,42 @@
       }
     }
 
+    function computeTopLearnedPaths() {
+      const K = clusters.length;
+      if (K === 0 || transitionCounts.length === 0) {
+        topLearnedPathsCache = [];
+        return;
+      }
+      const paths = [];
+      for (let i = 0; i < K; i++) {
+        if (!transitionCounts[i]) continue;
+        let sum = 0;
+        for (let j = 0; j < K; j++) sum += transitionCounts[i][j] || 0;
+        if (sum === 0) continue;
+        for (let j = 0; j < K; j++) {
+          if (i === j) continue;
+          const cnt = transitionCounts[i][j] || 0;
+          if (cnt > 0) {
+            paths.push({ from: i, to: j, count: cnt, prob: cnt / sum });
+          }
+        }
+      }
+      paths.sort((a, b) => b.count - a.count);
+      topLearnedPathsCache = paths.slice(0, 10);
+    }
+
     function drawTransitionMatrix(canvasId, isMini) {
       const cvs = document.getElementById(canvasId);
       if (!cvs) return;
+
+      // Visibility guard: skip drawing if canvas or tab is not visible
+      if (!isMini && typeof currentActiveTab !== 'undefined' && currentActiveTab !== 'tm') return;
+      if (isMini && !useTM) return;
+
       const ctx = cvs.getContext('2d');
-      const wrapper = cvs.parentElement;
-
-      // Dynamically fit available container dimensions
-      const availParentW = wrapper ? Math.floor(wrapper.clientWidth) : (isMini ? 340 : 420);
-      const availParentH = wrapper ? Math.floor(wrapper.clientHeight) : (isMini ? 210 : 320);
-
-      const w = Math.max(isMini ? 240 : 280, availParentW);
-      const h = Math.max(isMini ? 150 : 200, availParentH);
+      const dims = tmCanvasDimensions[canvasId] || { w: isMini ? 340 : 420, h: isMini ? 210 : 320 };
+      const w = Math.max(isMini ? 240 : 280, dims.w);
+      const h = Math.max(isMini ? 150 : 200, dims.h);
 
       if (cvs.width !== w || cvs.height !== h) {
         cvs.width = w;
@@ -3614,8 +3646,10 @@
       const gridX = ml + Math.max(0, Math.floor((maxGridW - S) / 2));
       const gridY = mt + Math.max(0, Math.floor((maxGridH - S) / 2));
 
-      // Row totals for probability normalization P(j | i) = count(i, j) / rowTotal
-      const rowTotals = new Float64Array(K);
+      // Row totals with cached TypedArray reuse
+      if (!cachedTMRowTotals || cachedTMRowTotals.length < K) {
+        cachedTMRowTotals = new Float64Array(Math.max(64, K * 2));
+      }
       let totalTransCount = 0;
       let nonZeroCount = 0;
 
@@ -3629,7 +3663,7 @@
             if (cnt > 0) nonZeroCount++;
           }
         }
-        rowTotals[i] = sum;
+        cachedTMRowTotals[i] = sum;
       }
 
       // Helper: Map probability [0, 1] to multi-hue RGBA color
@@ -3637,28 +3671,33 @@
         if (prob === 0) return '#0f172a';
         if (prob < 0.25) {
           const t = prob / 0.25;
-          const r = Math.round(15 + t * (139 - 15));
-          const g = Math.round(23 + t * (92 - 23));
-          const b = Math.round(42 + t * (246 - 42));
-          return `rgba(${r}, ${g}, ${b}, ${(0.30 + t * 0.25).toFixed(2)})`;
+          const r = Math.round(15 + t * 124);
+          const g = Math.round(23 + t * 69);
+          const b = Math.round(42 + t * 204);
+          return `rgba(${r},${g},${b},${(0.30 + t * 0.25).toFixed(2)})`;
         } else if (prob < 0.60) {
           const t = (prob - 0.25) / 0.35;
-          const r = Math.round(139 - t * (139 - 56));
-          const g = Math.round(92 + t * (189 - 92));
-          const b = Math.round(246 + t * (248 - 246));
-          return `rgba(${r}, ${g}, ${b}, ${(0.55 + t * 0.20).toFixed(2)})`;
+          const r = Math.round(139 - t * 83);
+          const g = Math.round(92 + t * 97);
+          return `rgba(${r},${g},248,${(0.55 + t * 0.20).toFixed(2)})`;
         } else {
           const t = (prob - 0.60) / 0.40;
-          const r = Math.round(56 + t * (245 - 56));
-          const g = Math.round(189 - t * (189 - 158));
-          const b = Math.round(248 - t * (248 - 11));
-          return `rgba(${r}, ${g}, ${b}, ${(0.75 + t * 0.23).toFixed(2)})`;
+          const r = Math.round(56 + t * 189);
+          const g = Math.round(189 - t * 31);
+          const b = Math.round(248 - t * 237);
+          return `rgba(${r},${g},${b},${(0.75 + t * 0.23).toFixed(2)})`;
         }
       }
 
       // 1. Draw 1:1 Aspect Ratio Grid Cells
+      const drawText = (!isRunning && !isMini && cw >= 28 && ch >= 18 && K <= 16);
+      if (drawText) {
+        ctx.font = `bold ${Math.min(10, Math.floor(ch * 0.55))}px monospace`;
+        ctx.textAlign = 'center';
+      }
+
       for (let i = 0; i < K; i++) {
-        const sum = rowTotals[i];
+        const sum = cachedTMRowTotals[i];
         for (let j = 0; j < K; j++) {
           const count = (transitionCounts[i] && transitionCounts[i][j]) ? transitionCounts[i][j] : 0;
           const prob = sum > 0 ? (count / sum) : 0.0;
@@ -3673,11 +3712,9 @@
           ctx.lineWidth = 0.5;
           ctx.strokeRect(x, y, cw, ch);
 
-          // Value inside cell if cell size is large enough
-          if (!isMini && cw >= 26 && ch >= 16 && prob > 0) {
+          // Value inside cell (only when paused/stepping with small K)
+          if (drawText && prob > 0) {
             ctx.fillStyle = prob > 0.4 ? '#ffffff' : '#cbd5e1';
-            ctx.font = `bold ${Math.min(10, Math.floor(ch * 0.55))}px monospace`;
-            ctx.textAlign = 'center';
             ctx.fillText(`${(prob * 100).toFixed(0)}%`, x + cw / 2, y + ch / 2 + 3);
           }
 
@@ -3758,11 +3795,11 @@
       const cbarH = S;
 
       const cbarGrad = ctx.createLinearGradient(0, cbarY + cbarH, 0, cbarY);
-      cbarGrad.addColorStop(0.00, '#0f172a');                     // 0%
-      cbarGrad.addColorStop(0.25, 'rgba(139, 92, 246, 0.50)');   // 25% Purple
-      cbarGrad.addColorStop(0.50, 'rgba(56, 189, 248, 0.70)');   // 50% Cyan
-      cbarGrad.addColorStop(0.75, 'rgba(16, 185, 129, 0.85)');   // 75% Emerald
-      cbarGrad.addColorStop(1.00, 'rgba(245, 158, 11, 0.95)');   // 100% Gold
+      cbarGrad.addColorStop(0.00, '#0f172a');
+      cbarGrad.addColorStop(0.25, 'rgba(139, 92, 246, 0.50)');
+      cbarGrad.addColorStop(0.50, 'rgba(56, 189, 248, 0.70)');
+      cbarGrad.addColorStop(0.75, 'rgba(16, 185, 129, 0.85)');
+      cbarGrad.addColorStop(1.00, 'rgba(245, 158, 11, 0.95)');
       ctx.fillStyle = cbarGrad;
       ctx.fillRect(cbarX, cbarY, cbarW, cbarH);
 
@@ -3795,7 +3832,7 @@
 
       // Hover Pointer on Colorbar
       if (hoveredTMCell && hoveredTMCell.i >= 0 && hoveredTMCell.i < K && hoveredTMCell.j >= 0 && hoveredTMCell.j < K) {
-        const hSum = rowTotals[hoveredTMCell.i];
+        const hSum = cachedTMRowTotals[hoveredTMCell.i];
         const hCnt = (transitionCounts[hoveredTMCell.i] && transitionCounts[hoveredTMCell.i][hoveredTMCell.j]) || 0;
         const hProb = hSum > 0 ? (hCnt / hSum) : 0.0;
         const pointerY = cbarY + cbarH - hProb * cbarH;
@@ -3831,34 +3868,13 @@
       if (!cont) return;
 
       const K = clusters.length;
-      if (K === 0 || transitionCounts.length === 0) {
+      if (K === 0 || transitionCounts.length === 0 || !topLearnedPathsCache || topLearnedPathsCache.length === 0) {
         cont.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 6px 0;">Awaiting transitions...</div>`;
         return;
       }
 
-      const paths = [];
-      for (let i = 0; i < K; i++) {
-        if (!transitionCounts[i]) continue;
-        let sum = 0;
-        for (let j = 0; j < K; j++) sum += transitionCounts[i][j] || 0;
-        for (let j = 0; j < K; j++) {
-          const cnt = transitionCounts[i][j] || 0;
-          if (cnt > 0) {
-            const prob = sum > 0 ? cnt / sum : 0;
-            paths.push({ from: i, to: j, count: cnt, prob });
-          }
-        }
-      }
-
-      paths.sort((a, b) => b.count - a.count);
-
-      if (paths.length === 0) {
-        cont.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 6px 0;">No transitions recorded yet.</div>`;
-        return;
-      }
-
       let html = '';
-      paths.slice(0, 8).forEach(p => {
+      topLearnedPathsCache.slice(0, 8).forEach(p => {
         const colFrom = getClusterColor(p.from);
         const colTo = getClusterColor(p.to);
         const isCurrent = (lastTransitionFrom === p.from && lastTransitionTo === p.to);
@@ -4577,11 +4593,29 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       draw();
 
+      updateTMCanvasDimensions();
       if (useTM) {
         drawTransitionMatrix('tmSettingsCanvas', true);
       }
       if (typeof currentActiveTab !== 'undefined' && currentActiveTab === 'tm') {
         drawTransitionMatrix('tmHeatmapCanvas', false);
+      }
+    }
+
+    function updateTMCanvasDimensions() {
+      const setWrap = document.getElementById('tmSettingsWrapper');
+      if (setWrap && setWrap.clientWidth > 0 && setWrap.clientHeight > 0) {
+        tmCanvasDimensions.tmSettingsCanvas = {
+          w: Math.floor(setWrap.clientWidth),
+          h: Math.floor(setWrap.clientHeight)
+        };
+      }
+      const heatWrap = document.getElementById('tmHeatmapWrapper');
+      if (heatWrap && heatWrap.clientWidth > 0 && heatWrap.clientHeight > 0) {
+        tmCanvasDimensions.tmHeatmapCanvas = {
+          w: Math.floor(heatWrap.clientWidth),
+          h: Math.floor(heatWrap.clientHeight)
+        };
       }
     }
     window.addEventListener('resize', resizeCanvas);
@@ -5092,35 +5126,47 @@
             }
           });
 
-          // Draw Learned Markov Transition Vector Arcs (-tm)
+          // Draw Learned Markov Transition Vector Arcs (-tm) (Optimized Batched)
           if (useTM && transitionCounts.length > 0 && clusters.length > 1) {
             ctx.save();
             const K = clusters.length;
-            for (let i = 0; i < K; i++) {
-              if (!transitionCounts[i]) continue;
-              let rowSum = 0;
-              for (let j = 0; j < K; j++) rowSum += transitionCounts[i][j] || 0;
-              if (rowSum === 0) continue;
 
-              for (let j = 0; j < K; j++) {
-                if (i === j) continue;
-                const count = transitionCounts[i][j] || 0;
-                const prob = count / rowSum;
-                if (prob < 0.05) continue;
+            // 1. Draw Active Frame Transition (Gold Beam)
+            if (lastTransitionFrom >= 0 && lastTransitionTo >= 0 && 
+                lastTransitionFrom < K && lastTransitionTo < K && 
+                lastTransitionFrom !== lastTransitionTo && 
+                clusters[lastTransitionFrom] && clusters[lastTransitionTo]) {
+              const prA = getProjectedCoord(clusters[lastTransitionFrom]);
+              const prB = getProjectedCoord(clusters[lastTransitionTo]);
+              const posA = mapMetricToQuad(prA.u, prA.v, qIdx, rect);
+              const posB = mapMetricToQuad(prB.u, prB.v, qIdx, rect);
 
-                const prA = getProjectedCoord(clusters[i]);
-                const prB = getProjectedCoord(clusters[j]);
+              ctx.beginPath();
+              ctx.moveTo(posA.px, posA.py);
+              ctx.lineTo(posB.px, posB.py);
+              ctx.strokeStyle = '#fbbf24';
+              ctx.lineWidth = 2.5;
+              ctx.stroke();
+            }
+
+            // 2. Batched Background Learned Paths (Top paths only, single stroke)
+            if (topLearnedPathsCache && topLearnedPathsCache.length > 0) {
+              ctx.beginPath();
+              const maxPaths = Math.min(8, topLearnedPathsCache.length);
+              for (let pIdx = 0; pIdx < maxPaths; pIdx++) {
+                const p = topLearnedPathsCache[pIdx];
+                if (p.from === p.to || p.from >= K || p.to >= K) continue;
+                if (p.from === lastTransitionFrom && p.to === lastTransitionTo) continue;
+                const prA = getProjectedCoord(clusters[p.from]);
+                const prB = getProjectedCoord(clusters[p.to]);
                 const posA = mapMetricToQuad(prA.u, prA.v, qIdx, rect);
                 const posB = mapMetricToQuad(prB.u, prB.v, qIdx, rect);
-
-                const isCurrent = (lastTransitionFrom === i && lastTransitionTo === j);
-                ctx.beginPath();
                 ctx.moveTo(posA.px, posA.py);
                 ctx.lineTo(posB.px, posB.py);
-                ctx.strokeStyle = isCurrent ? '#fbbf24' : `rgba(192, 132, 252, ${(0.15 + prob * 0.65).toFixed(2)})`;
-                ctx.lineWidth = isCurrent ? 2.5 : Math.max(1.0, prob * 3.5);
-                ctx.stroke();
               }
+              ctx.strokeStyle = 'rgba(192, 132, 252, 0.35)';
+              ctx.lineWidth = 1.2;
+              ctx.stroke();
             }
             ctx.restore();
           }
@@ -5466,6 +5512,8 @@
       } else if (tab === 'tm') {
         if (tabTM) tabTM.classList.add('active');
         if (contTM) contTM.style.display = 'flex';
+        updateTMCanvasDimensions();
+        computeTopLearnedPaths();
         drawTransitionMatrix('tmHeatmapCanvas', false);
         updateTMTopPaths();
       }
@@ -5502,11 +5550,18 @@
       const tmSub = document.getElementById('tmSettingsSubcard');
       if (tmSub) tmSub.style.display = useTM ? 'block' : 'none';
       if (useTM) {
-        drawTransitionMatrix('tmSettingsCanvas', true);
-      }
-      if (currentActiveTab === 'tm') {
-        drawTransitionMatrix('tmHeatmapCanvas', false);
-        updateTMTopPaths();
+        const now = performance.now();
+        const shouldRenderTM = !isRunning || (totalFrames % 4 === 0) || (now - lastTMRenderTimestamp > 80);
+        if (shouldRenderTM) {
+          lastTMRenderTimestamp = now;
+          if (tmSub && tmSub.offsetParent !== null) {
+            drawTransitionMatrix('tmSettingsCanvas', true);
+          }
+          if (typeof currentActiveTab !== 'undefined' && currentActiveTab === 'tm') {
+            drawTransitionMatrix('tmHeatmapCanvas', false);
+            updateTMTopPaths();
+          }
+        }
       }
 
       // Top Badges & Clusters Count
@@ -6021,6 +6076,9 @@
       lastTransitionFrom = -1;
       lastTransitionTo = -1;
       hoveredTMCell = null;
+      topLearnedPathsCache = [];
+      cachedTMRowTotals = null;
+      lastTMRenderTimestamp = 0;
       rollingHistory = [];
       currentCpuLoadPct = 0.0;
       currentFps = 0.0;
@@ -7246,12 +7304,13 @@
     // Initial Startup
     initSidebarResizers();
     initLayoutResizer();
+    updateTMCanvasDimensions();
     resizeCanvas();
     loadSelectedBenchmark();
     updateZoomBadge();
     setExplainMode(false);
-    setTimeout(() => resizeCanvas(), 50);
-    setTimeout(() => resizeCanvas(), 250);
+    setTimeout(() => { updateTMCanvasDimensions(); resizeCanvas(); }, 50);
+    setTimeout(() => { updateTMCanvasDimensions(); resizeCanvas(); }, 250);
   </script>
 </body>
 </html>
