@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:25 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (10:30 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:25:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 10:30:00 HST</span>
     </div>
   </header>
 
@@ -1934,7 +1934,7 @@
                       </span>
                     </div>
                   </div>
-                  <canvas id="distCurvesCanvas" width="380" height="70" style="width: 100%; height: 70px; display: block; border-radius: 4px;"></canvas>
+                  <canvas id="distCurvesCanvas" width="380" height="70" style="width: 100%; height: 70px; display: block; border-radius: 4px; cursor: crosshair;"></canvas>
                 </div>
 
                 <!-- Cumulative Average Distance Curve Canvas (Since Sample 0) -->
@@ -1950,7 +1950,7 @@
                       </span>
                     </div>
                   </div>
-                  <canvas id="distAvgCurvesCanvas" width="380" height="70" style="width: 100%; height: 70px; display: block; border-radius: 4px;"></canvas>
+                  <canvas id="distAvgCurvesCanvas" width="380" height="70" style="width: 100%; height: 70px; display: block; border-radius: 4px; cursor: crosshair;"></canvas>
                 </div>
               </div>
 
@@ -2927,6 +2927,8 @@
     let sparklineHistory = new Array(60).fill(0.0);
     let distHistoryDFC = [];
     let distHistoryDCC = [];
+    let hoverDistIndex = null;      // Frame index hovered on distCurvesCanvas
+    let hoverDistAvgIndex = null;   // Frame index hovered on distAvgCurvesCanvas
     let rollingHistory = [];        // [{ time, computeMs, frames, dists }] in rolling 1-sec window
     let currentCpuLoadPct = 0.0;
     let currentFps = 0.0;
@@ -3121,11 +3123,13 @@
       const n = distHistoryDFC.length;
 
       const lblFrames = document.getElementById('lblDistCurveFrames');
-      if (lblFrames) {
-        lblFrames.innerText = n > 0 ? `Frame 0 → ${n - 1} (${n} frames)` : `Frame 0 → 0`;
-      }
+      const lblDFC = document.getElementById('lblLastDFC');
+      const lblDCC = document.getElementById('lblLastDCC');
 
       if (n === 0) {
+        if (lblFrames) lblFrames.innerText = 'Frame 0 → 0';
+        if (lblDFC) lblDFC.innerText = '0';
+        if (lblDCC) lblDCC.innerText = '0';
         ctx.fillStyle = '#64748b';
         ctx.font = '10px monospace';
         ctx.textAlign = 'center';
@@ -3167,6 +3171,10 @@
         ctx.beginPath();
         ctx.arc(10, y_dcc, 3, 0, Math.PI * 2);
         ctx.fill();
+
+        if (lblFrames) lblFrames.innerText = 'Frame 0';
+        if (lblDFC) lblDFC.innerText = `${distHistoryDFC[0]}`;
+        if (lblDCC) lblDCC.innerText = `${distHistoryDCC[0]}`;
         return;
       }
 
@@ -3229,6 +3237,69 @@
       ctx.beginPath();
       ctx.arc(w - 2, lastY_dcc, 2.5, 0, Math.PI * 2);
       ctx.fill();
+
+      // 3. Hover Guide & Exact Value Tooltip
+      if (hoverDistIndex !== null && hoverDistIndex >= 0 && hoverDistIndex < n) {
+        const hX = (hoverDistIndex / (n - 1)) * w;
+        const hValDFC = distHistoryDFC[hoverDistIndex];
+        const hValDCC = distHistoryDCC[hoverDistIndex];
+        const hValTot = hValDFC + hValDCC;
+        const hY_dfc = h - (hValDFC / maxVal) * (h - 6) - 3;
+        const hY_dcc = h - (hValDCC / maxVal) * (h - 6) - 3;
+
+        // Vertical Dashed Crosshair
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(hX, 0);
+        ctx.lineTo(hX, h);
+        ctx.stroke();
+        ctx.restore();
+
+        // Highlight Dots with Halos
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(hX, hY_dfc, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath(); ctx.arc(hX, hY_dfc, 2.5, 0, Math.PI * 2); ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(hX, hY_dcc, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#c084fc';
+        ctx.beginPath(); ctx.arc(hX, hY_dcc, 2.5, 0, Math.PI * 2); ctx.fill();
+
+        // In-Canvas Floating Tooltip Tag
+        const tagText = `f=${hoverDistIndex}: d(f,c)=${hValDFC} d(c,c)=${hValDCC} (Σ=${hValTot})`;
+        ctx.font = 'bold 9px monospace';
+        const tw = ctx.measureText(tagText).width;
+        const boxW = tw + 8;
+        const boxH = 14;
+        let boxX = hX + 6;
+        if (boxX + boxW > w - 2) boxX = hX - boxW - 6;
+        if (boxX < 2) boxX = 2;
+        const boxY = 3;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(boxX, boxY, boxW, boxH, 3);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.textAlign = 'left';
+        ctx.fillText(tagText, boxX + 4, boxY + 10);
+
+        if (lblFrames) lblFrames.innerText = `Frame ${hoverDistIndex} (Hovered)`;
+        if (lblDFC) lblDFC.innerText = `${hValDFC}`;
+        if (lblDCC) lblDCC.innerText = `${hValDCC}`;
+      } else {
+        if (lblFrames) lblFrames.innerText = `Frame 0 → ${n - 1} (${n} frames)`;
+        if (lblDFC) lblDFC.innerText = `${distHistoryDFC[n - 1]}`;
+        if (lblDCC) lblDCC.innerText = `${distHistoryDCC[n - 1]}`;
+      }
     }
 
     function drawDistAvgCurves() {
@@ -3245,11 +3316,13 @@
       const n = distHistoryDFC.length;
 
       const lblFrames = document.getElementById('lblDistAvgCurveFrames');
-      if (lblFrames) {
-        lblFrames.innerText = n > 0 ? `f=0 → ${n - 1} (${n} frames)` : `Since Sample 0`;
-      }
+      const lblMeanDFC = document.getElementById('lblLiveMeanDFC');
+      const lblMeanDCC = document.getElementById('lblLiveMeanDCC');
 
       if (n === 0) {
+        if (lblFrames) lblFrames.innerText = 'Since Sample 0';
+        if (lblMeanDFC) lblMeanDFC.innerText = '0.00';
+        if (lblMeanDCC) lblMeanDCC.innerText = '0.00';
         ctx.fillStyle = '#64748b';
         ctx.font = '10px monospace';
         ctx.textAlign = 'center';
@@ -3270,11 +3343,6 @@
 
       const finalAvgDFC = avgDFC[n - 1];
       const finalAvgDCC = avgDCC[n - 1];
-
-      const lblMeanDFC = document.getElementById('lblLiveMeanDFC');
-      if (lblMeanDFC) lblMeanDFC.innerText = finalAvgDFC.toFixed(2);
-      const lblMeanDCC = document.getElementById('lblLiveMeanDCC');
-      if (lblMeanDCC) lblMeanDCC.innerText = finalAvgDCC.toFixed(2);
 
       // Max value for Y scaling
       let maxVal = Math.max(1.0, ...avgDFC, ...avgDCC);
@@ -3310,6 +3378,10 @@
         ctx.beginPath();
         ctx.arc(10, y_dcc, 3, 0, Math.PI * 2);
         ctx.fill();
+
+        if (lblFrames) lblFrames.innerText = 'f=0 (1 frame)';
+        if (lblMeanDFC) lblMeanDFC.innerText = finalAvgDFC.toFixed(2);
+        if (lblMeanDCC) lblMeanDCC.innerText = finalAvgDCC.toFixed(2);
         return;
       }
 
@@ -3372,6 +3444,69 @@
       ctx.beginPath();
       ctx.arc(w - 2, lastY_dcc, 2.5, 0, Math.PI * 2);
       ctx.fill();
+
+      // 3. Hover Guide & Exact Value Tooltip
+      if (hoverDistAvgIndex !== null && hoverDistAvgIndex >= 0 && hoverDistAvgIndex < n) {
+        const hX = (hoverDistAvgIndex / (n - 1)) * w;
+        const hAvgDFC = avgDFC[hoverDistAvgIndex];
+        const hAvgDCC = avgDCC[hoverDistAvgIndex];
+        const hAvgTot = hAvgDFC + hAvgDCC;
+        const hY_dfc = h - (hAvgDFC / maxVal) * (h - 6) - 3;
+        const hY_dcc = h - (hAvgDCC / maxVal) * (h - 6) - 3;
+
+        // Vertical Dashed Crosshair
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(hX, 0);
+        ctx.lineTo(hX, h);
+        ctx.stroke();
+        ctx.restore();
+
+        // Highlight Dots with Halos
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(hX, hY_dfc, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath(); ctx.arc(hX, hY_dfc, 2.5, 0, Math.PI * 2); ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(hX, hY_dcc, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#c084fc';
+        ctx.beginPath(); ctx.arc(hX, hY_dcc, 2.5, 0, Math.PI * 2); ctx.fill();
+
+        // In-Canvas Floating Tooltip Tag
+        const tagText = `f=${hoverDistAvgIndex}: avg d(f,c)=${hAvgDFC.toFixed(2)} avg d(c,c)=${hAvgDCC.toFixed(2)} (Σ=${hAvgTot.toFixed(2)})`;
+        ctx.font = 'bold 9px monospace';
+        const tw = ctx.measureText(tagText).width;
+        const boxW = tw + 8;
+        const boxH = 14;
+        let boxX = hX + 6;
+        if (boxX + boxW > w - 2) boxX = hX - boxW - 6;
+        if (boxX < 2) boxX = 2;
+        const boxY = 3;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+        ctx.strokeStyle = 'rgba(192, 132, 252, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(boxX, boxY, boxW, boxH, 3);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.textAlign = 'left';
+        ctx.fillText(tagText, boxX + 4, boxY + 10);
+
+        if (lblFrames) lblFrames.innerText = `f=${hoverDistAvgIndex} (Cumul. Avg)`;
+        if (lblMeanDFC) lblMeanDFC.innerText = hAvgDFC.toFixed(2);
+        if (lblMeanDCC) lblMeanDCC.innerText = hAvgDCC.toFixed(2);
+      } else {
+        if (lblFrames) lblFrames.innerText = `f=0 → ${n - 1} (${n} frames)`;
+        if (lblMeanDFC) lblMeanDFC.innerText = finalAvgDFC.toFixed(2);
+        if (lblMeanDCC) lblMeanDCC.innerText = finalAvgDCC.toFixed(2);
+      }
     }
 
     // Multi-Tile 1D Subspace Engines
@@ -5437,6 +5572,8 @@
       sparklineHistory = new Array(60).fill(0.0);
       distHistoryDFC = [];
       distHistoryDCC = [];
+      hoverDistIndex = null;
+      hoverDistAvgIndex = null;
       rollingHistory = [];
       currentCpuLoadPct = 0.0;
       currentFps = 0.0;
@@ -6570,6 +6707,39 @@
         }
       }
     });
+
+    // Distance Trace Curve Hover Handlers
+    const distCanvas = document.getElementById('distCurvesCanvas');
+    if (distCanvas) {
+      distCanvas.addEventListener('mousemove', (e) => {
+        const n = distHistoryDFC.length;
+        if (n === 0) return;
+        const rect = distCanvas.getBoundingClientRect();
+        const mouseX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+        hoverDistIndex = n > 1 ? Math.max(0, Math.min(n - 1, Math.round((mouseX / rect.width) * (n - 1)))) : 0;
+        drawDistCurves();
+      });
+      distCanvas.addEventListener('mouseleave', () => {
+        hoverDistIndex = null;
+        drawDistCurves();
+      });
+    }
+
+    const distAvgCanvas = document.getElementById('distAvgCurvesCanvas');
+    if (distAvgCanvas) {
+      distAvgCanvas.addEventListener('mousemove', (e) => {
+        const n = distHistoryDFC.length;
+        if (n === 0) return;
+        const rect = distAvgCanvas.getBoundingClientRect();
+        const mouseX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+        hoverDistAvgIndex = n > 1 ? Math.max(0, Math.min(n - 1, Math.round((mouseX / rect.width) * (n - 1)))) : 0;
+        drawDistAvgCurves();
+      });
+      distAvgCanvas.addEventListener('mouseleave', () => {
+        hoverDistAvgIndex = null;
+        drawDistAvgCurves();
+      });
+    }
 
     // Initial Startup
     initSidebarResizers();
