@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (11:15 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (11:25 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 11:15:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 11:25:00 HST</span>
     </div>
   </header>
 
@@ -3879,7 +3879,7 @@
         const colTo = getClusterColor(p.to);
         const isCurrent = (lastTransitionFrom === p.from && lastTransitionTo === p.to);
         html += `
-          <div style="display: flex; justify-content: space-between; align-items: center; background: ${isCurrent ? 'rgba(251, 191, 36, 0.12)' : '#172033'}; border: 1px solid ${isCurrent ? '#fbbf24' : 'var(--card-border)'}; border-radius: 4px; padding: 3px 6px;">
+          <div onmouseenter="setHoveredTMCell(${p.from}, ${p.to})" onmouseleave="setHoveredTMCell(-1, -1)" style="display: flex; justify-content: space-between; align-items: center; background: ${isCurrent ? 'rgba(251, 191, 36, 0.12)' : '#172033'}; border: 1px solid ${isCurrent ? '#fbbf24' : 'var(--card-border)'}; border-radius: 4px; padding: 3px 6px; cursor: pointer; transition: all 0.15s ease;">
             <span style="display: flex; align-items: center; gap: 4px;">
               <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${colFrom};"></span>
               <b>C${p.from}</b>
@@ -3894,6 +3894,31 @@
         `;
       });
       cont.innerHTML = html;
+    }
+
+    function setHoveredTMCell(from, to) {
+      if (from >= 0 && to >= 0) {
+        hoveredTMCell = { i: from, j: to };
+        const tipEl = document.getElementById('tmCellTooltip');
+        if (tipEl && transitionCounts[from]) {
+          let sum = 0;
+          for (let k = 0; k < clusters.length; k++) sum += transitionCounts[from][k] || 0;
+          const cnt = transitionCounts[from][to] || 0;
+          const prob = sum > 0 ? (cnt / sum) : 0.0;
+          tipEl.innerText = `C${from} → C${to}: Count=${cnt}, P=${(prob * 100).toFixed(1)}% (Row total: ${sum})`;
+        }
+      } else {
+        hoveredTMCell = null;
+        const tipEl = document.getElementById('tmCellTooltip');
+        if (tipEl) tipEl.innerText = 'Hover over any cell to inspect transition details';
+      }
+      if (useTM) {
+        drawTransitionMatrix('tmSettingsCanvas', true);
+      }
+      if (typeof currentActiveTab !== 'undefined' && currentActiveTab === 'tm') {
+        drawTransitionMatrix('tmHeatmapCanvas', false);
+      }
+      draw();
     }
 
     // Multi-Tile 1D Subspace Engines
@@ -5340,6 +5365,150 @@
         if (selectedClusterId !== -1) {
           const selC = clusters.find(c => c.id === selectedClusterId);
           if (selC) renderClusterHighlight(selC, '#facc15', true);
+        }
+
+        // Draw Hovered Transition Matrix Vector Arrow (from C_i -> C_j)
+        if (hoveredTMCell && hoveredTMCell.i >= 0 && hoveredTMCell.j >= 0 &&
+            hoveredTMCell.i < clusters.length && hoveredTMCell.j < clusters.length &&
+            clusters[hoveredTMCell.i] && clusters[hoveredTMCell.j]) {
+          const fromId = hoveredTMCell.i;
+          const toId = hoveredTMCell.j;
+          const clA = clusters[fromId];
+          const clB = clusters[toId];
+          const prA = getProjectedCoord(clA);
+          const prB = getProjectedCoord(clB);
+          const posA = mapMetricToQuad(prA.u, prA.v, qIdx, rect);
+          const posB = mapMetricToQuad(prB.u, prB.v, qIdx, rect);
+
+          ctx.save();
+
+          // Highlight source C_i node
+          ctx.beginPath();
+          ctx.arc(posA.px, posA.py, 10, 0, Math.PI * 2);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2.0;
+          ctx.setLineDash([3, 3]);
+          ctx.stroke();
+
+          // Highlight target C_j node
+          ctx.beginPath();
+          ctx.arc(posB.px, posB.py, 11, 0, Math.PI * 2);
+          ctx.strokeStyle = '#facc15';
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([]);
+          ctx.stroke();
+
+          // Probability & count stats
+          let rowSum = 0;
+          if (transitionCounts[fromId]) {
+            for (let k = 0; k < clusters.length; k++) rowSum += transitionCounts[fromId][k] || 0;
+          }
+          const cnt = (transitionCounts[fromId] && transitionCounts[fromId][toId]) || 0;
+          const prob = rowSum > 0 ? (cnt / rowSum) : 0.0;
+
+          if (fromId === toId) {
+            // Self-loop transition: draw smooth circular return loop
+            const loopR = 18;
+            const loopCx = posA.px;
+            const loopCy = posA.py - loopR - 6;
+
+            ctx.beginPath();
+            ctx.arc(loopCx, loopCy, loopR, 0.25 * Math.PI, 1.75 * Math.PI, false);
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 3.0;
+            ctx.shadowColor = '#facc15';
+            ctx.shadowBlur = 8;
+            ctx.stroke();
+
+            // Arrowhead on loop
+            const headX = loopCx + loopR * Math.cos(0.25 * Math.PI);
+            const headY = loopCy + loopR * Math.sin(0.25 * Math.PI);
+            const angle = 0.25 * Math.PI + Math.PI / 2;
+            const headLen = 10;
+            ctx.fillStyle = '#facc15';
+            ctx.beginPath();
+            ctx.moveTo(headX, headY);
+            ctx.lineTo(headX - headLen * Math.cos(angle - Math.PI / 6), headY - headLen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(headX - headLen * Math.cos(angle + Math.PI / 6), headY - headLen * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fill();
+
+            // Label badge
+            const badgeText = `C${fromId} ↺ C${toId} [${(prob * 100).toFixed(1)}%, N=${cnt}]`;
+            ctx.font = 'bold 10px monospace';
+            const tw = ctx.measureText(badgeText).width;
+            const badgeX = Math.max(rect.x + 10, Math.min(rect.x + rect.w - tw - 10, loopCx - tw / 2));
+            const badgeY = Math.max(rect.y + 16, loopCy - loopR - 6);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.roundRect(badgeX - 4, badgeY - 11, tw + 8, 15, 3);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#facc15';
+            ctx.textAlign = 'left';
+            ctx.fillText(badgeText, badgeX, badgeY);
+          } else {
+            // Directed straight vector arrow
+            const dx = posB.px - posA.px;
+            const dy = posB.py - posA.py;
+            const dist = Math.hypot(dx, dy);
+            const angle = Math.atan2(dy, dx);
+
+            const startOffset = Math.min(8, dist * 0.15);
+            const endOffset = Math.min(10, dist * 0.2);
+            const startX = posA.px + startOffset * Math.cos(angle);
+            const startY = posA.py + startOffset * Math.sin(angle);
+            const endX = posB.px - endOffset * Math.cos(angle);
+            const endY = posB.py - endOffset * Math.sin(angle);
+
+            // Arrow shaft with glowing outline
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 3.2;
+            ctx.shadowColor = '#facc15';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+
+            // Arrowhead at target C_j
+            const headLen = Math.min(15, Math.max(9, dist * 0.25));
+            ctx.fillStyle = '#facc15';
+            ctx.beginPath();
+            ctx.moveTo(endX, endY);
+            ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6.5), endY - headLen * Math.sin(angle - Math.PI / 6.5));
+            ctx.lineTo(endX - (headLen * 0.6) * Math.cos(angle), endY - (headLen * 0.6) * Math.sin(angle));
+            ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6.5), endY - headLen * Math.sin(angle + Math.PI / 6.5));
+            ctx.closePath();
+            ctx.fill();
+
+            // Label badge along arrow
+            const badgeText = `C${fromId} → C${toId} [${(prob * 100).toFixed(1)}%, N=${cnt}]`;
+            ctx.font = 'bold 10px monospace';
+            const tw = ctx.measureText(badgeText).width;
+            const midX = (startX + endX) / 2;
+            const midY = (startY + endY) / 2 - 10;
+
+            const badgeX = Math.max(rect.x + 10, Math.min(rect.x + rect.w - tw - 10, midX - tw / 2));
+            const badgeY = Math.max(rect.y + 16, Math.min(rect.y + rect.h - 10, midY));
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.roundRect(badgeX - 4, badgeY - 11, tw + 8, 15, 3);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#facc15';
+            ctx.textAlign = 'left';
+            ctx.fillText(badgeText, badgeX, badgeY);
+          }
+          ctx.restore();
         }
 
         // Current Evaluated Rays
@@ -7280,21 +7449,26 @@
           const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
           if (tipEl) tipEl.innerText = desc;
           drawTransitionMatrix(canvasId, isMini);
+          draw();
         } else {
           if (hoveredTMCell !== null) {
             hoveredTMCell = null;
             const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
             if (tipEl) tipEl.innerText = isMini ? 'Hover over matrix for details' : 'Hover over any cell to inspect transition details';
             drawTransitionMatrix(canvasId, isMini);
+            draw();
           }
         }
       });
 
       cvs.addEventListener('mouseleave', () => {
-        hoveredTMCell = null;
-        const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
-        if (tipEl) tipEl.innerText = isMini ? 'Hover over matrix for details' : 'Hover over any cell to inspect transition details';
-        drawTransitionMatrix(canvasId, isMini);
+        if (hoveredTMCell !== null) {
+          hoveredTMCell = null;
+          const tipEl = document.getElementById(isMini ? 'lblTMTooltip' : 'tmCellTooltip');
+          if (tipEl) tipEl.innerText = isMini ? 'Hover over matrix for details' : 'Hover over any cell to inspect transition details';
+          drawTransitionMatrix(canvasId, isMini);
+          draw();
+        }
       });
     }
 
