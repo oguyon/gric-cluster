@@ -1102,10 +1102,28 @@
           listEl.innerHTML = lastEntropyRankings.slice(0, 10).map(r => {
             const barW = Math.min(100, Math.max(5, (r.expectedH / maxH) * 100));
             const barColor = r.isChosen ? '#4ade80' : '#38bdf8';
+            const isHovered = (hoveredClusterId === r.id);
+            const isSelected = (selectedClusterId === r.id);
+            const bg = isSelected 
+              ? 'rgba(250, 204, 21, 0.15)' 
+              : (isHovered ? 'rgba(56, 189, 248, 0.15)' : (r.isChosen ? 'rgba(74, 222, 128, 0.08)' : '#172033'));
+            const border = isSelected 
+              ? 'rgba(250, 204, 21, 0.6)' 
+              : (isHovered ? 'rgba(56, 189, 248, 0.6)' : (r.isChosen ? 'rgba(74, 222, 128, 0.4)' : 'rgba(56, 189, 248, 0.2)'));
+
             return `
-              <div style="background: ${r.isChosen ? 'rgba(74, 222, 128, 0.08)' : '#172033'}; border: 1px solid ${r.isChosen ? 'rgba(74, 222, 128, 0.4)' : 'rgba(56, 189, 248, 0.2)'}; border-radius: 4px; padding: 4px 6px; margin-bottom: 3px;">
+              <div class="entropy-rank-item ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''}"
+                   data-cluster-id="${r.id}"
+                   style="background: ${bg}; border: 1px solid ${border}; border-radius: 4px; padding: 4px 6px; margin-bottom: 3px; cursor: pointer; transition: all 0.15s ease;"
+                   onmouseenter="setHoveredCluster(${r.id})"
+                   onmouseleave="setHoveredCluster(-1)"
+                   onclick="toggleSelectCluster(${r.id})"
+                   data-tooltip-title="Target Candidate C${r.id}"
+                   data-tooltip-badge="${r.isChosen ? 'Selected Target (★)' : 'Candidate Anchor'}"
+                   data-tooltip-color="${r.isChosen ? 'green' : 'cyan'}"
+                   data-tooltip-desc="Prior probability: P=${r.p.toFixed(4)}. Expected residual entropy: E[H]=${r.expectedH.toFixed(3)} bits. Expected info gain: ΔH=+${r.infoGain.toFixed(3)} bits. Click to pin cluster highlight.">
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; margin-bottom: 2px;">
-                  <span style="font-weight: 700; color: ${r.isChosen ? '#4ade80' : '#f8fafc'};">
+                  <span style="font-weight: 700; color: ${isSelected ? '#facc15' : (isHovered ? '#38bdf8' : (r.isChosen ? '#4ade80' : '#f8fafc'))};">
                     ${r.isChosen ? '★ ' : ''}Candidate C${r.id} <span style="color: var(--text-muted); font-size: 0.68rem;">(P=${r.p.toFixed(3)})</span>
                   </span>
                   <span style="font-family: monospace; font-size: 0.70rem; color: ${r.isChosen ? '#4ade80' : '#38bdf8'};">
@@ -1129,12 +1147,34 @@
           if (sortedCl.length === 0) {
             powerListEl.innerHTML = `<div style="color: var(--text-muted); font-size: 0.76rem; text-align: center; padding: 12px 0;">Run simulation in Entropy mode to compute anchor information gain.</div>`;
           } else {
-            powerListEl.innerHTML = sortedCl.slice(0, 8).map(c => `
-              <div style="display: flex; justify-content: space-between; align-items: center; background: #172033; border: 1px solid var(--card-border); border-radius: 4px; padding: 4px 6px; font-size: 0.71rem;">
-                <span style="color: ${c.color}; font-weight: 700;">Cluster C${c.id} <span style="color: var(--text-muted); font-size: 0.67rem;">(${c.members} members)</span></span>
-                <span style="font-family: monospace; color: #38bdf8; font-weight: 600;">ΔH = +${(c.infoGain || 0).toFixed(2)} bits</span>
-              </div>
-            `).join('');
+            powerListEl.innerHTML = sortedCl.slice(0, 8).map(c => {
+              const isHovered = (hoveredClusterId === c.id);
+              const isSelected = (selectedClusterId === c.id);
+              const bg = isSelected 
+                ? 'rgba(250, 204, 21, 0.15)' 
+                : (isHovered ? 'rgba(56, 189, 248, 0.15)' : '#172033');
+              const border = isSelected 
+                ? 'rgba(250, 204, 21, 0.6)' 
+                : (isHovered ? 'rgba(56, 189, 248, 0.6)' : 'var(--card-border)');
+
+              return `
+                <div class="entropy-power-item ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''}"
+                     data-cluster-id="${c.id}"
+                     style="display: flex; justify-content: space-between; align-items: center; background: ${bg}; border: 1px solid ${border}; border-radius: 4px; padding: 4px 6px; font-size: 0.71rem; cursor: pointer; transition: all 0.15s ease;"
+                     onmouseenter="setHoveredCluster(${c.id})"
+                     onmouseleave="setHoveredCluster(-1)"
+                     onclick="toggleSelectCluster(${c.id})"
+                     data-tooltip-title="Cluster C${c.id} Pruning Power"
+                     data-tooltip-badge="${c.members} Members"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Information reduction power: ΔH=+${(c.infoGain || 0).toFixed(3)} bits. Centroid: (${c.x.toFixed(2)}, ${c.y.toFixed(2)}${currentDim === 3 ? `, ${c.z.toFixed(2)}` : ''}). Click to pin highlight.">
+                  <span style="color: ${isSelected ? '#facc15' : (isHovered ? '#38bdf8' : c.color)}; font-weight: 700;">
+                    Cluster C${c.id} <span style="color: var(--text-muted); font-size: 0.67rem;">(${c.members} members)</span>
+                  </span>
+                  <span style="font-family: monospace; color: #38bdf8; font-weight: 600;">ΔH = +${(c.infoGain || 0).toFixed(2)} bits</span>
+                </div>
+              `;
+            }).join('');
           }
         }
       }
@@ -1499,16 +1539,26 @@
                   <span>Evaluated Targets Ranking</span>
                   <span>Uncertainty E[H] / Info Gain</span>
                 </div>
-                ${step.entropyRankings.slice(0, 5).map(r => `
-                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.68rem; padding: 2px 0; border-top: 1px solid rgba(51, 65, 85, 0.4);">
-                    <span style="color: ${r.isChosen ? '#4ade80' : '#cbd5e1'}; font-weight: ${r.isChosen ? '700' : 'normal'};">
-                      ${r.isChosen ? '★ ' : ''}C${r.id} <span style="color: var(--text-muted); font-size: 0.64rem;">(P=${r.p.toFixed(3)})</span>
-                    </span>
-                    <span style="font-family: monospace; color: ${r.isChosen ? '#4ade80' : '#38bdf8'}; font-size: 0.66rem;">
-                      ${r.isSupport ? `${r.expectedH.toFixed(1)} cl` : `E[H]=${r.expectedH.toFixed(2)}b`} <span style="color: #fbbf24;">(+${r.infoGain.toFixed(2)}b)</span>
-                    </span>
-                  </div>
-                `).join('')}
+                ${step.entropyRankings.slice(0, 5).map(r => {
+                  const isHovered = (hoveredClusterId === r.id);
+                  const isSelected = (selectedClusterId === r.id);
+                  const bg = isSelected 
+                    ? 'rgba(250, 204, 21, 0.15)' 
+                    : (isHovered ? 'rgba(56, 189, 248, 0.15)' : 'transparent');
+                  return `
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.68rem; padding: 2px 4px; border-top: 1px solid rgba(51, 65, 85, 0.4); background: ${bg}; cursor: pointer; border-radius: 3px; transition: background 0.15s ease;"
+                         onmouseenter="setHoveredCluster(${r.id})"
+                         onmouseleave="setHoveredCluster(-1)"
+                         onclick="toggleSelectCluster(${r.id})">
+                      <span style="color: ${isSelected ? '#facc15' : (isHovered ? '#38bdf8' : (r.isChosen ? '#4ade80' : '#cbd5e1'))}; font-weight: ${r.isChosen || isHovered ? '700' : 'normal'};">
+                        ${r.isChosen ? '★ ' : ''}C${r.id} <span style="color: var(--text-muted); font-size: 0.64rem;">(P=${r.p.toFixed(3)})</span>
+                      </span>
+                      <span style="font-family: monospace; color: ${r.isChosen ? '#4ade80' : '#38bdf8'}; font-size: 0.66rem;">
+                        ${r.isSupport ? `${r.expectedH.toFixed(1)} cl` : `E[H]=${r.expectedH.toFixed(2)}b`} <span style="color: #fbbf24;">(+${r.infoGain.toFixed(2)}b)</span>
+                      </span>
+                    </div>
+                  `;
+                }).join('')}
               </div>
             ` : ''}
           </div>
