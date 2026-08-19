@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (12:15 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (12:45 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 12:15:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 12:45:00 HST</span>
     </div>
   </header>
 
@@ -2951,6 +2951,33 @@
     let currentEntropyBits = 0;
     let currentExplanation = [];
 
+    // Fast Pre-computed Unit Circle Trigonometry Lookup Table (for 3D Wireframe Rings)
+    const CIRCLE_LUT_STEPS = 16;
+    const CIRCLE_COS = new Float32Array(CIRCLE_LUT_STEPS + 1);
+    const CIRCLE_SIN = new Float32Array(CIRCLE_LUT_STEPS + 1);
+    for (let s = 0; s <= CIRCLE_LUT_STEPS; s++) {
+      const ang = (s / CIRCLE_LUT_STEPS) * Math.PI * 2;
+      CIRCLE_COS[s] = Math.cos(ang);
+      CIRCLE_SIN[s] = Math.sin(ang);
+    }
+
+    // Pre-allocated Reusable Scratch Buffers for hot compute loop
+    let scratchCap = 256;
+    let scratchClMembFlag = new Uint8Array(scratchCap);
+    let scratchPBase = new Float64Array(scratchCap);
+    let scratchPCurrent = new Float64Array(scratchCap);
+    let scratchCurrentGprobs = new Float64Array(scratchCap);
+
+    function ensureScratchCapacity(k) {
+      if (k > scratchCap) {
+        scratchCap = Math.max(k * 2, 512);
+        scratchClMembFlag = new Uint8Array(scratchCap);
+        scratchPBase = new Float64Array(scratchCap);
+        scratchPCurrent = new Float64Array(scratchCap);
+        scratchCurrentGprobs = new Float64Array(scratchCap);
+      }
+    }
+
     // =========================================================================
     //  RESOURCE & PERFORMANCE TRACKER STATE & TELEMETRY
     // =========================================================================
@@ -3180,8 +3207,12 @@
         return;
       }
 
-      // Max value for Y scaling
-      let maxVal = Math.max(4, ...distHistoryDFC, ...distHistoryDCC);
+      // Max value for Y scaling (computed with safe loop, no spread operator)
+      let maxVal = 4;
+      for (let i = 0; i < n; i++) {
+        if (distHistoryDFC[i] > maxVal) maxVal = distHistoryDFC[i];
+        if (distHistoryDCC[i] > maxVal) maxVal = distHistoryDCC[i];
+      }
       maxVal = Math.ceil(maxVal * 1.15);
 
       // Grid horizontal lines (50%)
@@ -3221,10 +3252,15 @@
         return;
       }
 
+      // Subsample points if n > w * 1.5 to prevent overdraw
+      const maxPts = Math.min(n, Math.max(100, Math.floor(w * 1.5)));
+      const step = (n - 1) / (maxPts - 1);
+
       // 1. Draw d(f,c) Shaded Area and Stroke (Cyan #38bdf8)
       ctx.beginPath();
       ctx.moveTo(0, h);
-      for (let i = 0; i < n; i++) {
+      for (let p = 0; p < maxPts; p++) {
+        const i = Math.min(n - 1, Math.round(p * step));
         const x = (i / (n - 1)) * w;
         const y = h - (distHistoryDFC[i] / maxVal) * (h - 6) - 3;
         ctx.lineTo(x, y);
@@ -3235,10 +3271,11 @@
       ctx.fill();
 
       ctx.beginPath();
-      for (let i = 0; i < n; i++) {
+      for (let p = 0; p < maxPts; p++) {
+        const i = Math.min(n - 1, Math.round(p * step));
         const x = (i / (n - 1)) * w;
         const y = h - (distHistoryDFC[i] / maxVal) * (h - 6) - 3;
-        if (i === 0) ctx.moveTo(x, y);
+        if (p === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
       ctx.strokeStyle = '#38bdf8';
@@ -3254,7 +3291,8 @@
       // 2. Draw d(c,c) Shaded Area and Stroke (Purple #c084fc)
       ctx.beginPath();
       ctx.moveTo(0, h);
-      for (let i = 0; i < n; i++) {
+      for (let p = 0; p < maxPts; p++) {
+        const i = Math.min(n - 1, Math.round(p * step));
         const x = (i / (n - 1)) * w;
         const y = h - (distHistoryDCC[i] / maxVal) * (h - 6) - 3;
         ctx.lineTo(x, y);
@@ -3265,10 +3303,11 @@
       ctx.fill();
 
       ctx.beginPath();
-      for (let i = 0; i < n; i++) {
+      for (let p = 0; p < maxPts; p++) {
+        const i = Math.min(n - 1, Math.round(p * step));
         const x = (i / (n - 1)) * w;
         const y = h - (distHistoryDCC[i] / maxVal) * (h - 6) - 3;
-        if (i === 0) ctx.moveTo(x, y);
+        if (p === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
       ctx.strokeStyle = '#c084fc';
@@ -3373,22 +3412,37 @@
         return;
       }
 
-      // Compute cumulative running averages since frame 0
-      const avgDFC = new Float64Array(n);
-      const avgDCC = new Float64Array(n);
+      // Subsample points if n > w * 1.5 to prevent overdraw
+      const maxPts = Math.min(n, Math.max(100, Math.floor(w * 1.5)));
+      const step = (n - 1) / (maxPts - 1);
+
+      const sampledAvgDFC = new Float64Array(maxPts);
+      const sampledAvgDCC = new Float64Array(maxPts);
+      const sampleIndices = new Int32Array(maxPts);
+      for (let p = 0; p < maxPts; p++) {
+        sampleIndices[p] = Math.min(n - 1, Math.round(p * step));
+      }
+
       let sumDFC = 0, sumDCC = 0;
+      let maxVal = 1.0;
+      let samplePtr = 0;
+
       for (let i = 0; i < n; i++) {
         sumDFC += distHistoryDFC[i];
         sumDCC += distHistoryDCC[i];
-        avgDFC[i] = sumDFC / (i + 1);
-        avgDCC[i] = sumDCC / (i + 1);
+        while (samplePtr < maxPts && sampleIndices[samplePtr] === i) {
+          const aDFC = sumDFC / (i + 1);
+          const aDCC = sumDCC / (i + 1);
+          sampledAvgDFC[samplePtr] = aDFC;
+          sampledAvgDCC[samplePtr] = aDCC;
+          if (aDFC > maxVal) maxVal = aDFC;
+          if (aDCC > maxVal) maxVal = aDCC;
+          samplePtr++;
+        }
       }
 
-      const finalAvgDFC = avgDFC[n - 1];
-      const finalAvgDCC = avgDCC[n - 1];
-
-      // Max value for Y scaling
-      let maxVal = Math.max(1.0, ...avgDFC, ...avgDCC);
+      const finalAvgDFC = sumDFC / n;
+      const finalAvgDCC = sumDCC / n;
       maxVal = Math.ceil(maxVal * 1.2 * 10) / 10;
 
       // Grid horizontal lines (50%)
@@ -3409,8 +3463,8 @@
 
       if (n === 1) {
         // Single frame point
-        const y_dfc = h - (avgDFC[0] / maxVal) * (h - 6) - 3;
-        const y_dcc = h - (avgDCC[0] / maxVal) * (h - 6) - 3;
+        const y_dfc = h - (sampledAvgDFC[0] / maxVal) * (h - 6) - 3;
+        const y_dcc = h - (sampledAvgDCC[0] / maxVal) * (h - 6) - 3;
         
         ctx.fillStyle = '#38bdf8';
         ctx.beginPath();
@@ -3431,9 +3485,10 @@
       // 1. Draw Running Avg d(f,c) Shaded Area and Stroke (Cyan #38bdf8)
       ctx.beginPath();
       ctx.moveTo(0, h);
-      for (let i = 0; i < n; i++) {
+      for (let p = 0; p < maxPts; p++) {
+        const i = sampleIndices[p];
         const x = (i / (n - 1)) * w;
-        const y = h - (avgDFC[i] / maxVal) * (h - 6) - 3;
+        const y = h - (sampledAvgDFC[p] / maxVal) * (h - 6) - 3;
         ctx.lineTo(x, y);
       }
       ctx.lineTo(w, h);
@@ -3442,10 +3497,11 @@
       ctx.fill();
 
       ctx.beginPath();
-      for (let i = 0; i < n; i++) {
+      for (let p = 0; p < maxPts; p++) {
+        const i = sampleIndices[p];
         const x = (i / (n - 1)) * w;
-        const y = h - (avgDFC[i] / maxVal) * (h - 6) - 3;
-        if (i === 0) ctx.moveTo(x, y);
+        const y = h - (sampledAvgDFC[p] / maxVal) * (h - 6) - 3;
+        if (p === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
       ctx.strokeStyle = '#38bdf8';
@@ -3461,9 +3517,10 @@
       // 2. Draw Running Avg d(c,c) Shaded Area and Stroke (Purple #c084fc)
       ctx.beginPath();
       ctx.moveTo(0, h);
-      for (let i = 0; i < n; i++) {
+      for (let p = 0; p < maxPts; p++) {
+        const i = sampleIndices[p];
         const x = (i / (n - 1)) * w;
-        const y = h - (avgDCC[i] / maxVal) * (h - 6) - 3;
+        const y = h - (sampledAvgDCC[p] / maxVal) * (h - 6) - 3;
         ctx.lineTo(x, y);
       }
       ctx.lineTo(w, h);
@@ -3472,10 +3529,11 @@
       ctx.fill();
 
       ctx.beginPath();
-      for (let i = 0; i < n; i++) {
+      for (let p = 0; p < maxPts; p++) {
+        const i = sampleIndices[p];
         const x = (i / (n - 1)) * w;
-        const y = h - (avgDCC[i] / maxVal) * (h - 6) - 3;
-        if (i === 0) ctx.moveTo(x, y);
+        const y = h - (sampledAvgDCC[p] / maxVal) * (h - 6) - 3;
+        if (p === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
       ctx.strokeStyle = '#c084fc';
@@ -3491,8 +3549,13 @@
       // 3. Hover Guide & Exact Value Tooltip
       if (hoverDistAvgIndex !== null && hoverDistAvgIndex >= 0 && hoverDistAvgIndex < n) {
         const hX = (hoverDistAvgIndex / (n - 1)) * w;
-        const hAvgDFC = avgDFC[hoverDistAvgIndex];
-        const hAvgDCC = avgDCC[hoverDistAvgIndex];
+        let sDFC = 0, sDCC = 0;
+        for (let i = 0; i <= hoverDistAvgIndex; i++) {
+          sDFC += distHistoryDFC[i];
+          sDCC += distHistoryDCC[i];
+        }
+        const hAvgDFC = sDFC / (hoverDistAvgIndex + 1);
+        const hAvgDCC = sDCC / (hoverDistAvgIndex + 1);
         const hAvgTot = hAvgDFC + hAvgDCC;
         const hY_dfc = h - (hAvgDFC / maxVal) * (h - 6) - 3;
         const hY_dcc = h - (hAvgDCC / maxVal) * (h - 6) - 3;
@@ -3963,6 +4026,7 @@
       totalFrames++;
       currentFrame = { x, y, z };
       pastSamples.push({ x, y, z });
+      if (pastSamples.length > 25000) pastSamples.shift();
       currentExplanation = [];
 
       const coordStr = currentDim === 3 
@@ -4016,6 +4080,7 @@
         });
 
         assignmentHistory.push(tupleKey);
+        if (assignmentHistory.length > 5000) assignmentHistory.shift();
 
         const tComputeEnd = performance.now();
         const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
@@ -4071,7 +4136,9 @@
       }
 
       naiveEvals += K;
-      const clmembflag = new Array(K).fill(true);
+      ensureScratchCapacity(K);
+      scratchClMembFlag.fill(1, 0, K);
+      const clmembflag = scratchClMembFlag;
 
       // Step 2: Trajectory prediction candidates (-pred)
       let predCandidates = [];
@@ -4110,7 +4177,7 @@
       let sumProb = 0;
       for (let i = 0; i < K; i++) sumProb += (clusters[i].prob || 1.0);
 
-      const pBase = new Array(K).fill(0);
+      const pBase = scratchPBase;
       for (let i = 0; i < K; i++) pBase[i] = (clusters[i].prob || 1.0) / sumProb;
 
       // Transition matrix mixing (-tm <val>)
@@ -4126,8 +4193,10 @@
         }
       }
 
-      const currentGprobs = new Array(K).fill(1.0);
-      const pCurrent = [...pBase];
+      const currentGprobs = scratchCurrentGprobs;
+      currentGprobs.fill(1.0, 0, K);
+      const pCurrent = scratchPCurrent;
+      for (let i = 0; i < K; i++) pCurrent[i] = pBase[i];
       const measuredIndices = [];
       const measuredDists = [];
 
@@ -4257,12 +4326,13 @@
         const targetCl = clusters[chosenTarget];
         targetCl.scDists = (targetCl.scDists || 0) + 1;
         
-        // Exact Euclidean distance in 2D or 3D
+        // Exact Euclidean distance in 2D or 3D (squared distance check)
         const dx = x - targetCl.x;
         const dy = y - targetCl.y;
         const dz = currentDim === 3 ? (z - targetCl.z) : 0.0;
-        const dfc = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        const isMatch = dfc < rlim;
+        const dfcSq = dx * dx + dy * dy + dz * dz;
+        const isMatch = dfcSq <= rlim * rlim;
+        const dfc = Math.sqrt(dfcSq);
 
         measuredIndices.push(chosenTarget);
         measuredDists.push(dfc);
@@ -4560,11 +4630,13 @@
       }
       prevAssignedCluster = assignedCluster;
       assignmentHistory.push(assignedCluster);
+      if (assignmentHistory.length > 5000) assignmentHistory.shift();
       frameHistory.push({
         indices: [...measuredIndices],
         dists: [...measuredDists],
         assignment: assignedCluster
       });
+      if (frameHistory.length > 500) frameHistory.shift();
 
       const tComputeEnd = performance.now();
       const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
@@ -4826,24 +4898,36 @@
         clusterAlpha = tFocus / 0.5; // 0.0 at t=0.0, 1.0 at t=0.5
       }
 
-      // 2. Past Samples Point Cloud
-      if (pastSamples.length > 0 && pointAlpha > 0.001) {
+      // 2. Past Samples Point Cloud (Optimized Batch & Stride Subsampling)
+      const numPast = pastSamples.length;
+      if (numPast > 0 && pointAlpha > 0.001) {
         ctx.fillStyle = `rgba(148, 163, 184, ${pointAlpha.toFixed(3)})`;
         const basePtRad = samplePointSize;
-        for (let i = 0; i < pastSamples.length; i++) {
-          const pr = getProjectedCoord(pastSamples[i]);
-          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-          if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 || pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) continue;
-          
-          let ptRad = basePtRad * ptSizeScale;
-          if (is3DCustom) {
-            // Depth cueing with samplePointSize scaling
-            const depthFactor = Math.max(0.4, Math.min(2.2, 1.0 + pr.depth * 0.5));
-            ptRad = Math.max(0.3, basePtRad * depthFactor * ptSizeScale);
-          }
+        const maxDraw = 3000;
+        const stride = numPast > maxDraw ? Math.ceil(numPast / maxDraw) : 1;
+
+        if (!is3DCustom) {
+          const ptRad = Math.max(0.5, basePtRad * ptSizeScale);
+          const d = ptRad * 2;
           ctx.beginPath();
-          ctx.arc(pos.px, pos.py, ptRad, 0, Math.PI * 2);
+          for (let i = 0; i < numPast; i += stride) {
+            const pr = getProjectedCoord(pastSamples[i]);
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+            if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 || 
+                pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) continue;
+            ctx.rect(pos.px - ptRad, pos.py - ptRad, d, d);
+          }
           ctx.fill();
+        } else {
+          for (let i = 0; i < numPast; i += stride) {
+            const pr = getProjectedCoord(pastSamples[i]);
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+            if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 || 
+                pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) continue;
+            const depthFactor = Math.max(0.4, Math.min(2.2, 1.0 + pr.depth * 0.5));
+            const ptRad = Math.max(0.4, basePtRad * depthFactor * ptSizeScale);
+            ctx.fillRect(pos.px - ptRad, pos.py - ptRad, ptRad * 2, ptRad * 2);
+          }
         }
       }
 
@@ -5041,39 +5125,39 @@
 
                 // 1. Circle perpendicular to Z-axis (XY plane)
                 ctx.beginPath();
-                for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
-                  const rx = c.x + rlim * Math.cos(a);
-                  const ry = c.y + rlim * Math.sin(a);
+                for (let s = 0; s <= CIRCLE_LUT_STEPS; s++) {
+                  const rx = c.x + rlim * CIRCLE_COS[s];
+                  const ry = c.y + rlim * CIRCLE_SIN[s];
                   const rz = c.z;
                   const rp = project3D(rx, ry, rz, az, el);
                   const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
-                  if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                  if (s === 0) ctx.moveTo(ppos.px, ppos.py);
                   else ctx.lineTo(ppos.px, ppos.py);
                 }
                 ctx.stroke();
 
                 // 2. Circle perpendicular to Y-axis (XZ plane)
                 ctx.beginPath();
-                for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
-                  const rx = c.x + rlim * Math.cos(a);
+                for (let s = 0; s <= CIRCLE_LUT_STEPS; s++) {
+                  const rx = c.x + rlim * CIRCLE_COS[s];
                   const ry = c.y;
-                  const rz = c.z + rlim * Math.sin(a);
+                  const rz = c.z + rlim * CIRCLE_SIN[s];
                   const rp = project3D(rx, ry, rz, az, el);
                   const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
-                  if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                  if (s === 0) ctx.moveTo(ppos.px, ppos.py);
                   else ctx.lineTo(ppos.px, ppos.py);
                 }
                 ctx.stroke();
 
                 // 3. Circle perpendicular to X-axis (YZ plane)
                 ctx.beginPath();
-                for (let a = 0; a <= Math.PI * 2 + 0.05; a += Math.PI / 16) {
+                for (let s = 0; s <= CIRCLE_LUT_STEPS; s++) {
                   const rx = c.x;
-                  const ry = c.y + rlim * Math.cos(a);
-                  const rz = c.z + rlim * Math.sin(a);
+                  const ry = c.y + rlim * CIRCLE_COS[s];
+                  const rz = c.z + rlim * CIRCLE_SIN[s];
                   const rp = project3D(rx, ry, rz, az, el);
                   const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
-                  if (a === 0) ctx.moveTo(ppos.px, ppos.py);
+                  if (s === 0) ctx.moveTo(ppos.px, ppos.py);
                   else ctx.lineTo(ppos.px, ppos.py);
                 }
                 ctx.stroke();
