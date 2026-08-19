@@ -1155,6 +1155,40 @@
           </div>
 
           <div class="card-body-scroll" style="display: flex; flex-direction: column;">
+            <!-- Recent Samples History Navigation Toolbar -->
+            <div id="sampleHistoryToolbar" style="display: flex; flex-direction: column; gap: 4px; background: #0b1120; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px; margin-bottom: 8px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <button id="btnPrevSample" class="btn-micro" 
+                          data-tooltip-title="Previous Sample" 
+                          data-tooltip-badge="Nav" 
+                          data-tooltip-color="purple" 
+                          data-tooltip-desc="Step back to inspect algorithm decision log for the previous ingested point.">◀</button>
+                  <select id="selectSampleHistory" style="background: #172033; color: #f8fafc; border: 1px solid var(--card-border); border-radius: 4px; padding: 2px 6px; font-size: 0.70rem; font-family: monospace; max-width: 175px;">
+                    <option value="-1">● Live (Latest Point)</option>
+                  </select>
+                  <button id="btnNextSample" class="btn-micro" 
+                          data-tooltip-title="Next Sample" 
+                          data-tooltip-badge="Nav" 
+                          data-tooltip-color="purple" 
+                          data-tooltip-desc="Step forward to inspect algorithm decision log for the next ingested point.">▶</button>
+                </div>
+                <div style="display: flex; align-items: center; gap: 5px;">
+                  <button id="btnLiveSample" class="btn-micro" 
+                          style="background: rgba(74, 222, 128, 0.15); color: #4ade80; border-color: rgba(74, 222, 128, 0.3); font-weight: 700;"
+                          data-tooltip-title="Jump to Live Stream" 
+                          data-tooltip-badge="Real-time" 
+                          data-tooltip-color="green" 
+                          data-tooltip-desc="Return to tracking real-time live incoming frames.">● Live</button>
+                  <span id="lblSampleHistoryCount" style="color: var(--text-muted); font-size: 0.67rem; font-family: monospace;">0/0</span>
+                </div>
+              </div>
+              <!-- Quick Recent Points Scrubber Strip -->
+              <div id="sampleHistoryStrip" style="display: flex; align-items: center; gap: 3px; overflow-x: auto; padding: 2px 0 2px 0; scrollbar-width: thin;">
+                <span style="color: var(--text-muted); font-size: 0.65rem;">No samples logged yet.</span>
+              </div>
+            </div>
+
             <!-- Narrative Log Container -->
             <div id="narrativeContainer" class="narrative-list">
               <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">

@@ -591,6 +591,83 @@
     const tabEntropyTraceEl = document.getElementById('tabEntropyTrace');
     if (tabEntropyTraceEl) tabEntropyTraceEl.addEventListener('click', () => setTab('entropy'));
 
+    // Recent Samples History Navigation Listeners
+    const btnPrevSample = document.getElementById('btnPrevSample');
+    if (btnPrevSample) {
+      btnPrevSample.addEventListener('click', () => {
+        if (sampleTraceLog.length === 0) return;
+        let currentPos = -1;
+        if (selectedSampleTraceIndex === -1) {
+          currentPos = sampleTraceLog.length - 1;
+        } else {
+          currentPos = sampleTraceLog.findIndex(e => e.frameIndex === selectedSampleTraceIndex);
+        }
+        if (currentPos > 0) {
+          selectPastSample(sampleTraceLog[currentPos - 1].frameIndex);
+        }
+      });
+    }
+
+    const btnNextSample = document.getElementById('btnNextSample');
+    if (btnNextSample) {
+      btnNextSample.addEventListener('click', () => {
+        if (sampleTraceLog.length === 0 || selectedSampleTraceIndex === -1) return;
+        const currentPos = sampleTraceLog.findIndex(e => e.frameIndex === selectedSampleTraceIndex);
+        if (currentPos >= 0 && currentPos < sampleTraceLog.length - 1) {
+          selectPastSample(sampleTraceLog[currentPos + 1].frameIndex);
+        } else if (currentPos === sampleTraceLog.length - 1) {
+          returnToLiveStream();
+        }
+      });
+    }
+
+    const btnLiveSample = document.getElementById('btnLiveSample');
+    if (btnLiveSample) {
+      btnLiveSample.addEventListener('click', () => {
+        returnToLiveStream();
+      });
+    }
+
+    const selectSampleHistory = document.getElementById('selectSampleHistory');
+    if (selectSampleHistory) {
+      selectSampleHistory.addEventListener('change', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (val === -1) {
+          returnToLiveStream();
+        } else {
+          selectPastSample(val);
+        }
+      });
+    }
+
+    window.addEventListener('keydown', (e) => {
+      // Ignore when typing in inputs or selects
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+      if (e.key === '[' || e.key === 'ArrowLeft') {
+        if (sampleTraceLog.length === 0) return;
+        let currentPos = -1;
+        if (selectedSampleTraceIndex === -1) {
+          currentPos = sampleTraceLog.length - 1;
+        } else {
+          currentPos = sampleTraceLog.findIndex(el => el.frameIndex === selectedSampleTraceIndex);
+        }
+        if (currentPos > 0) {
+          selectPastSample(sampleTraceLog[currentPos - 1].frameIndex);
+        }
+      } else if (e.key === ']' || e.key === 'ArrowRight') {
+        if (sampleTraceLog.length === 0 || selectedSampleTraceIndex === -1) return;
+        const currentPos = sampleTraceLog.findIndex(el => el.frameIndex === selectedSampleTraceIndex);
+        if (currentPos >= 0 && currentPos < sampleTraceLog.length - 1) {
+          selectPastSample(sampleTraceLog[currentPos + 1].frameIndex);
+        } else if (currentPos === sampleTraceLog.length - 1) {
+          returnToLiveStream();
+        }
+      } else if (e.key === 'l' || e.key === 'L') {
+        returnToLiveStream();
+      }
+    });
+
     document.getElementById('btnReset').addEventListener('click', () => {
       pauseSimulation();
       loadSelectedBenchmark();
