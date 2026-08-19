@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (15:40 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (16:00 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 15:40:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 16:00:00 HST</span>
     </div>
   </header>
 
@@ -1302,6 +1302,7 @@
           <div class="legend-item"><div class="legend-dot" style="background: #f87171; border: 1px solid #ffffff;"></div> Pruned (3P/4P/5P)</div>
           <div class="legend-item" id="legendCircleMembers" style="display: none;"><div class="legend-dot" style="background: rgba(16, 185, 129, 0.2); border: 1.5px solid #10b981;"></div> Points Circle (Area ∝ Points)</div>
           <div class="legend-item" id="legendCircleSCDists" style="display: none;"><div class="legend-dot" style="background: rgba(245, 158, 11, 0.2); border: 1.5px dashed #f59e0b;"></div> #SC Dists Circle (Area ∝ #SC Dists)</div>
+          <div class="legend-item" id="legendEntropyMap" style="display: none;"><div class="legend-dot" style="background: radial-gradient(circle, #facc15 0%, #38bdf8 70%, transparent 100%); border: 1.5px solid #38bdf8;"></div> Info Gain Map (Glow ∝ ΔH)</div>
           <div class="legend-item" style="margin-left: auto; color: #64748b;" id="legendHint">[3D Mode: Drag Quad 4 to Orbit • Shift+Drag to Pan • Wheel to Zoom • ⛶ to Maximize]</div>
         </div>
       </div>
@@ -1743,20 +1744,27 @@
                 <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 8px;">
                   Draw enclosing circles around each cluster with area strictly proportional to points or distance computations. Both options can be simultaneously active.
                 </p>
-                <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 4px;">
+                <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 4px;">
                   <div id="optCircleMembers" class="toggle-btn toggle-green" 
                        data-tooltip-title="Circle: Member Points Count" 
                        data-tooltip-badge="Area ∝ Points (Green)" 
                        data-tooltip-color="green" 
                        data-tooltip-desc="Draws an emerald green circle around each cluster where the interior circle area is strictly proportional to the number of points (member frames) in that cluster.">
-                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; margin-right:4px;"></span>Points Circle
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; margin-right:4px;"></span>Points
                   </div>
                   <div id="optCircleSCDists" class="toggle-btn toggle-amber" 
                        data-tooltip-title="Circle: #SC Distance Computations" 
                        data-tooltip-badge="Area ∝ #SC Dists (Amber)" 
                        data-tooltip-color="amber" 
                        data-tooltip-desc="Draws an amber/orange dashed circle around each cluster where the interior circle area is strictly proportional to cumulative cluster-to-frame distances computed to that cluster.">
-                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f59e0b; margin-right:4px;"></span>#SC Dists Circle
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f59e0b; margin-right:4px;"></span>#SC Dists
+                  </div>
+                  <div id="optEntropyMap" class="toggle-btn" style="color: #38bdf8;" 
+                       data-tooltip-title="Spatial Information Gain Heatmap" 
+                       data-tooltip-badge="Entropy Reduction Map" 
+                       data-tooltip-color="cyan" 
+                       data-tooltip-desc="Draws a glowing spatial heatmap halo around each cluster anchor where brightness and color (violet → cyan → emerald → gold) represent its expected Shannon entropy reduction power / information gain ΔH = H - E[H|C_i].">
+                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#38bdf8; margin-right:4px;"></span>Info Gain Map
                   </div>
                 </div>
               </div>
@@ -1937,6 +1945,38 @@
                      data-tooltip-desc="Total estimated memory occupied by cluster centroids, inter-cluster matrix, and transition probabilities.">
                   <div id="statMemoryTotal" class="num" style="color: var(--accent-purple); font-size: 1.05rem;">0 KB</div>
                   <div class="lbl" id="lblStatMemory">Model Memory Footprint</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Entropy Reduction Power (η)"
+                     data-tooltip-badge="Information Gain"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Average Shannon entropy bits of hypothesis uncertainty eliminated per distance calculation evaluation (bits/eval).">
+                  <div id="statInfoGainRate" class="num" style="color: #38bdf8;">0.00 b/ev</div>
+                  <div class="lbl" id="lblStatInfoGain">Entropy Power (<span id="statLastInfoGain">0.00</span> b/ev)</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Initial Frame Uncertainty (H_0)"
+                     data-tooltip-badge="Shannon Entropy"
+                     data-tooltip-color="purple"
+                     data-tooltip-desc="Base Shannon entropy uncertainty of the coordinate frame before distance measurements (bits).">
+                  <div id="statInitialH" class="num" style="color: #c084fc;">0.00 b</div>
+                  <div class="lbl" id="lblStatInitialH">Initial H (Avg <span id="statAvgInitialH">0.00</span> b)</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Cumulative Information Reduced"
+                     data-tooltip-badge="Information Gain"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Total cumulative Shannon entropy bits of hypothesis uncertainty eliminated across all ingested frames.">
+                  <div id="statTotalEntropy" class="num" style="color: #4ade80;">0.00 kb</div>
+                  <div class="lbl" id="lblStatTotalEntropy">Info Reduced (Total)</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Entropy Gate Bypass Rate"
+                     data-tooltip-badge="Gating &amp; Short-Circuit"
+                     data-tooltip-color="amber"
+                     data-tooltip-desc="Percentage of frames where candidate distribution uncertainty was sharp enough (H < gate or leader shortcut) to bypass full entropy search.">
+                  <div id="statGateRatio" class="num" style="color: #fbbf24;">0.0%</div>
+                  <div class="lbl" id="lblStatGateRatio">Gate Bypass (<span id="statGatedCount">0</span> fr)</div>
                 </div>
               </div>
 
@@ -2149,6 +2189,33 @@
                   <span id="statPredHits" class="val" style="color: var(--accent-green);">0</span>
                 </div>
               </div>
+
+              <!-- Shannon Entropy Diagnostics -->
+              <div class="sub-control-card">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+                  <span>Shannon Entropy Diagnostics</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Avg Initial Uncertainty (H_0):</span>
+                  <span id="statDiagAvgInitialH" class="val" style="color: var(--accent-purple);">0.00 bits</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Info Reduction Power (η):</span>
+                  <span id="statDiagInfoPower" class="val" style="color: #38bdf8;">0.00 bits/eval</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Max Initial Uncertainty:</span>
+                  <span id="statDiagMaxInitialH" class="val" style="color: var(--accent-green);">0.00 bits</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Entropy Gated / Shortcut:</span>
+                  <span id="statDiagGatedCount" class="val" style="color: var(--accent-amber);">0 (0.0%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Full Evaluated Frames:</span>
+                  <span id="statDiagEvalCount" class="val" style="color: var(--accent-blue);">0</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2193,6 +2260,11 @@
                  data-tooltip-badge="-tm" 
                  data-tooltip-color="purple" 
                  data-tooltip-desc="Real-time visualization of learned cluster-to-cluster Markov transition matrix P(c_t | c_{t-1}) and transition probabilities.">🔀 Transition Matrix</div>
+            <div id="tabEntropyTrace" class="tab-btn" 
+                 data-tooltip-title="Shannon Entropy Trace &amp; Target Ranking" 
+                 data-tooltip-badge="-entropy" 
+                 data-tooltip-color="green" 
+                 data-tooltip-desc="Real-time breakdown of candidate targets comparing expected residual entropy E[H|c_i], prior probabilities P(c_i), and information gain ΔH.">📉 Entropy Trace</div>
           </div>
 
           <div class="card-body-scroll" style="display: flex; flex-direction: column;">
@@ -2234,6 +2306,31 @@
                 <div style="font-size: 0.74rem; font-weight: 700; color: var(--accent-blue); margin-bottom: 4px;">Top Learned Transition Paths</div>
                 <div id="tmTopPathsList" style="display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem;">
                   <div style="color: var(--text-muted); text-align: center; padding: 6px 0;">Awaiting transitions...</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Entropy Trace Container -->
+            <div id="entropyTraceContainer" class="candidate-list" style="display: none; flex-direction: column; gap: 8px; flex: 1; min-height: 0;">
+              <!-- Target Candidates Comparison Card -->
+              <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <span style="font-size: 0.76rem; font-weight: 700; color: var(--accent-green);">Target Candidates \(E[H \mid C_i]\) Comparison</span>
+                  <span id="badgeEntropyStatus" class="badge-pill" style="background: rgba(74, 222, 128, 0.15); color: #4ade80; font-family: monospace; font-size: 0.68rem;">Ready</span>
+                </div>
+                <div id="entropyRankingsList" style="display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem;">
+                  <div style="color: var(--text-muted); text-align: center; padding: 12px 0;">Awaiting entropy target evaluations...</div>
+                </div>
+              </div>
+
+              <!-- Information Gain by Cluster Anchor Table -->
+              <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <span style="font-size: 0.74rem; font-weight: 700; color: var(--accent-blue);">Cluster Anchors Information Reduction Power (\(\Delta H\))</span>
+                  <span id="lblEntropyMapHint" style="font-size: 0.68rem; color: var(--text-muted);">Top Anchors</span>
+                </div>
+                <div id="entropyClusterPowerList" style="display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem;">
+                  <div style="color: var(--text-muted); text-align: center; padding: 12px 0;">No active clusters evaluated yet.</div>
                 </div>
               </div>
             </div>
@@ -2766,6 +2863,7 @@
     let samplePointSize = 1.5; // Ingested sample points render radius in px (0.5 to 8.0)
     let showCircleMembers = false; // Area proportional to points in cluster
     let showCircleSCDists = false; // Area proportional to #SC distances
+    let showEntropyMap = false; // Spatial Information Gain / Entropy Reduction Map
     let noiseSigma = 0.000; // Truncated Gaussian noise std dev (0 = off)
     let noiseTruncLimit = 0.050; // Truncation radius limit
     let targetMode = 'greedy';
@@ -2796,6 +2894,17 @@
     let entropyFastMode = false; // -entropy_fast
     let entropyLeaderShortcut = false; // Leader P > cutoff bypass
     let entropyLeaderCutoff = 0.50; // Threshold for leader bypass
+
+    // Entropy Telemetry & Diagnostics
+    let totalInitialEntropyBits = 0.0;
+    let totalEntropyReducedBits = 0.0;
+    let totalEntropyEvals = 0;
+    let totalEntropyGated = 0;
+    let lastInitialEntropy = 0.0;
+    let lastEntropyReduced = 0.0;
+    let lastInfoGainRate = 0.0;
+    let maxInitialEntropyObserved = 0.0;
+    let lastEntropyRankings = [];
 
     // Soft Bayesian Mode
     let useSoftBayesian = false; // -soft_bayesian
@@ -4318,10 +4427,16 @@
             H -= pCurrent[i] * Math.log2(pCurrent[i]);
           }
         }
-        if (measDepth === 0) currentEntropyBits = H;
+        if (measDepth === 0) {
+          currentEntropyBits = H;
+          lastInitialEntropy = H;
+          totalInitialEntropyBits += H;
+          if (H > maxInitialEntropyObserved) maxInitialEntropyObserved = H;
+        }
 
         let chosenTarget = -1;
         let selectionReason = "";
+        let stepEntropyRankings = null;
 
         // Prediction shortcuts first
         while (predCandidates.length > 0) {
@@ -4357,7 +4472,9 @@
             if (entropyLeaderShortcut && maxP >= entropyLeaderCutoff) {
               chosenTarget = argMaxP;
               selectionReason = `Dominant leader shortcut (P(C${argMaxP}) = ${maxP.toFixed(3)} ≥ ${entropyLeaderCutoff.toFixed(2)}): bypassed entropy calculation to measure clear favorite directly`;
+              if (measDepth === 0) totalEntropyGated++;
             } else {
+              if (measDepth === 0) totalEntropyEvals++;
               let bestCi = -1;
               let minExpectedH = 1e30;
               const twoRlim = 2.0 * rlim;
@@ -4387,6 +4504,7 @@
                 }
               }
               const numH = sampledHypotheses.length;
+              const evalRankings = [];
 
               if (entropyFastMode) {
                 // Popcount surrogate mode (-entropy_fast in C)
@@ -4411,6 +4529,16 @@
                       }
                     }
                     expectedSupport += p_hj * survivingCount;
+                  }
+                  evalRankings.push({
+                    id: tc,
+                    p: pCurrent[tc],
+                    expectedH: expectedSupport,
+                    infoGain: Math.max(0, numA - expectedSupport),
+                    isSupport: true
+                  });
+                  if (clusters[tc]) {
+                    clusters[tc].infoGain = Math.max(0, numA - expectedSupport);
                   }
                   if (expectedSupport < minExpectedSupport) {
                     minExpectedSupport = expectedSupport;
@@ -4451,6 +4579,17 @@
                     }
                   }
 
+                  evalRankings.push({
+                    id: tc,
+                    p: pCurrent[tc],
+                    expectedH: expectedH,
+                    infoGain: Math.max(0, H - expectedH),
+                    isSupport: false
+                  });
+                  if (clusters[tc]) {
+                    clusters[tc].infoGain = Math.max(0, H - expectedH);
+                  }
+
                   if (expectedH < minExpectedH) {
                     minExpectedH = expectedH;
                     bestCi = tc;
@@ -4459,13 +4598,20 @@
                 chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag, K);
                 selectionReason = `Shannon entropy minimization (-entropy): candidate C${chosenTarget} provides lowest expected residual uncertainty E[H]=${minExpectedH.toFixed(2)} bits (current H=${H.toFixed(2)} > gate ${currentGate.toFixed(1)}) to maximize anticipated geometric pruning`;
               }
+              evalRankings.forEach(r => { r.isChosen = (r.id === chosenTarget); });
+              evalRankings.sort((a, b) => a.expectedH - b.expectedH);
+              stepEntropyRankings = evalRankings;
+              lastEntropyRankings = evalRankings;
             }
           } else {
-            // Greedy Prior Selection (argmax P)
+            // Greedy Prior Selection (argmax P) or Gated
+            if (targetMode === 'entropy' && measDepth === 0) totalEntropyGated++;
             chosenTarget = getArgMaxP(pCurrent, clmembflag, K);
             const tCount = (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) ? (transitionCounts[prevAssignedCluster][chosenTarget] || 0) : 0;
             if (useTM && tCount > 0) {
               selectionReason = `Markov transition prior (-tm): transition probability P(C${chosenTarget} | C${prevAssignedCluster}) = ${(pCurrent[chosenTarget] || 0).toFixed(3)} (${tCount} observed transitions from previous anchor C${prevAssignedCluster})`;
+            } else if (targetMode === 'entropy') {
+              selectionReason = `Entropy gating: candidate distribution uncertainty (H=${H.toFixed(2)} bits) ≤ gate (${currentGate.toFixed(1)} bits) — prioritized highest likelihood candidate C${chosenTarget} (P=${(pCurrent[chosenTarget] || 0).toFixed(3)})`;
             } else {
               selectionReason = `Greedy prior target selection: highest active likelihood P=${(pCurrent[chosenTarget] || 0).toFixed(3)} (${clusters[chosenTarget].members} historical members)`;
             }
@@ -4497,7 +4643,9 @@
         logExplainStep({
           type: 'target',
           title: `🔍 Measuring Distance: Anchor C${chosenTarget}`,
-          text: `<b>Reason for choice:</b> ${selectionReason}.<br>Anchor coordinates: (${targetCl.x.toFixed(3)}, ${targetCl.y.toFixed(3)}${currentDim === 3 ? `, ${targetCl.z.toFixed(3)}` : ''}).`
+          text: `<b>Reason for choice:</b> ${selectionReason}.<br>Anchor coordinates: (${targetCl.x.toFixed(3)}, ${targetCl.y.toFixed(3)}${currentDim === 3 ? `, ${targetCl.z.toFixed(3)}` : ''}).`,
+          entropyRankings: stepEntropyRankings,
+          currentH: H
         });
 
         if (isMatch) {
@@ -4793,6 +4941,12 @@
         assignment: assignedCluster
       });
       if (frameHistory.length > 500) frameHistory.shift();
+
+      if (evalsThisFrame > 0) {
+        lastEntropyReduced = currentEntropyBits;
+        totalEntropyReducedBits += currentEntropyBits;
+        lastInfoGainRate = currentEntropyBits / evalsThisFrame;
+      }
 
       const tComputeEnd = performance.now();
       const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
@@ -5245,11 +5399,13 @@
 
           let maxClusterMembers = 1;
           let maxClusterSCDists = 1;
-          if (showCircleMembers || showCircleSCDists) {
+          let maxInfoGain = 0.001;
+          if (showCircleMembers || showCircleSCDists || showEntropyMap) {
             clusters.forEach(cl => {
               if (cl.members > maxClusterMembers) maxClusterMembers = cl.members;
               const sc = cl.scDists || 0;
               if (sc > maxClusterSCDists) maxClusterSCDists = sc;
+              if (cl.infoGain && cl.infoGain > maxInfoGain) maxInfoGain = cl.infoGain;
             });
           }
 
@@ -5257,6 +5413,47 @@
             const pr = getProjectedCoord(c);
             const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
             const rPx = rlim * scale;
+
+            // 3. Spatial Information Gain Heatmap (Entropy Reduction Map)
+            if (showEntropyMap && c.infoGain !== undefined && c.infoGain > 0) {
+              const gainNorm = Math.min(1.0, Math.max(0.05, c.infoGain / maxInfoGain));
+              const rPxGain = Math.max(8, rlim * scale * (0.6 + 0.8 * gainNorm));
+              ctx.save();
+
+              // Radial gradient halo: violet -> cyan -> emerald -> gold
+              const grad = ctx.createRadialGradient(pos.px, pos.py, 2, pos.px, pos.py, rPxGain);
+              if (gainNorm > 0.75) {
+                grad.addColorStop(0.0, 'rgba(250, 204, 21, 0.45)');
+                grad.addColorStop(0.5, 'rgba(74, 222, 128, 0.25)');
+                grad.addColorStop(1.0, 'rgba(15, 23, 42, 0.0)');
+              } else if (gainNorm > 0.40) {
+                grad.addColorStop(0.0, 'rgba(74, 222, 128, 0.35)');
+                grad.addColorStop(0.6, 'rgba(56, 189, 248, 0.18)');
+                grad.addColorStop(1.0, 'rgba(15, 23, 42, 0.0)');
+              } else {
+                grad.addColorStop(0.0, 'rgba(56, 189, 248, 0.30)');
+                grad.addColorStop(0.7, 'rgba(192, 132, 252, 0.12)');
+                grad.addColorStop(1.0, 'rgba(15, 23, 42, 0.0)');
+              }
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rPxGain, 0, Math.PI * 2);
+              ctx.fillStyle = grad;
+              ctx.fill();
+
+              ctx.strokeStyle = (gainNorm > 0.75) ? '#facc15' : ((gainNorm > 0.4) ? '#4ade80' : '#38bdf8');
+              ctx.lineWidth = 1.4;
+              ctx.setLineDash([2, 3]);
+              ctx.stroke();
+              ctx.setLineDash([]);
+              ctx.restore();
+
+              // Mini Info Gain tag
+              ctx.save();
+              ctx.font = 'bold 9px monospace';
+              ctx.fillStyle = (gainNorm > 0.75) ? '#facc15' : '#38bdf8';
+              ctx.fillText(`+${c.infoGain.toFixed(2)}b`, pos.px - 14, pos.py + 16);
+              ctx.restore();
+            }
 
             if (!showCircleMembers && !showCircleSCDists) {
               if (!is3DCustom) {
@@ -5863,22 +6060,83 @@
       draw();
     }
 
+    function renderEntropyTrace() {
+      const listEl = document.getElementById('entropyRankingsList');
+      const powerListEl = document.getElementById('entropyClusterPowerList');
+      const badgeStatus = document.getElementById('badgeEntropyStatus');
+
+      if (badgeStatus) {
+        badgeStatus.innerText = targetMode === 'entropy' ? (entropyFastMode ? '-entropy_fast' : '-entropy') : 'Greedy Mode';
+      }
+
+      if (listEl) {
+        if (!lastEntropyRankings || lastEntropyRankings.length === 0) {
+          listEl.innerHTML = `<div style="color: var(--text-muted); font-size: 0.76rem; text-align: center; padding: 12px 0;">
+            ${targetMode === 'entropy' ? 'Step through or pause simulation to inspect candidate rankings.' : 'Switch Target Mode to <b>Entropy</b> to inspect target candidate rankings.'}
+          </div>`;
+        } else {
+          let maxH = 0.001;
+          lastEntropyRankings.forEach(r => { if (r.expectedH > maxH) maxH = r.expectedH; });
+          listEl.innerHTML = lastEntropyRankings.slice(0, 10).map(r => {
+            const barW = Math.min(100, Math.max(5, (r.expectedH / maxH) * 100));
+            const barColor = r.isChosen ? '#4ade80' : '#38bdf8';
+            return `
+              <div style="background: ${r.isChosen ? 'rgba(74, 222, 128, 0.08)' : '#172033'}; border: 1px solid ${r.isChosen ? 'rgba(74, 222, 128, 0.4)' : 'rgba(56, 189, 248, 0.2)'}; border-radius: 4px; padding: 4px 6px; margin-bottom: 3px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; margin-bottom: 2px;">
+                  <span style="font-weight: 700; color: ${r.isChosen ? '#4ade80' : '#f8fafc'};">
+                    ${r.isChosen ? '★ ' : ''}Candidate C${r.id} <span style="color: var(--text-muted); font-size: 0.68rem;">(P=${r.p.toFixed(3)})</span>
+                  </span>
+                  <span style="font-family: monospace; font-size: 0.70rem; color: ${r.isChosen ? '#4ade80' : '#38bdf8'};">
+                    ${r.isSupport ? `Support: ${r.expectedH.toFixed(1)} cl` : `E[H]=${r.expectedH.toFixed(2)} b`} <span style="color: #fbbf24;">(+${r.infoGain.toFixed(2)}b gain)</span>
+                  </span>
+                </div>
+                <div style="height: 4px; width: 100%; background: #0f172a; border-radius: 2px; overflow: hidden;">
+                  <div style="height: 100%; width: ${barW}%; background: ${barColor};"></div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+
+      if (powerListEl) {
+        if (clusters.length === 0) {
+          powerListEl.innerHTML = `<div style="color: var(--text-muted); font-size: 0.76rem; text-align: center; padding: 12px 0;">No active clusters.</div>`;
+        } else {
+          const sortedCl = [...clusters].filter(c => c && c.infoGain !== undefined).sort((a, b) => (b.infoGain || 0) - (a.infoGain || 0));
+          if (sortedCl.length === 0) {
+            powerListEl.innerHTML = `<div style="color: var(--text-muted); font-size: 0.76rem; text-align: center; padding: 12px 0;">Run simulation in Entropy mode to compute anchor information gain.</div>`;
+          } else {
+            powerListEl.innerHTML = sortedCl.slice(0, 8).map(c => `
+              <div style="display: flex; justify-content: space-between; align-items: center; background: #172033; border: 1px solid var(--card-border); border-radius: 4px; padding: 4px 6px; font-size: 0.71rem;">
+                <span style="color: ${c.color}; font-weight: 700;">Cluster C${c.id} <span style="color: var(--text-muted); font-size: 0.67rem;">(${c.members} members)</span></span>
+                <span style="font-family: monospace; color: #38bdf8; font-weight: 600;">ΔH = +${(c.infoGain || 0).toFixed(2)} bits</span>
+              </div>
+            `).join('');
+          }
+        }
+      }
+    }
+
     function setTab(tab) {
       currentActiveTab = tab;
-      if (tab === 'narrative' || tab === 'tm') {
+      if (tab === 'narrative' || tab === 'tm' || tab === 'entropy') {
         setHoveredCluster(-1);
       }
       const tabNarrative = document.getElementById('tabNarrative');
       const tabCandidates = document.getElementById('tabCandidates');
       const tabTM = document.getElementById('tabTM');
+      const tabEntropyTrace = document.getElementById('tabEntropyTrace');
       const contNarrative = document.getElementById('narrativeContainer');
       const contCandidates = document.getElementById('candidateContainer');
       const contTM = document.getElementById('tmContainer');
+      const contEntropyTrace = document.getElementById('entropyTraceContainer');
 
-      [tabNarrative, tabCandidates, tabTM].forEach(t => t && t.classList.remove('active'));
+      [tabNarrative, tabCandidates, tabTM, tabEntropyTrace].forEach(t => t && t.classList.remove('active'));
       if (contNarrative) contNarrative.style.display = 'none';
       if (contCandidates) contCandidates.style.display = 'none';
       if (contTM) contTM.style.display = 'none';
+      if (contEntropyTrace) contEntropyTrace.style.display = 'none';
 
       if (tab === 'narrative') {
         if (tabNarrative) tabNarrative.classList.add('active');
@@ -5893,6 +6151,10 @@
         computeTopLearnedPaths();
         drawTransitionMatrix('tmHeatmapCanvas', false);
         updateTMTopPaths();
+      } else if (tab === 'entropy') {
+        if (tabEntropyTrace) tabEntropyTrace.classList.add('active');
+        if (contEntropyTrace) contEntropyTrace.style.display = 'flex';
+        renderEntropyTrace();
       }
     }
 
@@ -5915,6 +6177,8 @@
       if (legMem) legMem.style.display = showCircleMembers ? 'inline-flex' : 'none';
       const legSC = document.getElementById('legendCircleSCDists');
       if (legSC) legSC.style.display = showCircleSCDists ? 'inline-flex' : 'none';
+      const legEntropy = document.getElementById('legendEntropyMap');
+      if (legEntropy) legEntropy.style.display = showEntropyMap ? 'inline-flex' : 'none';
 
       // 1. Refresh Resource Metrics, Heap Memory, and Latency Sparkline
       updateResourceMetrics();
@@ -5923,7 +6187,7 @@
       drawDistCurves();
       drawDistAvgCurves();
 
-      // 2. Refresh Live Transition Matrix (-tm) in Decision & Search Trace panel
+      // 2. Refresh Live Transition Matrix (-tm) or Entropy Trace
       if (useTM && typeof currentActiveTab !== 'undefined' && currentActiveTab === 'tm') {
         const now = performance.now();
         const shouldRenderTM = !isRunning || (totalFrames % 4 === 0) || (now - lastTMRenderTimestamp > 80);
@@ -5932,6 +6196,9 @@
           drawTransitionMatrix('tmHeatmapCanvas', false);
           updateTMTopPaths();
         }
+      }
+      if (typeof currentActiveTab !== 'undefined' && currentActiveTab === 'entropy') {
+        renderEntropyTrace();
       }
 
       // Top Badges & Clusters Count
@@ -6012,14 +6279,39 @@
 
       const statTotalDists = document.getElementById('statTotalDists');
       if (statTotalDists) statTotalDists.innerText = formatNumber(distSampleCluster + distClusterCluster);
-      const statDistRate = document.getElementById('statDistRate');
-      if (statDistRate) statDistRate.innerText = formatNumber(Math.round(currentDistRate));
-
-      const statDistRatio = document.getElementById('statDistRatio');
-      if (statDistRatio) statDistRatio.innerText = `${formatNumber(distSampleCluster)} / ${formatNumber(distClusterCluster)}`;
 
       const statMemoryTotal = document.getElementById('statMemoryTotal');
       if (statMemoryTotal) statMemoryTotal.innerText = formatBytes(memStats.totalModelBytes);
+
+      // Entropy Telemetry Stat Cards in Overview Panel
+      const avgInfoGainRate = distSampleCluster > 0 ? (totalEntropyReducedBits / distSampleCluster) : 0.0;
+      const avgInitialH = totalFrames > 0 ? (totalInitialEntropyBits / totalFrames) : 0.0;
+      const totalEntropyGatedAndEval = totalEntropyGated + totalEntropyEvals;
+      const gateRatioPct = totalEntropyGatedAndEval > 0 ? ((totalEntropyGated / totalEntropyGatedAndEval) * 100.0) : 0.0;
+
+      const statInfoGainRate = document.getElementById('statInfoGainRate');
+      if (statInfoGainRate) statInfoGainRate.innerText = `${avgInfoGainRate.toFixed(2)} b/ev`;
+      const statLastInfoGain = document.getElementById('statLastInfoGain');
+      if (statLastInfoGain) statLastInfoGain.innerText = lastInfoGainRate.toFixed(2);
+
+      const statInitialH = document.getElementById('statInitialH');
+      if (statInitialH) statInitialH.innerText = `${lastInitialEntropy.toFixed(2)} b`;
+      const statAvgInitialH = document.getElementById('statAvgInitialH');
+      if (statAvgInitialH) statAvgInitialH.innerText = avgInitialH.toFixed(2);
+
+      const statTotalEntropy = document.getElementById('statTotalEntropy');
+      if (statTotalEntropy) {
+        if (totalEntropyReducedBits >= 1000) {
+          statTotalEntropy.innerText = `${(totalEntropyReducedBits / 1000.0).toFixed(2)} kb`;
+        } else {
+          statTotalEntropy.innerText = `${totalEntropyReducedBits.toFixed(1)} b`;
+        }
+      }
+
+      const statGateRatio = document.getElementById('statGateRatio');
+      if (statGateRatio) statGateRatio.innerText = `${gateRatioPct.toFixed(1)}%`;
+      const statGatedCount = document.getElementById('statGatedCount');
+      if (statGatedCount) statGatedCount.innerText = formatNumber(totalEntropyGated);
 
       const sparklineVal = document.getElementById('sparklineVal');
       if (sparklineVal) sparklineVal.innerText = `${lastComputeTimeMs.toFixed(2)} ms`;
@@ -6065,6 +6357,13 @@
       }
       const statAvgCCEvals = document.getElementById('statAvgCCEvals');
       if (statAvgCCEvals) statAvgCCEvals.innerText = totalFrames > 0 ? (distClusterCluster / totalFrames).toFixed(2) : "0.00";
+
+      const statTotalClustersCount = document.getElementById('statTotalClustersCount');
+      if (statTotalClustersCount) {
+        statTotalClustersCount.innerText = useTiles 
+          ? `${jointTuplesMap.size} tuples` 
+          : `${clusters.length} anchors`;
+      }
 
       const statActiveClusters = document.getElementById('statActiveClusters');
       if (statActiveClusters) {
@@ -6118,6 +6417,21 @@
       const statPredHits = document.getElementById('statPredHits');
       if (statPredHits) statPredHits.innerText = formatNumber(predHitCount);
 
+      // Shannon Entropy Diagnostics in Compute Panel
+      const statDiagAvgInfoGain = document.getElementById('statDiagAvgInfoGain');
+      if (statDiagAvgInfoGain) {
+        const avgHPerFrame = totalFrames > 0 ? (totalEntropyReducedBits / totalFrames) : 0.0;
+        statDiagAvgInfoGain.innerText = `${avgHPerFrame.toFixed(2)} bits/fr`;
+      }
+      const statDiagInfoPower = document.getElementById('statDiagInfoPower');
+      if (statDiagInfoPower) statDiagInfoPower.innerText = `${avgInfoGainRate.toFixed(2)} bits/eval`;
+      const statDiagMaxInitialH = document.getElementById('statDiagMaxInitialH');
+      if (statDiagMaxInitialH) statDiagMaxInitialH.innerText = `${maxInitialEntropyObserved.toFixed(2)} bits`;
+      const statDiagGatedCount = document.getElementById('statDiagGatedCount');
+      if (statDiagGatedCount) statDiagGatedCount.innerText = `${formatNumber(totalEntropyGated)} (${gateRatioPct.toFixed(1)}%)`;
+      const statDiagEvalCount = document.getElementById('statDiagEvalCount');
+      if (statDiagEvalCount) statDiagEvalCount.innerText = formatNumber(totalEntropyEvals);
+
       // Progress bar and frame counter
       if (benchmarkDataset.length > 0) {
         if (loopCount === 0) {
@@ -6157,6 +6471,24 @@
               <span>${step.title}</span>
             </div>
             <div class="narrative-text">${step.text}</div>
+            ${step.entropyRankings && step.entropyRankings.length > 0 ? `
+              <div style="margin-top: 6px; background: #0f172a; border: 1px solid rgba(74, 222, 128, 0.25); border-radius: 4px; padding: 6px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.68rem; font-weight: 700; color: var(--accent-green); margin-bottom: 4px;">
+                  <span>Evaluated Targets Ranking</span>
+                  <span>Uncertainty E[H] / Info Gain</span>
+                </div>
+                ${step.entropyRankings.slice(0, 5).map(r => `
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.68rem; padding: 2px 0; border-top: 1px solid rgba(51, 65, 85, 0.4);">
+                    <span style="color: ${r.isChosen ? '#4ade80' : '#cbd5e1'}; font-weight: ${r.isChosen ? '700' : 'normal'};">
+                      ${r.isChosen ? '★ ' : ''}C${r.id} <span style="color: var(--text-muted); font-size: 0.64rem;">(P=${r.p.toFixed(3)})</span>
+                    </span>
+                    <span style="font-family: monospace; color: ${r.isChosen ? '#4ade80' : '#38bdf8'}; font-size: 0.66rem;">
+                      ${r.isSupport ? `${r.expectedH.toFixed(1)} cl` : `E[H]=${r.expectedH.toFixed(2)}b`} <span style="color: #fbbf24;">(+${r.infoGain.toFixed(2)}b)</span>
+                    </span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
           </div>
         `).join('');
       }
@@ -6487,6 +6819,17 @@
       sessionElapsedMs = 0;
       sessionIsActive = false;
       sessionAvgFps = 0.0;
+
+      // Entropy Telemetry reset
+      totalInitialEntropyBits = 0.0;
+      totalEntropyReducedBits = 0.0;
+      totalEntropyEvals = 0;
+      totalEntropyGated = 0;
+      lastInitialEntropy = 0.0;
+      lastEntropyReduced = 0.0;
+      lastInfoGainRate = 0.0;
+      maxInitialEntropyObserved = 0.0;
+      lastEntropyRankings = [];
 
       tileEngineX.reset();
       tileEngineY.reset();
@@ -7157,6 +7500,8 @@
     document.getElementById('tabCandidates').addEventListener('click', () => setTab('candidates'));
     const tabTMEl = document.getElementById('tabTM');
     if (tabTMEl) tabTMEl.addEventListener('click', () => setTab('tm'));
+    const tabEntropyTraceEl = document.getElementById('tabEntropyTrace');
+    if (tabEntropyTraceEl) tabEntropyTraceEl.addEventListener('click', () => setTab('entropy'));
 
     document.getElementById('btnReset').addEventListener('click', () => {
       pauseSimulation();
@@ -7219,6 +7564,16 @@
       optCircleSCDists.addEventListener('click', () => {
         showCircleSCDists = !showCircleSCDists;
         optCircleSCDists.classList.toggle('active', showCircleSCDists);
+        updateUI();
+        draw();
+      });
+    }
+
+    const optEntropyMap = document.getElementById('optEntropyMap');
+    if (optEntropyMap) {
+      optEntropyMap.addEventListener('click', () => {
+        showEntropyMap = !showEntropyMap;
+        optEntropyMap.classList.toggle('active', showEntropyMap);
         updateUI();
         draw();
       });
