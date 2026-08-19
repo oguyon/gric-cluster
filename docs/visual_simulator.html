@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (12:45 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (15:10 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 12:45:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 15:10:00 HST</span>
     </div>
   </header>
 
@@ -2978,6 +2978,13 @@
       }
     }
 
+    function clearScratchBuffers() {
+      scratchClMembFlag.fill(0);
+      scratchPBase.fill(0);
+      scratchPCurrent.fill(0);
+      scratchCurrentGprobs.fill(0);
+    }
+
     // =========================================================================
     //  RESOURCE & PERFORMANCE TRACKER STATE & TELEMETRY
     // =========================================================================
@@ -3996,16 +4003,18 @@
       }
     }
 
-    function countActive(mask) {
+    function countActive(mask, K) {
       let c = 0;
-      for (let i = 0; i < mask.length; i++) if (mask[i]) c++;
+      const limit = typeof K === 'number' ? K : mask.length;
+      for (let i = 0; i < limit; i++) if (mask[i]) c++;
       return c;
     }
 
-    function getArgMaxP(probs, activeMask) {
+    function getArgMaxP(probs, activeMask, K) {
       let maxP = -1;
       let argMax = -1;
-      for (let i = 0; i < probs.length; i++) {
+      const limit = typeof K === 'number' ? K : probs.length;
+      for (let i = 0; i < limit; i++) {
         if (activeMask[i] && probs[i] > maxP) {
           maxP = probs[i];
           argMax = i;
@@ -4303,10 +4312,10 @@
                 bestCi = i;
               }
             }
-            chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag);
+            chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag, K);
             selectionReason = `Shannon entropy minimization (-entropy): candidate provides lowest expected residual uncertainty E[H]=${minExpectedH.toFixed(2)} bits (current H=${H.toFixed(2)} > gate ${currentGate.toFixed(1)}) to maximize anticipated pruning`;
           } else {
-            chosenTarget = getArgMaxP(pCurrent, clmembflag);
+            chosenTarget = getArgMaxP(pCurrent, clmembflag, K);
             const tCount = (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) ? (transitionCounts[prevAssignedCluster][chosenTarget] || 0) : 0;
             if (useTM && tCount > 0) {
               selectionReason = `Markov transition prior (-tm): transition probability P(C${chosenTarget} | C${prevAssignedCluster}) = ${(pCurrent[chosenTarget] || 0).toFixed(3)} (${tCount} observed transitions from previous anchor C${prevAssignedCluster})`;
@@ -4385,7 +4394,7 @@
         }
 
         // 1. Triangle Inequality (3-Point Pruning)
-        const before3P = countActive(clmembflag);
+        const before3P = countActive(clmembflag, K);
         for (let cl = 0; cl < K; cl++) {
           if (!clmembflag[cl]) continue;
           const d_cc = dcc[chosenTarget][cl];
@@ -4394,7 +4403,7 @@
             currentPruned.push({ cluster: clusters[cl], reason: '3P' });
           }
         }
-        const after3P = countActive(clmembflag);
+        const after3P = countActive(clmembflag, K);
         const pruned3P = before3P - after3P;
         if (pruned3P > 0) pruneCount3P += pruned3P;
 
@@ -4411,7 +4420,7 @@
             const cPrev = measuredIndices[mCount - 2];
             const dPrev = measuredDists[mCount - 2];
             const d12 = dcc[cPrev][chosenTarget];
-            const before4P = countActive(clmembflag);
+            const before4P = countActive(clmembflag, K);
 
             for (let cl = 0; cl < K; cl++) {
               if (!clmembflag[cl]) continue;
@@ -4423,7 +4432,7 @@
                 currentPruned.push({ cluster: clusters[cl], reason: '4P' });
               }
             }
-            const after4P = countActive(clmembflag);
+            const after4P = countActive(clmembflag, K);
             const pruned4P = before4P - after4P;
             if (pruned4P > 0) {
               pruneCount4P += pruned4P;
@@ -4450,7 +4459,7 @@
             const d12 = dcc[c1][c2];
             const d13 = dcc[c1][c3];
             const d23 = dcc[c2][c3];
-            const before5P = countActive(clmembflag);
+            const before5P = countActive(clmembflag, K);
 
             for (let cl = 0; cl < K; cl++) {
               if (!clmembflag[cl]) continue;
@@ -4463,7 +4472,7 @@
                 currentPruned.push({ cluster: clusters[cl], reason: '5P' });
               }
             }
-            const after5P = countActive(clmembflag);
+            const after5P = countActive(clmembflag, K);
             const pruned5P = before5P - after5P;
             if (pruned5P > 0) {
               pruneCount5P += pruned5P;
@@ -6269,6 +6278,7 @@
       currentLoop = 1;
       currentExplanation = [];
       lorenzState = { x: 0.1, y: 0.0, z: 0.0 };
+      clearScratchBuffers();
 
       // Resource Tracker reset
       distSampleCluster = 0;
