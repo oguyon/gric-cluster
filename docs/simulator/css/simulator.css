@@ -137,51 +137,192 @@
 
     .btn-group {
       display: flex;
-      gap: 6px;
+      gap: 4px;
       align-items: center;
+      flex-wrap: wrap;
     }
 
+    .toolbar-divider {
+      width: 1px;
+      height: 18px;
+      background: rgba(255, 255, 255, 0.18);
+      margin: 0 2px;
+      flex-shrink: 0;
+    }
+
+    /* Base Action Buttons: Tactile / Solid push buttons */
     button {
       background: #334155;
       color: #ffffff;
-      border: 1px solid transparent;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 0.82rem;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 4px 8px;
+      border-radius: 5px;
+      font-size: 0.78rem;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s ease;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 4px;
       user-select: none;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
     }
 
     button:hover {
       background: #475569;
+      transform: translateY(-1px);
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    }
+
+    button:active {
+      transform: translateY(1px);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
     }
 
     button.primary {
       background: #2563eb;
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 1px 4px rgba(37, 99, 235, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
     }
     button.primary:hover {
       background: #1d4ed8;
+      box-shadow: 0 3px 8px rgba(37, 99, 235, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
     }
 
     button.danger {
       background: #991b1b;
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 1px 4px rgba(153, 27, 27, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
     }
     button.danger:hover {
       background: #dc2626;
+      box-shadow: 0 3px 8px rgba(220, 38, 38, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
     }
 
     button.secondary {
       background: #0f766e;
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 1px 4px rgba(15, 118, 110, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
     }
     button.secondary:hover {
       background: #0d9488;
+      box-shadow: 0 3px 8px rgba(13, 148, 136, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
     }
 
+    /* State Toggle Buttons (on/off): Distinct Pill Switch Shape with Status LED */
+    button.btn-toggle {
+      background: rgba(15, 23, 42, 0.85);
+      color: #94a3b8;
+      border: 1.5px solid #475569;
+      border-radius: 16px;
+      padding: 3px 8px 3px 7px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      user-select: none;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+      transform: none;
+    }
+
+    button.btn-toggle::before {
+      content: '';
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #475569;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    button.btn-toggle:hover {
+      background: rgba(30, 41, 59, 0.95);
+      border-color: #64748b;
+      color: #f1f5f9;
+      transform: none;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5), 0 2px 5px rgba(0, 0, 0, 0.25);
+    }
+
+    button.btn-toggle:hover::before {
+      background: #64748b;
+    }
+
+    button.btn-toggle:active {
+      transform: none;
+    }
+
+    /* Toggle Active (ON) State */
+    button.btn-toggle.toggle-active,
+    button.btn-toggle.active {
+      background: rgba(56, 189, 248, 0.18) !important;
+      border-color: var(--accent-blue) !important;
+      color: #38bdf8 !important;
+      font-weight: 700;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.35), inset 0 0 6px rgba(56, 189, 248, 0.15) !important;
+    }
+
+    button.btn-toggle.toggle-active::before,
+    button.btn-toggle.active::before {
+      background: #38bdf8 !important;
+      box-shadow: 0 0 8px #38bdf8, 0 0 2px #ffffff !important;
+    }
+
+    /* Amber Toggle (Add Point) */
+    button.btn-toggle.toggle-amber.toggle-active,
+    button.btn-toggle.toggle-amber.active,
+    button.btn-toggle#btnAddPoint.toggle-active,
+    button.btn-toggle#btnAddPointSide.toggle-active {
+      background: rgba(245, 158, 11, 0.18) !important;
+      border-color: #f59e0b !important;
+      color: #fbbf24 !important;
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.35), inset 0 0 6px rgba(245, 158, 11, 0.15) !important;
+    }
+    button.btn-toggle.toggle-amber.toggle-active::before,
+    button.btn-toggle.toggle-amber.active::before,
+    button.btn-toggle#btnAddPoint.toggle-active::before,
+    button.btn-toggle#btnAddPointSide.toggle-active::before {
+      background: #fbbf24 !important;
+      box-shadow: 0 0 8px #fbbf24, 0 0 2px #ffffff !important;
+    }
+
+    /* Green Toggle (WASM Engine) */
+    button.btn-toggle.toggle-green.toggle-active,
+    button.btn-toggle.toggle-green.active,
+    button.btn-toggle#btnWasm.toggle-active {
+      background: rgba(34, 197, 94, 0.18) !important;
+      border-color: #22c55e !important;
+      color: #4ade80 !important;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.35), inset 0 0 6px rgba(34, 197, 94, 0.15) !important;
+    }
+    button.btn-toggle.toggle-green.toggle-active::before,
+    button.btn-toggle.toggle-green.active::before,
+    button.btn-toggle#btnWasm.toggle-active::before {
+      background: #4ade80 !important;
+      box-shadow: 0 0 8px #4ade80, 0 0 2px #ffffff !important;
+    }
+
+    /* Cyan Toggle (Explain Mode) */
+    button.btn-toggle.toggle-cyan.toggle-active,
+    button.btn-toggle.toggle-cyan.active,
+    button.btn-toggle#btnExplain.toggle-active {
+      background: rgba(6, 182, 212, 0.18) !important;
+      border-color: #06b6d4 !important;
+      color: #22d3ee !important;
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.35), inset 0 0 6px rgba(6, 182, 212, 0.15) !important;
+    }
+    button.btn-toggle.toggle-cyan.toggle-active::before,
+    button.btn-toggle.toggle-cyan.active::before,
+    button.btn-toggle#btnExplain.toggle-active::before {
+      background: #22d3ee !important;
+      box-shadow: 0 0 8px #22d3ee, 0 0 2px #ffffff !important;
+    }
+
+    /* Fallback generic .toggle-active */
     button.toggle-active {
       background: rgba(56, 189, 248, 0.2) !important;
       border-color: var(--accent-blue) !important;
@@ -549,21 +690,36 @@
     .toggle-group {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 6px;
-      margin-bottom: 10px;
+      gap: 4px;
+      margin-bottom: 6px;
     }
 
     .toggle-btn {
       background: #172033;
       border: 1px solid var(--card-border);
-      padding: 6px;
-      border-radius: 6px;
+      padding: 4px 6px;
+      border-radius: 5px;
       text-align: center;
-      font-size: 0.76rem;
+      font-size: 0.73rem;
       cursor: pointer;
       color: var(--text-muted);
       transition: all 0.15s ease;
       user-select: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .toggle-btn::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #475569;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
     }
 
     .toggle-btn.active {
@@ -572,6 +728,10 @@
       color: var(--accent-blue);
       font-weight: 700;
     }
+    .toggle-btn.active::before {
+      background: var(--accent-blue);
+      box-shadow: 0 0 6px var(--accent-blue);
+    }
 
     .toggle-btn.active.toggle-green {
       background: rgba(16, 185, 129, 0.18);
@@ -579,12 +739,92 @@
       color: #34d399;
       font-weight: 700;
     }
+    .toggle-btn.active.toggle-green::before {
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
+    }
 
     .toggle-btn.active.toggle-amber {
       background: rgba(245, 158, 11, 0.18);
       border-color: #f59e0b;
       color: #fbbf24;
       font-weight: 700;
+    }
+    .toggle-btn.active.toggle-amber::before {
+      background: #f59e0b;
+      box-shadow: 0 0 6px #f59e0b;
+    }
+
+    /* Combined Toggle Button + Associated Parameter Slider Row */
+    .toggle-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+      background: rgba(15, 23, 42, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 6px;
+      padding: 4px 6px;
+      transition: all 0.15s ease;
+    }
+
+    .toggle-slider-row:hover {
+      background: rgba(15, 23, 42, 0.65);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .toggle-slider-row .toggle-btn {
+      flex: 0 0 88px;
+      min-width: 80px;
+      box-sizing: border-box;
+      white-space: nowrap;
+      padding: 4px 5px;
+      font-size: 0.73rem;
+    }
+
+    .toggle-slider-row .param-slider-col {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .toggle-slider-row .param-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.71rem;
+      color: var(--text-muted);
+      margin-bottom: 1px;
+    }
+
+    .toggle-slider-row .param-label .val {
+      color: #f8fafc;
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    /* Disabled / Greyed-out Control State */
+    .control-disabled,
+    .control-row.disabled,
+    .toggle-slider-row.disabled,
+    .sub-control-card.disabled,
+    .toggle-btn.disabled,
+    .param-slider-col.disabled,
+    .control-group.disabled,
+    button:disabled,
+    input:disabled,
+    select:disabled {
+      opacity: 0.32 !important;
+      pointer-events: none !important;
+      filter: grayscale(0.75) brightness(0.85);
+      cursor: not-allowed !important;
+    }
+
+    .sub-control-card.disabled {
+      border-color: rgba(255, 255, 255, 0.04) !important;
+      background: rgba(15, 23, 42, 0.25) !important;
     }
 
     .stats-grid {

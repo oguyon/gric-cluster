@@ -1362,6 +1362,10 @@
     }
 
     function updateUI() {
+      if (window.syncControlDependencies) {
+        window.syncControlDependencies();
+      }
+
       const presetBar = document.getElementById('viewPresetBar');
       if (presetBar) {
         presetBar.style.display = (currentDim === 3) ? 'flex' : 'none';
@@ -1483,6 +1487,12 @@
       const statTotalDists = document.getElementById('statTotalDists');
       if (statTotalDists) statTotalDists.innerText = formatNumber(distSampleCluster + distClusterCluster);
 
+      const statDistRate = document.getElementById('statDistRate');
+      if (statDistRate) statDistRate.innerText = formatNumber(Math.round(currentDistRate));
+
+      const statDistRatio = document.getElementById('statDistRatio');
+      if (statDistRatio) statDistRatio.innerText = `${formatNumber(distSampleCluster)} / ${formatNumber(distClusterCluster)}`;
+
       const statMemoryTotal = document.getElementById('statMemoryTotal');
       if (statMemoryTotal) statMemoryTotal.innerText = formatBytes(memStats.totalModelBytes);
 
@@ -1535,6 +1545,11 @@
       if (lblLastDFC) lblLastDFC.innerText = distSampleClusterLast;
       const lblLastDCC = document.getElementById('lblLastDCC');
       if (lblLastDCC) lblLastDCC.innerText = distClusterClusterLast;
+
+      const lblLiveMeanDFC = document.getElementById('lblLiveMeanDFC');
+      if (lblLiveMeanDFC) lblLiveMeanDFC.innerText = avgDFC.toFixed(2);
+      const lblLiveMeanDCC = document.getElementById('lblLiveMeanDCC');
+      if (lblLiveMeanDCC) lblLiveMeanDCC.innerText = avgDCC.toFixed(2);
 
       const statDistSC = document.getElementById('statDistSC');
       if (statDistSC) statDistSC.innerText = formatNumber(distSampleCluster);

@@ -67,32 +67,33 @@
                     data-tooltip-title="Run / Pause Continuous Simulation" 
                     data-tooltip-badge="Shortcut: Space" 
                     data-tooltip-color="cyan" 
-                    data-tooltip-desc="Start or pause sequential frame ingestion through the GRIC clustering pipeline at the selected playback speed.">&#9658; Run / Play</button>
-            <button id="btnStep" 
+                    data-tooltip-desc="Start or pause sequential frame ingestion through the GRIC clustering pipeline at the selected playback speed.">&#9658; Play</button>
+            <button id="btnStep" class="btn-action" 
                     data-tooltip-title="Step Ingest Single Frame" 
                     data-tooltip-badge="Shortcut: S / ➔" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Pushes exactly one coordinate vector from the stream, evaluating distance bounds, updating priors, and advancing the frame index.">&#8677; Step</button>
-            <button id="btnAddPoint" 
-                    data-tooltip-title="Toggle Interactive Point Injection" 
-                    data-tooltip-badge="Shortcut: Click Canvas" 
-                    data-tooltip-color="amber" 
-                    data-tooltip-desc="Click anywhere on the 2D canvas or 3D orthogonal projection planes to inject custom query points into the active clustering model.">＋ Add Point</button>
-            <button id="btnExplain" 
-                    data-tooltip-title="Toggle Decision Narrative Explanations" 
-                    data-tooltip-badge="Shortcut: E" 
-                    data-tooltip-color="green" 
-                    data-tooltip-desc="Enables rich step-by-step diagnostic telemetry explaining anchor choices, triangle inequality bounds, entropy calculations, and prunings.">💬 Explain</button>
-            <button id="btnReset" 
+            <button id="btnReset" class="btn-action" 
                     data-tooltip-title="Reset Simulation &amp; Clear Model" 
                     data-tooltip-badge="Shortcut: R" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Clears all established cluster centroids, distance matrices D_cc, transition counts, frame histories, and restarts the dataset from frame 0.">&#8635; Reset</button>
-            <button id="btnResetView" 
+            <button id="btnResetView" class="btn-action" 
                     data-tooltip-title="Reset Pan &amp; Zoom Calibration (1:1)" 
                     data-tooltip-badge="Shortcut: Z" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Restores canvas viewport pan coordinates to origin (0, 0) and resets magnification scale to 100% (1:1 aspect ratio).">🔍 1:1</button>
+            <div class="toolbar-divider"></div>
+            <button id="btnAddPoint" class="btn-toggle toggle-amber" 
+                    data-tooltip-title="Toggle Interactive Point Injection" 
+                    data-tooltip-badge="Shortcut: Click Canvas" 
+                    data-tooltip-color="amber" 
+                    data-tooltip-desc="Click anywhere on the 2D canvas or 3D orthogonal projection planes to inject custom query points into the active clustering model.">＋ Point</button>
+            <button id="btnExplain" class="btn-toggle toggle-cyan" 
+                    data-tooltip-title="Toggle Decision Narrative Explanations" 
+                    data-tooltip-badge="Shortcut: E" 
+                    data-tooltip-color="green" 
+                    data-tooltip-desc="Enables rich step-by-step diagnostic telemetry explaining anchor choices, triangle inequality bounds, entropy calculations, and prunings.">💬 Explain</button>
           </div>
         </div>
       </div>
@@ -152,7 +153,7 @@
                   data-tooltip-title="Isometric 3D Camera Perspective" 
                   data-tooltip-badge="θ=-35°, φ=25°" 
                   data-tooltip-color="teal" 
-                  data-tooltip-desc="Rotates 3D orbit camera to isometric perspective for balanced 3D spatial depth visualization.">Isometric</button>
+                  data-tooltip-desc="Rotates 3D orbit camera to isometric perspective for balanced 3D spatial depth visualization.">Iso</button>
           <button class="preset-btn" id="presetFront" 
                   data-tooltip-title="Front Elevation Projection (XZ Plane)" 
                   data-tooltip-badge="Front View" 
@@ -172,7 +173,7 @@
                   data-tooltip-title="Reset 3D Orbit Camera" 
                   data-tooltip-badge="Reset Camera" 
                   data-tooltip-color="teal" 
-                  data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">↺ Reset 3D</button>
+                  data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">↺ 3D</button>
         </div>
 
         <canvas id="simCanvas" width="800" height="520"></canvas>
@@ -264,12 +265,12 @@
                      data-tooltip-title="Greedy Prior Target Selection" 
                      data-tooltip-badge="Default Mode" 
                      data-tooltip-color="cyan" 
-                     data-tooltip-desc="Selects candidate cluster anchors by prioritizing the highest active prior probability P(c_i) in descending order.">Greedy (argmax P)</div>
+                     data-tooltip-desc="Selects candidate cluster anchors by prioritizing the highest active prior probability P(c_i) in descending order.">Greedy</div>
                 <div id="modeEntropy" class="toggle-btn" 
                      data-tooltip-title="Shannon Entropy Target Selection" 
                      data-tooltip-badge="CLI: -entropy" 
                      data-tooltip-color="green" 
-                     data-tooltip-desc="Minimizes expected residual information entropy E[H], querying anchors that maximize expected geometric pruning.">Entropy (-entropy)</div>
+                     data-tooltip-desc="Minimizes expected residual information entropy E[H], querying anchors that maximize expected geometric pruning.">Entropy</div>
               </div>
 
               <!-- Geometric Pruning Heuristics -->
@@ -279,79 +280,87 @@
                      data-tooltip-title="3-Point Triangle Inequality Pruning" 
                      data-tooltip-badge="Heuristic: 3P" 
                      data-tooltip-color="red" 
-                     data-tooltip-desc="Excludes candidates without computing distances when |d(f, c_i) - d(c_i, c_k)| > rlim using triangle inequality.">3-Point (3P)</div>
+                     data-tooltip-desc="Excludes candidates without computing distances when |d(f, c_i) - d(c_i, c_k)| > rlim using triangle inequality.">3-Point</div>
                 <div id="prune4P" class="toggle-btn" 
                      data-tooltip-title="4-Point Tetrahedral Bounding" 
                      data-tooltip-badge="CLI: -te4" 
                      data-tooltip-color="red" 
-                     data-tooltip-desc="Uses 2 measured anchors to compute Euclidean 4-point tetrahedral embeddability bounds, pruning unviable candidates.">4-Point (-te4)</div>
+                     data-tooltip-desc="Uses 2 measured anchors to compute Euclidean 4-point tetrahedral embeddability bounds, pruning unviable candidates.">4-Point</div>
                 <div id="prune5P" class="toggle-btn" 
                      data-tooltip-title="5-Point Cayley-Menger Bounding" 
                      data-tooltip-badge="CLI: -te5" 
                      data-tooltip-color="red" 
-                     data-tooltip-desc="Evaluates 5-point Cayley-Menger metric determinant geometry across 3 measured anchors for highest pruning power.">5-Point (-te5)</div>
+                     data-tooltip-desc="Evaluates 5-point Cayley-Menger metric determinant geometry across 3 measured anchors for highest pruning power.">5-Point</div>
               </div>
 
               <!-- Prior & Subspace Acceleration -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
+              <div class="sub-control-card" id="cardPriorSection">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-purple); margin-bottom: 8px;">
                   <span>Prior &amp; Subspace Acceleration</span>
                 </div>
-                <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 6px;">
+
+                <!-- 1. Markov Transition Matrix (-tm) -->
+                <div class="toggle-slider-row" id="rowTM">
                   <div id="optTM" class="toggle-btn" 
                        data-tooltip-title="Markov Transition Matrix Mixing" 
                        data-tooltip-badge="CLI: -tm" 
                        data-tooltip-color="purple" 
-                       data-tooltip-desc="Learns temporal transition matrix P(c_t | c_{t-1}) and mixes temporal likelihood with spatial cluster priors.">-tm (Markov)</div>
+                       data-tooltip-desc="Learns temporal transition matrix P(c_t | c_{t-1}) and mixes temporal likelihood with spatial cluster priors.">-tm</div>
+                  <div class="param-slider-col" id="colTmMix">
+                    <div class="param-label">
+                      <span>Mixing Coeff (<span class="badge-pill">-tm</span>)</span>
+                      <span id="lblTmMix" class="val">0.50</span>
+                    </div>
+                    <input type="range" id="sliderTmMix" min="0.00" max="1.00" step="0.05" value="0.50">
+                  </div>
+                </div>
+
+                <!-- 2. Pattern Sequence Predictor (-pred) -->
+                <div class="toggle-slider-row" id="rowPred">
                   <div id="optPred" class="toggle-btn" 
                        data-tooltip-title="Pattern Sequence Predictor" 
                        data-tooltip-badge="CLI: -pred [N]" 
                        data-tooltip-color="purple" 
-                       data-tooltip-desc="Forecasts upcoming cluster candidates across an N-frame horizon using learned empirical sequence trajectories.">-pred (Predictor)</div>
+                       data-tooltip-desc="Forecasts upcoming cluster candidates across an N-frame horizon using learned empirical sequence trajectories.">-pred</div>
+                  <div class="param-slider-col" id="colPredHorizon">
+                    <div class="param-label">
+                      <span>Horizon (<span class="badge-pill">-pred</span>)</span>
+                      <span id="lblPredHorizon" class="val">2 frames</span>
+                    </div>
+                    <input type="range" id="sliderPredHorizon" min="1" max="5" step="1" value="2">
+                  </div>
+                </div>
+
+                <!-- 3. Visitor History Geometry (-gprob) -->
+                <div class="toggle-slider-row" id="rowGprob">
                   <div id="optGprob" class="toggle-btn" 
                        data-tooltip-title="Visitor Co-Measurement Geometry" 
                        data-tooltip-badge="CLI: -gprob" 
                        data-tooltip-color="purple" 
-                       data-tooltip-desc="Boosts cluster candidate likelihood when recent visitor frames have co-measured the same cluster neighborhood.">-gprob (Visitors)</div>
+                       data-tooltip-desc="Boosts cluster candidate likelihood when recent visitor frames have co-measured the same cluster neighborhood.">-gprob</div>
+                  <div class="param-slider-col" id="colMaxVis">
+                    <div class="param-label">
+                      <span>History Depth (<span class="badge-pill">-maxvis</span>)</span>
+                      <span id="lblMaxVis" class="val">20 frames</span>
+                    </div>
+                    <input type="range" id="sliderMaxVis" min="5" max="50" step="5" value="20">
+                  </div>
+                </div>
+
+                <!-- 4. Subspace Tiles (-tiles) & Cross-Tile Prior Sharing (-xtile) on same line -->
+                <div class="toggle-group" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 4px;">
                   <div id="optTiles" class="toggle-btn" 
                        data-tooltip-title="1D Subspace Tile Partitioning" 
                        data-tooltip-badge="CLI: -tiles" 
                        data-tooltip-color="purple" 
-                       data-tooltip-desc="Partitions high-dimensional space into independent 1D orthogonal tiles (X, Y, Z) and resolves clusters as joint tuples.">-tiles (Subspaces)</div>
-                </div>
-
-                <div class="control-row">
-                  <div class="control-label">
-                    <span>Markov Mixing Coeff (<span class="badge-pill">-tm</span>)</span>
-                    <span id="lblTmMix" class="val">0.50</span>
-                  </div>
-                  <input type="range" id="sliderTmMix" min="0.00" max="1.00" step="0.05" value="0.50">
-                </div>
-
-                <div class="control-row">
-                  <div class="control-label">
-                    <span>Predictor Horizon (<span class="badge-pill">-pred [N]</span>)</span>
-                    <span id="lblPredHorizon" class="val">2 frames</span>
-                  </div>
-                  <input type="range" id="sliderPredHorizon" min="1" max="5" step="1" value="2">
-                </div>
-
-                <div class="control-row">
-                  <div class="control-label">
-                    <span>Visitor History Depth (<span class="badge-pill">-maxvis</span>)</span>
-                    <span id="lblMaxVis" class="val">20 frames</span>
-                  </div>
-                  <input type="range" id="sliderMaxVis" min="5" max="50" step="5" value="20">
-                </div>
-
-                <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 4px;">
+                       data-tooltip-desc="Partitions high-dimensional space into independent 1D orthogonal tiles (X, Y, Z) and resolves clusters as joint tuples.">-tiles (1D)</div>
                   <div id="optXTile" class="toggle-btn" 
                        data-tooltip-title="Cross-Tile Prior Sharing" 
                        data-tooltip-badge="CLI: -xtile" 
                        data-tooltip-color="purple" 
-                       data-tooltip-desc="Transfers temporal transition distributions across orthogonal subspace tiles to accelerate joint tuple convergence.">-xtile (Cross-Tile Prior Sharing)</div>
+                       data-tooltip-desc="Transfers temporal transition distributions across orthogonal subspace tiles to accelerate joint tuple convergence.">-xtile</div>
                 </div>
-                <div class="control-row" id="rowXTileDecay" style="display: none;">
+                <div class="control-row" id="rowXTileDecay" style="display: none; margin-top: 4px;">
                   <div class="control-label">
                     <span>Cross-Tile Decay (<span class="badge-pill">-xtile_decay</span>)</span>
                     <span id="lblXTileDecay" class="val">0.70</span>
@@ -361,10 +370,11 @@
               </div>
 
               <!-- Entropy & Soft Bayesian Likelihood -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+              <div class="sub-control-card" id="cardEntropySection">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-green); margin-bottom: 8px;">
                   <span>Shannon Entropy &amp; Bayesian Likelihood</span>
                 </div>
+
                 <div class="control-row">
                   <div class="control-label">
                     <span>Entropy First Gate (<span class="badge-pill">-entropy_first_gate</span>)</span>
@@ -381,18 +391,19 @@
                   <input type="range" id="sliderEntropyGate" min="0.0" max="4.0" step="0.25" value="0.75">
                 </div>
 
-                <div style="display:flex; gap:6px; margin-top:4px;">
-                  <div id="optEntropyFast" class="toggle-btn" style="flex:1;" 
+                <!-- Toggles packed on same line -->
+                <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-top: 6px; margin-bottom: 4px;">
+                  <div id="optEntropyFast" class="toggle-btn" 
                        data-tooltip-title="Fast Top-Candidate Entropy Approx" 
                        data-tooltip-badge="CLI: -entropy_fast" 
                        data-tooltip-color="green" 
                        data-tooltip-desc="Calculates expected entropy using only top high-probability candidate anchors, speeding up frame processing throughput.">-entropy_fast</div>
-                  <div id="optEntropyLeader" class="toggle-btn" style="flex:1;" 
+                  <div id="optEntropyLeader" class="toggle-btn" 
                        data-tooltip-title="Dominant Candidate Short-Circuit" 
                        data-tooltip-badge="P > Cutoff Shortcut" 
                        data-tooltip-color="green" 
-                       data-tooltip-desc="When candidate prior P(c_i) exceeds cutoff (default 0.50), bypasses entropy calculations and measures the dominant leader directly.">Leader Shortcut (P > 0.5)</div>
-                  <div id="optSoftBayesian" class="toggle-btn" style="flex:1;" 
+                       data-tooltip-desc="When candidate prior P(c_i) exceeds cutoff (default 0.50), bypasses entropy calculations and measures the dominant leader directly.">Leader</div>
+                  <div id="optSoftBayesian" class="toggle-btn" 
                        data-tooltip-title="Continuous Soft Bayesian Decay" 
                        data-tooltip-badge="CLI: -soft_bayesian" 
                        data-tooltip-color="green" 
@@ -418,7 +429,7 @@
 
               <!-- Cluster Budget & Eviction -->
               <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-blue); margin-bottom: 8px;">
                   <span>Cluster Budget &amp; Eviction (<span class="badge-pill">-maxcl</span>)</span>
                 </div>
                 <div class="control-row">
@@ -426,34 +437,37 @@
                     <span>Max Clusters (<span class="badge-pill">maxcl</span>)</span>
                     <span id="lblMaxcl" class="val">Unlimited (0)</span>
                   </div>
-                  <input type="range" id="sliderMaxcl" min="0" max="40" step="1" value="0">
+                  <input type="range" id="sliderMaxcl" min="0" max="17" step="1" value="0">
                 </div>
 
-                <div class="control-label" style="font-size: 0.72rem;">Eviction Strategy (-maxcl_strategy)</div>
-                <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 4px;">
-                  <div id="stratStop" class="toggle-btn active" 
-                       data-tooltip-title="Refuse New Clusters on Limit" 
-                       data-tooltip-badge="Strategy: stop" 
-                       data-tooltip-color="amber" 
-                       data-tooltip-desc="When max cluster limit is reached, incoming samples that do not match existing anchors remain unassigned.">stop</div>
-                  <div id="stratDiscard" class="toggle-btn" 
-                       data-tooltip-title="Evict Least-Active Cluster Slot" 
-                       data-tooltip-badge="Strategy: discard" 
-                       data-tooltip-color="amber" 
-                       data-tooltip-desc="When max cluster limit is reached, evicts the cluster with lowest cumulative membership to allocate new anchors.">discard</div>
-                  <div id="stratMerge" class="toggle-btn" 
-                       data-tooltip-title="Merge Closest Pair of Clusters" 
-                       data-tooltip-badge="Strategy: merge" 
-                       data-tooltip-color="amber" 
-                       data-tooltip-desc="When max cluster limit is reached, finds the two closest clusters in D_cc, merges them, and reuses the vacated slot.">merge</div>
-                </div>
-
-                <div class="control-row" id="rowDiscardFrac" style="display: none;">
-                  <div class="control-label">
-                    <span>Discard Fraction (<span class="badge-pill">-discard_frac</span>)</span>
-                    <span id="lblDiscardFrac" class="val">0.10</span>
+                <div id="sectionEvictionStrategy">
+                  <div class="control-label" style="font-size: 0.72rem; margin-top: 6px;">Eviction Strategy (-maxcl_strategy)</div>
+                  <div class="toggle-slider-row" style="margin-top: 4px;">
+                    <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0; flex: 1.2; min-width: 140px;">
+                      <div id="stratStop" class="toggle-btn active" 
+                           data-tooltip-title="Refuse New Clusters on Limit" 
+                           data-tooltip-badge="Strategy: stop" 
+                           data-tooltip-color="amber" 
+                           data-tooltip-desc="When max cluster limit is reached, incoming samples that do not match existing anchors remain unassigned.">stop</div>
+                      <div id="stratDiscard" class="toggle-btn" 
+                           data-tooltip-title="Evict Least-Active Cluster Slot" 
+                           data-tooltip-badge="Strategy: discard" 
+                           data-tooltip-color="amber" 
+                           data-tooltip-desc="When max cluster limit is reached, evicts the cluster with lowest cumulative membership to allocate new anchors.">discard</div>
+                      <div id="stratMerge" class="toggle-btn" 
+                           data-tooltip-title="Merge Closest Pair of Clusters" 
+                           data-tooltip-badge="Strategy: merge" 
+                           data-tooltip-color="amber" 
+                           data-tooltip-desc="When max cluster limit is reached, finds the two closest clusters in D_cc, merges them, and reuses the vacated slot.">merge</div>
+                    </div>
+                    <div class="param-slider-col" id="rowDiscardFrac" style="display: none;">
+                      <div class="param-label">
+                        <span>Discard Frac</span>
+                        <span id="lblDiscardFrac" class="val">0.10</span>
+                      </div>
+                      <input type="range" id="sliderDiscardFrac" min="0.05" max="0.30" step="0.05" value="0.10">
+                    </div>
                   </div>
-                  <input type="range" id="sliderDiscardFrac" min="0.05" max="0.30" step="0.05" value="0.10">
                 </div>
               </div>
             </div>
@@ -560,7 +574,7 @@
                   <input type="range" id="sliderNoiseSigma" min="0.00" max="0.15" step="0.002" value="0.00">
                 </div>
 
-                <div class="control-row">
+                <div class="control-row" id="rowNoiseTrunc">
                   <div class="control-label">
                     <span>Truncation Cutoff (<span class="badge-pill">trunc</span>)</span>
                     <span id="lblNoiseTrunc" class="val">0.050</span>
@@ -577,7 +591,7 @@
                 <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 6px;">
                   Click on any canvas quadrant to inject custom query points directly into the clustering model.
                 </p>
-                <button id="btnAddPointSide" style="width: 100%; justify-content: center; font-size: 0.78rem;" 
+                <button id="btnAddPointSide" class="btn-toggle toggle-amber" style="width: 100%; justify-content: center; font-size: 0.78rem;" 
                         data-tooltip-title="Toggle Point Injection Mode" 
                         data-tooltip-badge="Point Injection" 
                         data-tooltip-color="amber" 
@@ -637,63 +651,63 @@
                        data-tooltip-badge="Area ∝ Points (Green)" 
                        data-tooltip-color="green" 
                        data-tooltip-desc="Draws an emerald green circle around each cluster where the interior circle area is strictly proportional to the number of points (member frames) in that cluster.">
-                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; margin-right:4px;"></span>Points
+                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-right:3px;"></span>Points
                   </div>
                   <div id="optCircleSCDists" class="toggle-btn toggle-amber" 
                        data-tooltip-title="Circle: #SC Distance Computations" 
                        data-tooltip-badge="Area ∝ #SC Dists (Amber)" 
                        data-tooltip-color="amber" 
                        data-tooltip-desc="Draws an amber/orange dashed circle around each cluster where the interior circle area is strictly proportional to cumulative cluster-to-frame distances computed to that cluster.">
-                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f59e0b; margin-right:4px;"></span>#SC Dists
+                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#f59e0b; margin-right:3px;"></span>SC Dists
                   </div>
                   <div id="optEntropyMap" class="toggle-btn" style="color: #38bdf8;" 
                        data-tooltip-title="Spatial Information Gain Heatmap" 
                        data-tooltip-badge="Entropy Reduction Map" 
                        data-tooltip-color="cyan" 
                        data-tooltip-desc="Draws a glowing spatial heatmap halo around each cluster anchor where brightness and color (violet → cyan → emerald → gold) represent its expected Shannon entropy reduction power / information gain ΔH = H - E[H|C_i].">
-                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#38bdf8; margin-right:4px;"></span>Info Gain Map
+                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#38bdf8; margin-right:3px;"></span>Info Map
                   </div>
                 </div>
               </div>
 
               <!-- 3D Camera Presets -->
-              <div class="sub-control-card">
+              <div class="sub-control-card" id="card3DPresetsSide">
                 <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
                   <span>3D Camera Presets &amp; Reset</span>
                 </div>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 6px;">
-                  <button class="preset-btn" id="presetIsoSide" style="padding: 6px; font-size: 0.74rem;" 
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; margin-bottom: 4px;">
+                  <button class="preset-btn" id="presetIsoSide" style="padding: 4px; font-size: 0.73rem;" 
                           data-tooltip-title="Isometric 3D Camera Perspective" 
                           data-tooltip-badge="θ=-35°, φ=25°" 
                           data-tooltip-color="teal" 
-                          data-tooltip-desc="Rotates 3D orbit camera to isometric perspective for balanced 3D spatial depth visualization.">Isometric Perspective</button>
-                  <button class="preset-btn" id="presetFrontSide" style="padding: 6px; font-size: 0.74rem;" 
+                          data-tooltip-desc="Rotates 3D orbit camera to isometric perspective for balanced 3D spatial depth visualization.">Iso</button>
+                  <button class="preset-btn" id="presetFrontSide" style="padding: 4px; font-size: 0.73rem;" 
                           data-tooltip-title="Front Elevation Projection (XZ Plane)" 
                           data-tooltip-badge="Front View" 
                           data-tooltip-color="teal" 
-                          data-tooltip-desc="Aligns perspective along the Y-axis (θ = 0°, φ = 0°) looking directly at the orthogonal X-Z plane.">Front (θ=0°, φ=0°)</button>
-                  <button class="preset-btn" id="presetTopSide" style="padding: 6px; font-size: 0.74rem;" 
+                          data-tooltip-desc="Aligns perspective along the Y-axis (θ = 0°, φ = 0°) looking directly at the orthogonal X-Z plane.">Front (XZ)</button>
+                  <button class="preset-btn" id="presetTopSide" style="padding: 4px; font-size: 0.73rem;" 
                           data-tooltip-title="Top Planar Projection (XY Plane)" 
                           data-tooltip-badge="Top View" 
                           data-tooltip-color="teal" 
-                          data-tooltip-desc="Aligns perspective along the Z-axis (θ = 0°, φ = 89°) looking directly down onto the X-Y ground plane.">Top (θ=0°, φ=89°)</button>
-                  <button class="preset-btn" id="presetSideSide" style="padding: 6px; font-size: 0.74rem;" 
+                          data-tooltip-desc="Aligns perspective along the Z-axis (θ = 0°, φ = 89°) looking directly down onto the X-Y ground plane.">Top (XY)</button>
+                  <button class="preset-btn" id="presetSideSide" style="padding: 4px; font-size: 0.73rem;" 
                           data-tooltip-title="Lateral Side Projection (YZ Plane)" 
                           data-tooltip-badge="Side View" 
                           data-tooltip-color="teal" 
-                          data-tooltip-desc="Aligns perspective along the X-axis (θ = 90°, φ = 0°) looking directly at the orthogonal Y-Z plane.">Side (θ=90°, φ=0°)</button>
+                          data-tooltip-desc="Aligns perspective along the X-axis (θ = 90°, φ = 0°) looking directly at the orthogonal Y-Z plane.">Side (YZ)</button>
                 </div>
-                <div style="display: flex; gap: 6px;">
-                  <button class="preset-btn" id="presetReset3DSide" style="flex: 1; padding: 6px; font-size: 0.74rem;" 
+                <div style="display: flex; gap: 4px;">
+                  <button class="preset-btn" id="presetReset3DSide" style="flex: 1; padding: 4px; font-size: 0.73rem;" 
                           data-tooltip-title="Reset 3D Orbit Camera" 
                           data-tooltip-badge="Reset Camera" 
                           data-tooltip-color="teal" 
-                          data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">↺ Reset 3D Camera</button>
-                  <button id="btnResetViewSide" class="preset-btn" style="flex: 1; padding: 6px; font-size: 0.74rem;" 
+                          data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">↺ 3D Cam</button>
+                  <button id="btnResetViewSide" class="preset-btn" style="flex: 1; padding: 4px; font-size: 0.73rem;" 
                           data-tooltip-title="Reset Pan &amp; Zoom View (1:1)" 
                           data-tooltip-badge="1:1 Zoom" 
                           data-tooltip-color="cyan" 
-                          data-tooltip-desc="Restores 2D / orthogonal quad pan offsets to (0, 0) and resets canvas zoom to 100%.">🔍 Reset Pan/Zoom (1:1)</button>
+                          data-tooltip-desc="Restores 2D / orthogonal quad pan offsets to (0, 0) and resets canvas zoom to 100%.">🔍 1:1 View</button>
                 </div>
               </div>
 

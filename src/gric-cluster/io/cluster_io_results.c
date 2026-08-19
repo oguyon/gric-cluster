@@ -213,7 +213,8 @@ void write_results(
             for (long f = 0; f < state->telemetry.total_frames_processed; f++)
             {
                 int c = state->assignments[f];
-                if (c >= 0 && c < state->num_clusters && state->frame_infos)
+                if (c >= 0 && c < state->num_clusters && state->frame_infos &&
+                    state->frame_infos[f].cluster_indices && state->frame_infos[f].distances)
                 {
                     double d = 0.0;
                     for (int i = 0; i < state->frame_infos[f].num_dists; i++)

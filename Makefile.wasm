@@ -1,0 +1,63 @@
+SHELL := /bin/bash
+
+EMSCRIPTEN_ENV ?= $(HOME)/emsdk/emsdk_env.sh
+
+CC = emcc
+CFLAGS = -O3 -msimd128
+
+INCLUDES = \
+	-Isrc \
+	-Isrc/gric-cluster/core \
+	-Isrc/gric-cluster/math \
+	-Isrc/gric-cluster/steps \
+	-Isrc/gric-cluster/io \
+	-Isrc/wasm
+
+SRCS = \
+	src/gric-cluster/math/framedistance.c \
+	src/gric-cluster/math/cluster_math.c \
+	src/gric-cluster/math/cluster_prune.c \
+	src/gric-cluster/math/cluster_scandist.c \
+	src/gric-cluster/math/tuple_retrieval.c \
+	src/gric-cluster/core/cluster_step.c \
+	src/gric-cluster/core/cluster_mgmt.c \
+	src/gric-cluster/core/cluster_bounds.c \
+	src/gric-cluster/steps/initialize_initial_cluster.c \
+	src/gric-cluster/steps/compute_priors_and_mixing.c \
+	src/gric-cluster/steps/select_next_measurement_target.c \
+	src/gric-cluster/steps/measure_distance_to_cluster.c \
+	src/gric-cluster/steps/update_probabilities_and_pruning.c \
+	src/gric-cluster/steps/update_geometric_probabilities.c \
+	src/gric-cluster/steps/handle_new_cluster_creation.c \
+	src/gric-cluster/steps/record_step_assignment.c \
+	src/gric-cluster/steps/update_consistency_mask.c \
+	src/wasm/gric_wasm_api.c
+
+OUT_DIR = site/simulator/wasm
+OUT_FILE = $(OUT_DIR)/gric_cluster.js
+
+EXPORTED_FUNCTIONS = "['_wasm_cluster_init','_wasm_cluster_process_frame','_wasm_cluster_process_batch','_wasm_cluster_get_num_clusters','_wasm_cluster_get_anchors','_wasm_cluster_get_dcc','_wasm_cluster_get_transition_matrix','_wasm_cluster_get_telemetry','_wasm_cluster_get_probs','_wasm_cluster_reset','_wasm_cluster_free','_malloc','_free']"
+EXPORTED_RUNTIME_METHODS = "['ccall','cwrap','getValue','setValue','HEAPF64','HEAP32','HEAPU8']"
+
+LDFLAGS = \
+	-s MODULARIZE=1 \
+	-s EXPORT_NAME='GricClusterModule' \
+	-s EXPORTED_FUNCTIONS=$(EXPORTED_FUNCTIONS) \
+	-s EXPORTED_RUNTIME_METHODS=$(EXPORTED_RUNTIME_METHODS) \
+	-s ALLOW_MEMORY_GROWTH=1 \
+	-s INITIAL_MEMORY=16777216 \
+	-s STACK_SIZE=1048576 \
+	--no-entry
+
+.PHONY: all clean dirs
+
+all: dirs $(OUT_FILE)
+
+$(OUT_FILE): $(SRCS)
+	source $(EMSCRIPTEN_ENV) && $(CC) $(CFLAGS) $(INCLUDES) $(SRCS) -o $(OUT_FILE) $(LDFLAGS)
+
+dirs:
+	mkdir -p $(OUT_DIR)
+
+clean:
+	rm -rf $(OUT_DIR)
