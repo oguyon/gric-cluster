@@ -751,6 +751,7 @@
       if (lbl) {
         lbl.innerText = noiseSigma <= 1e-6 ? "0.000 (Off)" : noiseSigma.toFixed(3);
       }
+      syncControlDependencies();
     });
 
     const sliderNoiseTrunc = document.getElementById('sliderNoiseTrunc');
@@ -766,12 +767,14 @@
       targetMode = 'greedy';
       document.getElementById('modeGreedy').classList.add('active');
       document.getElementById('modeEntropy').classList.remove('active');
+      syncControlDependencies();
     });
 
     document.getElementById('modeEntropy').addEventListener('click', () => {
       targetMode = 'entropy';
       document.getElementById('modeEntropy').classList.add('active');
       document.getElementById('modeGreedy').classList.remove('active');
+      syncControlDependencies();
     });
 
     ['3P', '4P', '5P'].forEach(p => {
@@ -785,6 +788,7 @@
     document.getElementById('optTM').addEventListener('click', () => {
       useTM = !useTM;
       document.getElementById('optTM').classList.toggle('active', useTM);
+      syncControlDependencies();
       updateUI();
       draw();
     });
@@ -792,16 +796,19 @@
     document.getElementById('optPred').addEventListener('click', () => {
       usePred = !usePred;
       document.getElementById('optPred').classList.toggle('active', usePred);
+      syncControlDependencies();
     });
 
     document.getElementById('optGprob').addEventListener('click', () => {
       useGprob = !useGprob;
       document.getElementById('optGprob').classList.toggle('active', useGprob);
+      syncControlDependencies();
     });
 
     document.getElementById('optTiles').addEventListener('click', () => {
       useTiles = !useTiles;
       document.getElementById('optTiles').classList.toggle('active', useTiles);
+      syncControlDependencies();
       resetSimulation();
       if (currentBenchmark !== "stream" && currentBenchmark !== "3Dlorenz" && currentBenchmark !== "custom") {
         benchmarkDataset = generateBenchmark(currentBenchmark, 1000);
@@ -943,8 +950,19 @@
     // Max Clusters & Eviction Policy (-maxcl)
     const sliderMaxcl = document.getElementById('sliderMaxcl');
     sliderMaxcl.addEventListener('input', (e) => {
-      maxcl = parseInt(e.target.value);
-      document.getElementById('lblMaxcl').innerText = maxcl === 0 ? "Unlimited (0)" : `${maxcl} clusters`;
+      const idx = parseInt(e.target.value, 10);
+      maxcl = idx === 0 ? 0 : (1 << (idx - 1));
+      if (maxcl === 0) {
+        document.getElementById('lblMaxcl').innerText = "Unlimited (0)";
+      } else if (maxcl === 1) {
+        document.getElementById('lblMaxcl').innerText = "1 cluster";
+      } else if (maxcl >= 1024) {
+        const k = maxcl / 1024;
+        document.getElementById('lblMaxcl').innerText = `${maxcl.toLocaleString()} (${k}k)`;
+      } else {
+        document.getElementById('lblMaxcl').innerText = `${maxcl} clusters`;
+      }
+      syncControlDependencies();
     });
 
     ['stratStop', 'stratDiscard', 'stratMerge'].forEach(id => {
@@ -952,7 +970,7 @@
         ['stratStop', 'stratDiscard', 'stratMerge'].forEach(other => document.getElementById(other).classList.remove('active'));
         document.getElementById(id).classList.add('active');
         maxclStrategy = id.replace('strat', '').toLowerCase();
-        document.getElementById('rowDiscardFrac').style.display = (maxclStrategy === 'discard') ? 'flex' : 'none';
+        syncControlDependencies();
       });
     });
 
@@ -1002,7 +1020,7 @@
     document.getElementById('optEntropyLeader').addEventListener('click', () => {
       entropyLeaderShortcut = !entropyLeaderShortcut;
       document.getElementById('optEntropyLeader').classList.toggle('active', entropyLeaderShortcut);
-      document.getElementById('rowLeaderCutoff').style.display = entropyLeaderShortcut ? 'flex' : 'none';
+      syncControlDependencies();
     });
 
     const sliderLeaderCutoff = document.getElementById('sliderLeaderCutoff');
@@ -1014,7 +1032,7 @@
     document.getElementById('optSoftBayesian').addEventListener('click', () => {
       useSoftBayesian = !useSoftBayesian;
       document.getElementById('optSoftBayesian').classList.toggle('active', useSoftBayesian);
-      document.getElementById('rowBayesSigma').style.display = useSoftBayesian ? 'flex' : 'none';
+      syncControlDependencies();
     });
 
     const sliderBayesSigma = document.getElementById('sliderBayesSigma');
@@ -1027,7 +1045,7 @@
     document.getElementById('optXTile').addEventListener('click', () => {
       useXTile = !useXTile;
       document.getElementById('optXTile').classList.toggle('active', useXTile);
-      document.getElementById('rowXTileDecay').style.display = useXTile ? 'flex' : 'none';
+      syncControlDependencies();
     });
 
     const sliderXTileDecay = document.getElementById('sliderXTileDecay');
@@ -1035,6 +1053,92 @@
       xtileDecay = parseFloat(e.target.value);
       document.getElementById('lblXTileDecay').innerText = xtileDecay.toFixed(2);
     });
+
+    // Central Control Enablement & Dependency Synchronization
+    function syncControlDependencies() {
+      // 1. Target Selection Mode -> Shannon Entropy controls & Display Heatmap
+      const isEntropy = (targetMode === 'entropy');
+      const cardEntropy = document.getElementById('cardEntropySection');
+      if (cardEntropy) {
+        cardEntropy.classList.toggle('disabled', !isEntropy);
+      }
+      const optEntropyMap = document.getElementById('optEntropyMap');
+      if (optEntropyMap) {
+        optEntropyMap.classList.toggle('disabled', !isEntropy);
+      }
+
+      // 2. Prior & Subspace Acceleration Sliders
+      const colTmMix = document.getElementById('colTmMix');
+      const sliderTmMixEl = document.getElementById('sliderTmMix');
+      if (colTmMix && sliderTmMixEl) {
+        colTmMix.classList.toggle('disabled', !useTM);
+        sliderTmMixEl.disabled = !useTM;
+      }
+
+      const colPredHorizon = document.getElementById('colPredHorizon');
+      const sliderPredHorizonEl = document.getElementById('sliderPredHorizon');
+      if (colPredHorizon && sliderPredHorizonEl) {
+        colPredHorizon.classList.toggle('disabled', !usePred);
+        sliderPredHorizonEl.disabled = !usePred;
+      }
+
+      const colMaxVis = document.getElementById('colMaxVis');
+      const sliderMaxVisEl = document.getElementById('sliderMaxVis');
+      if (colMaxVis && sliderMaxVisEl) {
+        colMaxVis.classList.toggle('disabled', !useGprob);
+        sliderMaxVisEl.disabled = !useGprob;
+      }
+
+      // -tiles -> -xtile toggle
+      const optXTile = document.getElementById('optXTile');
+      if (optXTile) {
+        optXTile.classList.toggle('disabled', !useTiles);
+      }
+      const rowXTileDecay = document.getElementById('rowXTileDecay');
+      if (rowXTileDecay) {
+        rowXTileDecay.style.display = (useTiles && useXTile) ? 'flex' : 'none';
+      }
+
+      // Leader shortcut & Bayes Sigma conditional rows
+      const rowLeaderCutoff = document.getElementById('rowLeaderCutoff');
+      if (rowLeaderCutoff) {
+        rowLeaderCutoff.style.display = (isEntropy && entropyLeaderShortcut) ? 'flex' : 'none';
+      }
+      const rowBayesSigma = document.getElementById('rowBayesSigma');
+      if (rowBayesSigma) {
+        rowBayesSigma.style.display = useSoftBayesian ? 'flex' : 'none';
+      }
+
+      // 3. Cluster Budget & Eviction (-maxcl)
+      const isBudgeted = (maxcl > 0);
+      const sectionEviction = document.getElementById('sectionEvictionStrategy');
+      if (sectionEviction) {
+        sectionEviction.classList.toggle('disabled', !isBudgeted);
+      }
+      const rowDiscardFrac = document.getElementById('rowDiscardFrac');
+      if (rowDiscardFrac) {
+        rowDiscardFrac.style.display = (isBudgeted && maxclStrategy === 'discard') ? 'flex' : 'none';
+      }
+
+      // 4. Sample Truncated Gaussian Noise
+      const hasNoise = (noiseSigma > 1e-6);
+      const rowNoiseTrunc = document.getElementById('rowNoiseTrunc');
+      const sliderNoiseTruncEl = document.getElementById('sliderNoiseTrunc');
+      if (rowNoiseTrunc && sliderNoiseTruncEl) {
+        rowNoiseTrunc.classList.toggle('disabled', !hasNoise);
+        sliderNoiseTruncEl.disabled = !hasNoise;
+      }
+
+      // 5. 3D Mode Camera Presets
+      const is3D = (currentDim === 3);
+      const card3DPresetsSide = document.getElementById('card3DPresetsSide');
+      if (card3DPresetsSide) {
+        card3DPresetsSide.classList.toggle('disabled', !is3D);
+      }
+    }
+
+    window.syncControlDependencies = syncControlDependencies;
+    syncControlDependencies();
 
     // =========================================================================
     //  SIDEBAR PANELS RESIZING & COLLAPSE CONTROLLER

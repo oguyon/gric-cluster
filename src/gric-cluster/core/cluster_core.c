@@ -595,12 +595,15 @@ void print_clustering_metrics(
         }
 
         double d = 0.0;
-        for (int i = 0; i < state->frame_infos[t].num_dists; i++)
+        if (state->frame_infos[t].cluster_indices && state->frame_infos[t].distances)
         {
-            if (state->frame_infos[t].cluster_indices[i] == assigned_cl)
+            for (int i = 0; i < state->frame_infos[t].num_dists; i++)
             {
-                d = state->frame_infos[t].distances[i];
-                break;
+                if (state->frame_infos[t].cluster_indices[i] == assigned_cl)
+                {
+                    d = state->frame_infos[t].distances[i];
+                    break;
+                }
             }
         }
 

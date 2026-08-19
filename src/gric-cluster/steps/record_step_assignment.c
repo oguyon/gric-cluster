@@ -42,7 +42,35 @@ void record_step_assignment(
     }
     *prev_assigned_cluster = assigned_cluster;
 
-    state->assignments[state->telemetry.total_frames_processed] = assigned_cluster;
+    long frame_idx = state->telemetry.total_frames_processed;
+    if (frame_idx < config->input.maxnbfr)
+    {
+        state->assignments[frame_idx] = assigned_cluster;
+        state->frame_infos[frame_idx].assignment = assigned_cluster;
+        state->frame_infos[frame_idx].num_dists = temp_count;
+
+        if ((config->optim.gprob_mode || config->optim.pred_mode == 2) && temp_count > 0)
+        {
+            state->frame_infos[frame_idx].cluster_indices =
+                (int *)malloc((size_t)temp_count * sizeof(int));
+            state->frame_infos[frame_idx].distances =
+                (double *)malloc((size_t)temp_count * sizeof(double));
+            if (state->frame_infos[frame_idx].cluster_indices &&
+                state->frame_infos[frame_idx].distances)
+            {
+                memcpy(state->frame_infos[frame_idx].cluster_indices,
+                       temp_indices, (size_t)temp_count * sizeof(int));
+                memcpy(state->frame_infos[frame_idx].distances,
+                       temp_dists, (size_t)temp_count * sizeof(double));
+            }
+        }
+        else
+        {
+            state->frame_infos[frame_idx].cluster_indices = NULL;
+            state->frame_infos[frame_idx].distances = NULL;
+        }
+    }
+
     if (ascii_out)
     {
         if (config->input.stream_input_mode)
@@ -59,29 +87,6 @@ void record_step_assignment(
                     state->telemetry.total_frames_processed,
                     assigned_cluster, state->telemetry.last_assignment_dist);
         }
-    }
-
-    state->frame_infos[state->telemetry.total_frames_processed].assignment = assigned_cluster;
-    state->frame_infos[state->telemetry.total_frames_processed].num_dists = temp_count;
-    if (temp_count > 0)
-    {
-        state->frame_infos[state->telemetry.total_frames_processed].cluster_indices =
-            (int *)malloc(temp_count * sizeof(int));
-        state->frame_infos[state->telemetry.total_frames_processed].distances =
-            (double *)malloc(temp_count * sizeof(double));
-        if (state->frame_infos[state->telemetry.total_frames_processed].cluster_indices &&
-            state->frame_infos[state->telemetry.total_frames_processed].distances)
-        {
-            memcpy(state->frame_infos[state->telemetry.total_frames_processed].cluster_indices,
-                   temp_indices, temp_count * sizeof(int));
-            memcpy(state->frame_infos[state->telemetry.total_frames_processed].distances,
-                   temp_dists, temp_count * sizeof(double));
-        }
-    }
-    else
-    {
-        state->frame_infos[state->telemetry.total_frames_processed].cluster_indices = NULL;
-        state->frame_infos[state->telemetry.total_frames_processed].distances = NULL;
     }
 
     if (config->optim.pred_mode)
