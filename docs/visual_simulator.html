@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (15:35 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (15:40 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 15:35:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 15:40:00 HST</span>
     </div>
   </header>
 
@@ -1499,11 +1499,24 @@
                        data-tooltip-badge="CLI: -entropy_fast" 
                        data-tooltip-color="green" 
                        data-tooltip-desc="Calculates expected entropy using only top high-probability candidate anchors, speeding up frame processing throughput.">-entropy_fast</div>
+                  <div id="optEntropyLeader" class="toggle-btn" style="flex:1;" 
+                       data-tooltip-title="Dominant Candidate Short-Circuit" 
+                       data-tooltip-badge="P > Cutoff Shortcut" 
+                       data-tooltip-color="green" 
+                       data-tooltip-desc="When candidate prior P(c_i) exceeds cutoff (default 0.50), bypasses entropy calculations and measures the dominant leader directly.">Leader Shortcut (P > 0.5)</div>
                   <div id="optSoftBayesian" class="toggle-btn" style="flex:1;" 
                        data-tooltip-title="Continuous Soft Bayesian Decay" 
                        data-tooltip-badge="CLI: -soft_bayesian" 
                        data-tooltip-color="green" 
                        data-tooltip-desc="Applies continuous Gaussian likelihood attenuation on distance mismatch rather than strict binary pruning.">-soft_bayesian</div>
+                </div>
+
+                <div class="control-row" id="rowLeaderCutoff" style="display: none; margin-top: 4px;">
+                  <div class="control-label">
+                    <span>Leader Cutoff (<span class="badge-pill">P_match</span>)</span>
+                    <span id="lblLeaderCutoff" class="val">0.50</span>
+                  </div>
+                  <input type="range" id="sliderLeaderCutoff" min="0.30" max="0.90" step="0.05" value="0.50">
                 </div>
 
                 <div class="control-row" id="rowBayesSigma" style="display: none; margin-top: 4px;">
@@ -2777,10 +2790,12 @@
     let maxclStrategy = 'stop'; // -maxcl_strategy (stop, discard, merge)
     let discardFraction = 0.10; // -discard_frac
 
-    // Entropy Advanced Gating
+    // Entropy Advanced Gating & Leader Shortcut
     let entropyFirstGate = 1.50; // -entropy_first_gate (bits)
     let entropyGate = 0.75; // -entropy_gate (bits)
     let entropyFastMode = false; // -entropy_fast
+    let entropyLeaderShortcut = false; // Leader P > cutoff bypass
+    let entropyLeaderCutoff = 0.50; // Threshold for leader bypass
 
     // Soft Bayesian Mode
     let useSoftBayesian = false; // -soft_bayesian
@@ -4329,111 +4344,121 @@
           const currentGate = (measDepth === 0) ? entropyFirstGate : entropyGate;
 
           if (targetMode === 'entropy' && activeIndices.length > 1 && H > currentGate) {
-            let bestCi = -1;
-            let minExpectedH = 1e30;
-            const twoRlim = 2.0 * rlim;
-
             let maxP = -1;
+            let argMaxP = -1;
             for (let i of activeIndices) {
-              if (pCurrent[i] > maxP) maxP = pCurrent[i];
-            }
-            const dynamicMinProb = Math.max(1e-5, maxP * 0.01);
-
-            // Precompute p * log2(p) for active candidates
-            const plogp = new Float64Array(K);
-            for (let i of activeIndices) {
-              const p = pCurrent[i];
-              plogp[i] = (p > 1e-12) ? p * Math.log2(p) : 0.0;
-            }
-
-            // Top candidate targets to evaluate (in C: top M based on probability and limit)
-            let targetsToEval = activeIndices;
-            if (activeIndices.length > 24) {
-              const sorted = [...activeIndices].sort((a, b) => pCurrent[b] - pCurrent[a]);
-              targetsToEval = sorted.slice(0, 24);
-            }
-
-            const numA = activeIndices.length;
-            let sampledHypotheses = activeIndices;
-            if (numA > 32) {
-              sampledHypotheses = [];
-              const step = numA / 32.0;
-              for (let s = 0; s < 32; s++) {
-                sampledHypotheses.push(activeIndices[Math.floor(s * step)]);
+              if (pCurrent[i] > maxP) {
+                maxP = pCurrent[i];
+                argMaxP = i;
               }
             }
-            const numH = sampledHypotheses.length;
 
-            if (entropyFastMode) {
-              // Popcount surrogate mode (-entropy_fast in C)
-              let minExpectedSupport = 1e30;
-              for (let tc of targetsToEval) {
-                const dcc_tc = dcc[tc];
-                let expectedSupport = 0.0;
-                for (let h = 0; h < numH; h++) {
-                  const hj = sampledHypotheses[h];
-                  const p_hj = pCurrent[hj];
-                  if (p_hj < dynamicMinProb) continue;
-                  const d_ij = dcc_tc[hj];
-                  const minD = d_ij - twoRlim;
-                  const maxD = d_ij + twoRlim;
-
-                  let survivingCount = 0;
-                  for (let k = 0; k < numA; k++) {
-                    const hk = activeIndices[k];
-                    const d_ik = dcc_tc[hk];
-                    if (d_ik >= minD && d_ik <= maxD) {
-                      survivingCount++;
-                    }
-                  }
-                  expectedSupport += p_hj * survivingCount;
-                }
-                if (expectedSupport < minExpectedSupport) {
-                  minExpectedSupport = expectedSupport;
-                  bestCi = tc;
-                }
-              }
-              chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag, K);
-              selectionReason = `Popcount surrogate (-entropy_fast): candidate C${chosenTarget} minimizes expected surviving candidate support to ${minExpectedSupport.toFixed(1)} clusters (current H=${H.toFixed(2)} > gate ${currentGate.toFixed(1)})`;
+            // Dominant Leader Short-Circuit Option (e.g. P > 0.50)
+            if (entropyLeaderShortcut && maxP >= entropyLeaderCutoff) {
+              chosenTarget = argMaxP;
+              selectionReason = `Dominant leader shortcut (P(C${argMaxP}) = ${maxP.toFixed(3)} ≥ ${entropyLeaderCutoff.toFixed(2)}): bypassed entropy calculation to measure clear favorite directly`;
             } else {
-              // Full Expected Shannon Entropy Minimization (C Reference)
-              for (let tc of targetsToEval) {
-                const dcc_tc = dcc[tc];
-                let expectedH = 0.0;
+              let bestCi = -1;
+              let minExpectedH = 1e30;
+              const twoRlim = 2.0 * rlim;
+              const dynamicMinProb = Math.max(1e-5, maxP * 0.01);
 
-                for (let h = 0; h < numH; h++) {
-                  const hj = sampledHypotheses[h];
-                  const p_hj = pCurrent[hj];
-                  if (p_hj < dynamicMinProb) continue;
+              // Precompute p * log2(p) for active candidates
+              const plogp = new Float64Array(K);
+              for (let i of activeIndices) {
+                const p = pCurrent[i];
+                plogp[i] = (p > 1e-12) ? p * Math.log2(p) : 0.0;
+              }
 
-                  const d_ij = dcc_tc[hj];
-                  const minD = d_ij - twoRlim;
-                  const maxD = d_ij + twoRlim;
+              // Top candidate targets to evaluate (in C: top M based on probability and limit)
+              let targetsToEval = activeIndices;
+              if (activeIndices.length > 24) {
+                const sorted = [...activeIndices].sort((a, b) => pCurrent[b] - pCurrent[a]);
+                targetsToEval = sorted.slice(0, 24);
+              }
 
-                  let hypoSum = 0.0;
-                  let plogpSum = 0.0;
+              const numA = activeIndices.length;
+              let sampledHypotheses = activeIndices;
+              if (numA > 32) {
+                sampledHypotheses = [];
+                const step = numA / 32.0;
+                for (let s = 0; s < 32; s++) {
+                  sampledHypotheses.push(activeIndices[Math.floor(s * step)]);
+                }
+              }
+              const numH = sampledHypotheses.length;
 
-                  for (let k = 0; k < numA; k++) {
-                    const hk = activeIndices[k];
-                    const d_ik = dcc_tc[hk];
-                    if (d_ik >= minD && d_ik <= maxD) {
-                      hypoSum += pCurrent[hk];
-                      plogpSum += plogp[hk];
+              if (entropyFastMode) {
+                // Popcount surrogate mode (-entropy_fast in C)
+                let minExpectedSupport = 1e30;
+                for (let tc of targetsToEval) {
+                  const dcc_tc = dcc[tc];
+                  let expectedSupport = 0.0;
+                  for (let h = 0; h < numH; h++) {
+                    const hj = sampledHypotheses[h];
+                    const p_hj = pCurrent[hj];
+                    if (p_hj < dynamicMinProb) continue;
+                    const d_ij = dcc_tc[hj];
+                    const minD = d_ij - twoRlim;
+                    const maxD = d_ij + twoRlim;
+
+                    let survivingCount = 0;
+                    for (let k = 0; k < numA; k++) {
+                      const hk = activeIndices[k];
+                      const d_ik = dcc_tc[hk];
+                      if (d_ik >= minD && d_ik <= maxD) {
+                        survivingCount++;
+                      }
+                    }
+                    expectedSupport += p_hj * survivingCount;
+                  }
+                  if (expectedSupport < minExpectedSupport) {
+                    minExpectedSupport = expectedSupport;
+                    bestCi = tc;
+                  }
+                }
+                chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag, K);
+                selectionReason = `Popcount surrogate (-entropy_fast): candidate C${chosenTarget} minimizes expected surviving candidate support to ${minExpectedSupport.toFixed(1)} clusters (current H=${H.toFixed(2)} > gate ${currentGate.toFixed(1)})`;
+              } else {
+                // Full Expected Shannon Entropy Minimization (C Reference)
+                for (let tc of targetsToEval) {
+                  const dcc_tc = dcc[tc];
+                  let expectedH = 0.0;
+
+                  for (let h = 0; h < numH; h++) {
+                    const hj = sampledHypotheses[h];
+                    const p_hj = pCurrent[hj];
+                    if (p_hj < dynamicMinProb) continue;
+
+                    const d_ij = dcc_tc[hj];
+                    const minD = d_ij - twoRlim;
+                    const maxD = d_ij + twoRlim;
+
+                    let hypoSum = 0.0;
+                    let plogpSum = 0.0;
+
+                    for (let k = 0; k < numA; k++) {
+                      const hk = activeIndices[k];
+                      const d_ik = dcc_tc[hk];
+                      if (d_ik >= minD && d_ik <= maxD) {
+                        hypoSum += pCurrent[hk];
+                        plogpSum += plogp[hk];
+                      }
+                    }
+
+                    if (hypoSum > 0.0) {
+                      expectedH += p_hj * (Math.log2(hypoSum) - (plogpSum / hypoSum));
                     }
                   }
 
-                  if (hypoSum > 0.0) {
-                    expectedH += p_hj * (Math.log2(hypoSum) - (plogpSum / hypoSum));
+                  if (expectedH < minExpectedH) {
+                    minExpectedH = expectedH;
+                    bestCi = tc;
                   }
                 }
-
-                if (expectedH < minExpectedH) {
-                  minExpectedH = expectedH;
-                  bestCi = tc;
-                }
+                chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag, K);
+                selectionReason = `Shannon entropy minimization (-entropy): candidate C${chosenTarget} provides lowest expected residual uncertainty E[H]=${minExpectedH.toFixed(2)} bits (current H=${H.toFixed(2)} > gate ${currentGate.toFixed(1)}) to maximize anticipated geometric pruning`;
               }
-              chosenTarget = (bestCi !== -1) ? bestCi : getArgMaxP(pCurrent, clmembflag, K);
-              selectionReason = `Shannon entropy minimization (-entropy): candidate C${chosenTarget} provides lowest expected residual uncertainty E[H]=${minExpectedH.toFixed(2)} bits (current H=${H.toFixed(2)} > gate ${currentGate.toFixed(1)}) to maximize anticipated geometric pruning`;
             }
           } else {
             // Greedy Prior Selection (argmax P)
@@ -7452,6 +7477,18 @@
     document.getElementById('optEntropyFast').addEventListener('click', () => {
       entropyFastMode = !entropyFastMode;
       document.getElementById('optEntropyFast').classList.toggle('active', entropyFastMode);
+    });
+
+    document.getElementById('optEntropyLeader').addEventListener('click', () => {
+      entropyLeaderShortcut = !entropyLeaderShortcut;
+      document.getElementById('optEntropyLeader').classList.toggle('active', entropyLeaderShortcut);
+      document.getElementById('rowLeaderCutoff').style.display = entropyLeaderShortcut ? 'flex' : 'none';
+    });
+
+    const sliderLeaderCutoff = document.getElementById('sliderLeaderCutoff');
+    sliderLeaderCutoff.addEventListener('input', (e) => {
+      entropyLeaderCutoff = parseFloat(e.target.value);
+      document.getElementById('lblLeaderCutoff').innerText = entropyLeaderCutoff.toFixed(2);
     });
 
     document.getElementById('optSoftBayesian').addEventListener('click', () => {
