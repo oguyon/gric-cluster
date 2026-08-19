@@ -73,10 +73,10 @@
                     data-tooltip-badge="Shortcut: S / ➔" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Pushes exactly one coordinate vector from the stream, evaluating distance bounds, updating priors, and advancing the frame index.">&#8677; Step</button>
-            <button id="btnReset" class="btn-action" 
-                    data-tooltip-title="Reset Simulation &amp; Clear Model" 
-                    data-tooltip-badge="Shortcut: R" 
-                    data-tooltip-color="cyan" 
+            <button id="btnReset" class="btn-action"
+                    data-tooltip-title="Reset Simulation &amp; Clear Model"
+                    data-tooltip-badge="Shortcut: R"
+                    data-tooltip-color="cyan"
                     data-tooltip-desc="Clears all established cluster centroids, distance matrices D_cc, transition counts, frame histories, and restarts the dataset from frame 0.">&#8635; Reset</button>
             <button id="btnResetView" class="btn-action" 
                     data-tooltip-title="Reset Pan &amp; Zoom Calibration (1:1)" 
@@ -94,6 +94,11 @@
                     data-tooltip-badge="Shortcut: E" 
                     data-tooltip-color="green" 
                     data-tooltip-desc="Enables rich step-by-step diagnostic telemetry explaining anchor choices, triangle inequality bounds, entropy calculations, and prunings.">💬 Explain</button>
+            <button id="btnWasm" class="btn-toggle toggle-green"
+                    data-tooltip-title="Toggle C/WASM Clustering Engine"
+                    data-tooltip-badge="Faster Engine"
+                    data-tooltip-color="green"
+                    data-tooltip-desc="Switch between the C/WebAssembly (SIMD) engine and the JavaScript fallback. WASM is automatically disabled when Explain mode or Tile mode is active.">⚡ WASM</button>
           </div>
         </div>
       </div>
@@ -1029,6 +1034,18 @@
                 </div>
               </div>
 
+              <!-- Clustering Engine Backend -->
+              <div class="sub-control-card" style="margin-bottom: 6px;">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                  <span>Clustering Engine</span>
+                  <span id="badgeWasmStatus" class="badge-pill" style="background: rgba(100,100,100,0.2); color: #888; font-family: monospace; font-size: 0.68rem; cursor: pointer;" onclick="toggleWasmEngine()">JS</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Backend:</span>
+                  <span id="statEngineBackend" class="val">JavaScript</span>
+                </div>
+              </div>
+
               <!-- JS Engine Heap -->
               <div class="sub-control-card">
                 <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
@@ -1280,10 +1297,36 @@
   <script src="simulator/js/geometry.js"></script>
   <script src="simulator/js/benchmarks.js"></script>
   <script src="simulator/js/tile_engine.js"></script>
+  <script src="simulator/wasm/gric_cluster.js"></script>
+  <script src="simulator/js/wasm_bridge.js"></script>
   <script src="simulator/js/state.js"></script>
   <script src="simulator/js/telemetry.js"></script>
   <script src="simulator/js/renderer.js"></script>
   <script src="simulator/js/clustering_core.js"></script>
   <script src="simulator/js/main.js"></script>
+  <script>
+    // Async WASM module and Worker initialization
+    (async function() {
+      try {
+        await GricWasm.load();
+        if (typeof GricWasmWorker !== 'undefined') {
+          GricWasmWorker.initWorker();
+        }
+        if (GricWasm.isLoaded()) {
+          console.log('[WASM] Engine available');
+          // Init WASM session with current config
+          const params = GricWasm.buildParamsFromState();
+          wasmSessionActive = GricWasm.init(params);
+          if (typeof GricWasmWorker !== 'undefined') {
+            GricWasmWorker.startSession(params);
+          }
+          updateWasmBadge();
+        }
+      } catch (e) {
+        console.warn('[WASM] Load failed, using JS fallback:', e);
+        updateWasmBadge();
+      }
+    })();
+  </script>
 </body>
 </html>
