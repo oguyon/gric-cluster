@@ -297,6 +297,12 @@
     let currentEntropyBits = 0;
     let currentExplanation = [];
 
+    // Recent Samples Decision & Search Trace History Buffer
+    const MAX_SAMPLE_TRACE_HISTORY = 200;
+    let sampleTraceLog = []; // [{ frameIndex, point, assignedCluster, isNewCluster, distSC, distCC, initialEntropy, entropyReduced, steps, entropyRankings }]
+    let selectedSampleTraceIndex = -1; // -1: Live (Latest frame), >= 0: Viewing specific frame index
+    let hoveredSampleTracePoint = null; // { x, y, z, frameIndex, clusterId } for canvas highlight
+
     // Fast Pre-computed Unit Circle Trigonometry Lookup Table (for 3D Wireframe Rings)
     const CIRCLE_LUT_STEPS = 16;
     const CIRCLE_COS = new Float32Array(CIRCLE_LUT_STEPS + 1);

@@ -816,6 +816,44 @@
           if (selC) renderClusterHighlight(selC, '#facc15', true);
         }
 
+        // Draw Inspected / Hovered Past Sample Point
+        const targetSample = hoveredSampleTracePoint || 
+          (selectedSampleTraceIndex >= 0 ? sampleTraceLog.find(e => e.frameIndex === selectedSampleTraceIndex) : null);
+        if (targetSample) {
+          const ptObj = targetSample.point || targetSample;
+          const prP = getProjectedCoord(ptObj);
+          const posP = mapMetricToQuad(prP.u, prP.v, qIdx, rect);
+
+          ctx.save();
+          // Outer glowing ring
+          ctx.beginPath();
+          ctx.arc(posP.px, posP.py, 7, 0, Math.PI * 2);
+          ctx.strokeStyle = '#facc15';
+          ctx.lineWidth = 2.0;
+          ctx.stroke();
+
+          // Center solid point
+          ctx.beginPath();
+          ctx.arc(posP.px, posP.py, 3, 0, Math.PI * 2);
+          ctx.fillStyle = '#facc15';
+          ctx.fill();
+
+          // Crosshairs
+          ctx.beginPath();
+          ctx.moveTo(posP.px - 10, posP.py); ctx.lineTo(posP.px + 10, posP.py);
+          ctx.moveTo(posP.px, posP.py - 10); ctx.lineTo(posP.px, posP.py + 10);
+          ctx.strokeStyle = 'rgba(250, 204, 21, 0.85)';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          // Label
+          ctx.font = 'bold 9px monospace';
+          ctx.fillStyle = '#facc15';
+          const fIdx = targetSample.frameIndex || 0;
+          ctx.fillText(`Point #${fIdx}`, posP.px + 9, posP.py - 5);
+          ctx.restore();
+        }
+
         // Draw Hovered Transition Matrix Vector Arrow (from C_i -> C_j)
         if (hoveredTMCell && hoveredTMCell.i >= 0 && hoveredTMCell.j >= 0 &&
             hoveredTMCell.i < clusters.length && hoveredTMCell.j < clusters.length &&

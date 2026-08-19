@@ -1082,24 +1082,165 @@
       draw();
     }
 
+    function getActiveSampleTrace() {
+      if (selectedSampleTraceIndex >= 0) {
+        const found = sampleTraceLog.find(e => e.frameIndex === selectedSampleTraceIndex);
+        if (found) return found;
+      }
+      if (sampleTraceLog.length > 0) {
+        return sampleTraceLog[sampleTraceLog.length - 1];
+      }
+      return null;
+    }
+
+    function hoverSampleHistoryPoint(frameIndex) {
+      const entry = sampleTraceLog.find(e => e.frameIndex === frameIndex);
+      if (entry) {
+        hoveredSampleTracePoint = {
+          x: entry.point.x,
+          y: entry.point.y,
+          z: entry.point.z || 0.0,
+          frameIndex: entry.frameIndex,
+          clusterId: entry.assignedCluster
+        };
+        hoveredClusterId = entry.assignedCluster;
+        draw();
+      }
+    }
+
+    function clearSampleHistoryHover() {
+      hoveredSampleTracePoint = null;
+      hoveredClusterId = -1;
+      draw();
+    }
+
+    function selectPastSample(frameIndex) {
+      selectedSampleTraceIndex = frameIndex;
+      const entry = sampleTraceLog.find(e => e.frameIndex === frameIndex);
+      if (entry) {
+        hoveredSampleTracePoint = {
+          x: entry.point.x,
+          y: entry.point.y,
+          z: entry.point.z || 0.0,
+          frameIndex: entry.frameIndex,
+          clusterId: entry.assignedCluster
+        };
+      }
+      updateUI();
+      draw();
+    }
+
+    function returnToLiveStream() {
+      selectedSampleTraceIndex = -1;
+      hoveredSampleTracePoint = null;
+      updateUI();
+      draw();
+    }
+
+    function renderSampleHistoryUI() {
+      const selectEl = document.getElementById('selectSampleHistory');
+      const countEl = document.getElementById('lblSampleHistoryCount');
+      const btnPrev = document.getElementById('btnPrevSample');
+      const btnNext = document.getElementById('btnNextSample');
+      const btnLive = document.getElementById('btnLiveSample');
+      const stripEl = document.getElementById('sampleHistoryStrip');
+
+      const totalLogged = sampleTraceLog.length;
+      if (countEl) {
+        countEl.innerText = `${totalLogged}/${totalFrames}`;
+      }
+
+      const isLive = (selectedSampleTraceIndex === -1);
+
+      if (btnLive) {
+        btnLive.style.opacity = isLive ? '1.0' : '0.6';
+        btnLive.style.background = isLive ? 'rgba(74, 222, 128, 0.2)' : 'rgba(100, 116, 139, 0.2)';
+        btnLive.style.borderColor = isLive ? 'rgba(74, 222, 128, 0.4)' : 'rgba(100, 116, 139, 0.3)';
+        btnLive.style.color = isLive ? '#4ade80' : '#94a3b8';
+      }
+
+      // Populate Select Dropdown
+      if (selectEl) {
+        let activeVal = isLive ? -1 : selectedSampleTraceIndex;
+        let html = `<option value="-1" ${isLive ? 'selected' : ''}>● Live: Point #${totalFrames || 0}</option>`;
+        for (let i = sampleTraceLog.length - 1; i >= 0; i--) {
+          const entry = sampleTraceLog[i];
+          const isSel = (entry.frameIndex === selectedSampleTraceIndex);
+          const clName = `C${entry.assignedCluster}`;
+          html += `<option value="${entry.frameIndex}" ${isSel ? 'selected' : ''}>Point #${entry.frameIndex} (${clName}, ${entry.distSC}ev)</option>`;
+        }
+        selectEl.innerHTML = html;
+        selectEl.value = String(activeVal);
+      }
+
+      // Button states
+      let currentPos = -1;
+      if (!isLive) {
+        currentPos = sampleTraceLog.findIndex(e => e.frameIndex === selectedSampleTraceIndex);
+      } else {
+        currentPos = sampleTraceLog.length - 1;
+      }
+
+      if (btnPrev) btnPrev.disabled = (totalLogged === 0 || currentPos <= 0);
+      if (btnNext) btnNext.disabled = (totalLogged === 0 || isLive || currentPos >= totalLogged - 1);
+
+      // Render timeline strip
+      if (stripEl) {
+        if (sampleTraceLog.length === 0) {
+          stripEl.innerHTML = `<span style="color: var(--text-muted); font-size: 0.65rem; padding: 2px 4px;">No samples logged yet. Click Step or Play to ingest frames.</span>`;
+        } else {
+          const recentToShow = sampleTraceLog.slice(-25); // show last 25 points in strip
+          stripEl.innerHTML = recentToShow.map(entry => {
+            const isSel = (!isLive && entry.frameIndex === selectedSampleTraceIndex) || (isLive && entry.frameIndex === totalFrames);
+            const clColor = (clusters[entry.assignedCluster] && clusters[entry.assignedCluster].color) || '#38bdf8';
+            const bg = isSel ? 'rgba(250, 204, 21, 0.25)' : '#172033';
+            const border = isSel ? '#facc15' : 'rgba(51, 65, 85, 0.6)';
+            return `
+              <div class="sample-chip ${isSel ? 'active' : ''}"
+                   style="display: inline-flex; align-items: center; gap: 3px; background: ${bg}; border: 1px solid ${border}; border-radius: 4px; padding: 1px 5px; font-size: 0.65rem; font-family: monospace; cursor: pointer; white-space: nowrap; transition: all 0.15s ease;"
+                   onmouseenter="hoverSampleHistoryPoint(${entry.frameIndex})"
+                   onmouseleave="clearSampleHistoryHover()"
+                   onclick="selectPastSample(${entry.frameIndex})"
+                   data-tooltip-title="Sample #${entry.frameIndex}"
+                   data-tooltip-badge="Assigned C${entry.assignedCluster}"
+                   data-tooltip-color="cyan"
+                   data-tooltip-desc="Coordinates: (${entry.point.x.toFixed(2)}, ${entry.point.y.toFixed(2)}${currentDim === 3 ? `, ${entry.point.z.toFixed(2)}` : ''}). Distance Evaluations: ${entry.distSC}. Click to inspect decision trace.">
+                <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${clColor};"></span>
+                <span style="color: ${isSel ? '#facc15' : '#f8fafc'}; font-weight: ${isSel ? '700' : 'normal'};">#${entry.frameIndex}</span>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+    }
+
     function renderEntropyTrace() {
       const listEl = document.getElementById('entropyRankingsList');
       const powerListEl = document.getElementById('entropyClusterPowerList');
       const badgeStatus = document.getElementById('badgeEntropyStatus');
 
+      const activeTrace = getActiveSampleTrace();
+      const rankings = (activeTrace && activeTrace.entropyRankings && activeTrace.entropyRankings.length > 0)
+        ? activeTrace.entropyRankings
+        : lastEntropyRankings;
+
       if (badgeStatus) {
-        badgeStatus.innerText = targetMode === 'entropy' ? (entropyFastMode ? '-entropy_fast' : '-entropy') : 'Greedy Mode';
+        if (selectedSampleTraceIndex >= 0) {
+          badgeStatus.innerText = `Sample #${selectedSampleTraceIndex}`;
+        } else {
+          badgeStatus.innerText = targetMode === 'entropy' ? (entropyFastMode ? '-entropy_fast' : '-entropy') : 'Greedy Mode';
+        }
       }
 
       if (listEl) {
-        if (!lastEntropyRankings || lastEntropyRankings.length === 0) {
+        if (!rankings || rankings.length === 0) {
           listEl.innerHTML = `<div style="color: var(--text-muted); font-size: 0.76rem; text-align: center; padding: 12px 0;">
             ${targetMode === 'entropy' ? 'Step through or pause simulation to inspect candidate rankings.' : 'Switch Target Mode to <b>Entropy</b> to inspect target candidate rankings.'}
           </div>`;
         } else {
           let maxH = 0.001;
-          lastEntropyRankings.forEach(r => { if (r.expectedH > maxH) maxH = r.expectedH; });
-          listEl.innerHTML = lastEntropyRankings.slice(0, 10).map(r => {
+          rankings.forEach(r => { if (r.expectedH > maxH) maxH = r.expectedH; });
+          listEl.innerHTML = rankings.slice(0, 10).map(r => {
             const barW = Math.min(100, Math.max(5, (r.expectedH / maxH) * 100));
             const barColor = r.isChosen ? '#4ade80' : '#38bdf8';
             const isHovered = (hoveredClusterId === r.id);
@@ -1515,19 +1656,39 @@
         document.getElementById('frameCounter').innerText = `${totalFrames} live`;
       }
 
+      // Render Sample History Toolbar
+      renderSampleHistoryUI();
+
       // Render Narrative Log
       const contNarrative = document.getElementById('narrativeContainer');
-      if (!isExplainMode) {
+      const activeTrace = getActiveSampleTrace();
+      const isPastInspected = (selectedSampleTraceIndex >= 0 && activeTrace);
+
+      if (!isExplainMode && !isPastInspected) {
         contNarrative.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 30px 12px; line-height: 1.6;">
           <b>💬 Explain Mode is OFF</b><br>
-          Click <b>💬 Explain</b> in the top toolbar to enable real-time step-by-step decision tracking.
+          Click <b>💬 Explain</b> in the top toolbar to enable real-time step-by-step decision tracking, or inspect recent samples above.
         </div>`;
-      } else if (currentExplanation.length === 0) {
+      } else if (!activeTrace || !activeTrace.steps || activeTrace.steps.length === 0) {
         contNarrative.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 30px 12px; line-height: 1.5;">
-          No decisions logged for the current frame yet.<br>Click <b>➔ Step</b> or <b>＋ Add Point</b> to inspect algorithm decisions.
+          No decisions logged for this frame yet.<br>Click <b>➔ Step</b> or <b>＋ Add Point</b> to inspect algorithm decisions.
         </div>`;
       } else {
-        contNarrative.innerHTML = currentExplanation.map(step => `
+        let bannerHtml = '';
+        if (isPastInspected) {
+          const framesAgo = totalFrames - activeTrace.frameIndex;
+          bannerHtml = `
+            <div style="background: rgba(250, 204, 21, 0.10); border: 1px solid rgba(250, 204, 21, 0.4); border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; font-size: 0.72rem; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="color: #facc15; font-weight: 700;">🕒 Inspecting Sample #${activeTrace.frameIndex}</span>
+                <span style="color: var(--text-muted); font-size: 0.68rem; margin-left: 4px;">(${framesAgo === 0 ? 'Latest' : `${framesAgo} frames ago`})</span>
+              </div>
+              <button onclick="returnToLiveStream()" class="btn-micro" style="background: rgba(74, 222, 128, 0.2); color: #4ade80; border-color: rgba(74, 222, 128, 0.4); font-size: 0.68rem; padding: 2px 6px;">● Return to Live</button>
+            </div>
+          `;
+        }
+
+        contNarrative.innerHTML = bannerHtml + activeTrace.steps.map(step => `
           <div class="narrative-step ${step.type}">
             <div class="narrative-title">
               <span>${step.title}</span>
@@ -1856,6 +2017,9 @@
       currentFrameIdx = 0;
       currentLoop = 1;
       currentExplanation = [];
+      sampleTraceLog = [];
+      selectedSampleTraceIndex = -1;
+      hoveredSampleTracePoint = null;
       lorenzState = { x: 0.1, y: 0.0, z: 0.0 };
       clearScratchBuffers();
 

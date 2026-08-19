@@ -746,6 +746,32 @@
         lastInfoGainRate = currentEntropyBits / evalsThisFrame;
       }
 
+      // Record Sample Trace in History Log
+      const sampleEntry = {
+        frameIndex: totalFrames,
+        timestamp: performance.now(),
+        point: { x, y, z },
+        assignedCluster: assignedCluster,
+        isNewCluster: (assignedCluster === clusters.length - 1 && !useTiles),
+        distSC: distSampleClusterLast,
+        distCC: distClusterClusterLast,
+        evals: evalsThisFrame,
+        initialEntropy: lastInitialEntropy,
+        entropyReduced: currentEntropyBits,
+        steps: currentExplanation.length > 0 ? [...currentExplanation] : [
+          {
+            type: 'target',
+            title: `📍 Sample #${totalFrames} Ingested`,
+            text: `Coordinates ${coordStr} assigned to Cluster C${assignedCluster} with ${distSampleClusterLast} sample-cluster distance evaluations.`
+          }
+        ],
+        entropyRankings: lastEntropyRankings ? [...lastEntropyRankings] : []
+      };
+      sampleTraceLog.push(sampleEntry);
+      if (sampleTraceLog.length > MAX_SAMPLE_TRACE_HISTORY) {
+        sampleTraceLog.shift();
+      }
+
       const tComputeEnd = performance.now();
       const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
       recordFrameTelemetry(frameComputeMs);
