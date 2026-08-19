@@ -92,6 +92,10 @@
     let useSoftBayesian = false; // -soft_bayesian
     let softBayesianSigmaCoeff = 1.0; // -soft_bayesian_sigma (multiplier of rlim)
 
+    // WASM Engine Mode
+    let useWasm = true; // Use C/WASM backend when available
+    let wasmSessionActive = false; // True if GricWasm handle is live
+
     // Interactive Selection & Hover State
     let selectedClusterId = -1;
     let selectedTupleKey = null;

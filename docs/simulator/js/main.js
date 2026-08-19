@@ -3,6 +3,101 @@
  * Part of the GRIC Interactive Algorithm Simulator
  */
 
+//  WASM ENGINE TOGGLE
+    // =========================================================================
+
+    /**
+     * Returns true if the WASM engine is effectively active
+     * for the current frame pipeline (preference ON, module
+     * loaded, and no overriding mode like Explain or Tiles).
+     */
+    function isWasmEffective() {
+      return useWasm
+        && wasmSessionActive
+        && GricWasm.isReady()
+        && !isExplainMode
+        && !useTiles;
+    }
+
+    /**
+     * Update all WASM-related UI elements to reflect the
+     * effective code path, including overrides from Explain
+     * mode and Tile mode.
+     */
+    function updateWasmBadge() {
+      const btn = document.getElementById('btnWasm');
+      const badge = document.getElementById('badgeWasmStatus');
+      const label = document.getElementById('statEngineBackend');
+      const effective = isWasmEffective();
+      const loaded = GricWasm.isLoaded();
+
+      // Toolbar button
+      if (btn) {
+        if (effective) {
+          btn.classList.add('toggle-active');
+          btn.innerText = '⚡ WASM';
+        } else if (useWasm && loaded && (isExplainMode || useTiles)) {
+          btn.classList.remove('toggle-active');
+          btn.innerText = '⚡ WASM (overridden)';
+        } else {
+          btn.classList.remove('toggle-active');
+          btn.innerText = '⚡ WASM';
+        }
+      }
+
+      // Resource tracker badge
+      if (badge) {
+        badge.innerText = effective ? 'WASM' : 'JS';
+        badge.style.background = effective
+          ? 'rgba(74, 222, 128, 0.15)'
+          : 'rgba(100,100,100,0.2)';
+        badge.style.color = effective ? '#4ade80' : '#888';
+      }
+
+      // Backend label
+      if (label) {
+        if (effective) {
+          label.innerText = 'C/WebAssembly (SIMD)';
+        } else if (useWasm && (isExplainMode || useTiles)) {
+          const reason = isExplainMode ? 'Explain' : 'Tiles';
+          label.innerText = 'JS (WASM paused: ' + reason + ')';
+        } else {
+          label.innerText = 'JavaScript';
+        }
+      }
+    }
+
+    function toggleWasmEngine() {
+      if (!GricWasm.isLoaded()) {
+        showToast('⚠️ WASM module not loaded');
+        return;
+      }
+      useWasm = !useWasm;
+      if (useWasm) {
+        if (isExplainMode) {
+          isExplainMode = false;
+          const btnExp = document.getElementById('btnExplain');
+          if (btnExp) btnExp.classList.remove('toggle-active');
+        }
+        const params = GricWasm.buildParamsFromState();
+        wasmSessionActive = GricWasm.init(params);
+        if (typeof GricWasmWorker !== 'undefined') {
+          GricWasmWorker.startSession(params);
+        }
+        resetSimulation();
+        showToast('⚡ Engine: C/WASM');
+      } else {
+        GricWasm.destroy();
+        if (typeof GricWasmWorker !== 'undefined') {
+          GricWasmWorker.reset();
+        }
+        wasmSessionActive = false;
+        resetSimulation();
+        showToast('⚡ Engine: JavaScript');
+      }
+      updateWasmBadge();
+    }
+
 //  ASYNC PRODUCER-CONSUMER DISPLAY LOOP & COMPUTE ENGINE
     // =========================================================================
     let displayLoopId = null;
@@ -11,6 +106,13 @@
       if (displayLoopId !== null) return;
       function displayTick() {
         if (!isRunning && displayLoopId === null) return;
+        // Sync WASM state to JS before rendering (deferred from batch frames)
+        if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+          const snapshot = GricWasm.syncState();
+          if (snapshot) {
+            GricWasm.applyToJsState(snapshot);
+          }
+        }
         updateUI();
         draw();
         if (isRunning) {
@@ -32,6 +134,11 @@
     function runBatchInstant() {
       if (currentBenchmark === "stream" || currentBenchmark === "3Dlorenz") {
         for (let i = 0; i < 1000; i++) stepNextFrame(true);
+        // Sync WASM state after batch
+        if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+          const snapshot = GricWasm.syncState();
+          if (snapshot) GricWasm.applyToJsState(snapshot);
+        }
         updateUI();
         draw();
         pauseSimulation();
@@ -53,6 +160,11 @@
         const rawPt = benchmarkDataset[currentFrameIdx++];
         const pt = applyNoiseToPoint(rawPt.x, rawPt.y, rawPt.z || 0.0);
         clusterFrame(pt.x, pt.y, pt.z || 0.0, true);
+      }
+      // Sync WASM state after batch
+      if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+        const snapshot = GricWasm.syncState();
+        if (snapshot) GricWasm.applyToJsState(snapshot);
       }
       updateUI();
       draw();
@@ -177,7 +289,17 @@
         }
         playTimer = null;
       }
+      if (typeof GricWasmWorker !== 'undefined' && GricWasmWorker.isBusy()) {
+        GricWasmWorker.pauseBatch();
+      }
       stopDisplayLoop();
+      // Final WASM sync — batch frames since last display tick
+      if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+        const snapshot = GricWasm.syncState();
+        if (snapshot) {
+          GricWasm.applyToJsState(snapshot);
+        }
+      }
       updateUI();
       draw();
     }
@@ -207,10 +329,23 @@
       if (isExplainMode) {
         btn.classList.add('toggle-active');
         setTab('narrative');
+        // Explain mode requires the JS narrative pipeline -> explicitly disable WASM
+        if (useWasm) {
+          useWasm = false;
+          wasmSessionActive = false;
+          if (typeof GricWasm !== 'undefined') {
+            GricWasm.destroy();
+          }
+          if (typeof GricWasmWorker !== 'undefined') {
+            GricWasmWorker.reset();
+          }
+          showToast('💬 Explain active: switched to JavaScript engine');
+        }
       } else {
         btn.classList.remove('toggle-active');
         currentExplanation = [];
       }
+      updateWasmBadge();
       updateUI();
     }
 
@@ -584,6 +719,10 @@
       setExplainMode(!isExplainMode);
     });
 
+    document.getElementById('btnWasm').addEventListener('click', () => {
+      toggleWasmEngine();
+    });
+
     document.getElementById('tabNarrative').addEventListener('click', () => setTab('narrative'));
     document.getElementById('tabCandidates').addEventListener('click', () => setTab('candidates'));
     const tabTMEl = document.getElementById('tabTM');
@@ -813,6 +952,7 @@
       if (currentBenchmark !== "stream" && currentBenchmark !== "3Dlorenz" && currentBenchmark !== "custom") {
         benchmarkDataset = generateBenchmark(currentBenchmark, 1000);
       }
+      updateWasmBadge();
       updateUI();
       draw();
     });

@@ -119,8 +119,12 @@
     function updateResourceMetrics() {
       const now = performance.now();
       const cutoff = now - 1000;
-      while (rollingHistory.length > 0 && rollingHistory[0].time < cutoff) {
-        rollingHistory.shift();
+      let pruneIdx = 0;
+      while (pruneIdx < rollingHistory.length && rollingHistory[pruneIdx].time < cutoff) {
+        pruneIdx++;
+      }
+      if (pruneIdx > 0) {
+        rollingHistory = rollingHistory.slice(pruneIdx);
       }
 
       if (rollingHistory.length > 0) {
@@ -201,24 +205,33 @@
       spCtx.fill();
     }
 
-    function recordFrameTelemetry(frameComputeMs) {
+    function recordFrameTelemetry(frameComputeMs, batchFrames = 1, batchDists = 0) {
       lastComputeTimeMs = frameComputeMs;
       totalComputeTimeMs += frameComputeMs;
       avgComputeTimeMs = totalFrames > 0 ? (totalComputeTimeMs / totalFrames) : 0.0;
 
       sparklineHistory.push(frameComputeMs);
-      if (sparklineHistory.length > 60) sparklineHistory.shift();
+      if (sparklineHistory.length > 80) {
+        sparklineHistory = sparklineHistory.slice(-60);
+      }
 
       distHistoryDFC.push(distSampleClusterLast);
       distHistoryDCC.push(distClusterClusterLast);
+      if (distHistoryDFC.length > 6000) {
+        distHistoryDFC = distHistoryDFC.slice(-5000);
+        distHistoryDCC = distHistoryDCC.slice(-5000);
+      }
 
       const nowTime = performance.now();
       rollingHistory.push({
         time: nowTime,
         computeMs: frameComputeMs,
-        frames: 1,
-        dists: distSampleClusterLast + distClusterClusterLast
+        frames: batchFrames,
+        dists: batchDists || (distSampleClusterLast + distClusterClusterLast)
       });
+      if (rollingHistory.length > 1000) {
+        rollingHistory = rollingHistory.slice(-500);
+      }
     }
 
     function drawDistCurves() {
@@ -2090,6 +2103,24 @@
       tileTraceX = null;
       tileTraceY = null;
       tileTraceZ = null;
+
+      // WASM session init (re-create handle with current config)
+      if (useWasm && GricWasm.isLoaded()) {
+        const params = GricWasm.buildParamsFromState();
+        wasmSessionActive = GricWasm.init(params);
+        if (typeof GricWasmWorker !== 'undefined') {
+          GricWasmWorker.startSession(params);
+        }
+        if (wasmSessionActive) {
+          console.log('[WASM] Session initialized');
+        }
+      } else {
+        wasmSessionActive = false;
+      }
+
+      if (typeof updateWasmBadge === 'function') {
+        updateWasmBadge();
+      }
 
       updateUI();
       draw();

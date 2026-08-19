@@ -13,8 +13,12 @@
 
       totalFrames++;
       currentFrame = { x, y, z };
-      pastSamples.push({ x, y, z });
-      if (pastSamples.length > 25000) pastSamples.shift();
+      if (!skipRender || (totalFrames % 8 === 0)) {
+        pastSamples.push({ x, y, z });
+        if (pastSamples.length > 30000) {
+          pastSamples = pastSamples.slice(-20000);
+        }
+      }
       currentExplanation = [];
 
       const coordStr = currentDim === 3 
@@ -81,7 +85,87 @@
         return;
       }
 
-      // MONOLITHIC PIPELINE (2D or 3D)
+      // WASM FAST PATH — route through C/WASM engine
+      // Conditions: WASM loaded, session active, not tile mode, not explain mode
+      if (useWasm && wasmSessionActive && GricWasm.isReady() && !isExplainMode) {
+        const assigned = GricWasm.processFrame(x, y, z);
+
+        // Minimal JS bookkeeping (cheap — no WASM heap reads)
+        if (assigned >= 0) {
+          if (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
+            transitionCounts[prevAssignedCluster][assigned] =
+              (transitionCounts[prevAssignedCluster][assigned] || 0) + 1;
+            lastTransitionFrom = prevAssignedCluster;
+            lastTransitionTo = assigned;
+          } else {
+            lastTransitionFrom = -1;
+            lastTransitionTo = -1;
+          }
+          prevAssignedCluster = assigned;
+
+          assignmentHistory.push(assigned);
+          if (assignmentHistory.length > 6000) {
+            assignmentHistory = assignmentHistory.slice(-5000);
+          }
+        }
+
+        // Full state sync only when rendering (expensive: O(K²) getValue calls)
+        if (!skipRender) {
+          const snapshot = GricWasm.syncState();
+          if (snapshot) {
+            GricWasm.applyToJsState(snapshot);
+            if (snapshot.numClusters > 0) {
+              naiveEvals += snapshot.numClusters;
+            }
+          }
+
+          if (assigned >= 0) {
+            frameHistory.push({
+              indices: [assigned],
+              dists: [snapshot ? snapshot.telemetry.lastAssignmentDist : 0],
+              assignment: assigned
+            });
+            if (frameHistory.length > 600) {
+              frameHistory = frameHistory.slice(-500);
+            }
+
+            const sampleEntry = {
+              frameIndex: totalFrames,
+              timestamp: performance.now(),
+              point: { x, y, z },
+              assignedCluster: assigned,
+              isNewCluster: false,
+              distSC: distSampleClusterLast,
+              distCC: distClusterClusterLast,
+              evals: snapshot ? snapshot.telemetry.lastFrameDists : 0,
+              initialEntropy: 0,
+              entropyReduced: 0,
+              steps: [{
+                type: 'target',
+                title: `📍 Sample #${totalFrames} Ingested (WASM)`,
+                text: `Coordinates ${coordStr} assigned to Cluster C${assigned}.`
+              }],
+              entropyRankings: []
+            };
+            sampleTraceLog.push(sampleEntry);
+            if (sampleTraceLog.length > MAX_SAMPLE_TRACE_HISTORY) {
+              sampleTraceLog = sampleTraceLog.slice(-MAX_SAMPLE_TRACE_HISTORY);
+            }
+          }
+
+          const tComputeEnd = performance.now();
+          const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
+          recordFrameTelemetry(frameComputeMs);
+
+          if (!isRunning) {
+            updateUI();
+            draw();
+          }
+        }
+        return;
+      }
+
+      // MONOLITHIC JS PIPELINE (2D or 3D) — fallback when WASM is not active
       currentEvaluations = [];
       currentPruned = [];
       currentPredicted = [];
@@ -161,12 +245,17 @@
         predCandidates = candList.map(c => c.id).slice(0, Math.min(3, predHorizon + 1));
       }
 
-      // Step 3a: Prior Probability Calculation
+      // Step 3a: Prior Probability Calculation (matches C compute_priors_and_mixing.c)
       let sumProb = 0;
       for (let i = 0; i < K; i++) sumProb += (clusters[i].prob || 1.0);
+      if (sumProb > 0) {
+        for (let i = 0; i < K; i++) {
+          clusters[i].prob = (clusters[i].prob || 1.0) / sumProb;
+        }
+      }
 
       const pBase = scratchPBase;
-      for (let i = 0; i < K; i++) pBase[i] = (clusters[i].prob || 1.0) / sumProb;
+      for (let i = 0; i < K; i++) pBase[i] = clusters[i].prob;
 
       // Transition matrix mixing (-tm <val>)
       if (useTM && prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
@@ -449,7 +538,6 @@
         if (isMatch) {
           assignedCluster = chosenTarget;
           targetCl.members++;
-          targetCl.prob = (targetCl.prob || 1.0) + 0.05;
           targetCl.lastActive = totalFrames;
 
           if (currentPredicted.includes(chosenTarget) || (useTM && prevAssignedCluster >= 0 && (transitionCounts[prevAssignedCluster][chosenTarget] || 0) > 0)) {
@@ -733,6 +821,24 @@
       prevAssignedCluster = assignedCluster;
       assignmentHistory.push(assignedCluster);
       if (assignmentHistory.length > 5000) assignmentHistory.shift();
+
+      // Prediction probability dynamics (matches C record_step_assignment.c)
+      if (usePred && assignedCluster >= 0 && assignedCluster < clusters.length) {
+        clusters[assignedCluster].prob = (clusters[assignedCluster].prob || 0.0) + 0.3;
+        let sumP = 0.0;
+        for (let i = 0; i < clusters.length; i++) sumP += (clusters[i].prob || 0.0);
+        if (sumP > 0.0) {
+          for (let i = 0; i < clusters.length; i++) clusters[i].prob /= sumP;
+        }
+        const floorVal = 0.2 / clusters.length;
+        for (let i = 0; i < clusters.length; i++) clusters[i].prob += floorVal;
+        sumP = 0.0;
+        for (let i = 0; i < clusters.length; i++) sumP += clusters[i].prob;
+        if (sumP > 0.0) {
+          for (let i = 0; i < clusters.length; i++) clusters[i].prob /= sumP;
+        }
+      }
+
       frameHistory.push({
         indices: [...measuredIndices],
         dists: [...measuredDists],
