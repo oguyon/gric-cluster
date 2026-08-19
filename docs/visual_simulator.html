@@ -1124,13 +1124,13 @@
     <div>
       <h1>
         GRIC Interactive Algorithm Simulator
-        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (15:10 HST)</span>
+        <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 v2026.08.18 (15:15 HST)</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
-      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 15:10:00 HST</span>
+      <span style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Updated: 2026-08-18 15:15:00 HST</span>
     </div>
   </header>
 
@@ -1861,27 +1861,67 @@
             <!-- Sub-Tab 1: Overview Panel -->
             <div id="resOverviewPanel">
               <div class="stats-grid">
-                <div class="stat-box">
+                <div class="stat-box"
+                     data-tooltip-title="Clusters Formed"
+                     data-tooltip-badge="Metric"
+                     data-tooltip-color="purple"
+                     data-tooltip-desc="Total active cluster anchors allocated in the current clustering model.">
                   <div id="statClusters" class="num" style="color: #c084fc;">0</div>
                   <div class="lbl" id="lblStatClusters">Clusters Formed</div>
                 </div>
-                <div class="stat-box">
+                <div class="stat-box"
+                     data-tooltip-title="Frames Ingested"
+                     data-tooltip-badge="Metric"
+                     data-tooltip-color="blue"
+                     data-tooltip-desc="Total number of coordinate samples ingested and clustered since reset.">
                   <div id="statFrames" class="num" style="color: #f8fafc;">0</div>
                   <div class="lbl" id="lblStatFrames">Frames Ingested</div>
                 </div>
-                <div class="stat-box">
+                <div class="stat-box"
+                     data-tooltip-title="Total Clock Time"
+                     data-tooltip-badge="Session"
+                     data-tooltip-color="blue"
+                     data-tooltip-desc="Total elapsed wall-clock time spent clustering points in the current active play session. Resets when Play is pressed.">
+                  <div id="statTotalTime" class="num" style="color: #38bdf8;">0.00 s</div>
+                  <div class="lbl" id="lblStatTotalTime">Total Clock Time</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Average Throughput (FPS)"
+                     data-tooltip-badge="Session"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Average frames clustered per elapsed second of wall-clock time in the current play session. Resets when Play is pressed.">
+                  <div id="statAvgFps" class="num" style="color: #4ade80;">0.0 fps</div>
+                  <div class="lbl" id="lblStatAvgFps">Average Speed (FPS)</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="CPU Compute Load"
+                     data-tooltip-badge="Performance"
+                     data-tooltip-color="amber"
+                     data-tooltip-desc="Percentage of wall-clock time spent in mathematical distance clustering compute loop.">
                   <div id="statCpuLoad" class="num" style="color: var(--accent-amber);">0.0%</div>
                   <div class="lbl" id="lblStatCpu">CPU Load (<span id="statComputeMs">0.00 ms</span>/fr)</div>
                 </div>
-                <div class="stat-box">
+                <div class="stat-box"
+                     data-tooltip-title="Distance Evaluations"
+                     data-tooltip-badge="Compute"
+                     data-tooltip-color="blue"
+                     data-tooltip-desc="Total metric Euclidean distance calculations performed (both sample-to-cluster and cluster-to-cluster).">
                   <div id="statTotalDists" class="num" style="color: var(--accent-blue);">0</div>
                   <div class="lbl" id="lblStatTotalDists">Distances (<span id="statDistRate">0</span>/s)</div>
                 </div>
-                <div class="stat-box">
+                <div class="stat-box"
+                     data-tooltip-title="Distance Breakdown Ratio"
+                     data-tooltip-badge="Compute"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Ratio of candidate evaluation distance calls d(f,c) to cluster matrix maintenance calls d(ci,cj).">
                   <div id="statDistRatio" class="num" style="color: var(--accent-green); font-size: 1.05rem;">0 / 0</div>
                   <div class="lbl">SC (Eval) / CC (Matrix)</div>
                 </div>
-                <div class="stat-box">
+                <div class="stat-box"
+                     data-tooltip-title="Model Memory Footprint"
+                     data-tooltip-badge="Memory"
+                     data-tooltip-color="purple"
+                     data-tooltip-desc="Total estimated memory occupied by cluster centroids, inter-cluster matrix, and transition probabilities.">
                   <div id="statMemoryTotal" class="num" style="color: var(--accent-purple); font-size: 1.05rem;">0 KB</div>
                   <div class="lbl" id="lblStatMemory">Model Memory Footprint</div>
                 </div>
@@ -3010,6 +3050,23 @@
     let currentCpuLoadPct = 0.0;
     let currentFps = 0.0;
     let currentDistRate = 0.0;
+
+    // Session Clock Timing & Live Average FPS
+    let sessionStartTime = 0;
+    let sessionStartFrames = 0;
+    let sessionElapsedMs = 0;
+    let sessionIsActive = false;
+    let sessionAvgFps = 0.0;
+
+    function formatClockTime(ms) {
+      if (ms <= 0 || isNaN(ms)) return "0.00 s";
+      const sec = ms / 1000.0;
+      if (sec < 1.0) return `${sec.toFixed(3)} s`;
+      if (sec < 60.0) return `${sec.toFixed(2)} s`;
+      const m = Math.floor(sec / 60.0);
+      const s = (sec % 60.0).toFixed(1);
+      return `${m}m ${s}s`;
+    }
 
     function formatNumber(num) {
       if (num === null || num === undefined || isNaN(num)) return "0";
@@ -5830,6 +5887,34 @@
       }
 
       // 2. Resource Tracker - Tab 1: Overview
+      let currentElapsedMs = sessionElapsedMs;
+      let currentFramesClustered = totalFrames - sessionStartFrames;
+      if (sessionIsActive && isRunning) {
+        currentElapsedMs = Math.max(0.0001, performance.now() - sessionStartTime);
+        currentFramesClustered = totalFrames - sessionStartFrames;
+      }
+
+      let currentAvgFps = sessionAvgFps;
+      if (sessionIsActive && isRunning) {
+        currentAvgFps = currentElapsedMs > 0.001 ? (currentFramesClustered / (currentElapsedMs / 1000.0)) : 0.0;
+      }
+
+      const statTotalTime = document.getElementById('statTotalTime');
+      if (statTotalTime) {
+        statTotalTime.innerText = formatClockTime(currentElapsedMs);
+      }
+
+      const statAvgFps = document.getElementById('statAvgFps');
+      if (statAvgFps) {
+        if (currentAvgFps >= 1000) {
+          statAvgFps.innerText = `${formatNumber(Math.round(currentAvgFps))} fps`;
+        } else if (currentAvgFps > 0) {
+          statAvgFps.innerText = `${currentAvgFps.toFixed(1)} fps`;
+        } else {
+          statAvgFps.innerText = `0.0 fps`;
+        }
+      }
+
       const statCpuLoad = document.getElementById('statCpuLoad');
       if (statCpuLoad) statCpuLoad.innerText = `${currentCpuLoadPct.toFixed(1)}%`;
       const statComputeMs = document.getElementById('statComputeMs');
@@ -6307,6 +6392,11 @@
       currentCpuLoadPct = 0.0;
       currentFps = 0.0;
       currentDistRate = 0.0;
+      sessionStartTime = 0;
+      sessionStartFrames = 0;
+      sessionElapsedMs = 0;
+      sessionIsActive = false;
+      sessionAvgFps = 0.0;
 
       tileEngineX.reset();
       tileEngineY.reset();
@@ -6452,6 +6542,12 @@
       if (isAddPointMode) setAddPointMode(false);
 
       isRunning = true;
+      sessionStartTime = performance.now();
+      sessionStartFrames = totalFrames;
+      sessionElapsedMs = 0;
+      sessionIsActive = true;
+      sessionAvgFps = 0.0;
+
       const btn = document.getElementById('btnPlay');
       btn.innerText = "❚❚ Pause";
       btn.classList.add('danger');
@@ -6541,6 +6637,13 @@
 
     function pauseSimulation() {
       isRunning = false;
+      if (sessionIsActive) {
+        sessionElapsedMs = Math.max(0.0001, performance.now() - sessionStartTime);
+        const framesClustered = totalFrames - sessionStartFrames;
+        sessionAvgFps = sessionElapsedMs > 0.001 ? (framesClustered / (sessionElapsedMs / 1000.0)) : 0.0;
+        sessionIsActive = false;
+      }
+
       const btn = document.getElementById('btnPlay');
       btn.innerText = "► Run / Play";
       btn.classList.remove('danger');
