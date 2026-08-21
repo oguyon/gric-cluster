@@ -140,9 +140,11 @@ static void print_general_help(void)
     printf("  %sCore Tool%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("    %s%-24s%s Main clustering executable (offline files or live streams).\n",
            ANSI_BOLD_GREEN, "gric-cluster", ANSI_COLOR_RESET);
-    printf("  %sVisualization%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
+    printf("  %sVisualization & GUI%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("    %s%-24s%s Generates SVG/PNG diagnostic and summary plots.\n",
            ANSI_BOLD_GREEN, "gric-plot", ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Launches interactive web simulator in desktop app mode.\n",
+           ANSI_BOLD_GREEN, "gric-gui", ANSI_COLOR_RESET);
     printf("  %sUtility & Simulation%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("    %s%-24s%s Prints build info, library paths, and enabled features.\n",
            ANSI_BOLD_GREEN, "gric-info", ANSI_COLOR_RESET);
@@ -289,6 +291,33 @@ static int print_program_help(
             "  -fs <size>           Set font size for labels (default: 18.0)";
         const char *ex =
             "  $ gric-plot input_points.txt gric_run_log.txt summary_plot.png";
+
+        print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
+    }
+    else if (strcmp(target, "gric-gui") == 0)
+    {
+        /* Help definitions for gric-gui */
+        const char *banner =
+            "gric-gui - Launch the GRIC Interactive Simulator desktop application";
+        const char *usage = "gric-gui [options]";
+        const char *desc =
+            "Launches the GRIC web simulator in a standalone native desktop window.\n"
+            "  Automatically verifies and starts the background HTTP server on the\n"
+            "  designated port if not already active.";
+        const char *opts =
+            "  -h, --help           Show this help message and exit\n"
+            "  -p, --port <port>    HTTP port for local simulator server (default: 8080)\n"
+            "  -b, --browser <name> Select browser (google-chrome, chromium, firefox, default)\n"
+            "  -w, --window-size <W,H> Initial window resolution (default: 1600,1000)\n"
+            "  -s, --server-only    Start background HTTP server without launching browser\n"
+            "  -k, --kill-server    Terminate running background HTTP server on the port\n"
+            "  --status             Display active server process and browser runtime status";
+        const char *ex =
+            "  $ gric-gui\n"
+            "  $ gric-gui -p 8088 -w 1920,1080\n"
+            "  $ gric-gui --server-only\n"
+            "  $ gric-gui --kill-server";
 
         print_formatted_help(banner, usage, desc, opts, ex);
         return 0;
