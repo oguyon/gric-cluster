@@ -155,7 +155,7 @@
       // Start independent asynchronous 60 FPS display render loop
       startDisplayLoop();
 
-      if (playSpeed <= 0 && !isExplainMode) {
+      if (playSpeed <= 0) {
         // "⚡ As fast as possible" Mode:
         // Compute loop runs in ~12ms time-slices,
         // yielding to the display loop between slices.
@@ -266,14 +266,6 @@
       if (isExplainMode) {
         btn.classList.add('toggle-active');
         setTab('narrative');
-        // If speed was fastest (-1), switch to readable 150ms for explain mode
-        if (playSpeed <= 0) {
-          playSpeed = 150;
-          const s1 = document.getElementById('selectSpeed');
-          const s2 = document.getElementById('selectSpeedSide');
-          if (s1) s1.value = "150";
-          if (s2) s2.value = "150";
-        }
         // Enable C-side trace buffer for WASM explain
         if (typeof GricWasm !== 'undefined' && GricWasm.isReady()) {
           GricWasm.setTrace(true);
