@@ -65,7 +65,8 @@ all: dirs $(OUT_FILE_SITE)
 	@echo "⚡ [WASM] Built & deployed: $(GIT_HASH) | $(BUILD_DATE)"
 
 $(OUT_FILE_SITE): $(SRCS)
-	source $(EMSCRIPTEN_ENV) && $(CC) $(CFLAGS) $(INCLUDES) $(SRCS) -o $(OUT_FILE_SITE) $(LDFLAGS)
+	if [ -f "$(EMSCRIPTEN_ENV)" ]; then source "$(EMSCRIPTEN_ENV)"; fi && \
+	$(CC) $(CFLAGS) $(INCLUDES) $(SRCS) -o $(OUT_FILE_SITE) $(LDFLAGS)
 
 dirs:
 	mkdir -p $(OUT_DIR_SITE) $(OUT_DIR_DOCS)

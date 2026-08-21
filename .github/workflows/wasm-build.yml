@@ -47,8 +47,9 @@ jobs:
             const f = require('./site/simulator/wasm/gric_cluster.js');
             f().then(M => {
               const v = M.cwrap('wasm_cluster_get_version', 'string', [])();
-              console.log('WASM hash:', v, '| Expected:', '$EXPECTED');
-              if (v !== '$EXPECTED') {
+              console.log('WASM version:', v, '| Expected hash:', '$EXPECTED');
+              if (!v.startsWith('$EXPECTED')) {
+                console.error('❌ Version string does not start with expected git hash');
                 process.exit(1);
               }
               console.log('✅ Hash matches');
@@ -60,4 +61,6 @@ jobs:
           diff site/simulator/wasm/gric_cluster.wasm \
                docs/simulator/wasm/gric_cluster.wasm \
             && echo "✅ docs/ WASM binary matches" \
-            || (echo "❌ docs/ WASM binary is stale — run: make -f Makefile.wasm && cp site/simulator/wasm/* docs/simulator/wasm/" && exit 1)
+            || (echo "❌ docs/ WASM binary is stale" \
+                && echo "Run: make -f Makefile.wasm && cp site/simulator/wasm/* docs/simulator/wasm/" \
+                && exit 1)
