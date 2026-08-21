@@ -366,6 +366,16 @@ const GricWasm = (function () {
       _fn.setUnlimited(_handle, 1);
     }
 
+    if (_traceEnabled || (params && params.isExplainMode) || (typeof isExplainMode !== 'undefined' && isExplainMode)) {
+      _traceEnabled = true;
+      if (_fn.setTrace) {
+        _fn.setTrace(_handle, 1, 2048);
+        if (!_eventSize) {
+          _eventSize = _fn.getTraceEventSize();
+        }
+      }
+    }
+
     _allocBuffers();
     return true;
   }
@@ -601,6 +611,7 @@ const GricWasm = (function () {
       maxclStrategy: maxclStrategy,
       discardFraction: discardFraction,
       maxVisitors: maxVisitors,
+      isExplainMode: typeof isExplainMode !== 'undefined' ? isExplainMode : false,
     };
   }
 
@@ -956,7 +967,7 @@ const GricWasm = (function () {
 
     const head = _fn.getTraceHead(_handle);
     const frameStart = _fn.getTraceFrameStart(_handle);
-    const capacity = count; // count <= capacity
+    const capacity = 2048;
 
     const M = _module;
     const HEAP32 = M.HEAP32;
