@@ -13,10 +13,11 @@
 
       totalFrames++;
       currentFrame = { x, y, z };
-      if (!skipRender || (totalFrames % 8 === 0)) {
+      if (!skipRender || (totalFrames % batchThinRate === 0)) {
         pastSamples.push({ x, y, z });
-        if (pastSamples.length > 30000) {
-          pastSamples = pastSamples.slice(-20000);
+        if (pastSamples.length > sampleBufferCap) {
+          const trimTo = Math.floor(sampleBufferCap * 0.67);
+          pastSamples = pastSamples.slice(-trimTo);
         }
       }
       currentExplanation = [];
@@ -86,9 +87,20 @@
       }
 
       // WASM FAST PATH — route through C/WASM engine
-      // Conditions: WASM loaded, session active, not tile mode, not explain mode
-      if (useWasm && wasmSessionActive && GricWasm.isReady() && !isExplainMode) {
+      // Conditions: WASM loaded, session active, not tile mode
+      if (useWasm && wasmSessionActive && GricWasm.isReady()) {
         const assigned = GricWasm.processFrame(x, y, z);
+
+        // MAXCL_STOP: C engine returned -2 → stop
+        if (assigned === -2) {
+          if (typeof pauseSimulation === 'function') {
+            pauseSimulation();
+          }
+          showToast('🛑 Max cluster limit reached (stop)');
+          updateUI();
+          draw();
+          return;
+        }
 
         // Minimal JS bookkeeping (cheap — no WASM heap reads)
         if (assigned >= 0) {
@@ -129,6 +141,27 @@
               frameHistory = frameHistory.slice(-500);
             }
 
+            // Build trace steps for sample history
+            let traceSteps;
+            let traceRankings = [];
+            if (isExplainMode) {
+              traceSteps = GricWasm.getTrace();
+              // Extract entropy rankings from last
+              // TARGET_SELECTED step if present
+              for (let si = traceSteps.length - 1; si >= 0; si--) {
+                if (traceSteps[si].entropyRankings) {
+                  traceRankings = traceSteps[si].entropyRankings;
+                  break;
+                }
+              }
+            } else {
+              traceSteps = [{
+                type: 'target',
+                title: `📍 Sample #${totalFrames} (WASM)`,
+                text: `${coordStr} → C${assigned}.`
+              }];
+            }
+
             const sampleEntry = {
               frameIndex: totalFrames,
               timestamp: performance.now(),
@@ -140,12 +173,8 @@
               evals: snapshot ? snapshot.telemetry.lastFrameDists : 0,
               initialEntropy: 0,
               entropyReduced: 0,
-              steps: [{
-                type: 'target',
-                title: `📍 Sample #${totalFrames} Ingested (WASM)`,
-                text: `Coordinates ${coordStr} assigned to Cluster C${assigned}.`
-              }],
-              entropyRankings: []
+              steps: traceSteps,
+              entropyRankings: traceRankings
             };
             sampleTraceLog.push(sampleEntry);
             if (sampleTraceLog.length > MAX_SAMPLE_TRACE_HISTORY) {
@@ -692,6 +721,13 @@
               title: '🛑 Max Clusters Limit Reached (-maxcl stop)',
               text: `Cluster budget (${maxcl}) reached. Frame at ${coordStr} cannot form a new cluster and remains unassigned.`
             });
+            if (typeof pauseSimulation === 'function') {
+              pauseSimulation();
+            }
+            showToast('🛑 Max cluster limit reached (stop)');
+            updateUI();
+            draw();
+            return;
           } else if (maxclStrategy === 'discard') {
             let victimIdx = 0;
             let minMembers = Infinity;

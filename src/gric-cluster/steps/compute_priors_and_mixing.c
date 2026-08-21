@@ -9,6 +9,7 @@
 #include "framedistance.h"
 #include <math.h>
 #include <stdlib.h>
+#include "../trace/cluster_trace.h"
 
 /**
  * calculate_sequence_match_metric - Compute match metric mAB between two cluster histories.
@@ -342,5 +343,35 @@ void compute_priors_and_mixing(
     for (int i = 0; i < state->num_clusters; i++)
     {
         state->scratch.entropy_p_current[i] = state->scratch.mixed_probs[i];
+    }
+
+    if (state->trace)
+    {
+        TraceEvent *ev = trace_emit(state->trace, TRACE_PRIOR_MIXING);
+        if (ev)
+        {
+            Candidate *trace_cands = (Candidate *)malloc(state->num_clusters * sizeof(Candidate));
+            if (trace_cands)
+            {
+                for (int i = 0; i < state->num_clusters; i++)
+                {
+                    trace_cands[i].id = i;
+                    trace_cands[i].p = state->scratch.mixed_probs[i];
+                }
+                qsort(trace_cands, state->num_clusters, sizeof(Candidate), compare_candidates);
+                
+                ev->num_candidates = state->num_clusters < TRACE_MAX_CANDIDATES
+                                     ? state->num_clusters
+                                     : TRACE_MAX_CANDIDATES;
+                for (int i = 0; i < ev->num_candidates; i++)
+                {
+                    ev->candidates[i].id = trace_cands[i].id;
+                    ev->candidates[i].prob = trace_cands[i].p;
+                    ev->candidates[i].expected_h = 0.0;
+                    ev->candidates[i].info_gain = 0.0;
+                }
+                free(trace_cands);
+            }
+        }
     }
 }

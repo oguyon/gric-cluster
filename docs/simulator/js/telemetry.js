@@ -2048,7 +2048,6 @@
       sampleTraceLog = [];
       selectedSampleTraceIndex = -1;
       hoveredSampleTracePoint = null;
-      lorenzState = { x: 0.1, y: 0.0, z: 0.0 };
       clearScratchBuffers();
 
       // Resource Tracker reset
@@ -2127,7 +2126,6 @@
     }
 
     function hasMoreFrames() {
-      if (currentBenchmark === "stream" || currentBenchmark === "3Dlorenz") return true;
       if (benchmarkDataset.length === 0) return false;
       if (currentFrameIdx < benchmarkDataset.length) return true;
       if (loopCount === 0 || currentLoop < loopCount) return true;
@@ -2146,54 +2144,31 @@
 
       if (currentBenchmark === "custom") {
         document.getElementById('fileUpload').click();
-      } else if (currentBenchmark !== "stream" && currentBenchmark !== "3Dlorenz") {
-        benchmarkDataset = generateBenchmark(currentBenchmark, 1000);
       } else {
-        benchmarkDataset = [];
+        benchmarkDataset = generateBenchmark(
+          currentBenchmark, sampleCount
+        );
       }
       updateUI();
     }
 
     function stepNextFrame(skipRender = false) {
-      if (currentBenchmark === "stream") {
-        const t = totalFrames * 0.15;
-        const rawX = 0.70 * Math.cos(t) + 0.18 * Math.sin(t * 3.0);
-        const rawY = 0.60 * Math.sin(t * 0.8) + 0.15 * Math.cos(t * 2.0);
-        const pt = applyNoiseToPoint(rawX, rawY, 0.0);
-        clusterFrame(pt.x, pt.y, 0.0, skipRender);
-      } else if (currentBenchmark === "3Dlorenz") {
-        const dt = 0.009;
-        const sigma = 10.0, rho = 28.0, beta = 8.0 / 3.0;
-        const lx = lorenzState.x, ly = lorenzState.y, lz = lorenzState.z;
+      if (benchmarkDataset.length === 0) return;
 
-        const dx = sigma * (ly - lx);
-        const dy = lx * (rho - lz) - ly;
-        const dz = lx * ly - beta * lz;
-
-        lorenzState.x += dx * dt;
-        lorenzState.y += dy * dt;
-        lorenzState.z += dz * dt;
-
-        const rawX = (lorenzState.x / 20.0) * 0.82;
-        const rawY = (lorenzState.y / 28.0) * 0.82;
-        const rawZ = ((lorenzState.z - 25.0) / 25.0) * 0.82;
-
-        const pt = applyNoiseToPoint(rawX, rawY, rawZ);
-        clusterFrame(pt.x, pt.y, pt.z, skipRender);
-      } else if (benchmarkDataset.length > 0) {
-        if (currentFrameIdx >= benchmarkDataset.length) {
-          if (loopCount === 0 || currentLoop < loopCount) {
-            currentLoop++;
-            currentFrameIdx = 0;
-          } else {
-            pauseSimulation();
-            return;
-          }
+      if (currentFrameIdx >= benchmarkDataset.length) {
+        if (loopCount === 0 || currentLoop < loopCount) {
+          currentLoop++;
+          currentFrameIdx = 0;
+        } else {
+          pauseSimulation();
+          return;
         }
-        const rawPt = benchmarkDataset[currentFrameIdx++];
-        const pt = applyNoiseToPoint(rawPt.x, rawPt.y, rawPt.z || 0.0);
-        clusterFrame(pt.x, pt.y, pt.z || 0.0, skipRender);
       }
+      const rawPt = benchmarkDataset[currentFrameIdx++];
+      const pt = applyNoiseToPoint(
+        rawPt.x, rawPt.y, rawPt.z || 0.0
+      );
+      clusterFrame(pt.x, pt.y, pt.z || 0.0, skipRender);
     }
 
     // =========================================================================

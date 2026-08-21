@@ -1,0 +1,63 @@
+name: WASM Build & Verify
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Makefile.wasm'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Makefile.wasm'
+  workflow_dispatch:
+
+jobs:
+  wasm-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.61
+
+      - name: Build WASM
+        run: make -f Makefile.wasm
+
+      - name: Run WASM smoke test
+        run: node tests/wasm_smoke_test.js
+
+      - name: Run WASM parity test
+        run: node tests/wasm_benchmark_parity.js
+
+      - name: Run WASM growth test
+        run: node tests/wasm_growth_test.js
+
+      - name: Run WASM trace test
+        run: node tests/wasm_trace_test.js
+
+      - name: Verify git hash embedded
+        run: |
+          EXPECTED=$(git rev-parse --short HEAD)
+          node -e "
+            const f = require('./site/simulator/wasm/gric_cluster.js');
+            f().then(M => {
+              const v = M.cwrap('wasm_cluster_get_version', 'string', [])();
+              console.log('WASM hash:', v, '| Expected:', '$EXPECTED');
+              if (v !== '$EXPECTED') {
+                process.exit(1);
+              }
+              console.log('✅ Hash matches');
+            });
+          "
+
+      - name: Check docs/ WASM is up to date
+        run: |
+          diff site/simulator/wasm/gric_cluster.wasm \
+               docs/simulator/wasm/gric_cluster.wasm \
+            && echo "✅ docs/ WASM binary matches" \
+            || (echo "❌ docs/ WASM binary is stale — run: make -f Makefile.wasm && cp site/simulator/wasm/* docs/simulator/wasm/" && exit 1)

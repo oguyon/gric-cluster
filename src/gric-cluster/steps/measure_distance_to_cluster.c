@@ -3,6 +3,7 @@
 #include "cluster_mgmt.h"
 #include "cluster_core.h"
 #include <stdio.h>
+#include "cluster_trace.h"
 
 #define ANSI_COLOR_GREEN  "\x1b[32m"
 #define ANSI_COLOR_RESET  "\x1b[0m"
@@ -59,7 +60,27 @@ double measure_distance_to_cluster(
         (*temp_count)++;
     }
 
-    add_visitor(&state->cluster_visitors[cj], state->telemetry.total_frames_processed);
+    add_visitor(
+        &state->cluster_visitors[cj], state->telemetry.total_frames_processed
+    );
+
+    if (state->trace)
+    {
+        uint8_t type = (dfc < config->algo.rlim)
+                       ? TRACE_MATCH
+                       : TRACE_MISMATCH;
+        TraceEvent *ev = trace_emit(state->trace, type);
+        if (ev)
+        {
+            ev->cluster_id = cj;
+            ev->distance = dfc;
+            ev->rlim = config->algo.rlim;
+            if (is_prediction)
+            {
+                ev->reason = REASON_PREDICTION;
+            }
+        }
+    }
 
     if (dfc < config->algo.rlim)
     {

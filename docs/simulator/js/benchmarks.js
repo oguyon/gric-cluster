@@ -14,7 +14,7 @@
       "2DcircleP10n": "<b>2DcircleP10n</b>: 10 periodic circular cycles with additive Gaussian noise (sigma=0.04). Tests cyclic Markov transition matrix (-tm) and sequence predictor (-pred).",
       "2Drand": "<b>2Drand</b>: 1,000 uniform random points across the 2D plane. Stresses spatial coverage scaling.",
       "2Dwalk": "<b>2Dwalk</b>: 1,000 steps of bounded Brownian random walk in 2D. Tests localized drift and dynamic cluster reuse.",
-      "stream": "<b>Dynamic 2D Stream</b>: Continuous Lissajous orbital trajectory with real-time parameter streaming.",
+      "stream": "<b>stream</b>: 1,000 samples on a 2D Lissajous orbital trajectory. Tests smooth continuous motion clustering.",
       
       // 3D Benchmarks
       "3Dspiral": "<b>3Dspiral</b>: 1,000 continuous 3D samples on a rotating helical manifold. Shows quad-split X/Y/Z projections &amp; custom 3D drag rotation.",
@@ -24,7 +24,7 @@
       "3Dstar": "<b>3Dstar</b>: 1,000 points distributed across 20 3D radial star branches extending from origin.",
       "3Drand": "<b>3Drand</b>: 1,000 uniform random points distributed throughout a 3D spherical volume.",
       "3Dwalk": "<b>3Dwalk</b>: 1,000 steps of bounded 3D Brownian random walk. Tests localized 3D spatial drift and anchor reuse.",
-      "3Dlorenz": "<b>Dynamic 3D Lorenz</b>: Continuous dynamic integration of the chaotic Lorenz attractor (σ=10, ρ=28, β=8/3) with real-time 3D orbit streaming.",
+      "3Dlorenz": "<b>3Dlorenz</b>: 1,000 samples integrated along the chaotic Lorenz attractor (σ=10, ρ=28, β=8/3). Tests 3D chaotic trajectory clustering.",
       
       // Custom
       "custom": "<b>Custom Dataset</b>: User-uploaded 2D or 3D coordinate dataset."
@@ -91,6 +91,16 @@
           cx = Math.max(-0.9, Math.min(0.9, cx + step * Math.cos(theta)));
           cy = Math.max(-0.9, Math.min(0.9, cy + step * Math.sin(theta)));
           points.push({ x: cx, y: cy, z: 0.0 });
+        }
+      } else if (type === "stream") {
+        // 2D Lissajous orbital trajectory
+        for (let i = 0; i < N; i++) {
+          const t = i * 0.15;
+          const x = 0.70 * Math.cos(t)
+            + 0.18 * Math.sin(t * 3.0);
+          const y = 0.60 * Math.sin(t * 0.8)
+            + 0.15 * Math.cos(t * 2.0);
+          points.push({ x, y, z: 0.0 });
         }
       } 
       
@@ -187,6 +197,24 @@
           cy = Math.max(-0.85, Math.min(0.85, cy + step * sintheta * Math.sin(phi)));
           cz = Math.max(-0.85, Math.min(0.85, cz + step * costheta));
           points.push({ x: cx, y: cy, z: cz });
+        }
+      } else if (type === "3Dlorenz") {
+        // Lorenz attractor via Euler integration
+        const dt = 0.009;
+        const sigma = 10.0, rho = 28.0, beta = 8.0 / 3.0;
+        let lx = 0.1, ly = 0.0, lz = 0.0;
+        for (let i = 0; i < N; i++) {
+          const dx = sigma * (ly - lx);
+          const dy = lx * (rho - lz) - ly;
+          const dz = lx * ly - beta * lz;
+          lx += dx * dt;
+          ly += dy * dt;
+          lz += dz * dt;
+          points.push({
+            x: (lx / 20.0) * 0.82,
+            y: (ly / 28.0) * 0.82,
+            z: ((lz - 25.0) / 25.0) * 0.82
+          });
         }
       }
 

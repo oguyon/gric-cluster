@@ -56,6 +56,37 @@ const GricWasm = (function () {
       _wrapFunctions();
       _ready = true;
       console.log('[GricWasm] WASM clustering engine loaded.');
+
+      // Populate header with WASM build info
+      try {
+        const ver = getVersion();
+        let hash = 'unknown';
+        let dateStr = '';
+        if (ver.includes('|')) {
+          const parts = ver.split('|');
+          hash = parts[0].trim();
+          dateStr = parts.slice(1).join('|').trim();
+        } else {
+          const parts = ver.split(' ');
+          hash = parts[0] || 'unknown';
+          dateStr = parts.slice(1).join(' ');
+        }
+
+        const badge = document.getElementById('versionBadge');
+        if (badge) {
+          badge.textContent = '🔧 ' + hash + (dateStr ? ' | ' + dateStr : '');
+        }
+        const info = document.getElementById('headerBuildInfo');
+        if (info) {
+          info.textContent = 'Build: ' + ver;
+        }
+        const hashEl = document.getElementById('wasmBuildHash');
+        if (hashEl) {
+          hashEl.textContent = ver;
+        }
+      } catch (e) {
+        /* non-critical */
+      }
     } catch (err) {
       console.error(
         '[GricWasm] Failed to load WASM module:', err
@@ -85,6 +116,7 @@ const GricWasm = (function () {
       'number', // soft_bayesian_mode
       'number', // xtile_mode
       'number', // sparse_dcc_mode
+      'number', // sparse_dcc_extra_evals
       'number', // entropy_gate_bits
       'number', // entropy_first_gate_bits
       'number', // entropy_fast_mode
@@ -139,6 +171,59 @@ const GricWasm = (function () {
     _fn.free = M.cwrap(
       'wasm_cluster_free',
       null,
+      ['number']
+    );
+
+    // Trace / Explain API
+    _fn.setTrace = M.cwrap(
+      'wasm_cluster_set_trace',
+      null,
+      ['number', 'number', 'number']
+    );
+
+    _fn.getTraceCount = M.cwrap(
+      'wasm_cluster_get_trace_count',
+      'number',
+      ['number']
+    );
+
+    _fn.getTraceEvents = M.cwrap(
+      'wasm_cluster_get_trace_events',
+      'number',
+      ['number']
+    );
+
+    _fn.getTraceEventSize = M.cwrap(
+      'wasm_cluster_get_trace_event_size',
+      'number',
+      []
+    );
+
+    _fn.getTraceHead = M.cwrap(
+      'wasm_cluster_get_trace_head',
+      'number',
+      ['number']
+    );
+
+    _fn.getTraceFrameStart = M.cwrap(
+      'wasm_cluster_get_trace_frame_start',
+      'number',
+      ['number']
+    );
+
+    _fn.clearTrace = M.cwrap(
+      'wasm_cluster_clear_trace',
+      null,
+      ['number']
+    );
+    _fn.setUnlimited = M.cwrap(
+      'wasm_cluster_set_unlimited',
+      null,
+      ['number', 'number']
+    );
+    _fn.getCapacity = M.cwrap(
+      'wasm_cluster_get_capacity',
+      'number',
       ['number']
     );
   }
@@ -210,7 +295,8 @@ const GricWasm = (function () {
     }
 
     _ndim = params.ndim || 3;
-    _maxK = params.maxnbclust || 256;
+    const isUnlimited = !(params.maxcl > 0);
+    _maxK = isUnlimited ? 256 : params.maxnbclust;
 
     // Map JS pruneMode string to te4/te5 booleans
     const te4 = (params.pruneMode === '4P' ||
@@ -225,8 +311,7 @@ const GricWasm = (function () {
       strategyEnum = 2;
     }
 
-    const effectiveMaxcl = params.maxcl > 0
-      ? params.maxcl : _maxK;
+    const effectiveMaxcl = isUnlimited ? 256 : _maxK;
 
     _handle = _fn.init(
       params.rlim || 0.1,
@@ -242,7 +327,8 @@ const GricWasm = (function () {
       params.tmMixingCoeff || 0.0,
       params.softBayesian ? 1 : 0,
       params.xtileMode ? 1 : 0,
-      0, // sparse_dcc_mode (dense for simulator)
+      params.sparseDcc ? 1 : 0, // sparse_dcc_mode
+      params.sparseDccExtraEvals || 0, // sparse_dcc_extra_evals
       params.entropyGate || 0.75,
       params.entropyFirstGate || 1.5,
       params.entropyFast ? 1 : 0,
@@ -257,6 +343,11 @@ const GricWasm = (function () {
         '[GricWasm] wasm_cluster_init returned NULL'
       );
       return false;
+    }
+
+    // Enable geometric growth for unlimited mode
+    if (isUnlimited) {
+      _fn.setUnlimited(_handle, 1);
     }
 
     _allocBuffers();
@@ -300,6 +391,15 @@ const GricWasm = (function () {
     if (!_handle) return null;
 
     const M = _module;
+
+    // Detect if C engine grew its arrays
+    const cCapacity = _fn.getCapacity(_handle);
+    if (cCapacity > _maxK) {
+      _freeBuffers();
+      _maxK = cCapacity;
+      _allocBuffers();
+    }
+
     const K = _fn.getNumClusters(_handle);
 
     // Read anchor positions and member counts
@@ -455,6 +555,8 @@ const GricWasm = (function () {
       tmMixingCoeff: useTM ? tmMixingCoeff : 0.0,
       softBayesian: useSoftBayesian,
       xtileMode: useXTile,
+      sparseDcc: useSparseDcc,
+      sparseDccExtraEvals: sparseDccExtraEvals,
       entropyGate: entropyGate,
       entropyFirstGate: entropyFirstGate,
       entropyFast: entropyFastMode,
@@ -617,6 +719,315 @@ const GricWasm = (function () {
     }
   }
 
+  /* -------------------------------------------------------
+   * Trace event type enum values (must match cluster_trace.h)
+   * ------------------------------------------------------- */
+  const _TRACE_TYPE = {
+    FRAME_INGEST: 0,
+    INITIAL_CLUSTER: 1,
+    TARGET_SELECTED: 2,
+    MATCH: 3,
+    MISMATCH: 4,
+    PRUNE_3P: 5,
+    PRUNE_4P: 6,
+    PRUNE_5P: 7,
+    NEW_CLUSTER: 8,
+    EVICT_STOP: 9,
+    EVICT_DISCARD: 10,
+    EVICT_MERGE: 11,
+    ENTROPY_GATE: 12,
+    PRIOR_MIXING: 13,
+  };
+
+  const _TRACE_REASON = {
+    GREEDY_STATIC: 0,
+    GREEDY_DYNAMIC: 1,
+    PREDICTION: 2,
+    ENTROPY_FULL: 3,
+    ENTROPY_FAST: 4,
+    ENTROPY_GATED: 5,
+    LEADER_SHORTCUT: 6,
+  };
+
+  let _traceEnabled = false;
+  let _eventSize = 0;
+
+  /**
+   * Enable or disable the C-side explain trace buffer.
+   * @param {boolean} enabled
+   */
+  function setTrace(enabled) {
+    if (!_handle) return;
+    _traceEnabled = enabled;
+    _fn.setTrace(_handle, enabled ? 1 : 0, 2048);
+    if (!_eventSize && enabled) {
+      _eventSize = _fn.getTraceEventSize();
+    }
+  }
+
+  /**
+   * Map a trace event type enum to a JS step type string.
+   */
+  function _traceTypeToStep(t) {
+    switch (t) {
+      case _TRACE_TYPE.FRAME_INGEST:
+      case _TRACE_TYPE.TARGET_SELECTED:
+      case _TRACE_TYPE.ENTROPY_GATE:
+      case _TRACE_TYPE.PRIOR_MIXING:
+        return 'target';
+      case _TRACE_TYPE.INITIAL_CLUSTER:
+      case _TRACE_TYPE.NEW_CLUSTER:
+        return 'new-cluster';
+      case _TRACE_TYPE.MATCH:
+        return 'match';
+      case _TRACE_TYPE.MISMATCH:
+      case _TRACE_TYPE.EVICT_STOP:
+      case _TRACE_TYPE.EVICT_DISCARD:
+      case _TRACE_TYPE.EVICT_MERGE:
+        return 'mismatch';
+      case _TRACE_TYPE.PRUNE_3P:
+      case _TRACE_TYPE.PRUNE_4P:
+      case _TRACE_TYPE.PRUNE_5P:
+        return 'prune';
+      default:
+        return 'target';
+    }
+  }
+
+  /**
+   * Build a human-readable title for a trace event.
+   */
+  function _traceTitle(ev) {
+    switch (ev._type) {
+      case _TRACE_TYPE.FRAME_INGEST:
+        return `📍 Ingesting Frame #${ev.frame_id}`;
+      case _TRACE_TYPE.INITIAL_CLUSTER:
+        return '✨ Initial Cluster Anchor Created';
+      case _TRACE_TYPE.TARGET_SELECTED: {
+        const reasons = [
+          'Greedy', 'Greedy (dynamic)',
+          'Prediction', 'Shannon entropy',
+          'Popcount surrogate', 'Entropy-gated',
+          'Leader shortcut'
+        ];
+        const r = reasons[ev.reason] || 'Unknown';
+        return `🔍 Measuring: C${ev.cluster_id} (${r})`;
+      }
+      case _TRACE_TYPE.MATCH:
+        return `🎯 Match on C${ev.cluster_id}`;
+      case _TRACE_TYPE.MISMATCH:
+        return `❌ Mismatch on C${ev.cluster_id}`;
+      case _TRACE_TYPE.PRUNE_3P:
+        return '📐 3-Point Triangle Inequality Pruning';
+      case _TRACE_TYPE.PRUNE_4P:
+        return '📐 4-Point Pruning (-te4)';
+      case _TRACE_TYPE.PRUNE_5P:
+        return '📐 5-Point Pruning (-te5)';
+      case _TRACE_TYPE.NEW_CLUSTER:
+        return `✨ New Cluster Created: C${ev.cluster_id}`;
+      case _TRACE_TYPE.EVICT_STOP:
+        return '🛑 Max Clusters Limit Reached (-maxcl stop)';
+      case _TRACE_TYPE.EVICT_DISCARD:
+        return `♻️ Cluster Eviction: C${ev.cluster_id}`;
+      case _TRACE_TYPE.EVICT_MERGE:
+        return `🤝 Cluster Merge (-maxcl merge)`;
+      case _TRACE_TYPE.ENTROPY_GATE:
+        return '⚡ Entropy Gated → Greedy Shortcut';
+      case _TRACE_TYPE.PRIOR_MIXING:
+        return '📊 Prior Probability Mixing';
+      default:
+        return 'Unknown Event';
+    }
+  }
+
+  /**
+   * Build a human-readable text body for a trace event.
+   */
+  function _traceText(ev) {
+    switch (ev._type) {
+      case _TRACE_TYPE.INITIAL_CLUSTER:
+        return `Frame #${ev.frame_id}: initialized C0.`;
+      case _TRACE_TYPE.TARGET_SELECTED:
+        if (ev.entropy_h > 0) {
+          return `Target C${ev.cluster_id}, ` +
+            `current H = ${ev.entropy_h.toFixed(3)} bits.`;
+        }
+        return `Target C${ev.cluster_id} selected.`;
+      case _TRACE_TYPE.MATCH:
+        return `d = ${ev.distance.toFixed(4)}, ` +
+          `rlim = ${ev.rlim.toFixed(4)}. ` +
+          `Distance ≤ threshold → assigned.`;
+      case _TRACE_TYPE.MISMATCH:
+        return `d = ${ev.distance.toFixed(4)} > ` +
+          `rlim = ${ev.rlim.toFixed(4)}. Excluded.`;
+      case _TRACE_TYPE.PRUNE_3P:
+      case _TRACE_TYPE.PRUNE_4P:
+      case _TRACE_TYPE.PRUNE_5P:
+        return `Pruned ${ev.pruned_count} candidate(s), ` +
+          `${ev.active_remaining} remaining.`;
+      case _TRACE_TYPE.NEW_CLUSTER:
+        return `No match in ${ev.active_remaining || 0} ` +
+          `candidates. Spawned new anchor C${ev.cluster_id}.`;
+      case _TRACE_TYPE.EVICT_STOP:
+        return 'Cluster budget reached. Frame unassigned.';
+      case _TRACE_TYPE.EVICT_DISCARD:
+        return `Evicted C${ev.cluster_id} (lowest frequency).`;
+      case _TRACE_TYPE.EVICT_MERGE:
+        return `Merged closest pair (d = ` +
+          `${ev.distance.toFixed(4)}).`;
+      case _TRACE_TYPE.ENTROPY_GATE:
+        return `H = ${ev.entropy_h.toFixed(3)} bits < ` +
+          `gate ${ev.lower_bound.toFixed(3)} → greedy.`;
+      case _TRACE_TYPE.PRIOR_MIXING:
+        return 'Prior probabilities blended with ' +
+          'transition history.';
+      default:
+        return '';
+    }
+  }
+
+  /**
+   * Read trace events from WASM heap for the current
+   * frame and convert to JS explain step objects.
+   *
+   * @returns {Array} Array of step objects matching
+   *   the existing JS explain format:
+   *   { type, title, text, entropyRankings, currentH }
+   */
+  function getTrace() {
+    if (!_handle || !_traceEnabled) return [];
+
+    const count = _fn.getTraceCount(_handle);
+    if (count === 0) return [];
+
+    const eventsPtr = _fn.getTraceEvents(_handle);
+    if (!eventsPtr) return [];
+
+    if (!_eventSize) {
+      _eventSize = _fn.getTraceEventSize();
+    }
+
+    const head = _fn.getTraceHead(_handle);
+    const frameStart = _fn.getTraceFrameStart(_handle);
+    const capacity = count; // count <= capacity
+
+    const M = _module;
+    const HEAP32 = M.HEAP32;
+    const HEAPF64 = M.HEAPF64;
+    const steps = [];
+
+    /* Walk from frame_start to head (wrapping) to get
+     * only the events for the current frame. */
+    let idx = frameStart;
+    const endIdx = head;
+    const maxIter = capacity + 1; // safety bound
+    let iter = 0;
+
+    while (idx !== endIdx && iter < maxIter) {
+      iter++;
+      const byteOff = eventsPtr + idx * _eventSize;
+
+      /* TraceEvent struct layout (must match C):
+       *  0: uint16 type
+       *  2: uint16 reason
+       *  4: int    frame_id
+       *  8: int    cluster_id
+       * 12: (pad to 16)
+       * 16: double distance
+       * 24: double rlim
+       * 32: double lower_bound
+       * 40: double entropy_h
+       * 48: int    active_remaining
+       * 52: int    pruned_count
+       * 56: int    num_candidates
+       * 60: (pad to 64)
+       * 64: TraceCandidateEntry[8]
+       *   each: int id (4) + pad(4) + 3×double (24) = 32
+       *   total: 8 × 32 = 256
+       * Total: 64 + 256 = 320 bytes
+       *
+       * We use HEAP32 (4-byte view) for ints and
+       * HEAPF64 (8-byte view) for doubles.
+       */
+      const i32 = byteOff >> 2;
+      const typeAndReason = HEAP32[i32];
+      const evType = typeAndReason & 0xFFFF;
+      const reason = (typeAndReason >> 16) & 0xFFFF;
+      const frameId = HEAP32[i32 + 1];
+      const clusterId = HEAP32[i32 + 2];
+
+      const f64 = byteOff >> 3;
+      const dist = HEAPF64[f64 + 2];
+      const rlim = HEAPF64[f64 + 3];
+      const lowerBound = HEAPF64[f64 + 4];
+      const entropyH = HEAPF64[f64 + 5];
+
+      const activeRemaining = HEAP32[(byteOff + 48) >> 2];
+      const prunedCount = HEAP32[(byteOff + 52) >> 2];
+      const numCandidates = HEAP32[(byteOff + 56) >> 2];
+
+      const ev = {
+        _type: evType,
+        reason: reason,
+        frame_id: frameId,
+        cluster_id: clusterId,
+        distance: dist,
+        rlim: rlim,
+        lower_bound: lowerBound,
+        entropy_h: entropyH,
+        active_remaining: activeRemaining,
+        pruned_count: prunedCount,
+      };
+
+      const step = {
+        type: _traceTypeToStep(evType),
+        title: _traceTitle(ev),
+        text: _traceText(ev),
+      };
+
+      /* Populate entropy rankings if present */
+      if (numCandidates > 0) {
+        const rankings = [];
+        const candBase = byteOff + 64;
+        const candStride = 32; // 4 + 4pad + 3×8 = 32
+        const n = Math.min(numCandidates, 8);
+        for (let ci = 0; ci < n; ci++) {
+          const cOff = candBase + ci * candStride;
+          const cId = HEAP32[cOff >> 2];
+          const cF64 = (cOff + 8) >> 3;
+          rankings.push({
+            id: cId,
+            p: HEAPF64[cF64],
+            expectedH: HEAPF64[cF64 + 1],
+            infoGain: HEAPF64[cF64 + 2],
+          });
+        }
+        step.entropyRankings = rankings;
+        step.currentH = entropyH;
+      }
+
+      steps.push(step);
+      idx = (idx + 1) % capacity;
+    } // while trace events
+
+    return steps;
+  }
+
+  /**
+   * Get the git hash the WASM binary was built from.
+   * Returns 'unknown' if not available.
+   */
+  function getVersion() {
+    if (!_ready || !_module) return 'unknown';
+    try {
+      const fn = _module.cwrap(
+        'wasm_cluster_get_version', 'string', []);
+      return fn();
+    } catch (e) {
+      return 'unknown';
+    }
+  }
+
   // Public API
   return {
     load: load,
@@ -629,8 +1040,117 @@ const GricWasm = (function () {
     isLoaded: isLoaded,
     buildParamsFromState: buildParamsFromState,
     applyToJsState: applyToJsState,
+    setTrace: setTrace,
+    getTrace: getTrace,
+    getVersion: getVersion,
   };
 })();
+
+/**
+ * Build the equivalent gric-cluster CLI command from
+ * current JS simulator state variables.
+ * Returns a string like:
+ *   gric-cluster 0.100 -entropy -te4 input.fits
+ */
+function buildCliCommand() {
+  const parts = ['gric-cluster'];
+
+  // Positional: rlim
+  parts.push(rlim.toFixed(3));
+
+  // Pruning mode
+  if (pruneMode === '4P' || pruneMode === '5P') {
+    parts.push('-te4');
+  }
+  if (pruneMode === '5P') {
+    parts.push('-te5');
+  }
+
+  // Target selection
+  if (targetMode === 'entropy') {
+    parts.push('-entropy');
+    if (entropyGate !== 2.0) {
+      parts.push('-entropy_gate', entropyGate.toFixed(2));
+    }
+    if (entropyFirstGate !== 4.0) {
+      parts.push(
+        '-entropy_first_gate', entropyFirstGate.toFixed(2)
+      );
+    }
+    if (entropyFastMode) {
+      parts.push('-entropy_fast');
+    }
+  }
+
+  // Transition matrix
+  if (useTM && tmMixingCoeff > 0) {
+    parts.push('-tm', tmMixingCoeff.toFixed(2));
+  }
+
+  // Prediction
+  if (usePred) {
+    if (predHorizon !== 2) {
+      parts.push('-pred[,,' + predHorizon + ']');
+    } else {
+      parts.push('-pred');
+    }
+  }
+
+  // Geometric probability
+  if (useGprob) {
+    parts.push('-gprob');
+    if (maxVisitors !== 1000) {
+      parts.push('-maxvis', maxVisitors.toString());
+    }
+  }
+
+  // Soft Bayesian
+  if (useSoftBayesian) {
+    parts.push('-soft_bayesian');
+    if (softBayesianSigmaCoeff !== 1.0) {
+      parts.push(
+        '-soft_bayesian_sigma',
+        softBayesianSigmaCoeff.toFixed(2)
+      );
+    }
+  }
+
+  // Cross-tile
+  if (useXTile) {
+    parts.push('-xtile');
+  }
+
+  // Sparse DCC
+  if (useSparseDcc) {
+    parts.push('-sparse_dcc');
+    if (sparseDccExtraEvals > 0) {
+      parts.push(
+        '-sparse_dcc_extra_evals',
+        sparseDccExtraEvals.toString()
+      );
+    }
+  }
+
+  // Max clusters & eviction
+  if (maxcl > 0) {
+    parts.push('-maxcl', maxcl.toString());
+    if (maxclStrategy !== 'stop') {
+      parts.push('-maxcl_strategy', maxclStrategy);
+    }
+    if (maxclStrategy === 'discard' &&
+        discardFraction !== 0.5)
+    {
+      parts.push(
+        '-discard_frac', discardFraction.toFixed(2)
+      );
+    }
+  }
+
+  // Input placeholder
+  parts.push('<input.fits>');
+
+  return parts.join(' ');
+}
 
 /**
  * GricWasmWorker - Main thread controller for background Web Worker clustering.

@@ -78,6 +78,7 @@ include_directories(
     src/gric-cluster/io
     src/gric-cluster/help
     src/gric-cluster/steps
+    src/gric-cluster/trace
 )
 
 link_directories(
@@ -129,6 +130,7 @@ set(CLUSTER_SRCS
     src/gric-cluster/steps/handle_new_cluster_creation.c
     src/gric-cluster/steps/record_step_assignment.c
     src/gric-cluster/steps/update_consistency_mask.c
+    src/gric-cluster/trace/cluster_trace.c
     src/shared/cli_colors.c
 )
 
@@ -326,5 +328,12 @@ add_custom_target(benchmark-docs
     DEPENDS gric-cluster gric-mktxtseq gric-plot gric-gen-balls
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Generating benchmark figures with gric-plot and updating MkDocs benchmark pages"
+)
+
+# Target to build and deploy WebAssembly module to site/ and docs/
+add_custom_target(wasm
+    COMMAND make -f "${CMAKE_SOURCE_DIR}/Makefile.wasm"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Compiling WebAssembly module and deploying to site/ and docs/"
 )
 

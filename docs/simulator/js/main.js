@@ -9,20 +9,19 @@
     /**
      * Returns true if the WASM engine is effectively active
      * for the current frame pipeline (preference ON, module
-     * loaded, and no overriding mode like Explain or Tiles).
+     * loaded, and no overriding mode like Tiles).
      */
     function isWasmEffective() {
       return useWasm
         && wasmSessionActive
         && GricWasm.isReady()
-        && !isExplainMode
         && !useTiles;
     }
 
     /**
      * Update all WASM-related UI elements to reflect the
-     * effective code path, including overrides from Explain
-     * mode and Tile mode.
+     * effective code path, including overrides from
+     * Tile mode.
      */
     function updateWasmBadge() {
       const btn = document.getElementById('btnWasm');
@@ -36,7 +35,7 @@
         if (effective) {
           btn.classList.add('toggle-active');
           btn.innerText = '⚡ WASM';
-        } else if (useWasm && loaded && (isExplainMode || useTiles)) {
+        } else if (useWasm && loaded && useTiles) {
           btn.classList.remove('toggle-active');
           btn.innerText = '⚡ WASM (overridden)';
         } else {
@@ -47,20 +46,29 @@
 
       // Resource tracker badge
       if (badge) {
-        badge.innerText = effective ? 'WASM' : 'JS';
-        badge.style.background = effective
-          ? 'rgba(74, 222, 128, 0.15)'
-          : 'rgba(100,100,100,0.2)';
-        badge.style.color = effective ? '#4ade80' : '#888';
+        if (effective && isExplainMode) {
+          badge.innerText = 'WASM+Trace';
+          badge.style.background = 'rgba(251, 191, 36, 0.15)';
+          badge.style.color = '#fbbf24';
+        } else if (effective) {
+          badge.innerText = 'WASM';
+          badge.style.background = 'rgba(74, 222, 128, 0.15)';
+          badge.style.color = '#4ade80';
+        } else {
+          badge.innerText = 'JS';
+          badge.style.background = 'rgba(100,100,100,0.2)';
+          badge.style.color = '#888';
+        }
       }
 
       // Backend label
       if (label) {
-        if (effective) {
+        if (effective && isExplainMode) {
+          label.innerText = 'C/WebAssembly + Trace';
+        } else if (effective) {
           label.innerText = 'C/WebAssembly (SIMD)';
-        } else if (useWasm && (isExplainMode || useTiles)) {
-          const reason = isExplainMode ? 'Explain' : 'Tiles';
-          label.innerText = 'JS (WASM paused: ' + reason + ')';
+        } else if (useWasm && useTiles) {
+          label.innerText = 'JS (WASM paused: Tiles)';
         } else {
           label.innerText = 'JavaScript';
         }
@@ -74,13 +82,11 @@
       }
       useWasm = !useWasm;
       if (useWasm) {
-        if (isExplainMode) {
-          isExplainMode = false;
-          const btnExp = document.getElementById('btnExplain');
-          if (btnExp) btnExp.classList.remove('toggle-active');
-        }
         const params = GricWasm.buildParamsFromState();
         wasmSessionActive = GricWasm.init(params);
+        if (isExplainMode) {
+          GricWasm.setTrace(true);
+        }
         if (typeof GricWasmWorker !== 'undefined') {
           GricWasmWorker.startSession(params);
         }
@@ -131,46 +137,6 @@
       }
     }
 
-    function runBatchInstant() {
-      if (currentBenchmark === "stream" || currentBenchmark === "3Dlorenz") {
-        for (let i = 0; i < 1000; i++) stepNextFrame(true);
-        // Sync WASM state after batch
-        if (useWasm && wasmSessionActive && GricWasm.isReady()) {
-          const snapshot = GricWasm.syncState();
-          if (snapshot) GricWasm.applyToJsState(snapshot);
-        }
-        updateUI();
-        draw();
-        pauseSimulation();
-        return;
-      }
-      while (hasMoreFrames()) {
-        if (currentFrameIdx >= benchmarkDataset.length) {
-          if (loopCount === 0 || currentLoop < loopCount) {
-            currentLoop++;
-            currentFrameIdx = 0;
-          } else {
-            break;
-          }
-        }
-        if (loopCount === 0 && totalFrames >= 100000) {
-          showToast("Infinite batch capped at 100,000 frames");
-          break;
-        }
-        const rawPt = benchmarkDataset[currentFrameIdx++];
-        const pt = applyNoiseToPoint(rawPt.x, rawPt.y, rawPt.z || 0.0);
-        clusterFrame(pt.x, pt.y, pt.z || 0.0, true);
-      }
-      // Sync WASM state after batch
-      if (useWasm && wasmSessionActive && GricWasm.isReady()) {
-        const snapshot = GricWasm.syncState();
-        if (snapshot) GricWasm.applyToJsState(snapshot);
-      }
-      updateUI();
-      draw();
-      pauseSimulation();
-    }
-
     function startSimulation() {
       if (isAddPointMode) setAddPointMode(false);
 
@@ -189,45 +155,16 @@
       // Start independent asynchronous 60 FPS display render loop
       startDisplayLoop();
 
-      if (playSpeed === 0 && benchmarkDataset.length > 0) {
-        // Instant Batch Mode: Compute as fast as possible in non-blocking time-slices
-        function batchChunk() {
-          if (!isRunning) return;
-          const sliceStart = performance.now();
-          while (hasMoreFrames() && (performance.now() - sliceStart < 14)) {
-            if (currentFrameIdx >= benchmarkDataset.length) {
-              if (loopCount === 0 || currentLoop < loopCount) {
-                currentLoop++;
-                currentFrameIdx = 0;
-              } else {
-                break;
-              }
-            }
-            if (loopCount === 0 && totalFrames >= 100000) {
-              showToast("Infinite batch capped at 100,000 frames");
-              break;
-            }
-            const rawPt = benchmarkDataset[currentFrameIdx++];
-            const pt = applyNoiseToPoint(rawPt.x, rawPt.y, rawPt.z || 0.0);
-            clusterFrame(pt.x, pt.y, pt.z || 0.0, true);
-          }
-          if (!hasMoreFrames() || (loopCount > 0 && currentLoop >= loopCount && currentFrameIdx >= benchmarkDataset.length)) {
-            pauseSimulation();
-            return;
-          }
-          playTimer = setTimeout(batchChunk, 0);
-        }
-        playTimer = setTimeout(batchChunk, 0);
-        return;
-      }
-
       if (playSpeed <= 0) {
         // "⚡ As fast as possible" Mode:
-        // Pure mathematical compute loop runs continuously without waiting for display
+        // Compute loop runs in ~12ms time-slices,
+        // yielding to the display loop between slices.
         function pumpCompute() {
           if (!isRunning) return;
           const sliceStart = performance.now();
-          while (hasMoreFrames() && (performance.now() - sliceStart < 12)) {
+          while (hasMoreFrames()
+            && (performance.now() - sliceStart < 12))
+          {
             stepNextFrame(true);
           }
           if (!hasMoreFrames()) {
@@ -329,21 +266,17 @@
       if (isExplainMode) {
         btn.classList.add('toggle-active');
         setTab('narrative');
-        // Explain mode requires the JS narrative pipeline -> explicitly disable WASM
-        if (useWasm) {
-          useWasm = false;
-          wasmSessionActive = false;
-          if (typeof GricWasm !== 'undefined') {
-            GricWasm.destroy();
-          }
-          if (typeof GricWasmWorker !== 'undefined') {
-            GricWasmWorker.reset();
-          }
-          showToast('💬 Explain active: switched to JavaScript engine');
+        // Enable C-side trace buffer for WASM explain
+        if (typeof GricWasm !== 'undefined' && GricWasm.isReady()) {
+          GricWasm.setTrace(true);
         }
       } else {
         btn.classList.remove('toggle-active');
         currentExplanation = [];
+        // Disable C-side trace buffer
+        if (typeof GricWasm !== 'undefined' && GricWasm.isReady()) {
+          GricWasm.setTrace(false);
+        }
       }
       updateWasmBadge();
       updateUI();
@@ -815,41 +748,154 @@
     document.getElementById('btnResetView').addEventListener('click', resetView);
 
     const sliderRlim = document.getElementById('sliderRlim');
-    sliderRlim.addEventListener('input', (e) => {
-      rlim = parseFloat(e.target.value);
-      document.getElementById('lblRlim').innerText = rlim.toFixed(3);
-      draw();
-    });
+    const inputRlim = document.getElementById('inputRlim');
+    if (sliderRlim) {
+      sliderRlim.addEventListener('input', (e) => {
+        rlim = parseFloat(e.target.value);
+        if (inputRlim) inputRlim.value = rlim.toFixed(3);
+        draw();
+      });
+    }
+    if (inputRlim) {
+      inputRlim.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v > 0) {
+          rlim = v;
+          if (sliderRlim) sliderRlim.value = Math.max(0.02, Math.min(0.30, v));
+          draw();
+        }
+      });
+    }
 
     const sliderFocus = document.getElementById('sliderFocus');
-    sliderFocus.addEventListener('input', (e) => {
-      visualFocus = parseInt(e.target.value);
-      const lbl = document.getElementById('lblFocus');
-      if (lbl) {
-        if (visualFocus === 0) {
-          lbl.innerText = "Points Only (0%)";
-        } else if (visualFocus < 45) {
-          lbl.innerText = `Points Emphasis (${visualFocus}%)`;
-        } else if (visualFocus <= 55) {
-          lbl.innerText = `Balanced (${visualFocus}%)`;
-        } else if (visualFocus === 100) {
-          lbl.innerText = "Clusters Only (100%)";
-        } else {
-          lbl.innerText = `Clusters Emphasis (${visualFocus}%)`;
-        }
+    const inputFocus = document.getElementById('inputFocus');
+    function updateFocusDesc(val) {
+      const lblUnit = document.getElementById('lblFocusUnit');
+      if (lblUnit) {
+        if (val === 0) lblUnit.innerText = "% (Points Only)";
+        else if (val < 45) lblUnit.innerText = `% (Points Emph)`;
+        else if (val <= 55) lblUnit.innerText = `% (Balanced)`;
+        else if (val === 100) lblUnit.innerText = "% (Clusters Only)";
+        else lblUnit.innerText = `% (Clusters Emph)`;
       }
-      draw();
-    });
+    }
+    if (sliderFocus) {
+      sliderFocus.addEventListener('input', (e) => {
+        visualFocus = parseInt(e.target.value, 10);
+        if (inputFocus) inputFocus.value = visualFocus;
+        updateFocusDesc(visualFocus);
+        draw();
+      });
+    }
+    if (inputFocus) {
+      inputFocus.addEventListener('input', (e) => {
+        let v = parseInt(e.target.value, 10);
+        if (!isNaN(v)) {
+          v = Math.max(0, Math.min(100, v));
+          visualFocus = v;
+          if (sliderFocus) sliderFocus.value = v;
+          updateFocusDesc(visualFocus);
+          draw();
+        }
+      });
+    }
 
     const sliderPointSize = document.getElementById('sliderPointSize');
+    const inputPointSize = document.getElementById('inputPointSize');
     if (sliderPointSize) {
       sliderPointSize.addEventListener('input', (e) => {
         samplePointSize = parseFloat(e.target.value);
-        const lbl = document.getElementById('lblPointSize');
-        if (lbl) {
-          lbl.innerText = `${samplePointSize.toFixed(2).replace(/\.?0+$/, '')} px`;
-        }
+        if (inputPointSize) inputPointSize.value = samplePointSize.toFixed(2).replace(/\.?0+$/, '');
         draw();
+      });
+    }
+    if (inputPointSize) {
+      inputPointSize.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v > 0) {
+          samplePointSize = v;
+          if (sliderPointSize) sliderPointSize.value = v;
+          draw();
+        }
+      });
+    }
+
+    // Show / Hide Past Samples toggle
+    document.getElementById('optShowSamples').addEventListener('click', () => {
+      showPastSamples = true;
+      document.getElementById('optShowSamples').classList.add('toggle-active');
+      document.getElementById('optHideSamples').classList.remove('toggle-active');
+      draw();
+    });
+    document.getElementById('optHideSamples').addEventListener('click', () => {
+      showPastSamples = false;
+      document.getElementById('optHideSamples').classList.add('toggle-active');
+      document.getElementById('optShowSamples').classList.remove('toggle-active');
+      draw();
+    });
+
+    // Max Displayed Points slider
+    const sliderMaxDrawPts = document.getElementById('sliderMaxDrawPts');
+    const inputMaxDrawPts = document.getElementById('inputMaxDrawPts');
+    if (sliderMaxDrawPts) {
+      sliderMaxDrawPts.addEventListener('input', (e) => {
+        maxDrawPoints = parseInt(e.target.value, 10);
+        if (inputMaxDrawPts) inputMaxDrawPts.value = maxDrawPoints;
+        draw();
+      });
+    }
+    if (inputMaxDrawPts) {
+      inputMaxDrawPts.addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v > 0) {
+          maxDrawPoints = v;
+          if (sliderMaxDrawPts) sliderMaxDrawPts.value = v;
+          draw();
+        }
+      });
+    }
+
+    // Sample Buffer Capacity slider
+    const sliderSampleBufCap = document.getElementById('sliderSampleBufCap');
+    const inputSampleBufCap = document.getElementById('inputSampleBufCap');
+    if (sliderSampleBufCap) {
+      sliderSampleBufCap.addEventListener('input', (e) => {
+        sampleBufferCap = parseInt(e.target.value, 10);
+        if (inputSampleBufCap) inputSampleBufCap.value = sampleBufferCap;
+        if (pastSamples.length > sampleBufferCap) {
+          pastSamples = pastSamples.slice(-sampleBufferCap);
+        }
+      });
+    }
+    if (inputSampleBufCap) {
+      inputSampleBufCap.addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v >= 100) {
+          sampleBufferCap = v;
+          if (sliderSampleBufCap) sliderSampleBufCap.value = v;
+          if (pastSamples.length > sampleBufferCap) {
+            pastSamples = pastSamples.slice(-sampleBufferCap);
+          }
+        }
+      });
+    }
+
+    // Batch Thinning Rate slider
+    const sliderBatchThin = document.getElementById('sliderBatchThin');
+    const inputBatchThin = document.getElementById('inputBatchThin');
+    if (sliderBatchThin) {
+      sliderBatchThin.addEventListener('input', (e) => {
+        batchThinRate = parseInt(e.target.value, 10);
+        if (inputBatchThin) inputBatchThin.value = batchThinRate;
+      });
+    }
+    if (inputBatchThin) {
+      inputBatchThin.addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v >= 1) {
+          batchThinRate = v;
+          if (sliderBatchThin) sliderBatchThin.value = v;
+        }
       });
     }
 
@@ -884,23 +930,42 @@
     }
 
     const sliderNoiseSigma = document.getElementById('sliderNoiseSigma');
-    sliderNoiseSigma.addEventListener('input', (e) => {
-      noiseSigma = parseFloat(e.target.value);
-      const lbl = document.getElementById('lblNoiseSigma');
-      if (lbl) {
-        lbl.innerText = noiseSigma <= 1e-6 ? "0.000 (Off)" : noiseSigma.toFixed(3);
-      }
-      syncControlDependencies();
-    });
+    const inputNoiseSigma = document.getElementById('inputNoiseSigma');
+    if (sliderNoiseSigma) {
+      sliderNoiseSigma.addEventListener('input', (e) => {
+        noiseSigma = parseFloat(e.target.value);
+        if (inputNoiseSigma) inputNoiseSigma.value = noiseSigma.toFixed(3);
+        syncControlDependencies();
+      });
+    }
+    if (inputNoiseSigma) {
+      inputNoiseSigma.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v >= 0) {
+          noiseSigma = v;
+          if (sliderNoiseSigma) sliderNoiseSigma.value = v;
+          syncControlDependencies();
+        }
+      });
+    }
 
     const sliderNoiseTrunc = document.getElementById('sliderNoiseTrunc');
-    sliderNoiseTrunc.addEventListener('input', (e) => {
-      noiseTruncLimit = parseFloat(e.target.value);
-      const lbl = document.getElementById('lblNoiseTrunc');
-      if (lbl) {
-        lbl.innerText = noiseTruncLimit.toFixed(3);
-      }
-    });
+    const inputNoiseTrunc = document.getElementById('inputNoiseTrunc');
+    if (sliderNoiseTrunc) {
+      sliderNoiseTrunc.addEventListener('input', (e) => {
+        noiseTruncLimit = parseFloat(e.target.value);
+        if (inputNoiseTrunc) inputNoiseTrunc.value = noiseTruncLimit.toFixed(3);
+      });
+    }
+    if (inputNoiseTrunc) {
+      inputNoiseTrunc.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v > 0) {
+          noiseTruncLimit = v;
+          if (sliderNoiseTrunc) sliderNoiseTrunc.value = v;
+        }
+      });
+    }
 
     document.getElementById('modeGreedy').addEventListener('click', () => {
       targetMode = 'greedy';
@@ -949,7 +1014,7 @@
       document.getElementById('optTiles').classList.toggle('active', useTiles);
       syncControlDependencies();
       resetSimulation();
-      if (currentBenchmark !== "stream" && currentBenchmark !== "3Dlorenz" && currentBenchmark !== "custom") {
+      if (currentBenchmark !== "custom") {
         benchmarkDataset = generateBenchmark(currentBenchmark, 1000);
       }
       updateWasmBadge();
@@ -961,7 +1026,8 @@
     const configTabs = [
       { id: 'tabCfgAlgo', panel: 'cfgAlgoPanel' },
       { id: 'tabCfgInput', panel: 'cfgInputPanel' },
-      { id: 'tabCfgDisplay', panel: 'cfgDisplayPanel' }
+      { id: 'tabCfgDisplay', panel: 'cfgDisplayPanel' },
+      { id: 'tabCfgCli', panel: 'cfgCliPanel' }
     ];
 
     configTabs.forEach(t => {
@@ -1007,6 +1073,35 @@
         document.getElementById('selectBenchmark').value = e.target.value;
         loadSelectedBenchmark();
         resetView();
+      });
+    }
+
+    // Sample Count (N) slider
+    const sliderSampleCount = document.getElementById('sliderSampleCount');
+    const inputSampleCount = document.getElementById('inputSampleCount');
+    if (sliderSampleCount) {
+      sliderSampleCount.addEventListener('input', (e) => {
+        sampleCount = parseInt(e.target.value, 10);
+        if (inputSampleCount) inputSampleCount.value = sampleCount;
+      });
+      sliderSampleCount.addEventListener('change', () => {
+        if (currentBenchmark !== "custom") {
+          loadSelectedBenchmark();
+        }
+      });
+    }
+    if (inputSampleCount) {
+      inputSampleCount.addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v > 0) {
+          sampleCount = v;
+          if (sliderSampleCount) sliderSampleCount.value = Math.max(100, Math.min(10000, v));
+        }
+      });
+      inputSampleCount.addEventListener('change', () => {
+        if (currentBenchmark !== "custom") {
+          loadSelectedBenchmark();
+        }
       });
     }
 
@@ -1089,21 +1184,35 @@
 
     // Max Clusters & Eviction Policy (-maxcl)
     const sliderMaxcl = document.getElementById('sliderMaxcl');
-    sliderMaxcl.addEventListener('input', (e) => {
-      const idx = parseInt(e.target.value, 10);
-      maxcl = idx === 0 ? 0 : (1 << (idx - 1));
-      if (maxcl === 0) {
-        document.getElementById('lblMaxcl').innerText = "Unlimited (0)";
-      } else if (maxcl === 1) {
-        document.getElementById('lblMaxcl').innerText = "1 cluster";
-      } else if (maxcl >= 1024) {
-        const k = maxcl / 1024;
-        document.getElementById('lblMaxcl').innerText = `${maxcl.toLocaleString()} (${k}k)`;
-      } else {
-        document.getElementById('lblMaxcl').innerText = `${maxcl} clusters`;
+    const inputMaxcl = document.getElementById('inputMaxcl');
+    function updateMaxclUnit(val) {
+      const unitEl = document.getElementById('lblMaxclUnit');
+      if (unitEl) {
+        if (val === 0) unitEl.innerText = "cls (0=∞)";
+        else if (val >= 1024) unitEl.innerText = `cls (${(val/1024).toFixed(0)}k)`;
+        else unitEl.innerText = "clusters";
       }
-      syncControlDependencies();
-    });
+    }
+    if (sliderMaxcl) {
+      sliderMaxcl.addEventListener('input', (e) => {
+        const idx = parseInt(e.target.value, 10);
+        maxcl = idx === 0 ? 0 : (1 << (idx - 1));
+        if (inputMaxcl) inputMaxcl.value = maxcl;
+        updateMaxclUnit(maxcl);
+        syncControlDependencies();
+      });
+    }
+    if (inputMaxcl) {
+      inputMaxcl.addEventListener('input', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val) || val < 0) val = 0;
+        maxcl = val;
+        const idx = (maxcl === 0) ? 0 : Math.min(17, Math.max(1, Math.round(Math.log2(maxcl)) + 1));
+        if (sliderMaxcl) sliderMaxcl.value = idx;
+        updateMaxclUnit(maxcl);
+        syncControlDependencies();
+      });
+    }
 
     ['stratStop', 'stratDiscard', 'stratMerge'].forEach(id => {
       document.getElementById(id).addEventListener('click', () => {
@@ -1115,42 +1224,116 @@
     });
 
     const sliderDiscardFrac = document.getElementById('sliderDiscardFrac');
-    sliderDiscardFrac.addEventListener('input', (e) => {
-      discardFraction = parseFloat(e.target.value);
-      document.getElementById('lblDiscardFrac').innerText = discardFraction.toFixed(2);
-    });
+    const inputDiscardFrac = document.getElementById('inputDiscardFrac');
+    if (sliderDiscardFrac) {
+      sliderDiscardFrac.addEventListener('input', (e) => {
+        discardFraction = parseFloat(e.target.value);
+        if (inputDiscardFrac) inputDiscardFrac.value = discardFraction.toFixed(2);
+      });
+    }
+    if (inputDiscardFrac) {
+      inputDiscardFrac.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v > 0 && v < 1) {
+          discardFraction = v;
+          if (sliderDiscardFrac) sliderDiscardFrac.value = v;
+        }
+      });
+    }
 
     // Prior & Acceleration Tuning (-tm, -pred, -maxvis)
     const sliderTmMix = document.getElementById('sliderTmMix');
-    sliderTmMix.addEventListener('input', (e) => {
-      tmMixingCoeff = parseFloat(e.target.value);
-      document.getElementById('lblTmMix').innerText = tmMixingCoeff.toFixed(2);
-    });
+    const inputTmMix = document.getElementById('inputTmMix');
+    if (sliderTmMix) {
+      sliderTmMix.addEventListener('input', (e) => {
+        tmMixingCoeff = parseFloat(e.target.value);
+        if (inputTmMix) inputTmMix.value = tmMixingCoeff.toFixed(2);
+        drawTransitionMatrix('tmHeatmapCanvas', false);
+      });
+    }
+    if (inputTmMix) {
+      inputTmMix.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v >= 0 && v <= 1) {
+          tmMixingCoeff = v;
+          if (sliderTmMix) sliderTmMix.value = v;
+          drawTransitionMatrix('tmHeatmapCanvas', false);
+        }
+      });
+    }
 
     const sliderPredHorizon = document.getElementById('sliderPredHorizon');
-    sliderPredHorizon.addEventListener('input', (e) => {
-      predHorizon = parseInt(e.target.value);
-      document.getElementById('lblPredHorizon').innerText = `${predHorizon} frames`;
-    });
+    const inputPredHorizon = document.getElementById('inputPredHorizon');
+    if (sliderPredHorizon) {
+      sliderPredHorizon.addEventListener('input', (e) => {
+        predHorizon = parseInt(e.target.value, 10);
+        if (inputPredHorizon) inputPredHorizon.value = predHorizon;
+      });
+    }
+    if (inputPredHorizon) {
+      inputPredHorizon.addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v >= 1) {
+          predHorizon = v;
+          if (sliderPredHorizon) sliderPredHorizon.value = Math.max(1, Math.min(5, v));
+        }
+      });
+    }
 
     const sliderMaxVis = document.getElementById('sliderMaxVis');
-    sliderMaxVis.addEventListener('input', (e) => {
-      maxVisitors = parseInt(e.target.value);
-      document.getElementById('lblMaxVis').innerText = `${maxVisitors} frames`;
-    });
+    const inputMaxVis = document.getElementById('inputMaxVis');
+    if (sliderMaxVis) {
+      sliderMaxVis.addEventListener('input', (e) => {
+        maxVisitors = parseInt(e.target.value, 10);
+        if (inputMaxVis) inputMaxVis.value = maxVisitors;
+      });
+    }
+    if (inputMaxVis) {
+      inputMaxVis.addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v >= 1) {
+          maxVisitors = v;
+          if (sliderMaxVis) sliderMaxVis.value = Math.max(5, Math.min(50, v));
+        }
+      });
+    }
 
     // Entropy & Soft Bayesian Likelihood (-entropy_first_gate, -entropy_gate, -entropy_fast, -soft_bayesian)
     const sliderEntropyFirstGate = document.getElementById('sliderEntropyFirstGate');
-    sliderEntropyFirstGate.addEventListener('input', (e) => {
-      entropyFirstGate = parseFloat(e.target.value);
-      document.getElementById('lblEntropyFirstGate').innerText = `${entropyFirstGate.toFixed(2)} bits`;
-    });
+    const inputEntropyFirstGate = document.getElementById('inputEntropyFirstGate');
+    if (sliderEntropyFirstGate) {
+      sliderEntropyFirstGate.addEventListener('input', (e) => {
+        entropyFirstGate = parseFloat(e.target.value);
+        if (inputEntropyFirstGate) inputEntropyFirstGate.value = entropyFirstGate.toFixed(2);
+      });
+    }
+    if (inputEntropyFirstGate) {
+      inputEntropyFirstGate.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v >= 0) {
+          entropyFirstGate = v;
+          if (sliderEntropyFirstGate) sliderEntropyFirstGate.value = Math.max(0, Math.min(5.0, v));
+        }
+      });
+    }
 
     const sliderEntropyGate = document.getElementById('sliderEntropyGate');
-    sliderEntropyGate.addEventListener('input', (e) => {
-      entropyGate = parseFloat(e.target.value);
-      document.getElementById('lblEntropyGate').innerText = `${entropyGate.toFixed(2)} bits`;
-    });
+    const inputEntropyGate = document.getElementById('inputEntropyGate');
+    if (sliderEntropyGate) {
+      sliderEntropyGate.addEventListener('input', (e) => {
+        entropyGate = parseFloat(e.target.value);
+        if (inputEntropyGate) inputEntropyGate.value = entropyGate.toFixed(2);
+      });
+    }
+    if (inputEntropyGate) {
+      inputEntropyGate.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v >= 0) {
+          entropyGate = v;
+          if (sliderEntropyGate) sliderEntropyGate.value = Math.max(0, Math.min(4.0, v));
+        }
+      });
+    }
 
     document.getElementById('optEntropyFast').addEventListener('click', () => {
       entropyFastMode = !entropyFastMode;
@@ -1164,10 +1347,22 @@
     });
 
     const sliderLeaderCutoff = document.getElementById('sliderLeaderCutoff');
-    sliderLeaderCutoff.addEventListener('input', (e) => {
-      entropyLeaderCutoff = parseFloat(e.target.value);
-      document.getElementById('lblLeaderCutoff').innerText = entropyLeaderCutoff.toFixed(2);
-    });
+    const inputLeaderCutoff = document.getElementById('inputLeaderCutoff');
+    if (sliderLeaderCutoff) {
+      sliderLeaderCutoff.addEventListener('input', (e) => {
+        entropyLeaderCutoff = parseFloat(e.target.value);
+        if (inputLeaderCutoff) inputLeaderCutoff.value = entropyLeaderCutoff.toFixed(2);
+      });
+    }
+    if (inputLeaderCutoff) {
+      inputLeaderCutoff.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v >= 0 && v <= 1) {
+          entropyLeaderCutoff = v;
+          if (sliderLeaderCutoff) sliderLeaderCutoff.value = v;
+        }
+      });
+    }
 
     document.getElementById('optSoftBayesian').addEventListener('click', () => {
       useSoftBayesian = !useSoftBayesian;
@@ -1176,10 +1371,22 @@
     });
 
     const sliderBayesSigma = document.getElementById('sliderBayesSigma');
-    sliderBayesSigma.addEventListener('input', (e) => {
-      softBayesianSigmaCoeff = parseFloat(e.target.value);
-      document.getElementById('lblBayesSigma').innerText = `${softBayesianSigmaCoeff.toFixed(1)} × rlim`;
-    });
+    const inputBayesSigma = document.getElementById('inputBayesSigma');
+    if (sliderBayesSigma) {
+      sliderBayesSigma.addEventListener('input', (e) => {
+        softBayesianSigmaCoeff = parseFloat(e.target.value);
+        if (inputBayesSigma) inputBayesSigma.value = softBayesianSigmaCoeff.toFixed(1);
+      });
+    }
+    if (inputBayesSigma) {
+      inputBayesSigma.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v > 0) {
+          softBayesianSigmaCoeff = v;
+          if (sliderBayesSigma) sliderBayesSigma.value = v;
+        }
+      });
+    }
 
     // Cross-Tile Subspace Prior Transfer (-xtile, -xtile_decay)
     document.getElementById('optXTile').addEventListener('click', () => {
@@ -1189,10 +1396,47 @@
     });
 
     const sliderXTileDecay = document.getElementById('sliderXTileDecay');
-    sliderXTileDecay.addEventListener('input', (e) => {
-      xtileDecay = parseFloat(e.target.value);
-      document.getElementById('lblXTileDecay').innerText = xtileDecay.toFixed(2);
+    const inputXTileDecay = document.getElementById('inputXTileDecay');
+    if (sliderXTileDecay) {
+      sliderXTileDecay.addEventListener('input', (e) => {
+        xtileDecay = parseFloat(e.target.value);
+        if (inputXTileDecay) inputXTileDecay.value = xtileDecay.toFixed(2);
+      });
+    }
+    if (inputXTileDecay) {
+      inputXTileDecay.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v > 0 && v <= 1) {
+          xtileDecay = v;
+          if (sliderXTileDecay) sliderXTileDecay.value = v;
+        }
+      });
+    }
+
+    // Sparse DCC Distance Bounding (-sparse_dcc)
+    document.getElementById('optSparseDcc').addEventListener('click', () => {
+      useSparseDcc = !useSparseDcc;
+      document.getElementById('optSparseDcc').classList.toggle('active', useSparseDcc);
+      syncControlDependencies();
     });
+
+    const sliderSparseDccExtra = document.getElementById('sliderSparseDccExtra');
+    const inputSparseDccExtra = document.getElementById('inputSparseDccExtra');
+    if (sliderSparseDccExtra) {
+      sliderSparseDccExtra.addEventListener('input', (e) => {
+        sparseDccExtraEvals = parseInt(e.target.value, 10);
+        if (inputSparseDccExtra) inputSparseDccExtra.value = sparseDccExtraEvals;
+      });
+    }
+    if (inputSparseDccExtra) {
+      inputSparseDccExtra.addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v >= 0) {
+          sparseDccExtraEvals = v;
+          if (sliderSparseDccExtra) sliderSparseDccExtra.value = Math.max(0, Math.min(10, v));
+        }
+      });
+    }
 
     // Central Control Enablement & Dependency Synchronization
     function syncControlDependencies() {
@@ -1210,23 +1454,29 @@
       // 2. Prior & Subspace Acceleration Sliders
       const colTmMix = document.getElementById('colTmMix');
       const sliderTmMixEl = document.getElementById('sliderTmMix');
+      const inputTmMixEl = document.getElementById('inputTmMix');
       if (colTmMix && sliderTmMixEl) {
         colTmMix.classList.toggle('disabled', !useTM);
         sliderTmMixEl.disabled = !useTM;
+        if (inputTmMixEl) inputTmMixEl.disabled = !useTM;
       }
 
       const colPredHorizon = document.getElementById('colPredHorizon');
       const sliderPredHorizonEl = document.getElementById('sliderPredHorizon');
+      const inputPredHorizonEl = document.getElementById('inputPredHorizon');
       if (colPredHorizon && sliderPredHorizonEl) {
         colPredHorizon.classList.toggle('disabled', !usePred);
         sliderPredHorizonEl.disabled = !usePred;
+        if (inputPredHorizonEl) inputPredHorizonEl.disabled = !usePred;
       }
 
       const colMaxVis = document.getElementById('colMaxVis');
       const sliderMaxVisEl = document.getElementById('sliderMaxVis');
+      const inputMaxVisEl = document.getElementById('inputMaxVis');
       if (colMaxVis && sliderMaxVisEl) {
         colMaxVis.classList.toggle('disabled', !useGprob);
         sliderMaxVisEl.disabled = !useGprob;
+        if (inputMaxVisEl) inputMaxVisEl.disabled = !useGprob;
       }
 
       // -tiles -> -xtile toggle
@@ -1237,6 +1487,13 @@
       const rowXTileDecay = document.getElementById('rowXTileDecay');
       if (rowXTileDecay) {
         rowXTileDecay.style.display = (useTiles && useXTile) ? 'flex' : 'none';
+      }
+      const rowSparseDccExtra = document.getElementById(
+        'rowSparseDccExtra'
+      );
+      if (rowSparseDccExtra) {
+        rowSparseDccExtra.style.display =
+          useSparseDcc ? 'flex' : 'none';
       }
 
       // Leader shortcut & Bayes Sigma conditional rows
@@ -1264,9 +1521,11 @@
       const hasNoise = (noiseSigma > 1e-6);
       const rowNoiseTrunc = document.getElementById('rowNoiseTrunc');
       const sliderNoiseTruncEl = document.getElementById('sliderNoiseTrunc');
+      const inputNoiseTruncEl = document.getElementById('inputNoiseTrunc');
       if (rowNoiseTrunc && sliderNoiseTruncEl) {
         rowNoiseTrunc.classList.toggle('disabled', !hasNoise);
         sliderNoiseTruncEl.disabled = !hasNoise;
+        if (inputNoiseTruncEl) inputNoiseTruncEl.disabled = !hasNoise;
       }
 
       // 5. 3D Mode Camera Presets
@@ -1575,6 +1834,43 @@
 
     setupTMCanvasListeners();
 
+    // CLI Command Display
+    function updateCliCommand() {
+      const el = document.getElementById('cliCommandOutput');
+      if (!el) return;
+      const cmd = buildCliCommand();
+      el.textContent = cmd;
+    }
+
+    // Update CLI when tab is shown
+    const tabCli = document.getElementById('tabCfgCli');
+    if (tabCli) {
+      tabCli.addEventListener('click', () => {
+        updateCliCommand();
+        // Show WASM build hash
+        const hashEl = document.getElementById('wasmBuildHash');
+        if (hashEl && GricWasm.isReady()) {
+          hashEl.textContent = GricWasm.getVersion();
+        }
+      });
+    }
+
+    // Copy CLI command to clipboard
+    const btnCopy = document.getElementById('btnCopyCli');
+    if (btnCopy) {
+      btnCopy.addEventListener('click', () => {
+        const el = document.getElementById('cliCommandOutput');
+        if (!el) return;
+        navigator.clipboard.writeText(el.textContent)
+          .then(() => {
+            btnCopy.textContent = '✅ Copied';
+            setTimeout(() => {
+              btnCopy.textContent = '📋 Copy';
+            }, 1500);
+          });
+      });
+    }
+
     // Initial Startup
     initSidebarResizers();
     initLayoutResizer();
@@ -1583,5 +1879,324 @@
     loadSelectedBenchmark();
     updateZoomBadge();
     setExplainMode(false);
+    updateCliCommand();
+
+    // =========================================================================
+    //  HELP & DOCUMENTATION CENTER (MULTI-TOPIC MODAL & PRESETS)
+    // =========================================================================
+
+    const PRESETS = {
+      'preset-basic-spiral': {
+        name: '2D Spiral Baseline',
+        benchmark: '2Dspiral',
+        rlim: 0.100,
+        targetMode: 'greedy',
+        pruneMode: '3P',
+        useTM: false,
+        usePred: false,
+        useTiles: false,
+        speed: 50,
+        loopCount: 1,
+        isExplainMode: false,
+        useWasm: true,
+        autoPlay: true,
+      },
+      'preset-entropy-target': {
+        name: 'Shannon Entropy Scheduling',
+        benchmark: '2Dspiral',
+        rlim: 0.100,
+        targetMode: 'entropy',
+        entropyGate: 0.75,
+        entropyFirstGate: 1.50,
+        pruneMode: '3P',
+        useTM: false,
+        usePred: false,
+        useTiles: false,
+        speed: 50,
+        loopCount: 1,
+        isExplainMode: false,
+        useWasm: true,
+        autoPlay: true,
+      },
+      'preset-pruning-5p': {
+        name: '5P Metric Geometric Pruning (3D Torus)',
+        benchmark: '3Dtorus',
+        rlim: 0.100,
+        targetMode: 'greedy',
+        pruneMode: '5P',
+        useTM: false,
+        usePred: false,
+        useTiles: false,
+        speed: 50,
+        loopCount: 1,
+        isExplainMode: false,
+        useWasm: true,
+        autoPlay: true,
+      },
+      'preset-markov-pred': {
+        name: 'Markov Transitions & Sequence Prediction',
+        benchmark: '2DcircleP10n',
+        rlim: 0.120,
+        targetMode: 'greedy',
+        pruneMode: '3P',
+        useTM: true,
+        tmMixingCoeff: 0.70,
+        usePred: true,
+        predHorizon: 2,
+        useTiles: false,
+        speed: 50,
+        loopCount: 5,
+        isExplainMode: false,
+        useWasm: true,
+        autoPlay: true,
+      },
+      'preset-explain-walkthrough': {
+        name: 'Explain Mode Step-by-Step Walkthrough',
+        benchmark: '2Dspiral',
+        rlim: 0.100,
+        targetMode: 'entropy',
+        entropyGate: 0.75,
+        pruneMode: '3P',
+        useTM: false,
+        usePred: false,
+        useTiles: false,
+        speed: 150,
+        loopCount: 1,
+        isExplainMode: true,
+        useWasm: true,
+        autoPlay: false,
+      },
+      'preset-max-throughput': {
+        name: 'Maximum Performance C/WASM Engine',
+        benchmark: '3Dspiral',
+        rlim: 0.080,
+        targetMode: 'entropy',
+        pruneMode: '4P',
+        useTM: false,
+        usePred: true,
+        predHorizon: 2,
+        useTiles: false,
+        speed: 0,
+        loopCount: 1,
+        isExplainMode: false,
+        useWasm: true,
+        autoPlay: true,
+      }
+    };
+
+    function applySimulatorPreset(presetKey) {
+      const preset = PRESETS[presetKey];
+      if (!preset) return;
+
+      if (isRunning) pauseSimulation();
+
+      // Benchmark
+      if (preset.benchmark) {
+        currentBenchmark = preset.benchmark;
+        const selBench = document.getElementById('selectBenchmark');
+        if (selBench) selBench.value = preset.benchmark;
+        const selBenchSide = document.getElementById('selectBenchmarkSide');
+        if (selBenchSide) selBenchSide.value = preset.benchmark;
+        const descEl = document.getElementById('benchmarkDesc');
+        if (descEl && BENCHMARK_DESCS[preset.benchmark]) {
+          descEl.innerHTML = BENCHMARK_DESCS[preset.benchmark];
+        }
+      }
+
+      // Radius
+      if (preset.rlim !== undefined) {
+        rlim = preset.rlim;
+        const slRlim = document.getElementById('sliderRlim');
+        if (slRlim) slRlim.value = rlim;
+        const inpRlim = document.getElementById('inputRlim');
+        if (inpRlim) inpRlim.value = rlim.toFixed(3);
+      }
+
+      // Target mode
+      if (preset.targetMode) {
+        targetMode = preset.targetMode;
+        const btnGreedy = document.getElementById('modeGreedy');
+        const btnEntropy = document.getElementById('modeEntropy');
+        if (btnGreedy) btnGreedy.classList.toggle('active', targetMode === 'greedy');
+        if (btnEntropy) btnEntropy.classList.toggle('active', targetMode === 'entropy');
+      }
+
+      // Pruning mode
+      if (preset.pruneMode) {
+        pruneMode = preset.pruneMode;
+        ['3P', '4P', '5P'].forEach(p => {
+          const btn = document.getElementById(`prune${p}`);
+          if (btn) btn.classList.toggle('active', p === pruneMode);
+        });
+      }
+
+      // TM mixing
+      if (preset.useTM !== undefined) {
+        useTM = preset.useTM;
+        const optTM = document.getElementById('optTM');
+        if (optTM) optTM.classList.toggle('active', useTM);
+        if (preset.tmMixingCoeff !== undefined) {
+          tmMixingCoeff = preset.tmMixingCoeff;
+          const sl = document.getElementById('sliderTmMix');
+          if (sl) sl.value = tmMixingCoeff;
+          const inp = document.getElementById('inputTmMix');
+          if (inp) inp.value = tmMixingCoeff.toFixed(2);
+        }
+      }
+
+      // Sequence prediction
+      if (preset.usePred !== undefined) {
+        usePred = preset.usePred;
+        const optPred = document.getElementById('optPred');
+        if (optPred) optPred.classList.toggle('active', usePred);
+        if (preset.predHorizon !== undefined) {
+          predHorizon = preset.predHorizon;
+          const sl = document.getElementById('sliderPredHorizon');
+          if (sl) sl.value = predHorizon;
+          const inp = document.getElementById('inputPredHorizon');
+          if (inp) inp.value = predHorizon;
+        }
+      }
+
+      // Tiling
+      if (preset.useTiles !== undefined) {
+        useTiles = preset.useTiles;
+        const optTiles = document.getElementById('optTiles');
+        if (optTiles) optTiles.classList.toggle('active', useTiles);
+      }
+
+      // Entropy gates
+      if (preset.entropyGate !== undefined) {
+        entropyGate = preset.entropyGate;
+        const sl = document.getElementById('sliderEntropyGate');
+        if (sl) sl.value = entropyGate;
+        const inp = document.getElementById('inputEntropyGate');
+        if (inp) inp.value = entropyGate.toFixed(2);
+      }
+      if (preset.entropyFirstGate !== undefined) {
+        entropyFirstGate = preset.entropyFirstGate;
+        const sl = document.getElementById('sliderEntropyFirstGate');
+        if (sl) sl.value = entropyFirstGate;
+        const inp = document.getElementById('inputEntropyFirstGate');
+        if (inp) inp.value = entropyFirstGate.toFixed(2);
+      }
+
+      // Speed
+      if (preset.speed !== undefined) {
+        playSpeed = preset.speed;
+        const selSpeed = document.getElementById('selectSpeed');
+        if (selSpeed) selSpeed.value = preset.speed.toString();
+        const selSpeedSide = document.getElementById('selectSpeedSide');
+        if (selSpeedSide) selSpeedSide.value = preset.speed.toString();
+      }
+
+      // Loops
+      if (preset.loopCount !== undefined) {
+        loopCount = preset.loopCount;
+        const selLoop = document.getElementById('selectLoop');
+        if (selLoop) selLoop.value = preset.loopCount.toString();
+        const selLoopSide = document.getElementById('selectLoopSide');
+        if (selLoopSide) selLoopSide.value = preset.loopCount.toString();
+      }
+
+      // Explain mode
+      if (preset.isExplainMode !== undefined) {
+        setExplainMode(preset.isExplainMode);
+      }
+
+      // WASM preference
+      if (preset.useWasm !== undefined && GricWasm.isLoaded()) {
+        useWasm = preset.useWasm;
+      }
+
+      syncControlDependencies();
+      updateWasmBadge();
+      updateCliCommand();
+
+      // Reset and reload dataset
+      loadSelectedBenchmark();
+      resetView();
+      updateUI();
+      draw();
+
+      // Close modal
+      const modal = document.getElementById('helpModal');
+      if (modal) modal.style.display = 'none';
+
+      showToast(`⚡ Loaded: ${preset.name}`);
+
+      if (preset.autoPlay) {
+        setTimeout(() => {
+          startSimulation();
+        }, 250);
+      }
+    }
+
+    // Help modal lifecycle & topic switching
+    const helpModal = document.getElementById('helpModal');
+    const toggleHelp = () => {
+      if (!helpModal) return;
+      helpModal.style.display =
+        helpModal.style.display === 'none' ? 'flex' : 'none';
+    };
+
+    const btnHelp = document.getElementById('btnHelp');
+    if (btnHelp) btnHelp.addEventListener('click', toggleHelp);
+
+    const btnHelpClose = document.getElementById('btnHelpClose');
+    if (btnHelpClose) {
+      btnHelpClose.addEventListener('click', () => {
+        if (helpModal) helpModal.style.display = 'none';
+      });
+    }
+
+    if (helpModal) {
+      helpModal.addEventListener('click', (e) => {
+        if (e.target === helpModal) {
+          helpModal.style.display = 'none';
+        }
+      });
+    }
+
+    // Help Topic Sidebar Switching
+    const topicButtons = document.querySelectorAll('.help-topic-btn');
+    topicButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const topic = btn.getAttribute('data-topic');
+        topicButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        document.querySelectorAll('.help-topic-content').forEach(pane => {
+          pane.classList.remove('active');
+        });
+
+        const targetPane = document.getElementById(`topic-${topic}`);
+        if (targetPane) {
+          targetPane.classList.add('active');
+        }
+      });
+    });
+
+    // Preset Run Buttons inside Help Modal
+    document.querySelectorAll('.help-preset-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const key = btn.getAttribute('data-preset');
+        if (key) {
+          applySimulatorPreset(key);
+        }
+      });
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '?' && !e.target.matches('input, textarea, select')) {
+        e.preventDefault();
+        toggleHelp();
+      }
+      if (e.key === 'Escape' && helpModal && helpModal.style.display !== 'none') {
+        helpModal.style.display = 'none';
+      }
+    });
+
+
     setTimeout(() => { updateTMCanvasDimensions(); resizeCanvas(); }, 50);
     setTimeout(() => { updateTMCanvasDimensions(); resizeCanvas(); }, 250);
