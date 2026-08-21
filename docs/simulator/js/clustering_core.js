@@ -121,8 +121,8 @@
           }
         }
 
-        // Full state sync only when rendering (expensive: O(K²) getValue calls)
-        if (!skipRender) {
+        // Full state sync only when rendering or explain mode active
+        if (!skipRender || isExplainMode) {
           const snapshot = GricWasm.syncState();
           if (snapshot) {
             GricWasm.applyToJsState(snapshot);
