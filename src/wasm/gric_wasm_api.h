@@ -66,6 +66,13 @@ EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_get_probs(void *handle, double *out_probs, int K);
 
 EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_evaluations(
+    void   *handle,
+    int    *out_indices,
+    double *out_dists,
+    int     max_evals);
+
+EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_reset(void *handle);
 
 EMSCRIPTEN_KEEPALIVE
