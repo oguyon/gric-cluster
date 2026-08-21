@@ -30,6 +30,8 @@ const GricWasm = (function () {
   let _dccPtr = 0;       // double[maxK * maxK]
   let _tmPtr = 0;        // (unused for now, JS uses int64)
   let _probsPtr = 0;     // double[maxK]
+  let _evalIndicesPtr = 0; // int[maxK]
+  let _evalDistsPtr = 0;   // double[maxK]
   let _telemetryPtr = 0; // double[32]
   let _telemetryLenPtr = 0; // int[1]
 
@@ -156,6 +158,12 @@ const GricWasm = (function () {
       ['number', 'number', 'number']
     );
 
+    _fn.getEvaluations = M.cwrap(
+      'wasm_cluster_get_evaluations',
+      'number',
+      ['number', 'number', 'number', 'number']
+    );
+
     _fn.getTelemetry = M.cwrap(
       'wasm_cluster_get_telemetry',
       null,
@@ -251,6 +259,10 @@ const GricWasm = (function () {
     // Probabilities: double[maxK]
     _probsPtr = M._malloc(_maxK * DOUBLE);
 
+    // Evaluations: int[maxK] indices, double[maxK] distances
+    _evalIndicesPtr = M._malloc(_maxK * INT);
+    _evalDistsPtr = M._malloc(_maxK * DOUBLE);
+
     // Telemetry: double[32] + int[1] for length
     _telemetryPtr = M._malloc(32 * DOUBLE);
     _telemetryLenPtr = M._malloc(INT);
@@ -266,6 +278,8 @@ const GricWasm = (function () {
     if (_membersPtr) M._free(_membersPtr);
     if (_dccPtr) M._free(_dccPtr);
     if (_probsPtr) M._free(_probsPtr);
+    if (_evalIndicesPtr) M._free(_evalIndicesPtr);
+    if (_evalDistsPtr) M._free(_evalDistsPtr);
     if (_telemetryPtr) M._free(_telemetryPtr);
     if (_telemetryLenPtr) M._free(_telemetryLenPtr);
     _coordsPtr = 0;
@@ -273,6 +287,8 @@ const GricWasm = (function () {
     _membersPtr = 0;
     _dccPtr = 0;
     _probsPtr = 0;
+    _evalIndicesPtr = 0;
+    _evalDistsPtr = 0;
     _telemetryPtr = 0;
     _telemetryLenPtr = 0;
   }
@@ -467,11 +483,31 @@ const GricWasm = (function () {
       }
     }
 
+    // Read candidate distance evaluations for active query frame
+    const evaluations = [];
+    if (_fn.getEvaluations && _evalIndicesPtr && _evalDistsPtr) {
+      const numEvals = _fn.getEvaluations(
+        _handle, _evalIndicesPtr, _evalDistsPtr, _maxK
+      );
+      for (let i = 0; i < numEvals; i++) {
+        const cId = M.getValue(_evalIndicesPtr + i * 4, 'i32');
+        const dist = M.getValue(_evalDistsPtr + i * 8, 'double');
+        if (cId >= 0 && cId < K) {
+          evaluations.push({
+            target: anchors[cId],
+            dist: dist,
+            match: dist <= (rlim || 0.1),
+          });
+        }
+      }
+    }
+
     return {
       numClusters: K,
       anchors: anchors,
       dcc: dccMatrix,
       probs: probs,
+      evaluations: evaluations,
       telemetry: {
         framedistCalls: telemetryArr[0] || 0,
         framedistSample: telemetryArr[1] || 0,
@@ -625,6 +661,17 @@ const GricWasm = (function () {
       while (transitionCounts[i].length < K) {
         transitionCounts[i].push(0);
       }
+    }
+
+    // Update active frame distance evaluations for visual renderer
+    if (snapshot.evaluations && snapshot.evaluations.length > 0) {
+      currentEvaluations = snapshot.evaluations.map(ev => ({
+        target: clusters[ev.target.id] || ev.target,
+        dist: ev.dist,
+        match: ev.match,
+      }));
+    } else {
+      currentEvaluations = [];
     }
 
     // Update telemetry counters

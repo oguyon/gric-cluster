@@ -22,6 +22,8 @@ let _anchorsPtr = 0;
 let _membersPtr = 0;
 let _dccPtr = 0;
 let _probsPtr = 0;
+let _evalIndicesPtr = 0;
+let _evalDistsPtr = 0;
 let _telemetryPtr = 0;
 let _telemetryLenPtr = 0;
 
@@ -78,6 +80,7 @@ function _wrapFunctions() {
   _fn.getAnchors = M.cwrap('wasm_cluster_get_anchors', null, ['number', 'number', 'number', 'number']);
   _fn.getDcc = M.cwrap('wasm_cluster_get_dcc', null, ['number', 'number', 'number']);
   _fn.getProbs = M.cwrap('wasm_cluster_get_probs', null, ['number', 'number', 'number']);
+  _fn.getEvaluations = M.cwrap('wasm_cluster_get_evaluations', 'number', ['number', 'number', 'number', 'number']);
   _fn.getTelemetry = M.cwrap('wasm_cluster_get_telemetry', null, ['number', 'number', 'number']);
   _fn.reset = M.cwrap('wasm_cluster_reset', null, ['number']);
   _fn.free = M.cwrap('wasm_cluster_free', null, ['number']);
@@ -95,6 +98,8 @@ function _allocBuffers() {
   _membersPtr = M._malloc(_maxK * INT);
   _dccPtr = M._malloc(_maxK * _maxK * DOUBLE);
   _probsPtr = M._malloc(_maxK * DOUBLE);
+  _evalIndicesPtr = M._malloc(_maxK * INT);
+  _evalDistsPtr = M._malloc(_maxK * DOUBLE);
   _telemetryPtr = M._malloc(32 * DOUBLE);
   _telemetryLenPtr = M._malloc(INT);
 
@@ -109,6 +114,8 @@ function _freeBuffers() {
   if (_membersPtr) M._free(_membersPtr);
   if (_dccPtr) M._free(_dccPtr);
   if (_probsPtr) M._free(_probsPtr);
+  if (_evalIndicesPtr) M._free(_evalIndicesPtr);
+  if (_evalDistsPtr) M._free(_evalDistsPtr);
   if (_telemetryPtr) M._free(_telemetryPtr);
   if (_telemetryLenPtr) M._free(_telemetryLenPtr);
   if (_batchBufferPtr) M._free(_batchBufferPtr);
@@ -117,6 +124,8 @@ function _freeBuffers() {
   _membersPtr = 0;
   _dccPtr = 0;
   _probsPtr = 0;
+  _evalIndicesPtr = 0;
+  _evalDistsPtr = 0;
   _telemetryPtr = 0;
   _telemetryLenPtr = 0;
   _batchBufferPtr = 0;
@@ -235,11 +244,30 @@ function getSnapshot() {
     }
   }
 
+  const evaluations = [];
+  if (_fn.getEvaluations && _evalIndicesPtr && _evalDistsPtr) {
+    const numEvals = _fn.getEvaluations(
+      _handle, _evalIndicesPtr, _evalDistsPtr, _maxK
+    );
+    for (let i = 0; i < numEvals; i++) {
+      const cId = M.getValue(_evalIndicesPtr + i * 4, 'i32');
+      const dist = M.getValue(_evalDistsPtr + i * 8, 'double');
+      if (cId >= 0 && cId < K) {
+        evaluations.push({
+          target: anchors[cId],
+          dist: dist,
+          match: dist <= 0.1,
+        });
+      }
+    }
+  }
+
   return {
     numClusters: K,
     anchors: anchors,
     dcc: dccMatrix,
     probs: probs,
+    evaluations: evaluations,
     telemetry: {
       framedistCalls: tArr[0] || 0,
       framedistSample: tArr[1] || 0,

@@ -847,6 +847,54 @@ void wasm_cluster_get_probs(
     }
 }
 
+/**
+ * wasm_cluster_get_evaluations() - Retrieve distance evaluations for the last frame.
+ * @ptr:         Opaque WasmHandle pointer.
+ * @out_indices: Output array for evaluated cluster indices.
+ * @out_dists:   Output array for evaluated Euclidean distances.
+ * @max_evals:   Maximum capacity of output arrays.
+ *
+ * Copies the sequence of cluster indices and measured distances that were
+ * evaluated against the current frame during the search loop.
+ *
+ * Return: Number of evaluations recorded for the most recent frame.
+ */
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_evaluations(
+    void   *ptr,
+    int    *out_indices,
+    double *out_dists,
+    int     max_evals)
+{
+    WasmHandle *h = (WasmHandle *)ptr;
+    if (!h || !out_indices || !out_dists || max_evals <= 0)
+    {
+        return 0;
+    }
+
+    int count = (int)h->state.telemetry.last_frame_dfc;
+    if (count > max_evals)
+    {
+        count = max_evals;
+    }
+    if (count > h->config.algo.maxnbclust)
+    {
+        count = h->config.algo.maxnbclust;
+    }
+
+    if (count > 0 && h->temp_indices && h->temp_dists)
+    {
+        memcpy(out_indices, h->temp_indices, (size_t)count * sizeof(int));
+        memcpy(out_dists, h->temp_dists, (size_t)count * sizeof(double));
+    }
+    else
+    {
+        count = 0;
+    }
+
+    return count;
+}
+
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_reset(void *ptr)
 {

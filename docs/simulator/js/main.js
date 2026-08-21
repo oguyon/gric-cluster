@@ -639,7 +639,7 @@
 
     document.getElementById('btnStep').addEventListener('click', () => {
       if (isRunning) pauseSimulation();
-      stepNextFrame(true);
+      stepNextFrame(false);
       updateUI();
       draw();
     });

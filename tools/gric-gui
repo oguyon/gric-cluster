@@ -1,0 +1,274 @@
+#!/usr/bin/env bash
+# ==============================================================================
+#  GRIC Simulator - Desktop Application Launcher
+# ==============================================================================
+set -e
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PORT="${GRIC_GUI_PORT:-8080}"
+WINDOW_SIZE="1600,1000"
+BROWSER=""
+SERVER_ONLY=0
+KILL_SERVER=0
+CHECK_STATUS=0
+
+# ANSI Color formatting matching shared/cli_colors.h
+if [[ -z "${NO_COLOR:-}" && -t 1 ]]; then
+    ANSI_BOLD="[1m"
+    ANSI_BOLD_CYAN="[1;36m"
+    ANSI_BOLD_GREEN="[1;32m"
+    ANSI_COLOR_GREEN="[0;32m"
+    ANSI_COLOR_CYAN="[0;36m"
+    ANSI_COLOR_MAGENTA="[0;35m"
+    ANSI_COLOR_YELLOW="[0;33m"
+    ANSI_COLOR_RED="[0;31m"
+    ANSI_COLOR_GREY="[0;90m"
+    ANSI_COLOR_RESET="[0m"
+    COLOR_MODE_STR="Color mode: ON (set NO_COLOR=1 to disable ANSI colors)"
+else
+    ANSI_BOLD=""
+    ANSI_BOLD_CYAN=""
+    ANSI_BOLD_GREEN=""
+    ANSI_COLOR_GREEN=""
+    ANSI_COLOR_CYAN=""
+    ANSI_COLOR_MAGENTA=""
+    ANSI_COLOR_YELLOW=""
+    ANSI_COLOR_RED=""
+    ANSI_COLOR_GREY=""
+    ANSI_COLOR_RESET=""
+    COLOR_MODE_STR="Color mode: OFF (NO_COLOR is set or non-interactive terminal)"
+fi
+
+print_help_raw() {
+    printf "
+%bNAME%b
+" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
+    printf "  %bgric-gui%b - Launch the GRIC Interactive Simulator desktop application
+
+"            "${ANSI_BOLD_GREEN}" "${ANSI_COLOR_RESET}"
+
+    printf "%bUSAGE%b
+" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
+    printf "  %bgric-gui%b %b[options]%b
+
+"            "${ANSI_BOLD_GREEN}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
+
+    printf "%bDESCRIPTION%b
+" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
+    printf "  Launches the GRIC web simulator in a standalone native desktop window.
+"
+    printf "  Automatically verifies and starts the background HTTP server on the designated
+"
+    printf "  port if not already active.
+
+"
+
+    printf "%bOPTIONS%b
+" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
+    printf "  %b-h, --help%b                 Show this help message and exit
+"            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}"
+    printf "  %b-p, --port%b %b<port>%b           HTTP port for local simulator server (default: 8080 or \$GRIC_GUI_PORT)
+"            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
+    printf "  %b-b, --browser%b %b<name>%b       Select browser engine (%bgoogle-chrome%b, %bchromium%b, %bfirefox%b, %bdefault%b)
+"            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"            "${ANSI_COLOR_YELLOW}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_YELLOW}" "${ANSI_COLOR_RESET}"            "${ANSI_COLOR_YELLOW}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_YELLOW}" "${ANSI_COLOR_RESET}"
+    printf "  %b-w, --window-size%b %b<W,H>%b   Initial desktop window resolution (default: 1600,1000)
+"            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
+    printf "  %b-s, --server-only%b          Start background HTTP server without launching browser window
+"            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}"
+    printf "  %b-k, --kill-server%b          Terminate running background HTTP server on the port
+"            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}"
+    printf "  %b--status%b                   Display active server process and browser runtime status
+
+"            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}"
+
+    printf "%bEXAMPLES%b
+" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
+    printf "  %b# Launch desktop GUI with auto-detected Chrome/Chromium App mode:%b
+"            "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
+    printf "  %b$%b %bgric-gui%b
+
+"            "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}" "${ANSI_BOLD_GREEN}" "${ANSI_COLOR_RESET}"
+
+    printf "  %b# Launch with a custom port and resolution:%b
+"            "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
+    printf "  %b$%b %bgric-gui%b -p 8088 -w 1920,1080
+
+"            "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}" "${ANSI_BOLD_GREEN}" "${ANSI_COLOR_RESET}"
+
+    printf "  %b# Start local simulator server in background only:%b
+"            "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
+    printf "  %b$%b %bgric-gui%b --server-only
+
+"            "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}" "${ANSI_BOLD_GREEN}" "${ANSI_COLOR_RESET}"
+
+    printf "  %b# Stop the background simulator server:%b
+"            "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
+    printf "  %b$%b %bgric-gui%b --kill-server
+
+"            "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}" "${ANSI_BOLD_GREEN}" "${ANSI_COLOR_RESET}"
+
+    printf "%b%s%b
+" "${ANSI_COLOR_GREY}" "${COLOR_MODE_STR}" "${ANSI_COLOR_RESET}"
+}
+
+print_help() {
+    if [[ -t 1 ]] && command -v less >/dev/null 2>&1; then
+        local lines
+        lines=$(print_help_raw | wc -l)
+        local term_lines
+        term_lines=$(tput lines 2>/dev/null || echo 24)
+        if [[ $lines -gt $term_lines ]]; then
+            print_help_raw | "${PAGER:-less -R}"
+            return 0
+        fi
+    fi
+    print_help_raw
+}
+
+# Parse command line options
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            print_help
+            exit 0
+            ;;
+        -p|--port)
+            if [[ -z "${2:-}" || "${2:-}" =~ ^- ]]; then
+                echo -e "${ANSI_COLOR_RED}Error: Option $1 requires a port number.${ANSI_COLOR_RESET}" >&2
+                exit 1
+            fi
+            PORT="$2"
+            shift 2
+            ;;
+        -b|--browser)
+            if [[ -z "${2:-}" || "${2:-}" =~ ^- ]]; then
+                echo -e "${ANSI_COLOR_RED}Error: Option $1 requires a browser name.${ANSI_COLOR_RESET}" >&2
+                exit 1
+            fi
+            BROWSER="$2"
+            shift 2
+            ;;
+        -w|--window-size)
+            if [[ -z "${2:-}" || "${2:-}" =~ ^- ]]; then
+                echo -e "${ANSI_COLOR_RED}Error: Option $1 requires dimensions (e.g. 1600,1000).${ANSI_COLOR_RESET}" >&2
+                exit 1
+            fi
+            WINDOW_SIZE="$2"
+            shift 2
+            ;;
+        -s|--server-only)
+            SERVER_ONLY=1
+            shift
+            ;;
+        -k|--kill-server)
+            KILL_SERVER=1
+            shift
+            ;;
+        --status)
+            CHECK_STATUS=1
+            shift
+            ;;
+        *)
+            echo -e "${ANSI_COLOR_RED}Error: Unknown option '$1'.${ANSI_COLOR_RESET}" >&2
+            echo -e "Use '${ANSI_BOLD_GREEN}gric-gui -h${ANSI_COLOR_RESET}' for usage and options." >&2
+            exit 1
+            ;;
+    esac
+done
+
+URL="http://127.0.0.1:${PORT}/visual_simulator.html"
+
+# Handle --kill-server
+if [[ $KILL_SERVER -eq 1 ]]; then
+    PIDS=$(ss -tlnp 2>/dev/null | grep ":${PORT} " | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)
+    if [[ -n "$PIDS" ]]; then
+        echo -e "${ANSI_COLOR_YELLOW}Stopping server processes on port ${PORT}: ${PIDS}${ANSI_COLOR_RESET}"
+        for pid in $PIDS; do
+            kill "$pid" 2>/dev/null || true
+        done
+        echo -e "${ANSI_COLOR_GREEN}Server stopped.${ANSI_COLOR_RESET}"
+    else
+        echo -e "${ANSI_COLOR_GREY}No server running on port ${PORT}.${ANSI_COLOR_RESET}"
+    fi
+    exit 0
+fi
+
+# Handle --status
+if [[ $CHECK_STATUS -eq 1 ]]; then
+    echo -e "
+${ANSI_BOLD_CYAN}GRIC SIMULATOR DESKTOP STATUS${ANSI_COLOR_RESET}"
+    if curl -s -m 1 "${URL}" >/dev/null 2>&1; then
+        echo -e "  Server Status:   ${ANSI_COLOR_GREEN}● Running${ANSI_COLOR_RESET} (${URL})"
+    else
+        echo -e "  Server Status:   ${ANSI_COLOR_RED}○ Stopped${ANSI_COLOR_RESET} (Port ${PORT})"
+    fi
+
+    echo -e "
+${ANSI_BOLD_CYAN}AVAILABLE BROWSER RUNTIMES${ANSI_COLOR_RESET}"
+    for b in google-chrome chromium-browser chromium firefox; do
+        if command -v "$b" >/dev/null 2>&1; then
+            echo -e "  $b:  ${ANSI_COLOR_GREEN}Available${ANSI_COLOR_RESET} ($(command -v "$b"))"
+        else
+            echo -e "  $b:  ${ANSI_COLOR_GREY}Not installed${ANSI_COLOR_RESET}"
+        fi
+    done
+    echo ""
+    exit 0
+fi
+
+# 1. Start background HTTP server if not already responding
+if ! curl -s -m 1 "${URL}" >/dev/null 2>&1; then
+    echo -e "${ANSI_COLOR_CYAN}⚡ Starting background HTTP server on port ${PORT}...${ANSI_COLOR_RESET}"
+    nohup python3 -m http.server "${PORT}" --bind 127.0.0.1 --directory "${DIR}/docs" >/dev/null 2>&1 &
+    sleep 0.5
+    if ! curl -s -m 1 "${URL}" >/dev/null 2>&1; then
+        echo -e "${ANSI_COLOR_RED}Error: Failed to start server on port ${PORT}.${ANSI_COLOR_RESET}" >&2
+        exit 1
+    fi
+fi
+
+if [[ $SERVER_ONLY -eq 1 ]]; then
+    echo -e "${ANSI_COLOR_GREEN}✅ Server running at ${URL}${ANSI_COLOR_RESET}"
+    exit 0
+fi
+
+# 2. Launch Browser / Desktop App Window
+echo -e "${ANSI_COLOR_GREEN}Launching GRIC Simulator (${URL})...${ANSI_COLOR_RESET}"
+
+if [[ -n "$BROWSER" ]]; then
+    case "$BROWSER" in
+        google-chrome|chrome)
+            exec google-chrome --app="${URL}" --window-size="${WINDOW_SIZE}"
+            ;;
+        chromium|chromium-browser)
+            exec chromium --app="${URL}" --window-size="${WINDOW_SIZE}"
+            ;;
+        firefox)
+            exec firefox --new-window "${URL}"
+            ;;
+        default)
+            exec python3 -m webbrowser "${URL}"
+            ;;
+        *)
+            if command -v "$BROWSER" >/dev/null 2>&1; then
+                exec "$BROWSER" "${URL}"
+            else
+                echo -e "${ANSI_COLOR_RED}Error: Browser executable '$BROWSER' not found.${ANSI_COLOR_RESET}" >&2
+                exit 1
+            fi
+            ;;
+    esac
+fi
+
+# Auto-detect best browser engine (Chrome/Chromium app mode prioritized for V8 WASM SIMD performance)
+if command -v google-chrome >/dev/null 2>&1; then
+    exec google-chrome --app="${URL}" --window-size="${WINDOW_SIZE}"
+elif command -v chromium-browser >/dev/null 2>&1; then
+    exec chromium-browser --app="${URL}" --window-size="${WINDOW_SIZE}"
+elif command -v chromium >/dev/null 2>&1; then
+    exec chromium --app="${URL}" --window-size="${WINDOW_SIZE}"
+elif command -v firefox >/dev/null 2>&1; then
+    exec firefox --new-window "${URL}"
+else
+    exec python3 -m webbrowser "${URL}"
+fi
