@@ -146,6 +146,7 @@
             let traceRankings = [];
             if (isExplainMode) {
               traceSteps = GricWasm.getTrace();
+              currentExplanation = [...traceSteps];
               // Extract entropy rankings from last
               // TARGET_SELECTED step if present
               for (let si = traceSteps.length - 1; si >= 0; si--) {
