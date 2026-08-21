@@ -2,6 +2,7 @@
 #include "cluster_steps.h"
 #include "cluster_mgmt.h"
 #include <stdio.h>
+#include "cluster_trace.h"
 
 #define ANSI_COLOR_ORANGE "\x1b[38;5;208m"
 #define ANSI_COLOR_RESET  "\x1b[0m"
@@ -33,6 +34,16 @@ void initialize_initial_cluster(
 
     add_visitor(&state->cluster_visitors[0], state->telemetry.total_frames_processed);
     *assigned_cluster = 0;
+
+    if (state->trace)
+    {
+        TraceEvent *ev = trace_emit(state->trace, TRACE_INITIAL_CLUSTER);
+        if (ev)
+        {
+            ev->cluster_id = 0;
+            ev->frame_id = current_frame->id;
+        }
+    }
 
     if (config->output.verbose_level >= 2)
     {

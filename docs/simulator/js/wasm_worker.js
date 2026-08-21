@@ -155,7 +155,8 @@ function initSession(params) {
     params.tmMixingCoeff || 0.0,
     params.softBayesian ? 1 : 0,
     params.xtileMode ? 1 : 0,
-    0, // sparse_dcc_mode
+    params.sparseDcc ? 1 : 0, // sparse_dcc_mode
+    params.sparseDccExtraEvals || 0, // sparse_dcc_extra_evals
     params.entropyGate || 0.75,
     params.entropyFirstGate || 1.5,
     params.entropyFast ? 1 : 0,

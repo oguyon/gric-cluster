@@ -254,10 +254,10 @@
 
       // 2. Past Samples Point Cloud (Optimized Batch & Stride Subsampling)
       const numPast = pastSamples.length;
-      if (numPast > 0 && pointAlpha > 0.001) {
+      if (showPastSamples && numPast > 0 && pointAlpha > 0.001) {
         ctx.fillStyle = `rgba(148, 163, 184, ${pointAlpha.toFixed(3)})`;
         const basePtRad = samplePointSize;
-        const maxDraw = 3000;
+        const maxDraw = maxDrawPoints;
         const stride = numPast > maxDraw ? Math.ceil(numPast / maxDraw) : 1;
 
         if (!is3DCustom) {

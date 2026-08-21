@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "cluster_trace.h"
 
 #define ANSI_COLOR_GREEN  "\x1b[32m"
 #define ANSI_COLOR_RESET  "\x1b[0m"
@@ -218,6 +219,14 @@ int handle_new_cluster_creation(
         update_consistency_mask_for_new_cluster(config, state, state->num_clusters);
         state->telemetry.num_new_clusters++;
         state->num_clusters++;
+        if (state->trace)
+        {
+            TraceEvent *ev = trace_emit(state->trace, TRACE_NEW_CLUSTER);
+            if (ev)
+            {
+                ev->cluster_id = assigned_cluster;
+            }
+        }
         return assigned_cluster;
     }
 
@@ -226,6 +235,10 @@ int handle_new_cluster_creation(
         printf(ANSI_COLOR_ORANGE "Max clusters limit reached.\n" ANSI_COLOR_RESET);
         printf("Frames clustered: %ld\n", state->telemetry.total_frames_processed);
         free_frame(current_frame);
+        if (state->trace)
+        {
+            trace_emit(state->trace, TRACE_EVICT_STOP);
+        }
         return -2;
     }
     else if (config->algo.maxcl_strategy == MAXCL_DISCARD)
@@ -251,6 +264,14 @@ int handle_new_cluster_creation(
 
         if (min_idx != -1)
         {
+            if (state->trace)
+            {
+                TraceEvent *ev = trace_emit(state->trace, TRACE_EVICT_DISCARD);
+                if (ev)
+                {
+                    ev->cluster_id = min_idx;
+                }
+            }
             remove_cluster(state, config, min_idx, -1);
             if (*prev_assigned_cluster == min_idx)
             {
@@ -318,6 +339,17 @@ int handle_new_cluster_creation(
             {
                 printf("Merging cluster %d into %d (dist %.4f)\n", remove, target,
                        min_d);
+            }
+
+            if (state->trace)
+            {
+                TraceEvent *ev = trace_emit(state->trace, TRACE_EVICT_MERGE);
+                if (ev)
+                {
+                    ev->cluster_id = remove;
+                    ev->distance = min_d;
+                    ev->active_remaining = target;
+                }
             }
 
             remove_cluster(state, config, remove, target);

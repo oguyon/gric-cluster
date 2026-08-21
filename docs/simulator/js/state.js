@@ -41,22 +41,26 @@
 
     // Algorithm & Display Config
     let rlim = 0.100;
-    let visualFocus = 50; // 0 (Points Only) to 100 (Clusters Only)
+    let visualFocus = 20; // 0 (Points Only) to 100 (Clusters Only)
     let samplePointSize = 1.5; // Ingested sample points render radius in px (0.5 to 8.0)
+    let showPastSamples = true; // Toggle past sample point cloud visibility
+    let maxDrawPoints = 10000;  // Max points drawn per frame (subsampled)
+    let sampleBufferCap = 100000; // Rolling buffer capacity for pastSamples
+    let batchThinRate = 1;      // In batch mode, keep every Nth frame (1 = all / none)
     let showCircleMembers = false; // Area proportional to points in cluster
     let showCircleSCDists = false; // Area proportional to #SC distances
     let showEntropyMap = false; // Spatial Information Gain / Entropy Reduction Map
-    let noiseSigma = 0.000; // Truncated Gaussian noise std dev (0 = off)
-    let noiseTruncLimit = 0.050; // Truncation radius limit
+    let noiseSigma = 0.020; // Truncated Gaussian noise std dev (0 = off)
+    let noiseTruncLimit = 0.100; // Truncation radius limit
     let targetMode = 'greedy';
-    let pruneMode = '3P';
+    let pruneMode = '4P';
 
     // Prior Acceleration Options
-    let useTM = false;
+    let useTM = true;
     let tmMixingCoeff = 0.50; // -tm <val> (0.00 to 1.00)
-    let usePred = false;
+    let usePred = true;
     let predHorizon = 2; // -pred [L,H,N] (1 to 5)
-    let useGprob = false;
+    let useGprob = true;
     let maxVisitors = 20; // -maxvis <int> (5 to 50)
     let fmatchA = 1.0, fmatchB = 2.0;
 
@@ -64,6 +68,8 @@
     let useTiles = false; // -tiles
     let useXTile = false; // -xtile
     let xtileDecay = 0.70; // -xtile_decay (0.1 to 1.0)
+    let useSparseDcc = false; // -sparse_dcc
+    let sparseDccExtraEvals = 0; // -sparse_dcc_extra_evals
 
     // Cluster Capacity & Eviction Policy
     let maxcl = 0; // -maxcl <int> (0 = Unlimited)
@@ -174,11 +180,7 @@
     function computeAutoRlim() {
       let pts = benchmarkDataset;
       if (!pts || pts.length === 0) {
-        if (currentBenchmark === "stream" || currentBenchmark === "3Dlorenz") {
-          pts = generateBenchmark(currentBenchmark === "3Dlorenz" ? "3Dspiral" : "2Dspiral", 250);
-        } else {
-          pts = generateBenchmark(currentBenchmark, 250);
-        }
+        pts = generateBenchmark(currentBenchmark, 250);
       }
       const N = Math.min(pts.length, 300);
       const dists = [];
@@ -197,8 +199,10 @@
       const median = dists[Math.floor(dists.length * 0.5)];
       const autoR = Math.max(0.02, Math.min(0.28, median * 0.35));
       rlim = parseFloat(autoR.toFixed(3));
-      document.getElementById('sliderRlim').value = rlim;
-      document.getElementById('lblRlim').innerText = rlim.toFixed(3);
+      const slR = document.getElementById('sliderRlim');
+      if (slR) slR.value = rlim;
+      const inpR = document.getElementById('inputRlim');
+      if (inpR) inpR.value = rlim.toFixed(3);
       showToast(`⚡ Auto-rlim (-scandist): Median=${median.toFixed(3)} ➔ rlim=${rlim.toFixed(3)}`);
       draw();
     }
@@ -259,17 +263,15 @@
     }
 
     // Simulation & Benchmark State
-    let currentBenchmark = "3Dspiral";
+    let currentBenchmark = "3Dtorus";
     let benchmarkDataset = [];
     let currentFrameIdx = 0;
     let isRunning = false;
     let playTimer = null;
-    let playSpeed = 50;
-    let loopCount = 1; // 1 = 1 pass (default), 0 = Infinite, N = N passes
+    let playSpeed = -1;
+    let loopCount = 10; // 1 = 1 pass, 0 = Infinite, N = N passes
     let currentLoop = 1;
-
-    // Dynamic 3D Lorenz state
-    let lorenzState = { x: 0.1, y: 0.0, z: 0.0 };
+    let sampleCount = 10000; // Number of points generated per pattern
 
     // Past sample history for point cloud building (x, y, z)
     let pastSamples = [];

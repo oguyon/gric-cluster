@@ -182,26 +182,29 @@ typedef struct
     double *current_gprobs;     /**< Geometric probabilities computed during search */
     double *dcc_min;            /**< Pairwise inter-cluster minimum distance bounds */
     double *dcc_max;            /**< Pairwise inter-cluster maximum distance bounds */
-    char   *dcc_measured;       /**< 1 if exactly measured, 0 if estimated/unmeasured */
+    char   *dcc_measured;       /**< 1 if exactly measured, 0 if unmeasured */
     int    *probsortedclindex;  /**< Cluster indices sorted by descending prior probability */
-    int    *clmembflag;         /**< Flag indicating if a cluster is still an active candidate */
+    int    *clmembflag;         /**< Flag indicating if a cluster is an active candidate */
     double *mixed_probs;        /**< Prior predictive probabilities (frequency * sequence) */
     uint64_t *consistency_mask; /**< Precomputed 3D geometric consistency bitmask */
-    double *entropy_p_current;  /**< Pre-allocated scratch buffer for entropy search probabilities */
-    Candidate *entropy_candidates; /**< Pre-allocated scratch buffer for sorting candidates */
-    TargetScore *entropy_prob_scores;  /**< Pre-allocated scratch buffer for target scores */
-    TargetScore *entropy_prune_scores; /**< Pre-allocated scratch buffer for prune scores */
+    double *entropy_p_current;  /**< Pre-allocated buffer for entropy search probabilities */
+    Candidate *entropy_candidates; /**< Pre-allocated buffer for sorting candidates */
+    TargetScore *entropy_prob_scores;  /**< Pre-allocated buffer for target scores */
+    TargetScore *entropy_prune_scores; /**< Pre-allocated buffer for prune scores */
     int         *entropy_active_indices; /**< Pre-allocated active indices array */
     double      *entropy_plog2p;       /**< Pre-allocated plog2p probabilities array */
     uint8_t     *entropy_visited;      /**< Pre-allocated visited boolean array */
-    Candidate   *refine_queue;                  /**< Pre-allocated queue of closest unmeasured pairs */
-    int          refine_queue_size;             /**< Number of active items in the queue */
-    int          refine_queue_idx;              /**< Current index in the queue */
-    int          refine_queue_capacity;         /**< Capacity of the queue */
-    int          refine_queue_last_num_clusters;/**< Number of clusters during last queue rebuild */
-    int         *tuple_pred_candidates;         /**< Pre-populated candidates from joint prediction */
-    int          tuple_pred_count;              /**< Number of candidates pre-populated */
+    Candidate   *refine_queue;         /**< Pre-allocated queue of closest unmeasured pairs */
+    int          refine_queue_size;    /**< Number of active items in the queue */
+    int          refine_queue_idx;     /**< Current index in the queue */
+    int          refine_queue_capacity;/**< Capacity of the queue */
+    int          refine_queue_last_num_clusters; /**< Number of clusters at last queue rebuild */
+    int         *tuple_pred_candidates;/**< Pre-populated candidates from joint prediction */
+    int          tuple_pred_count;     /**< Number of candidates pre-populated */
 } ClusterScratch;
+
+/* Forward declaration — full definition in cluster_trace.h */
+struct TraceBuffer;
 
 // State structure
 typedef struct
@@ -218,6 +221,7 @@ typedef struct
     void             *shm_ptr;
     CrossTileHookFn   cross_tile_hook;  /**< Hook callback for cross-tile updates */
     void             *cross_tile_ctx;   /**< Callback context */
+    struct TraceBuffer *trace;          /**< Explain trace buffer (NULL = disabled) */
 } ClusterState;
 
 /** Minimum cluster count for OpenMP parallelization of pruning loops. */

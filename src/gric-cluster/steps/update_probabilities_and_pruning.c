@@ -9,6 +9,7 @@
 #include "cluster_prune.h"
 #include "cluster_math.h"
 #include <math.h>
+#include "cluster_trace.h"
 
 /* OMP_MIN_CLUSTERS — defined in cluster_defs.h */
 
@@ -89,6 +90,22 @@ void update_probabilities_and_pruning(
         }
     }
     state->telemetry.clusters_pruned += local_pruned;
+
+    if (state->trace)
+    {
+        TraceEvent *ev = trace_emit(state->trace, TRACE_PRUNE_3P);
+        if (ev)
+        {
+            ev->pruned_count = local_pruned;
+            ev->cluster_id = cj;
+            int active_cnt = 0;
+            for (int i = 0; i < state->num_clusters; i++)
+            {
+                if (state->scratch.clmembflag[i]) active_cnt++;
+            }
+            ev->active_remaining = active_cnt;
+        }
+    }
 
     if (config->optim.te4_mode && temp_count > 1)
     {
@@ -190,12 +207,50 @@ void update_probabilities_and_pruning(
                 }
             }
             state->telemetry.clusters_pruned += local_pruned_te4;
+
+            if (state->trace)
+            {
+                TraceEvent *ev = trace_emit(state->trace, TRACE_PRUNE_4P);
+                if (ev)
+                {
+                    ev->pruned_count = local_pruned_te4;
+                    ev->cluster_id = cj;
+                    int active_cnt = 0;
+                    for (int i = 0; i < state->num_clusters; i++)
+                    {
+                        if (state->scratch.clmembflag[i]) active_cnt++;
+                    }
+                    ev->active_remaining = active_cnt;
+                }
+            }
         }
     }
 
     if (config->optim.te5_mode)
     {
+        int active_before = 0;
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            if (state->scratch.clmembflag[i]) active_before++;
+        }
+
         prune_candidates_te5(config, state, temp_indices, temp_dists, temp_count);
+
+        if (state->trace)
+        {
+            int active_after = 0;
+            for (int i = 0; i < state->num_clusters; i++)
+            {
+                if (state->scratch.clmembflag[i]) active_after++;
+            }
+
+            TraceEvent *ev = trace_emit(state->trace, TRACE_PRUNE_5P);
+            if (ev)
+            {
+                ev->pruned_count = active_before - active_after;
+                ev->active_remaining = active_after;
+            }
+        }
     }
 
     state->scratch.clmembflag[cj] = 0;

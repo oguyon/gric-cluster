@@ -22,11 +22,16 @@
 #include "framedistance.h"
 #include "cluster_math.h"
 #include "cluster_bounds.h"
+#include "../gric-cluster/trace/cluster_trace.h"
 
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef GRIC_GIT_HASH
+#define GRIC_GIT_HASH "unknown"
+#endif
 
 /* -------------------------------------------------------
  * Global required by cluster_core.h / cluster_step.c
@@ -55,6 +60,7 @@ typedef struct
     long           maxnbfr;
     int            current_frame_id;
     int            prev_assigned;
+    int            user_maxcl;
     int           *temp_indices;
     double        *temp_dists;
     Candidate     *sorting_candidates;
@@ -170,6 +176,7 @@ void *wasm_cluster_init(
     int    soft_bayesian_mode,
     int    xtile_mode,
     int    sparse_dcc_mode,
+    int    sparse_dcc_extra_evals,
     double entropy_gate_bits,
     double entropy_first_gate_bits,
     int    entropy_fast_mode,
@@ -190,6 +197,7 @@ void *wasm_cluster_init(
     h->maxnbfr = maxnbfr;
     h->current_frame_id = 0;
     h->prev_assigned = -1;
+    h->user_maxcl = maxnbclust;
 
     /* --- ConfigAlgorithm --- */
     h->config.algo.rlim = rlim;
@@ -225,7 +233,8 @@ void *wasm_cluster_init(
     h->config.optim.entropy_fast_mode =
         entropy_fast_mode;
     h->config.optim.sparse_dcc_mode = sparse_dcc_mode;
-    h->config.optim.sparse_dcc_extra_evals = 0;
+    h->config.optim.sparse_dcc_extra_evals =
+        sparse_dcc_extra_evals;
     h->config.optim.soft_bayesian_mode =
         soft_bayesian_mode;
     h->config.optim.soft_bayesian_sigma_coeff =
@@ -355,6 +364,142 @@ void *wasm_cluster_init(
     return h;
 }
 
+/* -------------------------------------------------------
+ * Dynamic Growth Helpers
+ * ------------------------------------------------------- */
+
+static void *grow_nxn_matrix(
+    void   *old,
+    int     old_n,
+    int     new_n,
+    size_t  elem_size)
+{
+    void *new_buf = calloc((size_t)new_n * new_n, elem_size);
+    if (!new_buf)
+    {
+        return NULL;
+    }
+
+    if (old)
+    {
+        for (int i = 0; i < old_n; i++)
+        {
+            memcpy(
+                (char *)new_buf + (i * new_n * elem_size),
+                (char *)old + (i * old_n * elem_size),
+                (size_t)old_n * elem_size
+            );
+        }
+        free(old);
+    }
+    return new_buf;
+}
+
+static int grow_capacity(WasmHandle *h)
+{
+    int old_N = h->config.algo.maxnbclust;
+    int new_N = old_N * 2;
+
+    Cluster *new_clusters = (Cluster *)realloc(
+        h->state.clusters,
+        (size_t)new_N * sizeof(Cluster)
+    );
+    if (!new_clusters) return -1;
+    memset(new_clusters + old_N, 0, (size_t)(new_N - old_N) * sizeof(Cluster));
+    h->state.clusters = new_clusters;
+
+    VisitorList *new_visitors = (VisitorList *)realloc(
+        h->state.cluster_visitors,
+        (size_t)new_N * sizeof(VisitorList)
+    );
+    if (!new_visitors) return -1;
+    memset(new_visitors + old_N, 0, (size_t)(new_N - old_N) * sizeof(VisitorList));
+    h->state.cluster_visitors = new_visitors;
+
+    ClusterScratch *s = &h->state.scratch;
+#define GROW_LINEAR(ptr, type) \
+    do { \
+        type *tmp = (type *)realloc(ptr, (size_t)new_N * sizeof(type)); \
+        if (!tmp) return -1; \
+        memset(tmp + old_N, 0, (size_t)(new_N - old_N) * sizeof(type)); \
+        ptr = tmp; \
+    } while (0)
+
+    GROW_LINEAR(s->mixed_probs, double);
+    GROW_LINEAR(s->clmembflag, int);
+    GROW_LINEAR(s->probsortedclindex, int);
+    GROW_LINEAR(s->current_gprobs, double);
+    GROW_LINEAR(s->entropy_p_current, double);
+    GROW_LINEAR(s->entropy_candidates, Candidate);
+    GROW_LINEAR(s->entropy_prob_scores, TargetScore);
+    GROW_LINEAR(s->entropy_prune_scores, TargetScore);
+    GROW_LINEAR(s->entropy_active_indices, int);
+    GROW_LINEAR(s->entropy_plog2p, double);
+    GROW_LINEAR(s->entropy_visited, uint8_t);
+    GROW_LINEAR(s->refine_queue, Candidate);
+    GROW_LINEAR(s->tuple_pred_candidates, int);
+
+    s->refine_queue_capacity = new_N;
+
+    ClusterTelemetry *t = &h->state.telemetry;
+    GROW_LINEAR(t->pruned_fraction_sum, double);
+    GROW_LINEAR(t->step_counts, long);
+    GROW_LINEAR(t->cluster_query_counts, long);
+
+#define GROW_LINEAR_N1(ptr, type) \
+    do { \
+        type *tmp = (type *)realloc(ptr, (size_t)(new_N + 1) * sizeof(type)); \
+        if (!tmp) return -1; \
+        memset(tmp + (old_N + 1), 0, (size_t)(new_N - old_N) * sizeof(type)); \
+        ptr = tmp; \
+    } while (0)
+
+    GROW_LINEAR_N1(t->dist_counts, long);
+    GROW_LINEAR_N1(t->pruned_counts_by_dist, long);
+
+    GROW_LINEAR(h->temp_indices, int);
+    GROW_LINEAR(h->temp_dists, double);
+    GROW_LINEAR(h->sorting_candidates, Candidate);
+
+#undef GROW_LINEAR
+#undef GROW_LINEAR_N1
+
+    long *new_tm = (long *)grow_nxn_matrix(
+        h->state.transition_matrix, old_N, new_N, sizeof(long)
+    );
+    if (!new_tm) return -1;
+    h->state.transition_matrix = new_tm;
+
+    double *new_dcc_min = (double *)grow_nxn_matrix(
+        s->dcc_min, old_N, new_N, sizeof(double)
+    );
+    if (!new_dcc_min) return -1;
+    s->dcc_min = new_dcc_min;
+
+    double *new_dcc_max = (double *)grow_nxn_matrix(
+        s->dcc_max, old_N, new_N, sizeof(double)
+    );
+    if (!new_dcc_max) return -1;
+    s->dcc_max = new_dcc_max;
+
+    char *new_dcc_measured = (char *)grow_nxn_matrix(
+        s->dcc_measured, old_N, new_N, sizeof(char)
+    );
+    if (!new_dcc_measured) return -1;
+    s->dcc_measured = new_dcc_measured;
+
+    size_t new_mask_words = (size_t)new_N * new_N * ((new_N + 63) / 64);
+    uint64_t *new_mask = (uint64_t *)calloc(new_mask_words, sizeof(uint64_t));
+    if (!new_mask) return -1;
+    free(s->consistency_mask);
+    s->consistency_mask = new_mask;
+
+    h->config.algo.maxnbclust = new_N;
+    t->max_steps_recorded = new_N;
+
+    return 0;
+}
+
 EMSCRIPTEN_KEEPALIVE
 int wasm_cluster_process_frame(
     void   *ptr,
@@ -398,6 +543,20 @@ int wasm_cluster_process_frame(
     h->frame.id = h->current_frame_id;
     h->frame.width = ndim;
     h->frame.height = 1;
+
+    if (h->user_maxcl == 0 &&
+        h->state.num_clusters >= h->config.algo.maxnbclust - 1)
+    {
+        if (grow_capacity(h) != 0)
+        {
+            return -1; /* OOM */
+        }
+    }
+
+    if (h->state.trace)
+    {
+        trace_buffer_begin_frame(h->state.trace);
+    }
 
     int result = cluster_frame(
         &h->config,
@@ -454,6 +613,15 @@ int wasm_cluster_process_batch(
         h->frame.id = h->current_frame_id;
         h->frame.width = ndim;
         h->frame.height = 1;
+
+        if (h->user_maxcl == 0 &&
+            h->state.num_clusters >= h->config.algo.maxnbclust - 1)
+        {
+            if (grow_capacity(h) != 0)
+            {
+                return f; /* Return how many frames we processed successfully before OOM */
+            }
+        }
 
         int assigned = cluster_frame(
             &h->config,
@@ -695,6 +863,11 @@ void wasm_cluster_reset(void *ptr)
     h->prev_assigned = -1;
     h->state.num_clusters = 0;
 
+    if (h->state.trace)
+    {
+        trace_buffer_clear(h->state.trace);
+    }
+
     /* Free per-cluster anchor data */
     for (int i = 0; i < N; i++)
     {
@@ -812,6 +985,12 @@ void wasm_cluster_free(void *ptr)
 
     int N = h->config.algo.maxnbclust;
 
+    if (h->state.trace)
+    {
+        trace_buffer_destroy(h->state.trace);
+        h->state.trace = NULL;
+    }
+
     /* Free per-cluster anchor data */
     for (int i = 0; i < N; i++)
     {
@@ -880,4 +1059,119 @@ void wasm_cluster_free(void *ptr)
     }
 
     free(h);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_cluster_set_trace(void *ptr, int enabled, int capacity)
+{
+    WasmHandle *h = (WasmHandle *)ptr;
+    if (!h) return;
+
+    if (enabled && h->state.trace == NULL)
+    {
+        h->state.trace = trace_buffer_create(capacity);
+    }
+    else if (!enabled && h->state.trace != NULL)
+    {
+        trace_buffer_destroy(h->state.trace);
+        h->state.trace = NULL;
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_trace_count(void *ptr)
+{
+    WasmHandle *h = (WasmHandle *)ptr;
+    if (!h || !h->state.trace) return 0;
+    return h->state.trace->count;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void *wasm_cluster_get_trace_events(void *ptr)
+{
+    WasmHandle *h = (WasmHandle *)ptr;
+    if (!h || !h->state.trace) return NULL;
+    return h->state.trace->events;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_trace_event_size(void)
+{
+    return sizeof(TraceEvent);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_trace_head(void *ptr)
+{
+    WasmHandle *h = (WasmHandle *)ptr;
+    if (!h || !h->state.trace) return 0;
+    return h->state.trace->head;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_trace_frame_start(void *ptr)
+{
+    WasmHandle *h = (WasmHandle *)ptr;
+    if (!h || !h->state.trace) return 0;
+    return h->state.trace->frame_start;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_cluster_clear_trace(void *ptr)
+{
+    WasmHandle *h = (WasmHandle *)ptr;
+    if (!h || !h->state.trace) return;
+    trace_buffer_clear(h->state.trace);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_cluster_set_unlimited(void *ptr, int unlimited)
+{
+    WasmHandle *h = (WasmHandle *)ptr;
+    if (!h)
+    {
+        return;
+    }
+
+    if (unlimited)
+    {
+        h->user_maxcl = 0;
+    }
+    else
+    {
+        h->user_maxcl = h->config.algo.maxnbclust;
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_capacity(void *ptr)
+{
+    WasmHandle *h = (WasmHandle *)ptr;
+    if (!h)
+    {
+        return 0;
+    }
+    return h->config.algo.maxnbclust;
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char *wasm_cluster_get_version(void)
+{
+    static char buf[128];
+    static int init = 0;
+    if (!init)
+    {
+#if defined(GRIC_BUILD_DATE) && defined(GRIC_GIT_HASH)
+        snprintf(buf, sizeof(buf), "%s | %s",
+                 GRIC_GIT_HASH, GRIC_BUILD_DATE);
+#elif defined(GRIC_GIT_HASH)
+        snprintf(buf, sizeof(buf), "%s | %s %s",
+                 GRIC_GIT_HASH, __DATE__, __TIME__);
+#else
+        snprintf(buf, sizeof(buf), "dev | %s %s",
+                 __DATE__, __TIME__);
+#endif
+        init = 1;
+    }
+    return buf;
 }

@@ -3,7 +3,11 @@ SHELL := /bin/bash
 EMSCRIPTEN_ENV ?= $(HOME)/emsdk/emsdk_env.sh
 
 CC = emcc
-CFLAGS = -O3 -msimd128
+
+GIT_HASH := $(shell git describe --always --dirty 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE := $(shell date "+%b %d %Y %H:%M:%S")
+
+CFLAGS = -O3 -msimd128 -DGRIC_GIT_HASH="\"$(GIT_HASH)\"" -DGRIC_BUILD_DATE="\"$(BUILD_DATE)\""
 
 INCLUDES = \
 	-Isrc \
@@ -11,6 +15,7 @@ INCLUDES = \
 	-Isrc/gric-cluster/math \
 	-Isrc/gric-cluster/steps \
 	-Isrc/gric-cluster/io \
+	-Isrc/gric-cluster/trace \
 	-Isrc/wasm
 
 SRCS = \
@@ -31,12 +36,14 @@ SRCS = \
 	src/gric-cluster/steps/handle_new_cluster_creation.c \
 	src/gric-cluster/steps/record_step_assignment.c \
 	src/gric-cluster/steps/update_consistency_mask.c \
+	src/gric-cluster/trace/cluster_trace.c \
 	src/wasm/gric_wasm_api.c
 
-OUT_DIR = site/simulator/wasm
-OUT_FILE = $(OUT_DIR)/gric_cluster.js
+OUT_DIR_SITE = site/simulator/wasm
+OUT_DIR_DOCS = docs/simulator/wasm
+OUT_FILE_SITE = $(OUT_DIR_SITE)/gric_cluster.js
 
-EXPORTED_FUNCTIONS = "['_wasm_cluster_init','_wasm_cluster_process_frame','_wasm_cluster_process_batch','_wasm_cluster_get_num_clusters','_wasm_cluster_get_anchors','_wasm_cluster_get_dcc','_wasm_cluster_get_transition_matrix','_wasm_cluster_get_telemetry','_wasm_cluster_get_probs','_wasm_cluster_reset','_wasm_cluster_free','_malloc','_free']"
+EXPORTED_FUNCTIONS = "['_wasm_cluster_init','_wasm_cluster_process_frame','_wasm_cluster_process_batch','_wasm_cluster_get_num_clusters','_wasm_cluster_get_anchors','_wasm_cluster_get_dcc','_wasm_cluster_get_transition_matrix','_wasm_cluster_get_telemetry','_wasm_cluster_get_probs','_wasm_cluster_reset','_wasm_cluster_free','_wasm_cluster_set_trace','_wasm_cluster_get_trace_count','_wasm_cluster_get_trace_events','_wasm_cluster_get_trace_event_size','_wasm_cluster_get_trace_head','_wasm_cluster_get_trace_frame_start','_wasm_cluster_clear_trace','_wasm_cluster_set_unlimited','_wasm_cluster_get_capacity','_wasm_cluster_get_version','_malloc','_free']"
 EXPORTED_RUNTIME_METHODS = "['ccall','cwrap','getValue','setValue','HEAPF64','HEAP32','HEAPU8']"
 
 LDFLAGS = \
@@ -49,15 +56,22 @@ LDFLAGS = \
 	-s STACK_SIZE=1048576 \
 	--no-entry
 
-.PHONY: all clean dirs
+.PHONY: all clean dirs $(OUT_FILE_SITE)
 
-all: dirs $(OUT_FILE)
+all: dirs $(OUT_FILE_SITE)
+	@mkdir -p $(OUT_DIR_DOCS)
+	@cp -f $(OUT_DIR_SITE)/gric_cluster.js $(OUT_DIR_DOCS)/gric_cluster.js
+	@cp -f $(OUT_DIR_SITE)/gric_cluster.wasm $(OUT_DIR_DOCS)/gric_cluster.wasm
+	@echo "⚡ [WASM] Built & deployed: $(GIT_HASH) | $(BUILD_DATE)"
 
-$(OUT_FILE): $(SRCS)
-	source $(EMSCRIPTEN_ENV) && $(CC) $(CFLAGS) $(INCLUDES) $(SRCS) -o $(OUT_FILE) $(LDFLAGS)
+$(OUT_FILE_SITE): $(SRCS)
+	if [ -f "$(EMSCRIPTEN_ENV)" ]; then source "$(EMSCRIPTEN_ENV)"; fi && \
+	$(CC) $(CFLAGS) $(INCLUDES) $(SRCS) -o $(OUT_FILE_SITE) $(LDFLAGS)
 
 dirs:
-	mkdir -p $(OUT_DIR)
+	mkdir -p $(OUT_DIR_SITE) $(OUT_DIR_DOCS)
 
 clean:
-	rm -rf $(OUT_DIR)
+	rm -rf $(OUT_DIR_SITE)
+	rm -f $(OUT_DIR_DOCS)/gric_cluster.js $(OUT_DIR_DOCS)/gric_cluster.wasm
+

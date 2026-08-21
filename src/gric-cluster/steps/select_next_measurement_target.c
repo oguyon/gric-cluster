@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <time.h>
+#include "../trace/cluster_trace.h"
 
 /*
  * Max hypotheses sampled per candidate during
@@ -183,6 +184,16 @@ static int select_next_measurement_target_entropy(
         if (H_current < gate_bits)
         {
             state->telemetry.entropy_frames_gated++;
+            if (state->trace)
+            {
+                TraceEvent *ev = trace_emit(state->trace, TRACE_ENTROPY_GATE);
+                if (ev)
+                {
+                    ev->entropy_h = H_current;
+                    ev->lower_bound = gate_bits;
+                    ev->reason = REASON_ENTROPY_GATED;
+                }
+            }
             return argmax_p;
         }
     }
@@ -389,14 +400,26 @@ static int select_next_measurement_target_entropy(
      */
     if (config->optim.entropy_fast_mode)
     {
+        int ret = argmax_p;
         for (int idx = 0; idx < M; idx++)
         {
             if (prune_scores[idx].score < 1e30)
             {
-                return prune_scores[idx].id;
+                ret = prune_scores[idx].id;
+                break;
             }
         }
-        return argmax_p;
+        if (state->trace)
+        {
+            TraceEvent *ev = trace_emit(state->trace, TRACE_TARGET_SELECTED);
+            if (ev)
+            {
+                ev->reason = REASON_ENTROPY_FAST;
+                ev->cluster_id = ret;
+                ev->entropy_h = H_current;
+            }
+        }
+        return ret;
     }
 
     clock_gettime(CLOCK_MONOTONIC, &start_filter);
@@ -490,6 +513,19 @@ static int select_next_measurement_target_entropy(
     int best_target_ci = -1;
     double min_expected_entropy = 1e30;
 
+    double *expected_h_arr = NULL;
+    if (state->trace)
+    {
+        expected_h_arr = (double *)malloc(num_targets * sizeof(double));
+        if (expected_h_arr)
+        {
+            for (int i = 0; i < num_targets; i++)
+            {
+                expected_h_arr[i] = 1e30;
+            }
+        }
+    }
+
     #pragma omp parallel for
     for (int tc_idx = 0; tc_idx < num_targets; tc_idx++)
     {
@@ -550,6 +586,10 @@ static int select_next_measurement_target_entropy(
 
         if (!early_exit)
         {
+            if (expected_h_arr)
+            {
+                expected_h_arr[tc_idx] = expected_entropy_for_ci;
+            }
             #pragma omp critical
             {
                 if (expected_entropy_for_ci <
@@ -569,6 +609,61 @@ static int select_next_measurement_target_entropy(
         (end_eval.tv_sec - start_eval.tv_sec) * 1000.0 +
         (end_eval.tv_nsec - start_eval.tv_nsec)
             / 1000000.0;
+
+    if (state->trace)
+    {
+        TraceEvent *ev = trace_emit(state->trace, TRACE_TARGET_SELECTED);
+        if (ev)
+        {
+            ev->reason = REASON_ENTROPY_FULL;
+            ev->cluster_id = best_target_ci;
+            ev->entropy_h = H_current;
+            
+            if (expected_h_arr)
+            {
+                typedef struct { int id; double prob; double exp_h; } TCand;
+                TCand *tc_arr = malloc(num_targets * sizeof(TCand));
+                if (tc_arr)
+                {
+                    for (int i = 0; i < num_targets; i++)
+                    {
+                        tc_arr[i].id = candidates[i].id;
+                        tc_arr[i].prob = candidates[i].p;
+                        tc_arr[i].exp_h = expected_h_arr[i];
+                    }
+                    
+                    for (int i = 0; i < num_targets - 1; i++)
+                    {
+                        for (int j = i + 1; j < num_targets; j++)
+                        {
+                            if (tc_arr[i].exp_h > tc_arr[j].exp_h)
+                            {
+                                TCand tmp = tc_arr[i];
+                                tc_arr[i] = tc_arr[j];
+                                tc_arr[j] = tmp;
+                            }
+                        }
+                    }
+                    
+                    ev->num_candidates = num_targets < TRACE_MAX_CANDIDATES
+                                         ? num_targets
+                                         : TRACE_MAX_CANDIDATES;
+                    for (int i = 0; i < ev->num_candidates; i++)
+                    {
+                        ev->candidates[i].id = tc_arr[i].id;
+                        ev->candidates[i].prob = tc_arr[i].prob;
+                        ev->candidates[i].expected_h = tc_arr[i].exp_h;
+                        ev->candidates[i].info_gain = H_current - tc_arr[i].exp_h;
+                    }
+                    free(tc_arr);
+                }
+            }
+        }
+    }
+    if (expected_h_arr)
+    {
+        free(expected_h_arr);
+    }
 
     return best_target_ci;
 }
@@ -611,6 +706,15 @@ int select_next_measurement_target(
             (*current_pred_idx)++;
             if (cj >= 0 && cj < state->num_clusters && state->scratch.clmembflag[cj])
             {
+                if (state->trace)
+                {
+                    TraceEvent *ev = trace_emit(state->trace, TRACE_TARGET_SELECTED);
+                    if (ev)
+                    {
+                        ev->reason = REASON_PREDICTION;
+                        ev->cluster_id = cj;
+                    }
+                }
                 return cj;
             }
         }
@@ -646,6 +750,16 @@ int select_next_measurement_target(
         }
         int cj = state->scratch.probsortedclindex[*k_search];
         (*k_search)++;
+        
+        if (state->trace)
+        {
+            TraceEvent *ev = trace_emit(state->trace, TRACE_TARGET_SELECTED);
+            if (ev)
+            {
+                ev->reason = REASON_GREEDY_STATIC;
+                ev->cluster_id = cj;
+            }
+        }
         return cj;
     }
     /*
@@ -667,6 +781,16 @@ int select_next_measurement_target(
             {
                 max_p = state->scratch.entropy_p_current[i];
                 cj = i;
+            }
+        }
+        
+        if (state->trace && cj != -1)
+        {
+            TraceEvent *ev = trace_emit(state->trace, TRACE_TARGET_SELECTED);
+            if (ev)
+            {
+                ev->reason = REASON_GREEDY_DYNAMIC;
+                ev->cluster_id = cj;
             }
         }
         return cj;

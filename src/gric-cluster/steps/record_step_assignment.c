@@ -75,16 +75,17 @@ void record_step_assignment(
     {
         if (config->input.stream_input_mode)
         {
-            fprintf(ascii_out, "%ld %d %.6f %lu %ld.%09ld\n",
-                    state->telemetry.total_frames_processed,
+            fprintf(ascii_out, "%ld %d %.6f %llu %lld.%09ld\n",
+                    (long) state->telemetry.total_frames_processed,
                     assigned_cluster, state->telemetry.last_assignment_dist,
-                    current_frame->cnt0, current_frame->atime.tv_sec,
-                    current_frame->atime.tv_nsec);
+                    (unsigned long long) current_frame->cnt0,
+                    (long long) current_frame->atime.tv_sec,
+                    (long) current_frame->atime.tv_nsec);
         }
         else
         {
             fprintf(ascii_out, "%ld %d %.6f\n",
-                    state->telemetry.total_frames_processed,
+                    (long) state->telemetry.total_frames_processed,
                     assigned_cluster, state->telemetry.last_assignment_dist);
         }
     }

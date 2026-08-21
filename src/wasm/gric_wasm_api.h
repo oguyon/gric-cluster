@@ -27,6 +27,7 @@ void *wasm_cluster_init(
     int    soft_bayesian_mode,
     int    xtile_mode,
     int    sparse_dcc_mode,
+    int    sparse_dcc_extra_evals,
     double entropy_gate_bits,
     double entropy_first_gate_bits,
     int    entropy_fast_mode,
@@ -70,7 +71,38 @@ void wasm_cluster_reset(void *handle);
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_free(void *handle);
 
+EMSCRIPTEN_KEEPALIVE
+void wasm_cluster_set_trace(void *handle, int enabled, int capacity);
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_trace_count(void *handle);
+
+EMSCRIPTEN_KEEPALIVE
+void *wasm_cluster_get_trace_events(void *handle);
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_trace_event_size(void);
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_trace_head(void *handle);
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_trace_frame_start(void *handle);
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_cluster_clear_trace(void *handle);
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_cluster_set_unlimited(void *handle, int unlimited);
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_get_capacity(void *handle);
+
+EMSCRIPTEN_KEEPALIVE
+const char *wasm_cluster_get_version(void);
+
 #ifdef __cplusplus
+
 }
 #endif
 
