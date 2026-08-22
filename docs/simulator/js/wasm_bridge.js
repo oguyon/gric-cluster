@@ -35,6 +35,21 @@ const GricWasm = (function () {
   let _telemetryPtr = 0; // double[32]
   let _telemetryLenPtr = 0; // int[1]
 
+  // Multi-tile state variables
+  let _mtHandle = null;    // Opaque C pointer to WasmMultiTileHandle
+  let _mtMode = false;     // True when multi-tile session is active
+  let _mtMaxTuples = 4096; // Max unique tuples to read
+
+  // Multi-tile heap buffers
+  let _mtCoordsPtr = 0;      // double[ndim]
+  let _mtTileAnchorPtr = 0;  // double[maxK]
+  let _mtTileMemberPtr = 0;  // int[maxK]
+  let _mtTupleFlatPtr = 0;   // int[maxTuples * ndim]
+  let _mtTupleCountsPtr = 0; // int[maxTuples]
+  let _mtTupleActivePtr = 0; // int[maxTuples]
+  let _mtTelemetryPtr = 0;   // double[32]
+  let _mtTelemetryLenPtr = 0; // int[1]
+
   // Wrapped C functions (populated after module load)
   const _fn = {};
 
@@ -234,6 +249,21 @@ const GricWasm = (function () {
       'number',
       ['number']
     );
+
+    _fn.mtInit = M.cwrap('wasm_multitile_init', 'number', [
+      'number', 'number', 'number', 'number', 'number', 'number',
+      'number', 'number', 'number', 'number', 'number', 'number',
+      'number', 'number', 'number', 'number', 'number', 'number',
+      'number', 'number', 'number', 'number'
+    ]);
+    _fn.mtProcessFrame = M.cwrap('wasm_multitile_process_frame', 'number', ['number', 'number', 'number']);
+    _fn.mtGetNumTiles = M.cwrap('wasm_multitile_get_num_tiles', 'number', ['number']);
+    _fn.mtGetNumTileClusters = M.cwrap('wasm_multitile_get_num_tile_clusters', 'number', ['number', 'number']);
+    _fn.mtGetTileClusters = M.cwrap('wasm_multitile_get_tile_clusters', null, ['number', 'number', 'number', 'number']);
+    _fn.mtGetTuples = M.cwrap('wasm_multitile_get_tuples', 'number', ['number', 'number', 'number', 'number', 'number']);
+    _fn.mtGetTileTelemetry = M.cwrap('wasm_multitile_get_tile_telemetry', null, ['number', 'number', 'number', 'number']);
+    _fn.mtReset = M.cwrap('wasm_multitile_reset', null, ['number']);
+    _fn.mtFree = M.cwrap('wasm_multitile_free', null, ['number']);
   }
 
   /**
@@ -291,6 +321,46 @@ const GricWasm = (function () {
     _evalDistsPtr = 0;
     _telemetryPtr = 0;
     _telemetryLenPtr = 0;
+  }
+
+  /**
+   * Allocate multi-tile WASM heap buffers.
+   */
+  function _allocMtBuffers() {
+    const M = _module;
+    const DOUBLE = 8;
+    const INT = 4;
+    _mtCoordsPtr = M._malloc(_ndim * DOUBLE);
+    _mtTileAnchorPtr = M._malloc(_maxK * _ndim * DOUBLE);
+    _mtTileMemberPtr = M._malloc(_maxK * INT);
+    _mtTupleFlatPtr = M._malloc(_mtMaxTuples * _ndim * INT);
+    _mtTupleCountsPtr = M._malloc(_mtMaxTuples * INT);
+    _mtTupleActivePtr = M._malloc(_mtMaxTuples * INT);
+    _mtTelemetryPtr = M._malloc(32 * DOUBLE);
+    _mtTelemetryLenPtr = M._malloc(INT);
+  }
+
+  /**
+   * Free multi-tile WASM heap buffers.
+   */
+  function _freeMtBuffers() {
+    const M = _module;
+    if (_mtCoordsPtr) M._free(_mtCoordsPtr);
+    if (_mtTileAnchorPtr) M._free(_mtTileAnchorPtr);
+    if (_mtTileMemberPtr) M._free(_mtTileMemberPtr);
+    if (_mtTupleFlatPtr) M._free(_mtTupleFlatPtr);
+    if (_mtTupleCountsPtr) M._free(_mtTupleCountsPtr);
+    if (_mtTupleActivePtr) M._free(_mtTupleActivePtr);
+    if (_mtTelemetryPtr) M._free(_mtTelemetryPtr);
+    if (_mtTelemetryLenPtr) M._free(_mtTelemetryLenPtr);
+    _mtCoordsPtr = 0;
+    _mtTileAnchorPtr = 0;
+    _mtTileMemberPtr = 0;
+    _mtTupleFlatPtr = 0;
+    _mtTupleCountsPtr = 0;
+    _mtTupleActivePtr = 0;
+    _mtTelemetryPtr = 0;
+    _mtTelemetryLenPtr = 0;
   }
 
   /**
@@ -1071,6 +1141,148 @@ const GricWasm = (function () {
     return steps;
   }
 
+  function initMultiTile(params) {
+    if (!_ready) return false;
+    destroyMultiTile();
+    _ndim = params.ndim || 3;
+    _maxK = 256;
+    const te4 = (params.pruneMode === '4P' || params.pruneMode === '5P') ? 1 : 0;
+    const te5 = (params.pruneMode === '5P') ? 1 : 0;
+    let strategyEnum = 0;
+    if (params.maxclStrategy === 'discard') strategyEnum = 1;
+    else if (params.maxclStrategy === 'merge') strategyEnum = 2;
+
+    _mtHandle = _fn.mtInit(
+      params.rlim || 0.1,
+      params.maxcl > 0 ? params.maxcl : 256,
+      params.maxnbfr || 100000,
+      _ndim,
+      params.entropyMode ? 1 : 0,
+      te4,
+      te5,
+      params.predMode ? 1 : 0,
+      params.predHorizon || 2,
+      params.gprobMode ? 1 : 0,
+      params.tmMixingCoeff || 0.0,
+      params.softBayesian ? 1 : 0,
+      params.xtileMode ? 1 : 0,
+      params.sparseDcc ? 1 : 0,
+      params.sparseDccExtraEvals || 0,
+      params.entropyGate || 0.75,
+      params.entropyFirstGate || 1.5,
+      params.entropyFast ? 1 : 0,
+      params.softBayesianSigma || 1.0,
+      strategyEnum,
+      params.discardFraction || 0.1,
+      params.maxVisitors || 20
+    );
+    if (!_mtHandle) return false;
+    _mtMode = true;
+    _allocMtBuffers();
+    return true;
+  }
+
+  function processFrameMultiTile(x, y, z) {
+    if (!_mtHandle) return -1;
+    const M = _module;
+    M.setValue(_mtCoordsPtr, x, 'double');
+    M.setValue(_mtCoordsPtr + 8, y, 'double');
+    if (_ndim >= 3) M.setValue(_mtCoordsPtr + 16, z || 0.0, 'double');
+    return _fn.mtProcessFrame(_mtHandle, _mtCoordsPtr, _ndim);
+  }
+
+  function syncMultiTileState() {
+    if (!_mtHandle) return null;
+    const M = _module;
+    const numTiles = _fn.mtGetNumTiles(_mtHandle);
+    
+    // Per-tile data
+    const tiles = [];
+    for (let m = 0; m < numTiles; m++) {
+      const K = _fn.mtGetNumTileClusters(_mtHandle, m);
+      _fn.mtGetTileClusters(_mtHandle, m, _mtTileAnchorPtr, _mtTileMemberPtr);
+      const anchors = [];
+      for (let i = 0; i < K; i++) {
+        anchors.push({
+          val: M.getValue(_mtTileAnchorPtr + i * 8, 'double'),
+          members: M.getValue(_mtTileMemberPtr + i * 4, 'i32')
+        });
+      }
+      // Per-tile telemetry
+      _fn.mtGetTileTelemetry(_mtHandle, m, _mtTelemetryPtr, _mtTelemetryLenPtr);
+      const tLen = M.getValue(_mtTelemetryLenPtr, 'i32');
+      const telemetry = [];
+      for (let i = 0; i < tLen; i++) {
+        telemetry.push(M.getValue(_mtTelemetryPtr + i * 8, 'double'));
+      }
+      tiles.push({ anchors, numClusters: K, telemetry });
+    }
+    
+    // Joint tuples
+    const numTuples = _fn.mtGetTuples(
+      _mtHandle, _mtTupleFlatPtr, _mtTupleCountsPtr, _mtTupleActivePtr, _mtMaxTuples
+    );
+    const tuples = new Map();
+    for (let u = 0; u < numTuples; u++) {
+      const ids = [];
+      for (let m = 0; m < numTiles; m++) {
+        ids.push(M.getValue(_mtTupleFlatPtr + (u * numTiles + m) * 4, 'i32'));
+      }
+      const key = ids.join('_');
+      tuples.set(key, {
+        cx: ids[0],
+        cy: ids[1],
+        cz: numTiles >= 3 ? ids[2] : 0,
+        count: M.getValue(_mtTupleCountsPtr + u * 4, 'i32'),
+        lastActive: M.getValue(_mtTupleActivePtr + u * 4, 'i32')
+      });
+    }
+    
+    return { tiles, tuples, numTiles };
+  }
+
+  function applyMultiTileToJsState(snapshot) {
+    if (!snapshot) return;
+    
+    const tileEngines = [
+      typeof tileEngineX !== 'undefined' ? tileEngineX : null,
+      typeof tileEngineY !== 'undefined' ? tileEngineY : null,
+      typeof tileEngineZ !== 'undefined' ? tileEngineZ : null
+    ];
+    
+    for (let m = 0; m < snapshot.numTiles; m++) {
+      const tile = snapshot.tiles[m];
+      const engine = tileEngines[m];
+      if (engine) {
+        engine.clusters = tile.anchors.map((a, i) => ({
+          id: i, val: a.val, members: a.members, prob: a.members > 0 ? 1.0 : 0.0
+        }));
+        engine.totalEvals = tile.telemetry[0] || 0;  // TELEM_FRAMEDIST_CALLS
+        engine.naiveEvals = tile.telemetry[4] || 0;  // TELEM_TOTAL_FRAMES * K approx
+      }
+    }
+    
+    if (typeof jointTuplesMap !== 'undefined') {
+      jointTuplesMap.clear();
+      for (const [key, entry] of snapshot.tuples) {
+        jointTuplesMap.set(key, entry);
+      }
+    }
+  }
+
+  function destroyMultiTile() {
+    if (_mtHandle) {
+      _fn.mtFree(_mtHandle);
+      _freeMtBuffers();
+      _mtHandle = null;
+      _mtMode = false;
+    }
+  }
+
+  function resetMultiTile() {
+    if (_mtHandle) _fn.mtReset(_mtHandle);
+  }
+
   /**
    * Get the git hash the WASM binary was built from.
    * Returns 'unknown' if not available.
@@ -1101,6 +1313,13 @@ const GricWasm = (function () {
     setTrace: setTrace,
     getTrace: getTrace,
     getVersion: getVersion,
+    initMultiTile: initMultiTile,
+    processFrameMultiTile: processFrameMultiTile,
+    syncMultiTileState: syncMultiTileState,
+    applyMultiTileToJsState: applyMultiTileToJsState,
+    destroyMultiTile: destroyMultiTile,
+    resetMultiTile: resetMultiTile,
+    isMtMode: () => _mtMode,
   };
 })();
 

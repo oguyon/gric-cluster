@@ -319,26 +319,4 @@
       CIRCLE_SIN[s] = Math.sin(ang);
     }
 
-    // Pre-allocated Reusable Scratch Buffers for hot compute loop
-    let scratchCap = 256;
-    let scratchClMembFlag = new Uint8Array(scratchCap);
-    let scratchPBase = new Float64Array(scratchCap);
-    let scratchPCurrent = new Float64Array(scratchCap);
-    let scratchCurrentGprobs = new Float64Array(scratchCap);
 
-    function ensureScratchCapacity(k) {
-      if (k > scratchCap) {
-        scratchCap = Math.max(k * 2, 512);
-        scratchClMembFlag = new Uint8Array(scratchCap);
-        scratchPBase = new Float64Array(scratchCap);
-        scratchPCurrent = new Float64Array(scratchCap);
-        scratchCurrentGprobs = new Float64Array(scratchCap);
-      }
-    }
-
-    function clearScratchBuffers() {
-      scratchClMembFlag.fill(0);
-      scratchPBase.fill(0);
-      scratchPCurrent.fill(0);
-      scratchCurrentGprobs.fill(0);
-    }
