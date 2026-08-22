@@ -105,4 +105,8 @@
       hideRichTooltip();
     });
 
+    document.addEventListener('touchstart', () => {
+      hideRichTooltip();
+    }, { passive: true });
+
     // =========================================================================
