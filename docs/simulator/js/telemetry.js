@@ -1489,6 +1489,21 @@
         statTotalTime.innerText = formatClockTime(currentElapsedMs);
       }
 
+      // Update Mobile Live Telemetry HUD Overlay
+      const hudSamples = document.getElementById('hudSamples');
+      if (hudSamples) {
+        hudSamples.innerText = formatNumber(totalFrames);
+      }
+      const hudClusters = document.getElementById('hudClusters');
+      if (hudClusters) {
+        const kCount = useTiles ? jointTuplesMap.size : clusters.length;
+        hudClusters.innerText = formatNumber(kCount);
+      }
+      const hudTime = document.getElementById('hudTime');
+      if (hudTime) {
+        hudTime.innerText = formatClockTime(currentElapsedMs);
+      }
+
       const statAvgFps = document.getElementById('statAvgFps');
       if (statAvgFps) {
         if (currentAvgFps >= 1000) {

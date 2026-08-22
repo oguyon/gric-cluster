@@ -501,6 +501,59 @@
       opacity: 1;
     }
 
+    /* Mobile HUD Live Telemetry Overlay */
+    .mobile-hud-overlay {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      display: none;
+      align-items: center;
+      gap: 7px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 6px;
+      padding: 3px 8px;
+      z-index: 15;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      pointer-events: none;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+
+    .hud-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.1;
+    }
+
+    .hud-label {
+      font-size: 0.58rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .hud-val {
+      font-size: 0.76rem;
+      font-family: monospace;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .hud-divider {
+      width: 1px;
+      height: 18px;
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    @media (max-width: 768px) {
+      .mobile-hud-overlay {
+        display: flex;
+      }
+    }
+
     .view-preset-bar {
       position: absolute;
       top: 8px;
@@ -577,16 +630,64 @@
     }
 
     @media (max-width: 1050px) {
-      .layout-resizer {
+      .layout-resizer,
+      .panel-resizer {
         display: none !important;
       }
       .side-panel {
         width: 100% !important;
         min-width: 100% !important;
         max-width: 100% !important;
-        height: auto;
-        max-height: none;
-        overflow: visible;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        gap: 12px !important;
+        padding-right: 0 !important;
+      }
+      .card {
+        flex: none !important;
+        height: auto !important;
+        min-height: auto !important;
+        overflow: visible !important;
+        padding: 12px 14px;
+        margin-bottom: 4px;
+      }
+      .card.expanded {
+        flex: none !important;
+        height: auto !important;
+        min-height: auto !important;
+        display: flex !important;
+      }
+      .card.expanded .card-body {
+        display: flex !important;
+        flex: none !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+      }
+      .card.expanded .card-body-scroll {
+        display: block !important;
+        flex: none !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+      }
+      .card.collapsed {
+        flex: none !important;
+        height: auto !important;
+        min-height: auto !important;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+      }
+      .card.collapsed .card-body {
+        display: none !important;
+      }
+      .narrative-list,
+      .candidate-list,
+      .cluster-table-wrapper {
+        max-height: 420px !important;
+        overflow-y: auto !important;
+        flex: none !important;
       }
     }
 

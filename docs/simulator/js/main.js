@@ -1739,9 +1739,13 @@
       if (shouldCollapse) {
         card.style.flex = '0 0 auto';
       } else {
-        const cfg = panelConfigs.find(p => p.id === cardId);
-        const flexVal = (cfg && cfg.savedFlex) ? cfg.savedFlex : (cfg ? cfg.defaultFlex : 1.0);
-        card.style.flex = `${flexVal} 1 0px`;
+        if (window.innerWidth <= 1050) {
+          card.style.flex = '';
+        } else {
+          const cfg = panelConfigs.find(p => p.id === cardId);
+          const flexVal = (cfg && cfg.savedFlex) ? cfg.savedFlex : (cfg ? cfg.defaultFlex : 1.0);
+          card.style.flex = `${flexVal} 1 0px`;
+        }
       }
 
       updateResizersVisibility();
