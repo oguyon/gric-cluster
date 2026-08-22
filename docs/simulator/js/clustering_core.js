@@ -186,4 +186,78 @@
       }
     }
 
+    /**
+     * Process a raster image frame vector through the WASM clustering engine.
+     * @param {ArrayLike<number>} pixels - Image pixel buffer (W * H)
+     * @param {boolean} skipRender - If true, skip UI update / rendering
+     */
+    function clusterImageFrame(pixels, skipRender = false) {
+      const tComputeStart = performance.now();
+      distSampleClusterLast = 0;
+      distClusterClusterLast = 0;
+      currentExplanation = [];
+
+      if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+        const assigned = GricWasm.processFrameVector(pixels);
+
+        if (assigned === -2) {
+          if (typeof pauseSimulation === 'function') {
+            pauseSimulation();
+          }
+          showToast('🛑 Max cluster limit reached (stop)');
+          updateUI();
+          draw();
+          return;
+        }
+
+        if (assigned >= 0) {
+          if (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
+            transitionCounts[prevAssignedCluster][assigned] =
+              (transitionCounts[prevAssignedCluster][assigned] || 0) + 1;
+            lastTransitionFrom = prevAssignedCluster;
+            lastTransitionTo = assigned;
+          } else {
+            lastTransitionFrom = -1;
+            lastTransitionTo = -1;
+          }
+          prevAssignedCluster = assigned;
+
+          assignmentHistory.push(assigned);
+          if (assignmentHistory.length > 6000) {
+            assignmentHistory = assignmentHistory.slice(-5000);
+          }
+        }
+
+        if (!skipRender) {
+          const snapshot = GricWasm.syncState();
+          if (snapshot) {
+            GricWasm.applyToJsState(snapshot);
+            if (snapshot.numClusters > 0) {
+              naiveEvals += snapshot.numClusters;
+            }
+          }
+
+          if (assigned >= 0) {
+            frameHistory.push({
+              indices: [assigned],
+              dists: [snapshot ? snapshot.telemetry.lastAssignmentDist : 0],
+              assignment: assigned
+            });
+            if (frameHistory.length > 600) {
+              frameHistory = frameHistory.slice(-500);
+            }
+          }
+
+          const tComputeEnd = performance.now();
+          const frameComputeMs = Math.max(0.0001, tComputeEnd - tComputeStart);
+          recordFrameTelemetry(frameComputeMs);
+
+          if (!isRunning) {
+            updateUI();
+            draw();
+          }
+        }
+      }
+    }
+
     // =========================================================================

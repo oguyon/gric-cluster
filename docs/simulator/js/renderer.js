@@ -116,6 +116,14 @@
       ctx.fillStyle = '#0b1120';
       ctx.fillRect(0, 0, W, H);
 
+      // --- IMAGE MODE: 4-Quadrant Raster / Centroid Gallery ---
+      if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+        if (typeof drawImageMode === 'function') {
+          drawImageMode(ctx, W, H);
+        }
+        return;
+      }
+
       // --- 2D MODE: Single Screen ---
       if (currentDim === 2) {
         renderSubViewport(2, "2D", { x: 0, y: 0, w: W, h: H });

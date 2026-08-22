@@ -1381,14 +1381,22 @@
 
       const presetBar = document.getElementById('viewPresetBar');
       if (presetBar) {
-        presetBar.style.display = (currentDim === 3) ? 'flex' : 'none';
+        presetBar.style.display =
+          (typeof dataMode !== 'undefined' && dataMode === 'image') || currentDim !== 3
+            ? 'none'
+            : 'flex';
       }
 
       const legendHint = document.getElementById('legendHint');
       if (legendHint) {
-        legendHint.innerText = currentDim === 3
-          ? "[3D Mode: Drag Quad 4 to Orbit • Shift+Drag to Pan • Wheel to Zoom • ⛶ to Maximize]"
-          : "[2D Mode: Drag to Pan • Scroll to Zoom • ＋ Add Point: Inject]";
+        if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+          legendHint.innerText =
+            "[Image Mode (32×32): Double-Click Quad to Maximize • Scroll/Drag Quad 4 to Browse Centroids]";
+        } else {
+          legendHint.innerText = currentDim === 3
+            ? "[3D Mode: Drag Quad 4 to Orbit • Shift+Drag to Pan • Wheel to Zoom • ⛶ to Maximize]"
+            : "[2D Mode: Drag to Pan • Scroll to Zoom • ＋ Add Point: Inject]";
+        }
       }
 
       const legRlim = document.getElementById('legendRlim');
@@ -1977,9 +1985,11 @@
               badgeStyle = 'background: rgba(56,189,248,0.15); color: var(--accent-blue);';
             }
 
-            const coordStr = currentDim === 3
-              ? `(${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)})`
-              : `(${c.x.toFixed(2)}, ${c.y.toFixed(2)})`;
+            const coordStr = (typeof dataMode !== 'undefined' && dataMode === 'image')
+              ? `[32×32 Image]`
+              : (currentDim === 3
+                ? `(${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)})`
+                : `(${c.x.toFixed(2)}, ${c.y.toFixed(2)})`);
 
             const framePct = totalFrames > 0 ? ((c.members / totalFrames) * 100).toFixed(1) : '100.0';
             const scCount = c.scDists || 0;
@@ -2038,6 +2048,8 @@
       totalEvals = 0;
       naiveEvals = 0;
       currentFrame = null;
+      currentImageFrame = null;
+      imageGalleryScrollY = 0;
       currentEvaluations = [];
       currentPruned = [];
       currentPredicted = [];
@@ -2153,17 +2165,42 @@
       const selSide = document.getElementById('selectBenchmarkSide');
       if (selMain) currentBenchmark = selMain.value;
       if (selSide && selMain) selSide.value = selMain.value;
-      document.getElementById('benchmarkDesc').innerHTML = BENCHMARK_DESCS[currentBenchmark] || "";
+      document.getElementById('benchmarkDesc').innerHTML =
+        BENCHMARK_DESCS[currentBenchmark] || "";
 
-      currentDim = is3DBenchmark(currentBenchmark) ? 3 : 2;
-
-      if (currentBenchmark === "custom") {
-        document.getElementById('fileUpload').click();
+      if (typeof isImageBenchmark === 'function' && isImageBenchmark(currentBenchmark)) {
+        dataMode = 'image';
+        imageWidth = 32;
+        imageHeight = 32;
+        imageDim = 1024;
+        currentDim = 1024;
+        benchmarkDataset = generateImageBenchmark(currentBenchmark, sampleCount);
       } else {
-        benchmarkDataset = generateBenchmark(
-          currentBenchmark, sampleCount
-        );
+        dataMode = 'coord';
+        currentDim = is3DBenchmark(currentBenchmark) ? 3 : 2;
+        if (currentBenchmark === "custom") {
+          document.getElementById('fileUpload').click();
+        } else {
+          benchmarkDataset = generateBenchmark(
+            currentBenchmark, sampleCount
+          );
+        }
       }
+
+      // Hide/Show 3D Viewport Preset Bar in image mode
+      const presetBar = document.getElementById('viewPresetBar');
+      if (presetBar) {
+        presetBar.style.display =
+          (dataMode === 'image' || currentDim === 2) ? 'none' : 'flex';
+      }
+
+      // Re-initialize WASM session for new ndim / benchmark
+      if (useWasm && GricWasm.isLoaded()) {
+        const params = GricWasm.buildParamsFromState();
+        wasmSessionActive = GricWasm.init(params);
+        updateWasmBadge();
+      }
+
       updateUI();
     }
 
@@ -2179,6 +2216,15 @@
           return;
         }
       }
+
+      if (dataMode === 'image') {
+        const frameData = benchmarkDataset[currentFrameIdx++];
+        currentImageFrame = frameData;
+        totalFrames++;
+        clusterImageFrame(frameData, skipRender);
+        return;
+      }
+
       const rawPt = benchmarkDataset[currentFrameIdx++];
       const pt = applyNoiseToPoint(
         rawPt.x, rawPt.y, rawPt.z || 0.0
