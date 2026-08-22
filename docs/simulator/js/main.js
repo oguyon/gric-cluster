@@ -530,6 +530,184 @@
       }
     });
 
+    // =========================================================================
+    //  TOUCH EVENT LISTENERS FOR MOBILE / TABLET GESTURES
+    // =========================================================================
+    let isTouchDragging = false;
+    let isPinching = false;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let activeTouchQuad = 0;
+    let pinchStartDist = 0;
+    let pinchQuad = 0;
+    let lastTapTime = 0;
+
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (typeof hideRichTooltip === 'function') hideRichTooltip();
+
+      if (e.touches.length === 2) {
+        // Pinch-to-zoom gesture
+        isPinching = true;
+        isTouchDragging = false;
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        pinchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        const midX = (t1.clientX + t2.clientX) / 2;
+        const midY = (t1.clientY + t2.clientY) / 2;
+        pinchQuad = getQuadrantAt(midX, midY);
+        return;
+      }
+
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const px = t.clientX - rect.left;
+        const py = t.clientY - rect.top;
+        const W = rect.width;
+        const H = rect.height;
+        const qIdx = getQuadrantAt(t.clientX, t.clientY);
+        const qRect = getQuadRect(qIdx, W, H);
+
+        const now = performance.now();
+        const isDoubleTap = (now - lastTapTime < 300);
+        lastTapTime = now;
+
+        if (isDoubleTap && !isAddPointMode) {
+          if (dataMode === 'image') {
+            maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
+            draw();
+            return;
+          }
+          if (qIdx === 3 && currentDim === 3) {
+            orbitCamera.azimuth = -35 * (Math.PI / 180);
+            orbitCamera.elevation = 25 * (Math.PI / 180);
+            orbitCamera.panX = 0;
+            orbitCamera.panY = 0;
+            orbitCamera.zoom = 1.0;
+            quadViews[3].zoom = 1.0;
+            quadViews[3].panX = 0;
+            quadViews[3].panY = 0;
+            updateZoomBadge();
+            draw();
+          } else {
+            resetView();
+          }
+          return;
+        }
+
+        // Check if tapping Maximize / Restore Icon in top-right of quadrant
+        if (currentDim === 3 && px >= qRect.x + qRect.w - 36 && px <= qRect.x + qRect.w && py >= qRect.y && py <= qRect.y + 36) {
+          maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
+          draw();
+          return;
+        }
+
+        // Point Injection Mode on Touch
+        if (isAddPointMode) {
+          if (isRunning) pauseSimulation();
+          const m = mapQuadToMetric(px, py, qIdx, qRect);
+          let injX = 0, injY = 0, injZ = 0;
+
+          if (qIdx === 0) {
+            injY = m.u;
+            injZ = m.v;
+            injX = currentFrame ? currentFrame.x : 0.0;
+          } else if (qIdx === 1) {
+            injX = m.u;
+            injZ = m.v;
+            injY = currentFrame ? currentFrame.y : 0.0;
+          } else if (qIdx === 2) {
+            injX = m.u;
+            injY = m.v;
+            injZ = currentFrame ? currentFrame.z : 0.0;
+          } else if (qIdx === 3) {
+            const cosT = Math.cos(orbitCamera.azimuth), sinT = Math.sin(orbitCamera.azimuth);
+            injX = m.u * cosT;
+            injY = m.u * sinT;
+            injZ = m.v;
+          }
+
+          clusterFrame(injX, injY, injZ);
+          showToast(`Injected: (${injX.toFixed(3)}, ${injY.toFixed(3)}, ${injZ.toFixed(3)})`);
+          return;
+        }
+
+        // Start Touch Drag / Orbit
+        isTouchDragging = true;
+        isPinching = false;
+        activeTouchQuad = qIdx;
+        touchStartX = t.clientX;
+        touchStartY = t.clientY;
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+
+      if (isPinching && e.touches.length === 2) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        if (pinchStartDist > 0) {
+          const factor = currentDist / pinchStartDist;
+          const v = quadViews[pinchQuad];
+          if (v) {
+            v.zoom = Math.max(0.2, Math.min(25.0, (v.zoom || 1.0) * factor));
+            if (pinchQuad === 3) orbitCamera.zoom = v.zoom;
+          }
+          pinchStartDist = currentDist;
+          updateZoomBadge();
+          draw();
+        }
+        return;
+      }
+
+      if (isTouchDragging && e.touches.length === 1) {
+        const t = e.touches[0];
+        const dx = t.clientX - touchStartX;
+        const dy = t.clientY - touchStartY;
+        touchStartX = t.clientX;
+        touchStartY = t.clientY;
+
+        if (dataMode === 'image') {
+          if (activeTouchQuad === 3 || maximizedQuad === 3) {
+            imageGalleryScrollY = Math.max(0, (imageGalleryScrollY || 0) - dy);
+            draw();
+          }
+          return;
+        }
+
+        const is3DTarget = (activeTouchQuad === 3 || maximizedQuad === 3) && currentDim === 3;
+        if (is3DTarget) {
+          // Orbit camera in 3D
+          orbitCamera.azimuth += dx * 0.008;
+          orbitCamera.elevation = Math.max(-1.52, Math.min(1.52, orbitCamera.elevation - dy * 0.008));
+          draw();
+        } else {
+          // Pan 2D Sub-viewport
+          const rect = canvas.getBoundingClientRect();
+          const qRect = getQuadRect(activeTouchQuad, rect.width, rect.height);
+          const scale = getQuadScale(activeTouchQuad, qRect);
+
+          const v = quadViews[activeTouchQuad];
+          if (v) {
+            v.panX -= dx / scale;
+            v.panY += dy / scale;
+            draw();
+          }
+        }
+      }
+    }, { passive: false });
+
+    ['touchend', 'touchcancel'].forEach(ev => {
+      canvas.addEventListener(ev, () => {
+        isTouchDragging = false;
+        isPinching = false;
+        pinchStartDist = 0;
+      });
+    });
+
     // 3D Camera Presets
     document.getElementById('presetIso').addEventListener('click', () => {
       orbitCamera.azimuth = -35 * (Math.PI / 180);
@@ -1758,17 +1936,17 @@
       });
     }
 
-    // Transition Matrix Heatmap Hover Handlers
+    // Transition Matrix Heatmap Hover & Touch Handlers
     function setupTMCanvasListeners() {
       const cvs = document.getElementById('tmHeatmapCanvas');
       if (!cvs) return;
 
-      cvs.addEventListener('mousemove', (e) => {
+      function handleTMInteraction(clientX, clientY) {
         const layout = cvs._tmLayout;
         if (!layout || layout.K === 0 || transitionCounts.length === 0) return;
         const rect = cvs.getBoundingClientRect();
-        const mouseX = (e.clientX - rect.left) * (cvs.width / rect.width);
-        const mouseY = (e.clientY - rect.top) * (cvs.height / rect.height);
+        const mouseX = (clientX - rect.left) * (cvs.width / rect.width);
+        const mouseY = (clientY - rect.top) * (cvs.height / rect.height);
 
         const { gridX, gridY, S, cw, ch, K } = layout;
 
@@ -1798,9 +1976,9 @@
             draw();
           }
         }
-      });
+      }
 
-      cvs.addEventListener('mouseleave', () => {
+      function clearTMInteraction() {
         if (hoveredTMCell !== null) {
           hoveredTMCell = null;
           const tipEl = document.getElementById('tmCellTooltip');
@@ -1808,7 +1986,25 @@
           drawTransitionMatrix('tmHeatmapCanvas', false);
           draw();
         }
-      });
+      }
+
+      cvs.addEventListener('mousemove', (e) => handleTMInteraction(e.clientX, e.clientY));
+      cvs.addEventListener('mouseleave', clearTMInteraction);
+
+      cvs.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          handleTMInteraction(e.touches[0].clientX, e.touches[0].clientY);
+        }
+      }, { passive: true });
+
+      cvs.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1) {
+          handleTMInteraction(e.touches[0].clientX, e.touches[0].clientY);
+        }
+      }, { passive: true });
+
+      cvs.addEventListener('touchend', clearTMInteraction);
+      cvs.addEventListener('touchcancel', clearTMInteraction);
     }
 
     setupTMCanvasListeners();
