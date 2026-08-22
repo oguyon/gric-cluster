@@ -431,6 +431,14 @@
       dragStartX = e.clientX;
       dragStartY = e.clientY;
 
+      if (dataMode === 'image') {
+        if (activeDragQuad === 3 || maximizedQuad === 3) {
+          imageGalleryScrollY = Math.max(0, (imageGalleryScrollY || 0) - dy);
+          draw();
+        }
+        return;
+      }
+
       const is3DTarget = (activeDragQuad === 3 || maximizedQuad === 3) && currentDim === 3;
 
       if (is3DTarget) {
@@ -475,6 +483,15 @@
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       const qIdx = getQuadrantAt(e.clientX, e.clientY);
+
+      if (dataMode === 'image') {
+        if (qIdx === 3 || maximizedQuad === 3) {
+          imageGalleryScrollY = Math.max(0, (imageGalleryScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
+          draw();
+        }
+        return;
+      }
+
       const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
 
       const v = quadViews[qIdx];
@@ -492,6 +509,11 @@
     canvas.addEventListener('dblclick', (e) => {
       if (isAddPointMode) return;
       const qIdx = getQuadrantAt(e.clientX, e.clientY);
+      if (dataMode === 'image') {
+        maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
+        draw();
+        return;
+      }
       if (qIdx === 3 && currentDim === 3) {
         orbitCamera.azimuth = -35 * (Math.PI / 180);
         orbitCamera.elevation = 25 * (Math.PI / 180);

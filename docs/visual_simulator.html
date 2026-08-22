@@ -52,6 +52,10 @@
               <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
               <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
             </optgroup>
+            <optgroup label="Image Time-Series Benchmarks (32×32)">
+              <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
+              <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
+            </optgroup>
             <optgroup label="Custom Dataset">
               <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
             </optgroup>
@@ -553,6 +557,10 @@
                         <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
                         <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
                         <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
+                      </optgroup>
+                      <optgroup label="Image Time-Series Benchmarks (32×32)">
+                        <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
+                        <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
                       </optgroup>
                       <optgroup label="Custom Dataset">
                         <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
@@ -1930,11 +1938,13 @@
   <script src="simulator/js/tooltip.js?v=2026.08.21.1245"></script>
   <script src="simulator/js/geometry.js?v=2026.08.21.1245"></script>
   <script src="simulator/js/benchmarks.js?v=2026.08.21.1245"></script>
+  <script src="simulator/js/image_benchmarks.js?v=2026.08.21.1245"></script>
   <script src="simulator/js/tile_engine.js?v=2026.08.21.1245"></script>
   <script src="simulator/wasm/gric_cluster.js?v=2026.08.21.1245"></script>
   <script src="simulator/js/wasm_bridge.js?v=2026.08.21.1245"></script>
   <script src="simulator/js/state.js?v=2026.08.21.1245"></script>
   <script src="simulator/js/telemetry.js?v=2026.08.21.1245"></script>
+  <script src="simulator/js/image_renderer.js?v=2026.08.21.1245"></script>
   <script src="simulator/js/renderer.js?v=2026.08.21.1245"></script>
   <script src="simulator/js/clustering_core.js?v=2026.08.21.1245"></script>
   <script src="simulator/js/main.js?v=2026.08.21.1245"></script>

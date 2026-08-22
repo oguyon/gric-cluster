@@ -10,8 +10,16 @@
     const ctx = canvas.getContext('2d');
 
     // Dimensionality & Quadrant Layout State
-    let currentDim = 3; // 2 or 3
+    let dataMode = 'coord'; // 'coord' (2D/3D points) or 'image' (raster image)
+    let currentDim = 3; // 2 or 3 (or 1024 for 32x32 image mode)
     let maximizedQuad = null; // null (all 4 quads) or 0, 1, 2, 3
+
+    // Image Mode State
+    let imageWidth = 32;
+    let imageHeight = 32;
+    let imageDim = 1024; // = imageWidth * imageHeight
+    let currentImageFrame = null; // Float32Array or Float64Array for active frame
+    let imageGalleryScrollY = 0; // Centroid gallery scroll offset
 
     // 3D Orbit Camera State (Spherical Orbit: Azimuth θ, Elevation φ)
     const orbitCamera = {

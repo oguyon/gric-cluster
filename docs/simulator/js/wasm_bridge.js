@@ -476,6 +476,32 @@ const GricWasm = (function () {
   }
 
   /**
+   * Process an arbitrary N-dimensional vector frame (e.g. 32x32 image)
+   * through the WASM clustering engine.
+   *
+   * @param {ArrayLike<number>} vec — D-dimensional vector
+   * @returns {number} Assigned cluster index, or -1 if unassigned
+   */
+  function processFrameVector(vec) {
+    if (!_handle || !vec) return -1;
+
+    const M = _module;
+    const len = Math.min(vec.length, _ndim);
+    const heapF64 = M.HEAPF64;
+    if (heapF64 && vec instanceof Float64Array && len === _ndim) {
+      heapF64.set(vec, _coordsPtr >> 3);
+    } else {
+      for (let i = 0; i < len; i++) {
+        M.setValue(_coordsPtr + i * 8, vec[i], 'double');
+      }
+    }
+
+    return _fn.processFrame(
+      _handle, _coordsPtr, _ndim
+    );
+  }
+
+  /**
    * Pull cluster state from WASM heap into JS objects.
    * Updates the global JS `clusters`, `dcc`, and
    * `transitionCounts` arrays used by the renderer
@@ -504,8 +530,21 @@ const GricWasm = (function () {
     );
 
     const anchors = [];
+    const heapF64 = M.HEAPF64;
     for (let i = 0; i < K; i++) {
       const coordBase = _anchorsPtr + i * _ndim * 8;
+      let anchorVec = null;
+      if (_ndim > 3) {
+        anchorVec = new Float64Array(_ndim);
+        if (heapF64) {
+          const anchorOffset = (_anchorsPtr >> 3) + i * _ndim;
+          anchorVec.set(heapF64.subarray(anchorOffset, anchorOffset + _ndim));
+        } else {
+          for (let d = 0; d < _ndim; d++) {
+            anchorVec[d] = M.getValue(coordBase + d * 8, 'double');
+          }
+        }
+      }
       anchors.push({
         id: i,
         x: M.getValue(coordBase, 'double'),
@@ -513,6 +552,7 @@ const GricWasm = (function () {
         z: _ndim >= 3
           ? M.getValue(coordBase + 16, 'double')
           : 0.0,
+        anchor: anchorVec,
         members: M.getValue(
           _membersPtr + i * 4, 'i32'
         )
@@ -522,7 +562,6 @@ const GricWasm = (function () {
     // Read DCC matrix
     _fn.getDcc(_handle, _dccPtr, K);
     const dccMatrix = [];
-    const heapF64 = M.HEAPF64;
     if (heapF64) {
       const dccOffset = _dccPtr >> 3;
       for (let i = 0; i < K; i++) {
@@ -721,6 +760,7 @@ const GricWasm = (function () {
       c.x = a.x;
       c.y = a.y;
       c.z = a.z;
+      c.anchor = a.anchor;
       c.members = a.members;
       c.prob = snapshot.probs[i] || 0;
       c.lastActive = totalFrames;
@@ -1303,6 +1343,7 @@ const GricWasm = (function () {
     load: load,
     init: init,
     processFrame: processFrame,
+    processFrameVector: processFrameVector,
     syncState: syncState,
     resetState: resetState,
     destroy: destroy,
