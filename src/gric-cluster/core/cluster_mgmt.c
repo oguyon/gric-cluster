@@ -22,16 +22,39 @@
  * @frame_idx: Index of the frame to append.
  *
  * Dynamically resizes the integer list capacity as needed (doubles capacity,
- * starting at 16). Prints an error using `perror` if memory reallocation fails.
+ * starting at 16). When the list exceeds VISITOR_COMPACT_THRESHOLD entries,
+ * compacts to keep only the most recent VISITOR_COMPACT_KEEP entries to
+ * prevent unbounded memory growth in long-running sessions.
  */
+#define VISITOR_COMPACT_THRESHOLD 2048
+#define VISITOR_COMPACT_KEEP      1024
+
 void add_visitor(
     VisitorList *list,
     int          frame_idx)
 {
+    /* Compact when the list grows too large */
+    if (list->count >= VISITOR_COMPACT_THRESHOLD)
+    {
+        int keep = VISITOR_COMPACT_KEEP;
+        int start = list->count - keep;
+        memmove(
+            list->frames,
+            list->frames + start,
+            (size_t)keep * sizeof(int)
+        );
+        list->count = keep;
+    }
+
     if (list->count >= list->capacity)
     {
-        int new_capacity = (list->capacity == 0) ? 16 : list->capacity * 2;
-        int *new_frames = (int *)realloc(list->frames, new_capacity * sizeof(int));
+        int new_capacity =
+            (list->capacity == 0)
+                ? 16 : list->capacity * 2;
+        int *new_frames = (int *)realloc(
+            list->frames,
+            (size_t)new_capacity * sizeof(int)
+        );
         if (new_frames)
         {
             list->frames = new_frames;

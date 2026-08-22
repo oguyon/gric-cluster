@@ -68,6 +68,8 @@ typedef struct
     double entropy_gate_bits;       /**< Entropy gating threshold (bits) */
     double entropy_first_gate_bits; /**< Gate threshold at meas depth 0 (bits) */
     int    entropy_fast_mode;       /**< 1 to use popcount-only surrogate */
+    int    entropy_leader_shortcut; /**< 1 to bypass entropy when leader prob >= cutoff */
+    double entropy_leader_cutoff;   /**< Threshold for dominant leader bypass (e.g. 0.50) */
     int    sparse_dcc_mode;         /**< 1 to enable bounded sparse DCC, 0 for dense */
     int    sparse_dcc_extra_evals;  /**< Extra inter-cluster measurements per new cluster */
     int    soft_bayesian_mode;      /**< 1 to enable soft Bayesian updates */

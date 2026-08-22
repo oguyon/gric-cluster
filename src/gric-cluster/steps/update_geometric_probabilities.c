@@ -51,6 +51,12 @@ void update_geometric_probabilities(
             continue;
         }
 
+        /* Skip visitor entries beyond frame_infos capacity */
+        if (k_idx >= config->input.maxnbfr)
+        {
+            continue;
+        }
+
         int target_cl = state->frame_infos[k_idx].assignment;
         if (target_cl < 0 || target_cl >= state->num_clusters)
         {

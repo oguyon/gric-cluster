@@ -201,6 +201,18 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->optim.entropy_fast_mode = 1;
         return 0;
     }
+    else if (matches(key, "-entropy_leader"))
+    {
+        config->optim.entropy_leader_shortcut = 1;
+        return 0;
+    }
+    else if (matches(key, "-entropy_leader_cutoff"))
+    {
+        if (!value)
+            return -1;
+        config->optim.entropy_leader_cutoff = atof(value);
+        return 1;
+    }
     else if (matches(key, "-sparse_dcc"))
     {
         config->optim.sparse_dcc_mode = 1;
