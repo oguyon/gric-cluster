@@ -108,9 +108,79 @@ int wasm_cluster_get_capacity(void *handle);
 EMSCRIPTEN_KEEPALIVE
 const char *wasm_cluster_get_version(void);
 
+/* ---- Multi-tile WASM API ---- */
+
+EMSCRIPTEN_KEEPALIVE
+void *wasm_multitile_init(
+    double rlim,
+    int    maxnbclust,
+    long   maxnbfr,
+    int    ndim,
+    int    entropy_mode,
+    int    te4_mode,
+    int    te5_mode,
+    int    pred_mode,
+    int    pred_h,
+    int    gprob_mode,
+    double tm_mixing_coeff,
+    int    soft_bayesian_mode,
+    int    xtile_mode,
+    int    sparse_dcc_mode,
+    int    sparse_dcc_extra_evals,
+    double entropy_gate_bits,
+    double entropy_first_gate_bits,
+    int    entropy_fast_mode,
+    double soft_bayesian_sigma_coeff,
+    int    maxcl_strategy,
+    double discard_fraction,
+    int    max_gprob_visitors);
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_multitile_process_frame(
+    void   *handle,
+    double *coords,
+    int     ndim);
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_multitile_get_num_tiles(void *handle);
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_multitile_get_num_tile_clusters(
+    void *handle,
+    int   tile_id);
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_multitile_get_tile_clusters(
+    void   *handle,
+    int     tile_id,
+    double *out_coords,
+    int    *out_members);
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_multitile_get_tuples(
+    void *handle,
+    int  *out_flat,
+    int  *out_counts,
+    int  *out_last_active,
+    int   max_tuples);
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_multitile_get_tile_telemetry(
+    void   *handle,
+    int     tile_id,
+    double *out_stats,
+    int    *out_len);
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_multitile_reset(void *handle);
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_multitile_free(void *handle);
+
 #ifdef __cplusplus
 
 }
 #endif
 
 #endif /* GRIC_WASM_API_H */
+

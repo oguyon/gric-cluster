@@ -27,6 +27,9 @@ SRCS = \
 	src/gric-cluster/core/cluster_step.c \
 	src/gric-cluster/core/cluster_mgmt.c \
 	src/gric-cluster/core/cluster_bounds.c \
+	src/gric-cluster/core/tile_map.c \
+	src/gric-cluster/core/tile_state.c \
+	src/gric-cluster/io/frame_scatter.c \
 	src/gric-cluster/steps/initialize_initial_cluster.c \
 	src/gric-cluster/steps/compute_priors_and_mixing.c \
 	src/gric-cluster/steps/select_next_measurement_target.c \
@@ -43,7 +46,7 @@ OUT_DIR_SITE = site/simulator/wasm
 OUT_DIR_DOCS = docs/simulator/wasm
 OUT_FILE_SITE = $(OUT_DIR_SITE)/gric_cluster.js
 
-EXPORTED_FUNCTIONS = "['_wasm_cluster_init','_wasm_cluster_process_frame','_wasm_cluster_process_batch','_wasm_cluster_get_num_clusters','_wasm_cluster_get_anchors','_wasm_cluster_get_dcc','_wasm_cluster_get_transition_matrix','_wasm_cluster_get_telemetry','_wasm_cluster_get_probs','_wasm_cluster_get_evaluations','_wasm_cluster_reset','_wasm_cluster_free','_wasm_cluster_set_trace','_wasm_cluster_get_trace_count','_wasm_cluster_get_trace_events','_wasm_cluster_get_trace_event_size','_wasm_cluster_get_trace_head','_wasm_cluster_get_trace_frame_start','_wasm_cluster_clear_trace','_wasm_cluster_set_unlimited','_wasm_cluster_get_capacity','_wasm_cluster_get_version','_malloc','_free']"
+EXPORTED_FUNCTIONS = "['_wasm_cluster_init','_wasm_cluster_process_frame','_wasm_cluster_process_batch','_wasm_cluster_get_num_clusters','_wasm_cluster_get_anchors','_wasm_cluster_get_dcc','_wasm_cluster_get_transition_matrix','_wasm_cluster_get_telemetry','_wasm_cluster_get_probs','_wasm_cluster_get_evaluations','_wasm_cluster_reset','_wasm_cluster_free','_wasm_cluster_set_trace','_wasm_cluster_get_trace_count','_wasm_cluster_get_trace_events','_wasm_cluster_get_trace_event_size','_wasm_cluster_get_trace_head','_wasm_cluster_get_trace_frame_start','_wasm_cluster_clear_trace','_wasm_cluster_set_unlimited','_wasm_cluster_get_capacity','_wasm_cluster_get_version','_wasm_multitile_init','_wasm_multitile_process_frame','_wasm_multitile_get_num_tile_clusters','_wasm_multitile_get_tile_clusters','_wasm_multitile_get_tuples','_wasm_multitile_get_tile_telemetry','_wasm_multitile_get_num_tiles','_wasm_multitile_reset','_wasm_multitile_free','_malloc','_free']"
 EXPORTED_RUNTIME_METHODS = "['ccall','cwrap','getValue','setValue','HEAPF64','HEAP32','HEAPU8']"
 
 LDFLAGS = \

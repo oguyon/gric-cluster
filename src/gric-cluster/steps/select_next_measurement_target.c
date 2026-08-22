@@ -198,6 +198,35 @@ static int select_next_measurement_target_entropy(
         }
     }
 
+    /*
+     * Dominant Leader Short-Circuit:
+     * If a single candidate dominates the posterior
+     * probability (>= leader_cutoff), bypass the
+     * expensive expected Shannon entropy minimization
+     * and measure the leader directly.
+     */
+    if (config->optim.entropy_leader_shortcut &&
+        max_p >= config->optim.entropy_leader_cutoff)
+    {
+        if (meas_idx == 0)
+        {
+            state->telemetry.entropy_frames_gated++;
+        }
+        if (state->trace)
+        {
+            TraceEvent *ev = trace_emit(
+                state->trace,
+                TRACE_TARGET_SELECTED);
+            if (ev)
+            {
+                ev->reason = REASON_LEADER_SHORTCUT;
+                ev->cluster_id = argmax_p;
+                ev->entropy_h = H_current;
+            }
+        }
+        return argmax_p;
+    }
+
     state->telemetry.entropy_frames_evaluated++;
 
     /*

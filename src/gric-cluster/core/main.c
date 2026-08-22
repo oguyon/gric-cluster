@@ -119,6 +119,8 @@ int main(int argc, char *argv[])
     config.optim.entropy_gate_bits = 2.0;
     config.optim.entropy_first_gate_bits = 4.0;
     config.optim.entropy_fast_mode = 0;
+    config.optim.entropy_leader_shortcut = 0;
+    config.optim.entropy_leader_cutoff = 0.50;
     config.optim.sparse_dcc_mode = 0;
     config.optim.sparse_dcc_extra_evals = 0;
     config.optim.soft_bayesian_mode = 0;

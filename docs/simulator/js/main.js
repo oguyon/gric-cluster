@@ -6,102 +6,42 @@
 //  WASM ENGINE TOGGLE
     // =========================================================================
 
-    /**
-     * Returns true if the WASM engine is effectively active
-     * for the current frame pipeline (preference ON, module
-     * loaded, and no overriding mode like Tiles).
-     */
-    function isWasmEffective() {
-      return useWasm
-        && wasmSessionActive
-        && GricWasm.isReady()
-        && !useTiles;
-    }
-
-    /**
-     * Update all WASM-related UI elements to reflect the
-     * effective code path, including overrides from
-     * Tile mode.
-     */
     function updateWasmBadge() {
       const btn = document.getElementById('btnWasm');
       const badge = document.getElementById('badgeWasmStatus');
       const label = document.getElementById('statEngineBackend');
-      const effective = isWasmEffective();
-      const loaded = GricWasm.isLoaded();
 
       // Toolbar button
       if (btn) {
-        if (effective) {
-          btn.classList.add('toggle-active');
-          btn.innerText = '⚡ WASM';
-        } else if (useWasm && loaded && useTiles) {
-          btn.classList.remove('toggle-active');
-          btn.innerText = '⚡ WASM (overridden)';
-        } else {
-          btn.classList.remove('toggle-active');
-          btn.innerText = '⚡ WASM';
-        }
+        btn.classList.add('toggle-active');
+        btn.innerText = '⚡ WASM';
       }
 
       // Resource tracker badge
       if (badge) {
-        if (effective && isExplainMode) {
+        if (isExplainMode) {
           badge.innerText = 'WASM+Trace';
           badge.style.background = 'rgba(251, 191, 36, 0.15)';
           badge.style.color = '#fbbf24';
-        } else if (effective) {
+        } else {
           badge.innerText = 'WASM';
           badge.style.background = 'rgba(74, 222, 128, 0.15)';
           badge.style.color = '#4ade80';
-        } else {
-          badge.innerText = 'JS';
-          badge.style.background = 'rgba(100,100,100,0.2)';
-          badge.style.color = '#888';
         }
       }
 
       // Backend label
       if (label) {
-        if (effective && isExplainMode) {
+        if (isExplainMode) {
           label.innerText = 'C/WebAssembly + Trace';
-        } else if (effective) {
-          label.innerText = 'C/WebAssembly (SIMD)';
-        } else if (useWasm && useTiles) {
-          label.innerText = 'JS (WASM paused: Tiles)';
         } else {
-          label.innerText = 'JavaScript';
+          label.innerText = 'C/WebAssembly (SIMD)';
         }
       }
     }
 
     function toggleWasmEngine() {
-      if (!GricWasm.isLoaded()) {
-        showToast('⚠️ WASM module not loaded');
-        return;
-      }
-      useWasm = !useWasm;
-      if (useWasm) {
-        const params = GricWasm.buildParamsFromState();
-        wasmSessionActive = GricWasm.init(params);
-        if (isExplainMode) {
-          GricWasm.setTrace(true);
-        }
-        if (typeof GricWasmWorker !== 'undefined') {
-          GricWasmWorker.startSession(params);
-        }
-        resetSimulation();
-        showToast('⚡ Engine: C/WASM');
-      } else {
-        GricWasm.destroy();
-        if (typeof GricWasmWorker !== 'undefined') {
-          GricWasmWorker.reset();
-        }
-        wasmSessionActive = false;
-        resetSimulation();
-        showToast('⚡ Engine: JavaScript');
-      }
-      updateWasmBadge();
+      showToast('WASM is the only engine');
     }
 
 //  ASYNC PRODUCER-CONSUMER DISPLAY LOOP & COMPUTE ENGINE
@@ -652,9 +592,12 @@
       setExplainMode(!isExplainMode);
     });
 
-    document.getElementById('btnWasm').addEventListener('click', () => {
-      toggleWasmEngine();
-    });
+    const btnWasmEl = document.getElementById('btnWasm');
+    if (btnWasmEl) {
+      btnWasmEl.addEventListener('click', () => {
+        toggleWasmEngine();
+      });
+    }
 
     document.getElementById('tabNarrative').addEventListener('click', () => setTab('narrative'));
     document.getElementById('tabCandidates').addEventListener('click', () => setTab('candidates'));
@@ -1013,6 +956,20 @@
       useTiles = !useTiles;
       document.getElementById('optTiles').classList.toggle('active', useTiles);
       syncControlDependencies();
+      
+      const params = GricWasm.buildParamsFromState();
+      if (useTiles) {
+        GricWasm.destroy();
+        if (GricWasm.initMultiTile) {
+            GricWasm.initMultiTile(params);
+        }
+      } else {
+        if (GricWasm.destroyMultiTile) {
+            GricWasm.destroyMultiTile();
+        }
+        GricWasm.init(params);
+      }
+
       resetSimulation();
       if (currentBenchmark !== "custom") {
         benchmarkDataset = generateBenchmark(currentBenchmark, 1000);

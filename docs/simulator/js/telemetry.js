@@ -1020,9 +1020,9 @@
     }
 
     // Multi-Tile 1D Subspace Engines
-    const tileEngineX = new Tile1D("X");
-    const tileEngineY = new Tile1D("Y");
-    const tileEngineZ = new Tile1D("Z");
+    let tileEngineX = { axisName: "X", clusters: [], dcc: [], totalEvals: 0, naiveEvals: 0 };
+    let tileEngineY = { axisName: "Y", clusters: [], dcc: [], totalEvals: 0, naiveEvals: 0 };
+    let tileEngineZ = { axisName: "Z", clusters: [], dcc: [], totalEvals: 0, naiveEvals: 0 };
     let jointTuplesMap = new Map();
     let currentJointTuple = null;
     let tileTraceX = null;
@@ -2048,7 +2048,6 @@
       sampleTraceLog = [];
       selectedSampleTraceIndex = -1;
       hoveredSampleTracePoint = null;
-      clearScratchBuffers();
 
       // Resource Tracker reset
       distSampleCluster = 0;
@@ -2094,24 +2093,40 @@
       maxInitialEntropyObserved = 0.0;
       lastEntropyRankings = [];
 
-      tileEngineX.reset();
-      tileEngineY.reset();
-      tileEngineZ.reset();
+      // Reset tile engine plain objects
+      tileEngineX.clusters = [];
+      tileEngineX.dcc = [];
+      tileEngineX.totalEvals = 0;
+      tileEngineX.naiveEvals = 0;
+      tileEngineY.clusters = [];
+      tileEngineY.dcc = [];
+      tileEngineY.totalEvals = 0;
+      tileEngineY.naiveEvals = 0;
+      tileEngineZ.clusters = [];
+      tileEngineZ.dcc = [];
+      tileEngineZ.totalEvals = 0;
+      tileEngineZ.naiveEvals = 0;
       jointTuplesMap.clear();
       currentJointTuple = null;
       tileTraceX = null;
       tileTraceY = null;
       tileTraceZ = null;
 
-      // WASM session init (re-create handle with current config)
-      if (useWasm && GricWasm.isLoaded()) {
+      // WASM session init (re-create handle)
+      if (GricWasm.isLoaded()) {
         const params = GricWasm.buildParamsFromState();
-        wasmSessionActive = GricWasm.init(params);
+        if (useTiles && GricWasm.initMultiTile) {
+          GricWasm.destroy();
+          GricWasm.initMultiTile(params);
+          wasmSessionActive = true;
+        } else {
+          if (GricWasm.destroyMultiTile) {
+            GricWasm.destroyMultiTile();
+          }
+          wasmSessionActive = GricWasm.init(params);
+        }
         if (typeof GricWasmWorker !== 'undefined') {
           GricWasmWorker.startSession(params);
-        }
-        if (wasmSessionActive) {
-          console.log('[WASM] Session initialized');
         }
       } else {
         wasmSessionActive = false;
