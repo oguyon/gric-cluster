@@ -160,6 +160,24 @@
       <div class="canvas-wrapper" id="canvasWrapper">
         <div id="toastFeedback" class="toast-overlay">Point Injected: (0.000, 0.000, 0.000)</div>
         
+        <!-- Mobile Live Telemetry HUD Overlay (Samples, Clusters, Clock Time) -->
+        <div id="mobileHudOverlay" class="mobile-hud-overlay">
+          <div class="hud-item">
+            <span class="hud-label">Samples</span>
+            <span id="hudSamples" class="hud-val">0</span>
+          </div>
+          <div class="hud-divider"></div>
+          <div class="hud-item">
+            <span class="hud-label">Clusters</span>
+            <span id="hudClusters" class="hud-val" style="color: #c084fc;">0</span>
+          </div>
+          <div class="hud-divider"></div>
+          <div class="hud-item">
+            <span class="hud-label">Time</span>
+            <span id="hudTime" class="hud-val" style="color: #38bdf8;">0.00 s</span>
+          </div>
+        </div>
+
         <!-- 3D Camera Quick Presets (Visible in 3D Mode) -->
         <div id="viewPresetBar" class="view-preset-bar" style="display: flex;">
           <button class="preset-btn" id="presetIso" 
