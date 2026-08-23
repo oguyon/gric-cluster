@@ -15,16 +15,17 @@
 /** Context for random-access dataset reading */
 typedef struct
 {
-    char      *input_path;
-    int        is_fits;
-    long       total_frames;
-    long       frame_width;
-    long       frame_height;
-    long       frame_elements;
-    uint64_t  *line_offsets; /**< 64-bit file byte offsets for ASCII lines */
-    FILE      *ascii_file;
+    char         *input_path;
+    int           is_fits;
+    const double *memory_data; /**< Optional in-memory dataset buffer */
+    long          total_frames;
+    long          frame_width;
+    long          frame_height;
+    long          frame_elements;
+    uint64_t     *line_offsets; /**< 64-bit file byte offsets for ASCII lines */
+    FILE         *ascii_file;
 #ifdef USE_CFITSIO
-    fitsfile  *fits_ptr;
+    fitsfile     *fits_ptr;
 #endif
 } KnnFrameReader;
 
@@ -34,6 +35,12 @@ int knn_reader_open(
     long            total_frames,
     long            frame_width,
     long            frame_height);
+
+int knn_reader_open_memory(
+    KnnFrameReader *reader,
+    const double   *memory_data,
+    long            total_frames,
+    long            frame_elements);
 
 int knn_reader_read_frame(
     KnnFrameReader *reader,

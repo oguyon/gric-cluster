@@ -99,6 +99,7 @@ typedef struct
     int   output_anchors;    /**< 1 to write cluster anchor frames */
     int   output_counts;     /**< 1 to write cluster member counts */
     int   output_membership; /**< 1 to write frame membership log */
+    int   output_evals;      /**< 1 to write frame distance evaluations (frame_evals.txt) */
     int   output_discarded;  /**< 1 to write discarded-frame list */
     int   output_clustered;  /**< 1 to write clustered-frame cube */
     int   output_clusters;   /**< 1 to write per-cluster frame lists */
@@ -217,6 +218,7 @@ typedef struct
     FrameInfo        *frame_infos;
     int               num_clusters;
     FILE             *distall_out;
+    FILE             *evals_out;
     long             *transition_matrix;
     ClusterTelemetry  telemetry;
     ClusterScratch    scratch;

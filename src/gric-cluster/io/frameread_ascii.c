@@ -51,6 +51,17 @@ int init_ascii(
 
         while (getline(&line, &len, ascii_ptr) != -1)
         {
+            char *p = line;
+            while (isspace((unsigned char)*p))
+            {
+                p++;
+            }
+            if (*p == '#' || *p == '\0')
+            {
+                offset = ftell(ascii_ptr);
+                continue;
+            }
+
             if ((size_t)num_frames >= capacity)
             {
                 capacity *= 2;
@@ -73,7 +84,6 @@ int init_ascii(
             if (first_line)
             {
                 int cols = 0;
-                char *p = line;
                 int in_num = 0;
                 while (*p)
                 {

@@ -261,6 +261,27 @@ void run_clustering(
         }
     }
 
+    state->evals_out = NULL;
+    if (config->output.output_evals)
+    {
+        char out_path[1024];
+        if (config->output.user_outdir)
+        {
+            snprintf(out_path, sizeof(out_path), "%s/frame_evals.txt",
+                     config->output.user_outdir);
+        }
+        else
+        {
+            snprintf(out_path, sizeof(out_path), "frame_evals.txt");
+        }
+
+        state->evals_out = fopen(out_path, "w");
+        if (!state->evals_out)
+        {
+            perror("Failed to open frame_evals.txt");
+        }
+    }
+
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
@@ -520,6 +541,11 @@ void run_clustering(
     if (ascii_out)
     {
         fclose(ascii_out);
+    }
+    if (state->evals_out)
+    {
+        fclose(state->evals_out);
+        state->evals_out = NULL;
     }
 
     if (state->telemetry.dist_counts)

@@ -106,14 +106,49 @@
     let useSoftBayesian = false; // -soft_bayesian
     let softBayesianSigmaCoeff = 1.0; // -soft_bayesian_sigma (multiplier of rlim)
 
+    // Dataset Staging & Ingestion State
+    let isDatasetStaged = false; // True when a dataset is staged/loaded in memory
+    let stagedDatasetInfo = {
+      name: '3Dtorus',
+      count: 10000,
+      dim: 3,
+      passes: 1,
+      noise: 0.02
+    };
+
+    // Execution Engine Mode & Desktop Workspace
+    let engineMode = 'wasm'; // 'wasm' (Interactive) or 'cli' (Native gric-cluster)
+    let isDesktopBackend = false; // True if connected to native C gric-server
+    let workspacePath = ''; // Current working directory
+    let workspaceFiles = []; // Files found in workspace
+    let selectedCliDataset = ''; // Active dataset for CLI run
+    let isCliRunning = false; // True while native CLI subprocess is active
+    let autoLoadCliResults = true; // Auto-load clusters into visualizer when CLI finishes
+
     // WASM Engine Mode
     let useWasm = true; // Use C/WASM backend when available
     let wasmSessionActive = false; // True if GricWasm handle is live
+
+    // k-Nearest Neighbors (gric-knn) Post-Processing Options
+    let enableKnn = false;
+    let knnK = 10;
+    let knnDtmin = 1;
+    let knnDirection = 'all'; // 'all', 'past', 'future'
+    let knnEpsilon = 0.0;
+    let knnRlim = 0.0;
+    let showKnnLines = true;
+    let knnResults = null;
+    let selectedKnnQuerySample = -1;
+    let hoveredKnnNeighborId = -1;
 
     // Interactive Selection & Hover State
     let selectedClusterId = -1;
     let selectedTupleKey = null;
     let hoveredClusterId = -1;
+    let highlightClosestSample = true; // Toggle closest sample highlight on hover (ON by default)
+    let hoveredClosestSample = null;   // { index, point, qIdx, screenX, screenY, distPx, clusterId }
+    let lockedClosestSample = null;    // { index, point, qIdx, screenX, screenY, distPx, clusterId } - locked/pinned on click
+    let frameEvaluationsLog = [];      // Frame distance evaluation records: [frameIndex -> [{ clusterId, dist, match }]]
 
     // Cluster Table Column Visibility & Sorting State
     const clusterTableCols = {
@@ -188,7 +223,9 @@
     function computeAutoRlim() {
       let pts = benchmarkDataset;
       if (!pts || pts.length === 0) {
-        pts = generateBenchmark(currentBenchmark, 250);
+        rawBenchmarkDataset = generateBenchmark(currentBenchmark, 250);
+        applyNoiseToDataset();
+        pts = benchmarkDataset;
       }
       const N = Math.min(pts.length, 300);
       const dists = [];
@@ -270,8 +307,41 @@
       };
     }
 
+    function applyNoiseToDataset() {
+      if (!rawBenchmarkDataset || rawBenchmarkDataset.length === 0) {
+        benchmarkDataset = [];
+        return;
+      }
+      if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+        benchmarkDataset = rawBenchmarkDataset;
+        return;
+      }
+      const passes = (typeof loopCount === 'number' && loopCount > 0) ? loopCount : 1;
+      benchmarkDataset = [];
+      for (let p = 0; p < passes; p++) {
+        for (let i = 0; i < rawBenchmarkDataset.length; i++) {
+          const pt = rawBenchmarkDataset[i];
+          if (noiseSigma <= 1e-6) {
+            benchmarkDataset.push({
+              x: pt.x,
+              y: pt.y,
+              z: currentDim === 3 ? (pt.z || 0.0) : 0.0
+            });
+          } else {
+            const n = applyNoiseToPoint(pt.x, pt.y, pt.z || 0.0);
+            benchmarkDataset.push({
+              x: n.x,
+              y: n.y,
+              z: currentDim === 3 ? (n.z || 0.0) : 0.0
+            });
+          }
+        }
+      }
+    }
+
     // Simulation & Benchmark State
     let currentBenchmark = "3Dtorus";
+    let rawBenchmarkDataset = [];
     let benchmarkDataset = [];
     let currentFrameIdx = 0;
     let isRunning = false;

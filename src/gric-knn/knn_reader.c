@@ -146,6 +146,36 @@ int knn_reader_open(
 }
 
 /**
+ * knn_reader_open_memory() - Prepare in-memory dataset access.
+ * @reader:         Pointer to KnnFrameReader.
+ * @memory_data:    Contiguous buffer of frame vectors [total_frames * frame_elements].
+ * @total_frames:   Total number of frames in dataset.
+ * @frame_elements: Number of elements per frame.
+ *
+ * Return: 0 on success, -1 on error.
+ */
+int knn_reader_open_memory(
+    KnnFrameReader *reader,
+    const double   *memory_data,
+    long            total_frames,
+    long            frame_elements)
+{
+    if (reader == NULL || memory_data == NULL || total_frames <= 0 || frame_elements <= 0)
+    {
+        return -1;
+    }
+
+    memset(reader, 0, sizeof(KnnFrameReader));
+    reader->memory_data = memory_data;
+    reader->total_frames = total_frames;
+    reader->frame_width = frame_elements;
+    reader->frame_height = 1;
+    reader->frame_elements = frame_elements;
+
+    return 0;
+}
+
+/**
  * knn_reader_clone_thread() - Create a thread-local reader handle.
  * @src: Master KnnFrameReader structure.
  * @dst: Destination thread-local KnnFrameReader structure.
@@ -162,7 +192,16 @@ int knn_reader_clone_thread(
     }
 
     memcpy(dst, src, sizeof(KnnFrameReader));
-    dst->input_path = strdup(src->input_path);
+
+    if (src->memory_data != NULL)
+    {
+        dst->memory_data = src->memory_data;
+        dst->input_path = NULL;
+        dst->ascii_file = NULL;
+        return 0;
+    }
+
+    dst->input_path = (src->input_path != NULL) ? strdup(src->input_path) : NULL;
     dst->ascii_file = NULL;
 
     if (src->is_fits)
@@ -195,7 +234,7 @@ int knn_reader_clone_thread(
 }
 
 /**
- * knn_reader_read_frame() - Read single frame slice from disk into buffer.
+ * knn_reader_read_frame() - Read single frame slice into buffer.
  * @reader:   Pointer to KnnFrameReader.
  * @frame_id: Zero-indexed frame ID to retrieve.
  * @out_data: Output array (size frame_elements).
@@ -210,6 +249,13 @@ int knn_reader_read_frame(
     if (reader == NULL || out_data == NULL || frame_id < 0 || frame_id >= reader->total_frames)
     {
         return -1;
+    }
+
+    if (reader->memory_data != NULL)
+    {
+        memcpy(out_data, &reader->memory_data[frame_id * reader->frame_elements],
+               (size_t)reader->frame_elements * sizeof(double));
+        return 0;
     }
 
     if (reader->is_fits)

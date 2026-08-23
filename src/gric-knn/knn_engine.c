@@ -347,8 +347,17 @@ int knn_run_search(
     }
 
     KnnFrameReader master_reader;
-    if (knn_reader_open(&master_reader, config->input_data_path, N,
-                        model->frame_width, model->frame_height) != 0)
+    if (config->memory_data != NULL)
+    {
+        if (knn_reader_open_memory(&master_reader, config->memory_data, N,
+                                   model->frame_elements) != 0)
+        {
+            knn_results_free(results);
+            return -1;
+        }
+    }
+    else if (knn_reader_open(&master_reader, config->input_data_path, N,
+                             model->frame_width, model->frame_height) != 0)
     {
         knn_results_free(results);
         return -1;
@@ -424,9 +433,18 @@ int knn_run_search(
 #endif
                 {
                     double pct = 100.0 * (double)i / (double)N;
+                    int bar_offset = 40 - (int)(pct * 0.4);
+                    if (bar_offset < 0)
+                    {
+                        bar_offset = 0;
+                    }
+                    if (bar_offset > 40)
+                    {
+                        bar_offset = 40;
+                    }
+                    const char *bar = "========================================";
                     printf("\rSearching k-NN: [%-40s] %5.1f%% (%ld / %ld frames)",
-                           "========================================" +
-                           (40 - (int)(pct * 0.4)), pct, i, N);
+                           &bar[bar_offset], pct, i, N);
                     fflush(stdout);
                 }
             }

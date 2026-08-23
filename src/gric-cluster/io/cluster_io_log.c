@@ -97,6 +97,10 @@ void write_run_log(
         {
             fprintf(f, "OUTPUT_FILE: %s/frame_membership.txt\n", out_dir);
         }
+        if (config->output.output_evals)
+        {
+            fprintf(f, "OUTPUT_FILE: %s/frame_evals.txt\n", out_dir);
+        }
 
         if (config->output.output_clustered)
         {

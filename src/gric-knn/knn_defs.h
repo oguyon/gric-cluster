@@ -66,6 +66,7 @@ typedef struct
     int             future_only;      /**< 1 to search only in future frames j > i */
     double          epsilon;          /**< Slack factor for (1+eps)-ANN pruning */
     double          rlim_cutoff;      /**< Optional max distance cutoff */
+    const double   *memory_data;      /**< Optional in-memory dataset buffer [N * elements] */
     int             nthreads;         /**< Number of OpenMP worker threads */
     KnnOutputFormat output_format;    /**< Output format choice */
     int             progress_mode;    /**< 1 to show live progress bar */
