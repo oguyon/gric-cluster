@@ -332,9 +332,6 @@
           GricWasm.applyToJsState(snapshot);
         }
       }
-      if (enableKnn) {
-        runKnnIfEnabled();
-      }
       updateUI();
       draw();
     }
@@ -1131,9 +1128,6 @@
       }
       if (isRunning) pauseSimulation();
       stepNextFrame(false);
-      if (enableKnn) {
-        runKnnIfEnabled();
-      }
       updateUI();
       draw();
     });
@@ -2099,7 +2093,56 @@
     //  k-Nearest Neighbors (gric-knn) Controls: Setup & Run Separation
     // =========================================================================
 
-    let autoRunKnn = false;
+    // =========================================================================
+    //  k-Nearest Neighbors (gric-knn) Controls: Setup & Manual Stoppable Run
+    // =========================================================================
+
+    let isKnnComputing = false;
+    let knnAbortRequested = false;
+
+    function updateKnnButtonUI(computing, statusText) {
+      const btnTop = document.getElementById('btnRunKnn');
+      const btnSide = document.getElementById('btnRunKnnSide');
+      const badgeTop = document.getElementById('knnStatusBadgeTop');
+
+      if (computing) {
+        if (btnTop) {
+          btnTop.innerHTML = '⏹ Stop k-NN';
+          btnTop.style.background = 'rgba(239, 68, 68, 0.25)';
+          btnTop.style.color = '#f87171';
+          btnTop.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+          btnTop.title = 'Click to stop / cancel k-NN computation';
+        }
+        if (btnSide) {
+          btnSide.innerHTML = '⏹ Stop k-NN';
+          btnSide.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+          btnSide.title = 'Click to stop / cancel k-NN computation';
+        }
+        if (badgeTop) {
+          badgeTop.textContent = statusText || 'Computing k-NN...';
+          badgeTop.style.color = '#f87171';
+          badgeTop.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+        }
+      } else {
+        if (btnTop) {
+          btnTop.innerHTML = '▶ Compute k-NN';
+          btnTop.style.background = 'rgba(34, 197, 94, 0.2)';
+          btnTop.style.color = '#4ade80';
+          btnTop.style.borderColor = 'rgba(34, 197, 94, 0.5)';
+          btnTop.title = 'Compute k-Nearest Neighbors';
+        }
+        if (btnSide) {
+          btnSide.innerHTML = '▶ Compute k-NN';
+          btnSide.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+          btnSide.title = 'Run Out-of-Core k-NN Solver';
+        }
+        if (badgeTop) {
+          badgeTop.textContent = `k=${knnK} • ${knnDirection} • dt≥${knnDtmin}`;
+          badgeTop.style.color = '#c084fc';
+          badgeTop.style.borderColor = 'rgba(192, 132, 252, 0.3)';
+        }
+      }
+    }
 
     function openKnnSetup() {
       const card = document.getElementById('cardKnnSettings');
@@ -2112,11 +2155,24 @@
       showToast('⚙️ Opened k-NN Setup Panel in sidebar');
     }
 
-    function executeKnnComputation() {
+    async function executeKnnComputation() {
+      if (isKnnComputing) {
+        // User clicked STOP button while running
+        knnAbortRequested = true;
+        updateKnnButtonUI(true, 'Stopping k-NN...');
+        if (engineMode === 'cli' && DesktopBridge.isNativeSupported()) {
+          await DesktopBridge.killActiveJob();
+        }
+        isKnnComputing = false;
+        updateKnnButtonUI(false);
+        showToast('⏹ k-NN computation stopped');
+        return;
+      }
+
       const pts = (typeof benchmarkDataset !== 'undefined' && benchmarkDataset && benchmarkDataset.length > 0) ?
                   benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
       if (!pts || pts.length === 0) {
-        showToast('⚠️ No dataset staged to run k-NN. Stage a dataset first.');
+        showToast('⚠️ No dataset staged to run k-NN. Stage or generate a dataset first.');
         return;
       }
 
@@ -2125,28 +2181,86 @@
       syncControlDependencies();
       updateCliCommand();
 
-      if (typeof GricWasm === 'undefined' || !GricWasm.isReady()) {
-        showToast('⚠️ WASM engine not ready for k-NN');
+      isKnnComputing = true;
+      knnAbortRequested = false;
+      updateKnnButtonUI(true, 'Computing k-NN...');
+
+      // Yield briefly to let the browser paint the active "Stop k-NN" button state
+      await new Promise(r => setTimeout(r, 40));
+
+      if (knnAbortRequested) {
+        isKnnComputing = false;
+        updateKnnButtonUI(false);
         return;
       }
 
-      const config = {
-        k: knnK,
-        dtmin: knnDtmin,
-        direction: knnDirection,
-        epsilon: knnEpsilon,
-        rlim: knnRlim
-      };
+      try {
+        if (engineMode === 'cli' && DesktopBridge.isNativeSupported()) {
+          const datasetName = document.getElementById('selectCliDataset')?.value || 'dataset.txt';
+          const args = [
+            '-k', String(knnK),
+            '-dtmin', String(knnDtmin)
+          ];
+          if (knnDirection === 'past') args.push('-past');
+          if (knnDirection === 'future') args.push('-future');
+          if (knnEpsilon > 0) args.push('-eps', String(knnEpsilon));
+          if (knnRlim > 0) args.push('-rlim', String(knnRlim));
+          args.push(datasetName);
 
-      const t0 = performance.now();
-      knnResults = GricWasm.runKnn(config, pts);
-      const elapsed = (performance.now() - t0).toFixed(1);
+          showToast(`💻 Running native gric-knn (k=${knnK})...`);
+          const job = await DesktopBridge.runCliJob('gric-knn', args);
+          if (!job) {
+            showToast('⚠️ Failed to launch native gric-knn');
+            isKnnComputing = false;
+            updateKnnButtonUI(false);
+            return;
+          }
 
-      if (knnResults && typeof renderKnnTrace === 'function') {
-        renderKnnTrace();
+          while (isKnnComputing && !knnAbortRequested) {
+            await new Promise(r => setTimeout(r, 100));
+            const st = await DesktopBridge.getCliStatus(job.job_id);
+            if (!st || !st.active) {
+              break;
+            }
+          }
+        } else {
+          // WASM Execution
+          if (typeof GricWasm === 'undefined' || !GricWasm.isReady()) {
+            showToast('⚠️ WASM engine not ready for k-NN');
+            isKnnComputing = false;
+            updateKnnButtonUI(false);
+            return;
+          }
+
+          const config = {
+            k: knnK,
+            dtmin: knnDtmin,
+            direction: knnDirection,
+            epsilon: knnEpsilon,
+            rlim: knnRlim
+          };
+
+          const t0 = performance.now();
+          const results = GricWasm.runKnn(config, pts);
+          const elapsed = (performance.now() - t0).toFixed(1);
+
+          if (!knnAbortRequested && results) {
+            knnResults = results;
+            if (typeof renderKnnTrace === 'function') {
+              renderKnnTrace();
+            }
+            draw();
+            showToast(`⚡ k-NN computed in ${elapsed} ms (k=${knnK}, ${pts.length.toLocaleString()} points)`);
+          }
+        }
+      } catch (err) {
+        console.error('[k-NN] Computation error:', err);
+        showToast('⚠️ k-NN computation failed');
+      } finally {
+        isKnnComputing = false;
+        knnAbortRequested = false;
+        updateKnnButtonUI(false);
       }
-      draw();
-      showToast(`⚡ k-NN computed in ${elapsed} ms (k=${knnK}, ${pts.length.toLocaleString()} points)`);
     }
 
     function toggleKnnModule(enable) {
@@ -2159,10 +2273,7 @@
       updateCliCommand();
 
       if (enableKnn) {
-        showToast('⚡ k-NN enabled. Configure options or click ▶ Compute k-NN.');
-        if (autoRunKnn || (pastSamples && pastSamples.length > 0)) {
-          executeKnnComputation();
-        }
+        showToast('⚡ k-NN enabled. Configure options and click ▶ Compute k-NN.');
       } else {
         showToast('k-NN module disabled');
       }
@@ -2189,36 +2300,6 @@
       btnRunKnnSide.addEventListener('click', executeKnnComputation);
     }
 
-    const btnToggleKnnAutoTop = document.getElementById('btnToggleKnnAutoTop');
-    if (btnToggleKnnAutoTop) {
-      btnToggleKnnAutoTop.addEventListener('click', () => {
-        autoRunKnn = !autoRunKnn;
-        if (autoRunKnn) enableKnn = true;
-        syncControlDependencies();
-        if (autoRunKnn) {
-          showToast('⚡ Auto-run k-NN enabled');
-          executeKnnComputation();
-        } else {
-          showToast('Auto-run k-NN disabled');
-        }
-      });
-    }
-
-    const btnToggleKnnAuto = document.getElementById('btnToggleKnnAuto');
-    if (btnToggleKnnAuto) {
-      btnToggleKnnAuto.addEventListener('click', () => {
-        autoRunKnn = !autoRunKnn;
-        if (autoRunKnn) enableKnn = true;
-        syncControlDependencies();
-        if (autoRunKnn) {
-          showToast('⚡ Auto-run k-NN enabled');
-          executeKnnComputation();
-        } else {
-          showToast('Auto-run k-NN disabled');
-        }
-      });
-    }
-
     const sliderKnnK = document.getElementById('sliderKnnK');
     const inputKnnK = document.getElementById('inputKnnK');
     if (sliderKnnK) {
@@ -2226,7 +2307,6 @@
         knnK = parseInt(e.target.value, 10);
         if (inputKnnK) inputKnnK.value = knnK;
         updateCliCommand();
-        runKnnIfEnabled();
         draw();
       });
     }
@@ -2237,7 +2317,6 @@
           knnK = v;
           if (sliderKnnK) sliderKnnK.value = Math.min(50, v);
           updateCliCommand();
-          runKnnIfEnabled();
           draw();
         }
       });
@@ -2250,7 +2329,6 @@
         knnDtmin = parseInt(e.target.value, 10);
         if (inputKnnDtmin) inputKnnDtmin.value = knnDtmin;
         updateCliCommand();
-        runKnnIfEnabled();
         draw();
       });
     }
@@ -2261,7 +2339,6 @@
           knnDtmin = v;
           if (sliderKnnDtmin) sliderKnnDtmin.value = Math.min(25, v);
           updateCliCommand();
-          runKnnIfEnabled();
           draw();
         }
       });
@@ -2280,7 +2357,6 @@
           else if (id === 'knnDirFuture') knnDirection = 'future';
           else knnDirection = 'all';
           updateCliCommand();
-          runKnnIfEnabled();
           draw();
         });
       }
@@ -2293,7 +2369,6 @@
         knnEpsilon = parseFloat(e.target.value);
         if (inputKnnEps) inputKnnEps.value = knnEpsilon.toFixed(2);
         updateCliCommand();
-        runKnnIfEnabled();
         draw();
       });
     }
@@ -2304,7 +2379,6 @@
           knnEpsilon = v;
           if (sliderKnnEps) sliderKnnEps.value = Math.min(0.30, v);
           updateCliCommand();
-          runKnnIfEnabled();
           draw();
         }
       });
@@ -2326,29 +2400,6 @@
         draw();
       });
     }
-
-    function runKnnIfEnabled() {
-      if (!enableKnn) return;
-      if (typeof GricWasm === 'undefined' || !GricWasm.isReady()) return;
-
-      const pts = (typeof benchmarkDataset !== 'undefined' && benchmarkDataset && benchmarkDataset.length > 0) ?
-                  benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
-      if (!pts || pts.length === 0) return;
-
-      const config = {
-        k: knnK,
-        dtmin: knnDtmin,
-        direction: knnDirection,
-        epsilon: knnEpsilon,
-        rlim: knnRlim
-      };
-
-      knnResults = GricWasm.runKnn(config, pts);
-      if (knnResults && typeof renderKnnTrace === 'function') {
-        renderKnnTrace();
-      }
-    }
-    window.runKnnIfEnabled = runKnnIfEnabled;
 
     // =========================================================================
     //  SIDEBAR PANELS RESIZING & COLLAPSE CONTROLLER (9 PANELS & 8 RESIZERS)
@@ -2525,21 +2576,11 @@
         knnExpandedGroup.style.display = enableKnn ? 'inline-flex' : 'none';
       }
 
-      const btnToggleKnnAutoTop = document.getElementById('btnToggleKnnAutoTop');
-      if (btnToggleKnnAutoTop) {
-        btnToggleKnnAutoTop.classList.toggle('active', autoRunKnn);
-        btnToggleKnnAutoTop.classList.toggle('toggle-active', autoRunKnn);
-      }
-
-      const btnToggleKnnAuto = document.getElementById('btnToggleKnnAuto');
-      if (btnToggleKnnAuto) {
-        btnToggleKnnAuto.classList.toggle('active', autoRunKnn);
-        btnToggleKnnAuto.classList.toggle('toggle-active', autoRunKnn);
-      }
-
       const knnStatusBadgeTop = document.getElementById('knnStatusBadgeTop');
       if (knnStatusBadgeTop) {
-        knnStatusBadgeTop.textContent = `k=${knnK} • ${knnDirection} • dt≥${knnDtmin}`;
+        if (!isKnnComputing) {
+          knnStatusBadgeTop.textContent = `k=${knnK} • ${knnDirection} • dt≥${knnDtmin}`;
+        }
       }
 
       const optEnableKnnEl = document.getElementById('optEnableKnn');
