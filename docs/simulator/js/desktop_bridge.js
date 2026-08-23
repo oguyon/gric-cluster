@@ -74,6 +74,33 @@ const DesktopBridge = (function () {
     return null;
   }
 
+  /**
+   * Check if the client is running on a mobile phone / handheld device.
+   * @returns {boolean}
+   */
+  function isMobileDevice() {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || navigator.vendor || (window.opera || '');
+    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i;
+    if (mobileRegex.test(ua)) return true;
+    if (navigator.userAgentData && navigator.userAgentData.mobile) return true;
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px) and (pointer: coarse)').matches) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check if Native CLI mode is supported on the current device and backend.
+   * @returns {boolean} True only if on a desktop device connected to gric-server with binaries.
+   */
+  function isNativeSupported() {
+    if (isMobileDevice()) return false;
+    if (!_isDesktop || !_serverInfo) return false;
+    if (_serverInfo.binaries && _serverInfo.binaries['gric-cluster'] === false) return false;
+    return true;
+  }
+
   function isAvailable() {
     return _isDesktop;
   }
@@ -600,6 +627,8 @@ const DesktopBridge = (function () {
   return {
     probe,
     isAvailable,
+    isMobileDevice,
+    isNativeSupported,
     getServerInfo,
     getWorkspaceDir,
     listFiles,
