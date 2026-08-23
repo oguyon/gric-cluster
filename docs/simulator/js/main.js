@@ -127,12 +127,29 @@
         const engineToggleSlider = document.getElementById('engineToggleSlider');
         if (engineToggleSlider) engineToggleSlider.classList.remove('mode-cli');
         if (btnWasm) btnWasm.classList.add('active');
-        if (btnCli) btnCli.classList.remove('active');
-
-        const badgeNativeTmux = document.getElementById('badgeNativeTmux');
         if (badgeNativeTmux) badgeNativeTmux.style.display = 'none';
         if (btnWasm) btnWasm.classList.add('active');
         if (btnCli) btnCli.classList.remove('active');
+
+        // Check if Native CLI is supported on current device / environment
+        if (btnCli) {
+          if (!DesktopBridge.isNativeSupported()) {
+            btnCli.style.opacity = '0.35';
+            btnCli.style.cursor = 'not-allowed';
+            btnCli.title = DesktopBridge.isMobileDevice()
+              ? 'Native CLI is not supported on mobile cell phones (WASM active)'
+              : 'Native CLI requires a local desktop gric-server';
+          } else {
+            btnCli.style.opacity = '1.0';
+            btnCli.style.cursor = 'pointer';
+            btnCli.title = 'Switch to host Native Compiled C (gric-cluster)';
+          }
+        }
+
+        if (bannerToggle) {
+          bannerToggle.style.display = DesktopBridge.isNativeSupported() ? 'inline-block' : 'none';
+          bannerToggle.textContent = 'Switch to Native CLI ➔';
+        }
 
         if (badgeWasm) {
           if (isExplainMode) {
@@ -156,10 +173,12 @@
     }
 
     function toggleWasmEngine() {
-      if (isDesktopBackend) {
+      if (DesktopBridge.isNativeSupported()) {
         setEngineMode(engineMode === 'wasm' ? 'cli' : 'wasm');
+      } else if (DesktopBridge.isMobileDevice()) {
+        showToast('📱 Cell Phone: Native CLI is disabled (In-Browser WASM active)');
       } else {
-        showToast('Web Mode: In-Browser WebAssembly is active');
+        showToast('🌐 Web Mode: Native CLI requires a local desktop gric-server');
       }
     }
 
@@ -2855,7 +2874,7 @@
 
       // Probe native C gric-server
       const serverInfo = await DesktopBridge.probe();
-      if (serverInfo) {
+      if (serverInfo && !DesktopBridge.isMobileDevice()) {
         isDesktopBackend = true;
         workspacePath = serverInfo.cwd;
         if (lblPath) {
@@ -2870,18 +2889,40 @@
       } else {
         isDesktopBackend = false;
         if (lblPath) {
-          lblPath.textContent = 'Web Browser Sandbox (Client-Side Storage)';
+          lblPath.textContent = DesktopBridge.isMobileDevice()
+            ? '📱 Cell Phone Client (In-Browser Sandbox)'
+            : 'Web Browser Sandbox (Client-Side Storage)';
         }
-        if (btnOpenFolder && WebFs.isSupported()) {
+        if (btnOpenFolder && WebFs.isSupported() && !DesktopBridge.isMobileDevice()) {
           btnOpenFolder.style.display = 'inline-block';
+        } else if (btnOpenFolder) {
+          btnOpenFolder.style.display = 'none';
         }
-        if (cliNotice) cliNotice.style.display = 'block';
+        if (cliNotice) {
+          cliNotice.style.display = 'block';
+          if (DesktopBridge.isMobileDevice()) {
+            cliNotice.innerHTML = '📱 <b>Mobile Phone Mode:</b> In-Browser WebAssembly (WASM) is active with local SIMD hardware acceleration. Native CLI execution is disabled on mobile devices.';
+          }
+        }
+        if (cliControls) cliControls.style.display = 'none';
       }
+
+      // Ensure engine UI reflects mobile / desktop support state
+      updateEngineModeUI();
 
       // Bind Engine Switcher Toggle-Slider
       const engineToggleSlider = document.getElementById('engineToggleSlider');
       if (engineToggleSlider) {
         engineToggleSlider.addEventListener('click', (e) => {
+          if (!DesktopBridge.isNativeSupported()) {
+            if (DesktopBridge.isMobileDevice()) {
+              showToast('📱 Cell Phone: Native CLI is disabled (In-Browser WASM active)');
+            } else {
+              showToast('🌐 Web Mode: Native CLI requires a local desktop gric-server');
+            }
+            setEngineMode('wasm');
+            return;
+          }
           if (e.target.id === 'btnEngineWasm') {
             setEngineMode('wasm');
           } else if (e.target.id === 'btnEngineCli') {
@@ -2900,6 +2941,14 @@
       if (btnCliMode) {
         btnCliMode.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (!DesktopBridge.isNativeSupported()) {
+            if (DesktopBridge.isMobileDevice()) {
+              showToast('📱 Cell Phone: Native CLI is disabled (In-Browser WASM active)');
+            } else {
+              showToast('🌐 Web Mode: Native CLI requires a local desktop gric-server');
+            }
+            return;
+          }
           setEngineMode('cli');
         });
       }
@@ -2984,6 +3033,15 @@
     }
 
     async function setEngineMode(mode) {
+      if (mode === 'cli' && !DesktopBridge.isNativeSupported()) {
+        if (DesktopBridge.isMobileDevice()) {
+          showToast('📱 Cell Phone: Native CLI is disabled (In-Browser WASM active)');
+        } else {
+          showToast('🌐 Web Mode: Native CLI requires a local desktop gric-server');
+        }
+        mode = 'wasm';
+      }
+
       engineMode = mode;
       updateEngineModeUI();
 
