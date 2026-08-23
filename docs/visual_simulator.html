@@ -213,12 +213,7 @@
                       data-tooltip-title="Compute k-Nearest Neighbors" 
                       data-tooltip-badge="Run k-NN" 
                       data-tooltip-color="green" 
-                      data-tooltip-desc="Executes the out-of-core metric-pruned k-NN solver and overlays nearest neighbor lines and telemetry.">▶ Compute k-NN</button>
-              <button id="btnToggleKnnAutoTop" class="btn-toggle toggle-green"
-                      data-tooltip-title="Toggle Auto-Compute k-NN"
-                      data-tooltip-badge="Auto Run"
-                      data-tooltip-color="green"
-                      data-tooltip-desc="Automatically recomputes nearest neighbors whenever clustering completes or stages new points.">⚡ Auto</button>
+                      data-tooltip-desc="Executes the out-of-core metric-pruned k-NN solver on the current dataset.">▶ Compute k-NN</button>
               <span id="knnStatusBadgeTop" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.3); font-size: 0.72rem;">k=10 • forward • dt≥1</span>
             </div>
           </div>
@@ -1448,18 +1443,13 @@
 
         <div class="card-body">
           <div class="card-body-scroll" style="display: flex; flex-direction: column; gap: 8px;">
-            <!-- Action & Auto-Run Bar -->
+            <!-- Action Bar -->
             <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-              <button id="btnRunKnnSide" class="primary" style="flex: 1; padding: 6px 12px; font-weight: 700; font-size: 0.78rem; background: linear-gradient(135deg, #10b981, #059669); border: none;"
+              <button id="btnRunKnnSide" class="primary" style="width: 100%; padding: 7px 12px; font-weight: 700; font-size: 0.78rem; background: linear-gradient(135deg, #10b981, #059669); border: none; border-radius: 6px;"
                       data-tooltip-title="Run Out-of-Core k-NN Solver"
                       data-tooltip-badge="Action"
                       data-tooltip-color="green"
                       data-tooltip-desc="Executes the metric-pruned k-NN solver on the current point cloud and clusters, computing top-k neighbors for all frames.">▶ Compute k-NN</button>
-              <button id="btnToggleKnnAuto" class="btn-toggle toggle-green" style="padding: 6px 10px; font-size: 0.74rem; font-weight: 600;"
-                      data-tooltip-title="Toggle Auto-Run k-NN"
-                      data-tooltip-badge="Auto"
-                      data-tooltip-color="green"
-                      data-tooltip-desc="When active, automatically re-runs k-NN whenever clustering finishes or advances.">⚡ Auto</button>
             </div>
 
             <div id="knnControlsContainer" style="display: flex; flex-direction: column; gap: 6px;">
@@ -2364,21 +2354,21 @@
   </div>
 
   <!-- Modular JavaScript Components -->
-  <script src="simulator/js/tooltip.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/geometry.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/benchmarks.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/image_benchmarks.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/tile_engine.js?v=2026.08.23.1320"></script>
-  <script src="simulator/wasm/gric_cluster.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/wasm_bridge.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/fs_access.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/desktop_bridge.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/state.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/telemetry.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/image_renderer.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/renderer.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/clustering_core.js?v=2026.08.23.1320"></script>
-  <script src="simulator/js/main.js?v=2026.08.23.1320"></script>
+  <script src="simulator/js/tooltip.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/geometry.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/benchmarks.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/image_benchmarks.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/tile_engine.js?v=2026.08.23.1359"></script>
+  <script src="simulator/wasm/gric_cluster.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/wasm_bridge.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/fs_access.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/desktop_bridge.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/state.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/telemetry.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/image_renderer.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/renderer.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/clustering_core.js?v=2026.08.23.1359"></script>
+  <script src="simulator/js/main.js?v=2026.08.23.1359"></script>
   <script>
     // Async WASM module and Worker initialization
     (async function() {
