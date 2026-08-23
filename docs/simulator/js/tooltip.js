@@ -12,8 +12,38 @@
 
     let activeTooltipTarget = null;
     let tooltipTimeout = null;
+    let tooltipsEnabled = true;
+
+    function setTooltipsEnabled(enabled) {
+      tooltipsEnabled = !!enabled;
+      if (!tooltipsEnabled) {
+        hideRichTooltip();
+      }
+      const btn = document.getElementById('btnToggleTooltips');
+      if (btn) {
+        btn.classList.toggle('active', tooltipsEnabled);
+        btn.classList.toggle('toggle-active', tooltipsEnabled);
+      }
+      const optOn = document.getElementById('optTooltipsOn');
+      const optOff = document.getElementById('optTooltipsOff');
+      if (optOn) optOn.classList.toggle('toggle-active', tooltipsEnabled);
+      if (optOff) optOff.classList.toggle('toggle-active', !tooltipsEnabled);
+    }
+
+    function toggleTooltips() {
+      setTooltipsEnabled(!tooltipsEnabled);
+      if (typeof showToast === 'function') {
+        showToast(tooltipsEnabled ? '💡 Help Hover Tooltips: ON' : '💡 Help Hover Tooltips: OFF');
+      }
+    }
+
+    window.tooltipsEnabled = tooltipsEnabled;
+    window.setTooltipsEnabled = setTooltipsEnabled;
+    window.toggleTooltips = toggleTooltips;
 
     function showRichTooltip(target, e) {
+      if (!tooltipsEnabled) return;
+
       const title = target.getAttribute('data-tooltip-title') || target.getAttribute('title');
       const desc = target.getAttribute('data-tooltip-desc');
       const badge = target.getAttribute('data-tooltip-badge');

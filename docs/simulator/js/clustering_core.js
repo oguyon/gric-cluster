@@ -13,11 +13,14 @@
 
       totalFrames++;
       currentFrame = { x, y, z };
+      const currentIdx = totalFrames - 1;
       if (!skipRender || (totalFrames % batchThinRate === 0)) {
-        pastSamples.push({ x, y, z });
-        if (pastSamples.length > sampleBufferCap) {
-          const trimTo = Math.floor(sampleBufferCap * 0.67);
-          pastSamples = pastSamples.slice(-trimTo);
+        if (currentIdx < pastSamples.length) {
+          pastSamples[currentIdx].x = x;
+          pastSamples[currentIdx].y = y;
+          pastSamples[currentIdx].z = z;
+        } else if (pastSamples.length < sampleBufferCap) {
+          pastSamples.push({ x, y, z, frameIndex: currentIdx, clusterId: -1 });
         }
       }
       currentExplanation = [];
@@ -97,7 +100,27 @@
           return;
         }
 
+        // Always capture distance evaluations for every frame (for hover inspector)
+        const frameEvals = GricWasm.getFrameEvaluations();
+        if (frameEvals && frameEvals.length > 0) {
+          frameEvaluationsLog[currentIdx] = frameEvals;
+        } else if (assigned >= 0 && clusters[assigned]) {
+          const cl = clusters[assigned];
+          const dx = x - cl.x;
+          const dy = y - cl.y;
+          const dz = (currentDim === 3) ? (z - cl.z) : 0;
+          const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          frameEvaluationsLog[currentIdx] = [{
+            clusterId: assigned,
+            dist: d,
+            match: d <= (rlim || 0.1)
+          }];
+        }
+
         if (assigned >= 0) {
+          if (currentIdx < pastSamples.length) {
+            pastSamples[currentIdx].clusterId = assigned;
+          }
           if (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
             transitionCounts[prevAssignedCluster][assigned] =
               (transitionCounts[prevAssignedCluster][assigned] || 0) + 1;
@@ -153,6 +176,27 @@
               }];
             }
 
+            const evList = (snapshot && snapshot.evaluations) ? snapshot.evaluations.map(ev => ({
+              clusterId: (ev.target && ev.target.id !== undefined) ? ev.target.id : ev.target,
+              dist: ev.dist,
+              match: ev.match
+            })) : [];
+
+            if (evList.length > 0) {
+              frameEvaluationsLog[currentIdx] = evList;
+            } else if (assigned >= 0 && clusters[assigned]) {
+              const cl = clusters[assigned];
+              const dx = x - cl.x;
+              const dy = y - cl.y;
+              const dz = (currentDim === 3) ? (z - cl.z) : 0;
+              const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              frameEvaluationsLog[currentIdx] = [{
+                clusterId: assigned,
+                dist: d,
+                match: d <= (rlim || 0.1)
+              }];
+            }
+
             const sampleEntry = {
               frameIndex: totalFrames,
               timestamp: performance.now(),
@@ -162,6 +206,7 @@
               distSC: distSampleClusterLast,
               distCC: distClusterClusterLast,
               evals: snapshot ? snapshot.telemetry.lastFrameDists : 0,
+              evaluations: evList,
               initialEntropy: 0,
               entropyReduced: 0,
               steps: traceSteps,

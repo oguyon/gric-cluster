@@ -343,6 +343,16 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->output.output_membership = 0;
         return 0;
     }
+    else if (matches(key, "-evals") || matches(key, "-trace"))
+    {
+        config->output.output_evals = 1;
+        return 0;
+    }
+    else if (matches(key, "-no_evals"))
+    {
+        config->output.output_evals = 0;
+        return 0;
+    }
     else if (matches(key, "-discarded"))
     {
         config->output.output_discarded = 1;

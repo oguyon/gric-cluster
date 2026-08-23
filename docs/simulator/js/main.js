@@ -7,41 +7,160 @@
     // =========================================================================
 
     function updateWasmBadge() {
-      const btn = document.getElementById('btnWasm');
-      const badge = document.getElementById('badgeWasmStatus');
-      const label = document.getElementById('statEngineBackend');
+      updateEngineModeUI();
+    }
 
-      // Toolbar button
-      if (btn) {
-        btn.classList.add('toggle-active');
-        btn.innerText = '⚡ WASM';
-      }
+    function updateEngineModeUI() {
+      const activeBadge = document.getElementById('activeEngineBadge');
+      const banner = document.getElementById('engineModeBanner');
+      const bannerIcon = document.getElementById('engineBannerIcon');
+      const bannerTitle = document.getElementById('engineBannerTitle');
+      const bannerSubtitle = document.getElementById('engineBannerSubtitle');
+      const bannerToggle = document.getElementById('btnBannerToggleEngine');
+      const btnPlay = document.getElementById('btnPlay');
+      const btnStep = document.getElementById('btnStep');
+      const btnWasm = document.getElementById('btnEngineWasm');
+      const btnCli = document.getElementById('btnEngineCli');
+      const badgeWasm = document.getElementById('badgeWasmStatus');
+      const labelBackend = document.getElementById('statEngineBackend');
 
-      // Resource tracker badge
-      if (badge) {
-        if (isExplainMode) {
-          badge.innerText = 'WASM+Trace';
-          badge.style.background = 'rgba(251, 191, 36, 0.15)';
-          badge.style.color = '#fbbf24';
-        } else {
-          badge.innerText = 'WASM';
-          badge.style.background = 'rgba(74, 222, 128, 0.15)';
-          badge.style.color = '#4ade80';
+      if (engineMode === 'cli') {
+        // Header Badge
+        if (activeBadge) {
+          activeBadge.textContent = '💻 Native Compiled C (gric-cluster)';
+          activeBadge.style.background = 'rgba(74, 222, 128, 0.18)';
+          activeBadge.style.color = '#4ade80';
+          activeBadge.style.borderColor = 'rgba(74, 222, 128, 0.45)';
         }
-      }
 
-      // Backend label
-      if (label) {
-        if (isExplainMode) {
-          label.innerText = 'C/WebAssembly + Trace';
-        } else {
-          label.innerText = 'C/WebAssembly (SIMD)';
+        // Visual Banner
+        if (banner) {
+          banner.className = 'engine-mode-banner engine-cli';
+          if (bannerIcon) bannerIcon.textContent = '💻';
+          if (bannerTitle) {
+            bannerTitle.textContent = 'Active Path: Native Compiled C Executable (gric-cluster)';
+            bannerTitle.style.color = 'var(--accent-green)';
+          }
+          if (bannerSubtitle) {
+            bannerSubtitle.textContent = 'Spawning multi-threaded native ELF binary on host CPU with OpenMP & AVX SIMD.';
+          }
+          if (bannerToggle) {
+            bannerToggle.style.display = 'inline-block';
+            bannerToggle.textContent = 'Switch to WASM ➔';
+          }
+        }
+
+        // Toolbar Play / Step buttons
+        if (btnPlay) {
+          btnPlay.innerHTML = '▶ Run gric-cluster';
+          btnPlay.classList.remove('primary');
+          btnPlay.classList.add('btn-action');
+          btnPlay.style.background = 'rgba(74, 222, 128, 0.25)';
+          btnPlay.style.color = '#4ade80';
+          btnPlay.style.borderColor = 'rgba(74, 222, 128, 0.5)';
+          btnPlay.title = 'Run native compiled gric-cluster executable';
+        }
+        if (btnStep) {
+          btnStep.disabled = true;
+          btnStep.title = 'Step inspection is only available in WASM Interactive Simulation mode';
+          btnStep.style.opacity = '0.4';
+        }
+
+        // Toggle-Slider in Toolbar Row 1
+        const engineToggleSlider = document.getElementById('engineToggleSlider');
+        if (engineToggleSlider) engineToggleSlider.classList.add('mode-cli');
+        if (btnWasm) btnWasm.classList.remove('active');
+        if (btnCli) btnCli.classList.add('active');
+
+        const badgeNativeTmux = document.getElementById('badgeNativeTmux');
+        if (badgeNativeTmux) badgeNativeTmux.style.display = 'inline-flex';
+
+        // Resource Tracker
+        if (badgeWasm) {
+          badgeWasm.innerText = 'Native ELF';
+          badgeWasm.style.background = 'rgba(74, 222, 128, 0.18)';
+          badgeWasm.style.color = '#4ade80';
+        }
+        if (labelBackend) {
+          labelBackend.innerText = 'Native Compiled C (OpenMP / AVX)';
+        }
+      } else {
+        // WASM Mode
+        if (activeBadge) {
+          activeBadge.textContent = '⚡ In-Browser WASM Simulator';
+          activeBadge.style.background = 'rgba(56, 189, 248, 0.18)';
+          activeBadge.style.color = '#38bdf8';
+          activeBadge.style.borderColor = 'rgba(56, 189, 248, 0.45)';
+        }
+
+        if (banner) {
+          banner.className = 'engine-mode-banner engine-wasm';
+          if (bannerIcon) bannerIcon.textContent = '⚡';
+          if (bannerTitle) {
+            bannerTitle.textContent = 'Active Path: In-Browser WebAssembly (WASM)';
+            bannerTitle.style.color = 'var(--accent-blue)';
+          }
+          if (bannerSubtitle) {
+            bannerSubtitle.textContent = 'Running frame-by-frame simulation inside browser VM with step-by-step HUD telemetry.';
+          }
+          if (bannerToggle) {
+            bannerToggle.style.display = isDesktopBackend ? 'inline-block' : 'none';
+            bannerToggle.textContent = 'Switch to Native CLI ➔';
+          }
+        }
+
+        if (btnPlay) {
+          btnPlay.innerHTML = isRunning ? '⏸ Pause' : '▶ Cluster';
+          btnPlay.classList.add('primary');
+          btnPlay.classList.remove('btn-action');
+          btnPlay.style.background = '';
+          btnPlay.style.color = '';
+          btnPlay.style.borderColor = '';
+          btnPlay.title = 'Run / Pause Clustering';
+        }
+        if (btnStep) {
+          btnStep.disabled = false;
+          btnStep.title = 'Step Ingest Single Frame';
+          btnStep.style.opacity = '1.0';
+        }
+
+        const engineToggleSlider = document.getElementById('engineToggleSlider');
+        if (engineToggleSlider) engineToggleSlider.classList.remove('mode-cli');
+        if (btnWasm) btnWasm.classList.add('active');
+        if (btnCli) btnCli.classList.remove('active');
+
+        const badgeNativeTmux = document.getElementById('badgeNativeTmux');
+        if (badgeNativeTmux) badgeNativeTmux.style.display = 'none';
+        if (btnWasm) btnWasm.classList.add('active');
+        if (btnCli) btnCli.classList.remove('active');
+
+        if (badgeWasm) {
+          if (isExplainMode) {
+            badgeWasm.innerText = 'WASM+Trace';
+            badgeWasm.style.background = 'rgba(251, 191, 36, 0.15)';
+            badgeWasm.style.color = '#fbbf24';
+          } else {
+            badgeWasm.innerText = 'WASM';
+            badgeWasm.style.background = 'rgba(56, 189, 248, 0.18)';
+            badgeWasm.style.color = '#38bdf8';
+          }
+        }
+        if (labelBackend) {
+          if (isExplainMode) {
+            labelBackend.innerText = 'C/WebAssembly + Trace';
+          } else {
+            labelBackend.innerText = 'C/WebAssembly (SIMD)';
+          }
         }
       }
     }
 
     function toggleWasmEngine() {
-      showToast('WASM is the only engine');
+      if (isDesktopBackend) {
+        setEngineMode(engineMode === 'wasm' ? 'cli' : 'wasm');
+      } else {
+        showToast('Web Mode: In-Browser WebAssembly is active');
+      }
     }
 
 //  ASYNC PRODUCER-CONSUMER DISPLAY LOOP & COMPUTE ENGINE
@@ -80,6 +199,21 @@
     function startSimulation() {
       if (isAddPointMode) setAddPointMode(false);
 
+      if (!benchmarkDataset || benchmarkDataset.length === 0) {
+        stageDataset();
+      }
+
+      if (!hasMoreFrames()) {
+        resetClustering(true);
+        currentFrameIdx = 0;
+      }
+
+      if (useWasm && GricWasm.isLoaded() && (!wasmSessionActive || !GricWasm.isReady())) {
+        const params = GricWasm.buildParamsFromState();
+        wasmSessionActive = GricWasm.init(params);
+        updateWasmBadge();
+      }
+
       isRunning = true;
       sessionStartTime = performance.now();
       sessionStartFrames = totalFrames;
@@ -88,9 +222,11 @@
       sessionAvgFps = 0.0;
 
       const btn = document.getElementById('btnPlay');
-      btn.innerText = "❚❚ Pause";
-      btn.classList.add('danger');
-      btn.classList.remove('primary');
+      if (btn) {
+        btn.innerText = "❚❚ Pause";
+        btn.classList.add('danger');
+        btn.classList.remove('primary');
+      }
 
       // Start independent asynchronous 60 FPS display render loop
       startDisplayLoop();
@@ -155,7 +291,7 @@
       }
 
       const btn = document.getElementById('btnPlay');
-      btn.innerText = "► Run / Play";
+      btn.innerText = "► Cluster";
       btn.classList.remove('danger');
       btn.classList.add('primary');
       if (playTimer) {
@@ -176,6 +312,9 @@
         if (snapshot) {
           GricWasm.applyToJsState(snapshot);
         }
+      }
+      if (enableKnn) {
+        runKnnIfEnabled();
       }
       updateUI();
       draw();
@@ -279,11 +418,12 @@
       const midY = (minY + maxY) / 2;
       const midZ = (minZ + maxZ) / 2;
 
-      benchmarkDataset = rawPoints.map(p => ({
+      rawBenchmarkDataset = rawPoints.map(p => ({
         x: ((p.x - midX) / maxSpan) * 1.76,
         y: ((p.y - midY) / maxSpan) * 1.76,
         z: detected3D ? (((p.z - midZ) / maxSpan) * 1.76) : 0.0
       }));
+      applyNoiseToDataset();
 
       currentDim = detected3D ? 3 : 2;
       BENCHMARK_DESCS["custom"] = `<b>Custom File (${filename})</b>: ${benchmarkDataset.length} ${detected3D ? '3D' : '2D'} frames loaded from upload.`;
@@ -355,6 +495,10 @@
       return 3; // Custom 3D
     }
 
+    let mouseDownTime = 0;
+    let mouseDownClientX = 0;
+    let mouseDownClientY = 0;
+
     canvas.addEventListener('mousedown', (e) => {
       const rect = canvas.getBoundingClientRect();
       const px = e.clientX - rect.left;
@@ -364,9 +508,30 @@
       const qIdx = getQuadrantAt(e.clientX, e.clientY);
       const qRect = getQuadRect(qIdx, W, H);
 
+      mouseDownTime = performance.now();
+      mouseDownClientX = e.clientX;
+      mouseDownClientY = e.clientY;
+
       // Check if clicking Maximize / Restore Icon in top-right of quadrant
       if (currentDim === 3 && px >= qRect.x + qRect.w - 30 && px <= qRect.x + qRect.w - 4 && py >= qRect.y && py <= qRect.y + 24) {
         maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
+        draw();
+        return;
+      }
+
+      // Check if clicking Corner Zoom Box to reset zoom & pan to 1:1
+      if (px >= qRect.x + qRect.w - 180 && px <= qRect.x + qRect.w - 8 && py >= qRect.y + 24 && py <= qRect.y + 50) {
+        if (quadViews && quadViews[qIdx]) {
+          quadViews[qIdx].zoom = 1.0;
+          quadViews[qIdx].panX = 0;
+          quadViews[qIdx].panY = 0;
+        }
+        if (qIdx === 3 && typeof orbitCamera !== 'undefined') {
+          orbitCamera.zoom = 1.0;
+          orbitCamera.panX = 0;
+          orbitCamera.panY = 0;
+        }
+        if (typeof updateZoomBadge === 'function') updateZoomBadge();
         draw();
         return;
       }
@@ -472,11 +637,170 @@
       }
     });
 
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', (e) => {
       if (isDragging) {
         isDragging = false;
         dragMode = null;
         canvas.classList.remove('grabbing');
+      }
+
+      // Check if mouseup was a click (not a drag) on the canvas
+      const distFromDown = Math.hypot(e.clientX - mouseDownClientX, e.clientY - mouseDownClientY);
+      const clickDuration = performance.now() - mouseDownTime;
+      if (distFromDown < 6 && clickDuration < 450 && !isAddPointMode) {
+        if (e.target === canvas) {
+          if (hoveredClosestSample && hoveredClosestSample.point) {
+            if (lockedClosestSample && lockedClosestSample.index === hoveredClosestSample.index) {
+              // Clicked already locked point -> unlock
+              lockedClosestSample = null;
+              hoveredClosestSample = null;
+              if (typeof showToast === 'function') showToast('🔓 Selection Unlocked');
+              draw();
+            } else {
+              // Lock to this hovered sample point
+              lockedClosestSample = { ...hoveredClosestSample };
+              hoveredClosestSample = lockedClosestSample;
+              if (enableKnn && knnResults) {
+                selectedKnnQuerySample = lockedClosestSample.index;
+                if (typeof renderKnnTrace === 'function') renderKnnTrace();
+              }
+              if (typeof showToast === 'function') {
+                showToast(`🔒 Locked Sample #${lockedClosestSample.index} (Click or Esc to unlock)`);
+              }
+              draw();
+            }
+          } else if (lockedClosestSample !== null) {
+            // Clicked empty canvas space while locked -> unlock
+            lockedClosestSample = null;
+            hoveredClosestSample = null;
+            if (typeof showToast === 'function') showToast('🔓 Selection Unlocked');
+            draw();
+          }
+        }
+      }
+    });
+
+    // Closest Sample Hover Inspector
+    canvas.addEventListener('mousemove', (e) => {
+      if (isDragging || isAddPointMode) return;
+
+      // If user has locked a selection, keep locked selection steady
+      if (lockedClosestSample !== null) {
+        return;
+      }
+
+      if (!highlightClosestSample) {
+        if (hoveredClosestSample !== null) {
+          hoveredClosestSample = null;
+          draw();
+        }
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const W = rect.width;
+      const H = rect.height;
+
+      if (px < 0 || px > W || py < 0 || py > H) {
+        if (hoveredClosestSample !== null) {
+          hoveredClosestSample = null;
+          draw();
+        }
+        return;
+      }
+
+      const qIdx = getQuadrantAt(e.clientX, e.clientY);
+      const qRect = getQuadRect(qIdx, W, H);
+      if (px < qRect.x || px > qRect.x + qRect.w || py < qRect.y || py > qRect.y + qRect.h) {
+        if (hoveredClosestSample !== null) {
+          hoveredClosestSample = null;
+          draw();
+        }
+        return;
+      }
+
+      const numPast = pastSamples.length;
+      if (numPast === 0) {
+        if (hoveredClosestSample !== null) {
+          hoveredClosestSample = null;
+          draw();
+        }
+        return;
+      }
+
+      function getProjectedCoord(p) {
+        if (currentDim === 2 || qIdx === 2) return { u: p.x, v: p.y, depth: p.z || 0 };
+        if (qIdx === 0) return { u: p.y, v: p.z, depth: p.x };
+        if (qIdx === 1) return { u: p.x, v: p.z, depth: p.y };
+        // CUSTOM_3D (qIdx === 3)
+        return project3D(p.x, p.y, p.z, orbitCamera.azimuth, orbitCamera.elevation);
+      }
+
+      let bestIdx = -1;
+      let bestDistSq = Infinity;
+      let bestPos = null;
+      let bestPt = null;
+      const MAX_PICK_DIST_SQ = 70 * 70; // within 70px
+
+      const maxCheck = Math.min(numPast, 100000);
+      for (let i = 0; i < maxCheck; i++) {
+        const pt = pastSamples[i];
+        const pr = getProjectedCoord(pt);
+        const pos = mapMetricToQuad(pr.u, pr.v, qIdx, qRect);
+
+        const dx = pos.px - px;
+        const dy = pos.py - py;
+        const d2 = dx * dx + dy * dy;
+
+        if (d2 < bestDistSq) {
+          bestDistSq = d2;
+          bestIdx = (pt.frameIndex !== undefined) ? pt.frameIndex : i;
+          bestPos = pos;
+          bestPt = pt;
+        }
+      }
+
+      const prevIdx = hoveredClosestSample ? hoveredClosestSample.index : -1;
+      if (bestIdx >= 0 && bestDistSq <= MAX_PICK_DIST_SQ) {
+        let cId = -1;
+        if (typeof assignmentHistory !== 'undefined' && bestIdx < assignmentHistory.length) {
+          cId = assignmentHistory[bestIdx];
+        } else if (typeof clustersAssigned !== 'undefined' && clustersAssigned && bestIdx < clustersAssigned.length) {
+          cId = clustersAssigned[bestIdx];
+        }
+
+        hoveredClosestSample = {
+          index: bestIdx,
+          point: bestPt,
+          qIdx: qIdx,
+          screenX: bestPos.px,
+          screenY: bestPos.py,
+          distPx: Math.sqrt(bestDistSq),
+          clusterId: cId
+        };
+
+        if (prevIdx !== bestIdx) {
+          if (enableKnn && knnResults) {
+            selectedKnnQuerySample = bestIdx;
+            if (typeof renderKnnTrace === 'function') renderKnnTrace();
+          }
+          draw();
+        }
+      } else {
+        if (hoveredClosestSample !== null) {
+          hoveredClosestSample = null;
+          draw();
+        }
+      }
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      if (lockedClosestSample !== null) return;
+      if (hoveredClosestSample !== null) {
+        hoveredClosestSample = null;
+        draw();
       }
     });
 
@@ -768,18 +1092,29 @@
         loopCount = parseInt(e.target.value);
         const side = document.getElementById('selectLoopSide');
         if (side) side.value = e.target.value;
-        updateUI();
+        stageDataset();
       });
     }
 
     document.getElementById('btnPlay').addEventListener('click', () => {
+      if (engineMode === 'cli') {
+        runNativeCli();
+        return;
+      }
       if (isRunning) pauseSimulation();
       else startSimulation();
     });
 
     document.getElementById('btnStep').addEventListener('click', () => {
+      if (engineMode === 'cli') {
+        showToast('Step inspection is only available in WASM Interactive Simulation mode');
+        return;
+      }
       if (isRunning) pauseSimulation();
       stepNextFrame(false);
+      if (enableKnn) {
+        runKnnIfEnabled();
+      }
       updateUI();
       draw();
     });
@@ -859,7 +1194,29 @@
       // Ignore when typing in inputs or selects
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
 
-      if (e.key === '[' || e.key === 'ArrowLeft') {
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        const btnPlay = document.getElementById('btnPlay');
+        if (btnPlay) btnPlay.click();
+      } else if (e.key === 's' || e.key === 'S') {
+        const btnStep = document.getElementById('btnStep');
+        if (btnStep) btnStep.click();
+      } else if (e.key === 'r' || e.key === 'R') {
+        const btnReset = document.getElementById('btnReset');
+        if (btnReset) btnReset.click();
+      } else if (e.key === 'e' || e.key === 'E') {
+        const btnExplain = document.getElementById('btnExplain');
+        if (btnExplain) btnExplain.click();
+      } else if (e.key === 'k' || e.key === 'K') {
+        const btnRunKnn = document.getElementById('btnRunKnn');
+        if (btnRunKnn) btnRunKnn.click();
+      } else if (e.key === 'h' || e.key === 'H' || e.key === 't' || e.key === 'T') {
+        const btnToggleTooltips = document.getElementById('btnToggleTooltips');
+        if (btnToggleTooltips) btnToggleTooltips.click();
+      } else if (e.key === 'z' || e.key === 'Z') {
+        const btnResetView = document.getElementById('btnResetView');
+        if (btnResetView) btnResetView.click();
+      } else if (e.key === '[' || e.key === 'ArrowLeft') {
         if (sampleTraceLog.length === 0) return;
         let currentPos = -1;
         if (selectedSampleTraceIndex === -1) {
@@ -878,14 +1235,74 @@
         } else if (currentPos === sampleTraceLog.length - 1) {
           returnToLiveStream();
         }
+      } else if (e.key === 'x' || e.key === 'X') {
+        if (lockedClosestSample !== null) {
+          lockedClosestSample = null;
+          hoveredClosestSample = null;
+          if (typeof showToast === 'function') showToast('🔓 Selection Unlocked');
+          draw();
+        } else if (hoveredClosestSample !== null && hoveredClosestSample.point) {
+          lockedClosestSample = { ...hoveredClosestSample };
+          if (enableKnn && knnResults) {
+            selectedKnnQuerySample = lockedClosestSample.index;
+            if (typeof renderKnnTrace === 'function') renderKnnTrace();
+          }
+          if (typeof showToast === 'function') {
+            showToast(`🔒 Locked Sample #${lockedClosestSample.index} (Click or Esc to unlock)`);
+          }
+          draw();
+        }
+      } else if (e.key === 'Escape') {
+        if (lockedClosestSample !== null) {
+          lockedClosestSample = null;
+          hoveredClosestSample = null;
+          if (typeof showToast === 'function') showToast('🔓 Selection Unlocked');
+          draw();
+        }
       } else if (e.key === 'l' || e.key === 'L') {
         returnToLiveStream();
       }
     });
 
+    const btnStageDataset = document.getElementById('btnStageDataset');
+    if (btnStageDataset) {
+      btnStageDataset.addEventListener('click', () => {
+        pauseSimulation();
+        stageDataset();
+        if (typeof showToast === 'function') {
+          showToast(`🎲 Generated dataset "${currentBenchmark}" (${benchmarkDataset.length.toLocaleString()} pts)`);
+        }
+      });
+    }
+
+    const btnStageDatasetSide = document.getElementById('btnStageDatasetSide');
+    if (btnStageDatasetSide) {
+      btnStageDatasetSide.addEventListener('click', () => {
+        pauseSimulation();
+        stageDataset();
+        if (typeof showToast === 'function') {
+          showToast(`🎲 Generated dataset "${currentBenchmark}" (${benchmarkDataset.length.toLocaleString()} pts)`);
+        }
+      });
+    }
+
+    const btnResetClusters = document.getElementById('btnResetClusters');
+    if (btnResetClusters) {
+      btnResetClusters.addEventListener('click', () => {
+        pauseSimulation();
+        resetClustering(true);
+        if (typeof showToast === 'function') {
+          showToast('↺ Cluster models reset. Staged points preserved for next run.');
+        }
+      });
+    }
+
     document.getElementById('btnReset').addEventListener('click', () => {
       pauseSimulation();
-      loadSelectedBenchmark();
+      resetSimulation();
+      if (typeof showToast === 'function') {
+        showToast('⟲ Simulator reset completely to clean blank canvas.');
+      }
     });
 
     document.getElementById('btnResetView').addEventListener('click', resetView);
@@ -976,6 +1393,50 @@
       document.getElementById('optShowSamples').classList.remove('toggle-active');
       draw();
     });
+
+    const btnToggleTooltips = document.getElementById('btnToggleTooltips');
+    if (btnToggleTooltips) {
+      btnToggleTooltips.addEventListener('click', () => {
+        if (typeof toggleTooltips === 'function') {
+          toggleTooltips();
+        }
+      });
+    }
+
+    const optHighlightClosestOn = document.getElementById('optHighlightClosestOn');
+    const optHighlightClosestOff = document.getElementById('optHighlightClosestOff');
+    if (optHighlightClosestOn && optHighlightClosestOff) {
+      optHighlightClosestOn.addEventListener('click', () => {
+        highlightClosestSample = true;
+        optHighlightClosestOn.classList.add('toggle-active');
+        optHighlightClosestOff.classList.remove('toggle-active');
+        draw();
+      });
+      optHighlightClosestOff.addEventListener('click', () => {
+        highlightClosestSample = false;
+        hoveredClosestSample = null;
+        optHighlightClosestOff.classList.add('toggle-active');
+        optHighlightClosestOn.classList.remove('toggle-active');
+        draw();
+      });
+    }
+
+    const optTooltipsOn = document.getElementById('optTooltipsOn');
+    const optTooltipsOff = document.getElementById('optTooltipsOff');
+    if (optTooltipsOn && optTooltipsOff) {
+      optTooltipsOn.addEventListener('click', () => {
+        if (typeof setTooltipsEnabled === 'function') {
+          setTooltipsEnabled(true);
+          if (typeof showToast === 'function') showToast('💡 Help Hover Tooltips: ON');
+        }
+      });
+      optTooltipsOff.addEventListener('click', () => {
+        if (typeof setTooltipsEnabled === 'function') {
+          setTooltipsEnabled(false);
+          if (typeof showToast === 'function') showToast('💡 Help Hover Tooltips: OFF');
+        }
+      });
+    }
 
     // Max Displayed Points slider
     const sliderMaxDrawPts = document.getElementById('sliderMaxDrawPts');
@@ -1078,7 +1539,12 @@
       sliderNoiseSigma.addEventListener('input', (e) => {
         noiseSigma = parseFloat(e.target.value);
         if (inputNoiseSigma) inputNoiseSigma.value = noiseSigma.toFixed(3);
+        applyNoiseToDataset();
         syncControlDependencies();
+        if (!isRunning) {
+          resetSimulation();
+          draw();
+        }
       });
     }
     if (inputNoiseSigma) {
@@ -1087,7 +1553,12 @@
         if (!isNaN(v) && v >= 0) {
           noiseSigma = v;
           if (sliderNoiseSigma) sliderNoiseSigma.value = v;
+          applyNoiseToDataset();
           syncControlDependencies();
+          if (!isRunning) {
+            resetSimulation();
+            draw();
+          }
         }
       });
     }
@@ -1098,6 +1569,11 @@
       sliderNoiseTrunc.addEventListener('input', (e) => {
         noiseTruncLimit = parseFloat(e.target.value);
         if (inputNoiseTrunc) inputNoiseTrunc.value = noiseTruncLimit.toFixed(3);
+        applyNoiseToDataset();
+        if (!isRunning) {
+          resetSimulation();
+          draw();
+        }
       });
     }
     if (inputNoiseTrunc) {
@@ -1106,6 +1582,11 @@
         if (!isNaN(v) && v > 0) {
           noiseTruncLimit = v;
           if (sliderNoiseTrunc) sliderNoiseTrunc.value = v;
+          applyNoiseToDataset();
+          if (!isRunning) {
+            resetSimulation();
+            draw();
+          }
         }
       });
     }
@@ -1172,33 +1653,11 @@
 
       resetSimulation();
       if (currentBenchmark !== "custom") {
-        benchmarkDataset = generateBenchmark(currentBenchmark, 1000);
+        loadSelectedBenchmark();
       }
       updateWasmBadge();
       updateUI();
       draw();
-    });
-
-    // Simulator Settings 3-Tab Switching
-    const configTabs = [
-      { id: 'tabCfgAlgo', panel: 'cfgAlgoPanel' },
-      { id: 'tabCfgInput', panel: 'cfgInputPanel' },
-      { id: 'tabCfgDisplay', panel: 'cfgDisplayPanel' },
-      { id: 'tabCfgCli', panel: 'cfgCliPanel' }
-    ];
-
-    configTabs.forEach(t => {
-      const tabBtn = document.getElementById(t.id);
-      if (tabBtn) {
-        tabBtn.addEventListener('click', () => {
-          configTabs.forEach(other => {
-            const btnEl = document.getElementById(other.id);
-            const panelEl = document.getElementById(other.panel);
-            if (btnEl) btnEl.classList.toggle('active', other.id === t.id);
-            if (panelEl) panelEl.style.display = (other.id === t.id) ? 'block' : 'none';
-          });
-        });
-      }
     });
 
     // Resource Tracker 4-Tab Switching
@@ -1214,6 +1673,28 @@
       if (tabBtn) {
         tabBtn.addEventListener('click', () => {
           resourceTabs.forEach(other => {
+            const btnEl = document.getElementById(other.id);
+            const panelEl = document.getElementById(other.panel);
+            if (btnEl) btnEl.classList.toggle('active', other.id === t.id);
+            if (panelEl) panelEl.style.display = (other.id === t.id) ? 'block' : 'none';
+          });
+        });
+      }
+    });
+
+    // k-NN Resource Tracker 4-Tab Switching
+    const knnResourceTabs = [
+      { id: 'tabKnnResOverview', panel: 'knnResOverviewPanel' },
+      { id: 'tabKnnResPruning', panel: 'knnResPruningPanel' },
+      { id: 'tabKnnResMemory', panel: 'knnResMemoryPanel' },
+      { id: 'tabKnnResSpeed', panel: 'knnResSpeedPanel' }
+    ];
+
+    knnResourceTabs.forEach(t => {
+      const tabBtn = document.getElementById(t.id);
+      if (tabBtn) {
+        tabBtn.addEventListener('click', () => {
+          knnResourceTabs.forEach(other => {
             const btnEl = document.getElementById(other.id);
             const panelEl = document.getElementById(other.panel);
             if (btnEl) btnEl.classList.toggle('active', other.id === t.id);
@@ -1286,7 +1767,7 @@
       selLoopSide.addEventListener('change', (e) => {
         document.getElementById('selectLoop').value = e.target.value;
         loopCount = parseInt(e.target.value);
-        updateUI();
+        stageDataset();
       });
     }
 
@@ -1595,6 +2076,320 @@
       });
     }
 
+    // =========================================================================
+    //  k-Nearest Neighbors (gric-knn) Controls: Setup & Run Separation
+    // =========================================================================
+
+    let autoRunKnn = false;
+
+    function openKnnSetup() {
+      const card = document.getElementById('cardKnnSettings');
+      if (card && card.classList.contains('collapsed')) {
+        togglePanelCollapse('cardKnnSettings');
+      }
+      card?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const btn = document.getElementById('btnKnnSetup');
+      if (btn) btn.classList.add('active');
+      showToast('⚙️ Opened k-NN Setup Panel in sidebar');
+    }
+
+    function executeKnnComputation() {
+      const pts = (typeof benchmarkDataset !== 'undefined' && benchmarkDataset && benchmarkDataset.length > 0) ?
+                  benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
+      if (!pts || pts.length === 0) {
+        showToast('⚠️ No dataset staged to run k-NN. Stage a dataset first.');
+        return;
+      }
+
+      enableKnn = true;
+      showKnnLines = true;
+      syncControlDependencies();
+      updateCliCommand();
+
+      if (typeof GricWasm === 'undefined' || !GricWasm.isReady()) {
+        showToast('⚠️ WASM engine not ready for k-NN');
+        return;
+      }
+
+      const config = {
+        k: knnK,
+        dtmin: knnDtmin,
+        direction: knnDirection,
+        epsilon: knnEpsilon,
+        rlim: knnRlim
+      };
+
+      const t0 = performance.now();
+      knnResults = GricWasm.runKnn(config, pts);
+      const elapsed = (performance.now() - t0).toFixed(1);
+
+      if (knnResults && typeof renderKnnTrace === 'function') {
+        renderKnnTrace();
+      }
+      draw();
+      showToast(`⚡ k-NN computed in ${elapsed} ms (k=${knnK}, ${pts.length.toLocaleString()} points)`);
+    }
+
+    function toggleKnnModule(enable) {
+      if (typeof enable !== 'boolean') {
+        enable = !enableKnn;
+      }
+      enableKnn = enable;
+      showKnnLines = enable;
+      syncControlDependencies();
+      updateCliCommand();
+
+      if (enableKnn) {
+        showToast('⚡ k-NN enabled. Configure options or click ▶ Compute k-NN.');
+        if (autoRunKnn || (pastSamples && pastSamples.length > 0)) {
+          executeKnnComputation();
+        }
+      } else {
+        showToast('k-NN module disabled');
+      }
+      draw();
+    }
+
+    const btnToggleKnnModule = document.getElementById('btnToggleKnnModule');
+    if (btnToggleKnnModule) {
+      btnToggleKnnModule.addEventListener('click', () => toggleKnnModule());
+    }
+
+    const btnKnnSetup = document.getElementById('btnKnnSetup');
+    if (btnKnnSetup) {
+      btnKnnSetup.addEventListener('click', openKnnSetup);
+    }
+
+    const btnRunKnn = document.getElementById('btnRunKnn');
+    if (btnRunKnn) {
+      btnRunKnn.addEventListener('click', executeKnnComputation);
+    }
+
+    const btnRunKnnSide = document.getElementById('btnRunKnnSide');
+    if (btnRunKnnSide) {
+      btnRunKnnSide.addEventListener('click', executeKnnComputation);
+    }
+
+    const btnToggleKnnAutoTop = document.getElementById('btnToggleKnnAutoTop');
+    if (btnToggleKnnAutoTop) {
+      btnToggleKnnAutoTop.addEventListener('click', () => {
+        autoRunKnn = !autoRunKnn;
+        if (autoRunKnn) enableKnn = true;
+        syncControlDependencies();
+        if (autoRunKnn) {
+          showToast('⚡ Auto-run k-NN enabled');
+          executeKnnComputation();
+        } else {
+          showToast('Auto-run k-NN disabled');
+        }
+      });
+    }
+
+    const btnToggleKnnAuto = document.getElementById('btnToggleKnnAuto');
+    if (btnToggleKnnAuto) {
+      btnToggleKnnAuto.addEventListener('click', () => {
+        autoRunKnn = !autoRunKnn;
+        if (autoRunKnn) enableKnn = true;
+        syncControlDependencies();
+        if (autoRunKnn) {
+          showToast('⚡ Auto-run k-NN enabled');
+          executeKnnComputation();
+        } else {
+          showToast('Auto-run k-NN disabled');
+        }
+      });
+    }
+
+    const sliderKnnK = document.getElementById('sliderKnnK');
+    const inputKnnK = document.getElementById('inputKnnK');
+    if (sliderKnnK) {
+      sliderKnnK.addEventListener('input', (e) => {
+        knnK = parseInt(e.target.value, 10);
+        if (inputKnnK) inputKnnK.value = knnK;
+        updateCliCommand();
+        runKnnIfEnabled();
+        draw();
+      });
+    }
+    if (inputKnnK) {
+      inputKnnK.addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v >= 1) {
+          knnK = v;
+          if (sliderKnnK) sliderKnnK.value = Math.min(50, v);
+          updateCliCommand();
+          runKnnIfEnabled();
+          draw();
+        }
+      });
+    }
+
+    const sliderKnnDtmin = document.getElementById('sliderKnnDtmin');
+    const inputKnnDtmin = document.getElementById('inputKnnDtmin');
+    if (sliderKnnDtmin) {
+      sliderKnnDtmin.addEventListener('input', (e) => {
+        knnDtmin = parseInt(e.target.value, 10);
+        if (inputKnnDtmin) inputKnnDtmin.value = knnDtmin;
+        updateCliCommand();
+        runKnnIfEnabled();
+        draw();
+      });
+    }
+    if (inputKnnDtmin) {
+      inputKnnDtmin.addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v >= 0) {
+          knnDtmin = v;
+          if (sliderKnnDtmin) sliderKnnDtmin.value = Math.min(25, v);
+          updateCliCommand();
+          runKnnIfEnabled();
+          draw();
+        }
+      });
+    }
+
+    ['knnDirAll', 'knnDirPast', 'knnDirFuture'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('click', () => {
+          ['knnDirAll', 'knnDirPast', 'knnDirFuture'].forEach(otherId => {
+            const other = document.getElementById(otherId);
+            if (other) other.classList.remove('active');
+          });
+          el.classList.add('active');
+          if (id === 'knnDirPast') knnDirection = 'past';
+          else if (id === 'knnDirFuture') knnDirection = 'future';
+          else knnDirection = 'all';
+          updateCliCommand();
+          runKnnIfEnabled();
+          draw();
+        });
+      }
+    });
+
+    const sliderKnnEps = document.getElementById('sliderKnnEps');
+    const inputKnnEps = document.getElementById('inputKnnEps');
+    if (sliderKnnEps) {
+      sliderKnnEps.addEventListener('input', (e) => {
+        knnEpsilon = parseFloat(e.target.value);
+        if (inputKnnEps) inputKnnEps.value = knnEpsilon.toFixed(2);
+        updateCliCommand();
+        runKnnIfEnabled();
+        draw();
+      });
+    }
+    if (inputKnnEps) {
+      inputKnnEps.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        if (!isNaN(v) && v >= 0.0) {
+          knnEpsilon = v;
+          if (sliderKnnEps) sliderKnnEps.value = Math.min(0.30, v);
+          updateCliCommand();
+          runKnnIfEnabled();
+          draw();
+        }
+      });
+    }
+
+    const optShowKnnLines = document.getElementById('optShowKnnLines');
+    const optHideKnnLines = document.getElementById('optHideKnnLines');
+    if (optShowKnnLines && optHideKnnLines) {
+      optShowKnnLines.addEventListener('click', () => {
+        showKnnLines = true;
+        optShowKnnLines.classList.add('toggle-active');
+        optHideKnnLines.classList.remove('toggle-active');
+        draw();
+      });
+      optHideKnnLines.addEventListener('click', () => {
+        showKnnLines = false;
+        optHideKnnLines.classList.add('toggle-active');
+        optShowKnnLines.classList.remove('toggle-active');
+        draw();
+      });
+    }
+
+    function runKnnIfEnabled() {
+      if (!enableKnn) return;
+      if (typeof GricWasm === 'undefined' || !GricWasm.isReady()) return;
+
+      const pts = (typeof benchmarkDataset !== 'undefined' && benchmarkDataset && benchmarkDataset.length > 0) ?
+                  benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
+      if (!pts || pts.length === 0) return;
+
+      const config = {
+        k: knnK,
+        dtmin: knnDtmin,
+        direction: knnDirection,
+        epsilon: knnEpsilon,
+        rlim: knnRlim
+      };
+
+      knnResults = GricWasm.runKnn(config, pts);
+      if (knnResults && typeof renderKnnTrace === 'function') {
+        renderKnnTrace();
+      }
+    }
+    window.runKnnIfEnabled = runKnnIfEnabled;
+
+    // =========================================================================
+    //  SIDEBAR PANELS RESIZING & COLLAPSE CONTROLLER (9 PANELS & 8 RESIZERS)
+    // =========================================================================
+    const panelConfigs = [
+      { id: 'cardInputData', btnId: 'btnCollapseInputData', defaultFlex: 1.0, savedFlex: 1.0 },
+      { id: 'cardSettings', btnId: 'btnCollapseSettings', defaultFlex: 1.1, savedFlex: 1.1 },
+      { id: 'cardDisplay', btnId: 'btnCollapseDisplay', defaultFlex: 1.0, savedFlex: 1.0 },
+      { id: 'cardCli', btnId: 'btnCollapseCli', defaultFlex: 1.0, savedFlex: 1.0 },
+      { id: 'cardResources', btnId: 'btnCollapseResources', defaultFlex: 1.0, savedFlex: 1.0 },
+      { id: 'cardTrace', btnId: 'btnCollapseTrace', defaultFlex: 1.1, savedFlex: 1.1 },
+      { id: 'cardKnnSettings', btnId: 'btnCollapseKnnSettings', defaultFlex: 0.9, savedFlex: 0.9 },
+      { id: 'cardKnnResources', btnId: 'btnCollapseKnnResources', defaultFlex: 0.9, savedFlex: 0.9 },
+      { id: 'cardKnnTrace', btnId: 'btnCollapseKnnTrace', defaultFlex: 1.0, savedFlex: 1.0 }
+    ];
+
+    function getExpandedCardAbove(cardIndex) {
+      for (let i = cardIndex; i >= 0; i--) {
+        const card = document.getElementById(panelConfigs[i].id);
+        if (card && card.style.display !== 'none' && !card.classList.contains('collapsed')) return card;
+      }
+      return null;
+    }
+
+    function getExpandedCardBelow(cardIndex) {
+      for (let i = cardIndex; i < panelConfigs.length; i++) {
+        const card = document.getElementById(panelConfigs[i].id);
+        if (card && card.style.display !== 'none' && !card.classList.contains('collapsed')) return card;
+      }
+      return null;
+    }
+
+    function updateResizersVisibility() {
+      for (let i = 0; i < panelConfigs.length - 1; i++) {
+        const resizer = document.getElementById(`resizer${i + 1}`);
+        if (!resizer) continue;
+        const topCard = getExpandedCardAbove(i);
+        const botCard = getExpandedCardBelow(i + 1);
+        const isVisible = (topCard !== null && botCard !== null);
+        resizer.classList.toggle('hidden', !isVisible);
+      }
+    }
+
+    function togglePanelCollapse(cardId) {
+      const card = document.getElementById(cardId);
+      if (!card) return;
+
+      const isCurrentlyCollapsed = card.classList.contains('collapsed');
+      const shouldCollapse = !isCurrentlyCollapsed;
+
+      card.classList.toggle('collapsed', shouldCollapse);
+      card.classList.toggle('expanded', !shouldCollapse);
+
+      card.style.flex = '0 0 auto';
+      card.style.height = 'auto';
+
+      updateResizersVisibility();
+    }
+    window.togglePanelCollapse = togglePanelCollapse;
+
     // Central Control Enablement & Dependency Synchronization
     function syncControlDependencies() {
       // 1. Target Selection Mode -> Shannon Entropy controls & Display Heatmap
@@ -1691,65 +2486,76 @@
       if (card3DPresetsSide) {
         card3DPresetsSide.classList.toggle('disabled', !is3D);
       }
+
+      // 6. k-NN Post-Processing Controls & Sidebar Panels Visibility
+      const btnToggleKnnModule = document.getElementById('btnToggleKnnModule');
+      if (btnToggleKnnModule) {
+        btnToggleKnnModule.classList.toggle('active', enableKnn);
+        btnToggleKnnModule.classList.toggle('toggle-active', enableKnn);
+        btnToggleKnnModule.innerHTML = enableKnn ? '✓ k-NN Enabled' : '⚡ Enable k-NN';
+      }
+
+      const btnToggleKnn = document.getElementById('btnToggleKnn');
+      if (btnToggleKnn) {
+        btnToggleKnn.classList.toggle('active', enableKnn);
+        btnToggleKnn.classList.toggle('toggle-active', enableKnn);
+      }
+
+      const knnExpandedGroup = document.getElementById('knnExpandedGroup');
+      if (knnExpandedGroup) {
+        knnExpandedGroup.style.display = enableKnn ? 'inline-flex' : 'none';
+      }
+
+      const btnToggleKnnAutoTop = document.getElementById('btnToggleKnnAutoTop');
+      if (btnToggleKnnAutoTop) {
+        btnToggleKnnAutoTop.classList.toggle('active', autoRunKnn);
+        btnToggleKnnAutoTop.classList.toggle('toggle-active', autoRunKnn);
+      }
+
+      const btnToggleKnnAuto = document.getElementById('btnToggleKnnAuto');
+      if (btnToggleKnnAuto) {
+        btnToggleKnnAuto.classList.toggle('active', autoRunKnn);
+        btnToggleKnnAuto.classList.toggle('toggle-active', autoRunKnn);
+      }
+
+      const knnStatusBadgeTop = document.getElementById('knnStatusBadgeTop');
+      if (knnStatusBadgeTop) {
+        knnStatusBadgeTop.textContent = `k=${knnK} • ${knnDirection} • dt≥${knnDtmin}`;
+      }
+
+      const optEnableKnnEl = document.getElementById('optEnableKnn');
+      const knnControlsContainer = document.getElementById('knnControlsContainer');
+      if (optEnableKnnEl) {
+        optEnableKnnEl.classList.toggle('active', enableKnn);
+      }
+      if (knnControlsContainer) {
+        knnControlsContainer.style.display = enableKnn ? 'flex' : 'none';
+      }
+
+      // Show or hide the 3 k-NN sidebar panels and their resizers
+      const knnCardIds = ['cardKnnSettings', 'cardKnnResources', 'cardKnnTrace'];
+      knnCardIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.style.display = enableKnn ? 'flex' : 'none';
+        }
+      });
+
+      const knnResizerIds = ['resizer6', 'resizer7', 'resizer8'];
+      knnResizerIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.style.display = enableKnn ? '' : 'none';
+        }
+      });
+
+      if (typeof updateResizersVisibility === 'function') {
+        updateResizersVisibility();
+      }
     }
 
     window.syncControlDependencies = syncControlDependencies;
     syncControlDependencies();
-
-    // =========================================================================
-    //  SIDEBAR PANELS RESIZING & COLLAPSE CONTROLLER
-    // =========================================================================
-    const panelConfigs = [
-      { id: 'cardSettings', btnId: 'btnCollapseSettings', defaultFlex: 1.1, savedFlex: 1.1 },
-      { id: 'cardResources', btnId: 'btnCollapseResources', defaultFlex: 1.0, savedFlex: 1.0 },
-      { id: 'cardTrace', btnId: 'btnCollapseTrace', defaultFlex: 1.2, savedFlex: 1.2 }
-    ];
-
-    function updateResizersVisibility() {
-      const isSettingsExp = !document.getElementById('cardSettings').classList.contains('collapsed');
-      const isResourcesExp = !document.getElementById('cardResources').classList.contains('collapsed');
-      const isTraceExp = !document.getElementById('cardTrace').classList.contains('collapsed');
-
-      const resizer1 = document.getElementById('resizer1');
-      const resizer2 = document.getElementById('resizer2');
-
-      // Resizer 1 is between Settings and whatever is expanded below it
-      if (resizer1) {
-        const show1 = isSettingsExp && (isResourcesExp || isTraceExp);
-        resizer1.classList.toggle('hidden', !show1);
-      }
-
-      // Resizer 2 is between Resources (or Settings if Resources is collapsed) and Trace
-      if (resizer2) {
-        const show2 = isTraceExp && (isResourcesExp || isSettingsExp);
-        resizer2.classList.toggle('hidden', !show2);
-      }
-    }
-
-    function togglePanelCollapse(cardId) {
-      const card = document.getElementById(cardId);
-      if (!card) return;
-
-      const isCurrentlyCollapsed = card.classList.contains('collapsed');
-      const shouldCollapse = !isCurrentlyCollapsed;
-
-      card.classList.toggle('collapsed', shouldCollapse);
-      card.classList.toggle('expanded', !shouldCollapse);
-
-      if (shouldCollapse) {
-        card.style.flex = '0 0 auto';
-      } else {
-        if (window.innerWidth <= 1050) {
-          card.style.flex = '';
-        } else {
-          const cfg = panelConfigs.find(p => p.id === cardId);
-          const flexVal = (cfg && cfg.savedFlex) ? cfg.savedFlex : (cfg ? cfg.defaultFlex : 1.0);
-          card.style.flex = `${flexVal} 1 0px`;
-        }
-      }
-
-      updateResizersVisibility();
-    }
 
     function initSidebarResizers() {
       function setupResizer(resizerId, getTopCard, getBottomCard) {
@@ -1816,27 +2622,16 @@
         });
       }
 
-      setupResizer('resizer1',
-        () => document.getElementById('cardSettings'),
-        () => {
-          const res = document.getElementById('cardResources');
-          if (!res.classList.contains('collapsed')) return res;
-          const trace = document.getElementById('cardTrace');
-          if (!trace.classList.contains('collapsed')) return trace;
-          return null;
-        }
-      );
-
-      setupResizer('resizer2',
-        () => {
-          const res = document.getElementById('cardResources');
-          if (!res.classList.contains('collapsed')) return res;
-          const set = document.getElementById('cardSettings');
-          if (!set.classList.contains('collapsed')) return set;
-          return null;
-        },
-        () => document.getElementById('cardTrace')
-      );
+      for (let i = 0; i < panelConfigs.length - 1; i++) {
+        const resizerId = `resizer${i + 1}`;
+        const topIdx = i;
+        const botIdx = i + 1;
+        setupResizer(
+          resizerId,
+          () => getExpandedCardAbove(topIdx),
+          () => getExpandedCardBelow(botIdx)
+        );
+      }
 
       updateResizersVisibility();
     }
@@ -2021,17 +2816,11 @@
       el.textContent = cmd;
     }
 
-    // Update CLI when tab is shown
-    const tabCli = document.getElementById('tabCfgCli');
-    if (tabCli) {
-      tabCli.addEventListener('click', () => {
-        updateCliCommand();
-        // Show WASM build hash
-        const hashEl = document.getElementById('wasmBuildHash');
-        if (hashEl && GricWasm.isReady()) {
-          hashEl.textContent = GricWasm.getVersion();
-        }
-      });
+    // Update CLI and WASM build info
+    updateCliCommand();
+    const hashEl = document.getElementById('wasmBuildHash');
+    if (hashEl && typeof GricWasm !== 'undefined' && GricWasm.isReady && GricWasm.isReady()) {
+      hashEl.textContent = GricWasm.getVersion();
     }
 
     // Copy CLI command to clipboard
@@ -2050,6 +2839,704 @@
       });
     }
 
+    // =========================================================================
+    //  WORKSPACE & DUAL-MODE CONTROLLER (WASM vs Native CLI)
+    // =========================================================================
+
+    async function initWorkspaceAndEngine() {
+      const lblPath = document.getElementById('lblWorkspacePath');
+      const btnCliMode = document.getElementById('btnEngineCli');
+      const btnWasmMode = document.getElementById('btnEngineWasm');
+      const btnOpenFolder = document.getElementById('btnOpenLocalFolder');
+      const btnRefresh = document.getElementById('btnRefreshWorkspace');
+      const btnSaveWorkspace = document.getElementById('btnSaveToWorkspace');
+      const cliNotice = document.getElementById('cliWebNotice');
+      const cliControls = document.getElementById('cliDesktopControls');
+
+      // Probe native C gric-server
+      const serverInfo = await DesktopBridge.probe();
+      if (serverInfo) {
+        isDesktopBackend = true;
+        workspacePath = serverInfo.cwd;
+        if (lblPath) {
+          lblPath.textContent = workspacePath;
+          lblPath.title = workspacePath;
+        }
+        if (btnOpenFolder) btnOpenFolder.style.display = 'none';
+        if (cliNotice) cliNotice.style.display = 'none';
+        if (cliControls) cliControls.style.display = 'flex';
+
+        await refreshWorkspaceFiles();
+      } else {
+        isDesktopBackend = false;
+        if (lblPath) {
+          lblPath.textContent = 'Web Browser Sandbox (Client-Side Storage)';
+        }
+        if (btnOpenFolder && WebFs.isSupported()) {
+          btnOpenFolder.style.display = 'inline-block';
+        }
+        if (cliNotice) cliNotice.style.display = 'block';
+      }
+
+      // Bind Engine Switcher Toggle-Slider
+      const engineToggleSlider = document.getElementById('engineToggleSlider');
+      if (engineToggleSlider) {
+        engineToggleSlider.addEventListener('click', (e) => {
+          if (e.target.id === 'btnEngineWasm') {
+            setEngineMode('wasm');
+          } else if (e.target.id === 'btnEngineCli') {
+            setEngineMode('cli');
+          } else {
+            setEngineMode(engineMode === 'wasm' ? 'cli' : 'wasm');
+          }
+        });
+      }
+      if (btnWasmMode) {
+        btnWasmMode.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setEngineMode('wasm');
+        });
+      }
+      if (btnCliMode) {
+        btnCliMode.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setEngineMode('cli');
+        });
+      }
+
+      // Bind Workspace buttons
+      if (btnRefresh) {
+        btnRefresh.addEventListener('click', async () => {
+          await refreshWorkspaceFiles();
+          showToast('🔄 Workspace refreshed');
+        });
+      }
+
+      if (btnOpenFolder) {
+        btnOpenFolder.addEventListener('click', async () => {
+          const dir = await WebFs.openDirectory();
+          if (dir) {
+            if (lblPath) {
+              lblPath.textContent = `📁 ${dir.name} (Client Local)`;
+            }
+            await refreshWorkspaceFiles();
+            showToast(`📁 Opened local folder: ${dir.name}`);
+          }
+        });
+      }
+
+      // Bind Banner toggle
+      const btnBannerToggle = document.getElementById('btnBannerToggleEngine');
+      if (btnBannerToggle) {
+        btnBannerToggle.addEventListener('click', () => {
+          setEngineMode(engineMode === 'wasm' ? 'cli' : 'wasm');
+        });
+      }
+
+      updateEngineModeUI();
+
+      // Bind CLI Run & Kill buttons
+      setupCliRunnerListeners();
+    }
+
+    async function refreshWorkspaceFiles() {
+      let files = [];
+      let shmStreams = [];
+      if (isDesktopBackend) {
+        files = await DesktopBridge.listFiles();
+        shmStreams = await DesktopBridge.listShmStreams();
+      } else if (WebFs.isOpen()) {
+        files = await WebFs.listFiles();
+      }
+      workspaceFiles = files;
+
+      const selCli = document.getElementById('selectCliDataset');
+      if (selCli) {
+        const prevVal = selCli.value;
+        selCli.innerHTML = '<option value="">(Select dataset from workspace or SHM...)</option>';
+
+        if (shmStreams.length > 0) {
+          const shmGroup = document.createElement('optgroup');
+          shmGroup.label = '📡 Live Shared Memory Streams (ImageStreamIO)';
+          shmStreams.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = `shm:${s.name}`;
+            opt.textContent = `📡 ${s.name} (${(s.size / (1024 * 1024)).toFixed(1)} MB)`;
+            shmGroup.appendChild(opt);
+          });
+          selCli.appendChild(shmGroup);
+        }
+
+        const fileGroup = document.createElement('optgroup');
+        fileGroup.label = '📁 Local Workspace Files';
+        files.forEach(f => {
+          if (!f.isDir) {
+            const opt = document.createElement('option');
+            opt.value = f.name;
+            opt.textContent = `${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
+            fileGroup.appendChild(opt);
+          }
+        });
+        selCli.appendChild(fileGroup);
+
+        if (prevVal) selCli.value = prevVal;
+      }
+    }
+
+    async function setEngineMode(mode) {
+      engineMode = mode;
+      updateEngineModeUI();
+
+      if (mode === 'cli') {
+        const cardCli = document.getElementById('cardCli');
+        if (cardCli && cardCli.classList.contains('collapsed')) {
+          togglePanelCollapse('cardCli');
+        }
+        updateCliCommand();
+
+        if (DesktopBridge.isAvailable()) {
+          await DesktopBridge.initCliSession();
+        }
+        showToast('💻 Native CLI mode active (tmux session "gric_cli" ready)');
+      } else {
+        if (DesktopBridge.isAvailable()) {
+          await DesktopBridge.stopCliSession();
+        }
+        showToast('⚡ Switched to In-Browser WebAssembly (WASM)');
+      }
+    }
+
+    function setupCliRunnerListeners() {
+      const btnRun = document.getElementById('btnRunCli');
+      const btnKill = document.getElementById('btnKillCli');
+      const btnClear = document.getElementById('btnClearCliConsole');
+      const btnLoadManual = document.getElementById('btnLoadClusterDatManual');
+      const chkAutoLoad = document.getElementById('chkAutoLoadResults');
+
+      if (chkAutoLoad) {
+        chkAutoLoad.addEventListener('change', (e) => {
+          autoLoadCliResults = e.target.checked;
+        });
+      }
+
+      if (btnClear) {
+        btnClear.addEventListener('click', () => {
+          const consoleEl = document.getElementById('cliConsoleLog');
+          if (consoleEl) consoleEl.textContent = '[Console cleared]';
+        });
+      }
+
+      if (btnRun) {
+        btnRun.addEventListener('click', async () => {
+          await runNativeCli();
+        });
+      }
+
+      if (btnKill) {
+        btnKill.addEventListener('click', async () => {
+          await DesktopBridge.killActiveJob();
+          showToast('🛑 Abort signal sent to CLI job');
+        });
+      }
+
+      if (btnLoadManual) {
+        btnLoadManual.addEventListener('click', async () => {
+          const clusterDirs = workspaceFiles.filter(f => f.isDir && f.name.includes('cluster'));
+          if (clusterDirs.length === 0) {
+            showToast('No .clusterdat folders found in workspace');
+            return;
+          }
+          const choice = clusterDirs[0].name;
+          await loadClusterResults(choice);
+        });
+      }
+
+      // Tmux attach copy buttons
+      const copyTmuxAttachCmd = () => {
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText('tmux attach -t gric_cli').then(() => {
+            showToast('📋 Copied: tmux attach -t gric_cli');
+          }).catch(() => {
+            showToast('tmux attach -t gric_cli');
+          });
+        } else {
+          showToast('tmux attach -t gric_cli');
+        }
+      };
+
+      const badgeNativeTmux = document.getElementById('badgeNativeTmux');
+      if (badgeNativeTmux) {
+        badgeNativeTmux.addEventListener('click', copyTmuxAttachCmd);
+      }
+
+      const btnCopyTmux = document.getElementById('btnCopyTmuxCmd');
+      if (btnCopyTmux) {
+        btnCopyTmux.addEventListener('click', () => {
+          copyTmuxAttachCmd();
+          btnCopyTmux.textContent = '✅ Copied';
+          setTimeout(() => {
+            btnCopyTmux.textContent = '📋 Copy Attach';
+          }, 1500);
+        });
+      }
+    }
+
+    async function runNativeCli() {
+      if (!isDesktopBackend) {
+        showToast('Native CLI is only available in Desktop App mode');
+        return;
+      }
+
+      const selCli = document.getElementById('selectCliDataset');
+      let dataset = selCli ? selCli.value : '';
+      if (!dataset) {
+        dataset = `${currentBenchmark}.txt`;
+      }
+
+      let args = [];
+      let isStreamInput = false;
+
+      if (dataset.startsWith('shm:')) {
+        const streamName = dataset.substring(4);
+        isStreamInput = true;
+        args = [rlim.toFixed(3), streamName, '-stream'];
+      } else {
+        // If running active synthetic benchmark, always serialize full sequence with passes
+        const isSynthetic = !selCli || !selCli.value || dataset === `${currentBenchmark}.txt` ||
+          (typeof BENCHMARK_DESCS !== 'undefined' && BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
+
+        if (isSynthetic) {
+          dataset = `${currentBenchmark}.txt`;
+          if (!benchmarkDataset || benchmarkDataset.length === 0) {
+            stageDataset();
+          }
+
+          let content = '';
+          for (let i = 0; i < benchmarkDataset.length; i++) {
+            const pt = benchmarkDataset[i];
+            if (Array.isArray(pt)) {
+              content += pt.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+            } else if (pt && typeof pt === 'object') {
+              if (currentDim === 3) {
+                content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)} ${Number(pt.z || 0).toFixed(6)}\n`;
+              } else {
+                content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)}\n`;
+              }
+            }
+          }
+          try {
+            await DesktopBridge.writeFile(dataset, content);
+            await refreshWorkspaceFiles();
+          } catch (err) {
+            console.warn('[CLI] Could not write benchmark dataset file:', err);
+          }
+        }
+        args = [rlim.toFixed(3), dataset];
+      }
+
+      if (pruneMode === '4P' || pruneMode === '5P') args.push('-te4');
+      if (pruneMode === '5P') args.push('-te5');
+      if (targetMode === 'entropy') {
+        args.push('-entropy');
+        if (entropyGate !== 2.0) args.push('-entropy_gate', entropyGate.toFixed(2));
+        if (entropyFirstGate !== 4.0) args.push('-entropy_first_gate', entropyFirstGate.toFixed(2));
+        if (entropyFastMode) args.push('-entropy_fast');
+      }
+      if (useTM && tmMixingCoeff > 0) args.push('-tm', tmMixingCoeff.toFixed(2));
+      if (usePred) {
+        if (predHorizon !== 2) {
+          args.push('-pred[,,' + predHorizon + ']');
+        } else {
+          args.push('-pred');
+        }
+      }
+      if (useGprob) {
+        args.push('-gprob');
+        if (maxVisitors !== 1000) args.push('-maxvis', maxVisitors.toString());
+      }
+      if (useSoftBayesian) {
+        args.push('-soft_bayesian');
+        if (softBayesianSigmaCoeff !== 1.0) {
+          args.push('-soft_bayesian_sigma', softBayesianSigmaCoeff.toFixed(2));
+        }
+      }
+      if (useTiles) args.push('-tiles');
+      if (useXTile) args.push('-xtile');
+      if (useSparseDcc) args.push('-sparse_dcc');
+      if (maxcl > 0) args.push('-maxcl', maxcl.toString());
+      args.push('-evals');
+
+      // Expand CLI Console Card to show live console
+      const cardCli = document.getElementById('cardCli');
+      if (cardCli && cardCli.classList.contains('collapsed')) {
+        togglePanelCollapse('cardCli');
+      }
+
+      const btnRun = document.getElementById('btnRunCli');
+      const btnKill = document.getElementById('btnKillCli');
+      const btnPlay = document.getElementById('btnPlay');
+      const badgeStatus = document.getElementById('badgeCliStatus');
+      const consoleEl = document.getElementById('cliConsoleLog');
+
+      if (btnRun) btnRun.disabled = true;
+      if (btnKill) btnKill.disabled = false;
+      if (btnPlay) {
+        btnPlay.innerHTML = '⏳ Running...';
+        btnPlay.disabled = true;
+      }
+      if (badgeStatus) {
+        badgeStatus.textContent = '● tmux: gric_cli';
+        badgeStatus.style.background = 'rgba(74, 222, 128, 0.2)';
+        badgeStatus.style.color = '#4ade80';
+      }
+      if (consoleEl) {
+        consoleEl.textContent = `🚀 Dispatched in tmux session: gric_cli\n` +
+          `🖥️ Attach live: tmux attach -t gric_cli\n` +
+          `📄 Log stream: /tmp/gric_latest.log\n` +
+          `⚙️ Command: gric-cluster ${args.join(' ')}\n` +
+          `─────────────────────────────────────────────────────────────\n`;
+      }
+      showToast('🚀 Native CLI launched in tmux session "gric_cli" (tmux attach -t gric_cli)');
+
+      const tStart = performance.now();
+      isCliRunning = true;
+
+      try {
+        await DesktopBridge.runCliJob({
+          cmd: 'gric-cluster',
+          args: args,
+          onOutput: (chunk) => {
+            if (consoleEl) {
+              consoleEl.textContent += chunk;
+              consoleEl.scrollTop = consoleEl.scrollHeight;
+            }
+          },
+          onTelemetry: (t) => {
+            if (!t) return;
+
+            // Live progress & frame counters from SHM
+            if (t.total_frames > 0) {
+              const pct = Math.min(100, Math.max(0, (t.processed_frames / t.total_frames) * 100));
+              const fill = document.getElementById('progressFill');
+              if (fill) fill.style.width = `${pct.toFixed(1)}%`;
+              const fc = document.getElementById('frameCounter');
+              if (fc) fc.textContent = `${t.processed_frames} / ${t.total_frames} (${pct.toFixed(1)}%)`;
+            } else if (t.processed_frames > 0) {
+              const fc = document.getElementById('frameCounter');
+              if (fc) fc.textContent = `${t.processed_frames} frames (streaming)`;
+            }
+
+            const cb = document.getElementById('clusterBadge');
+            if (cb) cb.textContent = `${t.num_clusters} clusters`;
+
+            const fpsBadge = document.getElementById('fpsBadge');
+            if (fpsBadge && t.elapsed_ms > 0) {
+              const fps = Math.round(t.processed_frames / (t.elapsed_ms / 1000.0));
+              fpsBadge.textContent = `${fps} fps`;
+            }
+
+            if (t.elapsed_ms > 0 && t.processed_frames > 0) {
+              const liveFps = t.processed_frames / (t.elapsed_ms / 1000.0);
+              sessionAvgFps = liveFps;
+              avgComputeTimeMs = t.elapsed_ms / t.processed_frames;
+              currentCpuLoadPct = 100.0;
+
+              const statAvgFpsEl = document.getElementById('statAvgFps');
+              if (statAvgFpsEl) {
+                statAvgFpsEl.textContent = liveFps >= 1000
+                  ? `${Math.round(liveFps).toLocaleString()} fps`
+                  : `${liveFps.toFixed(1)} fps`;
+              }
+              const statCpuLoadEl = document.getElementById('statCpuLoad');
+              if (statCpuLoadEl) {
+                statCpuLoadEl.textContent = `${currentCpuLoadPct.toFixed(1)}%`;
+              }
+              const statComputeMsEl = document.getElementById('statComputeMs');
+              if (statComputeMsEl) {
+                statComputeMsEl.textContent = `${avgComputeTimeMs.toFixed(2)} ms`;
+              }
+            }
+
+            // Sync resource tracker panel
+            const statFramesEl = document.getElementById('statFrames');
+            if (statFramesEl) statFramesEl.textContent = t.processed_frames;
+
+            const statClustersEl = document.getElementById('statClusters');
+            if (statClustersEl) statClustersEl.textContent = t.num_clusters;
+
+            const statTotalTimeEl = document.getElementById('statTotalTime');
+            if (statTotalTimeEl) statTotalTimeEl.textContent = formatClockTime(t.elapsed_ms);
+
+            const statTotalDistsEl = document.getElementById('statTotalDists');
+            if (statTotalDistsEl) statTotalDistsEl.textContent = (t.framedist_calls || 0).toLocaleString();
+
+            const statDistRatioEl = document.getElementById('statDistRatio');
+            if (statDistRatioEl) {
+              statDistRatioEl.textContent = `${(t.framedist_sample || 0).toLocaleString()} / ${(t.framedist_intercluster || 0).toLocaleString()}`;
+            }
+
+            const statMemoryTotalEl = document.getElementById('statMemoryTotal');
+            if (statMemoryTotalEl && t.memory_rss_kb > 0) {
+              statMemoryTotalEl.textContent = formatBytes(t.memory_rss_kb * 1024);
+            }
+
+            const statPrune3PEl = document.getElementById('statPrune3P');
+            if (statPrune3PEl) statPrune3PEl.textContent = (t.clusters_pruned || 0).toLocaleString();
+
+            // Mobile HUD overlay
+            const hudSamples = document.getElementById('hudSamples');
+            if (hudSamples) hudSamples.textContent = t.processed_frames;
+            const hudClusters = document.getElementById('hudClusters');
+            if (hudClusters) hudClusters.textContent = t.num_clusters;
+            const hudTime = document.getElementById('hudTime');
+            if (hudTime) hudTime.textContent = formatClockTime(t.elapsed_ms);
+          },
+          onFinish: async (res) => {
+            isCliRunning = false;
+            const elapsed = ((performance.now() - tStart) / 1000).toFixed(2);
+            if (btnRun) btnRun.disabled = false;
+            if (btnKill) btnKill.disabled = true;
+            if (btnPlay) {
+              btnPlay.innerHTML = '▶ Run gric-cluster';
+              btnPlay.disabled = false;
+            }
+
+            if (res.exitCode === 0) {
+              if (badgeStatus) {
+                badgeStatus.textContent = `Done (${elapsed}s)`;
+                badgeStatus.style.background = 'rgba(56, 189, 248, 0.2)';
+                badgeStatus.style.color = '#38bdf8';
+              }
+              showToast(`✅ gric-cluster completed in ${elapsed}s`);
+
+              if (!isStreamInput) {
+                const baseName = dataset.replace(/\.[^/.]+$/, '');
+                const clusterDir = `${baseName}.clusterdat`;
+                await loadClusterResults(clusterDir);
+              }
+            } else {
+              if (badgeStatus) {
+                badgeStatus.textContent = `Failed (exit ${res.exitCode})`;
+                badgeStatus.style.background = 'rgba(248, 113, 113, 0.2)';
+                badgeStatus.style.color = '#f87171';
+              }
+              showToast(`❌ CLI execution failed (exit ${res.exitCode})`);
+            }
+
+            await refreshWorkspaceFiles();
+          }
+        });
+      } catch (err) {
+        isCliRunning = false;
+        if (btnRun) btnRun.disabled = false;
+        if (btnKill) btnKill.disabled = true;
+        if (btnPlay) {
+          btnPlay.innerHTML = '▶ Run gric-cluster';
+          btnPlay.disabled = false;
+        }
+        if (consoleEl) consoleEl.textContent += `\n[Error]: ${err.message}\n`;
+        showToast(`Error: ${err.message}`);
+      }
+    }
+
+    async function loadClusterResults(clusterDir) {
+      try {
+        const data = await DesktopBridge.parseClusterDatDir(clusterDir);
+        if (!data.anchors || data.anchors.length === 0) {
+          showToast(`No cluster centroids found in ${clusterDir}`);
+          return;
+        }
+
+        if (isRunning) pauseSimulation();
+
+        clusters = data.anchors.map((a, i) => ({
+          id: i,
+          x: a.x,
+          y: a.y,
+          z: a.z,
+          members: a.members || 0,
+          prob: 0,
+          scDists: 0,
+          lastActive: 0,
+          color: getClusterColor(i)
+        }));
+
+        if (data.dcc && data.dcc.length > 0) {
+          dcc = data.dcc;
+        }
+
+        // Populate pastSamples so points appear across the viewports
+        if (benchmarkDataset && benchmarkDataset.length > 0) {
+          pastSamples = benchmarkDataset.map((p, idx) => ({
+            x: Array.isArray(p) ? p[0] : (p.x || 0),
+            y: Array.isArray(p) ? p[1] : (p.y || 0),
+            z: currentDim === 3 ? (Array.isArray(p) ? (p[2] || 0) : (p.z || 0)) : 0,
+            frameIndex: idx
+          }));
+        } else {
+          try {
+            const baseName = clusterDir.replace(/\.clusterdat\/?$/, '');
+            const txtContent = await DesktopBridge.readFile(`${baseName}.txt`);
+            if (txtContent) {
+              const lines = txtContent.split(/\r?\n/);
+              const pts = [];
+              for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line || line.startsWith('#')) continue;
+                const tokens = line.split(/[,\s\t]+/).filter(t => t.length > 0);
+                if (tokens.length >= 2) {
+                  pts.push({
+                    x: parseFloat(tokens[0]),
+                    y: parseFloat(tokens[1]),
+                    z: tokens.length >= 3 ? parseFloat(tokens[2]) : 0,
+                    frameIndex: pts.length
+                  });
+                }
+                if (pts.length >= 10000) break;
+              }
+              if (pts.length > 0) {
+                pastSamples = pts;
+              }
+            }
+          } catch (e) {
+            /* ignore */
+          }
+        }
+
+        if (data.evals && data.evals.length > 0) {
+          frameEvaluationsLog = data.evals;
+        }
+        if (data.assignments && data.assignments.length > 0) {
+          assignmentHistory = data.assignments;
+        }
+
+        // Apply native execution stats to global telemetry & Resource Tracker
+        let sumMembers = 0;
+        clusters.forEach(c => { sumMembers += c.members; });
+
+        if (data.stats && data.stats.frames > 0) {
+          totalFrames = data.stats.frames;
+          sessionStartFrames = 0;
+          distSampleCluster = data.stats.sampleDists;
+          distClusterCluster = data.stats.interclusterDists;
+          distSampleClusterTotal = data.stats.sampleDists;
+          distClusterClusterTotal = data.stats.interclusterDists;
+          totalEvals = data.stats.sampleDists;
+          naiveEvals = data.stats.sampleDists + data.stats.pruned;
+          sessionElapsedMs = data.stats.timeMs;
+          sessionAvgFps = data.stats.timeMs > 0 ? (totalFrames / (data.stats.timeMs / 1000.0)) : 0.0;
+          avgComputeTimeMs = totalFrames > 0 ? (data.stats.timeMs / totalFrames) : 0.0;
+          currentCpuLoadPct = 100.0;
+          sessionIsActive = false;
+
+          if (data.stats.rssKb > 0) {
+            const statMemoryTotalEl = document.getElementById('statMemoryTotal');
+            if (statMemoryTotalEl) {
+              statMemoryTotalEl.textContent = formatBytes(data.stats.rssKb * 1024);
+            }
+          }
+        } else if (sumMembers > 0) {
+          totalFrames = sumMembers;
+          sessionStartFrames = 0;
+          sessionIsActive = false;
+        }
+
+        // Compute Shannon entropy over cluster member distribution
+        if (totalFrames > 0 && clusters.length > 0) {
+          let hBits = 0.0;
+          for (let i = 0; i < clusters.length; i++) {
+            const p = clusters[i].members / totalFrames;
+            clusters[i].prob = p;
+            if (p > 0.0) {
+              hBits -= p * Math.log2(p);
+            }
+          }
+          currentEntropyBits = hBits;
+        }
+
+        // Update progress bar and frame counter HUD
+        const progressFill = document.getElementById('progressFill');
+        if (progressFill) progressFill.style.width = '100%';
+        const frameCounter = document.getElementById('frameCounter');
+        if (frameCounter) frameCounter.textContent = `${totalFrames} / ${totalFrames} (100.0%)`;
+
+        updateUI();
+        resizeCanvas();
+        draw();
+        requestAnimationFrame(() => {
+          resizeCanvas();
+          draw();
+        });
+        setTimeout(() => {
+          resizeCanvas();
+          draw();
+        }, 80);
+
+        showToast(`📊 Loaded ${clusters.length} clusters (${totalFrames.toLocaleString()} frames) from ${clusterDir}`);
+      } catch (err) {
+        console.error('[LoadResults] Error loading cluster results:', err);
+        showToast(`Failed to load ${clusterDir}: ${err.message}`);
+      }
+    }
+
+    async function exportRunToWorkspace() {
+      if (clusters.length === 0) {
+        showToast('No clusters in memory to export');
+        return;
+      }
+
+      const dsName = currentBenchmark || 'custom_dataset';
+
+      let centroidsText = `# GRIC Cluster Centroids\n# ID X Y Z MEMBERS\n`;
+      clusters.forEach(c => {
+        centroidsText += `${c.id} ${c.x.toFixed(6)} ${c.y.toFixed(6)} ${c.z.toFixed(6)} ${c.members}\n`;
+      });
+
+      let dccText = `# GRIC Cluster-to-Cluster Distance Matrix D_cc\n`;
+      if (dcc && dcc.length > 0) {
+        dcc.forEach(row => {
+          dccText += row.map(v => v.toFixed(6)).join(' ') + '\n';
+        });
+      }
+
+      let memText = `# Frame Membership Assignments\n`;
+      if (pastSamples && pastSamples.length > 0) {
+        memText += pastSamples.map(p => p.clusterId || 0).join('\n') + '\n';
+      }
+
+      const logText = `GRIC Cluster Run Export\nDate: ${new Date().toISOString()}\nTotal Clusters: ${clusters.length}\nTotal Ingested Frames: ${totalFrames}\nRadius (rlim): ${rlim.toFixed(4)}\n`;
+
+      const artifacts = {
+        'centroids.txt': centroidsText,
+        'dcc.txt': dccText,
+        'frame_membership.txt': memText,
+        'cluster_run.log': logText
+      };
+
+      try {
+        if (isDesktopBackend) {
+          const outDir = await DesktopBridge.exportClusterDat(dsName, artifacts);
+          await refreshWorkspaceFiles();
+          showToast(`💾 Saved ${outDir}/ to desktop workspace`);
+        } else if (WebFs.isSupported()) {
+          if (!WebFs.isOpen()) {
+            const dir = await WebFs.openDirectory();
+            if (!dir) return;
+            const lbl = document.getElementById('lblWorkspacePath');
+            if (lbl) lbl.textContent = `📁 ${dir.name} (Client Local)`;
+          }
+          const outDir = await WebFs.exportClusterDat(dsName, artifacts);
+          await refreshWorkspaceFiles();
+          showToast(`💾 Saved ${outDir}/ directly to local disk`);
+        } else {
+          showToast('Client-side directory access not supported in this browser');
+        }
+      } catch (err) {
+        console.error('[Export] Error exporting run:', err);
+        showToast(`Export failed: ${err.message}`);
+      }
+    }
+
     // Initial Startup
     initSidebarResizers();
     initLayoutResizer();
@@ -2059,6 +3546,7 @@
     updateZoomBadge();
     setExplainMode(false);
     updateCliCommand();
+    initWorkspaceAndEngine();
 
     // =========================================================================
     //  HELP & DOCUMENTATION CENTER (MULTI-TOPIC MODAL & PRESETS)

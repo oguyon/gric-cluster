@@ -49,7 +49,8 @@ void record_step_assignment(
         state->frame_infos[frame_idx].assignment = assigned_cluster;
         state->frame_infos[frame_idx].num_dists = temp_count;
 
-        if ((config->optim.gprob_mode || config->optim.pred_mode == 2) && temp_count > 0)
+        if ((config->optim.gprob_mode || config->optim.pred_mode == 2 ||
+             config->output.output_evals) && temp_count > 0)
         {
             state->frame_infos[frame_idx].cluster_indices =
                 (int *)malloc((size_t)temp_count * sizeof(int));
@@ -68,6 +69,19 @@ void record_step_assignment(
         {
             state->frame_infos[frame_idx].cluster_indices = NULL;
             state->frame_infos[frame_idx].distances = NULL;
+        }
+    }
+
+    if (state->evals_out && temp_count > 0)
+    {
+        for (int i = 0; i < temp_count; i++)
+        {
+            int c = temp_indices[i];
+            double dist = temp_dists[i];
+            int match = (dist < config->algo.rlim) ? 1 : 0;
+            fprintf(state->evals_out, "%ld %d %.6f %d\n",
+                    (long) state->telemetry.total_frames_processed,
+                    c, dist, match);
         }
     }
 

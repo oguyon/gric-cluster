@@ -221,6 +221,15 @@ add_executable(gric-cluster-analysis
 )
 target_link_libraries(gric-cluster-analysis m)
 
+# gric-server tool (Native C desktop micro-server for GUI)
+add_executable(gric-server
+    src/gric-server/server_main.c
+    src/gric-server/http_server.c
+    src/gric-server/api_handlers.c
+    src/shared/cli_colors.c
+)
+target_include_directories(gric-server PRIVATE src/gric-server src src/gric-cluster/core)
+
 # gric-knn tool
 add_executable(gric-knn
     src/gric-knn/main.c

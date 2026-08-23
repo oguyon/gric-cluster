@@ -12,12 +12,12 @@
       <h1>
         GRIC Interactive Algorithm Simulator
         <span id="versionBadge" class="badge-pill" style="background: rgba(74, 222, 128, 0.12); color: var(--accent-green); border: 1px solid rgba(74, 222, 128, 0.35); font-size: 0.72rem; vertical-align: middle; margin-left: 6px; padding: 3px 7px;">🕒 loading...</span>
+        <span id="activeEngineBadge" class="badge-pill active-engine-badge" style="background: rgba(56, 189, 248, 0.18); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-size: 0.75rem; vertical-align: middle; margin-left: 6px; padding: 3px 8px; font-weight: 700;">⚡ In-Browser WASM</span>
       </h1>
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
       <div style="display: flex; gap: 12px;">
-        <a href="algorithm/visual_guide.md" style="color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; font-weight: 600;">&#8592; Back to Visual Guide</a>
         <a href="https://github.com/oguyon/gric-cluster" target="_blank" style="color: var(--accent-green); text-decoration: none; font-size: 0.85rem; font-weight: 600;">GitHub ↗</a>
       </div>
       <span id="headerBuildInfo" style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Build: loading...</span>
@@ -30,79 +30,54 @@
       <div id="dropzone" class="dropzone-overlay">Drop 2D/3D Coordinate File (.txt, .csv, .dat) Here</div>
       
       <div class="canvas-toolbar">
+        <!-- Row 1: Engine & Workspace (Top Row) + Corner Help -->
         <div class="toolbar-row">
-          <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Dataset:</label>
-          <select id="selectBenchmark">
-            <optgroup label="2D Benchmark Datasets">
-              <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
-              <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
-              <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
-              <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
-              <option value="2Drand">2Drand — 2D Uniform Random</option>
-              <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
-              <option value="stream">stream — 2D Lissajous Orbit</option>
-            </optgroup>
-            <optgroup label="3D Benchmark Datasets (Quad-Split View)">
-              <option value="3Dspiral">3Dspiral — 3D Helical/Conical Spiral</option>
-              <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
-              <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
-              <option value="3Dtorus" selected>3Dtorus — 3D Torus Manifold Knot</option>
-              <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
-              <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
-              <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
-              <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
-            </optgroup>
-            <optgroup label="Image Time-Series Benchmarks (32×32)">
-              <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
-              <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
-            </optgroup>
-            <optgroup label="Custom Dataset">
-              <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
-            </optgroup>
-          </select>
-          <input type="file" id="fileUpload" accept=".txt,.csv,.dat" style="display: none;">
-          <button id="btnUpload" class="secondary" 
-                  data-tooltip-title="Upload Custom Coordinate Dataset" 
-                  data-tooltip-badge="File: .txt / .csv" 
-                  data-tooltip-color="cyan" 
-                  data-tooltip-desc="Load custom 2D or 3D coordinate streams formatted as space- or comma-delimited columns (X, Y[, Z]). Normalizes and centers coordinate bounds.">📁 Upload</button>
-        </div>
+          <div class="toolbar-row-content">
+            <span class="toolbar-row-label">ENGINE:</span>
+            <div class="engine-toggle-slider" id="engineToggleSlider"
+                 data-tooltip-title="Engine Toggle-Slider"
+                 data-tooltip-badge="WASM (Left) ⇄ Native (Right)"
+                 data-tooltip-color="green"
+                 data-tooltip-desc="Click to toggle between In-Browser WebAssembly (WASM) on the left and host Native Compiled C (gric-cluster CLI) on the right.">
+              <div class="engine-toggle-slider-thumb" id="engineSliderThumb"></div>
+              <span id="btnEngineWasm" class="engine-toggle-opt active">⚡ WASM</span>
+              <span id="btnEngineCli" class="engine-toggle-opt">💻 Native</span>
+            </div>
 
-        <div class="toolbar-row">
-          <div class="btn-group">
-            <button id="btnPlay" class="primary" 
-                    data-tooltip-title="Run / Pause Continuous Simulation" 
-                    data-tooltip-badge="Shortcut: Space" 
-                    data-tooltip-color="cyan" 
-                    data-tooltip-desc="Start or pause sequential frame ingestion through the GRIC clustering pipeline at the selected playback speed.">&#9658; Play</button>
-            <button id="btnStep" class="btn-action" 
-                    data-tooltip-title="Step Ingest Single Frame" 
-                    data-tooltip-badge="Shortcut: S / ➔" 
-                    data-tooltip-color="cyan" 
-                    data-tooltip-desc="Pushes exactly one coordinate vector from the stream, evaluating distance bounds, updating priors, and advancing the frame index.">&#8677; Step</button>
-            <button id="btnReset" class="btn-action"
-                    data-tooltip-title="Reset Simulation &amp; Clear Model"
-                    data-tooltip-badge="Shortcut: R"
+            <span id="badgeNativeTmux" class="badge-pill mode-cli" style="display: none; background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); font-family: monospace; font-size: 0.72rem; padding: 2px 8px; cursor: pointer;"
+                  data-tooltip-title="Native CLI tmux Session"
+                  data-tooltip-badge="tmux: gric_cli"
+                  data-tooltip-color="green"
+                  data-tooltip-desc="Native CLI runs directly inside tmux session 'gric_cli'. Click to copy 'tmux attach -t gric_cli' to clipboard.">🖥️ tmux: gric_cli 📋</span>
+
+            <div class="toolbar-divider"></div>
+
+            <span style="font-size: 0.74rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">WORKSPACE:</span>
+            <span id="lblWorkspacePath" class="workspace-path" style="font-size: 0.72rem; padding: 2px 7px; background: rgba(15,23,42,0.6); border: 1px solid var(--card-border); border-radius: 4px; color: var(--text-main); font-family: monospace;">Local Browser Sandbox</span>
+            <button id="btnOpenLocalFolder" class="btn-mini-action" 
+                    data-tooltip-title="Select Local Client-Side Directory"
+                    data-tooltip-badge="Web Mode: W3C File System Access"
                     data-tooltip-color="cyan"
-                    data-tooltip-desc="Clears all established cluster centroids, distance matrices D_cc, transition counts, frame histories, and restarts the dataset from frame 0.">&#8635; Reset</button>
-            <button id="btnResetView" class="btn-action" 
-                    data-tooltip-title="Reset Pan &amp; Zoom Calibration (1:1)" 
-                    data-tooltip-badge="Shortcut: Z" 
-                    data-tooltip-color="cyan" 
-                    data-tooltip-desc="Restores canvas viewport pan coordinates to origin (0, 0) and resets magnification scale to 100% (1:1 aspect ratio).">🔍 1:1</button>
-            <div class="toolbar-divider"></div>
-            <button id="btnAddPoint" class="btn-toggle toggle-amber" 
-                    data-tooltip-title="Toggle Interactive Point Injection" 
-                    data-tooltip-badge="Shortcut: Click Canvas" 
-                    data-tooltip-color="amber" 
-                    data-tooltip-desc="Click anywhere on the 2D canvas or 3D orthogonal projection planes to inject custom query points into the active clustering model.">＋ Point</button>
-            <button id="btnExplain" class="btn-toggle toggle-cyan" 
-                    data-tooltip-title="Toggle Decision Narrative Explanations" 
-                    data-tooltip-badge="Shortcut: E" 
-                    data-tooltip-color="green" 
-                    data-tooltip-desc="Enables rich step-by-step diagnostic telemetry explaining anchor choices, triangle inequality bounds, entropy calculations, and prunings.">💬 Explain</button>
+                    data-tooltip-desc="Open a local directory on your computer to read datasets and write cluster outputs directly to disk without any server.">📂 Open</button>
+            <button id="btnRefreshWorkspace" class="btn-mini-action"
+                    data-tooltip-title="Scan Workspace Directory"
+                    data-tooltip-badge="File Scanner"
+                    data-tooltip-color="cyan"
+                    data-tooltip-desc="Rescans the local workspace directory for new dataset files (.txt, .csv, .fits) and .clusterdat results folders.">🔄 Scan</button>
+            <button id="btnSaveToWorkspace" class="btn-mini-action btn-save-workspace"
+                    data-tooltip-title="Export Run to Local Workspace"
+                    data-tooltip-badge="Export .clusterdat"
+                    data-tooltip-color="green"
+                    data-tooltip-desc="Saves current clustering centroids, D_cc matrix, membership indices, and telemetry log directly into a <dataset>.clusterdat/ folder in the workspace.">💾 Export</button>
+          </div>
 
-            <div class="toolbar-divider"></div>
+          <!-- Help Buttons in the Corner -->
+          <div class="btn-group" style="margin-left: auto;">
+            <button id="btnToggleTooltips" class="btn-toggle toggle-cyan active"
+                    data-tooltip-title="Toggle Hover Help Tooltips"
+                    data-tooltip-badge="Shortcut: H"
+                    data-tooltip-color="cyan"
+                    data-tooltip-desc="Turn rich hover help popups on or off across all UI controls, sliders, and panels.">💡 Tips</button>
             <button id="btnHelp" class="btn-action" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-weight: 700;"
                     data-tooltip-title="Help &amp; Quick Start Guide"
                     data-tooltip-badge="Shortcut: ?"
@@ -110,15 +85,149 @@
                     data-tooltip-desc="Open the quick start guide with orientation, keyboard shortcuts, and suggested examples.">❓ Help</button>
           </div>
         </div>
+
+        <!-- Row 2: Dataset -->
+        <div class="toolbar-row">
+          <div class="toolbar-row-content">
+            <span class="toolbar-row-label">DATASET:</span>
+            <select id="selectBenchmark">
+              <optgroup label="2D Benchmark Datasets">
+                <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
+                <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
+                <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
+                <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
+                <option value="2Drand">2Drand — 2D Uniform Random</option>
+                <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
+                <option value="stream">stream — 2D Lissajous Orbit</option>
+              </optgroup>
+              <optgroup label="3D Benchmark Datasets (Quad-Split View)">
+                <option value="3Dspiral">3Dspiral — 3D Helical/Conical Spiral</option>
+                <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
+                <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
+                <option value="3Dtorus" selected>3Dtorus — 3D Torus Manifold Knot</option>
+                <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
+                <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
+                <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
+                <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
+              </optgroup>
+              <optgroup label="Image Time-Series Benchmarks (32×32)">
+                <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
+                <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
+              </optgroup>
+              <optgroup label="Custom Dataset">
+                <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
+              </optgroup>
+            </select>
+            <input type="file" id="fileUpload" accept=".txt,.csv,.dat" style="display: none;">
+            <button id="btnUpload" class="secondary" 
+                    data-tooltip-title="Upload Custom Coordinate Dataset" 
+                    data-tooltip-badge="File: .txt / .csv" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Load custom 2D or 3D coordinate streams formatted as space- or comma-delimited columns (X, Y[, Z]). Normalizes and centers coordinate bounds.">📁 Upload</button>
+            <span style="display:inline-flex; align-items:center; gap:4px; margin-left: 2px;">
+              <span style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Loops (N):</span>
+              <select id="selectLoop" style="padding: 2px 6px; font-size: 0.76rem;" 
+                      data-tooltip-title="Dataset Loop / Pass Iterations" 
+                      data-tooltip-badge="Multi-Pass" 
+                      data-tooltip-color="cyan" 
+                      data-tooltip-desc="Sets the number of sequential passes over the dataset. Replicates the trajectory with independent noise per pass.">
+                <option value="1">1 pass (N=1)</option>
+                <option value="2">2 passes (N=2)</option>
+                <option value="3">3 passes (N=3)</option>
+                <option value="5">5 passes (N=5)</option>
+                <option value="10" selected>10 passes (N=10)</option>
+                <option value="20">20 passes (N=20)</option>
+                <option value="50">50 passes (N=50)</option>
+                <option value="100">100 passes (N=100)</option>
+              </select>
+            </span>
+            <button id="btnStageDataset" class="secondary" style="background: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.4); color: #38bdf8; font-weight: 600;"
+                    data-tooltip-title="Generate Dataset &amp; Preview" 
+                    data-tooltip-badge="Generate Points" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Generates or reloads the dataset into memory and workspace, rendering the raw unclustered point cloud in the viewports so you can inspect its geometry before clustering.">🎲 Generate</button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span id="datasetStatusPill" class="badge-pill" style="background: rgba(148, 163, 184, 0.12); color: var(--text-muted); font-size: 0.72rem; border: 1px solid rgba(148, 163, 184, 0.25);">📦 Staged: 10,000 pts (3D)</span>
+          </div>
+        </div>
+
+        <!-- Row 3: Clustering -->
+        <div class="toolbar-row">
+          <div class="toolbar-row-content">
+            <span class="toolbar-row-label">CLUSTER:</span>
+            <div class="btn-group">
+              <button id="btnPlay" class="primary" 
+                      data-tooltip-title="Run / Pause Clustering" 
+                      data-tooltip-badge="Shortcut: Space" 
+                      data-tooltip-color="cyan" 
+                      data-tooltip-desc="Start or pause sequential frame clustering through the GRIC pipeline at the selected playback speed.">&#9658; Cluster</button>
+              <button id="btnStep" class="btn-action" 
+                      data-tooltip-title="Step Ingest Single Frame" 
+                      data-tooltip-badge="Shortcut: S / ➔" 
+                      data-tooltip-color="cyan" 
+                      data-tooltip-desc="Pushes exactly one coordinate vector from the stream, evaluating distance bounds, updating priors, and advancing the frame index.">&#8677; Step</button>
+              <button id="btnResetClusters" class="btn-action"
+                      data-tooltip-title="Reset Clusters (Keep Staged Dataset)"
+                      data-tooltip-badge="Reset Model Only"
+                      data-tooltip-color="cyan"
+                      data-tooltip-desc="Clears cluster centroids, D_cc matrix, and assignments while preserving the staged dataset in memory so you can immediately re-cluster with new parameters.">&#8634; Reset Clusters</button>
+              <button id="btnReset" class="btn-action"
+                      data-tooltip-title="Reset All (Clear Dataset &amp; Clusters)"
+                      data-tooltip-badge="Shortcut: R"
+                      data-tooltip-color="cyan"
+                      data-tooltip-desc="Clears both the staged dataset and established cluster models, returning the canvas to a clean blank grid.">&#8635; Reset All</button>
+              <div class="toolbar-divider"></div>
+              <button id="btnAddPoint" class="btn-toggle toggle-amber" 
+                      data-tooltip-title="Toggle Interactive Point Injection" 
+                      data-tooltip-badge="Shortcut: Click Canvas" 
+                      data-tooltip-color="amber" 
+                      data-tooltip-desc="Click anywhere on the 2D canvas or 3D orthogonal projection planes to inject custom query points into the active clustering model.">＋ Point</button>
+              <button id="btnExplain" class="btn-toggle toggle-cyan" 
+                      data-tooltip-title="Toggle Decision Narrative Explanations" 
+                      data-tooltip-badge="Shortcut: E" 
+                      data-tooltip-color="green" 
+                      data-tooltip-desc="Enables rich step-by-step diagnostic telemetry explaining anchor choices, triangle inequality bounds, entropy calculations, and prunings.">💬 Explain</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 4: k-NN (Single Master Toggle, expands to action buttons when enabled) -->
+        <div class="toolbar-row">
+          <div class="toolbar-row-content">
+            <span class="toolbar-row-label">k-NN:</span>
+            <button id="btnToggleKnnModule" class="btn-toggle toggle-green"
+                    data-tooltip-title="Toggle k-Nearest Neighbors Module" 
+                    data-tooltip-badge="Shortcut: K" 
+                    data-tooltip-color="green" 
+                    data-tooltip-desc="Enables k-Nearest Neighbors (k-NN) mode, revealing configuration options and on-demand metric solver execution.">⚡ Enable k-NN</button>
+            
+            <!-- Expanded k-NN action group (visible when k-NN is enabled) -->
+            <div id="knnExpandedGroup" style="display: none; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <button id="btnKnnSetup" class="btn-action"
+                      data-tooltip-title="Open k-NN Settings in Sidebar" 
+                      data-tooltip-badge="Configure k-NN" 
+                      data-tooltip-color="cyan" 
+                      data-tooltip-desc="Opens and focuses the k-Nearest Neighbors parameter card in the right sidebar (k, dtmin, direction, epsilon).">⚙️ Options</button>
+              <button id="btnRunKnn" class="btn-action" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.5); font-weight: 700;"
+                      data-tooltip-title="Compute k-Nearest Neighbors" 
+                      data-tooltip-badge="Run k-NN" 
+                      data-tooltip-color="green" 
+                      data-tooltip-desc="Executes the out-of-core metric-pruned k-NN solver and overlays nearest neighbor lines and telemetry.">▶ Compute k-NN</button>
+              <button id="btnToggleKnnAutoTop" class="btn-toggle toggle-green"
+                      data-tooltip-title="Toggle Auto-Compute k-NN"
+                      data-tooltip-badge="Auto Run"
+                      data-tooltip-color="green"
+                      data-tooltip-desc="Automatically recomputes nearest neighbors whenever clustering completes or stages new points.">⚡ Auto</button>
+              <span id="knnStatusBadgeTop" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.3); font-size: 0.72rem;">k=10 • forward • dt≥1</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="benchmark-info">
         <div id="benchmarkDesc"><b>3Dtorus</b>: 10,000 points tracing a continuous knot trajectory around a 3D torus manifold (R=0.60, r=0.24).</div>
         <div style="display: flex; gap: 12px; align-items: center;">
-          <span style="display:flex; align-items:center; gap:4px;">
-            <span>Zoom:</span>
-            <span id="zoomBadge" class="badge-pill" style="color: var(--accent-blue);">100%</span>
-          </span>
           <span>Speed:</span>
           <select id="selectSpeed" style="padding: 2px 6px; font-size: 0.75rem;" 
                   data-tooltip-title="Simulation Playback Speed" 
@@ -131,25 +240,7 @@
             <option value="5">30x (5ms)</option>
             <option value="-1" selected>⚡ As fast as possible</option>
           </select>
-          <span style="display:flex; align-items:center; gap:4px;">
-            <span>Loop:</span>
-            <select id="selectLoop" style="padding: 2px 6px; font-size: 0.75rem;" 
-                    data-tooltip-title="Dataset Loop Iterations" 
-                    data-tooltip-badge="Multi-Pass" 
-                    data-tooltip-color="cyan" 
-                    data-tooltip-desc="Sets the number of sequential passes over the dataset. Multiple passes demonstrate Markov matrix convergence and steady-state cluster stabilization.">
-              <option value="1">1 pass (N=1)</option>
-              <option value="2">2 passes (N=2)</option>
-              <option value="3">3 passes (N=3)</option>
-              <option value="5">5 passes (N=5)</option>
-              <option value="10" selected>10 passes (N=10)</option>
-              <option value="20">20 passes (N=20)</option>
-              <option value="50">50 passes (N=50)</option>
-              <option value="100">100 passes (N=100)</option>
-              <option value="0">∞ Infinite (N=0)</option>
-            </select>
-          </span>
-          <span id="frameCounter">0 / 10000</span>
+          <span id="frameCounter">0 / 10,000</span>
         </div>
       </div>
 
@@ -178,8 +269,13 @@
           </div>
         </div>
 
-        <!-- 3D Camera Quick Presets (Visible in 3D Mode) -->
+        <!-- View Area Camera & Navigation Preset Bar -->
         <div id="viewPresetBar" class="view-preset-bar" style="display: flex;">
+          <button class="preset-btn" id="btnResetView" 
+                  data-tooltip-title="Reset Pan &amp; Zoom (1:1)" 
+                  data-tooltip-badge="Shortcut: Z" 
+                  data-tooltip-color="cyan" 
+                  data-tooltip-desc="Restores viewport pan coordinates to origin (0, 0) and resets magnification scale to 100% (1:1 aspect ratio).">🔍 1:1</button>
           <button class="preset-btn" id="presetIso" 
                   data-tooltip-title="Isometric 3D Camera Perspective" 
                   data-tooltip-badge="θ=-35°, φ=25°" 
@@ -236,48 +332,199 @@
 
     <!-- Right: Control & Telemetry Panel -->
     <div class="side-panel" id="sidePanel">
-      <!-- 1. Simulator Settings -->
-      <div id="cardSettings" class="card expanded" style="flex: 1.1 1 0px;">
-        <div class="card-title" onclick="togglePanelCollapse('cardSettings')">
+      <!-- 1. Input Data -->
+      <div id="cardInputData" class="card collapsed" style="flex: 0 0 auto;">
+        <div class="card-title" onclick="togglePanelCollapse('cardInputData')">
           <div style="display: flex; align-items: center; gap: 6px;">
-            <button class="card-collapse-btn" id="btnCollapseSettings" 
-                    data-tooltip-title="Collapse / Expand Simulator Settings" 
+            <button class="card-collapse-btn" id="btnCollapseInputData" 
+                    data-tooltip-title="Collapse / Expand Input Data Panel" 
                     data-tooltip-badge="Card Toggle" 
                     data-tooltip-color="cyan" 
-                    data-tooltip-desc="Toggles visibility of Algorithm, Input Stream, and Display panels. Open sibling panels auto-expand vertically." 
-                    onclick="event.stopPropagation(); togglePanelCollapse('cardSettings');">▾</button>
-            <span>Simulator Settings</span>
+                    data-tooltip-desc="Toggles visibility of Dataset Selection, Multi-Pass Looping, Staging, Playback Rate, Noise, and Manual Point Injection." 
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardInputData');">▾</button>
+            <span>Input Data</span>
           </div>
-          <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 500;">CLI Parity</span>
+          <div style="display: flex; gap: 5px; align-items: center;">
+            <span id="inputDataDimBadge" class="badge-pill" style="color: var(--accent-blue);">3D &bull; 10,000 pts</span>
+          </div>
         </div>
 
         <div class="card-body">
-          <div class="config-tab-bar">
-            <div id="tabCfgAlgo" class="config-tab-btn active" 
-                 data-tooltip-title="Algorithm Tuning Tab" 
-                 data-tooltip-badge="Settings" 
-                 data-tooltip-color="cyan" 
-                 data-tooltip-desc="Configure cluster radius threshold (rlim), candidate selection heuristics, geometric pruning (3P/4P/5P), and priors.">🎯 Algorithm</div>
-            <div id="tabCfgInput" class="config-tab-btn" 
-                 data-tooltip-title="Input Stream &amp; Dataset Tab" 
-                 data-tooltip-badge="Settings" 
-                 data-tooltip-color="cyan" 
-                 data-tooltip-desc="Select 2D/3D benchmarks (spirals, spheres, Lorenz attractor), custom files, noise amplitude, and looping.">📥 Input Stream</div>
-            <div id="tabCfgDisplay" class="config-tab-btn" 
-                 data-tooltip-title="Display &amp; View Controls Tab" 
-                 data-tooltip-badge="Settings" 
-                 data-tooltip-color="cyan" 
-                 data-tooltip-desc="Adjust visual focus balance between raw samples and clusters, 3D camera presets, and pan/zoom reset.">🎨 Display &amp; View</div>
-            <div id="tabCfgCli" class="config-tab-btn" 
-                 data-tooltip-title="CLI Command Equivalence" 
-                 data-tooltip-badge="Settings" 
-                 data-tooltip-color="cyan" 
-                 data-tooltip-desc="Shows the exact gric-cluster command line that reproduces the current GUI settings. Copy it to run the same clustering on the command line.">⌨️ CLI</div>
+          <div class="card-body-scroll" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Dataset & Input Source -->
+            <div class="sub-control-card">
+              <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                <span>Dataset &amp; Input Source</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600; width: 60px;">Select:</label>
+                  <select id="selectBenchmarkSide" style="flex: 1; padding: 5px 8px; font-size: 0.78rem;">
+                    <optgroup label="2D Benchmark Datasets">
+                      <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
+                      <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
+                      <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
+                      <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
+                      <option value="2Drand">2Drand — 2D Uniform Random</option>
+                      <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
+                      <option value="stream">stream — 2D Lissajous Orbit</option>
+                    </optgroup>
+                    <optgroup label="3D Benchmark Datasets (Quad-Split View)">
+                      <option value="3Dspiral">3Dspiral — 3D Helical/Conical Spiral</option>
+                      <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
+                      <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
+                      <option value="3Dtorus" selected>3Dtorus — 3D Torus Manifold Knot</option>
+                      <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
+                      <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
+                      <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
+                      <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
+                    </optgroup>
+                    <optgroup label="Image Time-Series Benchmarks (32×32)">
+                      <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
+                      <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
+                    </optgroup>
+                    <optgroup label="Custom Dataset">
+                      <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
+                    </optgroup>
+                  </select>
+                </div>
+
+                <div class="control-row" id="rowSampleCount">
+                  <div class="control-label">
+                    <span>Number of Samples (<span class="badge-pill">N</span>)</span>
+                    <div class="val-box">
+                      <input type="number" id="inputSampleCount" class="val-input" min="10" max="100000" step="100" value="10000" style="width:64px;">
+                      <span class="val-unit">pts</span>
+                    </div>
+                  </div>
+                  <input type="range" id="sliderSampleCount"
+                         min="100" max="10000" step="100" value="10000"
+                         data-tooltip-title="Number of Generated Samples"
+                         data-tooltip-badge="Dataset Size"
+                         data-tooltip-color="blue"
+                         data-tooltip-desc="Sets how many coordinate points are generated along the chosen pattern curve. Does not apply to custom uploaded datasets.">
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Loop Passes (N):</label>
+                  <select id="selectLoopSide" style="padding: 3px 8px; font-size: 0.76rem;" 
+                          data-tooltip-title="Dataset Loop Iterations" 
+                          data-tooltip-badge="Multi-Pass" 
+                          data-tooltip-color="cyan" 
+                          data-tooltip-desc="Sets the number of sequential passes over the dataset. Multiple passes demonstrate Markov matrix convergence and steady-state cluster stabilization.">
+                    <option value="1">1 pass (N=1)</option>
+                    <option value="2">2 passes (N=2)</option>
+                    <option value="3">3 passes (N=3)</option>
+                    <option value="5">5 passes (N=5)</option>
+                    <option value="10" selected>10 passes (N=10)</option>
+                    <option value="20">20 passes (N=20)</option>
+                    <option value="50">50 passes (N=50)</option>
+                    <option value="100">100 passes (N=100)</option>
+                  </select>
+                </div>
+
+                <div style="display: flex; gap: 6px; margin-top: 2px;">
+                  <button id="btnStageDatasetSide" class="secondary" style="flex: 1; padding: 5px 8px; font-size: 0.76rem; background: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.4); color: #38bdf8; font-weight: 600;"
+                          data-tooltip-title="Generate Dataset &amp; Preview" 
+                          data-tooltip-badge="Generate Points" 
+                          data-tooltip-color="cyan" 
+                          data-tooltip-desc="Generates or reloads the dataset into memory and workspace, rendering the raw unclustered point cloud in the viewports.">🎲 Generate</button>
+                  <button id="btnUploadSide" class="secondary" style="flex: 1; padding: 5px 8px; font-size: 0.76rem;" 
+                          data-tooltip-title="Upload Custom Coordinate Dataset" 
+                          data-tooltip-badge="File: .txt / .csv" 
+                          data-tooltip-color="cyan" 
+                          data-tooltip-desc="Load custom 2D or 3D coordinate streams formatted as space- or comma-delimited columns (X, Y[, Z]). Normalizes and centers coordinate bounds.">📁 Upload File</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stream Ingestion & Playback Rate -->
+            <div class="sub-control-card">
+              <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+                <span>Stream Ingestion &amp; Playback Rate</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Playback Speed:</label>
+                  <select id="selectSpeedSide" style="padding: 3px 8px; font-size: 0.76rem;" 
+                          data-tooltip-title="Simulation Playback Speed" 
+                          data-tooltip-badge="Rate Control" 
+                          data-tooltip-color="cyan" 
+                          data-tooltip-desc="Adjusts the interval delay between ingested frames, from step-by-step (150ms) to instant batch processing.">
+                    <option value="150">1x (150ms)</option>
+                    <option value="50">3x (50ms)</option>
+                    <option value="15">10x (15ms)</option>
+                    <option value="5">30x (5ms)</option>
+                    <option value="-1" selected>⚡ As fast as possible</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Truncated Gaussian Noise -->
+            <div class="sub-control-card">
+              <div class="control-label" style="font-weight: 700; color: #f87171;">
+                <span>Sample Truncated Gaussian Noise</span>
+              </div>
+              <div class="control-row">
+                <div class="control-label">
+                  <span>Noise Amplitude (<span class="badge-pill">σ</span>)</span>
+                  <input type="number" id="inputNoiseSigma" class="val-input" min="0.000" max="0.500" step="0.002" value="0.020">
+                </div>
+                <input type="range" id="sliderNoiseSigma" min="0.00" max="0.15" step="0.002" value="0.020">
+              </div>
+
+              <div class="control-row" id="rowNoiseTrunc">
+                <div class="control-label">
+                  <span>Truncation Cutoff (<span class="badge-pill">trunc</span>)</span>
+                  <input type="number" id="inputNoiseTrunc" class="val-input" min="0.001" max="1.000" step="0.005" value="0.100">
+                </div>
+                <input type="range" id="sliderNoiseTrunc" min="0.01" max="0.30" step="0.005" value="0.100">
+              </div>
+            </div>
+
+            <!-- Manual Point Injection -->
+            <div class="sub-control-card">
+              <div class="control-label" style="font-weight: 700; color: var(--accent-amber);">
+                <span>Manual Point Injection</span>
+              </div>
+              <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 6px;">
+                Click on any canvas quadrant to inject custom query points directly into the clustering model.
+              </p>
+              <button id="btnAddPointSide" class="btn-toggle toggle-amber" style="width: 100%; justify-content: center; font-size: 0.78rem;" 
+                      data-tooltip-title="Toggle Point Injection Mode" 
+                      data-tooltip-badge="Point Injection" 
+                      data-tooltip-color="amber" 
+                      data-tooltip-desc="Click on any canvas quadrant to inject custom coordinates directly into the clustering model.">＋ Toggle Add Point Mode</button>
+            </div>
           </div>
-          
+        </div>
+      </div>
+
+      <!-- Resizer 1 (between Input Data and Clustering Settings) -->
+      <div class="panel-resizer" id="resizer1" 
+           data-tooltip-title="Vertical Panel Resizer" 
+           data-tooltip-badge="Drag Handle" 
+           data-tooltip-color="cyan" 
+           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between Input Data and Clustering Settings."></div>
+
+      <!-- 2. Clustering: Algorithm -->
+      <div id="cardSettings" class="card collapsed" style="flex: 0 0 auto;">
+        <div class="card-title" onclick="togglePanelCollapse('cardSettings')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseSettings" 
+                    data-tooltip-title="Collapse / Expand Clustering Algorithm Settings" 
+                    data-tooltip-badge="Card Toggle" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Toggles visibility of Algorithm parameters (radius threshold rlim, target selection heuristics, geometric pruning 3P/4P/5P, and Markov priors)." 
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardSettings');">▾</button>
+            <span>Clustering: Algorithm</span>
+          </div>
+          <span style="font-size: 0.72rem; color: var(--accent-blue); font-weight: 600;">Algorithm</span>
+        </div>
+
+        <div class="card-body">
           <div class="card-body-scroll">
-            <!-- Tab 1: Algorithm Parameters -->
-            <div id="cfgAlgoPanel">
               <!-- Radius Threshold -->
               <div class="control-row">
                 <div class="control-label">
@@ -545,410 +792,348 @@
                 </div>
               </div>
             </div>
+          </div>
+        </div>
 
-            <!-- Tab 2: Input Stream Parameters -->
-            <div id="cfgInputPanel" style="display: none;">
-              <!-- Dataset & Generation -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-                  <span>Dataset &amp; Input Source</span>
+      <!-- Resizer 2 (between Clustering Algorithm and Display & View) -->
+      <div class="panel-resizer" id="resizer2" 
+           data-tooltip-title="Vertical Panel Resizer" 
+           data-tooltip-badge="Drag Handle" 
+           data-tooltip-color="teal" 
+           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between Clustering Algorithm and Display &amp; View."></div>
+
+      <!-- 3. Display & View -->
+      <div id="cardDisplay" class="card collapsed" style="flex: 0 0 auto;">
+        <div class="card-title" onclick="togglePanelCollapse('cardDisplay')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseDisplay" 
+                    data-tooltip-title="Collapse / Expand Display &amp; View Controls" 
+                    data-tooltip-badge="Card Toggle" 
+                    data-tooltip-color="teal" 
+                    data-tooltip-desc="Toggles visibility of visual focus, point sizing, cluster metric enclosing circles, 3D camera presets, and pan/zoom view reset." 
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardDisplay');">▾</button>
+            <span>Display &amp; View</span>
+          </div>
+          <span style="font-size: 0.72rem; color: var(--accent-teal); font-weight: 600;">View &amp; Optics</span>
+        </div>
+
+        <div class="card-body">
+          <div class="card-body-scroll">
+            <!-- Visual Balance & Point Sizing -->
+            <div class="sub-control-card">
+              <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                <span>Visual Balance &amp; Point Sizing</span>
+              </div>
+              <div class="control-row">
+                <div class="control-label">
+                  <span>Visual Focus (Samples ⟷ Clusters)</span>
+                  <div class="val-box">
+                    <input type="number" id="inputFocus" class="val-input" min="0" max="100" step="1" value="20">
+                    <span class="val-unit" id="lblFocusUnit">% (Points Emph)</span>
+                  </div>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <div style="display: flex; gap: 6px; align-items: center;">
-                    <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600; width: 60px;">Select:</label>
-                    <select id="selectBenchmarkSide" style="flex: 1; padding: 5px 8px; font-size: 0.78rem;">
-                      <optgroup label="2D Benchmark Datasets">
-                        <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
-                        <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
-                        <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
-                        <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
-                        <option value="2Drand">2Drand — 2D Uniform Random</option>
-                        <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
-                        <option value="stream">stream — 2D Lissajous Orbit</option>
-                      </optgroup>
-                      <optgroup label="3D Benchmark Datasets (Quad-Split View)">
-                        <option value="3Dspiral">3Dspiral — 3D Helical/Conical Spiral</option>
-                        <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
-                        <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
-                        <option value="3Dtorus" selected>3Dtorus — 3D Torus Manifold Knot</option>
-                        <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
-                        <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
-                        <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
-                        <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
-                      </optgroup>
-                      <optgroup label="Image Time-Series Benchmarks (32×32)">
-                        <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
-                        <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
-                      </optgroup>
-                      <optgroup label="Custom Dataset">
-                        <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
-                      </optgroup>
-                    </select>
-                  </div>
+                <input type="range" id="sliderFocus" min="0" max="100" step="1" value="20">
+              </div>
+              <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px; margin-bottom: 10px;">
+                <span>0%: Points Only</span>
+                <span>50%: Balanced</span>
+                <span>100%: Clusters Only</span>
+              </div>
 
-                  <div class="control-row" id="rowSampleCount">
-                    <div class="control-label">
-                      <span>Number of Samples (<span class="badge-pill">N</span>)</span>
-                      <div class="val-box">
-                        <input type="number" id="inputSampleCount" class="val-input" min="10" max="100000" step="100" value="10000" style="width:64px;">
-                        <span class="val-unit">pts</span>
-                      </div>
-                    </div>
-                    <input type="range" id="sliderSampleCount"
-                           min="100" max="10000" step="100" value="10000"
-                           data-tooltip-title="Number of Generated Samples"
-                           data-tooltip-badge="Dataset Size"
-                           data-tooltip-color="blue"
-                           data-tooltip-desc="Sets how many coordinate points are generated along the chosen pattern curve. Does not apply to custom uploaded datasets.">
+              <div class="control-row">
+                <div class="control-label">
+                  <span>Sample Point Size (<span class="badge-pill">radius</span>)</span>
+                  <div class="val-box">
+                    <input type="number" id="inputPointSize" class="val-input" min="0.25" max="20.0" step="0.25" value="1.5">
+                    <span class="val-unit">px</span>
                   </div>
+                </div>
+                <input type="range" id="sliderPointSize" min="0.5" max="8.0" step="0.25" value="1.5" 
+                       data-tooltip-title="Sample Point Size" 
+                       data-tooltip-badge="Display: Radius" 
+                       data-tooltip-color="teal" 
+                       data-tooltip-desc="Adjusts rendering radius of past ingested sample points (0.5px to 8.0px) across all 2D and 3D viewports.">
+              </div>
+              <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
+                <span>0.5 px (Fine)</span>
+                <span>1.5 px (Default)</span>
+                <span>8.0 px (Large)</span>
+              </div>
 
-                  <div style="display: flex; gap: 6px;">
-                    <button id="btnUploadSide" class="secondary" style="flex: 1; padding: 4px 8px; font-size: 0.76rem;" 
-                            data-tooltip-title="Upload Custom Coordinate Dataset" 
-                            data-tooltip-badge="File: .txt / .csv" 
-                            data-tooltip-color="cyan" 
-                            data-tooltip-desc="Load custom 2D or 3D coordinate streams formatted as space- or comma-delimited columns (X, Y[, Z]). Normalizes and centers coordinate bounds.">📁 Upload Custom File</button>
-                  </div>
+              <div class="control-row" style="margin-top: 10px;">
+                <div class="control-label">
+                  <span>Show Past Samples</span>
+                </div>
+                <div class="toggle-group" style="grid-template-columns: 1fr 1fr;">
+                  <div id="optShowSamples" class="toggle-btn toggle-active"
+                       data-tooltip-title="Show Past Samples"
+                       data-tooltip-badge="Point Cloud"
+                       data-tooltip-color="teal"
+                       data-tooltip-desc="Toggle visibility of the past sample point cloud overlay.">Show</div>
+                  <div id="optHideSamples" class="toggle-btn"
+                       data-tooltip-title="Hide Past Samples"
+                       data-tooltip-badge="Point Cloud"
+                       data-tooltip-color="teal"
+                       data-tooltip-desc="Hide the past sample point cloud overlay for a cleaner cluster-only view.">Hide</div>
                 </div>
               </div>
 
-              <!-- Stream Ingestion & Looping -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-                  <span>Stream Ingestion &amp; Loop Control</span>
+              <div class="control-row" style="margin-top: 6px;">
+                <div class="control-label">
+                  <span>Show k-NN Graph Lines</span>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Playback Speed:</label>
-                    <select id="selectSpeedSide" style="padding: 3px 8px; font-size: 0.76rem;" 
-                            data-tooltip-title="Simulation Playback Speed" 
-                            data-tooltip-badge="Rate Control" 
-                            data-tooltip-color="cyan" 
-                            data-tooltip-desc="Adjusts the interval delay between ingested frames, from step-by-step (150ms) to instant batch processing.">
-                      <option value="150">1x (150ms)</option>
-                      <option value="50">3x (50ms)</option>
-                      <option value="15">10x (15ms)</option>
-                      <option value="5">30x (5ms)</option>
-                      <option value="-1" selected>⚡ As fast as possible</option>
-                    </select>
-                  </div>
-
-                  <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Loop Iterations:</label>
-                    <select id="selectLoopSide" style="padding: 3px 8px; font-size: 0.76rem;" 
-                            data-tooltip-title="Dataset Loop Iterations" 
-                            data-tooltip-badge="Multi-Pass" 
-                            data-tooltip-color="cyan" 
-                            data-tooltip-desc="Sets the number of sequential passes over the dataset. Multiple passes demonstrate Markov matrix convergence and steady-state cluster stabilization.">
-                      <option value="1">1 pass (N=1)</option>
-                      <option value="2">2 passes (N=2)</option>
-                      <option value="3">3 passes (N=3)</option>
-                      <option value="5">5 passes (N=5)</option>
-                      <option value="10" selected>10 passes (N=10)</option>
-                      <option value="20">20 passes (N=20)</option>
-                      <option value="50">50 passes (N=50)</option>
-                      <option value="100">100 passes (N=100)</option>
-                      <option value="0">∞ Infinite (N=0)</option>
-                    </select>
-                  </div>
+                <div class="toggle-group" style="grid-template-columns: 1fr 1fr;">
+                  <div id="optShowKnnLines" class="toggle-btn toggle-active"
+                       data-tooltip-title="Show k-NN Graph Lines"
+                       data-tooltip-badge="k-NN"
+                       data-tooltip-color="green"
+                       data-tooltip-desc="Draws vector lines connecting the active or selected query sample to its k nearest neighbors.">Show</div>
+                  <div id="optHideKnnLines" class="toggle-btn"
+                       data-tooltip-title="Hide k-NN Graph Lines"
+                       data-tooltip-badge="k-NN"
+                       data-tooltip-color="green"
+                       data-tooltip-desc="Hides the k-NN graph connection vectors.">Hide</div>
                 </div>
               </div>
 
-              <!-- Truncated Gaussian Noise -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: #f87171;">
-                  <span>Sample Truncated Gaussian Noise</span>
+              <div class="control-row" style="margin-top: 6px;">
+                <div class="control-label">
+                  <span>Highlight Closest Sample on Hover</span>
                 </div>
-                <div class="control-row">
-                  <div class="control-label">
-                    <span>Noise Amplitude (<span class="badge-pill">σ</span>)</span>
-                    <input type="number" id="inputNoiseSigma" class="val-input" min="0.000" max="0.500" step="0.002" value="0.020">
-                  </div>
-                  <input type="range" id="sliderNoiseSigma" min="0.00" max="0.15" step="0.002" value="0.020">
-                </div>
-
-                <div class="control-row" id="rowNoiseTrunc">
-                  <div class="control-label">
-                    <span>Truncation Cutoff (<span class="badge-pill">trunc</span>)</span>
-                    <input type="number" id="inputNoiseTrunc" class="val-input" min="0.001" max="1.000" step="0.005" value="0.100">
-                  </div>
-                  <input type="range" id="sliderNoiseTrunc" min="0.01" max="0.30" step="0.005" value="0.100">
+                <div class="toggle-group" style="grid-template-columns: 1fr 1fr;">
+                  <div id="optHighlightClosestOn" class="toggle-btn toggle-active"
+                       data-tooltip-title="Highlight Closest Sample on Hover"
+                       data-tooltip-badge="Hover Inspector"
+                       data-tooltip-color="cyan"
+                       data-tooltip-desc="When moving mouse over the view, automatically finds and highlights the nearest ingested sample point with a target reticle and coordinate tooltip.">ON</div>
+                  <div id="optHighlightClosestOff" class="toggle-btn"
+                       data-tooltip-title="Disable Hover Highlight"
+                       data-tooltip-badge="Hover Inspector"
+                       data-tooltip-color="cyan"
+                       data-tooltip-desc="Disables hover-based nearest sample point highlighting on the viewports.">OFF</div>
                 </div>
               </div>
 
-              <!-- Manual Point Injection -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-amber);">
-                  <span>Manual Point Injection</span>
+              <div class="control-row">
+                <div class="control-label">
+                  <span>Max Displayed Points</span>
+                  <div class="val-box">
+                    <input type="number" id="inputMaxDrawPts" class="val-input" min="100" max="100000" step="500" value="10000" style="width:64px;">
+                    <span class="val-unit">pts</span>
+                  </div>
                 </div>
-                <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 6px;">
-                  Click on any canvas quadrant to inject custom query points directly into the clustering model.
-                </p>
-                <button id="btnAddPointSide" class="btn-toggle toggle-amber" style="width: 100%; justify-content: center; font-size: 0.78rem;" 
-                        data-tooltip-title="Toggle Point Injection Mode" 
-                        data-tooltip-badge="Point Injection" 
-                        data-tooltip-color="amber" 
-                        data-tooltip-desc="Click on any canvas quadrant to inject custom coordinates directly into the clustering model.">＋ Toggle Add Point Mode</button>
+                <input type="range" id="sliderMaxDrawPts" min="500" max="15000" step="500" value="10000"
+                       data-tooltip-title="Max Displayed Points"
+                       data-tooltip-badge="Display: Draw Cap"
+                       data-tooltip-color="teal"
+                       data-tooltip-desc="Maximum number of past sample points drawn per frame. Higher values show more detail but may reduce rendering performance.">
               </div>
-            </div>
-
-            <!-- Tab 3: Display & View Parameters -->
-            <div id="cfgDisplayPanel" style="display: none;">
-              <!-- Visual Balance & Point Sizing -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-                  <span>Visual Balance &amp; Point Sizing</span>
-                </div>
-                <div class="control-row">
-                  <div class="control-label">
-                    <span>Visual Focus (Samples ⟷ Clusters)</span>
-                    <div class="val-box">
-                      <input type="number" id="inputFocus" class="val-input" min="0" max="100" step="1" value="20">
-                      <span class="val-unit" id="lblFocusUnit">% (Points Emph)</span>
-                    </div>
-                  </div>
-                  <input type="range" id="sliderFocus" min="0" max="100" step="1" value="20">
-                </div>
-                <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px; margin-bottom: 10px;">
-                  <span>0%: Points Only</span>
-                  <span>50%: Balanced</span>
-                  <span>100%: Clusters Only</span>
-                </div>
-
-                <div class="control-row">
-                  <div class="control-label">
-                    <span>Sample Point Size (<span class="badge-pill">radius</span>)</span>
-                    <div class="val-box">
-                      <input type="number" id="inputPointSize" class="val-input" min="0.25" max="20.0" step="0.25" value="1.5">
-                      <span class="val-unit">px</span>
-                    </div>
-                  </div>
-                  <input type="range" id="sliderPointSize" min="0.5" max="8.0" step="0.25" value="1.5" 
-                         data-tooltip-title="Sample Point Size" 
-                         data-tooltip-badge="Display: Radius" 
-                         data-tooltip-color="teal" 
-                         data-tooltip-desc="Adjusts rendering radius of past ingested sample points (0.5px to 8.0px) across all 2D and 3D viewports.">
-                </div>
-                <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
-                  <span>0.5 px (Fine)</span>
-                  <span>1.5 px (Default)</span>
-                  <span>8.0 px (Large)</span>
-                </div>
-
-                <div class="control-row" style="margin-top: 10px;">
-                  <div class="control-label">
-                    <span>Show Past Samples</span>
-                  </div>
-                  <div class="toggle-group" style="grid-template-columns: 1fr 1fr;">
-                    <div id="optShowSamples" class="toggle-btn toggle-active"
-                         data-tooltip-title="Show Past Samples"
-                         data-tooltip-badge="Point Cloud"
-                         data-tooltip-color="teal"
-                         data-tooltip-desc="Toggle visibility of the past sample point cloud overlay.">Show</div>
-                    <div id="optHideSamples" class="toggle-btn"
-                         data-tooltip-title="Hide Past Samples"
-                         data-tooltip-badge="Point Cloud"
-                         data-tooltip-color="teal"
-                         data-tooltip-desc="Hide the past sample point cloud overlay for a cleaner cluster-only view.">Hide</div>
-                  </div>
-                </div>
-
-                <div class="control-row">
-                  <div class="control-label">
-                    <span>Max Displayed Points</span>
-                    <div class="val-box">
-                      <input type="number" id="inputMaxDrawPts" class="val-input" min="100" max="100000" step="500" value="10000" style="width:64px;">
-                      <span class="val-unit">pts</span>
-                    </div>
-                  </div>
-                  <input type="range" id="sliderMaxDrawPts" min="500" max="15000" step="500" value="10000"
-                         data-tooltip-title="Max Displayed Points"
-                         data-tooltip-badge="Display: Draw Cap"
-                         data-tooltip-color="teal"
-                         data-tooltip-desc="Maximum number of past sample points drawn per frame. Higher values show more detail but may reduce rendering performance.">
-                </div>
-                <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
-                  <span>500 (Fast)</span>
-                  <span>3,000 (Default)</span>
-                  <span>15,000 (Dense)</span>
-                </div>
-
-                <div class="control-row">
-                  <div class="control-label">
-                    <span>Sample Buffer Capacity</span>
-                    <div class="val-box">
-                      <input type="number" id="inputSampleBufCap" class="val-input" min="1000" max="500000" step="5000" value="100000" style="width:68px;">
-                      <span class="val-unit">pts</span>
-                    </div>
-                  </div>
-                  <input type="range" id="sliderSampleBufCap" min="5000" max="100000" step="5000" value="100000"
-                         data-tooltip-title="Sample Buffer Capacity"
-                         data-tooltip-badge="Display: Buffer"
-                         data-tooltip-color="teal"
-                         data-tooltip-desc="Maximum number of past sample coordinates kept in memory. When exceeded, the oldest samples are discarded. Higher values consume more memory.">
-                </div>
-                <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
-                  <span>5k (Lean)</span>
-                  <span>30k (Default)</span>
-                  <span>100k (Full)</span>
-                </div>
-
-                <div class="control-row">
-                  <div class="control-label">
-                    <span>Batch Thinning Rate</span>
-                    <div class="val-box">
-                      <span class="val-unit">1 /</span>
-                      <input type="number" id="inputBatchThin" class="val-input" min="1" max="128" step="1" value="1" style="width:48px;">
-                      <span class="val-unit">pts</span>
-                    </div>
-                  </div>
-                  <input type="range" id="sliderBatchThin" min="1" max="32" step="1" value="1"
-                         data-tooltip-title="Batch Thinning Rate"
-                         data-tooltip-badge="Display: Thinning"
-                         data-tooltip-color="teal"
-                         data-tooltip-desc="During batch (non-rendering) frames, keep 1 out of every N samples for the point cloud. Lower values capture more points but use more memory. 1 = keep all.">
-                </div>
-                <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
-                  <span>1 (All Frames)</span>
-                  <span>8 (Default)</span>
-                  <span>32 (Sparse)</span>
-                </div>
+              <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
+                <span>500 (Fast)</span>
+                <span>3,000 (Default)</span>
+                <span>15,000 (Dense)</span>
               </div>
 
-              <!-- Cluster Metric Enclosing Circles -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-                  <span>Cluster Metric Enclosing Circles</span>
-                </div>
-                <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 8px;">
-                  Draw enclosing circles around each cluster with area strictly proportional to points or distance computations. Both options can be simultaneously active.
-                </p>
-                <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 4px;">
-                  <div id="optCircleMembers" class="toggle-btn toggle-green" 
-                       data-tooltip-title="Circle: Member Points Count" 
-                       data-tooltip-badge="Area ∝ Points (Green)" 
-                       data-tooltip-color="green" 
-                       data-tooltip-desc="Draws an emerald green circle around each cluster where the interior circle area is strictly proportional to the number of points (member frames) in that cluster.">
-                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-right:3px;"></span>Points
-                  </div>
-                  <div id="optCircleSCDists" class="toggle-btn toggle-amber" 
-                       data-tooltip-title="Circle: #SC Distance Computations" 
-                       data-tooltip-badge="Area ∝ #SC Dists (Amber)" 
-                       data-tooltip-color="amber" 
-                       data-tooltip-desc="Draws an amber/orange dashed circle around each cluster where the interior circle area is strictly proportional to cumulative cluster-to-frame distances computed to that cluster.">
-                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#f59e0b; margin-right:3px;"></span>SC Dists
-                  </div>
-                  <div id="optEntropyMap" class="toggle-btn" style="color: #38bdf8;" 
-                       data-tooltip-title="Spatial Information Gain Heatmap" 
-                       data-tooltip-badge="Entropy Reduction Map" 
-                       data-tooltip-color="cyan" 
-                       data-tooltip-desc="Draws a glowing spatial heatmap halo around each cluster anchor where brightness and color (violet → cyan → emerald → gold) represent its expected Shannon entropy reduction power / information gain ΔH = H - E[H|C_i].">
-                    <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#38bdf8; margin-right:3px;"></span>Info Map
+              <div class="control-row">
+                <div class="control-label">
+                  <span>Sample Buffer Capacity</span>
+                  <div class="val-box">
+                    <input type="number" id="inputSampleBufCap" class="val-input" min="1000" max="500000" step="5000" value="100000" style="width:68px;">
+                    <span class="val-unit">pts</span>
                   </div>
                 </div>
+                <input type="range" id="sliderSampleBufCap" min="5000" max="100000" step="5000" value="100000"
+                       data-tooltip-title="Sample Buffer Capacity"
+                       data-tooltip-badge="Display: Buffer"
+                       data-tooltip-color="teal"
+                       data-tooltip-desc="Maximum number of past sample coordinates kept in memory. When exceeded, the oldest samples are discarded. Higher values consume more memory.">
+              </div>
+              <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
+                <span>5k (Lean)</span>
+                <span>30k (Default)</span>
+                <span>100k (Full)</span>
               </div>
 
-              <!-- 3D Camera Presets -->
-              <div class="sub-control-card" id="card3DPresetsSide">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
-                  <span>3D Camera Presets &amp; Reset</span>
+              <div class="control-row">
+                <div class="control-label">
+                  <span>Batch Thinning Rate</span>
+                  <div class="val-box">
+                    <span class="val-unit">1 /</span>
+                    <input type="number" id="inputBatchThin" class="val-input" min="1" max="128" step="1" value="1" style="width:48px;">
+                    <span class="val-unit">pts</span>
+                  </div>
                 </div>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; margin-bottom: 4px;">
-                  <button class="preset-btn" id="presetIsoSide" style="padding: 4px; font-size: 0.73rem;" 
-                          data-tooltip-title="Isometric 3D Camera Perspective" 
-                          data-tooltip-badge="θ=-35°, φ=25°" 
-                          data-tooltip-color="teal" 
-                          data-tooltip-desc="Rotates 3D orbit camera to isometric perspective for balanced 3D spatial depth visualization.">Iso</button>
-                  <button class="preset-btn" id="presetFrontSide" style="padding: 4px; font-size: 0.73rem;" 
-                          data-tooltip-title="Front Elevation Projection (XZ Plane)" 
-                          data-tooltip-badge="Front View" 
-                          data-tooltip-color="teal" 
-                          data-tooltip-desc="Aligns perspective along the Y-axis (θ = 0°, φ = 0°) looking directly at the orthogonal X-Z plane.">Front (XZ)</button>
-                  <button class="preset-btn" id="presetTopSide" style="padding: 4px; font-size: 0.73rem;" 
-                          data-tooltip-title="Top Planar Projection (XY Plane)" 
-                          data-tooltip-badge="Top View" 
-                          data-tooltip-color="teal" 
-                          data-tooltip-desc="Aligns perspective along the Z-axis (θ = 0°, φ = 89°) looking directly down onto the X-Y ground plane.">Top (XY)</button>
-                  <button class="preset-btn" id="presetSideSide" style="padding: 4px; font-size: 0.73rem;" 
-                          data-tooltip-title="Lateral Side Projection (YZ Plane)" 
-                          data-tooltip-badge="Side View" 
-                          data-tooltip-color="teal" 
-                          data-tooltip-desc="Aligns perspective along the X-axis (θ = 90°, φ = 0°) looking directly at the orthogonal Y-Z plane.">Side (YZ)</button>
-                </div>
-                <div style="display: flex; gap: 4px;">
-                  <button class="preset-btn" id="presetReset3DSide" style="flex: 1; padding: 4px; font-size: 0.73rem;" 
-                          data-tooltip-title="Reset 3D Orbit Camera" 
-                          data-tooltip-badge="Reset Camera" 
-                          data-tooltip-color="teal" 
-                          data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">↺ 3D Cam</button>
-                  <button id="btnResetViewSide" class="preset-btn" style="flex: 1; padding: 4px; font-size: 0.73rem;" 
-                          data-tooltip-title="Reset Pan &amp; Zoom View (1:1)" 
-                          data-tooltip-badge="1:1 Zoom" 
-                          data-tooltip-color="cyan" 
-                          data-tooltip-desc="Restores 2D / orthogonal quad pan offsets to (0, 0) and resets canvas zoom to 100%.">🔍 1:1 View</button>
-                </div>
+                <input type="range" id="sliderBatchThin" min="1" max="32" step="1" value="1"
+                       data-tooltip-title="Batch Thinning Rate"
+                       data-tooltip-badge="Display: Thinning"
+                       data-tooltip-color="teal"
+                       data-tooltip-desc="During batch (non-rendering) frames, keep 1 out of every N samples for the point cloud. Lower values capture more points but use more memory. 1 = keep all.">
               </div>
-
-              <!-- Multi-View Guide -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-teal);">
-                  <span>Multi-View Projections Guide</span>
-                </div>
-                <ul style="font-size: 0.72rem; color: var(--text-muted); margin-left: 16px; line-height: 1.45;">
-                  <li><b>Quad 1 (Top-Left):</b> Along X (Y-Z Orthogonal Plane)</li>
-                  <li><b>Quad 2 (Top-Right):</b> Along Y (X-Z Orthogonal Plane)</li>
-                  <li><b>Quad 3 (Bottom-Left):</b> Along Z (X-Y Orthogonal Plane)</li>
-                  <li><b>Quad 4 (Bottom-Right):</b> Interactive 3D Orbit Camera</li>
-                  <li><b>Controls:</b> Drag Quad 4 to orbit; drag Quads 1-3 to pan; wheel to zoom; click ⛶ to maximize.</li>
-                </ul>
+              <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
+                <span>1 (All Frames)</span>
+                <span>8 (Default)</span>
+                <span>32 (Sparse)</span>
               </div>
             </div>
 
-            <!-- Tab 4: CLI Command Equivalence -->
-            <div id="cfgCliPanel" style="display: none;">
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-cyan);">
-                  <span>Equivalent Command Line</span>
-                </div>
-                <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 8px;">
-                  This is the exact <code>gric-cluster</code> command that reproduces the current GUI settings. Replace <code>&lt;input.fits&gt;</code> with your input file path.
-                </p>
-                <div style="display: flex; justify-content: flex-end; margin-bottom: 4px;">
-                  <button id="btnCopyCli" class="btn-action" style="padding: 2px 8px; font-size: 0.7rem;"
-                          data-tooltip-title="Copy CLI Command"
-                          data-tooltip-badge="Clipboard"
-                          data-tooltip-color="cyan"
-                          data-tooltip-desc="Copy the gric-cluster command to clipboard.">📋 Copy</button>
-                </div>
-                <pre id="cliCommandOutput" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(100,100,100,0.3); border-radius: 6px; padding: 10px 12px; font-size: 0.78rem; color: #e2e8f0; white-space: pre-wrap; word-break: break-all; line-height: 1.5; margin: 0 0 8px 0; font-family: 'JetBrains Mono', 'Fira Code', monospace;">gric-cluster 0.100 &lt;input.fits&gt;</pre>
+            <!-- Cluster Metric Enclosing Circles -->
+            <div class="sub-control-card">
+              <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
+                <span>Cluster Metric Enclosing Circles</span>
               </div>
-
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-                  <span>WASM Build Info</span>
+              <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 8px;">
+                Draw enclosing circles around each cluster with area strictly proportional to points or distance computations. Both options can be simultaneously active.
+              </p>
+              <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 4px;">
+                <div id="optCircleMembers" class="toggle-btn toggle-green" 
+                     data-tooltip-title="Circle: Member Points Count" 
+                     data-tooltip-badge="Area ∝ Points (Green)" 
+                     data-tooltip-color="green" 
+                     data-tooltip-desc="Draws an emerald green circle around each cluster where the interior circle area is strictly proportional to the number of points (member frames) in that cluster.">
+                  <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-right:3px;"></span>Points
                 </div>
-                <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px;">
-                  <span style="font-size: 0.75rem; color: var(--text-muted);">Build hash:</span>
-                  <span id="wasmBuildHash" class="badge-pill" style="font-family: monospace; font-size: 0.72rem;">loading...</span>
+                <div id="optCircleSCDists" class="toggle-btn toggle-amber" 
+                     data-tooltip-title="Circle: #SC Distance Computations" 
+                     data-tooltip-badge="Area ∝ #SC Dists (Amber)" 
+                     data-tooltip-color="amber" 
+                     data-tooltip-desc="Draws an amber/orange dashed circle around each cluster where the interior circle area is strictly proportional to cumulative cluster-to-frame distances computed to that cluster.">
+                  <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#f59e0b; margin-right:3px;"></span>SC Dists
                 </div>
-                <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin: 0;">
-                  The WASM binary is compiled from the same C source code as the <code>gric-cluster</code> command-line program. The build hash identifies which git commit was used to compile the binary.
-                </p>
+                <div id="optEntropyMap" class="toggle-btn" style="color: #38bdf8;" 
+                     data-tooltip-title="Spatial Information Gain Heatmap" 
+                     data-tooltip-badge="Entropy Reduction Map" 
+                     data-tooltip-color="cyan" 
+                     data-tooltip-desc="Draws a glowing spatial heatmap halo around each cluster anchor where brightness and color (violet → cyan → emerald → gold) represent its expected Shannon entropy reduction power / information gain ΔH = H - E[H|C_i].">
+                  <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#38bdf8; margin-right:3px;"></span>Info Map
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Resizer 1 (between Settings and Resources) -->
-      <div class="panel-resizer" id="resizer1" 
+      <!-- Resizer 3 (between Display & View and CLI Console & Command) -->
+      <div class="panel-resizer" id="resizer3" 
            data-tooltip-title="Vertical Panel Resizer" 
            data-tooltip-badge="Drag Handle" 
            data-tooltip-color="cyan" 
-           data-tooltip-desc="Click and drag vertically to adjust the proportional height distribution between Simulator Settings and Resource Tracker."></div>
+           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between Display &amp; View and CLI Console &amp; Command."></div>
 
-      <!-- 2. Real-Time Resource & Performance Tracker -->
-      <div id="cardResources" class="card expanded" style="flex: 1.0 1 0px;">
+      <!-- 4. CLI Console & Command -->
+      <div id="cardCli" class="card collapsed" style="flex: 0 0 auto;">
+        <div class="card-title" onclick="togglePanelCollapse('cardCli')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseCli" 
+                    data-tooltip-title="Collapse / Expand CLI Console &amp; Command" 
+                    data-tooltip-badge="Card Toggle" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Toggles visibility of equivalent gric-cluster command, desktop native runner, and terminal output console." 
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardCli');">▾</button>
+            <span>CLI Console &amp; Command</span>
+          </div>
+          <span style="font-size: 0.72rem; color: var(--accent-cyan); font-weight: 600;">CLI: gric-cluster</span>
+        </div>
+
+        <div class="card-body">
+          <div class="card-body-scroll">
+            <!-- Section 1: Equivalent CLI Command -->
+            <div class="sub-control-card">
+              <div class="control-label" style="font-weight: 700; color: var(--accent-cyan);">
+                <span>Equivalent Command Line</span>
+              </div>
+              <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 8px;">
+                This is the exact <code>gric-cluster</code> command matching your current GUI parameters.
+              </p>
+              <div style="display: flex; justify-content: flex-end; margin-bottom: 4px;">
+                <button id="btnCopyCli" class="btn-action" style="padding: 2px 8px; font-size: 0.7rem;"
+                        data-tooltip-title="Copy CLI Command"
+                        data-tooltip-badge="Clipboard"
+                        data-tooltip-color="cyan"
+                        data-tooltip-desc="Copy the gric-cluster command to clipboard.">📋 Copy</button>
+              </div>
+              <pre id="cliCommandOutput" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(100,100,100,0.3); border-radius: 6px; padding: 10px 12px; font-size: 0.78rem; color: #e2e8f0; white-space: pre-wrap; word-break: break-all; line-height: 1.5; margin: 0 0 8px 0; font-family: 'JetBrains Mono', 'Fira Code', monospace;">gric-cluster 0.100 &lt;input.fits&gt;</pre>
+            </div>
+
+            <!-- Section 2: Native CLI Execution (Desktop Mode) -->
+            <div class="sub-control-card" id="cardCliRunner">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <div class="control-label" style="font-weight: 700; color: var(--accent-green); margin: 0;">
+                  <span>Native CLI Runner (OpenMP / AVX)</span>
+                </div>
+                <span id="badgeCliStatus" class="badge-pill" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8; font-size: 0.7rem;">Idle</span>
+              </div>
+
+              <div id="cliWebNotice" style="display: none; font-size: 0.72rem; color: var(--accent-amber); margin-bottom: 8px; line-height: 1.35;">
+                💡 Running in Web Mode (WASM). To execute native multi-threaded CLI binaries (gric-cluster / gric-knn), launch using <code>tools/gric-gui</code>.
+              </div>
+
+              <div id="cliDesktopControls" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- Tmux Session Banner -->
+                <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.25); border-radius: 5px; padding: 5px 8px;">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 0.85rem;">🖥️</span>
+                    <span style="font-size: 0.72rem; color: #4ade80; font-weight: 600;">Runs in tmux session <code style="color: #38bdf8; background: rgba(0,0,0,0.3); padding: 1px 4px; border-radius: 3px;">gric_cli</code></span>
+                  </div>
+                  <button id="btnCopyTmuxCmd" class="btn-action" style="padding: 2px 7px; font-size: 0.68rem; font-weight: 600; color: #4ade80; border-color: rgba(34, 197, 94, 0.4);"
+                          data-tooltip-title="Copy tmux Attach Command"
+                          data-tooltip-badge="tmux attach -t gric_cli"
+                          data-tooltip-color="green"
+                          data-tooltip-desc="Copies 'tmux attach -t gric_cli' to clipboard so you can attach from terminal.">📋 Copy Attach</button>
+                </div>
+
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <label style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600; width: 64px;">Dataset:</label>
+                  <select id="selectCliDataset" style="flex: 1; padding: 4px 8px; font-size: 0.76rem;">
+                    <option value="">(Select dataset from workspace...)</option>
+                  </select>
+                </div>
+
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <button id="btnRunCli" class="btn-action primary" style="flex: 1.2; padding: 6px 12px; font-size: 0.78rem; font-weight: 700;"
+                          data-tooltip-title="Run Native CLI Pipeline"
+                          data-tooltip-badge="Native Execution"
+                          data-tooltip-color="green"
+                          data-tooltip-desc="Spawns native compiled gric-cluster (and gric-knn if enabled) in the local workspace with multi-threading and direct disk I/O.">▶️ Run Native CLI</button>
+                  <button id="btnKillCli" class="btn-action danger" style="flex: 0.8; padding: 6px 10px; font-size: 0.78rem;" disabled
+                          data-tooltip-title="Abort Running CLI Process"
+                          data-tooltip-badge="Process Kill"
+                          data-tooltip-color="red"
+                          data-tooltip-desc="Sends termination signal to abort the active gric-cluster or gric-knn background process.">🛑 Stop</button>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
+                  <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                    <input type="checkbox" id="chkAutoLoadResults" checked style="cursor: pointer;">
+                    <span>Auto-load results into visualizer</span>
+                  </label>
+                  <button id="btnLoadClusterDatManual" class="btn-action" style="padding: 2px 6px; font-size: 0.68rem;"
+                          data-tooltip-title="Load Existing Output Folder"
+                          data-tooltip-badge="Import .clusterdat"
+                          data-tooltip-color="cyan"
+                          data-tooltip-desc="Manually select and parse a completed .clusterdat/ folder from the workspace into the visualizer.">📂 Load Results</button>
+                </div>
+
+                <!-- Live CLI Terminal Console -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                  <span style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600;">Console Output:</span>
+                  <button id="btnClearCliConsole" class="btn-action" style="padding: 1px 6px; font-size: 0.65rem;">Clear</button>
+                </div>
+                <pre id="cliConsoleLog" style="background: #090d16; border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 8px 10px; font-size: 0.72rem; color: #a5f3fc; height: 140px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.4; margin: 0; font-family: 'JetBrains Mono', 'Fira Code', monospace;">[GRIC CLI Console ready. Select a dataset and click 'Run Native CLI'.]</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resizer 4 (between CLI Console and Clustering Resources) -->
+      <div class="panel-resizer" id="resizer4" 
+           data-tooltip-title="Vertical Panel Resizer" 
+           data-tooltip-badge="Drag Handle" 
+           data-tooltip-color="cyan" 
+           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between CLI Console &amp; Command and Clustering Resource Tracker."></div>
+
+      <!-- 5. Clustering: Resource Tracker -->
+      <div id="cardResources" class="card collapsed" style="flex: 0 0 auto;">
         <div class="card-title" onclick="togglePanelCollapse('cardResources')">
           <div style="display: flex; align-items: center; gap: 6px;">
             <button class="card-collapse-btn" id="btnCollapseResources" 
@@ -957,7 +1142,7 @@
                     data-tooltip-color="amber" 
                     data-tooltip-desc="Toggles visibility of CPU execution telemetry, distance evaluation ratios, memory footprints, and pruning diagnostics." 
                     onclick="event.stopPropagation(); togglePanelCollapse('cardResources');">▾</button>
-            <span>⚡ Resource Tracker</span>
+            <span>Clustering: Resource Tracker</span>
           </div>
           <div style="display: flex; gap: 5px; align-items: center;">
             <span id="clusterBadge" class="badge-pill" style="background: rgba(192, 132, 252, 0.12); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.35); font-weight: 600;">0 clusters</span>
@@ -1056,288 +1241,84 @@
                      data-tooltip-color="purple"
                      data-tooltip-desc="Total estimated memory occupied by cluster centroids, inter-cluster matrix, and transition probabilities.">
                   <div id="statMemoryTotal" class="num" style="color: var(--accent-purple); font-size: 1.05rem;">0 KB</div>
-                  <div class="lbl" id="lblStatMemory">Model Memory Footprint</div>
-                </div>
-                <div class="stat-box"
-                     data-tooltip-title="Entropy Reduction Power (η)"
-                     data-tooltip-badge="Information Gain"
-                     data-tooltip-color="cyan"
-                     data-tooltip-desc="Average Shannon entropy bits of hypothesis uncertainty eliminated per distance calculation evaluation (bits/eval).">
-                  <div id="statInfoGainRate" class="num" style="color: #38bdf8;">0.00 b/ev</div>
-                  <div class="lbl" id="lblStatInfoGain">Entropy Power (<span id="statLastInfoGain">0.00</span> b/ev)</div>
-                </div>
-                <div class="stat-box"
-                     data-tooltip-title="Initial Frame Uncertainty (H_0)"
-                     data-tooltip-badge="Shannon Entropy"
-                     data-tooltip-color="purple"
-                     data-tooltip-desc="Base Shannon entropy uncertainty of the coordinate frame before distance measurements (bits).">
-                  <div id="statInitialH" class="num" style="color: #c084fc;">0.00 b</div>
-                  <div class="lbl" id="lblStatInitialH">Initial H (Avg <span id="statAvgInitialH">0.00</span> b)</div>
-                </div>
-                <div class="stat-box"
-                     data-tooltip-title="Cumulative Information Reduced"
-                     data-tooltip-badge="Information Gain"
-                     data-tooltip-color="green"
-                     data-tooltip-desc="Total cumulative Shannon entropy bits of hypothesis uncertainty eliminated across all ingested frames.">
-                  <div id="statTotalEntropy" class="num" style="color: #4ade80;">0.00 kb</div>
-                  <div class="lbl" id="lblStatTotalEntropy">Info Reduced (Total)</div>
-                </div>
-                <div class="stat-box"
-                     data-tooltip-title="Entropy Gate Bypass Rate"
-                     data-tooltip-badge="Gating &amp; Short-Circuit"
-                     data-tooltip-color="amber"
-                     data-tooltip-desc="Percentage of frames where candidate distribution uncertainty was sharp enough (H < gate or leader shortcut) to bypass full entropy search.">
-                  <div id="statGateRatio" class="num" style="color: #fbbf24;">0.0%</div>
-                  <div class="lbl" id="lblStatGateRatio">Gate Bypass (<span id="statGatedCount">0</span> fr)</div>
+                  <div class="lbl">Total Memory</div>
                 </div>
               </div>
 
-              <!-- Mini Sparkline for CPU Compute Latency -->
-              <div style="margin-top: 8px; background: #172033; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px;">
-                <div style="display: flex; justify-content: space-between; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
-                  <span>Frame Compute Latency (last 60 frames)</span>
-                  <span id="sparklineVal" style="color: var(--accent-blue); font-family: monospace; font-weight: 600;">0.00 ms</span>
+              <!-- Sparkline History Strip -->
+              <div style="margin-top: 10px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 3px;">
+                  <span>Clustering Latency (Last 60 Frames)</span>
+                  <span id="lblSparklineAvg">Avg: 0.00 ms</span>
                 </div>
-                <canvas id="sparklineCanvas" width="380" height="34" style="width: 100%; height: 34px; display: block; border-radius: 4px;"></canvas>
+                <canvas id="sparklineCanvas" height="32" style="width: 100%; height: 32px; background: #0b1120; border-radius: 4px; border: 1px solid var(--card-border); display: block;"></canvas>
               </div>
             </div>
 
-            <!-- Sub-Tab 2: Distance Breakdown Panel (Sample-Cluster vs Cluster-Cluster) -->
+            <!-- Sub-Tab 2: Distance Distribution -->
             <div id="resDistancesPanel" style="display: none;">
-              <!-- Live Distance Computation Curves & Live Averages -->
-              <div class="sub-control-card" style="margin-top: 0; border-color: rgba(56, 189, 248, 0.35);">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-                  <span>Live Distance Computation Curves</span>
-                  <span class="badge-pill" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; font-weight:700;">Live #Dist / Frame</span>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0 10px 0;">
-                  <div style="background: #172033; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 5px; padding: 5px 6px; text-align: center;">
-                    <div id="statLiveAvgDFC" style="font-size: 1.05rem; font-weight: 800; color: #38bdf8; font-family: monospace;">0.00</div>
-                    <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Avg d(f,c)/frame</div>
-                  </div>
-                  <div style="background: #172033; border: 1px solid rgba(192, 132, 252, 0.3); border-radius: 5px; padding: 5px 6px; text-align: center;">
-                    <div id="statLiveAvgDCC" style="font-size: 1.05rem; font-weight: 800; color: #c084fc; font-family: monospace;">0.00</div>
-                    <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Avg d(c,c)/frame</div>
-                  </div>
-                  <div style="background: #172033; border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 5px; padding: 5px 6px; text-align: center;">
-                    <div id="statLiveAvgTotal" style="font-size: 1.05rem; font-weight: 800; color: #4ade80; font-family: monospace;">0.00</div>
-                    <div style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">Total Dist/frame</div>
-                  </div>
-                </div>
-
-                <!-- Instantaneous Trace Curves Canvas -->
-                <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
-                    <span>Evaluations / Frame (<span id="lblDistCurveFrames" style="color: var(--text-main); font-family: monospace;">Frame 0 → 0</span>)</span>
-                    <div style="display: flex; gap: 8px; font-size: 0.68rem;">
-                      <span style="display: flex; align-items: center; gap: 3px; color: #38bdf8;">
-                        <span style="display: inline-block; width: 8px; height: 2px; background: #38bdf8;"></span> d(f,c) (<b id="lblLastDFC">0</b>)
-                      </span>
-                      <span style="display: flex; align-items: center; gap: 3px; color: #c084fc;">
-                        <span style="display: inline-block; width: 8px; height: 2px; background: #c084fc;"></span> d(c,c) (<b id="lblLastDCC">0</b>)
-                      </span>
-                    </div>
-                  </div>
-                  <canvas id="distCurvesCanvas" width="380" height="70" style="width: 100%; height: 70px; display: block; border-radius: 4px; cursor: crosshair;"></canvas>
-                </div>
-
-                <!-- Cumulative Average Distance Curve Canvas (Since Sample 0) -->
-                <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px; margin-top: 6px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.70rem; color: var(--text-muted); margin-bottom: 4px;">
-                    <span>Cumulative Avg / Frame (<span id="lblDistAvgCurveFrames" style="color: var(--text-main); font-family: monospace;">Since Sample 0</span>)</span>
-                    <div style="display: flex; gap: 8px; font-size: 0.68rem;">
-                      <span style="display: flex; align-items: center; gap: 3px; color: #38bdf8;">
-                        <span style="display: inline-block; width: 8px; height: 2px; background: #38bdf8;"></span> avg d(f,c) (<b id="lblLiveMeanDFC">0.00</b>)
-                      </span>
-                      <span style="display: flex; align-items: center; gap: 3px; color: #c084fc;">
-                        <span style="display: inline-block; width: 8px; height: 2px; background: #c084fc;"></span> avg d(c,c) (<b id="lblLiveMeanDCC">0.00</b>)
-                      </span>
-                    </div>
-                  </div>
-                  <canvas id="distAvgCurvesCanvas" width="380" height="70" style="width: 100%; height: 70px; display: block; border-radius: 4px; cursor: crosshair;"></canvas>
-                </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font-size: 0.75rem; font-weight: 600; color: var(--text-main);">Distance Distribution Histogram</span>
+                <span style="font-size: 0.7rem; color: var(--accent-green);">rlim = <span id="lblHistRlim">0.100</span></span>
               </div>
-
-              <!-- Sample-to-Cluster -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-                  <span>Sample-to-Cluster (<span class="badge-pill">d(f, c)</span>)</span>
-                  <span id="statDistSC" class="val" style="color: var(--accent-blue); font-size: 0.88rem;">0</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Avg Evaluations / Frame:</span>
-                  <span id="statAvgSCEvals" class="val">0.00</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Pruning Distance Savings:</span>
-                  <span id="statSavedPct" class="val" style="color: var(--accent-green);">0%</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Theoretical Naive Evals:</span>
-                  <span id="statNaiveEvals" class="val">0</span>
-                </div>
-              </div>
-
-              <!-- Cluster-to-Cluster -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
-                  <span>Cluster-to-Cluster (<span class="badge-pill">d(c_i, c_j)</span>)</span>
-                  <span id="statDistCC" class="val" style="color: var(--accent-purple); font-size: 0.88rem;">0</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Total Clusters Formed:</span>
-                  <span id="statDistTotalClusters" class="val" style="color: #c084fc; font-weight: 600;">0</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Inter-Cluster Matrix D_cc:</span>
-                  <span id="statDccDim" class="val">0 × 0 (0 cells)</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Avg CC Cost / Frame:</span>
-                  <span id="statAvgCCEvals" class="val">0.00</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Active Cluster Anchors:</span>
-                  <span id="statActiveClusters" class="val">0</span>
-                </div>
-              </div>
-
-              <!-- Ratio & Throughput -->
-              <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; padding: 0 4px;">
-                <span>Evaluation Rate: <b id="statDistThroughput" style="color: var(--text-main); font-family: monospace;">0 dist/s</b></span>
-                <span>Total Distances: <b id="statDistGrandTotal" style="color: var(--text-main); font-family: monospace;">0</b></span>
+              <canvas id="distHistCanvas" height="120" style="width: 100%; height: 120px; background: #0b1120; border-radius: 4px; border: 1px solid var(--card-border); display: block;"></canvas>
+              <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: 4px;">
+                <span style="color: var(--accent-blue);">■ d(f, c) Sample-to-Cluster</span>
+                <span style="color: var(--accent-purple);">■ d(c_i, c_j) Inter-Cluster</span>
               </div>
             </div>
 
-            <!-- Sub-Tab 3: Memory Footprint Panel -->
+            <!-- Sub-Tab 3: Memory Footprint -->
             <div id="resMemoryPanel" style="display: none;">
-              <!-- Model Footprint -->
-              <div class="sub-control-card" style="margin-top: 0;">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-purple);">
-                  <span>GRIC Model Footprint</span>
-                  <span id="statModelTotalBytes" class="val" style="color: var(--accent-purple); font-size: 0.88rem;">0 KB</span>
+              <div class="stats-grid" style="grid-template-columns: 1fr 1fr;">
+                <div class="stat-box">
+                  <div id="memCentroids" class="num" style="color: #c084fc;">0 B</div>
+                  <div class="lbl">Cluster Centroids</div>
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Centroids &amp; Metadata:</span>
-                  <span id="statCentroidsMem" class="val">0 B</span>
+                <div class="stat-box">
+                  <div id="memDcc" class="num" style="color: #38bdf8;">0 B</div>
+                  <div class="lbl">D_cc Matrix</div>
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>D_cc Distance Matrix:</span>
-                  <span id="statDccMem" class="val">0 B</span>
+                <div class="stat-box">
+                  <div id="memTransitions" class="num" style="color: #4ade80;">0 B</div>
+                  <div class="lbl">Transition Table</div>
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Transition Matrix (TM):</span>
-                  <span id="statTmMem" class="val">0 B</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Point Cloud &amp; History:</span>
-                  <span id="statPastSamplesMem" class="val">0 B</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Subspace Tiles &amp; Tuples:</span>
-                  <span id="statTuplesMem" class="val">0 B</span>
-                </div>
-              </div>
-
-              <!-- Clustering Engine Backend -->
-              <div class="sub-control-card" style="margin-bottom: 6px;">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-                  <span>Clustering Engine</span>
-                  <span id="badgeWasmStatus" class="badge-pill" style="background: rgba(100,100,100,0.2); color: #888; font-family: monospace; font-size: 0.68rem; cursor: pointer;" onclick="toggleWasmEngine()">JS</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Backend:</span>
-                  <span id="statEngineBackend" class="val">JavaScript</span>
-                </div>
-              </div>
-
-              <!-- JS Engine Heap -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-                  <span>Browser JS Heap Memory</span>
-                  <span id="statHeapUsed" class="val" style="color: var(--accent-green); font-size: 0.88rem;">N/A</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Allocated Heap Size:</span>
-                  <span id="statHeapTotal" class="val">N/A</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Heap Size Limit:</span>
-                  <span id="statHeapLimit" class="val">N/A</span>
+                <div class="stat-box">
+                  <div id="memHeap" class="num" style="color: var(--accent-amber);">0 MB</div>
+                  <div class="lbl">Browser JS Heap</div>
                 </div>
               </div>
             </div>
 
-            <!-- Sub-Tab 4: Compute & Pruning Breakdown Panel -->
+            <!-- Sub-Tab 4: Compute Latency & Pruning Counters -->
             <div id="resComputePanel" style="display: none;">
-              <!-- Engine CPU Stats -->
-              <div class="sub-control-card" style="margin-top: 0;">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-amber);">
-                  <span>CPU Execution Stats</span>
-                  <span id="statComputeThroughput" class="val" style="color: var(--accent-amber); font-size: 0.88rem;">0 FPS</span>
+              <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+                <div class="stat-box">
+                  <div id="statPrune3P" class="num" style="color: #f87171;">0</div>
+                  <div class="lbl">3P Pruned</div>
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Instantaneous Latency:</span>
-                  <span id="statInstComputeMs" class="val">0.00 ms</span>
+                <div class="stat-box">
+                  <div id="statPrune4P" class="num" style="color: #fb923c;">0</div>
+                  <div class="lbl">4P Pruned</div>
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Mean Latency / Frame:</span>
-                  <span id="statAvgComputeMs" class="val">0.00 ms</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Cumulative Compute Time:</span>
-                  <span id="statTotalComputeMs" class="val">0.00 s</span>
+                <div class="stat-box">
+                  <div id="statPrune5P" class="num" style="color: #facc15;">0</div>
+                  <div class="lbl">5P Pruned</div>
                 </div>
               </div>
-
-              <!-- Pruning Exclusions Breakdown -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
-                  <span>Pruning &amp; Prior Breakdown</span>
+              <div style="margin-top: 8px; background: #0f172a; border-radius: 4px; padding: 8px; border: 1px solid var(--card-border);">
+                <div style="font-size: 0.72rem; font-weight: 700; color: var(--accent-green); margin-bottom: 4px;">Shannon Entropy Diagnostics</div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted);">
+                  <span>Cumulative Bits Reduced:</span>
+                  <span id="statDiagTotalEntropy" class="val" style="color: #4ade80;">0.00 bits</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>3-Point (Triangle Ineq):</span>
-                  <span id="statPrune3P" class="val" style="color: var(--accent-blue);">0</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>4-Point (Tetrahedral):</span>
-                  <span id="statPrune4P" class="val" style="color: var(--accent-purple);">0</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>5-Point (Cayley-Menger):</span>
-                  <span id="statPrune5P" class="val" style="color: #f43f5e);">0</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Predictor / TM Hits:</span>
-                  <span id="statPredHits" class="val" style="color: var(--accent-green);">0</span>
-                </div>
-              </div>
-
-              <!-- Shannon Entropy Diagnostics -->
-              <div class="sub-control-card">
-                <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-                  <span>Shannon Entropy Diagnostics</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Avg Initial Uncertainty (H_0):</span>
-                  <span id="statDiagAvgInitialH" class="val" style="color: var(--accent-purple);">0.00 bits</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Info Reduction Power (η):</span>
-                  <span id="statDiagInfoPower" class="val" style="color: #38bdf8;">0.00 bits/eval</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Max Initial Uncertainty:</span>
+                  <span>Peak Initial Entropy:</span>
                   <span id="statDiagMaxInitialH" class="val" style="color: var(--accent-green);">0.00 bits</span>
                 </div>
                 <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
                   <span>Entropy Gated / Shortcut:</span>
                   <span id="statDiagGatedCount" class="val" style="color: var(--accent-amber);">0 (0.0%)</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
-                  <span>Full Evaluated Frames:</span>
-                  <span id="statDiagEvalCount" class="val" style="color: var(--accent-blue);">0</span>
                 </div>
               </div>
             </div>
@@ -1345,24 +1326,24 @@
         </div>
       </div>
 
-      <!-- Resizer 2 (between Resources and Decisions) -->
-      <div class="panel-resizer" id="resizer2" 
+      <!-- Resizer 5 (between Clustering Resources and Clustering Decisions & Trace) -->
+      <div class="panel-resizer" id="resizer5" 
            data-tooltip-title="Vertical Panel Resizer" 
            data-tooltip-badge="Drag Handle" 
-           data-tooltip-color="amber" 
-           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between Resource Tracker and Decisions / Search Trace."></div>
+           data-tooltip-color="purple" 
+           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between Clustering Resources and Clustering Decisions &amp; Trace."></div>
 
-      <!-- 3. Flexible Decision Narrative & Candidate Trace -->
-      <div id="cardTrace" class="card expanded" style="flex: 1.2 1 0px;">
+      <!-- 3. Clustering Decisions & Trace -->
+      <div id="cardTrace" class="card collapsed" style="flex: 0 0 auto;">
         <div class="card-title" style="margin-bottom: 6px;" onclick="togglePanelCollapse('cardTrace')">
           <div style="display: flex; align-items: center; gap: 6px;">
             <button class="card-collapse-btn" id="btnCollapseTrace" 
-                    data-tooltip-title="Collapse / Expand Decisions &amp; Trace" 
+                    data-tooltip-title="Collapse / Expand Clustering Decisions &amp; Trace" 
                     data-tooltip-badge="Card Toggle" 
                     data-tooltip-color="purple" 
-                    data-tooltip-desc="Toggles visibility of algorithmic decision narrative logs and the real-time interactive Cluster Table." 
+                    data-tooltip-desc="Toggles visibility of algorithmic decision narrative logs, cluster table, transition matrix, and entropy trace." 
                     onclick="event.stopPropagation(); togglePanelCollapse('cardTrace');">▾</button>
-            <span id="traceTitle">Decisions &amp; Search Trace</span>
+            <span id="traceTitle">Clustering Decisions &amp; Trace</span>
           </div>
           <span id="measCountBadge" class="badge-pill">0 measured</span>
         </div>
@@ -1392,40 +1373,6 @@
           </div>
 
           <div class="card-body-scroll" style="display: flex; flex-direction: column;">
-            <!-- Recent Samples History Navigation Toolbar -->
-            <div id="sampleHistoryToolbar" style="display: flex; flex-direction: column; gap: 4px; background: #0b1120; border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px; margin-bottom: 8px;">
-              <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
-                <div style="display: flex; align-items: center; gap: 4px;">
-                  <button id="btnPrevSample" class="btn-micro" 
-                          data-tooltip-title="Previous Sample" 
-                          data-tooltip-badge="Nav" 
-                          data-tooltip-color="purple" 
-                          data-tooltip-desc="Step back to inspect algorithm decision log for the previous ingested point.">◀</button>
-                  <select id="selectSampleHistory" style="background: #172033; color: #f8fafc; border: 1px solid var(--card-border); border-radius: 4px; padding: 2px 6px; font-size: 0.70rem; font-family: monospace; max-width: 175px;">
-                    <option value="-1">● Live (Latest Point)</option>
-                  </select>
-                  <button id="btnNextSample" class="btn-micro" 
-                          data-tooltip-title="Next Sample" 
-                          data-tooltip-badge="Nav" 
-                          data-tooltip-color="purple" 
-                          data-tooltip-desc="Step forward to inspect algorithm decision log for the next ingested point.">▶</button>
-                </div>
-                <div style="display: flex; align-items: center; gap: 5px;">
-                  <button id="btnLiveSample" class="btn-micro" 
-                          style="background: rgba(74, 222, 128, 0.15); color: #4ade80; border-color: rgba(74, 222, 128, 0.3); font-weight: 700;"
-                          data-tooltip-title="Jump to Live Stream" 
-                          data-tooltip-badge="Real-time" 
-                          data-tooltip-color="green" 
-                          data-tooltip-desc="Return to tracking real-time live incoming frames.">● Live</button>
-                  <span id="lblSampleHistoryCount" style="color: var(--text-muted); font-size: 0.67rem; font-family: monospace;">0/0</span>
-                </div>
-              </div>
-              <!-- Quick Recent Points Scrubber Strip -->
-              <div id="sampleHistoryStrip" style="display: flex; align-items: center; gap: 3px; overflow-x: auto; padding: 2px 0 2px 0; scrollbar-width: thin;">
-                <span style="color: var(--text-muted); font-size: 0.65rem;">No samples logged yet.</span>
-              </div>
-            </div>
-
             <!-- Narrative Log Container -->
             <div id="narrativeContainer" class="narrative-list">
               <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 20px 0;">
@@ -1441,9 +1388,9 @@
             </div>
 
             <!-- Transition Matrix Container -->
-            <div id="tmContainer" class="candidate-list" style="display: none; flex-direction: column; gap: 8px; flex: 1; min-height: 0;">
+            <div id="tmContainer" class="candidate-list" style="display: none; flex-direction: column; gap: 8px;">
               <!-- Live TM Heatmap Card -->
-              <div id="tmHeatmapCard" style="flex: 1; display: flex; flex-direction: column; min-height: 320px; background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+              <div id="tmHeatmapCard" style="display: flex; flex-direction: column; background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                   <span style="font-size: 0.76rem; font-weight: 700; color: var(--accent-purple);">Live Markov Heatmap \(P(c_t \mid c_{t-1})\)</span>
                   <div style="display: flex; align-items: center; gap: 6px;">
@@ -1451,19 +1398,11 @@
                     <span id="badgeLastTrans" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; font-family: monospace; font-size: 0.68rem;">Last: None</span>
                   </div>
                 </div>
-                <div id="tmHeatmapWrapper" style="flex: 1; min-height: 240px; width: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative; padding: 4px 0;">
+                <div id="tmHeatmapWrapper" style="height: 260px; max-height: 260px; width: 100%; display: flex; justify-content: center; align-items: center; overflow: hidden; position: relative; padding: 4px 0;">
                   <canvas id="tmHeatmapCanvas" style="display: block; border-radius: 4px; background: #0b1120; cursor: crosshair;"></canvas>
                 </div>
                 <div id="tmCellTooltip" style="font-size: 0.72rem; color: var(--text-muted); text-align: center; min-height: 16px; margin-top: 4px; font-family: monospace;">
                   Hover over any cell to inspect transition details
-                </div>
-              </div>
-
-              <!-- Top Transition Paths Card -->
-              <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
-                <div style="font-size: 0.74rem; font-weight: 700; color: var(--accent-blue); margin-bottom: 4px;">Top Learned Transition Paths</div>
-                <div id="tmTopPathsList" style="display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem;">
-                  <div style="color: var(--text-muted); text-align: center; padding: 6px 0;">Awaiting transitions...</div>
                 </div>
               </div>
             </div>
@@ -1480,17 +1419,433 @@
                   <div style="color: var(--text-muted); text-align: center; padding: 12px 0;">Awaiting entropy target evaluations...</div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-              <!-- Information Gain by Cluster Anchor Table -->
-              <div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                  <span style="font-size: 0.74rem; font-weight: 700; color: var(--accent-blue);">Cluster Anchors Information Reduction Power (\(\Delta H\))</span>
-                  <span id="lblEntropyMapHint" style="font-size: 0.68rem; color: var(--text-muted);">Top Anchors</span>
+      <!-- Resizer 6 (between Clustering Group and k-NN Group) -->
+      <div class="panel-resizer" id="resizer6" style="display: none;" 
+           data-tooltip-title="Vertical Panel Resizer" 
+           data-tooltip-badge="Group Divider" 
+           data-tooltip-color="green" 
+           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between Clustering Group and k-NN Group."></div>
+
+      <!-- 4. k-NN: Algorithm & Controls -->
+      <div id="cardKnnSettings" class="card collapsed" style="flex: 0 0 auto; display: none;">
+        <div class="card-title" onclick="togglePanelCollapse('cardKnnSettings')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseKnnSettings" 
+                    data-tooltip-title="Collapse / Expand k-NN Settings" 
+                    data-tooltip-badge="Card Toggle" 
+                    data-tooltip-color="green" 
+                    data-tooltip-desc="Toggles visibility of k-NN post-processing solver configuration (k, dtmin, past/future, epsilon slack)." 
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardKnnSettings');">▾</button>
+            <span>k-NN: Algorithm &amp; Controls</span>
+          </div>
+          <span style="font-size: 0.72rem; color: var(--accent-green); font-weight: 600;">CLI: gric-knn</span>
+        </div>
+
+        <div class="card-body">
+          <div class="card-body-scroll" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Action & Auto-Run Bar -->
+            <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
+              <button id="btnRunKnnSide" class="primary" style="flex: 1; padding: 6px 12px; font-weight: 700; font-size: 0.78rem; background: linear-gradient(135deg, #10b981, #059669); border: none;"
+                      data-tooltip-title="Run Out-of-Core k-NN Solver"
+                      data-tooltip-badge="Action"
+                      data-tooltip-color="green"
+                      data-tooltip-desc="Executes the metric-pruned k-NN solver on the current point cloud and clusters, computing top-k neighbors for all frames.">▶ Compute k-NN</button>
+              <button id="btnToggleKnnAuto" class="btn-toggle toggle-green" style="padding: 6px 10px; font-size: 0.74rem; font-weight: 600;"
+                      data-tooltip-title="Toggle Auto-Run k-NN"
+                      data-tooltip-badge="Auto"
+                      data-tooltip-color="green"
+                      data-tooltip-desc="When active, automatically re-runs k-NN whenever clustering finishes or advances.">⚡ Auto</button>
+            </div>
+
+            <div id="knnControlsContainer" style="display: flex; flex-direction: column; gap: 6px;">
+              <!-- Number of Neighbors k -->
+              <div class="control-row">
+                <div class="control-label">
+                  <span>Neighbors (<span class="badge-pill">-k</span>)</span>
+                  <div class="val-box">
+                    <input type="number" id="inputKnnK" class="val-input" min="1" max="100" step="1" value="10">
+                    <span class="val-unit">k</span>
+                  </div>
                 </div>
-                <div id="entropyClusterPowerList" style="display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem;">
-                  <div style="color: var(--text-muted); text-align: center; padding: 12px 0;">No active clusters evaluated yet.</div>
+                <input type="range" id="sliderKnnK" min="1" max="50" step="1" value="10">
+              </div>
+
+              <!-- Min Temporal Separation dtmin -->
+              <div class="control-row">
+                <div class="control-label">
+                  <span>Min Separation (<span class="badge-pill">-dtmin</span>)</span>
+                  <div class="val-box">
+                    <input type="number" id="inputKnnDtmin" class="val-input" min="0" max="50" step="1" value="1">
+                    <span class="val-unit">frames</span>
+                  </div>
+                </div>
+                <input type="range" id="sliderKnnDtmin" min="0" max="25" step="1" value="1">
+              </div>
+
+              <!-- Direction Mode -->
+              <div class="control-label" style="font-size: 0.72rem; margin-top: 2px;">Temporal Direction</div>
+              <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 2px;">
+                <div id="knnDirAll" class="toggle-btn active"
+                     data-tooltip-title="Bidirectional Search"
+                     data-tooltip-badge="Default"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Searches nearest neighbors across all frames satisfying |i - j| >= dtmin.">All</div>
+                <div id="knnDirPast" class="toggle-btn"
+                     data-tooltip-title="Past-Only Search (-past)"
+                     data-tooltip-badge="CLI: -past"
+                     data-tooltip-color="amber"
+                     data-tooltip-desc="Searches nearest neighbors only among strictly preceding frames (j < i - dtmin).">Past (-past)</div>
+                <div id="knnDirFuture" class="toggle-btn"
+                     data-tooltip-title="Future-Only Search (-future)"
+                     data-tooltip-badge="CLI: -future"
+                     data-tooltip-color="purple"
+                     data-tooltip-desc="Searches nearest neighbors only among strictly subsequent frames (j > i + dtmin).">Future (-future)</div>
+              </div>
+
+              <!-- Epsilon Slack -->
+              <div class="control-row">
+                <div class="control-label">
+                  <span>Approx Slack (<span class="badge-pill">-eps</span>)</span>
+                  <div class="val-box">
+                    <input type="number" id="inputKnnEps" class="val-input" min="0.00" max="0.50" step="0.01" value="0.00">
+                    <span class="val-unit">ε</span>
+                  </div>
+                </div>
+                <input type="range" id="sliderKnnEps" min="0.00" max="0.30" step="0.01" value="0.00">
+              </div>
+
+              <!-- Canvas Ray Overlay Toggle -->
+              <div class="control-label" style="font-size: 0.72rem; margin-top: 2px;">k-NN Graph Ray Overlay</div>
+              <div class="toggle-group">
+                <div id="optShowKnnLines" class="toggle-btn toggle-active"
+                     data-tooltip-title="Show k-NN Lines on Canvas"
+                     data-tooltip-badge="Display"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Draws translucent glowing vector rays connecting the selected query point to its top-k nearest neighbors on 2D and 3D canvases.">Show Lines</div>
+                <div id="optHideKnnLines" class="toggle-btn"
+                     data-tooltip-title="Hide k-NN Lines on Canvas"
+                     data-tooltip-badge="Display"
+                     data-tooltip-color="amber"
+                     data-tooltip-desc="Hides vector lines connecting nearest neighbors on the canvas viewports.">Hide Lines</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resizer 7 (between k-NN Controls and k-NN Resource Tracker) -->
+      <div class="panel-resizer" id="resizer7" style="display: none;" 
+           data-tooltip-title="Vertical Panel Resizer" 
+           data-tooltip-badge="Drag Handle" 
+           data-tooltip-color="green" 
+           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between k-NN Controls and k-NN Resource Tracker."></div>
+
+      <!-- 5. k-NN: Resource Tracker & Diagnostics -->
+      <div id="cardKnnResources" class="card collapsed" style="flex: 0 0 auto; display: none;">
+        <div class="card-title" onclick="togglePanelCollapse('cardKnnResources')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseKnnResources" 
+                    data-tooltip-title="Collapse / Expand k-NN Resource Tracker" 
+                    data-tooltip-badge="Card Toggle" 
+                    data-tooltip-color="green" 
+                    data-tooltip-desc="Toggles visibility of k-NN metric pruning efficiency, distance calculations, latency, multi-level hierarchy, memory index, and speed stats." 
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardKnnResources');">▾</button>
+            <span>k-NN: Resource Tracker</span>
+          </div>
+          <div style="display: flex; gap: 5px; align-items: center;">
+            <span id="knnSpeedBadge" class="badge-pill" style="color: var(--accent-green);">0 FPS</span>
+            <span id="knnStatusBadge" class="badge-pill" style="font-size: 0.68rem;">Ready</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <!-- 4-Tab Bar for k-NN Resources -->
+          <div class="config-tabs" style="margin-bottom: 6px;">
+            <div id="tabKnnResOverview" class="config-tab-btn active"
+                 data-tooltip-title="k-NN Overview &amp; Efficiency"
+                 data-tooltip-badge="k-NN"
+                 data-tooltip-color="green"
+                 data-tooltip-desc="Pruning efficiency percentage, speedup factor over brute force, evaluations per frame, and throughput.">📊 Overview</div>
+            <div id="tabKnnResPruning" class="config-tab-btn"
+                 data-tooltip-title="Multi-Level Metric Pruning Breakdown"
+                 data-tooltip-badge="Hierarchy"
+                 data-tooltip-color="purple"
+                 data-tooltip-desc="Counters and percentage breakdown of candidate eliminations at Level 1 (DCC), Level 2 (Anchor Balls), Level 3 (Annular Shells), and Temporal filter.">⚡ Pruning</div>
+            <div id="tabKnnResMemory" class="config-tab-btn"
+                 data-tooltip-title="Index Memory Footprint"
+                 data-tooltip-badge="RAM Index"
+                 data-tooltip-color="blue"
+                 data-tooltip-desc="In-memory resident footprint of cluster anchor vectors, DCC distance matrix, member metadata map, and top-k output buffer.">💾 Memory</div>
+            <div id="tabKnnResSpeed" class="config-tab-btn"
+                 data-tooltip-title="Complexity &amp; Throughput Metrics"
+                 data-tooltip-badge="Speed"
+                 data-tooltip-color="amber"
+                 data-tooltip-desc="Empirical search scaling, distance evaluation rate, query throughput, and approximation slack diagnostics.">⏱️ Scaling</div>
+          </div>
+
+          <div class="card-body-scroll">
+            <!-- Sub-Tab 1: Overview Panel -->
+            <div id="knnResOverviewPanel">
+              <div class="stats-grid">
+                <div class="stat-box"
+                     data-tooltip-title="Pruning Efficiency"
+                     data-tooltip-badge="Efficiency"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Percentage of brute-force full-vector distance calculations avoided through metric triangle inequality pruning.">
+                  <div id="knnPruneEffVal" class="num" style="color: #4ade80;">--%</div>
+                  <div class="lbl">Pruning Efficiency</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Pruning Speedup Factor"
+                     data-tooltip-badge="Speedup"
+                     data-tooltip-color="purple"
+                     data-tooltip-desc="Effective acceleration factor compared to exhaustive N² brute force search.">
+                  <div id="knnSpeedupVal" class="num" style="color: #c084fc;">--x</div>
+                  <div class="lbl">Speedup vs Brute</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Distance Evaluations"
+                     data-tooltip-badge="Compute"
+                     data-tooltip-color="blue"
+                     data-tooltip-desc="Exact full-vector distance calculations evaluated vs exhaustive N² brute force total.">
+                  <div id="knnDistCallsVal" class="num" style="color: #38bdf8; font-size: 1.0rem;">0</div>
+                  <div class="lbl">Distances (<span id="knnDistPerQueryVal">0/q</span>)</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Search Latency"
+                     data-tooltip-badge="Latency"
+                     data-tooltip-color="amber"
+                     data-tooltip-desc="Total wall-clock execution time for computing all k-NN queries across the entire dataset.">
+                  <div id="knnLatencyVal" class="num" style="color: #fbbf24;">0.00 ms</div>
+                  <div class="lbl">Search Latency</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Query Throughput"
+                     data-tooltip-badge="Throughput"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Query search throughput rate (queries / sec).">
+                  <div id="knnQpsVal" class="num" style="color: #4ade80;">0 QPS</div>
+                  <div class="lbl">Query Throughput</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Queries Processed"
+                     data-tooltip-badge="Dataset"
+                     data-tooltip-color="blue"
+                     data-tooltip-desc="Total query sample frames evaluated and indexed.">
+                  <div id="knnQueriesVal" class="num" style="color: #f8fafc;">0</div>
+                  <div class="lbl">Total Queries (<span id="knnKParamVal">k=10</span>)</div>
                 </div>
               </div>
+
+              <!-- Visual Summary Stacked Progress Bar -->
+              <div style="margin-top: 10px; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px;">
+                  <span style="font-weight: 700; color: #f8fafc;">⚡ Candidate Elimination Funnel</span>
+                  <span id="knnPruneSummaryTxt" style="font-family: monospace; color: #4ade80;">0% Pruned</span>
+                </div>
+                <div style="width: 100%; height: 12px; background: #1e293b; border-radius: 6px; overflow: hidden; display: flex;">
+                  <div id="barKnnPruned" style="height: 100%; width: 0%; background: linear-gradient(90deg, #a855f7, #38bdf8, #4ade80); transition: width 0.3s;"></div>
+                  <div id="barKnnEvaluated" style="height: 100%; width: 100%; background: #f59e0b; transition: width 0.3s;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: 5px;">
+                  <span style="color: #4ade80;">■ Pruned (<span id="lblKnnPrunedCount">0</span>)</span>
+                  <span style="color: #f59e0b;">■ Evaluated (<span id="lblKnnEvalCount">0</span>)</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Tab 2: Pruning Breakdown Panel -->
+            <div id="knnResPruningPanel" style="display: none;">
+              <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr);">
+                <div class="stat-box"
+                     data-tooltip-title="Level 1: DCC Cluster Pruning"
+                     data-tooltip-badge="Level 1"
+                     data-tooltip-color="purple"
+                     data-tooltip-desc="Entire clusters discarded via inter-cluster DCC distance bounds before checking individual member frames.">
+                  <div id="knnL1PrunedVal" class="num" style="color: #c084fc;">0</div>
+                  <div class="lbl">L1: DCC Clusters (<span id="knnL1PctVal">0%</span>)</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Level 2: Anchor Ball Pruning"
+                     data-tooltip-badge="Level 2"
+                     data-tooltip-color="blue"
+                     data-tooltip-desc="Candidate clusters pruned via query-to-anchor bounding ball inequality: d(q, a_c) - R_c > δ_k.">
+                  <div id="knnL2PrunedVal" class="num" style="color: #38bdf8;">0</div>
+                  <div class="lbl">L2: Anchor Balls (<span id="knnL2PctVal">0%</span>)</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Level 3: Annular Shell Pruning"
+                     data-tooltip-badge="Level 3"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Individual frame members pruned via member annular radius triangle inequality: |d(q, a_c) - r_anchor(p)| > δ_k.">
+                  <div id="knnL3PrunedVal" class="num" style="color: #4ade80;">0</div>
+                  <div class="lbl">L3: Annular Shells (<span id="knnL3PctVal">0%</span>)</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Temporal &amp; Causal Pruning"
+                     data-tooltip-badge="Temporal"
+                     data-tooltip-color="amber"
+                     data-tooltip-desc="Candidate frame pairs skipped due to minimum temporal separation (|i - j| < dtmin) or directional causality (-past / -future).">
+                  <div id="knnTemporalPrunedVal" class="num" style="color: #fbbf24;">0</div>
+                  <div class="lbl">Temporal Filtered</div>
+                </div>
+              </div>
+
+              <!-- Multi-Level Stacked Hierarchy Bar -->
+              <div style="margin-top: 10px; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+                <div style="font-size: 0.72rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px;">Pruning Hierarchy Distribution</div>
+                <div style="width: 100%; height: 14px; background: #1e293b; border-radius: 7px; overflow: hidden; display: flex;">
+                  <div id="barKnnL1" style="height: 100%; width: 0%; background: #c084fc;" title="L1 DCC Pruned"></div>
+                  <div id="barKnnL2" style="height: 100%; width: 0%; background: #38bdf8;" title="L2 Anchor Pruned"></div>
+                  <div id="barKnnL3" style="height: 100%; width: 0%; background: #4ade80;" title="L3 Annular Pruned"></div>
+                  <div id="barKnnTemp" style="height: 100%; width: 0%; background: #fbbf24;" title="Temporal Pruned"></div>
+                  <div id="barKnnExact" style="height: 100%; width: 100%; background: #f87171;" title="Exact Evaluated"></div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font-size: 0.66rem; color: var(--text-muted); margin-top: 6px;">
+                  <span style="color: #c084fc;">■ L1 DCC</span>
+                  <span style="color: #38bdf8;">■ L2 Anchor</span>
+                  <span style="color: #4ade80;">■ L3 Annular</span>
+                  <span style="color: #fbbf24;">■ Temporal</span>
+                  <span style="color: #f87171;">■ Exact Dists</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Tab 3: Memory Panel -->
+            <div id="knnResMemoryPanel" style="display: none;">
+              <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr);">
+                <div class="stat-box"
+                     data-tooltip-title="Cluster Anchors Vector Buffer"
+                     data-tooltip-badge="RAM"
+                     data-tooltip-color="purple"
+                     data-tooltip-desc="Memory allocated for M cluster centroid anchor vectors in RAM.">
+                  <div id="knnMemAnchorsVal" class="num" style="color: #c084fc;">0 B</div>
+                  <div class="lbl">Cluster Anchors (<span id="knnMemClustersCount">0 cl</span>)</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Inter-Cluster DCC Matrix"
+                     data-tooltip-badge="RAM"
+                     data-tooltip-color="blue"
+                     data-tooltip-desc="Dense M x M distance matrix holding precomputed inter-cluster minimum distances.">
+                  <div id="knnMemDccVal" class="num" style="color: #38bdf8;">0 B</div>
+                  <div class="lbl">D_cc Matrix (M×M)</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Member Index &amp; Annular Radii Map"
+                     data-tooltip-badge="RAM"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Compact array of member metadata records (frame ID + precomputed anchor distance r_anchor).">
+                  <div id="knnMemMembersVal" class="num" style="color: #4ade80;">0 B</div>
+                  <div class="lbl">Member Index Map</div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="k-NN Results Output Buffer"
+                     data-tooltip-badge="RAM"
+                     data-tooltip-color="amber"
+                     data-tooltip-desc="Output table holding top-k neighbor indices (int32) and Euclidean distances (float64) for all N queries.">
+                  <div id="knnMemResultsVal" class="num" style="color: #fbbf24;">0 B</div>
+                  <div class="lbl">Top-k Results Buffer</div>
+                </div>
+              </div>
+              <div style="margin-top: 8px; background: #0f172a; border-radius: 4px; padding: 8px; border: 1px solid var(--card-border);">
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted);">
+                  <span>Total In-Memory Index:</span>
+                  <span id="knnMemTotalVal" style="color: #4ade80; font-weight: 700;">0 KB</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.73rem; color: var(--text-muted); margin-top: 2px;">
+                  <span>Per-Frame Index Overhead:</span>
+                  <span id="knnMemPerFrameVal" style="color: #38bdf8; font-family: monospace;">0 bytes / frame</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Tab 4: Speed &amp; Scaling Panel -->
+            <div id="knnResSpeedPanel" style="display: none;">
+              <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr);">
+                <div class="stat-box">
+                  <div id="knnEvalRateVal" class="num" style="color: #38bdf8;">0 M/s</div>
+                  <div class="lbl">Distance Eval Rate</div>
+                </div>
+                <div class="stat-box">
+                  <div id="knnPerQueryLatVal" class="num" style="color: #4ade80;">0.0 µs</div>
+                  <div class="lbl">Avg Latency / Query</div>
+                </div>
+              </div>
+              <div style="margin-top: 8px; background: #0f172a; border-radius: 4px; padding: 8px; border: 1px solid var(--card-border); font-size: 0.72rem;">
+                <div style="font-weight: 700; color: var(--accent-green); margin-bottom: 4px;">Complexity &amp; Approximation Diagnostics</div>
+                <div style="display: flex; justify-content: space-between; color: var(--text-muted); margin-bottom: 2px;">
+                  <span>Brute Force Total Ops:</span>
+                  <span id="knnDiagBruteOps" style="font-family: monospace; color: #f87171;">0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; color: var(--text-muted); margin-bottom: 2px;">
+                  <span>Metric Pruned Ops:</span>
+                  <span id="knnDiagMetricOps" style="font-family: monospace; color: #4ade80;">0</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; color: var(--text-muted); margin-bottom: 2px;">
+                  <span>Approximation Slack (ε):</span>
+                  <span id="knnDiagEpsilon" style="font-family: monospace; color: #fbbf24;">ε = 0.00 (Exact)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; color: var(--text-muted);">
+                  <span>Temporal Constraint:</span>
+                  <span id="knnDiagTemporal" style="font-family: monospace; color: #38bdf8;">|i-j| ≥ 1</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resizer 8 (between k-NN Resources and k-NN Trace) -->
+      <div id="resizer8" class="panel-resizer" style="display: none;" 
+           data-tooltip-title="Vertical Panel Resizer" 
+           data-tooltip-badge="Drag Handle" 
+           data-tooltip-color="green" 
+           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between k-NN Resource Tracker and k-NN Nearest Neighbors Trace."></div>
+
+      <!-- 6. k-NN: Nearest Neighbors Trace -->
+      <div id="cardKnnTrace" class="card collapsed" style="flex: 0 0 auto; display: none;">
+        <div class="card-title" style="margin-bottom: 6px;" onclick="togglePanelCollapse('cardKnnTrace')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseKnnTrace" 
+                    data-tooltip-title="Collapse / Expand k-NN Trace" 
+                    data-tooltip-badge="Card Toggle" 
+                    data-tooltip-color="green" 
+                    data-tooltip-desc="Toggles visibility of the top-k nearest neighbors ranking table." 
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardKnnTrace');">▾</button>
+            <span>k-NN: Nearest Neighbors Trace</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span id="knnKBadge" class="badge-pill">k = 10</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="card-body-scroll" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Top-k Nearest Neighbors Table for Selected / Query Point -->
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span id="knnNeighborsTitle" style="font-size: 0.74rem; font-weight: 700; color: #f8fafc;">Top-k Nearest Neighbors (Sample #0)</span>
+              <span style="font-size: 0.68rem; color: var(--text-muted);">Click row to inspect</span>
+            </div>
+            <div style="overflow-y: auto; max-height: 240px; border: 1px solid var(--card-border); border-radius: 4px;">
+              <table id="knnNeighborsTable" style="width: 100%; border-collapse: collapse; font-size: 0.70rem; font-family: monospace;">
+                <thead>
+                  <tr style="background: rgba(30, 41, 59, 0.8); color: var(--text-muted); text-align: left;">
+                    <th style="padding: 4px 6px;">Rank</th>
+                    <th style="padding: 4px 6px;">Neighbor ID</th>
+                    <th style="padding: 4px 6px;">Distance</th>
+                    <th style="padding: 4px 6px;">Cluster</th>
+                    <th style="padding: 4px 6px;">Δt</th>
+                  </tr>
+                </thead>
+                <tbody id="knnNeighborsBody">
+                  <tr><td colspan="5" style="padding: 10px; text-align: center; color: var(--text-muted);">Run gric-knn or step simulation to populate neighbors graph</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1541,6 +1896,9 @@
           </button>
           <button class="help-topic-btn" data-topic="wasm">
             <span>⚡</span> <span>C/WASM &amp; CLI Matching</span>
+          </button>
+          <button class="help-topic-btn" data-topic="knn">
+            <span>🔍</span> <span>k-NN (gric-knn)</span>
           </button>
           <button class="help-topic-btn" data-topic="controls">
             <span>⌨️</span> <span>Controls &amp; Shortcuts</span>
@@ -1881,6 +2239,34 @@
             </div>
           </div>
 
+          <!-- TOPIC: k-NN (gric-knn) -->
+          <div id="topic-knn" class="help-topic-content">
+            <h2>🔍 Metric-Pruned k-Nearest Neighbors (gric-knn)</h2>
+            <p>
+              The <b>gric-knn</b> solver calculates all-to-all or causal \(k\)-Nearest Neighbors for every frame using the cluster model pre-built by <code>gric-cluster</code>. It executes the exact same C engine via WebAssembly to achieve 95%–99%+ metric pruning.
+            </p>
+
+            <div class="help-card">
+              <h4>🎯 4-Stage Metric Pruning Pipeline</h4>
+              <ul style="margin-left: 20px; font-size: 0.82rem; line-height: 1.6;">
+                <li><b>Level 1 (Inter-Cluster DCC Bound):</b> \(\text{LB}_q = \max(0, D(a_p, a_q) - r_{\text{home}} - R_q)\). If \(\text{LB}_q \ge \text{heap\_max} / (1+\epsilon)\), skips the entire cluster without inspecting any member frames.</li>
+                <li><b>Level 2 (Query-to-Anchor Bound):</b> Computes exact distance \(d(x_i, a_q)\). If \(d(x_i, a_q) - R_q \ge \text{heap\_max} / (1+\epsilon)\), prunes cluster \(c_q\).</li>
+                <li><b>Level 3 (1D Annular Member Filter):</b> Checks \(|d(x_i, a_q) - r_{\text{anc}}(x_j)| \ge \text{heap\_max} / (1+\epsilon)\) before accessing member coordinates.</li>
+                <li><b>Level 4 (Vectorized Euclidean Distance):</b> Evaluates exact coordinate distance and pushes into bounded top-\(k\) max-heap.</li>
+              </ul>
+            </div>
+
+            <div class="help-card">
+              <h4>⏱️ Temporal Causal Filtering</h4>
+              <ul style="margin-left: 20px; font-size: 0.82rem; line-height: 1.6;">
+                <li><code>-dtmin &lt;N&gt;</code>: Excludes self-matches and nearby frames within \(\pm N\) time steps to avoid auto-correlated trivial neighbors.</li>
+                <li><code>-past</code>: Enforces causal reconstruction by only searching preceding frames (\(j &lt; i\)).</li>
+                <li><code>-future</code>: Searches only subsequent frames (\(j &gt; i\)).</li>
+                <li><code>-eps &lt;slack&gt;</code>: \((1+\epsilon)\)-Approximate nearest neighbor search for even higher speedups.</li>
+              </ul>
+            </div>
+          </div>
+
           <!-- TOPIC 10: CONTROLS & SHORTCUTS -->
           <div id="topic-controls" class="help-topic-content">
             <h2>⌨️ Controls &amp; Keyboard Shortcuts</h2>
@@ -1920,6 +2306,21 @@
                   <td style="padding: 6px 8px; color: var(--text-muted);">Resets canvas pan position to (0,0) and zoom scale to 100%.</td>
                 </tr>
                 <tr style="border-bottom: 1px solid rgba(100,100,100,0.2);">
+                  <td style="padding: 6px 8px;"><kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">K</kbd></td>
+                  <td style="padding: 6px 8px; font-weight: 600;">Toggle k-NN</td>
+                  <td style="padding: 6px 8px; color: var(--text-muted);">Activates out-of-core metric-pruned k-NN solver and sidebar panels.</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(100,100,100,0.2);">
+                  <td style="padding: 6px 8px;"><kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">H</kbd> or <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">T</kbd></td>
+                  <td style="padding: 6px 8px; font-weight: 600;">Toggle Tooltips</td>
+                  <td style="padding: 6px 8px; color: var(--text-muted);">Turns hover help cards and descriptive popups on or off.</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(100,100,100,0.2);">
+                  <td style="padding: 6px 8px;"><kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">X</kbd> or <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">Esc</kbd></td>
+                  <td style="padding: 6px 8px; font-weight: 600;">Lock / Unlock Point</td>
+                  <td style="padding: 6px 8px; color: var(--text-muted);">Locks the hovered sample point selection (gold reticle) or unlocks it.</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(100,100,100,0.2);">
                   <td style="padding: 6px 8px;"><kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">[</kbd> / <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">]</kbd></td>
                   <td style="padding: 6px 8px; font-weight: 600;">Prev / Next Sample</td>
                   <td style="padding: 6px 8px; color: var(--text-muted);">Navigates past sample trace history in Explain mode.</td>
@@ -1939,11 +2340,21 @@
 
             <h3>Mouse &amp; Viewport Interactions</h3>
             <ul style="margin-left: 20px; font-size: 0.84rem; line-height: 1.7;">
+              <li><b>Hover over View:</b> Dynamically highlights nearest sample point, displaying distance measurement lines and computation order.</li>
+              <li><b>Click on Point / Canvas:</b> <b>Locks / Pins the selected point</b> (golden reticle and 🔒 LOCKED banner). Click again or press <kbd>Esc</kbd> to unlock.</li>
               <li><b>Drag in 2D / Orthogonal Quads:</b> Pans viewport coordinates.</li>
               <li><b>Drag in 3D Quad (Bottom-Right):</b> Rotates 3D orbit camera azimuth and elevation.</li>
               <li><b>Scroll Wheel:</b> Zooms into or out of the focused quadrant.</li>
               <li><b>Double Click:</b> Resets camera orientation and zoom.</li>
               <li><b>Click ⛶ Icon:</b> Maximizes quadrant to fill entire canvas; click again to restore quad split.</li>
+            </ul>
+
+            <h3>🎨 Distance Line Color Coding</h3>
+            <ul style="margin-left: 20px; font-size: 0.84rem; line-height: 1.7;">
+              <li><b style="color: #4ade80;">🟢 Solid Green:</b> Sample-to-Cluster solving match (\(d \le r_{\text{lim}}\), cluster allocation winner).</li>
+              <li><b style="color: #ef4444;">🔴 Dashed Red:</b> Sample-to-Cluster solving mismatch (\(d &gt; r_{\text{lim}}\), candidate rejected).</li>
+              <li><b style="color: #c084fc;">🟣 Vibrant Violet / Magenta:</b> Distance to \(k\)-Nearest Neighbor (NN) points.</li>
+              <li><b style="color: #f59e0b;">🟠 Dashed Amber:</b> Other distance computations (incoming queries from other frames to this point).</li>
             </ul>
           </div>
 
@@ -1953,19 +2364,21 @@
   </div>
 
   <!-- Modular JavaScript Components -->
-  <script src="simulator/js/tooltip.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/geometry.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/benchmarks.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/image_benchmarks.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/tile_engine.js?v=2026.08.21.1245"></script>
-  <script src="simulator/wasm/gric_cluster.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/wasm_bridge.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/state.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/telemetry.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/image_renderer.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/renderer.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/clustering_core.js?v=2026.08.21.1245"></script>
-  <script src="simulator/js/main.js?v=2026.08.21.1245"></script>
+  <script src="simulator/js/tooltip.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/geometry.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/benchmarks.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/image_benchmarks.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/tile_engine.js?v=2026.08.22.2347"></script>
+  <script src="simulator/wasm/gric_cluster.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/wasm_bridge.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/fs_access.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/desktop_bridge.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/state.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/telemetry.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/image_renderer.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/renderer.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/clustering_core.js?v=2026.08.22.2347"></script>
+  <script src="simulator/js/main.js?v=2026.08.22.2347"></script>
   <script>
     // Async WASM module and Worker initialization
     (async function() {

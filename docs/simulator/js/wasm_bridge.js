@@ -264,6 +264,13 @@ const GricWasm = (function () {
     _fn.mtGetTileTelemetry = M.cwrap('wasm_multitile_get_tile_telemetry', null, ['number', 'number', 'number', 'number']);
     _fn.mtReset = M.cwrap('wasm_multitile_reset', null, ['number']);
     _fn.mtFree = M.cwrap('wasm_multitile_free', null, ['number']);
+
+    // k-NN API
+    _fn.knnRunSearch = M.cwrap('wasm_knn_run_search', 'number', [
+      'number', 'number', 'number', 'number', 'number', 'number',
+      'number', 'number', 'number', 'number', 'number', 'number',
+      'number'
+    ]);
   }
 
   /**
@@ -614,6 +621,7 @@ const GricWasm = (function () {
         if (cId >= 0 && cId < K) {
           evaluations.push({
             target: anchors[cId],
+            clusterId: cId,
             dist: dist,
             match: dist <= (rlim || 0.1),
           });
@@ -1338,12 +1346,142 @@ const GricWasm = (function () {
     }
   }
 
+  /**
+   * Run metric-pruned k-NN solver on dataset frames via WASM C engine.
+   *
+   * @param {Object} config — k-NN search parameters (k, dtmin, direction, epsilon, rlim)
+   * @param {Array<Object>} points — array of {x, y, z} coordinate frames
+   * @returns {Object|null} Result indices, distances, and telemetry
+   */
+  function runKnn(config, points) {
+    if (!_handle || !_ready || !points || points.length === 0) return null;
+
+    const M = _module;
+    const N = points.length;
+    const ndim = _ndim;
+    const k = Math.min(config.k || 10, N);
+    const dtmin = (typeof config.dtmin === 'number') ? config.dtmin : 1;
+    const pastOnly = (config.direction === 'past') ? 1 : 0;
+    const futureOnly = (config.direction === 'future') ? 1 : 0;
+    const eps = config.epsilon || 0.0;
+    const rlimCutoff = config.rlim || 0.0;
+
+    const pointsBytes = N * ndim * 8;
+    const indicesBytes = N * k * 4;
+    const distsBytes = N * k * 8;
+    const telemBytes = 8 * 8;
+
+    const pointsPtr = M._malloc(pointsBytes);
+    const indicesPtr = M._malloc(indicesBytes);
+    const distsPtr = M._malloc(distsBytes);
+    const telemPtr = M._malloc(telemBytes);
+
+    if (!pointsPtr || !indicesPtr || !distsPtr || !telemPtr) {
+      if (pointsPtr) M._free(pointsPtr);
+      if (indicesPtr) M._free(indicesPtr);
+      if (distsPtr) M._free(distsPtr);
+      if (telemPtr) M._free(telemPtr);
+      return null;
+    }
+
+    // Populate points buffer
+    const heapF64 = M.HEAPF64;
+    const pOffset = pointsPtr >> 3;
+    for (let i = 0; i < N; i++) {
+      const p = points[i];
+      heapF64[pOffset + i * ndim] = p.x;
+      heapF64[pOffset + i * ndim + 1] = p.y;
+      if (ndim >= 3) {
+        heapF64[pOffset + i * ndim + 2] = p.z || 0.0;
+      }
+    }
+
+    const ret = _fn.knnRunSearch(
+      _handle,
+      pointsPtr,
+      N,
+      ndim,
+      k,
+      dtmin,
+      pastOnly,
+      futureOnly,
+      eps,
+      rlimCutoff,
+      indicesPtr,
+      distsPtr,
+      telemPtr
+    );
+
+    if (ret !== 0) {
+      M._free(pointsPtr);
+      M._free(indicesPtr);
+      M._free(distsPtr);
+      M._free(telemPtr);
+      return null;
+    }
+
+    // Copy results
+    const indices = new Int32Array(N * k);
+    const distances = new Float64Array(N * k);
+    const heap32 = M.HEAP32;
+    indices.set(heap32.subarray(indicesPtr >> 2, (indicesPtr >> 2) + N * k));
+    distances.set(heapF64.subarray(distsPtr >> 3, (distsPtr >> 3) + N * k));
+
+    const tOffset = telemPtr >> 3;
+    const telemetry = {
+      totalQueries: heapF64[tOffset] || 0,
+      framedistCalls: heapF64[tOffset + 1] || 0,
+      level1ClustersPruned: heapF64[tOffset + 2] || 0,
+      level2AnchorsPruned: heapF64[tOffset + 3] || 0,
+      level3AnnularPruned: heapF64[tOffset + 4] || 0,
+      temporalPruned: heapF64[tOffset + 5] || 0,
+      totalCandidatesConsidered: heapF64[tOffset + 6] || 0,
+      timeSearchMs: heapF64[tOffset + 7] || 0.0,
+    };
+
+    M._free(pointsPtr);
+    M._free(indicesPtr);
+    M._free(distsPtr);
+    M._free(telemPtr);
+
+    return {
+      k: k,
+      totalFrames: N,
+      indices: indices,
+      distances: distances,
+      telemetry: telemetry
+    };
+  }
+
+  /**
+   * Fast retrieval of distance evaluations for the current frame without full sync.
+   */
+  function getFrameEvaluations() {
+    if (!_handle || !_fn.getEvaluations || !_evalIndicesPtr || !_evalDistsPtr) {
+      return [];
+    }
+    const M = _module;
+    const numEvals = _fn.getEvaluations(_handle, _evalIndicesPtr, _evalDistsPtr, _maxK);
+    const evals = [];
+    for (let i = 0; i < numEvals; i++) {
+      const cId = M.getValue(_evalIndicesPtr + i * 4, 'i32');
+      const dist = M.getValue(_evalDistsPtr + i * 8, 'double');
+      evals.push({
+        clusterId: cId,
+        dist: dist,
+        match: dist <= (rlim || 0.1)
+      });
+    }
+    return evals;
+  }
+
   // Public API
   return {
     load: load,
     init: init,
     processFrame: processFrame,
     processFrameVector: processFrameVector,
+    getFrameEvaluations: getFrameEvaluations,
     syncState: syncState,
     resetState: resetState,
     destroy: destroy,
@@ -1361,6 +1499,7 @@ const GricWasm = (function () {
     destroyMultiTile: destroyMultiTile,
     resetMultiTile: resetMultiTile,
     isMtMode: () => _mtMode,
+    runKnn: runKnn,
   };
 })();
 
@@ -1466,6 +1605,28 @@ function buildCliCommand() {
 
   // Input placeholder
   parts.push('<input.fits>');
+
+  if (typeof enableKnn !== 'undefined' && enableKnn) {
+    const knnParts = ['gric-knn', '<input.fits>', '<cluster_dir>'];
+    if (typeof knnK === 'number' && knnK !== 10) {
+      knnParts.push('-k', knnK.toString());
+    }
+    if (typeof knnDtmin === 'number' && knnDtmin !== 1) {
+      knnParts.push('-dtmin', knnDtmin.toString());
+    }
+    if (typeof knnDirection === 'string') {
+      if (knnDirection === 'past') knnParts.push('-past');
+      else if (knnDirection === 'future') knnParts.push('-future');
+    }
+    if (typeof knnEpsilon === 'number' && knnEpsilon > 0) {
+      knnParts.push('-eps', knnEpsilon.toFixed(2));
+    }
+    if (typeof knnRlim === 'number' && knnRlim > 0) {
+      knnParts.push('-rlim', knnRlim.toFixed(3));
+    }
+    knnParts.push('-o', 'knn_results.fits');
+    return parts.join(' ') + ' && \\\n' + knnParts.join(' ');
+  }
 
   return parts.join(' ');
 }

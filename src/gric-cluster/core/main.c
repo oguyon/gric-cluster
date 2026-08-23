@@ -142,6 +142,7 @@ int main(int argc, char *argv[])
     config.output.output_anchors = 1;
     config.output.output_counts = 1;
     config.output.output_membership = 1;
+    config.output.output_evals = 1;
     config.output.output_discarded = 0;
     config.output.output_clustered = 0;
     config.output.output_clusters = 0;

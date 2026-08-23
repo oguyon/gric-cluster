@@ -177,6 +177,24 @@ void wasm_multitile_reset(void *handle);
 EMSCRIPTEN_KEEPALIVE
 void wasm_multitile_free(void *handle);
 
+/* ---- k-NN WASM API ---- */
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_knn_run_search(
+    void         *handle,
+    const double *dataset_points,
+    long          total_frames,
+    int           ndim,
+    int           k,
+    int           min_temporal_sep,
+    int           past_only,
+    int           future_only,
+    double        epsilon,
+    double        rlim_cutoff,
+    int          *out_indices,
+    double       *out_distances,
+    double       *out_telemetry);
+
 #ifdef __cplusplus
 
 }

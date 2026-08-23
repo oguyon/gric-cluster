@@ -1374,6 +1374,252 @@
       }
     }
 
+    function renderKnnTrace() {
+      const tbody = document.getElementById('knnNeighborsBody');
+      const effVal = document.getElementById('knnPruneEffVal');
+      const speedupVal = document.getElementById('knnSpeedupVal');
+      const distVal = document.getElementById('knnDistCallsVal');
+      const distPerQVal = document.getElementById('knnDistPerQueryVal');
+      const latVal = document.getElementById('knnLatencyVal');
+      const qpsVal = document.getElementById('knnQpsVal');
+      const queriesVal = document.getElementById('knnQueriesVal');
+      const kParamVal = document.getElementById('knnKParamVal');
+      const speedBadge = document.getElementById('knnSpeedBadge');
+      const statusBadge = document.getElementById('knnStatusBadge');
+      const titleEl = document.getElementById('knnNeighborsTitle');
+      const kBadge = document.getElementById('knnKBadge');
+
+      // Pruning tab elements
+      const l1Val = document.getElementById('knnL1PrunedVal');
+      const l1PctVal = document.getElementById('knnL1PctVal');
+      const l2Val = document.getElementById('knnL2PrunedVal');
+      const l2PctVal = document.getElementById('knnL2PctVal');
+      const l3Val = document.getElementById('knnL3PrunedVal');
+      const l3PctVal = document.getElementById('knnL3PctVal');
+      const tempVal = document.getElementById('knnTemporalPrunedVal');
+
+      // Progress / Stacked bars
+      const pruneSumTxt = document.getElementById('knnPruneSummaryTxt');
+      const barPruned = document.getElementById('barKnnPruned');
+      const barEval = document.getElementById('barKnnEvaluated');
+      const lblPrunedCount = document.getElementById('lblKnnPrunedCount');
+      const lblEvalCount = document.getElementById('lblKnnEvalCount');
+
+      const barL1 = document.getElementById('barKnnL1');
+      const barL2 = document.getElementById('barKnnL2');
+      const barL3 = document.getElementById('barKnnL3');
+      const barTemp = document.getElementById('barKnnTemp');
+      const barExact = document.getElementById('barKnnExact');
+
+      // Memory tab elements
+      const memAnchorsEl = document.getElementById('knnMemAnchorsVal');
+      const memClustersCountEl = document.getElementById('knnMemClustersCount');
+      const memDccEl = document.getElementById('knnMemDccVal');
+      const memMembersEl = document.getElementById('knnMemMembersVal');
+      const memResultsEl = document.getElementById('knnMemResultsVal');
+      const memTotalEl = document.getElementById('knnMemTotalVal');
+      const memPerFrameEl = document.getElementById('knnMemPerFrameVal');
+
+      // Scaling tab elements
+      const evalRateEl = document.getElementById('knnEvalRateVal');
+      const perQueryLatEl = document.getElementById('knnPerQueryLatVal');
+      const diagBruteEl = document.getElementById('knnDiagBruteOps');
+      const diagMetricEl = document.getElementById('knnDiagMetricOps');
+      const diagEpsEl = document.getElementById('knnDiagEpsilon');
+      const diagTempEl = document.getElementById('knnDiagTemporal');
+
+      if (!knnResults || !knnResults.telemetry) {
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="5" style="padding: 12px; text-align: center; color: var(--text-muted);">Enable "Run gric-knn" and run/step simulation to compute k-NN graph</td></tr>';
+        }
+        if (effVal) effVal.textContent = '--%';
+        if (speedupVal) speedupVal.textContent = '--x';
+        if (distVal) distVal.textContent = '0';
+        if (distPerQVal) distPerQVal.textContent = '0/q';
+        if (latVal) latVal.textContent = '0.00 ms';
+        if (qpsVal) qpsVal.textContent = '0 QPS';
+        if (queriesVal) queriesVal.textContent = '0';
+        if (kParamVal) kParamVal.textContent = `k=${knnK || 10}`;
+        if (speedBadge) speedBadge.textContent = '0 FPS';
+        if (statusBadge) {
+          statusBadge.textContent = 'Ready';
+          statusBadge.style.color = 'var(--text-muted)';
+        }
+        if (l1Val) l1Val.textContent = '0';
+        if (l1PctVal) l1PctVal.textContent = '0%';
+        if (l2Val) l2Val.textContent = '0';
+        if (l2PctVal) l2PctVal.textContent = '0%';
+        if (l3Val) l3Val.textContent = '0';
+        if (l3PctVal) l3PctVal.textContent = '0%';
+        if (tempVal) tempVal.textContent = '0';
+
+        if (pruneSumTxt) pruneSumTxt.textContent = '0% Pruned';
+        if (barPruned) barPruned.style.width = '0%';
+        if (barEval) barEval.style.width = '100%';
+        if (lblPrunedCount) lblPrunedCount.textContent = '0';
+        if (lblEvalCount) lblEvalCount.textContent = '0';
+
+        if (barL1) barL1.style.width = '0%';
+        if (barL2) barL2.style.width = '0%';
+        if (barL3) barL3.style.width = '0%';
+        if (barTemp) barTemp.style.width = '0%';
+        if (barExact) barExact.style.width = '100%';
+
+        if (memAnchorsEl) memAnchorsEl.textContent = '0 B';
+        if (memClustersCountEl) memClustersCountEl.textContent = '0 cl';
+        if (memDccEl) memDccEl.textContent = '0 B';
+        if (memMembersEl) memMembersEl.textContent = '0 B';
+        if (memResultsEl) memResultsEl.textContent = '0 B';
+        if (memTotalEl) memTotalEl.textContent = '0 KB';
+        if (memPerFrameEl) memPerFrameEl.textContent = '0 bytes / frame';
+
+        if (evalRateEl) evalRateEl.textContent = '0 M/s';
+        if (perQueryLatEl) perQueryLatEl.textContent = '0.0 µs';
+        if (diagBruteEl) diagBruteEl.textContent = '0';
+        if (diagMetricEl) diagMetricEl.textContent = '0';
+        if (diagEpsEl) diagEpsEl.textContent = 'ε = 0.00 (Exact)';
+        if (diagTempEl) diagTempEl.textContent = `|i-j| ≥ ${knnDtmin || 1}`;
+        return;
+      }
+
+      const telem = knnResults.telemetry;
+      const N = knnResults.totalFrames;
+      const k = knnResults.k;
+      const bruteForce = N * N;
+      const dists = telem.framedistCalls;
+      const pruned = Math.max(0, bruteForce - dists);
+      const pruneEffNum = bruteForce > 0 ? (1.0 - dists / bruteForce) * 100.0 : 100.0;
+      const pruneEff = pruneEffNum.toFixed(1);
+      const speedup = dists > 0 ? (bruteForce / dists).toFixed(1) : '∞';
+      const fps = telem.timeSearchMs > 0 ? Math.round(N / (telem.timeSearchMs / 1000.0)).toLocaleString() : '∞';
+      const distsPerQuery = N > 0 ? (dists / N).toFixed(1) : '0';
+
+      // 1. Overview Tab
+      if (effVal) effVal.textContent = `${pruneEff}%`;
+      if (speedupVal) speedupVal.textContent = `${speedup}x`;
+      if (distVal) distVal.textContent = `${dists.toLocaleString()}`;
+      if (distPerQVal) distPerQVal.textContent = `${distsPerQuery}/q`;
+      if (latVal) latVal.textContent = `${telem.timeSearchMs.toFixed(2)} ms`;
+      if (qpsVal) qpsVal.textContent = `${fps} QPS`;
+      if (queriesVal) queriesVal.textContent = `${N.toLocaleString()}`;
+      if (kParamVal) kParamVal.textContent = `k=${k}`;
+      if (speedBadge) speedBadge.textContent = `${fps} QPS`;
+      if (statusBadge) {
+        statusBadge.textContent = 'Active';
+        statusBadge.style.color = '#4ade80';
+      }
+
+      // Funnel bar
+      if (pruneSumTxt) pruneSumTxt.textContent = `${pruneEff}% Pruned`;
+      if (barPruned) barPruned.style.width = `${Math.min(100, Math.max(0, pruneEffNum))}%`;
+      if (barEval) barEval.style.width = `${Math.min(100, Math.max(0, 100 - pruneEffNum))}%`;
+      if (lblPrunedCount) lblPrunedCount.textContent = pruned.toLocaleString();
+      if (lblEvalCount) lblEvalCount.textContent = dists.toLocaleString();
+
+      // 2. Pruning Tab
+      const l1 = telem.level1ClustersPruned || 0;
+      const l2 = telem.level2AnchorsPruned || 0;
+      const l3 = telem.level3AnnularPruned || 0;
+      const temp = telem.temporalPruned || 0;
+
+      if (l1Val) l1Val.textContent = l1.toLocaleString();
+      if (l1PctVal) l1PctVal.textContent = `${bruteForce > 0 ? ((l1 / bruteForce) * 100).toFixed(1) : 0}%`;
+      if (l2Val) l2Val.textContent = l2.toLocaleString();
+      if (l2PctVal) l2PctVal.textContent = `${bruteForce > 0 ? ((l2 / bruteForce) * 100).toFixed(1) : 0}%`;
+      if (l3Val) l3Val.textContent = l3.toLocaleString();
+      if (l3PctVal) l3PctVal.textContent = `${bruteForce > 0 ? ((l3 / bruteForce) * 100).toFixed(1) : 0}%`;
+      if (tempVal) tempVal.textContent = temp.toLocaleString();
+
+      const totalHierarchy = Math.max(1, l1 + l2 + l3 + temp + dists);
+      if (barL1) barL1.style.width = `${((l1 / totalHierarchy) * 100).toFixed(1)}%`;
+      if (barL2) barL2.style.width = `${((l2 / totalHierarchy) * 100).toFixed(1)}%`;
+      if (barL3) barL3.style.width = `${((l3 / totalHierarchy) * 100).toFixed(1)}%`;
+      if (barTemp) barTemp.style.width = `${((temp / totalHierarchy) * 100).toFixed(1)}%`;
+      if (barExact) barExact.style.width = `${((dists / totalHierarchy) * 100).toFixed(1)}%`;
+
+      // 3. Memory Tab
+      const M = (typeof clusters !== 'undefined' && clusters) ? clusters.length : 0;
+      const D = (typeof currentDim !== 'undefined') ? currentDim : 2;
+      const memAnchors = M * D * 8;
+      const memDcc = M * M * 8;
+      const memMembers = N * 8;
+      const memResults = N * k * 12;
+      const memTotal = memAnchors + memDcc + memMembers + memResults;
+
+      if (memAnchorsEl) memAnchorsEl.textContent = formatBytes(memAnchors);
+      if (memClustersCountEl) memClustersCountEl.textContent = `${M} cl`;
+      if (memDccEl) memDccEl.textContent = formatBytes(memDcc);
+      if (memMembersEl) memMembersEl.textContent = formatBytes(memMembers);
+      if (memResultsEl) memResultsEl.textContent = formatBytes(memResults);
+      if (memTotalEl) memTotalEl.textContent = formatBytes(memTotal);
+      if (memPerFrameEl) memPerFrameEl.textContent = `${(memTotal / Math.max(1, N)).toFixed(1)} bytes / frame`;
+
+      // 4. Scaling Tab
+      const evalRate = telem.timeSearchMs > 0 ? (dists / (telem.timeSearchMs * 1000.0)).toFixed(2) : '0.00';
+      const perQueryLat = N > 0 && telem.timeSearchMs > 0 ? ((telem.timeSearchMs * 1000.0) / N).toFixed(1) : '0.0';
+
+      if (evalRateEl) evalRateEl.textContent = `${evalRate} M/s`;
+      if (perQueryLatEl) perQueryLatEl.textContent = `${perQueryLat} µs`;
+      if (diagBruteEl) diagBruteEl.textContent = `${bruteForce.toLocaleString()} evals`;
+      if (diagMetricEl) diagMetricEl.textContent = `${dists.toLocaleString()} evals`;
+      if (diagEpsEl) {
+        diagEpsEl.textContent = (typeof knnEpsilon !== 'undefined' && knnEpsilon > 0)
+          ? `ε = ${knnEpsilon.toFixed(2)} (${(knnEpsilon * 100).toFixed(0)}% ANN)`
+          : 'ε = 0.00 (Exact Search)';
+      }
+      if (diagTempEl) {
+        const dir = (typeof knnDirection !== 'undefined') ? knnDirection : 'all';
+        diagTempEl.textContent = `|i-j| ≥ ${typeof knnDtmin !== 'undefined' ? knnDtmin : 1} (${dir})`;
+      }
+
+      if (kBadge) kBadge.textContent = `k = ${k}`;
+
+      // Selected query sample
+      let qId = selectedKnnQuerySample;
+      if (qId < 0 || qId >= N) {
+        qId = (currentFrameIdx > 0 && currentFrameIdx <= N) ? currentFrameIdx - 1 : 0;
+      }
+      if (titleEl) {
+        titleEl.textContent = `Top-${k} Nearest Neighbors (Query Sample #${qId})`;
+      }
+
+      if (!tbody) return;
+
+      let html = '';
+      for (let r = 0; r < k; r++) {
+        const nId = knnResults.indices[qId * k + r];
+        const dist = knnResults.distances[qId * k + r];
+        if (nId < 0) continue;
+
+        const dt = nId - qId;
+        const dtStr = dt > 0 ? `+${dt}` : `${dt}`;
+        let cId = '-';
+        if (typeof clustersAssigned !== 'undefined' && clustersAssigned && nId < clustersAssigned.length) {
+          cId = `C${clustersAssigned[nId]}`;
+        }
+
+        const isHovered = (hoveredKnnNeighborId === nId);
+        const bgStyle = isHovered ? 'background: rgba(56, 189, 248, 0.2);' : (r % 2 === 1 ? 'background: rgba(15, 23, 42, 0.4);' : '');
+
+        html += `
+          <tr style="${bgStyle} cursor: pointer; transition: background 0.15s;"
+              onmouseenter="hoveredKnnNeighborId=${nId}; draw();"
+              onmouseleave="hoveredKnnNeighborId=-1; draw();"
+              onclick="selectedKnnQuerySample=${nId}; renderKnnTrace(); draw();">
+            <td style="padding: 4px 6px; font-weight: 700; color: ${r === 0 ? '#4ade80' : '#94a3b8'};">#${r + 1}</td>
+            <td style="padding: 4px 6px; color: #38bdf8; font-weight: 600;">#${nId}</td>
+            <td style="padding: 4px 6px; color: #f8fafc;">${dist.toFixed(4)}</td>
+            <td style="padding: 4px 6px; color: var(--accent-purple);">${cId}</td>
+            <td style="padding: 4px 6px; color: ${dt < 0 ? '#fbbf24' : '#a78bfa'}; font-family: monospace;">${dtStr}</td>
+          </tr>
+        `;
+      }
+
+      tbody.innerHTML = html || '<tr><td colspan="5" style="padding: 8px; text-align: center; color: var(--text-muted);">No neighbors found</td></tr>';
+    }
+
+    window.renderKnnTrace = renderKnnTrace;
+
     function updateUI() {
       if (window.syncControlDependencies) {
         window.syncControlDependencies();
@@ -1686,25 +1932,18 @@
       const statDiagEvalCount = document.getElementById('statDiagEvalCount');
       if (statDiagEvalCount) statDiagEvalCount.innerText = formatNumber(totalEntropyEvals);
 
-      // Progress bar and frame counter
-      if (benchmarkDataset.length > 0) {
-        if (loopCount === 0) {
-          const loopPct = ((currentFrameIdx % benchmarkDataset.length) / benchmarkDataset.length) * 100;
-          document.getElementById('progressFill').style.width = `${loopPct}%`;
-          document.getElementById('frameCounter').innerText = `${totalFrames} frames (Loop ${currentLoop} • ∞)`;
-        } else if (loopCount === 1) {
-          const pct = Math.min(100, (currentFrameIdx / benchmarkDataset.length) * 100);
-          document.getElementById('progressFill').style.width = `${pct}%`;
-          document.getElementById('frameCounter').innerText = `${currentFrameIdx} / ${benchmarkDataset.length}`;
-        } else {
-          const totalTarget = loopCount * benchmarkDataset.length;
-          const pct = Math.min(100, (totalFrames / totalTarget) * 100);
-          document.getElementById('progressFill').style.width = `${pct}%`;
-          document.getElementById('frameCounter').innerText = `${totalFrames} / ${totalTarget} (Loop ${currentLoop}/${loopCount})`;
-        }
+      // Progress bar and frame counter (matches dataset row sample count, Nloop removed)
+      const frameCounterEl = document.getElementById('frameCounter');
+      const progressFillEl = document.getElementById('progressFill');
+      if (benchmarkDataset && benchmarkDataset.length > 0) {
+        const total = benchmarkDataset.length;
+        const current = Math.min(currentFrameIdx, total);
+        const pct = Math.min(100, (current / total) * 100);
+        if (progressFillEl) progressFillEl.style.width = `${pct}%`;
+        if (frameCounterEl) frameCounterEl.innerText = `${formatNumber(current)} / ${formatNumber(total)}`;
       } else {
-        document.getElementById('progressFill').style.width = '100%';
-        document.getElementById('frameCounter').innerText = `${totalFrames} live`;
+        if (progressFillEl) progressFillEl.style.width = '100%';
+        if (frameCounterEl) frameCounterEl.innerText = `${formatNumber(totalFrames)} live`;
       }
 
       // Render Sample History Toolbar
@@ -2048,7 +2287,7 @@
       }
     }
 
-    function resetSimulation() {
+    function resetClustering(keepDataset = true) {
       selectedClusterId = -1;
       hoveredClusterId = -1;
       selectedTupleKey = null;
@@ -2058,7 +2297,6 @@
       prevAssignedCluster = -1;
       assignmentHistory = [];
       frameHistory = [];
-      pastSamples = [];
       totalFrames = 0;
       totalEvals = 0;
       naiveEvals = 0;
@@ -2075,6 +2313,8 @@
       sampleTraceLog = [];
       selectedSampleTraceIndex = -1;
       hoveredSampleTracePoint = null;
+      hoveredClosestSample = null;
+      frameEvaluationsLog = [];
 
       // Resource Tracker reset
       distSampleCluster = 0;
@@ -2120,6 +2360,16 @@
       maxInitialEntropyObserved = 0.0;
       lastEntropyRankings = [];
 
+      // k-NN Solver & Hover Selection reset
+      knnResults = null;
+      selectedKnnQuerySample = -1;
+      hoveredKnnNeighborId = -1;
+      hoveredClosestSample = null;
+      lockedClosestSample = null;
+      if (typeof renderKnnTrace === 'function') {
+        renderKnnTrace();
+      }
+
       // Reset tile engine plain objects
       tileEngineX.clusters = [];
       tileEngineX.dcc = [];
@@ -2159,29 +2409,83 @@
         wasmSessionActive = false;
       }
 
+      if (!keepDataset) {
+        pastSamples = [];
+        benchmarkDataset = [];
+        rawBenchmarkDataset = [];
+        isDatasetStaged = false;
+      } else if (pastSamples && pastSamples.length > 0) {
+        // Reset all sample cluster assignments to -1 (neutral unclustered preview)
+        for (let i = 0; i < pastSamples.length; i++) {
+          pastSamples[i].clusterId = -1;
+        }
+      }
+
       if (typeof updateWasmBadge === 'function') {
         updateWasmBadge();
       }
 
+      updateDatasetStatusBadge();
       updateUI();
-      draw();
+      if (typeof draw === 'function') {
+        draw();
+      }
+    }
+
+    function resetSimulation() {
+      resetClustering(false);
+    }
+
+    function updateDatasetStatusBadge() {
+      const pill = document.getElementById('datasetStatusPill');
+      if (!pill) return;
+
+      if (!isDatasetStaged || !benchmarkDataset || benchmarkDataset.length === 0) {
+        pill.textContent = '⚪ No dataset staged';
+        pill.style.background = 'rgba(100, 116, 139, 0.2)';
+        pill.style.color = '#94a3b8';
+        pill.style.borderColor = 'rgba(100, 116, 139, 0.4)';
+        return;
+      }
+
+      const countStr = benchmarkDataset.length.toLocaleString();
+      const dimStr = dataMode === 'image' ? '1024D Img' : (currentDim === 3 ? '3D' : '2D');
+      pill.textContent = `📦 Staged: ${countStr} pts (${dimStr}, ${currentBenchmark})`;
+      pill.style.background = 'rgba(56, 189, 248, 0.15)';
+      pill.style.color = '#38bdf8';
+      pill.style.borderColor = 'rgba(56, 189, 248, 0.35)';
+
+      const dimBadge = document.getElementById('inputDataDimBadge');
+      if (dimBadge) {
+        dimBadge.textContent = `${dimStr} • ${countStr} pts`;
+      }
     }
 
     function hasMoreFrames() {
-      if (benchmarkDataset.length === 0) return false;
-      if (currentFrameIdx < benchmarkDataset.length) return true;
-      if (loopCount === 0 || currentLoop < loopCount) return true;
-      return false;
+      if (!benchmarkDataset || benchmarkDataset.length === 0) return false;
+      return currentFrameIdx < benchmarkDataset.length;
     }
 
-    function loadSelectedBenchmark() {
-      resetSimulation();
-      const selMain = document.getElementById('selectBenchmark');
+    function stageDataset(benchmarkKey = null) {
+      if (benchmarkKey) {
+        currentBenchmark = benchmarkKey;
+        const selMain = document.getElementById('selectBenchmark');
+        if (selMain) selMain.value = benchmarkKey;
+      } else {
+        const selMain = document.getElementById('selectBenchmark');
+        if (selMain) currentBenchmark = selMain.value;
+      }
+
       const selSide = document.getElementById('selectBenchmarkSide');
-      if (selMain) currentBenchmark = selMain.value;
-      if (selSide && selMain) selSide.value = selMain.value;
-      document.getElementById('benchmarkDesc').innerHTML =
-        BENCHMARK_DESCS[currentBenchmark] || "";
+      if (selSide) selSide.value = currentBenchmark;
+
+      // Reset clustering while keeping dataset staging pipeline clean
+      resetClustering(false);
+
+      const descEl = document.getElementById('benchmarkDesc');
+      if (descEl) {
+        descEl.innerHTML = BENCHMARK_DESCS[currentBenchmark] || "";
+      }
 
       if (typeof isImageBenchmark === 'function' && isImageBenchmark(currentBenchmark)) {
         dataMode = 'image';
@@ -2189,18 +2493,48 @@
         imageHeight = 32;
         imageDim = 1024;
         currentDim = 1024;
-        benchmarkDataset = generateImageBenchmark(currentBenchmark, sampleCount);
+        rawBenchmarkDataset = generateImageBenchmark(currentBenchmark, sampleCount);
+        applyNoiseToDataset();
       } else {
         dataMode = 'coord';
         currentDim = is3DBenchmark(currentBenchmark) ? 3 : 2;
         if (currentBenchmark === "custom") {
-          document.getElementById('fileUpload').click();
+          const fileInput = document.getElementById('fileUpload');
+          if (fileInput) fileInput.click();
+          return;
         } else {
-          benchmarkDataset = generateBenchmark(
+          rawBenchmarkDataset = generateBenchmark(
             currentBenchmark, sampleCount
           );
+          applyNoiseToDataset();
         }
       }
+
+      // Populate pastSamples for immediate point cloud preview in viewports
+      pastSamples = [];
+      if (dataMode === 'coord' && benchmarkDataset && benchmarkDataset.length > 0) {
+        const maxStagedPreview = 100000;
+        const stride = benchmarkDataset.length > maxStagedPreview ? Math.ceil(benchmarkDataset.length / maxStagedPreview) : 1;
+        for (let i = 0; i < benchmarkDataset.length; i += stride) {
+          const pt = benchmarkDataset[i];
+          pastSamples.push({
+            x: pt.x,
+            y: pt.y,
+            z: pt.z || 0.0,
+            clusterId: -1,
+            frameIndex: i
+          });
+        }
+      }
+
+      isDatasetStaged = true;
+      stagedDatasetInfo = {
+        name: currentBenchmark,
+        count: benchmarkDataset.length,
+        dim: currentDim,
+        passes: loopCount || 1,
+        noise: noiseSigma
+      };
 
       // Hide/Show 3D Viewport Preset Bar in image mode
       const presetBar = document.getElementById('viewPresetBar');
@@ -2216,34 +2550,40 @@
         updateWasmBadge();
       }
 
+      // Auto-export staged dataset to native desktop workspace if connected
+      if (typeof DesktopBridge !== 'undefined' && DesktopBridge.isAvailable() &&
+          dataMode === 'coord' && benchmarkDataset.length > 0) {
+        DesktopBridge.stageDatasetFile(currentBenchmark, benchmarkDataset)
+          .catch(err => console.warn('[DesktopBridge] Auto-stage export failed:', err));
+      }
+
+      updateDatasetStatusBadge();
       updateUI();
+      if (typeof draw === 'function') {
+        draw();
+      }
+    }
+
+    function loadSelectedBenchmark() {
+      stageDataset();
     }
 
     function stepNextFrame(skipRender = false) {
-      if (benchmarkDataset.length === 0) return;
+      if (!benchmarkDataset || benchmarkDataset.length === 0) return;
 
       if (currentFrameIdx >= benchmarkDataset.length) {
-        if (loopCount === 0 || currentLoop < loopCount) {
-          currentLoop++;
-          currentFrameIdx = 0;
-        } else {
-          pauseSimulation();
-          return;
-        }
+        pauseSimulation();
+        return;
       }
 
       if (dataMode === 'image') {
         const frameData = benchmarkDataset[currentFrameIdx++];
         currentImageFrame = frameData;
-        totalFrames++;
         clusterImageFrame(frameData, skipRender);
         return;
       }
 
-      const rawPt = benchmarkDataset[currentFrameIdx++];
-      const pt = applyNoiseToPoint(
-        rawPt.x, rawPt.y, rawPt.z || 0.0
-      );
+      const pt = benchmarkDataset[currentFrameIdx++];
       clusterFrame(pt.x, pt.y, pt.z || 0.0, skipRender);
     }
 

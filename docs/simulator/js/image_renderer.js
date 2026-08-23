@@ -394,6 +394,67 @@ function renderImageSubViewport(ctx, qIdx, rect)
     }
   }
 
+  // Viewport Stats Box (Samples & Clusters currently displayed in this view)
+  let imgPtsCount = 0;
+  let imgClustCount = 0;
+  if (qIdx === 0)
+  {
+    imgPtsCount = frameBuf ? 1 : 0;
+    imgClustCount = 0;
+  }
+  else if (qIdx === 1)
+  {
+    imgPtsCount = 0;
+    imgClustCount = assignedCluster ? 1 : 0;
+  }
+  else if (qIdx === 2)
+  {
+    imgPtsCount = frameBuf ? 1 : 0;
+    imgClustCount = assignedCluster ? 1 : 0;
+  }
+  else if (qIdx === 3)
+  {
+    imgPtsCount = 0;
+    imgClustCount = clusters ? clusters.length : 0;
+  }
+
+  const labelPts = `${imgPtsCount} pts`;
+  const labelClust = `${imgClustCount} cl`;
+  const fullText = `${labelPts}  •  ${labelClust}`;
+
+  ctx.save();
+  ctx.font = 'bold 9.5px monospace';
+  const textW = ctx.measureText(fullText).width;
+  const boxW = textW + 14;
+  const boxH = 18;
+  const boxX = rect.x + rect.w - boxW - 8;
+  const boxY = rect.y + 4;
+
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+  ctx.lineWidth = 1.0;
+  ctx.beginPath();
+  ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+  ctx.fill();
+  ctx.stroke();
+
+  const midBoxY = boxY + boxH / 2;
+  let curX = boxX + 7;
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#cbd5e1';
+  ctx.fillText(labelPts, curX, midBoxY);
+  curX += ctx.measureText(labelPts).width;
+
+  ctx.fillStyle = 'rgba(100, 116, 139, 0.7)';
+  ctx.fillText('  •  ', curX, midBoxY);
+  curX += ctx.measureText('  •  ').width;
+
+  ctx.fillStyle = '#38bdf8';
+  ctx.fillText(labelClust, curX, midBoxY);
+  ctx.restore();
+
   ctx.restore();
 }
 

@@ -14,6 +14,7 @@ benchmarks/benchmark_summary.md
 
 # Data & datasets
 data/
+workspace/
 
 # Tests & temporary outputs
 *.clusterdat/
