@@ -2253,6 +2253,27 @@ int wasm_knn_run_search(
         }
     } // for (long i = 0; i < total_frames; i++)
 
+    /* Sort each cluster's members array by ascending r_anchor for O(log N) binary search */
+    for (int c = 0; c < M; c++)
+    {
+        if (model.clusters[c].num_members > 1)
+        {
+            for (int a = 0; a < model.clusters[c].num_members - 1; a++)
+            {
+                for (int b = a + 1; b < model.clusters[c].num_members; b++)
+                {
+                    if (model.clusters[c].members[a].r_anchor >
+                        model.clusters[c].members[b].r_anchor)
+                    {
+                        MemberMeta tmp = model.clusters[c].members[a];
+                        model.clusters[c].members[a] = model.clusters[c].members[b];
+                        model.clusters[c].members[b] = tmp;
+                    }
+                }
+            }
+        }
+    }
+
     /* 2. Configure KnnConfig for in-memory execution */
     KnnConfig config;
     memset(&config, 0, sizeof(KnnConfig));

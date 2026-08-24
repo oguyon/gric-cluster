@@ -44,6 +44,30 @@ static int check_is_fits(
 }
 
 /**
+ * compare_member_meta_radii() - Sort member records by ascending anchor distance.
+ * @a: Pointer to first MemberMeta.
+ * @b: Pointer to second MemberMeta.
+ *
+ * Return: -1 if a < b, 1 if a > b, 0 if equal.
+ */
+static int compare_member_meta_radii(
+    const void *a,
+    const void *b)
+{
+    const MemberMeta *ma = (const MemberMeta *)a;
+    const MemberMeta *mb = (const MemberMeta *)b;
+    if (ma->r_anchor < mb->r_anchor)
+    {
+        return -1;
+    }
+    if (ma->r_anchor > mb->r_anchor)
+    {
+        return 1;
+    }
+    return 0;
+}
+
+/**
  * parse_membership_file() - Load frame membership and anchor distance metadata.
  * @path:  Path to frame_membership.txt.
  * @model: Pointer to KnnModel.
@@ -177,6 +201,19 @@ static int parse_membership_file(
     } // while reading entries
 
     fclose(f);
+
+    /* Sort each cluster's members array by ascending r_anchor for O(log N) binary search */
+    for (int c = 0; c < model->num_clusters; c++)
+    {
+        if (model->clusters[c].num_members > 1)
+        {
+            qsort(model->clusters[c].members,
+                  (size_t)model->clusters[c].num_members,
+                  sizeof(MemberMeta),
+                  compare_member_meta_radii);
+        }
+    }
+
     return 0;
 }
 
