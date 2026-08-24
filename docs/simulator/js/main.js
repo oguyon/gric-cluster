@@ -23,6 +23,7 @@
       const btnCli = document.getElementById('btnEngineCli');
       const badgeWasm = document.getElementById('badgeWasmStatus');
       const labelBackend = document.getElementById('statEngineBackend');
+      const badgeNativeTmux = document.getElementById('badgeNativeTmux');
 
       if (engineMode === 'cli') {
         // Header Badge
@@ -72,7 +73,6 @@
         if (btnWasm) btnWasm.classList.remove('active');
         if (btnCli) btnCli.classList.add('active');
 
-        const badgeNativeTmux = document.getElementById('badgeNativeTmux');
         if (badgeNativeTmux) badgeNativeTmux.style.display = 'inline-flex';
 
         // Resource Tracker

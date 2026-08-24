@@ -621,6 +621,22 @@ const DesktopBridge = (function () {
   }
 
   /**
+   * Check status of the persistent gric_cli tmux session.
+   */
+  async function getCliSessionStatus() {
+    if (!_isDesktop) return { exists: false };
+    try {
+      const resp = await _fetchApi('/api/cli/session/status', { cache: 'no-store' });
+      if (resp.ok) {
+        return await resp.json();
+      }
+    } catch (err) {
+      /* ignore */
+    }
+    return { exists: false };
+  }
+
+  /**
    * Parse k-NN search telemetry from gric-knn stdout log text.
    *
    * @param {string} logText Raw or ANSI-colored log output from gric-knn.
