@@ -26,6 +26,7 @@
 #include "knn_defs.h"
 #include "knn_engine.h"
 #include "knn_reader.h"
+#include "knn_tree.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -2253,6 +2254,32 @@ int wasm_knn_run_search(
         }
     } // for (long i = 0; i < total_frames; i++)
 
+    /* Sort each cluster's members array by ascending r_anchor for O(log N) binary search */
+    for (int c = 0; c < M; c++)
+    {
+        if (model.clusters[c].num_members > 1)
+        {
+            for (int a = 0; a < model.clusters[c].num_members - 1; a++)
+            {
+                for (int b = a + 1; b < model.clusters[c].num_members; b++)
+                {
+                    if (model.clusters[c].members[a].r_anchor >
+                        model.clusters[c].members[b].r_anchor)
+                    {
+                        MemberMeta tmp = model.clusters[c].members[a];
+                        model.clusters[c].members[a] = model.clusters[c].members[b];
+                        model.clusters[c].members[b] = tmp;
+                    }
+                }
+            }
+        }
+    }
+
+    if (knn_build_super_clusters(&model) != 0)
+    {
+        goto cleanup_model_alloc;
+    }
+
     /* 2. Configure KnnConfig for in-memory execution */
     KnnConfig config;
     memset(&config, 0, sizeof(KnnConfig));
@@ -2302,6 +2329,8 @@ int wasm_knn_run_search(
     knn_results_free(&results);
 
     /* Free model buffers */
+    knn_free_super_clusters(&model);
+
     for (int c = 0; c < M; c++)
     {
         if (model.clusters[c].anchor_data != NULL)
@@ -2321,6 +2350,8 @@ int wasm_knn_run_search(
     return 0;
 
 cleanup_model_alloc:
+    knn_free_super_clusters(&model);
+
     if (model.clusters != NULL)
     {
         for (int c = 0; c < M; c++)
@@ -2348,7 +2379,6 @@ cleanup_model_alloc:
     {
         free(model.dcc_matrix);
     }
-
     return -1;
 }
 

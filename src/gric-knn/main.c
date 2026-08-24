@@ -292,7 +292,15 @@ int main(
 
     printf("Loaded Pass 1 Model in %.2f ms:\n", load_time_ms);
     printf("  Total Frames:    %ld\n", model.total_dataset_frames);
-    printf("  Total Clusters:  %d\n", model.num_clusters);
+    printf("  Total Clusters:  %d", model.num_clusters);
+    if (model.num_super_clusters > 0)
+    {
+        printf(" (%d super-clusters)\n", model.num_super_clusters);
+    }
+    else
+    {
+        printf("\n");
+    }
     printf("  Frame Dimension: %ld x %ld (%ld elements)\n\n",
            model.frame_width, model.frame_height, model.frame_elements);
 
@@ -332,6 +340,11 @@ int main(
            (unsigned long)telemetry.framedist_calls, (unsigned long)total_brute_force);
     printf("  Metric Pruning Efficiency: %s%.2f%%%s calls pruned!\n",
            ansi_bold_green, prune_pct, ansi_reset);
+    if (telemetry.level0_super_clusters_pruned > 0)
+    {
+        printf("  Level 0 Super-Clusters:    %lu pruned\n",
+               (unsigned long)telemetry.level0_super_clusters_pruned);
+    }
     printf("  Level 1 Clusters Pruned:   %lu\n", (unsigned long)telemetry.level1_clusters_pruned);
     printf("  Level 2 Anchors Pruned:    %lu\n", (unsigned long)telemetry.level2_anchors_pruned);
     printf("  Level 3 Annular Pruned:    %lu\n", (unsigned long)telemetry.level3_annular_pruned);

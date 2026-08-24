@@ -7,6 +7,7 @@
 #include "knn_engine.h"
 #include "knn_heap.h"
 #include "knn_reader.h"
+#include "knn_tree.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,15 +22,16 @@
 #include <immintrin.h>
 #endif
 
-/** Cluster candidate record for sorting by ascending lower bound */
+/** Cluster candidate record for sorting by ascending lower bound and center proximity */
 typedef struct
 {
     int    id;
     double lb;
+    double dcc;
 } ClusterScore;
 
 /**
- * compare_cluster_scores() - Sort cluster candidates by ascending lower bound.
+ * compare_cluster_scores() - Sort cluster candidates by ascending lower bound and center proximity.
  * @a: Pointer to first ClusterScore.
  * @b: Pointer to second ClusterScore.
  *
@@ -49,7 +51,75 @@ static int compare_cluster_scores(
     {
         return 1;
     }
+    if (ca->dcc < cb->dcc)
+    {
+        return -1;
+    }
+    if (ca->dcc > cb->dcc)
+    {
+        return 1;
+    }
     return 0;
+}
+
+/**
+ * find_member_lower_bound() - Binary search for first member with r_anchor >= val.
+ * @members: Sorted array of MemberMeta records.
+ * @n:       Total number of members.
+ * @val:     Threshold radius.
+ *
+ * Return: Index in [0, n] of first element >= val.
+ */
+static inline int find_member_lower_bound(
+    const MemberMeta *members,
+    int               n,
+    float             val)
+{
+    int low = 0;
+    int high = n;
+    while (low < high)
+    {
+        int mid = low + ((high - low) >> 1);
+        if (members[mid].r_anchor < val)
+        {
+            low = mid + 1;
+        }
+        else
+        {
+            high = mid;
+        }
+    }
+    return low;
+}
+
+/**
+ * find_member_upper_bound() - Binary search for first member with r_anchor > val.
+ * @members: Sorted array of MemberMeta records.
+ * @n:       Total number of members.
+ * @val:     Threshold radius.
+ *
+ * Return: Index in [0, n] of first element > val.
+ */
+static inline int find_member_upper_bound(
+    const MemberMeta *members,
+    int               n,
+    float             val)
+{
+    int low = 0;
+    int high = n;
+    while (low < high)
+    {
+        int mid = low + ((high - low) >> 1);
+        if (members[mid].r_anchor <= val)
+        {
+            low = mid + 1;
+        }
+        else
+        {
+            high = mid;
+        }
+    }
+    return low;
 }
 
 /**
@@ -141,7 +211,7 @@ static inline int check_temporal_separation(
 }
 
 /**
- * knn_search_single_frame() - Execute 3-level pruning search for one query frame.
+ * knn_search_single_frame() - Execute multi-level metric pruned search for one query frame.
  * @query_id:       Index of query frame.
  * @query_data:     Pixel buffer of query frame.
  * @model:          Active KnnModel.
@@ -179,10 +249,25 @@ static void knn_search_single_frame(
     if (home_cluster_id >= 0 && home_cluster_id < M)
     {
         const KnnCluster *home_cl = &model->clusters[home_cluster_id];
-        for (int m = 0; m < home_cl->num_members; m++)
+        telem->total_candidates_considered += (uint64_t)home_cl->num_members;
+
+        // Determine radial slice interval for home cluster
+        int start_m = 0;
+        int end_m = home_cl->num_members;
+        double tau_init = knn_heap_peek_max_dist(heap);
+        if (tau_init < 1e20)
+        {
+            float r_min = (float)fmax(0.0, r_home - tau_init / eps_factor);
+            float r_max = (float)(r_home + tau_init / eps_factor);
+            start_m = find_member_lower_bound(home_cl->members, home_cl->num_members, r_min);
+            end_m = find_member_upper_bound(home_cl->members, home_cl->num_members, r_max);
+            telem->level3_annular_pruned +=
+                (uint64_t)start_m + (uint64_t)(home_cl->num_members - end_m);
+        }
+
+        for (int m = start_m; m < end_m; m++)
         {
             long cand_id = (long)home_cl->members[m].frame_id;
-            telem->total_candidates_considered++;
 
             if (!check_temporal_separation(query_id, cand_id, config))
             {
@@ -209,30 +294,90 @@ static void knn_search_single_frame(
                     knn_heap_push(heap, (int)cand_id, d);
                 }
             }
-        } // for (int m = 0; ...)
+        } // for (int m = start_m; ...)
     } // Intra-Cluster Search
 
-    // Step 2: Rank and Sort other candidate clusters
+    // Step 2: Rank and Sort other candidate clusters (with Level 0 Super-Cluster pruning)
     int num_cand_clusters = 0;
-    for (int q = 0; q < M; q++)
+    double current_tau = knn_heap_peek_max_dist(heap);
+
+    if (model->num_super_clusters > 1 && home_cluster_id >= 0 &&
+        model->cluster_super_map != NULL)
     {
-        if (q == home_cluster_id || model->clusters[q].num_members == 0)
-        {
-            continue;
-        }
+        int home_super_id = model->cluster_super_map[home_cluster_id];
+        double r_home_super = model->super_clusters[home_super_id].radius;
+        int K = model->num_super_clusters;
 
-        double dcc = model->dcc_matrix[home_cluster_id * M + q];
-        double r_q = model->clusters[q].radius;
-        double lb = dcc - r_home - r_q;
-        if (lb < 0.0)
+        for (int s = 0; s < K; s++)
         {
-            lb = 0.0;
-        }
+            if (s != home_super_id)
+            {
+                double dss = model->dss_matrix[home_super_id * K + s];
+                double r_s = model->super_clusters[s].radius;
+                double lb_super = dss - r_home_super - r_s;
+                if (lb_super < 0.0)
+                {
+                    lb_super = 0.0;
+                }
 
-        scores_buffer[num_cand_clusters].id = q;
-        scores_buffer[num_cand_clusters].lb = lb;
-        num_cand_clusters++;
-    } // for (int q = 0; ...)
+                // Level 0: Super-Cluster Pruning
+                if (lb_super >= current_tau / eps_factor)
+                {
+                    telem->level0_super_clusters_pruned++;
+                    telem->level1_clusters_pruned +=
+                        (uint64_t)model->super_clusters[s].num_clusters;
+                    continue; // Skip all child clusters in super-cluster s
+                }
+            }
+
+            // Populate child clusters of surviving super-clusters
+            const KnnSuperCluster *sc = &model->super_clusters[s];
+            for (int ci = 0; ci < sc->num_clusters; ci++)
+            {
+                int q = sc->cluster_ids[ci];
+                if (q == home_cluster_id || model->clusters[q].num_members == 0)
+                {
+                    continue;
+                }
+
+                double dcc = model->dcc_matrix[home_cluster_id * M + q];
+                double r_q = model->clusters[q].radius;
+                double lb = dcc - r_home - r_q;
+                if (lb < 0.0)
+                {
+                    lb = 0.0;
+                }
+
+                scores_buffer[num_cand_clusters].id = q;
+                scores_buffer[num_cand_clusters].lb = lb;
+                scores_buffer[num_cand_clusters].dcc = dcc;
+                num_cand_clusters++;
+            } // for (int ci = 0; ...)
+        } // for (int s = 0; ...)
+    }
+    else
+    {
+        for (int q = 0; q < M; q++)
+        {
+            if (q == home_cluster_id || model->clusters[q].num_members == 0)
+            {
+                continue;
+            }
+
+            double dcc = model->dcc_matrix[home_cluster_id * M + q];
+            double r_q = model->clusters[q].radius;
+            double lb = dcc - r_home - r_q;
+            if (lb < 0.0)
+            {
+                lb = 0.0;
+            }
+
+            scores_buffer[num_cand_clusters].id = q;
+            scores_buffer[num_cand_clusters].lb = lb;
+            scores_buffer[num_cand_clusters].dcc = dcc;
+            num_cand_clusters++;
+        } // for (int q = 0; ...)
+    }
 
     qsort(scores_buffer, (size_t)num_cand_clusters, sizeof(ClusterScore),
           compare_cluster_scores);
@@ -242,7 +387,7 @@ static void knn_search_single_frame(
     {
         int q = scores_buffer[idx].id;
         double lb_cluster = scores_buffer[idx].lb;
-        double current_tau = knn_heap_peek_max_dist(heap);
+        current_tau = knn_heap_peek_max_dist(heap);
 
         // Level 1: Cluster-level DCC bound
         if (lb_cluster >= current_tau / eps_factor)
@@ -267,11 +412,29 @@ static void knn_search_single_frame(
             continue;
         }
 
-        // Level 3: 1D Annular Member Filter
-        for (int m = 0; m < cl->num_members; m++)
+        // Level 3: Radially-Sorted Annular Window Slicing & Multi-Pivot Filter
+        telem->total_candidates_considered += (uint64_t)cl->num_members;
+
+        double tau_eff = current_tau / eps_factor;
+        if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_eff)
+        {
+            tau_eff = config->rlim_cutoff;
+        }
+
+        float r_min = (float)fmax(0.0, d_anchor - tau_eff);
+        float r_max = (float)(d_anchor + tau_eff);
+
+        int start_m = find_member_lower_bound(cl->members, cl->num_members, r_min);
+        int end_m = find_member_upper_bound(cl->members, cl->num_members, r_max);
+
+        telem->level3_annular_pruned +=
+            (uint64_t)start_m + (uint64_t)(cl->num_members - end_m);
+
+        double dcc_home = model->dcc_matrix[home_cluster_id * M + q];
+
+        for (int m = start_m; m < end_m; m++)
         {
             long cand_id = (long)cl->members[m].frame_id;
-            telem->total_candidates_considered++;
 
             if (!check_temporal_separation(query_id, cand_id, config))
             {
@@ -281,15 +444,25 @@ static void knn_search_single_frame(
 
             current_tau = knn_heap_peek_max_dist(heap);
             double r_cand = (double)cl->members[m].r_anchor;
-            double lb_annular = fabs(d_anchor - r_cand);
 
-            if (lb_annular >= current_tau / eps_factor)
+            // Primary pivot lower bound: anchor A_q
+            double lb1 = fabs(d_anchor - r_cand);
+            if (lb1 >= current_tau / eps_factor)
             {
                 telem->level3_annular_pruned++;
                 continue;
             }
 
-            if (config->rlim_cutoff > 0.0 && lb_annular >= config->rlim_cutoff)
+            // Secondary pivot lower bound: home anchor A_home
+            double lb_home = dcc_home - r_cand - r_home;
+            if (lb_home >= current_tau / eps_factor)
+            {
+                telem->level3_annular_pruned++;
+                continue;
+            }
+
+            if (config->rlim_cutoff > 0.0 &&
+                (lb1 >= config->rlim_cutoff || lb_home >= config->rlim_cutoff))
             {
                 telem->level3_annular_pruned++;
                 continue;
@@ -305,7 +478,7 @@ static void knn_search_single_frame(
                     knn_heap_push(heap, (int)cand_id, d);
                 }
             }
-        } // for (int m = 0; ...)
+        } // for (int m = start_m; ...)
     } // for (int idx = 0; ...)
 
     // Extract sorted results
@@ -387,6 +560,7 @@ int knn_run_search(
     }
 
     uint64_t global_telem_calls = 0;
+    uint64_t global_telem_l0 = 0;
     uint64_t global_telem_l1 = 0;
     uint64_t global_telem_l2 = 0;
     uint64_t global_telem_l3 = 0;
@@ -394,8 +568,9 @@ int knn_run_search(
     uint64_t global_telem_cand = 0;
 
 #ifdef _OPENMP
-#pragma omp parallel reduction(+:global_telem_calls, global_telem_l1, global_telem_l2, \
-                                 global_telem_l3, global_telem_temp, global_telem_cand)
+#pragma omp parallel reduction(+:global_telem_calls, global_telem_l0, global_telem_l1, \
+                                 global_telem_l2, global_telem_l3, global_telem_temp,   \
+                                 global_telem_cand)
 #endif
     {
         KnnFrameReader thread_reader;
@@ -451,6 +626,7 @@ int knn_run_search(
         } // for (long i = 0; ...)
 
         global_telem_calls += thread_telem.framedist_calls;
+        global_telem_l0 += thread_telem.level0_super_clusters_pruned;
         global_telem_l1 += thread_telem.level1_clusters_pruned;
         global_telem_l2 += thread_telem.level2_anchors_pruned;
         global_telem_l3 += thread_telem.level3_annular_pruned;
@@ -477,6 +653,7 @@ int knn_run_search(
 
     telemetry->total_queries = (uint64_t)N;
     telemetry->framedist_calls = global_telem_calls;
+    telemetry->level0_super_clusters_pruned = global_telem_l0;
     telemetry->level1_clusters_pruned = global_telem_l1;
     telemetry->level2_anchors_pruned = global_telem_l2;
     telemetry->level3_annular_pruned = global_telem_l3;

@@ -5,6 +5,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "knn_loader.h"
+#include "knn_tree.h"
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
@@ -40,6 +41,30 @@ static int check_is_fits(
         return 1;
     }
 
+    return 0;
+}
+
+/**
+ * compare_member_meta_radii() - Sort member records by ascending anchor distance.
+ * @a: Pointer to first MemberMeta.
+ * @b: Pointer to second MemberMeta.
+ *
+ * Return: -1 if a < b, 1 if a > b, 0 if equal.
+ */
+static int compare_member_meta_radii(
+    const void *a,
+    const void *b)
+{
+    const MemberMeta *ma = (const MemberMeta *)a;
+    const MemberMeta *mb = (const MemberMeta *)b;
+    if (ma->r_anchor < mb->r_anchor)
+    {
+        return -1;
+    }
+    if (ma->r_anchor > mb->r_anchor)
+    {
+        return 1;
+    }
     return 0;
 }
 
@@ -177,6 +202,19 @@ static int parse_membership_file(
     } // while reading entries
 
     fclose(f);
+
+    /* Sort each cluster's members array by ascending r_anchor for O(log N) binary search */
+    for (int c = 0; c < model->num_clusters; c++)
+    {
+        if (model->clusters[c].num_members > 1)
+        {
+            qsort(model->clusters[c].members,
+                  (size_t)model->clusters[c].num_members,
+                  sizeof(MemberMeta),
+                  compare_member_meta_radii);
+        }
+    }
+
     return 0;
 }
 
@@ -587,6 +625,12 @@ int knn_model_load(
         return -1;
     }
 
+    if (knn_build_super_clusters(model) != 0)
+    {
+        knn_model_free(model);
+        return -1;
+    }
+
     return 0;
 }
 
@@ -601,6 +645,8 @@ void knn_model_free(
     {
         return;
     }
+
+    knn_free_super_clusters(model);
 
     if (model->clusters != NULL)
     {
