@@ -235,6 +235,7 @@ add_executable(gric-knn
     src/gric-knn/main.c
     src/gric-knn/knn_heap.c
     src/gric-knn/knn_loader.c
+    src/gric-knn/knn_tree.c
     src/gric-knn/knn_reader.c
     src/gric-knn/knn_engine.c
     src/gric-knn/knn_writer.c

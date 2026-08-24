@@ -5,6 +5,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "knn_loader.h"
+#include "knn_tree.h"
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
@@ -624,6 +625,12 @@ int knn_model_load(
         return -1;
     }
 
+    if (knn_build_super_clusters(model) != 0)
+    {
+        knn_model_free(model);
+        return -1;
+    }
+
     return 0;
 }
 
@@ -638,6 +645,8 @@ void knn_model_free(
     {
         return;
     }
+
+    knn_free_super_clusters(model);
 
     if (model->clusters != NULL)
     {

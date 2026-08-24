@@ -39,6 +39,16 @@ typedef struct
     MemberMeta *members;     /**< Array of member metadata records */
 } KnnCluster;
 
+/** Super-Cluster (Meta-Cluster) grouping multiple child clusters */
+typedef struct
+{
+    int     super_id;          /**< Super-cluster index */
+    int     medoid_cluster_id; /**< Index of central cluster acting as super-anchor */
+    double  radius;            /**< Maximum distance from super-anchor to any child member */
+    int     num_clusters;      /**< Number of constituent child clusters */
+    int    *cluster_ids;       /**< Array of constituent child cluster indices */
+} KnnSuperCluster;
+
 /** Single nearest neighbor record */
 typedef struct
 {
@@ -78,6 +88,7 @@ typedef struct
 {
     uint64_t total_queries;
     uint64_t total_candidates_considered;
+    uint64_t level0_super_clusters_pruned;
     uint64_t level1_clusters_pruned;
     uint64_t level2_anchors_pruned;
     uint64_t level3_annular_pruned;
@@ -91,16 +102,20 @@ typedef struct
 /** Pass 1 Cluster Model resident in RAM */
 typedef struct
 {
-    long        frame_width;
-    long        frame_height;
-    long        frame_elements;
-    int         num_clusters;
-    long        total_dataset_frames;
-    KnnCluster *clusters;
-    double     *dcc_matrix;          /**< Dense M x M inter-cluster distance matrix */
-    int        *frame_cluster_map;   /**< Cluster ID for each frame index [0..N-1] */
-    float      *frame_r_anchor;      /**< Distance to anchor for each frame [0..N-1] */
-    int         is_fits_input;       /**< 1 if input dataset is FITS, 0 if ASCII */
+    long             frame_width;
+    long             frame_height;
+    long             frame_elements;
+    int              num_clusters;
+    long             total_dataset_frames;
+    KnnCluster      *clusters;
+    double          *dcc_matrix;          /**< Dense M x M inter-cluster distance matrix */
+    int             *frame_cluster_map;   /**< Cluster ID for each frame index [0..N-1] */
+    float           *frame_r_anchor;      /**< Distance to anchor for each frame [0..N-1] */
+    int              num_super_clusters;  /**< Number of super-clusters K */
+    KnnSuperCluster *super_clusters;      /**< Array of super-clusters [0..K-1] */
+    double          *dss_matrix;          /**< Dense K x K inter-super-cluster distance matrix */
+    int             *cluster_super_map;   /**< Super-cluster index for each cluster [0..M-1] */
+    int              is_fits_input;       /**< 1 if input dataset is FITS, 0 if ASCII */
 } KnnModel;
 
 /** Per-query result structure containing top-k neighbors */

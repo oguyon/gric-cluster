@@ -42,6 +42,7 @@ SRCS = \
 	src/gric-cluster/steps/update_consistency_mask.c \
 	src/gric-cluster/trace/cluster_trace.c \
 	src/gric-knn/knn_heap.c \
+	src/gric-knn/knn_tree.c \
 	src/gric-knn/knn_reader.c \
 	src/gric-knn/knn_engine.c \
 	src/wasm/gric_wasm_api.c

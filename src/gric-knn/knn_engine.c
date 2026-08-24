@@ -7,6 +7,7 @@
 #include "knn_engine.h"
 #include "knn_heap.h"
 #include "knn_reader.h"
+#include "knn_tree.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -296,28 +297,87 @@ static void knn_search_single_frame(
         } // for (int m = start_m; ...)
     } // Intra-Cluster Search
 
-    // Step 2: Rank and Sort other candidate clusters (Heuristic proximity order)
+    // Step 2: Rank and Sort other candidate clusters (with Level 0 Super-Cluster pruning)
     int num_cand_clusters = 0;
-    for (int q = 0; q < M; q++)
+    double current_tau = knn_heap_peek_max_dist(heap);
+
+    if (model->num_super_clusters > 1 && home_cluster_id >= 0 &&
+        model->cluster_super_map != NULL)
     {
-        if (q == home_cluster_id || model->clusters[q].num_members == 0)
-        {
-            continue;
-        }
+        int home_super_id = model->cluster_super_map[home_cluster_id];
+        double r_home_super = model->super_clusters[home_super_id].radius;
+        int K = model->num_super_clusters;
 
-        double dcc = model->dcc_matrix[home_cluster_id * M + q];
-        double r_q = model->clusters[q].radius;
-        double lb = dcc - r_home - r_q;
-        if (lb < 0.0)
+        for (int s = 0; s < K; s++)
         {
-            lb = 0.0;
-        }
+            if (s != home_super_id)
+            {
+                double dss = model->dss_matrix[home_super_id * K + s];
+                double r_s = model->super_clusters[s].radius;
+                double lb_super = dss - r_home_super - r_s;
+                if (lb_super < 0.0)
+                {
+                    lb_super = 0.0;
+                }
 
-        scores_buffer[num_cand_clusters].id = q;
-        scores_buffer[num_cand_clusters].lb = lb;
-        scores_buffer[num_cand_clusters].dcc = dcc;
-        num_cand_clusters++;
-    } // for (int q = 0; ...)
+                // Level 0: Super-Cluster Pruning
+                if (lb_super >= current_tau / eps_factor)
+                {
+                    telem->level0_super_clusters_pruned++;
+                    telem->level1_clusters_pruned +=
+                        (uint64_t)model->super_clusters[s].num_clusters;
+                    continue; // Skip all child clusters in super-cluster s
+                }
+            }
+
+            // Populate child clusters of surviving super-clusters
+            const KnnSuperCluster *sc = &model->super_clusters[s];
+            for (int ci = 0; ci < sc->num_clusters; ci++)
+            {
+                int q = sc->cluster_ids[ci];
+                if (q == home_cluster_id || model->clusters[q].num_members == 0)
+                {
+                    continue;
+                }
+
+                double dcc = model->dcc_matrix[home_cluster_id * M + q];
+                double r_q = model->clusters[q].radius;
+                double lb = dcc - r_home - r_q;
+                if (lb < 0.0)
+                {
+                    lb = 0.0;
+                }
+
+                scores_buffer[num_cand_clusters].id = q;
+                scores_buffer[num_cand_clusters].lb = lb;
+                scores_buffer[num_cand_clusters].dcc = dcc;
+                num_cand_clusters++;
+            } // for (int ci = 0; ...)
+        } // for (int s = 0; ...)
+    }
+    else
+    {
+        for (int q = 0; q < M; q++)
+        {
+            if (q == home_cluster_id || model->clusters[q].num_members == 0)
+            {
+                continue;
+            }
+
+            double dcc = model->dcc_matrix[home_cluster_id * M + q];
+            double r_q = model->clusters[q].radius;
+            double lb = dcc - r_home - r_q;
+            if (lb < 0.0)
+            {
+                lb = 0.0;
+            }
+
+            scores_buffer[num_cand_clusters].id = q;
+            scores_buffer[num_cand_clusters].lb = lb;
+            scores_buffer[num_cand_clusters].dcc = dcc;
+            num_cand_clusters++;
+        } // for (int q = 0; ...)
+    }
 
     qsort(scores_buffer, (size_t)num_cand_clusters, sizeof(ClusterScore),
           compare_cluster_scores);
@@ -327,7 +387,7 @@ static void knn_search_single_frame(
     {
         int q = scores_buffer[idx].id;
         double lb_cluster = scores_buffer[idx].lb;
-        double current_tau = knn_heap_peek_max_dist(heap);
+        current_tau = knn_heap_peek_max_dist(heap);
 
         // Level 1: Cluster-level DCC bound
         if (lb_cluster >= current_tau / eps_factor)
@@ -500,6 +560,7 @@ int knn_run_search(
     }
 
     uint64_t global_telem_calls = 0;
+    uint64_t global_telem_l0 = 0;
     uint64_t global_telem_l1 = 0;
     uint64_t global_telem_l2 = 0;
     uint64_t global_telem_l3 = 0;
@@ -507,8 +568,9 @@ int knn_run_search(
     uint64_t global_telem_cand = 0;
 
 #ifdef _OPENMP
-#pragma omp parallel reduction(+:global_telem_calls, global_telem_l1, global_telem_l2, \
-                                 global_telem_l3, global_telem_temp, global_telem_cand)
+#pragma omp parallel reduction(+:global_telem_calls, global_telem_l0, global_telem_l1, \
+                                 global_telem_l2, global_telem_l3, global_telem_temp,   \
+                                 global_telem_cand)
 #endif
     {
         KnnFrameReader thread_reader;
@@ -564,6 +626,7 @@ int knn_run_search(
         } // for (long i = 0; ...)
 
         global_telem_calls += thread_telem.framedist_calls;
+        global_telem_l0 += thread_telem.level0_super_clusters_pruned;
         global_telem_l1 += thread_telem.level1_clusters_pruned;
         global_telem_l2 += thread_telem.level2_anchors_pruned;
         global_telem_l3 += thread_telem.level3_annular_pruned;
@@ -590,6 +653,7 @@ int knn_run_search(
 
     telemetry->total_queries = (uint64_t)N;
     telemetry->framedist_calls = global_telem_calls;
+    telemetry->level0_super_clusters_pruned = global_telem_l0;
     telemetry->level1_clusters_pruned = global_telem_l1;
     telemetry->level2_anchors_pruned = global_telem_l2;
     telemetry->level3_annular_pruned = global_telem_l3;
