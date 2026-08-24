@@ -2196,8 +2196,50 @@
 
       try {
         if (engineMode === 'cli' && DesktopBridge.isNativeSupported()) {
-          const datasetName = document.getElementById('selectCliDataset')?.value || 'dataset.txt';
-          const clusterDir = `${datasetName}.clusterdat`;
+          const selCli = document.getElementById('selectCliDataset');
+          let datasetName = selCli ? selCli.value : '';
+          if (!datasetName) {
+            datasetName = `${currentBenchmark}.txt`;
+          }
+          const datasetBase = datasetName.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '');
+          const clusterDir = `${datasetBase}.clusterdat`;
+
+          // 1. Ensure staged coordinates exist in workspace file
+          const pts = (typeof benchmarkDataset !== 'undefined' && benchmarkDataset && benchmarkDataset.length > 0) ?
+                      benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
+          if (pts && pts.length > 0) {
+            await DesktopBridge.stageDatasetFile(datasetBase, pts).catch(() => {});
+          }
+
+          // 2. Check if clusterdat exists; if not and we have in-memory clusters, export them
+          const filesInWorkspace = await DesktopBridge.listFiles().catch(() => []);
+          const hasClusterDir = filesInWorkspace.some(f => (f.name === clusterDir || f.name === `${datasetName}.clusterdat`) && f.is_dir);
+          if (!hasClusterDir && typeof clusters !== 'undefined' && clusters.length > 0) {
+            let centroidsText = `# GRIC Cluster Centroids\n# ID X Y Z MEMBERS\n`;
+            clusters.forEach(c => {
+              centroidsText += `${c.id} ${c.x.toFixed(6)} ${c.y.toFixed(6)} ${(c.z || 0).toFixed(6)} ${c.members || 1}\n`;
+            });
+            let dccText = `# GRIC Cluster-to-Cluster Distance Matrix D_cc\n`;
+            if (typeof dcc !== 'undefined' && dcc && dcc.length > 0) {
+              dcc.forEach(row => {
+                dccText += row.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+              });
+            }
+            let memText = `# Frame Membership Assignments\n`;
+            if (typeof pastSamples !== 'undefined' && pastSamples && pastSamples.length > 0) {
+              for (let i = 0; i < pastSamples.length; i++) {
+                const p = pastSamples[i];
+                const cId = p.clusterId >= 0 ? p.clusterId : (typeof clustersAssigned !== 'undefined' && clustersAssigned ? clustersAssigned[i] || 0 : 0);
+                memText += `${i} ${cId} 0.000000\n`;
+              }
+            }
+            await DesktopBridge.exportClusterDat(datasetBase, {
+              'anchors.txt': centroidsText,
+              'dcc.txt': dccText,
+              'frame_membership.txt': memText
+            }).catch(() => {});
+          }
+
           const args = [
             datasetName,
             clusterDir,
@@ -2209,6 +2251,7 @@
           if (knnEpsilon > 0) args.push('-eps', String(knnEpsilon));
           if (knnRlim > 0) args.push('-rlim', String(knnRlim));
           args.push('-progress');
+          args.push('-txt');
 
           // Expand CLI Console Card to show live output
           const cardCli = document.getElementById('cardCli');
@@ -2227,6 +2270,7 @@
           showToast(`💻 Running native gric-knn (k=${knnK})...`);
 
           let rawCliOutput = '';
+          let finalExitCode = 0;
           await new Promise((resolve) => {
             DesktopBridge.runCliJob({
               cmd: 'gric-knn',
@@ -2240,11 +2284,11 @@
               },
               onTelemetry: () => {},
               onFinish: (res) => {
-                const exitCode = res?.exitCode ?? 0;
-                if (exitCode === 0) {
+                finalExitCode = res?.exitCode ?? 0;
+                if (finalExitCode === 0) {
                   showToast(`✅ Native gric-knn finished successfully!`);
                 } else {
-                  showToast(`⚠️ Native gric-knn finished (Exit: ${exitCode})`);
+                  showToast(`⚠️ Native gric-knn finished (Exit: ${finalExitCode})`);
                 }
                 resolve();
               }
@@ -2262,6 +2306,9 @@
 
           // Attempt to load top-k neighbors from knn_results.txt
           let nativeData = await DesktopBridge.readKnnResults(clusterDir, knnK);
+          if (!nativeData) {
+            nativeData = await DesktopBridge.readKnnResults(`${datasetName}.clusterdat`, knnK);
+          }
           if (!nativeData) {
             const N = parsedTelem.totalQueries || pts.length;
             nativeData = {
