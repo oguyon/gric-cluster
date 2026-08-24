@@ -621,19 +621,93 @@ const DesktopBridge = (function () {
   }
 
   /**
-   * Check status of the persistent gric_cli tmux session.
+   * Parse k-NN search telemetry from gric-knn stdout log text.
+   *
+   * @param {string} logText Raw or ANSI-colored log output from gric-knn.
+   * @return {Object} Structured telemetry object.
    */
-  async function getCliSessionStatus() {
-    if (!_isDesktop) return { exists: false };
+  function parseKnnTelemetryLog(logText) {
+    const clean = (logText || '').replace(/\x1b\[[0-9;]*m/g, '');
+    const telem = {
+      totalQueries: 0,
+      framedistCalls: 0,
+      level0SuperClustersPruned: 0,
+      level1ClustersPruned: 0,
+      level2AnchorsPruned: 0,
+      level3AnnularPruned: 0,
+      temporalPruned: 0,
+      totalCandidatesConsidered: 0,
+      timeSearchMs: 0.0
+    };
+
+    const mTotal = clean.match(/Total Query Frames:\s+(\d+)/);
+    if (mTotal) telem.totalQueries = parseInt(mTotal[1], 10);
+
+    const mCalls = clean.match(/Framedist Computations:\s+(\d+)/);
+    if (mCalls) telem.framedistCalls = parseInt(mCalls[1], 10);
+
+    const mL0 = clean.match(/Level 0 Super-Clusters:\s+(\d+)/);
+    if (mL0) telem.level0SuperClustersPruned = parseInt(mL0[1], 10);
+
+    const mL1 = clean.match(/Level 1 Clusters Pruned:\s+(\d+)/);
+    if (mL1) telem.level1ClustersPruned = parseInt(mL1[1], 10);
+
+    const mL2 = clean.match(/Level 2 Anchors Pruned:\s+(\d+)/);
+    if (mL2) telem.level2AnchorsPruned = parseInt(mL2[1], 10);
+
+    const mL3 = clean.match(/Level 3 Annular Pruned:\s+(\d+)/);
+    if (mL3) telem.level3AnnularPruned = parseInt(mL3[1], 10);
+
+    const mTemp = clean.match(/Temporal Exclusions:\s+(\d+)/);
+    if (mTemp) telem.temporalPruned = parseInt(mTemp[1], 10);
+
+    const mTime = clean.match(/Search Wall Time:\s+([\d.]+)\s*ms/);
+    if (mTime) telem.timeSearchMs = parseFloat(mTime[1]);
+
+    return telem;
+  }
+
+  /**
+   * Load and parse knn_results.txt from workspace into visualizer format.
+   *
+   * @param {string} clusterDir Relative path to clusterdat directory.
+   * @param {number} k Number of nearest neighbors per frame.
+   */
+  async function readKnnResults(clusterDir, k) {
+    const cleanDir = clusterDir.replace(/\/+$/, '');
     try {
-      const resp = await _fetchApi('/api/cli/session/status', { cache: 'no-store' });
-      if (resp.ok) {
-        return await resp.json();
+      const text = await readFile(`${cleanDir}/knn_results.txt`);
+      if (!text) return null;
+
+      const lines = text.split(/\r?\n/);
+      let N = 0;
+      const indices = [];
+      const distances = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || line.startsWith('#')) continue;
+        const parts = line.split(/\s+/);
+        if (parts.length < 1 + 2 * k) continue;
+        N++;
+        for (let r = 0; r < k; r++) {
+          indices.push(parseInt(parts[1 + 2 * r], 10));
+          distances.push(parseFloat(parts[1 + 2 * r + 1]));
+        }
       }
+
+      if (N === 0) return null;
+
+      return {
+        totalFrames: N,
+        k: k,
+        indices: new Int32Array(indices),
+        distances: new Float64Array(distances)
+      };
     } catch (err) {
-      /* ignore */
+      console.warn('[DesktopBridge] Could not read knn_results.txt:', err);
+      return null;
     }
-    return { exists: false };
   }
 
   return {
@@ -655,6 +729,8 @@ const DesktopBridge = (function () {
     getShmTelemetry,
     stageDatasetFile,
     exportClusterDat,
-    parseClusterDatDir
+    parseClusterDatDir,
+    parseKnnTelemetryLog,
+    readKnnResults
   };
 })();

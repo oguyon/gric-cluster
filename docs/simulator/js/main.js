@@ -2226,11 +2226,13 @@
 
           showToast(`💻 Running native gric-knn (k=${knnK})...`);
 
+          let rawCliOutput = '';
           await new Promise((resolve) => {
             DesktopBridge.runCliJob({
               cmd: 'gric-knn',
               args: args,
               onOutput: (chunk) => {
+                rawCliOutput += chunk;
                 if (consoleEl) {
                   consoleEl.textContent += chunk;
                   consoleEl.scrollTop = consoleEl.scrollHeight;
@@ -2254,6 +2256,28 @@
               resolve();
             });
           });
+
+          // Parse telemetry from stdout log
+          const parsedTelem = DesktopBridge.parseKnnTelemetryLog(rawCliOutput);
+
+          // Attempt to load top-k neighbors from knn_results.txt
+          let nativeData = await DesktopBridge.readKnnResults(clusterDir, knnK);
+          if (!nativeData) {
+            const N = parsedTelem.totalQueries || pts.length;
+            nativeData = {
+              totalFrames: N,
+              k: knnK,
+              indices: new Int32Array(N * knnK).fill(-1),
+              distances: new Float64Array(N * knnK).fill(0.0)
+            };
+          }
+          nativeData.telemetry = parsedTelem;
+
+          knnResults = nativeData;
+          if (typeof renderKnnTrace === 'function') {
+            renderKnnTrace();
+          }
+          draw();
         } else {
           // WASM Execution
           if (typeof GricWasm === 'undefined' || !GricWasm.isReady()) {
