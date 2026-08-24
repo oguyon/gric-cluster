@@ -2197,7 +2197,10 @@
       try {
         if (engineMode === 'cli' && DesktopBridge.isNativeSupported()) {
           const datasetName = document.getElementById('selectCliDataset')?.value || 'dataset.txt';
+          const clusterDir = `${datasetName}.clusterdat`;
           const args = [
+            datasetName,
+            clusterDir,
             '-k', String(knnK),
             '-dtmin', String(knnDtmin)
           ];
@@ -2205,24 +2208,52 @@
           if (knnDirection === 'future') args.push('-future');
           if (knnEpsilon > 0) args.push('-eps', String(knnEpsilon));
           if (knnRlim > 0) args.push('-rlim', String(knnRlim));
-          args.push(datasetName);
+          args.push('-progress');
+
+          // Expand CLI Console Card to show live output
+          const cardCli = document.getElementById('cardCli');
+          if (cardCli && cardCli.classList.contains('collapsed')) {
+            togglePanelCollapse('cardCli');
+          }
+          const consoleEl = document.getElementById('cliConsoleLog');
+          if (consoleEl) {
+            consoleEl.textContent = `🚀 Dispatched in tmux session: gric_cli\n` +
+              `🖥️ Attach live: tmux attach -t gric_cli\n` +
+              `📄 Log stream: /tmp/gric_latest.log\n` +
+              `⚙️ Command: gric-knn ${args.join(' ')}\n` +
+              `─────────────────────────────────────────────────────────────\n`;
+          }
 
           showToast(`💻 Running native gric-knn (k=${knnK})...`);
-          const job = await DesktopBridge.runCliJob('gric-knn', args);
-          if (!job) {
-            showToast('⚠️ Failed to launch native gric-knn');
-            isKnnComputing = false;
-            updateKnnButtonUI(false);
-            return;
-          }
 
-          while (isKnnComputing && !knnAbortRequested) {
-            await new Promise(r => setTimeout(r, 100));
-            const st = await DesktopBridge.getCliStatus(job.job_id);
-            if (!st || !st.active) {
-              break;
-            }
-          }
+          await new Promise((resolve) => {
+            DesktopBridge.runCliJob({
+              cmd: 'gric-knn',
+              args: args,
+              onOutput: (chunk) => {
+                if (consoleEl) {
+                  consoleEl.textContent += chunk;
+                  consoleEl.scrollTop = consoleEl.scrollHeight;
+                }
+              },
+              onTelemetry: () => {},
+              onFinish: (res) => {
+                const exitCode = res?.exitCode ?? 0;
+                if (exitCode === 0) {
+                  showToast(`✅ Native gric-knn finished successfully!`);
+                } else {
+                  showToast(`⚠️ Native gric-knn finished (Exit: ${exitCode})`);
+                }
+                resolve();
+              }
+            }).catch((err) => {
+              showToast(`⚠️ Failed to start gric-knn: ${err.message}`);
+              if (consoleEl) {
+                consoleEl.textContent += `\n❌ Error: ${err.message}\n`;
+              }
+              resolve();
+            });
+          });
         } else {
           // WASM Execution
           if (typeof GricWasm === 'undefined' || !GricWasm.isReady()) {

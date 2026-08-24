@@ -172,11 +172,23 @@ const DesktopBridge = (function () {
   async function runCliJob(options) {
     if (!_isDesktop) throw new Error('Desktop backend not connected.');
 
-    const cmd = options.cmd || 'gric-cluster';
-    const args = options.args || [];
-    const onOutput = options.onOutput || function () {};
-    const onTelemetry = options.onTelemetry || function () {};
-    const onFinish = options.onFinish || function () {};
+    let opts = options;
+    if (typeof options === 'string') {
+      opts = {
+        cmd: options,
+        args: arguments[1] || [],
+        onOutput: arguments[2],
+        onFinish: arguments[3]
+      };
+    } else if (!opts) {
+      opts = {};
+    }
+
+    const cmd = opts.cmd || 'gric-cluster';
+    const args = opts.args || [];
+    const onOutput = opts.onOutput || function () {};
+    const onTelemetry = opts.onTelemetry || function () {};
+    const onFinish = opts.onFinish || function () {};
 
     if (_activeJobId) {
       await killActiveJob();
