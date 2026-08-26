@@ -80,6 +80,9 @@
           if (!isRunning) {
             updateUI();
             draw();
+            if (typeof scheduleActiveFrameCleanup === 'function') {
+              scheduleActiveFrameCleanup(800);
+            }
           }
         }
         return;
@@ -225,6 +228,9 @@
           if (!isRunning) {
             updateUI();
             draw();
+            if (typeof scheduleActiveFrameCleanup === 'function') {
+              scheduleActiveFrameCleanup(800);
+            }
           }
         }
         return;
@@ -303,6 +309,89 @@
           }
         }
       }
+    }
+
+    /**
+     * Reassign all points in pastSamples / active dataset to their closest cluster anchor.
+     * Uses triangle inequality bounds against the DCC matrix where available.
+     */
+    function runSecondPassClustering() {
+      if (!clusters || clusters.length <= 1) {
+        showToast('ℹ️ Need at least 2 clusters to run 2nd pass reassignment');
+        return;
+      }
+      if (!pastSamples || pastSamples.length === 0) {
+        showToast('ℹ️ No points available to reassign');
+        return;
+      }
+
+      const tStart = performance.now();
+      const K = clusters.length;
+      const N = pastSamples.length;
+      let reassignedCount = 0;
+      let distEvals = 0;
+      let distPruned = 0;
+
+      // Reset cluster member counts
+      clusters.forEach(c => { c.members = 0; });
+
+      // Reallocate each sample
+      for (let i = 0; i < N; i++) {
+        const pt = pastSamples[i];
+        let bestK = pt.clusterId;
+        let dBest = 1e30;
+
+        if (bestK >= 0 && bestK < K) {
+          const anc = clusters[bestK];
+          const dx = pt.x - anc.x;
+          const dy = pt.y - anc.y;
+          const dz = (pt.z || 0) - (anc.z || 0);
+          dBest = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          distEvals++;
+        }
+
+        for (let k = 0; k < K; k++) {
+          if (k === bestK) continue;
+
+          // Triangle inequality lower bound check if D_cc available
+          if (dcc && dcc[bestK] && dcc[bestK][k] !== undefined && dcc[bestK][k] >= 0) {
+            const dccDist = dcc[bestK][k];
+            const lb = Math.abs(dBest - dccDist);
+            if (lb >= dBest) {
+              distPruned++;
+              continue;
+            }
+          }
+
+          const anc = clusters[k];
+          const dx = pt.x - anc.x;
+          const dy = pt.y - anc.y;
+          const dz = (pt.z || 0) - (anc.z || 0);
+          const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          distEvals++;
+
+          if (d < dBest) {
+            dBest = d;
+            bestK = k;
+          }
+        }
+
+        if (bestK !== pt.clusterId) {
+          reassignedCount++;
+          pt.clusterId = bestK;
+        }
+
+        if (bestK >= 0 && bestK < K) {
+          clusters[bestK].members++;
+        }
+      }
+
+      const tElapsed = performance.now() - tStart;
+      const pct = N > 0 ? ((reassignedCount / N) * 100).toFixed(1) : 0;
+      showToast(`🔄 2nd Pass: ${reassignedCount} / ${N} pts reassigned (${pct}%) in ${tElapsed.toFixed(1)}ms`);
+
+      updateUI();
+      draw();
     }
 
     // =========================================================================

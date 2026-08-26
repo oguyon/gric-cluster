@@ -90,6 +90,10 @@ typedef struct
     double   entropy_last_initial;     // H at meas_idx==0 for last frame
     double   entropy_avg_initial;      // Running average H at meas_idx==0
     double   entropy_gate_ratio;       // Fraction of calls gated
+
+    /* DCC Population telemetry fields */
+    uint64_t dcc_entries_populated;    // Populated exact inter-cluster distance pairs
+    uint64_t dcc_pairs_total;          // Total possible inter-cluster pairs K*(K-1)/2
 } GricClusterShmStatus;
 
 /**

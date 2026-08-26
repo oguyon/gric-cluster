@@ -394,7 +394,11 @@ int cluster_frame(
 
     state->telemetry.last_frame_dists = state->telemetry.framedist_calls - start_dist_calls;
     state->telemetry.last_frame_dfc = state->telemetry.framedist_calls_sample - start_dfc_calls;
-    state->telemetry.last_frame_dcc = state->telemetry.framedist_calls_intercluster - start_dcc_calls;
+    state->telemetry.last_frame_dcc =
+        state->telemetry.framedist_calls_intercluster - start_dcc_calls;
+
+    int K = state->num_clusters;
+    state->telemetry.dcc_pairs_total = (K > 1) ? ((uint64_t)K * (K - 1) / 2) : 0;
 
     return assigned_cluster;
 }

@@ -37,6 +37,7 @@
       { panX: 0, panY: 0, zoom: 1.0 },
       { panX: 0, panY: 0, zoom: 1.0 }
     ];
+    let viewportZoomBoxRects = [null, null, null, null];
 
     // Mouse Interaction State
     let isDragging = false;
@@ -53,8 +54,25 @@
     let samplePointSize = 1.5; // Ingested sample points render radius in px (0.5 to 8.0)
     let showPastSamples = true; // Toggle past sample point cloud visibility
     let maxDrawPoints = 10000;  // Max points drawn per frame (subsampled)
+    let visibleIndicesBuffer = new Int32Array(500000); // Reusable index buffer for FOV sampling
+    let viewportPointStats = [
+      { drawn: 0, visible: 0, truncated: false },
+      { drawn: 0, visible: 0, truncated: false },
+      { drawn: 0, visible: 0, truncated: false },
+      { drawn: 0, visible: 0, truncated: false }
+    ];
     let sampleBufferCap = 100000; // Rolling buffer capacity for pastSamples
     let batchThinRate = 1;      // In batch mode, keep every Nth frame (1 = all / none)
+    let showDistLines = true;   // Toggle distance evaluation and solving lines
+    let showDistLabels = true;  // Toggle distance measurement pills & badges
+    let showClusterLabels = true; // Toggle C0, C1... cluster text labels
+    let showClusterRadii = true; // Toggle cluster receptive field circles (rlim)
+    let showTransitionLines = true; // Toggle Markov transition arcs and paths
+    let showKnnLines = true;    // Toggle k-NN graph connection vector lines
+    let showGridAxes = true;    // Toggle 2D/3D coordinate grids, axes & bounding box
+    let showViewportHUD = true; // Toggle viewport header title, stats & zoom badge
+    let showInspectorCallout = true; // Toggle detailed sample hover/locked callout box
+    let showPrunedMarks = true; // Toggle pruned cluster crosshair marks
     let showCircleMembers = false; // Area proportional to points in cluster
     let showCircleSCDists = false; // Area proportional to #SC distances
     let showEntropyMap = false; // Spatial Information Gain / Entropy Reduction Map
@@ -78,6 +96,7 @@
     let xtileDecay = 0.70; // -xtile_decay (0.1 to 1.0)
     let useSparseDcc = false; // -sparse_dcc
     let sparseDccExtraEvals = 0; // -sparse_dcc_extra_evals
+    let usePass2Nearest = false; // -pass2nearest
 
     // Cluster Capacity & Eviction Policy
     let maxcl = 0; // -maxcl <int> (0 = Unlimited)
@@ -136,7 +155,7 @@
     let knnDirection = 'all'; // 'all', 'past', 'future'
     let knnEpsilon = 0.0;
     let knnRlim = 0.0;
-    let showKnnLines = true;
+    let knnMvp = false; // Multi-Anchor Pivot Bounding (AESA)
     let knnResults = null;
     let selectedKnnQuerySample = -1;
     let hoveredKnnNeighborId = -1;
@@ -397,4 +416,89 @@
       CIRCLE_SIN[s] = Math.sin(ang);
     }
 
+    let currentEvaluationsAlpha = 1.0;
+    let evaluationsFadeTimer = null;
+    let evaluationsFadeAnimId = null;
 
+    /**
+     * Clear or fade out active frame evaluation lines so they do not persist on screen.
+     * @param {boolean} immediate - If true, clears immediately; otherwise performs a smooth fade.
+     */
+    function clearActiveFrameEvaluations(immediate = true) {
+      if (evaluationsFadeTimer) {
+        clearTimeout(evaluationsFadeTimer);
+        evaluationsFadeTimer = null;
+      }
+      if (evaluationsFadeAnimId) {
+        cancelAnimationFrame(evaluationsFadeAnimId);
+        evaluationsFadeAnimId = null;
+      }
+
+      if (immediate) {
+        currentEvaluations = [];
+        currentFrame = null;
+        currentPruned = [];
+        lastTransitionFrom = -1;
+        lastTransitionTo = -1;
+        currentEvaluationsAlpha = 1.0;
+        if (typeof draw === 'function') {
+          draw();
+        }
+        return;
+      }
+
+      const fadeStart = performance.now();
+      const fadeDuration = 350;
+      const startAlpha = currentEvaluationsAlpha;
+
+      function stepFade() {
+        if (typeof isRunning !== 'undefined' && isRunning) {
+          evaluationsFadeAnimId = null;
+          currentEvaluationsAlpha = 1.0;
+          return;
+        }
+        const now = performance.now();
+        const elapsed = now - fadeStart;
+        const progress = Math.min(1.0, elapsed / fadeDuration);
+        currentEvaluationsAlpha = startAlpha * (1.0 - progress);
+
+        if (progress >= 1.0 || currentEvaluationsAlpha <= 0.01) {
+          currentEvaluations = [];
+          currentFrame = null;
+          currentPruned = [];
+          lastTransitionFrom = -1;
+          lastTransitionTo = -1;
+          currentEvaluationsAlpha = 1.0;
+          evaluationsFadeAnimId = null;
+          if (typeof draw === 'function') draw();
+          return;
+        }
+
+        if (typeof draw === 'function') draw();
+        evaluationsFadeAnimId = requestAnimationFrame(stepFade);
+      }
+      evaluationsFadeAnimId = requestAnimationFrame(stepFade);
+    }
+
+    /**
+     * Schedule non-persistent active frame distance lines cleanup after a delay.
+     * @param {number} delayMs - Delay before fade out begins (default: 800ms)
+     */
+    function scheduleActiveFrameCleanup(delayMs = 800) {
+      if (evaluationsFadeTimer) {
+        clearTimeout(evaluationsFadeTimer);
+        evaluationsFadeTimer = null;
+      }
+      if (evaluationsFadeAnimId) {
+        cancelAnimationFrame(evaluationsFadeAnimId);
+        evaluationsFadeAnimId = null;
+      }
+      currentEvaluationsAlpha = 1.0;
+
+      if (typeof isRunning !== 'undefined' && isRunning) return;
+
+      evaluationsFadeTimer = setTimeout(() => {
+        evaluationsFadeTimer = null;
+        clearActiveFrameEvaluations(false);
+      }, delayMs);
+    }

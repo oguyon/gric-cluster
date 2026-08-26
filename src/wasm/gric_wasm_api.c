@@ -774,6 +774,8 @@ enum
     TELEM_ENTROPY_SUM_INITIAL,
     TELEM_ENTROPY_MAX_INITIAL,
     TELEM_ENTROPY_LAST_INITIAL,
+    TELEM_DCC_ENTRIES_POPULATED,
+    TELEM_DCC_PAIRS_TOTAL,
     TELEM_COUNT
 };
 
@@ -825,6 +827,10 @@ void wasm_cluster_get_telemetry(
         t->entropy_max_initial;
     out_stats[TELEM_ENTROPY_LAST_INITIAL] =
         t->entropy_last_initial;
+    out_stats[TELEM_DCC_ENTRIES_POPULATED] =
+        (double)t->dcc_entries_populated;
+    out_stats[TELEM_DCC_PAIRS_TOTAL] =
+        (double)t->dcc_pairs_total;
 
     *out_len = TELEM_COUNT;
 }
@@ -1026,6 +1032,75 @@ void wasm_cluster_reset(void *ptr)
                    (size_t)N * sizeof(long));
         }
     } // Reset telemetry
+}
+
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_reassign_nearest(
+    void         *ptr,
+    const double *coords_flat,
+    int           num_frames,
+    int           ndim,
+    int          *out_assignments)
+{
+    WasmHandle *h = (WasmHandle *)ptr;
+    if (h == NULL || h->state.num_clusters <= 0 || num_frames <= 0 || coords_flat == NULL)
+    {
+        return 0;
+    }
+
+    int K = h->state.num_clusters;
+    int reassigned = 0;
+
+    for (int t = 0; t < num_frames; t++)
+    {
+        const double *p = &coords_flat[(size_t)t * (size_t)ndim];
+        int best_k = -1;
+        double min_dist_sq = 1e30;
+
+        for (int k = 0; k < K; k++)
+        {
+            const double *anchor = h->state.clusters[k].anchor.data;
+            if (anchor == NULL)
+            {
+                continue;
+            }
+
+            double dist_sq = 0.0;
+            for (int d = 0; d < ndim; d++)
+            {
+                double diff = p[d] - anchor[d];
+                dist_sq += diff * diff;
+            }
+
+            if (dist_sq < min_dist_sq)
+            {
+                min_dist_sq = dist_sq;
+                best_k = k;
+            }
+        }
+
+        if (best_k >= 0)
+        {
+            if (out_assignments != NULL)
+            {
+                out_assignments[t] = best_k;
+            }
+            if (h->state.assignments != NULL && (long)t < h->maxnbfr)
+            {
+                if (h->state.assignments[t] != best_k)
+                {
+                    reassigned++;
+                }
+                h->state.assignments[t] = best_k;
+            }
+            if (h->state.frame_infos != NULL && (long)t < h->maxnbfr)
+            {
+                h->state.frame_infos[t].assignment = best_k;
+            }
+        }
+    }
+
+    return reassigned;
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -1863,6 +1938,10 @@ void wasm_multitile_get_tile_telemetry(
         t->entropy_max_initial;
     out_stats[TELEM_ENTROPY_LAST_INITIAL] =
         t->entropy_last_initial;
+    out_stats[TELEM_DCC_ENTRIES_POPULATED] =
+        (double)t->dcc_entries_populated;
+    out_stats[TELEM_DCC_PAIRS_TOTAL] =
+        (double)t->dcc_pairs_total;
 
     *out_len = TELEM_COUNT;
 }
@@ -2114,6 +2193,7 @@ int wasm_knn_run_search(
     int           future_only,
     double        epsilon,
     double        rlim_cutoff,
+    int           use_multi_pivot,
     int          *out_indices,
     double       *out_distances,
     double       *out_telemetry)
@@ -2290,6 +2370,8 @@ int wasm_knn_run_search(
     config.epsilon = epsilon;
     config.rlim_cutoff = rlim_cutoff;
     config.memory_data = dataset_points;
+    config.use_multi_pivot = use_multi_pivot;
+    config.use_reciprocal = (!past_only && !future_only) ? 1 : 0;
     config.nthreads = 1;
     config.progress_mode = 0;
     config.verbose_level = 0;

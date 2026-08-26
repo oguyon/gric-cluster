@@ -16,16 +16,28 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Helper to match options with or without leading dash
+// Helper to match options with or without leading dash(es) and dash/underscore equivalence
 static int matches(const char *key, const char *opt)
 {
-    if (strcmp(key, opt) == 0)
-        return 1;
-    if (key[0] != '-' && opt[0] == '-' && strcmp(key, opt + 1) == 0)
-        return 1;
-    if (key[0] == '-' && opt[0] != '-' && strcmp(key + 1, opt) == 0)
-        return 1;
-    return 0;
+    while (*key == '-')
+        key++;
+    while (*opt == '-')
+        opt++;
+
+    while (*key && *opt)
+    {
+        char ck = *key;
+        char co = *opt;
+        if (ck == '_')
+            ck = '-';
+        if (co == '_')
+            co = '-';
+        if (ck != co)
+            return 0;
+        key++;
+        opt++;
+    }
+    return (*key == '\0' && *opt == '\0');
 }
 
 /**
@@ -48,11 +60,15 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->algo.deltaprob = atof(value);
         return 1;
     }
-    else if (matches(key, "-maxcl"))
+    else if (matches(key, "maxcl") || matches(key, "maxnbclust") || matches(key, "maxclusters"))
     {
         if (!value)
             return -1;
-        config->algo.maxnbclust = atoi(value);
+        int parsed = atoi(value);
+        if (parsed > 0)
+        {
+            config->algo.maxnbclust = parsed;
+        }
         return 1;
     }
     else if (matches(key, "-ncpu"))
@@ -248,6 +264,25 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
           || matches(key, "-no-pass2"))
     {
         config->optim.disable_pass2 = 1;
+        return 0;
+    }
+    else if (matches(key, "-pass2nearest")
+          || matches(key, "-pass2_nearest")
+          || matches(key, "-pass2-nearest")
+          || matches(key, "-reassign")
+          || matches(key, "-second_pass")
+          || matches(key, "-second-pass")
+          || matches(key, "-reallocate"))
+    {
+        config->algo.pass2_nearest_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-no_pass2nearest")
+          || matches(key, "-no-pass2nearest")
+          || matches(key, "-no_pass2_nearest")
+          || matches(key, "-no_reassign"))
+    {
+        config->algo.pass2_nearest_mode = 0;
         return 0;
     }
     else if (matches(key, "-xtile"))
@@ -631,6 +666,10 @@ int write_config_file(const char *filename, ClusterConfig *config)
     {
         fprintf(f, "soft_bayesian\n");
         fprintf(f, "soft_bayesian_sigma %f\n", config->optim.soft_bayesian_sigma_coeff);
+    }
+    if (config->algo.pass2_nearest_mode)
+    {
+        fprintf(f, "pass2_nearest\n");
     }
 
     fprintf(f, "tm %f\n", config->algo.tm_mixing_coeff);

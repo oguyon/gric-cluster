@@ -50,7 +50,8 @@ void record_step_assignment(
         state->frame_infos[frame_idx].num_dists = temp_count;
 
         if ((config->optim.gprob_mode || config->optim.pred_mode == 2 ||
-             config->output.output_evals) && temp_count > 0)
+             config->output.output_evals || config->algo.pass2_nearest_mode)
+            && temp_count > 0)
         {
             state->frame_infos[frame_idx].cluster_indices =
                 (int *)malloc((size_t)temp_count * sizeof(int));

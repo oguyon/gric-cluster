@@ -444,7 +444,9 @@ int main(int argc, char *argv[])
     state.cluster_visitors = (VisitorList *)calloc(max_clusters, sizeof(VisitorList));
     state.scratch.probsortedclindex = (int *)malloc(max_clusters * sizeof(int));
     state.scratch.clmembflag = (int *)malloc(max_clusters * sizeof(int));
-    state.scratch.consistency_mask = (uint64_t *)calloc(consistency_words, sizeof(uint64_t));
+    state.scratch.consistency_mask = config.optim.gprob_mode
+                                         ? (uint64_t *)calloc(consistency_words, sizeof(uint64_t))
+                                         : NULL;
     state.scratch.entropy_p_current = (double *)malloc(max_clusters * sizeof(double));
     state.scratch.entropy_candidates = (Candidate *)malloc(max_clusters * sizeof(Candidate));
     state.scratch.entropy_prob_scores = (TargetScore *)malloc(max_clusters * sizeof(TargetScore));
@@ -529,7 +531,8 @@ int main(int argc, char *argv[])
     free(state.scratch.dcc_measured);
     free(state.scratch.probsortedclindex);
     free(state.scratch.clmembflag);
-    free(state.scratch.consistency_mask);
+    if (state.scratch.consistency_mask)
+        free(state.scratch.consistency_mask);
     free(state.scratch.entropy_p_current);
     free(state.scratch.entropy_candidates);
     free(state.scratch.entropy_prob_scores);

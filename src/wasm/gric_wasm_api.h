@@ -108,6 +108,14 @@ int wasm_cluster_get_capacity(void *handle);
 EMSCRIPTEN_KEEPALIVE
 const char *wasm_cluster_get_version(void);
 
+EMSCRIPTEN_KEEPALIVE
+int wasm_cluster_reassign_nearest(
+    void         *handle,
+    const double *coords_flat,
+    int           num_frames,
+    int           ndim,
+    int          *out_assignments);
+
 /* ---- Multi-tile WASM API ---- */
 
 EMSCRIPTEN_KEEPALIVE
@@ -191,6 +199,7 @@ int wasm_knn_run_search(
     int           future_only,
     double        epsilon,
     double        rlim_cutoff,
+    int           use_multi_pivot,
     int          *out_indices,
     double       *out_distances,
     double       *out_telemetry);

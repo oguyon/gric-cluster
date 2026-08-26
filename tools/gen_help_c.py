@@ -15,6 +15,7 @@ ALIASES = {
     "algorithm": ["algorithms"],
     "performance": ["tuning"],
     "compression": ["statespace"],
+    "pass2nearest": ["reassign", "second_pass", "pass2_nearest"],
 }
 
 def escape_c_string(text):

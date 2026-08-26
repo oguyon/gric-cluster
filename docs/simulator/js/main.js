@@ -332,6 +332,16 @@
           GricWasm.applyToJsState(snapshot);
         }
       }
+      if (typeof clearActiveFrameEvaluations === 'function') {
+        clearActiveFrameEvaluations(true);
+      }
+
+      if (typeof hasMoreFrames === 'function' && !hasMoreFrames() && usePass2Nearest) {
+        if (typeof runSecondPassClustering === 'function') {
+          runSecondPassClustering();
+        }
+      }
+
       updateUI();
       draw();
     }
@@ -442,6 +452,9 @@
       applyNoiseToDataset();
 
       currentDim = detected3D ? 3 : 2;
+      if (currentDim === 2) {
+        maximizedQuad = null;
+      }
       BENCHMARK_DESCS["custom"] = `<b>Custom File (${filename})</b>: ${benchmarkDataset.length} ${detected3D ? '3D' : '2D'} frames loaded from upload.`;
       document.getElementById('selectBenchmark').value = 'custom';
       document.getElementById('benchmarkDesc').innerHTML = BENCHMARK_DESCS["custom"];
@@ -495,15 +508,18 @@
     // =========================================================================
 
     function getQuadrantAt(clientX, clientY) {
+      if (currentDim === 2) {
+        return 2;
+      }
+      if (maximizedQuad !== null && currentDim === 3) {
+        return maximizedQuad;
+      }
+
       const rect = canvas.getBoundingClientRect();
       const px = clientX - rect.left;
       const py = clientY - rect.top;
       const W = rect.width;
       const H = rect.height;
-
-      if (currentDim === 2 || maximizedQuad !== null) {
-        return maximizedQuad !== null ? maximizedQuad : 2;
-      }
 
       if (px < W / 2 && py < H / 2) return 0; // Along X
       if (px >= W / 2 && py < H / 2) return 1; // Along Y
@@ -529,20 +545,26 @@
       mouseDownClientY = e.clientY;
 
       // Check if clicking Maximize / Restore Icon in top-right of quadrant
-      if (currentDim === 3 && px >= qRect.x + qRect.w - 30 && px <= qRect.x + qRect.w - 4 && py >= qRect.y && py <= qRect.y + 24) {
+      if (currentDim === 3 && px >= qRect.x + qRect.w - 30 && px <= qRect.x + qRect.w - 4 &&
+          py >= qRect.y && py <= qRect.y + 24) {
         maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
         draw();
         return;
       }
 
       // Check if clicking Corner Zoom Box to reset zoom & pan to 1:1
-      if (px >= qRect.x + qRect.w - 180 && px <= qRect.x + qRect.w - 8 && py >= qRect.y + 24 && py <= qRect.y + 50) {
+      const zRect = (typeof viewportZoomBoxRects !== 'undefined')
+        ? viewportZoomBoxRects[qIdx]
+        : null;
+      if (showViewportHUD && zRect &&
+          px >= zRect.x && px <= zRect.x + zRect.w &&
+          py >= zRect.y && py <= zRect.y + zRect.h) {
         if (quadViews && quadViews[qIdx]) {
           quadViews[qIdx].zoom = 1.0;
           quadViews[qIdx].panX = 0;
           quadViews[qIdx].panY = 0;
         }
-        if (qIdx === 3 && typeof orbitCamera !== 'undefined') {
+        if (qIdx === 3 && currentDim === 3 && typeof orbitCamera !== 'undefined') {
           orbitCamera.zoom = 1.0;
           orbitCamera.panX = 0;
           orbitCamera.panY = 0;
@@ -642,14 +664,17 @@
         }
       } else if (dragMode === 'pan') {
         // Pan 2D Sub-viewport
+        const targetQuad = (currentDim === 2) ? 2 : activeDragQuad;
         const rect = canvas.getBoundingClientRect();
-        const qRect = getQuadRect(activeDragQuad, rect.width, rect.height);
-        const scale = getQuadScale(activeDragQuad, qRect);
+        const qRect = getQuadRect(targetQuad, rect.width, rect.height);
+        const scale = getQuadScale(targetQuad, qRect);
 
-        const v = quadViews[activeDragQuad];
-        v.panX -= dx / scale;
-        v.panY += dy / scale;
-        draw();
+        const v = quadViews[targetQuad];
+        if (v && scale > 0) {
+          v.panX -= dx / scale;
+          v.panY += dy / scale;
+          draw();
+        }
       }
     });
 
@@ -836,8 +861,8 @@
 
       const v = quadViews[qIdx];
       if (v) {
-        v.zoom = Math.max(0.2, Math.min(25.0, (v.zoom || 1.0) * zoomFactor));
-        if (qIdx === 3) {
+        v.zoom = Math.max(0.05, (v.zoom || 1.0) * zoomFactor);
+        if (qIdx === 3 && currentDim === 3) {
           orbitCamera.zoom = v.zoom;
         }
       }
@@ -937,8 +962,31 @@
         }
 
         // Check if tapping Maximize / Restore Icon in top-right of quadrant
-        if (currentDim === 3 && px >= qRect.x + qRect.w - 36 && px <= qRect.x + qRect.w && py >= qRect.y && py <= qRect.y + 36) {
+        if (currentDim === 3 && px >= qRect.x + qRect.w - 36 && px <= qRect.x + qRect.w &&
+            py >= qRect.y && py <= qRect.y + 36) {
           maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
+          draw();
+          return;
+        }
+
+        // Check if tapping Corner Zoom Box to reset zoom & pan to 1:1
+        const zRect = (typeof viewportZoomBoxRects !== 'undefined')
+          ? viewportZoomBoxRects[qIdx]
+          : null;
+        if (showViewportHUD && zRect &&
+            px >= zRect.x && px <= zRect.x + zRect.w &&
+            py >= zRect.y && py <= zRect.y + zRect.h) {
+          if (quadViews && quadViews[qIdx]) {
+            quadViews[qIdx].zoom = 1.0;
+            quadViews[qIdx].panX = 0;
+            quadViews[qIdx].panY = 0;
+          }
+          if (qIdx === 3 && currentDim === 3 && typeof orbitCamera !== 'undefined') {
+            orbitCamera.zoom = 1.0;
+            orbitCamera.panX = 0;
+            orbitCamera.panY = 0;
+          }
+          if (typeof updateZoomBadge === 'function') updateZoomBadge();
           draw();
           return;
         }
@@ -991,10 +1039,11 @@
         const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
         if (pinchStartDist > 0) {
           const factor = currentDist / pinchStartDist;
-          const v = quadViews[pinchQuad];
+          const targetQuad = (currentDim === 2) ? 2 : pinchQuad;
+          const v = quadViews[targetQuad];
           if (v) {
-            v.zoom = Math.max(0.2, Math.min(25.0, (v.zoom || 1.0) * factor));
-            if (pinchQuad === 3) orbitCamera.zoom = v.zoom;
+            v.zoom = Math.max(0.05, (v.zoom || 1.0) * factor);
+            if (targetQuad === 3 && currentDim === 3) orbitCamera.zoom = v.zoom;
           }
           pinchStartDist = currentDist;
           updateZoomBadge();
@@ -1026,12 +1075,13 @@
           draw();
         } else {
           // Pan 2D Sub-viewport
+          const targetQuad = (currentDim === 2) ? 2 : activeTouchQuad;
           const rect = canvas.getBoundingClientRect();
-          const qRect = getQuadRect(activeTouchQuad, rect.width, rect.height);
-          const scale = getQuadScale(activeTouchQuad, qRect);
+          const qRect = getQuadRect(targetQuad, rect.width, rect.height);
+          const scale = getQuadScale(targetQuad, qRect);
 
-          const v = quadViews[activeTouchQuad];
-          if (v) {
+          const v = quadViews[targetQuad];
+          if (v && scale > 0) {
             v.panX -= dx / scale;
             v.panY += dy / scale;
             draw();
@@ -1147,6 +1197,23 @@
       });
     }
 
+    const btnPass2El = document.getElementById('btnPass2Nearest');
+    if (btnPass2El) {
+      btnPass2El.addEventListener('click', () => {
+        if (isRunning) pauseSimulation();
+        runSecondPassClustering();
+      });
+    }
+
+    const optPass2El = document.getElementById('optPass2Nearest');
+    if (optPass2El) {
+      optPass2El.addEventListener('click', () => {
+        optPass2El.classList.toggle('active');
+        usePass2Nearest = optPass2El.classList.contains('active');
+        showToast(usePass2Nearest ? '✓ 2nd Pass (auto-reassign) enabled' : '✗ 2nd Pass disabled');
+      });
+    }
+
     document.getElementById('tabNarrative').addEventListener('click', () => setTab('narrative'));
     document.getElementById('tabCandidates').addEventListener('click', () => setTab('candidates'));
     const tabTMEl = document.getElementById('tabTM');
@@ -1220,6 +1287,9 @@
       } else if (e.key === 'e' || e.key === 'E') {
         const btnExplain = document.getElementById('btnExplain');
         if (btnExplain) btnExplain.click();
+      } else if (e.key === 'p' || e.key === 'P' || e.key === '2') {
+        const btnPass2 = document.getElementById('btnPass2Nearest');
+        if (btnPass2) btnPass2.click();
       } else if (e.key === 'k' || e.key === 'K') {
         const btnRunKnn = document.getElementById('btnRunKnn');
         if (btnRunKnn) btnRunKnn.click();
@@ -1393,19 +1463,62 @@
       });
     }
 
-    // Show / Hide Past Samples toggle
-    document.getElementById('optShowSamples').addEventListener('click', () => {
-      showPastSamples = true;
-      document.getElementById('optShowSamples').classList.add('toggle-active');
-      document.getElementById('optHideSamples').classList.remove('toggle-active');
-      draw();
+    function setupSingleToggle(btnId, getter, setter) {
+      const btn = document.getElementById(btnId);
+      if (btn) {
+        btn.addEventListener('click', () => {
+          const newVal = !getter();
+          setter(newVal);
+          if (window.updateDisplayTogglesUI) {
+            window.updateDisplayTogglesUI();
+          }
+          draw();
+        });
+      }
+    }
+
+    setupSingleToggle('optToggleDistLines', () => showDistLines, v => showDistLines = v);
+    setupSingleToggle('optToggleKnnLines', () => showKnnLines, v => showKnnLines = v);
+    setupSingleToggle('optToggleKnnLinesKnnCard', () => showKnnLines, v => showKnnLines = v);
+    setupSingleToggle('optToggleTransitionLines', () => showTransitionLines,
+                      v => showTransitionLines = v);
+    setupSingleToggle('optToggleClusterRadii', () => showClusterRadii, v => showClusterRadii = v);
+    setupSingleToggle('optToggleGridAxes', () => showGridAxes, v => showGridAxes = v);
+    setupSingleToggle('optToggleClusterLabels', () => showClusterLabels,
+                      v => showClusterLabels = v);
+    setupSingleToggle('optToggleDistLabels', () => showDistLabels, v => showDistLabels = v);
+    setupSingleToggle('optToggleViewportHUD', () => showViewportHUD, v => showViewportHUD = v);
+    setupSingleToggle('optToggleShowSamples', () => showPastSamples, v => showPastSamples = v);
+    setupSingleToggle('optToggleHighlightClosest', () => highlightClosestSample, v => {
+      highlightClosestSample = v;
+      if (!v) hoveredClosestSample = null;
     });
-    document.getElementById('optHideSamples').addEventListener('click', () => {
-      showPastSamples = false;
-      document.getElementById('optHideSamples').classList.add('toggle-active');
-      document.getElementById('optShowSamples').classList.remove('toggle-active');
-      draw();
-    });
+
+    function updateDisplayTogglesUI() {
+      const syncBtn = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.classList.toggle('active', !!val);
+          el.classList.toggle('toggle-active', !!val);
+        }
+      };
+      syncBtn('optToggleDistLines', showDistLines);
+      syncBtn('optToggleKnnLines', showKnnLines);
+      syncBtn('optToggleKnnLinesKnnCard', showKnnLines);
+      syncBtn('optToggleTransitionLines', showTransitionLines);
+      syncBtn('optToggleClusterRadii', showClusterRadii);
+      syncBtn('optToggleGridAxes', showGridAxes);
+      syncBtn('optToggleClusterLabels', showClusterLabels);
+      syncBtn('optToggleDistLabels', showDistLabels);
+      syncBtn('optToggleViewportHUD', showViewportHUD);
+      syncBtn('optToggleShowSamples', showPastSamples);
+      syncBtn('optToggleHighlightClosest', highlightClosestSample);
+
+      syncBtn('optCircleMembers', showCircleMembers);
+      syncBtn('optCircleSCDists', showCircleSCDists);
+      syncBtn('optEntropyMap', showEntropyMap);
+    }
+    window.updateDisplayTogglesUI = updateDisplayTogglesUI;
 
     const btnToggleTooltips = document.getElementById('btnToggleTooltips');
     if (btnToggleTooltips) {
@@ -1413,24 +1526,6 @@
         if (typeof toggleTooltips === 'function') {
           toggleTooltips();
         }
-      });
-    }
-
-    const optHighlightClosestOn = document.getElementById('optHighlightClosestOn');
-    const optHighlightClosestOff = document.getElementById('optHighlightClosestOff');
-    if (optHighlightClosestOn && optHighlightClosestOff) {
-      optHighlightClosestOn.addEventListener('click', () => {
-        highlightClosestSample = true;
-        optHighlightClosestOn.classList.add('toggle-active');
-        optHighlightClosestOff.classList.remove('toggle-active');
-        draw();
-      });
-      optHighlightClosestOff.addEventListener('click', () => {
-        highlightClosestSample = false;
-        hoveredClosestSample = null;
-        optHighlightClosestOff.classList.add('toggle-active');
-        optHighlightClosestOn.classList.remove('toggle-active');
-        draw();
       });
     }
 
@@ -2233,11 +2328,24 @@
                 memText += `${i} ${cId} 0.000000\n`;
               }
             }
-            await DesktopBridge.exportClusterDat(datasetBase, {
+            let exportFiles = {
               'anchors.txt': centroidsText,
               'dcc.txt': dccText,
               'frame_membership.txt': memText
-            }).catch(() => {});
+            };
+            if (typeof dccMin !== 'undefined' && dccMin && dccMin.length > 0) {
+              let dccMinText = `# GRIC Cluster-to-Cluster Lower Bounds Matrix D_cc,min\n`;
+              for (let i = 0; i < clusters.length; i++) {
+                for (let j = 0; j < clusters.length; j++) {
+                  const val = (dccMin[i] && dccMin[i][j]) ? dccMin[i][j] : 0.0;
+                  if (val > 0.0) {
+                    dccMinText += `${i} ${j} ${val.toFixed(6)}\n`;
+                  }
+                }
+              }
+              exportFiles['dccmin.txt'] = dccMinText;
+            }
+            await DesktopBridge.exportClusterDat(datasetBase, exportFiles).catch(() => {});
           }
 
           const args = [
@@ -2250,14 +2358,10 @@
           if (knnDirection === 'future') args.push('-future');
           if (knnEpsilon > 0) args.push('-eps', String(knnEpsilon));
           if (knnRlim > 0) args.push('-rlim', String(knnRlim));
+          if (typeof knnMvp !== 'undefined' && knnMvp) args.push('-multipivot');
           args.push('-progress');
           args.push('-txt');
 
-          // Expand CLI Console Card to show live output
-          const cardCli = document.getElementById('cardCli');
-          if (cardCli && cardCli.classList.contains('collapsed')) {
-            togglePanelCollapse('cardCli');
-          }
           const consoleEl = document.getElementById('cliConsoleLog');
           if (consoleEl) {
             consoleEl.textContent = `🚀 Dispatched in tmux session: gric_cli\n` +
@@ -2339,7 +2443,8 @@
             dtmin: knnDtmin,
             direction: knnDirection,
             epsilon: knnEpsilon,
-            rlim: knnRlim
+            rlim: knnRlim,
+            multiPivot: (typeof knnMvp !== 'undefined' && knnMvp)
           };
 
           const t0 = performance.now();
@@ -2486,22 +2591,18 @@
       });
     }
 
-    const optShowKnnLines = document.getElementById('optShowKnnLines');
-    const optHideKnnLines = document.getElementById('optHideKnnLines');
-    if (optShowKnnLines && optHideKnnLines) {
-      optShowKnnLines.addEventListener('click', () => {
-        showKnnLines = true;
-        optShowKnnLines.classList.add('toggle-active');
-        optHideKnnLines.classList.remove('toggle-active');
-        draw();
-      });
-      optHideKnnLines.addEventListener('click', () => {
-        showKnnLines = false;
-        optHideKnnLines.classList.add('toggle-active');
-        optShowKnnLines.classList.remove('toggle-active');
-        draw();
+    const btnKnnMultiPivot = document.getElementById('btnKnnMultiPivot');
+    if (btnKnnMultiPivot) {
+      btnKnnMultiPivot.addEventListener('click', () => {
+        knnMvp = !knnMvp;
+        btnKnnMultiPivot.classList.toggle('toggle-active', knnMvp);
+        btnKnnMultiPivot.classList.toggle('toggle-cyan', knnMvp);
+        btnKnnMultiPivot.classList.toggle('active', knnMvp);
+        updateCliCommand();
+        if (enableKnn) executeKnnComputation();
       });
     }
+
 
     // =========================================================================
     //  SIDEBAR PANELS RESIZING & COLLAPSE CONTROLLER (9 PANELS & 8 RESIZERS)
@@ -2713,6 +2814,10 @@
 
       if (typeof updateResizersVisibility === 'function') {
         updateResizersVisibility();
+      }
+
+      if (typeof updateCliCommand === 'function') {
+        updateCliCommand();
       }
     }
 
@@ -3005,6 +3110,275 @@
     //  WORKSPACE & DUAL-MODE CONTROLLER (WASM vs Native CLI)
     // =========================================================================
 
+    let currentViewingFile = null;
+    let currentDataFilesTab = 'structures';
+
+    function updateStorageModeBanner() {
+      const iconMode = document.getElementById('iconStorageMode');
+      const titleMode = document.getElementById('txtStorageModeTitle');
+      const subMode = document.getElementById('txtStorageModeSubtitle');
+      if (!iconMode || !titleMode || !subMode) return;
+
+      if (isDesktopBackend) {
+        iconMode.textContent = '💻';
+        titleMode.textContent = 'Native Desktop Workspace';
+        subMode.textContent = workspacePath || 'Local Filesystem Active';
+      } else if (WebFs.isOpen()) {
+        iconMode.textContent = '📁';
+        titleMode.textContent = 'Linked Local Folder';
+        subMode.textContent = `Local Folder: ${WebFs.getDirectoryName()}`;
+      } else {
+        iconMode.textContent = '⚡';
+        titleMode.textContent = 'WebAssembly Sandbox';
+        subMode.textContent = 'In-Browser Memory (Save/Download to Disk)';
+      }
+    }
+
+    function switchDataFilesTab(tab) {
+      currentDataFilesTab = tab;
+      const tabNavStruct = document.getElementById('tabNavDataStructures');
+      const tabNavWs = document.getElementById('tabNavWorkspaceFiles');
+      const paneStruct = document.getElementById('tabPaneDataStructures');
+      const paneWs = document.getElementById('tabPaneWorkspaceFiles');
+
+      if (tab === 'workspace') {
+        if (tabNavStruct) tabNavStruct.classList.remove('active');
+        if (tabNavWs) tabNavWs.classList.add('active');
+        if (paneStruct) paneStruct.style.display = 'none';
+        if (paneWs) paneWs.style.display = 'block';
+        refreshWorkspaceFiles();
+      } else {
+        if (tabNavWs) tabNavWs.classList.remove('active');
+        if (tabNavStruct) tabNavStruct.classList.add('active');
+        if (paneWs) paneWs.style.display = 'none';
+        if (paneStruct) paneStruct.style.display = 'block';
+        renderDataStructuresUI();
+      }
+    }
+    window.switchDataFilesTab = switchDataFilesTab;
+
+    function openFileViewerModal(title, category, badge, sizeBytes, content) {
+      const modal = document.getElementById('modalFileViewer');
+      const lblTitle = document.getElementById('fileViewerTitle');
+      const lblSub = document.getElementById('fileViewerSubtitle');
+      const preContent = document.getElementById('fileViewerContent');
+
+      currentViewingFile = { title, category, badge, sizeBytes, content };
+
+      if (lblTitle) lblTitle.textContent = title;
+      if (lblSub) {
+        const sizeStr = (sizeBytes > 1048576)
+          ? `${(sizeBytes / 1048576).toFixed(2)} MB`
+          : `${(sizeBytes / 1024).toFixed(1)} KB`;
+        lblSub.textContent = `${category} • ${badge} • ${sizeStr}`;
+      }
+      if (preContent) preContent.textContent = content || '(Empty file)';
+
+      if (modal) modal.style.display = 'flex';
+    }
+    window.openFileViewerModal = openFileViewerModal;
+
+    function closeFileViewerModal() {
+      const modal = document.getElementById('modalFileViewer');
+      if (modal) modal.style.display = 'none';
+    }
+    window.closeFileViewerModal = closeFileViewerModal;
+
+    function renderDataStructuresUI() {
+      const listEl = document.getElementById('dataStructuresList');
+      const badgeCount = document.getElementById('badgeDataFilesCount');
+      if (!listEl || typeof DataManager === 'undefined') return;
+
+      const data = DataManager.generateCurrentDataStructures();
+      const structures = data.structures;
+
+      let readyCount = 0;
+      structures.forEach(s => { if (s.ready) readyCount++; });
+
+      if (badgeCount) {
+        badgeCount.textContent = `${readyCount}/${structures.length} ready`;
+      }
+
+      listEl.innerHTML = '';
+      structures.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'data-struct-item';
+
+        const sizeStr = (s.size > 1048576)
+          ? `${(s.size / 1048576).toFixed(2)} MB`
+          : `${(s.size / 1024).toFixed(1)} KB`;
+
+        const badgeBg = s.ready ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.1)';
+        const badgeColor = s.ready ? '#38bdf8' : '#94a3b8';
+
+        item.innerHTML = `
+          <div class="data-struct-info">
+            <div class="data-struct-title">
+              <span>${s.icon}</span>
+              <span style="color: ${s.ready ? '#f1f5f9' : '#64748b'};">${s.filename}</span>
+              <span class="badge-pill"
+                    style="background: ${badgeBg}; color: ${badgeColor};
+                           font-size: 0.65rem; padding: 1px 6px;">
+                ${s.badge}
+              </span>
+              <span style="font-size: 0.65rem; color: var(--text-muted); margin-left: auto;">
+                ${sizeStr}
+              </span>
+            </div>
+            <div class="data-struct-desc" title="${s.desc}">${s.desc}</div>
+          </div>
+          <div class="data-struct-actions">
+            <button class="btn-action btn-view-struct"
+                    style="padding: 2px 6px; font-size: 0.68rem;"
+                    title="View file content" ${s.ready ? '' : 'disabled'}>👁️</button>
+            <button class="btn-action btn-dl-struct"
+                    style="padding: 2px 6px; font-size: 0.68rem;"
+                    title="Download file to disk" ${s.ready ? '' : 'disabled'}>💾</button>
+            <button class="btn-action btn-copy-struct"
+                    style="padding: 2px 6px; font-size: 0.68rem;"
+                    title="Copy file text to clipboard" ${s.ready ? '' : 'disabled'}>📋</button>
+          </div>
+        `;
+
+        const btnView = item.querySelector('.btn-view-struct');
+        if (btnView) {
+          btnView.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openFileViewerModal(s.filename, s.category, s.badge, s.size, s.content);
+          });
+        }
+        const btnDl = item.querySelector('.btn-dl-struct');
+        if (btnDl) {
+          btnDl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            DataManager.downloadTextFile(s.filename, s.content);
+            showToast(`💾 Downloaded ${s.filename}`);
+          });
+        }
+        const btnCopy = item.querySelector('.btn-copy-struct');
+        if (btnCopy) {
+          btnCopy.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (navigator.clipboard) {
+              navigator.clipboard.writeText(s.content).then(() => {
+                showToast(`📋 Copied ${s.filename} to clipboard`);
+              }).catch(() => {
+                showToast(`📋 Copied ${s.filename}`);
+              });
+            } else {
+              showToast(`📋 Copied ${s.filename}`);
+            }
+          });
+        }
+
+        listEl.appendChild(item);
+      });
+    }
+    window.renderDataStructuresUI = renderDataStructuresUI;
+
+    function renderWorkspaceFilesTree() {
+      const treeEl = document.getElementById('workspaceFilesTree');
+      const headerEl = document.getElementById('lblWorkspaceTreeHeader');
+      if (!treeEl) return;
+
+      treeEl.innerHTML = '';
+
+      if (headerEl) {
+        if (isDesktopBackend) {
+          headerEl.textContent = `💻 Native Workspace (${workspaceFiles.length} items):`;
+        } else if (WebFs.isOpen()) {
+          headerEl.textContent = `📁 Local Folder (${WebFs.getDirectoryName()}):`;
+        } else {
+          headerEl.textContent = '⚡ In-Browser Sandbox (No local folder linked):';
+        }
+      }
+
+      if (!isDesktopBackend && !WebFs.isOpen()) {
+        treeEl.innerHTML = `
+          <div style="padding: 10px; color: var(--text-muted); text-align: center;
+                      line-height: 1.4;">
+            <div style="font-size: 1.1rem; margin-bottom: 4px;">⚡ Web Browser Sandbox</div>
+            <div>Working in client-side memory. Click <b>"Save All"</b> or <b>"ZIP"</b>
+                 to export results to disk.</div>
+            <div style="margin-top: 6px; font-size: 0.68rem; color: #38bdf8;">
+              Tip: Click <b>"Open"</b> in the top Workspace bar to link a local folder directly.
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (workspaceFiles.length === 0) {
+        treeEl.innerHTML = `
+          <div style="padding: 8px; color: var(--text-muted); text-align: center;">
+            (Directory is empty)
+          </div>
+        `;
+        return;
+      }
+
+      workspaceFiles.forEach(f => {
+        const item = document.createElement('div');
+        const isDir = f.is_dir || f.isDir;
+        item.className = `ws-tree-item ${isDir ? 'is-dir' : ''}`;
+
+        const icon = isDir ? '📁' : '📄';
+        const sizeStr = !isDir ? `(${(f.size / 1024).toFixed(1)} KB)` : '';
+
+        item.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 6px; overflow: hidden;
+                      text-overflow: ellipsis; white-space: nowrap; flex: 1;">
+            <span>${icon}</span>
+            <span style="font-weight: ${isDir ? '700' : '400'};">${f.name}</span>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">${sizeStr}</span>
+          </div>
+          <div style="display: flex; gap: 4px; flex-shrink: 0;">
+            ${isDir && f.name.includes('cluster')
+              ? `<button class="btn-action btn-load-cluster"
+                         style="padding: 1px 5px; font-size: 0.65rem; color: #4ade80;">
+                   Load
+                 </button>`
+              : ''}
+            ${!isDir
+              ? `<button class="btn-action btn-view-file"
+                         style="padding: 1px 5px; font-size: 0.65rem;">
+                   View
+                 </button>`
+              : ''}
+          </div>
+        `;
+
+        const btnLoad = item.querySelector('.btn-load-cluster');
+        if (btnLoad) {
+          btnLoad.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await loadClusterResults(f.name);
+          });
+        }
+
+        const btnView = item.querySelector('.btn-view-file');
+        if (btnView) {
+          btnView.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            try {
+              let text = '';
+              if (isDesktopBackend) {
+                text = await DesktopBridge.readFile(f.name);
+              } else if (WebFs.isOpen()) {
+                text = await WebFs.readFile(f.name);
+              }
+              openFileViewerModal(f.name, 'Workspace File', 'Local Disk', f.size, text);
+            } catch (err) {
+              showToast(`Failed to read ${f.name}: ${err.message}`);
+            }
+          });
+        }
+
+        treeEl.appendChild(item);
+      });
+    }
+    window.renderWorkspaceFilesTree = renderWorkspaceFilesTree;
+
     async function initWorkspaceAndEngine() {
       const lblPath = document.getElementById('lblWorkspacePath');
       const btnCliMode = document.getElementById('btnEngineCli');
@@ -3012,6 +3386,9 @@
       const btnOpenFolder = document.getElementById('btnOpenLocalFolder');
       const btnRefresh = document.getElementById('btnRefreshWorkspace');
       const btnSaveWorkspace = document.getElementById('btnSaveToWorkspace');
+      const btnSaveAllData = document.getElementById('btnSaveAllDataStructures');
+      const btnDownloadZip = document.getElementById('btnDownloadAllZip');
+      const btnRefreshTree = document.getElementById('btnRefreshWorkspaceTree');
       const cliNotice = document.getElementById('cliWebNotice');
       const cliControls = document.getElementById('cliDesktopControls');
 
@@ -3044,14 +3421,16 @@
         if (cliNotice) {
           cliNotice.style.display = 'block';
           if (DesktopBridge.isMobileDevice()) {
-            cliNotice.innerHTML = '📱 <b>Mobile Phone Mode:</b> In-Browser WebAssembly (WASM) is active with local SIMD hardware acceleration. Native CLI execution is disabled on mobile devices.';
+            cliNotice.innerHTML = '📱 <b>Mobile Phone Mode:</b> In-Browser WebAssembly (WASM) ' +
+              'is active with SIMD hardware acceleration. Native CLI is disabled on mobile.';
           }
         }
         if (cliControls) cliControls.style.display = 'none';
       }
 
-      // Ensure engine UI reflects mobile / desktop support state
+      updateStorageModeBanner();
       updateEngineModeUI();
+      renderDataStructuresUI();
 
       // Bind Engine Switcher Toggle-Slider
       const engineToggleSlider = document.getElementById('engineToggleSlider');
@@ -3104,6 +3483,31 @@
         });
       }
 
+      if (btnRefreshTree) {
+        btnRefreshTree.addEventListener('click', async () => {
+          await refreshWorkspaceFiles();
+          showToast('🔄 Workspace refreshed');
+        });
+      }
+
+      if (btnSaveWorkspace) {
+        btnSaveWorkspace.addEventListener('click', async () => {
+          await DataManager.saveAllToDisk();
+        });
+      }
+
+      if (btnSaveAllData) {
+        btnSaveAllData.addEventListener('click', async () => {
+          await DataManager.saveAllToDisk();
+        });
+      }
+
+      if (btnDownloadZip) {
+        btnDownloadZip.addEventListener('click', () => {
+          DataManager.downloadZipBundle();
+        });
+      }
+
       if (btnOpenFolder) {
         btnOpenFolder.addEventListener('click', async () => {
           const dir = await WebFs.openDirectory();
@@ -3111,10 +3515,44 @@
             if (lblPath) {
               lblPath.textContent = `📁 ${dir.name} (Client Local)`;
             }
+            updateStorageModeBanner();
             await refreshWorkspaceFiles();
             showToast(`📁 Opened local folder: ${dir.name}`);
           }
         });
+      }
+
+      // Modal File Viewer Buttons
+      const btnCopyModal = document.getElementById('btnCopyFileViewer');
+      if (btnCopyModal) {
+        btnCopyModal.addEventListener('click', () => {
+          if (currentViewingFile && currentViewingFile.content) {
+            if (navigator.clipboard) {
+              navigator.clipboard.writeText(currentViewingFile.content).then(() => {
+                showToast(`📋 Copied ${currentViewingFile.title} to clipboard`);
+              }).catch(() => {
+                showToast(`📋 Copied ${currentViewingFile.title}`);
+              });
+            } else {
+              showToast(`📋 Copied ${currentViewingFile.title}`);
+            }
+          }
+        });
+      }
+
+      const btnDlModal = document.getElementById('btnDownloadFileViewer');
+      if (btnDlModal) {
+        btnDlModal.addEventListener('click', () => {
+          if (currentViewingFile && currentViewingFile.content) {
+            DataManager.downloadTextFile(currentViewingFile.title, currentViewingFile.content);
+            showToast(`💾 Downloaded ${currentViewingFile.title}`);
+          }
+        });
+      }
+
+      const btnCloseModal = document.getElementById('btnCloseFileViewer');
+      if (btnCloseModal) {
+        btnCloseModal.addEventListener('click', closeFileViewerModal);
       }
 
       // Bind Banner toggle
@@ -3126,8 +3564,6 @@
       }
 
       updateEngineModeUI();
-
-      // Bind CLI Run & Kill buttons
       setupCliRunnerListeners();
     }
 
@@ -3141,6 +3577,9 @@
         files = await WebFs.listFiles();
       }
       workspaceFiles = files;
+
+      updateStorageModeBanner();
+      renderWorkspaceFilesTree();
 
       const selCli = document.getElementById('selectCliDataset');
       if (selCli) {
@@ -3363,15 +3802,25 @@
       }
       if (useTiles) args.push('-tiles');
       if (useXTile) args.push('-xtile');
-      if (useSparseDcc) args.push('-sparse_dcc');
-      if (maxcl > 0) args.push('-maxcl', maxcl.toString());
-      args.push('-evals');
-
-      // Expand CLI Console Card to show live console
-      const cardCli = document.getElementById('cardCli');
-      if (cardCli && cardCli.classList.contains('collapsed')) {
-        togglePanelCollapse('cardCli');
+      if (useSparseDcc) {
+        args.push('-sparse_dcc');
+        if (sparseDccExtraEvals > 0) {
+          args.push('-sparse_dcc_extra_evals', sparseDccExtraEvals.toString());
+        }
       }
+      if (maxcl > 0) {
+        args.push('-maxcl', maxcl.toString());
+      } else {
+        // In GUI, 0 = Unlimited: allocate large capacity headroom for native mode
+        args.push('-maxcl', '10000');
+      }
+      if (maxclStrategy !== 'stop') {
+        args.push('-maxcl_strategy', maxclStrategy);
+      }
+      if (maxclStrategy === 'discard' && discardFraction !== 0.10) {
+        args.push('-discard_frac', discardFraction.toFixed(2));
+      }
+      args.push('-evals');
 
       const btnRun = document.getElementById('btnRunCli');
       const btnKill = document.getElementById('btnKillCli');
@@ -3474,6 +3923,12 @@
             const statDistRatioEl = document.getElementById('statDistRatio');
             if (statDistRatioEl) {
               statDistRatioEl.textContent = `${(t.framedist_sample || 0).toLocaleString()} / ${(t.framedist_intercluster || 0).toLocaleString()}`;
+            }
+            const statDccPopBadge = document.getElementById('statDccPopBadge');
+            if (statDccPopBadge && t.dcc_entries_populated !== undefined) {
+              statDccPopBadge.textContent = t.dcc_pairs_total > 0
+                ? `[${(t.dcc_entries_populated || 0).toLocaleString()}/${(t.dcc_pairs_total || 0).toLocaleString()} pop]`
+                : `[${(t.dcc_entries_populated || 0).toLocaleString()} pop]`;
             }
 
             const statMemoryTotalEl = document.getElementById('statMemoryTotal');
@@ -3622,6 +4077,9 @@
           distClusterCluster = data.stats.interclusterDists;
           distSampleClusterTotal = data.stats.sampleDists;
           distClusterClusterTotal = data.stats.interclusterDists;
+          dccPopulated = data.stats.dccPopulated || 0;
+          dccPairsTotal = data.stats.dccPairsTotal ||
+            (clusters.length > 1 ? (clusters.length * (clusters.length - 1) / 2) : 0);
           totalEvals = data.stats.sampleDists;
           naiveEvals = data.stats.sampleDists + data.stats.pruned;
           sessionElapsedMs = data.stats.timeMs;
@@ -3681,61 +4139,7 @@
     }
 
     async function exportRunToWorkspace() {
-      if (clusters.length === 0) {
-        showToast('No clusters in memory to export');
-        return;
-      }
-
-      const dsName = currentBenchmark || 'custom_dataset';
-
-      let centroidsText = `# GRIC Cluster Centroids\n# ID X Y Z MEMBERS\n`;
-      clusters.forEach(c => {
-        centroidsText += `${c.id} ${c.x.toFixed(6)} ${c.y.toFixed(6)} ${c.z.toFixed(6)} ${c.members}\n`;
-      });
-
-      let dccText = `# GRIC Cluster-to-Cluster Distance Matrix D_cc\n`;
-      if (dcc && dcc.length > 0) {
-        dcc.forEach(row => {
-          dccText += row.map(v => v.toFixed(6)).join(' ') + '\n';
-        });
-      }
-
-      let memText = `# Frame Membership Assignments\n`;
-      if (pastSamples && pastSamples.length > 0) {
-        memText += pastSamples.map(p => p.clusterId || 0).join('\n') + '\n';
-      }
-
-      const logText = `GRIC Cluster Run Export\nDate: ${new Date().toISOString()}\nTotal Clusters: ${clusters.length}\nTotal Ingested Frames: ${totalFrames}\nRadius (rlim): ${rlim.toFixed(4)}\n`;
-
-      const artifacts = {
-        'centroids.txt': centroidsText,
-        'dcc.txt': dccText,
-        'frame_membership.txt': memText,
-        'cluster_run.log': logText
-      };
-
-      try {
-        if (isDesktopBackend) {
-          const outDir = await DesktopBridge.exportClusterDat(dsName, artifacts);
-          await refreshWorkspaceFiles();
-          showToast(`💾 Saved ${outDir}/ to desktop workspace`);
-        } else if (WebFs.isSupported()) {
-          if (!WebFs.isOpen()) {
-            const dir = await WebFs.openDirectory();
-            if (!dir) return;
-            const lbl = document.getElementById('lblWorkspacePath');
-            if (lbl) lbl.textContent = `📁 ${dir.name} (Client Local)`;
-          }
-          const outDir = await WebFs.exportClusterDat(dsName, artifacts);
-          await refreshWorkspaceFiles();
-          showToast(`💾 Saved ${outDir}/ directly to local disk`);
-        } else {
-          showToast('Client-side directory access not supported in this browser');
-        }
-      } catch (err) {
-        console.error('[Export] Error exporting run:', err);
-        showToast(`Export failed: ${err.message}`);
-      }
+      await DataManager.saveAllToDisk();
     }
 
     // Initial Startup
@@ -4055,13 +4459,27 @@
       });
     });
 
+    const fileModalEl = document.getElementById('modalFileViewer');
+    if (fileModalEl) {
+      fileModalEl.addEventListener('click', (e) => {
+        if (e.target === fileModalEl) {
+          fileModalEl.style.display = 'none';
+        }
+      });
+    }
+
     document.addEventListener('keydown', (e) => {
       if (e.key === '?' && !e.target.matches('input, textarea, select')) {
         e.preventDefault();
         toggleHelp();
       }
-      if (e.key === 'Escape' && helpModal && helpModal.style.display !== 'none') {
-        helpModal.style.display = 'none';
+      if (e.key === 'Escape') {
+        if (helpModal && helpModal.style.display !== 'none') {
+          helpModal.style.display = 'none';
+        }
+        if (fileModalEl && fileModalEl.style.display !== 'none') {
+          fileModalEl.style.display = 'none';
+        }
       }
     });
 

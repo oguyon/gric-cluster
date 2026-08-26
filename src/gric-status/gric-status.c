@@ -76,6 +76,10 @@ static void print_status_classic(
            status->framedist_calls,
            status->framedist_calls_sample,
            status->framedist_calls_intercluster);
+    printf("DCC Matrix Populated: %" PRIu64 " / %" PRIu64 " pairs (explicit calls: %" PRIu64 ")\n",
+           status->dcc_entries_populated,
+           status->dcc_pairs_total,
+           status->framedist_calls_intercluster);
     printf("Candidates Pruned:    %" PRIu64 "\n", status->clusters_pruned);
     printf("Missed Frames:        %" PRIu64 "\n", status->total_missed_frames);
 

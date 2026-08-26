@@ -10,6 +10,8 @@
     let distClusterCluster = 0;     // Total Cluster-to-Cluster evaluations d(ci, cj)
     let distSampleClusterLast = 0;  // Last frame SC evaluations
     let distClusterClusterLast = 0; // Last frame CC evaluations
+    let dccPopulated = 0;           // Populated exact inter-cluster distance pairs
+    let dccPairsTotal = 0;          // Total possible inter-cluster pairs K*(K-1)/2
     let pruneCount3P = 0;           // Pruned candidates via 3-Point
     let pruneCount4P = 0;           // Pruned candidates via 4-Point
     let pruneCount5P = 0;           // Pruned candidates via 5-Point
@@ -1079,7 +1081,8 @@
     function updateZoomBadge() {
       const badge = document.getElementById('zoomBadge');
       if (badge) {
-        const view = quadViews[0];
+        const activeIdx = (currentDim === 2) ? 2 : (maximizedQuad !== null ? maximizedQuad : 0);
+        const view = quadViews[activeIdx] || quadViews[0];
         badge.innerText = `${Math.round((view.zoom || 1.0) * 100)}%`;
       }
     }
@@ -1489,7 +1492,7 @@
       const dists = telem.framedistCalls;
       const pruned = Math.max(0, bruteForce - dists);
       const pruneEffNum = bruteForce > 0 ? (1.0 - dists / bruteForce) * 100.0 : 100.0;
-      const pruneEff = pruneEffNum.toFixed(1);
+      const pruneEff = pruneEffNum.toFixed(3);
       const speedup = dists > 0 ? (bruteForce / dists).toFixed(1) : '∞';
       const fps = telem.timeSearchMs > 0 ? Math.round(N / (telem.timeSearchMs / 1000.0)).toLocaleString() : '∞';
       const distsPerQuery = N > 0 ? (dists / N).toFixed(1) : '0';
@@ -1523,11 +1526,11 @@
       const temp = telem.temporalPruned || 0;
 
       if (l1Val) l1Val.textContent = l1.toLocaleString();
-      if (l1PctVal) l1PctVal.textContent = `${bruteForce > 0 ? ((l1 / bruteForce) * 100).toFixed(1) : 0}%`;
+      if (l1PctVal) l1PctVal.textContent = `${bruteForce > 0 ? ((l1 / bruteForce) * 100).toFixed(3) : 0}%`;
       if (l2Val) l2Val.textContent = l2.toLocaleString();
-      if (l2PctVal) l2PctVal.textContent = `${bruteForce > 0 ? ((l2 / bruteForce) * 100).toFixed(1) : 0}%`;
+      if (l2PctVal) l2PctVal.textContent = `${bruteForce > 0 ? ((l2 / bruteForce) * 100).toFixed(3) : 0}%`;
       if (l3Val) l3Val.textContent = l3.toLocaleString();
-      if (l3PctVal) l3PctVal.textContent = `${bruteForce > 0 ? ((l3 / bruteForce) * 100).toFixed(1) : 0}%`;
+      if (l3PctVal) l3PctVal.textContent = `${bruteForce > 0 ? ((l3 / bruteForce) * 100).toFixed(3) : 0}%`;
       if (tempVal) tempVal.textContent = temp.toLocaleString();
 
       const totalHierarchy = Math.max(1, l1 + l2 + l3 + temp + dists);
@@ -1624,6 +1627,12 @@
       if (window.syncControlDependencies) {
         window.syncControlDependencies();
       }
+      if (window.updateDisplayTogglesUI) {
+        window.updateDisplayTogglesUI();
+      }
+      if (window.renderDataStructuresUI) {
+        window.renderDataStructuresUI();
+      }
 
       const presetBar = document.getElementById('viewPresetBar');
       if (presetBar) {
@@ -1653,6 +1662,32 @@
       if (legSC) legSC.style.display = showCircleSCDists ? 'inline-flex' : 'none';
       const legEntropy = document.getElementById('legendEntropyMap');
       if (legEntropy) legEntropy.style.display = showEntropyMap ? 'inline-flex' : 'none';
+
+      const txtPointDensityMode = document.getElementById('txtPointDensityMode');
+      if (txtPointDensityMode) {
+        let isAnyTruncated = false;
+        let maxVis = 0;
+        let maxDrn = 0;
+        if (typeof viewportPointStats !== 'undefined') {
+          viewportPointStats.forEach(st => {
+            if (st && st.truncated) isAnyTruncated = true;
+            if (st && st.visible > maxVis) maxVis = st.visible;
+            if (st && st.drawn > maxDrn) maxDrn = st.drawn;
+          });
+        }
+        if (isAnyTruncated) {
+          txtPointDensityMode.innerText =
+            `⚠ Subsampled (Zoom in to reveal up to ${maxVis.toLocaleString()} pts)`;
+          txtPointDensityMode.style.color = '#fbbf24';
+        } else if (pastSamples.length > 0) {
+          txtPointDensityMode.innerText =
+            `✓ 100% Fidelity (${maxDrn.toLocaleString()} pts in FOV)`;
+          txtPointDensityMode.style.color = '#4ade80';
+        } else {
+          txtPointDensityMode.innerText = `Adaptive FOV (Zoom in for detail)`;
+          txtPointDensityMode.style.color = '#38bdf8';
+        }
+      }
 
       // 1. Refresh Resource Metrics, Heap Memory, and Latency Sparkline
       updateResourceMetrics();
@@ -1713,7 +1748,10 @@
           : `0 tuples`;
         document.getElementById('entropyBadge').innerText = `Tiles: ${currentDim} Subspaces`;
       } else {
-        document.getElementById('measCountBadge').innerText = `${currentEvaluations.length} evals`;
+        const evalsCount = (currentEvaluations && currentEvaluations.length > 0)
+          ? currentEvaluations.length
+          : (distSampleClusterLast || 0);
+        document.getElementById('measCountBadge').innerText = `${evalsCount} evals`;
         document.getElementById('entropyBadge').innerText = `H: ${currentEntropyBits.toFixed(2)} bits`;
       }
 
@@ -1769,11 +1807,16 @@
       const statTotalDists = document.getElementById('statTotalDists');
       if (statTotalDists) statTotalDists.innerText = formatNumber(distSampleCluster + distClusterCluster);
 
-      const statDistRate = document.getElementById('statDistRate');
-      if (statDistRate) statDistRate.innerText = formatNumber(Math.round(currentDistRate));
-
       const statDistRatio = document.getElementById('statDistRatio');
       if (statDistRatio) statDistRatio.innerText = `${formatNumber(distSampleCluster)} / ${formatNumber(distClusterCluster)}`;
+      const statDccPopBadge = document.getElementById('statDccPopBadge');
+      if (statDccPopBadge) {
+        const K = clusters.length;
+        const maxPairs = dccPairsTotal || (K > 1 ? (K * (K - 1) / 2) : 0);
+        statDccPopBadge.innerText = maxPairs > 0
+          ? `[${formatNumber(dccPopulated)}/${formatNumber(maxPairs)} pop]`
+          : `[${formatNumber(dccPopulated)} pop]`;
+      }
 
       const statMemoryTotal = document.getElementById('statMemoryTotal');
       if (statMemoryTotal) statMemoryTotal.innerText = formatBytes(memStats.totalModelBytes);
@@ -1849,10 +1892,13 @@
       if (statDistCC) statDistCC.innerText = formatNumber(distClusterCluster);
       const statDccDim = document.getElementById('statDccDim');
       if (statDccDim) {
+        const K = clusters.length;
+        const maxPairs = dccPairsTotal || (K > 1 ? (K * (K - 1) / 2) : 0);
+        const popPct = maxPairs > 0 ? ((dccPopulated / maxPairs) * 100).toFixed(1) : "100.0";
         if (useTiles) {
-          statDccDim.innerText = `1D Tiles (${formatNumber(memStats.dccCells)} cells)`;
+          statDccDim.innerText = `1D Tiles (${formatNumber(memStats.dccCells)} cells, ${formatNumber(dccPopulated)} pop)`;
         } else {
-          statDccDim.innerText = `${clusters.length} × ${clusters.length} (${formatNumber(memStats.dccCells)} cells)`;
+          statDccDim.innerText = `${clusters.length} × ${clusters.length} (${formatNumber(dccPopulated)}/${formatNumber(maxPairs)} pairs, ${popPct}% pop)`;
         }
       }
       const statAvgCCEvals = document.getElementById('statAvgCCEvals');
@@ -2288,6 +2334,9 @@
     }
 
     function resetClustering(keepDataset = true) {
+      if (typeof clearActiveFrameEvaluations === 'function') {
+        clearActiveFrameEvaluations(true);
+      }
       selectedClusterId = -1;
       hoveredClusterId = -1;
       selectedTupleKey = null;
@@ -2321,6 +2370,8 @@
       distClusterCluster = 0;
       distSampleClusterLast = 0;
       distClusterClusterLast = 0;
+      dccPopulated = 0;
+      dccPairsTotal = 0;
       pruneCount3P = 0;
       pruneCount4P = 0;
       pruneCount5P = 0;
@@ -2498,6 +2549,9 @@
       } else {
         dataMode = 'coord';
         currentDim = is3DBenchmark(currentBenchmark) ? 3 : 2;
+        if (currentDim === 2) {
+          maximizedQuad = null;
+        }
         if (currentBenchmark === "custom") {
           const fileInput = document.getElementById('fileUpload');
           if (fileInput) fileInput.click();

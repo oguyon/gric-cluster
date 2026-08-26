@@ -97,6 +97,7 @@ set(CLUSTER_SRCS
     src/gric-cluster/core/config_utils.c
     src/gric-cluster/core/cluster_bounds.c
     src/gric-cluster/core/cluster_shm.c
+    src/gric-cluster/core/cluster_reassign.c
     src/gric-cluster/core/tile_state.c
     src/gric-cluster/core/cluster_core_multitile.c
     src/gric-cluster/core/tile_map.c
@@ -330,6 +331,12 @@ endif()
 
 add_test(NAME test_benchmark_smoke
     COMMAND gric-benchmark -p 2Dspiral -n 500)
+
+add_executable(test_pass2_reassign tests/test_pass2_reassign.c)
+target_link_libraries(test_pass2_reassign m)
+add_test(NAME test_pass2_reassign
+    COMMAND test_pass2_reassign)
+set_tests_properties(test_pass2_reassign PROPERTIES DEPENDS gric-cluster)
 
 # Target to regenerate benchmark figures and documentation pages
 find_package(Python3 COMPONENTS Interpreter REQUIRED)

@@ -21,6 +21,11 @@ void recompute_consistency_mask(
     ClusterConfig *config,
     ClusterState  *state)
 {
+    if (!config->optim.gprob_mode || !state->scratch.consistency_mask)
+    {
+        return;
+    }
+
     int N = config->algo.maxnbclust;
     int words = (N + 63) / 64;
     double rc = config->algo.rlim;
@@ -109,6 +114,11 @@ void update_consistency_mask_for_new_cluster(
     ClusterState  *state,
     int            new_cl)
 {
+    if (!config->optim.gprob_mode || !state->scratch.consistency_mask)
+    {
+        return;
+    }
+
     int N = config->algo.maxnbclust;
     int words = (N + 63) / 64;
     double rc = config->algo.rlim;

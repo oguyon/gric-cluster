@@ -76,10 +76,19 @@ void write_run_log(
         fprintf(f, "PARAM_ENTROPY_FIRST_GATE: %f\n", config->optim.entropy_first_gate_bits);
         fprintf(f, "PARAM_ENTROPY_MAX_TARGETS: %d\n", config->optim.entropy_max_targets);
         fprintf(f, "PARAM_ENTROPY_MIN_PROB: %f\n", config->optim.entropy_min_prob);
+        fprintf(f, "PARAM_SPARSE_DCC: %d\n", config->optim.sparse_dcc_mode);
+        fprintf(f, "PARAM_SPARSE_DCC_EXTRA_EVALS: %d\n", config->optim.sparse_dcc_extra_evals);
+        fprintf(f, "PARAM_SOFT_BAYESIAN: %d\n", config->optim.soft_bayesian_mode);
+        fprintf(f, "PARAM_SOFT_BAYESIAN_SIGMA: %f\n", config->optim.soft_bayesian_sigma_coeff);
+        fprintf(f, "PARAM_MAXCL_STRATEGY: %d\n", (int)config->algo.maxcl_strategy);
 
         if (config->output.output_dcc)
         {
             fprintf(f, "OUTPUT_FILE: %s/dcc.txt\n", out_dir);
+            if (config->optim.sparse_dcc_mode)
+            {
+                fprintf(f, "OUTPUT_FILE: %s/dccmin.txt\n", out_dir);
+            }
         }
         if (config->output.output_tm)
         {
@@ -129,6 +138,10 @@ void write_run_log(
         fprintf(f, "STATS_DISTS_SAMPLE: %ld\n", state->telemetry.framedist_calls_sample);
         fprintf(f, "STATS_DISTS_INTERCLUSTER: %ld\n",
                 state->telemetry.framedist_calls_intercluster);
+        fprintf(f, "STATS_DCC_POPULATED: %lu\n",
+                (unsigned long)state->telemetry.dcc_entries_populated);
+        fprintf(f, "STATS_DCC_PAIRS_TOTAL: %lu\n",
+                (unsigned long)state->telemetry.dcc_pairs_total);
         fprintf(f, "STATS_PRUNED: %ld\n", state->telemetry.clusters_pruned);
         fprintf(f, "STATS_MAX_RSS_KB: %ld\n", max_rss);
         fprintf(f, "STATS_TIME_STEP_1_MS: %.3f\n", state->telemetry.time_step_1);

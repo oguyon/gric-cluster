@@ -30,6 +30,7 @@ typedef struct
     double           tm_mixing_coeff;  /**< Transition-matrix mixing weight */
     MaxClustStrategy maxcl_strategy;   /**< Strategy when maxnbclust reached */
     double           discard_fraction; /**< Fraction of clusters to discard */
+    int              pass2_nearest_mode; /**< 1 to run second pass closest-anchor reassignment */
 } ConfigAlgorithm;
 
 /** Input configuration. */
@@ -155,6 +156,10 @@ typedef struct
     double  time_step_4;           /**< Step 4: new cluster creation (ms) */
     double  time_step_5;           /**< Step 5: telemetry and serialization (ms) */
     double   time_step_refine;     /**< Sparse DCC bound refinement (ms) */
+    double   time_pass2;           /**< Pass 2 nearest anchor reassignment (ms) */
+    uint64_t pass2_frames_reassigned; /**< Frames reassigned during Pass 2 */
+    uint64_t pass2_dist_evals;     /**< Distance evaluations performed during Pass 2 */
+    uint64_t pass2_dist_pruned;    /**< Distance calculations pruned during Pass 2 */
     double   entropy_sum_initial;      /**< Accumulated H at meas_idx==0 */
     double   entropy_max_initial;      /**< Maximum H at meas_idx==0 */
     double   entropy_last_initial;     /**< H at meas_idx==0 for last frame */
@@ -163,6 +168,8 @@ typedef struct
     uint64_t pred_attempts;     /**< Frames where pred returned >= 1 candidate */
     uint64_t pred_hits;         /**< Frames where 1st pred candidate was assigned */
     uint64_t pred_same_as_last; /**< Frames where 1st pred == previous cluster */
+    uint64_t dcc_entries_populated; /**< Populated exact inter-cluster distance pairs */
+    uint64_t dcc_pairs_total;       /**< Total possible inter-cluster pairs K*(K-1)/2 */
 } ClusterTelemetry;
 
 // Candidate structure for sorting

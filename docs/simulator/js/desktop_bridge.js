@@ -84,7 +84,8 @@ const DesktopBridge = (function () {
     const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i;
     if (mobileRegex.test(ua)) return true;
     if (navigator.userAgentData && navigator.userAgentData.mobile) return true;
-    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px) and (pointer: coarse)').matches) {
+    if (typeof window !== 'undefined' && window.matchMedia &&
+        window.matchMedia('(max-width: 768px) and (pointer: coarse)').matches) {
       return true;
     }
     return false;
@@ -114,13 +115,14 @@ const DesktopBridge = (function () {
   }
 
   /**
-   * List files in the active desktop workspace directory.
+   * List files in the active desktop workspace directory or a subdirectory.
    */
-  async function listFiles() {
+  async function listFiles(subDir = '') {
     if (!_isDesktop) return [];
 
     try {
-      const resp = await _fetchApi('/api/files', { cache: 'no-store' });
+      const endpoint = subDir ? `/api/files?dir=${encodeURIComponent(subDir)}` : '/api/files';
+      const resp = await _fetchApi(endpoint, { cache: 'no-store' });
       if (resp.ok) {
         const data = await resp.json();
         return (data && data.files) ? data.files : [];
@@ -217,7 +219,8 @@ const DesktopBridge = (function () {
       if (!_activeJobId) return;
 
       try {
-        const statUrl = `/api/cli/status?job_id=${encodeURIComponent(_activeJobId)}&offset=${currentOffset}`;
+        const encId = encodeURIComponent(_activeJobId);
+        const statUrl = `/api/cli/status?job_id=${encId}&offset=${currentOffset}`;
         const statResp = await _fetchApi(statUrl, { cache: 'no-store' });
         if (statResp.ok) {
           const statData = await statResp.json();
@@ -324,10 +327,13 @@ const DesktopBridge = (function () {
       if (Array.isArray(pt)) {
         content += pt.map(v => Number(v).toFixed(6)).join(' ') + '\n';
       } else if (pt && typeof pt === 'object') {
+        const px = Number(pt.x || 0).toFixed(6);
+        const py = Number(pt.y || 0).toFixed(6);
         if (typeof pt.z === 'number' && !isNaN(pt.z)) {
-          content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)} ${Number(pt.z || 0).toFixed(6)}\n`;
+          const pz = Number(pt.z).toFixed(6);
+          content += `${px} ${py} ${pz}\n`;
         } else {
-          content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)}\n`;
+          content += `${px} ${py}\n`;
         }
       }
     }
@@ -427,7 +433,8 @@ const DesktopBridge = (function () {
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith('#')) continue;
-        const match = trimmed.match(/Cluster\s+(\d+):\s*(\d+)\s*frames/i) || trimmed.match(/(\d+)\s+(\d+)/);
+        const match = trimmed.match(/Cluster\s+(\d+):\s*(\d+)\s*frames/i) ||
+                      trimmed.match(/(\d+)\s+(\d+)/);
         if (match) {
           const idx = parseInt(match[1], 10);
           const count = parseInt(match[2], 10);
@@ -470,6 +477,8 @@ const DesktopBridge = (function () {
       totalDists: 0,
       sampleDists: 0,
       interclusterDists: 0,
+      dccPopulated: 0,
+      dccPairsTotal: 0,
       pruned: 0,
       rssKb: 0,
       predHits: 0,
@@ -493,6 +502,10 @@ const DesktopBridge = (function () {
             results.stats.sampleDists = parseInt(trimmed.substring(19).trim(), 10) || 0;
           } else if (trimmed.startsWith('STATS_DISTS_INTERCLUSTER:')) {
             results.stats.interclusterDists = parseInt(trimmed.substring(25).trim(), 10) || 0;
+          } else if (trimmed.startsWith('STATS_DCC_POPULATED:')) {
+            results.stats.dccPopulated = parseInt(trimmed.substring(20).trim(), 10) || 0;
+          } else if (trimmed.startsWith('STATS_DCC_PAIRS_TOTAL:')) {
+            results.stats.dccPairsTotal = parseInt(trimmed.substring(22).trim(), 10) || 0;
           } else if (trimmed.startsWith('STATS_PRUNED:')) {
             results.stats.pruned = parseInt(trimmed.substring(13).trim(), 10) || 0;
           } else if (trimmed.startsWith('STATS_MAX_RSS_KB:')) {
@@ -652,6 +665,7 @@ const DesktopBridge = (function () {
       level2AnchorsPruned: 0,
       level3AnnularPruned: 0,
       temporalPruned: 0,
+      reciprocalReused: 0,
       totalCandidatesConsidered: 0,
       timeSearchMs: 0.0
     };
@@ -673,6 +687,9 @@ const DesktopBridge = (function () {
 
     const mL3 = clean.match(/Level 3 Annular Pruned:\s+(\d+)/);
     if (mL3) telem.level3AnnularPruned = parseInt(mL3[1], 10);
+
+    const mRecip = clean.match(/Reciprocal Reused:\s+(\d+)/);
+    if (mRecip) telem.reciprocalReused = parseInt(mRecip[1], 10);
 
     const mTemp = clean.match(/Temporal Exclusions:\s+(\d+)/);
     if (mTemp) telem.temporalPruned = parseInt(mTemp[1], 10);

@@ -29,6 +29,11 @@ void update_dcc_bounds(
 {
     int N = config->algo.maxnbclust;
 
+    if (!state->scratch.dcc_measured[i * N + j])
+    {
+        state->telemetry.dcc_entries_populated++;
+    }
+
     state->scratch.dcc_min[i * N + j] = d_exact;
     state->scratch.dcc_min[j * N + i] = d_exact;
     state->scratch.dcc_max[i * N + j] = d_exact;
@@ -115,7 +120,14 @@ void refine_sparse_bounds(
 {
     int N = config->algo.maxnbclust;
     int E = config->optim.sparse_dcc_extra_evals;
-    if (E <= 0 || state->num_clusters <= 1)
+    int K = state->num_clusters;
+    if (E <= 0 || K <= 1)
+    {
+        return;
+    }
+
+    uint64_t total_pairs = (uint64_t)K * (K - 1) / 2;
+    if (state->telemetry.dcc_entries_populated >= total_pairs)
     {
         return;
     }
@@ -138,51 +150,17 @@ void refine_sparse_bounds(
             best_pairs[k].p = -1e30;
         }
 
-        #pragma omp parallel
+        for (int i = 0; i < state->num_clusters; i++)
         {
-            Candidate local_best[Q];
-            for (int k = 0; k < Q; k++)
+            const char   *measured_row = &state->scratch.dcc_measured[i * N];
+            const double *dcc_min_row = &state->scratch.dcc_min[i * N];
+            for (int j = i + 1; j < state->num_clusters; j++)
             {
-                local_best[k].id = -1;
-                local_best[k].p = -1e30;
-            }
-
-            #pragma omp for nowait
-            for (int i = 0; i < state->num_clusters; i++)
-            {
-                char *measured_row = &state->scratch.dcc_measured[i * N];
-                double *dcc_min_row = &state->scratch.dcc_min[i * N];
-                for (int j = i + 1; j < state->num_clusters; j++)
+                if (!measured_row[j])
                 {
-                    if (!measured_row[j])
-                    {
-                        double dcc_val = dcc_min_row[j];
-                        double score = -dcc_val;
+                    double dcc_val = dcc_min_row[j];
+                    double score = -dcc_val;
 
-                        if (score > local_best[Q - 1].p)
-                        {
-                            int k = Q - 2;
-                            while (k >= 0 && score > local_best[k].p)
-                            {
-                                local_best[k + 1] = local_best[k];
-                                k--;
-                            }
-                            local_best[k + 1].id = (i << 16) | j;
-                            local_best[k + 1].p = score;
-                        }
-                    }
-                }
-            }
-
-            #pragma omp critical
-            {
-                for (int idx = 0; idx < Q; idx++)
-                {
-                    if (local_best[idx].id == -1)
-                    {
-                        continue;
-                    }
-                    double score = local_best[idx].p;
                     if (score > best_pairs[Q - 1].p)
                     {
                         int k = Q - 2;
@@ -191,7 +169,8 @@ void refine_sparse_bounds(
                             best_pairs[k + 1] = best_pairs[k];
                             k--;
                         }
-                        best_pairs[k + 1] = local_best[idx];
+                        best_pairs[k + 1].id = (i << 16) | j;
+                        best_pairs[k + 1].p = score;
                     }
                 }
             }
@@ -229,7 +208,6 @@ void refine_sparse_bounds(
     }
 
     double distances[E];
-    #pragma omp parallel for if(found >= 2)
     for (int idx = 0; idx < found; idx++)
     {
         int q_idx = state->scratch.refine_queue_idx + idx;

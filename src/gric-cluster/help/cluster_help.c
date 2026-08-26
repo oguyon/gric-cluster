@@ -73,6 +73,9 @@ static const struct help_entry help_entries[] = {
     {"soft_bayesian_sigma",
      "Sigma coefficient for soft Bayesian update"},
     {"tm",         "Transition matrix mixing"},
+    {"pass2nearest", "Second pass closest-anchor clustering"},
+    {"reassign",   "(alias for pass2nearest)"},
+    {"second_pass", "(alias for pass2nearest)"},
     /* Analysis */
     {"scandist",   "Measure distance stats"},
     /* Output */
@@ -340,9 +343,12 @@ static void print_help_raw(
                        "(tile_id rlim maxcl)");
     print_colored_line("      -retrieval_window <N>  Tuple lookback horizon "
                        "(default: 1000)");
-    print_colored_line("      -xtile [mode]          Enable live cross-tile prior injection (1: spatial, 2: hybrid, default: 2)");
-    print_colored_line("      -xtile_decay <val>     Decay coefficient for CPT history (0.0 to 1.0]");
-    print_colored_line("      -no_xtile              Disable cross-tile Trajectory Fusion & prior injection");
+    print_colored_line("      -xtile [mode]          Enable live cross-tile prior injection");
+    print_colored_line("                             (1: spatial, 2: hybrid, default: 2)");
+    print_colored_line("      -xtile_decay <val>     Decay coefficient for CPT history");
+    print_colored_line("                             (0.0 to 1.0]");
+    print_colored_line("      -no_xtile              Disable cross-tile Trajectory Fusion & "
+                       "prior injection");
 
     printf("    %sPrediction:%s\n",
            ANSI_BOLD, ANSI_COLOR_RESET);
@@ -378,6 +384,8 @@ static void print_help_raw(
                        "distance matrix");
     print_colored_line("      -sparse_dcc_extra_evals  Extra DCC evals per step "
                        "(default: 0)");
+    print_colored_line("    -pass2nearest            Run second pass closest-anchor reallocation "
+                       "(-reassign)");
 
     printf("    %sGeometric Probability:%s\n",
            ANSI_BOLD, ANSI_COLOR_RESET);

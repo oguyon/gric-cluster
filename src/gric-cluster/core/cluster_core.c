@@ -9,6 +9,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_core.h"
 #include "cluster_core_multitile.h"
+#include "cluster_reassign.h"
 #include "cluster_step.h"
 #include "framedistance.h"
 #include "frameread.h"
@@ -376,6 +377,18 @@ void run_clustering(
         printf("\n");
     }
 
+    if (ascii_out)
+    {
+        fclose(ascii_out);
+        ascii_out = NULL;
+    }
+
+    /* Second pass nearest-anchor clustering */
+    if (config->algo.pass2_nearest_mode && !stop_requested)
+    {
+        run_second_pass_clustering(config, state);
+    }
+
     clock_gettime(CLOCK_MONOTONIC, &end);
     double elapsed_ms =
         (end.tv_sec - start.tv_sec) * 1000.0 + (end.tv_nsec - start.tv_nsec) / 1000000.0;
@@ -400,7 +413,8 @@ void run_clustering(
                             state->telemetry.time_step_3c +
                             state->telemetry.time_step_4 +
                             state->telemetry.time_step_5 +
-                            state->telemetry.time_step_refine;
+                            state->telemetry.time_step_refine +
+                            state->telemetry.time_pass2;
 
     if (total_steps_ms > 0.0)
     {
@@ -441,6 +455,12 @@ void run_clustering(
         printf("  DCC Bounds Refinement:   %9.3f ms (%5.1f%%)\n",
                state->telemetry.time_step_refine,
                100.0 * state->telemetry.time_step_refine / total_steps_ms);
+        if (state->telemetry.time_pass2 > 0.0)
+        {
+            printf("  Pass 2 (Reassignment):   %9.3f ms (%5.1f%%)\n",
+                   state->telemetry.time_pass2,
+                   100.0 * state->telemetry.time_pass2 / total_steps_ms);
+        }
         printf("  -------------------------------------------\n");
         printf("  Total Timed Steps:       %9.3f ms (100.0%%)\n\n", total_steps_ms);
     }
