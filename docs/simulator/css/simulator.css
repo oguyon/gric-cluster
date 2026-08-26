@@ -732,8 +732,10 @@
     }
 
     .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
+      background: rgba(30, 41, 59, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 12px;
       padding: 12px 14px;
       display: flex;
@@ -743,7 +745,13 @@
       height: auto;
       overflow: hidden;
       box-sizing: border-box;
-      transition: padding 0.15s ease;
+      transition: padding 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .card:hover {
+      border-color: rgba(56, 189, 248, 0.25);
+      box-shadow: 0 6px 20px -2px rgba(0, 0, 0, 0.45), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
     }
 
     .card.expanded {
@@ -2189,6 +2197,285 @@
       display: flex;
       flex-direction: column;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+    }
+
+    /* Sidebar Master Mode Navigation Bar */
+    .sidebar-mode-nav {
+      display: flex;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 3px;
+      gap: 3px;
+      margin-bottom: 6px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .sidebar-mode-nav::-webkit-scrollbar {
+      display: none;
+    }
+    .sidebar-mode-btn {
+      flex: 1;
+      min-width: 58px;
+      text-align: center;
+      padding: 5px 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 5px;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+      user-select: none;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .sidebar-mode-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: #ffffff;
+      transform: none;
+    }
+    .sidebar-mode-btn.active {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
+      font-weight: 700;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.25);
+    }
+    .sidebar-mode-btn.active.mode-knn {
+      background: rgba(74, 222, 128, 0.2);
+      color: #4ade80;
+      border-color: rgba(74, 222, 128, 0.4);
+      box-shadow: 0 0 8px rgba(74, 222, 128, 0.25);
+    }
+
+    /* Interactive Timeline Scrubber */
+    .timeline-scrubber {
+      position: relative;
+      height: 7px;
+      width: 100%;
+      background: #0f172a;
+      flex-shrink: 0;
+      cursor: pointer;
+      user-select: none;
+      transition: height 0.15s ease;
+    }
+    .timeline-scrubber:hover {
+      height: 12px;
+    }
+    .timeline-scrubber-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #38bdf8, #818cf8, #4ade80);
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+      position: relative;
+      pointer-events: none;
+    }
+    .timeline-scrubber-thumb {
+      position: absolute;
+      right: -5px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ffffff;
+      border: 2px solid var(--accent-blue);
+      box-shadow: 0 0 6px rgba(56, 189, 248, 0.9);
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      pointer-events: none;
+    }
+    .timeline-scrubber:hover .timeline-scrubber-thumb {
+      opacity: 1;
+    }
+    .timeline-milestones {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .timeline-milestone-tick {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: rgba(192, 132, 252, 0.85);
+      box-shadow: 0 0 4px #c084fc;
+    }
+    .timeline-scrub-tooltip {
+      position: absolute;
+      bottom: 16px;
+      background: rgba(15, 23, 42, 0.94);
+      border: 1px solid var(--accent-blue);
+      color: #f8fafc;
+      font-size: 0.70rem;
+      font-family: monospace;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transform: translateX(-50%);
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 100;
+      display: none;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Embedded Background Sparkline in Stat Cards */
+    .stat-box {
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-bg-sparkline {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 22px;
+      pointer-events: none;
+      opacity: 0.35;
+    }
+
+    /* Command Palette Overlay & Modal */
+    .command-palette-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 20000;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 12vh;
+      animation: cmdFadeIn 0.15s ease-out;
+    }
+    @keyframes cmdFadeIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .command-palette-modal {
+      background: #0f172a;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 600px;
+      box-shadow: 0 16px 48px -4px rgba(0, 0, 0, 0.8), 0 0 24px rgba(56, 189, 248, 0.25);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .command-palette-header {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      gap: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(30, 41, 59, 0.4);
+    }
+    .command-palette-icon {
+      font-size: 1.1rem;
+      color: var(--accent-blue);
+    }
+    .command-palette-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #ffffff;
+      font-size: 0.95rem;
+      font-weight: 500;
+      outline: none;
+      font-family: inherit;
+    }
+    .command-palette-input::placeholder {
+      color: var(--text-muted);
+    }
+    .command-palette-results {
+      max-height: 360px;
+      overflow-y: auto;
+      padding: 6px;
+    }
+    .command-palette-group-title {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      font-weight: 700;
+      padding: 6px 10px 4px 10px;
+    }
+    .command-palette-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.12s ease;
+      color: #e2e8f0;
+      gap: 8px;
+    }
+    .command-palette-item:hover,
+    .command-palette-item.active {
+      background: rgba(56, 189, 248, 0.18);
+      color: #38bdf8;
+    }
+    .command-palette-item-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .command-palette-item-icon {
+      font-size: 1.0rem;
+      flex-shrink: 0;
+    }
+    .command-palette-item-text {
+      font-size: 0.82rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .command-palette-item-badge {
+      font-size: 0.68rem;
+      font-family: monospace;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .command-palette-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(15, 23, 42, 0.6);
+      font-size: 0.70rem;
+      color: var(--text-muted);
+    }
+    .kbd-chip {
+      display: inline-block;
+      padding: 1px 5px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+      font-family: monospace;
+      font-size: 0.68rem;
+      color: #cbd5e1;
     }
 
 

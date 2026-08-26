@@ -61,6 +61,9 @@
       { drawn: 0, visible: 0, truncated: false },
       { drawn: 0, visible: 0, truncated: false }
     ];
+    let clusterSpawnRipples = []; // Active expanding ripple animations for new clusters
+    let clusterMilestoneFrames = []; // Frame indices where new cluster anchors were established
+    let activeSidebarMode = 'all'; // 'all', 'clustering', 'knn', 'files', 'telemetry'
     let sampleBufferCap = 100000; // Rolling buffer capacity for pastSamples
     let batchThinRate = 1;      // In batch mode, keep every Nth frame (1 = all / none)
     let showDistLines = true;   // Toggle distance evaluation and solving lines
@@ -69,9 +72,10 @@
     let showClusterRadii = true; // Toggle cluster receptive field circles (rlim)
     let showTransitionLines = true; // Toggle Markov transition arcs and paths
     let showKnnLines = true;    // Toggle k-NN graph connection vector lines
+    let showMotionTail = false; // Toggle recent points trajectory motion trail (off by default)
     let showGridAxes = true;    // Toggle 2D/3D coordinate grids, axes & bounding box
     let showViewportHUD = true; // Toggle viewport header title, stats & zoom badge
-    let showInspectorCallout = true; // Toggle detailed sample hover/locked callout box
+    let showColorPerCluster = true; // Toggle per-cluster point colors vs uniform
     let showPrunedMarks = true; // Toggle pruned cluster crosshair marks
     let showCircleMembers = false; // Area proportional to points in cluster
     let showCircleSCDists = false; // Area proportional to #SC distances

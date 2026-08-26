@@ -103,44 +103,44 @@
           return;
         }
 
-        // Always capture distance evaluations for every frame (for hover inspector)
-        const frameEvals = GricWasm.getFrameEvaluations();
-        if (frameEvals && frameEvals.length > 0) {
-          frameEvaluationsLog[currentIdx] = frameEvals;
-        } else if (assigned >= 0 && clusters[assigned]) {
-          const cl = clusters[assigned];
-          const dx = x - cl.x;
-          const dy = y - cl.y;
-          const dz = (currentDim === 3) ? (z - cl.z) : 0;
-          const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          frameEvaluationsLog[currentIdx] = [{
-            clusterId: assigned,
-            dist: d,
-            match: d <= (rlim || 0.1)
-          }];
-        }
+        // Fast cluster ID computation
+        const actualClusterId = (assigned >= 0)
+          ? assigned
+          : Math.max(0, GricWasm.getNumClusters() - 1);
 
-        if (assigned >= 0) {
+        // ALWAYS update sample assignment so points are colored per cluster!
+        if (actualClusterId >= 0) {
           if (currentIdx < pastSamples.length) {
-            pastSamples[currentIdx].clusterId = assigned;
+            pastSamples[currentIdx].clusterId = actualClusterId;
+          } else if (pastSamples.length < sampleBufferCap) {
+            pastSamples.push({
+              x, y, z,
+              frameIndex: currentIdx,
+              clusterId: actualClusterId
+            });
           }
-          if (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
-            transitionCounts[prevAssignedCluster][assigned] =
-              (transitionCounts[prevAssignedCluster][assigned] || 0) + 1;
+
+          if (typeof benchmarkDataset !== 'undefined' &&
+              benchmarkDataset && currentIdx < benchmarkDataset.length) {
+            benchmarkDataset[currentIdx].clusterId = actualClusterId;
+          }
+
+          if (prevAssignedCluster >= 0) {
+            if (!transitionCounts[prevAssignedCluster]) {
+              transitionCounts[prevAssignedCluster] = [];
+            }
+            transitionCounts[prevAssignedCluster][actualClusterId] =
+              (transitionCounts[prevAssignedCluster][actualClusterId] || 0) + 1;
             lastTransitionFrom = prevAssignedCluster;
-            lastTransitionTo = assigned;
+            lastTransitionTo = actualClusterId;
           } else {
             lastTransitionFrom = -1;
             lastTransitionTo = -1;
           }
-          prevAssignedCluster = assigned;
-
-          assignmentHistory.push(assigned);
-          if (assignmentHistory.length > 6000) {
-            assignmentHistory = assignmentHistory.slice(-5000);
-          }
+          prevAssignedCluster = actualClusterId;
         }
 
+        // Full state sync and trace only when rendering frame or in explain mode
         if (!skipRender || isExplainMode) {
           const snapshot = GricWasm.syncState();
           if (snapshot) {
@@ -150,75 +150,55 @@
             }
           }
 
-          if (assigned >= 0) {
-            frameHistory.push({
-              indices: [assigned],
-              dists: [snapshot ? snapshot.telemetry.lastAssignmentDist : 0],
-              assignment: assigned
-            });
-            if (frameHistory.length > 600) {
-              frameHistory = frameHistory.slice(-500);
-            }
-
-            let traceSteps;
-            let traceRankings = [];
-            if (isExplainMode) {
-              traceSteps = GricWasm.getTrace();
-              currentExplanation = [...traceSteps];
-              for (let si = traceSteps.length - 1; si >= 0; si--) {
-                if (traceSteps[si].entropyRankings) {
-                  traceRankings = traceSteps[si].entropyRankings;
-                  break;
-                }
+          let traceSteps;
+          let traceRankings = [];
+          if (isExplainMode) {
+            traceSteps = GricWasm.getTrace();
+            currentExplanation = [...traceSteps];
+            for (let si = traceSteps.length - 1; si >= 0; si--) {
+              if (traceSteps[si].entropyRankings) {
+                traceRankings = traceSteps[si].entropyRankings;
+                break;
               }
-            } else {
-              traceSteps = [{
-                type: 'target',
-                title: `📍 Sample #${totalFrames} (WASM)`,
-                text: `${coordStr} → C${assigned}.`
-              }];
             }
+          } else {
+            traceSteps = [{
+              type: 'target',
+              title: `📍 Sample #${totalFrames} (WASM)`,
+              text: (assigned >= 0)
+                ? `${coordStr} → C${assigned}.`
+                : `${coordStr} → ✨ Spawned Cluster C${actualClusterId}.`
+            }];
+          }
 
-            const evList = (snapshot && snapshot.evaluations) ? snapshot.evaluations.map(ev => ({
-              clusterId: (ev.target && ev.target.id !== undefined) ? ev.target.id : ev.target,
-              dist: ev.dist,
-              match: ev.match
-            })) : [];
+          const evList = (snapshot && snapshot.evaluations) ? snapshot.evaluations.map(ev => ({
+            clusterId: (ev.target && ev.target.id !== undefined) ? ev.target.id : ev.target,
+            dist: ev.dist,
+            match: ev.match
+          })) : [];
 
-            if (evList.length > 0) {
-              frameEvaluationsLog[currentIdx] = evList;
-            } else if (assigned >= 0 && clusters[assigned]) {
-              const cl = clusters[assigned];
-              const dx = x - cl.x;
-              const dy = y - cl.y;
-              const dz = (currentDim === 3) ? (z - cl.z) : 0;
-              const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-              frameEvaluationsLog[currentIdx] = [{
-                clusterId: assigned,
-                dist: d,
-                match: d <= (rlim || 0.1)
-              }];
-            }
+          if (evList.length > 0) {
+            frameEvaluationsLog[currentIdx] = evList;
+          }
 
-            const sampleEntry = {
-              frameIndex: totalFrames,
-              timestamp: performance.now(),
-              point: { x, y, z },
-              assignedCluster: assigned,
-              isNewCluster: false,
-              distSC: distSampleClusterLast,
-              distCC: distClusterClusterLast,
-              evals: snapshot ? snapshot.telemetry.lastFrameDists : 0,
-              evaluations: evList,
-              initialEntropy: 0,
-              entropyReduced: 0,
-              steps: traceSteps,
-              entropyRankings: traceRankings
-            };
-            sampleTraceLog.push(sampleEntry);
-            if (sampleTraceLog.length > MAX_SAMPLE_TRACE_HISTORY) {
-              sampleTraceLog = sampleTraceLog.slice(-MAX_SAMPLE_TRACE_HISTORY);
-            }
+          const sampleEntry = {
+            frameIndex: totalFrames,
+            timestamp: performance.now(),
+            point: { x, y, z },
+            assignedCluster: actualClusterId,
+            isNewCluster: (assigned < 0),
+            distSC: distSampleClusterLast,
+            distCC: distClusterClusterLast,
+            evals: snapshot ? snapshot.telemetry.lastFrameDists : 0,
+            evaluations: evList,
+            initialEntropy: 0,
+            entropyReduced: 0,
+            steps: traceSteps,
+            entropyRankings: traceRankings
+          };
+          sampleTraceLog.push(sampleEntry);
+          if (sampleTraceLog.length > MAX_SAMPLE_TRACE_HISTORY) {
+            sampleTraceLog = sampleTraceLog.slice(-MAX_SAMPLE_TRACE_HISTORY);
           }
 
           const tComputeEnd = performance.now();

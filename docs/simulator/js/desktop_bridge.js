@@ -696,6 +696,13 @@ const DesktopBridge = (function () {
 
     const mTime = clean.match(/Search Wall Time:\s+([\d.]+)\s*ms/);
     if (mTime) telem.timeSearchMs = parseFloat(mTime[1]);
+    telem.timeComputeMs = telem.timeSearchMs;
+
+    const mLoad = clean.match(/Loaded Pass 1 Model in\s+([\d.]+)\s*ms/);
+    if (mLoad) telem.timeLoadMs = parseFloat(mLoad[1]);
+
+    const mWrite = clean.match(/Output Write Time:\s+([\d.]+)\s*ms/);
+    if (mWrite) telem.timeWriteMs = parseFloat(mWrite[1]);
 
     return telem;
   }
