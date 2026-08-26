@@ -272,12 +272,29 @@ static void handle_api_info(
 
 static void handle_api_files(
     int                 client_fd,
-    const ServerConfig *config)
+    const ServerConfig *config,
+    const char         *query)
 {
-    DIR *dir = opendir(config->workdir);
+    char sub_dir[PATH_MAX] = "";
+    char target_dir[PATH_MAX];
+
+    if (query && get_query_param(query, "dir", sub_dir, sizeof(sub_dir)) && sub_dir[0] != '\0')
+    {
+        if (!sanitize_path(config->workdir, sub_dir, target_dir, sizeof(target_dir)))
+        {
+            api_send_json(client_fd, 400, "{\"error\":\"Invalid directory path\"}");
+            return;
+        }
+    }
+    else
+    {
+        snprintf(target_dir, sizeof(target_dir), "%s", config->workdir);
+    }
+
+    DIR *dir = opendir(target_dir);
     if (!dir)
     {
-        api_send_json(client_fd, 500, "{\"error\":\"Failed to open working directory\"}");
+        api_send_json(client_fd, 404, "{\"error\":\"Failed to open directory\"}");
         return;
     }
 
@@ -291,21 +308,22 @@ static void handle_api_files(
     }
 
     size_t buf_len = 0;
-    buf_len += (size_t)snprintf(buf + buf_len, buf_cap - buf_len, "{\"files\":[");
+    buf_len += (size_t)snprintf(buf + buf_len, buf_cap - buf_len,
+                                "{\"dir\":\"%s\",\"files\":[", sub_dir);
 
     struct dirent *entry = NULL;
     int first = 1;
 
     while ((entry = readdir(dir)) != NULL)
     {
-        /* Skip dot files except clusterdat folders */
+        /* Skip dot files */
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
         {
             continue;
         }
 
         char full_path[PATH_MAX + 256];
-        int pw = snprintf(full_path, sizeof(full_path), "%s/%s", config->workdir, entry->d_name);
+        int pw = snprintf(full_path, sizeof(full_path), "%s/%s", target_dir, entry->d_name);
         if (pw <= 0 || (size_t)pw >= sizeof(full_path))
         {
             continue;
@@ -321,18 +339,17 @@ static void handle_api_files(
         const char *dot = strrchr(entry->d_name, '.');
         const char *ext = dot ? dot + 1 : "";
 
-        /* Filter relevant files: txt, csv, fits, dat, log, clusterdat */
+        /* Filter relevant files: txt, csv, fits, dat, log, json, clusterdat */
         int is_relevant = 0;
-        if (is_dir && (strstr(entry->d_name, "clusterdat") ||
-                       strstr(entry->d_name, "cluster.out")))
+        if (is_dir)
         {
             is_relevant = 1;
         }
-        else if (!is_dir)
+        else
         {
             if (strcasecmp(ext, "txt") == 0 || strcasecmp(ext, "csv") == 0 ||
                 strcasecmp(ext, "dat") == 0 || strcasecmp(ext, "fits") == 0 ||
-                strcasecmp(ext, "log") == 0)
+                strcasecmp(ext, "log") == 0 || strcasecmp(ext, "json") == 0)
             {
                 is_relevant = 1;
             }
@@ -344,16 +361,18 @@ static void handle_api_files(
         }
 
         char item[1024];
-        int item_len = snprintf(item, sizeof(item),
-                                "%s{\"name\":\"%s\",\"size\":%ld,\"is_dir\":%s,\"ext\":\"%s\"}",
-                                first ? "" : ",",
-                                entry->d_name,
-                                (long)st.st_size,
-                                is_dir ? "true" : "false",
-                                ext);
+        int item_len = snprintf(
+            item, sizeof(item),
+            "%s{\"name\":\"%s\",\"size\":%ld,\"mtime\":%ld,\"is_dir\":%s,\"ext\":\"%s\"}",
+            first ? "" : ",",
+            entry->d_name,
+            (long)st.st_size,
+            (long)st.st_mtime,
+            is_dir ? "true" : "false",
+            ext);
         first = 0;
 
-        if (buf_len + (size_t)item_len + 16 >= buf_cap)
+        if (buf_len + (size_t)item_len + 32 >= buf_cap)
         {
             buf_cap *= 2;
             char *new_buf = (char *)realloc(buf, buf_cap);
@@ -1324,7 +1343,7 @@ int handle_api_request(
     if ((strcmp(path, "/api/files") == 0 || strcmp(path, "/api/files/list") == 0) &&
         strcmp(method, "GET") == 0)
     {
-        handle_api_files(client_fd, config);
+        handle_api_files(client_fd, config, query);
         return 1;
     }
     if ((strcmp(path, "/api/file/read") == 0 || strcmp(path, "/api/files/read") == 0) &&

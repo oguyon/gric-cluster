@@ -40,7 +40,7 @@ async function main() {
   const knnRunSearch = Module.cwrap('wasm_knn_run_search', 'number', [
     'number', 'number', 'number', 'number', 'number', 'number',
     'number', 'number', 'number', 'number', 'number', 'number',
-    'number'
+    'number', 'number'
   ]);
 
   // 1. Ingest 200 spiral frames into clustering engine
@@ -96,6 +96,7 @@ async function main() {
     0, // future_only
     0.0, // epsilon
     0.0, // rlim_cutoff
+    1,   // use_multi_pivot
     indicesPtr,
     distsPtr,
     telemPtr

@@ -133,14 +133,14 @@ static void init_new_cluster_distances(
                         state->scratch.dcc_min[k * N + new_cl] = l1;
                     }
                 }
-                double l2 = min_j_row[k] - d_new_j;
-                if (l2 > min_new_row[k])
+                if (min_j_row[k] - d_new_j > min_new_row[k])
                 {
-                    min_new_row[k] = l2;
-                    state->scratch.dcc_min[k * N + new_cl] = l2;
+                    min_new_row[k] = min_j_row[k] - d_new_j;
+                    state->scratch.dcc_min[k * N + new_cl] = min_new_row[k];
                 }
             }
         }
+        state->telemetry.dcc_entries_populated += (uint64_t)valid_count;
     }
     else
     {
@@ -159,6 +159,7 @@ static void init_new_cluster_distances(
         state->scratch.dcc_min[new_cl * N + new_cl] = 0.0;
         state->scratch.dcc_max[new_cl * N + new_cl] = 0.0;
         state->scratch.dcc_measured[new_cl * N + new_cl] = 1;
+        state->telemetry.dcc_entries_populated += (uint64_t)new_cl;
     }
 }
 

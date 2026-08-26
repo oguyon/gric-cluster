@@ -81,6 +81,8 @@ typedef struct
     KnnOutputFormat output_format;    /**< Output format choice */
     int             progress_mode;    /**< 1 to show live progress bar */
     int             verbose_level;    /**< 0 = quiet, 1 = normal, 2 = verbose */
+    int             use_multi_pivot;  /**< 1 to enable Multi-Anchor Pivot Bounding (AESA) */
+    int             use_reciprocal;   /**< 1 to enable Symmetric Distance Reciprocal Push */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -93,6 +95,7 @@ typedef struct
     uint64_t level2_anchors_pruned;
     uint64_t level3_annular_pruned;
     uint64_t temporal_pruned;
+    uint64_t reciprocal_reused;
     uint64_t framedist_calls;
     double   time_load_ms;
     double   time_search_ms;

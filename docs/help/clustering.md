@@ -44,6 +44,12 @@ to clusters and how the search is accelerated.
   Sparse cluster-to-cluster distance matrix.
   Avoids O(K^2) cost at cluster creation.
 
+-pass2nearest / -reassign
+  Run second pass clustering to reallocate
+  all frames to their nearest cluster anchor.
+  Reuses computed distances and prunes with
+  triangle inequality lower bounds.
+
 ## PREDICTION
 -pred[l,h,n]   (default: 10,1000,2)
   Binary: exact pattern match on

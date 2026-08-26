@@ -81,6 +81,33 @@ double knn_heap_peek_max_dist(
 }
 
 /**
+ * knn_heap_contains() - Check if a frame_id is already in the heap.
+ * @heap:     Pointer to the KnnMaxHeap structure.
+ * @frame_id: Frame index to look for.
+ *
+ * Return: 1 if present, 0 otherwise.
+ */
+int knn_heap_contains(
+    const KnnMaxHeap *heap,
+    int               frame_id)
+{
+    if (heap == NULL || heap->count == 0)
+    {
+        return 0;
+    }
+
+    for (int i = 0; i < heap->count; i++)
+    {
+        if (heap->data[i].frame_id == frame_id)
+        {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+/**
  * knn_heap_push() - Insert a neighbor candidate into the bounded max-heap.
  * @heap:     Pointer to the KnnMaxHeap structure.
  * @frame_id: Candidate frame index.
@@ -94,6 +121,16 @@ void knn_heap_push(
     if (heap == NULL || heap->k <= 0)
     {
         return;
+    }
+
+    // Check if frame_id is already in heap
+    for (int i = 0; i < heap->count; i++)
+    {
+        if (heap->data[i].frame_id == frame_id)
+        {
+            // Already present: ignore duplicate
+            return;
+        }
     }
 
     if (heap->count < heap->k)

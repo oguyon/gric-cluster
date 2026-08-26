@@ -14,6 +14,7 @@
 #include "frame_scatter.h"
 #include "cluster_step.h"
 #include "cluster_core.h"
+#include "cluster_reassign.h"
 #include "cluster_io.h"
 #include "cluster_io_multitile.h"
 #include "frameread.h"
@@ -367,7 +368,8 @@ void run_clustering_multitile(
                         {
                             if (k != res)
                             {
-                                double prior = ts->state.scratch.mixed_probs ? ts->state.scratch.mixed_probs[k] : 1.0;
+                                double prior = ts->state.scratch.mixed_probs
+                                    ? ts->state.scratch.mixed_probs[k] : 1.0;
                                 ts->pass1_posterior[k] = prior;
                                 sum_others += prior;
                             }
@@ -383,7 +385,8 @@ void run_clustering_multitile(
                                 }
                                 else
                                 {
-                                    ts->pass1_posterior[k] = epsilon * (ts->pass1_posterior[k] / sum_others);
+                                    ts->pass1_posterior[k] =
+                                        epsilon * (ts->pass1_posterior[k] / sum_others);
                                 }
                             }
                         }
@@ -507,6 +510,69 @@ void run_clustering_multitile(
 #endif
 
     printf("\n");
+
+    if (membership_out != NULL)
+    {
+        fclose(membership_out);
+        membership_out = NULL;
+    }
+
+    /* ---- Pass 2 Nearest-Anchor Reassignment ---- */
+    if (global_config->algo.pass2_nearest_mode)
+    {
+        for (int m = 0; m < num_tiles; m++)
+        {
+            printf("\n--- Tile %d Pass 2 ---", m);
+            run_second_pass_clustering(
+                &mts->tile_states[m].config,
+                &mts->tile_states[m].state);
+        }
+
+        /* Update tuple history with reassigned cluster IDs */
+        for (long fi = 0; fi < frames_done; fi++)
+        {
+            long base = fi * (long)num_tiles;
+            for (int m = 0; m < num_tiles; m++)
+            {
+                mts->tuple_history[base + m] =
+                    mts->tile_states[m].state.assignments[fi];
+            }
+        }
+
+        /* Rewrite multi-tile membership log with updated assignments */
+        if (global_config->output.output_membership)
+        {
+            char out_path[1024];
+            if (global_config->output.user_outdir != NULL)
+            {
+                snprintf(out_path, sizeof(out_path),
+                         "%s/frame_membership.txt",
+                         global_config->output.user_outdir);
+            }
+            else
+            {
+                snprintf(out_path, sizeof(out_path),
+                         "frame_membership.txt");
+            }
+
+            FILE *mout = fopen(out_path, "w");
+            if (mout != NULL)
+            {
+                for (long fi = 0; fi < frames_done; fi++)
+                {
+                    fprintf(mout, "%ld", fi);
+                    for (int m = 0; m < num_tiles; m++)
+                    {
+                        fprintf(mout, "  %d",
+                                mts->tile_states[m]
+                                    .state.assignments[fi]);
+                    }
+                    fprintf(mout, "\n");
+                }
+                fclose(mout);
+            }
+        }
+    } // if pass2_nearest_mode
 
     /* ---- Summary ---- */
     {

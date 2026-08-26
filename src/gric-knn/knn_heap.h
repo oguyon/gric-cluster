@@ -21,6 +21,10 @@ void knn_heap_reset(
 double knn_heap_peek_max_dist(
     const KnnMaxHeap *heap);
 
+int knn_heap_contains(
+    const KnnMaxHeap *heap,
+    int               frame_id);
+
 void knn_heap_push(
     KnnMaxHeap *heap,
     int         frame_id,

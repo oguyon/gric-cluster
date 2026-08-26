@@ -74,6 +74,29 @@ void write_results(
             } // for (int i = 0; ...)
             fclose(dcc_out);
         }
+
+        if (config->optim.sparse_dcc_mode)
+        {
+            printf("Writing dccmin.txt\n");
+            snprintf(out_path, sizeof(out_path), "%s/dccmin.txt", out_dir);
+            FILE *dccmin_out = fopen(out_path, "w");
+
+            if (dccmin_out)
+            {
+                for (int i = 0; i < state->num_clusters; i++)
+                {
+                    for (int j = 0; j < state->num_clusters; j++)
+                    {
+                        double d_min = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                        if (d_min > 0.0)
+                        {
+                            fprintf(dccmin_out, "%d %d %.6f\n", i, j, d_min);
+                        }
+                    }
+                } // for (int i = 0; ...)
+                fclose(dccmin_out);
+            }
+        }
     }
 
     // Write Transition Matrix

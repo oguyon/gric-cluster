@@ -257,14 +257,129 @@ static void parse_radii_file(
 }
 
 /**
- * parse_dcc_file() - Load M x M inter-cluster distance matrix.
- * @path:  Path to dcc.txt.
- * @model: Pointer to KnnModel.
+ * propagate_triangle_lower_bounds() - Use triangle inequality to compute
+ *                                     tight lower bounds for missing pairs.
+ * @model: Pointer to KnnModel with partially populated dcc_matrix.
+ */
+static void propagate_triangle_lower_bounds(
+    KnnModel *model)
+{
+    int M = model->num_clusters;
+    if (M <= 1)
+    {
+        return;
+    }
+
+    double *d_max = (double *)malloc((size_t)M * (size_t)M * sizeof(double));
+    if (d_max == NULL)
+    {
+        return;
+    }
+
+    for (int i = 0; i < M; i++)
+    {
+        for (int j = 0; j < M; j++)
+        {
+            if (i == j)
+            {
+                d_max[i * M + j] = 0.0;
+            }
+            else
+            {
+                double measured = model->dcc_matrix[i * M + j];
+                if (measured > 0.0)
+                {
+                    d_max[i * M + j] = measured;
+                }
+                else
+                {
+                    d_max[i * M + j] = 1e19;
+                }
+            }
+        }
+    }
+
+    // Step 1: Upper Bound Relaxation (All-Pairs Shortest Path)
+    for (int k = 0; k < M; k++)
+    {
+        #pragma omp parallel for schedule(static) if(M >= 64)
+        for (int i = 0; i < M; i++)
+        {
+            double d_ik = d_max[i * M + k];
+            if (d_ik >= 1e18)
+            {
+                continue;
+            }
+            for (int j = 0; j < M; j++)
+            {
+                double d_kj = d_max[k * M + j];
+                if (d_kj >= 1e18)
+                {
+                    continue;
+                }
+                double sum = d_ik + d_kj;
+                if (sum < d_max[i * M + j])
+                {
+                    d_max[i * M + j] = sum;
+                }
+            }
+        }
+    }
+
+    // Step 2: Lower Bound Propagation via Triangle Inequality
+    #pragma omp parallel for schedule(dynamic) if(M >= 64)
+    for (int i = 0; i < M; i++)
+    {
+        for (int j = i + 1; j < M; j++)
+        {
+            if (model->dcc_matrix[i * M + j] > 0.0)
+            {
+                continue;
+            }
+
+            double max_lb = 0.0;
+            for (int k = 0; k < M; k++)
+            {
+                double d_min_ik = model->dcc_matrix[i * M + k];
+                double d_max_kj = d_max[k * M + j];
+                if (d_min_ik > 0.0 && d_max_kj < 1e18)
+                {
+                    double lb1 = d_min_ik - d_max_kj;
+                    if (lb1 > max_lb)
+                    {
+                        max_lb = lb1;
+                    }
+                }
+
+                double d_min_jk = model->dcc_matrix[j * M + k];
+                double d_max_ki = d_max[k * M + i];
+                if (d_min_jk > 0.0 && d_max_ki < 1e18)
+                {
+                    double lb2 = d_min_jk - d_max_ki;
+                    if (lb2 > max_lb)
+                    {
+                        max_lb = lb2;
+                    }
+                }
+            }
+
+            model->dcc_matrix[i * M + j] = max_lb;
+            model->dcc_matrix[j * M + i] = max_lb;
+        }
+    }
+
+    free(d_max);
+}
+
+/**
+ * parse_dcc_file() - Load M x M inter-cluster distance matrix or lower bounds.
+ * @cluster_dir: Directory containing cluster results.
+ * @model:       Pointer to KnnModel.
  *
  * Return: 0 on success, -1 on error.
  */
 static int parse_dcc_file(
-    const char *path,
+    const char *cluster_dir,
     KnnModel   *model)
 {
     int M = model->num_clusters;
@@ -280,12 +395,26 @@ static int parse_dcc_file(
         model->dcc_matrix[i] = 0.0;
     }
 
+    char path[2048];
+    snprintf(path, sizeof(path), "%s/dccmin.txt", cluster_dir);
     FILE *f = fopen(path, "r");
+    int   using_dccmin = 0;
+    if (f != NULL)
+    {
+        using_dccmin = 1;
+    }
+    else
+    {
+        snprintf(path, sizeof(path), "%s/dcc.txt", cluster_dir);
+        f = fopen(path, "r");
+    }
+
     if (f == NULL)
     {
         return 0;
     }
 
+    long entries_read = 0;
     char line[1024];
     while (fgets(line, sizeof(line), f) != NULL)
     {
@@ -303,11 +432,19 @@ static int parse_dcc_file(
             {
                 model->dcc_matrix[c1 * M + c2] = dist;
                 model->dcc_matrix[c2 * M + c1] = dist;
+                entries_read++;
             }
         }
     } // while reading DCC
 
     fclose(f);
+
+    long total_pairs = (long)M * (M - 1) / 2;
+    if (!using_dccmin && entries_read < total_pairs && entries_read > 0)
+    {
+        propagate_triangle_lower_bounds(model);
+    }
+
     return 0;
 }
 
@@ -611,9 +748,7 @@ int knn_model_load(
     snprintf(radii_path, sizeof(radii_path), "%s/cluster_radii.txt", cluster_dir);
     parse_radii_file(radii_path, model);
 
-    char dcc_path[2048];
-    snprintf(dcc_path, sizeof(dcc_path), "%s/dcc.txt", cluster_dir);
-    if (parse_dcc_file(dcc_path, model) != 0)
+    if (parse_dcc_file(cluster_dir, model) != 0)
     {
         knn_model_free(model);
         return -1;

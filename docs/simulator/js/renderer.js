@@ -184,6 +184,10 @@
       const W = canvas.width / dpr;
       const H = canvas.height / dpr;
 
+      if (typeof viewportZoomBoxRects !== 'undefined') {
+        viewportZoomBoxRects = [null, null, null, null];
+      }
+
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = '#0b1120';
       ctx.fillRect(0, 0, W, H);
@@ -251,71 +255,77 @@
       }
 
       // 1. Grid & Axes
-      if (!is3DCustom) {
-        // Orthogonal 2D Projection Grids
-        const center = mapMetricToQuad(0, 0, qIdx, rect);
-        
-        ctx.strokeStyle = '#1e293b';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(rect.x, center.py);
-        ctx.lineTo(rect.x + rect.w, center.py);
-        ctx.moveTo(center.px, rect.y);
-        ctx.lineTo(center.px, rect.y + rect.h);
-        ctx.stroke();
-
-        // Reference Circles (radius 0.5, 0.85)
-        ctx.strokeStyle = '#172554';
-        ctx.setLineDash([2, 4]);
-        [0.5, 0.85].forEach(rad => {
+      if (showGridAxes) {
+        if (!is3DCustom) {
+          // Orthogonal 2D Projection Grids
+          const center = mapMetricToQuad(0, 0, qIdx, rect);
+          
+          ctx.strokeStyle = '#1e293b';
+          ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.arc(center.px, center.py, rad * scale, 0, Math.PI * 2);
+          ctx.moveTo(rect.x, center.py);
+          ctx.lineTo(rect.x + rect.w, center.py);
+          ctx.moveTo(center.px, rect.y);
+          ctx.lineTo(center.px, rect.y + rect.h);
           ctx.stroke();
-        });
-        ctx.setLineDash([]);
-      } else {
-        // 3D Custom Projection: Bounding Cube & Grid Floor
-        const az = orbitCamera.azimuth, el = orbitCamera.elevation;
-        
-        // 3D Bounding Box [-0.85, 0.85]^3
-        const b = 0.85;
-        const boxCorners = [
-          {x:-b, y:-b, z:-b}, {x: b, y:-b, z:-b}, {x: b, y: b, z:-b}, {x:-b, y: b, z:-b},
-          {x:-b, y:-b, z: b}, {x: b, y:-b, z: b}, {x: b, y: b, z: b}, {x:-b, y: b, z: b}
-        ];
-        const boxPx = boxCorners.map(pt => {
-          const pr = project3D(pt.x, pt.y, pt.z, az, el);
-          return mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-        });
 
-        // Floor Grid at z = -b
-        ctx.strokeStyle = 'rgba(30, 41, 59, 0.6)';
-        ctx.lineWidth = 1;
-        [-0.85, -0.425, 0, 0.425, 0.85].forEach(val => {
-          const p1 = mapMetricToQuad(project3D(val, -b, -b, az, el).u, project3D(val, -b, -b, az, el).v, qIdx, rect);
-          const p2 = mapMetricToQuad(project3D(val,  b, -b, az, el).u, project3D(val,  b, -b, az, el).v, qIdx, rect);
-          ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(p2.px, p2.py); ctx.stroke();
+          // Reference Circles (radius 0.5, 0.85)
+          ctx.strokeStyle = '#172554';
+          ctx.setLineDash([2, 4]);
+          [0.5, 0.85].forEach(rad => {
+            ctx.beginPath();
+            ctx.arc(center.px, center.py, rad * scale, 0, Math.PI * 2);
+            ctx.stroke();
+          });
+          ctx.setLineDash([]);
+        } else {
+          // 3D Custom Projection: Bounding Cube & Grid Floor
+          const az = orbitCamera.azimuth, el = orbitCamera.elevation;
+          
+          // 3D Bounding Box [-0.85, 0.85]^3
+          const b = 0.85;
+          const boxCorners = [
+            {x:-b, y:-b, z:-b}, {x: b, y:-b, z:-b}, {x: b, y: b, z:-b}, {x:-b, y: b, z:-b},
+            {x:-b, y:-b, z: b}, {x: b, y:-b, z: b}, {x: b, y: b, z: b}, {x:-b, y: b, z: b}
+          ];
+          const boxPx = boxCorners.map(pt => {
+            const pr = project3D(pt.x, pt.y, pt.z, az, el);
+            return mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+          });
 
-          const p3 = mapMetricToQuad(project3D(-b, val, -b, az, el).u, project3D(-b, val, -b, az, el).v, qIdx, rect);
-          const p4 = mapMetricToQuad(project3D( b, val, -b, az, el).u, project3D( b, val, -b, az, el).v, qIdx, rect);
-          ctx.beginPath(); ctx.moveTo(p3.px, p3.py); ctx.lineTo(p4.px, p4.py); ctx.stroke();
-        });
+          // Floor Grid at z = -b
+          ctx.strokeStyle = 'rgba(30, 41, 59, 0.6)';
+          ctx.lineWidth = 1;
+          [-0.85, -0.425, 0, 0.425, 0.85].forEach(val => {
+            const p1 = mapMetricToQuad(project3D(val, -b, -b, az, el).u,
+                                       project3D(val, -b, -b, az, el).v, qIdx, rect);
+            const p2 = mapMetricToQuad(project3D(val,  b, -b, az, el).u,
+                                       project3D(val,  b, -b, az, el).v, qIdx, rect);
+            ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(p2.px, p2.py); ctx.stroke();
 
-        // Bounding Box Edges
-        const edges = [
-          [0,1],[1,2],[2,3],[3,0],
-          [4,5],[5,6],[6,7],[7,4],
-          [0,4],[1,5],[2,6],[3,7]
-        ];
-        ctx.strokeStyle = 'rgba(51, 65, 85, 0.5)';
-        ctx.setLineDash([2, 3]);
-        edges.forEach(([i, j]) => {
-          ctx.beginPath();
-          ctx.moveTo(boxPx[i].px, boxPx[i].py);
-          ctx.lineTo(boxPx[j].px, boxPx[j].py);
-          ctx.stroke();
-        });
-        ctx.setLineDash([]);
+            const p3 = mapMetricToQuad(project3D(-b, val, -b, az, el).u,
+                                       project3D(-b, val, -b, az, el).v, qIdx, rect);
+            const p4 = mapMetricToQuad(project3D( b, val, -b, az, el).u,
+                                       project3D( b, val, -b, az, el).v, qIdx, rect);
+            ctx.beginPath(); ctx.moveTo(p3.px, p3.py); ctx.lineTo(p4.px, p4.py); ctx.stroke();
+          });
+
+          // Bounding Box Edges
+          const edges = [
+            [0,1],[1,2],[2,3],[3,0],
+            [4,5],[5,6],[6,7],[7,4],
+            [0,4],[1,5],[2,6],[3,7]
+          ];
+          ctx.strokeStyle = 'rgba(51, 65, 85, 0.5)';
+          ctx.setLineDash([2, 3]);
+          edges.forEach(([i, j]) => {
+            ctx.beginPath();
+            ctx.moveTo(boxPx[i].px, boxPx[i].py);
+            ctx.lineTo(boxPx[j].px, boxPx[j].py);
+            ctx.stroke();
+          });
+          ctx.setLineDash([]);
+        }
       }
 
       // Visual Focus / Opacity calculations
@@ -337,13 +347,80 @@
         clusterAlpha = tFocus / 0.5; // 0.0 at t=0.0, 1.0 at t=0.5
       }
 
-      // 2. Sample Point Cloud (Processed vs Unprocessed Differentiation)
+      // 2. Sample Point Cloud (Viewport-Aware Dynamic Density & Subsampling)
       let drawnPointsCount = 0;
+      let totalVisiblePoints = 0;
+      let isPointsTruncated = false;
       const numPast = pastSamples.length;
+
       if (showPastSamples && numPast > 0 && pointAlpha > 0.001) {
         const basePtRad = samplePointSize;
+        const view = quadViews[qIdx] || { panX: 0, panY: 0, zoom: 1.0 };
+        const cx = rect.x + rect.w / 2;
+        const cy = rect.y + rect.h / 2;
+
+        // Determine visible metric bounds with margin
+        const marginPx = 6;
+        const halfW_metric = (rect.w / 2 + marginPx) / scale;
+        const halfH_metric = (rect.h / 2 + marginPx) / scale;
+        const uMin = view.panX - halfW_metric;
+        const uMax = view.panX + halfW_metric;
+        const vMin = view.panY - halfH_metric;
+        const vMax = view.panY + halfH_metric;
+
+        // Ensure reusable index buffer is allocated
+        if (!visibleIndicesBuffer || visibleIndicesBuffer.length < numPast) {
+          visibleIndicesBuffer = new Int32Array(Math.max(numPast + 50000, 500000));
+        }
+
+        // Collect indices of all points that fall within visible FOV
+        if (!is3DCustom) {
+          if (currentDim === 2) {
+            for (let i = 0; i < numPast; i++) {
+              const pt = pastSamples[i];
+              if (pt.x >= uMin && pt.x <= uMax && pt.y >= vMin && pt.y <= vMax) {
+                visibleIndicesBuffer[totalVisiblePoints++] = i;
+              }
+            }
+          } else if (qIdx === 0) { // Along X: H = +Y, V = +Z
+            for (let i = 0; i < numPast; i++) {
+              const pt = pastSamples[i];
+              if (pt.y >= uMin && pt.y <= uMax && pt.z >= vMin && pt.z <= vMax) {
+                visibleIndicesBuffer[totalVisiblePoints++] = i;
+              }
+            }
+          } else if (qIdx === 1) { // Along Y: H = +X, V = +Z
+            for (let i = 0; i < numPast; i++) {
+              const pt = pastSamples[i];
+              if (pt.x >= uMin && pt.x <= uMax && pt.z >= vMin && pt.z <= vMax) {
+                visibleIndicesBuffer[totalVisiblePoints++] = i;
+              }
+            }
+          } else { // Along Z: H = +X, V = +Y
+            for (let i = 0; i < numPast; i++) {
+              const pt = pastSamples[i];
+              if (pt.x >= uMin && pt.x <= uMax && pt.y >= vMin && pt.y <= vMax) {
+                visibleIndicesBuffer[totalVisiblePoints++] = i;
+              }
+            }
+          }
+        } else {
+          // 3D Perspective Orbit View
+          const az = orbitCamera.azimuth;
+          const el = orbitCamera.elevation;
+          for (let i = 0; i < numPast; i++) {
+            const pt = pastSamples[i];
+            const pr = project3D(pt.x, pt.y, pt.z, az, el);
+            if (pr.u >= uMin && pr.u <= uMax && pr.v >= vMin && pr.v <= vMax) {
+              visibleIndicesBuffer[totalVisiblePoints++] = i;
+            }
+          }
+        }
+
         const maxDraw = maxDrawPoints;
-        const stride = numPast > maxDraw ? Math.ceil(numPast / maxDraw) : 1;
+        const drawCount = Math.min(totalVisiblePoints, maxDraw);
+        isPointsTruncated = (totalVisiblePoints > maxDraw);
+        const step = totalVisiblePoints > 0 ? (totalVisiblePoints / drawCount) : 1;
 
         // Distinct colors for unprocessed vs processed sample points
         const unprocColor = `rgba(100, 116, 139, ${(pointAlpha * 0.40).toFixed(3)})`;
@@ -367,93 +444,114 @@
 
           // Pass 1: Unprocessed Points (staged, not yet ingested)
           ctx.fillStyle = unprocColor;
-          for (let i = 0; i < numPast; i += stride) {
-            const pt = pastSamples[i];
+          for (let k = 0; k < drawCount; k++) {
+            const idx = visibleIndicesBuffer[Math.floor(k * step)];
+            const pt = pastSamples[idx];
             const isProcessed = (pt.clusterId !== undefined && pt.clusterId >= 0) ||
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
-                                (i < currentFrameIdx);
+                                (idx < currentFrameIdx);
             if (isProcessed) continue;
 
-            const pr = getProjectedCoord(pt);
-            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-            if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 || 
-                pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) continue;
-            ctx.fillRect(pos.px - ptRad, pos.py - ptRad, d, d);
+            let u, v;
+            if (currentDim === 2) { u = pt.x; v = pt.y; }
+            else if (qIdx === 0) { u = pt.y; v = pt.z; }
+            else if (qIdx === 1) { u = pt.x; v = pt.z; }
+            else { u = pt.x; v = pt.y; }
+
+            const px = cx + (u - view.panX) * scale;
+            const py = cy - (v - view.panY) * scale;
+            ctx.fillRect(px - ptRad, py - ptRad, d, d);
             drawnPointsCount++;
           }
 
           // Pass 2: Processed Points (clustered / ingested)
           let lastFill = null;
-          for (let i = 0; i < numPast; i += stride) {
-            const pt = pastSamples[i];
+          for (let k = 0; k < drawCount; k++) {
+            const idx = visibleIndicesBuffer[Math.floor(k * step)];
+            const pt = pastSamples[idx];
             const isProcessed = (pt.clusterId !== undefined && pt.clusterId >= 0) ||
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
-                                (i < currentFrameIdx);
+                                (idx < currentFrameIdx);
             if (!isProcessed) continue;
 
-            const pr = getProjectedCoord(pt);
-            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-            if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 || 
-                pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) continue;
+            let u, v;
+            if (currentDim === 2) { u = pt.x; v = pt.y; }
+            else if (qIdx === 0) { u = pt.y; v = pt.z; }
+            else if (qIdx === 1) { u = pt.x; v = pt.z; }
+            else { u = pt.x; v = pt.y; }
 
-            const fillColor = (pt.clusterId !== undefined && pt.clusterId >= 0) 
-                              ? getCachedColor(pt.clusterId) 
+            const px = cx + (u - view.panX) * scale;
+            const py = cy - (v - view.panY) * scale;
+
+            const fillColor = (pt.clusterId !== undefined && pt.clusterId >= 0)
+                              ? getCachedColor(pt.clusterId)
                               : procDefaultColor;
             if (fillColor !== lastFill) {
               ctx.fillStyle = fillColor;
               lastFill = fillColor;
             }
-            ctx.fillRect(pos.px - ptRad, pos.py - ptRad, d, d);
+            ctx.fillRect(px - ptRad, py - ptRad, d, d);
             drawnPointsCount++;
           }
         } else {
           // 3D Perspective Orbit View
+          const az = orbitCamera.azimuth;
+          const el = orbitCamera.elevation;
+
           // Pass 1: Unprocessed Points
           ctx.fillStyle = unprocColor;
-          for (let i = 0; i < numPast; i += stride) {
-            const pt = pastSamples[i];
+          for (let k = 0; k < drawCount; k++) {
+            const idx = visibleIndicesBuffer[Math.floor(k * step)];
+            const pt = pastSamples[idx];
             const isProcessed = (pt.clusterId !== undefined && pt.clusterId >= 0) ||
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
-                                (i < currentFrameIdx);
+                                (idx < currentFrameIdx);
             if (isProcessed) continue;
 
-            const pr = getProjectedCoord(pt);
-            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-            if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 || 
-                pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) continue;
+            const pr = project3D(pt.x, pt.y, pt.z, az, el);
+            const px = cx + (pr.u - view.panX) * scale;
+            const py = cy - (pr.v - view.panY) * scale;
             const depthFactor = Math.max(0.4, Math.min(2.2, 1.0 + pr.depth * 0.5));
             const ptRad = Math.max(0.4, basePtRad * depthFactor * ptSizeScale);
-            ctx.fillRect(pos.px - ptRad, pos.py - ptRad, ptRad * 2, ptRad * 2);
+            ctx.fillRect(px - ptRad, py - ptRad, ptRad * 2, ptRad * 2);
             drawnPointsCount++;
           }
 
           // Pass 2: Processed Points
           let lastFill = null;
-          for (let i = 0; i < numPast; i += stride) {
-            const pt = pastSamples[i];
+          for (let k = 0; k < drawCount; k++) {
+            const idx = visibleIndicesBuffer[Math.floor(k * step)];
+            const pt = pastSamples[idx];
             const isProcessed = (pt.clusterId !== undefined && pt.clusterId >= 0) ||
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
-                                (i < currentFrameIdx);
+                                (idx < currentFrameIdx);
             if (!isProcessed) continue;
 
-            const pr = getProjectedCoord(pt);
-            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-            if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 || 
-                pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) continue;
+            const pr = project3D(pt.x, pt.y, pt.z, az, el);
+            const px = cx + (pr.u - view.panX) * scale;
+            const py = cy - (pr.v - view.panY) * scale;
             const depthFactor = Math.max(0.4, Math.min(2.2, 1.0 + pr.depth * 0.5));
             const ptRad = Math.max(0.4, basePtRad * depthFactor * ptSizeScale);
 
-            const fillColor = (pt.clusterId !== undefined && pt.clusterId >= 0) 
-                              ? getCachedColor(pt.clusterId) 
+            const fillColor = (pt.clusterId !== undefined && pt.clusterId >= 0)
+                              ? getCachedColor(pt.clusterId)
                               : procDefaultColor;
             if (fillColor !== lastFill) {
               ctx.fillStyle = fillColor;
               lastFill = fillColor;
             }
-            ctx.fillRect(pos.px - ptRad, pos.py - ptRad, ptRad * 2, ptRad * 2);
+            ctx.fillRect(px - ptRad, py - ptRad, ptRad * 2, ptRad * 2);
             drawnPointsCount++;
           }
         }
+      }
+
+      if (typeof viewportPointStats !== 'undefined' && viewportPointStats[qIdx]) {
+        viewportPointStats[qIdx] = {
+          drawn: drawnPointsCount,
+          visible: totalVisiblePoints,
+          truncated: isPointsTruncated
+        };
       }
 
       // 3. Multi-Tile Mode Rendering
@@ -670,7 +768,7 @@
               ctx.restore();
             }
 
-            if (!showCircleMembers && !showCircleSCDists) {
+            if (showClusterRadii && !showCircleMembers && !showCircleSCDists) {
               if (!is3DCustom) {
                 // 2D Circle outline for receptive field
                 ctx.beginPath();
@@ -734,7 +832,7 @@
             }
 
             // 1. Proportional Area Circle: Points in Cluster (Emerald Green #10b981)
-            // Area within circle is strictly proportional to c.members => Radius is proportional to sqrt(c.members)
+            // Area within circle is strictly proportional to c.members
             if (showCircleMembers && c.members > 0) {
               const rMetricMem = rlim * Math.sqrt(c.members / maxClusterMembers);
               const rPxMem = Math.max(2, rMetricMem * scale);
@@ -752,7 +850,7 @@
             }
 
             // 2. Proportional Area Circle: #SC Distances (Amber #f59e0b)
-            // Area within circle is strictly proportional to c.scDists => Radius is proportional to sqrt(c.scDists)
+            // Area within circle is strictly proportional to c.scDists
             const scCount = c.scDists || 0;
             if (showCircleSCDists && scCount > 0) {
               const rMetricDist = rlim * Math.sqrt(scCount / maxClusterSCDists);
@@ -772,7 +870,7 @@
           });
 
           // Draw Learned Markov Transition Vector Arcs (-tm) (Optimized Batched)
-          if (useTM && transitionCounts.length > 0 && clusters.length > 1) {
+          if (showTransitionLines && useTM && transitionCounts.length > 0 && clusters.length > 1) {
             ctx.save();
             const K = clusters.length;
 
@@ -781,6 +879,10 @@
                 lastTransitionFrom < K && lastTransitionTo < K && 
                 lastTransitionFrom !== lastTransitionTo && 
                 clusters[lastTransitionFrom] && clusters[lastTransitionTo]) {
+              ctx.save();
+              if (typeof currentEvaluationsAlpha === 'number') {
+                ctx.globalAlpha = Math.max(0.0, Math.min(1.0, currentEvaluationsAlpha));
+              }
               const prA = getProjectedCoord(clusters[lastTransitionFrom]);
               const prB = getProjectedCoord(clusters[lastTransitionTo]);
               const posA = mapMetricToQuad(prA.u, prA.v, qIdx, rect);
@@ -792,6 +894,7 @@
               ctx.strokeStyle = '#fbbf24';
               ctx.lineWidth = 2.5;
               ctx.stroke();
+              ctx.restore();
             }
 
             // 2. Batched Background Learned Paths (Top paths only, single stroke)
@@ -829,25 +932,34 @@
             ctx.lineWidth = 1.2;
             ctx.stroke();
 
-            ctx.fillStyle = '#f8fafc';
-            ctx.font = '10px sans-serif';
-            ctx.fillText(`C${c.id}`, pos.px + 7, pos.py - 5);
+            if (showClusterLabels) {
+              ctx.fillStyle = '#f8fafc';
+              ctx.font = '10px sans-serif';
+              ctx.fillText(`C${c.id}`, pos.px + 7, pos.py - 5);
+            }
           });
 
           // Pruned Crosshairs
-          currentPruned.forEach(p => {
-            const pr = getProjectedCoord(p.cluster);
-            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+          if (showPrunedMarks && currentPruned && currentPruned.length > 0) {
+            ctx.save();
+            if (typeof currentEvaluationsAlpha === 'number') {
+              ctx.globalAlpha = Math.max(0.0, Math.min(1.0, currentEvaluationsAlpha));
+            }
+            currentPruned.forEach(p => {
+              const pr = getProjectedCoord(p.cluster);
+              const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
 
-            ctx.strokeStyle = '#ef4444';
-            ctx.lineWidth = 1.8;
-            ctx.beginPath();
-            ctx.moveTo(pos.px - 6, pos.py - 6);
-            ctx.lineTo(pos.px + 6, pos.py + 6);
-            ctx.moveTo(pos.px + 6, pos.py - 6);
-            ctx.lineTo(pos.px - 6, pos.py + 6);
-            ctx.stroke();
-          });
+              ctx.strokeStyle = '#ef4444';
+              ctx.lineWidth = 1.8;
+              ctx.beginPath();
+              ctx.moveTo(pos.px - 6, pos.py - 6);
+              ctx.lineTo(pos.px + 6, pos.py + 6);
+              ctx.moveTo(pos.px + 6, pos.py - 6);
+              ctx.lineTo(pos.px - 6, pos.py + 6);
+              ctx.stroke();
+            });
+            ctx.restore();
+          }
           ctx.restore();
         }
 
@@ -1018,10 +1130,12 @@
           ctx.stroke();
 
           // Label
-          ctx.font = 'bold 9px monospace';
-          ctx.fillStyle = '#facc15';
-          const fIdx = targetSample.frameIndex || 0;
-          ctx.fillText(`Point #${fIdx}`, posP.px + 9, posP.py - 5);
+          if (showDistLabels) {
+            ctx.font = 'bold 9px monospace';
+            ctx.fillStyle = '#facc15';
+            const fIdx = targetSample.frameIndex || 0;
+            ctx.fillText(`Point #${fIdx}`, posP.px + 9, posP.py - 5);
+          }
           ctx.restore();
         }
 
@@ -1149,48 +1263,54 @@
               const lineColor = ev.match ? '#4ade80' : '#ef4444';
               const orderSuffix = getOrdinalSuffix(evIdx + 1);
 
-              ctx.beginPath();
-              ctx.moveTo(pos.px, pos.py);
-              ctx.lineTo(posC.px, posC.py);
-              ctx.strokeStyle = lineColor;
-              ctx.lineWidth = ev.match ? 2.4 : 1.6;
-              if (!ev.match) ctx.setLineDash([4, 3]);
-              ctx.stroke();
-              ctx.setLineDash([]);
+              if (showDistLines) {
+                ctx.beginPath();
+                ctx.moveTo(pos.px, pos.py);
+                ctx.lineTo(posC.px, posC.py);
+                ctx.strokeStyle = lineColor;
+                ctx.lineWidth = ev.match ? 2.4 : 1.6;
+                if (!ev.match) ctx.setLineDash([4, 3]);
+                ctx.stroke();
+                ctx.setLineDash([]);
 
-              // Highlight cluster anchor node
-              ctx.beginPath();
-              ctx.arc(posC.px, posC.py, ev.match ? 7 : 5, 0, Math.PI * 2);
-              ctx.strokeStyle = lineColor;
-              ctx.lineWidth = 1.6;
-              ctx.stroke();
+                // Highlight cluster anchor node
+                ctx.beginPath();
+                ctx.arc(posC.px, posC.py, ev.match ? 7 : 5, 0, Math.PI * 2);
+                ctx.strokeStyle = lineColor;
+                ctx.lineWidth = 1.6;
+                ctx.stroke();
+              }
 
-              // Step computation order badge on cluster anchor (e.g. 1, 2, 3)
-              ctx.beginPath();
-              ctx.arc(posC.px + 9, posC.py - 9, 6.5, 0, Math.PI * 2);
-              ctx.fillStyle = lineColor;
-              ctx.fill();
-              ctx.strokeStyle = '#0f172a';
-              ctx.lineWidth = 1.0;
-              ctx.stroke();
+              if (showDistLabels) {
+                // Step computation order badge on cluster anchor (e.g. 1, 2, 3)
+                ctx.beginPath();
+                ctx.arc(posC.px + 9, posC.py - 9, 6.5, 0, Math.PI * 2);
+                ctx.fillStyle = lineColor;
+                ctx.fill();
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = 1.0;
+                ctx.stroke();
 
-              ctx.fillStyle = '#0f172a';
-              ctx.font = 'bold 8.5px monospace';
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillText(`${evIdx + 1}`, posC.px + 9, posC.py - 8.5);
+                ctx.fillStyle = '#0f172a';
+                ctx.font = 'bold 8.5px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`${evIdx + 1}`, posC.px + 9, posC.py - 8.5);
 
-              // Distance pill along line (at 52%-72% towards cluster, staggered if multiple)
-              const staggerRatio = 0.52 + Math.min(0.20, evIdx * 0.08);
-              const midX = pos.px * (1 - staggerRatio) + posC.px * staggerRatio;
-              const midY = pos.py * (1 - staggerRatio) + posC.py * staggerRatio;
-              const pillText = `${orderSuffix}: C${clObj.id} (d=${ev.dist.toFixed(3)}) ${ev.match ? '✓' : '✗'}`;
-              drawDistPill(midX, midY, pillText, lineColor, ev.match);
+                // Distance pill along line (at 52%-72% towards cluster, staggered if multiple)
+                const staggerRatio = 0.52 + Math.min(0.20, evIdx * 0.08);
+                const midX = pos.px * (1 - staggerRatio) + posC.px * staggerRatio;
+                const midY = pos.py * (1 - staggerRatio) + posC.py * staggerRatio;
+                const mark = ev.match ? '✓' : '✗';
+                const pillText = `${orderSuffix}: C${clObj.id} (d=${ev.dist.toFixed(3)}) ${mark}`;
+                drawDistPill(midX, midY, pillText, lineColor, ev.match);
+              }
             });
 
-            // B. Sample-to-Sample nearest neighbor distances computed when solving FOR this query point in k-NN
-            // (Distinct Vibrant Violet / Magenta palette #c084fc / #e879f9 to clearly distinguish from cluster lines)
-            if (typeof knnResults !== 'undefined' && knnResults && knnResults.indices) {
+            // B. Sample-to-Sample nearest neighbor distances computed when solving FOR this point
+            // (Distinct Vibrant Violet / Magenta palette #c084fc / #e879f9)
+            if (showDistLines && showKnnLines &&
+                typeof knnResults !== 'undefined' && knnResults && knnResults.indices) {
               const N = knnResults.totalFrames;
               const k = knnResults.k;
               if (sampleIdx >= 0 && sampleIdx < N) {
@@ -1223,11 +1343,13 @@
                     ctx.lineWidth = 1.2;
                     ctx.stroke();
 
-                    // Distance pill along ray (at 50% midpoint)
-                    const midX = (pos.px + posN.px) / 2;
-                    const midY = (pos.py + posN.py) / 2;
-                    const pillText = `${orderSuffix} NN: #${nId} (d=${dist.toFixed(3)})`;
-                    drawDistPill(midX, midY, pillText, nnColor, isRank1);
+                    if (showDistLabels) {
+                      // Distance pill along ray (at 50% midpoint)
+                      const midX = (pos.px + posN.px) / 2;
+                      const midY = (pos.py + posN.py) / 2;
+                      const pillText = `${orderSuffix} NN: #${nId} (d=${dist.toFixed(3)})`;
+                      drawDistPill(midX, midY, pillText, nnColor, isRank1);
+                    }
                   }
                 }
               }
@@ -1235,9 +1357,10 @@
 
             // -----------------------------------------------------------------
             // 2. OTHER Distance Computations INVOLVING THIS POINT
-            //    (Thinner dashed lines in distinct amber/orange, e.g. when other points queried this point)
+            //    (Thinner dashed lines in distinct amber/orange)
             // -----------------------------------------------------------------
-            if (typeof knnResults !== 'undefined' && knnResults && knnResults.indices) {
+            if (showDistLines &&
+                typeof knnResults !== 'undefined' && knnResults && knnResults.indices) {
               const N = knnResults.totalFrames;
               const k = knnResults.k;
               const maxIncoming = 12; // Cap display of incoming queries for visual clarity
@@ -1278,11 +1401,13 @@
                     ctx.lineWidth = 0.8;
                     ctx.stroke();
 
-                    // Mini distance pill at 35% towards source query
-                    const midX = pos.px * 0.65 + posM.px * 0.35;
-                    const midY = pos.py * 0.65 + posM.py * 0.35;
-                    const pillText = `#${m}→#${sampleIdx}: d=${dist.toFixed(3)}`;
-                    drawDistPill(midX, midY, pillText, otherColor, false);
+                    if (showDistLabels) {
+                      // Mini distance pill at 35% towards source query
+                      const midX = pos.px * 0.65 + posM.px * 0.35;
+                      const midY = pos.py * 0.65 + posM.py * 0.35;
+                      const pillText = `#${m}→#${sampleIdx}: d=${dist.toFixed(3)}`;
+                      drawDistPill(midX, midY, pillText, otherColor, false);
+                    }
                     ctx.restore();
 
                     incomingCount++;
@@ -1326,24 +1451,29 @@
             ctx.stroke();
 
             // 6. Detailed Info Callout Badge (in the hovered quadrant or 2D screen)
-            if (qIdx === activeSampleHighlight.qIdx || currentDim === 2 || maximizedQuad !== null) {
+            if (showInspectorCallout &&
+                (qIdx === activeSampleHighlight.qIdx ||
+                 currentDim === 2 || maximizedQuad !== null)) {
               const fIdx = activeSampleHighlight.index;
               const coordText = currentDim === 3 
                 ? `(${pt.x.toFixed(2)}, ${pt.y.toFixed(2)}, ${pt.z.toFixed(2)})`
                 : `(${pt.x.toFixed(2)}, ${pt.y.toFixed(2)})`;
 
               const lockTag = isLocked ? '🔒 LOCKED #' : '#';
-              const titleLine = `${lockTag}${fIdx}: ${coordText} ${cId >= 0 ? `→ C${cId}` : '(new cluster)'}`;
+              const titleLine = `${lockTag}${fIdx}: ${coordText} ` +
+                                `${cId >= 0 ? `→ C${cId}` : '(new cluster)'}`;
               const calloutLines = [titleLine];
 
               if (evaluatedClusters.length > 1) {
                 const seqParts = evaluatedClusters.map((ev, idx) => 
-                  `${getOrdinalSuffix(idx + 1)}: C${ev.cluster.id} (d=${ev.dist.toFixed(3)}${ev.match ? ' ✓' : ' ✗'})`
+                  `${getOrdinalSuffix(idx + 1)}: C${ev.cluster.id} ` +
+                  `(d=${ev.dist.toFixed(3)}${ev.match ? ' ✓' : ' ✗'})`
                 );
                 calloutLines.push(`Solving Sequence: ${seqParts.join(' → ')}`);
               } else if (evaluatedClusters.length === 1) {
                 const ev = evaluatedClusters[0];
-                calloutLines.push(`1st eval: C${ev.cluster.id} (d=${ev.dist.toFixed(3)}${ev.match ? ' ✓' : ' ✗'})`);
+                calloutLines.push(`1st eval: C${ev.cluster.id} ` +
+                                  `(d=${ev.dist.toFixed(3)}${ev.match ? ' ✓' : ' ✗'})`);
               }
 
               if (isLocked) {
@@ -1434,45 +1564,52 @@
             const loopCx = posA.px;
             const loopCy = posA.py - loopR - 6;
 
-            ctx.beginPath();
-            ctx.arc(loopCx, loopCy, loopR, 0.25 * Math.PI, 1.75 * Math.PI, false);
-            ctx.strokeStyle = '#facc15';
-            ctx.lineWidth = 3.0;
-            ctx.shadowColor = '#facc15';
-            ctx.shadowBlur = 8;
-            ctx.stroke();
+            if (showTransitionLines) {
+              ctx.beginPath();
+              ctx.arc(loopCx, loopCy, loopR, 0.25 * Math.PI, 1.75 * Math.PI, false);
+              ctx.strokeStyle = '#facc15';
+              ctx.lineWidth = 3.0;
+              ctx.shadowColor = '#facc15';
+              ctx.shadowBlur = 8;
+              ctx.stroke();
 
-            // Arrowhead on loop
-            const headX = loopCx + loopR * Math.cos(0.25 * Math.PI);
-            const headY = loopCy + loopR * Math.sin(0.25 * Math.PI);
-            const angle = 0.25 * Math.PI + Math.PI / 2;
-            const headLen = 10;
-            ctx.fillStyle = '#facc15';
-            ctx.beginPath();
-            ctx.moveTo(headX, headY);
-            ctx.lineTo(headX - headLen * Math.cos(angle - Math.PI / 6), headY - headLen * Math.sin(angle - Math.PI / 6));
-            ctx.lineTo(headX - headLen * Math.cos(angle + Math.PI / 6), headY - headLen * Math.sin(angle + Math.PI / 6));
-            ctx.closePath();
-            ctx.fill();
+              // Arrowhead on loop
+              const headX = loopCx + loopR * Math.cos(0.25 * Math.PI);
+              const headY = loopCy + loopR * Math.sin(0.25 * Math.PI);
+              const angle = 0.25 * Math.PI + Math.PI / 2;
+              const headLen = 10;
+              ctx.fillStyle = '#facc15';
+              ctx.beginPath();
+              ctx.moveTo(headX, headY);
+              ctx.lineTo(headX - headLen * Math.cos(angle - Math.PI / 6),
+                         headY - headLen * Math.sin(angle - Math.PI / 6));
+              ctx.lineTo(headX - headLen * Math.cos(angle + Math.PI / 6),
+                         headY - headLen * Math.sin(angle + Math.PI / 6));
+              ctx.closePath();
+              ctx.fill();
+            }
 
-            // Label badge
-            const badgeText = `C${fromId} ↺ C${toId} [${(prob * 100).toFixed(1)}%, N=${cnt}]`;
-            ctx.font = 'bold 10px monospace';
-            const tw = ctx.measureText(badgeText).width;
-            const badgeX = Math.max(rect.x + 10, Math.min(rect.x + rect.w - tw - 10, loopCx - tw / 2));
-            const badgeY = Math.max(rect.y + 16, loopCy - loopR - 6);
+            if (showDistLabels) {
+              // Label badge
+              const badgeText = `C${fromId} ↺ C${toId} [${(prob * 100).toFixed(1)}%, N=${cnt}]`;
+              ctx.font = 'bold 10px monospace';
+              const tw = ctx.measureText(badgeText).width;
+              const badgeX = Math.max(rect.x + 10,
+                                      Math.min(rect.x + rect.w - tw - 10, loopCx - tw / 2));
+              const badgeY = Math.max(rect.y + 16, loopCy - loopR - 6);
 
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-            ctx.strokeStyle = '#facc15';
-            ctx.lineWidth = 1.2;
-            ctx.beginPath();
-            ctx.roundRect(badgeX - 4, badgeY - 11, tw + 8, 15, 3);
-            ctx.fill();
-            ctx.stroke();
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+              ctx.strokeStyle = '#facc15';
+              ctx.lineWidth = 1.2;
+              ctx.beginPath();
+              ctx.roundRect(badgeX - 4, badgeY - 11, tw + 8, 15, 3);
+              ctx.fill();
+              ctx.stroke();
 
-            ctx.fillStyle = '#facc15';
-            ctx.textAlign = 'left';
-            ctx.fillText(badgeText, badgeX, badgeY);
+              ctx.fillStyle = '#facc15';
+              ctx.textAlign = 'left';
+              ctx.fillText(badgeText, badgeX, badgeY);
+            }
           } else {
             // Directed straight vector arrow
             const dx = posB.px - posA.px;
@@ -1487,68 +1624,82 @@
             const endX = posB.px - endOffset * Math.cos(angle);
             const endY = posB.py - endOffset * Math.sin(angle);
 
-            // Arrow shaft with glowing outline
-            ctx.strokeStyle = '#facc15';
-            ctx.lineWidth = 3.2;
-            ctx.shadowColor = '#facc15';
-            ctx.shadowBlur = 10;
-            ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.lineTo(endX, endY);
-            ctx.stroke();
+            if (showTransitionLines) {
+              // Arrow shaft with glowing outline
+              ctx.strokeStyle = '#facc15';
+              ctx.lineWidth = 3.2;
+              ctx.shadowColor = '#facc15';
+              ctx.shadowBlur = 10;
+              ctx.beginPath();
+              ctx.moveTo(startX, startY);
+              ctx.lineTo(endX, endY);
+              ctx.stroke();
 
-            // Arrowhead at target C_j
-            const headLen = Math.min(15, Math.max(9, dist * 0.25));
-            ctx.fillStyle = '#facc15';
-            ctx.beginPath();
-            ctx.moveTo(endX, endY);
-            ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6.5), endY - headLen * Math.sin(angle - Math.PI / 6.5));
-            ctx.lineTo(endX - (headLen * 0.6) * Math.cos(angle), endY - (headLen * 0.6) * Math.sin(angle));
-            ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6.5), endY - headLen * Math.sin(angle + Math.PI / 6.5));
-            ctx.closePath();
-            ctx.fill();
+              // Arrowhead at target C_j
+              const headLen = Math.min(15, Math.max(9, dist * 0.25));
+              ctx.fillStyle = '#facc15';
+              ctx.beginPath();
+              ctx.moveTo(endX, endY);
+              ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6.5),
+                         endY - headLen * Math.sin(angle - Math.PI / 6.5));
+              ctx.lineTo(endX - (headLen * 0.6) * Math.cos(angle),
+                         endY - (headLen * 0.6) * Math.sin(angle));
+              ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6.5),
+                         endY - headLen * Math.sin(angle + Math.PI / 6.5));
+              ctx.closePath();
+              ctx.fill();
+            }
 
-            // Label badge along arrow
-            const badgeText = `C${fromId} → C${toId} [${(prob * 100).toFixed(1)}%, N=${cnt}]`;
-            ctx.font = 'bold 10px monospace';
-            const tw = ctx.measureText(badgeText).width;
-            const midX = (startX + endX) / 2;
-            const midY = (startY + endY) / 2 - 10;
+            if (showDistLabels) {
+              // Label badge along arrow
+              const badgeText = `C${fromId} → C${toId} [${(prob * 100).toFixed(1)}%, N=${cnt}]`;
+              ctx.font = 'bold 10px monospace';
+              const tw = ctx.measureText(badgeText).width;
+              const midX = (startX + endX) / 2;
+              const midY = (startY + endY) / 2 - 10;
 
-            const badgeX = Math.max(rect.x + 10, Math.min(rect.x + rect.w - tw - 10, midX - tw / 2));
-            const badgeY = Math.max(rect.y + 16, Math.min(rect.y + rect.h - 10, midY));
+              const badgeX = Math.max(rect.x + 10,
+                                      Math.min(rect.x + rect.w - tw - 10, midX - tw / 2));
+              const badgeY = Math.max(rect.y + 16, Math.min(rect.y + rect.h - 10, midY));
 
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-            ctx.strokeStyle = '#facc15';
-            ctx.lineWidth = 1.2;
-            ctx.beginPath();
-            ctx.roundRect(badgeX - 4, badgeY - 11, tw + 8, 15, 3);
-            ctx.fill();
-            ctx.stroke();
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+              ctx.strokeStyle = '#facc15';
+              ctx.lineWidth = 1.2;
+              ctx.beginPath();
+              ctx.roundRect(badgeX - 4, badgeY - 11, tw + 8, 15, 3);
+              ctx.fill();
+              ctx.stroke();
 
-            ctx.fillStyle = '#facc15';
-            ctx.textAlign = 'left';
-            ctx.fillText(badgeText, badgeX, badgeY);
+              ctx.fillStyle = '#facc15';
+              ctx.textAlign = 'left';
+              ctx.fillText(badgeText, badgeX, badgeY);
+            }
           }
           ctx.restore();
         }
 
         // Current Evaluated Rays
-        if (currentFrame) {
+        if (currentFrame && currentEvaluations && currentEvaluations.length > 0) {
+          ctx.save();
+          if (typeof currentEvaluationsAlpha === 'number') {
+            ctx.globalAlpha = Math.max(0.0, Math.min(1.0, currentEvaluationsAlpha));
+          }
           const prFrame = getProjectedCoord(currentFrame);
           const posFrame = mapMetricToQuad(prFrame.u, prFrame.v, qIdx, rect);
 
-          currentEvaluations.forEach(ev => {
-            const prTarget = getProjectedCoord(ev.target);
-            const posTarget = mapMetricToQuad(prTarget.u, prTarget.v, qIdx, rect);
+          if (showDistLines) {
+            currentEvaluations.forEach(ev => {
+              const prTarget = getProjectedCoord(ev.target);
+              const posTarget = mapMetricToQuad(prTarget.u, prTarget.v, qIdx, rect);
 
-            ctx.beginPath();
-            ctx.moveTo(posFrame.px, posFrame.py);
-            ctx.lineTo(posTarget.px, posTarget.py);
-            ctx.strokeStyle = ev.match ? '#4ade80' : '#ef4444';
-            ctx.lineWidth = ev.match ? 2.2 : 1.2;
-            ctx.stroke();
-          });
+              ctx.beginPath();
+              ctx.moveTo(posFrame.px, posFrame.py);
+              ctx.lineTo(posTarget.px, posTarget.py);
+              ctx.strokeStyle = ev.match ? '#4ade80' : '#ef4444';
+              ctx.lineWidth = ev.match ? 2.2 : 1.2;
+              ctx.stroke();
+            });
+          }
 
           // Active Query Frame Node (f_i)
           ctx.beginPath();
@@ -1559,24 +1710,27 @@
           ctx.lineWidth = 1.8;
           ctx.stroke();
 
-          ctx.fillStyle = '#facc15';
-          ctx.font = 'bold 10px sans-serif';
-          ctx.fillText("fi", posFrame.px + 8, posFrame.py + 10);
+          if (showDistLabels) {
+            ctx.fillStyle = '#facc15';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.fillText("fi", posFrame.px + 8, posFrame.py + 10);
+          }
+          ctx.restore();
         }
 
         // 4b. Draw k-NN Graph Overlay (Query Point -> Top-k Nearest Neighbors)
-        if (typeof enableKnn !== 'undefined' && enableKnn &&
-            typeof showKnnLines !== 'undefined' && showKnnLines &&
+        if (showKnnLines &&
             typeof knnResults !== 'undefined' && knnResults && knnResults.indices) {
           const N = knnResults.totalFrames;
           const k = knnResults.k;
-          const pts = (typeof benchmarkDataset !== 'undefined' && benchmarkDataset && benchmarkDataset.length > 0) ?
+          const pts = (typeof benchmarkDataset !== 'undefined' &&
+                       benchmarkDataset && benchmarkDataset.length > 0) ?
                       benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
 
           let qId = (typeof selectedKnnQuerySample !== 'undefined') ? selectedKnnQuerySample : -1;
           if (qId < 0 || qId >= N) {
-            qId = (typeof currentFrameIdx !== 'undefined' && currentFrameIdx > 0 && currentFrameIdx <= N) ?
-                  currentFrameIdx - 1 : 0;
+            qId = (typeof currentFrameIdx !== 'undefined' && currentFrameIdx > 0 &&
+                   currentFrameIdx <= N) ? currentFrameIdx - 1 : 0;
           }
 
           if (qId >= 0 && qId < pts.length) {
@@ -1596,16 +1750,20 @@
               const posN = mapMetricToQuad(prN.u, prN.v, qIdx, rect);
 
               const isRank1 = (r === 0);
-              const isHovered = (typeof hoveredKnnNeighborId !== 'undefined' && hoveredKnnNeighborId === nId);
+              const isHovered = (typeof hoveredKnnNeighborId !== 'undefined' &&
+                                 hoveredKnnNeighborId === nId);
 
-              ctx.beginPath();
-              ctx.moveTo(posQ.px, posQ.py);
-              ctx.lineTo(posN.px, posN.py);
-              ctx.strokeStyle = isHovered ? '#e879f9' :
-                                (isRank1 ? 'rgba(232, 121, 249, 0.95)' :
-                                 `rgba(192, 132, 252, ${Math.max(0.20, 0.75 - r * 0.06).toFixed(2)})`);
-              ctx.lineWidth = isHovered ? 2.4 : (isRank1 ? 2.0 : 1.2);
-              ctx.stroke();
+              if (showDistLines) {
+                const alphaStr = Math.max(0.20, 0.75 - r * 0.06).toFixed(2);
+                ctx.beginPath();
+                ctx.moveTo(posQ.px, posQ.py);
+                ctx.lineTo(posN.px, posN.py);
+                ctx.strokeStyle = isHovered ? '#e879f9' :
+                                  (isRank1 ? 'rgba(232, 121, 249, 0.95)' :
+                                   `rgba(192, 132, 252, ${alphaStr})`);
+                ctx.lineWidth = isHovered ? 2.4 : (isRank1 ? 2.0 : 1.2);
+                ctx.stroke();
+              }
 
               // Highlight neighbor node
               ctx.beginPath();
@@ -1617,7 +1775,7 @@
               ctx.stroke();
 
               // Rank label for top neighbors
-              if (r < 3 || isHovered) {
+              if (showDistLabels && (r < 3 || isHovered)) {
                 ctx.font = 'bold 8.5px monospace';
                 ctx.fillStyle = isHovered ? '#e879f9' : (isRank1 ? '#c084fc' : '#d8b4fe');
                 ctx.fillText(`#${r + 1}`, posN.px + 5, posN.py - 3);
@@ -1636,9 +1794,11 @@
             ctx.fillStyle = '#e879f9';
             ctx.fill();
 
-            ctx.font = 'bold 9px monospace';
-            ctx.fillStyle = '#e879f9';
-            ctx.fillText(`Query #${qId}`, posQ.px + 10, posQ.py - 6);
+            if (showDistLabels) {
+              ctx.font = 'bold 9px monospace';
+              ctx.fillStyle = '#e879f9';
+              ctx.fillText(`Query #${qId}`, posQ.px + 10, posQ.py - 6);
+            }
 
             ctx.restore();
           }
@@ -1646,7 +1806,7 @@
       }
 
       // 5. 3D Coordinate RGB Triad Gizmo (for Custom 3D Viewport)
-      if (is3DCustom) {
+      if (is3DCustom && showGridAxes) {
         const gizmoOrigin = { px: rect.x + 36, py: rect.y + rect.h - 36 };
         const gLen = 24;
         const az = orbitCamera.azimuth, el = orbitCamera.elevation;
@@ -1684,142 +1844,177 @@
         ctx.fill();
       }
 
-      // 6. Viewport Header Overlay & Maximize Button
-      let title = "";
-      let subtitle = "";
-      if (viewType === "ALONG_X") {
-        title = "📐 Along X (Y-Z Plane)";
-        subtitle = "H: +Y ➔ | V: +Z ⬆";
-      } else if (viewType === "ALONG_Y") {
-        title = "📐 Along Y (X-Z Plane)";
-        subtitle = "H: +X ➔ | V: +Z ⬆";
-      } else if (viewType === "ALONG_Z") {
-        title = "📐 Along Z (X-Y Plane)";
-        subtitle = "H: +X ➔ | V: +Y ⬆";
-      } else if (viewType === "2D") {
-        title = "📐 2D Standard View (X-Y Plane)";
-        subtitle = "H: +X ➔ | V: +Y ⬆";
-      } else if (viewType === "CUSTOM_3D") {
-        const degAz = Math.round(orbitCamera.azimuth * 180 / Math.PI);
-        const degEl = Math.round(orbitCamera.elevation * 180 / Math.PI);
-        title = `🌐 3D Orbit View [θ: ${degAz}°, φ: ${degEl}°]`;
-        subtitle = "Drag to Rotate Camera";
+      if (showViewportHUD) {
+        // 6. Viewport Header Overlay & Maximize Button
+        let title = "";
+        let subtitle = "";
+        if (viewType === "ALONG_X") {
+          title = "📐 Along X (Y-Z Plane)";
+          subtitle = "H: +Y ➔ | V: +Z ⬆";
+        } else if (viewType === "ALONG_Y") {
+          title = "📐 Along Y (X-Z Plane)";
+          subtitle = "H: +X ➔ | V: +Z ⬆";
+        } else if (viewType === "ALONG_Z") {
+          title = "📐 Along Z (X-Y Plane)";
+          subtitle = "H: +X ➔ | V: +Y ⬆";
+        } else if (viewType === "2D") {
+          title = "📐 2D Standard View (X-Y Plane)";
+          subtitle = "H: +X ➔ | V: +Y ⬆";
+        } else if (viewType === "CUSTOM_3D") {
+          const degAz = Math.round(orbitCamera.azimuth * 180 / Math.PI);
+          const degEl = Math.round(orbitCamera.elevation * 180 / Math.PI);
+          title = `🌐 3D Orbit View [θ: ${degAz}°, φ: ${degEl}°]`;
+          subtitle = "Drag to Rotate Camera";
+        }
+
+        // Header background
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+        ctx.fillRect(rect.x, rect.y, rect.w, 24);
+        ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+        ctx.beginPath();
+        ctx.moveTo(rect.x, rect.y + 24);
+        ctx.lineTo(rect.x + rect.w, rect.y + 24);
+        ctx.stroke();
+
+        // Title text
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(title, rect.x + 8, rect.y + 16);
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px monospace';
+        ctx.fillText(subtitle, rect.x + rect.w - 180, rect.y + 16);
+
+        // Maximize / Restore Icon
+        if (currentDim === 3) {
+          ctx.fillStyle = maximizedQuad === qIdx ? '#38bdf8' : '#94a3b8';
+          ctx.font = '12px sans-serif';
+          ctx.fillText(maximizedQuad === qIdx ? '🗗' : '⛶', rect.x + rect.w - 20, rect.y + 16);
+        }
+
+        // 7. Small Stats Overlay Box (Number of Samples & Clusters Displayed)
+        let drawnClustersCount = 0;
+        if (useTiles) {
+          jointTuplesMap.forEach(entry => {
+            const clX = tileEngineX.clusters[entry.cx];
+            const clY = tileEngineY.clusters[entry.cy];
+            const clZ = currentDim === 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
+            if (!clX || !clY || (currentDim === 3 && !clZ)) return;
+            const pr = getProjectedCoord({ x: clX.val, y: clY.val, z: clZ.val });
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+            if (pos.px >= rect.x - 20 && pos.px <= rect.x + rect.w + 20 &&
+                pos.py >= rect.y - 20 && pos.py <= rect.y + rect.h + 20) {
+              drawnClustersCount++;
+            }
+          });
+        } else {
+          clusters.forEach(c => {
+            const pr = getProjectedCoord(c);
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+            if (pos.px >= rect.x - 20 && pos.px <= rect.x + rect.w + 20 &&
+                pos.py >= rect.y - 20 && pos.py <= rect.y + rect.h + 20) {
+              drawnClustersCount++;
+            }
+          });
+        }
+
+        let labelPts = "";
+        if (isPointsTruncated) {
+          const pct = Math.round((drawnPointsCount / totalVisiblePoints) * 100);
+          const strDrn = drawnPointsCount.toLocaleString();
+          const strVis = totalVisiblePoints.toLocaleString();
+          labelPts = `⚠ ${strDrn}/${strVis} pts (${pct}%)`;
+        } else if (totalVisiblePoints > 0) {
+          labelPts = `${drawnPointsCount.toLocaleString()} pts`;
+        } else {
+          labelPts = `0 pts`;
+        }
+
+        const labelClust = `${drawnClustersCount.toLocaleString()} cl`;
+        const fullText = `${labelPts}  •  ${labelClust}`;
+
+        ctx.save();
+        ctx.font = 'bold 9.5px monospace';
+        const textW = ctx.measureText(fullText).width;
+        const boxW = textW + 16;
+        const boxH = 20;
+        const boxX = rect.x + rect.w - boxW - 8;
+        const boxY = rect.y + 28;
+
+        if (isPointsTruncated) {
+          ctx.fillStyle = 'rgba(28, 18, 8, 0.94)';
+          ctx.strokeStyle = 'rgba(245, 158, 11, 0.85)';
+          ctx.lineWidth = 1.2;
+        } else {
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+          ctx.lineWidth = 1.0;
+        }
+        ctx.beginPath();
+        ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        const midBoxY = boxY + boxH / 2;
+        let curX = boxX + 8;
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+
+        if (isPointsTruncated) {
+          ctx.fillStyle = '#fbbf24';
+        } else {
+          ctx.fillStyle = '#cbd5e1';
+        }
+        ctx.fillText(labelPts, curX, midBoxY);
+        curX += ctx.measureText(labelPts).width;
+
+        ctx.fillStyle = 'rgba(100, 116, 139, 0.7)';
+        ctx.fillText('  •  ', curX, midBoxY);
+        curX += ctx.measureText('  •  ').width;
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillText(labelClust, curX, midBoxY);
+        ctx.restore();
+
+        // 8. Dedicated Corner Zoom Box (One per Viewport)
+        const view = quadViews[qIdx] || { zoom: 1.0 };
+        const zoomPct = Math.round((view.zoom || 1.0) * 100);
+        const zoomText = `Zoom: ${zoomPct}%`;
+
+        ctx.save();
+        ctx.font = 'bold 9.5px monospace';
+        const zoomTextW = ctx.measureText(zoomText).width;
+        const zoomBoxW = zoomTextW + 14;
+        const zoomBoxH = 20;
+        const zoomBoxX = boxX - zoomBoxW - 6;
+        const zoomBoxY = rect.y + 28;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.strokeStyle = (zoomPct !== 100)
+          ? 'rgba(74, 222, 128, 0.6)'
+          : 'rgba(56, 189, 248, 0.35)';
+        ctx.lineWidth = 1.0;
+        ctx.beginPath();
+        ctx.roundRect(zoomBoxX, zoomBoxY, zoomBoxW, zoomBoxH, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = (zoomPct !== 100) ? '#4ade80' : '#94a3b8';
+        ctx.fillText(zoomText, zoomBoxX + zoomBoxW / 2, zoomBoxY + zoomBoxH / 2);
+        ctx.restore();
+
+        if (typeof viewportZoomBoxRects !== 'undefined') {
+          viewportZoomBoxRects[qIdx] = {
+            x: zoomBoxX,
+            y: zoomBoxY,
+            w: zoomBoxW,
+            h: zoomBoxH
+          };
+        }
       }
-
-      // Header background
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
-      ctx.fillRect(rect.x, rect.y, rect.w, 24);
-      ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
-      ctx.beginPath();
-      ctx.moveTo(rect.x, rect.y + 24);
-      ctx.lineTo(rect.x + rect.w, rect.y + 24);
-      ctx.stroke();
-
-      // Title text
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = 'bold 11px sans-serif';
-      ctx.fillText(title, rect.x + 8, rect.y + 16);
-
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '10px monospace';
-      ctx.fillText(subtitle, rect.x + rect.w - 180, rect.y + 16);
-
-      // Maximize / Restore Icon
-      if (currentDim === 3) {
-        ctx.fillStyle = maximizedQuad === qIdx ? '#38bdf8' : '#94a3b8';
-        ctx.font = '12px sans-serif';
-        ctx.fillText(maximizedQuad === qIdx ? '🗗' : '⛶', rect.x + rect.w - 20, rect.y + 16);
-      }
-
-      // 7. Small Stats Overlay Box (Number of Samples & Clusters Displayed)
-      let drawnClustersCount = 0;
-      if (useTiles) {
-        jointTuplesMap.forEach(entry => {
-          const clX = tileEngineX.clusters[entry.cx];
-          const clY = tileEngineY.clusters[entry.cy];
-          const clZ = currentDim === 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
-          if (!clX || !clY || (currentDim === 3 && !clZ)) return;
-          const pr = getProjectedCoord({ x: clX.val, y: clY.val, z: clZ.val });
-          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-          if (pos.px >= rect.x - 20 && pos.px <= rect.x + rect.w + 20 &&
-              pos.py >= rect.y - 20 && pos.py <= rect.y + rect.h + 20) {
-            drawnClustersCount++;
-          }
-        });
-      } else {
-        clusters.forEach(c => {
-          const pr = getProjectedCoord(c);
-          const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
-          if (pos.px >= rect.x - 20 && pos.px <= rect.x + rect.w + 20 &&
-              pos.py >= rect.y - 20 && pos.py <= rect.y + rect.h + 20) {
-            drawnClustersCount++;
-          }
-        });
-      }
-
-      const labelPts = `${drawnPointsCount.toLocaleString()} pts`;
-      const labelClust = `${drawnClustersCount.toLocaleString()} cl`;
-      const fullText = `${labelPts}  •  ${labelClust}`;
-
-      ctx.save();
-      ctx.font = 'bold 9.5px monospace';
-      const textW = ctx.measureText(fullText).width;
-      const boxW = textW + 14;
-      const boxH = 18;
-      const boxX = rect.x + rect.w - boxW - 8;
-      const boxY = rect.y + 28;
-
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-      ctx.lineWidth = 1.0;
-      ctx.beginPath();
-      ctx.roundRect(boxX, boxY, boxW, boxH, 4);
-      ctx.fill();
-      ctx.stroke();
-
-      const midBoxY = boxY + boxH / 2;
-      let curX = boxX + 7;
-
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#cbd5e1';
-      ctx.fillText(labelPts, curX, midBoxY);
-      curX += ctx.measureText(labelPts).width;
-
-      ctx.fillStyle = 'rgba(100, 116, 139, 0.7)';
-      ctx.fillText('  •  ', curX, midBoxY);
-      curX += ctx.measureText('  •  ').width;
-
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillText(labelClust, curX, midBoxY);
-      ctx.restore();
-
-      // 8. Dedicated Corner Zoom Box (One per Viewport)
-      const view = quadViews[qIdx] || { zoom: 1.0 };
-      const zoomPct = Math.round((view.zoom || 1.0) * 100);
-      const zoomText = `Zoom: ${zoomPct}%`;
-
-      ctx.save();
-      ctx.font = 'bold 9.5px monospace';
-      const zoomTextW = ctx.measureText(zoomText).width;
-      const zoomBoxW = zoomTextW + 14;
-      const zoomBoxH = 18;
-      const zoomBoxX = boxX - zoomBoxW - 6;
-      const zoomBoxY = rect.y + 28;
-
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
-      ctx.strokeStyle = (zoomPct !== 100) ? 'rgba(74, 222, 128, 0.6)' : 'rgba(56, 189, 248, 0.35)';
-      ctx.lineWidth = 1.0;
-      ctx.beginPath();
-      ctx.roundRect(zoomBoxX, zoomBoxY, zoomBoxW, zoomBoxH, 4);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = (zoomPct !== 100) ? '#4ade80' : '#94a3b8';
-      ctx.fillText(zoomText, zoomBoxX + zoomBoxW / 2, zoomBoxY + zoomBoxH / 2);
-      ctx.restore();
 
       ctx.restore();
     }

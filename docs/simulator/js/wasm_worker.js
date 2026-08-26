@@ -286,6 +286,8 @@ function getSnapshot() {
       entropySumInitial: tArr[14] || 0,
       entropyMaxInitial: tArr[15] || 0,
       entropyLastInitial: tArr[16] || 0,
+      dccEntriesPopulated: tArr[17] || 0,
+      dccPairsTotal: tArr[18] || 0,
     }
   };
 }

@@ -177,6 +177,11 @@
                       data-tooltip-badge="Shortcut: R"
                       data-tooltip-color="cyan"
                       data-tooltip-desc="Clears both the staged dataset and established cluster models, returning the canvas to a clean blank grid.">&#8635; Reset All</button>
+              <button id="btnPass2Nearest" class="btn-action"
+                      data-tooltip-title="Run 2nd Pass (Nearest Anchor Reallocation)"
+                      data-tooltip-badge="Shortcut: 2 / P"
+                      data-tooltip-color="green"
+                      data-tooltip-desc="Reallocates all points in the dataset to their globally closest cluster anchor using triangle-inequality bounds, updating cluster assignments and quality metrics.">🔄 2nd Pass</button>
               <div class="toolbar-divider"></div>
               <button id="btnAddPoint" class="btn-toggle toggle-amber" 
                       data-tooltip-title="Toggle Interactive Point Injection" 
@@ -648,6 +653,11 @@
                        data-tooltip-badge="CLI: -sparse_dcc" 
                        data-tooltip-color="purple" 
                        data-tooltip-desc="Replaces the dense O(K²) cluster-to-cluster distance matrix with sparse interval bounds [d_min, d_max], reducing memory and compute for large cluster counts.">-sparse_dcc</div>
+                  <div id="optPass2Nearest" class="toggle-btn" 
+                       data-tooltip-title="Second Pass Nearest-Anchor Reassignment" 
+                       data-tooltip-badge="CLI: -pass2nearest" 
+                       data-tooltip-color="green" 
+                       data-tooltip-desc="Auto-runs a second pass when clustering completes: reallocates all points to their closest cluster anchor using triangle-inequality bounds.">-pass2nearest</div>
                 </div>
                 <div class="control-row" id="rowXTileDecay" style="display: none; margin-top: 4px;">
                   <div class="control-label">
@@ -814,6 +824,84 @@
 
         <div class="card-body">
           <div class="card-body-scroll">
+            
+            <!-- Lines & Vectors Overlay Controls -->
+            <div class="sub-control-card">
+              <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
+                <span>Lines &amp; Vectors Overlays</span>
+              </div>
+              <div class="toggle-group"
+                   style="grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 4px;">
+                <div id="optToggleDistLines" class="toggle-btn toggle-active"
+                     data-tooltip-title="Distance Evaluation Lines"
+                     data-tooltip-badge="Distance Rays"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Draws distance evaluation rays.">
+                  Distance Lines
+                </div>
+                <div id="optToggleKnnLines" class="toggle-btn toggle-active toggle-green"
+                     data-tooltip-title="k-NN Graph Lines"
+                     data-tooltip-badge="k-NN"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Draws vector lines to k nearest neighbors.">
+                  k-NN Graph
+                </div>
+                <div id="optToggleTransitionLines" class="toggle-btn toggle-active toggle-amber"
+                     data-tooltip-title="Markov Transition Vectors"
+                     data-tooltip-badge="Transition Graph"
+                     data-tooltip-color="amber"
+                     data-tooltip-desc="Draws Markov transition vector arcs between clusters.">
+                  Markov Vectors
+                </div>
+                <div id="optToggleClusterRadii" class="toggle-btn toggle-active"
+                     data-tooltip-title="Cluster Receptive Boundaries"
+                     data-tooltip-badge="Radius: rlim"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Draws 2D circle outlines or 3D wireframe rings for rlim.">
+                  Boundaries (r<sub>lim</sub>)
+                </div>
+                <div id="optToggleGridAxes" class="toggle-btn toggle-active toggle-teal"
+                     style="grid-column: span 2;"
+                     data-tooltip-title="Grid &amp; Coordinate Axes"
+                     data-tooltip-badge="Background Grid"
+                     data-tooltip-color="teal"
+                     data-tooltip-desc="Draws axes, floor grid, and 3D bounding box.">
+                  Grid &amp; Coordinate Axes
+                </div>
+              </div>
+            </div>
+
+            <!-- Labels & Text Badges -->
+            <div class="sub-control-card">
+              <div class="control-label" style="font-weight: 700; color: var(--accent-teal);">
+                <span>Labels &amp; Text Badges</span>
+              </div>
+              <div class="toggle-group"
+                   style="grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 4px;">
+                <div id="optToggleClusterLabels" class="toggle-btn toggle-active"
+                     data-tooltip-title="Cluster ID Labels"
+                     data-tooltip-badge="Anchor Labels"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Displays C0, C1, C2... text tags on clusters.">
+                  Cluster IDs
+                </div>
+                <div id="optToggleDistLabels" class="toggle-btn toggle-active toggle-green"
+                     data-tooltip-title="Distance Measurement Pills"
+                     data-tooltip-badge="Pill Badges"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Displays distance value pills and step sequence badges.">
+                  Dist Pills
+                </div>
+                <div id="optToggleViewportHUD" class="toggle-btn toggle-active toggle-teal"
+                     data-tooltip-title="Viewport HUD &amp; Stats"
+                     data-tooltip-badge="HUD Overlay"
+                     data-tooltip-color="teal"
+                     data-tooltip-desc="Displays viewport headers, stats, and zoom box.">
+                  Viewport HUD
+                </div>
+              </div>
+            </div>
+
             <!-- Visual Balance & Point Sizing -->
             <div class="sub-control-card">
               <div class="control-label" style="font-weight: 700; color: var(--accent-blue);">
@@ -823,13 +911,15 @@
                 <div class="control-label">
                   <span>Visual Focus (Samples ⟷ Clusters)</span>
                   <div class="val-box">
-                    <input type="number" id="inputFocus" class="val-input" min="0" max="100" step="1" value="20">
+                    <input type="number" id="inputFocus" class="val-input" min="0" max="100"
+                           step="1" value="20">
                     <span class="val-unit" id="lblFocusUnit">% (Points Emph)</span>
                   </div>
                 </div>
                 <input type="range" id="sliderFocus" min="0" max="100" step="1" value="20">
               </div>
-              <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px; margin-bottom: 10px;">
+              <div style="display:flex; justify-content: space-between; font-size: 0.68rem;
+                          color: var(--text-muted); margin-top: -2px; margin-bottom: 10px;">
                 <span>0%: Points Only</span>
                 <span>50%: Balanced</span>
                 <span>100%: Clusters Only</span>
@@ -839,73 +929,42 @@
                 <div class="control-label">
                   <span>Sample Point Size (<span class="badge-pill">radius</span>)</span>
                   <div class="val-box">
-                    <input type="number" id="inputPointSize" class="val-input" min="0.25" max="20.0" step="0.25" value="1.5">
+                    <input type="number" id="inputPointSize" class="val-input" min="0.25"
+                           max="20.0" step="0.25" value="1.5">
                     <span class="val-unit">px</span>
                   </div>
                 </div>
-                <input type="range" id="sliderPointSize" min="0.5" max="8.0" step="0.25" value="1.5" 
+                <input type="range" id="sliderPointSize" min="0.5" max="8.0" step="0.25"
+                       value="1.5" 
                        data-tooltip-title="Sample Point Size" 
                        data-tooltip-badge="Display: Radius" 
                        data-tooltip-color="teal" 
-                       data-tooltip-desc="Adjusts rendering radius of past ingested sample points (0.5px to 8.0px) across all 2D and 3D viewports.">
+                       data-tooltip-desc="Adjusts rendering radius of past sample points.">
               </div>
-              <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
+              <div style="display:flex; justify-content: space-between; font-size: 0.68rem;
+                          color: var(--text-muted); margin-top: -2px;">
                 <span>0.5 px (Fine)</span>
                 <span>1.5 px (Default)</span>
                 <span>8.0 px (Large)</span>
               </div>
 
-              <div class="control-row" style="margin-top: 10px;">
-                <div class="control-label">
-                  <span>Show Past Samples</span>
+              <!-- Sample Visibility & Hover Inspector Toggles -->
+              <div class="toggle-group"
+                   style="grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px;
+                          margin-bottom: 6px;">
+                <div id="optToggleShowSamples" class="toggle-btn toggle-active toggle-teal"
+                     data-tooltip-title="Show Past Samples"
+                     data-tooltip-badge="Point Cloud"
+                     data-tooltip-color="teal"
+                     data-tooltip-desc="Toggle visibility of the past sample point cloud overlay.">
+                  Past Samples
                 </div>
-                <div class="toggle-group" style="grid-template-columns: 1fr 1fr;">
-                  <div id="optShowSamples" class="toggle-btn toggle-active"
-                       data-tooltip-title="Show Past Samples"
-                       data-tooltip-badge="Point Cloud"
-                       data-tooltip-color="teal"
-                       data-tooltip-desc="Toggle visibility of the past sample point cloud overlay.">Show</div>
-                  <div id="optHideSamples" class="toggle-btn"
-                       data-tooltip-title="Hide Past Samples"
-                       data-tooltip-badge="Point Cloud"
-                       data-tooltip-color="teal"
-                       data-tooltip-desc="Hide the past sample point cloud overlay for a cleaner cluster-only view.">Hide</div>
-                </div>
-              </div>
-
-              <div class="control-row" style="margin-top: 6px;">
-                <div class="control-label">
-                  <span>Show k-NN Graph Lines</span>
-                </div>
-                <div class="toggle-group" style="grid-template-columns: 1fr 1fr;">
-                  <div id="optShowKnnLines" class="toggle-btn toggle-active"
-                       data-tooltip-title="Show k-NN Graph Lines"
-                       data-tooltip-badge="k-NN"
-                       data-tooltip-color="green"
-                       data-tooltip-desc="Draws vector lines connecting the active or selected query sample to its k nearest neighbors.">Show</div>
-                  <div id="optHideKnnLines" class="toggle-btn"
-                       data-tooltip-title="Hide k-NN Graph Lines"
-                       data-tooltip-badge="k-NN"
-                       data-tooltip-color="green"
-                       data-tooltip-desc="Hides the k-NN graph connection vectors.">Hide</div>
-                </div>
-              </div>
-
-              <div class="control-row" style="margin-top: 6px;">
-                <div class="control-label">
-                  <span>Highlight Closest Sample on Hover</span>
-                </div>
-                <div class="toggle-group" style="grid-template-columns: 1fr 1fr;">
-                  <div id="optHighlightClosestOn" class="toggle-btn toggle-active"
-                       data-tooltip-title="Highlight Closest Sample on Hover"
-                       data-tooltip-badge="Hover Inspector"
-                       data-tooltip-color="cyan"
-                       data-tooltip-desc="When moving mouse over the view, automatically finds and highlights the nearest ingested sample point with a target reticle and coordinate tooltip.">ON</div>
-                  <div id="optHighlightClosestOff" class="toggle-btn"
-                       data-tooltip-title="Disable Hover Highlight"
-                       data-tooltip-badge="Hover Inspector"
-                       data-tooltip-color="cyan"
-                       data-tooltip-desc="Disables hover-based nearest sample point highlighting on the viewports.">OFF</div>
+                <div id="optToggleHighlightClosest" class="toggle-btn toggle-active"
+                     data-tooltip-title="Highlight Closest Sample on Hover"
+                     data-tooltip-badge="Hover Inspector"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="When moving mouse over view, highlights nearest point.">
+                  Hover Inspector
                 </div>
               </div>
 
@@ -913,20 +972,34 @@
                 <div class="control-label">
                   <span>Max Displayed Points</span>
                   <div class="val-box">
-                    <input type="number" id="inputMaxDrawPts" class="val-input" min="100" max="100000" step="500" value="10000" style="width:64px;">
+                    <input type="number" id="inputMaxDrawPts" class="val-input" min="100"
+                           max="100000" step="500" value="10000" style="width:64px;">
                     <span class="val-unit">pts</span>
                   </div>
                 </div>
-                <input type="range" id="sliderMaxDrawPts" min="500" max="15000" step="500" value="10000"
+                <input type="range" id="sliderMaxDrawPts" min="500" max="15000" step="500"
+                       value="10000"
                        data-tooltip-title="Max Displayed Points"
                        data-tooltip-badge="Display: Draw Cap"
                        data-tooltip-color="teal"
-                       data-tooltip-desc="Maximum number of past sample points drawn per frame. Higher values show more detail but may reduce rendering performance.">
+                       data-tooltip-desc="Max points drawn. Zooming in renders more points in FOV.">
               </div>
-              <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
+              <div style="display:flex; justify-content: space-between; font-size: 0.68rem;
+                          color: var(--text-muted); margin-top: -2px;">
                 <span>500 (Fast)</span>
                 <span>3,000 (Default)</span>
                 <span>15,000 (Dense)</span>
+              </div>
+              <div id="lblPointDensityStatus"
+                   style="display: flex; align-items: center; justify-content: space-between;
+                          background: rgba(15, 23, 42, 0.45);
+                          border: 1px solid rgba(255, 255, 255, 0.06);
+                          border-radius: 5px; padding: 4px 8px; font-size: 0.68rem;
+                          margin-top: 5px;">
+                <span style="color: var(--text-muted);">FOV Point Density:</span>
+                <span id="txtPointDensityMode" style="color: #38bdf8; font-weight: 600;">
+                  Dynamic FOV (Zoom in for full detail)
+                </span>
               </div>
 
               <div class="control-row">
@@ -1007,14 +1080,131 @@
         </div>
       </div>
 
-      <!-- Resizer 3 (between Display & View and CLI Console & Command) -->
+      <!-- Resizer between Display & View and Data Files -->
+      <div class="panel-resizer" id="resizerDataFiles" 
+           data-tooltip-title="Vertical Panel Resizer" 
+           data-tooltip-badge="Drag Handle" 
+           data-tooltip-color="cyan" 
+           data-tooltip-desc="Adjust proportional height distribution."></div>
+
+      <!-- 4. Data Files & Workspace Tracker -->
+      <div id="cardDataFiles" class="card collapsed" style="flex: 0 0 auto;">
+        <div class="card-title" onclick="togglePanelCollapse('cardDataFiles')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseDataFiles" 
+                    data-tooltip-title="Collapse / Expand Data Files &amp; Workspace" 
+                    data-tooltip-badge="Card Toggle" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Track active session data structures and workspace." 
+                    onclick="event.stopPropagation();
+                             togglePanelCollapse('cardDataFiles');">▾</button>
+            <span>Data Files &amp; Workspace</span>
+          </div>
+          <span id="badgeDataFilesCount"
+                style="font-size: 0.72rem; color: var(--accent-cyan); font-weight: 600;">
+            8 structures
+          </span>
+        </div>
+
+        <div class="card-body">
+          <div class="card-body-scroll">
+            
+            <!-- Section 1: Mode & Storage Status Banner -->
+            <div class="sub-control-card" style="padding: 8px 10px; margin-bottom: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span id="iconStorageMode" style="font-size: 1.1rem;">⚡</span>
+                  <div>
+                    <div id="txtStorageModeTitle"
+                         style="font-size: 0.75rem; font-weight: 700; color: #38bdf8;">
+                      WebAssembly Sandbox
+                    </div>
+                    <div id="txtStorageModeSubtitle"
+                         style="font-size: 0.68rem; color: var(--text-muted);
+                                font-family: monospace;">
+                      In-Browser Memory
+                    </div>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 4px;">
+                  <button id="btnSaveAllDataStructures" class="btn-action primary"
+                          style="padding: 3px 8px; font-size: 0.70rem; font-weight: 700;"
+                          data-tooltip-title="Save All Data Structures to Disk"
+                          data-tooltip-badge="Export .clusterdat"
+                          data-tooltip-color="green"
+                          data-tooltip-desc="Exports all data structures to disk folder.">
+                    💾 Save All
+                  </button>
+                  <button id="btnDownloadAllZip" class="btn-action"
+                          style="padding: 3px 7px; font-size: 0.70rem;"
+                          data-tooltip-title="Download All Structures as ZIP"
+                          data-tooltip-badge="Download .zip"
+                          data-tooltip-color="teal"
+                          data-tooltip-desc="Packages all data structures into a .zip archive.">
+                    📦 ZIP
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Tabs: Current Structures vs Workspace Browser -->
+            <div class="tab-nav" style="margin-bottom: 8px;">
+              <div class="tab-item active" id="tabNavDataStructures"
+                   onclick="switchDataFilesTab('structures')">
+                📊 Active Structures
+              </div>
+              <div class="tab-item" id="tabNavWorkspaceFiles"
+                   onclick="switchDataFilesTab('workspace')">
+                📁 Workspace Map
+              </div>
+            </div>
+
+            <!-- Tab Pane 1: Active In-Memory Data Structures -->
+            <div id="tabPaneDataStructures">
+              <div id="dataStructuresList"
+                   style="display: flex; flex-direction: column; gap: 6px;">
+                <!-- Populated dynamically by DataManager / main.js -->
+              </div>
+            </div>
+
+            <!-- Tab Pane 2: Workspace Directory Map (Native / Local Folder) -->
+            <div id="tabPaneWorkspaceFiles" style="display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center;
+                          margin-bottom: 6px;">
+                <span id="lblWorkspaceTreeHeader"
+                      style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600;">
+                  Workspace Contents:
+                </span>
+                <button id="btnRefreshWorkspaceTree" class="btn-action"
+                        style="padding: 2px 7px; font-size: 0.68rem;"
+                        data-tooltip-title="Rescan Workspace"
+                        data-tooltip-badge="Directory Scan"
+                        data-tooltip-color="cyan"
+                        data-tooltip-desc="Reloads files and folders from workspace directory.">
+                  🔄 Refresh
+                </button>
+              </div>
+              <div id="workspaceFilesTree"
+                   style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border);
+                          border-radius: 6px; padding: 6px 8px; min-height: 120px;
+                          max-height: 240px; overflow-y: auto; font-family: monospace;
+                          font-size: 0.72rem;">
+                <!-- Populated dynamically with files, .clusterdat directories, and SHM streams -->
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Resizer 3 (between Data Files and CLI Console & Command) -->
       <div class="panel-resizer" id="resizer3" 
            data-tooltip-title="Vertical Panel Resizer" 
            data-tooltip-badge="Drag Handle" 
            data-tooltip-color="cyan" 
-           data-tooltip-desc="Click and drag vertically to adjust proportional height distribution between Display &amp; View and CLI Console &amp; Command."></div>
+           data-tooltip-desc="Adjust proportional height distribution."></div>
 
-      <!-- 4. CLI Console & Command -->
+      <!-- 5. CLI Console & Command -->
       <div id="cardCli" class="card collapsed" style="flex: 0 0 auto;">
         <div class="card-title" onclick="togglePanelCollapse('cardCli')">
           <div style="display: flex; align-items: center; gap: 6px;">
@@ -1223,12 +1413,15 @@
                   <div class="lbl" id="lblStatTotalDists">Distances (<span id="statDistRate">0</span>/s)</div>
                 </div>
                 <div class="stat-box"
-                     data-tooltip-title="Distance Breakdown Ratio"
+                     data-tooltip-title="Distance Breakdown &amp; DCC Matrix"
                      data-tooltip-badge="Compute"
                      data-tooltip-color="green"
-                     data-tooltip-desc="Ratio of candidate evaluation distance calls d(f,c) to cluster matrix maintenance calls d(ci,cj).">
-                  <div id="statDistRatio" class="num" style="color: var(--accent-green); font-size: 1.05rem;">0 / 0</div>
-                  <div class="lbl">SC (Eval) / CC (Matrix)</div>
+                     data-tooltip-desc="Ratio of sample evaluation calls d(f,c) to explicit inter-cluster matrix maintenance calls d(ci,cj), alongside total DCC entries populated in the distance matrix.">
+                  <div class="num" style="display: flex; justify-content: center; align-items: baseline; gap: 6px; flex-wrap: wrap;">
+                    <span id="statDistRatio" style="color: var(--accent-green); font-size: 1.15rem;">0 / 0</span>
+                    <span id="statDccPopBadge" style="color: #c084fc; font-size: 1.15rem; font-weight: 700;">[0 pop]</span>
+                  </div>
+                  <div class="lbl" id="lblStatDistRatio">SC (Eval) / CC (Expl) • DCC Populated</div>
                 </div>
                 <div class="stat-box"
                      data-tooltip-title="Model Memory Footprint"
@@ -1509,19 +1702,26 @@
                 <input type="range" id="sliderKnnEps" min="0.00" max="0.30" step="0.01" value="0.00">
               </div>
 
+              <!-- Multi-Pivot Toggle (AESA / LAESA Indexing) -->
+              <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 2px;">
+                <div id="btnKnnMultiPivot" class="toggle-btn"
+                     data-tooltip-title="Multi-Anchor Pivot Bounding (AESA / LAESA)"
+                     data-tooltip-badge="CLI: -multipivot"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Uses multiple previously evaluated anchors as geometric pivots to prune candidate samples before distance calculation.">
+                  Multi-Pivot Pruning (-multipivot)
+                </div>
+              </div>
+
               <!-- Canvas Ray Overlay Toggle -->
-              <div class="control-label" style="font-size: 0.72rem; margin-top: 2px;">k-NN Graph Ray Overlay</div>
-              <div class="toggle-group">
-                <div id="optShowKnnLines" class="toggle-btn toggle-active"
-                     data-tooltip-title="Show k-NN Lines on Canvas"
-                     data-tooltip-badge="Display"
+              <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 6px;">
+                <div id="optToggleKnnLinesKnnCard" class="toggle-btn toggle-active toggle-green"
+                     data-tooltip-title="k-NN Graph Ray Overlay"
+                     data-tooltip-badge="Display: k-NN Rays"
                      data-tooltip-color="green"
-                     data-tooltip-desc="Draws translucent glowing vector rays connecting the selected query point to its top-k nearest neighbors on 2D and 3D canvases.">Show Lines</div>
-                <div id="optHideKnnLines" class="toggle-btn"
-                     data-tooltip-title="Hide k-NN Lines on Canvas"
-                     data-tooltip-badge="Display"
-                     data-tooltip-color="amber"
-                     data-tooltip-desc="Hides vector lines connecting nearest neighbors on the canvas viewports.">Hide Lines</div>
+                     data-tooltip-desc="Draws glowing vector rays to k neighbors.">
+                  k-NN Graph Ray Overlay
+                </div>
               </div>
             </div>
           </div>
@@ -1555,7 +1755,7 @@
 
         <div class="card-body">
           <!-- 4-Tab Bar for k-NN Resources -->
-          <div class="config-tabs" style="margin-bottom: 6px;">
+          <div class="config-tab-bar" style="margin-bottom: 6px;">
             <div id="tabKnnResOverview" class="config-tab-btn active"
                  data-tooltip-title="k-NN Overview &amp; Efficiency"
                  data-tooltip-badge="k-NN"
@@ -1839,6 +2039,46 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- File Content & Structure Viewer Modal -->
+  <div id="modalFileViewer" class="file-modal-overlay" style="display: none;">
+    <div class="file-modal-container">
+      <div style="display: flex; justify-content: space-between; align-items: center;
+                  border-bottom: 1px solid var(--card-border); padding: 10px 14px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span id="fileViewerIcon" style="font-size: 1.2rem;">📄</span>
+          <div>
+            <div id="fileViewerTitle"
+                 style="font-size: 0.88rem; font-weight: 700; color: #38bdf8;">
+              centroids.txt
+            </div>
+            <div id="fileViewerSubtitle"
+                 style="font-size: 0.68rem; color: var(--text-muted);">
+              46 clusters • 2.4 KB
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <button id="btnCopyFileViewer" class="btn-action"
+                  style="padding: 3px 8px; font-size: 0.70rem;">📋 Copy</button>
+          <button id="btnDownloadFileViewer" class="btn-action primary"
+                  style="padding: 3px 8px; font-size: 0.70rem;">💾 Download</button>
+          <button id="btnCloseFileViewer" class="btn-action"
+                  style="padding: 3px 8px; font-size: 0.78rem;"
+                  onclick="closeFileViewerModal()">✕</button>
+        </div>
+      </div>
+      <div style="padding: 10px 14px; flex: 1; overflow-y: auto;">
+        <pre id="fileViewerContent"
+             style="background: #090d16; border: 1px solid rgba(56, 189, 248, 0.25);
+                    border-radius: 6px; padding: 10px 12px;
+                    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+                    font-size: 0.74rem; line-height: 1.45; color: #e2e8f0;
+                    white-space: pre-wrap; word-break: break-all; margin: 0;
+                    max-height: 55vh; overflow-y: auto;"></pre>
       </div>
     </div>
   </div>

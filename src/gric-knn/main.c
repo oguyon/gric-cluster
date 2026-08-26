@@ -72,6 +72,10 @@ static void print_help(
            ansi_color_green, ansi_reset);
     printf("  %s-txt%s                  Force ASCII text output format\n",
            ansi_color_green, ansi_reset);
+    printf("  %s-multipivot%s, %s-multi_pivot%s Enable Multi-Anchor Pivot Bounding (AESA)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-no-reciprocal%s         Disable Symmetric Distance Reciprocal Push\n",
+           ansi_color_green, ansi_reset);
     printf("  %s-progress%s             Display live progress bar\n",
            ansi_color_green, ansi_reset);
     printf("  %s-v, -vv%s               Verbosity level\n",
@@ -100,6 +104,7 @@ int main(
     config.output_format = KNN_FORMAT_AUTO;
     config.progress_mode = 0;
     config.verbose_level = 1;
+    config.use_reciprocal = 1; // Enabled by default for bidirectional search
 
     int arg_idx = 1;
     while (arg_idx < argc)
@@ -197,6 +202,29 @@ int main(
         {
             config.output_format = KNN_FORMAT_TXT;
         }
+        else if (strcmp(argv[arg_idx], "-multipivot") == 0 ||
+                 strcmp(argv[arg_idx], "--multipivot") == 0 ||
+                 strcmp(argv[arg_idx], "-multi_pivot") == 0 ||
+                 strcmp(argv[arg_idx], "--multi-pivot") == 0)
+        {
+            config.use_multi_pivot = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-multipivot") == 0 ||
+                 strcmp(argv[arg_idx], "-no_multipivot") == 0)
+        {
+            config.use_multi_pivot = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-reciprocal") == 0 ||
+                 strcmp(argv[arg_idx], "--reciprocal") == 0)
+        {
+            config.use_reciprocal = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-reciprocal") == 0 ||
+                 strcmp(argv[arg_idx], "--no-reciprocal") == 0 ||
+                 strcmp(argv[arg_idx], "-noreciprocal") == 0)
+        {
+            config.use_reciprocal = 0;
+        }
         else if (strcmp(argv[arg_idx], "-progress") == 0)
         {
             config.progress_mode = 1;
@@ -257,10 +285,12 @@ int main(
     if (config.past_only)
     {
         printf("  Direction:     Past-only (j < i)\n");
+        config.use_reciprocal = 0;
     }
     else if (config.future_only)
     {
         printf("  Direction:     Future-only (j > i)\n");
+        config.use_reciprocal = 0;
     }
     else
     {
@@ -273,6 +303,14 @@ int main(
     if (config.rlim_cutoff > 0.0)
     {
         printf("  Radius Cutoff: %.6f\n", config.rlim_cutoff);
+    }
+    if (config.use_multi_pivot)
+    {
+        printf("  Multi-Pivot:   Enabled (AESA/LAESA Indexing)\n");
+    }
+    if (config.use_reciprocal)
+    {
+        printf("  Reciprocal:    Enabled (Symmetric d(i,j)=d(j,i))\n");
     }
     printf("\n");
 
@@ -338,7 +376,7 @@ int main(
     printf("  Total Query Frames:        %ld\n", model.total_dataset_frames);
     printf("  Framedist Computations:    %lu (vs %lu brute-force)\n",
            (unsigned long)telemetry.framedist_calls, (unsigned long)total_brute_force);
-    printf("  Metric Pruning Efficiency: %s%.2f%%%s calls pruned!\n",
+    printf("  Metric Pruning Efficiency: %s%.4f%%%s calls pruned!\n",
            ansi_bold_green, prune_pct, ansi_reset);
     if (telemetry.level0_super_clusters_pruned > 0)
     {
@@ -348,6 +386,11 @@ int main(
     printf("  Level 1 Clusters Pruned:   %lu\n", (unsigned long)telemetry.level1_clusters_pruned);
     printf("  Level 2 Anchors Pruned:    %lu\n", (unsigned long)telemetry.level2_anchors_pruned);
     printf("  Level 3 Annular Pruned:    %lu\n", (unsigned long)telemetry.level3_annular_pruned);
+    if (telemetry.reciprocal_reused > 0)
+    {
+        printf("  Reciprocal Reused:         %lu\n",
+               (unsigned long)telemetry.reciprocal_reused);
+    }
     printf("  Temporal Exclusions:       %lu\n", (unsigned long)telemetry.temporal_pruned);
     printf("  Search Wall Time:          %.2f ms (%.1f fps)\n", telemetry.time_search_ms, fps);
     printf("  Output Write Time:         %.2f ms\n", write_time_ms);

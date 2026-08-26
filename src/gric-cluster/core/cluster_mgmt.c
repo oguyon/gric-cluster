@@ -246,6 +246,20 @@ void remove_cluster(
     // 7. Decrement Num Clusters
     state->num_clusters--;
 
-    // 8. Recompute Geometric Consistency Mask
+    // 8. Recompute Geometric Consistency Mask and update DCC count
     recompute_consistency_mask(config, state);
+
+    uint64_t pop_count = 0;
+    for (int i = 0; i < state->num_clusters; i++)
+    {
+        const char *row = &state->scratch.dcc_measured[i * N];
+        for (int j = i + 1; j < state->num_clusters; j++)
+        {
+            if (row[j])
+            {
+                pop_count++;
+            }
+        }
+    }
+    state->telemetry.dcc_entries_populated = pop_count;
 }

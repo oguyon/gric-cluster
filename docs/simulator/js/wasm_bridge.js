@@ -269,7 +269,7 @@ const GricWasm = (function () {
     _fn.knnRunSearch = M.cwrap('wasm_knn_run_search', 'number', [
       'number', 'number', 'number', 'number', 'number', 'number',
       'number', 'number', 'number', 'number', 'number', 'number',
-      'number'
+      'number', 'number'
     ]);
   }
 
@@ -653,6 +653,8 @@ const GricWasm = (function () {
         entropySumInitial: telemetryArr[14] || 0,
         entropyMaxInitial: telemetryArr[15] || 0,
         entropyLastInitial: telemetryArr[16] || 0,
+        dccEntriesPopulated: telemetryArr[17] || 0,
+        dccPairsTotal: telemetryArr[18] || 0,
       }
     };
   }
@@ -813,6 +815,8 @@ const GricWasm = (function () {
       distClusterCluster = t.framedistIntercluster;
       distSampleClusterLast = t.lastFrameDfc;
       distClusterClusterLast = t.lastFrameDcc;
+      dccPopulated = t.dccEntriesPopulated || 0;
+      dccPairsTotal = t.dccPairsTotal || (clusters.length > 1 ? (clusters.length * (clusters.length - 1) / 2) : 0);
 
       // Update pruning breakdown based on active pruneMode
       if (pruneMode === '4P') {
@@ -1365,6 +1369,7 @@ const GricWasm = (function () {
     const futureOnly = (config.direction === 'future') ? 1 : 0;
     const eps = config.epsilon || 0.0;
     const rlimCutoff = config.rlim || 0.0;
+    const useMultiPivot = (config.multiPivot || (typeof knnMvp !== 'undefined' && knnMvp)) ? 1 : 0;
 
     const pointsBytes = N * ndim * 8;
     const indicesBytes = N * k * 4;
@@ -1407,6 +1412,7 @@ const GricWasm = (function () {
       futureOnly,
       eps,
       rlimCutoff,
+      useMultiPivot,
       indicesPtr,
       distsPtr,
       telemPtr
@@ -1624,6 +1630,9 @@ function buildCliCommand() {
     if (typeof knnRlim === 'number' && knnRlim > 0) {
       knnParts.push('-rlim', knnRlim.toFixed(3));
     }
+    if (typeof knnMvp === 'boolean' && knnMvp) {
+      knnParts.push('-multipivot');
+    }
     knnParts.push('-o', 'knn_results.fits');
     return parts.join(' ') + ' && \\\n' + knnParts.join(' ');
   }
@@ -1691,6 +1700,9 @@ const GricWasmWorker = (function () {
         if (msg.snapshot) {
           GricWasm.applyToJsState(msg.snapshot);
         }
+        if (typeof clearActiveFrameEvaluations === 'function') {
+          clearActiveFrameEvaluations(true);
+        }
         if (typeof _onDoneCb === 'function') {
           _onDoneCb(msg.totalFrames);
         }
@@ -1700,6 +1712,9 @@ const GricWasmWorker = (function () {
         _busy = false;
         if (msg.snapshot) {
           GricWasm.applyToJsState(msg.snapshot);
+        }
+        if (typeof clearActiveFrameEvaluations === 'function') {
+          clearActiveFrameEvaluations(true);
         }
         break;
 
