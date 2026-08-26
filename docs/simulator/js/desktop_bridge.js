@@ -81,22 +81,17 @@ const DesktopBridge = (function () {
   function isMobileDevice() {
     if (typeof navigator === 'undefined') return false;
     const ua = navigator.userAgent || navigator.vendor || (window.opera || '');
-    const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i;
+    const mobileRegex = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
     if (mobileRegex.test(ua)) return true;
     if (navigator.userAgentData && navigator.userAgentData.mobile) return true;
-    if (typeof window !== 'undefined' && window.matchMedia &&
-        window.matchMedia('(max-width: 768px) and (pointer: coarse)').matches) {
-      return true;
-    }
     return false;
   }
 
   /**
    * Check if Native CLI mode is supported on the current device and backend.
-   * @returns {boolean} True only if on a desktop device connected to gric-server with binaries.
+   * @returns {boolean} True only if connected to native gric-server with binaries.
    */
   function isNativeSupported() {
-    if (isMobileDevice()) return false;
     if (!_isDesktop || !_serverInfo) return false;
     if (_serverInfo.binaries && _serverInfo.binaries['gric-cluster'] === false) return false;
     return true;
@@ -196,13 +191,20 @@ const DesktopBridge = (function () {
       await killActiveJob();
     }
 
+    const payload = {
+      cmd: cmd,
+      args: args
+    };
+    if (opts.streamFile) payload.stream_file = opts.streamFile;
+    if (opts.streamName) payload.stream_name = opts.streamName;
+    if (typeof opts.streamFps === 'number') payload.stream_fps = opts.streamFps;
+    if (typeof opts.streamLoop === 'boolean') payload.stream_loop = opts.streamLoop;
+    if (typeof opts.streamCnt2sync === 'boolean') payload.stream_cnt2sync = opts.streamCnt2sync;
+
     const runResp = await _fetchApi('/api/cli/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        cmd: cmd,
-        args: args
-      })
+      body: JSON.stringify(payload)
     });
 
     if (!runResp.ok) {

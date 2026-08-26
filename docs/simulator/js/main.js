@@ -182,44 +182,30 @@
       }
     }
 
-//  ASYNC PRODUCER-CONSUMER DISPLAY LOOP & COMPUTE ENGINE
+// =========================================================================
+    //  SYNCHRONIZED ANIMATION & COMPUTE ENGINE (60 FPS)
     // =========================================================================
-    let displayLoopId = null;
-
-    function startDisplayLoop() {
-      if (displayLoopId !== null) return;
-      function displayTick() {
-        if (!isRunning && displayLoopId === null) return;
-        // Sync WASM state to JS before rendering (deferred from batch frames)
-        if (useWasm && wasmSessionActive && GricWasm.isReady()) {
-          const snapshot = GricWasm.syncState();
-          if (snapshot) {
-            GricWasm.applyToJsState(snapshot);
-          }
-        }
-        updateUI();
-        draw();
-        if (isRunning) {
-          displayLoopId = requestAnimationFrame(displayTick);
-        } else {
-          displayLoopId = null;
-        }
-      }
-      displayLoopId = requestAnimationFrame(displayTick);
-    }
-
-    function stopDisplayLoop() {
-      if (displayLoopId !== null) {
-        cancelAnimationFrame(displayLoopId);
-        displayLoopId = null;
-      }
-    }
-
     function startSimulation() {
+      if (isRunning) pauseSimulation();
+      if (playTimer) {
+        cancelAnimationFrame(playTimer);
+        clearTimeout(playTimer);
+        clearInterval(playTimer);
+        playTimer = null;
+      }
       if (isAddPointMode) setAddPointMode(false);
 
       if (!benchmarkDataset || benchmarkDataset.length === 0) {
         stageDataset();
+      }
+
+      if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+        if (typeof inspectedImageFrameIdx !== 'undefined') {
+          inspectedImageFrameIdx = -1;
+        }
+        if (typeof inspectedClusterId !== 'undefined') {
+          inspectedClusterId = -1;
+        }
       }
 
       if (!hasMoreFrames()) {
@@ -247,87 +233,291 @@
         btn.classList.remove('primary');
       }
 
-      // Start independent asynchronous 60 FPS display render loop
-      startDisplayLoop();
-
-      if (playSpeed <= 0) {
-        // "⚡ As fast as possible" Mode:
-        // Compute loop runs in ~12ms time-slices,
-        // yielding to the display loop between slices.
-        function pumpCompute() {
-          if (!isRunning) return;
-          const sliceStart = performance.now();
-          while (hasMoreFrames()
-            && (performance.now() - sliceStart < 12))
-          {
-            stepNextFrame(true);
-          }
-          if (!hasMoreFrames()) {
-            pauseSimulation();
-            return;
-          }
-          playTimer = setTimeout(pumpCompute, 0);
-        }
-        playTimer = setTimeout(pumpCompute, 0);
+      // Mode 1: Instant Run to Completion (playSpeed === 0)
+      if (playSpeed === 0) {
+        runClusteringToCompletion();
         return;
       }
 
-      // Paced playback modes (150ms, 50ms, 15ms, 5ms):
-      let lastPacedTime = performance.now();
-      let frameAccumulator = 0;
-      function pacedCompute() {
-        if (!isRunning) return;
-        const now = performance.now();
-        const delta = now - lastPacedTime;
-        lastPacedTime = now;
-        frameAccumulator += delta;
+      // Mode 2: Paced Playback (playSpeed > 0)
+      if (playSpeed > 0) {
+        runPacedSimulation();
+        return;
+      }
 
+      // Mode 3: Decoupled High-Throughput Streaming Preview (playSpeed <= -1)
+      runDecoupledSimulation();
+    }
+
+    function runClusteringToCompletion() {
+      const btn = document.getElementById('btnPlay');
+      if (btn) {
+        btn.innerText = "⏳ Computing...";
+        btn.classList.add('danger');
+        btn.classList.remove('primary');
+      }
+
+      setTimeout(() => {
+        const tStart = performance.now();
+        const startFrames = totalFrames;
+        const isImg = (typeof dataMode !== 'undefined' && dataMode === 'image');
+
+        if (useWasm && wasmSessionActive && GricWasm.isReady() && !isImg && !useTiles) {
+          // Native WASM batch compute on flat coordinates
+          const N = benchmarkDataset ? benchmarkDataset.length : 0;
+          const remaining = N - currentFrameIdx;
+          if (remaining > 0) {
+            const d = currentDim;
+            const flatCoords = new Float64Array(remaining * d);
+            for (let i = 0; i < remaining; i++) {
+              const pt = benchmarkDataset[currentFrameIdx + i];
+              flatCoords[i * d] = pt.x;
+              flatCoords[i * d + 1] = pt.y;
+              if (d === 3) flatCoords[i * d + 2] = pt.z || 0.0;
+            }
+
+            const outAssignments = new Int32Array(remaining);
+            const processed = GricWasm.processBatch(
+              flatCoords, remaining, d, outAssignments
+            );
+
+            for (let i = 0; i < processed; i++) {
+              const frameIdx = currentFrameIdx + i;
+              const assigned = outAssignments[i];
+              const cId = (assigned >= 0)
+                ? assigned
+                : Math.max(0, GricWasm.getNumClusters() - 1);
+              if (frameIdx < pastSamples.length) {
+                pastSamples[frameIdx].clusterId = cId;
+              } else if (pastSamples.length < sampleBufferCap) {
+                const pt = benchmarkDataset[frameIdx];
+                pastSamples.push({
+                  x: pt.x, y: pt.y, z: pt.z || 0,
+                  frameIndex: frameIdx,
+                  clusterId: cId
+                });
+              }
+              if (frameIdx < benchmarkDataset.length) {
+                benchmarkDataset[frameIdx].clusterId = cId;
+              }
+            }
+            currentFrameIdx += processed;
+            totalFrames += processed;
+          }
+        } else {
+          // Standard pipeline until dataset completion
+          while (hasMoreFrames()) {
+            stepNextFrame(true);
+          }
+        }
+
+        const tEnd = performance.now();
+        const durationMs = Math.max(0.1, tEnd - tStart);
+        const framesComputed = totalFrames - startFrames;
+        const ptsPerSec = durationMs > 0.001
+          ? (framesComputed / (durationMs / 1000.0))
+          : 0.0;
+
+        if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+          const snapshot = GricWasm.syncState(true);
+          if (snapshot) {
+            GricWasm.applyToJsState(snapshot);
+          }
+        }
+
+        pauseSimulation();
+
+        // Update session metrics for completed batch
+        sessionElapsedMs = durationMs;
+        sessionAvgFps = ptsPerSec;
+        currentFps = ptsPerSec;
+        currentCpuLoadPct = 100.0;
+        lastComputeTimeMs = durationMs;
+        avgComputeTimeMs = framesComputed > 0
+          ? (durationMs / framesComputed)
+          : 0.0;
+        sessionIsActive = false;
+
+        if (typeof recordFrameTelemetry === 'function') {
+          recordFrameTelemetry(durationMs, framesComputed, distSampleCluster);
+        }
+
+        updateUI();
+        draw();
+
+        if (typeof showToast === 'function') {
+          const rateStr = Number(ptsPerSec.toFixed(0)).toLocaleString();
+          const msg = `⚡ Clustered ${framesComputed.toLocaleString()} pts in ` +
+            `${durationMs.toFixed(1)} ms (${rateStr} pts/sec)`;
+          showToast(msg);
+        }
+      }, 15);
+    }
+
+    function runDecoupledSimulation() {
+      let lastTickTime = performance.now();
+      let lastTelemetryFrames = totalFrames;
+      let lastTelemetryDists = distSampleCluster;
+
+      const isImg = (typeof dataMode !== 'undefined' && dataMode === 'image');
+      const chunkSize = isImg ? 16 : 800;
+      const sliceLimitMs = isImg ? 8 : 12;
+
+      // 1. Decoupled Compute Pump (runs at maximum processor speed)
+      function computePump() {
+        if (!isRunning) return;
+
+        const sliceStart = performance.now();
+        let count = 0;
+        while (hasMoreFrames()
+          && count < chunkSize
+          && (performance.now() - sliceStart < sliceLimitMs))
+        {
+          stepNextFrame(true);
+          count++;
+        }
+
+        if (!hasMoreFrames()) {
+          pauseSimulation();
+          return;
+        }
+
+        if (isRunning) {
+          computePumpTimer = setTimeout(computePump, 0);
+        }
+      }
+
+      // 2. Decoupled Render Pump (smooth 60 FPS viewport refresh)
+      function renderPump() {
+        if (!isRunning && !computePumpTimer) return;
+
+        const now = performance.now();
+        const delta = Math.max(0, now - lastTickTime);
+        lastTickTime = now;
+
+        if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+          const needDcc = (typeof currentTab !== 'undefined' &&
+            (currentTab === 'tm' || currentTab === 'dist'));
+          const snapshot = GricWasm.syncState(needDcc);
+          if (snapshot) {
+            GricWasm.applyToJsState(snapshot);
+          }
+        }
+
+        const framesDelta = totalFrames - lastTelemetryFrames;
+        const timeDelta = Math.max(0.001, delta);
+        if (framesDelta > 0 && typeof recordFrameTelemetry === 'function') {
+          const distsDelta = Math.max(0, distSampleCluster - lastTelemetryDists);
+          recordFrameTelemetry(timeDelta, framesDelta, distsDelta);
+          lastTelemetryFrames = totalFrames;
+          lastTelemetryDists = distSampleCluster;
+        }
+
+        updateUI();
+        draw();
+
+        if (isRunning) {
+          playTimer = requestAnimationFrame(renderPump);
+        }
+      }
+
+      computePumpTimer = setTimeout(computePump, 0);
+      playTimer = requestAnimationFrame(renderPump);
+    }
+
+    function runPacedSimulation() {
+      let lastTickTime = performance.now();
+      let lastTelemetryFrames = totalFrames;
+      let lastTelemetryDists = distSampleCluster;
+      let frameAccumulator = 0;
+
+      function pacedTick() {
+        if (!isRunning) return;
+
+        const now = performance.now();
+        const delta = Math.max(0, now - lastTickTime);
+        lastTickTime = now;
+
+        frameAccumulator += delta;
         const interval = playSpeed;
         let framesToProcess = Math.floor(frameAccumulator / interval);
         if (framesToProcess > 0) {
           frameAccumulator -= framesToProcess * interval;
           framesToProcess = Math.min(framesToProcess, 100);
           for (let f = 0; f < framesToProcess; f++) {
-            if (!hasMoreFrames()) {
-              pauseSimulation();
-              return;
-            }
+            if (!hasMoreFrames()) break;
             stepNextFrame(true);
           }
         }
-        playTimer = setTimeout(pacedCompute, Math.max(0, Math.min(interval, 4)));
+
+        if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+          const needDcc = (typeof currentTab !== 'undefined' &&
+            (currentTab === 'tm' || currentTab === 'dist'));
+          const snapshot = GricWasm.syncState(needDcc);
+          if (snapshot) {
+            GricWasm.applyToJsState(snapshot);
+          }
+        }
+
+        const framesDelta = totalFrames - lastTelemetryFrames;
+        const timeDelta = Math.max(0.001, delta);
+        if (framesDelta > 0 && typeof recordFrameTelemetry === 'function') {
+          const distsDelta = Math.max(0, distSampleCluster - lastTelemetryDists);
+          recordFrameTelemetry(timeDelta, framesDelta, distsDelta);
+          lastTelemetryFrames = totalFrames;
+          lastTelemetryDists = distSampleCluster;
+        }
+
+        updateUI();
+        draw();
+
+        if (!hasMoreFrames()) {
+          pauseSimulation();
+          return;
+        }
+
+        if (isRunning) {
+          playTimer = requestAnimationFrame(pacedTick);
+        }
       }
-      playTimer = setTimeout(pacedCompute, 0);
+
+      playTimer = requestAnimationFrame(pacedTick);
     }
 
     function pauseSimulation() {
       isRunning = false;
+      if (computePumpTimer) {
+        clearTimeout(computePumpTimer);
+        computePumpTimer = null;
+      }
+      if (playTimer) {
+        cancelAnimationFrame(playTimer);
+        clearTimeout(playTimer);
+        clearInterval(playTimer);
+        playTimer = null;
+      }
       if (sessionIsActive) {
         sessionElapsedMs = Math.max(0.0001, performance.now() - sessionStartTime);
         const framesClustered = totalFrames - sessionStartFrames;
-        sessionAvgFps = sessionElapsedMs > 0.001 ? (framesClustered / (sessionElapsedMs / 1000.0)) : 0.0;
+        sessionAvgFps = sessionElapsedMs > 0.001
+          ? (framesClustered / (sessionElapsedMs / 1000.0))
+          : 0.0;
         sessionIsActive = false;
       }
 
       const btn = document.getElementById('btnPlay');
-      btn.innerText = "► Cluster";
-      btn.classList.remove('danger');
-      btn.classList.add('primary');
-      if (playTimer) {
-        clearTimeout(playTimer);
-        clearInterval(playTimer);
-        if (typeof cancelAnimationFrame !== 'undefined') {
-          cancelAnimationFrame(playTimer);
-        }
-        playTimer = null;
+      if (btn) {
+        btn.innerText = "► Cluster";
+        btn.classList.remove('danger');
+        btn.classList.add('primary');
       }
       if (typeof GricWasmWorker !== 'undefined' && GricWasmWorker.isBusy()) {
         GricWasmWorker.pauseBatch();
       }
-      stopDisplayLoop();
-      // Final WASM sync — batch frames since last display tick
+
+      // Final WASM sync
       if (useWasm && wasmSessionActive && GricWasm.isReady()) {
-        const snapshot = GricWasm.syncState();
+        const snapshot = GricWasm.syncState(true);
         if (snapshot) {
           GricWasm.applyToJsState(snapshot);
         }
@@ -343,6 +533,7 @@
       }
 
       updateUI();
+      draw();
       draw();
     }
 
@@ -690,6 +881,20 @@
       const clickDuration = performance.now() - mouseDownTime;
       if (distFromDown < 6 && clickDuration < 450 && !isAddPointMode) {
         if (e.target === canvas) {
+          if (dataMode === 'image') {
+            const rect = canvas.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const py = e.clientY - rect.top;
+            const qIdx = getQuadrantAt(e.clientX, e.clientY);
+            if (typeof handleImageModeClick === 'function') {
+              const handled = handleImageModeClick(px, py, qIdx, rect.width, rect.height);
+              if (handled) {
+                draw();
+                return;
+              }
+            }
+          }
+
           if (hoveredClosestSample && hoveredClosestSample.point) {
             if (lockedClosestSample && lockedClosestSample.index === hoveredClosestSample.index) {
               // Clicked already locked point -> unlock
@@ -1135,8 +1340,8 @@
     });
 
     // Select Benchmark Handler
-    document.getElementById('selectBenchmark').addEventListener('change', () => {
-      loadSelectedBenchmark();
+    document.getElementById('selectBenchmark').addEventListener('change', (e) => {
+      stageDataset(e.target.value);
       resetView();
     });
 
@@ -1169,13 +1374,62 @@
       else startSimulation();
     });
 
+    const btnComputeAll = document.getElementById('btnComputeAll');
+    if (btnComputeAll) {
+      btnComputeAll.addEventListener('click', () => {
+        if (engineMode === 'cli') {
+          runNativeCli();
+          return;
+        }
+        if (!benchmarkDataset || benchmarkDataset.length === 0) {
+          stageDataset();
+        }
+        if (!hasMoreFrames()) {
+          resetClustering(true);
+          currentFrameIdx = 0;
+        }
+        if (useWasm && GricWasm.isLoaded() && (!wasmSessionActive || !GricWasm.isReady())) {
+          const params = GricWasm.buildParamsFromState();
+          wasmSessionActive = GricWasm.init(params);
+          updateWasmBadge();
+        }
+        runClusteringToCompletion();
+      });
+    }
+
     document.getElementById('btnStep').addEventListener('click', () => {
       if (engineMode === 'cli') {
         showToast('Step inspection is only available in WASM Interactive Simulation mode');
         return;
       }
+      if (!benchmarkDataset || benchmarkDataset.length === 0) {
+        stageDataset();
+      }
+      if (!hasMoreFrames()) {
+        resetClustering(true);
+        currentFrameIdx = 0;
+      }
+      if (useWasm && GricWasm.isLoaded() && (!wasmSessionActive || !GricWasm.isReady())) {
+        const params = GricWasm.buildParamsFromState();
+        wasmSessionActive = GricWasm.init(params);
+        updateWasmBadge();
+      }
+      if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+        if (typeof inspectedImageFrameIdx !== 'undefined') {
+          inspectedImageFrameIdx = -1;
+        }
+        if (typeof inspectedClusterId !== 'undefined') {
+          inspectedClusterId = -1;
+        }
+      }
       if (isRunning) pauseSimulation();
       stepNextFrame(false);
+      if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+        const snapshot = GricWasm.syncState(true);
+        if (snapshot) {
+          GricWasm.applyToJsState(snapshot);
+        }
+      }
       updateUI();
       draw();
     });
@@ -1304,6 +1558,19 @@
         const btnResetView = document.getElementById('btnResetView');
         if (btnResetView) btnResetView.click();
       } else if (e.key === '[' || e.key === 'ArrowLeft') {
+        if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+          const total = (benchmarkDataset && benchmarkDataset.length > 0)
+            ? benchmarkDataset.length
+            : totalFrames;
+          if (total === 0) return;
+          const cur = (typeof inspectedImageFrameIdx !== 'undefined' &&
+            inspectedImageFrameIdx >= 0)
+            ? inspectedImageFrameIdx
+            : totalFrames - 1;
+          const target = Math.max(0, cur - 1);
+          if (typeof selectImageFrame === 'function') selectImageFrame(target);
+          return;
+        }
         if (sampleTraceLog.length === 0) return;
         let currentPos = -1;
         if (selectedSampleTraceIndex === -1) {
@@ -1315,6 +1582,19 @@
           selectPastSample(sampleTraceLog[currentPos - 1].frameIndex);
         }
       } else if (e.key === ']' || e.key === 'ArrowRight') {
+        if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+          const total = (benchmarkDataset && benchmarkDataset.length > 0)
+            ? benchmarkDataset.length
+            : totalFrames;
+          if (total === 0) return;
+          const cur = (typeof inspectedImageFrameIdx !== 'undefined' &&
+            inspectedImageFrameIdx >= 0)
+            ? inspectedImageFrameIdx
+            : totalFrames - 1;
+          const target = Math.min(total - 1, cur + 1);
+          if (typeof selectImageFrame === 'function') selectImageFrame(target);
+          return;
+        }
         if (sampleTraceLog.length === 0 || selectedSampleTraceIndex === -1) return;
         const currentPos = sampleTraceLog.findIndex(el => el.frameIndex === selectedSampleTraceIndex);
         if (currentPos >= 0 && currentPos < sampleTraceLog.length - 1) {
@@ -1338,6 +1618,16 @@
           draw();
         }
       } else if (e.key === 'Escape') {
+        if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+          if (typeof inspectedClusterId !== 'undefined' && inspectedClusterId >= 0) {
+            if (typeof clearImageClusterInspection === 'function') {
+              clearImageClusterInspection();
+            }
+          } else if (typeof inspectedImageFrameIdx !== 'undefined' &&
+            inspectedImageFrameIdx >= 0) {
+            if (typeof selectImageFrame === 'function') selectImageFrame(-1);
+          }
+        }
         if (lockedClosestSample !== null) {
           lockedClosestSample = null;
           hoveredClosestSample = null;
@@ -1345,7 +1635,11 @@
           draw();
         }
       } else if (e.key === 'l' || e.key === 'L') {
-        returnToLiveStream();
+        if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+          if (typeof selectImageFrame === 'function') selectImageFrame(-1);
+        } else {
+          returnToLiveStream();
+        }
       }
     });
 
@@ -1376,6 +1670,9 @@
       btnResetClusters.addEventListener('click', () => {
         pauseSimulation();
         resetClustering(true);
+        currentFrameIdx = 0;
+        updateUI();
+        draw();
         if (typeof showToast === 'function') {
           showToast('↺ Cluster models reset. Staged points preserved for next run.');
         }
@@ -1385,6 +1682,9 @@
     document.getElementById('btnReset').addEventListener('click', () => {
       pauseSimulation();
       resetSimulation();
+      currentFrameIdx = 0;
+      updateUI();
+      draw();
       if (typeof showToast === 'function') {
         showToast('⟲ Simulator reset completely to clean blank canvas.');
       }
@@ -1845,8 +2145,7 @@
     const selBenchSide = document.getElementById('selectBenchmarkSide');
     if (selBenchSide) {
       selBenchSide.addEventListener('change', (e) => {
-        document.getElementById('selectBenchmark').value = e.target.value;
-        loadSelectedBenchmark();
+        stageDataset(e.target.value);
         resetView();
       });
     }
@@ -3814,6 +4113,11 @@
       if (mode === 'cli') {
         updateCliCommand();
 
+        const cardCli = document.getElementById('cardCli');
+        if (cardCli && cardCli.classList.contains('collapsed')) {
+          cardCli.classList.remove('collapsed');
+        }
+
         if (DesktopBridge.isAvailable()) {
           await DesktopBridge.initCliSession();
         }
@@ -3832,6 +4136,49 @@
       const btnClear = document.getElementById('btnClearCliConsole');
       const btnLoadManual = document.getElementById('btnLoadClusterDatManual');
       const chkAutoLoad = document.getElementById('chkAutoLoadResults');
+      const selCliInputMode = document.getElementById('selectCliInputMode');
+      const pnlCliStreamConfig = document.getElementById('cliStreamConfigPanel');
+      const selSideInputMode = document.getElementById('selectInputModeSide');
+      const pnlSideStreamConfig = document.getElementById('sideStreamConfigPanel');
+      const selCliFps = document.getElementById('selectCliStreamFps');
+      const selSideFps = document.getElementById('selectSideStreamFps');
+      const chkCliLoop = document.getElementById('chkCliStreamLoop');
+      const chkSideLoop = document.getElementById('chkSideStreamLoop');
+      const chkCliCnt2 = document.getElementById('chkCliStreamCnt2Sync');
+      const chkSideCnt2 = document.getElementById('chkSideStreamCnt2Sync');
+
+      const syncInputMode = (val) => {
+        if (selCliInputMode) selCliInputMode.value = val;
+        if (selSideInputMode) selSideInputMode.value = val;
+        const isStream = (val === 'stream');
+        if (pnlCliStreamConfig) pnlCliStreamConfig.style.display = isStream ? 'flex' : 'none';
+        if (pnlSideStreamConfig) pnlSideStreamConfig.style.display = isStream ? 'flex' : 'none';
+        if (isStream && engineMode !== 'cli') {
+          setEngineMode('cli');
+        }
+      };
+
+      if (selCliInputMode) {
+        selCliInputMode.addEventListener('change', () => syncInputMode(selCliInputMode.value));
+      }
+      if (selSideInputMode) {
+        selSideInputMode.addEventListener('change', () => syncInputMode(selSideInputMode.value));
+      }
+
+      if (selCliFps && selSideFps) {
+        selCliFps.addEventListener('change', () => { selSideFps.value = selCliFps.value; });
+        selSideFps.addEventListener('change', () => { selCliFps.value = selSideFps.value; });
+      }
+
+      if (chkCliLoop && chkSideLoop) {
+        chkCliLoop.addEventListener('change', () => { chkSideLoop.checked = chkCliLoop.checked; });
+        chkSideLoop.addEventListener('change', () => { chkCliLoop.checked = chkSideLoop.checked; });
+      }
+
+      if (chkCliCnt2 && chkSideCnt2) {
+        chkCliCnt2.addEventListener('change', () => { chkSideCnt2.checked = chkCliCnt2.checked; });
+        chkSideCnt2.addEventListener('change', () => { chkCliCnt2.checked = chkSideCnt2.checked; });
+      }
 
       if (chkAutoLoad) {
         chkAutoLoad.addEventListener('change', (e) => {
@@ -3915,11 +4262,70 @@
 
       let args = [];
       let isStreamInput = false;
+      const inputMode = document.getElementById('selectCliInputMode')?.value || 'file';
+      const isStreamingMode = (inputMode === 'stream');
+      const streamFps = parseFloat(document.getElementById('selectCliStreamFps')?.value || '100');
+      const streamLoop = document.getElementById('chkCliStreamLoop')?.checked || false;
+      const streamName = `gric_sim_${Date.now() % 100000}`;
+      let streamJobOpts = null;
 
-      if (dataset.startsWith('shm:')) {
-        const streamName = dataset.substring(4);
+      if (isStreamingMode) {
         isStreamInput = true;
-        args = [rlim.toFixed(3), streamName, '-stream'];
+        const isSynthetic = !selCli || !selCli.value || dataset === `${currentBenchmark}.txt` ||
+          (typeof BENCHMARK_DESCS !== 'undefined' && BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
+
+        if (isSynthetic || !dataset) {
+          dataset = `${currentBenchmark}.txt`;
+          if (!benchmarkDataset || benchmarkDataset.length === 0) {
+            stageDataset();
+          }
+
+          let content = '';
+          for (let i = 0; i < benchmarkDataset.length; i++) {
+            const pt = benchmarkDataset[i];
+            if (Array.isArray(pt)) {
+              content += pt.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+            } else if (pt && typeof pt === 'object') {
+              if (currentDim === 3) {
+                content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)} ${Number(pt.z || 0).toFixed(6)}\n`;
+              } else {
+                content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)}\n`;
+              }
+            }
+          }
+          try {
+            await DesktopBridge.writeFile(dataset, content);
+            await refreshWorkspaceFiles();
+          } catch (err) {
+            console.warn('[CLI] Could not write benchmark dataset file:', err);
+          }
+        }
+
+        const baseName = dataset.replace(/\.[^/.]+$/, '');
+        const clusterDir = `${baseName}.clusterdat`;
+        const streamCnt2sync = (streamFps === 0) ||
+          (document.getElementById('chkCliStreamCnt2Sync')?.checked ?? false) ||
+          (document.getElementById('chkSideStreamCnt2Sync')?.checked ?? false);
+
+        args = [rlim.toFixed(3), streamName, '-stream', '-outdir', clusterDir];
+        if (streamCnt2sync) {
+          args.push('-cnt2sync');
+        }
+        if (!streamLoop && benchmarkDataset && benchmarkDataset.length > 0) {
+          args.push('-maxim', String(benchmarkDataset.length));
+        }
+
+        streamJobOpts = {
+          streamFile: dataset,
+          streamName: streamName,
+          streamFps: streamFps,
+          streamLoop: streamLoop,
+          streamCnt2sync: streamCnt2sync
+        };
+      } else if (dataset.startsWith('shm:')) {
+        const customStreamName = dataset.substring(4);
+        isStreamInput = true;
+        args = [rlim.toFixed(3), customStreamName, '-stream', '-outdir', `${customStreamName}.clusterdat`];
       } else {
         // If running active synthetic benchmark, always serialize full sequence with passes
         const isSynthetic = !selCli || !selCli.value || dataset === `${currentBenchmark}.txt` ||
@@ -4020,9 +4426,13 @@
         badgeStatus.style.color = '#4ade80';
       }
       if (consoleEl) {
+        const streamNote = isStreamingMode
+          ? `📡 Streamer: gric-txt2stream ${dataset} ${streamName} -fps ${streamFps}${streamLoop ? ' -loop' : ''}\n`
+          : '';
         consoleEl.textContent = `🚀 Dispatched in tmux session: gric_cli\n` +
           `🖥️ Attach live: tmux attach -t gric_cli\n` +
           `📄 Log stream: /tmp/gric_latest.log\n` +
+          streamNote +
           `⚙️ Command: gric-cluster ${args.join(' ')}\n` +
           `─────────────────────────────────────────────────────────────\n`;
       }
@@ -4035,6 +4445,7 @@
         await DesktopBridge.runCliJob({
           cmd: 'gric-cluster',
           args: args,
+          ...(streamJobOpts || {}),
           onOutput: (chunk) => {
             if (consoleEl) {
               consoleEl.textContent += chunk;
@@ -4119,6 +4530,24 @@
             const statPrune3PEl = document.getElementById('statPrune3P');
             if (statPrune3PEl) statPrune3PEl.textContent = (t.clusters_pruned || 0).toLocaleString();
 
+            const statPrune4PEl = document.getElementById('statPrune4P');
+            if (statPrune4PEl) statPrune4PEl.textContent = (t.prune_4p_count || 0).toLocaleString();
+
+            const statPrune5PEl = document.getElementById('statPrune5P');
+            if (statPrune5PEl) statPrune5PEl.textContent = (t.prune_5p_count || 0).toLocaleString();
+
+            const statPredHitsEl = document.getElementById('statPredHits');
+            if (statPredHitsEl) statPredHitsEl.textContent = (t.pred_hits || 0).toLocaleString();
+
+            const statPredAttemptsEl = document.getElementById('statPredAttempts');
+            if (statPredAttemptsEl) statPredAttemptsEl.textContent = (t.pred_attempts || 0).toLocaleString();
+
+            const statPredRateEl = document.getElementById('statPredRate');
+            if (statPredRateEl && t.pred_attempts > 0) {
+              const rate = ((t.pred_hits / t.pred_attempts) * 100).toFixed(1);
+              statPredRateEl.textContent = `${rate}%`;
+            }
+
             // Mobile HUD overlay
             const hudSamples = document.getElementById('hudSamples');
             if (hudSamples) hudSamples.textContent = t.processed_frames;
@@ -4137,7 +4566,7 @@
               btnPlay.disabled = false;
             }
 
-            if (res.exitCode === 0) {
+            if (res.exitCode === 0 || res.exitCode === 137) {
               if (badgeStatus) {
                 badgeStatus.textContent = `Done (${elapsed}s)`;
                 badgeStatus.style.background = 'rgba(56, 189, 248, 0.2)';
@@ -4145,8 +4574,10 @@
               }
               showToast(`✅ gric-cluster completed in ${elapsed}s`);
 
-              if (!isStreamInput) {
-                const baseName = dataset.replace(/\.[^/.]+$/, '');
+              if (autoLoadCliResults) {
+                const baseName = dataset.startsWith('shm:')
+                  ? dataset.substring(4)
+                  : dataset.replace(/\.[^/.]+$/, '');
                 const clusterDir = `${baseName}.clusterdat`;
                 await loadClusterResults(clusterDir);
               }
@@ -4743,7 +5174,13 @@
         const total = benchmarkDataset.length;
         const targetFrame = Math.floor(ratio * (total - 1));
 
-        selectPastSample(targetFrame);
+        if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+          if (typeof selectImageFrame === 'function') {
+            selectImageFrame(targetFrame);
+          }
+        } else {
+          selectPastSample(targetFrame);
+        }
 
         if (tooltip) {
           tooltip.style.left = `${ratio * 100}%`;
@@ -4789,6 +5226,64 @@
           tooltip.style.display = 'none';
         }
       });
+    }
+
+    function initImageScrubber() {
+      const slider = document.getElementById('sliderImgFrame');
+      const btnPrev = document.getElementById('btnImgPrevFrame');
+      const btnNext = document.getElementById('btnImgNextFrame');
+      const btnLive = document.getElementById('btnImgLiveStream');
+
+      if (slider) {
+        slider.addEventListener('input', (e) => {
+          const val = parseInt(e.target.value, 10);
+          if (typeof selectImageFrame === 'function') {
+            selectImageFrame(val);
+          }
+        });
+      }
+
+      if (btnPrev) {
+        btnPrev.addEventListener('click', () => {
+          const total = (benchmarkDataset && benchmarkDataset.length > 0)
+            ? benchmarkDataset.length
+            : totalFrames;
+          if (total === 0) return;
+          const cur = (typeof inspectedImageFrameIdx !== 'undefined' &&
+            inspectedImageFrameIdx >= 0)
+            ? inspectedImageFrameIdx
+            : totalFrames - 1;
+          const target = Math.max(0, cur - 1);
+          if (typeof selectImageFrame === 'function') {
+            selectImageFrame(target);
+          }
+        });
+      }
+
+      if (btnNext) {
+        btnNext.addEventListener('click', () => {
+          const total = (benchmarkDataset && benchmarkDataset.length > 0)
+            ? benchmarkDataset.length
+            : totalFrames;
+          if (total === 0) return;
+          const cur = (typeof inspectedImageFrameIdx !== 'undefined' &&
+            inspectedImageFrameIdx >= 0)
+            ? inspectedImageFrameIdx
+            : totalFrames - 1;
+          const target = Math.min(total - 1, cur + 1);
+          if (typeof selectImageFrame === 'function') {
+            selectImageFrame(target);
+          }
+        });
+      }
+
+      if (btnLive) {
+        btnLive.addEventListener('click', () => {
+          if (typeof selectImageFrame === 'function') {
+            selectImageFrame(-1);
+          }
+        });
+      }
     }
 
     // -------------------------------------------------------------------------
@@ -5028,6 +5523,7 @@
     }
 
     initTimelineScrubber();
+    initImageScrubber();
     initCommandPalette();
 
     setTimeout(() => { updateTMCanvasDimensions(); resizeCanvas(); }, 50);

@@ -89,4 +89,9 @@ long get_frame_height(void);
  */
 int is_ascii_input_mode(void);
 
+/**
+ * @brief Check if the reader is in ImageStreamIO streaming mode.
+ */
+int is_stream_input_mode(void);
+
 #endif // FRAMEREAD_H
