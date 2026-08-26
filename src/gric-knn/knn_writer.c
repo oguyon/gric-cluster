@@ -4,6 +4,7 @@
  */
 
 #include "knn_writer.h"
+#include "../../shared/gric_bin_io.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,93 @@
 #ifdef USE_CFITSIO
 #include <fitsio.h>
 #endif
+
+/**
+ * write_bin_results() - Write results as dual self-describing GRIC binary arrays.
+ * @out_indices_path:   Output path for knn_indices.bin.
+ * @out_distances_path: Output path for knn_distances.bin.
+ * @config:             Active KnnConfig.
+ * @model:              Active KnnModel.
+ * @results:            Computed KnnResults.
+ *
+ * Return: 0 on success, -1 on error.
+ */
+static int write_bin_results(
+    const char       *out_indices_path,
+    const char       *out_distances_path,
+    const KnnConfig  *config,
+    const KnnModel   *model,
+    const KnnResults *results)
+{
+    long N = model->total_dataset_frames;
+    long k = config->k;
+    uint64_t total_elems = (uint64_t)N * (uint64_t)k;
+
+    // 1. Write knn_indices.bin (UINT32 [N, k])
+    FILE *fp_idx = fopen(out_indices_path, "wb");
+    if (fp_idx != NULL)
+    {
+        gric_bin_header_t hdr_idx;
+        memset(&hdr_idx, 0, sizeof(hdr_idx));
+        hdr_idx.file_type = GRIC_BIN_TYPE_GENERIC;
+        hdr_idx.data_type = GRIC_BIN_DTYPE_UINT32;
+        hdr_idx.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+        hdr_idx.ndim = 2;
+        hdr_idx.dims[0] = (uint64_t)N;
+        hdr_idx.dims[1] = (uint64_t)k;
+        hdr_idx.num_elements = total_elems;
+        hdr_idx.data_bytes = total_elems * sizeof(uint32_t);
+
+        if (gric_bin_write_header(fp_idx, &hdr_idx, "k-NN neighbor indices [N x k]") == 0)
+        {
+            uint32_t *u32_idx = (uint32_t *)malloc(total_elems * sizeof(uint32_t));
+            if (u32_idx != NULL)
+            {
+                for (uint64_t i = 0; i < total_elems; i++)
+                {
+                    u32_idx[i] = (results->indices[i] >= 0) ?
+                                 (uint32_t)results->indices[i] : 0;
+                }
+                fwrite(u32_idx, sizeof(uint32_t), total_elems, fp_idx);
+                free(u32_idx);
+            }
+        }
+        fclose(fp_idx);
+    }
+
+    // 2. Write knn_distances.bin (FLOAT32 [N, k])
+    FILE *fp_dst = fopen(out_distances_path, "wb");
+    if (fp_dst != NULL)
+    {
+        gric_bin_header_t hdr_dst;
+        memset(&hdr_dst, 0, sizeof(hdr_dst));
+        hdr_dst.file_type = GRIC_BIN_TYPE_GENERIC;
+        hdr_dst.data_type = GRIC_BIN_DTYPE_FLOAT32;
+        hdr_dst.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+        hdr_dst.ndim = 2;
+        hdr_dst.dims[0] = (uint64_t)N;
+        hdr_dst.dims[1] = (uint64_t)k;
+        hdr_dst.num_elements = total_elems;
+        hdr_dst.data_bytes = total_elems * sizeof(float);
+
+        if (gric_bin_write_header(fp_dst, &hdr_dst, "k-NN metric distances [N x k]") == 0)
+        {
+            float *f32_dst = (float *)malloc(total_elems * sizeof(float));
+            if (f32_dst != NULL)
+            {
+                for (uint64_t i = 0; i < total_elems; i++)
+                {
+                    f32_dst[i] = (float)results->distances[i];
+                }
+                fwrite(f32_dst, sizeof(float), total_elems, fp_dst);
+                free(f32_dst);
+            }
+        }
+        fclose(fp_dst);
+    }
+
+    return 0;
+}
 
 /**
  * write_ascii_results() - Write results as formatted ASCII table.
@@ -212,6 +300,24 @@ int knn_write_results(
     }
     else
     {
+        // Write binary outputs: knn_indices.bin and knn_distances.bin
+        char bin_idx_path[4096];
+        char bin_dst_path[4096];
+        if (config->cluster_dir != NULL)
+        {
+            snprintf(bin_idx_path, sizeof(bin_idx_path), "%s/knn_indices.bin",
+                     config->cluster_dir);
+            snprintf(bin_dst_path, sizeof(bin_dst_path), "%s/knn_distances.bin",
+                     config->cluster_dir);
+        }
+        else
+        {
+            snprintf(bin_idx_path, sizeof(bin_idx_path), "knn_indices.bin");
+            snprintf(bin_dst_path, sizeof(bin_dst_path), "knn_distances.bin");
+        }
+        printf("Writing binary outputs:\n  - %s\n  - %s\n", bin_idx_path, bin_dst_path);
+        write_bin_results(bin_idx_path, bin_dst_path, config, model, results);
+
         printf("Writing ASCII output: %s\n", final_out_path);
         return write_ascii_results(final_out_path, config, model, results);
     }

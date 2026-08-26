@@ -1717,7 +1717,7 @@
       if (legendHint) {
         if (typeof dataMode !== 'undefined' && dataMode === 'image') {
           legendHint.innerText =
-            "[Image Mode (32×32): Double-Click Quad to Maximize • Scroll/Drag Quad 4 to Browse Centroids]";
+            "[Image Mode: TL=Current Frame • TR=Anchor/Residual (Click ⇄) • BL=Cluster Members • BR=All Clusters]";
         } else {
           legendHint.innerText = currentDim === 3
             ? "[3D Mode: Drag Quad 4 to Orbit • Shift+Drag to Pan • Wheel to Zoom • ⛶ to Maximize]"

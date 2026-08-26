@@ -450,7 +450,15 @@ static void handle_api_file_read(
     fclose(f);
     content[read_bytes] = '\0';
 
-    api_send_response(client_fd, 200, "text/plain; charset=utf-8",
+    const char *content_type = "text/plain; charset=utf-8";
+    const char *ext = strrchr(rel_path, '.');
+    if (ext && (strcmp(ext, ".bin") == 0 || strcmp(ext, ".fits") == 0 ||
+                strcmp(ext, ".png") == 0 || strcmp(ext, ".mp4") == 0))
+    {
+        content_type = "application/octet-stream";
+    }
+
+    api_send_response(client_fd, 200, content_type,
                       content, read_bytes);
     free(content);
 }

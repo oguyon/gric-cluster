@@ -382,6 +382,17 @@
             Frame 0 / 0
           </span>
         </div>
+        <div style="display: flex; align-items: center; gap: 6px; margin-left: auto; border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
+          <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;">
+            Sort Clusters:
+          </span>
+          <select id="selectImgClusterSort" class="form-control"
+                  style="padding: 2px 6px; font-size: 0.72rem; background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 4px; cursor: pointer;">
+            <option value="id">🔢 ID (Default)</option>
+            <option value="size_desc">📊 Size ↓ (Largest First)</option>
+            <option value="size_asc">📉 Size ↑ (Smallest First)</option>
+          </select>
+        </div>
       </div>
 
       <div style="padding: 8px 14px; background: #172033; border-top: 1px solid var(--card-border);">
@@ -1286,26 +1297,25 @@
         <div class="card-body">
           <div class="card-body-scroll">
             
-            <!-- Section 1: Mode & Storage Status Banner -->
-            <div class="sub-control-card" style="padding: 8px 10px; margin-bottom: 8px;">
+            <!-- Section 1: Compact Mode & Storage Status Banner -->
+            <div class="sub-control-card" style="padding: 5px 8px; margin-bottom: 6px;">
               <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="display: flex; align-items: center; gap: 6px;">
-                  <span id="iconStorageMode" style="font-size: 1.1rem;">⚡</span>
-                  <div>
-                    <div id="txtStorageModeTitle"
-                         style="font-size: 0.75rem; font-weight: 700; color: #38bdf8;">
-                      WebAssembly Sandbox
-                    </div>
-                    <div id="txtStorageModeSubtitle"
-                         style="font-size: 0.68rem; color: var(--text-muted);
-                                font-family: monospace;">
-                      In-Browser Memory
-                    </div>
+                <div style="display: flex; align-items: center; gap: 5px;">
+                  <span id="iconStorageMode" style="font-size: 0.95rem;">⚡</span>
+                  <div style="display: flex; align-items: baseline; gap: 5px;">
+                    <span id="txtStorageModeTitle"
+                          style="font-size: 0.72rem; font-weight: 700; color: #38bdf8;">
+                      WASM Sandbox
+                    </span>
+                    <span id="txtStorageModeSubtitle"
+                          style="font-size: 0.65rem; color: var(--text-muted); font-family: monospace;">
+                      In-Browser RAM
+                    </span>
                   </div>
                 </div>
-                <div style="display: flex; gap: 4px;">
+                <div style="display: flex; gap: 3px;">
                   <button id="btnSaveAllDataStructures" class="btn-action primary"
-                          style="padding: 3px 8px; font-size: 0.70rem; font-weight: 700;"
+                          style="padding: 2px 6px; font-size: 0.68rem; font-weight: 700;"
                           data-tooltip-title="Save All Data Structures to Disk"
                           data-tooltip-badge="Export .clusterdat"
                           data-tooltip-color="green"
@@ -1313,7 +1323,7 @@
                     💾 Save All
                   </button>
                   <button id="btnDownloadAllZip" class="btn-action"
-                          style="padding: 3px 7px; font-size: 0.70rem;"
+                          style="padding: 2px 6px; font-size: 0.68rem;"
                           data-tooltip-title="Download All Structures as ZIP"
                           data-tooltip-badge="Download .zip"
                           data-tooltip-color="teal"
@@ -1325,35 +1335,37 @@
             </div>
 
             <!-- Sub-Tabs: Current Structures vs Workspace Browser -->
-            <div class="tab-nav" style="margin-bottom: 8px;">
+            <div class="tab-nav" style="margin-bottom: 6px;">
               <div class="tab-item active" id="tabNavDataStructures"
+                   style="padding: 3px 8px; font-size: 0.68rem;"
                    onclick="switchDataFilesTab('structures')">
                 📊 Active Structures
               </div>
               <div class="tab-item" id="tabNavWorkspaceFiles"
+                   style="padding: 3px 8px; font-size: 0.68rem;"
                    onclick="switchDataFilesTab('workspace')">
                 📁 Workspace Map
               </div>
             </div>
 
-            <!-- Tab Pane 1: Active In-Memory Data Structures -->
+            <!-- Tab Pane 1: Active In-Memory Data Structures Table -->
             <div id="tabPaneDataStructures">
-              <div id="dataStructuresList"
-                   style="display: flex; flex-direction: column; gap: 6px;">
-                <!-- Populated dynamically by DataManager / main.js -->
+              <div id="dataStructuresList" class="data-files-table-wrapper"
+                   style="max-height: 220px; overflow-y: auto;">
+                <!-- Populated dynamically as compact table by DataManager / main.js -->
               </div>
             </div>
 
-            <!-- Tab Pane 2: Workspace Directory Map (Native / Local Folder) -->
+            <!-- Tab Pane 2: Workspace Directory Map (Native / Local Folder) Table -->
             <div id="tabPaneWorkspaceFiles" style="display: none;">
               <div style="display: flex; justify-content: space-between; align-items: center;
-                          margin-bottom: 6px;">
+                          margin-bottom: 4px;">
                 <span id="lblWorkspaceTreeHeader"
-                      style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600;">
+                      style="font-size: 0.70rem; color: var(--text-muted); font-weight: 600;">
                   Workspace Contents:
                 </span>
                 <button id="btnRefreshWorkspaceTree" class="btn-action"
-                        style="padding: 2px 7px; font-size: 0.68rem;"
+                        style="padding: 1px 6px; font-size: 0.65rem;"
                         data-tooltip-title="Rescan Workspace"
                         data-tooltip-badge="Directory Scan"
                         data-tooltip-color="cyan"
@@ -1361,12 +1373,9 @@
                   🔄 Refresh
                 </button>
               </div>
-              <div id="workspaceFilesTree"
-                   style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border);
-                          border-radius: 6px; padding: 6px 8px; min-height: 120px;
-                          max-height: 240px; overflow-y: auto; font-family: monospace;
-                          font-size: 0.72rem;">
-                <!-- Populated dynamically with files, .clusterdat directories, and SHM streams -->
+              <div id="workspaceFilesTree" class="data-files-table-wrapper"
+                   style="max-height: 220px; overflow-y: auto;">
+                <!-- Populated dynamically as compact table -->
               </div>
             </div>
 

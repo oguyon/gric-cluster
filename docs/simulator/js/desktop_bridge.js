@@ -143,6 +143,20 @@ const DesktopBridge = (function () {
   }
 
   /**
+   * Read binary ArrayBuffer from the desktop workspace.
+   */
+  async function readBinaryFile(relPath) {
+    if (!_isDesktop) throw new Error('Desktop backend not connected.');
+
+    const url = `/api/file/read?path=${encodeURIComponent(relPath)}`;
+    const resp = await _fetchApi(url, { cache: 'no-store' });
+    if (!resp.ok) {
+      throw new Error(`Failed to read binary file ${relPath} (HTTP ${resp.status})`);
+    }
+    return await resp.arrayBuffer();
+  }
+
+  /**
    * Write text content to a file in the desktop workspace.
    */
   async function writeFile(relPath, content) {
@@ -326,8 +340,8 @@ const DesktopBridge = (function () {
     let content = '';
     for (let i = 0; i < dataset.length; i++) {
       const pt = dataset[i];
-      if (Array.isArray(pt)) {
-        content += pt.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+      if (Array.isArray(pt) || ArrayBuffer.isView(pt) || (pt && typeof pt.length === 'number')) {
+        content += Array.from(pt).map(v => Number(v).toFixed(6)).join(' ') + '\n';
       } else if (pt && typeof pt === 'object') {
         const px = Number(pt.x || 0).toFixed(6);
         const py = Number(pt.y || 0).toFixed(6);
@@ -353,6 +367,13 @@ const DesktopBridge = (function () {
     for (const [fname, content] of Object.entries(artifacts)) {
       if (typeof content === 'string') {
         await writeFile(`${folderName}/${fname}`, content);
+      } else if (content instanceof Uint8Array || ArrayBuffer.isView(content)) {
+        await writeBinaryFile(
+          `${folderName}/${fname}`,
+          content.buffer || content,
+          content.byteOffset || 0,
+          content.byteLength || content.length
+        );
       }
     }
     return folderName;
@@ -372,102 +393,200 @@ const DesktopBridge = (function () {
       logText: ''
     };
 
-    // 1. Try reading centroids.txt or anchors.txt
+    // 1. Try reading anchors.bin first, then fallback to anchors.txt / centroids.txt
     try {
-      let text = '';
+      const buf = await readBinaryFile(`${cleanDir}/anchors.bin`);
+      const view = new DataView(buf);
+      const magic = String.fromCharCode(
+        view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3)
+      );
+      if (magic === 'GRIC') {
+        const headerSize = view.getUint16(8, true);
+        const ndim = view.getUint16(10, true);
+        const nclusters = Number(view.getBigUint64(32, true));
+        const dims = ndim > 1 ? Number(view.getBigUint64(40, true)) : 1;
+        const floats = new Float32Array(buf, headerSize, nclusters * dims);
+        for (let i = 0; i < nclusters; i++) {
+          const x = floats[i * dims + 0] || 0.0;
+          const y = dims > 1 ? (floats[i * dims + 1] || 0.0) : 0.0;
+          const z = dims > 2 ? (floats[i * dims + 2] || 0.0) : 0.0;
+          const anchorBuf = new Float32Array(dims);
+          for (let d = 0; d < dims; d++) {
+            anchorBuf[d] = floats[i * dims + d];
+          }
+          results.anchors.push({
+            id: i,
+            x: x,
+            y: y,
+            z: isNaN(z) ? 0.0 : z,
+            anchor: anchorBuf,
+            members: 0
+          });
+        }
+      }
+    } catch (binErr) {
+      /* Fallback to text anchors */
       try {
-        text = await readFile(`${cleanDir}/anchors.txt`);
-      } catch (e) {
-        text = await readFile(`${cleanDir}/centroids.txt`);
-      }
-
-      const lines = text.split(/\r?\n/);
-      let cId = 0;
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const tokens = trimmed.split(/[,\s\t]+/).filter(t => t.length > 0);
-        if (tokens.length >= 2) {
-          const x = parseFloat(tokens[0]);
-          const y = parseFloat(tokens[1]);
-          const z = tokens.length >= 3 ? parseFloat(tokens[2]) : 0.0;
-          if (!isNaN(x) && !isNaN(y)) {
-            results.anchors.push({
-              id: cId++,
-              x: x,
-              y: y,
-              z: isNaN(z) ? 0.0 : z,
-              members: 0
-            });
-          }
+        let text = '';
+        try {
+          text = await readFile(`${cleanDir}/anchors.txt`);
+        } catch (e) {
+          text = await readFile(`${cleanDir}/centroids.txt`);
         }
-      }
-    } catch (err) {
-      console.warn('[DesktopBridge] Could not read centroids/anchors:', err);
-    }
 
-    // 2. Try reading dcc.txt
-    try {
-      const dccText = await readFile(`${cleanDir}/dcc.txt`);
-      const lines = dccText.split(/\r?\n/);
-      const mat = [];
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const row = trimmed.split(/[,\s\t]+/)
-          .filter(t => t.length > 0)
-          .map(t => parseFloat(t))
-          .filter(v => !isNaN(v));
-        if (row.length > 0) {
-          mat.push(row);
-        }
-      }
-      results.dcc = mat;
-    } catch (err) {
-      /* DCC optional */
-    }
-
-    // 3. Try reading cluster_counts.txt (or fallback to frame_membership.txt)
-    try {
-      const countsText = await readFile(`${cleanDir}/cluster_counts.txt`);
-      const lines = countsText.split(/\r?\n/);
-      let cIdx = 0;
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const match = trimmed.match(/Cluster\s+(\d+):\s*(\d+)\s*frames/i) ||
-                      trimmed.match(/(\d+)\s+(\d+)/);
-        if (match) {
-          const idx = parseInt(match[1], 10);
-          const count = parseInt(match[2], 10);
-          if (idx >= 0 && idx < results.anchors.length) {
-            results.anchors[idx].members = count;
-          }
-        } else {
-          const count = parseInt(trimmed, 10);
-          if (!isNaN(count) && cIdx < results.anchors.length) {
-            results.anchors[cIdx++].members = count;
-          }
-        }
-      }
-    } catch (e) {
-      /* Fallback to frame_membership.txt if cluster_counts.txt is not available */
-      try {
-        const memText = await readFile(`${cleanDir}/frame_membership.txt`);
-        const lines = memText.split(/\r?\n/);
+        const lines = text.split(/\r?\n/);
+        let cId = 0;
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed || trimmed.startsWith('#')) continue;
-          const val = parseInt(trimmed, 10);
-          if (!isNaN(val)) {
-            results.membership.push(val);
-            if (val >= 0 && val < results.anchors.length) {
-              results.anchors[val].members = (results.anchors[val].members || 0) + 1;
+          const tokens = trimmed.split(/[,\s\t]+/).filter(t => t.length > 0);
+          if (tokens.length >= 1) {
+            const x = parseFloat(tokens[0]);
+            const y = tokens.length > 1 ? parseFloat(tokens[1]) : 0.0;
+            const z = tokens.length > 2 ? parseFloat(tokens[2]) : 0.0;
+            const anchorBuf = new Float32Array(tokens.length);
+            for (let d = 0; d < tokens.length; d++) {
+              anchorBuf[d] = parseFloat(tokens[d]);
+            }
+            if (!isNaN(x)) {
+              results.anchors.push({
+                id: cId++,
+                x: x,
+                y: isNaN(y) ? 0.0 : y,
+                z: isNaN(z) ? 0.0 : z,
+                anchor: anchorBuf,
+                members: 0
+              });
             }
           }
         }
       } catch (err) {
-        /* Membership optional */
+        console.warn('[DesktopBridge] Could not read centroids/anchors:', err);
+      }
+    }
+
+    // 2. Try reading dcc.bin first, then fallback to dcc.txt
+    try {
+      const buf = await readBinaryFile(`${cleanDir}/dcc.bin`);
+      const view = new DataView(buf);
+      const magic = String.fromCharCode(
+        view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3)
+      );
+      if (magic === 'GRIC') {
+        const headerSize = view.getUint16(8, true);
+        const rows = Number(view.getBigUint64(32, true));
+        const cols = Number(view.getBigUint64(40, true));
+        const floats = new Float32Array(buf, headerSize, rows * cols);
+        const mat = [];
+        for (let r = 0; r < rows; r++) {
+          const row = [];
+          for (let c = 0; c < cols; c++) {
+            row.push(floats[r * cols + c]);
+          }
+          mat.push(row);
+        }
+        results.dcc = mat;
+      }
+    } catch (binErr) {
+      /* Fallback to text dcc.txt */
+      try {
+        const dccText = await readFile(`${cleanDir}/dcc.txt`);
+        const lines = dccText.split(/\r?\n/);
+        const mat = [];
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const row = trimmed.split(/[,\s\t]+/)
+            .filter(t => t.length > 0)
+            .map(t => parseFloat(t))
+            .filter(v => !isNaN(v));
+          if (row.length > 0) {
+            mat.push(row);
+          }
+        }
+        results.dcc = mat;
+      } catch (err) {
+        /* DCC optional */
+      }
+    }
+
+    // 3. Try reading cluster_counts.bin / cluster_counts.txt
+    try {
+      const buf = await readBinaryFile(`${cleanDir}/cluster_counts.bin`);
+      const view = new DataView(buf);
+      const magic = String.fromCharCode(
+        view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3)
+      );
+      if (magic === 'GRIC') {
+        const headerSize = view.getUint16(8, true);
+        const nclusters = Number(view.getBigUint64(32, true));
+        const counts = new Uint32Array(buf, headerSize, nclusters);
+        for (let i = 0; i < nclusters && i < results.anchors.length; i++) {
+          results.anchors[i].members = counts[i];
+        }
+      }
+    } catch (binErr) {
+      try {
+        const countsText = await readFile(`${cleanDir}/cluster_counts.txt`);
+        const lines = countsText.split(/\r?\n/);
+        let cIdx = 0;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const match = trimmed.match(/Cluster\s+(\d+):\s*(\d+)\s*frames/i) ||
+                        trimmed.match(/(\d+)\s+(\d+)/);
+          if (match) {
+            const idx = parseInt(match[1], 10);
+            const count = parseInt(match[2], 10);
+            if (idx >= 0 && idx < results.anchors.length) {
+              results.anchors[idx].members = count;
+            }
+          } else {
+            const count = parseInt(trimmed, 10);
+            if (!isNaN(count) && cIdx < results.anchors.length) {
+              results.anchors[cIdx++].members = count;
+            }
+          }
+        }
+      } catch (e) {
+        /* Fallback to frame_membership */
+        try {
+          const memBuf = await readBinaryFile(`${cleanDir}/frame_membership.bin`);
+          const view = new DataView(memBuf);
+          const magic = String.fromCharCode(
+            view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3)
+          );
+          if (magic === 'GRIC') {
+            const headerSize = view.getUint16(8, true);
+            const nframes = Number(view.getBigUint64(32, true));
+            const mems = new Uint32Array(memBuf, headerSize, nframes);
+            for (let f = 0; f < nframes; f++) {
+              const val = mems[f];
+              results.membership.push(val);
+              if (val < results.anchors.length) {
+                results.anchors[val].members = (results.anchors[val].members || 0) + 1;
+              }
+            }
+          }
+        } catch (memErr) {
+          try {
+            const memText = await readFile(`${cleanDir}/frame_membership.txt`);
+            const lines = memText.split(/\r?\n/);
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith('#')) continue;
+              const val = parseInt(trimmed, 10);
+              if (!isNaN(val)) {
+                results.membership.push(val);
+                if (val >= 0 && val < results.anchors.length) {
+                  results.anchors[val].members = (results.anchors[val].members || 0) + 1;
+                }
+              }
+            }
+          } catch (err) {
+            /* Membership optional */
+          }
+        }
       }
     }
 
@@ -710,13 +829,57 @@ const DesktopBridge = (function () {
   }
 
   /**
-   * Load and parse knn_results.txt from workspace into visualizer format.
+   * Load and parse k-NN results (binary or ASCII) from workspace into visualizer format.
    *
    * @param {string} clusterDir Relative path to clusterdat directory.
    * @param {number} k Number of nearest neighbors per frame.
    */
   async function readKnnResults(clusterDir, k) {
     const cleanDir = clusterDir.replace(/\/+$/, '');
+
+    // 1. Try reading binary files first: knn_indices.bin & knn_distances.bin
+    try {
+      const idxBuf = await readBinaryFile(`${cleanDir}/knn_indices.bin`);
+      const dstBuf = await readBinaryFile(`${cleanDir}/knn_distances.bin`);
+      if (idxBuf && dstBuf) {
+        const viewIdx = new DataView(idxBuf);
+        const viewDst = new DataView(dstBuf);
+        const magicIdx = String.fromCharCode(
+          viewIdx.getUint8(0), viewIdx.getUint8(1), viewIdx.getUint8(2), viewIdx.getUint8(3)
+        );
+        const magicDst = String.fromCharCode(
+          viewDst.getUint8(0), viewDst.getUint8(1), viewDst.getUint8(2), viewDst.getUint8(3)
+        );
+
+        if (magicIdx === 'GRIC' && magicDst === 'GRIC') {
+          const hdrBytesIdx = viewIdx.getUint16(8, true);
+          const hdrBytesDst = viewDst.getUint16(8, true);
+          const N = Number(viewIdx.getBigUint64(32, true));
+          const binK = Number(viewIdx.getBigUint64(40, true)) || k;
+          const totalElems = N * binK;
+          const rawIndices = new Uint32Array(idxBuf, hdrBytesIdx, totalElems);
+          const rawDistances = new Float32Array(dstBuf, hdrBytesDst, totalElems);
+
+          const indices = new Int32Array(totalElems);
+          const distances = new Float64Array(totalElems);
+          for (let i = 0; i < totalElems; i++) {
+            indices[i] = rawIndices[i];
+            distances[i] = rawDistances[i];
+          }
+
+          return {
+            totalFrames: N,
+            k: binK,
+            indices: indices,
+            distances: distances
+          };
+        }
+      }
+    } catch (e) {
+      /* Fallback to text format */
+    }
+
+    // 2. Fallback to ASCII knn_results.txt
     try {
       const text = await readFile(`${cleanDir}/knn_results.txt`);
       if (!text) return null;
@@ -747,7 +910,7 @@ const DesktopBridge = (function () {
         distances: new Float64Array(distances)
       };
     } catch (err) {
-      console.warn('[DesktopBridge] Could not read knn_results.txt:', err);
+      console.warn('[DesktopBridge] Could not read knn results:', err);
       return null;
     }
   }
@@ -761,6 +924,7 @@ const DesktopBridge = (function () {
     getWorkspaceDir,
     listFiles,
     readFile,
+    readBinaryFile,
     writeFile,
     initCliSession,
     stopCliSession,

@@ -249,36 +249,112 @@
       runDecoupledSimulation();
     }
 
-    function runClusteringToCompletion() {
-      const btn = document.getElementById('btnPlay');
+    function resetComputeAllButton() {
+      const btn = document.getElementById('btnComputeAll');
       if (btn) {
-        btn.innerText = "⏳ Computing...";
+        btn.innerHTML = '⚡ Compute All';
+        btn.style.background = 'rgba(34, 197, 94, 0.15)';
+        btn.style.color = '#4ade80';
+        btn.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+        btn.classList.remove('danger');
+      }
+    }
+
+    function setComputeAllButtonActive() {
+      const btn = document.getElementById('btnComputeAll');
+      if (btn) {
+        btn.innerHTML = '⏹ Stop';
+        btn.style.background = 'rgba(239, 68, 68, 0.25)';
+        btn.style.color = '#f87171';
+        btn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
         btn.classList.add('danger');
-        btn.classList.remove('primary');
+      }
+    }
+
+    function abortComputeAll() {
+      if (!isComputeAllRunning) return;
+      abortComputeAllRequested = true;
+      isComputeAllRunning = false;
+      if (computeAllTimer) {
+        clearTimeout(computeAllTimer);
+        cancelAnimationFrame(computeAllTimer);
+        computeAllTimer = null;
       }
 
-      setTimeout(() => {
-        const tStart = performance.now();
-        const startFrames = totalFrames;
-        const isImg = (typeof dataMode !== 'undefined' && dataMode === 'image');
+      if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+        const snapshot = GricWasm.syncState(true);
+        if (snapshot) {
+          GricWasm.applyToJsState(snapshot);
+        }
+      }
+
+      pauseSimulation();
+      resetComputeAllButton();
+      updateUI();
+      draw();
+      showToast(`⏹ Compute All stopped at frame ${totalFrames.toLocaleString()}`);
+    }
+
+    function runClusteringToCompletion() {
+      if (isComputeAllRunning) {
+        abortComputeAll();
+        return;
+      }
+
+      if (isRunning) pauseSimulation();
+      if (playTimer) {
+        cancelAnimationFrame(playTimer);
+        clearTimeout(playTimer);
+        clearInterval(playTimer);
+        playTimer = null;
+      }
+
+      isComputeAllRunning = true;
+      abortComputeAllRequested = false;
+      isRunning = true;
+      setComputeAllButtonActive();
+
+      const btnPlay = document.getElementById('btnPlay');
+      if (btnPlay) {
+        btnPlay.innerText = "❚❚ Pause";
+        btnPlay.classList.add('danger');
+        btnPlay.classList.remove('primary');
+      }
+
+      const tStart = performance.now();
+      const startFrames = totalFrames;
+      const isImg = (typeof dataMode !== 'undefined' && dataMode === 'image');
+      const totalDatasetCount = benchmarkDataset ? benchmarkDataset.length : 0;
+
+      function computeSlice() {
+        if (!isComputeAllRunning || abortComputeAllRequested) {
+          isComputeAllRunning = false;
+          resetComputeAllButton();
+          pauseSimulation();
+          return;
+        }
+
+        const sliceStart = performance.now();
+        const maxSliceMs = 25; // Keep UI responsive at ~40 FPS
 
         if (useWasm && wasmSessionActive && GricWasm.isReady() && !isImg && !useTiles) {
-          // Native WASM batch compute on flat coordinates
+          // Native WASM batch compute in chunks of 5000 frames
           const N = benchmarkDataset ? benchmarkDataset.length : 0;
           const remaining = N - currentFrameIdx;
           if (remaining > 0) {
+            const batchSize = Math.min(remaining, 5000);
             const d = currentDim;
-            const flatCoords = new Float64Array(remaining * d);
-            for (let i = 0; i < remaining; i++) {
+            const flatCoords = new Float64Array(batchSize * d);
+            for (let i = 0; i < batchSize; i++) {
               const pt = benchmarkDataset[currentFrameIdx + i];
               flatCoords[i * d] = pt.x;
               flatCoords[i * d + 1] = pt.y;
               if (d === 3) flatCoords[i * d + 2] = pt.z || 0.0;
             }
 
-            const outAssignments = new Int32Array(remaining);
+            const outAssignments = new Int32Array(batchSize);
             const processed = GricWasm.processBatch(
-              flatCoords, remaining, d, outAssignments
+              flatCoords, batchSize, d, outAssignments
             );
 
             for (let i = 0; i < processed; i++) {
@@ -305,53 +381,72 @@
             totalFrames += processed;
           }
         } else {
-          // Standard pipeline until dataset completion
-          while (hasMoreFrames()) {
+          // Standard / Image pipeline in time-budgeted slice
+          while (hasMoreFrames() && !abortComputeAllRequested && (performance.now() - sliceStart < maxSliceMs)) {
             stepNextFrame(true);
           }
         }
 
-        const tEnd = performance.now();
-        const durationMs = Math.max(0.1, tEnd - tStart);
-        const framesComputed = totalFrames - startFrames;
-        const ptsPerSec = durationMs > 0.001
-          ? (framesComputed / (durationMs / 1000.0))
-          : 0.0;
+        // Live progress telemetry update during Compute All
+        if (totalDatasetCount > 0) {
+          const pct = Math.min(100, Math.max(0, (totalFrames / totalDatasetCount) * 100));
+          const fill = document.getElementById('progressFill');
+          if (fill) fill.style.width = `${pct.toFixed(1)}%`;
+          const fc = document.getElementById('frameCounter');
+          if (fc) fc.textContent = `${totalFrames} / ${totalDatasetCount} (${pct.toFixed(1)}%)`;
+          const cb = document.getElementById('clusterBadge');
+          if (cb) cb.textContent = `${clusters.length} clusters`;
+        }
 
-        if (useWasm && wasmSessionActive && GricWasm.isReady()) {
-          const snapshot = GricWasm.syncState(true);
-          if (snapshot) {
-            GricWasm.applyToJsState(snapshot);
+        if (hasMoreFrames() && !abortComputeAllRequested && isComputeAllRunning) {
+          computeAllTimer = setTimeout(computeSlice, 0);
+        } else {
+          // Completion
+          const tEnd = performance.now();
+          const durationMs = Math.max(0.1, tEnd - tStart);
+          const framesComputed = totalFrames - startFrames;
+          const ptsPerSec = durationMs > 0.001
+            ? (framesComputed / (durationMs / 1000.0))
+            : 0.0;
+
+          if (useWasm && wasmSessionActive && GricWasm.isReady()) {
+            const snapshot = GricWasm.syncState(true);
+            if (snapshot) {
+              GricWasm.applyToJsState(snapshot);
+            }
+          }
+
+          isComputeAllRunning = false;
+          resetComputeAllButton();
+          pauseSimulation();
+
+          sessionElapsedMs = durationMs;
+          sessionAvgFps = ptsPerSec;
+          currentFps = ptsPerSec;
+          currentCpuLoadPct = 100.0;
+          lastComputeTimeMs = durationMs;
+          avgComputeTimeMs = framesComputed > 0
+            ? (durationMs / framesComputed)
+            : 0.0;
+          sessionIsActive = false;
+
+          if (typeof recordFrameTelemetry === 'function') {
+            recordFrameTelemetry(durationMs, framesComputed, distSampleCluster);
+          }
+
+          updateUI();
+          draw();
+
+          if (typeof showToast === 'function') {
+            const rateStr = Number(ptsPerSec.toFixed(0)).toLocaleString();
+            const msg = `⚡ Clustered ${framesComputed.toLocaleString()} pts in ` +
+              `${durationMs.toFixed(1)} ms (${rateStr} pts/sec)`;
+            showToast(msg);
           }
         }
+      }
 
-        pauseSimulation();
-
-        // Update session metrics for completed batch
-        sessionElapsedMs = durationMs;
-        sessionAvgFps = ptsPerSec;
-        currentFps = ptsPerSec;
-        currentCpuLoadPct = 100.0;
-        lastComputeTimeMs = durationMs;
-        avgComputeTimeMs = framesComputed > 0
-          ? (durationMs / framesComputed)
-          : 0.0;
-        sessionIsActive = false;
-
-        if (typeof recordFrameTelemetry === 'function') {
-          recordFrameTelemetry(durationMs, framesComputed, distSampleCluster);
-        }
-
-        updateUI();
-        draw();
-
-        if (typeof showToast === 'function') {
-          const rateStr = Number(ptsPerSec.toFixed(0)).toLocaleString();
-          const msg = `⚡ Clustered ${framesComputed.toLocaleString()} pts in ` +
-            `${durationMs.toFixed(1)} ms (${rateStr} pts/sec)`;
-          showToast(msg);
-        }
-      }, 15);
+      computeAllTimer = setTimeout(computeSlice, 0);
     }
 
     function runDecoupledSimulation() {
@@ -486,6 +581,16 @@
 
     function pauseSimulation() {
       isRunning = false;
+      if (isComputeAllRunning) {
+        abortComputeAllRequested = true;
+        isComputeAllRunning = false;
+        if (computeAllTimer) {
+          clearTimeout(computeAllTimer);
+          cancelAnimationFrame(computeAllTimer);
+          computeAllTimer = null;
+        }
+        resetComputeAllButton();
+      }
       if (computePumpTimer) {
         clearTimeout(computePumpTimer);
         computePumpTimer = null;
@@ -826,8 +931,11 @@
       dragStartY = e.clientY;
 
       if (dataMode === 'image') {
-        if (activeDragQuad === 3 || maximizedQuad === 3) {
-          imageGalleryScrollY = Math.max(0, (imageGalleryScrollY || 0) - dy);
+        if (activeDragQuad === 2 || maximizedQuad === 2) {
+          imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) - dy);
+          draw();
+        } else if (activeDragQuad === 3 || maximizedQuad === 3) {
+          imageClustersScrollY = Math.max(0, (imageClustersScrollY || 0) - dy);
           draw();
         }
         return;
@@ -1066,8 +1174,11 @@
       const qIdx = getQuadrantAt(e.clientX, e.clientY);
 
       if (dataMode === 'image') {
-        if (qIdx === 3 || maximizedQuad === 3) {
-          imageGalleryScrollY = Math.max(0, (imageGalleryScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
+        if (qIdx === 2 || maximizedQuad === 2) {
+          imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
+          draw();
+        } else if (qIdx === 3 || maximizedQuad === 3) {
+          imageClustersScrollY = Math.max(0, (imageClustersScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
           draw();
         }
         return;
@@ -1276,8 +1387,11 @@
         touchStartY = t.clientY;
 
         if (dataMode === 'image') {
-          if (activeTouchQuad === 3 || maximizedQuad === 3) {
-            imageGalleryScrollY = Math.max(0, (imageGalleryScrollY || 0) - dy);
+          if (activeTouchQuad === 2 || maximizedQuad === 2) {
+            imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) - dy);
+            draw();
+          } else if (activeTouchQuad === 3 || maximizedQuad === 3) {
+            imageClustersScrollY = Math.max(0, (imageClustersScrollY || 0) - dy);
             draw();
           }
           return;
@@ -1488,7 +1602,15 @@
 
     document.getElementById('btnPlay').addEventListener('click', () => {
       if (engineMode === 'cli') {
-        runNativeCli();
+        if (isCliRunning) {
+          killNativeCli();
+        } else {
+          runNativeCli();
+        }
+        return;
+      }
+      if (isComputeAllRunning) {
+        abortComputeAll();
         return;
       }
       if (isRunning) pauseSimulation();
@@ -1499,7 +1621,15 @@
     if (btnComputeAll) {
       btnComputeAll.addEventListener('click', () => {
         if (engineMode === 'cli') {
-          runNativeCli();
+          if (isCliRunning) {
+            killNativeCli();
+          } else {
+            runNativeCli();
+          }
+          return;
+        }
+        if (isComputeAllRunning) {
+          abortComputeAll();
           return;
         }
         if (!benchmarkDataset || benchmarkDataset.length === 0) {
@@ -1522,6 +1652,9 @@
       if (engineMode === 'cli') {
         showToast('Step inspection is only available in WASM Interactive Simulation mode');
         return;
+      }
+      if (isComputeAllRunning) {
+        abortComputeAll();
       }
       if (!benchmarkDataset || benchmarkDataset.length === 0) {
         stageDataset();
@@ -1651,6 +1784,14 @@
         e.preventDefault();
         toggleCommandPalette();
         return;
+      }
+
+      if (e.key === 'Escape') {
+        if (isComputeAllRunning) {
+          e.preventDefault();
+          abortComputeAll();
+          return;
+        }
       }
 
       if (e.key === ' ' || e.code === 'Space') {
@@ -2949,6 +3090,9 @@
           if (typeof renderKnnTrace === 'function') {
             renderKnnTrace();
           }
+          if (typeof renderDataStructuresUI === 'function') {
+            renderDataStructuresUI();
+          }
           draw();
           showToast(
             `✅ Native k-NN computed: Total ${totalWallMs.toFixed(1)} ms ` +
@@ -2995,6 +3139,9 @@
             knnResults = results;
             if (typeof renderKnnTrace === 'function') {
               renderKnnTrace();
+            }
+            if (typeof renderDataStructuresUI === 'function') {
+              renderDataStructuresUI();
             }
             draw();
             showToast(
@@ -3805,63 +3952,98 @@
         badgeCount.textContent = `${readyCount}/${structures.length} ready`;
       }
 
-      listEl.innerHTML = '';
-      structures.forEach(s => {
-        const item = document.createElement('div');
-        item.className = 'data-struct-item';
+      let html = `
+        <table class="data-files-table">
+          <thead>
+            <tr>
+              <th style="width: 32%;">File</th>
+              <th style="width: 22%;">Role</th>
+              <th style="width: 20%;">Summary</th>
+              <th style="width: 12%; text-align: right;">Size</th>
+              <th style="width: 14%; text-align: center;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
 
+      structures.forEach((s, idx) => {
         const sizeStr = (s.size > 1048576)
           ? `${(s.size / 1048576).toFixed(2)} MB`
           : `${(s.size / 1024).toFixed(1)} KB`;
 
         const badgeBg = s.ready ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.1)';
         const badgeColor = s.ready ? '#38bdf8' : '#94a3b8';
+        const statusColor = s.ready ? '#4ade80' : '#64748b';
 
-        item.innerHTML = `
-          <div class="data-struct-info">
-            <div class="data-struct-title">
-              <span>${s.icon}</span>
-              <span style="color: ${s.ready ? '#f1f5f9' : '#64748b'};">${s.filename}</span>
+        html += `
+          <tr class="df-row" data-idx="${idx}">
+            <td>
+              <span class="df-filename btn-view-struct" title="${s.desc}">
+                <span>${s.icon}</span>
+                <span style="color: ${s.ready ? '#f1f5f9' : '#64748b'};">${s.filename}</span>
+              </span>
+            </td>
+            <td>
               <span class="badge-pill"
                     style="background: ${badgeBg}; color: ${badgeColor};
-                           font-size: 0.65rem; padding: 1px 6px;">
+                           font-size: 0.62rem; padding: 1px 5px;">
+                ${s.category}
+              </span>
+            </td>
+            <td>
+              <span style="font-size: 0.64rem; color: ${statusColor};" title="${s.badge}">
                 ${s.badge}
               </span>
-              <span style="font-size: 0.65rem; color: var(--text-muted); margin-left: auto;">
-                ${sizeStr}
-              </span>
-            </div>
-            <div class="data-struct-desc" title="${s.desc}">${s.desc}</div>
-          </div>
-          <div class="data-struct-actions">
-            <button class="btn-action btn-view-struct"
-                    style="padding: 2px 6px; font-size: 0.68rem;"
-                    title="View file content" ${s.ready ? '' : 'disabled'}>👁️</button>
-            <button class="btn-action btn-dl-struct"
-                    style="padding: 2px 6px; font-size: 0.68rem;"
-                    title="Download file to disk" ${s.ready ? '' : 'disabled'}>💾</button>
-            <button class="btn-action btn-copy-struct"
-                    style="padding: 2px 6px; font-size: 0.68rem;"
-                    title="Copy file text to clipboard" ${s.ready ? '' : 'disabled'}>📋</button>
-          </div>
+            </td>
+            <td style="text-align: right;">
+              <span class="df-size">${sizeStr}</span>
+            </td>
+            <td>
+              <div class="df-actions">
+                <button class="df-btn-action btn-view-struct"
+                        title="View file content" ${s.ready ? '' : 'disabled'}>👁️</button>
+                <button class="df-btn-action btn-dl-struct"
+                        title="Download file" ${s.ready ? '' : 'disabled'}>💾</button>
+                <button class="df-btn-action btn-copy-struct"
+                        title="Copy text" ${s.ready ? '' : 'disabled'}>📋</button>
+              </div>
+            </td>
+          </tr>
         `;
+      });
 
-        const btnView = item.querySelector('.btn-view-struct');
-        if (btnView) {
-          btnView.addEventListener('click', (e) => {
+      html += `</tbody></table>`;
+      listEl.innerHTML = html;
+
+      // Attach event handlers
+      listEl.querySelectorAll('.df-row').forEach((row) => {
+        const idx = parseInt(row.getAttribute('data-idx'), 10);
+        const s = structures[idx];
+        if (!s) return;
+
+        row.querySelectorAll('.btn-view-struct').forEach(btn => {
+          btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            openFileViewerModal(s.filename, s.category, s.badge, s.size, s.content);
+            if (s.ready) {
+              openFileViewerModal(s.filename, s.category, s.badge, s.size, s.content);
+            }
           });
-        }
-        const btnDl = item.querySelector('.btn-dl-struct');
+        });
+
+        const btnDl = row.querySelector('.btn-dl-struct');
         if (btnDl) {
           btnDl.addEventListener('click', (e) => {
             e.stopPropagation();
-            DataManager.downloadTextFile(s.filename, s.content);
+            if (s.binaryBytes) {
+              DataManager.downloadBinaryFile(s.filename, s.binaryBytes);
+            } else {
+              DataManager.downloadTextFile(s.filename, s.content);
+            }
             showToast(`💾 Downloaded ${s.filename}`);
           });
         }
-        const btnCopy = item.querySelector('.btn-copy-struct');
+
+        const btnCopy = row.querySelector('.btn-copy-struct');
         if (btnCopy) {
           btnCopy.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -3876,8 +4058,6 @@
             }
           });
         }
-
-        listEl.appendChild(item);
       });
     }
     window.renderDataStructuresUI = renderDataStructuresUI;
@@ -3886,8 +4066,6 @@
       const treeEl = document.getElementById('workspaceFilesTree');
       const headerEl = document.getElementById('lblWorkspaceTreeHeader');
       if (!treeEl) return;
-
-      treeEl.innerHTML = '';
 
       if (headerEl) {
         if (isDesktopBackend) {
@@ -3903,10 +4081,10 @@
         treeEl.innerHTML = `
           <div style="padding: 10px; color: var(--text-muted); text-align: center;
                       line-height: 1.4;">
-            <div style="font-size: 1.1rem; margin-bottom: 4px;">⚡ Web Browser Sandbox</div>
-            <div>Working in client-side memory. Click <b>"Save All"</b> or <b>"ZIP"</b>
+            <div style="font-size: 1.05rem; margin-bottom: 4px;">⚡ Web Browser Sandbox</div>
+            <div style="font-size: 0.70rem;">Working in client-side memory. Click <b>"Save All"</b> or <b>"ZIP"</b>
                  to export results to disk.</div>
-            <div style="margin-top: 6px; font-size: 0.68rem; color: #38bdf8;">
+            <div style="margin-top: 5px; font-size: 0.66rem; color: #38bdf8;">
               Tip: Click <b>"Open"</b> in the top Workspace bar to link a local folder directly.
             </div>
           </div>
@@ -3916,45 +4094,88 @@
 
       if (workspaceFiles.length === 0) {
         treeEl.innerHTML = `
-          <div style="padding: 8px; color: var(--text-muted); text-align: center;">
+          <div style="padding: 8px; color: var(--text-muted); text-align: center; font-size: 0.70rem;">
             (Directory is empty)
           </div>
         `;
         return;
       }
 
-      workspaceFiles.forEach(f => {
-        const item = document.createElement('div');
+      let html = `
+        <table class="data-files-table">
+          <thead>
+            <tr>
+              <th style="width: 46%;">Name</th>
+              <th style="width: 24%;">Type</th>
+              <th style="width: 16%; text-align: right;">Size</th>
+              <th style="width: 14%; text-align: center;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      workspaceFiles.forEach((f, idx) => {
         const isDir = f.is_dir || f.isDir;
-        item.className = `ws-tree-item ${isDir ? 'is-dir' : ''}`;
+        const icon = isDir
+          ? '📁'
+          : (f.name.endsWith('.bin') ? '⚡' : (f.name.endsWith('.fits') ? '🌌' : '📄'));
+        const sizeStr = !isDir ? `${(f.size / 1024).toFixed(1)} KB` : '—';
+        const typeStr = isDir
+          ? (f.name.includes('cluster') ? 'Cluster Dir' : 'Directory')
+          : (f.name.endsWith('.bin')
+             ? 'GRIC Binary'
+             : (f.name.endsWith('.fits') ? 'FITS' : 'ASCII Text'));
+        const typeBg = isDir
+          ? 'rgba(250, 204, 21, 0.12)'
+          : (f.name.endsWith('.bin') ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.06)');
+        const typeColor = isDir
+          ? '#facc15'
+          : (f.name.endsWith('.bin') ? '#38bdf8' : '#94a3b8');
 
-        const icon = isDir ? '📁' : '📄';
-        const sizeStr = !isDir ? `(${(f.size / 1024).toFixed(1)} KB)` : '';
-
-        item.innerHTML = `
-          <div style="display: flex; align-items: center; gap: 6px; overflow: hidden;
-                      text-overflow: ellipsis; white-space: nowrap; flex: 1;">
-            <span>${icon}</span>
-            <span style="font-weight: ${isDir ? '700' : '400'};">${f.name}</span>
-            <span style="font-size: 0.65rem; color: var(--text-muted);">${sizeStr}</span>
-          </div>
-          <div style="display: flex; gap: 4px; flex-shrink: 0;">
-            ${isDir && f.name.includes('cluster')
-              ? `<button class="btn-action btn-load-cluster"
-                         style="padding: 1px 5px; font-size: 0.65rem; color: #4ade80;">
-                   Load
-                 </button>`
-              : ''}
-            ${!isDir
-              ? `<button class="btn-action btn-view-file"
-                         style="padding: 1px 5px; font-size: 0.65rem;">
-                   View
-                 </button>`
-              : ''}
-          </div>
+        html += `
+          <tr class="df-row" data-ws-idx="${idx}">
+            <td>
+              <span class="df-filename ${!isDir ? 'btn-view-file' : ''}"
+                    style="cursor: ${isDir ? 'default' : 'pointer'};">
+                <span>${icon}</span>
+                <span style="color: ${isDir ? '#facc15' : '#e2e8f0'};
+                             font-weight: ${isDir ? '700' : '400'};">
+                  ${f.name}
+                </span>
+              </span>
+            </td>
+            <td>
+              <span class="badge-pill"
+                    style="background: ${typeBg}; color: ${typeColor};
+                           font-size: 0.60rem; padding: 1px 4px;">
+                ${typeStr}
+              </span>
+            </td>
+            <td style="text-align: right;">
+              <span class="df-size">${sizeStr}</span>
+            </td>
+            <td style="text-align: center;">
+              ${isDir && f.name.includes('cluster')
+                ? `<button class="df-btn-action btn-load-cluster"
+                           style="color: #4ade80; border-color: rgba(74, 222, 128, 0.4);
+                                  font-weight: 700;">Load</button>`
+                : (!isDir ? `<button class="df-btn-action btn-view-file"
+                                     title="View file">👁️</button>` : '')}
+            </td>
+          </tr>
         `;
+      });
 
-        const btnLoad = item.querySelector('.btn-load-cluster');
+      html += `</tbody></table>`;
+      treeEl.innerHTML = html;
+
+      // Attach event listeners
+      treeEl.querySelectorAll('.df-row').forEach((row) => {
+        const idx = parseInt(row.getAttribute('data-ws-idx'), 10);
+        const f = workspaceFiles[idx];
+        if (!f) return;
+
+        const btnLoad = row.querySelector('.btn-load-cluster');
         if (btnLoad) {
           btnLoad.addEventListener('click', async (e) => {
             e.stopPropagation();
@@ -3962,9 +4183,8 @@
           });
         }
 
-        const btnView = item.querySelector('.btn-view-file');
-        if (btnView) {
-          btnView.addEventListener('click', async (e) => {
+        row.querySelectorAll('.btn-view-file').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
             e.stopPropagation();
             try {
               let text = '';
@@ -3978,9 +4198,7 @@
               showToast(`Failed to read ${f.name}: ${err.message}`);
             }
           });
-        }
-
-        treeEl.appendChild(item);
+        });
       });
     }
     window.renderWorkspaceFilesTree = renderWorkspaceFilesTree;
@@ -4406,8 +4624,8 @@
           let content = '';
           for (let i = 0; i < benchmarkDataset.length; i++) {
             const pt = benchmarkDataset[i];
-            if (Array.isArray(pt)) {
-              content += pt.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+            if (Array.isArray(pt) || ArrayBuffer.isView(pt) || (pt && typeof pt.length === 'number')) {
+              content += Array.from(pt).map(v => Number(v).toFixed(6)).join(' ') + '\n';
             } else if (pt && typeof pt === 'object') {
               if (currentDim === 3) {
                 content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)} ${Number(pt.z || 0).toFixed(6)}\n`;
@@ -4463,8 +4681,8 @@
           let content = '';
           for (let i = 0; i < benchmarkDataset.length; i++) {
             const pt = benchmarkDataset[i];
-            if (Array.isArray(pt)) {
-              content += pt.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+            if (Array.isArray(pt) || ArrayBuffer.isView(pt) || (pt && typeof pt.length === 'number')) {
+              content += Array.from(pt).map(v => Number(v).toFixed(6)).join(' ') + '\n';
             } else if (pt && typeof pt === 'object') {
               if (currentDim === 3) {
                 content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)} ${Number(pt.z || 0).toFixed(6)}\n`;
@@ -4744,6 +4962,7 @@
           x: a.x,
           y: a.y,
           z: a.z,
+          anchor: a.anchor,
           members: a.members || 0,
           prob: 0,
           scDists: 0,
@@ -4758,9 +4977,9 @@
         // Populate pastSamples so points appear across the viewports
         if (benchmarkDataset && benchmarkDataset.length > 0) {
           pastSamples = benchmarkDataset.map((p, idx) => ({
-            x: Array.isArray(p) ? p[0] : (p.x || 0),
-            y: Array.isArray(p) ? p[1] : (p.y || 0),
-            z: currentDim === 3 ? (Array.isArray(p) ? (p[2] || 0) : (p.z || 0)) : 0,
+            x: (Array.isArray(p) || ArrayBuffer.isView(p)) ? p[0] : (p.x || 0),
+            y: (Array.isArray(p) || ArrayBuffer.isView(p)) ? p[1] : (p.y || 0),
+            z: currentDim === 3 ? ((Array.isArray(p) || ArrayBuffer.isView(p)) ? (p[2] || 0) : (p.z || 0)) : 0,
             frameIndex: idx
           }));
         } else {
@@ -4798,6 +5017,14 @@
         }
         if (data.assignments && data.assignments.length > 0) {
           assignmentHistory = data.assignments;
+          imageFrameAssignments = data.assignments;
+          imageClusterMembers = {};
+          data.assignments.forEach((cId, fIdx) => {
+            if (!imageClusterMembers[cId]) {
+              imageClusterMembers[cId] = [];
+            }
+            imageClusterMembers[cId].push(fIdx);
+          });
         }
 
         // Apply native execution stats to global telemetry & Resource Tracker
@@ -4853,7 +5080,23 @@
         const frameCounter = document.getElementById('frameCounter');
         if (frameCounter) frameCounter.textContent = `${totalFrames} / ${totalFrames} (100.0%)`;
 
+        // Attempt loading existing knn_results.txt if available
+        try {
+          const knnData = await DesktopBridge.readKnnResults(clusterDir, (typeof knnK !== 'undefined' ? knnK : 10));
+          if (knnData) {
+            knnResults = knnData;
+            if (typeof renderKnnTrace === 'function') {
+              renderKnnTrace();
+            }
+          }
+        } catch (e) {
+          /* ignore */
+        }
+
         updateUI();
+        if (typeof renderDataStructuresUI === 'function') {
+          renderDataStructuresUI();
+        }
         resizeCanvas();
         draw();
         requestAnimationFrame(() => {
@@ -5407,6 +5650,20 @@
           }
         });
       }
+
+      const selectSort = document.getElementById('selectImgClusterSort');
+      if (selectSort) {
+        selectSort.addEventListener('change', (e) => {
+          imageClustersSortMode = e.target.value;
+          if (typeof draw === 'function') draw();
+          const label = (imageClustersSortMode === 'size_desc')
+            ? '📊 Sorted by Cluster Size (Descending: Largest first)'
+            : (imageClustersSortMode === 'size_asc')
+              ? '📉 Sorted by Cluster Size (Ascending: Smallest first)'
+              : '🔢 Sorted by Creation ID (Default)';
+          if (typeof showToast === 'function') showToast(label);
+        });
+      }
     }
 
     // -------------------------------------------------------------------------
@@ -5416,6 +5673,8 @@
       // Actions
       { id: 'act-play', group: 'Actions', icon: '▶', name: 'Cluster / Play Simulation',
         hint: 'Space', action: () => document.getElementById('btnPlay')?.click() },
+      { id: 'act-compute-all', group: 'Actions', icon: '⚡', name: 'Compute All / Run to Completion (or Stop)',
+        hint: 'Batch', action: () => document.getElementById('btnComputeAll')?.click() },
       { id: 'act-step', group: 'Actions', icon: '⏭', name: 'Step Single Frame',
         hint: 'S', action: () => document.getElementById('btnStep')?.click() },
       { id: 'act-reset-clusters', group: 'Actions', icon: '↺',
@@ -5433,6 +5692,30 @@
         hint: 'K', action: () => document.getElementById('btnToggleKnnModule')?.click() },
       { id: 'act-knn-run', group: 'Actions', icon: '▶', name: 'Compute k-Nearest Neighbors',
         hint: 'k-NN', action: () => document.getElementById('btnRunKnn')?.click() },
+      { id: 'act-img-sort-desc', group: 'Actions', icon: '📊', name: 'Image Mode: Sort Clusters by Size (Descending)',
+        hint: 'Sort Desc', action: () => {
+          imageClustersSortMode = 'size_desc';
+          const sel = document.getElementById('selectImgClusterSort');
+          if (sel) sel.value = 'size_desc';
+          if (typeof draw === 'function') draw();
+          if (typeof showToast === 'function') showToast('📊 Sorted by Cluster Size (Descending)');
+        } },
+      { id: 'act-img-sort-asc', group: 'Actions', icon: '📉', name: 'Image Mode: Sort Clusters by Size (Ascending)',
+        hint: 'Sort Asc', action: () => {
+          imageClustersSortMode = 'size_asc';
+          const sel = document.getElementById('selectImgClusterSort');
+          if (sel) sel.value = 'size_asc';
+          if (typeof draw === 'function') draw();
+          if (typeof showToast === 'function') showToast('📉 Sorted by Cluster Size (Ascending)');
+        } },
+      { id: 'act-img-sort-id', group: 'Actions', icon: '🔢', name: 'Image Mode: Sort Clusters by ID (Default)',
+        hint: 'Sort ID', action: () => {
+          imageClustersSortMode = 'id';
+          const sel = document.getElementById('selectImgClusterSort');
+          if (sel) sel.value = 'id';
+          if (typeof draw === 'function') draw();
+          if (typeof showToast === 'function') showToast('🔢 Sorted by Creation ID (Default)');
+        } },
       { id: 'act-motion-tail', group: 'Actions', icon: '〰️',
         name: 'Toggle Recent Points Motion Trail', hint: 'Trail',
         action: () => document.getElementById('btnToggleMotionTail')?.click() },
