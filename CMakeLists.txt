@@ -73,6 +73,7 @@ include_directories(
     ${IMAGESTREAMIO_INCLUDE_DIRS}
     ${CMAKE_CURRENT_BINARY_DIR}
     src
+    src/shared
     src/gric-cluster/core
     src/gric-cluster/math
     src/gric-cluster/io
@@ -255,6 +256,22 @@ if (CFITSIO_FOUND)
     target_include_directories(gric-knn PRIVATE ${CFITSIO_INCLUDE_DIRS})
 endif()
 
+# gric-ascii2bin tool
+add_executable(gric-ascii2bin
+    src/gric-ascii2bin/ascii2bin.c
+    src/shared/gric_bin_io.c
+    src/shared/cli_colors.c
+)
+target_link_libraries(gric-ascii2bin m)
+
+# gric-bin2ascii tool
+add_executable(gric-bin2ascii
+    src/gric-bin2ascii/bin2ascii.c
+    src/shared/gric_bin_io.c
+    src/shared/cli_colors.c
+)
+target_link_libraries(gric-bin2ascii m)
+
 if (CFITSIO_FOUND)
     target_compile_definitions(gric-info PRIVATE USE_CFITSIO)
     target_compile_definitions(gric-info PRIVATE CFITSIO_VERSION_STR=\"${CFITSIO_VERSION}\")
@@ -348,6 +365,15 @@ if (IMAGESTREAMIO_FOUND)
         COMMAND test_txt2stream)
     set_tests_properties(test_txt2stream PROPERTIES DEPENDS "gric-txt2stream;gric-cluster")
 endif()
+
+add_executable(test_bin_ascii_roundtrip
+    tests/test_bin_ascii_roundtrip.c
+    src/shared/gric_bin_io.c
+)
+target_link_libraries(test_bin_ascii_roundtrip m)
+add_test(NAME test_bin_ascii_roundtrip
+    COMMAND test_bin_ascii_roundtrip)
+set_tests_properties(test_bin_ascii_roundtrip PROPERTIES DEPENDS "gric-ascii2bin;gric-bin2ascii")
 
 # Target to regenerate benchmark figures and documentation pages
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
