@@ -19,12 +19,16 @@
     let imageHeight = 32;
     let imageDim = 1024; // = imageWidth * imageHeight
     let currentImageFrame = null; // Float32Array or Float64Array for active frame
-    let imageGalleryScrollY = 0; // Centroid gallery scroll offset
+    let imageGalleryScrollY = 0; // Legacy gallery scroll offset
+    let imageMembersScrollY = 0; // Q2 Members gallery scroll offset
+    let imageClustersScrollY = 0; // Q3 All clusters gallery scroll offset
+    let imageTopRightMode = 'anchor'; // 'anchor' or 'residual'
     let inspectedImageFrameIdx = -1; // -1 = live, >= 0 = retro-inspected frame
     let inspectedClusterId = -1; // -1 = all clusters, >= 0 = inspecting cluster member frames
     let imageFrameAssignments = []; // imageFrameAssignments[frameIdx] = clusterId
     let imageFrameDists = []; // imageFrameDists[frameIdx] = distance to anchor
     let imageClusterMembers = {}; // imageClusterMembers[clusterId] = [frameIdx, ...]
+    let imageClustersSortMode = 'id'; // 'id', 'size_desc' (largest first), 'size_asc' (smallest first)
 
     // 3D Orbit Camera State (Spherical Orbit: Azimuth θ, Elevation φ)
     const orbitCamera = {
@@ -406,6 +410,9 @@
     let benchmarkDataset = [];
     let currentFrameIdx = 0;
     let isRunning = false;
+    let isComputeAllRunning = false;
+    let abortComputeAllRequested = false;
+    let computeAllTimer = null;
     let playTimer = null;
     let computePumpTimer = null;
     let playSpeed = -1;

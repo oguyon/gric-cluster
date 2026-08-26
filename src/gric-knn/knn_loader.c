@@ -6,6 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "knn_loader.h"
 #include "knn_tree.h"
+#include "gric_bin_io.h"
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
@@ -79,6 +80,71 @@ static int parse_membership_file(
     const char *path,
     KnnModel   *model)
 {
+    // Try binary format first
+    FILE *f_bin = fopen(path, "rb");
+    if (f_bin != NULL)
+    {
+        gric_bin_header_t hdr;
+        char *comment = NULL;
+        if (gric_bin_read_header(f_bin, &hdr, &comment) == 0 &&
+            hdr.data_type == GRIC_BIN_DTYPE_UINT32)
+        {
+            long nframes = (long)hdr.dims[0];
+            uint32_t *ubuf = (uint32_t *)malloc((size_t)nframes * sizeof(uint32_t));
+            if (ubuf != NULL && fread(ubuf, sizeof(uint32_t), nframes, f_bin) == (size_t)nframes)
+            {
+                int max_c = -1;
+                for (long i = 0; i < nframes; i++)
+                {
+                    if ((int)ubuf[i] > max_c)
+                    {
+                        max_c = (int)ubuf[i];
+                    }
+                }
+                model->total_dataset_frames = nframes;
+                model->num_clusters = max_c + 1;
+                model->clusters =
+                    (KnnCluster *)calloc((size_t)model->num_clusters, sizeof(KnnCluster));
+                model->frame_cluster_map =
+                    (int *)malloc((size_t)nframes * sizeof(int));
+                model->frame_r_anchor =
+                    (float *)calloc((size_t)nframes, sizeof(float));
+
+                for (long i = 0; i < nframes; i++)
+                {
+                    int c = (int)ubuf[i];
+                    model->frame_cluster_map[i] = c;
+                    model->clusters[c].num_members++;
+                }
+                for (int c = 0; c < model->num_clusters; c++)
+                {
+                    if (model->clusters[c].num_members > 0)
+                    {
+                        model->clusters[c].members =
+                            (MemberMeta *)malloc((size_t)model->clusters[c].num_members *
+                                                 sizeof(MemberMeta));
+                    }
+                }
+                int *curr_m = (int *)calloc((size_t)model->num_clusters, sizeof(int));
+                for (long i = 0; i < nframes; i++)
+                {
+                    int c = model->frame_cluster_map[i];
+                    int slot = curr_m[c]++;
+                    model->clusters[c].members[slot].frame_id = i;
+                    model->clusters[c].members[slot].r_anchor = 0.0;
+                }
+                free(curr_m);
+                free(ubuf);
+                if (comment != NULL) free(comment);
+                fclose(f_bin);
+                return 0;
+            }
+            if (ubuf != NULL) free(ubuf);
+        }
+        if (comment != NULL) free(comment);
+        fclose(f_bin);
+    }
+
     FILE *f = fopen(path, "r");
     if (f == NULL)
     {
@@ -396,6 +462,37 @@ static int parse_dcc_file(
     }
 
     char path[2048];
+    snprintf(path, sizeof(path), "%s/dcc.bin", cluster_dir);
+    FILE *f_bin = fopen(path, "rb");
+    if (f_bin != NULL)
+    {
+        gric_bin_header_t hdr;
+        char *comment = NULL;
+        if (gric_bin_read_header(f_bin, &hdr, &comment) == 0 &&
+            hdr.data_type == GRIC_BIN_DTYPE_FLOAT32)
+        {
+            float *fbuf = (float *)malloc((size_t)M * (size_t)M * sizeof(float));
+            if (fbuf != NULL)
+            {
+                if (fread(fbuf, sizeof(float), (size_t)M * (size_t)M, f_bin) ==
+                    (size_t)M * (size_t)M)
+                {
+                    for (int i = 0; i < M * M; i++)
+                    {
+                        model->dcc_matrix[i] = (double)fbuf[i];
+                    }
+                    free(fbuf);
+                    if (comment != NULL) free(comment);
+                    fclose(f_bin);
+                    return 0;
+                }
+                free(fbuf);
+            }
+        }
+        if (comment != NULL) free(comment);
+        fclose(f_bin);
+    }
+
     snprintf(path, sizeof(path), "%s/dccmin.txt", cluster_dir);
     FILE *f = fopen(path, "r");
     int   using_dccmin = 0;
@@ -608,7 +705,50 @@ static int load_anchors(
     int M = model->num_clusters;
     char path[2048];
 
-    // Try FITS first
+    // Try binary anchors.bin first
+    snprintf(path, sizeof(path), "%s/anchors.bin", cluster_dir);
+    FILE *a_bin = fopen(path, "rb");
+    if (a_bin != NULL)
+    {
+        gric_bin_header_t hdr;
+        char *comment = NULL;
+        if (gric_bin_read_header(a_bin, &hdr, &comment) == 0)
+        {
+            model->frame_width = (hdr.ndim > 1) ? (long)hdr.dims[1] : 1;
+            model->frame_height = 1;
+            model->frame_elements = model->frame_width * model->frame_height;
+
+            float *fbuf = (float *)malloc((size_t)model->frame_elements * sizeof(float));
+            if (fbuf != NULL)
+            {
+                int ok = 1;
+                for (int c = 0; c < M; c++)
+                {
+                    model->clusters[c].anchor_data =
+                        (double *)malloc((size_t)model->frame_elements * sizeof(double));
+                    if (model->clusters[c].anchor_data == NULL ||
+                        fread(fbuf, sizeof(float), (size_t)model->frame_elements, a_bin) !=
+                        (size_t)model->frame_elements)
+                    {
+                        ok = 0;
+                        break;
+                    }
+                    for (long k = 0; k < model->frame_elements; k++)
+                    {
+                        model->clusters[c].anchor_data[k] = (double)fbuf[k];
+                    }
+                }
+                free(fbuf);
+                if (comment != NULL) free(comment);
+                fclose(a_bin);
+                if (ok) return 0;
+            }
+        }
+        if (comment != NULL) free(comment);
+        fclose(a_bin);
+    }
+
+    // Try FITS second
     snprintf(path, sizeof(path), "%s/anchors.fits", cluster_dir);
 
 #ifdef USE_CFITSIO
@@ -738,10 +878,14 @@ int knn_model_load(
     model->is_fits_input = check_is_fits(input_data_path);
 
     char memb_path[2048];
-    snprintf(memb_path, sizeof(memb_path), "%s/frame_membership.txt", cluster_dir);
+    snprintf(memb_path, sizeof(memb_path), "%s/frame_membership.bin", cluster_dir);
     if (parse_membership_file(memb_path, model) != 0)
     {
-        return -1;
+        snprintf(memb_path, sizeof(memb_path), "%s/frame_membership.txt", cluster_dir);
+        if (parse_membership_file(memb_path, model) != 0)
+        {
+            return -1;
+        }
     }
 
     char radii_path[2048];

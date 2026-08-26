@@ -270,6 +270,63 @@ const DataManager = (function () {
     downloadBlob(blob, filename);
   }
 
+  function downloadBinaryFile(filename, uint8Bytes) {
+    const blob = new Blob([uint8Bytes], { type: 'application/octet-stream' });
+    downloadBlob(blob, filename);
+  }
+
+  /**
+   * Constructs a self-describing 64-byte GRIC binary buffer with payload.
+   */
+  function createGricBinaryFile(fileType, dataType, dims, typedArray, comment = '') {
+    const enc = new TextEncoder();
+    const commentBytes = comment ? enc.encode(comment) : new Uint8Array(0);
+    const headerBytes = 64 + commentBytes.length;
+    const dataBytes = typedArray.byteLength;
+    const totalBytes = headerBytes + dataBytes;
+
+    const buffer = new ArrayBuffer(totalBytes);
+    const view = new DataView(buffer);
+    const u8 = new Uint8Array(buffer);
+
+    // Magic "GRIC"
+    u8[0] = 0x47; u8[1] = 0x52; u8[2] = 0x49; u8[3] = 0x43;
+    // Version 1
+    view.setUint8(4, 1);
+    // File Type (1=ANCHORS, 2=DCC, 3=MEMBERSHIP, 4=COUNTS, 5=EVALS, 6=COORDS, 0=GENERIC)
+    view.setUint8(5, fileType);
+    // Data Type (1=FLOAT32, 2=FLOAT64, 3=UINT32, 4=INT32)
+    view.setUint8(6, dataType);
+    // Endianness (1 = Little-Endian)
+    view.setUint8(7, 1);
+    // Header bytes (uint16)
+    view.setUint16(8, headerBytes, true);
+    // ndim (uint16)
+    view.setUint16(10, dims.length, true);
+    // flags (uint32) - Row-Major (0x0001)
+    view.setUint32(12, 0x0001, true);
+    // num_elements (uint64)
+    view.setBigUint64(16, BigInt(typedArray.length), true);
+    // data_bytes (uint64)
+    view.setBigUint64(24, BigInt(dataBytes), true);
+    // dims[4] (4 x uint64)
+    for (let d = 0; d < 4; d++) {
+      const dimVal = (d < dims.length) ? BigInt(dims[d]) : 0n;
+      view.setBigUint64(32 + d * 8, dimVal, true);
+    }
+    // Comment
+    if (commentBytes.length > 0) {
+      u8.set(commentBytes, 64);
+    }
+    // Payload Data
+    u8.set(
+      new Uint8Array(typedArray.buffer, typedArray.byteOffset, typedArray.byteLength),
+      headerBytes
+    );
+
+    return u8;
+  }
+
   function generateCurrentDataStructures() {
     const dsName = (typeof currentBenchmark !== 'undefined' && currentBenchmark)
       ? currentBenchmark : 'custom_dataset';
@@ -279,41 +336,94 @@ const DataManager = (function () {
     const dim = (typeof currentDim !== 'undefined') ? currentDim : 2;
     const radius = (typeof rlim !== 'undefined') ? rlim : 0.1;
 
-    // 1. centroids.txt
-    let centroidsText = `# GRIC Cluster Centroids\n# ID X Y Z MEMBERS RADIUS STATUS\n`;
+    // 1. anchors.bin (FLOAT32 [numClust, dim])
+    const f32Anchors = new Float32Array(numClust * dim);
+    let anchorsPreview = `# GRIC Binary File: anchors.bin [FLOAT32, ${numClust} x ${dim}]\n` +
+                         `# Format: 64-byte self-describing GRIC header\n` +
+                         `# ID X Y ${dim === 3 ? 'Z ' : ''}MEMBERS RADIUS STATUS\n`;
     if (typeof clusters !== 'undefined' && clusters.length > 0) {
-      clusters.forEach(c => {
+      clusters.forEach((c, idx) => {
+        if (c.anchor && (c.anchor.length === dim || dim > 3)) {
+          for (let d = 0; d < dim; d++) {
+            f32Anchors[idx * dim + d] = Number(c.anchor[d] || 0);
+          }
+        } else {
+          f32Anchors[idx * dim + 0] = Number(c.x || 0);
+          f32Anchors[idx * dim + 1] = Number(c.y || 0);
+          if (dim === 3) {
+            f32Anchors[idx * dim + 2] = Number(c.z || 0);
+          }
+        }
         const x = Number(c.x || 0).toFixed(6);
         const y = Number(c.y || 0).toFixed(6);
         const z = Number(c.z || 0).toFixed(6);
         const m = c.members || 0;
         const r = Number(c.radius || radius).toFixed(6);
         const st = c.pruned ? 'PRUNED' : 'ACTIVE';
-        centroidsText += `${c.id} ${x} ${y} ${z} ${m} ${r} ${st}\n`;
+        anchorsPreview += `${c.id} ${x} ${y} ${dim === 3 ? z + ' ' : ''}${m} ${r} ${st}\n`;
       });
     }
+    const binAnchors = createGricBinaryFile(
+      1, 1, [numClust, dim], f32Anchors, 'Cluster centroid coordinates'
+    );
 
-    // 2. dcc.txt
-    let dccText = `# GRIC Cluster-to-Cluster Distance Matrix D_cc\n`;
+    // 2. dcc.bin (FLOAT32 [numClust, numClust])
+    const f32Dcc = new Float32Array(numClust * numClust);
+    let dccPreview = `# GRIC Binary File: dcc.bin [FLOAT32, ${numClust} x ${numClust}]\n` +
+                     `# Format: 64-byte self-describing GRIC header\n` +
+                     `# Cluster-to-Cluster Metric Distance Matrix D_cc\n`;
     if (typeof dcc !== 'undefined' && dcc.length > 0) {
-      dcc.forEach(row => {
-        dccText += row.map(v => Number(v).toFixed(6)).join(' ') + '\n';
-      });
+      for (let i = 0; i < numClust; i++) {
+        for (let j = 0; j < numClust; j++) {
+          const val = (dcc[i] && dcc[i][j] !== undefined) ? Number(dcc[i][j]) : 0;
+          f32Dcc[i * numClust + j] = val;
+        }
+        if (dcc[i]) {
+          dccPreview += dcc[i].map(v => Number(v).toFixed(6)).join(' ') + '\n';
+        }
+      }
     }
+    const binDcc = createGricBinaryFile(
+      2, 1, [numClust, numClust], f32Dcc, 'Cluster distance matrix D_cc'
+    );
 
-    // 3. frame_membership.txt
-    let memText = `# Frame Membership Assignments\n# FrameIdx -> ClusterID\n`;
+    // 3. frame_membership.bin (UINT32 [numPast])
+    const u32Mem = new Uint32Array(numPast);
+    let memPreview = `# GRIC Binary File: frame_membership.bin [UINT32, ${numPast} frames]\n` +
+                     `# Format: 64-byte self-describing GRIC header\n` +
+                     `# FrameIdx -> ClusterID\n`;
     if (typeof assignmentHistory !== 'undefined' && assignmentHistory.length > 0) {
       assignmentHistory.forEach((cid, idx) => {
-        memText += `${idx} ${cid}\n`;
+        u32Mem[idx] = cid >= 0 ? cid : 0;
+        memPreview += `${idx} ${cid}\n`;
       });
     } else if (typeof pastSamples !== 'undefined' && pastSamples.length > 0) {
       pastSamples.forEach((p, idx) => {
-        memText += `${idx} ${p.clusterId !== undefined ? p.clusterId : -1}\n`;
+        const cid = p.clusterId !== undefined ? p.clusterId : -1;
+        u32Mem[idx] = cid >= 0 ? cid : 0;
+        memPreview += `${idx} ${cid}\n`;
       });
     }
+    const binMem = createGricBinaryFile(
+      3, 3, [numPast], u32Mem, 'Frame membership assignments'
+    );
 
-    // 4. transition_matrix.txt
+    // 4. cluster_counts.bin (UINT32 [numClust])
+    const u32Counts = new Uint32Array(numClust);
+    let countsPreview = `# GRIC Binary File: cluster_counts.bin [UINT32, ${numClust} clusters]\n` +
+                        `# Format: 64-byte self-describing GRIC header\n` +
+                        `# ClusterID -> Member Count\n`;
+    if (typeof clusters !== 'undefined' && clusters.length > 0) {
+      clusters.forEach((c, idx) => {
+        u32Counts[idx] = c.members || 0;
+        countsPreview += `${c.id} ${c.members || 0}\n`;
+      });
+    }
+    const binCounts = createGricBinaryFile(
+      4, 3, [numClust], u32Counts, 'Cluster member counts'
+    );
+
+    // 5. transition_matrix.txt
     let tmText = `# GRIC Markov State Transition Matrix\n`;
     if (typeof transitionCounts !== 'undefined' && transitionCounts.length > 0) {
       transitionCounts.forEach(row => {
@@ -321,35 +431,125 @@ const DataManager = (function () {
       });
     }
 
-    // 5. input_samples.txt
-    let samplesText = `# GRIC Input Dataset Coordinates\n# X Y Z\n`;
-    if (typeof pastSamples !== 'undefined' && pastSamples.length > 0) {
-      pastSamples.forEach(p => {
-        if (dim === 3) {
-          samplesText += `${Number(p.x||0).toFixed(6)} ${Number(p.y||0).toFixed(6)} ` +
-                         `${Number(p.z||0).toFixed(6)}\n`;
+    // 6. input_samples.bin (FLOAT32 [numPast, dim])
+    const f32Samples = new Float32Array(numPast * dim);
+    let samplesPreview = `# GRIC Binary File: input_samples.bin [FLOAT32, ${numPast} x ${dim}]\n` +
+                         `# Format: 64-byte self-describing GRIC header\n` +
+                         `# X Y ${dim === 3 ? 'Z' : ''}\n`;
+    const sourceSamples = (typeof benchmarkDataset !== 'undefined' && benchmarkDataset.length > 0)
+      ? benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
+
+    if (sourceSamples && sourceSamples.length > 0) {
+      sourceSamples.forEach((p, idx) => {
+        if (Array.isArray(p) || ArrayBuffer.isView(p)) {
+          for (let d = 0; d < dim; d++) {
+            f32Samples[idx * dim + d] = Number(p[d] || 0);
+          }
+          if (idx < 50) {
+            samplesPreview += Array.from(p.slice(0, Math.min(dim, 3)))
+              .map(v => Number(v).toFixed(6)).join(' ') + (dim > 3 ? ' ...\n' : '\n');
+          }
         } else {
-          samplesText += `${Number(p.x||0).toFixed(6)} ${Number(p.y||0).toFixed(6)}\n`;
+          f32Samples[idx * dim + 0] = Number(p.x || 0);
+          f32Samples[idx * dim + 1] = Number(p.y || 0);
+          if (dim === 3) {
+            f32Samples[idx * dim + 2] = Number(p.z || 0);
+            samplesPreview += `${Number(p.x||0).toFixed(6)} ${Number(p.y||0).toFixed(6)} ` +
+                              `${Number(p.z||0).toFixed(6)}\n`;
+          } else {
+            samplesPreview += `${Number(p.x||0).toFixed(6)} ${Number(p.y||0).toFixed(6)}\n`;
+          }
         }
       });
     }
+    const binSamples = createGricBinaryFile(
+      6, 1, [numPast, dim], f32Samples, 'Input dataset coordinates'
+    );
 
-    // 6. knn_results.txt (if k-NN graph is available)
+    // 7. knn_results.txt (k-NN search graph and metric distances)
     let knnText = `# GRIC k-Nearest Neighbor (k-NN) Graph & Diagnostics\n`;
-    if (typeof knnResults !== 'undefined' && knnResults && knnResults.queries) {
-      knnText += `# Target k: ${typeof knnK !== 'undefined' ? knnK : 8}\n`;
-      knnText += `# Total Queries: ${knnResults.queries.length}\n`;
-      knnText += `# Pruning Efficiency: ${knnResults.efficiencyPct || 0}%\n`;
-      knnText += `# Speedup Factor: ${knnResults.speedup || 1.0}x\n\n`;
-      knnResults.queries.forEach((q, qIdx) => {
-        const nList = q.neighbors
-          ? q.neighbors.map(n => `${n.index}:${n.dist.toFixed(4)}`).join(' ')
-          : '';
-        knnText += `Query ${qIdx} (distCalls=${q.distCalls || 0}): ${nList}\n`;
-      });
+    let isKnnReady = false;
+    let knnSummaryBadge = 'Pending (Run k-NN)';
+
+    if (typeof knnResults !== 'undefined' && knnResults) {
+      const k = knnResults.k || (typeof knnK !== 'undefined' ? knnK : 8);
+      const totalQueries = knnResults.totalFrames ||
+        (knnResults.indices ? Math.floor(knnResults.indices.length / k) : 0) ||
+        (knnResults.queries ? knnResults.queries.length : 0);
+
+      if (totalQueries > 0) {
+        isKnnReady = true;
+        knnSummaryBadge = `${totalQueries} queries (k=${k})`;
+        const telem = knnResults.telemetry || {};
+        const eff = (typeof telem.pruneEfficiencyPct === 'number')
+          ? telem.pruneEfficiencyPct.toFixed(1)
+          : (typeof telem.efficiencyPct === 'number'
+             ? telem.efficiencyPct.toFixed(1)
+             : '0.0');
+        const spd = (typeof telem.speedup === 'number')
+          ? telem.speedup.toFixed(2)
+          : '1.00';
+
+        knnText += `# Target k: ${k}\n`;
+        knnText += `# Total Queries: ${totalQueries}\n`;
+        knnText += `# Pruning Efficiency: ${eff}%\n`;
+        knnText += `# Speedup Factor: ${spd}x\n`;
+        knnText += `# Format: QueryFrameIdx NeighborIdx:Distance NeighborIdx:Distance ...\n\n`;
+
+        if (knnResults.indices && knnResults.distances) {
+          const maxRows = Math.min(totalQueries, 5000);
+          for (let q = 0; q < maxRows; q++) {
+            let rowStr = `${q}`;
+            for (let r = 0; r < k; r++) {
+              const nIdx = knnResults.indices[q * k + r];
+              const dist = knnResults.distances[q * k + r];
+              if (nIdx !== undefined && nIdx >= 0) {
+                rowStr += ` ${nIdx}:${Number(dist || 0).toFixed(4)}`;
+              }
+            }
+            knnText += `${rowStr}\n`;
+          }
+          if (totalQueries > maxRows) {
+            knnText += `# ... [${totalQueries - maxRows} additional queries omitted from preview]\n`;
+          }
+        } else if (knnResults.queries) {
+          knnResults.queries.forEach((q, qIdx) => {
+            const nList = q.neighbors
+              ? q.neighbors.map(n => `${n.index}:${n.dist.toFixed(4)}`).join(' ')
+              : '';
+            knnText += `Query ${qIdx} (distCalls=${q.distCalls || 0}): ${nList}\n`;
+          });
+        }
+      }
     }
 
-    // 7. cluster_run.log
+    let binKnnIdx = null;
+    let binKnnDst = null;
+    if (isKnnReady && knnResults.indices && knnResults.distances) {
+      const kVal = knnResults.k || (typeof knnK !== 'undefined' ? knnK : 8);
+      const totalQ = knnResults.totalFrames || Math.floor(knnResults.indices.length / kVal);
+      const totalElems = totalQ * kVal;
+      const u32Idx = new Uint32Array(totalElems);
+      const f32Dst = new Float32Array(totalElems);
+      for (let i = 0; i < totalElems; i++) {
+        u32Idx[i] = (knnResults.indices[i] >= 0) ? knnResults.indices[i] : 0;
+        f32Dst[i] = (knnResults.distances[i] !== undefined)
+          ? Number(knnResults.distances[i]) : 0;
+      }
+      binKnnIdx = createGricBinaryFile(
+        0, 3, [totalQ, kVal], u32Idx, 'k-NN neighbor indices [N x k]'
+      );
+      binKnnDst = createGricBinaryFile(
+        0, 1, [totalQ, kVal], f32Dst, 'k-NN metric distances [N x k]'
+      );
+    }
+
+    if (!isKnnReady) {
+      knnText += `# Status: k-NN graph not yet computed for this session.\n` +
+                 `# Run Pass 2 (k-NN) to generate nearest-neighbor graph & diagnostics.\n`;
+    }
+
+    // 8. cluster_run.log
     const nowIso = new Date().toISOString();
     const modeStr = typeof targetMode !== 'undefined' ? targetMode : 'greedy';
     const pruneStr = typeof pruneMode !== 'undefined' ? pruneMode : '4P';
@@ -378,7 +578,7 @@ const DataManager = (function () {
                   `Engine Mode:         ${engStr}\n` +
                   `=================================================================\n`;
 
-    // 8. metadata.json
+    // 9. metadata.json
     const metadataObj = {
       timestamp: nowIso,
       dataset: dsName,
@@ -401,37 +601,52 @@ const DataManager = (function () {
     const enc = new TextEncoder();
     const list = [
       {
-        id: 'centroids',
-        filename: 'centroids.txt',
+        id: 'anchors',
+        filename: 'anchors.bin',
         category: 'Cluster Anchors',
         icon: '📊',
         badge: `${numClust} anchors`,
-        desc: 'Centroid coordinates, member counts, radius, and state status.',
-        content: centroidsText,
-        size: enc.encode(centroidsText).length,
+        desc: 'Centroid coordinates in 64-byte self-describing GRIC float32 binary format.',
+        content: anchorsPreview,
+        binaryBytes: binAnchors,
+        size: binAnchors.length,
         ready: numClust > 0
       },
       {
         id: 'dcc',
-        filename: 'dcc.txt',
+        filename: 'dcc.bin',
         category: 'Distance Matrix',
         icon: '📐',
         badge: `${numClust}×${numClust} matrix`,
-        desc: 'Symmetric cluster-to-cluster metric distance matrix D_cc.',
-        content: dccText,
-        size: enc.encode(dccText).length,
+        desc: 'Symmetric cluster-to-cluster distance matrix D_cc in GRIC float32 binary format.',
+        content: dccPreview,
+        binaryBytes: binDcc,
+        size: binDcc.length,
         ready: numClust > 0
       },
       {
         id: 'membership',
-        filename: 'frame_membership.txt',
+        filename: 'frame_membership.bin',
         category: 'Assignments',
         icon: '🔗',
         badge: `${numPast} frames`,
-        desc: 'Sequence index to cluster ID assignment mapping.',
-        content: memText,
-        size: enc.encode(memText).length,
+        desc: 'Frame-to-cluster assignment array in uint32 binary format.',
+        content: memPreview,
+        binaryBytes: binMem,
+        size: binMem.length,
         ready: numPast > 0
+      },
+      {
+        id: 'counts',
+        filename: 'cluster_counts.bin',
+        category: 'Cluster Counts',
+        icon: '📈',
+        badge: `${numClust} clusters`,
+        desc: 'Cluster member counts in uint32 binary format.',
+        content: countsPreview,
+        binaryBytes: binCounts,
+        size: binCounts.length,
+        ready: numClust > 0
       },
       {
         id: 'transitions',
@@ -446,25 +661,50 @@ const DataManager = (function () {
       },
       {
         id: 'samples',
-        filename: 'input_samples.txt',
+        filename: 'input_samples.bin',
         category: 'Input Coordinates',
         icon: '📥',
         badge: `${numPast} points`,
-        desc: 'Full raw floating-point coordinates for all ingested points.',
-        content: samplesText,
-        size: enc.encode(samplesText).length,
+        desc: 'Raw floating-point point coordinates in float32 binary format.',
+        content: samplesPreview,
+        binaryBytes: binSamples,
+        size: binSamples.length,
         ready: numPast > 0
       },
       {
-        id: 'knn',
-        filename: 'knn_results.txt',
-        category: 'k-NN Search Graph',
+        id: 'knn_indices',
+        filename: 'knn_indices.bin',
+        category: 'k-NN Indices',
         icon: '🎯',
-        badge: (typeof knnResults !== 'undefined' && knnResults) ? 'Graph Ready' : 'Idle',
-        desc: 'k-nearest neighbor query indices, distances, and speedup diagnostics.',
+        badge: knnSummaryBadge,
+        desc: 'k-nearest neighbor index matrix in uint32 binary format.',
+        content: knnText,
+        binaryBytes: binKnnIdx,
+        size: binKnnIdx ? binKnnIdx.length : 0,
+        ready: isKnnReady
+      },
+      {
+        id: 'knn_distances',
+        filename: 'knn_distances.bin',
+        category: 'k-NN Distances',
+        icon: '📏',
+        badge: knnSummaryBadge,
+        desc: 'k-nearest neighbor metric distances in float32 binary format.',
+        content: knnText,
+        binaryBytes: binKnnDst,
+        size: binKnnDst ? binKnnDst.length : 0,
+        ready: isKnnReady
+      },
+      {
+        id: 'knn_txt',
+        filename: 'knn_results.txt',
+        category: 'k-NN Table',
+        icon: '📄',
+        badge: knnSummaryBadge,
+        desc: 'Human-readable ASCII table of query frame neighbor indices and distances.',
         content: knnText,
         size: enc.encode(knnText).length,
-        ready: typeof knnResults !== 'undefined' && !!knnResults
+        ready: isKnnReady
       },
       {
         id: 'log',
@@ -493,7 +733,7 @@ const DataManager = (function () {
     const artifactsMap = {};
     list.forEach(item => {
       if (item.ready) {
-        artifactsMap[item.filename] = item.content;
+        artifactsMap[item.filename] = item.binaryBytes || item.content;
       }
     });
 
@@ -564,6 +804,8 @@ const DataManager = (function () {
     buildZip,
     downloadBlob,
     downloadTextFile,
+    downloadBinaryFile,
+    createGricBinaryFile,
     generateCurrentDataStructures,
     saveAllToDisk,
     downloadZipBundle

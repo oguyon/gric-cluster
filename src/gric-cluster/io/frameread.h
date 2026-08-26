@@ -94,4 +94,9 @@ int is_ascii_input_mode(void);
  */
 int is_stream_input_mode(void);
 
+/**
+ * @brief Check if the reader is in binary (.bin) input mode.
+ */
+int is_bin_input_mode(void);
+
 #endif // FRAMEREAD_H

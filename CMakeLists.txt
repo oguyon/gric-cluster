@@ -134,6 +134,7 @@ set(CLUSTER_SRCS
     src/gric-cluster/steps/update_consistency_mask.c
     src/gric-cluster/trace/cluster_trace.c
     src/shared/cli_colors.c
+    src/shared/gric_bin_io.c
 )
 
 add_executable(gric-cluster ${CLUSTER_SRCS})
@@ -245,6 +246,7 @@ add_executable(gric-knn
     src/gric-knn/knn_engine.c
     src/gric-knn/knn_writer.c
     src/shared/cli_colors.c
+    src/shared/gric_bin_io.c
 )
 target_include_directories(gric-knn PRIVATE src/gric-knn src)
 target_link_libraries(gric-knn m)
@@ -374,6 +376,15 @@ target_link_libraries(test_bin_ascii_roundtrip m)
 add_test(NAME test_bin_ascii_roundtrip
     COMMAND test_bin_ascii_roundtrip)
 set_tests_properties(test_bin_ascii_roundtrip PROPERTIES DEPENDS "gric-ascii2bin;gric-bin2ascii")
+
+add_executable(test_bin_clustering_pipeline
+    tests/test_bin_clustering_pipeline.c
+    src/shared/gric_bin_io.c
+)
+target_link_libraries(test_bin_clustering_pipeline m)
+add_test(NAME test_bin_clustering_pipeline
+    COMMAND test_bin_clustering_pipeline)
+set_tests_properties(test_bin_clustering_pipeline PROPERTIES DEPENDS "gric-cluster;gric-ascii2bin;gric-bin2ascii;gric-mktxtseq;gric-knn")
 
 # Target to regenerate benchmark figures and documentation pages
 find_package(Python3 COMPONENTS Interpreter REQUIRED)

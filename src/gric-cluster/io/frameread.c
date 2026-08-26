@@ -7,6 +7,7 @@
 #include "frameread.h"
 #include "png_io.h"
 #include "frameread_internal.h"
+#include "gric_bin_io.h"
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -23,6 +24,11 @@ fitsfile *fptr = NULL;
 FILE *ascii_ptr = NULL;
 long *ascii_line_offsets = NULL;
 int is_ascii_mode = 0;
+
+static FILE *bin_input_ptr = NULL;
+static uint64_t bin_input_data_offset = 64;
+static gric_bin_data_type_t bin_input_dtype = GRIC_BIN_DTYPE_FLOAT32;
+static int is_bin_mode = 0;
 
 char **file_list = NULL;
 int is_filelist_mode = 0;
@@ -155,6 +161,144 @@ static int init_filelist(
 }
 
 /**
+ * init_bin() - Initialize binary (.bin) coordinate/image dataset reader.
+ * @filename: Path to .bin file.
+ *
+ * Return: 0 on success, -1 on error.
+ */
+static int init_bin(
+    char *filename)
+{
+    FILE *fp = fopen(filename, "rb");
+    if (fp == NULL)
+    {
+        perror("Failed to open binary dataset");
+        return -1;
+    }
+
+    gric_bin_header_t hdr;
+    char *comment = NULL;
+    if (gric_bin_read_header(fp, &hdr, &comment) != 0)
+    {
+        fprintf(stderr, "Error: '%s' is not a valid GRIC binary dataset\n", filename);
+        fclose(fp);
+        return -1;
+    }
+    if (comment != NULL)
+    {
+        free(comment);
+    }
+
+    num_frames = (long)hdr.dims[0];
+    frame_width = (hdr.ndim > 1) ? (long)hdr.dims[1] : 1;
+    frame_height = 1;
+    bin_input_data_offset = hdr.header_bytes;
+    bin_input_dtype = (gric_bin_data_type_t)hdr.data_type;
+    bin_input_ptr = fp;
+    is_bin_mode = 1;
+
+    printf("Binary dataset mode initialized. %ld frames, %ld dimensions (%s)\n",
+           num_frames, frame_width, gric_bin_data_type_str(bin_input_dtype));
+    return 0;
+}
+
+/**
+ * getframe_bin() - Read frame from binary dataset.
+ * @frame_struct: Frame struct to populate.
+ * @index:        Frame index.
+ *
+ * Return: 0 on success, -1 on error.
+ */
+static int getframe_bin(
+    Frame *frame_struct,
+    long   index)
+{
+    if (bin_input_ptr == NULL || index < 0 || index >= num_frames)
+    {
+        return -1;
+    }
+
+    size_t elem_size = gric_bin_data_type_size(bin_input_dtype);
+    off_t offset = (off_t)bin_input_data_offset +
+                   (off_t)index * (off_t)frame_width * (off_t)elem_size;
+    if (fseeko(bin_input_ptr, offset, SEEK_SET) != 0)
+    {
+        return -1;
+    }
+
+    if (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT32)
+    {
+        float *fbuf = (float *)malloc(frame_width * sizeof(float));
+        if (fbuf == NULL)
+        {
+            return -1;
+        }
+        if (fread(fbuf, sizeof(float), frame_width, bin_input_ptr) != (size_t)frame_width)
+        {
+            free(fbuf);
+            return -1;
+        }
+        for (long k = 0; k < frame_width; k++)
+        {
+            frame_struct->data[k] = (double)fbuf[k];
+        }
+        free(fbuf);
+    }
+    else if (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT64)
+    {
+        if (fread(frame_struct->data, sizeof(double), frame_width, bin_input_ptr) !=
+            (size_t)frame_width)
+        {
+            return -1;
+        }
+    }
+    else
+    {
+        uint32_t *ubuf = (uint32_t *)malloc(frame_width * sizeof(uint32_t));
+        if (ubuf == NULL)
+        {
+            return -1;
+        }
+        if (fread(ubuf, sizeof(uint32_t), frame_width, bin_input_ptr) != (size_t)frame_width)
+        {
+            free(ubuf);
+            return -1;
+        }
+        for (long k = 0; k < frame_width; k++)
+        {
+            frame_struct->data[k] = (double)ubuf[k];
+        }
+        free(ubuf);
+    }
+
+    return 0;
+}
+
+/**
+ * close_bin() - Close binary dataset file handle.
+ */
+static void close_bin(void)
+{
+    if (bin_input_ptr != NULL)
+    {
+        fclose(bin_input_ptr);
+        bin_input_ptr = NULL;
+    }
+    is_bin_mode = 0;
+}
+
+/**
+ * reset_bin() - Reset reading position for binary dataset.
+ */
+static void reset_bin(void)
+{
+    if (bin_input_ptr != NULL)
+    {
+        fseeko(bin_input_ptr, (off_t)bin_input_data_offset, SEEK_SET);
+    }
+}
+
+/**
  * init_frameread() - Public entrypoint to initialize the frame reader.
  * @filename:      Path to the file or stream name.
  * @stream_mode:   Whether to use shared memory streaming mode.
@@ -192,10 +336,14 @@ int init_frameread(
 #endif
 
     {
-        /* Check file extension for TXT or video formats */
+        /* Check file extension for BIN, TXT, or video formats */
         char *ext = strrchr(filename, '.');
         if (ext != NULL)
         {
+            if (strcmp(ext, ".bin") == 0)
+            {
+                return init_bin(filename);
+            }
             if (strcmp(ext, ".txt") == 0)
             {
                 return init_ascii(filename);
@@ -333,6 +481,15 @@ Frame *getframe_at(
             return NULL;
         }
     }
+    else if (is_bin_mode)
+    {
+        if (getframe_bin(frame_struct, index) != 0)
+        {
+            free(frame_struct->data);
+            free(frame_struct);
+            return NULL;
+        }
+    }
 #ifdef USE_IMAGESTREAMIO
     else if (is_stream_mode)
     {
@@ -442,6 +599,10 @@ void close_frameread(void)
     {
         close_ascii();
     }
+    else if (is_bin_mode)
+    {
+        close_bin();
+    }
 #ifdef USE_IMAGESTREAMIO
     else if (is_stream_mode)
     {
@@ -472,6 +633,10 @@ void reset_frameread(void)
     if (is_ascii_mode)
     {
         reset_ascii();
+    }
+    else if (is_bin_mode)
+    {
+        reset_bin();
     }
 #ifdef USE_IMAGESTREAMIO
     else if (is_stream_mode)
@@ -642,3 +807,13 @@ double get_stream_wait_time(void)
     return 0.0;
 }
 #endif
+
+/**
+ * is_bin_input_mode() - Query if active input dataset is in binary (.bin) format.
+ *
+ * Return: 1 if binary format, 0 otherwise.
+ */
+int is_bin_input_mode(void)
+{
+    return is_bin_mode;
+}

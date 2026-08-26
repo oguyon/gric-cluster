@@ -20,6 +20,7 @@
 #include "cluster_io.h"
 #include "common.h"
 #include "frameread.h"
+#include "gric_bin_io.h"
 
 /**
  * write_results() - Outputs the clustered coordinate and membership files.
@@ -51,9 +52,45 @@ void write_results(
 
     char out_path[4096];
 
-    // Write dcc.txt
+    // Write dcc.bin and dcc.txt
     if (config->output.output_dcc)
     {
+        printf("Writing dcc.bin\n");
+        snprintf(out_path, sizeof(out_path), "%s/dcc.bin", out_dir);
+        FILE *dcc_bin_fp = fopen(out_path, "wb");
+        if (dcc_bin_fp)
+        {
+            gric_bin_header_t dcc_hdr;
+            memset(&dcc_hdr, 0, sizeof(dcc_hdr));
+            dcc_hdr.file_type = GRIC_BIN_TYPE_DCC;
+            dcc_hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
+            dcc_hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+            dcc_hdr.ndim = 2;
+            dcc_hdr.dims[0] = state->num_clusters;
+            dcc_hdr.dims[1] = state->num_clusters;
+            dcc_hdr.num_elements = (uint64_t)state->num_clusters * state->num_clusters;
+            dcc_hdr.data_bytes = dcc_hdr.num_elements * sizeof(float);
+
+            if (gric_bin_write_header(dcc_bin_fp, &dcc_hdr, "DCC distance matrix") == 0)
+            {
+                float *dcc_buf = (float *)malloc(dcc_hdr.num_elements * sizeof(float));
+                if (dcc_buf)
+                {
+                    for (int i = 0; i < state->num_clusters; i++)
+                    {
+                        for (int j = 0; j < state->num_clusters; j++)
+                        {
+                            double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                            dcc_buf[i * state->num_clusters + j] = (d >= 0) ? (float)d : 0.0f;
+                        }
+                    }
+                    fwrite(dcc_buf, sizeof(float), dcc_hdr.num_elements, dcc_bin_fp);
+                    free(dcc_buf);
+                }
+            }
+            fclose(dcc_bin_fp);
+        }
+
         printf("Writing dcc.txt\n");
         snprintf(out_path, sizeof(out_path), "%s/dcc.txt", out_dir);
         FILE *dcc_out = fopen(out_path, "w");
@@ -131,6 +168,41 @@ void write_results(
 
     if (config->output.output_anchors)
     {
+        printf("Writing anchors.bin\n");
+        snprintf(out_path, sizeof(out_path), "%s/anchors.bin", out_dir);
+        FILE *a_bin_fp = fopen(out_path, "wb");
+        if (a_bin_fp)
+        {
+            gric_bin_header_t a_hdr;
+            memset(&a_hdr, 0, sizeof(a_hdr));
+            a_hdr.file_type = GRIC_BIN_TYPE_ANCHORS;
+            a_hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
+            a_hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+            a_hdr.ndim = (nelements > 1) ? 2 : 1;
+            a_hdr.dims[0] = state->num_clusters;
+            a_hdr.dims[1] = nelements;
+            a_hdr.num_elements = (uint64_t)state->num_clusters * nelements;
+            a_hdr.data_bytes = a_hdr.num_elements * sizeof(float);
+
+            if (gric_bin_write_header(a_bin_fp, &a_hdr, "Cluster centroids") == 0)
+            {
+                float *a_buf = (float *)malloc(a_hdr.num_elements * sizeof(float));
+                if (a_buf)
+                {
+                    for (int i = 0; i < state->num_clusters; i++)
+                    {
+                        for (long k = 0; k < nelements; k++)
+                        {
+                            a_buf[i * nelements + k] = (float)state->clusters[i].anchor.data[k];
+                        }
+                    }
+                    fwrite(a_buf, sizeof(float), a_hdr.num_elements, a_bin_fp);
+                    free(a_buf);
+                }
+            }
+            fclose(a_bin_fp);
+        }
+
         printf("Writing anchors\n");
         if (config->output.pngout_mode)
         {
@@ -215,6 +287,37 @@ void write_results(
 
     if (config->output.output_counts)
     {
+        printf("Writing cluster_counts.bin\n");
+        snprintf(out_path, sizeof(out_path), "%s/cluster_counts.bin", out_dir);
+        FILE *cnt_bin_fp = fopen(out_path, "wb");
+        if (cnt_bin_fp)
+        {
+            gric_bin_header_t cnt_hdr;
+            memset(&cnt_hdr, 0, sizeof(cnt_hdr));
+            cnt_hdr.file_type = GRIC_BIN_TYPE_COUNTS;
+            cnt_hdr.data_type = GRIC_BIN_DTYPE_UINT32;
+            cnt_hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+            cnt_hdr.ndim = 1;
+            cnt_hdr.dims[0] = state->num_clusters;
+            cnt_hdr.num_elements = state->num_clusters;
+            cnt_hdr.data_bytes = cnt_hdr.num_elements * sizeof(uint32_t);
+
+            if (gric_bin_write_header(cnt_bin_fp, &cnt_hdr, "Cluster counts") == 0)
+            {
+                uint32_t *cnt_buf = (uint32_t *)malloc(cnt_hdr.num_elements * sizeof(uint32_t));
+                if (cnt_buf)
+                {
+                    for (int c = 0; c < state->num_clusters; c++)
+                    {
+                        cnt_buf[c] = (uint32_t)cluster_counts[c];
+                    }
+                    fwrite(cnt_buf, sizeof(uint32_t), cnt_hdr.num_elements, cnt_bin_fp);
+                    free(cnt_buf);
+                }
+            }
+            fclose(cnt_bin_fp);
+        }
+
         printf("Writing cluster_counts.txt\n");
         snprintf(out_path, sizeof(out_path), "%s/cluster_counts.txt", out_dir);
         FILE *count_out = fopen(out_path, "w");
@@ -227,6 +330,42 @@ void write_results(
             }
             fclose(count_out);
         } // if (count_out)
+    }
+
+    // Write frame_membership.bin
+    if (config->output.output_membership)
+    {
+        printf("Writing frame_membership.bin\n");
+        snprintf(out_path, sizeof(out_path), "%s/frame_membership.bin", out_dir);
+        FILE *mem_bin_fp = fopen(out_path, "wb");
+        if (mem_bin_fp)
+        {
+            gric_bin_header_t mem_hdr;
+            memset(&mem_hdr, 0, sizeof(mem_hdr));
+            mem_hdr.file_type = GRIC_BIN_TYPE_MEMBERSHIP;
+            mem_hdr.data_type = GRIC_BIN_DTYPE_UINT32;
+            mem_hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+            mem_hdr.ndim = 1;
+            mem_hdr.dims[0] = state->telemetry.total_frames_processed;
+            mem_hdr.num_elements = state->telemetry.total_frames_processed;
+            mem_hdr.data_bytes = mem_hdr.num_elements * sizeof(uint32_t);
+
+            if (gric_bin_write_header(mem_bin_fp, &mem_hdr, "Frame membership") == 0)
+            {
+                uint32_t *mem_buf = (uint32_t *)malloc(mem_hdr.num_elements * sizeof(uint32_t));
+                if (mem_buf)
+                {
+                    for (long f = 0; f < state->telemetry.total_frames_processed; f++)
+                    {
+                        mem_buf[f] = (state->assignments[f] >= 0) ?
+                                     (uint32_t)state->assignments[f] : 0;
+                    }
+                    fwrite(mem_buf, sizeof(uint32_t), mem_hdr.num_elements, mem_bin_fp);
+                    free(mem_buf);
+                }
+            }
+            fclose(mem_bin_fp);
+        }
     }
 
     // Write Cluster Radii
@@ -255,6 +394,37 @@ void write_results(
                     }
                 }
             } // for (long f = 0; ...)
+
+            // Write cluster_radii.bin
+            snprintf(out_path, sizeof(out_path), "%s/cluster_radii.bin", out_dir);
+            FILE *rad_bin_fp = fopen(out_path, "wb");
+            if (rad_bin_fp)
+            {
+                gric_bin_header_t rad_hdr;
+                memset(&rad_hdr, 0, sizeof(rad_hdr));
+                rad_hdr.file_type = GRIC_BIN_TYPE_GENERIC;
+                rad_hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
+                rad_hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+                rad_hdr.ndim = 1;
+                rad_hdr.dims[0] = state->num_clusters;
+                rad_hdr.num_elements = state->num_clusters;
+                rad_hdr.data_bytes = rad_hdr.num_elements * sizeof(float);
+
+                if (gric_bin_write_header(rad_bin_fp, &rad_hdr, "Cluster max radii") == 0)
+                {
+                    float *rad_buf = (float *)malloc(rad_hdr.num_elements * sizeof(float));
+                    if (rad_buf)
+                    {
+                        for (int c = 0; c < state->num_clusters; c++)
+                        {
+                            rad_buf[c] = (float)cluster_max_radii[c];
+                        }
+                        fwrite(rad_buf, sizeof(float), rad_hdr.num_elements, rad_bin_fp);
+                        free(rad_buf);
+                    }
+                }
+                fclose(rad_bin_fp);
+            }
 
             snprintf(out_path, sizeof(out_path), "%s/cluster_radii.txt", out_dir);
             FILE *radii_out = fopen(out_path, "w");
