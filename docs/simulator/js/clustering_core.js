@@ -88,7 +88,15 @@
         return;
       }
 
-      // WASM engine — always active
+      if (useWasm && GricWasm.isLoaded() && (!wasmSessionActive || !GricWasm.isReady())) {
+        const params = GricWasm.buildParamsFromState();
+        wasmSessionActive = GricWasm.init(params);
+        if (typeof updateWasmBadge === 'function') {
+          updateWasmBadge();
+        }
+      }
+
+      // WASM engine
       if (wasmSessionActive && GricWasm.isReady()) {
         const assigned = GricWasm.processFrame(x, y, z);
 
@@ -214,6 +222,54 @@
           }
         }
         return;
+      } else {
+        // Pure JS 2D/3D clustering fallback
+        let bestDist = Infinity;
+        let bestCluster = -1;
+        const rlimSq = (rlim || 0.1) * (rlim || 0.1);
+        for (let k = 0; k < clusters.length; k++) {
+          const c = clusters[k];
+          const dx = x - c.x;
+          const dy = y - c.y;
+          const dz = (currentDim === 3) ? (z - c.z) : 0.0;
+          const dSq = dx * dx + dy * dy + dz * dz;
+          if (dSq < bestDist) {
+            bestDist = dSq;
+            bestCluster = k;
+          }
+        }
+        const actualDist = Math.sqrt(bestDist < Infinity ? bestDist : 0.0);
+        let actualClusterId = -1;
+        if (bestCluster >= 0 && actualDist <= (rlim || 0.1)) {
+          actualClusterId = bestCluster;
+          clusters[actualClusterId].members++;
+          clusters[actualClusterId].lastActive = totalFrames;
+        } else {
+          actualClusterId = clusters.length;
+          const col = (typeof getClusterColor === 'function')
+            ? getClusterColor(actualClusterId)
+            : '#38bdf8';
+          clusters.push({
+            id: actualClusterId,
+            x, y, z,
+            members: 1,
+            color: col,
+            lastActive: totalFrames
+          });
+        }
+        if (actualClusterId >= 0) {
+          if (currentIdx < pastSamples.length) {
+            pastSamples[currentIdx].clusterId = actualClusterId;
+          } else if (pastSamples.length < sampleBufferCap) {
+            pastSamples.push({ x, y, z, frameIndex: currentIdx, clusterId: actualClusterId });
+          }
+          prevAssignedCluster = actualClusterId;
+        }
+        distSampleClusterLast = actualDist;
+        if (!skipRender && !isRunning) {
+          updateUI();
+          draw();
+        }
       }
     }
 
@@ -228,6 +284,18 @@
       distClusterClusterLast = 0;
       currentExplanation = [];
 
+      totalFrames++;
+      currentImageFrame = pixels;
+      const currentIdx = totalFrames - 1;
+
+      if (useWasm && GricWasm.isLoaded() && (!wasmSessionActive || !GricWasm.isReady())) {
+        const params = GricWasm.buildParamsFromState();
+        wasmSessionActive = GricWasm.init(params);
+        if (typeof updateWasmBadge === 'function') {
+          updateWasmBadge();
+        }
+      }
+
       if (useWasm && wasmSessionActive && GricWasm.isReady()) {
         const assigned = GricWasm.processFrameVector(pixels);
 
@@ -241,23 +309,58 @@
           return;
         }
 
-        if (assigned >= 0) {
-          if (prevAssignedCluster >= 0 && transitionCounts[prevAssignedCluster]) {
-            transitionCounts[prevAssignedCluster][assigned] =
-              (transitionCounts[prevAssignedCluster][assigned] || 0) + 1;
+        const actualClusterId = (assigned >= 0)
+          ? assigned
+          : Math.max(0, GricWasm.getNumClusters() - 1);
+
+        imageFrameAssignments[currentIdx] = actualClusterId;
+        if (!imageClusterMembers[actualClusterId]) {
+          imageClusterMembers[actualClusterId] = [];
+        }
+        imageClusterMembers[actualClusterId].push(currentIdx);
+
+        if (typeof benchmarkDataset !== 'undefined' &&
+            benchmarkDataset && currentIdx < benchmarkDataset.length) {
+          if (benchmarkDataset[currentIdx]) {
+            benchmarkDataset[currentIdx].clusterId = actualClusterId;
+          }
+        }
+
+        if (actualClusterId >= 0) {
+          if (prevAssignedCluster >= 0) {
+            if (!transitionCounts[prevAssignedCluster]) {
+              transitionCounts[prevAssignedCluster] = [];
+            }
+            transitionCounts[prevAssignedCluster][actualClusterId] =
+              (transitionCounts[prevAssignedCluster][actualClusterId] || 0) + 1;
             lastTransitionFrom = prevAssignedCluster;
-            lastTransitionTo = assigned;
+            lastTransitionTo = actualClusterId;
           } else {
             lastTransitionFrom = -1;
             lastTransitionTo = -1;
           }
-          prevAssignedCluster = assigned;
+          prevAssignedCluster = actualClusterId;
 
-          assignmentHistory.push(assigned);
+          assignmentHistory.push(actualClusterId);
           if (assignmentHistory.length > 6000) {
             assignmentHistory = assignmentHistory.slice(-5000);
           }
         }
+
+        // Compute distance to assigned anchor
+        let frameDist = 0.0;
+        if (clusters[actualClusterId] && clusters[actualClusterId].anchor) {
+          const anch = clusters[actualClusterId].anchor;
+          let sumSq = 0.0;
+          const len = Math.min(pixels.length, anch.length);
+          for (let p = 0; p < len; p++) {
+            const diff = pixels[p] - anch[p];
+            sumSq += diff * diff;
+          }
+          frameDist = Math.sqrt(sumSq);
+        }
+        imageFrameDists[currentIdx] = frameDist;
+        distSampleClusterLast = frameDist;
 
         if (!skipRender) {
           const snapshot = GricWasm.syncState();
@@ -268,11 +371,11 @@
             }
           }
 
-          if (assigned >= 0) {
+          if (actualClusterId >= 0) {
             frameHistory.push({
-              indices: [assigned],
-              dists: [snapshot ? snapshot.telemetry.lastAssignmentDist : 0],
-              assignment: assigned
+              indices: [actualClusterId],
+              dists: [frameDist || (snapshot ? snapshot.telemetry.lastAssignmentDist : 0)],
+              assignment: actualClusterId
             });
             if (frameHistory.length > 600) {
               frameHistory = frameHistory.slice(-500);
@@ -287,6 +390,64 @@
             updateUI();
             draw();
           }
+        }
+      } else {
+        // Pure JS Image Clustering fallback:
+        let bestDist = Infinity;
+        let bestCluster = -1;
+        const rlimSq = (rlim || 0.1) * (rlim || 0.1);
+        const len = pixels.length;
+
+        for (let k = 0; k < clusters.length; k++) {
+          const anch = clusters[k].anchor;
+          if (!anch) continue;
+          let sumSq = 0.0;
+          for (let p = 0; p < len; p++) {
+            const diff = pixels[p] - anch[p];
+            sumSq += diff * diff;
+            if (sumSq > rlimSq && bestDist < Infinity) break;
+          }
+          if (sumSq < bestDist) {
+            bestDist = sumSq;
+            bestCluster = k;
+          }
+        }
+
+        const actualDist = Math.sqrt(bestDist < Infinity ? bestDist : 0.0);
+        let actualClusterId = -1;
+
+        if (bestCluster >= 0 && actualDist <= (rlim || 0.1)) {
+          actualClusterId = bestCluster;
+          clusters[actualClusterId].members++;
+          clusters[actualClusterId].lastActive = totalFrames;
+        } else {
+          // Spawn new cluster
+          actualClusterId = clusters.length;
+          const col = (typeof getClusterColor === 'function')
+            ? getClusterColor(actualClusterId)
+            : '#38bdf8';
+          const anchCopy = new Float64Array(len);
+          for (let p = 0; p < len; p++) anchCopy[p] = pixels[p];
+          clusters.push({
+            id: actualClusterId,
+            anchor: anchCopy,
+            members: 1,
+            color: col,
+            lastActive: totalFrames
+          });
+        }
+
+        imageFrameAssignments[currentIdx] = actualClusterId;
+        if (!imageClusterMembers[actualClusterId]) {
+          imageClusterMembers[actualClusterId] = [];
+        }
+        imageClusterMembers[actualClusterId].push(currentIdx);
+        imageFrameDists[currentIdx] = actualDist;
+        distSampleClusterLast = actualDist;
+        prevAssignedCluster = actualClusterId;
+        if (!skipRender && !isRunning) {
+          updateUI();
+          draw();
         }
       }
     }

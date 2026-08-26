@@ -547,6 +547,16 @@ int is_ascii_input_mode(void)
     return is_ascii_mode;
 }
 
+/**
+ * is_stream_input_mode() - Query if the reader is reading from an ImageStreamIO stream.
+ *
+ * Return: 1 if stream mode is active, 0 otherwise.
+ */
+int is_stream_input_mode(void)
+{
+    return is_stream_mode;
+}
+
 #ifdef USE_IMAGESTREAMIO
 /**
  * get_stream_read_slice() - Query the active read slice index for 3D streams.

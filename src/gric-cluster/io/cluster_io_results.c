@@ -144,7 +144,8 @@ void write_results(
             fprintf(stderr, "Warning: PNG output requested but not compiled in.\n");
 #endif
         }
-        else if (is_ascii_input_mode() && !config->output.fitsout_mode)
+        else if ((is_ascii_input_mode() || is_stream_input_mode() || height == 1) &&
+                 !config->output.fitsout_mode)
         {
             snprintf(out_path, sizeof(out_path), "%s/anchors.txt", out_dir);
             FILE *afptr = fopen(out_path, "w");
@@ -365,7 +366,8 @@ void write_results(
         } // for (int c = 0; ...)
 #endif
     }
-    else if (is_ascii_input_mode() && !config->output.fitsout_mode)
+    else if ((is_ascii_input_mode() || is_stream_input_mode() || height == 1) &&
+             !config->output.fitsout_mode)
     {
         FILE *avg_file = NULL;
 

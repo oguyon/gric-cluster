@@ -26,6 +26,8 @@ typedef struct
 {
     char   id[64];
     pid_t  pid;
+    pid_t  streamer_pid;
+    char   stream_name[256];
     int    active;
     int    finished;
     int    exit_code;
@@ -235,6 +237,7 @@ static void handle_api_info(
     char cluster_bin[PATH_MAX];
     char knn_bin[PATH_MAX];
     char status_bin[PATH_MAX];
+    char txt2stream_bin[PATH_MAX];
 
     int has_cluster = check_binary_available(config, "gric-cluster",
                                              cluster_bin, sizeof(cluster_bin));
@@ -242,6 +245,8 @@ static void handle_api_info(
                                          knn_bin, sizeof(knn_bin));
     int has_status = check_binary_available(config, "gric-status",
                                             status_bin, sizeof(status_bin));
+    int has_txt2stream = check_binary_available(config, "gric-txt2stream",
+                                                txt2stream_bin, sizeof(txt2stream_bin));
 
     long ncpus = sysconf(_SC_NPROCESSORS_ONLN);
     if (ncpus < 1)
@@ -259,13 +264,15 @@ static void handle_api_info(
              "  \"binaries\": {\n"
              "    \"gric-cluster\": %s,\n"
              "    \"gric-knn\": %s,\n"
-             "    \"gric-status\": %s\n"
+             "    \"gric-status\": %s,\n"
+             "    \"gric-txt2stream\": %s\n"
              "  }\n"
              "}\n",
              config->workdir, ncpus,
              has_cluster ? "true" : "false",
              has_knn ? "true" : "false",
-             has_status ? "true" : "false");
+             has_status ? "true" : "false",
+             has_txt2stream ? "true" : "false");
 
     api_send_json(client_fd, 200, resp);
 }
@@ -791,6 +798,128 @@ static void handle_api_cli_run(
         }
     }
 
+    /* Check for streaming options */
+    char stream_file[PATH_MAX] = {0};
+    char stream_name[256] = {0};
+    double stream_fps = 100.0;
+    int stream_loop = 0;
+    int stream_cnt2sync = 0;
+    int is_stream = 0;
+
+    const char *sf_pos = strstr(body, "\"stream_file\":");
+    if (sf_pos)
+    {
+        sf_pos += strlen("\"stream_file\":");
+        while (*sf_pos == ' ' || *sf_pos == '"') sf_pos++;
+        const char *sf_end = strchr(sf_pos, '"');
+        if (sf_end)
+        {
+            size_t sflen = (size_t)(sf_end - sf_pos);
+            if (sflen < sizeof(stream_file))
+            {
+                memcpy(stream_file, sf_pos, sflen);
+                stream_file[sflen] = '\0';
+                is_stream = 1;
+            }
+        }
+    }
+
+    const char *sn_pos = strstr(body, "\"stream_name\":");
+    if (sn_pos)
+    {
+        sn_pos += strlen("\"stream_name\":");
+        while (*sn_pos == ' ' || *sn_pos == '"') sn_pos++;
+        const char *sn_end = strchr(sn_pos, '"');
+        if (sn_end)
+        {
+            size_t snlen = (size_t)(sn_end - sn_pos);
+            if (snlen < sizeof(stream_name))
+            {
+                memcpy(stream_name, sn_pos, snlen);
+                stream_name[snlen] = '\0';
+            }
+        }
+    }
+
+    const char *fps_pos = strstr(body, "\"stream_fps\":");
+    if (fps_pos)
+    {
+        fps_pos += strlen("\"stream_fps\":");
+        while (*fps_pos == ' ' || *fps_pos == ':') fps_pos++;
+        stream_fps = atof(fps_pos);
+    }
+
+    const char *loop_pos = strstr(body, "\"stream_loop\":");
+    if (loop_pos)
+    {
+        loop_pos += strlen("\"stream_loop\":");
+        while (*loop_pos == ' ' || *loop_pos == ':') loop_pos++;
+        if (strncmp(loop_pos, "true", 4) == 0) stream_loop = 1;
+    }
+
+    const char *cnt2_pos = strstr(body, "\"stream_cnt2sync\":");
+    if (cnt2_pos)
+    {
+        cnt2_pos += strlen("\"stream_cnt2sync\":");
+        while (*cnt2_pos == ' ' || *cnt2_pos == ':') cnt2_pos++;
+        if (strncmp(cnt2_pos, "true", 4) == 0) stream_cnt2sync = 1;
+    }
+
+    pid_t streamer_pid = 0;
+    if (is_stream && stream_file[0] != '\0')
+    {
+        if (stream_name[0] == '\0')
+        {
+            snprintf(stream_name, sizeof(stream_name), "gric_sim_%s", job_id_buf);
+        }
+        char txt2stream_bin[PATH_MAX];
+        if (check_binary_available(config, "gric-txt2stream",
+                                   txt2stream_bin, sizeof(txt2stream_bin)))
+        {
+            char streamer_log[PATH_MAX];
+            snprintf(streamer_log, sizeof(streamer_log), "/tmp/gric_streamer_%s.log", job_id_buf);
+
+            char fps_str[32];
+            snprintf(fps_str, sizeof(fps_str), "%.1f", stream_fps);
+
+            char *s_argv[16];
+            int s_argc = 0;
+            s_argv[s_argc++] = txt2stream_bin;
+            s_argv[s_argc++] = stream_file;
+            s_argv[s_argc++] = stream_name;
+            s_argv[s_argc++] = "-fps";
+            s_argv[s_argc++] = fps_str;
+            if (stream_loop)
+            {
+                s_argv[s_argc++] = "-loop";
+            }
+            if (stream_cnt2sync)
+            {
+                s_argv[s_argc++] = "-cnt2sync";
+            }
+            s_argv[s_argc] = NULL;
+
+            streamer_pid = fork();
+            if (streamer_pid == 0)
+            {
+                int s_fd = open(streamer_log, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                if (s_fd >= 0)
+                {
+                    dup2(s_fd, STDOUT_FILENO);
+                    dup2(s_fd, STDERR_FILENO);
+                    close(s_fd);
+                }
+                int cd_ret = chdir(config->workdir);
+                (void)cd_ret;
+                execv(txt2stream_bin, s_argv);
+                _exit(127);
+            }
+            usleep(60000); /* Wait 60ms for shared memory initialization */
+        }
+    }
+    job->streamer_pid = streamer_pid;
+    snprintf(job->stream_name, sizeof(job->stream_name), "%s", stream_name);
+
     /* Ensure persistent gric_cli tmux session is active */
     ensure_tmux_session(config);
 
@@ -816,6 +945,11 @@ static void handle_api_cli_run(
     if (pid < 0)
     {
         job->active = 0;
+        if (job->streamer_pid > 0)
+        {
+            kill(job->streamer_pid, SIGTERM);
+            job->streamer_pid = 0;
+        }
         for (int i = 0; i < argc; i++) free(argv[i]);
         api_send_json(client_fd, 500, "{\"error\":\"fork() failed\"}");
         return;
@@ -1060,6 +1194,24 @@ static void handle_api_cli_status(
             {
                 job->exit_code = 128 + WTERMSIG(status);
             }
+
+            if (job->streamer_pid > 0)
+            {
+                kill(job->streamer_pid, SIGTERM);
+                usleep(20000);
+                kill(job->streamer_pid, SIGKILL);
+                job->streamer_pid = 0;
+            }
+            if (job->stream_name[0] != '\0')
+            {
+                char shm_im[PATH_MAX];
+                char shm_sem[PATH_MAX];
+                snprintf(shm_im, sizeof(shm_im), "/dev/shm/%s.im.shm", job->stream_name);
+                snprintf(shm_sem, sizeof(shm_sem), "/dev/shm/%s.sem.shm", job->stream_name);
+                unlink(shm_im);
+                unlink(shm_sem);
+                job->stream_name[0] = '\0';
+            }
         }
     }
 
@@ -1193,6 +1345,23 @@ static void handle_api_cli_kill(
         if (s_jobs[ii].active && s_jobs[ii].pid > 0 &&
             strcmp(s_jobs[ii].id, job_id) == 0)
         {
+            if (s_jobs[ii].streamer_pid > 0)
+            {
+                kill(s_jobs[ii].streamer_pid, SIGTERM);
+                usleep(20000);
+                kill(s_jobs[ii].streamer_pid, SIGKILL);
+                s_jobs[ii].streamer_pid = 0;
+            }
+            if (s_jobs[ii].stream_name[0] != '\0')
+            {
+                char shm_im[PATH_MAX];
+                char shm_sem[PATH_MAX];
+                snprintf(shm_im, sizeof(shm_im), "/dev/shm/%s.im.shm", s_jobs[ii].stream_name);
+                snprintf(shm_sem, sizeof(shm_sem), "/dev/shm/%s.sem.shm", s_jobs[ii].stream_name);
+                unlink(shm_im);
+                unlink(shm_sem);
+                s_jobs[ii].stream_name[0] = '\0';
+            }
             kill(s_jobs[ii].pid, SIGTERM);
             usleep(100000);
             kill(s_jobs[ii].pid, SIGKILL);
@@ -1410,6 +1579,23 @@ void api_handlers_cleanup(
     stop_tmux_session();
     for (int ii = 0; ii < MAX_JOBS; ii++)
     {
+        if (s_jobs[ii].streamer_pid > 0)
+        {
+            kill(s_jobs[ii].streamer_pid, SIGTERM);
+            usleep(20000);
+            kill(s_jobs[ii].streamer_pid, SIGKILL);
+            s_jobs[ii].streamer_pid = 0;
+        }
+        if (s_jobs[ii].stream_name[0] != '\0')
+        {
+            char shm_im[PATH_MAX];
+            char shm_sem[PATH_MAX];
+            snprintf(shm_im, sizeof(shm_im), "/dev/shm/%s.im.shm", s_jobs[ii].stream_name);
+            snprintf(shm_sem, sizeof(shm_sem), "/dev/shm/%s.sem.shm", s_jobs[ii].stream_name);
+            unlink(shm_im);
+            unlink(shm_sem);
+            s_jobs[ii].stream_name[0] = '\0';
+        }
         if (s_jobs[ii].active && s_jobs[ii].pid > 0)
         {
             kill(s_jobs[ii].pid, SIGTERM);

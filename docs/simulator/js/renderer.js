@@ -1709,16 +1709,17 @@
           ctx.restore();
         }
 
-        // Current Evaluated Rays
-        if (currentFrame && currentEvaluations && currentEvaluations.length > 0) {
+        // Active Query Frame Node (f_i) & Evaluated Distance Rays
+        if (currentFrame) {
           ctx.save();
-          if (typeof currentEvaluationsAlpha === 'number') {
-            ctx.globalAlpha = Math.max(0.0, Math.min(1.0, currentEvaluationsAlpha));
-          }
           const prFrame = getProjectedCoord(currentFrame);
           const posFrame = mapMetricToQuad(prFrame.u, prFrame.v, qIdx, rect);
 
-          if (showDistLines) {
+          // Current Evaluated Rays
+          if (showDistLines && currentEvaluations && currentEvaluations.length > 0) {
+            if (typeof currentEvaluationsAlpha === 'number') {
+              ctx.globalAlpha = Math.max(0.0, Math.min(1.0, currentEvaluationsAlpha));
+            }
             currentEvaluations.forEach(ev => {
               const prTarget = getProjectedCoord(ev.target);
               const posTarget = mapMetricToQuad(prTarget.u, prTarget.v, qIdx, rect);
@@ -1730,11 +1731,18 @@
               ctx.lineWidth = ev.match ? 2.2 : 1.2;
               ctx.stroke();
             });
+            ctx.globalAlpha = 1.0;
           }
 
-          // Active Query Frame Node (f_i)
+          // Active Query Frame Node (f_i) with pulsing outer ring
           ctx.beginPath();
-          ctx.arc(posFrame.px, posFrame.py, 6.5, 0, Math.PI * 2);
+          ctx.arc(posFrame.px, posFrame.py, 8.0, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(250, 204, 21, 0.4)';
+          ctx.lineWidth = 3.0;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(posFrame.px, posFrame.py, 5.5, 0, Math.PI * 2);
           ctx.fillStyle = '#facc15';
           ctx.fill();
           ctx.strokeStyle = '#ffffff';

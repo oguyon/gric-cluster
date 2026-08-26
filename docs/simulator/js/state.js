@@ -14,12 +14,17 @@
     let currentDim = 3; // 2 or 3 (or 1024 for 32x32 image mode)
     let maximizedQuad = null; // null (all 4 quads) or 0, 1, 2, 3
 
-    // Image Mode State
+    // Image Mode State & Retro-Inspection
     let imageWidth = 32;
     let imageHeight = 32;
     let imageDim = 1024; // = imageWidth * imageHeight
     let currentImageFrame = null; // Float32Array or Float64Array for active frame
     let imageGalleryScrollY = 0; // Centroid gallery scroll offset
+    let inspectedImageFrameIdx = -1; // -1 = live, >= 0 = retro-inspected frame
+    let inspectedClusterId = -1; // -1 = all clusters, >= 0 = inspecting cluster member frames
+    let imageFrameAssignments = []; // imageFrameAssignments[frameIdx] = clusterId
+    let imageFrameDists = []; // imageFrameDists[frameIdx] = distance to anchor
+    let imageClusterMembers = {}; // imageClusterMembers[clusterId] = [frameIdx, ...]
 
     // 3D Orbit Camera State (Spherical Orbit: Azimuth θ, Elevation φ)
     const orbitCamera = {
@@ -232,6 +237,33 @@
       draw();
     }
 
+    function selectImageFrame(frameIdx) {
+      if (frameIdx < 0 || (benchmarkDataset && frameIdx >= benchmarkDataset.length)) {
+        inspectedImageFrameIdx = -1;
+      } else {
+        inspectedImageFrameIdx = frameIdx;
+      }
+      updateUI();
+      draw();
+    }
+
+    function inspectClusterMembers(clusterId) {
+      if (inspectedClusterId === clusterId) {
+        inspectedClusterId = -1;
+      } else {
+        inspectedClusterId = clusterId;
+        selectedClusterId = clusterId;
+      }
+      updateUI();
+      draw();
+    }
+
+    function clearImageClusterInspection() {
+      inspectedClusterId = -1;
+      updateUI();
+      draw();
+    }
+
     function toggleSelectTuple(tupleKey) {
       if (selectedTupleKey === tupleKey) {
         selectedTupleKey = null;
@@ -369,6 +401,7 @@
     let currentFrameIdx = 0;
     let isRunning = false;
     let playTimer = null;
+    let computePumpTimer = null;
     let playSpeed = -1;
     let loopCount = 10; // 1 = 1 pass, 0 = Infinite, N = N passes
     let currentLoop = 1;

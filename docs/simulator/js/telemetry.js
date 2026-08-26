@@ -142,9 +142,11 @@
         const wallSpanSec = wallSpanMs / 1000.0;
 
         currentCpuLoadPct = Math.min(100.0, (windowComputeMs / wallSpanMs) * 100.0);
-        currentFps = windowFrames / wallSpanSec;
+        currentFps = isRunning ? (windowFrames / wallSpanSec) : (sessionAvgFps || currentFps);
         currentDistRate = windowDists / wallSpanSec;
-      } else {
+      } else if (!isRunning && sessionAvgFps > 0) {
+        currentFps = sessionAvgFps;
+      } else if (!isRunning && sessionElapsedMs <= 0) {
         currentCpuLoadPct = 0.0;
         currentFps = 0.0;
         currentDistRate = 0.0;
@@ -1670,6 +1672,47 @@
             : 'flex';
       }
 
+      const imgScrubberBar = document.getElementById('imageScrubberBar');
+      if (imgScrubberBar) {
+        const isImg = (typeof dataMode !== 'undefined' && dataMode === 'image');
+        imgScrubberBar.style.display = isImg ? 'flex' : 'none';
+        if (isImg) {
+          const slider = document.getElementById('sliderImgFrame');
+          const lbl = document.getElementById('lblImgFrameStatus');
+          const btnLive = document.getElementById('btnImgLiveStream');
+          const btnPrev = document.getElementById('btnImgPrevFrame');
+          const btnNext = document.getElementById('btnImgNextFrame');
+
+          const total = (benchmarkDataset && benchmarkDataset.length > 0)
+            ? benchmarkDataset.length
+            : totalFrames;
+          const isInspecting = (typeof inspectedImageFrameIdx !== 'undefined' &&
+            inspectedImageFrameIdx >= 0);
+          const curVal = isInspecting ? inspectedImageFrameIdx : Math.max(0, totalFrames - 1);
+
+          if (slider) {
+            slider.min = 0;
+            slider.max = Math.max(0, total - 1);
+            slider.value = curVal;
+            slider.disabled = (total === 0);
+          }
+          if (lbl) {
+            if (total === 0) {
+              lbl.innerText = 'No frames';
+            } else if (isInspecting) {
+              lbl.innerText = `Frame #${curVal + 1} / ${total} (Inspecting)`;
+            } else {
+              lbl.innerText = `Frame #${totalFrames} / ${total} (Live)`;
+            }
+          }
+          if (btnLive) {
+            btnLive.classList.toggle('active', !isInspecting);
+          }
+          if (btnPrev) btnPrev.disabled = (curVal <= 0 || total === 0);
+          if (btnNext) btnNext.disabled = (curVal >= total - 1 || total === 0);
+        }
+      }
+
       const legendHint = document.getElementById('legendHint');
       if (legendHint) {
         if (typeof dataMode !== 'undefined' && dataMode === 'image') {
@@ -1793,7 +1836,11 @@
 
       let currentAvgFps = sessionAvgFps;
       if (sessionIsActive && isRunning) {
-        currentAvgFps = currentElapsedMs > 0.001 ? (currentFramesClustered / (currentElapsedMs / 1000.0)) : 0.0;
+        currentAvgFps = currentElapsedMs > 0.001
+          ? (currentFramesClustered / (currentElapsedMs / 1000.0))
+          : 0.0;
+      } else if (currentAvgFps <= 0 && sessionElapsedMs > 0 && totalFrames > 0) {
+        currentAvgFps = (totalFrames / (sessionElapsedMs / 1000.0));
       }
 
       const statTotalTime = document.getElementById('statTotalTime');
@@ -2009,15 +2056,32 @@
       // Progress bar and frame counter (matches dataset row sample count, Nloop removed)
       const frameCounterEl = document.getElementById('frameCounter');
       const progressFillEl = document.getElementById('progressFill');
-      if (benchmarkDataset && benchmarkDataset.length > 0) {
+      if (typeof dataMode !== 'undefined' && dataMode === 'image' &&
+          typeof inspectedImageFrameIdx !== 'undefined' && inspectedImageFrameIdx >= 0) {
+        const total = (benchmarkDataset && benchmarkDataset.length > 0)
+          ? benchmarkDataset.length
+          : totalFrames;
+        const current = inspectedImageFrameIdx + 1;
+        const pct = total > 0 ? Math.min(100, (current / total) * 100) : 0;
+        if (progressFillEl) progressFillEl.style.width = `${pct}%`;
+        if (frameCounterEl) {
+          const countStr = `${formatNumber(current)} / ${formatNumber(total)}`;
+          frameCounterEl.innerText = `${countStr} (Inspecting)`;
+        }
+      } else if (benchmarkDataset && benchmarkDataset.length > 0) {
         const total = benchmarkDataset.length;
         const current = Math.min(currentFrameIdx, total);
         const pct = Math.min(100, (current / total) * 100);
         if (progressFillEl) progressFillEl.style.width = `${pct}%`;
         if (frameCounterEl) frameCounterEl.innerText = `${formatNumber(current)} / ${formatNumber(total)}`;
       } else {
-        if (progressFillEl) progressFillEl.style.width = '100%';
-        if (frameCounterEl) frameCounterEl.innerText = `${formatNumber(totalFrames)} live`;
+        const pct = totalFrames > 0 ? 100 : 0;
+        if (progressFillEl) progressFillEl.style.width = `${pct}%`;
+        if (frameCounterEl) {
+          frameCounterEl.innerText = totalFrames > 0
+            ? `${formatNumber(totalFrames)} live`
+            : '0 / 0';
+        }
       }
 
       // Render Sample History Toolbar
@@ -2144,6 +2208,92 @@
             </div>
           </th>
         `;
+      }
+
+      if (typeof dataMode !== 'undefined' && dataMode === 'image' &&
+          typeof inspectedClusterId !== 'undefined' && inspectedClusterId >= 0 &&
+          clusters[inspectedClusterId]) {
+        const c = clusters[inspectedClusterId];
+        const members = (imageClusterMembers && imageClusterMembers[inspectedClusterId]) || [];
+        const memberPct = totalFrames > 0
+          ? ((members.length / totalFrames) * 100).toFixed(1)
+          : '0.0';
+
+        let html = `
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; ` +
+              `padding:6px 10px; background:#0f172a; border:1px solid var(--card-border); ` +
+              `border-radius:6px;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="display:inline-block; width:9px; height:9px; border-radius:50%; ` +
+                  `background:${c.color || '#38bdf8'};"></span>
+                <span style="font-weight:700; color:#f8fafc; font-size:0.78rem;">` +
+                  `Cluster C${c.id} Member Frames</span>
+                <span class="badge-pill" style="background:rgba(56,189,248,0.15); ` +
+                  `color:#38bdf8; font-size:0.68rem;">` +
+                  `${members.length} frames (${memberPct}%)</span>
+              </div>
+              <button class="btn-action" style="padding:2px 8px; font-size:0.68rem;" ` +
+                `onclick="clearImageClusterInspection()">← All Clusters</button>
+            </div>
+        `;
+
+        if (members.length === 0) {
+          html += `<div style="color:var(--text-muted); font-size:0.75rem; text-align:center; ` +
+            `padding:20px 0;">No frames assigned to this cluster yet.</div>`;
+        } else {
+          html += `
+            <div style="display:grid; ` +
+              `grid-template-columns:repeat(auto-fill, minmax(72px, 1fr)); ` +
+              `gap:6px; max-height:360px; overflow-y:auto; padding:4px;">
+          `;
+          members.forEach(fIdx => {
+            const isSelected = (inspectedImageFrameIdx === fIdx);
+            const dist = (imageFrameDists && imageFrameDists[fIdx] !== undefined)
+              ? imageFrameDists[fIdx].toFixed(3)
+              : '—';
+            const cardBorder = isSelected ? '2px solid #facc15' : '1px solid #1e293b';
+            html += `
+              <div class="image-member-card ${isSelected ? 'selected' : ''}" 
+                   style="display:flex; flex-direction:column; align-items:center; ` +
+                     `background:#0b1120; border:${cardBorder}; ` +
+                     `border-radius:6px; padding:4px; cursor:pointer;"
+                   onclick="selectImageFrame(${fIdx})"
+                   title="Frame #${fIdx + 1} • d=${dist}">
+                <canvas class="member-thumb-canvas" data-frame-idx="${fIdx}" ` +
+                  `width="32" height="32" ` +
+                  `style="width:52px; height:52px; border-radius:3px; background:#020617; ` +
+                    `image-rendering:pixelated; border:1px solid rgba(255,255,255,0.08);"></canvas>
+                <div style="display:flex; justify-content:space-between; width:100%; ` +
+                  `margin-top:3px; font-size:0.62rem; font-family:monospace;">
+                  <span style="color:${isSelected ? '#facc15' : '#38bdf8'}; font-weight:700;">` +
+                    `#${fIdx + 1}</span>
+                  <span style="color:#94a3b8;">d:${dist}</span>
+                </div>
+              </div>
+            `;
+          });
+          html += `</div>`;
+        }
+        html += `</div>`;
+        contCandidates.innerHTML = html;
+
+        requestAnimationFrame(() => {
+          const canvases = contCandidates.querySelectorAll('.member-thumb-canvas');
+          canvases.forEach(cv => {
+            const fIdx = parseInt(cv.dataset.frameIdx, 10);
+            if (benchmarkDataset && benchmarkDataset[fIdx]) {
+              const cCtx = cv.getContext('2d');
+              if (typeof drawRasterBuffer === 'function') {
+                drawRasterBuffer(
+                  cCtx, benchmarkDataset[fIdx], imageWidth, imageHeight,
+                  0, 0, cv.width, cv.height, 1.0
+                );
+              }
+            }
+          });
+        });
+        return;
       }
 
       if (useTiles) {
@@ -2320,14 +2470,16 @@
                 : `(${c.x.toFixed(2)}, ${c.y.toFixed(2)})`);
 
             const framePct = totalFrames > 0 ? ((c.members / totalFrames) * 100).toFixed(1) : '100.0';
-            const scCount = c.scDists || 0;
+            const rowClick = (typeof dataMode !== 'undefined' && dataMode === 'image')
+              ? `inspectClusterMembers(${c.id})`
+              : `toggleSelectCluster(${c.id})`;
 
             html += `
               <tr class="cluster-row ${statusClass} ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''}" 
                   data-cluster-id="${c.id}" 
                   onmouseenter="setHoveredCluster(${c.id})" 
                   onmouseleave="setHoveredCluster(-1)" 
-                  onclick="toggleSelectCluster(${c.id})">
+                  onclick="${rowClick}">
                 ${clusterTableCols.cluster.visible ? `
                   <td>
                     <div style="display:flex; align-items:center; gap:5px;">
@@ -2343,7 +2495,9 @@
                   <td class="num-col"><span style="color:#f8fafc; font-weight:600;">${c.members}</span> <span style="color:#64748b; font-size:0.66rem;">(${framePct}%)</span></td>
                 ` : ''}
                 ${clusterTableCols.scDists.visible ? `
-                  <td class="num-col" style="color:var(--accent-blue); font-weight:600;">${scCount}</td>
+                  <td class="num-col" style="color:var(--accent-blue); font-weight:600;">
+                    ${c.scDists || c.members || 0}
+                  </td>
                 ` : ''}
                 ${clusterTableCols.dist.visible ? `
                   <td class="num-col" style="color:${distColor}; font-weight:600;">${distText}</td>
@@ -2362,6 +2516,9 @@
     }
 
     function resetClustering(keepDataset = true) {
+      if (typeof pauseSimulation === 'function') {
+        pauseSimulation();
+      }
       if (typeof clearActiveFrameEvaluations === 'function') {
         clearActiveFrameEvaluations(true);
       }
@@ -2380,6 +2537,11 @@
       currentFrame = null;
       currentImageFrame = null;
       imageGalleryScrollY = 0;
+      inspectedImageFrameIdx = -1;
+      inspectedClusterId = -1;
+      imageFrameAssignments = [];
+      imageFrameDists = [];
+      imageClusterMembers = {};
       currentEvaluations = [];
       currentPruned = [];
       currentPredicted = [];
@@ -2554,22 +2716,34 @@
     function stageDataset(benchmarkKey = null) {
       if (benchmarkKey) {
         currentBenchmark = benchmarkKey;
-        const selMain = document.getElementById('selectBenchmark');
-        if (selMain) selMain.value = benchmarkKey;
       } else {
         const selMain = document.getElementById('selectBenchmark');
-        if (selMain) currentBenchmark = selMain.value;
+        const selSide = document.getElementById('selectBenchmarkSide');
+        if (selMain && selMain.value) {
+          currentBenchmark = selMain.value;
+        } else if (selSide && selSide.value) {
+          currentBenchmark = selSide.value;
+        }
+      }
+
+      const selMain = document.getElementById('selectBenchmark');
+      if (selMain) {
+        const opt = selMain.querySelector(`option[value="${currentBenchmark}"]`);
+        if (opt) selMain.value = currentBenchmark;
       }
 
       const selSide = document.getElementById('selectBenchmarkSide');
-      if (selSide) selSide.value = currentBenchmark;
+      if (selSide) {
+        const optSide = selSide.querySelector(`option[value="${currentBenchmark}"]`);
+        if (optSide) selSide.value = currentBenchmark;
+      }
 
       // Reset clustering while keeping dataset staging pipeline clean
       resetClustering(false);
 
       const descEl = document.getElementById('benchmarkDesc');
       if (descEl) {
-        descEl.innerHTML = BENCHMARK_DESCS[currentBenchmark] || "";
+        descEl.innerHTML = BENCHMARK_DESCS[currentBenchmark] || `<b>${currentBenchmark}</b>`;
       }
 
       if (typeof isImageBenchmark === 'function' && isImageBenchmark(currentBenchmark)) {
@@ -2653,7 +2827,10 @@
     }
 
     function loadSelectedBenchmark() {
-      stageDataset();
+      const selMain = document.getElementById('selectBenchmark');
+      const selSide = document.getElementById('selectBenchmarkSide');
+      const key = (selMain && selMain.value) || (selSide && selSide.value) || currentBenchmark;
+      stageDataset(key);
     }
 
     function stepNextFrame(skipRender = false) {

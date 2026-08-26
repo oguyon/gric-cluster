@@ -181,6 +181,9 @@ add_executable(gric-ascii-spot-2-video src/gric-ascii-spot-2-video/ascii-spot-2-
 target_link_libraries(gric-ascii-spot-2-video m ${IMAGESTREAMIO_LIBRARIES})
 
 if (IMAGESTREAMIO_FOUND)
+    add_executable(gric-txt2stream src/gric-txt2stream/txt2stream.c src/shared/cli_colors.c)
+    target_link_libraries(gric-txt2stream ${IMAGESTREAMIO_LIBRARIES} m)
+
     add_executable(gric-stream-to-pipe src/gric-stream-to-pipe/stream_to_pipe.c src/shared/cli_colors.c)
     target_link_libraries(gric-stream-to-pipe ${IMAGESTREAMIO_LIBRARIES} m)
 endif()
@@ -337,6 +340,14 @@ target_link_libraries(test_pass2_reassign m)
 add_test(NAME test_pass2_reassign
     COMMAND test_pass2_reassign)
 set_tests_properties(test_pass2_reassign PROPERTIES DEPENDS gric-cluster)
+
+if (IMAGESTREAMIO_FOUND)
+    add_executable(test_txt2stream tests/test_txt2stream.c)
+    target_link_libraries(test_txt2stream m)
+    add_test(NAME test_txt2stream
+        COMMAND test_txt2stream)
+    set_tests_properties(test_txt2stream PROPERTIES DEPENDS "gric-txt2stream;gric-cluster")
+endif()
 
 # Target to regenerate benchmark figures and documentation pages
 find_package(Python3 COMPONENTS Interpreter REQUIRED)

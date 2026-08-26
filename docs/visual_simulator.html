@@ -179,6 +179,15 @@
                       data-tooltip-badge="Shortcut: S / ➔" 
                       data-tooltip-color="cyan" 
                       data-tooltip-desc="Pushes exactly one coordinate vector from the stream, evaluating distance bounds, updating priors, and advancing the frame index.">&#8677; Step</button>
+              <button id="btnComputeAll" class="btn-action" 
+                      style="background: rgba(34, 197, 94, 0.15); color: #4ade80; 
+                             border: 1px solid rgba(34, 197, 94, 0.4); font-weight: 700;"
+                      data-tooltip-title="Compute All (Run to Completion)" 
+                      data-tooltip-badge="Instant WASM Batch" 
+                      data-tooltip-color="green" 
+                      data-tooltip-desc="Computes clustering instantly in WASM memory.">
+                ⚡ Compute All
+              </button>
               <button id="btnResetClusters" class="btn-action"
                       data-tooltip-title="Reset Clusters (Keep Staged Dataset)"
                       data-tooltip-badge="Reset Model Only"
@@ -245,12 +254,13 @@
                   data-tooltip-title="Simulation Playback Speed" 
                   data-tooltip-badge="Rate Control" 
                   data-tooltip-color="cyan" 
-                  data-tooltip-desc="Adjusts the interval delay between ingested frames, from step-by-step (150ms) to instant batch processing.">
-            <option value="150">1x (150ms)</option>
-            <option value="50">3x (50ms)</option>
-            <option value="15">10x (15ms)</option>
-            <option value="5">30x (5ms)</option>
-            <option value="-1" selected>⚡ As fast as possible</option>
+                  data-tooltip-desc="Select Instant batch computation or 60 FPS streaming preview.">
+            <option value="0">⚡ Instant (Compute All, then Render)</option>
+            <option value="-1" selected>🚀 Fast Streaming Preview (60 FPS)</option>
+            <option value="5">30x Paced (5ms)</option>
+            <option value="15">10x Paced (15ms)</option>
+            <option value="50">3x Paced (50ms)</option>
+            <option value="150">1x Step (150ms)</option>
           </select>
           <span id="frameCounter">0 / 10,000</span>
         </div>
@@ -338,6 +348,32 @@
                   data-tooltip-desc="Colors points by assigned cluster vs uniform color.">
             🎨 Colors
           </button>
+        </div>
+      </div>
+
+      <!-- Image Mode Frame Scrubber & Retro-Inspection Bar -->
+      <div id="imageScrubberBar" class="image-scrubber-bar" style="display: none;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 0.74rem; font-weight: 700; color: #38bdf8;">
+            🎞️ Frame Inspector:
+          </span>
+          <button id="btnImgPrevFrame" class="btn-action"
+                  style="padding: 2px 8px; font-size: 0.72rem;"
+                  title="Previous Frame (Left Arrow)">◀ Prev</button>
+          <button id="btnImgNextFrame" class="btn-action"
+                  style="padding: 2px 8px; font-size: 0.72rem;"
+                  title="Next Frame (Right Arrow)">Next ▶</button>
+          <button id="btnImgLiveStream" class="btn-toggle toggle-green active"
+                  style="padding: 2px 8px; font-size: 0.72rem;"
+                  title="Toggle Live Streaming vs Historical Frame">● Live</button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 520px;">
+          <input type="range" id="sliderImgFrame" min="0" max="0" value="0"
+                 style="flex: 1; cursor: pointer; accent-color: #38bdf8;">
+          <span id="lblImgFrameStatus"
+                style="font-family: monospace; font-size: 0.72rem; color: #cbd5e1;">
+            Frame 0 / 0
+          </span>
         </div>
       </div>
 
@@ -487,24 +523,63 @@
               </div>
             </div>
 
-            <!-- Stream Ingestion & Playback Rate -->
+            <!-- Input Ingestion Mode & Streaming Source -->
             <div class="sub-control-card">
               <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-                <span>Stream Ingestion &amp; Playback Rate</span>
+                <span>Input Ingestion Mode</span>
               </div>
               <div style="display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Input Source:</label>
+                  <select id="selectInputModeSide" style="padding: 4px 8px; font-size: 0.76rem;"
+                          data-tooltip-title="Input Ingestion Mode"
+                          data-tooltip-badge="File vs Shared Memory"
+                          data-tooltip-color="cyan"
+                          data-tooltip-desc="Choose Direct File / Memory for standard simulation, or ImageStreamIO Stream for real-time shared-memory streaming from gric-txt2stream.">
+                    <option value="file" selected>📁 Direct File / Memory</option>
+                    <option value="stream">⚡ ImageStreamIO Stream (Real-Time SHM)</option>
+                  </select>
+                </div>
+
+                <div id="sideStreamConfigPanel" style="display: none; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 5px; padding: 6px 8px; flex-direction: column; gap: 6px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label style="font-size: 0.72rem; color: #38bdf8; font-weight: 600;">Stream Rate:</label>
+                    <select id="selectSideStreamFps" style="padding: 2px 6px; font-size: 0.72rem;">
+                      <option value="0" selected>⚡ Max / Unthrottled (cnt2 Lockstep)</option>
+                      <option value="1000">1,000 FPS (1 ms)</option>
+                      <option value="500">500 FPS (2 ms)</option>
+                      <option value="250">250 FPS (4 ms)</option>
+                      <option value="100">100 FPS (10 ms)</option>
+                      <option value="50">50 FPS (20 ms)</option>
+                    </select>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                      <input type="checkbox" id="chkSideStreamCnt2Sync" checked style="cursor: pointer;">
+                      <span>Lockstep Flow Control (cnt2sync)</span>
+                    </label>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                      <input type="checkbox" id="chkSideStreamLoop" style="cursor: pointer;">
+                      <span>Loop dataset indefinitely</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div id="rowWasmPlaybackSpeed" style="display: flex; justify-content: space-between; align-items: center;">
                   <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Playback Speed:</label>
                   <select id="selectSpeedSide" style="padding: 3px 8px; font-size: 0.76rem;" 
                           data-tooltip-title="Simulation Playback Speed" 
                           data-tooltip-badge="Rate Control" 
                           data-tooltip-color="cyan" 
-                          data-tooltip-desc="Adjusts the interval delay between ingested frames, from step-by-step (150ms) to instant batch processing.">
-                    <option value="150">1x (150ms)</option>
-                    <option value="50">3x (50ms)</option>
-                    <option value="15">10x (15ms)</option>
-                    <option value="5">30x (5ms)</option>
-                    <option value="-1" selected>⚡ As fast as possible</option>
+                          data-tooltip-desc="Select Instant batch or 60 FPS preview.">
+                    <option value="0">⚡ Instant (Compute All, then Render)</option>
+                    <option value="-1" selected>🚀 Fast Streaming Preview (60 FPS)</option>
+                    <option value="5">30x Paced (5ms)</option>
+                    <option value="15">10x Paced (15ms)</option>
+                    <option value="50">3x Paced (50ms)</option>
+                    <option value="150">1x Step (150ms)</option>
                   </select>
                 </div>
               </div>
@@ -1334,6 +1409,46 @@
                   <select id="selectCliDataset" style="flex: 1; padding: 4px 8px; font-size: 0.76rem;">
                     <option value="">(Select dataset from workspace...)</option>
                   </select>
+                </div>
+
+                <!-- Input Source Mode -->
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <label style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600; width: 64px;">Input Mode:</label>
+                  <select id="selectCliInputMode" style="flex: 1; padding: 4px 8px; font-size: 0.76rem;"
+                          data-tooltip-title="Input Ingestion Mode"
+                          data-tooltip-badge="File vs Shared Memory"
+                          data-tooltip-color="cyan"
+                          data-tooltip-desc="Choose Direct File for standard batch file reading, or ImageStreamIO Stream for real-time shared-memory streaming from gric-txt2stream.">
+                    <option value="file" selected>📁 Direct File (.txt / .csv)</option>
+                    <option value="stream">⚡ ImageStreamIO Stream (Real-Time SHM)</option>
+                  </select>
+                </div>
+
+                <!-- Stream Configuration Subpanel -->
+                <div id="cliStreamConfigPanel" style="display: none; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 5px; padding: 6px 8px; flex-direction: column; gap: 6px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label style="font-size: 0.72rem; color: #38bdf8; font-weight: 600;">Stream Rate:</label>
+                    <select id="selectCliStreamFps" style="padding: 2px 6px; font-size: 0.72rem;">
+                      <option value="0" selected>⚡ Max / Unthrottled (cnt2 Lockstep)</option>
+                      <option value="1000">1,000 FPS (1 ms)</option>
+                      <option value="500">500 FPS (2 ms)</option>
+                      <option value="250">250 FPS (4 ms)</option>
+                      <option value="100">100 FPS (10 ms)</option>
+                      <option value="50">50 FPS (20 ms)</option>
+                    </select>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                      <input type="checkbox" id="chkCliStreamCnt2Sync" checked style="cursor: pointer;">
+                      <span>Lockstep Flow Control (cnt2sync)</span>
+                    </label>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                      <input type="checkbox" id="chkCliStreamLoop" style="cursor: pointer;">
+                      <span>Loop dataset indefinitely</span>
+                    </label>
+                  </div>
                 </div>
 
                 <div style="display: flex; gap: 8px; align-items: center;">
@@ -2761,21 +2876,21 @@
   </div>
 
   <!-- Modular JavaScript Components -->
-  <script src="simulator/js/tooltip.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/geometry.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/benchmarks.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/image_benchmarks.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/tile_engine.js?v=2026.08.23.1457"></script>
-  <script src="simulator/wasm/gric_cluster.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/wasm_bridge.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/fs_access.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/desktop_bridge.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/state.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/telemetry.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/image_renderer.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/renderer.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/clustering_core.js?v=2026.08.23.1457"></script>
-  <script src="simulator/js/main.js?v=2026.08.23.1457"></script>
+  <script src="simulator/js/tooltip.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/geometry.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/benchmarks.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/image_benchmarks.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/tile_engine.js?v=2026.08.25.2330"></script>
+  <script src="simulator/wasm/gric_cluster.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/wasm_bridge.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/fs_access.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/desktop_bridge.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/state.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/telemetry.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/image_renderer.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/renderer.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/clustering_core.js?v=2026.08.25.2330"></script>
+  <script src="simulator/js/main.js?v=2026.08.25.2330"></script>
   <script>
     // Async WASM module and Worker initialization
     (async function() {

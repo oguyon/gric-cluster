@@ -149,6 +149,12 @@ const GricWasm = (function () {
       ['number', 'number', 'number']
     );
 
+    _fn.processBatch = M.cwrap(
+      'wasm_cluster_process_batch',
+      'number',
+      ['number', 'number', 'number', 'number', 'number']
+    );
+
     _fn.getNumClusters = M.cwrap(
       'wasm_cluster_get_num_clusters',
       'number',
@@ -443,13 +449,13 @@ const GricWasm = (function () {
       _fn.setUnlimited(_handle, 1);
     }
 
-    if (_traceEnabled || (params && params.isExplainMode) || (typeof isExplainMode !== 'undefined' && isExplainMode)) {
-      _traceEnabled = true;
-      if (_fn.setTrace) {
-        _fn.setTrace(_handle, 1, 2048);
-        if (!_eventSize) {
-          _eventSize = _fn.getTraceEventSize();
-        }
+    const shouldTrace = !!((params && params.isExplainMode) ||
+      (typeof isExplainMode !== 'undefined' && isExplainMode));
+    _traceEnabled = shouldTrace;
+    if (_fn.setTrace) {
+      _fn.setTrace(_handle, shouldTrace ? 1 : 0, 2048);
+      if (shouldTrace && !_eventSize) {
+        _eventSize = _fn.getTraceEventSize();
       }
     }
 
@@ -495,8 +501,11 @@ const GricWasm = (function () {
     const M = _module;
     const len = Math.min(vec.length, _ndim);
     const heapF64 = M.HEAPF64;
-    if (heapF64 && vec instanceof Float64Array && len === _ndim) {
-      heapF64.set(vec, _coordsPtr >> 3);
+    if (heapF64) {
+      const base = _coordsPtr >> 3;
+      for (let i = 0; i < len; i++) {
+        heapF64[base + i] = vec[i];
+      }
     } else {
       for (let i = 0; i < len; i++) {
         M.setValue(_coordsPtr + i * 8, vec[i], 'double');
@@ -506,6 +515,64 @@ const GricWasm = (function () {
     return _fn.processFrame(
       _handle, _coordsPtr, _ndim
     );
+  }
+
+  /**
+   * Process a contiguous batch of coordinate frames directly in WASM memory.
+   *
+   * @param {Float64Array|Array<number>} flatCoords - Flat coordinate array
+   * @param {number} numFrames - Number of frames in this batch
+   * @param {number} [ndim] - Dimensionality per frame (default: _ndim)
+   * @param {Int32Array} [outAssignments] - Optional output buffer for cluster assignments
+   * @returns {number} Number of frames successfully clustered
+   */
+  function processBatch(flatCoords, numFrames, ndim, outAssignments = null) {
+    if (!_handle || !flatCoords || numFrames <= 0) return 0;
+    const d = ndim || _ndim;
+    const M = _module;
+    const totalDoubles = numFrames * d;
+
+    // Detect if C engine grew its arrays
+    const cCapacity = _fn.getCapacity(_handle);
+    if (cCapacity > _maxK) {
+      _freeBuffers();
+      _maxK = cCapacity;
+      _allocBuffers();
+    }
+
+    const batchCoordsPtr = M._malloc(totalDoubles * 8);
+    const assignPtr = outAssignments ? M._malloc(numFrames * 4) : 0;
+    if (!batchCoordsPtr) return 0;
+
+    if (flatCoords instanceof Float64Array) {
+      M.HEAPF64.set(flatCoords.subarray(0, totalDoubles), batchCoordsPtr >> 3);
+    } else {
+      const base = batchCoordsPtr >> 3;
+      for (let i = 0; i < totalDoubles; i++) {
+        M.HEAPF64[base + i] = flatCoords[i];
+      }
+    }
+
+    const processed = _fn.processBatch(
+      _handle,
+      batchCoordsPtr,
+      assignPtr,
+      numFrames,
+      d
+    );
+
+    if (outAssignments && assignPtr && processed > 0) {
+      const heap32 = M.HEAP32;
+      const base = assignPtr >> 2;
+      for (let i = 0; i < processed; i++) {
+        outAssignments[i] = heap32[base + i];
+      }
+    }
+
+    M._free(batchCoordsPtr);
+    if (assignPtr) M._free(assignPtr);
+
+    return processed;
   }
 
   /**
@@ -868,9 +935,7 @@ const GricWasm = (function () {
     // Update telemetry counters
     const t = snapshot.telemetry;
     if (t) {
-      if (t.totalFrames > totalFrames) {
-        totalFrames = t.totalFrames;
-      }
+      totalFrames = t.totalFrames;
       distSampleCluster = t.framedistSample;
       distClusterCluster = t.framedistIntercluster;
       distSampleClusterLast = t.lastFrameDfc;
@@ -1609,6 +1674,7 @@ const GricWasm = (function () {
     load: load,
     init: init,
     processFrame: processFrame,
+    processBatch: processBatch,
     processFrameVector: processFrameVector,
     getNumClusters: getNumClusters,
     getFrameEvaluations: getFrameEvaluations,

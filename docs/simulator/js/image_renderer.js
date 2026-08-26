@@ -5,21 +5,25 @@
 
 /* eslint-disable no-unused-vars */
 
-// Shared reusable off-screen canvas for raster conversions
-let _imgOffCanvas = null;
-let _imgOffCtx = null;
-let _imgOffData = null;
+// Dedicated offscreen canvas cache by slot to prevent canvas buffer collision
+const _offscreenCanvases = {};
 
-function _ensureOffscreenCanvas(w, h)
+function _getOffscreenCanvas(slot, w, h)
 {
-  if (!_imgOffCanvas || _imgOffCanvas.width !== w || _imgOffCanvas.height !== h)
+  let entry = _offscreenCanvases[slot];
+  if (!entry || entry.canvas.width !== w || entry.canvas.height !== h)
   {
-    _imgOffCanvas = document.createElement('canvas');
-    _imgOffCanvas.width = w;
-    _imgOffCanvas.height = h;
-    _imgOffCtx = _imgOffCanvas.getContext('2d');
-    _imgOffData = _imgOffCtx.createImageData(w, h);
+    const canvas = (typeof OffscreenCanvas !== 'undefined')
+      ? new OffscreenCanvas(w, h)
+      : document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    const data = ctx.createImageData(w, h);
+    entry = { canvas, ctx, data };
+    _offscreenCanvases[slot] = entry;
   }
+  return entry;
 }
 
 /**
@@ -33,6 +37,7 @@ function _ensureOffscreenCanvas(w, h)
  * @param {number} dstW - Target destination width
  * @param {number} dstH - Target destination height
  * @param {number} maxVal - Max normalization value (default: 1.0)
+ * @param {string} slot - Dedicated canvas slot name
  */
 function drawRasterBuffer(
   targetCtx,
@@ -43,32 +48,33 @@ function drawRasterBuffer(
   dstY,
   dstW,
   dstH,
-  maxVal = 1.0
+  maxVal = 1.0,
+  slot = 'default'
 )
 {
   if (!pixels || pixels.length < imgW * imgH) return;
 
-  _ensureOffscreenCanvas(imgW, imgH);
-  const data = _imgOffData.data;
+  const { canvas, ctx, data } = _getOffscreenCanvas(slot, imgW, imgH);
   const numPix = imgW * imgH;
   const scale = maxVal > 0 ? 255.0 / maxVal : 255.0;
+  const d = data.data;
 
   for (let i = 0; i < numPix; i++)
   {
     const val = pixels[i];
     const lum = Math.max(0, Math.min(255, Math.round(val * scale)));
     const idx = i * 4;
-    data[idx] = lum;     // R
-    data[idx + 1] = lum; // G
-    data[idx + 2] = lum; // B
-    data[idx + 3] = 255; // A
+    d[idx] = lum;     // R
+    d[idx + 1] = lum; // G
+    d[idx + 2] = lum; // B
+    d[idx + 3] = 255; // A
   }
 
-  _imgOffCtx.putImageData(_imgOffData, 0, 0);
+  ctx.putImageData(data, 0, 0);
 
   targetCtx.imageSmoothingEnabled = false;
   targetCtx.drawImage(
-    _imgOffCanvas,
+    canvas,
     0, 0, imgW, imgH,
     Math.round(dstX), Math.round(dstY), Math.round(dstW), Math.round(dstH)
   );
@@ -158,15 +164,48 @@ function renderImageSubViewport(ctx, qIdx, rect)
   ctx.lineTo(rect.x + rect.w, rect.y + headerH);
   ctx.stroke();
 
-  // Determine active cluster and frame
-  const assignedId = typeof prevAssignedCluster !== 'undefined' ? prevAssignedCluster : -1;
-  const assignedCluster = (assignedId >= 0 && clusters[assignedId]) ? clusters[assignedId] : null;
-  const frameBuf = currentImageFrame;
+  // Determine if we are in retro-inspection mode or live stream mode
+  const isRetro = (typeof inspectedImageFrameIdx !== 'undefined' &&
+    inspectedImageFrameIdx >= 0 &&
+    benchmarkDataset && benchmarkDataset[inspectedImageFrameIdx]);
+  const activeFrameIdx = isRetro
+    ? inspectedImageFrameIdx
+    : (totalFrames > 0
+      ? totalFrames - 1
+      : (benchmarkDataset && benchmarkDataset.length > 0 ? 0 : -1));
+  const frameBuf = isRetro
+    ? benchmarkDataset[inspectedImageFrameIdx]
+    : (currentImageFrame ||
+      (benchmarkDataset && benchmarkDataset.length > 0
+        ? benchmarkDataset[Math.min(currentFrameIdx, benchmarkDataset.length - 1)]
+        : null));
 
-  // Q0: Current Query Frame
+  let assignedId = -1;
+  let lastDist = 0;
+  if (isRetro)
+  {
+    const hasAssigned = imageFrameAssignments &&
+      imageFrameAssignments[inspectedImageFrameIdx] !== undefined;
+    assignedId = hasAssigned ? imageFrameAssignments[inspectedImageFrameIdx] : -1;
+    lastDist = (imageFrameDists && imageFrameDists[inspectedImageFrameIdx] !== undefined)
+      ? imageFrameDists[inspectedImageFrameIdx]
+      : 0;
+  }
+  else
+  {
+    assignedId = typeof prevAssignedCluster !== 'undefined' ? prevAssignedCluster : -1;
+    lastDist = typeof distSampleClusterLast !== 'undefined' ? distSampleClusterLast : 0;
+  }
+
+  const assignedCluster = (assignedId >= 0 && clusters[assignedId]) ? clusters[assignedId] : null;
+
+  // Q0: Query Frame (Live or Inspected)
   if (qIdx === 0)
   {
-    drawHeader(ctx, rect.x + 8, rect.y + 17, '📸 Active Query Frame', '#38bdf8');
+    const title = isRetro
+      ? `🔍 Inspected Frame #${activeFrameIdx + 1}`
+      : '📸 Active Query Frame';
+    drawHeader(ctx, rect.x + 8, rect.y + 17, title, isRetro ? '#facc15' : '#38bdf8');
 
     if (frameBuf)
     {
@@ -177,19 +216,36 @@ function renderImageSubViewport(ctx, qIdx, rect)
       // Outer bounding frame
       ctx.fillStyle = '#020617';
       ctx.fillRect(imgX - 2, imgY - 2, size + 4, size + 4);
-      ctx.strokeStyle = '#38bdf8';
+      ctx.strokeStyle = isRetro ? '#facc15' : '#38bdf8';
       ctx.lineWidth = 1.5;
       ctx.strokeRect(imgX - 2, imgY - 2, size + 4, size + 4);
 
-      drawRasterBuffer(ctx, frameBuf, imageWidth, imageHeight, imgX, imgY, size, size, 1.0);
+      drawRasterBuffer(
+        ctx,
+        frameBuf,
+        imageWidth,
+        imageHeight,
+        imgX,
+        imgY,
+        size,
+        size,
+        1.0,
+        'quad0'
+      );
 
       // Info badge
+      const totalDatasetCount = (benchmarkDataset && benchmarkDataset.length > 0)
+        ? benchmarkDataset.length
+        : totalFrames;
+      const frameNum = activeFrameIdx >= 0
+        ? activeFrameIdx + 1
+        : (totalFrames > 0 ? totalFrames : 1);
       drawBadge(
         ctx,
         rect.x + 8,
         rect.y + rect.h - 8,
-        `Frame #${totalFrames} | ${imageWidth}×${imageHeight} (D=${imageDim})`,
-        '#94a3b8'
+        `Frame #${frameNum}/${totalDatasetCount} | ${imageWidth}×${imageHeight} (D=${imageDim})`,
+        isRetro ? '#facc15' : '#94a3b8'
       );
     }
     else
@@ -229,18 +285,18 @@ function renderImageSubViewport(ctx, qIdx, rect)
         imgY,
         size,
         size,
-        1.0
+        1.0,
+        'quad1'
       );
 
-      const lastDist = typeof distSampleClusterLast !== 'undefined'
-        ? distSampleClusterLast
-        : 0;
+      const isMatch = lastDist <= (rlim || 0.1);
+      const matchStatus = isMatch ? 'MATCH' : 'NEW ANCHOR';
       drawBadge(
         ctx,
         rect.x + 8,
         rect.y + rect.h - 8,
-        `Members: ${assignedCluster.members} | d(f,c): ${lastDist.toFixed(3)} | rlim: ${rlim.toFixed(3)}`,
-        '#94a3b8'
+        `Members: ${assignedCluster.members} | d(f,c): ${lastDist.toFixed(3)} | ${matchStatus}`,
+        isMatch ? '#4ade80' : '#facc15'
       );
     }
     else
@@ -292,7 +348,8 @@ function renderImageSubViewport(ctx, qIdx, rect)
         imgY,
         size,
         size,
-        Math.max(0.5, maxDiff)
+        Math.max(0.5, maxDiff),
+        'quad2'
       );
 
       drawBadge(
@@ -309,11 +366,51 @@ function renderImageSubViewport(ctx, qIdx, rect)
     }
   }
 
-  // Q3: Scrollable Centroid Gallery
+  // Q3: Scrollable Centroid Gallery OR Cluster Member Gallery
   else if (qIdx === 3)
   {
-    const kCount = clusters ? clusters.length : 0;
-    drawHeader(ctx, rect.x + 8, rect.y + 17, `📚 Centroid Gallery (${kCount})`, '#a78bfa');
+    const isClusterInspection = (typeof inspectedClusterId !== 'undefined' &&
+      inspectedClusterId >= 0 &&
+      clusters[inspectedClusterId]);
+    const members = isClusterInspection
+      ? ((imageClusterMembers && imageClusterMembers[inspectedClusterId]) || [])
+      : [];
+    const kCount = isClusterInspection ? members.length : (clusters ? clusters.length : 0);
+
+    if (isClusterInspection)
+    {
+      const c = clusters[inspectedClusterId];
+      drawHeader(
+        ctx,
+        rect.x + 8,
+        rect.y + 17,
+        `👥 C${inspectedClusterId} Members (${kCount} frames)`,
+        c.color || '#a78bfa'
+      );
+
+      // Back chip button in header
+      const btnBackW = 74;
+      const btnBackH = 18;
+      const btnBackX = rect.x + rect.w - btnBackW - 8;
+      const btnBackY = rect.y + 4;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(btnBackX, btnBackY, btnBackW, btnBackH, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = 'bold 9.5px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('← All Clusters', btnBackX + btnBackW / 2, btnBackY + btnBackH / 2);
+    }
+    else
+    {
+      drawHeader(ctx, rect.x + 8, rect.y + 17, `📚 Centroid Gallery (${kCount})`, '#a78bfa');
+    }
 
     if (kCount > 0)
     {
@@ -332,13 +429,10 @@ function renderImageSubViewport(ctx, qIdx, rect)
       ctx.rect(contentX, contentY, contentW, contentH);
       ctx.clip();
 
-      for (let k = 0; k < kCount; k++)
+      for (let i = 0; i < kCount; i++)
       {
-        const cl = clusters[k];
-        if (!cl || !cl.anchor) continue;
-
-        const col = k % cols;
-        const row = Math.floor(k / cols);
+        const col = i % cols;
+        const row = Math.floor(i / cols);
         const tx = contentX + col * (thumbSize + gap);
         const ty = contentY + row * (thumbSize + gap) - imageGalleryScrollY;
 
@@ -347,34 +441,59 @@ function renderImageSubViewport(ctx, qIdx, rect)
           continue; // Cull off-screen thumbnails
         }
 
-        const isAssigned = (k === assignedId);
+        let rasterData = null;
+        let isSelected = false;
+        let thumbLabel = '';
+        let badgeColor = '#cbd5e1';
+
+        if (isClusterInspection)
+        {
+          const memberFrameIdx = members[i];
+          rasterData = benchmarkDataset ? benchmarkDataset[memberFrameIdx] : null;
+          isSelected = (memberFrameIdx === activeFrameIdx);
+          thumbLabel = `#${memberFrameIdx + 1}`;
+          badgeColor = isSelected ? '#facc15' : '#cbd5e1';
+        }
+        else
+        {
+          const cl = clusters[i];
+          if (!cl || !cl.anchor) continue;
+          rasterData = cl.anchor;
+          isSelected = (i === assignedId);
+          thumbLabel = `C${i}`;
+          badgeColor = isSelected ? '#4ade80' : '#cbd5e1';
+        }
+
+        if (!rasterData) continue;
 
         // Thumbnail background & border
         ctx.fillStyle = '#020617';
         ctx.fillRect(tx, ty, thumbSize, thumbSize);
-        ctx.strokeStyle = isAssigned ? '#22c55e' : (cl.color || '#334155');
-        ctx.lineWidth = isAssigned ? 2.5 : 1.0;
+        ctx.strokeStyle = isSelected ? '#facc15' : '#334155';
+        ctx.lineWidth = isSelected ? 2.5 : 1.0;
         ctx.strokeRect(tx, ty, thumbSize, thumbSize);
 
         drawRasterBuffer(
           ctx,
-          cl.anchor,
+          rasterData,
           imageWidth,
           imageHeight,
           tx,
           ty,
           thumbSize,
           thumbSize,
-          1.0
+          1.0,
+          'thumb_' + i
         );
 
         // Thumbnail badge
         ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
         ctx.fillRect(tx, ty + thumbSize - 12, thumbSize, 12);
-        ctx.fillStyle = isAssigned ? '#4ade80' : '#cbd5e1';
+        ctx.fillStyle = badgeColor;
         ctx.font = '9px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`C${k}`, tx + thumbSize / 2, ty + thumbSize - 3);
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(thumbLabel, tx + thumbSize / 2, ty + thumbSize - 3);
       }
 
       // Scrollbar indicator if scrollable
@@ -390,7 +509,11 @@ function renderImageSubViewport(ctx, qIdx, rect)
     }
     else
     {
-      drawEmptyMessage(ctx, rect, 'No clusters created yet');
+      drawEmptyMessage(
+        ctx,
+        rect,
+        isClusterInspection ? 'No member frames in this cluster' : 'No clusters created yet'
+      );
     }
   }
 
@@ -414,8 +537,21 @@ function renderImageSubViewport(ctx, qIdx, rect)
   }
   else if (qIdx === 3)
   {
-    imgPtsCount = 0;
-    imgClustCount = clusters ? clusters.length : 0;
+    const isClusterInspection = (typeof inspectedClusterId !== 'undefined' &&
+      inspectedClusterId >= 0 &&
+      clusters[inspectedClusterId]);
+    if (isClusterInspection)
+    {
+      imgPtsCount = (imageClusterMembers && imageClusterMembers[inspectedClusterId])
+        ? imageClusterMembers[inspectedClusterId].length
+        : 0;
+      imgClustCount = 1;
+    }
+    else
+    {
+      imgPtsCount = 0;
+      imgClustCount = clusters ? clusters.length : 0;
+    }
   }
 
   const labelPts = `${imgPtsCount} pts`;
@@ -456,6 +592,104 @@ function renderImageSubViewport(ctx, qIdx, rect)
   ctx.restore();
 
   ctx.restore();
+}
+
+/**
+ * Handle mouse click inside an image sub-viewport.
+ * @param {number} px - Canvas X coordinate
+ * @param {number} py - Canvas Y coordinate
+ * @param {number} qIdx - Quadrant index (0..3)
+ * @param {number} W - Canvas width
+ * @param {number} H - Canvas height
+ * @returns {boolean} True if click was handled
+ */
+function handleImageModeClick(px, py, qIdx, W, H)
+{
+  if (qIdx !== 3 && (typeof maximizedQuad === 'undefined' || maximizedQuad !== 3))
+  {
+    return false;
+  }
+
+  const rect = getImageQuadRect(3, W, H);
+  const pad = 12;
+  const headerH = 26;
+  const contentX = rect.x + pad;
+  const contentY = rect.y + headerH + 6;
+  const contentW = rect.w - pad * 2;
+  const contentH = rect.h - headerH - pad - 6;
+
+  const isClusterInspection = (typeof inspectedClusterId !== 'undefined' &&
+    inspectedClusterId >= 0 &&
+    clusters[inspectedClusterId]);
+
+  // Check if click was on the "← All Clusters" back button
+  if (isClusterInspection)
+  {
+    const btnBackW = 74;
+    const btnBackH = 18;
+    const btnBackX = rect.x + rect.w - btnBackW - 8;
+    const btnBackY = rect.y + 4;
+    if (px >= btnBackX && px <= btnBackX + btnBackW &&
+        py >= btnBackY && py <= btnBackY + btnBackH)
+    {
+      if (typeof clearImageClusterInspection === 'function')
+      {
+        clearImageClusterInspection();
+      }
+      return true;
+    }
+  }
+
+  // Check if click is inside the thumbnail grid area
+  if (px < contentX || px > contentX + contentW || py < contentY || py > contentY + contentH)
+  {
+    return false;
+  }
+
+  const members = isClusterInspection
+    ? ((imageClusterMembers && imageClusterMembers[inspectedClusterId]) || [])
+    : [];
+  const kCount = isClusterInspection ? members.length : (clusters ? clusters.length : 0);
+  if (kCount === 0) return false;
+
+  const thumbSize = 44;
+  const gap = 8;
+  const cols = Math.max(1, Math.floor(contentW / (thumbSize + gap)));
+
+  const relX = px - contentX;
+  const relY = py - contentY + (imageGalleryScrollY || 0);
+
+  const col = Math.floor(relX / (thumbSize + gap));
+  const row = Math.floor(relY / (thumbSize + gap));
+
+  if (col < 0 || col >= cols) return false;
+
+  const inThumbX = relX - col * (thumbSize + gap);
+  const inThumbY = relY - row * (thumbSize + gap);
+  if (inThumbX > thumbSize || inThumbY > thumbSize) return false;
+
+  const clickedIdx = row * cols + col;
+  if (clickedIdx >= 0 && clickedIdx < kCount)
+  {
+    if (isClusterInspection)
+    {
+      const frameIdx = members[clickedIdx];
+      if (typeof selectImageFrame === 'function')
+      {
+        selectImageFrame(frameIdx);
+      }
+    }
+    else
+    {
+      if (typeof inspectClusterMembers === 'function')
+      {
+        inspectClusterMembers(clickedIdx);
+      }
+    }
+    return true;
+  }
+
+  return false;
 }
 
 function drawHeader(ctx, x, y, title, color)
