@@ -58,14 +58,24 @@
     }
 
     // Coordinate Transforms for Sub-Viewports
-    function project3D(x, y, z, az, el) {
+    function project3DVector(dx, dy, dz, az, el) {
       const cosT = Math.cos(az), sinT = Math.sin(az);
       const cosP = Math.cos(el), sinP = Math.sin(el);
       
-      const u = x * cosT + y * sinT;
-      const v = -x * sinT * sinP + y * cosT * sinP + z * cosP;
-      const depth = -x * sinT * cosP + y * cosT * cosP - z * sinP;
+      const u = dx * cosT + dy * sinT;
+      const v = -dx * sinT * sinP + dy * cosT * sinP + dz * cosP;
+      const depth = -dx * sinT * cosP + dy * cosT * cosP - dz * sinP;
       return { u, v, depth };
+    }
+
+    function project3D(x, y, z, az, el) {
+      let tx = 0, ty = 0, tz = 0;
+      if (typeof orbitCamera !== 'undefined' && orbitCamera && orbitCamera.isLocked) {
+        tx = orbitCamera.targetX || 0;
+        ty = orbitCamera.targetY || 0;
+        tz = orbitCamera.targetZ || 0;
+      }
+      return project3DVector(x - tx, y - ty, z - tz, az, el);
     }
 
     function getQuadRect(qIdx, W, H) {
@@ -184,6 +194,21 @@
         if (btnFront) btnFront.classList.toggle('active', Math.abs(azDeg - 0) <= 2 && Math.abs(elDeg - 0) <= 2);
         if (btnTop) btnTop.classList.toggle('active', Math.abs(azDeg - 0) <= 2 && Math.abs(elDeg - 89) <= 2);
         if (btnSide) btnSide.classList.toggle('active', Math.abs(azDeg - 90) <= 2 && Math.abs(elDeg - 0) <= 2);
+
+        const btnLock = document.getElementById('btnLockCenter3D');
+        if (btnLock) {
+          btnLock.classList.toggle('active', !!orbitCamera.isLocked);
+          btnLock.classList.toggle('toggle-active', !!orbitCamera.isLocked);
+          if (orbitCamera.isLocked) {
+            btnLock.style.background = 'rgba(56, 189, 248, 0.25)';
+            btnLock.style.borderColor = '#38bdf8';
+            btnLock.style.color = '#38bdf8';
+          } else {
+            btnLock.style.background = '';
+            btnLock.style.borderColor = '';
+            btnLock.style.color = '';
+          }
+        }
       }
     }
     window.updateViewPresetBarPosition = updateViewPresetBarPosition;
@@ -334,6 +359,51 @@
             ctx.stroke();
           });
           ctx.setLineDash([]);
+
+          // 3D Locked Rotation Center Reticle
+          if (orbitCamera && orbitCamera.isLocked) {
+            const centerPr = project3D(orbitCamera.targetX, orbitCamera.targetY, orbitCamera.targetZ, az, el);
+            const centerPos = mapMetricToQuad(centerPr.u, centerPr.v, qIdx, rect);
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+            ctx.lineWidth = 1.5;
+
+            // Target focal ring
+            ctx.beginPath();
+            ctx.arc(centerPos.px, centerPos.py, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Reticle crosshair ticks
+            ctx.beginPath();
+            ctx.moveTo(centerPos.px - 16, centerPos.py);
+            ctx.lineTo(centerPos.px - 6, centerPos.py);
+            ctx.moveTo(centerPos.px + 6, centerPos.py);
+            ctx.lineTo(centerPos.px + 16, centerPos.py);
+            ctx.moveTo(centerPos.px, centerPos.py - 16);
+            ctx.lineTo(centerPos.px, centerPos.py - 6);
+            ctx.moveTo(centerPos.px, centerPos.py + 6);
+            ctx.lineTo(centerPos.px, centerPos.py + 16);
+            ctx.stroke();
+
+            // Center focal dot
+            ctx.beginPath();
+            ctx.arc(centerPos.px, centerPos.py, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fill();
+
+            // Label tag below reticle
+            const lbl = orbitCamera.targetLabel ||
+              `(${orbitCamera.targetX.toFixed(2)}, ${orbitCamera.targetY.toFixed(2)}, ${orbitCamera.targetZ.toFixed(2)})`;
+            ctx.fillStyle = '#38bdf8';
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`🎯 ${lbl}`, centerPos.px, centerPos.py + 22);
+
+            ctx.restore();
+          }
         }
       }
 
@@ -1856,9 +1926,9 @@
         const gLen = 24;
         const az = orbitCamera.azimuth, el = orbitCamera.elevation;
 
-        const gx = project3D(1, 0, 0, az, el);
-        const gy = project3D(0, 1, 0, az, el);
-        const gz = project3D(0, 0, 1, az, el);
+        const gx = project3DVector(1, 0, 0, az, el);
+        const gy = project3DVector(0, 1, 0, az, el);
+        const gz = project3DVector(0, 0, 1, az, el);
 
         const axes = [
           { name: 'X', u: gx.u, v: gx.v, color: '#f87171' },
@@ -1908,8 +1978,13 @@
         } else if (viewType === "CUSTOM_3D") {
           const degAz = Math.round(orbitCamera.azimuth * 180 / Math.PI);
           const degEl = Math.round(orbitCamera.elevation * 180 / Math.PI);
-          title = `🌐 3D Orbit View [θ: ${degAz}°, φ: ${degEl}°]`;
-          subtitle = "Drag to Rotate Camera";
+          const lockNote = (orbitCamera && orbitCamera.isLocked)
+            ? ` [🎯 Center: ${orbitCamera.targetLabel || `(${orbitCamera.targetX.toFixed(2)},${orbitCamera.targetY.toFixed(2)},${orbitCamera.targetZ.toFixed(2)})`}]`
+            : '';
+          title = `🌐 3D Orbit View [θ: ${degAz}°, φ: ${degEl}°]${lockNote}`;
+          subtitle = (orbitCamera && orbitCamera.isLocked)
+            ? "Rotating around Locked Center"
+            : "Drag to Rotate Camera";
         }
 
         // Header background

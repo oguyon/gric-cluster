@@ -908,7 +908,20 @@
               hoveredClosestSample = lockedClosestSample;
               selectedKnnQuerySample = lockedClosestSample.index;
               if (typeof renderKnnTrace === 'function') renderKnnTrace();
-              if (typeof showToast === 'function') {
+
+              if (typeof orbitCamera !== 'undefined' && orbitCamera.isLocked && lockedClosestSample.point) {
+                orbitCamera.targetX = lockedClosestSample.point.x || 0;
+                orbitCamera.targetY = lockedClosestSample.point.y || 0;
+                orbitCamera.targetZ = lockedClosestSample.point.z || 0;
+                orbitCamera.targetIndex = lockedClosestSample.index;
+                orbitCamera.targetLabel = `#${lockedClosestSample.index}`;
+                quadViews[3].panX = 0;
+                quadViews[3].panY = 0;
+                if (typeof updateLockCenterButtonUI === 'function') updateLockCenterButtonUI();
+                if (typeof showToast === 'function') {
+                  showToast(`🎯 3D Center locked to Sample #${lockedClosestSample.index} (${orbitCamera.targetX.toFixed(3)}, ${orbitCamera.targetY.toFixed(3)}, ${orbitCamera.targetZ.toFixed(3)})`);
+                }
+              } else if (typeof showToast === 'function') {
                 showToast(`🔒 Locked Sample #${lockedClosestSample.index} (Click or Esc to unlock)`);
               }
               draw();
@@ -1339,6 +1352,114 @@
       draw();
     });
 
+    function updateLockCenterButtonUI() {
+      const btn = document.getElementById('btnLockCenter3D');
+      const btnSide = document.getElementById('btnLockCenter3DSide');
+      const isLocked = !!(orbitCamera && orbitCamera.isLocked);
+
+      [btn, btnSide].forEach(el => {
+        if (!el) return;
+        if (isLocked) {
+          el.classList.add('active');
+          el.classList.add('toggle-active');
+          const shortLabel = orbitCamera.targetLabel ? ` (${orbitCamera.targetLabel})` : '';
+          el.innerHTML = `🎯 Center${shortLabel}`;
+          el.style.background = 'rgba(56, 189, 248, 0.25)';
+          el.style.borderColor = '#38bdf8';
+          el.style.color = '#38bdf8';
+        } else {
+          el.classList.remove('active');
+          el.classList.remove('toggle-active');
+          el.innerHTML = el.id === 'btnLockCenter3DSide' ? `🎯 Lock 3D Center` : `🎯 Center`;
+          el.style.background = '';
+          el.style.borderColor = '';
+          el.style.color = '';
+        }
+      });
+    }
+
+    function toggleLockCenter3D(explicitTarget) {
+      if (orbitCamera.isLocked && !explicitTarget) {
+        // Unlock rotation center
+        orbitCamera.isLocked = false;
+        orbitCamera.targetX = 0;
+        orbitCamera.targetY = 0;
+        orbitCamera.targetZ = 0;
+        orbitCamera.targetIndex = -1;
+        orbitCamera.targetLabel = '';
+        updateLockCenterButtonUI();
+        if (typeof showToast === 'function') showToast('🔓 3D rotation center reset to origin (0, 0, 0)');
+        draw();
+        return;
+      }
+
+      // Determine target coordinates
+      let targetPt = explicitTarget || null;
+      let targetIdx = -1;
+      let targetLbl = '';
+
+      if (!targetPt) {
+        if (lockedClosestSample && lockedClosestSample.point) {
+          targetPt = lockedClosestSample.point;
+          targetIdx = lockedClosestSample.index;
+          targetLbl = `#${targetIdx}`;
+        } else if (hoveredClosestSample && hoveredClosestSample.point) {
+          targetPt = hoveredClosestSample.point;
+          targetIdx = hoveredClosestSample.index;
+          targetLbl = `#${targetIdx}`;
+        } else if (typeof inspectedClusterId !== 'undefined' && inspectedClusterId >= 0 && clusters[inspectedClusterId]) {
+          const c = clusters[inspectedClusterId];
+          targetPt = { x: c.x, y: c.y, z: c.z || 0 };
+          targetLbl = `Cls #${inspectedClusterId}`;
+        } else if (currentFrame && (currentFrame.x !== undefined || currentFrame.y !== undefined)) {
+          targetPt = { x: currentFrame.x || 0, y: currentFrame.y || 0, z: currentFrame.z || 0 };
+          targetLbl = `Frame`;
+        } else if (clusters && clusters.length > 0) {
+          targetPt = { x: clusters[0].x, y: clusters[0].y, z: clusters[0].z || 0 };
+          targetLbl = `Cls #0`;
+        } else if (benchmarkDataset && benchmarkDataset.length > 0) {
+          const p = benchmarkDataset[0];
+          targetPt = {
+            x: Array.isArray(p) ? p[0] : (p.x || 0),
+            y: Array.isArray(p) ? p[1] : (p.y || 0),
+            z: currentDim === 3 ? (Array.isArray(p) ? (p[2] || 0) : (p.z || 0)) : 0
+          };
+          targetLbl = `#0`;
+        } else {
+          targetPt = { x: 0, y: 0, z: 0 };
+          targetLbl = `(0,0,0)`;
+        }
+      }
+
+      orbitCamera.isLocked = true;
+      orbitCamera.targetX = targetPt.x || 0;
+      orbitCamera.targetY = targetPt.y || 0;
+      orbitCamera.targetZ = targetPt.z || 0;
+      orbitCamera.targetIndex = targetIdx;
+      orbitCamera.targetLabel = targetLbl || `(${orbitCamera.targetX.toFixed(2)}, ${orbitCamera.targetY.toFixed(2)}, ${orbitCamera.targetZ.toFixed(2)})`;
+
+      // Reset 2D pan offsets in Quad 3 so target point sits at the exact center of viewport
+      quadViews[3].panX = 0;
+      quadViews[3].panY = 0;
+
+      updateLockCenterButtonUI();
+      if (typeof showToast === 'function') {
+        showToast(`🎯 Locked 3D center to ${orbitCamera.targetLabel} (${orbitCamera.targetX.toFixed(3)}, ${orbitCamera.targetY.toFixed(3)}, ${orbitCamera.targetZ.toFixed(3)})`);
+      }
+      draw();
+    }
+    window.toggleLockCenter3D = toggleLockCenter3D;
+
+    const btnLockCenter = document.getElementById('btnLockCenter3D');
+    if (btnLockCenter) {
+      btnLockCenter.addEventListener('click', () => toggleLockCenter3D());
+    }
+
+    const btnLockCenterSide = document.getElementById('btnLockCenter3DSide');
+    if (btnLockCenterSide) {
+      btnLockCenterSide.addEventListener('click', () => toggleLockCenter3D());
+    }
+
     // Select Benchmark Handler
     document.getElementById('selectBenchmark').addEventListener('change', (e) => {
       stageDataset(e.target.value);
@@ -1640,6 +1761,8 @@
         } else {
           returnToLiveStream();
         }
+      } else if (e.key === 'c' || e.key === 'C') {
+        toggleLockCenter3D();
       }
     });
 
@@ -5332,6 +5455,8 @@
         hint: 'Side', action: () => document.getElementById('presetSide')?.click() },
       { id: 'cam-reset3d', group: 'Camera', icon: '↺', name: 'Reset 3D Orbit Camera',
         hint: 'Reset 3D', action: () => document.getElementById('presetReset3D')?.click() },
+      { id: 'cam-lock-center', group: 'Camera', icon: '🎯', name: 'Lock / Unlock 3D Center of Rotation',
+        hint: 'C', action: () => toggleLockCenter3D() },
 
       // Datasets
       { id: 'ds-3dtorus', group: 'Datasets', icon: '🍩',

@@ -32,7 +32,13 @@
       elevation: 25 * (Math.PI / 180), // φ
       zoom: 1.0,
       panX: 0,
-      panY: 0
+      panY: 0,
+      isLocked: false,                 // Center lock toggle
+      targetX: 0,                      // Locked center target X
+      targetY: 0,                      // Locked center target Y
+      targetZ: 0,                      // Locked center target Z
+      targetIndex: -1,                 // Sample index or cluster id
+      targetLabel: ''                  // Display label (e.g. "Sample #42")
     };
 
     // 2D Pan & Zoom per Quadrant [0: Along X, 1: Along Y, 2: Along Z, 3: Custom]

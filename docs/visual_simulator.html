@@ -334,6 +334,13 @@
                   data-tooltip-badge="Reset Camera" 
                   data-tooltip-color="teal" 
                   data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">↺ 3D</button>
+          <button class="preset-btn" id="btnLockCenter3D"
+                  data-tooltip-title="Lock 3D Rotation Center"
+                  data-tooltip-badge="Shortcut: C"
+                  data-tooltip-color="cyan"
+                  data-tooltip-desc="Locks a point at the center of the 3D view and rotates around that point. Click with a selected point or click any point on canvas to set rotation center.">
+            🎯 Center
+          </button>
           <button class="preset-btn" id="btnToggleMotionTail"
                   data-tooltip-title="Toggle Motion Trail"
                   data-tooltip-badge="Recent Points"
@@ -1212,6 +1219,38 @@
                      data-tooltip-desc="Draws a glowing spatial heatmap halo around each cluster anchor where brightness and color (violet → cyan → emerald → gold) represent its expected Shannon entropy reduction power / information gain ΔH = H - E[H|C_i].">
                   <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#38bdf8; margin-right:3px;"></span>Info Map
                 </div>
+              </div>
+            </div>
+
+            <!-- 3D Orbit Camera & Center Lock -->
+            <div class="sub-control-card">
+              <div class="control-label" style="font-weight: 700; color: var(--accent-cyan);">
+                <span>3D Orbit Camera &amp; Center Lock</span>
+              </div>
+              <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 8px;">
+                Lock a sample point or cluster centroid at the center of the 3D view and rotate around that point.
+              </p>
+              <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 6px;">
+                <button class="btn-action primary" id="btnLockCenter3DSide" style="flex: 1.2; padding: 5px 8px; font-size: 0.74rem;"
+                        data-tooltip-title="Lock 3D Rotation Center"
+                        data-tooltip-badge="Shortcut: C"
+                        data-tooltip-color="cyan"
+                        data-tooltip-desc="Locks a point at the center of the 3D view and rotates around that point. Click with a selected point or click any point on canvas to set rotation center.">
+                  🎯 Lock 3D Center
+                </button>
+                <button class="btn-action" id="presetReset3DSide" style="flex: 0.8; padding: 5px 8px; font-size: 0.74rem;"
+                        data-tooltip-title="Reset 3D Orbit Camera"
+                        data-tooltip-badge="Reset Camera"
+                        data-tooltip-color="teal"
+                        data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">
+                  ↺ Reset 3D
+                </button>
+              </div>
+              <div class="toggle-group" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0;">
+                <div id="presetIsoSide" class="toggle-btn active" style="font-size: 0.70rem;">Iso</div>
+                <div id="presetFrontSide" class="toggle-btn" style="font-size: 0.70rem;">Front</div>
+                <div id="presetTopSide" class="toggle-btn" style="font-size: 0.70rem;">Top</div>
+                <div id="presetSideSide" class="toggle-btn" style="font-size: 0.70rem;">Side</div>
               </div>
             </div>
           </div>
