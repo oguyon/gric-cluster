@@ -17,8 +17,20 @@
       <p class="subtitle">Live 2D &amp; 3D simulation of metric sequential clustering, exact multi-point pruning (3P/4P/5P), Shannon entropy scheduling, 3D multi-view quad projections, and input-subspace tiling</p>
     </div>
     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
-      <div style="display: flex; gap: 12px;">
-        <a href="https://github.com/oguyon/gric-cluster" target="_blank" style="color: var(--accent-green); text-decoration: none; font-size: 0.85rem; font-weight: 600;">GitHub ↗</a>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <button id="btnOpenCommandPalette" class="btn-action"
+                style="background: rgba(56, 189, 248, 0.12); color: #38bdf8;
+                       border: 1px solid rgba(56, 189, 248, 0.35);
+                       font-size: 0.74rem; padding: 2px 7px; font-weight: 600;"
+                data-tooltip-title="Command Palette"
+                data-tooltip-badge="Ctrl+K / ⌘K"
+                data-tooltip-color="cyan"
+                data-tooltip-desc="Open instant search and quick command palette.">
+          🔍 Commands <span class="kbd-chip">Ctrl+K</span>
+        </button>
+        <a href="https://github.com/oguyon/gric-cluster" target="_blank"
+           style="color: var(--accent-green); text-decoration: none;
+                  font-size: 0.85rem; font-weight: 600;">GitHub ↗</a>
       </div>
       <span id="headerBuildInfo" style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Build: loading...</span>
     </div>
@@ -244,13 +256,24 @@
         </div>
       </div>
 
-      <div class="progress-bar-container">
-        <div id="progressFill" class="progress-bar-fill"></div>
+      <!-- Interactive Timeline Scrub Bar with Milestones -->
+      <div class="timeline-scrubber" id="timelineScrubber"
+           data-tooltip-title="Interactive Timeline Scrubber"
+           data-tooltip-badge="Click/Drag to Scrub"
+           data-tooltip-color="cyan"
+           data-tooltip-desc="Click or drag to scrub across the stream timeline.
+                              Purple ticks mark points where new clusters emerged.">
+        <div id="timelineMilestones" class="timeline-milestones"></div>
+        <div id="progressFill" class="timeline-scrubber-fill">
+          <div class="timeline-scrubber-thumb"></div>
+        </div>
+        <div id="timelineScrubTooltip" class="timeline-scrub-tooltip">Frame 0</div>
       </div>
 
       <div class="canvas-wrapper" id="canvasWrapper">
+        <canvas id="simCanvas" width="800" height="520"></canvas>
         <div id="toastFeedback" class="toast-overlay">Point Injected: (0.000, 0.000, 0.000)</div>
-        
+
         <!-- Mobile Live Telemetry HUD Overlay (Samples, Clusters, Clock Time) -->
         <div id="mobileHudOverlay" class="mobile-hud-overlay">
           <div class="hud-item">
@@ -301,9 +324,21 @@
                   data-tooltip-badge="Reset Camera" 
                   data-tooltip-color="teal" 
                   data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">↺ 3D</button>
+          <button class="preset-btn" id="btnToggleMotionTail"
+                  data-tooltip-title="Toggle Motion Trail"
+                  data-tooltip-badge="Recent Points"
+                  data-tooltip-color="cyan"
+                  data-tooltip-desc="Toggles lines connecting recent stream data points.">
+            〰️ Trail
+          </button>
+          <button class="preset-btn active" id="btnToggleColorPerCluster"
+                  data-tooltip-title="Toggle Per-Cluster Point Colors"
+                  data-tooltip-badge="Point Colors"
+                  data-tooltip-color="cyan"
+                  data-tooltip-desc="Colors points by assigned cluster vs uniform color.">
+            🎨 Colors
+          </button>
         </div>
-
-        <canvas id="simCanvas" width="800" height="520"></canvas>
       </div>
 
       <div style="padding: 8px 14px; background: #172033; border-top: 1px solid var(--card-border);">
@@ -332,6 +367,20 @@
 
     <!-- Right: Control & Telemetry Panel -->
     <div class="side-panel" id="sidePanel">
+      <!-- Sidebar Master Mode Navigation Filter Bar -->
+      <div class="sidebar-mode-nav" id="sidebarModeNav">
+        <button class="sidebar-mode-btn active" data-mode="all"
+                onclick="switchSidebarMode('all')">All</button>
+        <button class="sidebar-mode-btn" data-mode="clustering"
+                onclick="switchSidebarMode('clustering')">Clustering</button>
+        <button class="sidebar-mode-btn mode-knn" data-mode="knn"
+                onclick="switchSidebarMode('knn')">k-NN</button>
+        <button class="sidebar-mode-btn" data-mode="files"
+                onclick="switchSidebarMode('files')">Files &amp; CLI</button>
+        <button class="sidebar-mode-btn" data-mode="telemetry"
+                onclick="switchSidebarMode('telemetry')">Telemetry</button>
+      </div>
+
       <!-- 1. Input Data -->
       <div id="cardInputData" class="card collapsed" style="flex: 0 0 auto;">
         <div class="card-title" onclick="togglePanelCollapse('cardInputData')">
@@ -860,6 +909,20 @@
                      data-tooltip-desc="Draws 2D circle outlines or 3D wireframe rings for rlim.">
                   Boundaries (r<sub>lim</sub>)
                 </div>
+                <div id="optToggleMotionTail" class="toggle-btn"
+                     data-tooltip-title="Recent Points Motion Trail"
+                     data-tooltip-badge="Trail Lines"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Draws lines connecting recent stream data points.">
+                  Motion Trail
+                </div>
+                <div id="optToggleColorPerCluster" class="toggle-btn toggle-active toggle-cyan"
+                     data-tooltip-title="Per-Cluster Point Colors"
+                     data-tooltip-badge="Point Colors"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Colors points by assigned cluster vs uniform color.">
+                  Cluster Colors
+                </div>
                 <div id="optToggleGridAxes" class="toggle-btn toggle-active toggle-teal"
                      style="grid-column: span 2;"
                      data-tooltip-title="Grid &amp; Coordinate Axes"
@@ -877,7 +940,7 @@
                 <span>Labels &amp; Text Badges</span>
               </div>
               <div class="toggle-group"
-                   style="grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 4px;">
+                   style="grid-template-columns: repeat(2, 1fr); gap: 5px; margin-top: 4px;">
                 <div id="optToggleClusterLabels" class="toggle-btn toggle-active"
                      data-tooltip-title="Cluster ID Labels"
                      data-tooltip-badge="Anchor Labels"
@@ -1638,11 +1701,40 @@
           <div class="card-body-scroll" style="display: flex; flex-direction: column; gap: 8px;">
             <!-- Action Bar -->
             <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-              <button id="btnRunKnnSide" class="primary" style="width: 100%; padding: 7px 12px; font-weight: 700; font-size: 0.78rem; background: linear-gradient(135deg, #10b981, #059669); border: none; border-radius: 6px;"
+              <button id="btnRunKnnSide" class="primary"
+                      style="width: 100%; padding: 7px 12px; font-weight: 700; "
+                      style="font-size: 0.78rem; border: none; border-radius: 6px; "
+                      style="background: linear-gradient(135deg, #10b981, #059669);"
                       data-tooltip-title="Run Out-of-Core k-NN Solver"
                       data-tooltip-badge="Action"
                       data-tooltip-color="green"
-                      data-tooltip-desc="Executes the metric-pruned k-NN solver on the current point cloud and clusters, computing top-k neighbors for all frames.">▶ Compute k-NN</button>
+                      data-tooltip-desc="Executes metric-pruned k-NN solver on point cloud.">
+                ▶ Compute k-NN
+              </button>
+            </div>
+
+            <!-- Persistent k-NN Error Status Banner (Config) -->
+            <div id="knnErrorBannerConfig"
+                 style="display: none; padding: 8px 10px; font-size: 0.75rem; border-radius: 6px; "
+                 style="background: rgba(239, 68, 68, 0.16); color: #fca5a5; margin-bottom: 6px; "
+                 style="border: 1px solid rgba(239, 68, 68, 0.45);">
+              <div style="display: flex; align-items: flex-start; "
+                   style="justify-content: space-between; gap: 6px;">
+                <div style="display: flex; align-items: flex-start; gap: 6px;">
+                  <span style="font-size: 1.05rem; line-height: 1;">⚠️</span>
+                  <div>
+                    <div id="knnErrorTitleConfig"
+                         style="font-weight: 700; color: #f87171; margin-bottom: 2px;">
+                      WASM Memory Limit Exceeded
+                    </div>
+                    <div id="knnErrorMsgConfig" style="color: #fecaca; line-height: 1.35;"></div>
+                  </div>
+                </div>
+                <button type="button"
+                        style="background: transparent; border: none; color: #fca5a5; "
+                        style="cursor: pointer; font-size: 0.9rem; padding: 0 2px;"
+                        onclick="dismissKnnError()">✕</button>
+              </div>
             </div>
 
             <div id="knnControlsContainer" style="display: flex; flex-direction: column; gap: 6px;">
@@ -1754,6 +1846,30 @@
         </div>
 
         <div class="card-body">
+          <!-- Persistent k-NN Error Status Banner (Resources) -->
+          <div id="knnErrorBannerRes"
+               style="display: none; padding: 8px 10px; font-size: 0.75rem; border-radius: 6px; "
+               style="background: rgba(239, 68, 68, 0.16); color: #fca5a5; margin-bottom: 8px; "
+               style="border: 1px solid rgba(239, 68, 68, 0.45);">
+            <div style="display: flex; align-items: flex-start; "
+                 style="justify-content: space-between; gap: 6px;">
+              <div style="display: flex; align-items: flex-start; gap: 6px;">
+                <span style="font-size: 1.05rem; line-height: 1;">⚠️</span>
+                <div>
+                  <div id="knnErrorTitleRes"
+                       style="font-weight: 700; color: #f87171; margin-bottom: 2px;">
+                    WASM Memory Limit Exceeded
+                  </div>
+                  <div id="knnErrorMsgRes" style="color: #fecaca; line-height: 1.35;"></div>
+                </div>
+              </div>
+              <button type="button"
+                      style="background: transparent; border: none; color: #fca5a5; "
+                      style="cursor: pointer; font-size: 0.9rem; padding: 0 2px;"
+                      onclick="dismissKnnError()">✕</button>
+            </div>
+          </div>
+
           <!-- 4-Tab Bar for k-NN Resources -->
           <div class="config-tab-bar" style="margin-bottom: 6px;">
             <div id="tabKnnResOverview" class="config-tab-btn active"
@@ -1807,12 +1923,14 @@
                   <div class="lbl">Distances (<span id="knnDistPerQueryVal">0/q</span>)</div>
                 </div>
                 <div class="stat-box"
-                     data-tooltip-title="Compute time"
-                     data-tooltip-badge="Time"
+                     data-tooltip-title="k-NN Execution Timings"
+                     data-tooltip-badge="Timers"
                      data-tooltip-color="amber"
-                     data-tooltip-desc="Total wall-clock execution time for computing all k-NN queries across the entire dataset.">
-                  <div id="knnLatencyVal" class="num" style="color: #fbbf24;">0.00 ms</div>
-                  <div class="lbl">Compute time</div>
+                     data-tooltip-desc="Compute search vs total time with I/O and IPC.">
+                  <div id="knnLatencyVal"
+                       class="num"
+                       style="color: #fbbf24; font-size: 0.95rem;">0.00 ms</div>
+                  <div class="lbl">Compute (<span id="knnTotalTimeVal">0.00 ms tot</span>)</div>
                 </div>
                 <div class="stat-box"
                      data-tooltip-title="Query Throughput"
@@ -1964,6 +2082,33 @@
                 <div class="stat-box">
                   <div id="knnPerQueryLatVal" class="num" style="color: #4ade80;">0.0 µs</div>
                   <div class="lbl">Avg Latency / Query</div>
+                </div>
+              </div>
+              <div style="margin-top: 8px; background: #0f172a; border-radius: 4px; padding: 8px;
+                          border: 1px solid var(--card-border); font-size: 0.72rem;">
+                <div style="font-weight: 700; color: #fbbf24; margin-bottom: 4px;">
+                  ⏱️ Execution Time Breakdown
+                </div>
+                <div style="display: flex; justify-content: space-between;
+                            color: var(--text-muted); margin-bottom: 2px;">
+                  <span>Compute Search Time:</span>
+                  <span id="knnTimingCompute"
+                        style="font-family: monospace; color: #fbbf24;
+                               font-weight: 700;">0.00 ms</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;
+                            color: var(--text-muted); margin-bottom: 2px;">
+                  <span>Input / Output &amp; IPC Time:</span>
+                  <span id="knnTimingIo"
+                        style="font-family: monospace; color: #38bdf8;">0.00 ms</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;
+                            color: var(--text-muted); border-top: 1px solid #1e293b;
+                            padding-top: 3px; margin-top: 3px;">
+                  <span>Total End-to-End Time:</span>
+                  <span id="knnTimingTotal"
+                        style="font-family: monospace; color: #4ade80;
+                               font-weight: 700;">0.00 ms</span>
                 </div>
               </div>
               <div style="margin-top: 8px; background: #0f172a; border-radius: 4px; padding: 8px; border: 1px solid var(--card-border); font-size: 0.72rem;">
@@ -2589,6 +2734,28 @@
           </div>
 
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Command Palette Modal (Ctrl+K) -->
+  <div id="modalCommandPalette" class="command-palette-overlay" style="display: none;">
+    <div class="command-palette-modal">
+      <div class="command-palette-header">
+        <span class="command-palette-icon">🔍</span>
+        <input type="text" id="commandPaletteInput" class="command-palette-input"
+               placeholder="Search datasets, actions, camera views, controls..." autocomplete="off">
+        <span class="kbd-chip">ESC</span>
+      </div>
+      <div id="commandPaletteResults" class="command-palette-results">
+        <!-- Results populated dynamically -->
+      </div>
+      <div class="command-palette-footer">
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <span><span class="kbd-chip">↑</span> <span class="kbd-chip">↓</span> Navigate</span>
+          <span><span class="kbd-chip">↵</span> Execute</span>
+        </div>
+        <span>GRIC Quick Actions</span>
       </div>
     </div>
   </div>

@@ -701,10 +701,8 @@
               // Lock to this hovered sample point
               lockedClosestSample = { ...hoveredClosestSample };
               hoveredClosestSample = lockedClosestSample;
-              if (enableKnn && knnResults) {
-                selectedKnnQuerySample = lockedClosestSample.index;
-                if (typeof renderKnnTrace === 'function') renderKnnTrace();
-              }
+              selectedKnnQuerySample = lockedClosestSample.index;
+              if (typeof renderKnnTrace === 'function') renderKnnTrace();
               if (typeof showToast === 'function') {
                 showToast(`🔒 Locked Sample #${lockedClosestSample.index} (Click or Esc to unlock)`);
               }
@@ -823,10 +821,8 @@
         };
 
         if (prevIdx !== bestIdx) {
-          if (enableKnn && knnResults) {
-            selectedKnnQuerySample = bestIdx;
-            if (typeof renderKnnTrace === 'function') renderKnnTrace();
-          }
+          selectedKnnQuerySample = bestIdx;
+          if (typeof renderKnnTrace === 'function') renderKnnTrace();
           draw();
         }
       } else {
@@ -838,7 +834,9 @@
     });
 
     canvas.addEventListener('mouseleave', () => {
-      if (lockedClosestSample !== null) return;
+      if (lockedClosestSample !== null) {
+        return;
+      }
       if (hoveredClosestSample !== null) {
         hoveredClosestSample = null;
         draw();
@@ -1274,6 +1272,12 @@
       // Ignore when typing in inputs or selects
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
 
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        toggleCommandPalette();
+        return;
+      }
+
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
         const btnPlay = document.getElementById('btnPlay');
@@ -1326,10 +1330,8 @@
           draw();
         } else if (hoveredClosestSample !== null && hoveredClosestSample.point) {
           lockedClosestSample = { ...hoveredClosestSample };
-          if (enableKnn && knnResults) {
-            selectedKnnQuerySample = lockedClosestSample.index;
-            if (typeof renderKnnTrace === 'function') renderKnnTrace();
-          }
+          selectedKnnQuerySample = lockedClosestSample.index;
+          if (typeof renderKnnTrace === 'function') renderKnnTrace();
           if (typeof showToast === 'function') {
             showToast(`🔒 Locked Sample #${lockedClosestSample.index} (Click or Esc to unlock)`);
           }
@@ -1489,10 +1491,33 @@
     setupSingleToggle('optToggleDistLabels', () => showDistLabels, v => showDistLabels = v);
     setupSingleToggle('optToggleViewportHUD', () => showViewportHUD, v => showViewportHUD = v);
     setupSingleToggle('optToggleShowSamples', () => showPastSamples, v => showPastSamples = v);
+    setupSingleToggle('optToggleMotionTail', () => showMotionTail, v => showMotionTail = v);
+    setupSingleToggle('optToggleColorPerCluster', () => showColorPerCluster, v => {
+      showColorPerCluster = v;
+      draw();
+    });
     setupSingleToggle('optToggleHighlightClosest', () => highlightClosestSample, v => {
       highlightClosestSample = v;
       if (!v) hoveredClosestSample = null;
     });
+
+    const btnToggleMotionTail = document.getElementById('btnToggleMotionTail');
+    if (btnToggleMotionTail) {
+      btnToggleMotionTail.addEventListener('click', () => {
+        showMotionTail = !showMotionTail;
+        updateDisplayTogglesUI();
+        draw();
+      });
+    }
+
+    const btnToggleColorPerCluster = document.getElementById('btnToggleColorPerCluster');
+    if (btnToggleColorPerCluster) {
+      btnToggleColorPerCluster.addEventListener('click', () => {
+        showColorPerCluster = !showColorPerCluster;
+        updateDisplayTogglesUI();
+        draw();
+      });
+    }
 
     function updateDisplayTogglesUI() {
       const syncBtn = (id, val) => {
@@ -1512,6 +1537,10 @@
       syncBtn('optToggleDistLabels', showDistLabels);
       syncBtn('optToggleViewportHUD', showViewportHUD);
       syncBtn('optToggleShowSamples', showPastSamples);
+      syncBtn('optToggleMotionTail', showMotionTail);
+      syncBtn('btnToggleMotionTail', showMotionTail);
+      syncBtn('optToggleColorPerCluster', showColorPerCluster);
+      syncBtn('btnToggleColorPerCluster', showColorPerCluster);
       syncBtn('optToggleHighlightClosest', highlightClosestSample);
 
       syncBtn('optCircleMembers', showCircleMembers);
@@ -2199,18 +2228,26 @@
       const btnTop = document.getElementById('btnRunKnn');
       const btnSide = document.getElementById('btnRunKnnSide');
       const badgeTop = document.getElementById('knnStatusBadgeTop');
+      const hasClusters = (typeof clusters !== 'undefined' &&
+                           clusters && clusters.length > 0);
 
       if (computing) {
         if (btnTop) {
+          btnTop.disabled = false;
           btnTop.innerHTML = '⏹ Stop k-NN';
           btnTop.style.background = 'rgba(239, 68, 68, 0.25)';
           btnTop.style.color = '#f87171';
           btnTop.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+          btnTop.style.opacity = '1.0';
+          btnTop.style.cursor = 'pointer';
           btnTop.title = 'Click to stop / cancel k-NN computation';
         }
         if (btnSide) {
+          btnSide.disabled = false;
           btnSide.innerHTML = '⏹ Stop k-NN';
           btnSide.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+          btnSide.style.opacity = '1.0';
+          btnSide.style.cursor = 'pointer';
           btnSide.title = 'Click to stop / cancel k-NN computation';
         }
         if (badgeTop) {
@@ -2221,20 +2258,50 @@
       } else {
         if (btnTop) {
           btnTop.innerHTML = '▶ Compute k-NN';
-          btnTop.style.background = 'rgba(34, 197, 94, 0.2)';
-          btnTop.style.color = '#4ade80';
-          btnTop.style.borderColor = 'rgba(34, 197, 94, 0.5)';
-          btnTop.title = 'Compute k-Nearest Neighbors';
+          if (!hasClusters) {
+            btnTop.disabled = true;
+            btnTop.style.background = 'rgba(71, 85, 105, 0.2)';
+            btnTop.style.color = '#94a3b8';
+            btnTop.style.borderColor = 'rgba(71, 85, 105, 0.4)';
+            btnTop.style.opacity = '0.5';
+            btnTop.style.cursor = 'not-allowed';
+            btnTop.title = 'Clustering required: Run clustering first to compute cluster anchors';
+          } else {
+            btnTop.disabled = false;
+            btnTop.style.background = 'rgba(34, 197, 94, 0.2)';
+            btnTop.style.color = '#4ade80';
+            btnTop.style.borderColor = 'rgba(34, 197, 94, 0.5)';
+            btnTop.style.opacity = '1.0';
+            btnTop.style.cursor = 'pointer';
+            btnTop.title = 'Compute k-Nearest Neighbors';
+          }
         }
         if (btnSide) {
           btnSide.innerHTML = '▶ Compute k-NN';
-          btnSide.style.background = 'linear-gradient(135deg, #10b981, #059669)';
-          btnSide.title = 'Run Out-of-Core k-NN Solver';
+          if (!hasClusters) {
+            btnSide.disabled = true;
+            btnSide.style.background = 'linear-gradient(135deg, #475569, #334155)';
+            btnSide.style.opacity = '0.5';
+            btnSide.style.cursor = 'not-allowed';
+            btnSide.title = 'Clustering required: Run clustering first to compute cluster anchors';
+          } else {
+            btnSide.disabled = false;
+            btnSide.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+            btnSide.style.opacity = '1.0';
+            btnSide.style.cursor = 'pointer';
+            btnSide.title = 'Run Out-of-Core k-NN Solver';
+          }
         }
         if (badgeTop) {
-          badgeTop.textContent = `k=${knnK} • ${knnDirection} • dt≥${knnDtmin}`;
-          badgeTop.style.color = '#c084fc';
-          badgeTop.style.borderColor = 'rgba(192, 132, 252, 0.3)';
+          if (!hasClusters) {
+            badgeTop.textContent = 'Needs Clustering';
+            badgeTop.style.color = '#94a3b8';
+            badgeTop.style.borderColor = 'rgba(148, 163, 184, 0.3)';
+          } else {
+            badgeTop.textContent = `k=${knnK} • ${knnDirection} • dt≥${knnDtmin}`;
+            badgeTop.style.color = '#c084fc';
+            badgeTop.style.borderColor = 'rgba(192, 132, 252, 0.3)';
+          }
         }
       }
     }
@@ -2264,8 +2331,23 @@
         return;
       }
 
-      const pts = (typeof benchmarkDataset !== 'undefined' && benchmarkDataset && benchmarkDataset.length > 0) ?
-                  benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
+      const numClusters = (typeof clusters !== 'undefined' && clusters)
+        ? clusters.length
+        : 0;
+      if (numClusters === 0) {
+        showToast('⚠️ No clusters computed yet. Run clustering first before computing k-NN.');
+        showKnnError(
+          'No Clusters Found',
+          'Run or step clustering first so k-NN has cluster anchors for metric pruning.'
+        );
+        updateKnnButtonUI(false);
+        return;
+      }
+
+      const pts = (typeof benchmarkDataset !== 'undefined' &&
+                   benchmarkDataset && benchmarkDataset.length > 0)
+        ? benchmarkDataset
+        : (typeof pastSamples !== 'undefined' ? pastSamples : []);
       if (!pts || pts.length === 0) {
         showToast('⚠️ No dataset staged to run k-NN. Stage or generate a dataset first.');
         return;
@@ -2275,6 +2357,7 @@
       showKnnLines = true;
       syncControlDependencies();
       updateCliCommand();
+      clearKnnError();
 
       isKnnComputing = true;
       knnAbortRequested = false;
@@ -2290,6 +2373,7 @@
       }
 
       try {
+        const tKnnStart = performance.now();
         if (engineMode === 'cli' && DesktopBridge.isNativeSupported()) {
           const selCli = document.getElementById('selectCliDataset');
           let datasetName = selCli ? selCli.value : '';
@@ -2300,19 +2384,24 @@
           const clusterDir = `${datasetBase}.clusterdat`;
 
           // 1. Ensure staged coordinates exist in workspace file
-          const pts = (typeof benchmarkDataset !== 'undefined' && benchmarkDataset && benchmarkDataset.length > 0) ?
-                      benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
+          const pts = (typeof benchmarkDataset !== 'undefined' &&
+                       benchmarkDataset && benchmarkDataset.length > 0)
+            ? benchmarkDataset
+            : (typeof pastSamples !== 'undefined' ? pastSamples : []);
           if (pts && pts.length > 0) {
             await DesktopBridge.stageDatasetFile(datasetBase, pts).catch(() => {});
           }
 
           // 2. Check if clusterdat exists; if not and we have in-memory clusters, export them
           const filesInWorkspace = await DesktopBridge.listFiles().catch(() => []);
-          const hasClusterDir = filesInWorkspace.some(f => (f.name === clusterDir || f.name === `${datasetName}.clusterdat`) && f.is_dir);
+          const hasClusterDir = filesInWorkspace.some(
+            f => (f.name === clusterDir || f.name === `${datasetName}.clusterdat`) && f.is_dir
+          );
           if (!hasClusterDir && typeof clusters !== 'undefined' && clusters.length > 0) {
             let centroidsText = `# GRIC Cluster Centroids\n# ID X Y Z MEMBERS\n`;
             clusters.forEach(c => {
-              centroidsText += `${c.id} ${c.x.toFixed(6)} ${c.y.toFixed(6)} ${(c.z || 0).toFixed(6)} ${c.members || 1}\n`;
+              centroidsText += `${c.id} ${c.x.toFixed(6)} ${c.y.toFixed(6)} ` +
+                               `${(c.z || 0).toFixed(6)} ${c.members || 1}\n`;
             });
             let dccText = `# GRIC Cluster-to-Cluster Distance Matrix D_cc\n`;
             if (typeof dcc !== 'undefined' && dcc && dcc.length > 0) {
@@ -2324,7 +2413,11 @@
             if (typeof pastSamples !== 'undefined' && pastSamples && pastSamples.length > 0) {
               for (let i = 0; i < pastSamples.length; i++) {
                 const p = pastSamples[i];
-                const cId = p.clusterId >= 0 ? p.clusterId : (typeof clustersAssigned !== 'undefined' && clustersAssigned ? clustersAssigned[i] || 0 : 0);
+                const cId = p.clusterId >= 0 ? p.clusterId : (
+                  typeof clustersAssigned !== 'undefined' && clustersAssigned
+                    ? clustersAssigned[i] || 0
+                    : 0
+                );
                 memText += `${i} ${cId} 0.000000\n`;
               }
             }
@@ -2422,6 +2515,12 @@
               distances: new Float64Array(N * knnK).fill(0.0)
             };
           }
+
+          const totalWallMs = performance.now() - tKnnStart;
+          const timeCompute = parsedTelem.timeSearchMs || 0.0;
+          parsedTelem.timeComputeMs = timeCompute;
+          parsedTelem.timeTotalMs = totalWallMs;
+          parsedTelem.timeIoMs = Math.max(0, totalWallMs - timeCompute);
           nativeData.telemetry = parsedTelem;
 
           knnResults = nativeData;
@@ -2429,10 +2528,17 @@
             renderKnnTrace();
           }
           draw();
+          showToast(
+            `✅ Native k-NN computed: Total ${totalWallMs.toFixed(1)} ms ` +
+            `(Compute: ${timeCompute.toFixed(1)} ms, ` +
+            `I/O & IPC: ${parsedTelem.timeIoMs.toFixed(1)} ms)`
+          );
         } else {
           // WASM Execution
           if (typeof GricWasm === 'undefined' || !GricWasm.isReady()) {
-            showToast('⚠️ WASM engine not ready for k-NN');
+            const notReadyMsg = 'WASM engine session is not ready. Start simulation first.';
+            showKnnError('WASM Not Ready', notReadyMsg);
+            showToast(`⚠️ ${notReadyMsg}`);
             isKnnComputing = false;
             updateKnnButtonUI(false);
             return;
@@ -2449,26 +2555,102 @@
 
           const t0 = performance.now();
           const results = GricWasm.runKnn(config, pts);
-          const elapsed = (performance.now() - t0).toFixed(1);
+          const totalWallMs = performance.now() - t0;
 
-          if (!knnAbortRequested && results) {
+          if (knnAbortRequested) {
+            return;
+          }
+
+          if (results && !results.error && results.indices) {
+            const timeCompute = (typeof results.telemetry?.timeComputeMs === 'number')
+              ? results.telemetry.timeComputeMs
+              : (results.telemetry?.timeSearchMs || 0.0);
+            results.telemetry.timeComputeMs = timeCompute;
+            results.telemetry.timeTotalMs = totalWallMs;
+            results.telemetry.timeIoMs = Math.max(0, totalWallMs - timeCompute);
+
+            clearKnnError();
             knnResults = results;
             if (typeof renderKnnTrace === 'function') {
               renderKnnTrace();
             }
             draw();
-            showToast(`⚡ k-NN computed in ${elapsed} ms (k=${knnK}, ${pts.length.toLocaleString()} points)`);
+            showToast(
+              `⚡ k-NN computed: Total ${totalWallMs.toFixed(1)} ms ` +
+              `(Compute: ${timeCompute.toFixed(1)} ms, ` +
+              `I/O: ${results.telemetry.timeIoMs.toFixed(1)} ms)`
+            );
+          } else {
+            const errMsg = (results && results.error)
+              ? results.error
+              : `WASM k-NN memory limit reached ` +
+                `(${pts.length.toLocaleString()} points exceeds WASM heap).`;
+            showKnnError('WASM Memory Limit Exceeded', errMsg);
+            showToast(`⚠️ ${errMsg}`);
+            console.error('[k-NN WASM]', errMsg);
           }
         }
       } catch (err) {
         console.error('[k-NN] Computation error:', err);
-        showToast('⚠️ k-NN computation failed');
+        const errMsg = err && err.message ? err.message : 'Unknown execution error';
+        showKnnError('k-NN Execution Error', errMsg);
+        showToast(`⚠️ k-NN computation failed: ${errMsg}`);
       } finally {
         isKnnComputing = false;
         knnAbortRequested = false;
         updateKnnButtonUI(false);
       }
     }
+
+    function showKnnError(title, message) {
+      const errConfig = document.getElementById('knnErrorBannerConfig');
+      const errTitleConfig = document.getElementById('knnErrorTitleConfig');
+      const errMsgConfig = document.getElementById('knnErrorMsgConfig');
+      if (errConfig && errMsgConfig) {
+        if (errTitleConfig) errTitleConfig.textContent = title || 'k-NN Error';
+        errMsgConfig.textContent = message || 'k-NN computation failed.';
+        errConfig.style.display = 'block';
+      }
+
+      const errRes = document.getElementById('knnErrorBannerRes');
+      const errTitleRes = document.getElementById('knnErrorTitleRes');
+      const errMsgRes = document.getElementById('knnErrorMsgRes');
+      if (errRes && errMsgRes) {
+        if (errTitleRes) errTitleRes.textContent = title || 'k-NN Error';
+        errMsgRes.textContent = message || 'k-NN computation failed.';
+        errRes.style.display = 'block';
+      }
+
+      const statusBadge = document.getElementById('knnStatusBadge');
+      if (statusBadge) {
+        statusBadge.textContent = '⚠️ Memory Limit';
+        statusBadge.style.color = '#f87171';
+        statusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+        statusBadge.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+      }
+    }
+
+    function clearKnnError() {
+      const errConfig = document.getElementById('knnErrorBannerConfig');
+      if (errConfig) errConfig.style.display = 'none';
+
+      const errRes = document.getElementById('knnErrorBannerRes');
+      if (errRes) errRes.style.display = 'none';
+
+      const statusBadge = document.getElementById('knnStatusBadge');
+      if (statusBadge && statusBadge.textContent.includes('Memory Limit')) {
+        statusBadge.textContent = (typeof knnResults !== 'undefined' && knnResults)
+          ? 'Active'
+          : 'Ready';
+        statusBadge.style.color = '';
+        statusBadge.style.background = '';
+        statusBadge.style.border = '';
+      }
+    }
+
+    window.dismissKnnError = function() {
+      clearKnnError();
+    };
 
     function toggleKnnModule(enable) {
       if (typeof enable !== 'boolean') {
@@ -2815,6 +2997,8 @@
       if (typeof updateResizersVisibility === 'function') {
         updateResizersVisibility();
       }
+
+      updateKnnButtonUI(isKnnComputing);
 
       if (typeof updateCliCommand === 'function') {
         updateCliCommand();
@@ -3628,10 +3812,6 @@
       updateEngineModeUI();
 
       if (mode === 'cli') {
-        const cardCli = document.getElementById('cardCli');
-        if (cardCli && cardCli.classList.contains('collapsed')) {
-          togglePanelCollapse('cardCli');
-        }
         updateCliCommand();
 
         if (DesktopBridge.isAvailable()) {
@@ -4480,9 +4660,375 @@
         if (fileModalEl && fileModalEl.style.display !== 'none') {
           fileModalEl.style.display = 'none';
         }
+        const cmdModal = document.getElementById('modalCommandPalette');
+        if (cmdModal && cmdModal.style.display !== 'none') {
+          cmdModal.style.display = 'none';
+        }
       }
     });
 
+    // -------------------------------------------------------------------------
+    // Sidebar Master Mode Switcher
+    // -------------------------------------------------------------------------
+    function switchSidebarMode(mode) {
+      activeSidebarMode = mode;
+      document.querySelectorAll('#sidebarModeNav .sidebar-mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+      });
+
+      const cards = {
+        cardInputData: ['all', 'clustering'],
+        cardSettings: ['all', 'clustering'],
+        cardDisplay: ['all', 'clustering'],
+        cardDataFiles: ['all', 'files'],
+        cardCli: ['all', 'files'],
+        cardResources: ['all', 'clustering', 'telemetry'],
+        cardTrace: ['all', 'clustering', 'telemetry'],
+        cardKnnSettings: ['all', 'knn'],
+        cardKnnResources: ['all', 'knn', 'telemetry'],
+        cardKnnTrace: ['all', 'knn', 'telemetry']
+      };
+
+      Object.entries(cards).forEach(([cardId, allowedModes]) => {
+        const el = document.getElementById(cardId);
+        if (!el) return;
+        const isKnnCard = cardId.startsWith('cardKnn');
+        const allowed = allowedModes.includes(mode);
+
+        if (isKnnCard && !enableKnn) {
+          el.style.display = 'none';
+        } else {
+          el.style.display = allowed ? '' : 'none';
+        }
+      });
+    }
+    window.switchSidebarMode = switchSidebarMode;
+
+    // -------------------------------------------------------------------------
+    // Interactive Timeline Scrubber & Milestones
+    // -------------------------------------------------------------------------
+    function addClusterMilestone(frameIdx) {
+      if (!clusterMilestoneFrames.includes(frameIdx)) {
+        clusterMilestoneFrames.push(frameIdx);
+      }
+      renderTimelineMilestones();
+    }
+    window.addClusterMilestone = addClusterMilestone;
+
+    function renderTimelineMilestones() {
+      const container = document.getElementById('timelineMilestones');
+      if (!container) return;
+      const total = (benchmarkDataset && benchmarkDataset.length > 0) ? benchmarkDataset.length : 1;
+      container.innerHTML = '';
+      clusterMilestoneFrames.forEach(f => {
+        const tick = document.createElement('div');
+        tick.className = 'timeline-milestone-tick';
+        tick.style.left = `${(f / total) * 100}%`;
+        container.appendChild(tick);
+      });
+    }
+    window.renderTimelineMilestones = renderTimelineMilestones;
+
+    function initTimelineScrubber() {
+      const scrubber = document.getElementById('timelineScrubber');
+      const tooltip = document.getElementById('timelineScrubTooltip');
+      if (!scrubber) return;
+
+      let isScrubbing = false;
+
+      function scrubToMouse(e) {
+        if (!benchmarkDataset || benchmarkDataset.length === 0) return;
+        const rect = scrubber.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const total = benchmarkDataset.length;
+        const targetFrame = Math.floor(ratio * (total - 1));
+
+        selectPastSample(targetFrame);
+
+        if (tooltip) {
+          tooltip.style.left = `${ratio * 100}%`;
+          tooltip.textContent = `Frame ${targetFrame + 1} / ${total}`;
+          tooltip.style.display = 'block';
+        }
+      }
+
+      scrubber.addEventListener('mousedown', (e) => {
+        isScrubbing = true;
+        scrubToMouse(e);
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (isScrubbing) {
+          scrubToMouse(e);
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (isScrubbing) {
+          isScrubbing = false;
+          if (tooltip) tooltip.style.display = 'none';
+        }
+      });
+
+      scrubber.addEventListener('mousemove', (e) => {
+        if (!benchmarkDataset || benchmarkDataset.length === 0) return;
+        const rect = scrubber.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const total = benchmarkDataset.length;
+        const targetFrame = Math.floor(ratio * (total - 1));
+
+        if (tooltip && !isScrubbing) {
+          tooltip.style.left = `${ratio * 100}%`;
+          tooltip.textContent = `Frame ${targetFrame + 1} / ${total}`;
+          tooltip.style.display = 'block';
+        }
+      });
+
+      scrubber.addEventListener('mouseleave', () => {
+        if (!isScrubbing && tooltip) {
+          tooltip.style.display = 'none';
+        }
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // Quick Command Palette (Ctrl+K / Cmd+K)
+    // -------------------------------------------------------------------------
+    const commandPaletteCommands = [
+      // Actions
+      { id: 'act-play', group: 'Actions', icon: '▶', name: 'Cluster / Play Simulation',
+        hint: 'Space', action: () => document.getElementById('btnPlay')?.click() },
+      { id: 'act-step', group: 'Actions', icon: '⏭', name: 'Step Single Frame',
+        hint: 'S', action: () => document.getElementById('btnStep')?.click() },
+      { id: 'act-reset-clusters', group: 'Actions', icon: '↺',
+        name: 'Reset Clusters (Keep Dataset)', hint: 'Reset Model',
+        action: () => document.getElementById('btnResetClusters')?.click() },
+      { id: 'act-reset-all', group: 'Actions', icon: '⟲',
+        name: 'Reset All (Clear Dataset & Clusters)', hint: 'R',
+        action: () => document.getElementById('btnReset')?.click() },
+      { id: 'act-pass2', group: 'Actions', icon: '🔄',
+        name: '2nd Pass Nearest Anchor Reallocation', hint: '2 / P',
+        action: () => document.getElementById('btnPass2Nearest')?.click() },
+      { id: 'act-explain', group: 'Actions', icon: '💬', name: 'Toggle Decision Explain Mode',
+        hint: 'E', action: () => document.getElementById('btnExplain')?.click() },
+      { id: 'act-knn-toggle', group: 'Actions', icon: '⚡', name: 'Toggle k-NN Module',
+        hint: 'K', action: () => document.getElementById('btnToggleKnnModule')?.click() },
+      { id: 'act-knn-run', group: 'Actions', icon: '▶', name: 'Compute k-Nearest Neighbors',
+        hint: 'k-NN', action: () => document.getElementById('btnRunKnn')?.click() },
+      { id: 'act-motion-tail', group: 'Actions', icon: '〰️',
+        name: 'Toggle Recent Points Motion Trail', hint: 'Trail',
+        action: () => document.getElementById('btnToggleMotionTail')?.click() },
+      { id: 'act-color-per-cluster', group: 'Actions', icon: '🎨',
+        name: 'Toggle Per-Cluster Point Colors', hint: 'Colors',
+        action: () => document.getElementById('btnToggleColorPerCluster')?.click() },
+      { id: 'act-export', group: 'Actions', icon: '💾', name: 'Export Run to Local Workspace',
+        hint: '.clusterdat', action: () => document.getElementById('btnSaveToWorkspace')?.click() },
+
+      // Camera Views
+      { id: 'cam-11', group: 'Camera', icon: '🔍', name: '1:1 Reset Pan & Zoom',
+        hint: 'Z', action: () => document.getElementById('btnResetView')?.click() },
+      { id: 'cam-iso', group: 'Camera', icon: '📐', name: 'Isometric 3D Perspective',
+        hint: '3D Orbit', action: () => document.getElementById('presetIso')?.click() },
+      { id: 'cam-front', group: 'Camera', icon: '🔲', name: 'Front View (XZ Plane)',
+        hint: 'Front', action: () => document.getElementById('presetFront')?.click() },
+      { id: 'cam-top', group: 'Camera', icon: '🔝', name: 'Top View (XY Plane)',
+        hint: 'Top', action: () => document.getElementById('presetTop')?.click() },
+      { id: 'cam-side', group: 'Camera', icon: '🔳', name: 'Side View (YZ Plane)',
+        hint: 'Side', action: () => document.getElementById('presetSide')?.click() },
+      { id: 'cam-reset3d', group: 'Camera', icon: '↺', name: 'Reset 3D Orbit Camera',
+        hint: 'Reset 3D', action: () => document.getElementById('presetReset3D')?.click() },
+
+      // Datasets
+      { id: 'ds-3dtorus', group: 'Datasets', icon: '🍩',
+        name: 'Load 3Dtorus (3D Torus Manifold Knot)', hint: '3D Dataset',
+        action: () => loadDatasetByKey('3Dtorus') },
+      { id: 'ds-2dspiral', group: 'Datasets', icon: '🌀',
+        name: 'Load 2Dspiral (Archimedean Spiral)', hint: '2D Dataset',
+        action: () => loadDatasetByKey('2Dspiral') },
+      { id: 'ds-3dsphere', group: 'Datasets', icon: '🌐',
+        name: 'Load 3Dsphere (Spherical Shell S²)', hint: '3D Dataset',
+        action: () => loadDatasetByKey('3Dsphere') },
+      { id: 'ds-3dstar', group: 'Datasets', icon: '✨',
+        name: 'Load 3Dstar (Multi-Spoke Radial Star)', hint: '3D Dataset',
+        action: () => loadDatasetByKey('3Dstar') },
+      { id: 'ds-3dlorenz', group: 'Datasets', icon: '🦋',
+        name: 'Load 3Dlorenz (Lorenz Strange Attractor)', hint: '3D Dataset',
+        action: () => loadDatasetByKey('3Dlorenz') },
+      { id: 'ds-2dcircle', group: 'Datasets', icon: '⭕',
+        name: 'Load 2Dcircle-shuffle (Circle Shuffled)', hint: '2D Dataset',
+        action: () => loadDatasetByKey('2Dcircle-shuffle') },
+      { id: 'ds-img-ball1', group: 'Datasets', icon: '⚽',
+        name: 'Load Single Bouncing Ball (32×32 Image)', hint: 'Image Dataset',
+        action: () => loadDatasetByKey('img-ball-1') },
+
+      // Panels & Modes
+      { id: 'nav-clustering', group: 'Navigation', icon: '📊', name: 'Switch to Clustering Mode',
+        hint: 'Sidebar', action: () => switchSidebarMode('clustering') },
+      { id: 'nav-knn', group: 'Navigation', icon: '⚡', name: 'Switch to k-NN Mode',
+        hint: 'Sidebar', action: () => {
+          if (!enableKnn) document.getElementById('btnToggleKnnModule')?.click();
+          switchSidebarMode('knn');
+        } },
+      { id: 'nav-files', group: 'Navigation', icon: '📂', name: 'Switch to Files & CLI Mode',
+        hint: 'Sidebar', action: () => switchSidebarMode('files') },
+      { id: 'nav-telemetry', group: 'Navigation', icon: '📈', name: 'Switch to Telemetry Mode',
+        hint: 'Sidebar', action: () => switchSidebarMode('telemetry') },
+      { id: 'nav-all', group: 'Navigation', icon: '📑', name: 'Show All Panels',
+        hint: 'Sidebar', action: () => switchSidebarMode('all') }
+    ];
+
+    function loadDatasetByKey(key) {
+      const sel = document.getElementById('selectBenchmark');
+      if (sel) {
+        sel.value = key;
+        sel.dispatchEvent(new Event('change'));
+      }
+    }
+
+    let cmdSelectedIdx = 0;
+    let cmdFilteredList = [];
+
+    function openCommandPalette() {
+      const modal = document.getElementById('modalCommandPalette');
+      const input = document.getElementById('commandPaletteInput');
+      if (!modal || !input) return;
+      modal.style.display = 'flex';
+      input.value = '';
+      renderCommandPaletteResults('');
+      setTimeout(() => input.focus(), 20);
+    }
+
+    function closeCommandPalette() {
+      const modal = document.getElementById('modalCommandPalette');
+      if (modal) modal.style.display = 'none';
+    }
+
+    function toggleCommandPalette() {
+      const modal = document.getElementById('modalCommandPalette');
+      if (modal && modal.style.display !== 'none') {
+        closeCommandPalette();
+      } else {
+        openCommandPalette();
+      }
+    }
+    window.openCommandPalette = openCommandPalette;
+    window.closeCommandPalette = closeCommandPalette;
+    window.toggleCommandPalette = toggleCommandPalette;
+
+    function renderCommandPaletteResults(query) {
+      const resultsEl = document.getElementById('commandPaletteResults');
+      if (!resultsEl) return;
+      const q = query.trim().toLowerCase();
+
+      cmdFilteredList = commandPaletteCommands.filter(c => {
+        if (!q) return true;
+        return c.name.toLowerCase().includes(q) ||
+               c.group.toLowerCase().includes(q) ||
+               (c.hint && c.hint.toLowerCase().includes(q));
+      });
+
+      cmdSelectedIdx = Math.max(0, Math.min(cmdSelectedIdx, cmdFilteredList.length - 1));
+
+      if (cmdFilteredList.length === 0) {
+        resultsEl.innerHTML = `
+          <div style="padding: 24px; text-align: center; color: var(--text-muted);
+                      font-size: 0.8rem;">
+            No matching commands found
+          </div>`;
+        return;
+      }
+
+      const groups = {};
+      cmdFilteredList.forEach((cmd, idx) => {
+        if (!groups[cmd.group]) groups[cmd.group] = [];
+        groups[cmd.group].push({ cmd, flatIdx: idx });
+      });
+
+      let html = '';
+      Object.entries(groups).forEach(([groupName, items]) => {
+        html += `<div class="command-palette-group-title">${groupName}</div>`;
+        items.forEach(({ cmd, flatIdx }) => {
+          const isActive = (flatIdx === cmdSelectedIdx);
+          const badgeHtml = cmd.hint
+            ? `<span class="command-palette-item-badge">${cmd.hint}</span>`
+            : '';
+          html += `
+            <div class="command-palette-item ${isActive ? 'active' : ''}"
+                 data-idx="${flatIdx}" onclick="executeCommand(${flatIdx})">
+              <div class="command-palette-item-left">
+                <span class="command-palette-item-icon">${cmd.icon}</span>
+                <span class="command-palette-item-text">${cmd.name}</span>
+              </div>
+              ${badgeHtml}
+            </div>
+          `;
+        });
+      });
+
+      resultsEl.innerHTML = html;
+
+      const activeEl = resultsEl.querySelector('.command-palette-item.active');
+      if (activeEl) {
+        activeEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    function executeCommand(idx) {
+      if (idx >= 0 && idx < cmdFilteredList.length) {
+        const cmd = cmdFilteredList[idx];
+        closeCommandPalette();
+        if (cmd && typeof cmd.action === 'function') {
+          cmd.action();
+        }
+      }
+    }
+    window.executeCommand = executeCommand;
+
+    function initCommandPalette() {
+      const btn = document.getElementById('btnOpenCommandPalette');
+      if (btn) btn.addEventListener('click', openCommandPalette);
+
+      const modal = document.getElementById('modalCommandPalette');
+      if (modal) {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) closeCommandPalette();
+        });
+      }
+
+      const input = document.getElementById('commandPaletteInput');
+      if (input) {
+        input.addEventListener('input', (e) => {
+          cmdSelectedIdx = 0;
+          renderCommandPaletteResults(e.target.value);
+        });
+
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (cmdFilteredList.length > 0) {
+              cmdSelectedIdx = (cmdSelectedIdx + 1) % cmdFilteredList.length;
+              renderCommandPaletteResults(input.value);
+            }
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (cmdFilteredList.length > 0) {
+              const len = cmdFilteredList.length;
+              cmdSelectedIdx = (cmdSelectedIdx - 1 + len) % len;
+              renderCommandPaletteResults(input.value);
+            }
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            executeCommand(cmdSelectedIdx);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            closeCommandPalette();
+          }
+        });
+      }
+    }
+
+    initTimelineScrubber();
+    initCommandPalette();
 
     setTimeout(() => { updateTMCanvasDimensions(); resizeCanvas(); }, 50);
     setTimeout(() => { updateTMCanvasDimensions(); resizeCanvas(); }, 250);

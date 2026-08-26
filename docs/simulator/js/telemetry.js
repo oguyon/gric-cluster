@@ -1384,6 +1384,7 @@
       const distVal = document.getElementById('knnDistCallsVal');
       const distPerQVal = document.getElementById('knnDistPerQueryVal');
       const latVal = document.getElementById('knnLatencyVal');
+      const totalTimeVal = document.getElementById('knnTotalTimeVal');
       const qpsVal = document.getElementById('knnQpsVal');
       const queriesVal = document.getElementById('knnQueriesVal');
       const kParamVal = document.getElementById('knnKParamVal');
@@ -1426,6 +1427,9 @@
       // Scaling tab elements
       const evalRateEl = document.getElementById('knnEvalRateVal');
       const perQueryLatEl = document.getElementById('knnPerQueryLatVal');
+      const timingComputeEl = document.getElementById('knnTimingCompute');
+      const timingIoEl = document.getElementById('knnTimingIo');
+      const timingTotalEl = document.getElementById('knnTimingTotal');
       const diagBruteEl = document.getElementById('knnDiagBruteOps');
       const diagMetricEl = document.getElementById('knnDiagMetricOps');
       const diagEpsEl = document.getElementById('knnDiagEpsilon');
@@ -1440,6 +1444,7 @@
         if (distVal) distVal.textContent = '0';
         if (distPerQVal) distPerQVal.textContent = '0/q';
         if (latVal) latVal.textContent = '0.00 ms';
+        if (totalTimeVal) totalTimeVal.textContent = '0.00 ms tot';
         if (qpsVal) qpsVal.textContent = '0 QPS';
         if (queriesVal) queriesVal.textContent = '0';
         if (kParamVal) kParamVal.textContent = `k=${knnK || 10}`;
@@ -1478,6 +1483,9 @@
 
         if (evalRateEl) evalRateEl.textContent = '0 M/s';
         if (perQueryLatEl) perQueryLatEl.textContent = '0.0 µs';
+        if (timingComputeEl) timingComputeEl.textContent = '0.00 ms';
+        if (timingIoEl) timingIoEl.textContent = '0.00 ms';
+        if (timingTotalEl) timingTotalEl.textContent = '0.00 ms';
         if (diagBruteEl) diagBruteEl.textContent = '0';
         if (diagMetricEl) diagMetricEl.textContent = '0';
         if (diagEpsEl) diagEpsEl.textContent = 'ε = 0.00 (Exact)';
@@ -1494,15 +1502,28 @@
       const pruneEffNum = bruteForce > 0 ? (1.0 - dists / bruteForce) * 100.0 : 100.0;
       const pruneEff = pruneEffNum.toFixed(3);
       const speedup = dists > 0 ? (bruteForce / dists).toFixed(1) : '∞';
-      const fps = telem.timeSearchMs > 0 ? Math.round(N / (telem.timeSearchMs / 1000.0)).toLocaleString() : '∞';
+      const timeCompute = (typeof telem.timeComputeMs === 'number')
+        ? telem.timeComputeMs
+        : (telem.timeSearchMs || 0.0);
+      const timeTotal = (typeof telem.timeTotalMs === 'number')
+        ? telem.timeTotalMs
+        : timeCompute;
+      const timeIo = (typeof telem.timeIoMs === 'number')
+        ? telem.timeIoMs
+        : Math.max(0, timeTotal - timeCompute);
+
+      const fps = timeCompute > 0 ? Math.round(N / (timeCompute / 1000.0)).toLocaleString() : '∞';
       const distsPerQuery = N > 0 ? (dists / N).toFixed(1) : '0';
 
       // 1. Overview Tab
-      if (effVal) effVal.textContent = `${pruneEff}%`;
+      if (effVal) {
+        effVal.textContent = `${pruneEff}%`;
+      }
       if (speedupVal) speedupVal.textContent = `${speedup}x`;
       if (distVal) distVal.textContent = `${dists.toLocaleString()}`;
       if (distPerQVal) distPerQVal.textContent = `${distsPerQuery}/q`;
-      if (latVal) latVal.textContent = `${telem.timeSearchMs.toFixed(2)} ms`;
+      if (latVal) latVal.textContent = `${timeCompute.toFixed(2)} ms`;
+      if (totalTimeVal) totalTimeVal.textContent = `${timeTotal.toFixed(2)} ms tot`;
       if (qpsVal) qpsVal.textContent = `${fps} QPS`;
       if (queriesVal) queriesVal.textContent = `${N.toLocaleString()}`;
       if (kParamVal) kParamVal.textContent = `k=${k}`;
@@ -1558,11 +1579,18 @@
       if (memPerFrameEl) memPerFrameEl.textContent = `${(memTotal / Math.max(1, N)).toFixed(1)} bytes / frame`;
 
       // 4. Scaling Tab
-      const evalRate = telem.timeSearchMs > 0 ? (dists / (telem.timeSearchMs * 1000.0)).toFixed(2) : '0.00';
-      const perQueryLat = N > 0 && telem.timeSearchMs > 0 ? ((telem.timeSearchMs * 1000.0) / N).toFixed(1) : '0.0';
+      const evalRate = timeCompute > 0
+        ? (dists / (timeCompute * 1000.0)).toFixed(2)
+        : '0.00';
+      const perQueryLat = (N > 0 && timeCompute > 0)
+        ? ((timeCompute * 1000.0) / N).toFixed(1)
+        : '0.0';
 
       if (evalRateEl) evalRateEl.textContent = `${evalRate} M/s`;
       if (perQueryLatEl) perQueryLatEl.textContent = `${perQueryLat} µs`;
+      if (timingComputeEl) timingComputeEl.textContent = `${timeCompute.toFixed(2)} ms`;
+      if (timingIoEl) timingIoEl.textContent = `${timeIo.toFixed(2)} ms`;
+      if (timingTotalEl) timingTotalEl.textContent = `${timeTotal.toFixed(2)} ms`;
       if (diagBruteEl) diagBruteEl.textContent = `${bruteForce.toLocaleString()} evals`;
       if (diagMetricEl) diagMetricEl.textContent = `${dists.toLocaleString()} evals`;
       if (diagEpsEl) {
@@ -2470,6 +2498,12 @@
         for (let i = 0; i < pastSamples.length; i++) {
           pastSamples[i].clusterId = -1;
         }
+      }
+
+      clusterMilestoneFrames = [];
+      clusterSpawnRipples = [];
+      if (typeof renderTimelineMilestones === 'function') {
+        renderTimelineMilestones();
       }
 
       if (typeof updateWasmBadge === 'function') {

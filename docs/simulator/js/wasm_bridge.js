@@ -516,7 +516,20 @@ const GricWasm = (function () {
    *
    * @returns {Object} Snapshot of current WASM state
    */
-  function syncState() {
+  function getNumClusters() {
+    if (!_handle || !_fn.getNumClusters) return 0;
+    return _fn.getNumClusters(_handle);
+  }
+
+  /**
+   * Synchronize full cluster state from WASM to JS.
+   * Pulls anchor coordinates, member counts, probabilities,
+   * evaluations, and telemetry.
+   *
+   * @param {boolean} [includeDcc=false] - Whether to pull full DCC matrix
+   * @returns {Object} Snapshot of current WASM state
+   */
+  function syncState(includeDcc = false) {
     if (!_handle) return null;
 
     const M = _module;
@@ -538,49 +551,57 @@ const GricWasm = (function () {
 
     const anchors = [];
     const heapF64 = M.HEAPF64;
+    const heap32 = M.HEAP32;
+    const anchorsOffset = _anchorsPtr >> 3;
+    const membersOffset = _membersPtr >> 2;
+
     for (let i = 0; i < K; i++) {
-      const coordBase = _anchorsPtr + i * _ndim * 8;
       let anchorVec = null;
-      if (_ndim > 3) {
-        anchorVec = new Float64Array(_ndim);
-        if (heapF64) {
-          const anchorOffset = (_anchorsPtr >> 3) + i * _ndim;
-          anchorVec.set(heapF64.subarray(anchorOffset, anchorOffset + _ndim));
-        } else {
-          for (let d = 0; d < _ndim; d++) {
-            anchorVec[d] = M.getValue(coordBase + d * 8, 'double');
-          }
+      let x = 0, y = 0, z = 0;
+      if (heapF64) {
+        const base = anchorsOffset + i * _ndim;
+        x = heapF64[base];
+        y = heapF64[base + 1];
+        z = _ndim >= 3 ? heapF64[base + 2] : 0.0;
+        if (_ndim > 3) {
+          anchorVec = new Float64Array(_ndim);
+          anchorVec.set(heapF64.subarray(base, base + _ndim));
         }
+      } else {
+        const coordBase = _anchorsPtr + i * _ndim * 8;
+        x = M.getValue(coordBase, 'double');
+        y = M.getValue(coordBase + 8, 'double');
+        z = _ndim >= 3 ? M.getValue(coordBase + 16, 'double') : 0.0;
       }
+      const members = heap32 ? heap32[membersOffset + i] : M.getValue(_membersPtr + i * 4, 'i32');
       anchors.push({
         id: i,
-        x: M.getValue(coordBase, 'double'),
-        y: M.getValue(coordBase + 8, 'double'),
-        z: _ndim >= 3
-          ? M.getValue(coordBase + 16, 'double')
-          : 0.0,
+        x: x,
+        y: y,
+        z: z,
         anchor: anchorVec,
-        members: M.getValue(
-          _membersPtr + i * 4, 'i32'
-        )
+        members: members
       });
     }
 
-    // Read DCC matrix
-    _fn.getDcc(_handle, _dccPtr, K);
-    const dccMatrix = [];
-    if (heapF64) {
-      const dccOffset = _dccPtr >> 3;
-      for (let i = 0; i < K; i++) {
-        dccMatrix.push(Array.from(heapF64.subarray(dccOffset + i * K, dccOffset + (i + 1) * K)));
-      }
-    } else {
-      for (let i = 0; i < K; i++) {
-        const row = [];
-        for (let j = 0; j < K; j++) {
-          row.push(M.getValue(_dccPtr + (i * K + j) * 8, 'double'));
+    // Read DCC matrix only when explicitly requested
+    let dccMatrix = null;
+    if (includeDcc && _fn.getDcc && _dccPtr) {
+      _fn.getDcc(_handle, _dccPtr, K);
+      dccMatrix = [];
+      if (heapF64) {
+        const dccOffset = _dccPtr >> 3;
+        for (let i = 0; i < K; i++) {
+          dccMatrix.push(Array.from(heapF64.subarray(dccOffset + i * K, dccOffset + (i + 1) * K)));
         }
-        dccMatrix.push(row);
+      } else {
+        for (let i = 0; i < K; i++) {
+          const row = [];
+          for (let j = 0; j < K; j++) {
+            row.push(M.getValue(_dccPtr + (i * K + j) * 8, 'double'));
+          }
+          dccMatrix.push(row);
+        }
       }
     }
 
@@ -589,7 +610,7 @@ const GricWasm = (function () {
     const probs = [];
     if (heapF64) {
       const probsOffset = _probsPtr >> 3;
-      probs.push(...heapF64.subarray(probsOffset, probsOffset + K));
+      for (let i = 0; i < K; i++) probs.push(heapF64[probsOffset + i]);
     } else {
       for (let i = 0; i < K; i++) {
         probs.push(M.getValue(_probsPtr + i * 8, 'double'));
@@ -602,7 +623,7 @@ const GricWasm = (function () {
     const telemetryArr = [];
     if (heapF64) {
       const telOffset = _telemetryPtr >> 3;
-      telemetryArr.push(...heapF64.subarray(telOffset, telOffset + tLen));
+      for (let i = 0; i < tLen; i++) telemetryArr.push(heapF64[telOffset + i]);
     } else {
       for (let i = 0; i < tLen; i++) {
         telemetryArr.push(M.getValue(_telemetryPtr + i * 8, 'double'));
@@ -615,16 +636,33 @@ const GricWasm = (function () {
       const numEvals = _fn.getEvaluations(
         _handle, _evalIndicesPtr, _evalDistsPtr, _maxK
       );
-      for (let i = 0; i < numEvals; i++) {
-        const cId = M.getValue(_evalIndicesPtr + i * 4, 'i32');
-        const dist = M.getValue(_evalDistsPtr + i * 8, 'double');
-        if (cId >= 0 && cId < K) {
-          evaluations.push({
-            target: anchors[cId],
-            clusterId: cId,
-            dist: dist,
-            match: dist <= (rlim || 0.1),
-          });
+      if (heap32 && heapF64) {
+        const evalIdxOffset = _evalIndicesPtr >> 2;
+        const evalDistOffset = _evalDistsPtr >> 3;
+        for (let i = 0; i < numEvals; i++) {
+          const cId = heap32[evalIdxOffset + i];
+          const dist = heapF64[evalDistOffset + i];
+          if (cId >= 0 && cId < K) {
+            evaluations.push({
+              target: anchors[cId],
+              clusterId: cId,
+              dist: dist,
+              match: dist <= (rlim || 0.1)
+            });
+          }
+        }
+      } else {
+        for (let i = 0; i < numEvals; i++) {
+          const cId = M.getValue(_evalIndicesPtr + i * 4, 'i32');
+          const dist = M.getValue(_evalDistsPtr + i * 8, 'double');
+          if (cId >= 0 && cId < K) {
+            evaluations.push({
+              target: anchors[cId],
+              clusterId: cId,
+              dist: dist,
+              match: dist <= (rlim || 0.1)
+            });
+          }
         }
       }
     }
@@ -750,15 +788,34 @@ const GricWasm = (function () {
 
     // Grow or shrink the JS clusters array
     while (clusters.length < K) {
+      const newId = clusters.length;
+      const col = (typeof getClusterColor === 'function')
+        ? getClusterColor(newId)
+        : '#38bdf8';
+      const hasAnchor = (snapshot.anchors && snapshot.anchors[newId]);
+      const a = hasAnchor ? snapshot.anchors[newId] : { x: 0, y: 0, z: 0 };
       clusters.push({
-        id: clusters.length,
-        x: 0, y: 0, z: 0,
+        id: newId,
+        x: a.x || 0, y: a.y || 0, z: a.z || 0,
         members: 0,
         prob: 0,
         scDists: 0,
         lastActive: totalFrames,
-        color: getClusterColor(clusters.length),
+        color: col,
       });
+      if (typeof clusterSpawnRipples !== 'undefined') {
+        clusterSpawnRipples.push({
+          x: a.x || 0,
+          y: a.y || 0,
+          z: a.z || 0,
+          color: col,
+          startTime: performance.now(),
+          duration: 750
+        });
+      }
+      if (typeof addClusterMilestone === 'function') {
+        addClusterMilestone(currentFrameIdx || totalFrames);
+      }
     }
     clusters.length = K;
 
@@ -775,32 +832,35 @@ const GricWasm = (function () {
       c.prob = snapshot.probs[i] || 0;
       c.lastActive = totalFrames;
       if (!c.color) {
-        c.color = getClusterColor(i);
+        c.color = (typeof getClusterColor === 'function')
+          ? getClusterColor(i)
+          : '#38bdf8';
       }
     }
 
-    // Update DCC matrix
-    dcc = snapshot.dcc;
+    // Update DCC matrix if provided
+    if (snapshot.dcc) {
+      dcc = snapshot.dcc;
+    }
 
     // Grow transitionCounts to match cluster count
     while (transitionCounts.length < K) {
-      const newRow = new Array(K).fill(0);
-      transitionCounts.push(newRow);
-    }
-    // Extend existing rows
-    for (let i = 0; i < transitionCounts.length; i++) {
-      while (transitionCounts[i].length < K) {
-        transitionCounts[i].push(0);
-      }
+      transitionCounts.push([]);
     }
 
     // Update active frame distance evaluations for visual renderer
     if (snapshot.evaluations && snapshot.evaluations.length > 0) {
-      currentEvaluations = snapshot.evaluations.map(ev => ({
-        target: clusters[ev.target.id] || ev.target,
-        dist: ev.dist,
-        match: ev.match,
-      }));
+      currentEvaluations = snapshot.evaluations.map(ev => {
+        const cId = (ev.clusterId !== undefined)
+          ? ev.clusterId
+          : (ev.target && ev.target.id !== undefined ? ev.target.id : 0);
+        return {
+          target: clusters[cId] || ev.target,
+          dist: ev.dist,
+          match: ev.match,
+        };
+      });
+      currentEvaluationsAlpha = 1.0;
     } else {
       currentEvaluations = [];
     }
@@ -1358,9 +1418,19 @@ const GricWasm = (function () {
    * @returns {Object|null} Result indices, distances, and telemetry
    */
   function runKnn(config, points) {
-    if (!_handle || !_ready || !points || points.length === 0) return null;
+    if (!_handle || !_ready) {
+      return {
+        error: 'WASM engine session is not ready. Please start/initialize simulation first.'
+      };
+    }
+    if (!points || points.length === 0) {
+      return {
+        error: 'No dataset points available for k-NN search.'
+      };
+    }
 
     const M = _module;
+    const tWasmStart = performance.now();
     const N = points.length;
     const ndim = _ndim;
     const k = Math.min(config.k || 10, N);
@@ -1375,18 +1445,40 @@ const GricWasm = (function () {
     const indicesBytes = N * k * 4;
     const distsBytes = N * k * 8;
     const telemBytes = 8 * 8;
+    const totalMb = ((pointsBytes + indicesBytes + distsBytes) / (1024 * 1024)).toFixed(1);
 
-    const pointsPtr = M._malloc(pointsBytes);
-    const indicesPtr = M._malloc(indicesBytes);
-    const distsPtr = M._malloc(distsBytes);
-    const telemPtr = M._malloc(telemBytes);
+    let pointsPtr = 0;
+    let indicesPtr = 0;
+    let distsPtr = 0;
+    let telemPtr = 0;
+
+    try {
+      pointsPtr = M._malloc(pointsBytes);
+      indicesPtr = M._malloc(indicesBytes);
+      distsPtr = M._malloc(distsBytes);
+      telemPtr = M._malloc(telemBytes);
+    } catch (allocErr) {
+      if (pointsPtr) M._free(pointsPtr);
+      if (indicesPtr) M._free(indicesPtr);
+      if (distsPtr) M._free(distsPtr);
+      if (telemPtr) M._free(telemPtr);
+      return {
+        error: `Out of WebAssembly memory (requested ~${totalMb} MB for ` +
+               `${N.toLocaleString()} points). Reduce dataset points, lower k, ` +
+               `or switch to native CLI mode.`
+      };
+    }
 
     if (!pointsPtr || !indicesPtr || !distsPtr || !telemPtr) {
       if (pointsPtr) M._free(pointsPtr);
       if (indicesPtr) M._free(indicesPtr);
       if (distsPtr) M._free(distsPtr);
       if (telemPtr) M._free(telemPtr);
-      return null;
+      return {
+        error: `Out of WebAssembly memory: Failed to allocate ${totalMb} MB buffer ` +
+               `for ${N.toLocaleString()} points (k=${k}). Reduce dataset size ` +
+               `or run in native CLI mode.`
+      };
     }
 
     // Populate points buffer
@@ -1401,29 +1493,55 @@ const GricWasm = (function () {
       }
     }
 
-    const ret = _fn.knnRunSearch(
-      _handle,
-      pointsPtr,
-      N,
-      ndim,
-      k,
-      dtmin,
-      pastOnly,
-      futureOnly,
-      eps,
-      rlimCutoff,
-      useMultiPivot,
-      indicesPtr,
-      distsPtr,
-      telemPtr
-    );
+    let ret = -1;
+    try {
+      ret = _fn.knnRunSearch(
+        _handle,
+        pointsPtr,
+        N,
+        ndim,
+        k,
+        dtmin,
+        pastOnly,
+        futureOnly,
+        eps,
+        rlimCutoff,
+        useMultiPivot,
+        indicesPtr,
+        distsPtr,
+        telemPtr
+      );
+    } catch (execErr) {
+      M._free(pointsPtr);
+      M._free(indicesPtr);
+      M._free(distsPtr);
+      M._free(telemPtr);
+      const detail = execErr && execErr.message
+        ? execErr.message
+        : 'Out of memory / internal error';
+      return {
+        error: `WASM k-NN execution crashed: ${detail}`
+      };
+    }
 
     if (ret !== 0) {
       M._free(pointsPtr);
       M._free(indicesPtr);
       M._free(distsPtr);
       M._free(telemPtr);
-      return null;
+      const numClust = (_handle && typeof clusters !== 'undefined' && clusters)
+        ? clusters.length
+        : 0;
+      if (numClust <= 0) {
+        return {
+          error: 'No cluster anchors found. Please run or step the clustering engine ' +
+                 'first so k-NN has anchors for metric pruning.'
+        };
+      }
+      return {
+        error: `k-NN search failed (code ${ret}) with ${N.toLocaleString()} points. ` +
+               `Dataset size may exceed WASM C heap capacity.`
+      };
     }
 
     // Copy results
@@ -1434,6 +1552,8 @@ const GricWasm = (function () {
     distances.set(heapF64.subarray(distsPtr >> 3, (distsPtr >> 3) + N * k));
 
     const tOffset = telemPtr >> 3;
+    const timeCompute = heapF64[tOffset + 7] || 0.0;
+    const tWasmTotal = performance.now() - tWasmStart;
     const telemetry = {
       totalQueries: heapF64[tOffset] || 0,
       framedistCalls: heapF64[tOffset + 1] || 0,
@@ -1442,7 +1562,10 @@ const GricWasm = (function () {
       level3AnnularPruned: heapF64[tOffset + 4] || 0,
       temporalPruned: heapF64[tOffset + 5] || 0,
       totalCandidatesConsidered: heapF64[tOffset + 6] || 0,
-      timeSearchMs: heapF64[tOffset + 7] || 0.0,
+      timeSearchMs: timeCompute,
+      timeComputeMs: timeCompute,
+      timeTotalMs: tWasmTotal,
+      timeIoMs: Math.max(0, tWasmTotal - timeCompute)
     };
 
     M._free(pointsPtr);
@@ -1487,6 +1610,7 @@ const GricWasm = (function () {
     init: init,
     processFrame: processFrame,
     processFrameVector: processFrameVector,
+    getNumClusters: getNumClusters,
     getFrameEvaluations: getFrameEvaluations,
     syncState: syncState,
     resetState: resetState,

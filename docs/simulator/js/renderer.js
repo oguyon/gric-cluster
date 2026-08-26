@@ -6,7 +6,10 @@
 //  6. QUAD-SCREEN VIEWPORT MANAGER & 3D RENDERING
     // =========================================================================
 
-    function resizeCanvas() {
+    let lastRenderedSquareSize = -1;
+    let lastRenderedDpr = -1;
+
+    function resizeCanvas(force) {
       const canvasWrapper = document.getElementById('canvasWrapper');
       if (!canvasWrapper) return;
       const availableW = canvasWrapper.clientWidth;
@@ -14,11 +17,17 @@
       if (availableW <= 0 || availableH <= 0) return;
 
       const squareSize = Math.max(100, Math.floor(Math.min(availableW, availableH)));
+      const dpr = window.devicePixelRatio || 1;
+
+      if (!force && squareSize === lastRenderedSquareSize && dpr === lastRenderedDpr) {
+        return;
+      }
+      lastRenderedSquareSize = squareSize;
+      lastRenderedDpr = dpr;
 
       canvas.style.width = `${squareSize}px`;
       canvas.style.height = `${squareSize}px`;
 
-      const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.round(squareSize * dpr);
       canvas.height = Math.round(squareSize * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -40,10 +49,10 @@
         };
       }
     }
-    window.addEventListener('resize', resizeCanvas);
-    window.addEventListener('load', resizeCanvas);
+    window.addEventListener('resize', () => resizeCanvas(true));
+    window.addEventListener('load', () => resizeCanvas(true));
     if (typeof ResizeObserver !== 'undefined') {
-      const ro = new ResizeObserver(() => resizeCanvas());
+      const ro = new ResizeObserver(() => resizeCanvas(false));
       const cWrap = document.getElementById('canvasWrapper');
       if (cWrap) ro.observe(cWrap);
     }
@@ -424,7 +433,7 @@
 
         // Distinct colors for unprocessed vs processed sample points
         const unprocColor = `rgba(100, 116, 139, ${(pointAlpha * 0.40).toFixed(3)})`;
-        const procDefaultColor = `rgba(56, 189, 248, ${pointAlpha.toFixed(3)})`;
+        const procDefaultColor = `rgba(148, 163, 184, ${pointAlpha.toFixed(3)})`;
 
         // Cache cluster colors to maximize rendering throughput
         const clusterColorCache = {};
@@ -483,7 +492,9 @@
             const px = cx + (u - view.panX) * scale;
             const py = cy - (v - view.panY) * scale;
 
-            const fillColor = (pt.clusterId !== undefined && pt.clusterId >= 0)
+            const fillColor = (showColorPerCluster &&
+                               pt.clusterId !== undefined &&
+                               pt.clusterId >= 0)
                               ? getCachedColor(pt.clusterId)
                               : procDefaultColor;
             if (fillColor !== lastFill) {
@@ -533,7 +544,9 @@
             const depthFactor = Math.max(0.4, Math.min(2.2, 1.0 + pr.depth * 0.5));
             const ptRad = Math.max(0.4, basePtRad * depthFactor * ptSizeScale);
 
-            const fillColor = (pt.clusterId !== undefined && pt.clusterId >= 0)
+            const fillColor = (showColorPerCluster &&
+                               pt.clusterId !== undefined &&
+                               pt.clusterId >= 0)
                               ? getCachedColor(pt.clusterId)
                               : procDefaultColor;
             if (fillColor !== lastFill) {
@@ -552,6 +565,65 @@
           visible: totalVisiblePoints,
           truncated: isPointsTruncated
         };
+      }
+
+      // Dynamic Stream Trajectory Motion Tail (off by default, toggleable)
+      if (showMotionTail && typeof pastSamples !== 'undefined' &&
+          pastSamples && pastSamples.length > 1) {
+        const currIdx = (typeof currentFrameIdx === 'number' && currentFrameIdx > 0)
+          ? Math.min(currentFrameIdx, pastSamples.length)
+          : pastSamples.length;
+        const N_tail = Math.min(12, currIdx);
+        const startTail = currIdx - N_tail;
+        if (N_tail > 1) {
+          ctx.save();
+          for (let t = startTail; t < currIdx - 1; t++) {
+            const ptA = pastSamples[t];
+            const ptB = pastSamples[t + 1];
+            if (!ptA || !ptB) continue;
+            const prA = getProjectedCoord(ptA);
+            const prB = getProjectedCoord(ptB);
+            const posA = mapMetricToQuad(prA.u, prA.v, qIdx, rect);
+            const posB = mapMetricToQuad(prB.u, prB.v, qIdx, rect);
+            const tRatio = (t - startTail + 1) / N_tail;
+            ctx.strokeStyle = `rgba(56, 189, 248, ${tRatio * 0.75})`;
+            ctx.lineWidth = 1.0 + tRatio * 2.0;
+            ctx.beginPath();
+            ctx.moveTo(posA.px, posA.py);
+            ctx.lineTo(posB.px, posB.py);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }
+
+      // Cluster Spawn Expanding Shockwave Ripple Animation
+      if (typeof clusterSpawnRipples !== 'undefined' && clusterSpawnRipples.length > 0) {
+        const nowTime = performance.now();
+        let anyRippleActive = false;
+        clusterSpawnRipples.forEach(rip => {
+          const elapsed = nowTime - rip.startTime;
+          if (elapsed < rip.duration) {
+            anyRippleActive = true;
+            const progress = elapsed / rip.duration;
+            const ripRad = (6 + progress * 28);
+            const pr = getProjectedCoord(rip);
+            const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, ripRad, 0, Math.PI * 2);
+            ctx.strokeStyle = rip.color;
+            ctx.globalAlpha = (1.0 - progress) * 0.85;
+            ctx.lineWidth = 2.2 * (1.0 - progress);
+            ctx.stroke();
+            ctx.restore();
+          }
+        });
+        clusterSpawnRipples = clusterSpawnRipples.filter(r => (nowTime - r.startTime) < r.duration);
+        if (anyRippleActive) {
+          requestAnimationFrame(draw);
+        }
       }
 
       // 3. Multi-Tile Mode Rendering
@@ -923,19 +995,32 @@
             const pr = getProjectedCoord(c);
             const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
 
-            // Anchor Core Node
+            // Radius scales slightly with cluster membership points
+            const memberCount = (typeof c.members === 'number')
+              ? c.members : (c.members ? c.members.length : 1);
+            const nodeRadius = Math.min(8.0, 5.0 + Math.sqrt(Math.max(0, memberCount)) * 0.2);
+
+            // Radiant Bloom / Glow aura around anchor
+            ctx.save();
+            ctx.shadowColor = c.color;
+            ctx.shadowBlur = 10;
             ctx.beginPath();
-            ctx.arc(pos.px, pos.py, 5.5, 0, Math.PI * 2);
+            ctx.arc(pos.px, pos.py, nodeRadius, 0, Math.PI * 2);
             ctx.fillStyle = c.color;
             ctx.fill();
+            ctx.restore();
+
+            // Anchor Core Node Outline
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, nodeRadius, 0, Math.PI * 2);
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.2;
+            ctx.lineWidth = 1.3;
             ctx.stroke();
 
             if (showClusterLabels) {
               ctx.fillStyle = '#f8fafc';
-              ctx.font = '10px sans-serif';
-              ctx.fillText(`C${c.id}`, pos.px + 7, pos.py - 5);
+              ctx.font = 'bold 10px sans-serif';
+              ctx.fillText(`C${c.id}`, pos.px + nodeRadius + 3, pos.py - 5);
             }
           });
 
@@ -1309,15 +1394,19 @@
 
             // B. Sample-to-Sample nearest neighbor distances computed when solving FOR this point
             // (Distinct Vibrant Violet / Magenta palette #c084fc / #e879f9)
-            if (showDistLines && showKnnLines &&
+            if (showKnnLines &&
                 typeof knnResults !== 'undefined' && knnResults && knnResults.indices) {
               const N = knnResults.totalFrames;
               const k = knnResults.k;
-              if (sampleIdx >= 0 && sampleIdx < N) {
+              let targetLookupIdx = sampleIdx;
+              if (targetLookupIdx >= N && sampleIdx > 0 && (sampleIdx - 1) < N) {
+                targetLookupIdx = sampleIdx - 1;
+              }
+              if (targetLookupIdx >= 0 && targetLookupIdx < N) {
                 for (let r = 0; r < k; r++) {
-                  const nId = knnResults.indices[sampleIdx * k + r];
-                  const dist = knnResults.distances[sampleIdx * k + r];
-                  if (nId >= 0 && nId !== sampleIdx) {
+                  const nId = knnResults.indices[targetLookupIdx * k + r];
+                  const dist = knnResults.distances[targetLookupIdx * k + r];
+                  if (nId >= 0 && nId !== targetLookupIdx) {
                     const nPt = getFramePoint(nId);
                     if (!nPt) continue; // Ensure no lines to non-existing points
 
@@ -1325,14 +1414,21 @@
                     const posN = mapMetricToQuad(prN.u, prN.v, qIdx, rect);
                     const isRank1 = (r === 0);
                     const nnColor = isRank1 ? '#e879f9' : '#c084fc';
-                    const orderSuffix = getOrdinalSuffix(r + 1);
+                    // Glowing dual-tone laser gradient ray
+                    const grad = ctx.createLinearGradient(pos.px, pos.py, posN.px, posN.py);
+                    grad.addColorStop(0, '#38bdf8');
+                    grad.addColorStop(1, nnColor);
 
+                    ctx.save();
+                    ctx.shadowColor = nnColor;
+                    ctx.shadowBlur = isRank1 ? 8 : 4;
                     ctx.beginPath();
                     ctx.moveTo(pos.px, pos.py);
                     ctx.lineTo(posN.px, posN.py);
-                    ctx.strokeStyle = nnColor;
-                    ctx.lineWidth = isRank1 ? 2.4 : 1.8;
+                    ctx.strokeStyle = grad;
+                    ctx.lineWidth = isRank1 ? 2.6 : 1.8;
                     ctx.stroke();
+                    ctx.restore();
 
                     // Highlight neighbor point node
                     ctx.beginPath();
@@ -1347,7 +1443,7 @@
                       // Distance pill along ray (at 50% midpoint)
                       const midX = (pos.px + posN.px) / 2;
                       const midY = (pos.py + posN.py) / 2;
-                      const pillText = `${orderSuffix} NN: #${nId} (d=${dist.toFixed(3)})`;
+                      const pillText = `NN: #${nId} (d=${dist.toFixed(3)})`;
                       drawDistPill(midX, midY, pillText, nnColor, isRank1);
                     }
                   }
@@ -1359,7 +1455,7 @@
             // 2. OTHER Distance Computations INVOLVING THIS POINT
             //    (Thinner dashed lines in distinct amber/orange)
             // -----------------------------------------------------------------
-            if (showDistLines &&
+            if (showKnnLines &&
                 typeof knnResults !== 'undefined' && knnResults && knnResults.indices) {
               const N = knnResults.totalFrames;
               const k = knnResults.k;
@@ -1449,71 +1545,6 @@
             ctx.strokeStyle = reticleColor;
             ctx.lineWidth = isLocked ? 2.0 : 1.6;
             ctx.stroke();
-
-            // 6. Detailed Info Callout Badge (in the hovered quadrant or 2D screen)
-            if (showInspectorCallout &&
-                (qIdx === activeSampleHighlight.qIdx ||
-                 currentDim === 2 || maximizedQuad !== null)) {
-              const fIdx = activeSampleHighlight.index;
-              const coordText = currentDim === 3 
-                ? `(${pt.x.toFixed(2)}, ${pt.y.toFixed(2)}, ${pt.z.toFixed(2)})`
-                : `(${pt.x.toFixed(2)}, ${pt.y.toFixed(2)})`;
-
-              const lockTag = isLocked ? '🔒 LOCKED #' : '#';
-              const titleLine = `${lockTag}${fIdx}: ${coordText} ` +
-                                `${cId >= 0 ? `→ C${cId}` : '(new cluster)'}`;
-              const calloutLines = [titleLine];
-
-              if (evaluatedClusters.length > 1) {
-                const seqParts = evaluatedClusters.map((ev, idx) => 
-                  `${getOrdinalSuffix(idx + 1)}: C${ev.cluster.id} ` +
-                  `(d=${ev.dist.toFixed(3)}${ev.match ? ' ✓' : ' ✗'})`
-                );
-                calloutLines.push(`Solving Sequence: ${seqParts.join(' → ')}`);
-              } else if (evaluatedClusters.length === 1) {
-                const ev = evaluatedClusters[0];
-                calloutLines.push(`1st eval: C${ev.cluster.id} ` +
-                                  `(d=${ev.dist.toFixed(3)}${ev.match ? ' ✓' : ' ✗'})`);
-              }
-
-              if (isLocked) {
-                calloutLines.push('Click point/canvas or press Esc to unlock');
-              }
-
-              ctx.font = 'bold 9.5px monospace';
-              let maxLineW = 0;
-              calloutLines.forEach(ln => {
-                const w = ctx.measureText(ln).width;
-                if (w > maxLineW) maxLineW = w;
-              });
-
-              const lineH = 14;
-              const boxW = Math.min(rect.w - 16, maxLineW + 16);
-              const boxH = calloutLines.length * lineH + 8;
-              const badgeX = rect.x + 8;
-              const badgeY = rect.y + 28;
-
-              ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-              ctx.strokeStyle = isLocked ? '#f59e0b' : '#38bdf8';
-              ctx.lineWidth = isLocked ? 1.5 : 1.2;
-              ctx.beginPath();
-              ctx.roundRect(badgeX, badgeY, boxW, boxH, 4);
-              ctx.fill();
-              ctx.stroke();
-
-              ctx.textAlign = 'left';
-              ctx.textBaseline = 'middle';
-              calloutLines.forEach((ln, lIdx) => {
-                if (lIdx === 0) {
-                  ctx.fillStyle = isLocked ? '#fbbf24' : '#38bdf8';
-                } else if (isLocked && lIdx === calloutLines.length - 1) {
-                  ctx.fillStyle = '#94a3b8';
-                } else {
-                  ctx.fillStyle = '#e2e8f0';
-                }
-                ctx.fillText(ln, badgeX + 8, badgeY + 6 + lIdx * lineH + lineH / 2);
-              });
-            }
 
             ctx.restore();
           }
@@ -1719,7 +1750,7 @@
         }
 
         // 4b. Draw k-NN Graph Overlay (Query Point -> Top-k Nearest Neighbors)
-        if (showKnnLines &&
+        if (showKnnLines && !activeSampleHighlight &&
             typeof knnResults !== 'undefined' && knnResults && knnResults.indices) {
           const N = knnResults.totalFrames;
           const k = knnResults.k;
@@ -1727,13 +1758,15 @@
                        benchmarkDataset && benchmarkDataset.length > 0) ?
                       benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
 
-          let qId = (typeof selectedKnnQuerySample !== 'undefined') ? selectedKnnQuerySample : -1;
+          let qId = (typeof selectedKnnQuerySample !== 'undefined')
+            ? selectedKnnQuerySample
+            : -1;
           if (qId < 0 || qId >= N) {
             qId = (typeof currentFrameIdx !== 'undefined' && currentFrameIdx > 0 &&
                    currentFrameIdx <= N) ? currentFrameIdx - 1 : 0;
           }
 
-          if (qId >= 0 && qId < pts.length) {
+          if (qId >= 0 && qId < pts.length && qId < N) {
             const queryPt = pts[qId];
             const prQ = getProjectedCoord(queryPt);
             const posQ = mapMetricToQuad(prQ.u, prQ.v, qIdx, rect);
@@ -1746,6 +1779,7 @@
               if (nId < 0 || nId >= pts.length) continue;
 
               const nPt = pts[nId];
+              if (!nPt) continue;
               const prN = getProjectedCoord(nPt);
               const posN = mapMetricToQuad(prN.u, prN.v, qIdx, rect);
 
@@ -1753,17 +1787,23 @@
               const isHovered = (typeof hoveredKnnNeighborId !== 'undefined' &&
                                  hoveredKnnNeighborId === nId);
 
-              if (showDistLines) {
-                const alphaStr = Math.max(0.20, 0.75 - r * 0.06).toFixed(2);
-                ctx.beginPath();
-                ctx.moveTo(posQ.px, posQ.py);
-                ctx.lineTo(posN.px, posN.py);
-                ctx.strokeStyle = isHovered ? '#e879f9' :
-                                  (isRank1 ? 'rgba(232, 121, 249, 0.95)' :
-                                   `rgba(192, 132, 252, ${alphaStr})`);
-                ctx.lineWidth = isHovered ? 2.4 : (isRank1 ? 2.0 : 1.2);
-                ctx.stroke();
-              }
+              const alphaStr = Math.max(0.20, 0.75 - r * 0.06).toFixed(2);
+              const rayColor = isHovered ? '#e879f9' :
+                                (isRank1 ? '#e879f9' : `rgba(192, 132, 252, ${alphaStr})`);
+              const grad = ctx.createLinearGradient(posQ.px, posQ.py, posN.px, posN.py);
+              grad.addColorStop(0, '#38bdf8');
+              grad.addColorStop(1, rayColor);
+
+              ctx.save();
+              ctx.shadowColor = isHovered ? '#facc15' : (isRank1 ? '#e879f9' : '#c084fc');
+              ctx.shadowBlur = isHovered ? 8 : 4;
+              ctx.beginPath();
+              ctx.moveTo(posQ.px, posQ.py);
+              ctx.lineTo(posN.px, posN.py);
+              ctx.strokeStyle = grad;
+              ctx.lineWidth = isHovered ? 2.6 : (isRank1 ? 2.2 : 1.4);
+              ctx.stroke();
+              ctx.restore();
 
               // Highlight neighbor node
               ctx.beginPath();
@@ -1791,15 +1831,12 @@
 
             ctx.beginPath();
             ctx.arc(posQ.px, posQ.py, 3.5, 0, Math.PI * 2);
-            ctx.fillStyle = '#e879f9';
+            ctx.fillStyle = '#f8fafc';
             ctx.fill();
 
-            if (showDistLabels) {
-              ctx.font = 'bold 9px monospace';
-              ctx.fillStyle = '#e879f9';
-              ctx.fillText(`Query #${qId}`, posQ.px + 10, posQ.py - 6);
-            }
-
+            ctx.fillStyle = '#e879f9';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText(`Query #${qId}`, posQ.px + 10, posQ.py - 6);
             ctx.restore();
           }
         }
