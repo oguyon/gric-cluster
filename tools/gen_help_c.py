@@ -15,7 +15,10 @@ ALIASES = {
     "algorithm": ["algorithms"],
     "performance": ["tuning"],
     "compression": ["statespace"],
-    "pass2nearest": ["reassign", "second_pass", "pass2_nearest"],
+    "pass2nearest": ["reassign", "second_pass", "pass2_nearest", "no_pass2nearest", "no_reassign"],
+    "evals": ["trace", "no_evals"],
+    "verbose": ["veryverbose"],
+    "entropy_leader": ["entropy_leader_cutoff"],
 }
 
 def escape_c_string(text):
