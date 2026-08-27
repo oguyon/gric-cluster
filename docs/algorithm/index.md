@@ -82,14 +82,19 @@ high-probability candidate (e.g., in continuous streams with high temporal corre
 ---
 
 ### 2. Entropy Mode (`-entropy`)
-In Entropy Mode, instead of greedily testing the most likely candidate, the algorithm treats target selection as an information-theory optimization problem:
+In Entropy Mode, instead of greedily testing the most likely candidate, the algorithm treats target
+selection as an information-theory optimization problem:
 
-- If a candidate cluster has a combined probability **greater than 0.5**, it is checked immediately.
+- **Adaptive Entropy Gating (`-entropy_gate`, `-entropy_first_gate`)**: If posterior Shannon
+  entropy is already lower than the gating threshold (e.g., confident distribution), the engine
+  measures the top candidate directly, saving evaluation overhead.
+- **Dominant Leader Shortcut (`-entropy_leader`)**: When active, if a candidate's probability meets
+  or exceeds `-entropy_leader_cutoff` (default: 0.50), it is measured immediately without evaluation.
 - Otherwise, it evaluates a subset of active candidates (up to `-entropy_max_targets`, default 15)
   and calculates the **Expected Shannon Entropy** of the posterior probability distribution:
   
   \[
-  H(X | \text{measure } c_j) = P(\text{match}) \cdot H(X | \text{match}) + P(\text{mismatch}) \cdot H(X | \text{mismatch})
+  H(X \mid \text{measure } c_j) = P(\text{match}) \cdot H(X \mid \text{match}) + P(\text{mismatch}) \cdot H(X \mid \text{mismatch})
   \]
 
 - **Match Scenario**: If the measurement is a match, the search terminates (entropy falls to 0).
@@ -108,7 +113,7 @@ or noisy datasets where simple greedy paths struggle.
 complementary because they handle different roles in the target selection process:
 
 - **`gprob` acts as a probability generator**: It calculates the spatial probability distribution
-  based on geometric similarity and historical co-measurements. It answer the question:
+  based on geometric similarity and historical co-measurements. It answers the question:
   *Where is the frame likely located in space?*
 - **`-entropy` acts as a decision-theoretic scheduler**: It utilizes the probability distribution
   provided by `gprob` to calculate the expected Shannon information gain. It answers the question:

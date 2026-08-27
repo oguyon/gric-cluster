@@ -137,32 +137,49 @@ static void print_general_help(void)
     printf("    Run 'gric-cluster -h entropy' for a detailed description.\n");
 
     print_header("3. PROGRAM INDEX", 1);
-    printf("  %sCore Tool%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
+    printf("  %sCore Clustering & Indexing%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("    %s%-24s%s Main clustering executable (offline files or live streams).\n",
            ANSI_BOLD_GREEN, "gric-cluster", ANSI_COLOR_RESET);
-    printf("  %sVisualization & GUI%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Out-of-core metric-pruned k-NN search solver.\n",
+           ANSI_BOLD_GREEN, "gric-knn", ANSI_COLOR_RESET);
+    printf("  %sVisualization & Desktop GUI%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("    %s%-24s%s Generates SVG/PNG diagnostic and summary plots.\n",
            ANSI_BOLD_GREEN, "gric-plot", ANSI_COLOR_RESET);
-    printf("    %s%-24s%s Launches interactive web simulator in desktop app mode.\n",
+    printf("    %s%-24s%s Desktop application launcher for interactive simulator.\n",
            ANSI_BOLD_GREEN, "gric-gui", ANSI_COLOR_RESET);
-    printf("  %sUtility & Simulation%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Native C HTTP micro-server powering the GUI & REST API.\n",
+           ANSI_BOLD_GREEN, "gric-server", ANSI_COLOR_RESET);
+    printf("  %sBinary Format & Conversion%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Encodes ASCII tables and coordinates into .bin files.\n",
+           ANSI_BOLD_GREEN, "gric-ascii2bin", ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Decodes and inspects self-describing .bin files.\n",
+           ANSI_BOLD_GREEN, "gric-bin2ascii", ANSI_COLOR_RESET);
+    printf("  %sBenchmarking, Tuning & Telemetry%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Real-time SHM telemetry monitor (TUI dashboard).\n",
+           ANSI_BOLD_GREEN, "gric-status", ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Performance benchmarking across synthetic manifolds.\n",
+           ANSI_BOLD_GREEN, "gric-benchmark", ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Parameter space exploration and hyperparameter tuner.\n",
+           ANSI_BOLD_GREEN, "gric-tune", ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Offline cluster quality and efficiency analysis tool.\n",
+           ANSI_BOLD_GREEN, "gric-cluster-analysis", ANSI_COLOR_RESET);
+    printf("  %sGenerators, Simulation & Streaming%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     printf("    %s%-24s%s Prints build info, library paths, and enabled features.\n",
            ANSI_BOLD_GREEN, "gric-info", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Reconstructs N-dimensional coordinates from dcc.txt.\n",
            ANSI_BOLD_GREEN, "gric-NDmodel", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Generates synthetic coordinate sequences (walk, spiral, etc.).\n",
            ANSI_BOLD_GREEN, "gric-mktxtseq", ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Generates multi-body bouncing ball physics simulations.\n",
+           ANSI_BOLD_GREEN, "gric-gen-balls", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Converts 3D coordinates into MP4 video/ImageStreamIO streams.\n",
            ANSI_BOLD_GREEN, "gric-ascii-spot-2-video", ANSI_COLOR_RESET);
-    printf("    %s%-24s%s Reconstructs a full clustered file from input and membership list.\n",
+    printf("    %s%-24s%s Ingests ASCII coordinate streams into ImageStreamIO SHM.\n",
+           ANSI_BOLD_GREEN, "gric-txt2stream", ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Reconstructs a full clustered file from input and memberships.\n",
            ANSI_BOLD_GREEN, "gric-mkclusteredfile", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Pipes raw data from live ImageStreamIO shared memory to stdout.\n",
            ANSI_BOLD_GREEN, "gric-stream-to-pipe", ANSI_COLOR_RESET);
-    printf("  %sMonitoring & Benchmarking%s\n", ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
-    printf("    %s%-24s%s Real-time SHM telemetry monitor (TUI dashboard).\n",
-           ANSI_BOLD_GREEN, "gric-status", ANSI_COLOR_RESET);
-    printf("    %s%-24s%s Performance benchmarking across patterns and options.\n",
-           ANSI_BOLD_GREEN, "gric-benchmark", ANSI_COLOR_RESET);
 
     print_header("4. TYPICAL ONBOARDING WORKFLOW", 1);
     printf("  Follow these steps to familiarize yourself with GRIC:\n\n");
@@ -181,12 +198,14 @@ static void print_general_help(void)
 
     printf("  %sStep 4: Run the Clustering%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
     printf("    Cluster the points using a radius limit of 1.5x the median distance:\n");
-    printf("      $ %sgric-cluster%s a1.5 test_walk.txt -clustered > run.log\n", ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
+    printf("      $ %sgric-cluster%s a1.5 test_walk.txt -clustered > run.log\n",
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
     printf("    This generates an output directory: `test_walk.clusterdat/`.\n\n");
 
     printf("  %sStep 5: Plot results%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
     printf("    Visualize the clusters and centroids using the plotting tool:\n");
-    printf("      $ %sgric-plot%s test_walk.txt run.log plot.png\n\n", ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
+    printf("      $ %sgric-plot%s test_walk.txt run.log plot.png\n\n",
+           ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
 
     printf("  For detailed guide on a specific program, run:\n");
     printf("    $ %sgric-help%s %s<program-name>%s   (e.g. %sgric-help%s %sgric-cluster%s)\n",
@@ -248,6 +267,39 @@ static int print_program_help(
     else if (strcmp(prog, "benchmark") == 0)
     {
         target = "gric-benchmark";
+    }
+    else if (strcmp(prog, "knn") == 0)
+    {
+        target = "gric-knn";
+    }
+    else if (strcmp(prog, "ascii2bin") == 0)
+    {
+        target = "gric-ascii2bin";
+    }
+    else if (strcmp(prog, "bin2ascii") == 0)
+    {
+        target = "gric-bin2ascii";
+    }
+    else if (strcmp(prog, "server") == 0)
+    {
+        target = "gric-server";
+    }
+    else if (strcmp(prog, "tune") == 0)
+    {
+        target = "gric-tune";
+    }
+    else if (strcmp(prog, "analysis") == 0 || strcmp(prog, "cluster-analysis") == 0)
+    {
+        target = "gric-cluster-analysis";
+    }
+    else if (strcmp(prog, "gen-balls") == 0 || strcmp(prog, "gen_balls") == 0 ||
+             strcmp(prog, "balls") == 0)
+    {
+        target = "gric-gen-balls";
+    }
+    else if (strcmp(prog, "txt2stream") == 0)
+    {
+        target = "gric-txt2stream";
     } // if (strcmp(prog, "cluster") == 0)...
 
     if (strcmp(target, "gric-cluster") == 0)
@@ -493,9 +545,152 @@ static int print_program_help(
             banner, usage, desc, opts, ex);
         return 0;
     }
+    else if (strcmp(target, "gric-knn") == 0)
+    {
+        const char *banner = "gric-knn - Out-of-core metric-pruned k-NN solver";
+        const char *usage = "gric-knn <input_data> <cluster_dir> [options]";
+        const char *desc = "Identifies the k-nearest neighbors for each frame in a dataset using\n"
+                           "  cluster anchors and metric distance bounds from gric-cluster.";
+        const char *opts =
+            "  -k <int>             Number of nearest neighbors to find (default: 10)\n"
+            "  -o, --output <path>  Output destination file (.txt, .bin, .fits)\n"
+            "  -dtmin <int>         Min frame separation |i - j| >= dtmin (default: 1)\n"
+            "  -past / -future      Search only in preceding or subsequent frames\n"
+            "  -eps <float>         (1+eps)-ANN relaxation slack factor (default: 0.0)\n"
+            "  -rlim <float>        Cutoff radius cutoff\n"
+            "  -nthreads <int>      Number of OpenMP worker threads\n"
+            "  -progress            Display live progress bar";
+        const char *ex =
+            "  $ gric-knn input.txt cluster_out/ -k 10 -dtmin 5\n"
+            "  $ gric-knn dataset.fits cluster_out/ -k 20 -eps 0.05 -nthreads 8";
+
+        print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
+    }
+    else if (strcmp(target, "gric-ascii2bin") == 0)
+    {
+        const char *banner = "gric-ascii2bin - Convert ASCII tables/coordinates to binary format";
+        const char *usage = "gric-ascii2bin <input.txt> <output.bin> [options]";
+        const char *desc = "Encodes ASCII coordinate tables and data matrices into the\n"
+                           "  self-describing GRIC binary (.bin) format for rapid zero-copy mmap.";
+        const char *opts =
+            "  -type <type>         Semantic type (anchors|dcc|membership|counts|coords)\n"
+            "  -double              Encode floats as float64 (default: float32)\n"
+            "  -uint32 / -int32     Encode integers as 32-bit unsigned/signed\n"
+            "  -dim <D>             Explicit column dimension count\n"
+            "  -v, --verbose        Print verbose encoding details";
+        const char *ex =
+            "  $ gric-ascii2bin 2Dspiral.txt spiral.bin -type coords\n"
+            "  $ gric-ascii2bin dcc.txt dcc.bin -type dcc -double";
+
+        print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
+    }
+    else if (strcmp(target, "gric-bin2ascii") == 0)
+    {
+        const char *banner = "gric-bin2ascii - Decode GRIC binary files to ASCII or stdout";
+        const char *usage = "gric-bin2ascii <input.bin> [output.txt] [options]";
+        const char *desc = "Decodes self-describing GRIC binary (.bin) files into ASCII format\n"
+                           "  or pipes directly to stdout.";
+        const char *opts =
+            "  -info, -i            Display header metadata without decoding payload\n"
+            "  -fmt <specifier>     Custom printf format specifier (e.g. '%.8f')\n"
+            "  -v, --verbose        Print decoding summary to stderr";
+        const char *ex =
+            "  $ gric-bin2ascii spiral.bin -info\n"
+            "  $ gric-bin2ascii dcc.bin - | head -n 10";
+
+        print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
+    }
+    else if (strcmp(target, "gric-server") == 0)
+    {
+        const char *banner = "gric-server - Native C micro-server for GRIC desktop GUI";
+        const char *usage = "gric-server [options]";
+        const char *desc = "Serves the interactive simulator web UI and provides a native\n"
+                           "  REST API for workspace file management and CLI execution.";
+        const char *opts =
+            "  -p, --port <port>    HTTP listen port (default: 8080 or $GRIC_GUI_PORT)\n"
+            "  -d, --dir <path>     Workspace directory (default: current directory)\n"
+            "  -w, --docs <path>    Documentation directory path\n"
+            "  -t <sec>             Inactivity timeout in seconds\n"
+            "  --auto-shutdown      Exit when all browser client tabs disconnect\n"
+            "  -v, --verbose        Enable verbose HTTP logging";
+        const char *ex =
+            "  $ gric-server -p 8080 -d ./workspace\n"
+            "  $ gric-server --auto-shutdown";
+
+        print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
+    }
+    else if (strcmp(target, "gric-tune") == 0)
+    {
+        const char *banner = "gric-tune - Parameter search and tuning utility for gric-cluster";
+        const char *usage = "gric-tune <input_file> [options]";
+        const char *desc = "Explores parameter spaces across datasets to identify optimal\n"
+                           "  hyperparameters for target clustering quality and throughput.";
+        const char *opts =
+            "  -rlim_range <range>  Range of radius thresholds (min,max,step)\n"
+            "  -tm_range <range>    Range of transition matrix weights (min,max,step)\n"
+            "  -metric <type>       Optimization metric (speed|quality|balance)";
+        const char *ex =
+            "  $ gric-tune dataset.txt -rlim_range 0.1,1.0,0.05";
+
+        print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
+    }
+    else if (strcmp(target, "gric-cluster-analysis") == 0)
+    {
+        const char *banner = "gric-cluster-analysis - Offline diagnostic and quality analysis";
+        const char *usage = "gric-cluster-analysis <cluster_output_dir> [options]";
+        const char *desc = "Analyzes cluster run logs, transition matrices, and memberships\n"
+                           "  to report clustering quality, entropy, and trajectory continuity.";
+        const char *opts =
+            "  -v                   Verbose analysis report\n"
+            "  -plot                Generate summary diagnostic plots";
+        const char *ex =
+            "  $ gric-cluster-analysis my_run.clusterdat/";
+
+        print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
+    }
+    else if (strcmp(target, "gric-gen-balls") == 0)
+    {
+        const char *banner = "gric-gen-balls - Multi-body bouncing ball simulation generator";
+        const char *usage = "gric-gen-balls [options] <output.fits>";
+        const char *desc = "Generates synthetic 3D FITS image cubes containing multi-body\n"
+                           "  elastic bouncing ball collisions for multi-tile image tests.";
+        const char *opts =
+            "  -n <num_balls>       Number of bouncing balls (default: 1)\n"
+            "  -r <radius>          Ball radius in pixels (default: 5.0)\n"
+            "  -W, -H <size>        Image dimensions (default: 32x32)\n"
+            "  -f <frames>          Number of simulation frames (default: 500)\n"
+            "  -s <seed>            Random number generator seed";
+        const char *ex =
+            "  $ gric-gen-balls -n 3 -r 5.0 -W 32 -H 32 -f 1000 balls_3.fits";
+
+        print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
+    }
+    else if (strcmp(target, "gric-txt2stream") == 0)
+    {
+        const char *banner = "gric-txt2stream - Ingest ASCII coordinates into ImageStreamIO SHM";
+        const char *usage = "gric-txt2stream <input.txt> <stream_name> [options]";
+        const char *desc = "Reads ASCII coordinate sequences from file and writes them into\n"
+                           "  a live ImageStreamIO shared-memory circular ring buffer.";
+        const char *opts =
+            "  -fps <val>           Target frame rate in frames/sec\n"
+            "  -loop                Loop coordinate sequence continuously";
+        const char *ex =
+            "  $ gric-txt2stream spiral.txt spiral_stream -fps 100";
+
+        print_formatted_help(banner, usage, desc, opts, ex);
+        return 0;
+    }
     else
     {
-        fprintf(stderr, "%sError: Unknown program '%s'.%s\n", ANSI_COLOR_RED, prog, ANSI_COLOR_RESET);
+        fprintf(stderr, "%sError: Unknown program '%s'.%s\n",
+                ANSI_COLOR_RED, prog, ANSI_COLOR_RESET);
         fprintf(stderr, "Run 'gric-help' to see the list of valid programs.\n");
         return 1;
     } // if (strcmp(target, "gric-cluster") == 0)...

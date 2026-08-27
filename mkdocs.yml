@@ -80,6 +80,7 @@ nav:
           - maxim: help/maxim.md
           - ncpu (Threads): help/ncpu.md
           - progress: help/progress.md
+          - verbose: help/verbose.md
           - conf: help/conf.md
           - confw: help/confw.md
       - Pruning & Geometry:
@@ -98,6 +99,7 @@ nav:
           - entropy_first_gate: help/entropy_first_gate.md
           - entropy_max_targets: help/entropy_max_targets.md
           - entropy_min_prob: help/entropy_min_prob.md
+          - entropy_leader: help/entropy_leader.md
           - Target Selection: help/algorithm_entropy.md
           - Adaptive Gating: help/algorithm_gating.md
       - Priors & Prediction:
@@ -112,6 +114,7 @@ nav:
           - tm (Transitions): help/tm.md
           - tm_out: help/tm_out.md
           - pred (Predictor): help/pred.md
+          - pass2nearest: help/pass2nearest.md
       - Multi-Tile & JTF:
           - tiles: help/tiles.md
           - tilemap: help/tilemap.md
@@ -124,6 +127,7 @@ nav:
           - cpt: help/cpt.md
       - Input & Streams:
           - input (Formats): help/input.md
+          - filelist: help/filelist.md
           - stream (ImageStreamIO): help/stream.md
           - cnt2sync: help/cnt2sync.md
           - shm: help/shm.md
@@ -133,15 +137,25 @@ nav:
           - clustered: help/clustered.md
           - membership: help/membership.md
           - no_membership: help/no_membership.md
+          - anchors: help/anchors.md
+          - no_anchors: help/no_anchors.md
+          - counts: help/counts.md
+          - no_counts: help/no_counts.md
+          - evals: help/evals.md
           - avg: help/avg.md
           - fitsout: help/fitsout.md
           - pngout: help/pngout.md
           - clusters: help/clusters.md
-          - anchors: help/anchors.md
-          - counts: help/counts.md
           - maxvis: help/maxvis.md
           - distall: help/distall.md
           - analysis: help/analysis.md
+  - Tools & Utilities:
+      - Overview: tools/index.md
+      - k-NN Solver (gric-knn): tools/knn.md
+      - Binary Formats & I/O: tools/bin_io.md
+      - Server & Desktop GUI: tools/server_gui.md
+      - Benchmarking & Tuning: tools/benchmark_tune.md
+      - Data Generators & Media: tools/generators.md
   - Benchmarks:
       - Overview: benchmarks/index.md
       - 2D Trajectories:
@@ -159,4 +173,3 @@ nav:
           - 3 Colliding Balls: benchmarks/balls_coll.md
   - Practical Use Cases: practical-use.md
   - Satellite Earth Demo: satellite_demo.md
-

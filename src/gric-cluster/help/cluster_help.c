@@ -28,6 +28,7 @@ struct help_entry
 static const struct help_entry help_entries[] = {
     /* Input */
     {"stream",     "Input is an ImageStreamIO stream"},
+    {"filelist",   "Input is a list of image filepaths"},
     {"cnt2sync",   "Enable cnt2 synchronization"},
     /* Core */
     {"rlim",
@@ -62,6 +63,10 @@ static const struct help_entry help_entries[] = {
      "Max targets for entropy evaluation"},
     {"entropy_min_prob",
      "Min probability for entropy hypothesis"},
+    {"entropy_leader",
+     "Dominant leader bypass shortcut"},
+    {"entropy_leader_cutoff",
+     "(alias for entropy_leader)"},
     {"entropy_fast",
      "Popcount-only surrogate (skip Shannon)"},
     {"soft_bayesian",
@@ -76,6 +81,8 @@ static const struct help_entry help_entries[] = {
     {"pass2nearest", "Second pass closest-anchor clustering"},
     {"reassign",   "(alias for pass2nearest)"},
     {"second_pass", "(alias for pass2nearest)"},
+    {"no_pass2nearest", "Disable second pass reallocation"},
+    {"no_reassign", "(alias for no_pass2nearest)"},
     /* Analysis */
     {"scandist",   "Measure distance stats"},
     /* Output */
@@ -88,8 +95,13 @@ static const struct help_entry help_entries[] = {
     {"tm_out",
      "Enable transition_matrix.txt output"},
     {"anchors",    "Enable anchors output"},
+    {"no_anchors", "Disable anchors output"},
     {"counts",
      "Enable cluster_counts.txt output"},
+    {"no_counts",  "Disable cluster_counts.txt output"},
+    {"evals",      "Enable frame_evals.txt output"},
+    {"trace",      "(alias for evals)"},
+    {"no_evals",   "Disable frame_evals.txt output"},
     {"membership",
      "Enable frame_membership.txt output"},
     {"no_membership",
@@ -105,6 +117,8 @@ static const struct help_entry help_entries[] = {
     {"shm",
      "Enable shared-memory status output"},
     {"progress",   "Print progress information"},
+    {"verbose",    "Enable level 1 verbose output"},
+    {"veryverbose","(alias for verbose)"},
     {"conf",       "Read options from configuration file"},
     {"confw",
      "Write options to configuration file"},

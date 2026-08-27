@@ -1,14 +1,19 @@
 # dcc
 
 ## ROLE
-Output Control
+Output Control & Inter-Cluster Distance Matrix
 
 ## FUNCTION
-Writes the Distance Between Cluster Centers (DCC) matrix to 'dcc.txt'.
+Writes the pairwise inter-cluster distance matrix to the output directory (Default: Enabled).
 
-## FORMAT
-Cluster_i Cluster_j Distance
+Outputs include:
+- `dcc.txt`: ASCII list formatted as `Cluster_i Cluster_j Distance`.
+- `dcc.bin`: Float32 matrix in row-major GRIC binary format.
+- `dccmin.txt`: Generated when `-sparse_dcc` is enabled to log sparse lower bounds.
+
+To disable DCC output completely, pass `-no_dcc`.
 
 ## SEE ALSO
-- `-sparse_dcc`: Enable sparse cluster-to-cluster distance matrix
-- `-tm_out`: Enable transition_matrix.txt output
+- `-no_dcc`: Suppress DCC distance matrix output
+- `-sparse_dcc`: Sparse DCC bounding mode
+- `-outdir`: Specify output directory
