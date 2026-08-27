@@ -20,9 +20,15 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 static volatile sig_atomic_t s_server_running = 1;
+static time_t                s_last_heartbeat_time = 0;
+static int                   s_active_client_sessions = 0;
+static int                   s_has_received_heartbeat = 0;
+static int                   s_auto_shutdown_enabled = 0;
+static int                   s_idle_timeout_seconds = 0;
 
 void server_config_init(
     ServerConfig *config)
@@ -86,6 +92,32 @@ void server_stop(
     void)
 {
     s_server_running = 0;
+}
+
+void server_record_heartbeat(
+    void)
+{
+    s_last_heartbeat_time = time(NULL);
+    s_has_received_heartbeat = 1;
+    if (s_active_client_sessions <= 0)
+    {
+        s_active_client_sessions = 1;
+    }
+}
+
+void server_client_leave(
+    void)
+{
+    if (s_active_client_sessions > 0)
+    {
+        s_active_client_sessions--;
+    }
+    if (s_auto_shutdown_enabled && s_active_client_sessions <= 0)
+    {
+        printf("\n%s[gric-server] All client sessions disconnected. Initiating shutdown...%s\n",
+               ansi_color_yellow, ansi_reset);
+        s_server_running = 0;
+    }
 }
 
 static const char *get_mime_type(
@@ -182,7 +214,8 @@ static void serve_static_file(
     FILE *f = fopen(full_path, "rb");
     if (!f)
     {
-        const char *resp = "HTTP/1.1 500 Internal Error\r\nContent-Length: 14\r\n\r\nInternal Error";
+        const char *resp =
+            "HTTP/1.1 500 Internal Error\r\nContent-Length: 14\r\n\r\nInternal Error";
         ssize_t nw = write(client_fd, resp, strlen(resp));
         (void)nw;
         return;
@@ -407,8 +440,28 @@ int server_run(
            ansi_color_cyan, ansi_reset, ansi_color_yellow, config->workdir, ansi_reset);
     printf("  %sDocs Dir:%s     %s%s%s\n",
            ansi_color_cyan, ansi_reset, ansi_color_grey, config->docs_dir, ansi_reset);
-    printf("  %sEngine Mode:%s  %sDual-Mode (WASM + Native C CLI)%s\n\n",
+    printf("  %sEngine Mode:%s  %sDual-Mode (WASM + Native C CLI)%s\n",
            ansi_color_cyan, ansi_reset, ansi_color_magenta, ansi_reset);
+
+    if (config->watch_pid > 0)
+    {
+        printf("  %sWatch PID:%s    %s%d%s\n",
+               ansi_color_cyan, ansi_reset, ansi_color_yellow, (int)config->watch_pid, ansi_reset);
+    }
+    if (config->idle_timeout > 0)
+    {
+        printf("  %sIdle Timeout:%s %s%d s%s\n",
+               ansi_color_cyan, ansi_reset, ansi_color_yellow, config->idle_timeout, ansi_reset);
+    }
+    if (config->auto_shutdown)
+    {
+        printf("  %sAuto Shutdown:%s %sEnabled (on client disconnect)%s\n",
+               ansi_color_cyan, ansi_reset, ansi_color_green, ansi_reset);
+    }
+    printf("\n");
+
+    s_auto_shutdown_enabled = config->auto_shutdown;
+    s_idle_timeout_seconds = config->idle_timeout;
 
     struct pollfd pfd;
     pfd.fd = server_fd;
@@ -416,6 +469,31 @@ int server_run(
 
     while (s_server_running)
     {
+        /* 1. Check parent / watched PID alive status */
+        if (config->watch_pid > 0)
+        {
+            if (kill(config->watch_pid, 0) == -1 && errno == ESRCH)
+            {
+                printf("\n%s[gric-server] Watched PID %d terminated. Exiting server.%s\n",
+                       ansi_color_yellow, (int)config->watch_pid, ansi_reset);
+                s_server_running = 0;
+                break;
+            }
+        }
+
+        /* 2. Check idle timeout (after first heartbeat or if auto-shutdown is set) */
+        if (s_idle_timeout_seconds > 0 && s_has_received_heartbeat)
+        {
+            time_t now = time(NULL);
+            if (now - s_last_heartbeat_time > s_idle_timeout_seconds)
+            {
+                printf("\n%s[gric-server] Inactivity timeout (%d s without ping). Terminating.%s\n",
+                       ansi_color_yellow, s_idle_timeout_seconds, ansi_reset);
+                s_server_running = 0;
+                break;
+            }
+        }
+
         int ret = poll(&pfd, 1, 250);
         if (ret < 0)
         {

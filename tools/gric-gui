@@ -42,11 +42,11 @@ else
 fi
 
 print_help_raw() {
-    printf "\n%bNAME%b\n" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
-    printf "  %bgric-gui%b - Launch the GRIC Interactive Simulator desktop application\n\n" \
+    printf "%bNAME%b\n" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
+    printf "  %bgric-gui%b - Desktop Launcher for the GRIC Interactive Simulator\n\n" \
            "${ANSI_BOLD_GREEN}" "${ANSI_COLOR_RESET}"
 
-    printf "%bUSAGE%b\n" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
+    printf "%bSYNOPSIS%b\n" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
     printf "  %bgric-gui%b %b[options]%b\n\n" \
            "${ANSI_BOLD_GREEN}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
 
@@ -59,21 +59,19 @@ print_help_raw() {
     printf "%bOPTIONS%b\n" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
     printf "  %b-h, --help%b                 Show this help message and exit\n" \
            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}"
-    printf "  %b-d, --dir%b %b<path>%b           Working directory for datasets and results (default: \$PWD)\n" \
+    printf "  %b-d, --dir%b %b<path>%b           Working directory (default: \$PWD)\n" \
            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
-    printf "  %b-p, --port%b %b<port>%b           HTTP port for local server (default: 8080 or \$GRIC_GUI_PORT)\n" \
+    printf "  %b-p, --port%b %b<port>%b           HTTP port (default: 8080 or \$GRIC_GUI_PORT)\n" \
            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
-    printf "  %b-b, --browser%b %b<name>%b       Select browser engine (%bgoogle-chrome%b, %bchromium%b, %bfirefox%b, %bdefault%b)\n" \
-           "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}" \
-           "${ANSI_COLOR_YELLOW}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_YELLOW}" "${ANSI_COLOR_RESET}" \
-           "${ANSI_COLOR_YELLOW}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_YELLOW}" "${ANSI_COLOR_RESET}"
-    printf "  %b-w, --window-size%b %b<W,H>%b   Initial desktop window resolution (default: 1600,1000)\n" \
+    printf "  %b-b, --browser%b %b<name>%b       Browser engine (chrome, firefox, default)\n" \
            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
-    printf "  %b-s, --server-only%b          Start background gric-server without launching browser window\n" \
+    printf "  %b-w, --window-size%b %b<W,H>%b   Window resolution (default: 1600,1000)\n" \
+           "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}" "${ANSI_COLOR_GREY}" "${ANSI_COLOR_RESET}"
+    printf "  %b-s, --server-only%b          Start gric-server without launching browser\n" \
            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}"
-    printf "  %b-k, --kill-server%b          Terminate running background server on the port\n" \
+    printf "  %b-k, --kill-server%b          Terminate running background server on port\n" \
            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}"
-    printf "  %b--status%b                   Display active server process and browser runtime status\n\n" \
+    printf "  %b--status%b                   Display server process and browser status\n\n" \
            "${ANSI_COLOR_GREEN}" "${ANSI_COLOR_RESET}"
 
     printf "%bEXAMPLES%b\n" "${ANSI_BOLD_CYAN}" "${ANSI_COLOR_RESET}"
@@ -123,7 +121,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         -d|--dir)
             if [[ -z "${2:-}" || "${2:-}" =~ ^- ]]; then
-                echo -e "${ANSI_COLOR_RED}Error: Option $1 requires a directory path.${ANSI_COLOR_RESET}" >&2
+                echo -e "${ANSI_COLOR_RED}Error: $1 requires directory path.${ANSI_COLOR_RESET}" >&2
                 exit 1
             fi
             WORKDIR="$(cd "$2" && pwd)"
@@ -131,7 +129,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         -p|--port)
             if [[ -z "${2:-}" || "${2:-}" =~ ^- ]]; then
-                echo -e "${ANSI_COLOR_RED}Error: Option $1 requires a port number.${ANSI_COLOR_RESET}" >&2
+                echo -e "${ANSI_COLOR_RED}Error: $1 requires port number.${ANSI_COLOR_RESET}" >&2
                 exit 1
             fi
             PORT="$2"
@@ -139,7 +137,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         -b|--browser)
             if [[ -z "${2:-}" || "${2:-}" =~ ^- ]]; then
-                echo -e "${ANSI_COLOR_RED}Error: Option $1 requires a browser name.${ANSI_COLOR_RESET}" >&2
+                echo -e "${ANSI_COLOR_RED}Error: $1 requires browser name.${ANSI_COLOR_RESET}" >&2
                 exit 1
             fi
             BROWSER="$2"
@@ -147,7 +145,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         -w|--window-size)
             if [[ -z "${2:-}" || "${2:-}" =~ ^- ]]; then
-                echo -e "${ANSI_COLOR_RED}Error: Option $1 requires dimensions (e.g. 1600,1000).${ANSI_COLOR_RESET}" >&2
+                echo -e "${ANSI_COLOR_RED}Error: $1 requires W,H size.${ANSI_COLOR_RESET}" >&2
                 exit 1
             fi
             WINDOW_SIZE="$2"
@@ -171,7 +169,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo -e "${ANSI_COLOR_RED}Error: Unknown option '$1'.${ANSI_COLOR_RESET}" >&2
-            echo -e "Use '${ANSI_BOLD_GREEN}gric-gui -h${ANSI_COLOR_RESET}' for usage and options." >&2
+            echo -e "Use '${ANSI_BOLD_GREEN}gric-gui -h${ANSI_COLOR_RESET}' for usage." >&2
             exit 1
             ;;
     esac
@@ -181,16 +179,21 @@ URL="http://127.0.0.1:${PORT}/visual_simulator.html"
 
 # Handle --kill-server or --restart
 if [[ $KILL_SERVER -eq 1 || ${RESTART_SERVER:-0} -eq 1 ]]; then
-    PIDS=$(lsof -ti ":${PORT}" 2>/dev/null || ss -tlnp 2>/dev/null | grep ":${PORT} " | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)
+    # Attempt graceful HTTP shutdown first
+    curl -s -m 1 -X POST "http://127.0.0.1:${PORT}/api/shutdown" >/dev/null 2>&1 || true
+    sleep 0.2
+
+    PIDS=$(lsof -ti ":${PORT}" 2>/dev/null || \
+           ss -tlnp 2>/dev/null | grep ":${PORT} " | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)
     if [[ -n "$PIDS" ]]; then
-        echo -e "${ANSI_COLOR_YELLOW}Stopping server processes on port ${PORT}: ${PIDS}${ANSI_COLOR_RESET}"
+        echo -e "${ANSI_COLOR_YELLOW}Stopping port ${PORT} processes: ${PIDS}${ANSI_COLOR_RESET}"
         for pid in $PIDS; do
             kill -9 "$pid" 2>/dev/null || true
         done
-        sleep 0.3
+        sleep 0.2
         echo -e "${ANSI_COLOR_GREEN}Server stopped.${ANSI_COLOR_RESET}"
     else
-        echo -e "${ANSI_COLOR_GREY}No server running on port ${PORT}.${ANSI_COLOR_RESET}"
+        echo -e "${ANSI_COLOR_GREEN}Server stopped on port ${PORT}.${ANSI_COLOR_RESET}"
     fi
     if [[ $KILL_SERVER -eq 1 ]]; then
         exit 0
@@ -222,7 +225,7 @@ if [[ $CHECK_STATUS -eq 1 ]]; then
     if [[ -n "$SERVER_BIN" ]]; then
         echo -e "  gric-server:     ${ANSI_COLOR_GREEN}Available${ANSI_COLOR_RESET} (${SERVER_BIN})"
     else
-        echo -e "  gric-server:     ${ANSI_COLOR_YELLOW}Not compiled (run 'cmake --build build --target gric-server')${ANSI_COLOR_RESET}"
+        echo -e "  gric-server:     ${ANSI_COLOR_YELLOW}Not compiled${ANSI_COLOR_RESET}"
     fi
 
     echo -e "\n${ANSI_BOLD_CYAN}AVAILABLE BROWSER RUNTIMES${ANSI_COLOR_RESET}"
@@ -237,10 +240,14 @@ if [[ $CHECK_STATUS -eq 1 ]]; then
     exit 0
 fi
 
-# 1. Start background gric-server if not already responding with /api/info
-if ! ( curl -s -m 1 "http://127.0.0.1:${PORT}/api/info" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"' ); then
+# 1. Start gric-server if not already responding with /api/info
+SPAWNED_SERVER=0
+SERVER_PID=""
+if ! ( curl -s -m 1 "http://127.0.0.1:${PORT}/api/info" 2>/dev/null | \
+       grep -q '"status"[[:space:]]*:[[:space:]]*"ok"' ); then
     # Kill any stale or rogue non-gric-server processes on the port
-    PIDS=$(lsof -ti ":${PORT}" 2>/dev/null || ss -tlnp 2>/dev/null | grep ":${PORT} " | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)
+    PIDS=$(lsof -ti ":${PORT}" 2>/dev/null || \
+           ss -tlnp 2>/dev/null | grep ":${PORT} " | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)
     if [[ -n "$PIDS" ]]; then
         for pid in $PIDS; do
             kill -9 "$pid" 2>/dev/null || true
@@ -249,31 +256,43 @@ if ! ( curl -s -m 1 "http://127.0.0.1:${PORT}/api/info" 2>/dev/null | grep -q '"
     fi
 
     if [[ -z "$SERVER_BIN" ]]; then
-        echo -e "${ANSI_COLOR_RED}Error: gric-server binary not found in ${DIR}/build or PATH.${ANSI_COLOR_RESET}" >&2
-        echo -e "Please build it with: ${ANSI_BOLD_GREEN}cmake -B build && cmake --build build --target gric-server${ANSI_COLOR_RESET}" >&2
+        echo -e "${ANSI_COLOR_RED}Error: gric-server binary not found.${ANSI_COLOR_RESET}" >&2
+        echo -e "Build: ${ANSI_BOLD_GREEN}cmake --build build${ANSI_COLOR_RESET}" >&2
         exit 1
     fi
 
     echo -e "${ANSI_COLOR_CYAN}⚡ Starting native gric-server on port ${PORT}...${ANSI_COLOR_RESET}"
     echo -e "  ${ANSI_COLOR_GREY}Workspace: ${WORKDIR}${ANSI_COLOR_RESET}"
-    if command -v setsid >/dev/null 2>&1; then
-        setsid "$SERVER_BIN" -p "${PORT}" -d "${WORKDIR}" -w "${DIR}/docs" >/tmp/gric_server.log 2>&1 &
+    if [[ $SERVER_ONLY -eq 1 ]]; then
+        if command -v setsid >/dev/null 2>&1; then
+            setsid "$SERVER_BIN" -p "${PORT}" -d "${WORKDIR}" \
+                   -w "${DIR}/docs" >/tmp/gric_server.log 2>&1 &
+            SERVER_PID=$!
+        else
+            nohup "$SERVER_BIN" -p "${PORT}" -d "${WORKDIR}" \
+                  -w "${DIR}/docs" >/tmp/gric_server.log 2>&1 &
+            SERVER_PID=$!
+        fi
     else
-        nohup "$SERVER_BIN" -p "${PORT}" -d "${WORKDIR}" -w "${DIR}/docs" >/tmp/gric_server.log 2>&1 &
+        "$SERVER_BIN" -p "${PORT}" -d "${WORKDIR}" -w "${DIR}/docs" \
+            --watch-pid $$ --idle-timeout 10 --auto-shutdown >/tmp/gric_server.log 2>&1 &
+        SERVER_PID=$!
+        SPAWNED_SERVER=1
     fi
     
     # Wait up to 2.5s for server to become responsive
     SERVER_OK=0
     for ((i=0; i<25; i++)); do
         sleep 0.1
-        if curl -s -m 1 "http://127.0.0.1:${PORT}/api/info" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+        if curl -s -m 1 "http://127.0.0.1:${PORT}/api/info" 2>/dev/null | \
+           grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
             SERVER_OK=1
             break
         fi
     done
 
     if [[ $SERVER_OK -eq 0 ]]; then
-        echo -e "${ANSI_COLOR_RED}Error: Failed to start gric-server on port ${PORT}.${ANSI_COLOR_RESET}" >&2
+        echo -e "${ANSI_COLOR_RED}Error: Failed to start server on ${PORT}.${ANSI_COLOR_RESET}" >&2
         if [[ -f /tmp/gric_server.log ]]; then
             cat /tmp/gric_server.log >&2
         fi
@@ -287,43 +306,60 @@ if [[ $SERVER_ONLY -eq 1 ]]; then
     exit 0
 fi
 
+# Set up process exit trap to ensure gric-server terminates when GUI window closes
+cleanup_gui() {
+    local exit_code=$?
+    if [[ "${SPAWNED_SERVER:-0}" -eq 1 && -n "${SERVER_PID:-}" ]] && \
+       kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo -e "\n${ANSI_COLOR_YELLOW}🛑 Stopping gric-server (${SERVER_PID})...${ANSI_COLOR_RESET}"
+        curl -s -m 1 -X POST "http://127.0.0.1:${PORT}/api/shutdown" >/dev/null 2>&1 || true
+        sleep 0.1
+        if kill -0 "$SERVER_PID" 2>/dev/null; then
+            kill -TERM "$SERVER_PID" 2>/dev/null || true
+        fi
+    fi
+    exit $exit_code
+}
+trap cleanup_gui EXIT INT TERM HUP
+
 # 2. Launch Browser / Desktop App Window
 echo -e "${ANSI_COLOR_GREEN}Launching GRIC Simulator (${URL})...${ANSI_COLOR_RESET}"
 
 if [[ -n "$BROWSER" ]]; then
     case "$BROWSER" in
         google-chrome|chrome)
-            exec google-chrome --app="${URL}" --window-size="${WINDOW_SIZE}"
+            google-chrome --app="${URL}" --window-size="${WINDOW_SIZE}"
             ;;
         chromium|chromium-browser)
-            exec chromium --app="${URL}" --window-size="${WINDOW_SIZE}"
+            chromium --app="${URL}" --window-size="${WINDOW_SIZE}"
             ;;
         firefox)
-            exec firefox --new-window "${URL}"
+            firefox --new-window "${URL}"
             ;;
         default)
-            exec xdg-open "${URL}"
+            xdg-open "${URL}"
+            echo -e "${ANSI_COLOR_GREY}GUI in browser. Press Ctrl+C to stop.${ANSI_COLOR_RESET}"
+            wait $SERVER_PID 2>/dev/null || sleep infinity
             ;;
         *)
             if command -v "$BROWSER" >/dev/null 2>&1; then
-                exec "$BROWSER" "${URL}"
+                "$BROWSER" "${URL}"
             else
-                echo -e "${ANSI_COLOR_RED}Error: Browser executable '$BROWSER' not found.${ANSI_COLOR_RESET}" >&2
+                echo -e "${ANSI_COLOR_RED}Error: '$BROWSER' not found.${ANSI_COLOR_RESET}" >&2
                 exit 1
             fi
             ;;
     esac
-fi
-
-# Auto-detect best browser engine (Chrome/Chromium app mode prioritized for V8 WASM SIMD performance)
-if command -v google-chrome >/dev/null 2>&1; then
-    exec google-chrome --app="${URL}" --window-size="${WINDOW_SIZE}"
+elif command -v google-chrome >/dev/null 2>&1; then
+    google-chrome --app="${URL}" --window-size="${WINDOW_SIZE}"
 elif command -v chromium-browser >/dev/null 2>&1; then
-    exec chromium-browser --app="${URL}" --window-size="${WINDOW_SIZE}"
+    chromium-browser --app="${URL}" --window-size="${WINDOW_SIZE}"
 elif command -v chromium >/dev/null 2>&1; then
-    exec chromium --app="${URL}" --window-size="${WINDOW_SIZE}"
+    chromium --app="${URL}" --window-size="${WINDOW_SIZE}"
 elif command -v firefox >/dev/null 2>&1; then
-    exec firefox --new-window "${URL}"
+    firefox --new-window "${URL}"
 else
-    exec xdg-open "${URL}"
+    xdg-open "${URL}"
+    echo -e "${ANSI_COLOR_GREY}GUI in browser. Press Ctrl+C to stop.${ANSI_COLOR_RESET}"
+    wait $SERVER_PID 2>/dev/null || sleep infinity
 fi

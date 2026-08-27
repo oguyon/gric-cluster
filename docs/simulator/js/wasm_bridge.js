@@ -376,6 +376,27 @@ const GricWasm = (function () {
     _mtTelemetryLenPtr = 0;
   }
 
+  let _lastInitParams = null;
+
+  /**
+   * Check if requested algorithm parameters differ from the active WASM session.
+   * @param {Object} params - Proposed algorithm parameters
+   * @returns {boolean} True if any core parameter differs
+   */
+  function isConfigChanged(params) {
+    if (!_lastInitParams || !_handle) return true;
+    if (Math.abs((params.rlim || 0.1) - (_lastInitParams.rlim || 0.1)) > 1e-6) return true;
+    if ((params.ndim || 3) !== (_lastInitParams.ndim || 3)) return true;
+    if ((params.maxcl || 0) !== (_lastInitParams.maxcl || 0)) return true;
+    if (params.pruneMode !== _lastInitParams.pruneMode) return true;
+    if (params.maxclStrategy !== _lastInitParams.maxclStrategy) return true;
+    if (!!params.predMode !== !!_lastInitParams.predMode) return true;
+    if (!!params.gprobMode !== !!_lastInitParams.gprobMode) return true;
+    if (!!params.softBayesian !== !!_lastInitParams.softBayesian) return true;
+    if (!!params.entropyMode !== !!_lastInitParams.entropyMode) return true;
+    return false;
+  }
+
   /**
    * Initialize a new WASM clustering session.
    * Maps JS simulator state variables to C config.
@@ -393,6 +414,7 @@ const GricWasm = (function () {
       _handle = null;
     }
 
+    _lastInitParams = { ...params };
     _ndim = params.ndim || 3;
     const isUnlimited = !(params.maxcl > 0);
     _maxK = isUnlimited ? 256 : params.maxnbclust;
@@ -441,6 +463,7 @@ const GricWasm = (function () {
       console.error(
         '[GricWasm] wasm_cluster_init returned NULL'
       );
+      _lastInitParams = null;
       return false;
     }
 
@@ -784,6 +807,7 @@ const GricWasm = (function () {
     _lastSyncFrames = 0;
     _lastSyncTime = 0;
     _lastSyncDists = 0;
+    _lastInitParams = null;
     if (_handle) {
       _fn.free(_handle);
       _freeBuffers();
@@ -812,11 +836,23 @@ const GricWasm = (function () {
    * object from current simulator settings.
    */
   function buildParamsFromState() {
+    let effectiveDim = currentDim;
+    if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+      if (typeof imageWidth !== 'undefined' && typeof imageHeight !== 'undefined' &&
+          imageWidth > 0 && imageHeight > 0) {
+        effectiveDim = imageWidth * imageHeight;
+      } else if (typeof benchmarkDataset !== 'undefined' &&
+                 benchmarkDataset && benchmarkDataset[0]) {
+        effectiveDim = benchmarkDataset[0].length || 1024;
+      } else {
+        effectiveDim = 1024;
+      }
+    }
     return {
       rlim: rlim,
       maxnbclust: maxcl > 0 ? maxcl : 256,
       maxnbfr: 100000,
-      ndim: currentDim,
+      ndim: effectiveDim,
       entropyMode: (targetMode === 'entropy'),
       pruneMode: pruneMode,
       predMode: usePred,
@@ -1497,7 +1533,10 @@ const GricWasm = (function () {
     const M = _module;
     const tWasmStart = performance.now();
     const N = points.length;
-    const ndim = _ndim;
+    let ndim = _ndim;
+    if (points[0] && typeof points[0].length === 'number' && points[0].length > 0) {
+      ndim = points[0].length;
+    }
     const k = Math.min(config.k || 10, N);
     const dtmin = (typeof config.dtmin === 'number') ? config.dtmin : 1;
     const pastOnly = (config.direction === 'past') ? 1 : 0;
@@ -1551,10 +1590,16 @@ const GricWasm = (function () {
     const pOffset = pointsPtr >> 3;
     for (let i = 0; i < N; i++) {
       const p = points[i];
-      heapF64[pOffset + i * ndim] = p.x;
-      heapF64[pOffset + i * ndim + 1] = p.y;
-      if (ndim >= 3) {
-        heapF64[pOffset + i * ndim + 2] = p.z || 0.0;
+      if (Array.isArray(p) || ArrayBuffer.isView(p)) {
+        for (let d = 0; d < ndim; d++) {
+          heapF64[pOffset + i * ndim + d] = (p[d] !== undefined) ? Number(p[d]) : 0.0;
+        }
+      } else if (p && typeof p === 'object') {
+        heapF64[pOffset + i * ndim] = Number(p.x || 0.0);
+        heapF64[pOffset + i * ndim + 1] = Number(p.y || 0.0);
+        if (ndim >= 3) {
+          heapF64[pOffset + i * ndim + 2] = Number(p.z || 0.0);
+        }
       }
     }
 
@@ -1695,6 +1740,7 @@ const GricWasm = (function () {
     destroyMultiTile: destroyMultiTile,
     resetMultiTile: resetMultiTile,
     isMtMode: () => _mtMode,
+    isConfigChanged: isConfigChanged,
     runKnn: runKnn,
   };
 })();

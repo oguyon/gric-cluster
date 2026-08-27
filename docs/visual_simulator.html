@@ -218,7 +218,7 @@
           </div>
         </div>
 
-        <!-- Row 4: k-NN (Single Master Toggle, expands to action buttons when enabled) -->
+        <!-- Row 4: k-NN (Dedicated Controls Block) -->
         <div class="toolbar-row">
           <div class="toolbar-row-content">
             <span class="toolbar-row-label">k-NN:</span>
@@ -230,16 +230,21 @@
             
             <!-- Expanded k-NN action group (visible when k-NN is enabled) -->
             <div id="knnExpandedGroup" style="display: none; align-items: center; gap: 6px; flex-wrap: wrap;">
-              <button id="btnKnnSetup" class="btn-action"
-                      data-tooltip-title="Open k-NN Settings in Sidebar" 
-                      data-tooltip-badge="Configure k-NN" 
-                      data-tooltip-color="cyan" 
-                      data-tooltip-desc="Opens and focuses the k-Nearest Neighbors parameter card in the right sidebar (k, dtmin, direction, epsilon).">⚙️ Options</button>
               <button id="btnRunKnn" class="btn-action" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.5); font-weight: 700;"
                       data-tooltip-title="Compute k-Nearest Neighbors" 
                       data-tooltip-badge="Run k-NN" 
                       data-tooltip-color="green" 
                       data-tooltip-desc="Executes the out-of-core metric-pruned k-NN solver on the current dataset.">▶ Compute k-NN</button>
+              <button id="btnResetKnn" class="btn-action"
+                      data-tooltip-title="Reset k-NN Results (Keep Clusters)"
+                      data-tooltip-badge="Clear k-NN"
+                      data-tooltip-color="cyan"
+                      data-tooltip-desc="Clears computed k-NN neighbor indices and ray overlays without resetting clusters.">↺ Reset k-NN</button>
+              <button id="btnKnnSetup" class="btn-action"
+                      data-tooltip-title="Open k-NN Settings in Sidebar" 
+                      data-tooltip-badge="Configure k-NN" 
+                      data-tooltip-color="cyan" 
+                      data-tooltip-desc="Opens and focuses the k-Nearest Neighbors parameter card in the right sidebar (k, dtmin, direction, epsilon).">⚙️ Options</button>
               <span id="knnStatusBadgeTop" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.3); font-size: 0.72rem;">k=10 • forward • dt≥1</span>
             </div>
           </div>
@@ -384,6 +389,24 @@
         </div>
         <div style="display: flex; align-items: center; gap: 6px; margin-left: auto; border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
           <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;">
+            Panels:
+          </span>
+          <button id="btnImgShowAllPanels" class="btn-action primary"
+                  style="padding: 2px 8px; font-size: 0.72rem; font-weight: 700; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);"
+                  title="Show all 4 view panels in split grid (Shortcut: Esc)">⊞ All 4 Panels</button>
+          <select id="selectImgViewPanel" class="form-control"
+                  style="padding: 2px 6px; font-size: 0.72rem; background: #0f172a; color: #cbd5e1; border: 1px solid #334155; border-radius: 4px; cursor: pointer;"
+                  title="Select specific view panel or 4-split grid">
+            <option value="all">⊞ All 4 Panels</option>
+            <option value="0">📸 Q0: Current Frame</option>
+            <option value="1">🎯 Q1: Anchor / Residual / NN1</option>
+            <option value="2">👥 Q2: Cluster Members</option>
+            <option value="2_knn">⚡ Q2: k-NN Neighbors</option>
+            <option value="3">🗂️ Q3: All Clusters</option>
+          </select>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
+          <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;">
             Sort Clusters:
           </span>
           <select id="selectImgClusterSort" class="form-control"
@@ -392,6 +415,19 @@
             <option value="size_desc">📊 Size ↓ (Largest First)</option>
             <option value="size_asc">📉 Size ↑ (Smallest First)</option>
           </select>
+        </div>
+        <div style="display: flex; align-items: center; gap: 4px; border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
+          <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;">
+            Thumbnails:
+          </span>
+          <button id="btnImgThumbSmaller" class="btn-action"
+                  style="padding: 2px 6px; font-size: 0.72rem; font-weight: 700; background: #0f172a; border: 1px solid #334155; color: #38bdf8;"
+                  title="Make thumbnails smaller (Shortcut: -)">🔍－</button>
+          <span id="lblImgThumbSize"
+                style="font-family: monospace; font-size: 0.72rem; color: #38bdf8; min-width: 38px; text-align: center;">64px</span>
+          <button id="btnImgThumbBigger" class="btn-action"
+                  style="padding: 2px 6px; font-size: 0.72rem; font-weight: 700; background: #0f172a; border: 1px solid #334155; color: #38bdf8;"
+                  title="Make thumbnails bigger (Shortcut: +)">🔍＋</button>
         </div>
       </div>
 
@@ -541,14 +577,14 @@
               </div>
             </div>
 
-            <!-- Input Ingestion Mode & Streaming Source -->
+            <!-- Data Ingestion & Streaming (ImageStreamIO) Hub -->
             <div class="sub-control-card">
               <div class="control-label" style="font-weight: 700; color: var(--accent-green);">
-                <span>Input Ingestion Mode</span>
+                <span>Data Ingestion &amp; Streaming (ISIO)</span>
               </div>
               <div style="display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Input Source:</label>
+                  <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Ingestion Source:</label>
                   <select id="selectInputModeSide" style="padding: 4px 8px; font-size: 0.76rem;"
                           data-tooltip-title="Input Ingestion Mode"
                           data-tooltip-badge="File vs Shared Memory"
@@ -559,6 +595,7 @@
                   </select>
                 </div>
 
+                <!-- Unified ImageStreamIO Stream Configuration Box -->
                 <div id="sideStreamConfigPanel" style="display: none; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 5px; padding: 6px 8px; flex-direction: column; gap: 6px;">
                   <div style="display: flex; justify-content: space-between; align-items: center;">
                     <label style="font-size: 0.72rem; color: #38bdf8; font-weight: 600;">Stream Rate:</label>
@@ -582,6 +619,10 @@
                       <input type="checkbox" id="chkSideStreamLoop" style="cursor: pointer;">
                       <span>Loop dataset indefinitely</span>
                     </label>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 2px; border-top: 1px dashed rgba(56, 189, 248, 0.2); font-size: 0.70rem;">
+                    <span style="color: #94a3b8;">Ring Buffer:</span>
+                    <span id="badgeStreamShmStatus" class="badge-pill" style="color: #38bdf8; font-family: monospace;">/dev/shm/gric_stream</span>
                   </div>
                 </div>
 
@@ -1459,57 +1500,30 @@
                   </select>
                 </div>
 
-                <!-- Input Source Mode -->
+                <!-- Ingestion Source Reference Banner -->
+                <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.6); padding: 5px 8px; border-radius: 4px; border: 1px solid var(--card-border); font-size: 0.73rem;">
+                  <span style="color: var(--text-muted); font-weight: 600;">Ingestion Source:</span>
+                  <span id="cliIngestionSourceBadge" class="badge-pill" style="color: var(--accent-green); cursor: pointer;"
+                        title="Click to configure ingestion source in Data Ingestion panel"
+                        onclick="document.getElementById('selectInputModeSide')?.focus();">📁 Direct File / Memory</span>
+                </div>
+
                 <div style="display: flex; gap: 6px; align-items: center;">
-                  <label style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600; width: 64px;">Input Mode:</label>
-                  <select id="selectCliInputMode" style="flex: 1; padding: 4px 8px; font-size: 0.76rem;"
-                          data-tooltip-title="Input Ingestion Mode"
-                          data-tooltip-badge="File vs Shared Memory"
-                          data-tooltip-color="cyan"
-                          data-tooltip-desc="Choose Direct File for standard batch file reading, or ImageStreamIO Stream for real-time shared-memory streaming from gric-txt2stream.">
-                    <option value="file" selected>📁 Direct File (.txt / .csv)</option>
-                    <option value="stream">⚡ ImageStreamIO Stream (Real-Time SHM)</option>
-                  </select>
-                </div>
-
-                <!-- Stream Configuration Subpanel -->
-                <div id="cliStreamConfigPanel" style="display: none; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 5px; padding: 6px 8px; flex-direction: column; gap: 6px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <label style="font-size: 0.72rem; color: #38bdf8; font-weight: 600;">Stream Rate:</label>
-                    <select id="selectCliStreamFps" style="padding: 2px 6px; font-size: 0.72rem;">
-                      <option value="0" selected>⚡ Max / Unthrottled (cnt2 Lockstep)</option>
-                      <option value="1000">1,000 FPS (1 ms)</option>
-                      <option value="500">500 FPS (2 ms)</option>
-                      <option value="250">250 FPS (4 ms)</option>
-                      <option value="100">100 FPS (10 ms)</option>
-                      <option value="50">50 FPS (20 ms)</option>
-                    </select>
-                  </div>
-                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
-                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
-                      <input type="checkbox" id="chkCliStreamCnt2Sync" checked style="cursor: pointer;">
-                      <span>Lockstep Flow Control (cnt2sync)</span>
-                    </label>
-                  </div>
-                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
-                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
-                      <input type="checkbox" id="chkCliStreamLoop" style="cursor: pointer;">
-                      <span>Loop dataset indefinitely</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div style="display: flex; gap: 8px; align-items: center;">
-                  <button id="btnRunCli" class="btn-action primary" style="flex: 1.2; padding: 6px 12px; font-size: 0.78rem; font-weight: 700;"
-                          data-tooltip-title="Run Native CLI Pipeline"
-                          data-tooltip-badge="Native Execution"
+                  <button id="btnRunCli" class="btn-action primary" style="flex: 1.1; padding: 6px 8px; font-size: 0.74rem; font-weight: 700;"
+                          data-tooltip-title="Run Native gric-cluster"
+                          data-tooltip-badge="Clustering CLI"
                           data-tooltip-color="green"
-                          data-tooltip-desc="Spawns native compiled gric-cluster (and gric-knn if enabled) in the local workspace with multi-threading and direct disk I/O.">▶️ Run Native CLI</button>
-                  <button id="btnKillCli" class="btn-action danger" style="flex: 0.8; padding: 6px 10px; font-size: 0.78rem;" disabled
-                          data-tooltip-title="Abort Running CLI Process"
+                          data-tooltip-desc="Executes native compiled gric-cluster multi-threaded clustering on the selected dataset.">▶️ Run gric-cluster</button>
+                  <button id="btnRunCliKnn" class="btn-action" style="flex: 0.9; padding: 6px 8px; font-size: 0.74rem; font-weight: 700; background: rgba(192, 132, 252, 0.15); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.4);"
+                          data-tooltip-title="Run Native gric-knn"
+                          data-tooltip-badge="k-NN CLI"
+                          data-tooltip-color="purple"
+                          data-tooltip-desc="Executes native compiled gric-knn out-of-core metric solver on the cluster dictionary.">▶️ Run gric-knn</button>
+                  <button id="btnKillCli" class="btn-action danger" style="flex: 0.5; padding: 6px 6px; font-size: 0.74rem;" disabled
+                          data-tooltip-title="Abort Running Process"
                           data-tooltip-badge="Process Kill"
                           data-tooltip-color="red"
-                          data-tooltip-desc="Sends termination signal to abort the active gric-cluster or gric-knn background process.">🛑 Stop</button>
+                          data-tooltip-desc="Sends termination signal to abort the active background CLI process.">🛑 Stop</button>
                 </div>
 
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--text-muted);">
@@ -1865,15 +1879,54 @@
             <!-- Action Bar -->
             <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
               <button id="btnRunKnnSide" class="primary"
-                      style="width: 100%; padding: 7px 12px; font-weight: 700; "
-                      style="font-size: 0.78rem; border: none; border-radius: 6px; "
-                      style="background: linear-gradient(135deg, #10b981, #059669);"
+                      style="flex: 1.4; padding: 7px 12px; font-weight: 700; font-size: 0.78rem; border: none; border-radius: 6px; background: linear-gradient(135deg, #10b981, #059669);"
                       data-tooltip-title="Run Out-of-Core k-NN Solver"
                       data-tooltip-badge="Action"
                       data-tooltip-color="green"
                       data-tooltip-desc="Executes metric-pruned k-NN solver on point cloud.">
                 ▶ Compute k-NN
               </button>
+              <button id="btnResetKnnSide" class="btn-action"
+                      style="flex: 0.8; padding: 7px 8px; font-size: 0.74rem;"
+                      data-tooltip-title="Reset k-NN Results (Keep Clusters)"
+                      data-tooltip-badge="Clear k-NN"
+                      data-tooltip-color="cyan"
+                      data-tooltip-desc="Clears computed k-NN neighbor indices and overlays without resetting clusters.">
+                ↺ Reset k-NN
+              </button>
+            </div>
+
+            <!-- Live k-NN Progress Monitor Box -->
+            <div id="knnProgressContainer"
+                 style="display: none; padding: 8px 10px; border-radius: 6px; margin-bottom: 6px;
+                        background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(168, 85, 247, 0.5);
+                        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);">
+              <div style="display: flex; justify-content: space-between; align-items: center;
+                          margin-bottom: 5px;">
+                <div style="display: flex; align-items: center; gap: 5px; font-weight: 700;
+                            font-size: 0.74rem; color: #c084fc;">
+                  <span class="knn-spin-anim">⚡</span>
+                  <span id="knnProgressTitle">Searching k-NN...</span>
+                </div>
+                <span id="knnProgressPct"
+                      style="font-weight: 700; font-size: 0.78rem; color: #4ade80;
+                             font-family: monospace;">0.0%</span>
+              </div>
+              <div style="width: 100%; height: 7px; background: rgba(30, 41, 59, 0.9);
+                          border-radius: 4px; overflow: hidden;
+                          border: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 5px;">
+                <div id="knnProgressBarFill"
+                     style="width: 0%; height: 100%; border-radius: 4px;
+                            background: linear-gradient(90deg, #a855f7, #22c55e);
+                            transition: width 0.08s ease-out;
+                            box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);"></div>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 0.68rem;
+                          color: #94a3b8; font-family: monospace;">
+                <span id="knnProgFrames">Frames: 0 / 0</span>
+                <span id="knnProgSpeed">- f/s</span>
+                <span id="knnProgTime">Elapsed: 0.0s</span>
+              </div>
             </div>
 
             <!-- Persistent k-NN Error Status Banner (Config) -->

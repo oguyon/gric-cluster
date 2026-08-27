@@ -62,6 +62,7 @@ const DesktopBridge = (function () {
           _isDesktop = true;
           _serverInfo = data;
           console.log('[DesktopBridge] Native C gric-server connected. Workspace:', data.cwd);
+          _startHeartbeat();
           return _serverInfo;
         }
       }
@@ -72,6 +73,58 @@ const DesktopBridge = (function () {
     _isDesktop = false;
     _serverInfo = null;
     return null;
+  }
+
+  let _heartbeatTimer = null;
+
+  /**
+   * Start keepalive heartbeats and unload beacon listeners.
+   */
+  function _startHeartbeat() {
+    if (_heartbeatTimer) return;
+    _sendHeartbeat();
+    _heartbeatTimer = setInterval(_sendHeartbeat, 2500);
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', _sendLeaveBeacon);
+      window.addEventListener('beforeunload', _sendLeaveBeacon);
+    }
+  }
+
+  function _sendHeartbeat() {
+    if (!_isDesktop) return;
+    _fetchApi('/api/heartbeat', {
+      method: 'POST',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json' }
+    }).catch(() => {});
+  }
+
+  function _sendLeaveBeacon() {
+    if (!_isDesktop || typeof navigator === 'undefined' || !navigator.sendBeacon) return;
+    try {
+      const url = (_baseUrl ? _baseUrl : '') + '/api/heartbeat/leave';
+      navigator.sendBeacon(url, '');
+    } catch (_) {}
+  }
+
+  /**
+   * Request graceful remote shutdown of the native gric-server.
+   */
+  async function shutdownServer() {
+    if (!_isDesktop) return false;
+    try {
+      if (_heartbeatTimer) {
+        clearInterval(_heartbeatTimer);
+        _heartbeatTimer = null;
+      }
+      await _fetchApi('/api/shutdown', { method: 'POST' });
+      _isDesktop = false;
+      _serverInfo = null;
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /**
@@ -937,6 +990,7 @@ const DesktopBridge = (function () {
     exportClusterDat,
     parseClusterDatDir,
     parseKnnTelemetryLog,
-    readKnnResults
+    readKnnResults,
+    shutdownServer
   };
 })();

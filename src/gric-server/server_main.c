@@ -38,12 +38,18 @@ static void print_help(
            "  (gric-cluster, gric-knn) without any external dependencies or Python runtime.\n\n");
 
     printf("%sOPTIONS%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  %s-p, --port%s %s<port>%s        HTTP listen port (default: 8080 or $GRIC_SERVER_PORT)\n",
+    printf("  %s-p, --port%s %s<port>%s        HTTP listen port (default: 8080 or env)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-d, --dir%s %s<path>%s         Workspace working directory (default: current directory)\n",
+    printf("  %s-d, --dir%s %s<path>%s         Workspace directory (default: current directory)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-w, --docs%s %s<path>%s        HTML/JS documentation directory (default: auto-detected)\n",
+    printf("  %s-w, --docs%s %s<path>%s        HTML/JS documentation directory (default: auto)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-W, --watch-pid%s %s<pid>%s    Monitor PID and exit when it terminates\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-t, --idle-timeout%s %s<sec>%s Inactivity timeout (0: disabled)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s--auto-shutdown%s          Exit when all client sessions disconnect\n",
+           ansi_color_green, ansi_reset);
     printf("  %s-v, --verbose%s            Enable verbose request logging\n",
            ansi_color_green, ansi_reset);
     printf("  %s-h, --help%s               Show this help message and exit\n\n",
@@ -108,6 +114,20 @@ int main(
             {
                 snprintf(config.docs_dir, sizeof(config.docs_dir), "%s", argv[i]);
             }
+        }
+        else if ((strcmp(argv[i], "-W") == 0 || strcmp(argv[i], "--watch-pid") == 0) &&
+                 i + 1 < argc)
+        {
+            config.watch_pid = (pid_t)atoi(argv[++i]);
+        }
+        else if ((strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--idle-timeout") == 0) &&
+                 i + 1 < argc)
+        {
+            config.idle_timeout = atoi(argv[++i]);
+        }
+        else if (strcmp(argv[i], "--auto-shutdown") == 0)
+        {
+            config.auto_shutdown = 1;
         }
         else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0)
         {
