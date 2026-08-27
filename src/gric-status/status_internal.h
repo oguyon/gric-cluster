@@ -6,6 +6,7 @@
 #ifndef STATUS_INTERNAL_H
 #define STATUS_INTERNAL_H
 
+#include "shared/cli_colors.h"
 #include "gric-cluster/core/cluster_shm.h"
 #include <inttypes.h>
 #include <signal.h>
@@ -15,13 +16,6 @@
 #define MAX_COLS 180
 #define FPS_SAMPLES 10
 #define FRAME_HISTORY_SIZE 100
-
-#ifndef ANSI_BOLD
-#define ANSI_BOLD        "\033[1m"
-#endif
-#ifndef ANSI_COLOR_RESET
-#define ANSI_COLOR_RESET "\033[0m"
-#endif
 
 #define MH_RST   "\033[0m"
 #define MH_BOLD  "\033[1m"
@@ -133,8 +127,18 @@ void setup_signals(void);
  * handle_sigint() - Set exit flag on SIGINT/SIGTERM.
  * @sig: Signal number received.
  */
-void handle_sigint(
-    int sig);
+/* Classic Mode & Help */
+void print_status_classic(
+    const GricClusterShmStatus *status);
+
+void print_help_standard(
+    const char *progname,
+    int         color);
+
+/* Watch Mode */
+int run_status_watch(
+    const GricClusterShmStatus *status,
+    double                      rate_hz);
 
 /* Shared Memory & Process Functions */
 

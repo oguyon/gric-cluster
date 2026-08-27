@@ -151,7 +151,11 @@ if (PNG_FOUND)
     target_link_libraries(gric-cluster ${PNG_LIBRARIES})
 endif()
 
-add_executable(gric-mktxtseq src/gric-mktxtseq/mktestseq.c src/shared/cli_colors.c)
+add_executable(gric-mktxtseq
+    src/gric-mktxtseq/mktestseq.c
+    src/shared/gric_gen_patterns.c
+    src/shared/cli_colors.c
+)
 target_link_libraries(gric-mktxtseq m)
 
 add_executable(gric-plot
@@ -193,10 +197,13 @@ endif()
 # gric-status tool
 add_executable(gric-status
     src/gric-status/gric-status.c
+    src/gric-status/status_classic.c
+    src/gric-status/status_watch.c
     src/gric-status/status_terminal.c
     src/gric-status/status_shm.c
     src/gric-status/status_tui.c
-    src/shared/cli_colors.c)
+    src/shared/cli_colors.c
+)
 
 
 # gric-info tool
@@ -208,6 +215,9 @@ add_executable(gric-help src/gric-help/gric-help.c src/shared/cli_colors.c)
 # gric-benchmark tool
 add_executable(gric-benchmark
     src/gric-benchmark/gric-benchmark.c
+    src/gric-benchmark/benchmark_cli.c
+    src/gric-benchmark/benchmark_runner.c
+    src/gric-benchmark/benchmark_report.c
     src/gric-benchmark/benchmark_utils.c
     src/gric-benchmark/test_list.c
     src/shared/cli_colors.c
@@ -223,6 +233,9 @@ target_link_libraries(gric-tune m)
 # gric-cluster-analysis tool
 add_executable(gric-cluster-analysis
     src/gric-cluster-analysis/gric-cluster-analysis.c
+    src/gric-cluster-analysis/analysis_parser.c
+    src/gric-cluster-analysis/analysis_stats.c
+    src/gric-cluster-analysis/analysis_report.c
     src/shared/cli_colors.c
 )
 target_link_libraries(gric-cluster-analysis m)
@@ -232,6 +245,10 @@ add_executable(gric-server
     src/gric-server/server_main.c
     src/gric-server/http_server.c
     src/gric-server/api_handlers.c
+    src/gric-server/server_http_utils.c
+    src/gric-server/server_job_mgmt.c
+    src/gric-server/server_fs_api.c
+    src/gric-server/server_cli_runner.c
     src/shared/cli_colors.c
 )
 target_include_directories(gric-server PRIVATE src/gric-server src src/gric-cluster/core)
