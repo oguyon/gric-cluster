@@ -1090,12 +1090,14 @@
     }
 
     function resetView() {
+      maximizedQuad = null;
       quadViews.forEach(v => { v.panX = 0; v.panY = 0; v.zoom = 1.0; });
       orbitCamera.azimuth = -35 * (Math.PI / 180);
       orbitCamera.elevation = 25 * (Math.PI / 180);
       orbitCamera.panX = 0;
       orbitCamera.panY = 0;
       orbitCamera.zoom = 1.0;
+      if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
       updateZoomBadge();
       draw();
     }

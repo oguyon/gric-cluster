@@ -213,10 +213,13 @@
         currentFrameIdx = 0;
       }
 
-      if (useWasm && GricWasm.isLoaded() && (!wasmSessionActive || !GricWasm.isReady())) {
+      if (useWasm && GricWasm.isLoaded()) {
         const params = GricWasm.buildParamsFromState();
-        wasmSessionActive = GricWasm.init(params);
-        updateWasmBadge();
+        if (!wasmSessionActive || !GricWasm.isReady() ||
+            (GricWasm.isConfigChanged && GricWasm.isConfigChanged(params))) {
+          wasmSessionActive = GricWasm.init(params);
+          updateWasmBadge();
+        }
       }
 
       isRunning = true;
@@ -307,6 +310,24 @@
         clearTimeout(playTimer);
         clearInterval(playTimer);
         playTimer = null;
+      }
+
+      if (!benchmarkDataset || benchmarkDataset.length === 0) {
+        stageDataset();
+      }
+
+      if (!hasMoreFrames()) {
+        resetClustering(true);
+        currentFrameIdx = 0;
+      }
+
+      if (useWasm && GricWasm.isLoaded()) {
+        const params = GricWasm.buildParamsFromState();
+        if (!wasmSessionActive || !GricWasm.isReady() ||
+            (GricWasm.isConfigChanged && GricWasm.isConfigChanged(params))) {
+          wasmSessionActive = GricWasm.init(params);
+          updateWasmBadge();
+        }
       }
 
       isComputeAllRunning = true;
@@ -804,10 +825,10 @@
     // =========================================================================
 
     function getQuadrantAt(clientX, clientY) {
-      if (currentDim === 2) {
+      if (currentDim === 2 && (typeof dataMode === 'undefined' || dataMode !== 'image')) {
         return 2;
       }
-      if (maximizedQuad !== null && currentDim === 3) {
+      if (maximizedQuad !== null) {
         return maximizedQuad;
       }
 
@@ -817,10 +838,10 @@
       const W = rect.width;
       const H = rect.height;
 
-      if (px < W / 2 && py < H / 2) return 0; // Along X
-      if (px >= W / 2 && py < H / 2) return 1; // Along Y
-      if (px < W / 2 && py >= H / 2) return 2; // Along Z
-      return 3; // Custom 3D
+      if (px < W / 2 && py < H / 2) return 0; // Along X / Top-Left
+      if (px >= W / 2 && py < H / 2) return 1; // Along Y / Top-Right
+      if (px < W / 2 && py >= H / 2) return 2; // Along Z / Bottom-Left
+      return 3; // Custom 3D / Bottom-Right
     }
 
     let mouseDownTime = 0;
@@ -840,12 +861,23 @@
       mouseDownClientX = e.clientX;
       mouseDownClientY = e.clientY;
 
-      // Check if clicking Maximize / Restore Icon in top-right of quadrant
-      if (currentDim === 3 && px >= qRect.x + qRect.w - 30 && px <= qRect.x + qRect.w - 4 &&
-          py >= qRect.y && py <= qRect.y + 24) {
-        maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
-        draw();
-        return;
+      // Check if clicking Maximize / Restore in image mode or 3D mode
+      if (dataMode === 'image') {
+        if (typeof handleImageModeClick === 'function') {
+          const handled = handleImageModeClick(px, py, qIdx, W, H);
+          if (handled) {
+            syncImageQuadUI();
+            return;
+          }
+        }
+      } else if (currentDim === 3) {
+        if (px >= qRect.x + qRect.w - 30 && px <= qRect.x + qRect.w - 4 &&
+            py >= qRect.y && py <= qRect.y + 24) {
+          maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
+          syncImageQuadUI();
+          draw();
+          return;
+        }
       }
 
       // Check if clicking Corner Zoom Box to reset zoom & pan to 1:1
@@ -932,7 +964,11 @@
 
       if (dataMode === 'image') {
         if (activeDragQuad === 2 || maximizedQuad === 2) {
-          imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) - dy);
+          if (imageQ2ViewMode === 'knn') {
+            imageKnnScrollY = Math.max(0, (imageKnnScrollY || 0) - dy);
+          } else {
+            imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) - dy);
+          }
           draw();
         } else if (activeDragQuad === 3 || maximizedQuad === 3) {
           imageClustersScrollY = Math.max(0, (imageClustersScrollY || 0) - dy);
@@ -1174,8 +1210,24 @@
       const qIdx = getQuadrantAt(e.clientX, e.clientY);
 
       if (dataMode === 'image') {
+        if ((e.ctrlKey || e.altKey) &&
+            (qIdx === 2 || qIdx === 3 || maximizedQuad === 2 || maximizedQuad === 3)) {
+          const delta = e.deltaY < 0 ? 12 : -12;
+          const cur = (typeof imageThumbSize !== 'undefined') ? imageThumbSize : 64;
+          const next = Math.max(36, Math.min(220, cur + delta));
+          imageThumbSize = next;
+          const lbl = document.getElementById('lblImgThumbSize');
+          if (lbl) lbl.textContent = `${next}px`;
+          draw();
+          return;
+        }
+
         if (qIdx === 2 || maximizedQuad === 2) {
-          imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
+          if (imageQ2ViewMode === 'knn') {
+            imageKnnScrollY = Math.max(0, (imageKnnScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
+          } else {
+            imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
+          }
           draw();
         } else if (qIdx === 3 || maximizedQuad === 3) {
           imageClustersScrollY = Math.max(0, (imageClustersScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
@@ -1388,7 +1440,11 @@
 
         if (dataMode === 'image') {
           if (activeTouchQuad === 2 || maximizedQuad === 2) {
-            imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) - dy);
+            if (imageQ2ViewMode === 'knn') {
+              imageKnnScrollY = Math.max(0, (imageKnnScrollY || 0) - dy);
+            } else {
+              imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) - dy);
+            }
             draw();
           } else if (activeTouchQuad === 3 || maximizedQuad === 3) {
             imageClustersScrollY = Math.max(0, (imageClustersScrollY || 0) - dy);
@@ -1639,10 +1695,13 @@
           resetClustering(true);
           currentFrameIdx = 0;
         }
-        if (useWasm && GricWasm.isLoaded() && (!wasmSessionActive || !GricWasm.isReady())) {
+        if (useWasm && GricWasm.isLoaded()) {
           const params = GricWasm.buildParamsFromState();
-          wasmSessionActive = GricWasm.init(params);
-          updateWasmBadge();
+          if (!wasmSessionActive || !GricWasm.isReady() ||
+              (GricWasm.isConfigChanged && GricWasm.isConfigChanged(params))) {
+            wasmSessionActive = GricWasm.init(params);
+            updateWasmBadge();
+          }
         }
         runClusteringToCompletion();
       });
@@ -1792,6 +1851,14 @@
           abortComputeAll();
           return;
         }
+        if (maximizedQuad !== null) {
+          e.preventDefault();
+          maximizedQuad = null;
+          syncImageQuadUI();
+          draw();
+          showToast('⊞ Restored All 4 View Panels');
+          return;
+        }
       }
 
       if (e.key === ' ' || e.code === 'Space') {
@@ -1904,6 +1971,28 @@
         }
       } else if (e.key === 'c' || e.key === 'C') {
         toggleLockCenter3D();
+      } else if (e.key === '+' || e.key === '=') {
+        if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+          e.preventDefault();
+          const cur = (typeof imageThumbSize !== 'undefined') ? imageThumbSize : 64;
+          const next = Math.min(220, cur + 16);
+          imageThumbSize = next;
+          const lbl = document.getElementById('lblImgThumbSize');
+          if (lbl) lbl.textContent = `${next}px`;
+          draw();
+          if (typeof showToast === 'function') showToast(`🔍 Thumbnail Size: ${next}px`);
+        }
+      } else if (e.key === '-' || e.key === '_') {
+        if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+          e.preventDefault();
+          const cur = (typeof imageThumbSize !== 'undefined') ? imageThumbSize : 64;
+          const next = Math.max(36, cur - 16);
+          imageThumbSize = next;
+          const lbl = document.getElementById('lblImgThumbSize');
+          if (lbl) lbl.textContent = `${next}px`;
+          draw();
+          if (typeof showToast === 'function') showToast(`🔍 Thumbnail Size: ${next}px`);
+        }
       }
     });
 
@@ -1962,6 +2051,16 @@
       sliderRlim.addEventListener('input', (e) => {
         rlim = parseFloat(e.target.value);
         if (inputRlim) inputRlim.value = rlim.toFixed(3);
+        if (!isRunning) {
+          if (totalFrames > 0) {
+            resetClustering(true);
+            currentFrameIdx = 0;
+          } else if (useWasm && GricWasm.isLoaded()) {
+            const params = GricWasm.buildParamsFromState();
+            wasmSessionActive = GricWasm.init(params);
+            updateWasmBadge();
+          }
+        }
         draw();
       });
     }
@@ -1971,6 +2070,16 @@
         if (!isNaN(v) && v > 0) {
           rlim = v;
           if (sliderRlim) sliderRlim.value = Math.max(0.02, Math.min(0.30, v));
+          if (!isRunning) {
+            if (totalFrames > 0) {
+              resetClustering(true);
+              currentFrameIdx = 0;
+            } else if (useWasm && GricWasm.isLoaded()) {
+              const params = GricWasm.buildParamsFromState();
+              wasmSessionActive = GricWasm.init(params);
+              updateWasmBadge();
+            }
+          }
           draw();
         }
       });
@@ -2787,6 +2896,76 @@
     let isKnnComputing = false;
     let knnAbortRequested = false;
 
+    function showKnnProgress(pct, processed, total, speed, elapsedSec, etaSec, title) {
+      const container = document.getElementById('knnProgressContainer');
+      const barFill = document.getElementById('knnProgressBarFill');
+      const lblPct = document.getElementById('knnProgressPct');
+      const lblFrames = document.getElementById('knnProgFrames');
+      const lblSpeed = document.getElementById('knnProgSpeed');
+      const lblTime = document.getElementById('knnProgTime');
+      const lblTitle = document.getElementById('knnProgressTitle');
+      const badgeTop = document.getElementById('knnStatusBadgeTop');
+      const badgeCli = document.getElementById('badgeCliStatus');
+
+      const clampedPct = Math.max(0, Math.min(100, pct || 0));
+
+      if (container) container.style.display = 'block';
+      if (barFill) barFill.style.width = `${clampedPct.toFixed(1)}%`;
+      if (lblPct) lblPct.textContent = `${clampedPct.toFixed(1)}%`;
+      if (lblTitle && title) lblTitle.textContent = title;
+
+      if (lblFrames && typeof total === 'number' && total > 0) {
+        lblFrames.textContent = `Frames: ${(processed || 0).toLocaleString()} / ${total.toLocaleString()}`;
+      }
+      if (lblSpeed) {
+        lblSpeed.textContent = (speed > 0) ? `${Math.round(speed).toLocaleString()} f/s` : `- f/s`;
+      }
+      if (lblTime) {
+        const elap = (typeof elapsedSec === 'number') ? `${elapsedSec.toFixed(1)}s` : `0.0s`;
+        const eta = (typeof etaSec === 'number' && etaSec > 0) ? `${etaSec.toFixed(1)}s` : `-`;
+        lblTime.textContent = `Elapsed: ${elap} • ETA: ${eta}`;
+      }
+
+      // Update Top Status Badge
+      if (badgeTop) {
+        const totalStr = (total > 0) ? total.toLocaleString() : '';
+        const procStr = (processed > 0) ? processed.toLocaleString() : '';
+        badgeTop.textContent = (total > 0)
+          ? `⚡ k-NN: ${clampedPct.toFixed(1)}% (${procStr}/${totalStr})`
+          : `⚡ Computing k-NN (${clampedPct.toFixed(1)}%)...`;
+        badgeTop.style.color = '#4ade80';
+        badgeTop.style.borderColor = 'rgba(74, 222, 128, 0.4)';
+      }
+
+      // Update Stop Button Labels
+      const btnTop = document.getElementById('btnRunKnn');
+      const btnSide = document.getElementById('btnRunKnnSide');
+      if (btnTop && isKnnComputing) {
+        btnTop.innerHTML = `⏹ Stop (${clampedPct.toFixed(0)}%)`;
+      }
+      if (btnSide && isKnnComputing) {
+        btnSide.innerHTML = `⏹ Stop (${clampedPct.toFixed(0)}%)`;
+      }
+
+      // Update CLI Badge if in CLI mode
+      if (badgeCli && typeof engineMode !== 'undefined' && engineMode === 'cli') {
+        badgeCli.textContent = `● k-NN: ${clampedPct.toFixed(1)}%`;
+      }
+
+      // Scrubber fill update during search
+      const scrubFill = document.getElementById('progressFill');
+      if (scrubFill) {
+        scrubFill.style.width = `${clampedPct.toFixed(1)}%`;
+      }
+    }
+
+    function hideKnnProgress() {
+      const container = document.getElementById('knnProgressContainer');
+      if (container) container.style.display = 'none';
+      const barFill = document.getElementById('knnProgressBarFill');
+      if (barFill) barFill.style.width = '0%';
+    }
+
     function updateKnnButtonUI(computing, statusText) {
       const btnTop = document.getElementById('btnRunKnn');
       const btnSide = document.getElementById('btnRunKnnSide');
@@ -2937,6 +3116,11 @@
 
       try {
         const tKnnStart = performance.now();
+        const pts = (typeof benchmarkDataset !== 'undefined' &&
+                     benchmarkDataset && benchmarkDataset.length > 0)
+          ? benchmarkDataset
+          : (typeof pastSamples !== 'undefined' ? pastSamples : []);
+
         if (engineMode === 'cli' && DesktopBridge.isNativeSupported()) {
           const selCli = document.getElementById('selectCliDataset');
           let datasetName = selCli ? selCli.value : '';
@@ -2947,10 +3131,6 @@
           const clusterDir = `${datasetBase}.clusterdat`;
 
           // 1. Ensure staged coordinates exist in workspace file
-          const pts = (typeof benchmarkDataset !== 'undefined' &&
-                       benchmarkDataset && benchmarkDataset.length > 0)
-            ? benchmarkDataset
-            : (typeof pastSamples !== 'undefined' ? pastSamples : []);
           if (pts && pts.length > 0) {
             await DesktopBridge.stageDatasetFile(datasetBase, pts).catch(() => {});
           }
@@ -3019,6 +3199,20 @@
           args.push('-txt');
 
           const consoleEl = document.getElementById('cliConsoleLog');
+          const btnRunCli = document.getElementById('btnRunCli');
+          const btnRunCliKnn = document.getElementById('btnRunCliKnn');
+          const btnKillCli = document.getElementById('btnKillCli');
+          const badgeStatus = document.getElementById('badgeCliStatus');
+
+          if (btnRunCli) btnRunCli.disabled = true;
+          if (btnRunCliKnn) btnRunCliKnn.disabled = true;
+          if (btnKillCli) btnKillCli.disabled = false;
+          if (badgeStatus) {
+            badgeStatus.textContent = '● tmux: gric_knn';
+            badgeStatus.style.background = 'rgba(192, 132, 252, 0.2)';
+            badgeStatus.style.color = '#c084fc';
+          }
+
           if (consoleEl) {
             consoleEl.textContent = `🚀 Dispatched in tmux session: gric_cli\n` +
               `🖥️ Attach live: tmux attach -t gric_cli\n` +
@@ -3028,6 +3222,7 @@
           }
 
           showToast(`💻 Running native gric-knn (k=${knnK})...`);
+          showKnnProgress(0, 0, pts.length, 0, 0, 0, 'Starting native gric-knn solver...');
 
           let rawCliOutput = '';
           let finalExitCode = 0;
@@ -3041,6 +3236,29 @@
                   consoleEl.textContent += chunk;
                   consoleEl.scrollTop = consoleEl.scrollHeight;
                 }
+
+                // Match live progress: "Searching k-NN: [====] 50.0% (500 / 1000 frames)"
+                const lines = chunk.split(/\r|\n/);
+                for (const line of lines) {
+                  const m = line.match(
+                    /Searching k-NN:\s*\[.*?\]\s*([\d.]+)%\s*\(\s*(\d+)\s*\/\s*(\d+)\s*frames\)/
+                  );
+                  if (m) {
+                    const pct = parseFloat(m[1]);
+                    const processed = parseInt(m[2], 10);
+                    const total = parseInt(m[3], 10);
+                    const now = performance.now();
+                    const elapsedSec = Math.max(0.01, (now - tKnnStart) / 1000.0);
+                    const speed = (processed > 0) ? (processed / elapsedSec) : 0;
+                    const remaining = Math.max(0, total - processed);
+                    const etaSec = (speed > 0) ? (remaining / speed) : 0;
+
+                    showKnnProgress(
+                      pct, processed, total, speed, elapsedSec, etaSec,
+                      'Searching k-Nearest Neighbors...'
+                    );
+                  }
+                }
               },
               onTelemetry: () => {},
               onFinish: (res) => {
@@ -3050,6 +3268,9 @@
                 } else {
                   showToast(`⚠️ Native gric-knn finished (Exit: ${finalExitCode})`);
                 }
+                if (btnRunCli) btnRunCli.disabled = false;
+                if (btnRunCliKnn) btnRunCliKnn.disabled = false;
+                if (btnKillCli) btnKillCli.disabled = true;
                 resolve();
               }
             }).catch((err) => {
@@ -3057,6 +3278,9 @@
               if (consoleEl) {
                 consoleEl.textContent += `\n❌ Error: ${err.message}\n`;
               }
+              if (btnRunCli) btnRunCli.disabled = false;
+              if (btnRunCliKnn) btnRunCliKnn.disabled = false;
+              if (btnKillCli) btnKillCli.disabled = true;
               resolve();
             });
           });
@@ -3087,6 +3311,10 @@
           nativeData.telemetry = parsedTelem;
 
           knnResults = nativeData;
+          if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+            imageQ2ViewMode = 'knn';
+            if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
+          }
           if (typeof renderKnnTrace === 'function') {
             renderKnnTrace();
           }
@@ -3094,6 +3322,7 @@
             renderDataStructuresUI();
           }
           draw();
+          showKnnProgress(100, pts.length, pts.length, 0, totalWallMs / 1000.0, 0, 'Completed!');
           showToast(
             `✅ Native k-NN computed: Total ${totalWallMs.toFixed(1)} ms ` +
             `(Compute: ${timeCompute.toFixed(1)} ms, ` +
@@ -3119,6 +3348,15 @@
             multiPivot: (typeof knnMvp !== 'undefined' && knnMvp)
           };
 
+          const N = pts.length;
+          showKnnProgress(15, 0, N, 0, 0.05, 0.2, 'Building Metric Model & Super-Clusters...');
+          await new Promise(r => setTimeout(r, 40));
+
+          showKnnProgress(
+            40, Math.floor(N * 0.4), N, 0, 0.1, 0.15, 'Evaluating Multi-Pivot Pruning...'
+          );
+          await new Promise(r => setTimeout(r, 20));
+
           const t0 = performance.now();
           const results = GricWasm.runKnn(config, pts);
           const totalWallMs = performance.now() - t0;
@@ -3137,6 +3375,10 @@
 
             clearKnnError();
             knnResults = results;
+            if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+              imageQ2ViewMode = 'knn';
+              if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
+            }
             if (typeof renderKnnTrace === 'function') {
               renderKnnTrace();
             }
@@ -3144,6 +3386,7 @@
               renderDataStructuresUI();
             }
             draw();
+            showKnnProgress(100, N, N, 0, totalWallMs / 1000.0, 0, 'Completed!');
             showToast(
               `⚡ k-NN computed: Total ${totalWallMs.toFixed(1)} ms ` +
               `(Compute: ${timeCompute.toFixed(1)} ms, ` +
@@ -3167,7 +3410,10 @@
       } finally {
         isKnnComputing = false;
         knnAbortRequested = false;
-        updateKnnButtonUI(false);
+        setTimeout(() => {
+          hideKnnProgress();
+          updateKnnButtonUI(false);
+        }, 700);
       }
     }
 
@@ -3238,6 +3484,23 @@
       draw();
     }
 
+    function resetKnn() {
+      knnResults = null;
+      selectedKnnQuerySample = -1;
+      hoveredKnnNeighborId = -1;
+      hoveredClosestSample = null;
+      lockedClosestSample = null;
+      clearKnnError();
+      if (typeof renderKnnTrace === 'function') {
+        renderKnnTrace();
+      }
+      if (typeof renderDataStructuresUI === 'function') {
+        renderDataStructuresUI();
+      }
+      draw();
+      showToast('↺ k-NN results reset (clusters preserved)');
+    }
+
     const btnToggleKnnModule = document.getElementById('btnToggleKnnModule');
     if (btnToggleKnnModule) {
       btnToggleKnnModule.addEventListener('click', () => toggleKnnModule());
@@ -3256,6 +3519,16 @@
     const btnRunKnnSide = document.getElementById('btnRunKnnSide');
     if (btnRunKnnSide) {
       btnRunKnnSide.addEventListener('click', executeKnnComputation);
+    }
+
+    const btnResetKnn = document.getElementById('btnResetKnn');
+    if (btnResetKnn) {
+      btnResetKnn.addEventListener('click', resetKnn);
+    }
+
+    const btnResetKnnSide = document.getElementById('btnResetKnnSide');
+    if (btnResetKnnSide) {
+      btnResetKnnSide.addEventListener('click', resetKnn);
     }
 
     const sliderKnnK = document.getElementById('sliderKnnK');
@@ -3350,7 +3623,7 @@
         btnKnnMultiPivot.classList.toggle('toggle-cyan', knnMvp);
         btnKnnMultiPivot.classList.toggle('active', knnMvp);
         updateCliCommand();
-        if (enableKnn) executeKnnComputation();
+        draw();
       });
     }
 
@@ -4477,49 +4750,41 @@
       const btnClear = document.getElementById('btnClearCliConsole');
       const btnLoadManual = document.getElementById('btnLoadClusterDatManual');
       const chkAutoLoad = document.getElementById('chkAutoLoadResults');
-      const selCliInputMode = document.getElementById('selectCliInputMode');
-      const pnlCliStreamConfig = document.getElementById('cliStreamConfigPanel');
       const selSideInputMode = document.getElementById('selectInputModeSide');
       const pnlSideStreamConfig = document.getElementById('sideStreamConfigPanel');
-      const selCliFps = document.getElementById('selectCliStreamFps');
       const selSideFps = document.getElementById('selectSideStreamFps');
-      const chkCliLoop = document.getElementById('chkCliStreamLoop');
       const chkSideLoop = document.getElementById('chkSideStreamLoop');
-      const chkCliCnt2 = document.getElementById('chkCliStreamCnt2Sync');
       const chkSideCnt2 = document.getElementById('chkSideStreamCnt2Sync');
+      const badgeIngestion = document.getElementById('cliIngestionSourceBadge');
 
-      const syncInputMode = (val) => {
-        if (selCliInputMode) selCliInputMode.value = val;
-        if (selSideInputMode) selSideInputMode.value = val;
-        const isStream = (val === 'stream');
-        if (pnlCliStreamConfig) pnlCliStreamConfig.style.display = isStream ? 'flex' : 'none';
-        if (pnlSideStreamConfig) pnlSideStreamConfig.style.display = isStream ? 'flex' : 'none';
+      const updateIngestionStatus = () => {
+        const isStream = (selSideInputMode && selSideInputMode.value === 'stream');
+        if (pnlSideStreamConfig) {
+          pnlSideStreamConfig.style.display = isStream ? 'flex' : 'none';
+        }
+        if (badgeIngestion) {
+          if (isStream) {
+            const fpsVal = selSideFps ? selSideFps.value : '0';
+            const fpsLabel = (fpsVal === '0') ? 'Lockstep (cnt2sync)' : `${fpsVal} FPS`;
+            badgeIngestion.textContent = `⚡ ImageStreamIO (${fpsLabel})`;
+            badgeIngestion.style.color = '#38bdf8';
+          } else {
+            badgeIngestion.textContent = '📁 Direct File / Memory';
+            badgeIngestion.style.color = '#4ade80';
+          }
+        }
         if (isStream && engineMode !== 'cli') {
           setEngineMode('cli');
         }
       };
 
-      if (selCliInputMode) {
-        selCliInputMode.addEventListener('change', () => syncInputMode(selCliInputMode.value));
-      }
       if (selSideInputMode) {
-        selSideInputMode.addEventListener('change', () => syncInputMode(selSideInputMode.value));
+        selSideInputMode.addEventListener('change', updateIngestionStatus);
       }
-
-      if (selCliFps && selSideFps) {
-        selCliFps.addEventListener('change', () => { selSideFps.value = selCliFps.value; });
-        selSideFps.addEventListener('change', () => { selCliFps.value = selSideFps.value; });
+      if (selSideFps) {
+        selSideFps.addEventListener('change', updateIngestionStatus);
       }
-
-      if (chkCliLoop && chkSideLoop) {
-        chkCliLoop.addEventListener('change', () => { chkSideLoop.checked = chkCliLoop.checked; });
-        chkSideLoop.addEventListener('change', () => { chkCliLoop.checked = chkSideLoop.checked; });
-      }
-
-      if (chkCliCnt2 && chkSideCnt2) {
-        chkCliCnt2.addEventListener('change', () => { chkSideCnt2.checked = chkCliCnt2.checked; });
-        chkSideCnt2.addEventListener('change', () => { chkCliCnt2.checked = chkSideCnt2.checked; });
-      }
+      updateIngestionStatus();
 
       if (chkAutoLoad) {
         chkAutoLoad.addEventListener('change', (e) => {
@@ -4537,6 +4802,13 @@
       if (btnRun) {
         btnRun.addEventListener('click', async () => {
           await runNativeCli();
+        });
+      }
+
+      const btnRunCliKnn = document.getElementById('btnRunCliKnn');
+      if (btnRunCliKnn) {
+        btnRunCliKnn.addEventListener('click', async () => {
+          await executeKnnComputation();
         });
       }
 
@@ -4603,17 +4875,21 @@
 
       let args = [];
       let isStreamInput = false;
-      const inputMode = document.getElementById('selectCliInputMode')?.value || 'file';
+      const inputMode = document.getElementById('selectInputModeSide')?.value || 'file';
       const isStreamingMode = (inputMode === 'stream');
-      const streamFps = parseFloat(document.getElementById('selectCliStreamFps')?.value || '100');
-      const streamLoop = document.getElementById('chkCliStreamLoop')?.checked || false;
+      const streamFps = parseFloat(
+        document.getElementById('selectSideStreamFps')?.value || '0'
+      );
+      const streamLoop =
+        document.getElementById('chkSideStreamLoop')?.checked || false;
       const streamName = `gric_sim_${Date.now() % 100000}`;
       let streamJobOpts = null;
 
       if (isStreamingMode) {
         isStreamInput = true;
         const isSynthetic = !selCli || !selCli.value || dataset === `${currentBenchmark}.txt` ||
-          (typeof BENCHMARK_DESCS !== 'undefined' && BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
+          (typeof BENCHMARK_DESCS !== 'undefined' &&
+           BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
 
         if (isSynthetic || !dataset) {
           dataset = `${currentBenchmark}.txt`;
@@ -4624,11 +4900,14 @@
           let content = '';
           for (let i = 0; i < benchmarkDataset.length; i++) {
             const pt = benchmarkDataset[i];
-            if (Array.isArray(pt) || ArrayBuffer.isView(pt) || (pt && typeof pt.length === 'number')) {
+            if (Array.isArray(pt) || ArrayBuffer.isView(pt) ||
+                (pt && typeof pt.length === 'number')) {
               content += Array.from(pt).map(v => Number(v).toFixed(6)).join(' ') + '\n';
             } else if (pt && typeof pt === 'object') {
               if (currentDim === 3) {
-                content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)} ${Number(pt.z || 0).toFixed(6)}\n`;
+                content += `${Number(pt.x || 0).toFixed(6)} ` +
+                           `${Number(pt.y || 0).toFixed(6)} ` +
+                           `${Number(pt.z || 0).toFixed(6)}\n`;
               } else {
                 content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)}\n`;
               }
@@ -4645,7 +4924,6 @@
         const baseName = dataset.replace(/\.[^/.]+$/, '');
         const clusterDir = `${baseName}.clusterdat`;
         const streamCnt2sync = (streamFps === 0) ||
-          (document.getElementById('chkCliStreamCnt2Sync')?.checked ?? false) ||
           (document.getElementById('chkSideStreamCnt2Sync')?.checked ?? false);
 
         args = [rlim.toFixed(3), streamName, '-stream', '-outdir', clusterDir];
@@ -4750,12 +5028,14 @@
       args.push('-evals');
 
       const btnRun = document.getElementById('btnRunCli');
+      const btnRunKnn = document.getElementById('btnRunCliKnn');
       const btnKill = document.getElementById('btnKillCli');
       const btnPlay = document.getElementById('btnPlay');
       const badgeStatus = document.getElementById('badgeCliStatus');
       const consoleEl = document.getElementById('cliConsoleLog');
 
       if (btnRun) btnRun.disabled = true;
+      if (btnRunKnn) btnRunKnn.disabled = true;
       if (btnKill) btnKill.disabled = false;
       if (btnPlay) {
         btnPlay.innerHTML = '⏳ Running...';
@@ -4901,6 +5181,7 @@
             isCliRunning = false;
             const elapsed = ((performance.now() - tStart) / 1000).toFixed(2);
             if (btnRun) btnRun.disabled = false;
+            if (btnRunKnn) btnRunKnn.disabled = false;
             if (btnKill) btnKill.disabled = true;
             if (btnPlay) {
               btnPlay.innerHTML = '▶ Run gric-cluster';
@@ -5664,7 +5945,95 @@
           if (typeof showToast === 'function') showToast(label);
         });
       }
+
+      const btnShowAll = document.getElementById('btnImgShowAllPanels');
+      if (btnShowAll) {
+        btnShowAll.addEventListener('click', () => {
+          maximizedQuad = null;
+          syncImageQuadUI();
+          if (typeof draw === 'function') draw();
+          if (typeof showToast === 'function') showToast('⊞ Restored All 4 View Panels');
+        });
+      }
+
+      const selectView = document.getElementById('selectImgViewPanel');
+      if (selectView) {
+        selectView.addEventListener('change', (e) => {
+          const val = e.target.value;
+          if (val === 'all') {
+            maximizedQuad = null;
+            if (typeof showToast === 'function') showToast('⊞ All 4 Panels (Split Grid)');
+          } else if (val === '2_knn') {
+            maximizedQuad = 2;
+            imageQ2ViewMode = 'knn';
+            if (typeof showToast === 'function') showToast('⚡ Maximized Q2: k-NN Neighbors');
+          } else {
+            maximizedQuad = parseInt(val, 10);
+            if (maximizedQuad === 2) imageQ2ViewMode = 'members';
+            const qNames = ['Current Frame', 'Anchor / Residual', 'Cluster Members', 'All Clusters'];
+            if (typeof showToast === 'function') {
+              showToast(`🔍 Maximized Q${maximizedQuad}: ${qNames[maximizedQuad]}`);
+            }
+          }
+          syncImageQuadUI();
+          if (typeof draw === 'function') draw();
+        });
+      }
+
+      function setImageThumbSize(size) {
+        const clamped = Math.max(36, Math.min(220, Math.round(size)));
+        imageThumbSize = clamped;
+        const lblSize = document.getElementById('lblImgThumbSize');
+        if (lblSize) lblSize.textContent = `${clamped}px`;
+        if (typeof draw === 'function') draw();
+      }
+
+      const btnThumbSmaller = document.getElementById('btnImgThumbSmaller');
+      if (btnThumbSmaller) {
+        btnThumbSmaller.addEventListener('click', () => {
+          const cur = (typeof imageThumbSize !== 'undefined') ? imageThumbSize : 64;
+          setImageThumbSize(cur - 16);
+          if (typeof showToast === 'function') showToast(`🔍 Thumbnail Size: ${imageThumbSize}px`);
+        });
+      }
+
+      const btnThumbBigger = document.getElementById('btnImgThumbBigger');
+      if (btnThumbBigger) {
+        btnThumbBigger.addEventListener('click', () => {
+          const cur = (typeof imageThumbSize !== 'undefined') ? imageThumbSize : 64;
+          setImageThumbSize(cur + 16);
+          if (typeof showToast === 'function') showToast(`🔍 Thumbnail Size: ${imageThumbSize}px`);
+        });
+      }
     }
+
+    function syncImageQuadUI() {
+      const selectView = document.getElementById('selectImgViewPanel');
+      const btnShowAll = document.getElementById('btnImgShowAllPanels');
+      if (selectView) {
+        if (maximizedQuad === null) {
+          selectView.value = 'all';
+        } else if (maximizedQuad === 2 && imageQ2ViewMode === 'knn') {
+          selectView.value = '2_knn';
+        } else {
+          selectView.value = String(maximizedQuad);
+        }
+      }
+      if (btnShowAll) {
+        if (maximizedQuad === null) {
+          btnShowAll.style.background = 'rgba(56, 189, 248, 0.2)';
+          btnShowAll.style.color = '#38bdf8';
+          btnShowAll.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+          btnShowAll.textContent = '⊞ All 4 Panels';
+        } else {
+          btnShowAll.style.background = 'rgba(34, 197, 94, 0.25)';
+          btnShowAll.style.color = '#4ade80';
+          btnShowAll.style.borderColor = 'rgba(34, 197, 94, 0.6)';
+          btnShowAll.textContent = '⊞ Show All Panels';
+        }
+      }
+    }
+    window.syncImageQuadUI = syncImageQuadUI;
 
     // -------------------------------------------------------------------------
     // Quick Command Palette (Ctrl+K / Cmd+K)
@@ -5692,6 +6061,13 @@
         hint: 'K', action: () => document.getElementById('btnToggleKnnModule')?.click() },
       { id: 'act-knn-run', group: 'Actions', icon: '▶', name: 'Compute k-Nearest Neighbors',
         hint: 'k-NN', action: () => document.getElementById('btnRunKnn')?.click() },
+      { id: 'act-img-show-all', group: 'Actions', icon: '⊞', name: 'Show All View Panels (4-Split Grid)',
+        hint: 'Esc', action: () => {
+          maximizedQuad = null;
+          syncImageQuadUI();
+          if (typeof draw === 'function') draw();
+          if (typeof showToast === 'function') showToast('⊞ Restored All 4 View Panels');
+        } },
       { id: 'act-img-sort-desc', group: 'Actions', icon: '📊', name: 'Image Mode: Sort Clusters by Size (Descending)',
         hint: 'Sort Desc', action: () => {
           imageClustersSortMode = 'size_desc';

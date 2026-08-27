@@ -21,14 +21,17 @@
     let currentImageFrame = null; // Float32Array or Float64Array for active frame
     let imageGalleryScrollY = 0; // Legacy gallery scroll offset
     let imageMembersScrollY = 0; // Q2 Members gallery scroll offset
+    let imageKnnScrollY = 0; // Q2 k-NN gallery scroll offset
     let imageClustersScrollY = 0; // Q3 All clusters gallery scroll offset
-    let imageTopRightMode = 'anchor'; // 'anchor' or 'residual'
+    let imageTopRightMode = 'anchor'; // 'anchor', 'residual', 'nn1', 'nn1_diff'
+    let imageQ2ViewMode = 'members'; // 'members' (cluster) or 'knn' (neighbors)
     let inspectedImageFrameIdx = -1; // -1 = live, >= 0 = retro-inspected frame
     let inspectedClusterId = -1; // -1 = all clusters, >= 0 = inspecting cluster member frames
     let imageFrameAssignments = []; // imageFrameAssignments[frameIdx] = clusterId
     let imageFrameDists = []; // imageFrameDists[frameIdx] = distance to anchor
     let imageClusterMembers = {}; // imageClusterMembers[clusterId] = [frameIdx, ...]
-    let imageClustersSortMode = 'id'; // 'id', 'size_desc' (largest first), 'size_asc' (smallest first)
+    let imageClustersSortMode = 'id'; // 'id', 'size_desc', 'size_asc'
+    let imageThumbSize = 64; // Thumbnail gallery size in pixels (36 to 200)
 
     // 3D Orbit Camera State (Spherical Orbit: Azimuth θ, Elevation φ)
     const orbitCamera = {
@@ -313,6 +316,17 @@
       if (slR) slR.value = rlim;
       const inpR = document.getElementById('inputRlim');
       if (inpR) inpR.value = rlim.toFixed(3);
+      if (typeof isRunning !== 'undefined' && !isRunning) {
+        if (typeof totalFrames !== 'undefined' && totalFrames > 0) {
+          if (typeof resetClustering === 'function') {
+            resetClustering(true);
+            currentFrameIdx = 0;
+          }
+        } else if (typeof GricWasm !== 'undefined' && GricWasm.isLoaded()) {
+          const params = GricWasm.buildParamsFromState();
+          wasmSessionActive = GricWasm.init(params);
+        }
+      }
       showToast(`⚡ Auto-rlim (-scandist): Median=${median.toFixed(3)} ➔ rlim=${rlim.toFixed(3)}`);
       draw();
     }

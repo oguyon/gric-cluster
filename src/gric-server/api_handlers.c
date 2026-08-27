@@ -1496,6 +1496,36 @@ static void handle_api_shm_telemetry(
     api_send_json(client_fd, 200, resp);
 }
 
+/**
+ * @brief Handle keepalive heartbeat ping from web client.
+ */
+static void handle_api_heartbeat(
+    int client_fd)
+{
+    server_record_heartbeat();
+    api_send_json(client_fd, 200, "{\"status\":\"ok\"}");
+}
+
+/**
+ * @brief Handle client tab departure / page unload beacon.
+ */
+static void handle_api_heartbeat_leave(
+    int client_fd)
+{
+    server_client_leave();
+    api_send_json(client_fd, 200, "{\"status\":\"bye\"}");
+}
+
+/**
+ * @brief Handle explicit server shutdown request.
+ */
+static void handle_api_shutdown(
+    int client_fd)
+{
+    api_send_json(client_fd, 200, "{\"status\":\"shutting_down\"}");
+    server_stop();
+}
+
 int handle_api_request(
     int                 client_fd,
     const ServerConfig *config,
@@ -1533,6 +1563,24 @@ int handle_api_request(
         strcmp(method, "POST") == 0)
     {
         handle_api_file_write(client_fd, config, body, body_len);
+        return 1;
+    }
+    if (strcmp(path, "/api/heartbeat") == 0 &&
+        (strcmp(method, "POST") == 0 || strcmp(method, "GET") == 0))
+    {
+        handle_api_heartbeat(client_fd);
+        return 1;
+    }
+    if (strcmp(path, "/api/heartbeat/leave") == 0 &&
+        (strcmp(method, "POST") == 0 || strcmp(method, "GET") == 0))
+    {
+        handle_api_heartbeat_leave(client_fd);
+        return 1;
+    }
+    if (strcmp(path, "/api/shutdown") == 0 &&
+        (strcmp(method, "POST") == 0 || strcmp(method, "GET") == 0))
+    {
+        handle_api_shutdown(client_fd);
         return 1;
     }
     if (strcmp(path, "/api/cli/session/init") == 0 &&

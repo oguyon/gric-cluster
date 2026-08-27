@@ -88,11 +88,14 @@
         return;
       }
 
-      if (useWasm && GricWasm.isLoaded() && (!wasmSessionActive || !GricWasm.isReady())) {
+      if (useWasm && GricWasm.isLoaded()) {
         const params = GricWasm.buildParamsFromState();
-        wasmSessionActive = GricWasm.init(params);
-        if (typeof updateWasmBadge === 'function') {
-          updateWasmBadge();
+        if (!wasmSessionActive || !GricWasm.isReady() ||
+            (GricWasm.isConfigChanged && GricWasm.isConfigChanged(params))) {
+          wasmSessionActive = GricWasm.init(params);
+          if (typeof updateWasmBadge === 'function') {
+            updateWasmBadge();
+          }
         }
       }
 
@@ -288,11 +291,14 @@
       currentImageFrame = pixels;
       const currentIdx = totalFrames - 1;
 
-      if (useWasm && GricWasm.isLoaded() && (!wasmSessionActive || !GricWasm.isReady())) {
+      if (useWasm && GricWasm.isLoaded()) {
         const params = GricWasm.buildParamsFromState();
-        wasmSessionActive = GricWasm.init(params);
-        if (typeof updateWasmBadge === 'function') {
-          updateWasmBadge();
+        if (!wasmSessionActive || !GricWasm.isReady() ||
+            (GricWasm.isConfigChanged && GricWasm.isConfigChanged(params))) {
+          wasmSessionActive = GricWasm.init(params);
+          if (typeof updateWasmBadge === 'function') {
+            updateWasmBadge();
+          }
         }
       }
 

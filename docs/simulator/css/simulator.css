@@ -2590,6 +2590,15 @@
       box-shadow: 0 0 10px rgba(250, 204, 21, 0.35);
     }
 
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .knn-spin-anim {
+      display: inline-block;
+      animation: spin 1s linear infinite;
+    }
+
 
 
 

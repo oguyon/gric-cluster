@@ -16,12 +16,15 @@
 
 typedef struct
 {
-    int  port;
-    char bind_ip[64];
-    char workdir[PATH_MAX];
-    char docs_dir[PATH_MAX];
-    char server_bin_dir[PATH_MAX];
-    int  verbose;
+    int    port;
+    char   bind_ip[64];
+    char   workdir[PATH_MAX];
+    char   docs_dir[PATH_MAX];
+    char   server_bin_dir[PATH_MAX];
+    int    verbose;
+    pid_t  watch_pid;
+    int    idle_timeout;
+    int    auto_shutdown;
 } ServerConfig;
 
 /**
@@ -45,6 +48,18 @@ int server_run(
  * @brief Request graceful server shutdown.
  */
 void server_stop(
+    void);
+
+/**
+ * @brief Record a client keepalive heartbeat ping.
+ */
+void server_record_heartbeat(
+    void);
+
+/**
+ * @brief Handle a client session departure notification.
+ */
+void server_client_leave(
     void);
 
 #endif // HTTP_SERVER_H
