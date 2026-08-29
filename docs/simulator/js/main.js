@@ -333,6 +333,7 @@
       isComputeAllRunning = true;
       abortComputeAllRequested = false;
       isRunning = true;
+      knnResults = null;
       setComputeAllButtonActive();
 
       const btnPlay = document.getElementById('btnPlay');
@@ -686,17 +687,28 @@
       isExplainMode = enabled;
       const btn = document.getElementById('btnExplain');
       if (isExplainMode) {
-        btn.classList.add('toggle-active');
+        if (btn) btn.classList.add('toggle-active');
         setTab('narrative');
+
+        // Automatically expand the trace panel so the Decision Narrative is visible
+        const card = document.getElementById('cardTrace');
+        if (card && card.classList.contains('collapsed')) {
+          if (typeof togglePanelCollapse === 'function') {
+            togglePanelCollapse('cardTrace');
+          } else {
+            card.classList.remove('collapsed');
+          }
+        }
+
         // Enable C-side trace buffer for WASM explain
-        if (typeof GricWasm !== 'undefined' && GricWasm.isReady()) {
+        if (typeof GricWasm !== 'undefined' && typeof GricWasm.setTrace === 'function') {
           GricWasm.setTrace(true);
         }
       } else {
-        btn.classList.remove('toggle-active');
+        if (btn) btn.classList.remove('toggle-active');
         currentExplanation = [];
         // Disable C-side trace buffer
-        if (typeof GricWasm !== 'undefined' && GricWasm.isReady()) {
+        if (typeof GricWasm !== 'undefined' && typeof GricWasm.setTrace === 'function') {
           GricWasm.setTrace(false);
         }
       }
@@ -1779,12 +1791,28 @@
       });
     }
 
-    document.getElementById('tabNarrative').addEventListener('click', () => setTab('narrative'));
-    document.getElementById('tabCandidates').addEventListener('click', () => setTab('candidates'));
+    document.getElementById('tabNarrative').addEventListener('click', () => {
+      setTab('narrative');
+      updateUI();
+    });
+    document.getElementById('tabCandidates').addEventListener('click', () => {
+      setTab('candidates');
+      updateUI();
+    });
     const tabTMEl = document.getElementById('tabTM');
-    if (tabTMEl) tabTMEl.addEventListener('click', () => setTab('tm'));
+    if (tabTMEl) {
+      tabTMEl.addEventListener('click', () => {
+        setTab('tm');
+        updateUI();
+      });
+    }
     const tabEntropyTraceEl = document.getElementById('tabEntropyTrace');
-    if (tabEntropyTraceEl) tabEntropyTraceEl.addEventListener('click', () => setTab('entropy'));
+    if (tabEntropyTraceEl) {
+      tabEntropyTraceEl.addEventListener('click', () => {
+        setTab('entropy');
+        updateUI();
+      });
+    }
 
     // Recent Samples History Navigation Listeners
     const btnPrevSample = document.getElementById('btnPrevSample');
@@ -5061,6 +5089,7 @@
 
       const tStart = performance.now();
       isCliRunning = true;
+      knnResults = null;
 
       try {
         await DesktopBridge.runCliJob({
@@ -5361,17 +5390,10 @@
         const frameCounter = document.getElementById('frameCounter');
         if (frameCounter) frameCounter.textContent = `${totalFrames} / ${totalFrames} (100.0%)`;
 
-        // Attempt loading existing knn_results.txt if available
-        try {
-          const knnData = await DesktopBridge.readKnnResults(clusterDir, (typeof knnK !== 'undefined' ? knnK : 10));
-          if (knnData) {
-            knnResults = knnData;
-            if (typeof renderKnnTrace === 'function') {
-              renderKnnTrace();
-            }
-          }
-        } catch (e) {
-          /* ignore */
+        // Reset k-NN post-processing results for newly computed/loaded clusters
+        knnResults = null;
+        if (typeof renderKnnTrace === 'function') {
+          renderKnnTrace();
         }
 
         updateUI();

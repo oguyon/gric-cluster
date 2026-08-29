@@ -67,8 +67,32 @@
             }
             
             if (isExplainMode) {
-              if (snapshot.traceSteps) {
+              if (snapshot.traceSteps && snapshot.traceSteps.length > 0) {
                 currentExplanation.push(...snapshot.traceSteps);
+              }
+              const sampleEntry = {
+                frameIndex: totalFrames,
+                timestamp: performance.now(),
+                point: { x, y, z },
+                assignedCluster: (snapshot.lastTuple && snapshot.lastTuple[0] !== undefined)
+                  ? snapshot.lastTuple[0] : 0,
+                isNewCluster: false,
+                distSC: distSampleClusterLast,
+                distCC: distClusterClusterLast,
+                evals: evalsThis,
+                evaluations: [],
+                initialEntropy: 0,
+                entropyReduced: 0,
+                steps: currentExplanation.length > 0 ? [...currentExplanation] : [{
+                  type: 'target',
+                  title: `📍 Sample #${totalFrames} Multi-Tile Partitioned`,
+                  text: `Ingested ${coordStr} across sub-dimensional tiles.`
+                }],
+                entropyRankings: []
+              };
+              sampleTraceLog.push(sampleEntry);
+              if (sampleTraceLog.length > MAX_SAMPLE_TRACE_HISTORY) {
+                sampleTraceLog = sampleTraceLog.slice(-MAX_SAMPLE_TRACE_HISTORY);
               }
             }
           }
@@ -161,10 +185,21 @@
             }
           }
 
-          let traceSteps;
+          let traceSteps = [];
           let traceRankings = [];
           if (isExplainMode) {
             traceSteps = GricWasm.getTrace();
+            if (!traceSteps || traceSteps.length === 0) {
+              traceSteps = [{
+                type: (assigned >= 0) ? 'match' : 'new-cluster',
+                title: (assigned >= 0)
+                  ? `🎯 Sample #${totalFrames} Assigned to C${assigned}`
+                  : `✨ Sample #${totalFrames} Spawned New Cluster C${actualClusterId}`,
+                text: (assigned >= 0)
+                  ? `Point ${coordStr} matched cluster anchor C${assigned} within rlim = ${(rlim || 0.1).toFixed(4)}.`
+                  : `Point ${coordStr} exceeded distance threshold to all anchors. Created cluster C${actualClusterId}.`
+              }];
+            }
             currentExplanation = [...traceSteps];
             for (let si = traceSteps.length - 1; si >= 0; si--) {
               if (traceSteps[si].entropyRankings) {
@@ -269,6 +304,58 @@
           prevAssignedCluster = actualClusterId;
         }
         distSampleClusterLast = actualDist;
+
+        // Build pure JS decision trace steps
+        const jsSteps = [];
+        jsSteps.push({
+          type: 'target',
+          title: `📍 Ingesting Sample #${totalFrames} (JS Engine)`,
+          text: `Processing point ${coordStr} with radius threshold rlim = ${(rlim || 0.1).toFixed(4)}.`
+        });
+
+        if (bestCluster >= 0 && actualDist <= (rlim || 0.1)) {
+          jsSteps.push({
+            type: 'match',
+            title: `🎯 Match on Cluster C${bestCluster}`,
+            text: `Distance d = ${actualDist.toFixed(4)} ≤ rlim = ${(rlim || 0.1).toFixed(4)}. Assigned to cluster C${bestCluster}.`
+          });
+        } else {
+          if (clusters.length > 1) {
+            jsSteps.push({
+              type: 'mismatch',
+              title: `❌ Mismatch with Closest Cluster (C${bestCluster >= 0 ? bestCluster : 0})`,
+              text: `Closest distance d = ${actualDist.toFixed(4)} > rlim = ${(rlim || 0.1).toFixed(4)}.`
+            });
+          }
+          jsSteps.push({
+            type: 'new-cluster',
+            title: `✨ New Cluster Created: C${actualClusterId}`,
+            text: `Point exceeded radius threshold for all existing clusters. Established new cluster anchor C${actualClusterId}.`
+          });
+        }
+
+        currentExplanation = [...jsSteps];
+
+        const sampleEntry = {
+          frameIndex: totalFrames,
+          timestamp: performance.now(),
+          point: { x, y, z },
+          assignedCluster: actualClusterId,
+          isNewCluster: (bestCluster < 0 || actualDist > (rlim || 0.1)),
+          distSC: actualDist,
+          distCC: 0,
+          evals: clusters.length,
+          evaluations: [],
+          initialEntropy: 0,
+          entropyReduced: 0,
+          steps: jsSteps,
+          entropyRankings: []
+        };
+        sampleTraceLog.push(sampleEntry);
+        if (sampleTraceLog.length > MAX_SAMPLE_TRACE_HISTORY) {
+          sampleTraceLog = sampleTraceLog.slice(-MAX_SAMPLE_TRACE_HISTORY);
+        }
+
         if (!skipRender && !isRunning) {
           updateUI();
           draw();
@@ -368,13 +455,56 @@
         imageFrameDists[currentIdx] = frameDist;
         distSampleClusterLast = frameDist;
 
-        if (!skipRender) {
+        if (!skipRender || isExplainMode) {
           const snapshot = GricWasm.syncState();
           if (snapshot) {
             GricWasm.applyToJsState(snapshot);
             if (snapshot.numClusters > 0) {
               naiveEvals += snapshot.numClusters;
             }
+          }
+
+          let traceSteps = [];
+          if (isExplainMode) {
+            traceSteps = GricWasm.getTrace();
+            if (!traceSteps || traceSteps.length === 0) {
+              traceSteps = [{
+                type: (assigned >= 0) ? 'match' : 'new-cluster',
+                title: (assigned >= 0)
+                  ? `🖼️ Image Frame #${totalFrames} Assigned to C${assigned}`
+                  : `✨ Image Frame #${totalFrames} Spawned New Cluster C${actualClusterId}`,
+                text: (assigned >= 0)
+                  ? `Pixel vector matched cluster anchor C${assigned} within rlim = ${(rlim || 0.1).toFixed(4)}.`
+                  : `Pixel vector established new image cluster anchor C${actualClusterId}.`
+              }];
+            }
+            currentExplanation = [...traceSteps];
+          } else {
+            traceSteps = [{
+              type: 'target',
+              title: `🖼️ Image Frame #${totalFrames} (WASM)`,
+              text: (assigned >= 0) ? `Assigned to C${assigned}.` : `Spawned C${actualClusterId}.`
+            }];
+          }
+
+          const sampleEntry = {
+            frameIndex: totalFrames,
+            timestamp: performance.now(),
+            point: { x: 0, y: 0, z: 0 },
+            assignedCluster: actualClusterId,
+            isNewCluster: (assigned < 0),
+            distSC: distSampleClusterLast,
+            distCC: distClusterClusterLast,
+            evals: snapshot ? snapshot.telemetry.lastFrameDists : 0,
+            evaluations: [],
+            initialEntropy: 0,
+            entropyReduced: 0,
+            steps: traceSteps,
+            entropyRankings: []
+          };
+          sampleTraceLog.push(sampleEntry);
+          if (sampleTraceLog.length > MAX_SAMPLE_TRACE_HISTORY) {
+            sampleTraceLog = sampleTraceLog.slice(-MAX_SAMPLE_TRACE_HISTORY);
           }
 
           if (actualClusterId >= 0) {
@@ -451,6 +581,38 @@
         imageFrameDists[currentIdx] = actualDist;
         distSampleClusterLast = actualDist;
         prevAssignedCluster = actualClusterId;
+
+        const jsSteps = [{
+          type: (bestCluster >= 0 && actualDist <= (rlim || 0.1)) ? 'match' : 'new-cluster',
+          title: (bestCluster >= 0 && actualDist <= (rlim || 0.1))
+            ? `🖼️ Image Frame #${totalFrames} Assigned to C${actualClusterId}`
+            : `✨ Image Frame #${totalFrames} Spawned New Cluster C${actualClusterId}`,
+          text: (bestCluster >= 0 && actualDist <= (rlim || 0.1))
+            ? `Vector distance d = ${actualDist.toFixed(4)} ≤ rlim = ${(rlim || 0.1).toFixed(4)}. Assigned to cluster C${actualClusterId}.`
+            : `Vector distance exceeded threshold. Created new cluster anchor C${actualClusterId}.`
+        }];
+        currentExplanation = [...jsSteps];
+
+        const sampleEntry = {
+          frameIndex: totalFrames,
+          timestamp: performance.now(),
+          point: { x: 0, y: 0, z: 0 },
+          assignedCluster: actualClusterId,
+          isNewCluster: (bestCluster < 0 || actualDist > (rlim || 0.1)),
+          distSC: actualDist,
+          distCC: 0,
+          evals: clusters.length,
+          evaluations: [],
+          initialEntropy: 0,
+          entropyReduced: 0,
+          steps: jsSteps,
+          entropyRankings: []
+        };
+        sampleTraceLog.push(sampleEntry);
+        if (sampleTraceLog.length > MAX_SAMPLE_TRACE_HISTORY) {
+          sampleTraceLog = sampleTraceLog.slice(-MAX_SAMPLE_TRACE_HISTORY);
+        }
+
         if (!skipRender && !isRunning) {
           updateUI();
           draw();

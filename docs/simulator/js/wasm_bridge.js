@@ -1098,10 +1098,10 @@ const GricWasm = (function () {
    * @param {boolean} enabled
    */
   function setTrace(enabled) {
-    if (!_handle) return;
-    _traceEnabled = enabled;
+    _traceEnabled = !!enabled;
+    if (!_handle || !_fn.setTrace) return;
     _fn.setTrace(_handle, enabled ? 1 : 0, 2048);
-    if (!_eventSize && enabled) {
+    if (!_eventSize && enabled && _fn.getTraceEventSize) {
       _eventSize = _fn.getTraceEventSize();
     }
   }

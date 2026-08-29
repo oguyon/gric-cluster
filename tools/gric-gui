@@ -325,25 +325,78 @@ trap cleanup_gui EXIT INT TERM HUP
 # 2. Launch Browser / Desktop App Window
 echo -e "${ANSI_COLOR_GREEN}Launching GRIC Simulator (${URL})...${ANSI_COLOR_RESET}"
 
+GUI_PROFILE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/gric-gui"
+mkdir -p "${GUI_PROFILE_DIR}"
+
+CHROME_FLAGS=(
+    "--app=${URL}"
+    "--window-size=${WINDOW_SIZE}"
+    "--user-data-dir=${GUI_PROFILE_DIR}/chrome-profile"
+    "--no-first-run"
+    "--no-default-browser-check"
+)
+
+CHROMIUM_FLAGS=(
+    "--app=${URL}"
+    "--window-size=${WINDOW_SIZE}"
+    "--user-data-dir=${GUI_PROFILE_DIR}/chromium-profile"
+    "--no-first-run"
+    "--no-default-browser-check"
+)
+
+run_browser_and_wait() {
+    local start_ts
+    start_ts=$(date +%s)
+
+    "$@"
+    local browser_exit=$?
+
+    local elapsed
+    elapsed=$(( $(date +%s) - start_ts ))
+
+    # If the browser command returned immediately (e.g. attached to an existing session),
+    # keep the script alive so gric-server remains running until interrupted.
+    if [[ $elapsed -lt 2 && -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo -e "${ANSI_COLOR_CYAN}Simulator is running at ${URL}${ANSI_COLOR_RESET}"
+        echo -e "${ANSI_COLOR_GREY}Press Ctrl+C to stop the server.${ANSI_COLOR_RESET}"
+        wait "$SERVER_PID" 2>/dev/null || sleep infinity
+    fi
+    return $browser_exit
+}
+
 if [[ -n "$BROWSER" ]]; then
     case "$BROWSER" in
         google-chrome|chrome)
-            google-chrome --app="${URL}" --window-size="${WINDOW_SIZE}"
+            run_browser_and_wait google-chrome "${CHROME_FLAGS[@]}"
             ;;
         chromium|chromium-browser)
-            chromium --app="${URL}" --window-size="${WINDOW_SIZE}"
+            if command -v chromium >/dev/null 2>&1; then
+                run_browser_and_wait chromium "${CHROMIUM_FLAGS[@]}"
+            elif command -v chromium-browser >/dev/null 2>&1; then
+                run_browser_and_wait chromium-browser "${CHROMIUM_FLAGS[@]}"
+            else
+                echo -e "${ANSI_COLOR_RED}Error: Chromium browser not found.${ANSI_COLOR_RESET}" >&2
+                exit 1
+            fi
+            ;;
+        brave|brave-browser)
+            run_browser_and_wait brave-browser "${CHROMIUM_FLAGS[@]}"
+            ;;
+        edge|msedge|microsoft-edge)
+            run_browser_and_wait microsoft-edge "${CHROMIUM_FLAGS[@]}"
             ;;
         firefox)
-            firefox --new-window "${URL}"
+            run_browser_and_wait firefox --new-window "${URL}"
             ;;
         default)
-            xdg-open "${URL}"
-            echo -e "${ANSI_COLOR_GREY}GUI in browser. Press Ctrl+C to stop.${ANSI_COLOR_RESET}"
-            wait $SERVER_PID 2>/dev/null || sleep infinity
+            xdg-open "${URL}" >/dev/null 2>&1 || true
+            echo -e "${ANSI_COLOR_CYAN}Simulator is running at ${URL}${ANSI_COLOR_RESET}"
+            echo -e "${ANSI_COLOR_GREY}Press Ctrl+C to stop the server.${ANSI_COLOR_RESET}"
+            wait "$SERVER_PID" 2>/dev/null || sleep infinity
             ;;
         *)
             if command -v "$BROWSER" >/dev/null 2>&1; then
-                "$BROWSER" "${URL}"
+                run_browser_and_wait "$BROWSER" "${URL}"
             else
                 echo -e "${ANSI_COLOR_RED}Error: '$BROWSER' not found.${ANSI_COLOR_RESET}" >&2
                 exit 1
@@ -351,15 +404,16 @@ if [[ -n "$BROWSER" ]]; then
             ;;
     esac
 elif command -v google-chrome >/dev/null 2>&1; then
-    google-chrome --app="${URL}" --window-size="${WINDOW_SIZE}"
-elif command -v chromium-browser >/dev/null 2>&1; then
-    chromium-browser --app="${URL}" --window-size="${WINDOW_SIZE}"
+    run_browser_and_wait google-chrome "${CHROME_FLAGS[@]}"
 elif command -v chromium >/dev/null 2>&1; then
-    chromium --app="${URL}" --window-size="${WINDOW_SIZE}"
+    run_browser_and_wait chromium "${CHROMIUM_FLAGS[@]}"
+elif command -v chromium-browser >/dev/null 2>&1; then
+    run_browser_and_wait chromium-browser "${CHROMIUM_FLAGS[@]}"
 elif command -v firefox >/dev/null 2>&1; then
-    firefox --new-window "${URL}"
+    run_browser_and_wait firefox --new-window "${URL}"
 else
-    xdg-open "${URL}"
-    echo -e "${ANSI_COLOR_GREY}GUI in browser. Press Ctrl+C to stop.${ANSI_COLOR_RESET}"
-    wait $SERVER_PID 2>/dev/null || sleep infinity
+    xdg-open "${URL}" >/dev/null 2>&1 || true
+    echo -e "${ANSI_COLOR_CYAN}Simulator is running at ${URL}${ANSI_COLOR_RESET}"
+    echo -e "${ANSI_COLOR_GREY}Press Ctrl+C to stop the server.${ANSI_COLOR_RESET}"
+    wait "$SERVER_PID" 2>/dev/null || sleep infinity
 fi

@@ -1155,16 +1155,15 @@
     }
 
     .narrative-list {
-      flex: 1 1 0px;
-      min-height: 0;
-      max-height: none;
+      flex: 0 0 auto;
+      min-height: 140px;
+      max-height: 450px;
       overflow-y: auto;
       overflow-x: hidden;
       display: flex;
       flex-direction: column;
       gap: 8px;
       padding-right: 4px;
-      contain: content;
     }
 
     .narrative-step {
@@ -1217,16 +1216,15 @@
     }
 
     .candidate-list, .cluster-table-wrapper {
-      flex: 1 1 0px;
-      min-height: 0;
-      max-height: none;
+      flex: 0 0 auto;
+      min-height: 140px;
+      max-height: 450px;
       overflow-y: auto;
       overflow-x: auto;
       display: flex;
       flex-direction: column;
       gap: 5px;
       padding-right: 2px;
-      contain: content;
     }
 
     .table-toolbar {
