@@ -1110,6 +1110,14 @@
       if (sampleTraceLog.length > 0) {
         return sampleTraceLog[sampleTraceLog.length - 1];
       }
+      if (currentExplanation && currentExplanation.length > 0) {
+        return {
+          frameIndex: totalFrames,
+          steps: currentExplanation,
+          point: currentFrame || { x: 0, y: 0, z: 0 },
+          assignedCluster: prevAssignedCluster
+        };
+      }
       return null;
     }
 
@@ -2094,15 +2102,17 @@
       const activeTrace = getActiveSampleTrace();
       const isPastInspected = (selectedSampleTraceIndex >= 0 && activeTrace);
 
-      if (!isExplainMode && !isPastInspected) {
-        contNarrative.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 30px 12px; line-height: 1.6;">
-          <b>💬 Explain Mode is OFF</b><br>
-          Click <b>💬 Explain</b> in the top toolbar to enable real-time step-by-step decision tracking, or inspect recent samples above.
-        </div>`;
-      } else if (!activeTrace || !activeTrace.steps || activeTrace.steps.length === 0) {
-        contNarrative.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 30px 12px; line-height: 1.5;">
-          No decisions logged for this frame yet.<br>Click <b>➔ Step</b> or <b>＋ Add Point</b> to inspect algorithm decisions.
-        </div>`;
+      if (!activeTrace || !activeTrace.steps || activeTrace.steps.length === 0) {
+        contNarrative.innerHTML = `
+          <div style="color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 25px 12px; line-height: 1.6;">
+            <span style="color: var(--accent-cyan); font-weight: 700; font-size: 0.92rem;">💬 Decision Narrative</span><br><br>
+            No algorithmic decisions logged for this frame yet.<br>
+            <div style="display: flex; gap: 8px; justify-content: center; margin-top: 12px;">
+              <button onclick="setExplainMode(true); document.getElementById('btnStep')?.click();" class="btn-micro" style="background: rgba(74, 222, 128, 0.2); color: #4ade80; border-color: rgba(74, 222, 128, 0.4); font-size: 0.76rem; padding: 4px 10px; cursor: pointer;">⚡ Enable Explain &amp; Step</button>
+              <button onclick="document.getElementById('btnStep')?.click();" class="btn-micro" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); font-size: 0.76rem; padding: 4px 10px; cursor: pointer;">➔ Step Next Frame</button>
+            </div>
+          </div>
+        `;
       } else {
         let bannerHtml = '';
         if (isPastInspected) {
@@ -2114,6 +2124,15 @@
                 <span style="color: var(--text-muted); font-size: 0.68rem; margin-left: 4px;">(${framesAgo === 0 ? 'Latest' : `${framesAgo} frames ago`})</span>
               </div>
               <button onclick="returnToLiveStream()" class="btn-micro" style="background: rgba(74, 222, 128, 0.2); color: #4ade80; border-color: rgba(74, 222, 128, 0.4); font-size: 0.68rem; padding: 2px 6px;">● Return to Live</button>
+            </div>
+          `;
+        } else if (!isExplainMode) {
+          bannerHtml = `
+            <div style="background: rgba(56, 189, 248, 0.10); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 4px; padding: 5px 8px; margin-bottom: 8px; font-size: 0.72rem; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="color: #38bdf8; font-weight: 700;">📍 Sample #${activeTrace.frameIndex} Summary</span>
+              </div>
+              <button onclick="setExplainMode(true)" class="btn-micro" style="background: rgba(74, 222, 128, 0.2); color: #4ade80; border-color: rgba(74, 222, 128, 0.4); font-size: 0.68rem; padding: 2px 6px; cursor: pointer;">⚡ Enable Full Explain</button>
             </div>
           `;
         }
