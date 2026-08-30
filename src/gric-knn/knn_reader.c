@@ -6,6 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 #define _FILE_OFFSET_BITS 64
 #include "knn_reader.h"
+#include "gric_bin_io.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +36,146 @@ static int check_is_fits_path(
     {
         return 1;
     }
+
+    return 0;
+}
+
+/**
+ * knn_reader_inspect() - Discover dataset sample count and coordinate dimensions.
+ * @path:         Path to dataset file.
+ * @total_frames: Output pointer for sample/frame count.
+ * @frame_width:  Output pointer for frame width / coordinate count.
+ * @frame_height: Output pointer for frame height.
+ *
+ * Return: 0 on success, -1 on error.
+ */
+int knn_reader_inspect(
+    const char *path,
+    long       *total_frames,
+    long       *frame_width,
+    long       *frame_height)
+{
+    if (path == NULL || total_frames == NULL || frame_width == NULL || frame_height == NULL)
+    {
+        return -1;
+    }
+
+    *total_frames = 0;
+    *frame_width = 0;
+    *frame_height = 1;
+
+    FILE *fp_bin = fopen(path, "rb");
+    if (fp_bin != NULL)
+    {
+        gric_bin_header_t hdr;
+        char *comment = NULL;
+        if (gric_bin_read_header(fp_bin, &hdr, &comment) == 0)
+        {
+            *total_frames = (long)hdr.dims[0];
+            *frame_width = (hdr.ndim >= 2) ? (long)hdr.dims[1] : 1;
+            *frame_height = (hdr.ndim >= 3) ? (long)hdr.dims[2] : 1;
+            if (comment != NULL)
+            {
+                free(comment);
+            }
+            fclose(fp_bin);
+            return 0;
+        }
+        if (comment != NULL)
+        {
+            free(comment);
+        }
+        fclose(fp_bin);
+    }
+
+    if (check_is_fits_path(path))
+    {
+#ifdef USE_CFITSIO
+        int status = 0;
+        fitsfile *fptr = NULL;
+        fits_open_file(&fptr, path, READONLY, &status);
+        if (status == 0 && fptr != NULL)
+        {
+            int naxis = 0;
+            long naxes[3] = {0, 0, 0};
+            fits_get_img_dim(fptr, &naxis, &status);
+            fits_get_img_size(fptr, 3, naxes, &status);
+            if (status == 0)
+            {
+                if (naxis >= 3)
+                {
+                    *frame_width = naxes[0];
+                    *frame_height = naxes[1];
+                    *total_frames = naxes[2];
+                }
+                else if (naxis == 2)
+                {
+                    *frame_width = naxes[0];
+                    *frame_height = naxes[1];
+                    *total_frames = 1;
+                }
+                fits_close_file(fptr, &status);
+                return 0;
+            }
+            fits_close_file(fptr, &status);
+        }
+        return -1;
+#else
+        return -1;
+#endif
+    }
+
+    FILE *f = fopen(path, "r");
+    if (f == NULL)
+    {
+        return -1;
+    }
+
+    char line_buf[65536];
+    long count = 0;
+    long elements_detected = 0;
+
+    while (fgets(line_buf, sizeof(line_buf), f) != NULL)
+    {
+        if (line_buf[0] == '#' || line_buf[0] == '\n' || line_buf[0] == '\0')
+        {
+            continue;
+        }
+
+        if (elements_detected == 0)
+        {
+            char *ptr = line_buf;
+            while (*ptr != '\0')
+            {
+                while (isspace((unsigned char)*ptr))
+                {
+                    ptr++;
+                }
+                if (*ptr == '\0')
+                {
+                    break;
+                }
+                elements_detected++;
+                while (*ptr != '\0' && !isspace((unsigned char)*ptr))
+                {
+                    ptr++;
+                }
+            } // while parsing first line
+        }
+
+        count++;
+    } // while reading ASCII
+
+    fclose(f);
+
+    if (count == 0 || elements_detected == 0)
+    {
+        return -1;
+    }
+
+    *total_frames = count;
+    *frame_width = elements_detected;
+    *frame_height = 1;
 
     return 0;
 }
@@ -120,6 +261,31 @@ int knn_reader_open(
     reader->frame_width = frame_width;
     reader->frame_height = frame_height;
     reader->frame_elements = frame_width * frame_height;
+
+    FILE *fp_bin = fopen(input_path, "rb");
+    if (fp_bin != NULL)
+    {
+        gric_bin_header_t hdr;
+        char *comment = NULL;
+        if (gric_bin_read_header(fp_bin, &hdr, &comment) == 0)
+        {
+            reader->is_bin = 1;
+            reader->bin_data_type = hdr.data_type;
+            reader->bin_header_bytes = hdr.header_bytes;
+            reader->bin_file = fp_bin;
+            if (comment != NULL)
+            {
+                free(comment);
+            }
+            return 0;
+        }
+        if (comment != NULL)
+        {
+            free(comment);
+        }
+        fclose(fp_bin);
+    }
+
     reader->is_fits = check_is_fits_path(input_path);
 
     if (reader->is_fits)
@@ -198,11 +364,23 @@ int knn_reader_clone_thread(
         dst->memory_data = src->memory_data;
         dst->input_path = NULL;
         dst->ascii_file = NULL;
+        dst->bin_file = NULL;
         return 0;
     }
 
     dst->input_path = (src->input_path != NULL) ? strdup(src->input_path) : NULL;
     dst->ascii_file = NULL;
+    dst->bin_file = NULL;
+
+    if (src->is_bin)
+    {
+        dst->bin_file = fopen(dst->input_path, "rb");
+        if (dst->bin_file == NULL)
+        {
+            return -1;
+        }
+        return 0;
+    }
 
     if (src->is_fits)
     {
@@ -258,6 +436,72 @@ int knn_reader_read_frame(
         return 0;
     }
 
+    if (reader->is_bin)
+    {
+        if (reader->bin_file == NULL)
+        {
+            return -1;
+        }
+        size_t elem_size = gric_bin_data_type_size((gric_bin_data_type_t)reader->bin_data_type);
+        if (elem_size == 0)
+        {
+            return -1;
+        }
+        off_t offset = (off_t)reader->bin_header_bytes +
+                       (off_t)frame_id * (off_t)reader->frame_elements * (off_t)elem_size;
+        if (fseeko(reader->bin_file, offset, SEEK_SET) != 0)
+        {
+            return -1;
+        }
+        if (reader->bin_data_type == GRIC_BIN_DTYPE_FLOAT64)
+        {
+            if (fread(out_data, sizeof(double), (size_t)reader->frame_elements,
+                      reader->bin_file) != (size_t)reader->frame_elements)
+            {
+                return -1;
+            }
+        }
+        else if (reader->bin_data_type == GRIC_BIN_DTYPE_FLOAT32)
+        {
+            float *fbuf = (float *)malloc((size_t)reader->frame_elements * sizeof(float));
+            if (fbuf == NULL)
+            {
+                return -1;
+            }
+            if (fread(fbuf, sizeof(float), (size_t)reader->frame_elements,
+                      reader->bin_file) != (size_t)reader->frame_elements)
+            {
+                free(fbuf);
+                return -1;
+            }
+            for (long k = 0; k < reader->frame_elements; k++)
+            {
+                out_data[k] = (double)fbuf[k];
+            }
+            free(fbuf);
+        }
+        else if (reader->bin_data_type == GRIC_BIN_DTYPE_UINT32)
+        {
+            uint32_t *ubuf = (uint32_t *)malloc((size_t)reader->frame_elements * sizeof(uint32_t));
+            if (ubuf == NULL)
+            {
+                return -1;
+            }
+            if (fread(ubuf, sizeof(uint32_t), (size_t)reader->frame_elements,
+                      reader->bin_file) != (size_t)reader->frame_elements)
+            {
+                free(ubuf);
+                return -1;
+            }
+            for (long k = 0; k < reader->frame_elements; k++)
+            {
+                out_data[k] = (double)ubuf[k];
+            }
+            free(ubuf);
+        }
+        return 0;
+    }
+
     if (reader->is_fits)
     {
 #ifdef USE_CFITSIO
@@ -304,6 +548,12 @@ void knn_reader_close_thread(
     if (reader == NULL)
     {
         return;
+    }
+
+    if (reader->bin_file != NULL)
+    {
+        fclose(reader->bin_file);
+        reader->bin_file = NULL;
     }
 
     if (reader->is_fits)

@@ -32,7 +32,7 @@ static int write_bin_results(
     const KnnModel   *model,
     const KnnResults *results)
 {
-    long N = model->total_dataset_frames;
+    long N = (results->num_queries > 0) ? results->num_queries : model->total_dataset_frames;
     long k = config->k;
     uint64_t total_elems = (uint64_t)N * (uint64_t)k;
 
@@ -124,12 +124,11 @@ static int write_ascii_results(
         return -1;
     }
 
-    fprintf(f, "# gric-knn results: k = %d, total_queries = %ld\n",
-            config->k, model->total_dataset_frames);
-    fprintf(f, "# Columns: query_frame_id  [neighbor_1 dist_1  neighbor_2 dist_2 ...]\n");
+    long N = (results->num_queries > 0) ? results->num_queries : model->total_dataset_frames;
+    int  k = config->k;
 
-    long N = model->total_dataset_frames;
-    int k = config->k;
+    fprintf(f, "# gric-knn results: k = %d, total_queries = %ld\n", k, N);
+    fprintf(f, "# Columns: query_frame_id  [neighbor_1 dist_1  neighbor_2 dist_2 ...]\n");
 
     for (long i = 0; i < N; i++)
     {
@@ -176,7 +175,7 @@ static int write_fits_results(
     fitsfile *f_idx = NULL;
     fitsfile *f_dst = NULL;
 
-    long N = model->total_dataset_frames;
+    long N = (results->num_queries > 0) ? results->num_queries : model->total_dataset_frames;
     long k = config->k;
     long naxes[2] = {k, N};
     long n_total_elements = k * N;

@@ -77,6 +77,8 @@ typedef struct
     double          epsilon;          /**< Slack factor for (1+eps)-ANN pruning */
     double          rlim_cutoff;      /**< Optional max distance cutoff */
     const double   *memory_data;      /**< Optional in-memory dataset buffer [N * elements] */
+    char           *query_data_path;  /**< Optional path to external query dataset */
+    long            query_num_frames; /**< Frame count of external query dataset */
     int             nthreads;         /**< Number of OpenMP worker threads */
     KnnOutputFormat output_format;    /**< Output format choice */
     int             progress_mode;    /**< 1 to show live progress bar */
@@ -124,8 +126,9 @@ typedef struct
 /** Per-query result structure containing top-k neighbors */
 typedef struct
 {
-    int    *indices;   /**< Size N x k */
-    double *distances; /**< Size N x k */
+    long    num_queries; /**< Total query count */
+    int    *indices;     /**< Size N x k */
+    double *distances;   /**< Size N x k */
 } KnnResults;
 
 #endif // KNN_DEFS_H

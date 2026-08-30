@@ -265,7 +265,7 @@ add_executable(gric-knn
     src/shared/cli_colors.c
     src/shared/gric_bin_io.c
 )
-target_include_directories(gric-knn PRIVATE src/gric-knn src)
+target_include_directories(gric-knn PRIVATE src/gric-knn src/shared src)
 target_link_libraries(gric-knn m)
 if (OpenMP_C_FOUND)
     target_link_libraries(gric-knn OpenMP::OpenMP_C)
@@ -432,6 +432,14 @@ target_link_libraries(test_dimdensity m)
 add_test(NAME test_dimdensity
     COMMAND test_dimdensity)
 set_tests_properties(test_dimdensity PROPERTIES DEPENDS "gric-cluster;gric-mktxtseq;gric-knn;gric-dimdensity")
+
+add_executable(test_knn_cross_dataset
+    tests/test_knn_cross_dataset.c
+)
+target_link_libraries(test_knn_cross_dataset m)
+add_test(NAME test_knn_cross_dataset
+    COMMAND test_knn_cross_dataset)
+set_tests_properties(test_knn_cross_dataset PROPERTIES DEPENDS "gric-cluster;gric-mktxtseq;gric-knn")
 
 # Target to regenerate benchmark figures and documentation pages
 find_package(Python3 COMPONENTS Interpreter REQUIRED)

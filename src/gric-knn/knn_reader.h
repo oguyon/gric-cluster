@@ -17,6 +17,9 @@ typedef struct
 {
     char         *input_path;
     int           is_fits;
+    int           is_bin;
+    uint32_t      bin_data_type;
+    uint64_t      bin_header_bytes;
     const double *memory_data; /**< Optional in-memory dataset buffer */
     long          total_frames;
     long          frame_width;
@@ -24,10 +27,17 @@ typedef struct
     long          frame_elements;
     uint64_t     *line_offsets; /**< 64-bit file byte offsets for ASCII lines */
     FILE         *ascii_file;
+    FILE         *bin_file;
 #ifdef USE_CFITSIO
     fitsfile     *fits_ptr;
 #endif
 } KnnFrameReader;
+
+int knn_reader_inspect(
+    const char *path,
+    long       *total_frames,
+    long       *frame_width,
+    long       *frame_height);
 
 int knn_reader_open(
     KnnFrameReader *reader,

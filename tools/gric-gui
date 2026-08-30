@@ -7,7 +7,7 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${GRIC_GUI_PORT:-8080}"
 WORKDIR="${DIR}/workspace"
-mkdir -p "$WORKDIR"
+mkdir -p "$WORKDIR" "$WORKDIR/A" "$WORKDIR/B" "$WORKDIR/C"
 WINDOW_SIZE="1600,1000"
 BROWSER=""
 SERVER_ONLY=0

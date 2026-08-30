@@ -728,6 +728,220 @@ static void knn_search_single_frame(
 }
 
 /**
+ * knn_search_cross_dataset_frame() - Metric-pruned k-NN search for external query frame.
+ * @query_id:      Index of query frame.
+ * @query_data:    Pixel buffer of query frame.
+ * @model:         Active KnnModel.
+ * @config:        Active KnnConfig.
+ * @cand_reader:   Thread-local candidate frame reader.
+ * @cand_buffer:   Scratch buffer for candidate frame pixels.
+ * @anchor_dists:  Scratch buffer for query-to-anchor distances [num_clusters].
+ * @scores_buffer: Scratch buffer for cluster sorting [num_clusters].
+ * @heap:          KnnMaxHeap structure for this query frame.
+ * @telem:         Thread-local KnnTelemetry.
+ */
+static void knn_search_cross_dataset_frame(
+    long                   query_id,
+    const double *restrict query_data,
+    const KnnModel        *model,
+    const KnnConfig       *config,
+    KnnFrameReader        *cand_reader,
+    double        *restrict cand_buffer,
+    double        *restrict anchor_dists,
+    ClusterScore  *restrict scores_buffer,
+    KnnMaxHeap            *heap,
+    KnnTelemetry  *restrict telem)
+{
+    (void)query_id;
+    int M = model->num_clusters;
+    long frame_elem = model->frame_elements;
+    double eps_factor = 1.0 + config->epsilon;
+
+    int best_c = 0;
+    double min_d_anchor = 1e20;
+
+    for (int c = 0; c < M; c++)
+    {
+        telem->framedist_calls++;
+        anchor_dists[c] = compute_euclidean_distance(query_data, model->clusters[c].anchor_data,
+                                                     frame_elem);
+        if (anchor_dists[c] < min_d_anchor)
+        {
+            min_d_anchor = anchor_dists[c];
+            best_c = c;
+        }
+    } // for (int c = 0; ...)
+
+    // Step 1: Intra-Cluster Search in best cluster
+    if (best_c >= 0 && best_c < M)
+    {
+        const KnnCluster *best_cl = &model->clusters[best_c];
+        telem->total_candidates_considered += (uint64_t)best_cl->num_members;
+        double d_anchor_best = anchor_dists[best_c];
+
+        int start_m = 0;
+        int end_m = best_cl->num_members;
+        double tau_init = knn_heap_peek_max_dist(heap);
+        if (tau_init < 1e20)
+        {
+            float r_min = (float)fmax(0.0, d_anchor_best - tau_init / eps_factor);
+            float r_max = (float)(d_anchor_best + tau_init / eps_factor);
+            start_m = find_member_lower_bound(best_cl->members, best_cl->num_members, r_min);
+            end_m = find_member_upper_bound(best_cl->members, best_cl->num_members, r_max);
+            telem->level3_annular_pruned +=
+                (uint64_t)start_m + (uint64_t)(best_cl->num_members - end_m);
+        }
+
+        for (int m = start_m; m < end_m; m++)
+        {
+            long cand_id = (long)best_cl->members[m].frame_id;
+            double current_tau = knn_heap_peek_max_dist(heap);
+            double r_cand = (double)best_cl->members[m].r_anchor;
+            double lb_annular = fabs(d_anchor_best - r_cand);
+
+            if (lb_annular >= current_tau / eps_factor)
+            {
+                telem->level3_annular_pruned++;
+                continue;
+            }
+
+            if (config->rlim_cutoff > 0.0 && lb_annular >= config->rlim_cutoff)
+            {
+                telem->level3_annular_pruned++;
+                continue;
+            }
+
+            if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
+            {
+                telem->framedist_calls++;
+                double d = compute_euclidean_distance(query_data, cand_buffer, frame_elem);
+                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                {
+                    knn_heap_push(heap, (int)cand_id, d);
+                }
+            }
+        } // for (int m = start_m; ...)
+    } // Intra-Cluster Search
+
+    // Step 2: Rank remaining candidate clusters by anchor distance lower bound
+    int num_cand_clusters = 0;
+    for (int q = 0; q < M; q++)
+    {
+        if (q == best_c || model->clusters[q].num_members == 0)
+        {
+            continue;
+        }
+
+        double d_a = anchor_dists[q];
+        double r_q = model->clusters[q].radius;
+        double lb = d_a - r_q;
+        if (lb < 0.0)
+        {
+            lb = 0.0;
+        }
+
+        scores_buffer[num_cand_clusters].id = q;
+        scores_buffer[num_cand_clusters].lb = lb;
+        scores_buffer[num_cand_clusters].dcc = d_a;
+        num_cand_clusters++;
+    } // for (int q = 0; ...)
+
+    qsort(scores_buffer, (size_t)num_cand_clusters, sizeof(ClusterScore),
+          compare_cluster_scores);
+
+    // Step 3: Inter-Cluster Pruning and Exact Member Evaluations
+    for (int idx = 0; idx < num_cand_clusters; idx++)
+    {
+        int q = scores_buffer[idx].id;
+        double lb_cluster = scores_buffer[idx].lb;
+        double current_tau = knn_heap_peek_max_dist(heap);
+
+        if (lb_cluster >= current_tau / eps_factor)
+        {
+            telem->level1_clusters_pruned++;
+            continue;
+        }
+
+        if (config->rlim_cutoff > 0.0 && lb_cluster >= config->rlim_cutoff)
+        {
+            telem->level1_clusters_pruned++;
+            continue;
+        }
+
+        const KnnCluster *cl = &model->clusters[q];
+        double d_anchor = anchor_dists[q];
+        double lb_anchor = d_anchor - cl->radius;
+        if (lb_anchor < 0.0)
+        {
+            lb_anchor = 0.0;
+        }
+
+        if (lb_anchor >= current_tau / eps_factor)
+        {
+            telem->level2_anchors_pruned++;
+            continue;
+        }
+
+        telem->total_candidates_considered += (uint64_t)cl->num_members;
+
+        double tau_eff = current_tau / eps_factor;
+        if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_eff)
+        {
+            tau_eff = config->rlim_cutoff;
+        }
+
+        float r_min = (float)fmax(0.0, d_anchor - tau_eff);
+        float r_max = (float)(d_anchor + tau_eff);
+
+        int start_m = find_member_lower_bound(cl->members, cl->num_members, r_min);
+        int end_m = find_member_upper_bound(cl->members, cl->num_members, r_max);
+
+        telem->level3_annular_pruned +=
+            (uint64_t)start_m + (uint64_t)(cl->num_members - end_m);
+
+        double dcc_home = model->dcc_matrix[best_c * M + q];
+
+        for (int m = start_m; m < end_m; m++)
+        {
+            long cand_id = (long)cl->members[m].frame_id;
+            current_tau = knn_heap_peek_max_dist(heap);
+            double r_cand = (double)cl->members[m].r_anchor;
+
+            double lb1 = fabs(d_anchor - r_cand);
+            if (lb1 >= current_tau / eps_factor)
+            {
+                telem->level3_annular_pruned++;
+                continue;
+            }
+
+            double lb_home = dcc_home - r_cand - min_d_anchor;
+            if (lb_home >= current_tau / eps_factor)
+            {
+                telem->level3_annular_pruned++;
+                continue;
+            }
+
+            if (config->rlim_cutoff > 0.0 &&
+                (lb1 >= config->rlim_cutoff || lb_home >= config->rlim_cutoff))
+            {
+                telem->level3_annular_pruned++;
+                continue;
+            }
+
+            if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
+            {
+                telem->framedist_calls++;
+                double d = compute_euclidean_distance(query_data, cand_buffer, frame_elem);
+                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                {
+                    knn_heap_push(heap, (int)cand_id, d);
+                }
+            }
+        } // for (int m = start_m; ...)
+    } // for (int idx = 0; ...)
+}
+
+/**
  * knn_run_search() - Multi-threaded driver executing k-NN search across all frames.
  * @config:    Active KnnConfig.
  * @model:     Active KnnModel.
@@ -749,11 +963,35 @@ int knn_run_search(
 
     memset(telemetry, 0, sizeof(KnnTelemetry));
 
-    long N = model->total_dataset_frames;
+    int is_cross_dataset = (config->query_data_path != NULL) ? 1 : 0;
+    long N_query = model->total_dataset_frames;
+    long N_cand = model->total_dataset_frames;
+    long q_w = model->frame_width;
+    long q_h = model->frame_height;
+
+    if (is_cross_dataset)
+    {
+        if (knn_reader_inspect(config->query_data_path, &N_query, &q_w, &q_h) != 0 || N_query <= 0)
+        {
+            fprintf(stderr, "Error: Could not inspect query dataset '%s'\n",
+                    config->query_data_path);
+            return -1;
+        }
+
+        if (q_w * q_h != model->frame_elements)
+        {
+            fprintf(stderr,
+                    "Error: Query frame dimension (%ld elements) does not match model (%ld)\n",
+                    q_w * q_h, model->frame_elements);
+            return -1;
+        }
+    }
+
     int k = config->k;
 
-    results->indices = (int *)malloc((size_t)N * (size_t)k * sizeof(int));
-    results->distances = (double *)malloc((size_t)N * (size_t)k * sizeof(double));
+    results->num_queries = N_query;
+    results->indices = (int *)malloc((size_t)N_query * (size_t)k * sizeof(int));
+    results->distances = (double *)malloc((size_t)N_query * (size_t)k * sizeof(double));
 
     if (results->indices == NULL || results->distances == NULL)
     {
@@ -761,7 +999,7 @@ int knn_run_search(
         return -1;
     }
 
-    KnnMaxHeap *all_heaps = (KnnMaxHeap *)malloc((size_t)N * sizeof(KnnMaxHeap));
+    KnnMaxHeap *all_heaps = (KnnMaxHeap *)malloc((size_t)N_query * sizeof(KnnMaxHeap));
     if (all_heaps == NULL)
     {
         fprintf(stderr, "Error: Memory allocation failed for heaps array\n");
@@ -769,7 +1007,7 @@ int knn_run_search(
         return -1;
     }
 
-    for (long i = 0; i < N; i++)
+    for (long i = 0; i < N_query; i++)
     {
         if (knn_heap_init(&all_heaps[i], k) != 0)
         {
@@ -782,31 +1020,47 @@ int knn_run_search(
             knn_results_free(results);
             return -1;
         }
-    }
+    } // for (long i = 0; ...)
 
 #ifdef _OPENMP
     omp_lock_t bucket_locks[256];
-    for (int b = 0; b < 256; b++)
+    if (!is_cross_dataset)
     {
-        omp_init_lock(&bucket_locks[b]);
+        for (int b = 0; b < 256; b++)
+        {
+            omp_init_lock(&bucket_locks[b]);
+        }
     }
 #endif
 
-    KnnFrameReader master_reader;
+    KnnFrameReader master_cand_reader;
+    KnnFrameReader master_query_reader;
+
     if (config->memory_data != NULL)
     {
-        if (knn_reader_open_memory(&master_reader, config->memory_data, N,
+        if (knn_reader_open_memory(&master_cand_reader, config->memory_data, N_cand,
                                    model->frame_elements) != 0)
         {
             knn_results_free(results);
             return -1;
         }
     }
-    else if (knn_reader_open(&master_reader, config->input_data_path, N,
+    else if (knn_reader_open(&master_cand_reader, config->input_data_path, N_cand,
                              model->frame_width, model->frame_height) != 0)
     {
         knn_results_free(results);
         return -1;
+    }
+
+    if (is_cross_dataset)
+    {
+        if (knn_reader_open(&master_query_reader, config->query_data_path, N_query,
+                            q_w, q_h) != 0)
+        {
+            knn_reader_close(&master_cand_reader);
+            knn_results_free(results);
+            return -1;
+        }
     }
 
     int nthreads = config->nthreads;
@@ -826,7 +1080,7 @@ int knn_run_search(
     struct timespec start_time, end_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-    long progress_step = N / 100;
+    long progress_step = N_query / 100;
     if (progress_step < 1)
     {
         progress_step = 1;
@@ -847,11 +1101,18 @@ int knn_run_search(
                                  global_telem_recip, global_telem_cand)
 #endif
     {
-        KnnFrameReader thread_reader;
-        knn_reader_clone_thread(&master_reader, &thread_reader);
+        KnnFrameReader thread_cand_reader;
+        KnnFrameReader thread_query_reader;
+
+        knn_reader_clone_thread(&master_cand_reader, &thread_cand_reader);
+        if (is_cross_dataset)
+        {
+            knn_reader_clone_thread(&master_query_reader, &thread_query_reader);
+        }
 
         double *query_buffer = (double *)malloc((size_t)model->frame_elements * sizeof(double));
         double *cand_buffer = (double *)malloc((size_t)model->frame_elements * sizeof(double));
+        double *anchor_dists = (double *)malloc((size_t)model->num_clusters * sizeof(double));
         ClusterScore *scores_buf =
             (ClusterScore *)malloc((size_t)model->num_clusters * sizeof(ClusterScore));
 
@@ -861,17 +1122,30 @@ int knn_run_search(
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic, 32)
 #endif
-        for (long i = 0; i < N; i++)
+        for (long i = 0; i < N_query; i++)
         {
-            if (knn_reader_read_frame(&thread_reader, i, query_buffer) == 0)
+            KnnFrameReader *active_qreader = is_cross_dataset ? &thread_query_reader :
+                                                                &thread_cand_reader;
+
+            if (knn_reader_read_frame(active_qreader, i, query_buffer) == 0)
             {
-                knn_search_single_frame(
-                    i, query_buffer, model, config, &thread_reader,
-                    cand_buffer, scores_buf, all_heaps,
+                if (is_cross_dataset)
+                {
+                    knn_search_cross_dataset_frame(
+                        i, query_buffer, model, config, &thread_cand_reader,
+                        cand_buffer, anchor_dists, scores_buf, &all_heaps[i],
+                        &thread_telem);
+                }
+                else
+                {
+                    knn_search_single_frame(
+                        i, query_buffer, model, config, &thread_cand_reader,
+                        cand_buffer, scores_buf, all_heaps,
 #ifdef _OPENMP
-                    bucket_locks,
+                        bucket_locks,
 #endif
-                    &thread_telem);
+                        &thread_telem);
+                }
                 thread_telem.total_queries++;
             }
 
@@ -881,7 +1155,7 @@ int knn_run_search(
                 if (omp_get_thread_num() == 0)
 #endif
                 {
-                    double pct = 100.0 * (double)i / (double)N;
+                    double pct = 100.0 * (double)i / (double)N_query;
                     int bar_offset = 40 - (int)(pct * 0.4);
                     if (bar_offset < 0)
                     {
@@ -893,7 +1167,7 @@ int knn_run_search(
                     }
                     const char *bar = "========================================";
                     printf("\rSearching k-NN: [%-40s] %5.1f%% (%ld / %ld frames)",
-                           &bar[bar_offset], pct, i, N);
+                           &bar[bar_offset], pct, i, N_query);
                     fflush(stdout);
                 }
             }
@@ -909,16 +1183,22 @@ int knn_run_search(
         global_telem_cand += thread_telem.total_candidates_considered;
 
         free(scores_buf);
+        free(anchor_dists);
         free(cand_buffer);
         free(query_buffer);
-        knn_reader_close_thread(&thread_reader);
+
+        if (is_cross_dataset)
+        {
+            knn_reader_close_thread(&thread_query_reader);
+        }
+        knn_reader_close_thread(&thread_cand_reader);
     } // OpenMP parallel block
 
     // Extract sorted results in parallel from all heaps
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static)
 #endif
-    for (long i = 0; i < N; i++)
+    for (long i = 0; i < N_query; i++)
     {
         knn_heap_extract_sorted(&all_heaps[i], &results->indices[i * k],
                                 &results->distances[i * k], k);
@@ -927,24 +1207,32 @@ int knn_run_search(
     free(all_heaps);
 
 #ifdef _OPENMP
-    for (int b = 0; b < 256; b++)
+    if (!is_cross_dataset)
     {
-        omp_destroy_lock(&bucket_locks[b]);
+        for (int b = 0; b < 256; b++)
+        {
+            omp_destroy_lock(&bucket_locks[b]);
+        }
     }
 #endif
 
     clock_gettime(CLOCK_MONOTONIC, &end_time);
-    knn_reader_close(&master_reader);
+
+    if (is_cross_dataset)
+    {
+        knn_reader_close(&master_query_reader);
+    }
+    knn_reader_close(&master_cand_reader);
 
     if (config->progress_mode)
     {
         printf("\rSearching k-NN: [========================================] "
                "100.0%% (%ld / %ld frames)\n",
-               N, N);
+               N_query, N_query);
         fflush(stdout);
     }
 
-    telemetry->total_queries = (uint64_t)N;
+    telemetry->total_queries = (uint64_t)N_query;
     telemetry->framedist_calls = global_telem_calls;
     telemetry->level0_super_clusters_pruned = global_telem_l0;
     telemetry->level1_clusters_pruned = global_telem_l1;

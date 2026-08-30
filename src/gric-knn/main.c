@@ -42,6 +42,8 @@ static void print_help(
     printf("  of high-dimensional distance evaluations.\n\n");
 
     printf("%sOPTIONS%s\n", ansi_bold_cyan, ansi_reset);
+    printf("  %s-query%s %s<path>%s         External query dataset (cross-dataset k-NN mode)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-k%s %s<int>%s              Number of nearest neighbors to find "
            "(%sdefault:%s 10)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
@@ -86,7 +88,9 @@ static void print_help(
     printf("%sEXAMPLES%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s$%s %s%s%s dataset.fits cluster_out/ -k 10 -dtmin 5\n",
            ansi_color_grey, ansi_reset, ansi_bold_green, progname, ansi_reset);
-    printf("  %s$%s %s%s%s spiral.txt cluster_out/ -k 20 -eps 0.05 -progress\n\n",
+    printf("  %s$%s %s%s%s spiral.txt cluster_out/ -k 20 -eps 0.05 -progress\n",
+           ansi_color_grey, ansi_reset, ansi_bold_green, progname, ansi_reset);
+    printf("  %s$%s %s%s%s train_A.txt cluster_out/ -query test_C.txt -k 10\n\n",
            ansi_color_grey, ansi_reset, ansi_bold_green, progname, ansi_reset);
     cli_print_color_mode();
 }
@@ -106,6 +110,8 @@ int main(
     config.verbose_level = 1;
     config.use_reciprocal = 1; // Enabled by default for bidirectional search
 
+    int dtmin_explicitly_set = 0;
+
     int arg_idx = 1;
     while (arg_idx < argc)
     {
@@ -113,6 +119,18 @@ int main(
         {
             print_help(argv[0]);
             return 0;
+        }
+        else if (strcmp(argv[arg_idx], "-query") == 0 || strcmp(argv[arg_idx], "--query") == 0)
+        {
+            if (arg_idx + 1 < argc)
+            {
+                config.query_data_path = argv[++arg_idx];
+            }
+            else
+            {
+                fprintf(stderr, "Error: -query requires a path argument\n");
+                return 1;
+            }
         }
         else if (strcmp(argv[arg_idx], "-k") == 0)
         {
@@ -143,6 +161,7 @@ int main(
             if (arg_idx + 1 < argc)
             {
                 config.min_temporal_sep = atoi(argv[++arg_idx]);
+                dtmin_explicitly_set = 1;
             }
             else
             {
@@ -276,25 +295,41 @@ int main(
         return 1;
     }
 
+    if (config.query_data_path != NULL)
+    {
+        if (!dtmin_explicitly_set)
+        {
+            config.min_temporal_sep = 0;
+        }
+        config.use_reciprocal = 0;
+    }
+
     printf("%sStarting gric-knn: Out-of-Core Metric-Pruned k-NN Solver%s\n",
            ansi_bold_green, ansi_reset);
-    printf("  Dataset:       %s\n", config.input_data_path);
+    printf("  Dataset (A):   %s\n", config.input_data_path);
     printf("  Cluster Dir:   %s\n", config.cluster_dir);
+    if (config.query_data_path != NULL)
+    {
+        printf("  Query Set (C): %s (Cross-Dataset Mode)\n", config.query_data_path);
+    }
     printf("  k Neighbors:   %d\n", config.k);
-    printf("  Min Temp Sep:  %d frames\n", config.min_temporal_sep);
-    if (config.past_only)
+    if (config.query_data_path == NULL)
     {
-        printf("  Direction:     Past-only (j < i)\n");
-        config.use_reciprocal = 0;
-    }
-    else if (config.future_only)
-    {
-        printf("  Direction:     Future-only (j > i)\n");
-        config.use_reciprocal = 0;
-    }
-    else
-    {
-        printf("  Direction:     Bidirectional\n");
+        printf("  Min Temp Sep:  %d frames\n", config.min_temporal_sep);
+        if (config.past_only)
+        {
+            printf("  Direction:     Past-only (j < i)\n");
+            config.use_reciprocal = 0;
+        }
+        else if (config.future_only)
+        {
+            printf("  Direction:     Future-only (j > i)\n");
+            config.use_reciprocal = 0;
+        }
+        else
+        {
+            printf("  Direction:     Bidirectional\n");
+        }
     }
     if (config.epsilon > 0.0)
     {
@@ -365,15 +400,17 @@ int main(
     clock_gettime(CLOCK_MONOTONIC, &write_end);
     double write_time_ms = (write_end.tv_sec - write_start.tv_sec) * 1000.0 +
                            (write_end.tv_nsec - write_start.tv_nsec) / 1000000.0;
-    uint64_t total_brute_force = (uint64_t)model.total_dataset_frames *
+    long total_queries = (results.num_queries > 0) ? results.num_queries :
+                                                     model.total_dataset_frames;
+    uint64_t total_brute_force = (uint64_t)total_queries *
                                  (uint64_t)model.total_dataset_frames;
     double prune_pct = 100.0 * (1.0 - (double)telemetry.framedist_calls /
                                        (double)total_brute_force);
     double fps = (telemetry.time_search_ms > 0.0) ?
-                 (double)model.total_dataset_frames / (telemetry.time_search_ms / 1000.0) : 0.0;
+                 (double)total_queries / (telemetry.time_search_ms / 1000.0) : 0.0;
 
     printf("\n%sgric-knn Search Summary:%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  Total Query Frames:        %ld\n", model.total_dataset_frames);
+    printf("  Total Query Frames:        %ld\n", total_queries);
     printf("  Framedist Computations:    %lu (vs %lu brute-force)\n",
            (unsigned long)telemetry.framedist_calls, (unsigned long)total_brute_force);
     printf("  Metric Pruning Efficiency: %s%.4f%%%s calls pruned!\n",

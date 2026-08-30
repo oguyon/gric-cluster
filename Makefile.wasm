@@ -17,6 +17,7 @@ INCLUDES = \
 	-Isrc/gric-cluster/io \
 	-Isrc/gric-cluster/trace \
 	-Isrc/gric-knn \
+	-Isrc/shared \
 	-Isrc/wasm
 
 SRCS = \
@@ -45,6 +46,7 @@ SRCS = \
 	src/gric-knn/knn_tree.c \
 	src/gric-knn/knn_reader.c \
 	src/gric-knn/knn_engine.c \
+	src/shared/gric_bin_io.c \
 	src/wasm/gric_wasm_api.c
 
 OUT_DIR_SITE = site/simulator/wasm

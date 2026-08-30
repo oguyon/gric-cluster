@@ -26,17 +26,36 @@
       "3Dwalk": "<b>3Dwalk</b>: 1,000 steps of bounded 3D Brownian random walk. Tests localized 3D spatial drift and anchor reuse.",
       "3Dlorenz": "<b>3Dlorenz</b>: 1,000 samples integrated along the chaotic Lorenz attractor (σ=10, ρ=28, β=8/3). Tests 3D chaotic trajectory clustering.",
       
+      // Reconstructed
+      "reconstructed": "<b>Reconstructed Dataset</b>: Non-parametric k-NN reconstruction evaluated from queries C mapped through training set (A → B).",
+
       // Custom
       "custom": "<b>Custom Dataset</b>: User-uploaded 2D or 3D coordinate dataset."
     };
 
     function is3DBenchmark(type) {
+      if (!type) return false;
       if (type.startsWith("3D") || type === "3Dlorenz") return true;
+      if (type === "reconstructed") {
+        const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
+        if (slotD && slotD.currentDim === 3) return true;
+        if (slotD && slotD.reconstructionInfo && slotD.reconstructionInfo.outputDim === 3) return true;
+      }
       return false;
     }
 
     function generateBenchmark(type, N = 1000) {
       const points = [];
+
+      // If reconstructed slot has data, return it directly
+      if (type === "reconstructed") {
+        const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
+        if (slotD && slotD.benchmarkDataset && slotD.benchmarkDataset.length > 0) {
+          return slotD.benchmarkDataset.map(p => ({ x: p.x, y: p.y, z: p.z || 0.0 }));
+        }
+        // Fallback default if not yet reconstructed
+        return generateBenchmark("3Dtorus", N);
+      }
       
       // --- 2D BENCHMARKS ---
       if (type === "2Dspiral") {

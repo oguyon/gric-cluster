@@ -2534,6 +2534,13 @@
           contCandidates.innerHTML = html;
         }
       }
+
+      if (typeof renderKnnTrace === 'function') {
+        renderKnnTrace();
+      }
+      if (typeof renderDimDensityDashboard === 'function') {
+        renderDimDensityDashboard();
+      }
     }
 
     function resetClustering(keepDataset = true) {
@@ -2705,27 +2712,97 @@
     }
 
     function updateDatasetStatusBadge() {
-      const pill = document.getElementById('datasetStatusPill');
-      if (!pill) return;
+      // Sync slot highlights (Row & Toggles)
+      DATASET_SLOTS.forEach(sId => {
+        const row = document.getElementById(`datasetRow${sId}`);
+        const btnToggle = document.getElementById(`btnToggleSlot${sId}`);
+        const btnToggleSide = document.getElementById(`btnToggleSlotSide${sId}`);
+        const wsLabel = document.getElementById(`lblWorkspaceSlot_${sId}`);
+        const pill = document.getElementById(`datasetStatusPill_${sId}`);
+        const sel = document.getElementById(`selectBenchmark_${sId}`);
+        const loopSel = document.getElementById(`selectLoop_${sId}`);
 
-      if (!isDatasetStaged || !benchmarkDataset || benchmarkDataset.length === 0) {
-        pill.textContent = '⚪ No dataset staged';
-        pill.style.background = 'rgba(100, 116, 139, 0.2)';
-        pill.style.color = '#94a3b8';
-        pill.style.borderColor = 'rgba(100, 116, 139, 0.4)';
-        return;
+        const isActive = (sId === activeDatasetSlot);
+        if (row) {
+          if (isActive) row.classList.add('active');
+          else row.classList.remove('active');
+        }
+        if (btnToggle) {
+          if (isActive) btnToggle.classList.add('active');
+          else btnToggle.classList.remove('active');
+        }
+        if (btnToggleSide) {
+          if (isActive) btnToggleSide.classList.add('active');
+          else btnToggleSide.classList.remove('active');
+        }
+
+        const slot = datasetSlots[sId];
+        if (slot) {
+          if (wsLabel) wsLabel.textContent = slot.workspaceName || `workspace/${sId}`;
+          if (sel && (!isActive || sel.value !== currentBenchmark)) {
+            sel.value = isActive ? currentBenchmark : slot.benchmarkKey;
+          }
+          if (loopSel) {
+            loopSel.value = String(isActive ? (loopCount || 10) : (slot.loopCount || 10));
+          }
+
+          if (pill) {
+            const count = isActive
+              ? (benchmarkDataset ? benchmarkDataset.length : 0)
+              : (slot.benchmarkDataset ? slot.benchmarkDataset.length : (slot.stagedDatasetInfo ? slot.stagedDatasetInfo.count : 0));
+            const bmName = isActive ? currentBenchmark : slot.benchmarkKey;
+            const dim = isActive ? currentDim : slot.currentDim;
+            const mode = isActive ? dataMode : slot.dataMode;
+            const dimStr = mode === 'image' ? '1024D Img' : (dim === 3 ? '3D' : '2D');
+
+            if (count > 0) {
+              pill.textContent = `📦 Staged: ${count.toLocaleString()} pts (${dimStr}, ${bmName})`;
+              pill.style.background = isActive ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.12)';
+              pill.style.color = isActive ? '#38bdf8' : 'var(--text-muted)';
+              pill.style.borderColor = isActive ? 'rgba(56, 189, 248, 0.35)' : 'rgba(148, 163, 184, 0.25)';
+            } else {
+              pill.textContent = '⚪ Cleared';
+              pill.style.background = 'rgba(100, 116, 139, 0.2)';
+              pill.style.color = '#94a3b8';
+              pill.style.borderColor = 'rgba(100, 116, 139, 0.4)';
+            }
+          }
+        }
+      });
+
+      // Update active dataset side controls
+      const selSide = document.getElementById('selectBenchmarkSide');
+      if (selSide && selSide.value !== currentBenchmark) {
+        selSide.value = currentBenchmark;
+      }
+      const selectLoopSide = document.getElementById('selectLoopSide');
+      if (selectLoopSide) {
+        selectLoopSide.value = String(loopCount || 10);
       }
 
-      const countStr = benchmarkDataset.length.toLocaleString();
-      const dimStr = dataMode === 'image' ? '1024D Img' : (currentDim === 3 ? '3D' : '2D');
-      pill.textContent = `📦 Staged: ${countStr} pts (${dimStr}, ${currentBenchmark})`;
-      pill.style.background = 'rgba(56, 189, 248, 0.15)';
-      pill.style.color = '#38bdf8';
-      pill.style.borderColor = 'rgba(56, 189, 248, 0.35)';
+      // Legacy fallback pill
+      const legacyPill = document.getElementById('datasetStatusPill');
+      if (legacyPill) {
+        if (!isDatasetStaged || !benchmarkDataset || benchmarkDataset.length === 0) {
+          legacyPill.textContent = '⚪ Cleared';
+          legacyPill.style.background = 'rgba(100, 116, 139, 0.2)';
+          legacyPill.style.color = '#94a3b8';
+          legacyPill.style.borderColor = 'rgba(100, 116, 139, 0.4)';
+        } else {
+          const countStr = benchmarkDataset.length.toLocaleString();
+          const dimStr = dataMode === 'image' ? '1024D Img' : (currentDim === 3 ? '3D' : '2D');
+          legacyPill.textContent = `📦 Staged [${activeDatasetSlot}]: ${countStr} pts (${dimStr}, ${currentBenchmark})`;
+          legacyPill.style.background = 'rgba(56, 189, 248, 0.15)';
+          legacyPill.style.color = '#38bdf8';
+          legacyPill.style.borderColor = 'rgba(56, 189, 248, 0.35)';
+        }
+      }
 
       const dimBadge = document.getElementById('inputDataDimBadge');
       if (dimBadge) {
-        dimBadge.textContent = `${dimStr} • ${countStr} pts`;
+        const countStr = benchmarkDataset ? benchmarkDataset.length.toLocaleString() : '0';
+        const dimStr = dataMode === 'image' ? '1024D Img' : (currentDim === 3 ? '3D' : '2D');
+        dimBadge.textContent = `[${activeDatasetSlot}] ${dimStr} • ${countStr} pts`;
       }
     }
 
@@ -2734,29 +2811,92 @@
       return currentFrameIdx < benchmarkDataset.length;
     }
 
-    function stageDataset(benchmarkKey = null) {
+    function stageDataset(benchmarkKey = null, targetSlot = null) {
+      const slotId = (targetSlot && DATASET_SLOTS.includes(targetSlot))
+        ? targetSlot : activeDatasetSlot;
+
+      if (slotId !== activeDatasetSlot) {
+        // Stage non-active slot in background
+        const slot = datasetSlots[slotId];
+        if (benchmarkKey) slot.benchmarkKey = benchmarkKey;
+        const bKey = slot.benchmarkKey || '3Dtorus';
+
+        if (typeof isImageBenchmark === 'function' && isImageBenchmark(bKey)) {
+          slot.dataMode = 'image';
+          slot.currentDim = 1024;
+          slot.rawBenchmarkDataset = generateImageBenchmark(bKey, slot.sampleCount || 10000);
+          slot.benchmarkDataset = slot.rawBenchmarkDataset;
+        } else {
+          slot.dataMode = 'coord';
+          slot.currentDim = is3DBenchmark(bKey) ? 3 : 2;
+          slot.rawBenchmarkDataset = generateBenchmark(bKey, slot.sampleCount || 10000);
+          const passes = (typeof slot.loopCount === 'number' && slot.loopCount > 0)
+            ? slot.loopCount : 1;
+          const noiseSig = (slot.noiseSigma !== undefined) ? slot.noiseSigma : 0.02;
+          slot.benchmarkDataset = [];
+          for (let p = 0; p < passes; p++) {
+            for (let i = 0; i < slot.rawBenchmarkDataset.length; i++) {
+              const pt = slot.rawBenchmarkDataset[i];
+              if (noiseSig <= 1e-6) {
+                slot.benchmarkDataset.push({
+                  x: pt.x,
+                  y: pt.y,
+                  z: slot.currentDim === 3 ? (pt.z || 0.0) : 0.0
+                });
+              } else {
+                const n = applyNoiseToPoint(pt.x, pt.y, pt.z || 0.0);
+                slot.benchmarkDataset.push({
+                  x: n.x,
+                  y: n.y,
+                  z: slot.currentDim === 3 ? (n.z || 0.0) : 0.0
+                });
+              }
+            }
+          }
+        }
+
+        slot.pastSamples = [];
+        if (slot.dataMode === 'coord' && slot.benchmarkDataset && slot.benchmarkDataset.length > 0) {
+          const maxStagedPreview = 100000;
+          const stride = slot.benchmarkDataset.length > maxStagedPreview
+            ? Math.ceil(slot.benchmarkDataset.length / maxStagedPreview) : 1;
+          for (let i = 0; i < slot.benchmarkDataset.length; i += stride) {
+            const pt = slot.benchmarkDataset[i];
+            slot.pastSamples.push({
+              x: pt.x,
+              y: pt.y,
+              z: pt.z || 0.0,
+              clusterId: -1,
+              frameIndex: i
+            });
+          }
+        }
+
+        slot.isDatasetStaged = true;
+        slot.stagedDatasetInfo = {
+          name: bKey,
+          count: slot.benchmarkDataset.length,
+          dim: slot.currentDim,
+          passes: slot.loopCount || 1,
+          noise: slot.noiseSigma || 0.02
+        };
+        updateDatasetStatusBadge();
+        return;
+      }
+
       if (benchmarkKey) {
         currentBenchmark = benchmarkKey;
       } else {
+        const selSlot = document.getElementById(`selectBenchmark_${activeDatasetSlot}`);
         const selMain = document.getElementById('selectBenchmark');
         const selSide = document.getElementById('selectBenchmarkSide');
-        if (selMain && selMain.value) {
+        if (selSlot && selSlot.value) {
+          currentBenchmark = selSlot.value;
+        } else if (selMain && selMain.value) {
           currentBenchmark = selMain.value;
         } else if (selSide && selSide.value) {
           currentBenchmark = selSide.value;
         }
-      }
-
-      const selMain = document.getElementById('selectBenchmark');
-      if (selMain) {
-        const opt = selMain.querySelector(`option[value="${currentBenchmark}"]`);
-        if (opt) selMain.value = currentBenchmark;
-      }
-
-      const selSide = document.getElementById('selectBenchmarkSide');
-      if (selSide) {
-        const optSide = selSide.querySelector(`option[value="${currentBenchmark}"]`);
-        if (optSide) selSide.value = currentBenchmark;
       }
 
       // Reset clustering while keeping dataset staging pipeline clean
@@ -2777,19 +2917,32 @@
         applyNoiseToDataset();
       } else {
         dataMode = 'coord';
-        currentDim = is3DBenchmark(currentBenchmark) ? 3 : 2;
-        if (currentDim === 2) {
-          maximizedQuad = null;
-        }
-        if (currentBenchmark === "custom") {
-          const fileInput = document.getElementById('fileUpload');
+        if (currentBenchmark === 'reconstructed') {
+          const slotD = datasetSlots['D'];
+          if (slotD && slotD.benchmarkDataset && slotD.benchmarkDataset.length > 0) {
+            currentDim = slotD.currentDim || (slotD.reconstructionInfo ? slotD.reconstructionInfo.outputDim : 3);
+            rawBenchmarkDataset = slotD.rawBenchmarkDataset || slotD.benchmarkDataset;
+            benchmarkDataset = slotD.benchmarkDataset;
+          } else {
+            currentDim = 3;
+            rawBenchmarkDataset = generateBenchmark('3Dtorus', sampleCount);
+            applyNoiseToDataset();
+          }
+        } else if (currentBenchmark === "custom") {
+          currentDim = is3DBenchmark(currentBenchmark) ? 3 : 2;
+          const fileInput = document.getElementById(`fileUpload_${activeDatasetSlot}`) ||
+                            document.getElementById('fileUpload');
           if (fileInput) fileInput.click();
           return;
         } else {
+          currentDim = is3DBenchmark(currentBenchmark) ? 3 : 2;
           rawBenchmarkDataset = generateBenchmark(
             currentBenchmark, sampleCount
           );
           applyNoiseToDataset();
+        }
+        if (currentDim === 2) {
+          maximizedQuad = null;
         }
       }
 
@@ -2797,7 +2950,8 @@
       pastSamples = [];
       if (dataMode === 'coord' && benchmarkDataset && benchmarkDataset.length > 0) {
         const maxStagedPreview = 100000;
-        const stride = benchmarkDataset.length > maxStagedPreview ? Math.ceil(benchmarkDataset.length / maxStagedPreview) : 1;
+        const stride = benchmarkDataset.length > maxStagedPreview
+          ? Math.ceil(benchmarkDataset.length / maxStagedPreview) : 1;
         for (let i = 0; i < benchmarkDataset.length; i += stride) {
           const pt = benchmarkDataset[i];
           pastSamples.push({
@@ -2818,6 +2972,9 @@
         passes: loopCount || 1,
         noise: noiseSigma
       };
+
+      // Also save to datasetSlots dictionary
+      saveSlotState(activeDatasetSlot);
 
       // Hide/Show 3D Viewport Preset Bar in image mode
       const presetBar = document.getElementById('viewPresetBar');
@@ -2848,9 +3005,11 @@
     }
 
     function loadSelectedBenchmark() {
+      const selSlot = document.getElementById(`selectBenchmark_${activeDatasetSlot}`);
       const selMain = document.getElementById('selectBenchmark');
       const selSide = document.getElementById('selectBenchmarkSide');
-      const key = (selMain && selMain.value) || (selSide && selSide.value) || currentBenchmark;
+      const key = (selSlot && selSlot.value) || (selMain && selMain.value) ||
+                  (selSide && selSide.value) || currentBenchmark;
       stageDataset(key);
     }
 
@@ -2874,4 +3033,164 @@
     }
 
     // =========================================================================
+    // k-NN Reconstruction Studio & Inspector Dashboard
+    // =========================================================================
+
+    function renderReconstructionDashboard() {
+      // 1. Update Slot Mapping Info
+      const slotA = datasetSlots['A'];
+      const slotB = datasetSlots['B'];
+      const slotC = datasetSlots['C'];
+      const slotD = datasetSlots['D'];
+
+      const aInfo = document.getElementById('reconSlotAInfo');
+      const bInfo = document.getElementById('reconSlotBInfo');
+      const cInfo = document.getElementById('reconSlotCInfo');
+      const dInfo = document.getElementById('reconSlotDInfo');
+
+      if (aInfo && slotA) {
+        const countA = slotA.benchmarkDataset ? slotA.benchmarkDataset.length : 0;
+        aInfo.textContent = `${countA.toLocaleString()} pts (${slotA.currentDim || 2}D)`;
+        aInfo.style.color = countA > 0 ? '#38bdf8' : 'var(--text-muted)';
+      }
+      if (bInfo && slotB) {
+        const countB = slotB.benchmarkDataset ? slotB.benchmarkDataset.length : 0;
+        bInfo.textContent = `${countB.toLocaleString()} pts (${slotB.currentDim || 2}D)`;
+        bInfo.style.color = countB > 0 ? '#4ade80' : 'var(--text-muted)';
+      }
+      if (cInfo && slotC) {
+        const countC = slotC.benchmarkDataset ? slotC.benchmarkDataset.length : 0;
+        cInfo.textContent = `${countC.toLocaleString()} pts (${slotC.currentDim || 2}D)`;
+        cInfo.style.color = countC > 0 ? '#fbbf24' : 'var(--text-muted)';
+      }
+      if (dInfo && slotD) {
+        const countD = slotD.benchmarkDataset ? slotD.benchmarkDataset.length : 0;
+        dInfo.textContent = (countD > 0)
+          ? `${countD.toLocaleString()} pts (${slotD.currentDim || 2}D)`
+          : 'Not Reconstructed';
+        dInfo.style.color = countD > 0 ? '#c084fc' : 'var(--text-muted)';
+      }
+
+      // 2. Telemetry Summary Box
+      const sumBox = document.getElementById('reconSummaryBox');
+      const timeBadge = document.getElementById('reconComputeTimeBadge');
+      const ptsVal = document.getElementById('reconStatsPoints');
+      const dimVal = document.getElementById('reconStatsDim');
+      const avgDistVal = document.getElementById('reconStatsAvgDist');
+      const modeVal = document.getElementById('reconStatsMode');
+      const statusBadge = document.getElementById('reconStatusBadge');
+
+      const info = slotD ? slotD.reconstructionInfo : null;
+      if (sumBox) {
+        if (info) {
+          sumBox.style.display = 'block';
+          if (timeBadge) timeBadge.textContent = `${(info.computeTimeMs || 0).toFixed(1)} ms`;
+          if (ptsVal) ptsVal.textContent = `${(info.queryCount || 0).toLocaleString()} pts`;
+          if (dimVal) dimVal.textContent = `${info.outputDim || 2}D`;
+          if (avgDistVal) avgDistVal.textContent = (info.avgNeighborDist || 0).toFixed(4);
+          if (modeVal) modeVal.textContent = `${info.weightMode.toUpperCase()} (k=${info.k})`;
+          if (statusBadge) {
+            statusBadge.textContent = `✓ Done: ${info.queryCount} pts`;
+            statusBadge.style.background = 'rgba(34, 197, 94, 0.2)';
+            statusBadge.style.color = '#4ade80';
+          }
+        } else {
+          sumBox.style.display = 'none';
+          if (statusBadge) {
+            statusBadge.textContent = 'A+B+C → D';
+            statusBadge.style.background = 'rgba(168, 85, 247, 0.15)';
+            statusBadge.style.color = '#c084fc';
+          }
+        }
+      }
+
+      // 3. Point Inspector
+      const titleEl = document.getElementById('reconInspectorTitle');
+      const queryCoordsEl = document.getElementById('reconQueryCoords');
+      const outputCoordsEl = document.getElementById('reconOutputCoords');
+      const tbody = document.getElementById('reconNeighborsBody');
+
+      if (!slotD || !slotD.benchmarkDataset || slotD.benchmarkDataset.length === 0 || !info) {
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="5" style="padding: 10px; text-align: center; color: var(--text-muted);">Run reconstruction to inspect contributing B samples</td></tr>';
+        }
+        if (queryCoordsEl) queryCoordsEl.textContent = '--';
+        if (outputCoordsEl) outputCoordsEl.textContent = '--';
+        return;
+      }
+
+      const totalQ = slotD.benchmarkDataset.length;
+      let qIdx = (typeof selectedKnnQuerySample !== 'undefined' && selectedKnnQuerySample >= 0)
+        ? selectedKnnQuerySample
+        : 0;
+      if (qIdx >= totalQ) qIdx = 0;
+
+      if (titleEl) {
+        titleEl.textContent = `Point Inspector (Sample #${qIdx})`;
+      }
+
+      // Query Coordinates in C
+      const ptsC = slotC ? slotC.benchmarkDataset : null;
+      if (ptsC && qIdx < ptsC.length && queryCoordsEl) {
+        const qc = ptsC[qIdx];
+        if (typeof qc.z === 'number') {
+          queryCoordsEl.textContent = `(${qc.x.toFixed(3)}, ${qc.y.toFixed(3)}, ${qc.z.toFixed(3)})`;
+        } else {
+          queryCoordsEl.textContent = `(${qc.x.toFixed(3)}, ${qc.y.toFixed(3)})`;
+        }
+      }
+
+      // Reconstructed Coordinates in D
+      const ptsD = slotD.benchmarkDataset;
+      if (qIdx < ptsD.length && outputCoordsEl) {
+        const qd = ptsD[qIdx];
+        if (typeof qd.z === 'number') {
+          outputCoordsEl.textContent = `(${qd.x.toFixed(3)}, ${qd.y.toFixed(3)}, ${qd.z.toFixed(3)})`;
+        } else {
+          outputCoordsEl.textContent = `(${qd.x.toFixed(3)}, ${qd.y.toFixed(3)})`;
+        }
+      }
+
+      // Contributing B-Neighbors Table
+      const mapping = slotD.reconstructionSourceNeighbors;
+      if (!mapping || !mapping[qIdx] || !tbody) return;
+
+      const neighbors = mapping[qIdx];
+      let html = '';
+      const ptsB = slotB ? slotB.benchmarkDataset : null;
+
+      for (let r = 0; r < neighbors.length; r++) {
+        const item = neighbors[r];
+        const nId = item.id;
+        const dist = item.dist;
+        const weight = item.weight;
+
+        let bCoordStr = '-';
+        if (ptsB && nId >= 0 && nId < ptsB.length) {
+          const pb = ptsB[nId];
+          bCoordStr = (typeof pb.z === 'number')
+            ? `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)}, ${pb.z.toFixed(2)})`
+            : `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)})`;
+        }
+
+        const isHovered = (hoveredKnnNeighborId === nId);
+        const bg = isHovered ? 'background: rgba(168, 85, 247, 0.25);' : (r % 2 === 1 ? 'background: rgba(15, 23, 42, 0.4);' : '');
+
+        html += `
+          <tr style="${bg} cursor: pointer; transition: background 0.15s;"
+              onmouseenter="hoveredKnnNeighborId=${nId}; draw();"
+              onmouseleave="hoveredKnnNeighborId=-1; draw();">
+            <td style="padding: 3px 5px; color: ${r === 0 ? '#4ade80' : '#94a3b8'}; font-weight: 700;">#${r + 1}</td>
+            <td style="padding: 3px 5px; color: #38bdf8; font-weight: 600;">#${nId}</td>
+            <td style="padding: 3px 5px; color: #f8fafc;">${dist.toFixed(4)}</td>
+            <td style="padding: 3px 5px; color: #fbbf24;">${(weight * 100).toFixed(1)}%</td>
+            <td style="padding: 3px 5px; color: #c084fc; font-family: monospace;">${bCoordStr}</td>
+          </tr>
+        `;
+      }
+
+      tbody.innerHTML = html;
+    }
+
+    window.renderReconstructionDashboard = renderReconstructionDashboard;
 
