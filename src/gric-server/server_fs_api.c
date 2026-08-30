@@ -23,15 +23,23 @@ void handle_api_info(
     char knn_bin[PATH_MAX];
     char status_bin[PATH_MAX];
     char txt2stream_bin[PATH_MAX];
+    char dimdensity_bin[PATH_MAX];
 
-    int has_cluster = check_binary_available(config, "gric-cluster",
-                                             cluster_bin, sizeof(cluster_bin));
-    int has_knn = check_binary_available(config, "gric-knn",
-                                         knn_bin, sizeof(knn_bin));
-    int has_status = check_binary_available(config, "gric-status",
-                                            status_bin, sizeof(status_bin));
-    int has_txt2stream = check_binary_available(config, "gric-txt2stream",
-                                                txt2stream_bin, sizeof(txt2stream_bin));
+    int has_cluster = check_binary_available(
+        config, "gric-cluster",
+        cluster_bin, sizeof(cluster_bin));
+    int has_knn = check_binary_available(
+        config, "gric-knn",
+        knn_bin, sizeof(knn_bin));
+    int has_status = check_binary_available(
+        config, "gric-status",
+        status_bin, sizeof(status_bin));
+    int has_txt2stream = check_binary_available(
+        config, "gric-txt2stream",
+        txt2stream_bin, sizeof(txt2stream_bin));
+    int has_dimdensity = check_binary_available(
+        config, "gric-dimdensity",
+        dimdensity_bin, sizeof(dimdensity_bin));
 
     long ncpus = sysconf(_SC_NPROCESSORS_ONLN);
     if (ncpus < 1)
@@ -50,14 +58,16 @@ void handle_api_info(
              "    \"gric-cluster\": %s,\n"
              "    \"gric-knn\": %s,\n"
              "    \"gric-status\": %s,\n"
-             "    \"gric-txt2stream\": %s\n"
+             "    \"gric-txt2stream\": %s,\n"
+             "    \"gric-dimdensity\": %s\n"
              "  }\n"
              "}\n",
              config->workdir, ncpus,
              has_cluster ? "true" : "false",
              has_knn ? "true" : "false",
              has_status ? "true" : "false",
-             has_txt2stream ? "true" : "false");
+             has_txt2stream ? "true" : "false",
+             has_dimdensity ? "true" : "false");
 
     api_send_json(client_fd, 200, resp);
 } // handle_api_info

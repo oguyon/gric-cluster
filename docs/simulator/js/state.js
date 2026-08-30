@@ -182,6 +182,13 @@
     let selectedKnnQuerySample = -1;
     let hoveredKnnNeighborId = -1;
 
+    // Dim & Density State (gric-dimdensity)
+    let dimDensityResults = null;
+    let dimDensitySummary = null;
+    let isDimDensityComputing = false;
+    let pointColorMode = 'cluster';
+    let dimDensityTraceOffset = 0;
+
     // Interactive Selection & Hover State
     let selectedClusterId = -1;
     let selectedTupleKey = null;

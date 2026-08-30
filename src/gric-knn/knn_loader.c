@@ -5,6 +5,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "knn_loader.h"
+#include "knn_reader.h"
 #include "knn_tree.h"
 #include "gric_bin_io.h"
 #include <ctype.h>
@@ -43,6 +44,28 @@ static int check_is_fits(
     }
 
     return 0;
+}
+
+/**
+ * calc_euclidean_dist() - Euclidean distance between two coordinate vectors.
+ * @a: First vector.
+ * @b: Second vector.
+ * @n: Vector length.
+ *
+ * Return: Euclidean distance.
+ */
+static inline double calc_euclidean_dist(
+    const double *restrict a,
+    const double *restrict b,
+    long                   n)
+{
+    double sum = 0.0;
+    for (long i = 0; i < n; i++)
+    {
+        double diff = a[i] - b[i];
+        sum += diff * diff;
+    }
+    return sqrt(sum);
 }
 
 /**
@@ -314,7 +337,10 @@ static void parse_radii_file(
         {
             if (c_id >= 0 && c_id < model->num_clusters)
             {
-                model->clusters[c_id].radius = radius;
+                if (radius > model->clusters[c_id].radius)
+                {
+                    model->clusters[c_id].radius = radius;
+                }
             }
         }
     } // while parsing radii
@@ -857,6 +883,79 @@ static int load_anchors(
 }
 
 /**
+ * compute_exact_frame_anchor_radii() - Compute distance to cluster anchor for each frame.
+ * @input_data_path: Path to dataset file.
+ * @model:           Pointer to KnnModel with populated anchors and assignments.
+ *
+ * Return: 0 on success, -1 on error.
+ */
+static int compute_exact_frame_anchor_radii(
+    const char *input_data_path,
+    KnnModel   *model)
+{
+    KnnFrameReader reader;
+    if (knn_reader_open(&reader, input_data_path, model->total_dataset_frames,
+                        model->frame_width, model->frame_height) != 0)
+    {
+        return -1;
+    }
+
+    double *fbuf = (double *)malloc((size_t)model->frame_elements * sizeof(double));
+    if (fbuf == NULL)
+    {
+        knn_reader_close(&reader);
+        return -1;
+    }
+
+    for (int c = 0; c < model->num_clusters; c++)
+    {
+        model->clusters[c].radius = 0.0;
+        model->clusters[c].num_members = 0;
+    }
+
+    for (long i = 0; i < model->total_dataset_frames; i++)
+    {
+        if (knn_reader_read_frame(&reader, i, fbuf) == 0)
+        {
+            int c = model->frame_cluster_map[i];
+            if (c >= 0 && c < model->num_clusters)
+            {
+                double r = calc_euclidean_dist(
+                    fbuf,
+                    model->clusters[c].anchor_data,
+                    model->frame_elements);
+                model->frame_r_anchor[i] = (float)r;
+
+                int slot = model->clusters[c].num_members++;
+                model->clusters[c].members[slot].frame_id = (uint32_t)i;
+                model->clusters[c].members[slot].r_anchor = (float)r;
+
+                if (r > model->clusters[c].radius)
+                {
+                    model->clusters[c].radius = r;
+                }
+            }
+        }
+    } // for (long i = 0; ...)
+
+    /* Sort each cluster's members array by ascending r_anchor for O(log N) binary search */
+    for (int c = 0; c < model->num_clusters; c++)
+    {
+        if (model->clusters[c].num_members > 1)
+        {
+            qsort(model->clusters[c].members,
+                  (size_t)model->clusters[c].num_members,
+                  sizeof(MemberMeta),
+                  compare_member_meta_radii);
+        }
+    }
+
+    free(fbuf);
+    knn_reader_close(&reader);
+    return 0;
+}
+
+/**
  * knn_model_load() - Load all Pass 1 artifacts into resident KnnModel.
  * @cluster_dir:      Directory with Pass 1 outputs.
  * @input_data_path:  Path to original input dataset.
@@ -899,6 +998,28 @@ int knn_model_load(
     }
 
     if (load_anchors(cluster_dir, input_data_path, model) != 0)
+    {
+        knn_model_free(model);
+        return -1;
+    }
+
+    /* Compute exact pairwise inter-cluster anchor distances */
+    for (int i = 0; i < model->num_clusters; i++)
+    {
+        model->dcc_matrix[i * model->num_clusters + i] = 0.0;
+        for (int j = i + 1; j < model->num_clusters; j++)
+        {
+            double d = calc_euclidean_dist(
+                model->clusters[i].anchor_data,
+                model->clusters[j].anchor_data,
+                model->frame_elements);
+            model->dcc_matrix[i * model->num_clusters + j] = d;
+            model->dcc_matrix[j * model->num_clusters + i] = d;
+        }
+    }
+
+    /* Compute exact frame-to-anchor distances and exact cluster enclosing radii */
+    if (compute_exact_frame_anchor_radii(input_data_path, model) != 0)
     {
         knn_model_free(model);
         return -1;

@@ -1654,24 +1654,25 @@ const GricWasm = (function () {
       };
     }
 
-    // Copy results
+    // Copy results (re-fetch HEAP views in case WebAssembly memory grew during search)
     const indices = new Int32Array(N * k);
     const distances = new Float64Array(N * k);
     const heap32 = M.HEAP32;
+    const heapF64After = M.HEAPF64;
     indices.set(heap32.subarray(indicesPtr >> 2, (indicesPtr >> 2) + N * k));
-    distances.set(heapF64.subarray(distsPtr >> 3, (distsPtr >> 3) + N * k));
+    distances.set(heapF64After.subarray(distsPtr >> 3, (distsPtr >> 3) + N * k));
 
     const tOffset = telemPtr >> 3;
-    const timeCompute = heapF64[tOffset + 7] || 0.0;
+    const timeCompute = heapF64After[tOffset + 7] || 0.0;
     const tWasmTotal = performance.now() - tWasmStart;
     const telemetry = {
-      totalQueries: heapF64[tOffset] || 0,
-      framedistCalls: heapF64[tOffset + 1] || 0,
-      level1ClustersPruned: heapF64[tOffset + 2] || 0,
-      level2AnchorsPruned: heapF64[tOffset + 3] || 0,
-      level3AnnularPruned: heapF64[tOffset + 4] || 0,
-      temporalPruned: heapF64[tOffset + 5] || 0,
-      totalCandidatesConsidered: heapF64[tOffset + 6] || 0,
+      totalQueries: heapF64After[tOffset] || 0,
+      framedistCalls: heapF64After[tOffset + 1] || 0,
+      level1ClustersPruned: heapF64After[tOffset + 2] || 0,
+      level2AnchorsPruned: heapF64After[tOffset + 3] || 0,
+      level3AnnularPruned: heapF64After[tOffset + 4] || 0,
+      temporalPruned: heapF64After[tOffset + 5] || 0,
+      totalCandidatesConsidered: heapF64After[tOffset + 6] || 0,
       timeSearchMs: timeCompute,
       timeComputeMs: timeCompute,
       timeTotalMs: tWasmTotal,

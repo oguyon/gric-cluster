@@ -968,6 +968,155 @@ const DesktopBridge = (function () {
     }
   }
 
+  /**
+   * Parse gric-dimdensity JSON summary from stdout.
+   *
+   * @param {string} logText Raw or ANSI-colored output.
+   * @return {Object|null} Parsed JSON summary or null.
+   */
+  function parseDimDensityLog(logText) {
+    const clean = (logText || '')
+      .replace(/\x1b\[[0-9;]*m/g, '');
+
+    // Find the outermost JSON object block
+    const start = clean.indexOf('{');
+    if (start < 0) return null;
+
+    let depth = 0;
+    let end = -1;
+    for (let i = start; i < clean.length; i++) {
+      if (clean[i] === '{') depth++;
+      else if (clean[i] === '}') depth--;
+      if (depth === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+    if (end <= start) return null;
+
+    try {
+      return JSON.parse(clean.substring(start, end));
+    } catch (e) {
+      console.warn(
+        '[DesktopBridge] parseDimDensityLog: ' +
+        'JSON parse failed:', e
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Read per-sample dim/density results from binary
+   * dimdensity.bin in a clusterdat directory.
+   *
+   * @param {string} clusterDir Relative clusterdat path.
+   * @return {Object|null} Per-sample result arrays.
+   */
+  async function readDimDensityResults(clusterDir) {
+    const dir = clusterDir.replace(/\/+$/, '');
+
+    // Try binary file first
+    try {
+      const buf = await readBinaryFile(
+        `${dir}/dimdensity.bin`
+      );
+      if (!buf) return null;
+
+      const view = new DataView(buf);
+      const magic = String.fromCharCode(
+        view.getUint8(0), view.getUint8(1),
+        view.getUint8(2), view.getUint8(3)
+      );
+
+      if (magic === 'GRIC') {
+        const hdrBytes = view.getUint16(8, true);
+        const N = Number(
+          view.getBigUint64(32, true)
+        );
+        const cols = Number(
+          view.getBigUint64(40, true)
+        ) || 4;
+
+        const totalElems = N * cols;
+        let raw;
+        if (hdrBytes % 4 === 0) {
+          raw = new Float32Array(
+            buf, hdrBytes, totalElems
+          );
+        } else {
+          raw = new Float32Array(
+            buf.slice(
+              hdrBytes, hdrBytes + totalElems * 4
+            )
+          );
+        }
+
+        const localDim = new Float32Array(N);
+        const density = new Float32Array(N);
+        const logDensity = new Float32Array(N);
+        const rkDist = new Float32Array(N);
+
+        for (let i = 0; i < N; i++) {
+          localDim[i] = raw[i * cols + 0];
+          density[i] = raw[i * cols + 1];
+          logDensity[i] = raw[i * cols + 2];
+          rkDist[i] = raw[i * cols + 3];
+        }
+
+        return {
+          totalFrames: N,
+          localDim: localDim,
+          density: density,
+          logDensity: logDensity,
+          rkDist: rkDist
+        };
+      }
+    } catch (e) {
+      /* fallback to ASCII */
+    }
+
+    // Fallback: parse ASCII dimdensity.txt
+    try {
+      const text = await readFile(
+        `${dir}/dimdensity.txt`
+      );
+      if (!text) return null;
+
+      const lines = text.split(/\r?\n/);
+      const dims = [];
+      const dens = [];
+      const logd = [];
+      const rks = [];
+
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t || t.startsWith('#')) continue;
+        const parts = t.split(/\s+/);
+        if (parts.length < 5) continue;
+        dims.push(parseFloat(parts[1]));
+        dens.push(parseFloat(parts[2]));
+        logd.push(parseFloat(parts[3]));
+        rks.push(parseFloat(parts[4]));
+      }
+
+      if (dims.length === 0) return null;
+
+      return {
+        totalFrames: dims.length,
+        localDim: new Float32Array(dims),
+        density: new Float32Array(dens),
+        logDensity: new Float32Array(logd),
+        rkDist: new Float32Array(rks)
+      };
+    } catch (e) {
+      console.warn(
+        '[DesktopBridge] readDimDensityResults:',
+        e
+      );
+      return null;
+    }
+  }
+
   return {
     probe,
     isAvailable,
@@ -991,6 +1140,8 @@ const DesktopBridge = (function () {
     parseClusterDatDir,
     parseKnnTelemetryLog,
     readKnnResults,
+    parseDimDensityLog,
+    readDimDensityResults,
     shutdownServer
   };
 })();

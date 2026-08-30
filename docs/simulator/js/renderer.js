@@ -6,6 +6,57 @@
 //  6. QUAD-SCREEN VIEWPORT MANAGER & 3D RENDERING
     // =========================================================================
 
+    // Viridis color ramp (16-stop approximation)
+    const VIRIDIS_STOPS = [
+      [68,1,84],[72,35,116],[64,67,135],
+      [57,86,140],[49,104,142],[42,120,142],
+      [35,137,142],[31,154,138],[53,170,120],
+      [94,186,97],[144,201,67],[194,210,35],
+      [227,220,25],[240,229,30],[248,238,35],
+      [253,231,37]
+    ];
+
+    // Inferno color ramp (16-stop approximation)
+    const INFERNO_STOPS = [
+      [0,0,4],[14,11,53],[40,11,84],
+      [73,10,119],[101,0,167],[137,34,141],
+      [165,53,112],[187,72,86],[208,92,60],
+      [224,116,38],[239,143,18],[249,170,10],
+      [252,195,19],[250,219,67],[244,240,136],
+      [252,255,164]
+    ];
+
+    /**
+     * Map a scalar value to an RGB color string.
+     * @param {number} val - Data value
+     * @param {number} mn  - Data minimum
+     * @param {number} mx  - Data maximum
+     * @param {Array}  stops - Color ramp array
+     * @returns {string} CSS rgb() string
+     */
+    function getColorFromRamp(val, mn, mx, stops) {
+      const t = Math.max(0, Math.min(1,
+        (val - mn) / (mx - mn || 1)
+      ));
+      const n = stops.length - 1;
+      const fi = t * n;
+      const lo = Math.floor(fi);
+      const hi = Math.min(lo + 1, n);
+      const f = fi - lo;
+      const c0 = stops[lo];
+      const c1 = stops[hi];
+      const r = Math.round(
+        c0[0] + (c1[0] - c0[0]) * f
+      );
+      const g = Math.round(
+        c0[1] + (c1[1] - c0[1]) * f
+      );
+      const b = Math.round(
+        c0[2] + (c1[2] - c0[2]) * f
+      );
+      return `rgb(${r},${g},${b})`;
+    }
+
     let lastRenderedSquareSize = -1;
     let lastRenderedDpr = -1;
 
@@ -539,6 +590,34 @@
 
             const px = cx + (u - view.panX) * scale;
             const py = cy - (v - view.panY) * scale;
+
+            // Color override for dim/density
+            if (typeof pointColorMode !== 'undefined'
+                && pointColorMode !== 'cluster'
+                && dimDensityResults
+                && dimDensitySummary
+                && idx < dimDensityResults.totalFrames
+            ) {
+              let fc;
+              if (pointColorMode === 'dimension') {
+                const s =
+                  dimDensitySummary
+                    .intrinsic_dimension;
+                fc = getColorFromRamp(
+                  dimDensityResults.localDim[idx],
+                  s.min, s.max, VIRIDIS_STOPS
+                );
+              } else {
+                const s =
+                  dimDensitySummary.log_density;
+                fc = getColorFromRamp(
+                  dimDensityResults.logDensity[idx],
+                  s.min, s.max, INFERNO_STOPS
+                );
+              }
+              ctx.fillStyle = fc;
+            }
+
             ctx.fillRect(px - ptRad, py - ptRad, d, d);
             drawnPointsCount++;
           }
@@ -562,16 +641,43 @@
             const px = cx + (u - view.panX) * scale;
             const py = cy - (v - view.panY) * scale;
 
-            const fillColor = (showColorPerCluster &&
-                               pt.clusterId !== undefined &&
-                               pt.clusterId >= 0)
-                              ? getCachedColor(pt.clusterId)
-                              : procDefaultColor;
+            let fillColor;
+            if (typeof pointColorMode !== 'undefined'
+                && pointColorMode !== 'cluster'
+                && dimDensityResults
+                && dimDensitySummary
+                && idx < dimDensityResults.totalFrames
+            ) {
+              if (pointColorMode === 'dimension') {
+                const s =
+                  dimDensitySummary
+                    .intrinsic_dimension;
+                fillColor = getColorFromRamp(
+                  dimDensityResults.localDim[idx],
+                  s.min, s.max, VIRIDIS_STOPS
+                );
+              } else {
+                const s =
+                  dimDensitySummary.log_density;
+                fillColor = getColorFromRamp(
+                  dimDensityResults.logDensity[idx],
+                  s.min, s.max, INFERNO_STOPS
+                );
+              }
+            } else {
+              fillColor = (showColorPerCluster &&
+                pt.clusterId !== undefined &&
+                pt.clusterId >= 0)
+                ? getCachedColor(pt.clusterId)
+                : procDefaultColor;
+            }
             if (fillColor !== lastFill) {
               ctx.fillStyle = fillColor;
               lastFill = fillColor;
             }
-            ctx.fillRect(px - ptRad, py - ptRad, d, d);
+            ctx.fillRect(
+              px - ptRad, py - ptRad, d, d
+            );
             drawnPointsCount++;
           }
         } else {
@@ -594,6 +700,34 @@
             const py = cy - (pr.v - view.panY) * scale;
             const depthFactor = Math.max(0.4, Math.min(2.2, 1.0 + pr.depth * 0.5));
             const ptRad = Math.max(0.4, basePtRad * depthFactor * ptSizeScale);
+
+            // Color override for dim/density
+            if (typeof pointColorMode !== 'undefined'
+                && pointColorMode !== 'cluster'
+                && dimDensityResults
+                && dimDensitySummary
+                && idx < dimDensityResults.totalFrames
+            ) {
+              let fc;
+              if (pointColorMode === 'dimension') {
+                const s =
+                  dimDensitySummary
+                    .intrinsic_dimension;
+                fc = getColorFromRamp(
+                  dimDensityResults.localDim[idx],
+                  s.min, s.max, VIRIDIS_STOPS
+                );
+              } else {
+                const s =
+                  dimDensitySummary.log_density;
+                fc = getColorFromRamp(
+                  dimDensityResults.logDensity[idx],
+                  s.min, s.max, INFERNO_STOPS
+                );
+              }
+              ctx.fillStyle = fc;
+            }
+
             ctx.fillRect(px - ptRad, py - ptRad, ptRad * 2, ptRad * 2);
             drawnPointsCount++;
           }
@@ -614,16 +748,44 @@
             const depthFactor = Math.max(0.4, Math.min(2.2, 1.0 + pr.depth * 0.5));
             const ptRad = Math.max(0.4, basePtRad * depthFactor * ptSizeScale);
 
-            const fillColor = (showColorPerCluster &&
-                               pt.clusterId !== undefined &&
-                               pt.clusterId >= 0)
-                              ? getCachedColor(pt.clusterId)
-                              : procDefaultColor;
+            let fillColor;
+            if (typeof pointColorMode !== 'undefined'
+                && pointColorMode !== 'cluster'
+                && dimDensityResults
+                && dimDensitySummary
+                && idx < dimDensityResults.totalFrames
+            ) {
+              if (pointColorMode === 'dimension') {
+                const s =
+                  dimDensitySummary
+                    .intrinsic_dimension;
+                fillColor = getColorFromRamp(
+                  dimDensityResults.localDim[idx],
+                  s.min, s.max, VIRIDIS_STOPS
+                );
+              } else {
+                const s =
+                  dimDensitySummary.log_density;
+                fillColor = getColorFromRamp(
+                  dimDensityResults.logDensity[idx],
+                  s.min, s.max, INFERNO_STOPS
+                );
+              }
+            } else {
+              fillColor = (showColorPerCluster &&
+                pt.clusterId !== undefined &&
+                pt.clusterId >= 0)
+                ? getCachedColor(pt.clusterId)
+                : procDefaultColor;
+            }
             if (fillColor !== lastFill) {
               ctx.fillStyle = fillColor;
               lastFill = fillColor;
             }
-            ctx.fillRect(px - ptRad, py - ptRad, ptRad * 2, ptRad * 2);
+            ctx.fillRect(
+              px - ptRad, py - ptRad,
+              ptRad * 2, ptRad * 2
+            );
             drawnPointsCount++;
           }
         }
@@ -1958,6 +2120,76 @@
         ctx.fillStyle = '#ffffff';
         ctx.fill();
       }
+
+      // Color-bar legend for dim/density modes
+      if (typeof pointColorMode !== 'undefined'
+          && pointColorMode !== 'cluster'
+          && dimDensitySummary
+      ) {
+        const barH = 12;
+        const margin = 16;
+        const barY = rect.y + rect.h - margin - barH - 8;
+        const barX = rect.x + margin + 70;
+        const barW = Math.max(120, rect.w - (margin * 2 + 140));
+
+        // Background card
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.fillRect(
+          barX - 8, barY - 18,
+          barW + 16, barH + 26
+        );
+
+        let stops, mn, mx, label;
+        if (pointColorMode === 'dimension') {
+          stops = VIRIDIS_STOPS;
+          const s =
+            dimDensitySummary.intrinsic_dimension;
+          mn = s ? s.min : 0;
+          mx = s ? s.max : 1;
+          label = 'Local Intrinsic Dimension (Viridis)';
+        } else {
+          stops = INFERNO_STOPS;
+          const s = dimDensitySummary.log_density;
+          mn = s ? s.min : 0;
+          mx = s ? s.max : 1;
+          label = 'Log-Density ln(f) (Inferno)';
+        }
+
+        // Draw gradient bar
+        const segW = barW / stops.length;
+        for (let s = 0; s < stops.length; s++) {
+          const [r, g, b] = stops[s];
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.fillRect(
+            barX + s * segW, barY,
+            segW + 1, barH
+          );
+        }
+
+        // Border
+        ctx.strokeStyle =
+          'rgba(255, 255, 255, 0.35)';
+        ctx.lineWidth = 0.8;
+        ctx.strokeRect(
+          barX, barY, barW, barH
+        );
+
+        // Labels
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 9.5px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(
+          mn.toFixed(2), barX, barY - 4
+        );
+        ctx.textAlign = 'right';
+        ctx.fillText(
+          mx.toFixed(2), barX + barW, barY - 4
+        );
+        ctx.textAlign = 'center';
+        ctx.fillText(
+          label, barX + barW / 2, barY - 4
+        );
+      } // color-bar legend
 
       if (showViewportHUD) {
         // 6. Viewport Header Overlay & Maximize Button

@@ -275,6 +275,27 @@ if (CFITSIO_FOUND)
     target_include_directories(gric-knn PRIVATE ${CFITSIO_INCLUDE_DIRS})
 endif()
 
+# gric-dimdensity tool
+add_executable(gric-dimdensity
+    src/gric-dimdensity/main.c
+    src/gric-dimdensity/dimdensity_loader.c
+    src/gric-dimdensity/dimdensity_mle.c
+    src/gric-dimdensity/dimdensity_mack.c
+    src/gric-dimdensity/dimdensity_stats.c
+    src/gric-dimdensity/dimdensity_writer.c
+    src/shared/cli_colors.c
+    src/shared/gric_bin_io.c
+)
+target_include_directories(gric-dimdensity PRIVATE src/gric-dimdensity src)
+target_link_libraries(gric-dimdensity m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(gric-dimdensity OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(gric-dimdensity ${CFITSIO_LIBRARIES})
+    target_include_directories(gric-dimdensity PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+
 # gric-ascii2bin tool
 add_executable(gric-ascii2bin
     src/gric-ascii2bin/ascii2bin.c
@@ -402,6 +423,15 @@ target_link_libraries(test_bin_clustering_pipeline m)
 add_test(NAME test_bin_clustering_pipeline
     COMMAND test_bin_clustering_pipeline)
 set_tests_properties(test_bin_clustering_pipeline PROPERTIES DEPENDS "gric-cluster;gric-ascii2bin;gric-bin2ascii;gric-mktxtseq;gric-knn")
+
+add_executable(test_dimdensity
+    tests/test_dimdensity.c
+    src/shared/gric_bin_io.c
+)
+target_link_libraries(test_dimdensity m)
+add_test(NAME test_dimdensity
+    COMMAND test_dimdensity)
+set_tests_properties(test_dimdensity PROPERTIES DEPENDS "gric-cluster;gric-mktxtseq;gric-knn;gric-dimdensity")
 
 # Target to regenerate benchmark figures and documentation pages
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
