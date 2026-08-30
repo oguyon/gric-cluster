@@ -1097,6 +1097,20 @@
       orbitCamera.panX = 0;
       orbitCamera.panY = 0;
       orbitCamera.zoom = 1.0;
+      if (typeof reconInputCamera !== 'undefined') {
+        reconInputCamera.azimuth = -35 * (Math.PI / 180);
+        reconInputCamera.elevation = 25 * (Math.PI / 180);
+        reconInputCamera.panX = 0;
+        reconInputCamera.panY = 0;
+        reconInputCamera.zoom = 1.0;
+      }
+      if (typeof reconOutputCamera !== 'undefined') {
+        reconOutputCamera.azimuth = -35 * (Math.PI / 180);
+        reconOutputCamera.elevation = 25 * (Math.PI / 180);
+        reconOutputCamera.panX = 0;
+        reconOutputCamera.panY = 0;
+        reconOutputCamera.zoom = 1.0;
+      }
       if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
       updateZoomBadge();
       draw();
@@ -1664,6 +1678,9 @@
     window.renderKnnTrace = renderKnnTrace;
 
     function updateUI() {
+      if (typeof updateDatasetStatusBadge === 'function') {
+        updateDatasetStatusBadge();
+      }
       if (window.syncControlDependencies) {
         window.syncControlDependencies();
       }
@@ -2736,9 +2753,11 @@
           else btnToggleSide.classList.remove('active');
         }
 
+        const clustPill = document.getElementById(`datasetClusteredPill_${sId}`);
+        const knnPill = document.getElementById(`datasetKnnPill_${sId}`);
         const slot = datasetSlots[sId];
         if (slot) {
-          if (wsLabel) wsLabel.textContent = slot.workspaceName || `workspace/${sId}`;
+          if (wsLabel) wsLabel.textContent = `ws/${sId}`;
           if (sel && (!isActive || sel.value !== currentBenchmark)) {
             sel.value = isActive ? currentBenchmark : slot.benchmarkKey;
           }
@@ -2746,22 +2765,123 @@
             loopSel.value = String(isActive ? (loopCount || 10) : (slot.loopCount || 10));
           }
 
+          // 1. Clustered Indicator
+          if (clustPill) {
+            let nClust = 0;
+            if (isActive) {
+              if (useTiles) {
+                nClust = jointTuplesMap
+                  ? jointTuplesMap.size
+                  : (tileEngineX.clusters ? tileEngineX.clusters.length : 0);
+              } else if (clusters && clusters.length > 0) {
+                nClust = clusters.length;
+              } else if (typeof GricWasm !== 'undefined' &&
+                         GricWasm.isLoaded() &&
+                         GricWasm.isReady() &&
+                         wasmSessionActive) {
+                nClust = GricWasm.getNumClusters();
+              }
+            } else {
+              if (slot.useTiles) {
+                nClust = slot.jointTuplesMap
+                  ? slot.jointTuplesMap.size
+                  : (slot.tileEngineX && slot.tileEngineX.clusters
+                      ? slot.tileEngineX.clusters.length
+                      : 0);
+              } else {
+                nClust = slot.clusters ? slot.clusters.length : 0;
+              }
+            }
+            const framesCount = isActive ? totalFrames : (slot.totalFrames || 0);
+            const isClust = (nClust > 0 || framesCount > 0);
+
+            if (isClust) {
+              clustPill.textContent = `🟢 Clust (${nClust}c)`;
+              clustPill.title =
+                `Dataset ${sId} clustered: ${nClust} clusters, ${framesCount} frames`;
+              clustPill.style.background = 'rgba(34, 197, 94, 0.15)';
+              clustPill.style.color = '#4ade80';
+              clustPill.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+            } else {
+              clustPill.textContent = '⚪ Unclustered';
+              clustPill.title = `Dataset ${sId} has not been clustered`;
+              clustPill.style.background = 'rgba(100, 116, 139, 0.12)';
+              clustPill.style.color = '#64748b';
+              clustPill.style.borderColor = 'rgba(100, 116, 139, 0.25)';
+            }
+          }
+
+          // 2. k-NN Indicator
+          if (knnPill) {
+            const activeKnnObj = knnResults;
+            const slotKnnObj = slot.knnResults;
+            const hasActiveKnn = Boolean(
+              activeKnnObj && (
+                activeKnnObj.indices ||
+                activeKnnObj.queries ||
+                (Array.isArray(activeKnnObj) && activeKnnObj.length > 0) ||
+                (typeof activeKnnObj.totalFrames === 'number' && activeKnnObj.totalFrames > 0)
+              )
+            ) || Boolean(reconstructionInfo) || Boolean(reconstructionSourceNeighbors);
+
+            const hasSlotKnn = Boolean(
+              slotKnnObj && (
+                slotKnnObj.indices ||
+                slotKnnObj.queries ||
+                (Array.isArray(slotKnnObj) && slotKnnObj.length > 0) ||
+                (typeof slotKnnObj.totalFrames === 'number' && slotKnnObj.totalFrames > 0)
+              )
+            ) || Boolean(slot.reconstructionInfo) || Boolean(slot.reconstructionSourceNeighbors);
+
+            const hasKnn = isActive ? hasActiveKnn : hasSlotKnn;
+            const kVal = isActive
+              ? (activeKnnObj?.k || reconstructionInfo?.k || knnK || 10)
+              : (slotKnnObj?.k || slot.reconstructionInfo?.k || slot.knnK || 10);
+
+            if (hasKnn) {
+              const isRecon = isActive
+                ? Boolean(reconstructionInfo)
+                : Boolean(slot.reconstructionInfo);
+              knnPill.textContent = isRecon ? `⚡ k-NN (k=${kVal})` : `🔵 k-NN (k=${kVal})`;
+              knnPill.title = `Dataset ${sId} has k-NN graph computed (k=${kVal})`;
+              knnPill.style.background =
+                isRecon ? 'rgba(168, 85, 247, 0.15)' : 'rgba(56, 189, 248, 0.15)';
+              knnPill.style.color = isRecon ? '#c084fc' : '#38bdf8';
+              knnPill.style.borderColor =
+                isRecon ? 'rgba(168, 85, 247, 0.4)' : 'rgba(56, 189, 248, 0.4)';
+            } else {
+              knnPill.textContent = '⚪ No k-NN';
+              knnPill.title = `Dataset ${sId} has not had k-NN computed`;
+              knnPill.style.background = 'rgba(100, 116, 139, 0.12)';
+              knnPill.style.color = '#64748b';
+              knnPill.style.borderColor = 'rgba(100, 116, 139, 0.25)';
+            }
+          }
+
+          // 3. Staged / Points Status Pill (Compact)
           if (pill) {
             const count = isActive
               ? (benchmarkDataset ? benchmarkDataset.length : 0)
-              : (slot.benchmarkDataset ? slot.benchmarkDataset.length : (slot.stagedDatasetInfo ? slot.stagedDatasetInfo.count : 0));
+              : (slot.benchmarkDataset
+                   ? slot.benchmarkDataset.length
+                   : (slot.stagedDatasetInfo ? slot.stagedDatasetInfo.count : 0));
             const bmName = isActive ? currentBenchmark : slot.benchmarkKey;
             const dim = isActive ? currentDim : slot.currentDim;
             const mode = isActive ? dataMode : slot.dataMode;
-            const dimStr = mode === 'image' ? '1024D Img' : (dim === 3 ? '3D' : '2D');
+            const dimStr = mode === 'image' ? '1024D' : (dim === 3 ? '3D' : '2D');
 
             if (count > 0) {
-              pill.textContent = `📦 Staged: ${count.toLocaleString()} pts (${dimStr}, ${bmName})`;
-              pill.style.background = isActive ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.12)';
+              const countFormatted = count >= 1000
+                ? `${(count / 1000).toFixed(count % 1000 === 0 ? 0 : 1)}k`
+                : count;
+              pill.textContent = `📦 ${countFormatted} pts (${dimStr}, ${bmName})`;
+              pill.style.background =
+                isActive ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.12)';
               pill.style.color = isActive ? '#38bdf8' : 'var(--text-muted)';
-              pill.style.borderColor = isActive ? 'rgba(56, 189, 248, 0.35)' : 'rgba(148, 163, 184, 0.25)';
+              pill.style.borderColor =
+                isActive ? 'rgba(56, 189, 248, 0.35)' : 'rgba(148, 163, 184, 0.25)';
             } else {
-              pill.textContent = '⚪ Cleared';
+              pill.textContent = '⚪ Empty';
               pill.style.background = 'rgba(100, 116, 139, 0.2)';
               pill.style.color = '#94a3b8';
               pill.style.borderColor = 'rgba(100, 116, 139, 0.4)';
@@ -3104,6 +3224,31 @@
         }
       }
 
+      // 2b. Quality Box visibility and state synchronization
+      const qualBox = document.getElementById('reconQualityBox');
+      if (qualBox) {
+        const hasQuality = (slotC && slotC.reconKthDist) ||
+                           (slotD && slotD.reconVariance);
+        qualBox.style.display = hasQuality ? 'block' : 'none';
+        if (hasQuality) {
+          const chkQuality = document.getElementById('chkReconQuality');
+          const sliderQuality = document.getElementById('sliderReconQuality');
+          const lblPct = document.getElementById('lblReconQualityPct');
+          if (chkQuality && typeof reconQualityColoringEnabled !== 'undefined') {
+            chkQuality.checked = reconQualityColoringEnabled;
+          }
+          if (sliderQuality && typeof reconQualityThreshold !== 'undefined') {
+            sliderQuality.value = Math.round(reconQualityThreshold * 100);
+          }
+          if (lblPct && typeof reconQualityThreshold !== 'undefined') {
+            lblPct.textContent = `${Math.round(reconQualityThreshold * 100)}%`;
+          }
+          if (typeof updateReconQualityMask === 'function') {
+            updateReconQualityMask();
+          }
+        }
+      }
+
       // 3. Point Inspector
       const titleEl = document.getElementById('reconInspectorTitle');
       const queryCoordsEl = document.getElementById('reconQueryCoords');
@@ -3120,13 +3265,25 @@
       }
 
       const totalQ = slotD.benchmarkDataset.length;
-      let qIdx = (typeof selectedKnnQuerySample !== 'undefined' && selectedKnnQuerySample >= 0)
-        ? selectedKnnQuerySample
-        : 0;
+      let qIdx = 0;
+      if (typeof reconLockedQueryIdx !== 'undefined' && reconLockedQueryIdx >= 0) {
+        qIdx = reconLockedQueryIdx;
+      } else if (typeof reconHoveredQueryIdx !== 'undefined' && reconHoveredQueryIdx >= 0) {
+        qIdx = reconHoveredQueryIdx;
+      } else if (typeof selectedKnnQuerySample !== 'undefined' && selectedKnnQuerySample >= 0) {
+        qIdx = selectedKnnQuerySample;
+      }
       if (qIdx >= totalQ) qIdx = 0;
 
+      const btn4P = document.getElementById('btnToggleRecon4PanelView');
+      if (btn4P && typeof isRecon4PanelView !== 'undefined') {
+        btn4P.classList.toggle('active', isRecon4PanelView);
+      }
+
       if (titleEl) {
-        titleEl.textContent = `Point Inspector (Sample #${qIdx})`;
+        const lockBadge = (typeof reconLockedQueryIdx !== 'undefined' && reconLockedQueryIdx >= 0)
+          ? ' 🔒' : '';
+        titleEl.textContent = `Point Inspector (Query #${qIdx}${lockBadge})`;
       }
 
       // Query Coordinates in C

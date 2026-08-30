@@ -275,6 +275,23 @@ if (CFITSIO_FOUND)
     target_include_directories(gric-knn PRIVATE ${CFITSIO_INCLUDE_DIRS})
 endif()
 
+# gric-knn-avg reconstruction tool
+add_executable(gric-knn-avg
+    src/gric-knn/knn_reconstruct.c
+    src/gric-knn/knn_reader.c
+    src/shared/cli_colors.c
+    src/shared/gric_bin_io.c
+)
+target_include_directories(gric-knn-avg PRIVATE src/gric-knn src/shared src)
+target_link_libraries(gric-knn-avg m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(gric-knn-avg OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(gric-knn-avg ${CFITSIO_LIBRARIES})
+    target_include_directories(gric-knn-avg PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+
 # gric-dimdensity tool
 add_executable(gric-dimdensity
     src/gric-dimdensity/main.c

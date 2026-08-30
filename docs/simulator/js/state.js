@@ -153,6 +153,34 @@
     let multiDatasetEnabled = false; // Multi-Dataset mode option: Off by default
     let reconstructionInfo = null; // Staged reconstruction metadata & stats for Slot D
     let reconstructionSourceNeighbors = null; // Mapping of D query -> contributing B neighbors
+    let isRecon4PanelView = false; // 4-Panel Synchronized View (A, B, C, D)
+    let showReconKnn = true; // Toggle k-NN rays & focused bright/grey highlights in 4-Panel view
+    let reconHoveredQueryIdx = -1; // Current hover-selected query index in C/D
+    let reconLockedQueryIdx = -1; // Click-pinned query index in C/D
+    let reconHoveredTrainingIdx = -1; // Current hover-selected training point index in A/B
+    let reconLockedTrainingIdx = -1; // Click-pinned training point index in A/B
+    let reconHoveredTrainingSlot = 'A'; // 'A' or 'B'
+    let reconLockedTrainingSlot = 'A'; // 'A' or 'B'
+
+    // 4-Panel Domain-Separated 3D Cameras (Inputs A&C vs Outputs B&D)
+    let reconInputCamera = {
+      azimuth: -35 * (Math.PI / 180),
+      elevation: 25 * (Math.PI / 180),
+      panX: 0,
+      panY: 0,
+      zoom: 1.0,
+      targetX: 0, targetY: 0, targetZ: 0,
+      isLocked: false
+    };
+    let reconOutputCamera = {
+      azimuth: -35 * (Math.PI / 180),
+      elevation: 25 * (Math.PI / 180),
+      panX: 0,
+      panY: 0,
+      zoom: 1.0,
+      targetX: 0, targetY: 0, targetZ: 0,
+      isLocked: false
+    };
 
     // Dataset Staging & Ingestion State
     let isDatasetStaged = false; // True when a dataset is staged/loaded in memory
@@ -194,6 +222,9 @@
     let dimDensitySummary = null;
     let isDimDensityComputing = false;
     let pointColorMode = 'cluster';
+    let reconQualityColoringEnabled = false;
+    let reconQualityThreshold = 1.0;
+    let reconQualityMask = null;
     let dimDensityTraceOffset = 0;
 
     // Interactive Selection & Hover State
@@ -694,7 +725,13 @@
         inspectedImageFrameIdx: -1,
         inspectedClusterId: -1,
         reconstructionInfo: null,
-        reconstructionSourceNeighbors: null
+        reconstructionSourceNeighbors: null,
+        reconKthDist: null,
+        reconVariance: null,
+        reconKthDistMin: 0,
+        reconKthDistMax: 0,
+        reconVarianceMin: 0,
+        reconVarianceMax: 0
       };
     }
 
@@ -811,6 +848,9 @@
       slot.inspectedClusterId = inspectedClusterId;
       slot.reconstructionInfo = reconstructionInfo;
       slot.reconstructionSourceNeighbors = reconstructionSourceNeighbors;
+      slot.reconQualityColoringEnabled = reconQualityColoringEnabled;
+      slot.reconQualityThreshold = reconQualityThreshold;
+      slot.reconQualityMask = reconQualityMask;
     }
 
     function loadSlotState(slotId) {
@@ -936,6 +976,10 @@
       inspectedClusterId = (slot.inspectedClusterId !== undefined) ? slot.inspectedClusterId : -1;
       reconstructionInfo = slot.reconstructionInfo || null;
       reconstructionSourceNeighbors = slot.reconstructionSourceNeighbors || null;
+      reconQualityColoringEnabled = slot.reconQualityColoringEnabled || false;
+      reconQualityThreshold = (slot.reconQualityThreshold !== undefined)
+        ? slot.reconQualityThreshold : 1.0;
+      reconQualityMask = slot.reconQualityMask || null;
     }
 
     function switchDatasetSlot(newSlotId) {
@@ -1164,14 +1208,37 @@
       slot.inspectedClusterId = -1;
       slot.reconstructionInfo = null;
       slot.reconstructionSourceNeighbors = null;
+      slot.reconKthDist = null;
+      slot.reconVariance = null;
+      slot.reconKthDistMin = 0;
+      slot.reconKthDistMax = 0;
+      slot.reconVarianceMin = 0;
+      slot.reconVarianceMax = 0;
+      slot.reconQualityColoringEnabled = false;
+      slot.reconQualityThreshold = 1.0;
+      slot.reconQualityMask = null;
 
-      // Update toolbar status pill
+      // Update toolbar status pill & indicators
       const pill = document.getElementById(`datasetStatusPill_${slotId}`);
       if (pill) {
-        pill.textContent = '⚪ Cleared';
+        pill.textContent = '⚪ Empty';
         pill.style.background = 'rgba(100, 116, 139, 0.2)';
         pill.style.color = '#94a3b8';
         pill.style.borderColor = 'rgba(100, 116, 139, 0.4)';
+      }
+      const clustPill = document.getElementById(`datasetClusteredPill_${slotId}`);
+      if (clustPill) {
+        clustPill.textContent = '⚪ Unclustered';
+        clustPill.style.background = 'rgba(100, 116, 139, 0.12)';
+        clustPill.style.color = '#64748b';
+        clustPill.style.borderColor = 'rgba(100, 116, 139, 0.25)';
+      }
+      const knnPill = document.getElementById(`datasetKnnPill_${slotId}`);
+      if (knnPill) {
+        knnPill.textContent = '⚪ No k-NN';
+        knnPill.style.background = 'rgba(100, 116, 139, 0.12)';
+        knnPill.style.color = '#64748b';
+        knnPill.style.borderColor = 'rgba(100, 116, 139, 0.25)';
       }
 
       // If this is the active slot, synchronize global state and redraw
@@ -1245,9 +1312,74 @@
       }
     }
 
+    function setRecon4PanelView(enabled) {
+      isRecon4PanelView = !!enabled;
+      if (isRecon4PanelView) {
+        maximizedQuad = null;
+      }
+      const btnPreset = document.getElementById('btnPresetRecon4Panel');
+      if (btnPreset) {
+        btnPreset.classList.toggle('active', isRecon4PanelView);
+      }
+      const btnSide = document.getElementById('btnToggleRecon4PanelView');
+      if (btnSide) {
+        btnSide.classList.toggle('active', isRecon4PanelView);
+      }
+      const btnTop = document.getElementById('btnToggleRecon4PanelTop');
+      if (btnTop) {
+        btnTop.classList.toggle('active', isRecon4PanelView);
+      }
+      if (typeof updateViewPresetBarPosition === 'function') {
+        updateViewPresetBarPosition();
+      }
+      if (typeof draw === 'function') {
+        draw();
+      }
+    }
+
+    function setReconKnn(enabled) {
+      if (typeof enabled === 'boolean') {
+        showReconKnn = enabled;
+      } else {
+        showReconKnn = !showReconKnn;
+      }
+      showKnnLines = showReconKnn;
+      syncReconKnnUI();
+      if (typeof showToast === 'function') {
+        showToast(showReconKnn ? '⚡ ABCD k-NN highlights & rays enabled'
+                               : 'ABCD k-NN highlights hidden');
+      }
+      if (typeof draw === 'function') {
+        draw();
+      }
+    }
+
+    function syncReconKnnUI() {
+      const btnTop = document.getElementById('btnToggleReconKnnTop');
+      if (btnTop) {
+        btnTop.classList.toggle('active', showReconKnn);
+      }
+      const btnSide = document.getElementById('btnToggleReconKnnSide');
+      if (btnSide) {
+        btnSide.classList.toggle('active', showReconKnn);
+      }
+      const btn4PTop = document.getElementById('btnToggleRecon4PanelTop');
+      if (btn4PTop) {
+        btn4PTop.classList.toggle('active', isRecon4PanelView);
+      }
+    }
+
     window.switchDatasetSlot = switchDatasetSlot;
     window.clearDatasetSlot = clearDatasetSlot;
     window.saveSlotState = saveSlotState;
     window.loadSlotState = loadSlotState;
     window.updateMultiDatasetUI = updateMultiDatasetUI;
     window.setMultiDatasetEnabled = setMultiDatasetEnabled;
+    window.setRecon4PanelView = setRecon4PanelView;
+    window.setReconKnn = setReconKnn;
+    window.syncReconKnnUI = syncReconKnnUI;
+    window.reconInputCamera = reconInputCamera;
+    window.reconOutputCamera = reconOutputCamera;
+    window.reconHoveredTrainingIdx = reconHoveredTrainingIdx;
+    window.reconLockedTrainingIdx = reconLockedTrainingIdx;
+    window.showReconKnn = showReconKnn;

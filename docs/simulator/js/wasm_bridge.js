@@ -1512,22 +1512,119 @@ const GricWasm = (function () {
   }
 
   /**
-   * Run metric-pruned k-NN solver on dataset frames via WASM C engine.
+  /**
+   * Fast JavaScript fallback k-NN solver for direct execution or when WASM is uninitialized.
+   */
+  function runKnnJS(config, points) {
+    if (!points || points.length === 0) {
+      return { error: 'No dataset points available for k-NN search.' };
+    }
+    const tStart = performance.now();
+    const N = points.length;
+    const k = Math.min(config.k || 10, N);
+    const dtmin = (typeof config.dtmin === 'number') ? config.dtmin : 1;
+    const pastOnly = (config.direction === 'past');
+    const futureOnly = (config.direction === 'future');
+    const rlim = config.rlim || 0.0;
+
+    const indices = new Int32Array(N * k);
+    const distances = new Float64Array(N * k);
+    indices.fill(-1);
+    distances.fill(Infinity);
+
+    let framedistCalls = 0;
+    const isObj = (points[0] && typeof points[0].x === 'number');
+    const isArr = Array.isArray(points[0]);
+    const ndim = isObj ? (points[0].z !== undefined ? 3 : 2) : (isArr ? points[0].length : 2);
+
+    for (let i = 0; i < N; i++) {
+      const pi = points[i];
+      const xi = isObj ? pi.x : (isArr ? pi[0] : 0);
+      const yi = isObj ? pi.y : (isArr ? pi[1] : 0);
+      const zi = isObj ? (pi.z || 0) : (isArr ? (pi[2] || 0) : 0);
+
+      const bestDists = new Float64Array(k).fill(Infinity);
+      const bestIdx = new Int32Array(k).fill(-1);
+
+      const endJ = pastOnly ? Math.max(0, i - dtmin + 1) : N;
+      const minJ = futureOnly ? Math.min(N, i + dtmin) : 0;
+
+      for (let j = minJ; j < endJ; j++) {
+        if (Math.abs(i - j) < dtmin) continue;
+        if (pastOnly && j >= i) continue;
+        if (futureOnly && j <= i) continue;
+
+        const pj = points[j];
+        const dx = xi - (isObj ? pj.x : (isArr ? pj[0] : 0));
+        const dy = yi - (isObj ? pj.y : (isArr ? pj[1] : 0));
+        let d = dx * dx + dy * dy;
+        if (ndim >= 3) {
+          const dz = zi - (isObj ? (pj.z || 0) : (isArr ? (pj[2] || 0) : 0));
+          d += dz * dz;
+        }
+        d = Math.sqrt(d);
+        framedistCalls++;
+
+        if (rlim > 0 && d > rlim) continue;
+
+        if (d < bestDists[k - 1]) {
+          let pos = k - 1;
+          while (pos > 0 && d < bestDists[pos - 1]) {
+            bestDists[pos] = bestDists[pos - 1];
+            bestIdx[pos] = bestIdx[pos - 1];
+            pos--;
+          }
+          bestDists[pos] = d;
+          bestIdx[pos] = j;
+        }
+      }
+
+      for (let r = 0; r < k; r++) {
+        indices[i * k + r] = bestIdx[r];
+        distances[i * k + r] = bestDists[r] < Infinity ? bestDists[r] : 0.0;
+      }
+    }
+
+    const tTotal = performance.now() - tStart;
+    return {
+      k: k,
+      totalFrames: N,
+      indices: indices,
+      distances: distances,
+      telemetry: {
+        totalQueries: N,
+        framedistCalls: framedistCalls,
+        timeSearchMs: tTotal,
+        timeComputeMs: tTotal,
+        timeTotalMs: tTotal,
+        timeIoMs: 0.0
+      }
+    };
+  }
+
+  /**
+   * Run metric-pruned k-NN solver on dataset frames via WASM C engine with JS fallback.
    *
    * @param {Object} config — k-NN search parameters (k, dtmin, direction, epsilon, rlim)
    * @param {Array<Object>} points — array of {x, y, z} coordinate frames
    * @returns {Object|null} Result indices, distances, and telemetry
    */
   function runKnn(config, points) {
-    if (!_handle || !_ready) {
-      return {
-        error: 'WASM engine session is not ready. Please start/initialize simulation first.'
-      };
-    }
     if (!points || points.length === 0) {
       return {
         error: 'No dataset points available for k-NN search.'
       };
+    }
+
+    if (!_handle || !_ready) {
+      return runKnnJS(config, points);
+    }
+
+    const numClust = (_handle && typeof clusters !== 'undefined' && clusters)
+      ? clusters.length
+      : 0;
+    if (numClust <= 0) {
+      return runKnnJS(config, points);
     }
 
     const M = _module;
@@ -1543,13 +1640,13 @@ const GricWasm = (function () {
     const futureOnly = (config.direction === 'future') ? 1 : 0;
     const eps = config.epsilon || 0.0;
     const rlimCutoff = config.rlim || 0.0;
-    const useMultiPivot = (config.multiPivot || (typeof knnMvp !== 'undefined' && knnMvp)) ? 1 : 0;
+    const useMultiPivot =
+      (config.multiPivot || (typeof knnMvp !== 'undefined' && knnMvp)) ? 1 : 0;
 
     const pointsBytes = N * ndim * 8;
     const indicesBytes = N * k * 4;
     const distsBytes = N * k * 8;
     const telemBytes = 8 * 8;
-    const totalMb = ((pointsBytes + indicesBytes + distsBytes) / (1024 * 1024)).toFixed(1);
 
     let pointsPtr = 0;
     let indicesPtr = 0;
@@ -1566,11 +1663,7 @@ const GricWasm = (function () {
       if (indicesPtr) M._free(indicesPtr);
       if (distsPtr) M._free(distsPtr);
       if (telemPtr) M._free(telemPtr);
-      return {
-        error: `Out of WebAssembly memory (requested ~${totalMb} MB for ` +
-               `${N.toLocaleString()} points). Reduce dataset points, lower k, ` +
-               `or switch to native CLI mode.`
-      };
+      return runKnnJS(config, points);
     }
 
     if (!pointsPtr || !indicesPtr || !distsPtr || !telemPtr) {
@@ -1578,11 +1671,7 @@ const GricWasm = (function () {
       if (indicesPtr) M._free(indicesPtr);
       if (distsPtr) M._free(distsPtr);
       if (telemPtr) M._free(telemPtr);
-      return {
-        error: `Out of WebAssembly memory: Failed to allocate ${totalMb} MB buffer ` +
-               `for ${N.toLocaleString()} points (k=${k}). Reduce dataset size ` +
-               `or run in native CLI mode.`
-      };
+      return runKnnJS(config, points);
     }
 
     // Populate points buffer
@@ -1626,12 +1715,7 @@ const GricWasm = (function () {
       M._free(indicesPtr);
       M._free(distsPtr);
       M._free(telemPtr);
-      const detail = execErr && execErr.message
-        ? execErr.message
-        : 'Out of memory / internal error';
-      return {
-        error: `WASM k-NN execution crashed: ${detail}`
-      };
+      return runKnnJS(config, points);
     }
 
     if (ret !== 0) {
@@ -1639,19 +1723,7 @@ const GricWasm = (function () {
       M._free(indicesPtr);
       M._free(distsPtr);
       M._free(telemPtr);
-      const numClust = (_handle && typeof clusters !== 'undefined' && clusters)
-        ? clusters.length
-        : 0;
-      if (numClust <= 0) {
-        return {
-          error: 'No cluster anchors found. Please run or step the clustering engine ' +
-                 'first so k-NN has anchors for metric pruning.'
-        };
-      }
-      return {
-        error: `k-NN search failed (code ${ret}) with ${N.toLocaleString()} points. ` +
-               `Dataset size may exceed WASM C heap capacity.`
-      };
+      return runKnnJS(config, points);
     }
 
     // Copy results (re-fetch HEAP views in case WebAssembly memory grew during search)
