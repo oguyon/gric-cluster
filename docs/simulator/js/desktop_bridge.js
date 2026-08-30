@@ -1051,21 +1051,33 @@ const DesktopBridge = (function () {
           );
         }
 
-        const localDim = new Float32Array(N);
+        const localDimMed = new Float32Array(N);
+        const localDimMean = new Float32Array(N);
         const density = new Float32Array(N);
         const logDensity = new Float32Array(N);
         const rkDist = new Float32Array(N);
 
         for (let i = 0; i < N; i++) {
-          localDim[i] = raw[i * cols + 0];
-          density[i] = raw[i * cols + 1];
-          logDensity[i] = raw[i * cols + 2];
-          rkDist[i] = raw[i * cols + 3];
+          if (cols >= 5) {
+            localDimMed[i] = raw[i * cols + 0];
+            localDimMean[i] = raw[i * cols + 1];
+            density[i] = raw[i * cols + 2];
+            logDensity[i] = raw[i * cols + 3];
+            rkDist[i] = raw[i * cols + 4];
+          } else {
+            localDimMed[i] = raw[i * cols + 0];
+            localDimMean[i] = raw[i * cols + 0];
+            density[i] = raw[i * cols + 1];
+            logDensity[i] = raw[i * cols + 2];
+            rkDist[i] = raw[i * cols + 3];
+          }
         }
 
         return {
           totalFrames: N,
-          localDim: localDim,
+          localDim: localDimMed,
+          localDimMed: localDimMed,
+          localDimMean: localDimMean,
           density: density,
           logDensity: logDensity,
           rkDist: rkDist
@@ -1083,7 +1095,8 @@ const DesktopBridge = (function () {
       if (!text) return null;
 
       const lines = text.split(/\r?\n/);
-      const dims = [];
+      const dimMeds = [];
+      const dimMeans = [];
       const dens = [];
       const logd = [];
       const rks = [];
@@ -1092,18 +1105,28 @@ const DesktopBridge = (function () {
         const t = line.trim();
         if (!t || t.startsWith('#')) continue;
         const parts = t.split(/\s+/);
-        if (parts.length < 5) continue;
-        dims.push(parseFloat(parts[1]));
-        dens.push(parseFloat(parts[2]));
-        logd.push(parseFloat(parts[3]));
-        rks.push(parseFloat(parts[4]));
+        if (parts.length >= 6) {
+          dimMeds.push(parseFloat(parts[1]));
+          dimMeans.push(parseFloat(parts[2]));
+          dens.push(parseFloat(parts[3]));
+          logd.push(parseFloat(parts[4]));
+          rks.push(parseFloat(parts[5]));
+        } else if (parts.length >= 5) {
+          dimMeds.push(parseFloat(parts[1]));
+          dimMeans.push(parseFloat(parts[1]));
+          dens.push(parseFloat(parts[2]));
+          logd.push(parseFloat(parts[3]));
+          rks.push(parseFloat(parts[4]));
+        }
       }
 
-      if (dims.length === 0) return null;
+      if (dimMeds.length === 0) return null;
 
       return {
-        totalFrames: dims.length,
-        localDim: new Float32Array(dims),
+        totalFrames: dimMeds.length,
+        localDim: new Float32Array(dimMeds),
+        localDimMed: new Float32Array(dimMeds),
+        localDimMean: new Float32Array(dimMeans),
         density: new Float32Array(dens),
         logDensity: new Float32Array(logd),
         rkDist: new Float32Array(rks)

@@ -24,7 +24,7 @@ double dimdensity_unit_ball_log_volume(
 double dimdensity_estimate_single_mle(
     const double *restrict distances,
     int                    k,
-    int                    unbiased);
+    int                    mode);
 
 /**
  * Run MLE intrinsic dimension estimation across all dataset samples.

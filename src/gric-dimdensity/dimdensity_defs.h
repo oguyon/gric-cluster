@@ -52,12 +52,14 @@ typedef struct
 /** Per-sample evaluation results */
 typedef struct
 {
-    uint64_t num_samples;   /**< Total number of query samples N */
-    int      k_used;        /**< Target k used for density estimation */
-    double  *local_dim;     /**< Estimated local intrinsic dimension [N] */
-    double  *density;       /**< Mack-Rosenblatt local density [N] */
-    double  *log_density;   /**< Natural log of local density [N] */
-    double  *rk_dist;       /**< Distance to k-th nearest neighbor [N] */
+    uint64_t num_samples;       /**< Total number of query samples N */
+    int      k_used;            /**< Target k used for density estimation */
+    double  *local_dim;         /**< Primary estimated local intrinsic dimension [N] */
+    double  *local_dim_med;     /**< Median-unbiased (k - 4/3) local dimension [N] */
+    double  *local_dim_mean;    /**< Mean-unbiased (k - 2) local dimension [N] */
+    double  *density;           /**< Mack-Rosenblatt local density [N] */
+    double  *log_density;       /**< Natural log of local density [N] */
+    double  *rk_dist;           /**< Distance to k-th nearest neighbor [N] */
 } DimDensityResults;
 
 /** Summary percentiles container */
@@ -73,11 +75,17 @@ typedef struct
 /** Global statistical distribution summary */
 typedef struct
 {
-    double                dim_mean;
+    double                dim_mean;       /**< Mean of median-unbiased dimension */
     double                dim_std;
     double                dim_min;
     double                dim_max;
     DimDensityPercentiles dim_pct;
+
+    double                dim_mean_unb_mean; /**< Mean of mean-unbiased dimension */
+    double                dim_mean_unb_std;
+    double                dim_mean_unb_min;
+    double                dim_mean_unb_max;
+    DimDensityPercentiles dim_mean_unb_pct;
 
     double                dens_mean;
     double                dens_std;

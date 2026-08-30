@@ -63,16 +63,18 @@ int main(void)
         }
 
         unsigned long id;
-        double d, dens, log_dens, rk;
-        int n_scanned = sscanf(line, "%lu %lf %lf %lf %lf", &id, &d, &dens, &log_dens, &rk);
-        assert(n_scanned == 5);
-        assert(!isnan(d) && !isinf(d));
+        double d_med, d_mean, dens, log_dens, rk;
+        int n_scanned = sscanf(line, "%lu %lf %lf %lf %lf %lf",
+                               &id, &d_med, &d_mean, &dens, &log_dens, &rk);
+        assert(n_scanned == 6);
+        assert(!isnan(d_med) && !isinf(d_med));
+        assert(!isnan(d_mean) && !isinf(d_mean));
         assert(!isnan(dens) && !isinf(dens));
-        assert(d > 0.0);
+        assert(d_med > 0.0 && d_mean > 0.0);
         assert(dens > 0.0);
         assert(rk > 0.0);
 
-        mean_dim += d;
+        mean_dim += d_med;
         mean_dens += dens;
         line_count++;
     }
@@ -97,13 +99,13 @@ int main(void)
     assert(hdr.data_type == GRIC_BIN_DTYPE_FLOAT32);
     assert(hdr.ndim == 2);
     assert(hdr.dims[0] == 1000);
-    assert(hdr.dims[1] == 4);
+    assert(hdr.dims[1] == 5);
     fclose(fp_bin);
     if (comment != NULL)
     {
         free(comment);
     }
-    printf("  Verified binary matrix %s [1000 x 4]\n", TEST_DIMDENS_BIN);
+    printf("  Verified binary matrix %s [1000 x 5]\n", TEST_DIMDENS_BIN);
 
     // 7. Test JSON output mode
     snprintf(cmd, sizeof(cmd),

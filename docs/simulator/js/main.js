@@ -3743,6 +3743,21 @@
         '-k', String(knnK)
       ];
 
+      const chkRange = document.getElementById(
+        'chkDimDensMultiRange'
+      );
+      const inKmin = document.getElementById(
+        'dimDensKmin'
+      );
+      const inKmax = document.getElementById(
+        'dimDensKmax'
+      );
+      if (chkRange && chkRange.checked) {
+        const kmin = parseInt(inKmin?.value || '5', 10) || 5;
+        const kmax = parseInt(inKmax?.value || '20', 10) || knnK;
+        args.push('-kmin', String(kmin), '-kmax', String(kmax), '-range');
+      }
+
       const consoleEl = document.getElementById(
         'cliConsoleLog'
       );
@@ -3848,46 +3863,54 @@
       const s = dimDensitySummary;
       if (!s) return;
 
-      const dim = s.intrinsic_dimension || {};
+      const dimMed = s.intrinsic_dimension_median_unbiased || s.intrinsic_dimension || {};
+      const dimMean = s.intrinsic_dimension_mean_unbiased || s.intrinsic_dimension || {};
       const ld = s.log_density || {};
       const dens = s.local_density || {};
-      const dimP = dim.percentiles || {};
+      const dimMedP = dimMed.percentiles || {};
+      const dimMeanP = dimMean.percentiles || {};
       const ldP = ld.percentiles || {};
 
-      // Stat grid
       const setTxt = (id, txt) => {
         const el = document.getElementById(id);
         if (el) el.textContent = txt;
       };
 
-      const iqr = ((dimP.p75 || 0) -
-        (dimP.p25 || 0)).toFixed(2);
+      const iqrMed = ((dimMedP.p75 || 0) - (dimMedP.p25 || 0)).toFixed(2);
       setTxt('dimDensDimMedian',
-        `${(dimP.p50 || 0).toFixed(2)} ±${iqr}`);
+        `${(dimMedP.p50 || 0).toFixed(2)} ±${iqrMed}`);
+
+      const stdMean = (dimMean.std_dev || 0).toFixed(2);
+      setTxt('dimDensDimMeanUnb',
+        `${(dimMean.mean || 0).toFixed(2)} ±${stdMean}`);
+
       setTxt('dimDensLogDensMedian',
         (ldP.p50 || 0).toFixed(2));
       setTxt('dimDensDimRange',
-        `${(dim.min || 0).toFixed(1)} – ` +
-        `${(dim.max || 0).toFixed(1)}`);
+        `${(dimMed.min || 0).toFixed(1)} – ${(dimMed.max || 0).toFixed(1)}`);
       setTxt('dimDensDensRange',
-        `${(dens.min || 0).toExponential(1)} – ` +
-        `${(dens.max || 0).toExponential(1)}`);
+        `${(dens.min || 0).toExponential(1)} – ${(dens.max || 0).toExponential(1)}`);
       setTxt('dimDensExecTime',
         `${(s.execution_time_ms || 0).toFixed(1)} ms`);
-      setTxt('dimDensSamples',
-        String(s.num_samples || 0));
 
-      // Percentile table
-      setTxt('dimPctP10', (dimP.p10||0).toFixed(2));
-      setTxt('dimPctP25', (dimP.p25||0).toFixed(2));
-      setTxt('dimPctP50', (dimP.p50||0).toFixed(2));
-      setTxt('dimPctP75', (dimP.p75||0).toFixed(2));
-      setTxt('dimPctP90', (dimP.p90||0).toFixed(2));
-      setTxt('ldPctP10', (ldP.p10||0).toFixed(2));
-      setTxt('ldPctP25', (ldP.p25||0).toFixed(2));
-      setTxt('ldPctP50', (ldP.p50||0).toFixed(2));
-      setTxt('ldPctP75', (ldP.p75||0).toFixed(2));
-      setTxt('ldPctP90', (ldP.p90||0).toFixed(2));
+      // Percentile table for both estimators
+      setTxt('dimMedPctP10', (dimMedP.p10 || 0).toFixed(2));
+      setTxt('dimMedPctP25', (dimMedP.p25 || 0).toFixed(2));
+      setTxt('dimMedPctP50', (dimMedP.p50 || 0).toFixed(2));
+      setTxt('dimMedPctP75', (dimMedP.p75 || 0).toFixed(2));
+      setTxt('dimMedPctP90', (dimMedP.p90 || 0).toFixed(2));
+
+      setTxt('dimMeanPctP10', (dimMeanP.p10 || 0).toFixed(2));
+      setTxt('dimMeanPctP25', (dimMeanP.p25 || 0).toFixed(2));
+      setTxt('dimMeanPctP50', (dimMeanP.p50 || 0).toFixed(2));
+      setTxt('dimMeanPctP75', (dimMeanP.p75 || 0).toFixed(2));
+      setTxt('dimMeanPctP90', (dimMeanP.p90 || 0).toFixed(2));
+
+      setTxt('ldPctP10', (ldP.p10 || 0).toFixed(2));
+      setTxt('ldPctP25', (ldP.p25 || 0).toFixed(2));
+      setTxt('ldPctP50', (ldP.p50 || 0).toFixed(2));
+      setTxt('ldPctP75', (ldP.p75 || 0).toFixed(2));
+      setTxt('ldPctP90', (ldP.p90 || 0).toFixed(2));
 
       // Draw histograms
       drawDimDensHistograms();
@@ -4317,19 +4340,15 @@
           return td;
         };
 
+        const dimMedVal = (dd.localDimMed ? dd.localDimMed[i] : dd.localDim[i]) || 0;
+        const dimMeanVal = (dd.localDimMean ? dd.localDimMean[i] : dd.localDim[i]) || 0;
+
         tr.appendChild(mkTd(String(i), 'left'));
-        tr.appendChild(mkTd(
-          dd.localDim[i].toFixed(3)
-        ));
-        tr.appendChild(mkTd(
-          dd.density[i].toExponential(2)
-        ));
-        tr.appendChild(mkTd(
-          dd.logDensity[i].toFixed(3)
-        ));
-        tr.appendChild(mkTd(
-          dd.rkDist[i].toFixed(4)
-        ));
+        tr.appendChild(mkTd(dimMedVal.toFixed(3)));
+        tr.appendChild(mkTd(dimMeanVal.toFixed(3)));
+        tr.appendChild(mkTd(dd.density[i].toExponential(2)));
+        tr.appendChild(mkTd(dd.logDensity[i].toFixed(3)));
+        tr.appendChild(mkTd(dd.rkDist[i].toFixed(4)));
         tbody.appendChild(tr);
       }
 
