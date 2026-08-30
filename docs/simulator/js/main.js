@@ -785,24 +785,61 @@
         maximizedQuad = null;
       }
       BENCHMARK_DESCS["custom"] = `<b>Custom File (${filename})</b>: ${benchmarkDataset.length} ${detected3D ? '3D' : '2D'} frames loaded from upload.`;
-      document.getElementById('selectBenchmark').value = 'custom';
-      document.getElementById('benchmarkDesc').innerHTML = BENCHMARK_DESCS["custom"];
+      const selMain = document.getElementById('selectBenchmark');
+      if (selMain) selMain.value = 'custom';
+      const selSlot = document.getElementById(`selectBenchmark_${activeDatasetSlot}`);
+      if (selSlot) selSlot.value = 'custom';
+      const selSide = document.getElementById('selectBenchmarkSide');
+      if (selSide) selSide.value = 'custom';
+      const descEl = document.getElementById('benchmarkDesc');
+      if (descEl) descEl.innerHTML = BENCHMARK_DESCS["custom"];
 
       resetSimulation();
       resetView();
+      updateDatasetStatusBadge();
+      updateUI();
     }
 
-    const fileInput = document.getElementById('fileUpload');
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (evt) => parseCoordinateFile(evt.target.result, file.name);
-      reader.readAsText(file);
-      fileInput.value = '';
+    DATASET_SLOTS.forEach(sId => {
+      const fileIn = document.getElementById(`fileUpload_${sId}`);
+      if (fileIn) {
+        fileIn.addEventListener('change', (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          if (activeDatasetSlot !== sId) {
+            switchDatasetSlot(sId);
+          }
+          const reader = new FileReader();
+          reader.onload = (evt) => parseCoordinateFile(evt.target.result, file.name);
+          reader.readAsText(file);
+          fileIn.value = '';
+        });
+      }
+      const btnUp = document.getElementById(`btnUpload_${sId}`);
+      if (btnUp && fileIn) {
+        btnUp.addEventListener('click', (e) => {
+          e.stopPropagation();
+          fileIn.click();
+        });
+      }
     });
 
-    document.getElementById('btnUpload').addEventListener('click', () => fileInput.click());
+    const fileInput = document.getElementById('fileUpload');
+    if (fileInput) {
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => parseCoordinateFile(evt.target.result, file.name);
+        reader.readAsText(file);
+        fileInput.value = '';
+      });
+    }
+
+    const btnUploadLegacy = document.getElementById('btnUpload');
+    if (btnUploadLegacy && fileInput) {
+      btnUploadLegacy.addEventListener('click', () => fileInput.click());
+    }
 
     const canvasBox = document.getElementById('canvasBox');
     const dropzone = document.getElementById('dropzone');
@@ -1642,26 +1679,122 @@
       btnLockCenterSide.addEventListener('click', () => toggleLockCenter3D());
     }
 
-    // Select Benchmark Handler
-    document.getElementById('selectBenchmark').addEventListener('change', (e) => {
-      stageDataset(e.target.value);
-      resetView();
-    });
+    // Multi-Dataset (A, B, C) Toolbar & Sidebar Handlers
+    DATASET_SLOTS.forEach(sId => {
+      // Toggle button in toolbar
+      const btnToggle = document.getElementById(`btnToggleSlot${sId}`);
+      if (btnToggle) {
+        btnToggle.addEventListener('click', (e) => {
+          e.stopPropagation();
+          switchDatasetSlot(sId);
+        });
+      }
 
-    document.getElementById('selectSpeed').addEventListener('change', (e) => {
-      playSpeed = parseInt(e.target.value);
-      const side = document.getElementById('selectSpeedSide');
-      if (side) side.value = e.target.value;
-      if (isRunning) {
-        pauseSimulation();
-        startSimulation();
+      // Toggle button in sidebar
+      const btnToggleSide = document.getElementById(`btnToggleSlotSide${sId}`);
+      if (btnToggleSide) {
+        btnToggleSide.addEventListener('click', (e) => {
+          e.stopPropagation();
+          switchDatasetSlot(sId);
+        });
+      }
+
+      // Inactive Row click to switch dataset
+      const row = document.getElementById(`datasetRow${sId}`);
+      if (row) {
+        row.addEventListener('click', (e) => {
+          if (e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' ||
+              e.target.tagName === 'INPUT' || e.target.closest('button') ||
+              e.target.closest('select')) {
+            return;
+          }
+          if (activeDatasetSlot !== sId) {
+            switchDatasetSlot(sId);
+          }
+        });
+      }
+
+      // Benchmark dropdown per slot
+      const selBench = document.getElementById(`selectBenchmark_${sId}`);
+      if (selBench) {
+        selBench.addEventListener('change', (e) => {
+          if (activeDatasetSlot !== sId) {
+            switchDatasetSlot(sId);
+          }
+          stageDataset(e.target.value);
+          resetView();
+        });
+      }
+
+      // Loop count dropdown per slot
+      const selLoop = document.getElementById(`selectLoop_${sId}`);
+      if (selLoop) {
+        selLoop.addEventListener('change', (e) => {
+          if (activeDatasetSlot !== sId) {
+            switchDatasetSlot(sId);
+          }
+          loopCount = parseInt(e.target.value, 10);
+          const side = document.getElementById('selectLoopSide');
+          if (side) side.value = e.target.value;
+          stageDataset();
+        });
+      }
+
+      // Generate / Stage button per slot
+      const btnStage = document.getElementById(`btnStageDataset_${sId}`);
+      if (btnStage) {
+        btnStage.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (activeDatasetSlot !== sId) {
+            switchDatasetSlot(sId);
+          }
+          pauseSimulation();
+          stageDataset();
+          if (typeof showToast === 'function') {
+            showToast(`🎲 Generated dataset [${sId}] "${currentBenchmark}" (${benchmarkDataset.length.toLocaleString()} pts)`);
+          }
+        });
+      }
+
+      // Clear button per slot
+      const btnClear = document.getElementById(`btnClearDataset_${sId}`);
+      if (btnClear) {
+        btnClear.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (activeDatasetSlot !== sId) {
+            switchDatasetSlot(sId);
+          }
+          clearDatasetSlot(sId);
+        });
       }
     });
 
-    const selectLoop = document.getElementById('selectLoop');
-    if (selectLoop) {
-      selectLoop.addEventListener('change', (e) => {
-        loopCount = parseInt(e.target.value);
+    // Multi-Dataset Toggle Buttons
+    const btnToggleMulti = document.getElementById('btnToggleMultiDataset');
+    if (btnToggleMulti) {
+      btnToggleMulti.addEventListener('click', () => {
+        setMultiDatasetEnabled(!multiDatasetEnabled);
+      });
+    }
+    const btnToggleMultiSide = document.getElementById('btnToggleMultiDatasetSide');
+    if (btnToggleMultiSide) {
+      btnToggleMultiSide.addEventListener('click', () => {
+        setMultiDatasetEnabled(!multiDatasetEnabled);
+      });
+    }
+
+    const selectBenchmarkLegacy = document.getElementById('selectBenchmark');
+    if (selectBenchmarkLegacy) {
+      selectBenchmarkLegacy.addEventListener('change', (e) => {
+        stageDataset(e.target.value);
+        resetView();
+      });
+    }
+
+    const selectLoopLegacy = document.getElementById('selectLoop');
+    if (selectLoopLegacy) {
+      selectLoopLegacy.addEventListener('change', (e) => {
+        loopCount = parseInt(e.target.value, 10);
         const side = document.getElementById('selectLoopSide');
         if (side) side.value = e.target.value;
         stageDataset();
@@ -2043,6 +2176,13 @@
         if (typeof showToast === 'function') {
           showToast(`🎲 Generated dataset "${currentBenchmark}" (${benchmarkDataset.length.toLocaleString()} pts)`);
         }
+      });
+    }
+
+    const btnClearDatasetSide = document.getElementById('btnClearDatasetSide');
+    if (btnClearDatasetSide) {
+      btnClearDatasetSide.addEventListener('click', () => {
+        clearDatasetSlot(activeDatasetSlot);
       });
     }
 
@@ -3142,6 +3282,8 @@
         return;
       }
 
+      const targetSlot = activeDatasetSlot;
+
       try {
         const tKnnStart = performance.now();
         const pts = (typeof benchmarkDataset !== 'undefined' &&
@@ -3338,24 +3480,29 @@
           parsedTelem.timeIoMs = Math.max(0, totalWallMs - timeCompute);
           nativeData.telemetry = parsedTelem;
 
-          knnResults = nativeData;
-          {
-            const btnDD = document.getElementById(
-              'btnRunDimDensity'
-            );
-            if (btnDD) btnDD.disabled = false;
+          if (datasetSlots[targetSlot]) {
+            datasetSlots[targetSlot].knnResults = nativeData;
           }
-          if (typeof dataMode !== 'undefined' && dataMode === 'image') {
-            imageQ2ViewMode = 'knn';
-            if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
+          if (activeDatasetSlot === targetSlot) {
+            knnResults = nativeData;
+            {
+              const btnDD = document.getElementById(
+                'btnRunDimDensity'
+              );
+              if (btnDD) btnDD.disabled = false;
+            }
+            if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+              imageQ2ViewMode = 'knn';
+              if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
+            }
+            if (typeof renderKnnTrace === 'function') {
+              renderKnnTrace();
+            }
+            if (typeof renderDataStructuresUI === 'function') {
+              renderDataStructuresUI();
+            }
+            draw();
           }
-          if (typeof renderKnnTrace === 'function') {
-            renderKnnTrace();
-          }
-          if (typeof renderDataStructuresUI === 'function') {
-            renderDataStructuresUI();
-          }
-          draw();
           showKnnProgress(100, pts.length, pts.length, 0, totalWallMs / 1000.0, 0, 'Completed!');
           showToast(
             `✅ Native k-NN computed: Total ${totalWallMs.toFixed(1)} ms ` +
@@ -3408,24 +3555,29 @@
             results.telemetry.timeIoMs = Math.max(0, totalWallMs - timeCompute);
 
             clearKnnError();
-            knnResults = results;
-            {
-              const btnDD = document.getElementById(
-                'btnRunDimDensity'
-              );
-              if (btnDD) btnDD.disabled = false;
+            if (datasetSlots[targetSlot]) {
+              datasetSlots[targetSlot].knnResults = results;
             }
-            if (typeof dataMode !== 'undefined' && dataMode === 'image') {
-              imageQ2ViewMode = 'knn';
-              if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
+            if (activeDatasetSlot === targetSlot) {
+              knnResults = results;
+              {
+                const btnDD = document.getElementById(
+                  'btnRunDimDensity'
+                );
+                if (btnDD) btnDD.disabled = false;
+              }
+              if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+                imageQ2ViewMode = 'knn';
+                if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
+              }
+              if (typeof renderKnnTrace === 'function') {
+                renderKnnTrace();
+              }
+              if (typeof renderDataStructuresUI === 'function') {
+                renderDataStructuresUI();
+              }
+              draw();
             }
-            if (typeof renderKnnTrace === 'function') {
-              renderKnnTrace();
-            }
-            if (typeof renderDataStructuresUI === 'function') {
-              renderDataStructuresUI();
-            }
-            draw();
             showKnnProgress(100, N, N, 0, totalWallMs / 1000.0, 0, 'Completed!');
             showToast(
               `⚡ k-NN computed: Total ${totalWallMs.toFixed(1)} ms ` +
@@ -3705,15 +3857,8 @@
         return;
       }
 
-      if (engineMode !== 'cli' ||
-          !DesktopBridge.isNativeSupported()) {
-        showToast(
-          '⚠️ Dim & Density requires native CLI mode.'
-        );
-        return;
-      }
-
       isDimDensityComputing = true;
+      const targetSlot = activeDatasetSlot;
       const badge = document.getElementById(
         'dimDensStatusBadge'
       );
@@ -3763,11 +3908,14 @@
       );
       if (consoleEl) {
         consoleEl.textContent +=
-          `\n⚙️ gric-dimdensity ${args.join(' ')}\n` +
-          '─'.repeat(50) + '\n';
+          `\n🔬 Running: gric-dimdensity ` +
+          `${args.join(' ')}\n`;
+        consoleEl.scrollTop = consoleEl.scrollHeight;
       }
 
-      showToast('📐 Running gric-dimdensity...');
+      showToast(
+        '🔬 Running gric-dimdensity estimation...'
+      );
 
       let rawOutput = '';
       let finalExitCode = 0;
@@ -3810,50 +3958,49 @@
         return;
       }
 
-      // Parse JSON summary from stdout
-      dimDensitySummary =
-        DesktopBridge.parseDimDensityLog(rawOutput);
-
-      // Read per-sample binary results
-      dimDensityResults =
-        await DesktopBridge.readDimDensityResults(
-          clusterDir
-        );
+      // Parse JSON summary and read per-sample binary results
+      const parsedSummary = DesktopBridge.parseDimDensityLog(rawOutput);
+      const parsedResults = await DesktopBridge.readDimDensityResults(clusterDir);
 
       isDimDensityComputing = false;
 
-      if (!dimDensitySummary && !dimDensityResults) {
-        showToast('⚠️ Could not parse results.');
-        if (badge) {
-          badge.textContent = 'Error';
-          badge.style.color = '#f87171';
+      if (datasetSlots[targetSlot]) {
+        datasetSlots[targetSlot].dimDensitySummary = parsedSummary;
+        datasetSlots[targetSlot].dimDensityResults = parsedResults;
+      }
+
+      if (activeDatasetSlot === targetSlot) {
+        dimDensitySummary = parsedSummary;
+        dimDensityResults = parsedResults;
+
+        if (!dimDensitySummary && !dimDensityResults) {
+          showToast('⚠️ Could not parse results.');
+          if (badge) {
+            badge.textContent = 'Error';
+            badge.style.color = '#f87171';
+          }
+          return;
         }
-        return;
-      }
 
-      if (badge) {
-        badge.textContent = '✓ Done';
-        badge.style.color = '#4ade80';
-        badge.style.background =
-          'rgba(34, 197, 94, 0.15)';
-      }
+        if (badge) {
+          badge.textContent = '✓ Done';
+          badge.style.color = '#4ade80';
+          badge.style.background = 'rgba(34, 197, 94, 0.15)';
+        }
 
-      // Show Card 7 and color toggle
-      const card7 = document.getElementById(
-        'cardDimDensity'
-      );
-      if (card7) {
-        card7.style.display = '';
-        card7.classList.remove('collapsed');
-      }
-      const cg = document.getElementById(
-        'dimDensityColorGroup'
-      );
-      if (cg) cg.style.display = 'flex';
+        // Show Card 7 and color toggle
+        const card7 = document.getElementById('cardDimDensity');
+        if (card7) {
+          card7.style.display = '';
+          card7.classList.remove('collapsed');
+        }
+        const cg = document.getElementById('dimDensityColorGroup');
+        if (cg) cg.style.display = 'flex';
 
-      renderDimDensityDashboard();
-      draw();
-      showToast('✅ Dim & Density analysis complete!');
+        renderDimDensityDashboard();
+        draw();
+        showToast('✅ Dim & Density analysis complete!');
+      }
     }
 
     /**
@@ -3861,7 +4008,30 @@
      */
     function renderDimDensityDashboard() {
       const s = dimDensitySummary;
-      if (!s) return;
+      const setTxt = (id, txt) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = txt;
+      };
+
+      if (!s) {
+        setTxt('dimDensDimMedian', '--');
+        setTxt('dimDensDimMeanUnb', '--');
+        setTxt('dimDensLogDensMedian', '--');
+        setTxt('dimDensDimRange', '--');
+        setTxt('dimDensDensRange', '--');
+        setTxt('dimDensExecTime', '-- ms');
+        ['dimMedPctP10', 'dimMedPctP25', 'dimMedPctP50', 'dimMedPctP75', 'dimMedPctP90',
+         'dimMeanPctP10', 'dimMeanPctP25', 'dimMeanPctP50', 'dimMeanPctP75', 'dimMeanPctP90',
+         'ldPctP10', 'ldPctP25', 'ldPctP50', 'ldPctP75', 'ldPctP90'].forEach(id => setTxt(id, '--'));
+        const badge = document.getElementById('dimDensStatusBadge');
+        if (badge) {
+          badge.textContent = 'Idle';
+          badge.style.color = 'var(--text-muted)';
+        }
+        drawDimDensHistograms();
+        populateDimDensTraceTable();
+        return;
+      }
 
       const dimMed = s.intrinsic_dimension_median_unbiased || s.intrinsic_dimension || {};
       const dimMean = s.intrinsic_dimension_mean_unbiased || s.intrinsic_dimension || {};
@@ -3870,11 +4040,6 @@
       const dimMedP = dimMed.percentiles || {};
       const dimMeanP = dimMean.percentiles || {};
       const ldP = ld.percentiles || {};
-
-      const setTxt = (id, txt) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = txt;
-      };
 
       const iqrMed = ((dimMedP.p75 || 0) - (dimMedP.p25 || 0)).toFixed(2);
       setTxt('dimDensDimMedian',
@@ -3899,6 +4064,12 @@
       setTxt('dimMedPctP50', (dimMedP.p50 || 0).toFixed(2));
       setTxt('dimMedPctP75', (dimMedP.p75 || 0).toFixed(2));
       setTxt('dimMedPctP90', (dimMedP.p90 || 0).toFixed(2));
+
+      const badge = document.getElementById('dimDensStatusBadge');
+      if (badge) {
+        badge.textContent = 'Computed';
+        badge.style.color = '#4ade80';
+      }
 
       setTxt('dimMeanPctP10', (dimMeanP.p10 || 0).toFixed(2));
       setTxt('dimMeanPctP25', (dimMeanP.p25 || 0).toFixed(2));
@@ -4153,7 +4324,16 @@
      * Draw 2D heatmap and 1D histograms.
      */
     function drawDimDensHistograms() {
-      if (!dimDensityResults) return;
+      if (!dimDensityResults) {
+        ['canvasDimDensHeatmap', 'canvasDimHist', 'canvasDensHist'].forEach(id => {
+          const cvs = document.getElementById(id);
+          if (cvs) {
+            const ctx2 = cvs.getContext('2d');
+            ctx2.clearRect(0, 0, cvs.width, cvs.height);
+          }
+        });
+        return;
+      }
       const dd = dimDensityResults;
 
       drawDimDensHeatmap();
@@ -4176,12 +4356,12 @@
       canvasId, data, N, color, label
     ) {
       const cvs = document.getElementById(canvasId);
-      if (!cvs || !data || N === 0) return;
-
+      if (!cvs) return;
       const ctx2 = cvs.getContext('2d');
       const W = cvs.width;
       const H = cvs.height;
       ctx2.clearRect(0, 0, W, H);
+      if (!data || N === 0) return;
 
       let sum = 0, validN = 0;
       for (let i = 0; i < N; i++) {
@@ -4295,7 +4475,13 @@
       );
       const dd = dimDensityResults;
 
-      if (!tbody || !dd) return;
+      if (!tbody) return;
+
+      if (!dd) {
+        tbody.innerHTML = '<tr><td colspan="5" style="padding: 12px; text-align: center; color: var(--text-muted);">Run gric-dimdensity to compute local dimensionality & density</td></tr>';
+        if (title) title.textContent = 'Per-Sample Trace (0 samples)';
+        return;
+      }
 
       if (title) {
         title.textContent =
@@ -4515,9 +4701,311 @@
       });
     }
 
+    // =========================================================================
+    //  k-NN RECONSTRUCTION ENGINE & MULTI-DATASET INTERPOLATOR
+    // =========================================================================
+
+    /**
+     * Executes non-parametric k-NN reconstruction:
+     * Mapping Input A -> Output B, evaluating queries C to reconstruct D.
+     */
+    async function executeDatasetReconstruction() {
+      // 1. Validate Slots
+      const slotA = datasetSlots['A'];
+      const slotB = datasetSlots['B'];
+      const slotC = datasetSlots['C'];
+      const slotD = datasetSlots['D'];
+
+      const ptsA = slotA ? slotA.benchmarkDataset : null;
+      const ptsB = slotB ? slotB.benchmarkDataset : null;
+      const ptsC = slotC ? slotC.benchmarkDataset : null;
+
+      if (!ptsA || ptsA.length === 0) {
+        showToast('⚠️ Reconstruction Error: Training Input Dataset [A] is empty or not staged.');
+        return;
+      }
+      if (!ptsB || ptsB.length === 0) {
+        showToast('⚠️ Reconstruction Error: Training Output Dataset [B] is empty or not staged.');
+        return;
+      }
+      if (!ptsC || ptsC.length === 0) {
+        showToast('⚠️ Reconstruction Error: Query Input Dataset [C] is empty or not staged.');
+        return;
+      }
+      if (ptsA.length !== ptsB.length) {
+        showToast(`⚠️ Reconstruction Error: Sample count mismatch between [A] (${ptsA.length.toLocaleString()}) and [B] (${ptsB.length.toLocaleString()}). A and B must have identical sample counts.`);
+        return;
+      }
+
+      function detectSlotDim(slot, pts) {
+        if (slot && slot.benchmarkKey && typeof is3DBenchmark === 'function') {
+          if (is3DBenchmark(slot.benchmarkKey)) return 3;
+          if (typeof isImageBenchmark === 'function' && !isImageBenchmark(slot.benchmarkKey)) return 2;
+        }
+        if (slot && slot.currentDim && (slot.currentDim === 2 || slot.currentDim === 3)) {
+          return slot.currentDim;
+        }
+        if (pts && pts.length > 0) {
+          for (let i = 0; i < Math.min(200, pts.length); i++) {
+            if (pts[i].z !== undefined && Math.abs(pts[i].z) > 1e-6) return 3;
+          }
+        }
+        return 2;
+      }
+
+      const dimA = detectSlotDim(slotA, ptsA);
+      const dimB = detectSlotDim(slotB, ptsB);
+      const dimC = detectSlotDim(slotC, ptsC);
+
+      if (dimA !== dimC) {
+        showToast(`⚠️ Reconstruction Error: Coordinate dimension mismatch between Input [A] (${dimA}D) and Query [C] (${dimC}D). They must match.`);
+        return;
+      }
+
+      // 2. Read Parameters
+      const inputK = document.getElementById('inputReconK');
+      const k = inputK ? Math.max(1, Math.min(parseInt(inputK.value, 10) || 10, ptsA.length)) : 10;
+      const selectWeight = document.getElementById('selectReconWeight');
+      const weightMode = selectWeight ? selectWeight.value : 'idw';
+      const inputAlpha = document.getElementById('inputReconAlpha');
+      const alpha = inputAlpha ? Math.max(0.1, parseFloat(inputAlpha.value) || 1.0) : 1.0;
+
+      showToast(`⚡ Running k-NN Reconstruction (A: ${ptsA.length} pts in ${dimA}D, B: ${dimB}D target, C: ${ptsC.length} queries, k=${k})...`);
+
+      const tStart = performance.now();
+      const numQueries = ptsC.length;
+      const numCandidates = ptsA.length;
+      const reconstructedPoints = new Array(numQueries);
+      const sourceNeighbors = new Array(numQueries);
+      let totalDistSum = 0.0;
+      let totalDistCount = 0;
+
+      // 3. For each query in C, find top-k nearest neighbors in A and average B
+      for (let i = 0; i < numQueries; i++) {
+        const qc = ptsC[i];
+        const qx = qc.x;
+        const qy = qc.y;
+        const qz = (dimA >= 3 && typeof qc.z === 'number') ? qc.z : 0.0;
+
+        // Compute distance to all candidates in A
+        const dists = new Float64Array(numCandidates);
+        const indices = new Int32Array(numCandidates);
+        for (let j = 0; j < numCandidates; j++) {
+          const pa = ptsA[j];
+          const dx = qx - pa.x;
+          const dy = qy - pa.y;
+          const dz = (dimA >= 3 && typeof pa.z === 'number') ? (qz - pa.z) : 0.0;
+          dists[j] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          indices[j] = j;
+        }
+
+        // Partial sort top-k smallest distances
+        for (let p = 0; p < k; p++) {
+          let minIdx = p;
+          for (let j = p + 1; j < numCandidates; j++) {
+            if (dists[j] < dists[minIdx]) {
+              minIdx = j;
+            }
+          }
+          const tmpD = dists[p];
+          dists[p] = dists[minIdx];
+          dists[minIdx] = tmpD;
+
+          const tmpI = indices[p];
+          indices[p] = indices[minIdx];
+          indices[minIdx] = tmpI;
+        }
+
+        // Calculate weights and average corresponding B samples
+        const topNeighbors = [];
+        let exactMatchIdx = -1;
+        for (let p = 0; p < k; p++) {
+          if (dists[p] < 1e-9) {
+            exactMatchIdx = p;
+            break;
+          }
+        }
+
+        let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
+        if (exactMatchIdx >= 0) {
+          const matchedSampleId = indices[exactMatchIdx];
+          const pb = ptsB[matchedSampleId];
+          avgX = pb.x;
+          avgY = pb.y;
+          avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+          for (let p = 0; p < k; p++) {
+            topNeighbors.push({
+              id: indices[p],
+              dist: dists[p],
+              weight: (p === exactMatchIdx) ? 1.0 : 0.0
+            });
+            totalDistSum += dists[p];
+            totalDistCount++;
+          }
+        } else if (weightMode === 'idw') {
+          let sumW = 0.0;
+          const weights = new Float64Array(k);
+          for (let p = 0; p < k; p++) {
+            const d = dists[p];
+            const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+            weights[p] = w;
+            sumW += w;
+            totalDistSum += d;
+            totalDistCount++;
+          }
+          for (let p = 0; p < k; p++) {
+            const normW = weights[p] / sumW;
+            const pb = ptsB[indices[p]];
+            avgX += normW * pb.x;
+            avgY += normW * pb.y;
+            if (dimB >= 3 && typeof pb.z === 'number') {
+              avgZ += normW * pb.z;
+            }
+            topNeighbors.push({
+              id: indices[p],
+              dist: dists[p],
+              weight: normW
+            });
+          }
+        } else {
+          // Uniform Average
+          const normW = 1.0 / k;
+          for (let p = 0; p < k; p++) {
+            const pb = ptsB[indices[p]];
+            avgX += normW * pb.x;
+            avgY += normW * pb.y;
+            if (dimB >= 3 && typeof pb.z === 'number') {
+              avgZ += normW * pb.z;
+            }
+            topNeighbors.push({
+              id: indices[p],
+              dist: dists[p],
+              weight: normW
+            });
+            totalDistSum += dists[p];
+            totalDistCount++;
+          }
+        }
+
+        const reconPt = { x: avgX, y: avgY };
+        if (dimB >= 3) {
+          reconPt.z = avgZ;
+        }
+        reconstructedPoints[i] = reconPt;
+        sourceNeighbors[i] = topNeighbors;
+      }
+
+      const elapsedMs = performance.now() - tStart;
+      const avgNeighborDist = totalDistCount > 0 ? (totalDistSum / totalDistCount) : 0.0;
+
+      // 4. Save into Slot D
+      slotD.benchmarkDataset = reconstructedPoints;
+      slotD.rawBenchmarkDataset = reconstructedPoints;
+      slotD.pastSamples = reconstructedPoints.map((p, idx) => ({
+        x: p.x,
+        y: p.y,
+        z: (dimB >= 3 && typeof p.z === 'number') ? p.z : 0.0,
+        clusterId: -1,
+        frameIndex: idx
+      }));
+      slotD.currentDim = dimB;
+      slotD.benchmarkKey = 'reconstructed';
+      slotD.sampleCount = numQueries;
+      slotD.isDatasetStaged = true;
+      slotD.stagedDatasetInfo = {
+        name: 'Reconstructed (from A, B, C)',
+        count: numQueries,
+        dim: dimB,
+        passes: 1,
+        noise: 0
+      };
+      slotD.reconstructionInfo = {
+        queryCount: numQueries,
+        outputDim: dimB,
+        k: k,
+        weightMode: weightMode,
+        alpha: alpha,
+        computeTimeMs: elapsedMs,
+        avgNeighborDist: avgNeighborDist
+      };
+      slotD.reconstructionSourceNeighbors = sourceNeighbors;
+
+      // Update Toolbar status pill for D
+      const pillD = document.getElementById('datasetStatusPill_D');
+      if (pillD) {
+        pillD.textContent = `📦 Reconstructed: ${numQueries.toLocaleString()} pts (${dimB}D, k=${k})`;
+        pillD.style.background = 'rgba(168, 85, 247, 0.2)';
+        pillD.style.color = '#c084fc';
+        pillD.style.borderColor = 'rgba(168, 85, 247, 0.5)';
+      }
+
+      // 5. Automatically switch active slot to D
+      if (!multiDatasetEnabled) {
+        setMultiDatasetEnabled(true);
+      }
+      if (activeDatasetSlot !== 'D') {
+        switchDatasetSlot('D');
+      } else {
+        loadSlotState('D');
+        if (typeof updateDatasetStatusBadge === 'function') updateDatasetStatusBadge();
+        if (typeof updateUI === 'function') updateUI();
+        if (typeof renderReconstructionDashboard === 'function') renderReconstructionDashboard();
+      }
+
+      if (typeof resetView === 'function') {
+        resetView();
+      }
+      if (typeof draw === 'function') {
+        draw();
+      }
+
+      showToast(`✅ Reconstruction Complete! Dataset [D] contains ${numQueries.toLocaleString()} points (${dimB}D) computed in ${elapsedMs.toFixed(1)} ms.`);
+    }
+
+    // Reconstruction UI Listeners
+    const btnReconSide = document.getElementById('btnRunReconstructionSide');
+    if (btnReconSide) {
+      btnReconSide.addEventListener('click', executeDatasetReconstruction);
+    }
+    const btnReconTop = document.getElementById('btnReconstructDTop');
+    if (btnReconTop) {
+      btnReconTop.addEventListener('click', executeDatasetReconstruction);
+    }
+    const btnInspectD = document.getElementById('btnInspectDatasetDSide');
+    if (btnInspectD) {
+      btnInspectD.addEventListener('click', () => {
+        if (!multiDatasetEnabled) setMultiDatasetEnabled(true);
+        switchDatasetSlot('D');
+      });
+    }
+    const btnClearDSide = document.getElementById('btnClearDatasetDSide');
+    if (btnClearDSide) {
+      btnClearDSide.addEventListener('click', () => {
+        clearDatasetSlot('D');
+      });
+    }
+
+    const inputReconK = document.getElementById('inputReconK');
+    const sliderReconK = document.getElementById('sliderReconK');
+    if (inputReconK && sliderReconK) {
+      inputReconK.addEventListener('input', () => {
+        sliderReconK.value = inputReconK.value;
+      });
+      sliderReconK.addEventListener('input', () => {
+        inputReconK.value = sliderReconK.value;
+      });
+    }
+
+    const selectReconWeight = document.getElementById('selectReconWeight');
+    const reconIdwRow = document.getElementById('reconIdwRow');
+    if (selectReconWeight && reconIdwRow) {
+      selectReconWeight.addEventListener('change', () => {
+        reconIdwRow.style.display = (selectReconWeight.value === 'idw') ? 'flex' : 'none';
+      });
+    }
 
     // =========================================================================
-    //  SIDEBAR PANELS RESIZING & COLLAPSE CONTROLLER (9 PANELS & 8 RESIZERS)
+    //  SIDEBAR PANELS RESIZING & COLLAPSE CONTROLLER (10 PANELS & 9 RESIZERS)
     // =========================================================================
     const panelConfigs = [
       { id: 'cardInputData', btnId: 'btnCollapseInputData', defaultFlex: 1.0, savedFlex: 1.0 },
@@ -4529,7 +5017,8 @@
       { id: 'cardKnnSettings', btnId: 'btnCollapseKnnSettings', defaultFlex: 0.9, savedFlex: 0.9 },
       { id: 'cardKnnResources', btnId: 'btnCollapseKnnResources', defaultFlex: 0.9, savedFlex: 0.9 },
       { id: 'cardKnnTrace', btnId: 'btnCollapseKnnTrace', defaultFlex: 1.0, savedFlex: 1.0 },
-      { id: 'cardDimDensity', btnId: 'btnCollapseDimDensity', defaultFlex: 1.0, savedFlex: 1.0 }
+      { id: 'cardDimDensity', btnId: 'btnCollapseDimDensity', defaultFlex: 1.0, savedFlex: 1.0 },
+      { id: 'cardReconstruction', btnId: 'btnCollapseReconstruction', defaultFlex: 1.1, savedFlex: 1.1 }
     ];
 
     function getExpandedCardAbove(cardIndex) {
@@ -5611,6 +6100,8 @@
       }
 
       engineMode = mode;
+      useWasm = (mode === 'wasm');
+      useJSFallback = (mode === 'js');
       updateEngineModeUI();
 
       if (mode === 'cli') {
@@ -5628,6 +6119,13 @@
       } else {
         if (DesktopBridge.isAvailable()) {
           await DesktopBridge.stopCliSession();
+        }
+        if (typeof GricWasm !== 'undefined' && GricWasm.isLoaded()) {
+          const params = GricWasm.buildParamsFromState();
+          if (!wasmSessionActive || !GricWasm.isReady() || (GricWasm.isConfigChanged && GricWasm.isConfigChanged(params))) {
+            wasmSessionActive = GricWasm.init(params);
+            if (typeof updateWasmBadge === 'function') updateWasmBadge();
+          }
         }
         showToast('⚡ Switched to In-Browser WebAssembly (WASM)');
       }
@@ -6288,11 +6786,18 @@
     initLayoutResizer();
     updateTMCanvasDimensions();
     resizeCanvas();
+    stageDataset('3Dtorus', 'B');
+    stageDataset('3Dtorus', 'C');
+    activeDatasetSlot = 'A';
     loadSelectedBenchmark();
     updateZoomBadge();
     setExplainMode(false);
     updateCliCommand();
     initWorkspaceAndEngine();
+    updateDatasetStatusBadge();
+    if (typeof updateMultiDatasetUI === 'function') {
+      updateMultiDatasetUI();
+    }
 
     // =========================================================================
     //  HELP & DOCUMENTATION CENTER (MULTI-TOPIC MODAL & PRESETS)
@@ -6944,6 +7449,12 @@
         hint: 'K', action: () => document.getElementById('btnToggleKnnModule')?.click() },
       { id: 'act-knn-run', group: 'Actions', icon: '▶', name: 'Compute k-Nearest Neighbors',
         hint: 'k-NN', action: () => document.getElementById('btnRunKnn')?.click() },
+      { id: 'act-multi-dataset-toggle', group: 'Actions', icon: '🗂️', name: 'Toggle Multi-Dataset Mode (A, B, C)',
+        hint: 'Multi-DS', action: () => {
+          if (typeof setMultiDatasetEnabled === 'function') {
+            setMultiDatasetEnabled(!multiDatasetEnabled);
+          }
+        } },
       { id: 'act-img-show-all', group: 'Actions', icon: '⊞', name: 'Show All View Panels (4-Split Grid)',
         hint: 'Esc', action: () => {
           maximizedQuad = null;
@@ -7001,6 +7512,15 @@
         hint: 'C', action: () => toggleLockCenter3D() },
 
       // Datasets
+      { id: 'ds-slot-a', group: 'Datasets', icon: '🅰️',
+        name: 'Switch to Dataset A (workspace/A)', hint: 'Slot A',
+        action: () => switchDatasetSlot('A') },
+      { id: 'ds-slot-b', group: 'Datasets', icon: '🅱️',
+        name: 'Switch to Dataset B (workspace/B)', hint: 'Slot B',
+        action: () => switchDatasetSlot('B') },
+      { id: 'ds-slot-c', group: 'Datasets', icon: '🅲',
+        name: 'Switch to Dataset C (workspace/C)', hint: 'Slot C',
+        action: () => switchDatasetSlot('C') },
       { id: 'ds-3dtorus', group: 'Datasets', icon: '🍩',
         name: 'Load 3Dtorus (3D Torus Manifold Knot)', hint: '3D Dataset',
         action: () => loadDatasetByKey('3Dtorus') },

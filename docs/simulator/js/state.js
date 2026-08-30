@@ -147,13 +147,20 @@
     let useSoftBayesian = false; // -soft_bayesian
     let softBayesianSigmaCoeff = 1.0; // -soft_bayesian_sigma (multiplier of rlim)
 
+    // Multi-Dataset Slots: A, B, C, D (Reconstruction)
+    const DATASET_SLOTS = ['A', 'B', 'C', 'D'];
+    let activeDatasetSlot = 'A';
+    let multiDatasetEnabled = false; // Multi-Dataset mode option: Off by default
+    let reconstructionInfo = null; // Staged reconstruction metadata & stats for Slot D
+    let reconstructionSourceNeighbors = null; // Mapping of D query -> contributing B neighbors
+
     // Dataset Staging & Ingestion State
     let isDatasetStaged = false; // True when a dataset is staged/loaded in memory
     let stagedDatasetInfo = {
       name: '3Dtorus',
       count: 10000,
       dim: 3,
-      passes: 1,
+      passes: 10,
       noise: 0.02
     };
 
@@ -447,6 +454,7 @@
     // Monolithic Clustering Engine State (2D / 3D)
     let clusters = [];
     let dcc = [];
+    let dccMin = null;
     let transitionCounts = [];
     let prevAssignedCluster = -1;
     let lastTransitionFrom = -1;
@@ -573,3 +581,673 @@
         clearActiveFrameEvaluations(false);
       }, delayMs);
     }
+
+    // =========================================================================
+    //  MULTI-DATASET SLOTS MANAGEMENT (A, B, C)
+    // =========================================================================
+
+    function createInitialDatasetSlot(slotId) {
+      return {
+        id: slotId,
+        workspaceName: `workspace/${slotId}`,
+        benchmarkKey: '3Dtorus',
+        sampleCount: 10000,
+        loopCount: 10,
+        noiseSigma: 0.02,
+        dataMode: 'coord',
+        currentDim: 3,
+        isDatasetStaged: false,
+        rawBenchmarkDataset: [],
+        benchmarkDataset: [],
+        stagedDatasetInfo: {
+          name: '3Dtorus',
+          count: 0,
+          dim: 3,
+          passes: 10,
+          noise: 0.02
+        },
+        customFileName: '',
+        customFileDesc: '',
+        currentFrameIdx: 0,
+        currentLoop: 1,
+        pastSamples: [],
+        clusters: [],
+        dcc: [],
+        dccMin: null,
+        transitionCounts: [],
+        prevAssignedCluster: -1,
+        lastTransitionFrom: -1,
+        lastTransitionTo: -1,
+        assignmentHistory: [],
+        frameHistory: [],
+        totalFrames: 0,
+        totalEvals: 0,
+        naiveEvals: 0,
+        distSampleCluster: 0,
+        distClusterCluster: 0,
+        distSampleClusterLast: 0,
+        distClusterClusterLast: 0,
+        dccPopulated: 0,
+        dccPairsTotal: 0,
+        pruneCount3P: 0,
+        pruneCount4P: 0,
+        pruneCount5P: 0,
+        predHitCount: 0,
+        totalComputeTimeMs: 0.0,
+        lastComputeTimeMs: 0.0,
+        avgComputeTimeMs: 0.0,
+        sparklineHistory: new Array(60).fill(0.0),
+        distHistoryDFC: [],
+        distHistoryDCC: [],
+        rollingHistory: [],
+        currentCpuLoadPct: 0.0,
+        currentFps: 0.0,
+        currentDistRate: 0.0,
+        sessionStartTime: 0,
+        sessionStartFrames: 0,
+        sessionElapsedMs: 0,
+        sessionIsActive: false,
+        sessionAvgFps: 0.0,
+        totalInitialEntropyBits: 0.0,
+        totalEntropyReducedBits: 0.0,
+        totalEntropyEvals: 0,
+        totalEntropyGated: 0,
+        lastInitialEntropy: 0.0,
+        lastEntropyReduced: 0.0,
+        lastInfoGainRate: 0.0,
+        maxInitialEntropyObserved: 0.0,
+        lastEntropyRankings: [],
+        currentFrame: null,
+        currentEvaluations: [],
+        currentPruned: [],
+        currentPredicted: [],
+        currentEntropyBits: 0,
+        currentExplanation: [],
+        sampleTraceLog: [],
+        frameEvaluationsLog: [],
+        clusterMilestoneFrames: [],
+        clusterSpawnRipples: [],
+        selectedSampleTraceIndex: -1,
+        hoveredSampleTracePoint: null,
+        hoveredClosestSample: null,
+        lockedClosestSample: null,
+        selectedClusterId: -1,
+        hoveredClusterId: -1,
+        knnResults: null,
+        selectedKnnQuerySample: -1,
+        hoveredKnnNeighborId: -1,
+        enableKnn: false,
+        knnK: 10,
+        knnDtmin: 1,
+        knnDirection: 'all',
+        knnEpsilon: 0.0,
+        knnRlim: 0.0,
+        knnMvp: false,
+        dimDensityResults: null,
+        dimDensitySummary: null,
+        isDimDensityComputing: false,
+        dimDensityTraceOffset: 0,
+        selectedCliDataset: '',
+        imageFrameAssignments: [],
+        imageFrameDists: [],
+        imageClusterMembers: {},
+        inspectedImageFrameIdx: -1,
+        inspectedClusterId: -1,
+        reconstructionInfo: null,
+        reconstructionSourceNeighbors: null
+      };
+    }
+
+    let datasetSlots = {
+      A: createInitialDatasetSlot('A'),
+      B: createInitialDatasetSlot('B'),
+      C: createInitialDatasetSlot('C'),
+      D: createInitialDatasetSlot('D')
+    };
+
+    function saveSlotState(slotId) {
+      if (!datasetSlots[slotId]) return;
+      const slot = datasetSlots[slotId];
+      slot.benchmarkKey = currentBenchmark;
+      slot.sampleCount = sampleCount;
+      slot.loopCount = loopCount;
+      slot.noiseSigma = noiseSigma;
+      slot.dataMode = dataMode;
+      slot.currentDim = currentDim;
+      slot.isDatasetStaged = isDatasetStaged;
+      slot.stagedDatasetInfo = stagedDatasetInfo ? { ...stagedDatasetInfo } : {
+        name: currentBenchmark,
+        count: benchmarkDataset ? benchmarkDataset.length : 0,
+        dim: currentDim,
+        passes: loopCount || 1,
+        noise: noiseSigma
+      };
+      slot.rawBenchmarkDataset = rawBenchmarkDataset;
+      slot.benchmarkDataset = benchmarkDataset;
+      slot.currentFrameIdx = currentFrameIdx;
+      slot.currentLoop = typeof currentLoop !== 'undefined' ? currentLoop : 1;
+      slot.pastSamples = pastSamples;
+      slot.clusters = clusters;
+      slot.dcc = dcc;
+      slot.dccMin = dccMin;
+      slot.transitionCounts = transitionCounts;
+      slot.prevAssignedCluster = prevAssignedCluster;
+      slot.lastTransitionFrom = lastTransitionFrom;
+      slot.lastTransitionTo = lastTransitionTo;
+      slot.assignmentHistory = assignmentHistory;
+      slot.frameHistory = frameHistory;
+      slot.totalFrames = totalFrames;
+      slot.totalEvals = totalEvals;
+      slot.naiveEvals = naiveEvals;
+      slot.distSampleCluster = (typeof distSampleCluster !== 'undefined') ? distSampleCluster : 0;
+      slot.distClusterCluster = (typeof distClusterCluster !== 'undefined') ? distClusterCluster : 0;
+      slot.distSampleClusterLast = (typeof distSampleClusterLast !== 'undefined') ? distSampleClusterLast : 0;
+      slot.distClusterClusterLast = (typeof distClusterClusterLast !== 'undefined') ? distClusterClusterLast : 0;
+      slot.dccPopulated = (typeof dccPopulated !== 'undefined') ? dccPopulated : 0;
+      slot.dccPairsTotal = (typeof dccPairsTotal !== 'undefined') ? dccPairsTotal : 0;
+      slot.pruneCount3P = (typeof pruneCount3P !== 'undefined') ? pruneCount3P : 0;
+      slot.pruneCount4P = (typeof pruneCount4P !== 'undefined') ? pruneCount4P : 0;
+      slot.pruneCount5P = (typeof pruneCount5P !== 'undefined') ? pruneCount5P : 0;
+      slot.predHitCount = (typeof predHitCount !== 'undefined') ? predHitCount : 0;
+      slot.totalComputeTimeMs = (typeof totalComputeTimeMs !== 'undefined') ? totalComputeTimeMs : 0;
+      slot.lastComputeTimeMs = (typeof lastComputeTimeMs !== 'undefined') ? lastComputeTimeMs : 0;
+      slot.avgComputeTimeMs = (typeof avgComputeTimeMs !== 'undefined') ? avgComputeTimeMs : 0;
+      slot.sparklineHistory = (typeof sparklineHistory !== 'undefined') ? [...sparklineHistory] : new Array(60).fill(0.0);
+      slot.distHistoryDFC = (typeof distHistoryDFC !== 'undefined') ? [...distHistoryDFC] : [];
+      slot.distHistoryDCC = (typeof distHistoryDCC !== 'undefined') ? [...distHistoryDCC] : [];
+      slot.rollingHistory = (typeof rollingHistory !== 'undefined') ? [...rollingHistory] : [];
+      slot.currentCpuLoadPct = (typeof currentCpuLoadPct !== 'undefined') ? currentCpuLoadPct : 0;
+      slot.currentFps = (typeof currentFps !== 'undefined') ? currentFps : 0;
+      slot.currentDistRate = (typeof currentDistRate !== 'undefined') ? currentDistRate : 0;
+      slot.sessionStartTime = (typeof sessionStartTime !== 'undefined') ? sessionStartTime : 0;
+      slot.sessionStartFrames = (typeof sessionStartFrames !== 'undefined') ? sessionStartFrames : 0;
+      slot.sessionElapsedMs = (typeof sessionElapsedMs !== 'undefined') ? sessionElapsedMs : 0;
+      slot.sessionIsActive = (typeof sessionIsActive !== 'undefined') ? sessionIsActive : false;
+      slot.sessionAvgFps = (typeof sessionAvgFps !== 'undefined') ? sessionAvgFps : 0;
+      slot.totalInitialEntropyBits = (typeof totalInitialEntropyBits !== 'undefined') ? totalInitialEntropyBits : 0;
+      slot.totalEntropyReducedBits = (typeof totalEntropyReducedBits !== 'undefined') ? totalEntropyReducedBits : 0;
+      slot.totalEntropyEvals = (typeof totalEntropyEvals !== 'undefined') ? totalEntropyEvals : 0;
+      slot.totalEntropyGated = (typeof totalEntropyGated !== 'undefined') ? totalEntropyGated : 0;
+      slot.lastInitialEntropy = (typeof lastInitialEntropy !== 'undefined') ? lastInitialEntropy : 0;
+      slot.lastEntropyReduced = (typeof lastEntropyReduced !== 'undefined') ? lastEntropyReduced : 0;
+      slot.lastInfoGainRate = (typeof lastInfoGainRate !== 'undefined') ? lastInfoGainRate : 0;
+      slot.maxInitialEntropyObserved = (typeof maxInitialEntropyObserved !== 'undefined') ? maxInitialEntropyObserved : 0;
+      slot.lastEntropyRankings = (typeof lastEntropyRankings !== 'undefined') ? [...lastEntropyRankings] : [];
+      slot.currentFrame = currentFrame;
+      slot.currentEvaluations = currentEvaluations;
+      slot.currentPruned = currentPruned;
+      slot.currentPredicted = currentPredicted;
+      slot.currentEntropyBits = currentEntropyBits;
+      slot.currentExplanation = currentExplanation;
+      slot.sampleTraceLog = sampleTraceLog;
+      slot.frameEvaluationsLog = frameEvaluationsLog;
+      slot.clusterMilestoneFrames = clusterMilestoneFrames;
+      slot.clusterSpawnRipples = clusterSpawnRipples;
+      slot.selectedSampleTraceIndex = (typeof selectedSampleTraceIndex !== 'undefined') ? selectedSampleTraceIndex : -1;
+      slot.hoveredSampleTracePoint = hoveredSampleTracePoint;
+      slot.hoveredClosestSample = hoveredClosestSample;
+      slot.lockedClosestSample = lockedClosestSample;
+      slot.selectedClusterId = selectedClusterId;
+      slot.hoveredClusterId = hoveredClusterId;
+      slot.knnResults = knnResults;
+      slot.selectedKnnQuerySample = selectedKnnQuerySample;
+      slot.hoveredKnnNeighborId = hoveredKnnNeighborId;
+      slot.enableKnn = enableKnn;
+      slot.knnK = knnK;
+      slot.knnDtmin = knnDtmin;
+      slot.knnDirection = knnDirection;
+      slot.knnEpsilon = knnEpsilon;
+      slot.knnRlim = knnRlim;
+      slot.knnMvp = knnMvp;
+      slot.dimDensityResults = dimDensityResults;
+      slot.dimDensitySummary = dimDensitySummary;
+      slot.isDimDensityComputing = isDimDensityComputing;
+      slot.dimDensityTraceOffset = dimDensityTraceOffset;
+      slot.selectedCliDataset = selectedCliDataset;
+      slot.imageFrameAssignments = imageFrameAssignments;
+      slot.imageFrameDists = imageFrameDists;
+      slot.imageClusterMembers = imageClusterMembers;
+      slot.inspectedImageFrameIdx = inspectedImageFrameIdx;
+      slot.inspectedClusterId = inspectedClusterId;
+      slot.reconstructionInfo = reconstructionInfo;
+      slot.reconstructionSourceNeighbors = reconstructionSourceNeighbors;
+    }
+
+    function loadSlotState(slotId) {
+      if (!datasetSlots[slotId]) return;
+      const slot = datasetSlots[slotId];
+      currentBenchmark = slot.benchmarkKey || '3Dtorus';
+      sampleCount = slot.sampleCount || 10000;
+      loopCount = slot.loopCount || 10;
+      noiseSigma = (slot.noiseSigma !== undefined) ? slot.noiseSigma : 0.02;
+      dataMode = slot.dataMode || 'coord';
+      currentDim = slot.currentDim || 3;
+      isDatasetStaged = slot.isDatasetStaged || false;
+      stagedDatasetInfo = slot.stagedDatasetInfo || {
+        name: currentBenchmark,
+        count: 0,
+        dim: currentDim,
+        passes: loopCount,
+        noise: noiseSigma
+      };
+      rawBenchmarkDataset = slot.rawBenchmarkDataset || [];
+      benchmarkDataset = slot.benchmarkDataset || [];
+      currentFrameIdx = slot.currentFrameIdx || 0;
+      if (typeof currentLoop !== 'undefined') currentLoop = slot.currentLoop || 1;
+      pastSamples = slot.pastSamples || [];
+      if ((!pastSamples || pastSamples.length === 0) && benchmarkDataset && benchmarkDataset.length > 0 && dataMode === 'coord') {
+        const maxStagedPreview = 100000;
+        const stride = benchmarkDataset.length > maxStagedPreview
+          ? Math.ceil(benchmarkDataset.length / maxStagedPreview) : 1;
+        pastSamples = [];
+        for (let i = 0; i < benchmarkDataset.length; i += stride) {
+          const pt = benchmarkDataset[i];
+          pastSamples.push({
+            x: pt.x,
+            y: pt.y,
+            z: pt.z || 0.0,
+            clusterId: -1,
+            frameIndex: i
+          });
+        }
+        slot.pastSamples = pastSamples;
+      }
+      clusters = slot.clusters || [];
+      dcc = slot.dcc || [];
+      dccMin = slot.dccMin || null;
+      transitionCounts = slot.transitionCounts || [];
+      prevAssignedCluster = (slot.prevAssignedCluster !== undefined) ? slot.prevAssignedCluster : -1;
+      lastTransitionFrom = (slot.lastTransitionFrom !== undefined) ? slot.lastTransitionFrom : -1;
+      lastTransitionTo = (slot.lastTransitionTo !== undefined) ? slot.lastTransitionTo : -1;
+      assignmentHistory = slot.assignmentHistory || [];
+      frameHistory = slot.frameHistory || [];
+      totalFrames = slot.totalFrames || 0;
+      totalEvals = slot.totalEvals || 0;
+      naiveEvals = slot.naiveEvals || 0;
+      if (typeof distSampleCluster !== 'undefined') distSampleCluster = slot.distSampleCluster || 0;
+      if (typeof distClusterCluster !== 'undefined') distClusterCluster = slot.distClusterCluster || 0;
+      if (typeof distSampleClusterLast !== 'undefined') distSampleClusterLast = slot.distSampleClusterLast || 0;
+      if (typeof distClusterClusterLast !== 'undefined') distClusterClusterLast = slot.distClusterClusterLast || 0;
+      if (typeof dccPopulated !== 'undefined') dccPopulated = slot.dccPopulated || 0;
+      if (typeof dccPairsTotal !== 'undefined') dccPairsTotal = slot.dccPairsTotal || 0;
+      if (typeof pruneCount3P !== 'undefined') pruneCount3P = slot.pruneCount3P || 0;
+      if (typeof pruneCount4P !== 'undefined') pruneCount4P = slot.pruneCount4P || 0;
+      if (typeof pruneCount5P !== 'undefined') pruneCount5P = slot.pruneCount5P || 0;
+      if (typeof predHitCount !== 'undefined') predHitCount = slot.predHitCount || 0;
+      if (typeof totalComputeTimeMs !== 'undefined') totalComputeTimeMs = slot.totalComputeTimeMs || 0;
+      if (typeof lastComputeTimeMs !== 'undefined') lastComputeTimeMs = slot.lastComputeTimeMs || 0;
+      if (typeof avgComputeTimeMs !== 'undefined') avgComputeTimeMs = slot.avgComputeTimeMs || 0;
+      if (typeof sparklineHistory !== 'undefined') sparklineHistory = slot.sparklineHistory ? [...slot.sparklineHistory] : new Array(60).fill(0.0);
+      if (typeof distHistoryDFC !== 'undefined') distHistoryDFC = slot.distHistoryDFC ? [...slot.distHistoryDFC] : [];
+      if (typeof distHistoryDCC !== 'undefined') distHistoryDCC = slot.distHistoryDCC ? [...slot.distHistoryDCC] : [];
+      if (typeof rollingHistory !== 'undefined') rollingHistory = slot.rollingHistory ? [...slot.rollingHistory] : [];
+      if (typeof currentCpuLoadPct !== 'undefined') currentCpuLoadPct = slot.currentCpuLoadPct || 0;
+      if (typeof currentFps !== 'undefined') currentFps = slot.currentFps || 0;
+      if (typeof currentDistRate !== 'undefined') currentDistRate = slot.currentDistRate || 0;
+      if (typeof sessionStartTime !== 'undefined') sessionStartTime = slot.sessionStartTime || 0;
+      if (typeof sessionStartFrames !== 'undefined') sessionStartFrames = slot.sessionStartFrames || 0;
+      if (typeof sessionElapsedMs !== 'undefined') sessionElapsedMs = slot.sessionElapsedMs || 0;
+      if (typeof sessionIsActive !== 'undefined') sessionIsActive = slot.sessionIsActive || false;
+      if (typeof sessionAvgFps !== 'undefined') sessionAvgFps = slot.sessionAvgFps || 0;
+      if (typeof totalInitialEntropyBits !== 'undefined') totalInitialEntropyBits = slot.totalInitialEntropyBits || 0;
+      if (typeof totalEntropyReducedBits !== 'undefined') totalEntropyReducedBits = slot.totalEntropyReducedBits || 0;
+      if (typeof totalEntropyEvals !== 'undefined') totalEntropyEvals = slot.totalEntropyEvals || 0;
+      if (typeof totalEntropyGated !== 'undefined') totalEntropyGated = slot.totalEntropyGated || 0;
+      if (typeof lastInitialEntropy !== 'undefined') lastInitialEntropy = slot.lastInitialEntropy || 0;
+      if (typeof lastEntropyReduced !== 'undefined') lastEntropyReduced = slot.lastEntropyReduced || 0;
+      if (typeof lastInfoGainRate !== 'undefined') lastInfoGainRate = slot.lastInfoGainRate || 0;
+      if (typeof maxInitialEntropyObserved !== 'undefined') maxInitialEntropyObserved = slot.maxInitialEntropyObserved || 0;
+      if (typeof lastEntropyRankings !== 'undefined') lastEntropyRankings = slot.lastEntropyRankings ? [...slot.lastEntropyRankings] : [];
+      currentFrame = slot.currentFrame || null;
+      currentEvaluations = slot.currentEvaluations || [];
+      currentPruned = slot.currentPruned || [];
+      currentPredicted = slot.currentPredicted || [];
+      currentEntropyBits = slot.currentEntropyBits || 0;
+      currentExplanation = slot.currentExplanation || [];
+      sampleTraceLog = slot.sampleTraceLog || [];
+      frameEvaluationsLog = slot.frameEvaluationsLog || [];
+      clusterMilestoneFrames = slot.clusterMilestoneFrames || [];
+      clusterSpawnRipples = slot.clusterSpawnRipples || [];
+      selectedSampleTraceIndex = (slot.selectedSampleTraceIndex !== undefined) ? slot.selectedSampleTraceIndex : -1;
+      hoveredSampleTracePoint = slot.hoveredSampleTracePoint || null;
+      hoveredClosestSample = slot.hoveredClosestSample || null;
+      lockedClosestSample = slot.lockedClosestSample || null;
+      selectedClusterId = (slot.selectedClusterId !== undefined) ? slot.selectedClusterId : -1;
+      hoveredClusterId = (slot.hoveredClusterId !== undefined) ? slot.hoveredClusterId : -1;
+      knnResults = slot.knnResults || null;
+      selectedKnnQuerySample = (slot.selectedKnnQuerySample !== undefined) ? slot.selectedKnnQuerySample : -1;
+      hoveredKnnNeighborId = (slot.hoveredKnnNeighborId !== undefined) ? slot.hoveredKnnNeighborId : -1;
+      enableKnn = slot.enableKnn || false;
+      knnK = slot.knnK || 10;
+      knnDtmin = (slot.knnDtmin !== undefined) ? slot.knnDtmin : 1;
+      knnDirection = slot.knnDirection || 'all';
+      knnEpsilon = (slot.knnEpsilon !== undefined) ? slot.knnEpsilon : 0.0;
+      knnRlim = (slot.knnRlim !== undefined) ? slot.knnRlim : 0.0;
+      knnMvp = slot.knnMvp || false;
+      dimDensityResults = slot.dimDensityResults || null;
+      dimDensitySummary = slot.dimDensitySummary || null;
+      isDimDensityComputing = slot.isDimDensityComputing || false;
+      dimDensityTraceOffset = slot.dimDensityTraceOffset || 0;
+      selectedCliDataset = slot.selectedCliDataset || '';
+      imageFrameAssignments = slot.imageFrameAssignments || [];
+      imageFrameDists = slot.imageFrameDists || [];
+      imageClusterMembers = slot.imageClusterMembers || {};
+      inspectedImageFrameIdx = (slot.inspectedImageFrameIdx !== undefined) ? slot.inspectedImageFrameIdx : -1;
+      inspectedClusterId = (slot.inspectedClusterId !== undefined) ? slot.inspectedClusterId : -1;
+      reconstructionInfo = slot.reconstructionInfo || null;
+      reconstructionSourceNeighbors = slot.reconstructionSourceNeighbors || null;
+    }
+
+    function switchDatasetSlot(newSlotId) {
+      if (!DATASET_SLOTS.includes(newSlotId)) return;
+      if (newSlotId === activeDatasetSlot) return;
+
+      // Auto-pause active simulation to prevent race conditions
+      if (typeof pauseSimulation === 'function' && isRunning) {
+        pauseSimulation();
+      }
+      if (typeof abortComputeAll === 'function' && isComputeAllRunning) {
+        abortComputeAll();
+      }
+
+      // Save previous slot state
+      saveSlotState(activeDatasetSlot);
+
+      // Switch active slot
+      activeDatasetSlot = newSlotId;
+
+      // Load new slot state
+      loadSlotState(newSlotId);
+
+      // Sync WASM session if available
+      if (useWasm && typeof GricWasm !== 'undefined' && GricWasm.isLoaded()) {
+        const params = GricWasm.buildParamsFromState();
+        wasmSessionActive = GricWasm.init(params);
+        if (typeof updateWasmBadge === 'function') updateWasmBadge();
+      }
+
+      // Update UI controls & highlights
+      if (typeof updateDatasetStatusBadge === 'function') {
+        updateDatasetStatusBadge();
+      }
+      if (typeof updateUI === 'function') {
+        updateUI();
+      }
+      if (typeof renderKnnTrace === 'function') {
+        renderKnnTrace();
+      }
+      if (typeof renderDimDensityDashboard === 'function') {
+        renderDimDensityDashboard();
+      }
+      if (typeof renderReconstructionDashboard === 'function') {
+        renderReconstructionDashboard();
+      }
+      if (typeof renderEntropyTrace === 'function') {
+        renderEntropyTrace();
+      }
+      if (typeof renderSampleHistoryUI === 'function') {
+        renderSampleHistoryUI();
+      }
+      if (typeof renderDataStructuresUI === 'function') {
+        renderDataStructuresUI();
+      }
+      if (typeof refreshWorkspaceFiles === 'function') {
+        refreshWorkspaceFiles();
+      }
+      if (typeof draw === 'function') {
+        draw();
+      }
+
+      if (typeof showToast === 'function') {
+        showToast(`⚡ Active Dataset: ${newSlotId} (${datasetSlots[newSlotId].workspaceName})`);
+      }
+    }
+
+    function updateMultiDatasetUI() {
+      const rowB = document.getElementById('datasetRowB');
+      const rowC = document.getElementById('datasetRowC');
+      const rowD = document.getElementById('datasetRowD');
+      const slotBtnA = document.getElementById('btnToggleSlotA');
+      const btnToggle = document.getElementById('btnToggleMultiDataset');
+      const btnToggleSide = document.getElementById('btnToggleMultiDatasetSide');
+      const slotGroupSide = document.getElementById('datasetSlotTogglesSide');
+
+      if (rowB) rowB.style.display = multiDatasetEnabled ? 'flex' : 'none';
+      if (rowC) rowC.style.display = multiDatasetEnabled ? 'flex' : 'none';
+      if (rowD) rowD.style.display = multiDatasetEnabled ? 'flex' : 'none';
+      if (slotBtnA) slotBtnA.style.display = multiDatasetEnabled ? 'inline-flex' : 'none';
+      if (slotGroupSide) slotGroupSide.style.display = multiDatasetEnabled ? 'flex' : 'none';
+
+      if (btnToggle) {
+        if (multiDatasetEnabled) {
+          btnToggle.classList.add('active');
+          btnToggle.style.background = 'rgba(56, 189, 248, 0.2)';
+          btnToggle.style.color = '#38bdf8';
+          btnToggle.style.borderColor = 'rgba(56, 189, 248, 0.5)';
+          btnToggle.textContent = '🗂️ Multi-Dataset (A-D): ON';
+        } else {
+          btnToggle.classList.remove('active');
+          btnToggle.style.background = 'rgba(148, 163, 184, 0.1)';
+          btnToggle.style.color = 'var(--text-muted)';
+          btnToggle.style.borderColor = 'var(--card-border)';
+          btnToggle.textContent = '🗂️ Multi-Dataset: OFF';
+        }
+      }
+
+      if (btnToggleSide) {
+        if (multiDatasetEnabled) {
+          btnToggleSide.classList.add('active');
+          btnToggleSide.style.background = 'rgba(56, 189, 248, 0.2)';
+          btnToggleSide.style.color = '#38bdf8';
+          btnToggleSide.style.borderColor = 'rgba(56, 189, 248, 0.5)';
+          btnToggleSide.textContent = '🗂️ 4 Datasets: ON';
+        } else {
+          btnToggleSide.classList.remove('active');
+          btnToggleSide.style.background = 'rgba(148, 163, 184, 0.1)';
+          btnToggleSide.style.color = 'var(--text-muted)';
+          btnToggleSide.style.borderColor = 'var(--card-border)';
+          btnToggleSide.textContent = '🗂️ 4 Datasets: OFF';
+        }
+      }
+    }
+
+    function setMultiDatasetEnabled(enabled) {
+      multiDatasetEnabled = !!enabled;
+      if (!multiDatasetEnabled && activeDatasetSlot !== 'A') {
+        switchDatasetSlot('A');
+      }
+      updateMultiDatasetUI();
+      if (typeof showToast === 'function') {
+        showToast(multiDatasetEnabled
+          ? '🗂️ Multi-Dataset Mode: ON (Slots A, B, C, and D active)'
+          : '🗂️ Multi-Dataset Mode: OFF (Single Dataset active)');
+      }
+    }
+
+    function clearDatasetSlot(slotId) {
+      if (!datasetSlots[slotId]) return;
+
+      // Auto-pause if active simulation is running
+      if (activeDatasetSlot === slotId) {
+        if (typeof pauseSimulation === 'function' && isRunning) {
+          pauseSimulation();
+        }
+        if (typeof abortComputeAll === 'function' && isComputeAllRunning) {
+          abortComputeAll();
+        }
+      }
+
+      const slot = datasetSlots[slotId];
+      slot.isDatasetStaged = false;
+      slot.rawBenchmarkDataset = [];
+      slot.benchmarkDataset = [];
+      slot.pastSamples = [];
+      slot.stagedDatasetInfo = {
+        name: 'None',
+        count: 0,
+        dim: slot.currentDim || 2,
+        passes: 1,
+        noise: 0
+      };
+      slot.clusters = [];
+      slot.dcc = [];
+      slot.dccMin = null;
+      slot.transitionCounts = [];
+      slot.prevAssignedCluster = -1;
+      slot.lastTransitionFrom = -1;
+      slot.lastTransitionTo = -1;
+      slot.assignmentHistory = [];
+      slot.frameHistory = [];
+      slot.totalFrames = 0;
+      slot.totalEvals = 0;
+      slot.naiveEvals = 0;
+      slot.currentFrameIdx = 0;
+      slot.distSampleCluster = 0;
+      slot.distClusterCluster = 0;
+      slot.distSampleClusterLast = 0;
+      slot.distClusterClusterLast = 0;
+      slot.dccPopulated = 0;
+      slot.dccPairsTotal = 0;
+      slot.pruneCount3P = 0;
+      slot.pruneCount4P = 0;
+      slot.pruneCount5P = 0;
+      slot.predHitCount = 0;
+      slot.totalComputeTimeMs = 0;
+      slot.lastComputeTimeMs = 0;
+      slot.avgComputeTimeMs = 0;
+      slot.sparklineHistory = new Array(60).fill(0.0);
+      slot.distHistoryDFC = [];
+      slot.distHistoryDCC = [];
+      slot.rollingHistory = [];
+      slot.currentCpuLoadPct = 0;
+      slot.currentFps = 0;
+      slot.currentDistRate = 0;
+      slot.sessionIsActive = false;
+      slot.sessionAvgFps = 0;
+      slot.totalInitialEntropyBits = 0;
+      slot.totalEntropyReducedBits = 0;
+      slot.totalEntropyEvals = 0;
+      slot.totalEntropyGated = 0;
+      slot.lastInitialEntropy = 0;
+      slot.lastEntropyReduced = 0;
+      slot.lastInfoGainRate = 0;
+      slot.maxInitialEntropyObserved = 0;
+      slot.lastEntropyRankings = [];
+      slot.currentFrame = null;
+      slot.currentEvaluations = [];
+      slot.currentPruned = [];
+      slot.currentPredicted = [];
+      slot.currentEntropyBits = 0;
+      slot.currentExplanation = [];
+      slot.sampleTraceLog = [];
+      slot.frameEvaluationsLog = [];
+      slot.clusterMilestoneFrames = [];
+      slot.clusterSpawnRipples = [];
+      slot.selectedSampleTraceIndex = -1;
+      slot.hoveredSampleTracePoint = null;
+      slot.hoveredClosestSample = null;
+      slot.lockedClosestSample = null;
+      slot.selectedClusterId = -1;
+      slot.hoveredClusterId = -1;
+      slot.knnResults = null;
+      slot.selectedKnnQuerySample = -1;
+      slot.hoveredKnnNeighborId = -1;
+      slot.dimDensityResults = null;
+      slot.dimDensitySummary = null;
+      slot.isDimDensityComputing = false;
+      slot.dimDensityTraceOffset = 0;
+      slot.selectedCliDataset = '';
+      slot.imageFrameAssignments = [];
+      slot.imageFrameDists = [];
+      slot.imageClusterMembers = {};
+      slot.inspectedImageFrameIdx = -1;
+      slot.inspectedClusterId = -1;
+      slot.reconstructionInfo = null;
+      slot.reconstructionSourceNeighbors = null;
+
+      // Update toolbar status pill
+      const pill = document.getElementById(`datasetStatusPill_${slotId}`);
+      if (pill) {
+        pill.textContent = '⚪ Cleared';
+        pill.style.background = 'rgba(100, 116, 139, 0.2)';
+        pill.style.color = '#94a3b8';
+        pill.style.borderColor = 'rgba(100, 116, 139, 0.4)';
+      }
+
+      // If this is the active slot, synchronize global state and redraw
+      if (activeDatasetSlot === slotId) {
+        benchmarkDataset = [];
+        rawBenchmarkDataset = [];
+        pastSamples = [];
+        isDatasetStaged = false;
+        clusters = [];
+        dcc = [];
+        dccMin = null;
+        transitionCounts = [];
+        prevAssignedCluster = -1;
+        lastTransitionFrom = -1;
+        lastTransitionTo = -1;
+        assignmentHistory = [];
+        frameHistory = [];
+        totalFrames = 0;
+        totalEvals = 0;
+        naiveEvals = 0;
+        currentFrameIdx = 0;
+        currentEvaluations = [];
+        currentPruned = [];
+        currentPredicted = [];
+
+        loadSlotState(slotId);
+
+        // Reset WASM session if available
+        if (useWasm && typeof GricWasm !== 'undefined' && GricWasm.isLoaded()) {
+          GricWasm.reset();
+          const params = GricWasm.buildParamsFromState();
+          wasmSessionActive = GricWasm.init(params);
+          if (typeof updateWasmBadge === 'function') updateWasmBadge();
+        }
+
+        if (typeof resetView === 'function') {
+          resetView();
+        }
+        if (typeof updateDatasetStatusBadge === 'function') {
+          updateDatasetStatusBadge();
+        }
+        if (typeof updateUI === 'function') {
+          updateUI();
+        }
+        if (typeof renderKnnTrace === 'function') {
+          renderKnnTrace();
+        }
+        if (typeof renderDimDensityDashboard === 'function') {
+          renderDimDensityDashboard();
+        }
+        if (typeof renderReconstructionDashboard === 'function') {
+          renderReconstructionDashboard();
+        }
+        if (typeof renderEntropyTrace === 'function') {
+          renderEntropyTrace();
+        }
+        if (typeof renderSampleHistoryUI === 'function') {
+          renderSampleHistoryUI();
+        }
+        if (typeof draw === 'function') {
+          draw();
+        }
+      } else {
+        if (typeof renderReconstructionDashboard === 'function') {
+          renderReconstructionDashboard();
+        }
+      }
+
+      if (typeof showToast === 'function') {
+        showToast(`🗑️ Cleared Dataset [${slotId}] (data reset & view cleared)`);
+      }
+    }
+
+    window.switchDatasetSlot = switchDatasetSlot;
+    window.clearDatasetSlot = clearDatasetSlot;
+    window.saveSlotState = saveSlotState;
+    window.loadSlotState = loadSlotState;
+    window.updateMultiDatasetUI = updateMultiDatasetUI;
+    window.setMultiDatasetEnabled = setMultiDatasetEnabled;
