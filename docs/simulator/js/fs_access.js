@@ -707,6 +707,31 @@ const DataManager = (function () {
         ready: isKnnReady
       },
       {
+        id: 'knn_quality',
+        filename: 'knn_quality.bin',
+        category: 'k-NN Quality',
+        icon: '🎨',
+        badge: 'Quality Metrics',
+        desc: 'Per-query quality metrics: k-th NN dist '
+            + 'and reconstruction variance [N x 2] '
+            + 'float32.',
+        content: '',
+        size: 0,
+        ready: false
+      },
+      {
+        id: 'knn_recon',
+        filename: 'knn_recon.bin',
+        category: 'Reconstruction',
+        icon: '🔮',
+        badge: 'Recon Output',
+        desc: 'Reconstructed output dataset D as [N x D]'
+            + ' float32 binary.',
+        content: '',
+        size: 0,
+        ready: false
+      },
+      {
         id: 'log',
         filename: 'cluster_run.log',
         category: 'Execution Log',

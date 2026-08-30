@@ -26,6 +26,16 @@
       [252,255,164]
     ];
 
+    // Quality color ramp: green → yellow → red (good → poor)
+    const QUALITY_STOPS = [
+      [34,197,94], [52,211,106], [74,222,128],
+      [110,231,150], [153,240,176], [200,247,200],
+      [254,249,195], [254,240,138], [253,224,71],
+      [250,204,21], [245,158,11], [239,115,22],
+      [239,68,68], [220,38,38], [185,28,28],
+      [153,27,27]
+    ];
+
     /**
      * Map a scalar value to an RGB color string.
      * @param {number} val - Data value
@@ -56,6 +66,59 @@
       );
       return `rgb(${r},${g},${b})`;
     }
+
+    /**
+     * Get quality coloring info for the active slot.
+     * @returns {Object|null} {arr, min, max, label} or null
+     */
+    function getReconQualityInfo()
+    {
+      if (!reconQualityColoringEnabled)
+      {
+        return null;
+      }
+      const slot = datasetSlots[activeDatasetSlot];
+      if (slot && activeDatasetSlot === 'C' && slot.reconKthDist)
+      {
+        return {
+          arr: slot.reconKthDist,
+          min: slot.reconKthDistMin,
+          max: slot.reconKthDistMax,
+          label: 'k-th NN Dist'
+        };
+      }
+      if (slot && activeDatasetSlot === 'D' && slot.reconVariance)
+      {
+        return {
+          arr: slot.reconVariance,
+          min: slot.reconVarianceMin,
+          max: slot.reconVarianceMax,
+          label: 'Recon Variance'
+        };
+      }
+      if (datasetSlots['D'] && datasetSlots['D'].reconVariance)
+      {
+        const slotD = datasetSlots['D'];
+        return {
+          arr: slotD.reconVariance,
+          min: slotD.reconVarianceMin,
+          max: slotD.reconVarianceMax,
+          label: 'Recon Variance'
+        };
+      }
+      if (datasetSlots['C'] && datasetSlots['C'].reconKthDist)
+      {
+        const slotC = datasetSlots['C'];
+        return {
+          arr: slotC.reconKthDist,
+          min: slotC.reconKthDistMin,
+          max: slotC.reconKthDistMax,
+          label: 'k-th NN Dist'
+        };
+      }
+      return null;
+    }
+
 
     let lastRenderedSquareSize = -1;
     let lastRenderedDpr = -1;
@@ -130,6 +193,17 @@
     }
 
     function getQuadRect(qIdx, W, H) {
+      if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView) {
+        const halfW = W / 2;
+        const halfH = H / 2;
+        switch (qIdx) {
+          case 0: return { x: 0, y: 0, w: halfW, h: halfH };
+          case 1: return { x: halfW, y: 0, w: halfW, h: halfH };
+          case 2: return { x: 0, y: halfH, w: halfW, h: halfH };
+          case 3: return { x: halfW, y: halfH, w: halfW, h: halfH };
+          default: return { x: 0, y: 0, w: W, h: H };
+        }
+      }
       if (maximizedQuad !== null) {
         return { x: 0, y: 0, w: W, h: H };
       }
@@ -193,15 +267,23 @@
       const btnTop = document.getElementById('presetTop');
       const btnSide = document.getElementById('presetSide');
       const btnReset3D = document.getElementById('presetReset3D');
+      const btnRecon4P = document.getElementById('btnPresetRecon4Panel');
 
-      const is3D = (currentDim === 3);
-      const is3DOrbitVisible = is3D && (maximizedQuad === null || maximizedQuad === 3);
+      const isRecon = (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView);
+      let anySlotIs3D = false;
+      if (isRecon && typeof datasetSlots !== 'undefined') {
+        anySlotIs3D = Object.values(datasetSlots).some(s => s && s.currentDim === 3);
+      }
+      const is3D = isRecon ? anySlotIs3D : (currentDim === 3);
+      const is3DOrbitVisible = is3D && (maximizedQuad === null || maximizedQuad === 3 || isRecon);
 
       if (btnIso) btnIso.style.display = is3DOrbitVisible ? '' : 'none';
       if (btnFront) btnFront.style.display = is3DOrbitVisible ? '' : 'none';
       if (btnTop) btnTop.style.display = is3DOrbitVisible ? '' : 'none';
       if (btnSide) btnSide.style.display = is3DOrbitVisible ? '' : 'none';
       if (btnReset3D) btnReset3D.style.display = is3DOrbitVisible ? '' : 'none';
+      if (btnRecon4P) btnRecon4P.classList.toggle('active', !!isRecon);
+
       if (btnResetView) {
         btnResetView.style.display = '';
         btnResetView.textContent = is3D ? '🔍 1:1' : '🔍 1:1 Reset View';
@@ -214,7 +296,7 @@
       const cRect = canvas.getBoundingClientRect();
 
       let targetLeft, targetTop, targetWidth, targetHeight;
-      if (!is3D || maximizedQuad !== null) {
+      if (isRecon || !is3D || maximizedQuad !== null) {
         targetLeft = cRect.left - wrapRect.left;
         targetTop = cRect.top - wrapRect.top;
         targetWidth = cRect.width;
@@ -241,10 +323,26 @@
         const azDeg = Math.round(orbitCamera.azimuth * 180 / Math.PI);
         const elDeg = Math.round(orbitCamera.elevation * 180 / Math.PI);
 
-        if (btnIso) btnIso.classList.toggle('active', Math.abs(azDeg - (-35)) <= 2 && Math.abs(elDeg - 25) <= 2);
-        if (btnFront) btnFront.classList.toggle('active', Math.abs(azDeg - 0) <= 2 && Math.abs(elDeg - 0) <= 2);
-        if (btnTop) btnTop.classList.toggle('active', Math.abs(azDeg - 0) <= 2 && Math.abs(elDeg - 89) <= 2);
-        if (btnSide) btnSide.classList.toggle('active', Math.abs(azDeg - 90) <= 2 && Math.abs(elDeg - 0) <= 2);
+        if (btnIso) {
+          btnIso.classList.toggle(
+            'active', Math.abs(azDeg - (-35)) <= 2 && Math.abs(elDeg - 25) <= 2
+          );
+        }
+        if (btnFront) {
+          btnFront.classList.toggle(
+            'active', Math.abs(azDeg - 0) <= 2 && Math.abs(elDeg - 0) <= 2
+          );
+        }
+        if (btnTop) {
+          btnTop.classList.toggle(
+            'active', Math.abs(azDeg - 0) <= 2 && Math.abs(elDeg - 89) <= 2
+          );
+        }
+        if (btnSide) {
+          btnSide.classList.toggle(
+            'active', Math.abs(azDeg - 90) <= 2 && Math.abs(elDeg - 0) <= 2
+          );
+        }
 
         const btnLock = document.getElementById('btnLockCenter3D');
         if (btnLock) {
@@ -277,6 +375,13 @@
       ctx.fillStyle = '#0b1120';
       ctx.fillRect(0, 0, W, H);
 
+      // --- RECONSTRUCTION 4-PANEL VIEW MODE (A: TL, B: TR, C: BL, D: BR) ---
+      if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView) {
+        drawRecon4PanelView(ctx, W, H);
+        updateViewPresetBarPosition();
+        return;
+      }
+
       // --- IMAGE MODE: 4-Quadrant Raster / Centroid Gallery ---
       if (typeof dataMode !== 'undefined' && dataMode === 'image') {
         if (typeof drawImageMode === 'function') {
@@ -302,10 +407,24 @@
       }
 
       // Render 4 Quadrants
-      renderSubViewport(0, "ALONG_X", getQuadRect(0, W, H));
-      renderSubViewport(1, "ALONG_Y", getQuadRect(1, W, H));
-      renderSubViewport(2, "ALONG_Z", getQuadRect(2, W, H));
-      renderSubViewport(3, "CUSTOM_3D", getQuadRect(3, W, H));
+      for (let qi = 0; qi < 4; qi++)
+      {
+        const types = [
+          "ALONG_X", "ALONG_Y", "ALONG_Z", "CUSTOM_3D"
+        ];
+        try
+        {
+          renderSubViewport(
+            qi, types[qi], getQuadRect(qi, W, H)
+          );
+        }
+        catch (err)
+        {
+          console.error(
+            `[Renderer] Viewport ${qi} error:`, err
+          );
+        }
+      }
 
       // Draw Viewport Divider Lines
       ctx.strokeStyle = '#334155';
@@ -503,10 +622,17 @@
           visibleIndicesBuffer = new Int32Array(Math.max(numPast + 50000, 500000));
         }
 
+        const slotObj = (typeof datasetSlots !== 'undefined')
+          ? datasetSlots[activeDatasetSlot] : null;
+        const qFovMask = (typeof reconQualityThreshold !== 'undefined' &&
+          reconQualityThreshold < 1.0)
+          ? ((slotObj && slotObj.reconQualityMask) || reconQualityMask) : null;
+
         // Collect indices of all points that fall within visible FOV
         if (!is3DCustom) {
           if (currentDim === 2) {
             for (let i = 0; i < numPast; i++) {
+              if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
               const pt = pastSamples[i];
               if (pt.x >= uMin && pt.x <= uMax && pt.y >= vMin && pt.y <= vMax) {
                 visibleIndicesBuffer[totalVisiblePoints++] = i;
@@ -514,6 +640,7 @@
             }
           } else if (qIdx === 0) { // Along X: H = +Y, V = +Z
             for (let i = 0; i < numPast; i++) {
+              if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
               const pt = pastSamples[i];
               if (pt.y >= uMin && pt.y <= uMax && pt.z >= vMin && pt.z <= vMax) {
                 visibleIndicesBuffer[totalVisiblePoints++] = i;
@@ -521,6 +648,7 @@
             }
           } else if (qIdx === 1) { // Along Y: H = +X, V = +Z
             for (let i = 0; i < numPast; i++) {
+              if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
               const pt = pastSamples[i];
               if (pt.x >= uMin && pt.x <= uMax && pt.z >= vMin && pt.z <= vMax) {
                 visibleIndicesBuffer[totalVisiblePoints++] = i;
@@ -528,6 +656,7 @@
             }
           } else { // Along Z: H = +X, V = +Y
             for (let i = 0; i < numPast; i++) {
+              if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
               const pt = pastSamples[i];
               if (pt.x >= uMin && pt.x <= uMax && pt.y >= vMin && pt.y <= vMax) {
                 visibleIndicesBuffer[totalVisiblePoints++] = i;
@@ -539,6 +668,7 @@
           const az = orbitCamera.azimuth;
           const el = orbitCamera.elevation;
           for (let i = 0; i < numPast; i++) {
+            if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
             const pt = pastSamples[i];
             const pr = project3D(pt.x, pt.y, pt.z, az, el);
             if (pr.u >= uMin && pr.u <= uMax && pr.v >= vMin && pr.v <= vMax) {
@@ -568,6 +698,13 @@
           return clusterColorCache[cid];
         };
 
+        // Quality coloring lookup (once per viewport)
+        const qInfo = getReconQualityInfo();
+        const qArr = qInfo ? qInfo.arr : null;
+        const qMin = qInfo ? qInfo.min : 0;
+        const qMax = qInfo ? qInfo.max : 1;
+        const qMask = reconQualityMask;
+
         if (!is3DCustom) {
           const ptRad = Math.max(0.5, basePtRad * ptSizeScale);
           const d = ptRad * 2;
@@ -581,6 +718,7 @@
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
                                 (idx < currentFrameIdx);
             if (isProcessed) continue;
+            if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
             let u, v;
             if (currentDim === 2) { u = pt.x; v = pt.y; }
@@ -591,8 +729,12 @@
             const px = cx + (u - view.panX) * scale;
             const py = cy - (v - view.panY) * scale;
 
-            // Color override for dim/density
-            if (typeof pointColorMode !== 'undefined'
+            // Color override: quality > dim/density
+            if (qArr && idx < qArr.length) {
+              ctx.fillStyle = getColorFromRamp(
+                qArr[idx], qMin, qMax, QUALITY_STOPS
+              );
+            } else if (typeof pointColorMode !== 'undefined'
                 && pointColorMode !== 'cluster'
                 && dimDensityResults
                 && dimDensitySummary
@@ -631,6 +773,7 @@
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
                                 (idx < currentFrameIdx);
             if (!isProcessed) continue;
+            if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
             let u, v;
             if (currentDim === 2) { u = pt.x; v = pt.y; }
@@ -642,7 +785,11 @@
             const py = cy - (v - view.panY) * scale;
 
             let fillColor;
-            if (typeof pointColorMode !== 'undefined'
+            if (qArr && idx < qArr.length) {
+              fillColor = getColorFromRamp(
+                qArr[idx], qMin, qMax, QUALITY_STOPS
+              );
+            } else if (typeof pointColorMode !== 'undefined'
                 && pointColorMode !== 'cluster'
                 && dimDensityResults
                 && dimDensitySummary
@@ -694,15 +841,24 @@
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
                                 (idx < currentFrameIdx);
             if (isProcessed) continue;
+            if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
             const pr = project3D(pt.x, pt.y, pt.z, az, el);
             const px = cx + (pr.u - view.panX) * scale;
             const py = cy - (pr.v - view.panY) * scale;
-            const depthFactor = Math.max(0.4, Math.min(2.2, 1.0 + pr.depth * 0.5));
-            const ptRad = Math.max(0.4, basePtRad * depthFactor * ptSizeScale);
+            const depthFactor = Math.max(
+              0.4, Math.min(2.2, 1.0 + pr.depth * 0.5)
+            );
+            const ptRad = Math.max(
+              0.4, basePtRad * depthFactor * ptSizeScale
+            );
 
-            // Color override for dim/density
-            if (typeof pointColorMode !== 'undefined'
+            // Color override: quality > dim/density
+            if (qArr && idx < qArr.length) {
+              ctx.fillStyle = getColorFromRamp(
+                qArr[idx], qMin, qMax, QUALITY_STOPS
+              );
+            } else if (typeof pointColorMode !== 'undefined'
                 && pointColorMode !== 'cluster'
                 && dimDensityResults
                 && dimDensitySummary
@@ -728,7 +884,9 @@
               ctx.fillStyle = fc;
             }
 
-            ctx.fillRect(px - ptRad, py - ptRad, ptRad * 2, ptRad * 2);
+            ctx.fillRect(
+              px - ptRad, py - ptRad, ptRad * 2, ptRad * 2
+            );
             drawnPointsCount++;
           }
 
@@ -741,15 +899,24 @@
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
                                 (idx < currentFrameIdx);
             if (!isProcessed) continue;
+            if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
             const pr = project3D(pt.x, pt.y, pt.z, az, el);
             const px = cx + (pr.u - view.panX) * scale;
             const py = cy - (pr.v - view.panY) * scale;
-            const depthFactor = Math.max(0.4, Math.min(2.2, 1.0 + pr.depth * 0.5));
-            const ptRad = Math.max(0.4, basePtRad * depthFactor * ptSizeScale);
+            const depthFactor = Math.max(
+              0.4, Math.min(2.2, 1.0 + pr.depth * 0.5)
+            );
+            const ptRad = Math.max(
+              0.4, basePtRad * depthFactor * ptSizeScale
+            );
 
             let fillColor;
-            if (typeof pointColorMode !== 'undefined'
+            if (qArr && idx < qArr.length) {
+              fillColor = getColorFromRamp(
+                qArr[idx], qMin, qMax, QUALITY_STOPS
+              );
+            } else if (typeof pointColorMode !== 'undefined'
                 && pointColorMode !== 'cluster'
                 && dimDensityResults
                 && dimDensitySummary
@@ -788,6 +955,45 @@
             );
             drawnPointsCount++;
           }
+        }
+      }
+
+      // Quality color bar legend
+      {
+        const qLegend = getReconQualityInfo();
+        if (qLegend)
+        {
+          const barW = 12, barH = 80;
+          const barX = rect.x + 10;
+          const barY = rect.y + rect.h - barH - 30;
+
+          for (let row = 0; row < barH; row++)
+          {
+            const t = row / (barH - 1);
+            const c = getColorFromRamp(
+              qLegend.min + t * (qLegend.max - qLegend.min),
+              qLegend.min, qLegend.max, QUALITY_STOPS
+            );
+            ctx.fillStyle = c;
+            ctx.fillRect(barX, barY + barH - 1 - row, barW, 1);
+          }
+
+          ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+          ctx.lineWidth = 0.5;
+          ctx.strokeRect(barX, barY, barW, barH);
+
+          ctx.font = '9px monospace';
+          ctx.fillStyle = 'rgba(255,255,255,0.7)';
+          ctx.textAlign = 'left';
+          ctx.fillText(
+            qLegend.max.toFixed(4),
+            barX + barW + 3, barY + 8
+          );
+          ctx.fillText(
+            qLegend.min.toFixed(4),
+            barX + barW + 3, barY + barH
+          );
+          ctx.fillText(qLegend.label, barX, barY - 4);
         }
       }
 
@@ -2372,3 +2578,1235 @@
     }
 
     // =========================================================================
+    //  4-PANEL SYNCHRONIZED RECONSTRUCTION VIEW (A, B, C, D)
+    // =========================================================================
+
+    /**
+     * Helper to retrieve or compute top-k nearest neighbors in Dataset A
+     * for query C[activeQueryIdx]
+     */
+    function getOrComputeKnnNeighbors(activeQueryIdx, k = 10) {
+      const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
+      if (slotD && slotD.reconstructionSourceNeighbors &&
+          slotD.reconstructionSourceNeighbors[activeQueryIdx]) {
+        return slotD.reconstructionSourceNeighbors[activeQueryIdx];
+      }
+      const slotA = (typeof datasetSlots !== 'undefined') ? datasetSlots['A'] : null;
+      const slotC = (typeof datasetSlots !== 'undefined') ? datasetSlots['C'] : null;
+      const ptsA = slotA ? (slotA.benchmarkDataset || slotA.pastSamples) : null;
+      const ptsC = slotC ? (slotC.benchmarkDataset || slotC.pastSamples) : null;
+      if (!ptsA || !ptsC || activeQueryIdx < 0 || activeQueryIdx >= ptsC.length) return [];
+
+      const qc = ptsC[activeQueryIdx];
+      const qx = qc.x, qy = qc.y, qz = (typeof qc.z === 'number') ? qc.z : 0.0;
+      const dimA = slotA.currentDim || 2;
+      const numCandidates = ptsA.length;
+      const effK = Math.min(k, numCandidates);
+
+      const dists = new Float64Array(numCandidates);
+      const indices = new Int32Array(numCandidates);
+      for (let j = 0; j < numCandidates; j++) {
+        const pa = ptsA[j];
+        const dx = qx - pa.x;
+        const dy = qy - pa.y;
+        const dz = (dimA >= 3 && typeof pa.z === 'number') ? (qz - pa.z) : 0.0;
+        dists[j] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        indices[j] = j;
+      }
+
+      for (let p = 0; p < effK; p++) {
+        let minIdx = p;
+        for (let j = p + 1; j < numCandidates; j++) {
+          if (dists[j] < dists[minIdx]) minIdx = j;
+        }
+        const tmpD = dists[p]; dists[p] = dists[minIdx]; dists[minIdx] = tmpD;
+        const tmpI = indices[p]; indices[p] = indices[minIdx]; indices[minIdx] = tmpI;
+      }
+
+      let sumW = 0.0;
+      const weights = new Float64Array(effK);
+      for (let p = 0; p < effK; p++) {
+        const d = dists[p];
+        const w = 1.0 / Math.max(d, 1e-7);
+        weights[p] = w;
+        sumW += w;
+      }
+
+      const result = [];
+      for (let p = 0; p < effK; p++) {
+        result.push({
+          id: indices[p],
+          dist: dists[p],
+          weight: sumW > 0 ? (weights[p] / sumW) : (1.0 / effK)
+        });
+      }
+      return result;
+    }
+
+    /**
+     * Helper to find all queries C_i that include targetTrainingIdx in their k-NN neighbor set
+     */
+    function getOrComputeReverseKnnNeighbors(targetTrainingIdx, k = 10) {
+      const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
+      const slotA = (typeof datasetSlots !== 'undefined') ? datasetSlots['A'] : null;
+      const slotC = (typeof datasetSlots !== 'undefined') ? datasetSlots['C'] : null;
+      const ptsA = slotA ? (slotA.benchmarkDataset || slotA.pastSamples) : null;
+      const ptsC = slotC ? (slotC.benchmarkDataset || slotC.pastSamples) : null;
+
+      if (!ptsA || !ptsC || targetTrainingIdx < 0 || targetTrainingIdx >= ptsA.length) {
+        return [];
+      }
+
+      const results = [];
+      const mapping = (slotD && slotD.reconstructionSourceNeighbors)
+        ? slotD.reconstructionSourceNeighbors : null;
+
+      if (mapping && mapping.length === ptsC.length) {
+        for (let i = 0; i < mapping.length; i++) {
+          const nbs = mapping[i];
+          if (!nbs) continue;
+          for (let r = 0; r < nbs.length; r++) {
+            if (nbs[r].id === targetTrainingIdx) {
+              results.push({
+                queryIdx: i,
+                rank: r + 1,
+                dist: nbs[r].dist,
+                weight: nbs[r].weight
+              });
+              break;
+            }
+          }
+        }
+        return results;
+      }
+
+      // If mapping not precomputed, compute on-demand for queries
+      const numQueries = ptsC.length;
+      for (let i = 0; i < numQueries; i++) {
+        const nbs = getOrComputeKnnNeighbors(i, k);
+        for (let r = 0; r < nbs.length; r++) {
+          if (nbs[r].id === targetTrainingIdx) {
+            results.push({
+              queryIdx: i,
+              rank: r + 1,
+              dist: nbs[r].dist,
+              weight: nbs[r].weight
+            });
+            break;
+          }
+        }
+      }
+      return results;
+    }
+
+    /**
+     * Retrieves computed k-NN neighbors for a given sample in dataset slot A or B.
+     */
+    function getSlotKnnNeighbors(slotId, pointIdx) {
+      const slot = datasetSlots[slotId];
+      const knn = (slot && slot.knnResults) ? slot.knnResults
+        : (activeDatasetSlot === slotId && typeof knnResults !== 'undefined' ? knnResults : null);
+      if (!knn || pointIdx < 0) return null;
+      const k = knn.k || (slot ? slot.knnK : 10) || (typeof knnK !== 'undefined' ? knnK : 10);
+
+      if (knn.indices && knn.indices.length >= (pointIdx + 1) * k) {
+        const neighbors = [];
+        for (let r = 0; r < k; r++) {
+          const idx = knn.indices[pointIdx * k + r];
+          const dist = (knn.distances && knn.distances.length > pointIdx * k + r)
+            ? knn.distances[pointIdx * k + r] : 0.0;
+          if (idx >= 0) {
+            neighbors.push({ index: idx, dist: dist, rank: r + 1 });
+          }
+        }
+        return neighbors;
+      }
+      if (knn.queries && knn.queries[pointIdx] && knn.queries[pointIdx].neighbors) {
+        return knn.queries[pointIdx].neighbors.map((n, r) => ({
+          index: (typeof n === 'number') ? n : n.index,
+          dist: (typeof n === 'number') ? 0.0 : (n.dist || 0.0),
+          rank: r + 1
+        }));
+      }
+      if (Array.isArray(knn) && knn[pointIdx] && knn[pointIdx].neighbors) {
+        return knn[pointIdx].neighbors.map((n, r) => ({
+          index: (typeof n === 'number') ? n : n.index,
+          dist: (typeof n === 'number') ? 0.0 : (n.dist || 0.0),
+          rank: r + 1
+        }));
+      }
+      return null;
+    }
+
+    /**
+     * Renders the 4-Panel Synchronized Reconstruction View:
+     * Panel 0 (Top-Left): Slot A (Training Input)
+     * Panel 1 (Top-Right): Slot B (Training Output)
+     * Panel 2 (Bottom-Left): Slot C (Query Input)
+     * Panel 3 (Bottom-Right): Slot D (Reconstructed Output)
+     */
+    function drawRecon4PanelView(ctx, W, H) {
+      const halfW = W / 2;
+      const halfH = H / 2;
+      const quadRects = [
+        { x: 0, y: 0, w: halfW, h: halfH, slotId: 'A', name: 'Training Input [A]',
+          color: '#38bdf8' },
+        { x: halfW, y: 0, w: halfW, h: halfH, slotId: 'B', name: 'Training Output [B]',
+          color: '#4ade80' },
+        { x: 0, y: halfH, w: halfW, h: halfH, slotId: 'C', name: 'Query Input [C]',
+          color: '#fbbf24' },
+        { x: halfW, y: halfH, w: halfW, h: halfH, slotId: 'D', name: 'Reconstructed Output [D]',
+          color: '#c084fc' }
+      ];
+
+      const activeTrainingIdx = (typeof reconLockedTrainingIdx !== 'undefined' &&
+        reconLockedTrainingIdx >= 0) ? reconLockedTrainingIdx
+        : (typeof reconHoveredTrainingIdx !== 'undefined' ? reconHoveredTrainingIdx : -1);
+
+      const activeTrainingSlot = (typeof reconLockedTrainingIdx !== 'undefined' &&
+        reconLockedTrainingIdx >= 0)
+        ? (typeof reconLockedTrainingSlot !== 'undefined' ? reconLockedTrainingSlot : 'A')
+        : (typeof reconHoveredTrainingSlot !== 'undefined' ? reconHoveredTrainingSlot : 'A');
+
+      const activeQueryIdx = (typeof reconLockedQueryIdx !== 'undefined' &&
+        reconLockedQueryIdx >= 0) ? reconLockedQueryIdx
+        : (typeof reconHoveredQueryIdx !== 'undefined' ? reconHoveredQueryIdx : -1);
+
+      const slotD = datasetSlots['D'];
+      const k = (slotD && slotD.reconstructionInfo)
+        ? slotD.reconstructionInfo.k : (typeof knnK !== 'undefined' ? knnK : 10);
+
+      // 1. Render Each Quadrant Content
+      for (let q = 0; q < 4; q++) {
+        const qConfig = quadRects[q];
+        const rect = { x: qConfig.x, y: qConfig.y, w: qConfig.w, h: qConfig.h };
+        const slot = datasetSlots[qConfig.slotId];
+        const pts = slot ? (slot.benchmarkDataset || slot.pastSamples || []) : [];
+        const is3D = (slot && slot.currentDim === 3);
+
+        const isInputSpace = (q === 0 || q === 2);
+        const activeView = isInputSpace ? quadViews[0] : quadViews[1];
+        const activePanX = activeView ? (activeView.panX || 0) : 0;
+        const activePanY = activeView ? (activeView.panY || 0) : 0;
+        const activeZoom = activeView ? (activeView.zoom || 1.0) : 1.0;
+        const activeCam = isInputSpace
+          ? (typeof reconInputCamera !== 'undefined' ? reconInputCamera : orbitCamera)
+          : (typeof reconOutputCamera !== 'undefined' ? reconOutputCamera : orbitCamera);
+
+        const az = activeCam.azimuth;
+        const el = activeCam.elevation;
+        const scale = (Math.min(rect.w, rect.h) / 2.35) * activeZoom;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(rect.x, rect.y, rect.w, rect.h);
+        ctx.clip();
+
+        // Project coordinate function for this quadrant
+        function projectPt(p) {
+          if (is3D) {
+            let tx = 0, ty = 0, tz = 0;
+            if (activeCam && activeCam.isLocked) {
+              tx = activeCam.targetX || 0;
+              ty = activeCam.targetY || 0;
+              tz = activeCam.targetZ || 0;
+            }
+            return project3DVector(p.x - tx, p.y - ty, (p.z || 0.0) - tz, az, el);
+          }
+          return { u: p.x, v: p.y, depth: p.z || 0.0 };
+        }
+
+        function mapToScreen(pr) {
+          const cx = rect.x + rect.w / 2;
+          const cy = rect.y + rect.h / 2;
+          return {
+            px: cx + (pr.u - activePanX) * scale,
+            py: cy - (pr.v - activePanY) * scale
+          };
+        }
+
+        // A. Grid & Axes
+        if (showGridAxes) {
+          if (!is3D) {
+            // 2D Axes & Circles
+            const center = mapToScreen({ u: 0, v: 0 });
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(rect.x, center.py); ctx.lineTo(rect.x + rect.w, center.py);
+            ctx.moveTo(center.px, rect.y); ctx.lineTo(center.px, rect.y + rect.h);
+            ctx.stroke();
+
+            ctx.strokeStyle = '#172554';
+            ctx.setLineDash([2, 4]);
+            [0.5, 0.85].forEach(rad => {
+              ctx.beginPath();
+              ctx.arc(center.px, center.py, rad * scale, 0, Math.PI * 2);
+              ctx.stroke();
+            });
+            ctx.setLineDash([]);
+          } else {
+            // 3D Bounding Box & Grid Floor
+            const b = 0.85;
+            const boxCorners = [
+              {x:-b, y:-b, z:-b}, {x: b, y:-b, z:-b}, {x: b, y: b, z:-b}, {x:-b, y: b, z:-b},
+              {x:-b, y:-b, z: b}, {x: b, y:-b, z: b}, {x: b, y: b, z: b}, {x:-b, y: b, z: b}
+            ];
+            const boxPx = boxCorners.map(pt => mapToScreen(projectPt(pt)));
+
+            ctx.strokeStyle = 'rgba(30, 41, 59, 0.6)';
+            ctx.lineWidth = 1;
+            [-0.85, -0.425, 0, 0.425, 0.85].forEach(val => {
+              const p1 = mapToScreen(projectPt({ x: val, y: -b, z: -b }));
+              const p2 = mapToScreen(projectPt({ x: val, y:  b, z: -b }));
+              ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(p2.px, p2.py); ctx.stroke();
+              const p3 = mapToScreen(projectPt({ x: -b, y: val, z: -b }));
+              const p4 = mapToScreen(projectPt({ x:  b, y: val, z: -b }));
+              ctx.beginPath(); ctx.moveTo(p3.px, p3.py); ctx.lineTo(p4.px, p4.py); ctx.stroke();
+            });
+
+            const edges = [
+              [0,1],[1,2],[2,3],[3,0],
+              [4,5],[5,6],[6,7],[7,4],
+              [0,4],[1,5],[2,6],[3,7]
+            ];
+            ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+            ctx.setLineDash([2, 3]);
+            edges.forEach(([i, j]) => {
+              ctx.beginPath();
+              ctx.moveTo(boxPx[i].px, boxPx[i].py);
+              ctx.lineTo(boxPx[j].px, boxPx[j].py);
+              ctx.stroke();
+            });
+            ctx.setLineDash([]);
+          }
+        }
+
+        // B. Point Cloud Drawing
+        if (pts && pts.length > 0) {
+          const numPts = pts.length;
+          const step = numPts > 10000 ? Math.ceil(numPts / 10000) : 1;
+          const ptRad = Math.max(1.0, samplePointSize * 0.9);
+
+          // Check for quality coloring and filtering in C and D
+          const qualArr = (q === 2 && slot.reconKthDist) ? slot.reconKthDist
+                        : (q === 3 && slot.reconVariance) ? slot.reconVariance : null;
+          const qualMin = (q === 2) ? slot.reconKthDistMin : (q === 3) ? slot.reconVarianceMin : 0;
+          const qualMax = (q === 2) ? slot.reconKthDistMax : (q === 3) ? slot.reconVarianceMax : 1;
+          const qMask = (q === 2 || q === 3)
+            ? (slot.reconQualityMask || (q === 2 ? datasetSlots['C'].reconQualityMask
+                                                 : datasetSlots['D'].reconQualityMask)
+                                     || reconQualityMask)
+            : null;
+
+          // Compute set of active highlight neighbor indices for this quadrant
+          let activeNeighborSet = null;
+          let isFocusMode = false;
+          let primaryFocusedIdx = -1;
+          const isKnnActive = (typeof showReconKnn === 'undefined' || showReconKnn);
+
+          if (isKnnActive) {
+            if (activeTrainingIdx >= 0) {
+              isFocusMode = true;
+              primaryFocusedIdx = activeTrainingIdx;
+              if (q === 0 || q === 1) {
+                activeNeighborSet = new Set();
+                activeNeighborSet.add(activeTrainingIdx);
+                const nbs = getSlotKnnNeighbors(activeTrainingSlot, activeTrainingIdx);
+                if (nbs) {
+                  for (let r = 0; r < nbs.length; r++) {
+                    activeNeighborSet.add(nbs[r].index);
+                  }
+                }
+              } else if (q === 2 || q === 3) {
+                const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
+                if (revQueries && revQueries.length > 0) {
+                  activeNeighborSet = new Set();
+                  for (let r = 0; r < revQueries.length; r++) {
+                    activeNeighborSet.add(revQueries[r].queryIdx);
+                  }
+                }
+              }
+            } else if (activeQueryIdx >= 0) {
+              isFocusMode = true;
+              primaryFocusedIdx = activeQueryIdx;
+              if (q === 2 || q === 3) {
+                activeNeighborSet = new Set();
+                activeNeighborSet.add(activeQueryIdx);
+              } else if (q === 0 || q === 1) {
+                const nbs = getOrComputeKnnNeighbors(activeQueryIdx, k);
+                if (nbs) {
+                  activeNeighborSet = new Set();
+                  for (let r = 0; r < nbs.length; r++) {
+                    activeNeighborSet.add(nbs[r].id);
+                  }
+                }
+              }
+            }
+          }
+
+          // Pass 1: Render background / non-neighbor points (faded grey when in focus mode)
+          for (let i = 0; i < numPts; i += step) {
+            if (reconQualityThreshold < 1.0 && qMask && i < qMask.length && !qMask[i]) {
+              continue;
+            }
+
+            const isNeighbor = activeNeighborSet && activeNeighborSet.has(i);
+            if (isFocusMode && isNeighbor) {
+              // Rendered in Pass 2 on top
+              continue;
+            }
+
+            const p = pts[i];
+            const pr = projectPt(p);
+            const pos = mapToScreen(pr);
+
+            if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 ||
+                pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) {
+              continue;
+            }
+
+            let pCol = qConfig.color;
+            let pAlpha = 0.55;
+
+            if (isFocusMode) {
+              pCol = '#64748b';
+              pAlpha = 0.18;
+            } else if (reconQualityColoringEnabled && qualArr && i < qualArr.length) {
+              pCol = getColorFromRamp(qualArr[i], qualMin, qualMax, QUALITY_STOPS);
+              pAlpha = 0.85;
+            }
+
+            ctx.fillStyle = pCol;
+            ctx.globalAlpha = pAlpha;
+            ctx.beginPath();
+            ctx.arc(pos.px, pos.py, ptRad, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Pass 2: Render active k-NN neighbor points bright on top
+          if (isFocusMode && activeNeighborSet && activeNeighborSet.size > 0) {
+            for (const i of activeNeighborSet) {
+              if (i < 0 || i >= numPts) continue;
+              if (reconQualityThreshold < 1.0 && qMask && i < qMask.length && !qMask[i]) {
+                continue;
+              }
+
+              const p = pts[i];
+              const pr = projectPt(p);
+              const pos = mapToScreen(pr);
+
+              if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 ||
+                  pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) {
+                continue;
+              }
+
+              const isAnchor = (i === primaryFocusedIdx);
+              let pCol = qConfig.color;
+              if (q === 0) pCol = isAnchor ? '#38bdf8' : '#7dd3fc';
+              else if (q === 1) pCol = isAnchor ? '#4ade80' : '#86efac';
+              else if (q === 2) pCol = isAnchor ? '#fbbf24' : '#fde68a';
+              else if (q === 3) pCol = isAnchor ? '#c084fc' : '#e9d5ff';
+
+              const rad = isAnchor ? ptRad * 1.8 : ptRad * 1.35;
+              ctx.fillStyle = pCol;
+              ctx.globalAlpha = 1.0;
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rad, 0, Math.PI * 2);
+              ctx.fill();
+
+              ctx.strokeStyle = pCol;
+              ctx.lineWidth = 1.0;
+              ctx.beginPath();
+              ctx.arc(pos.px, pos.py, rad + 1.5, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+          }
+          ctx.globalAlpha = 1.0;
+        }
+
+        // C. Quadrant Header HUD
+        ctx.save();
+        const ptCount = pts ? pts.length : 0;
+        const dimStr = is3D ? '3D' : '2D';
+        const benchName = (slot && slot.stagedDatasetInfo && slot.stagedDatasetInfo.name)
+          ? slot.stagedDatasetInfo.name
+          : (slot ? (slot.benchmarkKey || 'None') : 'None');
+
+        const qHudMask = (q === 2 || q === 3)
+          ? (slot.reconQualityMask || (q === 2 ? datasetSlots['C'].reconQualityMask
+                                               : datasetSlots['D'].reconQualityMask)
+                                   || reconQualityMask)
+          : null;
+        let countText = `${ptCount.toLocaleString()} pts (${dimStr})`;
+        if ((q === 2 || q === 3) && reconQualityThreshold < 1.0 && qHudMask) {
+          let visibleCount = 0;
+          for (let i = 0; i < qHudMask.length; i++) {
+            if (qHudMask[i]) visibleCount++;
+          }
+          const visStr = visibleCount.toLocaleString();
+          const totStr = ptCount.toLocaleString();
+          countText = `${visStr}/${totStr} pts (${dimStr})`;
+        }
+
+        // Top-left slot identifier pill
+        const slotPillW = 20;
+        const slotPillH = 16;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.strokeStyle = qConfig.color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect(rect.x + 8, rect.y + 8, slotPillW, slotPillH, 3);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = qConfig.color;
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(qConfig.slotId, rect.x + 8 + slotPillW / 2, rect.y + 8 + slotPillH / 2);
+
+        // Title and stats
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillText(qConfig.name, rect.x + 34, rect.y + 15);
+
+        ctx.font = '9px monospace';
+        ctx.fillStyle = 'var(--text-muted, #94a3b8)';
+        ctx.fillText(`${benchName} • ${countText}`, rect.x + 34, rect.y + 26);
+
+        // Top-right status / hint
+        ctx.textAlign = 'right';
+        if (q === 0) {
+          if (activeTrainingIdx >= 0) {
+            const isLocked = (typeof reconLockedTrainingIdx !== 'undefined' &&
+              reconLockedTrainingIdx >= 0);
+            const knnA = getSlotKnnNeighbors('A', activeTrainingIdx);
+            const knnB = (activeTrainingSlot === 'B')
+              ? getSlotKnnNeighbors('B', activeTrainingIdx) : null;
+            ctx.fillStyle = isLocked ? '#38bdf8' : '#94a3b8';
+            let hText = isLocked ? `🔒 PINNED #${activeTrainingIdx}`
+              : `Sample #${activeTrainingIdx}`;
+            if (activeTrainingSlot === 'A' && knnA && knnA.length > 0) {
+              hText = `${isLocked ? '🔒 ' : ''}k-NN #${activeTrainingIdx} (${knnA.length} NNs in A)`;
+            } else if (activeTrainingSlot === 'B' && knnB && knnB.length > 0) {
+              hText = `Mapped #${activeTrainingIdx} & ${knnB.length} NNs from [B]`;
+            }
+            ctx.fillText(hText, rect.x + rect.w - 10, rect.y + 15);
+          } else {
+            ctx.fillStyle = '#38bdf8';
+            ctx.font = '9px -apple-system, sans-serif';
+            ctx.fillText('k-NN Neighbors', rect.x + rect.w - 10, rect.y + 15);
+          }
+        } else if (q === 1) {
+          if (activeTrainingIdx >= 0) {
+            const isLocked = (typeof reconLockedTrainingIdx !== 'undefined' &&
+              reconLockedTrainingIdx >= 0);
+            const knnB = getSlotKnnNeighbors('B', activeTrainingIdx);
+            const knnA = (activeTrainingSlot === 'A')
+              ? getSlotKnnNeighbors('A', activeTrainingIdx) : null;
+            ctx.fillStyle = isLocked ? '#4ade80' : '#94a3b8';
+            let hText = isLocked ? `🔒 PINNED #${activeTrainingIdx}`
+              : `Counterpart #${activeTrainingIdx}`;
+            if (activeTrainingSlot === 'B' && knnB && knnB.length > 0) {
+              hText = `${isLocked ? '🔒 ' : ''}k-NN #${activeTrainingIdx} (${knnB.length} NNs in B)`;
+            } else if (activeTrainingSlot === 'A' && knnA && knnA.length > 0) {
+              hText = `Mapped #${activeTrainingIdx} & ${knnA.length} NNs from [A]`;
+            }
+            ctx.fillText(hText, rect.x + rect.w - 10, rect.y + 15);
+          } else {
+            ctx.fillStyle = '#4ade80';
+            ctx.font = '9px -apple-system, sans-serif';
+            ctx.fillText('Weighted Contribution', rect.x + rect.w - 10, rect.y + 15);
+          }
+        } else if (q === 2) {
+          if (activeTrainingIdx >= 0) {
+            const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
+            ctx.fillStyle = '#fbbf24';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText(`${revQueries.length} queries use A[${activeTrainingIdx}]`,
+              rect.x + rect.w - 10, rect.y + 15);
+          } else {
+            const isLocked = (activeQueryIdx >= 0 && typeof reconLockedQueryIdx !== 'undefined' &&
+              reconLockedQueryIdx >= 0);
+            ctx.fillStyle = isLocked ? '#fbbf24' : '#94a3b8';
+            ctx.font = isLocked ? 'bold 9px monospace' : '9px -apple-system, sans-serif';
+            const hintText = isLocked
+              ? `🔒 PINNED #${activeQueryIdx}` : '🔍 Hover query to inspect';
+            ctx.fillText(hintText, rect.x + rect.w - 10, rect.y + 15);
+          }
+        } else if (q === 3) {
+          if (activeTrainingIdx >= 0) {
+            const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
+            ctx.fillStyle = '#c084fc';
+            ctx.font = '9px monospace';
+            ctx.fillText(`Influences ${revQueries.length} outputs`,
+              rect.x + rect.w - 10, rect.y + 15);
+          } else {
+            const info = datasetSlots.D ? datasetSlots.D.reconstructionInfo : null;
+            ctx.fillStyle = info ? '#c084fc' : '#94a3b8';
+            ctx.font = '9px monospace';
+            const dText = info ? `k=${info.k} • ${info.weightMode}` : 'Slot D';
+            ctx.fillText(dText, rect.x + rect.w - 10, rect.y + 15);
+          }
+        }
+
+        ctx.restore();
+        ctx.restore(); // restore clip
+      }
+
+      // 2. Synchronized 4-Panel Highlight Overlays
+      if (activeTrainingIdx >= 0 || activeQueryIdx >= 0) {
+        renderRecon4PanelHighlights(
+          ctx, W, H, quadRects, activeQueryIdx, activeTrainingIdx, activeTrainingSlot
+        );
+      }
+
+      // 3. Viewport Divider Lines
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(halfW, 0); ctx.lineTo(halfW, H);
+      ctx.moveTo(0, halfH); ctx.lineTo(W, halfH);
+      ctx.stroke();
+    }
+
+    /**
+     * Cross-quadrant synchronized highlighting for k-NN reconstruction
+     */
+    function renderRecon4PanelHighlights(
+      ctx, W, H, quadRects, activeQueryIdx, activeTrainingIdx = -1, activeTrainingSlot = 'A'
+    ) {
+      if (typeof showReconKnn !== 'undefined' && !showReconKnn) return;
+
+      const slotA = datasetSlots['A'];
+      const slotB = datasetSlots['B'];
+      const slotC = datasetSlots['C'];
+      const slotD = datasetSlots['D'];
+
+      const ptsA = slotA ? (slotA.benchmarkDataset || slotA.pastSamples) : null;
+      const ptsB = slotB ? (slotB.benchmarkDataset || slotB.pastSamples) : null;
+      const ptsC = slotC ? (slotC.benchmarkDataset || slotC.pastSamples) : null;
+      const ptsD = slotD ? (slotD.benchmarkDataset || slotD.pastSamples) : null;
+
+      const dimA = slotA ? (slotA.currentDim || 2) : 2;
+      const dimB = slotB ? (slotB.currentDim || 2) : 2;
+      const dimC = slotC ? (slotC.currentDim || 2) : 2;
+      const dimD = slotD ? (slotD.currentDim || 2) : 2;
+
+      const k = (slotD && slotD.reconstructionInfo)
+        ? slotD.reconstructionInfo.k : (typeof knnK !== 'undefined' ? knnK : 10);
+
+      function mapPt(p, rect, is3D, isInputSpace) {
+        const activeView = isInputSpace ? quadViews[0] : quadViews[1];
+        const activePanX = activeView ? (activeView.panX || 0) : 0;
+        const activePanY = activeView ? (activeView.panY || 0) : 0;
+        const activeZoom = activeView ? (activeView.zoom || 1.0) : 1.0;
+        const activeCam = isInputSpace
+          ? (typeof reconInputCamera !== 'undefined' ? reconInputCamera : orbitCamera)
+          : (typeof reconOutputCamera !== 'undefined' ? reconOutputCamera : orbitCamera);
+
+        const scale = (Math.min(rect.w, rect.h) / 2.35) * activeZoom;
+        const cx = rect.x + rect.w / 2;
+        const cy = rect.y + rect.h / 2;
+        let u = p.x, v = p.y;
+        if (is3D) {
+          let tx = 0, ty = 0, tz = 0;
+          if (activeCam && activeCam.isLocked) {
+            tx = activeCam.targetX || 0;
+            ty = activeCam.targetY || 0;
+            tz = activeCam.targetZ || 0;
+          }
+          const pr = project3DVector(
+            p.x - tx, p.y - ty, (p.z || 0.0) - tz, activeCam.azimuth, activeCam.elevation
+          );
+          u = pr.u;
+          v = pr.v;
+        }
+        return {
+          px: cx + (u - activePanX) * scale,
+          py: cy - (v - activePanY) * scale
+        };
+      }
+
+      function drawPillBadge(px, py, text, color, rect, offsetY = -16) {
+        ctx.font = 'bold 9px monospace';
+        const tw = ctx.measureText(text).width;
+        const pw = tw + 8;
+        const ph = 14;
+        const clX = Math.max(rect.x + 4, Math.min(rect.x + rect.w - pw - 4, px - pw / 2));
+        const clY = Math.max(rect.y + 4, Math.min(rect.y + rect.h - ph - 4, py + offsetY));
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.0;
+        ctx.beginPath();
+        ctx.roundRect(clX, clY, pw, ph, 3);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = color;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, clX + pw / 2, clY + ph / 2 + 0.5);
+      }
+
+      // =======================================================================
+      // MODE A: Training Point Hovered / Locked (Panel A / B) -> k-NN in A/B
+      // =======================================================================
+      if (activeTrainingIdx >= 0) {
+        const isFromA = (activeTrainingSlot === 'A');
+        const primSlotId = isFromA ? 'A' : 'B';
+        const otherSlotId = isFromA ? 'B' : 'A';
+        const primRect = isFromA ? quadRects[0] : quadRects[1];
+        const otherRect = isFromA ? quadRects[1] : quadRects[0];
+        const primPts = isFromA ? ptsA : ptsB;
+        const otherPts = isFromA ? ptsB : ptsA;
+        const primDim = isFromA ? dimA : dimB;
+        const otherDim = isFromA ? dimB : dimA;
+        const primColor = isFromA ? '#38bdf8' : '#4ade80';
+        const otherColor = isFromA ? '#4ade80' : '#38bdf8';
+        const isPrimInput = isFromA;
+        const isOtherInput = !isFromA;
+
+        if (primPts && activeTrainingIdx < primPts.length) {
+          const pPrim = primPts[activeTrainingIdx];
+          const pOther = (otherPts && activeTrainingIdx < otherPts.length)
+            ? otherPts[activeTrainingIdx] : null;
+          const knnNbs = getSlotKnnNeighbors(primSlotId, activeTrainingIdx);
+          const revQueries = isFromA
+            ? getOrComputeReverseKnnNeighbors(activeTrainingIdx, k)
+            : [];
+
+          // --- 1. Primary Panel Highlight (A if hovered A, B if hovered B) ---
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(primRect.x, primRect.y, primRect.w, primRect.h);
+          ctx.clip();
+
+          const posPrim = mapPt(pPrim, primRect, primDim === 3, isPrimInput);
+
+          // Pulse & Outer target circle
+          ctx.beginPath();
+          ctx.arc(posPrim.px, posPrim.py, 14, 0, Math.PI * 2);
+          ctx.fillStyle = isFromA ? 'rgba(56, 189, 248, 0.25)' : 'rgba(74, 222, 128, 0.25)';
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(posPrim.px, posPrim.py, 8, 0, Math.PI * 2);
+          ctx.strokeStyle = primColor;
+          ctx.lineWidth = 2.0;
+          ctx.stroke();
+
+          // Crosshairs
+          ctx.beginPath();
+          ctx.moveTo(posPrim.px - 14, posPrim.py); ctx.lineTo(posPrim.px + 14, posPrim.py);
+          ctx.moveTo(posPrim.px, posPrim.py - 14); ctx.lineTo(posPrim.px, posPrim.py + 14);
+          ctx.strokeStyle = isFromA ? 'rgba(56, 189, 248, 0.85)' : 'rgba(74, 222, 128, 0.85)';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          // Center solid point
+          ctx.beginPath();
+          ctx.arc(posPrim.px, posPrim.py, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = primColor;
+          ctx.fill();
+
+          // Draw k-NN neighbor rays & markers if dataset has been k-NNed
+          if (knnNbs && knnNbs.length > 0) {
+            for (let r = 0; r < knnNbs.length; r++) {
+              const nb = knnNbs[r];
+              const nbIdx = nb.index;
+              if (nbIdx < 0 || nbIdx >= primPts.length) continue;
+              const pNb = primPts[nbIdx];
+              const posNb = mapPt(pNb, primRect, primDim === 3, isPrimInput);
+              const isTop1 = (nb.rank === 1);
+
+              // Connecting Ray
+              ctx.beginPath();
+              ctx.moveTo(posPrim.px, posPrim.py);
+              ctx.lineTo(posNb.px, posNb.py);
+              ctx.strokeStyle = isTop1 ? '#4ade80' : (isFromA ? 'rgba(56, 189, 248, 0.75)'
+                                                             : 'rgba(192, 132, 252, 0.75)');
+              ctx.lineWidth = isTop1 ? 2.0 : 1.2;
+              if (!isTop1) ctx.setLineDash([3, 3]);
+              ctx.stroke();
+              ctx.setLineDash([]);
+
+              // Neighbor ring
+              ctx.beginPath();
+              ctx.arc(posNb.px, posNb.py, isTop1 ? 7.5 : 5.0, 0, Math.PI * 2);
+              ctx.strokeStyle = isTop1 ? '#4ade80' : primColor;
+              ctx.lineWidth = isTop1 ? 2.0 : 1.4;
+              ctx.stroke();
+
+              // Neighbor center dot
+              ctx.beginPath();
+              ctx.arc(posNb.px, posNb.py, 2.5, 0, Math.PI * 2);
+              ctx.fillStyle = isTop1 ? '#4ade80' : primColor;
+              ctx.fill();
+            }
+          }
+
+          const coordStrPrim = (primDim === 3 && typeof pPrim.z === 'number')
+            ? `(${pPrim.x.toFixed(2)}, ${pPrim.y.toFixed(2)}, ${pPrim.z.toFixed(2)})`
+            : `(${pPrim.x.toFixed(2)}, ${pPrim.y.toFixed(2)})`;
+          const primTag = (knnNbs && knnNbs.length > 0)
+            ? `[${primSlotId}] #${activeTrainingIdx} (k=${knnNbs.length})`
+            : `[${primSlotId}] #${activeTrainingIdx}`;
+          drawPillBadge(
+            posPrim.px, posPrim.py, `${primTag} ${coordStrPrim}`,
+            primColor, primRect, -20
+          );
+          ctx.restore();
+
+          // --- 2. Counterpart Panel Highlight (B if hovered A, A if hovered B) ---
+          if (pOther) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(otherRect.x, otherRect.y, otherRect.w, otherRect.h);
+            ctx.clip();
+
+            const posOther = mapPt(pOther, otherRect, otherDim === 3, isOtherInput);
+
+            ctx.beginPath();
+            ctx.arc(posOther.px, posOther.py, 14, 0, Math.PI * 2);
+            ctx.fillStyle = isFromA ? 'rgba(74, 222, 128, 0.25)' : 'rgba(56, 189, 248, 0.25)';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(posOther.px, posOther.py, 8, 0, Math.PI * 2);
+            ctx.strokeStyle = otherColor;
+            ctx.lineWidth = 2.0;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(posOther.px - 14, posOther.py); ctx.lineTo(posOther.px + 14, posOther.py);
+            ctx.moveTo(posOther.px, posOther.py - 14); ctx.lineTo(posOther.px, posOther.py + 14);
+            ctx.strokeStyle = isFromA ? 'rgba(74, 222, 128, 0.85)' : 'rgba(56, 189, 248, 0.85)';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(posOther.px, posOther.py, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = otherColor;
+            ctx.fill();
+
+            // Also show corresponding k-NN neighbor points in the other panel!
+            if (knnNbs && knnNbs.length > 0 && otherPts) {
+              for (let r = 0; r < knnNbs.length; r++) {
+                const nb = knnNbs[r];
+                const nbIdx = nb.index;
+                if (nbIdx < 0 || nbIdx >= otherPts.length) continue;
+                const pOtherNb = otherPts[nbIdx];
+                const posOtherNb = mapPt(pOtherNb, otherRect, otherDim === 3, isOtherInput);
+                const isTop1 = (nb.rank === 1);
+
+                // Connecting Ray in Counterpart Panel
+                ctx.beginPath();
+                ctx.moveTo(posOther.px, posOther.py);
+                ctx.lineTo(posOtherNb.px, posOtherNb.py);
+                ctx.strokeStyle = isTop1 ? '#4ade80' : (isFromA ? 'rgba(74, 222, 128, 0.75)'
+                                                               : 'rgba(56, 189, 248, 0.75)');
+                ctx.lineWidth = isTop1 ? 2.0 : 1.2;
+                if (!isTop1) ctx.setLineDash([3, 3]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Counterpart neighbor ring
+                ctx.beginPath();
+                ctx.arc(posOtherNb.px, posOtherNb.py, isTop1 ? 7.5 : 5.0, 0, Math.PI * 2);
+                ctx.strokeStyle = isTop1 ? '#4ade80' : otherColor;
+                ctx.lineWidth = isTop1 ? 2.0 : 1.4;
+                ctx.stroke();
+
+                // Counterpart neighbor center dot
+                ctx.beginPath();
+                ctx.arc(posOtherNb.px, posOtherNb.py, 2.5, 0, Math.PI * 2);
+                ctx.fillStyle = isTop1 ? '#4ade80' : otherColor;
+                ctx.fill();
+              }
+            }
+
+            const coordStrOther = (otherDim === 3 && typeof pOther.z === 'number')
+              ? `(${pOther.x.toFixed(2)}, ${pOther.y.toFixed(2)}, ${pOther.z.toFixed(2)})`
+              : `(${pOther.x.toFixed(2)}, ${pOther.y.toFixed(2)})`;
+            const otherTag = (knnNbs && knnNbs.length > 0)
+              ? `Mapped [${otherSlotId}] #${activeTrainingIdx}`
+              : `Counterpart #${activeTrainingIdx}`;
+            drawPillBadge(
+              posOther.px, posOther.py, `${otherTag} ${coordStrOther}`,
+              otherColor, otherRect, -20
+            );
+            ctx.restore();
+          }
+
+          // --- 3. Panel C (Bottom-Left): Reverse k-NN Queries C_i (if hovering A) ---
+          const rectC = quadRects[2];
+          if (isFromA && ptsC && revQueries.length > 0) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(rectC.x, rectC.y, rectC.w, rectC.h);
+            ctx.clip();
+
+            // Draw Ghost A[j] in Panel C
+            const posA_in_C = mapPt(pPrim, rectC, dimC === 3, true);
+
+            ctx.beginPath();
+            ctx.arc(posA_in_C.px, posA_in_C.py, 7, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+            ctx.setLineDash([3, 3]);
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.beginPath();
+            ctx.moveTo(posA_in_C.px - 10, posA_in_C.py);
+            ctx.lineTo(posA_in_C.px + 10, posA_in_C.py);
+            ctx.moveTo(posA_in_C.px, posA_in_C.py - 10);
+            ctx.lineTo(posA_in_C.px, posA_in_C.py + 10);
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+            ctx.lineWidth = 1.0;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(posA_in_C.px, posA_in_C.py, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fill();
+
+            // Connect each reverse query C_i
+            for (let p = 0; p < revQueries.length; p++) {
+              const item = revQueries[p];
+              const qIdx = item.queryIdx;
+              if (qIdx < 0 || qIdx >= ptsC.length) continue;
+
+              const qc = ptsC[qIdx];
+              const posQc = mapPt(qc, rectC, dimC === 3, true);
+              const isTop1 = (item.rank === 1);
+
+              ctx.beginPath();
+              ctx.moveTo(posA_in_C.px, posA_in_C.py);
+              ctx.lineTo(posQc.px, posQc.py);
+              ctx.strokeStyle = isTop1 ? '#4ade80' : 'rgba(251, 191, 36, 0.7)';
+              ctx.lineWidth = isTop1 ? 2.0 : 1.1;
+              if (!isTop1) ctx.setLineDash([3, 3]);
+              ctx.stroke();
+              ctx.setLineDash([]);
+
+              ctx.beginPath();
+              ctx.arc(posQc.px, posQc.py, isTop1 ? 7.5 : 5.0, 0, Math.PI * 2);
+              ctx.strokeStyle = isTop1 ? '#4ade80' : '#fbbf24';
+              ctx.lineWidth = isTop1 ? 2.0 : 1.4;
+              ctx.stroke();
+
+              ctx.beginPath();
+              ctx.arc(posQc.px, posQc.py, 2.5, 0, Math.PI * 2);
+              ctx.fillStyle = isTop1 ? '#4ade80' : '#fbbf24';
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+
+          // --- 4. Panel D (Bottom-Right): Reconstructed Outputs D_i Influenced by B[j] ---
+          const rectD = quadRects[3];
+          if (isFromA && ptsD && pOther && revQueries.length > 0) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(rectD.x, rectD.y, rectD.w, rectD.h);
+            ctx.clip();
+
+            // Draw Ghost B[j] in Panel D
+            const posB_in_D = mapPt(pOther, rectD, dimD === 3, false);
+
+            ctx.beginPath();
+            ctx.arc(posB_in_D.px, posB_in_D.py, 7, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(74, 222, 128, 0.85)';
+            ctx.setLineDash([3, 3]);
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.beginPath();
+            ctx.moveTo(posB_in_D.px - 10, posB_in_D.py);
+            ctx.lineTo(posB_in_D.px + 10, posB_in_D.py);
+            ctx.moveTo(posB_in_D.px, posB_in_D.py - 10);
+            ctx.lineTo(posB_in_D.px, posB_in_D.py + 10);
+            ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
+            ctx.lineWidth = 1.0;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(posB_in_D.px, posB_in_D.py, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#4ade80';
+            ctx.fill();
+
+            for (let p = 0; p < revQueries.length; p++) {
+              const item = revQueries[p];
+              const qIdx = item.queryIdx;
+              if (qIdx < 0 || qIdx >= ptsD.length) continue;
+
+              const qd = ptsD[qIdx];
+              const posQd = mapPt(qd, rectD, dimD === 3, false);
+              const w = item.weight;
+              const isTop1 = (item.rank === 1);
+
+              ctx.beginPath();
+              ctx.moveTo(posB_in_D.px, posB_in_D.py);
+              ctx.lineTo(posQd.px, posQd.py);
+              ctx.strokeStyle =
+                `rgba(192, 132, 252, ${Math.max(0.35, Math.min(0.95, w * 2.5))})`;
+              ctx.lineWidth = Math.max(1.0, Math.min(3.5, w * 6.0));
+              ctx.stroke();
+
+              const ringRad = Math.max(4.5, Math.min(10.0, 4.0 + w * 12.0));
+              ctx.beginPath();
+              ctx.arc(posQd.px, posQd.py, ringRad, 0, Math.PI * 2);
+              ctx.strokeStyle = isTop1 ? '#4ade80' : 'rgba(192, 132, 252, 0.85)';
+              ctx.lineWidth = isTop1 ? 2.0 : 1.4;
+              ctx.stroke();
+
+              ctx.beginPath();
+              ctx.arc(posQd.px, posQd.py, 2.5, 0, Math.PI * 2);
+              ctx.fillStyle = '#c084fc';
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+        }
+        return;
+      }
+
+      // =======================================================================
+      // MODE B: Query Point Hovered / Locked (Panel C / D) -> Forward k-NN
+      // =======================================================================
+      if (!ptsC || activeQueryIdx < 0 || activeQueryIdx >= ptsC.length) return;
+
+      const qc = ptsC[activeQueryIdx];
+      const qd = (ptsD && activeQueryIdx < ptsD.length) ? ptsD[activeQueryIdx] : null;
+      const neighbors = getOrComputeKnnNeighbors(activeQueryIdx, k);
+
+      // --- 1. Panel C (Bottom-Left): Query Point Highlight ---
+      const rectC = quadRects[2];
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(rectC.x, rectC.y, rectC.w, rectC.h);
+      ctx.clip();
+
+      const posC = mapPt(qc, rectC, dimC === 3, true);
+
+      ctx.beginPath();
+      ctx.arc(posC.px, posC.py, 13, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.22)';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(posC.px, posC.py, 8, 0, Math.PI * 2);
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2.0;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(posC.px - 14, posC.py); ctx.lineTo(posC.px + 14, posC.py);
+      ctx.moveTo(posC.px, posC.py - 14); ctx.lineTo(posC.px, posC.py + 14);
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.85)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(posC.px, posC.py, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#fbbf24';
+      ctx.fill();
+
+      const coordStrC = (dimC === 3 && typeof qc.z === 'number')
+        ? `(${qc.x.toFixed(2)}, ${qc.y.toFixed(2)}, ${qc.z.toFixed(2)})`
+        : `(${qc.x.toFixed(2)}, ${qc.y.toFixed(2)})`;
+      drawPillBadge(
+        posC.px, posC.py, `Query #${activeQueryIdx} ${coordStrC}`, '#fbbf24', rectC, -20
+      );
+      ctx.restore();
+
+      // --- 2. Panel D (Bottom-Right): Reconstructed Output Highlight ---
+      const rectD = quadRects[3];
+      if (qd) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(rectD.x, rectD.y, rectD.w, rectD.h);
+        ctx.clip();
+
+        const posD = mapPt(qd, rectD, dimD === 3, false);
+
+        ctx.beginPath();
+        ctx.arc(posD.px, posD.py, 13, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(192, 132, 252, 0.22)';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(posD.px, posD.py, 8, 0, Math.PI * 2);
+        ctx.strokeStyle = '#c084fc';
+        ctx.lineWidth = 2.0;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(posD.px - 14, posD.py); ctx.lineTo(posD.px + 14, posD.py);
+        ctx.moveTo(posD.px, posD.py - 14); ctx.lineTo(posD.px, posD.py + 14);
+        ctx.strokeStyle = 'rgba(192, 132, 252, 0.85)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(posD.px, posD.py, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#c084fc';
+        ctx.fill();
+
+        const coordStrD = (dimD === 3 && typeof qd.z === 'number')
+          ? `(${qd.x.toFixed(2)}, ${qd.y.toFixed(2)}, ${qd.z.toFixed(2)})`
+          : `(${qd.x.toFixed(2)}, ${qd.y.toFixed(2)})`;
+        const varStr = (slotD.reconVariance && activeQueryIdx < slotD.reconVariance.length)
+          ? ` • Var:${slotD.reconVariance[activeQueryIdx].toFixed(4)}` : '';
+        drawPillBadge(
+          posD.px, posD.py, `Output #${activeQueryIdx} ${coordStrD}${varStr}`,
+          '#c084fc', rectD, -20
+        );
+        ctx.restore();
+      }
+
+      // --- 3. Panel A (Top-Left): Ghost Query C_i and k-NN Distance Vectors ---
+      const rectA = quadRects[0];
+      if (ptsA && neighbors && neighbors.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(rectA.x, rectA.y, rectA.w, rectA.h);
+        ctx.clip();
+
+        const posQ_in_A = mapPt(qc, rectA, dimA === 3, true);
+
+        // Draw Ghost Query reticle in A
+        ctx.beginPath();
+        ctx.arc(posQ_in_A.px, posQ_in_A.py, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.8)';
+        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.beginPath();
+        ctx.moveTo(posQ_in_A.px - 10, posQ_in_A.py); ctx.lineTo(posQ_in_A.px + 10, posQ_in_A.py);
+        ctx.moveTo(posQ_in_A.px, posQ_in_A.py - 10); ctx.lineTo(posQ_in_A.px, posQ_in_A.py + 10);
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+        ctx.lineWidth = 1.0;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(posQ_in_A.px, posQ_in_A.py, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#fbbf24';
+        ctx.fill();
+
+        // Draw lines and nodes for all k neighbors in A
+        for (let p = 0; p < neighbors.length; p++) {
+          const item = neighbors[p];
+          const nId = item.id;
+          if (nId < 0 || nId >= ptsA.length) continue;
+
+          const pa = ptsA[nId];
+          const posNa = mapPt(pa, rectA, dimA === 3, true);
+          const isTop1 = (p === 0);
+
+          // Vector distance line from ghost query to neighbor
+          ctx.beginPath();
+          ctx.moveTo(posQ_in_A.px, posQ_in_A.py);
+          ctx.lineTo(posNa.px, posNa.py);
+          ctx.strokeStyle = isTop1 ? '#4ade80' : 'rgba(56, 189, 248, 0.7)';
+          ctx.lineWidth = isTop1 ? 2.0 : 1.1;
+          if (!isTop1) ctx.setLineDash([3, 3]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Neighbor node highlight
+          ctx.beginPath();
+          ctx.arc(posNa.px, posNa.py, isTop1 ? 7.5 : 5.0, 0, Math.PI * 2);
+          ctx.strokeStyle = isTop1 ? '#4ade80' : '#38bdf8';
+          ctx.lineWidth = isTop1 ? 2.0 : 1.4;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(posNa.px, posNa.py, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = isTop1 ? '#4ade80' : '#38bdf8';
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // --- 4. Panel B (Top-Right): Ghost Recon Output D_i and Weighted Vectors ---
+      const rectB = quadRects[1];
+      if (ptsB && neighbors && neighbors.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(rectB.x, rectB.y, rectB.w, rectB.h);
+        ctx.clip();
+
+        let posD_in_B = null;
+        if (qd) {
+          posD_in_B = mapPt(qd, rectB, dimB === 3, false);
+
+          // Draw Ghost Reconstructed Output reticle in B
+          ctx.beginPath();
+          ctx.arc(posD_in_B.px, posD_in_B.py, 7, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(192, 132, 252, 0.8)';
+          ctx.setLineDash([3, 3]);
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.beginPath();
+          ctx.moveTo(posD_in_B.px - 10, posD_in_B.py); ctx.lineTo(posD_in_B.px + 10, posD_in_B.py);
+          ctx.moveTo(posD_in_B.px, posD_in_B.py - 10); ctx.lineTo(posD_in_B.px, posD_in_B.py + 10);
+          ctx.strokeStyle = 'rgba(192, 132, 252, 0.6)';
+          ctx.lineWidth = 1.0;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(posD_in_B.px, posD_in_B.py, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#c084fc';
+          ctx.fill();
+        }
+
+        // Draw weighted contribution vectors and nodes in B
+        for (let p = 0; p < neighbors.length; p++) {
+          const item = neighbors[p];
+          const nId = item.id;
+          if (nId < 0 || nId >= ptsB.length) continue;
+
+          const pb = ptsB[nId];
+          const posNb = mapPt(pb, rectB, dimB === 3, false);
+          const w = item.weight;
+          const isTop1 = (p === 0);
+
+          if (posD_in_B) {
+            ctx.beginPath();
+            ctx.moveTo(posNb.px, posNb.py);
+            ctx.lineTo(posD_in_B.px, posD_in_B.py);
+            ctx.strokeStyle = `rgba(74, 222, 128, ${Math.max(0.35, Math.min(0.95, w * 2.5))})`;
+            ctx.lineWidth = Math.max(1.0, Math.min(3.5, w * 6.0));
+            ctx.stroke();
+          }
+
+          const ringRad = Math.max(4.5, Math.min(10.0, 4.0 + w * 12.0));
+          ctx.beginPath();
+          ctx.arc(posNb.px, posNb.py, ringRad, 0, Math.PI * 2);
+          ctx.strokeStyle = isTop1 ? '#4ade80' : 'rgba(74, 222, 128, 0.85)';
+          ctx.lineWidth = isTop1 ? 2.0 : 1.4;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(posNb.px, posNb.py, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#4ade80';
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
+    window.drawRecon4PanelView = drawRecon4PanelView;
+    window.getOrComputeKnnNeighbors = getOrComputeKnnNeighbors;
+    window.getOrComputeReverseKnnNeighbors = getOrComputeReverseKnnNeighbors;

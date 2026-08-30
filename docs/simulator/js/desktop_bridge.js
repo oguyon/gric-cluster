@@ -969,6 +969,52 @@ const DesktopBridge = (function () {
   }
 
   /**
+   * readKnnQuality() - Read knn_quality.bin from workspace.
+   *
+   * @param {string} clusterDir Relative path to cluster directory.
+   * @return {Object|null} {kthDist: Float32Array, variance: Float32Array}
+   */
+  async function readKnnQuality(clusterDir)
+  {
+    const cleanDir = clusterDir.replace(/\/+$/, '');
+    try
+    {
+      const buf = await readBinaryFile(
+        `${cleanDir}/knn_quality.bin`
+      );
+      if (!buf) { return null; }
+
+      const view = new DataView(buf);
+      const magic = String.fromCharCode(
+        view.getUint8(0), view.getUint8(1),
+        view.getUint8(2), view.getUint8(3)
+      );
+      if (magic !== 'GRIC') { return null; }
+
+      const hdrBytes = view.getUint16(8, true);
+      const N = Number(view.getBigUint64(32, true));
+      const cols = Number(
+        view.getBigUint64(40, true)
+      ) || 2;
+      if (cols < 2) { return null; }
+
+      const raw = new Float32Array(buf, hdrBytes, N * cols);
+      const kthDist = new Float32Array(N);
+      const variance = new Float32Array(N);
+      for (let i = 0; i < N; i++)
+      {
+        kthDist[i] = raw[i * cols];
+        variance[i] = raw[i * cols + 1];
+      }
+      return { kthDist, variance, numQueries: N };
+    }
+    catch (err)
+    {
+      return null;
+    }
+  }
+
+  /**
    * Parse gric-dimdensity JSON summary from stdout.
    *
    * @param {string} logText Raw or ANSI-colored output.
