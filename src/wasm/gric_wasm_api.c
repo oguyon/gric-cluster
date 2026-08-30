@@ -2233,18 +2233,6 @@ int wasm_knn_run_search(
         goto cleanup_model_alloc;
     }
 
-    /* Copy DCC matrix */
-    int stride = h->config.algo.maxnbclust;
-    for (int i = 0; i < M; i++)
-    {
-        for (int j = 0; j < M; j++)
-        {
-            model.dcc_matrix[i * M + j] =
-                (h->state.scratch.dcc_min != NULL) ?
-                h->state.scratch.dcc_min[i * stride + j] : 0.0;
-        }
-    }
-
     /* Initialize cluster anchors and capacities */
     for (int c = 0; c < M; c++)
     {
@@ -2278,6 +2266,21 @@ int wasm_knn_run_search(
             goto cleanup_model_alloc;
         }
     } // for (int c = 0; c < M; c++)
+
+    /* Compute exact pairwise inter-cluster anchor distances */
+    for (int i = 0; i < M; i++)
+    {
+        model.dcc_matrix[i * M + i] = 0.0;
+        for (int j = i + 1; j < M; j++)
+        {
+            double d = wasm_knn_calc_dist(
+                model.clusters[i].anchor_data,
+                model.clusters[j].anchor_data,
+                ndim);
+            model.dcc_matrix[i * M + j] = d;
+            model.dcc_matrix[j * M + i] = d;
+        }
+    }
 
     /* Assign each dataset frame to its home cluster and compute anchor distances */
     for (long i = 0; i < total_frames; i++)

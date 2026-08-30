@@ -246,6 +246,21 @@
                       data-tooltip-color="cyan" 
                       data-tooltip-desc="Opens and focuses the k-Nearest Neighbors parameter card in the right sidebar (k, dtmin, direction, epsilon).">⚙️ Options</button>
               <span id="knnStatusBadgeTop" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.3); font-size: 0.72rem;">k=10 • forward • dt≥1</span>
+              <div id="dimDensityColorGroup"
+                   style="display: none; align-items: center;
+                          gap: 4px;">
+                <span style="font-size: 0.70rem; color: #fbbf24;
+                             font-weight: 600;">Color:</span>
+                <div class="toggle-group"
+                     style="grid-template-columns: repeat(3, 1fr);">
+                  <div id="colorByCluster"
+                       class="toggle-btn active">Cluster</div>
+                  <div id="colorByDim"
+                       class="toggle-btn">Dimension</div>
+                  <div id="colorByDensity"
+                       class="toggle-btn">Density</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1895,6 +1910,22 @@
                 ↺ Reset k-NN
               </button>
             </div>
+            
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <button id="btnRunDimDensity" class="btn-action"
+                style="flex: 1; padding: 7px 10px;
+                       font-weight: 700; font-size: 0.74rem;
+                       background: rgba(251, 191, 36, 0.15);
+                       color: #fbbf24;
+                       border: 1px solid rgba(251, 191, 36, 0.4);"
+                disabled
+                data-tooltip-title="Estimate Dim & Density"
+                data-tooltip-badge="CLI: gric-dimdensity"
+                data-tooltip-color="amber"
+                data-tooltip-desc="Levina-Bickel MLE intrinsic dimension and Mack-Rosenblatt local density from k-NN distances. Requires k-NN results.">
+                ▶ Dim & Density
+              </button>
+            </div>
 
             <!-- Live k-NN Progress Monitor Box -->
             <div id="knnProgressContainer"
@@ -2397,6 +2428,205 @@
                   <tr><td colspan="5" style="padding: 10px; text-align: center; color: var(--text-muted);">Run gric-knn or step simulation to populate neighbors graph</td></tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. Dim & Density: Analysis Dashboard -->
+      <div id="cardDimDensity" class="card collapsed" style="flex: 0 0 auto; display: none;">
+        <div class="card-title" style="margin-bottom: 6px;"
+             onclick="togglePanelCollapse('cardDimDensity')">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button class="card-collapse-btn" id="btnCollapseDimDensity"
+                    data-tooltip-title="Collapse / Expand Dim & Density"
+                    data-tooltip-badge="Card Toggle"
+                    data-tooltip-color="amber"
+                    data-tooltip-desc="Toggles visibility of intrinsic dim and local density."
+                    onclick="event.stopPropagation(); togglePanelCollapse('cardDimDensity');">▾</button>
+            <span>Dim & Density: Analysis</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span id="dimDensStatusBadge" class="badge-pill"
+                  style="background: rgba(251, 191, 36, 0.15); color: #fbbf24;">--</span>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="config-tab-bar" style="margin-bottom: 10px;">
+            <div id="tabDimDensSummary" class="config-tab-btn active">📊 Summary</div>
+            <div id="tabDimDensDistrib" class="config-tab-btn">📈 Distribution</div>
+            <div id="tabDimDensTrace" class="config-tab-btn">📝 Per-Sample</div>
+          </div>
+          
+          <div class="card-body-scroll" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Summary Panel -->
+            <div id="dimDensSummaryPanel">
+              <div class="stats-grid">
+                <div class="stat-box" data-tooltip-title="Median Intrinsic Dimension"
+                     data-tooltip-badge="Levina-Bickel" data-tooltip-color="amber"
+                     data-tooltip-desc="Median intrinsic dimension over all samples (±IQR).">
+                  <div class="label">Median Dimension (±IQR)</div>
+                  <div id="dimDensDimMedian" class="num" style="color: #fbbf24;">--</div>
+                </div>
+                <div class="stat-box" data-tooltip-title="Median Local Density"
+                     data-tooltip-badge="Mack-Rosenblatt" data-tooltip-color="purple"
+                     data-tooltip-desc="Median log-density ln(f) over all samples (±IQR).">
+                  <div class="label">Median Log-Density</div>
+                  <div id="dimDensLogDensMedian" class="num" style="color: #c084fc;">--</div>
+                </div>
+                <div class="stat-box" data-tooltip-title="Dimension Range"
+                     data-tooltip-badge="Min-Max" data-tooltip-color="blue"
+                     data-tooltip-desc="Range of intrinsic dimension estimates.">
+                  <div class="label">Dimension Range</div>
+                  <div id="dimDensDimRange" class="num"
+                       style="color: #38bdf8; font-size: 1.0rem;">--</div>
+                </div>
+                <div class="stat-box" data-tooltip-title="Density Range"
+                     data-tooltip-badge="Min-Max" data-tooltip-color="green"
+                     data-tooltip-desc="Range of log-density estimates.">
+                  <div class="label">Density Range</div>
+                  <div id="dimDensDensRange" class="num"
+                       style="color: #4ade80; font-size: 1.0rem;">--</div>
+                </div>
+                <div class="stat-box" data-tooltip-title="Execution Time"
+                     data-tooltip-badge="Performance" data-tooltip-color="amber"
+                     data-tooltip-desc="Time spent computing dimension and density estimates.">
+                  <div class="label">Execution Time</div>
+                  <div id="dimDensExecTime" class="num" style="color: #fbbf24;">-- ms</div>
+                </div>
+                <div class="stat-box" data-tooltip-title="Total Samples"
+                     data-tooltip-badge="Count" data-tooltip-color="gray"
+                     data-tooltip-desc="Number of samples evaluated for dim & density.">
+                  <div class="label">Samples</div>
+                  <div id="dimDensSamples" class="num" style="color: #f8fafc;">0</div>
+                </div>
+              </div>
+              <div style="margin-top: 10px; background: rgba(15, 23, 42, 0.7);
+                          border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+                <div style="font-size: 0.72rem; font-weight: 700; color: #f8fafc;
+                            margin-bottom: 6px;">Percentile Distribution</div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.70rem;
+                              font-family: monospace;">
+                  <thead>
+                    <tr style="color: var(--text-muted); text-align: right;">
+                      <th style="padding: 3px 6px; text-align: left;">Metric</th>
+                      <th style="padding: 3px 6px;">P10</th>
+                      <th style="padding: 3px 6px;">P25</th>
+                      <th style="padding: 3px 6px; color: #4ade80;">P50</th>
+                      <th style="padding: 3px 6px;">P75</th>
+                      <th style="padding: 3px 6px;">P90</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style="color: #fbbf24;">
+                      <td style="padding: 3px 6px; text-align: left; font-weight: 600;">
+                        Dimension
+                      </td>
+                      <td id="dimPctP10" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="dimPctP25" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="dimPctP50" style="padding: 3px 6px; text-align: right;
+                                               color: #4ade80; font-weight: 700;">--</td>
+                      <td id="dimPctP75" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="dimPctP90" style="padding: 3px 6px; text-align: right;">--</td>
+                    </tr>
+                    <tr style="color: #c084fc;">
+                      <td style="padding: 3px 6px; text-align: left; font-weight: 600;">
+                        Log-Density
+                      </td>
+                      <td id="ldPctP10" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="ldPctP25" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="ldPctP50" style="padding: 3px 6px; text-align: right;
+                                               color: #4ade80; font-weight: 700;">--</td>
+                      <td id="ldPctP75" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="ldPctP90" style="padding: 3px 6px; text-align: right;">--</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Distribution Panel -->
+            <div id="dimDensDistribPanel" style="display: none;">
+              <!-- 2D Heatmap: Occurrences vs Density and Dimension -->
+              <div style="margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between;
+                            align-items: center; margin-bottom: 4px;">
+                  <div style="font-size: 0.72rem; font-weight: 700; color: #38bdf8;">
+                    2D Heatmap: Occurrences (Density × Dim)
+                  </div>
+                  <span id="dimDensHeatmapHover"
+                        style="font-size: 0.65rem; color: #94a3b8; font-family: monospace;">
+                    Hover grid for counts
+                  </span>
+                </div>
+                <canvas id="canvasDimDensHeatmap" width="280" height="190"
+                        style="width: 100%; height: 190px; background: #0f172a;
+                               border-radius: 4px; border: 1px solid var(--card-border);
+                               cursor: crosshair; display: block;"></canvas>
+              </div>
+
+              <!-- 1D Local Dimension Histogram -->
+              <div style="margin-bottom: 10px;">
+                <div style="font-size: 0.72rem; font-weight: 700; color: #fbbf24;
+                            margin-bottom: 4px;">Local Intrinsic Dimension (1D)</div>
+                <canvas id="canvasDimHist" width="280" height="90"
+                        style="width: 100%; height: 90px; background: #0f172a;
+                               border-radius: 4px; border: 1px solid var(--card-border);
+                               display: block;"></canvas>
+              </div>
+
+              <!-- 1D Log-Density Histogram -->
+              <div>
+                <div style="font-size: 0.72rem; font-weight: 700; color: #c084fc;
+                            margin-bottom: 4px;">Log-Density ln(f) (1D)</div>
+                <canvas id="canvasDensHist" width="280" height="90"
+                        style="width: 100%; height: 90px; background: #0f172a;
+                               border-radius: 4px; border: 1px solid var(--card-border);
+                               display: block;"></canvas>
+              </div>
+            </div>
+
+            <!-- Per-Sample Trace Panel -->
+            <div id="dimDensTracePanel" style="display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center;
+                          margin-bottom: 6px;">
+                <span id="dimDensTraceTitle"
+                      style="font-size: 0.74rem; font-weight: 700; color: #f8fafc;">
+                  Per-Sample Trace (0 samples)
+                </span>
+                <span style="font-size: 0.68rem; color: var(--text-muted);">
+                  Click row to inspect
+                </span>
+              </div>
+              <div style="overflow-y: auto; max-height: 240px;
+                          border: 1px solid var(--card-border); border-radius: 4px;">
+                <table id="dimDensTraceTable" style="width: 100%; border-collapse: collapse;
+                                                     font-size: 0.70rem; font-family: monospace;">
+                  <thead>
+                    <tr style="background: rgba(30, 41, 59, 0.8); color: var(--text-muted);
+                               text-align: right;">
+                      <th style="padding: 4px 6px; text-align: left;">#</th>
+                      <th style="padding: 4px 6px;">Dim</th>
+                      <th style="padding: 4px 6px;">Density</th>
+                      <th style="padding: 4px 6px;">log(f)</th>
+                      <th style="padding: 4px 6px;">r_k</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dimDensTraceBody">
+                    <tr><td colspan="5" style="padding: 10px; text-align: center;
+                                               color: var(--text-muted);">
+                      Run gric-dimdensity to populate trace
+                    </td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="text-align: center; margin-top: 6px;">
+                <button id="btnDimDensLoadMore" class="btn-action"
+                        style="padding: 4px 12px; font-size: 0.72rem; display: none;">
+                  Load More (200 rows)
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2977,21 +3207,21 @@
   </div>
 
   <!-- Modular JavaScript Components -->
-  <script src="simulator/js/tooltip.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/geometry.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/benchmarks.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/image_benchmarks.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/tile_engine.js?v=2026.08.29.0245"></script>
-  <script src="simulator/wasm/gric_cluster.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/wasm_bridge.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/fs_access.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/desktop_bridge.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/state.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/telemetry.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/image_renderer.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/renderer.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/clustering_core.js?v=2026.08.29.0245"></script>
-  <script src="simulator/js/main.js?v=2026.08.29.0245"></script>
+  <script src="simulator/js/tooltip.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/geometry.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/benchmarks.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/image_benchmarks.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/tile_engine.js?v=2026.08.29.2115"></script>
+  <script src="simulator/wasm/gric_cluster.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/wasm_bridge.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/fs_access.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/desktop_bridge.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/state.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/telemetry.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/image_renderer.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/renderer.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/clustering_core.js?v=2026.08.29.2115"></script>
+  <script src="simulator/js/main.js?v=2026.08.29.2115"></script>
   <script>
     // Async WASM module and Worker initialization
     (async function() {
