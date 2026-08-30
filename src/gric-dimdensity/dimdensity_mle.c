@@ -44,14 +44,14 @@ double dimdensity_unit_ball_log_volume(
  * dimdensity_estimate_single_mle() - Local dimension for a single sample.
  * @distances: Array of sorted nearest neighbor distances [r_1, r_2, ..., r_k].
  * @k:         Target neighbor count (must be >= 3).
- * @unbiased:  1 to use (k-2) unbiased numerator, 0 for classic (k-1) MLE.
+ * @mode:      0 for (k-1) classic, 1 for (k-2) mean-unbiased, 2 for (k-4/3) median-unbiased.
  *
  * Return: Estimated local intrinsic dimension.
  */
 double dimdensity_estimate_single_mle(
     const double *restrict distances,
     int                    k,
-    int                    unbiased)
+    int                    mode)
 {
     if (distances == NULL || k < 3)
     {
@@ -88,7 +88,20 @@ double dimdensity_estimate_single_mle(
         return 1.0;
     }
 
-    double num = unbiased ? (double)(k - 2) : (double)(k - 1);
+    double num;
+    if (mode == 2)
+    {
+        num = (double)k - 4.0 / 3.0; // Median-unbiased: k - 4/3
+    }
+    else if (mode == 1)
+    {
+        num = (double)(k - 2);       // Mean-unbiased: k - 2
+    }
+    else
+    {
+        num = (double)(k - 1);       // Classic MLE: k - 1
+    }
+
     double d = num / sum_log_diff;
 
     if (isnan(d) || isinf(d))
@@ -147,12 +160,21 @@ int dimdensity_compute_mle_dimensions(
     {
         results->local_dim = (double *)malloc(n * sizeof(double));
     }
+    if (results->local_dim_med == NULL)
+    {
+        results->local_dim_med = (double *)malloc(n * sizeof(double));
+    }
+    if (results->local_dim_mean == NULL)
+    {
+        results->local_dim_mean = (double *)malloc(n * sizeof(double));
+    }
     if (results->rk_dist == NULL)
     {
         results->rk_dist = (double *)malloc(n * sizeof(double));
     }
 
-    if (results->local_dim == NULL || results->rk_dist == NULL)
+    if (results->local_dim == NULL || results->local_dim_med == NULL ||
+        results->local_dim_mean == NULL || results->rk_dist == NULL)
     {
         fprintf(stderr, "Error: Failed to allocate memory for results\n");
         return -1;
@@ -193,20 +215,25 @@ int dimdensity_compute_mle_dimensions(
 
         if (use_range && k_max > k_min)
         {
-            double sum_d = 0.0;
+            double sum_med = 0.0, sum_mean = 0.0;
             int count_k = 0;
             for (int k_curr = k_min; k_curr <= k_max; k_curr++)
             {
-                sum_d += dimdensity_estimate_single_mle(row, k_curr, config->unbiased_mle);
+                sum_med += dimdensity_estimate_single_mle(row, k_curr, 2);
+                sum_mean += dimdensity_estimate_single_mle(row, k_curr, 1);
                 count_k++;
             }
-            results->local_dim[i] = (count_k > 0) ? (sum_d / (double)count_k) : 1.0;
+            results->local_dim_med[i] = (count_k > 0) ? (sum_med / (double)count_k) : 1.0;
+            results->local_dim_mean[i] = (count_k > 0) ? (sum_mean / (double)count_k) : 1.0;
         }
         else
         {
-            results->local_dim[i] = dimdensity_estimate_single_mle(row, target_k,
-                                                                   config->unbiased_mle);
+            results->local_dim_med[i] = dimdensity_estimate_single_mle(row, target_k, 2);
+            results->local_dim_mean[i] = dimdensity_estimate_single_mle(row, target_k, 1);
         }
+
+        // Primary alias matches median-unbiased default
+        results->local_dim[i] = results->local_dim_med[i];
     } // for (uint64_t i = 0; ...)
 
     return 0;

@@ -149,36 +149,48 @@ int dimdensity_compute_stats(
         return -1;
     }
 
-    // 1. Compute summary stats for local dimension
-    double dim_sum = 0.0;
-    double dim_min = DBL_MAX;
-    double dim_max = -DBL_MAX;
+    // 1. Compute summary stats for local dimension (Median-unbiased k-4/3 and Mean-unbiased k-2)
+    double dim_sum = 0.0, dim_min = DBL_MAX, dim_max = -DBL_MAX;
+    double dim_mean_unb_sum = 0.0;
+    double dim_mean_unb_min = DBL_MAX, dim_mean_unb_max = -DBL_MAX;
+
+    const double *dim_med_arr = results->local_dim_med ?
+                                results->local_dim_med : results->local_dim;
+    const double *dim_mean_arr = results->local_dim_mean ?
+                                 results->local_dim_mean : results->local_dim;
 
     for (uint64_t i = 0; i < n; i++)
     {
-        double d = results->local_dim[i];
-        dim_sum += d;
-        if (d < dim_min)
-        {
-            dim_min = d;
-        }
-        if (d > dim_max)
-        {
-            dim_max = d;
-        }
+        double d_med = dim_med_arr[i];
+        dim_sum += d_med;
+        if (d_med < dim_min) dim_min = d_med;
+        if (d_med > dim_max) dim_max = d_med;
+
+        double d_mean = dim_mean_arr[i];
+        dim_mean_unb_sum += d_mean;
+        if (d_mean < dim_mean_unb_min) dim_mean_unb_min = d_mean;
+        if (d_mean > dim_mean_unb_max) dim_mean_unb_max = d_mean;
     }
 
     stats->dim_mean = dim_sum / (double)n;
     stats->dim_min = dim_min;
     stats->dim_max = dim_max;
 
-    double dim_sq_sum = 0.0;
+    stats->dim_mean_unb_mean = dim_mean_unb_sum / (double)n;
+    stats->dim_mean_unb_min = dim_mean_unb_min;
+    stats->dim_mean_unb_max = dim_mean_unb_max;
+
+    double dim_sq_sum = 0.0, dim_mean_unb_sq_sum = 0.0;
     for (uint64_t i = 0; i < n; i++)
     {
-        double diff = results->local_dim[i] - stats->dim_mean;
+        double diff = dim_med_arr[i] - stats->dim_mean;
         dim_sq_sum += (diff * diff);
+
+        double diff_m = dim_mean_arr[i] - stats->dim_mean_unb_mean;
+        dim_mean_unb_sq_sum += (diff_m * diff_m);
     }
     stats->dim_std = (n > 1) ? sqrt(dim_sq_sum / (double)(n - 1)) : 0.0;
+    stats->dim_mean_unb_std = (n > 1) ? sqrt(dim_mean_unb_sq_sum / (double)(n - 1)) : 0.0;
 
     // 2. Compute summary stats for density and log-density
     double dens_sum = 0.0;
@@ -195,24 +207,12 @@ int dimdensity_compute_stats(
         double lf = results->log_density[i];
 
         dens_sum += f;
-        if (f < dens_min)
-        {
-            dens_min = f;
-        }
-        if (f > dens_max)
-        {
-            dens_max = f;
-        }
+        if (f < dens_min) dens_min = f;
+        if (f > dens_max) dens_max = f;
 
         log_dens_sum += lf;
-        if (lf < log_dens_min)
-        {
-            log_dens_min = lf;
-        }
-        if (lf > log_dens_max)
-        {
-            log_dens_max = lf;
-        }
+        if (lf < log_dens_min) log_dens_min = lf;
+        if (lf > log_dens_max) log_dens_max = lf;
     }
 
     stats->dens_mean = dens_sum / (double)n;
@@ -240,9 +240,13 @@ int dimdensity_compute_stats(
     double *tmp_sort = (double *)malloc(n * sizeof(double));
     if (tmp_sort != NULL)
     {
-        memcpy(tmp_sort, results->local_dim, n * sizeof(double));
+        memcpy(tmp_sort, dim_med_arr, n * sizeof(double));
         qsort(tmp_sort, (size_t)n, sizeof(double), compare_doubles);
         compute_vector_percentiles(tmp_sort, n, &stats->dim_pct);
+
+        memcpy(tmp_sort, dim_mean_arr, n * sizeof(double));
+        qsort(tmp_sort, (size_t)n, sizeof(double), compare_doubles);
+        compute_vector_percentiles(tmp_sort, n, &stats->dim_mean_unb_pct);
 
         memcpy(tmp_sort, results->density, n * sizeof(double));
         qsort(tmp_sort, (size_t)n, sizeof(double), compare_doubles);
@@ -256,7 +260,7 @@ int dimdensity_compute_stats(
     }
 
     // 4. Compute Histograms
-    compute_histogram(results->local_dim, n, stats->dim_min, stats->dim_max,
+    compute_histogram(dim_med_arr, n, stats->dim_min, stats->dim_max,
                       bins, stats->dim_hist);
     compute_histogram(results->log_density, n, stats->log_dens_min, stats->log_dens_max,
                       bins, stats->log_dens_hist);

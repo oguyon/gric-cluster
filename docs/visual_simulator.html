@@ -1927,6 +1927,34 @@
               </button>
             </div>
 
+            <!-- Multi-Range Option -->
+            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border);
+                        border-radius: 6px; padding: 6px 8px; margin-top: 2px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <label style="font-size: 0.70rem; color: #fbbf24; font-weight: 600;
+                              display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                  <input type="checkbox" id="chkDimDensMultiRange" style="cursor: pointer;"
+                         onchange="document.getElementById('dimDensRangeInputs').style.display = this.checked ? 'grid' : 'none';">
+                  Multi-k Range Averaging
+                </label>
+              </div>
+              <div id="dimDensRangeInputs" style="display: none; grid-template-columns: 1fr 1fr;
+                                                  gap: 6px; margin-top: 6px;">
+                <div>
+                  <span style="font-size: 0.66rem; color: var(--text-muted);">k_min:</span>
+                  <input type="number" id="dimDensKmin" value="5" min="3" max="500"
+                         class="config-input"
+                         style="width: 100%; font-size: 0.70rem; padding: 2px 4px;">
+                </div>
+                <div>
+                  <span style="font-size: 0.66rem; color: var(--text-muted);">k_max:</span>
+                  <input type="number" id="dimDensKmax" value="20" min="3" max="500"
+                         class="config-input"
+                         style="width: 100%; font-size: 0.70rem; padding: 2px 4px;">
+                </div>
+              </div>
+            </div>
+
             <!-- Live k-NN Progress Monitor Box -->
             <div id="knnProgressContainer"
                  style="display: none; padding: 8px 10px; border-radius: 6px; margin-bottom: 6px;
@@ -2463,11 +2491,17 @@
             <!-- Summary Panel -->
             <div id="dimDensSummaryPanel">
               <div class="stats-grid">
-                <div class="stat-box" data-tooltip-title="Median Intrinsic Dimension"
-                     data-tooltip-badge="Levina-Bickel" data-tooltip-color="amber"
-                     data-tooltip-desc="Median intrinsic dimension over all samples (±IQR).">
-                  <div class="label">Median Dimension (±IQR)</div>
+                <div class="stat-box" data-tooltip-title="Median-Unbiased Intrinsic Dimension"
+                     data-tooltip-badge="k - 4/3 MLE" data-tooltip-color="amber"
+                     data-tooltip-desc="Median-unbiased dimension (k-4/3 numerator) over all samples (±IQR).">
+                  <div class="label">Median-Unbiased (k-4/3)</div>
                   <div id="dimDensDimMedian" class="num" style="color: #fbbf24;">--</div>
+                </div>
+                <div class="stat-box" data-tooltip-title="Mean-Unbiased Intrinsic Dimension"
+                     data-tooltip-badge="k - 2 MLE" data-tooltip-color="amber"
+                     data-tooltip-desc="Mean-unbiased dimension (k-2 numerator) over all samples (±StdDev).">
+                  <div class="label">Mean-Unbiased (k-2)</div>
+                  <div id="dimDensDimMeanUnb" class="num" style="color: #f59e0b;">--</div>
                 </div>
                 <div class="stat-box" data-tooltip-title="Median Local Density"
                      data-tooltip-badge="Mack-Rosenblatt" data-tooltip-color="purple"
@@ -2495,12 +2529,6 @@
                   <div class="label">Execution Time</div>
                   <div id="dimDensExecTime" class="num" style="color: #fbbf24;">-- ms</div>
                 </div>
-                <div class="stat-box" data-tooltip-title="Total Samples"
-                     data-tooltip-badge="Count" data-tooltip-color="gray"
-                     data-tooltip-desc="Number of samples evaluated for dim & density.">
-                  <div class="label">Samples</div>
-                  <div id="dimDensSamples" class="num" style="color: #f8fafc;">0</div>
-                </div>
               </div>
               <div style="margin-top: 10px; background: rgba(15, 23, 42, 0.7);
                           border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
@@ -2521,18 +2549,29 @@
                   <tbody>
                     <tr style="color: #fbbf24;">
                       <td style="padding: 3px 6px; text-align: left; font-weight: 600;">
-                        Dimension
+                        Dim (Med-Unb k-4/3)
                       </td>
-                      <td id="dimPctP10" style="padding: 3px 6px; text-align: right;">--</td>
-                      <td id="dimPctP25" style="padding: 3px 6px; text-align: right;">--</td>
-                      <td id="dimPctP50" style="padding: 3px 6px; text-align: right;
+                      <td id="dimMedPctP10" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="dimMedPctP25" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="dimMedPctP50" style="padding: 3px 6px; text-align: right;
                                                color: #4ade80; font-weight: 700;">--</td>
-                      <td id="dimPctP75" style="padding: 3px 6px; text-align: right;">--</td>
-                      <td id="dimPctP90" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="dimMedPctP75" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="dimMedPctP90" style="padding: 3px 6px; text-align: right;">--</td>
+                    </tr>
+                    <tr style="color: #f59e0b;">
+                      <td style="padding: 3px 6px; text-align: left; font-weight: 600;">
+                        Dim (Mean-Unb k-2)
+                      </td>
+                      <td id="dimMeanPctP10" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="dimMeanPctP25" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="dimMeanPctP50" style="padding: 3px 6px; text-align: right;
+                                               color: #4ade80; font-weight: 700;">--</td>
+                      <td id="dimMeanPctP75" style="padding: 3px 6px; text-align: right;">--</td>
+                      <td id="dimMeanPctP90" style="padding: 3px 6px; text-align: right;">--</td>
                     </tr>
                     <tr style="color: #c084fc;">
                       <td style="padding: 3px 6px; text-align: left; font-weight: 600;">
-                        Log-Density
+                        Log-Density ln(f)
                       </td>
                       <td id="ldPctP10" style="padding: 3px 6px; text-align: right;">--</td>
                       <td id="ldPctP25" style="padding: 3px 6px; text-align: right;">--</td>
@@ -2606,15 +2645,16 @@
                   <thead>
                     <tr style="background: rgba(30, 41, 59, 0.8); color: var(--text-muted);
                                text-align: right;">
-                      <th style="padding: 4px 6px; text-align: left;">#</th>
-                      <th style="padding: 4px 6px;">Dim</th>
-                      <th style="padding: 4px 6px;">Density</th>
-                      <th style="padding: 4px 6px;">log(f)</th>
-                      <th style="padding: 4px 6px;">r_k</th>
+                      <th style="padding: 4px 5px; text-align: left;">#</th>
+                      <th style="padding: 4px 5px; color: #fbbf24;">Med-Unb</th>
+                      <th style="padding: 4px 5px; color: #f59e0b;">Mean-Unb</th>
+                      <th style="padding: 4px 5px;">Density</th>
+                      <th style="padding: 4px 5px;">log(f)</th>
+                      <th style="padding: 4px 5px;">r_k</th>
                     </tr>
                   </thead>
                   <tbody id="dimDensTraceBody">
-                    <tr><td colspan="5" style="padding: 10px; text-align: center;
+                    <tr><td colspan="6" style="padding: 10px; text-align: center;
                                                color: var(--text-muted);">
                       Run gric-dimdensity to populate trace
                     </td></tr>

@@ -118,23 +118,29 @@ static int write_ascii_file(
     }
 
     fprintf(fp, "# gric-dimdensity results\n");
-    fprintf(fp, "# Samples: %lu, Target k: %d, Kernel: %s, Estimator: %s\n",
-            results->num_samples, results->k_used, kernel_name(config->kernel_type),
-            config->unbiased_mle ? "Unbiased MLE (k-2)" : "Classic MLE (k-1)");
-    fprintf(fp, "# Intrinsic Dimension: Mean = %.4f +/- %.4f [Median = %.4f, "
-            "Min = %.4f, Max = %.4f]\n",
-            stats->dim_mean, stats->dim_std, stats->dim_pct.p50, stats->dim_min, stats->dim_max);
-    fprintf(fp, "# Log-Density:         Mean = %.4f +/- %.4f [Median = %.4f, "
-            "Min = %.4f, Max = %.4f]\n",
-            stats->log_dens_mean, stats->log_dens_std, stats->log_dens_pct.p50,
-            stats->log_dens_min, stats->log_dens_max);
-    fprintf(fp, "# Columns: sample_id  local_dim  density  log_density  r_k\n");
+    fprintf(fp, "# Samples: %lu, Target k: %d, Kernel: %s\n",
+            results->num_samples, results->k_used, kernel_name(config->kernel_type));
+    fprintf(fp, "# Intrinsic Dimension (Median-Unbiased, k-4/3): "
+            "Mean = %.4f +/- %.4f [Median = %.4f]\n",
+            stats->dim_mean, stats->dim_std, stats->dim_pct.p50);
+    fprintf(fp, "# Intrinsic Dimension (Mean-Unbiased, k-2):     "
+            "Mean = %.4f +/- %.4f [Median = %.4f]\n",
+            stats->dim_mean_unb_mean, stats->dim_mean_unb_std, stats->dim_mean_unb_pct.p50);
+    fprintf(fp, "# Log-Density:         Mean = %.4f +/- %.4f [Median = %.4f]\n",
+            stats->log_dens_mean, stats->log_dens_std, stats->log_dens_pct.p50);
+    fprintf(fp, "# Columns: sample_id  dim_med_unbiased  dim_mean_unbiased  "
+            "density  log_density  r_k\n");
 
     uint64_t n = results->num_samples;
+    const double *dim_med = results->local_dim_med ?
+                            results->local_dim_med : results->local_dim;
+    const double *dim_mean = results->local_dim_mean ?
+                             results->local_dim_mean : results->local_dim;
+
     for (uint64_t i = 0; i < n; i++)
     {
-        fprintf(fp, "%-8lu  %10.4f  %14.6e  %12.4f  %12.6f\n",
-                (unsigned long)i, results->local_dim[i], results->density[i],
+        fprintf(fp, "%-8lu  %10.4f  %10.4f  %14.6e  %12.4f  %12.6f\n",
+                (unsigned long)i, dim_med[i], dim_mean[i], results->density[i],
                 results->log_density[i], results->rk_dist[i]);
     }
 
@@ -143,7 +149,7 @@ static int write_ascii_file(
 }
 
 /**
- * write_bin_file() - Write GRIC binary [N x 4] array.
+ * write_bin_file() - Write GRIC binary [N x 5] array.
  * @path:    Output file path.
  * @results: Evaluation results.
  *
@@ -161,7 +167,7 @@ static int write_bin_file(
     }
 
     uint64_t n = results->num_samples;
-    uint64_t num_cols = 4;
+    uint64_t num_cols = 5;
     uint64_t total_elems = n * num_cols;
 
     gric_bin_header_t hdr;
@@ -175,7 +181,8 @@ static int write_bin_file(
     hdr.num_elements = total_elems;
     hdr.data_bytes = total_elems * sizeof(float);
 
-    const char *comment = "gric-dimdensity output matrix [N x 4]: local_dim, dens, log_dens, rk";
+    const char *comment =
+        "gric-dimdensity output matrix [N x 5]: dim_med, dim_mean, dens, log_dens, rk";
     if (gric_bin_write_header(fp, &hdr, comment) != 0)
     {
         fclose(fp);
@@ -189,12 +196,18 @@ static int write_bin_file(
         return -1;
     }
 
+    const double *dim_med = results->local_dim_med ?
+                            results->local_dim_med : results->local_dim;
+    const double *dim_mean = results->local_dim_mean ?
+                             results->local_dim_mean : results->local_dim;
+
     for (uint64_t i = 0; i < n; i++)
     {
-        buf[i * 4 + 0] = (float)results->local_dim[i];
-        buf[i * 4 + 1] = (float)results->density[i];
-        buf[i * 4 + 2] = (float)results->log_density[i];
-        buf[i * 4 + 3] = (float)results->rk_dist[i];
+        buf[i * 5 + 0] = (float)dim_med[i];
+        buf[i * 5 + 1] = (float)dim_mean[i];
+        buf[i * 5 + 2] = (float)results->density[i];
+        buf[i * 5 + 3] = (float)results->log_density[i];
+        buf[i * 5 + 4] = (float)results->rk_dist[i];
     }
 
     fwrite(buf, sizeof(float), total_elems, fp);
@@ -205,7 +218,7 @@ static int write_bin_file(
 
 #ifdef USE_CFITSIO
 /**
- * write_fits_file() - Write results as 2D FITS image HDU [4 x N].
+ * write_fits_file() - Write results as 2D FITS image HDU [5 x N].
  * @path:    Output FITS file path.
  * @results: Evaluation results.
  *
@@ -229,33 +242,44 @@ static int write_fits_file(
     }
 
     long n = (long)results->num_samples;
-    long naxes[2] = {4, n};
+    long naxes[2] = {5, n};
     fits_create_img(fptr, DOUBLE_IMG, 2, naxes, &status);
 
-    double *buf = (double *)malloc((size_t)(n * 4) * sizeof(double));
+    double *buf = (double *)malloc((size_t)(n * 5) * sizeof(double));
     if (buf == NULL)
     {
         fits_close_file(fptr, &status);
         return -1;
     }
 
+    const double *dim_med = results->local_dim_med ?
+                            results->local_dim_med : results->local_dim;
+    const double *dim_mean = results->local_dim_mean ?
+                             results->local_dim_mean : results->local_dim;
+
     for (long i = 0; i < n; i++)
     {
-        buf[i * 4 + 0] = results->local_dim[i];
-        buf[i * 4 + 1] = results->density[i];
-        buf[i * 4 + 2] = results->log_density[i];
-        buf[i * 4 + 3] = results->rk_dist[i];
+        buf[i * 5 + 0] = dim_med[i];
+        buf[i * 5 + 1] = dim_mean[i];
+        buf[i * 5 + 2] = results->density[i];
+        buf[i * 5 + 3] = results->log_density[i];
+        buf[i * 5 + 4] = results->rk_dist[i];
     }
 
     long fpixel[2] = {1, 1};
-    fits_write_pix(fptr, TDOUBLE, fpixel, n * 4, buf, &status);
+    fits_write_pix(fptr, TDOUBLE, fpixel, n * 5, buf, &status);
     free(buf);
 
-    fits_write_key(fptr, TSTRING, "COL1", "local_dim", "Estimated Local Intrinsic Dimension",
-                   &status);
-    fits_write_key(fptr, TSTRING, "COL2", "density", "Mack-Rosenblatt Local Density", &status);
-    fits_write_key(fptr, TSTRING, "COL3", "log_dens", "Log-Density ln(f)", &status);
-    fits_write_key(fptr, TSTRING, "COL4", "rk_dist", "Distance to k-th neighbor", &status);
+    fits_write_key(fptr, TSTRING, "COL1", "dim_med_unbiased",
+                   "Median-Unbiased Local Dimension (k-4/3)", &status);
+    fits_write_key(fptr, TSTRING, "COL2", "dim_mean_unbiased",
+                   "Mean-Unbiased Local Dimension (k-2)", &status);
+    fits_write_key(fptr, TSTRING, "COL3", "density",
+                   "Mack-Rosenblatt Local Density", &status);
+    fits_write_key(fptr, TSTRING, "COL4", "log_dens",
+                   "Log-Density ln(f)", &status);
+    fits_write_key(fptr, TSTRING, "COL5", "rk_dist",
+                   "Distance to k-th neighbor", &status);
 
     fits_close_file(fptr, &status);
     return (status == 0) ? 0 : -1;
@@ -293,10 +317,44 @@ int dimdensity_write_json_report(
     fprintf(stream, "  \"num_samples\": %lu,\n", results->num_samples);
     fprintf(stream, "  \"target_k\": %d,\n", results->k_used);
     fprintf(stream, "  \"kernel\": \"%s\",\n", kernel_name(config->kernel_type));
-    fprintf(stream, "  \"unbiased_mle\": %s,\n", config->unbiased_mle ? "true" : "false");
+    fprintf(stream, "  \"multi_range\": {\n");
+    fprintf(stream, "    \"enabled\": %s,\n", config->use_range_avg ? "true" : "false");
+    fprintf(stream, "    \"k_min\": %d,\n", config->k_min);
+    fprintf(stream, "    \"k_max\": %d\n", config->k_max);
+    fprintf(stream, "  },\n");
     fprintf(stream, "  \"execution_time_ms\": %.2f,\n", elapsed_ms);
 
-    // Intrinsic Dimension section
+    // Median-Unbiased Intrinsic Dimension (k-4/3)
+    fprintf(stream, "  \"intrinsic_dimension_median_unbiased\": {\n");
+    fprintf(stream, "    \"mean\": %.4f,\n", stats->dim_mean);
+    fprintf(stream, "    \"std_dev\": %.4f,\n", stats->dim_std);
+    fprintf(stream, "    \"min\": %.4f,\n", stats->dim_min);
+    fprintf(stream, "    \"max\": %.4f,\n", stats->dim_max);
+    fprintf(stream, "    \"percentiles\": {\n");
+    fprintf(stream, "      \"p10\": %.4f,\n", stats->dim_pct.p10);
+    fprintf(stream, "      \"p25\": %.4f,\n", stats->dim_pct.p25);
+    fprintf(stream, "      \"p50\": %.4f,\n", stats->dim_pct.p50);
+    fprintf(stream, "      \"p75\": %.4f,\n", stats->dim_pct.p75);
+    fprintf(stream, "      \"p90\": %.4f\n", stats->dim_pct.p90);
+    fprintf(stream, "    }\n");
+    fprintf(stream, "  },\n");
+
+    // Mean-Unbiased Intrinsic Dimension (k-2)
+    fprintf(stream, "  \"intrinsic_dimension_mean_unbiased\": {\n");
+    fprintf(stream, "    \"mean\": %.4f,\n", stats->dim_mean_unb_mean);
+    fprintf(stream, "    \"std_dev\": %.4f,\n", stats->dim_mean_unb_std);
+    fprintf(stream, "    \"min\": %.4f,\n", stats->dim_mean_unb_min);
+    fprintf(stream, "    \"max\": %.4f,\n", stats->dim_mean_unb_max);
+    fprintf(stream, "    \"percentiles\": {\n");
+    fprintf(stream, "      \"p10\": %.4f,\n", stats->dim_mean_unb_pct.p10);
+    fprintf(stream, "      \"p25\": %.4f,\n", stats->dim_mean_unb_pct.p25);
+    fprintf(stream, "      \"p50\": %.4f,\n", stats->dim_mean_unb_pct.p50);
+    fprintf(stream, "      \"p75\": %.4f,\n", stats->dim_mean_unb_pct.p75);
+    fprintf(stream, "      \"p90\": %.4f\n", stats->dim_mean_unb_pct.p90);
+    fprintf(stream, "    }\n");
+    fprintf(stream, "  },\n");
+
+    // Default alias
     fprintf(stream, "  \"intrinsic_dimension\": {\n");
     fprintf(stream, "    \"mean\": %.4f,\n", stats->dim_mean);
     fprintf(stream, "    \"std_dev\": %.4f,\n", stats->dim_std);
@@ -378,9 +436,12 @@ void dimdensity_print_dashboard(
            results->num_samples);
     printf("  %sTarget k Neighbors:%s  %d (available: %d)\n", ansi_color_grey, ansi_reset,
            results->k_used, dist_data->k_available);
-    printf("  %sLID Estimator:%s       %s%s%s\n", ansi_color_grey, ansi_reset,
-           ansi_bold_green, config->unbiased_mle ? "Unbiased MLE (k-2)" : "Classic MLE (k-1)",
-           ansi_reset);
+    if (config->use_range_avg)
+    {
+        printf("  %sMulti-k Range:%s       %s[%d .. %d]%s (Averaged)\n",
+               ansi_color_grey, ansi_reset, ansi_bold_green, config->k_min, config->k_max,
+               ansi_reset);
+    }
     printf("  %sDensity Kernel:%s      %s%s%s\n", ansi_color_grey, ansi_reset,
            ansi_bold_green, kernel_name(config->kernel_type), ansi_reset);
     printf("  %sCompute Time:%s        %.2f ms (%.1f samples/sec)\n\n",
@@ -389,25 +450,32 @@ void dimdensity_print_dashboard(
 
     // Distribution Table
     printf("%s--- Distribution Summary ---%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  %s%-20s %-20s %7s %7s %12s %7s %7s%s\n",
+    printf("  %s%-24s %-18s %7s %7s %12s %7s %7s%s\n",
            ansi_color_grey, "Metric", "Mean ± Std Dev", "P10", "P25", "Median (P50)",
            "P75", "P90", ansi_reset);
 
-    printf("  %s%-20s%s  %6.3f ± %-6.3f   %7.3f %7.3f    %s%7.3f%s   %7.3f %7.3f\n",
-           ansi_color_magenta, "Intrinsic Dimension", ansi_reset,
+    printf("  %s%-24s%s  %6.3f ± %-6.3f %7.3f %7.3f    %s%7.3f%s   %7.3f %7.3f\n",
+           ansi_color_magenta, "Dim (Median-Unb k-4/3)", ansi_reset,
            stats->dim_mean, stats->dim_std,
            stats->dim_pct.p10, stats->dim_pct.p25,
            ansi_bold_green, stats->dim_pct.p50, ansi_reset,
            stats->dim_pct.p75, stats->dim_pct.p90);
 
-    printf("  %s%-20s%s  %6.3f ± %-6.3f   %7.3f %7.3f    %s%7.3f%s   %7.3f %7.3f\n",
+    printf("  %s%-24s%s  %6.3f ± %-6.3f %7.3f %7.3f    %s%7.3f%s   %7.3f %7.3f\n",
+           ansi_color_magenta, "Dim (Mean-Unb k-2)", ansi_reset,
+           stats->dim_mean_unb_mean, stats->dim_mean_unb_std,
+           stats->dim_mean_unb_pct.p10, stats->dim_mean_unb_pct.p25,
+           ansi_bold_green, stats->dim_mean_unb_pct.p50, ansi_reset,
+           stats->dim_mean_unb_pct.p75, stats->dim_mean_unb_pct.p90);
+
+    printf("  %s%-24s%s  %6.3f ± %-6.3f %7.3f %7.3f    %s%7.3f%s   %7.3f %7.3f\n",
            ansi_color_magenta, "Log-Density ln(f)", ansi_reset,
            stats->log_dens_mean, stats->log_dens_std,
            stats->log_dens_pct.p10, stats->log_dens_pct.p25,
            ansi_bold_green, stats->log_dens_pct.p50, ansi_reset,
            stats->log_dens_pct.p75, stats->log_dens_pct.p90);
 
-    printf("  %s%-20s%s %9.2e ± %-9.2e %9.2e %9.2e  %s%9.2e%s %9.2e %9.2e\n\n",
+    printf("  %s%-24s%s %8.2e ± %-8.2e %8.2e %8.2e  %s%8.2e%s %8.2e %8.2e\n\n",
            ansi_color_magenta, "Density f(x)", ansi_reset,
            stats->dens_mean, stats->dens_std,
            stats->dens_pct.p10, stats->dens_pct.p25,

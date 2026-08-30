@@ -143,9 +143,16 @@ int main(
                 return 1;
             }
         }
-        else if (strcmp(argv[arg_idx], "-range") == 0)
+        else if (strcmp(argv[arg_idx], "-range") == 0 ||
+                 strcmp(argv[arg_idx], "--range") == 0 ||
+                 strcmp(argv[arg_idx], "-R") == 0)
         {
             config.use_range_avg = 1;
+            if (arg_idx + 2 < argc && argv[arg_idx + 1][0] != '-' && argv[arg_idx + 2][0] != '-')
+            {
+                config.k_min = atoi(argv[++arg_idx]);
+                config.k_max = atoi(argv[++arg_idx]);
+            }
         }
         else if (strcmp(argv[arg_idx], "-classic") == 0 ||
                  strcmp(argv[arg_idx], "-mle-classic") == 0 ||
