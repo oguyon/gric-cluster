@@ -2363,6 +2363,18 @@ int wasm_knn_run_search(
         goto cleanup_model_alloc;
     }
 
+    model.anchor_ptrs = (const double **)malloc((size_t)M * sizeof(const double *));
+    model.cluster_radii = (double *)malloc((size_t)M * sizeof(double));
+    if (model.anchor_ptrs == NULL || model.cluster_radii == NULL)
+    {
+        goto cleanup_model_alloc;
+    }
+    for (int c = 0; c < M; c++)
+    {
+        model.anchor_ptrs[c] = model.clusters[c].anchor_data;
+        model.cluster_radii[c] = model.clusters[c].radius;
+    }
+
     /* 2. Configure KnnConfig for in-memory execution */
     KnnConfig config;
     memset(&config, 0, sizeof(KnnConfig));
@@ -2431,6 +2443,14 @@ int wasm_knn_run_search(
     free(model.frame_cluster_map);
     free(model.frame_r_anchor);
     free(model.dcc_matrix);
+    if (model.anchor_ptrs != NULL)
+    {
+        free((void *)model.anchor_ptrs);
+    }
+    if (model.cluster_radii != NULL)
+    {
+        free(model.cluster_radii);
+    }
 
     return 0;
 
@@ -2463,6 +2483,14 @@ cleanup_model_alloc:
     if (model.dcc_matrix != NULL)
     {
         free(model.dcc_matrix);
+    }
+    if (model.anchor_ptrs != NULL)
+    {
+        free((void *)model.anchor_ptrs);
+    }
+    if (model.cluster_radii != NULL)
+    {
+        free(model.cluster_radii);
     }
     return -1;
 }

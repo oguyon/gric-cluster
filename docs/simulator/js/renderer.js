@@ -45,25 +45,29 @@
      * @returns {string} CSS rgb() string
      */
     function getColorFromRamp(val, mn, mx, stops) {
-      const t = Math.max(0, Math.min(1,
-        (val - mn) / (mx - mn || 1)
-      ));
+      if (!stops || stops.length === 0) {
+        return 'rgb(148, 163, 184)';
+      }
+      if (typeof val !== 'number' || isNaN(val) || !isFinite(val)) {
+        val = (typeof mn === 'number' && isFinite(mn)) ? mn : 0;
+      }
+      if (typeof mn !== 'number' || isNaN(mn) || !isFinite(mn)) {
+        mn = 0;
+      }
+      if (typeof mx !== 'number' || isNaN(mx) || !isFinite(mx) || mx <= mn) {
+        mx = mn + 1.0;
+      }
+      const t = Math.max(0, Math.min(1, (val - mn) / (mx - mn)));
       const n = stops.length - 1;
-      const fi = t * n;
+      const fi = Math.max(0, Math.min(n, t * n));
       const lo = Math.floor(fi);
       const hi = Math.min(lo + 1, n);
       const f = fi - lo;
-      const c0 = stops[lo];
-      const c1 = stops[hi];
-      const r = Math.round(
-        c0[0] + (c1[0] - c0[0]) * f
-      );
-      const g = Math.round(
-        c0[1] + (c1[1] - c0[1]) * f
-      );
-      const b = Math.round(
-        c0[2] + (c1[2] - c0[2]) * f
-      );
+      const c0 = stops[lo] || stops[0];
+      const c1 = stops[hi] || stops[n];
+      const r = Math.round(c0[0] + (c1[0] - c0[0]) * f);
+      const g = Math.round(c0[1] + (c1[1] - c0[1]) * f);
+      const b = Math.round(c0[2] + (c1[2] - c0[2]) * f);
       return `rgb(${r},${g},${b})`;
     }
 
@@ -2969,12 +2973,12 @@
             let pCol = qConfig.color;
             let pAlpha = 0.55;
 
-            if (isFocusMode) {
-              pCol = '#64748b';
-              pAlpha = 0.18;
-            } else if (reconQualityColoringEnabled && qualArr && i < qualArr.length) {
+            if (reconQualityColoringEnabled && qualArr && i < qualArr.length) {
               pCol = getColorFromRamp(qualArr[i], qualMin, qualMax, QUALITY_STOPS);
-              pAlpha = 0.85;
+              pAlpha = isFocusMode ? 0.50 : 0.85;
+            } else if (isFocusMode) {
+              pCol = (q === 2 || q === 3) ? qConfig.color : '#64748b';
+              pAlpha = (q === 2 || q === 3) ? 0.45 : 0.18;
             }
 
             ctx.fillStyle = pCol;
@@ -3003,10 +3007,14 @@
 
               const isAnchor = (i === primaryFocusedIdx);
               let pCol = qConfig.color;
-              if (q === 0) pCol = isAnchor ? '#38bdf8' : '#7dd3fc';
-              else if (q === 1) pCol = isAnchor ? '#4ade80' : '#86efac';
-              else if (q === 2) pCol = isAnchor ? '#fbbf24' : '#fde68a';
-              else if (q === 3) pCol = isAnchor ? '#c084fc' : '#e9d5ff';
+              if (reconQualityColoringEnabled && qualArr && i < qualArr.length) {
+                pCol = getColorFromRamp(qualArr[i], qualMin, qualMax, QUALITY_STOPS);
+              } else {
+                if (q === 0) pCol = isAnchor ? '#38bdf8' : '#7dd3fc';
+                else if (q === 1) pCol = isAnchor ? '#4ade80' : '#86efac';
+                else if (q === 2) pCol = isAnchor ? '#fbbf24' : '#fde68a';
+                else if (q === 3) pCol = isAnchor ? '#c084fc' : '#e9d5ff';
+              }
 
               const rad = isAnchor ? ptRad * 1.8 : ptRad * 1.35;
               ctx.fillStyle = pCol;

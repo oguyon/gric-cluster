@@ -5241,9 +5241,9 @@
 
       // 2. Read Parameters
       const inputK = document.getElementById('inputReconK');
-      const k = inputK ? Math.max(1, Math.min(parseInt(inputK.value, 10) || 10, ptsA.length)) : 10;
+      const k = inputK ? Math.max(1, Math.min(parseInt(inputK.value, 10) || 30, ptsA.length)) : 30;
       const selectWeight = document.getElementById('selectReconWeight');
-      const weightMode = selectWeight ? selectWeight.value : 'idw';
+      const weightMode = selectWeight ? selectWeight.value : 'uniform';
       const inputAlpha = document.getElementById('inputReconAlpha');
       const alpha = inputAlpha ? Math.max(0.1, parseFloat(inputAlpha.value) || 1.0) : 1.0;
 
@@ -5466,7 +5466,9 @@
         for (let p = 0; p < neighbors.length; p++)
         {
           const nb = neighbors[p];
+          if (!nb) continue;
           const pb = ptsB[nb.id];
+          if (!pb) continue;
           let dxSq = (pb.x - rp.x) * (pb.x - rp.x)
                    + (pb.y - rp.y) * (pb.y - rp.y);
           if (dimB >= 3)
@@ -5475,7 +5477,8 @@
             const rz = (typeof rp.z === 'number') ? rp.z : 0.0;
             dxSq += (pz - rz) * (pz - rz);
           }
-          wvar += nb.weight * dxSq;
+          const weightVal = (typeof nb.weight === 'number' && !isNaN(nb.weight)) ? nb.weight : (1.0 / neighbors.length);
+          wvar += weightVal * dxSq;
         }
         reconVariance[i] = wvar;
         if (wvar < varMin) { varMin = wvar; }
@@ -5616,12 +5619,12 @@
           ? `${(100.0 * val / totalSlots).toFixed(1)}%`
           : '0%';
       }
-      const l1 = telem.level1ClustersPruned || 0;
-      const l2 = telem.level2AnchorsPruned  || 0;
-      const l3 = telem.level3AnnularPruned  || 0;
-      const tp = telem.temporalPruned       || 0;
+      const l1 = (telem.level0SuperClustersPruned || 0) + (telem.level1ClustersPruned || 0);
+      const l3 = telem.level3AnnularPruned || 0;
+      const gPruned = telem.graphEdgesPruned || 0;
+      const gSeeds = telem.graphSeedsEvaluated || 0;
       const exact = Math.max(0, telem.framedistCalls || 0);
-      const totalAll = l1 + l2 + l3 + tp + exact;
+      const totalAll = l1 + l3 + gPruned + gSeeds + exact;
 
       function barPct(val) {
         return totalAll > 0
@@ -5658,25 +5661,37 @@
       set('lblReconQueryEvalCount',    exact.toLocaleString());
 
       /* -- Pruning tab -- */
-      set('reconQueryL1PrunedVal',       l1.toLocaleString());
-      set('reconQueryL1PctVal',          pct(l1));
-      set('reconQueryL2PrunedVal',       l2.toLocaleString());
-      set('reconQueryL2PctVal',          pct(l2));
-      set('reconQueryL3PrunedVal',       l3.toLocaleString());
-      set('reconQueryL3PctVal',          pct(l3));
-      set('reconQueryTemporalPrunedVal', tp.toLocaleString());
+      set('reconQueryL1PrunedVal',          l1.toLocaleString());
+      set('reconQueryL1PctVal',             pct(l1));
+      set('reconQueryL3PrunedVal',          l3.toLocaleString());
+      set('reconQueryL3PctVal',             pct(l3));
+      set('reconQueryGraphPrunedVal',       gPruned.toLocaleString());
+      set('reconQueryGraphPrunedPctVal',    pct(gPruned));
+      set('reconQueryGraphSeedsVal',        gSeeds.toLocaleString());
+      set('reconQueryGraphSeedsPctVal',     pct(gSeeds));
+
+      const multiPivot = telem.multiPivotPruned || 0;
+      set('reconQueryMultiPivotVal',        multiPivot.toLocaleString());
+      set('reconQueryMultiPivotPctVal',     pct(multiPivot));
+
+      const containmentHits = telem.globalContainmentHits || 0;
+      const containmentPct = numQ > 0 ? (100.0 * containmentHits / numQ).toFixed(1) : '0.0';
+      set('reconQueryContainmentVal',       containmentHits.toLocaleString());
+      set('reconQueryContainmentPctVal',    `${containmentPct}% of queries`);
 
       /* Hierarchy stacked bar */
       const bL1   = document.getElementById('barReconQueryL1');
-      const bL2   = document.getElementById('barReconQueryL2');
       const bL3   = document.getElementById('barReconQueryL3');
-      const bTemp = document.getElementById('barReconQueryTemp');
+      const bGPruned = document.getElementById('barReconQueryGraphPruned');
+      const bMultiPivot = document.getElementById('barReconQueryMultiPivot');
+      const bGSeeds  = document.getElementById('barReconQueryGraphSeeds');
       const bExact= document.getElementById('barReconQueryExact');
-      if (bL1)   { bL1.style.width   = barPct(l1); }
-      if (bL2)   { bL2.style.width   = barPct(l2); }
-      if (bL3)   { bL3.style.width   = barPct(l3); }
-      if (bTemp) { bTemp.style.width = barPct(tp); }
-      if (bExact){ bExact.style.width= barPct(exact); }
+      if (bL1)         { bL1.style.width         = barPct(l1); }
+      if (bL3)         { bL3.style.width         = barPct(l3); }
+      if (bGPruned)    { bGPruned.style.width    = barPct(gPruned); }
+      if (bMultiPivot) { bMultiPivot.style.width = barPct(multiPivot); }
+      if (bGSeeds)     { bGSeeds.style.width     = barPct(gSeeds); }
+      if (bExact)      { bExact.style.width      = barPct(exact); }
 
       /* Header badges */
       set('reconQueryPruneEffBadge', `${pruneEff.toFixed(1)}% pruned`);
@@ -5823,7 +5838,7 @@
 
         /* 3. Read k from the reconstruction k input */
         const inputK = document.getElementById('inputReconK');
-        const k = inputK ? Math.max(1, Math.min(parseInt(inputK.value, 10) || 10, ptsA.length)) : 10;
+        const k = inputK ? Math.max(1, Math.min(parseInt(inputK.value, 10) || 30, ptsA.length)) : 30;
 
         /* Distinct output path so we don't overwrite the A-vs-A knn results */
         const queryOutPrefix = `${clusterDir}/knn_query_C`;
@@ -5837,6 +5852,11 @@
           '-txt',
           '-o', queryOutPrefix
         ];
+
+        const chkApprox = document.getElementById('chkReconQueryApprox');
+        if (chkApprox && chkApprox.checked) {
+          args.push('--approx');
+        }
 
         if (consoleEl) {
           consoleEl.textContent +=
@@ -5932,8 +5952,12 @@
             slotC.knnResultsForQuery = true;
             showToast(
               `📊 Loaded ${queryData.totalFrames.toLocaleString()} query k-NN results ` +
-              `(k=${queryData.k}) into Slot C. Click "⚡ Reconstruct D" to use them.`
+              `(k=${queryData.k}). Auto-reconstructing D...`
             );
+            /* Auto-reconstruct Dataset D with the loaded query k-NN neighbors */
+            if (typeof reconstructDatasetD === 'function') {
+              reconstructDatasetD();
+            }
           } else {
             showToast('⚠️ Query search completed but result file could not be read.');
           }

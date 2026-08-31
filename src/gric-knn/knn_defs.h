@@ -85,6 +85,7 @@ typedef struct
     int             verbose_level;    /**< 0 = quiet, 1 = normal, 2 = verbose */
     int             use_multi_pivot;  /**< 1 to enable Multi-Anchor Pivot Bounding (AESA) */
     int             use_reciprocal;   /**< 1 to enable Symmetric Distance Reciprocal Push */
+    int             approx_mode;      /**< 1 to enable Fast Approximate Graph Search */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -98,6 +99,10 @@ typedef struct
     uint64_t level3_annular_pruned;
     uint64_t temporal_pruned;
     uint64_t reciprocal_reused;
+    uint64_t graph_seeds_evaluated;
+    uint64_t graph_edges_pruned;
+    uint64_t multi_pivot_pruned;
+    uint64_t global_containment_hits;
     uint64_t framedist_calls;
     double   time_load_ms;
     double   time_search_ms;
@@ -121,6 +126,12 @@ typedef struct
     double          *dss_matrix;          /**< Dense K x K inter-super-cluster distance matrix */
     int             *cluster_super_map;   /**< Super-cluster index for each cluster [0..M-1] */
     int              is_fits_input;       /**< 1 if input dataset is FITS, 0 if ASCII */
+    int              has_knn_graph;       /**< 1 if precomputed k-NN graph is available */
+    int              graph_k;             /**< Number of neighbors per node in graph */
+    uint32_t        *graph_indices;       /**< [N x graph_k] neighbor node indices in A */
+    float           *graph_distances;     /**< [N x graph_k] precomputed neighbor distances */
+    const double   **anchor_ptrs;         /**< [M] array of anchor pointers */
+    double          *cluster_radii;       /**< [M] array of cluster radii */
 } KnnModel;
 
 /** Per-query result structure containing top-k neighbors */

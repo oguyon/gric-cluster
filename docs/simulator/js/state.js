@@ -207,7 +207,7 @@
 
     // k-Nearest Neighbors (gric-knn) Post-Processing Options
     let enableKnn = false;
-    let knnK = 10;
+    let knnK = 50;
     let knnDtmin = 1;
     let knnDirection = 'all'; // 'all', 'past', 'future'
     let knnEpsilon = 0.0;
@@ -713,7 +713,7 @@
         selectedKnnQuerySample: -1,
         hoveredKnnNeighborId: -1,
         enableKnn: false,
-        knnK: 10,
+        knnK: 50,
         knnDtmin: 1,
         knnDirection: 'all',
         knnEpsilon: 0.0,
@@ -963,7 +963,7 @@
       selectedKnnQuerySample = (slot.selectedKnnQuerySample !== undefined) ? slot.selectedKnnQuerySample : -1;
       hoveredKnnNeighborId = (slot.hoveredKnnNeighborId !== undefined) ? slot.hoveredKnnNeighborId : -1;
       enableKnn = slot.enableKnn || false;
-      knnK = slot.knnK || 10;
+      knnK = slot.knnK || 50;
       knnDtmin = (slot.knnDtmin !== undefined) ? slot.knnDtmin : 1;
       knnDirection = slot.knnDirection || 'all';
       knnEpsilon = (slot.knnEpsilon !== undefined) ? slot.knnEpsilon : 0.0;

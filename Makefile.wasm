@@ -46,6 +46,7 @@ SRCS = \
 	src/gric-knn/knn_tree.c \
 	src/gric-knn/knn_reader.c \
 	src/gric-knn/knn_engine.c \
+	src/shared/cluster_locator.c \
 	src/shared/gric_bin_io.c \
 	src/wasm/gric_wasm_api.c
 

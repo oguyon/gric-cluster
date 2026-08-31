@@ -78,6 +78,9 @@ static void print_help(
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-no-reciprocal%s         Disable Symmetric Distance Reciprocal Push\n",
            ansi_color_green, ansi_reset);
+    printf("  %s-approx%s, %s--approx%s         Fast Approximate Graph Search "
+           "(10-20 evals/query)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-progress%s             Display live progress bar\n",
            ansi_color_green, ansi_reset);
     printf("  %s-v, -vv%s               Verbosity level\n",
@@ -103,13 +106,14 @@ int main(
 
     KnnConfig config;
     memset(&config, 0, sizeof(KnnConfig));
-    config.k = 10;
+    config.k = 50;
     config.min_temporal_sep = 1; // Exclude self-matching by default
     config.output_format = KNN_FORMAT_AUTO;
     config.progress_mode = 0;
     config.verbose_level = 1;
     config.use_reciprocal = 1; // Enabled by default for bidirectional search
 
+    int k_explicitly_set = 0;
     int dtmin_explicitly_set = 0;
 
     int arg_idx = 1;
@@ -137,6 +141,7 @@ int main(
             if (arg_idx + 1 < argc)
             {
                 config.k = atoi(argv[++arg_idx]);
+                k_explicitly_set = 1;
             }
             else
             {
@@ -244,6 +249,13 @@ int main(
         {
             config.use_reciprocal = 0;
         }
+        else if (strcmp(argv[arg_idx], "-approx") == 0 ||
+                 strcmp(argv[arg_idx], "--approx") == 0 ||
+                 strcmp(argv[arg_idx], "-fast") == 0 ||
+                 strcmp(argv[arg_idx], "--fast") == 0)
+        {
+            config.approx_mode = 1;
+        }
         else if (strcmp(argv[arg_idx], "-progress") == 0)
         {
             config.progress_mode = 1;
@@ -297,9 +309,13 @@ int main(
 
     if (config.query_data_path != NULL)
     {
+        if (!k_explicitly_set)
+        {
+            config.k = 30; // Default k=30 for cross-dataset query mode
+        }
         if (!dtmin_explicitly_set)
         {
-            config.min_temporal_sep = 0;
+            config.min_temporal_sep = 0; // Cross-dataset query has no temporal self-exclusion
         }
         config.use_reciprocal = 0;
     }
@@ -423,6 +439,25 @@ int main(
     printf("  Level 1 Clusters Pruned:   %lu\n", (unsigned long)telemetry.level1_clusters_pruned);
     printf("  Level 2 Anchors Pruned:    %lu\n", (unsigned long)telemetry.level2_anchors_pruned);
     printf("  Level 3 Annular Pruned:    %lu\n", (unsigned long)telemetry.level3_annular_pruned);
+    if (telemetry.graph_seeds_evaluated > 0)
+    {
+        printf("  Graph Seeds Evaluated:     %lu\n",
+               (unsigned long)telemetry.graph_seeds_evaluated);
+    }
+    if (telemetry.graph_edges_pruned > 0)
+    {
+        printf("  Graph Edges Pruned:        %lu\n",
+               (unsigned long)telemetry.graph_edges_pruned);
+    }
+    printf("  Multi-Pivot Pruned:        %lu\n",
+           (unsigned long)telemetry.multi_pivot_pruned);
+    if (telemetry.global_containment_hits > 0)
+    {
+        printf("  Global Containment Hits:   %lu queries (%.1f%%)\n",
+               (unsigned long)telemetry.global_containment_hits,
+               100.0 * (double)telemetry.global_containment_hits /
+                   (double)telemetry.total_queries);
+    }
     if (telemetry.reciprocal_reused > 0)
     {
         printf("  Reciprocal Reused:         %lu\n",
