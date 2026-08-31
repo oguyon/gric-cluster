@@ -3546,8 +3546,15 @@
       const btnTop = document.getElementById('btnRunKnn');
       const btnSide = document.getElementById('btnRunKnnSide');
       const badgeTop = document.getElementById('knnStatusBadgeTop');
-      const hasClusters = (typeof clusters !== 'undefined' &&
-                           clusters && clusters.length > 0);
+      const slot = (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot])
+        ? datasetSlots[activeDatasetSlot] : null;
+      const pts = (slot && slot.benchmarkDataset && slot.benchmarkDataset.length > 0)
+        ? slot.benchmarkDataset
+        : ((typeof benchmarkDataset !== 'undefined' &&
+            benchmarkDataset && benchmarkDataset.length > 0)
+            ? benchmarkDataset
+            : (typeof pastSamples !== 'undefined' ? pastSamples : []));
+      const hasPoints = (pts && pts.length > 0);
 
       if (computing) {
         if (btnTop) {
@@ -3576,14 +3583,14 @@
       } else {
         if (btnTop) {
           btnTop.innerHTML = '▶ Compute k-NN';
-          if (!hasClusters) {
+          if (!hasPoints) {
             btnTop.disabled = true;
             btnTop.style.background = 'rgba(71, 85, 105, 0.2)';
             btnTop.style.color = '#94a3b8';
             btnTop.style.borderColor = 'rgba(71, 85, 105, 0.4)';
             btnTop.style.opacity = '0.5';
             btnTop.style.cursor = 'not-allowed';
-            btnTop.title = 'Clustering required: Run clustering first to compute cluster anchors';
+            btnTop.title = 'No dataset staged: Stage or generate a dataset first';
           } else {
             btnTop.disabled = false;
             btnTop.style.background = 'rgba(34, 197, 94, 0.2)';
@@ -3596,12 +3603,12 @@
         }
         if (btnSide) {
           btnSide.innerHTML = '▶ Compute k-NN';
-          if (!hasClusters) {
+          if (!hasPoints) {
             btnSide.disabled = true;
             btnSide.style.background = 'linear-gradient(135deg, #475569, #334155)';
             btnSide.style.opacity = '0.5';
             btnSide.style.cursor = 'not-allowed';
-            btnSide.title = 'Clustering required: Run clustering first to compute cluster anchors';
+            btnSide.title = 'No dataset staged: Stage or generate a dataset first';
           } else {
             btnSide.disabled = false;
             btnSide.style.background = 'linear-gradient(135deg, #10b981, #059669)';
@@ -3611,8 +3618,8 @@
           }
         }
         if (badgeTop) {
-          if (!hasClusters) {
-            badgeTop.textContent = 'Needs Clustering';
+          if (!hasPoints) {
+            badgeTop.textContent = 'No Dataset';
             badgeTop.style.color = '#94a3b8';
             badgeTop.style.borderColor = 'rgba(148, 163, 184, 0.3)';
           } else {
@@ -3667,7 +3674,6 @@
       isKnnComputing = true;
       knnAbortRequested = false;
       updateKnnButtonUI(true, 'Computing k-NN...');
-
       // Yield briefly to let the browser paint the active "Stop k-NN" button state
       await new Promise(r => setTimeout(r, 40));
 
@@ -3681,14 +3687,23 @@
 
       try {
         const tKnnStart = performance.now();
-        const pts = (typeof benchmarkDataset !== 'undefined' &&
-                     benchmarkDataset && benchmarkDataset.length > 0)
-          ? benchmarkDataset
-          : (typeof pastSamples !== 'undefined' ? pastSamples : []);
+        const slot = (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot])
+          ? datasetSlots[activeDatasetSlot] : null;
+        const pts = (slot && slot.benchmarkDataset && slot.benchmarkDataset.length > 0)
+          ? slot.benchmarkDataset
+          : ((typeof benchmarkDataset !== 'undefined' &&
+              benchmarkDataset && benchmarkDataset.length > 0)
+              ? benchmarkDataset
+              : (typeof pastSamples !== 'undefined' ? pastSamples : []));
 
         if (engineMode === 'cli' && DesktopBridge.isNativeSupported()) {
-          const selCli = document.getElementById('selectCliDataset');
-          let datasetName = selCli ? selCli.value : '';
+          let datasetName = (slot && slot.stagedDatasetInfo && slot.stagedDatasetInfo.name)
+            ? slot.stagedDatasetInfo.name
+            : (slot && slot.benchmarkKey ? `${slot.benchmarkKey}.txt` : '');
+          if (!datasetName) {
+            const selCli = document.getElementById('selectCliDataset');
+            datasetName = selCli ? selCli.value : '';
+          }
           if (!datasetName) {
             datasetName = `${currentBenchmark}.txt`;
           }
@@ -3700,53 +3715,63 @@
             await DesktopBridge.stageDatasetFile(datasetBase, pts).catch(() => {});
           }
 
-          // 2. Check if clusterdat exists; if not and we have in-memory clusters, export them
+          // 2. Check if clusterdat exists; if not, create clusters first
           const filesInWorkspace = await DesktopBridge.listFiles().catch(() => []);
-          const hasClusterDir = filesInWorkspace.some(
+          let hasClusterDir = filesInWorkspace.some(
             f => (f.name === clusterDir || f.name === `${datasetName}.clusterdat`) && f.is_dir
           );
-          if (!hasClusterDir && typeof clusters !== 'undefined' && clusters.length > 0) {
-            let centroidsText = `# GRIC Cluster Centroids\n# ID X Y Z MEMBERS\n`;
-            clusters.forEach(c => {
-              centroidsText += `${c.id} ${c.x.toFixed(6)} ${c.y.toFixed(6)} ` +
-                               `${(c.z || 0).toFixed(6)} ${c.members || 1}\n`;
-            });
-            let dccText = `# GRIC Cluster-to-Cluster Distance Matrix D_cc\n`;
-            if (typeof dcc !== 'undefined' && dcc && dcc.length > 0) {
-              dcc.forEach(row => {
-                dccText += row.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+          if (!hasClusterDir) {
+            const memClusters = (slot && slot.clusters && slot.clusters.length > 0)
+              ? slot.clusters : (typeof clusters !== 'undefined' ? clusters : []);
+            if (memClusters && memClusters.length > 0) {
+              let centroidsText = `# GRIC Cluster Centroids\n# ID X Y Z MEMBERS\n`;
+              memClusters.forEach(c => {
+                centroidsText += `${c.id} ${c.x.toFixed(6)} ${c.y.toFixed(6)} ` +
+                                 `${(c.z || 0).toFixed(6)} ${c.members || 1}\n`;
               });
-            }
-            let memText = `# Frame Membership Assignments\n`;
-            if (typeof pastSamples !== 'undefined' && pastSamples && pastSamples.length > 0) {
-              for (let i = 0; i < pastSamples.length; i++) {
-                const p = pastSamples[i];
-                const cId = p.clusterId >= 0 ? p.clusterId : (
-                  typeof clustersAssigned !== 'undefined' && clustersAssigned
-                    ? clustersAssigned[i] || 0
-                    : 0
-                );
-                memText += `${i} ${cId} 0.000000\n`;
+              let dccText = `# GRIC Cluster-to-Cluster Distance Matrix D_cc\n`;
+              const memDcc = (slot && slot.dcc && slot.dcc.length > 0)
+                ? slot.dcc : (typeof dcc !== 'undefined' ? dcc : []);
+              if (memDcc && memDcc.length > 0) {
+                memDcc.forEach(row => {
+                  dccText += row.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+                });
               }
-            }
-            let exportFiles = {
-              'anchors.txt': centroidsText,
-              'dcc.txt': dccText,
-              'frame_membership.txt': memText
-            };
-            if (typeof dccMin !== 'undefined' && dccMin && dccMin.length > 0) {
-              let dccMinText = `# GRIC Cluster-to-Cluster Lower Bounds Matrix D_cc,min\n`;
-              for (let i = 0; i < clusters.length; i++) {
-                for (let j = 0; j < clusters.length; j++) {
-                  const val = (dccMin[i] && dccMin[i][j]) ? dccMin[i][j] : 0.0;
-                  if (val > 0.0) {
-                    dccMinText += `${i} ${j} ${val.toFixed(6)}\n`;
-                  }
+              let memText = `# Frame Membership Assignments\n`;
+              const memPast = (slot && slot.pastSamples && slot.pastSamples.length > 0)
+                ? slot.pastSamples : (typeof pastSamples !== 'undefined' ? pastSamples : []);
+              if (memPast && memPast.length > 0) {
+                for (let i = 0; i < memPast.length; i++) {
+                  const p = memPast[i];
+                  const cId = p.clusterId >= 0 ? p.clusterId : 0;
+                  memText += `${i} ${cId} 0.000000\n`;
                 }
               }
-              exportFiles['dccmin.txt'] = dccMinText;
+              let exportFiles = {
+                'anchors.txt': centroidsText,
+                'dcc.txt': dccText,
+                'frame_membership.txt': memText
+              };
+              await DesktopBridge.exportClusterDat(datasetBase, exportFiles).catch(() => {});
+            } else {
+              // Run native gric-cluster in workspace first to generate cluster anchors
+              showToast(`⚡ Clustering ${datasetName} for k-NN metric bounds...`);
+              await new Promise((resolve) => {
+                DesktopBridge.runCliJob({
+                  cmd: 'gric-cluster',
+                  args: [datasetName, '-o', clusterDir, '-dlim', '0.15'],
+                  onOutput: (chunk) => {
+                    const consoleEl = document.getElementById('cliConsoleLog');
+                    if (consoleEl) {
+                      consoleEl.textContent += chunk;
+                      consoleEl.scrollTop = consoleEl.scrollHeight;
+                    }
+                  },
+                  onTelemetry: () => {},
+                  onFinish: () => resolve()
+                }).catch(() => resolve());
+              });
             }
-            await DesktopBridge.exportClusterDat(datasetBase, exportFiles).catch(() => {});
           }
 
           const args = [
@@ -3857,6 +3882,21 @@
           let nativeData = await DesktopBridge.readKnnResults(clusterDir, knnK);
           if (!nativeData) {
             nativeData = await DesktopBridge.readKnnResults(`${datasetName}.clusterdat`, knnK);
+          }
+          if (!nativeData || !nativeData.indices || nativeData.indices[0] === -1) {
+            // Fallback to WASM / JS engine if native binary produced no valid indices
+            const config = {
+              k: knnK,
+              dtmin: knnDtmin,
+              direction: knnDirection,
+              epsilon: knnEpsilon,
+              rlim: knnRlim,
+              multiPivot: (typeof knnMvp !== 'undefined' && knnMvp)
+            };
+            const wasmRes = GricWasm.runKnn(config, pts);
+            if (wasmRes && wasmRes.indices && wasmRes.indices.length > 0) {
+              nativeData = wasmRes;
+            }
           }
           if (!nativeData) {
             const N = parsedTelem.totalQueries || pts.length;
