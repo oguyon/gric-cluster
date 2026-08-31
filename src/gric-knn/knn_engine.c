@@ -1029,69 +1029,168 @@ static void knn_search_cross_dataset_frame(
             best_seed_id = curr_seed;
             best_seed_dist = curr_dist;
 
-            // Expand 1-hop and 2-hop graph neighborhood around best_seed_id to ensure
-            // the k-NN heap is saturated with tight local manifold points and evicts
-            // any distant starting seeds from earlier hops.
+            // 4. Dynamic Frontier Graph Search around best_seed_id:
+            // Expands candidate nodes until all unexpanded frontier candidates are
+            // farther than the current k-th distance in the heap (tau_k), dynamically
+            // adapting the number of hops to the user's k and the local manifold geometry.
             if (best_seed_id >= 0)
             {
-                long hop1_ids[128];
-                int  num_hop1 = 0;
-                const uint32_t *neighbors = &model->graph_indices[best_seed_id * (long)graph_k];
-                for (int k_idx = 0; k_idx < graph_k && num_hop1 < 128; k_idx++)
+                #define GRAPH_FRONTIER_MAX 256
+                typedef struct
                 {
-                    long nb_id = (long)neighbors[k_idx];
-                    if (nb_id >= 0 && nb_id < model->total_dataset_frames && nb_id != best_seed_id)
+                    long    frame_id;
+                    double  dist;
+                    uint8_t expanded;
+                } FrontierNode;
+
+                FrontierNode frontier[GRAPH_FRONTIER_MAX];
+                int frontier_count = 0;
+
+                frontier[0].frame_id = best_seed_id;
+                frontier[0].dist = best_seed_dist;
+                frontier[0].expanded = 0;
+                frontier_count = 1;
+
+                // Also seed frontier with entry points from other evaluated anchor clusters
+                for (int e = 0; e < loc_res.num_evaluated_anchors && frontier_count < 8; e++)
+                {
+                    int anc_c = loc_res.evaluated_clusters[e];
+                    if (anc_c >= 0 && anc_c < M && anc_c != best_c)
                     {
-                        hop1_ids[num_hop1++] = nb_id;
-                        if (!knn_heap_contains(heap, (int)nb_id))
+                        const KnnCluster *anc_cl = &model->clusters[anc_c];
+                        double d_anc = loc_res.evaluated_dists[e];
+                        int mid = find_member_lower_bound(
+                            anc_cl->members, anc_cl->num_members, (float)d_anc
+                        );
+                        if (mid >= anc_cl->num_members)
                         {
-                            if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
+                            mid = anc_cl->num_members - 1;
+                        }
+                        if (mid >= 0)
+                        {
+                            long s_frame = (long)anc_cl->members[mid].frame_id;
+                            if (!knn_heap_contains(heap, (int)s_frame))
                             {
-                                telem->framedist_calls++;
-                                telem->graph_seeds_evaluated++;
-                                double d = compute_euclidean_distance(query_data, cand_buffer,
-                                                                     frame_elem);
-                                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                                if (knn_reader_read_frame(cand_reader, s_frame, cand_buffer) == 0)
                                 {
-                                    knn_heap_push(heap, (int)nb_id, d);
+                                    telem->framedist_calls++;
+                                    telem->graph_seeds_evaluated++;
+                                    double d = compute_euclidean_distance(
+                                        query_data, cand_buffer, frame_elem
+                                    );
+                                    if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                                    {
+                                        knn_heap_push(heap, (int)s_frame, d);
+                                    }
+                                    frontier[frontier_count].frame_id = s_frame;
+                                    frontier[frontier_count].dist = d;
+                                    frontier[frontier_count].expanded = 0;
+                                    frontier_count++;
                                 }
                             }
                         }
                     }
                 }
 
-                // If in approx mode, expand 2-hop neighbors to saturate the k-NN heap
-                // with tight local manifold points
-                if (config->approx_mode)
+                int max_expansions = (config->approx_mode) ? 64 : 16;
+                int expansions_done = 0;
+
+                while (expansions_done < max_expansions)
                 {
-                    int max_hop2_expand = (num_hop1 < 12) ? num_hop1 : 12;
-                    for (int h = 0; h < max_hop2_expand; h++)
+                    int best_idx = -1;
+                    double min_f_dist = 1e20;
+                    for (int fi = 0; fi < frontier_count; fi++)
                     {
-                        long parent_id = hop1_ids[h];
-                        const uint32_t *h2_nbs =
-                            &model->graph_indices[parent_id * (long)graph_k];
-                        for (int k_idx = 0; k_idx < graph_k; k_idx++)
+                        if (!frontier[fi].expanded && frontier[fi].dist < min_f_dist)
                         {
-                            long nb2_id = (long)h2_nbs[k_idx];
-                            if (nb2_id < 0 || nb2_id >= model->total_dataset_frames ||
-                                nb2_id == best_seed_id || knn_heap_contains(heap, (int)nb2_id))
-                            {
-                                continue;
-                            }
-                            if (knn_reader_read_frame(cand_reader, nb2_id, cand_buffer) == 0)
-                            {
-                                telem->framedist_calls++;
-                                telem->graph_seeds_evaluated++;
-                                double d = compute_euclidean_distance(query_data, cand_buffer,
-                                                                     frame_elem);
-                                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
-                                {
-                                    knn_heap_push(heap, (int)nb2_id, d);
-                                }
-                            }
+                            min_f_dist = frontier[fi].dist;
+                            best_idx = fi;
                         }
                     }
-                }
+
+                    if (best_idx < 0)
+                    {
+                        break;
+                    }
+
+                    double current_tau = knn_heap_peek_max_dist(heap);
+                    if (heap->count >= config->k && min_f_dist > current_tau / eps_factor)
+                    {
+                        break;
+                    }
+
+                    frontier[best_idx].expanded = 1;
+                    expansions_done++;
+
+                    long curr_u = frontier[best_idx].frame_id;
+                    double curr_u_dist = frontier[best_idx].dist;
+                    const uint32_t *neighbors = &model->graph_indices[curr_u * (long)graph_k];
+                    const float *n_dists = &model->graph_distances[curr_u * (long)graph_k];
+
+                    for (int k_idx = 0; k_idx < graph_k; k_idx++)
+                    {
+                        long nb_id = (long)neighbors[k_idx];
+                        if (nb_id < 0 || nb_id >= model->total_dataset_frames || nb_id == curr_u)
+                        {
+                            continue;
+                        }
+
+                        int already_in_frontier = 0;
+                        for (int fi = 0; fi < frontier_count; fi++)
+                        {
+                            if (frontier[fi].frame_id == nb_id)
+                            {
+                                already_in_frontier = 1;
+                                break;
+                            }
+                        }
+                        if (already_in_frontier)
+                        {
+                            continue;
+                        }
+
+                        double d_edge = (double)n_dists[k_idx];
+                        double lb_edge = fabs(curr_u_dist - d_edge);
+                        current_tau = knn_heap_peek_max_dist(heap);
+
+                        if (heap->count >= config->k &&
+                            (lb_edge >= current_tau / eps_factor ||
+                             (config->rlim_cutoff > 0.0 && lb_edge >= config->rlim_cutoff)))
+                        {
+                            telem->graph_edges_pruned++;
+                            continue;
+                        }
+
+                        if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
+                        {
+                            telem->framedist_calls++;
+                            telem->graph_seeds_evaluated++;
+                            double d = compute_euclidean_distance(
+                                query_data, cand_buffer, frame_elem
+                            );
+                            if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                            {
+                                knn_heap_push(heap, (int)nb_id, d);
+                            }
+                            if (num_seed_pivots < 8)
+                            {
+                                seed_pivot_ids[num_seed_pivots] = nb_id;
+                                seed_pivot_dists[num_seed_pivots] = d;
+                                num_seed_pivots++;
+                            }
+
+                            current_tau = knn_heap_peek_max_dist(heap);
+                            if ((d < current_tau / eps_factor || heap->count < config->k) &&
+                                frontier_count < GRAPH_FRONTIER_MAX)
+                            {
+                                frontier[frontier_count].frame_id = nb_id;
+                                frontier[frontier_count].dist = d;
+                                frontier[frontier_count].expanded = 0;
+                                frontier_count++;
+                            }
+                        }
+                    } // for (int k_idx = 0; ...)
+                } // while (expansions_done ...)
             }
 
             // 4c. Global Containment Criterion via Local k-Ball Radius R_k(curr_seed)
