@@ -612,7 +612,7 @@ const DesktopBridge = (function () {
           if (magic === 'GRIC') {
             const headerSize = view.getUint16(8, true);
             const nframes = Number(view.getBigUint64(32, true));
-            const mems = new Uint32Array(memBuf, headerSize, nframes);
+            const mems = new Uint32Array(memBuf.slice(headerSize), 0, nframes);
             for (let f = 0; f < nframes; f++) {
               const val = mems[f];
               results.membership.push(val);
@@ -910,8 +910,8 @@ const DesktopBridge = (function () {
           const N = Number(viewIdx.getBigUint64(32, true));
           const binK = Number(viewIdx.getBigUint64(40, true)) || k;
           const totalElems = N * binK;
-          const rawIndices = new Uint32Array(idxBuf, hdrBytesIdx, totalElems);
-          const rawDistances = new Float32Array(dstBuf, hdrBytesDst, totalElems);
+          const rawIndices = new Uint32Array(idxBuf.slice(hdrBytesIdx), 0, totalElems);
+          const rawDistances = new Float32Array(dstBuf.slice(hdrBytesDst), 0, totalElems);
 
           const indices = new Int32Array(totalElems);
           const distances = new Float64Array(totalElems);
@@ -964,6 +964,88 @@ const DesktopBridge = (function () {
       };
     } catch (err) {
       console.warn('[DesktopBridge] Could not read knn results:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Read k-NN results written by `gric-knn -query C -o <outputPrefix>`.
+   *
+   * The C knn_writer derives binary paths as `<outputPrefix>_indices.bin`
+   * and `<outputPrefix>_distances.bin` when `-o` is explicitly set.
+   *
+   * @param {string} outputPrefix  Path prefix passed as `-o` (without extension).
+   * @param {number} k             Number of neighbors (used for ASCII fallback).
+   * @return {Object|null}         Same shape as readKnnResults: {totalFrames, k, indices, distances}
+   */
+  async function readKnnQueryResults(outputPrefix, k) {
+    const pfx = outputPrefix.replace(/\.txt$/i, '');
+
+    /* 1. Try binary files first */
+    try {
+      const idxBuf = await readBinaryFile(`${pfx}_indices.bin`);
+      const dstBuf = await readBinaryFile(`${pfx}_distances.bin`);
+      if (idxBuf && dstBuf) {
+        const viewIdx = new DataView(idxBuf);
+        const viewDst = new DataView(dstBuf);
+        const magicIdx = String.fromCharCode(
+          viewIdx.getUint8(0), viewIdx.getUint8(1),
+          viewIdx.getUint8(2), viewIdx.getUint8(3)
+        );
+        const magicDst = String.fromCharCode(
+          viewDst.getUint8(0), viewDst.getUint8(1),
+          viewDst.getUint8(2), viewDst.getUint8(3)
+        );
+        if (magicIdx === 'GRIC' && magicDst === 'GRIC') {
+          const hdrBytesIdx = viewIdx.getUint16(8, true);
+          const hdrBytesDst = viewDst.getUint16(8, true);
+          const N     = Number(viewIdx.getBigUint64(32, true));
+          const binK  = Number(viewIdx.getBigUint64(40, true)) || k;
+          const total = N * binK;
+          const rawIndices   = new Uint32Array(idxBuf.slice(hdrBytesIdx), 0, total);
+          const rawDistances = new Float32Array(dstBuf.slice(hdrBytesDst), 0, total);
+          const indices   = new Int32Array(total);
+          const distances = new Float64Array(total);
+          for (let i = 0; i < total; i++) {
+            indices[i]   = rawIndices[i];
+            distances[i] = rawDistances[i];
+          }
+          return { totalFrames: N, k: binK, indices, distances };
+        }
+      }
+    } catch (_e) { /* fall through to ASCII */ }
+
+    /* 2. Fallback to ASCII text file at <outputPrefix>.txt or <outputPrefix> */
+    try {
+      let text = await readFile(`${pfx}.txt`);
+      if (!text) {
+        text = await readFile(pfx);
+      }
+      if (!text) { return null; }
+      const lines = text.split(/\r?\n/);
+      let N = 0;
+      const indices = [];
+      const distances = [];
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) { continue; }
+        const parts = trimmed.split(/\s+/);
+        if (parts.length < 1 + 2 * k) { continue; }
+        N++;
+        for (let r = 0; r < k; r++) {
+          indices.push(parseInt(parts[1 + 2 * r], 10));
+          distances.push(parseFloat(parts[1 + 2 * r + 1]));
+        }
+      }
+      if (N === 0) { return null; }
+      return {
+        totalFrames: N,
+        k,
+        indices: new Int32Array(indices),
+        distances: new Float64Array(distances)
+      };
+    } catch (err) {
+      console.warn('[DesktopBridge] Could not read knn query results:', err);
       return null;
     }
   }
@@ -1209,6 +1291,7 @@ const DesktopBridge = (function () {
     parseClusterDatDir,
     parseKnnTelemetryLog,
     readKnnResults,
+    readKnnQueryResults,
     parseDimDensityLog,
     readDimDensityResults,
     shutdownServer

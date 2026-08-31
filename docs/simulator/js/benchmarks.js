@@ -8,23 +8,23 @@
 
     const BENCHMARK_DESCS = {
       // 2D Benchmarks
-      "2Dspiral": "<b>2Dspiral</b>: 1,000 continuous 2D samples tracing an Archimedean spiral. Demonstrates ~1.0 eval/frame via sequential recency prior.",
-      "2Dspiral-shuffle": "<b>2Dspiral-shuffle</b>: 1,000 samples on spiral with randomized temporal order. Stresses multi-point metric pruning on non-convex manifolds.",
-      "2Dcircle-shuffle": "<b>2Dcircle-shuffle</b>: 1,000 samples on a 1D circle manifold in 2D with shuffled order. Tests pure distance geometry without temporal correlation.",
-      "2DcircleP10n": "<b>2DcircleP10n</b>: 10 periodic circular cycles with additive Gaussian noise (sigma=0.04). Tests cyclic Markov transition matrix (-tm) and sequence predictor (-pred).",
-      "2Drand": "<b>2Drand</b>: 1,000 uniform random points across the 2D plane. Stresses spatial coverage scaling.",
-      "2Dwalk": "<b>2Dwalk</b>: 1,000 steps of bounded Brownian random walk in 2D. Tests localized drift and dynamic cluster reuse.",
-      "stream": "<b>stream</b>: 1,000 samples on a 2D Lissajous orbital trajectory. Tests smooth continuous motion clustering.",
+      "2Dspiral": "<b>2Dspiral</b>: Continuous 2D samples tracing an Archimedean spiral. Demonstrates ~1.0 eval/frame via sequential recency prior.",
+      "2Dspiral-shuffle": "<b>2Dspiral-shuffle</b>: Samples on spiral with randomized temporal order. Stresses multi-point metric pruning on non-convex manifolds.",
+      "2Dcircle-shuffle": "<b>2Dcircle-shuffle</b>: Samples on a 1D circle manifold in 2D with shuffled order. Tests pure distance geometry without temporal correlation.",
+      "2DcircleP10n": "<b>2DcircleP10n</b>: Periodic circular cycles with additive Gaussian noise (sigma=0.04). Tests cyclic Markov transition matrix (-tm) and sequence predictor (-pred).",
+      "2Drand": "<b>2Drand</b>: Uniform random points across the 2D plane. Stresses spatial coverage scaling.",
+      "2Dwalk": "<b>2Dwalk</b>: Steps of bounded Brownian random walk in 2D. Tests localized drift and dynamic cluster reuse.",
+      "stream": "<b>stream</b>: Samples on a 2D Lissajous orbital trajectory. Tests smooth continuous motion clustering.",
       
       // 3D Benchmarks
-      "3Dspiral": "<b>3Dspiral</b>: 1,000 continuous 3D samples on a rotating helical manifold. Shows quad-split X/Y/Z projections &amp; custom 3D drag rotation.",
-      "3Dspiral-shuffle": "<b>3Dspiral-shuffle</b>: 1,000 3D helical spiral points with shuffled temporal order. Stresses 3D metric pruning (3P/4P/5P) without temporal prior.",
-      "3Dsphere": "<b>3Dsphere</b>: 1,000 points uniformly distributed on the surface of a 3D sphere manifold (S²). Tests non-Euclidean intrinsic 2D manifold embedded in 3D.",
-      "3Dtorus": "<b>3Dtorus</b>: 1,000 points tracing a continuous knot trajectory around a 3D torus manifold (R=0.60, r=0.24).",
-      "3Dstar": "<b>3Dstar</b>: 1,000 points distributed across 20 3D radial star branches extending from origin.",
-      "3Drand": "<b>3Drand</b>: 1,000 uniform random points distributed throughout a 3D spherical volume.",
-      "3Dwalk": "<b>3Dwalk</b>: 1,000 steps of bounded 3D Brownian random walk. Tests localized 3D spatial drift and anchor reuse.",
-      "3Dlorenz": "<b>3Dlorenz</b>: 1,000 samples integrated along the chaotic Lorenz attractor (σ=10, ρ=28, β=8/3). Tests 3D chaotic trajectory clustering.",
+      "3Dspiral": "<b>3Dspiral</b>: Continuous 3D samples on a rotating helical manifold. Shows quad-split X/Y/Z projections &amp; custom 3D drag rotation.",
+      "3Dspiral-shuffle": "<b>3Dspiral-shuffle</b>: 3D helical spiral points with shuffled temporal order. Stresses 3D metric pruning (3P/4P/5P) without temporal prior.",
+      "3Dsphere": "<b>3Dsphere</b>: Points uniformly distributed on the surface of a 3D sphere manifold (S²). Tests non-Euclidean intrinsic 2D manifold embedded in 3D.",
+      "3Dtorus": "<b>3Dtorus</b>: Continuous knot trajectory around a 3D torus manifold (R=0.60, r=0.24).",
+      "3Dstar": "<b>3Dstar</b>: Points distributed across 20 3D radial star branches extending from origin.",
+      "3Drand": "<b>3Drand</b>: Uniform random points distributed throughout a 3D spherical volume.",
+      "3Dwalk": "<b>3Dwalk</b>: Steps of bounded 3D Brownian random walk. Tests localized 3D spatial drift and anchor reuse.",
+      "3Dlorenz": "<b>3Dlorenz</b>: Samples integrated along the chaotic Lorenz attractor (σ=10, ρ=28, β=8/3). Tests 3D chaotic trajectory clustering.",
       
       // Reconstructed
       "reconstructed": "<b>Reconstructed Dataset</b>: Non-parametric k-NN reconstruction evaluated from queries C mapped through training set (A → B).",
