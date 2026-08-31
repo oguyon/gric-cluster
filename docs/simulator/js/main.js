@@ -146,6 +146,19 @@
           }
         }
 
+        const btnNativeQuery = document.getElementById('btnRunNativeReconQuery');
+        if (btnNativeQuery) {
+          if (DesktopBridge.isNativeSupported()) {
+            btnNativeQuery.style.opacity = '1.0';
+            btnNativeQuery.style.cursor = 'pointer';
+            btnNativeQuery.title = 'Run native gric-knn -query C using cluster anchors of A';
+          } else {
+            btnNativeQuery.style.opacity = '0.5';
+            btnNativeQuery.style.cursor = 'not-allowed';
+            btnNativeQuery.title = 'Native CLI requires a local desktop gric-server';
+          }
+        }
+
         if (bannerToggle) {
           bannerToggle.style.display = DesktopBridge.isNativeSupported() ? 'inline-block' : 'none';
           bannerToggle.textContent = 'Switch to Native CLI ➔';
@@ -793,6 +806,16 @@
       if (selSide) selSide.value = 'custom';
       const descEl = document.getElementById('benchmarkDesc');
       if (descEl) descEl.innerHTML = BENCHMARK_DESCS["custom"];
+
+      /* Store the original filename on the active slot so that native CLI jobs
+       * (e.g. gric-knn -query C) can reference the actual workspace file directly
+       * without needing to re-stage the in-memory point data. */
+      if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+        if (!datasetSlots[activeDatasetSlot].stagedDatasetInfo) {
+          datasetSlots[activeDatasetSlot].stagedDatasetInfo = {};
+        }
+        datasetSlots[activeDatasetSlot].stagedDatasetInfo.name = filename;
+      }
 
       resetSimulation();
       resetView();
@@ -3696,18 +3719,22 @@
               ? benchmarkDataset
               : (typeof pastSamples !== 'undefined' ? pastSamples : []));
 
+        const inputKnnKEl = document.getElementById('inputKnnK');
+        if (inputKnnKEl && !isNaN(parseInt(inputKnnKEl.value, 10))) {
+          knnK = Math.max(1, parseInt(inputKnnKEl.value, 10));
+        }
+        if (slot) slot.knnK = knnK;
+
         if (engineMode === 'cli' && DesktopBridge.isNativeSupported()) {
-          let datasetName = (slot && slot.stagedDatasetInfo && slot.stagedDatasetInfo.name)
+          let rawDatasetName = (slot && slot.stagedDatasetInfo && slot.stagedDatasetInfo.name)
             ? slot.stagedDatasetInfo.name
-            : (slot && slot.benchmarkKey ? `${slot.benchmarkKey}.txt` : '');
-          if (!datasetName) {
+            : (slot && slot.benchmarkKey ? slot.benchmarkKey : currentBenchmark);
+          if (!rawDatasetName) {
             const selCli = document.getElementById('selectCliDataset');
-            datasetName = selCli ? selCli.value : '';
+            rawDatasetName = selCli ? selCli.value : `${currentBenchmark}.txt`;
           }
-          if (!datasetName) {
-            datasetName = `${currentBenchmark}.txt`;
-          }
-          const datasetBase = datasetName.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '');
+          const datasetBase = rawDatasetName.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
+          const datasetFile = `${datasetBase}.txt`;
           const clusterDir = `${datasetBase}.clusterdat`;
 
           // 1. Ensure staged coordinates exist in workspace file
@@ -3718,7 +3745,7 @@
           // 2. Check if clusterdat exists; if not, create clusters first
           const filesInWorkspace = await DesktopBridge.listFiles().catch(() => []);
           let hasClusterDir = filesInWorkspace.some(
-            f => (f.name === clusterDir || f.name === `${datasetName}.clusterdat`) && f.is_dir
+            f => (f.name === clusterDir || f.name === `${datasetBase}.clusterdat`) && (f.is_dir || f.isDir)
           );
           if (!hasClusterDir) {
             const memClusters = (slot && slot.clusters && slot.clusters.length > 0)
@@ -3726,8 +3753,8 @@
             if (memClusters && memClusters.length > 0) {
               let centroidsText = `# GRIC Cluster Centroids\n# ID X Y Z MEMBERS\n`;
               memClusters.forEach(c => {
-                centroidsText += `${c.id} ${c.x.toFixed(6)} ${c.y.toFixed(6)} ` +
-                                 `${(c.z || 0).toFixed(6)} ${c.members || 1}\n`;
+                centroidsText += `${c.id} ${Number(c.x || 0).toFixed(6)} ${Number(c.y || 0).toFixed(6)} ` +
+                                 `${Number(c.z || 0).toFixed(6)} ${c.members || 1}\n`;
               });
               let dccText = `# GRIC Cluster-to-Cluster Distance Matrix D_cc\n`;
               const memDcc = (slot && slot.dcc && slot.dcc.length > 0)
@@ -3755,11 +3782,11 @@
               await DesktopBridge.exportClusterDat(datasetBase, exportFiles).catch(() => {});
             } else {
               // Run native gric-cluster in workspace first to generate cluster anchors
-              showToast(`⚡ Clustering ${datasetName} for k-NN metric bounds...`);
+              showToast(`⚡ Clustering ${datasetFile} for k-NN metric bounds...`);
               await new Promise((resolve) => {
                 DesktopBridge.runCliJob({
                   cmd: 'gric-cluster',
-                  args: [datasetName, '-o', clusterDir, '-dlim', '0.15'],
+                  args: [datasetFile, '-o', clusterDir, '-dlim', '0.15'],
                   onOutput: (chunk) => {
                     const consoleEl = document.getElementById('cliConsoleLog');
                     if (consoleEl) {
@@ -3775,7 +3802,7 @@
           }
 
           const args = [
-            datasetName,
+            datasetFile,
             clusterDir,
             '-k', String(knnK),
             '-dtmin', String(knnDtmin)
@@ -4188,7 +4215,13 @@
       sliderKnnK.addEventListener('input', (e) => {
         knnK = parseInt(e.target.value, 10);
         if (inputKnnK) inputKnnK.value = knnK;
+        if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+          datasetSlots[activeDatasetSlot].knnK = knnK;
+        }
         updateCliCommand();
+        if (typeof updateDatasetStatusBadge === 'function') {
+          updateDatasetStatusBadge();
+        }
         draw();
       });
     }
@@ -4197,8 +4230,14 @@
         const v = parseInt(e.target.value, 10);
         if (!isNaN(v) && v >= 1) {
           knnK = v;
-          if (sliderKnnK) sliderKnnK.value = Math.min(50, v);
+          if (sliderKnnK) sliderKnnK.value = Math.min(100, v);
+          if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+            datasetSlots[activeDatasetSlot].knnK = knnK;
+          }
           updateCliCommand();
+          if (typeof updateDatasetStatusBadge === 'function') {
+            updateDatasetStatusBadge();
+          }
           draw();
         }
       });
@@ -5208,130 +5247,194 @@
       const inputAlpha = document.getElementById('inputReconAlpha');
       const alpha = inputAlpha ? Math.max(0.1, parseFloat(inputAlpha.value) || 1.0) : 1.0;
 
+      const numQueries = ptsC.length;
+      const numCandidates = ptsA.length;
+
+      // 3. In Native C mode, automatically run the compiled native C gric-knn -query C if not already cached
+      if (DesktopBridge.isNativeSupported()) {
+        const hasValidNativeKnn = !!(
+          slotC && slotC.knnResults && slotC.knnResultsForQuery &&
+          slotC.knnResults.indices &&
+          slotC.knnResults.totalFrames === numQueries &&
+          slotC.knnResults.k >= k
+        );
+
+        if (!hasValidNativeKnn) {
+          showToast(`⚡ Running native compiled C gric-knn -query C (k=${k})...`);
+          await runNativeReconQueryKnn();
+        }
+      }
+
+      const activeSlotC = datasetSlots['C'] || slotC;
+      const nativeKnn = (activeSlotC && activeSlotC.knnResults && activeSlotC.knnResultsForQuery &&
+                         activeSlotC.knnResults.indices && activeSlotC.knnResults.totalFrames === numQueries)
+        ? activeSlotC.knnResults : null;
+
+      if (DesktopBridge.isNativeSupported() && !nativeKnn) {
+        showToast('⚠️ Native k-NN search could not load result indices.');
+        return;
+      }
+
       showToast(`⚡ Running k-NN Reconstruction (A: ${ptsA.length} pts in ${dimA}D, B: ${dimB}D target, C: ${ptsC.length} queries, k=${k})...`);
 
       const tStart = performance.now();
-      const numQueries = ptsC.length;
-      const numCandidates = ptsA.length;
       const reconstructedPoints = new Array(numQueries);
       const sourceNeighbors = new Array(numQueries);
       let totalDistSum = 0.0;
       let totalDistCount = 0;
 
-      // 3. For each query in C, find top-k nearest neighbors in A and average B
-      for (let i = 0; i < numQueries; i++) {
-        const qc = ptsC[i];
-        const qx = qc.x;
-        const qy = qc.y;
-        const qz = (dimA >= 3 && typeof qc.z === 'number') ? qc.z : 0.0;
+      if (nativeKnn) {
+        /* Fast path: use pre-computed C-in-A indices from gric-knn -query */
+        console.log(`[Reconstruction] Using pre-computed native k-NN results ` +
+                    `(k=${nativeKnn.k}, N=${numQueries})`);
+        const kUsed = Math.min(k, nativeKnn.k);
+        for (let i = 0; i < numQueries; i++) {
+          const offset = i * nativeKnn.k;
+          const topNeighbors = [];
+          let exactMatchIdx = -1;
 
-        // Compute distance to all candidates in A
-        const dists = new Float64Array(numCandidates);
-        const indices = new Int32Array(numCandidates);
-        for (let j = 0; j < numCandidates; j++) {
-          const pa = ptsA[j];
-          const dx = qx - pa.x;
-          const dy = qy - pa.y;
-          const dz = (dimA >= 3 && typeof pa.z === 'number') ? (qz - pa.z) : 0.0;
-          dists[j] = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          indices[j] = j;
-        }
+          /* Collect the top-k neighbor indices and distances */
+          const rawDists = new Float64Array(kUsed);
+          const rawIdx   = new Int32Array(kUsed);
+          for (let p = 0; p < kUsed; p++) {
+            rawDists[p] = nativeKnn.distances[offset + p];
+            rawIdx[p]   = nativeKnn.indices[offset + p];
+            if (rawDists[p] < 1e-9) { exactMatchIdx = p; }
+          }
 
-        // Partial sort top-k smallest distances
-        for (let p = 0; p < k; p++) {
-          let minIdx = p;
-          for (let j = p + 1; j < numCandidates; j++) {
-            if (dists[j] < dists[minIdx]) {
-              minIdx = j;
+          let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
+          if (exactMatchIdx >= 0) {
+            const pb = ptsB[rawIdx[exactMatchIdx]];
+            avgX = pb.x; avgY = pb.y;
+            avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+            for (let p = 0; p < kUsed; p++) {
+              topNeighbors.push({
+                id: rawIdx[p], dist: rawDists[p],
+                weight: (p === exactMatchIdx) ? 1.0 : 0.0
+              });
+              totalDistSum += rawDists[p];
+              totalDistCount++;
+            }
+          } else if (weightMode === 'idw') {
+            let sumW = 0.0;
+            const weights = new Float64Array(kUsed);
+            for (let p = 0; p < kUsed; p++) {
+              const d = rawDists[p];
+              const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+              weights[p] = w; sumW += w;
+              totalDistSum += d; totalDistCount++;
+            }
+            for (let p = 0; p < kUsed; p++) {
+              const normW = weights[p] / sumW;
+              const pb = ptsB[rawIdx[p]];
+              avgX += normW * pb.x; avgY += normW * pb.y;
+              if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+              topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
+            }
+          } else {
+            const normW = 1.0 / kUsed;
+            for (let p = 0; p < kUsed; p++) {
+              const pb = ptsB[rawIdx[p]];
+              avgX += normW * pb.x; avgY += normW * pb.y;
+              if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+              topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
+              totalDistSum += rawDists[p]; totalDistCount++;
             }
           }
-          const tmpD = dists[p];
-          dists[p] = dists[minIdx];
-          dists[minIdx] = tmpD;
 
-          const tmpI = indices[p];
-          indices[p] = indices[minIdx];
-          indices[minIdx] = tmpI;
+          const reconPt = { x: avgX, y: avgY };
+          if (dimB >= 3) { reconPt.z = avgZ; }
+          reconstructedPoints[i] = reconPt;
+          sourceNeighbors[i]     = topNeighbors;
+        } // for each query (fast path)
+
+      } else {
+        /* Brute-force path: O(N_C × N_A) for each query in C */
+        if (nativeKnn === null && slotC && slotC.knnResults) {
+          console.log('[Reconstruction] Native k-NN results exist but dimensions mismatch; ' +
+                      'falling back to brute-force.');
         }
+        for (let i = 0; i < numQueries; i++) {
+          const qc = ptsC[i];
+          const qx = qc.x;
+          const qy = qc.y;
+          const qz = (dimA >= 3 && typeof qc.z === 'number') ? qc.z : 0.0;
 
-        // Calculate weights and average corresponding B samples
-        const topNeighbors = [];
-        let exactMatchIdx = -1;
-        for (let p = 0; p < k; p++) {
-          if (dists[p] < 1e-9) {
-            exactMatchIdx = p;
-            break;
+          /* Compute distance to all candidates in A */
+          const dists   = new Float64Array(numCandidates);
+          const indices = new Int32Array(numCandidates);
+          for (let j = 0; j < numCandidates; j++) {
+            const pa = ptsA[j];
+            const dx = qx - pa.x;
+            const dy = qy - pa.y;
+            const dz = (dimA >= 3 && typeof pa.z === 'number') ? (qz - pa.z) : 0.0;
+            dists[j]   = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            indices[j] = j;
           }
-        }
 
-        let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
-        if (exactMatchIdx >= 0) {
-          const matchedSampleId = indices[exactMatchIdx];
-          const pb = ptsB[matchedSampleId];
-          avgX = pb.x;
-          avgY = pb.y;
-          avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+          /* Partial sort top-k smallest distances */
           for (let p = 0; p < k; p++) {
-            topNeighbors.push({
-              id: indices[p],
-              dist: dists[p],
-              weight: (p === exactMatchIdx) ? 1.0 : 0.0
-            });
-            totalDistSum += dists[p];
-            totalDistCount++;
-          }
-        } else if (weightMode === 'idw') {
-          let sumW = 0.0;
-          const weights = new Float64Array(k);
-          for (let p = 0; p < k; p++) {
-            const d = dists[p];
-            const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
-            weights[p] = w;
-            sumW += w;
-            totalDistSum += d;
-            totalDistCount++;
-          }
-          for (let p = 0; p < k; p++) {
-            const normW = weights[p] / sumW;
-            const pb = ptsB[indices[p]];
-            avgX += normW * pb.x;
-            avgY += normW * pb.y;
-            if (dimB >= 3 && typeof pb.z === 'number') {
-              avgZ += normW * pb.z;
+            let minIdx = p;
+            for (let j = p + 1; j < numCandidates; j++) {
+              if (dists[j] < dists[minIdx]) { minIdx = j; }
             }
-            topNeighbors.push({
-              id: indices[p],
-              dist: dists[p],
-              weight: normW
-            });
+            const tmpD = dists[p]; dists[p] = dists[minIdx]; dists[minIdx] = tmpD;
+            const tmpI = indices[p]; indices[p] = indices[minIdx]; indices[minIdx] = tmpI;
           }
-        } else {
-          // Uniform Average
-          const normW = 1.0 / k;
-          for (let p = 0; p < k; p++) {
-            const pb = ptsB[indices[p]];
-            avgX += normW * pb.x;
-            avgY += normW * pb.y;
-            if (dimB >= 3 && typeof pb.z === 'number') {
-              avgZ += normW * pb.z;
-            }
-            topNeighbors.push({
-              id: indices[p],
-              dist: dists[p],
-              weight: normW
-            });
-            totalDistSum += dists[p];
-            totalDistCount++;
-          }
-        }
 
-        const reconPt = { x: avgX, y: avgY };
-        if (dimB >= 3) {
-          reconPt.z = avgZ;
-        }
-        reconstructedPoints[i] = reconPt;
-        sourceNeighbors[i] = topNeighbors;
-      }
+          /* Calculate weights and average corresponding B samples */
+          const topNeighbors = [];
+          let exactMatchIdx = -1;
+          for (let p = 0; p < k; p++) {
+            if (dists[p] < 1e-9) { exactMatchIdx = p; break; }
+          }
+
+          let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
+          if (exactMatchIdx >= 0) {
+            const matchedSampleId = indices[exactMatchIdx];
+            const pb = ptsB[matchedSampleId];
+            avgX = pb.x; avgY = pb.y;
+            avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+            for (let p = 0; p < k; p++) {
+              topNeighbors.push({
+                id: indices[p], dist: dists[p],
+                weight: (p === exactMatchIdx) ? 1.0 : 0.0
+              });
+              totalDistSum += dists[p]; totalDistCount++;
+            }
+          } else if (weightMode === 'idw') {
+            let sumW = 0.0;
+            const weights = new Float64Array(k);
+            for (let p = 0; p < k; p++) {
+              const d = dists[p];
+              const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+              weights[p] = w; sumW += w;
+              totalDistSum += d; totalDistCount++;
+            }
+            for (let p = 0; p < k; p++) {
+              const normW = weights[p] / sumW;
+              const pb = ptsB[indices[p]];
+              avgX += normW * pb.x; avgY += normW * pb.y;
+              if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+              topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
+            }
+          } else {
+            const normW = 1.0 / k;
+            for (let p = 0; p < k; p++) {
+              const pb = ptsB[indices[p]];
+              avgX += normW * pb.x; avgY += normW * pb.y;
+              if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+              topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
+              totalDistSum += dists[p]; totalDistCount++;
+            }
+          }
+
+          const reconPt = { x: avgX, y: avgY };
+          if (dimB >= 3) { reconPt.z = avgZ; }
+          reconstructedPoints[i] = reconPt;
+          sourceNeighbors[i]     = topNeighbors;
+        } // for each query (brute-force)
+      } // if nativeKnn
 
       const elapsedMs = performance.now() - tStart;
       const avgNeighborDist =
@@ -5427,6 +5530,22 @@
       slotD.reconVarianceMin = varMin;
       slotD.reconVarianceMax = varMax;
 
+      // Update Query k-NN Resource Tracker card with query execution metrics
+      if (!nativeKnn) {
+        const bruteDistCalls = numQueries * numCandidates;
+        updateReconQueryTracker({
+          framedistCalls: bruteDistCalls,
+          timeSearchMs: elapsedMs,
+          timeLoadMs: 0,
+          level1ClustersPruned: 0,
+          level2AnchorsPruned: 0,
+          level3AnnularPruned: 0,
+          temporalPruned: 0
+        }, numQueries, numCandidates, k);
+        const pBadge = document.getElementById('reconQueryPruneEffBadge');
+        if (pBadge) pBadge.textContent = '0% (WASM Brute)';
+      }
+
       // Update Toolbar status pill for D
       const pillD = document.getElementById('datasetStatusPill_D');
       if (pillD) {
@@ -5465,6 +5584,401 @@
       );
     }
 
+    // =========================================================================
+    //  NATIVE gric-knn -query C RUNNER
+    // =========================================================================
+
+    /**
+     * Populate the Query k-NN Resource Tracker card with parsed telemetry.
+     *
+     * @param {object} telem    Result of DesktopBridge.parseKnnTelemetryLog()
+     * @param {number} numQ     Number of query (C) frames
+     * @param {number} numCand  Number of candidate (A) frames
+     * @param {number} k        k neighbors
+     */
+    function updateReconQueryTracker(telem, numQ, numCand, k)
+    {
+      const bruteForce = numQ * numCand;
+      const pruned = Math.max(0, bruteForce - telem.framedistCalls);
+      const pruneEff = bruteForce > 0
+        ? (100.0 * pruned / bruteForce) : 0.0;
+      const speedup = telem.framedistCalls > 0
+        ? (bruteForce / telem.framedistCalls) : 0.0;
+      const qps = telem.timeSearchMs > 0
+        ? (numQ / (telem.timeSearchMs / 1000.0)) : 0.0;
+      const distPerQuery = numQ > 0
+        ? Math.round(telem.framedistCalls / numQ) : 0;
+
+      /* Compute per-level percentages against total candidate slots */
+      const totalSlots = numQ * numCand;
+      function pct(val) {
+        return totalSlots > 0
+          ? `${(100.0 * val / totalSlots).toFixed(1)}%`
+          : '0%';
+      }
+      const l1 = telem.level1ClustersPruned || 0;
+      const l2 = telem.level2AnchorsPruned  || 0;
+      const l3 = telem.level3AnnularPruned  || 0;
+      const tp = telem.temporalPruned       || 0;
+      const exact = Math.max(0, telem.framedistCalls || 0);
+      const totalAll = l1 + l2 + l3 + tp + exact;
+
+      function barPct(val) {
+        return totalAll > 0
+          ? `${(100.0 * val / totalAll).toFixed(2)}%`
+          : '0%';
+      }
+
+      /* Helper to safely set textContent by id */
+      function set(id, text) {
+        const el = document.getElementById(id);
+        if (el) { el.textContent = text; }
+      }
+
+      /* -- Overview tab -- */
+      set('reconQueryPruneEffVal',     `${pruneEff.toFixed(1)}%`);
+      set('reconQuerySpeedupVal',      `${speedup.toFixed(1)}×`);
+      set('reconQueryDistCallsVal',    telem.framedistCalls.toLocaleString());
+      set('reconQueryDistPerQueryVal', `${distPerQuery.toLocaleString()}/q`);
+      set('reconQuerySearchTimeVal',   `${telem.timeSearchMs.toFixed(1)} ms`);
+      set('reconQueryLoadTimeVal',     telem.timeLoadMs != null
+                                         ? `load ${telem.timeLoadMs.toFixed(0)} ms`
+                                         : 'load --');
+      set('reconQueryQpsVal',          `${Math.round(qps).toLocaleString()} QPS`);
+      set('reconQueryTotalQueriesVal', numQ.toLocaleString());
+      set('reconQueryKParamVal',       `k=${k}`);
+
+      /* Funnel bar */
+      set('reconQueryPruneSummaryTxt', `${pruneEff.toFixed(1)}% Pruned`);
+      const barPruned = document.getElementById('barReconQueryPruned');
+      const barEval   = document.getElementById('barReconQueryEvaluated');
+      if (barPruned) { barPruned.style.width = `${pruneEff.toFixed(2)}%`; }
+      if (barEval)   { barEval.style.width   = `${(100 - pruneEff).toFixed(2)}%`; }
+      set('lblReconQueryPrunedCount',  pruned.toLocaleString());
+      set('lblReconQueryEvalCount',    exact.toLocaleString());
+
+      /* -- Pruning tab -- */
+      set('reconQueryL1PrunedVal',       l1.toLocaleString());
+      set('reconQueryL1PctVal',          pct(l1));
+      set('reconQueryL2PrunedVal',       l2.toLocaleString());
+      set('reconQueryL2PctVal',          pct(l2));
+      set('reconQueryL3PrunedVal',       l3.toLocaleString());
+      set('reconQueryL3PctVal',          pct(l3));
+      set('reconQueryTemporalPrunedVal', tp.toLocaleString());
+
+      /* Hierarchy stacked bar */
+      const bL1   = document.getElementById('barReconQueryL1');
+      const bL2   = document.getElementById('barReconQueryL2');
+      const bL3   = document.getElementById('barReconQueryL3');
+      const bTemp = document.getElementById('barReconQueryTemp');
+      const bExact= document.getElementById('barReconQueryExact');
+      if (bL1)   { bL1.style.width   = barPct(l1); }
+      if (bL2)   { bL2.style.width   = barPct(l2); }
+      if (bL3)   { bL3.style.width   = barPct(l3); }
+      if (bTemp) { bTemp.style.width = barPct(tp); }
+      if (bExact){ bExact.style.width= barPct(exact); }
+
+      /* Header badges */
+      set('reconQueryPruneEffBadge', `${pruneEff.toFixed(1)}% pruned`);
+      set('reconQueryQpsBadge',      `${Math.round(qps).toLocaleString()} QPS`);
+
+      /* Show and expand the tracker card */
+      const card = document.getElementById('cardReconQueryResources');
+      if (card) {
+        card.style.display = '';
+        if (card.classList.contains('collapsed')) {
+          togglePanelCollapse('cardReconQueryResources');
+        }
+      }
+    }
+
+    /**
+     * Run native gric-knn -query C via gric-server, showing a live progress
+     * bar and populating the Query k-NN Resource Tracker on completion.
+     */
+    async function runNativeReconQueryKnn()
+    {
+      if (!DesktopBridge.isNativeSupported()) {
+        showToast('⚠️ Native runner not available in Web Mode.');
+        return;
+      }
+
+      const slotA = datasetSlots['A'];
+      const slotC = datasetSlots['C'];
+
+      if (!slotA || !slotA.benchmarkDataset || slotA.benchmarkDataset.length === 0) {
+        showToast('⚠️ Dataset A (Training Input) must be staged first.');
+        return;
+      }
+      if (!slotC || !slotC.benchmarkDataset || slotC.benchmarkDataset.length === 0) {
+        showToast('⚠️ Dataset C (Query Input) must be staged first.');
+        return;
+      }
+
+      const ptsA = slotA.benchmarkDataset;
+      const ptsC = slotC.benchmarkDataset;
+
+      /* Resolve clean dataset base names and full filenames */
+      let rawNameA = (slotA.stagedDatasetInfo && slotA.stagedDatasetInfo.name)
+        ? slotA.stagedDatasetInfo.name
+        : (slotA.benchmarkKey || 'dataset_A');
+      let rawNameC = (slotC.stagedDatasetInfo && slotC.stagedDatasetInfo.name)
+        ? slotC.stagedDatasetInfo.name
+        : (slotC.benchmarkKey || 'dataset_C');
+
+      const baseA = rawNameA.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const baseC = rawNameC.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
+
+      const datasetFileA = `${baseA}.txt`;
+      const datasetFileC = `${baseC}.txt`;
+      const clusterDir   = `${baseA}.clusterdat`;
+
+      const btnRun  = document.getElementById('btnRunNativeReconQuery');
+      const btnKill = document.getElementById('btnKillReconQuery');
+      const boxProg = document.getElementById('reconQueryProgressBox');
+      const elFill  = document.getElementById('reconQueryProgressFill');
+      const elPct   = document.getElementById('reconQueryPct');
+      const elFrames= document.getElementById('reconQueryFrames');
+      const elEta   = document.getElementById('reconQueryEta');
+      const elSpeed = document.getElementById('reconQuerySpeed');
+      const elElapsed = document.getElementById('reconQueryElapsed');
+      const consoleEl = document.getElementById('cliConsoleLog');
+
+      if (btnRun)  { btnRun.disabled  = true; }
+      if (btnKill) { btnKill.disabled = false; }
+      if (boxProg) { boxProg.style.display = ''; }
+      if (elFill)  { elFill.style.width = '0%'; }
+      if (elPct)   { elPct.textContent   = '0%'; }
+      if (elFrames){ elFrames.textContent = `0 / ${ptsC.length.toLocaleString()}`; }
+      if (elEta)   { elEta.textContent    = 'ETA --'; }
+      if (elSpeed) { elSpeed.textContent  = '0 fr/s'; }
+      if (elElapsed){ elElapsed.textContent = '0.0 s'; }
+
+      try {
+        /* 1. Ensure staged coordinates exist on disk in workspace */
+        if (ptsA && ptsA.length > 0) {
+          await DesktopBridge.stageDatasetFile(baseA, ptsA).catch(() => {});
+        }
+        if (ptsC && ptsC.length > 0) {
+          await DesktopBridge.stageDatasetFile(baseC, ptsC).catch(() => {});
+        }
+
+        /* 2. Check if cluster directory exists on disk; if not, export clusters of A */
+        const filesInWorkspace = await DesktopBridge.listFiles().catch(() => []);
+        let hasClusterDir = filesInWorkspace.some(
+          f => (f.name === clusterDir || f.name === `${baseA}.clusterdat`) && (f.is_dir || f.isDir)
+        );
+
+        if (!hasClusterDir) {
+          const memClusters = (slotA && slotA.clusters && slotA.clusters.length > 0)
+            ? slotA.clusters : (typeof clusters !== 'undefined' ? clusters : []);
+          if (memClusters && memClusters.length > 0) {
+            let centroidsText = `# GRIC Cluster Centroids\n# ID X Y Z MEMBERS\n`;
+            memClusters.forEach(c => {
+              centroidsText += `${c.id} ${Number(c.x || 0).toFixed(6)} ${Number(c.y || 0).toFixed(6)} ` +
+                               `${Number(c.z || 0).toFixed(6)} ${c.members || 1}\n`;
+            });
+            let dccText = `# GRIC Cluster-to-Cluster Distance Matrix D_cc\n`;
+            const memDcc = (slotA && slotA.dcc && slotA.dcc.length > 0)
+              ? slotA.dcc : (typeof dcc !== 'undefined' ? dcc : []);
+            if (memDcc && memDcc.length > 0) {
+              memDcc.forEach(row => {
+                dccText += row.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+              });
+            }
+            let memText = `# Frame Membership Assignments\n`;
+            const memPast = (slotA && slotA.pastSamples && slotA.pastSamples.length > 0)
+              ? slotA.pastSamples : (typeof pastSamples !== 'undefined' ? pastSamples : []);
+            if (memPast && memPast.length > 0) {
+              for (let i = 0; i < memPast.length; i++) {
+                const p = memPast[i];
+                const cId = p.clusterId >= 0 ? p.clusterId : 0;
+                memText += `${i} ${cId} 0.000000\n`;
+              }
+            }
+            let exportFiles = {
+              'anchors.txt': centroidsText,
+              'dcc.txt': dccText,
+              'frame_membership.txt': memText
+            };
+            await DesktopBridge.exportClusterDat(baseA, exportFiles).catch(() => {});
+          } else {
+            showToast(`⚡ Clustering Dataset A (${datasetFileA}) for metric bounds...`);
+            await new Promise((resolve) => {
+              DesktopBridge.runCliJob({
+                cmd: 'gric-cluster',
+                args: [datasetFileA, '-o', clusterDir, '-dlim', '0.15'],
+                onOutput: (chunk) => {
+                  if (consoleEl) {
+                    consoleEl.textContent += chunk;
+                    consoleEl.scrollTop = consoleEl.scrollHeight;
+                  }
+                },
+                onTelemetry: () => {},
+                onFinish: () => resolve()
+              }).catch(() => resolve());
+            });
+          }
+        }
+
+        /* 3. Read k from the reconstruction k input */
+        const inputK = document.getElementById('inputReconK');
+        const k = inputK ? Math.max(1, Math.min(parseInt(inputK.value, 10) || 10, ptsA.length)) : 10;
+
+        /* Distinct output path so we don't overwrite the A-vs-A knn results */
+        const queryOutPrefix = `${clusterDir}/knn_query_C`;
+
+        const args = [
+          datasetFileA,
+          clusterDir,
+          '-query', datasetFileC,
+          '-k', String(k),
+          '-progress',
+          '-txt',
+          '-o', queryOutPrefix
+        ];
+
+        if (consoleEl) {
+          consoleEl.textContent +=
+            `\n🔍 [Reconstruction] Dispatching native gric-knn -query C (k=${k})...\n` +
+            `🗂️  Dataset A:    ${datasetFileA}\n` +
+            `🗂️  Query C:      ${datasetFileC}\n` +
+            `📁  Cluster Dir:  ${clusterDir}\n` +
+            `📄  Output Base:  ${queryOutPrefix}\n` +
+            `─────────────────────────────────────────────────────────\n`;
+          consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        showToast(`🔍 Running native gric-knn -query C (k=${k})...`);
+
+        const tKnnStart = performance.now();
+        let rawCliOutput = '';
+        let finalExitCode = 0;
+
+        await new Promise((resolve) => {
+          DesktopBridge.runCliJob({
+            cmd: 'gric-knn',
+            args: args,
+            onOutput: (chunk) => {
+              rawCliOutput += chunk;
+              if (consoleEl) {
+                consoleEl.textContent += chunk;
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+              }
+
+              /* Parse live progress: "Searching k-NN: [...] XX.X% (N / M frames)" */
+              const lines = chunk.split(/\r|\n/);
+              for (const line of lines) {
+                const m = line.match(
+                  /Searching k-NN:\s*\[.*?\]\s*([\d.]+)%\s*\(\s*(\d+)\s*\/\s*(\d+)\s*frames\)/
+                );
+                if (!m) { continue; }
+
+                const pct      = parseFloat(m[1]);
+                const processed = parseInt(m[2], 10);
+                const total    = parseInt(m[3], 10);
+                const now      = performance.now();
+                const elapsedSec = Math.max(0.01, (now - tKnnStart) / 1000.0);
+                const speed    = processed > 0 ? (processed / elapsedSec) : 0;
+                const remaining = Math.max(0, total - processed);
+                const etaSec   = speed > 0 ? (remaining / speed) : 0;
+
+                if (elFill)   { elFill.style.width     = `${pct.toFixed(1)}%`; }
+                if (elPct)    { elPct.textContent       = `${pct.toFixed(1)}%`; }
+                if (elFrames) { elFrames.textContent    = `${processed.toLocaleString()} / ${total.toLocaleString()}`; }
+                if (elSpeed)  { elSpeed.textContent     = `${Math.round(speed).toLocaleString()} fr/s`; }
+                if (elElapsed){ elElapsed.textContent   = `${elapsedSec.toFixed(1)} s`; }
+                if (elEta) {
+                  elEta.textContent = etaSec > 1
+                    ? `ETA ${etaSec.toFixed(0)} s`
+                    : 'ETA < 1 s';
+                }
+              } // for lines
+            },
+            onTelemetry: () => {},
+            onFinish: (res) => {
+              finalExitCode = res?.exitCode ?? 0;
+              if (finalExitCode === 0) {
+                showToast('✅ gric-knn -query C completed successfully!');
+                if (elFill) { elFill.style.width = '100%'; }
+                if (elPct)  { elPct.textContent   = '100%'; }
+                if (elEta)  { elEta.textContent   = 'Done'; }
+              } else {
+                showToast(`⚠️ gric-knn -query C finished with exit code ${finalExitCode}`);
+              }
+              resolve();
+            }
+          }).catch((err) => {
+            showToast(`⚠️ Failed to execute gric-knn: ${err.message}`);
+            if (consoleEl) {
+              consoleEl.textContent += `\n❌ Error: ${err.message}\n`;
+              consoleEl.scrollTop = consoleEl.scrollHeight;
+            }
+            resolve();
+          });
+        });
+
+        if (finalExitCode === 0) {
+          /* Parse final telemetry from stdout */
+          const parsedTelem = DesktopBridge.parseKnnTelemetryLog(rawCliOutput);
+
+          /* Populate tracker card */
+          updateReconQueryTracker(parsedTelem, ptsC.length, ptsA.length, k);
+
+          /* Load the query k-NN results from distinct output binary files */
+          let queryData = await DesktopBridge.readKnnQueryResults(queryOutPrefix, k).catch(() => null);
+          if (queryData && queryData.indices && queryData.totalFrames > 0) {
+            slotC.knnResults = queryData;
+            slotC.knnResultsForQuery = true;
+            showToast(
+              `📊 Loaded ${queryData.totalFrames.toLocaleString()} query k-NN results ` +
+              `(k=${queryData.k}) into Slot C. Click "⚡ Reconstruct D" to use them.`
+            );
+          } else {
+            showToast('⚠️ Query search completed but result file could not be read.');
+          }
+        }
+      } catch (err) {
+        showToast(`⚠️ Error in gric-knn -query: ${err.message}`);
+        console.error('[runNativeReconQueryKnn]', err);
+      } finally {
+        if (btnRun)  { btnRun.disabled  = false; }
+        if (btnKill) { btnKill.disabled = true;  }
+        if (boxProg) {
+          setTimeout(() => {
+            boxProg.style.display = 'none';
+          }, 800);
+        }
+      }
+    } // runNativeReconQueryKnn
+
+
+    // =========================================================================
+    //  Query k-NN resource tracker tab switching
+    // =========================================================================
+
+    {
+      const tabOverview = document.getElementById('tabReconQueryOverview');
+      const tabPruning  = document.getElementById('tabReconQueryPruning');
+      const panelOverview = document.getElementById('reconQueryOverviewPanel');
+      const panelPruning  = document.getElementById('reconQueryPruningPanel');
+
+      if (tabOverview && tabPruning) {
+        tabOverview.addEventListener('click', () => {
+          tabOverview.classList.add('active');
+          tabPruning.classList.remove('active');
+          if (panelOverview) { panelOverview.style.display = ''; }
+          if (panelPruning)  { panelPruning.style.display  = 'none'; }
+        });
+        tabPruning.addEventListener('click', () => {
+          tabPruning.classList.add('active');
+          tabOverview.classList.remove('active');
+          if (panelPruning)  { panelPruning.style.display  = ''; }
+          if (panelOverview) { panelOverview.style.display = 'none'; }
+        });
+      }
+    }
+
     // Reconstruction UI Listeners
     const btnReconSide = document.getElementById('btnRunReconstructionSide');
     if (btnReconSide) {
@@ -5474,6 +5988,22 @@
     if (btnReconTop) {
       btnReconTop.addEventListener('click', executeDatasetReconstruction);
     }
+
+    /* Native query button — only active in desktop mode */
+    const btnNativeQuery = document.getElementById('btnRunNativeReconQuery');
+    if (btnNativeQuery) {
+      btnNativeQuery.addEventListener('click', runNativeReconQueryKnn);
+    }
+    const btnKillReconQuery = document.getElementById('btnKillReconQuery');
+    if (btnKillReconQuery) {
+      btnKillReconQuery.addEventListener('click', () => {
+        DesktopBridge.killActiveJob().catch(() => {});
+        btnKillReconQuery.disabled = true;
+        const btnNQ = document.getElementById('btnRunNativeReconQuery');
+        if (btnNQ) { btnNQ.disabled = false; }
+      });
+    }
+
     const btnToggleRecon4P = document.getElementById('btnToggleRecon4PanelView');
     if (btnToggleRecon4P) {
       btnToggleRecon4P.addEventListener('click', () => {
@@ -6578,11 +7108,10 @@
           lblPath.textContent = workspacePath;
           lblPath.title = workspacePath;
         }
-        if (btnOpenFolder) btnOpenFolder.style.display = 'none';
-        if (cliNotice) cliNotice.style.display = 'none';
-        if (cliControls) cliControls.style.display = 'flex';
-
         await refreshWorkspaceFiles();
+
+        // Default to Native C Engine mode when desktop backend is available
+        await setEngineMode('cli', true);
       } else {
         isDesktopBackend = false;
         if (lblPath) {
@@ -6603,6 +7132,8 @@
           }
         }
         if (cliControls) cliControls.style.display = 'none';
+
+        await setEngineMode('wasm', true);
       }
 
       updateStorageModeBanner();
@@ -6791,12 +7322,14 @@
       }
     }
 
-    async function setEngineMode(mode) {
+    async function setEngineMode(mode, silent = false) {
       if (mode === 'cli' && !DesktopBridge.isNativeSupported()) {
-        if (DesktopBridge.isMobileDevice()) {
-          showToast('📱 Cell Phone: Native CLI is disabled (In-Browser WASM active)');
-        } else {
-          showToast('🌐 Web Mode: Native CLI requires a local desktop gric-server');
+        if (!silent) {
+          if (DesktopBridge.isMobileDevice()) {
+            showToast('📱 Cell Phone: Native CLI is disabled (In-Browser WASM active)');
+          } else {
+            showToast('🌐 Web Mode: Native CLI requires a local desktop gric-server');
+          }
         }
         mode = 'wasm';
       }
@@ -6817,7 +7350,9 @@
         if (DesktopBridge.isAvailable()) {
           await DesktopBridge.initCliSession();
         }
-        showToast('💻 Native CLI mode active (tmux session "gric_cli" ready)');
+        if (!silent) {
+          showToast('💻 Native CLI mode active (tmux session "gric_cli" ready)');
+        }
       } else {
         if (DesktopBridge.isAvailable()) {
           await DesktopBridge.stopCliSession();
@@ -6829,7 +7364,9 @@
             if (typeof updateWasmBadge === 'function') updateWasmBadge();
           }
         }
-        showToast('⚡ Switched to In-Browser WebAssembly (WASM)');
+        if (!silent) {
+          showToast('⚡ Switched to In-Browser WebAssembly (WASM)');
+        }
       }
     }
 
@@ -7488,8 +8025,13 @@
     initLayoutResizer();
     updateTMCanvasDimensions();
     resizeCanvas();
-    stageDataset('3Dtorus', 'B');
-    stageDataset('3Dtorus', 'C');
+    if (typeof populateDefaultMultiDatasets === 'function') {
+      populateDefaultMultiDatasets();
+    } else {
+      stageDataset('3Dspiral', 'B');
+      stageDataset('3Drand', 'C');
+      clearDatasetSlot('D');
+    }
     activeDatasetSlot = 'A';
     loadSelectedBenchmark();
     updateZoomBadge();
@@ -7854,7 +8396,9 @@
         cardTrace: ['all', 'clustering', 'telemetry'],
         cardKnnSettings: ['all', 'knn'],
         cardKnnResources: ['all', 'knn', 'telemetry'],
-        cardKnnTrace: ['all', 'knn', 'telemetry']
+        cardKnnTrace: ['all', 'knn', 'telemetry'],
+        cardDimDensity: ['all', 'knn', 'telemetry'],
+        cardReconstruction: ['all', 'knn', 'clustering', 'telemetry', 'files']
       };
 
       Object.entries(cards).forEach(([cardId, allowedModes]) => {

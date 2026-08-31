@@ -12,7 +12,7 @@
 
 #define TEST_SPIRAL_TXT   "/tmp/test_dimdens_spiral.txt"
 #define TEST_CLUSTER_DIR  "/tmp/test_dimdens_cluster"
-#define TEST_KNN_TXT      "/tmp/test_dimdens_knn.txt"
+#define TEST_KNN_TXT      "/tmp/test_dimdens_cluster/knn_results.txt"
 #define TEST_KNN_BIN      "/tmp/test_dimdens_cluster/knn_distances.bin"
 #define TEST_DIMDENS_TXT  "/tmp/test_dimdens_out.txt"
 #define TEST_DIMDENS_BIN  "/tmp/test_dimdens_out.bin"
@@ -35,8 +35,8 @@ int main(void)
     assert(ret == 0);
 
     // 3. Solve k-NN with gric-knn (k = 20)
-    snprintf(cmd, sizeof(cmd), "./gric-knn %s %s -k 20 -dtmin 1 -o %s",
-             TEST_SPIRAL_TXT, TEST_CLUSTER_DIR, TEST_KNN_TXT);
+    snprintf(cmd, sizeof(cmd), "./gric-knn %s %s -k 20 -dtmin 1 -txt",
+             TEST_SPIRAL_TXT, TEST_CLUSTER_DIR);
     ret = system(cmd);
     assert(ret == 0);
 

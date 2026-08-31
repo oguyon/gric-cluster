@@ -618,12 +618,17 @@
     // =========================================================================
 
     function createInitialDatasetSlot(slotId) {
+      let defaultBench = '3Dtorus';
+      if (slotId === 'B') defaultBench = '3Dspiral';
+      if (slotId === 'C') defaultBench = '3Drand';
+      if (slotId === 'D') defaultBench = 'reconstructed';
+
       return {
         id: slotId,
         workspaceName: `workspace/${slotId}`,
-        benchmarkKey: '3Dtorus',
+        benchmarkKey: defaultBench,
         sampleCount: 10000,
-        loopCount: 10,
+        loopCount: 1,
         noiseSigma: 0.02,
         dataMode: 'coord',
         currentDim: 3,
@@ -631,10 +636,10 @@
         rawBenchmarkDataset: [],
         benchmarkDataset: [],
         stagedDatasetInfo: {
-          name: '3Dtorus',
+          name: defaultBench,
           count: 0,
           dim: 3,
-          passes: 10,
+          passes: 1,
           noise: 0.02
         },
         customFileName: '',
@@ -1095,15 +1100,116 @@
       }
     }
 
+    function populateDefaultMultiDatasets() {
+      // 1. Configure Slot A: 3D torus manifold, N=1, 10000 pts
+      if (datasetSlots['A']) {
+        const slotA = datasetSlots['A'];
+        slotA.benchmarkKey = '3Dtorus';
+        slotA.sampleCount = 10000;
+        slotA.loopCount = 1;
+        slotA.noiseSigma = 0.02;
+        slotA.currentDim = 3;
+        slotA.dataMode = 'coord';
+      }
+
+      // 2. Configure Slot B: 3D spiral, N=1, 10000 pts
+      if (datasetSlots['B']) {
+        const slotB = datasetSlots['B'];
+        slotB.benchmarkKey = '3Dspiral';
+        slotB.sampleCount = 10000;
+        slotB.loopCount = 1;
+        slotB.noiseSigma = 0.02;
+        slotB.currentDim = 3;
+        slotB.dataMode = 'coord';
+      }
+
+      // 3. Configure Slot C: 3Drand, N=1, 10000 pts
+      if (datasetSlots['C']) {
+        const slotC = datasetSlots['C'];
+        slotC.benchmarkKey = '3Drand';
+        slotC.sampleCount = 10000;
+        slotC.loopCount = 1;
+        slotC.noiseSigma = 0.02;
+        slotC.currentDim = 3;
+        slotC.dataMode = 'coord';
+      }
+
+      // 4. Stage datasets B and C in background
+      if (typeof stageDataset === 'function') {
+        stageDataset('3Dspiral', 'B');
+        stageDataset('3Drand', 'C');
+      }
+
+      // 5. Clear Slot D
+      if (typeof clearDatasetSlot === 'function') {
+        clearDatasetSlot('D');
+      }
+
+      // 6. Stage and load Slot A
+      if (activeDatasetSlot === 'A') {
+        sampleCount = 10000;
+        loopCount = 1;
+        currentBenchmark = '3Dtorus';
+        currentDim = 3;
+        noiseSigma = 0.02;
+
+        const selCount = document.getElementById('selectSampleCount');
+        if (selCount) selCount.value = '10000';
+        const selCountSide = document.getElementById('selectSampleCountSide');
+        if (selCountSide) selCountSide.value = '10000';
+        const selLoop = document.getElementById('selectLoop');
+        if (selLoop) selLoop.value = '1';
+        const selLoopSide = document.getElementById('selectLoopSide');
+        if (selLoopSide) selLoopSide.value = '1';
+        const selBench = document.getElementById('selectBenchmark');
+        if (selBench) selBench.value = '3Dtorus';
+        const selBenchSide = document.getElementById('selectBenchmarkSide');
+        if (selBenchSide) selBenchSide.value = '3Dtorus';
+        const selSlotA = document.getElementById('selectBenchmark_A');
+        if (selSlotA) selSlotA.value = '3Dtorus';
+
+        if (typeof stageDataset === 'function') {
+          stageDataset('3Dtorus', 'A');
+        }
+        if (typeof loadSelectedBenchmark === 'function') {
+          loadSelectedBenchmark();
+        }
+      } else {
+        if (typeof stageDataset === 'function') {
+          stageDataset('3Dtorus', 'A');
+        }
+      }
+
+      const selSlotB = document.getElementById('selectBenchmark_B');
+      if (selSlotB) selSlotB.value = '3Dspiral';
+      const selSlotC = document.getElementById('selectBenchmark_C');
+      if (selSlotC) selSlotC.value = '3Drand';
+      const selSlotD = document.getElementById('selectBenchmark_D');
+      if (selSlotD) selSlotD.value = 'reconstructed';
+
+      if (typeof updateDatasetStatusBadge === 'function') {
+        updateDatasetStatusBadge();
+      }
+      if (typeof updateMultiDatasetUI === 'function') {
+        updateMultiDatasetUI();
+      }
+    }
+
     function setMultiDatasetEnabled(enabled) {
+      const wasEnabled = multiDatasetEnabled;
       multiDatasetEnabled = !!enabled;
       if (!multiDatasetEnabled && activeDatasetSlot !== 'A') {
         switchDatasetSlot('A');
       }
       updateMultiDatasetUI();
+
+      if (multiDatasetEnabled && !wasEnabled) {
+        populateDefaultMultiDatasets();
+      }
+
       if (typeof showToast === 'function') {
         showToast(multiDatasetEnabled
-          ? '🗂️ Multi-Dataset Mode: ON (Slots A, B, C, and D active)'
+          ? '🗂️ Multi-Dataset Mode: ON (Defaults loaded: A=3Dtorus, B=3Dspiral, C=3Drand, D=clear)'
           : '🗂️ Multi-Dataset Mode: OFF (Single Dataset active)');
       }
     }
@@ -1375,6 +1481,7 @@
     window.loadSlotState = loadSlotState;
     window.updateMultiDatasetUI = updateMultiDatasetUI;
     window.setMultiDatasetEnabled = setMultiDatasetEnabled;
+    window.populateDefaultMultiDatasets = populateDefaultMultiDatasets;
     window.setRecon4PanelView = setRecon4PanelView;
     window.setReconKnn = setReconKnn;
     window.syncReconKnnUI = syncReconKnnUI;

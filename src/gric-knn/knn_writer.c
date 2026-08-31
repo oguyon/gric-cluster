@@ -299,10 +299,32 @@ int knn_write_results(
     }
     else
     {
-        // Write binary outputs: knn_indices.bin and knn_distances.bin
+        /* Write binary outputs.
+         * If -o was explicitly set, derive binary paths from that prefix so that
+         * different runs (e.g. A-vs-A vs -query C) produce distinct files.
+         * Otherwise fall back to the standard clusterDir/knn_indices.bin names. */
         char bin_idx_path[4096];
         char bin_dst_path[4096];
-        if (config->cluster_dir != NULL)
+        if (config->output_path != NULL)
+        {
+            /* Strip a trailing .txt extension if present, then add _indices.bin/_distances.bin */
+            char base[2048];
+            size_t olen = strlen(config->output_path);
+            if (olen >= 4 && strcasecmp(config->output_path + olen - 4, ".txt") == 0)
+            {
+                size_t blen = olen - 4;
+                if (blen >= sizeof(base)) { blen = sizeof(base) - 1; }
+                memcpy(base, config->output_path, blen);
+                base[blen] = '\0';
+            }
+            else
+            {
+                snprintf(base, sizeof(base), "%s", config->output_path);
+            }
+            snprintf(bin_idx_path, sizeof(bin_idx_path), "%s_indices.bin", base);
+            snprintf(bin_dst_path, sizeof(bin_dst_path), "%s_distances.bin", base);
+        }
+        else if (config->cluster_dir != NULL)
         {
             snprintf(bin_idx_path, sizeof(bin_idx_path), "%s/knn_indices.bin",
                      config->cluster_dir);

@@ -9,10 +9,10 @@
 if (typeof BENCHMARK_DESCS !== 'undefined')
 {
   BENCHMARK_DESCS['img-ball-1'] =
-    '<b>Single Bouncing Ball (32×32)</b>: 10,000 frames of a 2D circular disk ' +
+    '<b>Single Bouncing Ball (32×32)</b>: 2D circular disk ' +
     '(radius=5.0) bouncing elastically in a 32×32 box (D=1024).';
   BENCHMARK_DESCS['img-ball-3'] =
-    '<b>3 Colliding Balls (32×32)</b>: 10,000 frames of 3 circular disks with ' +
+    '<b>3 Colliding Balls (32×32)</b>: 3 circular disks with ' +
     'elastic inter-ball collisions and boundary bounces in a 32×32 box (D=1024).';
 }
 

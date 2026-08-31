@@ -1691,6 +1691,24 @@
         window.renderDataStructuresUI();
       }
 
+      const inputKnnK = document.getElementById('inputKnnK');
+      const sliderKnnK = document.getElementById('sliderKnnK');
+      if (inputKnnK && typeof knnK !== 'undefined') {
+        inputKnnK.value = knnK;
+      }
+      if (sliderKnnK && typeof knnK !== 'undefined') {
+        sliderKnnK.value = Math.min(100, knnK);
+      }
+
+      const inputKnnDtmin = document.getElementById('inputKnnDtmin');
+      const sliderKnnDtmin = document.getElementById('sliderKnnDtmin');
+      if (inputKnnDtmin && typeof knnDtmin !== 'undefined') {
+        inputKnnDtmin.value = knnDtmin;
+      }
+      if (sliderKnnDtmin && typeof knnDtmin !== 'undefined') {
+        sliderKnnDtmin.value = Math.min(25, knnDtmin);
+      }
+
       const presetBar = document.getElementById('viewPresetBar');
       if (presetBar) {
         presetBar.style.display =
