@@ -135,6 +135,7 @@ set(CLUSTER_SRCS
     src/gric-cluster/trace/cluster_trace.c
     src/shared/cli_colors.c
     src/shared/gric_bin_io.c
+    src/shared/cluster_locator.c
 )
 
 add_executable(gric-cluster ${CLUSTER_SRCS})

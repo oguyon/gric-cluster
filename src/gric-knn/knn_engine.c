@@ -880,7 +880,8 @@ static void knn_search_cross_dataset_frame(
     uint8_t *active_mask = (uint8_t *)alloca((size_t)M);
     ClusterLocatorConfig loc_cfg;
     memset(&loc_cfg, 0, sizeof(loc_cfg));
-    loc_cfg.max_targets = 16;
+    loc_cfg.max_targets = 32;
+    loc_cfg.te4_mode = 1;
     loc_cfg.rlim = config->rlim_cutoff;
     loc_cfg.tau_max = knn_heap_peek_max_dist(heap);
     loc_cfg.epsilon = config->epsilon;
