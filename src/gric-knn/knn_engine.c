@@ -1040,7 +1040,7 @@ static void knn_search_cross_dataset_frame(
 
             int target_k = config->k;
             int max_expansions = (config->approx_mode) ?
-                ((target_k / 3 > 16) ? (target_k / 3 + 4) : 16) : 12;
+                ((target_k > 32) ? (target_k / 2 + 8) : 32) : 16;
             int max_eval_k = (config->approx_mode) ? ((graph_k < 24) ? graph_k : 24) : graph_k;
             int expansions_done = 0;
 
