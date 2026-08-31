@@ -32,16 +32,24 @@ int gric_bin_write_header(
     local_hdr.endian = GRIC_BIN_ENDIAN_LITTLE;
 
     size_t comment_len = (comment != NULL) ? strlen(comment) : 0;
-    local_hdr.header_bytes = (uint16_t)(GRIC_BIN_HEADER_DEFAULT_SIZE + comment_len);
+    size_t padded_comment_len = (comment_len > 0) ? ((comment_len + 7) & ~((size_t)7)) : 0;
+    local_hdr.header_bytes = (uint16_t)(GRIC_BIN_HEADER_DEFAULT_SIZE + padded_comment_len);
 
     if (fwrite(&local_hdr, sizeof(gric_bin_header_t), 1, fp) != 1)
     {
         return -1;
     }
 
-    if (comment_len > 0)
+    if (padded_comment_len > 0)
     {
-        if (fwrite(comment, 1, comment_len, fp) != comment_len)
+        char pad_buf[256];
+        memset(pad_buf, 0, sizeof(pad_buf));
+        if (comment_len > 0)
+        {
+            size_t copy_len = (comment_len < sizeof(pad_buf)) ? comment_len : sizeof(pad_buf);
+            memcpy(pad_buf, comment, copy_len);
+        }
+        if (fwrite(pad_buf, 1, padded_comment_len, fp) != padded_comment_len)
         {
             return -1;
         }

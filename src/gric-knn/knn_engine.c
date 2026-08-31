@@ -1029,33 +1029,66 @@ static void knn_search_cross_dataset_frame(
             best_seed_id = curr_seed;
             best_seed_dist = curr_dist;
 
-            // Evaluate the direct graph neighborhood around best_seed_id to ensure
-            // the k-NN heap is populated with local manifold points and evicts any
-            // distant starting seeds from earlier hops.
+            // Expand 1-hop and 2-hop graph neighborhood around best_seed_id to ensure
+            // the k-NN heap is saturated with tight local manifold points and evicts
+            // any distant starting seeds from earlier hops.
             if (best_seed_id >= 0)
             {
+                long hop1_ids[128];
+                int  num_hop1 = 0;
                 const uint32_t *neighbors = &model->graph_indices[best_seed_id * (long)graph_k];
-                for (int k_idx = 0; k_idx < graph_k; k_idx++)
+                for (int k_idx = 0; k_idx < graph_k && num_hop1 < 128; k_idx++)
                 {
                     long nb_id = (long)neighbors[k_idx];
-                    if (nb_id < 0 || nb_id >= model->total_dataset_frames ||
-                        nb_id == best_seed_id)
+                    if (nb_id >= 0 && nb_id < model->total_dataset_frames && nb_id != best_seed_id)
                     {
-                        continue;
-                    }
-                    if (knn_heap_contains(heap, (int)nb_id))
-                    {
-                        continue;
-                    }
-                    if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
-                    {
-                        telem->framedist_calls++;
-                        telem->graph_seeds_evaluated++;
-                        double d = compute_euclidean_distance(query_data, cand_buffer,
-                                                             frame_elem);
-                        if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                        hop1_ids[num_hop1++] = nb_id;
+                        if (!knn_heap_contains(heap, (int)nb_id))
                         {
-                            knn_heap_push(heap, (int)nb_id, d);
+                            if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
+                            {
+                                telem->framedist_calls++;
+                                telem->graph_seeds_evaluated++;
+                                double d = compute_euclidean_distance(query_data, cand_buffer,
+                                                                     frame_elem);
+                                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                                {
+                                    knn_heap_push(heap, (int)nb_id, d);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // If in approx mode, expand 2-hop neighbors to saturate the k-NN heap
+                // with tight local manifold points
+                if (config->approx_mode)
+                {
+                    int max_hop2_expand = (num_hop1 < 12) ? num_hop1 : 12;
+                    for (int h = 0; h < max_hop2_expand; h++)
+                    {
+                        long parent_id = hop1_ids[h];
+                        const uint32_t *h2_nbs =
+                            &model->graph_indices[parent_id * (long)graph_k];
+                        for (int k_idx = 0; k_idx < graph_k; k_idx++)
+                        {
+                            long nb2_id = (long)h2_nbs[k_idx];
+                            if (nb2_id < 0 || nb2_id >= model->total_dataset_frames ||
+                                nb2_id == best_seed_id || knn_heap_contains(heap, (int)nb2_id))
+                            {
+                                continue;
+                            }
+                            if (knn_reader_read_frame(cand_reader, nb2_id, cand_buffer) == 0)
+                            {
+                                telem->framedist_calls++;
+                                telem->graph_seeds_evaluated++;
+                                double d = compute_euclidean_distance(query_data, cand_buffer,
+                                                                     frame_elem);
+                                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                                {
+                                    knn_heap_push(heap, (int)nb2_id, d);
+                                }
+                            }
                         }
                     }
                 }
@@ -1118,29 +1151,52 @@ static void knn_search_cross_dataset_frame(
             } // Global Containment
         } // Graph Hill-Climbing
 
-        // 4b. Intra-Cluster Member Search in best_c (now with tightened tau_k)
-        if (best_c >= 0 && best_c < M)
+        // 4b. Intra-Cluster Member Search in target cluster (containing best_seed_id)
+        int target_c = best_c;
+        if (best_seed_id >= 0 && model->frame_cluster_map != NULL)
         {
-            const KnnCluster *best_cl = &model->clusters[best_c];
-            telem->total_candidates_considered += (uint64_t)best_cl->num_members;
-            double d_anchor_best = anchor_dists[best_c];
+            int mapped_c = (int)model->frame_cluster_map[best_seed_id];
+            if (mapped_c >= 0 && mapped_c < M)
+            {
+                target_c = mapped_c;
+            }
+        }
+
+        if (target_c >= 0 && target_c < M)
+        {
+            const KnnCluster *target_cl = &model->clusters[target_c];
+            telem->total_candidates_considered += (uint64_t)target_cl->num_members;
+
+            double d_anchor_target = anchor_dists[target_c];
+            if (d_anchor_target < 0.0)
+            {
+                telem->framedist_calls++;
+                d_anchor_target = compute_euclidean_distance(
+                    query_data, target_cl->anchor_data, frame_elem
+                );
+                anchor_dists[target_c] = d_anchor_target;
+            }
 
             int start_m = 0;
-            int end_m = best_cl->num_members;
+            int end_m = target_cl->num_members;
             double tau_init = knn_heap_peek_max_dist(heap);
             if (tau_init < 1e20)
             {
-                float r_min = (float)fmax(0.0, d_anchor_best - tau_init / eps_factor);
-                float r_max = (float)(d_anchor_best + tau_init / eps_factor);
-                start_m = find_member_lower_bound(best_cl->members, best_cl->num_members, r_min);
-                end_m = find_member_upper_bound(best_cl->members, best_cl->num_members, r_max);
+                float r_min = (float)fmax(0.0, d_anchor_target - tau_init / eps_factor);
+                float r_max = (float)(d_anchor_target + tau_init / eps_factor);
+                start_m = find_member_lower_bound(
+                    target_cl->members, target_cl->num_members, r_min
+                );
+                end_m = find_member_upper_bound(
+                    target_cl->members, target_cl->num_members, r_max
+                );
                 telem->level3_annular_pruned +=
-                    (uint64_t)start_m + (uint64_t)(best_cl->num_members - end_m);
+                    (uint64_t)start_m + (uint64_t)(target_cl->num_members - end_m);
             }
 
             for (int m = start_m; m < end_m; m++)
             {
-                long cand_id = (long)best_cl->members[m].frame_id;
+                long cand_id = (long)target_cl->members[m].frame_id;
                 if (knn_heap_contains(heap, (int)cand_id))
                 {
                     continue;
@@ -1148,10 +1204,10 @@ static void knn_search_cross_dataset_frame(
 
                 double current_tau = knn_heap_peek_max_dist(heap);
                 double tau_eff = current_tau / eps_factor;
-                double r_cand = (double)best_cl->members[m].r_anchor;
+                double r_cand = (double)target_cl->members[m].r_anchor;
 
                 if (is_member_pruned_by_pointwise_pivots(
-                        cand_id, d_anchor_best, r_cand, 0.0, min_d_anchor,
+                        cand_id, d_anchor_target, r_cand, 0.0, min_d_anchor,
                         num_seed_pivots, seed_pivot_ids, seed_pivot_dists,
                         model, tau_eff, config->rlim_cutoff, telem))
                 {
