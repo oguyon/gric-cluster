@@ -956,9 +956,114 @@ static int compute_exact_frame_anchor_radii(
 }
 
 /**
- * knn_model_load() - Load all Pass 1 artifacts into resident KnnModel.
- * @cluster_dir:      Directory with Pass 1 outputs.
- * @input_data_path:  Path to original input dataset.
+ * load_knn_graph() - Opportunistically load pre-computed k-NN graph of dataset A.
+ * @cluster_dir: Path to the cluster directory.
+ * @model:       Pointer to KnnModel.
+ *
+ * Return: 0 if loaded or not present (non-fatal), -1 on critical parse error.
+ */
+static int load_knn_graph(
+    const char *cluster_dir,
+    KnnModel   *model)
+{
+    model->has_knn_graph = 0;
+    model->graph_k = 0;
+    model->graph_indices = NULL;
+    model->graph_distances = NULL;
+
+    if (cluster_dir == NULL || model == NULL || model->total_dataset_frames <= 0)
+    {
+        return 0;
+    }
+
+    char idx_path[2048];
+    char dst_path[2048];
+    snprintf(idx_path, sizeof(idx_path), "%s/knn_indices.bin", cluster_dir);
+    snprintf(dst_path, sizeof(dst_path), "%s/knn_distances.bin", cluster_dir);
+
+    FILE *fp_idx = fopen(idx_path, "rb");
+    FILE *fp_dst = fopen(dst_path, "rb");
+    if (fp_idx == NULL || fp_dst == NULL)
+    {
+        if (fp_idx != NULL)
+        {
+            fclose(fp_idx);
+        }
+        if (fp_dst != NULL)
+        {
+            fclose(fp_dst);
+        }
+        return 0;
+    }
+
+    gric_bin_header_t hdr_idx;
+    gric_bin_header_t hdr_dst;
+    if (gric_bin_read_header(fp_idx, &hdr_idx, NULL) != 0 ||
+        gric_bin_read_header(fp_dst, &hdr_dst, NULL) != 0)
+    {
+        fclose(fp_idx);
+        fclose(fp_dst);
+        return 0;
+    }
+
+    if (hdr_idx.ndim < 2 || hdr_dst.ndim < 2 ||
+        hdr_idx.dims[0] != (uint64_t)model->total_dataset_frames ||
+        hdr_dst.dims[0] != (uint64_t)model->total_dataset_frames ||
+        hdr_idx.dims[1] != hdr_dst.dims[1] ||
+        hdr_idx.dims[1] == 0)
+    {
+        fclose(fp_idx);
+        fclose(fp_dst);
+        return 0;
+    }
+
+    uint64_t n_frames = hdr_idx.dims[0];
+    uint64_t graph_k = hdr_idx.dims[1];
+    uint64_t total_elems = n_frames * graph_k;
+
+    uint32_t *indices = (uint32_t *)malloc(total_elems * sizeof(uint32_t));
+    float    *distances = (float *)malloc(total_elems * sizeof(float));
+    if (indices == NULL || distances == NULL)
+    {
+        if (indices != NULL)
+        {
+            free(indices);
+        }
+        if (distances != NULL)
+        {
+            free(distances);
+        }
+        fclose(fp_idx);
+        fclose(fp_dst);
+        return 0;
+    }
+
+    size_t r_idx = fread(indices, sizeof(uint32_t), total_elems, fp_idx);
+    size_t r_dst = fread(distances, sizeof(float), total_elems, fp_dst);
+    fclose(fp_idx);
+    fclose(fp_dst);
+
+    if (r_idx != total_elems || r_dst != total_elems)
+    {
+        free(indices);
+        free(distances);
+        return 0;
+    }
+
+    model->has_knn_graph = 1;
+    model->graph_k = (int)graph_k;
+    model->graph_indices = indices;
+    model->graph_distances = distances;
+
+    printf("  k-NN Metric Graph:   Loaded %lu frames x %lu neighbors from cluster directory\n",
+           n_frames, graph_k);
+    return 0;
+}
+
+/**
+ * knn_model_load() - Load Pass 1 clustering artifacts and prepare resident model.
+ * @cluster_dir:      Directory containing Pass 1 artifacts.
+ * @input_data_path:  Path to the input dataset.
  * @model:            Pointer to KnnModel.
  *
  * Return: 0 on success, -1 on error.
@@ -1031,6 +1136,23 @@ int knn_model_load(
         return -1;
     }
 
+    /* Populate fast lookup pointer arrays for shared cluster locator */
+    model->anchor_ptrs =
+        (const double **)malloc((size_t)model->num_clusters * sizeof(const double *));
+    model->cluster_radii =
+        (double *)malloc((size_t)model->num_clusters * sizeof(double));
+    if (model->anchor_ptrs != NULL && model->cluster_radii != NULL)
+    {
+        for (int c = 0; c < model->num_clusters; c++)
+        {
+            model->anchor_ptrs[c] = model->clusters[c].anchor_data;
+            model->cluster_radii[c] = model->clusters[c].radius;
+        }
+    }
+
+    /* Opportunistically load precomputed k-NN graph of dataset A */
+    load_knn_graph(cluster_dir, model);
+
     return 0;
 }
 
@@ -1083,5 +1205,29 @@ void knn_model_free(
     {
         free(model->frame_r_anchor);
         model->frame_r_anchor = NULL;
+    }
+
+    if (model->graph_indices != NULL)
+    {
+        free(model->graph_indices);
+        model->graph_indices = NULL;
+    }
+
+    if (model->graph_distances != NULL)
+    {
+        free(model->graph_distances);
+        model->graph_distances = NULL;
+    }
+
+    if (model->anchor_ptrs != NULL)
+    {
+        free((void *)model->anchor_ptrs);
+        model->anchor_ptrs = NULL;
+    }
+
+    if (model->cluster_radii != NULL)
+    {
+        free(model->cluster_radii);
+        model->cluster_radii = NULL;
     }
 }

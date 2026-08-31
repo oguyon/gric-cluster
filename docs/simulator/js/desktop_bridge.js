@@ -865,6 +865,18 @@ const DesktopBridge = (function () {
     const mRecip = clean.match(/Reciprocal Reused:\s+(\d+)/);
     if (mRecip) telem.reciprocalReused = parseInt(mRecip[1], 10);
 
+    const mGraphSeeds = clean.match(/Graph Seeds Evaluated:\s+(\d+)/);
+    if (mGraphSeeds) telem.graphSeedsEvaluated = parseInt(mGraphSeeds[1], 10);
+
+    const mGraphEdges = clean.match(/Graph Edges Pruned:\s+(\d+)/);
+    if (mGraphEdges) telem.graphEdgesPruned = parseInt(mGraphEdges[1], 10);
+
+    const mMultiPivot = clean.match(/Multi-Pivot Pruned:\s+(\d+)/);
+    if (mMultiPivot) telem.multiPivotPruned = parseInt(mMultiPivot[1], 10);
+
+    const mContainment = clean.match(/Global Containment Hits:\s+(\d+)/);
+    if (mContainment) telem.globalContainmentHits = parseInt(mContainment[1], 10);
+
     const mTemp = clean.match(/Temporal Exclusions:\s+(\d+)/);
     if (mTemp) telem.temporalPruned = parseInt(mTemp[1], 10);
 

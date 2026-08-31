@@ -262,6 +262,7 @@ add_executable(gric-knn
     src/gric-knn/knn_reader.c
     src/gric-knn/knn_engine.c
     src/gric-knn/knn_writer.c
+    src/shared/cluster_locator.c
     src/shared/cli_colors.c
     src/shared/gric_bin_io.c
 )

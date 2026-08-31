@@ -1473,7 +1473,7 @@
         if (totalTimeVal) totalTimeVal.textContent = '0.00 ms tot';
         if (qpsVal) qpsVal.textContent = '0 QPS';
         if (queriesVal) queriesVal.textContent = '0';
-        if (kParamVal) kParamVal.textContent = `k=${knnK || 10}`;
+        if (kParamVal) kParamVal.textContent = `k=${knnK || 50}`;
         if (speedBadge) speedBadge.textContent = '0 FPS';
         if (statusBadge) {
           statusBadge.textContent = 'Ready';
