@@ -311,6 +311,7 @@ int cluster_locate_sample(
         result->evaluated_clusters[idx] = next_target;
         result->evaluated_dists[idx] = d_target;
         result->num_evaluated_anchors++;
+        result->active_cluster_mask[next_target] = 0;
 
         if (d_target < result->best_anchor_dist)
         {
