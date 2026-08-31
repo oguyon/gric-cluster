@@ -1029,6 +1029,38 @@ static void knn_search_cross_dataset_frame(
             best_seed_id = curr_seed;
             best_seed_dist = curr_dist;
 
+            // Evaluate the direct graph neighborhood around best_seed_id to ensure
+            // the k-NN heap is populated with local manifold points and evicts any
+            // distant starting seeds from earlier hops.
+            if (best_seed_id >= 0)
+            {
+                const uint32_t *neighbors = &model->graph_indices[best_seed_id * (long)graph_k];
+                for (int k_idx = 0; k_idx < graph_k; k_idx++)
+                {
+                    long nb_id = (long)neighbors[k_idx];
+                    if (nb_id < 0 || nb_id >= model->total_dataset_frames ||
+                        nb_id == best_seed_id)
+                    {
+                        continue;
+                    }
+                    if (knn_heap_contains(heap, (int)nb_id))
+                    {
+                        continue;
+                    }
+                    if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
+                    {
+                        telem->framedist_calls++;
+                        telem->graph_seeds_evaluated++;
+                        double d = compute_euclidean_distance(query_data, cand_buffer,
+                                                             frame_elem);
+                        if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                        {
+                            knn_heap_push(heap, (int)nb_id, d);
+                        }
+                    }
+                }
+            }
+
             // 4c. Global Containment Criterion via Local k-Ball Radius R_k(curr_seed)
             if (curr_seed >= 0 && heap->count >= config->k)
             {
