@@ -41,29 +41,34 @@ static int matches(const char *key, const char *opt)
 }
 
 /**
- * apply_option() - Parse a single CLI flag and apply it
- *                  to the configuration.
+ * apply_algo_option() - Parse algorithm-related options.
  * @config: Configuration struct to modify.
- * @key:    Option key string (with or without leading dash).
- * @value:  Option value string, or NULL for boolean flags.
+ * @key:    Option key string.
+ * @value:  Option value string.
  *
- * Return: 0 if a boolean flag was consumed (no value),
- *         1 if a flag + value pair was consumed,
- *        -1 if the flag is unknown.
+ * Return: 0 (flag), 1 (key-value), or -1 (not matched).
  */
-int apply_option(ClusterConfig *config, const char *key, const char *value)
+static int apply_algo_option(
+    ClusterConfig *config,
+    const char    *key,
+    const char    *value)
 {
     if (matches(key, "-dprob"))
     {
         if (!value)
+        {
             return -1;
+        }
         config->algo.deltaprob = atof(value);
         return 1;
     }
-    else if (matches(key, "maxcl") || matches(key, "maxnbclust") || matches(key, "maxclusters"))
+    else if (matches(key, "maxcl") || matches(key, "maxnbclust") ||
+             matches(key, "maxclusters"))
     {
         if (!value)
+        {
             return -1;
+        }
         int parsed = atoi(value);
         if (parsed > 0)
         {
@@ -71,17 +76,195 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         }
         return 1;
     }
-    else if (matches(key, "-ncpu"))
+    else if (matches(key, "-gprob"))
+    {
+        config->optim.gprob_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-entropy"))
+    {
+        config->optim.entropy_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-entropy_max_targets"))
     {
         if (!value)
+        {
             return -1;
-        config->optim.ncpu = atoi(value);
+        }
+        config->optim.entropy_max_targets = atoi(value);
         return 1;
     }
-    else if (matches(key, "-maxim"))
+    else if (matches(key, "-entropy_min_prob"))
     {
         if (!value)
+        {
             return -1;
+        }
+        config->optim.entropy_min_prob = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-entropy_gate"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.entropy_gate_bits = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-entropy_first_gate"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.entropy_first_gate_bits = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-entropy_fast"))
+    {
+        config->optim.entropy_fast_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-entropy_leader"))
+    {
+        config->optim.entropy_leader_shortcut = 1;
+        return 0;
+    }
+    else if (matches(key, "-entropy_leader_cutoff"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.entropy_leader_cutoff = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-sparse_dcc"))
+    {
+        config->optim.sparse_dcc_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-sparse_dcc_extra_evals"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.sparse_dcc_extra_evals = atoi(value);
+        return 1;
+    }
+    else if (matches(key, "-soft_bayesian"))
+    {
+        config->optim.soft_bayesian_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-soft_bayesian_sigma"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.soft_bayesian_sigma_coeff = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-pass2nearest") || matches(key, "-pass2_nearest") ||
+             matches(key, "-pass2-nearest") || matches(key, "-reassign") ||
+             matches(key, "-second_pass") || matches(key, "-second-pass") ||
+             matches(key, "-reallocate"))
+    {
+        config->algo.pass2_nearest_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-no_pass2nearest") || matches(key, "-no-pass2nearest") ||
+             matches(key, "-no_pass2_nearest") || matches(key, "-no_reassign"))
+    {
+        config->algo.pass2_nearest_mode = 0;
+        return 0;
+    }
+    else if (matches(key, "-tm"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->algo.tm_mixing_coeff = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-maxcl_strategy"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        if (strcmp(value, "stop") == 0)
+        {
+            config->algo.maxcl_strategy = MAXCL_STOP;
+        }
+        else if (strcmp(value, "discard") == 0)
+        {
+            config->algo.maxcl_strategy = MAXCL_DISCARD;
+        }
+        else if (strcmp(value, "merge") == 0)
+        {
+            config->algo.maxcl_strategy = MAXCL_MERGE;
+        }
+        else
+        {
+            fprintf(stderr, "Warning: Unknown maxcl_strategy '%s'\n", value);
+        }
+        return 1;
+    }
+    else if (matches(key, "-discard_frac"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->algo.discard_fraction = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-rlim"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        if (value[0] == 'a')
+        {
+            config->algo.auto_rlim_factor = atof(value + 1);
+            config->algo.auto_rlim_mode = 1;
+        }
+        else
+        {
+            config->algo.rlim = atof(value);
+        }
+        return 1;
+    }
+
+    return -1;
+}
+
+/**
+ * apply_io_option() - Parse I/O and format configuration options.
+ * @config: Configuration struct to modify.
+ * @key:    Option key string.
+ * @value:  Option value string.
+ *
+ * Return: 0 (flag), 1 (key-value), or -1 (not matched).
+ */
+static int apply_io_option(
+    ClusterConfig *config,
+    const char    *key,
+    const char    *value)
+{
+    if (matches(key, "-maxim"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
         config->input.maxnbfr = atol(value);
         return 1;
     }
@@ -98,19 +281,15 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
     else if (matches(key, "-outdir"))
     {
         if (!value)
+        {
             return -1;
-        config->output.user_outdir =
-            strdup(value); // We strdup here to manage memory consistent with config file reading
+        }
+        config->output.user_outdir = strdup(value);
         return 1;
     }
     else if (matches(key, "-progress"))
     {
         config->output.progress_mode = 1;
-        return 0;
-    }
-    else if (matches(key, "-gprob"))
-    {
-        config->optim.gprob_mode = 1;
         return 0;
     }
     else if (matches(key, "-verbose"))
@@ -147,191 +326,6 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
     {
         config->input.cnt2sync_mode = 1;
         return 0;
-    }
-    else if (matches(key, "-fmatcha"))
-    {
-        if (!value)
-            return -1;
-        config->optim.fmatch_a = atof(value);
-        return 1;
-    }
-    else if (matches(key, "-fmatchb"))
-    {
-        if (!value)
-            return -1;
-        config->optim.fmatch_b = atof(value);
-        return 1;
-    }
-    else if (matches(key, "-maxvis"))
-    {
-        if (!value)
-            return -1;
-        config->optim.max_gprob_visitors = atoi(value);
-        return 1;
-    }
-    else if (matches(key, "-te4"))
-    {
-        config->optim.te4_mode = 1;
-        return 0;
-    }
-    else if (matches(key, "-te5"))
-    {
-        config->optim.te5_mode = 1;
-        return 0;
-    }
-    else if (matches(key, "-entropy"))
-    {
-        config->optim.entropy_mode = 1;
-        return 0;
-    }
-    else if (matches(key, "-entropy_max_targets"))
-    {
-        if (!value)
-            return -1;
-        config->optim.entropy_max_targets = atoi(value);
-        return 1;
-    }
-    else if (matches(key, "-entropy_min_prob"))
-    {
-        if (!value)
-            return -1;
-        config->optim.entropy_min_prob = atof(value);
-        return 1;
-    }
-    else if (matches(key, "-entropy_gate"))
-    {
-        if (!value)
-            return -1;
-        config->optim.entropy_gate_bits = atof(value);
-        return 1;
-    }
-    else if (matches(key, "-entropy_first_gate"))
-    {
-        if (!value)
-            return -1;
-        config->optim.entropy_first_gate_bits = atof(value);
-        return 1;
-    }
-    else if (matches(key, "-entropy_fast"))
-    {
-        config->optim.entropy_fast_mode = 1;
-        return 0;
-    }
-    else if (matches(key, "-entropy_leader"))
-    {
-        config->optim.entropy_leader_shortcut = 1;
-        return 0;
-    }
-    else if (matches(key, "-entropy_leader_cutoff"))
-    {
-        if (!value)
-            return -1;
-        config->optim.entropy_leader_cutoff = atof(value);
-        return 1;
-    }
-    else if (matches(key, "-sparse_dcc"))
-    {
-        config->optim.sparse_dcc_mode = 1;
-        return 0;
-    }
-    else if (matches(key, "-sparse_dcc_extra_evals"))
-    {
-        if (!value)
-            return -1;
-        config->optim.sparse_dcc_extra_evals = atoi(value);
-        return 1;
-    }
-    else if (matches(key, "-soft_bayesian"))
-    {
-        config->optim.soft_bayesian_mode = 1;
-        return 0;
-    }
-    else if (matches(key, "-soft_bayesian_sigma"))
-    {
-        if (!value)
-            return -1;
-        config->optim.soft_bayesian_sigma_coeff = atof(value);
-        return 1;
-    }
-    else if (matches(key, "-jtf")
-          || matches(key, "-pass2"))
-    {
-        config->optim.disable_pass2 = 0;
-        return 0;
-    }
-    else if (matches(key, "-no_xtile")
-          || matches(key, "-no_pass2")
-          || matches(key, "-no-pass2"))
-    {
-        config->optim.disable_pass2 = 1;
-        return 0;
-    }
-    else if (matches(key, "-pass2nearest")
-          || matches(key, "-pass2_nearest")
-          || matches(key, "-pass2-nearest")
-          || matches(key, "-reassign")
-          || matches(key, "-second_pass")
-          || matches(key, "-second-pass")
-          || matches(key, "-reallocate"))
-    {
-        config->algo.pass2_nearest_mode = 1;
-        return 0;
-    }
-    else if (matches(key, "-no_pass2nearest")
-          || matches(key, "-no-pass2nearest")
-          || matches(key, "-no_pass2_nearest")
-          || matches(key, "-no_reassign"))
-    {
-        config->algo.pass2_nearest_mode = 0;
-        return 0;
-    }
-    else if (matches(key, "-xtile"))
-    {
-        if (value && (strcmp(value, "1") == 0 || strcmp(value, "2") == 0))
-        {
-            config->optim.xtile_mode = atoi(value);
-            return 1;
-        }
-        else
-        {
-            config->optim.xtile_mode = 2;
-            return 0;
-        }
-    }
-    else if (matches(key, "-xtile_decay"))
-    {
-        if (!value)
-            return -1;
-        config->optim.xtile_decay = atof(value);
-        return 1;
-    }
-    else if (matches(key, "-tm"))
-    {
-        if (!value)
-            return -1;
-        config->algo.tm_mixing_coeff = atof(value);
-        return 1;
-    }
-    else if (matches(key, "-maxcl_strategy"))
-    {
-        if (!value)
-            return -1;
-        if (strcmp(value, "stop") == 0)
-            config->algo.maxcl_strategy = MAXCL_STOP;
-        else if (strcmp(value, "discard") == 0)
-            config->algo.maxcl_strategy = MAXCL_DISCARD;
-        else if (strcmp(value, "merge") == 0)
-            config->algo.maxcl_strategy = MAXCL_MERGE;
-        else
-            fprintf(stderr, "Warning: Unknown maxcl_strategy '%s'\n", value);
-        return 1;
-    }
-    else if (matches(key, "-discard_frac"))
-    {
-        if (!value)
-            return -1;
-        config->algo.discard_fraction = atof(value);
-        return 1;
     }
     else if (matches(key, "-tm_out"))
     {
@@ -403,82 +397,131 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
         config->output.output_clusters = 1;
         return 0;
     }
-    else if (strncmp(key, "-predf", 6) == 0
-             || strncmp(key, "predf", 5) == 0)
-    {
-        config->optim.pred_mode = 2;
-        const char *params = strchr(key, '[');
-        if (params)
-        {
-            params++;
-            int l, h, n;
-            if (sscanf(params, "%d,%d,%d",
-                       &l, &h, &n) == 3)
-            {
-                config->optim.pred_len = l;
-                config->optim.pred_h = h;
-                config->optim.pred_n = n;
-            }
-        }
-        return 0;
-    }
-    else if (strncmp(key, "-pred", 5) == 0
-             || strncmp(key, "pred", 4) == 0)
-    {
-        config->optim.pred_mode = 1;
-        const char *params = strchr(key, '[');
-        if (params)
-        {
-            params++;
-            int l, h, n;
-            if (sscanf(params, "%d,%d,%d",
-                       &l, &h, &n) == 3)
-            {
-                config->optim.pred_len = l;
-                config->optim.pred_h = h;
-                config->optim.pred_n = n;
-            }
-        }
-        return 0;
-    }
     else if (matches(key, "-scandist"))
     {
         config->input.scandist_mode = 1;
         return 0;
     }
-    else if (matches(key, "-rlim"))
-    { // Explicit rlim
-        if (!value)
-            return -1;
-        if (value[0] == 'a')
-        {
-            config->algo.auto_rlim_factor = atof(value + 1);
-            config->algo.auto_rlim_mode = 1;
-        }
-        else
-        {
-            config->algo.rlim = atof(value);
-        }
-        return 1;
-    }
     else if (matches(key, "-input") || matches(key, "-in"))
-    { // Explicit input
+    {
         if (!value)
+        {
             return -1;
+        }
         config->input.fits_filename = strdup(value);
         return 1;
     }
     else if (matches(key, "-shm") || matches(key, "-shm-file"))
     {
         if (!value)
+        {
             return -1;
+        }
         config->output.shm_filename = strdup(value);
+        return 1;
+    }
+
+    return -1;
+}
+
+/**
+ * apply_optim_tile_option() - Parse performance, pruning, and spatial tiling options.
+ * @config: Configuration struct to modify.
+ * @key:    Option key string.
+ * @value:  Option value string.
+ *
+ * Return: 0 (flag), 1 (key-value), or -1 (not matched).
+ */
+static int apply_optim_tile_option(
+    ClusterConfig *config,
+    const char    *key,
+    const char    *value)
+{
+    if (matches(key, "-ncpu"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.ncpu = atoi(value);
+        return 1;
+    }
+    else if (matches(key, "-fmatcha"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.fmatch_a = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-fmatchb"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.fmatch_b = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-maxvis"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.max_gprob_visitors = atoi(value);
+        return 1;
+    }
+    else if (matches(key, "-te4"))
+    {
+        config->optim.te4_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-te5"))
+    {
+        config->optim.te5_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-jtf") || matches(key, "-pass2"))
+    {
+        config->optim.disable_pass2 = 0;
+        return 0;
+    }
+    else if (matches(key, "-no_xtile") || matches(key, "-no_pass2") ||
+             matches(key, "-no-pass2"))
+    {
+        config->optim.disable_pass2 = 1;
+        return 0;
+    }
+    else if (matches(key, "-xtile"))
+    {
+        if (value && (strcmp(value, "1") == 0 || strcmp(value, "2") == 0))
+        {
+            config->optim.xtile_mode = atoi(value);
+            return 1;
+        }
+        else
+        {
+            config->optim.xtile_mode = 2;
+            return 0;
+        }
+    }
+    else if (matches(key, "-xtile_decay"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.xtile_decay = atof(value);
         return 1;
     }
     else if (matches(key, "-tiles"))
     {
         if (!value)
+        {
             return -1;
+        }
         if (sscanf(value, "%dx%d",
                    &config->input.tile_grid_x,
                    &config->input.tile_grid_y) == 2)
@@ -494,31 +537,130 @@ int apply_option(ClusterConfig *config, const char *key, const char *value)
                 side++;
             }
             config->input.tile_grid_x = side;
-            config->input.tile_grid_y =
-                (n + side - 1) / side;
+            config->input.tile_grid_y = (n + side - 1) / side;
         }
         return 1;
     }
     else if (matches(key, "-tilemap"))
     {
         if (!value)
+        {
             return -1;
+        }
         config->input.tile_map_file = strdup(value);
         return 1;
     }
     else if (matches(key, "-tileconf"))
     {
         if (!value)
+        {
             return -1;
+        }
         config->input.tile_config_file = strdup(value);
         return 1;
     }
     else if (matches(key, "-retrieval_window"))
     {
         if (!value)
+        {
             return -1;
+        }
         config->input.retrieval_window = atoi(value);
         return 1;
+    }
+
+    return -1;
+}
+
+/**
+ * apply_prediction_option() - Parse sequence prediction pattern flags.
+ * @config: Configuration struct to modify.
+ * @key:    Option key string.
+ * @value:  Option value string.
+ *
+ * Return: 0 (flag), 1 (key-value), or -1 (not matched).
+ */
+static int apply_prediction_option(
+    ClusterConfig *config,
+    const char    *key,
+    const char    *value)
+{
+    (void)value;
+    if (strncmp(key, "-predf", 6) == 0 || strncmp(key, "predf", 5) == 0)
+    {
+        config->optim.pred_mode = 2;
+        const char *params = strchr(key, '[');
+        if (params)
+        {
+            params++;
+            int l, h, n;
+            if (sscanf(params, "%d,%d,%d", &l, &h, &n) == 3)
+            {
+                config->optim.pred_len = l;
+                config->optim.pred_h = h;
+                config->optim.pred_n = n;
+            }
+        }
+        return 0;
+    }
+    else if (strncmp(key, "-pred", 5) == 0 || strncmp(key, "pred", 4) == 0)
+    {
+        config->optim.pred_mode = 1;
+        const char *params = strchr(key, '[');
+        if (params)
+        {
+            params++;
+            int l, h, n;
+            if (sscanf(params, "%d,%d,%d", &l, &h, &n) == 3)
+            {
+                config->optim.pred_len = l;
+                config->optim.pred_h = h;
+                config->optim.pred_n = n;
+            }
+        }
+        return 0;
+    }
+
+    return -1;
+}
+
+/**
+ * apply_option() - Parse a single CLI flag and apply it to the configuration.
+ * @config: Configuration struct to modify.
+ * @key:    Option key string (with or without leading dash).
+ * @value:  Option value string, or NULL for boolean flags.
+ *
+ * Return: 0 if a boolean flag was consumed (no value),
+ *         1 if a flag + value pair was consumed,
+ *        -1 if the flag is unknown.
+ */
+int apply_option(
+    ClusterConfig *config,
+    const char    *key,
+    const char    *value)
+{
+    int res = apply_algo_option(config, key, value);
+    if (res != -1)
+    {
+        return res;
+    }
+
+    res = apply_io_option(config, key, value);
+    if (res != -1)
+    {
+        return res;
+    }
+
+    res = apply_optim_tile_option(config, key, value);
+    if (res != -1)
+    {
+        return res;
+    }
+
+    res = apply_prediction_option(config, key, value);
+    if (res != -1)
+    {
+        return res;
     }
 
     return -1; // Unknown option

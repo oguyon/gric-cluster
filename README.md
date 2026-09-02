@@ -110,6 +110,8 @@ The GRIC suite includes several specialized CLI executables:
 | :--- | :--- | :--- |
 | **`gric-cluster`** | **Core** | Main clustering executable for images, streams, and coordinates. |
 | **`gric-knn`** | **Indexing** | Out-of-core metric-pruned k-nearest neighbor search solver. |
+| **`gric-knn-avg`** | **Indexing** | Reconstructs frames and feature averages using k-NN graph connectivity. |
+| **`gric-dimdensity`** | **Analysis** | Local intrinsic dimensionality (LID) and neighborhood density estimator. |
 | **`gric-ascii2bin`** | **Format** | Fast encoder from ASCII coordinates/tables to `.bin` format. |
 | **`gric-bin2ascii`** | **Format** | Decoder and metadata inspection tool for GRIC `.bin` files. |
 | **`gric-server`** | **Server** | Native C HTTP micro-server powering the desktop GUI & REST API. |

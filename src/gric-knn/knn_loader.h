@@ -8,11 +8,22 @@
 
 #include "knn_defs.h"
 
+/**
+ * @brief Load Pass 1 clustering artifacts and anchors into memory.
+ * @param cluster_dir     Path to clustering directory (e.g., `<name>.clusterdat/`).
+ * @param input_data_path Path to original dataset input file.
+ * @param model           Pointer to KnnModel to initialize and populate.
+ * @return 0 on success, -1 on failure.
+ */
 int knn_model_load(
     const char *cluster_dir,
     const char *input_data_path,
     KnnModel   *model);
 
+/**
+ * @brief Free all resident buffers and structures within a KnnModel.
+ * @param model Pointer to KnnModel to free.
+ */
 void knn_model_free(
     KnnModel *model);
 

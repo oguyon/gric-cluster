@@ -237,7 +237,9 @@ void write_results_multitile(
                 char out_path[2048];
                 snprintf(out_path, sizeof(out_path), "!%s/anchors.fits", tile_dir);
                 fits_create_file(&afptr, out_path, &status);
-                long naxes[3] = {ts->tile_frame.width, ts->tile_frame.height, ts->state.num_clusters};
+                long naxes[3] = {
+                    ts->tile_frame.width, ts->tile_frame.height, ts->state.num_clusters
+                };
                 fits_create_img(afptr, DOUBLE_IMG, 3, naxes, &status);
 
                 long nelements = ts->tile_frame.width * ts->tile_frame.height;

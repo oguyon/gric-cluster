@@ -206,10 +206,13 @@ int cluster_frame(
             {
                 struct timespec step_start, step_end;
                 clock_gettime(CLOCK_MONOTONIC, &step_start);
-                compute_priors_and_mixing(config, state, *prev_assigned_cluster, sorting_candidates);
+                compute_priors_and_mixing(
+                    config, state, *prev_assigned_cluster, sorting_candidates
+                );
                 clock_gettime(CLOCK_MONOTONIC, &step_end);
-                state->telemetry.time_step_3a += (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
-                                                 (step_end.tv_nsec - step_start.tv_nsec) / 1000000.0;
+                state->telemetry.time_step_3a +=
+                    (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
+                    (step_end.tv_nsec - step_start.tv_nsec) / 1000000.0;
                 first_iter = 0;
             }
             else
@@ -219,8 +222,9 @@ int cluster_frame(
                 update_probabilities_and_pruning(last_cj, dfc, config, state, temp_indices,
                                                  temp_dists, temp_count);
                 clock_gettime(CLOCK_MONOTONIC, &step_end);
-                state->telemetry.time_step_3a += (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
-                                                 (step_end.tv_nsec - step_start.tv_nsec) / 1000000.0;
+                state->telemetry.time_step_3a +=
+                    (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
+                    (step_end.tv_nsec - step_start.tv_nsec) / 1000000.0;
             }
 
             if (state->cross_tile_hook != NULL)

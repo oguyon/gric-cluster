@@ -22,11 +22,11 @@ static void print_usage(
     printf("Usage:\n");
     printf("  %s <input.txt> <output.bin> [options]\n\n", prog);
     printf("Options:\n");
-    printf("  -type <type>        Semantic file type: anchors, dcc, membership, counts, coords, generic\n");
+    printf("  -type <type>        Semantic type: anchors, dcc, membership, counts, coords\n");
     printf("  -double             Encode floating-point as float64 (default: float32)\n");
     printf("  -uint32             Encode as unsigned 32-bit integers\n");
     printf("  -int32              Encode as signed 32-bit integers\n");
-    printf("  -dim <D>            Explicit number of columns/dimensions (default: auto-detected)\n");
+    printf("  -dim <D>            Explicit column count (default: auto-detected)\n");
     printf("  -comment <text>     Embed description string in header\n");
     printf("  -v, --verbose       Print verbose encoding details\n");
     printf("  -h, --help          Display this help message\n\n");

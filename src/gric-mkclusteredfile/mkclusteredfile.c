@@ -47,11 +47,12 @@ void print_help(const char *progname)
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-h, --help%s           Show this help message\n\n", ansi_color_green, ansi_reset);
     printf("  Arguments:\n");
-    printf("    %s<input_file>%s       Original input text file (coordinates)\n", ansi_color_magenta,
-           ansi_reset);
-    printf("    %s<membership_file>%s  Frame membership file (index cluster_id)\n", ansi_color_magenta,
-           ansi_reset);
-    printf("    %s<output_file>%s      Output clustered filename\n\n", ansi_color_magenta, ansi_reset);
+    printf("    %s<input_file>%s       Input coordinates file\n",
+           ansi_color_magenta, ansi_reset);
+    printf("    %s<membership_file>%s  Frame membership file (index cluster_id)\n",
+           ansi_color_magenta, ansi_reset);
+    printf("    %s<output_file>%s      Output clustered filename\n\n",
+           ansi_color_magenta, ansi_reset);
 
     printf("%sEXAMPLES%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s$%s %s%s%s input.txt membership.txt output_clustered.txt\n", ansi_color_grey,

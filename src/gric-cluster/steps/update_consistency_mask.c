@@ -106,8 +106,9 @@ void recompute_consistency_mask(
  * @state: Running state of the clustering execution.
  * @new_cl: Index of the newly added cluster.
  *
- * Computes and sets consistency bitmask flags involving the new cluster, avoiding full recalculations.
- * Handles cases where the new cluster is the target (target_ci), hypothesis (hypothesis_cj), or candidate k.
+ * Computes and sets consistency bitmask flags involving the new cluster, avoiding
+ * full recalculations.
+ * Handles cases where the new cluster is the target, hypothesis, or candidate k.
  */
 void update_consistency_mask_for_new_cluster(
     ClusterConfig *config,
@@ -130,7 +131,8 @@ void update_consistency_mask_for_new_cluster(
     #pragma omp parallel for if(new_cl >= OMP_MIN_CLUSTERS)
     for (int j = 0; j <= new_cl; j++)
     {
-        memset(&state->scratch.consistency_mask[(j * N + new_cl) * words], 0, words * sizeof(uint64_t));
+        memset(&state->scratch.consistency_mask[(j * N + new_cl) * words], 0,
+               (size_t)words * sizeof(uint64_t));
     }
 
     // Pre-load the row of new_cl into heap-allocated arrays to avoid stack overflow

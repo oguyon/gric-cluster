@@ -4,12 +4,8 @@
  *
  * Implements a simulated annealing optimizer to reconstruct N-dimensional coordinate
  * matrices from pairwise distance matrices (dcc.txt).
- *
- * Main Functions:
- * - dist_nd: Computes distance in N-dimensional space between two points.
- * - rand_double: Helper to generate a random double-precision floating-point number.
- * - main: Entry point of the reconstruction utility.
  */
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,15 +13,29 @@
 #include <time.h>
 #include <unistd.h>
 #include "shared/cli_colors.h"
+
 #define MAX_CLUSTERS 2000
 
-typedef struct
-{
+/**
+ * struct PointND - An N-dimensional coordinate point.
+ * @coords: Array of dimension coordinates [dim].
+ * @dim:    Number of dimensions.
+ */
+typedef struct {
     double *coords;
-    int dim;
+    int     dim;
 } PointND;
 
-double dist_nd(PointND p1, PointND p2)
+/**
+ * dist_nd() - Euclidean distance in N-dimensional space between two points.
+ * @p1: First point.
+ * @p2: Second point.
+ *
+ * Return: Euclidean distance.
+ */
+static double dist_nd(
+    PointND p1,
+    PointND p2)
 {
     double sum = 0.0;
     for (int k = 0; k < p1.dim; k++)
@@ -36,12 +46,24 @@ double dist_nd(PointND p1, PointND p2)
     return sqrt(sum);
 }
 
-double rand_double()
+/**
+ * rand_double() - Generate a pseudo-random double in [0, 1).
+ *
+ * Return: Random floating-point value.
+ */
+static double rand_double(void)
 {
     return (double)rand() / (double)RAND_MAX;
 }
 
-void print_args_on_error(int argc, char *argv[])
+/**
+ * print_args_on_error() - Print argument list to stderr for diagnostics.
+ * @argc: Number of arguments.
+ * @argv: Argument array.
+ */
+static void print_args_on_error(
+    int   argc,
+    char *argv[])
 {
     fprintf(stderr, "\nProgram arguments:\n");
     for (int i = 0; i < argc; i++)
@@ -51,16 +73,22 @@ void print_args_on_error(int argc, char *argv[])
     fprintf(stderr, "\n");
 }
 
-
-
-static void print_usage(const char *progname)
+/**
+ * print_usage() - Print short command synopsis to stderr.
+ * @progname: Executable name.
+ */
+static void print_usage(
+    const char *progname)
 {
     fprintf(stderr, "Usage: %s <dcc_file> <dimensions> <output_file> [options]\n", progname);
-} // print_usage
+}
 
-
-
-static void print_help_raw(const char *progname)
+/**
+ * print_help_raw() - Output full formatted manual screen to stdout.
+ * @progname: Executable name.
+ */
+static void print_help_raw(
+    const char *progname)
 {
     printf("%sNAME%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %sgric-NDmodel%s - N-Dimensional space reconstruction from distance matrix\n\n",
@@ -87,19 +115,25 @@ static void print_help_raw(const char *progname)
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset, ansi_color_cyan,
            ansi_reset, ansi_color_cyan, ansi_reset);
     printf("  Arguments:\n");
-    printf("    %s<dcc_file>%s         Input distance matrix file (dcc.txt)\n", ansi_color_magenta,
-           ansi_reset);
-    printf("    %s<dimensions>%s       Target dimensionality (N)\n", ansi_color_magenta, ansi_reset);
-    printf("    %s<output_file>%s      Output filename for coordinates\n\n", ansi_color_magenta,
-           ansi_reset);
+    printf("    %s<dcc_file>%s         Input distance matrix file (dcc.txt)\n",
+           ansi_color_magenta, ansi_reset);
+    printf("    %s<dimensions>%s       Target dimensionality (N)\n",
+           ansi_color_magenta, ansi_reset);
+    printf("    %s<output_file>%s      Output filename for coordinates\n\n",
+           ansi_color_magenta, ansi_reset);
 
     printf("%sEXAMPLES%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  %s$%s %s%s%s dcc.txt 3 coordinates.txt\n", ansi_color_grey, ansi_reset,
-           ansi_bold_green, progname, ansi_reset);
+    printf("  %s$%s %s%s%s dcc.txt 3 coordinates.txt\n",
+           ansi_color_grey, ansi_reset, ansi_bold_green, progname, ansi_reset);
     cli_print_color_mode();
-} // print_help_raw
+}
 
-static void print_help(const char *progname)
+/**
+ * print_help() - Paged help wrapper.
+ * @progname: Executable name.
+ */
+static void print_help(
+    const char *progname)
 {
     FILE *tmp = tmpfile();
     if (tmp != NULL)
@@ -134,11 +168,297 @@ static void print_help(const char *progname)
     }
 }
 
-int main(int argc, char *argv[])
+/**
+ * load_distance_matrix() - Parse dcc.txt distance matrix.
+ * @input_file:       Path to dcc file.
+ * @out_num_clusters: Output cluster count.
+ * @out_matrix:       Output allocated pairwise distance array.
+ *
+ * Return: 0 on success, -1 on error.
+ */
+static int load_distance_matrix(
+    const char  *input_file,
+    int         *out_num_clusters,
+    double     **out_matrix)
+{
+    FILE *fin = fopen(input_file, "r");
+    if (!fin)
+    {
+        perror("Error opening dcc file");
+        return -1;
+    }
+
+    int max_id = -1;
+    char line[1024];
+    while (fgets(line, sizeof(line), fin))
+    {
+        int i, j;
+        double d;
+        if (sscanf(line, "%d %d %lf", &i, &j, &d) == 3)
+        {
+            if (i > max_id)
+            {
+                max_id = i;
+            }
+            if (j > max_id)
+            {
+                max_id = j;
+            }
+        }
+    }
+
+    int num_clusters = max_id + 1;
+    if (num_clusters <= 0)
+    {
+        fprintf(stderr, "No valid data in dcc file\n");
+        fclose(fin);
+        return -1;
+    }
+    if (num_clusters > MAX_CLUSTERS)
+    {
+        fprintf(stderr, "Too many clusters (%d), max is %d\n", num_clusters, MAX_CLUSTERS);
+        fclose(fin);
+        return -1;
+    }
+
+    double *D = (double *)malloc((size_t)(num_clusters * num_clusters) * sizeof(double));
+    if (D == NULL)
+    {
+        fclose(fin);
+        return -1;
+    }
+
+    for (int i = 0; i < num_clusters * num_clusters; i++)
+    {
+        D[i] = -1.0;
+    }
+
+    rewind(fin);
+    while (fgets(line, sizeof(line), fin))
+    {
+        int i, j;
+        double d;
+        if (sscanf(line, "%d %d %lf", &i, &j, &d) == 3)
+        {
+            D[i * num_clusters + j] = d;
+            D[j * num_clusters + i] = d;
+        }
+    }
+    fclose(fin);
+
+    *out_num_clusters = num_clusters;
+    *out_matrix = D;
+    return 0;
+}
+
+/**
+ * init_random_points() - Allocate and randomly initialize N-dimensional points.
+ * @num_clusters: Number of points to allocate.
+ * @dimensions:   Dimensionality.
+ *
+ * Return: Allocated PointND array or NULL.
+ */
+static PointND *init_random_points(
+    int num_clusters,
+    int dimensions)
+{
+    PointND *P = (PointND *)malloc((size_t)num_clusters * sizeof(PointND));
+    if (P == NULL)
+    {
+        return NULL;
+    }
+
+    srand((unsigned int)time(NULL));
+    for (int i = 0; i < num_clusters; i++)
+    {
+        P[i].dim = dimensions;
+        P[i].coords = (double *)malloc((size_t)dimensions * sizeof(double));
+        if (P[i].coords != NULL)
+        {
+            for (int k = 0; k < dimensions; k++)
+            {
+                P[i].coords[k] = (rand_double() - 0.5) * 20.0;
+            }
+        }
+    }
+
+    return P;
+}
+
+/**
+ * free_points() - Deallocate PointND array and coordinate buffers.
+ * @P:            Points array.
+ * @num_clusters: Point count.
+ */
+static void free_points(
+    PointND *P,
+    int      num_clusters)
+{
+    if (P == NULL)
+    {
+        return;
+    }
+
+    for (int i = 0; i < num_clusters; i++)
+    {
+        if (P[i].coords != NULL)
+        {
+            free(P[i].coords);
+            P[i].coords = NULL;
+        }
+    }
+    free(P);
+}
+
+/**
+ * run_simulated_annealing() - Execute simulated annealing to align points to distance matrix.
+ * @P:            Points array to optimize in-place.
+ * @D:            Pairwise target distance matrix.
+ * @num_clusters: Number of points.
+ * @dimensions:   Dimensionality.
+ * @initial_T:    Initial temperature.
+ * @cooling_rate: Multiplicative cooling factor.
+ * @iterations:   Max iteration count.
+ */
+static void run_simulated_annealing(
+    PointND      *P,
+    const double *D,
+    int           num_clusters,
+    int           dimensions,
+    double        initial_T,
+    double        cooling_rate,
+    int           iterations)
+{
+    double E = 0.0;
+    int pair_count = 0;
+    for (int i = 0; i < num_clusters; i++)
+    {
+        for (int j = i + 1; j < num_clusters; j++)
+        {
+            double target = D[i * num_clusters + j];
+            if (target >= 0.0)
+            {
+                double curr = dist_nd(P[i], P[j]);
+                E += (curr - target) * (curr - target);
+                pair_count++;
+            }
+        }
+    }
+
+    if (pair_count == 0)
+    {
+        fprintf(stderr, "No pairs to optimize\n");
+        return;
+    }
+
+    printf("Initial Energy: %.6f\n", E);
+
+    PointND new_p;
+    new_p.dim = dimensions;
+    new_p.coords = (double *)malloc((size_t)dimensions * sizeof(double));
+    if (new_p.coords == NULL)
+    {
+        return;
+    }
+
+    double T = initial_T;
+    for (int k = 0; k < iterations; k++)
+    {
+        int idx = rand() % num_clusters;
+        memcpy(new_p.coords, P[idx].coords, (size_t)dimensions * sizeof(double));
+
+        for (int d = 0; d < dimensions; d++)
+        {
+            new_p.coords[d] += (rand_double() - 0.5) * T;
+        }
+
+        double dE = 0.0;
+        for (int j = 0; j < num_clusters; j++)
+        {
+            if (idx == j)
+            {
+                continue;
+            }
+            double target = D[idx * num_clusters + j];
+            if (target >= 0.0)
+            {
+                double old_dist = dist_nd(P[idx], P[j]);
+                double new_dist = dist_nd(new_p, P[j]);
+                dE += (new_dist - target) * (new_dist - target) -
+                      (old_dist - target) * (old_dist - target);
+            }
+        }
+
+        if (dE < 0.0 || exp(-dE / T) > rand_double())
+        {
+            memcpy(P[idx].coords, new_p.coords, (size_t)dimensions * sizeof(double));
+            E += dE;
+        }
+
+        T *= cooling_rate;
+        if (T < 1e-5)
+        {
+            break;
+        }
+    }
+
+    printf("Final Energy: %.6f\n", E);
+    free(new_p.coords);
+}
+
+/**
+ * write_coordinates_file() - Export reconstructed coordinates to text file.
+ * @output_file:  Output file path.
+ * @P:            Points array.
+ * @num_clusters: Point count.
+ * @dimensions:   Dimensionality.
+ */
+static void write_coordinates_file(
+    const char    *output_file,
+    const PointND *P,
+    int            num_clusters,
+    int            dimensions)
+{
+    FILE *fout = fopen(output_file, "w");
+    if (!fout)
+    {
+        perror("Error opening output file");
+        return;
+    }
+
+    fprintf(fout, "# ID");
+    for (int d = 0; d < dimensions; d++)
+    {
+        fprintf(fout, " Dim%d", d);
+    }
+    fprintf(fout, "\n");
+
+    for (int i = 0; i < num_clusters; i++)
+    {
+        fprintf(fout, "%d", i);
+        for (int d = 0; d < dimensions; d++)
+        {
+            fprintf(fout, " %.6f", P[i].coords[d]);
+        }
+        fprintf(fout, "\n");
+    }
+    fclose(fout);
+    printf("Saved ND model to %s\n", output_file);
+}
+
+/**
+ * main() - Entry point of the NDmodel utility.
+ * @argc: Command argument count.
+ * @argv: Command argument array.
+ *
+ * Return: 0 on success, 1 on error.
+ */
+int main(
+    int   argc,
+    char *argv[])
 {
     cli_colors_init();
 
-    // Check help option early
     for (int i = 1; i < argc; i++)
     {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
@@ -160,12 +480,10 @@ int main(int argc, char *argv[])
     int dimensions = atoi(argv[2]);
     char *output_file = argv[3];
 
-    // Defaults
     double T = 10.0;
     double cooling_rate = 0.995;
     int iterations = 100000;
 
-    // Parse options
     for (int i = 4; i < argc; i++)
     {
         if (strcmp(argv[i], "-temp") == 0)
@@ -198,183 +516,26 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Load distance matrix
-    FILE *fin = fopen(input_file, "r");
-    if (!fin)
+    int num_clusters = 0;
+    double *D = NULL;
+    if (load_distance_matrix(input_file, &num_clusters, &D) != 0)
     {
-        perror("Error opening dcc file");
         print_args_on_error(argc, argv);
         return 1;
     }
 
-    int max_id = -1;
-    char line[1024];
-    while (fgets(line, sizeof(line), fin))
+    PointND *P = init_random_points(num_clusters, dimensions);
+    if (P == NULL)
     {
-        int i, j;
-        double d;
-        if (sscanf(line, "%d %d %lf", &i, &j, &d) == 3)
-        {
-            if (i > max_id)
-                max_id = i;
-            if (j > max_id)
-                max_id = j;
-        }
-    }
-
-    int num_clusters = max_id + 1;
-    if (num_clusters <= 0)
-    {
-        fprintf(stderr, "No valid data in dcc file\n");
-        fclose(fin);
-        print_args_on_error(argc, argv);
-        return 1;
-    }
-    if (num_clusters > MAX_CLUSTERS)
-    {
-        fprintf(stderr, "Too many clusters (%d), max is %d\n", num_clusters, MAX_CLUSTERS);
-        fclose(fin);
-        print_args_on_error(argc, argv);
-        return 1;
-    }
-
-    // Allocate matrix
-    double *D = (double *)malloc(num_clusters * num_clusters * sizeof(double));
-    for (int i = 0; i < num_clusters * num_clusters; i++)
-        D[i] = -1.0;
-
-    rewind(fin);
-    while (fgets(line, sizeof(line), fin))
-    {
-        int i, j;
-        double d;
-        if (sscanf(line, "%d %d %lf", &i, &j, &d) == 3)
-        {
-            D[i * num_clusters + j] = d;
-            D[j * num_clusters + i] = d;
-        }
-    }
-    fclose(fin);
-
-    // Initialize random positions
-    PointND *P = (PointND *)malloc(num_clusters * sizeof(PointND));
-    srand(time(NULL));
-    for (int i = 0; i < num_clusters; i++)
-    {
-        P[i].dim = dimensions;
-        P[i].coords = (double *)malloc(dimensions * sizeof(double));
-        for (int k = 0; k < dimensions; k++)
-        {
-            P[i].coords[k] = (rand_double() - 0.5) * 20.0;
-        }
-    }
-
-    // Simulated Annealing
-    double E = 0.0;
-    int pair_count = 0;
-    for (int i = 0; i < num_clusters; i++)
-    {
-        for (int j = i + 1; j < num_clusters; j++)
-        {
-            double target = D[i * num_clusters + j];
-            if (target >= 0.0)
-            {
-                double curr = dist_nd(P[i], P[j]);
-                E += (curr - target) * (curr - target);
-                pair_count++;
-            }
-        }
-    }
-
-    if (pair_count == 0)
-    {
-        fprintf(stderr, "No pairs to optimize\n");
-        // Cleanup
         free(D);
-        for (int i = 0; i < num_clusters; i++)
-            free(P[i].coords);
-        free(P);
         print_args_on_error(argc, argv);
-        return 0;
+        return 1;
     }
 
-    printf("Initial Energy: %.6f\n", E);
+    run_simulated_annealing(P, D, num_clusters, dimensions, T, cooling_rate, iterations);
+    write_coordinates_file(output_file, P, num_clusters, dimensions);
 
-    // Temporary point for perturbations
-    PointND new_p;
-    new_p.dim = dimensions;
-    new_p.coords = (double *)malloc(dimensions * sizeof(double));
-
-    for (int k = 0; k < iterations; k++)
-    {
-        int idx = rand() % num_clusters;
-
-        // Copy current to new
-        memcpy(new_p.coords, P[idx].coords, dimensions * sizeof(double));
-
-        // Perturb
-        for (int d = 0; d < dimensions; d++)
-        {
-            new_p.coords[d] += (rand_double() - 0.5) * T;
-        }
-
-        // Calculate delta E
-        double dE = 0.0;
-        for (int j = 0; j < num_clusters; j++)
-        {
-            if (idx == j)
-                continue;
-            double target = D[idx * num_clusters + j];
-            if (target >= 0.0)
-            {
-                double old_dist = dist_nd(P[idx], P[j]);
-                double new_dist = dist_nd(new_p, P[j]);
-                dE += (new_dist - target) * (new_dist - target) - (old_dist - target) * (old_dist - target);
-            }
-        }
-
-        // Accept?
-        if (dE < 0 || exp(-dE / T) > rand_double())
-        {
-            memcpy(P[idx].coords, new_p.coords, dimensions * sizeof(double));
-            E += dE;
-        }
-
-        T *= cooling_rate;
-        if (T < 1e-5)
-            break;
-    }
-
-    printf("Final Energy: %.6f\n", E);
-
-    FILE *fout = fopen(output_file, "w");
-    if (!fout)
-    {
-        perror("Error opening output file");
-    }
-    else
-    {
-        fprintf(fout, "# ID");
-        for (int d = 0; d < dimensions; d++)
-            fprintf(fout, " Dim%d", d);
-        fprintf(fout, "\n");
-
-        for (int i = 0; i < num_clusters; i++)
-        {
-            fprintf(fout, "%d", i);
-            for (int d = 0; d < dimensions; d++)
-                fprintf(fout, " %.6f", P[i].coords[d]);
-            fprintf(fout, "\n");
-        }
-        fclose(fout);
-        printf("Saved ND model to %s\n", output_file);
-    }
-
-    free(new_p.coords);
+    free_points(P, num_clusters);
     free(D);
-    for (int i = 0; i < num_clusters; i++)
-        free(P[i].coords);
-    free(P);
-
     return 0;
 }

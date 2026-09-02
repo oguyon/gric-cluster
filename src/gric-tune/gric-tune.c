@@ -231,32 +231,41 @@ int main(
     }
 
     printf("\n" ANSI_BOLD_CYAN "=== CALIBRATION SUMMARY REPORT ===" ANSI_COLOR_RESET "\n");
-    printf("| Grid Size | Horizon (H) | rlim | Wall Time | Unique States/Tuples | Global RMS | Max Dist | Entropy |\n");
+    printf("| Grid Size | Horizon (H) | rlim | Wall Time | States/Tuples | "
+           "Global RMS | Max Dist | Entropy |\n");
     printf("|:---|:---|---:|---:|---:|---:|---:|---:|\n");
     printf("| 1x1 Baseline | H=0  | %.4f | %.1f ms | %4d clusters | %.4f | %.4f | %.4f bits |\n",
-           res_1x1.rlim, res_1x1.wall_time, res_1x1.clusters, res_1x1.rms, res_1x1.max_dist, res_1x1.entropy);
+           res_1x1.rlim, res_1x1.wall_time, res_1x1.clusters, res_1x1.rms,
+           res_1x1.max_dist, res_1x1.entropy);
     printf("| 2x2 Tiled    | H=0  | %.4f | %.1f ms | %4d tuples   | %.4f | %.4f | %.4f bits |\n",
-           res_2x2.rlim, res_2x2.wall_time, res_2x2.clusters, res_2x2.rms, res_2x2.max_dist, res_2x2.entropy);
+           res_2x2.rlim, res_2x2.wall_time, res_2x2.clusters, res_2x2.rms,
+           res_2x2.max_dist, res_2x2.entropy);
     printf("| 2x2 Tiled    | H=1k | %.4f | %.1f ms | %4d tuples   | %.4f | %.4f | %.4f bits |\n",
-           res_2x2_h1k.rlim, res_2x2_h1k.wall_time, res_2x2_h1k.clusters, res_2x2_h1k.rms, res_2x2_h1k.max_dist, res_2x2_h1k.entropy);
+           res_2x2_h1k.rlim, res_2x2_h1k.wall_time, res_2x2_h1k.clusters, res_2x2_h1k.rms,
+           res_2x2_h1k.max_dist, res_2x2_h1k.entropy);
     printf("| 2x2 Tiled    | H=10k| %.4f | %.1f ms | %4d tuples   | %.4f | %.4f | %.4f bits |\n",
-           res_2x2_h10k.rlim, res_2x2_h10k.wall_time, res_2x2_h10k.clusters, res_2x2_h10k.rms, res_2x2_h10k.max_dist, res_2x2_h10k.entropy);
+           res_2x2_h10k.rlim, res_2x2_h10k.wall_time, res_2x2_h10k.clusters, res_2x2_h10k.rms,
+           res_2x2_h10k.max_dist, res_2x2_h10k.entropy);
     printf("| 3x3 Tiled    | H=0  | %.4f | %.1f ms | %4d tuples   | %.4f | %.4f | %.4f bits |\n",
-           res_3x3.rlim, res_3x3.wall_time, res_3x3.clusters, res_3x3.rms, res_3x3.max_dist, res_3x3.entropy);
+           res_3x3.rlim, res_3x3.wall_time, res_3x3.clusters, res_3x3.rms,
+           res_3x3.max_dist, res_3x3.entropy);
 
     printf("\n" ANSI_BOLD_YELLOW "=== DIAGNOSTICS & RECOMMENDATIONS ===" ANSI_COLOR_RESET "\n");
 
     if (res_1x1.clusters >= maxcl)
     {
-        printf(ANSI_BOLD_YELLOW "  [WARNING] Monolithic baseline maxed out the maximum cluster capacity (%d clusters)!\n" ANSI_COLOR_RESET
-               "            This truncates new cluster creation and degrades quality/RMS accuracy.\n"
-               "            * RECOMMENDATION: Increase maximum cluster limit using -k flag (e.g. -k %d).\n\n",
+        printf(ANSI_BOLD_YELLOW
+               "  [WARNING] Baseline maxed out maximum cluster capacity (%d clusters)!\n"
+               ANSI_COLOR_RESET
+               "            This truncates new cluster creation and degrades quality.\n"
+               "            * RECOMMENDATION: Increase maximum cluster limit (e.g. -k %d).\n\n",
                maxcl, maxcl * 2);
     }
 
     if (res_2x2.clusters > nsamples * 0.15)
     {
-        printf(ANSI_BOLD_RED "  [ALERT] Combinatorial State Explosion detected on 2x2 grid!\n" ANSI_COLOR_RESET
+        printf(ANSI_BOLD_RED "  [ALERT] Combinatorial State Explosion on 2x2 grid!\n"
+               ANSI_COLOR_RESET
                "          The 2x2 grid created %d unique states for %d frames.\n"
                "          Tiling is too fine for the spatial correlation of this data.\n"
                "          * RECOMMENDATION: Use No Tiling (1x1).\n",
@@ -271,24 +280,28 @@ int main(
         int comp_10k = res_2x2.clusters - res_2x2_h10k.clusters;
 
         printf("  [INFO] Tiling is stable and yields optimal state compression.\n");
-        if (comp_10k > res_2x2.clusters * 0.05 && res_2x2_h10k.wall_time < 3.0 * res_2x2_h1k.wall_time)
+        if (comp_10k > res_2x2.clusters * 0.05 &&
+            res_2x2_h10k.wall_time < 3.0 * res_2x2_h1k.wall_time)
         {
             printf("         Deep Trajectory Fusion (H=10,000) yields significant state-space\n"
                    "         compression gains (%d tuples eliminated).\n"
                    "         * RECOMMENDATION: Use 2x2 Tiling with Deep Lookback (H=10,000).\n",
                    comp_10k);
             printf("\nRecommended command for full run:\n"
-                   "  gric-cluster %.4f %s -tiles 2x2 -maxcl %d -retrieval_window 10000 \"-pred[2,10000,2]\"\n",
+                   "  gric-cluster %.4f %s -tiles 2x2 -maxcl %d -retrieval_window 10000 "
+                   "\"-pred[2,10000,2]\"\n",
                    rlim_2x2, input_file, maxcl);
         }
         else if (comp_1k > res_2x2.clusters * 0.02)
         {
             printf("         Moderate Trajectory Fusion (H=1,000) balances lookback memory\n"
                    "         compression with fast execution speed.\n"
-                   "         * RECOMMENDATION: Use 2x2 Tiling with Moderate Lookback (H=1,000, %d tuples eliminated).\n",
+                   "         * RECOMMENDATION: Use 2x2 Tiling with Moderate Lookback (H=1,000, "
+                   "%d tuples eliminated).\n",
                    comp_1k);
             printf("\nRecommended command for full run:\n"
-                   "  gric-cluster %.4f %s -tiles 2x2 -maxcl %d -retrieval_window 1000 \"-pred[2,1000,2]\"\n",
+                   "  gric-cluster %.4f %s -tiles 2x2 -maxcl %d -retrieval_window 1000 "
+                   "\"-pred[2,1000,2]\"\n",
                    rlim_2x2, input_file, maxcl);
         }
         else
