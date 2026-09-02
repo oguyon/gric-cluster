@@ -45,7 +45,7 @@ static void print_help(
            ansi_color_magenta, ansi_reset, ansi_color_grey, ansi_reset);
 
     printf("%sDESCRIPTION%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  Generates synthetic coordinate sequences (walk, spiral, circle, etc.) for testing.\n\n");
+    printf("  Generates synthetic coordinate sequences (walk, spiral, circle, etc.).\n\n");
 
     printf("%sOPTIONS%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s-repeat%s %s<M>%s          Repeat the pattern M times\n", ansi_color_green,
@@ -55,7 +55,7 @@ static void print_help(
     printf("  %s-shuffle%s             Shuffle the order of generated points\n\n",
            ansi_color_green, ansi_reset);
     printf("  Patterns:\n");
-    printf("    %s[ND]random%s         Uniform random in unit hypercube/sphere (%sdefault:%s%s 2D%s)\n",
+    printf("    %s[ND]random%s         Uniform random in hypercube (%sdefault:%s%s 2D%s)\n",
            ansi_color_green, ansi_reset, ansi_color_cyan, ansi_reset, ansi_color_cyan, ansi_reset);
     printf("    %s[ND]sphere%s         Random points on unit hypersphere surface\n",
            ansi_color_green, ansi_reset);

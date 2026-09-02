@@ -439,6 +439,314 @@ static void write_radii_results(
     free(cluster_max_radii);
 } // write_radii_results
 
+#ifdef USE_PNG
+/**
+ * write_clusters_and_averages_png() - Export cluster member frames and averages as PNG files.
+ * @out_dir:        Target output directory.
+ * @config:         Active ClusterConfig.
+ * @state:          Active ClusterState.
+ * @cluster_counts: Frame counts per cluster.
+ * @width:          Image width in pixels.
+ * @height:         Image height in pixels.
+ * @nelements:      Pixel count per frame.
+ * @avg_buffer:     Preallocated scratch buffer for computing frame averages.
+ */
+static void write_clusters_and_averages_png(
+    const char          *out_dir,
+    const ClusterConfig *config,
+    const ClusterState  *state,
+    const int           *cluster_counts,
+    long                 width,
+    long                 height,
+    long                 nelements,
+    double              *avg_buffer)
+{
+    char out_path[4096];
+
+    for (int c = 0; c < state->num_clusters; c++)
+    {
+        if (cluster_counts[c] == 0)
+        {
+            continue;
+        }
+
+        if (config->output.output_clusters)
+        {
+            char cluster_dir[1024];
+            snprintf(cluster_dir, sizeof(cluster_dir), "%s/cluster_%04d", out_dir, c);
+            safe_mkdir(cluster_dir);
+        }
+
+        if (config->output.average_mode && avg_buffer != NULL)
+        {
+            for (long k = 0; k < nelements; k++)
+            {
+                avg_buffer[k] = 0.0;
+            }
+        }
+
+        for (long f = 0; f < state->telemetry.total_frames_processed; f++)
+        {
+            if (state->assignments[f] == c)
+            {
+                Frame *fr = getframe_at(f);
+                if (fr != NULL)
+                {
+                    if (config->output.output_clusters)
+                    {
+                        char cluster_dir[1024];
+                        snprintf(cluster_dir, sizeof(cluster_dir), "%s/cluster_%04d", out_dir, c);
+                        snprintf(out_path, sizeof(out_path), "%s/frame%05ld.png", cluster_dir, f);
+                        write_png_frame(out_path, fr->data, width, height);
+                    }
+                    if (config->output.average_mode && avg_buffer != NULL)
+                    {
+                        for (long k = 0; k < nelements; k++)
+                        {
+                            avg_buffer[k] += fr->data[k];
+                        }
+                    }
+                    free_frame(fr);
+                }
+            }
+        }
+
+        if (config->output.average_mode && avg_buffer != NULL)
+        {
+            for (long k = 0; k < nelements; k++)
+            {
+                avg_buffer[k] /= cluster_counts[c];
+            }
+            snprintf(out_path, sizeof(out_path), "%s/average_%04d.png", out_dir, c);
+            write_png_frame(out_path, avg_buffer, width, height);
+        }
+    }
+}
+#endif // USE_PNG
+
+/**
+ * write_clusters_and_averages_ascii() - Export cluster member frames and averages to ASCII text.
+ * @out_dir:        Target output directory.
+ * @config:         Active ClusterConfig.
+ * @state:          Active ClusterState.
+ * @cluster_counts: Frame counts per cluster.
+ * @nelements:      Total elements per frame.
+ * @avg_buffer:     Preallocated scratch buffer for frame averages.
+ */
+static void write_clusters_and_averages_ascii(
+    const char          *out_dir,
+    const ClusterConfig *config,
+    const ClusterState  *state,
+    const int           *cluster_counts,
+    long                 nelements,
+    double              *avg_buffer)
+{
+    char out_path[4096];
+    FILE *avg_file = NULL;
+
+    if (config->output.average_mode)
+    {
+        snprintf(out_path, sizeof(out_path), "%s/average.txt", out_dir);
+        avg_file = fopen(out_path, "w");
+    }
+
+    for (int c = 0; c < state->num_clusters; c++)
+    {
+        if (cluster_counts[c] == 0)
+        {
+            if (avg_file != NULL)
+            {
+                for (long k = 0; k < nelements; k++)
+                {
+                    fprintf(avg_file, "0.0 ");
+                }
+                fprintf(avg_file, "\n");
+            }
+            continue;
+        }
+
+        FILE *cfptr = NULL;
+        if (config->output.output_clusters)
+        {
+            char fname[1024];
+            snprintf(fname, sizeof(fname), "%s/cluster_%d.txt", out_dir, c);
+            cfptr = fopen(fname, "w");
+        }
+
+        if (config->output.average_mode && avg_buffer != NULL)
+        {
+            for (long k = 0; k < nelements; k++)
+            {
+                avg_buffer[k] = 0.0;
+            }
+        }
+
+        for (long f = 0; f < state->telemetry.total_frames_processed; f++)
+        {
+            if (state->assignments[f] == c)
+            {
+                Frame *fr = getframe_at(f);
+                if (fr != NULL)
+                {
+                    for (long k = 0; k < nelements; k++)
+                    {
+                        if (cfptr != NULL)
+                        {
+                            fprintf(cfptr, "%f ", fr->data[k]);
+                        }
+                        if (config->output.average_mode && avg_buffer != NULL)
+                        {
+                            avg_buffer[k] += fr->data[k];
+                        }
+                    }
+                    if (cfptr != NULL)
+                    {
+                        fprintf(cfptr, "\n");
+                    }
+                    free_frame(fr);
+                }
+            }
+        }
+
+        if (cfptr != NULL)
+        {
+            fclose(cfptr);
+        }
+
+        if (avg_file != NULL && avg_buffer != NULL)
+        {
+            for (long k = 0; k < nelements; k++)
+            {
+                fprintf(avg_file, "%f ", avg_buffer[k] / cluster_counts[c]);
+            }
+            fprintf(avg_file, "\n");
+        }
+    }
+
+    if (avg_file != NULL)
+    {
+        fclose(avg_file);
+    }
+}
+
+#ifdef USE_CFITSIO
+/**
+ * write_clusters_and_averages_fits() - Export cluster cubes and average images as FITS.
+ * @out_dir:        Target output directory.
+ * @config:         Active ClusterConfig.
+ * @state:          Active ClusterState.
+ * @cluster_counts: Frame counts per cluster.
+ * @width:          Image width in pixels.
+ * @height:         Image height in pixels.
+ * @nelements:      Pixel count per frame.
+ * @avg_buffer:     Preallocated scratch buffer for frame averages.
+ */
+static void write_clusters_and_averages_fits(
+    const char          *out_dir,
+    const ClusterConfig *config,
+    const ClusterState  *state,
+    const int           *cluster_counts,
+    long                 width,
+    long                 height,
+    long                 nelements,
+    double              *avg_buffer)
+{
+    char out_path[4096];
+    int status = 0;
+    fitsfile *avg_ptr = NULL;
+
+    if (config->output.average_mode)
+    {
+        snprintf(out_path, sizeof(out_path), "!%s/average.fits", out_dir);
+        fits_create_file(&avg_ptr, out_path, &status);
+        long anaxes[3] = {width, height, state->num_clusters};
+        fits_create_img(avg_ptr, DOUBLE_IMG, 3, anaxes, &status);
+    }
+
+    for (int c = 0; c < state->num_clusters; c++)
+    {
+        if (cluster_counts[c] == 0)
+        {
+            continue;
+        }
+
+        fitsfile *cfptr = NULL;
+        if (config->output.output_clusters)
+        {
+            char fname[1024];
+            snprintf(fname, sizeof(fname), "!%s/cluster_%d.fits", out_dir, c);
+            fits_create_file(&cfptr, fname, &status);
+            long cnaxes[3] = {width, height, cluster_counts[c]};
+            fits_create_img(cfptr, DOUBLE_IMG, 3, cnaxes, &status);
+        }
+
+        if (config->output.average_mode && avg_buffer != NULL)
+        {
+            for (long k = 0; k < nelements; k++)
+            {
+                avg_buffer[k] = 0.0;
+            }
+        }
+
+        int fr_count = 0;
+        for (long f = 0; f < state->telemetry.total_frames_processed; f++)
+        {
+            if (state->assignments[f] == c)
+            {
+                Frame *fr = getframe_at(f);
+                if (fr != NULL)
+                {
+                    if (cfptr != NULL)
+                    {
+                        long fpixel[3] = {1, 1, fr_count + 1};
+                        fits_write_pix(cfptr, TDOUBLE, fpixel, nelements, fr->data, &status);
+                    }
+                    if (config->output.average_mode && avg_buffer != NULL)
+                    {
+                        for (long k = 0; k < nelements; k++)
+                        {
+                            avg_buffer[k] += fr->data[k];
+                        }
+                    }
+                    free_frame(fr);
+                    fr_count++;
+                }
+            }
+        }
+
+        if (cfptr != NULL)
+        {
+            fits_close_file(cfptr, &status);
+        }
+
+        if (config->output.average_mode && avg_ptr != NULL && avg_buffer != NULL)
+        {
+            for (long k = 0; k < nelements; k++)
+            {
+                avg_buffer[k] /= cluster_counts[c];
+            }
+            long fpixel[3] = {1, 1, c + 1};
+            fits_write_pix(avg_ptr, TDOUBLE, fpixel, nelements, avg_buffer, &status);
+        }
+    }
+
+    if (avg_ptr != NULL)
+    {
+        fits_close_file(avg_ptr, &status);
+    }
+}
+#endif // USE_CFITSIO
+
+/**
+ * write_clusters_and_averages() - Export cluster data and computed averages in active formats.
+ * @out_dir:        Target output directory.
+ * @config:         Active ClusterConfig.
+ * @state:          Active ClusterState.
+ * @cluster_counts: Frame counts per cluster.
+ * @width:          Image width in pixels.
+ * @height:         Image height in pixels.
+ * @nelements:      Total elements per frame.
+ */
 static void write_clusters_and_averages(
     const char          *out_dir,
     const ClusterConfig *config,
@@ -448,7 +756,6 @@ static void write_clusters_and_averages(
     long                 height,
     long                 nelements)
 {
-    char out_path[4096];
     double *avg_buffer = NULL;
     if (config->output.average_mode)
     {
@@ -476,241 +783,24 @@ static void write_clusters_and_averages(
     if (config->output.pngout_mode)
     {
 #ifdef USE_PNG
-        for (int c = 0; c < state->num_clusters; c++)
-        {
-            if (cluster_counts[c] == 0)
-            {
-                continue;
-            }
-
-            if (config->output.output_clusters)
-            {
-                char cluster_dir[1024];
-                snprintf(cluster_dir, sizeof(cluster_dir), "%s/cluster_%04d", out_dir, c);
-                safe_mkdir(cluster_dir);
-            }
-
-            if (config->output.average_mode && avg_buffer != NULL)
-            {
-                for (long k = 0; k < nelements; k++)
-                {
-                    avg_buffer[k] = 0.0;
-                }
-            }
-
-            for (long f = 0; f < state->telemetry.total_frames_processed; f++)
-            {
-                if (state->assignments[f] == c)
-                {
-                    Frame *fr = getframe_at(f);
-                    if (fr != NULL)
-                    {
-                        if (config->output.output_clusters)
-                        {
-                            char cluster_dir[1024];
-                            snprintf(cluster_dir, sizeof(cluster_dir), "%s/cluster_%04d",
-                                     out_dir, c);
-                            snprintf(out_path, sizeof(out_path), "%s/frame%05ld.png",
-                                     cluster_dir, f);
-                            write_png_frame(out_path, fr->data, width, height);
-                        }
-                        if (config->output.average_mode && avg_buffer != NULL)
-                        {
-                            for (long k = 0; k < nelements; k++)
-                            {
-                                avg_buffer[k] += fr->data[k];
-                            }
-                        }
-                        free_frame(fr);
-                    }
-                }
-            }
-
-            if (config->output.average_mode && avg_buffer != NULL)
-            {
-                for (long k = 0; k < nelements; k++)
-                {
-                    avg_buffer[k] /= cluster_counts[c];
-                }
-                snprintf(out_path, sizeof(out_path), "%s/average_%04d.png", out_dir, c);
-                write_png_frame(out_path, avg_buffer, width, height);
-            }
-        }
+        write_clusters_and_averages_png(
+            out_dir, config, state, cluster_counts, width, height, nelements, avg_buffer
+        );
 #endif
     }
     else if ((is_ascii_input_mode() || is_stream_input_mode() || height == 1) &&
              !config->output.fitsout_mode)
     {
-        FILE *avg_file = NULL;
-        if (config->output.average_mode)
-        {
-            snprintf(out_path, sizeof(out_path), "%s/average.txt", out_dir);
-            avg_file = fopen(out_path, "w");
-        }
-
-        for (int c = 0; c < state->num_clusters; c++)
-        {
-            if (cluster_counts[c] == 0)
-            {
-                if (avg_file != NULL)
-                {
-                    for (long k = 0; k < nelements; k++)
-                    {
-                        fprintf(avg_file, "0.0 ");
-                    }
-                    fprintf(avg_file, "\n");
-                }
-                continue;
-            }
-
-            FILE *cfptr = NULL;
-            if (config->output.output_clusters)
-            {
-                char fname[1024];
-                snprintf(fname, sizeof(fname), "%s/cluster_%d.txt", out_dir, c);
-                cfptr = fopen(fname, "w");
-            }
-
-            if (config->output.average_mode && avg_buffer != NULL)
-            {
-                for (long k = 0; k < nelements; k++)
-                {
-                    avg_buffer[k] = 0.0;
-                }
-            }
-
-            for (long f = 0; f < state->telemetry.total_frames_processed; f++)
-            {
-                if (state->assignments[f] == c)
-                {
-                    Frame *fr = getframe_at(f);
-                    if (fr != NULL)
-                    {
-                        for (long k = 0; k < nelements; k++)
-                        {
-                            if (cfptr != NULL)
-                            {
-                                fprintf(cfptr, "%f ", fr->data[k]);
-                            }
-                            if (config->output.average_mode && avg_buffer != NULL)
-                            {
-                                avg_buffer[k] += fr->data[k];
-                            }
-                        }
-                        if (cfptr != NULL)
-                        {
-                            fprintf(cfptr, "\n");
-                        }
-                        free_frame(fr);
-                    }
-                }
-            }
-
-            if (cfptr != NULL)
-            {
-                fclose(cfptr);
-            }
-
-            if (avg_file != NULL && avg_buffer != NULL)
-            {
-                for (long k = 0; k < nelements; k++)
-                {
-                    fprintf(avg_file, "%f ", avg_buffer[k] / cluster_counts[c]);
-                }
-                fprintf(avg_file, "\n");
-            }
-        }
-
-        if (avg_file != NULL)
-        {
-            fclose(avg_file);
-        }
+        write_clusters_and_averages_ascii(
+            out_dir, config, state, cluster_counts, nelements, avg_buffer
+        );
     }
     else
     {
 #ifdef USE_CFITSIO
-        int status = 0;
-        fitsfile *avg_ptr = NULL;
-
-        if (config->output.average_mode)
-        {
-            snprintf(out_path, sizeof(out_path), "!%s/average.fits", out_dir);
-            fits_create_file(&avg_ptr, out_path, &status);
-            long anaxes[3] = {width, height, state->num_clusters};
-            fits_create_img(avg_ptr, DOUBLE_IMG, 3, anaxes, &status);
-        }
-
-        for (int c = 0; c < state->num_clusters; c++)
-        {
-            if (cluster_counts[c] == 0)
-            {
-                continue;
-            }
-
-            fitsfile *cfptr = NULL;
-            if (config->output.output_clusters)
-            {
-                char fname[1024];
-                snprintf(fname, sizeof(fname), "!%s/cluster_%d.fits", out_dir, c);
-                fits_create_file(&cfptr, fname, &status);
-                long cnaxes[3] = {width, height, cluster_counts[c]};
-                fits_create_img(cfptr, DOUBLE_IMG, 3, cnaxes, &status);
-            }
-
-            if (config->output.average_mode && avg_buffer != NULL)
-            {
-                for (long k = 0; k < nelements; k++)
-                {
-                    avg_buffer[k] = 0.0;
-                }
-            }
-
-            int fr_count = 0;
-            for (long f = 0; f < state->telemetry.total_frames_processed; f++)
-            {
-                if (state->assignments[f] == c)
-                {
-                    Frame *fr = getframe_at(f);
-                    if (fr != NULL)
-                    {
-                        if (cfptr != NULL)
-                        {
-                            long fpixel[3] = {1, 1, fr_count + 1};
-                            fits_write_pix(cfptr, TDOUBLE, fpixel, nelements, fr->data, &status);
-                        }
-                        if (config->output.average_mode && avg_buffer != NULL)
-                        {
-                            for (long k = 0; k < nelements; k++)
-                            {
-                                avg_buffer[k] += fr->data[k];
-                            }
-                        }
-                        free_frame(fr);
-                        fr_count++;
-                    }
-                }
-            }
-
-            if (cfptr != NULL)
-            {
-                fits_close_file(cfptr, &status);
-            }
-
-            if (config->output.average_mode && avg_ptr != NULL && avg_buffer != NULL)
-            {
-                for (long k = 0; k < nelements; k++)
-                {
-                    avg_buffer[k] /= cluster_counts[c];
-                }
-                long fpixel[3] = {1, 1, c + 1};
-                fits_write_pix(avg_ptr, TDOUBLE, fpixel, nelements, avg_buffer, &status);
-            }
-        }
-
-        if (avg_ptr != NULL)
-        {
-            fits_close_file(avg_ptr, &status);
-        }
+        write_clusters_and_averages_fits(
+            out_dir, config, state, cluster_counts, width, height, nelements, avg_buffer
+        );
 #endif
     }
 

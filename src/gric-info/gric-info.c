@@ -33,7 +33,8 @@ static void print_help_raw(
     printf("  ImageStreamIO, and OpenMP. Identifies supported formats and modes.\n\n");
 
     printf("%sOPTIONS%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
-    printf("  %s-h, --help%s           Show this help message\n\n", ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
+    printf("  %s-h, --help%s           Show this help message\n\n",
+           ANSI_COLOR_GREEN, ANSI_COLOR_RESET);
 
     printf("%sEXAMPLES%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
     printf("  %s$%s %s%s%s\n", ANSI_COLOR_GREY, ANSI_COLOR_RESET, ANSI_BOLD_GREEN, progname,

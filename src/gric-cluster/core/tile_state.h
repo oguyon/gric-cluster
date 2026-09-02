@@ -32,7 +32,7 @@ typedef struct
     double        *cpt;                /**< Shared Conditional Probability Table */
     double        *cpt_scale;          /**< Shared CPT scale factor pointer */
     int           *last_injected_assignment; /**< Resolved neighbor track list */
-    void          *mts;                /**< Ptr to parent MultiTileState (forward declared void* to avoid circular header dependencies) */
+    void          *mts;                      /**< Ptr to parent MultiTileState */
 } TileState;
 
 /** Top-level multi-tile state. */

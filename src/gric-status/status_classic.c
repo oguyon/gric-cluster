@@ -43,7 +43,8 @@ void print_status_classic(
     printf("Missed Frames:        %" PRIu64 "\n", status->total_missed_frames);
 
     double avg_dists = (status->total_frames_processed > 0)
-                           ? (double)status->framedist_calls / (double)status->total_frames_processed
+                           ? ((double)status->framedist_calls /
+                              (double)status->total_frames_processed)
                            : 0.0;
     printf("Avg Dists per Sample: %.3f\n", avg_dists);
 

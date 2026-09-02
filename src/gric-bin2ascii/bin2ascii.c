@@ -22,7 +22,7 @@ static void print_usage(
     printf("  %s <input.bin> [output.txt] [options]\n\n", prog);
     printf("Options:\n");
     printf("  -info, -i           Display header metadata summary without decoding payload\n");
-    printf("  -fmt <specifier>    Custom printf formatting specifier (e.g. '%%.8f', '%%g', '%%d')\n");
+    printf("  -fmt <specifier>    Custom printf formatting specifier (e.g. '%%.8f', '%%g')\n");
     printf("  -v, --verbose       Print decoding summary to stderr\n");
     printf("  -h, --help          Display this help message\n\n");
     printf("Notes:\n");

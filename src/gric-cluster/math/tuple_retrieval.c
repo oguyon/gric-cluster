@@ -312,320 +312,261 @@ cleanup:
     free(scores);
 }
 
-void predict_joint_tuples(
-    MultiTileState *mts,
-    int             pred_len,
-    int             pred_h,
-    int             pred_n)
+/**
+ * predict_calc_frame_dcc() - Lookup or compute DCC between two clusters on a tile.
+ * @ts:  Pointer to TileState.
+ * @cA:  First cluster ID.
+ * @cB:  Second cluster ID.
+ *
+ * Return: Distance between clusters cA and cB.
+ */
+static inline double predict_calc_frame_dcc(
+    TileState *ts,
+    int        cA,
+    int        cB)
 {
-    int M = mts->num_tiles;
-    long T = mts->tuple_count;
-    int L = pred_len;
-    int H = pred_h;
-
-    if (T < L)
+    if (cA == cB)
     {
-        /* Not enough history, initialize to uniform priors */
-        for (int m = 0; m < M; m++)
-        {
-            TileState *ts = &mts->tile_states[m];
-            int K = ts->state.num_clusters;
-            for (int k = 0; k < K; k++)
-            {
-                ts->state.scratch.mixed_probs[k] = 1.0 / (double)K;
-            }
-            ts->state.scratch.tuple_pred_count = 0;
-        }
-        return;
+        return 0.0;
     }
 
-    int *recent_seq = malloc((size_t)(L * M) * sizeof(int));
-    if (recent_seq == NULL)
+    int maxcl = ts->config.algo.maxnbclust;
+    int idx = cA * maxcl + cB;
+    double dcc = 0.0;
+
+    if (ts->state.scratch.dcc_measured[idx])
     {
-        return;
+        dcc = ts->state.scratch.dcc_min[idx];
+    }
+    else
+    {
+        dcc = ts->state.scratch.dcc_max[idx];
     }
 
-    for (int j = 0; j < L; j++)
+    if (dcc < 0.0)
     {
-        long frame_idx = T - L + j;
-        memcpy(&recent_seq[j * M],
-               &mts->tuple_history[frame_idx * M],
-               (size_t)M * sizeof(int));
+        dcc = 2.0 * ts->config.algo.rlim;
     }
 
-    /* Identify the most selective tile based on cluster prob to dynamically limit H */
-    double min_prob = 1.0;
-    int m_best = 0;
-    for (int m = 0; m < M; m++)
+    return dcc;
+}
+
+/**
+ * predict_scan_occurrence_index() - Scan LIFO occurrence chains to accumulate prediction scores.
+ * @mts:          MultiTileState pointer.
+ * @recent_seq:   Recent cluster sequence [L * M].
+ * @L:            Prediction history window length.
+ * @M:            Number of tiles.
+ * @m_best:       Most selective anchor tile index.
+ * @search_start: Starting historical frame index.
+ * @search_limit: Horizon limit index.
+ * @decay:        Exponential time decay factor.
+ * @accum_scores: Output score accumulator array [M * max_clusters].
+ *
+ * Return: 1 if index search succeeded, 0 if caller should fall back to linear scan.
+ */
+static int predict_scan_occurrence_index(
+    MultiTileState *mts,
+    const int      *recent_seq,
+    int             L,
+    int             M,
+    int             m_best,
+    long            search_start,
+    long            search_limit,
+    double          decay,
+    double         *accum_scores)
+{
+    if (mts->occurrence_head == NULL || mts->occurrence_prev == NULL)
     {
-        TileState *ts = &mts->tile_states[m];
-        int q = recent_seq[(L - 1) * M + m];
-        if (q >= 0 && q < ts->state.num_clusters)
-        {
-            double p = ts->state.clusters[q].prob;
-            if (p < min_prob)
-            {
-                min_prob = p;
-                m_best = m;
-            }
-        }
-        else
-        {
-            min_prob = 0.0;
-        }
+        return 0;
     }
 
-    if (min_prob > 0.08)
-    {
-        H = 100; /* Bypasses deep lookback for background states */
-    }
-
-    long search_limit = T - L;
-    long search_start = (T > H) ? T - H : 0;
-    if (search_start > search_limit)
-    {
-        search_start = search_limit;
-    }
-
-    /* We need maxnbclust for strides */
     int max_clusters = mts->tile_states[0].config.algo.maxnbclust;
-    double *accum_scores = calloc((size_t)(M * max_clusters), sizeof(double));
-    if (accum_scores == NULL)
+    TileState *ts_best = &mts->tile_states[m_best];
+    int q_best = recent_seq[(L - 1) * M + m_best];
+
+    if (q_best < 0 || q_best >= ts_best->state.num_clusters)
     {
-        free(recent_seq);
-        return;
+        return 0;
     }
 
-    double decay = 1.0 - 1.0 / (double)L;
+    double rlim_best = ts_best->config.algo.rlim;
 
-    long n_frames_in_horizon = search_limit - search_start;
-    int index_search_ok = 0;
-    if (mts->occurrence_head != NULL && mts->occurrence_prev != NULL &&
-        n_frames_in_horizon > 0)
+    for (int C = 0; C < ts_best->state.num_clusters; C++)
     {
-
-        TileState *ts_best = &mts->tile_states[m_best];
-        int q_best = recent_seq[(L - 1) * M + m_best];
-        if (q_best >= 0 && q_best < ts_best->state.num_clusters)
+        double dcc_best = predict_calc_frame_dcc(ts_best, q_best, C);
+        if (dcc_best > 2.0 * rlim_best)
         {
-            index_search_ok = 1;
-            double rlim_best = ts_best->config.algo.rlim;
-            for (int C = 0; C < ts_best->state.num_clusters; C++)
-            {
-                double dcc_best = 0.0;
-                if (q_best != C)
-                {
-                    int idx = q_best * max_clusters + C;
-                    if (ts_best->state.scratch.dcc_measured[idx])
-                    {
-                        dcc_best = ts_best->state.scratch.dcc_min[idx];
-                    }
-                    else
-                    {
-                        dcc_best = ts_best->state.scratch.dcc_max[idx];
-                    }
-                    if (dcc_best < 0.0)
-                    {
-                        dcc_best = 2.0 * rlim_best;
-                    }
-                }
+            continue;
+        }
 
-                if (dcc_best <= 2.0 * rlim_best)
-                {
-                    /* Traverse LIFO occurrence chain of C on m_best */
-                    int t_occ = mts->occurrence_head[m_best * max_clusters + C];
-                    while (t_occ != -1)
-                    {
-                        long s = (long)t_occ + 1;
-                        if (s < search_start)
-                        {
-                            break; /* Link chain is in reverse chronological order */
-                        }
-
-                        if (s < search_limit)
-                        {
-                            /* Verify remaining M-1 tiles directly */
-                            int match = 1;
-                            for (int m = 0; m < M; m++)
-                            {
-                                if (m == m_best)
-                                {
-                                    continue;
-                                }
-
-                                int cB = mts->tuple_history[(s - 1) * M + m];
-                                int q_m = recent_seq[(L - 1) * M + m];
-                                TileState *ts = &mts->tile_states[m];
-
-                                if (cB < 0 || cB >= ts->state.num_clusters ||
-                                    q_m < 0 || q_m >= ts->state.num_clusters)
-                                {
-                                    match = 0;
-                                    break;
-                                }
-
-                                double dcc = 0.0;
-                                if (q_m != cB)
-                                {
-                                    int idx = q_m * max_clusters + cB;
-                                    if (ts->state.scratch.dcc_measured[idx])
-                                    {
-                                        dcc = ts->state.scratch.dcc_min[idx];
-                                    }
-                                    else
-                                    {
-                                        dcc = ts->state.scratch.dcc_max[idx];
-                                    }
-                                    if (dcc < 0.0)
-                                    {
-                                        dcc = 2.0 * ts->config.algo.rlim;
-                                    }
-                                }
-
-                                double rlim = ts->config.algo.rlim;
-                                if (dcc > 2.0 * rlim)
-                                {
-                                    match = 0;
-                                    break;
-                                }
-                            } // for m
-
-                            if (match)
-                            {
-                                double sum_exponent = 0.0;
-                                int sum_exceeded = 0;
-                                for (int j = 0; j < L; j++)
-                                {
-                                    long hist_frame_idx = s - L + j;
-                                    double frame_exponent = 0.0;
-                                    for (int m = 0; m < M; m++)
-                                    {
-                                        int cA = recent_seq[j * M + m];
-                                        int cB = mts->tuple_history[hist_frame_idx * M + m];
-                                        TileState *ts = &mts->tile_states[m];
-                                        if (cA < 0 || cA >= ts->state.num_clusters ||
-                                            cB < 0 || cB >= ts->state.num_clusters)
-                                        {
-                                            continue;
-                                        }
-
-                                        double dcc = 0.0;
-                                        if (cA != cB)
-                                        {
-                                            int maxcl = ts->config.algo.maxnbclust;
-                                            int idx = cA * maxcl + cB;
-                                            if (ts->state.scratch.dcc_measured[idx])
-                                            {
-                                                dcc = ts->state.scratch.dcc_min[idx];
-                                            }
-                                            else
-                                            {
-                                                dcc = ts->state.scratch.dcc_max[idx];
-                                            }
-                                            if (dcc < 0.0)
-                                            {
-                                                dcc = 2.0 * ts->config.algo.rlim;
-                                            }
-                                        }
-                                        double rlim = ts->config.algo.rlim;
-                                        frame_exponent += dcc / rlim;
-                                    } // for m
-                                    sum_exponent += pow(decay, (double)(L - 1 - j)) *
-                                                    frame_exponent;
-                                    if (sum_exponent > 10.0)
-                                    {
-                                        sum_exceeded = 1;
-                                        break;
-                                    }
-                                } // for j
-
-                                if (!sum_exceeded)
-                                {
-                                    double score = exp(-sum_exponent /
-                                                       ((double)L * 0.63212055882855767));
-                                    for (int m = 0; m < M; m++)
-                                    {
-                                        int c_next = mts->tuple_history[s * M + m];
-                                        if (c_next >= 0 &&
-                                            c_next < mts->tile_states[m].state.num_clusters)
-                                        {
-                                            accum_scores[m * max_clusters + c_next] += score;
-                                        }
-                                    }
-                                }
-                            } // if match
-                        } // if s < search_limit
-                        t_occ = mts->occurrence_prev[t_occ * M + m_best];
-                    } // while t_occ
-                } // if dcc_best <= 2.0 * rlim_best
-            } // for C
-        } // if q_best valid
-    }
-
-    if (!index_search_ok)
-    {
-        /* Fallback: brute force linear scan */
-        for (long s = search_start; s < search_limit; s++)
+        int t_occ = mts->occurrence_head[m_best * max_clusters + C];
+        while (t_occ != -1)
         {
-            double sum_exponent = 0.0;
-            for (int j = 0; j < L; j++)
+            long s = (long)t_occ + 1;
+            if (s < search_start)
             {
-                long hist_frame_idx = s - L + j;
-                double frame_exponent = 0.0;
+                break;
+            }
+
+            if (s < search_limit)
+            {
+                int match = 1;
                 for (int m = 0; m < M; m++)
                 {
-                    int cA = recent_seq[j * M + m];
-                    int cB = mts->tuple_history[hist_frame_idx * M + m];
-                    TileState *ts = &mts->tile_states[m];
-                    if (cA < 0 || cA >= ts->state.num_clusters ||
-                        cB < 0 || cB >= ts->state.num_clusters)
+                    if (m == m_best)
                     {
                         continue;
                     }
-                    double dcc = 0.0;
-                    if (cA != cB)
+                    int cB = mts->tuple_history[(s - 1) * M + m];
+                    int q_m = recent_seq[(L - 1) * M + m];
+                    TileState *ts = &mts->tile_states[m];
+
+                    if (cB < 0 || cB >= ts->state.num_clusters ||
+                        q_m < 0 || q_m >= ts->state.num_clusters)
                     {
-                        int maxcl = ts->config.algo.maxnbclust;
-                        int idx = cA * maxcl + cB;
-                        if (ts->state.scratch.dcc_measured[idx])
+                        match = 0;
+                        break;
+                    }
+
+                    double dcc = predict_calc_frame_dcc(ts, q_m, cB);
+                    if (dcc > 2.0 * ts->config.algo.rlim)
+                    {
+                        match = 0;
+                        break;
+                    }
+                } // for m
+
+                if (match)
+                {
+                    double sum_exponent = 0.0;
+                    int sum_exceeded = 0;
+                    for (int j = 0; j < L; j++)
+                    {
+                        long hist_frame_idx = s - L + j;
+                        double frame_exponent = 0.0;
+                        for (int m = 0; m < M; m++)
                         {
-                            dcc = ts->state.scratch.dcc_min[idx];
+                            int cA = recent_seq[j * M + m];
+                            int cB = mts->tuple_history[hist_frame_idx * M + m];
+                            TileState *ts = &mts->tile_states[m];
+                            if (cA < 0 || cA >= ts->state.num_clusters ||
+                                cB < 0 || cB >= ts->state.num_clusters)
+                            {
+                                continue;
+                            }
+                            double dcc = predict_calc_frame_dcc(ts, cA, cB);
+                            frame_exponent += dcc / ts->config.algo.rlim;
+                        } // for m
+                        sum_exponent += pow(decay, (double)(L - 1 - j)) * frame_exponent;
+                        if (sum_exponent > 10.0)
+                        {
+                            sum_exceeded = 1;
+                            break;
                         }
-                        else
+                    } // for j
+
+                    if (!sum_exceeded)
+                    {
+                        double score = exp(-sum_exponent / ((double)L * 0.63212055882855767));
+                        for (int m = 0; m < M; m++)
                         {
-                            dcc = ts->state.scratch.dcc_max[idx];
-                        }
-                        if (dcc < 0.0)
-                        {
-                            dcc = framedist(&ts->state.clusters[cA].anchor,
-                                            &ts->state.clusters[cB].anchor);
+                            int c_next = mts->tuple_history[s * M + m];
+                            if (c_next >= 0 &&
+                                c_next < mts->tile_states[m].state.num_clusters)
+                            {
+                                accum_scores[m * max_clusters + c_next] += score;
+                            }
                         }
                     }
-                    double rlim = mts->tile_states[m].config.algo.rlim;
-                    frame_exponent += dcc / rlim;
-                } // for m
-                sum_exponent += pow(decay, (double)(L - 1 - j)) * frame_exponent;
-            } // for j
+                } // if match
+            } // if s < search_limit
 
-            double score = exp(-sum_exponent / ((double)L * 0.63212055882855767));
+            t_occ = mts->occurrence_prev[t_occ * M + m_best];
+        } // while t_occ
+    } // for C
+
+    return 1;
+}
+
+/**
+ * predict_scan_linear_history() - Fallback brute-force linear scan over tuple history.
+ * @mts:          MultiTileState pointer.
+ * @recent_seq:   Recent cluster sequence [L * M].
+ * @L:            Prediction history length.
+ * @M:            Number of tiles.
+ * @search_start: Starting historical frame.
+ * @search_limit: Horizon limit.
+ * @decay:        Time decay factor.
+ * @accum_scores: Output score accumulator array [M * max_clusters].
+ */
+static void predict_scan_linear_history(
+    MultiTileState *mts,
+    const int      *recent_seq,
+    int             L,
+    int             M,
+    long            search_start,
+    long            search_limit,
+    double          decay,
+    double         *accum_scores)
+{
+    int max_clusters = mts->tile_states[0].config.algo.maxnbclust;
+
+    for (long s = search_start; s < search_limit; s++)
+    {
+        double sum_exponent = 0.0;
+        for (int j = 0; j < L; j++)
+        {
+            long hist_frame_idx = s - L + j;
+            double frame_exponent = 0.0;
             for (int m = 0; m < M; m++)
             {
-                int c_next = mts->tuple_history[s * M + m];
-                if (c_next >= 0 && c_next < mts->tile_states[m].state.num_clusters)
+                int cA = recent_seq[j * M + m];
+                int cB = mts->tuple_history[hist_frame_idx * M + m];
+                TileState *ts = &mts->tile_states[m];
+                if (cA < 0 || cA >= ts->state.num_clusters ||
+                    cB < 0 || cB >= ts->state.num_clusters)
                 {
-                    accum_scores[m * max_clusters + c_next] += score;
+                    continue;
                 }
-            }
-        } // for s
-    }
+                double dcc = predict_calc_frame_dcc(ts, cA, cB);
+                frame_exponent += dcc / ts->config.algo.rlim;
+            } // for m
+            sum_exponent += pow(decay, (double)(L - 1 - j)) * frame_exponent;
+        } // for j
 
-    /* Populate mixed_probs and tuple_pred_candidates for each tile */
+        double score = exp(-sum_exponent / ((double)L * 0.63212055882855767));
+        for (int m = 0; m < M; m++)
+        {
+            int c_next = mts->tuple_history[s * M + m];
+            if (c_next >= 0 && c_next < mts->tile_states[m].state.num_clusters)
+            {
+                accum_scores[m * max_clusters + c_next] += score;
+            }
+        }
+    }
+}
+
+/**
+ * predict_populate_tile_scratch() - Normalise scores and rank top prediction candidates.
+ * @mts:          MultiTileState pointer.
+ * @accum_scores: Computed accumulator scores [M * max_clusters].
+ * @pred_n:       Maximum candidates to extract.
+ */
+static void predict_populate_tile_scratch(
+    MultiTileState *mts,
+    const double   *accum_scores,
+    int             pred_n)
+{
+    int M = mts->num_tiles;
+    int max_clusters = mts->tile_states[0].config.algo.maxnbclust;
+
     for (int m = 0; m < M; m++)
     {
         TileState *ts = &mts->tile_states[m];
         int K = ts->state.num_clusters;
         double sum = 0.0;
-        double alpha = 0.01; /* Laplace smoothing pseudocount */
+        double alpha = 0.01;
 
         for (int k = 0; k < K; k++)
         {
@@ -657,7 +598,116 @@ void predict_joint_tuples(
             ts->state.scratch.tuple_pred_count = n_out;
             free(cand_list);
         }
-    } // for m
+    }
+}
+
+/**
+ * predict_joint_tuples() - Predict joint transitions for all tiles before Pass 1.
+ * @mts:      Active MultiTileState structure.
+ * @pred_len: History sequence match window length L.
+ * @pred_h:   Lookback search horizon H.
+ * @pred_n:   Maximum shortcut candidates to extract.
+ */
+void predict_joint_tuples(
+    MultiTileState *mts,
+    int             pred_len,
+    int             pred_h,
+    int             pred_n)
+{
+    int M = mts->num_tiles;
+    long T = mts->tuple_count;
+    int L = pred_len;
+    int H = pred_h;
+
+    if (T < L)
+    {
+        for (int m = 0; m < M; m++)
+        {
+            TileState *ts = &mts->tile_states[m];
+            int K = ts->state.num_clusters;
+            for (int k = 0; k < K; k++)
+            {
+                ts->state.scratch.mixed_probs[k] = 1.0 / (double)K;
+            }
+            ts->state.scratch.tuple_pred_count = 0;
+        }
+        return;
+    }
+
+    int *recent_seq = malloc((size_t)(L * M) * sizeof(int));
+    if (recent_seq == NULL)
+    {
+        return;
+    }
+
+    for (int j = 0; j < L; j++)
+    {
+        long frame_idx = T - L + j;
+        memcpy(&recent_seq[j * M],
+               &mts->tuple_history[frame_idx * M],
+               (size_t)M * sizeof(int));
+    }
+
+    double min_prob = 1.0;
+    int m_best = 0;
+    for (int m = 0; m < M; m++)
+    {
+        TileState *ts = &mts->tile_states[m];
+        int q = recent_seq[(L - 1) * M + m];
+        if (q >= 0 && q < ts->state.num_clusters)
+        {
+            double p = ts->state.clusters[q].prob;
+            if (p < min_prob)
+            {
+                min_prob = p;
+                m_best = m;
+            }
+        }
+        else
+        {
+            min_prob = 0.0;
+        }
+    }
+
+    if (min_prob > 0.08)
+    {
+        H = 100;
+    }
+
+    long search_limit = T - L;
+    long search_start = (T > H) ? T - H : 0;
+    if (search_start > search_limit)
+    {
+        search_start = search_limit;
+    }
+
+    int max_clusters = mts->tile_states[0].config.algo.maxnbclust;
+    double *accum_scores = calloc((size_t)(M * max_clusters), sizeof(double));
+    if (accum_scores == NULL)
+    {
+        free(recent_seq);
+        return;
+    }
+
+    double decay = 1.0 - 1.0 / (double)L;
+    long n_frames_in_horizon = search_limit - search_start;
+    int index_search_ok = 0;
+
+    if (n_frames_in_horizon > 0)
+    {
+        index_search_ok = predict_scan_occurrence_index(
+            mts, recent_seq, L, M, m_best, search_start, search_limit, decay, accum_scores
+        );
+    }
+
+    if (!index_search_ok)
+    {
+        predict_scan_linear_history(
+            mts, recent_seq, L, M, search_start, search_limit, decay, accum_scores
+        );
+    }
+
+    predict_populate_tile_scratch(mts, accum_scores, pred_n);
 
     free(accum_scores);
     free(recent_seq);

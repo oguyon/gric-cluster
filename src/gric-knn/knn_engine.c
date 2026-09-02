@@ -33,6 +33,7 @@ typedef struct
 } ClusterScore;
 
 #define MAX_MEASURED_PIVOTS 8
+#define GRAPH_FRONTIER_MAX 256
 
 /** Measured anchor pivot record for Multi-Anchor Pivot Bounding (AESA) */
 typedef struct
@@ -41,8 +42,16 @@ typedef struct
     double d_anchor;
 } MeasuredPivot;
 
+/** Graph frontier node for approximate dynamic search */
+typedef struct
+{
+    long    frame_id;
+    double  dist;
+    uint8_t expanded;
+} FrontierNode;
+
 /**
- * compare_cluster_scores() - Sort cluster candidates by ascending lower bound and center proximity.
+ * compare_cluster_scores() - Sort cluster candidates by ascending lower bound.
  * @a: Pointer to first ClusterScore.
  * @b: Pointer to second ClusterScore.
  *
@@ -223,16 +232,16 @@ static inline int check_temporal_separation(
 
 /**
  * is_member_pruned_by_pointwise_pivots() - Multi-Pivot Pointwise Member Bounding.
- * @cand_id:          Candidate frame index x.
- * @d_anchor:         Distance from query q to candidate's cluster anchor a_q.
- * @r_cand:           Distance from cluster anchor a_q to member x.
- * @dcc_best:         Distance from closest anchor best_c to candidate's cluster anchor a_q.
- * @min_d_anchor:     Distance from query q to closest anchor best_c.
+ * @cand_id:          Candidate frame index.
+ * @d_anchor:         Distance from query to candidate cluster anchor.
+ * @r_cand:           Distance from anchor to member candidate.
+ * @dcc_best:         Distance from closest anchor to candidate cluster anchor.
+ * @min_d_anchor:     Distance from query to closest anchor.
  * @num_seed_pivots:  Number of evaluated graph seed pivots [0..8].
  * @seed_pivot_ids:   Array of evaluated graph seed frame IDs.
- * @seed_pivot_dists: Array of computed distances from query q to seeds.
+ * @seed_pivot_dists: Array of computed distances from query to seeds.
  * @model:            KnnModel pointer.
- * @tau_eff:          Effective search radius bound (tau_k / (1 + eps)).
+ * @tau_eff:          Effective search radius bound.
  * @rlim_cutoff:      Radius cutoff (if any).
  * @telem:            Telemetry structure to record pruning counters.
  *
@@ -313,12 +322,23 @@ static inline int is_member_pruned_by_pointwise_pivots(
                 telem->graph_edges_pruned++;
                 return 1;
             }
-        }
+        } // for (int p = 0; ...)
     }
 
     return 0;
 }
 
+/**
+ * record_neighbor_and_reciprocal() - Insert candidate into heap and update reciprocal neighbor.
+ * @query_id:     Query frame index.
+ * @cand_id:      Candidate frame index.
+ * @dist:         Calculated distance.
+ * @config:       Active KnnConfig.
+ * @model:        Active KnnModel.
+ * @heap:         Heap for query frame.
+ * @all_heaps:    All heaps array.
+ * @bucket_locks: OpenMP bucket locks (if multithreaded).
+ */
 static inline void record_neighbor_and_reciprocal(
     long             query_id,
     long             cand_id,
@@ -377,196 +397,244 @@ static inline void record_neighbor_and_reciprocal(
 }
 
 /**
- * knn_search_single_frame() - Execute multi-level metric pruned search for one query frame.
- * @query_id:       Index of query frame.
- * @query_data:     Pixel buffer of query frame.
- * @model:          Active KnnModel.
- * @config:         Active KnnConfig.
- * @reader:         Thread-local KnnFrameReader.
- * @cand_buffer:    Scratch buffer for candidate frame pixels.
- * @scores_buffer:  Scratch buffer for cluster sorting.
- * @all_heaps:      Array of KnnMaxHeap structures for all frames.
- * @bucket_locks:   Array of OpenMP bucket locks (if OpenMP enabled).
- * @telem:          Thread-local KnnTelemetry.
+ * knn_search_intra_cluster() - Search members of the query's home cluster.
+ * @query_id:        Index of query frame.
+ * @query_data:      Query frame pixel data.
+ * @home_cluster_id: Home cluster index.
+ * @r_home:          Distance from query to home anchor.
+ * @model:           Active KnnModel.
+ * @config:          Active KnnConfig.
+ * @reader:          KnnFrameReader context.
+ * @cand_buffer:     Candidate pixel buffer.
+ * @heap:            Max-heap for current query.
+ * @all_heaps:       Array of all frame heaps.
+ * @bucket_locks:    OpenMP locks.
+ * @telem:           Telemetry record.
  */
-static void knn_search_single_frame(
+static void knn_search_intra_cluster(
     long                  query_id,
     const double *restrict query_data,
+    int                   home_cluster_id,
+    double                r_home,
     const KnnModel       *model,
     const KnnConfig      *config,
     KnnFrameReader       *reader,
     double       *restrict cand_buffer,
-    ClusterScore *restrict scores_buffer,
+    KnnMaxHeap           *heap,
     KnnMaxHeap           *all_heaps,
 #ifdef _OPENMP
     omp_lock_t           *bucket_locks,
 #endif
     KnnTelemetry *restrict telem)
 {
-    KnnMaxHeap *heap = &all_heaps[query_id];
+    const KnnCluster *home_cl = &model->clusters[home_cluster_id];
+    telem->total_candidates_considered += (uint64_t)home_cl->num_members;
+    double eps_factor = 1.0 + config->epsilon;
 
-    int home_cluster_id = model->frame_cluster_map[query_id];
-    double r_home = (double)model->frame_r_anchor[query_id];
+    int start_m = 0;
+    int end_m = home_cl->num_members;
+    double tau_init = knn_heap_peek_max_dist(heap);
+    if (tau_init < 1e20)
+    {
+        float r_min = (float)fmax(0.0, r_home - tau_init / eps_factor);
+        float r_max = (float)(r_home + tau_init / eps_factor);
+        start_m = find_member_lower_bound(home_cl->members, home_cl->num_members, r_min);
+        end_m = find_member_upper_bound(home_cl->members, home_cl->num_members, r_max);
+        telem->level3_annular_pruned +=
+            (uint64_t)start_m + (uint64_t)(home_cl->num_members - end_m);
+    }
+
+    for (int m = start_m; m < end_m; m++)
+    {
+        long cand_id = (long)home_cl->members[m].frame_id;
+
+        if (!check_temporal_separation(query_id, cand_id, config))
+        {
+            telem->temporal_pruned++;
+            continue;
+        }
+
+        double current_tau = knn_heap_peek_max_dist(heap);
+        double r_cand = (double)home_cl->members[m].r_anchor;
+        double lb_annular = fabs(r_home - r_cand);
+
+        if (lb_annular >= current_tau / eps_factor)
+        {
+            telem->level3_annular_pruned++;
+            continue;
+        }
+
+        if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
+        {
+            telem->reciprocal_reused++;
+            continue;
+        }
+
+        if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+        {
+            telem->framedist_calls++;
+            double d = compute_euclidean_distance(
+                query_data, cand_buffer, model->frame_elements
+            );
+            record_neighbor_and_reciprocal(
+                query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                , bucket_locks
+#endif
+            );
+        }
+    } // for (int m = start_m; ...)
+}
+
+/**
+ * knn_warm_start_nearest_cluster() - Search nearest neighboring cluster if heap is not full.
+ * @query_id:        Index of query frame.
+ * @query_data:      Query frame pixel data.
+ * @home_cluster_id: Home cluster index.
+ * @model:           Active KnnModel.
+ * @config:          Active KnnConfig.
+ * @reader:          KnnFrameReader context.
+ * @cand_buffer:     Candidate pixel buffer.
+ * @heap:            Max-heap for current query.
+ * @all_heaps:       Array of all frame heaps.
+ * @bucket_locks:    OpenMP locks.
+ * @pivots:          Output pivot array.
+ * @num_pivots:      Output pivot count.
+ * @telem:           Telemetry record.
+ *
+ * Return: Cluster ID of nearest cluster used for warm start, or -1.
+ */
+static int knn_warm_start_nearest_cluster(
+    long                  query_id,
+    const double *restrict query_data,
+    int                   home_cluster_id,
+    const KnnModel       *model,
+    const KnnConfig      *config,
+    KnnFrameReader       *reader,
+    double       *restrict cand_buffer,
+    KnnMaxHeap           *heap,
+    KnnMaxHeap           *all_heaps,
+#ifdef _OPENMP
+    omp_lock_t           *bucket_locks,
+#endif
+    MeasuredPivot        *pivots,
+    int                  *num_pivots,
+    KnnTelemetry *restrict telem)
+{
+    if (heap->count >= heap->k || home_cluster_id < 0 || home_cluster_id >= model->num_clusters)
+    {
+        return -1;
+    }
+
     int M = model->num_clusters;
-    long frame_elem = model->frame_elements;
+    int best_c = -1;
+    double min_dcc = 1e19;
+
+    for (int c = 0; c < M; c++)
+    {
+        if (c == home_cluster_id || model->clusters[c].num_members == 0)
+        {
+            continue;
+        }
+        double dcc = model->dcc_matrix[home_cluster_id * M + c];
+        if (dcc > 0.0 && dcc < min_dcc)
+        {
+            min_dcc = dcc;
+            best_c = c;
+        }
+    }
+
+    if (best_c < 0)
+    {
+        return -1;
+    }
+
+    const KnnCluster *warm_cl = &model->clusters[best_c];
+    telem->total_candidates_considered += (uint64_t)warm_cl->num_members;
+    telem->framedist_calls++;
+
+    double d_anchor = compute_euclidean_distance(
+        query_data, warm_cl->anchor_data, model->frame_elements
+    );
+    double eps_factor = 1.0 + config->epsilon;
+
+    for (int m = 0; m < warm_cl->num_members; m++)
+    {
+        long cand_id = (long)warm_cl->members[m].frame_id;
+        if (!check_temporal_separation(query_id, cand_id, config))
+        {
+            telem->temporal_pruned++;
+            continue;
+        }
+        double r_cand = (double)warm_cl->members[m].r_anchor;
+        double lb1 = fabs(d_anchor - r_cand);
+        double current_tau = knn_heap_peek_max_dist(heap);
+        if (lb1 >= current_tau / eps_factor)
+        {
+            telem->level3_annular_pruned++;
+            continue;
+        }
+        if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
+        {
+            telem->reciprocal_reused++;
+            continue;
+        }
+        if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+        {
+            telem->framedist_calls++;
+            double d = compute_euclidean_distance(
+                query_data, cand_buffer, model->frame_elements
+            );
+            record_neighbor_and_reciprocal(
+                query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                , bucket_locks
+#endif
+            );
+        }
+        if (heap->count >= heap->k)
+        {
+            break;
+        }
+    } // for (int m = 0; ...)
+
+    if (config->use_multi_pivot && *num_pivots < MAX_MEASURED_PIVOTS)
+    {
+        pivots[*num_pivots].cluster_id = best_c;
+        pivots[*num_pivots].d_anchor = d_anchor;
+        (*num_pivots)++;
+    }
+
+    return best_c;
+}
+
+/**
+ * knn_score_candidate_clusters() - Filter super-clusters and score candidate clusters.
+ * @home_cluster_id: Home cluster index.
+ * @warm_cluster_id: Warm-started cluster index (or -1).
+ * @r_home:          Distance to home anchor.
+ * @model:           Active KnnModel.
+ * @config:          Active KnnConfig.
+ * @heap:            Max-heap for current query.
+ * @scores_buffer:   Output array for scored candidate clusters.
+ * @telem:           Telemetry record.
+ *
+ * Return: Number of candidate clusters populated in scores_buffer.
+ */
+static int knn_score_candidate_clusters(
+    int                   home_cluster_id,
+    int                   warm_cluster_id,
+    double                r_home,
+    const KnnModel       *model,
+    const KnnConfig      *config,
+    const KnnMaxHeap     *heap,
+    ClusterScore *restrict scores_buffer,
+    KnnTelemetry *restrict telem)
+{
+    int M = model->num_clusters;
+    int num_cand_clusters = 0;
     double eps_factor = 1.0 + config->epsilon;
     double current_tau = knn_heap_peek_max_dist(heap);
-
-    // Multi-Anchor Pivot Tracking (AESA / LAESA Indexing)
-    MeasuredPivot pivots[MAX_MEASURED_PIVOTS];
-    int           num_pivots = 0;
-    if (config->use_multi_pivot && home_cluster_id >= 0 && home_cluster_id < M)
-    {
-        pivots[num_pivots].cluster_id = home_cluster_id;
-        pivots[num_pivots].d_anchor = r_home;
-        num_pivots++;
-    }
-
-    // Step 1: Intra-Cluster Search (Home cluster c_p)
-    if (home_cluster_id >= 0 && home_cluster_id < M)
-    {
-        const KnnCluster *home_cl = &model->clusters[home_cluster_id];
-        telem->total_candidates_considered += (uint64_t)home_cl->num_members;
-
-        // Determine radial slice interval for home cluster
-        int start_m = 0;
-        int end_m = home_cl->num_members;
-        double tau_init = knn_heap_peek_max_dist(heap);
-        if (tau_init < 1e20)
-        {
-            float r_min = (float)fmax(0.0, r_home - tau_init / eps_factor);
-            float r_max = (float)(r_home + tau_init / eps_factor);
-            start_m = find_member_lower_bound(home_cl->members, home_cl->num_members, r_min);
-            end_m = find_member_upper_bound(home_cl->members, home_cl->num_members, r_max);
-            telem->level3_annular_pruned +=
-                (uint64_t)start_m + (uint64_t)(home_cl->num_members - end_m);
-        }
-
-        for (int m = start_m; m < end_m; m++)
-        {
-            long cand_id = (long)home_cl->members[m].frame_id;
-
-            if (!check_temporal_separation(query_id, cand_id, config))
-            {
-                telem->temporal_pruned++;
-                continue;
-            }
-
-            double current_tau = knn_heap_peek_max_dist(heap);
-            double r_cand = (double)home_cl->members[m].r_anchor;
-            double lb_annular = fabs(r_home - r_cand);
-
-            if (lb_annular >= current_tau / eps_factor)
-            {
-                telem->level3_annular_pruned++;
-                continue;
-            }
-
-            if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
-            {
-                telem->reciprocal_reused++;
-                continue;
-            }
-
-            if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
-            {
-                telem->framedist_calls++;
-                double d = compute_euclidean_distance(query_data, cand_buffer, frame_elem);
-                record_neighbor_and_reciprocal(
-                    query_id, cand_id, d, config, model, heap, all_heaps
-#ifdef _OPENMP
-                    , bucket_locks
-#endif
-                );
-            }
-        } // for (int m = start_m; ...)
-    } // Intra-Cluster Search
-
-    // Fast tau-Contraction: Warm-start tau by searching closest neighbor cluster if heap not full
-    int warm_cluster_id = -1;
-    if (heap->count < heap->k && home_cluster_id >= 0 && home_cluster_id < M)
-    {
-        int    best_c = -1;
-        double min_dcc = 1e19;
-        for (int c = 0; c < M; c++)
-        {
-            if (c == home_cluster_id || model->clusters[c].num_members == 0)
-            {
-                continue;
-            }
-            double dcc = model->dcc_matrix[home_cluster_id * M + c];
-            if (dcc > 0.0 && dcc < min_dcc)
-            {
-                min_dcc = dcc;
-                best_c = c;
-            }
-        }
-
-        if (best_c >= 0)
-        {
-            warm_cluster_id = best_c;
-            const KnnCluster *warm_cl = &model->clusters[best_c];
-            telem->total_candidates_considered += (uint64_t)warm_cl->num_members;
-            telem->framedist_calls++;
-            double d_anchor = compute_euclidean_distance(query_data,
-                                                         warm_cl->anchor_data,
-                                                         frame_elem);
-            for (int m = 0; m < warm_cl->num_members; m++)
-            {
-                long cand_id = (long)warm_cl->members[m].frame_id;
-                if (!check_temporal_separation(query_id, cand_id, config))
-                {
-                    telem->temporal_pruned++;
-                    continue;
-                }
-                double r_cand = (double)warm_cl->members[m].r_anchor;
-                double lb1 = fabs(d_anchor - r_cand);
-                current_tau = knn_heap_peek_max_dist(heap);
-                if (lb1 >= current_tau / eps_factor)
-                {
-                    telem->level3_annular_pruned++;
-                    continue;
-                }
-                if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
-                {
-                    telem->reciprocal_reused++;
-                    continue;
-                }
-                if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
-                {
-                    telem->framedist_calls++;
-                    double d = compute_euclidean_distance(query_data, cand_buffer, frame_elem);
-                    record_neighbor_and_reciprocal(
-                        query_id, cand_id, d, config, model, heap, all_heaps
-#ifdef _OPENMP
-                        , bucket_locks
-#endif
-                    );
-                }
-                if (heap->count >= heap->k)
-                {
-                    break;
-                }
-            }
-
-            if (config->use_multi_pivot && num_pivots < MAX_MEASURED_PIVOTS)
-            {
-                pivots[num_pivots].cluster_id = best_c;
-                pivots[num_pivots].d_anchor = d_anchor;
-                num_pivots++;
-            }
-        }
-    }
-
-    if (config->approx_mode)
-    {
-        telem->level1_clusters_pruned += (uint64_t)M;
-        return;
-    }
-
-    // Step 2: Rank and Sort other candidate clusters (with Level 0 Super-Cluster pruning)
-    int num_cand_clusters = 0;
-    current_tau = knn_heap_peek_max_dist(heap);
 
     if (model->num_super_clusters > 1 && home_cluster_id >= 0 &&
         model->cluster_super_map != NULL)
@@ -651,12 +719,57 @@ static void knn_search_single_frame(
     qsort(scores_buffer, (size_t)num_cand_clusters, sizeof(ClusterScore),
           compare_cluster_scores);
 
-    // Step 3 & 4: Inter-Cluster Pruning and Verification
+    return num_cand_clusters;
+}
+
+/**
+ * knn_search_inter_clusters() - Evaluate inter-cluster candidate members.
+ * @query_id:          Index of query frame.
+ * @query_data:        Query frame pixel data.
+ * @home_cluster_id:   Home cluster index.
+ * @r_home:            Distance to home anchor.
+ * @num_cand_clusters: Number of candidate clusters.
+ * @model:             Active KnnModel.
+ * @config:            Active KnnConfig.
+ * @reader:            KnnFrameReader context.
+ * @cand_buffer:       Candidate pixel buffer.
+ * @scores_buffer:     Candidate cluster records.
+ * @heap:              Max-heap for current query.
+ * @all_heaps:         Array of all heaps.
+ * @bucket_locks:      OpenMP bucket locks.
+ * @pivots:            Pivot array.
+ * @num_pivots:        Pointer to pivot count.
+ * @telem:             Telemetry record.
+ */
+static void knn_search_inter_clusters(
+    long                  query_id,
+    const double *restrict query_data,
+    int                   home_cluster_id,
+    double                r_home,
+    int                   num_cand_clusters,
+    const KnnModel       *model,
+    const KnnConfig      *config,
+    KnnFrameReader       *reader,
+    double       *restrict cand_buffer,
+    ClusterScore *restrict scores_buffer,
+    KnnMaxHeap           *heap,
+    KnnMaxHeap           *all_heaps,
+#ifdef _OPENMP
+    omp_lock_t           *bucket_locks,
+#endif
+    MeasuredPivot        *pivots,
+    int                  *num_pivots,
+    KnnTelemetry *restrict telem)
+{
+    int M = model->num_clusters;
+    long frame_elem = model->frame_elements;
+    double eps_factor = 1.0 + config->epsilon;
+
     for (int idx = 0; idx < num_cand_clusters; idx++)
     {
         int q = scores_buffer[idx].id;
         double lb_cluster = scores_buffer[idx].lb;
-        current_tau = knn_heap_peek_max_dist(heap);
+        double current_tau = knn_heap_peek_max_dist(heap);
 
         // Level 1: Cluster-level DCC bound
         if (lb_cluster >= current_tau / eps_factor)
@@ -668,9 +781,11 @@ static void knn_search_single_frame(
         // Level 2: Query-to-Anchor evaluation
         const KnnCluster *cl = &model->clusters[q];
         telem->framedist_calls++;
-        double d_anchor = compute_euclidean_distance(query_data, cl->anchor_data, frame_elem);
+        double d_anchor = compute_euclidean_distance(
+            query_data, cl->anchor_data, frame_elem
+        );
 
-        // Dynamic Bound Tightening (Multi-Pivot): use anchor A_q as pivot for remaining clusters
+        // Dynamic Bound Tightening (Multi-Pivot)
         if (config->use_multi_pivot)
         {
             for (int j = idx + 1; j < num_cand_clusters; j++)
@@ -690,10 +805,10 @@ static void knn_search_single_frame(
         }
 
         // Record measured anchor pivot for Multi-Anchor Pivot Bounding (AESA)
-        if (config->use_multi_pivot && num_pivots < MAX_MEASURED_PIVOTS)
+        if (config->use_multi_pivot && *num_pivots < MAX_MEASURED_PIVOTS)
         {
             int already_present = 0;
-            for (int p = 0; p < num_pivots; p++)
+            for (int p = 0; p < *num_pivots; p++)
             {
                 if (pivots[p].cluster_id == q)
                 {
@@ -703,9 +818,9 @@ static void knn_search_single_frame(
             }
             if (!already_present)
             {
-                pivots[num_pivots].cluster_id = q;
-                pivots[num_pivots].d_anchor = d_anchor;
-                num_pivots++;
+                pivots[*num_pivots].cluster_id = q;
+                pivots[*num_pivots].d_anchor = d_anchor;
+                (*num_pivots)++;
             }
         }
 
@@ -771,10 +886,10 @@ static void knn_search_single_frame(
             }
 
             // Multi-Anchor Pivot Bounding (AESA / LAESA Indexing)
-            if (config->use_multi_pivot && num_pivots > 0)
+            if (config->use_multi_pivot && *num_pivots > 0)
             {
                 int pruned_by_pivot = 0;
-                for (int p = 0; p < num_pivots; p++)
+                for (int p = 0; p < *num_pivots; p++)
                 {
                     int p_cl = pivots[p].cluster_id;
                     if (p_cl == q || p_cl == home_cluster_id)
@@ -821,7 +936,9 @@ static void knn_search_single_frame(
             if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
             {
                 telem->framedist_calls++;
-                double d = compute_euclidean_distance(query_data, cand_buffer, frame_elem);
+                double d = compute_euclidean_distance(
+                    query_data, cand_buffer, frame_elem
+                );
                 record_neighbor_and_reciprocal(
                     query_id, cand_id, d, config, model, heap, all_heaps
 #ifdef _OPENMP
@@ -834,17 +951,727 @@ static void knn_search_single_frame(
 }
 
 /**
+ * knn_search_single_frame() - Execute multi-level metric pruned search for one query frame.
+ * @query_id:       Index of query frame.
+ * @query_data:     Pixel buffer of query frame.
+ * @model:          Active KnnModel.
+ * @config:         Active KnnConfig.
+ * @reader:         Thread-local KnnFrameReader.
+ * @cand_buffer:    Scratch buffer for candidate frame pixels.
+ * @scores_buffer:  Scratch buffer for cluster sorting.
+ * @all_heaps:      Array of KnnMaxHeap structures for all frames.
+ * @bucket_locks:   Array of OpenMP bucket locks (if OpenMP enabled).
+ * @telem:          Thread-local KnnTelemetry.
+ */
+static void knn_search_single_frame(
+    long                  query_id,
+    const double *restrict query_data,
+    const KnnModel       *model,
+    const KnnConfig      *config,
+    KnnFrameReader       *reader,
+    double       *restrict cand_buffer,
+    ClusterScore *restrict scores_buffer,
+    KnnMaxHeap           *all_heaps,
+#ifdef _OPENMP
+    omp_lock_t           *bucket_locks,
+#endif
+    KnnTelemetry *restrict telem)
+{
+    KnnMaxHeap *heap = &all_heaps[query_id];
+    int home_cluster_id = model->frame_cluster_map[query_id];
+    double r_home = (double)model->frame_r_anchor[query_id];
+    int M = model->num_clusters;
+
+    MeasuredPivot pivots[MAX_MEASURED_PIVOTS];
+    int           num_pivots = 0;
+    if (config->use_multi_pivot && home_cluster_id >= 0 && home_cluster_id < M)
+    {
+        pivots[num_pivots].cluster_id = home_cluster_id;
+        pivots[num_pivots].d_anchor = r_home;
+        num_pivots++;
+    }
+
+    // Step 1: Intra-Cluster Search (Home cluster c_p)
+    if (home_cluster_id >= 0 && home_cluster_id < M)
+    {
+        knn_search_intra_cluster(
+            query_id, query_data, home_cluster_id, r_home, model, config,
+            reader, cand_buffer, heap, all_heaps,
+#ifdef _OPENMP
+            bucket_locks,
+#endif
+            telem
+        );
+    }
+
+    // Fast tau-Contraction: Warm-start tau by searching closest neighbor cluster
+    int warm_cluster_id = knn_warm_start_nearest_cluster(
+        query_id, query_data, home_cluster_id, model, config, reader,
+        cand_buffer, heap, all_heaps,
+#ifdef _OPENMP
+        bucket_locks,
+#endif
+        pivots, &num_pivots, telem
+    );
+
+    if (config->approx_mode)
+    {
+        telem->level1_clusters_pruned += (uint64_t)M;
+        return;
+    }
+
+    // Step 2: Rank and Sort candidate clusters
+    int num_cand_clusters = knn_score_candidate_clusters(
+        home_cluster_id, warm_cluster_id, r_home, model, config,
+        heap, scores_buffer, telem
+    );
+
+    // Step 3 & 4: Inter-Cluster Pruning and Verification
+    knn_search_inter_clusters(
+        query_id, query_data, home_cluster_id, r_home, num_cand_clusters,
+        model, config, reader, cand_buffer, scores_buffer, heap, all_heaps,
+#ifdef _OPENMP
+        bucket_locks,
+#endif
+        pivots, &num_pivots, telem
+    );
+}
+
+/**
+ * knn_cross_seed_frontier() - Populate dynamic search frontier with nearest evaluated anchor seeds.
+ * @loc_res:         Cluster locator result with evaluated anchors.
+ * @best_c:          Best anchor cluster ID.
+ * @query_data:      Query frame pixel data.
+ * @model:           Active KnnModel.
+ * @config:          Active KnnConfig.
+ * @cand_reader:     Candidate frame reader.
+ * @cand_buffer:     Candidate frame pixel buffer.
+ * @heap:            Max-heap for current query.
+ * @frontier:        Output frontier node array.
+ * @frontier_count:  Pointer to frontier count.
+ * @best_seed_id:    Pointer to best seed frame ID.
+ * @best_seed_dist:  Pointer to best seed distance.
+ * @telem:           Telemetry record.
+ */
+static void knn_cross_seed_frontier(
+    const ClusterLocatorResult *loc_res,
+    int                         best_c,
+    const double *restrict      query_data,
+    const KnnModel             *model,
+    const KnnConfig            *config,
+    KnnFrameReader             *cand_reader,
+    double *restrict            cand_buffer,
+    KnnMaxHeap                 *heap,
+    FrontierNode               *frontier,
+    int                        *frontier_count,
+    long                       *best_seed_id,
+    double                     *best_seed_dist,
+    KnnTelemetry *restrict      telem)
+{
+    int sorted_eval_clusters[32];
+    double sorted_eval_dists[32];
+    int num_eval = loc_res->num_evaluated_anchors;
+    if (num_eval > 32)
+    {
+        num_eval = 32;
+    }
+    for (int e = 0; e < num_eval; e++)
+    {
+        sorted_eval_clusters[e] = loc_res->evaluated_clusters[e];
+        sorted_eval_dists[e] = loc_res->evaluated_dists[e];
+    }
+    for (int i = 0; i < num_eval - 1; i++)
+    {
+        for (int j = i + 1; j < num_eval; j++)
+        {
+            if (sorted_eval_dists[j] < sorted_eval_dists[i])
+            {
+                double tmp_d = sorted_eval_dists[i];
+                sorted_eval_dists[i] = sorted_eval_dists[j];
+                sorted_eval_dists[j] = tmp_d;
+                int tmp_c = sorted_eval_clusters[i];
+                sorted_eval_clusters[i] = sorted_eval_clusters[j];
+                sorted_eval_clusters[j] = tmp_c;
+            }
+        }
+    }
+
+    int M = model->num_clusters;
+    long frame_elem = model->frame_elements;
+
+    for (int e = 0; e < num_eval && *frontier_count < 8; e++)
+    {
+        int anc_c = sorted_eval_clusters[e];
+        if (anc_c >= 0 && anc_c < M && anc_c != best_c)
+        {
+            const KnnCluster *anc_cl = &model->clusters[anc_c];
+            if (anc_cl->num_members > 0)
+            {
+                for (int mi = 0; mi < anc_cl->num_members && mi < 2; mi++)
+                {
+                    long s_frame = (long)anc_cl->members[mi].frame_id;
+                    if (!knn_heap_contains(heap, (int)s_frame))
+                    {
+                        if (knn_reader_read_frame(cand_reader, s_frame, cand_buffer) == 0)
+                        {
+                            telem->framedist_calls++;
+                            telem->graph_seeds_evaluated++;
+                            double d = compute_euclidean_distance(
+                                query_data, cand_buffer, frame_elem
+                            );
+                            if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                            {
+                                knn_heap_push(heap, (int)s_frame, d);
+                            }
+                            if (d < *best_seed_dist)
+                            {
+                                *best_seed_id = s_frame;
+                                *best_seed_dist = d;
+                            }
+                            if (*frontier_count < GRAPH_FRONTIER_MAX)
+                            {
+                                frontier[*frontier_count].frame_id = s_frame;
+                                frontier[*frontier_count].dist = d;
+                                frontier[*frontier_count].expanded = 0;
+                                (*frontier_count)++;
+                            }
+                        }
+                    }
+                } // for (int mi = 0; ...)
+            }
+        }
+    } // for (int e = 0; ...)
+}
+
+/**
+ * knn_cross_explore_graph_frontier() - Explore KNN graph frontier for cross-dataset query.
+ * @query_data:       Query frame pixel data.
+ * @model:            Active KnnModel.
+ * @config:           Active KnnConfig.
+ * @cand_reader:      Candidate frame reader.
+ * @cand_buffer:      Candidate frame pixel buffer.
+ * @heap:             Max-heap for current query.
+ * @frontier:         Frontier node array.
+ * @frontier_count:   Frontier node count.
+ * @best_seed_id:     Pointer to best seed ID.
+ * @best_seed_dist:   Pointer to best seed distance.
+ * @seed_pivot_ids:   Array of evaluated seed pivot IDs.
+ * @seed_pivot_dists: Array of computed distances from query to seed pivots.
+ * @num_seed_pivots:  Pointer to seed pivot count.
+ * @telem:            Telemetry record.
+ *
+ * Return: 1 if global containment criterion was satisfied, 0 otherwise.
+ */
+static int knn_cross_explore_graph_frontier(
+    const double *restrict query_data,
+    const KnnModel        *model,
+    const KnnConfig       *config,
+    KnnFrameReader        *cand_reader,
+    double        *restrict cand_buffer,
+    KnnMaxHeap            *heap,
+    FrontierNode          *frontier,
+    int                    frontier_count,
+    long                  *best_seed_id,
+    double                *best_seed_dist,
+    long                  *seed_pivot_ids,
+    double                *seed_pivot_dists,
+    int                   *num_seed_pivots,
+    KnnTelemetry  *restrict telem)
+{
+    int graph_k = model->graph_k;
+    int target_k = config->k;
+    long frame_elem = model->frame_elements;
+    double eps_factor = 1.0 + config->epsilon;
+
+    int max_expansions = (config->approx_mode) ?
+        ((target_k > 32) ? (target_k / 2 + 8) : 32) : 16;
+    int max_eval_k = (config->approx_mode) ? ((graph_k < 24) ? graph_k : 24) : graph_k;
+    int expansions_done = 0;
+
+    while ((expansions_done < max_expansions || heap->count < target_k) &&
+           expansions_done < GRAPH_FRONTIER_MAX)
+    {
+        int best_idx = -1;
+        double min_f_dist = 1e20;
+        for (int fi = 0; fi < frontier_count; fi++)
+        {
+            if (!frontier[fi].expanded && frontier[fi].dist < min_f_dist)
+            {
+                min_f_dist = frontier[fi].dist;
+                best_idx = fi;
+            }
+        }
+
+        if (best_idx < 0)
+        {
+            break;
+        }
+
+        double current_tau = knn_heap_peek_max_dist(heap);
+        if (heap->count >= target_k && min_f_dist > current_tau / eps_factor)
+        {
+            break;
+        }
+
+        frontier[best_idx].expanded = 1;
+        expansions_done++;
+
+        long curr_u = frontier[best_idx].frame_id;
+        double curr_u_dist = frontier[best_idx].dist;
+        if (curr_u_dist < *best_seed_dist)
+        {
+            *best_seed_id = curr_u;
+            *best_seed_dist = curr_u_dist;
+        }
+        const uint32_t *neighbors = &model->graph_indices[curr_u * (long)graph_k];
+        const float *n_dists = &model->graph_distances[curr_u * (long)graph_k];
+
+        for (int k_idx = 0; k_idx < max_eval_k; k_idx++)
+        {
+            long nb_id = (long)neighbors[k_idx];
+            if (nb_id < 0 || nb_id >= model->total_dataset_frames || nb_id == curr_u)
+            {
+                continue;
+            }
+
+            int already_in_frontier = 0;
+            for (int fi = 0; fi < frontier_count; fi++)
+            {
+                if (frontier[fi].frame_id == nb_id)
+                {
+                    already_in_frontier = 1;
+                    break;
+                }
+            }
+            if (already_in_frontier)
+            {
+                continue;
+            }
+
+            double d_edge = (double)n_dists[k_idx];
+            double lb_edge = fabs(curr_u_dist - d_edge);
+            current_tau = knn_heap_peek_max_dist(heap);
+
+            if (heap->count >= config->k &&
+                (lb_edge >= current_tau / eps_factor ||
+                 (config->rlim_cutoff > 0.0 && lb_edge >= config->rlim_cutoff)))
+            {
+                telem->graph_edges_pruned++;
+                continue;
+            }
+
+            if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
+            {
+                telem->framedist_calls++;
+                telem->graph_seeds_evaluated++;
+                double d = compute_euclidean_distance(
+                    query_data, cand_buffer, frame_elem
+                );
+                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                {
+                    knn_heap_push(heap, (int)nb_id, d);
+                }
+                if (d < *best_seed_dist)
+                {
+                    *best_seed_id = nb_id;
+                    *best_seed_dist = d;
+                }
+                if (*num_seed_pivots < 8)
+                {
+                    seed_pivot_ids[*num_seed_pivots] = nb_id;
+                    seed_pivot_dists[*num_seed_pivots] = d;
+                    (*num_seed_pivots)++;
+                }
+
+                current_tau = knn_heap_peek_max_dist(heap);
+                if ((d < current_tau / eps_factor || heap->count < config->k) &&
+                    frontier_count < GRAPH_FRONTIER_MAX)
+                {
+                    frontier[frontier_count].frame_id = nb_id;
+                    frontier[frontier_count].dist = d;
+                    frontier[frontier_count].expanded = 0;
+                    frontier_count++;
+                }
+            }
+        } // for (int k_idx = 0; ...)
+    } // while (expansions_done ...)
+
+    // Global Containment Criterion via Local k-Ball Radius R_k(best_seed_id)
+    if (*best_seed_id >= 0 && heap->count >= config->k)
+    {
+        double current_tau = knn_heap_peek_max_dist(heap);
+        double r_graph_ball =
+            (double)model->graph_distances[*best_seed_id * (long)graph_k + (graph_k - 1)];
+
+        if (r_graph_ball > 0.0 && (*best_seed_dist + current_tau / eps_factor) <= r_graph_ball)
+        {
+            const uint32_t *neighbors = &model->graph_indices[*best_seed_id * (long)graph_k];
+            const float *n_dists = &model->graph_distances[*best_seed_id * (long)graph_k];
+
+            for (int k_idx = 0; k_idx < graph_k; k_idx++)
+            {
+                long nb_id = (long)neighbors[k_idx];
+                if (nb_id < 0 || nb_id >= model->total_dataset_frames || nb_id == *best_seed_id)
+                {
+                    continue;
+                }
+                if (knn_heap_contains(heap, (int)nb_id))
+                {
+                    continue;
+                }
+
+                double d_edge = (double)n_dists[k_idx];
+                double lb_edge = fabs(*best_seed_dist - d_edge);
+                current_tau = knn_heap_peek_max_dist(heap);
+
+                if (lb_edge >= current_tau / eps_factor ||
+                    (config->rlim_cutoff > 0.0 && lb_edge >= config->rlim_cutoff))
+                {
+                    telem->graph_edges_pruned++;
+                    continue;
+                }
+
+                if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
+                {
+                    telem->framedist_calls++;
+                    telem->graph_seeds_evaluated++;
+                    double d = compute_euclidean_distance(
+                        query_data, cand_buffer, frame_elem
+                    );
+                    if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                    {
+                        knn_heap_push(heap, (int)nb_id, d);
+                    }
+                }
+            } // for (int k_idx = 0; ...)
+
+            telem->level0_super_clusters_pruned += (uint64_t)model->num_super_clusters;
+            telem->level1_clusters_pruned += (uint64_t)model->num_clusters;
+            telem->global_containment_hits++;
+            return 1;
+        } // if contained
+    } // Global Containment
+
+    return 0;
+}
+
+/**
+ * knn_cross_eval_intra_cluster() - Search target cluster containing best seed for cross dataset.
+ * @best_c:           Initial best anchor cluster.
+ * @best_seed_id:     Best seed frame ID.
+ * @min_d_anchor:     Distance to closest anchor.
+ * @num_seed_pivots:  Number of evaluated seed pivots.
+ * @seed_pivot_ids:   Evaluated seed pivot frame IDs.
+ * @seed_pivot_dists: Computed distances to seed pivots.
+ * @query_data:       Query frame pixel data.
+ * @model:            Active KnnModel.
+ * @config:           Active KnnConfig.
+ * @cand_reader:      Candidate frame reader.
+ * @cand_buffer:      Candidate frame pixel buffer.
+ * @anchor_dists:     Query-to-anchor distance cache.
+ * @heap:             Max-heap for current query.
+ * @telem:            Telemetry record.
+ */
+static void knn_cross_eval_intra_cluster(
+    int                    best_c,
+    long                   best_seed_id,
+    double                 min_d_anchor,
+    int                    num_seed_pivots,
+    const long            *seed_pivot_ids,
+    const double          *seed_pivot_dists,
+    const double *restrict query_data,
+    const KnnModel        *model,
+    const KnnConfig       *config,
+    KnnFrameReader        *cand_reader,
+    double        *restrict cand_buffer,
+    double        *restrict anchor_dists,
+    KnnMaxHeap            *heap,
+    KnnTelemetry  *restrict telem)
+{
+    int M = model->num_clusters;
+    long frame_elem = model->frame_elements;
+    double eps_factor = 1.0 + config->epsilon;
+
+    int target_c = best_c;
+    if (best_seed_id >= 0 && model->frame_cluster_map != NULL)
+    {
+        int mapped_c = (int)model->frame_cluster_map[best_seed_id];
+        if (mapped_c >= 0 && mapped_c < M)
+        {
+            target_c = mapped_c;
+        }
+    }
+
+    if (target_c >= 0 && target_c < M)
+    {
+        const KnnCluster *target_cl = &model->clusters[target_c];
+        telem->total_candidates_considered += (uint64_t)target_cl->num_members;
+
+        double d_anchor_target = anchor_dists[target_c];
+        if (d_anchor_target < 0.0)
+        {
+            telem->framedist_calls++;
+            d_anchor_target = compute_euclidean_distance(
+                query_data, target_cl->anchor_data, frame_elem
+            );
+            anchor_dists[target_c] = d_anchor_target;
+        }
+
+        int start_m = 0;
+        int end_m = target_cl->num_members;
+        double tau_init = knn_heap_peek_max_dist(heap);
+        if (tau_init < 1e20)
+        {
+            float r_min = (float)fmax(0.0, d_anchor_target - tau_init / eps_factor);
+            float r_max = (float)(d_anchor_target + tau_init / eps_factor);
+            start_m = find_member_lower_bound(
+                target_cl->members, target_cl->num_members, r_min
+            );
+            end_m = find_member_upper_bound(
+                target_cl->members, target_cl->num_members, r_max
+            );
+            telem->level3_annular_pruned +=
+                (uint64_t)start_m + (uint64_t)(target_cl->num_members - end_m);
+        }
+
+        for (int m = start_m; m < end_m; m++)
+        {
+            long cand_id = (long)target_cl->members[m].frame_id;
+            if (knn_heap_contains(heap, (int)cand_id))
+            {
+                continue;
+            }
+
+            double current_tau = knn_heap_peek_max_dist(heap);
+            double tau_eff = current_tau / eps_factor;
+            double r_cand = (double)target_cl->members[m].r_anchor;
+
+            if (is_member_pruned_by_pointwise_pivots(
+                    cand_id, d_anchor_target, r_cand, 0.0, min_d_anchor,
+                    num_seed_pivots, seed_pivot_ids, seed_pivot_dists,
+                    model, tau_eff, config->rlim_cutoff, telem))
+            {
+                continue;
+            }
+
+            if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
+            {
+                telem->framedist_calls++;
+                double d = compute_euclidean_distance(
+                    query_data, cand_buffer, frame_elem
+                );
+                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                {
+                    knn_heap_push(heap, (int)cand_id, d);
+                }
+            }
+        } // for (int m = start_m; ...)
+    } // if (target_c >= 0 ...)
+}
+
+/**
+ * knn_cross_eval_inter_clusters() - Evaluate inter-cluster candidate members for cross dataset.
+ * @loc_res:          Cluster locator results.
+ * @best_c:           Best anchor cluster index.
+ * @min_d_anchor:     Distance to closest anchor.
+ * @num_seed_pivots:  Number of evaluated seed pivots.
+ * @seed_pivot_ids:   Evaluated seed pivot frame IDs.
+ * @seed_pivot_dists: Distances to evaluated seed pivots.
+ * @query_data:       Query frame pixel data.
+ * @model:            Active KnnModel.
+ * @config:           Active KnnConfig.
+ * @cand_reader:      Candidate frame reader.
+ * @cand_buffer:      Candidate frame pixel buffer.
+ * @anchor_dists:     Query-to-anchor distance cache.
+ * @scores_buffer:    Scratch buffer for candidate cluster sorting.
+ * @active_mask:      Mask of surviving clusters.
+ * @heap:             Max-heap for current query.
+ * @telem:            Telemetry record.
+ */
+static void knn_cross_eval_inter_clusters(
+    const ClusterLocatorResult *loc_res,
+    int                         best_c,
+    double                      min_d_anchor,
+    int                         num_seed_pivots,
+    const long                 *seed_pivot_ids,
+    const double               *seed_pivot_dists,
+    const double *restrict      query_data,
+    const KnnModel             *model,
+    const KnnConfig            *config,
+    KnnFrameReader             *cand_reader,
+    double *restrict            cand_buffer,
+    double *restrict            anchor_dists,
+    ClusterScore *restrict      scores_buffer,
+    uint8_t                    *active_mask,
+    KnnMaxHeap                 *heap,
+    KnnTelemetry *restrict      telem)
+{
+    int M = model->num_clusters;
+    long frame_elem = model->frame_elements;
+    double eps_factor = 1.0 + config->epsilon;
+    double current_tau = knn_heap_peek_max_dist(heap);
+    int num_cand_clusters = 0;
+
+    for (int q = 0; q < M; q++)
+    {
+        if (q == best_c || model->clusters[q].num_members == 0)
+        {
+            continue;
+        }
+
+        if (active_mask[q] == 0)
+        {
+            telem->level1_clusters_pruned++;
+            continue;
+        }
+
+        // 3P test against all evaluated anchor pivots using tightened tau_k
+        int pruned_3p = 0;
+        double r_q = model->cluster_radii[q];
+        for (int e = 0; e < loc_res->num_evaluated_anchors; e++)
+        {
+            int p = loc_res->evaluated_clusters[e];
+            double d_p = loc_res->evaluated_dists[e];
+            double dcc = model->dcc_matrix[p * M + q];
+            double lb1 = dcc - r_q - d_p;
+            double lb2 = d_p - dcc - r_q;
+            double lb = (lb1 > lb2) ? lb1 : lb2;
+
+            if (lb >= current_tau / eps_factor ||
+                (config->rlim_cutoff > 0.0 && lb >= config->rlim_cutoff))
+            {
+                active_mask[q] = 0;
+                pruned_3p = 1;
+                break;
+            }
+        }
+
+        if (pruned_3p)
+        {
+            telem->level1_clusters_pruned++;
+            continue;
+        }
+
+        if (anchor_dists[q] < 0.0)
+        {
+            telem->framedist_calls++;
+            anchor_dists[q] = compute_euclidean_distance(
+                query_data, model->clusters[q].anchor_data, frame_elem
+            );
+        }
+
+        double d_a = anchor_dists[q];
+        double lb = d_a - r_q;
+        if (lb < 0.0)
+        {
+            lb = 0.0;
+        }
+
+        if (lb >= current_tau / eps_factor ||
+            (config->rlim_cutoff > 0.0 && lb >= config->rlim_cutoff))
+        {
+            telem->level1_clusters_pruned++;
+            continue;
+        }
+
+        scores_buffer[num_cand_clusters].id = q;
+        scores_buffer[num_cand_clusters].lb = lb;
+        scores_buffer[num_cand_clusters].dcc = d_a;
+        num_cand_clusters++;
+    } // for (int q = 0; ...)
+
+    qsort(scores_buffer, (size_t)num_cand_clusters, sizeof(ClusterScore),
+          compare_cluster_scores);
+
+    // Inter-Cluster Search on surviving candidate clusters
+    for (int idx = 0; idx < num_cand_clusters; idx++)
+    {
+        int q = scores_buffer[idx].id;
+        double lb_cluster = scores_buffer[idx].lb;
+        current_tau = knn_heap_peek_max_dist(heap);
+
+        if (lb_cluster >= current_tau / eps_factor)
+        {
+            telem->level1_clusters_pruned++;
+            continue;
+        }
+
+        if (config->rlim_cutoff > 0.0 && lb_cluster >= config->rlim_cutoff)
+        {
+            telem->level1_clusters_pruned++;
+            continue;
+        }
+
+        const KnnCluster *cl = &model->clusters[q];
+        double d_anchor = anchor_dists[q];
+        telem->total_candidates_considered += (uint64_t)cl->num_members;
+
+        double tau_eff = current_tau / eps_factor;
+        if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_eff)
+        {
+            tau_eff = config->rlim_cutoff;
+        }
+
+        float r_min = (float)fmax(0.0, d_anchor - tau_eff);
+        float r_max = (float)(d_anchor + tau_eff);
+
+        int start_m = find_member_lower_bound(cl->members, cl->num_members, r_min);
+        int end_m = find_member_upper_bound(cl->members, cl->num_members, r_max);
+
+        telem->level3_annular_pruned +=
+            (uint64_t)start_m + (uint64_t)(cl->num_members - end_m);
+
+        double dcc_best = model->dcc_matrix[best_c * M + q];
+
+        for (int m = start_m; m < end_m; m++)
+        {
+            long cand_id = (long)cl->members[m].frame_id;
+            if (knn_heap_contains(heap, (int)cand_id))
+            {
+                telem->graph_edges_pruned++;
+                continue;
+            }
+
+            current_tau = knn_heap_peek_max_dist(heap);
+            tau_eff = current_tau / eps_factor;
+            double r_cand = (double)cl->members[m].r_anchor;
+
+            if (is_member_pruned_by_pointwise_pivots(
+                    cand_id, d_anchor, r_cand, dcc_best, min_d_anchor,
+                    num_seed_pivots, seed_pivot_ids, seed_pivot_dists,
+                    model, tau_eff, config->rlim_cutoff, telem))
+            {
+                continue;
+            }
+
+            if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
+            {
+                telem->framedist_calls++;
+                double d = compute_euclidean_distance(
+                    query_data, cand_buffer, frame_elem
+                );
+                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                {
+                    knn_heap_push(heap, (int)cand_id, d);
+                }
+            }
+        } // for (int m = start_m; ...)
+    } // for (int idx = 0; ...)
+}
+
+/**
  * knn_search_cross_dataset_frame() - Metric-pruned k-NN search for external query frame.
- * @query_id:      Index of query frame.
- * @query_data:    Pixel buffer of query frame.
- * @model:         Active KnnModel.
- * @config:        Active KnnConfig.
- * @cand_reader:   Thread-local candidate frame reader.
- * @cand_buffer:   Scratch buffer for candidate frame pixels.
- * @anchor_dists:  Scratch buffer for query-to-anchor distances [num_clusters].
- * @scores_buffer: Scratch buffer for cluster sorting [num_clusters].
- * @heap:          KnnMaxHeap structure for this query frame.
- * @telem:         Thread-local KnnTelemetry.
+ * @query_id:        Index of query frame.
+ * @query_data:      Pixel buffer of query frame.
+ * @model:           Active KnnModel.
+ * @config:          Active KnnConfig.
+ * @cand_reader:     Thread-local candidate frame reader.
+ * @cand_buffer:     Scratch buffer for candidate frame pixels.
+ * @anchor_dists:    Scratch buffer for query-to-anchor distances [num_clusters].
+ * @scores_buffer:   Scratch buffer for cluster sorting [num_clusters].
+ * @heap:            KnnMaxHeap structure for this query frame.
+ * @prev_cluster_id: Pointer to previously selected cluster ID (for temporal tracking).
+ * @telem:           Thread-local KnnTelemetry.
  */
 static void knn_search_cross_dataset_frame(
     long                   query_id,
@@ -862,7 +1689,6 @@ static void knn_search_cross_dataset_frame(
     (void)query_id;
     int M = model->num_clusters;
     long frame_elem = model->frame_elements;
-    double eps_factor = 1.0 + config->epsilon;
 
     int best_c = -1;
     double min_d_anchor = 1e20;
@@ -912,14 +1738,16 @@ static void knn_search_cross_dataset_frame(
         best_c = 0;
     }
 
-    // 2. Select initial seed in best_c and run Graph Hill-Climbing (Method B & A)
+    // Select initial seed in best_c
     if (best_c >= 0 && best_c < M)
     {
         const KnnCluster *best_cl = &model->clusters[best_c];
-        double d_anchor_best = (anchor_dists[best_c] >= 0.0) ? anchor_dists[best_c] : min_d_anchor;
+        double d_anchor_best = (anchor_dists[best_c] >= 0.0) ?
+            anchor_dists[best_c] : min_d_anchor;
 
-        int mid = find_member_lower_bound(best_cl->members, best_cl->num_members,
-                                          (float)d_anchor_best);
+        int mid = find_member_lower_bound(
+            best_cl->members, best_cl->num_members, (float)d_anchor_best
+        );
         if (mid >= best_cl->num_members)
         {
             mid = best_cl->num_members - 1;
@@ -930,7 +1758,9 @@ static void knn_search_cross_dataset_frame(
             if (knn_reader_read_frame(cand_reader, seed_0, cand_buffer) == 0)
             {
                 telem->framedist_calls++;
-                double d0 = compute_euclidean_distance(query_data, cand_buffer, frame_elem);
+                double d0 = compute_euclidean_distance(
+                    query_data, cand_buffer, frame_elem
+                );
                 if (config->rlim_cutoff <= 0.0 || d0 <= config->rlim_cutoff)
                 {
                     knn_heap_push(heap, (int)seed_0, d0);
@@ -944,498 +1774,56 @@ static void knn_search_cross_dataset_frame(
         }
     }
 
-        // 4. Graph Search: Dynamic Frontier Search across candidate seeds
-        if (model->has_knn_graph && best_seed_id >= 0 && model->graph_indices != NULL &&
-            model->graph_distances != NULL)
+    // Graph Search: Dynamic Frontier Search across candidate seeds
+    if (model->has_knn_graph && best_seed_id >= 0 && model->graph_indices != NULL &&
+        model->graph_distances != NULL)
+    {
+        FrontierNode frontier[GRAPH_FRONTIER_MAX];
+        int frontier_count = 0;
+
+        frontier[0].frame_id = best_seed_id;
+        frontier[0].dist = best_seed_dist;
+        frontier[0].expanded = 0;
+        frontier_count = 1;
+
+        knn_cross_seed_frontier(
+            &loc_res, best_c, query_data, model, config, cand_reader,
+            cand_buffer, heap, frontier, &frontier_count,
+            &best_seed_id, &best_seed_dist, telem
+        );
+
+        int contained = knn_cross_explore_graph_frontier(
+            query_data, model, config, cand_reader, cand_buffer, heap,
+            frontier, frontier_count, &best_seed_id, &best_seed_dist,
+            seed_pivot_ids, seed_pivot_dists, &num_seed_pivots, telem
+        );
+
+        if (contained)
         {
-            int graph_k = model->graph_k;
-            #define GRAPH_FRONTIER_MAX 256
-            typedef struct
-            {
-                long    frame_id;
-                double  dist;
-                uint8_t expanded;
-            } FrontierNode;
-
-            FrontierNode frontier[GRAPH_FRONTIER_MAX];
-            int frontier_count = 0;
-
-            frontier[0].frame_id = best_seed_id;
-            frontier[0].dist = best_seed_dist;
-            frontier[0].expanded = 0;
-            frontier_count = 1;
-
-            // Sort evaluated clusters by distance so closest clusters are prioritized
-            int sorted_eval_clusters[32];
-            double sorted_eval_dists[32];
-            int num_eval = loc_res.num_evaluated_anchors;
-            if (num_eval > 32)
-            {
-                num_eval = 32;
-            }
-            for (int e = 0; e < num_eval; e++)
-            {
-                sorted_eval_clusters[e] = loc_res.evaluated_clusters[e];
-                sorted_eval_dists[e] = loc_res.evaluated_dists[e];
-            }
-            for (int i = 0; i < num_eval - 1; i++)
-            {
-                for (int j = i + 1; j < num_eval; j++)
-                {
-                    if (sorted_eval_dists[j] < sorted_eval_dists[i])
-                    {
-                        double tmp_d = sorted_eval_dists[i];
-                        sorted_eval_dists[i] = sorted_eval_dists[j];
-                        sorted_eval_dists[j] = tmp_d;
-                        int tmp_c = sorted_eval_clusters[i];
-                        sorted_eval_clusters[i] = sorted_eval_clusters[j];
-                        sorted_eval_clusters[j] = tmp_c;
-                    }
-                }
-            }
-
-            // Seed frontier with entry points from top closest evaluated anchor clusters
-            for (int e = 0; e < num_eval && frontier_count < 8; e++)
-            {
-                int anc_c = sorted_eval_clusters[e];
-                if (anc_c >= 0 && anc_c < M && anc_c != best_c)
-                {
-                    const KnnCluster *anc_cl = &model->clusters[anc_c];
-                    if (anc_cl->num_members > 0)
-                    {
-                        for (int mi = 0; mi < anc_cl->num_members && mi < 2; mi++)
-                        {
-                            long s_frame = (long)anc_cl->members[mi].frame_id;
-                            if (!knn_heap_contains(heap, (int)s_frame))
-                            {
-                                if (knn_reader_read_frame(cand_reader, s_frame, cand_buffer) == 0)
-                                {
-                                    telem->framedist_calls++;
-                                    telem->graph_seeds_evaluated++;
-                                    double d = compute_euclidean_distance(
-                                        query_data, cand_buffer, frame_elem
-                                    );
-                                    if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
-                                    {
-                                        knn_heap_push(heap, (int)s_frame, d);
-                                    }
-                                    if (d < best_seed_dist)
-                                    {
-                                        best_seed_id = s_frame;
-                                        best_seed_dist = d;
-                                    }
-                                    if (frontier_count < GRAPH_FRONTIER_MAX)
-                                    {
-                                        frontier[frontier_count].frame_id = s_frame;
-                                        frontier[frontier_count].dist = d;
-                                        frontier[frontier_count].expanded = 0;
-                                        frontier_count++;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            int target_k = config->k;
-            int max_expansions = (config->approx_mode) ?
-                ((target_k > 32) ? (target_k / 2 + 8) : 32) : 16;
-            int max_eval_k = (config->approx_mode) ? ((graph_k < 24) ? graph_k : 24) : graph_k;
-            int expansions_done = 0;
-
-            while ((expansions_done < max_expansions || heap->count < target_k) &&
-                   expansions_done < GRAPH_FRONTIER_MAX)
-            {
-                int best_idx = -1;
-                double min_f_dist = 1e20;
-                for (int fi = 0; fi < frontier_count; fi++)
-                {
-                    if (!frontier[fi].expanded && frontier[fi].dist < min_f_dist)
-                    {
-                        min_f_dist = frontier[fi].dist;
-                        best_idx = fi;
-                    }
-                }
-
-                if (best_idx < 0)
-                {
-                    break;
-                }
-
-                double current_tau = knn_heap_peek_max_dist(heap);
-                if (heap->count >= target_k && min_f_dist > current_tau / eps_factor)
-                {
-                    break;
-                }
-
-                frontier[best_idx].expanded = 1;
-                expansions_done++;
-
-                long curr_u = frontier[best_idx].frame_id;
-                double curr_u_dist = frontier[best_idx].dist;
-                if (curr_u_dist < best_seed_dist)
-                {
-                    best_seed_id = curr_u;
-                    best_seed_dist = curr_u_dist;
-                }
-                const uint32_t *neighbors = &model->graph_indices[curr_u * (long)graph_k];
-                const float *n_dists = &model->graph_distances[curr_u * (long)graph_k];
-
-                for (int k_idx = 0; k_idx < max_eval_k; k_idx++)
-                {
-                    long nb_id = (long)neighbors[k_idx];
-                    if (nb_id < 0 || nb_id >= model->total_dataset_frames || nb_id == curr_u)
-                    {
-                        continue;
-                    }
-
-                    int already_in_frontier = 0;
-                    for (int fi = 0; fi < frontier_count; fi++)
-                    {
-                        if (frontier[fi].frame_id == nb_id)
-                        {
-                            already_in_frontier = 1;
-                            break;
-                        }
-                    }
-                    if (already_in_frontier)
-                    {
-                        continue;
-                    }
-
-                    double d_edge = (double)n_dists[k_idx];
-                    double lb_edge = fabs(curr_u_dist - d_edge);
-                    current_tau = knn_heap_peek_max_dist(heap);
-
-                    if (heap->count >= config->k &&
-                        (lb_edge >= current_tau / eps_factor ||
-                         (config->rlim_cutoff > 0.0 && lb_edge >= config->rlim_cutoff)))
-                    {
-                        telem->graph_edges_pruned++;
-                        continue;
-                    }
-
-                    if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
-                    {
-                        telem->framedist_calls++;
-                        telem->graph_seeds_evaluated++;
-                        double d = compute_euclidean_distance(
-                            query_data, cand_buffer, frame_elem
-                        );
-                        if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
-                        {
-                            knn_heap_push(heap, (int)nb_id, d);
-                        }
-                        if (d < best_seed_dist)
-                        {
-                            best_seed_id = nb_id;
-                            best_seed_dist = d;
-                        }
-                        if (num_seed_pivots < 8)
-                        {
-                            seed_pivot_ids[num_seed_pivots] = nb_id;
-                            seed_pivot_dists[num_seed_pivots] = d;
-                            num_seed_pivots++;
-                        }
-
-                        current_tau = knn_heap_peek_max_dist(heap);
-                        if ((d < current_tau / eps_factor || heap->count < config->k) &&
-                            frontier_count < GRAPH_FRONTIER_MAX)
-                        {
-                            frontier[frontier_count].frame_id = nb_id;
-                            frontier[frontier_count].dist = d;
-                            frontier[frontier_count].expanded = 0;
-                            frontier_count++;
-                        }
-                    }
-                } // for (int k_idx = 0; ...)
-            } // while (expansions_done ...)
-
-            // 4c. Global Containment Criterion via Local k-Ball Radius R_k(best_seed_id)
-            if (best_seed_id >= 0 && heap->count >= config->k)
-            {
-                double current_tau = knn_heap_peek_max_dist(heap);
-                double r_graph_ball =
-                    (double)model->graph_distances[best_seed_id * (long)graph_k + (graph_k - 1)];
-
-                if (r_graph_ball > 0.0 && (best_seed_dist + current_tau / eps_factor) <= r_graph_ball)
-                {
-                    const uint32_t *neighbors = &model->graph_indices[best_seed_id * (long)graph_k];
-                    const float *n_dists = &model->graph_distances[best_seed_id * (long)graph_k];
-
-                    for (int k_idx = 0; k_idx < graph_k; k_idx++)
-                    {
-                        long nb_id = (long)neighbors[k_idx];
-                        if (nb_id < 0 || nb_id >= model->total_dataset_frames || nb_id == best_seed_id)
-                        {
-                            continue;
-                        }
-                        if (knn_heap_contains(heap, (int)nb_id))
-                        {
-                            continue;
-                        }
-
-                        double d_edge = (double)n_dists[k_idx];
-                        double lb_edge = fabs(best_seed_dist - d_edge);
-                        current_tau = knn_heap_peek_max_dist(heap);
-
-                        if (lb_edge >= current_tau / eps_factor ||
-                            (config->rlim_cutoff > 0.0 && lb_edge >= config->rlim_cutoff))
-                        {
-                            telem->graph_edges_pruned++;
-                            continue;
-                        }
-
-                        if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
-                        {
-                            telem->framedist_calls++;
-                            telem->graph_seeds_evaluated++;
-                            double d = compute_euclidean_distance(query_data, cand_buffer,
-                                                                 frame_elem);
-                            if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
-                            {
-                                knn_heap_push(heap, (int)nb_id, d);
-                            }
-                        }
-                    } // for (int k_idx = 0; ...)
-
-                    telem->level0_super_clusters_pruned +=
-                        (uint64_t)model->num_super_clusters;
-                    telem->level1_clusters_pruned += (uint64_t)M;
-                    telem->global_containment_hits++;
-                    return;
-                } // if contained
-            } // Global Containment
-        } // Graph Hill-Climbing
-
-        // 4b. Intra-Cluster Member Search in target cluster (containing best_seed_id)
-        int target_c = best_c;
-        if (best_seed_id >= 0 && model->frame_cluster_map != NULL)
-        {
-            int mapped_c = (int)model->frame_cluster_map[best_seed_id];
-            if (mapped_c >= 0 && mapped_c < M)
-            {
-                target_c = mapped_c;
-            }
-        }
-
-        if (target_c >= 0 && target_c < M)
-        {
-            const KnnCluster *target_cl = &model->clusters[target_c];
-            telem->total_candidates_considered += (uint64_t)target_cl->num_members;
-
-            double d_anchor_target = anchor_dists[target_c];
-            if (d_anchor_target < 0.0)
-            {
-                telem->framedist_calls++;
-                d_anchor_target = compute_euclidean_distance(
-                    query_data, target_cl->anchor_data, frame_elem
-                );
-                anchor_dists[target_c] = d_anchor_target;
-            }
-
-            int start_m = 0;
-            int end_m = target_cl->num_members;
-            double tau_init = knn_heap_peek_max_dist(heap);
-            if (tau_init < 1e20)
-            {
-                float r_min = (float)fmax(0.0, d_anchor_target - tau_init / eps_factor);
-                float r_max = (float)(d_anchor_target + tau_init / eps_factor);
-                start_m = find_member_lower_bound(
-                    target_cl->members, target_cl->num_members, r_min
-                );
-                end_m = find_member_upper_bound(
-                    target_cl->members, target_cl->num_members, r_max
-                );
-                telem->level3_annular_pruned +=
-                    (uint64_t)start_m + (uint64_t)(target_cl->num_members - end_m);
-            }
-
-            for (int m = start_m; m < end_m; m++)
-            {
-                long cand_id = (long)target_cl->members[m].frame_id;
-                if (knn_heap_contains(heap, (int)cand_id))
-                {
-                    continue;
-                }
-
-                double current_tau = knn_heap_peek_max_dist(heap);
-                double tau_eff = current_tau / eps_factor;
-                double r_cand = (double)target_cl->members[m].r_anchor;
-
-                if (is_member_pruned_by_pointwise_pivots(
-                        cand_id, d_anchor_target, r_cand, 0.0, min_d_anchor,
-                        num_seed_pivots, seed_pivot_ids, seed_pivot_dists,
-                        model, tau_eff, config->rlim_cutoff, telem))
-                {
-                    continue;
-                }
-
-                if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
-                {
-                    telem->framedist_calls++;
-                    double d = compute_euclidean_distance(query_data, cand_buffer, frame_elem);
-                    if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
-                    {
-                        knn_heap_push(heap, (int)cand_id, d);
-                    }
-                }
-            } // for (int m = start_m; ...)
-        } // Intra-Cluster Search
-
-        if (config->approx_mode)
-        {
-            telem->level1_clusters_pruned += (uint64_t)M;
             return;
         }
+    }
 
-        // 5. Populate and filter surviving candidate clusters from active_mask
-        double current_tau = knn_heap_peek_max_dist(heap);
-        int num_cand_clusters = 0;
+    // Intra-Cluster Member Search in target cluster (containing best_seed_id)
+    knn_cross_eval_intra_cluster(
+        best_c, best_seed_id, min_d_anchor, num_seed_pivots,
+        seed_pivot_ids, seed_pivot_dists, query_data, model,
+        config, cand_reader, cand_buffer, anchor_dists, heap, telem
+    );
 
-        for (int q = 0; q < M; q++)
-        {
-            if (q == best_c || model->clusters[q].num_members == 0)
-            {
-                continue;
-            }
+    if (config->approx_mode)
+    {
+        telem->level1_clusters_pruned += (uint64_t)M;
+        return;
+    }
 
-            if (active_mask[q] == 0)
-            {
-                telem->level1_clusters_pruned++;
-                continue;
-            }
-
-            // 3P test against all evaluated anchor pivots using tightened tau_k
-            int pruned_3p = 0;
-            double r_q = model->cluster_radii[q];
-            for (int e = 0; e < loc_res.num_evaluated_anchors; e++)
-            {
-                int p = loc_res.evaluated_clusters[e];
-                double d_p = loc_res.evaluated_dists[e];
-                double dcc = model->dcc_matrix[p * M + q];
-                double lb1 = dcc - r_q - d_p;
-                double lb2 = d_p - dcc - r_q;
-                double lb = (lb1 > lb2) ? lb1 : lb2;
-
-                if (lb >= current_tau / eps_factor ||
-                    (config->rlim_cutoff > 0.0 && lb >= config->rlim_cutoff))
-                {
-                    active_mask[q] = 0;
-                    pruned_3p = 1;
-                    break;
-                }
-            }
-
-            if (pruned_3p)
-            {
-                telem->level1_clusters_pruned++;
-                continue;
-            }
-
-            if (anchor_dists[q] < 0.0)
-            {
-                telem->framedist_calls++;
-                anchor_dists[q] = compute_euclidean_distance(
-                    query_data, model->clusters[q].anchor_data, frame_elem);
-            }
-
-            double d_a = anchor_dists[q];
-            double lb = d_a - r_q;
-            if (lb < 0.0)
-            {
-                lb = 0.0;
-            }
-
-            if (lb >= current_tau / eps_factor ||
-                (config->rlim_cutoff > 0.0 && lb >= config->rlim_cutoff))
-            {
-                telem->level1_clusters_pruned++;
-                continue;
-            }
-
-            scores_buffer[num_cand_clusters].id = q;
-            scores_buffer[num_cand_clusters].lb = lb;
-            scores_buffer[num_cand_clusters].dcc = d_a;
-            num_cand_clusters++;
-        }
-
-        qsort(scores_buffer, (size_t)num_cand_clusters, sizeof(ClusterScore),
-              compare_cluster_scores);
-
-        // 6. Inter-Cluster Search on surviving candidate clusters
-        for (int idx = 0; idx < num_cand_clusters; idx++)
-        {
-            int q = scores_buffer[idx].id;
-            double lb_cluster = scores_buffer[idx].lb;
-            double current_tau = knn_heap_peek_max_dist(heap);
-
-            if (lb_cluster >= current_tau / eps_factor)
-            {
-                telem->level1_clusters_pruned++;
-                continue;
-            }
-
-            if (config->rlim_cutoff > 0.0 && lb_cluster >= config->rlim_cutoff)
-            {
-                telem->level1_clusters_pruned++;
-                continue;
-            }
-
-            const KnnCluster *cl = &model->clusters[q];
-            double d_anchor = anchor_dists[q];
-            telem->total_candidates_considered += (uint64_t)cl->num_members;
-
-            double tau_eff = current_tau / eps_factor;
-            if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_eff)
-            {
-                tau_eff = config->rlim_cutoff;
-            }
-
-            float r_min = (float)fmax(0.0, d_anchor - tau_eff);
-            float r_max = (float)(d_anchor + tau_eff);
-
-            int start_m = find_member_lower_bound(cl->members, cl->num_members, r_min);
-            int end_m = find_member_upper_bound(cl->members, cl->num_members, r_max);
-
-            telem->level3_annular_pruned +=
-                (uint64_t)start_m + (uint64_t)(cl->num_members - end_m);
-
-            double dcc_best = model->dcc_matrix[best_c * M + q];
-
-            for (int m = start_m; m < end_m; m++)
-            {
-                long cand_id = (long)cl->members[m].frame_id;
-                if (knn_heap_contains(heap, (int)cand_id))
-                {
-                    telem->graph_edges_pruned++;
-                    continue;
-                }
-
-                current_tau = knn_heap_peek_max_dist(heap);
-                tau_eff = current_tau / eps_factor;
-                double r_cand = (double)cl->members[m].r_anchor;
-
-                if (is_member_pruned_by_pointwise_pivots(
-                        cand_id, d_anchor, r_cand, dcc_best, min_d_anchor,
-                        num_seed_pivots, seed_pivot_ids, seed_pivot_dists,
-                        model, tau_eff, config->rlim_cutoff, telem))
-                {
-                    continue;
-                }
-
-                if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
-                {
-                    telem->framedist_calls++;
-                    double d = compute_euclidean_distance(query_data, cand_buffer, frame_elem);
-                    if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
-                    {
-                        knn_heap_push(heap, (int)cand_id, d);
-                    }
-                }
-            } // for (int m = start_m; ...)
-        } // for (int idx = 0; ...)
+    // Inter-Cluster Search on surviving candidate clusters
+    knn_cross_eval_inter_clusters(
+        &loc_res, best_c, min_d_anchor, num_seed_pivots,
+        seed_pivot_ids, seed_pivot_dists, query_data, model,
+        config, cand_reader, cand_buffer, anchor_dists,
+        scores_buffer, active_mask, heap, telem
+    );
 }
 
 /**
@@ -1468,7 +1856,8 @@ int knn_run_search(
 
     if (is_cross_dataset)
     {
-        if (knn_reader_inspect(config->query_data_path, &N_query, &q_w, &q_h) != 0 || N_query <= 0)
+        if (knn_reader_inspect(config->query_data_path, &N_query, &q_w, &q_h) != 0 ||
+            N_query <= 0)
         {
             fprintf(stderr, "Error: Could not inspect query dataset '%s'\n",
                     config->query_data_path);
@@ -1478,7 +1867,7 @@ int knn_run_search(
         if (q_w * q_h != model->frame_elements)
         {
             fprintf(stderr,
-                    "Error: Query frame dimension (%ld elements) does not match model (%ld)\n",
+                    "Error: Query frame dim (%ld) does not match model (%ld)\n",
                     q_w * q_h, model->frame_elements);
             return -1;
         }
@@ -1613,9 +2002,12 @@ int knn_run_search(
             knn_reader_clone_thread(&master_query_reader, &thread_query_reader);
         }
 
-        double *query_buffer = (double *)malloc((size_t)model->frame_elements * sizeof(double));
-        double *cand_buffer = (double *)malloc((size_t)model->frame_elements * sizeof(double));
-        double *anchor_dists = (double *)malloc((size_t)model->num_clusters * sizeof(double));
+        double *query_buffer =
+            (double *)malloc((size_t)model->frame_elements * sizeof(double));
+        double *cand_buffer =
+            (double *)malloc((size_t)model->frame_elements * sizeof(double));
+        double *anchor_dists =
+            (double *)malloc((size_t)model->num_clusters * sizeof(double));
         ClusterScore *scores_buf =
             (ClusterScore *)malloc((size_t)model->num_clusters * sizeof(ClusterScore));
 
@@ -1783,3 +2175,4 @@ void knn_results_free(
         results->distances = NULL;
     }
 }
+
