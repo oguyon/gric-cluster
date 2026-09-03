@@ -219,11 +219,43 @@ void knn_heap_extract_sorted(
         return;
     }
 
-    int count = heap->count;
-    if (count > k)
+    // Discard largest elements beyond requested k
+    while (heap->count > k)
     {
-        count = k;
-    }
+        heap->data[0] = heap->data[heap->count - 1];
+        heap->count--;
+        int idx = 0;
+        int n = heap->count;
+        while (1)
+        {
+            int left = 2 * idx + 1;
+            int right = 2 * idx + 2;
+            int largest = idx;
+
+            if (left < n && heap->data[left].dist > heap->data[largest].dist)
+            {
+                largest = left;
+            }
+            if (right < n && heap->data[right].dist > heap->data[largest].dist)
+            {
+                largest = right;
+            }
+
+            if (largest != idx)
+            {
+                KnnNeighbor tmp = heap->data[idx];
+                heap->data[idx] = heap->data[largest];
+                heap->data[largest] = tmp;
+                idx = largest;
+            }
+            else
+            {
+                break;
+            }
+        } // while (1)
+    } // while (heap->count > k)
+
+    int count = heap->count;
 
     // Repeatedly extract max and place from back to front of valid count
     for (int i = count - 1; i >= 0; i--)

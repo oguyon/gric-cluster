@@ -76,11 +76,17 @@ static void print_help(
            ansi_color_green, ansi_reset);
     printf("  %s-multipivot%s, %s-multi_pivot%s Enable Multi-Anchor Pivot Bounding (AESA)\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-angular%s, %s--angular%s       Enable Angular Cosine Directional Bounding\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-no-angular%s, %s--no-angular%s Disable Angular Cosine Directional Bounding\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-no-reciprocal%s         Disable Symmetric Distance Reciprocal Push\n",
            ansi_color_green, ansi_reset);
     printf("  %s-approx%s, %s--approx%s         Fast Approximate Graph Search "
            "(10-20 evals/query)\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-ef-search%s %s<L>%s       Search pool / heap size (default: 2*k in approx)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-progress%s             Display live progress bar\n",
            ansi_color_green, ansi_reset);
     printf("  %s-v, -vv%s               Verbosity level\n",
@@ -112,6 +118,7 @@ int main(
     config.progress_mode = 0;
     config.verbose_level = 1;
     config.use_reciprocal = 1; // Enabled by default for bidirectional search
+    config.use_angular_bound = 1; // Enabled by default for directional pruning
 
     int k_explicitly_set = 0;
     int dtmin_explicitly_set = 0;
@@ -238,6 +245,20 @@ int main(
         {
             config.use_multi_pivot = 0;
         }
+        else if (strcmp(argv[arg_idx], "-angular") == 0 ||
+                 strcmp(argv[arg_idx], "--angular") == 0 ||
+                 strcmp(argv[arg_idx], "-direction") == 0 ||
+                 strcmp(argv[arg_idx], "--direction") == 0)
+        {
+            config.use_angular_bound = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-angular") == 0 ||
+                 strcmp(argv[arg_idx], "--no-angular") == 0 ||
+                 strcmp(argv[arg_idx], "-no-direction") == 0 ||
+                 strcmp(argv[arg_idx], "--no-direction") == 0)
+        {
+            config.use_angular_bound = 0;
+        }
         else if (strcmp(argv[arg_idx], "-reciprocal") == 0 ||
                  strcmp(argv[arg_idx], "--reciprocal") == 0)
         {
@@ -255,6 +276,17 @@ int main(
                  strcmp(argv[arg_idx], "--fast") == 0)
         {
             config.approx_mode = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-ef-search") == 0 ||
+                 strcmp(argv[arg_idx], "--ef-search") == 0 ||
+                 strcmp(argv[arg_idx], "-ef") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -ef-search requires an integer argument\n");
+                return 1;
+            }
+            config.ef_search = atoi(argv[++arg_idx]);
         }
         else if (strcmp(argv[arg_idx], "-progress") == 0)
         {
@@ -363,6 +395,15 @@ int main(
     {
         printf("  Reciprocal:    Enabled (Symmetric d(i,j)=d(j,i))\n");
     }
+    if (config.approx_mode)
+    {
+        int eff_ef = (config.ef_search > 0) ? config.ef_search : 2 * config.k;
+        printf("  Approx Search: Enabled (ef_search = %d)\n", eff_ef);
+    }
+    else if (config.ef_search > 0)
+    {
+        printf("  Search Pool:   ef_search = %d\n", config.ef_search);
+    }
     printf("\n");
 
     struct timespec load_start, load_end;
@@ -451,6 +492,16 @@ int main(
     }
     printf("  Multi-Pivot Pruned:        %lu\n",
            (unsigned long)telemetry.multi_pivot_pruned);
+    if (telemetry.angular_pruned > 0)
+    {
+        uint64_t total_graph_cands = telemetry.graph_seeds_evaluated +
+                                     telemetry.graph_edges_pruned +
+                                     telemetry.angular_pruned;
+        double ang_pct = (total_graph_cands > 0) ?
+            100.0 * (double)telemetry.angular_pruned / (double)total_graph_cands : 0.0;
+        printf("  Angular Cosine Pruned:     %lu (%.1f%% of graph edges)\n",
+               (unsigned long)telemetry.angular_pruned, ang_pct);
+    }
     if (telemetry.global_containment_hits > 0)
     {
         printf("  Global Containment Hits:   %lu queries (%.1f%%)\n",

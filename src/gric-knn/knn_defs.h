@@ -83,9 +83,11 @@ typedef struct
     KnnOutputFormat output_format;    /**< Output format choice */
     int             progress_mode;    /**< 1 to show live progress bar */
     int             verbose_level;    /**< 0 = quiet, 1 = normal, 2 = verbose */
-    int             use_multi_pivot;  /**< 1 to enable Multi-Anchor Pivot Bounding (AESA) */
-    int             use_reciprocal;   /**< 1 to enable Symmetric Distance Reciprocal Push */
-    int             approx_mode;      /**< 1 to enable Fast Approximate Graph Search */
+    int             use_multi_pivot;   /**< 1 to enable Multi-Anchor Pivot Bounding (AESA) */
+    int             use_reciprocal;    /**< 1 to enable Symmetric Distance Reciprocal Push */
+    int             use_angular_bound; /**< 1 to enable Angular Cosine Directional Bounding */
+    int             approx_mode;       /**< 1 to enable Fast Approximate Graph Search */
+    int             ef_search;         /**< Search candidate pool size (default: 2*k in approx) */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -102,6 +104,7 @@ typedef struct
     uint64_t graph_seeds_evaluated;
     uint64_t graph_edges_pruned;
     uint64_t multi_pivot_pruned;
+    uint64_t angular_pruned;
     uint64_t global_containment_hits;
     uint64_t framedist_calls;
     double   time_load_ms;
@@ -130,6 +133,7 @@ typedef struct
     int              graph_k;             /**< Number of neighbors per node in graph */
     uint32_t        *graph_indices;       /**< [N x graph_k] neighbor node indices in A */
     float           *graph_distances;     /**< [N x graph_k] precomputed neighbor distances */
+    float           *graph_mutual_dists;  /**< [N x (graph_k * (graph_k - 1) / 2)] mutual dists */
     const double   **anchor_ptrs;         /**< [M] array of anchor pointers */
     double          *cluster_radii;       /**< [M] array of cluster radii */
 } KnnModel;
@@ -141,5 +145,81 @@ typedef struct
     int    *indices;     /**< Size N x k */
     double *distances;   /**< Size N x k */
 } KnnResults;
+
+/**
+ * struct KnnVisitedTracker - Per-query frame deduplication tracker.
+ * @tags:  Array of query epochs indexed by candidate frame ID [N_cand].
+ * @epoch: Monotonically increasing query epoch counter.
+ */
+typedef struct
+{
+    uint32_t *tags;
+    uint32_t  epoch;
+} KnnVisitedTracker;
+
+/**
+ * knn_visited_check_and_mark() - Check if frame was visited in current query and mark it.
+ * @tracker:  Pointer to KnnVisitedTracker.
+ * @frame_id: Frame index to check and mark.
+ *
+ * Return: 1 if already visited in this query, 0 if not visited yet (and now marked).
+ */
+static inline int knn_visited_check_and_mark(
+    KnnVisitedTracker *tracker,
+    long               frame_id)
+{
+    if (tracker == NULL || tracker->tags == NULL)
+    {
+        return 0;
+    }
+
+    if (tracker->tags[frame_id] == tracker->epoch)
+    {
+        return 1;
+    }
+
+    tracker->tags[frame_id] = tracker->epoch;
+    return 0;
+}
+
+/**
+ * knn_get_mutual_dist() - Retrieve precomputed mutual distance between neighbors i and j.
+ * @model: Active KnnModel.
+ * @u:     Central node frame index in A.
+ * @i:     First neighbor local index in [0..graph_k-1].
+ * @j:     Second neighbor local index in [0..graph_k-1].
+ *
+ * Return: Mutual Euclidean distance d_A(i, j) or 0.0f/error.
+ */
+static inline float knn_get_mutual_dist(
+    const KnnModel *model,
+    long            u,
+    int             i,
+    int             j)
+{
+    if (model == NULL || model->graph_mutual_dists == NULL || i == j)
+    {
+        return 0.0f;
+    }
+
+    int k = model->graph_k;
+    if (i >= k || j >= k || u < 0 || u >= model->total_dataset_frames)
+    {
+        return -1.0f;
+    }
+
+    if (i > j)
+    {
+        int tmp = i;
+        i = j;
+        j = tmp;
+    }
+
+    long m_per_node = ((long)k * (long)(k - 1)) / 2;
+    long pair_idx = (long)i * (long)k - ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
+    long offset = u * m_per_node + pair_idx;
+
+    return model->graph_mutual_dists[offset];
+}
 
 #endif // KNN_DEFS_H

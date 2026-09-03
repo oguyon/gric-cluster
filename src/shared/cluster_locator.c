@@ -259,11 +259,6 @@ int cluster_locate_sample(
                 result->active_cluster_mask[c] = 0;
             }
         }
-
-        if (config->rlim > 0.0 && d_prev <= config->rlim)
-        {
-            return 0; // Matched within rlim on attempt 0!
-        }
     }
 
     // Step 1: Iterative Target Selection & 3P Bounding Loop
@@ -322,6 +317,13 @@ int cluster_locate_sample(
         if (d_target < tau_eff)
         {
             tau_eff = d_target;
+        }
+
+        double r_target = (cluster_radii != NULL) ? cluster_radii[next_target] : 0.0;
+        if ((config->rlim > 0.0 && d_target <= config->rlim) ||
+            (r_target > 0.0 && d_target <= r_target))
+        {
+            return 0; // Matched cluster within radius!
         }
 
         // 3P and 4P Metric Pruning against measured target
