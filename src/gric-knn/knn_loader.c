@@ -15,6 +15,10 @@
 #include <string.h>
 #include <strings.h>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #ifdef USE_CFITSIO
 #include <fitsio.h>
 #endif
@@ -957,19 +961,22 @@ static int compute_exact_frame_anchor_radii(
 
 /**
  * load_knn_graph() - Opportunistically load pre-computed k-NN graph of dataset A.
- * @cluster_dir: Path to the cluster directory.
- * @model:       Pointer to KnnModel.
+ * @cluster_dir:     Path to the cluster directory.
+ * @input_data_path: Path to dataset input file.
+ * @model:           Pointer to KnnModel.
  *
  * Return: 0 if loaded or not present (non-fatal), -1 on critical parse error.
  */
 static int load_knn_graph(
     const char *cluster_dir,
+    const char *input_data_path,
     KnnModel   *model)
 {
     model->has_knn_graph = 0;
     model->graph_k = 0;
     model->graph_indices = NULL;
     model->graph_distances = NULL;
+    model->graph_mutual_dists = NULL;
 
     if (cluster_dir == NULL || model == NULL || model->total_dataset_frames <= 0)
     {
@@ -1057,6 +1064,135 @@ static int load_knn_graph(
 
     printf("  k-NN Metric Graph:   Loaded %lu frames x %lu neighbors from cluster directory\n",
            n_frames, graph_k);
+
+    /* Opportunistically load precomputed mutual distances */
+    char mut_path[2048];
+    snprintf(mut_path, sizeof(mut_path), "%s/knn_mutual_dists.bin", cluster_dir);
+    FILE *fp_mut = fopen(mut_path, "rb");
+    if (fp_mut != NULL)
+    {
+        gric_bin_header_t hdr_mut;
+        if (gric_bin_read_header(fp_mut, &hdr_mut, NULL) == 0)
+        {
+            uint64_t m_pairs = (graph_k * (graph_k - 1)) / 2;
+            if (hdr_mut.ndim >= 2 &&
+                hdr_mut.dims[0] == n_frames &&
+                hdr_mut.dims[1] == m_pairs)
+            {
+                uint64_t total_mut = n_frames * m_pairs;
+                float *mut_dists = (float *)malloc(total_mut * sizeof(float));
+                if (mut_dists != NULL)
+                {
+                    if (fread(mut_dists, sizeof(float), total_mut, fp_mut) == total_mut)
+                    {
+                        model->graph_mutual_dists = mut_dists;
+                        printf("  k-NN Mutual Dists:   Loaded %lu frames x %lu pairs from %s\n",
+                               n_frames, m_pairs, mut_path);
+                    }
+                    else
+                    {
+                        free(mut_dists);
+                    }
+                }
+            }
+        }
+        fclose(fp_mut);
+    }
+
+    /* If mutual distances missing on disk, compute and cache them */
+    if (model->graph_mutual_dists == NULL && input_data_path != NULL && graph_k >= 2)
+    {
+        KnnFrameReader rdr;
+        if (knn_reader_open(&rdr, input_data_path, (long)n_frames,
+                            model->frame_width, model->frame_height) == 0)
+        {
+            long elem = model->frame_elements;
+            size_t total_bytes = (size_t)n_frames * (size_t)elem * sizeof(double);
+            if (total_bytes <= 1024ULL * 1024ULL * 1024ULL) // 1 GB allocation threshold
+            {
+                double *frames = (double *)malloc(total_bytes);
+                if (frames != NULL)
+                {
+                    for (long f = 0; f < (long)n_frames; f++)
+                    {
+                        knn_reader_read_frame(&rdr, f, &frames[f * elem]);
+                    }
+
+                    uint64_t m_pairs = (graph_k * (graph_k - 1)) / 2;
+                    uint64_t total_mut = n_frames * m_pairs;
+                    float *mut_dists = (float *)calloc(total_mut, sizeof(float));
+                    if (mut_dists != NULL)
+                    {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+                        for (long u = 0; u < (long)n_frames; u++)
+                        {
+                            for (int i = 0; i < (int)graph_k; i++)
+                            {
+                                long id_i = (long)indices[u * (long)graph_k + i];
+                                if (id_i < 0 || id_i >= (long)n_frames)
+                                {
+                                    continue;
+                                }
+                                const double *f_i = &frames[id_i * elem];
+
+                                for (int j = i + 1; j < (int)graph_k; j++)
+                                {
+                                    long id_j = (long)indices[u * (long)graph_k + j];
+                                    if (id_j < 0 || id_j >= (long)n_frames)
+                                    {
+                                        continue;
+                                    }
+                                    const double *f_j = &frames[id_j * elem];
+
+                                    double sum = 0.0;
+                                    for (long p = 0; p < elem; p++)
+                                    {
+                                        double diff = f_i[p] - f_j[p];
+                                        sum += diff * diff;
+                                    }
+
+                                    long pair_idx = (long)i * (long)graph_k -
+                                        ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
+                                    mut_dists[(uint64_t)u * m_pairs + (uint64_t)pair_idx] =
+                                        (float)sqrt(sum);
+                                }
+                            }
+                        } // for (long u = 0; ...)
+
+                        model->graph_mutual_dists = mut_dists;
+                        printf("  k-NN Mutual Dists:   Computed %lu frames x %lu pairs\n",
+                               n_frames, m_pairs);
+
+                        FILE *fp_w = fopen(mut_path, "wb");
+                        if (fp_w != NULL)
+                        {
+                            gric_bin_header_t hdr_w;
+                            memset(&hdr_w, 0, sizeof(hdr_w));
+                            hdr_w.file_type = GRIC_BIN_TYPE_GENERIC;
+                            hdr_w.data_type = GRIC_BIN_DTYPE_FLOAT32;
+                            hdr_w.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+                            hdr_w.ndim = 2;
+                            hdr_w.dims[0] = n_frames;
+                            hdr_w.dims[1] = m_pairs;
+                            hdr_w.num_elements = total_mut;
+                            hdr_w.data_bytes = total_mut * sizeof(float);
+                            if (gric_bin_write_header(fp_w, &hdr_w,
+                                                      "k-NN mutual distances [N x k*(k-1)/2]") == 0)
+                            {
+                                fwrite(mut_dists, sizeof(float), total_mut, fp_w);
+                            }
+                            fclose(fp_w);
+                        }
+                    }
+                    free(frames);
+                }
+            }
+            knn_reader_close(&rdr);
+        }
+    }
+
     return 0;
 }
 
@@ -1151,7 +1287,7 @@ int knn_model_load(
     }
 
     /* Opportunistically load precomputed k-NN graph of dataset A */
-    load_knn_graph(cluster_dir, model);
+    load_knn_graph(cluster_dir, input_data_path, model);
 
     return 0;
 }
@@ -1217,6 +1353,12 @@ void knn_model_free(
     {
         free(model->graph_distances);
         model->graph_distances = NULL;
+    }
+
+    if (model->graph_mutual_dists != NULL)
+    {
+        free(model->graph_mutual_dists);
+        model->graph_mutual_dists = NULL;
     }
 
     if (model->anchor_ptrs != NULL)

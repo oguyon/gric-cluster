@@ -903,6 +903,9 @@
         const py = clientY - rect.top;
         const W = rect.width;
         const H = rect.height;
+        if (typeof reconOverlayMode !== 'undefined' && reconOverlayMode) {
+          return (px < W / 2) ? 0 : 1;
+        }
         if (px < W / 2 && py < H / 2) return 0;
         if (px >= W / 2 && py < H / 2) return 1;
         if (px < W / 2 && py >= H / 2) return 2;
@@ -1095,7 +1098,10 @@
           draw();
         } else {
           const rect = canvas.getBoundingClientRect();
-          const qRect = { x: 0, y: 0, w: rect.width / 2, h: rect.height / 2 };
+          const isOverlay = (typeof reconOverlayMode !== 'undefined' && reconOverlayMode);
+          const qRect = isOverlay
+            ? { x: 0, y: 0, w: rect.width / 2, h: rect.height }
+            : { x: 0, y: 0, w: rect.width / 2, h: rect.height / 2 };
           const scale = (Math.min(qRect.w, qRect.h) / 2.35) * (targetViews[0].zoom || 1.0);
           if (scale > 0) {
             targetViews.forEach(v => {
@@ -1172,58 +1178,50 @@
             }
           }
 
-          // --- 4-Panel Reconstruction View Click / Lock ---
+          // --- ABCD Reconstruction View Click / Lock ---
           if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView) {
             const qIdx = getQuadrantAt(e.clientX, e.clientY);
-            if (qIdx === 0 || qIdx === 1) {
-              // Training Space Click (A or B)
-              if (reconHoveredTrainingIdx >= 0) {
-                if (reconLockedTrainingIdx === reconHoveredTrainingIdx) {
-                  reconLockedTrainingIdx = -1;
-                  reconHoveredTrainingIdx = -1;
-                  if (typeof showToast === 'function') showToast('🔓 Selection Unlocked');
-                  draw();
-                } else {
-                  reconLockedTrainingIdx = reconHoveredTrainingIdx;
-                  reconLockedTrainingSlot = (qIdx === 0) ? 'A' : 'B';
-                  reconLockedQueryIdx = -1;
-                  if (typeof showToast === 'function') {
-                    showToast(`🔒 Locked [${reconLockedTrainingSlot}] Sample #${reconLockedTrainingIdx}`);
-                  }
-                  draw();
-                }
-              } else if (reconLockedTrainingIdx !== -1 || reconLockedQueryIdx !== -1) {
+            if (reconHoveredTrainingIdx >= 0) {
+              if (reconLockedTrainingIdx === reconHoveredTrainingIdx) {
                 reconLockedTrainingIdx = -1;
-                reconLockedQueryIdx = -1;
+                reconHoveredTrainingIdx = -1;
                 if (typeof showToast === 'function') showToast('🔓 Selection Unlocked');
                 draw();
-              }
-            } else {
-              // Query Space Click (C or D)
-              if (reconHoveredQueryIdx >= 0) {
-                if (reconLockedQueryIdx === reconHoveredQueryIdx) {
-                  reconLockedQueryIdx = -1;
-                  reconHoveredQueryIdx = -1;
-                  if (typeof showToast === 'function') showToast('🔓 Selection Unlocked');
-                  draw();
-                } else {
-                  reconLockedQueryIdx = reconHoveredQueryIdx;
-                  reconLockedTrainingIdx = -1;
-                  selectedKnnQuerySample = reconLockedQueryIdx;
-                  if (typeof renderReconstructionDashboard === 'function') {
-                    renderReconstructionDashboard();
-                  }
-                  if (typeof showToast === 'function') {
-                    showToast(`🔒 Locked Query #${reconLockedQueryIdx}`);
-                  }
-                  draw();
-                }
-              } else if (reconLockedQueryIdx !== -1 || reconLockedTrainingIdx !== -1) {
+              } else {
+                reconLockedTrainingIdx = reconHoveredTrainingIdx;
+                reconLockedTrainingSlot = reconHoveredTrainingSlot ||
+                  ((qIdx === 0) ? 'A' : 'B');
                 reconLockedQueryIdx = -1;
-                reconLockedTrainingIdx = -1;
-                if (typeof showToast === 'function') showToast('🔓 Selection Unlocked');
+                if (typeof showToast === 'function') {
+                  showToast(
+                    `🔒 Locked [${reconLockedTrainingSlot}] Sample #${reconLockedTrainingIdx}`
+                  );
+                }
                 draw();
               }
+            } else if (reconHoveredQueryIdx >= 0) {
+              if (reconLockedQueryIdx === reconHoveredQueryIdx) {
+                reconLockedQueryIdx = -1;
+                reconHoveredQueryIdx = -1;
+                if (typeof showToast === 'function') showToast('🔓 Selection Unlocked');
+                draw();
+              } else {
+                reconLockedQueryIdx = reconHoveredQueryIdx;
+                reconLockedTrainingIdx = -1;
+                selectedKnnQuerySample = reconLockedQueryIdx;
+                if (typeof renderReconstructionDashboard === 'function') {
+                  renderReconstructionDashboard();
+                }
+                if (typeof showToast === 'function') {
+                  showToast(`🔒 Locked Query #${reconLockedQueryIdx}`);
+                }
+                draw();
+              }
+            } else if (reconLockedTrainingIdx !== -1 || reconLockedQueryIdx !== -1) {
+              reconLockedTrainingIdx = -1;
+              reconLockedQueryIdx = -1;
+              if (typeof showToast === 'function') showToast('🔓 Selection Unlocked');
+              draw();
             }
             return;
           }
@@ -1295,65 +1293,163 @@
           return;
         }
 
-        const qIdx = getQuadrantAt(e.clientX, e.clientY);
+        function findClosestPointInSlot(
+          slotId, px, py, qRect, activeView, activeCam, checkMask = false
+        ) {
+          const targetSlot = datasetSlots[slotId];
+          const pts = targetSlot
+            ? (targetSlot.benchmarkDataset || targetSlot.pastSamples) : null;
+          if (!pts || pts.length === 0) return { index: -1, distSq: Infinity };
 
-        // Case 1: Hovering over Panel A (qIdx === 0) or Panel B (qIdx === 1) -> Training Space
-        if (qIdx === 0 || qIdx === 1) {
-          const targetSlotId = (qIdx === 0) ? 'A' : 'B';
-          const targetSlot = datasetSlots[targetSlotId];
-          const pts = targetSlot ? (targetSlot.benchmarkDataset || targetSlot.pastSamples) : null;
           const is3D = (targetSlot && targetSlot.currentDim === 3);
+          const scale = (Math.min(qRect.w, qRect.h) / 2.35) * (activeView.zoom || 1.0);
+          const cx = qRect.x + qRect.w / 2;
+          const cy = qRect.y + qRect.h / 2;
 
-          if (pts && pts.length > 0) {
-            const isInputSpace = (qIdx === 0);
-            const activeView = isInputSpace ? quadViews[0] : quadViews[1];
-            const activeCam = isInputSpace
-              ? (typeof reconInputCamera !== 'undefined' ? reconInputCamera : orbitCamera)
-              : (typeof reconOutputCamera !== 'undefined' ? reconOutputCamera : orbitCamera);
+          let bestIdx = -1;
+          let bestDistSq = Infinity;
+          const checkN = Math.min(pts.length, 100000);
+          const slotMask = checkMask
+            ? (targetSlot.reconQualityMask ||
+               (slotId === 'C' ? datasetSlots.C?.reconQualityMask
+                               : datasetSlots.D?.reconQualityMask) ||
+               reconQualityMask)
+            : null;
 
-            const qRect = getQuadRect(qIdx, W, H);
-            const scale = (Math.min(qRect.w, qRect.h) / 2.35) * (activeView.zoom || 1.0);
-            const cx = qRect.x + qRect.w / 2;
-            const cy = qRect.y + qRect.h / 2;
-
-            let bestIdx = -1;
-            let bestDistSq = Infinity;
-            const MAX_PICK_DIST_SQ = 70 * 70;
-            const checkN = Math.min(pts.length, 100000);
-
-            for (let i = 0; i < checkN; i++) {
-              const pt = pts[i];
-              let u = pt.x, v = pt.y;
-              if (is3D) {
-                let tx = 0, ty = 0, tz = 0;
-                if (activeCam && activeCam.isLocked) {
-                  tx = activeCam.targetX || 0;
-                  ty = activeCam.targetY || 0;
-                  tz = activeCam.targetZ || 0;
-                }
-                const pr = project3DVector(
-                  pt.x - tx, pt.y - ty, (pt.z || 0.0) - tz,
-                  activeCam.azimuth, activeCam.elevation
-                );
-                u = pr.u;
-                v = pr.v;
-              }
-              const screenPx = cx + (u - (activeView.panX || 0)) * scale;
-              const screenPy = cy - (v - (activeView.panY || 0)) * scale;
-              const dx = screenPx - px;
-              const dy = screenPy - py;
-              const d2 = dx * dx + dy * dy;
-              if (d2 < bestDistSq) {
-                bestDistSq = d2;
-                bestIdx = i;
-              }
+          for (let i = 0; i < checkN; i++) {
+            if (checkMask && reconQualityThreshold < 1.0 && slotMask &&
+                i < slotMask.length && !slotMask[i]) {
+              continue;
             }
+            const pt = pts[i];
+            let u = pt.x, v = pt.y;
+            if (is3D) {
+              let tx = 0, ty = 0, tz = 0;
+              if (activeCam && activeCam.isLocked) {
+                tx = activeCam.targetX || 0;
+                ty = activeCam.targetY || 0;
+                tz = activeCam.targetZ || 0;
+              }
+              const pr = project3DVector(
+                pt.x - tx, pt.y - ty, (pt.z || 0.0) - tz,
+                activeCam.azimuth, activeCam.elevation
+              );
+              u = pr.u;
+              v = pr.v;
+            }
+            const screenPx = cx + (u - (activeView.panX || 0)) * scale;
+            const screenPy = cy - (v - (activeView.panY || 0)) * scale;
+            const dx = screenPx - px;
+            const dy = screenPy - py;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < bestDistSq) {
+              bestDistSq = d2;
+              bestIdx = i;
+            }
+          }
+          return { index: bestIdx, distSq: bestDistSq };
+        }
 
-            if (bestIdx >= 0 && bestDistSq <= MAX_PICK_DIST_SQ) {
-              if (reconHoveredTrainingIdx !== bestIdx ||
-                  reconHoveredTrainingSlot !== targetSlotId) {
-                reconHoveredTrainingIdx = bestIdx;
-                reconHoveredTrainingSlot = targetSlotId;
+        const isOverlay = (typeof reconOverlayMode !== 'undefined' && reconOverlayMode);
+        const MAX_PICK_DIST_SQ = 70 * 70;
+
+        if (isOverlay) {
+          const isLeft = (px < W / 2);
+          const qRect = isLeft
+            ? { x: 0, y: 0, w: W / 2, h: H }
+            : { x: W / 2, y: 0, w: W / 2, h: H };
+          const activeView = isLeft ? quadViews[0] : quadViews[1];
+          const activeCam = isLeft
+            ? (typeof reconInputCamera !== 'undefined' ? reconInputCamera : orbitCamera)
+            : (typeof reconOutputCamera !== 'undefined' ? reconOutputCamera : orbitCamera);
+
+          if (isLeft) {
+            // Input Space: Check Slot A and Slot C
+            const hitA = findClosestPointInSlot(
+              'A', px, py, qRect, activeView, activeCam, false
+            );
+            const hitC = findClosestPointInSlot(
+              'C', px, py, qRect, activeView, activeCam, true
+            );
+
+            if (hitC.index >= 0 && hitC.distSq <= hitA.distSq &&
+                hitC.distSq <= MAX_PICK_DIST_SQ) {
+              if (reconHoveredQueryIdx !== hitC.index) {
+                reconHoveredQueryIdx = hitC.index;
+                reconHoveredTrainingIdx = -1;
+                selectedKnnQuerySample = hitC.index;
+                if (typeof renderReconstructionDashboard === 'function') {
+                  renderReconstructionDashboard();
+                }
+                draw();
+              }
+            } else if (hitA.index >= 0 && hitA.distSq <= MAX_PICK_DIST_SQ) {
+              if (reconHoveredTrainingIdx !== hitA.index ||
+                  reconHoveredTrainingSlot !== 'A') {
+                reconHoveredTrainingIdx = hitA.index;
+                reconHoveredTrainingSlot = 'A';
+                reconHoveredQueryIdx = -1;
+                draw();
+              }
+            } else if (reconHoveredQueryIdx !== -1 || reconHoveredTrainingIdx !== -1) {
+              reconHoveredQueryIdx = -1;
+              reconHoveredTrainingIdx = -1;
+              draw();
+            }
+          } else {
+            // Output Space: Check Slot B and Slot D
+            const hitB = findClosestPointInSlot(
+              'B', px, py, qRect, activeView, activeCam, false
+            );
+            const hitD = findClosestPointInSlot(
+              'D', px, py, qRect, activeView, activeCam, true
+            );
+
+            if (hitD.index >= 0 && hitD.distSq <= hitB.distSq &&
+                hitD.distSq <= MAX_PICK_DIST_SQ) {
+              if (reconHoveredQueryIdx !== hitD.index) {
+                reconHoveredQueryIdx = hitD.index;
+                reconHoveredTrainingIdx = -1;
+                selectedKnnQuerySample = hitD.index;
+                if (typeof renderReconstructionDashboard === 'function') {
+                  renderReconstructionDashboard();
+                }
+                draw();
+              }
+            } else if (hitB.index >= 0 && hitB.distSq <= MAX_PICK_DIST_SQ) {
+              if (reconHoveredTrainingIdx !== hitB.index ||
+                  reconHoveredTrainingSlot !== 'B') {
+                reconHoveredTrainingIdx = hitB.index;
+                reconHoveredTrainingSlot = 'B';
+                reconHoveredQueryIdx = -1;
+                draw();
+              }
+            } else if (reconHoveredQueryIdx !== -1 || reconHoveredTrainingIdx !== -1) {
+              reconHoveredQueryIdx = -1;
+              reconHoveredTrainingIdx = -1;
+              draw();
+            }
+          }
+        } else {
+          // 4-Panel Quadrant Hover
+          const qIdx = getQuadrantAt(e.clientX, e.clientY);
+          const qRect = getQuadRect(qIdx, W, H);
+          const isInputSpace = (qIdx === 0 || qIdx === 2);
+          const activeView = isInputSpace ? quadViews[0] : quadViews[1];
+          const activeCam = isInputSpace
+            ? (typeof reconInputCamera !== 'undefined' ? reconInputCamera : orbitCamera)
+            : (typeof reconOutputCamera !== 'undefined' ? reconOutputCamera : orbitCamera);
+
+          if (qIdx === 0 || qIdx === 1) {
+            const slotId = (qIdx === 0) ? 'A' : 'B';
+            const hit = findClosestPointInSlot(
+              slotId, px, py, qRect, activeView, activeCam, false
+            );
+            if (hit.index >= 0 && hit.distSq <= MAX_PICK_DIST_SQ) {
+              if (reconHoveredTrainingIdx !== hit.index ||
+                  reconHoveredTrainingSlot !== slotId) {
+                reconHoveredTrainingIdx = hit.index;
+                reconHoveredTrainingSlot = slotId;
                 reconHoveredQueryIdx = -1;
                 draw();
               }
@@ -1361,72 +1457,16 @@
               reconHoveredTrainingIdx = -1;
               draw();
             }
-          }
-        } else if (qIdx === 2 || qIdx === 3) {
-          // Case 2: Hovering over Panel C (qIdx === 2) or Panel D (qIdx === 3) -> Query Space
-          const targetSlotId = (qIdx === 2) ? 'C' : 'D';
-          const targetSlot = datasetSlots[targetSlotId];
-          const pts = targetSlot ? (targetSlot.benchmarkDataset || targetSlot.pastSamples) : null;
-          const is3D = (targetSlot && targetSlot.currentDim === 3);
-
-          if (pts && pts.length > 0) {
-            const isInputSpace = (qIdx === 2);
-            const activeView = isInputSpace ? quadViews[0] : quadViews[1];
-            const activeCam = isInputSpace
-              ? (typeof reconInputCamera !== 'undefined' ? reconInputCamera : orbitCamera)
-              : (typeof reconOutputCamera !== 'undefined' ? reconOutputCamera : orbitCamera);
-
-            const qRect = getQuadRect(qIdx, W, H);
-            const scale = (Math.min(qRect.w, qRect.h) / 2.35) * (activeView.zoom || 1.0);
-            const cx = qRect.x + qRect.w / 2;
-            const cy = qRect.y + qRect.h / 2;
-
-            let bestIdx = -1;
-            let bestDistSq = Infinity;
-            const MAX_PICK_DIST_SQ = 70 * 70;
-            const slotCMask = datasetSlots['C'] ? datasetSlots['C'].reconQualityMask : null;
-            const slotDMask = datasetSlots['D'] ? datasetSlots['D'].reconQualityMask : null;
-            const qMask = (qIdx === 2)
-              ? (targetSlot.reconQualityMask || slotCMask)
-              : (targetSlot.reconQualityMask || slotDMask);
-            const checkN = Math.min(pts.length, 100000);
-
-            for (let i = 0; i < checkN; i++) {
-              if (reconQualityThreshold < 1.0 && qMask && i < qMask.length && !qMask[i]) {
-                continue;
-              }
-              const pt = pts[i];
-              let u = pt.x, v = pt.y;
-              if (is3D) {
-                let tx = 0, ty = 0, tz = 0;
-                if (activeCam && activeCam.isLocked) {
-                  tx = activeCam.targetX || 0;
-                  ty = activeCam.targetY || 0;
-                  tz = activeCam.targetZ || 0;
-                }
-                const pr = project3DVector(
-                  pt.x - tx, pt.y - ty, (pt.z || 0.0) - tz,
-                  activeCam.azimuth, activeCam.elevation
-                );
-                u = pr.u;
-                v = pr.v;
-              }
-              const screenPx = cx + (u - (activeView.panX || 0)) * scale;
-              const screenPy = cy - (v - (activeView.panY || 0)) * scale;
-              const dx = screenPx - px;
-              const dy = screenPy - py;
-              const d2 = dx * dx + dy * dy;
-              if (d2 < bestDistSq) {
-                bestDistSq = d2;
-                bestIdx = i;
-              }
-            }
-
-            if (bestIdx >= 0 && bestDistSq <= MAX_PICK_DIST_SQ) {
-              if (reconHoveredQueryIdx !== bestIdx) {
-                reconHoveredQueryIdx = bestIdx;
+          } else {
+            const slotId = (qIdx === 2) ? 'C' : 'D';
+            const hit = findClosestPointInSlot(
+              slotId, px, py, qRect, activeView, activeCam, true
+            );
+            if (hit.index >= 0 && hit.distSq <= MAX_PICK_DIST_SQ) {
+              if (reconHoveredQueryIdx !== hit.index) {
+                reconHoveredQueryIdx = hit.index;
                 reconHoveredTrainingIdx = -1;
-                selectedKnnQuerySample = bestIdx;
+                selectedKnnQuerySample = hit.index;
                 if (typeof renderReconstructionDashboard === 'function') {
                   renderReconstructionDashboard();
                 }
@@ -2135,7 +2175,7 @@
           if (activeDatasetSlot !== sId) {
             switchDatasetSlot(sId);
           }
-          stageDataset(e.target.value);
+          stageDataset(e.target.value, sId);
           resetView();
         });
       }
@@ -2150,7 +2190,7 @@
           loopCount = parseInt(e.target.value, 10);
           const side = document.getElementById('selectLoopSide');
           if (side) side.value = e.target.value;
-          stageDataset();
+          stageDataset(null, sId);
         });
       }
 
@@ -2163,7 +2203,7 @@
             switchDatasetSlot(sId);
           }
           pauseSimulation();
-          stageDataset();
+          stageDataset(null, sId);
           if (typeof showToast === 'function') {
             showToast(`🎲 Generated dataset [${sId}] "${currentBenchmark}" (${benchmarkDataset.length.toLocaleString()} pts)`);
           }
@@ -2464,6 +2504,8 @@
       } else if (e.key === 'k' || e.key === 'K') {
         const btnRunKnn = document.getElementById('btnRunKnn');
         if (btnRunKnn) btnRunKnn.click();
+      } else if (e.key === 'o' || e.key === 'O') {
+        setReconOverlayMode();
       } else if (e.key === 'h' || e.key === 'H' || e.key === 't' || e.key === 'T') {
         const btnToggleTooltips = document.getElementById('btnToggleTooltips');
         if (btnToggleTooltips) btnToggleTooltips.click();
@@ -3786,7 +3828,7 @@
               await new Promise((resolve) => {
                 DesktopBridge.runCliJob({
                   cmd: 'gric-cluster',
-                  args: [datasetFile, '-o', clusterDir, '-dlim', '0.15'],
+                  args: ['-outdir', clusterDir, '0.15', datasetFile],
                   onOutput: (chunk) => {
                     const consoleEl = document.getElementById('cliConsoleLog');
                     if (consoleEl) {
@@ -5291,7 +5333,6 @@
         for (let i = 0; i < numQueries; i++) {
           const offset = i * nativeKnn.k;
           const topNeighbors = [];
-          let exactMatchIdx = -1;
 
           /* Collect the top-k neighbor indices and distances */
           const rawDists = new Float64Array(kUsed);
@@ -5299,39 +5340,45 @@
           for (let p = 0; p < kUsed; p++) {
             rawDists[p] = nativeKnn.distances[offset + p];
             rawIdx[p]   = nativeKnn.indices[offset + p];
-            if (rawDists[p] < 1e-9) { exactMatchIdx = p; }
           }
 
           let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
-          if (exactMatchIdx >= 0) {
-            const pb = ptsB[rawIdx[exactMatchIdx]];
-            avgX = pb.x; avgY = pb.y;
-            avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+          if (weightMode === 'idw') {
+            let exactMatchIdx = -1;
             for (let p = 0; p < kUsed; p++) {
-              topNeighbors.push({
-                id: rawIdx[p], dist: rawDists[p],
-                weight: (p === exactMatchIdx) ? 1.0 : 0.0
-              });
-              totalDistSum += rawDists[p];
-              totalDistCount++;
+              if (rawDists[p] < 1e-9) { exactMatchIdx = p; break; }
             }
-          } else if (weightMode === 'idw') {
-            let sumW = 0.0;
-            const weights = new Float64Array(kUsed);
-            for (let p = 0; p < kUsed; p++) {
-              const d = rawDists[p];
-              const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
-              weights[p] = w; sumW += w;
-              totalDistSum += d; totalDistCount++;
-            }
-            for (let p = 0; p < kUsed; p++) {
-              const normW = weights[p] / sumW;
-              const pb = ptsB[rawIdx[p]];
-              avgX += normW * pb.x; avgY += normW * pb.y;
-              if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
-              topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
+            if (exactMatchIdx >= 0) {
+              const pb = ptsB[rawIdx[exactMatchIdx]];
+              avgX = pb.x; avgY = pb.y;
+              avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+              for (let p = 0; p < kUsed; p++) {
+                topNeighbors.push({
+                  id: rawIdx[p], dist: rawDists[p],
+                  weight: (p === exactMatchIdx) ? 1.0 : 0.0
+                });
+                totalDistSum += rawDists[p];
+                totalDistCount++;
+              }
+            } else {
+              let sumW = 0.0;
+              const weights = new Float64Array(kUsed);
+              for (let p = 0; p < kUsed; p++) {
+                const d = rawDists[p];
+                const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+                weights[p] = w; sumW += w;
+                totalDistSum += d; totalDistCount++;
+              }
+              for (let p = 0; p < kUsed; p++) {
+                const normW = weights[p] / sumW;
+                const pb = ptsB[rawIdx[p]];
+                avgX += normW * pb.x; avgY += normW * pb.y;
+                if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+                topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
+              }
             }
           } else {
+            // 'uniform': Boxcar filter averaging all k nearest neighbors
             const normW = 1.0 / kUsed;
             for (let p = 0; p < kUsed; p++) {
               const pb = ptsB[rawIdx[p]];
@@ -5384,41 +5431,44 @@
 
           /* Calculate weights and average corresponding B samples */
           const topNeighbors = [];
-          let exactMatchIdx = -1;
-          for (let p = 0; p < k; p++) {
-            if (dists[p] < 1e-9) { exactMatchIdx = p; break; }
-          }
-
           let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
-          if (exactMatchIdx >= 0) {
-            const matchedSampleId = indices[exactMatchIdx];
-            const pb = ptsB[matchedSampleId];
-            avgX = pb.x; avgY = pb.y;
-            avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+
+          if (weightMode === 'idw') {
+            let exactMatchIdx = -1;
             for (let p = 0; p < k; p++) {
-              topNeighbors.push({
-                id: indices[p], dist: dists[p],
-                weight: (p === exactMatchIdx) ? 1.0 : 0.0
-              });
-              totalDistSum += dists[p]; totalDistCount++;
+              if (dists[p] < 1e-9) { exactMatchIdx = p; break; }
             }
-          } else if (weightMode === 'idw') {
-            let sumW = 0.0;
-            const weights = new Float64Array(k);
-            for (let p = 0; p < k; p++) {
-              const d = dists[p];
-              const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
-              weights[p] = w; sumW += w;
-              totalDistSum += d; totalDistCount++;
-            }
-            for (let p = 0; p < k; p++) {
-              const normW = weights[p] / sumW;
-              const pb = ptsB[indices[p]];
-              avgX += normW * pb.x; avgY += normW * pb.y;
-              if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
-              topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
+            if (exactMatchIdx >= 0) {
+              const matchedSampleId = indices[exactMatchIdx];
+              const pb = ptsB[matchedSampleId];
+              avgX = pb.x; avgY = pb.y;
+              avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+              for (let p = 0; p < k; p++) {
+                topNeighbors.push({
+                  id: indices[p], dist: dists[p],
+                  weight: (p === exactMatchIdx) ? 1.0 : 0.0
+                });
+                totalDistSum += dists[p]; totalDistCount++;
+              }
+            } else {
+              let sumW = 0.0;
+              const weights = new Float64Array(k);
+              for (let p = 0; p < k; p++) {
+                const d = dists[p];
+                const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+                weights[p] = w; sumW += w;
+                totalDistSum += d; totalDistCount++;
+              }
+              for (let p = 0; p < k; p++) {
+                const normW = weights[p] / sumW;
+                const pb = ptsB[indices[p]];
+                avgX += normW * pb.x; avgY += normW * pb.y;
+                if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+                topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
+              }
             }
           } else {
+            // 'uniform': Boxcar filter averaging all k nearest neighbors
             const normW = 1.0 / k;
             for (let p = 0; p < k; p++) {
               const pb = ptsB[indices[p]];
@@ -5622,9 +5672,11 @@
       const l1 = (telem.level0SuperClustersPruned || 0) + (telem.level1ClustersPruned || 0);
       const l3 = telem.level3AnnularPruned || 0;
       const gPruned = telem.graphEdgesPruned || 0;
+      const angular = telem.angularPruned || 0;
+      const multiPivot = telem.multiPivotPruned || 0;
       const gSeeds = telem.graphSeedsEvaluated || 0;
       const exact = Math.max(0, telem.framedistCalls || 0);
-      const totalAll = l1 + l3 + gPruned + gSeeds + exact;
+      const totalAll = l1 + l3 + gPruned + angular + multiPivot + gSeeds + exact;
 
       function barPct(val) {
         return totalAll > 0
@@ -5670,7 +5722,9 @@
       set('reconQueryGraphSeedsVal',        gSeeds.toLocaleString());
       set('reconQueryGraphSeedsPctVal',     pct(gSeeds));
 
-      const multiPivot = telem.multiPivotPruned || 0;
+      set('reconQueryAngularVal',           angular.toLocaleString());
+      set('reconQueryAngularPctVal',        pct(angular));
+
       set('reconQueryMultiPivotVal',        multiPivot.toLocaleString());
       set('reconQueryMultiPivotPctVal',     pct(multiPivot));
 
@@ -5680,15 +5734,17 @@
       set('reconQueryContainmentPctVal',    `${containmentPct}% of queries`);
 
       /* Hierarchy stacked bar */
-      const bL1   = document.getElementById('barReconQueryL1');
-      const bL3   = document.getElementById('barReconQueryL3');
-      const bGPruned = document.getElementById('barReconQueryGraphPruned');
+      const bL1         = document.getElementById('barReconQueryL1');
+      const bL3         = document.getElementById('barReconQueryL3');
+      const bGPruned    = document.getElementById('barReconQueryGraphPruned');
+      const bAngular    = document.getElementById('barReconQueryAngular');
       const bMultiPivot = document.getElementById('barReconQueryMultiPivot');
-      const bGSeeds  = document.getElementById('barReconQueryGraphSeeds');
-      const bExact= document.getElementById('barReconQueryExact');
+      const bGSeeds     = document.getElementById('barReconQueryGraphSeeds');
+      const bExact      = document.getElementById('barReconQueryExact');
       if (bL1)         { bL1.style.width         = barPct(l1); }
       if (bL3)         { bL3.style.width         = barPct(l3); }
       if (bGPruned)    { bGPruned.style.width    = barPct(gPruned); }
+      if (bAngular)    { bAngular.style.width    = barPct(angular); }
       if (bMultiPivot) { bMultiPivot.style.width = barPct(multiPivot); }
       if (bGSeeds)     { bGSeeds.style.width     = barPct(gSeeds); }
       if (bExact)      { bExact.style.width      = barPct(exact); }
@@ -5744,8 +5800,9 @@
       const baseA = rawNameA.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
       const baseC = rawNameC.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
 
+      const stagedNameC = (baseA === baseC) ? `${baseC}_query_C` : baseC;
       const datasetFileA = `${baseA}.txt`;
-      const datasetFileC = `${baseC}.txt`;
+      const datasetFileC = `${stagedNameC}.txt`;
       const clusterDir   = `${baseA}.clusterdat`;
 
       const btnRun  = document.getElementById('btnRunNativeReconQuery');
@@ -5771,11 +5828,13 @@
 
       try {
         /* 1. Ensure staged coordinates exist on disk in workspace */
+        const dimA = slotA.currentDim || 2;
+        const dimC = slotC.currentDim || 2;
         if (ptsA && ptsA.length > 0) {
-          await DesktopBridge.stageDatasetFile(baseA, ptsA).catch(() => {});
+          await DesktopBridge.stageDatasetFile(baseA, ptsA, dimA).catch(() => {});
         }
         if (ptsC && ptsC.length > 0) {
-          await DesktopBridge.stageDatasetFile(baseC, ptsC).catch(() => {});
+          await DesktopBridge.stageDatasetFile(stagedNameC, ptsC, dimC).catch(() => {});
         }
 
         /* 2. Check if cluster directory exists on disk; if not, export clusters of A */
@@ -5822,7 +5881,7 @@
             await new Promise((resolve) => {
               DesktopBridge.runCliJob({
                 cmd: 'gric-cluster',
-                args: [datasetFileA, '-o', clusterDir, '-dlim', '0.15'],
+                args: ['-outdir', clusterDir, '0.15', datasetFileA],
                 onOutput: (chunk) => {
                   if (consoleEl) {
                     consoleEl.textContent += chunk;
@@ -5955,8 +6014,8 @@
               `(k=${queryData.k}). Auto-reconstructing D...`
             );
             /* Auto-reconstruct Dataset D with the loaded query k-NN neighbors */
-            if (typeof reconstructDatasetD === 'function') {
-              reconstructDatasetD();
+            if (typeof executeDatasetReconstruction === 'function') {
+              await executeDatasetReconstruction();
             }
           } else {
             showToast('⚠️ Query search completed but result file could not be read.');
@@ -6031,19 +6090,19 @@
     const btnToggleRecon4P = document.getElementById('btnToggleRecon4PanelView');
     if (btnToggleRecon4P) {
       btnToggleRecon4P.addEventListener('click', () => {
-        setRecon4PanelView(!isRecon4PanelView);
+        toggleRecon4PanelView();
       });
     }
     const btnToggleRecon4PTop = document.getElementById('btnToggleRecon4PanelTop');
     if (btnToggleRecon4PTop) {
       btnToggleRecon4PTop.addEventListener('click', () => {
-        setRecon4PanelView(!isRecon4PanelView);
+        toggleRecon4PanelView();
       });
     }
     const btnPresetRecon4P = document.getElementById('btnPresetRecon4Panel');
     if (btnPresetRecon4P) {
       btnPresetRecon4P.addEventListener('click', () => {
-        setRecon4PanelView(!isRecon4PanelView);
+        toggleRecon4PanelView();
       });
     }
     const btnToggleReconKnnTop = document.getElementById('btnToggleReconKnnTop');
@@ -6056,6 +6115,18 @@
     if (btnToggleReconKnnSide) {
       btnToggleReconKnnSide.addEventListener('click', () => {
         setReconKnn(!showReconKnn);
+      });
+    }
+    const btnToggleReconOverlayTop = document.getElementById('btnToggleReconOverlayTop');
+    if (btnToggleReconOverlayTop) {
+      btnToggleReconOverlayTop.addEventListener('click', () => {
+        setReconOverlayMode();
+      });
+    }
+    const btnToggleReconOverlaySide = document.getElementById('btnToggleReconOverlaySide');
+    if (btnToggleReconOverlaySide) {
+      btnToggleReconOverlaySide.addEventListener('click', () => {
+        setReconOverlayMode();
       });
     }
     const btnInspectD = document.getElementById('btnInspectDatasetDSide');

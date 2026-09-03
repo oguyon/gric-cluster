@@ -420,6 +420,8 @@ static const ProgramHelpDoc PROGRAM_DOCS[] = {
             "  -past / -future      Search only in preceding or subsequent frames\n"
             "  -eps <float>         (1+eps)-ANN relaxation slack factor (default: 0.0)\n"
             "  -rlim <float>        Cutoff radius cutoff\n"
+            "  -approx              Fast Approximate Graph Search (10-20 evals/query)\n"
+            "  -ef-search <int>     Search pool / heap size (default: 2*k in approx)\n"
             "  -nthreads <int>      Number of OpenMP worker threads\n"
             "  -progress            Display live progress bar",
         .examples =

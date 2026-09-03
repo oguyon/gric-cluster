@@ -4,12 +4,17 @@
  */
 
 #include "knn_writer.h"
+#include "knn_reader.h"
 #include "../../shared/gric_bin_io.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #ifdef USE_CFITSIO
 #include <fitsio.h>
@@ -19,6 +24,7 @@
  * write_bin_results() - Write results as dual self-describing GRIC binary arrays.
  * @out_indices_path:   Output path for knn_indices.bin.
  * @out_distances_path: Output path for knn_distances.bin.
+ * @out_mutual_path:    Output path for knn_mutual_dists.bin (if requested).
  * @config:             Active KnnConfig.
  * @model:              Active KnnModel.
  * @results:            Computed KnnResults.
@@ -28,6 +34,7 @@
 static int write_bin_results(
     const char       *out_indices_path,
     const char       *out_distances_path,
+    const char       *out_mutual_path,
     const KnnConfig  *config,
     const KnnModel   *model,
     const KnnResults *results)
@@ -97,6 +104,113 @@ static int write_bin_results(
             }
         }
         fclose(fp_dst);
+    }
+
+    // 3. Write knn_mutual_dists.bin (FLOAT32 [N, k*(k-1)/2])
+    if (out_mutual_path != NULL && k >= 2 && model->total_dataset_frames > 0)
+    {
+        uint64_t m_pairs = ((uint64_t)k * (uint64_t)(k - 1)) / 2;
+        uint64_t total_mut = (uint64_t)N * m_pairs;
+        const double *frames = config->memory_data;
+        double *loaded_frames = NULL;
+        long elem = model->frame_elements;
+
+        if (frames == NULL && config->input_data_path != NULL && elem > 0)
+        {
+            KnnFrameReader rdr;
+            if (knn_reader_open(&rdr, config->input_data_path, N,
+                                model->frame_width, model->frame_height) == 0)
+            {
+                size_t total_bytes = (size_t)N * (size_t)elem * sizeof(double);
+                if (total_bytes <= 1024ULL * 1024ULL * 1024ULL) // 1 GB allocation threshold
+                {
+                    loaded_frames = (double *)malloc(total_bytes);
+                    if (loaded_frames != NULL)
+                    {
+                        for (long f = 0; f < N; f++)
+                        {
+                            knn_reader_read_frame(&rdr, f, &loaded_frames[f * elem]);
+                        }
+                        frames = loaded_frames;
+                    }
+                }
+                knn_reader_close(&rdr);
+            }
+        }
+
+        if (frames != NULL)
+        {
+            FILE *fp_mut = fopen(out_mutual_path, "wb");
+            if (fp_mut != NULL)
+            {
+                gric_bin_header_t hdr_mut;
+                memset(&hdr_mut, 0, sizeof(hdr_mut));
+                hdr_mut.file_type = GRIC_BIN_TYPE_GENERIC;
+                hdr_mut.data_type = GRIC_BIN_DTYPE_FLOAT32;
+                hdr_mut.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+                hdr_mut.ndim = 2;
+                hdr_mut.dims[0] = (uint64_t)N;
+                hdr_mut.dims[1] = m_pairs;
+                hdr_mut.num_elements = total_mut;
+                hdr_mut.data_bytes = total_mut * sizeof(float);
+
+                if (gric_bin_write_header(fp_mut, &hdr_mut,
+                                          "k-NN mutual distances [N x k*(k-1)/2]") == 0)
+                {
+                    float *f32_mut = (float *)calloc(total_mut, sizeof(float));
+                    if (f32_mut != NULL)
+                    {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+                        for (long u = 0; u < N; u++)
+                        {
+                            for (int i = 0; i < (int)k; i++)
+                            {
+                                long id_i = (long)results->indices[u * k + i];
+                                if (id_i < 0 || id_i >= N)
+                                {
+                                    continue;
+                                }
+                                const double *f_i = &frames[id_i * elem];
+
+                                for (int j = i + 1; j < (int)k; j++)
+                                {
+                                    long id_j = (long)results->indices[u * k + j];
+                                    if (id_j < 0 || id_j >= N)
+                                    {
+                                        continue;
+                                    }
+                                    const double *f_j = &frames[id_j * elem];
+
+                                    double sum = 0.0;
+                                    for (long p = 0; p < elem; p++)
+                                    {
+                                        double diff = f_i[p] - f_j[p];
+                                        sum += diff * diff;
+                                    }
+                                    double dist = sqrt(sum);
+
+                                    long pair_idx = (long)i * (long)k -
+                                        ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
+                                    f32_mut[(uint64_t)u * m_pairs + (uint64_t)pair_idx] =
+                                        (float)dist;
+                                }
+                            }
+                        } // for (long u = 0; ...)
+
+                        fwrite(f32_mut, sizeof(float), total_mut, fp_mut);
+                        free(f32_mut);
+                    }
+                }
+                fclose(fp_mut);
+            }
+        }
+
+        if (loaded_frames != NULL)
+        {
+            free(loaded_frames);
+        }
     }
 
     return 0;
@@ -305,6 +419,7 @@ int knn_write_results(
          * Otherwise fall back to the standard clusterDir/knn_indices.bin names. */
         char bin_idx_path[4096];
         char bin_dst_path[4096];
+        char bin_mut_path[4096];
         if (config->output_path != NULL)
         {
             /* Strip a trailing .txt extension if present, then add _indices.bin/_distances.bin */
@@ -323,6 +438,7 @@ int knn_write_results(
             }
             snprintf(bin_idx_path, sizeof(bin_idx_path), "%s_indices.bin", base);
             snprintf(bin_dst_path, sizeof(bin_dst_path), "%s_distances.bin", base);
+            snprintf(bin_mut_path, sizeof(bin_mut_path), "%s_mutual_dists.bin", base);
         }
         else if (config->cluster_dir != NULL)
         {
@@ -330,14 +446,18 @@ int knn_write_results(
                      config->cluster_dir);
             snprintf(bin_dst_path, sizeof(bin_dst_path), "%s/knn_distances.bin",
                      config->cluster_dir);
+            snprintf(bin_mut_path, sizeof(bin_mut_path), "%s/knn_mutual_dists.bin",
+                     config->cluster_dir);
         }
         else
         {
             snprintf(bin_idx_path, sizeof(bin_idx_path), "knn_indices.bin");
             snprintf(bin_dst_path, sizeof(bin_dst_path), "knn_distances.bin");
+            snprintf(bin_mut_path, sizeof(bin_mut_path), "knn_mutual_dists.bin");
         }
-        printf("Writing binary outputs:\n  - %s\n  - %s\n", bin_idx_path, bin_dst_path);
-        write_bin_results(bin_idx_path, bin_dst_path, config, model, results);
+        printf("Writing binary outputs:\n  - %s\n  - %s\n  - %s\n",
+               bin_idx_path, bin_dst_path, bin_mut_path);
+        write_bin_results(bin_idx_path, bin_dst_path, bin_mut_path, config, model, results);
 
         printf("Writing ASCII output: %s\n", final_out_path);
         return write_ascii_results(final_out_path, config, model, results);
