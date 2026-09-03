@@ -2982,7 +2982,7 @@
                   z: slot.currentDim === 3 ? (pt.z || 0.0) : 0.0
                 });
               } else {
-                const n = applyNoiseToPoint(pt.x, pt.y, pt.z || 0.0);
+                const n = applyNoiseToPoint(pt.x, pt.y, pt.z || 0.0, slot.currentDim);
                 slot.benchmarkDataset.push({
                   x: n.x,
                   y: n.y,
@@ -3003,7 +3003,7 @@
             slot.pastSamples.push({
               x: pt.x,
               y: pt.y,
-              z: pt.z || 0.0,
+              z: slot.currentDim === 3 ? (pt.z || 0.0) : 0.0,
               clusterId: -1,
               frameIndex: i
             });

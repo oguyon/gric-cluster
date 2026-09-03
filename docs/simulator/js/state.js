@@ -154,6 +154,7 @@
     let reconstructionInfo = null; // Staged reconstruction metadata & stats for Slot D
     let reconstructionSourceNeighbors = null; // Mapping of D query -> contributing B neighbors
     let isRecon4PanelView = false; // 4-Panel Synchronized View (A, B, C, D)
+    let reconOverlayMode = false; // Overlays A+C in left view and B+D in right view
     let showReconKnn = true; // Toggle k-NN rays & focused bright/grey highlights in 4-Panel view
     let reconHoveredQueryIdx = -1; // Current hover-selected query index in C/D
     let reconLockedQueryIdx = -1; // Click-pinned query index in C/D
@@ -421,13 +422,13 @@
       return { dx: z0 * scale, dy: z1 * scale, dz: z2 * scale };
     }
 
-    function applyNoiseToPoint(x, y, z = 0.0) {
-      if (noiseSigma <= 1e-6) return { x, y, z };
-      const noise = generateTruncatedGaussianNoise(currentDim);
+    function applyNoiseToPoint(x, y, z = 0.0, dim = currentDim) {
+      if (noiseSigma <= 1e-6) return { x, y, z: (dim === 3) ? z : 0.0 };
+      const noise = generateTruncatedGaussianNoise(dim);
       return {
         x: x + noise.dx,
         y: y + noise.dy,
-        z: currentDim === 3 ? (z + noise.dz) : 0.0
+        z: (dim === 3) ? (z + noise.dz) : 0.0
       };
     }
 
@@ -452,7 +453,7 @@
               z: currentDim === 3 ? (pt.z || 0.0) : 0.0
             });
           } else {
-            const n = applyNoiseToPoint(pt.x, pt.y, pt.z || 0.0);
+            const n = applyNoiseToPoint(pt.x, pt.y, pt.z || 0.0, currentDim);
             benchmarkDataset.push({
               x: n.x,
               y: n.y,
@@ -1022,6 +1023,10 @@
       if (typeof updateUI === 'function') {
         updateUI();
       }
+      const descEl = document.getElementById('benchmarkDesc');
+      if (descEl && typeof BENCHMARK_DESCS !== 'undefined') {
+        descEl.innerHTML = BENCHMARK_DESCS[currentBenchmark] || `<b>${currentBenchmark}</b>`;
+      }
       if (typeof renderKnnTrace === 'function') {
         renderKnnTrace();
       }
@@ -1418,22 +1423,119 @@
       }
     }
 
-    function setRecon4PanelView(enabled) {
-      isRecon4PanelView = !!enabled;
-      if (isRecon4PanelView) {
-        maximizedQuad = null;
-      }
+    function syncRecon4PanelUI() {
+      const is4P = isRecon4PanelView && !reconOverlayMode;
+      const isOverlay = isRecon4PanelView && reconOverlayMode;
+
       const btnPreset = document.getElementById('btnPresetRecon4Panel');
       if (btnPreset) {
         btnPreset.classList.toggle('active', isRecon4PanelView);
+        btnPreset.textContent = isOverlay ? '⧉ A+C | B+D' : '⊞ ABCD';
       }
       const btnSide = document.getElementById('btnToggleRecon4PanelView');
       if (btnSide) {
-        btnSide.classList.toggle('active', isRecon4PanelView);
+        btnSide.classList.toggle('active', is4P);
+        btnSide.classList.toggle('toggle-active', is4P);
       }
       const btnTop = document.getElementById('btnToggleRecon4PanelTop');
       if (btnTop) {
-        btnTop.classList.toggle('active', isRecon4PanelView);
+        btnTop.classList.toggle('active', is4P);
+        btnTop.classList.toggle('toggle-active', is4P);
+      }
+      const btnOverlayTop = document.getElementById('btnToggleReconOverlayTop');
+      if (btnOverlayTop) {
+        btnOverlayTop.classList.toggle('active', isOverlay);
+        btnOverlayTop.classList.toggle('toggle-active', isOverlay);
+      }
+      const btnOverlaySide = document.getElementById('btnToggleReconOverlaySide');
+      if (btnOverlaySide) {
+        btnOverlaySide.classList.toggle('active', isOverlay);
+        btnOverlaySide.classList.toggle('toggle-active', isOverlay);
+      }
+    }
+
+    function syncReconOverlayUI() {
+      syncRecon4PanelUI();
+    }
+
+    function toggleRecon4PanelView() {
+      if (isRecon4PanelView && reconOverlayMode) {
+        // Currently in Overlaid (A+C & B+D) view -> switch back to 4-Panel ABCD view
+        reconOverlayMode = false;
+        isRecon4PanelView = true;
+        if (typeof showToast === 'function') {
+          showToast('⊞ ABCD 4-Panel split view restored');
+        }
+      } else if (isRecon4PanelView) {
+        // Currently in 4-Panel ABCD view -> turn off ABCD view completely
+        isRecon4PanelView = false;
+        reconOverlayMode = false;
+        if (typeof showToast === 'function') {
+          showToast('⊞ ABCD view closed');
+        }
+      } else {
+        // Currently in single dataset view -> turn on 4-Panel ABCD view
+        isRecon4PanelView = true;
+        reconOverlayMode = false;
+        maximizedQuad = null;
+        if (typeof showToast === 'function') {
+          showToast('⊞ ABCD 4-Panel synchronized view enabled');
+        }
+      }
+      syncRecon4PanelUI();
+      if (typeof updateViewPresetBarPosition === 'function') {
+        updateViewPresetBarPosition();
+      }
+      if (typeof draw === 'function') {
+        draw();
+      }
+    }
+
+    function setRecon4PanelView(enabled) {
+      if (typeof enabled === 'undefined') {
+        toggleRecon4PanelView();
+        return;
+      }
+      isRecon4PanelView = !!enabled;
+      reconOverlayMode = false;
+      if (isRecon4PanelView) {
+        maximizedQuad = null;
+      }
+      syncRecon4PanelUI();
+      if (typeof updateViewPresetBarPosition === 'function') {
+        updateViewPresetBarPosition();
+      }
+      if (typeof draw === 'function') {
+        draw();
+      }
+    }
+
+    function setReconOverlayMode(enabled) {
+      if (typeof enabled === 'boolean') {
+        reconOverlayMode = enabled;
+      } else {
+        if (isRecon4PanelView && reconOverlayMode) {
+          reconOverlayMode = false;
+          isRecon4PanelView = true;
+        } else {
+          reconOverlayMode = true;
+          isRecon4PanelView = true;
+          maximizedQuad = null;
+        }
+      }
+      if (reconOverlayMode) {
+        isRecon4PanelView = true;
+        maximizedQuad = null;
+      }
+      syncRecon4PanelUI();
+      syncReconKnnUI();
+
+      if (typeof showToast === 'function') {
+        showToast(
+          reconOverlayMode
+            ? '⧉ ABCD Overlay (A+C | B+D) enabled'
+            : '⊞ ABCD 4-Panel split view restored'
+        );
       }
       if (typeof updateViewPresetBarPosition === 'function') {
         updateViewPresetBarPosition();
@@ -1452,8 +1554,7 @@
       showKnnLines = showReconKnn;
       syncReconKnnUI();
       if (typeof showToast === 'function') {
-        showToast(showReconKnn ? '⚡ ABCD k-NN highlights & rays enabled'
-                               : 'ABCD k-NN highlights hidden');
+        showToast(showReconKnn ? '⚡ k-NN Highlights & Rays enabled' : '⚡ k-NN Highlights hidden');
       }
       if (typeof draw === 'function') {
         draw();
@@ -1469,10 +1570,6 @@
       if (btnSide) {
         btnSide.classList.toggle('active', showReconKnn);
       }
-      const btn4PTop = document.getElementById('btnToggleRecon4PanelTop');
-      if (btn4PTop) {
-        btn4PTop.classList.toggle('active', isRecon4PanelView);
-      }
     }
 
     window.switchDatasetSlot = switchDatasetSlot;
@@ -1482,7 +1579,11 @@
     window.updateMultiDatasetUI = updateMultiDatasetUI;
     window.setMultiDatasetEnabled = setMultiDatasetEnabled;
     window.populateDefaultMultiDatasets = populateDefaultMultiDatasets;
+    window.toggleRecon4PanelView = toggleRecon4PanelView;
     window.setRecon4PanelView = setRecon4PanelView;
+    window.syncRecon4PanelUI = syncRecon4PanelUI;
+    window.setReconOverlayMode = setReconOverlayMode;
+    window.syncReconOverlayUI = syncReconOverlayUI;
     window.setReconKnn = setReconKnn;
     window.syncReconKnnUI = syncReconKnnUI;
     window.reconInputCamera = reconInputCamera;
@@ -1490,3 +1591,8 @@
     window.reconHoveredTrainingIdx = reconHoveredTrainingIdx;
     window.reconLockedTrainingIdx = reconLockedTrainingIdx;
     window.showReconKnn = showReconKnn;
+    Object.defineProperty(window, 'reconOverlayMode', {
+      get: () => reconOverlayMode,
+      set: (v) => { reconOverlayMode = !!v; },
+      configurable: true
+    });

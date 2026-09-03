@@ -393,11 +393,18 @@
                     data-tooltip-badge="Reconstruction" 
                     data-tooltip-color="purple" 
                     data-tooltip-desc="For each query in C, finds k-NN in A, averages corresponding samples in B, and writes reconstructed output D.">⚡ Recon D</button>
-            <button id="btnToggleRecon4PanelTop" class="btn-action" style="padding: 2px 6px; font-size: 0.72rem; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); font-weight: 600;"
+            <button id="btnToggleRecon4PanelTop" class="btn-toggle toggle-cyan"
+                    style="padding: 2px 6px; font-size: 0.72rem; font-weight: 600;"
                     data-tooltip-title="Toggle 4-Panel (A, B, C, D) View" 
                     data-tooltip-badge="ABCD View" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Shows datasets A, B, C, and D simultaneously in synchronized 4-panel quadrants.">⊞ ABCD</button>
+            <button id="btnToggleReconOverlayTop" class="btn-toggle toggle-purple"
+                    style="padding: 2px 6px; font-size: 0.72rem; font-weight: 600;"
+                    data-tooltip-title="Overlay A+C &amp; B+D in ABCD View" 
+                    data-tooltip-badge="Shortcut: O" 
+                    data-tooltip-color="purple" 
+                    data-tooltip-desc="In ABCD view, overlays A+C (Input) and B+D (Output).">⧉ A+C | B+D</button>
             <button id="btnToggleReconKnnTop" class="btn-toggle toggle-green active" style="padding: 2px 6px; font-size: 0.72rem; font-weight: 600;"
                     data-tooltip-title="Toggle k-NN Highlights &amp; Rays in ABCD View" 
                     data-tooltip-badge="Shortcut: K" 
@@ -3029,13 +3036,21 @@
                       data-tooltip-desc="For each query in C, queries k-NN in A using cluster indexing, averages corresponding samples in B, and stores reconstructed points in Slot D.">
                 ⚡ Reconstruct D
               </button>
-              <button id="btnToggleRecon4PanelView" class="btn-action"
-                      style="flex: 1.2; min-width: 105px; padding: 7px 8px; font-size: 0.74rem; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); font-weight: 600;"
+              <button id="btnToggleRecon4PanelView" class="btn-toggle toggle-cyan"
+                      style="flex: 1.2; min-width: 105px; padding: 7px 8px; font-size: 0.74rem; font-weight: 600;"
                       data-tooltip-title="Toggle 4-Panel (A, B, C, D) View"
                       data-tooltip-badge="ABCD Quad"
                       data-tooltip-color="cyan"
                       data-tooltip-desc="Shows A (top-left), B (top-right), C (bottom-left), and D (bottom-right) simultaneously with synchronized zoom/pan/rotation and live hover cross-highlighting.">
                 ⊞ 4-Panel View
+              </button>
+              <button id="btnToggleReconOverlaySide" class="btn-toggle toggle-purple"
+                      style="flex: 1.1; min-width: 105px; padding: 7px 8px; font-size: 0.74rem; font-weight: 600;"
+                      data-tooltip-title="Toggle Overlaid Views (A+C, B+D)"
+                      data-tooltip-badge="Shortcut: O"
+                      data-tooltip-color="purple"
+                      data-tooltip-desc="Overlays A+C (Input) in left panel and B+D (Output) in right panel.">
+                ⧉ Overlay A+C / B+D
               </button>
               <button id="btnToggleReconKnnSide" class="btn-toggle toggle-green active"
                       style="flex: 1.0; min-width: 95px; padding: 7px 8px; font-size: 0.74rem; font-weight: 600;"
@@ -3347,6 +3362,16 @@ vs exhaustive N_C × N_A brute-force total.">
                           </div>
                         </div>
                         <div class="stat-box"
+                             data-tooltip-title="Angular Directional Pruning"
+                             data-tooltip-badge="Angular Cosine"
+                             data-tooltip-color="cyan"
+                             data-tooltip-desc="Candidate graph neighbors eliminated via Euclidean Angular Cosine Bounding: cos θ_i cos φ_ij + sin θ_i sin φ_ij lower bounds from precomputed neighbor geometry.">
+                          <div id="reconQueryAngularVal" class="num" style="color: #06b6d4;">0</div>
+                          <div class="lbl">
+                            Angular Pruned (<span id="reconQueryAngularPctVal">0%</span>)
+                          </div>
+                        </div>
+                        <div class="stat-box"
                              data-tooltip-title="Multi-Pivot Member Pruning (Method B)"
                              data-tooltip-badge="Method B"
                              data-tooltip-color="teal"
@@ -3391,6 +3416,10 @@ vs exhaustive N_C × N_A brute-force total.">
                                style="height: 100%; width: 0%; background: #4ade80;"
                                title="Graph Edges Pruned">
                           </div>
+                          <div id="barReconQueryAngular"
+                               style="height: 100%; width: 0%; background: #06b6d4;"
+                               title="Angular Cosine Pruned">
+                          </div>
                           <div id="barReconQueryMultiPivot"
                                style="height: 100%; width: 0%; background: #2dd4bf;"
                                title="Multi-Pivot Pruned">
@@ -3404,15 +3433,17 @@ vs exhaustive N_C × N_A brute-force total.">
                                title="Exact Distances">
                           </div>
                         </div>
-                        <div style="display: grid; grid-template-columns: repeat(3, 1fr);
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr);
                                     gap: 4px; font-size: 0.66rem; color: var(--text-muted);
                                     margin-top: 6px;">
                           <span style="color: #c084fc;">■ Clusters</span>
                           <span style="color: #38bdf8;">■ Annular</span>
                           <span style="color: #4ade80;">■ Graph Pruned</span>
+                          <span style="color: #06b6d4;">■ Angular</span>
                           <span style="color: #2dd4bf;">■ Multi-Pivot</span>
                           <span style="color: #fbbf24;">■ Graph Seeds</span>
                           <span style="color: #f87171;">■ Exact Dists</span>
+                        </div>
                         </div>
                       </div>
                     </div>

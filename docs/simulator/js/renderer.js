@@ -199,6 +199,12 @@
     function getQuadRect(qIdx, W, H) {
       if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView) {
         const halfW = W / 2;
+        if (typeof reconOverlayMode !== 'undefined' && reconOverlayMode) {
+          if (qIdx === 0 || qIdx === 2) {
+            return { x: 0, y: 0, w: halfW, h: H };
+          }
+          return { x: halfW, y: 0, w: halfW, h: H };
+        }
         const halfH = H / 2;
         switch (qIdx) {
           case 0: return { x: 0, y: 0, w: halfW, h: halfH };
@@ -286,7 +292,11 @@
       if (btnTop) btnTop.style.display = is3DOrbitVisible ? '' : 'none';
       if (btnSide) btnSide.style.display = is3DOrbitVisible ? '' : 'none';
       if (btnReset3D) btnReset3D.style.display = is3DOrbitVisible ? '' : 'none';
-      if (btnRecon4P) btnRecon4P.classList.toggle('active', !!isRecon);
+      if (btnRecon4P) {
+        btnRecon4P.classList.toggle('active', !!isRecon);
+        const isOverlay = (typeof reconOverlayMode !== 'undefined' && reconOverlayMode);
+        btnRecon4P.textContent = (isRecon && isOverlay) ? '⧉ A+C | B+D' : '⊞ ABCD';
+      }
 
       if (btnResetView) {
         btnResetView.style.display = '';
@@ -2627,22 +2637,35 @@
         const tmpI = indices[p]; indices[p] = indices[minIdx]; indices[minIdx] = tmpI;
       }
 
-      let sumW = 0.0;
-      const weights = new Float64Array(effK);
-      for (let p = 0; p < effK; p++) {
-        const d = dists[p];
-        const w = 1.0 / Math.max(d, 1e-7);
-        weights[p] = w;
-        sumW += w;
-      }
+      const weightMode = (slotD && slotD.reconstructionInfo)
+        ? slotD.reconstructionInfo.weightMode : 'uniform';
 
       const result = [];
-      for (let p = 0; p < effK; p++) {
-        result.push({
-          id: indices[p],
-          dist: dists[p],
-          weight: sumW > 0 ? (weights[p] / sumW) : (1.0 / effK)
-        });
+      if (weightMode === 'uniform') {
+        const normW = 1.0 / effK;
+        for (let p = 0; p < effK; p++) {
+          result.push({
+            id: indices[p],
+            dist: dists[p],
+            weight: normW
+          });
+        }
+      } else {
+        let sumW = 0.0;
+        const weights = new Float64Array(effK);
+        for (let p = 0; p < effK; p++) {
+          const d = dists[p];
+          const w = 1.0 / Math.max(d, 1e-7);
+          weights[p] = w;
+          sumW += w;
+        }
+        for (let p = 0; p < effK; p++) {
+          result.push({
+            id: indices[p],
+            dist: dists[p],
+            weight: sumW > 0 ? (weights[p] / sumW) : (1.0 / effK)
+          });
+        }
       }
       return result;
     }
@@ -2749,10 +2772,241 @@
      * Panel 2 (Bottom-Left): Slot C (Query Input)
      * Panel 3 (Bottom-Right): Slot D (Reconstructed Output)
      */
+    /**
+     * Compute set of active highlight neighbor indices for a slot in ABCD view
+     */
+    function getActiveNeighborSetForSlot(
+      slotId, activeTrainingIdx, activeTrainingSlot, activeQueryIdx, k
+    ) {
+      const isKnnActive = (typeof showReconKnn === 'undefined' || showReconKnn);
+      if (!isKnnActive) return null;
+
+      if (activeTrainingIdx >= 0) {
+        if (slotId === 'A' || slotId === 'B') {
+          const activeNeighborSet = new Set();
+          activeNeighborSet.add(activeTrainingIdx);
+          const nbs = getSlotKnnNeighbors(activeTrainingSlot, activeTrainingIdx);
+          if (nbs) {
+            for (let r = 0; r < nbs.length; r++) {
+              activeNeighborSet.add(nbs[r].index);
+            }
+          }
+          return activeNeighborSet;
+        } else if (slotId === 'C' || slotId === 'D') {
+          const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
+          if (revQueries && revQueries.length > 0) {
+            const activeNeighborSet = new Set();
+            for (let r = 0; r < revQueries.length; r++) {
+              activeNeighborSet.add(revQueries[r].queryIdx);
+            }
+            return activeNeighborSet;
+          }
+        }
+      } else if (activeQueryIdx >= 0) {
+        if (slotId === 'C' || slotId === 'D') {
+          const activeNeighborSet = new Set();
+          activeNeighborSet.add(activeQueryIdx);
+          return activeNeighborSet;
+        } else if (slotId === 'A' || slotId === 'B') {
+          const nbs = getOrComputeKnnNeighbors(activeQueryIdx, k);
+          if (nbs) {
+            const activeNeighborSet = new Set();
+            for (let r = 0; r < nbs.length; r++) {
+              activeNeighborSet.add(nbs[r].id);
+            }
+            return activeNeighborSet;
+          }
+        }
+      }
+      return null;
+    }
+
+    /**
+     * Render grid and axes for an ABCD panel
+     */
+    function drawPanelGridAxes(ctx, rect, is3D, scale, mapToScreen, projectPt) {
+      if (!showGridAxes) return;
+      if (!is3D) {
+        const center = mapToScreen({ u: 0, v: 0 });
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(rect.x, center.py); ctx.lineTo(rect.x + rect.w, center.py);
+        ctx.moveTo(center.px, rect.y); ctx.lineTo(center.px, rect.y + rect.h);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#172554';
+        ctx.setLineDash([2, 4]);
+        [0.5, 0.85].forEach(rad => {
+          ctx.beginPath();
+          ctx.arc(center.px, center.py, rad * scale, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+      } else {
+        const b = 0.85;
+        const boxCorners = [
+          {x:-b, y:-b, z:-b}, {x: b, y:-b, z:-b}, {x: b, y: b, z:-b}, {x:-b, y: b, z:-b},
+          {x:-b, y:-b, z: b}, {x: b, y:-b, z: b}, {x: b, y: b, z: b}, {x:-b, y: b, z: b}
+        ];
+        const boxPx = boxCorners.map(pt => mapToScreen(projectPt(pt)));
+
+        ctx.strokeStyle = 'rgba(30, 41, 59, 0.6)';
+        ctx.lineWidth = 1;
+        [-0.85, -0.425, 0, 0.425, 0.85].forEach(val => {
+          const p1 = mapToScreen(projectPt({ x: val, y: -b, z: -b }));
+          const p2 = mapToScreen(projectPt({ x: val, y:  b, z: -b }));
+          ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(p2.px, p2.py); ctx.stroke();
+          const p3 = mapToScreen(projectPt({ x: -b, y: val, z: -b }));
+          const p4 = mapToScreen(projectPt({ x:  b, y: val, z: -b }));
+          ctx.beginPath(); ctx.moveTo(p3.px, p3.py); ctx.lineTo(p4.px, p4.py); ctx.stroke();
+        });
+
+        const edges = [
+          [0,1],[1,2],[2,3],[3,0],
+          [4,5],[5,6],[6,7],[7,4],
+          [0,4],[1,5],[2,6],[3,7]
+        ];
+        ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+        ctx.setLineDash([2, 3]);
+        edges.forEach(([i, j]) => {
+          ctx.beginPath();
+          ctx.moveTo(boxPx[i].px, boxPx[i].py);
+          ctx.lineTo(boxPx[j].px, boxPx[j].py);
+          ctx.stroke();
+        });
+        ctx.setLineDash([]);
+      }
+    }
+
+    /**
+     * Render point cloud for a specific slot in ABCD view
+     */
+    function drawSlotPoints(
+      ctx, slot, slotId, defaultColor, rect, projectPt, mapToScreen,
+      activeNeighborSet, isFocusMode, primaryFocusedIdx
+    ) {
+      const pts = slot ? (slot.benchmarkDataset || slot.pastSamples || []) : [];
+      if (!pts || pts.length === 0) return;
+
+      const numPts = pts.length;
+      const step = numPts > 10000 ? Math.ceil(numPts / 10000) : 1;
+      const ptRad = Math.max(1.0, samplePointSize * 0.9);
+
+      const qualArr = (slotId === 'C' && slot.reconKthDist) ? slot.reconKthDist
+                    : (slotId === 'D' && slot.reconVariance) ? slot.reconVariance : null;
+      const qualMin = (slotId === 'C') ? slot.reconKthDistMin
+                    : (slotId === 'D') ? slot.reconVarianceMin : 0;
+      const qualMax = (slotId === 'C') ? slot.reconKthDistMax
+                    : (slotId === 'D') ? slot.reconVarianceMax : 1;
+      const qMask = (slotId === 'C' || slotId === 'D')
+        ? (slot.reconQualityMask || (slotId === 'C' ? datasetSlots['C'].reconQualityMask
+                                                    : datasetSlots['D'].reconQualityMask)
+                                 || reconQualityMask)
+        : null;
+
+      // Pass 1: Render background / non-neighbor points
+      for (let i = 0; i < numPts; i += step) {
+        if (reconQualityThreshold < 1.0 && qMask && i < qMask.length && !qMask[i]) {
+          continue;
+        }
+
+        const isNeighbor = activeNeighborSet && activeNeighborSet.has(i);
+        if (isFocusMode && isNeighbor) {
+          continue;
+        }
+
+        const p = pts[i];
+        const pr = projectPt(p);
+        const pos = mapToScreen(pr);
+
+        if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 ||
+            pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) {
+          continue;
+        }
+
+        let pCol = defaultColor;
+        let pAlpha = 0.55;
+
+        if (reconQualityColoringEnabled && qualArr && i < qualArr.length) {
+          pCol = getColorFromRamp(qualArr[i], qualMin, qualMax, QUALITY_STOPS);
+          pAlpha = isFocusMode ? 0.50 : 0.85;
+        } else if (isFocusMode) {
+          pCol = (slotId === 'C' || slotId === 'D') ? defaultColor : '#64748b';
+          pAlpha = (slotId === 'C' || slotId === 'D') ? 0.45 : 0.18;
+        }
+
+        ctx.fillStyle = pCol;
+        ctx.globalAlpha = pAlpha;
+        ctx.beginPath();
+        ctx.arc(pos.px, pos.py, ptRad, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Pass 2: Render active k-NN neighbor points bright on top
+      if (isFocusMode && activeNeighborSet && activeNeighborSet.size > 0) {
+        for (const i of activeNeighborSet) {
+          if (i < 0 || i >= numPts) continue;
+          if (reconQualityThreshold < 1.0 && qMask && i < qMask.length && !qMask[i]) {
+            continue;
+          }
+
+          const p = pts[i];
+          const pr = projectPt(p);
+          const pos = mapToScreen(pr);
+
+          if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 ||
+              pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) {
+            continue;
+          }
+
+          const isAnchor = (i === primaryFocusedIdx);
+          let pCol = defaultColor;
+          if (reconQualityColoringEnabled && qualArr && i < qualArr.length) {
+            pCol = getColorFromRamp(qualArr[i], qualMin, qualMax, QUALITY_STOPS);
+          } else {
+            if (slotId === 'A') pCol = isAnchor ? '#38bdf8' : '#7dd3fc';
+            else if (slotId === 'B') pCol = isAnchor ? '#4ade80' : '#86efac';
+            else if (slotId === 'C') pCol = isAnchor ? '#fbbf24' : '#fde68a';
+            else if (slotId === 'D') pCol = isAnchor ? '#c084fc' : '#e9d5ff';
+          }
+
+          const rad = isAnchor ? ptRad * 1.8 : ptRad * 1.35;
+          ctx.fillStyle = pCol;
+          ctx.globalAlpha = 1.0;
+          ctx.beginPath();
+          ctx.arc(pos.px, pos.py, rad, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = pCol;
+          ctx.lineWidth = 1.0;
+          ctx.beginPath();
+          ctx.arc(pos.px, pos.py, rad + 1.5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1.0;
+    }
+
+    /**
+     * Renders the 4-Panel Synchronized Reconstruction View:
+     * - 4-Panel mode: A (Top-Left), B (Top-Right), C (Bottom-Left), D (Bottom-Right)
+     * - Overlay mode: A+C in Left View (Input), B+D in Right View (Output)
+     */
     function drawRecon4PanelView(ctx, W, H) {
       const halfW = W / 2;
       const halfH = H / 2;
-      const quadRects = [
+      const isOverlay = (typeof reconOverlayMode !== 'undefined' && reconOverlayMode);
+      const quadRects = isOverlay ? [
+        { x: 0, y: 0, w: halfW, h: H, slotId: 'A', name: 'Training Input [A]',
+          color: '#38bdf8' },
+        { x: halfW, y: 0, w: halfW, h: H, slotId: 'B', name: 'Training Output [B]',
+          color: '#4ade80' },
+        { x: 0, y: 0, w: halfW, h: H, slotId: 'C', name: 'Query Input [C]',
+          color: '#fbbf24' },
+        { x: halfW, y: 0, w: halfW, h: H, slotId: 'D', name: 'Reconstructed Output [D]',
+          color: '#c084fc' }
+      ] : [
         { x: 0, y: 0, w: halfW, h: halfH, slotId: 'A', name: 'Training Input [A]',
           color: '#38bdf8' },
         { x: halfW, y: 0, w: halfW, h: halfH, slotId: 'B', name: 'Training Output [B]',
@@ -2776,392 +3030,449 @@
         reconLockedQueryIdx >= 0) ? reconLockedQueryIdx
         : (typeof reconHoveredQueryIdx !== 'undefined' ? reconHoveredQueryIdx : -1);
 
+      const slotA = datasetSlots['A'];
+      const slotB = datasetSlots['B'];
+      const slotC = datasetSlots['C'];
       const slotD = datasetSlots['D'];
       const k = (slotD && slotD.reconstructionInfo)
         ? slotD.reconstructionInfo.k : (typeof knnK !== 'undefined' ? knnK : 10);
 
-      // 1. Render Each Quadrant Content
-      for (let q = 0; q < 4; q++) {
-        const qConfig = quadRects[q];
-        const rect = { x: qConfig.x, y: qConfig.y, w: qConfig.w, h: qConfig.h };
-        const slot = datasetSlots[qConfig.slotId];
-        const pts = slot ? (slot.benchmarkDataset || slot.pastSamples || []) : [];
-        const is3D = (slot && slot.currentDim === 3);
-
-        const isInputSpace = (q === 0 || q === 2);
-        const activeView = isInputSpace ? quadViews[0] : quadViews[1];
-        const activePanX = activeView ? (activeView.panX || 0) : 0;
-        const activePanY = activeView ? (activeView.panY || 0) : 0;
-        const activeZoom = activeView ? (activeView.zoom || 1.0) : 1.0;
-        const activeCam = isInputSpace
-          ? (typeof reconInputCamera !== 'undefined' ? reconInputCamera : orbitCamera)
-          : (typeof reconOutputCamera !== 'undefined' ? reconOutputCamera : orbitCamera);
-
-        const az = activeCam.azimuth;
-        const el = activeCam.elevation;
-        const scale = (Math.min(rect.w, rect.h) / 2.35) * activeZoom;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(rect.x, rect.y, rect.w, rect.h);
-        ctx.clip();
-
-        // Project coordinate function for this quadrant
-        function projectPt(p) {
-          if (is3D) {
-            let tx = 0, ty = 0, tz = 0;
-            if (activeCam && activeCam.isLocked) {
-              tx = activeCam.targetX || 0;
-              ty = activeCam.targetY || 0;
-              tz = activeCam.targetZ || 0;
-            }
-            return project3DVector(p.x - tx, p.y - ty, (p.z || 0.0) - tz, az, el);
+      function projectPtCustom(p, is3D, activeCam, az, el) {
+        if (is3D) {
+          let tx = 0, ty = 0, tz = 0;
+          if (activeCam && activeCam.isLocked) {
+            tx = activeCam.targetX || 0;
+            ty = activeCam.targetY || 0;
+            tz = activeCam.targetZ || 0;
           }
-          return { u: p.x, v: p.y, depth: p.z || 0.0 };
+          return project3DVector(p.x - tx, p.y - ty, (p.z || 0.0) - tz, az, el);
         }
+        return { u: p.x, v: p.y, depth: p.z || 0.0 };
+      }
 
-        function mapToScreen(pr) {
-          const cx = rect.x + rect.w / 2;
-          const cy = rect.y + rect.h / 2;
-          return {
-            px: cx + (pr.u - activePanX) * scale,
-            py: cy - (pr.v - activePanY) * scale
-          };
-        }
+      function mapToScreenCustom(pr, rect, activePanX, activePanY, scale) {
+        const cx = rect.x + rect.w / 2;
+        const cy = rect.y + rect.h / 2;
+        return {
+          px: cx + (pr.u - activePanX) * scale,
+          py: cy - (pr.v - activePanY) * scale
+        };
+      }
 
-        // A. Grid & Axes
-        if (showGridAxes) {
-          if (!is3D) {
-            // 2D Axes & Circles
-            const center = mapToScreen({ u: 0, v: 0 });
-            ctx.strokeStyle = '#1e293b';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(rect.x, center.py); ctx.lineTo(rect.x + rect.w, center.py);
-            ctx.moveTo(center.px, rect.y); ctx.lineTo(center.px, rect.y + rect.h);
-            ctx.stroke();
+      if (isOverlay) {
+        // =====================================================================
+        // OVERLAY MODE: Left Panel (A + C) & Right Panel (B + D)
+        // =====================================================================
 
-            ctx.strokeStyle = '#172554';
-            ctx.setLineDash([2, 4]);
-            [0.5, 0.85].forEach(rad => {
-              ctx.beginPath();
-              ctx.arc(center.px, center.py, rad * scale, 0, Math.PI * 2);
-              ctx.stroke();
-            });
-            ctx.setLineDash([]);
-          } else {
-            // 3D Bounding Box & Grid Floor
-            const b = 0.85;
-            const boxCorners = [
-              {x:-b, y:-b, z:-b}, {x: b, y:-b, z:-b}, {x: b, y: b, z:-b}, {x:-b, y: b, z:-b},
-              {x:-b, y:-b, z: b}, {x: b, y:-b, z: b}, {x: b, y: b, z: b}, {x:-b, y: b, z: b}
-            ];
-            const boxPx = boxCorners.map(pt => mapToScreen(projectPt(pt)));
+        // --- 1. Left Panel (Input Space: A + C) ---
+        {
+          const rect = { x: 0, y: 0, w: halfW, h: H };
+          const activeView = quadViews[0] || { panX: 0, panY: 0, zoom: 1.0 };
+          const activePanX = activeView.panX || 0;
+          const activePanY = activeView.panY || 0;
+          const activeZoom = activeView.zoom || 1.0;
+          const activeCam = (typeof reconInputCamera !== 'undefined')
+            ? reconInputCamera : orbitCamera;
+          const az = activeCam.azimuth;
+          const el = activeCam.elevation;
+          const scale = (Math.min(rect.w, rect.h) / 2.35) * activeZoom;
+          const is3D = (slotA && slotA.currentDim === 3) || (slotC && slotC.currentDim === 3);
 
-            ctx.strokeStyle = 'rgba(30, 41, 59, 0.6)';
-            ctx.lineWidth = 1;
-            [-0.85, -0.425, 0, 0.425, 0.85].forEach(val => {
-              const p1 = mapToScreen(projectPt({ x: val, y: -b, z: -b }));
-              const p2 = mapToScreen(projectPt({ x: val, y:  b, z: -b }));
-              ctx.beginPath(); ctx.moveTo(p1.px, p1.py); ctx.lineTo(p2.px, p2.py); ctx.stroke();
-              const p3 = mapToScreen(projectPt({ x: -b, y: val, z: -b }));
-              const p4 = mapToScreen(projectPt({ x:  b, y: val, z: -b }));
-              ctx.beginPath(); ctx.moveTo(p3.px, p3.py); ctx.lineTo(p4.px, p4.py); ctx.stroke();
-            });
+          const projectPt = (p) => projectPtCustom(p, is3D, activeCam, az, el);
+          const mapToScreen = (pr) => mapToScreenCustom(pr, rect, activePanX, activePanY, scale);
 
-            const edges = [
-              [0,1],[1,2],[2,3],[3,0],
-              [4,5],[5,6],[6,7],[7,4],
-              [0,4],[1,5],[2,6],[3,7]
-            ];
-            ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
-            ctx.setLineDash([2, 3]);
-            edges.forEach(([i, j]) => {
-              ctx.beginPath();
-              ctx.moveTo(boxPx[i].px, boxPx[i].py);
-              ctx.lineTo(boxPx[j].px, boxPx[j].py);
-              ctx.stroke();
-            });
-            ctx.setLineDash([]);
-          }
-        }
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(rect.x, rect.y, rect.w, rect.h);
+          ctx.clip();
 
-        // B. Point Cloud Drawing
-        if (pts && pts.length > 0) {
-          const numPts = pts.length;
-          const step = numPts > 10000 ? Math.ceil(numPts / 10000) : 1;
-          const ptRad = Math.max(1.0, samplePointSize * 0.9);
+          // A. Grid & Axes
+          drawPanelGridAxes(ctx, rect, is3D, scale, mapToScreen, projectPt);
 
-          // Check for quality coloring and filtering in C and D
-          const qualArr = (q === 2 && slot.reconKthDist) ? slot.reconKthDist
-                        : (q === 3 && slot.reconVariance) ? slot.reconVariance : null;
-          const qualMin = (q === 2) ? slot.reconKthDistMin : (q === 3) ? slot.reconVarianceMin : 0;
-          const qualMax = (q === 2) ? slot.reconKthDistMax : (q === 3) ? slot.reconVarianceMax : 1;
-          const qMask = (q === 2 || q === 3)
-            ? (slot.reconQualityMask || (q === 2 ? datasetSlots['C'].reconQualityMask
-                                                 : datasetSlots['D'].reconQualityMask)
-                                     || reconQualityMask)
-            : null;
+          // B. Point Cloud A (Training Input)
+          const isFocus = (activeTrainingIdx >= 0 || activeQueryIdx >= 0);
+          const nbSetA = getActiveNeighborSetForSlot(
+            'A', activeTrainingIdx, activeTrainingSlot, activeQueryIdx, k
+          );
+          drawSlotPoints(
+            ctx, slotA, 'A', '#38bdf8', rect, projectPt, mapToScreen,
+            nbSetA, isFocus, activeTrainingIdx
+          );
 
-          // Compute set of active highlight neighbor indices for this quadrant
-          let activeNeighborSet = null;
-          let isFocusMode = false;
-          let primaryFocusedIdx = -1;
-          const isKnnActive = (typeof showReconKnn === 'undefined' || showReconKnn);
+          // C. Point Cloud C (Query Input)
+          const nbSetC = getActiveNeighborSetForSlot(
+            'C', activeTrainingIdx, activeTrainingSlot, activeQueryIdx, k
+          );
+          drawSlotPoints(
+            ctx, slotC, 'C', '#fbbf24', rect, projectPt, mapToScreen,
+            nbSetC, isFocus, activeQueryIdx
+          );
 
-          if (isKnnActive) {
-            if (activeTrainingIdx >= 0) {
-              isFocusMode = true;
-              primaryFocusedIdx = activeTrainingIdx;
-              if (q === 0 || q === 1) {
-                activeNeighborSet = new Set();
-                activeNeighborSet.add(activeTrainingIdx);
-                const nbs = getSlotKnnNeighbors(activeTrainingSlot, activeTrainingIdx);
-                if (nbs) {
-                  for (let r = 0; r < nbs.length; r++) {
-                    activeNeighborSet.add(nbs[r].index);
-                  }
-                }
-              } else if (q === 2 || q === 3) {
-                const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
-                if (revQueries && revQueries.length > 0) {
-                  activeNeighborSet = new Set();
-                  for (let r = 0; r < revQueries.length; r++) {
-                    activeNeighborSet.add(revQueries[r].queryIdx);
-                  }
-                }
-              }
-            } else if (activeQueryIdx >= 0) {
-              isFocusMode = true;
-              primaryFocusedIdx = activeQueryIdx;
-              if (q === 2 || q === 3) {
-                activeNeighborSet = new Set();
-                activeNeighborSet.add(activeQueryIdx);
-              } else if (q === 0 || q === 1) {
-                const nbs = getOrComputeKnnNeighbors(activeQueryIdx, k);
-                if (nbs) {
-                  activeNeighborSet = new Set();
-                  for (let r = 0; r < nbs.length; r++) {
-                    activeNeighborSet.add(nbs[r].id);
-                  }
-                }
-              }
-            }
-          }
+          // D. Left Panel HUD Header
+          ctx.save();
+          const ptsA = slotA ? (slotA.benchmarkDataset || slotA.pastSamples || []) : [];
+          const ptsC = slotC ? (slotC.benchmarkDataset || slotC.pastSamples || []) : [];
+          const dimStr = is3D ? '3D' : '2D';
 
-          // Pass 1: Render background / non-neighbor points (faded grey when in focus mode)
-          for (let i = 0; i < numPts; i += step) {
-            if (reconQualityThreshold < 1.0 && qMask && i < qMask.length && !qMask[i]) {
-              continue;
-            }
+          // Slot A Pill
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(rect.x + 8, rect.y + 8, 20, 16, 3);
+          ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#38bdf8';
+          ctx.font = 'bold 10px monospace';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('A', rect.x + 18, rect.y + 16);
 
-            const isNeighbor = activeNeighborSet && activeNeighborSet.has(i);
-            if (isFocusMode && isNeighbor) {
-              // Rendered in Pass 2 on top
-              continue;
-            }
+          // Slot C Pill
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(rect.x + 32, rect.y + 8, 20, 16, 3);
+          ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#fbbf24';
+          ctx.font = 'bold 10px monospace';
+          ctx.fillText('C', rect.x + 42, rect.y + 16);
 
-            const p = pts[i];
-            const pr = projectPt(p);
-            const pos = mapToScreen(pr);
+          // Header Text
+          ctx.textAlign = 'left';
+          ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillText('Input Domain: Training [A] + Query [C]', rect.x + 58, rect.y + 15);
 
-            if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 ||
-                pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) {
-              continue;
-            }
+          ctx.font = '9px monospace';
+          ctx.fillStyle = 'var(--text-muted, #94a3b8)';
+          const countAStr = `${ptsA.length.toLocaleString()} [A]`;
+          const countCStr = `${ptsC.length.toLocaleString()} [C] (${dimStr})`;
+          ctx.fillText(`${countAStr} • ${countCStr}`, rect.x + 58, rect.y + 26);
 
-            let pCol = qConfig.color;
-            let pAlpha = 0.55;
-
-            if (reconQualityColoringEnabled && qualArr && i < qualArr.length) {
-              pCol = getColorFromRamp(qualArr[i], qualMin, qualMax, QUALITY_STOPS);
-              pAlpha = isFocusMode ? 0.50 : 0.85;
-            } else if (isFocusMode) {
-              pCol = (q === 2 || q === 3) ? qConfig.color : '#64748b';
-              pAlpha = (q === 2 || q === 3) ? 0.45 : 0.18;
-            }
-
-            ctx.fillStyle = pCol;
-            ctx.globalAlpha = pAlpha;
-            ctx.beginPath();
-            ctx.arc(pos.px, pos.py, ptRad, 0, Math.PI * 2);
-            ctx.fill();
-          }
-
-          // Pass 2: Render active k-NN neighbor points bright on top
-          if (isFocusMode && activeNeighborSet && activeNeighborSet.size > 0) {
-            for (const i of activeNeighborSet) {
-              if (i < 0 || i >= numPts) continue;
-              if (reconQualityThreshold < 1.0 && qMask && i < qMask.length && !qMask[i]) {
-                continue;
-              }
-
-              const p = pts[i];
-              const pr = projectPt(p);
-              const pos = mapToScreen(pr);
-
-              if (pos.px < rect.x - 5 || pos.px > rect.x + rect.w + 5 ||
-                  pos.py < rect.y - 5 || pos.py > rect.y + rect.h + 5) {
-                continue;
-              }
-
-              const isAnchor = (i === primaryFocusedIdx);
-              let pCol = qConfig.color;
-              if (reconQualityColoringEnabled && qualArr && i < qualArr.length) {
-                pCol = getColorFromRamp(qualArr[i], qualMin, qualMax, QUALITY_STOPS);
-              } else {
-                if (q === 0) pCol = isAnchor ? '#38bdf8' : '#7dd3fc';
-                else if (q === 1) pCol = isAnchor ? '#4ade80' : '#86efac';
-                else if (q === 2) pCol = isAnchor ? '#fbbf24' : '#fde68a';
-                else if (q === 3) pCol = isAnchor ? '#c084fc' : '#e9d5ff';
-              }
-
-              const rad = isAnchor ? ptRad * 1.8 : ptRad * 1.35;
-              ctx.fillStyle = pCol;
-              ctx.globalAlpha = 1.0;
-              ctx.beginPath();
-              ctx.arc(pos.px, pos.py, rad, 0, Math.PI * 2);
-              ctx.fill();
-
-              ctx.strokeStyle = pCol;
-              ctx.lineWidth = 1.0;
-              ctx.beginPath();
-              ctx.arc(pos.px, pos.py, rad + 1.5, 0, Math.PI * 2);
-              ctx.stroke();
-            }
-          }
-          ctx.globalAlpha = 1.0;
-        }
-
-        // C. Quadrant Header HUD
-        ctx.save();
-        const ptCount = pts ? pts.length : 0;
-        const dimStr = is3D ? '3D' : '2D';
-        const benchName = (slot && slot.stagedDatasetInfo && slot.stagedDatasetInfo.name)
-          ? slot.stagedDatasetInfo.name
-          : (slot ? (slot.benchmarkKey || 'None') : 'None');
-
-        const qHudMask = (q === 2 || q === 3)
-          ? (slot.reconQualityMask || (q === 2 ? datasetSlots['C'].reconQualityMask
-                                               : datasetSlots['D'].reconQualityMask)
-                                   || reconQualityMask)
-          : null;
-        let countText = `${ptCount.toLocaleString()} pts (${dimStr})`;
-        if ((q === 2 || q === 3) && reconQualityThreshold < 1.0 && qHudMask) {
-          let visibleCount = 0;
-          for (let i = 0; i < qHudMask.length; i++) {
-            if (qHudMask[i]) visibleCount++;
-          }
-          const visStr = visibleCount.toLocaleString();
-          const totStr = ptCount.toLocaleString();
-          countText = `${visStr}/${totStr} pts (${dimStr})`;
-        }
-
-        // Top-left slot identifier pill
-        const slotPillW = 20;
-        const slotPillH = 16;
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
-        ctx.strokeStyle = qConfig.color;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(rect.x + 8, rect.y + 8, slotPillW, slotPillH, 3);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = qConfig.color;
-        ctx.font = 'bold 10px monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(qConfig.slotId, rect.x + 8 + slotPillW / 2, rect.y + 8 + slotPillH / 2);
-
-        // Title and stats
-        ctx.textAlign = 'left';
-        ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillText(qConfig.name, rect.x + 34, rect.y + 15);
-
-        ctx.font = '9px monospace';
-        ctx.fillStyle = 'var(--text-muted, #94a3b8)';
-        ctx.fillText(`${benchName} • ${countText}`, rect.x + 34, rect.y + 26);
-
-        // Top-right status / hint
-        ctx.textAlign = 'right';
-        if (q === 0) {
+          // Top-right status / hint
+          ctx.textAlign = 'right';
           if (activeTrainingIdx >= 0) {
             const isLocked = (typeof reconLockedTrainingIdx !== 'undefined' &&
               reconLockedTrainingIdx >= 0);
             const knnA = getSlotKnnNeighbors('A', activeTrainingIdx);
-            const knnB = (activeTrainingSlot === 'B')
-              ? getSlotKnnNeighbors('B', activeTrainingIdx) : null;
             ctx.fillStyle = isLocked ? '#38bdf8' : '#94a3b8';
             let hText = isLocked ? `🔒 PINNED #${activeTrainingIdx}`
               : `Sample #${activeTrainingIdx}`;
             if (activeTrainingSlot === 'A' && knnA && knnA.length > 0) {
               hText = `${isLocked ? '🔒 ' : ''}k-NN #${activeTrainingIdx} (${knnA.length} NNs in A)`;
-            } else if (activeTrainingSlot === 'B' && knnB && knnB.length > 0) {
-              hText = `Mapped #${activeTrainingIdx} & ${knnB.length} NNs from [B]`;
+            } else if (activeTrainingSlot === 'B') {
+              hText = `Mapped #${activeTrainingIdx} from [B]`;
             }
             ctx.fillText(hText, rect.x + rect.w - 10, rect.y + 15);
-          } else {
-            ctx.fillStyle = '#38bdf8';
-            ctx.font = '9px -apple-system, sans-serif';
-            ctx.fillText('k-NN Neighbors', rect.x + rect.w - 10, rect.y + 15);
-          }
-        } else if (q === 1) {
-          if (activeTrainingIdx >= 0) {
-            const isLocked = (typeof reconLockedTrainingIdx !== 'undefined' &&
-              reconLockedTrainingIdx >= 0);
-            const knnB = getSlotKnnNeighbors('B', activeTrainingIdx);
-            const knnA = (activeTrainingSlot === 'A')
-              ? getSlotKnnNeighbors('A', activeTrainingIdx) : null;
-            ctx.fillStyle = isLocked ? '#4ade80' : '#94a3b8';
-            let hText = isLocked ? `🔒 PINNED #${activeTrainingIdx}`
-              : `Counterpart #${activeTrainingIdx}`;
-            if (activeTrainingSlot === 'B' && knnB && knnB.length > 0) {
-              hText = `${isLocked ? '🔒 ' : ''}k-NN #${activeTrainingIdx} (${knnB.length} NNs in B)`;
-            } else if (activeTrainingSlot === 'A' && knnA && knnA.length > 0) {
-              hText = `Mapped #${activeTrainingIdx} & ${knnA.length} NNs from [A]`;
-            }
-            ctx.fillText(hText, rect.x + rect.w - 10, rect.y + 15);
-          } else {
-            ctx.fillStyle = '#4ade80';
-            ctx.font = '9px -apple-system, sans-serif';
-            ctx.fillText('Weighted Contribution', rect.x + rect.w - 10, rect.y + 15);
-          }
-        } else if (q === 2) {
-          if (activeTrainingIdx >= 0) {
-            const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
-            ctx.fillStyle = '#fbbf24';
-            ctx.font = 'bold 9px monospace';
-            ctx.fillText(`${revQueries.length} queries use A[${activeTrainingIdx}]`,
-              rect.x + rect.w - 10, rect.y + 15);
-          } else {
-            const isLocked = (activeQueryIdx >= 0 && typeof reconLockedQueryIdx !== 'undefined' &&
+          } else if (activeQueryIdx >= 0) {
+            const isLocked = (typeof reconLockedQueryIdx !== 'undefined' &&
               reconLockedQueryIdx >= 0);
             ctx.fillStyle = isLocked ? '#fbbf24' : '#94a3b8';
             ctx.font = isLocked ? 'bold 9px monospace' : '9px -apple-system, sans-serif';
-            const hintText = isLocked
-              ? `🔒 PINNED #${activeQueryIdx}` : '🔍 Hover query to inspect';
-            ctx.fillText(hintText, rect.x + rect.w - 10, rect.y + 15);
+            ctx.fillText(
+              `${isLocked ? '🔒 ' : ''}Query #${activeQueryIdx}`,
+              rect.x + rect.w - 10, rect.y + 15
+            );
+          } else {
+            ctx.fillStyle = '#38bdf8';
+            ctx.font = '9px -apple-system, sans-serif';
+            ctx.fillText('⧉ Overlay A+C • Input Space', rect.x + rect.w - 10, rect.y + 15);
           }
-        } else if (q === 3) {
+
+          ctx.restore();
+          ctx.restore(); // restore clip
+        }
+
+        // --- 2. Right Panel (Output Space: B + D) ---
+        {
+          const rect = { x: halfW, y: 0, w: halfW, h: H };
+          const activeView = quadViews[1] || { panX: 0, panY: 0, zoom: 1.0 };
+          const activePanX = activeView.panX || 0;
+          const activePanY = activeView.panY || 0;
+          const activeZoom = activeView.zoom || 1.0;
+          const activeCam = (typeof reconOutputCamera !== 'undefined')
+            ? reconOutputCamera : orbitCamera;
+          const az = activeCam.azimuth;
+          const el = activeCam.elevation;
+          const scale = (Math.min(rect.w, rect.h) / 2.35) * activeZoom;
+          const is3D = (slotB && slotB.currentDim === 3) || (slotD && slotD.currentDim === 3);
+
+          const projectPt = (p) => projectPtCustom(p, is3D, activeCam, az, el);
+          const mapToScreen = (pr) => mapToScreenCustom(pr, rect, activePanX, activePanY, scale);
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(rect.x, rect.y, rect.w, rect.h);
+          ctx.clip();
+
+          // A. Grid & Axes
+          drawPanelGridAxes(ctx, rect, is3D, scale, mapToScreen, projectPt);
+
+          // B. Point Cloud B (Training Output)
+          const isFocus = (activeTrainingIdx >= 0 || activeQueryIdx >= 0);
+          const nbSetB = getActiveNeighborSetForSlot(
+            'B', activeTrainingIdx, activeTrainingSlot, activeQueryIdx, k
+          );
+          drawSlotPoints(
+            ctx, slotB, 'B', '#4ade80', rect, projectPt, mapToScreen,
+            nbSetB, isFocus, activeTrainingIdx
+          );
+
+          // C. Point Cloud D (Reconstructed Output)
+          const nbSetD = getActiveNeighborSetForSlot(
+            'D', activeTrainingIdx, activeTrainingSlot, activeQueryIdx, k
+          );
+          drawSlotPoints(
+            ctx, slotD, 'D', '#c084fc', rect, projectPt, mapToScreen,
+            nbSetD, isFocus, activeQueryIdx
+          );
+
+          // D. Right Panel HUD Header
+          ctx.save();
+          const ptsB = slotB ? (slotB.benchmarkDataset || slotB.pastSamples || []) : [];
+          const ptsD = slotD ? (slotD.benchmarkDataset || slotD.pastSamples || []) : [];
+          const dimStr = is3D ? '3D' : '2D';
+
+          // Slot B Pill
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+          ctx.strokeStyle = '#4ade80';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(rect.x + 8, rect.y + 8, 20, 16, 3);
+          ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#4ade80';
+          ctx.font = 'bold 10px monospace';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('B', rect.x + 18, rect.y + 16);
+
+          // Slot D Pill
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+          ctx.strokeStyle = '#c084fc';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(rect.x + 32, rect.y + 8, 20, 16, 3);
+          ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#c084fc';
+          ctx.font = 'bold 10px monospace';
+          ctx.fillText('D', rect.x + 42, rect.y + 16);
+
+          // Header Text
+          ctx.textAlign = 'left';
+          ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillText('Output Domain: Training [B] + Recon [D]', rect.x + 58, rect.y + 15);
+
+          ctx.font = '9px monospace';
+          ctx.fillStyle = 'var(--text-muted, #94a3b8)';
+          const countBStr = `${ptsB.length.toLocaleString()} [B]`;
+          const countDStr = `${ptsD.length.toLocaleString()} [D] (${dimStr})`;
+          ctx.fillText(`${countBStr} • ${countDStr}`, rect.x + 58, rect.y + 26);
+
+          // Top-right status / hint
+          ctx.textAlign = 'right';
           if (activeTrainingIdx >= 0) {
             const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
             ctx.fillStyle = '#c084fc';
             ctx.font = '9px monospace';
-            ctx.fillText(`Influences ${revQueries.length} outputs`,
-              rect.x + rect.w - 10, rect.y + 15);
-          } else {
-            const info = datasetSlots.D ? datasetSlots.D.reconstructionInfo : null;
+            ctx.fillText(
+              `Influences ${revQueries.length} outputs`,
+              rect.x + rect.w - 10, rect.y + 15
+            );
+          } else if (activeQueryIdx >= 0) {
+            const info = slotD ? slotD.reconstructionInfo : null;
             ctx.fillStyle = info ? '#c084fc' : '#94a3b8';
             ctx.font = '9px monospace';
-            const dText = info ? `k=${info.k} • ${info.weightMode}` : 'Slot D';
+            const dText = info ? `k=${info.k} • ${info.weightMode}` : `Output #${activeQueryIdx}`;
             ctx.fillText(dText, rect.x + rect.w - 10, rect.y + 15);
+          } else {
+            ctx.fillStyle = '#c084fc';
+            ctx.font = '9px -apple-system, sans-serif';
+            ctx.fillText('⧉ Overlay B+D • Output Space', rect.x + rect.w - 10, rect.y + 15);
           }
-        }
 
-        ctx.restore();
-        ctx.restore(); // restore clip
+          ctx.restore();
+          ctx.restore(); // restore clip
+        }
+      } else {
+        // =====================================================================
+        // 4-PANEL QUADRANT MODE (A, B, C, D separate)
+        // =====================================================================
+        for (let q = 0; q < 4; q++) {
+          const qConfig = quadRects[q];
+          const rect = { x: qConfig.x, y: qConfig.y, w: qConfig.w, h: qConfig.h };
+          const slot = datasetSlots[qConfig.slotId];
+          const pts = slot ? (slot.benchmarkDataset || slot.pastSamples || []) : [];
+          const is3D = (slot && slot.currentDim === 3);
+
+          const isInputSpace = (q === 0 || q === 2);
+          const activeView = isInputSpace ? quadViews[0] : quadViews[1];
+          const activePanX = activeView ? (activeView.panX || 0) : 0;
+          const activePanY = activeView ? (activeView.panY || 0) : 0;
+          const activeZoom = activeView ? (activeView.zoom || 1.0) : 1.0;
+          const activeCam = isInputSpace
+            ? (typeof reconInputCamera !== 'undefined' ? reconInputCamera : orbitCamera)
+            : (typeof reconOutputCamera !== 'undefined' ? reconOutputCamera : orbitCamera);
+
+          const az = activeCam.azimuth;
+          const el = activeCam.elevation;
+          const scale = (Math.min(rect.w, rect.h) / 2.35) * activeZoom;
+
+          const projectPt = (p) => projectPtCustom(p, is3D, activeCam, az, el);
+          const mapToScreen = (pr) => mapToScreenCustom(pr, rect, activePanX, activePanY, scale);
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(rect.x, rect.y, rect.w, rect.h);
+          ctx.clip();
+
+          // A. Grid & Axes
+          drawPanelGridAxes(ctx, rect, is3D, scale, mapToScreen, projectPt);
+
+          // B. Point Cloud Drawing
+          const isFocus = (activeTrainingIdx >= 0 || activeQueryIdx >= 0);
+          const nbSet = getActiveNeighborSetForSlot(
+            qConfig.slotId, activeTrainingIdx, activeTrainingSlot, activeQueryIdx, k
+          );
+          const primIdx = (qConfig.slotId === 'A' || qConfig.slotId === 'B')
+            ? activeTrainingIdx : activeQueryIdx;
+          drawSlotPoints(
+            ctx, slot, qConfig.slotId, qConfig.color, rect, projectPt, mapToScreen,
+            nbSet, isFocus, primIdx
+          );
+
+          // C. Quadrant Header HUD
+          ctx.save();
+          const ptCount = pts ? pts.length : 0;
+          const dimStr = is3D ? '3D' : '2D';
+          const benchName = (slot && slot.stagedDatasetInfo && slot.stagedDatasetInfo.name)
+            ? slot.stagedDatasetInfo.name
+            : (slot ? (slot.benchmarkKey || 'None') : 'None');
+
+          const qHudMask = (q === 2 || q === 3)
+            ? (slot.reconQualityMask || (q === 2 ? datasetSlots['C'].reconQualityMask
+                                                 : datasetSlots['D'].reconQualityMask)
+                                     || reconQualityMask)
+            : null;
+          let countText = `${ptCount.toLocaleString()} pts (${dimStr})`;
+          if ((q === 2 || q === 3) && reconQualityThreshold < 1.0 && qHudMask) {
+            let visibleCount = 0;
+            for (let i = 0; i < qHudMask.length; i++) {
+              if (qHudMask[i]) visibleCount++;
+            }
+            const visStr = visibleCount.toLocaleString();
+            const totStr = ptCount.toLocaleString();
+            countText = `${visStr}/${totStr} pts (${dimStr})`;
+          }
+
+          // Top-left slot identifier pill
+          const slotPillW = 20;
+          const slotPillH = 16;
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+          ctx.strokeStyle = qConfig.color;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(rect.x + 8, rect.y + 8, slotPillW, slotPillH, 3);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = qConfig.color;
+          ctx.font = 'bold 10px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(qConfig.slotId, rect.x + 8 + slotPillW / 2, rect.y + 8 + slotPillH / 2);
+
+          // Title and stats
+          ctx.textAlign = 'left';
+          ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif';
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillText(qConfig.name, rect.x + 34, rect.y + 15);
+
+          ctx.font = '9px monospace';
+          ctx.fillStyle = 'var(--text-muted, #94a3b8)';
+          ctx.fillText(`${benchName} • ${countText}`, rect.x + 34, rect.y + 26);
+
+          // Top-right status / hint
+          ctx.textAlign = 'right';
+          if (q === 0) {
+            if (activeTrainingIdx >= 0) {
+              const isLocked = (typeof reconLockedTrainingIdx !== 'undefined' &&
+                reconLockedTrainingIdx >= 0);
+              const knnA = getSlotKnnNeighbors('A', activeTrainingIdx);
+              const knnB = (activeTrainingSlot === 'B')
+                ? getSlotKnnNeighbors('B', activeTrainingIdx) : null;
+              ctx.fillStyle = isLocked ? '#38bdf8' : '#94a3b8';
+              let hText = isLocked ? `🔒 PINNED #${activeTrainingIdx}`
+                : `Sample #${activeTrainingIdx}`;
+              if (activeTrainingSlot === 'A' && knnA && knnA.length > 0) {
+                const lockPrefix = isLocked ? '🔒 ' : '';
+                hText = `${lockPrefix}k-NN #${activeTrainingIdx} (${knnA.length} NNs in A)`;
+              } else if (activeTrainingSlot === 'B' && knnB && knnB.length > 0) {
+                hText = `Mapped #${activeTrainingIdx} & ${knnB.length} NNs from [B]`;
+              }
+              ctx.fillText(hText, rect.x + rect.w - 10, rect.y + 15);
+            } else {
+              ctx.fillStyle = '#38bdf8';
+              ctx.font = '9px -apple-system, sans-serif';
+              ctx.fillText('k-NN Neighbors', rect.x + rect.w - 10, rect.y + 15);
+            }
+          } else if (q === 1) {
+            if (activeTrainingIdx >= 0) {
+              const isLocked = (typeof reconLockedTrainingIdx !== 'undefined' &&
+                reconLockedTrainingIdx >= 0);
+              const knnB = getSlotKnnNeighbors('B', activeTrainingIdx);
+              const knnA = (activeTrainingSlot === 'A')
+                ? getSlotKnnNeighbors('A', activeTrainingIdx) : null;
+              ctx.fillStyle = isLocked ? '#4ade80' : '#94a3b8';
+              let hText = isLocked ? `🔒 PINNED #${activeTrainingIdx}`
+                : `Counterpart #${activeTrainingIdx}`;
+              if (activeTrainingSlot === 'B' && knnB && knnB.length > 0) {
+                const lockPrefix = isLocked ? '🔒 ' : '';
+                hText = `${lockPrefix}k-NN #${activeTrainingIdx} (${knnB.length} NNs in B)`;
+              } else if (activeTrainingSlot === 'A' && knnA && knnA.length > 0) {
+                hText = `Mapped #${activeTrainingIdx} & ${knnA.length} NNs from [A]`;
+              }
+              ctx.fillText(hText, rect.x + rect.w - 10, rect.y + 15);
+            } else {
+              ctx.fillStyle = '#4ade80';
+              ctx.font = '9px -apple-system, sans-serif';
+              ctx.fillText('Weighted Contribution', rect.x + rect.w - 10, rect.y + 15);
+            }
+          } else if (q === 2) {
+            if (activeTrainingIdx >= 0) {
+              const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
+              ctx.fillStyle = '#fbbf24';
+              ctx.font = 'bold 9px monospace';
+              ctx.fillText(`${revQueries.length} queries use A[${activeTrainingIdx}]`,
+                rect.x + rect.w - 10, rect.y + 15);
+            } else {
+              const isLocked = (activeQueryIdx >= 0 &&
+                typeof reconLockedQueryIdx !== 'undefined' &&
+                reconLockedQueryIdx >= 0);
+              ctx.fillStyle = isLocked ? '#fbbf24' : '#94a3b8';
+              ctx.font = isLocked ? 'bold 9px monospace' : '9px -apple-system, sans-serif';
+              const hintText = isLocked
+                ? `🔒 PINNED #${activeQueryIdx}` : '🔍 Hover query to inspect';
+              ctx.fillText(hintText, rect.x + rect.w - 10, rect.y + 15);
+            }
+          } else if (q === 3) {
+            if (activeTrainingIdx >= 0) {
+              const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
+              ctx.fillStyle = '#c084fc';
+              ctx.font = '9px monospace';
+              ctx.fillText(`Influences ${revQueries.length} outputs`,
+                rect.x + rect.w - 10, rect.y + 15);
+            } else {
+              const info = datasetSlots.D ? datasetSlots.D.reconstructionInfo : null;
+              ctx.fillStyle = info ? '#c084fc' : '#94a3b8';
+              ctx.font = '9px monospace';
+              const dText = info ? `k=${info.k} • ${info.weightMode}` : 'Slot D';
+              ctx.fillText(dText, rect.x + rect.w - 10, rect.y + 15);
+            }
+          }
+
+          ctx.restore();
+          ctx.restore(); // restore clip
+        }
       }
 
       // 2. Synchronized 4-Panel Highlight Overlays
@@ -3176,7 +3487,9 @@
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(halfW, 0); ctx.lineTo(halfW, H);
-      ctx.moveTo(0, halfH); ctx.lineTo(W, halfH);
+      if (!isOverlay) {
+        ctx.moveTo(0, halfH); ctx.lineTo(W, halfH);
+      }
       ctx.stroke();
     }
 
@@ -3187,6 +3500,7 @@
       ctx, W, H, quadRects, activeQueryIdx, activeTrainingIdx = -1, activeTrainingSlot = 'A'
     ) {
       if (typeof showReconKnn !== 'undefined' && !showReconKnn) return;
+      const isOverlay = (typeof reconOverlayMode !== 'undefined' && reconOverlayMode);
 
       const slotA = datasetSlots['A'];
       const slotB = datasetSlots['B'];
@@ -3461,27 +3775,29 @@
             // Draw Ghost A[j] in Panel C
             const posA_in_C = mapPt(pPrim, rectC, dimC === 3, true);
 
-            ctx.beginPath();
-            ctx.arc(posA_in_C.px, posA_in_C.py, 7, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
-            ctx.setLineDash([3, 3]);
-            ctx.lineWidth = 1.4;
-            ctx.stroke();
-            ctx.setLineDash([]);
+            if (!isOverlay) {
+              ctx.beginPath();
+              ctx.arc(posA_in_C.px, posA_in_C.py, 7, 0, Math.PI * 2);
+              ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+              ctx.setLineDash([3, 3]);
+              ctx.lineWidth = 1.4;
+              ctx.stroke();
+              ctx.setLineDash([]);
 
-            ctx.beginPath();
-            ctx.moveTo(posA_in_C.px - 10, posA_in_C.py);
-            ctx.lineTo(posA_in_C.px + 10, posA_in_C.py);
-            ctx.moveTo(posA_in_C.px, posA_in_C.py - 10);
-            ctx.lineTo(posA_in_C.px, posA_in_C.py + 10);
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
-            ctx.lineWidth = 1.0;
-            ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(posA_in_C.px - 10, posA_in_C.py);
+              ctx.lineTo(posA_in_C.px + 10, posA_in_C.py);
+              ctx.moveTo(posA_in_C.px, posA_in_C.py - 10);
+              ctx.lineTo(posA_in_C.px, posA_in_C.py + 10);
+              ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+              ctx.lineWidth = 1.0;
+              ctx.stroke();
 
-            ctx.beginPath();
-            ctx.arc(posA_in_C.px, posA_in_C.py, 2.5, 0, Math.PI * 2);
-            ctx.fillStyle = '#38bdf8';
-            ctx.fill();
+              ctx.beginPath();
+              ctx.arc(posA_in_C.px, posA_in_C.py, 2.5, 0, Math.PI * 2);
+              ctx.fillStyle = '#38bdf8';
+              ctx.fill();
+            }
 
             // Connect each reverse query C_i
             for (let p = 0; p < revQueries.length; p++) {
@@ -3527,27 +3843,29 @@
             // Draw Ghost B[j] in Panel D
             const posB_in_D = mapPt(pOther, rectD, dimD === 3, false);
 
-            ctx.beginPath();
-            ctx.arc(posB_in_D.px, posB_in_D.py, 7, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(74, 222, 128, 0.85)';
-            ctx.setLineDash([3, 3]);
-            ctx.lineWidth = 1.4;
-            ctx.stroke();
-            ctx.setLineDash([]);
+            if (!isOverlay) {
+              ctx.beginPath();
+              ctx.arc(posB_in_D.px, posB_in_D.py, 7, 0, Math.PI * 2);
+              ctx.strokeStyle = 'rgba(74, 222, 128, 0.85)';
+              ctx.setLineDash([3, 3]);
+              ctx.lineWidth = 1.4;
+              ctx.stroke();
+              ctx.setLineDash([]);
 
-            ctx.beginPath();
-            ctx.moveTo(posB_in_D.px - 10, posB_in_D.py);
-            ctx.lineTo(posB_in_D.px + 10, posB_in_D.py);
-            ctx.moveTo(posB_in_D.px, posB_in_D.py - 10);
-            ctx.lineTo(posB_in_D.px, posB_in_D.py + 10);
-            ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
-            ctx.lineWidth = 1.0;
-            ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(posB_in_D.px - 10, posB_in_D.py);
+              ctx.lineTo(posB_in_D.px + 10, posB_in_D.py);
+              ctx.moveTo(posB_in_D.px, posB_in_D.py - 10);
+              ctx.lineTo(posB_in_D.px, posB_in_D.py + 10);
+              ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
+              ctx.lineWidth = 1.0;
+              ctx.stroke();
 
-            ctx.beginPath();
-            ctx.arc(posB_in_D.px, posB_in_D.py, 2.5, 0, Math.PI * 2);
-            ctx.fillStyle = '#4ade80';
-            ctx.fill();
+              ctx.beginPath();
+              ctx.arc(posB_in_D.px, posB_in_D.py, 2.5, 0, Math.PI * 2);
+              ctx.fillStyle = '#4ade80';
+              ctx.fill();
+            }
 
             for (let p = 0; p < revQueries.length; p++) {
               const item = revQueries[p];
@@ -3690,25 +4008,29 @@
         const posQ_in_A = mapPt(qc, rectA, dimA === 3, true);
 
         // Draw Ghost Query reticle in A
-        ctx.beginPath();
-        ctx.arc(posQ_in_A.px, posQ_in_A.py, 7, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(251, 191, 36, 0.8)';
-        ctx.setLineDash([3, 3]);
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-        ctx.setLineDash([]);
+        if (!isOverlay) {
+          ctx.beginPath();
+          ctx.arc(posQ_in_A.px, posQ_in_A.py, 7, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(251, 191, 36, 0.8)';
+          ctx.setLineDash([3, 3]);
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+          ctx.setLineDash([]);
 
-        ctx.beginPath();
-        ctx.moveTo(posQ_in_A.px - 10, posQ_in_A.py); ctx.lineTo(posQ_in_A.px + 10, posQ_in_A.py);
-        ctx.moveTo(posQ_in_A.px, posQ_in_A.py - 10); ctx.lineTo(posQ_in_A.px, posQ_in_A.py + 10);
-        ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
-        ctx.lineWidth = 1.0;
-        ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(posQ_in_A.px - 10, posQ_in_A.py);
+          ctx.lineTo(posQ_in_A.px + 10, posQ_in_A.py);
+          ctx.moveTo(posQ_in_A.px, posQ_in_A.py - 10);
+          ctx.lineTo(posQ_in_A.px, posQ_in_A.py + 10);
+          ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+          ctx.lineWidth = 1.0;
+          ctx.stroke();
 
-        ctx.beginPath();
-        ctx.arc(posQ_in_A.px, posQ_in_A.py, 2.5, 0, Math.PI * 2);
-        ctx.fillStyle = '#fbbf24';
-        ctx.fill();
+          ctx.beginPath();
+          ctx.arc(posQ_in_A.px, posQ_in_A.py, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#fbbf24';
+          ctx.fill();
+        }
 
         // Draw lines and nodes for all k neighbors in A
         for (let p = 0; p < neighbors.length; p++) {
@@ -3758,25 +4080,29 @@
           posD_in_B = mapPt(qd, rectB, dimB === 3, false);
 
           // Draw Ghost Reconstructed Output reticle in B
-          ctx.beginPath();
-          ctx.arc(posD_in_B.px, posD_in_B.py, 7, 0, Math.PI * 2);
-          ctx.strokeStyle = 'rgba(192, 132, 252, 0.8)';
-          ctx.setLineDash([3, 3]);
-          ctx.lineWidth = 1.4;
-          ctx.stroke();
-          ctx.setLineDash([]);
+          if (!isOverlay) {
+            ctx.beginPath();
+            ctx.arc(posD_in_B.px, posD_in_B.py, 7, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(192, 132, 252, 0.8)';
+            ctx.setLineDash([3, 3]);
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+            ctx.setLineDash([]);
 
-          ctx.beginPath();
-          ctx.moveTo(posD_in_B.px - 10, posD_in_B.py); ctx.lineTo(posD_in_B.px + 10, posD_in_B.py);
-          ctx.moveTo(posD_in_B.px, posD_in_B.py - 10); ctx.lineTo(posD_in_B.px, posD_in_B.py + 10);
-          ctx.strokeStyle = 'rgba(192, 132, 252, 0.6)';
-          ctx.lineWidth = 1.0;
-          ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(posD_in_B.px - 10, posD_in_B.py);
+            ctx.lineTo(posD_in_B.px + 10, posD_in_B.py);
+            ctx.moveTo(posD_in_B.px, posD_in_B.py - 10);
+            ctx.lineTo(posD_in_B.px, posD_in_B.py + 10);
+            ctx.strokeStyle = 'rgba(192, 132, 252, 0.6)';
+            ctx.lineWidth = 1.0;
+            ctx.stroke();
 
-          ctx.beginPath();
-          ctx.arc(posD_in_B.px, posD_in_B.py, 2.5, 0, Math.PI * 2);
-          ctx.fillStyle = '#c084fc';
-          ctx.fill();
+            ctx.beginPath();
+            ctx.arc(posD_in_B.px, posD_in_B.py, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#c084fc';
+            ctx.fill();
+          }
         }
 
         // Draw weighted contribution vectors and nodes in B

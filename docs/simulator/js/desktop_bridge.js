@@ -387,18 +387,20 @@ const DesktopBridge = (function () {
   /**
    * Stage dataset coordinates to a workspace file on disk.
    */
-  async function stageDatasetFile(datasetName, dataset) {
+  async function stageDatasetFile(datasetName, dataset, forceDim = null) {
     const safeName = datasetName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const fileName = `${safeName}.txt`;
+    const is2D = (forceDim === 2) || (safeName.startsWith('2D') || safeName === 'stream');
     let content = '';
     for (let i = 0; i < dataset.length; i++) {
       const pt = dataset[i];
       if (Array.isArray(pt) || ArrayBuffer.isView(pt) || (pt && typeof pt.length === 'number')) {
-        content += Array.from(pt).map(v => Number(v).toFixed(6)).join(' ') + '\n';
+        const slice = is2D ? Array.from(pt).slice(0, 2) : Array.from(pt);
+        content += slice.map(v => Number(v).toFixed(6)).join(' ') + '\n';
       } else if (pt && typeof pt === 'object') {
         const px = Number(pt.x || 0).toFixed(6);
         const py = Number(pt.y || 0).toFixed(6);
-        if (typeof pt.z === 'number' && !isNaN(pt.z)) {
+        if (!is2D && typeof pt.z === 'number' && !isNaN(pt.z)) {
           const pz = Number(pt.z).toFixed(6);
           content += `${px} ${py} ${pz}\n`;
         } else {
@@ -873,6 +875,9 @@ const DesktopBridge = (function () {
 
     const mMultiPivot = clean.match(/Multi-Pivot Pruned:\s+(\d+)/);
     if (mMultiPivot) telem.multiPivotPruned = parseInt(mMultiPivot[1], 10);
+
+    const mAngular = clean.match(/Angular Cosine Pruned:\s+(\d+)/);
+    if (mAngular) telem.angularPruned = parseInt(mAngular[1], 10);
 
     const mContainment = clean.match(/Global Containment Hits:\s+(\d+)/);
     if (mContainment) telem.globalContainmentHits = parseInt(mContainment[1], 10);
