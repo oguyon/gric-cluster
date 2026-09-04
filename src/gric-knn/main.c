@@ -89,6 +89,10 @@ static void print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-progress%s             Display live progress bar\n",
            ansi_color_green, ansi_reset);
+    printf("  %s-double%s, %s--double%s         Run computations in 64-bit double precision "
+           "(%sdefault:%s float)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_cyan, ansi_reset);
     printf("  %s-v, -vv%s               Verbosity level\n",
            ansi_color_green, ansi_reset);
     printf("  %s-h, --help%s            Show this help message\n\n",
@@ -292,6 +296,11 @@ int main(
         {
             config.progress_mode = 1;
         }
+        else if (strcmp(argv[arg_idx], "-double") == 0 ||
+                 strcmp(argv[arg_idx], "--double") == 0)
+        {
+            config.use_double = 1;
+        }
         else if (strcmp(argv[arg_idx], "-v") == 0)
         {
             config.verbose_level = 2;
@@ -404,13 +413,15 @@ int main(
     {
         printf("  Search Pool:   ef_search = %d\n", config.ef_search);
     }
+    printf("  Precision:     %s\n",
+           config.use_double ? "64-bit Double Precision" : "32-bit Single Precision (Default)");
     printf("\n");
 
     struct timespec load_start, load_end;
     clock_gettime(CLOCK_MONOTONIC, &load_start);
 
     KnnModel model;
-    if (knn_model_load(config.cluster_dir, config.input_data_path, &model) != 0)
+    if (knn_model_load(config.cluster_dir, config.input_data_path, &model, config.use_double) != 0)
     {
         fprintf(stderr, "Error: Failed to load cluster model from '%s'\n", config.cluster_dir);
         return 1;

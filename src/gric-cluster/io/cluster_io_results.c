@@ -41,29 +41,54 @@ static void write_dcc_results(
         gric_bin_header_t dcc_hdr;
         memset(&dcc_hdr, 0, sizeof(dcc_hdr));
         dcc_hdr.file_type = GRIC_BIN_TYPE_DCC;
-        dcc_hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
         dcc_hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
         dcc_hdr.ndim = 2;
         dcc_hdr.dims[0] = state->num_clusters;
         dcc_hdr.dims[1] = state->num_clusters;
         dcc_hdr.num_elements = (uint64_t)state->num_clusters * (uint64_t)state->num_clusters;
-        dcc_hdr.data_bytes = dcc_hdr.num_elements * sizeof(float);
 
-        if (gric_bin_write_header(dcc_bin_fp, &dcc_hdr, "DCC distance matrix") == 0)
+        if (config->algo.use_double)
         {
-            float *dcc_buf = malloc(dcc_hdr.num_elements * sizeof(float));
-            if (dcc_buf != NULL)
+            dcc_hdr.data_type = GRIC_BIN_DTYPE_FLOAT64;
+            dcc_hdr.data_bytes = dcc_hdr.num_elements * sizeof(double);
+            if (gric_bin_write_header(dcc_bin_fp, &dcc_hdr, "DCC distance matrix") == 0)
             {
-                for (int i = 0; i < state->num_clusters; i++)
+                double *dcc_buf = malloc(dcc_hdr.num_elements * sizeof(double));
+                if (dcc_buf != NULL)
                 {
-                    for (int j = 0; j < state->num_clusters; j++)
+                    for (int i = 0; i < state->num_clusters; i++)
                     {
-                        double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
-                        dcc_buf[i * state->num_clusters + j] = (d >= 0) ? (float)d : 0.0f;
+                        for (int j = 0; j < state->num_clusters; j++)
+                        {
+                            double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                            dcc_buf[i * state->num_clusters + j] = (d >= 0) ? d : 0.0;
+                        }
                     }
+                    fwrite(dcc_buf, sizeof(double), dcc_hdr.num_elements, dcc_bin_fp);
+                    free(dcc_buf);
                 }
-                fwrite(dcc_buf, sizeof(float), dcc_hdr.num_elements, dcc_bin_fp);
-                free(dcc_buf);
+            }
+        }
+        else
+        {
+            dcc_hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
+            dcc_hdr.data_bytes = dcc_hdr.num_elements * sizeof(float);
+            if (gric_bin_write_header(dcc_bin_fp, &dcc_hdr, "DCC distance matrix") == 0)
+            {
+                float *dcc_buf = malloc(dcc_hdr.num_elements * sizeof(float));
+                if (dcc_buf != NULL)
+                {
+                    for (int i = 0; i < state->num_clusters; i++)
+                    {
+                        for (int j = 0; j < state->num_clusters; j++)
+                        {
+                            double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                            dcc_buf[i * state->num_clusters + j] = (d >= 0) ? (float)d : 0.0f;
+                        }
+                    }
+                    fwrite(dcc_buf, sizeof(float), dcc_hdr.num_elements, dcc_bin_fp);
+                    free(dcc_buf);
+                }
             }
         }
         fclose(dcc_bin_fp);
@@ -170,22 +195,30 @@ static void write_anchors_results(
         a_hdr.dims[0] = state->num_clusters;
         a_hdr.dims[1] = nelements;
         a_hdr.num_elements = (uint64_t)state->num_clusters * (uint64_t)nelements;
-        a_hdr.data_bytes = a_hdr.num_elements * sizeof(float);
-
-        if (gric_bin_write_header(a_bin_fp, &a_hdr, "Cluster centroids") == 0)
+        if (config->algo.use_double)
         {
-            float *a_buf = malloc(a_hdr.num_elements * sizeof(float));
-            if (a_buf != NULL)
+            a_hdr.data_type = GRIC_BIN_DTYPE_FLOAT64;
+            a_hdr.data_bytes = a_hdr.num_elements * sizeof(double);
+            if (gric_bin_write_header(a_bin_fp, &a_hdr, "Cluster centroids") == 0)
             {
                 for (int i = 0; i < state->num_clusters; i++)
                 {
-                    for (long k = 0; k < nelements; k++)
-                    {
-                        a_buf[i * nelements + k] = (float)state->clusters[i].anchor.data[k];
-                    }
+                    fwrite(state->clusters[i].anchor.data, sizeof(double),
+                           (size_t)nelements, a_bin_fp);
                 }
-                fwrite(a_buf, sizeof(float), a_hdr.num_elements, a_bin_fp);
-                free(a_buf);
+            }
+        }
+        else
+        {
+            a_hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
+            a_hdr.data_bytes = a_hdr.num_elements * sizeof(float);
+            if (gric_bin_write_header(a_bin_fp, &a_hdr, "Cluster centroids") == 0)
+            {
+                for (int i = 0; i < state->num_clusters; i++)
+                {
+                    fwrite(state->clusters[i].anchor.data, sizeof(float),
+                           (size_t)nelements, a_bin_fp);
+                }
             }
         }
         fclose(a_bin_fp);
@@ -215,7 +248,10 @@ static void write_anchors_results(
             {
                 for (long k = 0; k < nelements; k++)
                 {
-                    fprintf(afptr, "%f ", state->clusters[i].anchor.data[k]);
+                    double v = config->algo.use_double ?
+                        ((double *)state->clusters[i].anchor.data)[k] :
+                        (double)((float *)state->clusters[i].anchor.data)[k];
+                    fprintf(afptr, "%f ", v);
                 }
                 fprintf(afptr, "\n");
             }
@@ -230,12 +266,14 @@ static void write_anchors_results(
         snprintf(out_path, sizeof(out_path), "!%s/anchors.fits", out_dir);
         fits_create_file(&afptr, out_path, &status);
         long naxes[3] = {width, height, state->num_clusters};
-        fits_create_img(afptr, DOUBLE_IMG, 3, naxes, &status);
+        int bitpix = config->algo.use_double ? DOUBLE_IMG : FLOAT_IMG;
+        int dtype = config->algo.use_double ? TDOUBLE : TFLOAT;
+        fits_create_img(afptr, bitpix, 3, naxes, &status);
 
         for (int i = 0; i < state->num_clusters; i++)
         {
             long fpixel[3] = {1, 1, i + 1};
-            fits_write_pix(afptr, TDOUBLE, fpixel, nelements,
+            fits_write_pix(afptr, dtype, fpixel, nelements,
                            state->clusters[i].anchor.data, &status);
         }
         fits_close_file(afptr, &status);
@@ -250,7 +288,10 @@ static void write_anchors_results(
             {
                 for (long k = 0; k < nelements; k++)
                 {
-                    fprintf(afptr, "%f ", state->clusters[i].anchor.data[k]);
+                    double v = config->algo.use_double ?
+                        ((double *)state->clusters[i].anchor.data)[k] :
+                        (double)((float *)state->clusters[i].anchor.data)[k];
+                    fprintf(afptr, "%f ", v);
                 }
                 fprintf(afptr, "\n");
             }
@@ -503,7 +544,9 @@ static void write_clusters_and_averages_png(
                     {
                         for (long k = 0; k < nelements; k++)
                         {
-                            avg_buffer[k] += fr->data[k];
+                            double v = fr->is_double ?
+                                ((double *)fr->data)[k] : (double)((float *)fr->data)[k];
+                            avg_buffer[k] += v;
                         }
                     }
                     free_frame(fr);
@@ -590,13 +633,15 @@ static void write_clusters_and_averages_ascii(
                 {
                     for (long k = 0; k < nelements; k++)
                     {
+                        double v = fr->is_double ?
+                            ((double *)fr->data)[k] : (double)((float *)fr->data)[k];
                         if (cfptr != NULL)
                         {
-                            fprintf(cfptr, "%f ", fr->data[k]);
+                            fprintf(cfptr, "%f ", v);
                         }
                         if (config->output.average_mode && avg_buffer != NULL)
                         {
-                            avg_buffer[k] += fr->data[k];
+                            avg_buffer[k] += v;
                         }
                     }
                     if (cfptr != NULL)
@@ -677,7 +722,8 @@ static void write_clusters_and_averages_fits(
             snprintf(fname, sizeof(fname), "!%s/cluster_%d.fits", out_dir, c);
             fits_create_file(&cfptr, fname, &status);
             long cnaxes[3] = {width, height, cluster_counts[c]};
-            fits_create_img(cfptr, DOUBLE_IMG, 3, cnaxes, &status);
+            int bitpix = config->algo.use_double ? DOUBLE_IMG : FLOAT_IMG;
+            fits_create_img(cfptr, bitpix, 3, cnaxes, &status);
         }
 
         if (config->output.average_mode && avg_buffer != NULL)
@@ -699,13 +745,16 @@ static void write_clusters_and_averages_fits(
                     if (cfptr != NULL)
                     {
                         long fpixel[3] = {1, 1, fr_count + 1};
-                        fits_write_pix(cfptr, TDOUBLE, fpixel, nelements, fr->data, &status);
+                        int dtype = fr->is_double ? TDOUBLE : TFLOAT;
+                        fits_write_pix(cfptr, dtype, fpixel, nelements, fr->data, &status);
                     }
                     if (config->output.average_mode && avg_buffer != NULL)
                     {
                         for (long k = 0; k < nelements; k++)
                         {
-                            avg_buffer[k] += fr->data[k];
+                            double v = fr->is_double ?
+                                ((double *)fr->data)[k] : (double)((float *)fr->data)[k];
+                            avg_buffer[k] += v;
                         }
                     }
                     free_frame(fr);
@@ -900,8 +949,10 @@ static void write_clustered_output_file(
                     fprintf(clustered_out, "# NEWCLUSTER %d %ld ", assigned, i);
                     for (long k = 0; k < nelements; k++)
                     {
-                        fprintf(clustered_out, "%f ",
-                                state->clusters[assigned].anchor.data[k]);
+                        double v = config->algo.use_double ?
+                            ((double *)state->clusters[assigned].anchor.data)[k] :
+                            (double)((float *)state->clusters[assigned].anchor.data)[k];
+                        fprintf(clustered_out, "%f ", v);
                     }
                     fprintf(clustered_out, "\n");
                     next_new_cluster++;
@@ -913,7 +964,9 @@ static void write_clustered_output_file(
                     fprintf(clustered_out, "%ld %d ", i, assigned);
                     for (long k = 0; k < nelements; k++)
                     {
-                        fprintf(clustered_out, "%f ", fr->data[k]);
+                        double v = fr->is_double ?
+                            ((double *)fr->data)[k] : (double)((float *)fr->data)[k];
+                        fprintf(clustered_out, "%f ", v);
                     }
                     fprintf(clustered_out, "\n");
                     free_frame(fr);

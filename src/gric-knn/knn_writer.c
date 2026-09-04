@@ -111,25 +111,27 @@ static int write_bin_results(
     {
         uint64_t m_pairs = ((uint64_t)k * (uint64_t)(k - 1)) / 2;
         uint64_t total_mut = (uint64_t)N * m_pairs;
-        const double *frames = config->memory_data;
-        double *loaded_frames = NULL;
+        const void *frames = config->memory_data;
+        void *loaded_frames = NULL;
         long elem = model->frame_elements;
+        size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
 
         if (frames == NULL && config->input_data_path != NULL && elem > 0)
         {
             KnnFrameReader rdr;
             if (knn_reader_open(&rdr, config->input_data_path, N,
-                                model->frame_width, model->frame_height) == 0)
+                                model->frame_width, model->frame_height, model->is_double) == 0)
             {
-                size_t total_bytes = (size_t)N * (size_t)elem * sizeof(double);
+                size_t total_bytes = (size_t)N * (size_t)elem * elem_size;
                 if (total_bytes <= 1024ULL * 1024ULL * 1024ULL) // 1 GB allocation threshold
                 {
-                    loaded_frames = (double *)malloc(total_bytes);
+                    loaded_frames = malloc(total_bytes);
                     if (loaded_frames != NULL)
                     {
                         for (long f = 0; f < N; f++)
                         {
-                            knn_reader_read_frame(&rdr, f, &loaded_frames[f * elem]);
+                            knn_reader_read_frame(&rdr, f,
+                                (char *)loaded_frames + (size_t)f * (size_t)elem * elem_size);
                         }
                         frames = loaded_frames;
                     }
@@ -172,7 +174,8 @@ static int write_bin_results(
                                 {
                                     continue;
                                 }
-                                const double *f_i = &frames[id_i * elem];
+                                const void *f_i =
+                                    (const char *)frames + (size_t)id_i * (size_t)elem * elem_size;
 
                                 for (int j = i + 1; j < (int)k; j++)
                                 {
@@ -181,13 +184,29 @@ static int write_bin_results(
                                     {
                                         continue;
                                     }
-                                    const double *f_j = &frames[id_j * elem];
+                                    const void *f_j = (const char *)frames +
+                                        (size_t)id_j * (size_t)elem * elem_size;
 
                                     double sum = 0.0;
-                                    for (long p = 0; p < elem; p++)
+                                    if (model->is_double)
                                     {
-                                        double diff = f_i[p] - f_j[p];
-                                        sum += diff * diff;
+                                        const double *di = (const double *)f_i;
+                                        const double *dj = (const double *)f_j;
+                                        for (long p = 0; p < elem; p++)
+                                        {
+                                            double diff = di[p] - dj[p];
+                                            sum += diff * diff;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        const float *fi = (const float *)f_i;
+                                        const float *fj = (const float *)f_j;
+                                        for (long p = 0; p < elem; p++)
+                                        {
+                                            float diff = fi[p] - fj[p];
+                                            sum += (double)(diff * diff);
+                                        }
                                     }
                                     double dist = sqrt(sum);
 

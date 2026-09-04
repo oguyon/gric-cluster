@@ -7,11 +7,12 @@
 
 typedef struct
 {
-    double *data;
-    long width;
-    long height;
-    int id;
-    uint64_t cnt0;
+    void           *data;
+    int             is_double;
+    long            width;
+    long            height;
+    int             id;
+    uint64_t        cnt0;
     struct timespec atime;
 } Frame;
 

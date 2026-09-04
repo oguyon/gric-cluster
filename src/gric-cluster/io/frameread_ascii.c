@@ -148,11 +148,26 @@ int getframe_ascii(
         return -1;
     }
 
-    for (long ii = 0; ii < nelements; ii++)
+    if (frame_struct->is_double)
     {
-        if (fscanf(ascii_ptr, "%lf", &frame_struct->data[ii]) != 1)
+        double *dptr = (double *)frame_struct->data;
+        for (long ii = 0; ii < nelements; ii++)
         {
-            return -1;
+            if (fscanf(ascii_ptr, "%lf", &dptr[ii]) != 1)
+            {
+                return -1;
+            }
+        }
+    }
+    else
+    {
+        float *fptr = (float *)frame_struct->data;
+        for (long ii = 0; ii < nelements; ii++)
+        {
+            if (fscanf(ascii_ptr, "%f", &fptr[ii]) != 1)
+            {
+                return -1;
+            }
         }
     }
 

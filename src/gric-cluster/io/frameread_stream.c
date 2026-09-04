@@ -180,52 +180,125 @@ int getframe_stream(
         switch (dtype)
         {
         case _DATATYPE_FLOAT:
-            for (long ii = 0; ii < nelements; ii++)
+            if (!frame_struct->is_double)
             {
-                frame_struct->data[ii] =
-                    (double)((float *)stream_image.array.F)[offset + ii];
+                memcpy(frame_struct->data,
+                       ((float *)stream_image.array.F) + offset,
+                       (size_t)nelements * sizeof(float));
+            }
+            else
+            {
+                double *dptr = (double *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    dptr[ii] = (double)((float *)stream_image.array.F)[offset + ii];
+                }
             }
             break;
         case _DATATYPE_DOUBLE:
-            for (long ii = 0; ii < nelements; ii++)
+            if (frame_struct->is_double)
             {
-                frame_struct->data[ii] =
-                    ((double *)stream_image.array.D)[offset + ii];
+                memcpy(frame_struct->data,
+                       ((double *)stream_image.array.D) + offset,
+                       (size_t)nelements * sizeof(double));
+            }
+            else
+            {
+                float *fptr = (float *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    fptr[ii] = (float)((double *)stream_image.array.D)[offset + ii];
+                }
             }
             break;
         case _DATATYPE_UINT8:
-            for (long ii = 0; ii < nelements; ii++)
+            if (frame_struct->is_double)
             {
-                frame_struct->data[ii] =
-                    (double)((uint8_t *)stream_image.array.UI8)[offset + ii];
+                double *dptr = (double *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    dptr[ii] = (double)((uint8_t *)stream_image.array.UI8)[offset + ii];
+                }
+            }
+            else
+            {
+                float *fptr = (float *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    fptr[ii] = (float)((uint8_t *)stream_image.array.UI8)[offset + ii];
+                }
             }
             break;
         case _DATATYPE_UINT16:
-            for (long ii = 0; ii < nelements; ii++)
+            if (frame_struct->is_double)
             {
-                frame_struct->data[ii] =
-                    (double)((uint16_t *)stream_image.array.UI16)[offset + ii];
+                double *dptr = (double *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    dptr[ii] = (double)((uint16_t *)stream_image.array.UI16)[offset + ii];
+                }
+            }
+            else
+            {
+                float *fptr = (float *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    fptr[ii] = (float)((uint16_t *)stream_image.array.UI16)[offset + ii];
+                }
             }
             break;
         case _DATATYPE_INT16:
-            for (long ii = 0; ii < nelements; ii++)
+            if (frame_struct->is_double)
             {
-                frame_struct->data[ii] =
-                    (double)((int16_t *)stream_image.array.SI16)[offset + ii];
+                double *dptr = (double *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    dptr[ii] = (double)((int16_t *)stream_image.array.SI16)[offset + ii];
+                }
+            }
+            else
+            {
+                float *fptr = (float *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    fptr[ii] = (float)((int16_t *)stream_image.array.SI16)[offset + ii];
+                }
             }
             break;
         case _DATATYPE_UINT32:
-            for (long ii = 0; ii < nelements; ii++)
+            if (frame_struct->is_double)
             {
-                frame_struct->data[ii] =
-                    (double)((uint32_t *)stream_image.array.UI32)[offset + ii];
+                double *dptr = (double *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    dptr[ii] = (double)((uint32_t *)stream_image.array.UI32)[offset + ii];
+                }
+            }
+            else
+            {
+                float *fptr = (float *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    fptr[ii] = (float)((uint32_t *)stream_image.array.UI32)[offset + ii];
+                }
             }
             break;
         case _DATATYPE_INT32:
-            for (long ii = 0; ii < nelements; ii++)
+            if (frame_struct->is_double)
             {
-                frame_struct->data[ii] =
-                    (double)((int32_t *)stream_image.array.SI32)[offset + ii];
+                double *dptr = (double *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    dptr[ii] = (double)((int32_t *)stream_image.array.SI32)[offset + ii];
+                }
+            }
+            else
+            {
+                float *fptr = (float *)frame_struct->data;
+                for (long ii = 0; ii < nelements; ii++)
+                {
+                    fptr[ii] = (float)((int32_t *)stream_image.array.SI32)[offset + ii];
+                }
             }
             break;
         default:

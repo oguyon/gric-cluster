@@ -14,14 +14,16 @@
  */
 void frame_scatter_alloc(
     const TileMap *tm,
-    Frame         *tile_frames)
+    Frame         *tile_frames,
+    int            is_double)
 {
+    size_t elem_size = is_double ? sizeof(double) : sizeof(float);
     for (int m = 0; m < tm->num_tiles; m++)
     {
         uint64_t npix = tm->tiles[m].num_pixels;
 
-        tile_frames[m].data =
-            (double *) malloc(npix * sizeof(double));
+        tile_frames[m].data = malloc(npix * elem_size);
+        tile_frames[m].is_double = is_double;
         tile_frames[m].width  = (long) npix;
         tile_frames[m].height = 1;
     }
@@ -53,19 +55,34 @@ void frame_scatter(
         Frame *tf = &tile_frames[m];
 
         /* Copy metadata from source frame */
-        tf->id    = src->id;
-        tf->cnt0  = src->cnt0;
-        tf->atime = src->atime;
+        tf->id        = src->id;
+        tf->cnt0      = src->cnt0;
+        tf->atime     = src->atime;
+        tf->is_double = src->is_double;
 
         /* Gather pixels into contiguous tile buffer */
         const int      *restrict idx = td->pixel_indices;
-        const double   *restrict sd  = src->data;
-        double         *restrict dd  = tf->data;
         const uint64_t  npix         = td->num_pixels;
 
-        for (uint64_t i = 0; i < npix; i++)
+        if (src->is_double)
         {
-            dd[i] = sd[idx[i]];
+            const double *restrict sd = (const double *)src->data;
+            double       *restrict dd = (double *)tf->data;
+
+            for (uint64_t i = 0; i < npix; i++)
+            {
+                dd[i] = sd[idx[i]];
+            }
+        }
+        else
+        {
+            const float *restrict sf = (const float *)src->data;
+            float       *restrict df = (float *)tf->data;
+
+            for (uint64_t i = 0; i < npix; i++)
+            {
+                df[i] = sf[idx[i]];
+            }
         }
     }
 }

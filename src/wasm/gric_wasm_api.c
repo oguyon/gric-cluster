@@ -211,6 +211,7 @@ void *wasm_cluster_init(
     h->config.algo.maxcl_strategy =
         (MaxClustStrategy)maxcl_strategy;
     h->config.algo.discard_fraction = discard_fraction;
+    h->config.algo.use_double = 1;
 
     /* --- ConfigInput --- */
     h->config.input.maxnbfr = maxnbfr;
@@ -362,6 +363,7 @@ void *wasm_cluster_init(
     /* Reusable input frame */
     h->frame.data =
         (double *)calloc(ndim, sizeof(double));
+    h->frame.is_double = 1;
     h->frame.width = ndim;
     h->frame.height = 1;
     h->frame.id = 0;
@@ -542,6 +544,7 @@ int wasm_cluster_process_frame(
         {
             return -1;
         }
+        h->frame.is_double = 1;
     }
 
     memcpy(h->frame.data, coords,
@@ -613,6 +616,7 @@ int wasm_cluster_process_batch(
             {
                 return f;
             }
+            h->frame.is_double = 1;
         }
 
         memcpy(h->frame.data, &coords_flat[f * ndim], (size_t)ndim * sizeof(double));
@@ -1448,6 +1452,7 @@ void *wasm_multitile_init(
     h->config.algo.maxcl_strategy =
         (MaxClustStrategy)maxcl_strategy;
     h->config.algo.discard_fraction = discard_fraction;
+    h->config.algo.use_double = 1;
 
     h->config.input.maxnbfr = maxnbfr;
 
@@ -1512,10 +1517,11 @@ void *wasm_multitile_init(
         free(h);
         return NULL;
     }
-    frame_scatter_alloc(h->tile_map, h->scatter_buf);
+    frame_scatter_alloc(h->tile_map, h->scatter_buf, 1);
 
     /* Reusable source frame */
     h->src_frame.data = calloc(ndim, sizeof(double));
+    h->src_frame.is_double = 1;
     h->src_frame.width = ndim;
     h->src_frame.height = 1;
     h->src_frame.id = 0;
@@ -1594,6 +1600,7 @@ int wasm_multitile_process_frame(
         task_frame.cnt0 = h->scatter_buf[m].cnt0;
         task_frame.width = h->scatter_buf[m].width;
         task_frame.height = h->scatter_buf[m].height;
+        task_frame.is_double = 1;
         task_frame.data = malloc(
             (size_t)(task_frame.width
                      * task_frame.height)
@@ -2221,6 +2228,7 @@ int wasm_knn_run_search(
     model.num_clusters = M;
     model.total_dataset_frames = total_frames;
     model.is_fits_input = 0;
+    model.is_double = 1;
 
     model.clusters = (KnnCluster *)calloc((size_t)M, sizeof(KnnCluster));
     model.frame_cluster_map = (int *)malloc((size_t)total_frames * sizeof(int));
@@ -2363,7 +2371,7 @@ int wasm_knn_run_search(
         goto cleanup_model_alloc;
     }
 
-    model.anchor_ptrs = (const double **)malloc((size_t)M * sizeof(const double *));
+    model.anchor_ptrs = (const void **)malloc((size_t)M * sizeof(const void *));
     model.cluster_radii = (double *)malloc((size_t)M * sizeof(double));
     if (model.anchor_ptrs == NULL || model.cluster_radii == NULL)
     {
@@ -2387,6 +2395,7 @@ int wasm_knn_run_search(
     config.memory_data = dataset_points;
     config.use_multi_pivot = use_multi_pivot;
     config.use_reciprocal = (!past_only && !future_only) ? 1 : 0;
+    config.use_double = 1;
     config.nthreads = 1;
     config.progress_mode = 0;
     config.verbose_level = 0;

@@ -83,7 +83,8 @@ int getframe_fits(
     long nelements = frame_width * frame_height;
     long fpixel[3] = {1, 1, index + 1};
 
-    if (fits_read_pix(fptr, TDOUBLE, fpixel, nelements, NULL, frame_struct->data, NULL,
+    int datatype = frame_struct->is_double ? TDOUBLE : TFLOAT;
+    if (fits_read_pix(fptr, datatype, fpixel, nelements, NULL, frame_struct->data, NULL,
                       &status))
     {
         fits_report_error(stderr, status);

@@ -22,6 +22,7 @@ typedef struct
     int    te4_mode;        /**< 1 = 4-point geometric bounding */
     int    te5_mode;        /**< 1 = 5-point geometric bounding */
     int    prev_cluster_id; /**< Preceding query cluster ID for trajectory warm-starting */
+    int    is_double;       /**< 1 = double precision, 0 = float */
 } ClusterLocatorConfig;
 
 /** Results of the coarse cluster localization */
@@ -91,10 +92,10 @@ double calc_min_dist_5pt(
  * Return: 0 on success, -1 on error.
  */
 int cluster_locate_sample(
-    const double               *query_data,
+    const void                 *query_data,
     long                        frame_elements,
     int                         num_clusters,
-    const double *const        *cluster_anchors,
+    const void *const          *cluster_anchors,
     const double               *cluster_radii,
     const double               *dcc_matrix,
     const ClusterLocatorConfig *config,

@@ -15,7 +15,17 @@
  * @return The Euclidean distance, or -1.0 if the frame dimensions mismatch.
  */
 double framedist(
-    Frame *a,
-    Frame *b);
+    const Frame *a,
+    const Frame *b);
+
+double framedist_float(
+    const float *restrict da,
+    const float *restrict db,
+    long                  size);
+
+double framedist_double(
+    const double *restrict da,
+    const double *restrict db,
+    long                   size);
 
 #endif // FRAMEDISTANCE_H

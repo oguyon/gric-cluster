@@ -243,9 +243,21 @@ int getframe_mp4(
                   dec_ctx->height, rgb_data, rgb_linesize);
 
         uint8_t *src = rgb_data[0];
-        for (long ii = 0; ii < nelements; ii++)
+        if (frame_struct->is_double)
         {
-            frame_struct->data[ii] = (double)src[ii];
+            double *dptr = (double *)frame_struct->data;
+            for (long ii = 0; ii < nelements; ii++)
+            {
+                dptr[ii] = (double)src[ii];
+            }
+        }
+        else
+        {
+            float *fptr = (float *)frame_struct->data;
+            for (long ii = 0; ii < nelements; ii++)
+            {
+                fptr[ii] = (float)src[ii];
+            }
         }
 
         free(rgb_data[0]);

@@ -18,7 +18,8 @@
 int knn_model_load(
     const char *cluster_dir,
     const char *input_data_path,
-    KnnModel   *model);
+    KnnModel   *model,
+    int         use_double);
 
 /**
  * @brief Free all resident buffers and structures within a KnnModel.
