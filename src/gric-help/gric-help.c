@@ -422,6 +422,7 @@ static const ProgramHelpDoc PROGRAM_DOCS[] = {
             "  -rlim <float>        Cutoff radius cutoff\n"
             "  -approx              Fast Approximate Graph Search (10-20 evals/query)\n"
             "  -ef-search <int>     Search pool / heap size (default: 2*k in approx)\n"
+            "  -trajectory          Enable trajectory warm-start (for smooth trajectories)\n"
             "  -nthreads <int>      Number of OpenMP worker threads\n"
             "  -progress            Display live progress bar",
         .examples =

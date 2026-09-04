@@ -5917,6 +5917,13 @@
           args.push('--approx');
         }
 
+        const chkTrajectory = document.getElementById('chkReconQueryTrajectory');
+        if (chkTrajectory && chkTrajectory.checked) {
+          args.push('--trajectory');
+        } else {
+          args.push('--no-trajectory');
+        }
+
         if (consoleEl) {
           consoleEl.textContent +=
             `\n🔍 [Reconstruction] Dispatching native gric-knn -query C (k=${k})...\n` +

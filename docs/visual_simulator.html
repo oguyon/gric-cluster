@@ -3122,6 +3122,18 @@ Results are stored in the cluster directory and loaded back for fast reconstruct
                 </label>
               </div>
 
+              <!-- Smooth Trajectory Momentum Checkbox -->
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; padding: 4px 8px; background: rgba(15, 23, 42, 0.45); border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.2);">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: #e9d5ff; cursor: pointer;"
+                       data-tooltip-title="Smooth Trajectory Warm-Start"
+                       data-tooltip-badge="--trajectory"
+                       data-tooltip-color="cyan"
+                       data-tooltip-desc="Enables sequential trajectory momentum and heap warm-starting across consecutive query frames. Recommended for smooth, low-noise time series and continuous motion where consecutive queries are close. Leave OFF for independent, noisy, or shuffled queries.">
+                  <input type="checkbox" id="chkReconQueryTrajectory" style="accent-color: #a855f7; cursor: pointer;">
+                  <span>📈 Smooth Trajectory (<code style="color: #38bdf8;">--trajectory</code>)</span>
+                </label>
+              </div>
+
               <!-- Live progress bar (shown during job) -->
               <div id="reconQueryProgressBox"
                    style="display: none; margin-top: 6px;
