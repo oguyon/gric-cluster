@@ -80,6 +80,11 @@ static void print_help(
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-no-angular%s, %s--no-angular%s Disable Angular Cosine Directional Bounding\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-trajectory%s, %s--trajectory%s   Enable Trajectory Momentum\n"
+           "                                (for smooth trajectories)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-no-trajectory%s             Disable Trajectory Momentum (default)\n",
+           ansi_color_green, ansi_reset);
     printf("  %s-no-reciprocal%s         Disable Symmetric Distance Reciprocal Push\n",
            ansi_color_green, ansi_reset);
     printf("  %s-approx%s, %s--approx%s         Fast Approximate Graph Search "
@@ -123,6 +128,7 @@ int main(
     config.verbose_level = 1;
     config.use_reciprocal = 1; // Enabled by default for bidirectional search
     config.use_angular_bound = 1; // Enabled by default for directional pruning
+    config.use_trajectory = 0; // Disabled by default; enable for smooth trajectories
 
     int k_explicitly_set = 0;
     int dtmin_explicitly_set = 0;
@@ -262,6 +268,17 @@ int main(
                  strcmp(argv[arg_idx], "--no-direction") == 0)
         {
             config.use_angular_bound = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-trajectory") == 0 ||
+                 strcmp(argv[arg_idx], "--trajectory") == 0)
+        {
+            config.use_trajectory = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-trajectory") == 0 ||
+                 strcmp(argv[arg_idx], "--no-trajectory") == 0 ||
+                 strcmp(argv[arg_idx], "-notrajectory") == 0)
+        {
+            config.use_trajectory = 0;
         }
         else if (strcmp(argv[arg_idx], "-reciprocal") == 0 ||
                  strcmp(argv[arg_idx], "--reciprocal") == 0)
@@ -404,6 +421,14 @@ int main(
     {
         printf("  Reciprocal:    Enabled (Symmetric d(i,j)=d(j,i))\n");
     }
+    if (config.use_angular_bound)
+    {
+        printf("  Angular Bound: Enabled (Directional Cosine Bounding)\n");
+    }
+    if (config.query_data_path != NULL && config.use_trajectory)
+    {
+        printf("  Trajectory:    Enabled (Sequential Heap & Seed Warm-Start)\n");
+    }
     if (config.approx_mode)
     {
         int eff_ef = (config.ef_search > 0) ? config.ef_search : 2 * config.k;
@@ -512,6 +537,13 @@ int main(
             100.0 * (double)telemetry.angular_pruned / (double)total_graph_cands : 0.0;
         printf("  Angular Cosine Pruned:     %lu (%.1f%% of graph edges)\n",
                (unsigned long)telemetry.angular_pruned, ang_pct);
+    }
+    if (telemetry.trajectory_warmstarts > 0)
+    {
+        printf("  Trajectory Warmstarts:     %lu queries (%.1f%%)\n",
+               (unsigned long)telemetry.trajectory_warmstarts,
+               100.0 * (double)telemetry.trajectory_warmstarts /
+                   (double)telemetry.total_queries);
     }
     if (telemetry.global_containment_hits > 0)
     {

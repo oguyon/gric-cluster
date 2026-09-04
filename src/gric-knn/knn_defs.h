@@ -86,6 +86,7 @@ typedef struct
     int             use_multi_pivot;   /**< 1 to enable Multi-Anchor Pivot Bounding (AESA) */
     int             use_reciprocal;    /**< 1 to enable Symmetric Distance Reciprocal Push */
     int             use_angular_bound; /**< 1 to enable Angular Cosine Directional Bounding */
+    int             use_trajectory;    /**< 1 to enable Trajectory Momentum (smooth trajectories) */
     int             approx_mode;       /**< 1 to enable Fast Approximate Graph Search */
     int             ef_search;         /**< Search candidate pool size (default: 2*k in approx) */
     int             use_double;        /**< 1 to run computations in double precision */
@@ -108,6 +109,7 @@ typedef struct
     uint64_t angular_pruned;
     uint64_t global_containment_hits;
     uint64_t framedist_calls;
+    uint64_t trajectory_warmstarts;
     double   time_load_ms;
     double   time_search_ms;
     double   time_write_ms;
@@ -183,6 +185,27 @@ static inline int knn_visited_check_and_mark(
     tracker->tags[frame_id] = tracker->epoch;
     return 0;
 }
+
+/**
+ * struct KnnTrajectoryTracker - Thread-local sequential query trajectory state.
+ * @prev_query_id:   Index of the preceding query frame evaluated by this thread.
+ * @prev_cluster_id: Most recent matching cluster ID.
+ * @prev_best_seed:  Most recent closest reference frame ID (1-NN match).
+ * @prev_best_dist:  Distance to @prev_best_seed.
+ * @num_cached:      Number of cached neighbor candidates from preceding query.
+ * @cached_ids:      Candidate frame IDs from preceding query top-k.
+ * @cached_dists:    Candidate distances from preceding query top-k.
+ */
+typedef struct
+{
+    long   prev_query_id;
+    int    prev_cluster_id;
+    long   prev_best_seed;
+    double prev_best_dist;
+    int    num_cached;
+    int    cached_ids[64];
+    double cached_dists[64];
+} KnnTrajectoryTracker;
 
 /**
  * knn_get_mutual_dist() - Retrieve precomputed mutual distance between neighbors i and j.
