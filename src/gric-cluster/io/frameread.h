@@ -13,6 +13,12 @@ int init_frameread(
     int   filelist_mode);
 
 /**
+ * @brief Set the computation precision for the frame reader (0=float, 1=double).
+ */
+void set_frameread_precision(
+    int use_double);
+
+/**
  * @brief Retrieve the next sequential frame.
  */
 Frame *getframe(void);

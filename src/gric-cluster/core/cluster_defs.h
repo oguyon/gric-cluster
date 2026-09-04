@@ -29,8 +29,9 @@ typedef struct
     int              maxnbclust;       /**< Maximum number of clusters */
     double           tm_mixing_coeff;  /**< Transition-matrix mixing weight */
     MaxClustStrategy maxcl_strategy;   /**< Strategy when maxnbclust reached */
-    double           discard_fraction; /**< Fraction of clusters to discard */
+    double           discard_fraction;   /**< Fraction of clusters to discard */
     int              pass2_nearest_mode; /**< 1 to run second pass closest-anchor reassignment */
+    int              use_double;         /**< 1 to run computations in double precision */
 } ConfigAlgorithm;
 
 /** Input configuration. */

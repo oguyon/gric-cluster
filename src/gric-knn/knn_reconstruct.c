@@ -173,7 +173,7 @@ int main(
     uint64_t b_dim = (uint64_t)(b_w * b_h);
 
     KnnFrameReader b_ctx;
-    if (knn_reader_open(&b_ctx, data_b_path, b_n, b_w, b_h) != 0)
+    if (knn_reader_open(&b_ctx, data_b_path, b_n, b_w, b_h, 0) != 0)
     {
         fprintf(stderr, "Error: failed to open %s\n", data_b_path);
         free(indices);
@@ -182,12 +182,9 @@ int main(
     }
 
     float* data_b = malloc((size_t)(b_n * b_dim * sizeof(float)));
-    double* temp_frame = malloc((size_t)(b_dim * sizeof(double)));
-    if (!data_b || !temp_frame)
+    if (!data_b)
     {
         fprintf(stderr, "Error: out of memory for dataset B\n");
-        if (data_b) free(data_b);
-        if (temp_frame) free(temp_frame);
         knn_reader_close(&b_ctx);
         free(indices);
         free(distances);
@@ -196,22 +193,16 @@ int main(
 
     for (long i = 0; i < b_n; i++)
     {
-        if (knn_reader_read_frame(&b_ctx, i, temp_frame) != 0)
+        if (knn_reader_read_frame(&b_ctx, i, &data_b[i * b_dim]) != 0)
         {
             fprintf(stderr, "Error: failed to read frame %ld from %s\n", i, data_b_path);
             knn_reader_close(&b_ctx);
             free(data_b);
-            free(temp_frame);
             free(indices);
             free(distances);
             return 1;
         }
-        for (long d = 0; d < (long)b_dim; d++)
-        {
-            data_b[i * b_dim + d] = (float)temp_frame[d];
-        }
     }
-    free(temp_frame);
     knn_reader_close(&b_ctx);
 
     float* D = calloc((size_t)(N * b_dim), sizeof(float));

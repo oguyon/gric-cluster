@@ -390,6 +390,16 @@ add_test(NAME test_knn_spiral
     COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_out -k 10 -dtmin 5 -o /tmp/ctest_knn_spiral.txt)
 set_tests_properties(test_knn_spiral PROPERTIES DEPENDS test_spiral_clustering)
 
+add_test(NAME test_spiral_clustering_double
+    COMMAND gric-cluster 0.1 /tmp/ctest_spiral.txt -maxim 1000
+            -outdir /tmp/ctest_spiral_double_out -double)
+set_tests_properties(test_spiral_clustering_double PROPERTIES DEPENDS test_sequence_generator)
+
+add_test(NAME test_knn_spiral_double
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_double_out
+            -k 10 -dtmin 5 -double -o /tmp/ctest_knn_spiral_double.txt)
+set_tests_properties(test_knn_spiral_double PROPERTIES DEPENDS test_spiral_clustering_double)
+
 if (CFITSIO_FOUND)
     add_test(NAME test_bouncing_balls_single_gen
         COMMAND gric-gen-balls -n 1 -r 5.0 -W 32 -H 32 -f 500 -s 42 /tmp/ctest_balls_1.fits)

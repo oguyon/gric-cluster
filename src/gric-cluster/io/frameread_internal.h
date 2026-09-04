@@ -64,8 +64,9 @@ extern long frame_height;
 extern int current_frame_idx;
 
 #define FRAME_DATA_POOL_SIZE 64
-extern double *frame_data_pool[FRAME_DATA_POOL_SIZE];
+extern void *frame_data_pool[FRAME_DATA_POOL_SIZE];
 extern int frame_data_pool_count;
+extern int frameread_use_double;
 
 /* Format-specific helper prototypes */
 

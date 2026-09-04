@@ -20,7 +20,8 @@ typedef struct
     int           is_bin;
     uint32_t      bin_data_type;
     uint64_t      bin_header_bytes;
-    const double *memory_data; /**< Optional in-memory dataset buffer */
+    int           use_double;
+    const void   *memory_data; /**< Optional in-memory dataset buffer */
     long          total_frames;
     long          frame_width;
     long          frame_height;
@@ -54,6 +55,7 @@ int knn_reader_inspect(
  * @param total_frames Expected total frames.
  * @param frame_width  Frame width.
  * @param frame_height Frame height.
+ * @param use_double   1 for double precision, 0 for float.
  * @return 0 on success, -1 on error.
  */
 int knn_reader_open(
@@ -61,7 +63,8 @@ int knn_reader_open(
     const char     *input_path,
     long            total_frames,
     long            frame_width,
-    long            frame_height);
+    long            frame_height,
+    int             use_double);
 
 /**
  * @brief Open an in-memory dataset buffer for zero-copy random access.
@@ -69,25 +72,27 @@ int knn_reader_open(
  * @param memory_data    Pointer to contiguous frame pixel data.
  * @param total_frames   Number of frames.
  * @param frame_elements Number of elements per frame.
+ * @param use_double     1 for double precision, 0 for float.
  * @return 0 on success, -1 on error.
  */
 int knn_reader_open_memory(
     KnnFrameReader *reader,
-    const double   *memory_data,
+    const void     *memory_data,
     long            total_frames,
-    long            frame_elements);
+    long            frame_elements,
+    int             use_double);
 
 /**
  * @brief Read a single frame by index into the destination buffer.
  * @param reader   Pointer to KnnFrameReader context.
  * @param frame_id 0-based frame index.
- * @param out_data Output pixel buffer of size frame_elements.
+ * @param out_data Output pixel buffer of size frame_elements (float* or double*).
  * @return 0 on success, -1 on error.
  */
 int knn_reader_read_frame(
     KnnFrameReader *reader,
     long            frame_id,
-    double         *out_data);
+    void           *out_data);
 
 /**
  * @brief Clone a reader handle for thread-local usage in parallel OpenMP workers.

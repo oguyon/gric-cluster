@@ -292,6 +292,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    set_frameread_precision(config.algo.use_double);
     if (init_frameread(config.input.fits_filename,
                        config.input.stream_input_mode,
                        config.input.cnt2sync_mode,

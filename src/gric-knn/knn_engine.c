@@ -143,14 +143,64 @@ static inline int find_member_upper_bound(
 }
 
 /**
- * compute_euclidean_distance() - Vectorized Euclidean distance between frames.
+ * compute_euclidean_distance_float() - Vectorized single-precision Euclidean distance.
+ * @da:   Pointer to first pixel array.
+ * @db:   Pointer to second pixel array.
+ * @size: Number of elements in frame.
+ *
+ * Return: Euclidean L2 distance as double.
+ */
+static inline double compute_euclidean_distance_float(
+    const float *restrict da,
+    const float *restrict db,
+    long                  size)
+{
+    float sum = 0.0f;
+    long i = 0;
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (size >= 8)
+    {
+        __m256 sum_vec = _mm256_setzero_ps();
+        for (; i <= size - 8; i += 8)
+        {
+            __m256 va = _mm256_loadu_ps(&da[i]);
+            __m256 vb = _mm256_loadu_ps(&db[i]);
+            __m256 diff = _mm256_sub_ps(va, vb);
+#ifdef __FMA__
+            sum_vec = _mm256_fmadd_ps(diff, diff, sum_vec);
+#else
+            sum_vec = _mm256_add_ps(sum_vec, _mm256_mul_ps(diff, diff));
+#endif
+        }
+        __m128 vlow = _mm256_castps256_ps128(sum_vec);
+        __m128 vhigh = _mm256_extractf128_ps(sum_vec, 1);
+        __m128 vsum = _mm_add_ps(vlow, vhigh);
+        vsum = _mm_hadd_ps(vsum, vsum);
+        vsum = _mm_hadd_ps(vsum, vsum);
+        sum += _mm_cvtss_f32(vsum);
+    }
+#endif
+
+    for (; i < size; i++)
+    {
+        float diff = da[i] - db[i];
+        sum += diff * diff;
+    }
+
+    return (double)sqrtf(sum);
+}
+
+/**
+ * compute_euclidean_distance_double() - Vectorized double-precision Euclidean distance.
  * @da:   Pointer to first pixel array.
  * @db:   Pointer to second pixel array.
  * @size: Number of elements in frame.
  *
  * Return: Euclidean L2 distance.
  */
-static inline double compute_euclidean_distance(
+static inline double compute_euclidean_distance_double(
     const double *restrict da,
     const double *restrict db,
     long                   size)
@@ -186,6 +236,28 @@ static inline double compute_euclidean_distance(
     }
 
     return sqrt(sum);
+}
+
+/**
+ * compute_euclidean_distance() - Vectorized Euclidean distance between frames.
+ * @da:        Pointer to first pixel array.
+ * @db:        Pointer to second pixel array.
+ * @size:      Number of elements in frame.
+ * @is_double: 1 for double precision, 0 for float.
+ *
+ * Return: Euclidean L2 distance.
+ */
+static inline double compute_euclidean_distance(
+    const void *restrict da,
+    const void *restrict db,
+    long                 size,
+    int                  is_double)
+{
+    if (is_double)
+    {
+        return compute_euclidean_distance_double((const double *)da, (const double *)db, size);
+    }
+    return compute_euclidean_distance_float((const float *)da, (const float *)db, size);
 }
 
 /**
@@ -550,13 +622,13 @@ static inline void record_neighbor_and_reciprocal(
  */
 static void knn_search_intra_cluster(
     long                   query_id,
-    const double *restrict query_data,
+    const void *restrict   query_data,
     int                    home_cluster_id,
     double                 r_home,
     const KnnModel        *model,
     const KnnConfig       *config,
     KnnFrameReader        *reader,
-    double        *restrict cand_buffer,
+    void          *restrict cand_buffer,
     KnnMaxHeap            *heap,
     KnnMaxHeap            *all_heaps,
 #ifdef _OPENMP
@@ -617,7 +689,7 @@ static void knn_search_intra_cluster(
         {
             telem->framedist_calls++;
             double d = compute_euclidean_distance(
-                query_data, cand_buffer, model->frame_elements
+                query_data, cand_buffer, model->frame_elements, model->is_double
             );
             record_neighbor_and_reciprocal(
                 query_id, cand_id, d, config, model, heap, all_heaps
@@ -650,12 +722,12 @@ static void knn_search_intra_cluster(
  */
 static int knn_warm_start_nearest_cluster(
     long                   query_id,
-    const double *restrict query_data,
+    const void *restrict   query_data,
     int                    home_cluster_id,
     const KnnModel        *model,
     const KnnConfig       *config,
     KnnFrameReader        *reader,
-    double        *restrict cand_buffer,
+    void          *restrict cand_buffer,
     KnnMaxHeap            *heap,
     KnnMaxHeap            *all_heaps,
 #ifdef _OPENMP
@@ -699,7 +771,7 @@ static int knn_warm_start_nearest_cluster(
     telem->framedist_calls++;
 
     double d_anchor = compute_euclidean_distance(
-        query_data, warm_cl->anchor_data, model->frame_elements
+        query_data, warm_cl->anchor_data, model->frame_elements, model->is_double
     );
     double eps_factor = 1.0 + config->epsilon;
 
@@ -734,7 +806,7 @@ static int knn_warm_start_nearest_cluster(
         {
             telem->framedist_calls++;
             double d = compute_euclidean_distance(
-                query_data, cand_buffer, model->frame_elements
+                query_data, cand_buffer, model->frame_elements, model->is_double
             );
             record_neighbor_and_reciprocal(
                 query_id, cand_id, d, config, model, heap, all_heaps
@@ -749,7 +821,7 @@ static int knn_warm_start_nearest_cluster(
         }
     } // for (int m = 0; ...)
 
-    if (config->use_multi_pivot && *num_pivots < MAX_MEASURED_PIVOTS)
+    if (num_pivots != NULL && *num_pivots < MAX_MEASURED_PIVOTS)
     {
         pivots[*num_pivots].cluster_id = best_c;
         pivots[*num_pivots].d_anchor = d_anchor;
@@ -895,14 +967,14 @@ static int knn_score_candidate_clusters(
  */
 static void knn_search_inter_clusters(
     long                   query_id,
-    const double *restrict query_data,
+    const void *restrict query_data,
     int                    home_cluster_id,
     double                 r_home,
     int                    num_cand_clusters,
     const KnnModel        *model,
     const KnnConfig       *config,
     KnnFrameReader        *reader,
-    double        *restrict cand_buffer,
+    void          *restrict cand_buffer,
     ClusterScore  *restrict scores_buffer,
     KnnMaxHeap            *heap,
     KnnMaxHeap            *all_heaps,
@@ -935,7 +1007,7 @@ static void knn_search_inter_clusters(
         const KnnCluster *cl = &model->clusters[q];
         telem->framedist_calls++;
         double d_anchor = compute_euclidean_distance(
-            query_data, cl->anchor_data, frame_elem
+            query_data, cl->anchor_data, frame_elem, model->is_double
         );
 
         // Dynamic Bound Tightening (Multi-Pivot)
@@ -1095,7 +1167,7 @@ static void knn_search_inter_clusters(
             {
                 telem->framedist_calls++;
                 double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem
+                    query_data, cand_buffer, frame_elem, model->is_double
                 );
                 record_neighbor_and_reciprocal(
                     query_id, cand_id, d, config, model, heap, all_heaps
@@ -1124,11 +1196,11 @@ static void knn_search_inter_clusters(
  */
 static void knn_search_single_frame(
     long                   query_id,
-    const double *restrict query_data,
+    const void *restrict   query_data,
     const KnnModel        *model,
     const KnnConfig       *config,
     KnnFrameReader        *reader,
-    double        *restrict cand_buffer,
+    void          *restrict cand_buffer,
     ClusterScore  *restrict scores_buffer,
     KnnMaxHeap            *all_heaps,
 #ifdef _OPENMP
@@ -1217,11 +1289,11 @@ static void knn_search_single_frame(
 static void knn_cross_seed_frontier(
     const ClusterLocatorResult *loc_res,
     int                         best_c,
-    const double *restrict      query_data,
+    const void *restrict        query_data,
     const KnnModel             *model,
     const KnnConfig            *config,
     KnnFrameReader             *cand_reader,
-    double *restrict            cand_buffer,
+    void *restrict              cand_buffer,
     KnnMaxHeap                 *heap,
     FrontierNode               *frontier,
     int                        *frontier_count,
@@ -1284,7 +1356,7 @@ static void knn_cross_seed_frontier(
                             telem->framedist_calls++;
                             telem->graph_seeds_evaluated++;
                             double d = compute_euclidean_distance(
-                                query_data, cand_buffer, frame_elem
+                                query_data, cand_buffer, frame_elem, model->is_double
                             );
                             if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                             {
@@ -1327,19 +1399,19 @@ static void knn_cross_seed_frontier(
  * @telem:            Telemetry record.
  */
 static void knn_greedy_route_to_basin(
-    const double *restrict query_data,
-    const KnnModel        *model,
-    const KnnConfig       *config,
-    KnnFrameReader        *cand_reader,
-    double        *restrict cand_buffer,
-    KnnMaxHeap            *heap,
-    long                  *best_seed_id,
-    double                *best_seed_dist,
-    long                  *seed_pivot_ids,
-    double                *seed_pivot_dists,
-    int                   *num_seed_pivots,
-    KnnVisitedTracker     *visited,
-    KnnTelemetry  *restrict telem)
+    const void *restrict query_data,
+    const KnnModel      *model,
+    const KnnConfig     *config,
+    KnnFrameReader      *cand_reader,
+    void *restrict       cand_buffer,
+    KnnMaxHeap          *heap,
+    long                *best_seed_id,
+    double              *best_seed_dist,
+    long                *seed_pivot_ids,
+    double              *seed_pivot_dists,
+    int                 *num_seed_pivots,
+    KnnVisitedTracker   *visited,
+    KnnTelemetry *restrict telem)
 {
     long curr_u = *best_seed_id;
     double curr_d = *best_seed_dist;
@@ -1382,7 +1454,7 @@ static void knn_greedy_route_to_basin(
                 telem->framedist_calls++;
                 telem->graph_seeds_evaluated++;
                 double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem
+                    query_data, cand_buffer, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
@@ -1437,19 +1509,19 @@ static void knn_greedy_route_to_basin(
  * @telem:            Telemetry record.
  */
 static void knn_direct_basin_expansion(
-    const double *restrict query_data,
-    const KnnModel        *model,
-    const KnnConfig       *config,
-    KnnFrameReader        *cand_reader,
-    double        *restrict cand_buffer,
-    KnnMaxHeap            *heap,
-    long                  *best_seed_id,
-    double                *best_seed_dist,
-    long                  *seed_pivot_ids,
-    double                *seed_pivot_dists,
-    int                   *num_seed_pivots,
-    KnnVisitedTracker     *visited,
-    KnnTelemetry  *restrict telem)
+    const void *restrict query_data,
+    const KnnModel      *model,
+    const KnnConfig     *config,
+    KnnFrameReader      *cand_reader,
+    void *restrict       cand_buffer,
+    KnnMaxHeap          *heap,
+    long                *best_seed_id,
+    double              *best_seed_dist,
+    long                *seed_pivot_ids,
+    double              *seed_pivot_dists,
+    int                 *num_seed_pivots,
+    KnnVisitedTracker   *visited,
+    KnnTelemetry *restrict telem)
 {
     long center_u = *best_seed_id;
     double center_d = *best_seed_dist;
@@ -1534,7 +1606,7 @@ static void knn_direct_basin_expansion(
             telem->framedist_calls++;
             telem->graph_seeds_evaluated++;
             double d = compute_euclidean_distance(
-                query_data, cand_buffer, frame_elem
+                query_data, cand_buffer, frame_elem, model->is_double
             );
             if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
             {
@@ -1699,7 +1771,7 @@ static void knn_direct_basin_expansion(
                         telem->framedist_calls++;
                         telem->graph_seeds_evaluated++;
                         double d2 = compute_euclidean_distance(
-                            query_data, cand_buffer, frame_elem
+                            query_data, cand_buffer, frame_elem, model->is_double
                         );
                         if (config->rlim_cutoff <= 0.0 || d2 <= config->rlim_cutoff)
                         {
@@ -1738,21 +1810,21 @@ static void knn_direct_basin_expansion(
  * Return: 1 if global containment criterion was satisfied, 0 otherwise.
  */
 static int knn_cross_explore_graph_frontier(
-    const double *restrict query_data,
-    const KnnModel        *model,
-    const KnnConfig       *config,
-    KnnFrameReader        *cand_reader,
-    double        *restrict cand_buffer,
-    KnnMaxHeap            *heap,
-    FrontierNode          *frontier,
-    int                    frontier_count,
-    long                  *best_seed_id,
-    double                *best_seed_dist,
-    long                  *seed_pivot_ids,
-    double                *seed_pivot_dists,
-    int                   *num_seed_pivots,
-    KnnVisitedTracker     *visited,
-    KnnTelemetry  *restrict telem)
+    const void *restrict query_data,
+    const KnnModel      *model,
+    const KnnConfig     *config,
+    KnnFrameReader      *cand_reader,
+    void *restrict       cand_buffer,
+    KnnMaxHeap          *heap,
+    FrontierNode        *frontier,
+    int                  frontier_count,
+    long                *best_seed_id,
+    double              *best_seed_dist,
+    long                *seed_pivot_ids,
+    double              *seed_pivot_dists,
+    int                 *num_seed_pivots,
+    KnnVisitedTracker   *visited,
+    KnnTelemetry *restrict telem)
 {
     int graph_k = model->graph_k;
     int target_k = heap->k;
@@ -1893,7 +1965,7 @@ static int knn_cross_explore_graph_frontier(
                 telem->framedist_calls++;
                 telem->graph_seeds_evaluated++;
                 double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem
+                    query_data, cand_buffer, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
@@ -2058,7 +2130,7 @@ static int knn_cross_explore_graph_frontier(
                     telem->framedist_calls++;
                     telem->graph_seeds_evaluated++;
                     double d = compute_euclidean_distance(
-                        query_data, cand_buffer, frame_elem
+                        query_data, cand_buffer, frame_elem, model->is_double
                     );
                     if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                     {
@@ -2126,11 +2198,11 @@ static void knn_cross_eval_intra_cluster(
     int                    num_seed_pivots,
     const long            *seed_pivot_ids,
     const double          *seed_pivot_dists,
-    const double *restrict query_data,
+    const void *restrict query_data,
     const KnnModel        *model,
     const KnnConfig       *config,
     KnnFrameReader        *cand_reader,
-    double        *restrict cand_buffer,
+    void *restrict         cand_buffer,
     double        *restrict anchor_dists,
     KnnMaxHeap            *heap,
     KnnVisitedTracker     *visited,
@@ -2160,7 +2232,7 @@ static void knn_cross_eval_intra_cluster(
         {
             telem->framedist_calls++;
             d_anchor_target = compute_euclidean_distance(
-                query_data, target_cl->anchor_data, frame_elem
+                query_data, target_cl->anchor_data, frame_elem, model->is_double
             );
             anchor_dists[target_c] = d_anchor_target;
         }
@@ -2227,7 +2299,7 @@ static void knn_cross_eval_intra_cluster(
             {
                 telem->framedist_calls++;
                 double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem
+                    query_data, cand_buffer, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
@@ -2265,11 +2337,11 @@ static void knn_cross_eval_inter_clusters(
     int                         num_seed_pivots,
     const long                 *seed_pivot_ids,
     const double               *seed_pivot_dists,
-    const double *restrict      query_data,
+    const void *restrict        query_data,
     const KnnModel             *model,
     const KnnConfig            *config,
     KnnFrameReader             *cand_reader,
-    double *restrict            cand_buffer,
+    void *restrict              cand_buffer,
     double *restrict            anchor_dists,
     ClusterScore *restrict      scores_buffer,
     uint8_t                    *active_mask,
@@ -2327,7 +2399,7 @@ static void knn_cross_eval_inter_clusters(
         {
             telem->framedist_calls++;
             anchor_dists[q] = compute_euclidean_distance(
-                query_data, model->clusters[q].anchor_data, frame_elem
+                query_data, model->clusters[q].anchor_data, frame_elem, model->is_double
             );
         }
 
@@ -2440,7 +2512,7 @@ static void knn_cross_eval_inter_clusters(
             {
                 telem->framedist_calls++;
                 double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem
+                    query_data, cand_buffer, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
@@ -2467,18 +2539,18 @@ static void knn_cross_eval_inter_clusters(
  * @telem:           Thread-local KnnTelemetry.
  */
 static void knn_search_cross_dataset_frame(
-    long                   query_id,
-    const double *restrict query_data,
-    const KnnModel        *model,
-    const KnnConfig       *config,
-    KnnFrameReader        *cand_reader,
-    double        *restrict cand_buffer,
-    double        *restrict anchor_dists,
-    ClusterScore  *restrict scores_buffer,
-    KnnMaxHeap            *heap,
-    int                   *prev_cluster_id,
-    KnnVisitedTracker     *visited,
-    KnnTelemetry  *restrict telem)
+    long                 query_id,
+    const void *restrict query_data,
+    const KnnModel      *model,
+    const KnnConfig     *config,
+    KnnFrameReader      *cand_reader,
+    void       *restrict cand_buffer,
+    double     *restrict anchor_dists,
+    ClusterScore *restrict scores_buffer,
+    KnnMaxHeap          *heap,
+    int                 *prev_cluster_id,
+    KnnVisitedTracker   *visited,
+    KnnTelemetry *restrict telem)
 {
     (void)query_id;
     int M = model->num_clusters;
@@ -2506,6 +2578,7 @@ static void knn_search_cross_dataset_frame(
     loc_cfg.tau_max = knn_heap_peek_max_dist(heap);
     loc_cfg.epsilon = config->epsilon;
     loc_cfg.prev_cluster_id = (prev_cluster_id != NULL) ? *prev_cluster_id : -1;
+    loc_cfg.is_double = model->is_double;
 
     ClusterLocatorResult loc_res;
     loc_res.active_cluster_mask = active_mask;
@@ -2554,7 +2627,7 @@ static void knn_search_cross_dataset_frame(
             {
                 telem->framedist_calls++;
                 double d0 = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem
+                    query_data, cand_buffer, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d0 <= config->rlim_cutoff)
                 {
@@ -2777,14 +2850,14 @@ int knn_run_search(
     if (config->memory_data != NULL)
     {
         if (knn_reader_open_memory(&master_cand_reader, config->memory_data, N_cand,
-                                   model->frame_elements) != 0)
+                                   model->frame_elements, model->is_double) != 0)
         {
             knn_results_free(results);
             return -1;
         }
     }
     else if (knn_reader_open(&master_cand_reader, config->input_data_path, N_cand,
-                             model->frame_width, model->frame_height) != 0)
+                             model->frame_width, model->frame_height, model->is_double) != 0)
     {
         knn_results_free(results);
         return -1;
@@ -2793,7 +2866,7 @@ int knn_run_search(
     if (is_cross_dataset)
     {
         if (knn_reader_open(&master_query_reader, config->query_data_path, N_query,
-                            q_w, q_h) != 0)
+                            q_w, q_h, model->is_double) != 0)
         {
             knn_reader_close(&master_cand_reader);
             knn_results_free(results);
@@ -2856,10 +2929,11 @@ int knn_run_search(
             knn_reader_clone_thread(&master_query_reader, &thread_query_reader);
         }
 
-        double *query_buffer =
-            (double *)malloc((size_t)model->frame_elements * sizeof(double));
-        double *cand_buffer =
-            (double *)malloc((size_t)model->frame_elements * sizeof(double));
+        size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
+        void *query_buffer =
+            malloc((size_t)model->frame_elements * elem_size);
+        void *cand_buffer =
+            malloc((size_t)model->frame_elements * elem_size);
         double *anchor_dists =
             (double *)malloc((size_t)model->num_clusters * sizeof(double));
         ClusterScore *scores_buf =

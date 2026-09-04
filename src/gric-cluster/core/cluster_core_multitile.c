@@ -91,18 +91,16 @@ static Frame *make_task_frame(const Frame *tile_frame)
      */
     long full_w = get_frame_width();
     long full_h = get_frame_height();
-    size_t pool_bytes =
-        (size_t)(full_w * full_h) * sizeof(double);
-    size_t tile_bytes =
-        (size_t)(tile_frame->width
-                 * tile_frame->height)
-        * sizeof(double);
+    size_t elem_size = tile_frame->is_double ? sizeof(double) : sizeof(float);
+    size_t pool_bytes = (size_t)(full_w * full_h) * elem_size;
+    size_t tile_bytes = (size_t)(tile_frame->width * tile_frame->height) * elem_size;
 
     if (pool_bytes < tile_bytes)
     {
         pool_bytes = tile_bytes;
     }
 
+    tf->is_double = tile_frame->is_double;
     tf->data = calloc(1, pool_bytes);
     if (tf->data == NULL)
     {
@@ -176,7 +174,7 @@ void run_clustering_multitile(
             "ERROR: scatter buffer alloc failed\n");
         return;
     }
-    frame_scatter_alloc(mts->tile_map, scatter_buf);
+    frame_scatter_alloc(mts->tile_map, scatter_buf, global_config->algo.use_double);
 
     /* ---- Open membership file ---- */
     FILE *membership_out = NULL;

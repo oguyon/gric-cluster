@@ -248,7 +248,8 @@ int knn_reader_open(
     const char     *input_path,
     long            total_frames,
     long            frame_width,
-    long            frame_height)
+    long            frame_height,
+    int             use_double)
 {
     if (reader == NULL || input_path == NULL)
     {
@@ -261,6 +262,7 @@ int knn_reader_open(
     reader->frame_width = frame_width;
     reader->frame_height = frame_height;
     reader->frame_elements = frame_width * frame_height;
+    reader->use_double = use_double;
 
     FILE *fp_bin = fopen(input_path, "rb");
     if (fp_bin != NULL)
@@ -317,14 +319,16 @@ int knn_reader_open(
  * @memory_data:    Contiguous buffer of frame vectors [total_frames * frame_elements].
  * @total_frames:   Total number of frames in dataset.
  * @frame_elements: Number of elements per frame.
+ * @use_double:     1 for double precision, 0 for float.
  *
  * Return: 0 on success, -1 on error.
  */
 int knn_reader_open_memory(
     KnnFrameReader *reader,
-    const double   *memory_data,
+    const void     *memory_data,
     long            total_frames,
-    long            frame_elements)
+    long            frame_elements,
+    int             use_double)
 {
     if (reader == NULL || memory_data == NULL || total_frames <= 0 || frame_elements <= 0)
     {
@@ -337,6 +341,7 @@ int knn_reader_open_memory(
     reader->frame_width = frame_elements;
     reader->frame_height = 1;
     reader->frame_elements = frame_elements;
+    reader->use_double = use_double;
 
     return 0;
 }
@@ -422,17 +427,20 @@ int knn_reader_clone_thread(
 int knn_reader_read_frame(
     KnnFrameReader *reader,
     long            frame_id,
-    double         *out_data)
+    void           *out_data)
 {
     if (reader == NULL || out_data == NULL || frame_id < 0 || frame_id >= reader->total_frames)
     {
         return -1;
     }
 
+    size_t elem_size = reader->use_double ? sizeof(double) : sizeof(float);
+
     if (reader->memory_data != NULL)
     {
-        memcpy(out_data, &reader->memory_data[frame_id * reader->frame_elements],
-               (size_t)reader->frame_elements * sizeof(double));
+        const char *src_ptr = (const char *)reader->memory_data;
+        size_t offset = (size_t)frame_id * (size_t)reader->frame_elements * elem_size;
+        memcpy(out_data, src_ptr + offset, (size_t)reader->frame_elements * elem_size);
         return 0;
     }
 
@@ -442,43 +450,78 @@ int knn_reader_read_frame(
         {
             return -1;
         }
-        size_t elem_size = gric_bin_data_type_size((gric_bin_data_type_t)reader->bin_data_type);
-        if (elem_size == 0)
+        size_t bin_elem_size = gric_bin_data_type_size((gric_bin_data_type_t)reader->bin_data_type);
+        if (bin_elem_size == 0)
         {
             return -1;
         }
         off_t offset = (off_t)reader->bin_header_bytes +
-                       (off_t)frame_id * (off_t)reader->frame_elements * (off_t)elem_size;
+                       (off_t)frame_id * (off_t)reader->frame_elements * (off_t)bin_elem_size;
         if (fseeko(reader->bin_file, offset, SEEK_SET) != 0)
         {
             return -1;
         }
         if (reader->bin_data_type == GRIC_BIN_DTYPE_FLOAT64)
         {
-            if (fread(out_data, sizeof(double), (size_t)reader->frame_elements,
-                      reader->bin_file) != (size_t)reader->frame_elements)
+            if (reader->use_double)
             {
-                return -1;
+                if (fread(out_data, sizeof(double), (size_t)reader->frame_elements,
+                          reader->bin_file) != (size_t)reader->frame_elements)
+                {
+                    return -1;
+                }
+            }
+            else
+            {
+                double *dbuf = (double *)malloc((size_t)reader->frame_elements * sizeof(double));
+                if (dbuf == NULL)
+                {
+                    return -1;
+                }
+                if (fread(dbuf, sizeof(double), (size_t)reader->frame_elements,
+                          reader->bin_file) != (size_t)reader->frame_elements)
+                {
+                    free(dbuf);
+                    return -1;
+                }
+                float *fptr = (float *)out_data;
+                for (long k = 0; k < reader->frame_elements; k++)
+                {
+                    fptr[k] = (float)dbuf[k];
+                }
+                free(dbuf);
             }
         }
         else if (reader->bin_data_type == GRIC_BIN_DTYPE_FLOAT32)
         {
-            float *fbuf = (float *)malloc((size_t)reader->frame_elements * sizeof(float));
-            if (fbuf == NULL)
+            if (!reader->use_double)
             {
-                return -1;
+                if (fread(out_data, sizeof(float), (size_t)reader->frame_elements,
+                          reader->bin_file) != (size_t)reader->frame_elements)
+                {
+                    return -1;
+                }
             }
-            if (fread(fbuf, sizeof(float), (size_t)reader->frame_elements,
-                      reader->bin_file) != (size_t)reader->frame_elements)
+            else
             {
+                float *fbuf = (float *)malloc((size_t)reader->frame_elements * sizeof(float));
+                if (fbuf == NULL)
+                {
+                    return -1;
+                }
+                if (fread(fbuf, sizeof(float), (size_t)reader->frame_elements,
+                          reader->bin_file) != (size_t)reader->frame_elements)
+                {
+                    free(fbuf);
+                    return -1;
+                }
+                double *dptr = (double *)out_data;
+                for (long k = 0; k < reader->frame_elements; k++)
+                {
+                    dptr[k] = (double)fbuf[k];
+                }
                 free(fbuf);
-                return -1;
             }
-            for (long k = 0; k < reader->frame_elements; k++)
-            {
-                out_data[k] = (double)fbuf[k];
-            }
-            free(fbuf);
         }
         else if (reader->bin_data_type == GRIC_BIN_DTYPE_UINT32)
         {
@@ -493,9 +536,21 @@ int knn_reader_read_frame(
                 free(ubuf);
                 return -1;
             }
-            for (long k = 0; k < reader->frame_elements; k++)
+            if (reader->use_double)
             {
-                out_data[k] = (double)ubuf[k];
+                double *dptr = (double *)out_data;
+                for (long k = 0; k < reader->frame_elements; k++)
+                {
+                    dptr[k] = (double)ubuf[k];
+                }
+            }
+            else
+            {
+                float *fptr = (float *)out_data;
+                for (long k = 0; k < reader->frame_elements; k++)
+                {
+                    fptr[k] = (float)ubuf[k];
+                }
             }
             free(ubuf);
         }
@@ -507,7 +562,8 @@ int knn_reader_read_frame(
 #ifdef USE_CFITSIO
         int status = 0;
         long fpixel[3] = {1, 1, frame_id + 1};
-        fits_read_pix(reader->fits_ptr, TDOUBLE, fpixel, reader->frame_elements, NULL,
+        int dtype = reader->use_double ? TDOUBLE : TFLOAT;
+        fits_read_pix(reader->fits_ptr, dtype, fpixel, reader->frame_elements, NULL,
                       out_data, NULL, &status);
         return (status == 0) ? 0 : -1;
 #else
@@ -527,11 +583,26 @@ int knn_reader_read_frame(
             return -1;
         }
 
-        for (long k = 0; k < reader->frame_elements; k++)
+        if (reader->use_double)
         {
-            if (fscanf(reader->ascii_file, "%lf", &out_data[k]) != 1)
+            double *dptr = (double *)out_data;
+            for (long k = 0; k < reader->frame_elements; k++)
             {
-                out_data[k] = 0.0;
+                if (fscanf(reader->ascii_file, "%lf", &dptr[k]) != 1)
+                {
+                    dptr[k] = 0.0;
+                }
+            }
+        }
+        else
+        {
+            float *fptr = (float *)out_data;
+            for (long k = 0; k < reader->frame_elements; k++)
+            {
+                if (fscanf(reader->ascii_file, "%f", &fptr[k]) != 1)
+                {
+                    fptr[k] = 0.0f;
+                }
             }
         }
         return 0;

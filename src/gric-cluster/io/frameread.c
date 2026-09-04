@@ -63,9 +63,19 @@ long num_frames = 0;
 long frame_width = 0;
 long frame_height = 0;
 int current_frame_idx = 0;
-
-double *frame_data_pool[FRAME_DATA_POOL_SIZE];
+void *frame_data_pool[FRAME_DATA_POOL_SIZE];
 int frame_data_pool_count = 0;
+int frameread_use_double = 0;
+
+/**
+ * set_frameread_precision() - Configure reading precision (0=float, 1=double).
+ * @use_double: 1 for double precision, 0 for float.
+ */
+void set_frameread_precision(
+    int use_double)
+{
+    frameread_use_double = use_double;
+}
 
 /**
  * init_filelist() - Initialize the frame reader in file list (PNG sequence) mode.
@@ -228,28 +238,62 @@ static int getframe_bin(
 
     if (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT32)
     {
-        float *fbuf = (float *)malloc(frame_width * sizeof(float));
-        if (fbuf == NULL)
+        if (!frame_struct->is_double)
         {
-            return -1;
+            if (fread(frame_struct->data, sizeof(float), frame_width, bin_input_ptr) !=
+                (size_t)frame_width)
+            {
+                return -1;
+            }
         }
-        if (fread(fbuf, sizeof(float), frame_width, bin_input_ptr) != (size_t)frame_width)
+        else
         {
+            float *fbuf = (float *)malloc(frame_width * sizeof(float));
+            if (fbuf == NULL)
+            {
+                return -1;
+            }
+            if (fread(fbuf, sizeof(float), frame_width, bin_input_ptr) != (size_t)frame_width)
+            {
+                free(fbuf);
+                return -1;
+            }
+            double *dptr = (double *)frame_struct->data;
+            for (long k = 0; k < frame_width; k++)
+            {
+                dptr[k] = (double)fbuf[k];
+            }
             free(fbuf);
-            return -1;
         }
-        for (long k = 0; k < frame_width; k++)
-        {
-            frame_struct->data[k] = (double)fbuf[k];
-        }
-        free(fbuf);
     }
     else if (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT64)
     {
-        if (fread(frame_struct->data, sizeof(double), frame_width, bin_input_ptr) !=
-            (size_t)frame_width)
+        if (frame_struct->is_double)
         {
-            return -1;
+            if (fread(frame_struct->data, sizeof(double), frame_width, bin_input_ptr) !=
+                (size_t)frame_width)
+            {
+                return -1;
+            }
+        }
+        else
+        {
+            double *dbuf = (double *)malloc(frame_width * sizeof(double));
+            if (dbuf == NULL)
+            {
+                return -1;
+            }
+            if (fread(dbuf, sizeof(double), frame_width, bin_input_ptr) != (size_t)frame_width)
+            {
+                free(dbuf);
+                return -1;
+            }
+            float *fptr = (float *)frame_struct->data;
+            for (long k = 0; k < frame_width; k++)
+            {
+                fptr[k] = (float)dbuf[k];
+            }
+            free(dbuf);
         }
     }
     else
@@ -264,9 +308,21 @@ static int getframe_bin(
             free(ubuf);
             return -1;
         }
-        for (long k = 0; k < frame_width; k++)
+        if (frame_struct->is_double)
         {
-            frame_struct->data[k] = (double)ubuf[k];
+            double *dptr = (double *)frame_struct->data;
+            for (long k = 0; k < frame_width; k++)
+            {
+                dptr[k] = (double)ubuf[k];
+            }
+        }
+        else
+        {
+            float *fptr = (float *)frame_struct->data;
+            for (long k = 0; k < frame_width; k++)
+            {
+                fptr[k] = (float)ubuf[k];
+            }
         }
         free(ubuf);
     }
@@ -418,9 +474,11 @@ Frame *getframe_at(
     frame_struct->width = frame_width;
     frame_struct->height = frame_height;
     frame_struct->id = index;
+    frame_struct->is_double = frameread_use_double;
 
     if (!is_filelist_mode)
     {
+        size_t elem_size = frameread_use_double ? sizeof(double) : sizeof(float);
         int got_from_pool = 0;
 #ifdef _OPENMP
 #pragma omp critical(frame_pool)
@@ -434,7 +492,7 @@ Frame *getframe_at(
         }
         if (!got_from_pool)
         {
-            frame_struct->data = (double *)malloc(nelements * sizeof(double));
+            frame_struct->data = malloc(nelements * elem_size);
         }
         if (frame_struct->data == NULL)
         {

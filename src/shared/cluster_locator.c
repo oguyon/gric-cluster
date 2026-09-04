@@ -106,17 +106,35 @@ double calc_min_dist_5pt(
  * Return: Euclidean distance.
  */
 static inline double compute_vector_distance(
-    const double *restrict a,
-    const double *restrict b,
-    long                   n)
+    const void *restrict a,
+    const void *restrict b,
+    long                 n,
+    int                  is_double)
 {
-    double sum = 0.0;
-    for (long i = 0; i < n; i++)
+    if (is_double)
     {
-        double diff = a[i] - b[i];
-        sum += diff * diff;
+        const double *restrict da = (const double *)a;
+        const double *restrict db = (const double *)b;
+        double sum = 0.0;
+        for (long i = 0; i < n; i++)
+        {
+            double diff = da[i] - db[i];
+            sum += diff * diff;
+        }
+        return sqrt(sum);
     }
-    return sqrt(sum);
+    else
+    {
+        const float *restrict fa = (const float *)a;
+        const float *restrict fb = (const float *)b;
+        float sum = 0.0f;
+        for (long i = 0; i < n; i++)
+        {
+            float diff = fa[i] - fb[i];
+            sum += diff * diff;
+        }
+        return (double)sqrtf(sum);
+    }
 }
 
 /**
@@ -182,10 +200,10 @@ static int select_greedy_max_spread_target(
  * Return: 0 on success, -1 on error.
  */
 int cluster_locate_sample(
-    const double               *query_data,
+    const void                 *query_data,
     long                        frame_elements,
     int                         num_clusters,
-    const double *const        *cluster_anchors,
+    const void *const          *cluster_anchors,
     const double               *cluster_radii,
     const double               *dcc_matrix,
     const ClusterLocatorConfig *config,
@@ -227,8 +245,8 @@ int cluster_locate_sample(
     if (config->prev_cluster_id >= 0 && config->prev_cluster_id < num_clusters)
     {
         int    p_id = config->prev_cluster_id;
-        double d_prev =
-            compute_vector_distance(query_data, cluster_anchors[p_id], frame_elements);
+        double d_prev = compute_vector_distance(
+            query_data, cluster_anchors[p_id], frame_elements, config->is_double);
 
         result->evaluated_clusters[0] = p_id;
         result->evaluated_dists[0] = d_prev;
@@ -300,7 +318,7 @@ int cluster_locate_sample(
 
         // Measure distance to selected target
         double d_target = compute_vector_distance(query_data, cluster_anchors[next_target],
-                                                 frame_elements);
+                                                 frame_elements, config->is_double);
 
         int idx = result->num_evaluated_anchors;
         result->evaluated_clusters[idx] = next_target;

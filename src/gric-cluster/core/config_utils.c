@@ -81,6 +81,11 @@ static int apply_algo_option(
         config->optim.gprob_mode = 1;
         return 0;
     }
+    else if (matches(key, "-double") || matches(key, "--double"))
+    {
+        config->algo.use_double = 1;
+        return 0;
+    }
     else if (matches(key, "-entropy"))
     {
         config->optim.entropy_mode = 1;
@@ -774,6 +779,8 @@ int write_config_file(const char *filename, ClusterConfig *config)
         fprintf(f, "stream\n");
     if (config->input.cnt2sync_mode)
         fprintf(f, "cnt2sync\n");
+    if (config->algo.use_double)
+        fprintf(f, "double\n");
 
     fprintf(f, "fmatcha %f\n", config->optim.fmatch_a);
     fprintf(f, "fmatchb %f\n", config->optim.fmatch_b);

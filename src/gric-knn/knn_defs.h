@@ -32,7 +32,7 @@ typedef struct
 typedef struct
 {
     int         cluster_id;
-    double     *anchor_data; /**< Cluster anchor frame pixel vector */
+    void       *anchor_data; /**< Cluster anchor frame pixel vector */
     double      radius;      /**< Max Euclidean distance from anchor to any member */
     int         num_members;
     int         capacity;
@@ -75,19 +75,20 @@ typedef struct
     int             past_only;        /**< 1 to search only in past frames j < i */
     int             future_only;      /**< 1 to search only in future frames j > i */
     double          epsilon;          /**< Slack factor for (1+eps)-ANN pruning */
-    double          rlim_cutoff;      /**< Optional max distance cutoff */
-    const double   *memory_data;      /**< Optional in-memory dataset buffer [N * elements] */
-    char           *query_data_path;  /**< Optional path to external query dataset */
-    long            query_num_frames; /**< Frame count of external query dataset */
-    int             nthreads;         /**< Number of OpenMP worker threads */
-    KnnOutputFormat output_format;    /**< Output format choice */
-    int             progress_mode;    /**< 1 to show live progress bar */
-    int             verbose_level;    /**< 0 = quiet, 1 = normal, 2 = verbose */
+    double          rlim_cutoff;       /**< Optional max distance cutoff */
+    const void     *memory_data;       /**< Optional in-memory dataset buffer [N * elements] */
+    char           *query_data_path;   /**< Optional path to external query dataset */
+    long            query_num_frames;  /**< Frame count of external query dataset */
+    int             nthreads;          /**< Number of OpenMP worker threads */
+    KnnOutputFormat output_format;     /**< Output format choice */
+    int             progress_mode;     /**< 1 to show live progress bar */
+    int             verbose_level;     /**< 0 = quiet, 1 = normal, 2 = verbose */
     int             use_multi_pivot;   /**< 1 to enable Multi-Anchor Pivot Bounding (AESA) */
     int             use_reciprocal;    /**< 1 to enable Symmetric Distance Reciprocal Push */
     int             use_angular_bound; /**< 1 to enable Angular Cosine Directional Bounding */
     int             approx_mode;       /**< 1 to enable Fast Approximate Graph Search */
     int             ef_search;         /**< Search candidate pool size (default: 2*k in approx) */
+    int             use_double;        /**< 1 to run computations in double precision */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -120,6 +121,7 @@ typedef struct
     long             frame_elements;
     int              num_clusters;
     long             total_dataset_frames;
+    int              is_double;           /**< 1 if anchors & queries in double precision */
     KnnCluster      *clusters;
     double          *dcc_matrix;          /**< Dense M x M inter-cluster distance matrix */
     int             *frame_cluster_map;   /**< Cluster ID for each frame index [0..N-1] */
@@ -134,7 +136,7 @@ typedef struct
     uint32_t        *graph_indices;       /**< [N x graph_k] neighbor node indices in A */
     float           *graph_distances;     /**< [N x graph_k] precomputed neighbor distances */
     float           *graph_mutual_dists;  /**< [N x (graph_k * (graph_k - 1) / 2)] mutual dists */
-    const double   **anchor_ptrs;         /**< [M] array of anchor pointers */
+    const void     **anchor_ptrs;         /**< [M] array of anchor pointers */
     double          *cluster_radii;       /**< [M] array of cluster radii */
 } KnnModel;
 

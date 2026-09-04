@@ -17,7 +17,8 @@ void frame_scatter(
  */
 void frame_scatter_alloc(
     const TileMap *tm,
-    Frame         *tile_frames);
+    Frame         *tile_frames,
+    int            is_double);
 
 /**
  * @brief Free data buffers of M tile sub-frames.
