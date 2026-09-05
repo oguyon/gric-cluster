@@ -72,7 +72,8 @@
       }
 
       const K = useTiles 
-        ? (tileEngineX.clusters.length + tileEngineY.clusters.length + (currentDim === 3 ? tileEngineZ.clusters.length : 0)) 
+        ? (tileEngineX.clusters.length + tileEngineY.clusters.length +
+           (currentDim >= 3 ? tileEngineZ.clusters.length : 0)) 
         : clusters.length;
 
       // Centroids & metadata: ~64 bytes per cluster centroid
@@ -83,7 +84,7 @@
       if (useTiles) {
         dccCells = (tileEngineX.clusters.length ** 2) + 
                    (tileEngineY.clusters.length ** 2) + 
-                   (currentDim === 3 ? (tileEngineZ.clusters.length ** 2) : 0);
+                   (currentDim >= 3 ? (tileEngineZ.clusters.length ** 2) : 0);
       } else {
         dccCells = clusters.length * clusters.length;
       }
@@ -1237,6 +1238,10 @@
             const clColor = (clusters[entry.assignedCluster] && clusters[entry.assignedCluster].color) || '#38bdf8';
             const bg = isSel ? 'rgba(250, 204, 21, 0.25)' : '#172033';
             const border = isSel ? '#facc15' : 'rgba(51, 65, 85, 0.6)';
+            const ptZ = currentDim >= 3 ? `, ${entry.point.z.toFixed(2)}` : '';
+            const ptCoords = `(${entry.point.x.toFixed(2)}, ${entry.point.y.toFixed(2)}${ptZ})`;
+            const tipDesc = `Coordinates: ${ptCoords}. Distance Evaluations: ${entry.distSC}. ` +
+              `Click to inspect decision trace.`;
             return `
               <div class="sample-chip ${isSel ? 'active' : ''}"
                    style="display: inline-flex; align-items: center; gap: 3px; background: ${bg}; border: 1px solid ${border}; border-radius: 4px; padding: 1px 5px; font-size: 0.65rem; font-family: monospace; cursor: pointer; white-space: nowrap; transition: all 0.15s ease;"
@@ -1246,7 +1251,7 @@
                    data-tooltip-title="Sample #${entry.frameIndex}"
                    data-tooltip-badge="Assigned C${entry.assignedCluster}"
                    data-tooltip-color="cyan"
-                   data-tooltip-desc="Coordinates: (${entry.point.x.toFixed(2)}, ${entry.point.y.toFixed(2)}${currentDim === 3 ? `, ${entry.point.z.toFixed(2)}` : ''}). Distance Evaluations: ${entry.distSC}. Click to inspect decision trace.">
+                   data-tooltip-desc="${tipDesc}">
                 <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${clColor};"></span>
                 <span style="color: ${isSel ? '#facc15' : '#f8fafc'}; font-weight: ${isSel ? '700' : 'normal'};">#${entry.frameIndex}</span>
               </div>
@@ -1340,6 +1345,11 @@
                 ? 'rgba(250, 204, 21, 0.6)' 
                 : (isHovered ? 'rgba(56, 189, 248, 0.6)' : 'var(--card-border)');
 
+              const cZ = currentDim >= 3 ? `, ${c.z.toFixed(2)}` : '';
+              const cCoords = `(${c.x.toFixed(2)}, ${c.y.toFixed(2)}${cZ})`;
+              const hGain = (c.infoGain || 0).toFixed(3);
+              const cTipDesc = `Information reduction power: ΔH=+${hGain} bits. ` +
+                `Centroid: ${cCoords}. Click to pin highlight.`;
               return `
                 <div class="entropy-power-item ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''}"
                      data-cluster-id="${c.id}"
@@ -1350,7 +1360,7 @@
                      data-tooltip-title="Cluster C${c.id} Pruning Power"
                      data-tooltip-badge="${c.members} Members"
                      data-tooltip-color="cyan"
-                     data-tooltip-desc="Information reduction power: ΔH=+${(c.infoGain || 0).toFixed(3)} bits. Centroid: (${c.x.toFixed(2)}, ${c.y.toFixed(2)}${currentDim === 3 ? `, ${c.z.toFixed(2)}` : ''}). Click to pin highlight.">
+                     data-tooltip-desc="${cTipDesc}">
                   <span style="color: ${isSelected ? '#facc15' : (isHovered ? '#38bdf8' : c.color)}; font-weight: 700;">
                     Cluster C${c.id} <span style="color: var(--text-muted); font-size: 0.67rem;">(${c.members} members)</span>
                   </span>
@@ -1427,6 +1437,11 @@
       const l3Val = document.getElementById('knnL3PrunedVal');
       const l3PctVal = document.getElementById('knnL3PctVal');
       const tempVal = document.getElementById('knnTemporalPrunedVal');
+      const sq8EvalsEl = document.getElementById('knnSq8EvalsVal');
+      const fullPrecCallsEl = document.getElementById('knnFullPrecCallsVal');
+      const sq8PrunedVal = document.getElementById('knnSq8PrunedVal');
+      const sq8PctVal = document.getElementById('knnSq8PctVal');
+      const sq8BreakdownVal = document.getElementById('knnSq8BreakdownVal');
 
       // Progress / Stacked bars
       const pruneSumTxt = document.getElementById('knnPruneSummaryTxt');
@@ -1439,6 +1454,7 @@
       const barL2 = document.getElementById('barKnnL2');
       const barL3 = document.getElementById('barKnnL3');
       const barTemp = document.getElementById('barKnnTemp');
+      const barSq8 = document.getElementById('barKnnSq8');
       const barExact = document.getElementById('barKnnExact');
 
       // Memory tab elements
@@ -1486,6 +1502,11 @@
         if (l3Val) l3Val.textContent = '0';
         if (l3PctVal) l3PctVal.textContent = '0%';
         if (tempVal) tempVal.textContent = '0';
+        if (sq8EvalsEl) sq8EvalsEl.textContent = '0';
+        if (fullPrecCallsEl) fullPrecCallsEl.textContent = '0';
+        if (sq8PrunedVal) sq8PrunedVal.textContent = '0';
+        if (sq8PctVal) sq8PctVal.textContent = '0%';
+        if (sq8BreakdownVal) sq8BreakdownVal.textContent = 'Members: 0 | Graph: 0';
 
         if (pruneSumTxt) pruneSumTxt.textContent = '0% Pruned';
         if (barPruned) barPruned.style.width = '0%';
@@ -1497,6 +1518,7 @@
         if (barL2) barL2.style.width = '0%';
         if (barL3) barL3.style.width = '0%';
         if (barTemp) barTemp.style.width = '0%';
+        if (barSq8) barSq8.style.width = '0%';
         if (barExact) barExact.style.width = '100%';
 
         if (memAnchorsEl) memAnchorsEl.textContent = '0 B';
@@ -1571,20 +1593,51 @@
       const l2 = telem.level2AnchorsPruned || 0;
       const l3 = telem.level3AnnularPruned || 0;
       const temp = telem.temporalPruned || 0;
+      const sq8Evals = telem.sq8Evaluations || 0;
+      const sq8Members = telem.sq8MembersPruned || 0;
+      const sq8Graph = telem.sq8GraphPruned || 0;
+      const sq8Pruned = (telem.sq8TotalPruned !== undefined)
+        ? telem.sq8TotalPruned
+        : (sq8Members + sq8Graph);
+
+      if (sq8EvalsEl) {
+        sq8EvalsEl.textContent = sq8Evals > 0 ? sq8Evals.toLocaleString() : '--';
+      }
+      if (fullPrecCallsEl) {
+        fullPrecCallsEl.textContent = dists.toLocaleString();
+      }
 
       if (l1Val) l1Val.textContent = l1.toLocaleString();
-      if (l1PctVal) l1PctVal.textContent = `${bruteForce > 0 ? ((l1 / bruteForce) * 100).toFixed(3) : 0}%`;
+      if (l1PctVal) {
+        l1PctVal.textContent = `${bruteForce > 0 ? ((l1 / bruteForce) * 100).toFixed(3) : 0}%`;
+      }
       if (l2Val) l2Val.textContent = l2.toLocaleString();
-      if (l2PctVal) l2PctVal.textContent = `${bruteForce > 0 ? ((l2 / bruteForce) * 100).toFixed(3) : 0}%`;
+      if (l2PctVal) {
+        l2PctVal.textContent = `${bruteForce > 0 ? ((l2 / bruteForce) * 100).toFixed(3) : 0}%`;
+      }
       if (l3Val) l3Val.textContent = l3.toLocaleString();
-      if (l3PctVal) l3PctVal.textContent = `${bruteForce > 0 ? ((l3 / bruteForce) * 100).toFixed(3) : 0}%`;
+      if (l3PctVal) {
+        l3PctVal.textContent = `${bruteForce > 0 ? ((l3 / bruteForce) * 100).toFixed(3) : 0}%`;
+      }
       if (tempVal) tempVal.textContent = temp.toLocaleString();
+      if (sq8PrunedVal) sq8PrunedVal.textContent = sq8Pruned.toLocaleString();
+      if (sq8PctVal) {
+        const pct = bruteForce > 0
+          ? ((sq8Pruned / bruteForce) * 100).toFixed(3)
+          : 0;
+        sq8PctVal.textContent = `${pct}%`;
+      }
+      if (sq8BreakdownVal) {
+        sq8BreakdownVal.textContent =
+          `Members: ${sq8Members.toLocaleString()} | Graph: ${sq8Graph.toLocaleString()}`;
+      }
 
-      const totalHierarchy = Math.max(1, l1 + l2 + l3 + temp + dists);
+      const totalHierarchy = Math.max(1, l1 + l2 + l3 + temp + sq8Pruned + dists);
       if (barL1) barL1.style.width = `${((l1 / totalHierarchy) * 100).toFixed(1)}%`;
       if (barL2) barL2.style.width = `${((l2 / totalHierarchy) * 100).toFixed(1)}%`;
       if (barL3) barL3.style.width = `${((l3 / totalHierarchy) * 100).toFixed(1)}%`;
       if (barTemp) barTemp.style.width = `${((temp / totalHierarchy) * 100).toFixed(1)}%`;
+      if (barSq8) barSq8.style.width = `${((sq8Pruned / totalHierarchy) * 100).toFixed(1)}%`;
       if (barExact) barExact.style.width = `${((dists / totalHierarchy) * 100).toFixed(1)}%`;
 
       // 3. Memory Tab
@@ -1690,6 +1743,9 @@
       if (window.renderDataStructuresUI) {
         window.renderDataStructuresUI();
       }
+      if (typeof updatePlottingDimSelectorsUI === 'function') {
+        updatePlottingDimSelectorsUI();
+      }
 
       const inputKnnK = document.getElementById('inputKnnK');
       const sliderKnnK = document.getElementById('sliderKnnK');
@@ -1709,6 +1765,17 @@
         sliderKnnDtmin.value = Math.min(25, knnDtmin);
       }
 
+      const optSq8El = document.getElementById('optSq8');
+      if (optSq8El && typeof clusterUseSq8 !== 'undefined') {
+        optSq8El.classList.toggle('active', clusterUseSq8);
+      }
+      const btnKnnSq8 = document.getElementById('btnKnnSq8');
+      if (btnKnnSq8 && typeof knnUseSq8 !== 'undefined') {
+        btnKnnSq8.classList.toggle('toggle-active', knnUseSq8);
+        btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
+        btnKnnSq8.classList.toggle('active', knnUseSq8);
+      }
+
       const presetBar = document.getElementById('viewPresetBar');
       if (presetBar) {
         presetBar.style.display =
@@ -1723,6 +1790,8 @@
         imgScrubberBar.style.display = isImg ? 'flex' : 'none';
         if (isImg) {
           const slider = document.getElementById('sliderImgFrame');
+          const inputFrame = document.getElementById('inputImgFrame');
+          const lblTotal = document.getElementById('lblImgTotalFrames');
           const lbl = document.getElementById('lblImgFrameStatus');
           const btnLive = document.getElementById('btnImgLiveStream');
           const btnPrev = document.getElementById('btnImgPrevFrame');
@@ -1730,24 +1799,42 @@
 
           const total = (benchmarkDataset && benchmarkDataset.length > 0)
             ? benchmarkDataset.length
-            : totalFrames;
+            : (typeof totalFrames !== 'undefined' ? totalFrames : 0);
           const isInspecting = (typeof inspectedImageFrameIdx !== 'undefined' &&
             inspectedImageFrameIdx >= 0);
-          const curVal = isInspecting ? inspectedImageFrameIdx : Math.max(0, totalFrames - 1);
+          const curVal = isInspecting
+            ? inspectedImageFrameIdx
+            : Math.max(0, (typeof totalFrames !== 'undefined' ? totalFrames : 1) - 1);
 
           if (slider) {
             slider.min = 0;
             slider.max = Math.max(0, total - 1);
-            slider.value = curVal;
+            if (!window.isDraggingImageSlider && document.activeElement !== slider) {
+              slider.value = curVal;
+            }
             slider.disabled = (total === 0);
+          }
+          if (inputFrame) {
+            inputFrame.min = 1;
+            inputFrame.max = Math.max(1, total);
+            if (document.activeElement !== inputFrame) {
+              inputFrame.value = total > 0 ? (curVal + 1) : 0;
+            }
+            inputFrame.disabled = (total === 0);
+          }
+          if (lblTotal) {
+            lblTotal.innerText = total > 0 ? total.toLocaleString() : '0';
           }
           if (lbl) {
             if (total === 0) {
-              lbl.innerText = 'No frames';
+              lbl.innerText = '(No frames)';
+              lbl.style.color = '#94a3b8';
             } else if (isInspecting) {
-              lbl.innerText = `Frame #${curVal + 1} / ${total} (Inspecting)`;
+              lbl.innerText = '(Inspecting)';
+              lbl.style.color = '#facc15';
             } else {
-              lbl.innerText = `Frame #${totalFrames} / ${total} (Live)`;
+              lbl.innerText = '(Live)';
+              lbl.style.color = '#4ade80';
             }
           }
           if (btnLive) {
@@ -1764,7 +1851,7 @@
           legendHint.innerText =
             "[Image Mode: TL=Current Frame • TR=Anchor/Residual (Click ⇄) • BL=Cluster Members • BR=All Clusters]";
         } else {
-          legendHint.innerText = currentDim === 3
+          legendHint.innerText = currentDim >= 3
             ? "[3D Mode: Drag Quad 4 to Orbit • Shift+Drag to Pan • Wheel to Zoom • ⛶ to Maximize]"
             : "[2D Mode: Drag to Pan • Scroll to Zoom • ＋ Add Point: Inject]";
         }
@@ -1839,9 +1926,12 @@
         if (statClusters) statClusters.innerText = `${tupleCount}`;
         if (statDistTotalClusters) statDistTotalClusters.innerText = `${tupleCount} joint tuples`;
         if (lblStatClusters) {
-          lblStatClusters.innerText = currentDim === 3 
-            ? `3D Tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length}, Kz=${tileEngineZ.clusters.length})`
-            : `2D Tuples (Kx=${tileEngineX.clusters.length}, Ky=${tileEngineY.clusters.length})`;
+          const kx = tileEngineX.clusters.length;
+          const ky = tileEngineY.clusters.length;
+          const kz = tileEngineZ.clusters.length;
+          lblStatClusters.innerText = currentDim >= 3 
+            ? `3D Tuples (Kx=${kx}, Ky=${ky}, Kz=${kz})`
+            : `2D Tuples (Kx=${kx}, Ky=${ky})`;
         }
       } else {
         const kCount = clusters.length;
@@ -1859,9 +1949,12 @@
       }
 
       if (useTiles) {
-        document.getElementById('measCountBadge').innerText = currentJointTuple 
-          ? `Tuple: ${currentDim === 3 ? `(${currentJointTuple.cx},${currentJointTuple.cy},${currentJointTuple.cz})` : `(${currentJointTuple.cx},${currentJointTuple.cy})`}` 
-          : `0 tuples`;
+        let tupleStr = '0 tuples';
+        if (currentJointTuple) {
+          const { cx, cy, cz } = currentJointTuple;
+          tupleStr = `Tuple: (${cx},${cy}${currentDim >= 3 ? `,${cz}` : ''})`;
+        }
+        document.getElementById('measCountBadge').innerText = tupleStr;
         document.getElementById('entropyBadge').innerText = `Tiles: ${currentDim} Subspaces`;
       } else {
         const evalsCount = (currentEvaluations && currentEvaluations.length > 0)
@@ -2400,18 +2493,24 @@
             const statusClass = isCurrent ? 'matched' : '';
             const badgeText = isCurrent ? 'ACTIVE' : 'IDLE';
 
+            const tCz = currentDim >= 3 ? `_${item.cz}` : '';
+            const tTupleName = `T_${item.cx}_${item.cy}${tCz}`;
+            const tCoordZ = currentDim >= 3 ? `, ${item.cz}` : '';
+            const tCentroidText = `(${item.cx}, ${item.cy}${tCoordZ})`;
+            const tColor = isSelected ? '#facc15' : '#f8fafc';
+
             html += `
               <tr class="cluster-row ${statusClass} ${isSelected ? 'selected' : ''}" onclick="toggleSelectTuple('${key}')">
                 ${clusterTableCols.cluster.visible ? `
                   <td>
                     <div style="display:flex; align-items:center; gap:5px;">
                       <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#c084fc;"></span>
-                      <span style="font-weight:700; color:${isSelected ? '#facc15' : '#f8fafc'};">T_${item.cx}_${item.cy}${currentDim === 3 ? `_${item.cz}` : ''}</span>
+                      <span style="font-weight:700; color:${tColor};">${tTupleName}</span>
                     </div>
                   </td>
                 ` : ''}
                 ${clusterTableCols.centroid.visible ? `
-                  <td style="color:#94a3b8;">(${item.cx}, ${item.cy}${currentDim === 3 ? `, ${item.cz}` : ''})</td>
+                  <td style="color:#94a3b8;">${tCentroidText}</td>
                 ` : ''}
                 ${clusterTableCols.frames.visible ? `
                   <td class="num-col"><span style="color:#f8fafc; font-weight:600;">${item.count}</span> <span style="color:#64748b; font-size:0.68rem;">(${((item.count / Math.max(1, totalFrames)) * 100).toFixed(1)}%)</span></td>
@@ -2440,8 +2539,10 @@
             if (clusterSortKey === 'cluster') {
               res = a.id - b.id;
             } else if (clusterSortKey === 'centroid') {
-              const normA = Math.sqrt(a.x * a.x + a.y * a.y + (currentDim === 3 ? a.z * a.z : 0));
-              const normB = Math.sqrt(b.x * b.x + b.y * b.y + (currentDim === 3 ? b.z * b.z : 0));
+              const az2 = currentDim >= 3 ? ((a.z || 0) ** 2) : 0;
+              const bz2 = currentDim >= 3 ? ((b.z || 0) ** 2) : 0;
+              const normA = Math.sqrt(a.x * a.x + a.y * a.y + az2);
+              const normB = Math.sqrt(b.x * b.x + b.y * b.y + bz2);
               res = normA - normB;
             } else if (clusterSortKey === 'frames') {
               res = a.members - b.members;
@@ -2521,11 +2622,12 @@
 
             const coordStr = (typeof dataMode !== 'undefined' && dataMode === 'image')
               ? `[32×32 Image]`
-              : (currentDim === 3
+              : (currentDim >= 3
                 ? `(${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)})`
                 : `(${c.x.toFixed(2)}, ${c.y.toFixed(2)})`);
 
-            const framePct = totalFrames > 0 ? ((c.members / totalFrames) * 100).toFixed(1) : '100.0';
+            const framePct = totalFrames > 0
+              ? ((c.members / totalFrames) * 100).toFixed(1) : '100.0';
             const rowClick = (typeof dataMode !== 'undefined' && dataMode === 'image')
               ? `inspectClusterMembers(${c.id})`
               : `toggleSelectCluster(${c.id})`;
@@ -2886,7 +2988,8 @@
             const bmName = isActive ? currentBenchmark : slot.benchmarkKey;
             const dim = isActive ? currentDim : slot.currentDim;
             const mode = isActive ? dataMode : slot.dataMode;
-            const dimStr = mode === 'image' ? '1024D' : (dim === 3 ? '3D' : '2D');
+            const dimStr = mode === 'image'
+              ? '1024D' : (dim > 3 ? `${dim}D` : (dim === 3 ? '3D' : '2D'));
 
             if (count > 0) {
               const countFormatted = count >= 1000
@@ -2928,8 +3031,10 @@
           legacyPill.style.borderColor = 'rgba(100, 116, 139, 0.4)';
         } else {
           const countStr = benchmarkDataset.length.toLocaleString();
-          const dimStr = dataMode === 'image' ? '1024D Img' : (currentDim === 3 ? '3D' : '2D');
-          legacyPill.textContent = `📦 Staged [${activeDatasetSlot}]: ${countStr} pts (${dimStr}, ${currentBenchmark})`;
+          const dimStr = dataMode === 'image'
+            ? '1024D Img' : (currentDim > 3 ? `${currentDim}D` : (currentDim === 3 ? '3D' : '2D'));
+          legacyPill.textContent =
+            `📦 Staged [${activeDatasetSlot}]: ${countStr} pts (${dimStr}, ${currentBenchmark})`;
           legacyPill.style.background = 'rgba(56, 189, 248, 0.15)';
           legacyPill.style.color = '#38bdf8';
           legacyPill.style.borderColor = 'rgba(56, 189, 248, 0.35)';
@@ -2939,7 +3044,8 @@
       const dimBadge = document.getElementById('inputDataDimBadge');
       if (dimBadge) {
         const countStr = benchmarkDataset ? benchmarkDataset.length.toLocaleString() : '0';
-        const dimStr = dataMode === 'image' ? '1024D Img' : (currentDim === 3 ? '3D' : '2D');
+        const dimStr = dataMode === 'image'
+          ? '1024D Img' : (currentDim > 3 ? `${currentDim}D` : (currentDim === 3 ? '3D' : '2D'));
         dimBadge.textContent = `[${activeDatasetSlot}] ${dimStr} • ${countStr} pts`;
       }
     }
@@ -2966,7 +3072,17 @@
           slot.benchmarkDataset = slot.rawBenchmarkDataset;
         } else {
           slot.dataMode = 'coord';
-          slot.currentDim = is3DBenchmark(bKey) ? 3 : 2;
+          slot.currentDim = (typeof getBenchmarkDim === 'function')
+            ? getBenchmarkDim(bKey) : (is3DBenchmark(bKey) ? 3 : 2);
+          if (bKey.startsWith('32D') || slot.currentDim === 32) {
+            slot.rlim = 1.0;
+            slot.noiseSigma = 0.005;
+          } else if (slot.rlim === 1.0 && slot.currentDim <= 3) {
+            slot.rlim = 0.100;
+            if (slot.noiseSigma === 0.005) {
+              slot.noiseSigma = 0.020;
+            }
+          }
           slot.rawBenchmarkDataset = generateBenchmark(bKey, slot.sampleCount || 10000);
           const passes = (typeof slot.loopCount === 'number' && slot.loopCount > 0)
             ? slot.loopCount : 1;
@@ -2976,18 +3092,35 @@
             for (let i = 0; i < slot.rawBenchmarkDataset.length; i++) {
               const pt = slot.rawBenchmarkDataset[i];
               if (noiseSig <= 1e-6) {
-                slot.benchmarkDataset.push({
+                const newPt = {
                   x: pt.x,
                   y: pt.y,
-                  z: slot.currentDim === 3 ? (pt.z || 0.0) : 0.0
-                });
+                  z: slot.currentDim >= 3 ? (pt.z || 0.0) : 0.0
+                };
+                if (pt.coords) newPt.coords = new Float64Array(pt.coords);
+                slot.benchmarkDataset.push(newPt);
               } else {
                 const n = applyNoiseToPoint(pt.x, pt.y, pt.z || 0.0, slot.currentDim);
-                slot.benchmarkDataset.push({
+                const newPt = {
                   x: n.x,
                   y: n.y,
-                  z: slot.currentDim === 3 ? (n.z || 0.0) : 0.0
-                });
+                  z: slot.currentDim >= 3 ? (n.z || 0.0) : 0.0
+                };
+                if (pt.coords) {
+                  const noisyCoords = new Float64Array(pt.coords.length);
+                  noisyCoords[0] = n.x;
+                  noisyCoords[1] = n.y;
+                  if (noisyCoords.length > 2) noisyCoords[2] = n.z;
+                  for (let d = 3; d < noisyCoords.length; d++) {
+                    const u1 = Math.max(1e-12, Math.random());
+                    const u2 = Math.random();
+                    const g = Math.sqrt(-2.0 * Math.log(u1)) *
+                      Math.cos(2.0 * Math.PI * u2);
+                    noisyCoords[d] = pt.coords[d] + g * noiseSig;
+                  }
+                  newPt.coords = noisyCoords;
+                }
+                slot.benchmarkDataset.push(newPt);
               }
             }
           }
@@ -3000,13 +3133,15 @@
             ? Math.ceil(slot.benchmarkDataset.length / maxStagedPreview) : 1;
           for (let i = 0; i < slot.benchmarkDataset.length; i += stride) {
             const pt = slot.benchmarkDataset[i];
-            slot.pastSamples.push({
+            const newPt = {
               x: pt.x,
               y: pt.y,
-              z: slot.currentDim === 3 ? (pt.z || 0.0) : 0.0,
+              z: slot.currentDim >= 3 ? (pt.z || 0.0) : 0.0,
               clusterId: -1,
               frameIndex: i
-            });
+            };
+            if (pt.coords) newPt.coords = pt.coords;
+            slot.pastSamples.push(newPt);
           }
         }
 
@@ -3073,7 +3208,33 @@
           if (fileInput) fileInput.click();
           return;
         } else {
-          currentDim = is3DBenchmark(currentBenchmark) ? 3 : 2;
+          currentDim = (typeof getBenchmarkDim === 'function')
+            ? getBenchmarkDim(currentBenchmark) : (is3DBenchmark(currentBenchmark) ? 3 : 2);
+          if (currentBenchmark.startsWith('32D') || currentDim === 32) {
+            if (typeof setClusteringRlim === 'function') {
+              setClusteringRlim(1.0, false);
+            } else {
+              rlim = 1.0;
+            }
+            if (typeof setNoiseSigma === 'function') {
+              setNoiseSigma(0.005, false);
+            } else {
+              noiseSigma = 0.005;
+            }
+          } else if (rlim === 1.0 && currentDim <= 3) {
+            if (typeof setClusteringRlim === 'function') {
+              setClusteringRlim(0.100, false);
+            } else {
+              rlim = 0.100;
+            }
+            if (noiseSigma === 0.005) {
+              if (typeof setNoiseSigma === 'function') {
+                setNoiseSigma(0.020, false);
+              } else {
+                noiseSigma = 0.020;
+              }
+            }
+          }
           rawBenchmarkDataset = generateBenchmark(
             currentBenchmark, sampleCount
           );
@@ -3092,13 +3253,15 @@
           ? Math.ceil(benchmarkDataset.length / maxStagedPreview) : 1;
         for (let i = 0; i < benchmarkDataset.length; i += stride) {
           const pt = benchmarkDataset[i];
-          pastSamples.push({
+          const newPt = {
             x: pt.x,
             y: pt.y,
             z: pt.z || 0.0,
             clusterId: -1,
             frameIndex: i
-          });
+          };
+          if (pt.coords) newPt.coords = pt.coords;
+          pastSamples.push(newPt);
         }
       }
 
@@ -3135,6 +3298,19 @@
           .catch(err => console.warn('[DesktopBridge] Auto-stage export failed:', err));
       }
 
+      if (typeof clampPlottingDimensions === 'function') {
+        clampPlottingDimensions();
+      }
+      if (typeof updatePlottingDimSelectorsUI === 'function') {
+        updatePlottingDimSelectorsUI();
+      }
+      if (currentBenchmark.startsWith('32D') || currentDim === 32) {
+        if (typeof showToast === 'function') {
+          showToast(
+            `⚡ 32D dataset [${slotId}]: rlim auto-set to 1.0, noise σ to 0.005`
+          );
+        }
+      }
       updateDatasetStatusBadge();
       updateUI();
       if (typeof draw === 'function') {
@@ -3167,7 +3343,7 @@
       }
 
       const pt = benchmarkDataset[currentFrameIdx++];
-      clusterFrame(pt.x, pt.y, pt.z || 0.0, skipRender);
+      clusterFrame(pt.x, pt.y, pt.z || 0.0, skipRender, pt.coords);
     }
 
     // =========================================================================

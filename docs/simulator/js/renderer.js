@@ -270,6 +270,9 @@
       }
 
       bar.style.display = 'flex';
+      if (typeof updatePlottingDimSelectorsUI === 'function') {
+        updatePlottingDimSelectorsUI();
+      }
 
       const btnResetView = document.getElementById('btnResetView');
       const btnIso = document.getElementById('presetIso');
@@ -282,9 +285,9 @@
       const isRecon = (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView);
       let anySlotIs3D = false;
       if (isRecon && typeof datasetSlots !== 'undefined') {
-        anySlotIs3D = Object.values(datasetSlots).some(s => s && s.currentDim === 3);
+        anySlotIs3D = Object.values(datasetSlots).some(s => s && s.currentDim >= 3);
       }
-      const is3D = isRecon ? anySlotIs3D : (currentDim === 3);
+      const is3D = isRecon ? anySlotIs3D : (currentDim >= 3);
       const is3DOrbitVisible = is3D && (maximizedQuad === null || maximizedQuad === 3 || isRecon);
 
       if (btnIso) btnIso.style.display = is3DOrbitVisible ? '' : 'none';
@@ -465,11 +468,14 @@
 
       // Projection point helper
       function getProjectedCoord(p) {
-        if (viewType === "ALONG_X") return { u: p.y, v: p.z, depth: p.x };
-        if (viewType === "ALONG_Y") return { u: p.x, v: p.z, depth: p.y };
-        if (viewType === "ALONG_Z" || viewType === "2D") return { u: p.x, v: p.y, depth: p.z };
+        const pt = (typeof getPlotCoords === 'function') ? getPlotCoords(p) : p;
+        if (viewType === "ALONG_X") return { u: pt.y, v: pt.z, depth: pt.x };
+        if (viewType === "ALONG_Y") return { u: pt.x, v: pt.z, depth: pt.y };
+        if (viewType === "ALONG_Z" || viewType === "2D") {
+          return { u: pt.x, v: pt.y, depth: pt.z };
+        }
         // CUSTOM_3D
-        return project3D(p.x, p.y, p.z, orbitCamera.azimuth, orbitCamera.elevation);
+        return project3D(pt.x, pt.y, pt.z, orbitCamera.azimuth, orbitCamera.elevation);
       }
 
       // 1. Grid & Axes
@@ -640,15 +646,37 @@
           ? datasetSlots[activeDatasetSlot] : null;
         const qFovMask = (typeof reconQualityThreshold !== 'undefined' &&
           reconQualityThreshold < 1.0)
-          ? ((slotObj && slotObj.reconQualityMask) || reconQualityMask) : null;
+          ? ((slotObj && slotObj.reconQualityMask) ||
+             (activeDatasetSlot === 'C' || activeDatasetSlot === 'D'
+               ? reconQualityMask : null)) : null;
 
         // Collect indices of all points that fall within visible FOV
+        const isHighD = (currentDim > 3);
+        const dX = (typeof plotDimX === 'number') ? plotDimX : 0;
+        const dY = (typeof plotDimY === 'number') ? plotDimY : 1;
+        const dZ = (typeof plotDimZ === 'number') ? plotDimZ : 2;
+
         if (!is3DCustom) {
           if (currentDim === 2) {
             for (let i = 0; i < numPast; i++) {
               if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
               const pt = pastSamples[i];
               if (pt.x >= uMin && pt.x <= uMax && pt.y >= vMin && pt.y <= vMax) {
+                visibleIndicesBuffer[totalVisiblePoints++] = i;
+              }
+            }
+          } else if (isHighD) {
+            for (let i = 0; i < numPast; i++) {
+              if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
+              const pt = pastSamples[i];
+              const px = (pt.coords && pt.coords.length > dX) ? pt.coords[dX] : pt.x;
+              const py = (pt.coords && pt.coords.length > dY) ? pt.coords[dY] : pt.y;
+              const pz = (pt.coords && pt.coords.length > dZ) ? pt.coords[dZ] : (pt.z || 0.0);
+              let u, v;
+              if (qIdx === 0) { u = py; v = pz; }
+              else if (qIdx === 1) { u = px; v = pz; }
+              else { u = px; v = py; }
+              if (u >= uMin && u <= uMax && v >= vMin && v <= vMax) {
                 visibleIndicesBuffer[totalVisiblePoints++] = i;
               }
             }
@@ -684,7 +712,11 @@
           for (let i = 0; i < numPast; i++) {
             if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
             const pt = pastSamples[i];
-            const pr = project3D(pt.x, pt.y, pt.z, az, el);
+            const px = (isHighD && pt.coords && pt.coords.length > dX) ? pt.coords[dX] : pt.x;
+            const py = (isHighD && pt.coords && pt.coords.length > dY) ? pt.coords[dY] : pt.y;
+            const pz = (isHighD && pt.coords && pt.coords.length > dZ)
+              ? pt.coords[dZ] : (pt.z || 0.0);
+            const pr = project3D(px, py, pz, az, el);
             if (pr.u >= uMin && pr.u <= uMax && pr.v >= vMin && pr.v <= vMax) {
               visibleIndicesBuffer[totalVisiblePoints++] = i;
             }
@@ -735,10 +767,23 @@
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
             let u, v;
-            if (currentDim === 2) { u = pt.x; v = pt.y; }
-            else if (qIdx === 0) { u = pt.y; v = pt.z; }
-            else if (qIdx === 1) { u = pt.x; v = pt.z; }
-            else { u = pt.x; v = pt.y; }
+            if (currentDim === 2) {
+              u = pt.x; v = pt.y;
+            } else if (isHighD) {
+              const pxCoord = (pt.coords && pt.coords.length > dX) ? pt.coords[dX] : pt.x;
+              const pyCoord = (pt.coords && pt.coords.length > dY) ? pt.coords[dY] : pt.y;
+              const pzCoord = (pt.coords && pt.coords.length > dZ)
+                ? pt.coords[dZ] : (pt.z || 0.0);
+              if (qIdx === 0) { u = pyCoord; v = pzCoord; }
+              else if (qIdx === 1) { u = pxCoord; v = pzCoord; }
+              else { u = pxCoord; v = pyCoord; }
+            } else if (qIdx === 0) {
+              u = pt.y; v = pt.z;
+            } else if (qIdx === 1) {
+              u = pt.x; v = pt.z;
+            } else {
+              u = pt.x; v = pt.y;
+            }
 
             const px = cx + (u - view.panX) * scale;
             const py = cy - (v - view.panY) * scale;
@@ -790,10 +835,23 @@
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
             let u, v;
-            if (currentDim === 2) { u = pt.x; v = pt.y; }
-            else if (qIdx === 0) { u = pt.y; v = pt.z; }
-            else if (qIdx === 1) { u = pt.x; v = pt.z; }
-            else { u = pt.x; v = pt.y; }
+            if (currentDim === 2) {
+              u = pt.x; v = pt.y;
+            } else if (isHighD) {
+              const pxCoord = (pt.coords && pt.coords.length > dX) ? pt.coords[dX] : pt.x;
+              const pyCoord = (pt.coords && pt.coords.length > dY) ? pt.coords[dY] : pt.y;
+              const pzCoord = (pt.coords && pt.coords.length > dZ)
+                ? pt.coords[dZ] : (pt.z || 0.0);
+              if (qIdx === 0) { u = pyCoord; v = pzCoord; }
+              else if (qIdx === 1) { u = pxCoord; v = pzCoord; }
+              else { u = pxCoord; v = pyCoord; }
+            } else if (qIdx === 0) {
+              u = pt.y; v = pt.z;
+            } else if (qIdx === 1) {
+              u = pt.x; v = pt.z;
+            } else {
+              u = pt.x; v = pt.y;
+            }
 
             const px = cx + (u - view.panX) * scale;
             const py = cy - (v - view.panY) * scale;
@@ -856,8 +914,13 @@
                                 (idx < currentFrameIdx);
             if (isProcessed) continue;
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
-
-            const pr = project3D(pt.x, pt.y, pt.z, az, el);
+            const pxCoord = (isHighD && pt.coords && pt.coords.length > dX)
+              ? pt.coords[dX] : pt.x;
+            const pyCoord = (isHighD && pt.coords && pt.coords.length > dY)
+              ? pt.coords[dY] : pt.y;
+            const pzCoord = (isHighD && pt.coords && pt.coords.length > dZ)
+              ? pt.coords[dZ] : (pt.z || 0.0);
+            const pr = project3D(pxCoord, pyCoord, pzCoord, az, el);
             const px = cx + (pr.u - view.panX) * scale;
             const py = cy - (pr.v - view.panY) * scale;
             const depthFactor = Math.max(
@@ -915,7 +978,13 @@
             if (!isProcessed) continue;
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
-            const pr = project3D(pt.x, pt.y, pt.z, az, el);
+            const pxCoord = (isHighD && pt.coords && pt.coords.length > dX)
+              ? pt.coords[dX] : pt.x;
+            const pyCoord = (isHighD && pt.coords && pt.coords.length > dY)
+              ? pt.coords[dY] : pt.y;
+            const pzCoord = (isHighD && pt.coords && pt.coords.length > dZ)
+              ? pt.coords[dZ] : (pt.z || 0.0);
+            const pr = project3D(pxCoord, pyCoord, pzCoord, az, el);
             const px = cx + (pr.u - view.panX) * scale;
             const py = cy - (pr.v - view.panY) * scale;
             const depthFactor = Math.max(
@@ -1135,8 +1204,8 @@
           jointTuplesMap.forEach((entry, key) => {
             const clX = tileEngineX.clusters[entry.cx];
             const clY = tileEngineY.clusters[entry.cy];
-            const clZ = currentDim === 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
-            if (!clX || !clY || (currentDim === 3 && !clZ)) return;
+            const clZ = currentDim >= 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
+            if (!clX || !clY || (currentDim >= 3 && !clZ)) return;
 
             const pr = getProjectedCoord({ x: clX.val, y: clY.val, z: clZ.val });
             const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
@@ -1189,7 +1258,7 @@
           const entry = jointTuplesMap.get(selectedTupleKey);
           const clX = tileEngineX.clusters[entry.cx];
           const clY = tileEngineY.clusters[entry.cy];
-          const clZ = currentDim === 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
+          const clZ = currentDim >= 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
           if (clX && clY && (currentDim === 2 || clZ)) {
             const pr = getProjectedCoord({ x: clX.val, y: clY.val, z: clZ.val });
             const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
@@ -1209,7 +1278,8 @@
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
-            const tagText = `Tuple (${entry.cx}, ${entry.cy}${currentDim === 3 ? `, ${entry.cz}` : ''}) [${entry.count} frames]`;
+            const czPart = currentDim >= 3 ? `, ${entry.cz}` : '';
+            const tagText = `Tuple (${entry.cx}, ${entry.cy}${czPart}) [${entry.count} frames]`;
             ctx.font = 'bold 11px monospace';
             const textWidth = ctx.measureText(tagText).width;
             const tagX = Math.min(pos.px + 12, rect.x + rect.w - textWidth - 14);
@@ -1307,6 +1377,8 @@
               } else {
                 // 3D Custom: 3 Orthogonal Wireframe Rings (perpendicular to Z, Y, X axes)
                 const az = orbitCamera.azimuth, el = orbitCamera.elevation;
+                const p0 = (typeof getPlotCoords === 'function') ? getPlotCoords(c) : c;
+                const cx = p0.x, cy = p0.y, cz = p0.z;
                 
                 ctx.save();
                 ctx.strokeStyle = c.color;
@@ -1316,9 +1388,9 @@
                 // 1. Circle perpendicular to Z-axis (XY plane)
                 ctx.beginPath();
                 for (let s = 0; s <= CIRCLE_LUT_STEPS; s++) {
-                  const rx = c.x + rlim * CIRCLE_COS[s];
-                  const ry = c.y + rlim * CIRCLE_SIN[s];
-                  const rz = c.z;
+                  const rx = cx + rlim * CIRCLE_COS[s];
+                  const ry = cy + rlim * CIRCLE_SIN[s];
+                  const rz = cz;
                   const rp = project3D(rx, ry, rz, az, el);
                   const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
                   if (s === 0) ctx.moveTo(ppos.px, ppos.py);
@@ -1329,9 +1401,9 @@
                 // 2. Circle perpendicular to Y-axis (XZ plane)
                 ctx.beginPath();
                 for (let s = 0; s <= CIRCLE_LUT_STEPS; s++) {
-                  const rx = c.x + rlim * CIRCLE_COS[s];
-                  const ry = c.y;
-                  const rz = c.z + rlim * CIRCLE_SIN[s];
+                  const rx = cx + rlim * CIRCLE_COS[s];
+                  const ry = cy;
+                  const rz = cz + rlim * CIRCLE_SIN[s];
                   const rp = project3D(rx, ry, rz, az, el);
                   const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
                   if (s === 0) ctx.moveTo(ppos.px, ppos.py);
@@ -1342,9 +1414,9 @@
                 // 3. Circle perpendicular to X-axis (YZ plane)
                 ctx.beginPath();
                 for (let s = 0; s <= CIRCLE_LUT_STEPS; s++) {
-                  const rx = c.x;
-                  const ry = c.y + rlim * CIRCLE_COS[s];
-                  const rz = c.z + rlim * CIRCLE_SIN[s];
+                  const rx = cx;
+                  const ry = cy + rlim * CIRCLE_COS[s];
+                  const rz = cz + rlim * CIRCLE_SIN[s];
                   const rp = project3D(rx, ry, rz, az, el);
                   const ppos = mapMetricToQuad(rp.u, rp.v, qIdx, rect);
                   if (s === 0) ctx.moveTo(ppos.px, ppos.py);
@@ -1605,7 +1677,10 @@
           ctx.stroke();
 
           // Callout Badge with short name C0, coordinates and member count
-          const tagText = `C${clObj.id} [${clObj.members}f] (${clObj.x.toFixed(2)}, ${clObj.y.toFixed(2)}${currentDim === 3 ? `, ${clObj.z.toFixed(2)}` : ''})`;
+          const zCoord = currentDim >= 3 ? `, ${clObj.z.toFixed(2)}` : '';
+          const tagText =
+            `C${clObj.id} [${clObj.members}f] ` +
+            `(${clObj.x.toFixed(2)}, ${clObj.y.toFixed(2)}${zCoord})`;
           ctx.font = 'bold 11px monospace';
           const textWidth = ctx.measureText(tagText).width;
           const tagX = Math.min(pos.px + 12, rect.x + rect.w - textWidth - 14);
@@ -1778,12 +1853,14 @@
               }
             }
 
-            // If no evaluation list in logs but assigned cluster exists, include assigned cluster match
-            if (evaluatedClusters.length === 0 && cId >= 0 && clusters && cId < clusters.length && clusters[cId]) {
+            // If no evaluation list in logs but assigned cluster exists, include assigned match
+            const hasAssigned = (evaluatedClusters.length === 0 && cId >= 0 &&
+              clusters && cId < clusters.length && clusters[cId]);
+            if (hasAssigned) {
               const clObj = clusters[cId];
               const dx = pt.x - clObj.x;
               const dy = pt.y - clObj.y;
-              const dz = currentDim === 3 ? (pt.z - clObj.z) : 0;
+              const dz = currentDim >= 3 ? (pt.z - clObj.z) : 0;
               const dVal = Math.sqrt(dx * dx + dy * dy + dz * dz);
               evaluatedClusters.push({
                 cluster: clObj,
@@ -2415,25 +2492,48 @@
         // 6. Viewport Header Overlay & Maximize Button
         let title = "";
         let subtitle = "";
+        const isHighD = (currentDim > 3);
+        const dX = (typeof plotDimX === 'number') ? plotDimX : 0;
+        const dY = (typeof plotDimY === 'number') ? plotDimY : 1;
+        const dZ = (typeof plotDimZ === 'number') ? plotDimZ : 2;
+
         if (viewType === "ALONG_X") {
-          title = "📐 Along X (Y-Z Plane)";
-          subtitle = "H: +Y ➔ | V: +Z ⬆";
+          title = isHighD
+            ? `📐 Along D${dX} (D${dY}-D${dZ} Plane)`
+            : "📐 Along X (Y-Z Plane)";
+          subtitle = isHighD
+            ? `H: +D${dY} ➔ | V: +D${dZ} ⬆`
+            : "H: +Y ➔ | V: +Z ⬆";
         } else if (viewType === "ALONG_Y") {
-          title = "📐 Along Y (X-Z Plane)";
-          subtitle = "H: +X ➔ | V: +Z ⬆";
+          title = isHighD
+            ? `📐 Along D${dY} (D${dX}-D${dZ} Plane)`
+            : "📐 Along Y (X-Z Plane)";
+          subtitle = isHighD
+            ? `H: +D${dX} ➔ | V: +D${dZ} ⬆`
+            : "H: +X ➔ | V: +Z ⬆";
         } else if (viewType === "ALONG_Z") {
-          title = "📐 Along Z (X-Y Plane)";
-          subtitle = "H: +X ➔ | V: +Y ⬆";
+          title = isHighD
+            ? `📐 Along D${dZ} (D${dX}-D${dY} Plane)`
+            : "📐 Along Z (X-Y Plane)";
+          subtitle = isHighD
+            ? `H: +D${dX} ➔ | V: +D${dY} ⬆`
+            : "H: +X ➔ | V: +Y ⬆";
         } else if (viewType === "2D") {
           title = "📐 2D Standard View (X-Y Plane)";
           subtitle = "H: +X ➔ | V: +Y ⬆";
         } else if (viewType === "CUSTOM_3D") {
           const degAz = Math.round(orbitCamera.azimuth * 180 / Math.PI);
           const degEl = Math.round(orbitCamera.elevation * 180 / Math.PI);
-          const lockNote = (orbitCamera && orbitCamera.isLocked)
-            ? ` [🎯 Center: ${orbitCamera.targetLabel || `(${orbitCamera.targetX.toFixed(2)},${orbitCamera.targetY.toFixed(2)},${orbitCamera.targetZ.toFixed(2)})`}]`
+          const cCenter = (orbitCamera && orbitCamera.isLocked)
+            ? (orbitCamera.targetLabel ||
+               `(${orbitCamera.targetX.toFixed(2)},${orbitCamera.targetY.toFixed(2)},` +
+               `${orbitCamera.targetZ.toFixed(2)})`)
             : '';
-          title = `🌐 3D Orbit View [θ: ${degAz}°, φ: ${degEl}°]${lockNote}`;
+          const lockNote = (orbitCamera && orbitCamera.isLocked)
+            ? ` [🎯 Center: ${cCenter}]`
+            : '';
+          const dimTag = isHighD ? ` [D${dX}, D${dY}, D${dZ}]` : '';
+          title = `🌐 3D Orbit View [θ: ${degAz}°, φ: ${degEl}°]${dimTag}${lockNote}`;
           subtitle = (orbitCamera && orbitCamera.isLocked)
             ? "Rotating around Locked Center"
             : "Drag to Rotate Camera";
@@ -2451,14 +2551,21 @@
         // Title text
         ctx.fillStyle = '#f8fafc';
         ctx.font = 'bold 11px sans-serif';
+        const titleW = ctx.measureText(title).width;
         ctx.fillText(title, rect.x + 8, rect.y + 16);
 
-        ctx.fillStyle = '#94a3b8';
+        // Subtitle text (guaranteed no overlap with title)
         ctx.font = '10px monospace';
-        ctx.fillText(subtitle, rect.x + rect.w - 180, rect.y + 16);
+        const subW = ctx.measureText(subtitle).width;
+        const iconMargin = (currentDim >= 3) ? 32 : 12;
+        const subX = rect.x + rect.w - subW - iconMargin;
+        if (subX > rect.x + titleW + 24) {
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText(subtitle, subX, rect.y + 16);
+        }
 
         // Maximize / Restore Icon
-        if (currentDim === 3) {
+        if (currentDim >= 3) {
           ctx.fillStyle = maximizedQuad === qIdx ? '#38bdf8' : '#94a3b8';
           ctx.font = '12px sans-serif';
           ctx.fillText(maximizedQuad === qIdx ? '🗗' : '⛶', rect.x + rect.w - 20, rect.y + 16);
@@ -2470,8 +2577,8 @@
           jointTuplesMap.forEach(entry => {
             const clX = tileEngineX.clusters[entry.cx];
             const clY = tileEngineY.clusters[entry.cy];
-            const clZ = currentDim === 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
-            if (!clX || !clY || (currentDim === 3 && !clZ)) return;
+            const clZ = currentDim >= 3 ? tileEngineZ.clusters[entry.cz] : { val: 0 };
+            if (!clX || !clY || (currentDim >= 3 && !clZ)) return;
             const pr = getProjectedCoord({ x: clX.val, y: clY.val, z: clZ.val });
             const pos = mapMetricToQuad(pr.u, pr.v, qIdx, rect);
             if (pos.px >= rect.x - 20 && pos.px <= rect.x + rect.w + 20 &&
@@ -2890,7 +2997,6 @@
       if (!pts || pts.length === 0) return;
 
       const numPts = pts.length;
-      const step = numPts > 10000 ? Math.ceil(numPts / 10000) : 1;
       const ptRad = Math.max(1.0, samplePointSize * 0.9);
 
       const qualArr = (slotId === 'C' && slot.reconKthDist) ? slot.reconKthDist
@@ -2900,14 +3006,37 @@
       const qualMax = (slotId === 'C') ? slot.reconKthDistMax
                     : (slotId === 'D') ? slot.reconVarianceMax : 1;
       const qMask = (slotId === 'C' || slotId === 'D')
-        ? (slot.reconQualityMask || (slotId === 'C' ? datasetSlots['C'].reconQualityMask
-                                                    : datasetSlots['D'].reconQualityMask)
+        ? (slot.reconQualityMask || (slotId === 'C' ? datasetSlots['C']?.reconQualityMask
+                                                    : datasetSlots['D']?.reconQualityMask)
                                  || reconQualityMask)
         : null;
+      const qIndices = (slotId === 'C' || slotId === 'D')
+        ? (slot.reconQualityIndices || (slotId === 'C' ? datasetSlots['C']?.reconQualityIndices
+                                                       : datasetSlots['D']?.reconQualityIndices)
+                                    || reconQualityIndices)
+        : null;
+
+      const isQualityFiltering = (reconQualityThreshold < 1.0 && qMask);
+      const maxDraw = (typeof maxDrawPoints !== 'undefined') ? maxDrawPoints : 10000;
+
+      let drawPoolLength = numPts;
+      let getPointIndex = (idx) => idx;
+
+      if (isQualityFiltering && qIndices && qIndices.length > 0)
+      {
+        drawPoolLength = qIndices.length;
+        getPointIndex = (idx) => qIndices[idx];
+      }
+
+      const drawCount = Math.min(drawPoolLength, maxDraw);
+      const step = drawPoolLength > drawCount ? (drawPoolLength / drawCount) : 1;
 
       // Pass 1: Render background / non-neighbor points
-      for (let i = 0; i < numPts; i += step) {
-        if (reconQualityThreshold < 1.0 && qMask && i < qMask.length && !qMask[i]) {
+      for (let k = 0; k < drawCount; k++) {
+        const i = getPointIndex(Math.floor(k * step));
+        if (i < 0 || i >= numPts) continue;
+
+        if (isQualityFiltering && !qIndices && qMask && i < qMask.length && !qMask[i]) {
           continue;
         }
 
@@ -2917,6 +3046,7 @@
         }
 
         const p = pts[i];
+        if (!p) continue;
         const pr = projectPt(p);
         const pos = mapToScreen(pr);
 
@@ -2947,11 +3077,12 @@
       if (isFocusMode && activeNeighborSet && activeNeighborSet.size > 0) {
         for (const i of activeNeighborSet) {
           if (i < 0 || i >= numPts) continue;
-          if (reconQualityThreshold < 1.0 && qMask && i < qMask.length && !qMask[i]) {
+          if (isQualityFiltering && qMask && i < qMask.length && !qMask[i]) {
             continue;
           }
 
           const p = pts[i];
+          if (!p) continue;
           const pr = projectPt(p);
           const pos = mapToScreen(pr);
 
@@ -3038,6 +3169,7 @@
         ? slotD.reconstructionInfo.k : (typeof knnK !== 'undefined' ? knnK : 10);
 
       function projectPtCustom(p, is3D, activeCam, az, el) {
+        const pt = (typeof getPlotCoords === 'function') ? getPlotCoords(p) : p;
         if (is3D) {
           let tx = 0, ty = 0, tz = 0;
           if (activeCam && activeCam.isLocked) {
@@ -3045,9 +3177,9 @@
             ty = activeCam.targetY || 0;
             tz = activeCam.targetZ || 0;
           }
-          return project3DVector(p.x - tx, p.y - ty, (p.z || 0.0) - tz, az, el);
+          return project3DVector(pt.x - tx, pt.y - ty, (pt.z || 0.0) - tz, az, el);
         }
-        return { u: p.x, v: p.y, depth: p.z || 0.0 };
+        return { u: pt.x, v: pt.y, depth: pt.z || 0.0 };
       }
 
       function mapToScreenCustom(pr, rect, activePanX, activePanY, scale) {
@@ -3076,7 +3208,7 @@
           const az = activeCam.azimuth;
           const el = activeCam.elevation;
           const scale = (Math.min(rect.w, rect.h) / 2.35) * activeZoom;
-          const is3D = (slotA && slotA.currentDim === 3) || (slotC && slotC.currentDim === 3);
+          const is3D = (slotA && slotA.currentDim >= 3) || (slotC && slotC.currentDim >= 3);
 
           const projectPt = (p) => projectPtCustom(p, is3D, activeCam, az, el);
           const mapToScreen = (pr) => mapToScreenCustom(pr, rect, activePanX, activePanY, scale);
@@ -3146,7 +3278,15 @@
           ctx.font = '9px monospace';
           ctx.fillStyle = 'var(--text-muted, #94a3b8)';
           const countAStr = `${ptsA.length.toLocaleString()} [A]`;
-          const countCStr = `${ptsC.length.toLocaleString()} [C] (${dimStr})`;
+          let countCStr = `${ptsC.length.toLocaleString()} [C] (${dimStr})`;
+          if (reconQualityThreshold < 1.0 &&
+              (slotC?.reconQualityIndices || slotC?.reconQualityMask)) {
+            const visC = slotC.reconQualityIndices ? slotC.reconQualityIndices.length : 0;
+            if (visC > 0) {
+              countCStr =
+                `${visC.toLocaleString()}/${ptsC.length.toLocaleString()} [C] (${dimStr})`;
+            }
+          }
           ctx.fillText(`${countAStr} • ${countCStr}`, rect.x + 58, rect.y + 26);
 
           // Top-right status / hint
@@ -3195,7 +3335,7 @@
           const az = activeCam.azimuth;
           const el = activeCam.elevation;
           const scale = (Math.min(rect.w, rect.h) / 2.35) * activeZoom;
-          const is3D = (slotB && slotB.currentDim === 3) || (slotD && slotD.currentDim === 3);
+          const is3D = (slotB && slotB.currentDim >= 3) || (slotD && slotD.currentDim >= 3);
 
           const projectPt = (p) => projectPtCustom(p, is3D, activeCam, az, el);
           const mapToScreen = (pr) => mapToScreenCustom(pr, rect, activePanX, activePanY, scale);
@@ -3265,7 +3405,15 @@
           ctx.font = '9px monospace';
           ctx.fillStyle = 'var(--text-muted, #94a3b8)';
           const countBStr = `${ptsB.length.toLocaleString()} [B]`;
-          const countDStr = `${ptsD.length.toLocaleString()} [D] (${dimStr})`;
+          let countDStr = `${ptsD.length.toLocaleString()} [D] (${dimStr})`;
+          if (reconQualityThreshold < 1.0 &&
+              (slotD?.reconQualityIndices || slotD?.reconQualityMask)) {
+            const visD = slotD.reconQualityIndices ? slotD.reconQualityIndices.length : 0;
+            if (visD > 0) {
+              countDStr =
+                `${visD.toLocaleString()}/${ptsD.length.toLocaleString()} [D] (${dimStr})`;
+            }
+          }
           ctx.fillText(`${countBStr} • ${countDStr}`, rect.x + 58, rect.y + 26);
 
           // Top-right status / hint
@@ -3302,7 +3450,7 @@
           const rect = { x: qConfig.x, y: qConfig.y, w: qConfig.w, h: qConfig.h };
           const slot = datasetSlots[qConfig.slotId];
           const pts = slot ? (slot.benchmarkDataset || slot.pastSamples || []) : [];
-          const is3D = (slot && slot.currentDim === 3);
+          const is3D = (slot && slot.currentDim >= 3);
 
           const isInputSpace = (q === 0 || q === 2);
           const activeView = isInputSpace ? quadViews[0] : quadViews[1];
@@ -3355,9 +3503,12 @@
             : null;
           let countText = `${ptCount.toLocaleString()} pts (${dimStr})`;
           if ((q === 2 || q === 3) && reconQualityThreshold < 1.0 && qHudMask) {
-            let visibleCount = 0;
-            for (let i = 0; i < qHudMask.length; i++) {
-              if (qHudMask[i]) visibleCount++;
+            let visibleCount = (slot && slot.reconQualityIndices)
+              ? slot.reconQualityIndices.length : 0;
+            if (visibleCount === 0 && qHudMask) {
+              for (let i = 0; i < qHudMask.length; i++) {
+                if (qHudMask[i]) visibleCount++;
+              }
             }
             const visStr = visibleCount.toLocaleString();
             const totStr = ptCount.toLocaleString();
@@ -3607,7 +3758,7 @@
           ctx.rect(primRect.x, primRect.y, primRect.w, primRect.h);
           ctx.clip();
 
-          const posPrim = mapPt(pPrim, primRect, primDim === 3, isPrimInput);
+          const posPrim = mapPt(pPrim, primRect, primDim >= 3, isPrimInput);
 
           // Pulse & Outer target circle
           ctx.beginPath();
@@ -3642,7 +3793,7 @@
               const nbIdx = nb.index;
               if (nbIdx < 0 || nbIdx >= primPts.length) continue;
               const pNb = primPts[nbIdx];
-              const posNb = mapPt(pNb, primRect, primDim === 3, isPrimInput);
+              const posNb = mapPt(pNb, primRect, primDim >= 3, isPrimInput);
               const isTop1 = (nb.rank === 1);
 
               // Connecting Ray
@@ -3671,7 +3822,7 @@
             }
           }
 
-          const coordStrPrim = (primDim === 3 && typeof pPrim.z === 'number')
+          const coordStrPrim = (primDim >= 3 && typeof pPrim.z === 'number')
             ? `(${pPrim.x.toFixed(2)}, ${pPrim.y.toFixed(2)}, ${pPrim.z.toFixed(2)})`
             : `(${pPrim.x.toFixed(2)}, ${pPrim.y.toFixed(2)})`;
           const primTag = (knnNbs && knnNbs.length > 0)
@@ -3690,7 +3841,7 @@
             ctx.rect(otherRect.x, otherRect.y, otherRect.w, otherRect.h);
             ctx.clip();
 
-            const posOther = mapPt(pOther, otherRect, otherDim === 3, isOtherInput);
+            const posOther = mapPt(pOther, otherRect, otherDim >= 3, isOtherInput);
 
             ctx.beginPath();
             ctx.arc(posOther.px, posOther.py, 14, 0, Math.PI * 2);
@@ -3722,7 +3873,7 @@
                 const nbIdx = nb.index;
                 if (nbIdx < 0 || nbIdx >= otherPts.length) continue;
                 const pOtherNb = otherPts[nbIdx];
-                const posOtherNb = mapPt(pOtherNb, otherRect, otherDim === 3, isOtherInput);
+                const posOtherNb = mapPt(pOtherNb, otherRect, otherDim >= 3, isOtherInput);
                 const isTop1 = (nb.rank === 1);
 
                 // Connecting Ray in Counterpart Panel
@@ -3751,7 +3902,7 @@
               }
             }
 
-            const coordStrOther = (otherDim === 3 && typeof pOther.z === 'number')
+            const coordStrOther = (otherDim >= 3 && typeof pOther.z === 'number')
               ? `(${pOther.x.toFixed(2)}, ${pOther.y.toFixed(2)}, ${pOther.z.toFixed(2)})`
               : `(${pOther.x.toFixed(2)}, ${pOther.y.toFixed(2)})`;
             const otherTag = (knnNbs && knnNbs.length > 0)
@@ -3773,7 +3924,7 @@
             ctx.clip();
 
             // Draw Ghost A[j] in Panel C
-            const posA_in_C = mapPt(pPrim, rectC, dimC === 3, true);
+            const posA_in_C = mapPt(pPrim, rectC, dimC >= 3, true);
 
             if (!isOverlay) {
               ctx.beginPath();
@@ -3806,7 +3957,7 @@
               if (qIdx < 0 || qIdx >= ptsC.length) continue;
 
               const qc = ptsC[qIdx];
-              const posQc = mapPt(qc, rectC, dimC === 3, true);
+              const posQc = mapPt(qc, rectC, dimC >= 3, true);
               const isTop1 = (item.rank === 1);
 
               ctx.beginPath();
@@ -3841,7 +3992,7 @@
             ctx.clip();
 
             // Draw Ghost B[j] in Panel D
-            const posB_in_D = mapPt(pOther, rectD, dimD === 3, false);
+            const posB_in_D = mapPt(pOther, rectD, dimD >= 3, false);
 
             if (!isOverlay) {
               ctx.beginPath();
@@ -3873,7 +4024,7 @@
               if (qIdx < 0 || qIdx >= ptsD.length) continue;
 
               const qd = ptsD[qIdx];
-              const posQd = mapPt(qd, rectD, dimD === 3, false);
+              const posQd = mapPt(qd, rectD, dimD >= 3, false);
               const w = item.weight;
               const isTop1 = (item.rank === 1);
 
@@ -3919,7 +4070,7 @@
       ctx.rect(rectC.x, rectC.y, rectC.w, rectC.h);
       ctx.clip();
 
-      const posC = mapPt(qc, rectC, dimC === 3, true);
+      const posC = mapPt(qc, rectC, dimC >= 3, true);
 
       ctx.beginPath();
       ctx.arc(posC.px, posC.py, 13, 0, Math.PI * 2);
@@ -3944,7 +4095,7 @@
       ctx.fillStyle = '#fbbf24';
       ctx.fill();
 
-      const coordStrC = (dimC === 3 && typeof qc.z === 'number')
+      const coordStrC = (dimC >= 3 && typeof qc.z === 'number')
         ? `(${qc.x.toFixed(2)}, ${qc.y.toFixed(2)}, ${qc.z.toFixed(2)})`
         : `(${qc.x.toFixed(2)}, ${qc.y.toFixed(2)})`;
       drawPillBadge(
@@ -3960,7 +4111,7 @@
         ctx.rect(rectD.x, rectD.y, rectD.w, rectD.h);
         ctx.clip();
 
-        const posD = mapPt(qd, rectD, dimD === 3, false);
+        const posD = mapPt(qd, rectD, dimD >= 3, false);
 
         ctx.beginPath();
         ctx.arc(posD.px, posD.py, 13, 0, Math.PI * 2);
@@ -3985,7 +4136,7 @@
         ctx.fillStyle = '#c084fc';
         ctx.fill();
 
-        const coordStrD = (dimD === 3 && typeof qd.z === 'number')
+        const coordStrD = (dimD >= 3 && typeof qd.z === 'number')
           ? `(${qd.x.toFixed(2)}, ${qd.y.toFixed(2)}, ${qd.z.toFixed(2)})`
           : `(${qd.x.toFixed(2)}, ${qd.y.toFixed(2)})`;
         const varStr = (slotD.reconVariance && activeQueryIdx < slotD.reconVariance.length)
@@ -4005,7 +4156,7 @@
         ctx.rect(rectA.x, rectA.y, rectA.w, rectA.h);
         ctx.clip();
 
-        const posQ_in_A = mapPt(qc, rectA, dimA === 3, true);
+        const posQ_in_A = mapPt(qc, rectA, dimA >= 3, true);
 
         // Draw Ghost Query reticle in A
         if (!isOverlay) {
@@ -4039,7 +4190,7 @@
           if (nId < 0 || nId >= ptsA.length) continue;
 
           const pa = ptsA[nId];
-          const posNa = mapPt(pa, rectA, dimA === 3, true);
+          const posNa = mapPt(pa, rectA, dimA >= 3, true);
           const isTop1 = (p === 0);
 
           // Vector distance line from ghost query to neighbor
@@ -4077,7 +4228,7 @@
 
         let posD_in_B = null;
         if (qd) {
-          posD_in_B = mapPt(qd, rectB, dimB === 3, false);
+          posD_in_B = mapPt(qd, rectB, dimB >= 3, false);
 
           // Draw Ghost Reconstructed Output reticle in B
           if (!isOverlay) {
@@ -4112,7 +4263,7 @@
           if (nId < 0 || nId >= ptsB.length) continue;
 
           const pb = ptsB[nId];
-          const posNb = mapPt(pb, rectB, dimB === 3, false);
+          const posNb = mapPt(pb, rectB, dimB >= 3, false);
           const w = item.weight;
           const isTop1 = (p === 0);
 

@@ -13,6 +13,9 @@
     let dataMode = 'coord'; // 'coord' (2D/3D points) or 'image' (raster image)
     let currentDim = 3; // 2 or 3 (or 1024 for 32x32 image mode)
     let maximizedQuad = null; // null (all 4 quads) or 0, 1, 2, 3
+    let plotDimX = 0; // Visual X-axis plotting dimension (0 .. currentDim-1)
+    let plotDimY = 1; // Visual Y-axis plotting dimension (0 .. currentDim-1)
+    let plotDimZ = 2; // Visual Z-axis plotting dimension (0 .. currentDim-1)
 
     // Image Mode State & Retro-Inspection
     let imageWidth = 32;
@@ -214,6 +217,8 @@
     let knnEpsilon = 0.0;
     let knnRlim = 0.0;
     let knnMvp = false; // Multi-Anchor Pivot Bounding (AESA)
+    let knnUseSq8 = false; // 8-Bit Scalar Quantization Filtering
+    let clusterUseSq8 = false; // 8-Bit Scalar Quantization Metric Pre-Filter
     let knnResults = null;
     let selectedKnnQuerySample = -1;
     let hoveredKnnNeighborId = -1;
@@ -226,6 +231,7 @@
     let reconQualityColoringEnabled = false;
     let reconQualityThreshold = 1.0;
     let reconQualityMask = null;
+    let reconQualityIndices = null;
     let dimDensityTraceOffset = 0;
 
     // Interactive Selection & Hover State
@@ -297,10 +303,17 @@
     }
 
     function selectImageFrame(frameIdx) {
-      if (frameIdx < 0 || (benchmarkDataset && frameIdx >= benchmarkDataset.length)) {
+      if (frameIdx < 0) {
         inspectedImageFrameIdx = -1;
       } else {
-        inspectedImageFrameIdx = frameIdx;
+        const total = (benchmarkDataset && benchmarkDataset.length > 0)
+          ? benchmarkDataset.length
+          : (typeof totalFrames !== 'undefined' ? totalFrames : 0);
+        if (total > 0) {
+          inspectedImageFrameIdx = Math.min(total - 1, Math.max(0, frameIdx));
+        } else {
+          inspectedImageFrameIdx = 0;
+        }
       }
       updateUI();
       draw();
@@ -333,35 +346,30 @@
       draw();
     }
 
-    // Auto-rlim Computation (-scandist parity)
-    function computeAutoRlim() {
-      let pts = benchmarkDataset;
-      if (!pts || pts.length === 0) {
-        rawBenchmarkDataset = generateBenchmark(currentBenchmark, 250);
-        applyNoiseToDataset();
-        pts = benchmarkDataset;
+    // Programmatic clustering rlim setter with UI synchronization
+    function setClusteringRlim(val, notify = false) {
+      const v = Math.max(0.001, parseFloat(val));
+      if (isNaN(v)) return;
+      rlim = parseFloat(v.toFixed(3));
+      if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+        datasetSlots[activeDatasetSlot].rlim = rlim;
       }
-      const N = Math.min(pts.length, 300);
-      const dists = [];
-      for (let i = 0; i < N; i += 2) {
-        for (let j = i + 1; j < N; j += 2) {
-          const dx = pts[i].x - pts[j].x;
-          const dy = pts[i].y - pts[j].y;
-          const dz = currentDim === 3 ? (pts[i].z - pts[j].z) : 0;
-          dists.push(Math.sqrt(dx*dx + dy*dy + dz*dz));
-          distClusterCluster++;
-          distClusterClusterLast++;
-        }
-      }
-      if (dists.length === 0) return;
-      dists.sort((a, b) => a - b);
-      const median = dists[Math.floor(dists.length * 0.5)];
-      const autoR = Math.max(0.02, Math.min(0.28, median * 0.35));
-      rlim = parseFloat(autoR.toFixed(3));
       const slR = document.getElementById('sliderRlim');
-      if (slR) slR.value = rlim;
+      if (slR) {
+        if (rlim > parseFloat(slR.max || "0.30")) {
+          slR.max = Math.max(2.00, rlim).toFixed(2);
+        } else if (currentDim <= 3 && rlim <= 0.30) {
+          slR.max = "0.30";
+        }
+        slR.value = rlim;
+      }
       const inpR = document.getElementById('inputRlim');
-      if (inpR) inpR.value = rlim.toFixed(3);
+      if (inpR) {
+        if (rlim > parseFloat(inpR.max || "1.000")) {
+          inpR.max = Math.max(2.00, rlim).toFixed(2);
+        }
+        inpR.value = rlim.toFixed(3);
+      }
       if (typeof isRunning !== 'undefined' && !isRunning) {
         if (typeof totalFrames !== 'undefined' && totalFrames > 0) {
           if (typeof resetClustering === 'function') {
@@ -371,10 +379,75 @@
         } else if (typeof GricWasm !== 'undefined' && GricWasm.isLoaded()) {
           const params = GricWasm.buildParamsFromState();
           wasmSessionActive = GricWasm.init(params);
+          if (typeof updateWasmBadge === 'function') updateWasmBadge();
         }
       }
-      showToast(`⚡ Auto-rlim (-scandist): Median=${median.toFixed(3)} ➔ rlim=${rlim.toFixed(3)}`);
-      draw();
+      if (notify && typeof showToast === 'function') {
+        showToast(`⚡ Clustering rlim set to ${rlim.toFixed(3)}`);
+      }
+      if (typeof draw === 'function') {
+        draw();
+      }
+    }
+
+    // Programmatic noise sigma setter with UI synchronization
+    function setNoiseSigma(val, notify = false) {
+      const v = Math.max(0.0, parseFloat(val));
+      if (isNaN(v)) return;
+      noiseSigma = parseFloat(v.toFixed(4));
+      if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+        datasetSlots[activeDatasetSlot].noiseSigma = noiseSigma;
+      }
+      const slN = document.getElementById('sliderNoiseSigma');
+      if (slN) {
+        slN.value = noiseSigma;
+      }
+      const inpN = document.getElementById('inputNoiseSigma');
+      if (inpN) {
+        inpN.value = noiseSigma.toFixed(3);
+      }
+      if (typeof syncControlDependencies === 'function') {
+        syncControlDependencies();
+      }
+      if (notify && typeof showToast === 'function') {
+        showToast(`⚡ Noise σ set to ${noiseSigma.toFixed(3)}`);
+      }
+    }
+
+    // Auto-rlim Computation (-scandist parity)
+    function computeAutoRlim() {
+      let pts = benchmarkDataset;
+      if (!pts || pts.length === 0) {
+        rawBenchmarkDataset = generateBenchmark(currentBenchmark, 250);
+        applyNoiseToDataset();
+        pts = benchmarkDataset;
+      }
+      const is32D = (currentDim === 32) ||
+                    (currentBenchmark && currentBenchmark.startsWith('32D'));
+      if (is32D) {
+        setClusteringRlim(1.0, true);
+        return;
+      }
+      const N = Math.min(pts.length, 300);
+      const dists = [];
+      for (let i = 0; i < N; i += 2) {
+        for (let j = i + 1; j < N; j += 2) {
+          const dx = pts[i].x - pts[j].x;
+          const dy = pts[i].y - pts[j].y;
+          const dz = currentDim >= 3 ? (pts[i].z - pts[j].z) : 0;
+          dists.push(Math.sqrt(dx*dx + dy*dy + dz*dz));
+          distClusterCluster++;
+          distClusterClusterLast++;
+        }
+      }
+      if (dists.length === 0) return;
+      dists.sort((a, b) => a - b);
+      const median = dists[Math.floor(dists.length * 0.5)];
+      const autoR = Math.max(0.02, Math.min(0.28, median * 0.35));
+      setClusteringRlim(autoR, false);
+      showToast(
+        `⚡ Auto-rlim (-scandist): Median=${median.toFixed(3)} ➔ rlim=${rlim.toFixed(3)}`
+      );
     }
 
     // Truncated Gaussian Random Noise Generator (2D / 3D)
@@ -393,7 +466,7 @@
         const z1 = mag1 * Math.sin(2.0 * Math.PI * u2);
 
         let z2 = 0;
-        if (dim === 3) {
+        if (dim >= 3) {
           const u3 = Math.max(1e-12, Math.random());
           const u4 = Math.random();
           const mag2 = sigma * Math.sqrt(-2.0 * Math.log(u3));
@@ -412,7 +485,7 @@
       const z0 = sigma * Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
       const z1 = sigma * Math.sqrt(-2.0 * Math.log(u1)) * Math.sin(2.0 * Math.PI * u2);
       let z2 = 0;
-      if (dim === 3) {
+      if (dim >= 3) {
         const u3 = Math.max(1e-12, Math.random());
         const u4 = Math.random();
         z2 = sigma * Math.sqrt(-2.0 * Math.log(u3)) * Math.cos(2.0 * Math.PI * u4);
@@ -423,13 +496,125 @@
     }
 
     function applyNoiseToPoint(x, y, z = 0.0, dim = currentDim) {
-      if (noiseSigma <= 1e-6) return { x, y, z: (dim === 3) ? z : 0.0 };
+      if (noiseSigma <= 1e-6) return { x, y, z: (dim >= 3) ? z : 0.0 };
       const noise = generateTruncatedGaussianNoise(dim);
       return {
         x: x + noise.dx,
         y: y + noise.dy,
-        z: (dim === 3) ? (z + noise.dz) : 0.0
+        z: (dim >= 3) ? (z + noise.dz) : 0.0
       };
+    }
+
+    /**
+     * Extract 3D plotting coordinates (x, y, z) mapped from selected visual dimensions.
+     * When currentDim > 3, extracts coordinates from p.coords or p.anchor at [plotDimX, Y, Z].
+     * Computations remain over all dimensions.
+     * @param {Object} p - Point or cluster object
+     * @returns {{ x: number, y: number, z: number }}
+     */
+    function getPlotCoords(p) {
+      if (!p) return { x: 0, y: 0, z: 0 };
+      if (currentDim > 3) {
+        const c = p.coords || p.anchor;
+        if (c && c.length > 0) {
+          const len = c.length;
+          const ix = (plotDimX >= 0 && plotDimX < len) ? plotDimX : 0;
+          const iy = (plotDimY >= 0 && plotDimY < len) ? plotDimY : (len > 1 ? 1 : 0);
+          const iz = (plotDimZ >= 0 && plotDimZ < len) ? plotDimZ : (len > 2 ? 2 : 0);
+          return {
+            x: (c[ix] !== undefined) ? c[ix] : 0.0,
+            y: (c[iy] !== undefined) ? c[iy] : 0.0,
+            z: (c[iz] !== undefined) ? c[iz] : 0.0
+          };
+        }
+      }
+      return {
+        x: p.x || 0.0,
+        y: p.y || 0.0,
+        z: (currentDim >= 3) ? (p.z || 0.0) : 0.0
+      };
+    }
+
+    /**
+     * Clamp plotting dimensions to valid range [0, currentDim - 1].
+     */
+    function clampPlottingDimensions() {
+      const maxDim = (currentDim > 0) ? currentDim - 1 : 2;
+      if (plotDimX < 0 || plotDimX > maxDim) plotDimX = 0;
+      if (plotDimY < 0 || plotDimY > maxDim) plotDimY = Math.min(1, maxDim);
+      if (plotDimZ < 0 || plotDimZ > maxDim) plotDimZ = Math.min(2, maxDim);
+    }
+
+    /**
+     * Set active 3D plotting dimensions and synchronize UI.
+     * @param {number} [dx] - Visual X dimension index
+     * @param {number} [dy] - Visual Y dimension index
+     * @param {number} [dz] - Visual Z dimension index
+     */
+    function setPlottingDimensions(dx, dy, dz) {
+      const maxDim = (currentDim > 0) ? currentDim - 1 : 2;
+      if (typeof dx === 'number' && !isNaN(dx)) {
+        plotDimX = Math.max(0, Math.min(maxDim, Math.floor(dx)));
+      }
+      if (typeof dy === 'number' && !isNaN(dy)) {
+        plotDimY = Math.max(0, Math.min(maxDim, Math.floor(dy)));
+      }
+      if (typeof dz === 'number' && !isNaN(dz)) {
+        plotDimZ = Math.max(0, Math.min(maxDim, Math.floor(dz)));
+      }
+      if (typeof datasetSlots !== 'undefined' && activeDatasetSlot &&
+          datasetSlots[activeDatasetSlot]) {
+        datasetSlots[activeDatasetSlot].plotDimX = plotDimX;
+        datasetSlots[activeDatasetSlot].plotDimY = plotDimY;
+        datasetSlots[activeDatasetSlot].plotDimZ = plotDimZ;
+      }
+      updatePlottingDimSelectorsUI();
+      if (typeof draw === 'function') {
+        draw();
+      }
+    }
+
+    /**
+     * Synchronize and populate plotting dimension selectors in viewport bar and sidebar.
+     */
+    function updatePlottingDimSelectorsUI() {
+      const isHighD = (currentDim > 3);
+      const projGroup = document.getElementById('projDimGroup');
+      const sideCard = document.getElementById('projDimSidebarCard');
+
+      if (projGroup) {
+        projGroup.style.display = isHighD ? 'inline-flex' : 'none';
+      }
+      if (sideCard) {
+        sideCard.style.display = isHighD ? 'block' : 'none';
+      }
+
+      if (!isHighD) return;
+
+      clampPlottingDimensions();
+
+      const selectIds = [
+        { el: document.getElementById('selectPlotDimX'), val: plotDimX },
+        { el: document.getElementById('selectPlotDimY'), val: plotDimY },
+        { el: document.getElementById('selectPlotDimZ'), val: plotDimZ },
+        { el: document.getElementById('selectSidePlotDimX'), val: plotDimX },
+        { el: document.getElementById('selectSidePlotDimY'), val: plotDimY },
+        { el: document.getElementById('selectSidePlotDimZ'), val: plotDimZ }
+      ];
+
+      selectIds.forEach(({ el, val }) => {
+        if (!el) return;
+        if (el.children.length !== currentDim) {
+          el.innerHTML = '';
+          for (let d = 0; d < currentDim; d++) {
+            const opt = document.createElement('option');
+            opt.value = String(d);
+            opt.textContent = `d${d}`;
+            el.appendChild(opt);
+          }
+        }
+        el.value = String(val);
+      });
     }
 
     function applyNoiseToDataset() {
@@ -447,18 +632,37 @@
         for (let i = 0; i < rawBenchmarkDataset.length; i++) {
           const pt = rawBenchmarkDataset[i];
           if (noiseSigma <= 1e-6) {
-            benchmarkDataset.push({
+            const newPt = {
               x: pt.x,
               y: pt.y,
-              z: currentDim === 3 ? (pt.z || 0.0) : 0.0
-            });
+              z: currentDim >= 3 ? (pt.z || 0.0) : 0.0
+            };
+            if (pt.coords) {
+              newPt.coords = new Float64Array(pt.coords);
+            }
+            benchmarkDataset.push(newPt);
           } else {
             const n = applyNoiseToPoint(pt.x, pt.y, pt.z || 0.0, currentDim);
-            benchmarkDataset.push({
+            const newPt = {
               x: n.x,
               y: n.y,
-              z: currentDim === 3 ? (n.z || 0.0) : 0.0
-            });
+              z: currentDim >= 3 ? (n.z || 0.0) : 0.0
+            };
+            if (pt.coords) {
+              const noisyCoords = new Float64Array(pt.coords.length);
+              noisyCoords[0] = n.x;
+              noisyCoords[1] = n.y;
+              if (noisyCoords.length > 2) noisyCoords[2] = n.z;
+              for (let d = 3; d < noisyCoords.length; d++) {
+                const u1 = Math.max(1e-12, Math.random());
+                const u2 = Math.random();
+                const g = Math.sqrt(-2.0 * Math.log(u1)) *
+                  Math.cos(2.0 * Math.PI * u2);
+                noisyCoords[d] = pt.coords[d] + g * noiseSigma;
+              }
+              newPt.coords = noisyCoords;
+            }
+            benchmarkDataset.push(newPt);
           }
         }
       }
@@ -720,6 +924,8 @@
         knnEpsilon: 0.0,
         knnRlim: 0.0,
         knnMvp: false,
+        knnUseSq8: false,
+        clusterUseSq8: false,
         dimDensityResults: null,
         dimDensitySummary: null,
         isDimDensityComputing: false,
@@ -737,7 +943,11 @@
         reconKthDistMin: 0,
         reconKthDistMax: 0,
         reconVarianceMin: 0,
-        reconVarianceMax: 0
+        reconVarianceMax: 0,
+        plotDimX: 0,
+        plotDimY: 1,
+        plotDimZ: 2,
+        rlim: 0.100
       };
     }
 
@@ -755,6 +965,7 @@
       slot.sampleCount = sampleCount;
       slot.loopCount = loopCount;
       slot.noiseSigma = noiseSigma;
+      slot.rlim = rlim;
       slot.dataMode = dataMode;
       slot.currentDim = currentDim;
       slot.isDatasetStaged = isDatasetStaged;
@@ -842,6 +1053,8 @@
       slot.knnEpsilon = knnEpsilon;
       slot.knnRlim = knnRlim;
       slot.knnMvp = knnMvp;
+      slot.knnUseSq8 = knnUseSq8;
+      slot.clusterUseSq8 = clusterUseSq8;
       slot.dimDensityResults = dimDensityResults;
       slot.dimDensitySummary = dimDensitySummary;
       slot.isDimDensityComputing = isDimDensityComputing;
@@ -857,6 +1070,10 @@
       slot.reconQualityColoringEnabled = reconQualityColoringEnabled;
       slot.reconQualityThreshold = reconQualityThreshold;
       slot.reconQualityMask = reconQualityMask;
+      slot.reconQualityIndices = reconQualityIndices;
+      slot.plotDimX = plotDimX;
+      slot.plotDimY = plotDimY;
+      slot.plotDimZ = plotDimZ;
     }
 
     function loadSlotState(slotId) {
@@ -868,6 +1085,27 @@
       noiseSigma = (slot.noiseSigma !== undefined) ? slot.noiseSigma : 0.02;
       dataMode = slot.dataMode || 'coord';
       currentDim = slot.currentDim || 3;
+      if (typeof slot.rlim === 'number') {
+        setClusteringRlim(slot.rlim, false);
+      } else if (slot.benchmarkKey &&
+                 (slot.benchmarkKey.startsWith('32D') || slot.currentDim === 32)) {
+        setClusteringRlim(1.0, false);
+      } else {
+        setClusteringRlim(0.100, false);
+      }
+      if (typeof slot.noiseSigma === 'number') {
+        setNoiseSigma(slot.noiseSigma, false);
+      } else if (slot.benchmarkKey &&
+                 (slot.benchmarkKey.startsWith('32D') || slot.currentDim === 32)) {
+        setNoiseSigma(0.005, false);
+      } else {
+        setNoiseSigma(0.020, false);
+      }
+      plotDimX = (typeof slot.plotDimX === 'number') ? slot.plotDimX : 0;
+      plotDimY = (typeof slot.plotDimY === 'number') ? slot.plotDimY : 1;
+      plotDimZ = (typeof slot.plotDimZ === 'number') ? slot.plotDimZ : 2;
+      clampPlottingDimensions();
+      updatePlottingDimSelectorsUI();
       isDatasetStaged = slot.isDatasetStaged || false;
       stagedDatasetInfo = slot.stagedDatasetInfo || {
         name: currentBenchmark,
@@ -881,20 +1119,24 @@
       currentFrameIdx = slot.currentFrameIdx || 0;
       if (typeof currentLoop !== 'undefined') currentLoop = slot.currentLoop || 1;
       pastSamples = slot.pastSamples || [];
-      if ((!pastSamples || pastSamples.length === 0) && benchmarkDataset && benchmarkDataset.length > 0 && dataMode === 'coord') {
+      if ((!pastSamples || pastSamples.length === 0) &&
+          benchmarkDataset && benchmarkDataset.length > 0 &&
+          dataMode === 'coord') {
         const maxStagedPreview = 100000;
         const stride = benchmarkDataset.length > maxStagedPreview
           ? Math.ceil(benchmarkDataset.length / maxStagedPreview) : 1;
         pastSamples = [];
         for (let i = 0; i < benchmarkDataset.length; i += stride) {
           const pt = benchmarkDataset[i];
-          pastSamples.push({
+          const newPt = {
             x: pt.x,
             y: pt.y,
             z: pt.z || 0.0,
             clusterId: -1,
             frameIndex: i
-          });
+          };
+          if (pt.coords) newPt.coords = pt.coords;
+          pastSamples.push(newPt);
         }
         slot.pastSamples = pastSamples;
       }
@@ -970,6 +1212,8 @@
       knnEpsilon = (slot.knnEpsilon !== undefined) ? slot.knnEpsilon : 0.0;
       knnRlim = (slot.knnRlim !== undefined) ? slot.knnRlim : 0.0;
       knnMvp = slot.knnMvp || false;
+      knnUseSq8 = slot.knnUseSq8 || false;
+      clusterUseSq8 = slot.clusterUseSq8 || false;
       dimDensityResults = slot.dimDensityResults || null;
       dimDensitySummary = slot.dimDensitySummary || null;
       isDimDensityComputing = slot.isDimDensityComputing || false;
@@ -986,6 +1230,7 @@
       reconQualityThreshold = (slot.reconQualityThreshold !== undefined)
         ? slot.reconQualityThreshold : 1.0;
       reconQualityMask = slot.reconQualityMask || null;
+      reconQualityIndices = slot.reconQualityIndices || null;
     }
 
     function switchDatasetSlot(newSlotId) {
@@ -1328,6 +1573,8 @@
       slot.reconQualityColoringEnabled = false;
       slot.reconQualityThreshold = 1.0;
       slot.reconQualityMask = null;
+      slot.reconQualityIndices = null;
+      slot._unprunedBackup = null;
 
       // Update toolbar status pill & indicators
       const pill = document.getElementById(`datasetStatusPill_${slotId}`);
@@ -1596,3 +1843,25 @@
       set: (v) => { reconOverlayMode = !!v; },
       configurable: true
     });
+    Object.defineProperty(window, 'plotDimX', {
+      get: () => plotDimX,
+      set: (v) => { plotDimX = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'plotDimY', {
+      get: () => plotDimY,
+      set: (v) => { plotDimY = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'plotDimZ', {
+      get: () => plotDimZ,
+      set: (v) => { plotDimZ = v; },
+      configurable: true
+    });
+    window.getPlotCoords = getPlotCoords;
+    window.clampPlottingDimensions = clampPlottingDimensions;
+    window.setPlottingDimensions = setPlottingDimensions;
+    window.updatePlottingDimSelectorsUI = updatePlottingDimSelectorsUI;
+    window.setClusteringRlim = setClusteringRlim;
+    window.setNoiseSigma = setNoiseSigma;
+    window.datasetSlots = datasetSlots;

@@ -86,6 +86,11 @@ static int apply_algo_option(
         config->algo.use_double = 1;
         return 0;
     }
+    else if (matches(key, "-sq8") || matches(key, "--sq8"))
+    {
+        config->optim.use_sq8 = 1;
+        return 0;
+    }
     else if (matches(key, "-entropy"))
     {
         config->optim.entropy_mode = 1;

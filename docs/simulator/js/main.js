@@ -382,9 +382,15 @@
             const flatCoords = new Float64Array(batchSize * d);
             for (let i = 0; i < batchSize; i++) {
               const pt = benchmarkDataset[currentFrameIdx + i];
-              flatCoords[i * d] = pt.x;
-              flatCoords[i * d + 1] = pt.y;
-              if (d === 3) flatCoords[i * d + 2] = pt.z || 0.0;
+              if (pt.coords && pt.coords.length >= d) {
+                for (let dimIdx = 0; dimIdx < d; dimIdx++) {
+                  flatCoords[i * d + dimIdx] = pt.coords[dimIdx];
+                }
+              } else {
+                flatCoords[i * d] = pt.x;
+                flatCoords[i * d + 1] = pt.y;
+                if (d >= 3) flatCoords[i * d + 2] = pt.z || 0.0;
+              }
             }
 
             const outAssignments = new Int32Array(batchSize);
@@ -402,11 +408,13 @@
                 pastSamples[frameIdx].clusterId = cId;
               } else if (pastSamples.length < sampleBufferCap) {
                 const pt = benchmarkDataset[frameIdx];
-                pastSamples.push({
+                const s = {
                   x: pt.x, y: pt.y, z: pt.z || 0,
                   frameIndex: frameIdx,
                   clusterId: cId
-                });
+                };
+                if (pt.coords) s.coords = pt.coords;
+                pastSamples.push(s);
               }
               if (frameIdx < benchmarkDataset.length) {
                 benchmarkDataset[frameIdx].clusterId = cId;
@@ -737,6 +745,7 @@
       const lines = text.split(/\r?\n/);
       const rawPoints = [];
       let detected3D = false;
+      let detectedDim = 2;
 
       for (let line of lines) {
         line = line.trim();
@@ -748,7 +757,21 @@
           const y = parseFloat(tokens[1]);
           const z = parseFloat(tokens[2]);
           if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
-            rawPoints.push({ x, y, z });
+            const pt = { x, y, z };
+            if (tokens.length > 3) {
+              const coords = new Float64Array(tokens.length);
+              coords[0] = x;
+              coords[1] = y;
+              coords[2] = z;
+              for (let d = 3; d < tokens.length; d++) {
+                coords[d] = parseFloat(tokens[d]) || 0.0;
+              }
+              pt.coords = coords;
+              if (tokens.length > detectedDim) detectedDim = tokens.length;
+            } else if (detectedDim < 3) {
+              detectedDim = 3;
+            }
+            rawPoints.push(pt);
             detected3D = true;
           }
         } else if (tokens.length >= 2) {
@@ -761,7 +784,9 @@
       }
 
       if (rawPoints.length === 0) {
-        alert("Error: No valid 2D or 3D coordinates found in file. Expected 'x y [z]' or 'x,y[,z]' per line.");
+        alert(
+          "Error: No valid coordinates found in file. Expected 'x y [z...]' per line."
+        );
         return;
       }
 
@@ -786,18 +811,47 @@
       const midY = (minY + maxY) / 2;
       const midZ = (minZ + maxZ) / 2;
 
-      rawBenchmarkDataset = rawPoints.map(p => ({
-        x: ((p.x - midX) / maxSpan) * 1.76,
-        y: ((p.y - midY) / maxSpan) * 1.76,
-        z: detected3D ? (((p.z - midZ) / maxSpan) * 1.76) : 0.0
-      }));
+      rawBenchmarkDataset = rawPoints.map(p => {
+        const item = {
+          x: ((p.x - midX) / maxSpan) * 1.76,
+          y: ((p.y - midY) / maxSpan) * 1.76,
+          z: detected3D ? (((p.z - midZ) / maxSpan) * 1.76) : 0.0
+        };
+        if (p.coords) {
+          const c = new Float64Array(p.coords.length);
+          c[0] = item.x;
+          c[1] = item.y;
+          c[2] = item.z;
+          for (let d = 3; d < p.coords.length; d++) {
+            c[d] = p.coords[d];
+          }
+          item.coords = c;
+        }
+        return item;
+      });
+
+      currentDim = detectedDim > 3 ? detectedDim : (detected3D ? 3 : 2);
+      if (currentDim === 32) {
+        if (typeof setClusteringRlim === 'function') {
+          setClusteringRlim(1.0, false);
+        } else {
+          rlim = 1.0;
+        }
+        if (typeof setNoiseSigma === 'function') {
+          setNoiseSigma(0.005, false);
+        } else {
+          noiseSigma = 0.005;
+        }
+      }
       applyNoiseToDataset();
 
-      currentDim = detected3D ? 3 : 2;
       if (currentDim === 2) {
         maximizedQuad = null;
       }
-      BENCHMARK_DESCS["custom"] = `<b>Custom File (${filename})</b>: ${benchmarkDataset.length} ${detected3D ? '3D' : '2D'} frames loaded from upload.`;
+      const dimLabel = currentDim > 3 ? currentDim + 'D' : (detected3D ? '3D' : '2D');
+      BENCHMARK_DESCS["custom"] =
+        `<b>Custom File (${filename})</b>: ${benchmarkDataset.length} ` +
+        `${dimLabel} frames loaded from upload.`;
       const selMain = document.getElementById('selectBenchmark');
       if (selMain) selMain.value = 'custom';
       const selSlot = document.getElementById(`selectBenchmark_${activeDatasetSlot}`);
@@ -956,7 +1010,7 @@
             return;
           }
         }
-      } else if (currentDim === 3) {
+      } else if (currentDim >= 3) {
         if (px >= qRect.x + qRect.w - 30 && px <= qRect.x + qRect.w - 4 &&
             py >= qRect.y && py <= qRect.y + 24) {
           maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
@@ -978,7 +1032,7 @@
           quadViews[qIdx].panX = 0;
           quadViews[qIdx].panY = 0;
         }
-        if (qIdx === 3 && currentDim === 3 && typeof orbitCamera !== 'undefined') {
+        if (qIdx === 3 && currentDim >= 3 && typeof orbitCamera !== 'undefined') {
           orbitCamera.zoom = 1.0;
           orbitCamera.panX = 0;
           orbitCamera.panY = 0;
@@ -1036,17 +1090,17 @@
         let spaceIs3D = false;
         if (typeof datasetSlots !== 'undefined') {
           if (isInputSpace) {
-            spaceIs3D = (datasetSlots.A && datasetSlots.A.currentDim === 3) ||
-                        (datasetSlots.C && datasetSlots.C.currentDim === 3);
+            spaceIs3D = (datasetSlots.A && datasetSlots.A.currentDim >= 3) ||
+                        (datasetSlots.C && datasetSlots.C.currentDim >= 3);
           } else {
-            spaceIs3D = (datasetSlots.B && datasetSlots.B.currentDim === 3) ||
-                        (datasetSlots.D && datasetSlots.D.currentDim === 3);
+            spaceIs3D = (datasetSlots.B && datasetSlots.B.currentDim >= 3) ||
+                        (datasetSlots.D && datasetSlots.D.currentDim >= 3);
           }
         }
         dragMode = (spaceIs3D && !e.shiftKey) ? 'orbit' : 'pan';
         canvas.classList.add('grabbing');
       } else {
-        const is3DTarget = ((qIdx === 3 || maximizedQuad === 3) && currentDim === 3);
+        const is3DTarget = ((qIdx === 3 || maximizedQuad === 3) && currentDim >= 3);
         if (is3DTarget) {
           dragMode = e.shiftKey ? 'pan' : 'orbit';
           canvas.classList.add('grabbing');
@@ -1116,7 +1170,7 @@
         return;
       }
 
-      const is3DTarget = (activeDragQuad === 3 || maximizedQuad === 3) && currentDim === 3;
+      const is3DTarget = (activeDragQuad === 3 || maximizedQuad === 3) && currentDim >= 3;
 
       if (is3DTarget) {
         if (e.shiftKey || dragMode === 'pan') {
@@ -1301,7 +1355,7 @@
             ? (targetSlot.benchmarkDataset || targetSlot.pastSamples) : null;
           if (!pts || pts.length === 0) return { index: -1, distSq: Infinity };
 
-          const is3D = (targetSlot && targetSlot.currentDim === 3);
+          const is3D = (targetSlot && targetSlot.currentDim >= 3);
           const scale = (Math.min(qRect.w, qRect.h) / 2.35) * (activeView.zoom || 1.0);
           const cx = qRect.x + qRect.w / 2;
           const cy = qRect.y + qRect.h / 2;
@@ -1322,7 +1376,8 @@
               continue;
             }
             const pt = pts[i];
-            let u = pt.x, v = pt.y;
+            const pCoord = (typeof getPlotCoords === 'function') ? getPlotCoords(pt) : pt;
+            let u = pCoord.x, v = pCoord.y;
             if (is3D) {
               let tx = 0, ty = 0, tz = 0;
               if (activeCam && activeCam.isLocked) {
@@ -1331,7 +1386,7 @@
                 tz = activeCam.targetZ || 0;
               }
               const pr = project3DVector(
-                pt.x - tx, pt.y - ty, (pt.z || 0.0) - tz,
+                pCoord.x - tx, pCoord.y - ty, (pCoord.z || 0.0) - tz,
                 activeCam.azimuth, activeCam.elevation
               );
               u = pr.u;
@@ -1528,11 +1583,12 @@
       }
 
       function getProjectedCoord(p) {
-        if (currentDim === 2 || qIdx === 2) return { u: p.x, v: p.y, depth: p.z || 0 };
-        if (qIdx === 0) return { u: p.y, v: p.z, depth: p.x };
-        if (qIdx === 1) return { u: p.x, v: p.z, depth: p.y };
+        const pt = (typeof getPlotCoords === 'function') ? getPlotCoords(p) : p;
+        if (currentDim === 2 || qIdx === 2) return { u: pt.x, v: pt.y, depth: pt.z || 0 };
+        if (qIdx === 0) return { u: pt.y, v: pt.z, depth: pt.x };
+        if (qIdx === 1) return { u: pt.x, v: pt.z, depth: pt.y };
         // CUSTOM_3D (qIdx === 3)
-        return project3D(p.x, p.y, p.z, orbitCamera.azimuth, orbitCamera.elevation);
+        return project3D(pt.x, pt.y, pt.z, orbitCamera.azimuth, orbitCamera.elevation);
       }
 
       let bestIdx = -1;
@@ -1666,7 +1722,7 @@
       const v = quadViews[qIdx];
       if (v) {
         v.zoom = Math.max(0.05, (v.zoom || 1.0) * zoomFactor);
-        if (qIdx === 3 && currentDim === 3) {
+        if (qIdx === 3 && currentDim >= 3) {
           orbitCamera.zoom = v.zoom;
         }
       }
@@ -1708,7 +1764,7 @@
         draw();
         return;
       }
-      if (qIdx === 3 && currentDim === 3) {
+      if (qIdx === 3 && currentDim >= 3) {
         orbitCamera.azimuth = -35 * (Math.PI / 180);
         orbitCamera.elevation = 25 * (Math.PI / 180);
         orbitCamera.panX = 0;
@@ -1773,7 +1829,7 @@
             draw();
             return;
           }
-          if (qIdx === 3 && currentDim === 3) {
+          if (qIdx === 3 && currentDim >= 3) {
             orbitCamera.azimuth = -35 * (Math.PI / 180);
             orbitCamera.elevation = 25 * (Math.PI / 180);
             orbitCamera.panX = 0;
@@ -1791,7 +1847,7 @@
         }
 
         // Check if tapping Maximize / Restore Icon in top-right of quadrant
-        if (currentDim === 3 && px >= qRect.x + qRect.w - 36 && px <= qRect.x + qRect.w &&
+        if (currentDim >= 3 && px >= qRect.x + qRect.w - 36 && px <= qRect.x + qRect.w &&
             py >= qRect.y && py <= qRect.y + 36) {
           maximizedQuad = (maximizedQuad === qIdx) ? null : qIdx;
           draw();
@@ -1810,7 +1866,7 @@
             quadViews[qIdx].panX = 0;
             quadViews[qIdx].panY = 0;
           }
-          if (qIdx === 3 && currentDim === 3 && typeof orbitCamera !== 'undefined') {
+          if (qIdx === 3 && currentDim >= 3 && typeof orbitCamera !== 'undefined') {
             orbitCamera.zoom = 1.0;
             orbitCamera.panX = 0;
             orbitCamera.panY = 0;
@@ -1872,7 +1928,7 @@
           const v = quadViews[targetQuad];
           if (v) {
             v.zoom = Math.max(0.05, (v.zoom || 1.0) * factor);
-            if (targetQuad === 3 && currentDim === 3) orbitCamera.zoom = v.zoom;
+            if (targetQuad === 3 && currentDim >= 3) orbitCamera.zoom = v.zoom;
           }
           pinchStartDist = currentDist;
           updateZoomBadge();
@@ -1903,7 +1959,7 @@
           return;
         }
 
-        const is3DTarget = (activeTouchQuad === 3 || maximizedQuad === 3) && currentDim === 3;
+        const is3DTarget = (activeTouchQuad === 3 || maximizedQuad === 3) && currentDim >= 3;
         if (is3DTarget) {
           // Orbit camera in 3D
           orbitCamera.azimuth += dx * 0.008;
@@ -2025,6 +2081,34 @@
       draw();
     });
 
+    // High-D Visual Plotting Dimension Selectors
+    ['selectPlotDimX', 'selectSidePlotDimX'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', (e) => {
+          setPlottingDimensions(parseInt(e.target.value, 10), plotDimY, plotDimZ);
+        });
+      }
+    });
+
+    ['selectPlotDimY', 'selectSidePlotDimY'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', (e) => {
+          setPlottingDimensions(plotDimX, parseInt(e.target.value, 10), plotDimZ);
+        });
+      }
+    });
+
+    ['selectPlotDimZ', 'selectSidePlotDimZ'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', (e) => {
+          setPlottingDimensions(plotDimX, plotDimY, parseInt(e.target.value, 10));
+        });
+      }
+    });
+
     function updateLockCenterButtonUI() {
       const btn = document.getElementById('btnLockCenter3D');
       const btnSide = document.getElementById('btnLockCenter3DSide');
@@ -2095,7 +2179,7 @@
           targetPt = {
             x: Array.isArray(p) ? p[0] : (p.x || 0),
             y: Array.isArray(p) ? p[1] : (p.y || 0),
-            z: currentDim === 3 ? (Array.isArray(p) ? (p[2] || 0) : (p.z || 0)) : 0
+            z: currentDim >= 3 ? (Array.isArray(p) ? (p[2] || 0) : (p.z || 0)) : 0
           };
           targetLbl = `#0`;
         } else {
@@ -2104,12 +2188,16 @@
         }
       }
 
+      const pCoord = (typeof getPlotCoords === 'function')
+        ? getPlotCoords(targetPt) : targetPt;
       orbitCamera.isLocked = true;
-      orbitCamera.targetX = targetPt.x || 0;
-      orbitCamera.targetY = targetPt.y || 0;
-      orbitCamera.targetZ = targetPt.z || 0;
+      orbitCamera.targetX = pCoord.x || 0;
+      orbitCamera.targetY = pCoord.y || 0;
+      orbitCamera.targetZ = pCoord.z || 0;
       orbitCamera.targetIndex = targetIdx;
-      orbitCamera.targetLabel = targetLbl || `(${orbitCamera.targetX.toFixed(2)}, ${orbitCamera.targetY.toFixed(2)}, ${orbitCamera.targetZ.toFixed(2)})`;
+      orbitCamera.targetLabel = targetLbl ||
+        `(${orbitCamera.targetX.toFixed(2)}, ${orbitCamera.targetY.toFixed(2)}, ` +
+        `${orbitCamera.targetZ.toFixed(2)})`;
 
       // Reset 2D pan offsets in Quad 3 so target point sits at the exact center of viewport
       quadViews[3].panX = 0;
@@ -2117,7 +2205,12 @@
 
       updateLockCenterButtonUI();
       if (typeof showToast === 'function') {
-        showToast(`🎯 Locked 3D center to ${orbitCamera.targetLabel} (${orbitCamera.targetX.toFixed(3)}, ${orbitCamera.targetY.toFixed(3)}, ${orbitCamera.targetZ.toFixed(3)})`);
+        const cxStr = orbitCamera.targetX.toFixed(3);
+        const cyStr = orbitCamera.targetY.toFixed(3);
+        const czStr = orbitCamera.targetZ.toFixed(3);
+        showToast(
+          `🎯 Locked 3D center to ${orbitCamera.targetLabel} (${cxStr}, ${cyStr}, ${czStr})`
+        );
       }
       draw();
     }
@@ -2174,6 +2267,18 @@
         selBench.addEventListener('change', (e) => {
           if (activeDatasetSlot !== sId) {
             switchDatasetSlot(sId);
+          }
+          if (e.target.value.startsWith('32D')) {
+            if (typeof setClusteringRlim === 'function') {
+              setClusteringRlim(1.0, false);
+            } else {
+              rlim = 1.0;
+            }
+            if (typeof setNoiseSigma === 'function') {
+              setNoiseSigma(0.005, false);
+            } else {
+              noiseSigma = 0.005;
+            }
           }
           stageDataset(e.target.value, sId);
           resetView();
@@ -2240,6 +2345,18 @@
     const selectBenchmarkLegacy = document.getElementById('selectBenchmark');
     if (selectBenchmarkLegacy) {
       selectBenchmarkLegacy.addEventListener('change', (e) => {
+        if (e.target.value.startsWith('32D')) {
+          if (typeof setClusteringRlim === 'function') {
+            setClusteringRlim(1.0, false);
+          } else {
+            rlim = 1.0;
+          }
+          if (typeof setNoiseSigma === 'function') {
+            setNoiseSigma(0.005, false);
+          } else {
+            noiseSigma = 0.005;
+          }
+        }
         stageDataset(e.target.value);
         resetView();
       });
@@ -2692,6 +2809,9 @@
       sliderRlim.addEventListener('input', (e) => {
         rlim = parseFloat(e.target.value);
         if (inputRlim) inputRlim.value = rlim.toFixed(3);
+        if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+          datasetSlots[activeDatasetSlot].rlim = rlim;
+        }
         if (!isRunning) {
           if (totalFrames > 0) {
             resetClustering(true);
@@ -2710,7 +2830,18 @@
         const v = parseFloat(e.target.value);
         if (!isNaN(v) && v > 0) {
           rlim = v;
-          if (sliderRlim) sliderRlim.value = Math.max(0.02, Math.min(0.30, v));
+          if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+            datasetSlots[activeDatasetSlot].rlim = rlim;
+          }
+          if (sliderRlim) {
+            if (v > parseFloat(sliderRlim.max || "0.30")) {
+              sliderRlim.max = Math.max(2.0, v).toFixed(2);
+            }
+            sliderRlim.value = Math.max(
+              parseFloat(sliderRlim.min || "0.01"),
+              Math.min(parseFloat(sliderRlim.max), v)
+            );
+          }
           if (!isRunning) {
             if (totalFrames > 0) {
               resetClustering(true);
@@ -2990,6 +3121,9 @@
       sliderNoiseSigma.addEventListener('input', (e) => {
         noiseSigma = parseFloat(e.target.value);
         if (inputNoiseSigma) inputNoiseSigma.value = noiseSigma.toFixed(3);
+        if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+          datasetSlots[activeDatasetSlot].noiseSigma = noiseSigma;
+        }
         applyNoiseToDataset();
         syncControlDependencies();
         if (!isRunning) {
@@ -3003,6 +3137,9 @@
         const v = parseFloat(e.target.value);
         if (!isNaN(v) && v >= 0) {
           noiseSigma = v;
+          if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+            datasetSlots[activeDatasetSlot].noiseSigma = noiseSigma;
+          }
           if (sliderNoiseSigma) sliderNoiseSigma.value = v;
           applyNoiseToDataset();
           syncControlDependencies();
@@ -3063,6 +3200,16 @@
         document.getElementById(`prune${p}`).classList.add('active');
       });
     });
+
+    const optSq8El = document.getElementById('optSq8');
+    if (optSq8El) {
+      optSq8El.addEventListener('click', () => {
+        clusterUseSq8 = !clusterUseSq8;
+        optSq8El.classList.toggle('active', clusterUseSq8);
+        updateCliCommand();
+        draw();
+      });
+    }
 
     document.getElementById('optTM').addEventListener('click', () => {
       useTM = !useTM;
@@ -3159,6 +3306,18 @@
     const selBenchSide = document.getElementById('selectBenchmarkSide');
     if (selBenchSide) {
       selBenchSide.addEventListener('change', (e) => {
+        if (e.target.value.startsWith('32D')) {
+          if (typeof setClusteringRlim === 'function') {
+            setClusteringRlim(1.0, false);
+          } else {
+            rlim = 1.0;
+          }
+          if (typeof setNoiseSigma === 'function') {
+            setNoiseSigma(0.005, false);
+          } else {
+            noiseSigma = 0.005;
+          }
+        }
         stageDataset(e.target.value);
         resetView();
       });
@@ -3854,6 +4013,7 @@
           if (knnEpsilon > 0) args.push('-eps', String(knnEpsilon));
           if (knnRlim > 0) args.push('-rlim', String(knnRlim));
           if (typeof knnMvp !== 'undefined' && knnMvp) args.push('-multipivot');
+          if (typeof knnUseSq8 !== 'undefined' && knnUseSq8) args.push('-sq8');
           args.push('-progress');
           args.push('-txt');
 
@@ -4354,6 +4514,18 @@
         btnKnnMultiPivot.classList.toggle('toggle-active', knnMvp);
         btnKnnMultiPivot.classList.toggle('toggle-cyan', knnMvp);
         btnKnnMultiPivot.classList.toggle('active', knnMvp);
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    const btnKnnSq8 = document.getElementById('btnKnnSq8');
+    if (btnKnnSq8) {
+      btnKnnSq8.addEventListener('click', () => {
+        knnUseSq8 = !knnUseSq8;
+        btnKnnSq8.classList.toggle('toggle-active', knnUseSq8);
+        btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
+        btnKnnSq8.classList.toggle('active', knnUseSq8);
         updateCliCommand();
         draw();
       });
@@ -5257,14 +5429,16 @@
       }
 
       function detectSlotDim(slot, pts) {
-        if (slot && slot.benchmarkKey && typeof is3DBenchmark === 'function') {
-          if (is3DBenchmark(slot.benchmarkKey)) return 3;
-          if (typeof isImageBenchmark === 'function' && !isImageBenchmark(slot.benchmarkKey)) return 2;
+        if (slot && slot.benchmarkKey && typeof getBenchmarkDim === 'function') {
+          return getBenchmarkDim(slot.benchmarkKey);
         }
-        if (slot && slot.currentDim && (slot.currentDim === 2 || slot.currentDim === 3)) {
+        if (slot && slot.currentDim) {
           return slot.currentDim;
         }
         if (pts && pts.length > 0) {
+          if (pts[0].coords && pts[0].coords.length > 0) {
+            return pts[0].coords.length;
+          }
           for (let i = 0; i < Math.min(200, pts.length); i++) {
             if (pts[i].z !== undefined && Math.abs(pts[i].z) > 1e-6) return 3;
           }
@@ -5675,8 +5849,14 @@
       const angular = telem.angularPruned || 0;
       const multiPivot = telem.multiPivotPruned || 0;
       const gSeeds = telem.graphSeedsEvaluated || 0;
+      const sq8Evals = telem.sq8Evaluations || 0;
+      const sq8Members = telem.sq8MembersPruned || 0;
+      const sq8Graph = telem.sq8GraphPruned || 0;
+      const sq8Pruned = (telem.sq8TotalPruned !== undefined)
+        ? telem.sq8TotalPruned
+        : (sq8Members + sq8Graph);
       const exact = Math.max(0, telem.framedistCalls || 0);
-      const totalAll = l1 + l3 + gPruned + angular + multiPivot + gSeeds + exact;
+      const totalAll = l1 + l3 + gPruned + angular + multiPivot + gSeeds + sq8Pruned + exact;
 
       function barPct(val) {
         return totalAll > 0
@@ -5695,6 +5875,8 @@
       set('reconQuerySpeedupVal',      `${speedup.toFixed(1)}×`);
       set('reconQueryDistCallsVal',    telem.framedistCalls.toLocaleString());
       set('reconQueryDistPerQueryVal', `${distPerQuery.toLocaleString()}/q`);
+      set('reconQuerySq8EvalsVal',     sq8Evals > 0 ? sq8Evals.toLocaleString() : '--');
+      set('reconQueryFullPrecCallsVal', exact.toLocaleString());
       set('reconQuerySearchTimeVal',   `${telem.timeSearchMs.toFixed(1)} ms`);
       set('reconQueryLoadTimeVal',     telem.timeLoadMs != null
                                          ? `load ${telem.timeLoadMs.toFixed(0)} ms`
@@ -5728,6 +5910,11 @@
       set('reconQueryMultiPivotVal',        multiPivot.toLocaleString());
       set('reconQueryMultiPivotPctVal',     pct(multiPivot));
 
+      set('reconQuerySq8PrunedVal',         sq8Pruned.toLocaleString());
+      set('reconQuerySq8PctVal',            pct(sq8Pruned));
+      set('reconQuerySq8BreakdownVal',
+          `Members: ${sq8Members.toLocaleString()} | Graph: ${sq8Graph.toLocaleString()}`);
+
       const containmentHits = telem.globalContainmentHits || 0;
       const containmentPct = numQ > 0 ? (100.0 * containmentHits / numQ).toFixed(1) : '0.0';
       set('reconQueryContainmentVal',       containmentHits.toLocaleString());
@@ -5740,6 +5927,7 @@
       const bAngular    = document.getElementById('barReconQueryAngular');
       const bMultiPivot = document.getElementById('barReconQueryMultiPivot');
       const bGSeeds     = document.getElementById('barReconQueryGraphSeeds');
+      const bSq8        = document.getElementById('barReconQuerySq8');
       const bExact      = document.getElementById('barReconQueryExact');
       if (bL1)         { bL1.style.width         = barPct(l1); }
       if (bL3)         { bL3.style.width         = barPct(l3); }
@@ -5747,6 +5935,7 @@
       if (bAngular)    { bAngular.style.width    = barPct(angular); }
       if (bMultiPivot) { bMultiPivot.style.width = barPct(multiPivot); }
       if (bGSeeds)     { bGSeeds.style.width     = barPct(gSeeds); }
+      if (bSq8)        { bSq8.style.width        = barPct(sq8Pruned); }
       if (bExact)      { bExact.style.width      = barPct(exact); }
 
       /* Header badges */
@@ -5922,6 +6111,11 @@
           args.push('--trajectory');
         } else {
           args.push('--no-trajectory');
+        }
+
+        const chkSq8 = document.getElementById('chkReconQuerySq8');
+        if (chkSq8 && chkSq8.checked) {
+          args.push('-sq8');
         }
 
         if (consoleEl) {
@@ -6162,26 +6356,42 @@
       let visCountC = 0;
       if (arrC && arrC.length > 0 && reconQualityThreshold < 1.0)
       {
-        const sortedC = Float64Array.from(arrC).sort();
+        if (!slotC || !slotC.sortedReconKthDist ||
+            slotC.sortedReconKthDist.length !== arrC.length)
+        {
+          if (slotC) { slotC.sortedReconKthDist = Float64Array.from(arrC).sort(); }
+        }
+        const sortedC = (slotC && slotC.sortedReconKthDist)
+          ? slotC.sortedReconKthDist : Float64Array.from(arrC).sort();
         const pctIdxC = Math.min(
           sortedC.length - 1,
           Math.floor(reconQualityThreshold * sortedC.length)
         );
         const threshC = sortedC[pctIdxC];
         const maskC = new Uint8Array(arrC.length);
+        const indicesC = [];
         for (let i = 0; i < arrC.length; i++)
         {
           if (arrC[i] <= threshC)
           {
             maskC[i] = 1;
+            indicesC.push(i);
             visCountC++;
           }
         }
-        if (slotC) { slotC.reconQualityMask = maskC; }
+        if (slotC)
+        {
+          slotC.reconQualityMask = maskC;
+          slotC.reconQualityIndices = new Int32Array(indicesC);
+        }
       }
       else
       {
-        if (slotC) { slotC.reconQualityMask = null; }
+        if (slotC)
+        {
+          slotC.reconQualityMask = null;
+          slotC.reconQualityIndices = null;
+        }
         if (arrC) { visCountC = arrC.length; }
       }
 
@@ -6191,55 +6401,100 @@
       let visCountD = 0;
       if (arrD && arrD.length > 0 && reconQualityThreshold < 1.0)
       {
-        const sortedD = Float64Array.from(arrD).sort();
+        if (!slotD || !slotD.sortedReconVariance ||
+            slotD.sortedReconVariance.length !== arrD.length)
+        {
+          if (slotD) { slotD.sortedReconVariance = Float64Array.from(arrD).sort(); }
+        }
+        const sortedD = (slotD && slotD.sortedReconVariance)
+          ? slotD.sortedReconVariance : Float64Array.from(arrD).sort();
         const pctIdxD = Math.min(
           sortedD.length - 1,
           Math.floor(reconQualityThreshold * sortedD.length)
         );
         const threshD = sortedD[pctIdxD];
         const maskD = new Uint8Array(arrD.length);
+        const indicesD = [];
         for (let i = 0; i < arrD.length; i++)
         {
           if (arrD[i] <= threshD)
           {
             maskD[i] = 1;
+            indicesD.push(i);
             visCountD++;
           }
         }
-        if (slotD) { slotD.reconQualityMask = maskD; }
+        if (slotD)
+        {
+          slotD.reconQualityMask = maskD;
+          slotD.reconQualityIndices = new Int32Array(indicesD);
+        }
       }
       else
       {
-        if (slotD) { slotD.reconQualityMask = null; }
+        if (slotD)
+        {
+          slotD.reconQualityMask = null;
+          slotD.reconQualityIndices = null;
+        }
         if (arrD) { visCountD = arrD.length; }
       }
 
-      // 3. Set global reconQualityMask according to activeDatasetSlot
+      // 3. Set global reconQualityMask & reconQualityIndices according to activeDatasetSlot
       if (activeDatasetSlot === 'C' && slotC)
       {
         reconQualityMask = slotC.reconQualityMask;
+        reconQualityIndices = slotC.reconQualityIndices;
       }
       else if (activeDatasetSlot === 'D' && slotD)
       {
         reconQualityMask = slotD.reconQualityMask;
+        reconQualityIndices = slotD.reconQualityIndices;
       }
       else if (slotD && slotD.reconQualityMask)
       {
         reconQualityMask = slotD.reconQualityMask;
+        reconQualityIndices = slotD.reconQualityIndices;
       }
       else if (slotC && slotC.reconQualityMask)
       {
         reconQualityMask = slotC.reconQualityMask;
+        reconQualityIndices = slotC.reconQualityIndices;
       }
       else
       {
         reconQualityMask = null;
+        reconQualityIndices = null;
       }
 
       // 4. Update UI labels
       const targetArr = (activeDatasetSlot === 'C') ? arrC : (arrD || arrC);
       const targetVis = (activeDatasetSlot === 'C') ? visCountC : (visCountD || visCountC);
       updateReconQualityLabels(targetArr, targetVis);
+
+      // 5. Update Sample Pool Action Button State
+      const btnUpdatePool = document.getElementById('btnUpdatePoolToPruned');
+      if (btnUpdatePool)
+      {
+        const activeIdxs = (activeDatasetSlot === 'C')
+          ? (slotC && slotC.reconQualityIndices)
+          : ((slotD && slotD.reconQualityIndices) || (slotC && slotC.reconQualityIndices));
+        if (reconQualityThreshold < 1.0 && activeIdxs && activeIdxs.length > 0)
+        {
+          btnUpdatePool.disabled = false;
+          btnUpdatePool.style.opacity = '1.0';
+          btnUpdatePool.style.cursor = 'pointer';
+          btnUpdatePool.innerHTML =
+            `<span>⚡</span> Update Pool to Pruned (${activeIdxs.length.toLocaleString()} pts)`;
+        }
+        else
+        {
+          btnUpdatePool.disabled = true;
+          btnUpdatePool.style.opacity = '0.45';
+          btnUpdatePool.style.cursor = 'not-allowed';
+          btnUpdatePool.innerHTML = '<span>⚡</span> Update Pool to Pruned';
+        }
+      }
     }
 
     function updateReconQualityLabels(arr, visCount)
@@ -6318,6 +6573,276 @@
     }
 
     window.updateReconQualityMask = updateReconQualityMask;
+
+    function updatePoolToPruned()
+    {
+      const slotC = datasetSlots['C'];
+      const slotD = datasetSlots['D'];
+      const indices = (slotD && slotD.reconQualityIndices) ? slotD.reconQualityIndices
+                    : (slotC && slotC.reconQualityIndices) ? slotC.reconQualityIndices : null;
+
+      if (!indices || indices.length === 0)
+      {
+        return;
+      }
+
+      // Save backups if not already saved
+      if (slotC && !slotC._unprunedBackup)
+      {
+        slotC._unprunedBackup = {
+          benchmarkDataset: slotC.benchmarkDataset,
+          rawBenchmarkDataset: slotC.rawBenchmarkDataset,
+          pastSamples: slotC.pastSamples,
+          sampleCount: slotC.sampleCount,
+          stagedDatasetInfo: slotC.stagedDatasetInfo ? { ...slotC.stagedDatasetInfo } : null,
+          reconKthDist: slotC.reconKthDist,
+          reconKthDistMin: slotC.reconKthDistMin,
+          reconKthDistMax: slotC.reconKthDistMax,
+          sortedReconKthDist: slotC.sortedReconKthDist
+        };
+      }
+      if (slotD && !slotD._unprunedBackup)
+      {
+        slotD._unprunedBackup = {
+          benchmarkDataset: slotD.benchmarkDataset,
+          rawBenchmarkDataset: slotD.rawBenchmarkDataset,
+          pastSamples: slotD.pastSamples,
+          sampleCount: slotD.sampleCount,
+          stagedDatasetInfo: slotD.stagedDatasetInfo ? { ...slotD.stagedDatasetInfo } : null,
+          reconstructionInfo: slotD.reconstructionInfo ? { ...slotD.reconstructionInfo } : null,
+          reconstructionSourceNeighbors: slotD.reconstructionSourceNeighbors,
+          reconVariance: slotD.reconVariance,
+          reconVarianceMin: slotD.reconVarianceMin,
+          reconVarianceMax: slotD.reconVarianceMax,
+          reconKthDist: slotD.reconKthDist,
+          reconKthDistMin: slotD.reconKthDistMin,
+          reconKthDistMax: slotD.reconKthDistMax,
+          sortedReconVariance: slotD.sortedReconVariance,
+          sortedReconKthDist: slotD.sortedReconKthDist
+        };
+      }
+
+      const newCount = indices.length;
+      const dimB = slotD ? slotD.currentDim : 3;
+
+      if (slotC && slotC.benchmarkDataset)
+      {
+        const newPtsC = new Array(newCount);
+        const newPastC = new Array(newCount);
+        const newKthDistC = slotC.reconKthDist ? new Float64Array(newCount) : null;
+        let kthMin = Infinity, kthMax = -Infinity;
+
+        for (let j = 0; j < newCount; j++)
+        {
+          const origIdx = indices[j];
+          const pc = slotC.benchmarkDataset[origIdx];
+          if (pc)
+          {
+            newPtsC[j] = { x: pc.x, y: pc.y, z: pc.z };
+            newPastC[j] = {
+              x: pc.x,
+              y: pc.y,
+              z: pc.z || 0.0,
+              clusterId: -1,
+              frameIndex: j
+            };
+          }
+          if (newKthDistC && slotC.reconKthDist)
+          {
+            const kd = slotC.reconKthDist[origIdx];
+            newKthDistC[j] = kd;
+            if (kd < kthMin) kthMin = kd;
+            if (kd > kthMax) kthMax = kd;
+          }
+        }
+        slotC.benchmarkDataset = newPtsC;
+        slotC.rawBenchmarkDataset = newPtsC;
+        slotC.pastSamples = newPastC;
+        slotC.sampleCount = newCount;
+        if (slotC.stagedDatasetInfo)
+        {
+          slotC.stagedDatasetInfo.count = newCount;
+          if (!slotC.stagedDatasetInfo.name.includes('(pruned)'))
+          {
+            slotC.stagedDatasetInfo.name += ' (pruned)';
+          }
+        }
+        slotC.reconKthDist = newKthDistC;
+        slotC.reconKthDistMin = (kthMin === Infinity) ? 0 : kthMin;
+        slotC.reconKthDistMax = (kthMax === -Infinity) ? 1 : kthMax;
+        slotC.sortedReconKthDist = newKthDistC ? Float64Array.from(newKthDistC).sort() : null;
+      }
+
+      if (slotD && slotD.benchmarkDataset)
+      {
+        const newPtsD = new Array(newCount);
+        const newPastD = new Array(newCount);
+        const newVarD = slotD.reconVariance ? new Float64Array(newCount) : null;
+        const newKthDistD = slotD.reconKthDist ? new Float64Array(newCount) : null;
+        const newNeighborsD = slotD.reconstructionSourceNeighbors ? new Array(newCount) : null;
+        let varMin = Infinity, varMax = -Infinity;
+
+        for (let j = 0; j < newCount; j++)
+        {
+          const origIdx = indices[j];
+          const pd = slotD.benchmarkDataset[origIdx];
+          if (pd)
+          {
+            newPtsD[j] = { x: pd.x, y: pd.y, z: pd.z };
+            newPastD[j] = {
+              x: pd.x,
+              y: pd.y,
+              z: pd.z || 0.0,
+              clusterId: -1,
+              frameIndex: j
+            };
+          }
+          if (newVarD && slotD.reconVariance)
+          {
+            const v = slotD.reconVariance[origIdx];
+            newVarD[j] = v;
+            if (v < varMin) varMin = v;
+            if (v > varMax) varMax = v;
+          }
+          if (newKthDistD && slotD.reconKthDist)
+          {
+            newKthDistD[j] = slotD.reconKthDist[origIdx];
+          }
+          if (newNeighborsD && slotD.reconstructionSourceNeighbors)
+          {
+            newNeighborsD[j] = slotD.reconstructionSourceNeighbors[origIdx];
+          }
+        }
+        slotD.benchmarkDataset = newPtsD;
+        slotD.rawBenchmarkDataset = newPtsD;
+        slotD.pastSamples = newPastD;
+        slotD.sampleCount = newCount;
+        if (slotD.stagedDatasetInfo)
+        {
+          slotD.stagedDatasetInfo.count = newCount;
+          if (!slotD.stagedDatasetInfo.name.includes('(pruned)'))
+          {
+            slotD.stagedDatasetInfo.name += ' (pruned)';
+          }
+        }
+        if (slotD.reconstructionInfo)
+        {
+          slotD.reconstructionInfo.queryCount = newCount;
+        }
+        slotD.reconstructionSourceNeighbors = newNeighborsD;
+        slotD.reconVariance = newVarD;
+        slotD.reconVarianceMin = (varMin === Infinity) ? 0 : varMin;
+        slotD.reconVarianceMax = (varMax === -Infinity) ? 1 : varMax;
+        slotD.sortedReconVariance = newVarD ? Float64Array.from(newVarD).sort() : null;
+        if (slotC)
+        {
+          slotD.reconKthDist = slotC.reconKthDist;
+          slotD.reconKthDistMin = slotC.reconKthDistMin;
+          slotD.reconKthDistMax = slotC.reconKthDistMax;
+          slotD.sortedReconKthDist = slotC.sortedReconKthDist;
+        }
+      }
+
+      // Reset quality filter slider to 100%
+      reconQualityThreshold = 1.0;
+      if (sliderQuality) sliderQuality.value = 100;
+      const lblPct = document.getElementById('lblReconQualityPct');
+      if (lblPct) lblPct.textContent = '100%';
+
+      if (slotC)
+      {
+        slotC.reconQualityMask = null;
+        slotC.reconQualityIndices = null;
+      }
+      if (slotD)
+      {
+        slotD.reconQualityMask = null;
+        slotD.reconQualityIndices = null;
+      }
+      reconQualityMask = null;
+      reconQualityIndices = null;
+
+      updateReconQualityMask();
+
+      const btnRestore = document.getElementById('btnRestoreOriginalPool');
+      if (btnRestore) btnRestore.style.display = 'inline-flex';
+
+      if (typeof updateDatasetStatusBadge === 'function') updateDatasetStatusBadge();
+      const pillD = document.getElementById('datasetStatusPill_D');
+      if (pillD && slotD)
+      {
+        pillD.textContent =
+          `📦 Reconstructed: ${newCount.toLocaleString()} pts (${dimB}D, pruned)`;
+      }
+      const pillC = document.getElementById('datasetStatusPill_C');
+      if (pillC && slotC && slotC.stagedDatasetInfo)
+      {
+        pillC.textContent = `📦 ${slotC.stagedDatasetInfo.name}: ${newCount.toLocaleString()} pts`;
+      }
+      const statPts = document.getElementById('reconStatsPoints');
+      if (statPts) statPts.textContent = newCount.toLocaleString();
+
+      if (typeof draw === 'function') draw();
+    }
+
+    function restoreOriginalPool()
+    {
+      const slotC = datasetSlots['C'];
+      const slotD = datasetSlots['D'];
+      if (slotC && slotC._unprunedBackup)
+      {
+        Object.assign(slotC, slotC._unprunedBackup);
+        delete slotC._unprunedBackup;
+      }
+      if (slotD && slotD._unprunedBackup)
+      {
+        Object.assign(slotD, slotD._unprunedBackup);
+        delete slotD._unprunedBackup;
+      }
+
+      const btnRestore = document.getElementById('btnRestoreOriginalPool');
+      if (btnRestore) btnRestore.style.display = 'none';
+
+      reconQualityThreshold = 1.0;
+      if (sliderQuality) sliderQuality.value = 100;
+      const lblPct = document.getElementById('lblReconQualityPct');
+      if (lblPct) lblPct.textContent = '100%';
+
+      updateReconQualityMask();
+      if (typeof updateDatasetStatusBadge === 'function') updateDatasetStatusBadge();
+      const pillD = document.getElementById('datasetStatusPill_D');
+      if (pillD && slotD)
+      {
+        const k = (slotD.reconstructionInfo && slotD.reconstructionInfo.k) || 10;
+        pillD.textContent =
+          `📦 Reconstructed: ${slotD.sampleCount.toLocaleString()} pts ` +
+          `(${slotD.currentDim}D, k=${k})`;
+      }
+      const pillC = document.getElementById('datasetStatusPill_C');
+      if (pillC && slotC && slotC.stagedDatasetInfo)
+      {
+        pillC.textContent =
+          `📦 ${slotC.stagedDatasetInfo.name}: ` +
+          `${slotC.sampleCount.toLocaleString()} pts`;
+      }
+      const statPts = document.getElementById('reconStatsPoints');
+      if (statPts && slotD) statPts.textContent = slotD.sampleCount.toLocaleString();
+
+      if (typeof draw === 'function') draw();
+    }
+
+    const btnUpdatePool = document.getElementById('btnUpdatePoolToPruned');
+    if (btnUpdatePool)
+    {
+      btnUpdatePool.addEventListener('click', updatePoolToPruned);
+    }
+    const btnRestorePool = document.getElementById('btnRestoreOriginalPool');
+    if (btnRestorePool)
+    {
+      btnRestorePool.addEventListener('click', restoreOriginalPool);
+    }
+    window.updatePoolToPruned = updatePoolToPruned;
+    window.restoreOriginalPool = restoreOriginalPool;
 
     const inputReconK = document.getElementById('inputReconK');
     const sliderReconK = document.getElementById('sliderReconK');
@@ -6490,7 +7015,7 @@
       }
 
       // 5. 3D Mode Camera Presets
-      const is3D = (currentDim === 3);
+      const is3D = (currentDim >= 3);
       const card3DPresetsSide = document.getElementById('card3DPresetsSide');
       if (card3DPresetsSide) {
         card3DPresetsSide.classList.toggle('disabled', !is3D);
@@ -7632,7 +8157,11 @@
                 (pt && typeof pt.length === 'number')) {
               content += Array.from(pt).map(v => Number(v).toFixed(6)).join(' ') + '\n';
             } else if (pt && typeof pt === 'object') {
-              if (currentDim === 3) {
+              if (pt.coords &&
+                  (Array.isArray(pt.coords) || ArrayBuffer.isView(pt.coords))) {
+                content +=
+                  Array.from(pt.coords).map(v => Number(v).toFixed(6)).join(' ') + '\n';
+              } else if (currentDim >= 3) {
                 content += `${Number(pt.x || 0).toFixed(6)} ` +
                            `${Number(pt.y || 0).toFixed(6)} ` +
                            `${Number(pt.z || 0).toFixed(6)}\n`;
@@ -7690,8 +8219,14 @@
             if (Array.isArray(pt) || ArrayBuffer.isView(pt) || (pt && typeof pt.length === 'number')) {
               content += Array.from(pt).map(v => Number(v).toFixed(6)).join(' ') + '\n';
             } else if (pt && typeof pt === 'object') {
-              if (currentDim === 3) {
-                content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)} ${Number(pt.z || 0).toFixed(6)}\n`;
+              if (pt.coords &&
+                  (Array.isArray(pt.coords) || ArrayBuffer.isView(pt.coords))) {
+                content +=
+                  Array.from(pt.coords).map(v => Number(v).toFixed(6)).join(' ') + '\n';
+              } else if (currentDim >= 3) {
+                content += `${Number(pt.x || 0).toFixed(6)} ` +
+                           `${Number(pt.y || 0).toFixed(6)} ` +
+                           `${Number(pt.z || 0).toFixed(6)}\n`;
               } else {
                 content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)}\n`;
               }
@@ -7740,6 +8275,9 @@
         if (sparseDccExtraEvals > 0) {
           args.push('-sparse_dcc_extra_evals', sparseDccExtraEvals.toString());
         }
+      }
+      if (typeof clusterUseSq8 === 'boolean' && clusterUseSq8) {
+        args.push('-sq8');
       }
       if (maxcl > 0) {
         args.push('-maxcl', maxcl.toString());
@@ -7989,7 +8527,8 @@
           pastSamples = benchmarkDataset.map((p, idx) => ({
             x: (Array.isArray(p) || ArrayBuffer.isView(p)) ? p[0] : (p.x || 0),
             y: (Array.isArray(p) || ArrayBuffer.isView(p)) ? p[1] : (p.y || 0),
-            z: currentDim === 3 ? ((Array.isArray(p) || ArrayBuffer.isView(p)) ? (p[2] || 0) : (p.z || 0)) : 0,
+            z: currentDim >= 3
+              ? ((Array.isArray(p) || ArrayBuffer.isView(p)) ? (p[2] || 0) : (p.z || 0)) : 0,
             frameIndex: idx
           }));
         } else {
@@ -8613,17 +9152,68 @@
 
     function initImageScrubber() {
       const slider = document.getElementById('sliderImgFrame');
+      const inputFrame = document.getElementById('inputImgFrame');
       const btnPrev = document.getElementById('btnImgPrevFrame');
       const btnNext = document.getElementById('btnImgNextFrame');
       const btnLive = document.getElementById('btnImgLiveStream');
 
+      window.isDraggingImageSlider = false;
+
       if (slider) {
-        slider.addEventListener('input', (e) => {
+        const onSliderUpdate = (e) => {
           const val = parseInt(e.target.value, 10);
-          if (typeof selectImageFrame === 'function') {
+          if (!isNaN(val) && typeof selectImageFrame === 'function') {
             selectImageFrame(val);
           }
+        };
+
+        slider.addEventListener('pointerdown', () => { window.isDraggingImageSlider = true; });
+        slider.addEventListener('mousedown', () => { window.isDraggingImageSlider = true; });
+        window.addEventListener('pointerup', () => { window.isDraggingImageSlider = false; });
+        window.addEventListener('mouseup', () => { window.isDraggingImageSlider = false; });
+
+        slider.addEventListener('input', onSliderUpdate);
+        slider.addEventListener('change', onSliderUpdate);
+      }
+
+      if (inputFrame) {
+        const commitFrameInput = () => {
+          const total = (benchmarkDataset && benchmarkDataset.length > 0)
+            ? benchmarkDataset.length
+            : (typeof totalFrames !== 'undefined' ? totalFrames : 0);
+          if (total === 0) return;
+          let val = parseInt(inputFrame.value, 10);
+          if (isNaN(val)) {
+            const cur = (typeof inspectedImageFrameIdx !== 'undefined' &&
+              inspectedImageFrameIdx >= 0)
+              ? inspectedImageFrameIdx
+              : Math.max(0, (typeof totalFrames !== 'undefined' ? totalFrames : 1) - 1);
+            inputFrame.value = cur + 1;
+            return;
+          }
+          val = Math.max(1, Math.min(total, val));
+          inputFrame.value = val;
+          if (typeof selectImageFrame === 'function') {
+            selectImageFrame(val - 1);
+          }
+        };
+
+        inputFrame.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commitFrameInput();
+            inputFrame.blur();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            const cur = (typeof inspectedImageFrameIdx !== 'undefined' &&
+              inspectedImageFrameIdx >= 0)
+              ? inspectedImageFrameIdx
+              : Math.max(0, (typeof totalFrames !== 'undefined' ? totalFrames : 1) - 1);
+            inputFrame.value = cur + 1;
+            inputFrame.blur();
+          }
         });
+        inputFrame.addEventListener('change', commitFrameInput);
       }
 
       if (btnPrev) {

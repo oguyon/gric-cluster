@@ -1516,4 +1516,192 @@ void knn_model_free(
         free(model->cluster_radii);
         model->cluster_radii = NULL;
     }
+
+    if (model->sq8_dataset_buffer != NULL)
+    {
+        free(model->sq8_dataset_buffer);
+        model->sq8_dataset_buffer = NULL;
+    }
+}
+
+/**
+ * knn_model_build_or_load_sq8() - Build or load quantized SQ8 dataset buffer into KnnModel.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_or_load_sq8(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (!config->use_sq8 || model == NULL || config == NULL)
+    {
+        return 0;
+    }
+
+    long N = model->total_dataset_frames;
+    long dim = model->frame_elements;
+    if (N <= 0 || dim <= 0)
+    {
+        return -1;
+    }
+
+    // Path 1: Load from sidecar file if requested
+    if (config->sq8_load_path != NULL)
+    {
+        long loaded_frames = 0;
+        if (sq8_load_sidecar(config->sq8_load_path, &model->sq8_params,
+                             &model->sq8_dataset_buffer, &loaded_frames) != 0)
+        {
+            fprintf(stderr, "Error: Failed to load SQ8 sidecar file '%s'\n",
+                    config->sq8_load_path);
+            return -1;
+        }
+        if (loaded_frames != N || model->sq8_params.dim != dim)
+        {
+            fprintf(stderr, "Error: SQ8 sidecar dimensions mismatch (%ldx%ld vs %ldx%ld)\n",
+                    loaded_frames, model->sq8_params.dim, N, dim);
+            free(model->sq8_dataset_buffer);
+            model->sq8_dataset_buffer = NULL;
+            return -1;
+        }
+        if (config->verbose_level >= 1)
+        {
+            printf("Loaded SQ8 sidecar: %ld frames, range [%.4f, %.4f], scale=%.6f\n",
+                   N, model->sq8_params.min_val, model->sq8_params.max_val,
+                   model->sq8_params.scale);
+        }
+        return 0;
+    }
+
+    // Path 2: Build SQ8 representation by scanning dataset frames
+    KnnFrameReader reader;
+    int open_res = 0;
+    if (config->memory_data != NULL)
+    {
+        open_res = knn_reader_open_memory(
+            &reader, config->memory_data, N, dim, model->is_double);
+    }
+    else
+    {
+        open_res = knn_reader_open(
+            &reader, config->input_data_path, N, model->frame_width,
+            model->frame_height, model->is_double);
+    }
+    if (open_res != 0)
+    {
+        fprintf(stderr, "Error: Failed to open dataset reader for SQ8 quantization\n");
+        return -1;
+    }
+
+    size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
+    void *frame_buf = malloc((size_t)dim * elem_size);
+    if (frame_buf == NULL)
+    {
+        knn_reader_close(&reader);
+        return -1;
+    }
+
+    // Calibrate min and max by scanning frames
+    float global_min = 1e30f;
+    float global_max = -1e30f;
+
+    for (long i = 0; i < N; i++)
+    {
+        if (knn_reader_read_frame(&reader, i, frame_buf) == 0)
+        {
+            if (model->is_double)
+            {
+                const double *da = (const double *)frame_buf;
+                for (long d = 0; d < dim; d++)
+                {
+                    float v = (float)da[d];
+                    if (v < global_min)
+                    {
+                        global_min = v;
+                    }
+                    if (v > global_max)
+                    {
+                        global_max = v;
+                    }
+                }
+            }
+            else
+            {
+                const float *fa = (const float *)frame_buf;
+                for (long d = 0; d < dim; d++)
+                {
+                    float v = fa[d];
+                    if (v < global_min)
+                    {
+                        global_min = v;
+                    }
+                    if (v > global_max)
+                    {
+                        global_max = v;
+                    }
+                }
+            }
+        }
+    } // for (long i = 0; i < N; i++)
+
+    sq8_init_params(&model->sq8_params, global_min, global_max, dim);
+
+    // Allocate resident uint8 buffer [N x dim]
+    size_t total_bytes = (size_t)N * (size_t)dim;
+    model->sq8_dataset_buffer = (uint8_t *)malloc(total_bytes);
+    if (model->sq8_dataset_buffer == NULL)
+    {
+        free(frame_buf);
+        knn_reader_close(&reader);
+        return -1;
+    }
+
+    // Quantize all frames
+    for (long i = 0; i < N; i++)
+    {
+        if (knn_reader_read_frame(&reader, i, frame_buf) == 0)
+        {
+            uint8_t *dst = model->sq8_dataset_buffer + (size_t)i * (size_t)dim;
+            if (model->is_double)
+            {
+                sq8_quantize_double((const double *)frame_buf, dst, &model->sq8_params);
+            }
+            else
+            {
+                sq8_quantize_float((const float *)frame_buf, dst, &model->sq8_params);
+            }
+        }
+    } // for (long i = 0; i < N; i++)
+
+    free(frame_buf);
+    knn_reader_close(&reader);
+
+    if (config->verbose_level >= 1)
+    {
+        printf("Built SQ8 dataset cache: %ld frames (%.2f MB), range [%.4f, %.4f]\n",
+               N, (double)total_bytes / (1024.0 * 1024.0),
+               model->sq8_params.min_val, model->sq8_params.max_val);
+    }
+
+    // Optional: Save sidecar file
+    if (config->sq8_save_path != NULL)
+    {
+        if (sq8_save_sidecar(config->sq8_save_path, &model->sq8_params,
+                             model->sq8_dataset_buffer, N) == 0)
+        {
+            if (config->verbose_level >= 1)
+            {
+                printf("Saved SQ8 sidecar file to '%s'\n", config->sq8_save_path);
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Warning: Failed to write SQ8 sidecar file '%s'\n",
+                    config->sq8_save_path);
+        }
+    }
+
+    return 0;
 }

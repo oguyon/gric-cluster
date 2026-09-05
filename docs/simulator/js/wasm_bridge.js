@@ -1918,6 +1918,11 @@ function buildCliCommand() {
     }
   }
 
+  // SQ8 pre-filtering
+  if (typeof clusterUseSq8 === 'boolean' && clusterUseSq8) {
+    parts.push('-sq8');
+  }
+
   // Input placeholder
   parts.push('<input.fits>');
 
@@ -1941,6 +1946,9 @@ function buildCliCommand() {
     }
     if (typeof knnMvp === 'boolean' && knnMvp) {
       knnParts.push('-multipivot');
+    }
+    if (typeof knnUseSq8 === 'boolean' && knnUseSq8) {
+      knnParts.push('-sq8');
     }
     knnParts.push('-o', 'knn_results.fits');
     return parts.join(' ') + ' && \\\n' + knnParts.join(' ');
@@ -2059,9 +2067,15 @@ const GricWasmWorker = (function () {
 
     for (let i = 0; i < totalFrames; i++) {
       const pt = dataset[startIndex + i];
-      flat[i * ndim] = pt.x;
-      flat[i * ndim + 1] = pt.y;
-      if (ndim >= 3) flat[i * ndim + 2] = pt.z || 0.0;
+      if (pt.coords && pt.coords.length >= ndim) {
+        for (let d = 0; d < ndim; d++) {
+          flat[i * ndim + d] = pt.coords[d];
+        }
+      } else {
+        flat[i * ndim] = pt.x;
+        flat[i * ndim + 1] = pt.y;
+        if (ndim >= 3) flat[i * ndim + 2] = pt.z || 0.0;
+      }
     }
 
     _worker.postMessage({

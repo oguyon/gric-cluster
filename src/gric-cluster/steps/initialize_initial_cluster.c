@@ -1,8 +1,9 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_steps.h"
 #include "cluster_mgmt.h"
-#include <stdio.h>
 #include "cluster_trace.h"
+#include <stdio.h>
+#include <string.h>
 
 #define ANSI_COLOR_ORANGE "\x1b[38;5;208m"
 #define ANSI_COLOR_RESET  "\x1b[0m"
@@ -24,6 +25,19 @@ void initialize_initial_cluster(
     int           *assigned_cluster)
 {
     state->clusters[0].anchor = *current_frame;
+    if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
+    {
+        long dim = current_frame->width * current_frame->height;
+        state->clusters[0].anchor_sq8 = (uint8_t *)malloc((size_t)dim);
+        if (state->clusters[0].anchor_sq8 != NULL)
+        {
+            memcpy(state->clusters[0].anchor_sq8, state->current_frame_sq8, (size_t)dim);
+        }
+    }
+    else
+    {
+        state->clusters[0].anchor_sq8 = NULL;
+    }
     current_frame->data = NULL;
     state->clusters[0].id = 0;
     state->clusters[0].prob = 1.0;

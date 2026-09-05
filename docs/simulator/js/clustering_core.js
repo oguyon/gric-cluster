@@ -6,26 +6,30 @@
 //  5. CORE 2D / 3D CLUSTERING ENGINE
     // =========================================================================
 
-    function clusterFrame(x, y, z = 0.0, skipRender = false) {
+    function clusterFrame(x, y, z = 0.0, skipRender = false, coords = null) {
       const tComputeStart = performance.now();
       distSampleClusterLast = 0;
       distClusterClusterLast = 0;
 
       totalFrames++;
       currentFrame = { x, y, z };
+      if (coords) currentFrame.coords = coords;
       const currentIdx = totalFrames - 1;
       if (!skipRender || (totalFrames % batchThinRate === 0)) {
         if (currentIdx < pastSamples.length) {
           pastSamples[currentIdx].x = x;
           pastSamples[currentIdx].y = y;
           pastSamples[currentIdx].z = z;
+          if (coords) pastSamples[currentIdx].coords = coords;
         } else if (pastSamples.length < sampleBufferCap) {
-          pastSamples.push({ x, y, z, frameIndex: currentIdx, clusterId: -1 });
+          const s = { x, y, z, frameIndex: currentIdx, clusterId: -1 };
+          if (coords) s.coords = coords;
+          pastSamples.push(s);
         }
       }
       currentExplanation = [];
 
-      const coordStr = currentDim === 3 
+      const coordStr = currentDim >= 3 
         ? `(x=${x.toFixed(3)}, y=${y.toFixed(3)}, z=${z.toFixed(3)})`
         : `(x=${x.toFixed(3)}, y=${y.toFixed(3)})`;
 
@@ -34,7 +38,8 @@
           logExplainStep({
             type: 'target',
             title: `📍 Ingesting Frame #${totalFrames}`,
-            text: `Coordinates ${coordStr} partitioned into ${currentDim === 3 ? '3' : '2'} 1D Subspaces.`
+            text: `Coordinates ${coordStr} partitioned into ` +
+                  `${currentDim >= 3 ? '3' : '2'} 1D Subspaces.`
           });
         }
 
@@ -59,9 +64,9 @@
             if (snapshot.lastTuple) {
               const cx = snapshot.lastTuple[0] || 0;
               const cy = snapshot.lastTuple[1] || 0;
-              const cz = currentDim === 3 ? (snapshot.lastTuple[2] || 0) : 0;
+              const cz = currentDim >= 3 ? (snapshot.lastTuple[2] || 0) : 0;
               currentJointTuple = { cx, cy, cz };
-              const tupleKey = currentDim === 3 ? `${cx}_${cy}_${cz}` : `${cx}_${cy}`;
+              const tupleKey = currentDim >= 3 ? `${cx}_${cy}_${cz}` : `${cx}_${cy}`;
               assignmentHistory.push(tupleKey);
               if (assignmentHistory.length > 5000) assignmentHistory.shift();
             }
@@ -125,7 +130,9 @@
 
       // WASM engine
       if (wasmSessionActive && GricWasm.isReady()) {
-        const assigned = GricWasm.processFrame(x, y, z);
+        const assigned = (coords && coords.length > 3)
+          ? GricWasm.processFrameVector(coords)
+          : GricWasm.processFrame(x, y, z);
 
         // MAXCL_STOP: C engine returned -2 → stop
         if (assigned === -2) {
@@ -148,11 +155,13 @@
           if (currentIdx < pastSamples.length) {
             pastSamples[currentIdx].clusterId = actualClusterId;
           } else if (pastSamples.length < sampleBufferCap) {
-            pastSamples.push({
+            const s = {
               x, y, z,
               frameIndex: currentIdx,
               clusterId: actualClusterId
-            });
+            };
+            if (coords) s.coords = coords;
+            pastSamples.push(s);
           }
 
           if (typeof benchmarkDataset !== 'undefined' &&
@@ -264,13 +273,22 @@
         // Pure JS 2D/3D clustering fallback
         let bestDist = Infinity;
         let bestCluster = -1;
-        const rlimSq = (rlim || 0.1) * (rlim || 0.1);
+        const pt = (benchmarkDataset && currentIdx < benchmarkDataset.length)
+          ? benchmarkDataset[currentIdx] : null;
         for (let k = 0; k < clusters.length; k++) {
           const c = clusters[k];
-          const dx = x - c.x;
-          const dy = y - c.y;
-          const dz = (currentDim === 3) ? (z - c.z) : 0.0;
-          const dSq = dx * dx + dy * dy + dz * dz;
+          let dSq = 0;
+          if (pt && pt.coords && c.coords && pt.coords.length === c.coords.length) {
+            for (let d = 0; d < pt.coords.length; d++) {
+              const diff = pt.coords[d] - c.coords[d];
+              dSq += diff * diff;
+            }
+          } else {
+            const dx = x - c.x;
+            const dy = y - c.y;
+            const dz = (currentDim >= 3) ? (z - c.z) : 0.0;
+            dSq = dx * dx + dy * dy + dz * dz;
+          }
           if (dSq < bestDist) {
             bestDist = dSq;
             bestCluster = k;
@@ -287,19 +305,25 @@
           const col = (typeof getClusterColor === 'function')
             ? getClusterColor(actualClusterId)
             : '#38bdf8';
-          clusters.push({
+          const newClust = {
             id: actualClusterId,
             x, y, z,
             members: 1,
             color: col,
             lastActive: totalFrames
-          });
+          };
+          if (pt && pt.coords) {
+            newClust.coords = new Float64Array(pt.coords);
+          }
+          clusters.push(newClust);
         }
         if (actualClusterId >= 0) {
           if (currentIdx < pastSamples.length) {
             pastSamples[currentIdx].clusterId = actualClusterId;
           } else if (pastSamples.length < sampleBufferCap) {
-            pastSamples.push({ x, y, z, frameIndex: currentIdx, clusterId: actualClusterId });
+            const s = { x, y, z, frameIndex: currentIdx, clusterId: actualClusterId };
+            if (coords) s.coords = coords;
+            pastSamples.push(s);
           }
           prevAssignedCluster = actualClusterId;
         }
