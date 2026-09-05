@@ -340,7 +340,7 @@ const DataManager = (function () {
     const f32Anchors = new Float32Array(numClust * dim);
     let anchorsPreview = `# GRIC Binary File: anchors.bin [FLOAT32, ${numClust} x ${dim}]\n` +
                          `# Format: 64-byte self-describing GRIC header\n` +
-                         `# ID X Y ${dim === 3 ? 'Z ' : ''}MEMBERS RADIUS STATUS\n`;
+                         `# ID X Y ${dim >= 3 ? 'Z ' : ''}MEMBERS RADIUS STATUS\n`;
     if (typeof clusters !== 'undefined' && clusters.length > 0) {
       clusters.forEach((c, idx) => {
         if (c.anchor && (c.anchor.length === dim || dim > 3)) {
@@ -350,7 +350,7 @@ const DataManager = (function () {
         } else {
           f32Anchors[idx * dim + 0] = Number(c.x || 0);
           f32Anchors[idx * dim + 1] = Number(c.y || 0);
-          if (dim === 3) {
+          if (dim >= 3) {
             f32Anchors[idx * dim + 2] = Number(c.z || 0);
           }
         }
@@ -360,7 +360,7 @@ const DataManager = (function () {
         const m = c.members || 0;
         const r = Number(c.radius || radius).toFixed(6);
         const st = c.pruned ? 'PRUNED' : 'ACTIVE';
-        anchorsPreview += `${c.id} ${x} ${y} ${dim === 3 ? z + ' ' : ''}${m} ${r} ${st}\n`;
+        anchorsPreview += `${c.id} ${x} ${y} ${dim >= 3 ? z + ' ' : ''}${m} ${r} ${st}\n`;
       });
     }
     const binAnchors = createGricBinaryFile(
@@ -435,7 +435,7 @@ const DataManager = (function () {
     const f32Samples = new Float32Array(numPast * dim);
     let samplesPreview = `# GRIC Binary File: input_samples.bin [FLOAT32, ${numPast} x ${dim}]\n` +
                          `# Format: 64-byte self-describing GRIC header\n` +
-                         `# X Y ${dim === 3 ? 'Z' : ''}\n`;
+                         `# X Y ${dim >= 3 ? 'Z' : ''}\n`;
     const sourceSamples = (typeof benchmarkDataset !== 'undefined' && benchmarkDataset.length > 0)
       ? benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []);
 
@@ -449,10 +449,18 @@ const DataManager = (function () {
             samplesPreview += Array.from(p.slice(0, Math.min(dim, 3)))
               .map(v => Number(v).toFixed(6)).join(' ') + (dim > 3 ? ' ...\n' : '\n');
           }
+        } else if (p.coords && p.coords.length >= dim) {
+          for (let d = 0; d < dim; d++) {
+            f32Samples[idx * dim + d] = Number(p.coords[d] || 0);
+          }
+          if (idx < 50) {
+            samplesPreview += Array.from(p.coords.slice(0, Math.min(dim, 3)))
+              .map(v => Number(v).toFixed(6)).join(' ') + (dim > 3 ? ' ...\n' : '\n');
+          }
         } else {
           f32Samples[idx * dim + 0] = Number(p.x || 0);
           f32Samples[idx * dim + 1] = Number(p.y || 0);
-          if (dim === 3) {
+          if (dim >= 3) {
             f32Samples[idx * dim + 2] = Number(p.z || 0);
             samplesPreview += `${Number(p.x||0).toFixed(6)} ${Number(p.y||0).toFixed(6)} ` +
                               `${Number(p.z||0).toFixed(6)}\n`;

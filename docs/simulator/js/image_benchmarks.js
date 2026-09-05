@@ -11,6 +11,9 @@ if (typeof BENCHMARK_DESCS !== 'undefined')
   BENCHMARK_DESCS['img-ball-1'] =
     '<b>Single Bouncing Ball (32×32)</b>: 2D circular disk ' +
     '(radius=5.0) bouncing elastically in a 32×32 box (D=1024).';
+  BENCHMARK_DESCS['img-ball-2'] =
+    '<b>2 Colliding Balls (32×32)</b>: 2 circular disks with ' +
+    'elastic inter-ball collisions and boundary bounces in a 32×32 box (D=1024).';
   BENCHMARK_DESCS['img-ball-3'] =
     '<b>3 Colliding Balls (32×32)</b>: 3 circular disks with ' +
     'elastic inter-ball collisions and boundary bounces in a 32×32 box (D=1024).';
@@ -276,6 +279,13 @@ function generateImageBenchmark(type, N = 1000)
   {
     return generateBouncingBalls(
       { width: 32, height: 32, nballs: 1, radius: 5.0, collisions: false, seed: 42 },
+      N
+    );
+  }
+  if (type === 'img-ball-2')
+  {
+    return generateBouncingBalls(
+      { width: 32, height: 32, nballs: 2, radius: 5.0, collisions: true, seed: 42 },
       N
     );
   }

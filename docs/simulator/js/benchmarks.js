@@ -26,6 +26,26 @@
       "3Dwalk": "<b>3Dwalk</b>: Steps of bounded 3D Brownian random walk. Tests localized 3D spatial drift and anchor reuse.",
       "3Dlorenz": "<b>3Dlorenz</b>: Samples integrated along the chaotic Lorenz attractor (σ=10, ρ=28, β=8/3). Tests 3D chaotic trajectory clustering.",
       
+      // High-Dimensional Benchmarks (50% 3D Variance)
+      "32Dtorus": "<b>32Dtorus</b>: 32D torus knot " +
+        "(dims 0..2: 50% variance, dims 3..31: 50% variance).",
+      "32Dspiral": "<b>32Dspiral</b>: 32D spiral " +
+        "(dims 0..2: 50% variance, dims 3..31: 50% variance).",
+      "32Drand": "<b>32Drand</b>: 32D random " +
+        "(dims 0..2: 50% variance, dims 3..31: 50% variance).",
+      "128Dtorus": "<b>128Dtorus</b>: 128D torus knot " +
+        "(dims 0..2: 50% variance, dims 3..127: 50% variance).",
+      "128Dspiral": "<b>128Dspiral</b>: 128D spiral " +
+        "(dims 0..2: 50% variance, dims 3..127: 50% variance).",
+      "128Drand": "<b>128Drand</b>: 128D random " +
+        "(dims 0..2: 50% variance, dims 3..127: 50% variance).",
+      "512Dtorus": "<b>512Dtorus</b>: 512D torus knot " +
+        "(dims 0..2: 50% variance, dims 3..511: 50% variance).",
+      "512Dspiral": "<b>512Dspiral</b>: 512D spiral " +
+        "(dims 0..2: 50% variance, dims 3..511: 50% variance).",
+      "512Drand": "<b>512Drand</b>: 512D random " +
+        "(dims 0..2: 50% variance, dims 3..511: 50% variance).",
+
       // Reconstructed
       "reconstructed": "<b>Reconstructed Dataset</b>: Non-parametric k-NN reconstruction evaluated from queries C mapped through training set (A → B).",
 
@@ -36,12 +56,25 @@
     function is3DBenchmark(type) {
       if (!type) return false;
       if (type.startsWith("3D") || type === "3Dlorenz") return true;
+      if (type.startsWith("32D") || type.startsWith("128D") || type.startsWith("512D")) return true;
       if (type === "reconstructed") {
         const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
-        if (slotD && slotD.currentDim === 3) return true;
-        if (slotD && slotD.reconstructionInfo && slotD.reconstructionInfo.outputDim === 3) return true;
+        if (slotD && (slotD.currentDim >= 3 ||
+            (slotD.reconstructionInfo && slotD.reconstructionInfo.outputDim >= 3))) {
+          return true;
+        }
       }
       return false;
+    }
+
+    function getBenchmarkDim(type) {
+      if (!type) return 2;
+      if (typeof isImageBenchmark === 'function' && isImageBenchmark(type)) return 1024;
+      if (type.startsWith("32D")) return 32;
+      if (type.startsWith("128D")) return 128;
+      if (type.startsWith("512D")) return 512;
+      if (is3DBenchmark(type)) return 3;
+      return 2;
     }
 
     function generateBenchmark(type, N = 1000) {
@@ -233,6 +266,93 @@
             x: (lx / 20.0) * 0.82,
             y: (ly / 28.0) * 0.82,
             z: ((lz - 25.0) / 25.0) * 0.82
+          });
+        }
+      } else if (type.startsWith("32D") || type.startsWith("128D") || type.startsWith("512D")) {
+        let D = 32;
+        let baseType = "3Dtorus";
+        if (type.startsWith("32D")) {
+          D = 32;
+          baseType = "3D" + type.slice(3);
+        } else if (type.startsWith("128D")) {
+          D = 128;
+          baseType = "3D" + type.slice(4);
+        } else if (type.startsWith("512D")) {
+          D = 512;
+          baseType = "3D" + type.slice(4);
+        }
+
+        // Generate base 3D coordinates
+        const basePts = generateBenchmark(baseType, N);
+        const remD = D - 3;
+
+        let sumX = 0, sumY = 0, sumZ = 0;
+        for (let i = 0; i < N; i++) {
+          sumX += basePts[i].x;
+          sumY += basePts[i].y;
+          sumZ += basePts[i].z;
+        }
+        const meanX = sumX / N;
+        const meanY = sumY / N;
+        const meanZ = sumZ / N;
+
+        let var3D = 0;
+        for (let i = 0; i < N; i++) {
+          const dx = basePts[i].x - meanX;
+          const dy = basePts[i].y - meanY;
+          const dz = basePts[i].z - meanZ;
+          var3D += dx * dx + dy * dy + dz * dz;
+        }
+        var3D /= N;
+
+        // Generate independent Gaussian components for remaining D - 3 dimensions
+        const remValues = new Float64Array(N * remD);
+        const remSums = new Float64Array(remD);
+        for (let i = 0; i < N; i++) {
+          for (let d = 0; d < remD; d += 2) {
+            const u1 = Math.max(1e-12, Math.random());
+            const u2 = Math.random();
+            const mag = Math.sqrt(-2.0 * Math.log(u1));
+            const g1 = mag * Math.cos(2.0 * Math.PI * u2);
+            const g2 = mag * Math.sin(2.0 * Math.PI * u2);
+            remValues[i * remD + d] = g1;
+            remSums[d] += g1;
+            if (d + 1 < remD) {
+              remValues[i * remD + d + 1] = g2;
+              remSums[d + 1] += g2;
+            }
+          }
+        }
+
+        // Center and compute sample variance of raw remaining values
+        let rawRemVarSum = 0;
+        for (let d = 0; d < remD; d++) {
+          const m = remSums[d] / N;
+          let v = 0;
+          for (let i = 0; i < N; i++) {
+            const diff = remValues[i * remD + d] - m;
+            remValues[i * remD + d] = diff;
+            v += diff * diff;
+          }
+          rawRemVarSum += v / N;
+        }
+
+        // Scale factor: empirical variance in dims 3..D-1 equals var3D exactly (50% ratio)
+        const scale = (rawRemVarSum > 1e-12) ? Math.sqrt(var3D / rawRemVarSum) : 1.0;
+
+        for (let i = 0; i < N; i++) {
+          const coords = new Float64Array(D);
+          coords[0] = basePts[i].x;
+          coords[1] = basePts[i].y;
+          coords[2] = basePts[i].z;
+          for (let d = 0; d < remD; d++) {
+            coords[3 + d] = remValues[i * remD + d] * scale;
+          }
+          points.push({
+            x: coords[0],
+            y: coords[1],
+            z: coords[2],
+            coords: coords
           });
         }
       }

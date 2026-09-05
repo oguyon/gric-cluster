@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GRIC Interactive Algorithm Simulator - Metric Sequential Clustering &amp; Exact Pruning</title>
-  <link rel="stylesheet" href="simulator/css/simulator.css?v=2026.08.29.0258">
+  <link rel="stylesheet" href="simulator/css/simulator.css?v=2026.09.04.2005">
 </head>
 <body>
 <header>
@@ -128,8 +128,20 @@
                 <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
                 <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
               </optgroup>
+              <optgroup label="High-Dimensional Benchmarks (50% 3D Variance)">
+                <option value="32Dtorus">32Dtorus — 32D Torus Knot</option>
+                <option value="32Dspiral">32Dspiral — 32D Spiral</option>
+                <option value="32Drand">32Drand — 32D Random Volume</option>
+                <option value="128Dtorus">128Dtorus — 128D Torus Knot</option>
+                <option value="128Dspiral">128Dspiral — 128D Spiral</option>
+                <option value="128Drand">128Drand — 128D Random Volume</option>
+                <option value="512Dtorus">512Dtorus — 512D Torus Knot</option>
+                <option value="512Dspiral">512Dspiral — 512D Spiral</option>
+                <option value="512Drand">512Drand — 512D Random Volume</option>
+              </optgroup>
               <optgroup label="Image Time-Series Benchmarks (32×32)">
                 <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
+                <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
                 <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
               </optgroup>
               <optgroup label="Custom Dataset">
@@ -202,8 +214,20 @@
                 <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
                 <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
               </optgroup>
+              <optgroup label="High-Dimensional Benchmarks (50% 3D Variance)">
+                <option value="32Dtorus">32Dtorus — 32D Torus Knot</option>
+                <option value="32Dspiral">32Dspiral — 32D Spiral</option>
+                <option value="32Drand">32Drand — 32D Random Volume</option>
+                <option value="128Dtorus">128Dtorus — 128D Torus Knot</option>
+                <option value="128Dspiral">128Dspiral — 128D Spiral</option>
+                <option value="128Drand">128Drand — 128D Random Volume</option>
+                <option value="512Dtorus">512Dtorus — 512D Torus Knot</option>
+                <option value="512Dspiral">512Dspiral — 512D Spiral</option>
+                <option value="512Drand">512Drand — 512D Random Volume</option>
+              </optgroup>
               <optgroup label="Image Time-Series Benchmarks (32×32)">
                 <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
+                <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
                 <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
               </optgroup>
               <optgroup label="Custom Dataset">
@@ -276,8 +300,20 @@
                 <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
                 <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
               </optgroup>
+              <optgroup label="High-Dimensional Benchmarks (50% 3D Variance)">
+                <option value="32Dtorus">32Dtorus — 32D Torus Knot</option>
+                <option value="32Dspiral">32Dspiral — 32D Spiral</option>
+                <option value="32Drand">32Drand — 32D Random Volume</option>
+                <option value="128Dtorus">128Dtorus — 128D Torus Knot</option>
+                <option value="128Dspiral">128Dspiral — 128D Spiral</option>
+                <option value="128Drand">128Drand — 128D Random Volume</option>
+                <option value="512Dtorus">512Dtorus — 512D Torus Knot</option>
+                <option value="512Dspiral">512Dspiral — 512D Spiral</option>
+                <option value="512Drand">512Drand — 512D Random Volume</option>
+              </optgroup>
               <optgroup label="Image Time-Series Benchmarks (32×32)">
                 <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
+                <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
                 <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
               </optgroup>
               <optgroup label="Custom Dataset">
@@ -353,6 +389,22 @@
                 <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
                 <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
                 <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
+              </optgroup>
+              <optgroup label="High-Dimensional Benchmarks (50% 3D Variance)">
+                <option value="32Dtorus">32Dtorus — 32D Torus Knot</option>
+                <option value="32Dspiral">32Dspiral — 32D Spiral</option>
+                <option value="32Drand">32Drand — 32D Random Volume</option>
+                <option value="128Dtorus">128Dtorus — 128D Torus Knot</option>
+                <option value="128Dspiral">128Dspiral — 128D Spiral</option>
+                <option value="128Drand">128Drand — 128D Random Volume</option>
+                <option value="512Dtorus">512Dtorus — 512D Torus Knot</option>
+                <option value="512Dspiral">512Dspiral — 512D Spiral</option>
+                <option value="512Drand">512Drand — 512D Random Volume</option>
+              </optgroup>
+              <optgroup label="Image Time-Series Benchmarks (32×32)">
+                <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
+                <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
+                <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
               </optgroup>
               <optgroup label="Custom Dataset">
                 <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
@@ -620,74 +672,113 @@
                   data-tooltip-desc="Colors points by assigned cluster vs uniform color.">
             🎨 Colors
           </button>
+          <div id="projDimGroup" class="proj-dim-group" style="display: none;"
+               data-tooltip-title="3D Visual Plotting Dimensions (D &gt; 3)"
+               data-tooltip-badge="Visual Axes"
+               data-tooltip-color="cyan"
+               data-tooltip-desc="Select 3 dimensions for visual plotting.">
+            <span class="proj-dim-label">Plot:</span>
+            <span class="proj-dim-axis">X</span>
+            <select id="selectPlotDimX" class="select-plot-dim"
+                    aria-label="X-axis Plotting Dimension"></select>
+            <span class="proj-dim-axis">Y</span>
+            <select id="selectPlotDimY" class="select-plot-dim"
+                    aria-label="Y-axis Plotting Dimension"></select>
+            <span class="proj-dim-axis">Z</span>
+            <select id="selectPlotDimZ" class="select-plot-dim"
+                    aria-label="Z-axis Plotting Dimension"></select>
+          </div>
         </div>
       </div>
 
       <!-- Image Mode Frame Scrubber & Retro-Inspection Bar -->
       <div id="imageScrubberBar" class="image-scrubber-bar" style="display: none;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 0.74rem; font-weight: 700; color: #38bdf8;">
+        <div class="image-scrubber-nav-group">
+          <span style="font-size: 0.74rem; font-weight: 700; color: #38bdf8; white-space: nowrap;">
             🎞️ Frame Inspector:
           </span>
           <button id="btnImgPrevFrame" class="btn-action"
-                  style="padding: 2px 8px; font-size: 0.72rem;"
+                  style="padding: 2px 8px; font-size: 0.72rem; white-space: nowrap;"
                   title="Previous Frame (Left Arrow)">◀ Prev</button>
           <button id="btnImgNextFrame" class="btn-action"
-                  style="padding: 2px 8px; font-size: 0.72rem;"
+                  style="padding: 2px 8px; font-size: 0.72rem; white-space: nowrap;"
                   title="Next Frame (Right Arrow)">Next ▶</button>
           <button id="btnImgLiveStream" class="btn-toggle toggle-green active"
-                  style="padding: 2px 8px; font-size: 0.72rem;"
+                  style="padding: 2px 8px; font-size: 0.72rem; white-space: nowrap;"
                   title="Toggle Live Streaming vs Historical Frame">● Live</button>
+          <input type="range" id="sliderImgFrame" class="image-frame-slider"
+                 min="0" max="0" value="0" title="Drag to scrub frames">
+          <div class="image-frame-input-wrap">
+            <span style="color: #94a3b8; font-weight: 600;">Frame #</span>
+            <input type="number" id="inputImgFrame" min="1" max="1" value="1"
+                   class="image-frame-number-input"
+                   title="Type frame number and press Enter"
+                   aria-label="Frame Number">
+            <span style="color: #64748b;">/</span>
+            <span id="lblImgTotalFrames" style="font-weight: 600; color: #cbd5e1;">0</span>
+            <span id="lblImgFrameStatus" style="color: #94a3b8; margin-left: 2px;">(Live)</span>
+          </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 520px;">
-          <input type="range" id="sliderImgFrame" min="0" max="0" value="0"
-                 style="flex: 1; cursor: pointer; accent-color: #38bdf8;">
-          <span id="lblImgFrameStatus"
-                style="font-family: monospace; font-size: 0.72rem; color: #cbd5e1;">
-            Frame 0 / 0
-          </span>
-        </div>
-        <div style="display: flex; align-items: center; gap: 6px; margin-left: auto; border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
-          <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;">
-            Panels:
-          </span>
-          <button id="btnImgShowAllPanels" class="btn-action primary"
-                  style="padding: 2px 8px; font-size: 0.72rem; font-weight: 700; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);"
-                  title="Show all 4 view panels in split grid (Shortcut: Esc)">⊞ All 4 Panels</button>
-          <select id="selectImgViewPanel" class="form-control"
-                  style="padding: 2px 6px; font-size: 0.72rem; background: #0f172a; color: #cbd5e1; border: 1px solid #334155; border-radius: 4px; cursor: pointer;"
-                  title="Select specific view panel or 4-split grid">
-            <option value="all">⊞ All 4 Panels</option>
-            <option value="0">📸 Q0: Current Frame</option>
-            <option value="1">🎯 Q1: Anchor / Residual / NN1</option>
-            <option value="2">👥 Q2: Cluster Members</option>
-            <option value="2_knn">⚡ Q2: k-NN Neighbors</option>
-            <option value="3">🗂️ Q3: All Clusters</option>
-          </select>
-        </div>
-        <div style="display: flex; align-items: center; gap: 6px; border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
-          <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;">
-            Sort Clusters:
-          </span>
-          <select id="selectImgClusterSort" class="form-control"
-                  style="padding: 2px 6px; font-size: 0.72rem; background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 4px; cursor: pointer;">
-            <option value="id">🔢 ID (Default)</option>
-            <option value="size_desc">📊 Size ↓ (Largest First)</option>
-            <option value="size_asc">📉 Size ↑ (Smallest First)</option>
-          </select>
-        </div>
-        <div style="display: flex; align-items: center; gap: 4px; border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
-          <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;">
-            Thumbnails:
-          </span>
-          <button id="btnImgThumbSmaller" class="btn-action"
-                  style="padding: 2px 6px; font-size: 0.72rem; font-weight: 700; background: #0f172a; border: 1px solid #334155; color: #38bdf8;"
-                  title="Make thumbnails smaller (Shortcut: -)">🔍－</button>
-          <span id="lblImgThumbSize"
-                style="font-family: monospace; font-size: 0.72rem; color: #38bdf8; min-width: 38px; text-align: center;">64px</span>
-          <button id="btnImgThumbBigger" class="btn-action"
-                  style="padding: 2px 6px; font-size: 0.72rem; font-weight: 700; background: #0f172a; border: 1px solid #334155; color: #38bdf8;"
-                  title="Make thumbnails bigger (Shortcut: +)">🔍＋</button>
+        <div class="image-scrubber-ctrl-group">
+          <div style="display: flex; align-items: center; gap: 6px;
+                      border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
+            <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;
+                         white-space: nowrap;">
+              Panels:
+            </span>
+            <button id="btnImgShowAllPanels" class="btn-action primary"
+                    style="padding: 2px 8px; font-size: 0.72rem; font-weight: 700;
+                           background: rgba(56, 189, 248, 0.2); color: #38bdf8;
+                           border: 1px solid rgba(56, 189, 248, 0.4); white-space: nowrap;"
+                    title="Show all 4 view panels in split grid (Shortcut: Esc)">
+              ⊞ All 4 Panels
+            </button>
+            <select id="selectImgViewPanel" class="form-control"
+                    style="padding: 2px 6px; font-size: 0.72rem; background: #0f172a;
+                           color: #cbd5e1; border: 1px solid #334155; border-radius: 4px;
+                           cursor: pointer;"
+                    title="Select specific view panel or 4-split grid">
+              <option value="all">⊞ All 4 Panels</option>
+              <option value="0">📸 Q0: Current Frame</option>
+              <option value="1">🎯 Q1: Anchor / Residual / NN1</option>
+              <option value="2">👥 Q2: Cluster Members</option>
+              <option value="2_knn">⚡ Q2: k-NN Neighbors</option>
+              <option value="3">🗂️ Q3: All Clusters</option>
+            </select>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;
+                      border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
+            <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;
+                         white-space: nowrap;">
+              Sort Clusters:
+            </span>
+            <select id="selectImgClusterSort" class="form-control"
+                    style="padding: 2px 6px; font-size: 0.72rem; background: #0f172a;
+                           color: #38bdf8; border: 1px solid #334155; border-radius: 4px;
+                           cursor: pointer;">
+              <option value="id">🔢 ID (Default)</option>
+              <option value="size_desc">📊 Size ↓ (Largest First)</option>
+              <option value="size_asc">📉 Size ↑ (Smallest First)</option>
+            </select>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;
+                      border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
+            <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;
+                         white-space: nowrap;">
+              Thumbnails:
+            </span>
+            <button id="btnImgThumbSmaller" class="btn-action"
+                    style="padding: 2px 6px; font-size: 0.72rem; font-weight: 700;
+                           background: #0f172a; border: 1px solid #334155; color: #38bdf8;"
+                    title="Make thumbnails smaller (Shortcut: -)">🔍－</button>
+            <span id="lblImgThumbSize"
+                  style="font-family: monospace; font-size: 0.72rem; color: #38bdf8;
+                         min-width: 38px; text-align: center;">64px</span>
+            <button id="btnImgThumbBigger" class="btn-action"
+                    style="padding: 2px 6px; font-size: 0.72rem; font-weight: 700;
+                           background: #0f172a; border: 1px solid #334155; color: #38bdf8;"
+                    title="Make thumbnails bigger (Shortcut: +)">🔍＋</button>
+          </div>
         </div>
       </div>
 
@@ -788,8 +879,20 @@
                       <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
                       <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
                     </optgroup>
+                    <optgroup label="High-Dimensional Benchmarks (50% 3D Variance)">
+                      <option value="32Dtorus">32Dtorus — 32D Torus Knot</option>
+                      <option value="32Dspiral">32Dspiral — 32D Spiral</option>
+                      <option value="32Drand">32Drand — 32D Random Volume</option>
+                      <option value="128Dtorus">128Dtorus — 128D Torus Knot</option>
+                      <option value="128Dspiral">128Dspiral — 128D Spiral</option>
+                      <option value="128Drand">128Drand — 128D Random Volume</option>
+                      <option value="512Dtorus">512Dtorus — 512D Torus Knot</option>
+                      <option value="512Dspiral">512Dspiral — 512D Spiral</option>
+                      <option value="512Drand">512Drand — 512D Random Volume</option>
+                    </optgroup>
                     <optgroup label="Image Time-Series Benchmarks (32×32)">
                       <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
+                      <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
                       <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
                     </optgroup>
                     <optgroup label="Custom Dataset">
@@ -802,7 +905,8 @@
                   <div class="control-label">
                     <span>Number of Samples (<span class="badge-pill">N</span>)</span>
                     <div class="val-box">
-                      <input type="number" id="inputSampleCount" class="val-input" min="10" max="100000" step="100" value="10000" style="width:64px;">
+                      <input type="number" id="inputSampleCount" class="val-input"
+                             min="10" max="100000" step="100" value="10000">
                       <span class="val-unit">pts</span>
                     </div>
                   </div>
@@ -927,9 +1031,11 @@
               <div class="control-row">
                 <div class="control-label">
                   <span>Noise Amplitude (<span class="badge-pill">σ</span>)</span>
-                  <input type="number" id="inputNoiseSigma" class="val-input" min="0.000" max="0.500" step="0.002" value="0.020">
+                  <input type="number" id="inputNoiseSigma" class="val-input"
+                         min="0.000" max="0.500" step="0.001" value="0.020">
                 </div>
-                <input type="range" id="sliderNoiseSigma" min="0.00" max="0.15" step="0.002" value="0.020">
+                <input type="range" id="sliderNoiseSigma" min="0.00" max="0.15"
+                       step="0.001" value="0.020">
               </div>
 
               <div class="control-row" id="rowNoiseTrunc">
@@ -993,10 +1099,12 @@
                             data-tooltip-badge="CLI: -scandist" 
                             data-tooltip-color="green" 
                             data-tooltip-desc="Scans initial dataset points to compute median sample distance, setting rlim = 0.20 × d_med for optimal density coverage.">⚡ Auto</button>
-                    <input type="number" id="inputRlim" class="val-input" min="0.001" max="1.000" step="0.005" value="0.100">
+                    <input type="number" id="inputRlim" class="val-input"
+                           min="0.001" max="2.000" step="0.005" value="0.100">
                   </div>
                 </div>
-                <input type="range" id="sliderRlim" min="0.02" max="0.30" step="0.005" value="0.100">
+                <input type="range" id="sliderRlim" min="0.02" max="0.30"
+                       step="0.005" value="0.100">
               </div>
 
               <!-- Target Selection Mode -->
@@ -1032,6 +1140,19 @@
                      data-tooltip-badge="CLI: -te5" 
                      data-tooltip-color="red" 
                      data-tooltip-desc="Evaluates 5-point Cayley-Menger metric determinant geometry across 3 measured anchors for highest pruning power.">5-Point</div>
+              </div>
+
+              <!-- SQ8 Candidate Anchor Pre-Filtering -->
+              <div class="toggle-group"
+                   style="grid-template-columns: 1fr; margin-top: 6px; margin-bottom: 2px;">
+                <div id="optSq8" class="toggle-btn"
+                     data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
+                     data-tooltip-badge="CLI: -sq8"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Pre-filters candidate anchors using fast 8-bit SIMD
+integer lower bounds against rlim.">
+                  SQ8 Metric Pre-Filter (-sq8)
+                </div>
               </div>
 
               <!-- Prior & Subspace Acceleration -->
@@ -1217,7 +1338,8 @@
                   <div class="control-label">
                     <span>Max Clusters (<span class="badge-pill">maxcl</span>)</span>
                     <div class="val-box">
-                      <input type="number" id="inputMaxcl" class="val-input" min="0" max="65536" step="1" value="0" style="width:62px;">
+                      <input type="number" id="inputMaxcl" class="val-input"
+                             min="0" max="65536" step="1" value="0">
                       <span class="val-unit" id="lblMaxclUnit">cls (0=∞)</span>
                     </div>
                   </div>
@@ -1445,7 +1567,7 @@
                   <span>Max Displayed Points</span>
                   <div class="val-box">
                     <input type="number" id="inputMaxDrawPts" class="val-input" min="100"
-                           max="100000" step="500" value="10000" style="width:64px;">
+                           max="100000" step="500" value="10000">
                     <span class="val-unit">pts</span>
                   </div>
                 </div>
@@ -1478,7 +1600,8 @@
                 <div class="control-label">
                   <span>Sample Buffer Capacity</span>
                   <div class="val-box">
-                    <input type="number" id="inputSampleBufCap" class="val-input" min="1000" max="500000" step="5000" value="100000" style="width:68px;">
+                    <input type="number" id="inputSampleBufCap" class="val-input"
+                           min="1000" max="500000" step="5000" value="100000">
                     <span class="val-unit">pts</span>
                   </div>
                 </div>
@@ -1499,7 +1622,8 @@
                   <span>Batch Thinning Rate</span>
                   <div class="val-box">
                     <span class="val-unit">1 /</span>
-                    <input type="number" id="inputBatchThin" class="val-input" min="1" max="128" step="1" value="1" style="width:48px;">
+                    <input type="number" id="inputBatchThin" class="val-input"
+                           min="1" max="128" step="1" value="1">
                     <span class="val-unit">pts</span>
                   </div>
                 </div>
@@ -1578,6 +1702,41 @@
                 <div id="presetFrontSide" class="toggle-btn" style="font-size: 0.70rem;">Front</div>
                 <div id="presetTopSide" class="toggle-btn" style="font-size: 0.70rem;">Top</div>
                 <div id="presetSideSide" class="toggle-btn" style="font-size: 0.70rem;">Side</div>
+              </div>
+            </div>
+
+            <!-- High-D Plotting Projection Dimensions -->
+            <div class="sub-control-card" id="projDimSidebarCard" style="display: none;">
+              <div class="control-label" style="font-weight: 700; color: var(--accent-cyan);">
+                <span>High-D Plotting Dimensions (D &gt; 3)</span>
+              </div>
+              <p style="font-size: 0.72rem; color: var(--text-muted);
+                        line-height: 1.35; margin-bottom: 8px;">
+                Select 3 dimensions for visual plotting. All dimensions are used for
+                computations.
+              </p>
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+                <div>
+                  <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 2px;">
+                    X Axis:
+                  </div>
+                  <select id="selectSidePlotDimX" class="select-plot-dim" style="width: 100%;">
+                  </select>
+                </div>
+                <div>
+                  <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 2px;">
+                    Y Axis:
+                  </div>
+                  <select id="selectSidePlotDimY" class="select-plot-dim" style="width: 100%;">
+                  </select>
+                </div>
+                <div>
+                  <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 2px;">
+                    Z Axis:
+                  </div>
+                  <select id="selectSidePlotDimZ" class="select-plot-dim" style="width: 100%;">
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -2340,6 +2499,19 @@
                 </div>
               </div>
 
+              <!-- SQ8 8-Bit Scalar Quantization Toggle -->
+              <div class="toggle-group"
+                   style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 2px;">
+                <div id="btnKnnSq8" class="toggle-btn"
+                     data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
+                     data-tooltip-badge="CLI: -sq8"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Applies fast 8-bit scalar quantization with SIMD
+integer lower-bound metric pruning before full-precision distance evaluation.">
+                  8-Bit Scalar Quantization (-sq8)
+                </div>
+              </div>
+
               <!-- Canvas Ray Overlay Toggle -->
               <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 6px;">
                 <div id="optToggleKnnLinesKnnCard" class="toggle-btn toggle-active toggle-green"
@@ -2458,6 +2630,16 @@
                   <div class="lbl">Distances (<span id="knnDistPerQueryVal">0/q</span>)</div>
                 </div>
                 <div class="stat-box"
+                     data-tooltip-title="SQ8 vs Full-Precision Evaluations"
+                     data-tooltip-badge="Precision"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Comparison between lightweight 8-bit integer SIMD
+lower-bound evaluations and exact full-precision distance evaluations.">
+                  <div id="knnSq8EvalsVal"
+                       class="num" style="color: #38bdf8; font-size: 0.95rem;">0</div>
+                  <div class="lbl">SQ8 / Full-Prec (<span id="knnFullPrecCallsVal">0</span>)</div>
+                </div>
+                <div class="stat-box"
                      data-tooltip-title="k-NN Execution Timings"
                      data-tooltip-badge="Timers"
                      data-tooltip-color="amber"
@@ -2537,23 +2719,47 @@
                   <div id="knnTemporalPrunedVal" class="num" style="color: #fbbf24;">0</div>
                   <div class="lbl">Temporal Filtered</div>
                 </div>
+                <div class="stat-box"
+                     data-tooltip-title="SQ8 Metric Lower-Bound Pruning"
+                     data-tooltip-badge="SQ8 Pruned"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Candidates pruned using guaranteed 8-bit integer SIMD
+lower bounds (d_LB > tau) without full-precision distance computation.">
+                  <div id="knnSq8PrunedVal" class="num" style="color: #06b6d4;">0</div>
+                  <div class="lbl">SQ8 Pruned (<span id="knnSq8PctVal">0%</span>)</div>
+                  <div id="knnSq8BreakdownVal"
+                       style="font-size: 0.65rem; color: #94a3b8; margin-top: 2px;">
+                    Members: 0 | Graph: 0
+                  </div>
+                </div>
               </div>
 
               <!-- Multi-Level Stacked Hierarchy Bar -->
-              <div style="margin-top: 10px; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
-                <div style="font-size: 0.72rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px;">Pruning Hierarchy Distribution</div>
-                <div style="width: 100%; height: 14px; background: #1e293b; border-radius: 7px; overflow: hidden; display: flex;">
-                  <div id="barKnnL1" style="height: 100%; width: 0%; background: #c084fc;" title="L1 DCC Pruned"></div>
-                  <div id="barKnnL2" style="height: 100%; width: 0%; background: #38bdf8;" title="L2 Anchor Pruned"></div>
-                  <div id="barKnnL3" style="height: 100%; width: 0%; background: #4ade80;" title="L3 Annular Pruned"></div>
-                  <div id="barKnnTemp" style="height: 100%; width: 0%; background: #fbbf24;" title="Temporal Pruned"></div>
-                  <div id="barKnnExact" style="height: 100%; width: 100%; background: #f87171;" title="Exact Evaluated"></div>
+              <div style="margin-top: 10px; background: rgba(15, 23, 42, 0.7);
+                          border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+                <div style="font-size: 0.72rem; font-weight: 700; color: #f8fafc;
+                            margin-bottom: 6px;">Pruning Hierarchy Distribution</div>
+                <div style="width: 100%; height: 14px; background: #1e293b; border-radius: 7px;
+                            overflow: hidden; display: flex;">
+                  <div id="barKnnL1" style="height: 100%; width: 0%; background: #c084fc;"
+                       title="L1 DCC Pruned"></div>
+                  <div id="barKnnL2" style="height: 100%; width: 0%; background: #38bdf8;"
+                       title="L2 Anchor Pruned"></div>
+                  <div id="barKnnL3" style="height: 100%; width: 0%; background: #4ade80;"
+                       title="L3 Annular Pruned"></div>
+                  <div id="barKnnTemp" style="height: 100%; width: 0%; background: #fbbf24;"
+                       title="Temporal Pruned"></div>
+                  <div id="barKnnSq8" style="height: 100%; width: 0%; background: #06b6d4;"
+                       title="SQ8 Pruned"></div>
+                  <div id="barKnnExact" style="height: 100%; width: 100%; background: #f87171;"
+                       title="Exact Evaluated"></div>
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font-size: 0.66rem; color: var(--text-muted); margin-top: 6px;">
                   <span style="color: #c084fc;">■ L1 DCC</span>
                   <span style="color: #38bdf8;">■ L2 Anchor</span>
                   <span style="color: #4ade80;">■ L3 Annular</span>
                   <span style="color: #fbbf24;">■ Temporal</span>
+                  <span style="color: #06b6d4;">■ SQ8 Pruned</span>
                   <span style="color: #f87171;">■ Exact Dists</span>
                 </div>
               </div>
@@ -3117,6 +3323,23 @@ Results are stored in the cluster directory and loaded back for fast reconstruct
                 </label>
               </div>
 
+              <!-- 8-Bit Scalar Quantization Checkbox -->
+              <div style="display: flex; justify-content: space-between; align-items: center;
+                          margin-top: 4px; padding: 4px 8px; background: rgba(15, 23, 42, 0.45);
+                          border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.3);">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.72rem;
+                              color: #cffafe; cursor: pointer;"
+                       data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
+                       data-tooltip-badge="-sq8"
+                       data-tooltip-color="cyan"
+                       data-tooltip-desc="Applies fast 8-bit scalar quantization with SIMD
+integer lower-bound metric pruning to prune candidates without full-precision distance compute.">
+                  <input type="checkbox" id="chkReconQuerySq8" checked
+                         style="accent-color: #06b6d4; cursor: pointer;">
+                  <span>⚡ SQ8 Acceleration (<code style="color: #38bdf8;">-sq8</code>)</span>
+                </label>
+              </div>
+
               <!-- Live progress bar (shown during job) -->
               <div id="reconQueryProgressBox"
                    style="display: none; margin-top: 6px;
@@ -3238,6 +3461,18 @@ vs exhaustive N_C × N_A brute-force total.">
                                class="num" style="color: #38bdf8; font-size: 1.0rem;">0</div>
                           <div class="lbl">
                             Distances (<span id="reconQueryDistPerQueryVal">0/q</span>)
+                          </div>
+                        </div>
+                        <div class="stat-box"
+                             data-tooltip-title="SQ8 vs Full-Precision Evaluations"
+                             data-tooltip-badge="Precision"
+                             data-tooltip-color="cyan"
+                             data-tooltip-desc="Comparison between lightweight 8-bit integer SIMD
+lower-bound evaluations and exact full-precision distance evaluations.">
+                          <div id="reconQuerySq8EvalsVal"
+                               class="num" style="color: #38bdf8; font-size: 0.95rem;">0</div>
+                          <div class="lbl">
+                            SQ8 / Full-Prec (<span id="reconQueryFullPrecCallsVal">0</span>)
                           </div>
                         </div>
                         <div class="stat-box"
@@ -3387,6 +3622,22 @@ vs exhaustive N_C × N_A brute-force total.">
                             Global Containment (<span id="reconQueryContainmentPctVal">0.0% of queries</span>)
                           </div>
                         </div>
+                        <div class="stat-box"
+                             data-tooltip-title="SQ8 Lower-Bound Metric Pruning"
+                             data-tooltip-badge="SQ8 Pruned"
+                             data-tooltip-color="cyan"
+                             data-tooltip-desc="Candidate frames eliminated via 8-bit integer SIMD
+lower bounds (d_LB > tau) without full-precision distance computation.">
+                          <div id="reconQuerySq8PrunedVal"
+                               class="num" style="color: #06b6d4;">0</div>
+                          <div class="lbl">
+                            SQ8 Pruned (<span id="reconQuerySq8PctVal">0%</span>)
+                          </div>
+                          <div id="reconQuerySq8BreakdownVal"
+                               style="font-size: 0.65rem; color: #94a3b8; margin-top: 2px;">
+                            Members: 0 | Graph: 0
+                          </div>
+                        </div>
                       </div>
 
                       <!-- Stacked pruning hierarchy bar -->
@@ -3423,6 +3674,10 @@ vs exhaustive N_C × N_A brute-force total.">
                                style="height: 100%; width: 0%; background: #fbbf24;"
                                title="Graph Seeds Evaluated">
                           </div>
+                          <div id="barReconQuerySq8"
+                               style="height: 100%; width: 0%; background: #06b6d4;"
+                               title="SQ8 Pruned">
+                          </div>
                           <div id="barReconQueryExact"
                                style="height: 100%; width: 100%; background: #f87171;"
                                title="Exact Distances">
@@ -3437,6 +3692,7 @@ vs exhaustive N_C × N_A brute-force total.">
                           <span style="color: #06b6d4;">■ Angular</span>
                           <span style="color: #2dd4bf;">■ Multi-Pivot</span>
                           <span style="color: #fbbf24;">■ Graph Seeds</span>
+                          <span style="color: #06b6d4;">■ SQ8 Pruned</span>
                           <span style="color: #f87171;">■ Exact Dists</span>
                         </div>
                         </div>
@@ -3533,6 +3789,30 @@ vs exhaustive N_C × N_A brute-force total.">
                   <b id="lblReconQualityTotal"
                      style="color: #f8fafc;">--</b>
                 </span>
+              </div>
+              <!-- Sample Pool Update Actions -->
+              <div id="reconQualityPoolActions"
+                   style="display: flex; gap: 6px; margin-top: 8px;">
+                <button id="btnUpdatePoolToPruned"
+                        style="flex: 1; padding: 4px 8px; font-size: 0.68rem; font-weight: 600;
+                               color: #0f172a; background: #4ade80; border: none;
+                               border-radius: 4px; cursor: pointer; display: flex;
+                               align-items: center; justify-content: center; gap: 4px;
+                               transition: all 0.15s ease;"
+                        title="Update sample pool to match the quality-pruned subset">
+                  <span>⚡</span> Update Pool to Pruned
+                </button>
+                <button id="btnRestoreOriginalPool"
+                        style="display: none; padding: 4px 8px; font-size: 0.68rem;
+                               font-weight: 600; color: #94a3b8;
+                               background: rgba(30, 41, 59, 0.8);
+                               border: 1px solid rgba(148, 163, 184, 0.3);
+                               border-radius: 4px; cursor: pointer; align-items: center;
+                               justify-content: center; gap: 4px;
+                               transition: all 0.15s ease;"
+                        title="Restore original unpruned dataset sample pool">
+                  <span>↺</span> Restore Pool
+                </button>
               </div>
             </div>
 

@@ -394,17 +394,25 @@ const DesktopBridge = (function () {
     let content = '';
     for (let i = 0; i < dataset.length; i++) {
       const pt = dataset[i];
-      if (Array.isArray(pt) || ArrayBuffer.isView(pt) || (pt && typeof pt.length === 'number')) {
+      if (Array.isArray(pt) || ArrayBuffer.isView(pt) ||
+          (pt && typeof pt.length === 'number')) {
         const slice = is2D ? Array.from(pt).slice(0, 2) : Array.from(pt);
         content += slice.map(v => Number(v).toFixed(6)).join(' ') + '\n';
       } else if (pt && typeof pt === 'object') {
-        const px = Number(pt.x || 0).toFixed(6);
-        const py = Number(pt.y || 0).toFixed(6);
-        if (!is2D && typeof pt.z === 'number' && !isNaN(pt.z)) {
-          const pz = Number(pt.z).toFixed(6);
-          content += `${px} ${py} ${pz}\n`;
+        if (pt.coords &&
+            (Array.isArray(pt.coords) || ArrayBuffer.isView(pt.coords))) {
+          const coords = forceDim ?
+            Array.from(pt.coords).slice(0, forceDim) : Array.from(pt.coords);
+          content += coords.map(v => Number(v).toFixed(6)).join(' ') + '\n';
         } else {
-          content += `${px} ${py}\n`;
+          const px = Number(pt.x || 0).toFixed(6);
+          const py = Number(pt.y || 0).toFixed(6);
+          if (!is2D && typeof pt.z === 'number' && !isNaN(pt.z)) {
+            const pz = Number(pt.z).toFixed(6);
+            content += `${px} ${py} ${pz}\n`;
+          } else {
+            content += `${px} ${py}\n`;
+          }
         }
       }
     }
@@ -842,6 +850,10 @@ const DesktopBridge = (function () {
       level3AnnularPruned: 0,
       temporalPruned: 0,
       reciprocalReused: 0,
+      sq8Evaluations: 0,
+      sq8MembersPruned: 0,
+      sq8GraphPruned: 0,
+      sq8TotalPruned: 0,
       totalCandidatesConsidered: 0,
       timeSearchMs: 0.0
     };
@@ -884,6 +896,22 @@ const DesktopBridge = (function () {
 
     const mTemp = clean.match(/Temporal Exclusions:\s+(\d+)/);
     if (mTemp) telem.temporalPruned = parseInt(mTemp[1], 10);
+
+    const mSq8Evals = clean.match(/SQ8 Evaluations:\s+(\d+)/);
+    if (mSq8Evals) telem.sq8Evaluations = parseInt(mSq8Evals[1], 10);
+
+    const mSq8TotalPruned = clean.match(/SQ8 Lower-Bound Pruned:\s+(\d+)/);
+    if (mSq8TotalPruned) telem.sq8TotalPruned = parseInt(mSq8TotalPruned[1], 10);
+
+    const mSq8MemberPruned = clean.match(/SQ8 Member Pruned:\s+(\d+)/);
+    if (mSq8MemberPruned) telem.sq8MembersPruned = parseInt(mSq8MemberPruned[1], 10);
+
+    const mSq8GraphPruned = clean.match(/SQ8 Graph Pruned:\s+(\d+)/);
+    if (mSq8GraphPruned) telem.sq8GraphPruned = parseInt(mSq8GraphPruned[1], 10);
+
+    if (telem.sq8TotalPruned && !telem.sq8MembersPruned && !telem.sq8GraphPruned) {
+      telem.sq8MembersPruned = telem.sq8TotalPruned;
+    }
 
     const mTime = clean.match(/Search Wall Time:\s+([\d.]+)\s*ms/);
     if (mTime) telem.timeSearchMs = parseFloat(mTime[1]);
