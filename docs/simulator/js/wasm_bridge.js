@@ -646,22 +646,22 @@ const GricWasm = (function () {
     const membersOffset = _membersPtr >> 2;
 
     for (let i = 0; i < K; i++) {
-      let anchorVec = null;
+      const anchorVec = new Float64Array(_ndim);
       let x = 0, y = 0, z = 0;
       if (heapF64) {
         const base = anchorsOffset + i * _ndim;
         x = heapF64[base];
         y = heapF64[base + 1];
         z = _ndim >= 3 ? heapF64[base + 2] : 0.0;
-        if (_ndim > 3) {
-          anchorVec = new Float64Array(_ndim);
-          anchorVec.set(heapF64.subarray(base, base + _ndim));
-        }
+        anchorVec.set(heapF64.subarray(base, base + _ndim));
       } else {
         const coordBase = _anchorsPtr + i * _ndim * 8;
         x = M.getValue(coordBase, 'double');
         y = M.getValue(coordBase + 8, 'double');
         z = _ndim >= 3 ? M.getValue(coordBase + 16, 'double') : 0.0;
+        for (let d = 0; d < _ndim; d++) {
+          anchorVec[d] = M.getValue(coordBase + d * 8, 'double');
+        }
       }
       const members = heap32 ? heap32[membersOffset + i] : M.getValue(_membersPtr + i * 4, 'i32');
       anchors.push({
@@ -900,6 +900,7 @@ const GricWasm = (function () {
       clusters.push({
         id: newId,
         x: a.x || 0, y: a.y || 0, z: a.z || 0,
+        anchor: (hasAnchor && a.anchor) ? a.anchor : null,
         members: 0,
         prob: 0,
         scDists: 0,

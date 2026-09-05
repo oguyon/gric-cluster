@@ -855,6 +855,49 @@
       box-shadow: 0 0 4px rgba(56, 189, 248, 0.4);
     }
 
+    .highd-scree-bar {
+      display: inline-flex;
+      align-items: center;
+      position: relative;
+      width: 96px;
+      height: 16px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 3px;
+      overflow: hidden;
+      margin: 0 3px;
+    }
+
+    .highd-scree-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      background: linear-gradient(90deg, #0284c7, #38bdf8);
+      border-radius: 2px;
+      transition: width 0.2s ease;
+      opacity: 0.85;
+    }
+
+    .highd-scree-text {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      text-align: center;
+      font-size: 0.62rem;
+      font-family: monospace;
+      font-weight: 700;
+      color: #f8fafc;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+      white-space: nowrap;
+    }
+
+    .raw-axis-picker {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+
     .side-panel {
       display: flex;
       flex-direction: column;

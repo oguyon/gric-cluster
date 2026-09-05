@@ -17,6 +17,27 @@
     let plotDimY = 1; // Visual Y-axis plotting dimension (0 .. currentDim-1)
     let plotDimZ = 2; // Visual Z-axis plotting dimension (0 .. currentDim-1)
 
+    // High-Dimensional (32D+) Visualization State
+    let highDProjMode = 'raw'; // 'raw' | 'pca' | 'tour' | 'lda'
+    let pcaComponentIndices = [0, 1, 2]; // PC index triplet to map to visual (X, Y, Z)
+    let cachedPCAResult = null;
+    let cachedLDAResult = null;
+    let grandTour = null;
+    let isTourPlaying = false;
+    let tourSpeed = 1.0;
+    let quad2Mode = 'along_z'; // 'along_z' | 'pcp'
+    let decoupledQuads = false;
+    let quadAxisPairs = [
+      { x: 0, y: 1 },
+      { x: 2, y: 3 },
+      { x: 4, y: 5 }
+    ];
+    let sliceDim = -1; // -1 = off, 0 .. currentDim-1
+    let sliceCenter = 0.0;
+    let sliceThickness = 0.3;
+    let showBiplotRays = false;
+    let showAnchorSparklines = false;
+
     // Image Mode State & Retro-Inspection
     let imageWidth = 32;
     let imageHeight = 32;
@@ -506,32 +527,149 @@
     }
 
     /**
-     * Extract 3D plotting coordinates (x, y, z) mapped from selected visual dimensions.
-     * When currentDim > 3, extracts coordinates from p.coords or p.anchor at [plotDimX, Y, Z].
-     * Computations remain over all dimensions.
+     * High-Dimensional (32D+) Helper Methods & Lifecycle
+     */
+    function ensureGrandTour() {
+      if (typeof HighDEngine === 'undefined' || !HighDEngine.GrandTour) return null;
+      if (!grandTour || grandTour.dim !== currentDim) {
+        grandTour = new HighDEngine.GrandTour(currentDim);
+        grandTour.speed = tourSpeed;
+        grandTour.isPlaying = isTourPlaying;
+      }
+      return grandTour;
+    }
+
+    function invalidateHighDCaches() {
+      cachedPCAResult = null;
+      cachedLDAResult = null;
+      if (grandTour) grandTour.reset();
+    }
+
+    function ensurePCAComputed() {
+      if (cachedPCAResult && cachedPCAResult.components &&
+          cachedPCAResult.components.length >= currentDim) {
+        return cachedPCAResult;
+      }
+      if (typeof HighDEngine === 'undefined' || !HighDEngine.computePCA) return null;
+      const pts = (benchmarkDataset && benchmarkDataset.length > 0)
+        ? benchmarkDataset
+        : (pastSamples && pastSamples.length > 0 ? pastSamples : clusters);
+      if (!pts || pts.length === 0) return null;
+      cachedPCAResult = HighDEngine.computePCA(pts, currentDim);
+      return cachedPCAResult;
+    }
+
+    function ensureLDAComputed() {
+      if (cachedLDAResult && cachedLDAResult.components && cachedLDAResult.components.length >= 3) {
+        return cachedLDAResult;
+      }
+      if (typeof HighDEngine === 'undefined' || !HighDEngine.computeFisherLDA) return null;
+      if (!clusters || clusters.length < 2) return null;
+      cachedLDAResult = HighDEngine.computeFisherLDA(clusters, currentDim);
+      return cachedLDAResult;
+    }
+
+    /**
+     * Extract a single dimension coordinate from any point, cluster, or coordinate buffer.
+     * Handles objects with coords array, cluster anchor array, raw Array/TypedArray,
+     * or standard { x, y, z } point objects.
+     * @param {Object|Array} p - Point, cluster, or coordinate buffer
+     * @param {number} dimIdx - Dimension index (0-based)
+     * @returns {number}
+     */
+    function getPointDim(p, dimIdx) {
+      if (!p || dimIdx < 0) return 0.0;
+      if (p.coords && p.coords[dimIdx] !== undefined) return p.coords[dimIdx];
+      if (p.anchor && p.anchor[dimIdx] !== undefined) return p.anchor[dimIdx];
+      if (Array.isArray(p) || ArrayBuffer.isView(p)) {
+        return p[dimIdx] !== undefined ? p[dimIdx] : 0.0;
+      }
+      if (dimIdx === 0) return (p.x !== undefined) ? p.x : 0.0;
+      if (dimIdx === 1) return (p.y !== undefined) ? p.y : 0.0;
+      if (dimIdx === 2) return (p.z !== undefined) ? p.z : 0.0;
+      return 0.0;
+    }
+
+    /**
+     * Extract 3D plotting coordinates (x, y, z) mapped from selected visual dimensions
+     * or projection mode. Supports Raw dimension slicing (across any dimension D >= 2),
+     * PCA projection, Grand Tour continuous rotation, or Fisher LDA projection.
      * @param {Object} p - Point or cluster object
      * @returns {{ x: number, y: number, z: number }}
      */
     function getPlotCoords(p) {
       if (!p) return { x: 0, y: 0, z: 0 };
       if (currentDim > 3) {
-        const c = p.coords || p.anchor;
-        if (c && c.length > 0) {
-          const len = c.length;
-          const ix = (plotDimX >= 0 && plotDimX < len) ? plotDimX : 0;
-          const iy = (plotDimY >= 0 && plotDimY < len) ? plotDimY : (len > 1 ? 1 : 0);
-          const iz = (plotDimZ >= 0 && plotDimZ < len) ? plotDimZ : (len > 2 ? 2 : 0);
-          return {
-            x: (c[ix] !== undefined) ? c[ix] : 0.0,
-            y: (c[iy] !== undefined) ? c[iy] : 0.0,
-            z: (c[iz] !== undefined) ? c[iz] : 0.0
-          };
+        // 1. Grand Tour Continuous Projection (60 FPS)
+        if (highDProjMode === 'tour') {
+          const tour = ensureGrandTour();
+          if (tour) {
+            const pca = ensurePCAComputed();
+            return tour.projectPoint(p, pca ? pca.mean : null);
+          }
+        }
+
+        // 2. Principal Component Analysis (PCA) Projection
+        if (highDProjMode === 'pca') {
+          const pca = ensurePCAComputed();
+          if (pca && pca.components && pca.components.length >= 3) {
+            const c = (typeof HighDEngine !== 'undefined' && HighDEngine.getCoords)
+              ? HighDEngine.getCoords(p, currentDim)
+              : (p.coords || p.anchor);
+            if (c) {
+              const i0 = pcaComponentIndices[0] || 0;
+              const i1 = pcaComponentIndices[1] || 1;
+              const i2 = pcaComponentIndices[2] || 2;
+              const v0 = pca.components[i0];
+              const v1 = pca.components[i1];
+              const v2 = pca.components[i2];
+              const mean = pca.mean;
+              let px = 0.0, py = 0.0, pz = 0.0;
+              for (let d = 0; d < currentDim; d++) {
+                const diff = c[d] - (mean ? mean[d] : 0.0);
+                px += (v0 ? v0[d] : 0.0) * diff;
+                py += (v1 ? v1[d] : 0.0) * diff;
+                pz += (v2 ? v2[d] : 0.0) * diff;
+              }
+              return { x: px, y: py, z: pz };
+            }
+          }
+        }
+
+        // 3. Fisher LDA Cluster Discriminant Projection
+        if (highDProjMode === 'lda') {
+          const lda = ensureLDAComputed();
+          if (lda && lda.components && lda.components.length >= 3) {
+            const c = (typeof HighDEngine !== 'undefined' && HighDEngine.getCoords)
+              ? HighDEngine.getCoords(p, currentDim)
+              : (p.coords || p.anchor);
+            if (c) {
+              const v0 = lda.components[0];
+              const v1 = lda.components[1];
+              const v2 = lda.components[2];
+              const mean = lda.mean;
+              let px = 0.0, py = 0.0, pz = 0.0;
+              for (let d = 0; d < currentDim; d++) {
+                const diff = c[d] - (mean ? mean[d] : 0.0);
+                px += (v0 ? v0[d] : 0.0) * diff;
+                py += (v1 ? v1[d] : 0.0) * diff;
+                pz += (v2 ? v2[d] : 0.0) * diff;
+              }
+              return { x: px, y: py, z: pz };
+            }
+          }
         }
       }
+
+      // 4. Raw Coordinate Slicing (default for Raw mode, and for any dimension D >= 2)
+      const dX = (typeof plotDimX === 'number') ? plotDimX : 0;
+      const dY = (typeof plotDimY === 'number') ? plotDimY : 1;
+      const dZ = (typeof plotDimZ === 'number') ? plotDimZ : 2;
+
       return {
-        x: p.x || 0.0,
-        y: p.y || 0.0,
-        z: (currentDim >= 3) ? (p.z || 0.0) : 0.0
+        x: getPointDim(p, dX),
+        y: getPointDim(p, dY),
+        z: (currentDim >= 3 || dZ > 1) ? getPointDim(p, dZ) : 0.0
       };
     }
 
@@ -575,6 +713,35 @@
     }
 
     /**
+     * Set active high-dimensional projection mode.
+     * @param {'raw'|'pca'|'tour'|'lda'} mode
+     */
+    function setHighDProjMode(mode) {
+      if (mode === highDProjMode) return;
+      highDProjMode = mode;
+      if (mode === 'tour') {
+        ensureGrandTour();
+        isTourPlaying = true;
+        if (grandTour) grandTour.isPlaying = true;
+        if (typeof window.startGrandTourAnimation === 'function') {
+          window.startGrandTourAnimation();
+        }
+      } else {
+        isTourPlaying = false;
+        if (grandTour) grandTour.isPlaying = false;
+      }
+
+      if (typeof datasetSlots !== 'undefined' && activeDatasetSlot &&
+          datasetSlots[activeDatasetSlot]) {
+        datasetSlots[activeDatasetSlot].highDProjMode = highDProjMode;
+      }
+      updatePlottingDimSelectorsUI();
+      if (typeof draw === 'function') {
+        draw();
+      }
+    }
+
+    /**
      * Synchronize and populate plotting dimension selectors in viewport bar and sidebar.
      */
     function updatePlottingDimSelectorsUI() {
@@ -592,6 +759,73 @@
       if (!isHighD) return;
 
       clampPlottingDimensions();
+
+      // Sync High-D Mode Selectors
+      const selModeTop = document.getElementById('selectHighDModeTop');
+      const selModeSide = document.getElementById('selectHighDModeSide');
+      if (selModeTop) selModeTop.value = highDProjMode;
+      if (selModeSide) selModeSide.value = highDProjMode;
+
+      const badgeHighD = document.getElementById('badgeHighDStatus');
+      if (badgeHighD) {
+        badgeHighD.textContent = `${currentDim}D Active (${highDProjMode.toUpperCase()})`;
+      }
+
+      // Sync Scree Variance Bar HUD
+      const screeBar = document.getElementById('highDScreeBar');
+      const screeFill = document.getElementById('highDScreeFill');
+      const screeText = document.getElementById('highDScreeText');
+      if (screeBar) {
+        if (highDProjMode === 'pca') {
+          const pca = ensurePCAComputed();
+          if (pca && pca.cumulativeVarianceRatio && pca.cumulativeVarianceRatio.length >= 3) {
+            screeBar.style.display = 'inline-flex';
+            const i2 = (pcaComponentIndices[2] !== undefined) ? pcaComponentIndices[2] : 2;
+            const cumRatio = pca.cumulativeVarianceRatio[
+              Math.min(i2, pca.cumulativeVarianceRatio.length - 1)
+            ];
+            const cumPct = (cumRatio * 100).toFixed(1);
+            if (screeFill) screeFill.style.width = `${cumPct}%`;
+            if (screeText) screeText.textContent = `PC1-3: ${cumPct}% var`;
+          } else {
+            screeBar.style.display = 'none';
+          }
+        } else {
+          screeBar.style.display = 'none';
+        }
+      }
+
+      // Sync Tour Play Button and Speed Row
+      const btnTour = document.getElementById('btnHighDTourPlay');
+      if (btnTour) {
+        btnTour.style.display = (highDProjMode === 'tour') ? 'inline-flex' : 'none';
+        btnTour.textContent = isTourPlaying ? '⏸ Pause' : '▶ Tour';
+        btnTour.classList.toggle('active', isTourPlaying);
+      }
+      const rowTourSpeed = document.getElementById('rowTourSpeed');
+      if (rowTourSpeed) {
+        rowTourSpeed.style.display = (highDProjMode === 'tour') ? 'block' : 'none';
+      }
+      const sliderTourSpeed = document.getElementById('sliderTourSpeed');
+      const lblTourSpeed = document.getElementById('lblTourSpeed');
+      if (sliderTourSpeed) sliderTourSpeed.value = String(tourSpeed);
+      if (lblTourSpeed) lblTourSpeed.textContent = `${tourSpeed.toFixed(1)}x`;
+
+      // Sync PCA Picker Row
+      const rowPcaPicker = document.getElementById('rowPcaPicker');
+      if (rowPcaPicker) {
+        rowPcaPicker.style.display = (highDProjMode === 'pca') ? 'block' : 'none';
+      }
+      const selectPcaTriplet = document.getElementById('selectPcaTriplet');
+      if (selectPcaTriplet) {
+        const tripletStr = pcaComponentIndices.slice(0, 3).join(',');
+        selectPcaTriplet.value = tripletStr;
+      }
+
+      // Show/hide raw axis select based on mode
+      const isRaw = (highDProjMode === 'raw');
+      const rawPickers = document.querySelectorAll('.raw-axis-picker');
+      rawPickers.forEach(el => { el.style.display = isRaw ? 'inline-flex' : 'none'; });
 
       const selectIds = [
         { el: document.getElementById('selectPlotDimX'), val: plotDimX },
@@ -615,6 +849,46 @@
         }
         el.value = String(val);
       });
+
+      // Populate & Sync Tomographic Slicing Selectors
+      const selectSliceDim = document.getElementById('selectSliceDim');
+      if (selectSliceDim) {
+        if (selectSliceDim.children.length !== currentDim + 1) {
+          selectSliceDim.innerHTML = '<option value="-1">None (Off)</option>';
+          for (let d = 0; d < currentDim; d++) {
+            const opt = document.createElement('option');
+            opt.value = String(d);
+            opt.textContent = `d${d}`;
+            selectSliceDim.appendChild(opt);
+          }
+        }
+        selectSliceDim.value = String(sliceDim);
+      }
+
+      const rowSliceSlider = document.getElementById('rowSliceSlider');
+      if (rowSliceSlider) {
+        rowSliceSlider.style.display = (sliceDim >= 0) ? 'block' : 'none';
+      }
+      const sliderSliceCenter = document.getElementById('sliderSliceCenter');
+      const lblSliceCenter = document.getElementById('lblSliceCenter');
+      if (sliderSliceCenter) sliderSliceCenter.value = String(sliceCenter);
+      if (lblSliceCenter) lblSliceCenter.textContent = Number(sliceCenter).toFixed(2);
+
+      const selectSliceThickness = document.getElementById('selectSliceThickness');
+      if (selectSliceThickness) selectSliceThickness.value = String(sliceThickness);
+
+      // Sync Viewport & Glyphs Checkboxes
+      const chkQuad2PCP = document.getElementById('chkQuad2PCP');
+      if (chkQuad2PCP) chkQuad2PCP.checked = (quad2Mode === 'pcp');
+
+      const chkBiplotRays = document.getElementById('chkBiplotRays');
+      if (chkBiplotRays) chkBiplotRays.checked = !!showBiplotRays;
+
+      const chkAnchorSparklines = document.getElementById('chkAnchorSparklines');
+      if (chkAnchorSparklines) chkAnchorSparklines.checked = !!showAnchorSparklines;
+
+      const chkDecoupledQuads = document.getElementById('chkDecoupledQuads');
+      if (chkDecoupledQuads) chkDecoupledQuads.checked = !!decoupledQuads;
     }
 
     function applyNoiseToDataset() {
@@ -666,6 +940,7 @@
           }
         }
       }
+      invalidateHighDCaches();
     }
 
     // Simulation & Benchmark State
@@ -1074,6 +1349,16 @@
       slot.plotDimX = plotDimX;
       slot.plotDimY = plotDimY;
       slot.plotDimZ = plotDimZ;
+      slot.highDProjMode = highDProjMode;
+      slot.pcaComponentIndices = [...pcaComponentIndices];
+      slot.quad2Mode = quad2Mode;
+      slot.decoupledQuads = decoupledQuads;
+      slot.quadAxisPairs = JSON.parse(JSON.stringify(quadAxisPairs));
+      slot.sliceDim = sliceDim;
+      slot.sliceCenter = sliceCenter;
+      slot.sliceThickness = sliceThickness;
+      slot.showBiplotRays = showBiplotRays;
+      slot.showAnchorSparklines = showAnchorSparklines;
     }
 
     function loadSlotState(slotId) {
@@ -1231,6 +1516,22 @@
         ? slot.reconQualityThreshold : 1.0;
       reconQualityMask = slot.reconQualityMask || null;
       reconQualityIndices = slot.reconQualityIndices || null;
+      plotDimX = (slot.plotDimX !== undefined) ? slot.plotDimX : 0;
+      plotDimY = (slot.plotDimY !== undefined) ? slot.plotDimY : 1;
+      plotDimZ = (slot.plotDimZ !== undefined) ? slot.plotDimZ : 2;
+      highDProjMode = slot.highDProjMode || 'raw';
+      pcaComponentIndices = slot.pcaComponentIndices ? [...slot.pcaComponentIndices] : [0, 1, 2];
+      quad2Mode = slot.quad2Mode || 'along_z';
+      decoupledQuads = !!slot.decoupledQuads;
+      quadAxisPairs = slot.quadAxisPairs ? JSON.parse(JSON.stringify(slot.quadAxisPairs)) : [
+        { x: 0, y: 1 }, { x: 2, y: 3 }, { x: 4, y: 5 }
+      ];
+      sliceDim = (slot.sliceDim !== undefined) ? slot.sliceDim : -1;
+      sliceCenter = (slot.sliceCenter !== undefined) ? slot.sliceCenter : 0.0;
+      sliceThickness = (slot.sliceThickness !== undefined) ? slot.sliceThickness : 0.3;
+      showBiplotRays = !!slot.showBiplotRays;
+      showAnchorSparklines = !!slot.showAnchorSparklines;
+      invalidateHighDCaches();
     }
 
     function switchDatasetSlot(newSlotId) {
@@ -1564,6 +1865,8 @@
       slot.inspectedClusterId = -1;
       slot.reconstructionInfo = null;
       slot.reconstructionSourceNeighbors = null;
+      slot._reverseNeighborsIndex = null;
+      slot._onDemandKnnCache = null;
       slot.reconKthDist = null;
       slot.reconVariance = null;
       slot.reconKthDistMin = 0;
@@ -1706,6 +2009,8 @@
     }
 
     function toggleRecon4PanelView() {
+      reconHoveredTrainingIdx = -1;
+      reconHoveredQueryIdx = -1;
       if (isRecon4PanelView && reconOverlayMode) {
         // Currently in Overlaid (A+C & B+D) view -> switch back to 4-Panel ABCD view
         reconOverlayMode = false;
@@ -1743,6 +2048,8 @@
         toggleRecon4PanelView();
         return;
       }
+      reconHoveredTrainingIdx = -1;
+      reconHoveredQueryIdx = -1;
       isRecon4PanelView = !!enabled;
       reconOverlayMode = false;
       if (isRecon4PanelView) {
@@ -1835,9 +2142,37 @@
     window.syncReconKnnUI = syncReconKnnUI;
     window.reconInputCamera = reconInputCamera;
     window.reconOutputCamera = reconOutputCamera;
-    window.reconHoveredTrainingIdx = reconHoveredTrainingIdx;
-    window.reconLockedTrainingIdx = reconLockedTrainingIdx;
     window.showReconKnn = showReconKnn;
+    Object.defineProperty(window, 'reconHoveredTrainingIdx', {
+      get: () => reconHoveredTrainingIdx,
+      set: (v) => { reconHoveredTrainingIdx = Number(v); },
+      configurable: true
+    });
+    Object.defineProperty(window, 'reconLockedTrainingIdx', {
+      get: () => reconLockedTrainingIdx,
+      set: (v) => { reconLockedTrainingIdx = Number(v); },
+      configurable: true
+    });
+    Object.defineProperty(window, 'reconHoveredQueryIdx', {
+      get: () => reconHoveredQueryIdx,
+      set: (v) => { reconHoveredQueryIdx = Number(v); },
+      configurable: true
+    });
+    Object.defineProperty(window, 'reconLockedQueryIdx', {
+      get: () => reconLockedQueryIdx,
+      set: (v) => { reconLockedQueryIdx = Number(v); },
+      configurable: true
+    });
+    Object.defineProperty(window, 'reconHoveredTrainingSlot', {
+      get: () => reconHoveredTrainingSlot,
+      set: (v) => { reconHoveredTrainingSlot = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'reconLockedTrainingSlot', {
+      get: () => reconLockedTrainingSlot,
+      set: (v) => { reconLockedTrainingSlot = v; },
+      configurable: true
+    });
     Object.defineProperty(window, 'reconOverlayMode', {
       get: () => reconOverlayMode,
       set: (v) => { reconOverlayMode = !!v; },
@@ -1858,10 +2193,82 @@
       set: (v) => { plotDimZ = v; },
       configurable: true
     });
+    window.getPointDim = getPointDim;
     window.getPlotCoords = getPlotCoords;
     window.clampPlottingDimensions = clampPlottingDimensions;
     window.setPlottingDimensions = setPlottingDimensions;
     window.updatePlottingDimSelectorsUI = updatePlottingDimSelectorsUI;
+    window.setHighDProjMode = setHighDProjMode;
+    window.ensureGrandTour = ensureGrandTour;
+    window.ensurePCAComputed = ensurePCAComputed;
+    window.ensureLDAComputed = ensureLDAComputed;
+    window.invalidateHighDCaches = invalidateHighDCaches;
+    Object.defineProperty(window, 'highDProjMode', {
+      get: () => highDProjMode,
+      set: (v) => { setHighDProjMode(v); },
+      configurable: true
+    });
+    Object.defineProperty(window, 'pcaComponentIndices', {
+      get: () => pcaComponentIndices,
+      set: (v) => { if (Array.isArray(v)) pcaComponentIndices = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'isTourPlaying', {
+      get: () => isTourPlaying,
+      set: (v) => {
+        isTourPlaying = !!v;
+        if (grandTour) grandTour.isPlaying = isTourPlaying;
+      },
+      configurable: true
+    });
+    Object.defineProperty(window, 'tourSpeed', {
+      get: () => tourSpeed,
+      set: (v) => {
+        tourSpeed = Number(v) || 1.0;
+        if (grandTour) grandTour.speed = tourSpeed;
+      },
+      configurable: true
+    });
+    Object.defineProperty(window, 'quad2Mode', {
+      get: () => quad2Mode,
+      set: (v) => { quad2Mode = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'decoupledQuads', {
+      get: () => decoupledQuads,
+      set: (v) => { decoupledQuads = !!v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'quadAxisPairs', {
+      get: () => quadAxisPairs,
+      set: (v) => { if (Array.isArray(v)) quadAxisPairs = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'sliceDim', {
+      get: () => sliceDim,
+      set: (v) => { sliceDim = Number(v); },
+      configurable: true
+    });
+    Object.defineProperty(window, 'sliceCenter', {
+      get: () => sliceCenter,
+      set: (v) => { sliceCenter = Number(v); },
+      configurable: true
+    });
+    Object.defineProperty(window, 'sliceThickness', {
+      get: () => sliceThickness,
+      set: (v) => { sliceThickness = Number(v); },
+      configurable: true
+    });
+    Object.defineProperty(window, 'showBiplotRays', {
+      get: () => showBiplotRays,
+      set: (v) => { showBiplotRays = !!v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'showAnchorSparklines', {
+      get: () => showAnchorSparklines,
+      set: (v) => { showAnchorSparklines = !!v; },
+      configurable: true
+    });
     window.setClusteringRlim = setClusteringRlim;
     window.setNoiseSigma = setNoiseSigma;
     window.datasetSlots = datasetSlots;
