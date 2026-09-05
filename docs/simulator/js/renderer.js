@@ -463,11 +463,36 @@
       ctx.rect(rect.x, rect.y, rect.w, rect.h);
       ctx.clip();
 
+      // Check if Quad 2 is in 32D Parallel Coordinates (PCP) mode
+      if (qIdx === 2 && currentDim > 3 && typeof quad2Mode !== 'undefined' && quad2Mode === 'pcp') {
+        if (typeof HighDEngine !== 'undefined' && HighDEngine.renderParallelCoordinates) {
+          const sampleData = (typeof pastSamples !== 'undefined' && pastSamples.length > 0)
+            ? pastSamples : (typeof benchmarkDataset !== 'undefined' ? benchmarkDataset : null);
+          HighDEngine.renderParallelCoordinates(
+            ctx, rect, clusters, sampleData, hoveredClusterId, selectedClusterId, currentDim
+          );
+          ctx.restore();
+          return;
+        }
+      }
+
       const scale = getQuadScale(qIdx, rect);
       const is3DCustom = (viewType === "CUSTOM_3D");
 
       // Projection point helper
       function getProjectedCoord(p) {
+        if (currentDim > 3 && typeof decoupledQuads !== 'undefined' &&
+            decoupledQuads && qIdx < 3) {
+          const pair = (typeof quadAxisPairs !== 'undefined' && quadAxisPairs[qIdx])
+            ? quadAxisPairs[qIdx] : { x: qIdx * 2, y: qIdx * 2 + 1 };
+          const u = (typeof getPointDim === 'function')
+            ? getPointDim(p, pair.x)
+            : (p.coords ? (p.coords[pair.x] || 0.0) : 0.0);
+          const v = (typeof getPointDim === 'function')
+            ? getPointDim(p, pair.y)
+            : (p.coords ? (p.coords[pair.y] || 0.0) : 0.0);
+          return { u, v, depth: 0 };
+        }
         const pt = (typeof getPlotCoords === 'function') ? getPlotCoords(p) : p;
         if (viewType === "ALONG_X") return { u: pt.y, v: pt.z, depth: pt.x };
         if (viewType === "ALONG_Y") return { u: pt.x, v: pt.z, depth: pt.y };
@@ -656,70 +681,20 @@
         const dY = (typeof plotDimY === 'number') ? plotDimY : 1;
         const dZ = (typeof plotDimZ === 'number') ? plotDimZ : 2;
 
-        if (!is3DCustom) {
-          if (currentDim === 2) {
-            for (let i = 0; i < numPast; i++) {
-              if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
-              const pt = pastSamples[i];
-              if (pt.x >= uMin && pt.x <= uMax && pt.y >= vMin && pt.y <= vMax) {
-                visibleIndicesBuffer[totalVisiblePoints++] = i;
-              }
-            }
-          } else if (isHighD) {
-            for (let i = 0; i < numPast; i++) {
-              if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
-              const pt = pastSamples[i];
-              const px = (pt.coords && pt.coords.length > dX) ? pt.coords[dX] : pt.x;
-              const py = (pt.coords && pt.coords.length > dY) ? pt.coords[dY] : pt.y;
-              const pz = (pt.coords && pt.coords.length > dZ) ? pt.coords[dZ] : (pt.z || 0.0);
-              let u, v;
-              if (qIdx === 0) { u = py; v = pz; }
-              else if (qIdx === 1) { u = px; v = pz; }
-              else { u = px; v = py; }
-              if (u >= uMin && u <= uMax && v >= vMin && v <= vMax) {
-                visibleIndicesBuffer[totalVisiblePoints++] = i;
-              }
-            }
-          } else if (qIdx === 0) { // Along X: H = +Y, V = +Z
-            for (let i = 0; i < numPast; i++) {
-              if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
-              const pt = pastSamples[i];
-              if (pt.y >= uMin && pt.y <= uMax && pt.z >= vMin && pt.z <= vMax) {
-                visibleIndicesBuffer[totalVisiblePoints++] = i;
-              }
-            }
-          } else if (qIdx === 1) { // Along Y: H = +X, V = +Z
-            for (let i = 0; i < numPast; i++) {
-              if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
-              const pt = pastSamples[i];
-              if (pt.x >= uMin && pt.x <= uMax && pt.z >= vMin && pt.z <= vMax) {
-                visibleIndicesBuffer[totalVisiblePoints++] = i;
-              }
-            }
-          } else { // Along Z: H = +X, V = +Y
-            for (let i = 0; i < numPast; i++) {
-              if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
-              const pt = pastSamples[i];
-              if (pt.x >= uMin && pt.x <= uMax && pt.y >= vMin && pt.y <= vMax) {
-                visibleIndicesBuffer[totalVisiblePoints++] = i;
-              }
-            }
+        const hasSlice = (isHighD && typeof sliceDim === 'number' &&
+          sliceDim >= 0 && typeof HighDEngine !== 'undefined');
+        for (let i = 0; i < numPast; i++) {
+          if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
+          const pt = pastSamples[i];
+          if (hasSlice) {
+            const inSlice = HighDEngine.isPointInSlice(
+              pt, sliceDim, sliceCenter, sliceThickness
+            );
+            if (!inSlice.inside) continue;
           }
-        } else {
-          // 3D Perspective Orbit View
-          const az = orbitCamera.azimuth;
-          const el = orbitCamera.elevation;
-          for (let i = 0; i < numPast; i++) {
-            if (qFovMask && i < qFovMask.length && !qFovMask[i]) continue;
-            const pt = pastSamples[i];
-            const px = (isHighD && pt.coords && pt.coords.length > dX) ? pt.coords[dX] : pt.x;
-            const py = (isHighD && pt.coords && pt.coords.length > dY) ? pt.coords[dY] : pt.y;
-            const pz = (isHighD && pt.coords && pt.coords.length > dZ)
-              ? pt.coords[dZ] : (pt.z || 0.0);
-            const pr = project3D(px, py, pz, az, el);
-            if (pr.u >= uMin && pr.u <= uMax && pr.v >= vMin && pr.v <= vMax) {
-              visibleIndicesBuffer[totalVisiblePoints++] = i;
-            }
+          const pr = getProjectedCoord(pt);
+          if (pr.u >= uMin && pr.u <= uMax && pr.v >= vMin && pr.v <= vMax) {
+            visibleIndicesBuffer[totalVisiblePoints++] = i;
           }
         }
 
@@ -766,27 +741,9 @@
             if (isProcessed) continue;
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
-            let u, v;
-            if (currentDim === 2) {
-              u = pt.x; v = pt.y;
-            } else if (isHighD) {
-              const pxCoord = (pt.coords && pt.coords.length > dX) ? pt.coords[dX] : pt.x;
-              const pyCoord = (pt.coords && pt.coords.length > dY) ? pt.coords[dY] : pt.y;
-              const pzCoord = (pt.coords && pt.coords.length > dZ)
-                ? pt.coords[dZ] : (pt.z || 0.0);
-              if (qIdx === 0) { u = pyCoord; v = pzCoord; }
-              else if (qIdx === 1) { u = pxCoord; v = pzCoord; }
-              else { u = pxCoord; v = pyCoord; }
-            } else if (qIdx === 0) {
-              u = pt.y; v = pt.z;
-            } else if (qIdx === 1) {
-              u = pt.x; v = pt.z;
-            } else {
-              u = pt.x; v = pt.y;
-            }
-
-            const px = cx + (u - view.panX) * scale;
-            const py = cy - (v - view.panY) * scale;
+            const pr = getProjectedCoord(pt);
+            const px = cx + (pr.u - view.panX) * scale;
+            const py = cy - (pr.v - view.panY) * scale;
 
             // Color override: quality > dim/density
             if (qArr && idx < qArr.length) {
@@ -834,27 +791,9 @@
             if (!isProcessed) continue;
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
-            let u, v;
-            if (currentDim === 2) {
-              u = pt.x; v = pt.y;
-            } else if (isHighD) {
-              const pxCoord = (pt.coords && pt.coords.length > dX) ? pt.coords[dX] : pt.x;
-              const pyCoord = (pt.coords && pt.coords.length > dY) ? pt.coords[dY] : pt.y;
-              const pzCoord = (pt.coords && pt.coords.length > dZ)
-                ? pt.coords[dZ] : (pt.z || 0.0);
-              if (qIdx === 0) { u = pyCoord; v = pzCoord; }
-              else if (qIdx === 1) { u = pxCoord; v = pzCoord; }
-              else { u = pxCoord; v = pyCoord; }
-            } else if (qIdx === 0) {
-              u = pt.y; v = pt.z;
-            } else if (qIdx === 1) {
-              u = pt.x; v = pt.z;
-            } else {
-              u = pt.x; v = pt.y;
-            }
-
-            const px = cx + (u - view.panX) * scale;
-            const py = cy - (v - view.panY) * scale;
+            const pr = getProjectedCoord(pt);
+            const px = cx + (pr.u - view.panX) * scale;
+            const py = cy - (pr.v - view.panY) * scale;
 
             let fillColor;
             if (qArr && idx < qArr.length) {
@@ -914,13 +853,7 @@
                                 (idx < currentFrameIdx);
             if (isProcessed) continue;
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
-            const pxCoord = (isHighD && pt.coords && pt.coords.length > dX)
-              ? pt.coords[dX] : pt.x;
-            const pyCoord = (isHighD && pt.coords && pt.coords.length > dY)
-              ? pt.coords[dY] : pt.y;
-            const pzCoord = (isHighD && pt.coords && pt.coords.length > dZ)
-              ? pt.coords[dZ] : (pt.z || 0.0);
-            const pr = project3D(pxCoord, pyCoord, pzCoord, az, el);
+            const pr = getProjectedCoord(pt);
             const px = cx + (pr.u - view.panX) * scale;
             const py = cy - (pr.v - view.panY) * scale;
             const depthFactor = Math.max(
@@ -978,13 +911,7 @@
             if (!isProcessed) continue;
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
-            const pxCoord = (isHighD && pt.coords && pt.coords.length > dX)
-              ? pt.coords[dX] : pt.x;
-            const pyCoord = (isHighD && pt.coords && pt.coords.length > dY)
-              ? pt.coords[dY] : pt.y;
-            const pzCoord = (isHighD && pt.coords && pt.coords.length > dZ)
-              ? pt.coords[dZ] : (pt.z || 0.0);
-            const pr = project3D(pxCoord, pyCoord, pzCoord, az, el);
+            const pr = getProjectedCoord(pt);
             const px = cx + (pr.u - view.panX) * scale;
             const py = cy - (pr.v - view.panY) * scale;
             const depthFactor = Math.max(
@@ -1546,6 +1473,13 @@
               ctx.font = 'bold 10px sans-serif';
               ctx.fillText(`C${c.id}`, pos.px + nodeRadius + 3, pos.py - 5);
             }
+
+            if (typeof showAnchorSparklines !== 'undefined' &&
+                showAnchorSparklines && currentDim > 3) {
+              if (typeof HighDEngine !== 'undefined' && HighDEngine.renderAnchorSparkline) {
+                HighDEngine.renderAnchorSparkline(ctx, pos.px, pos.py, c, c.color, currentDim);
+              }
+            }
           });
 
           // Pruned Crosshairs
@@ -2075,7 +2009,35 @@
             ctx.lineWidth = isLocked ? 2.0 : 1.6;
             ctx.stroke();
 
+            // 32-Bar Equalizer HUD for Hovered / Locked Sample
+            if (currentDim > 3 && typeof HighDEngine !== 'undefined' &&
+                HighDEngine.renderEqualizerHUD) {
+              const hudX = rect.x + 10;
+              const hudY = rect.y + rect.h - 86;
+              const label = isLocked ? `Sample #${sampleIdx} (Locked)` : `Sample #${sampleIdx}`;
+              HighDEngine.renderEqualizerHUD(
+                ctx, hudX, hudY, pt, label, reticleColor, currentDim
+              );
+            }
+
             ctx.restore();
+          }
+        }
+
+        // 32-Bar Equalizer HUD for Hovered Cluster (when no sample is hovered)
+        if (currentDim > 3 && hoveredClusterId !== -1 &&
+            (!activeSampleHighlight || !activeSampleHighlight.point)) {
+          const hovCl = clusters.find(c => c.id === hoveredClusterId);
+          if (hovCl && typeof HighDEngine !== 'undefined' && HighDEngine.renderEqualizerHUD) {
+            const hudX = rect.x + 10;
+            const hudY = rect.y + rect.h - 86;
+            const cnt = typeof hovCl.members === 'number'
+              ? hovCl.members
+              : (hovCl.members ? hovCl.members.length : 1);
+            const clLabel = `Cluster C${hovCl.id} (N=${cnt})`;
+            HighDEngine.renderEqualizerHUD(
+              ctx, hudX, hudY, hovCl, clLabel, hovCl.color || '#38bdf8', currentDim
+            );
           }
         }
 
@@ -2389,10 +2351,15 @@
         const gy = project3DVector(0, 1, 0, az, el);
         const gz = project3DVector(0, 0, 1, az, el);
 
+        const dXG = (typeof plotDimX === 'number') ? plotDimX : 0;
+        const dYG = (typeof plotDimY === 'number') ? plotDimY : 1;
+        const dZG = (typeof plotDimZ === 'number') ? plotDimZ : 2;
+        const isCustomGizmo = (currentDim > 3 || dXG !== 0 || dYG !== 1 || dZG !== 2);
+
         const axes = [
-          { name: 'X', u: gx.u, v: gx.v, color: '#f87171' },
-          { name: 'Y', u: gy.u, v: gy.v, color: '#4ade80' },
-          { name: 'Z', u: gz.u, v: gz.v, color: '#38bdf8' }
+          { name: isCustomGizmo ? `D${dXG}` : 'X', u: gx.u, v: gx.v, color: '#f87171' },
+          { name: isCustomGizmo ? `D${dYG}` : 'Y', u: gy.u, v: gy.v, color: '#4ade80' },
+          { name: isCustomGizmo ? `D${dZG}` : 'Z', u: gz.u, v: gz.v, color: '#38bdf8' }
         ];
 
         axes.forEach(ax => {
@@ -2416,6 +2383,69 @@
         ctx.arc(gizmoOrigin.px, gizmoOrigin.py, 2.5, 0, Math.PI * 2);
         ctx.fillStyle = '#ffffff';
         ctx.fill();
+      }
+
+      // 5B. 3D Biplot Basis Rays (for High-D)
+      if (is3DCustom && typeof showBiplotRays !== 'undefined' && showBiplotRays && currentDim > 3) {
+        if (typeof HighDEngine !== 'undefined' && HighDEngine.getBiplotRays) {
+          let projMatrix = null;
+          if (highDProjMode === 'tour' && grandTour) {
+            projMatrix = grandTour.frame;
+          } else if (highDProjMode === 'pca' && cachedPCAResult && cachedPCAResult.components) {
+            const i0 = pcaComponentIndices[0] || 0;
+            const i1 = pcaComponentIndices[1] || 1;
+            const i2 = pcaComponentIndices[2] || 2;
+            projMatrix = [
+              cachedPCAResult.components[i0],
+              cachedPCAResult.components[i1],
+              cachedPCAResult.components[i2]
+            ];
+          } else if (highDProjMode === 'lda' && cachedLDAResult && cachedLDAResult.components) {
+            projMatrix = cachedLDAResult.components;
+          } else {
+            projMatrix = [
+              new Float64Array(currentDim),
+              new Float64Array(currentDim),
+              new Float64Array(currentDim)
+            ];
+            if (plotDimX < currentDim) projMatrix[0][plotDimX] = 1.0;
+            if (plotDimY < currentDim) projMatrix[1][plotDimY] = 1.0;
+            if (plotDimZ < currentDim) projMatrix[2][plotDimZ] = 1.0;
+          }
+
+          if (projMatrix) {
+            const rays = HighDEngine.getBiplotRays(projMatrix, currentDim, 0.75);
+            const center = mapMetricToQuad(0, 0, qIdx, rect);
+            const az = orbitCamera.azimuth, el = orbitCamera.elevation;
+
+            ctx.save();
+            rays.forEach(ray => {
+              if (ray.mag < 0.05) return;
+              const pr = project3D(ray.x, ray.y, ray.z, az, el);
+              const px = center.px + pr.u * scale;
+              const py = center.py - pr.v * scale;
+
+              const hue = Math.floor((ray.dim * 360) / currentDim);
+              ctx.strokeStyle = `hsla(${hue}, 85%, 65%, 0.75)`;
+              ctx.lineWidth = 1.5;
+
+              ctx.beginPath();
+              ctx.moveTo(center.px, center.py);
+              ctx.lineTo(px, py);
+              ctx.stroke();
+
+              ctx.beginPath();
+              ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+              ctx.fillStyle = `hsl(${hue}, 85%, 65%)`;
+              ctx.fill();
+
+              ctx.fillStyle = '#f8fafc';
+              ctx.font = 'bold 9px monospace';
+              ctx.fillText(`d${ray.dim}`, px + 4, py + 2);
+            });
+            ctx.restore();
+          }
+        }
       }
 
       // Color-bar legend for dim/density modes
@@ -2497,25 +2527,50 @@
         const dY = (typeof plotDimY === 'number') ? plotDimY : 1;
         const dZ = (typeof plotDimZ === 'number') ? plotDimZ : 2;
 
-        if (viewType === "ALONG_X") {
-          title = isHighD
+        const isCustomAxes = (isHighD || dX !== 0 || dY !== 1 || dZ !== 2);
+
+        if (isHighD && typeof decoupledQuads !== 'undefined' && decoupledQuads && qIdx < 3) {
+          const pair = (typeof quadAxisPairs !== 'undefined' && quadAxisPairs[qIdx])
+            ? quadAxisPairs[qIdx] : { x: qIdx * 2, y: qIdx * 2 + 1 };
+          title = `📐 Subspace Q${qIdx + 1} (D${pair.x} vs D${pair.y})`;
+          subtitle = `H: +D${pair.x} ➔ | V: +D${pair.y} ⬆`;
+        } else if (isHighD && typeof highDProjMode !== 'undefined' &&
+                   highDProjMode === 'pca' && !is3DCustom) {
+          const i0 = (typeof pcaComponentIndices !== 'undefined' &&
+                      pcaComponentIndices[0] !== undefined) ? pcaComponentIndices[0] : 0;
+          const i1 = (typeof pcaComponentIndices !== 'undefined' &&
+                      pcaComponentIndices[1] !== undefined) ? pcaComponentIndices[1] : 1;
+          const i2 = (typeof pcaComponentIndices !== 'undefined' &&
+                      pcaComponentIndices[2] !== undefined) ? pcaComponentIndices[2] : 2;
+          if (viewType === "ALONG_X") {
+            title = `📐 PCA: Along PC${i0 + 1} (PC${i1 + 1}-PC${i2 + 1})`;
+            subtitle = `H: +PC${i1 + 1} ➔ | V: +PC${i2 + 1} ⬆`;
+          } else if (viewType === "ALONG_Y") {
+            title = `📐 PCA: Along PC${i1 + 1} (PC${i0 + 1}-PC${i2 + 1})`;
+            subtitle = `H: +PC${i0 + 1} ➔ | V: +PC${i2 + 1} ⬆`;
+          } else {
+            title = `📐 PCA: Along PC${i2 + 1} (PC${i0 + 1}-PC${i1 + 1})`;
+            subtitle = `H: +PC${i0 + 1} ➔ | V: +PC${i1 + 1} ⬆`;
+          }
+        } else if (viewType === "ALONG_X") {
+          title = isCustomAxes
             ? `📐 Along D${dX} (D${dY}-D${dZ} Plane)`
             : "📐 Along X (Y-Z Plane)";
-          subtitle = isHighD
+          subtitle = isCustomAxes
             ? `H: +D${dY} ➔ | V: +D${dZ} ⬆`
             : "H: +Y ➔ | V: +Z ⬆";
         } else if (viewType === "ALONG_Y") {
-          title = isHighD
+          title = isCustomAxes
             ? `📐 Along D${dY} (D${dX}-D${dZ} Plane)`
             : "📐 Along Y (X-Z Plane)";
-          subtitle = isHighD
+          subtitle = isCustomAxes
             ? `H: +D${dX} ➔ | V: +D${dZ} ⬆`
             : "H: +X ➔ | V: +Z ⬆";
         } else if (viewType === "ALONG_Z") {
-          title = isHighD
+          title = isCustomAxes
             ? `📐 Along D${dZ} (D${dX}-D${dY} Plane)`
             : "📐 Along Z (X-Y Plane)";
-          subtitle = isHighD
+          subtitle = isCustomAxes
             ? `H: +D${dX} ➔ | V: +D${dY} ⬆`
             : "H: +X ➔ | V: +Y ⬆";
         } else if (viewType === "2D") {
@@ -2532,11 +2587,19 @@
           const lockNote = (orbitCamera && orbitCamera.isLocked)
             ? ` [🎯 Center: ${cCenter}]`
             : '';
-          const dimTag = isHighD ? ` [D${dX}, D${dY}, D${dZ}]` : '';
-          title = `🌐 3D Orbit View [θ: ${degAz}°, φ: ${degEl}°]${dimTag}${lockNote}`;
+          let modeTag = '';
+          if (isCustomAxes) {
+            if (isHighD && highDProjMode === 'pca') modeTag = ' [PCA 3D]';
+            else if (isHighD && highDProjMode === 'tour') modeTag = ' [Grand Tour 32D]';
+            else if (isHighD && highDProjMode === 'lda') modeTag = ' [Fisher LDA]';
+            else modeTag = ` [D${dX}, D${dY}, D${dZ}]`;
+          }
+          title = `🌐 3D Orbit View [θ: ${degAz}°, φ: ${degEl}°]${modeTag}${lockNote}`;
           subtitle = (orbitCamera && orbitCamera.isLocked)
             ? "Rotating around Locked Center"
-            : "Drag to Rotate Camera";
+            : (highDProjMode === 'tour'
+                ? "Continuous 60 FPS Geodesic Rotation"
+                : "Drag to Rotate Camera");
         }
 
         // Header background
@@ -2703,8 +2766,7 @@
     // =========================================================================
 
     /**
-     * Helper to retrieve or compute top-k nearest neighbors in Dataset A
-     * for query C[activeQueryIdx]
+     * Compute or retrieve k-NN neighbors for query C[activeQueryIdx]
      */
     function getOrComputeKnnNeighbors(activeQueryIdx, k = 10) {
       const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
@@ -2717,6 +2779,11 @@
       const ptsA = slotA ? (slotA.benchmarkDataset || slotA.pastSamples) : null;
       const ptsC = slotC ? (slotC.benchmarkDataset || slotC.pastSamples) : null;
       if (!ptsA || !ptsC || activeQueryIdx < 0 || activeQueryIdx >= ptsC.length) return [];
+
+      if (!slotC._onDemandKnnCache) slotC._onDemandKnnCache = new Map();
+      if (slotC._onDemandKnnCache.has(activeQueryIdx)) {
+        return slotC._onDemandKnnCache.get(activeQueryIdx);
+      }
 
       const qc = ptsC[activeQueryIdx];
       const qx = qc.x, qy = qc.y, qz = (typeof qc.z === 'number') ? qc.z : 0.0;
@@ -2774,11 +2841,18 @@
           });
         }
       }
+
+      if (slotC._onDemandKnnCache.size > 200) {
+        slotC._onDemandKnnCache.clear();
+      }
+      slotC._onDemandKnnCache.set(activeQueryIdx, result);
       return result;
     }
 
     /**
-     * Helper to find all queries C_i that include targetTrainingIdx in their k-NN neighbor set
+     * Helper to find all queries C_i that include targetTrainingIdx in their k-NN neighbor set.
+     * Uses precomputed mapping from slotD with lazy inverted index.
+     * If D has not been reconstructed, returns [] immediately to prevent UI thread freeze.
      */
     function getOrComputeReverseKnnNeighbors(targetTrainingIdx, k = 10) {
       const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
@@ -2791,46 +2865,35 @@
         return [];
       }
 
-      const results = [];
       const mapping = (slotD && slotD.reconstructionSourceNeighbors)
         ? slotD.reconstructionSourceNeighbors : null;
 
-      if (mapping && mapping.length === ptsC.length) {
+      // If D has not been reconstructed, no reverse mapping exists yet
+      if (!mapping || mapping.length !== ptsC.length) {
+        return [];
+      }
+
+      // Fast inverted index: build once in O(k * N_c), subsequent lookups are O(1)
+      if (!slotD._reverseNeighborsIndex) {
+        const revIdx = {};
         for (let i = 0; i < mapping.length; i++) {
           const nbs = mapping[i];
           if (!nbs) continue;
           for (let r = 0; r < nbs.length; r++) {
-            if (nbs[r].id === targetTrainingIdx) {
-              results.push({
-                queryIdx: i,
-                rank: r + 1,
-                dist: nbs[r].dist,
-                weight: nbs[r].weight
-              });
-              break;
-            }
-          }
-        }
-        return results;
-      }
-
-      // If mapping not precomputed, compute on-demand for queries
-      const numQueries = ptsC.length;
-      for (let i = 0; i < numQueries; i++) {
-        const nbs = getOrComputeKnnNeighbors(i, k);
-        for (let r = 0; r < nbs.length; r++) {
-          if (nbs[r].id === targetTrainingIdx) {
-            results.push({
+            const trId = nbs[r].id;
+            if (!revIdx[trId]) revIdx[trId] = [];
+            revIdx[trId].push({
               queryIdx: i,
               rank: r + 1,
               dist: nbs[r].dist,
               weight: nbs[r].weight
             });
-            break;
           }
         }
+        slotD._reverseNeighborsIndex = revIdx;
       }
-      return results;
+
+      return slotD._reverseNeighborsIndex[targetTrainingIdx] || [];
     }
 
     /**
@@ -3418,19 +3481,23 @@
 
           // Top-right status / hint
           ctx.textAlign = 'right';
+          const isRecon = slotD && slotD.reconstructionSourceNeighbors &&
+            slotD.reconstructionSourceNeighbors.length > 0;
           if (activeTrainingIdx >= 0) {
             const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
             ctx.fillStyle = '#c084fc';
             ctx.font = '9px monospace';
-            ctx.fillText(
-              `Influences ${revQueries.length} outputs`,
-              rect.x + rect.w - 10, rect.y + 15
-            );
+            const inflText = isRecon
+              ? `Influences ${revQueries.length} outputs`
+              : 'Recon [D] to inspect';
+            ctx.fillText(inflText, rect.x + rect.w - 10, rect.y + 15);
           } else if (activeQueryIdx >= 0) {
             const info = slotD ? slotD.reconstructionInfo : null;
             ctx.fillStyle = info ? '#c084fc' : '#94a3b8';
             ctx.font = '9px monospace';
-            const dText = info ? `k=${info.k} • ${info.weightMode}` : `Output #${activeQueryIdx}`;
+            const dText = info
+              ? `k=${info.k} • ${info.weightMode}`
+              : `Output #${activeQueryIdx}`;
             ctx.fillText(dText, rect.x + rect.w - 10, rect.y + 15);
           } else {
             ctx.fillStyle = '#c084fc';
@@ -3502,7 +3569,7 @@
                                      || reconQualityMask)
             : null;
           let countText = `${ptCount.toLocaleString()} pts (${dimStr})`;
-          if ((q === 2 || q === 3) && reconQualityThreshold < 1.0 && qHudMask) {
+          if (ptCount > 0 && (q === 2 || q === 3) && reconQualityThreshold < 1.0 && qHudMask) {
             let visibleCount = (slot && slot.reconQualityIndices)
               ? slot.reconQualityIndices.length : 0;
             if (visibleCount === 0 && qHudMask) {
@@ -3589,12 +3656,16 @@
               ctx.fillText('Weighted Contribution', rect.x + rect.w - 10, rect.y + 15);
             }
           } else if (q === 2) {
+            const isRecon = datasetSlots.D && datasetSlots.D.reconstructionSourceNeighbors &&
+              datasetSlots.D.reconstructionSourceNeighbors.length > 0;
             if (activeTrainingIdx >= 0) {
               const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
               ctx.fillStyle = '#fbbf24';
               ctx.font = 'bold 9px monospace';
-              ctx.fillText(`${revQueries.length} queries use A[${activeTrainingIdx}]`,
-                rect.x + rect.w - 10, rect.y + 15);
+              const revText = isRecon
+                ? `${revQueries.length} queries use A[${activeTrainingIdx}]`
+                : 'Recon [D] to inspect influences';
+              ctx.fillText(revText, rect.x + rect.w - 10, rect.y + 15);
             } else {
               const isLocked = (activeQueryIdx >= 0 &&
                 typeof reconLockedQueryIdx !== 'undefined' &&
@@ -3606,17 +3677,23 @@
               ctx.fillText(hintText, rect.x + rect.w - 10, rect.y + 15);
             }
           } else if (q === 3) {
+            const isRecon = datasetSlots.D && datasetSlots.D.reconstructionSourceNeighbors &&
+              datasetSlots.D.reconstructionSourceNeighbors.length > 0;
             if (activeTrainingIdx >= 0) {
               const revQueries = getOrComputeReverseKnnNeighbors(activeTrainingIdx, k);
               ctx.fillStyle = '#c084fc';
               ctx.font = '9px monospace';
-              ctx.fillText(`Influences ${revQueries.length} outputs`,
-                rect.x + rect.w - 10, rect.y + 15);
+              const inflText = isRecon
+                ? `Influences ${revQueries.length} outputs`
+                : 'Not reconstructed';
+              ctx.fillText(inflText, rect.x + rect.w - 10, rect.y + 15);
             } else {
               const info = datasetSlots.D ? datasetSlots.D.reconstructionInfo : null;
               ctx.fillStyle = info ? '#c084fc' : '#94a3b8';
               ctx.font = '9px monospace';
-              const dText = info ? `k=${info.k} • ${info.weightMode}` : 'Slot D';
+              const dText = info
+                ? `k=${info.k} • ${info.weightMode}`
+                : (isRecon ? 'Slot D' : 'Slot D (not reconstructed)');
               ctx.fillText(dText, rect.x + rect.w - 10, rect.y + 15);
             }
           }

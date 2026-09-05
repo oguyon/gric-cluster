@@ -2109,6 +2109,178 @@
       }
     });
 
+    // Grand Tour 60 FPS animation loop
+    let tourAnimFrameId = null;
+    let lastTourTimestamp = 0;
+
+    function grandTourAnimLoop(now) {
+      if (typeof isTourPlaying !== 'undefined' && isTourPlaying && highDProjMode === 'tour') {
+        if (!lastTourTimestamp) lastTourTimestamp = now;
+        const dt = Math.min(0.1, Math.max(0.001, (now - lastTourTimestamp) / 1000));
+        lastTourTimestamp = now;
+        if (typeof ensureGrandTour === 'function') {
+          const tour = ensureGrandTour();
+          if (tour) {
+            tour.step(dt);
+            draw();
+          }
+        }
+        tourAnimFrameId = requestAnimationFrame(grandTourAnimLoop);
+      } else {
+        tourAnimFrameId = null;
+        lastTourTimestamp = 0;
+      }
+    }
+
+    function startGrandTourAnimation() {
+      if (!tourAnimFrameId) {
+        lastTourTimestamp = 0;
+        tourAnimFrameId = requestAnimationFrame(grandTourAnimLoop);
+      }
+    }
+    window.startGrandTourAnimation = startGrandTourAnimation;
+
+    // High-D Projection Mode Selectors
+    ['selectHighDModeTop', 'selectHighDModeSide'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('change', (e) => {
+          setHighDProjMode(e.target.value);
+        });
+      }
+    });
+
+    // Grand Tour Play/Pause button
+    const btnTourPlay = document.getElementById('btnHighDTourPlay');
+    if (btnTourPlay) {
+      btnTourPlay.addEventListener('click', () => {
+        isTourPlaying = !isTourPlaying;
+        if (isTourPlaying) {
+          if (highDProjMode !== 'tour') {
+            setHighDProjMode('tour');
+          }
+          startGrandTourAnimation();
+        } else {
+          if (grandTour) grandTour.isPlaying = false;
+        }
+        updatePlottingDimSelectorsUI();
+        draw();
+      });
+    }
+
+    // Auto-3D Dimension Optimization button
+    const btnAuto3D = document.getElementById('btnHighDAutoPick');
+    if (btnAuto3D) {
+      btnAuto3D.addEventListener('click', () => {
+        const dataset = (typeof pastSamples !== 'undefined' && pastSamples.length > 0)
+          ? pastSamples
+          : (typeof benchmarkDataset !== 'undefined' ? benchmarkDataset : []);
+        if (typeof HighDEngine !== 'undefined') {
+          const triplet = HighDEngine.findBestSeparatingTriplet(clusters, dataset, currentDim);
+          if (triplet) {
+            setHighDProjMode('raw');
+            setPlottingDimensions(triplet[0], triplet[1], triplet[2]);
+            if (typeof showToast === 'function') {
+              const msg =
+                `⚡ Auto-selected best dimensions: d${triplet[0]}, d${triplet[1]}, d${triplet[2]}`;
+              showToast(msg);
+            }
+          }
+        }
+      });
+    }
+
+    // PCA Triplet Select
+    const selectPcaTriplet = document.getElementById('selectPcaTriplet');
+    if (selectPcaTriplet) {
+      selectPcaTriplet.addEventListener('change', (e) => {
+        const parts = e.target.value.split(',').map(s => parseInt(s.trim(), 10));
+        if (parts.length >= 3 && !parts.some(isNaN)) {
+          pcaComponentIndices = parts;
+          invalidateHighDCaches();
+          updatePlottingDimSelectorsUI();
+          draw();
+        }
+      });
+    }
+
+    // Grand Tour Speed Slider
+    const sliderTourSpeed = document.getElementById('sliderTourSpeed');
+    if (sliderTourSpeed) {
+      const onTourSpeedChange = (e) => {
+        tourSpeed = parseFloat(e.target.value);
+        if (grandTour) grandTour.speed = tourSpeed;
+        const lbl = document.getElementById('lblTourSpeed');
+        if (lbl) lbl.textContent = `${tourSpeed.toFixed(1)}x`;
+      };
+      sliderTourSpeed.addEventListener('input', onTourSpeedChange);
+      sliderTourSpeed.addEventListener('change', onTourSpeedChange);
+    }
+
+    // Tomographic Slicing Controls
+    const selectSliceDim = document.getElementById('selectSliceDim');
+    if (selectSliceDim) {
+      selectSliceDim.addEventListener('change', (e) => {
+        sliceDim = parseInt(e.target.value, 10);
+        const rowSlice = document.getElementById('rowSliceSlider');
+        if (rowSlice) rowSlice.style.display = (sliceDim >= 0) ? 'block' : 'none';
+        draw();
+      });
+    }
+
+    const selectSliceThick = document.getElementById('selectSliceThickness');
+    if (selectSliceThick) {
+      selectSliceThick.addEventListener('change', (e) => {
+        sliceThickness = parseFloat(e.target.value);
+        draw();
+      });
+    }
+
+    const sliderSliceCenter = document.getElementById('sliderSliceCenter');
+    if (sliderSliceCenter) {
+      const onSliceCenterChange = (e) => {
+        sliceCenter = parseFloat(e.target.value);
+        const lbl = document.getElementById('lblSliceCenter');
+        if (lbl) lbl.textContent = Number(sliceCenter).toFixed(2);
+        draw();
+      };
+      sliderSliceCenter.addEventListener('input', onSliceCenterChange);
+      sliderSliceCenter.addEventListener('change', onSliceCenterChange);
+    }
+
+    // Viewport & Glyphs Checkboxes
+    const chkQuad2PCP = document.getElementById('chkQuad2PCP');
+    if (chkQuad2PCP) {
+      chkQuad2PCP.addEventListener('change', (e) => {
+        quad2Mode = e.target.checked ? 'pcp' : 'along_z';
+        draw();
+      });
+    }
+
+    const chkBiplotRays = document.getElementById('chkBiplotRays');
+    if (chkBiplotRays) {
+      chkBiplotRays.addEventListener('change', (e) => {
+        showBiplotRays = e.target.checked;
+        draw();
+      });
+    }
+
+    const chkAnchorSparklines = document.getElementById('chkAnchorSparklines');
+    if (chkAnchorSparklines) {
+      chkAnchorSparklines.addEventListener('change', (e) => {
+        showAnchorSparklines = e.target.checked;
+        draw();
+      });
+    }
+
+    const chkDecoupledQuads = document.getElementById('chkDecoupledQuads');
+    if (chkDecoupledQuads) {
+      chkDecoupledQuads.addEventListener('change', (e) => {
+        decoupledQuads = e.target.checked;
+        draw();
+      });
+    }
+
     function updateLockCenterButtonUI() {
       const btn = document.getElementById('btnLockCenter3D');
       const btnSide = document.getElementById('btnLockCenter3DSide');
@@ -5745,6 +5917,8 @@
         avgNeighborDist: avgNeighborDist
       };
       slotD.reconstructionSourceNeighbors = sourceNeighbors;
+      slotD._reverseNeighborsIndex = null;
+      if (slotC && slotC._onDemandKnnCache) slotC._onDemandKnnCache.clear();
 
       // Store quality metrics on slots C and D
       slotC.reconKthDist = reconKthDist;
@@ -6730,6 +6904,8 @@
           slotD.reconstructionInfo.queryCount = newCount;
         }
         slotD.reconstructionSourceNeighbors = newNeighborsD;
+        slotD._reverseNeighborsIndex = null;
+        if (slotC && slotC._onDemandKnnCache) slotC._onDemandKnnCache.clear();
         slotD.reconVariance = newVarD;
         slotD.reconVarianceMin = (varMin === Infinity) ? 0 : varMin;
         slotD.reconVarianceMax = (varMax === -Infinity) ? 1 : varMax;
@@ -6799,6 +6975,8 @@
         Object.assign(slotD, slotD._unprunedBackup);
         delete slotD._unprunedBackup;
       }
+      if (slotD) slotD._reverseNeighborsIndex = null;
+      if (slotC && slotC._onDemandKnnCache) slotC._onDemandKnnCache.clear();
 
       const btnRestore = document.getElementById('btnRestoreOriginalPool');
       if (btnRestore) btnRestore.style.display = 'none';
@@ -8529,6 +8707,7 @@
             y: (Array.isArray(p) || ArrayBuffer.isView(p)) ? p[1] : (p.y || 0),
             z: currentDim >= 3
               ? ((Array.isArray(p) || ArrayBuffer.isView(p)) ? (p[2] || 0) : (p.z || 0)) : 0,
+            coords: p.coords || (Array.isArray(p) || ArrayBuffer.isView(p) ? p : null),
             frameIndex: idx
           }));
         } else {
@@ -8543,10 +8722,15 @@
                 if (!line || line.startsWith('#')) continue;
                 const tokens = line.split(/[,\s\t]+/).filter(t => t.length > 0);
                 if (tokens.length >= 2) {
+                  const coords = new Float64Array(tokens.length);
+                  for (let d = 0; d < tokens.length; d++) {
+                    coords[d] = parseFloat(tokens[d]) || 0;
+                  }
                   pts.push({
-                    x: parseFloat(tokens[0]),
-                    y: parseFloat(tokens[1]),
-                    z: tokens.length >= 3 ? parseFloat(tokens[2]) : 0,
+                    x: coords[0],
+                    y: coords[1],
+                    z: coords.length >= 3 ? coords[2] : 0,
+                    coords: coords,
                     frameIndex: pts.length
                   });
                 }

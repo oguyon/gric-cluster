@@ -673,20 +673,44 @@
             🎨 Colors
           </button>
           <div id="projDimGroup" class="proj-dim-group" style="display: none;"
-               data-tooltip-title="3D Visual Plotting Dimensions (D &gt; 3)"
-               data-tooltip-badge="Visual Axes"
+               data-tooltip-title="High-D (32D) Visual Projections"
+               data-tooltip-badge="32D Suite"
                data-tooltip-color="cyan"
-               data-tooltip-desc="Select 3 dimensions for visual plotting.">
-            <span class="proj-dim-label">Plot:</span>
-            <span class="proj-dim-axis">X</span>
-            <select id="selectPlotDimX" class="select-plot-dim"
-                    aria-label="X-axis Plotting Dimension"></select>
-            <span class="proj-dim-axis">Y</span>
-            <select id="selectPlotDimY" class="select-plot-dim"
-                    aria-label="Y-axis Plotting Dimension"></select>
-            <span class="proj-dim-axis">Z</span>
-            <select id="selectPlotDimZ" class="select-plot-dim"
-                    aria-label="Z-axis Plotting Dimension"></select>
+               data-tooltip-desc="Multi-dimensional visualization: Raw axes, PCA, Tour, or LDA.">
+            <span class="proj-dim-label">Proj:</span>
+            <select id="selectHighDModeTop" class="select-plot-dim"
+                    style="font-weight: 700; color: #38bdf8;"
+                    aria-label="High-D Projection Mode">
+              <option value="raw">Raw Axes</option>
+              <option value="pca">PCA (Top 3)</option>
+              <option value="tour">Grand Tour</option>
+              <option value="lda">Fisher LDA</option>
+            </select>
+            <div id="highDScreeBar" class="highd-scree-bar" style="display: none;"
+                 title="Cumulative PCA Explained Variance">
+              <div id="highDScreeFill" class="highd-scree-fill" style="width: 0%;"></div>
+              <span id="highDScreeText" class="highd-scree-text">PC1-3: 0%</span>
+            </div>
+            <button id="btnHighDTourPlay" class="preset-btn"
+                    style="display: none; padding: 2px 6px; font-size: 0.72rem;"
+                    title="Play / Pause 60 FPS Grand Tour continuous rotation">▶ Tour</button>
+            <button id="btnHighDAutoPick" class="preset-btn"
+                    style="padding: 2px 6px; font-size: 0.72rem;"
+                    title="Auto-select 3 dimensions with maximum cluster separation">
+              ⚡ Auto 3D
+            </button>
+            <span class="raw-axis-picker"
+                  style="display: inline-flex; align-items: center; gap: 3px;">
+              <span class="proj-dim-axis">X</span>
+              <select id="selectPlotDimX" class="select-plot-dim"
+                      aria-label="X-axis Plotting Dimension"></select>
+              <span class="proj-dim-axis">Y</span>
+              <select id="selectPlotDimY" class="select-plot-dim"
+                      aria-label="Y-axis Plotting Dimension"></select>
+              <span class="proj-dim-axis">Z</span>
+              <select id="selectPlotDimZ" class="select-plot-dim"
+                      aria-label="Z-axis Plotting Dimension"></select>
+            </span>
           </div>
         </div>
       </div>
@@ -1705,37 +1729,154 @@ integer lower bounds against rlim.">
               </div>
             </div>
 
-            <!-- High-D Plotting Projection Dimensions -->
+            <!-- High-D (32D+) Exploration & Slicing Suite -->
             <div class="sub-control-card" id="projDimSidebarCard" style="display: none;">
-              <div class="control-label" style="font-weight: 700; color: var(--accent-cyan);">
-                <span>High-D Plotting Dimensions (D &gt; 3)</span>
+              <div class="control-label"
+                   style="font-weight: 700; color: var(--accent-cyan); display: flex;
+                          justify-content: space-between; align-items: center;">
+                <span>High-D Visualization Suite (D &gt; 3)</span>
+                <span id="badgeHighDStatus" class="tag"
+                      style="font-size: 0.65rem; background: rgba(56, 189, 248, 0.2);
+                             color: #38bdf8;">32D Active</span>
               </div>
-              <p style="font-size: 0.72rem; color: var(--text-muted);
-                        line-height: 1.35; margin-bottom: 8px;">
-                Select 3 dimensions for visual plotting. All dimensions are used for
-                computations.
+              <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35;
+                        margin-bottom: 8px;">
+                Interactive projections, continuous rotations, tomographic slicing,
+                and parallel coordinates.
               </p>
-              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+
+              <!-- Projection Mode Selector -->
+              <div style="margin-bottom: 8px;">
+                <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 2px;">
+                  Projection Mode:
+                </div>
+                <select id="selectHighDModeSide" class="select-plot-dim"
+                        style="width: 100%; font-weight: 700;">
+                  <option value="raw">Raw Dimension Slicing (dx, dy, dz)</option>
+                  <option value="pca">Principal Component Analysis (PCA)</option>
+                  <option value="tour">Grand Tour (60 FPS Continuous Geodesic)</option>
+                  <option value="lda">Fisher LDA (Cluster Discriminant)</option>
+                </select>
+              </div>
+
+              <!-- PCA Component Triplet Picker -->
+              <div id="rowPcaPicker" style="display: none; margin-bottom: 8px;">
+                <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 2px;">
+                  PCA Component Triplet:
+                </div>
+                <select id="selectPcaTriplet" class="select-plot-dim" style="width: 100%;">
+                  <option value="0,1,2">PC 1, 2, 3 (Primary Manifold)</option>
+                  <option value="1,2,3">PC 2, 3, 4</option>
+                  <option value="2,3,4">PC 3, 4, 5</option>
+                  <option value="3,4,5">PC 4, 5, 6</option>
+                </select>
+              </div>
+
+              <!-- Raw Axis Selectors -->
+              <div class="raw-axis-picker"
+                   style="display: grid; grid-template-columns: repeat(3, 1fr);
+                          gap: 6px; margin-bottom: 8px;">
                 <div>
                   <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 2px;">
                     X Axis:
                   </div>
-                  <select id="selectSidePlotDimX" class="select-plot-dim" style="width: 100%;">
-                  </select>
+                  <select id="selectSidePlotDimX" class="select-plot-dim"
+                          style="width: 100%;"></select>
                 </div>
                 <div>
                   <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 2px;">
                     Y Axis:
                   </div>
-                  <select id="selectSidePlotDimY" class="select-plot-dim" style="width: 100%;">
-                  </select>
+                  <select id="selectSidePlotDimY" class="select-plot-dim"
+                          style="width: 100%;"></select>
                 </div>
                 <div>
                   <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 2px;">
                     Z Axis:
                   </div>
-                  <select id="selectSidePlotDimZ" class="select-plot-dim" style="width: 100%;">
-                  </select>
+                  <select id="selectSidePlotDimZ" class="select-plot-dim"
+                          style="width: 100%;"></select>
+                </div>
+              </div>
+
+              <!-- Grand Tour Speed Slider -->
+              <div id="rowTourSpeed" style="display: none; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.68rem;
+                            color: var(--text-muted); margin-bottom: 2px;">
+                  <span>Grand Tour Speed:</span>
+                  <span id="lblTourSpeed" style="font-family: monospace; color: #38bdf8;">
+                    1.0x
+                  </span>
+                </div>
+                <input type="range" id="sliderTourSpeed" min="0.2" max="4.0" step="0.1"
+                       value="1.0" style="width: 100%;">
+              </div>
+
+              <!-- Tomographic Hyperplane Slicing -->
+              <div style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px;
+                          margin-bottom: 8px;">
+                <div style="font-size: 0.70rem; font-weight: 700; color: #facc15;
+                            margin-bottom: 4px;">
+                  🔪 Tomographic Slicing (Scan 32D Space)
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+                            margin-bottom: 6px;">
+                  <div>
+                    <div style="font-size: 0.66rem; color: var(--text-muted);">Slice Axis:</div>
+                    <select id="selectSliceDim" class="select-plot-dim" style="width: 100%;">
+                      <option value="-1">None (Off)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div style="font-size: 0.66rem; color: var(--text-muted);">Thickness:</div>
+                    <select id="selectSliceThickness" class="select-plot-dim" style="width: 100%;">
+                      <option value="0.1">0.10 (Narrow)</option>
+                      <option value="0.25" selected>0.25 (Default)</option>
+                      <option value="0.5">0.50 (Wide)</option>
+                      <option value="1.0">1.00 (All)</option>
+                    </select>
+                  </div>
+                </div>
+                <div id="rowSliceSlider" style="display: none;">
+                  <div style="display: flex; justify-content: space-between; font-size: 0.66rem;
+                              color: var(--text-muted);">
+                    <span>Slice Center:</span>
+                    <span id="lblSliceCenter" style="font-family: monospace; color: #facc15;">
+                      0.00
+                    </span>
+                  </div>
+                  <input type="range" id="sliderSliceCenter" min="-1.5" max="1.5" step="0.02"
+                         value="0.0" style="width: 100%;">
+                </div>
+              </div>
+
+              <!-- High-D Visual Encodings & Viewport Toggles -->
+              <div style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 8px;">
+                <div style="font-size: 0.70rem; font-weight: 700; color: #38bdf8;
+                            margin-bottom: 6px;">
+                  Viewport Layout &amp; Glyphs
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 0.70rem;
+                                cursor: pointer; color: #cbd5e1;">
+                    <input type="checkbox" id="chkQuad2PCP">
+                    <span>📈 Quad 2: Parallel Coordinates (32D)</span>
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 0.70rem;
+                                cursor: pointer; color: #cbd5e1;">
+                    <input type="checkbox" id="chkBiplotRays">
+                    <span>🧭 3D Biplot Basis Rays</span>
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 0.70rem;
+                                cursor: pointer; color: #cbd5e1;">
+                    <input type="checkbox" id="chkAnchorSparklines">
+                    <span>📊 Cluster Anchor Sparkline Glyphs</span>
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 0.70rem;
+                                cursor: pointer; color: #cbd5e1;">
+                    <input type="checkbox" id="chkDecoupledQuads">
+                    <span>🔀 Decouple Quads 0, 1, 2 Subspaces</span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -4444,6 +4585,7 @@ lower bounds (d_LB > tau) without full-precision distance computation.">
   <script src="simulator/js/wasm_bridge.js?v=2026.08.31.0405"></script>
   <script src="simulator/js/fs_access.js?v=2026.08.31.0405"></script>
   <script src="simulator/js/desktop_bridge.js?v=2026.08.31.0405"></script>
+  <script src="simulator/js/highd_engine.js?v=2026.09.04"></script>
   <script src="simulator/js/state.js?v=2026.08.31.0405"></script>
   <script src="simulator/js/telemetry.js?v=2026.08.31.0405"></script>
   <script src="simulator/js/image_renderer.js?v=2026.08.31.0405"></script>
