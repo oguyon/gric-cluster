@@ -28,9 +28,19 @@
                 data-tooltip-desc="Open instant search and quick command palette.">
           🔍 Commands <span class="kbd-chip">Ctrl+K</span>
         </button>
+        <button id="btnToggleTooltips" class="btn-toggle toggle-cyan active"
+                data-tooltip-title="Toggle Hover Help Tooltips"
+                data-tooltip-badge="Shortcut: H"
+                data-tooltip-color="cyan"
+                data-tooltip-desc="Turn rich hover help popups on or off across all UI controls, sliders, and panels.">💡 Tips</button>
+        <button id="btnHelp" class="btn-action" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-weight: 700;"
+                data-tooltip-title="Help &amp; Quick Start Guide"
+                data-tooltip-badge="Shortcut: ?"
+                data-tooltip-color="cyan"
+                data-tooltip-desc="Open the quick start guide with orientation, keyboard shortcuts, and suggested examples.">❓ Help</button>
         <a href="https://github.com/oguyon/gric-cluster" target="_blank"
            style="color: var(--accent-green); text-decoration: none;
-                  font-size: 0.85rem; font-weight: 600;">GitHub ↗</a>
+                  font-size: 0.85rem; font-weight: 600; margin-left: 4px;">GitHub ↗</a>
       </div>
       <span id="headerBuildInfo" style="font-size: 0.68rem; color: var(--text-muted); font-family: monospace;">Build: loading...</span>
     </div>
@@ -70,8 +80,8 @@
 
             <div class="toolbar-divider"></div>
 
-            <span style="font-size: 0.74rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">WORKSPACE:</span>
-            <span id="lblWorkspacePath" class="workspace-path" style="font-size: 0.72rem; padding: 2px 7px; background: rgba(15,23,42,0.6); border: 1px solid var(--card-border); border-radius: 4px; color: var(--text-main); font-family: monospace;">Local Browser Sandbox</span>
+            <span style="font-size: 0.70rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">WORKSPACE:</span>
+            <span id="lblWorkspacePath" class="workspace-path" style="font-size: 0.72rem; padding: 2px 7px; background: rgba(15,23,42,0.6); border: 1px solid var(--card-border); border-radius: 4px; color: var(--text-main); font-family: monospace; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle;" title="Workspace Directory">Local Browser Sandbox</span>
             <button id="btnOpenLocalFolder" class="btn-mini-action" 
                     data-tooltip-title="Select Local Client-Side Directory"
                     data-tooltip-badge="Web Mode: W3C File System Access"
@@ -87,20 +97,6 @@
                     data-tooltip-badge="Export .clusterdat"
                     data-tooltip-color="green"
                     data-tooltip-desc="Saves current clustering centroids, D_cc matrix, membership indices, and telemetry log directly into a <dataset>.clusterdat/ folder in the workspace.">💾 Export</button>
-          </div>
-
-          <!-- Help Buttons in the Corner -->
-          <div class="btn-group" style="margin-left: auto;">
-            <button id="btnToggleTooltips" class="btn-toggle toggle-cyan active"
-                    data-tooltip-title="Toggle Hover Help Tooltips"
-                    data-tooltip-badge="Shortcut: H"
-                    data-tooltip-color="cyan"
-                    data-tooltip-desc="Turn rich hover help popups on or off across all UI controls, sliders, and panels.">💡 Tips</button>
-            <button id="btnHelp" class="btn-action" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-weight: 700;"
-                    data-tooltip-title="Help &amp; Quick Start Guide"
-                    data-tooltip-badge="Shortcut: ?"
-                    data-tooltip-color="cyan"
-                    data-tooltip-desc="Open the quick start guide with orientation, keyboard shortcuts, and suggested examples.">❓ Help</button>
           </div>
         </div>
 
@@ -419,10 +415,9 @@
           </div>
         </div>
 
-        <!-- Row 3: Clustering -->
-        <div class="toolbar-row">
+        <!-- Row 2: Simulation Transport & Playback Ribbon -->
+        <div class="toolbar-row" id="transportRow">
           <div class="toolbar-row-content">
-            <span class="toolbar-row-label">CLUSTER:</span>
             <div class="btn-group">
               <button id="btnPlay" class="primary" 
                       data-tooltip-title="Run / Pause Clustering" 
@@ -435,7 +430,7 @@
                       data-tooltip-color="cyan" 
                       data-tooltip-desc="Pushes exactly one coordinate vector from the stream, evaluating distance bounds, updating priors, and advancing the frame index.">&#8677; Step</button>
               <button id="btnComputeAll" class="btn-action" 
-                      style="background: rgba(34, 197, 94, 0.15); color: #4ade80; 
+                      style="background: rgba(34, 197, 94, 0.18); color: #4ade80; 
                              border: 1px solid rgba(34, 197, 94, 0.4); font-weight: 700;"
                       data-tooltip-title="Compute All (Run to Completion)" 
                       data-tooltip-badge="Instant WASM Batch" 
@@ -447,18 +442,22 @@
                       data-tooltip-title="Reset Clusters (Keep Staged Dataset)"
                       data-tooltip-badge="Reset Model Only"
                       data-tooltip-color="cyan"
-                      data-tooltip-desc="Clears cluster centroids, D_cc matrix, and assignments while preserving the staged dataset in memory so you can immediately re-cluster with new parameters.">&#8634; Reset Clusters</button>
+                      data-tooltip-desc="Clears cluster centroids, D_cc matrix, and assignments while preserving the staged dataset in memory so you can immediately re-cluster with new parameters.">&#8634; Reset</button>
               <button id="btnReset" class="btn-action"
                       data-tooltip-title="Reset All (Clear Dataset &amp; Clusters)"
                       data-tooltip-badge="Shortcut: R"
                       data-tooltip-color="cyan"
                       data-tooltip-desc="Clears both the staged dataset and established cluster models, returning the canvas to a clean blank grid.">&#8635; Reset All</button>
+            </div>
+
+            <div class="toolbar-divider"></div>
+
+            <div class="btn-group">
               <button id="btnPass2Nearest" class="btn-action"
                       data-tooltip-title="Run 2nd Pass (Nearest Anchor Reallocation)"
                       data-tooltip-badge="Shortcut: 2 / P"
                       data-tooltip-color="green"
                       data-tooltip-desc="Reallocates all points in the dataset to their globally closest cluster anchor using triangle-inequality bounds, updating cluster assignments and quality metrics.">🔄 2nd Pass</button>
-              <div class="toolbar-divider"></div>
               <button id="btnAddPoint" class="btn-toggle toggle-amber" 
                       data-tooltip-title="Toggle Interactive Point Injection" 
                       data-tooltip-badge="Shortcut: Click Canvas" 
@@ -469,75 +468,59 @@
                       data-tooltip-badge="Shortcut: E" 
                       data-tooltip-color="green" 
                       data-tooltip-desc="Enables rich step-by-step diagnostic telemetry explaining anchor choices, triangle inequality bounds, entropy calculations, and prunings.">💬 Explain</button>
+              <button id="btnToggleKnnModule" class="btn-toggle toggle-green"
+                      data-tooltip-title="Toggle k-Nearest Neighbors Module" 
+                      data-tooltip-badge="Shortcut: K" 
+                      data-tooltip-color="green" 
+                      data-tooltip-desc="Enables k-Nearest Neighbors (k-NN) mode, revealing configuration options and on-demand metric solver execution.">⚡ k-NN</button>
             </div>
-          </div>
-        </div>
 
-        <!-- Row 4: k-NN (Dedicated Controls Block) -->
-        <div class="toolbar-row">
-          <div class="toolbar-row-content">
-            <span class="toolbar-row-label">k-NN:</span>
-            <button id="btnToggleKnnModule" class="btn-toggle toggle-green"
-                    data-tooltip-title="Toggle k-Nearest Neighbors Module" 
-                    data-tooltip-badge="Shortcut: K" 
-                    data-tooltip-color="green" 
-                    data-tooltip-desc="Enables k-Nearest Neighbors (k-NN) mode, revealing configuration options and on-demand metric solver execution.">⚡ Enable k-NN</button>
-            
             <!-- Expanded k-NN action group (visible when k-NN is enabled) -->
-            <div id="knnExpandedGroup" style="display: none; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <div id="knnExpandedGroup" style="display: none; align-items: center; gap: 4px; flex-wrap: wrap;">
               <button id="btnRunKnn" class="btn-action" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.5); font-weight: 700;"
                       data-tooltip-title="Compute k-Nearest Neighbors" 
                       data-tooltip-badge="Run k-NN" 
                       data-tooltip-color="green" 
-                      data-tooltip-desc="Executes the out-of-core metric-pruned k-NN solver on the current dataset.">▶ Compute k-NN</button>
+                      data-tooltip-desc="Executes the out-of-core metric-pruned k-NN solver on the current dataset.">▶ Run k-NN</button>
               <button id="btnResetKnn" class="btn-action"
                       data-tooltip-title="Reset k-NN Results (Keep Clusters)"
                       data-tooltip-badge="Clear k-NN"
                       data-tooltip-color="cyan"
-                      data-tooltip-desc="Clears computed k-NN neighbor indices and ray overlays without resetting clusters.">↺ Reset k-NN</button>
+                      data-tooltip-desc="Clears computed k-NN neighbor indices and ray overlays without resetting clusters.">↺ Clear</button>
               <button id="btnKnnSetup" class="btn-action"
                       data-tooltip-title="Open k-NN Settings in Sidebar" 
                       data-tooltip-badge="Configure k-NN" 
                       data-tooltip-color="cyan" 
-                      data-tooltip-desc="Opens and focuses the k-Nearest Neighbors parameter card in the right sidebar (k, dtmin, direction, epsilon).">⚙️ Options</button>
-              <span id="knnStatusBadgeTop" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.3); font-size: 0.72rem;">k=10 • forward • dt≥1</span>
-              <div id="dimDensityColorGroup"
-                   style="display: none; align-items: center;
-                          gap: 4px;">
-                <span style="font-size: 0.70rem; color: #fbbf24;
-                             font-weight: 600;">Color:</span>
-                <div class="toggle-group"
-                     style="grid-template-columns: repeat(3, 1fr);">
-                  <div id="colorByCluster"
-                       class="toggle-btn active">Cluster</div>
-                  <div id="colorByDim"
-                       class="toggle-btn">Dimension</div>
-                  <div id="colorByDensity"
-                       class="toggle-btn">Density</div>
+                      data-tooltip-desc="Opens and focuses the k-Nearest Neighbors parameter card in the right sidebar (k, dtmin, direction, epsilon).">⚙️</button>
+              <span id="knnStatusBadgeTop" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.3); font-size: 0.70rem;">k=10</span>
+              <div id="dimDensityColorGroup" style="display: none; align-items: center; gap: 4px;">
+                <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr);">
+                  <div id="colorByCluster" class="toggle-btn active">Clust</div>
+                  <div id="colorByDim" class="toggle-btn">Dim</div>
+                  <div id="colorByDensity" class="toggle-btn">Dens</div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div class="benchmark-info">
-        <div id="benchmarkDesc"><b>3Dtorus</b>: Continuous knot trajectory around a 3D torus manifold (R=0.60, r=0.24).</div>
-        <div style="display: flex; gap: 12px; align-items: center;">
-          <span>Speed:</span>
-          <select id="selectSpeed" style="padding: 2px 6px; font-size: 0.75rem;" 
-                  data-tooltip-title="Simulation Playback Speed" 
-                  data-tooltip-badge="Rate Control" 
-                  data-tooltip-color="cyan" 
-                  data-tooltip-desc="Select Instant batch computation or 60 FPS streaming preview.">
-            <option value="0">⚡ Instant (Compute All, then Render)</option>
-            <option value="-1" selected>🚀 Fast Streaming Preview (60 FPS)</option>
-            <option value="5">30x Paced (5ms)</option>
-            <option value="15">10x Paced (15ms)</option>
-            <option value="50">3x Paced (50ms)</option>
-            <option value="150">1x Step (150ms)</option>
-          </select>
-          <span id="frameCounter">0 / 10,000</span>
+          <div class="btn-group" style="margin-left: auto;">
+            <div id="benchmarkDesc" class="benchmark-desc" style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; color: var(--text-muted);" title="Dataset Description"><b>3Dtorus</b>: Continuous knot trajectory around a 3D torus manifold (R=0.60, r=0.24).</div>
+            <div class="toolbar-divider"></div>
+            <span style="font-size: 0.70rem; color: var(--text-muted); font-weight: 600;">Speed:</span>
+            <select id="selectSpeed" style="padding: 1px 4px; font-size: 0.72rem; height: 22px;" 
+                    data-tooltip-title="Simulation Playback Speed" 
+                    data-tooltip-badge="Rate Control" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Select Instant batch computation or 60 FPS streaming preview.">
+              <option value="0">⚡ Instant</option>
+              <option value="-1" selected>🚀 60 FPS</option>
+              <option value="5">30x (5ms)</option>
+              <option value="15">10x (15ms)</option>
+              <option value="50">3x (50ms)</option>
+              <option value="150">1x (150ms)</option>
+            </select>
+            <span id="frameCounter" class="badge-pill frame-counter" style="font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); color: #f8fafc; padding: 2px 7px;">0 / 10,000</span>
+          </div>
         </div>
       </div>
 
@@ -995,7 +978,7 @@
                     onclick="event.stopPropagation(); togglePanelCollapse('cardSettings');">▾</button>
             <span>Clustering: Algorithm</span>
           </div>
-          <span style="font-size: 0.72rem; color: var(--accent-blue); font-weight: 600;">Algorithm</span>
+          <span style="font-size: 0.70rem; color: var(--accent-blue); font-weight: 600;">rlim &amp; Pruning</span>
         </div>
 
         <div class="card-body">
@@ -1294,7 +1277,7 @@
                     onclick="event.stopPropagation(); togglePanelCollapse('cardDisplay');">▾</button>
             <span>Display &amp; View</span>
           </div>
-          <span style="font-size: 0.72rem; color: var(--accent-teal); font-weight: 600;">View &amp; Optics</span>
+          <span style="font-size: 0.70rem; color: var(--accent-teal); font-weight: 600;">Optics &amp; Overlays</span>
         </div>
 
         <div class="card-body">
@@ -1735,7 +1718,7 @@
                     onclick="event.stopPropagation(); togglePanelCollapse('cardCli');">▾</button>
             <span>CLI Console &amp; Command</span>
           </div>
-          <span style="font-size: 0.72rem; color: var(--accent-cyan); font-weight: 600;">CLI: gric-cluster</span>
+          <span style="font-size: 0.70rem; color: var(--accent-cyan); font-weight: 600;">gric-cluster</span>
         </div>
 
         <div class="card-body">

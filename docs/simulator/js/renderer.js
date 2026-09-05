@@ -2451,11 +2451,18 @@
         // Title text
         ctx.fillStyle = '#f8fafc';
         ctx.font = 'bold 11px sans-serif';
+        const titleW = ctx.measureText(title).width;
         ctx.fillText(title, rect.x + 8, rect.y + 16);
 
-        ctx.fillStyle = '#94a3b8';
+        // Subtitle text (guaranteed no overlap with title)
         ctx.font = '10px monospace';
-        ctx.fillText(subtitle, rect.x + rect.w - 180, rect.y + 16);
+        const subW = ctx.measureText(subtitle).width;
+        const iconMargin = (currentDim === 3) ? 32 : 12;
+        const subX = rect.x + rect.w - subW - iconMargin;
+        if (subX > rect.x + titleW + 24) {
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText(subtitle, subX, rect.y + 16);
+        }
 
         // Maximize / Restore Icon
         if (currentDim === 3) {
