@@ -48,6 +48,7 @@ SRCS = \
 	src/gric-knn/knn_engine.c \
 	src/shared/cluster_locator.c \
 	src/shared/gric_bin_io.c \
+	src/shared/scalar_quant.c \
 	src/wasm/gric_wasm_api.c
 
 OUT_DIR_SITE = site/simulator/wasm

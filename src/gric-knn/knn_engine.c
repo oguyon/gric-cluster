@@ -263,6 +263,94 @@ static inline double compute_euclidean_distance(
 }
 
 /**
+ * is_member_pruned_by_sq8() - Evaluate SQ8 metric lower bound against current search radius.
+ * @query_sq8: Pointer to quantized query vector [dim].
+ * @cand_id:   Index of candidate dataset frame.
+ * @cur_tau:   Current distance to k-th nearest neighbor (or cutoff radius).
+ * @model:     Active KnnModel.
+ * @config:    Active KnnConfig.
+ * @telem:     Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+static inline int is_member_pruned_by_sq8(
+    const uint8_t   *query_sq8,
+    long             cand_id,
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config,
+    KnnTelemetry    *telem)
+{
+    if (!config->use_sq8 || model->sq8_dataset_buffer == NULL || query_sq8 == NULL)
+    {
+        return 0;
+    }
+
+    const uint8_t *cand_sq8 = model->sq8_dataset_buffer +
+                              (size_t)cand_id * (size_t)model->frame_elements;
+    double eps = config->sq8_approx ? config->epsilon : 0.0;
+    telem->sq8_evaluations++;
+    double d_lb = sq8_compute_lower_bound(query_sq8, cand_sq8, &model->sq8_params, eps);
+
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
+    {
+        cur_tau = config->rlim_cutoff;
+    }
+
+    if (d_lb > cur_tau)
+    {
+        telem->sq8_members_pruned++;
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * is_graph_pruned_by_sq8() - Evaluate SQ8 metric lower bound for graph candidate pruning.
+ * @query_sq8: Pointer to quantized query vector [dim].
+ * @cand_id:   Index of candidate dataset frame.
+ * @cur_tau:   Current distance threshold (e.g. heap max or routing threshold).
+ * @model:     Active KnnModel.
+ * @config:    Active KnnConfig.
+ * @telem:     Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+static inline int is_graph_pruned_by_sq8(
+    const uint8_t   *query_sq8,
+    long             cand_id,
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config,
+    KnnTelemetry    *telem)
+{
+    if (!config->use_sq8 || model->sq8_dataset_buffer == NULL || query_sq8 == NULL)
+    {
+        return 0;
+    }
+
+    const uint8_t *cand_sq8 = model->sq8_dataset_buffer +
+                              (size_t)cand_id * (size_t)model->frame_elements;
+    double eps = config->sq8_approx ? config->epsilon : 0.0;
+    telem->sq8_evaluations++;
+    double d_lb = sq8_compute_lower_bound(query_sq8, cand_sq8, &model->sq8_params, eps);
+
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
+    {
+        cur_tau = config->rlim_cutoff;
+    }
+
+    if (d_lb > cur_tau)
+    {
+        telem->sq8_graph_pruned++;
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
  * check_temporal_separation() - Verify if candidate satisfies temporal criteria.
  * @query_id:     Frame ID of query.
  * @candidate_id: Frame ID of candidate.
@@ -687,6 +775,12 @@ static void knn_search_intra_cluster(
             continue;
         }
 
+        if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                    model, config, telem))
+        {
+            continue;
+        }
+
         if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
         {
             telem->framedist_calls++;
@@ -802,6 +896,11 @@ static int knn_warm_start_nearest_cluster(
         if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
         {
             telem->reciprocal_reused++;
+            continue;
+        }
+        if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                    model, config, telem))
+        {
             continue;
         }
         if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
@@ -1164,6 +1263,12 @@ static void knn_search_inter_clusters(
                 continue;
             }
 
+            if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                        model, config, telem))
+            {
+                continue;
+            }
+
             // Level 4: Exact Distance Evaluation
             if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
             {
@@ -1353,6 +1458,17 @@ static void knn_cross_seed_frontier(
                     }
                     if (!knn_heap_contains(heap, (int)s_frame))
                     {
+                        double tau = knn_heap_peek_max_dist(heap);
+                        if (best_seed_dist != NULL && *best_seed_dist > tau)
+                        {
+                            tau = *best_seed_dist;
+                        }
+                        if (is_graph_pruned_by_sq8(visited->query_sq8, s_frame, tau,
+                                                   model, config, telem))
+                        {
+                            continue;
+                        }
+
                         if (knn_reader_read_frame(cand_reader, s_frame, cand_buffer) == 0)
                         {
                             telem->framedist_calls++;
@@ -1534,6 +1650,18 @@ static void knn_greedy_route_to_basin(
             if (lb_edge >= curr_d)
             {
                 telem->graph_edges_pruned++;
+                continue;
+            }
+
+            double routing_tau = next_d;
+            double tau_heap = knn_heap_peek_max_dist(heap);
+            if (tau_heap > routing_tau)
+            {
+                routing_tau = tau_heap;
+            }
+            if (is_graph_pruned_by_sq8(visited->query_sq8, nb_id, routing_tau,
+                                       model, config, telem))
+            {
                 continue;
             }
 
@@ -1779,6 +1907,20 @@ static void knn_direct_basin_expansion(
             if (non_improving_streak >= max_streak)
             {
                 break;
+            }
+            continue;
+        }
+
+        if (is_graph_pruned_by_sq8(visited->query_sq8, nb_id, current_tau,
+                                   model, config, telem))
+        {
+            if (heap->count >= heap->k)
+            {
+                non_improving_streak++;
+                if (non_improving_streak >= max_streak)
+                {
+                    break;
+                }
             }
             continue;
         }
@@ -2058,6 +2200,12 @@ static void knn_direct_basin_expansion(
                 if (heap->count >= heap->k && d_edge >= tau_eff)
                 {
                     telem->graph_edges_pruned++;
+                    continue;
+                }
+
+                if (is_graph_pruned_by_sq8(visited->query_sq8, nb2, current_tau,
+                                           model, config, telem))
+                {
                     continue;
                 }
 
@@ -2341,6 +2489,17 @@ static int knn_cross_explore_graph_frontier(
                 continue;
             }
 
+            double sq8_tau = current_tau;
+            if (best_seed_dist != NULL && *best_seed_dist > sq8_tau)
+            {
+                sq8_tau = *best_seed_dist;
+            }
+            if (is_graph_pruned_by_sq8(visited->query_sq8, nb_id, sq8_tau,
+                                       model, config, telem))
+            {
+                continue;
+            }
+
             if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
             {
                 telem->framedist_calls++;
@@ -2505,6 +2664,12 @@ static int knn_cross_explore_graph_frontier(
                     (config->rlim_cutoff > 0.0 && lb_edge >= config->rlim_cutoff))
                 {
                     telem->graph_edges_pruned++;
+                    continue;
+                }
+
+                if (is_graph_pruned_by_sq8(visited->query_sq8, nb_id, current_tau,
+                                           model, config, telem))
+                {
                     continue;
                 }
 
@@ -2674,6 +2839,12 @@ static void knn_cross_eval_intra_cluster(
                     cand_id, d_anchor_target, r_cand, 0.0, min_d_anchor,
                     num_seed_pivots, seed_pivot_ids, seed_pivot_dists,
                     model, tau_eff, config->rlim_cutoff, telem))
+            {
+                continue;
+            }
+
+            if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                        model, config, telem))
             {
                 continue;
             }
@@ -2887,6 +3058,12 @@ static void knn_cross_eval_inter_clusters(
                     cand_id, d_anchor, r_cand, dcc_best, min_d_anchor,
                     num_seed_pivots, seed_pivot_ids, seed_pivot_dists,
                     model, tau_eff, config->rlim_cutoff, telem))
+            {
+                continue;
+            }
+
+            if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                        model, config, telem))
             {
                 continue;
             }
@@ -3390,6 +3567,9 @@ int knn_run_search(
     uint64_t global_telem_containment = 0;
     uint64_t global_telem_cand = 0;
     uint64_t global_telem_traj = 0;
+    uint64_t global_telem_sq8_evals = 0;
+    uint64_t global_telem_sq8_pruned = 0;
+    uint64_t global_telem_sq8_graph_pruned = 0;
 
 #ifdef _OPENMP
 #pragma omp parallel reduction(+:global_telem_calls, global_telem_l0, global_telem_l1, \
@@ -3397,7 +3577,9 @@ int knn_run_search(
                                  global_telem_recip, global_telem_graph_seeds,          \
                                  global_telem_graph_edges, global_telem_multi_pivot,    \
                                  global_telem_angular, global_telem_containment,        \
-                                 global_telem_cand, global_telem_traj)
+                                 global_telem_cand, global_telem_traj,                  \
+                                 global_telem_sq8_evals, global_telem_sq8_pruned,      \
+                                 global_telem_sq8_graph_pruned)
 #endif
     {
         KnnFrameReader thread_cand_reader;
@@ -3414,6 +3596,8 @@ int knn_run_search(
             malloc((size_t)model->frame_elements * elem_size);
         void *cand_buffer =
             malloc((size_t)model->frame_elements * elem_size);
+        uint8_t *query_sq8 =
+            config->use_sq8 ? (uint8_t *)malloc((size_t)model->frame_elements) : NULL;
         double *anchor_dists =
             (double *)malloc((size_t)model->num_clusters * sizeof(double));
         ClusterScore *scores_buf =
@@ -3431,6 +3615,7 @@ int knn_run_search(
         KnnVisitedTracker visited;
         visited.tags = (uint32_t *)calloc((size_t)N_cand, sizeof(uint32_t));
         visited.epoch = 1;
+        visited.query_sq8 = query_sq8;
 
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic, 32)
@@ -3452,6 +3637,20 @@ int knn_run_search(
 
             if (knn_reader_read_frame(active_qreader, i, query_buffer) == 0)
             {
+                if (config->use_sq8 && query_sq8 != NULL)
+                {
+                    if (model->is_double)
+                    {
+                        sq8_quantize_double(
+                            (const double *)query_buffer, query_sq8, &model->sq8_params);
+                    }
+                    else
+                    {
+                        sq8_quantize_float(
+                            (const float *)query_buffer, query_sq8, &model->sq8_params);
+                    }
+                }
+
                 if (is_cross_dataset)
                 {
                     knn_search_cross_dataset_frame(
@@ -3510,10 +3709,18 @@ int knn_run_search(
         global_telem_containment += thread_telem.global_containment_hits;
         global_telem_cand += thread_telem.total_candidates_considered;
         global_telem_traj += thread_telem.trajectory_warmstarts;
+        global_telem_sq8_evals += thread_telem.sq8_evaluations;
+        global_telem_sq8_pruned += thread_telem.sq8_members_pruned;
+        global_telem_sq8_graph_pruned += thread_telem.sq8_graph_pruned;
 
         if (visited.tags != NULL)
         {
             free(visited.tags);
+        }
+
+        if (query_sq8 != NULL)
+        {
+            free(query_sq8);
         }
 
         free(scores_buf);
@@ -3580,6 +3787,9 @@ int knn_run_search(
     telemetry->angular_pruned = global_telem_angular;
     telemetry->global_containment_hits = global_telem_containment;
     telemetry->trajectory_warmstarts = global_telem_traj;
+    telemetry->sq8_evaluations = global_telem_sq8_evals;
+    telemetry->sq8_members_pruned = global_telem_sq8_pruned;
+    telemetry->sq8_graph_pruned = global_telem_sq8_graph_pruned;
     telemetry->total_candidates_considered = global_telem_cand;
     telemetry->time_search_ms = (end_time.tv_sec - start_time.tv_sec) * 1000.0 +
                                 (end_time.tv_nsec - start_time.tv_nsec) / 1000000.0;

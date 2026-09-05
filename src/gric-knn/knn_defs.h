@@ -6,6 +6,7 @@
  * @brief Core data structures and configuration types for the gric-knn engine.
  */
 
+#include "scalar_quant.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -90,6 +91,10 @@ typedef struct
     int             approx_mode;       /**< 1 to enable Fast Approximate Graph Search */
     int             ef_search;         /**< Search candidate pool size (default: 2*k in approx) */
     int             use_double;        /**< 1 to run computations in double precision */
+    int             use_sq8;           /**< 1 to enable 8-bit scalar quantization filtering */
+    char           *sq8_save_path;     /**< Optional path to save .sq8 sidecar file */
+    char           *sq8_load_path;     /**< Optional path to load .sq8 sidecar file */
+    int             sq8_approx;        /**< 1 to relax lower bounds with epsilon */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -110,6 +115,9 @@ typedef struct
     uint64_t global_containment_hits;
     uint64_t framedist_calls;
     uint64_t trajectory_warmstarts;
+    uint64_t sq8_evaluations;
+    uint64_t sq8_members_pruned;
+    uint64_t sq8_graph_pruned;
     double   time_load_ms;
     double   time_search_ms;
     double   time_write_ms;
@@ -140,6 +148,8 @@ typedef struct
     float           *graph_mutual_dists;  /**< [N x (graph_k * (graph_k - 1) / 2)] mutual dists */
     const void     **anchor_ptrs;         /**< [M] array of anchor pointers */
     double          *cluster_radii;       /**< [M] array of cluster radii */
+    uint8_t         *sq8_dataset_buffer;  /**< [N x D] resident 8-bit quantized dataset */
+    SQ8Params        sq8_params;          /**< Calibration parameters for SQ8 */
 } KnnModel;
 
 /** Per-query result structure containing top-k neighbors */
@@ -157,8 +167,9 @@ typedef struct
  */
 typedef struct
 {
-    uint32_t *tags;
-    uint32_t  epoch;
+    uint32_t       *tags;
+    uint32_t        epoch;
+    const uint8_t  *query_sq8; /**< Quantized representation of active query frame */
 } KnnVisitedTracker;
 
 /**

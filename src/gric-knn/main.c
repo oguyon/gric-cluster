@@ -318,6 +318,39 @@ int main(
         {
             config.use_double = 1;
         }
+        else if (strcmp(argv[arg_idx], "-sq8") == 0 ||
+                 strcmp(argv[arg_idx], "--sq8") == 0)
+        {
+            config.use_sq8 = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-sq8-save") == 0 ||
+                 strcmp(argv[arg_idx], "--sq8-save") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -sq8-save requires a filepath argument\n");
+                return 1;
+            }
+            config.use_sq8 = 1;
+            config.sq8_save_path = argv[++arg_idx];
+        }
+        else if (strcmp(argv[arg_idx], "-sq8-load") == 0 ||
+                 strcmp(argv[arg_idx], "--sq8-load") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -sq8-load requires a filepath argument\n");
+                return 1;
+            }
+            config.use_sq8 = 1;
+            config.sq8_load_path = argv[++arg_idx];
+        }
+        else if (strcmp(argv[arg_idx], "-sq8-approx") == 0 ||
+                 strcmp(argv[arg_idx], "--sq8-approx") == 0)
+        {
+            config.use_sq8 = 1;
+            config.sq8_approx = 1;
+        }
         else if (strcmp(argv[arg_idx], "-v") == 0)
         {
             config.verbose_level = 2;
@@ -438,6 +471,11 @@ int main(
     {
         printf("  Search Pool:   ef_search = %d\n", config.ef_search);
     }
+    if (config.use_sq8)
+    {
+        printf("  SQ8 Filtering: Enabled (%s)\n",
+               config.sq8_approx ? "Relaxed Approx Mode" : "Exact Lower-Bound Mode");
+    }
     printf("  Precision:     %s\n",
            config.use_double ? "64-bit Double Precision" : "32-bit Single Precision (Default)");
     printf("\n");
@@ -450,6 +488,16 @@ int main(
     {
         fprintf(stderr, "Error: Failed to load cluster model from '%s'\n", config.cluster_dir);
         return 1;
+    }
+
+    if (config.use_sq8)
+    {
+        if (knn_model_build_or_load_sq8(&model, &config) != 0)
+        {
+            fprintf(stderr, "Error: Failed to initialize SQ8 dataset buffer\n");
+            knn_model_free(&model);
+            return 1;
+        }
     }
 
     clock_gettime(CLOCK_MONOTONIC, &load_end);
@@ -516,6 +564,19 @@ int main(
     printf("  Level 1 Clusters Pruned:   %lu\n", (unsigned long)telemetry.level1_clusters_pruned);
     printf("  Level 2 Anchors Pruned:    %lu\n", (unsigned long)telemetry.level2_anchors_pruned);
     printf("  Level 3 Annular Pruned:    %lu\n", (unsigned long)telemetry.level3_annular_pruned);
+    if (config.use_sq8)
+    {
+        uint64_t total_sq8_pruned = telemetry.sq8_members_pruned +
+                                    telemetry.sq8_graph_pruned;
+        printf("  SQ8 Evaluations:           %lu\n",
+               (unsigned long)telemetry.sq8_evaluations);
+        printf("  SQ8 Lower-Bound Pruned:    %lu\n",
+               (unsigned long)total_sq8_pruned);
+        printf("  SQ8 Member Pruned:         %lu\n",
+               (unsigned long)telemetry.sq8_members_pruned);
+        printf("  SQ8 Graph Pruned:          %lu\n",
+               (unsigned long)telemetry.sq8_graph_pruned);
+    }
     if (telemetry.graph_seeds_evaluated > 0)
     {
         printf("  Graph Seeds Evaluated:     %lu\n",

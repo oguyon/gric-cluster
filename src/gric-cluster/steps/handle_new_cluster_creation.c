@@ -178,6 +178,32 @@ static void init_new_cluster_distances(
  *
  * Return: Cluster index assigned to the new frame, or -2 if stop signal is triggered.
  */
+static void assign_new_cluster_anchor(
+    ClusterState  *state,
+    ClusterConfig *config,
+    int            cl_idx,
+    Frame         *current_frame)
+{
+    state->clusters[cl_idx].anchor = *current_frame;
+    if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
+    {
+        long dim = current_frame->width * current_frame->height;
+        state->clusters[cl_idx].anchor_sq8 = (uint8_t *)malloc((size_t)dim);
+        if (state->clusters[cl_idx].anchor_sq8 != NULL)
+        {
+            memcpy(state->clusters[cl_idx].anchor_sq8, state->current_frame_sq8,
+                   (size_t)dim);
+        }
+    }
+    else
+    {
+        state->clusters[cl_idx].anchor_sq8 = NULL;
+    }
+    current_frame->data = NULL;
+    state->clusters[cl_idx].id = cl_idx;
+    state->clusters[cl_idx].prob = 1.0;
+}
+
 int handle_new_cluster_creation(
     ClusterConfig *config,
     ClusterState  *state,
@@ -190,10 +216,7 @@ int handle_new_cluster_creation(
     if (state->num_clusters < config->algo.maxnbclust)
     {
         int assigned_cluster = state->num_clusters;
-        state->clusters[state->num_clusters].anchor = *current_frame;
-        current_frame->data = NULL;
-        state->clusters[state->num_clusters].id = state->num_clusters;
-        state->clusters[state->num_clusters].prob = 1.0;
+        assign_new_cluster_anchor(state, config, state->num_clusters, current_frame);
 
         init_new_cluster_distances(config, state, state->num_clusters,
                                    temp_indices, temp_dists, *temp_count);
@@ -283,10 +306,7 @@ int handle_new_cluster_creation(
                 (*prev_assigned_cluster)--;
             }
             int assigned_cluster = state->num_clusters;
-            state->clusters[state->num_clusters].anchor = *current_frame;
-            current_frame->data = NULL;
-            state->clusters[state->num_clusters].id = state->num_clusters;
-            state->clusters[state->num_clusters].prob = 1.0;
+            assign_new_cluster_anchor(state, config, state->num_clusters, current_frame);
 
             init_new_cluster_distances(config, state, state->num_clusters,
                                        temp_indices, temp_dists, *temp_count);
@@ -371,10 +391,7 @@ int handle_new_cluster_creation(
             }
 
             int assigned_cluster = state->num_clusters;
-            state->clusters[state->num_clusters].anchor = *current_frame;
-            current_frame->data = NULL;
-            state->clusters[state->num_clusters].id = state->num_clusters;
-            state->clusters[state->num_clusters].prob = 1.0;
+            assign_new_cluster_anchor(state, config, state->num_clusters, current_frame);
 
             init_new_cluster_distances(config, state, state->num_clusters,
                                        temp_indices, temp_dists, *temp_count);

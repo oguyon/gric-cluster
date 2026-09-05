@@ -8,6 +8,7 @@
  */
 
 #include "common.h"
+#include "scalar_quant.h"
 #include <signal.h>
 #include <stdio.h>
 
@@ -76,9 +77,11 @@ typedef struct
     int    sparse_dcc_extra_evals;  /**< Extra inter-cluster measurements per new cluster */
     int    soft_bayesian_mode;      /**< 1 to enable soft Bayesian updates */
     double soft_bayesian_sigma_coeff; /**< Coefficient multiplying rlim for sigma */
-    int    disable_pass2;           /**< 1 to disable Pass 2 fusion (tuple prediction) */
-    int    xtile_mode;              /**< 1 to enable live cross-tile prior injection */
-    double xtile_decay;             /**< Decay coefficient for CPT history (0.0 to 1.0] */
+    int       disable_pass2;           /**< 1 to disable Pass 2 fusion (tuple prediction) */
+    int       xtile_mode;              /**< 1 to enable live cross-tile prior injection */
+    double    xtile_decay;             /**< Decay coefficient for CPT history (0.0 to 1.0] */
+    int       use_sq8;                 /**< 1 to enable 8-bit scalar quantization pruning */
+    SQ8Params sq8_params;              /**< Uniform scalar quantization parameters */
 } ConfigOptim;
 
 /** Cross-tile injection callback signature. */
@@ -171,6 +174,8 @@ typedef struct
     uint64_t pred_same_as_last; /**< Frames where 1st pred == previous cluster */
     uint64_t dcc_entries_populated; /**< Populated exact inter-cluster distance pairs */
     uint64_t dcc_pairs_total;       /**< Total possible inter-cluster pairs K*(K-1)/2 */
+    uint64_t sq8_evals;             /**< Cluster candidates evaluated with SQ8 lower bound */
+    uint64_t sq8_pruned;            /**< Cluster checks pruned by SQ8 lower bound */
 } ClusterTelemetry;
 
 // Candidate structure for sorting
@@ -230,10 +235,12 @@ typedef struct
     long             *transition_matrix;
     ClusterTelemetry  telemetry;
     ClusterScratch    scratch;
-    void             *shm_ptr;
-    CrossTileHookFn   cross_tile_hook;  /**< Hook callback for cross-tile updates */
-    void             *cross_tile_ctx;   /**< Callback context */
-    struct TraceBuffer *trace;          /**< Explain trace buffer (NULL = disabled) */
+    void               *shm_ptr;
+    CrossTileHookFn     cross_tile_hook;    /**< Hook callback for cross-tile updates */
+    void               *cross_tile_ctx;     /**< Callback context */
+    struct TraceBuffer *trace;              /**< Explain trace buffer (NULL = disabled) */
+    uint8_t            *current_frame_sq8;  /**< Scratch buffer for quantized current frame */
+    int                 sq8_calibrated;     /**< 1 if global SQ8 params are calibrated */
 } ClusterState;
 
 /** Minimum cluster count for OpenMP parallelization of pruning loops. */

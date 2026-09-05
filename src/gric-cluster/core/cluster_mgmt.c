@@ -120,6 +120,11 @@ void remove_cluster(
     {
         free(state->clusters[index_to_remove].anchor.data);
     }
+    if (state->clusters[index_to_remove].anchor_sq8)
+    {
+        free(state->clusters[index_to_remove].anchor_sq8);
+        state->clusters[index_to_remove].anchor_sq8 = NULL;
+    }
     // Shift clusters down
     for (int cl_idx = index_to_remove; cl_idx < state->num_clusters - 1; cl_idx++)
     {

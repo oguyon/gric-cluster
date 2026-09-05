@@ -71,6 +71,43 @@ int cluster_frame(
     long start_dcc_calls = state->telemetry.framedist_calls_intercluster;
     int  temp_count = 0;
 
+    if (config->optim.use_sq8)
+    {
+        long frame_dim = current_frame->width * current_frame->height;
+        if (state->current_frame_sq8 == NULL)
+        {
+            state->current_frame_sq8 = (uint8_t *)malloc((size_t)frame_dim);
+        }
+        if (!state->sq8_calibrated)
+        {
+            if (current_frame->is_double)
+            {
+                sq8_calibrate_double(&config->optim.sq8_params,
+                                     (const double *)current_frame->data,
+                                     frame_dim, frame_dim);
+            }
+            else
+            {
+                sq8_calibrate_float(&config->optim.sq8_params,
+                                    (const float *)current_frame->data,
+                                    frame_dim, frame_dim);
+            }
+            state->sq8_calibrated = 1;
+        }
+        if (current_frame->is_double)
+        {
+            sq8_quantize_double((const double *)current_frame->data,
+                                state->current_frame_sq8,
+                                &config->optim.sq8_params);
+        }
+        else
+        {
+            sq8_quantize_float((const float *)current_frame->data,
+                               state->current_frame_sq8,
+                               &config->optim.sq8_params);
+        }
+    }
+
     // Step 1: Base case setup.
     // If no clusters exist yet, the very first ingested frame serves as the anchor frame
     // for Cluster 0, initializing our clustering space.
@@ -96,6 +133,7 @@ int cluster_frame(
         double dfc = 0.0;
         int first_iter = 1;
         int last_cj = -1;
+        int need_prune_update = 0;
         int meas_idx = 0;  /* measurement depth within this frame */
 
         int *pred_candidates = NULL;
@@ -215,7 +253,7 @@ int cluster_frame(
                     (step_end.tv_nsec - step_start.tv_nsec) / 1000000.0;
                 first_iter = 0;
             }
-            else
+            else if (need_prune_update && last_cj >= 0)
             {
                 struct timespec step_start, step_end;
                 clock_gettime(CLOCK_MONOTONIC, &step_start);
@@ -225,6 +263,7 @@ int cluster_frame(
                 state->telemetry.time_step_3a +=
                     (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
                     (step_end.tv_nsec - step_start.tv_nsec) / 1000000.0;
+                need_prune_update = 0;
             }
 
             if (state->cross_tile_hook != NULL)
@@ -285,6 +324,26 @@ int cluster_frame(
                 break;
             }
 
+            // Fast SQ8 metric lower-bound pre-filtering
+            if (config->optim.use_sq8 &&
+                state->clusters[cj].anchor_sq8 != NULL &&
+                state->current_frame_sq8 != NULL)
+            {
+                state->telemetry.sq8_evals++;
+                double d_lb = sq8_compute_lower_bound(
+                    state->current_frame_sq8,
+                    state->clusters[cj].anchor_sq8,
+                    &config->optim.sq8_params,
+                    0.0);
+                if (d_lb > config->algo.rlim)
+                {
+                    state->telemetry.sq8_pruned++;
+                    state->telemetry.clusters_pruned++;
+                    state->scratch.clmembflag[cj] = 0;
+                    continue;
+                }
+            }
+
             // Check if we are measuring a prediction candidate
             int is_prediction = 0;
             if (pred_candidates)
@@ -330,6 +389,7 @@ int cluster_frame(
             }
 
             last_cj = cj;
+            need_prune_update = 1;
         }
 
         /* Record prediction hit if 1st candidate was assigned */

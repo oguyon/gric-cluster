@@ -555,6 +555,16 @@ void run_clustering(
         printf("\n");
     }
 
+    /* SQ8 diagnostics */
+    if (config->optim.use_sq8)
+    {
+        printf("Scalar Quantization (SQ8) Diagnostics:\n");
+        printf("  SQ8 Evaluated:  %8lu\n",
+               (unsigned long)state->telemetry.sq8_evals);
+        printf("  SQ8 Pruned:     %8lu\n\n",
+               (unsigned long)state->telemetry.sq8_pruned);
+    }
+
     print_clustering_metrics(state, -1);
     printf("\n");
 
@@ -577,6 +587,23 @@ void run_clustering(
             {
                 printf("  Count %4d: %8ld samples, %12ld samples pruned away\n", k,
                        state->telemetry.dist_counts[k], state->telemetry.pruned_counts_by_dist[k]);
+            }
+        }
+    }
+
+    if (state->current_frame_sq8)
+    {
+        free(state->current_frame_sq8);
+        state->current_frame_sq8 = NULL;
+    }
+    if (state->clusters)
+    {
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            if (state->clusters[i].anchor_sq8)
+            {
+                free(state->clusters[i].anchor_sq8);
+                state->clusters[i].anchor_sq8 = NULL;
             }
         }
     }
