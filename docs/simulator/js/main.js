@@ -4246,7 +4246,23 @@
         }
       }
 
-      // 4. Spectral Variance
+      // 4. Pruning
+      if (raw.pruning) {
+        if (typeof raw.pruning.te3_prune_rate === 'number') {
+          norm.te3_prune_rate = raw.pruning.te3_prune_rate;
+        }
+        if (typeof raw.pruning.te4_marginal_rate === 'number') {
+          norm.te4_marginal_rate = raw.pruning.te4_marginal_rate;
+        }
+        if (typeof raw.pruning.te5_marginal_rate === 'number') {
+          norm.te5_marginal_rate = raw.pruning.te5_marginal_rate;
+        }
+        if (raw.pruning.recommended_mode) {
+          norm.recommended_prune_mode = String(raw.pruning.recommended_mode).toUpperCase();
+        }
+      }
+
+      // 5. Spectral Variance
       if (raw.spectral) {
         if (Array.isArray(raw.spectral.variance_ordering)) {
           norm.perm_dim = raw.spectral.variance_ordering;
@@ -4464,6 +4480,155 @@
         if (maxVal[d] > gMax) gMax = maxVal[d];
       }
 
+      function getCoord(pt, d) {
+        if (dim <= 3) {
+          return (d === 0) ? pt.x : ((d === 1) ? pt.y : (pt.z || 0));
+        }
+        return (pt.coords) ? (pt.coords[d] || 0) : ((d === 0) ? pt.x : 0);
+      }
+      function ptDist(ptA, ptB) {
+        let sum = 0;
+        for (let d = 0; d < dim; d++) {
+          const diff = getCoord(ptA, d) - getCoord(ptB, d);
+          sum += diff * diff;
+        }
+        return Math.sqrt(sum);
+      }
+
+      /* Empirical Pruning Evaluation */
+      let te3Rate = 0;
+      let te4Marg = 0;
+      let te5Marg = 0;
+      let te4_enabled = 0;
+      let te5_enabled = 0;
+      let recommended_prune_mode = '3P';
+
+      if (N >= 6) {
+        const kAnchors = Math.min(32, Math.max(4, Math.floor(N / 3)));
+        const anchorIndices = [];
+        for (let k = 0; k < kAnchors; k++) {
+          const frac = (kAnchors > 1) ? k / (kAnchors - 1) : 0;
+          anchorIndices.push(Math.floor(frac * (N - 1)));
+        }
+
+        const dcc = new Float64Array(kAnchors * kAnchors);
+        for (let i = 0; i < kAnchors; i++) {
+          const pA = points[anchorIndices[i]];
+          for (let j = i + 1; j < kAnchors; j++) {
+            const pB = points[anchorIndices[j]];
+            const dist = ptDist(pA, pB);
+            dcc[i * kAnchors + j] = dist;
+            dcc[j * kAnchors + i] = dist;
+          }
+        }
+
+        const mQueries = Math.min(64, N);
+        let totalCandidates = 0;
+        let te3Pruned = 0;
+        let te4Pruned = 0;
+        let te5Pruned = 0;
+        const dfc = new Float64Array(kAnchors);
+
+        for (let m = 0; m < mQueries; m++) {
+          const frac = (mQueries > 1) ? m / (mQueries - 1) : 0;
+          const qPt = points[Math.floor(frac * (N - 1))];
+
+          for (let k = 0; k < kAnchors; k++) {
+            dfc[k] = ptDist(qPt, points[anchorIndices[k]]);
+          }
+
+          let a1 = 0;
+          let minDfc = dfc[0];
+          for (let k = 1; k < kAnchors; k++) {
+            if (dfc[k] < minDfc) {
+              minDfc = dfc[k];
+              a1 = k;
+            }
+          }
+
+          const unpruned = [];
+          for (let k = 0; k < kAnchors; k++) {
+            if (k === a1) continue;
+            totalCandidates++;
+            const te3Bound = Math.abs(dfc[a1] - dcc[a1 * kAnchors + k]);
+            if (te3Bound > d10) {
+              te3Pruned++;
+            } else {
+              unpruned.push(k);
+            }
+          }
+
+          if (unpruned.length > 1) {
+            const a2 = unpruned[0];
+            const remaining = [];
+            for (let u = 1; u < unpruned.length; u++) {
+              const k = unpruned[u];
+              const te3Bound2 = Math.abs(dfc[a2] - dcc[a2 * kAnchors + k]);
+              if (te3Bound2 > d10) continue;
+
+              if (typeof calc_min_dist_4pt === 'function') {
+                const minD4 = calc_min_dist_4pt(
+                  dfc[a1], dfc[a2], dcc[a1 * kAnchors + a2],
+                  dcc[a1 * kAnchors + k], dcc[a2 * kAnchors + k]
+                );
+                if (minD4 > d10) {
+                  te4Pruned++;
+                  continue;
+                }
+              }
+              remaining.push(k);
+            }
+
+            if (remaining.length > 1 && dim >= 3 &&
+                typeof calc_min_dist_5pt === 'function') {
+              const a3 = remaining[0];
+              for (let u = 1; u < remaining.length; u++) {
+                const k = remaining[u];
+                const te3Bound3 = Math.abs(dfc[a3] - dcc[a3 * kAnchors + k]);
+                if (te3Bound3 > d10) continue;
+                const minD4_3 = calc_min_dist_4pt(
+                  dfc[a1], dfc[a3], dcc[a1 * kAnchors + a3],
+                  dcc[a1 * kAnchors + k], dcc[a3 * kAnchors + k]
+                );
+                if (minD4_3 > d10) continue;
+
+                const minD5 = calc_min_dist_5pt(
+                  dfc[a1], dfc[a2], dfc[a3],
+                  dcc[k * kAnchors + a1], dcc[k * kAnchors + a2], dcc[k * kAnchors + a3],
+                  dcc[a1 * kAnchors + a2], dcc[a1 * kAnchors + a3],
+                  dcc[a2 * kAnchors + a3]
+                );
+                if (minD5 > d10) {
+                  te5Pruned++;
+                }
+              }
+            }
+          }
+        }
+
+        te3Rate = (totalCandidates > 0) ? (te3Pruned / totalCandidates) : 0;
+        te4Marg = (totalCandidates > 0) ? (te4Pruned / totalCandidates) : 0;
+        te5Marg = (totalCandidates > 0) ? (te5Pruned / totalCandidates) : 0;
+
+        const costDist = 2.0 * dim;
+        const benefitTe4 = te4Marg * costDist - 40.0;
+        const benefitTe5 = te5Marg * costDist - 120.0;
+
+        if (dim >= 8 && benefitTe5 > 0 && te5Marg >= 0.03) {
+          te4_enabled = 1;
+          te5_enabled = 1;
+          recommended_prune_mode = '5P';
+        } else if (dim >= 4 && benefitTe4 > 0 && te4Marg >= 0.03) {
+          te4_enabled = 1;
+          te5_enabled = 0;
+          recommended_prune_mode = '4P';
+        } else {
+          te4_enabled = 0;
+          te5_enabled = 0;
+          recommended_prune_mode = '3P';
+        }
+      }
+
       if (onProgress) {
         onProgress(100, 'Profile calibration complete');
       }
@@ -4481,13 +4646,18 @@
         pred_enabled: (continuityRatio < 0.6) ? 1 : 0,
         pred_len: 2,
         continuity_ratio: parseFloat(continuityRatio.toFixed(3)),
-        use_sq8: 1,
+        use_sq8: (dim >= 32) ? 1 : 0,
         sq8_params: {
           min_val: gMin,
           max_val: gMax,
           scale: (gMax > gMin) ? (gMax - gMin) / 255.0 : 1.0 / 255.0
         },
-        te4_enabled: 1,
+        te4_enabled: te4_enabled,
+        te5_enabled: te5_enabled,
+        te3_prune_rate: parseFloat(te3Rate.toFixed(4)),
+        te4_marginal_rate: parseFloat(te4Marg.toFixed(4)),
+        te5_marginal_rate: parseFloat(te5Marg.toFixed(4)),
+        recommended_prune_mode: recommended_prune_mode,
         perm_dim: perm_dim
       };
     }
@@ -4565,15 +4735,13 @@
         if (optSq8) optSq8.classList.toggle('active', clusterUseSq8);
       }
 
-      if (profile.te4_enabled) {
-        pruneMode = '4P';
-        ['3P', '4P', '5P'].forEach(other => {
-          const el = document.getElementById(`prune${other}`);
-          if (el) el.classList.remove('active');
-        });
-        const el4P = document.getElementById('prune4P');
-        if (el4P) el4P.classList.add('active');
-      }
+      const targetPrune = profile.recommended_prune_mode ||
+        (profile.te5_enabled ? '5P' : (profile.te4_enabled ? '4P' : '3P'));
+      pruneMode = targetPrune;
+      ['3P', '4P', '5P'].forEach(other => {
+        const el = document.getElementById(`prune${other}`);
+        if (el) el.classList.toggle('active', other === targetPrune);
+      });
 
       if (profile.perm_dim && profile.perm_dim.length >= 3 && currentDim > 3) {
         if (typeof setPlottingDimensions === 'function') {

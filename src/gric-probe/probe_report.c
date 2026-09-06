@@ -102,6 +102,54 @@ void probe_report_print_terminal(
                 ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
     }
 
+    /* Empirical Metric Pruning Efficiency */
+    fprintf(out, "\n%s=== METRIC PRUNING EFFICIENCY (rlim = %.4f) ===%s\n",
+            ANSI_BOLD, p->rlim_balanced, ANSI_COLOR_RESET);
+    fprintf(out, "  * Standard 3-Point (TE3): %s%.1f%%%s pruned (Baseline, cost: ~2 FLOPs)\n",
+            ANSI_BOLD_GREEN, p->te3_prune_rate * 100.0, ANSI_COLOR_RESET);
+
+    double cost_dist = 2.0 * (double)p->dim;
+    double benefit_te4 = p->te4_marginal_rate * cost_dist - 40.0;
+    if (p->te4_enabled)
+    {
+        fprintf(out,
+                "  * 4-Point Pruning (TE4):  %s+%.1f%%%s marginal (%sNet Gain: +%.1f FLOPs%s)\n",
+                ANSI_BOLD_GREEN, p->te4_marginal_rate * 100.0, ANSI_COLOR_RESET,
+                ANSI_BOLD_GREEN, benefit_te4, ANSI_COLOR_RESET);
+    }
+    else
+    {
+        fprintf(out,
+                "  * 4-Point Pruning (TE4):  +%.1f%% marginal "
+                "(%sNot recommended: net %.1f FLOPs%s)\n",
+                p->te4_marginal_rate * 100.0,
+                ANSI_COLOR_YELLOW, benefit_te4, ANSI_COLOR_RESET);
+    }
+
+    if (p->dim >= 3)
+    {
+        double benefit_te5 = p->te5_marginal_rate * cost_dist - 120.0;
+        if (p->te5_enabled)
+        {
+            fprintf(out,
+                    "  * 5-Point Pruning (TE5):  %s+%.1f%%%s marginal "
+                    "(%sNet Gain: +%.1f FLOPs%s)\n",
+                    ANSI_BOLD_GREEN, p->te5_marginal_rate * 100.0, ANSI_COLOR_RESET,
+                    ANSI_BOLD_GREEN, benefit_te5, ANSI_COLOR_RESET);
+        }
+        else
+        {
+            fprintf(out,
+                    "  * 5-Point Pruning (TE5):  +%.1f%% marginal (%sNot recommended%s)\n",
+                    p->te5_marginal_rate * 100.0,
+                    ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
+        }
+    }
+    fprintf(out, "  * Recommended Prune Mode: %s%s%s\n",
+            ANSI_BOLD_CYAN,
+            p->recommended_prune_mode[0] ? p->recommended_prune_mode : "3P",
+            ANSI_COLOR_RESET);
+
     /* Recommended Parameters */
     fprintf(out, "\n%s=== RECOMMENDED CLUSTERING PRESETS ===%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
     fprintf(out, "  * %sBalanced (Default):%s  rlim = %s%.4f%s (-preset balanced)\n",
@@ -165,4 +213,8 @@ void probe_report_print_env(
     fprintf(out, "export GRIC_USE_SQ8=%d\n", p->use_sq8);
     fprintf(out, "export GRIC_PREDICT=%d\n", p->pred_enabled);
     fprintf(out, "export GRIC_PRED_H=%d\n", p->pred_h);
+    fprintf(out, "export GRIC_PRUNE_MODE=\"%s\"\n",
+            p->recommended_prune_mode[0] ? p->recommended_prune_mode : "3P");
+    fprintf(out, "export GRIC_TE4=%d\n", p->te4_enabled);
+    fprintf(out, "export GRIC_TE5=%d\n", p->te5_enabled);
 }

@@ -56,6 +56,12 @@ typedef struct
     int      te5_enabled;            /**< 1 if 5-point pruning recommended */
     int      ncpu;                   /**< Recommended CPU thread count */
 
+    /* Empirical Metric Pruning Telemetry */
+    double   te3_prune_rate;         /**< Fraction of candidates pruned by 3-point ineq */
+    double   te4_marginal_rate;      /**< Marginal fraction pruned by 4-point ineq */
+    double   te5_marginal_rate;      /**< Marginal fraction pruned by 5-point ineq */
+    char     recommended_prune_mode[8]; /**< Recommended mode ("3P", "4P", "5P") */
+
     /* Distance Distribution Spectrum */
     double   dist_min;               /**< Minimum measured pairwise distance */
     double   dist_p01;               /**< 1st percentile distance */

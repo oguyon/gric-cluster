@@ -13,6 +13,7 @@
 #include "gric_bin_io.h"
 #include "gric_bin_header.h"
 #include "scalar_quant.h"
+#include "cluster_locator.h"
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
@@ -393,6 +394,273 @@ static float *load_fits_data(
 #endif
 
 /**
+ * probe_profile_pruning() - Empirically evaluate TE3, TE4, and TE5 pruning.
+ * @data:       Dataset samples array [num_frames * dim].
+ * @num_frames: Total frame count.
+ * @dim:        Dimension count.
+ * @rlim:       Calibrated cluster radius.
+ * @profile:    Pointer to GricProfile to update.
+ */
+static void probe_profile_pruning(
+    const float *restrict data,
+    long                  num_frames,
+    long                  dim,
+    double                rlim,
+    GricProfile          *profile)
+{
+    if (data == NULL || profile == NULL || num_frames < 6 || dim < 1 || rlim <= 0.0)
+    {
+        profile->te3_prune_rate = 0.0;
+        profile->te4_marginal_rate = 0.0;
+        profile->te5_marginal_rate = 0.0;
+        profile->te4_enabled = 0;
+        profile->te5_enabled = 0;
+        strcpy(profile->recommended_prune_mode, "3P");
+        return;
+    }
+
+    /* Choose sample cluster anchor count K (max 32) */
+    int k_anchors = (int)(num_frames / 3);
+    if (k_anchors > 32)
+    {
+        k_anchors = 32;
+    }
+    if (k_anchors < 4)
+    {
+        k_anchors = (num_frames > 4) ? 4 : (int)num_frames;
+    }
+
+    long *anchor_indices = (long *)malloc((size_t)k_anchors * sizeof(long));
+    double *dcc = (double *)malloc((size_t)(k_anchors * k_anchors) * sizeof(double));
+
+    if (anchor_indices == NULL || dcc == NULL)
+    {
+        free(anchor_indices);
+        free(dcc);
+        profile->te4_enabled = 0;
+        profile->te5_enabled = 0;
+        strcpy(profile->recommended_prune_mode, "3P");
+        return;
+    }
+
+    /* Evenly spaced anchors across dataset */
+    for (int k = 0; k < k_anchors; k++)
+    {
+        double frac = (k_anchors > 1) ? (double)k / (double)(k_anchors - 1) : 0.0;
+        anchor_indices[k] = (long)(frac * (double)(num_frames - 1));
+    }
+
+    /* Precompute pairwise inter-anchor distances */
+    for (int i = 0; i < k_anchors; i++)
+    {
+        const float *ai = data + anchor_indices[i] * dim;
+        dcc[i * k_anchors + i] = 0.0;
+        for (int j = i + 1; j < k_anchors; j++)
+        {
+            const float *aj = data + anchor_indices[j] * dim;
+            double sum = 0.0;
+            for (long d = 0; d < dim; d++)
+            {
+                double diff = (double)ai[d] - (double)aj[d];
+                sum += diff * diff;
+            }
+            double dist = sqrt(sum);
+            dcc[i * k_anchors + j] = dist;
+            dcc[j * k_anchors + i] = dist;
+        }
+    }
+
+    /* Choose sample query frames (max 64) */
+    int m_queries = (int)num_frames;
+    if (m_queries > 64)
+    {
+        m_queries = 64;
+    }
+
+    long total_candidates = 0;
+    long te3_pruned = 0;
+    long te4_marginal_pruned = 0;
+    long te5_marginal_pruned = 0;
+
+    double *dfc = (double *)malloc((size_t)k_anchors * sizeof(double));
+    int *unpruned = (int *)malloc((size_t)k_anchors * sizeof(int));
+
+    if (dfc == NULL || unpruned == NULL)
+    {
+        free(anchor_indices);
+        free(dcc);
+        free(dfc);
+        free(unpruned);
+        profile->te4_enabled = 0;
+        profile->te5_enabled = 0;
+        strcpy(profile->recommended_prune_mode, "3P");
+        return;
+    }
+
+    for (int m = 0; m < m_queries; m++)
+    {
+        double frac = (m_queries > 1) ? (double)m / (double)(m_queries - 1) : 0.0;
+        long q_idx = (long)(frac * (double)(num_frames - 1));
+        const float *fq = data + q_idx * dim;
+
+        /* Measure distance from query to all anchors */
+        for (int k = 0; k < k_anchors; k++)
+        {
+            const float *ak = data + anchor_indices[k] * dim;
+            double sum = 0.0;
+            for (long d = 0; d < dim; d++)
+            {
+                double diff = (double)fq[d] - (double)ak[d];
+                sum += diff * diff;
+            }
+            dfc[k] = sqrt(sum);
+        }
+
+        /* Pick first anchor as closest */
+        int a1 = 0;
+        double min_dfc = dfc[0];
+        for (int k = 1; k < k_anchors; k++)
+        {
+            if (dfc[k] < min_dfc)
+            {
+                min_dfc = dfc[k];
+                a1 = k;
+            }
+        }
+
+        /* Evaluate TE3 pruning relative to anchor a1 */
+        int unpruned_count = 0;
+        for (int k = 0; k < k_anchors; k++)
+        {
+            if (k == a1)
+            {
+                continue;
+            }
+            total_candidates++;
+            double te3_bound = fabs(dfc[a1] - dcc[a1 * k_anchors + k]);
+            if (te3_bound > rlim)
+            {
+                te3_pruned++;
+            }
+            else
+            {
+                unpruned[unpruned_count++] = k;
+            }
+        }
+
+        /* If unpruned candidates remain and we have a second anchor, evaluate TE4 */
+        if (unpruned_count > 1)
+        {
+            int a2 = unpruned[0];
+            int remaining_count = 0;
+
+            for (int u = 1; u < unpruned_count; u++)
+            {
+                int k = unpruned[u];
+                /* Check if anchor a2 also prunes k via TE3 */
+                double te3_bound2 = fabs(dfc[a2] - dcc[a2 * k_anchors + k]);
+                if (te3_bound2 > rlim)
+                {
+                    continue;
+                }
+
+                /* Check 4-point pruning (TE4) */
+                double min_d4 = calc_min_dist_4pt(
+                    dfc[a1], dfc[a2], dcc[a1 * k_anchors + a2],
+                    dcc[a1 * k_anchors + k], dcc[a2 * k_anchors + k]);
+                if (min_d4 > rlim)
+                {
+                    te4_marginal_pruned++;
+                }
+                else
+                {
+                    unpruned[remaining_count++] = k;
+                }
+            }
+
+            /* If unpruned candidates remain and dim >= 3, evaluate TE5 */
+            if (remaining_count > 1 && dim >= 3)
+            {
+                int a3 = unpruned[0];
+                for (int u = 1; u < remaining_count; u++)
+                {
+                    int k = unpruned[u];
+                    /* Check TE3 and TE4 with a3 */
+                    double te3_bound3 = fabs(dfc[a3] - dcc[a3 * k_anchors + k]);
+                    if (te3_bound3 > rlim)
+                    {
+                        continue;
+                    }
+                    double min_d4_3 = calc_min_dist_4pt(
+                        dfc[a1], dfc[a3], dcc[a1 * k_anchors + a3],
+                        dcc[a1 * k_anchors + k], dcc[a3 * k_anchors + k]);
+                    if (min_d4_3 > rlim)
+                    {
+                        continue;
+                    }
+
+                    /* Check 5-point pruning (TE5) */
+                    double min_d5 = calc_min_dist_5pt(
+                        dfc[a1], dfc[a2], dfc[a3],
+                        dcc[k * k_anchors + a1], dcc[k * k_anchors + a2],
+                        dcc[k * k_anchors + a3],
+                        dcc[a1 * k_anchors + a2], dcc[a1 * k_anchors + a3],
+                        dcc[a2 * k_anchors + a3]);
+                    if (min_d5 > rlim)
+                    {
+                        te5_marginal_pruned++;
+                    }
+                }
+            }
+        }
+    } // for (int m = 0; m < m_queries; m++)
+
+    double te3_rate = (total_candidates > 0) ?
+        ((double)te3_pruned / (double)total_candidates) : 0.0;
+    double te4_marg = (total_candidates > 0) ?
+        ((double)te4_marginal_pruned / (double)total_candidates) : 0.0;
+    double te5_marg = (total_candidates > 0) ?
+        ((double)te5_marginal_pruned / (double)total_candidates) : 0.0;
+
+    profile->te3_prune_rate = te3_rate;
+    profile->te4_marginal_rate = te4_marg;
+    profile->te5_marginal_rate = te5_marg;
+
+    /* Cost-benefit FLOP trade-off:
+     * Distance calculation cost: ~ 2 * dim FLOPs
+     * TE4 evaluation cost: ~ 40 FLOPs
+     * TE5 evaluation cost: ~ 120 FLOPs
+     */
+    double cost_dist = 2.0 * (double)dim;
+    double benefit_te4 = te4_marg * cost_dist - 40.0;
+    double benefit_te5 = te5_marg * cost_dist - 120.0;
+
+    if (dim >= 8 && benefit_te5 > 0.0 && te5_marg >= 0.03)
+    {
+        profile->te4_enabled = 1;
+        profile->te5_enabled = 1;
+        strcpy(profile->recommended_prune_mode, "5P");
+    }
+    else if (dim >= 4 && benefit_te4 > 0.0 && te4_marg >= 0.03)
+    {
+        profile->te4_enabled = 1;
+        profile->te5_enabled = 0;
+        strcpy(profile->recommended_prune_mode, "4P");
+    }
+    else
+    {
+        profile->te4_enabled = 0;
+        profile->te5_enabled = 0;
+        strcpy(profile->recommended_prune_mode, "3P");
+    }
+
+    free(anchor_indices);
+    free(dcc);
+    free(dfc);
+    free(unpruned);
+}
+
+/**
  * probe_run() - Execute the complete dataset profiling pipeline.
  * @config:  Input probe configuration.
  * @results: Output results container.
@@ -661,9 +929,9 @@ int probe_run(
         results->profile.tiles_y = 1;
     }
 
-    /* Step 9: Acceleration recommendations */
-    results->profile.te4_enabled = (dim >= 3) ? 1 : 0;
-    results->profile.te5_enabled = (dim >= 3) ? 1 : 0;
+    /* Step 9: Empirical metric pruning profiling (TE3 vs TE4 vs TE5) */
+    probe_profile_pruning(data, num_frames, dim, results->profile.rlim_balanced,
+                          &results->profile);
 
 #ifdef _OPENMP
     results->profile.ncpu = omp_get_max_threads();

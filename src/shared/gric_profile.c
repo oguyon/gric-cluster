@@ -43,6 +43,10 @@ void gric_profile_init(
     prof->pred_len = 2;
     prof->pred_h = 1000;
     prof->ncpu = 4;
+    prof->te3_prune_rate = 0.0;
+    prof->te4_marginal_rate = 0.0;
+    prof->te5_marginal_rate = 0.0;
+    strcpy(prof->recommended_prune_mode, "3P");
 
     if (dim > 0)
     {
@@ -150,6 +154,14 @@ int gric_profile_write_json(
     fprintf(fp, "    \"te4\": %s,\n", prof->te4_enabled ? "true" : "false");
     fprintf(fp, "    \"te5\": %s,\n", prof->te5_enabled ? "true" : "false");
     fprintf(fp, "    \"ncpu\": %d\n", prof->ncpu);
+    fprintf(fp, "  },\n");
+
+    fprintf(fp, "  \"pruning\": {\n");
+    fprintf(fp, "    \"te3_prune_rate\": %.4f,\n", prof->te3_prune_rate);
+    fprintf(fp, "    \"te4_marginal_rate\": %.4f,\n", prof->te4_marginal_rate);
+    fprintf(fp, "    \"te5_marginal_rate\": %.4f,\n", prof->te5_marginal_rate);
+    fprintf(fp, "    \"recommended_mode\": \"%s\"\n",
+            prof->recommended_prune_mode[0] ? prof->recommended_prune_mode : "3P");
     fprintf(fp, "  },\n");
 
     fprintf(fp, "  \"distance_spectrum\": {\n");
@@ -387,6 +399,16 @@ int gric_profile_read_json(
     prof->te4_enabled = parse_json_bool(buf, "te4", 0);
     prof->te5_enabled = parse_json_bool(buf, "te5", 0);
     prof->ncpu = (int)parse_json_long(buf, "ncpu", 4);
+
+    prof->te3_prune_rate = parse_json_double(buf, "te3_prune_rate", 0.0);
+    prof->te4_marginal_rate = parse_json_double(buf, "te4_marginal_rate", 0.0);
+    prof->te5_marginal_rate = parse_json_double(buf, "te5_marginal_rate", 0.0);
+    parse_json_string(buf, "recommended_mode", prof->recommended_prune_mode,
+                      sizeof(prof->recommended_prune_mode));
+    if (prof->recommended_prune_mode[0] == '\0')
+    {
+        strcpy(prof->recommended_prune_mode, prof->te4_enabled ? "4P" : "3P");
+    }
 
     prof->dist_min = parse_json_double(buf, "min", 0.0);
     prof->dist_p01 = parse_json_double(buf, "p01", 0.0);

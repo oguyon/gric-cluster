@@ -355,6 +355,7 @@ add_executable(gric-probe
     src/gric-probe/probe_engine.c
     src/gric-probe/probe_report.c
     src/shared/gric_profile.c
+    src/shared/cluster_locator.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
     src/shared/cli_colors.c
