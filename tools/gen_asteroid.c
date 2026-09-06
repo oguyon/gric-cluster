@@ -19,7 +19,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fitsio.h>
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
