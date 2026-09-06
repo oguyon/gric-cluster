@@ -400,16 +400,26 @@ int server_run(
 {
     cli_colors_init();
 
+#ifdef SOCK_CLOEXEC
+    int server_fd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+#else
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+#endif
     if (server_fd < 0)
     {
         fprintf(stderr, "%sError: socket() failed: %s%s\n",
                 ansi_color_red, strerror(errno), ansi_reset);
         return 1;
     }
+#if !defined(SOCK_CLOEXEC) && defined(FD_CLOEXEC)
+    fcntl(server_fd, F_SETFD, FD_CLOEXEC);
+#endif
 
     int opt = 1;
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#ifdef SO_REUSEPORT
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
 
     struct sockaddr_in saddr;
     memset(&saddr, 0, sizeof(saddr));
@@ -508,7 +518,18 @@ int server_run(
         {
             struct sockaddr_in caddr;
             socklen_t clen = sizeof(caddr);
+#if defined(__linux__) && defined(SOCK_CLOEXEC)
+            int client_fd = accept4(
+                server_fd, (struct sockaddr *)&caddr, &clen, SOCK_CLOEXEC);
+#else
             int client_fd = accept(server_fd, (struct sockaddr *)&caddr, &clen);
+#if defined(FD_CLOEXEC)
+            if (client_fd >= 0)
+            {
+                fcntl(client_fd, F_SETFD, FD_CLOEXEC);
+            }
+#endif
+#endif
             if (client_fd >= 0)
             {
                 handle_client_connection(client_fd, config);

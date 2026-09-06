@@ -137,6 +137,7 @@ set(CLUSTER_SRCS
     src/shared/gric_bin_io.c
     src/shared/cluster_locator.c
     src/shared/scalar_quant.c
+    src/shared/gric_profile.c
 )
 
 add_executable(gric-cluster ${CLUSTER_SRCS})
@@ -282,6 +283,7 @@ add_executable(gric-knn
     src/shared/cli_colors.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
+    src/shared/gric_profile.c
 )
 target_include_directories(gric-knn PRIVATE src/gric-knn src/shared src)
 target_link_libraries(gric-knn m)
@@ -346,6 +348,38 @@ add_executable(gric-bin2ascii
     src/shared/cli_colors.c
 )
 target_link_libraries(gric-bin2ascii m)
+
+# gric-probe dataset characterization tool
+add_executable(gric-probe
+    src/gric-probe/main.c
+    src/gric-probe/probe_engine.c
+    src/gric-probe/probe_report.c
+    src/shared/gric_profile.c
+    src/shared/gric_bin_io.c
+    src/shared/scalar_quant.c
+    src/shared/cli_colors.c
+)
+target_include_directories(gric-probe PRIVATE src/gric-probe src/shared src)
+target_link_libraries(gric-probe m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(gric-probe OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(gric-probe ${CFITSIO_LIBRARIES})
+    target_include_directories(gric-probe PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(gric-probe ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(gric-probe PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+
+add_custom_command(
+    TARGET gric-probe POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+            $<TARGET_FILE_NAME:gric-probe>
+            "${CMAKE_CURRENT_BINARY_DIR}/gric-cluster-probe"
+    COMMENT "Creating gric-cluster-probe alias symlink"
+)
 
 if (CFITSIO_FOUND)
     target_compile_definitions(gric-info PRIVATE USE_CFITSIO)

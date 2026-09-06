@@ -497,15 +497,21 @@
       }
       const slR = document.getElementById('sliderRlim');
       if (slR) {
+        if (rlim < parseFloat(slR.min || "0.02")) {
+          slR.min = Math.min(0.001, rlim).toFixed(3);
+        }
         if (rlim > parseFloat(slR.max || "0.30")) {
           slR.max = Math.max(2.00, rlim).toFixed(2);
-        } else if (currentDim <= 3 && rlim <= 0.30) {
+        } else if (currentDim <= 3 && rlim <= 0.30 && rlim >= 0.02) {
           slR.max = "0.30";
         }
         slR.value = rlim;
       }
       const inpR = document.getElementById('inputRlim');
       if (inpR) {
+        if (rlim < parseFloat(inpR.min || "0.001")) {
+          inpR.min = Math.min(0.001, rlim).toFixed(3);
+        }
         if (rlim > parseFloat(inpR.max || "1.000")) {
           inpR.max = Math.max(2.00, rlim).toFixed(2);
         }
@@ -526,10 +532,17 @@
       if (notify && typeof showToast === 'function') {
         showToast(`⚡ Clustering rlim set to ${rlim.toFixed(3)}`);
       }
+      if (typeof updateCliCommand === 'function') {
+        updateCliCommand();
+      }
+      if (typeof updateUI === 'function') {
+        updateUI();
+      }
       if (typeof draw === 'function') {
         draw();
       }
     }
+    window.setClusteringRlim = setClusteringRlim;
 
     // Programmatic noise sigma setter with UI synchronization
     function setNoiseSigma(val, notify = false) {

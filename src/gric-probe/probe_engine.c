@@ -1,0 +1,716 @@
+/**
+ * @file probe_engine.c
+ * @brief Analysis engine for dataset geometry, variance, and parameter tuning.
+ */
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#ifndef _DARWIN_C_SOURCE
+#define _DARWIN_C_SOURCE
+#endif
+#include "probe_engine.h"
+#include "gric_bin_io.h"
+#include "gric_bin_header.h"
+#include "scalar_quant.h"
+#include <ctype.h>
+#include <errno.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <unistd.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#ifdef USE_CFITSIO
+#include <fitsio.h>
+#endif
+
+#ifdef USE_IMAGESTREAMIO
+#include <ImageStreamIO/ImageStreamIO.h>
+#endif
+
+/** Context for sorting dimension indices by descending variance */
+static const double *s_dim_vars = NULL;
+
+static int compare_dim_indices(
+    const void *a,
+    const void *b)
+{
+    long ia = *(const long *)a;
+    long ib = *(const long *)b;
+    double va = s_dim_vars[ia];
+    double vb = s_dim_vars[ib];
+
+    if (va > vb)
+    {
+        return -1;
+    }
+    if (va < vb)
+    {
+        return 1;
+    }
+    return (ia < ib) ? -1 : 1;
+}
+
+static int compare_doubles(
+    const void *a,
+    const void *b)
+{
+    double da = *(const double *)a;
+    double db = *(const double *)b;
+    if (da < db)
+    {
+        return -1;
+    }
+    if (da > db)
+    {
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * load_ascii_data() - Ingest ASCII vector coordinates.
+ */
+static float *load_ascii_data(
+    const char *filepath,
+    long        max_samples,
+    long       *out_frames,
+    long       *out_dim)
+{
+    FILE *fp = fopen(filepath, "r");
+    if (fp == NULL)
+    {
+        return NULL;
+    }
+
+    /* Step 1: determine dimension D from first non-comment line */
+    char line[65536];
+    long dim = 0;
+    while (fgets(line, sizeof(line), fp))
+    {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0')
+        {
+            continue;
+        }
+
+        char *endptr = NULL;
+        while (*p)
+        {
+            strtod(p, &endptr);
+            if (endptr == p) break;
+            dim++;
+            p = endptr;
+            while (*p == ' ' || *p == '\t' || *p == ',') p++;
+        }
+        break;
+    }
+
+    if (dim <= 0)
+    {
+        fclose(fp);
+        return NULL;
+    }
+
+    /* Step 2: count total lines */
+    fseek(fp, 0, SEEK_SET);
+    long total_lines = 0;
+    while (fgets(line, sizeof(line), fp))
+    {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0')
+        {
+            continue;
+        }
+        total_lines++;
+        if (max_samples > 0 && total_lines >= max_samples)
+        {
+            break;
+        }
+    }
+
+    if (total_lines <= 0)
+    {
+        fclose(fp);
+        return NULL;
+    }
+
+    float *buffer = (float *)malloc((size_t)(total_lines * dim) * sizeof(float));
+    if (buffer == NULL)
+    {
+        fclose(fp);
+        return NULL;
+    }
+
+    /* Step 3: read coordinates */
+    fseek(fp, 0, SEEK_SET);
+    long frame_idx = 0;
+    while (fgets(line, sizeof(line), fp) && frame_idx < total_lines)
+    {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == '\n' || *p == '\r' || *p == '\0')
+        {
+            continue;
+        }
+
+        float *row = buffer + frame_idx * dim;
+        char *endptr = NULL;
+        for (long d = 0; d < dim; d++)
+        {
+            row[d] = (float)strtod(p, &endptr);
+            if (endptr == p)
+            {
+                row[d] = 0.0f;
+            }
+            p = endptr;
+            while (*p == ' ' || *p == '\t' || *p == ',') p++;
+        }
+        frame_idx++;
+    }
+
+    fclose(fp);
+    *out_frames = frame_idx;
+    *out_dim = dim;
+    return buffer;
+}
+
+/**
+ * load_bin_data() - Ingest self-describing GRIC binary datasets.
+ */
+static float *load_bin_data(
+    const char *filepath,
+    long        max_samples,
+    long       *out_frames,
+    long       *out_width,
+    long       *out_height,
+    long       *out_dim,
+    int        *out_is_double)
+{
+    FILE *fp = fopen(filepath, "rb");
+    if (fp == NULL)
+    {
+        return NULL;
+    }
+
+    gric_bin_header_t hdr;
+    char *comment = NULL;
+    if (gric_bin_read_header(fp, &hdr, &comment) != 0)
+    {
+        fclose(fp);
+        return NULL;
+    }
+    if (comment != NULL)
+    {
+        free(comment);
+    }
+
+    long width = 1;
+    long height = 1;
+    long total_frames = 1;
+
+    if (hdr.ndim == 1)
+    {
+        total_frames = (long)hdr.dims[0];
+        width = 1;
+        height = 1;
+    }
+    else if (hdr.ndim == 2)
+    {
+        total_frames = (long)hdr.dims[0];
+        width = (long)hdr.dims[1];
+        height = 1;
+    }
+    else if (hdr.ndim == 3)
+    {
+        width = (long)hdr.dims[0];
+        height = (long)hdr.dims[1];
+        total_frames = (long)hdr.dims[2];
+    }
+    else if (hdr.ndim == 4)
+    {
+        width = (long)hdr.dims[0];
+        height = (long)hdr.dims[1];
+        total_frames = (long)hdr.dims[3];
+    }
+
+    long dim = width * height;
+    long n_load = total_frames;
+    if (max_samples > 0 && max_samples < n_load)
+    {
+        n_load = max_samples;
+    }
+
+    float *buffer = (float *)malloc((size_t)(n_load * dim) * sizeof(float));
+    if (buffer == NULL)
+    {
+        fclose(fp);
+        return NULL;
+    }
+
+    size_t elem_size = gric_bin_data_type_size(hdr.data_type);
+    if (hdr.data_type == GRIC_BIN_DTYPE_FLOAT32)
+    {
+        size_t read_n = fread(buffer, sizeof(float), (size_t)(n_load * dim), fp);
+        (void)read_n;
+    }
+    else if (hdr.data_type == GRIC_BIN_DTYPE_FLOAT64)
+    {
+        *out_is_double = 1;
+        double *dbuf = (double *)malloc((size_t)(n_load * dim) * sizeof(double));
+        if (dbuf != NULL)
+        {
+            size_t read_n = fread(dbuf, sizeof(double), (size_t)(n_load * dim), fp);
+            (void)read_n;
+            for (long ii = 0; ii < n_load * dim; ii++)
+            {
+                buffer[ii] = (float)dbuf[ii];
+            }
+            free(dbuf);
+        }
+    }
+    else
+    {
+        /* Generic byte conversion */
+        uint8_t *raw = (uint8_t *)malloc(elem_size * (size_t)(n_load * dim));
+        if (raw != NULL)
+        {
+            size_t read_n = fread(raw, elem_size, (size_t)(n_load * dim), fp);
+            (void)read_n;
+            for (long ii = 0; ii < n_load * dim; ii++)
+            {
+                buffer[ii] = (float)raw[ii];
+            }
+            free(raw);
+        }
+    }
+
+    fclose(fp);
+    *out_frames = n_load;
+    *out_width = width;
+    *out_height = height;
+    *out_dim = dim;
+    return buffer;
+}
+
+#ifdef USE_CFITSIO
+/**
+ * load_fits_data() - Ingest FITS 2D tables or 3D cubes.
+ */
+static float *load_fits_data(
+    const char *filepath,
+    long        max_samples,
+    long       *out_frames,
+    long       *out_width,
+    long       *out_height,
+    long       *out_dim,
+    int        *out_is_double)
+{
+    fitsfile *fptr = NULL;
+    int status = 0;
+
+    if (fits_open_file(&fptr, filepath, READONLY, &status))
+    {
+        return NULL;
+    }
+
+    int bitpix = 0;
+    int naxis = 0;
+    long naxes[4] = {0, 0, 0, 0};
+
+    if (fits_get_img_param(fptr, 4, &bitpix, &naxis, naxes, &status))
+    {
+        fits_close_file(fptr, &status);
+        return NULL;
+    }
+
+    if (bitpix == DOUBLE_IMG)
+    {
+        *out_is_double = 1;
+    }
+
+    long width = 1;
+    long height = 1;
+    long total_frames = 1;
+
+    if (naxis == 1)
+    {
+        total_frames = naxes[0];
+        width = 1;
+        height = 1;
+    }
+    else if (naxis == 2)
+    {
+        /* Either N x D (vector table) or W x H (single image) */
+        width = naxes[0];
+        total_frames = naxes[1];
+        height = 1;
+    }
+    else if (naxis >= 3)
+    {
+        width = naxes[0];
+        height = naxes[1];
+        total_frames = naxes[2];
+    }
+
+    long dim = width * height;
+    long n_load = total_frames;
+    if (max_samples > 0 && max_samples < n_load)
+    {
+        n_load = max_samples;
+    }
+
+    float *buffer = (float *)malloc((size_t)(n_load * dim) * sizeof(float));
+    if (buffer == NULL)
+    {
+        fits_close_file(fptr, &status);
+        return NULL;
+    }
+
+    long fpixel[4] = {1, 1, 1, 1};
+    if (fits_read_pix(fptr, TFLOAT, fpixel, n_load * dim, NULL, buffer, NULL, &status))
+    {
+        free(buffer);
+        fits_close_file(fptr, &status);
+        return NULL;
+    }
+
+    fits_close_file(fptr, &status);
+    *out_frames = n_load;
+    *out_width = width;
+    *out_height = height;
+    *out_dim = dim;
+    return buffer;
+}
+#endif
+
+/**
+ * probe_run() - Execute the complete dataset profiling pipeline.
+ * @config:  Input probe configuration.
+ * @results: Output results container.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int probe_run(
+    const ProbeConfig *config,
+    ProbeResults      *results)
+{
+    if (config == NULL || results == NULL)
+    {
+        return -1;
+    }
+
+    memset(results, 0, sizeof(ProbeResults));
+
+    long max_samples = 0;
+    if (config->force_all)
+    {
+        max_samples = 0;
+    }
+    else if (config->sample_limit > 0)
+    {
+        max_samples = config->sample_limit;
+    }
+    else
+    {
+        /* Adaptive default: first 5,000 frames if larger */
+        max_samples = 5000;
+    }
+
+    float *data = NULL;
+    long num_frames = 0;
+    long width = 1;
+    long height = 1;
+    long dim = 0;
+    int is_double = config->use_double;
+
+    const char *ext = strrchr(config->dataset_path, '.');
+
+    if (config->show_progress)
+    {
+        fprintf(stderr, "[PROBE: 10%%] Ingesting dataset frames\n");
+        fflush(stderr);
+    }
+
+    if (ext != NULL && (strcasecmp(ext, ".bin") == 0 || strcasecmp(ext, ".clusterdat") == 0))
+    {
+        data = load_bin_data(config->dataset_path, max_samples, &num_frames,
+                             &width, &height, &dim, &is_double);
+    }
+#ifdef USE_CFITSIO
+    else if (ext != NULL && (strcasecmp(ext, ".fits") == 0 || strcasecmp(ext, ".fits.gz") == 0))
+    {
+        data = load_fits_data(config->dataset_path, max_samples, &num_frames,
+                              &width, &height, &dim, &is_double);
+    }
+#endif
+    else
+    {
+        data = load_ascii_data(config->dataset_path, max_samples, &num_frames, &dim);
+        width = dim;
+        height = 1;
+    }
+
+    if (data == NULL || num_frames <= 0 || dim <= 0)
+    {
+        return -1;
+    }
+
+    /* Initialize profile container */
+    gric_profile_init(&results->profile, dim);
+    snprintf(results->profile.dataset_path, sizeof(results->profile.dataset_path),
+             "%s", config->dataset_path);
+    results->profile.num_frames = num_frames;
+    results->profile.width = width;
+    results->profile.height = height;
+    results->profile.dim = dim;
+    results->profile.is_image = (height > 1) ? 1 : 0;
+    results->profile.is_double = is_double;
+
+    if (config->show_progress)
+    {
+        fprintf(stderr, "[PROBE: 30%%] Computing coordinate statistics and ranges\n");
+        fflush(stderr);
+    }
+
+    /* Step 1: Single-pass Welford coordinate statistics and ranges */
+    double global_min = 1e30;
+    double global_max = -1e30;
+    double *mins = (double *)malloc((size_t)dim * sizeof(double));
+    double *maxs = (double *)malloc((size_t)dim * sizeof(double));
+
+    int dead_count = 0;
+
+    for (long d = 0; d < dim; d++)
+    {
+        double mean = 0.0;
+        double m2 = 0.0;
+        double min_val = 1e30;
+        double max_val = -1e30;
+
+        for (long f = 0; f < num_frames; f++)
+        {
+            double val = (double)data[f * dim + d];
+            if (val < min_val) min_val = val;
+            if (val > max_val) max_val = val;
+
+            double delta = val - mean;
+            mean += delta / (double)(f + 1);
+            m2 += delta * (val - mean);
+        }
+
+        mins[d] = min_val;
+        maxs[d] = max_val;
+        if (min_val < global_min) global_min = min_val;
+        if (max_val > global_max) global_max = max_val;
+
+        double var = (num_frames > 1) ? (m2 / (double)(num_frames - 1)) : 0.0;
+        results->profile.var_dim[d] = var;
+        if (var < 1e-12)
+        {
+            dead_count++;
+        }
+    } // for (long d = 0; d < dim; d++)
+
+    results->dead_dims_count = dead_count;
+
+    if (config->show_progress)
+    {
+        fprintf(stderr, "[PROBE: 55%%] Spectral variance analysis and SQ8 calibration\n");
+        fflush(stderr);
+    }
+
+    /* Step 2: Spectral variance sorting */
+    for (long d = 0; d < dim; d++)
+    {
+        results->profile.perm_dim[d] = d;
+    }
+    s_dim_vars = results->profile.var_dim;
+    qsort(results->profile.perm_dim, (size_t)dim, sizeof(long), compare_dim_indices);
+
+    /* Step 3: Compute residual tail envelopes Omega_m */
+    double accum_tail_sq = 0.0;
+    for (long ii = dim - 1; ii >= 0; ii--)
+    {
+        long d = results->profile.perm_dim[ii];
+        double range = maxs[d] - mins[d];
+        accum_tail_sq += range * range;
+        results->profile.residual_tail[ii] = sqrt(accum_tail_sq);
+    } // for (long ii = dim - 1; ii >= 0; ii--)
+
+    /* Step 4: Calibrate SQ8 quantization */
+    results->profile.use_sq8 = (dim >= 32) ? 1 : 0;
+    sq8_init_params(&results->profile.sq8_params, (float)global_min, (float)global_max, dim);
+
+    if (config->show_progress)
+    {
+        fprintf(stderr, "[PROBE: 75%%] Sampling pairwise distance spectrum\n");
+        fflush(stderr);
+    }
+
+    /* Step 5: Subsampled pairwise distance spectrum */
+    long s_pairs = (num_frames < 200) ? (num_frames * (num_frames - 1) / 2) : 10000;
+    if (s_pairs > 10000) s_pairs = 10000;
+
+    double *dist_samples = (double *)malloc((size_t)s_pairs * sizeof(double));
+    if (dist_samples != NULL)
+    {
+        unsigned int seed = 42;
+        for (long s = 0; s < s_pairs; s++)
+        {
+            long i = rand_r(&seed) % num_frames;
+            long j = rand_r(&seed) % num_frames;
+            while (j == i && num_frames > 1)
+            {
+                j = rand_r(&seed) % num_frames;
+            }
+
+            const float *fa = data + i * dim;
+            const float *fb = data + j * dim;
+            double sum = 0.0;
+            for (long d = 0; d < dim; d++)
+            {
+                double diff = (double)fa[d] - (double)fb[d];
+                sum += diff * diff;
+            }
+            dist_samples[s] = sqrt(sum);
+        }
+
+        qsort(dist_samples, (size_t)s_pairs, sizeof(double), compare_doubles);
+
+        results->profile.dist_min = dist_samples[0];
+        results->profile.dist_p01 = dist_samples[(long)(s_pairs * 0.01)];
+        results->profile.dist_p05 = dist_samples[(long)(s_pairs * 0.05)];
+        results->profile.dist_p10 = dist_samples[(long)(s_pairs * 0.10)];
+        results->profile.dist_p25 = dist_samples[(long)(s_pairs * 0.25)];
+        results->profile.dist_p50 = dist_samples[(long)(s_pairs * 0.50)];
+        results->profile.dist_p75 = dist_samples[(long)(s_pairs * 0.75)];
+        results->profile.dist_p90 = dist_samples[(long)(s_pairs * 0.90)];
+        results->profile.dist_max = dist_samples[s_pairs - 1];
+
+        free(dist_samples);
+    }
+
+    /* Step 6: Radius presets */
+    results->profile.rlim_fine = results->profile.dist_p05;
+    results->profile.rlim_balanced = results->profile.dist_p10;
+    results->profile.rlim_coarse = results->profile.dist_p25;
+    results->profile.rlim_recommended = results->profile.rlim_balanced;
+    strcpy(results->profile.preset_name, "balanced");
+
+    if (config->show_progress)
+    {
+        fprintf(stderr, "[PROBE: 90%%] Evaluating temporal continuity and presets\n");
+        fflush(stderr);
+    }
+
+    /* Step 7: Temporal autocorrelation & continuity */
+    if (num_frames >= 2)
+    {
+        double sum_seq = 0.0;
+        long seq_pairs = (num_frames < 2000) ? (num_frames - 1) : 2000;
+        for (long t = 0; t < seq_pairs; t++)
+        {
+            const float *fa = data + t * dim;
+            const float *fb = data + (t + 1) * dim;
+            double sum = 0.0;
+            for (long d = 0; d < dim; d++)
+            {
+                double diff = (double)fa[d] - (double)fb[d];
+                sum += diff * diff;
+            }
+            sum_seq += sqrt(sum);
+        }
+        double d_seq = sum_seq / (double)seq_pairs;
+        results->profile.continuity_ratio =
+            (results->profile.dist_p50 > 0.0) ? (d_seq / results->profile.dist_p50) : 1.0;
+        results->noise_floor_est = d_seq / sqrt(2.0 * (double)dim);
+
+        if (results->profile.continuity_ratio < 0.50)
+        {
+            results->profile.pred_enabled = 1;
+            results->profile.pred_len = 2;
+            int horizon = (int)(15.0 / (results->profile.continuity_ratio + 0.01));
+            if (horizon > 2000) horizon = 2000;
+            if (horizon < 100) horizon = 100;
+            results->profile.pred_h = horizon;
+        }
+        else
+        {
+            results->profile.pred_enabled = 0;
+        }
+    } // if (num_frames >= 2)
+
+    /* Step 8: Spatial tiling guidance */
+    if (results->profile.is_image && width >= 16 && height >= 16)
+    {
+        results->profile.tiles_x = 2;
+        results->profile.tiles_y = 2;
+    }
+    else
+    {
+        results->profile.tiles_x = 1;
+        results->profile.tiles_y = 1;
+    }
+
+    /* Step 9: Acceleration recommendations */
+    results->profile.te4_enabled = (dim >= 3) ? 1 : 0;
+    results->profile.te5_enabled = (dim >= 3) ? 1 : 0;
+
+#ifdef _OPENMP
+    results->profile.ncpu = omp_get_max_threads();
+#elif defined(_SC_NPROCESSORS_ONLN)
+    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    results->profile.ncpu = (ncpu > 0) ? (int)ncpu : 4;
+#elif defined(_SC_NPROCESSORS_CONF)
+    long ncpu = sysconf(_SC_NPROCESSORS_CONF);
+    results->profile.ncpu = (ncpu > 0) ? (int)ncpu : 4;
+#else
+    results->profile.ncpu = 4;
+#endif
+
+    int est_cl = (int)(num_frames * 0.15);
+    if (est_cl < 100)
+    {
+        est_cl = 100;
+    }
+    if (est_cl > 10000)
+    {
+        est_cl = 10000;
+    }
+    results->profile.recommended_maxcl = est_cl;
+
+    if (config->show_progress)
+    {
+        fprintf(stderr, "[PROBE: 100%%] Profile calibration complete\n");
+        fflush(stderr);
+    }
+
+    free(mins);
+    free(maxs);
+    free(data);
+    return 0;
+}
+
+/**
+ * probe_results_free() - Free resources in a ProbeResults.
+ * @results: Pointer to ProbeResults.
+ */
+void probe_results_free(
+    ProbeResults *results)
+{
+    if (results == NULL)
+    {
+        return;
+    }
+
+    gric_profile_free(&results->profile);
+}

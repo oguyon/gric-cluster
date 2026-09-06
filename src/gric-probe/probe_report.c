@@ -1,0 +1,168 @@
+/**
+ * @file probe_report.c
+ * @brief Formatted terminal reporting and export for gric-probe.
+ */
+
+#include "probe_report.h"
+#include "cli_colors.h"
+#include <stdio.h>
+#include <string.h>
+
+/**
+ * probe_report_print_terminal() - Display formatted dashboard to terminal.
+ * @out:     Target output stream (stdout/stderr).
+ * @results: Pointer to completed ProbeResults.
+ */
+void probe_report_print_terminal(
+    FILE               *out,
+    const ProbeResults *results)
+{
+    if (out == NULL || results == NULL)
+    {
+        return;
+    }
+
+    const GricProfile *p = &results->profile;
+
+    fprintf(out, "\n%s%s=== GRIC DATASET PROBE REPORT ===%s\n",
+            ANSI_BOLD, ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+    fprintf(out, "%sTarget:%s     %s\n", ANSI_BOLD, ANSI_COLOR_RESET, p->dataset_path);
+    fprintf(out, "%sGeometry:%s   %ld frames, %s (%ld-dim",
+            ANSI_BOLD, ANSI_COLOR_RESET, p->num_frames,
+            p->is_image ? "2D Image" : "1D Vector", p->dim);
+    if (p->is_image)
+    {
+        fprintf(out, ", %ld x %ld", p->width, p->height);
+    }
+    fprintf(out, "), %s\n", p->is_double ? "float64 (double)" : "float32 (single)");
+
+    /* Dynamic Range & Diagnostics */
+    fprintf(out, "%sRange:%s      [%.4f, %.4f] (span: %.4f)\n",
+            ANSI_BOLD, ANSI_COLOR_RESET,
+            (double)p->sq8_params.min_val, (double)p->sq8_params.max_val,
+            (double)(p->sq8_params.max_val - p->sq8_params.min_val));
+    if (results->dead_dims_count > 0)
+    {
+        fprintf(out, "%s[WARNING]%s   %d coordinates have zero variance (dead pixels/channels)!\n",
+                ANSI_COLOR_YELLOW, ANSI_COLOR_RESET, results->dead_dims_count);
+    }
+
+    /* Variance Scree Spectrum */
+    fprintf(out, "\n%s--- Coordinate Variance Spectrum ---%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
+    double total_var = 0.0;
+    for (long d = 0; d < p->dim; d++)
+    {
+        total_var += p->var_dim[d];
+    }
+
+    double accum = 0.0;
+    long top_k = (p->dim < 5) ? p->dim : 5;
+    for (long k = 0; k < top_k; k++)
+    {
+        long dim_idx = p->perm_dim[k];
+        double pct = (total_var > 0.0) ? (p->var_dim[dim_idx] / total_var * 100.0) : 0.0;
+        accum += pct;
+
+        char bar[32];
+        int bar_len = (int)(pct / 4.0);
+        if (bar_len > 25) bar_len = 25;
+        for (int b = 0; b < bar_len; b++) bar[b] = '#';
+        bar[bar_len] = '\0';
+
+        fprintf(out, "  Top %ld (dim %4ld): %7.4f (%5.1f%%) |%-25s| (cum: %5.1f%%)\n",
+                k + 1, dim_idx, p->var_dim[dim_idx], pct, bar, accum);
+    } // for (long k = 0; k < top_k; k++)
+
+    /* Distance Distribution Spectrum */
+    fprintf(out, "\n%s--- Distance Percentile Spectrum ---%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
+    fprintf(out, "  Min:     %8.4f\n", p->dist_min);
+    fprintf(out, "  P01:     %8.4f\n", p->dist_p01);
+    fprintf(out, "  P05:     %8.4f  %s(Fine Granularity Reference)%s\n",
+            p->dist_p05, ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
+    fprintf(out, "  P10:     %8.4f  %s(Balanced / Nominal Reference)%s\n",
+            p->dist_p10, ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
+    fprintf(out, "  P25:     %8.4f  %s(Coarse Granularity Reference)%s\n",
+            p->dist_p25, ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
+    fprintf(out, "  Median:  %8.4f\n", p->dist_p50);
+    fprintf(out, "  P90:     %8.4f\n", p->dist_p90);
+    fprintf(out, "  Max:     %8.4f\n", p->dist_max);
+
+    /* Temporal Continuity */
+    fprintf(out, "\n%s--- Temporal Dynamics ---%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
+    fprintf(out, "  Continuity Ratio: %.4f (d_seq / d_med)\n", p->continuity_ratio);
+    if (p->pred_enabled)
+    {
+        fprintf(out, "  Status:           %sStrong Temporal Continuity%s (auto-enabling -pred)\n",
+                ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
+        fprintf(out, "  Recommended H:    %d lookback frames\n", p->pred_h);
+    }
+    else
+    {
+        fprintf(out, "  Status:           %sUncorrelated / Static Sequence%s (prediction off)\n",
+                ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
+    }
+
+    /* Recommended Parameters */
+    fprintf(out, "\n%s=== RECOMMENDED CLUSTERING PRESETS ===%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
+    fprintf(out, "  * %sBalanced (Default):%s  rlim = %s%.4f%s (-preset balanced)\n",
+            ANSI_BOLD, ANSI_COLOR_RESET, ANSI_BOLD_GREEN, p->rlim_balanced, ANSI_COLOR_RESET);
+    fprintf(out, "  * Fine Granularity:    rlim = %.4f (-preset fine)\n", p->rlim_fine);
+    fprintf(out, "  * Coarse Granularity:  rlim = %.4f (-preset coarse)\n", p->rlim_coarse);
+    fprintf(out, "  * Cluster Limit:       -maxcl %d\n", p->recommended_maxcl);
+    fprintf(out, "  * Spatial Layout:      -tiles %dx%d\n", p->tiles_x, p->tiles_y);
+    fprintf(out, "  * Acceleration:        %s %s %s\n",
+            p->use_sq8 ? "-sq8" : "",
+            p->te4_enabled ? "-te4" : "",
+            p->te5_enabled ? "-te5" : "");
+
+    /* Quick copy-paste command */
+    fprintf(out, "\n%sSuggested gric-cluster Command:%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
+    fprintf(out, "  gric-cluster %s", p->dataset_path);
+    if (p->tiles_x > 1 || p->tiles_y > 1)
+    {
+        fprintf(out, " -tiles %dx%d", p->tiles_x, p->tiles_y);
+    }
+    if (p->pred_enabled)
+    {
+        fprintf(out, " \"-pred[2,%d,2]\"", p->pred_h);
+    }
+    if (p->use_sq8)
+    {
+        fprintf(out, " -sq8");
+    }
+    if (p->te4_enabled)
+    {
+        fprintf(out, " -te4");
+    }
+    if (p->te5_enabled)
+    {
+        fprintf(out, " -te5");
+    }
+    fprintf(out, "\n\n");
+}
+
+/**
+ * probe_report_print_env() - Print shell environment variables.
+ * @out:     Target output stream.
+ * @results: Pointer to completed ProbeResults.
+ */
+void probe_report_print_env(
+    FILE               *out,
+    const ProbeResults *results)
+{
+    if (out == NULL || results == NULL)
+    {
+        return;
+    }
+
+    const GricProfile *p = &results->profile;
+    fprintf(out, "export GRIC_RLIM=%.6f\n", p->rlim_recommended);
+    fprintf(out, "export GRIC_RLIM_FINE=%.6f\n", p->rlim_fine);
+    fprintf(out, "export GRIC_RLIM_BALANCED=%.6f\n", p->rlim_balanced);
+    fprintf(out, "export GRIC_RLIM_COARSE=%.6f\n", p->rlim_coarse);
+    fprintf(out, "export GRIC_MAXCL=%d\n", p->recommended_maxcl);
+    fprintf(out, "export GRIC_TILES=\"%dx%d\"\n", p->tiles_x, p->tiles_y);
+    fprintf(out, "export GRIC_USE_SQ8=%d\n", p->use_sq8);
+    fprintf(out, "export GRIC_PREDICT=%d\n", p->pred_enabled);
+    fprintf(out, "export GRIC_PRED_H=%d\n", p->pred_h);
+}

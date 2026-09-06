@@ -108,6 +108,10 @@ static void print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-sq8-load%s %s<path>%s      Load quantized dataset from sidecar file\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-prof%s %s<path>%s          Explicit dataset profile file (.gricprof)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-no-prof%s, %s--no-prof%s       Disable auto-loading of .gricprof file\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-v, -vv%s               Verbosity level\n",
            ansi_color_green, ansi_reset);
     printf("  %s-h, --help%s            Show this help message\n\n",
@@ -368,6 +372,21 @@ int main(
             config.use_sq8 = 1;
             config.sq8_approx = 1;
         }
+        else if (strcmp(argv[arg_idx], "-prof") == 0 ||
+                 strcmp(argv[arg_idx], "--prof") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -prof requires a filepath argument\n");
+                return 1;
+            }
+            config.prof_filename = argv[++arg_idx];
+        }
+        else if (strcmp(argv[arg_idx], "-no-prof") == 0 ||
+                 strcmp(argv[arg_idx], "--no-prof") == 0)
+        {
+            config.no_prof = 1;
+        }
         else if (strcmp(argv[arg_idx], "-v") == 0)
         {
             config.verbose_level = 2;
@@ -501,10 +520,50 @@ int main(
     clock_gettime(CLOCK_MONOTONIC, &load_start);
 
     KnnModel model;
-    if (knn_model_load(config.cluster_dir, config.input_data_path, &model, config.use_double) != 0)
+    if (knn_model_load(config.cluster_dir, config.input_data_path, &model,
+                       config.use_double) != 0)
     {
         fprintf(stderr, "Error: Failed to load cluster model from '%s'\n", config.cluster_dir);
         return 1;
+    }
+
+    // Profile auto-discovery and loading
+    char auto_prof_path[1024];
+    const char *prof_to_load = config.prof_filename;
+    if (prof_to_load == NULL && !config.no_prof)
+    {
+        if (gric_profile_find_auto(config.input_data_path,
+                                   auto_prof_path,
+                                   sizeof(auto_prof_path)))
+        {
+            prof_to_load = auto_prof_path;
+        }
+        else
+        {
+            char cluster_dir_prof[1024];
+            snprintf(cluster_dir_prof, sizeof(cluster_dir_prof),
+                     "%s/dataset.gricprof", config.cluster_dir);
+            FILE *fchk = fopen(cluster_dir_prof, "r");
+            if (fchk != NULL)
+            {
+                fclose(fchk);
+                snprintf(auto_prof_path, sizeof(auto_prof_path), "%s", cluster_dir_prof);
+                prof_to_load = auto_prof_path;
+            }
+        }
+    }
+
+    if (prof_to_load != NULL)
+    {
+        if (gric_profile_read_json(prof_to_load, &model.profile) == 0)
+        {
+            model.has_profile = 1;
+            printf("%s[PROFILE]%s Auto-loaded dataset profile: %s\n",
+                   ansi_bold_cyan, ansi_reset, prof_to_load);
+            printf("  Range: [%.4f, %.4f], SQ8 scale: %.6f, suggested rlim: %.4f\n",
+                   model.profile.sq8_params.min_val, model.profile.sq8_params.max_val,
+                   model.profile.sq8_params.scale, model.profile.rlim_recommended);
+        }
     }
 
     if (config.use_sq8)
