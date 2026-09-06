@@ -91,6 +91,12 @@ static int apply_algo_option(
         config->optim.use_sq8 = 1;
         return 0;
     }
+    else if (matches(key, "-no-sq8") || matches(key, "--no-sq8") ||
+             matches(key, "no_sq8") || matches(key, "-nosq8"))
+    {
+        config->optim.use_sq8 = 0;
+        return 0;
+    }
     else if (matches(key, "-entropy"))
     {
         config->optim.entropy_mode = 1;
@@ -824,6 +830,14 @@ int write_config_file(const char *filename, ClusterConfig *config)
     if (config->algo.pass2_nearest_mode)
     {
         fprintf(f, "pass2_nearest\n");
+    }
+    if (config->optim.use_sq8)
+    {
+        fprintf(f, "sq8\n");
+    }
+    else
+    {
+        fprintf(f, "no_sq8\n");
     }
 
     fprintf(f, "tm %f\n", config->algo.tm_mixing_coeff);

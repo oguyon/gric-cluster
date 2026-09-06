@@ -198,6 +198,40 @@ static inline int knn_visited_check_and_mark(
 }
 
 /**
+ * knn_visited_is_visited() - Check if frame was already visited without marking.
+ * @tracker:  Pointer to KnnVisitedTracker.
+ * @frame_id: Frame index to check.
+ *
+ * Return: 1 if already visited in this query, 0 if not visited yet.
+ */
+static inline int knn_visited_is_visited(
+    const KnnVisitedTracker *tracker,
+    long                     frame_id)
+{
+    if (tracker == NULL || tracker->tags == NULL)
+    {
+        return 0;
+    }
+
+    return (tracker->tags[frame_id] == tracker->epoch);
+}
+
+/**
+ * knn_visited_mark() - Explicitly mark a frame as visited.
+ * @tracker:  Pointer to KnnVisitedTracker.
+ * @frame_id: Frame index to mark.
+ */
+static inline void knn_visited_mark(
+    KnnVisitedTracker *tracker,
+    long               frame_id)
+{
+    if (tracker != NULL && tracker->tags != NULL)
+    {
+        tracker->tags[frame_id] = tracker->epoch;
+    }
+}
+
+/**
  * struct KnnTrajectoryTracker - Thread-local sequential query trajectory state.
  * @prev_query_id:   Index of the preceding query frame evaluated by this thread.
  * @prev_cluster_id: Most recent matching cluster ID.

@@ -8,6 +8,8 @@
 
     const canvas = document.getElementById('simCanvas');
     const ctx = canvas.getContext('2d');
+    window.canvas = canvas;
+    window.ctx = ctx;
 
     // Dimensionality & Quadrant Layout State
     let dataMode = 'coord'; // 'coord' (2D/3D points) or 'image' (raster image)
@@ -47,15 +49,44 @@
     let imageMembersScrollY = 0; // Q2 Members gallery scroll offset
     let imageKnnScrollY = 0; // Q2 k-NN gallery scroll offset
     let imageClustersScrollY = 0; // Q3 All clusters gallery scroll offset
+    let imageReconKnnScrollY = 0; // ABCD Recon Panel A & B k-NN gallery scroll offset
     let imageTopRightMode = 'anchor'; // 'anchor', 'residual', 'nn1', 'nn1_diff'
     let imageQ2ViewMode = 'members'; // 'members' (cluster) or 'knn' (neighbors)
     let inspectedImageFrameIdx = -1; // -1 = live, >= 0 = retro-inspected frame
     let inspectedClusterId = -1; // -1 = all clusters, >= 0 = inspecting cluster member frames
+    let inspectedImageMemberIdx = 0; // index within active cluster's members (0 = anchor)
+    let autoClusterFollow = true; // true = follow active frame cluster, false = pinned
     let imageFrameAssignments = []; // imageFrameAssignments[frameIdx] = clusterId
     let imageFrameDists = []; // imageFrameDists[frameIdx] = distance to anchor
     let imageClusterMembers = {}; // imageClusterMembers[clusterId] = [frameIdx, ...]
     let imageClustersSortMode = 'id'; // 'id', 'size_desc', 'size_asc'
     let imageThumbSize = 64; // Thumbnail gallery size in pixels (36 to 200)
+    let imagePanelViewModes = ['current_frame', 'anchor', 'members', 'clusters'];
+
+    function getImagePanelViewMode(qIdx) {
+      if (typeof imagePanelViewModes !== 'undefined' &&
+          imagePanelViewModes && imagePanelViewModes[qIdx]) {
+        return imagePanelViewModes[qIdx];
+      }
+      const defaults = ['current_frame', 'anchor', 'members', 'clusters'];
+      return defaults[qIdx] || 'current_frame';
+    }
+
+    function setImagePanelViewMode(qIdx, mode) {
+      if (typeof imagePanelViewModes === 'undefined' || !imagePanelViewModes) {
+        imagePanelViewModes = ['current_frame', 'anchor', 'members', 'clusters'];
+      }
+      imagePanelViewModes[qIdx] = mode;
+      if (qIdx === 1 && (mode === 'anchor' || mode === 'residual' ||
+                         mode === 'nn1' || mode === 'nn1_diff')) {
+        imageTopRightMode = mode;
+      }
+      if (qIdx === 2 && (mode === 'members' || mode === 'knn')) {
+        imageQ2ViewMode = mode;
+      }
+      if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
+      if (typeof draw === 'function') draw();
+    }
 
     // 3D Orbit Camera State (Spherical Orbit: Azimuth θ, Elevation φ)
     const orbitCamera = {
@@ -173,12 +204,15 @@
 
     // Multi-Dataset Slots: A, B, C, D (Reconstruction)
     const DATASET_SLOTS = ['A', 'B', 'C', 'D'];
+    window.DATASET_SLOTS = DATASET_SLOTS;
     let activeDatasetSlot = 'A';
     let multiDatasetEnabled = false; // Multi-Dataset mode option: Off by default
     let reconstructionInfo = null; // Staged reconstruction metadata & stats for Slot D
     let reconstructionSourceNeighbors = null; // Mapping of D query -> contributing B neighbors
     let isRecon4PanelView = false; // 4-Panel Synchronized View (A, B, C, D)
     let reconOverlayMode = false; // Overlays A+C in left view and B+D in right view
+    let reconPanelAMode = 'knn'; // 'knn' (k-NN gallery) or 'single' (single frame)
+    let reconPanelBMode = 'targets'; // 'targets' (targets gallery) or 'single' (single frame)
     let showReconKnn = true; // Toggle k-NN rays & focused bright/grey highlights in 4-Panel view
     let reconHoveredQueryIdx = -1; // Current hover-selected query index in C/D
     let reconLockedQueryIdx = -1; // Click-pinned query index in C/D
@@ -238,8 +272,8 @@
     let knnEpsilon = 0.0;
     let knnRlim = 0.0;
     let knnMvp = false; // Multi-Anchor Pivot Bounding (AESA)
-    let knnUseSq8 = false; // 8-Bit Scalar Quantization Filtering
-    let clusterUseSq8 = false; // 8-Bit Scalar Quantization Metric Pre-Filter
+    let knnUseSq8 = true; // 8-Bit Scalar Quantization Filtering (Default: true)
+    let clusterUseSq8 = true; // 8-Bit Scalar Quantization Metric Pre-Filter (Default: true)
     let knnResults = null;
     let selectedKnnQuerySample = -1;
     let hoveredKnnNeighborId = -1;
@@ -324,37 +358,123 @@
     }
 
     function selectImageFrame(frameIdx) {
+      const total = (benchmarkDataset && benchmarkDataset.length > 0)
+        ? benchmarkDataset.length
+        : (typeof totalFrames !== 'undefined' ? totalFrames : 0);
+
       if (frameIdx < 0) {
         inspectedImageFrameIdx = -1;
+      } else if (total > 0) {
+        inspectedImageFrameIdx = Math.min(total - 1, Math.max(0, frameIdx));
       } else {
-        const total = (benchmarkDataset && benchmarkDataset.length > 0)
-          ? benchmarkDataset.length
-          : (typeof totalFrames !== 'undefined' ? totalFrames : 0);
-        if (total > 0) {
-          inspectedImageFrameIdx = Math.min(total - 1, Math.max(0, frameIdx));
-        } else {
-          inspectedImageFrameIdx = 0;
+        inspectedImageFrameIdx = 0;
+      }
+
+      // 3-Way status coordination: sync cluster & member inspectors
+      const effFrame = (inspectedImageFrameIdx >= 0)
+        ? inspectedImageFrameIdx
+        : Math.max(0, total - 1);
+
+      if (effFrame >= 0 && typeof imageFrameAssignments !== 'undefined' &&
+          imageFrameAssignments && imageFrameAssignments[effFrame] !== undefined) {
+        const assignedCls = imageFrameAssignments[effFrame];
+        if (assignedCls >= 0) {
+          if (autoClusterFollow || inspectedClusterId < 0) {
+            inspectedClusterId = assignedCls;
+            selectedClusterId = assignedCls;
+            if (typeof scrollImageClusterIntoView === 'function') {
+              scrollImageClusterIntoView(assignedCls);
+            }
+          }
+
+          // If current inspected cluster matches assignedCls, update member index
+          if (inspectedClusterId === assignedCls) {
+            const members = (typeof getClusterMembersList === 'function')
+              ? getClusterMembersList(assignedCls)
+              : ((imageClusterMembers && imageClusterMembers[assignedCls]) || []);
+            const mIdx = members.indexOf(effFrame);
+            inspectedImageMemberIdx = (mIdx >= 0) ? mIdx : 0;
+            if (typeof scrollImageMemberIntoView === 'function') {
+              scrollImageMemberIntoView(inspectedImageMemberIdx);
+            }
+          }
         }
       }
-      updateUI();
-      draw();
+
+      if (typeof updateUI === 'function') updateUI();
+      if (typeof draw === 'function') draw();
+    }
+
+    function selectImageCluster(clusterId, autoScroll = true) {
+      const totalCls = (clusters && clusters.length > 0) ? clusters.length : 0;
+      if (totalCls === 0) return;
+
+      const cId = Math.min(totalCls - 1, Math.max(0, clusterId));
+      inspectedClusterId = cId;
+      selectedClusterId = cId;
+
+      const members = (typeof getClusterMembersList === 'function')
+        ? getClusterMembersList(cId)
+        : ((imageClusterMembers && imageClusterMembers[cId]) || []);
+
+      if (members && members.length > 0) {
+        inspectedImageMemberIdx = 0; // Select Anchor frame (member 0)
+        inspectedImageFrameIdx = members[0];
+        imageMembersScrollY = 0;
+      } else {
+        inspectedImageMemberIdx = 0;
+      }
+
+      if (autoScroll && typeof scrollImageClusterIntoView === 'function') {
+        scrollImageClusterIntoView(cId);
+      }
+
+      if (typeof updateUI === 'function') updateUI();
+      if (typeof draw === 'function') draw();
+    }
+
+    function selectImageClusterMember(memberIdx, autoScroll = true) {
+      const cId = (typeof inspectedClusterId !== 'undefined' && inspectedClusterId >= 0)
+        ? inspectedClusterId
+        : ((typeof prevAssignedCluster !== 'undefined' && prevAssignedCluster >= 0)
+          ? prevAssignedCluster : 0);
+
+      const members = (typeof getClusterMembersList === 'function' && cId >= 0)
+        ? getClusterMembersList(cId)
+        : ((imageClusterMembers && imageClusterMembers[cId]) || []);
+
+      if (members.length === 0) return;
+
+      const mIdx = Math.min(members.length - 1, Math.max(0, memberIdx));
+      inspectedImageMemberIdx = mIdx;
+      inspectedClusterId = cId;
+      selectedClusterId = cId;
+
+      const targetFrame = members[mIdx];
+      inspectedImageFrameIdx = targetFrame;
+
+      if (autoScroll && typeof scrollImageMemberIntoView === 'function') {
+        scrollImageMemberIntoView(mIdx);
+      }
+
+      if (typeof updateUI === 'function') updateUI();
+      if (typeof draw === 'function') draw();
     }
 
     function inspectClusterMembers(clusterId) {
       if (inspectedClusterId === clusterId) {
         inspectedClusterId = -1;
+        if (typeof updateUI === 'function') updateUI();
+        if (typeof draw === 'function') draw();
       } else {
-        inspectedClusterId = clusterId;
-        selectedClusterId = clusterId;
+        selectImageCluster(clusterId);
       }
-      updateUI();
-      draw();
     }
 
     function clearImageClusterInspection() {
       inspectedClusterId = -1;
-      updateUI();
-      draw();
+      if (typeof updateUI === 'function') updateUI();
+      if (typeof draw === 'function') draw();
     }
 
     function toggleSelectTuple(tupleKey) {
@@ -958,6 +1078,10 @@
     let loopCount = 10; // 1 = 1 pass, 0 = Infinite, N = N passes
     let currentLoop = 1;
     let sampleCount = 10000; // Number of points generated per pattern
+    let randomBallSeed = false; // When true, bouncing ball sequences use a random seed
+    let ballSeed = 42;          // Active random or custom seed for bouncing balls
+    let shuffleFrames = false;  // When true, newly generated datasets are randomly shuffled
+    let isShuffled = false;     // True if the active dataset frames are currently shuffled
 
     // Past sample history for point cloud building (x, y, z)
     let pastSamples = [];
@@ -1111,7 +1235,16 @@
         loopCount: 1,
         noiseSigma: 0.02,
         dataMode: 'coord',
+        imageWidth: 32,
+        imageHeight: 32,
+        imageDim: 1024,
+        currentImageFrame: null,
+        randomBallSeed: false,
+        ballSeed: 42,
+        shuffleFrames: false,
+        isShuffled: false,
         currentDim: 3,
+        genState: (slotId === 'D' ? 'pending' : 'ready'),
         isDatasetStaged: false,
         rawBenchmarkDataset: [],
         benchmarkDataset: [],
@@ -1199,8 +1332,8 @@
         knnEpsilon: 0.0,
         knnRlim: 0.0,
         knnMvp: false,
-        knnUseSq8: false,
-        clusterUseSq8: false,
+        knnUseSq8: true,
+        clusterUseSq8: true,
         dimDensityResults: null,
         dimDensitySummary: null,
         isDimDensityComputing: false,
@@ -1211,6 +1344,8 @@
         imageClusterMembers: {},
         inspectedImageFrameIdx: -1,
         inspectedClusterId: -1,
+        inspectedImageMemberIdx: 0,
+        autoClusterFollow: true,
         reconstructionInfo: null,
         reconstructionSourceNeighbors: null,
         reconKthDist: null,
@@ -1242,7 +1377,21 @@
       slot.noiseSigma = noiseSigma;
       slot.rlim = rlim;
       slot.dataMode = dataMode;
+      if (dataMode === 'image') {
+        slot.imageWidth = (typeof imageWidth !== 'undefined') ? imageWidth : 32;
+        slot.imageHeight = (typeof imageHeight !== 'undefined') ? imageHeight : 32;
+        slot.imageDim = (typeof imageDim !== 'undefined') ? imageDim : 1024;
+        slot.currentImageFrame = currentImageFrame;
+      }
+      slot.randomBallSeed = (typeof randomBallSeed !== 'undefined') ? randomBallSeed : false;
+      slot.ballSeed = (typeof ballSeed !== 'undefined') ? ballSeed : 42;
+      slot.shuffleFrames = (typeof shuffleFrames !== 'undefined') ? shuffleFrames : false;
+      slot.isShuffled = (typeof isShuffled !== 'undefined') ? isShuffled : false;
+      slot.imagePanelViewModes = imagePanelViewModes
+        ? [...imagePanelViewModes]
+        : ['current_frame', 'anchor', 'members', 'clusters'];
       slot.currentDim = currentDim;
+      slot.genState = slot.genState || 'ready';
       slot.isDatasetStaged = isDatasetStaged;
       slot.stagedDatasetInfo = stagedDatasetInfo ? { ...stagedDatasetInfo } : {
         name: currentBenchmark,
@@ -1340,6 +1489,8 @@
       slot.imageClusterMembers = imageClusterMembers;
       slot.inspectedImageFrameIdx = inspectedImageFrameIdx;
       slot.inspectedClusterId = inspectedClusterId;
+      slot.inspectedImageMemberIdx = inspectedImageMemberIdx;
+      slot.autoClusterFollow = autoClusterFollow;
       slot.reconstructionInfo = reconstructionInfo;
       slot.reconstructionSourceNeighbors = reconstructionSourceNeighbors;
       slot.reconQualityColoringEnabled = reconQualityColoringEnabled;
@@ -1369,6 +1520,18 @@
       loopCount = slot.loopCount || 10;
       noiseSigma = (slot.noiseSigma !== undefined) ? slot.noiseSigma : 0.02;
       dataMode = slot.dataMode || 'coord';
+      if (dataMode === 'image') {
+        imageWidth = slot.imageWidth || 32;
+        imageHeight = slot.imageHeight || 32;
+        imageDim = slot.imageDim || 1024;
+      }
+      randomBallSeed = (slot.randomBallSeed !== undefined) ? slot.randomBallSeed : false;
+      ballSeed = (slot.ballSeed !== undefined) ? slot.ballSeed : 42;
+      shuffleFrames = (slot.shuffleFrames !== undefined) ? slot.shuffleFrames : false;
+      isShuffled = (slot.isShuffled !== undefined) ? slot.isShuffled : false;
+      imagePanelViewModes = slot.imagePanelViewModes
+        ? [...slot.imagePanelViewModes]
+        : ['current_frame', 'anchor', 'members', 'clusters'];
       currentDim = slot.currentDim || 3;
       if (typeof slot.rlim === 'number') {
         setClusteringRlim(slot.rlim, false);
@@ -1497,8 +1660,8 @@
       knnEpsilon = (slot.knnEpsilon !== undefined) ? slot.knnEpsilon : 0.0;
       knnRlim = (slot.knnRlim !== undefined) ? slot.knnRlim : 0.0;
       knnMvp = slot.knnMvp || false;
-      knnUseSq8 = slot.knnUseSq8 || false;
-      clusterUseSq8 = slot.clusterUseSq8 || false;
+      knnUseSq8 = (slot.knnUseSq8 !== undefined) ? slot.knnUseSq8 : true;
+      clusterUseSq8 = (slot.clusterUseSq8 !== undefined) ? slot.clusterUseSq8 : true;
       dimDensityResults = slot.dimDensityResults || null;
       dimDensitySummary = slot.dimDensitySummary || null;
       isDimDensityComputing = slot.isDimDensityComputing || false;
@@ -1507,8 +1670,14 @@
       imageFrameAssignments = slot.imageFrameAssignments || [];
       imageFrameDists = slot.imageFrameDists || [];
       imageClusterMembers = slot.imageClusterMembers || {};
-      inspectedImageFrameIdx = (slot.inspectedImageFrameIdx !== undefined) ? slot.inspectedImageFrameIdx : -1;
-      inspectedClusterId = (slot.inspectedClusterId !== undefined) ? slot.inspectedClusterId : -1;
+      inspectedImageFrameIdx = (slot.inspectedImageFrameIdx !== undefined)
+        ? slot.inspectedImageFrameIdx : -1;
+      inspectedClusterId = (slot.inspectedClusterId !== undefined)
+        ? slot.inspectedClusterId : -1;
+      inspectedImageMemberIdx = (slot.inspectedImageMemberIdx !== undefined)
+        ? slot.inspectedImageMemberIdx : 0;
+      autoClusterFollow = (slot.autoClusterFollow !== undefined)
+        ? slot.autoClusterFollow : true;
       reconstructionInfo = slot.reconstructionInfo || null;
       reconstructionSourceNeighbors = slot.reconstructionSourceNeighbors || null;
       reconQualityColoringEnabled = slot.reconQualityColoringEnabled || false;
@@ -1531,6 +1700,15 @@
       sliceThickness = (slot.sliceThickness !== undefined) ? slot.sliceThickness : 0.3;
       showBiplotRays = !!slot.showBiplotRays;
       showAnchorSparklines = !!slot.showAnchorSparklines;
+      currentImageFrame = slot.currentImageFrame || null;
+      if (dataMode === 'image' && benchmarkDataset && benchmarkDataset.length > 0) {
+        if (!currentImageFrame || currentImageFrame.length === 0) {
+          const fIdx = (inspectedImageFrameIdx >= 0 &&
+                        inspectedImageFrameIdx < benchmarkDataset.length)
+            ? inspectedImageFrameIdx : 0;
+          currentImageFrame = benchmarkDataset[fIdx];
+        }
+      }
       invalidateHighDCaches();
     }
 
@@ -1780,6 +1958,7 @@
 
       const slot = datasetSlots[slotId];
       slot.isDatasetStaged = false;
+      slot.genState = 'pending';
       slot.rawBenchmarkDataset = [];
       slot.benchmarkDataset = [];
       slot.pastSamples = [];
@@ -1863,6 +2042,8 @@
       slot.imageClusterMembers = {};
       slot.inspectedImageFrameIdx = -1;
       slot.inspectedClusterId = -1;
+      slot.inspectedImageMemberIdx = 0;
+      slot.autoClusterFollow = true;
       slot.reconstructionInfo = null;
       slot.reconstructionSourceNeighbors = null;
       slot._reverseNeighborsIndex = null;
@@ -1878,6 +2059,8 @@
       slot.reconQualityMask = null;
       slot.reconQualityIndices = null;
       slot._unprunedBackup = null;
+      slot.knnUseSq8 = true;
+      slot.clusterUseSq8 = true;
 
       // Update toolbar status pill & indicators
       const pill = document.getElementById(`datasetStatusPill_${slotId}`);
@@ -1900,6 +2083,9 @@
         knnPill.style.background = 'rgba(100, 116, 139, 0.12)';
         knnPill.style.color = '#64748b';
         knnPill.style.borderColor = 'rgba(100, 116, 139, 0.25)';
+      }
+      if (typeof updateSlotGenState === 'function') {
+        updateSlotGenState(slotId, 'pending');
       }
 
       // If this is the active slot, synchronize global state and redraw
@@ -2001,6 +2187,40 @@
       if (btnOverlaySide) {
         btnOverlaySide.classList.toggle('active', isOverlay);
         btnOverlaySide.classList.toggle('toggle-active', isOverlay);
+      }
+      syncReconPanelModeUI();
+    }
+
+    function syncReconPanelModeUI() {
+      const selA = document.getElementById('selectReconPanelAMode');
+      if (selA) selA.value = reconPanelAMode;
+      const selASide = document.getElementById('selectReconPanelAModeSide');
+      if (selASide) selASide.value = reconPanelAMode;
+      const selB = document.getElementById('selectReconPanelBMode');
+      if (selB) selB.value = reconPanelBMode;
+      const selBSide = document.getElementById('selectReconPanelBModeSide');
+      if (selBSide) selBSide.value = reconPanelBMode;
+
+      const grp = document.getElementById('groupReconPanelModes');
+      const sep = document.getElementById('sepReconPanelModes');
+      const isRecon = isRecon4PanelView;
+      if (grp) grp.style.display = isRecon ? 'flex' : 'none';
+      if (sep) sep.style.display = isRecon ? 'block' : 'none';
+    }
+
+    function setReconPanelAMode(mode) {
+      reconPanelAMode = (mode === 'single') ? 'single' : 'knn';
+      syncReconPanelModeUI();
+      if (typeof draw === 'function') {
+        draw();
+      }
+    }
+
+    function setReconPanelBMode(mode) {
+      reconPanelBMode = (mode === 'single') ? 'single' : 'targets';
+      syncReconPanelModeUI();
+      if (typeof draw === 'function') {
+        draw();
       }
     }
 
@@ -2126,6 +2346,84 @@
       }
     }
 
+    function shuffleDataset(slotId = activeDatasetSlot) {
+      const slot = datasetSlots[slotId];
+      if (!slot) return false;
+
+      const ds = (slotId === activeDatasetSlot) ? benchmarkDataset : slot.benchmarkDataset;
+      if (!ds || ds.length <= 1) return false;
+
+      if (typeof shuffleArray === 'function') {
+        shuffleArray(ds);
+      } else {
+        for (let i = ds.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const tmp = ds[i];
+          ds[i] = ds[j];
+          ds[j] = tmp;
+        }
+      }
+
+      slot.isShuffled = true;
+      if (slotId === activeDatasetSlot) {
+        isShuffled = true;
+        if (dataMode === 'image') {
+          currentImageFrame = ds[0];
+          slot.currentImageFrame = ds[0];
+        } else {
+          const maxStagedPreview = 100000;
+          const stride = ds.length > maxStagedPreview
+            ? Math.ceil(ds.length / maxStagedPreview) : 1;
+          pastSamples = [];
+          for (let i = 0; i < ds.length; i += stride) {
+            const pt = ds[i];
+            const newPt = {
+              x: pt.x,
+              y: pt.y,
+              z: pt.z || 0.0,
+              clusterId: -1,
+              frameIndex: i
+            };
+            if (pt.coords) newPt.coords = pt.coords;
+            pastSamples.push(newPt);
+          }
+          slot.pastSamples = pastSamples;
+        }
+        invalidateHighDCaches();
+        if (typeof draw === 'function') draw();
+        if (typeof syncImageQuadUI === 'function' && dataMode === 'image') {
+          syncImageQuadUI();
+        }
+      } else {
+        if (slot.dataMode === 'image') {
+          slot.currentImageFrame = ds[0];
+        } else {
+          const maxStagedPreview = 100000;
+          const stride = ds.length > maxStagedPreview
+            ? Math.ceil(ds.length / maxStagedPreview) : 1;
+          slot.pastSamples = [];
+          for (let i = 0; i < ds.length; i += stride) {
+            const pt = ds[i];
+            const newPt = {
+              x: pt.x,
+              y: pt.y,
+              z: pt.z || 0.0,
+              clusterId: -1,
+              frameIndex: i
+            };
+            if (pt.coords) newPt.coords = pt.coords;
+            slot.pastSamples.push(newPt);
+          }
+        }
+      }
+
+      if (typeof updateDatasetStatusBadge === 'function') {
+        updateDatasetStatusBadge(slotId);
+      }
+      return true;
+    }
+
+    window.shuffleDataset = shuffleDataset;
     window.switchDatasetSlot = switchDatasetSlot;
     window.clearDatasetSlot = clearDatasetSlot;
     window.saveSlotState = saveSlotState;
@@ -2138,6 +2436,9 @@
     window.syncRecon4PanelUI = syncRecon4PanelUI;
     window.setReconOverlayMode = setReconOverlayMode;
     window.syncReconOverlayUI = syncReconOverlayUI;
+    window.setReconPanelAMode = setReconPanelAMode;
+    window.setReconPanelBMode = setReconPanelBMode;
+    window.syncReconPanelModeUI = syncReconPanelModeUI;
     window.setReconKnn = setReconKnn;
     window.syncReconKnnUI = syncReconKnnUI;
     window.reconInputCamera = reconInputCamera;
@@ -2176,6 +2477,22 @@
     Object.defineProperty(window, 'reconOverlayMode', {
       get: () => reconOverlayMode,
       set: (v) => { reconOverlayMode = !!v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'reconPanelAMode', {
+      get: () => reconPanelAMode,
+      set: (v) => {
+        reconPanelAMode = (v === 'single') ? 'single' : 'knn';
+        syncReconPanelModeUI();
+      },
+      configurable: true
+    });
+    Object.defineProperty(window, 'reconPanelBMode', {
+      get: () => reconPanelBMode,
+      set: (v) => {
+        reconPanelBMode = (v === 'single') ? 'single' : 'targets';
+        syncReconPanelModeUI();
+      },
       configurable: true
     });
     Object.defineProperty(window, 'plotDimX', {
@@ -2272,3 +2589,114 @@
     window.setClusteringRlim = setClusteringRlim;
     window.setNoiseSigma = setNoiseSigma;
     window.datasetSlots = datasetSlots;
+    window.getImagePanelViewMode = getImagePanelViewMode;
+    window.setImagePanelViewMode = setImagePanelViewMode;
+    window.selectImageFrame = selectImageFrame;
+    window.selectImageCluster = selectImageCluster;
+    window.selectImageClusterMember = selectImageClusterMember;
+    Object.defineProperty(window, 'imagePanelViewModes', {
+      get: () => imagePanelViewModes,
+      set: (v) => { if (Array.isArray(v)) imagePanelViewModes = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'inspectedImageMemberIdx', {
+      get: () => inspectedImageMemberIdx,
+      set: (v) => { inspectedImageMemberIdx = Number(v) || 0; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'inspectedImageFrameIdx', {
+      get: () => inspectedImageFrameIdx,
+      set: (v) => { inspectedImageFrameIdx = Number(v); },
+      configurable: true
+    });
+    Object.defineProperty(window, 'inspectedClusterId', {
+      get: () => inspectedClusterId,
+      set: (v) => { inspectedClusterId = Number(v); },
+      configurable: true
+    });
+    Object.defineProperty(window, 'autoClusterFollow', {
+      get: () => autoClusterFollow,
+      set: (v) => { autoClusterFollow = !!v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'dataMode', {
+      get: () => dataMode,
+      set: (v) => { dataMode = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'clusters', {
+      get: () => clusters,
+      set: (v) => { if (Array.isArray(v)) clusters = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'imageClusterMembers', {
+      get: () => imageClusterMembers,
+      set: (v) => { if (v && typeof v === 'object') imageClusterMembers = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'imageFrameAssignments', {
+      get: () => imageFrameAssignments,
+      set: (v) => { if (Array.isArray(v)) imageFrameAssignments = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'imageFrameDists', {
+      get: () => imageFrameDists,
+      set: (v) => { if (Array.isArray(v)) imageFrameDists = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'totalFrames', {
+      get: () => totalFrames,
+      set: (v) => { totalFrames = Number(v) || 0; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'benchmarkDataset', {
+      get: () => benchmarkDataset,
+      set: (v) => { benchmarkDataset = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'imageWidth', {
+      get: () => imageWidth,
+      set: (v) => { imageWidth = Number(v) || 32; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'imageHeight', {
+      get: () => imageHeight,
+      set: (v) => { imageHeight = Number(v) || 32; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'imageDim', {
+      get: () => imageDim,
+      set: (v) => { imageDim = Number(v) || 1024; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'currentImageFrame', {
+      get: () => currentImageFrame,
+      set: (v) => { currentImageFrame = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'randomBallSeed', {
+      get: () => randomBallSeed,
+      set: (v) => { randomBallSeed = !!v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'ballSeed', {
+      get: () => ballSeed,
+      set: (v) => { ballSeed = Number(v) || 42; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'shuffleFrames', {
+      get: () => shuffleFrames,
+      set: (v) => { shuffleFrames = !!v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'isShuffled', {
+      get: () => isShuffled,
+      set: (v) => { isShuffled = !!v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'imageReconKnnScrollY', {
+      get: () => imageReconKnnScrollY,
+      set: (v) => { imageReconKnnScrollY = Math.max(0, Number(v) || 0); },
+      configurable: true
+    });
+

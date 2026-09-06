@@ -274,6 +274,7 @@ static void handle_client_connection(
         return;
     }
     req_buf[nread] = '\0';
+    s_last_heartbeat_time = time(NULL);
 
     /* Find header boundary \r\n\r\n */
     char *hdr_end = strstr(req_buf, "\r\n\r\n");

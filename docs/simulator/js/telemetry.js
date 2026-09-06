@@ -1116,6 +1116,7 @@
       updateZoomBadge();
       draw();
     }
+    window.resetView = resetView;
 
     function getActiveSampleTrace() {
       if (selectedSampleTraceIndex >= 0) {
@@ -1831,7 +1832,7 @@
               lbl.style.color = '#94a3b8';
             } else if (isInspecting) {
               lbl.innerText = '(Inspecting)';
-              lbl.style.color = '#facc15';
+              lbl.style.color = '#38bdf8';
             } else {
               lbl.innerText = '(Live)';
               lbl.style.color = '#4ade80';
@@ -1842,6 +1843,155 @@
           }
           if (btnPrev) btnPrev.disabled = (curVal <= 0 || total === 0);
           if (btnNext) btnNext.disabled = (curVal >= total - 1 || total === 0);
+
+          if (typeof updateReconQualityBar === 'function') {
+            updateReconQualityBar(curVal, total);
+          } else if (typeof window.updateReconQualityBar === 'function') {
+            window.updateReconQualityBar(curVal, total);
+          }
+
+          // -------------------------------------------------------------
+          // 2. Cluster Inspector Synchronization
+          // -------------------------------------------------------------
+          const sliderCluster = document.getElementById('sliderImgCluster');
+          const inputCluster = document.getElementById('inputImgCluster');
+          const lblTotalClusters = document.getElementById('lblImgTotalClusters');
+          const lblClusterStatus = document.getElementById('lblImgClusterStatus');
+          const btnAutoCluster = document.getElementById('btnImgAutoCluster');
+          const btnPrevCluster = document.getElementById('btnImgPrevCluster');
+          const btnNextCluster = document.getElementById('btnImgNextCluster');
+
+          const totalClusters = (clusters && clusters.length > 0) ? clusters.length : 0;
+          let curCluster = (typeof inspectedClusterId !== 'undefined' &&
+            inspectedClusterId >= 0)
+            ? inspectedClusterId
+            : ((imageFrameAssignments && imageFrameAssignments[curVal] !== undefined &&
+                imageFrameAssignments[curVal] >= 0)
+              ? imageFrameAssignments[curVal]
+              : 0);
+          curCluster = Math.min(Math.max(0, curCluster), Math.max(0, totalClusters - 1));
+
+          if (sliderCluster) {
+            sliderCluster.min = 0;
+            sliderCluster.max = Math.max(0, totalClusters - 1);
+            if (!window.isDraggingImageClusterSlider &&
+                document.activeElement !== sliderCluster) {
+              sliderCluster.value = curCluster;
+            }
+            sliderCluster.disabled = (totalClusters === 0);
+          }
+          if (inputCluster) {
+            inputCluster.min = 0;
+            inputCluster.max = Math.max(0, totalClusters - 1);
+            if (document.activeElement !== inputCluster) {
+              inputCluster.value = curCluster;
+            }
+            inputCluster.disabled = (totalClusters === 0);
+          }
+          if (lblTotalClusters) {
+            lblTotalClusters.innerText = totalClusters.toLocaleString();
+          }
+
+          const curMembers = (typeof getClusterMembersList === 'function' && totalClusters > 0)
+            ? getClusterMembersList(curCluster)
+            : ((imageClusterMembers && imageClusterMembers[curCluster]) || []);
+          const totalMembers = curMembers ? curMembers.length : 0;
+
+          if (lblClusterStatus) {
+            if (totalClusters === 0) {
+              lblClusterStatus.innerText = '(No clusters)';
+              lblClusterStatus.style.color = '#94a3b8';
+            } else {
+              lblClusterStatus.innerText = `(${totalMembers} members)`;
+              lblClusterStatus.style.color = '#facc15';
+            }
+          }
+          if (btnAutoCluster) {
+            btnAutoCluster.classList.toggle('active', !!autoClusterFollow);
+          }
+          if (btnPrevCluster) {
+            btnPrevCluster.disabled = (curCluster <= 0 || totalClusters === 0);
+          }
+          if (btnNextCluster) {
+            btnNextCluster.disabled = (curCluster >= totalClusters - 1 || totalClusters === 0);
+          }
+
+          // -------------------------------------------------------------
+          // 3. Member Inspector Synchronization
+          // -------------------------------------------------------------
+          const sliderMember = document.getElementById('sliderImgMember');
+          const inputMember = document.getElementById('inputImgMember');
+          const lblTotalMembers = document.getElementById('lblImgTotalMembers');
+          const lblMemberStatus = document.getElementById('lblImgMemberStatus');
+          const btnAnchorMember = document.getElementById('btnImgAnchorMember');
+          const btnPrevMember = document.getElementById('btnImgPrevMember');
+          const btnNextMember = document.getElementById('btnImgNextMember');
+          const lblMemberDist = document.getElementById('lblImgMemberDist');
+
+          const curMemberIdx = Math.max(0, Math.min(
+            (typeof inspectedImageMemberIdx !== 'undefined' ? inspectedImageMemberIdx : 0),
+            Math.max(0, totalMembers - 1)
+          ));
+
+          if (sliderMember) {
+            sliderMember.min = totalMembers > 0 ? 1 : 0;
+            sliderMember.max = Math.max(1, totalMembers);
+            if (!window.isDraggingImageMemberSlider &&
+                document.activeElement !== sliderMember) {
+              sliderMember.value = totalMembers > 0 ? (curMemberIdx + 1) : 0;
+            }
+            sliderMember.disabled = (totalMembers === 0);
+          }
+          if (inputMember) {
+            inputMember.min = totalMembers > 0 ? 1 : 0;
+            inputMember.max = Math.max(1, totalMembers);
+            if (document.activeElement !== inputMember) {
+              inputMember.value = totalMembers > 0 ? (curMemberIdx + 1) : 0;
+            }
+            inputMember.disabled = (totalMembers === 0);
+          }
+          if (lblTotalMembers) {
+            lblTotalMembers.innerText = totalMembers.toLocaleString();
+          }
+
+          const activeFrameForMember = (totalMembers > 0 && curMemberIdx < totalMembers)
+            ? curMembers[curMemberIdx]
+            : -1;
+          const memberDist = (activeFrameForMember >= 0 && imageFrameDists &&
+            imageFrameDists[activeFrameForMember] !== undefined)
+            ? imageFrameDists[activeFrameForMember]
+            : 0;
+          const memberDistStr = (typeof memberDist === 'number' && !isNaN(memberDist))
+            ? memberDist.toFixed(3)
+            : '0.000';
+
+          if (lblMemberStatus) {
+            if (totalMembers === 0) {
+              lblMemberStatus.innerText = '(No members)';
+              lblMemberStatus.style.color = '#94a3b8';
+            } else if (curMemberIdx === 0) {
+              lblMemberStatus.innerText = `(Anchor • F#${activeFrameForMember + 1})`;
+              lblMemberStatus.style.color = '#c084fc';
+            } else {
+              lblMemberStatus.innerText =
+                `(F#${activeFrameForMember + 1} • d=${memberDistStr})`;
+              lblMemberStatus.style.color = '#cbd5e1';
+            }
+          }
+          if (lblMemberDist) {
+            lblMemberDist.innerText = (totalMembers > 0)
+              ? `Residual: d=${memberDistStr}`
+              : 'Residual: —';
+          }
+          if (btnPrevMember) {
+            btnPrevMember.disabled = (curMemberIdx <= 0 || totalMembers === 0);
+          }
+          if (btnNextMember) {
+            btnNextMember.disabled = (curMemberIdx >= totalMembers - 1 || totalMembers === 0);
+          }
+          if (btnAnchorMember) {
+            btnAnchorMember.disabled = (curMemberIdx === 0 || totalMembers === 0);
+          }
         }
       }
 
@@ -2885,6 +3035,32 @@
             loopSel.value = String(isActive ? (loopCount || 10) : (slot.loopCount || 10));
           }
 
+          // Slot Gen state sync
+          const sGen = slot.genState ||
+            ((slot.benchmarkDataset && slot.benchmarkDataset.length > 0) ? 'ready' : 'pending');
+          const btnStageSlot = document.getElementById(`btnStageDataset_${sId}`);
+          if (sGen === 'pending') {
+            if (sel) sel.classList.add('pending-gen');
+            if (btnStageSlot) {
+              btnStageSlot.classList.remove('btn-gen-generating', 'btn-gen-ready');
+              btnStageSlot.classList.add('btn-gen-pending');
+              btnStageSlot.innerHTML = '🎲 Gen';
+            }
+          } else if (sGen === 'generating') {
+            if (btnStageSlot) {
+              btnStageSlot.classList.remove('btn-gen-pending', 'btn-gen-ready');
+              btnStageSlot.classList.add('btn-gen-generating');
+              btnStageSlot.innerHTML = '<span class="gen-spin-icon">🔄</span> Gen';
+            }
+          } else if (sGen === 'ready') {
+            if (sel) sel.classList.remove('pending-gen');
+            if (btnStageSlot) {
+              btnStageSlot.classList.remove('btn-gen-pending', 'btn-gen-generating');
+              btnStageSlot.classList.add('btn-gen-ready');
+              btnStageSlot.innerHTML = '<span class="gen-check-icon">✓</span> Gen';
+            }
+          }
+
           // 1. Clustered Indicator
           if (clustPill) {
             let nClust = 0;
@@ -2913,7 +3089,7 @@
               }
             }
             const framesCount = isActive ? totalFrames : (slot.totalFrames || 0);
-            const isClust = (nClust > 0 || framesCount > 0);
+            const isClust = (nClust > 0);
 
             if (isClust) {
               clustPill.textContent = `🟢 Clust (${nClust}c)`;
@@ -2988,19 +3164,33 @@
             const bmName = isActive ? currentBenchmark : slot.benchmarkKey;
             const dim = isActive ? currentDim : slot.currentDim;
             const mode = isActive ? dataMode : slot.dataMode;
-            const dimStr = mode === 'image'
-              ? '1024D' : (dim > 3 ? `${dim}D` : (dim === 3 ? '3D' : '2D'));
+            const isImg = mode === 'image';
+            const imgW = isActive ? (imageWidth || 32) : (slot.imageWidth || 32);
+            const imgH = isActive ? (imageHeight || 32) : (slot.imageHeight || 32);
+            const dimStr = isImg
+              ? `${imgW}×${imgH}`
+              : (dim > 3 ? `${dim}D` : (dim === 3 ? '3D' : '2D'));
 
             if (count > 0) {
               const countFormatted = count >= 1000
                 ? `${(count / 1000).toFixed(count % 1000 === 0 ? 0 : 1)}k`
                 : count;
-              pill.textContent = `📦 ${countFormatted} pts (${dimStr}, ${bmName})`;
-              pill.style.background =
-                isActive ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.12)';
-              pill.style.color = isActive ? '#38bdf8' : 'var(--text-muted)';
-              pill.style.borderColor =
-                isActive ? 'rgba(56, 189, 248, 0.35)' : 'rgba(148, 163, 184, 0.25)';
+              const isShuf = isActive ? isShuffled : slot.isShuffled;
+              const shufTag = isShuf ? ', 🔀 Shuffled' : '';
+              pill.textContent = isImg
+                ? `📦 ${countFormatted} frames (${dimStr}, ${bmName}${shufTag})`
+                : `📦 ${countFormatted} pts (${dimStr}, ${bmName}${shufTag})`;
+              if (sId === 'D' && (slot.reconstructionInfo || bmName === 'reconstructed')) {
+                pill.style.background = 'rgba(168, 85, 247, 0.2)';
+                pill.style.color = '#c084fc';
+                pill.style.borderColor = 'rgba(168, 85, 247, 0.5)';
+              } else {
+                pill.style.background =
+                  isActive ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.12)';
+                pill.style.color = isActive ? '#38bdf8' : 'var(--text-muted)';
+                pill.style.borderColor =
+                  isActive ? 'rgba(56, 189, 248, 0.35)' : 'rgba(148, 163, 184, 0.25)';
+              }
             } else {
               pill.textContent = '⚪ Empty';
               pill.style.background = 'rgba(100, 116, 139, 0.2)';
@@ -3021,6 +3211,34 @@
         selectLoopSide.value = String(loopCount || 10);
       }
 
+      // Sync active slot genState to side controls
+      const activeSlotObj = datasetSlots[activeDatasetSlot];
+      const activeGenState = activeSlotObj
+        ? (activeSlotObj.genState || 'ready') : 'ready';
+      const btnStageSide = document.getElementById('btnStageDatasetSide');
+      if (selSide) {
+        if (activeGenState === 'pending') {
+          selSide.classList.add('pending-gen');
+        } else {
+          selSide.classList.remove('pending-gen');
+        }
+      }
+      if (btnStageSide) {
+        if (activeGenState === 'pending') {
+          btnStageSide.classList.remove('btn-gen-generating', 'btn-gen-ready');
+          btnStageSide.classList.add('btn-gen-pending');
+          btnStageSide.innerHTML = '🎲 Generate';
+        } else if (activeGenState === 'generating') {
+          btnStageSide.classList.remove('btn-gen-pending', 'btn-gen-ready');
+          btnStageSide.classList.add('btn-gen-generating');
+          btnStageSide.innerHTML = '<span class="gen-spin-icon">🔄</span> Generating...';
+        } else {
+          btnStageSide.classList.remove('btn-gen-pending', 'btn-gen-generating');
+          btnStageSide.classList.add('btn-gen-ready');
+          btnStageSide.innerHTML = '<span class="gen-check-icon">✓</span> Ready';
+        }
+      }
+
       // Legacy fallback pill
       const legacyPill = document.getElementById('datasetStatusPill');
       if (legacyPill) {
@@ -3033,8 +3251,10 @@
           const countStr = benchmarkDataset.length.toLocaleString();
           const dimStr = dataMode === 'image'
             ? '1024D Img' : (currentDim > 3 ? `${currentDim}D` : (currentDim === 3 ? '3D' : '2D'));
+          const shufTag = isShuffled ? ', 🔀 Shuffled' : '';
           legacyPill.textContent =
-            `📦 Staged [${activeDatasetSlot}]: ${countStr} pts (${dimStr}, ${currentBenchmark})`;
+            `📦 Staged [${activeDatasetSlot}]: ` +
+            `${countStr} pts (${dimStr}, ${currentBenchmark}${shufTag})`;
           legacyPill.style.background = 'rgba(56, 189, 248, 0.15)';
           legacyPill.style.color = '#38bdf8';
           legacyPill.style.borderColor = 'rgba(56, 189, 248, 0.35)';
@@ -3046,13 +3266,89 @@
         const countStr = benchmarkDataset ? benchmarkDataset.length.toLocaleString() : '0';
         const dimStr = dataMode === 'image'
           ? '1024D Img' : (currentDim > 3 ? `${currentDim}D` : (currentDim === 3 ? '3D' : '2D'));
-        dimBadge.textContent = `[${activeDatasetSlot}] ${dimStr} • ${countStr} pts`;
+        const shufTag = isShuffled ? ' • 🔀' : '';
+        dimBadge.textContent = `[${activeDatasetSlot}] ${dimStr} • ${countStr} pts${shufTag}`;
       }
     }
 
     function hasMoreFrames() {
       if (!benchmarkDataset || benchmarkDataset.length === 0) return false;
       return currentFrameIdx < benchmarkDataset.length;
+    }
+
+    function updateSlotGenState(slotId, state) {
+      if (!DATASET_SLOTS.includes(slotId)) return;
+      const slot = datasetSlots[slotId];
+      if (slot) {
+        slot.genState = state;
+      }
+
+      const selSlot = document.getElementById(`selectBenchmark_${slotId}`);
+      const btnStage = document.getElementById(`btnStageDataset_${slotId}`);
+      const isActive = (slotId === activeDatasetSlot);
+      const selSide = document.getElementById('selectBenchmarkSide');
+      const btnSide = document.getElementById('btnStageDatasetSide');
+
+      if (state === 'pending') {
+        if (selSlot) {
+          selSlot.classList.add('pending-gen');
+          selSlot.title =
+            'Dataset selected but not yet generated/loaded. Click Gen to generate.';
+        }
+        if (isActive && selSide) {
+          selSide.classList.add('pending-gen');
+          selSide.title =
+            'Dataset selected but not yet generated/loaded. Click Generate to generate.';
+        }
+        if (btnStage) {
+          btnStage.classList.remove('btn-gen-generating', 'btn-gen-ready');
+          btnStage.classList.add('btn-gen-pending');
+          btnStage.innerHTML = '🎲 Gen';
+          btnStage.title = `Generate / load ${slot ? slot.benchmarkKey : ''}`;
+        }
+        if (isActive && btnSide) {
+          btnSide.classList.remove('btn-gen-generating', 'btn-gen-ready');
+          btnSide.classList.add('btn-gen-pending');
+          btnSide.innerHTML = '🎲 Generate';
+          btnSide.title = `Generate / load ${slot ? slot.benchmarkKey : ''}`;
+        }
+      } else if (state === 'generating') {
+        if (btnStage) {
+          btnStage.classList.remove('btn-gen-pending', 'btn-gen-ready');
+          btnStage.classList.add('btn-gen-generating');
+          btnStage.innerHTML = '<span class="gen-spin-icon">🔄</span> Gen';
+          btnStage.title = 'Generating / loading dataset into memory...';
+        }
+        if (isActive && btnSide) {
+          btnSide.classList.remove('btn-gen-pending', 'btn-gen-ready');
+          btnSide.classList.add('btn-gen-generating');
+          btnSide.innerHTML = '<span class="gen-spin-icon">🔄</span> Generating...';
+          btnSide.title = 'Generating / loading dataset into memory...';
+        }
+      } else if (state === 'ready') {
+        if (selSlot) {
+          selSlot.classList.remove('pending-gen');
+          selSlot.title = '';
+        }
+        if (isActive && selSide) {
+          selSide.classList.remove('pending-gen');
+          selSide.title = '';
+        }
+        if (btnStage) {
+          btnStage.classList.remove('btn-gen-pending', 'btn-gen-generating');
+          btnStage.classList.add('btn-gen-ready');
+          btnStage.innerHTML = '<span class="gen-check-icon">✓</span> Gen';
+          btnStage.title =
+            'Dataset generated and loaded. Click again to regenerate/reload.';
+        }
+        if (isActive && btnSide) {
+          btnSide.classList.remove('btn-gen-pending', 'btn-gen-generating');
+          btnSide.classList.add('btn-gen-ready');
+          btnStage.innerHTML = '<span class="gen-check-icon">✓</span> Ready';
+          btnSide.title =
+            'Dataset generated and loaded. Click again to regenerate/reload.';
+        }
+      }
     }
 
     function stageDataset(benchmarkKey = null, targetSlot = null) {
@@ -3068,7 +3364,18 @@
         if (typeof isImageBenchmark === 'function' && isImageBenchmark(bKey)) {
           slot.dataMode = 'image';
           slot.currentDim = 1024;
-          slot.rawBenchmarkDataset = generateImageBenchmark(bKey, slot.sampleCount || 10000);
+          slot.rlim = bKey.startsWith('img-asteroid')
+            ? 2.98 : ((bKey === 'img-ball-3') ? 11.0 : 8.0);
+          const imgOpts = {
+            randomSeed: slot.randomBallSeed,
+            seed: slot.ballSeed
+          };
+          slot.rawBenchmarkDataset = generateImageBenchmark(
+            bKey, slot.sampleCount || 10000, imgOpts
+          );
+          if (slot.rawBenchmarkDataset && slot.rawBenchmarkDataset.seed !== undefined) {
+            slot.ballSeed = slot.rawBenchmarkDataset.seed;
+          }
           slot.benchmarkDataset = slot.rawBenchmarkDataset;
         } else {
           slot.dataMode = 'coord';
@@ -3077,7 +3384,7 @@
           if (bKey.startsWith('32D') || slot.currentDim === 32) {
             slot.rlim = 1.0;
             slot.noiseSigma = 0.005;
-          } else if (slot.rlim === 1.0 && slot.currentDim <= 3) {
+          } else if ((slot.rlim === 1.0 || slot.rlim >= 5.0) && slot.currentDim <= 3) {
             slot.rlim = 0.100;
             if (slot.noiseSigma === 0.005) {
               slot.noiseSigma = 0.020;
@@ -3126,6 +3433,15 @@
           }
         }
 
+        if (slot.shuffleFrames && slot.benchmarkDataset && slot.benchmarkDataset.length > 1) {
+          if (typeof shuffleArray === 'function') {
+            shuffleArray(slot.benchmarkDataset);
+          }
+          slot.isShuffled = true;
+        } else {
+          slot.isShuffled = false;
+        }
+
         slot.pastSamples = [];
         if (slot.dataMode === 'coord' && slot.benchmarkDataset && slot.benchmarkDataset.length > 0) {
           const maxStagedPreview = 100000;
@@ -3146,6 +3462,18 @@
         }
 
         slot.isDatasetStaged = true;
+        slot.genState = 'ready';
+        slot.clusters = [];
+        slot.totalFrames = 0;
+        slot.totalEvals = 0;
+        slot.naiveEvals = 0;
+        slot.assignmentHistory = [];
+        slot.frameHistory = [];
+        slot.dcc = [];
+        slot.dccMin = null;
+        slot.transitionCounts = [];
+        slot.prevAssignedCluster = -1;
+        updateSlotGenState(slotId, 'ready');
         slot.stagedDatasetInfo = {
           name: bKey,
           count: slot.benchmarkDataset.length,
@@ -3186,7 +3514,23 @@
         imageHeight = 32;
         imageDim = 1024;
         currentDim = 1024;
-        rawBenchmarkDataset = generateImageBenchmark(currentBenchmark, sampleCount);
+        const defaultImageRlim = currentBenchmark.startsWith('img-asteroid') ? 2.98 :
+                                 ((currentBenchmark === 'img-ball-3') ? 11.0 : 8.0);
+        if (typeof setClusteringRlim === 'function') {
+          setClusteringRlim(defaultImageRlim, false);
+        } else {
+          rlim = defaultImageRlim;
+        }
+        const imgOpts = {
+          randomSeed: (typeof randomBallSeed !== 'undefined' ? randomBallSeed : false),
+          seed: (typeof ballSeed !== 'undefined' ? ballSeed : 42)
+        };
+        rawBenchmarkDataset = generateImageBenchmark(
+          currentBenchmark, sampleCount, imgOpts
+        );
+        if (rawBenchmarkDataset && rawBenchmarkDataset.seed !== undefined) {
+          ballSeed = rawBenchmarkDataset.seed;
+        }
         applyNoiseToDataset();
       } else {
         dataMode = 'coord';
@@ -3221,7 +3565,7 @@
             } else {
               noiseSigma = 0.005;
             }
-          } else if (rlim === 1.0 && currentDim <= 3) {
+          } else if ((rlim === 1.0 || rlim >= 5.0) && currentDim <= 3) {
             if (typeof setClusteringRlim === 'function') {
               setClusteringRlim(0.100, false);
             } else {
@@ -3245,6 +3589,16 @@
         }
       }
 
+      if (typeof shuffleFrames !== 'undefined' && shuffleFrames &&
+          benchmarkDataset && benchmarkDataset.length > 1) {
+        if (typeof shuffleArray === 'function') {
+          shuffleArray(benchmarkDataset);
+        }
+        isShuffled = true;
+      } else {
+        isShuffled = false;
+      }
+
       // Populate pastSamples for immediate point cloud preview in viewports
       pastSamples = [];
       if (dataMode === 'coord' && benchmarkDataset && benchmarkDataset.length > 0) {
@@ -3263,6 +3617,8 @@
           if (pt.coords) newPt.coords = pt.coords;
           pastSamples.push(newPt);
         }
+      } else if (dataMode === 'image' && benchmarkDataset && benchmarkDataset.length > 0) {
+        currentImageFrame = benchmarkDataset[0];
       }
 
       isDatasetStaged = true;
@@ -3311,6 +3667,10 @@
           );
         }
       }
+      if (datasetSlots[activeDatasetSlot]) {
+        datasetSlots[activeDatasetSlot].genState = 'ready';
+      }
+      updateSlotGenState(activeDatasetSlot, 'ready');
       updateDatasetStatusBadge();
       updateUI();
       if (typeof draw === 'function') {
@@ -3364,23 +3724,39 @@
 
       if (aInfo && slotA) {
         const countA = slotA.benchmarkDataset ? slotA.benchmarkDataset.length : 0;
-        aInfo.textContent = `${countA.toLocaleString()} pts (${slotA.currentDim || 2}D)`;
+        const isImgA = slotA.dataMode === 'image';
+        aInfo.textContent = isImgA
+          ? `${countA.toLocaleString()} frames ` +
+            `(${slotA.imageWidth || 32}×${slotA.imageHeight || 32})`
+          : `${countA.toLocaleString()} pts (${slotA.currentDim || 2}D)`;
         aInfo.style.color = countA > 0 ? '#38bdf8' : 'var(--text-muted)';
       }
       if (bInfo && slotB) {
         const countB = slotB.benchmarkDataset ? slotB.benchmarkDataset.length : 0;
-        bInfo.textContent = `${countB.toLocaleString()} pts (${slotB.currentDim || 2}D)`;
+        const isImgB = slotB.dataMode === 'image';
+        bInfo.textContent = isImgB
+          ? `${countB.toLocaleString()} frames ` +
+            `(${slotB.imageWidth || 32}×${slotB.imageHeight || 32})`
+          : `${countB.toLocaleString()} pts (${slotB.currentDim || 2}D)`;
         bInfo.style.color = countB > 0 ? '#4ade80' : 'var(--text-muted)';
       }
       if (cInfo && slotC) {
         const countC = slotC.benchmarkDataset ? slotC.benchmarkDataset.length : 0;
-        cInfo.textContent = `${countC.toLocaleString()} pts (${slotC.currentDim || 2}D)`;
+        const isImgC = slotC.dataMode === 'image';
+        cInfo.textContent = isImgC
+          ? `${countC.toLocaleString()} frames ` +
+            `(${slotC.imageWidth || 32}×${slotC.imageHeight || 32})`
+          : `${countC.toLocaleString()} pts (${slotC.currentDim || 2}D)`;
         cInfo.style.color = countC > 0 ? '#fbbf24' : 'var(--text-muted)';
       }
       if (dInfo && slotD) {
         const countD = slotD.benchmarkDataset ? slotD.benchmarkDataset.length : 0;
+        const isImgD = slotD.dataMode === 'image';
         dInfo.textContent = (countD > 0)
-          ? `${countD.toLocaleString()} pts (${slotD.currentDim || 2}D)`
+          ? (isImgD
+              ? `${countD.toLocaleString()} frames ` +
+                `(${slotD.imageWidth || 32}×${slotD.imageHeight || 32})`
+              : `${countD.toLocaleString()} pts (${slotD.currentDim || 2}D)`)
           : 'Not Reconstructed';
         dInfo.style.color = countD > 0 ? '#c084fc' : 'var(--text-muted)';
       }
@@ -3398,13 +3774,24 @@
       if (sumBox) {
         if (info) {
           sumBox.style.display = 'block';
+          const isImgD = slotD && slotD.dataMode === 'image';
           if (timeBadge) timeBadge.textContent = `${(info.computeTimeMs || 0).toFixed(1)} ms`;
-          if (ptsVal) ptsVal.textContent = `${(info.queryCount || 0).toLocaleString()} pts`;
-          if (dimVal) dimVal.textContent = `${info.outputDim || 2}D`;
+          if (ptsVal) {
+            ptsVal.textContent = isImgD
+              ? `${(info.queryCount || 0).toLocaleString()} frames`
+              : `${(info.queryCount || 0).toLocaleString()} pts`;
+          }
+          if (dimVal) {
+            dimVal.textContent = isImgD
+              ? `${slotD.imageWidth || 32}×${slotD.imageHeight || 32}`
+              : `${info.outputDim || 2}D`;
+          }
           if (avgDistVal) avgDistVal.textContent = (info.avgNeighborDist || 0).toFixed(4);
           if (modeVal) modeVal.textContent = `${info.weightMode.toUpperCase()} (k=${info.k})`;
           if (statusBadge) {
-            statusBadge.textContent = `✓ Done: ${info.queryCount} pts`;
+            statusBadge.textContent = isImgD
+              ? `✓ Done: ${info.queryCount} frames`
+              : `✓ Done: ${info.queryCount} pts`;
             statusBadge.style.background = 'rgba(34, 197, 94, 0.2)';
             statusBadge.style.color = '#4ade80';
           }
@@ -3484,8 +3871,13 @@
       const ptsC = slotC ? slotC.benchmarkDataset : null;
       if (ptsC && qIdx < ptsC.length && queryCoordsEl) {
         const qc = ptsC[qIdx];
-        if (typeof qc.z === 'number') {
-          queryCoordsEl.textContent = `(${qc.x.toFixed(3)}, ${qc.y.toFixed(3)}, ${qc.z.toFixed(3)})`;
+        if (slotC.dataMode === 'image' || qc instanceof Float32Array ||
+            qc instanceof Float64Array) {
+          queryCoordsEl.textContent =
+            `Frame #${qIdx} (${slotC.imageWidth || 32}×${slotC.imageHeight || 32})`;
+        } else if (typeof qc.z === 'number') {
+          queryCoordsEl.textContent =
+            `(${qc.x.toFixed(3)}, ${qc.y.toFixed(3)}, ${qc.z.toFixed(3)})`;
         } else {
           queryCoordsEl.textContent = `(${qc.x.toFixed(3)}, ${qc.y.toFixed(3)})`;
         }
@@ -3495,8 +3887,13 @@
       const ptsD = slotD.benchmarkDataset;
       if (qIdx < ptsD.length && outputCoordsEl) {
         const qd = ptsD[qIdx];
-        if (typeof qd.z === 'number') {
-          outputCoordsEl.textContent = `(${qd.x.toFixed(3)}, ${qd.y.toFixed(3)}, ${qd.z.toFixed(3)})`;
+        if (slotD.dataMode === 'image' || qd instanceof Float32Array ||
+            qd instanceof Float64Array) {
+          outputCoordsEl.textContent =
+            `Frame #${qIdx} (${slotD.imageWidth || 32}×${slotD.imageHeight || 32})`;
+        } else if (typeof qd.z === 'number') {
+          outputCoordsEl.textContent =
+            `(${qd.x.toFixed(3)}, ${qd.y.toFixed(3)}, ${qd.z.toFixed(3)})`;
         } else {
           outputCoordsEl.textContent = `(${qd.x.toFixed(3)}, ${qd.y.toFixed(3)})`;
         }
@@ -3519,9 +3916,14 @@
         let bCoordStr = '-';
         if (ptsB && nId >= 0 && nId < ptsB.length) {
           const pb = ptsB[nId];
-          bCoordStr = (typeof pb.z === 'number')
-            ? `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)}, ${pb.z.toFixed(2)})`
-            : `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)})`;
+          if (slotB.dataMode === 'image' || pb instanceof Float32Array ||
+              pb instanceof Float64Array) {
+            bCoordStr = `Frame #${nId}`;
+          } else {
+            bCoordStr = (typeof pb.z === 'number')
+              ? `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)}, ${pb.z.toFixed(2)})`
+              : `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)})`;
+          }
         }
 
         const isHovered = (hoveredKnnNeighborId === nId);
@@ -3544,4 +3946,8 @@
     }
 
     window.renderReconstructionDashboard = renderReconstructionDashboard;
+    window.updateUI = updateUI;
+    window.updateSlotGenState = updateSlotGenState;
+    window.stageDataset = stageDataset;
+    window.updateDatasetStatusBadge = updateDatasetStatusBadge;
 

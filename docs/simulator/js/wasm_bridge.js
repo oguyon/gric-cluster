@@ -932,7 +932,13 @@ const GricWasm = (function () {
       c.y = a.y;
       c.z = a.z;
       c.anchor = a.anchor;
-      c.members = a.members;
+      const trueMembers = (typeof imageClusterMembers !== 'undefined' &&
+                           imageClusterMembers &&
+                           imageClusterMembers[i] &&
+                           imageClusterMembers[i].length > 0)
+        ? imageClusterMembers[i].length
+        : a.members;
+      c.members = trueMembers;
       c.prob = snapshot.probs[i] || 0;
       c.lastActive = totalFrames;
       if (!c.color) {
@@ -1920,8 +1926,8 @@ function buildCliCommand() {
   }
 
   // SQ8 pre-filtering
-  if (typeof clusterUseSq8 === 'boolean' && clusterUseSq8) {
-    parts.push('-sq8');
+  if (typeof clusterUseSq8 === 'boolean') {
+    parts.push(clusterUseSq8 ? '-sq8' : '-no-sq8');
   }
 
   // Input placeholder
@@ -1948,8 +1954,8 @@ function buildCliCommand() {
     if (typeof knnMvp === 'boolean' && knnMvp) {
       knnParts.push('-multipivot');
     }
-    if (typeof knnUseSq8 === 'boolean' && knnUseSq8) {
-      knnParts.push('-sq8');
+    if (typeof knnUseSq8 === 'boolean') {
+      knnParts.push(knnUseSq8 ? '-sq8' : '-no-sq8');
     }
     knnParts.push('-o', 'knn_results.fits');
     return parts.join(' ') + ' && \\\n' + knnParts.join(' ');

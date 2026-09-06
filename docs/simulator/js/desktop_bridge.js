@@ -40,7 +40,16 @@ const DesktopBridge = (function () {
         lastErr = err;
       }
     }
-    throw lastErr || new Error(`Failed to fetch ${endpoint}`);
+    if (lastErr) {
+      if (lastErr.name === 'TypeError' || lastErr.message === 'Failed to fetch') {
+        throw new Error(
+          `Cannot reach gric-server at ${urls[0] || '127.0.0.1:8080'} (Failed to fetch). ` +
+          'Please ensure ./tools/gric-gui or gric-server is running.'
+        );
+      }
+      throw lastErr;
+    }
+    throw new Error(`Failed to fetch ${endpoint}`);
   }
 
   /**
@@ -453,6 +462,8 @@ const DesktopBridge = (function () {
       anchors: [],
       dcc: [],
       membership: [],
+      assignments: [],
+      evals: [],
       logText: ''
     };
 
@@ -612,48 +623,54 @@ const DesktopBridge = (function () {
           }
         }
       } catch (e) {
-        /* Fallback to frame_membership */
-        try {
-          const memBuf = await readBinaryFile(`${cleanDir}/frame_membership.bin`);
-          const view = new DataView(memBuf);
-          const magic = String.fromCharCode(
-            view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3)
-          );
-          if (magic === 'GRIC') {
-            const headerSize = view.getUint16(8, true);
-            const nframes = Number(view.getBigUint64(32, true));
-            const mems = new Uint32Array(memBuf.slice(headerSize), 0, nframes);
-            for (let f = 0; f < nframes; f++) {
-              const val = mems[f];
-              results.membership.push(val);
-              if (val < results.anchors.length) {
-                results.anchors[val].members = (results.anchors[val].members || 0) + 1;
-              }
-            }
-          }
-        } catch (memErr) {
-          try {
-            const memText = await readFile(`${cleanDir}/frame_membership.txt`);
-            const lines = memText.split(/\r?\n/);
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || trimmed.startsWith('#')) continue;
-              const val = parseInt(trimmed, 10);
-              if (!isNaN(val)) {
-                results.membership.push(val);
-                if (val >= 0 && val < results.anchors.length) {
-                  results.anchors[val].members = (results.anchors[val].members || 0) + 1;
-                }
-              }
-            }
-          } catch (err) {
-            /* Membership optional */
-          }
-        }
+        /* Counts optional */
       }
     }
 
-    // 4. Try reading cluster_run.log and extract stats
+    // 4. Try reading frame_membership.bin / frame_membership.txt (authoritative assignments)
+    try {
+      const memBuf = await readBinaryFile(`${cleanDir}/frame_membership.bin`);
+      const view = new DataView(memBuf);
+      const magic = String.fromCharCode(
+        view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3)
+      );
+      if (magic === 'GRIC') {
+        const headerSize = view.getUint16(8, true);
+        const nframes = Number(view.getBigUint64(32, true));
+        const mems = new Uint32Array(memBuf.slice(headerSize), 0, nframes);
+        for (let f = 0; f < nframes; f++) {
+          const val = mems[f];
+          results.membership.push(val);
+          results.assignments.push(val);
+        }
+      }
+    } catch (memBinErr) {
+      try {
+        const memText = await readFile(`${cleanDir}/frame_membership.txt`);
+        const lines = memText.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+          const trimmed = lines[i].trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const tokens = trimmed.split(/[,\s\t]+/).filter(t => t.length > 0);
+          let val = NaN;
+          let fIdx = i;
+          if (tokens.length >= 2) {
+            fIdx = parseInt(tokens[0], 10);
+            val = parseInt(tokens[1], 10);
+          } else if (tokens.length === 1) {
+            val = parseInt(tokens[0], 10);
+          }
+          if (!isNaN(val)) {
+            results.membership[fIdx] = val;
+            results.assignments[fIdx] = val;
+          }
+        }
+      } catch (err) {
+        /* Membership optional */
+      }
+    }
+
+    // 5. Try reading cluster_run.log and extract stats
     results.stats = {
       frames: 0,
       clusters: 0,
@@ -668,10 +685,12 @@ const DesktopBridge = (function () {
       predHits: 0,
       predAttempts: 0
     };
+
     try {
-      results.logText = await readFile(`${cleanDir}/cluster_run.log`);
-      if (results.logText) {
-        const logLines = results.logText.split(/\r?\n/);
+      const logText = await readFile(`${cleanDir}/cluster_run.log`);
+      if (logText) {
+        results.logText = logText;
+        const logLines = logText.split(/\r?\n/);
         for (const l of logLines) {
           const trimmed = l.trim();
           if (trimmed.startsWith('STATS_FRAMES:')) {
@@ -705,13 +724,16 @@ const DesktopBridge = (function () {
       /* Log optional */
     }
 
-    // 5. Try reading frame_evals.txt (per-frame distance evaluations)
+    // 6. Try reading frame_evals.txt (per-frame distance evaluations)
     results.evals = [];
-    results.assignments = [];
     try {
       const evalsText = await readFile(`${cleanDir}/frame_evals.txt`);
       if (evalsText) {
         const lines = evalsText.split(/\r?\n/);
+        let hasIncompatibleCluster = false;
+        const parsedEvals = [];
+        const parsedAssignments = [];
+
         for (let i = 0; i < lines.length; i++) {
           const l = lines[i].trim();
           if (!l || l.startsWith('#')) continue;
@@ -723,18 +745,34 @@ const DesktopBridge = (function () {
             const match = parseInt(tokens[3], 10) === 1;
 
             if (!isNaN(fIdx) && !isNaN(cId) && !isNaN(dist)) {
-              if (!results.evals[fIdx]) {
-                results.evals[fIdx] = [];
+              if (results.anchors.length > 0 && cId >= results.anchors.length) {
+                hasIncompatibleCluster = true;
               }
-              results.evals[fIdx].push({
+              if (!parsedEvals[fIdx]) {
+                parsedEvals[fIdx] = [];
+              }
+              parsedEvals[fIdx].push({
                 clusterId: cId,
                 dist: dist,
                 match: match
               });
               if (match) {
-                results.assignments[fIdx] = cId;
+                parsedAssignments[fIdx] = cId;
               }
             }
+          }
+        }
+
+        if (hasIncompatibleCluster) {
+          console.warn(
+            `[DesktopBridge] Warning: frame_evals.txt references cluster IDs >= ` +
+            `anchor count (${results.anchors.length}). Likely an aborted run with ` +
+            `different parameters. Ignoring incompatible evals.`
+          );
+        } else {
+          results.evals = parsedEvals;
+          if (results.assignments.length === 0 && parsedAssignments.length > 0) {
+            results.assignments = parsedAssignments;
           }
         }
       }
@@ -742,35 +780,17 @@ const DesktopBridge = (function () {
       /* frame_evals optional */
     }
 
-    // 6. Fallback reading frame_membership.txt for cluster assignments if evals missing
-    if (results.assignments.length === 0) {
-      try {
-        const memText = await readFile(`${cleanDir}/frame_membership.txt`);
-        if (memText) {
-          const lines = memText.split(/\r?\n/);
-          for (let i = 0; i < lines.length; i++) {
-            const l = lines[i].trim();
-            if (!l || l.startsWith('#')) continue;
-            const tokens = l.split(/[,\s\t]+/).filter(t => t.length > 0);
-            if (tokens.length >= 2) {
-              const fIdx = parseInt(tokens[0], 10);
-              const cId = parseInt(tokens[1], 10);
-              const dist = tokens.length >= 3 ? parseFloat(tokens[2]) : 0.0;
-              if (!isNaN(fIdx) && !isNaN(cId)) {
-                results.assignments[fIdx] = cId;
-                if (!results.evals[fIdx]) {
-                  results.evals[fIdx] = [{
-                    clusterId: cId,
-                    dist: isNaN(dist) ? 0.0 : dist,
-                    match: true
-                  }];
-                }
-              }
-            }
-          }
+    // 7. Ensure cluster member counts in results.anchors are synced with actual assignments
+    if (results.assignments.length > 0 && results.anchors.length > 0) {
+      const counts = new Uint32Array(results.anchors.length);
+      for (let f = 0; f < results.assignments.length; f++) {
+        const c = results.assignments[f];
+        if (c !== undefined && c >= 0 && c < results.anchors.length) {
+          counts[c]++;
         }
-      } catch (err) {
-        /* frame_membership optional */
+      }
+      for (let i = 0; i < results.anchors.length; i++) {
+        results.anchors[i].members = counts[i];
       }
     }
 

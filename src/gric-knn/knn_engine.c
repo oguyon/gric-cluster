@@ -1546,6 +1546,11 @@ static void knn_greedy_route_to_basin(
 
     for (int hop = 0; hop < max_hops; hop++)
     {
+        if (curr_d <= 1e-9)
+        {
+            break;
+        }
+
         const uint32_t *neighbors = &model->graph_indices[curr_u * (long)graph_k];
         const float    *n_dists = &model->graph_distances[curr_u * (long)graph_k];
         int improved = 0;
@@ -1640,7 +1645,7 @@ static void knn_greedy_route_to_basin(
                 continue;
             }
 
-            if (knn_visited_check_and_mark(visited, nb_id))
+            if (knn_visited_is_visited(visited, nb_id))
             {
                 continue;
             }
@@ -1664,6 +1669,8 @@ static void knn_greedy_route_to_basin(
             {
                 continue;
             }
+
+            knn_visited_mark(visited, nb_id);
 
             if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
             {
@@ -2916,11 +2923,7 @@ static void knn_cross_eval_inter_clusters(
             continue;
         }
 
-        if (active_mask[q] == 0)
-        {
-            telem->level1_clusters_pruned++;
-            continue;
-        }
+        /* Do not skip based on locator's internal measurement worklist mask */
 
         // 3P test against all evaluated anchor pivots using tightened tau_k
         int pruned_3p = 0;
@@ -2981,7 +2984,8 @@ static void knn_cross_eval_inter_clusters(
           compare_cluster_scores);
 
     // Inter-Cluster Search on surviving candidate clusters
-    for (int idx = 0; idx < num_cand_clusters; idx++)
+    int max_cands = (config->approx_mode) ? 4 : num_cand_clusters;
+    for (int idx = 0; idx < num_cand_clusters && idx < max_cands; idx++)
     {
         int q = scores_buffer[idx].id;
         double lb_cluster = scores_buffer[idx].lb;
@@ -3234,29 +3238,12 @@ static void knn_search_cross_dataset_frame(
         }
     }
 
-    // Option 2: Sequential Trajectory Seed Warm-Start (gated by cluster adjacency)
+    // Option 2: Sequential Trajectory Seed Warm-Start
     if (config->use_trajectory && tracker != NULL &&
         tracker->prev_query_id == query_id - 1 && tracker->prev_best_seed >= 0)
     {
         long prev_seed = tracker->prev_best_seed;
-        int check_prev = 0;
-
-        if (prev_c == best_c)
-        {
-            check_prev = 1;
-        }
-        else if (prev_c >= 0 && prev_c < M && best_c >= 0 && best_c < M)
-        {
-            double dcc = model->dcc_matrix[best_c * M + prev_c];
-            double r_sum = model->cluster_radii[best_c] +
-                           model->cluster_radii[prev_c];
-            if (dcc <= r_sum)
-            {
-                check_prev = 1;
-            }
-        }
-
-        if (check_prev && !knn_visited_check_and_mark(visited, prev_seed))
+        if (!knn_visited_check_and_mark(visited, prev_seed))
         {
             if (knn_reader_read_frame(cand_reader, prev_seed, cand_buffer) == 0)
             {
@@ -3279,6 +3266,15 @@ static void knn_search_cross_dataset_frame(
                         num_seed_pivots++;
                     }
                     telem->trajectory_warmstarts++;
+                }
+                if (prev_seed >= 0 && prev_seed < model->total_dataset_frames)
+                {
+                    int prev_seed_c = model->frame_cluster_map[prev_seed];
+                    if (prev_seed_c >= 0 && prev_seed_c < M && d_prev < min_d_anchor)
+                    {
+                        best_c = prev_seed_c;
+                        min_d_anchor = d_prev;
+                    }
                 }
             }
         }
@@ -3378,7 +3374,25 @@ static void knn_search_cross_dataset_frame(
         config, cand_reader, cand_buffer, anchor_dists, heap, visited, telem
     );
 
-    if (config->approx_mode)
+    for (int j = 0; j < heap->count; j++)
+    {
+        if (heap->data[j].dist < best_seed_dist)
+        {
+            best_seed_dist = heap->data[j].dist;
+            best_seed_id = heap->data[j].frame_id;
+        }
+    }
+
+    if (best_seed_id >= 0 && best_seed_id < model->total_dataset_frames)
+    {
+        int seed_c = model->frame_cluster_map[best_seed_id];
+        if (seed_c >= 0 && seed_c < M)
+        {
+            best_c = seed_c;
+        }
+    }
+
+    if (config->approx_mode && heap->count >= heap->k && best_seed_dist < 1e-5)
     {
         telem->level1_clusters_pruned += (uint64_t)M;
         knn_update_trajectory_tracker(
@@ -3394,6 +3408,24 @@ static void knn_search_cross_dataset_frame(
         config, cand_reader, cand_buffer, anchor_dists,
         scores_buffer, active_mask, heap, visited, telem
     );
+
+    for (int j = 0; j < heap->count; j++)
+    {
+        if (heap->data[j].dist < best_seed_dist)
+        {
+            best_seed_dist = heap->data[j].dist;
+            best_seed_id = heap->data[j].frame_id;
+        }
+    }
+
+    if (best_seed_id >= 0 && best_seed_id < model->total_dataset_frames)
+    {
+        int seed_c = model->frame_cluster_map[best_seed_id];
+        if (seed_c >= 0 && seed_c < M)
+        {
+            best_c = seed_c;
+        }
+    }
 
     knn_update_trajectory_tracker(
         tracker, query_id, best_c, best_seed_id, best_seed_dist, heap
@@ -3618,7 +3650,7 @@ int knn_run_search(
         visited.query_sq8 = query_sq8;
 
 #ifdef _OPENMP
-#pragma omp for schedule(dynamic, 32)
+#pragma omp for schedule(static)
 #endif
         for (long i = 0; i < N_query; i++)
         {

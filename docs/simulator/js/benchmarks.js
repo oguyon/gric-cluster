@@ -46,6 +46,14 @@
       "512Drand": "<b>512Drand</b>: 512D random " +
         "(dims 0..2: 50% variance, dims 3..511: 50% variance).",
 
+      // Image Benchmarks (32x32)
+      "img-ball-1": "<b>Single Bouncing Ball (32×32)</b>: 2D circular disk (radius=5) in box.",
+      "img-ball-2": "<b>2 Colliding Balls (32×32)</b>: 2 circular disks with collisions.",
+      "img-ball-3": "<b>3 Colliding Balls (32×32)</b>: 3 circular disks with collisions.",
+      "img-asteroid-x": "<b>Asteroid View X (32×32)</b>: Rotating bumpy asteroid viewed along +X.",
+      "img-asteroid-y": "<b>Asteroid View Y (32×32)</b>: Rotating bumpy asteroid viewed along +Y.",
+      "img-asteroid-z": "<b>Asteroid View Z (32×32)</b>: Rotating bumpy asteroid viewed along +Z.",
+
       // Reconstructed
       "reconstructed": "<b>Reconstructed Dataset</b>: Non-parametric k-NN reconstruction evaluated from queries C mapped through training set (A → B).",
 
@@ -55,10 +63,12 @@
 
     function is3DBenchmark(type) {
       if (!type) return false;
+      if (typeof isImageBenchmark === 'function' && isImageBenchmark(type)) return false;
       if (type.startsWith("3D") || type === "3Dlorenz") return true;
       if (type.startsWith("32D") || type.startsWith("128D") || type.startsWith("512D")) return true;
       if (type === "reconstructed") {
         const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
+        if (slotD && slotD.dataMode === 'image') return false;
         if (slotD && (slotD.currentDim >= 3 ||
             (slotD.reconstructionInfo && slotD.reconstructionInfo.outputDim >= 3))) {
           return true;
@@ -70,6 +80,10 @@
     function getBenchmarkDim(type) {
       if (!type) return 2;
       if (typeof isImageBenchmark === 'function' && isImageBenchmark(type)) return 1024;
+      if (type === "reconstructed") {
+        const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
+        if (slotD && slotD.dataMode === 'image') return slotD.imageDim || 1024;
+      }
       if (type.startsWith("32D")) return 32;
       if (type.startsWith("128D")) return 128;
       if (type.startsWith("512D")) return 512;
@@ -362,4 +376,7 @@
 
     // =========================================================================
 
-
+    if (typeof window !== 'undefined') {
+      window.is3DBenchmark = is3DBenchmark;
+      window.getBenchmarkDim = getBenchmarkDim;
+    }
