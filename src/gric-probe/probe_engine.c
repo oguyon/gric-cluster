@@ -3,7 +3,12 @@
  * @brief Analysis engine for dataset geometry, variance, and parameter tuning.
  */
 
-#define _POSIX_C_SOURCE 200809L
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#ifndef _DARWIN_C_SOURCE
+#define _DARWIN_C_SOURCE
+#endif
 #include "probe_engine.h"
 #include "gric_bin_io.h"
 #include "gric_bin_header.h"
@@ -662,14 +667,25 @@ int probe_run(
 
 #ifdef _OPENMP
     results->profile.ncpu = omp_get_max_threads();
+#elif defined(_SC_NPROCESSORS_ONLN)
+    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    results->profile.ncpu = (ncpu > 0) ? (int)ncpu : 4;
+#elif defined(_SC_NPROCESSORS_CONF)
+    long ncpu = sysconf(_SC_NPROCESSORS_CONF);
+    results->profile.ncpu = (ncpu > 0) ? (int)ncpu : 4;
 #else
-    results->profile.ncpu = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (results->profile.ncpu < 1) results->profile.ncpu = 4;
+    results->profile.ncpu = 4;
 #endif
 
     int est_cl = (int)(num_frames * 0.15);
-    if (est_cl < 100) est_cl = 100;
-    if (est_cl > 10000) est_cl = 10000;
+    if (est_cl < 100)
+    {
+        est_cl = 100;
+    }
+    if (est_cl > 10000)
+    {
+        est_cl = 10000;
+    }
     results->profile.recommended_maxcl = est_cl;
 
     if (config->show_progress)

@@ -3,7 +3,12 @@
  * @brief Implementation of dataset profile serialization and discovery.
  */
 
-#define _POSIX_C_SOURCE 200809L
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#ifndef _DARWIN_C_SOURCE
+#define _DARWIN_C_SOURCE
+#endif
 #include "gric_profile.h"
 #include <ctype.h>
 #include <stdio.h>

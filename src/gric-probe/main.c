@@ -3,7 +3,12 @@
  * @brief Main entrypoint for gric-probe dataset characterization utility.
  */
 
-#define _POSIX_C_SOURCE 200809L
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#ifndef _DARWIN_C_SOURCE
+#define _DARWIN_C_SOURCE
+#endif
 #include "probe_engine.h"
 #include "probe_report.h"
 #include "gric_profile.h"
