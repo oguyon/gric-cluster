@@ -247,11 +247,13 @@ const DesktopBridge = (function () {
 
     let opts = options;
     if (typeof options === 'string') {
+      const fn4 = (typeof arguments[4] === 'function') ? arguments[4] : null;
+      const fn3 = (typeof arguments[3] === 'function') ? arguments[3] : null;
       opts = {
         cmd: options,
         args: arguments[1] || [],
         onOutput: arguments[2],
-        onFinish: arguments[3]
+        onFinish: fn4 || fn3 || function () {}
       };
     } else if (!opts) {
       opts = {};
@@ -396,36 +398,55 @@ const DesktopBridge = (function () {
   /**
    * Stage dataset coordinates to a workspace file on disk.
    */
-  async function stageDatasetFile(datasetName, dataset, forceDim = null) {
+  async function stageDatasetFile(
+    datasetName,
+    dataset,
+    forceDim = null,
+    onProgress = null
+  ) {
     const safeName = datasetName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const fileName = `${safeName}.txt`;
     const is2D = (forceDim === 2) || (safeName.startsWith('2D') || safeName === 'stream');
-    let content = '';
-    for (let i = 0; i < dataset.length; i++) {
+    const total = dataset.length;
+    const lines = [];
+
+    for (let i = 0; i < total; i++) {
+      if (onProgress && (i === 0 || i % 1000 === 0)) {
+        const pct = Math.floor((i / Math.max(1, total)) * 100);
+        onProgress(pct, 'Staging dataset coordinates');
+        await new Promise(r => setTimeout(r, 0));
+      }
+
       const pt = dataset[i];
       if (Array.isArray(pt) || ArrayBuffer.isView(pt) ||
           (pt && typeof pt.length === 'number')) {
         const slice = is2D ? Array.from(pt).slice(0, 2) : Array.from(pt);
-        content += slice.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+        lines.push(slice.map(v => Number(v).toFixed(6)).join(' '));
       } else if (pt && typeof pt === 'object') {
         if (pt.coords &&
             (Array.isArray(pt.coords) || ArrayBuffer.isView(pt.coords))) {
           const coords = forceDim ?
             Array.from(pt.coords).slice(0, forceDim) : Array.from(pt.coords);
-          content += coords.map(v => Number(v).toFixed(6)).join(' ') + '\n';
+          lines.push(coords.map(v => Number(v).toFixed(6)).join(' '));
         } else {
           const px = Number(pt.x || 0).toFixed(6);
           const py = Number(pt.y || 0).toFixed(6);
           if (!is2D && typeof pt.z === 'number' && !isNaN(pt.z)) {
             const pz = Number(pt.z).toFixed(6);
-            content += `${px} ${py} ${pz}\n`;
+            lines.push(`${px} ${py} ${pz}`);
           } else {
-            content += `${px} ${py}\n`;
+            lines.push(`${px} ${py}`);
           }
         }
       }
     }
-    await writeFile(fileName, content);
+
+    if (onProgress) {
+      onProgress(100, 'Writing staged dataset file');
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    await writeFile(fileName, lines.join('\n') + '\n');
     return fileName;
   }
 
@@ -1332,6 +1353,71 @@ const DesktopBridge = (function () {
       return null;
     }
   }
+  /**
+   * Run gric-probe on a dataset file to analyze spectral variance,
+   * calibrate rlim presets, spatial tiling, temporal prediction,
+   * and SQ8 quantization parameters.
+   *
+   * @param {string} datasetPath - Path to dataset file or stream.
+   * @param {Object} [options] - Options (numSample, warmup, useDouble, etc.)
+   * @returns {Promise<Object>} Parsed .gricprof JSON profile object.
+   */
+  async function runDatasetProbe(datasetPath, options = {}) {
+    return new Promise((resolve, reject) => {
+      let outputBuffer = '';
+      const args = [datasetPath, '--json', '-q', '-progress'];
+      if (options.numSample && options.numSample > 0) {
+        args.push('-n', String(options.numSample));
+      }
+      if (options.warmup && options.warmup > 0) {
+        args.push('-warmup', String(options.warmup));
+      }
+      if (options.useDouble) {
+        args.push('-double');
+      }
+
+      runCliJob({
+        cmd: 'gric-probe',
+        args: args,
+        onOutput: (text) => {
+          outputBuffer += text;
+          if (typeof options.onProgress === 'function') {
+            const regex = /\[PROBE:\s*(\d+)%\](?:\s*([^\r\n]*))?/g;
+            let match;
+            let lastPct = null;
+            let lastPhase = null;
+            while ((match = regex.exec(outputBuffer)) !== null) {
+              lastPct = parseInt(match[1], 10);
+              lastPhase = match[2] ? match[2].trim() : '';
+            }
+            if (lastPct !== null) {
+              options.onProgress(lastPct, lastPhase);
+            }
+          }
+        },
+        onFinish: (res) => {
+          if (res.exitCode !== 0) {
+            return reject(
+              new Error(`gric-probe failed (code ${res.exitCode}): ${outputBuffer}`)
+            );
+          }
+          try {
+            const jsonStart = outputBuffer.indexOf('{');
+            const jsonEnd = outputBuffer.lastIndexOf('}');
+            if (jsonStart >= 0 && jsonEnd > jsonStart) {
+              const jsonStr = outputBuffer.substring(jsonStart, jsonEnd + 1);
+              const profile = JSON.parse(jsonStr);
+              resolve(profile);
+            } else {
+              reject(new Error('No valid JSON output received from gric-probe'));
+            }
+          } catch (err) {
+            reject(new Error(`Failed to parse gric-probe JSON: ${err.message}`));
+          }
+        }
+      });
+    });
+  }
 
   return {
     probe,
@@ -1359,6 +1445,7 @@ const DesktopBridge = (function () {
     readKnnQueryResults,
     parseDimDensityLog,
     readDimDensityResults,
+    runDatasetProbe,
     shutdownServer
   };
 })();

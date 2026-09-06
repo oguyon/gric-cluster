@@ -2926,6 +2926,18 @@
           clearDatasetSlot(sId);
         });
       }
+
+      // Probe button per slot
+      const btnProbeSlot = document.getElementById(`btnProbeDataset_${sId}`);
+      if (btnProbeSlot) {
+        btnProbeSlot.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (activeDatasetSlot !== sId) {
+            switchDatasetSlot(sId);
+          }
+          triggerDatasetProbe(sId);
+        });
+      }
     });
 
     // Multi-Dataset Toggle Buttons
@@ -4145,6 +4157,710 @@
 
     // Auto-rlim (-scandist)
     document.getElementById('btnAutoRlim').addEventListener('click', computeAutoRlim);
+
+    // Dataset Probe & Calibration (gric-probe)
+    const btnProbeEl = document.getElementById('btnProbeDataset');
+    if (btnProbeEl) {
+      btnProbeEl.addEventListener('click', () => {
+        triggerDatasetProbe(activeDatasetSlot || 'A');
+      });
+    }
+
+    const pillFine = document.getElementById('pillPresetFine');
+    if (pillFine) {
+      pillFine.addEventListener('click', () => applyProbePreset('fine'));
+    }
+    const pillBalanced = document.getElementById('pillPresetBalanced');
+    if (pillBalanced) {
+      pillBalanced.addEventListener('click', () => applyProbePreset('balanced'));
+    }
+    const pillCoarse = document.getElementById('pillPresetCoarse');
+    if (pillCoarse) {
+      pillCoarse.addEventListener('click', () => applyProbePreset('coarse'));
+    }
+
+    function normalizeGricProfile(raw) {
+      if (!raw) return null;
+      const norm = { ...raw };
+
+      // 1. Clustering & Presets
+      if (raw.clustering) {
+        if (typeof raw.clustering.rlim_recommended === 'number') {
+          norm.rlim_recommended = raw.clustering.rlim_recommended;
+        }
+        if (raw.clustering.rlim_presets) {
+          if (typeof raw.clustering.rlim_presets.fine === 'number') {
+            norm.rlim_fine = raw.clustering.rlim_presets.fine;
+          }
+          if (typeof raw.clustering.rlim_presets.balanced === 'number') {
+            norm.rlim_balanced = raw.clustering.rlim_presets.balanced;
+          }
+          if (typeof raw.clustering.rlim_presets.coarse === 'number') {
+            norm.rlim_coarse = raw.clustering.rlim_presets.coarse;
+          }
+        }
+        if (typeof raw.clustering.recommended_maxcl === 'number') {
+          norm.recommended_maxcl = raw.clustering.recommended_maxcl;
+        }
+        if (raw.clustering.tiles_x !== undefined) norm.tiles_x = raw.clustering.tiles_x;
+        if (raw.clustering.tiles_y !== undefined) norm.tiles_y = raw.clustering.tiles_y;
+      }
+
+      // 2. Prediction
+      if (raw.prediction) {
+        if (raw.prediction.enabled !== undefined) {
+          norm.pred_enabled = (raw.prediction.enabled === true ||
+                               raw.prediction.enabled === 1) ? 1 : 0;
+        }
+        if (typeof raw.prediction.pred_len === 'number') {
+          norm.pred_len = raw.prediction.pred_len;
+        }
+        if (typeof raw.prediction.pred_h === 'number') {
+          norm.pred_h = raw.prediction.pred_h;
+        }
+        if (typeof raw.prediction.continuity_ratio === 'number') {
+          norm.continuity_ratio = raw.prediction.continuity_ratio;
+        }
+      }
+
+      // 3. Acceleration
+      if (raw.acceleration) {
+        if (raw.acceleration.use_sq8 !== undefined) {
+          norm.use_sq8 = (raw.acceleration.use_sq8 === true ||
+                          raw.acceleration.use_sq8 === 1) ? 1 : 0;
+        }
+        if (raw.acceleration.te4 !== undefined) {
+          norm.te4_enabled = (raw.acceleration.te4 === true ||
+                              raw.acceleration.te4 === 1) ? 1 : 0;
+        }
+        if (raw.acceleration.te5 !== undefined) {
+          norm.te5_enabled = (raw.acceleration.te5 === true ||
+                              raw.acceleration.te5 === 1) ? 1 : 0;
+        }
+        if (raw.acceleration.sq8_scale !== undefined) {
+          norm.sq8_params = {
+            min_val: raw.acceleration.sq8_min,
+            max_val: raw.acceleration.sq8_max,
+            scale: raw.acceleration.sq8_scale
+          };
+        }
+      }
+
+      // 4. Spectral Variance
+      if (raw.spectral) {
+        if (Array.isArray(raw.spectral.variance_ordering)) {
+          norm.perm_dim = raw.spectral.variance_ordering;
+        }
+        if (Array.isArray(raw.spectral.residual_tail)) {
+          norm.residual_tail = raw.spectral.residual_tail;
+        }
+      }
+
+      // Fallbacks
+      if (typeof norm.rlim_recommended === 'number' && typeof norm.rlim_balanced !== 'number') {
+        norm.rlim_balanced = norm.rlim_recommended;
+      }
+      if (typeof norm.rlim_balanced === 'number') {
+        if (typeof norm.rlim_fine !== 'number') norm.rlim_fine = norm.rlim_balanced * 0.5;
+        if (typeof norm.rlim_coarse !== 'number') norm.rlim_coarse = norm.rlim_balanced * 2.0;
+        if (typeof norm.rlim_recommended !== 'number') norm.rlim_recommended = norm.rlim_balanced;
+      }
+
+      return norm;
+    }
+
+    function updateProbePresetPills(activePresetName = 'balanced') {
+      const activeProf = window._activeGricProfile ||
+        ((typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot])
+          ? datasetSlots[activeDatasetSlot].gricProfile : null);
+      const prof = normalizeGricProfile(activeProf);
+      const pFine = document.getElementById('pillPresetFine');
+      const pBal = document.getElementById('pillPresetBalanced');
+      const pCoarse = document.getElementById('pillPresetCoarse');
+
+      if (prof) {
+        if (pFine && typeof prof.rlim_fine === 'number') {
+          pFine.title = `Fine: rlim = ${prof.rlim_fine.toFixed(3)} (~D5%)`;
+        }
+        if (pBal && typeof prof.rlim_balanced === 'number') {
+          pBal.title = `Balanced: rlim = ${prof.rlim_balanced.toFixed(3)} (~D10%)`;
+        }
+        if (pCoarse && typeof prof.rlim_coarse === 'number') {
+          pCoarse.title = `Coarse: rlim = ${prof.rlim_coarse.toFixed(3)} (~D25%)`;
+        }
+      }
+
+      [pFine, pBal, pCoarse].forEach(p => {
+        if (p) p.classList.remove('active');
+      });
+      if (activePresetName) {
+        const cap = activePresetName.charAt(0).toUpperCase() +
+          activePresetName.slice(1).toLowerCase();
+        const activePill = document.getElementById(`pillPreset${cap}`);
+        if (activePill) activePill.classList.add('active');
+      }
+    }
+    window.updateProbePresetPills = updateProbePresetPills;
+
+    function applyProbePreset(presetName) {
+      const activeProf = window._activeGricProfile ||
+        ((typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot])
+          ? datasetSlots[activeDatasetSlot].gricProfile : null);
+
+      const prof = normalizeGricProfile(activeProf);
+      let targetR = null;
+
+      if (prof) {
+        if (presetName === 'fine' && typeof prof.rlim_fine === 'number') {
+          targetR = prof.rlim_fine;
+        } else if (presetName === 'coarse' && typeof prof.rlim_coarse === 'number') {
+          targetR = prof.rlim_coarse;
+        } else if (typeof prof.rlim_balanced === 'number') {
+          targetR = prof.rlim_balanced;
+        }
+      } else {
+        const baseR = (typeof rlim === 'number' && rlim > 0) ? rlim : 0.100;
+        if (presetName === 'fine') {
+          targetR = baseR * 0.5;
+        } else if (presetName === 'coarse') {
+          targetR = baseR * 2.0;
+        } else {
+          targetR = baseR;
+        }
+      }
+
+      if (typeof targetR === 'number' && !isNaN(targetR) && targetR > 0) {
+        if (typeof setClusteringRlim === 'function') {
+          setClusteringRlim(targetR, false);
+        } else if (typeof window.setClusteringRlim === 'function') {
+          window.setClusteringRlim(targetR, false);
+        } else {
+          rlim = parseFloat(targetR.toFixed(3));
+          const slR = document.getElementById('sliderRlim');
+          if (slR) slR.value = rlim;
+          const inpR = document.getElementById('inputRlim');
+          if (inpR) inpR.value = rlim.toFixed(3);
+        }
+      }
+
+      updateProbePresetPills(presetName);
+
+      const capPreset = presetName.charAt(0).toUpperCase() + presetName.slice(1);
+      if (typeof showToast === 'function') {
+        const est = prof ? '' : ' (pre-probe estimate)';
+        showToast(`🎯 Applied ${capPreset} preset: rlim = ${Number(targetR).toFixed(3)}${est}`);
+      }
+      if (typeof syncControlDependencies === 'function') syncControlDependencies();
+      if (typeof updateCliCommand === 'function') updateCliCommand();
+      if (typeof updateUI === 'function') updateUI();
+      if (typeof draw === 'function') draw();
+    }
+
+    async function runJsInMemoryProbe(points, dim, onProgress = null) {
+      const N = points.length;
+      if (N === 0) return null;
+
+      if (onProgress) {
+        onProgress(15, 'Computing coordinate statistics');
+        await new Promise(r => setTimeout(r, 15));
+      }
+
+      const minVal = new Float64Array(dim).fill(Infinity);
+      const maxVal = new Float64Array(dim).fill(-Infinity);
+      const mean = new Float64Array(dim);
+      const M2 = new Float64Array(dim);
+
+      for (let i = 0; i < N; i++) {
+        const pt = points[i];
+        for (let d = 0; d < dim; d++) {
+          let v = 0;
+          if (dim <= 3) {
+            v = (d === 0) ? pt.x : ((d === 1) ? pt.y : (pt.z || 0));
+          } else {
+            v = (pt.coords) ? (pt.coords[d] || 0) : ((d === 0) ? pt.x : 0);
+          }
+          if (v < minVal[d]) minVal[d] = v;
+          if (v > maxVal[d]) maxVal[d] = v;
+          const count = i + 1;
+          const delta = v - mean[d];
+          mean[d] += delta / count;
+          const delta2 = v - mean[d];
+          M2[d] += delta * delta2;
+        }
+      }
+
+      if (onProgress) {
+        onProgress(45, 'Spectral variance sorting');
+        await new Promise(r => setTimeout(r, 15));
+      }
+
+      const variances = [];
+      for (let d = 0; d < dim; d++) {
+        const variance = (N > 1) ? (M2[d] / (N - 1)) : 0;
+        variances.push({ dim: d, variance: variance, min: minVal[d], max: maxVal[d] });
+      }
+      variances.sort((a, b) => b.variance - a.variance);
+      const perm_dim = variances.map(v => v.dim);
+
+      if (onProgress) {
+        onProgress(70, 'Sampling pairwise distance spectrum');
+        await new Promise(r => setTimeout(r, 15));
+      }
+
+      const nPairs = Math.min(1000, Math.floor((N * (N - 1)) / 2));
+      const dists = [];
+      for (let p = 0; p < nPairs; p++) {
+        const i = Math.floor(Math.random() * N);
+        let j = Math.floor(Math.random() * N);
+        if (i === j) j = (j + 1) % N;
+        const ptA = points[i];
+        const ptB = points[j];
+        let sq = 0;
+        for (let d = 0; d < dim; d++) {
+          const vA = (dim <= 3) ? ((d === 0) ? ptA.x : ((d === 1) ? ptA.y : (ptA.z || 0)))
+                                : ((ptA.coords) ? (ptA.coords[d] || 0) : 0);
+          const vB = (dim <= 3) ? ((d === 0) ? ptB.x : ((d === 1) ? ptB.y : (ptB.z || 0)))
+                                : ((ptB.coords) ? (ptB.coords[d] || 0) : 0);
+          const diff = vA - vB;
+          sq += diff * diff;
+        }
+        dists.push(Math.sqrt(sq));
+      }
+      dists.sort((a, b) => a - b);
+
+      const d5 = dists[Math.floor(dists.length * 0.05)] || 0.05;
+      const d10 = dists[Math.floor(dists.length * 0.10)] || 0.10;
+      const d25 = dists[Math.floor(dists.length * 0.25)] || 0.20;
+      const median = dists[Math.floor(dists.length * 0.50)] || 0.25;
+
+      if (onProgress) {
+        onProgress(90, 'Evaluating temporal continuity');
+        await new Promise(r => setTimeout(r, 15));
+      }
+
+      let seqSum = 0;
+      const seqN = Math.min(N - 1, 300);
+      for (let i = 0; i < seqN; i++) {
+        const ptA = points[i];
+        const ptB = points[i + 1];
+        let sq = 0;
+        for (let d = 0; d < dim; d++) {
+          const vA = (dim <= 3) ? ((d === 0) ? ptA.x : ((d === 1) ? ptA.y : (ptA.z || 0)))
+                                : ((ptA.coords) ? (ptA.coords[d] || 0) : 0);
+          const vB = (dim <= 3) ? ((d === 0) ? ptB.x : ((d === 1) ? ptB.y : (ptB.z || 0)))
+                                : ((ptB.coords) ? (ptB.coords[d] || 0) : 0);
+          const diff = vA - vB;
+          sq += diff * diff;
+        }
+        seqSum += Math.sqrt(sq);
+      }
+      const meanSeq = (seqN > 0) ? (seqSum / seqN) : median;
+      const continuityRatio = (median > 1e-6) ? (meanSeq / median) : 1.0;
+
+      let gMin = Infinity;
+      let gMax = -Infinity;
+      for (let d = 0; d < dim; d++) {
+        if (minVal[d] < gMin) gMin = minVal[d];
+        if (maxVal[d] > gMax) gMax = maxVal[d];
+      }
+
+      if (onProgress) {
+        onProgress(100, 'Profile calibration complete');
+      }
+
+      return {
+        num_frames: N,
+        dim: dim,
+        rlim_fine: parseFloat(d5.toFixed(4)),
+        rlim_balanced: parseFloat(d10.toFixed(4)),
+        rlim_coarse: parseFloat(d25.toFixed(4)),
+        rlim_recommended: parseFloat(d10.toFixed(4)),
+        preset_name: 'balanced',
+        tiles_x: 1,
+        tiles_y: 1,
+        pred_enabled: (continuityRatio < 0.6) ? 1 : 0,
+        pred_len: 2,
+        continuity_ratio: parseFloat(continuityRatio.toFixed(3)),
+        use_sq8: 1,
+        sq8_params: {
+          min_val: gMin,
+          max_val: gMax,
+          scale: (gMax > gMin) ? (gMax - gMin) / 255.0 : 1.0 / 255.0
+        },
+        te4_enabled: 1,
+        perm_dim: perm_dim
+      };
+    }
+
+    function handleAutoConfigureFromProbe(rawProfile, slotId) {
+      if (!rawProfile) return;
+      const profile = normalizeGricProfile(rawProfile);
+      if (!profile) return;
+      window._activeGricProfile = profile;
+      const sId = slotId || (typeof activeDatasetSlot !== 'undefined' ? activeDatasetSlot : 'A');
+      if (typeof datasetSlots !== 'undefined' && datasetSlots[sId]) {
+        datasetSlots[sId].gricProfile = profile;
+      }
+
+      window._probeUndoState = {
+        rlim: rlim,
+        pruneMode: pruneMode,
+        usePred: usePred,
+        predHorizon: (typeof predHorizon === 'number') ? predHorizon : 2,
+        maxcl: (typeof maxcl === 'number') ? maxcl : 2000,
+        clusterUseSq8: clusterUseSq8,
+        plotDimX: (typeof plotDimX === 'number') ? plotDimX : 0,
+        plotDimY: (typeof plotDimY === 'number') ? plotDimY : 1,
+        plotDimZ: (typeof plotDimZ === 'number') ? plotDimZ : 2
+      };
+
+      const recR = (typeof profile.rlim_recommended === 'number' && profile.rlim_recommended > 0)
+        ? profile.rlim_recommended
+        : (typeof profile.rlim_balanced === 'number' ? profile.rlim_balanced : null);
+
+      if (typeof recR === 'number') {
+        if (typeof setClusteringRlim === 'function') {
+          setClusteringRlim(recR, false);
+        } else if (typeof window.setClusteringRlim === 'function') {
+          window.setClusteringRlim(recR, false);
+        } else {
+          rlim = parseFloat(recR.toFixed(3));
+          const slR = document.getElementById('sliderRlim');
+          if (slR) slR.value = rlim;
+          const inpR = document.getElementById('inputRlim');
+          if (inpR) inpR.value = rlim.toFixed(3);
+        }
+      }
+
+      updateProbePresetPills('balanced');
+
+      if (profile.pred_enabled !== undefined) {
+        usePred = (profile.pred_enabled === 1 || profile.pred_enabled === true);
+        const optPred = document.getElementById('optPred');
+        if (optPred) optPred.classList.toggle('active', usePred);
+        if (profile.pred_len || profile.pred_h) {
+          const phVal = profile.pred_h || profile.pred_len;
+          predHorizon = phVal;
+          const sl = document.getElementById('sliderPredHorizon');
+          const inp = document.getElementById('inputPredHorizon');
+          if (sl) sl.value = Math.max(1, Math.min(5, phVal));
+          if (inp) inp.value = phVal;
+        }
+      }
+
+      if (typeof profile.recommended_maxcl === 'number' && profile.recommended_maxcl >= 0) {
+        maxcl = profile.recommended_maxcl;
+        const inpMaxcl = document.getElementById('inputMaxcl');
+        const slMaxcl = document.getElementById('sliderMaxcl');
+        if (inpMaxcl) inpMaxcl.value = maxcl;
+        const idx = (maxcl === 0) ? 0 :
+          Math.min(17, Math.max(1, Math.round(Math.log2(maxcl)) + 1));
+        if (slMaxcl) slMaxcl.value = idx;
+        if (typeof updateMaxclUnit === 'function') updateMaxclUnit(maxcl);
+      }
+
+      if (profile.use_sq8 !== undefined) {
+        clusterUseSq8 = (profile.use_sq8 === 1 || profile.use_sq8 === true);
+        const optSq8 = document.getElementById('optSq8');
+        if (optSq8) optSq8.classList.toggle('active', clusterUseSq8);
+      }
+
+      if (profile.te4_enabled) {
+        pruneMode = '4P';
+        ['3P', '4P', '5P'].forEach(other => {
+          const el = document.getElementById(`prune${other}`);
+          if (el) el.classList.remove('active');
+        });
+        const el4P = document.getElementById('prune4P');
+        if (el4P) el4P.classList.add('active');
+      }
+
+      if (profile.perm_dim && profile.perm_dim.length >= 3 && currentDim > 3) {
+        if (typeof setPlottingDimensions === 'function') {
+          setPlottingDimensions(profile.perm_dim[0], profile.perm_dim[1], profile.perm_dim[2]);
+        }
+      }
+
+      const lbl = document.getElementById('lblProbeSummary');
+      if (lbl) {
+        const piStr = (profile.perm_dim && profile.perm_dim.length >= 3) ?
+          `[D${profile.perm_dim[0]},D${profile.perm_dim[1]},D${profile.perm_dim[2]}]` : '';
+        const cRatio = (typeof profile.continuity_ratio === 'number') ?
+          `R_cont=${profile.continuity_ratio.toFixed(2)}` : '';
+        lbl.innerText = `${piStr} ${cRatio}`.trim();
+        lbl.title = `Variance dims: ${profile.perm_dim ? profile.perm_dim.join(',') : ''}`;
+      }
+
+      if (typeof syncControlDependencies === 'function') syncControlDependencies();
+
+      if (typeof showToast === 'function') {
+        const rVal = (typeof rlim === 'number') ? rlim.toFixed(3) : '0.100';
+        const predStr = usePred ? 'Pred ON' : 'Pred OFF';
+        const sq8Str = clusterUseSq8 ? 'SQ8 ON' : 'SQ8 OFF';
+        showToast(`🔍 Probed [${sId}]: rlim=${rVal} (Balanced) | ${predStr} | ${sq8Str}`);
+      }
+      if (typeof updateCliCommand === 'function') updateCliCommand();
+      if (typeof updateUI === 'function') updateUI();
+      if (typeof draw === 'function') draw();
+    }
+
+    function undoProbeConfiguration() {
+      if (!window._probeUndoState) return;
+      const prev = window._probeUndoState;
+      setClusteringRlim(prev.rlim, false);
+      usePred = prev.usePred;
+      const optPred = document.getElementById('optPred');
+      if (optPred) optPred.classList.toggle('active', usePred);
+      if (typeof prev.predHorizon === 'number') {
+        predHorizon = prev.predHorizon;
+        const sl = document.getElementById('sliderPredHorizon');
+        const inp = document.getElementById('inputPredHorizon');
+        if (sl) sl.value = Math.max(1, Math.min(5, predHorizon));
+        if (inp) inp.value = predHorizon;
+      }
+      if (typeof prev.maxcl === 'number') {
+        maxcl = prev.maxcl;
+        const inpMaxcl = document.getElementById('inputMaxcl');
+        const slMaxcl = document.getElementById('sliderMaxcl');
+        if (inpMaxcl) inpMaxcl.value = maxcl;
+        const idx = (maxcl === 0) ? 0 :
+          Math.min(17, Math.max(1, Math.round(Math.log2(maxcl)) + 1));
+        if (slMaxcl) slMaxcl.value = idx;
+        if (typeof updateMaxclUnit === 'function') updateMaxclUnit(maxcl);
+      }
+      clusterUseSq8 = prev.clusterUseSq8;
+      const optSq8 = document.getElementById('optSq8');
+      if (optSq8) optSq8.classList.toggle('active', clusterUseSq8);
+      pruneMode = prev.pruneMode;
+      ['3P', '4P', '5P'].forEach(other => {
+        const el = document.getElementById(`prune${other}`);
+        if (el) el.classList.remove('active');
+      });
+      const elPrune = document.getElementById(`prune${pruneMode}`);
+      if (elPrune) elPrune.classList.add('active');
+      if (typeof setPlottingDimensions === 'function') {
+        setPlottingDimensions(prev.plotDimX, prev.plotDimY, prev.plotDimZ);
+      }
+      window._probeUndoState = null;
+      if (typeof showToast === 'function') {
+        showToast('↩️ Reverted probe configuration.');
+      }
+      if (typeof syncControlDependencies === 'function') syncControlDependencies();
+      updateCliCommand();
+      updateUI();
+      draw();
+    }
+    window.undoProbeConfiguration = undoProbeConfiguration;
+
+    function setProbeButtonState(state, slotId, pct = null, phaseText = '') {
+      const sId = slotId || activeDatasetSlot || 'A';
+      const btnAlgo = document.getElementById('btnProbeDataset');
+      const btnSlot = document.getElementById(`btnProbeDataset_${sId}`);
+      const lblSummary = document.getElementById('lblProbeSummary');
+      const progressWrap = document.getElementById('probeProgressBarWrap');
+      const progressBar = document.getElementById('probeProgressBar');
+
+      if (state === 'running') {
+        const hasPct = (typeof pct === 'number' && !isNaN(pct));
+        const pctStr = hasPct ? `${pct}%` : '';
+        const spin = '<span class="gen-spin-icon">🔄</span>';
+
+        if (btnAlgo) {
+          btnAlgo.classList.add('btn-probe-running');
+          btnAlgo.classList.remove('btn-probe-done');
+          btnAlgo.innerHTML = hasPct ? `${spin} ${pctStr}` : `${spin} Probing...`;
+          btnAlgo.disabled = true;
+          btnAlgo.title = hasPct ? `Probing: ${pctStr} complete` : 'Running gric-probe...';
+        }
+        if (btnSlot) {
+          btnSlot.classList.add('btn-probe-running');
+          btnSlot.classList.remove('btn-probe-done');
+          btnSlot.innerHTML = hasPct ? `${spin} ${pctStr}` : spin;
+          btnSlot.disabled = true;
+          btnSlot.title = `Probing Dataset ${sId}: ${pctStr}`;
+        }
+        if (lblSummary) {
+          const detail = phaseText ? `${pctStr} ${phaseText}`.trim() : (pctStr || 'Probing...');
+          lblSummary.innerHTML = `${spin} ${detail}`;
+          lblSummary.style.color = '#fbbf24';
+        }
+        if (progressWrap) {
+          progressWrap.style.display = 'block';
+        }
+        if (progressBar && hasPct) {
+          progressBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+        }
+      } else if (state === 'done') {
+        if (btnAlgo) {
+          btnAlgo.classList.remove('btn-probe-running');
+          btnAlgo.classList.add('btn-probe-done');
+          btnAlgo.innerHTML = '<span class="gen-check-icon">✓</span> Probed';
+          btnAlgo.disabled = false;
+          btnAlgo.title = 'Dataset probed & calibrated! Click to re-run.';
+        }
+        if (btnSlot) {
+          btnSlot.classList.remove('btn-probe-running');
+          btnSlot.classList.add('btn-probe-done');
+          btnSlot.innerHTML = '<span class="gen-check-icon">✓</span>';
+          btnSlot.disabled = false;
+          btnSlot.title = `Dataset ${sId} probed & calibrated!`;
+        }
+        if (lblSummary) {
+          lblSummary.style.color = '';
+        }
+        if (progressBar) {
+          progressBar.style.width = '100%';
+        }
+        setTimeout(() => {
+          if (progressWrap) {
+            progressWrap.style.display = 'none';
+          }
+          if (progressBar) {
+            progressBar.style.width = '0%';
+          }
+          if (btnAlgo && btnAlgo.classList.contains('btn-probe-done')) {
+            btnAlgo.classList.remove('btn-probe-done');
+            btnAlgo.innerHTML = '🔍 Probe';
+            btnAlgo.title = 'Probe Dataset (gric-probe)';
+          }
+          if (btnSlot && btnSlot.classList.contains('btn-probe-done')) {
+            btnSlot.classList.remove('btn-probe-done');
+            btnSlot.innerHTML = '🔍';
+            btnSlot.title = `Probe Dataset ${sId} (gric-probe)`;
+          }
+        }, 2200);
+      } else if (state === 'error') {
+        if (btnAlgo) {
+          btnAlgo.classList.remove('btn-probe-running');
+          btnAlgo.innerHTML = '⚠️ Error';
+          btnAlgo.disabled = false;
+          btnAlgo.title = 'Probe failed';
+        }
+        if (btnSlot) {
+          btnSlot.classList.remove('btn-probe-running');
+          btnSlot.innerHTML = '⚠️';
+          btnSlot.disabled = false;
+          btnSlot.title = `Probe failed for Dataset ${sId}`;
+        }
+        if (lblSummary) {
+          lblSummary.style.color = '';
+        }
+        if (progressWrap) {
+          progressWrap.style.display = 'none';
+        }
+        setTimeout(() => {
+          if (btnAlgo) {
+            btnAlgo.innerHTML = '🔍 Probe';
+            btnAlgo.title = 'Probe Dataset (gric-probe)';
+          }
+          if (btnSlot) {
+            btnSlot.innerHTML = '🔍';
+            btnSlot.title = `Probe Dataset ${sId} (gric-probe)`;
+          }
+        }, 2500);
+      } else {
+        if (btnAlgo) {
+          btnAlgo.classList.remove('btn-probe-running', 'btn-probe-done');
+          btnAlgo.innerHTML = '🔍 Probe';
+          btnAlgo.disabled = false;
+          btnAlgo.title = 'Probe Dataset (gric-probe)';
+        }
+        if (btnSlot) {
+          btnSlot.classList.remove('btn-probe-running', 'btn-probe-done');
+          btnSlot.innerHTML = '🔍';
+          btnSlot.disabled = false;
+          btnSlot.title = `Probe Dataset ${sId} (gric-probe)`;
+        }
+        if (progressWrap) {
+          progressWrap.style.display = 'none';
+        }
+      }
+    }
+
+    async function triggerDatasetProbe(slotId) {
+      if (window._isProbingActive) return;
+      const sId = slotId || activeDatasetSlot || 'A';
+      const slot = (typeof datasetSlots !== 'undefined') ? datasetSlots[sId] : null;
+      let pts = (slot && slot.benchmarkDataset && slot.benchmarkDataset.length > 0) ?
+        slot.benchmarkDataset : benchmarkDataset;
+
+      if (!pts || pts.length === 0) {
+        if (typeof generateBenchmark === 'function') {
+          rawBenchmarkDataset = generateBenchmark(currentBenchmark, 250);
+          applyNoiseToDataset();
+          pts = benchmarkDataset;
+        }
+      }
+
+      if (!pts || pts.length === 0) {
+        if (typeof showToast === 'function') {
+          showToast(`⚠️ Dataset [${sId}] has no points to probe.`);
+        }
+        return;
+      }
+
+      window._isProbingActive = true;
+      setProbeButtonState('running', sId, 0, 'Initializing probe');
+      const startTime = Date.now();
+
+      if (typeof showToast === 'function') {
+        showToast(`🔍 Probing Dataset [${sId}]...`);
+      }
+
+      try {
+        let profile = null;
+        if (typeof DesktopBridge !== 'undefined' && DesktopBridge.isAvailable()) {
+          try {
+            const rawName = (slot && slot.stagedDatasetInfo && slot.stagedDatasetInfo.name)
+              ? slot.stagedDatasetInfo.name
+              : (slot && slot.benchmarkKey ? slot.benchmarkKey
+                                           : (currentBenchmark || `dataset_${sId}`));
+            const cleanBase = rawName.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '')
+                                     .replace(/[^a-zA-Z0-9_.-]/g, '_');
+            const stageFile = await DesktopBridge.stageDatasetFile(
+              cleanBase,
+              pts,
+              currentDim,
+              (pct, phase) => {
+                const overallPct = Math.floor(pct * 0.25);
+                setProbeButtonState('running', sId, overallPct, phase);
+              }
+            );
+            profile = await DesktopBridge.runDatasetProbe(stageFile, {
+              onProgress: (pct, phase) => {
+                const overallPct = 25 + Math.floor(pct * 0.75);
+                setProbeButtonState('running', sId, overallPct, phase);
+              }
+            });
+          } catch (err) {
+            console.warn('[Probe] Desktop bridge probe error, using in-memory:', err);
+          }
+        }
+
+        if (!profile) {
+          profile = await runJsInMemoryProbe(pts, currentDim, (pct, phase) => {
+            setProbeButtonState('running', sId, pct, phase);
+          });
+        }
+
+        const elapsed = Date.now() - startTime;
+        if (elapsed < 300) {
+          await new Promise(r => setTimeout(r, 300 - elapsed));
+        }
+
+        if (profile) {
+          handleAutoConfigureFromProbe(profile, sId);
+          setProbeButtonState('done', sId);
+        } else {
+          setProbeButtonState('error', sId);
+        }
+      } catch (err) {
+        console.error('[Probe] Error during dataset probe:', err);
+        setProbeButtonState('error', sId);
+      } finally {
+        window._isProbingActive = false;
+      }
+    }
 
     // Max Clusters & Eviction Policy (-maxcl)
     const sliderMaxcl = document.getElementById('sliderMaxcl');

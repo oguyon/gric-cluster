@@ -182,6 +182,15 @@
                     data-tooltip-badge="Slot A"
                     data-tooltip-color="purple"
                     data-tooltip-desc="Randomly permutes frame/point order in Dataset A.">🔀</button>
+            <button id="btnProbeDataset_A" class="secondary btn-dataset-probe" data-slot="A"
+                    style="background: rgba(245, 158, 11, 0.15);
+                           border-color: rgba(245, 158, 11, 0.4);
+                           color: #f59e0b; font-weight: 600;"
+                    data-tooltip-title="Probe Dataset A (gric-probe)"
+                    data-tooltip-badge="Profile &amp; Calibrate"
+                    data-tooltip-color="amber"
+                    data-tooltip-desc="Runs single-pass gric-probe: variance, presets, SQ8."
+                    >🔍</button>
             <button id="btnClearDataset_A" class="secondary btn-dataset-clear" data-slot="A" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset A"
                     data-tooltip-badge="Slot A"
@@ -278,6 +287,15 @@
                     data-tooltip-badge="Slot B"
                     data-tooltip-color="purple"
                     data-tooltip-desc="Randomly permutes frame/point order in Dataset B.">🔀</button>
+            <button id="btnProbeDataset_B" class="secondary btn-dataset-probe" data-slot="B"
+                    style="background: rgba(245, 158, 11, 0.15);
+                           border-color: rgba(245, 158, 11, 0.4);
+                           color: #f59e0b; font-weight: 600;"
+                    data-tooltip-title="Probe Dataset B (gric-probe)"
+                    data-tooltip-badge="Profile &amp; Calibrate"
+                    data-tooltip-color="amber"
+                    data-tooltip-desc="Runs single-pass gric-probe: variance, presets, SQ8."
+                    >🔍</button>
             <button id="btnClearDataset_B" class="secondary btn-dataset-clear" data-slot="B" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset B"
                     data-tooltip-badge="Slot B"
@@ -374,6 +392,15 @@
                     data-tooltip-badge="Slot C"
                     data-tooltip-color="purple"
                     data-tooltip-desc="Randomly permutes frame/point order in Dataset C.">🔀</button>
+            <button id="btnProbeDataset_C" class="secondary btn-dataset-probe" data-slot="C"
+                    style="background: rgba(245, 158, 11, 0.15);
+                           border-color: rgba(245, 158, 11, 0.4);
+                           color: #f59e0b; font-weight: 600;"
+                    data-tooltip-title="Probe Dataset C (gric-probe)"
+                    data-tooltip-badge="Profile &amp; Calibrate"
+                    data-tooltip-color="amber"
+                    data-tooltip-desc="Runs single-pass gric-probe: variance, presets, SQ8."
+                    >🔍</button>
             <button id="btnClearDataset_C" class="secondary btn-dataset-clear" data-slot="C" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset C"
                     data-tooltip-badge="Slot C"
@@ -471,6 +498,15 @@
                     data-tooltip-badge="Slot D"
                     data-tooltip-color="purple"
                     data-tooltip-desc="Randomly permutes frame/point order in Dataset D.">🔀</button>
+            <button id="btnProbeDataset_D" class="secondary btn-dataset-probe" data-slot="D"
+                    style="background: rgba(245, 158, 11, 0.15);
+                           border-color: rgba(245, 158, 11, 0.4);
+                           color: #f59e0b; font-weight: 600;"
+                    data-tooltip-title="Probe Dataset D (gric-probe)"
+                    data-tooltip-badge="Profile &amp; Calibrate"
+                    data-tooltip-color="amber"
+                    data-tooltip-desc="Runs single-pass gric-probe: variance, presets, SQ8."
+                    >🔍</button>
             <button id="btnClearDataset_D" class="secondary btn-dataset-clear" data-slot="D" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset D"
                     data-tooltip-badge="Slot D"
@@ -1372,6 +1408,12 @@
                 <div class="control-label">
                   <span>Radius Threshold (<span class="badge-pill">rlim</span>)</span>
                   <div class="val-box">
+                    <button id="btnProbeDataset" class="btn-mini btn-probe"
+                            data-tooltip-title="Probe Dataset (gric-probe)"
+                            data-tooltip-badge="Profile &amp; Calibrate"
+                            data-tooltip-color="amber"
+                            data-tooltip-desc="Runs single-pass gric-probe: variance, presets, SQ8."
+                            >🔍 Probe</button>
                     <button id="btnAutoRlim" class="btn-mini" 
                             data-tooltip-title="Auto-Compute Radius (-scandist)" 
                             data-tooltip-badge="CLI: -scandist" 
@@ -1383,6 +1425,39 @@
                 </div>
                 <input type="range" id="sliderRlim" min="0.02" max="0.30"
                        step="0.005" value="0.100">
+                <div id="probePresetRow" class="probe-presets"
+                     style="display: flex; gap: 5px; margin-top: 4px; align-items: center;">
+                  <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 600;">
+                    Presets:
+                  </span>
+                  <button id="pillPresetFine" class="badge-pill preset-pill"
+                          style="cursor: pointer; background: rgba(59, 130, 246, 0.15);
+                                 color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);
+                                 font-size: 0.68rem;"
+                          title="Fine granularity (~D5%)">Fine</button>
+                  <button id="pillPresetBalanced" class="badge-pill preset-pill active"
+                          style="cursor: pointer; background: rgba(16, 185, 129, 0.2);
+                                 color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);
+                                 font-size: 0.68rem;"
+                          title="Balanced granularity (~D10%)">Balanced</button>
+                  <button id="pillPresetCoarse" class="badge-pill preset-pill"
+                          style="cursor: pointer; background: rgba(245, 158, 11, 0.15);
+                                 color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);
+                                 font-size: 0.68rem;"
+                          title="Coarse granularity (~D25%)">Coarse</button>
+                  <span id="lblProbeSummary"
+                        style="margin-left: auto; font-size: 0.65rem; color: var(--text-muted);
+                               font-family: monospace;"></span>
+                </div>
+                <div id="probeProgressBarWrap"
+                     style="display: none; width: 100%; height: 3px;
+                            background: rgba(255,255,255,0.1); border-radius: 2px;
+                            margin-top: 5px; overflow: hidden;">
+                  <div id="probeProgressBar"
+                       style="width: 0%; height: 100%;
+                              background: linear-gradient(90deg, #3b82f6, #10b981);
+                              transition: width 0.15s ease;"></div>
+                </div>
               </div>
 
               <!-- Target Selection Mode -->

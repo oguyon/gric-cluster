@@ -3283,6 +3283,22 @@
       color: #4ade80;
     }
 
+    .btn-probe-running {
+      background: rgba(245, 158, 11, 0.28) !important;
+      border-color: rgba(245, 158, 11, 0.7) !important;
+      color: #fbbf24 !important;
+      cursor: wait !important;
+      box-shadow: 0 0 8px rgba(245, 158, 11, 0.4) !important;
+    }
+
+    .btn-probe-done {
+      background: rgba(16, 185, 129, 0.25) !important;
+      border-color: rgba(16, 185, 129, 0.6) !important;
+      color: #34d399 !important;
+      transition: all 0.3s ease;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.35) !important;
+    }
+
 
 
 

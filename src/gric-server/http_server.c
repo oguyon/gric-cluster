@@ -400,7 +400,7 @@ int server_run(
 {
     cli_colors_init();
 
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int server_fd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (server_fd < 0)
     {
         fprintf(stderr, "%sError: socket() failed: %s%s\n",
@@ -410,6 +410,7 @@ int server_run(
 
     int opt = 1;
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
 
     struct sockaddr_in saddr;
     memset(&saddr, 0, sizeof(saddr));
@@ -508,7 +509,7 @@ int server_run(
         {
             struct sockaddr_in caddr;
             socklen_t clen = sizeof(caddr);
-            int client_fd = accept(server_fd, (struct sockaddr *)&caddr, &clen);
+            int client_fd = accept4(server_fd, (struct sockaddr *)&caddr, &clen, SOCK_CLOEXEC);
             if (client_fd >= 0)
             {
                 handle_client_connection(client_fd, config);

@@ -16,6 +16,8 @@
 #include "config_utils.h"
 #include "cluster_shm.h"
 #include "frameread.h"
+#include "gric_profile.h"
+#include "cli_colors.h"
 #include <ctype.h>
 #include <signal.h>
 #include <stdio.h>
@@ -333,6 +335,78 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    GricProfile dataset_prof;
+    memset(&dataset_prof, 0, sizeof(GricProfile));
+    int has_prof = 0;
+    char located_prof_path[1024] = "";
+
+    if (!config.optim.no_prof && config.input.fits_filename != NULL)
+    {
+        if (config.optim.prof_filename != NULL)
+        {
+            snprintf(located_prof_path, sizeof(located_prof_path), "%s",
+                     config.optim.prof_filename);
+            has_prof = (gric_profile_read_json(located_prof_path, &dataset_prof) == 0);
+        }
+        else if (gric_profile_find_auto(config.input.fits_filename,
+                                        located_prof_path, sizeof(located_prof_path)))
+        {
+            has_prof = (gric_profile_read_json(located_prof_path, &dataset_prof) == 0);
+        }
+
+        if (has_prof)
+        {
+            printf("%s[INFO]%s Auto-loaded dataset profile: %s%s%s\n",
+                   ANSI_BOLD_GREEN, ANSI_COLOR_RESET,
+                   ANSI_BOLD, located_prof_path, ANSI_COLOR_RESET);
+
+            if (!rlim_set)
+            {
+                if (strcasecmp(config.optim.preset_name, "fine") == 0)
+                {
+                    config.algo.rlim = dataset_prof.rlim_fine;
+                }
+                else if (strcasecmp(config.optim.preset_name, "coarse") == 0)
+                {
+                    config.algo.rlim = dataset_prof.rlim_coarse;
+                }
+                else
+                {
+                    config.algo.rlim = dataset_prof.rlim_recommended;
+                }
+                rlim_set = 1;
+            }
+
+            if (config.optim.use_sq8 && dataset_prof.use_sq8)
+            {
+                config.optim.sq8_params = dataset_prof.sq8_params;
+            }
+
+            if (config.input.tile_grid_x == 0 && config.input.tile_grid_y == 0 &&
+                (dataset_prof.tiles_x > 1 || dataset_prof.tiles_y > 1))
+            {
+                config.input.tile_grid_x = dataset_prof.tiles_x;
+                config.input.tile_grid_y = dataset_prof.tiles_y;
+            }
+
+            if (config.optim.pred_mode == 0 && dataset_prof.pred_enabled)
+            {
+                config.optim.pred_mode = 1;
+                config.optim.pred_len = dataset_prof.pred_len;
+                config.optim.pred_h = dataset_prof.pred_h;
+            }
+        } // if (has_prof)
+    } // if (!config.optim.no_prof)
+
+    if (!config.input.scandist_mode && !rlim_set)
+    {
+        fprintf(stderr, "Error: Missing rlim parameter (no profile found and no rlim provided).\n");
+        print_usage(argv[0]);
+        if (cmdline)
+            free(cmdline);
+        return 1;
+    }
+
     set_frameread_precision(config.algo.use_double);
     if (init_frameread(config.input.fits_filename,
                        config.input.stream_input_mode,
@@ -397,6 +471,14 @@ int main(int argc, char *argv[])
 
     ClusterState state;
     memset(&state, 0, sizeof(ClusterState));
+
+    if (has_prof && dataset_prof.perm_dim != NULL)
+    {
+        state.perm_dim = dataset_prof.perm_dim;
+        state.residual_tail = dataset_prof.residual_tail;
+        dataset_prof.perm_dim = NULL;
+        dataset_prof.residual_tail = NULL;
+    }
 
     if (config.output.distall_mode)
     {
@@ -612,6 +694,13 @@ int main(int argc, char *argv[])
     gric_shm_cleanup(&state);
     if (config.output.shm_filename)
         free(config.output.shm_filename);
+
+    if (state.perm_dim != NULL)
+        free(state.perm_dim);
+    if (state.residual_tail != NULL)
+        free(state.residual_tail);
+    if (has_prof)
+        gric_profile_free(&dataset_prof);
 
     close_frameread();
 

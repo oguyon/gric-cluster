@@ -1522,6 +1522,12 @@ void knn_model_free(
         free(model->sq8_dataset_buffer);
         model->sq8_dataset_buffer = NULL;
     }
+
+    if (model->has_profile)
+    {
+        gric_profile_free(&model->profile);
+        model->has_profile = 0;
+    }
 }
 
 /**
@@ -1603,50 +1609,63 @@ int knn_model_build_or_load_sq8(
         return -1;
     }
 
-    // Calibrate min and max by scanning frames
-    float global_min = 1e30f;
-    float global_max = -1e30f;
-
-    for (long i = 0; i < N; i++)
+    // Calibrate min and max by scanning frames or using profile
+    if (model->has_profile && model->profile.sq8_params.scale > 0.0f)
     {
-        if (knn_reader_read_frame(&reader, i, frame_buf) == 0)
+        model->sq8_params = model->profile.sq8_params;
+        model->sq8_params.dim = dim;
+        if (config->verbose_level >= 1)
         {
-            if (model->is_double)
-            {
-                const double *da = (const double *)frame_buf;
-                for (long d = 0; d < dim; d++)
-                {
-                    float v = (float)da[d];
-                    if (v < global_min)
-                    {
-                        global_min = v;
-                    }
-                    if (v > global_max)
-                    {
-                        global_max = v;
-                    }
-                }
-            }
-            else
-            {
-                const float *fa = (const float *)frame_buf;
-                for (long d = 0; d < dim; d++)
-                {
-                    float v = fa[d];
-                    if (v < global_min)
-                    {
-                        global_min = v;
-                    }
-                    if (v > global_max)
-                    {
-                        global_max = v;
-                    }
-                }
-            }
+            printf("  [PROFILE] Fast SQ8 init using profile range [%.4f, %.4f]\n",
+                   model->profile.sq8_params.min_val, model->profile.sq8_params.max_val);
         }
-    } // for (long i = 0; i < N; i++)
+    }
+    else
+    {
+        float global_min = 1e30f;
+        float global_max = -1e30f;
 
-    sq8_init_params(&model->sq8_params, global_min, global_max, dim);
+        for (long i = 0; i < N; i++)
+        {
+            if (knn_reader_read_frame(&reader, i, frame_buf) == 0)
+            {
+                if (model->is_double)
+                {
+                    const double *da = (const double *)frame_buf;
+                    for (long d = 0; d < dim; d++)
+                    {
+                        float v = (float)da[d];
+                        if (v < global_min)
+                        {
+                            global_min = v;
+                        }
+                        if (v > global_max)
+                        {
+                            global_max = v;
+                        }
+                    }
+                }
+                else
+                {
+                    const float *fa = (const float *)frame_buf;
+                    for (long d = 0; d < dim; d++)
+                    {
+                        float v = fa[d];
+                        if (v < global_min)
+                        {
+                            global_min = v;
+                        }
+                        if (v > global_max)
+                        {
+                            global_max = v;
+                        }
+                    }
+                }
+            }
+        } // for (long i = 0; i < N; i++)
+
+        sq8_init_params(&model->sq8_params, global_min, global_max, dim);
+    }
 
     // Allocate resident uint8 buffer [N x dim]
     size_t total_bytes = (size_t)N * (size_t)dim;

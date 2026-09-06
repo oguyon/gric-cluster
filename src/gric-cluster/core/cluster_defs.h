@@ -82,6 +82,9 @@ typedef struct
     double    xtile_decay;             /**< Decay coefficient for CPT history (0.0 to 1.0] */
     int       use_sq8;                 /**< 1 to enable 8-bit scalar quantization pruning */
     SQ8Params sq8_params;              /**< Uniform scalar quantization parameters */
+    char     *prof_filename;           /**< Path to explicitly loaded .gricprof */
+    int       no_prof;                 /**< 1 to disable automatic .gricprof loading */
+    char      preset_name[32];         /**< Calibrated radius preset name ("fine", etc.) */
 } ConfigOptim;
 
 /** Cross-tile injection callback signature. */
@@ -241,6 +244,8 @@ typedef struct
     struct TraceBuffer *trace;              /**< Explain trace buffer (NULL = disabled) */
     uint8_t            *current_frame_sq8;  /**< Scratch buffer for quantized current frame */
     int                 sq8_calibrated;     /**< 1 if global SQ8 params are calibrated */
+    long               *perm_dim;           /**< Spectral dimension ordering [dim] */
+    double             *residual_tail;      /**< Precomputed residual tail array [dim] */
 } ClusterState;
 
 /** Minimum cluster count for OpenMP parallelization of pruning loops. */

@@ -97,6 +97,29 @@ static int apply_algo_option(
         config->optim.use_sq8 = 0;
         return 0;
     }
+    else if (matches(key, "-prof") || matches(key, "--prof") || matches(key, "-profile"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.prof_filename = strdup(value);
+        return 1;
+    }
+    else if (matches(key, "-no-prof") || matches(key, "--no-prof") || matches(key, "-noprof"))
+    {
+        config->optim.no_prof = 1;
+        return 0;
+    }
+    else if (matches(key, "-preset") || matches(key, "--preset"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        strncpy(config->optim.preset_name, value, sizeof(config->optim.preset_name) - 1);
+        return 1;
+    }
     else if (matches(key, "-entropy"))
     {
         config->optim.entropy_mode = 1;

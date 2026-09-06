@@ -7,6 +7,7 @@
  */
 
 #include "scalar_quant.h"
+#include "gric_profile.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -95,6 +96,8 @@ typedef struct
     char           *sq8_save_path;     /**< Optional path to save .sq8 sidecar file */
     char           *sq8_load_path;     /**< Optional path to load .sq8 sidecar file */
     int             sq8_approx;        /**< 1 to relax lower bounds with epsilon */
+    const char     *prof_filename;     /**< Optional path to .gricprof file */
+    int             no_prof;           /**< 1 to disable auto-loading .gricprof */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -150,6 +153,8 @@ typedef struct
     double          *cluster_radii;       /**< [M] array of cluster radii */
     uint8_t         *sq8_dataset_buffer;  /**< [N x D] resident 8-bit quantized dataset */
     SQ8Params        sq8_params;          /**< Calibration parameters for SQ8 */
+    GricProfile      profile;             /**< Optional dataset profile (.gricprof) */
+    int              has_profile;         /**< 1 if dataset profile was loaded */
 } KnnModel;
 
 /** Per-query result structure containing top-k neighbors */
