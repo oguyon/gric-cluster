@@ -95,7 +95,7 @@ int main(
         {
             json_stdout = 1;
         }
-        else if (strcmp(argv[ii], "--env") == 0)
+        else if (strcmp(argv[ii], "-env") == 0 || strcmp(argv[ii], "--env") == 0)
         {
             env_stdout = 1;
         }

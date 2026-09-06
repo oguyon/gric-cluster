@@ -547,6 +547,33 @@ target_link_libraries(test_scalar_quant m)
 add_test(NAME test_scalar_quant
     COMMAND test_scalar_quant)
 
+add_executable(test_gric_probe
+    tests/test_gric_probe.c
+    src/gric-probe/probe_engine.c
+    src/gric-probe/probe_report.c
+    src/shared/gric_profile.c
+    src/shared/cluster_locator.c
+    src/shared/gric_bin_io.c
+    src/shared/scalar_quant.c
+    src/shared/cli_colors.c
+)
+target_include_directories(test_gric_probe PRIVATE src/gric-probe src/shared src)
+target_link_libraries(test_gric_probe m)
+if (OpenMP_FOUND)
+    target_link_libraries(test_gric_probe OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_gric_probe ${CFITSIO_LIBRARIES})
+    target_include_directories(test_gric_probe PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_gric_probe ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_gric_probe PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_gric_probe
+    COMMAND test_gric_probe)
+set_tests_properties(test_gric_probe PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Target to regenerate benchmark figures and documentation pages
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_custom_target(benchmark-docs

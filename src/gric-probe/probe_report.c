@@ -101,6 +101,16 @@ void probe_report_print_terminal(
         fprintf(out, "  Status:           %sUncorrelated / Static Sequence%s (prediction off)\n",
                 ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
     }
+    if (p->tm_mixing_coeff > 0.0)
+    {
+        fprintf(out, "  Transition Mixing:%s %.2f%s (-tm %.2f)\n",
+                ANSI_BOLD_GREEN, p->tm_mixing_coeff, ANSI_COLOR_RESET, p->tm_mixing_coeff);
+    }
+    else
+    {
+        fprintf(out, "  Transition Mixing: %sOff%s\n",
+                ANSI_COLOR_YELLOW, ANSI_COLOR_RESET);
+    }
 
     /* Empirical Metric Pruning Efficiency */
     fprintf(out, "\n%s=== METRIC PRUNING EFFICIENCY (rlim = %.4f) ===%s\n",
@@ -149,6 +159,15 @@ void probe_report_print_terminal(
             ANSI_BOLD_CYAN,
             p->recommended_prune_mode[0] ? p->recommended_prune_mode : "3P",
             ANSI_COLOR_RESET);
+    if (p->entropy_enabled)
+    {
+        fprintf(out, "  * Entropy Search:         %sON%s (-entropy -entropy_gate %.2f)\n",
+                ANSI_BOLD_GREEN, ANSI_COLOR_RESET, p->entropy_gate);
+    }
+    else
+    {
+        fprintf(out, "  * Entropy Search:         OFF (insufficient gain)\n");
+    }
 
     /* Recommended Parameters */
     fprintf(out, "\n%s=== RECOMMENDED CLUSTERING PRESETS ===%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
@@ -162,6 +181,21 @@ void probe_report_print_terminal(
             p->use_sq8 ? "-sq8" : "",
             p->te4_enabled ? "-te4" : "",
             p->te5_enabled ? "-te5" : "");
+    fprintf(out, "  * Sparse DCC:          %s%s%s\n",
+            p->sparse_dcc_enabled ? ANSI_BOLD_GREEN : ANSI_COLOR_YELLOW,
+            p->sparse_dcc_enabled ? "ON (-sparse_dcc)" : "OFF",
+            ANSI_COLOR_RESET);
+    fprintf(out, "  * Soft Bayesian:       %s%s%s\n",
+            p->soft_bayesian_enabled ? ANSI_BOLD_GREEN : ANSI_COLOR_YELLOW,
+            p->soft_bayesian_enabled ? "ON (-soft_bayesian)" : "OFF",
+            ANSI_COLOR_RESET);
+    if (p->soft_bayesian_enabled)
+    {
+        fprintf(out, "  * Soft Sigma Coeff:    %.2f (-soft_sigma %.2f)\n",
+                p->soft_bayesian_sigma_coeff, p->soft_bayesian_sigma_coeff);
+    }
+    fprintf(out, "  * Precision:           %s\n",
+            p->recommend_double ? "float64 (-double recommended)" : "float32 (single)");
 
     /* Quick copy-paste command */
     fprintf(out, "\n%sSuggested gric-cluster Command:%s\n", ANSI_BOLD_CYAN, ANSI_COLOR_RESET);
@@ -174,6 +208,10 @@ void probe_report_print_terminal(
     {
         fprintf(out, " \"-pred[2,%d,2]\"", p->pred_h);
     }
+    if (p->tm_mixing_coeff > 0.0)
+    {
+        fprintf(out, " -tm %.2f", p->tm_mixing_coeff);
+    }
     if (p->use_sq8)
     {
         fprintf(out, " -sq8");
@@ -185,6 +223,26 @@ void probe_report_print_terminal(
     if (p->te5_enabled)
     {
         fprintf(out, " -te5");
+    }
+    if (p->sparse_dcc_enabled)
+    {
+        fprintf(out, " -sparse_dcc");
+    }
+    if (p->entropy_enabled)
+    {
+        fprintf(out, " -entropy");
+    }
+    if (p->soft_bayesian_enabled)
+    {
+        fprintf(out, " -soft_bayesian");
+        if (p->soft_bayesian_sigma_coeff > 1.001)
+        {
+            fprintf(out, " -soft_sigma %.2f", p->soft_bayesian_sigma_coeff);
+        }
+    }
+    if (p->recommend_double)
+    {
+        fprintf(out, " -double");
     }
     fprintf(out, "\n\n");
 }
@@ -213,8 +271,16 @@ void probe_report_print_env(
     fprintf(out, "export GRIC_USE_SQ8=%d\n", p->use_sq8);
     fprintf(out, "export GRIC_PREDICT=%d\n", p->pred_enabled);
     fprintf(out, "export GRIC_PRED_H=%d\n", p->pred_h);
+    fprintf(out, "export GRIC_TM_MIX=%.4f\n", p->tm_mixing_coeff);
     fprintf(out, "export GRIC_PRUNE_MODE=\"%s\"\n",
             p->recommended_prune_mode[0] ? p->recommended_prune_mode : "3P");
     fprintf(out, "export GRIC_TE4=%d\n", p->te4_enabled);
     fprintf(out, "export GRIC_TE5=%d\n", p->te5_enabled);
+    fprintf(out, "export GRIC_SPARSE_DCC=%d\n", p->sparse_dcc_enabled);
+    fprintf(out, "export GRIC_ENTROPY=%d\n", p->entropy_enabled);
+    fprintf(out, "export GRIC_ENTROPY_GATE=%.4f\n", p->entropy_gate);
+    fprintf(out, "export GRIC_SOFT_BAYESIAN=%d\n", p->soft_bayesian_enabled);
+    fprintf(out, "export GRIC_SOFT_SIGMA=%.4f\n", p->soft_bayesian_sigma_coeff);
+    fprintf(out, "export GRIC_RECOMMEND_DOUBLE=%d\n", p->recommend_double);
+    fprintf(out, "export GRIC_NOISE_FLOOR=%.6f\n", p->noise_floor_est);
 }

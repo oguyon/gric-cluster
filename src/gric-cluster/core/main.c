@@ -395,8 +395,54 @@ int main(int argc, char *argv[])
                 config.optim.pred_len = dataset_prof.pred_len;
                 config.optim.pred_h = dataset_prof.pred_h;
             }
+
+            if (config.optim.te4_mode == 0 && config.optim.te5_mode == 0)
+            {
+                if (dataset_prof.te5_enabled)
+                {
+                    config.optim.te5_mode = 1;
+                }
+                else if (dataset_prof.te4_enabled)
+                {
+                    config.optim.te4_mode = 1;
+                }
+            }
+
+            if (config.algo.tm_mixing_coeff == 0.0 && dataset_prof.tm_mixing_coeff > 0.0)
+            {
+                config.algo.tm_mixing_coeff = dataset_prof.tm_mixing_coeff;
+            }
+
+            if (config.optim.sparse_dcc_mode == 0 && dataset_prof.sparse_dcc_enabled)
+            {
+                config.optim.sparse_dcc_mode = 1;
+            }
+
+            if (config.optim.entropy_mode == 0 && dataset_prof.entropy_enabled)
+            {
+                config.optim.entropy_mode = 1;
+                config.optim.entropy_gate_bits = dataset_prof.entropy_gate;
+            }
+
+            if (config.optim.soft_bayesian_mode == 0 && dataset_prof.soft_bayesian_enabled)
+            {
+                config.optim.soft_bayesian_mode = 1;
+                config.optim.soft_bayesian_sigma_coeff =
+                    dataset_prof.soft_bayesian_sigma_coeff;
+            }
+
+            if (config.algo.use_double == 0 && dataset_prof.recommend_double)
+            {
+                config.algo.use_double = 1;
+            }
         } // if (has_prof)
     } // if (!config.optim.no_prof)
+
+    if (config.optim.te4_mode < 0) config.optim.te4_mode = 0;
+    if (config.optim.te5_mode < 0) config.optim.te5_mode = 0;
+    if (config.optim.entropy_mode < 0) config.optim.entropy_mode = 0;
+    if (config.optim.sparse_dcc_mode < 0) config.optim.sparse_dcc_mode = 0;
+    if (config.optim.soft_bayesian_mode < 0) config.optim.soft_bayesian_mode = 0;
 
     if (!config.input.scandist_mode && !rlim_set)
     {
