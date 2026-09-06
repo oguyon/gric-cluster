@@ -4221,9 +4221,12 @@
         if (typeof raw.prediction.continuity_ratio === 'number') {
           norm.continuity_ratio = raw.prediction.continuity_ratio;
         }
+        if (typeof raw.prediction.tm_mixing_coeff === 'number') {
+          norm.tm_mixing_coeff = raw.prediction.tm_mixing_coeff;
+        }
       }
 
-      // 3. Acceleration
+      // 3. Acceleration & Advanced Clustering
       if (raw.acceleration) {
         if (raw.acceleration.use_sq8 !== undefined) {
           norm.use_sq8 = (raw.acceleration.use_sq8 === true ||
@@ -4236,6 +4239,31 @@
         if (raw.acceleration.te5 !== undefined) {
           norm.te5_enabled = (raw.acceleration.te5 === true ||
                               raw.acceleration.te5 === 1) ? 1 : 0;
+        }
+        if (raw.acceleration.sparse_dcc !== undefined) {
+          norm.sparse_dcc_enabled = (raw.acceleration.sparse_dcc === true ||
+                                     raw.acceleration.sparse_dcc === 1) ? 1 : 0;
+        }
+        if (raw.acceleration.entropy !== undefined) {
+          norm.entropy_enabled = (raw.acceleration.entropy === true ||
+                                  raw.acceleration.entropy === 1) ? 1 : 0;
+        }
+        if (typeof raw.acceleration.entropy_gate === 'number') {
+          norm.entropy_gate = raw.acceleration.entropy_gate;
+        }
+        if (raw.acceleration.soft_bayesian !== undefined) {
+          norm.soft_bayesian_enabled = (raw.acceleration.soft_bayesian === true ||
+                                        raw.acceleration.soft_bayesian === 1) ? 1 : 0;
+        }
+        if (typeof raw.acceleration.soft_sigma_coeff === 'number') {
+          norm.soft_bayesian_sigma_coeff = raw.acceleration.soft_sigma_coeff;
+        }
+        if (raw.acceleration.recommend_double !== undefined) {
+          norm.recommend_double = (raw.acceleration.recommend_double === true ||
+                                   raw.acceleration.recommend_double === 1) ? 1 : 0;
+        }
+        if (typeof raw.acceleration.noise_floor === 'number') {
+          norm.noise_floor_est = raw.acceleration.noise_floor;
         }
         if (raw.acceleration.sq8_scale !== undefined) {
           norm.sq8_params = {
@@ -4527,6 +4555,8 @@
         let te3Pruned = 0;
         let te4Pruned = 0;
         let te5Pruned = 0;
+        let greedyEvals = 0;
+        let entropyEvals = 0;
         const dfc = new Float64Array(kAnchors);
 
         for (let m = 0; m < mQueries; m++) {
@@ -4555,6 +4585,23 @@
               te3Pruned++;
             } else {
               unpruned.push(k);
+            }
+          }
+
+          if (unpruned.length >= 3 && dim >= 8) {
+            const candLb = unpruned.map(k => Math.abs(dfc[a1] - dcc[a1 * kAnchors + k]));
+            const orderG = unpruned.map((_, idx) => idx).sort((a, b) => candLb[a] - candLb[b]);
+            for (let u = 0; u < orderG.length; u++) {
+              greedyEvals++;
+              if (dfc[unpruned[orderG[u]]] <= d10) break;
+            }
+            const medLb = candLb[orderG[Math.floor(orderG.length / 2)]];
+            const orderE = unpruned.map((_, idx) => idx).sort((a, b) => {
+              return Math.abs(candLb[a] - medLb) - Math.abs(candLb[b] - medLb);
+            });
+            for (let u = 0; u < orderE.length; u++) {
+              entropyEvals++;
+              if (dfc[unpruned[orderE[u]]] <= d10) break;
             }
           }
 
@@ -4627,7 +4674,30 @@
           te5_enabled = 0;
           recommended_prune_mode = '3P';
         }
+
+        let entropy_enabled = 0;
+        if (dim >= 8 && greedyEvals > 20 && entropyEvals < greedyEvals * 0.95) {
+          entropy_enabled = 1;
+        }
       }
+
+      let tmMixingCoeff = 0.0;
+      if (continuityRatio < 0.20) {
+        tmMixingCoeff = 0.35;
+      } else if (continuityRatio < 0.50) {
+        tmMixingCoeff = 0.15;
+      }
+
+      const noiseFloorEst = meanSeq / Math.sqrt(2.0 * dim);
+      const eta = (d10 > 0) ? (noiseFloorEst / d10) : 0;
+      const softBayesianEnabled = (eta > 0.25) ? 1 : 0;
+      const softBayesianSigmaCoeff = softBayesianEnabled
+        ? Math.min(1.5, 1.0 + (eta - 0.25))
+        : 1.0;
+
+      const recMaxcl = Math.min(10000, Math.max(100, Math.floor(N * 0.15)));
+      const sparseDccEnabled = (recMaxcl >= 2000) ? 1 : 0;
+      const recommendDouble = ((gMax - gMin) > 1e7) ? 1 : 0;
 
       if (onProgress) {
         onProgress(100, 'Profile calibration complete');
@@ -4646,6 +4716,7 @@
         pred_enabled: (continuityRatio < 0.6) ? 1 : 0,
         pred_len: 2,
         continuity_ratio: parseFloat(continuityRatio.toFixed(3)),
+        tm_mixing_coeff: tmMixingCoeff,
         use_sq8: (dim >= 32) ? 1 : 0,
         sq8_params: {
           min_val: gMin,
@@ -4654,6 +4725,13 @@
         },
         te4_enabled: te4_enabled,
         te5_enabled: te5_enabled,
+        sparse_dcc_enabled: sparseDccEnabled,
+        entropy_enabled: (typeof entropy_enabled === 'number') ? entropy_enabled : 0,
+        entropy_gate: 0.20,
+        soft_bayesian_enabled: softBayesianEnabled,
+        soft_bayesian_sigma_coeff: parseFloat(softBayesianSigmaCoeff.toFixed(2)),
+        recommend_double: recommendDouble,
+        noise_floor_est: parseFloat(noiseFloorEst.toFixed(6)),
         te3_prune_rate: parseFloat(te3Rate.toFixed(4)),
         te4_marginal_rate: parseFloat(te4Marg.toFixed(4)),
         te5_marginal_rate: parseFloat(te5Marg.toFixed(4)),
@@ -4679,6 +4757,14 @@
         predHorizon: (typeof predHorizon === 'number') ? predHorizon : 2,
         maxcl: (typeof maxcl === 'number') ? maxcl : 2000,
         clusterUseSq8: clusterUseSq8,
+        targetMode: targetMode,
+        entropyGate: (typeof entropyGate === 'number') ? entropyGate : 0.75,
+        useSoftBayesian: useSoftBayesian,
+        softBayesianSigmaCoeff: (typeof softBayesianSigmaCoeff === 'number')
+          ? softBayesianSigmaCoeff : 1.0,
+        useSparseDcc: useSparseDcc,
+        useTM: useTM,
+        tmMixingCoeff: (typeof tmMixingCoeff === 'number') ? tmMixingCoeff : 0.50,
         plotDimX: (typeof plotDimX === 'number') ? plotDimX : 0,
         plotDimY: (typeof plotDimY === 'number') ? plotDimY : 1,
         plotDimZ: (typeof plotDimZ === 'number') ? plotDimZ : 2
@@ -4743,6 +4829,54 @@
         if (el) el.classList.toggle('active', other === targetPrune);
       });
 
+      if (profile.entropy_enabled !== undefined) {
+        targetMode = (profile.entropy_enabled === 1 || profile.entropy_enabled === true)
+          ? 'entropy' : 'greedy';
+        const btnG = document.getElementById('modeGreedy');
+        const btnE = document.getElementById('modeEntropy');
+        if (btnG) btnG.classList.toggle('active', targetMode === 'greedy');
+        if (btnE) btnE.classList.toggle('active', targetMode === 'entropy');
+        if (typeof profile.entropy_gate === 'number') {
+          entropyGate = profile.entropy_gate;
+          const slEG = document.getElementById('sliderEntropyGate');
+          const inpEG = document.getElementById('inputEntropyGate');
+          if (slEG) slEG.value = entropyGate;
+          if (inpEG) inpEG.value = entropyGate.toFixed(2);
+        }
+      }
+
+      if (profile.soft_bayesian_enabled !== undefined) {
+        useSoftBayesian = (profile.soft_bayesian_enabled === 1 ||
+                           profile.soft_bayesian_enabled === true);
+        const optSB = document.getElementById('optSoftBayesian');
+        if (optSB) optSB.classList.toggle('active', useSoftBayesian);
+        if (typeof profile.soft_bayesian_sigma_coeff === 'number') {
+          softBayesianSigmaCoeff = profile.soft_bayesian_sigma_coeff;
+          const slBS = document.getElementById('sliderBayesSigma');
+          const inpBS = document.getElementById('inputBayesSigma');
+          if (slBS) slBS.value = softBayesianSigmaCoeff;
+          if (inpBS) inpBS.value = softBayesianSigmaCoeff.toFixed(1);
+        }
+      }
+
+      if (profile.sparse_dcc_enabled !== undefined) {
+        useSparseDcc = (profile.sparse_dcc_enabled === 1 ||
+                        profile.sparse_dcc_enabled === true);
+        const optSD = document.getElementById('optSparseDcc');
+        if (optSD) optSD.classList.toggle('active', useSparseDcc);
+      }
+
+      if (profile.tm_mixing_coeff !== undefined) {
+        useTM = (profile.tm_mixing_coeff > 0.0);
+        tmMixingCoeff = profile.tm_mixing_coeff;
+        const optTM = document.getElementById('optTM');
+        if (optTM) optTM.classList.toggle('active', useTM);
+        const slTM = document.getElementById('sliderTmMix');
+        const inpTM = document.getElementById('inputTmMix');
+        if (slTM) slTM.value = tmMixingCoeff;
+        if (inpTM) inpTM.value = tmMixingCoeff.toFixed(2);
+      }
+
       if (profile.perm_dim && profile.perm_dim.length >= 3 && currentDim > 3) {
         if (typeof setPlottingDimensions === 'function') {
           setPlottingDimensions(profile.perm_dim[0], profile.perm_dim[1], profile.perm_dim[2]);
@@ -4765,7 +4899,14 @@
         const rVal = (typeof rlim === 'number') ? rlim.toFixed(3) : '0.100';
         const predStr = usePred ? 'Pred ON' : 'Pred OFF';
         const sq8Str = clusterUseSq8 ? 'SQ8 ON' : 'SQ8 OFF';
-        showToast(`🔍 Probed [${sId}]: rlim=${rVal} (Balanced) | ${predStr} | ${sq8Str}`);
+        const entStr = (targetMode === 'entropy') ? ' | Entropy ON' : '';
+        const sbStr = useSoftBayesian ? ' | Bayes ON' : '';
+        const spStr = useSparseDcc ? ' | SparseDCC ON' : '';
+        const tmStr = (useTM && tmMixingCoeff > 0) ? ` | TM=${tmMixingCoeff.toFixed(2)}` : '';
+        showToast(
+          `🔍 Probed [${sId}]: rlim=${rVal} (${pruneMode}) | ${predStr} | ` +
+          `${sq8Str}${entStr}${sbStr}${spStr}${tmStr}`
+        );
       }
       if (typeof updateCliCommand === 'function') updateCliCommand();
       if (typeof updateUI === 'function') updateUI();
@@ -4806,6 +4947,51 @@
       });
       const elPrune = document.getElementById(`prune${pruneMode}`);
       if (elPrune) elPrune.classList.add('active');
+
+      if (prev.targetMode) {
+        targetMode = prev.targetMode;
+        const btnG = document.getElementById('modeGreedy');
+        const btnE = document.getElementById('modeEntropy');
+        if (btnG) btnG.classList.toggle('active', targetMode === 'greedy');
+        if (btnE) btnE.classList.toggle('active', targetMode === 'entropy');
+      }
+      if (typeof prev.entropyGate === 'number') {
+        entropyGate = prev.entropyGate;
+        const slEG = document.getElementById('sliderEntropyGate');
+        const inpEG = document.getElementById('inputEntropyGate');
+        if (slEG) slEG.value = entropyGate;
+        if (inpEG) inpEG.value = entropyGate.toFixed(2);
+      }
+      if (prev.useSoftBayesian !== undefined) {
+        useSoftBayesian = prev.useSoftBayesian;
+        const optSB = document.getElementById('optSoftBayesian');
+        if (optSB) optSB.classList.toggle('active', useSoftBayesian);
+      }
+      if (typeof prev.softBayesianSigmaCoeff === 'number') {
+        softBayesianSigmaCoeff = prev.softBayesianSigmaCoeff;
+        const slBS = document.getElementById('sliderBayesSigma');
+        const inpBS = document.getElementById('inputBayesSigma');
+        if (slBS) slBS.value = softBayesianSigmaCoeff;
+        if (inpBS) inpBS.value = softBayesianSigmaCoeff.toFixed(1);
+      }
+      if (prev.useSparseDcc !== undefined) {
+        useSparseDcc = prev.useSparseDcc;
+        const optSD = document.getElementById('optSparseDcc');
+        if (optSD) optSD.classList.toggle('active', useSparseDcc);
+      }
+      if (prev.useTM !== undefined) {
+        useTM = prev.useTM;
+        const optTM = document.getElementById('optTM');
+        if (optTM) optTM.classList.toggle('active', useTM);
+      }
+      if (typeof prev.tmMixingCoeff === 'number') {
+        tmMixingCoeff = prev.tmMixingCoeff;
+        const slTM = document.getElementById('sliderTmMix');
+        const inpTM = document.getElementById('inputTmMix');
+        if (slTM) slTM.value = tmMixingCoeff;
+        if (inpTM) inpTM.value = tmMixingCoeff.toFixed(2);
+      }
+
       if (typeof setPlottingDimensions === 'function') {
         setPlottingDimensions(prev.plotDimX, prev.plotDimY, prev.plotDimZ);
       }

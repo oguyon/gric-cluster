@@ -80,6 +80,8 @@ void write_run_log(
         fprintf(f, "PARAM_SPARSE_DCC_EXTRA_EVALS: %d\n", config->optim.sparse_dcc_extra_evals);
         fprintf(f, "PARAM_SOFT_BAYESIAN: %d\n", config->optim.soft_bayesian_mode);
         fprintf(f, "PARAM_SOFT_BAYESIAN_SIGMA: %f\n", config->optim.soft_bayesian_sigma_coeff);
+        fprintf(f, "PARAM_TM_MIX: %f\n", config->algo.tm_mixing_coeff);
+        fprintf(f, "PARAM_DOUBLE: %d\n", config->algo.use_double);
         fprintf(f, "PARAM_MAXCL_STRATEGY: %d\n", (int)config->algo.maxcl_strategy);
 
         if (config->output.output_dcc)

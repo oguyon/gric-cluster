@@ -125,6 +125,11 @@ static int apply_algo_option(
         config->optim.entropy_mode = 1;
         return 0;
     }
+    else if (matches(key, "-no_entropy") || matches(key, "-no-entropy"))
+    {
+        config->optim.entropy_mode = -1;
+        return 0;
+    }
     else if (matches(key, "-entropy_max_targets"))
     {
         if (!value)
@@ -185,6 +190,11 @@ static int apply_algo_option(
         config->optim.sparse_dcc_mode = 1;
         return 0;
     }
+    else if (matches(key, "-no_sparse_dcc") || matches(key, "-no-sparse-dcc"))
+    {
+        config->optim.sparse_dcc_mode = -1;
+        return 0;
+    }
     else if (matches(key, "-sparse_dcc_extra_evals"))
     {
         if (!value)
@@ -199,7 +209,12 @@ static int apply_algo_option(
         config->optim.soft_bayesian_mode = 1;
         return 0;
     }
-    else if (matches(key, "-soft_bayesian_sigma"))
+    else if (matches(key, "-no_soft_bayesian") || matches(key, "-no-soft-bayesian"))
+    {
+        config->optim.soft_bayesian_mode = -1;
+        return 0;
+    }
+    else if (matches(key, "-soft_bayesian_sigma") || matches(key, "-soft_sigma"))
     {
         if (!value)
         {
@@ -222,7 +237,7 @@ static int apply_algo_option(
         config->algo.pass2_nearest_mode = 0;
         return 0;
     }
-    else if (matches(key, "-tm"))
+    else if (matches(key, "-tm") || matches(key, "-tm_mix"))
     {
         if (!value)
         {
@@ -517,9 +532,19 @@ static int apply_optim_tile_option(
         config->optim.te4_mode = 1;
         return 0;
     }
+    else if (matches(key, "-no_te4") || matches(key, "-no-te4"))
+    {
+        config->optim.te4_mode = -1;
+        return 0;
+    }
     else if (matches(key, "-te5"))
     {
         config->optim.te5_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-no_te5") || matches(key, "-no-te5"))
+    {
+        config->optim.te5_mode = -1;
         return 0;
     }
     else if (matches(key, "-jtf") || matches(key, "-pass2"))

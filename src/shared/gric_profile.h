@@ -48,12 +48,20 @@ typedef struct
     int      pred_len;               /**< Recommended pattern length (default: 2) */
     int      pred_h;                 /**< Recommended lookback horizon H */
     double   continuity_ratio;       /**< Ratio d_seq / median_dist */
+    double   tm_mixing_coeff;        /**< Recommended TM mixing weight (0.0 - 0.5) */
 
-    /* Acceleration & Quantization */
+    /* Acceleration & Advanced Clustering */
     int      use_sq8;                /**< 1 if 8-bit scalar quantization recommended */
     SQ8Params sq8_params;            /**< Calibrated SQ8 parameters */
     int      te4_enabled;            /**< 1 if 4-point pruning recommended */
     int      te5_enabled;            /**< 1 if 5-point pruning recommended */
+    int      sparse_dcc_enabled;     /**< 1 if sparse DCC recommended for memory */
+    int      entropy_enabled;        /**< 1 if entropy-guided search recommended */
+    double   entropy_gate;           /**< Entropy gating threshold (bits) */
+    int      soft_bayesian_enabled;  /**< 1 if soft Gaussian likelihood recommended */
+    double   soft_bayesian_sigma_coeff; /**< Multiplier for radius in soft Bayesian */
+    int      recommend_double;       /**< 1 if double precision recommended */
+    double   noise_floor_est;        /**< Estimated local temporal noise floor */
     int      ncpu;                   /**< Recommended CPU thread count */
 
     /* Empirical Metric Pruning Telemetry */

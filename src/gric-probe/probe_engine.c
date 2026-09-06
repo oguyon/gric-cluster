@@ -481,18 +481,28 @@ static void probe_profile_pruning(
     long te3_pruned = 0;
     long te4_marginal_pruned = 0;
     long te5_marginal_pruned = 0;
+    long greedy_evals = 0;
+    long entropy_evals = 0;
 
     double *dfc = (double *)malloc((size_t)k_anchors * sizeof(double));
     int *unpruned = (int *)malloc((size_t)k_anchors * sizeof(int));
+    int *order_greedy = (int *)malloc((size_t)k_anchors * sizeof(int));
+    int *order_entropy = (int *)malloc((size_t)k_anchors * sizeof(int));
+    double *cand_lb = (double *)malloc((size_t)k_anchors * sizeof(double));
 
-    if (dfc == NULL || unpruned == NULL)
+    if (dfc == NULL || unpruned == NULL || order_greedy == NULL ||
+        order_entropy == NULL || cand_lb == NULL)
     {
         free(anchor_indices);
         free(dcc);
         free(dfc);
         free(unpruned);
+        free(order_greedy);
+        free(order_entropy);
+        free(cand_lb);
         profile->te4_enabled = 0;
         profile->te5_enabled = 0;
+        profile->entropy_enabled = 0;
         strcpy(profile->recommended_prune_mode, "3P");
         return;
     }
@@ -549,10 +559,11 @@ static void probe_profile_pruning(
         }
 
         /* If unpruned candidates remain and we have a second anchor, evaluate TE4 */
+        int remaining_count = unpruned_count;
         if (unpruned_count > 1)
         {
             int a2 = unpruned[0];
-            int remaining_count = 0;
+            remaining_count = 0;
 
             for (int u = 1; u < unpruned_count; u++)
             {
@@ -582,6 +593,7 @@ static void probe_profile_pruning(
             if (remaining_count > 1 && dim >= 3)
             {
                 int a3 = unpruned[0];
+                int final_count = 0;
                 for (int u = 1; u < remaining_count; u++)
                 {
                     int k = unpruned[u];
@@ -610,6 +622,74 @@ static void probe_profile_pruning(
                     {
                         te5_marginal_pruned++;
                     }
+                    else
+                    {
+                        unpruned[final_count++] = k;
+                    }
+                }
+                remaining_count = final_count;
+            }
+        }
+
+        /* Simulate greedy vs entropy candidate ordering for remaining candidates */
+        if (remaining_count >= 3 && dim >= 8)
+        {
+            for (int u = 0; u < remaining_count; u++)
+            {
+                int k = unpruned[u];
+                cand_lb[u] = fabs(dfc[a1] - dcc[a1 * k_anchors + k]);
+                order_greedy[u] = u;
+                order_entropy[u] = u;
+            }
+
+            /* Sort order_greedy by cand_lb ascending */
+            for (int i = 0; i < remaining_count - 1; i++)
+            {
+                for (int j = i + 1; j < remaining_count; j++)
+                {
+                    if (cand_lb[order_greedy[j]] < cand_lb[order_greedy[i]])
+                    {
+                        int tmp = order_greedy[i];
+                        order_greedy[i] = order_greedy[j];
+                        order_greedy[j] = tmp;
+                    }
+                }
+            }
+
+            for (int u = 0; u < remaining_count; u++)
+            {
+                greedy_evals++;
+                int k = unpruned[order_greedy[u]];
+                if (dfc[k] <= rlim)
+                {
+                    break;
+                }
+            }
+
+            /* Entropy ordering: select candidate closest to median lower bound */
+            double med_lb = cand_lb[order_greedy[remaining_count / 2]];
+            for (int i = 0; i < remaining_count - 1; i++)
+            {
+                for (int j = i + 1; j < remaining_count; j++)
+                {
+                    double diff_i = fabs(cand_lb[order_entropy[i]] - med_lb);
+                    double diff_j = fabs(cand_lb[order_entropy[j]] - med_lb);
+                    if (diff_j < diff_i)
+                    {
+                        int tmp = order_entropy[i];
+                        order_entropy[i] = order_entropy[j];
+                        order_entropy[j] = tmp;
+                    }
+                }
+            }
+
+            for (int u = 0; u < remaining_count; u++)
+            {
+                entropy_evals++;
+                int k = unpruned[order_entropy[u]];
+                if (dfc[k] <= rlim)
+                {
+                    break;
                 }
             }
         }
@@ -654,10 +734,25 @@ static void probe_profile_pruning(
         strcpy(profile->recommended_prune_mode, "3P");
     }
 
+    if (dim >= 8 && greedy_evals > 20 &&
+        (double)entropy_evals < (double)greedy_evals * 0.95)
+    {
+        profile->entropy_enabled = 1;
+        profile->entropy_gate = 0.20;
+    }
+    else
+    {
+        profile->entropy_enabled = 0;
+        profile->entropy_gate = 0.20;
+    }
+
     free(anchor_indices);
     free(dcc);
     free(dfc);
     free(unpruned);
+    free(order_greedy);
+    free(order_entropy);
+    free(cand_lb);
 }
 
 /**
@@ -901,6 +996,20 @@ int probe_run(
         results->profile.continuity_ratio =
             (results->profile.dist_p50 > 0.0) ? (d_seq / results->profile.dist_p50) : 1.0;
         results->noise_floor_est = d_seq / sqrt(2.0 * (double)dim);
+        results->profile.noise_floor_est = results->noise_floor_est;
+
+        if (results->profile.continuity_ratio < 0.20)
+        {
+            results->profile.tm_mixing_coeff = 0.35;
+        }
+        else if (results->profile.continuity_ratio < 0.50)
+        {
+            results->profile.tm_mixing_coeff = 0.15;
+        }
+        else
+        {
+            results->profile.tm_mixing_coeff = 0.0;
+        }
 
         if (results->profile.continuity_ratio < 0.50)
         {
@@ -914,6 +1023,27 @@ int probe_run(
         else
         {
             results->profile.pred_enabled = 0;
+        }
+
+        /* Step 7b: Soft Bayesian Likelihood Gating */
+        if (results->profile.rlim_balanced > 0.0)
+        {
+            double eta = results->profile.noise_floor_est / results->profile.rlim_balanced;
+            if (eta > 0.25)
+            {
+                results->profile.soft_bayesian_enabled = 1;
+                double coeff = 1.0 + (eta - 0.25);
+                if (coeff > 1.5)
+                {
+                    coeff = 1.5;
+                }
+                results->profile.soft_bayesian_sigma_coeff = coeff;
+            }
+            else
+            {
+                results->profile.soft_bayesian_enabled = 0;
+                results->profile.soft_bayesian_sigma_coeff = 1.0;
+            }
         }
     } // if (num_frames >= 2)
 
@@ -955,6 +1085,8 @@ int probe_run(
         est_cl = 10000;
     }
     results->profile.recommended_maxcl = est_cl;
+    results->profile.sparse_dcc_enabled = (est_cl >= 2000) ? 1 : 0;
+    results->profile.recommend_double = ((global_max - global_min) > 1e7) ? 1 : 0;
 
     if (config->show_progress)
     {

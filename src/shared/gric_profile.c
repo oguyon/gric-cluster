@@ -42,7 +42,15 @@ void gric_profile_init(
     prof->tiles_y = 1;
     prof->pred_len = 2;
     prof->pred_h = 1000;
+    prof->tm_mixing_coeff = 0.0;
     prof->ncpu = 4;
+    prof->sparse_dcc_enabled = 0;
+    prof->entropy_enabled = 0;
+    prof->entropy_gate = 0.20;
+    prof->soft_bayesian_enabled = 0;
+    prof->soft_bayesian_sigma_coeff = 1.0;
+    prof->recommend_double = 0;
+    prof->noise_floor_est = 0.0;
     prof->te3_prune_rate = 0.0;
     prof->te4_marginal_rate = 0.0;
     prof->te5_marginal_rate = 0.0;
@@ -142,7 +150,8 @@ int gric_profile_write_json(
     fprintf(fp, "    \"enabled\": %s,\n", prof->pred_enabled ? "true" : "false");
     fprintf(fp, "    \"pred_len\": %d,\n", prof->pred_len);
     fprintf(fp, "    \"pred_h\": %d,\n", prof->pred_h);
-    fprintf(fp, "    \"continuity_ratio\": %.6f\n", prof->continuity_ratio);
+    fprintf(fp, "    \"continuity_ratio\": %.6f,\n", prof->continuity_ratio);
+    fprintf(fp, "    \"tm_mixing_coeff\": %.4f\n", prof->tm_mixing_coeff);
     fprintf(fp, "  },\n");
 
     fprintf(fp, "  \"acceleration\": {\n");
@@ -153,6 +162,15 @@ int gric_profile_write_json(
     fprintf(fp, "    \"sq8_err_radius\": %.6f,\n", (double)prof->sq8_params.err_radius);
     fprintf(fp, "    \"te4\": %s,\n", prof->te4_enabled ? "true" : "false");
     fprintf(fp, "    \"te5\": %s,\n", prof->te5_enabled ? "true" : "false");
+    fprintf(fp, "    \"sparse_dcc\": %s,\n", prof->sparse_dcc_enabled ? "true" : "false");
+    fprintf(fp, "    \"entropy\": %s,\n", prof->entropy_enabled ? "true" : "false");
+    fprintf(fp, "    \"entropy_gate\": %.4f,\n", prof->entropy_gate);
+    fprintf(fp, "    \"soft_bayesian\": %s,\n",
+            prof->soft_bayesian_enabled ? "true" : "false");
+    fprintf(fp, "    \"soft_sigma_coeff\": %.4f,\n", prof->soft_bayesian_sigma_coeff);
+    fprintf(fp, "    \"recommend_double\": %s,\n",
+            prof->recommend_double ? "true" : "false");
+    fprintf(fp, "    \"noise_floor\": %.6f,\n", prof->noise_floor_est);
     fprintf(fp, "    \"ncpu\": %d\n", prof->ncpu);
     fprintf(fp, "  },\n");
 
@@ -384,6 +402,7 @@ int gric_profile_read_json(
     prof->pred_len = (int)parse_json_long(buf, "pred_len", 2);
     prof->pred_h = (int)parse_json_long(buf, "pred_h", 1000);
     prof->continuity_ratio = parse_json_double(buf, "continuity_ratio", 1.0);
+    prof->tm_mixing_coeff = parse_json_double(buf, "tm_mixing_coeff", 0.0);
 
     prof->use_sq8 = parse_json_bool(buf, "use_sq8", 0);
     prof->sq8_params.min_val = (float)parse_json_double(buf, "sq8_min", 0.0);
@@ -398,6 +417,13 @@ int gric_profile_read_json(
 
     prof->te4_enabled = parse_json_bool(buf, "te4", 0);
     prof->te5_enabled = parse_json_bool(buf, "te5", 0);
+    prof->sparse_dcc_enabled = parse_json_bool(buf, "sparse_dcc", 0);
+    prof->entropy_enabled = parse_json_bool(buf, "entropy", 0);
+    prof->entropy_gate = parse_json_double(buf, "entropy_gate", 0.20);
+    prof->soft_bayesian_enabled = parse_json_bool(buf, "soft_bayesian", 0);
+    prof->soft_bayesian_sigma_coeff = parse_json_double(buf, "soft_sigma_coeff", 1.0);
+    prof->recommend_double = parse_json_bool(buf, "recommend_double", 0);
+    prof->noise_floor_est = parse_json_double(buf, "noise_floor", 0.0);
     prof->ncpu = (int)parse_json_long(buf, "ncpu", 4);
 
     prof->te3_prune_rate = parse_json_double(buf, "te3_prune_rate", 0.0);
