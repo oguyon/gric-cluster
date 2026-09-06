@@ -398,6 +398,9 @@ static void print_help_raw(
                        "distance matrix");
     print_colored_line("      -sparse_dcc_extra_evals  Extra DCC evals per step "
                        "(default: 0)");
+    print_colored_line("    -sq8                     Use 8-bit scalar quantization pruning "
+                       "(default)");
+    print_colored_line("    -no-sq8                  Disable 8-bit scalar quantization pruning");
     print_colored_line("    -pass2nearest            Run second pass closest-anchor reallocation "
                        "(-reassign)");
 

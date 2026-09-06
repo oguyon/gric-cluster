@@ -275,7 +275,7 @@ if ! ( curl -s -m 1 "http://127.0.0.1:${PORT}/api/info" 2>/dev/null | \
         fi
     else
         "$SERVER_BIN" -p "${PORT}" -d "${WORKDIR}" -w "${DIR}/docs" \
-            --watch-pid $$ --idle-timeout 10 --auto-shutdown >/tmp/gric_server.log 2>&1 &
+            --watch-pid $$ --auto-shutdown >/tmp/gric_server.log 2>&1 &
         SERVER_PID=$!
         SPAWNED_SERVER=1
     fi

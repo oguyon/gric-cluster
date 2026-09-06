@@ -25,6 +25,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
 
 volatile sig_atomic_t stop_requested = 0;
 
@@ -42,6 +43,45 @@ void print_args_on_error(int argc, char *argv[])
         fprintf(stderr, "  argv[%d] = \"%s\"\n", arg_idx, argv[arg_idx]);
     }
     fprintf(stderr, "\n");
+}
+
+/**
+ * cleanup_stale_output_files - Remove stale completion files from previous runs
+ * @dir: Directory path to clean
+ *
+ * Deletes any existing result and log files before a new clustering session
+ * begins to prevent aborted runs from leaving behind mismatched results.
+ */
+static void cleanup_stale_output_files(
+    const char *dir)
+{
+    if (dir == NULL)
+    {
+        return;
+    }
+
+    static const char *const files[] = {
+        "anchors.bin",
+        "anchors.txt",
+        "anchors.fits",
+        "cluster_counts.bin",
+        "cluster_counts.txt",
+        "cluster_radii.bin",
+        "cluster_radii.txt",
+        "frame_membership.bin",
+        "frame_membership.txt",
+        "frame_evals.txt",
+        "dcc.bin",
+        "dcc.txt",
+        "cluster_run.log"
+    };
+
+    char path[1024];
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++)
+    {
+        snprintf(path, sizeof(path), "%s/%s", dir, files[i]);
+        unlink(path);
+    }
 }
 
 int main(int argc, char *argv[])
@@ -128,6 +168,7 @@ int main(int argc, char *argv[])
     config.optim.disable_pass2 = 1;
     config.optim.xtile_mode = 0;
     config.optim.xtile_decay = 1.0;
+    config.optim.use_sq8 = 1; // Enabled by default for 8-bit metric pre-filtering
 
     // Tiling defaults (M=1, no tiling)
     config.input.tile_grid_x = 0;
@@ -347,6 +388,11 @@ int main(int argc, char *argv[])
     {
         free(out_dir);
         out_dir = NULL;
+    }
+
+    if (config.output.user_outdir)
+    {
+        cleanup_stale_output_files(config.output.user_outdir);
     }
 
     ClusterState state;

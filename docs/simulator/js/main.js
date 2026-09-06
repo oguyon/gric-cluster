@@ -1002,12 +1002,75 @@
       mouseDownClientY = e.clientY;
 
       // Check if clicking Maximize / Restore in image mode or 3D mode
-      if (dataMode === 'image') {
-        if (typeof handleImageModeClick === 'function') {
-          const handled = handleImageModeClick(px, py, qIdx, W, H);
-          if (handled) {
-            syncImageQuadUI();
+      const isReconImgDown = (typeof isRecon4PanelView !== 'undefined' &&
+        isRecon4PanelView && typeof isReconstructionImageMode === 'function' &&
+        isReconstructionImageMode());
+      if (dataMode === 'image' || isReconImgDown) {
+        if (typeof maximizedQuad !== 'undefined' && maximizedQuad !== null) {
+          if (py <= 28 && px >= W - 180) {
+            maximizedQuad = null;
+            if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
+            draw();
             return;
+          }
+        } else {
+          if (px >= qRect.x + qRect.w - 32 && px <= qRect.x + qRect.w - 4 &&
+              py >= qRect.y && py <= qRect.y + 26) {
+            maximizedQuad = qIdx;
+            if (typeof syncImageQuadUI === 'function') syncImageQuadUI();
+            draw();
+            return;
+          }
+        }
+
+        // Check if clicking or dragging vertical slider in image view panels
+        const targetQ = (typeof maximizedQuad !== 'undefined' && maximizedQuad !== null)
+          ? maximizedQuad : qIdx;
+        if (typeof getPanelSliderRect === 'function') {
+          const slider = getPanelSliderRect(targetQ, W, H);
+          if (slider) {
+            const hitMargin = 5;
+            if (px >= slider.trackX - hitMargin &&
+                px <= slider.trackX + slider.trackW + hitMargin &&
+                py >= slider.trackY &&
+                py <= slider.trackY + slider.trackH) {
+              const scrollFraction = Math.max(
+                0, Math.min(1, (slider.scrollY || 0) / slider.maxScroll)
+              );
+              const thumbY = slider.trackY + scrollFraction * (slider.trackH - slider.thumbH);
+
+              if (py >= thumbY && py <= thumbY + slider.thumbH) {
+                if (typeof startPanelSliderDrag === 'function') {
+                  startPanelSliderDrag(
+                    slider.effectiveQuad,
+                    slider.viewMode,
+                    slider.trackY,
+                    slider.trackH,
+                    slider.thumbH,
+                    slider.maxScroll,
+                    py - thumbY
+                  );
+                }
+              } else {
+                const offset = slider.thumbH / 2;
+                if (typeof startPanelSliderDrag === 'function') {
+                  startPanelSliderDrag(
+                    slider.effectiveQuad,
+                    slider.viewMode,
+                    slider.trackY,
+                    slider.trackH,
+                    slider.thumbH,
+                    slider.maxScroll,
+                    offset
+                  );
+                }
+                if (typeof updatePanelSliderDrag === 'function') {
+                  updatePanelSliderDrag(py);
+                }
+              }
+              draw();
+              return;
+            }
           }
         }
       } else if (currentDim >= 3) {
@@ -1084,21 +1147,26 @@
 
       const isRecon = (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView);
       if (isRecon) {
-        // Quad 0 (A) and Quad 2 (C) -> Input Space
-        // Quad 1 (B) and Quad 3 (D) -> Output Space
-        const isInputSpace = (qIdx === 0 || qIdx === 2);
-        let spaceIs3D = false;
-        if (typeof datasetSlots !== 'undefined') {
-          if (isInputSpace) {
-            spaceIs3D = (datasetSlots.A && datasetSlots.A.currentDim >= 3) ||
-                        (datasetSlots.C && datasetSlots.C.currentDim >= 3);
-          } else {
-            spaceIs3D = (datasetSlots.B && datasetSlots.B.currentDim >= 3) ||
-                        (datasetSlots.D && datasetSlots.D.currentDim >= 3);
+        if (typeof isReconstructionImageMode === 'function' && isReconstructionImageMode()) {
+          dragMode = 'pan';
+          canvas.classList.add('grabbing');
+        } else {
+          // Quad 0 (A) and Quad 2 (C) -> Input Space
+          // Quad 1 (B) and Quad 3 (D) -> Output Space
+          const isInputSpace = (qIdx === 0 || qIdx === 2);
+          let spaceIs3D = false;
+          if (typeof datasetSlots !== 'undefined') {
+            if (isInputSpace) {
+              spaceIs3D = (datasetSlots.A && datasetSlots.A.currentDim >= 3) ||
+                          (datasetSlots.C && datasetSlots.C.currentDim >= 3);
+            } else {
+              spaceIs3D = (datasetSlots.B && datasetSlots.B.currentDim >= 3) ||
+                          (datasetSlots.D && datasetSlots.D.currentDim >= 3);
+            }
           }
+          dragMode = (spaceIs3D && !e.shiftKey) ? 'orbit' : 'pan';
+          canvas.classList.add('grabbing');
         }
-        dragMode = (spaceIs3D && !e.shiftKey) ? 'orbit' : 'pan';
-        canvas.classList.add('grabbing');
       } else {
         const is3DTarget = ((qIdx === 3 || maximizedQuad === 3) && currentDim >= 3);
         if (is3DTarget) {
@@ -1112,6 +1180,19 @@
     });
 
     window.addEventListener('mousemove', (e) => {
+      if (typeof getPanelSliderState === 'function') {
+        const sState = getPanelSliderState();
+        if (sState && sState.isDragging) {
+          const rect = canvas.getBoundingClientRect();
+          const py = e.clientY - rect.top;
+          if (typeof updatePanelSliderDrag === 'function') {
+            updatePanelSliderDrag(py);
+          }
+          draw();
+          return;
+        }
+      }
+
       if (!isDragging || isAddPointMode) return;
 
       const dx = e.clientX - dragStartX;
@@ -1120,14 +1201,20 @@
       dragStartY = e.clientY;
 
       if (dataMode === 'image') {
-        if (activeDragQuad === 2 || maximizedQuad === 2) {
-          if (imageQ2ViewMode === 'knn') {
-            imageKnnScrollY = Math.max(0, (imageKnnScrollY || 0) - dy);
-          } else {
-            imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) - dy);
-          }
+        const targetQ = (maximizedQuad !== null) ? maximizedQuad : activeDragQuad;
+        const viewMode = (typeof getImagePanelViewMode === 'function')
+          ? getImagePanelViewMode(targetQ)
+          : (targetQ === 2
+            ? (imageQ2ViewMode || 'members')
+            : (targetQ === 3 ? 'clusters' : ''));
+
+        if (viewMode === 'members') {
+          imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) - dy);
           draw();
-        } else if (activeDragQuad === 3 || maximizedQuad === 3) {
+        } else if (viewMode === 'knn') {
+          imageKnnScrollY = Math.max(0, (imageKnnScrollY || 0) - dy);
+          draw();
+        } else if (viewMode === 'clusters') {
           imageClustersScrollY = Math.max(0, (imageClustersScrollY || 0) - dy);
           draw();
         }
@@ -1136,6 +1223,9 @@
 
       // --- 4-Panel Reconstruction View Drag Handling ---
       if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView) {
+        if (typeof isReconstructionImageMode === 'function' && isReconstructionImageMode()) {
+          return;
+        }
         const isInputSpace = (activeDragQuad === 0 || activeDragQuad === 2);
         const targetViews = isInputSpace
           ? [quadViews[0], quadViews[2]]
@@ -1207,6 +1297,11 @@
     });
 
     window.addEventListener('mouseup', (e) => {
+      if (typeof stopPanelSliderDrag === 'function' && stopPanelSliderDrag()) {
+        draw();
+        return;
+      }
+
       if (isDragging) {
         isDragging = false;
         dragMode = null;
@@ -1218,7 +1313,10 @@
       const clickDuration = performance.now() - mouseDownTime;
       if (distFromDown < 6 && clickDuration < 450 && !isAddPointMode) {
         if (e.target === canvas) {
-          if (dataMode === 'image') {
+          const isReconImgClick = (typeof isRecon4PanelView !== 'undefined' &&
+            isRecon4PanelView && typeof isReconstructionImageMode === 'function' &&
+            isReconstructionImageMode());
+          if (dataMode === 'image' || isReconImgClick) {
             const rect = canvas.getBoundingClientRect();
             const px = e.clientX - rect.left;
             const py = e.clientY - rect.top;
@@ -1327,8 +1425,180 @@
     canvas.addEventListener('mousemove', (e) => {
       if (isDragging || isAddPointMode) return;
 
+      if (dataMode === 'image') {
+        const rect = canvas.getBoundingClientRect();
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+        const W = rect.width;
+        const H = rect.height;
+        const qIdx = getQuadrantAt(e.clientX, e.clientY);
+        const isMax = (typeof maximizedQuad !== 'undefined' && maximizedQuad !== null);
+        const targetQ = isMax ? maximizedQuad : qIdx;
+
+        let onSlider = false;
+        if (typeof getPanelSliderRect === 'function') {
+          const slider = getPanelSliderRect(targetQ, W, H);
+          if (slider) {
+            const hitMargin = 5;
+            if (px >= slider.trackX - hitMargin &&
+                px <= slider.trackX + slider.trackW + hitMargin &&
+                py >= slider.trackY &&
+                py <= slider.trackY + slider.trackH) {
+              onSlider = true;
+              const sState = (typeof getPanelSliderState === 'function')
+                ? getPanelSliderState() : null;
+              if (sState && sState.hoveredQuad !== slider.effectiveQuad) {
+                if (typeof setHoveredSliderQuad === 'function') {
+                  setHoveredSliderQuad(slider.effectiveQuad);
+                }
+                canvas.style.cursor = 'pointer';
+                draw();
+              }
+            }
+          }
+        }
+        if (!onSlider) {
+          const sState = (typeof getPanelSliderState === 'function')
+            ? getPanelSliderState() : null;
+          if (sState && sState.hoveredQuad !== -1) {
+            if (typeof setHoveredSliderQuad === 'function') {
+              setHoveredSliderQuad(-1);
+            }
+            canvas.style.cursor = '';
+            draw();
+          }
+        }
+        return;
+      }
+
       // --- 4-Panel Reconstruction View Hover Handling ---
       if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView) {
+        if (typeof isReconstructionImageMode === 'function' && isReconstructionImageMode()) {
+          const rect = canvas.getBoundingClientRect();
+          const px = e.clientX - rect.left;
+          const py = e.clientY - rect.top;
+          const W = rect.width;
+          const H = rect.height;
+          const qIdx = getQuadrantAt(e.clientX, e.clientY);
+
+          // Slider hover
+          let onSlider = false;
+          if (typeof getPanelSliderRect === 'function') {
+            const slider = getPanelSliderRect(qIdx, W, H);
+            if (slider) {
+              const hitMargin = 5;
+              if (px >= slider.trackX - hitMargin &&
+                  px <= slider.trackX + slider.trackW + hitMargin &&
+                  py >= slider.trackY &&
+                  py <= slider.trackY + slider.trackH) {
+                onSlider = true;
+                if (typeof setHoveredSliderQuad === 'function') {
+                  setHoveredSliderQuad(slider.effectiveQuad);
+                }
+                canvas.style.cursor = 'pointer';
+                draw();
+                return;
+              }
+            }
+          }
+          if (!onSlider && typeof getPanelSliderState === 'function') {
+            const sState = getPanelSliderState();
+            if (sState && sState.hoveredQuad !== -1) {
+              if (typeof setHoveredSliderQuad === 'function') {
+                setHoveredSliderQuad(-1);
+              }
+              canvas.style.cursor = '';
+              draw();
+            }
+          }
+
+          // Thumbnail or Header hover in Quad 0 or Quad 1
+          if (qIdx === 0 || qIdx === 1) {
+            const headerH = 28;
+            const qRect = (typeof getImageQuadRect === 'function')
+              ? getImageQuadRect(qIdx, W, H)
+              : { x: (qIdx === 1 ? W / 2 : 0), y: 0, w: W / 2, h: H / 2 };
+
+            // Hovering over header bar or mode toggle button
+            if (py >= qRect.y && py <= qRect.y + headerH) {
+              if (reconHoveredTrainingIdx !== -1) {
+                reconHoveredTrainingIdx = -1;
+                draw();
+              }
+              canvas.style.cursor = 'pointer';
+              return;
+            }
+
+            const isSingle = (qIdx === 0 && typeof reconPanelAMode !== 'undefined' &&
+                              reconPanelAMode === 'single') ||
+                             (qIdx === 1 && typeof reconPanelBMode !== 'undefined' &&
+                              reconPanelBMode === 'single');
+            if (isSingle) {
+              if (reconHoveredTrainingIdx !== -1) {
+                reconHoveredTrainingIdx = -1;
+                draw();
+              }
+              canvas.style.cursor = 'pointer';
+              return;
+            }
+
+            let curQ = 0;
+            if (typeof reconLockedQueryIdx !== 'undefined' && reconLockedQueryIdx >= 0) {
+              curQ = reconLockedQueryIdx;
+            } else if (typeof inspectedImageFrameIdx === 'number' &&
+                       inspectedImageFrameIdx >= 0) {
+              curQ = inspectedImageFrameIdx;
+            }
+
+            const neighbors = (typeof getReconstructionKnnNeighbors === 'function')
+              ? getReconstructionKnnNeighbors(curQ) : null;
+            let hoveredIdx = -1;
+            if (neighbors && neighbors.length > 0) {
+              const pad = 8;
+              const contentX = qRect.x + pad;
+              const contentY = qRect.y + headerH + pad;
+              const contentW = qRect.w - pad * 2;
+              const thumbSize = (typeof getImageThumbSize === 'function')
+                ? getImageThumbSize() : 64;
+              const style = (typeof getThumbCardStyle === 'function')
+                ? getThumbCardStyle(thumbSize, true) : { infoH: 26 };
+              const cardW = thumbSize;
+              const cardH = thumbSize + style.infoH;
+              const gap = 8;
+              const availableW = contentW - 16;
+              const cols = Math.max(1, Math.floor(availableW / (cardW + gap)));
+              const scrollY = (typeof imageReconKnnScrollY !== 'undefined')
+                ? imageReconKnnScrollY : 0;
+
+              for (let r = 0; r < neighbors.length; r++) {
+                const col = r % cols;
+                const row = Math.floor(r / cols);
+                const tx = contentX + col * (cardW + gap);
+                const ty = contentY + row * (cardH + gap) - scrollY;
+
+                if (px >= tx && px <= tx + cardW && py >= ty && py <= ty + cardH) {
+                  hoveredIdx = neighbors[r].id;
+                  break;
+                }
+              }
+            }
+
+            if (hoveredIdx !== reconHoveredTrainingIdx) {
+              reconHoveredTrainingIdx = hoveredIdx;
+              reconHoveredTrainingSlot = (qIdx === 0) ? 'A' : 'B';
+              canvas.style.cursor = (hoveredIdx >= 0) ? 'pointer' : '';
+              draw();
+            }
+            return;
+          } else {
+            if (reconHoveredTrainingIdx !== -1) {
+              reconHoveredTrainingIdx = -1;
+              canvas.style.cursor = '';
+              draw();
+            }
+          }
+          return;
+        }
         if (reconLockedQueryIdx >= 0 || reconLockedTrainingIdx >= 0) {
           return;
         }
@@ -1665,6 +1935,16 @@
         hoveredClosestSample = null;
         draw();
       }
+
+      if (typeof setHoveredSliderQuad === 'function') {
+        const sState = (typeof getPanelSliderState === 'function')
+          ? getPanelSliderState() : null;
+        if (sState && sState.hoveredQuad !== -1) {
+          setHoveredSliderQuad(-1);
+          canvas.style.cursor = '';
+          draw();
+        }
+      }
     });
 
     canvas.addEventListener('wheel', (e) => {
@@ -1672,6 +1952,56 @@
       const qIdx = getQuadrantAt(e.clientX, e.clientY);
 
       if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView) {
+        if (typeof isReconstructionImageMode === 'function' && isReconstructionImageMode()) {
+          if (qIdx === 0 || qIdx === 1) {
+            const isSingle = (qIdx === 0 && typeof reconPanelAMode !== 'undefined' &&
+                              reconPanelAMode === 'single') ||
+                             (qIdx === 1 && typeof reconPanelBMode !== 'undefined' &&
+                              reconPanelBMode === 'single');
+            if (!isSingle) {
+              if (e.ctrlKey || e.altKey) {
+                const delta = e.deltaY < 0 ? 12 : -12;
+                const cur = (typeof imageThumbSize !== 'undefined') ? imageThumbSize : 64;
+                const next = Math.max(36, Math.min(220, cur + delta));
+                imageThumbSize = next;
+                const lbl = document.getElementById('lblImgThumbSize');
+                if (lbl) lbl.textContent = `${next}px`;
+                draw();
+                return;
+              }
+              const slider = (typeof getPanelSliderRect === 'function')
+                ? getPanelSliderRect(qIdx, canvas.width, canvas.height) : null;
+              const maxS = slider ? slider.maxScroll : 2000;
+              const step = e.shiftKey ? 90 : 30;
+              imageReconKnnScrollY = Math.max(
+                0,
+                Math.min(maxS, (imageReconKnnScrollY || 0) + (e.deltaY > 0 ? step : -step))
+              );
+              draw();
+              return;
+            }
+          }
+
+          const slotC = (typeof datasetSlots !== 'undefined') ? datasetSlots['C'] : null;
+          const totalQ = (slotC && slotC.benchmarkDataset)
+            ? slotC.benchmarkDataset.length : 0;
+          if (totalQ > 0) {
+            const step = e.shiftKey ? 10 : (e.altKey ? 50 : 1);
+            const delta = e.deltaY > 0 ? step : -step;
+            const curIdx = (typeof inspectedImageFrameIdx === 'number' &&
+                            inspectedImageFrameIdx >= 0)
+              ? inspectedImageFrameIdx : 0;
+            const newIdx = Math.max(0, Math.min(totalQ - 1, curIdx + delta));
+            if (typeof selectImageFrame === 'function') {
+              selectImageFrame(newIdx);
+            } else {
+              inspectedImageFrameIdx = newIdx;
+              if (typeof updateUI === 'function') updateUI();
+              draw();
+            }
+          }
+          return;
+        }
         const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
         const isInputSpace = (qIdx === 0 || qIdx === 2);
         const targetViews = isInputSpace
@@ -1691,8 +2021,15 @@
       }
 
       if (dataMode === 'image') {
+        const targetQ = (maximizedQuad !== null) ? maximizedQuad : qIdx;
+        const viewMode = (typeof getImagePanelViewMode === 'function')
+          ? getImagePanelViewMode(targetQ)
+          : (targetQ === 2
+            ? (imageQ2ViewMode || 'members')
+            : (targetQ === 3 ? 'clusters' : ''));
+
         if ((e.ctrlKey || e.altKey) &&
-            (qIdx === 2 || qIdx === 3 || maximizedQuad === 2 || maximizedQuad === 3)) {
+            (viewMode === 'members' || viewMode === 'knn' || viewMode === 'clusters')) {
           const delta = e.deltaY < 0 ? 12 : -12;
           const cur = (typeof imageThumbSize !== 'undefined') ? imageThumbSize : 64;
           const next = Math.max(36, Math.min(220, cur + delta));
@@ -1703,15 +2040,20 @@
           return;
         }
 
-        if (qIdx === 2 || maximizedQuad === 2) {
-          if (imageQ2ViewMode === 'knn') {
-            imageKnnScrollY = Math.max(0, (imageKnnScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
-          } else {
-            imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
-          }
+        if (viewMode === 'members') {
+          imageMembersScrollY = Math.max(
+            0, (imageMembersScrollY || 0) + (e.deltaY > 0 ? 30 : -30)
+          );
           draw();
-        } else if (qIdx === 3 || maximizedQuad === 3) {
-          imageClustersScrollY = Math.max(0, (imageClustersScrollY || 0) + (e.deltaY > 0 ? 30 : -30));
+        } else if (viewMode === 'knn') {
+          imageKnnScrollY = Math.max(
+            0, (imageKnnScrollY || 0) + (e.deltaY > 0 ? 30 : -30)
+          );
+          draw();
+        } else if (viewMode === 'clusters') {
+          imageClustersScrollY = Math.max(
+            0, (imageClustersScrollY || 0) + (e.deltaY > 0 ? 30 : -30)
+          );
           draw();
         }
         return;
@@ -1945,14 +2287,20 @@
         touchStartY = t.clientY;
 
         if (dataMode === 'image') {
-          if (activeTouchQuad === 2 || maximizedQuad === 2) {
-            if (imageQ2ViewMode === 'knn') {
-              imageKnnScrollY = Math.max(0, (imageKnnScrollY || 0) - dy);
-            } else {
-              imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) - dy);
-            }
+          const targetQ = (maximizedQuad !== null) ? maximizedQuad : activeTouchQuad;
+          const viewMode = (typeof getImagePanelViewMode === 'function')
+            ? getImagePanelViewMode(targetQ)
+            : (targetQ === 2
+              ? (imageQ2ViewMode || 'members')
+              : (targetQ === 3 ? 'clusters' : ''));
+
+          if (viewMode === 'members') {
+            imageMembersScrollY = Math.max(0, (imageMembersScrollY || 0) - dy);
             draw();
-          } else if (activeTouchQuad === 3 || maximizedQuad === 3) {
+          } else if (viewMode === 'knn') {
+            imageKnnScrollY = Math.max(0, (imageKnnScrollY || 0) - dy);
+            draw();
+          } else if (viewMode === 'clusters') {
             imageClustersScrollY = Math.max(0, (imageClustersScrollY || 0) - dy);
             draw();
           }
@@ -2398,6 +2746,44 @@
       btnLockCenterSide.addEventListener('click', () => toggleLockCenter3D());
     }
 
+    async function handleGenButtonClick(slotId = null) {
+      const targetSlot = (slotId && DATASET_SLOTS.includes(slotId))
+        ? slotId : activeDatasetSlot;
+
+      if (activeDatasetSlot !== targetSlot) {
+        switchDatasetSlot(targetSlot);
+      }
+
+      if (typeof pauseSimulation === 'function' && isRunning) {
+        pauseSimulation();
+      }
+
+      if (typeof updateSlotGenState === 'function') {
+        updateSlotGenState(targetSlot, 'generating');
+      }
+
+      await new Promise(r => setTimeout(r, 35));
+
+      stageDataset(null, targetSlot);
+
+      if (typeof updateSlotGenState === 'function') {
+        updateSlotGenState(targetSlot, 'ready');
+      }
+
+      const slotObj = datasetSlots[targetSlot];
+      const bKey = slotObj ? slotObj.benchmarkKey : currentBenchmark;
+      const count = slotObj && slotObj.benchmarkDataset
+        ? slotObj.benchmarkDataset.length
+        : (benchmarkDataset ? benchmarkDataset.length : 0);
+      if (typeof showToast === 'function') {
+        showToast(
+          `🎲 Generated & loaded dataset [${targetSlot}] "${bKey}" ` +
+          `(${count.toLocaleString()} pts)`
+        );
+      }
+    }
+    window.handleGenButtonClick = handleGenButtonClick;
+
     // Multi-Dataset (A, B, C) Toolbar & Sidebar Handlers
     DATASET_SLOTS.forEach(sId => {
       // Toggle button in toolbar
@@ -2440,7 +2826,14 @@
           if (activeDatasetSlot !== sId) {
             switchDatasetSlot(sId);
           }
-          if (e.target.value.startsWith('32D')) {
+          const newBench = e.target.value;
+          const slot = datasetSlots[sId];
+          if (slot) {
+            slot.benchmarkKey = newBench;
+          }
+          currentBenchmark = newBench;
+
+          if (newBench.startsWith('32D')) {
             if (typeof setClusteringRlim === 'function') {
               setClusteringRlim(1.0, false);
             } else {
@@ -2451,9 +2844,35 @@
             } else {
               noiseSigma = 0.005;
             }
+          } else if (newBench.startsWith('img-asteroid')) {
+            if (typeof setClusteringRlim === 'function') {
+              setClusteringRlim(2.98, false);
+            } else {
+              rlim = 2.98;
+            }
+          } else if (newBench.startsWith('img-ball')) {
+            const imgRlim = (newBench === 'img-ball-3') ? 11.0 : 8.0;
+            if (typeof setClusteringRlim === 'function') {
+              setClusteringRlim(imgRlim, false);
+            } else {
+              rlim = imgRlim;
+            }
           }
-          stageDataset(e.target.value, sId);
-          resetView();
+
+          const descEl = document.getElementById('benchmarkDesc');
+          if (descEl && typeof BENCHMARK_DESCS !== 'undefined') {
+            descEl.innerHTML = BENCHMARK_DESCS[newBench] || `<b>${newBench}</b>`;
+          }
+
+          const selSide = document.getElementById('selectBenchmarkSide');
+          if (selSide) selSide.value = newBench;
+
+          if (typeof updateSlotGenState === 'function') {
+            updateSlotGenState(sId, 'pending');
+          }
+          if (typeof updateDatasetStatusBadge === 'function') {
+            updateDatasetStatusBadge();
+          }
         });
       }
 
@@ -2476,13 +2895,22 @@
       if (btnStage) {
         btnStage.addEventListener('click', (e) => {
           e.stopPropagation();
+          handleGenButtonClick(sId);
+        });
+      }
+
+      // Shuffle button per slot
+      const btnShuffle = document.getElementById(`btnShuffle_${sId}`);
+      if (btnShuffle) {
+        btnShuffle.addEventListener('click', (e) => {
+          e.stopPropagation();
           if (activeDatasetSlot !== sId) {
             switchDatasetSlot(sId);
           }
           pauseSimulation();
-          stageDataset(null, sId);
+          shuffleDataset(sId);
           if (typeof showToast === 'function') {
-            showToast(`🎲 Generated dataset [${sId}] "${currentBenchmark}" (${benchmarkDataset.length.toLocaleString()} pts)`);
+            showToast(`🔀 Shuffled frame order for Dataset [${sId}]`);
           }
         });
       }
@@ -2517,7 +2945,14 @@
     const selectBenchmarkLegacy = document.getElementById('selectBenchmark');
     if (selectBenchmarkLegacy) {
       selectBenchmarkLegacy.addEventListener('change', (e) => {
-        if (e.target.value.startsWith('32D')) {
+        const newBench = e.target.value;
+        const slot = datasetSlots[activeDatasetSlot];
+        if (slot) {
+          slot.benchmarkKey = newBench;
+        }
+        currentBenchmark = newBench;
+
+        if (newBench.startsWith('32D')) {
           if (typeof setClusteringRlim === 'function') {
             setClusteringRlim(1.0, false);
           } else {
@@ -2528,9 +2963,23 @@
           } else {
             noiseSigma = 0.005;
           }
+        } else if (newBench.startsWith('img-asteroid')) {
+          if (typeof setClusteringRlim === 'function') {
+            setClusteringRlim(2.98, false);
+          } else {
+            rlim = 2.98;
+          }
+        } else if (newBench.startsWith('img-ball')) {
+          const imgRlim = (newBench === 'img-ball-3') ? 11.0 : 8.0;
+          if (typeof setClusteringRlim === 'function') {
+            setClusteringRlim(imgRlim, false);
+          } else {
+            rlim = imgRlim;
+          }
         }
-        stageDataset(e.target.value);
-        resetView();
+        if (typeof updateSlotGenState === 'function') {
+          updateSlotGenState(activeDatasetSlot, 'pending');
+        }
       });
     }
 
@@ -2922,22 +3371,14 @@
     const btnStageDataset = document.getElementById('btnStageDataset');
     if (btnStageDataset) {
       btnStageDataset.addEventListener('click', () => {
-        pauseSimulation();
-        stageDataset();
-        if (typeof showToast === 'function') {
-          showToast(`🎲 Generated dataset "${currentBenchmark}" (${benchmarkDataset.length.toLocaleString()} pts)`);
-        }
+        handleGenButtonClick(activeDatasetSlot);
       });
     }
 
     const btnStageDatasetSide = document.getElementById('btnStageDatasetSide');
     if (btnStageDatasetSide) {
       btnStageDatasetSide.addEventListener('click', () => {
-        pauseSimulation();
-        stageDataset();
-        if (typeof showToast === 'function') {
-          showToast(`🎲 Generated dataset "${currentBenchmark}" (${benchmarkDataset.length.toLocaleString()} pts)`);
-        }
+        handleGenButtonClick(activeDatasetSlot);
       });
     }
 
@@ -2945,6 +3386,80 @@
     if (btnClearDatasetSide) {
       btnClearDatasetSide.addEventListener('click', () => {
         clearDatasetSlot(activeDatasetSlot);
+      });
+    }
+
+    // Random Ball Seed Checkbox & Re-roll Button
+    const chkRandomBallSeed = document.getElementById('chkRandomBallSeed');
+    if (chkRandomBallSeed) {
+      chkRandomBallSeed.addEventListener('change', (e) => {
+        randomBallSeed = e.target.checked;
+        if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+          datasetSlots[activeDatasetSlot].randomBallSeed = randomBallSeed;
+        }
+        if (typeof isImageBenchmark === 'function' && isImageBenchmark(currentBenchmark)) {
+          pauseSimulation();
+          stageDataset();
+          if (typeof showToast === 'function') {
+            showToast(randomBallSeed
+              ? '🎲 Random seed enabled for bouncing balls'
+              : '🔒 Default seed restored for bouncing balls');
+          }
+        }
+      });
+    }
+
+    const btnNewBallSeed = document.getElementById('btnNewBallSeed');
+    if (btnNewBallSeed) {
+      btnNewBallSeed.addEventListener('click', () => {
+        randomBallSeed = true;
+        ballSeed = Math.floor(Math.random() * 0x7FFFFFFF);
+        if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+          datasetSlots[activeDatasetSlot].randomBallSeed = true;
+          datasetSlots[activeDatasetSlot].ballSeed = ballSeed;
+        }
+        if (chkRandomBallSeed) chkRandomBallSeed.checked = true;
+        pauseSimulation();
+        stageDataset();
+        if (typeof showToast === 'function') {
+          showToast(`🎲 Generated new bouncing ball seed: ${ballSeed}`);
+        }
+      });
+    }
+
+    // Shuffle Checkbox & Shuffle Now Button
+    const chkShuffleFrames = document.getElementById('chkShuffleFrames');
+    if (chkShuffleFrames) {
+      chkShuffleFrames.addEventListener('change', (e) => {
+        shuffleFrames = e.target.checked;
+        if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+          datasetSlots[activeDatasetSlot].shuffleFrames = shuffleFrames;
+        }
+        if (shuffleFrames && !isShuffled &&
+            benchmarkDataset && benchmarkDataset.length > 1) {
+          pauseSimulation();
+          shuffleDataset(activeDatasetSlot);
+          if (typeof showToast === 'function') {
+            showToast(`🔀 Shuffled frame sequence for [${activeDatasetSlot}]`);
+          }
+        } else if (!shuffleFrames && isShuffled) {
+          pauseSimulation();
+          stageDataset();
+          if (typeof showToast === 'function') {
+            showToast(`Restored original frame sequence for [${activeDatasetSlot}]`);
+          }
+        }
+      });
+    }
+
+    const btnShuffleNow = document.getElementById('btnShuffleNow');
+    if (btnShuffleNow) {
+      btnShuffleNow.addEventListener('click', () => {
+        pauseSimulation();
+        shuffleDataset(activeDatasetSlot);
+        if (typeof showToast === 'function') {
+          showToast(`🔀 Permuted frame order for [${activeDatasetSlot}]`);
+        }
       });
     }
 
@@ -3478,7 +3993,14 @@
     const selBenchSide = document.getElementById('selectBenchmarkSide');
     if (selBenchSide) {
       selBenchSide.addEventListener('change', (e) => {
-        if (e.target.value.startsWith('32D')) {
+        const newBench = e.target.value;
+        const slot = datasetSlots[activeDatasetSlot];
+        if (slot) {
+          slot.benchmarkKey = newBench;
+        }
+        currentBenchmark = newBench;
+
+        if (newBench.startsWith('32D')) {
           if (typeof setClusteringRlim === 'function') {
             setClusteringRlim(1.0, false);
           } else {
@@ -3489,9 +4011,32 @@
           } else {
             noiseSigma = 0.005;
           }
+        } else if (newBench.startsWith('img-asteroid')) {
+          if (typeof setClusteringRlim === 'function') {
+            setClusteringRlim(2.98, false);
+          } else {
+            rlim = 2.98;
+          }
+        } else if (newBench.startsWith('img-ball')) {
+          const imgRlim = (newBench === 'img-ball-3') ? 11.0 : 8.0;
+          if (typeof setClusteringRlim === 'function') {
+            setClusteringRlim(imgRlim, false);
+          } else {
+            rlim = imgRlim;
+          }
         }
-        stageDataset(e.target.value);
-        resetView();
+
+        const descEl = document.getElementById('benchmarkDesc');
+        if (descEl && typeof BENCHMARK_DESCS !== 'undefined') {
+          descEl.innerHTML = BENCHMARK_DESCS[newBench] || `<b>${newBench}</b>`;
+        }
+
+        const selSlot = document.getElementById(`selectBenchmark_${activeDatasetSlot}`);
+        if (selSlot) selSlot.value = newBench;
+
+        if (typeof updateSlotGenState === 'function') {
+          updateSlotGenState(activeDatasetSlot, 'pending');
+        }
       });
     }
 
@@ -4185,7 +4730,9 @@
           if (knnEpsilon > 0) args.push('-eps', String(knnEpsilon));
           if (knnRlim > 0) args.push('-rlim', String(knnRlim));
           if (typeof knnMvp !== 'undefined' && knnMvp) args.push('-multipivot');
-          if (typeof knnUseSq8 !== 'undefined' && knnUseSq8) args.push('-sq8');
+          if (typeof knnUseSq8 !== 'undefined') {
+            args.push(knnUseSq8 ? '-sq8' : '-no-sq8');
+          }
           args.push('-progress');
           args.push('-txt');
 
@@ -5596,11 +6143,31 @@
         return;
       }
       if (ptsA.length !== ptsB.length) {
-        showToast(`⚠️ Reconstruction Error: Sample count mismatch between [A] (${ptsA.length.toLocaleString()}) and [B] (${ptsB.length.toLocaleString()}). A and B must have identical sample counts.`);
+        showToast(
+          `⚠️ Reconstruction Error: Sample count mismatch between [A] ` +
+          `(${ptsA.length.toLocaleString()}) and [B] (${ptsB.length.toLocaleString()}). ` +
+          `A and B must have identical sample counts.`
+        );
         return;
       }
 
+      const isImageOutput = (slotB && slotB.dataMode === 'image') ||
+                            (ptsB && ptsB.length > 0 &&
+                             (ptsB[0] instanceof Float32Array ||
+                              ptsB[0] instanceof Float64Array));
+      const isImageInput = (slotA && slotA.dataMode === 'image') ||
+                           (ptsA && ptsA.length > 0 &&
+                            (ptsA[0] instanceof Float32Array ||
+                             ptsA[0] instanceof Float64Array));
+
       function detectSlotDim(slot, pts) {
+        if (slot && slot.dataMode === 'image') {
+          return slot.imageDim || 1024;
+        }
+        if (pts && pts.length > 0 &&
+            (pts[0] instanceof Float32Array || pts[0] instanceof Float64Array)) {
+          return pts[0].length;
+        }
         if (slot && slot.benchmarkKey && typeof getBenchmarkDim === 'function') {
           return getBenchmarkDim(slot.benchmarkKey);
         }
@@ -5623,22 +6190,27 @@
       const dimC = detectSlotDim(slotC, ptsC);
 
       if (dimA !== dimC) {
-        showToast(`⚠️ Reconstruction Error: Coordinate dimension mismatch between Input [A] (${dimA}D) and Query [C] (${dimC}D). They must match.`);
+        showToast(
+          `⚠️ Reconstruction Error: Coordinate dimension mismatch between Input [A] ` +
+          `(${dimA}D) and Query [C] (${dimC}D). They must match.`
+        );
         return;
       }
 
       // 2. Read Parameters
       const inputK = document.getElementById('inputReconK');
-      const k = inputK ? Math.max(1, Math.min(parseInt(inputK.value, 10) || 30, ptsA.length)) : 30;
+      const k = inputK
+        ? Math.max(1, Math.min(parseInt(inputK.value, 10) || 30, ptsA.length)) : 30;
       const selectWeight = document.getElementById('selectReconWeight');
       const weightMode = selectWeight ? selectWeight.value : 'uniform';
       const inputAlpha = document.getElementById('inputReconAlpha');
-      const alpha = inputAlpha ? Math.max(0.1, parseFloat(inputAlpha.value) || 1.0) : 1.0;
+      const alpha = inputAlpha
+        ? Math.max(0.1, parseFloat(inputAlpha.value) || 1.0) : 1.0;
 
       const numQueries = ptsC.length;
       const numCandidates = ptsA.length;
 
-      // 3. In Native C mode, automatically run the compiled native C gric-knn -query C if not already cached
+      // 3. In Native C mode, automatically run the compiled native C gric-knn -query C
       if (DesktopBridge.isNativeSupported()) {
         const hasValidNativeKnn = !!(
           slotC && slotC.knnResults && slotC.knnResultsForQuery &&
@@ -5654,8 +6226,10 @@
       }
 
       const activeSlotC = datasetSlots['C'] || slotC;
-      const nativeKnn = (activeSlotC && activeSlotC.knnResults && activeSlotC.knnResultsForQuery &&
-                         activeSlotC.knnResults.indices && activeSlotC.knnResults.totalFrames === numQueries)
+      const nativeKnn = (activeSlotC && activeSlotC.knnResults &&
+                         activeSlotC.knnResultsForQuery &&
+                         activeSlotC.knnResults.indices &&
+                         activeSlotC.knnResults.totalFrames === numQueries)
         ? activeSlotC.knnResults : null;
 
       if (DesktopBridge.isNativeSupported() && !nativeKnn) {
@@ -5663,7 +6237,10 @@
         return;
       }
 
-      showToast(`⚡ Running k-NN Reconstruction (A: ${ptsA.length} pts in ${dimA}D, B: ${dimB}D target, C: ${ptsC.length} queries, k=${k})...`);
+      showToast(
+        `⚡ Running k-NN Reconstruction (A: ${ptsA.length} pts in ${dimA}D, ` +
+        `B: ${dimB}D target, C: ${ptsC.length} queries, k=${k})...`
+      );
 
       const tStart = performance.now();
       const reconstructedPoints = new Array(numQueries);
@@ -5688,57 +6265,109 @@
             rawIdx[p]   = nativeKnn.indices[offset + p];
           }
 
-          let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
-          if (weightMode === 'idw') {
-            let exactMatchIdx = -1;
-            for (let p = 0; p < kUsed; p++) {
-              if (rawDists[p] < 1e-9) { exactMatchIdx = p; break; }
-            }
-            if (exactMatchIdx >= 0) {
-              const pb = ptsB[rawIdx[exactMatchIdx]];
-              avgX = pb.x; avgY = pb.y;
-              avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+          if (isImageOutput) {
+            const reconBuf = new Float32Array(dimB);
+            if (weightMode === 'idw') {
+              let exactMatchIdx = -1;
               for (let p = 0; p < kUsed; p++) {
-                topNeighbors.push({
-                  id: rawIdx[p], dist: rawDists[p],
-                  weight: (p === exactMatchIdx) ? 1.0 : 0.0
-                });
-                totalDistSum += rawDists[p];
-                totalDistCount++;
+                if (rawDists[p] < 1e-9) { exactMatchIdx = p; break; }
+              }
+              if (exactMatchIdx >= 0) {
+                const pb = ptsB[rawIdx[exactMatchIdx]];
+                for (let d = 0; d < dimB; d++) {
+                  reconBuf[d] = pb[d];
+                }
+                for (let p = 0; p < kUsed; p++) {
+                  topNeighbors.push({
+                    id: rawIdx[p], dist: rawDists[p],
+                    weight: (p === exactMatchIdx) ? 1.0 : 0.0
+                  });
+                  totalDistSum += rawDists[p];
+                  totalDistCount++;
+                }
+              } else {
+                let sumW = 0.0;
+                const weights = new Float64Array(kUsed);
+                for (let p = 0; p < kUsed; p++) {
+                  const d = rawDists[p];
+                  const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+                  weights[p] = w; sumW += w;
+                  totalDistSum += d; totalDistCount++;
+                }
+                for (let p = 0; p < kUsed; p++) {
+                  const normW = weights[p] / sumW;
+                  const pb = ptsB[rawIdx[p]];
+                  for (let d = 0; d < dimB; d++) {
+                    reconBuf[d] += normW * pb[d];
+                  }
+                  topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
+                }
               }
             } else {
-              let sumW = 0.0;
-              const weights = new Float64Array(kUsed);
+              const normW = 1.0 / kUsed;
               for (let p = 0; p < kUsed; p++) {
-                const d = rawDists[p];
-                const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
-                weights[p] = w; sumW += w;
-                totalDistSum += d; totalDistCount++;
+                const pb = ptsB[rawIdx[p]];
+                for (let d = 0; d < dimB; d++) {
+                  reconBuf[d] += normW * pb[d];
+                }
+                topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
+                totalDistSum += rawDists[p]; totalDistCount++;
               }
+            }
+            reconstructedPoints[i] = reconBuf;
+            sourceNeighbors[i]     = topNeighbors;
+          } else {
+            let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
+            if (weightMode === 'idw') {
+              let exactMatchIdx = -1;
               for (let p = 0; p < kUsed; p++) {
-                const normW = weights[p] / sumW;
+                if (rawDists[p] < 1e-9) { exactMatchIdx = p; break; }
+              }
+              if (exactMatchIdx >= 0) {
+                const pb = ptsB[rawIdx[exactMatchIdx]];
+                avgX = pb.x; avgY = pb.y;
+                avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+                for (let p = 0; p < kUsed; p++) {
+                  topNeighbors.push({
+                    id: rawIdx[p], dist: rawDists[p],
+                    weight: (p === exactMatchIdx) ? 1.0 : 0.0
+                  });
+                  totalDistSum += rawDists[p];
+                  totalDistCount++;
+                }
+              } else {
+                let sumW = 0.0;
+                const weights = new Float64Array(kUsed);
+                for (let p = 0; p < kUsed; p++) {
+                  const d = rawDists[p];
+                  const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+                  weights[p] = w; sumW += w;
+                  totalDistSum += d; totalDistCount++;
+                }
+                for (let p = 0; p < kUsed; p++) {
+                  const normW = weights[p] / sumW;
+                  const pb = ptsB[rawIdx[p]];
+                  avgX += normW * pb.x; avgY += normW * pb.y;
+                  if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+                  topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
+                }
+              }
+            } else {
+              const normW = 1.0 / kUsed;
+              for (let p = 0; p < kUsed; p++) {
                 const pb = ptsB[rawIdx[p]];
                 avgX += normW * pb.x; avgY += normW * pb.y;
                 if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
                 topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
+                totalDistSum += rawDists[p]; totalDistCount++;
               }
             }
-          } else {
-            // 'uniform': Boxcar filter averaging all k nearest neighbors
-            const normW = 1.0 / kUsed;
-            for (let p = 0; p < kUsed; p++) {
-              const pb = ptsB[rawIdx[p]];
-              avgX += normW * pb.x; avgY += normW * pb.y;
-              if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
-              topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
-              totalDistSum += rawDists[p]; totalDistCount++;
-            }
-          }
 
-          const reconPt = { x: avgX, y: avgY };
-          if (dimB >= 3) { reconPt.z = avgZ; }
-          reconstructedPoints[i] = reconPt;
-          sourceNeighbors[i]     = topNeighbors;
+            const reconPt = { x: avgX, y: avgY };
+            if (dimB >= 3) { reconPt.z = avgZ; }
+            reconstructedPoints[i] = reconPt;
+            sourceNeighbors[i]     = topNeighbors;
+          }
         } // for each query (fast path)
 
       } else {
@@ -5748,21 +6377,42 @@
                       'falling back to brute-force.');
         }
         for (let i = 0; i < numQueries; i++) {
+          if (i > 0 && i % 25 === 0) {
+            if (typeof showToast === 'function' && numQueries > 50) {
+              showToast(
+                `⚡ Reconstructing Frame ${i}/${numQueries} ` +
+                `(${Math.round((i / numQueries) * 100)}%)...`
+              );
+            }
+            await new Promise(r => setTimeout(r, 0));
+          }
           const qc = ptsC[i];
-          const qx = qc.x;
-          const qy = qc.y;
-          const qz = (dimA >= 3 && typeof qc.z === 'number') ? qc.z : 0.0;
-
-          /* Compute distance to all candidates in A */
           const dists   = new Float64Array(numCandidates);
           const indices = new Int32Array(numCandidates);
-          for (let j = 0; j < numCandidates; j++) {
-            const pa = ptsA[j];
-            const dx = qx - pa.x;
-            const dy = qy - pa.y;
-            const dz = (dimA >= 3 && typeof pa.z === 'number') ? (qz - pa.z) : 0.0;
-            dists[j]   = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            indices[j] = j;
+
+          if (isImageInput) {
+            for (let j = 0; j < numCandidates; j++) {
+              const pa = ptsA[j];
+              let sumSq = 0.0;
+              for (let d = 0; d < dimA; d++) {
+                const diff = qc[d] - pa[d];
+                sumSq += diff * diff;
+              }
+              dists[j]   = Math.sqrt(sumSq);
+              indices[j] = j;
+            }
+          } else {
+            const qx = qc.x;
+            const qy = qc.y;
+            const qz = (dimA >= 3 && typeof qc.z === 'number') ? qc.z : 0.0;
+            for (let j = 0; j < numCandidates; j++) {
+              const pa = ptsA[j];
+              const dx = qx - pa.x;
+              const dy = qy - pa.y;
+              const dz = (dimA >= 3 && typeof pa.z === 'number') ? (qz - pa.z) : 0.0;
+              dists[j]   = Math.sqrt(dx * dx + dy * dy + dz * dz);
+              indices[j] = j;
+            }
           }
 
           /* Partial sort top-k smallest distances */
@@ -5777,58 +6427,109 @@
 
           /* Calculate weights and average corresponding B samples */
           const topNeighbors = [];
-          let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
-
-          if (weightMode === 'idw') {
-            let exactMatchIdx = -1;
-            for (let p = 0; p < k; p++) {
-              if (dists[p] < 1e-9) { exactMatchIdx = p; break; }
-            }
-            if (exactMatchIdx >= 0) {
-              const matchedSampleId = indices[exactMatchIdx];
-              const pb = ptsB[matchedSampleId];
-              avgX = pb.x; avgY = pb.y;
-              avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+          if (isImageOutput) {
+            const reconBuf = new Float32Array(dimB);
+            if (weightMode === 'idw') {
+              let exactMatchIdx = -1;
               for (let p = 0; p < k; p++) {
-                topNeighbors.push({
-                  id: indices[p], dist: dists[p],
-                  weight: (p === exactMatchIdx) ? 1.0 : 0.0
-                });
-                totalDistSum += dists[p]; totalDistCount++;
+                if (dists[p] < 1e-9) { exactMatchIdx = p; break; }
+              }
+              if (exactMatchIdx >= 0) {
+                const matchedSampleId = indices[exactMatchIdx];
+                const pb = ptsB[matchedSampleId];
+                for (let d = 0; d < dimB; d++) {
+                  reconBuf[d] = pb[d];
+                }
+                for (let p = 0; p < k; p++) {
+                  topNeighbors.push({
+                    id: indices[p], dist: dists[p],
+                    weight: (p === exactMatchIdx) ? 1.0 : 0.0
+                  });
+                  totalDistSum += dists[p]; totalDistCount++;
+                }
+              } else {
+                let sumW = 0.0;
+                const weights = new Float64Array(k);
+                for (let p = 0; p < k; p++) {
+                  const d = dists[p];
+                  const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+                  weights[p] = w; sumW += w;
+                  totalDistSum += d; totalDistCount++;
+                }
+                for (let p = 0; p < k; p++) {
+                  const normW = weights[p] / sumW;
+                  const pb = ptsB[indices[p]];
+                  for (let d = 0; d < dimB; d++) {
+                    reconBuf[d] += normW * pb[d];
+                  }
+                  topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
+                }
               }
             } else {
-              let sumW = 0.0;
-              const weights = new Float64Array(k);
+              const normW = 1.0 / k;
               for (let p = 0; p < k; p++) {
-                const d = dists[p];
-                const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
-                weights[p] = w; sumW += w;
-                totalDistSum += d; totalDistCount++;
+                const pb = ptsB[indices[p]];
+                for (let d = 0; d < dimB; d++) {
+                  reconBuf[d] += normW * pb[d];
+                }
+                topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
+                totalDistSum += dists[p]; totalDistCount++;
               }
+            }
+            reconstructedPoints[i] = reconBuf;
+            sourceNeighbors[i]     = topNeighbors;
+          } else {
+            let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
+            if (weightMode === 'idw') {
+              let exactMatchIdx = -1;
               for (let p = 0; p < k; p++) {
-                const normW = weights[p] / sumW;
+                if (dists[p] < 1e-9) { exactMatchIdx = p; break; }
+              }
+              if (exactMatchIdx >= 0) {
+                const matchedSampleId = indices[exactMatchIdx];
+                const pb = ptsB[matchedSampleId];
+                avgX = pb.x; avgY = pb.y;
+                avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+                for (let p = 0; p < k; p++) {
+                  topNeighbors.push({
+                    id: indices[p], dist: dists[p],
+                    weight: (p === exactMatchIdx) ? 1.0 : 0.0
+                  });
+                  totalDistSum += dists[p]; totalDistCount++;
+                }
+              } else {
+                let sumW = 0.0;
+                const weights = new Float64Array(k);
+                for (let p = 0; p < k; p++) {
+                  const d = dists[p];
+                  const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+                  weights[p] = w; sumW += w;
+                  totalDistSum += d; totalDistCount++;
+                }
+                for (let p = 0; p < k; p++) {
+                  const normW = weights[p] / sumW;
+                  const pb = ptsB[indices[p]];
+                  avgX += normW * pb.x; avgY += normW * pb.y;
+                  if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+                  topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
+                }
+              }
+            } else {
+              const normW = 1.0 / k;
+              for (let p = 0; p < k; p++) {
                 const pb = ptsB[indices[p]];
                 avgX += normW * pb.x; avgY += normW * pb.y;
                 if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
                 topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
+                totalDistSum += dists[p]; totalDistCount++;
               }
             }
-          } else {
-            // 'uniform': Boxcar filter averaging all k nearest neighbors
-            const normW = 1.0 / k;
-            for (let p = 0; p < k; p++) {
-              const pb = ptsB[indices[p]];
-              avgX += normW * pb.x; avgY += normW * pb.y;
-              if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
-              topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
-              totalDistSum += dists[p]; totalDistCount++;
-            }
-          }
 
-          const reconPt = { x: avgX, y: avgY };
-          if (dimB >= 3) { reconPt.z = avgZ; }
-          reconstructedPoints[i] = reconPt;
-          sourceNeighbors[i]     = topNeighbors;
+            const reconPt = { x: avgX, y: avgY };
+            if (dimB >= 3) { reconPt.z = avgZ; }
+            reconstructedPoints[i] = reconPt;
+            sourceNeighbors[i]     = topNeighbors;
+          }
         } // for each query (brute-force)
       } // if nativeKnn
 
@@ -5865,15 +6566,24 @@
           if (!nb) continue;
           const pb = ptsB[nb.id];
           if (!pb) continue;
-          let dxSq = (pb.x - rp.x) * (pb.x - rp.x)
-                   + (pb.y - rp.y) * (pb.y - rp.y);
-          if (dimB >= 3)
-          {
-            const pz = (typeof pb.z === 'number') ? pb.z : 0.0;
-            const rz = (typeof rp.z === 'number') ? rp.z : 0.0;
-            dxSq += (pz - rz) * (pz - rz);
+          let dxSq = 0.0;
+          if (isImageOutput) {
+            for (let d = 0; d < dimB; d++) {
+              const diff = pb[d] - rp[d];
+              dxSq += diff * diff;
+            }
+          } else {
+            dxSq = (pb.x - rp.x) * (pb.x - rp.x)
+                 + (pb.y - rp.y) * (pb.y - rp.y);
+            if (dimB >= 3)
+            {
+              const pz = (typeof pb.z === 'number') ? pb.z : 0.0;
+              const rz = (typeof rp.z === 'number') ? rp.z : 0.0;
+              dxSq += (pz - rz) * (pz - rz);
+            }
           }
-          const weightVal = (typeof nb.weight === 'number' && !isNaN(nb.weight)) ? nb.weight : (1.0 / neighbors.length);
+          const weightVal = (typeof nb.weight === 'number' && !isNaN(nb.weight))
+            ? nb.weight : (1.0 / neighbors.length);
           wvar += weightVal * dxSq;
         }
         reconVariance[i] = wvar;
@@ -5889,24 +6599,45 @@
       // 4. Save into Slot D
       slotD.benchmarkDataset = reconstructedPoints;
       slotD.rawBenchmarkDataset = reconstructedPoints;
-      slotD.pastSamples = reconstructedPoints.map((p, idx) => ({
-        x: p.x,
-        y: p.y,
-        z: (dimB >= 3 && typeof p.z === 'number') ? p.z : 0.0,
-        clusterId: -1,
-        frameIndex: idx
-      }));
       slotD.currentDim = dimB;
       slotD.benchmarkKey = 'reconstructed';
       slotD.sampleCount = numQueries;
       slotD.isDatasetStaged = true;
-      slotD.stagedDatasetInfo = {
-        name: 'Reconstructed (from A, B, C)',
-        count: numQueries,
-        dim: dimB,
-        passes: 1,
-        noise: 0
-      };
+
+      if (isImageOutput) {
+        slotD.dataMode = 'image';
+        slotD.imageWidth = (slotB && slotB.imageWidth) || 32;
+        slotD.imageHeight = (slotB && slotB.imageHeight) || 32;
+        slotD.imageDim = dimB;
+        slotD.pastSamples = [];
+        slotD.totalFrames = numQueries;
+        slotD.currentImageFrame = reconstructedPoints.length > 0
+          ? reconstructedPoints[0] : null;
+        slotD.stagedDatasetInfo = {
+          name: 'Reconstructed Images (from A, B, C)',
+          count: numQueries,
+          dim: dimB,
+          passes: 1,
+          noise: 0
+        };
+      } else {
+        slotD.dataMode = 'coord';
+        slotD.pastSamples = reconstructedPoints.map((p, idx) => ({
+          x: p.x,
+          y: p.y,
+          z: (dimB >= 3 && typeof p.z === 'number') ? p.z : 0.0,
+          clusterId: -1,
+          frameIndex: idx
+        }));
+        slotD.stagedDatasetInfo = {
+          name: 'Reconstructed (from A, B, C)',
+          count: numQueries,
+          dim: dimB,
+          passes: 1,
+          noise: 0
+        };
+      }
+
       slotD.reconstructionInfo = {
         queryCount: numQueries,
         outputDim: dimB,
@@ -5924,6 +6655,9 @@
       slotC.reconKthDist = reconKthDist;
       slotC.reconKthDistMin = kthDistMin;
       slotC.reconKthDistMax = kthDistMax;
+      slotC.reconVariance = reconVariance;
+      slotC.reconVarianceMin = varMin;
+      slotC.reconVarianceMax = varMax;
       slotD.reconKthDist = reconKthDist;
       slotD.reconKthDistMin = kthDistMin;
       slotD.reconKthDistMax = kthDistMax;
@@ -5950,8 +6684,10 @@
       // Update Toolbar status pill for D
       const pillD = document.getElementById('datasetStatusPill_D');
       if (pillD) {
-        pillD.textContent =
-          `📦 Reconstructed: ${numQueries.toLocaleString()} pts (${dimB}D, k=${k})`;
+        pillD.textContent = isImageOutput
+          ? `📦 Reconstructed: ${numQueries.toLocaleString()} frames ` +
+            `(${slotD.imageWidth}×${slotD.imageHeight}, k=${k})`
+          : `📦 Reconstructed: ${numQueries.toLocaleString()} pts (${dimB}D, k=${k})`;
         pillD.style.background = 'rgba(168, 85, 247, 0.2)';
         pillD.style.color = '#c084fc';
         pillD.style.borderColor = 'rgba(168, 85, 247, 0.5)';
@@ -5969,7 +6705,9 @@
         loadSlotState('D');
         if (typeof updateDatasetStatusBadge === 'function') updateDatasetStatusBadge();
         if (typeof updateUI === 'function') updateUI();
-        if (typeof renderReconstructionDashboard === 'function') renderReconstructionDashboard();
+        if (typeof renderReconstructionDashboard === 'function') {
+          renderReconstructionDashboard();
+        }
       }
 
       if (typeof resetView === 'function') {
@@ -5978,10 +6716,15 @@
       if (typeof draw === 'function') {
         draw();
       }
+      if (typeof updateReconQualityBar === 'function') {
+        updateReconQualityBar();
+      }
 
       showToast(
         `✅ Reconstruction Complete! Dataset [D] contains ` +
-        `${numQueries.toLocaleString()} points (${dimB}D) in ${elapsedMs.toFixed(1)} ms.`
+        `${numQueries.toLocaleString()} ` +
+        `${isImageOutput ? 'frames (image)' : `points (${dimB}D)`} ` +
+        `in ${elapsedMs.toFixed(1)} ms.`
       );
     }
 
@@ -6288,8 +7031,8 @@
         }
 
         const chkSq8 = document.getElementById('chkReconQuerySq8');
-        if (chkSq8 && chkSq8.checked) {
-          args.push('-sq8');
+        if (chkSq8) {
+          args.push(chkSq8.checked ? '-sq8' : '-no-sq8');
         }
 
         if (consoleEl) {
@@ -6446,6 +7189,22 @@
     if (btnReconTop) {
       btnReconTop.addEventListener('click', executeDatasetReconstruction);
     }
+    const btnAsteroidReconTop = document.getElementById('btnPresetAsteroidReconTop');
+    if (btnAsteroidReconTop) {
+      btnAsteroidReconTop.addEventListener('click', () => {
+        if (typeof setupAsteroidReconTest === 'function') {
+          setupAsteroidReconTest(10000, 0.80);
+        }
+      });
+    }
+    const btnAsteroidReconSide = document.getElementById('btnPresetAsteroidReconSide');
+    if (btnAsteroidReconSide) {
+      btnAsteroidReconSide.addEventListener('click', () => {
+        if (typeof setupAsteroidReconTest === 'function') {
+          setupAsteroidReconTest(10000, 0.80);
+        }
+      });
+    }
 
     /* Native query button — only active in desktop mode */
     const btnNativeQuery = document.getElementById('btnRunNativeReconQuery');
@@ -6502,6 +7261,30 @@
     if (btnToggleReconOverlaySide) {
       btnToggleReconOverlaySide.addEventListener('click', () => {
         setReconOverlayMode();
+      });
+    }
+    const selA = document.getElementById('selectReconPanelAMode');
+    if (selA) {
+      selA.addEventListener('change', (e) => {
+        setReconPanelAMode(e.target.value);
+      });
+    }
+    const selASide = document.getElementById('selectReconPanelAModeSide');
+    if (selASide) {
+      selASide.addEventListener('change', (e) => {
+        setReconPanelAMode(e.target.value);
+      });
+    }
+    const selB = document.getElementById('selectReconPanelBMode');
+    if (selB) {
+      selB.addEventListener('change', (e) => {
+        setReconPanelBMode(e.target.value);
+      });
+    }
+    const selBSide = document.getElementById('selectReconPanelBModeSide');
+    if (selBSide) {
+      selBSide.addEventListener('change', (e) => {
+        setReconPanelBMode(e.target.value);
       });
     }
     const btnInspectD = document.getElementById('btnInspectDatasetDSide');
@@ -7102,6 +7885,18 @@
     }
     window.togglePanelCollapse = togglePanelCollapse;
 
+    function collapseAllControlPanels() {
+      const cards = document.querySelectorAll('.side-panel .card');
+      cards.forEach(card => {
+        card.classList.add('collapsed');
+        card.classList.remove('expanded');
+        card.style.flex = '0 0 auto';
+        card.style.height = 'auto';
+      });
+      updateResizersVisibility();
+    }
+    window.collapseAllControlPanels = collapseAllControlPanels;
+
     // Central Control Enablement & Dependency Synchronization
     function syncControlDependencies() {
       // 1. Target Selection Mode -> Shannon Entropy controls & Display Heatmap
@@ -7256,6 +8051,22 @@
       }
 
       updateKnnButtonUI(isKnnComputing);
+
+      // 7. Ball seed & shuffle options sync
+      const rowBallSeedOptions = document.getElementById('rowBallSeedOptions');
+      if (rowBallSeedOptions) {
+        const isBallBench = typeof isImageBenchmark === 'function' &&
+                            isImageBenchmark(currentBenchmark);
+        rowBallSeedOptions.style.display = isBallBench ? 'flex' : 'none';
+      }
+      const chkBallSeedEl = document.getElementById('chkRandomBallSeed');
+      if (chkBallSeedEl && typeof randomBallSeed !== 'undefined') {
+        chkBallSeedEl.checked = !!randomBallSeed;
+      }
+      const chkShuffleEl = document.getElementById('chkShuffleFrames');
+      if (chkShuffleEl && typeof shuffleFrames !== 'undefined') {
+        chkShuffleEl.checked = !!shuffleFrames;
+      }
 
       if (typeof updateCliCommand === 'function') {
         updateCliCommand();
@@ -8147,11 +8958,6 @@
       if (mode === 'cli') {
         updateCliCommand();
 
-        const cardCli = document.getElementById('cardCli');
-        if (cardCli && cardCli.classList.contains('collapsed')) {
-          cardCli.classList.remove('collapsed');
-        }
-
         if (DesktopBridge.isAvailable()) {
           await DesktopBridge.initCliSession();
         }
@@ -8293,9 +9099,15 @@
     }
 
     async function runNativeCli() {
-      if (!isDesktopBackend) {
-        showToast('Native CLI is only available in Desktop App mode');
-        return;
+      if (!isDesktopBackend || !DesktopBridge.isAvailable()) {
+        const probed = await DesktopBridge.probe();
+        if (!probed) {
+          showToast(
+            '❌ Cannot connect to gric-server. Launch via ./tools/gric-gui or start gric-server'
+          );
+          return;
+        }
+        isDesktopBackend = true;
       }
 
       const selCli = document.getElementById('selectCliDataset');
@@ -8322,7 +9134,10 @@
           (typeof BENCHMARK_DESCS !== 'undefined' &&
            BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
 
-        if (isSynthetic || !dataset) {
+        const streamFileExists = workspaceFiles &&
+          workspaceFiles.some(f => f.name === dataset && f.size > 0);
+
+        if ((isSynthetic || !dataset) && !streamFileExists) {
           dataset = `${currentBenchmark}.txt`;
           if (!benchmarkDataset || benchmarkDataset.length === 0) {
             stageDataset();
@@ -8381,11 +9196,15 @@
         isStreamInput = true;
         args = [rlim.toFixed(3), customStreamName, '-stream', '-outdir', `${customStreamName}.clusterdat`];
       } else {
-        // If running active synthetic benchmark, always serialize full sequence with passes
+        // If running active synthetic benchmark, ensure file exists in workspace
         const isSynthetic = !selCli || !selCli.value || dataset === `${currentBenchmark}.txt` ||
-          (typeof BENCHMARK_DESCS !== 'undefined' && BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
+          (typeof BENCHMARK_DESCS !== 'undefined' &&
+           BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
 
-        if (isSynthetic) {
+        const fileAlreadyExists = workspaceFiles &&
+          workspaceFiles.some(f => f.name === dataset && f.size > 0);
+
+        if (isSynthetic && !fileAlreadyExists) {
           dataset = `${currentBenchmark}.txt`;
           if (!benchmarkDataset || benchmarkDataset.length === 0) {
             stageDataset();
@@ -8454,8 +9273,8 @@
           args.push('-sparse_dcc_extra_evals', sparseDccExtraEvals.toString());
         }
       }
-      if (typeof clusterUseSq8 === 'boolean' && clusterUseSq8) {
-        args.push('-sq8');
+      if (typeof clusterUseSq8 === 'boolean') {
+        args.push(clusterUseSq8 ? '-sq8' : '-no-sq8');
       }
       if (maxcl > 0) {
         args.push('-maxcl', maxcl.toString());
@@ -8867,6 +9686,7 @@
     if (typeof updateMultiDatasetUI === 'function') {
       updateMultiDatasetUI();
     }
+    collapseAllControlPanels();
 
     // =========================================================================
     //  HELP & DOCUMENTATION CENTER (MULTI-TOPIC MODAL & PRESETS)
@@ -9442,6 +10262,346 @@
         });
       }
 
+      // -------------------------------------------------------------
+      // Reconstruction Quality Bar & Box Event Handlers
+      // -------------------------------------------------------------
+      const qualityCanvas = document.getElementById('canvasImgReconQualityBar');
+      const qualityBox = document.getElementById('boxImgFrameReconQuality');
+      if (qualityCanvas) {
+        let isScrubbingQualityBar = false;
+
+        const scrubFromEvent = (e) => {
+          const rect = qualityCanvas.getBoundingClientRect();
+          if (rect.width <= 0) return;
+          const total = (benchmarkDataset && benchmarkDataset.length > 0)
+            ? benchmarkDataset.length
+            : (typeof totalFrames !== 'undefined' ? totalFrames : 0);
+          if (total <= 0) return;
+
+          const clientX = (e.touches && e.touches.length > 0)
+            ? e.touches[0].clientX : e.clientX;
+          const relX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+          const ratio = relX / rect.width;
+          const target = Math.min(total - 1, Math.floor(ratio * total));
+          if (typeof selectImageFrame === 'function') {
+            selectImageFrame(target);
+          }
+        };
+
+        qualityCanvas.addEventListener('pointerdown', (e) => {
+          isScrubbingQualityBar = true;
+          try { qualityCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+          scrubFromEvent(e);
+        });
+
+        qualityCanvas.addEventListener('pointermove', (e) => {
+          if (isScrubbingQualityBar) {
+            scrubFromEvent(e);
+          }
+        });
+
+        const stopQualityScrub = (e) => {
+          if (isScrubbingQualityBar) {
+            isScrubbingQualityBar = false;
+            try { qualityCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+          }
+        };
+
+        qualityCanvas.addEventListener('pointerup', stopQualityScrub);
+        qualityCanvas.addEventListener('pointercancel', stopQualityScrub);
+
+        qualityCanvas.addEventListener('mousemove', (e) => {
+          if (isScrubbingQualityBar) return;
+          const qualData = (typeof getReconVarianceData === 'function')
+            ? getReconVarianceData()
+            : (typeof window.getReconVarianceData === 'function')
+              ? window.getReconVarianceData() : null;
+          if (!qualData || !qualData.arr || qualData.arr.length === 0) return;
+
+          const rect = qualityCanvas.getBoundingClientRect();
+          if (rect.width <= 0) return;
+          const relX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+          const ratio = relX / rect.width;
+          const target = Math.min(qualData.arr.length - 1,
+                                  Math.floor(ratio * qualData.arr.length));
+          const val = qualData.arr[target];
+          qualityCanvas.title = `Recon Quality: Frame #${target + 1} ` +
+            `Var = ${val.toFixed(4)} (Click to jump)`;
+        });
+      }
+
+      if (qualityBox) {
+        qualityBox.addEventListener('click', () => {
+          const cur = (typeof inspectedImageFrameIdx !== 'undefined' &&
+                       inspectedImageFrameIdx >= 0)
+            ? inspectedImageFrameIdx : 0;
+          const qualData = (typeof getReconVarianceData === 'function')
+            ? getReconVarianceData()
+            : (typeof window.getReconVarianceData === 'function')
+              ? window.getReconVarianceData() : null;
+          if (qualData && qualData.arr && cur < qualData.arr.length) {
+            const val = qualData.arr[cur];
+            if (typeof showToast === 'function') {
+              showToast(`📊 Frame #${cur + 1} Recon Variance: ${val.toFixed(4)}`);
+            }
+          }
+        });
+      }
+
+      // -------------------------------------------------------------
+      // Cluster Inspector Event Handlers
+      // -------------------------------------------------------------
+      const sliderCluster = document.getElementById('sliderImgCluster');
+      const inputCluster = document.getElementById('inputImgCluster');
+      const btnPrevCluster = document.getElementById('btnImgPrevCluster');
+      const btnNextCluster = document.getElementById('btnImgNextCluster');
+      const btnAutoCluster = document.getElementById('btnImgAutoCluster');
+
+      window.isDraggingImageClusterSlider = false;
+
+      if (sliderCluster) {
+        const onClusterSliderUpdate = (e) => {
+          const val = parseInt(e.target.value, 10);
+          if (!isNaN(val) && typeof selectImageCluster === 'function') {
+            selectImageCluster(val);
+          }
+        };
+
+        sliderCluster.addEventListener('pointerdown', () => {
+          window.isDraggingImageClusterSlider = true;
+        });
+        sliderCluster.addEventListener('mousedown', () => {
+          window.isDraggingImageClusterSlider = true;
+        });
+        window.addEventListener('pointerup', () => {
+          window.isDraggingImageClusterSlider = false;
+        });
+        window.addEventListener('mouseup', () => {
+          window.isDraggingImageClusterSlider = false;
+        });
+
+        sliderCluster.addEventListener('input', onClusterSliderUpdate);
+        sliderCluster.addEventListener('change', onClusterSliderUpdate);
+      }
+
+      if (inputCluster) {
+        const commitClusterInput = () => {
+          const totalCls = (clusters && clusters.length > 0) ? clusters.length : 0;
+          if (totalCls === 0) return;
+          const raw = inputCluster.value.trim().replace(/^[cC#]/, '');
+          let val = parseInt(raw, 10);
+          if (isNaN(val)) {
+            const cur = (typeof inspectedClusterId !== 'undefined' &&
+              inspectedClusterId >= 0)
+              ? inspectedClusterId
+              : 0;
+            inputCluster.value = cur;
+            return;
+          }
+          val = Math.max(0, Math.min(totalCls - 1, val));
+          inputCluster.value = val;
+          if (typeof selectImageCluster === 'function') {
+            selectImageCluster(val);
+          }
+        };
+
+        inputCluster.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commitClusterInput();
+            inputCluster.blur();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            const cur = (typeof inspectedClusterId !== 'undefined' &&
+              inspectedClusterId >= 0)
+              ? inspectedClusterId
+              : 0;
+            inputCluster.value = cur;
+            inputCluster.blur();
+          }
+        });
+        inputCluster.addEventListener('change', commitClusterInput);
+      }
+
+      if (btnPrevCluster) {
+        btnPrevCluster.addEventListener('click', () => {
+          const totalCls = (clusters && clusters.length > 0) ? clusters.length : 0;
+          if (totalCls === 0) return;
+          const cur = (typeof inspectedClusterId !== 'undefined' &&
+            inspectedClusterId >= 0)
+            ? inspectedClusterId
+            : 0;
+          const target = Math.max(0, cur - 1);
+          if (typeof selectImageCluster === 'function') {
+            selectImageCluster(target);
+          }
+        });
+      }
+
+      if (btnNextCluster) {
+        btnNextCluster.addEventListener('click', () => {
+          const totalCls = (clusters && clusters.length > 0) ? clusters.length : 0;
+          if (totalCls === 0) return;
+          const cur = (typeof inspectedClusterId !== 'undefined' &&
+            inspectedClusterId >= 0)
+            ? inspectedClusterId
+            : 0;
+          const target = Math.min(totalCls - 1, cur + 1);
+          if (typeof selectImageCluster === 'function') {
+            selectImageCluster(target);
+          }
+        });
+      }
+
+      if (btnAutoCluster) {
+        btnAutoCluster.addEventListener('click', () => {
+          autoClusterFollow = !autoClusterFollow;
+          if (autoClusterFollow) {
+            const total = (benchmarkDataset && benchmarkDataset.length > 0)
+              ? benchmarkDataset.length
+              : (typeof totalFrames !== 'undefined' ? totalFrames : 0);
+            const effFrame = (typeof inspectedImageFrameIdx !== 'undefined' &&
+              inspectedImageFrameIdx >= 0)
+              ? inspectedImageFrameIdx
+              : Math.max(0, total - 1);
+            if (effFrame >= 0 && imageFrameAssignments &&
+                imageFrameAssignments[effFrame] !== undefined &&
+                imageFrameAssignments[effFrame] >= 0) {
+              if (typeof selectImageCluster === 'function') {
+                selectImageCluster(imageFrameAssignments[effFrame]);
+              }
+            } else if (typeof updateUI === 'function') {
+              updateUI();
+            }
+          } else if (typeof updateUI === 'function') {
+            updateUI();
+          }
+        });
+      }
+
+      // -------------------------------------------------------------
+      // Member Inspector Event Handlers
+      // -------------------------------------------------------------
+      const sliderMember = document.getElementById('sliderImgMember');
+      const inputMember = document.getElementById('inputImgMember');
+      const btnPrevMember = document.getElementById('btnImgPrevMember');
+      const btnNextMember = document.getElementById('btnImgNextMember');
+      const btnAnchorMember = document.getElementById('btnImgAnchorMember');
+
+      window.isDraggingImageMemberSlider = false;
+
+      if (sliderMember) {
+        const onMemberSliderUpdate = (e) => {
+          const val = parseInt(e.target.value, 10);
+          if (!isNaN(val) && val >= 1 &&
+              typeof selectImageClusterMember === 'function') {
+            selectImageClusterMember(val - 1);
+          }
+        };
+
+        sliderMember.addEventListener('pointerdown', () => {
+          window.isDraggingImageMemberSlider = true;
+        });
+        sliderMember.addEventListener('mousedown', () => {
+          window.isDraggingImageMemberSlider = true;
+        });
+        window.addEventListener('pointerup', () => {
+          window.isDraggingImageMemberSlider = false;
+        });
+        window.addEventListener('mouseup', () => {
+          window.isDraggingImageMemberSlider = false;
+        });
+
+        sliderMember.addEventListener('input', onMemberSliderUpdate);
+        sliderMember.addEventListener('change', onMemberSliderUpdate);
+      }
+
+      if (inputMember) {
+        const commitMemberInput = () => {
+          const curCls = (typeof inspectedClusterId !== 'undefined' &&
+            inspectedClusterId >= 0)
+            ? inspectedClusterId
+            : 0;
+          const curMembers = (typeof getClusterMembersList === 'function')
+            ? getClusterMembersList(curCls)
+            : ((imageClusterMembers && imageClusterMembers[curCls]) || []);
+          const totalM = curMembers ? curMembers.length : 0;
+          if (totalM === 0) return;
+
+          const raw = inputMember.value.trim().replace(/^#/, '');
+          let val = parseInt(raw, 10);
+          if (isNaN(val)) {
+            const cur = (typeof inspectedImageMemberIdx !== 'undefined')
+              ? inspectedImageMemberIdx
+              : 0;
+            inputMember.value = cur + 1;
+            return;
+          }
+          val = Math.max(1, Math.min(totalM, val));
+          inputMember.value = val;
+          if (typeof selectImageClusterMember === 'function') {
+            selectImageClusterMember(val - 1);
+          }
+        };
+
+        inputMember.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commitMemberInput();
+            inputMember.blur();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            const cur = (typeof inspectedImageMemberIdx !== 'undefined')
+              ? inspectedImageMemberIdx
+              : 0;
+            inputMember.value = cur + 1;
+            inputMember.blur();
+          }
+        });
+        inputMember.addEventListener('change', commitMemberInput);
+      }
+
+      if (btnPrevMember) {
+        btnPrevMember.addEventListener('click', () => {
+          const cur = (typeof inspectedImageMemberIdx !== 'undefined')
+            ? inspectedImageMemberIdx
+            : 0;
+          const target = Math.max(0, cur - 1);
+          if (typeof selectImageClusterMember === 'function') {
+            selectImageClusterMember(target);
+          }
+        });
+      }
+
+      if (btnNextMember) {
+        btnNextMember.addEventListener('click', () => {
+          const curCls = (typeof inspectedClusterId !== 'undefined' &&
+            inspectedClusterId >= 0)
+            ? inspectedClusterId
+            : 0;
+          const curMembers = (typeof getClusterMembersList === 'function')
+            ? getClusterMembersList(curCls)
+            : ((imageClusterMembers && imageClusterMembers[curCls]) || []);
+          const totalM = curMembers ? curMembers.length : 0;
+          if (totalM === 0) return;
+          const cur = (typeof inspectedImageMemberIdx !== 'undefined')
+            ? inspectedImageMemberIdx
+            : 0;
+          const target = Math.min(totalM - 1, cur + 1);
+          if (typeof selectImageClusterMember === 'function') {
+            selectImageClusterMember(target);
+          }
+        });
+      }
+
+      if (btnAnchorMember) {
+        btnAnchorMember.addEventListener('click', () => {
+          if (typeof selectImageClusterMember === 'function') {
+            selectImageClusterMember(0);
+          }
+        });
+      }
+
       const selectSort = document.getElementById('selectImgClusterSort');
       if (selectSort) {
         selectSort.addEventListener('change', (e) => {
@@ -9454,6 +10614,24 @@
               : '🔢 Sorted by Creation ID (Default)';
           if (typeof showToast === 'function') showToast(label);
         });
+      }
+
+      for (let q = 0; q < 4; q++) {
+        const sel = document.getElementById(`selectImgQuad${q}`);
+        if (sel) {
+          sel.addEventListener('change', (e) => {
+            const newMode = e.target.value;
+            if (typeof setImagePanelViewMode === 'function') {
+              setImagePanelViewMode(q, newMode);
+            }
+            const title = (typeof getImageViewTitle === 'function')
+              ? getImageViewTitle(newMode)
+              : newMode;
+            if (typeof showToast === 'function') {
+              showToast(`Q${q}: ${title}`);
+            }
+          });
+        }
       }
 
       const btnShowAll = document.getElementById('btnImgShowAllPanels');
@@ -9475,14 +10653,20 @@
             if (typeof showToast === 'function') showToast('⊞ All 4 Panels (Split Grid)');
           } else if (val === '2_knn') {
             maximizedQuad = 2;
-            imageQ2ViewMode = 'knn';
+            if (typeof setImagePanelViewMode === 'function') {
+              setImagePanelViewMode(2, 'knn');
+            } else {
+              imageQ2ViewMode = 'knn';
+            }
             if (typeof showToast === 'function') showToast('⚡ Maximized Q2: k-NN Neighbors');
           } else {
             maximizedQuad = parseInt(val, 10);
-            if (maximizedQuad === 2) imageQ2ViewMode = 'members';
-            const qNames = ['Current Frame', 'Anchor / Residual', 'Cluster Members', 'All Clusters'];
+            const title = (typeof getImagePanelViewMode === 'function' &&
+                           typeof getImageViewTitle === 'function')
+              ? getImageViewTitle(getImagePanelViewMode(maximizedQuad))
+              : `Panel ${maximizedQuad}`;
             if (typeof showToast === 'function') {
-              showToast(`🔍 Maximized Q${maximizedQuad}: ${qNames[maximizedQuad]}`);
+              showToast(`🔍 Maximized Q${maximizedQuad}: ${title}`);
             }
           }
           syncImageQuadUI();
@@ -9523,10 +10707,24 @@
       if (selectView) {
         if (maximizedQuad === null) {
           selectView.value = 'all';
-        } else if (maximizedQuad === 2 && imageQ2ViewMode === 'knn') {
+        } else if (maximizedQuad === 2 &&
+                   (typeof getImagePanelViewMode === 'function'
+                     ? getImagePanelViewMode(2) === 'knn'
+                     : imageQ2ViewMode === 'knn')) {
           selectView.value = '2_knn';
         } else {
           selectView.value = String(maximizedQuad);
+        }
+
+        // Update option labels with dynamic view titles
+        if (typeof getImagePanelViewMode === 'function' &&
+            typeof getImageViewTitle === 'function') {
+          for (let q = 0; q < 4; q++) {
+            const opt = selectView.querySelector(`option[value="${q}"]`);
+            if (opt) {
+              opt.textContent = `Q${q}: ${getImageViewTitle(getImagePanelViewMode(q))}`;
+            }
+          }
         }
       }
       if (btnShowAll) {
@@ -9541,6 +10739,20 @@
           btnShowAll.style.borderColor = 'rgba(34, 197, 94, 0.6)';
           btnShowAll.textContent = '⊞ Show All Panels';
         }
+      }
+
+      // Sync the 4 quadrant dropdown select elements & update layout
+      for (let q = 0; q < 4; q++) {
+        const sel = document.getElementById(`selectImgQuad${q}`);
+        if (sel && typeof getImagePanelViewMode === 'function') {
+          const cur = getImagePanelViewMode(q);
+          if (sel.value !== cur) {
+            sel.value = cur;
+          }
+        }
+      }
+      if (typeof updateImageQuadDropdowns === 'function') {
+        updateImageQuadDropdowns();
       }
     }
     window.syncImageQuadUI = syncImageQuadUI;
@@ -9577,6 +10789,12 @@
             setMultiDatasetEnabled(!multiDatasetEnabled);
           }
         } },
+      { id: 'act-shuffle-dataset', group: 'Actions', icon: '🔀',
+        name: 'Shuffle Frame Order (Active Dataset)', hint: 'Shuffle',
+        action: () => document.getElementById('btnShuffleNow')?.click() },
+      { id: 'act-reroll-ball-seed', group: 'Actions', icon: '🎲',
+        name: 'Re-roll Random Ball Seed', hint: 'Re-roll',
+        action: () => document.getElementById('btnNewBallSeed')?.click() },
       { id: 'act-img-show-all', group: 'Actions', icon: '⊞', name: 'Show All View Panels (4-Split Grid)',
         hint: 'Esc', action: () => {
           maximizedQuad = null;

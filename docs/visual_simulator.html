@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GRIC Interactive Algorithm Simulator - Metric Sequential Clustering &amp; Exact Pruning</title>
-  <link rel="stylesheet" href="simulator/css/simulator.css?v=2026.09.04.2005">
+  <link rel="stylesheet" href="simulator/css/simulator.css?v=2026.09.06.01">
 </head>
 <body>
 <header>
@@ -140,6 +140,9 @@
                 <option value="512Drand">512Drand — 512D Random Volume</option>
               </optgroup>
               <optgroup label="Image Time-Series Benchmarks (32×32)">
+                <option value="img-asteroid-x">🪐 Asteroid View X (32×32, D=1024)</option>
+                <option value="img-asteroid-y">🪐 Asteroid View Y (32×32, D=1024)</option>
+                <option value="img-asteroid-z">🪐 Asteroid View Z (32×32, D=1024)</option>
                 <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
                 <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
                 <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
@@ -172,6 +175,13 @@
                     data-tooltip-badge="Slot A" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Generates or reloads Dataset A into memory and workspace.">🎲 Gen</button>
+            <button id="btnShuffle_A" class="secondary btn-dataset-shuffle" data-slot="A"
+                    style="background: rgba(168, 85, 247, 0.12); color: #c084fc; font-weight: 600;
+                           border-color: rgba(168, 85, 247, 0.35);"
+                    data-tooltip-title="Shuffle Dataset A"
+                    data-tooltip-badge="Slot A"
+                    data-tooltip-color="purple"
+                    data-tooltip-desc="Randomly permutes frame/point order in Dataset A.">🔀</button>
             <button id="btnClearDataset_A" class="secondary btn-dataset-clear" data-slot="A" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset A"
                     data-tooltip-badge="Slot A"
@@ -226,6 +236,9 @@
                 <option value="512Drand">512Drand — 512D Random Volume</option>
               </optgroup>
               <optgroup label="Image Time-Series Benchmarks (32×32)">
+                <option value="img-asteroid-x">🪐 Asteroid View X (32×32, D=1024)</option>
+                <option value="img-asteroid-y">🪐 Asteroid View Y (32×32, D=1024)</option>
+                <option value="img-asteroid-z">🪐 Asteroid View Z (32×32, D=1024)</option>
                 <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
                 <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
                 <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
@@ -258,6 +271,13 @@
                     data-tooltip-badge="Slot B" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Generates or reloads Dataset B into memory and workspace.">🎲 Gen</button>
+            <button id="btnShuffle_B" class="secondary btn-dataset-shuffle" data-slot="B"
+                    style="background: rgba(168, 85, 247, 0.12); color: #c084fc; font-weight: 600;
+                           border-color: rgba(168, 85, 247, 0.35);"
+                    data-tooltip-title="Shuffle Dataset B"
+                    data-tooltip-badge="Slot B"
+                    data-tooltip-color="purple"
+                    data-tooltip-desc="Randomly permutes frame/point order in Dataset B.">🔀</button>
             <button id="btnClearDataset_B" class="secondary btn-dataset-clear" data-slot="B" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset B"
                     data-tooltip-badge="Slot B"
@@ -312,6 +332,9 @@
                 <option value="512Drand">512Drand — 512D Random Volume</option>
               </optgroup>
               <optgroup label="Image Time-Series Benchmarks (32×32)">
+                <option value="img-asteroid-x">🪐 Asteroid View X (32×32, D=1024)</option>
+                <option value="img-asteroid-y">🪐 Asteroid View Y (32×32, D=1024)</option>
+                <option value="img-asteroid-z">🪐 Asteroid View Z (32×32, D=1024)</option>
                 <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
                 <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
                 <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
@@ -344,6 +367,13 @@
                     data-tooltip-badge="Slot C" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Generates or reloads Dataset C into memory and workspace.">🎲 Gen</button>
+            <button id="btnShuffle_C" class="secondary btn-dataset-shuffle" data-slot="C"
+                    style="background: rgba(168, 85, 247, 0.12); color: #c084fc; font-weight: 600;
+                           border-color: rgba(168, 85, 247, 0.35);"
+                    data-tooltip-title="Shuffle Dataset C"
+                    data-tooltip-badge="Slot C"
+                    data-tooltip-color="purple"
+                    data-tooltip-desc="Randomly permutes frame/point order in Dataset C.">🔀</button>
             <button id="btnClearDataset_C" class="secondary btn-dataset-clear" data-slot="C" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset C"
                     data-tooltip-badge="Slot C"
@@ -402,6 +432,9 @@
                 <option value="512Drand">512Drand — 512D Random Volume</option>
               </optgroup>
               <optgroup label="Image Time-Series Benchmarks (32×32)">
+                <option value="img-asteroid-x">🪐 Asteroid View X (32×32, D=1024)</option>
+                <option value="img-asteroid-y">🪐 Asteroid View Y (32×32, D=1024)</option>
+                <option value="img-asteroid-z">🪐 Asteroid View Z (32×32, D=1024)</option>
                 <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
                 <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
                 <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
@@ -431,11 +464,27 @@
                     data-tooltip-badge="Slot D" 
                     data-tooltip-color="purple" 
                     data-tooltip-desc="Generates or reloads Dataset D into memory and workspace.">🎲 Gen</button>
+            <button id="btnShuffle_D" class="secondary btn-dataset-shuffle" data-slot="D"
+                    style="background: rgba(168, 85, 247, 0.12); color: #c084fc; font-weight: 600;
+                           border-color: rgba(168, 85, 247, 0.35);"
+                    data-tooltip-title="Shuffle Dataset D"
+                    data-tooltip-badge="Slot D"
+                    data-tooltip-color="purple"
+                    data-tooltip-desc="Randomly permutes frame/point order in Dataset D.">🔀</button>
             <button id="btnClearDataset_D" class="secondary btn-dataset-clear" data-slot="D" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset D"
                     data-tooltip-badge="Slot D"
                     data-tooltip-color="amber"
                     data-tooltip-desc="Resets and clears all reconstructed points and data for Dataset D.">🗑️</button>
+            <button id="btnPresetAsteroidReconTop" class="btn-action"
+                    style="background: rgba(14, 165, 233, 0.22); color: #38bdf8;
+                           border: 1px solid rgba(14, 165, 233, 0.55); font-weight: 700;
+                           padding: 2px 7px; font-size: 0.72rem; border-radius: 4px;"
+                    data-tooltip-title="1-Click Asteroid X→Y Test (10k Frames)" 
+                    data-tooltip-badge="Auto A, B, C" 
+                    data-tooltip-color="cyan" 
+                    data-tooltip-desc="Sets A=TrainX, B=TrainY, C=TestX, opens ABCD view, and runs."
+            >🪐 Asteroid X→Y</button>
             <button id="btnReconstructDTop" class="btn-action" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.5); font-weight: 700; padding: 2px 6px; font-size: 0.72rem;"
                     data-tooltip-title="Run Reconstruction (A+B+C → D)" 
                     data-tooltip-badge="Reconstruction" 
@@ -594,6 +643,62 @@
         <canvas id="simCanvas" width="800" height="520"></canvas>
         <div id="toastFeedback" class="toast-overlay">Point Injected: (0.000, 0.000, 0.000)</div>
 
+        <!-- Image Mode Quadrant Dropdown Overlays (Q0..Q3) -->
+        <div id="imageQuadDropdowns" class="image-quad-dropdowns-container" style="display: none;">
+          <div id="imageQuadDropdown0" class="image-quad-dropdown-wrap" data-quad="0">
+            <span class="image-quad-pill">Q0</span>
+            <select id="selectImgQuad0" class="image-quad-select" aria-label="Panel 0 View Mode">
+              <option value="current_frame" selected>📸 Current Frame</option>
+              <option value="anchor">🎯 Cluster Anchor</option>
+              <option value="residual">⚡ Residual (|f - C|)</option>
+              <option value="nn1">🥇 Nearest Neighbor #1</option>
+              <option value="nn1_diff">⚡ NN #1 Diff (|f - NN1|)</option>
+              <option value="members">👥 Cluster Members</option>
+              <option value="knn">⚡ k-NN Neighbors</option>
+              <option value="clusters">📚 All Clusters</option>
+            </select>
+          </div>
+          <div id="imageQuadDropdown1" class="image-quad-dropdown-wrap" data-quad="1">
+            <span class="image-quad-pill">Q1</span>
+            <select id="selectImgQuad1" class="image-quad-select" aria-label="Panel 1 View Mode">
+              <option value="current_frame">📸 Current Frame</option>
+              <option value="anchor" selected>🎯 Cluster Anchor</option>
+              <option value="residual">⚡ Residual (|f - C|)</option>
+              <option value="nn1">🥇 Nearest Neighbor #1</option>
+              <option value="nn1_diff">⚡ NN #1 Diff (|f - NN1|)</option>
+              <option value="members">👥 Cluster Members</option>
+              <option value="knn">⚡ k-NN Neighbors</option>
+              <option value="clusters">📚 All Clusters</option>
+            </select>
+          </div>
+          <div id="imageQuadDropdown2" class="image-quad-dropdown-wrap" data-quad="2">
+            <span class="image-quad-pill">Q2</span>
+            <select id="selectImgQuad2" class="image-quad-select" aria-label="Panel 2 View Mode">
+              <option value="current_frame">📸 Current Frame</option>
+              <option value="anchor">🎯 Cluster Anchor</option>
+              <option value="residual">⚡ Residual (|f - C|)</option>
+              <option value="nn1">🥇 Nearest Neighbor #1</option>
+              <option value="nn1_diff">⚡ NN #1 Diff (|f - NN1|)</option>
+              <option value="members" selected>👥 Cluster Members</option>
+              <option value="knn">⚡ k-NN Neighbors</option>
+              <option value="clusters">📚 All Clusters</option>
+            </select>
+          </div>
+          <div id="imageQuadDropdown3" class="image-quad-dropdown-wrap" data-quad="3">
+            <span class="image-quad-pill">Q3</span>
+            <select id="selectImgQuad3" class="image-quad-select" aria-label="Panel 3 View Mode">
+              <option value="current_frame">📸 Current Frame</option>
+              <option value="anchor">🎯 Cluster Anchor</option>
+              <option value="residual">⚡ Residual (|f - C|)</option>
+              <option value="nn1">🥇 Nearest Neighbor #1</option>
+              <option value="nn1_diff">⚡ NN #1 Diff (|f - NN1|)</option>
+              <option value="members">👥 Cluster Members</option>
+              <option value="knn">⚡ k-NN Neighbors</option>
+              <option value="clusters" selected>📚 All Clusters</option>
+            </select>
+          </div>
+        </div>
+
         <!-- Mobile Live Telemetry HUD Overlay (Samples, Clusters, Clock Time) -->
         <div id="mobileHudOverlay" class="mobile-hud-overlay">
           <div class="hud-item">
@@ -715,41 +820,13 @@
         </div>
       </div>
 
-      <!-- Image Mode Frame Scrubber & Retro-Inspection Bar -->
-      <div id="imageScrubberBar" class="image-scrubber-bar" style="display: none;">
-        <div class="image-scrubber-nav-group">
-          <span style="font-size: 0.74rem; font-weight: 700; color: #38bdf8; white-space: nowrap;">
-            🎞️ Frame Inspector:
-          </span>
-          <button id="btnImgPrevFrame" class="btn-action"
-                  style="padding: 2px 8px; font-size: 0.72rem; white-space: nowrap;"
-                  title="Previous Frame (Left Arrow)">◀ Prev</button>
-          <button id="btnImgNextFrame" class="btn-action"
-                  style="padding: 2px 8px; font-size: 0.72rem; white-space: nowrap;"
-                  title="Next Frame (Right Arrow)">Next ▶</button>
-          <button id="btnImgLiveStream" class="btn-toggle toggle-green active"
-                  style="padding: 2px 8px; font-size: 0.72rem; white-space: nowrap;"
-                  title="Toggle Live Streaming vs Historical Frame">● Live</button>
-          <input type="range" id="sliderImgFrame" class="image-frame-slider"
-                 min="0" max="0" value="0" title="Drag to scrub frames">
-          <div class="image-frame-input-wrap">
-            <span style="color: #94a3b8; font-weight: 600;">Frame #</span>
-            <input type="number" id="inputImgFrame" min="1" max="1" value="1"
-                   class="image-frame-number-input"
-                   title="Type frame number and press Enter"
-                   aria-label="Frame Number">
-            <span style="color: #64748b;">/</span>
-            <span id="lblImgTotalFrames" style="font-weight: 600; color: #cbd5e1;">0</span>
-            <span id="lblImgFrameStatus" style="color: #94a3b8; margin-left: 2px;">(Live)</span>
-          </div>
-        </div>
-        <div class="image-scrubber-ctrl-group">
-          <div style="display: flex; align-items: center; gap: 6px;
-                      border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
-            <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;
-                         white-space: nowrap;">
-              Panels:
-            </span>
+      <!-- Image Mode Scrubber & Multi-Inspector Bar (Frame, Cluster, Member) -->
+      <!-- Image Mode Scrubber & Multi-Inspector Bar (Frame, Cluster, Member) -->
+      <div id="imageScrubberBar" class="image-inspectors-container" style="display: none;">
+        <!-- Separate Toolbar: View Panels, Thumbnails, and Cluster Sort -->
+        <div class="image-view-toolbar" id="rowImgViewToolbar">
+          <div class="image-view-toolbar-group">
+            <span class="image-view-toolbar-label">🖥️ View Panels:</span>
             <button id="btnImgShowAllPanels" class="btn-action primary"
                     style="padding: 2px 8px; font-size: 0.72rem; font-weight: 700;
                            background: rgba(56, 189, 248, 0.2); color: #38bdf8;
@@ -770,38 +847,158 @@
               <option value="3">🗂️ Q3: All Clusters</option>
             </select>
           </div>
-          <div style="display: flex; align-items: center; gap: 6px;
-                      border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
-            <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;
-                         white-space: nowrap;">
-              Sort Clusters:
-            </span>
+          <div class="image-view-toolbar-sep"></div>
+          <div class="image-view-toolbar-group">
+            <span class="image-view-toolbar-label">Thumbnails:</span>
+            <button id="btnImgThumbSmaller" class="btn-action"
+                    style="padding: 2px 6px; font-size: 0.72rem; font-weight: 700;
+                           background: #0f172a; border: 1px solid #334155; color: #38bdf8;"
+                    title="Make thumbnails smaller (Shortcut: -)">🔍－</button>
+            <span id="lblImgThumbSize" class="image-thumb-size-val">64px</span>
+            <button id="btnImgThumbBigger" class="btn-action"
+                    style="padding: 2px 6px; font-size: 0.72rem; font-weight: 700;
+                           background: #0f172a; border: 1px solid #334155; color: #38bdf8;"
+                    title="Make thumbnails bigger (Shortcut: +)">🔍＋</button>
+          </div>
+          <div class="image-view-toolbar-sep"></div>
+          <div class="image-view-toolbar-group">
+            <span class="image-view-toolbar-label">Sort Clusters:</span>
             <select id="selectImgClusterSort" class="form-control"
                     style="padding: 2px 6px; font-size: 0.72rem; background: #0f172a;
-                           color: #38bdf8; border: 1px solid #334155; border-radius: 4px;
-                           cursor: pointer;">
+                           color: #facc15; border: 1px solid #334155; border-radius: 4px;
+                           cursor: pointer;"
+                    title="Sort cluster cards in Q3 gallery">
               <option value="id">🔢 ID (Default)</option>
               <option value="size_desc">📊 Size ↓ (Largest First)</option>
               <option value="size_asc">📉 Size ↑ (Smallest First)</option>
             </select>
           </div>
-          <div style="display: flex; align-items: center; gap: 4px;
-                      border-left: 1px solid rgba(148,163,184,0.2); padding-left: 10px;">
-            <span style="font-size: 0.72rem; font-weight: 700; color: #94a3b8;
-                         white-space: nowrap;">
-              Thumbnails:
-            </span>
-            <button id="btnImgThumbSmaller" class="btn-action"
-                    style="padding: 2px 6px; font-size: 0.72rem; font-weight: 700;
-                           background: #0f172a; border: 1px solid #334155; color: #38bdf8;"
-                    title="Make thumbnails smaller (Shortcut: -)">🔍－</button>
-            <span id="lblImgThumbSize"
-                  style="font-family: monospace; font-size: 0.72rem; color: #38bdf8;
-                         min-width: 38px; text-align: center;">64px</span>
-            <button id="btnImgThumbBigger" class="btn-action"
-                    style="padding: 2px 6px; font-size: 0.72rem; font-weight: 700;
-                           background: #0f172a; border: 1px solid #334155; color: #38bdf8;"
-                    title="Make thumbnails bigger (Shortcut: +)">🔍＋</button>
+          <div class="image-view-toolbar-sep" id="sepReconPanelModes"></div>
+          <div class="image-view-toolbar-group" id="groupReconPanelModes">
+            <span class="image-view-toolbar-label" style="color: #38bdf8;">[A]:</span>
+            <select id="selectReconPanelAMode" class="form-control"
+                    style="padding: 2px 6px; font-size: 0.72rem; background: #0f172a;
+                           color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);
+                           border-radius: 4px; cursor: pointer;"
+                    title="Panel [A] View Mode">
+              <option value="knn">Training Input [A] (k-NN)</option>
+              <option value="single">Single Frame in Dataset A</option>
+            </select>
+            <span class="image-view-toolbar-label"
+                  style="color: #4ade80; margin-left: 4px;">[B]:</span>
+            <select id="selectReconPanelBMode" class="form-control"
+                    style="padding: 2px 6px; font-size: 0.72rem; background: #0f172a;
+                           color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.4);
+                           border-radius: 4px; cursor: pointer;"
+                    title="Panel [B] View Mode">
+              <option value="targets">Training Output [B] (Targets)</option>
+              <option value="single">Single Frame in Dataset B</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Row 1: Frame Inspector -->
+        <div class="image-inspector-row" id="rowImgFrameInspector">
+          <span class="image-inspector-title" style="color: #38bdf8;">
+            🎞️ Frame Inspector:
+          </span>
+          <div class="image-inspector-nav-btns">
+            <button id="btnImgPrevFrame" class="btn-action"
+                    style="padding: 2px 0; font-size: 0.72rem; white-space: nowrap;"
+                    title="Previous Frame (Left Arrow)">◀ Prev</button>
+            <button id="btnImgNextFrame" class="btn-action"
+                    style="padding: 2px 0; font-size: 0.72rem; white-space: nowrap;"
+                    title="Next Frame (Right Arrow)">Next ▶</button>
+          </div>
+          <button id="btnImgLiveStream" class="btn-toggle toggle-green active image-mode-btn"
+                  style="padding: 2px 0; font-size: 0.72rem; white-space: nowrap;"
+                  title="Toggle Live Streaming vs Historical Frame">● Live</button>
+          <div class="image-frame-slider-container" id="containerImgFrameSlider">
+            <input type="range" id="sliderImgFrame" class="image-frame-slider"
+                   min="0" max="0" value="0" title="Drag to scrub frames">
+            <canvas id="canvasImgReconQualityBar" class="image-recon-quality-bar"
+                    height="6"
+                    title="Reconstruction Quality (Green = Best, Red = Poor)"></canvas>
+          </div>
+          <div class="image-frame-input-wrap">
+            <div id="boxImgFrameReconQuality" class="image-recon-quality-box"
+                 title="Current frame reconstruction quality (Variance)"></div>
+            <span class="image-input-prefix" style="color: #94a3b8;">Frame #</span>
+            <input type="number" id="inputImgFrame" min="1" max="1" value="1"
+                   class="image-frame-number-input"
+                   title="Type frame number and press Enter"
+                   aria-label="Frame Number">
+            <span style="color: #64748b;">/</span>
+            <span id="lblImgTotalFrames" class="image-total-label"
+                  style="color: #cbd5e1;">0</span>
+            <span id="lblImgFrameStatus" class="image-status-badge"
+                  style="color: #94a3b8;">(Live)</span>
+          </div>
+        </div>
+
+        <!-- Row 2: Cluster Inspector -->
+        <div class="image-inspector-row" id="rowImgClusterInspector">
+          <span class="image-inspector-title" style="color: #facc15;">
+            🗂️ Cluster Inspector:
+          </span>
+          <div class="image-inspector-nav-btns">
+            <button id="btnImgPrevCluster" class="btn-action"
+                    style="padding: 2px 0; font-size: 0.72rem; white-space: nowrap;"
+                    title="Previous Cluster">◀ Prev</button>
+            <button id="btnImgNextCluster" class="btn-action"
+                    style="padding: 2px 0; font-size: 0.72rem; white-space: nowrap;"
+                    title="Next Cluster">Next ▶</button>
+          </div>
+          <button id="btnImgAutoCluster" class="btn-toggle toggle-green active image-mode-btn"
+                  style="padding: 2px 0; font-size: 0.72rem; white-space: nowrap;"
+                  title="Toggle Auto-Follow Frame Cluster vs Pinned Cluster">● Follow</button>
+          <input type="range" id="sliderImgCluster" class="image-cluster-slider"
+                 min="0" max="0" value="0" title="Drag to inspect clusters">
+          <div class="image-frame-input-wrap">
+            <span class="image-input-prefix" style="color: #94a3b8;">Cluster C</span>
+            <input type="number" id="inputImgCluster" min="0" max="0" value="0"
+                   class="image-cluster-number-input"
+                   title="Type cluster ID (0 to K-1) and press Enter"
+                   aria-label="Cluster ID">
+            <span style="color: #64748b;">/</span>
+            <span id="lblImgTotalClusters" class="image-total-label"
+                  style="color: #cbd5e1;">0</span>
+            <span id="lblImgClusterStatus" class="image-status-badge"
+                  style="color: #facc15;">(0 members)</span>
+          </div>
+        </div>
+
+        <!-- Row 3: Member Inspector -->
+        <div class="image-inspector-row" id="rowImgMemberInspector">
+          <span class="image-inspector-title" style="color: #c084fc;">
+            👥 Member Inspector:
+          </span>
+          <div class="image-inspector-nav-btns">
+            <button id="btnImgPrevMember" class="btn-action"
+                    style="padding: 2px 0; font-size: 0.72rem; white-space: nowrap;"
+                    title="Previous Member in Active Cluster">◀ Prev</button>
+            <button id="btnImgNextMember" class="btn-action"
+                    style="padding: 2px 0; font-size: 0.72rem; white-space: nowrap;"
+                    title="Next Member in Active Cluster">Next ▶</button>
+          </div>
+          <button id="btnImgAnchorMember" class="btn-action image-mode-btn"
+                  style="padding: 2px 0; font-size: 0.72rem; white-space: nowrap;
+                         color: #c084fc; border-color: rgba(192, 132, 252, 0.4);"
+                  title="Jump to Anchor Frame (Member 1)">⚓ Anchor</button>
+          <input type="range" id="sliderImgMember" class="image-member-slider"
+                 min="1" max="1" value="1" title="Drag to scrub members of active cluster">
+          <div class="image-frame-input-wrap">
+            <span class="image-input-prefix" style="color: #94a3b8;">Member #</span>
+            <input type="number" id="inputImgMember" min="1" max="1" value="1"
+                   class="image-member-number-input"
+                   title="Type member number (1 to M) and press Enter"
+                   aria-label="Member Number">
+            <span style="color: #64748b;">/</span>
+            <span id="lblImgTotalMembers" class="image-total-label"
+                  style="color: #cbd5e1;">0</span>
+            <span id="lblImgMemberStatus" class="image-status-badge"
+                  style="color: #c084fc;">(Anchor)</span>
+            <span id="lblImgMemberDist" style="display: none;"></span>
           </div>
         </div>
       </div>
@@ -915,6 +1112,9 @@
                       <option value="512Drand">512Drand — 512D Random Volume</option>
                     </optgroup>
                     <optgroup label="Image Time-Series Benchmarks (32×32)">
+                      <option value="img-asteroid-x">🪐 Asteroid View X (32×32, D=1024)</option>
+                      <option value="img-asteroid-y">🪐 Asteroid View Y (32×32, D=1024)</option>
+                      <option value="img-asteroid-z">🪐 Asteroid View Z (32×32, D=1024)</option>
                       <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
                       <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
                       <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
@@ -958,6 +1158,60 @@
                     <option value="50">50 passes (N=50)</option>
                     <option value="100">100 passes (N=100)</option>
                   </select>
+                </div>
+
+                <div id="rowBallSeedOptions"
+                     style="display: none; justify-content: space-between; align-items: center;
+                            background: rgba(56, 189, 248, 0.08); border-radius: 4px;
+                            border: 1px solid rgba(56, 189, 248, 0.2);
+                            padding: 4px 8px; margin-top: 4px;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 0.76rem;
+                                color: #38bdf8; font-weight: 600; cursor: pointer; margin: 0;"
+                         data-tooltip-title="Random Seed (Bouncing Balls)"
+                         data-tooltip-badge="Seed Randomizer"
+                         data-tooltip-color="blue"
+                         data-tooltip-desc="Randomizes ball positions and vectors.">
+                    <input type="checkbox" id="chkRandomBallSeed"
+                           style="accent-color: #38bdf8; margin: 0;">
+                    <span>Random Ball Seed</span>
+                  </label>
+                  <button id="btnNewBallSeed" class="secondary"
+                          style="padding: 2px 7px; font-size: 0.72rem; font-weight: 600;
+                                 background: rgba(56, 189, 248, 0.2); color: #38bdf8;
+                                 border-color: rgba(56, 189, 248, 0.4);"
+                          data-tooltip-title="Re-roll Seed &amp; Regenerate"
+                          data-tooltip-badge="Bouncing Balls"
+                          data-tooltip-color="blue"
+                          data-tooltip-desc="Generates new random seed and regenerates the balls.">
+                    🎲 Re-roll
+                  </button>
+                </div>
+
+                <div id="rowShuffleOptions"
+                     style="display: flex; justify-content: space-between; align-items: center;
+                            background: rgba(168, 85, 247, 0.08); border-radius: 4px;
+                            border: 1px solid rgba(168, 85, 247, 0.2);
+                            padding: 4px 8px; margin-top: 4px;">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 0.76rem;
+                                color: #c084fc; font-weight: 600; cursor: pointer; margin: 0;"
+                         data-tooltip-title="Auto-Shuffle On Generation"
+                         data-tooltip-badge="Randomize Sequence"
+                         data-tooltip-color="purple"
+                         data-tooltip-desc="Randomly shuffles frame/sample order when generated.">
+                    <input type="checkbox" id="chkShuffleFrames"
+                           style="accent-color: #a855f7; margin: 0;">
+                    <span>Shuffle Frame Order</span>
+                  </label>
+                  <button id="btnShuffleNow" class="secondary"
+                          style="padding: 2px 7px; font-size: 0.72rem; font-weight: 600;
+                                 background: rgba(168, 85, 247, 0.2); color: #c084fc;
+                                 border-color: rgba(168, 85, 247, 0.4);"
+                          data-tooltip-title="Shuffle Dataset Order Now"
+                          data-tooltip-badge="Fisher-Yates"
+                          data-tooltip-color="purple"
+                          data-tooltip-desc="Permutes frame or point order in active slot.">
+                    🔀 Shuffle Now
+                  </button>
                 </div>
 
                 <div style="display: flex; gap: 6px; margin-top: 2px;">
@@ -1169,7 +1423,7 @@
               <!-- SQ8 Candidate Anchor Pre-Filtering -->
               <div class="toggle-group"
                    style="grid-template-columns: 1fr; margin-top: 6px; margin-bottom: 2px;">
-                <div id="optSq8" class="toggle-btn"
+                <div id="optSq8" class="toggle-btn active"
                      data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
                      data-tooltip-badge="CLI: -sq8"
                      data-tooltip-color="cyan"
@@ -2643,7 +2897,7 @@ integer lower bounds against rlim.">
               <!-- SQ8 8-Bit Scalar Quantization Toggle -->
               <div class="toggle-group"
                    style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 2px;">
-                <div id="btnKnnSq8" class="toggle-btn"
+                <div id="btnKnnSq8" class="toggle-btn toggle-active toggle-cyan active"
                      data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
                      data-tooltip-badge="CLI: -sq8"
                      data-tooltip-color="cyan"
@@ -3280,7 +3534,7 @@ lower bounds (d_LB > tau) without full-precision distance computation.">
       </div>
 
       <!-- 8. k-NN Reconstruction: Multi-Dataset Interpolator & Inspector -->
-      <div id="cardReconstruction" class="card" style="flex: 0 0 auto;">
+      <div id="cardReconstruction" class="card collapsed" style="flex: 0 0 auto;">
         <div class="card-title" style="margin-bottom: 6px;"
              onclick="togglePanelCollapse('cardReconstruction')">
           <div style="display: flex; align-items: center; gap: 6px;">
@@ -3408,6 +3662,66 @@ lower bounds (d_LB > tau) without full-precision distance computation.">
               </button>
             </div>
 
+            <!-- ABCD View Mode Options: Panel [A] and Panel [B] -->
+            <div id="rowReconPanelModesSide"
+                 style="display: flex; gap: 8px; margin-top: 6px;
+                        background: rgba(15, 23, 42, 0.6); padding: 6px 8px;
+                        border-radius: 6px; border: 1px solid rgba(51, 65, 85, 0.6);">
+              <div style="flex: 1;">
+                <label style="font-size: 0.72rem; color: #38bdf8; font-weight: 600;
+                              margin-bottom: 2px; display: block;"
+                       data-tooltip-title="Panel [A] Display Mode"
+                       data-tooltip-badge="ABCD Quad A"
+                       data-tooltip-color="blue"
+                       data-tooltip-desc="Select k-NN gallery or single frame matching query.">
+                  Panel [A] Mode:
+                </label>
+                <select id="selectReconPanelAModeSide" class="form-control"
+                        style="width: 100%; padding: 3px 6px; font-size: 0.72rem;
+                               background: #0f172a; color: #38bdf8;
+                               border: 1px solid rgba(56, 189, 248, 0.4);
+                               border-radius: 4px; cursor: pointer;">
+                  <option value="knn">Training Input [A] (k-NN)</option>
+                  <option value="single">Single Frame in Dataset A</option>
+                </select>
+              </div>
+              <div style="flex: 1;">
+                <label style="font-size: 0.72rem; color: #4ade80; font-weight: 600;
+                              margin-bottom: 2px; display: block;"
+                       data-tooltip-title="Panel [B] Display Mode"
+                       data-tooltip-badge="ABCD Quad B"
+                       data-tooltip-color="green"
+                       data-tooltip-desc="Select paired targets or single frame matching query.">
+                  Panel [B] Mode:
+                </label>
+                <select id="selectReconPanelBModeSide" class="form-control"
+                        style="width: 100%; padding: 3px 6px; font-size: 0.72rem;
+                               background: #0f172a; color: #4ade80;
+                               border: 1px solid rgba(74, 222, 128, 0.4);
+                               border-radius: 4px; cursor: pointer;">
+                  <option value="targets">Training Output [B] (Targets)</option>
+                  <option value="single">Single Frame in Dataset B</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 1-Click Asteroid Reconstruction Benchmark Preset -->
+            <div style="margin-top: 6px;">
+              <button id="btnPresetAsteroidReconSide" class="btn-action"
+                      style="width: 100%; padding: 8px 10px; font-size: 0.75rem; font-weight: 700;
+                             background: linear-gradient(135deg, rgba(14, 165, 233, 0.18),
+                                                         rgba(2, 132, 199, 0.28));
+                             color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.5);
+                             border-radius: 6px;"
+                      data-tooltip-title="1-Click Asteroid X→Y Test (10,000 Frames)"
+                      data-tooltip-badge="10k Frames"
+                      data-tooltip-color="cyan"
+                      data-tooltip-desc="Sets A=TrainX, B=TrainY, C=TestX, opens ABCD view."
+              >
+                🪐 1-Click Asteroid X→Y Test (10,000 Frames)
+              </button>
+            </div>
+
             <!-- Native gric-knn -query C Runner & Resource Tracker -->
             <div id="reconNativeQuerySection" style="margin-top: 6px;">
               <!-- Separator -->
@@ -3514,7 +3828,7 @@ integer lower-bound metric pruning to prune candidates without full-precision di
 
               <!-- Query k-NN Resource Tracker Card -->
               <div id="cardReconQueryResources"
-                   class="card"
+                   class="card collapsed"
                    style="flex: 0 0 auto; margin-top: 6px; border: 1px solid rgba(168, 85, 247, 0.4);">
                 <div class="card-title"
                      onclick="togglePanelCollapse('cardReconQueryResources')">
@@ -4588,10 +4902,10 @@ lower bounds (d_LB > tau) without full-precision distance computation.">
   <script src="simulator/js/highd_engine.js?v=2026.09.04"></script>
   <script src="simulator/js/state.js?v=2026.08.31.0405"></script>
   <script src="simulator/js/telemetry.js?v=2026.08.31.0405"></script>
-  <script src="simulator/js/image_renderer.js?v=2026.08.31.0405"></script>
+  <script src="simulator/js/image_renderer.js?v=2026.09.06.01"></script>
   <script src="simulator/js/renderer.js?v=2026.08.31.0405"></script>
   <script src="simulator/js/clustering_core.js?v=2026.08.31.0405"></script>
-  <script src="simulator/js/main.js?v=2026.08.31.0405"></script>
+  <script src="simulator/js/main.js?v=2026.09.06.01"></script>
   <script>
     // Async WASM module and Worker initialization
     (async function() {

@@ -98,6 +98,16 @@ static void print_help(
            "(%sdefault:%s float)\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
            ansi_color_cyan, ansi_reset);
+    printf("  %s-sq8%s, %s--sq8%s               Enable 8-bit scalar quantization filtering "
+           "(%sdefault:%s on)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("  %s-no-sq8%s, %s--no-sq8%s         Disable 8-bit scalar quantization filtering\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-sq8-save%s %s<path>%s      Save quantized dataset to sidecar file\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-sq8-load%s %s<path>%s      Load quantized dataset from sidecar file\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-v, -vv%s               Verbosity level\n",
            ansi_color_green, ansi_reset);
     printf("  %s-h, --help%s            Show this help message\n\n",
@@ -129,6 +139,7 @@ int main(
     config.use_reciprocal = 1; // Enabled by default for bidirectional search
     config.use_angular_bound = 1; // Enabled by default for directional pruning
     config.use_trajectory = 0; // Disabled by default; enable for smooth trajectories
+    config.use_sq8 = 1; // Enabled by default for 8-bit metric pre-filtering
 
     int k_explicitly_set = 0;
     int dtmin_explicitly_set = 0;
@@ -322,6 +333,12 @@ int main(
                  strcmp(argv[arg_idx], "--sq8") == 0)
         {
             config.use_sq8 = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-sq8") == 0 ||
+                 strcmp(argv[arg_idx], "--no-sq8") == 0 ||
+                 strcmp(argv[arg_idx], "-nosq8") == 0)
+        {
+            config.use_sq8 = 0;
         }
         else if (strcmp(argv[arg_idx], "-sq8-save") == 0 ||
                  strcmp(argv[arg_idx], "--sq8-save") == 0)

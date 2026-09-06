@@ -138,24 +138,26 @@ static inline double compute_vector_distance(
 }
 
 /**
- * select_greedy_max_spread_target() - Selects next target maximizing distance spread.
- * @num_clusters: Total cluster count.
- * @active_mask: Active cluster flags.
- * @evaluated_clusters: Array of already evaluated cluster IDs.
- * @num_eval: Number of evaluated anchors.
- * @dcc_matrix: Dense M x M inter-cluster distance matrix.
+ * select_best_first_target() - Selects next target minimizing lower bound to query.
+ * @num_clusters:        Total cluster count.
+ * @active_mask:         Active cluster flags.
+ * @evaluated_clusters:  Array of already evaluated cluster IDs.
+ * @evaluated_dists:     Measured distances to evaluated anchors.
+ * @num_eval:            Number of evaluated anchors.
+ * @dcc_matrix:          Dense M x M inter-cluster distance matrix.
  *
  * Return: Selected cluster index, or -1 if none available.
  */
-static int select_greedy_max_spread_target(
+static int select_best_first_target(
     int            num_clusters,
     const uint8_t *active_mask,
     const int     *evaluated_clusters,
+    const double  *evaluated_dists,
     int            num_eval,
     const double  *dcc_matrix)
 {
     int    best_target = -1;
-    double max_min_dcc = -1.0;
+    double min_max_lb = 1e30;
 
     for (int c = 0; c < num_clusters; c++)
     {
@@ -164,21 +166,22 @@ static int select_greedy_max_spread_target(
             continue;
         }
 
-        // Compute minimum distance to any already evaluated anchor
-        double min_dist_to_eval = 1e20;
+        double max_lb = 0.0;
         for (int e = 0; e < num_eval; e++)
         {
             int    eval_c = evaluated_clusters[e];
+            double d_p = evaluated_dists[e];
             double dcc = dcc_matrix[eval_c * num_clusters + c];
-            if (dcc < min_dist_to_eval)
+            double lb = fabs(d_p - dcc);
+            if (lb > max_lb)
             {
-                min_dist_to_eval = dcc;
+                max_lb = lb;
             }
         }
 
-        if (min_dist_to_eval > max_min_dcc)
+        if (max_lb < min_max_lb)
         {
-            max_min_dcc = min_dist_to_eval;
+            min_max_lb = max_lb;
             best_target = c;
         }
     }
@@ -253,6 +256,7 @@ int cluster_locate_sample(
         result->num_evaluated_anchors = 1;
         result->best_cluster_id = p_id;
         result->best_anchor_dist = d_prev;
+        result->active_cluster_mask[p_id] = 0;
 
         if (d_prev < tau_eff)
         {
@@ -306,9 +310,9 @@ int cluster_locate_sample(
         }
         else
         {
-            next_target = select_greedy_max_spread_target(
+            next_target = select_best_first_target(
                 num_clusters, result->active_cluster_mask, result->evaluated_clusters,
-                result->num_evaluated_anchors, dcc_matrix);
+                result->evaluated_dists, result->num_evaluated_anchors, dcc_matrix);
         }
 
         if (next_target < 0)
@@ -337,11 +341,9 @@ int cluster_locate_sample(
             tau_eff = d_target;
         }
 
-        double r_target = (cluster_radii != NULL) ? cluster_radii[next_target] : 0.0;
-        if ((config->rlim > 0.0 && d_target <= config->rlim) ||
-            (r_target > 0.0 && d_target <= r_target))
+        if ((config->rlim > 0.0 && d_target <= config->rlim) || d_target < 1e-6)
         {
-            return 0; // Matched cluster within radius!
+            return 0; // Matched cluster within tolerance or exact anchor!
         }
 
         // 3P and 4P Metric Pruning against measured target

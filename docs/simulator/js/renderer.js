@@ -71,6 +71,12 @@
       return `rgb(${r},${g},${b})`;
     }
 
+    if (typeof window !== 'undefined')
+    {
+      window.getColorFromRamp = getColorFromRamp;
+      window.QUALITY_STOPS = QUALITY_STOPS;
+    }
+
     /**
      * Get quality coloring info for the active slot.
      * @returns {Object|null} {arr, min, max, label} or null
@@ -167,7 +173,14 @@
         };
       }
     }
-    window.addEventListener('resize', () => resizeCanvas(true));
+    window.addEventListener('resize', () => {
+      resizeCanvas(true);
+      if (typeof updateReconQualityBar === 'function') {
+        updateReconQualityBar();
+      } else if (typeof window.updateReconQualityBar === 'function') {
+        window.updateReconQualityBar();
+      }
+    });
     window.addEventListener('load', () => resizeCanvas(true));
     if (typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(() => resizeCanvas(false));
@@ -309,6 +322,10 @@
       const canvasWrapper = document.getElementById('canvasWrapper');
       if (!canvasWrapper || !canvas) return;
 
+      if (typeof updateImageQuadDropdowns === 'function') {
+        updateImageQuadDropdowns();
+      }
+
       const wrapRect = canvasWrapper.getBoundingClientRect();
       const cRect = canvas.getBoundingClientRect();
 
@@ -392,9 +409,19 @@
       ctx.fillStyle = '#0b1120';
       ctx.fillRect(0, 0, W, H);
 
+      if (typeof updateImageQuadDropdowns === 'function') {
+        updateImageQuadDropdowns();
+      }
+
       // --- RECONSTRUCTION 4-PANEL VIEW MODE (A: TL, B: TR, C: BL, D: BR) ---
       if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView) {
-        drawRecon4PanelView(ctx, W, H);
+        if (typeof isReconstructionImageMode === 'function' && isReconstructionImageMode()) {
+          if (typeof drawReconImage4PanelView === 'function') {
+            drawReconImage4PanelView(ctx, W, H);
+          }
+        } else {
+          drawRecon4PanelView(ctx, W, H);
+        }
         updateViewPresetBarPosition();
         return;
       }

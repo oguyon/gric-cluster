@@ -24,6 +24,7 @@ void handle_api_info(
     char status_bin[PATH_MAX];
     char txt2stream_bin[PATH_MAX];
     char dimdensity_bin[PATH_MAX];
+    char gen_asteroid_bin[PATH_MAX];
 
     int has_cluster = check_binary_available(
         config, "gric-cluster",
@@ -40,6 +41,9 @@ void handle_api_info(
     int has_dimdensity = check_binary_available(
         config, "gric-dimdensity",
         dimdensity_bin, sizeof(dimdensity_bin));
+    int has_gen_asteroid = check_binary_available(
+        config, "gric-gen-asteroid",
+        gen_asteroid_bin, sizeof(gen_asteroid_bin));
 
     long ncpus = sysconf(_SC_NPROCESSORS_ONLN);
     if (ncpus < 1)
@@ -59,7 +63,8 @@ void handle_api_info(
              "    \"gric-knn\": %s,\n"
              "    \"gric-status\": %s,\n"
              "    \"gric-txt2stream\": %s,\n"
-             "    \"gric-dimdensity\": %s\n"
+             "    \"gric-dimdensity\": %s,\n"
+             "    \"gric-gen-asteroid\": %s\n"
              "  }\n"
              "}\n",
              config->workdir, ncpus,
@@ -67,7 +72,8 @@ void handle_api_info(
              has_knn ? "true" : "false",
              has_status ? "true" : "false",
              has_txt2stream ? "true" : "false",
-             has_dimdensity ? "true" : "false");
+             has_dimdensity ? "true" : "false",
+             has_gen_asteroid ? "true" : "false");
 
     api_send_json(client_fd, 200, resp);
 } // handle_api_info
