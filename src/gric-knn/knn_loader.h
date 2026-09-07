@@ -32,6 +32,16 @@ int knn_model_build_or_load_sq8(
     const KnnConfig *config);
 
 /**
+ * @brief Build or load quantized SQ16 dataset buffer into KnnModel.
+ * @param model  Pointer to initialized KnnModel.
+ * @param config Pointer to KnnConfig.
+ * @return 0 on success, -1 on failure.
+ */
+int knn_model_build_or_load_sq16(
+    KnnModel        *model,
+    const KnnConfig *config);
+
+/**
  * @brief Free all resident buffers and structures within a KnnModel.
  * @param model Pointer to KnnModel to free.
  */

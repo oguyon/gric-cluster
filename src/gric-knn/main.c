@@ -108,6 +108,14 @@ static void print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-sq8-load%s %s<path>%s      Load quantized dataset from sidecar file\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-sq16%s, %s--sq16%s             Enable 16-bit scalar quantization filtering\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-no-sq16%s, %s--no-sq16%s       Disable 16-bit scalar quantization filtering\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-sq16-save%s %s<path>%s     Save 16-bit quantized dataset to sidecar file\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-sq16-load%s %s<path>%s     Load 16-bit quantized dataset from sidecar file\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-prof%s %s<path>%s          Explicit dataset profile file (.gricprof)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-no-prof%s, %s--no-prof%s       Disable auto-loading of .gricprof file\n",
@@ -337,6 +345,7 @@ int main(
                  strcmp(argv[arg_idx], "--sq8") == 0)
         {
             config.use_sq8 = 1;
+            config.use_sq16 = 0;
         }
         else if (strcmp(argv[arg_idx], "-no-sq8") == 0 ||
                  strcmp(argv[arg_idx], "--no-sq8") == 0 ||
@@ -353,6 +362,7 @@ int main(
                 return 1;
             }
             config.use_sq8 = 1;
+            config.use_sq16 = 0;
             config.sq8_save_path = argv[++arg_idx];
         }
         else if (strcmp(argv[arg_idx], "-sq8-load") == 0 ||
@@ -364,13 +374,58 @@ int main(
                 return 1;
             }
             config.use_sq8 = 1;
+            config.use_sq16 = 0;
             config.sq8_load_path = argv[++arg_idx];
         }
         else if (strcmp(argv[arg_idx], "-sq8-approx") == 0 ||
                  strcmp(argv[arg_idx], "--sq8-approx") == 0)
         {
             config.use_sq8 = 1;
+            config.use_sq16 = 0;
             config.sq8_approx = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-sq16") == 0 ||
+                 strcmp(argv[arg_idx], "--sq16") == 0)
+        {
+            config.use_sq16 = 1;
+            config.use_sq8 = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-no-sq16") == 0 ||
+                 strcmp(argv[arg_idx], "--no-sq16") == 0 ||
+                 strcmp(argv[arg_idx], "-nosq16") == 0)
+        {
+            config.use_sq16 = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-sq16-save") == 0 ||
+                 strcmp(argv[arg_idx], "--sq16-save") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -sq16-save requires a filepath argument\n");
+                return 1;
+            }
+            config.use_sq16 = 1;
+            config.use_sq8 = 0;
+            config.sq16_save_path = argv[++arg_idx];
+        }
+        else if (strcmp(argv[arg_idx], "-sq16-load") == 0 ||
+                 strcmp(argv[arg_idx], "--sq16-load") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -sq16-load requires a filepath argument\n");
+                return 1;
+            }
+            config.use_sq16 = 1;
+            config.use_sq8 = 0;
+            config.sq16_load_path = argv[++arg_idx];
+        }
+        else if (strcmp(argv[arg_idx], "-sq16-approx") == 0 ||
+                 strcmp(argv[arg_idx], "--sq16-approx") == 0)
+        {
+            config.use_sq16 = 1;
+            config.use_sq8 = 0;
+            config.sq16_approx = 1;
         }
         else if (strcmp(argv[arg_idx], "-prof") == 0 ||
                  strcmp(argv[arg_idx], "--prof") == 0)
@@ -507,7 +562,12 @@ int main(
     {
         printf("  Search Pool:   ef_search = %d\n", config.ef_search);
     }
-    if (config.use_sq8)
+    if (config.use_sq16)
+    {
+        printf("  SQ16 Filtering: Enabled (%s)\n",
+               config.sq16_approx ? "Relaxed Approx Mode" : "Exact Lower-Bound Mode");
+    }
+    else if (config.use_sq8)
     {
         printf("  SQ8 Filtering: Enabled (%s)\n",
                config.sq8_approx ? "Relaxed Approx Mode" : "Exact Lower-Bound Mode");
@@ -560,13 +620,31 @@ int main(
             model.has_profile = 1;
             printf("%s[PROFILE]%s Auto-loaded dataset profile: %s\n",
                    ansi_bold_cyan, ansi_reset, prof_to_load);
-            printf("  Range: [%.4f, %.4f], SQ8 scale: %.6f, suggested rlim: %.4f\n",
-                   model.profile.sq8_params.min_val, model.profile.sq8_params.max_val,
-                   model.profile.sq8_params.scale, model.profile.rlim_recommended);
+            if (model.profile.use_sq16)
+            {
+                printf("  Range: [%.4f, %.4f], SQ16 scale: %.6f, suggested rlim: %.4f\n",
+                       model.profile.sq16_params.min_val, model.profile.sq16_params.max_val,
+                       model.profile.sq16_params.scale, model.profile.rlim_recommended);
+            }
+            else
+            {
+                printf("  Range: [%.4f, %.4f], SQ8 scale: %.6f, suggested rlim: %.4f\n",
+                       model.profile.sq8_params.min_val, model.profile.sq8_params.max_val,
+                       model.profile.sq8_params.scale, model.profile.rlim_recommended);
+            }
         }
     }
 
-    if (config.use_sq8)
+    if (config.use_sq16)
+    {
+        if (knn_model_build_or_load_sq16(&model, &config) != 0)
+        {
+            fprintf(stderr, "Error: Failed to initialize SQ16 dataset buffer\n");
+            knn_model_free(&model);
+            return 1;
+        }
+    }
+    else if (config.use_sq8)
     {
         if (knn_model_build_or_load_sq8(&model, &config) != 0)
         {
@@ -640,7 +718,20 @@ int main(
     printf("  Level 1 Clusters Pruned:   %lu\n", (unsigned long)telemetry.level1_clusters_pruned);
     printf("  Level 2 Anchors Pruned:    %lu\n", (unsigned long)telemetry.level2_anchors_pruned);
     printf("  Level 3 Annular Pruned:    %lu\n", (unsigned long)telemetry.level3_annular_pruned);
-    if (config.use_sq8)
+    if (config.use_sq16)
+    {
+        uint64_t total_sq16_pruned = telemetry.sq16_members_pruned +
+                                     telemetry.sq16_graph_pruned;
+        printf("  SQ16 Evaluations:          %lu\n",
+               (unsigned long)telemetry.sq16_evaluations);
+        printf("  SQ16 Lower-Bound Pruned:   %lu\n",
+               (unsigned long)total_sq16_pruned);
+        printf("  SQ16 Member Pruned:        %lu\n",
+               (unsigned long)telemetry.sq16_members_pruned);
+        printf("  SQ16 Graph Pruned:         %lu\n",
+               (unsigned long)telemetry.sq16_graph_pruned);
+    }
+    else if (config.use_sq8)
     {
         uint64_t total_sq8_pruned = telemetry.sq8_members_pruned +
                                     telemetry.sq8_graph_pruned;

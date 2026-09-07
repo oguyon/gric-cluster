@@ -55,6 +55,8 @@ typedef struct
     /* Acceleration & Advanced Clustering */
     int      use_sq8;                /**< 1 if 8-bit scalar quantization recommended */
     SQ8Params sq8_params;            /**< Calibrated SQ8 parameters */
+    int      use_sq16;               /**< 1 if 16-bit scalar quantization recommended */
+    SQ16Params sq16_params;          /**< Calibrated SQ16 parameters */
     int      te4_enabled;            /**< 1 if 4-point pruning recommended */
     int      te5_enabled;            /**< 1 if 5-point pruning recommended */
     int      sparse_dcc_enabled;     /**< 1 if sparse DCC recommended for memory */

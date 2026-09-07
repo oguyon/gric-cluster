@@ -96,6 +96,10 @@ typedef struct
     char           *sq8_save_path;     /**< Optional path to save .sq8 sidecar file */
     char           *sq8_load_path;     /**< Optional path to load .sq8 sidecar file */
     int             sq8_approx;        /**< 1 to relax lower bounds with epsilon */
+    int             use_sq16;          /**< 1 to enable 16-bit scalar quantization filtering */
+    char           *sq16_save_path;    /**< Optional path to save .sq16 sidecar file */
+    char           *sq16_load_path;    /**< Optional path to load .sq16 sidecar file */
+    int             sq16_approx;       /**< 1 to relax lower bounds with epsilon */
     const char     *prof_filename;     /**< Optional path to .gricprof file */
     int             no_prof;           /**< 1 to disable auto-loading .gricprof */
 } KnnConfig;
@@ -121,6 +125,9 @@ typedef struct
     uint64_t sq8_evaluations;
     uint64_t sq8_members_pruned;
     uint64_t sq8_graph_pruned;
+    uint64_t sq16_evaluations;
+    uint64_t sq16_members_pruned;
+    uint64_t sq16_graph_pruned;
     double   time_load_ms;
     double   time_search_ms;
     double   time_write_ms;
@@ -153,6 +160,8 @@ typedef struct
     double          *cluster_radii;       /**< [M] array of cluster radii */
     uint8_t         *sq8_dataset_buffer;  /**< [N x D] resident 8-bit quantized dataset */
     SQ8Params        sq8_params;          /**< Calibration parameters for SQ8 */
+    int16_t         *sq16_dataset_buffer; /**< [N x D] resident 16-bit quantized dataset */
+    SQ16Params       sq16_params;         /**< Calibration parameters for SQ16 */
     GricProfile      profile;             /**< Optional dataset profile (.gricprof) */
     int              has_profile;         /**< 1 if dataset profile was loaded */
 } KnnModel;
@@ -167,14 +176,17 @@ typedef struct
 
 /**
  * struct KnnVisitedTracker - Per-query frame deduplication tracker.
- * @tags:  Array of query epochs indexed by candidate frame ID [N_cand].
- * @epoch: Monotonically increasing query epoch counter.
+ * @tags:       Array of query epochs indexed by candidate frame ID [N_cand].
+ * @epoch:      Monotonically increasing query epoch counter.
+ * @query_sq8:  Quantized 8-bit representation of active query frame.
+ * @query_sq16: Quantized 16-bit representation of active query frame.
  */
 typedef struct
 {
     uint32_t       *tags;
     uint32_t        epoch;
-    const uint8_t  *query_sq8; /**< Quantized representation of active query frame */
+    const uint8_t  *query_sq8;  /**< Quantized 8-bit representation of active query frame */
+    const int16_t  *query_sq16; /**< Quantized 16-bit representation of active query frame */
 } KnnVisitedTracker;
 
 /**

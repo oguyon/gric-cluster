@@ -555,8 +555,16 @@ void run_clustering(
         printf("\n");
     }
 
-    /* SQ8 diagnostics */
-    if (config->optim.use_sq8)
+    /* SQ8 / SQ16 diagnostics */
+    if (config->optim.use_sq16)
+    {
+        printf("Scalar Quantization (SQ16) Diagnostics:\n");
+        printf("  SQ16 Evaluated: %8lu\n",
+               (unsigned long)state->telemetry.sq16_evals);
+        printf("  SQ16 Pruned:    %8lu\n\n",
+               (unsigned long)state->telemetry.sq16_pruned);
+    }
+    else if (config->optim.use_sq8)
     {
         printf("Scalar Quantization (SQ8) Diagnostics:\n");
         printf("  SQ8 Evaluated:  %8lu\n",
@@ -596,6 +604,11 @@ void run_clustering(
         free(state->current_frame_sq8);
         state->current_frame_sq8 = NULL;
     }
+    if (state->current_frame_sq16)
+    {
+        free(state->current_frame_sq16);
+        state->current_frame_sq16 = NULL;
+    }
     if (state->clusters)
     {
         for (int i = 0; i < state->num_clusters; i++)
@@ -604,6 +617,11 @@ void run_clustering(
             {
                 free(state->clusters[i].anchor_sq8);
                 state->clusters[i].anchor_sq8 = NULL;
+            }
+            if (state->clusters[i].anchor_sq16)
+            {
+                free(state->clusters[i].anchor_sq16);
+                state->clusters[i].anchor_sq16 = NULL;
             }
         }
     }

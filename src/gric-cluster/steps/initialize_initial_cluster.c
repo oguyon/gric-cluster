@@ -38,6 +38,20 @@ void initialize_initial_cluster(
     {
         state->clusters[0].anchor_sq8 = NULL;
     }
+    if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
+    {
+        long dim = current_frame->width * current_frame->height;
+        state->clusters[0].anchor_sq16 = (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+        if (state->clusters[0].anchor_sq16 != NULL)
+        {
+            memcpy(state->clusters[0].anchor_sq16, state->current_frame_sq16,
+                   (size_t)dim * sizeof(int16_t));
+        }
+    }
+    else
+    {
+        state->clusters[0].anchor_sq16 = NULL;
+    }
     current_frame->data = NULL;
     state->clusters[0].id = 0;
     state->clusters[0].prob = 1.0;
@@ -48,6 +62,7 @@ void initialize_initial_cluster(
 
     add_visitor(&state->cluster_visitors[0], state->telemetry.total_frames_processed);
     *assigned_cluster = 0;
+    update_consistency_mask_for_new_cluster(config, state, 0);
 
     if (state->trace)
     {

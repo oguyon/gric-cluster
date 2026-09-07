@@ -468,6 +468,23 @@ add_test(NAME test_knn_spiral_sq8_load
             -o /tmp/ctest_knn_spiral_sq8_load.txt)
 set_tests_properties(test_knn_spiral_sq8_load PROPERTIES DEPENDS test_knn_spiral_sq8)
 
+add_test(NAME test_spiral_clustering_sq16
+    COMMAND gric-cluster 0.1 /tmp/ctest_spiral.txt -maxim 1000
+            -outdir /tmp/ctest_spiral_sq16_out -sq16)
+set_tests_properties(test_spiral_clustering_sq16 PROPERTIES DEPENDS test_sequence_generator)
+
+add_test(NAME test_knn_spiral_sq16
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_sq16_out
+            -k 10 -dtmin 5 -no-reciprocal -sq16 -sq16-save /tmp/ctest_spiral.sq16
+            -o /tmp/ctest_knn_spiral_sq16.txt)
+set_tests_properties(test_knn_spiral_sq16 PROPERTIES DEPENDS test_spiral_clustering_sq16)
+
+add_test(NAME test_knn_spiral_sq16_load
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_sq16_out
+            -k 10 -dtmin 5 -no-reciprocal -sq16 -sq16-load /tmp/ctest_spiral.sq16
+            -o /tmp/ctest_knn_spiral_sq16_load.txt)
+set_tests_properties(test_knn_spiral_sq16_load PROPERTIES DEPENDS test_knn_spiral_sq16)
+
 if (CFITSIO_FOUND)
     add_test(NAME test_bouncing_balls_single_gen
         COMMAND gric-gen-balls -n 1 -r 5.0 -W 32 -H 32 -f 500 -s 42 /tmp/ctest_balls_1.fits)

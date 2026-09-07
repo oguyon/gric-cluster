@@ -909,9 +909,11 @@ int probe_run(
         results->profile.residual_tail[ii] = sqrt(accum_tail_sq);
     } // for (long ii = dim - 1; ii >= 0; ii--)
 
-    /* Step 4: Calibrate SQ8 quantization */
+    /* Step 4: Calibrate SQ8 & SQ16 quantization */
     results->profile.use_sq8 = (dim >= 32) ? 1 : 0;
     sq8_init_params(&results->profile.sq8_params, (float)global_min, (float)global_max, dim);
+    results->profile.use_sq16 = (dim >= 32) ? 1 : 0;
+    sq16_init_params(&results->profile.sq16_params, (float)global_min, (float)global_max, dim);
 
     if (config->show_progress)
     {

@@ -20,8 +20,9 @@ typedef struct
 {
     Frame    anchor;     /**< Frame serving as the cluster anchor point */
     int      id;         /**< Unique cluster index identifier */
-    double   prob;       /**< Prior frequency probability distribution (CFPD/DFPD) */
-    uint8_t *anchor_sq8; /**< Optional 8-bit quantized anchor buffer */
+    double   prob;        /**< Prior frequency probability distribution (CFPD/DFPD) */
+    uint8_t *anchor_sq8;  /**< Optional 8-bit quantized anchor buffer */
+    int16_t *anchor_sq16; /**< Optional 16-bit quantized anchor buffer */
 } Cluster;
 
 typedef struct

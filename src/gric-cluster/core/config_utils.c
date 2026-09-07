@@ -89,12 +89,25 @@ static int apply_algo_option(
     else if (matches(key, "-sq8") || matches(key, "--sq8"))
     {
         config->optim.use_sq8 = 1;
+        config->optim.use_sq16 = 0;
         return 0;
     }
     else if (matches(key, "-no-sq8") || matches(key, "--no-sq8") ||
              matches(key, "no_sq8") || matches(key, "-nosq8"))
     {
         config->optim.use_sq8 = 0;
+        return 0;
+    }
+    else if (matches(key, "-sq16") || matches(key, "--sq16"))
+    {
+        config->optim.use_sq16 = 1;
+        config->optim.use_sq8 = 0;
+        return 0;
+    }
+    else if (matches(key, "-no-sq16") || matches(key, "--no-sq16") ||
+             matches(key, "no_sq16") || matches(key, "-nosq16"))
+    {
+        config->optim.use_sq16 = 0;
         return 0;
     }
     else if (matches(key, "-prof") || matches(key, "--prof") || matches(key, "-profile"))
@@ -879,7 +892,11 @@ int write_config_file(const char *filename, ClusterConfig *config)
     {
         fprintf(f, "pass2_nearest\n");
     }
-    if (config->optim.use_sq8)
+    if (config->optim.use_sq16)
+    {
+        fprintf(f, "sq16\n");
+    }
+    else if (config->optim.use_sq8)
     {
         fprintf(f, "sq8\n");
     }

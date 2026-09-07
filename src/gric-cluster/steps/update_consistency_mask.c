@@ -21,7 +21,8 @@ void recompute_consistency_mask(
     ClusterConfig *config,
     ClusterState  *state)
 {
-    if (!config->optim.gprob_mode || !state->scratch.consistency_mask)
+    if ((!config->optim.gprob_mode && !config->optim.entropy_mode) ||
+        !state->scratch.consistency_mask)
     {
         return;
     }
@@ -115,7 +116,8 @@ void update_consistency_mask_for_new_cluster(
     ClusterState  *state,
     int            new_cl)
 {
-    if (!config->optim.gprob_mode || !state->scratch.consistency_mask)
+    if ((!config->optim.gprob_mode && !config->optim.entropy_mode) ||
+        !state->scratch.consistency_mask)
     {
         return;
     }
