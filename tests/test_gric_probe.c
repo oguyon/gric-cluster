@@ -25,7 +25,8 @@ static void test_profile_json_roundtrip(void)
     p1.num_frames = 2000;
     p1.width = 10;
     p1.height = 1;
-    p1.dim = 10;
+    p1.rlim_p01 = 0.015;
+    p1.rlim_p03 = 0.035;
     p1.rlim_fine = 0.05;
     p1.rlim_balanced = 0.10;
     p1.rlim_coarse = 0.25;
@@ -66,6 +67,11 @@ static void test_profile_json_roundtrip(void)
 
     assert(p2.num_frames == p1.num_frames);
     assert(p2.dim == p1.dim);
+    assert(fabs(p2.rlim_p01 - p1.rlim_p01) < 1e-5);
+    assert(fabs(p2.rlim_p03 - p1.rlim_p03) < 1e-5);
+    assert(fabs(p2.rlim_fine - p1.rlim_fine) < 1e-5);
+    assert(fabs(p2.rlim_balanced - p1.rlim_balanced) < 1e-5);
+    assert(fabs(p2.rlim_coarse - p1.rlim_coarse) < 1e-5);
     assert(fabs(p2.rlim_recommended - p1.rlim_recommended) < 1e-5);
     assert(p2.recommended_maxcl == p1.recommended_maxcl);
     assert(p2.pred_enabled == p1.pred_enabled);
@@ -109,7 +115,11 @@ static void test_probe_execution_synthetic(void)
 
     assert(res.profile.num_frames == 500);
     assert(res.profile.dim == 2);
-    assert(res.profile.rlim_balanced > 0.0);
+    assert(res.profile.rlim_p01 > 0.0);
+    assert(res.profile.rlim_p03 >= res.profile.rlim_p01);
+    assert(res.profile.rlim_fine >= res.profile.rlim_p03);
+    assert(res.profile.rlim_balanced >= res.profile.rlim_fine);
+    assert(res.profile.rlim_coarse >= res.profile.rlim_balanced);
     assert(res.profile.continuity_ratio < 0.10);
     assert(res.profile.pred_enabled == 1);
     assert(res.profile.tm_mixing_coeff >= 0.15);

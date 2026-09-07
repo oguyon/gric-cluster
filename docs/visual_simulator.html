@@ -1426,25 +1426,37 @@
                 <input type="range" id="sliderRlim" min="0.02" max="0.30"
                        step="0.005" value="0.100">
                 <div id="probePresetRow" class="probe-presets"
-                     style="display: flex; gap: 5px; margin-top: 4px; align-items: center;">
-                  <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 600;">
-                    Presets:
+                     style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
+                            align-items: center;">
+                  <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 600;"
+                        title="Radius presets based on pairwise distance percentiles (Dp%)">
+                    Percentiles:
                   </span>
+                  <button id="pillPresetP01" class="badge-pill preset-pill"
+                          style="cursor: pointer; background: rgba(168, 85, 247, 0.15);
+                                 color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3);
+                                 font-size: 0.68rem;"
+                          title="Ultra-Fine granularity (D1% percentile)">1% (Ultra)</button>
+                  <button id="pillPresetP03" class="badge-pill preset-pill"
+                          style="cursor: pointer; background: rgba(99, 102, 241, 0.15);
+                                 color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);
+                                 font-size: 0.68rem;"
+                          title="Very Fine granularity (D3% percentile)">3% (VFine)</button>
                   <button id="pillPresetFine" class="badge-pill preset-pill"
                           style="cursor: pointer; background: rgba(59, 130, 246, 0.15);
                                  color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);
                                  font-size: 0.68rem;"
-                          title="Fine granularity (~D5%)">Fine</button>
+                          title="Fine granularity (D5% percentile)">5% (Fine)</button>
                   <button id="pillPresetBalanced" class="badge-pill preset-pill active"
                           style="cursor: pointer; background: rgba(16, 185, 129, 0.2);
                                  color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);
                                  font-size: 0.68rem;"
-                          title="Balanced granularity (~D10%)">Balanced</button>
+                          title="Balanced granularity (D10% percentile)">10% (Bal)</button>
                   <button id="pillPresetCoarse" class="badge-pill preset-pill"
                           style="cursor: pointer; background: rgba(245, 158, 11, 0.15);
                                  color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);
                                  font-size: 0.68rem;"
-                          title="Coarse granularity (~D25%)">Coarse</button>
+                          title="Coarse granularity (D25% percentile)">25% (Coarse)</button>
                   <span id="lblProbeSummary"
                         style="margin-left: auto; font-size: 0.65rem; color: var(--text-muted);
                                font-family: monospace;"></span>

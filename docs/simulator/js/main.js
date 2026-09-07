@@ -4166,6 +4166,14 @@
       });
     }
 
+    const pillP01 = document.getElementById('pillPresetP01');
+    if (pillP01) {
+      pillP01.addEventListener('click', () => applyProbePreset('p01'));
+    }
+    const pillP03 = document.getElementById('pillPresetP03');
+    if (pillP03) {
+      pillP03.addEventListener('click', () => applyProbePreset('p03'));
+    }
     const pillFine = document.getElementById('pillPresetFine');
     if (pillFine) {
       pillFine.addEventListener('click', () => applyProbePreset('fine'));
@@ -4189,6 +4197,12 @@
           norm.rlim_recommended = raw.clustering.rlim_recommended;
         }
         if (raw.clustering.rlim_presets) {
+          if (typeof raw.clustering.rlim_presets.p01 === 'number') {
+            norm.rlim_p01 = raw.clustering.rlim_presets.p01;
+          }
+          if (typeof raw.clustering.rlim_presets.p03 === 'number') {
+            norm.rlim_p03 = raw.clustering.rlim_presets.p03;
+          }
           if (typeof raw.clustering.rlim_presets.fine === 'number') {
             norm.rlim_fine = raw.clustering.rlim_presets.fine;
           }
@@ -4306,6 +4320,8 @@
       }
       if (typeof norm.rlim_balanced === 'number') {
         if (typeof norm.rlim_fine !== 'number') norm.rlim_fine = norm.rlim_balanced * 0.5;
+        if (typeof norm.rlim_p01 !== 'number') norm.rlim_p01 = norm.rlim_fine * 0.4;
+        if (typeof norm.rlim_p03 !== 'number') norm.rlim_p03 = norm.rlim_fine * 0.7;
         if (typeof norm.rlim_coarse !== 'number') norm.rlim_coarse = norm.rlim_balanced * 2.0;
         if (typeof norm.rlim_recommended !== 'number') norm.rlim_recommended = norm.rlim_balanced;
       }
@@ -4318,29 +4334,51 @@
         ((typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot])
           ? datasetSlots[activeDatasetSlot].gricProfile : null);
       const prof = normalizeGricProfile(activeProf);
+      const p01 = document.getElementById('pillPresetP01');
+      const p03 = document.getElementById('pillPresetP03');
       const pFine = document.getElementById('pillPresetFine');
       const pBal = document.getElementById('pillPresetBalanced');
       const pCoarse = document.getElementById('pillPresetCoarse');
 
       if (prof) {
+        if (p01 && typeof prof.rlim_p01 === 'number') {
+          p01.title = `Ultra-Fine (D1%): rlim = ${prof.rlim_p01.toFixed(3)}`;
+        }
+        if (p03 && typeof prof.rlim_p03 === 'number') {
+          p03.title = `Very Fine (D3%): rlim = ${prof.rlim_p03.toFixed(3)}`;
+        }
         if (pFine && typeof prof.rlim_fine === 'number') {
-          pFine.title = `Fine: rlim = ${prof.rlim_fine.toFixed(3)} (~D5%)`;
+          pFine.title = `Fine (D5%): rlim = ${prof.rlim_fine.toFixed(3)}`;
         }
         if (pBal && typeof prof.rlim_balanced === 'number') {
-          pBal.title = `Balanced: rlim = ${prof.rlim_balanced.toFixed(3)} (~D10%)`;
+          pBal.title = `Balanced (D10%): rlim = ${prof.rlim_balanced.toFixed(3)}`;
         }
         if (pCoarse && typeof prof.rlim_coarse === 'number') {
-          pCoarse.title = `Coarse: rlim = ${prof.rlim_coarse.toFixed(3)} (~D25%)`;
+          pCoarse.title = `Coarse (D25%): rlim = ${prof.rlim_coarse.toFixed(3)}`;
         }
       }
 
-      [pFine, pBal, pCoarse].forEach(p => {
+      [p01, p03, pFine, pBal, pCoarse].forEach(p => {
         if (p) p.classList.remove('active');
       });
       if (activePresetName) {
-        const cap = activePresetName.charAt(0).toUpperCase() +
-          activePresetName.slice(1).toLowerCase();
-        const activePill = document.getElementById(`pillPreset${cap}`);
+        let pillId = null;
+        if (activePresetName === 'p01' || activePresetName === '1%' ||
+            activePresetName === 'ultrafine') {
+          pillId = 'pillPresetP01';
+        } else if (activePresetName === 'p03' || activePresetName === '3%' ||
+                   activePresetName === 'vfine') {
+          pillId = 'pillPresetP03';
+        } else if (activePresetName === 'fine' || activePresetName === 'p05' ||
+                   activePresetName === '5%') {
+          pillId = 'pillPresetFine';
+        } else if (activePresetName === 'coarse' || activePresetName === 'p25' ||
+                   activePresetName === '25%') {
+          pillId = 'pillPresetCoarse';
+        } else {
+          pillId = 'pillPresetBalanced';
+        }
+        const activePill = document.getElementById(pillId);
         if (activePill) activePill.classList.add('active');
       }
     }
@@ -4355,18 +4393,30 @@
       let targetR = null;
 
       if (prof) {
-        if (presetName === 'fine' && typeof prof.rlim_fine === 'number') {
+        if ((presetName === 'p01' || presetName === '1%' || presetName === 'ultrafine') &&
+            typeof prof.rlim_p01 === 'number') {
+          targetR = prof.rlim_p01;
+        } else if ((presetName === 'p03' || presetName === '3%' || presetName === 'vfine') &&
+                   typeof prof.rlim_p03 === 'number') {
+          targetR = prof.rlim_p03;
+        } else if ((presetName === 'fine' || presetName === 'p05' || presetName === '5%') &&
+                   typeof prof.rlim_fine === 'number') {
           targetR = prof.rlim_fine;
-        } else if (presetName === 'coarse' && typeof prof.rlim_coarse === 'number') {
+        } else if ((presetName === 'coarse' || presetName === 'p25' || presetName === '25%') &&
+                   typeof prof.rlim_coarse === 'number') {
           targetR = prof.rlim_coarse;
         } else if (typeof prof.rlim_balanced === 'number') {
           targetR = prof.rlim_balanced;
         }
       } else {
         const baseR = (typeof rlim === 'number' && rlim > 0) ? rlim : 0.100;
-        if (presetName === 'fine') {
+        if (presetName === 'p01' || presetName === '1%' || presetName === 'ultrafine') {
+          targetR = baseR * 0.2;
+        } else if (presetName === 'p03' || presetName === '3%' || presetName === 'vfine') {
+          targetR = baseR * 0.35;
+        } else if (presetName === 'fine' || presetName === 'p05' || presetName === '5%') {
           targetR = baseR * 0.5;
-        } else if (presetName === 'coarse') {
+        } else if (presetName === 'coarse' || presetName === 'p25' || presetName === '25%') {
           targetR = baseR * 2.0;
         } else {
           targetR = baseR;
@@ -4472,6 +4522,8 @@
       }
       dists.sort((a, b) => a - b);
 
+      const d1 = dists[Math.floor(dists.length * 0.01)] || (dists[0] || 0.02);
+      const d3 = dists[Math.floor(dists.length * 0.03)] || (dists[0] || 0.035);
       const d5 = dists[Math.floor(dists.length * 0.05)] || 0.05;
       const d10 = dists[Math.floor(dists.length * 0.10)] || 0.10;
       const d25 = dists[Math.floor(dists.length * 0.25)] || 0.20;
@@ -4706,6 +4758,8 @@
       return {
         num_frames: N,
         dim: dim,
+        rlim_p01: parseFloat(d1.toFixed(4)),
+        rlim_p03: parseFloat(d3.toFixed(4)),
         rlim_fine: parseFloat(d5.toFixed(4)),
         rlim_balanced: parseFloat(d10.toFixed(4)),
         rlim_coarse: parseFloat(d25.toFixed(4)),

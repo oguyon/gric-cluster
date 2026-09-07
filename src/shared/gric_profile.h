@@ -31,7 +31,9 @@ typedef struct
     int      is_image;               /**< 1 if 2D image (height > 1), 0 for 1D vector */
     int      is_double;              /**< 1 if float64/double, 0 if float32 */
 
-    /* Radius Calibration & Presets */
+    /* Radius Calibration & Presets (Distance Percentiles) */
+    double   rlim_p01;               /**< 1st percentile radius (~D1%, ultra-fine) */
+    double   rlim_p03;               /**< 3rd percentile radius (~D3%, very fine) */
     double   rlim_fine;              /**< Fine granularity radius (~D5%) */
     double   rlim_balanced;          /**< Balanced / nominal radius (~D10%) */
     double   rlim_coarse;            /**< Coarse granularity radius (~D25%) */
@@ -73,6 +75,7 @@ typedef struct
     /* Distance Distribution Spectrum */
     double   dist_min;               /**< Minimum measured pairwise distance */
     double   dist_p01;               /**< 1st percentile distance */
+    double   dist_p03;               /**< 3rd percentile distance */
     double   dist_p05;               /**< 5th percentile distance */
     double   dist_p10;               /**< 10th percentile distance */
     double   dist_p25;               /**< 25th percentile distance */

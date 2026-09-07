@@ -951,6 +951,8 @@ int probe_run(
 
         results->profile.dist_min = dist_samples[0];
         results->profile.dist_p01 = dist_samples[(long)(s_pairs * 0.01)];
+        long idx_p03 = (long)(s_pairs * 0.03);
+        results->profile.dist_p03 = dist_samples[idx_p03];
         results->profile.dist_p05 = dist_samples[(long)(s_pairs * 0.05)];
         results->profile.dist_p10 = dist_samples[(long)(s_pairs * 0.10)];
         results->profile.dist_p25 = dist_samples[(long)(s_pairs * 0.25)];
@@ -959,10 +961,13 @@ int probe_run(
         results->profile.dist_p90 = dist_samples[(long)(s_pairs * 0.90)];
         results->profile.dist_max = dist_samples[s_pairs - 1];
 
+        results->profile.rlim_p01 = results->profile.dist_p01;
+        results->profile.rlim_p03 = results->profile.dist_p03;
+
         free(dist_samples);
     }
 
-    /* Step 6: Radius presets */
+    /* Step 6: Radius presets (Pairwise distance percentiles) */
     results->profile.rlim_fine = results->profile.dist_p05;
     results->profile.rlim_balanced = results->profile.dist_p10;
     results->profile.rlim_coarse = results->profile.dist_p25;

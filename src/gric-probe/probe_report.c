@@ -76,7 +76,10 @@ void probe_report_print_terminal(
     /* Distance Distribution Spectrum */
     fprintf(out, "\n%s--- Distance Percentile Spectrum ---%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
     fprintf(out, "  Min:     %8.4f\n", p->dist_min);
-    fprintf(out, "  P01:     %8.4f\n", p->dist_p01);
+    fprintf(out, "  P01:     %8.4f  %s(Ultra-Fine Granularity Reference)%s\n",
+            p->dist_p01, ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
+    fprintf(out, "  P03:     %8.4f  %s(Very Fine Granularity Reference)%s\n",
+            p->dist_p03, ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     fprintf(out, "  P05:     %8.4f  %s(Fine Granularity Reference)%s\n",
             p->dist_p05, ANSI_COLOR_CYAN, ANSI_COLOR_RESET);
     fprintf(out, "  P10:     %8.4f  %s(Balanced / Nominal Reference)%s\n",
@@ -171,10 +174,16 @@ void probe_report_print_terminal(
 
     /* Recommended Parameters */
     fprintf(out, "\n%s=== RECOMMENDED CLUSTERING PRESETS ===%s\n", ANSI_BOLD, ANSI_COLOR_RESET);
-    fprintf(out, "  * %sBalanced (Default):%s  rlim = %s%.4f%s (-preset balanced)\n",
+    fprintf(out, "  * %sBalanced (Default):%s  rlim = %s%.4f%s (-preset balanced / -preset 10%%)\n",
             ANSI_BOLD, ANSI_COLOR_RESET, ANSI_BOLD_GREEN, p->rlim_balanced, ANSI_COLOR_RESET);
-    fprintf(out, "  * Fine Granularity:    rlim = %.4f (-preset fine)\n", p->rlim_fine);
-    fprintf(out, "  * Coarse Granularity:  rlim = %.4f (-preset coarse)\n", p->rlim_coarse);
+    fprintf(out, "  * Ultra-Fine (1%%):     rlim = %.4f (-preset 1%% / -preset ultrafine)\n",
+            p->rlim_p01);
+    fprintf(out, "  * Very Fine (3%%):      rlim = %.4f (-preset 3%% / -preset vfine)\n",
+            p->rlim_p03);
+    fprintf(out, "  * Fine (5%%):           rlim = %.4f (-preset fine / -preset 5%%)\n",
+            p->rlim_fine);
+    fprintf(out, "  * Coarse (25%%):        rlim = %.4f (-preset coarse / -preset 25%%)\n",
+            p->rlim_coarse);
     fprintf(out, "  * Cluster Limit:       -maxcl %d\n", p->recommended_maxcl);
     fprintf(out, "  * Spatial Layout:      -tiles %dx%d\n", p->tiles_x, p->tiles_y);
     fprintf(out, "  * Acceleration:        %s %s %s\n",
@@ -263,6 +272,8 @@ void probe_report_print_env(
 
     const GricProfile *p = &results->profile;
     fprintf(out, "export GRIC_RLIM=%.6f\n", p->rlim_recommended);
+    fprintf(out, "export GRIC_RLIM_P01=%.6f\n", p->rlim_p01);
+    fprintf(out, "export GRIC_RLIM_P03=%.6f\n", p->rlim_p03);
     fprintf(out, "export GRIC_RLIM_FINE=%.6f\n", p->rlim_fine);
     fprintf(out, "export GRIC_RLIM_BALANCED=%.6f\n", p->rlim_balanced);
     fprintf(out, "export GRIC_RLIM_COARSE=%.6f\n", p->rlim_coarse);

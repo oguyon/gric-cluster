@@ -33,6 +33,8 @@ void gric_profile_init(
     memset(prof, 0, sizeof(GricProfile));
     prof->dim = dim;
     prof->rlim_recommended = 0.1;
+    prof->rlim_p01 = 0.02;
+    prof->rlim_p03 = 0.035;
     prof->rlim_fine = 0.05;
     prof->rlim_balanced = 0.1;
     prof->rlim_coarse = 0.2;
@@ -137,6 +139,8 @@ int gric_profile_write_json(
     fprintf(fp, "  \"clustering\": {\n");
     fprintf(fp, "    \"rlim_recommended\": %.6f,\n", prof->rlim_recommended);
     fprintf(fp, "    \"rlim_presets\": {\n");
+    fprintf(fp, "      \"p01\": %.6f,\n", prof->rlim_p01);
+    fprintf(fp, "      \"p03\": %.6f,\n", prof->rlim_p03);
     fprintf(fp, "      \"fine\": %.6f,\n", prof->rlim_fine);
     fprintf(fp, "      \"balanced\": %.6f,\n", prof->rlim_balanced);
     fprintf(fp, "      \"coarse\": %.6f\n", prof->rlim_coarse);
@@ -185,6 +189,7 @@ int gric_profile_write_json(
     fprintf(fp, "  \"distance_spectrum\": {\n");
     fprintf(fp, "    \"min\": %.6f,\n", prof->dist_min);
     fprintf(fp, "    \"p01\": %.6f,\n", prof->dist_p01);
+    fprintf(fp, "    \"p03\": %.6f,\n", prof->dist_p03);
     fprintf(fp, "    \"p05\": %.6f,\n", prof->dist_p05);
     fprintf(fp, "    \"p10\": %.6f,\n", prof->dist_p10);
     fprintf(fp, "    \"p25\": %.6f,\n", prof->dist_p25);
@@ -390,10 +395,14 @@ int gric_profile_read_json(
     prof->is_image = parse_json_bool(buf, "is_image", 0);
     prof->is_double = parse_json_bool(buf, "is_double", 0);
 
+    const char *rp_pos = find_json_key(buf, "rlim_presets");
+    const char *p_rp = (rp_pos != NULL) ? rp_pos : buf;
     prof->rlim_recommended = parse_json_double(buf, "rlim_recommended", 0.1);
-    prof->rlim_fine = parse_json_double(buf, "fine", prof->rlim_recommended * 0.5);
-    prof->rlim_balanced = parse_json_double(buf, "balanced", prof->rlim_recommended);
-    prof->rlim_coarse = parse_json_double(buf, "coarse", prof->rlim_recommended * 2.0);
+    prof->rlim_fine = parse_json_double(p_rp, "fine", prof->rlim_recommended * 0.5);
+    prof->rlim_p01 = parse_json_double(p_rp, "p01", prof->rlim_fine * 0.4);
+    prof->rlim_p03 = parse_json_double(p_rp, "p03", prof->rlim_fine * 0.7);
+    prof->rlim_balanced = parse_json_double(p_rp, "balanced", prof->rlim_recommended);
+    prof->rlim_coarse = parse_json_double(p_rp, "coarse", prof->rlim_recommended * 2.0);
     prof->recommended_maxcl = (int)parse_json_long(buf, "recommended_maxcl", 2000);
     prof->tiles_x = (int)parse_json_long(buf, "tiles_x", 1);
     prof->tiles_y = (int)parse_json_long(buf, "tiles_y", 1);
@@ -436,15 +445,18 @@ int gric_profile_read_json(
         strcpy(prof->recommended_prune_mode, prof->te4_enabled ? "4P" : "3P");
     }
 
-    prof->dist_min = parse_json_double(buf, "min", 0.0);
-    prof->dist_p01 = parse_json_double(buf, "p01", 0.0);
-    prof->dist_p05 = parse_json_double(buf, "p05", 0.0);
-    prof->dist_p10 = parse_json_double(buf, "p10", 0.0);
-    prof->dist_p25 = parse_json_double(buf, "p25", 0.0);
-    prof->dist_p50 = parse_json_double(buf, "p50", 0.0);
-    prof->dist_p75 = parse_json_double(buf, "p75", 0.0);
-    prof->dist_p90 = parse_json_double(buf, "p90", 0.0);
-    prof->dist_max = parse_json_double(buf, "max", 0.0);
+    const char *ds_pos = find_json_key(buf, "distance_spectrum");
+    const char *p_ds = (ds_pos != NULL) ? ds_pos : buf;
+    prof->dist_min = parse_json_double(p_ds, "min", 0.0);
+    prof->dist_p01 = parse_json_double(p_ds, "p01", 0.0);
+    prof->dist_p03 = parse_json_double(p_ds, "p03", 0.0);
+    prof->dist_p05 = parse_json_double(p_ds, "p05", 0.0);
+    prof->dist_p10 = parse_json_double(p_ds, "p10", 0.0);
+    prof->dist_p25 = parse_json_double(p_ds, "p25", 0.0);
+    prof->dist_p50 = parse_json_double(p_ds, "p50", 0.0);
+    prof->dist_p75 = parse_json_double(p_ds, "p75", 0.0);
+    prof->dist_p90 = parse_json_double(p_ds, "p90", 0.0);
+    prof->dist_max = parse_json_double(p_ds, "max", 0.0);
 
     /* Parse variance_ordering array */
     const char *vo_pos = find_json_key(buf, "variance_ordering");
