@@ -1594,12 +1594,21 @@
       const l2 = telem.level2AnchorsPruned || 0;
       const l3 = telem.level3AnnularPruned || 0;
       const temp = telem.temporalPruned || 0;
-      const sq8Evals = telem.sq8Evaluations || 0;
-      const sq8Members = telem.sq8MembersPruned || 0;
-      const sq8Graph = telem.sq8GraphPruned || 0;
-      const sq8Pruned = (telem.sq8TotalPruned !== undefined)
-        ? telem.sq8TotalPruned
-        : (sq8Members + sq8Graph);
+      const isSq16 = Boolean(
+        telem.sq16Evaluations || telem.sq16MembersPruned || telem.sq16GraphPruned
+      );
+      const sqType = isSq16 ? 'SQ16' : 'SQ8';
+      const sqEvals = (telem.sq16Evaluations || 0) + (telem.sq8Evaluations || 0);
+      const sqMembers = (telem.sq16MembersPruned || 0) + (telem.sq8MembersPruned || 0);
+      const sqGraph = (telem.sq16GraphPruned || 0) + (telem.sq8GraphPruned || 0);
+      const sqPruned = (telem.sq16TotalPruned || telem.sq8TotalPruned !== undefined)
+        ? ((telem.sq16TotalPruned || 0) + (telem.sq8TotalPruned || 0))
+        : (sqMembers + sqGraph);
+
+      const lblKnnSqPrecType = document.getElementById('lblKnnSqPrecType');
+      if (lblKnnSqPrecType) lblKnnSqPrecType.textContent = sqType;
+      const lblKnnSqType = document.getElementById('lblKnnSqType');
+      if (lblKnnSqType) lblKnnSqType.textContent = sqType;
 
       if (sq8EvalsEl) {
         sq8EvalsEl.textContent = sq8Evals > 0 ? sq8Evals.toLocaleString() : '--';
@@ -1770,11 +1779,21 @@
       if (optSq8El && typeof clusterUseSq8 !== 'undefined') {
         optSq8El.classList.toggle('active', clusterUseSq8);
       }
+      const optSq16El = document.getElementById('optSq16');
+      if (optSq16El && typeof clusterUseSq16 !== 'undefined') {
+        optSq16El.classList.toggle('active', clusterUseSq16);
+      }
       const btnKnnSq8 = document.getElementById('btnKnnSq8');
       if (btnKnnSq8 && typeof knnUseSq8 !== 'undefined') {
         btnKnnSq8.classList.toggle('toggle-active', knnUseSq8);
         btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
         btnKnnSq8.classList.toggle('active', knnUseSq8);
+      }
+      const btnKnnSq16 = document.getElementById('btnKnnSq16');
+      if (btnKnnSq16 && typeof knnUseSq16 !== 'undefined') {
+        btnKnnSq16.classList.toggle('toggle-active', knnUseSq16);
+        btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
+        btnKnnSq16.classList.toggle('active', knnUseSq16);
       }
 
       const presetBar = document.getElementById('viewPresetBar');

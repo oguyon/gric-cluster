@@ -3901,10 +3901,29 @@
     });
 
     const optSq8El = document.getElementById('optSq8');
+    const optSq16El = document.getElementById('optSq16');
+
     if (optSq8El) {
       optSq8El.addEventListener('click', () => {
         clusterUseSq8 = !clusterUseSq8;
+        if (clusterUseSq8) {
+          clusterUseSq16 = false;
+        }
         optSq8El.classList.toggle('active', clusterUseSq8);
+        if (optSq16El) optSq16El.classList.toggle('active', clusterUseSq16);
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    if (optSq16El) {
+      optSq16El.addEventListener('click', () => {
+        clusterUseSq16 = !clusterUseSq16;
+        if (clusterUseSq16) {
+          clusterUseSq8 = false;
+        }
+        optSq16El.classList.toggle('active', clusterUseSq16);
+        if (optSq8El) optSq8El.classList.toggle('active', clusterUseSq8);
         updateCliCommand();
         draw();
       });
@@ -4246,6 +4265,10 @@
           norm.use_sq8 = (raw.acceleration.use_sq8 === true ||
                           raw.acceleration.use_sq8 === 1) ? 1 : 0;
         }
+        if (raw.acceleration.use_sq16 !== undefined) {
+          norm.use_sq16 = (raw.acceleration.use_sq16 === true ||
+                           raw.acceleration.use_sq16 === 1) ? 1 : 0;
+        }
         if (raw.acceleration.te4 !== undefined) {
           norm.te4_enabled = (raw.acceleration.te4 === true ||
                               raw.acceleration.te4 === 1) ? 1 : 0;
@@ -4284,6 +4307,13 @@
             min_val: raw.acceleration.sq8_min,
             max_val: raw.acceleration.sq8_max,
             scale: raw.acceleration.sq8_scale
+          };
+        }
+        if (raw.acceleration.sq16_scale !== undefined) {
+          norm.sq16_params = {
+            min_val: raw.acceleration.sq16_min,
+            max_val: raw.acceleration.sq16_max,
+            scale: raw.acceleration.sq16_scale
           };
         }
       }
@@ -4771,11 +4801,17 @@
         pred_len: 2,
         continuity_ratio: parseFloat(continuityRatio.toFixed(3)),
         tm_mixing_coeff: tmMixingCoeff,
-        use_sq8: (dim >= 32) ? 1 : 0,
+        use_sq8: 0,
         sq8_params: {
           min_val: gMin,
           max_val: gMax,
           scale: (gMax > gMin) ? (gMax - gMin) / 255.0 : 1.0 / 255.0
+        },
+        use_sq16: (dim >= 32) ? 1 : 0,
+        sq16_params: {
+          min_val: gMin,
+          max_val: gMax,
+          scale: (gMax > gMin) ? (gMax - gMin) / 32767.0 : 1.0 / 32767.0
         },
         te4_enabled: te4_enabled,
         te5_enabled: te5_enabled,
@@ -4811,6 +4847,7 @@
         predHorizon: (typeof predHorizon === 'number') ? predHorizon : 2,
         maxcl: (typeof maxcl === 'number') ? maxcl : 2000,
         clusterUseSq8: clusterUseSq8,
+        clusterUseSq16: clusterUseSq16,
         targetMode: targetMode,
         entropyGate: (typeof entropyGate === 'number') ? entropyGate : 0.75,
         useSoftBayesian: useSoftBayesian,
@@ -4869,11 +4906,17 @@
         if (typeof updateMaxclUnit === 'function') updateMaxclUnit(maxcl);
       }
 
-      if (profile.use_sq8 !== undefined) {
+      if (profile.use_sq16 !== undefined && (profile.use_sq16 === 1 || profile.use_sq16 === true)) {
+        clusterUseSq16 = true;
+        clusterUseSq8 = false;
+      } else if (profile.use_sq8 !== undefined) {
         clusterUseSq8 = (profile.use_sq8 === 1 || profile.use_sq8 === true);
-        const optSq8 = document.getElementById('optSq8');
-        if (optSq8) optSq8.classList.toggle('active', clusterUseSq8);
+        clusterUseSq16 = false;
       }
+      const optSq8 = document.getElementById('optSq8');
+      if (optSq8) optSq8.classList.toggle('active', clusterUseSq8);
+      const optSq16 = document.getElementById('optSq16');
+      if (optSq16) optSq16.classList.toggle('active', clusterUseSq16);
 
       const targetPrune = profile.recommended_prune_mode ||
         (profile.te5_enabled ? '5P' : (profile.te4_enabled ? '4P' : '3P'));
@@ -4952,7 +4995,7 @@
       if (typeof showToast === 'function') {
         const rVal = (typeof rlim === 'number') ? rlim.toFixed(3) : '0.100';
         const predStr = usePred ? 'Pred ON' : 'Pred OFF';
-        const sq8Str = clusterUseSq8 ? 'SQ8 ON' : 'SQ8 OFF';
+        const sq8Str = clusterUseSq16 ? 'SQ16 ON' : (clusterUseSq8 ? 'SQ8 ON' : 'SQ OFF');
         const entStr = (targetMode === 'entropy') ? ' | Entropy ON' : '';
         const sbStr = useSoftBayesian ? ' | Bayes ON' : '';
         const spStr = useSparseDcc ? ' | SparseDCC ON' : '';
@@ -4992,8 +5035,11 @@
         if (typeof updateMaxclUnit === 'function') updateMaxclUnit(maxcl);
       }
       clusterUseSq8 = prev.clusterUseSq8;
+      clusterUseSq16 = prev.clusterUseSq16 !== undefined ? prev.clusterUseSq16 : false;
       const optSq8 = document.getElementById('optSq8');
       if (optSq8) optSq8.classList.toggle('active', clusterUseSq8);
+      const optSq16 = document.getElementById('optSq16');
+      if (optSq16) optSq16.classList.toggle('active', clusterUseSq16);
       pruneMode = prev.pruneMode;
       ['3P', '4P', '5P'].forEach(other => {
         const el = document.getElementById(`prune${other}`);
@@ -5854,7 +5900,9 @@
           if (knnEpsilon > 0) args.push('-eps', String(knnEpsilon));
           if (knnRlim > 0) args.push('-rlim', String(knnRlim));
           if (typeof knnMvp !== 'undefined' && knnMvp) args.push('-multipivot');
-          if (typeof knnUseSq8 !== 'undefined') {
+          if (typeof knnUseSq16 !== 'undefined' && knnUseSq16) {
+            args.push('-sq16');
+          } else if (typeof knnUseSq8 !== 'undefined') {
             args.push(knnUseSq8 ? '-sq8' : '-no-sq8');
           }
           args.push('-progress');
@@ -6363,12 +6411,41 @@
     }
 
     const btnKnnSq8 = document.getElementById('btnKnnSq8');
+    const btnKnnSq16 = document.getElementById('btnKnnSq16');
+
     if (btnKnnSq8) {
       btnKnnSq8.addEventListener('click', () => {
         knnUseSq8 = !knnUseSq8;
+        if (knnUseSq8) {
+          knnUseSq16 = false;
+        }
         btnKnnSq8.classList.toggle('toggle-active', knnUseSq8);
         btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
         btnKnnSq8.classList.toggle('active', knnUseSq8);
+        if (btnKnnSq16) {
+          btnKnnSq16.classList.toggle('toggle-active', knnUseSq16);
+          btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
+          btnKnnSq16.classList.toggle('active', knnUseSq16);
+        }
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    if (btnKnnSq16) {
+      btnKnnSq16.addEventListener('click', () => {
+        knnUseSq16 = !knnUseSq16;
+        if (knnUseSq16) {
+          knnUseSq8 = false;
+        }
+        btnKnnSq16.classList.toggle('toggle-active', knnUseSq16);
+        btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
+        btnKnnSq16.classList.toggle('active', knnUseSq16);
+        if (btnKnnSq8) {
+          btnKnnSq8.classList.toggle('toggle-active', knnUseSq8);
+          btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
+          btnKnnSq8.classList.toggle('active', knnUseSq8);
+        }
         updateCliCommand();
         draw();
       });
@@ -7890,14 +7967,18 @@
       const angular = telem.angularPruned || 0;
       const multiPivot = telem.multiPivotPruned || 0;
       const gSeeds = telem.graphSeedsEvaluated || 0;
-      const sq8Evals = telem.sq8Evaluations || 0;
-      const sq8Members = telem.sq8MembersPruned || 0;
-      const sq8Graph = telem.sq8GraphPruned || 0;
-      const sq8Pruned = (telem.sq8TotalPruned !== undefined)
-        ? telem.sq8TotalPruned
-        : (sq8Members + sq8Graph);
+      const isSq16 = Boolean(
+        telem.sq16Evaluations || telem.sq16MembersPruned || telem.sq16GraphPruned
+      );
+      const sqType = isSq16 ? 'SQ16' : 'SQ8';
+      const sqEvals = (telem.sq16Evaluations || 0) + (telem.sq8Evaluations || 0);
+      const sqMembers = (telem.sq16MembersPruned || 0) + (telem.sq8MembersPruned || 0);
+      const sqGraph = (telem.sq16GraphPruned || 0) + (telem.sq8GraphPruned || 0);
+      const sqPruned = (telem.sq16TotalPruned || telem.sq8TotalPruned !== undefined)
+        ? ((telem.sq16TotalPruned || 0) + (telem.sq8TotalPruned || 0))
+        : (sqMembers + sqGraph);
       const exact = Math.max(0, telem.framedistCalls || 0);
-      const totalAll = l1 + l3 + gPruned + angular + multiPivot + gSeeds + sq8Pruned + exact;
+      const totalAll = l1 + l3 + gPruned + angular + multiPivot + gSeeds + sqPruned + exact;
 
       function barPct(val) {
         return totalAll > 0
@@ -7916,7 +7997,8 @@
       set('reconQuerySpeedupVal',      `${speedup.toFixed(1)}×`);
       set('reconQueryDistCallsVal',    telem.framedistCalls.toLocaleString());
       set('reconQueryDistPerQueryVal', `${distPerQuery.toLocaleString()}/q`);
-      set('reconQuerySq8EvalsVal',     sq8Evals > 0 ? sq8Evals.toLocaleString() : '--');
+      set('lblReconQuerySqPrecType',   sqType);
+      set('reconQuerySq8EvalsVal',     sqEvals > 0 ? sqEvals.toLocaleString() : '--');
       set('reconQueryFullPrecCallsVal', exact.toLocaleString());
       set('reconQuerySearchTimeVal',   `${telem.timeSearchMs.toFixed(1)} ms`);
       set('reconQueryLoadTimeVal',     telem.timeLoadMs != null
@@ -7951,10 +8033,11 @@
       set('reconQueryMultiPivotVal',        multiPivot.toLocaleString());
       set('reconQueryMultiPivotPctVal',     pct(multiPivot));
 
-      set('reconQuerySq8PrunedVal',         sq8Pruned.toLocaleString());
-      set('reconQuerySq8PctVal',            pct(sq8Pruned));
+      set('lblReconQuerySqType',            sqType);
+      set('reconQuerySq8PrunedVal',         sqPruned.toLocaleString());
+      set('reconQuerySq8PctVal',            pct(sqPruned));
       set('reconQuerySq8BreakdownVal',
-          `Members: ${sq8Members.toLocaleString()} | Graph: ${sq8Graph.toLocaleString()}`);
+          `Members: ${sqMembers.toLocaleString()} | Graph: ${sqGraph.toLocaleString()}`);
 
       const containmentHits = telem.globalContainmentHits || 0;
       const containmentPct = numQ > 0 ? (100.0 * containmentHits / numQ).toFixed(1) : '0.0';
@@ -8154,9 +8237,17 @@
           args.push('--no-trajectory');
         }
 
+        const radSq16 = document.getElementById('radReconQuerySq16');
+        const radSq8 = document.getElementById('radReconQuerySq8');
         const chkSq8 = document.getElementById('chkReconQuerySq8');
-        if (chkSq8) {
-          args.push(chkSq8.checked ? '-sq8' : '-no-sq8');
+        if (radSq16 && radSq16.checked) {
+          args.push('-sq16');
+        } else if (radSq8 && radSq8.checked) {
+          args.push('-sq8');
+        } else if (chkSq8 && chkSq8.checked) {
+          args.push('-sq8');
+        } else {
+          args.push('-no-sq16', '-no-sq8');
         }
 
         if (consoleEl) {
@@ -10397,7 +10488,9 @@
           args.push('-sparse_dcc_extra_evals', sparseDccExtraEvals.toString());
         }
       }
-      if (typeof clusterUseSq8 === 'boolean') {
+      if (typeof clusterUseSq16 === 'boolean' && clusterUseSq16) {
+        args.push('-sq16');
+      } else if (typeof clusterUseSq8 === 'boolean') {
         args.push(clusterUseSq8 ? '-sq8' : '-no-sq8');
       }
       if (maxcl > 0) {

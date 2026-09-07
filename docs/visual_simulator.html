@@ -1507,16 +1507,24 @@
                      data-tooltip-desc="Evaluates 5-point Cayley-Menger metric determinant geometry across 3 measured anchors for highest pruning power.">5-Point</div>
               </div>
 
-              <!-- SQ8 Candidate Anchor Pre-Filtering -->
+              <!-- Scalar Quantization Candidate Pre-Filtering -->
               <div class="toggle-group"
-                   style="grid-template-columns: 1fr; margin-top: 6px; margin-bottom: 2px;">
-                <div id="optSq8" class="toggle-btn active"
+                   style="grid-template-columns: 1fr 1fr; margin-top: 6px; margin-bottom: 2px;">
+                <div id="optSq8" class="toggle-btn"
                      data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
                      data-tooltip-badge="CLI: -sq8"
                      data-tooltip-color="cyan"
-                     data-tooltip-desc="Pre-filters candidate anchors using fast 8-bit SIMD
+                     data-tooltip-desc="Pre-filters candidate anchors using 8-bit SIMD
 integer lower bounds against rlim.">
-                  SQ8 Metric Pre-Filter (-sq8)
+                  SQ8 (-sq8)
+                </div>
+                <div id="optSq16" class="toggle-btn active"
+                     data-tooltip-title="16-Bit Scalar Quantization Metric Filter"
+                     data-tooltip-badge="CLI: -sq16"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Pre-filters candidate anchors using 16-bit SIMD
+integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
+                  SQ16 (-sq16)
                 </div>
               </div>
 
@@ -2981,16 +2989,24 @@ integer lower bounds against rlim.">
                 </div>
               </div>
 
-              <!-- SQ8 8-Bit Scalar Quantization Toggle -->
+              <!-- Scalar Quantization Toggle -->
               <div class="toggle-group"
-                   style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 2px;">
-                <div id="btnKnnSq8" class="toggle-btn toggle-active toggle-cyan active"
+                   style="grid-template-columns: 1fr 1fr; margin-top: 4px; margin-bottom: 2px;">
+                <div id="btnKnnSq8" class="toggle-btn toggle-active toggle-cyan"
                      data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
                      data-tooltip-badge="CLI: -sq8"
                      data-tooltip-color="cyan"
-                     data-tooltip-desc="Applies fast 8-bit scalar quantization with SIMD
-integer lower-bound metric pruning before full-precision distance evaluation.">
-                  8-Bit Scalar Quantization (-sq8)
+                     data-tooltip-desc="Applies 8-bit scalar quantization with SIMD
+integer lower-bound metric pruning.">
+                  SQ8 (-sq8)
+                </div>
+                <div id="btnKnnSq16" class="toggle-btn toggle-active toggle-cyan active"
+                     data-tooltip-title="16-Bit Scalar Quantization Metric Filter"
+                     data-tooltip-badge="CLI: -sq16"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Applies 16-bit scalar quantization with SIMD
+integer lower-bound metric pruning (256x tighter bounds, zero-unpack AVX2).">
+                  SQ16 (-sq16)
                 </div>
               </div>
 
@@ -3119,7 +3135,10 @@ integer lower-bound metric pruning before full-precision distance evaluation.">
 lower-bound evaluations and exact full-precision distance evaluations.">
                   <div id="knnSq8EvalsVal"
                        class="num" style="color: #38bdf8; font-size: 0.95rem;">0</div>
-                  <div class="lbl">SQ8 / Full-Prec (<span id="knnFullPrecCallsVal">0</span>)</div>
+                  <div class="lbl">
+                    <span id="lblKnnSqPrecType">SQ</span> / Full-Prec
+                    (<span id="knnFullPrecCallsVal">0</span>)
+                  </div>
                 </div>
                 <div class="stat-box"
                      data-tooltip-title="k-NN Execution Timings"
@@ -3208,7 +3227,9 @@ lower-bound evaluations and exact full-precision distance evaluations.">
                      data-tooltip-desc="Candidates pruned using guaranteed 8-bit integer SIMD
 lower bounds (d_LB > tau) without full-precision distance computation.">
                   <div id="knnSq8PrunedVal" class="num" style="color: #06b6d4;">0</div>
-                  <div class="lbl">SQ8 Pruned (<span id="knnSq8PctVal">0%</span>)</div>
+                  <div class="lbl">
+                    <span id="lblKnnSqType">SQ</span> Pruned (<span id="knnSq8PctVal">0%</span>)
+                  </div>
                   <div id="knnSq8BreakdownVal"
                        style="font-size: 0.65rem; color: #94a3b8; margin-top: 2px;">
                     Members: 0 | Graph: 0
@@ -3865,21 +3886,40 @@ Results are stored in the cluster directory and loaded back for fast reconstruct
                 </label>
               </div>
 
-              <!-- 8-Bit Scalar Quantization Checkbox -->
+              <!-- Scalar Quantization Selection -->
               <div style="display: flex; justify-content: space-between; align-items: center;
                           margin-top: 4px; padding: 4px 8px; background: rgba(15, 23, 42, 0.45);
                           border-radius: 4px; border: 1px solid rgba(6, 182, 212, 0.3);">
-                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.72rem;
-                              color: #cffafe; cursor: pointer;"
-                       data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
-                       data-tooltip-badge="-sq8"
-                       data-tooltip-color="cyan"
-                       data-tooltip-desc="Applies fast 8-bit scalar quantization with SIMD
-integer lower-bound metric pruning to prune candidates without full-precision distance compute.">
-                  <input type="checkbox" id="chkReconQuerySq8" checked
-                         style="accent-color: #06b6d4; cursor: pointer;">
-                  <span>⚡ SQ8 Acceleration (<code style="color: #38bdf8;">-sq8</code>)</span>
-                </label>
+                <span style="font-size: 0.72rem; color: #cffafe; font-weight: 600;"
+                      data-tooltip-title="Scalar Quantization Acceleration"
+                      data-tooltip-badge="SQ Option"
+                      data-tooltip-color="cyan"
+                      data-tooltip-desc="Applies fast SIMD integer metric lower-bound pruning
+before full-precision distance computation.">
+                  ⚡ Quantization:
+                </span>
+                <div style="display: flex; gap: 8px;">
+                  <label style="display: flex; align-items: center; gap: 3px; font-size: 0.70rem;
+                                color: #94a3b8; cursor: pointer;">
+                    <input type="radio" name="reconQuerySq" id="radReconQuerySqOff" value="off"
+                           style="accent-color: #06b6d4; cursor: pointer;">
+                    <span>Off</span>
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 3px; font-size: 0.70rem;
+                                color: #cffafe; cursor: pointer;">
+                    <input type="radio" name="reconQuerySq" id="radReconQuerySq8" value="sq8"
+                           style="accent-color: #06b6d4; cursor: pointer;">
+                    <span>SQ8</span>
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 3px; font-size: 0.70rem;
+                                color: #38bdf8; font-weight: 600; cursor: pointer;">
+                    <input type="radio" name="reconQuerySq" id="radReconQuerySq16"
+                           value="sq16" checked
+                           style="accent-color: #06b6d4; cursor: pointer;">
+                    <span>SQ16</span>
+                  </label>
+                </div>
+                <input type="checkbox" id="chkReconQuerySq8" style="display: none;">
               </div>
 
               <!-- Live progress bar (shown during job) -->
@@ -4014,7 +4054,8 @@ lower-bound evaluations and exact full-precision distance evaluations.">
                           <div id="reconQuerySq8EvalsVal"
                                class="num" style="color: #38bdf8; font-size: 0.95rem;">0</div>
                           <div class="lbl">
-                            SQ8 / Full-Prec (<span id="reconQueryFullPrecCallsVal">0</span>)
+                            <span id="lblReconQuerySqPrecType">SQ</span> / Full-Prec
+                            (<span id="reconQueryFullPrecCallsVal">0</span>)
                           </div>
                         </div>
                         <div class="stat-box"
@@ -4173,7 +4214,8 @@ lower bounds (d_LB > tau) without full-precision distance computation.">
                           <div id="reconQuerySq8PrunedVal"
                                class="num" style="color: #06b6d4;">0</div>
                           <div class="lbl">
-                            SQ8 Pruned (<span id="reconQuerySq8PctVal">0%</span>)
+                            <span id="lblReconQuerySqType">SQ</span> Pruned
+                            (<span id="reconQuerySq8PctVal">0%</span>)
                           </div>
                           <div id="reconQuerySq8BreakdownVal"
                                style="font-size: 0.65rem; color: #94a3b8; margin-top: 2px;">
