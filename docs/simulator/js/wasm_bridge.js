@@ -1925,9 +1925,11 @@ function buildCliCommand() {
     }
   }
 
-  // SQ8 pre-filtering
-  if (typeof clusterUseSq8 === 'boolean') {
-    parts.push(clusterUseSq8 ? '-sq8' : '-no-sq8');
+  // Scalar quantization pre-filtering
+  if (typeof clusterUseSq16 === 'boolean' && clusterUseSq16) {
+    parts.push('-sq16');
+  } else if (typeof clusterUseSq8 === 'boolean' && clusterUseSq8) {
+    parts.push('-sq8');
   }
 
   // Input placeholder
@@ -1954,7 +1956,9 @@ function buildCliCommand() {
     if (typeof knnMvp === 'boolean' && knnMvp) {
       knnParts.push('-multipivot');
     }
-    if (typeof knnUseSq8 === 'boolean') {
+    if (typeof knnUseSq16 === 'boolean' && knnUseSq16) {
+      knnParts.push('-sq16');
+    } else if (typeof knnUseSq8 === 'boolean') {
       knnParts.push(knnUseSq8 ? '-sq8' : '-no-sq8');
     }
     knnParts.push('-o', 'knn_results.fits');

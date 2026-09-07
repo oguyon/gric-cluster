@@ -71,7 +71,43 @@ int cluster_frame(
     long start_dcc_calls = state->telemetry.framedist_calls_intercluster;
     int  temp_count = 0;
 
-    if (config->optim.use_sq8)
+    if (config->optim.use_sq16)
+    {
+        long frame_dim = current_frame->width * current_frame->height;
+        if (state->current_frame_sq16 == NULL)
+        {
+            state->current_frame_sq16 = (int16_t *)malloc((size_t)frame_dim * sizeof(int16_t));
+        }
+        if (!state->sq16_calibrated)
+        {
+            if (current_frame->is_double)
+            {
+                sq16_calibrate_double(&config->optim.sq16_params,
+                                      (const double *)current_frame->data,
+                                      frame_dim, frame_dim);
+            }
+            else
+            {
+                sq16_calibrate_float(&config->optim.sq16_params,
+                                     (const float *)current_frame->data,
+                                     frame_dim, frame_dim);
+            }
+            state->sq16_calibrated = 1;
+        }
+        if (current_frame->is_double)
+        {
+            sq16_quantize_double((const double *)current_frame->data,
+                                 state->current_frame_sq16,
+                                 &config->optim.sq16_params);
+        }
+        else
+        {
+            sq16_quantize_float((const float *)current_frame->data,
+                                state->current_frame_sq16,
+                                &config->optim.sq16_params);
+        }
+    }
+    else if (config->optim.use_sq8)
     {
         long frame_dim = current_frame->width * current_frame->height;
         if (state->current_frame_sq8 == NULL)
@@ -324,10 +360,28 @@ int cluster_frame(
                 break;
             }
 
-            // Fast SQ8 metric lower-bound pre-filtering
-            if (config->optim.use_sq8 &&
-                state->clusters[cj].anchor_sq8 != NULL &&
-                state->current_frame_sq8 != NULL)
+            // Fast SQ16 / SQ8 metric lower-bound pre-filtering
+            if (config->optim.use_sq16 &&
+                state->clusters[cj].anchor_sq16 != NULL &&
+                state->current_frame_sq16 != NULL)
+            {
+                state->telemetry.sq16_evals++;
+                double d_lb = sq16_compute_lower_bound(
+                    state->current_frame_sq16,
+                    state->clusters[cj].anchor_sq16,
+                    &config->optim.sq16_params,
+                    0.0);
+                if (d_lb > config->algo.rlim)
+                {
+                    state->telemetry.sq16_pruned++;
+                    state->telemetry.clusters_pruned++;
+                    state->scratch.clmembflag[cj] = 0;
+                    continue;
+                }
+            }
+            else if (config->optim.use_sq8 &&
+                     state->clusters[cj].anchor_sq8 != NULL &&
+                     state->current_frame_sq8 != NULL)
             {
                 state->telemetry.sq8_evals++;
                 double d_lb = sq8_compute_lower_bound(

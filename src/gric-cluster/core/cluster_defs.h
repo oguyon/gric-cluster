@@ -82,6 +82,8 @@ typedef struct
     double    xtile_decay;             /**< Decay coefficient for CPT history (0.0 to 1.0] */
     int       use_sq8;                 /**< 1 to enable 8-bit scalar quantization pruning */
     SQ8Params sq8_params;              /**< Uniform scalar quantization parameters */
+    int       use_sq16;                /**< 1 to enable 16-bit scalar quantization pruning */
+    SQ16Params sq16_params;            /**< Uniform 16-bit scalar quantization parameters */
     char     *prof_filename;           /**< Path to explicitly loaded .gricprof */
     int       no_prof;                 /**< 1 to disable automatic .gricprof loading */
     char      preset_name[32];         /**< Calibrated radius preset name ("fine", etc.) */
@@ -179,6 +181,8 @@ typedef struct
     uint64_t dcc_pairs_total;       /**< Total possible inter-cluster pairs K*(K-1)/2 */
     uint64_t sq8_evals;             /**< Cluster candidates evaluated with SQ8 lower bound */
     uint64_t sq8_pruned;            /**< Cluster checks pruned by SQ8 lower bound */
+    uint64_t sq16_evals;            /**< Cluster candidates evaluated with SQ16 lower bound */
+    uint64_t sq16_pruned;           /**< Cluster checks pruned by SQ16 lower bound */
 } ClusterTelemetry;
 
 // Candidate structure for sorting
@@ -244,6 +248,8 @@ typedef struct
     struct TraceBuffer *trace;              /**< Explain trace buffer (NULL = disabled) */
     uint8_t            *current_frame_sq8;  /**< Scratch buffer for quantized current frame */
     int                 sq8_calibrated;     /**< 1 if global SQ8 params are calibrated */
+    int16_t            *current_frame_sq16; /**< Scratch buffer for SQ16 current frame */
+    int                 sq16_calibrated;    /**< 1 if global SQ16 params are calibrated */
     long               *perm_dim;           /**< Spectral dimension ordering [dim] */
     double             *residual_tail;      /**< Precomputed residual tail array [dim] */
 } ClusterState;

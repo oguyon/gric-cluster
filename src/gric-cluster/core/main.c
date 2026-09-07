@@ -171,6 +171,7 @@ int main(int argc, char *argv[])
     config.optim.xtile_mode = 0;
     config.optim.xtile_decay = 1.0;
     config.optim.use_sq8 = 1; // Enabled by default for 8-bit metric pre-filtering
+    config.optim.use_sq16 = 0;
 
     // Tiling defaults (M=1, no tiling)
     config.input.tile_grid_x = 0;
@@ -393,7 +394,11 @@ int main(int argc, char *argv[])
                 rlim_set = 1;
             }
 
-            if (config.optim.use_sq8 && dataset_prof.use_sq8)
+            if (config.optim.use_sq16 && dataset_prof.use_sq16)
+            {
+                config.optim.sq16_params = dataset_prof.sq16_params;
+            }
+            else if (config.optim.use_sq8 && dataset_prof.use_sq8)
             {
                 config.optim.sq8_params = dataset_prof.sq8_params;
             }
@@ -635,9 +640,10 @@ int main(int argc, char *argv[])
     state.cluster_visitors = (VisitorList *)calloc(max_clusters, sizeof(VisitorList));
     state.scratch.probsortedclindex = (int *)malloc(max_clusters * sizeof(int));
     state.scratch.clmembflag = (int *)malloc(max_clusters * sizeof(int));
-    state.scratch.consistency_mask = config.optim.gprob_mode
-                                         ? (uint64_t *)calloc(consistency_words, sizeof(uint64_t))
-                                         : NULL;
+    state.scratch.consistency_mask =
+        (config.optim.gprob_mode || config.optim.entropy_mode)
+            ? (uint64_t *)calloc(consistency_words, sizeof(uint64_t))
+            : NULL;
     state.scratch.entropy_p_current = (double *)malloc(max_clusters * sizeof(double));
     state.scratch.entropy_candidates = (Candidate *)malloc(max_clusters * sizeof(Candidate));
     state.scratch.entropy_prob_scores = (TargetScore *)malloc(max_clusters * sizeof(TargetScore));

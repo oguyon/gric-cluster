@@ -895,6 +895,10 @@ const DesktopBridge = (function () {
       sq8MembersPruned: 0,
       sq8GraphPruned: 0,
       sq8TotalPruned: 0,
+      sq16Evaluations: 0,
+      sq16MembersPruned: 0,
+      sq16GraphPruned: 0,
+      sq16TotalPruned: 0,
       totalCandidatesConsidered: 0,
       timeSearchMs: 0.0
     };
@@ -952,6 +956,22 @@ const DesktopBridge = (function () {
 
     if (telem.sq8TotalPruned && !telem.sq8MembersPruned && !telem.sq8GraphPruned) {
       telem.sq8MembersPruned = telem.sq8TotalPruned;
+    }
+
+    const mSq16Evals = clean.match(/SQ16 Evaluations:\s+(\d+)/);
+    if (mSq16Evals) telem.sq16Evaluations = parseInt(mSq16Evals[1], 10);
+
+    const mSq16TotalPruned = clean.match(/SQ16 Lower-Bound Pruned:\s+(\d+)/);
+    if (mSq16TotalPruned) telem.sq16TotalPruned = parseInt(mSq16TotalPruned[1], 10);
+
+    const mSq16MemberPruned = clean.match(/SQ16 Member Pruned:\s+(\d+)/);
+    if (mSq16MemberPruned) telem.sq16MembersPruned = parseInt(mSq16MemberPruned[1], 10);
+
+    const mSq16GraphPruned = clean.match(/SQ16 Graph Pruned:\s+(\d+)/);
+    if (mSq16GraphPruned) telem.sq16GraphPruned = parseInt(mSq16GraphPruned[1], 10);
+
+    if (telem.sq16TotalPruned && !telem.sq16MembersPruned && !telem.sq16GraphPruned) {
+      telem.sq16MembersPruned = telem.sq16TotalPruned;
     }
 
     const mTime = clean.match(/Search Wall Time:\s+([\d.]+)\s*ms/);

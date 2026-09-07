@@ -199,6 +199,20 @@ static void assign_new_cluster_anchor(
     {
         state->clusters[cl_idx].anchor_sq8 = NULL;
     }
+    if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
+    {
+        long dim = current_frame->width * current_frame->height;
+        state->clusters[cl_idx].anchor_sq16 = (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+        if (state->clusters[cl_idx].anchor_sq16 != NULL)
+        {
+            memcpy(state->clusters[cl_idx].anchor_sq16, state->current_frame_sq16,
+                   (size_t)dim * sizeof(int16_t));
+        }
+    }
+    else
+    {
+        state->clusters[cl_idx].anchor_sq16 = NULL;
+    }
     current_frame->data = NULL;
     state->clusters[cl_idx].id = cl_idx;
     state->clusters[cl_idx].prob = 1.0;

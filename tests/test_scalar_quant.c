@@ -183,13 +183,176 @@ static void test_sidecar_roundtrip()
     printf("  -> Sidecar file round-trip passed.\n");
 }
 
+static uint64_t reference_ssd_i16(
+    const int16_t *a,
+    const int16_t *b,
+    long           dim)
+{
+    uint64_t sum = 0;
+    for (long i = 0; i < dim; i++)
+    {
+        int64_t diff = (int64_t)a[i] - (int64_t)b[i];
+        sum += (uint64_t)(diff * diff);
+    }
+    return sum;
+}
+
+static void test_sq16_initialization_and_clamping()
+{
+    printf("[TEST] Testing SQ16 initialization and clamping...\n");
+    SQ16Params params;
+    sq16_init_params(&params, -10.0f, 10.0f, 128);
+
+    assert(fabsf(params.min_val - (-10.0f)) < 1e-5f);
+    assert(fabsf(params.max_val - 10.0f) < 1e-5f);
+    assert(fabsf(params.scale - (20.0f / 32767.0f)) < 1e-5f);
+    assert(params.dim == 128);
+
+    float src[4] = {-15.0f, -10.0f, 10.0f, 25.0f};
+    int16_t dst[4];
+    params.dim = 4;
+    sq16_quantize_float(src, dst, &params);
+
+    assert(dst[0] == 0);     // Clamped below min
+    assert(dst[1] == 0);     // Min
+    assert(dst[2] == 32767); // Max
+    assert(dst[3] == 32767); // Clamped above max
+
+    printf("  -> SQ16 initialization and clamping passed.\n");
+}
+
+static void test_sq16_simd_bit_exactness()
+{
+    printf("[TEST] Testing SQ16 SIMD vs scalar bit-exactness...\n");
+    long test_dims[] = {1, 7, 16, 31, 32, 33, 63, 64, 65, 128, 255, 1024, 4097};
+    int num_dims = sizeof(test_dims) / sizeof(test_dims[0]);
+
+    for (int d = 0; d < num_dims; d++)
+    {
+        long dim = test_dims[d];
+        int16_t *a = (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+        int16_t *b = (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+
+        for (long i = 0; i < dim; i++)
+        {
+            a[i] = (int16_t)(rand() % 32768);
+            b[i] = (int16_t)(rand() % 32768);
+        }
+
+        uint64_t ref = reference_ssd_i16(a, b, dim);
+        uint64_t simd = sq16_dist_squared_i16(a, b, dim);
+
+        assert(ref == simd);
+
+        free(a);
+        free(b);
+    }
+
+    printf("  -> SQ16 SIMD bit-exactness passed across all tested dimensions.\n");
+}
+
+static void test_sq16_metric_lower_bound_invariance()
+{
+    printf("[TEST] Testing SQ16 metric lower-bound invariance (100,000 random vector pairs)...\n");
+    long test_dims[] = {2, 8, 32, 128, 512, 1024};
+    int num_dims = sizeof(test_dims) / sizeof(test_dims[0]);
+    int pairs_per_dim = 20000;
+
+    for (int d = 0; d < num_dims; d++)
+    {
+        long dim = test_dims[d];
+        SQ16Params params;
+        sq16_init_params(&params, -50.0f, 150.0f, dim);
+
+        float *fa = (float *)malloc((size_t)dim * sizeof(float));
+        float *fb = (float *)malloc((size_t)dim * sizeof(float));
+        int16_t *qa = (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+        int16_t *qb = (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+
+        for (int p = 0; p < pairs_per_dim; p++)
+        {
+            for (long i = 0; i < dim; i++)
+            {
+                fa[i] = -50.0f + (float)rand() / (float)(RAND_MAX / 200.0f);
+                fb[i] = -50.0f + (float)rand() / (float)(RAND_MAX / 200.0f);
+            }
+
+            sq16_quantize_float(fa, qa, &params);
+            sq16_quantize_float(fb, qb, &params);
+
+            double d_exact = reference_euclidean_distance(fa, fb, dim);
+            double d_lb = sq16_compute_lower_bound(qa, qb, &params, 0.0);
+
+            // Lower bound MUST be <= exact distance (allowing tiny float epsilon)
+            if (d_lb > d_exact + 1e-6)
+            {
+                fprintf(stderr, "VIOLATION at dim %ld, pair %d: d_lb=%.6f > d_exact=%.6f\n",
+                        dim, p, d_lb, d_exact);
+                assert(d_lb <= d_exact + 1e-6);
+            }
+        }
+
+        free(fa);
+        free(fb);
+        free(qa);
+        free(qb);
+    }
+
+    printf("  -> SQ16 metric lower-bound invariance passed: zero violations observed.\n");
+}
+
+static void test_sq16_sidecar_roundtrip()
+{
+    printf("[TEST] Testing .sq16 sidecar file save and load round-trip...\n");
+    const char *tmp_path = "/tmp/test_sq16_sidecar.sq16";
+    long dim = 256;
+    long num_frames = 10;
+
+    SQ16Params p_save;
+    sq16_init_params(&p_save, -12.5f, 87.5f, dim);
+
+    size_t total_elements = (size_t)dim * (size_t)num_frames;
+    int16_t *data_save = (int16_t *)malloc(total_elements * sizeof(int16_t));
+    for (size_t i = 0; i < total_elements; i++)
+    {
+        data_save[i] = (int16_t)(i % 32768);
+    }
+
+    int rc = sq16_save_sidecar(tmp_path, &p_save, data_save, num_frames);
+    assert(rc == 0);
+
+    SQ16Params p_load;
+    int16_t *data_load = NULL;
+    long loaded_frames = 0;
+
+    rc = sq16_load_sidecar(tmp_path, &p_load, &data_load, &loaded_frames);
+    assert(rc == 0);
+    assert(loaded_frames == num_frames);
+    assert(p_load.dim == dim);
+    assert(fabsf(p_load.min_val - p_save.min_val) < 1e-5f);
+    assert(fabsf(p_load.max_val - p_save.max_val) < 1e-5f);
+    assert(fabsf(p_load.scale - p_save.scale) < 1e-5f);
+    assert(memcmp(data_save, data_load, total_elements * sizeof(int16_t)) == 0);
+
+    free(data_save);
+    free(data_load);
+    remove(tmp_path);
+
+    printf("  -> SQ16 sidecar file round-trip passed.\n");
+}
+
 int main()
 {
-    printf("=== Running Scalar Quantization (SQ8) Unit Tests ===\n");
+    printf("=== Running Scalar Quantization (SQ8 & SQ16) Unit Tests ===\n");
     test_initialization_and_clamping();
     test_simd_bit_exactness();
     test_metric_lower_bound_invariance();
     test_sidecar_roundtrip();
-    printf("=== All SQ8 Unit Tests Passed Successfully ===\n");
+
+    test_sq16_initialization_and_clamping();
+    test_sq16_simd_bit_exactness();
+    test_sq16_metric_lower_bound_invariance();
+    test_sq16_sidecar_roundtrip();
+    printf("=== All SQ8 & SQ16 Unit Tests Passed Successfully ===\n");
     return 0;
 }

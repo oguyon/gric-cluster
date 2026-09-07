@@ -351,6 +351,94 @@ static inline int is_graph_pruned_by_sq8(
 }
 
 /**
+ * is_member_pruned_by_sq16() - Evaluate SQ16 metric lower bound against current search radius.
+ * @query_sq16: Pointer to quantized query vector [dim].
+ * @cand_id:    Index of candidate dataset frame.
+ * @cur_tau:    Current distance to k-th nearest neighbor (or cutoff radius).
+ * @model:      Active KnnModel.
+ * @config:     Active KnnConfig.
+ * @telem:      Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+static inline int is_member_pruned_by_sq16(
+    const int16_t   *query_sq16,
+    long             cand_id,
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config,
+    KnnTelemetry    *telem)
+{
+    if (!config->use_sq16 || model->sq16_dataset_buffer == NULL || query_sq16 == NULL)
+    {
+        return 0;
+    }
+
+    const int16_t *cand_sq16 = model->sq16_dataset_buffer +
+                               (size_t)cand_id * (size_t)model->frame_elements;
+    double eps = config->sq16_approx ? config->epsilon : 0.0;
+    telem->sq16_evaluations++;
+    double d_lb = sq16_compute_lower_bound(query_sq16, cand_sq16, &model->sq16_params, eps);
+
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
+    {
+        cur_tau = config->rlim_cutoff;
+    }
+
+    if (d_lb > cur_tau)
+    {
+        telem->sq16_members_pruned++;
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * is_graph_pruned_by_sq16() - Evaluate SQ16 metric lower bound for graph candidate pruning.
+ * @query_sq16: Pointer to quantized query vector [dim].
+ * @cand_id:    Index of candidate dataset frame.
+ * @cur_tau:    Current distance threshold (e.g. heap max or routing threshold).
+ * @model:      Active KnnModel.
+ * @config:     Active KnnConfig.
+ * @telem:      Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+static inline int is_graph_pruned_by_sq16(
+    const int16_t   *query_sq16,
+    long             cand_id,
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config,
+    KnnTelemetry    *telem)
+{
+    if (!config->use_sq16 || model->sq16_dataset_buffer == NULL || query_sq16 == NULL)
+    {
+        return 0;
+    }
+
+    const int16_t *cand_sq16 = model->sq16_dataset_buffer +
+                               (size_t)cand_id * (size_t)model->frame_elements;
+    double eps = config->sq16_approx ? config->epsilon : 0.0;
+    telem->sq16_evaluations++;
+    double d_lb = sq16_compute_lower_bound(query_sq16, cand_sq16, &model->sq16_params, eps);
+
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
+    {
+        cur_tau = config->rlim_cutoff;
+    }
+
+    if (d_lb > cur_tau)
+    {
+        telem->sq16_graph_pruned++;
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
  * check_temporal_separation() - Verify if candidate satisfies temporal criteria.
  * @query_id:     Frame ID of query.
  * @candidate_id: Frame ID of candidate.
@@ -775,7 +863,9 @@ static void knn_search_intra_cluster(
             continue;
         }
 
-        if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+        if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+                                     model, config, telem) ||
+            is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                     model, config, telem))
         {
             continue;
@@ -898,7 +988,9 @@ static int knn_warm_start_nearest_cluster(
             telem->reciprocal_reused++;
             continue;
         }
-        if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+        if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+                                     model, config, telem) ||
+            is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                     model, config, telem))
         {
             continue;
@@ -1263,7 +1355,9 @@ static void knn_search_inter_clusters(
                 continue;
             }
 
-            if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+            if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+                                         model, config, telem) ||
+                is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                         model, config, telem))
             {
                 continue;
@@ -1463,7 +1557,9 @@ static void knn_cross_seed_frontier(
                         {
                             tau = *best_seed_dist;
                         }
-                        if (is_graph_pruned_by_sq8(visited->query_sq8, s_frame, tau,
+                        if (is_graph_pruned_by_sq16(visited->query_sq16, s_frame, tau,
+                                                    model, config, telem) ||
+                            is_graph_pruned_by_sq8(visited->query_sq8, s_frame, tau,
                                                    model, config, telem))
                         {
                             continue;
@@ -1664,7 +1760,9 @@ static void knn_greedy_route_to_basin(
             {
                 routing_tau = tau_heap;
             }
-            if (is_graph_pruned_by_sq8(visited->query_sq8, nb_id, routing_tau,
+            if (is_graph_pruned_by_sq16(visited->query_sq16, nb_id, routing_tau,
+                                        model, config, telem) ||
+                is_graph_pruned_by_sq8(visited->query_sq8, nb_id, routing_tau,
                                        model, config, telem))
             {
                 continue;
@@ -1918,7 +2016,9 @@ static void knn_direct_basin_expansion(
             continue;
         }
 
-        if (is_graph_pruned_by_sq8(visited->query_sq8, nb_id, current_tau,
+        if (is_graph_pruned_by_sq16(visited->query_sq16, nb_id, current_tau,
+                                    model, config, telem) ||
+            is_graph_pruned_by_sq8(visited->query_sq8, nb_id, current_tau,
                                    model, config, telem))
         {
             if (heap->count >= heap->k)
@@ -2210,7 +2310,9 @@ static void knn_direct_basin_expansion(
                     continue;
                 }
 
-                if (is_graph_pruned_by_sq8(visited->query_sq8, nb2, current_tau,
+                if (is_graph_pruned_by_sq16(visited->query_sq16, nb2, current_tau,
+                                            model, config, telem) ||
+                    is_graph_pruned_by_sq8(visited->query_sq8, nb2, current_tau,
                                            model, config, telem))
                 {
                     continue;
@@ -2496,12 +2598,14 @@ static int knn_cross_explore_graph_frontier(
                 continue;
             }
 
-            double sq8_tau = current_tau;
-            if (best_seed_dist != NULL && *best_seed_dist > sq8_tau)
+            double sq_tau = current_tau;
+            if (best_seed_dist != NULL && *best_seed_dist > sq_tau)
             {
-                sq8_tau = *best_seed_dist;
+                sq_tau = *best_seed_dist;
             }
-            if (is_graph_pruned_by_sq8(visited->query_sq8, nb_id, sq8_tau,
+            if (is_graph_pruned_by_sq16(visited->query_sq16, nb_id, sq_tau,
+                                        model, config, telem) ||
+                is_graph_pruned_by_sq8(visited->query_sq8, nb_id, sq_tau,
                                        model, config, telem))
             {
                 continue;
@@ -2674,7 +2778,9 @@ static int knn_cross_explore_graph_frontier(
                     continue;
                 }
 
-                if (is_graph_pruned_by_sq8(visited->query_sq8, nb_id, current_tau,
+                if (is_graph_pruned_by_sq16(visited->query_sq16, nb_id, current_tau,
+                                            model, config, telem) ||
+                    is_graph_pruned_by_sq8(visited->query_sq8, nb_id, current_tau,
                                            model, config, telem))
                 {
                     continue;
@@ -2850,7 +2956,9 @@ static void knn_cross_eval_intra_cluster(
                 continue;
             }
 
-            if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+            if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+                                         model, config, telem) ||
+                is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                         model, config, telem))
             {
                 continue;
@@ -3066,7 +3174,9 @@ static void knn_cross_eval_inter_clusters(
                 continue;
             }
 
-            if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+            if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+                                         model, config, telem) ||
+                is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                         model, config, telem))
             {
                 continue;
@@ -3602,6 +3712,9 @@ int knn_run_search(
     uint64_t global_telem_sq8_evals = 0;
     uint64_t global_telem_sq8_pruned = 0;
     uint64_t global_telem_sq8_graph_pruned = 0;
+    uint64_t global_telem_sq16_evals = 0;
+    uint64_t global_telem_sq16_pruned = 0;
+    uint64_t global_telem_sq16_graph_pruned = 0;
 
 #ifdef _OPENMP
 #pragma omp parallel reduction(+:global_telem_calls, global_telem_l0, global_telem_l1, \
@@ -3611,7 +3724,9 @@ int knn_run_search(
                                  global_telem_angular, global_telem_containment,        \
                                  global_telem_cand, global_telem_traj,                  \
                                  global_telem_sq8_evals, global_telem_sq8_pruned,      \
-                                 global_telem_sq8_graph_pruned)
+                                 global_telem_sq8_graph_pruned,                         \
+                                 global_telem_sq16_evals, global_telem_sq16_pruned,    \
+                                 global_telem_sq16_graph_pruned)
 #endif
     {
         KnnFrameReader thread_cand_reader;
@@ -3630,6 +3745,9 @@ int knn_run_search(
             malloc((size_t)model->frame_elements * elem_size);
         uint8_t *query_sq8 =
             config->use_sq8 ? (uint8_t *)malloc((size_t)model->frame_elements) : NULL;
+        int16_t *query_sq16 =
+            config->use_sq16 ? (int16_t *)malloc((size_t)model->frame_elements *
+                                                 sizeof(int16_t)) : NULL;
         double *anchor_dists =
             (double *)malloc((size_t)model->num_clusters * sizeof(double));
         ClusterScore *scores_buf =
@@ -3648,6 +3766,7 @@ int knn_run_search(
         visited.tags = (uint32_t *)calloc((size_t)N_cand, sizeof(uint32_t));
         visited.epoch = 1;
         visited.query_sq8 = query_sq8;
+        visited.query_sq16 = query_sq16;
 
 #ifdef _OPENMP
 #pragma omp for schedule(static)
@@ -3680,6 +3799,20 @@ int knn_run_search(
                     {
                         sq8_quantize_float(
                             (const float *)query_buffer, query_sq8, &model->sq8_params);
+                    }
+                }
+
+                if (config->use_sq16 && query_sq16 != NULL)
+                {
+                    if (model->is_double)
+                    {
+                        sq16_quantize_double(
+                            (const double *)query_buffer, query_sq16, &model->sq16_params);
+                    }
+                    else
+                    {
+                        sq16_quantize_float(
+                            (const float *)query_buffer, query_sq16, &model->sq16_params);
                     }
                 }
 
@@ -3744,6 +3877,9 @@ int knn_run_search(
         global_telem_sq8_evals += thread_telem.sq8_evaluations;
         global_telem_sq8_pruned += thread_telem.sq8_members_pruned;
         global_telem_sq8_graph_pruned += thread_telem.sq8_graph_pruned;
+        global_telem_sq16_evals += thread_telem.sq16_evaluations;
+        global_telem_sq16_pruned += thread_telem.sq16_members_pruned;
+        global_telem_sq16_graph_pruned += thread_telem.sq16_graph_pruned;
 
         if (visited.tags != NULL)
         {
@@ -3753,6 +3889,11 @@ int knn_run_search(
         if (query_sq8 != NULL)
         {
             free(query_sq8);
+        }
+
+        if (query_sq16 != NULL)
+        {
+            free(query_sq16);
         }
 
         free(scores_buf);
@@ -3822,6 +3963,9 @@ int knn_run_search(
     telemetry->sq8_evaluations = global_telem_sq8_evals;
     telemetry->sq8_members_pruned = global_telem_sq8_pruned;
     telemetry->sq8_graph_pruned = global_telem_sq8_graph_pruned;
+    telemetry->sq16_evaluations = global_telem_sq16_evals;
+    telemetry->sq16_members_pruned = global_telem_sq16_pruned;
+    telemetry->sq16_graph_pruned = global_telem_sq16_graph_pruned;
     telemetry->total_candidates_considered = global_telem_cand;
     telemetry->time_search_ms = (end_time.tv_sec - start_time.tv_sec) * 1000.0 +
                                 (end_time.tv_nsec - start_time.tv_nsec) / 1000000.0;

@@ -237,6 +237,11 @@ static void entropy_rank_popcount_scores(
     uint8_t *visited = state->scratch.entropy_visited;
     memset(visited, 0, nc * sizeof(uint8_t));
 
+    if (state->scratch.consistency_mask == NULL)
+    {
+        return;
+    }
+
     #pragma omp parallel for if(M >= 16)
     for (int idx_p = 0; idx_p < M; idx_p++)
     {
@@ -308,6 +313,11 @@ static int entropy_evaluate_hypotheses(
     double              *expected_h_arr)
 {
     (void)H_current;
+    if (state->scratch.consistency_mask == NULL)
+    {
+        return (num_targets > 0) ? candidates[0].id : -1;
+    }
+
     int N = config->algo.maxnbclust;
     int best_target_ci = -1;
     double min_expected_entropy = 1e30;

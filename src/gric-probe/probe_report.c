@@ -187,7 +187,7 @@ void probe_report_print_terminal(
     fprintf(out, "  * Cluster Limit:       -maxcl %d\n", p->recommended_maxcl);
     fprintf(out, "  * Spatial Layout:      -tiles %dx%d\n", p->tiles_x, p->tiles_y);
     fprintf(out, "  * Acceleration:        %s %s %s\n",
-            p->use_sq8 ? "-sq8" : "",
+            p->use_sq16 ? "-sq16" : (p->use_sq8 ? "-sq8" : ""),
             p->te4_enabled ? "-te4" : "",
             p->te5_enabled ? "-te5" : "");
     fprintf(out, "  * Sparse DCC:          %s%s%s\n",
@@ -221,7 +221,11 @@ void probe_report_print_terminal(
     {
         fprintf(out, " -tm %.2f", p->tm_mixing_coeff);
     }
-    if (p->use_sq8)
+    if (p->use_sq16)
+    {
+        fprintf(out, " -sq16");
+    }
+    else if (p->use_sq8)
     {
         fprintf(out, " -sq8");
     }
@@ -280,6 +284,7 @@ void probe_report_print_env(
     fprintf(out, "export GRIC_MAXCL=%d\n", p->recommended_maxcl);
     fprintf(out, "export GRIC_TILES=\"%dx%d\"\n", p->tiles_x, p->tiles_y);
     fprintf(out, "export GRIC_USE_SQ8=%d\n", p->use_sq8);
+    fprintf(out, "export GRIC_USE_SQ16=%d\n", p->use_sq16);
     fprintf(out, "export GRIC_PREDICT=%d\n", p->pred_enabled);
     fprintf(out, "export GRIC_PRED_H=%d\n", p->pred_h);
     fprintf(out, "export GRIC_TM_MIX=%.4f\n", p->tm_mixing_coeff);
