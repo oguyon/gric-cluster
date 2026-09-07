@@ -362,11 +362,27 @@ int main(int argc, char *argv[])
 
             if (!rlim_set)
             {
-                if (strcasecmp(config.optim.preset_name, "fine") == 0)
+                if (strcasecmp(config.optim.preset_name, "p01") == 0 ||
+                    strcasecmp(config.optim.preset_name, "1%") == 0 ||
+                    strcasecmp(config.optim.preset_name, "ultrafine") == 0)
+                {
+                    config.algo.rlim = dataset_prof.rlim_p01;
+                }
+                else if (strcasecmp(config.optim.preset_name, "p03") == 0 ||
+                         strcasecmp(config.optim.preset_name, "3%") == 0 ||
+                         strcasecmp(config.optim.preset_name, "vfine") == 0)
+                {
+                    config.algo.rlim = dataset_prof.rlim_p03;
+                }
+                else if (strcasecmp(config.optim.preset_name, "fine") == 0 ||
+                         strcasecmp(config.optim.preset_name, "p05") == 0 ||
+                         strcasecmp(config.optim.preset_name, "5%") == 0)
                 {
                     config.algo.rlim = dataset_prof.rlim_fine;
                 }
-                else if (strcasecmp(config.optim.preset_name, "coarse") == 0)
+                else if (strcasecmp(config.optim.preset_name, "coarse") == 0 ||
+                         strcasecmp(config.optim.preset_name, "p25") == 0 ||
+                         strcasecmp(config.optim.preset_name, "25%") == 0)
                 {
                     config.algo.rlim = dataset_prof.rlim_coarse;
                 }
