@@ -279,13 +279,14 @@ add_executable(gric-knn
     src/gric-knn/knn_reader.c
     src/gric-knn/knn_engine.c
     src/gric-knn/knn_writer.c
+    src/gric-cluster/math/framedistance.c
     src/shared/cluster_locator.c
     src/shared/cli_colors.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
     src/shared/gric_profile.c
 )
-target_include_directories(gric-knn PRIVATE src/gric-knn src/shared src)
+target_include_directories(gric-knn PRIVATE src/gric-knn src/gric-cluster/math src/shared src)
 target_link_libraries(gric-knn m)
 if (OpenMP_C_FOUND)
     target_link_libraries(gric-knn OpenMP::OpenMP_C)

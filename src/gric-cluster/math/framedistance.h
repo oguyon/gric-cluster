@@ -3,16 +3,18 @@
 
 #include "common.h"
 
+#if defined(__AVX512F__)
+#define FRAMEDIST_BATCH_SIZE 8
+#else
+#define FRAMEDIST_BATCH_SIZE 4
+#endif
+
 /**
- * @brief Computes the Euclidean distance between two frames.
+ * framedist() - Computes the Euclidean distance between two frames.
+ * @a: Pointer to the first Frame.
+ * @b: Pointer to the second Frame.
  *
- * Checks that the frames have matching dimensions (width and height),
- * and then computes the L2 Euclidean distance between their pixel data.
- * Utilizes SIMD/AVX2 vectorization when compiled on supporting x86 architectures.
- *
- * @param a Pointer to the first Frame.
- * @param b Pointer to the second Frame.
- * @return The Euclidean distance, or -1.0 if the frame dimensions mismatch.
+ * Return: The Euclidean distance, or -1.0 if the frame dimensions mismatch.
  */
 double framedist(
     const Frame *a,
@@ -27,5 +29,37 @@ double framedist_double(
     const double *restrict da,
     const double *restrict db,
     long                   size);
+
+void framedist_batch_1x4_float(
+    const float *restrict        q,
+    const float *const *restrict anchors,
+    double *restrict             out_dists,
+    long                         size);
+
+void framedist_batch_1x4_double(
+    const double *restrict        q,
+    const double *const *restrict anchors,
+    double *restrict              out_dists,
+    long                          size);
+
+void framedist_batch_float(
+    const float *restrict        q,
+    const float *const *restrict anchors,
+    int                          n_anchors,
+    double *restrict             out_dists,
+    long                         size);
+
+void framedist_batch_double(
+    const double *restrict        q,
+    const double *const *restrict anchors,
+    int                          n_anchors,
+    double *restrict             out_dists,
+    long                         size);
+
+void framedist_batch(
+    const Frame  *q,
+    const Frame **anchors,
+    int           n_anchors,
+    double       *out_dists);
 
 #endif // FRAMEDISTANCE_H

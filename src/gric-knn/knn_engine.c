@@ -9,6 +9,7 @@
 #include "knn_reader.h"
 #include "knn_tree.h"
 #include "cluster_locator.h"
+#include "framedistance.h"
 #include <alloca.h>
 #include <math.h>
 #include <stdio.h>
@@ -145,102 +146,6 @@ static inline int find_member_upper_bound(
 }
 
 /**
- * compute_euclidean_distance_float() - Vectorized single-precision Euclidean distance.
- * @da:   Pointer to first pixel array.
- * @db:   Pointer to second pixel array.
- * @size: Number of elements in frame.
- *
- * Return: Euclidean L2 distance as double.
- */
-static inline double compute_euclidean_distance_float(
-    const float *restrict da,
-    const float *restrict db,
-    long                  size)
-{
-    float sum = 0.0f;
-    long i = 0;
-
-#if defined(__AVX__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    if (size >= 8)
-    {
-        __m256 sum_vec = _mm256_setzero_ps();
-        for (; i <= size - 8; i += 8)
-        {
-            __m256 va = _mm256_loadu_ps(&da[i]);
-            __m256 vb = _mm256_loadu_ps(&db[i]);
-            __m256 diff = _mm256_sub_ps(va, vb);
-#ifdef __FMA__
-            sum_vec = _mm256_fmadd_ps(diff, diff, sum_vec);
-#else
-            sum_vec = _mm256_add_ps(sum_vec, _mm256_mul_ps(diff, diff));
-#endif
-        }
-        __m128 vlow = _mm256_castps256_ps128(sum_vec);
-        __m128 vhigh = _mm256_extractf128_ps(sum_vec, 1);
-        __m128 vsum = _mm_add_ps(vlow, vhigh);
-        vsum = _mm_hadd_ps(vsum, vsum);
-        vsum = _mm_hadd_ps(vsum, vsum);
-        sum += _mm_cvtss_f32(vsum);
-    }
-#endif
-
-    for (; i < size; i++)
-    {
-        float diff = da[i] - db[i];
-        sum += diff * diff;
-    }
-
-    return (double)sqrtf(sum);
-}
-
-/**
- * compute_euclidean_distance_double() - Vectorized double-precision Euclidean distance.
- * @da:   Pointer to first pixel array.
- * @db:   Pointer to second pixel array.
- * @size: Number of elements in frame.
- *
- * Return: Euclidean L2 distance.
- */
-static inline double compute_euclidean_distance_double(
-    const double *restrict da,
-    const double *restrict db,
-    long                   size)
-{
-    double sum = 0.0;
-    long i = 0;
-
-#if defined(__AVX__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    if (size >= 4)
-    {
-        __m256d sum_vec = _mm256_setzero_pd();
-        for (; i <= size - 4; i += 4)
-        {
-            __m256d va = _mm256_loadu_pd(&da[i]);
-            __m256d vb = _mm256_loadu_pd(&db[i]);
-            __m256d diff = _mm256_sub_pd(va, vb);
-#ifdef __FMA__
-            sum_vec = _mm256_fmadd_pd(diff, diff, sum_vec);
-#else
-            sum_vec = _mm256_add_pd(sum_vec, _mm256_mul_pd(diff, diff));
-#endif
-        }
-        __m256d hsum = _mm256_hadd_pd(sum_vec, sum_vec);
-        sum += ((double *)&hsum)[0] + ((double *)&hsum)[2];
-    }
-#endif
-
-    for (; i < size; i++)
-    {
-        double diff = da[i] - db[i];
-        sum += diff * diff;
-    }
-
-    return sqrt(sum);
-}
-
-/**
  * compute_euclidean_distance() - Vectorized Euclidean distance between frames.
  * @da:        Pointer to first pixel array.
  * @db:        Pointer to second pixel array.
@@ -257,9 +162,9 @@ static inline double compute_euclidean_distance(
 {
     if (is_double)
     {
-        return compute_euclidean_distance_double((const double *)da, (const double *)db, size);
+        return framedist_double((const double *)da, (const double *)db, size);
     }
-    return compute_euclidean_distance_float((const float *)da, (const float *)db, size);
+    return framedist_float((const float *)da, (const float *)db, size);
 }
 
 /**
@@ -832,6 +737,13 @@ static void knn_search_intra_cluster(
             (uint64_t)start_m + (uint64_t)(home_cl->num_members - end_m);
     }
 
+    long batch_cand_ids[4];
+    const void *batch_ptrs[4];
+    int batch_count = 0;
+    long frame_elem = model->frame_elements;
+    size_t frame_bytes = (size_t)frame_elem *
+        (model->is_double ? sizeof(double) : sizeof(float));
+
     for (int m = start_m; m < end_m; m++)
     {
         long cand_id = (long)home_cl->members[m].frame_id;
@@ -871,20 +783,80 @@ static void knn_search_intra_cluster(
             continue;
         }
 
-        if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+        void *dest = (char *)cand_buffer + (size_t)batch_count * frame_bytes;
+        if (knn_reader_read_frame(reader, cand_id, dest) == 0)
         {
-            telem->framedist_calls++;
-            double d = compute_euclidean_distance(
-                query_data, cand_buffer, model->frame_elements, model->is_double
-            );
+            batch_cand_ids[batch_count] = cand_id;
+            batch_ptrs[batch_count] = dest;
+            batch_count++;
+            if (batch_count == 4)
+            {
+                double dists[4];
+                if (model->is_double)
+                {
+                    framedist_batch_1x4_double(
+                        (const double *)query_data,
+                        (const double *const *)batch_ptrs,
+                        dists,
+                        frame_elem);
+                }
+                else
+                {
+                    framedist_batch_1x4_float(
+                        (const float *)query_data,
+                        (const float *const *)batch_ptrs,
+                        dists,
+                        frame_elem);
+                }
+                telem->framedist_calls += 4;
+                for (int b = 0; b < 4; b++)
+                {
+                    record_neighbor_and_reciprocal(
+                        query_id, batch_cand_ids[b], dists[b],
+                        config, model, heap, all_heaps
+#ifdef _OPENMP
+                        , bucket_locks
+#endif
+                    );
+                }
+                batch_count = 0;
+            }
+        }
+    } // for (int m = start_m; ...)
+
+    if (batch_count > 0)
+    {
+        double dists[4];
+        if (model->is_double)
+        {
+            framedist_batch_double(
+                (const double *)query_data,
+                (const double *const *)batch_ptrs,
+                batch_count,
+                dists,
+                frame_elem);
+        }
+        else
+        {
+            framedist_batch_float(
+                (const float *)query_data,
+                (const float *const *)batch_ptrs,
+                batch_count,
+                dists,
+                frame_elem);
+        }
+        telem->framedist_calls += (uint64_t)batch_count;
+        for (int b = 0; b < batch_count; b++)
+        {
             record_neighbor_and_reciprocal(
-                query_id, cand_id, d, config, model, heap, all_heaps
+                query_id, batch_cand_ids[b], dists[b],
+                config, model, heap, all_heaps
 #ifdef _OPENMP
                 , bucket_locks
 #endif
             );
         }
-    } // for (int m = start_m; ...)
+    }
 }
 
 /**
@@ -1183,6 +1155,12 @@ static void knn_search_inter_clusters(
     long frame_elem = model->frame_elements;
     double eps_factor = 1.0 + config->epsilon;
 
+    long batch_cand_ids[4];
+    const void *batch_ptrs[4];
+    int batch_count = 0;
+    size_t frame_bytes = (size_t)frame_elem *
+        (model->is_double ? sizeof(double) : sizeof(float));
+
     for (int idx = 0; idx < num_cand_clusters; idx++)
     {
         int q = scores_buffer[idx].id;
@@ -1364,21 +1342,81 @@ static void knn_search_inter_clusters(
             }
 
             // Level 4: Exact Distance Evaluation
-            if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+            void *dest = (char *)cand_buffer + (size_t)batch_count * frame_bytes;
+            if (knn_reader_read_frame(reader, cand_id, dest) == 0)
             {
-                telem->framedist_calls++;
-                double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem, model->is_double
-                );
-                record_neighbor_and_reciprocal(
-                    query_id, cand_id, d, config, model, heap, all_heaps
+                batch_cand_ids[batch_count] = cand_id;
+                batch_ptrs[batch_count] = dest;
+                batch_count++;
+                if (batch_count == 4)
+                {
+                    double dists[4];
+                    if (model->is_double)
+                    {
+                        framedist_batch_1x4_double(
+                            (const double *)query_data,
+                            (const double *const *)batch_ptrs,
+                            dists,
+                            frame_elem);
+                    }
+                    else
+                    {
+                        framedist_batch_1x4_float(
+                            (const float *)query_data,
+                            (const float *const *)batch_ptrs,
+                            dists,
+                            frame_elem);
+                    }
+                    telem->framedist_calls += 4;
+                    for (int b = 0; b < 4; b++)
+                    {
+                        record_neighbor_and_reciprocal(
+                            query_id, batch_cand_ids[b], dists[b],
+                            config, model, heap, all_heaps
 #ifdef _OPENMP
-                    , bucket_locks
+                            , bucket_locks
 #endif
-                );
+                        );
+                    }
+                    batch_count = 0;
+                }
             }
         } // for (int m = start_m; ...)
     } // for (int idx = 0; ...)
+
+    if (batch_count > 0)
+    {
+        double dists[4];
+        if (model->is_double)
+        {
+            framedist_batch_double(
+                (const double *)query_data,
+                (const double *const *)batch_ptrs,
+                batch_count,
+                dists,
+                frame_elem);
+        }
+        else
+        {
+            framedist_batch_float(
+                (const float *)query_data,
+                (const float *const *)batch_ptrs,
+                batch_count,
+                dists,
+                frame_elem);
+        }
+        telem->framedist_calls += (uint64_t)batch_count;
+        for (int b = 0; b < batch_count; b++)
+        {
+            record_neighbor_and_reciprocal(
+                query_id, batch_cand_ids[b], dists[b],
+                config, model, heap, all_heaps
+#ifdef _OPENMP
+                , bucket_locks
+#endif
+            );
+        }
+    }
 }
 
 /**
@@ -3742,7 +3780,7 @@ int knn_run_search(
         void *query_buffer =
             malloc((size_t)model->frame_elements * elem_size);
         void *cand_buffer =
-            malloc((size_t)model->frame_elements * elem_size);
+            malloc((size_t)4 * model->frame_elements * elem_size);
         uint8_t *query_sq8 =
             config->use_sq8 ? (uint8_t *)malloc((size_t)model->frame_elements) : NULL;
         int16_t *query_sq16 =
