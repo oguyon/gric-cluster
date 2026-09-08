@@ -660,6 +660,11 @@ int main(int argc, char *argv[])
     state.scratch.refine_queue_last_num_clusters = 0;
     state.scratch.tuple_pred_candidates = (int *)malloc(max_clusters * sizeof(int));
     state.scratch.tuple_pred_count = 0;
+    state.scratch.sq16_cand_indices = (int *)malloc(max_clusters * sizeof(int));
+    state.scratch.sq16_anchor_ptrs =
+        (const int16_t **)malloc(max_clusters * sizeof(const int16_t *));
+    state.scratch.d_min_scratch = (double *)malloc(max_clusters * sizeof(double));
+    state.scratch.d_max_scratch = (double *)malloc(max_clusters * sizeof(double));
 
     // Run Clustering
     if (gric_shm_init(&config, &state) != 0)
@@ -740,6 +745,10 @@ int main(int argc, char *argv[])
     free(state.scratch.entropy_visited);
     free(state.scratch.refine_queue);
     free(state.scratch.tuple_pred_candidates);
+    free(state.scratch.sq16_cand_indices);
+    free((void *)state.scratch.sq16_anchor_ptrs);
+    free(state.scratch.d_min_scratch);
+    free(state.scratch.d_max_scratch);
     free(state.assignments);
 
     if (state.telemetry.pruned_fraction_sum)

@@ -109,25 +109,37 @@ void compute_priors_and_mixing(
     Candidate     *sorting_candidates)
 {
     double sum_prob = 0.0;
+#ifdef _OPENMP
+#pragma omp parallel for reduction(+:sum_prob) if(state->num_clusters >= OMP_MIN_CLUSTERS)
+#endif
     for (int i = 0; i < state->num_clusters; i++)
     {
         sum_prob += state->clusters[i].prob;
     }
-    if (sum_prob > 0)
+
+    if (sum_prob > 0.0)
     {
+        double inv_sum = 1.0 / sum_prob;
+#ifdef _OPENMP
+#pragma omp parallel for if(state->num_clusters >= OMP_MIN_CLUSTERS)
+#endif
         for (int i = 0; i < state->num_clusters; i++)
         {
-            state->clusters[i].prob /= sum_prob;
+            state->clusters[i].prob *= inv_sum;
+            state->scratch.current_gprobs[i] = 1.0;
+            state->scratch.clmembflag[i] = 1;
         }
     }
-
-    for (int i = 0; i < state->num_clusters; i++)
+    else
     {
-        state->scratch.current_gprobs[i] = 1.0;
-    }
-    for (int i = 0; i < state->num_clusters; i++)
-    {
-        state->scratch.clmembflag[i] = 1;
+#ifdef _OPENMP
+#pragma omp parallel for if(state->num_clusters >= OMP_MIN_CLUSTERS)
+#endif
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            state->scratch.current_gprobs[i] = 1.0;
+            state->scratch.clmembflag[i] = 1;
+        }
     }
 
     if (config->optim.pred_mode == 2)
@@ -299,6 +311,9 @@ void compute_priors_and_mixing(
             }
         }
 
+#ifdef _OPENMP
+#pragma omp parallel for if(state->num_clusters >= OMP_MIN_CLUSTERS)
+#endif
         for (int i = 0; i < state->num_clusters; i++)
         {
             double prior = state->clusters[i].prob;

@@ -225,6 +225,10 @@ typedef struct
     int          refine_queue_last_num_clusters; /**< Number of clusters at last queue rebuild */
     int         *tuple_pred_candidates;/**< Pre-populated candidates from joint prediction */
     int          tuple_pred_count;     /**< Number of candidates pre-populated */
+    int         *sq16_cand_indices;    /**< Pre-allocated candidate indices for bulk SQ16 */
+    const int16_t **sq16_anchor_ptrs;  /**< Pre-allocated anchor pointers for bulk SQ16 */
+    double      *d_min_scratch;        /**< Pre-allocated scratch row for DCC bounds */
+    double      *d_max_scratch;        /**< Pre-allocated scratch row for DCC bounds */
 } ClusterScratch;
 
 /* Forward declaration — full definition in cluster_trace.h */

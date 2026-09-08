@@ -137,13 +137,23 @@ void update_consistency_mask_for_new_cluster(
                (size_t)words * sizeof(uint64_t));
     }
 
-    // Pre-load the row of new_cl into heap-allocated arrays to avoid stack overflow
-    double *d_min_new_k = (double *)malloc((new_cl + 1) * sizeof(double));
-    double *d_max_new_k = (double *)malloc((new_cl + 1) * sizeof(double));
+    // Pre-load the row of new_cl using pre-allocated scratch buffers
+    int need_free = 0;
+    double *d_min_new_k = state->scratch.d_min_scratch;
+    double *d_max_new_k = state->scratch.d_max_scratch;
     if (d_min_new_k == NULL || d_max_new_k == NULL)
     {
-        free(d_min_new_k);
-        free(d_max_new_k);
+        d_min_new_k = (double *)malloc((new_cl + 1) * sizeof(double));
+        d_max_new_k = (double *)malloc((new_cl + 1) * sizeof(double));
+        need_free = 1;
+    }
+    if (d_min_new_k == NULL || d_max_new_k == NULL)
+    {
+        if (need_free)
+        {
+            free(d_min_new_k);
+            free(d_max_new_k);
+        }
         return;
     }
     for (int k = 0; k <= new_cl; k++)
@@ -295,6 +305,9 @@ void update_consistency_mask_for_new_cluster(
         }
     }
 
-    free(d_min_new_k);
-    free(d_max_new_k);
+    if (need_free)
+    {
+        free(d_min_new_k);
+        free(d_max_new_k);
+    }
 }

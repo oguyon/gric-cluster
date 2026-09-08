@@ -183,6 +183,27 @@ double sq16_compute_lower_bound(
     double                     epsilon);
 
 /**
+ * @brief Compute sum of squared differences between 1 query and 4 int16 anchors using AVX2.
+ */
+void sq16_dist_squared_batch_1x4_i16(
+    const int16_t *restrict        q,
+    const int16_t *const *restrict anchors,
+    uint64_t *restrict             out_sq_dists,
+    long                           dim);
+
+/**
+ * @brief Bulk filter cluster candidates using 16-bit scalar quantization lower bounds.
+ */
+int sq16_batch_filter_candidates(
+    const int16_t *restrict        q_sq16,
+    const int16_t *const *restrict anchor_ptrs,
+    const int                     *candidate_indices,
+    int                            num_candidates,
+    double                         cutoff_dist,
+    const SQ16Params              *params,
+    int *restrict                  clmembflag);
+
+/**
  * @brief Save quantized dataset buffer and parameters to a binary .sq16 file.
  */
 int sq16_save_sidecar(

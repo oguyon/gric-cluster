@@ -130,6 +130,14 @@ MultiTileState *multitile_init(
             ts->state.scratch.tuple_pred_candidates = malloc(
                 mc * sizeof(int));
             ts->state.scratch.tuple_pred_count = 0;
+            ts->state.scratch.sq16_cand_indices = malloc(
+                mc * sizeof(int));
+            ts->state.scratch.sq16_anchor_ptrs = malloc(
+                mc * sizeof(const int16_t *));
+            ts->state.scratch.d_min_scratch = malloc(
+                mc * sizeof(double));
+            ts->state.scratch.d_max_scratch = malloc(
+                mc * sizeof(double));
 
             /* Init DCC bounds */
             for (size_t ii = 0; ii < pairs; ii++)
@@ -265,6 +273,22 @@ void multitile_free(MultiTileState *mts)
             if (ts->state.scratch.tuple_pred_candidates)
             {
                 free(ts->state.scratch.tuple_pred_candidates);
+            }
+            if (ts->state.scratch.sq16_cand_indices)
+            {
+                free(ts->state.scratch.sq16_cand_indices);
+            }
+            if (ts->state.scratch.sq16_anchor_ptrs)
+            {
+                free((void *)ts->state.scratch.sq16_anchor_ptrs);
+            }
+            if (ts->state.scratch.d_min_scratch)
+            {
+                free(ts->state.scratch.d_min_scratch);
+            }
+            if (ts->state.scratch.d_max_scratch)
+            {
+                free(ts->state.scratch.d_max_scratch);
             }
         } // for each tile m
 

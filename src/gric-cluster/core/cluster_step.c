@@ -23,6 +23,7 @@
 #include "cluster_math.h"
 #include "cluster_prune.h"
 #include "cluster_bounds.h"
+#include "scalar_quant.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -283,6 +284,39 @@ int cluster_frame(
                 compute_priors_and_mixing(
                     config, state, *prev_assigned_cluster, sorting_candidates
                 );
+
+                if (config->optim.use_sq16 && state->current_frame_sq16 != NULL &&
+                    state->scratch.sq16_cand_indices != NULL &&
+                    state->scratch.sq16_anchor_ptrs != NULL)
+                {
+                    int cand_cnt = 0;
+                    for (int cl = 0; cl < state->num_clusters; cl++)
+                    {
+                        if (state->scratch.clmembflag[cl] &&
+                            state->clusters[cl].anchor_sq16 != NULL)
+                        {
+                            state->scratch.sq16_cand_indices[cand_cnt] = cl;
+                            state->scratch.sq16_anchor_ptrs[cand_cnt] =
+                                state->clusters[cl].anchor_sq16;
+                            cand_cnt++;
+                        }
+                    }
+                    if (cand_cnt > 0)
+                    {
+                        state->telemetry.sq16_evals += (uint64_t)cand_cnt;
+                        int pruned = sq16_batch_filter_candidates(
+                            state->current_frame_sq16,
+                            state->scratch.sq16_anchor_ptrs,
+                            state->scratch.sq16_cand_indices,
+                            cand_cnt,
+                            config->algo.rlim,
+                            &config->optim.sq16_params,
+                            state->scratch.clmembflag);
+                        state->telemetry.sq16_pruned += (uint64_t)pruned;
+                        state->telemetry.clusters_pruned += (uint64_t)pruned;
+                    }
+                }
+
                 clock_gettime(CLOCK_MONOTONIC, &step_end);
                 state->telemetry.time_step_3a +=
                     (step_end.tv_sec - step_start.tv_sec) * 1000.0 +

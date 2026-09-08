@@ -167,6 +167,24 @@ static inline double compute_euclidean_distance(
     return framedist_float((const float *)da, (const float *)db, size);
 }
 
+static inline double compute_euclidean_distance_cutoff(
+    const void *restrict da,
+    const void *restrict db,
+    long                 size,
+    int                  is_double,
+    double               cutoff_sq)
+{
+    if (is_double)
+    {
+        return framedist_squared_cutoff_double(
+            (const double *)da, (const double *)db, size, cutoff_sq
+        );
+    }
+    return framedist_squared_cutoff_float(
+        (const float *)da, (const float *)db, size, cutoff_sq
+    );
+}
+
 /**
  * is_member_pruned_by_sq8() - Evaluate SQ8 metric lower bound against current search radius.
  * @query_sq8: Pointer to quantized query vector [dim].
@@ -788,8 +806,12 @@ static void knn_search_intra_cluster(
             if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
             {
                 telem->framedist_calls++;
-                double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem, model->is_double
+                double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
+                               ? config->rlim_cutoff
+                               : current_tau;
+                double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
+                double d = compute_euclidean_distance_cutoff(
+                    query_data, cand_buffer, frame_elem, model->is_double, cutoff_sq
                 );
                 record_neighbor_and_reciprocal(
                     query_id, cand_id, d, config, model, heap, all_heaps
@@ -1365,8 +1387,12 @@ static void knn_search_inter_clusters(
                 if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
                 {
                     telem->framedist_calls++;
-                    double d = compute_euclidean_distance(
-                        query_data, cand_buffer, frame_elem, model->is_double
+                    double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
+                                   ? config->rlim_cutoff
+                                   : current_tau;
+                    double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
+                    double d = compute_euclidean_distance_cutoff(
+                        query_data, cand_buffer, frame_elem, model->is_double, cutoff_sq
                     );
                     record_neighbor_and_reciprocal(
                         query_id, cand_id, d, config, model, heap, all_heaps

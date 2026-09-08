@@ -795,6 +795,188 @@ double sq16_compute_lower_bound(
 }
 
 /**
+ * sq16_dist_squared_batch_1x4_i16() - Compute sum of squared diffs for 1 query vs 4 anchors.
+ * @q:            Pointer to query int16 array [dim].
+ * @anchors:      Array of 4 pointers to candidate anchor int16 arrays [dim].
+ * @out_sq_dists: Array of 4 uint64_t to receive squared integer distances.
+ * @dim:          Vector dimension.
+ *
+ * Employs AVX2 SIMD to evaluate 1 query against 4 candidate anchors simultaneously.
+ */
+void sq16_dist_squared_batch_1x4_i16(
+    const int16_t *restrict        q,
+    const int16_t *const *restrict anchors,
+    uint64_t *restrict             out_sq_dists,
+    long                           dim)
+{
+    long i = 0;
+
+#if defined(__AVX2__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    __m256i sum0_lo = _mm256_setzero_si256(), sum0_hi = _mm256_setzero_si256();
+    __m256i sum1_lo = _mm256_setzero_si256(), sum1_hi = _mm256_setzero_si256();
+    __m256i sum2_lo = _mm256_setzero_si256(), sum2_hi = _mm256_setzero_si256();
+    __m256i sum3_lo = _mm256_setzero_si256(), sum3_hi = _mm256_setzero_si256();
+
+    const int16_t *a0 = anchors[0];
+    const int16_t *a1 = anchors[1];
+    const int16_t *a2 = anchors[2];
+    const int16_t *a3 = anchors[3];
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m256i vq = _mm256_loadu_si256((const __m256i *)(const void *)(q + i));
+
+        __m256i va0 = _mm256_loadu_si256((const __m256i *)(const void *)(a0 + i));
+        __m256i va1 = _mm256_loadu_si256((const __m256i *)(const void *)(a1 + i));
+        __m256i va2 = _mm256_loadu_si256((const __m256i *)(const void *)(a2 + i));
+        __m256i va3 = _mm256_loadu_si256((const __m256i *)(const void *)(a3 + i));
+
+        __m256i d0 = _mm256_sub_epi16(vq, va0);
+        __m256i d1 = _mm256_sub_epi16(vq, va1);
+        __m256i d2 = _mm256_sub_epi16(vq, va2);
+        __m256i d3 = _mm256_sub_epi16(vq, va3);
+
+        __m256i p0 = _mm256_madd_epi16(d0, d0);
+        __m256i p1 = _mm256_madd_epi16(d1, d1);
+        __m256i p2 = _mm256_madd_epi16(d2, d2);
+        __m256i p3 = _mm256_madd_epi16(d3, d3);
+
+        sum0_lo = _mm256_add_epi64(sum0_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p0)));
+        sum0_hi = _mm256_add_epi64(sum0_hi, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p0, 1)));
+
+        sum1_lo = _mm256_add_epi64(sum1_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p1)));
+        sum1_hi = _mm256_add_epi64(sum1_hi, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p1, 1)));
+
+        sum2_lo = _mm256_add_epi64(sum2_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p2)));
+        sum2_hi = _mm256_add_epi64(sum2_hi, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p2, 1)));
+
+        sum3_lo = _mm256_add_epi64(sum3_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p3)));
+        sum3_hi = _mm256_add_epi64(sum3_hi, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p3, 1)));
+    } // for (; i <= dim - 16; i += 16)
+
+    __m256i s0 = _mm256_add_epi64(sum0_lo, sum0_hi);
+    __m128i r0 = _mm_add_epi64(_mm256_castsi256_si128(s0), _mm256_extracti128_si256(s0, 1));
+    out_sq_dists[0] = (uint64_t)_mm_cvtsi128_si64(r0) + (uint64_t)_mm_extract_epi64(r0, 1);
+
+    __m256i s1 = _mm256_add_epi64(sum1_lo, sum1_hi);
+    __m128i r1 = _mm_add_epi64(_mm256_castsi256_si128(s1), _mm256_extracti128_si256(s1, 1));
+    out_sq_dists[1] = (uint64_t)_mm_cvtsi128_si64(r1) + (uint64_t)_mm_extract_epi64(r1, 1);
+
+    __m256i s2 = _mm256_add_epi64(sum2_lo, sum2_hi);
+    __m128i r2 = _mm_add_epi64(_mm256_castsi256_si128(s2), _mm256_extracti128_si256(s2, 1));
+    out_sq_dists[2] = (uint64_t)_mm_cvtsi128_si64(r2) + (uint64_t)_mm_extract_epi64(r2, 1);
+
+    __m256i s3 = _mm256_add_epi64(sum3_lo, sum3_hi);
+    __m128i r3 = _mm_add_epi64(_mm256_castsi256_si128(s3), _mm256_extracti128_si256(s3, 1));
+    out_sq_dists[3] = (uint64_t)_mm_cvtsi128_si64(r3) + (uint64_t)_mm_extract_epi64(r3, 1);
+#else
+    out_sq_dists[0] = 0;
+    out_sq_dists[1] = 0;
+    out_sq_dists[2] = 0;
+    out_sq_dists[3] = 0;
+    const int16_t *a0 = anchors[0];
+    const int16_t *a1 = anchors[1];
+    const int16_t *a2 = anchors[2];
+    const int16_t *a3 = anchors[3];
+#endif
+
+    for (; i < dim; i++)
+    {
+        int32_t qv = (int32_t)q[i];
+        int32_t diff0 = qv - (int32_t)a0[i];
+        int32_t diff1 = qv - (int32_t)a1[i];
+        int32_t diff2 = qv - (int32_t)a2[i];
+        int32_t diff3 = qv - (int32_t)a3[i];
+        out_sq_dists[0] += (uint64_t)(diff0 * diff0);
+        out_sq_dists[1] += (uint64_t)(diff1 * diff1);
+        out_sq_dists[2] += (uint64_t)(diff2 * diff2);
+        out_sq_dists[3] += (uint64_t)(diff3 * diff3);
+    } // for (; i < dim; i++)
+}
+
+/**
+ * sq16_batch_filter_candidates() - Bulk filter cluster candidates using SQ16 lower bounds.
+ * @q_sq16:            Pointer to query int16 array [dim].
+ * @anchor_ptrs:       Array of pointers to candidate cluster anchor int16 arrays.
+ * @candidate_indices: Array of cluster indices corresponding to anchor_ptrs.
+ * @num_candidates:    Total count of candidates to evaluate.
+ * @cutoff_dist:       Radius cutoff threshold (rlim).
+ * @params:            Pointer to SQ16Params.
+ * @clmembflag:        Membership flags array to be updated (0 = pruned).
+ *
+ * Evaluates candidate clusters in SIMD batches of 4. Prunes candidates whose metric
+ * lower bound strictly exceeds @cutoff_dist.
+ *
+ * Return: Number of candidates pruned.
+ */
+int sq16_batch_filter_candidates(
+    const int16_t *restrict        q_sq16,
+    const int16_t *const *restrict anchor_ptrs,
+    const int                     *candidate_indices,
+    int                            num_candidates,
+    double                         cutoff_dist,
+    const SQ16Params              *params,
+    int *restrict                  clmembflag)
+{
+    if (num_candidates <= 0 || q_sq16 == NULL || anchor_ptrs == NULL)
+    {
+        return 0;
+    }
+
+    double raw_thresh = (cutoff_dist + 2.0 * (double)params->err_radius) / (double)params->scale;
+    uint64_t ssd_thresh = 0;
+    if (raw_thresh > 0.0)
+    {
+        ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+    }
+
+    int pruned_count = 0;
+    long dim = params->dim;
+
+    int b_count = num_candidates / 4;
+#ifdef _OPENMP
+#pragma omp parallel for reduction(+:pruned_count) schedule(static) if(num_candidates >= 256)
+#endif
+    for (int b = 0; b < b_count; b++)
+    {
+        int idx = b * 4;
+        const int16_t *batch_anchors[4];
+        batch_anchors[0] = anchor_ptrs[idx];
+        batch_anchors[1] = anchor_ptrs[idx + 1];
+        batch_anchors[2] = anchor_ptrs[idx + 2];
+        batch_anchors[3] = anchor_ptrs[idx + 3];
+
+        uint64_t out_ssd[4];
+        sq16_dist_squared_batch_1x4_i16(q_sq16, batch_anchors, out_ssd, dim);
+
+        for (int k = 0; k < 4; k++)
+        {
+            if (out_ssd[k] > ssd_thresh)
+            {
+                int cl_id = candidate_indices[idx + k];
+                clmembflag[cl_id] = 0;
+                pruned_count++;
+            }
+        }
+    } // for (int b = 0; b < b_count; b++)
+
+    // Handle scalar remainder
+    for (int i = b_count * 4; i < num_candidates; i++)
+    {
+        uint64_t ssd = sq16_dist_squared_i16(q_sq16, anchor_ptrs[i], dim);
+        if (ssd > ssd_thresh)
+        {
+            int cl_id = candidate_indices[i];
+            clmembflag[cl_id] = 0;
+            pruned_count++;
+        }
+    }
+
+    return pruned_count;
+}
+
+/**
  * sq16_save_sidecar() - Save quantized dataset buffer and parameters to a binary .sq16 file.
  * @filepath:   Path to destination .sq16 file.
  * @params:     Pointer to SQ16Params.

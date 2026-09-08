@@ -30,6 +30,18 @@ double framedist_double(
     const double *restrict db,
     long                   size);
 
+double framedist_squared_cutoff_float(
+    const float *restrict da,
+    const float *restrict db,
+    long                  size,
+    double                cutoff_sq);
+
+double framedist_squared_cutoff_double(
+    const double *restrict da,
+    const double *restrict db,
+    long                   size,
+    double                 cutoff_sq);
+
 void framedist_batch_1x4_float(
     const float *restrict        q,
     const float *const *restrict anchors,
