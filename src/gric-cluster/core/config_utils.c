@@ -110,6 +110,18 @@ static int apply_algo_option(
         config->optim.use_sq16 = 0;
         return 0;
     }
+    else if (matches(key, "-batch-dist") || matches(key, "--batch-dist") ||
+             matches(key, "-batchdist"))
+    {
+        config->optim.use_batch_dist = 1;
+        return 0;
+    }
+    else if (matches(key, "-no-batch-dist") || matches(key, "--no-batch-dist") ||
+             matches(key, "no_batch_dist") || matches(key, "-nobatchdist"))
+    {
+        config->optim.use_batch_dist = 0;
+        return 0;
+    }
     else if (matches(key, "-prof") || matches(key, "--prof") || matches(key, "-profile"))
     {
         if (!value)

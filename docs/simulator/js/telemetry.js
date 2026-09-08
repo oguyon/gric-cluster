@@ -1795,6 +1795,16 @@
         btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
         btnKnnSq16.classList.toggle('active', knnUseSq16);
       }
+      const optBatchDistEl = document.getElementById('optBatchDist');
+      if (optBatchDistEl && typeof clusterUseBatchDist !== 'undefined') {
+        optBatchDistEl.classList.toggle('active', clusterUseBatchDist);
+      }
+      const btnKnnBatchDist = document.getElementById('btnKnnBatchDist');
+      if (btnKnnBatchDist && typeof knnUseBatchDist !== 'undefined') {
+        btnKnnBatchDist.classList.toggle('toggle-active', knnUseBatchDist);
+        btnKnnBatchDist.classList.toggle('toggle-cyan', knnUseBatchDist);
+        btnKnnBatchDist.classList.toggle('active', knnUseBatchDist);
+      }
 
       const presetBar = document.getElementById('viewPresetBar');
       if (presetBar) {

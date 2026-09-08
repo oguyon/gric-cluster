@@ -248,6 +248,7 @@ void *wasm_cluster_init(
         soft_bayesian_sigma_coeff;
     h->config.optim.xtile_mode = xtile_mode;
     h->config.optim.xtile_decay = 0.70;
+    h->config.optim.use_batch_dist = 1;
 
     /* --- ConfigOutput (all disabled for WASM) --- */
     h->config.output.verbose_level = 0;
@@ -2396,6 +2397,7 @@ int wasm_knn_run_search(
     config.use_multi_pivot = use_multi_pivot;
     config.use_reciprocal = (!past_only && !future_only) ? 1 : 0;
     config.use_double = 1;
+    config.use_batch_dist = 1;
     config.nthreads = 1;
     config.progress_mode = 0;
     config.verbose_level = 0;

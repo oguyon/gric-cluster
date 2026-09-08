@@ -149,7 +149,7 @@ static void init_new_cluster_distances(
         const Frame *batch_anchors[4];
         double       batch_dists[4];
 
-        while (i + 4 <= new_cl && !config->output.distall_mode)
+        while (i + 4 <= new_cl && !config->output.distall_mode && config->optim.use_batch_dist)
         {
             batch_anchors[0] = &state->clusters[i].anchor;
             batch_anchors[1] = &state->clusters[i + 1].anchor;

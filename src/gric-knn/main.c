@@ -116,6 +116,8 @@ static void print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-sq16-load%s %s<path>%s     Load 16-bit quantized dataset from sidecar file\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-no-batch-dist%s          Disable multi-vector SIMD batch distance\n",
+           ansi_color_green, ansi_reset);
     printf("  %s-prof%s %s<path>%s          Explicit dataset profile file (.gricprof)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-no-prof%s, %s--no-prof%s       Disable auto-loading of .gricprof file\n",
@@ -152,6 +154,7 @@ int main(
     config.use_angular_bound = 1; // Enabled by default for directional pruning
     config.use_trajectory = 0; // Disabled by default; enable for smooth trajectories
     config.use_sq8 = 1; // Enabled by default for 8-bit metric pre-filtering
+    config.use_batch_dist = 1; // Enabled by default for multi-vector SIMD batching
 
     int k_explicitly_set = 0;
     int dtmin_explicitly_set = 0;
@@ -426,6 +429,18 @@ int main(
             config.use_sq16 = 1;
             config.use_sq8 = 0;
             config.sq16_approx = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-batch-dist") == 0 ||
+                 strcmp(argv[arg_idx], "--batch-dist") == 0 ||
+                 strcmp(argv[arg_idx], "-batchdist") == 0)
+        {
+            config.use_batch_dist = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-batch-dist") == 0 ||
+                 strcmp(argv[arg_idx], "--no-batch-dist") == 0 ||
+                 strcmp(argv[arg_idx], "-nobatchdist") == 0)
+        {
+            config.use_batch_dist = 0;
         }
         else if (strcmp(argv[arg_idx], "-prof") == 0 ||
                  strcmp(argv[arg_idx], "--prof") == 0)

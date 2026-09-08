@@ -783,6 +783,24 @@ static void knn_search_intra_cluster(
             continue;
         }
 
+        if (!config->use_batch_dist)
+        {
+            if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+            {
+                telem->framedist_calls++;
+                double d = compute_euclidean_distance(
+                    query_data, cand_buffer, frame_elem, model->is_double
+                );
+                record_neighbor_and_reciprocal(
+                    query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                    , bucket_locks
+#endif
+                );
+            }
+            continue;
+        }
+
         void *dest = (char *)cand_buffer + (size_t)batch_count * frame_bytes;
         if (knn_reader_read_frame(reader, cand_id, dest) == 0)
         {
@@ -1342,6 +1360,24 @@ static void knn_search_inter_clusters(
             }
 
             // Level 4: Exact Distance Evaluation
+            if (!config->use_batch_dist)
+            {
+                if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+                {
+                    telem->framedist_calls++;
+                    double d = compute_euclidean_distance(
+                        query_data, cand_buffer, frame_elem, model->is_double
+                    );
+                    record_neighbor_and_reciprocal(
+                        query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                        , bucket_locks
+#endif
+                    );
+                }
+                continue;
+            }
+
             void *dest = (char *)cand_buffer + (size_t)batch_count * frame_bytes;
             if (knn_reader_read_frame(reader, cand_id, dest) == 0)
             {

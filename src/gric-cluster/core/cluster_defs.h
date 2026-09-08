@@ -84,6 +84,7 @@ typedef struct
     SQ8Params sq8_params;              /**< Uniform scalar quantization parameters */
     int       use_sq16;                /**< 1 to enable 16-bit scalar quantization pruning */
     SQ16Params sq16_params;            /**< Uniform 16-bit scalar quantization parameters */
+    int       use_batch_dist;          /**< 1 to enable multi-vector SIMD batch distance */
     char     *prof_filename;           /**< Path to explicitly loaded .gricprof */
     int       no_prof;                 /**< 1 to disable automatic .gricprof loading */
     char      preset_name[32];         /**< Calibrated radius preset name ("fine", etc.) */
