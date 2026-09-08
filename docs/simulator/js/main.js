@@ -873,6 +873,17 @@
 
       resetSimulation();
       resetView();
+      if (currentDim >= 3 && (plotDimZ === plotDimY || plotDimZ < 2)) {
+        plotDimX = 0;
+        plotDimY = 1;
+        plotDimZ = 2;
+      }
+      if (typeof clampPlottingDimensions === 'function') {
+        clampPlottingDimensions();
+      }
+      if (typeof updatePlottingDimSelectorsUI === 'function') {
+        updatePlottingDimSelectorsUI();
+      }
       updateDatasetStatusBadge();
       updateUI();
     }
@@ -8088,7 +8099,7 @@
       if (bAngular)    { bAngular.style.width    = barPct(angular); }
       if (bMultiPivot) { bMultiPivot.style.width = barPct(multiPivot); }
       if (bGSeeds)     { bGSeeds.style.width     = barPct(gSeeds); }
-      if (bSq8)        { bSq8.style.width        = barPct(sq8Pruned); }
+      if (bSq8)        { bSq8.style.width        = barPct(sqPruned); }
       if (bExact)      { bExact.style.width      = barPct(exact); }
 
       /* Header badges */

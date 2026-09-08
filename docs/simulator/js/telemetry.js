@@ -1611,7 +1611,7 @@
       if (lblKnnSqType) lblKnnSqType.textContent = sqType;
 
       if (sq8EvalsEl) {
-        sq8EvalsEl.textContent = sq8Evals > 0 ? sq8Evals.toLocaleString() : '--';
+        sq8EvalsEl.textContent = sqEvals > 0 ? sqEvals.toLocaleString() : '--';
       }
       if (fullPrecCallsEl) {
         fullPrecCallsEl.textContent = dists.toLocaleString();
@@ -1630,24 +1630,24 @@
         l3PctVal.textContent = `${bruteForce > 0 ? ((l3 / bruteForce) * 100).toFixed(3) : 0}%`;
       }
       if (tempVal) tempVal.textContent = temp.toLocaleString();
-      if (sq8PrunedVal) sq8PrunedVal.textContent = sq8Pruned.toLocaleString();
+      if (sq8PrunedVal) sq8PrunedVal.textContent = sqPruned.toLocaleString();
       if (sq8PctVal) {
         const pct = bruteForce > 0
-          ? ((sq8Pruned / bruteForce) * 100).toFixed(3)
+          ? ((sqPruned / bruteForce) * 100).toFixed(3)
           : 0;
         sq8PctVal.textContent = `${pct}%`;
       }
       if (sq8BreakdownVal) {
         sq8BreakdownVal.textContent =
-          `Members: ${sq8Members.toLocaleString()} | Graph: ${sq8Graph.toLocaleString()}`;
+          `Members: ${sqMembers.toLocaleString()} | Graph: ${sqGraph.toLocaleString()}`;
       }
 
-      const totalHierarchy = Math.max(1, l1 + l2 + l3 + temp + sq8Pruned + dists);
+      const totalHierarchy = Math.max(1, l1 + l2 + l3 + temp + sqPruned + dists);
       if (barL1) barL1.style.width = `${((l1 / totalHierarchy) * 100).toFixed(1)}%`;
       if (barL2) barL2.style.width = `${((l2 / totalHierarchy) * 100).toFixed(1)}%`;
       if (barL3) barL3.style.width = `${((l3 / totalHierarchy) * 100).toFixed(1)}%`;
       if (barTemp) barTemp.style.width = `${((temp / totalHierarchy) * 100).toFixed(1)}%`;
-      if (barSq8) barSq8.style.width = `${((sq8Pruned / totalHierarchy) * 100).toFixed(1)}%`;
+      if (barSq8) barSq8.style.width = `${((sqPruned / totalHierarchy) * 100).toFixed(1)}%`;
       if (barExact) barExact.style.width = `${((dists / totalHierarchy) * 100).toFixed(1)}%`;
 
       // 3. Memory Tab
@@ -3531,6 +3531,7 @@
 
       // Reset clustering while keeping dataset staging pipeline clean
       resetClustering(false);
+      const prevDim = currentDim;
 
       const descEl = document.getElementById('benchmarkDesc');
       if (descEl) {
@@ -3583,6 +3584,14 @@
         } else {
           currentDim = (typeof getBenchmarkDim === 'function')
             ? getBenchmarkDim(currentBenchmark) : (is3DBenchmark(currentBenchmark) ? 3 : 2);
+          if (prevDim <= 2 && currentDim >= 3) {
+            plotDimX = 0;
+            plotDimY = 1;
+            plotDimZ = 2;
+            if (typeof resetView === 'function') {
+              resetView();
+            }
+          }
           if (currentBenchmark.startsWith('32D') || currentDim === 32) {
             if (typeof setClusteringRlim === 'function') {
               setClusteringRlim(1.0, false);
@@ -3659,6 +3668,13 @@
         noise: noiseSigma
       };
 
+      if (typeof clampPlottingDimensions === 'function') {
+        clampPlottingDimensions();
+      }
+      if (typeof updatePlottingDimSelectorsUI === 'function') {
+        updatePlottingDimSelectorsUI();
+      }
+
       // Also save to datasetSlots dictionary
       saveSlotState(activeDatasetSlot);
 
@@ -3681,13 +3697,6 @@
           dataMode === 'coord' && benchmarkDataset.length > 0) {
         DesktopBridge.stageDatasetFile(currentBenchmark, benchmarkDataset)
           .catch(err => console.warn('[DesktopBridge] Auto-stage export failed:', err));
-      }
-
-      if (typeof clampPlottingDimensions === 'function') {
-        clampPlottingDimensions();
-      }
-      if (typeof updatePlottingDimSelectorsUI === 'function') {
-        updatePlottingDimSelectorsUI();
       }
       if (currentBenchmark.startsWith('32D') || currentDim === 32) {
         if (typeof showToast === 'function') {
