@@ -94,44 +94,51 @@ static void write_dcc_results(
         fclose(dcc_bin_fp);
     }
 
-    printf("Writing dcc.txt\n");
-    snprintf(out_path, sizeof(out_path), "%s/dcc.txt", out_dir);
-    FILE *dcc_out = fopen(out_path, "w");
-    if (dcc_out != NULL)
+    if (!config->output.no_txt)
     {
-        for (int i = 0; i < state->num_clusters; i++)
+        printf("Writing dcc.txt\n");
+        snprintf(out_path, sizeof(out_path), "%s/dcc.txt", out_dir);
+        FILE *dcc_out = fopen(out_path, "w");
+        if (dcc_out != NULL)
         {
-            for (int j = 0; j < state->num_clusters; j++)
-            {
-                double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
-                if (state->scratch.dcc_measured[i * config->algo.maxnbclust + j] && d >= 0)
-                {
-                    fprintf(dcc_out, "%d %d %.6f\n", i, j, d);
-                }
-            }
-        }
-        fclose(dcc_out);
-    }
-
-    if (config->optim.sparse_dcc_mode)
-    {
-        printf("Writing dccmin.txt\n");
-        snprintf(out_path, sizeof(out_path), "%s/dccmin.txt", out_dir);
-        FILE *dccmin_out = fopen(out_path, "w");
-        if (dccmin_out != NULL)
-        {
+            char buf[65536];
+            setvbuf(dcc_out, buf, _IOFBF, sizeof(buf));
             for (int i = 0; i < state->num_clusters; i++)
             {
                 for (int j = 0; j < state->num_clusters; j++)
                 {
-                    double d_min = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
-                    if (d_min > 0.0)
+                    double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                    if (state->scratch.dcc_measured[i * config->algo.maxnbclust + j] && d >= 0)
                     {
-                        fprintf(dccmin_out, "%d %d %.6f\n", i, j, d_min);
+                        fprintf(dcc_out, "%d %d %.6f\n", i, j, d);
                     }
                 }
             }
-            fclose(dccmin_out);
+            fclose(dcc_out);
+        }
+
+        if (config->optim.sparse_dcc_mode)
+        {
+            printf("Writing dccmin.txt\n");
+            snprintf(out_path, sizeof(out_path), "%s/dccmin.txt", out_dir);
+            FILE *dccmin_out = fopen(out_path, "w");
+            if (dccmin_out != NULL)
+            {
+                char buf[65536];
+                setvbuf(dccmin_out, buf, _IOFBF, sizeof(buf));
+                for (int i = 0; i < state->num_clusters; i++)
+                {
+                    for (int j = 0; j < state->num_clusters; j++)
+                    {
+                        double d_min = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                        if (d_min > 0.0)
+                        {
+                            fprintf(dccmin_out, "%d %d %.6f\n", i, j, d_min);
+                        }
+                    }
+                }
+                fclose(dccmin_out);
+            }
         }
     }
 } // write_dcc_results
@@ -237,13 +244,16 @@ static void write_anchors_results(
         fprintf(stderr, "Warning: PNG output requested but not compiled in.\n");
 #endif
     }
-    else if ((is_ascii_input_mode() || is_stream_input_mode() || height == 1) &&
+    else if (!config->output.no_txt &&
+             (is_ascii_input_mode() || is_stream_input_mode() || height == 1) &&
              !config->output.fitsout_mode)
     {
         snprintf(out_path, sizeof(out_path), "%s/anchors.txt", out_dir);
         FILE *afptr = fopen(out_path, "w");
         if (afptr != NULL)
         {
+            char buf[65536];
+            setvbuf(afptr, buf, _IOFBF, sizeof(buf));
             for (int i = 0; i < state->num_clusters; i++)
             {
                 for (long k = 0; k < nelements; k++)
@@ -344,16 +354,21 @@ static void write_counts_results(
         fclose(cnt_bin_fp);
     }
 
-    printf("Writing cluster_counts.txt\n");
-    snprintf(out_path, sizeof(out_path), "%s/cluster_counts.txt", out_dir);
-    FILE *count_out = fopen(out_path, "w");
-    if (count_out != NULL)
+    if (!config->output.no_txt)
     {
-        for (int c = 0; c < state->num_clusters; c++)
+        printf("Writing cluster_counts.txt\n");
+        snprintf(out_path, sizeof(out_path), "%s/cluster_counts.txt", out_dir);
+        FILE *count_out = fopen(out_path, "w");
+        if (count_out != NULL)
         {
-            fprintf(count_out, "Cluster %d: %d frames\n", c, cluster_counts[c]);
+            char buf[65536];
+            setvbuf(count_out, buf, _IOFBF, sizeof(buf));
+            for (int c = 0; c < state->num_clusters; c++)
+            {
+                fprintf(count_out, "Cluster %d: %d frames\n", c, cluster_counts[c]);
+            }
+            fclose(count_out);
         }
-        fclose(count_out);
     }
 } // write_counts_results
 
@@ -402,9 +417,10 @@ static void write_membership_results(
 } // write_membership_results
 
 static void write_radii_results(
-    const char         *out_dir,
-    const ClusterState *state,
-    const int          *cluster_counts)
+    const char          *out_dir,
+    const ClusterConfig *config,
+    const ClusterState  *state,
+    const int           *cluster_counts)
 {
     double *cluster_max_radii = calloc((size_t)state->num_clusters, sizeof(double));
     if (cluster_max_radii == NULL)
@@ -465,17 +481,22 @@ static void write_radii_results(
         fclose(rad_bin_fp);
     }
 
-    snprintf(out_path, sizeof(out_path), "%s/cluster_radii.txt", out_dir);
-    FILE *radii_out = fopen(out_path, "w");
-    if (radii_out != NULL)
+    if (!config->output.no_txt)
     {
-        fprintf(radii_out, "# cluster_id member_count max_radius\n");
-        for (int c = 0; c < state->num_clusters; c++)
+        snprintf(out_path, sizeof(out_path), "%s/cluster_radii.txt", out_dir);
+        FILE *radii_out = fopen(out_path, "w");
+        if (radii_out != NULL)
         {
-            fprintf(radii_out, "%d %d %.6f\n",
-                    c, cluster_counts[c], cluster_max_radii[c]);
+            char buf[65536];
+            setvbuf(radii_out, buf, _IOFBF, sizeof(buf));
+            fprintf(radii_out, "# cluster_id member_count max_radius\n");
+            for (int c = 0; c < state->num_clusters; c++)
+            {
+                fprintf(radii_out, "%d %d %.6f\n",
+                        c, cluster_counts[c], cluster_max_radii[c]);
+            }
+            fclose(radii_out);
         }
-        fclose(radii_out);
     }
     free(cluster_max_radii);
 } // write_radii_results
@@ -820,11 +841,13 @@ static void write_clusters_and_averages(
         }
     }
 
-    if (config->output.output_clusters)
+    if (config->output.output_clusters &&
+        (config->output.pngout_mode || config->output.fitsout_mode || !config->output.no_txt))
     {
         printf("Writing cluster files (%d files)\n", active_cluster_count);
     }
-    if (config->output.average_mode)
+    if (config->output.average_mode &&
+        (config->output.pngout_mode || config->output.fitsout_mode || !config->output.no_txt))
     {
         printf("Writing average cluster files\n");
     }
@@ -837,7 +860,8 @@ static void write_clusters_and_averages(
         );
 #endif
     }
-    else if ((is_ascii_input_mode() || is_stream_input_mode() || height == 1) &&
+    else if (!config->output.no_txt &&
+             (is_ascii_input_mode() || is_stream_input_mode() || height == 1) &&
              !config->output.fitsout_mode)
     {
         write_clusters_and_averages_ascii(
@@ -865,7 +889,7 @@ static void write_clustered_output_file(
     const ClusterState  *state,
     long                 nelements)
 {
-    if (!config->output.output_clustered)
+    if (!config->output.output_clustered || config->output.no_txt)
     {
         return;
     }
@@ -896,6 +920,8 @@ static void write_clustered_output_file(
         FILE *clustered_out = fopen(clustered_fname, "w");
         if (clustered_out != NULL)
         {
+            char buf[65536];
+            setvbuf(clustered_out, buf, _IOFBF, sizeof(buf));
             fprintf(clustered_out, "# Parameters:\n");
             fprintf(clustered_out, "# rlim %.6f\n", config->algo.rlim);
             fprintf(clustered_out, "# dprob %.6f\n", config->algo.deltaprob);
@@ -1005,7 +1031,6 @@ void write_results(
     long height = get_frame_height();
     long nelements = width * height;
 
-    /* Compute cluster counts */
     int *cluster_counts = calloc((size_t)state->num_clusters, sizeof(int));
     if (cluster_counts != NULL)
     {
@@ -1028,7 +1053,7 @@ void write_results(
     write_membership_results(out_dir, config, state);
     if (cluster_counts != NULL)
     {
-        write_radii_results(out_dir, state, cluster_counts);
+        write_radii_results(out_dir, config, state, cluster_counts);
         write_clusters_and_averages(out_dir, config, state, cluster_counts,
                                     width, height, nelements);
         free(cluster_counts);

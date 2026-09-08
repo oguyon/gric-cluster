@@ -35,6 +35,8 @@ typedef struct
 
 #define MAX_MEASURED_PIVOTS 8
 #define GRAPH_FRONTIER_MAX 256
+#define KNN_NUM_BUCKET_LOCKS 4096
+#define KNN_BUCKET_LOCK_MASK (KNN_NUM_BUCKET_LOCKS - 1)
 
 /** Measured anchor pivot record for Multi-Anchor Pivot Bounding (AESA) */
 typedef struct
@@ -731,9 +733,9 @@ static inline void record_neighbor_and_reciprocal(
 #ifdef _OPENMP
     if (bucket_locks != NULL)
     {
-        omp_set_lock(&bucket_locks[query_id & 0xFF]);
+        omp_set_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
         knn_heap_push(heap, (int)cand_id, dist);
-        omp_unset_lock(&bucket_locks[query_id & 0xFF]);
+        omp_unset_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
     }
     else
     {
@@ -752,9 +754,9 @@ static inline void record_neighbor_and_reciprocal(
 #ifdef _OPENMP
             if (bucket_locks != NULL)
             {
-                omp_set_lock(&bucket_locks[cand_id & 0xFF]);
+                omp_set_lock(&bucket_locks[cand_id & KNN_BUCKET_LOCK_MASK]);
                 knn_heap_push(target_heap, (int)query_id, dist);
-                omp_unset_lock(&bucket_locks[cand_id & 0xFF]);
+                omp_unset_lock(&bucket_locks[cand_id & KNN_BUCKET_LOCK_MASK]);
             }
             else
             {
@@ -3945,10 +3947,10 @@ int knn_run_search(
     } // for (long i = 0; ...)
 
 #ifdef _OPENMP
-    omp_lock_t bucket_locks[256];
+    omp_lock_t bucket_locks[KNN_NUM_BUCKET_LOCKS];
     if (!is_cross_dataset)
     {
-        for (int b = 0; b < 256; b++)
+        for (int b = 0; b < KNN_NUM_BUCKET_LOCKS; b++)
         {
             omp_init_lock(&bucket_locks[b]);
         }
@@ -4082,7 +4084,7 @@ int knn_run_search(
         visited.query_sq16 = query_sq16;
 
 #ifdef _OPENMP
-#pragma omp for schedule(static)
+#pragma omp for schedule(guided, 16)
 #endif
         for (long i = 0; i < N_query; i++)
         {
@@ -4236,7 +4238,7 @@ int knn_run_search(
 #ifdef _OPENMP
     if (!is_cross_dataset)
     {
-        for (int b = 0; b < 256; b++)
+        for (int b = 0; b < KNN_NUM_BUCKET_LOCKS; b++)
         {
             omp_destroy_lock(&bucket_locks[b]);
         }

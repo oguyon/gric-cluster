@@ -461,6 +461,7 @@ static void print_help_raw(
 #endif
     print_colored_line("    -dcc                     Enable dcc.txt output (default: enabled)");
     print_colored_line("    -no_dcc                  Disable dcc.txt output");
+    print_colored_line("    -no-txt                  Suppress all ASCII text output (binary only)");
     print_colored_line("    -tm_out                  Enable transition_matrix.txt output "
                        "(default: disabled)");
     print_colored_line("    -anchors                 Enable anchors output (default: disabled)");

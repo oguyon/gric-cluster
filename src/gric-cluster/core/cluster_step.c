@@ -297,6 +297,54 @@ int cluster_frame(
                     config, state, *prev_assigned_cluster, sorting_candidates
                 );
 
+                if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
+                {
+                    long dim = config->optim.sq16_params.dim;
+                    for (int i = 0; i < state->num_clusters; i++)
+                    {
+                        if (state->scratch.clmembflag[i] &&
+                            state->clusters[i].anchor_sq16 != NULL)
+                        {
+                            state->telemetry.sq16_evals++;
+                            uint64_t ssd = sq16_dist_squared_cutoff_i16(
+                                state->current_frame_sq16,
+                                state->clusters[i].anchor_sq16,
+                                dim,
+                                sq16_ssd_thresh
+                            );
+                            if (ssd > sq16_ssd_thresh)
+                            {
+                                state->scratch.clmembflag[i] = 0;
+                                state->telemetry.sq16_pruned++;
+                                state->telemetry.clusters_pruned++;
+                            }
+                        }
+                    }
+                }
+                else if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
+                {
+                    for (int i = 0; i < state->num_clusters; i++)
+                    {
+                        if (state->scratch.clmembflag[i] &&
+                            state->clusters[i].anchor_sq8 != NULL)
+                        {
+                            state->telemetry.sq8_evals++;
+                            double d_lb = sq8_compute_lower_bound(
+                                state->current_frame_sq8,
+                                state->clusters[i].anchor_sq8,
+                                &config->optim.sq8_params,
+                                0.0
+                            );
+                            if (d_lb > config->algo.rlim)
+                            {
+                                state->scratch.clmembflag[i] = 0;
+                                state->telemetry.sq8_pruned++;
+                                state->telemetry.clusters_pruned++;
+                            }
+                        }
+                    }
+                }
+
                 clock_gettime(CLOCK_MONOTONIC, &step_end);
                 state->telemetry.time_step_3a +=
                     (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
