@@ -122,6 +122,10 @@ static void print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-no-prof%s, %s--no-prof%s       Disable auto-loading of .gricprof file\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-no-mutual%s, %s--no-mutual%s   Disable knn_mutual_dists.bin calculation/output\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-no-txt%s, %s--no-txt%s         Disable ASCII knn_results.txt output\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-v, -vv%s               Verbosity level\n",
            ansi_color_green, ansi_reset);
     printf("  %s-h, --help%s            Show this help message\n\n",
@@ -462,6 +466,20 @@ int main(
                  strcmp(argv[arg_idx], "-no-cache") == 0)
         {
             config.no_cache_dataset = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-mutual") == 0 ||
+                 strcmp(argv[arg_idx], "--no-mutual") == 0 ||
+                 strcmp(argv[arg_idx], "-no_mutual") == 0 ||
+                 strcmp(argv[arg_idx], "-nomutual") == 0)
+        {
+            config.no_mutual = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-txt") == 0 ||
+                 strcmp(argv[arg_idx], "--no-txt") == 0 ||
+                 strcmp(argv[arg_idx], "-no_txt") == 0 ||
+                 strcmp(argv[arg_idx], "-notxt") == 0)
+        {
+            config.no_txt = 1;
         }
         else if (strcmp(argv[arg_idx], "-v") == 0)
         {

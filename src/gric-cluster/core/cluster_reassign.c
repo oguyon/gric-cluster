@@ -278,7 +278,7 @@ long run_second_pass_clustering(
     }
 
     /* 7. Rewrite frame_membership.txt if enabled */
-    if (config->output.output_membership)
+    if (config->output.output_membership && !config->output.no_txt)
     {
         char out_path[1024];
         if (config->output.user_outdir != NULL)
@@ -294,6 +294,7 @@ long run_second_pass_clustering(
         FILE *ascii_out = fopen(out_path, "w");
         if (ascii_out != NULL)
         {
+            setvbuf(ascii_out, NULL, _IOFBF, 65536);
             for (long t = 0; t < N; t++)
             {
                 double best_d = 0.0;

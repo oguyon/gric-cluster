@@ -421,6 +421,11 @@ static int apply_io_option(
         config->output.output_dcc = 0;
         return 0;
     }
+    else if (matches(key, "-no-txt") || matches(key, "-no_txt") || matches(key, "--no-txt"))
+    {
+        config->output.no_txt = 1;
+        return 0;
+    }
     else if (matches(key, "-anchors"))
     {
         config->output.output_anchors = 1;

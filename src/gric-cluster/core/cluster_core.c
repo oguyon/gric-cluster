@@ -242,7 +242,7 @@ void run_clustering(
     } // Allocate reusable query and candidate buffers
 
     FILE *ascii_out = NULL;
-    if (config->output.output_membership)
+    if (config->output.output_membership && !config->output.no_txt)
     {
         char out_path[1024];
         if (config->output.user_outdir)
@@ -260,10 +260,14 @@ void run_clustering(
         {
             perror("Failed to open frame_membership.txt");
         }
+        else
+        {
+            setvbuf(ascii_out, NULL, _IOFBF, 65536);
+        }
     }
 
     state->evals_out = NULL;
-    if (config->output.output_evals)
+    if (config->output.output_evals && !config->output.no_txt)
     {
         char out_path[1024];
         if (config->output.user_outdir)
@@ -280,6 +284,10 @@ void run_clustering(
         if (!state->evals_out)
         {
             perror("Failed to open frame_evals.txt");
+        }
+        else
+        {
+            setvbuf(state->evals_out, NULL, _IOFBF, 65536);
         }
     }
 

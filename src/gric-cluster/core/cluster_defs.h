@@ -114,6 +114,7 @@ typedef struct
     int   output_discarded;  /**< 1 to write discarded-frame list */
     int   output_clustered;  /**< 1 to write clustered-frame cube */
     int   output_clusters;   /**< 1 to write per-cluster frame lists */
+    int   no_txt;            /**< 1 to suppress ASCII text file output (write binary only) */
     char *shm_filename;      /**< Shared-memory status image name */
 } ConfigOutput;
 

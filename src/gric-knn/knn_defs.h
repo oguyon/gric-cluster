@@ -98,12 +98,14 @@ typedef struct
     int             sq8_approx;        /**< 1 to relax lower bounds with epsilon */
     int             use_sq16;          /**< 1 to enable 16-bit scalar quantization filtering */
     char           *sq16_save_path;    /**< Optional path to save .sq16 sidecar file */
-    char           *sq16_load_path;    /**< Optional path to load .sq16 sidecar file */
+    char           *sq16_load_path;     /**< Optional path to load .sq16 sidecar file */
     int             sq16_approx;       /**< 1 to relax lower bounds with epsilon */
     int             use_batch_dist;    /**< 1 to enable multi-vector SIMD batch distance */
     const char     *prof_filename;     /**< Optional path to .gricprof file */
     int             no_prof;           /**< 1 to disable auto-loading .gricprof */
     int             no_cache_dataset;  /**< 1 to disable automatic dataset caching in RAM */
+    int             no_mutual;         /**< 1 to disable knn_mutual_dists.bin output */
+    int             no_txt;            /**< 1 to disable ASCII results output */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -161,6 +163,8 @@ typedef struct
     const void     **anchor_ptrs;         /**< [M] array of anchor pointers */
     double          *cluster_radii;       /**< [M] array of cluster radii */
     void            *dataset_buffer;      /**< [N x D] resident dataset frames in float/double */
+    void            *dataset_mmap_addr;   /**< Base address if mmap'd */
+    size_t           dataset_mmap_size;   /**< Size of mmap region */
     uint8_t         *sq8_dataset_buffer;  /**< [N x D] resident 8-bit quantized dataset */
     SQ8Params        sq8_params;          /**< Calibration parameters for SQ8 */
     int16_t         *sq16_dataset_buffer; /**< [N x D] resident 16-bit quantized dataset */

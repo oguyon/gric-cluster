@@ -5,6 +5,7 @@
 
 #include "knn_writer.h"
 #include "knn_reader.h"
+#include "framedistance.h"
 #include "../../shared/gric_bin_io.h"
 #include <math.h>
 #include <stdio.h>
@@ -187,28 +188,17 @@ static int write_bin_results(
                                     const void *f_j = (const char *)frames +
                                         (size_t)id_j * (size_t)elem * elem_size;
 
-                                    double sum = 0.0;
+                                    double dist;
                                     if (model->is_double)
                                     {
-                                        const double *di = (const double *)f_i;
-                                        const double *dj = (const double *)f_j;
-                                        for (long p = 0; p < elem; p++)
-                                        {
-                                            double diff = di[p] - dj[p];
-                                            sum += diff * diff;
-                                        }
+                                        dist = framedist_double(
+                                            (const double *)f_i, (const double *)f_j, elem);
                                     }
                                     else
                                     {
-                                        const float *fi = (const float *)f_i;
-                                        const float *fj = (const float *)f_j;
-                                        for (long p = 0; p < elem; p++)
-                                        {
-                                            float diff = fi[p] - fj[p];
-                                            sum += (double)(diff * diff);
-                                        }
+                                        dist = framedist_float(
+                                            (const float *)f_i, (const float *)f_j, elem);
                                     }
-                                    double dist = sqrt(sum);
 
                                     long pair_idx = (long)i * (long)k -
                                         ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
@@ -256,6 +246,9 @@ static int write_ascii_results(
         fprintf(stderr, "Error: Could not open output file '%s' for writing\n", path);
         return -1;
     }
+
+    char buf[65536];
+    setvbuf(f, buf, _IOFBF, sizeof(buf));
 
     long N = (results->num_queries > 0) ? results->num_queries : model->total_dataset_frames;
     int  k = config->k;
@@ -474,11 +467,24 @@ int knn_write_results(
             snprintf(bin_dst_path, sizeof(bin_dst_path), "knn_distances.bin");
             snprintf(bin_mut_path, sizeof(bin_mut_path), "knn_mutual_dists.bin");
         }
-        printf("Writing binary outputs:\n  - %s\n  - %s\n  - %s\n",
-               bin_idx_path, bin_dst_path, bin_mut_path);
-        write_bin_results(bin_idx_path, bin_dst_path, bin_mut_path, config, model, results);
+        const char *mut_path = config->no_mutual ? NULL : bin_mut_path;
+        if (mut_path != NULL)
+        {
+            printf("Writing binary outputs:\n  - %s\n  - %s\n  - %s\n",
+                   bin_idx_path, bin_dst_path, bin_mut_path);
+        }
+        else
+        {
+            printf("Writing binary outputs:\n  - %s\n  - %s\n",
+                   bin_idx_path, bin_dst_path);
+        }
+        write_bin_results(bin_idx_path, bin_dst_path, mut_path, config, model, results);
 
-        printf("Writing ASCII output: %s\n", final_out_path);
-        return write_ascii_results(final_out_path, config, model, results);
+        if (!config->no_txt)
+        {
+            printf("Writing ASCII output: %s\n", final_out_path);
+            return write_ascii_results(final_out_path, config, model, results);
+        }
+        return 0;
     }
 }

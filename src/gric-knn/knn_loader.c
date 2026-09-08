@@ -9,11 +9,15 @@
 #include "knn_tree.h"
 #include "gric_bin_io.h"
 #include <ctype.h>
+#include <fcntl.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -1535,7 +1539,13 @@ void knn_model_free(
         model->anchor_sq16_buffer = NULL;
     }
 
-    if (model->dataset_buffer != NULL)
+    if (model->dataset_mmap_addr != NULL)
+    {
+        munmap(model->dataset_mmap_addr, model->dataset_mmap_size);
+        model->dataset_mmap_addr = NULL;
+        model->dataset_buffer = NULL;
+    }
+    else if (model->dataset_buffer != NULL)
     {
         free(model->dataset_buffer);
         model->dataset_buffer = NULL;
@@ -1994,6 +2004,56 @@ int knn_model_cache_dataset(
     if (total_bytes > 2ULL * 1024 * 1024 * 1024)
     {
         return 0;
+    }
+
+    FILE *fp_bin = fopen(config->input_data_path, "rb");
+    if (fp_bin != NULL)
+    {
+        gric_bin_header_t hdr;
+        char *comment = NULL;
+        if (gric_bin_read_header(fp_bin, &hdr, &comment) == 0)
+        {
+            if (comment != NULL)
+            {
+                free(comment);
+            }
+            int type_matches = (model->is_double &&
+                                hdr.data_type == GRIC_BIN_DTYPE_FLOAT64) ||
+                               (!model->is_double &&
+                                hdr.data_type == GRIC_BIN_DTYPE_FLOAT32);
+            if (type_matches && hdr.num_elements >= (uint64_t)N * (uint64_t)dim)
+            {
+                int fd = fileno(fp_bin);
+                struct stat st;
+                if (fstat(fd, &st) == 0 &&
+                    (size_t)st.st_size >= hdr.header_bytes + total_bytes)
+                {
+                    void *mmap_addr = mmap(NULL, (size_t)st.st_size, PROT_READ,
+                                           MAP_SHARED, fd, 0);
+                    if (mmap_addr != MAP_FAILED)
+                    {
+                        posix_madvise(mmap_addr, (size_t)st.st_size, POSIX_MADV_WILLNEED);
+                        model->dataset_mmap_addr = mmap_addr;
+                        model->dataset_mmap_size = (size_t)st.st_size;
+                        model->dataset_buffer = (char *)mmap_addr + hdr.header_bytes;
+                        config->memory_data = model->dataset_buffer;
+                        fclose(fp_bin);
+                        if (config->verbose_level >= 1)
+                        {
+                            printf("Mmapped resident dataset in RAM: %ld frames (%.2f MB, "
+                                   "zero-copy)\n",
+                                   N, (double)total_bytes / (1024.0 * 1024.0));
+                        }
+                        return 0;
+                    }
+                }
+            }
+        }
+        else if (comment != NULL)
+        {
+            free(comment);
+        }
+        fclose(fp_bin);
     }
 
     void *buf = malloc(total_bytes);
