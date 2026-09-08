@@ -36,9 +36,6 @@ void update_probabilities_and_pruning(
     int            temp_count)
 {
     long local_pruned = 0;
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+ : local_pruned) if(state->num_clusters >= OMP_MIN_CLUSTERS)
-#endif
     for (int cl = 0; cl < state->num_clusters; cl++)
     {
         if (state->scratch.clmembflag[cl] == 0)
@@ -141,9 +138,6 @@ void update_probabilities_and_pruning(
             }
 
             long local_pruned_te4 = 0;
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+ : local_pruned_te4) if(state->num_clusters >= OMP_MIN_CLUSTERS)
-#endif
             for (int k = 0; k < state->num_clusters; k++)
             {
                 if (!state->scratch.clmembflag[k])

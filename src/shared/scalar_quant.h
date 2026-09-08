@@ -174,6 +174,15 @@ uint64_t sq16_dist_squared_i16(
     long                    dim);
 
 /**
+ * @brief Compute sum of squared differences between two int16 vectors with early cutoff.
+ */
+uint64_t sq16_dist_squared_cutoff_i16(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim,
+    uint64_t                ssd_cutoff);
+
+/**
  * @brief Compute guaranteed metric lower bound between two 16-bit quantized vectors.
  */
 double sq16_compute_lower_bound(

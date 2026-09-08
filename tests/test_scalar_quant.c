@@ -407,6 +407,39 @@ static void test_sq16_batch_and_filter()
     printf("  -> SQ16 batch 1x4 and bulk filter passed successfully (%d pruned).\n", pruned);
 }
 
+static void test_sq16_cutoff()
+{
+    printf("[TEST] Testing SQ16 early cutoff correctness...\n");
+    const long dim = 128;
+    int16_t a[128];
+    int16_t b[128];
+
+    for (int rep = 0; rep < 1000; rep++)
+    {
+        for (long j = 0; j < dim; j++)
+        {
+            a[j] = (int16_t)(rand() % 32768);
+            b[j] = (int16_t)(rand() % 32768);
+        }
+
+        uint64_t full_ssd = sq16_dist_squared_i16(a, b, dim);
+
+        // Test with cutoff > full_ssd (must return exact full_ssd)
+        uint64_t high_cutoff = full_ssd + 1000;
+        uint64_t res_high = sq16_dist_squared_cutoff_i16(a, b, dim, high_cutoff);
+        assert(res_high == full_ssd);
+
+        // Test with cutoff < full_ssd (must return > low_cutoff)
+        if (full_ssd > 100)
+        {
+            uint64_t low_cutoff = full_ssd / 2;
+            uint64_t res_low = sq16_dist_squared_cutoff_i16(a, b, dim, low_cutoff);
+            assert(res_low > low_cutoff);
+        }
+    }
+    printf("  -> SQ16 early cutoff passed across 1,000 random vectors.\n");
+}
+
 int main()
 {
     printf("=== Running Scalar Quantization (SQ8 & SQ16) Unit Tests ===\n");
@@ -420,6 +453,7 @@ int main()
     test_sq16_metric_lower_bound_invariance();
     test_sq16_sidecar_roundtrip();
     test_sq16_batch_and_filter();
+    test_sq16_cutoff();
     printf("=== All SQ8 & SQ16 Unit Tests Passed Successfully ===\n");
     return 0;
 }

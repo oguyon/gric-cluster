@@ -270,6 +270,18 @@ int cluster_frame(
             }
         }
 
+        uint64_t sq16_ssd_thresh = 0;
+        if (config->optim.use_sq16)
+        {
+            double raw_thresh = (config->algo.rlim +
+                                 2.0 * (double)config->optim.sq16_params.err_radius) /
+                                (double)config->optim.sq16_params.scale;
+            if (raw_thresh > 0.0)
+            {
+                sq16_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+            }
+        }
+
         // Step 3: Iterative search loop (Prediction & Standard search).
         while (!found)
         {
@@ -284,38 +296,6 @@ int cluster_frame(
                 compute_priors_and_mixing(
                     config, state, *prev_assigned_cluster, sorting_candidates
                 );
-
-                if (config->optim.use_sq16 && state->current_frame_sq16 != NULL &&
-                    state->scratch.sq16_cand_indices != NULL &&
-                    state->scratch.sq16_anchor_ptrs != NULL)
-                {
-                    int cand_cnt = 0;
-                    for (int cl = 0; cl < state->num_clusters; cl++)
-                    {
-                        if (state->scratch.clmembflag[cl] &&
-                            state->clusters[cl].anchor_sq16 != NULL)
-                        {
-                            state->scratch.sq16_cand_indices[cand_cnt] = cl;
-                            state->scratch.sq16_anchor_ptrs[cand_cnt] =
-                                state->clusters[cl].anchor_sq16;
-                            cand_cnt++;
-                        }
-                    }
-                    if (cand_cnt > 0)
-                    {
-                        state->telemetry.sq16_evals += (uint64_t)cand_cnt;
-                        int pruned = sq16_batch_filter_candidates(
-                            state->current_frame_sq16,
-                            state->scratch.sq16_anchor_ptrs,
-                            state->scratch.sq16_cand_indices,
-                            cand_cnt,
-                            config->algo.rlim,
-                            &config->optim.sq16_params,
-                            state->scratch.clmembflag);
-                        state->telemetry.sq16_pruned += (uint64_t)pruned;
-                        state->telemetry.clusters_pruned += (uint64_t)pruned;
-                    }
-                }
 
                 clock_gettime(CLOCK_MONOTONIC, &step_end);
                 state->telemetry.time_step_3a +=
@@ -400,12 +380,12 @@ int cluster_frame(
                 state->current_frame_sq16 != NULL)
             {
                 state->telemetry.sq16_evals++;
-                double d_lb = sq16_compute_lower_bound(
+                uint64_t ssd = sq16_dist_squared_cutoff_i16(
                     state->current_frame_sq16,
                     state->clusters[cj].anchor_sq16,
-                    &config->optim.sq16_params,
-                    0.0);
-                if (d_lb > config->algo.rlim)
+                    config->optim.sq16_params.dim,
+                    sq16_ssd_thresh);
+                if (ssd > sq16_ssd_thresh)
                 {
                     state->telemetry.sq16_pruned++;
                     state->telemetry.clusters_pruned++;

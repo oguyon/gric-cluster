@@ -181,9 +181,6 @@ static void init_new_cluster_distances(
 
         if (!config->output.distall_mode && config->optim.use_batch_dist)
         {
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) if(b_count >= 16)
-#endif
             for (int b = 0; b < b_count; b++)
             {
                 int b_idx = b * 4;
@@ -249,9 +246,6 @@ static void init_new_cluster_distances(
         }
         else
         {
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) if(unvisited_count >= OMP_MIN_CLUSTERS)
-#endif
             for (int i = 0; i < unvisited_count; i++)
             {
                 int cl_idx = unvisited[i];
