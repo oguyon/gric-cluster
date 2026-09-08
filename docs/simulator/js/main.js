@@ -873,6 +873,17 @@
 
       resetSimulation();
       resetView();
+      if (currentDim >= 3 && (plotDimZ === plotDimY || plotDimZ < 2)) {
+        plotDimX = 0;
+        plotDimY = 1;
+        plotDimZ = 2;
+      }
+      if (typeof clampPlottingDimensions === 'function') {
+        clampPlottingDimensions();
+      }
+      if (typeof updatePlottingDimSelectorsUI === 'function') {
+        updatePlottingDimSelectorsUI();
+      }
       updateDatasetStatusBadge();
       updateUI();
     }
@@ -3929,6 +3940,16 @@
       });
     }
 
+    const optBatchDistEl = document.getElementById('optBatchDist');
+    if (optBatchDistEl) {
+      optBatchDistEl.addEventListener('click', () => {
+        clusterUseBatchDist = !clusterUseBatchDist;
+        optBatchDistEl.classList.toggle('active', clusterUseBatchDist);
+        updateCliCommand();
+        draw();
+      });
+    }
+
     document.getElementById('optTM').addEventListener('click', () => {
       useTM = !useTM;
       document.getElementById('optTM').classList.toggle('active', useTM);
@@ -4848,6 +4869,7 @@
         maxcl: (typeof maxcl === 'number') ? maxcl : 2000,
         clusterUseSq8: clusterUseSq8,
         clusterUseSq16: clusterUseSq16,
+        clusterUseBatchDist: clusterUseBatchDist,
         targetMode: targetMode,
         entropyGate: (typeof entropyGate === 'number') ? entropyGate : 0.75,
         useSoftBayesian: useSoftBayesian,
@@ -5040,6 +5062,9 @@
       if (optSq8) optSq8.classList.toggle('active', clusterUseSq8);
       const optSq16 = document.getElementById('optSq16');
       if (optSq16) optSq16.classList.toggle('active', clusterUseSq16);
+      clusterUseBatchDist = prev.clusterUseBatchDist !== undefined ? prev.clusterUseBatchDist : true;
+      const optBatchDist = document.getElementById('optBatchDist');
+      if (optBatchDist) optBatchDist.classList.toggle('active', clusterUseBatchDist);
       pruneMode = prev.pruneMode;
       ['3P', '4P', '5P'].forEach(other => {
         const el = document.getElementById(`prune${other}`);
@@ -5905,6 +5930,9 @@
           } else if (typeof knnUseSq8 !== 'undefined') {
             args.push(knnUseSq8 ? '-sq8' : '-no-sq8');
           }
+          if (typeof knnUseBatchDist !== 'undefined' && !knnUseBatchDist) {
+            args.push('-no-batch-dist');
+          }
           args.push('-progress');
           args.push('-txt');
 
@@ -6446,6 +6474,18 @@
           btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
           btnKnnSq8.classList.toggle('active', knnUseSq8);
         }
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    const btnKnnBatchDist = document.getElementById('btnKnnBatchDist');
+    if (btnKnnBatchDist) {
+      btnKnnBatchDist.addEventListener('click', () => {
+        knnUseBatchDist = !knnUseBatchDist;
+        btnKnnBatchDist.classList.toggle('toggle-active', knnUseBatchDist);
+        btnKnnBatchDist.classList.toggle('toggle-cyan', knnUseBatchDist);
+        btnKnnBatchDist.classList.toggle('active', knnUseBatchDist);
         updateCliCommand();
         draw();
       });
@@ -8059,7 +8099,7 @@
       if (bAngular)    { bAngular.style.width    = barPct(angular); }
       if (bMultiPivot) { bMultiPivot.style.width = barPct(multiPivot); }
       if (bGSeeds)     { bGSeeds.style.width     = barPct(gSeeds); }
-      if (bSq8)        { bSq8.style.width        = barPct(sq8Pruned); }
+      if (bSq8)        { bSq8.style.width        = barPct(sqPruned); }
       if (bExact)      { bExact.style.width      = barPct(exact); }
 
       /* Header badges */
@@ -8248,6 +8288,9 @@
           args.push('-sq8');
         } else {
           args.push('-no-sq16', '-no-sq8');
+        }
+        if (typeof knnUseBatchDist !== 'undefined' && !knnUseBatchDist) {
+          args.push('-no-batch-dist');
         }
 
         if (consoleEl) {
@@ -10492,6 +10535,9 @@
         args.push('-sq16');
       } else if (typeof clusterUseSq8 === 'boolean') {
         args.push(clusterUseSq8 ? '-sq8' : '-no-sq8');
+      }
+      if (typeof clusterUseBatchDist === 'boolean' && !clusterUseBatchDist) {
+        args.push('-no-batch-dist');
       }
       if (maxcl > 0) {
         args.push('-maxcl', maxcl.toString());

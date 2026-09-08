@@ -100,6 +100,7 @@ typedef struct
     char           *sq16_save_path;    /**< Optional path to save .sq16 sidecar file */
     char           *sq16_load_path;    /**< Optional path to load .sq16 sidecar file */
     int             sq16_approx;       /**< 1 to relax lower bounds with epsilon */
+    int             use_batch_dist;    /**< 1 to enable multi-vector SIMD batch distance */
     const char     *prof_filename;     /**< Optional path to .gricprof file */
     int             no_prof;           /**< 1 to disable auto-loading .gricprof */
 } KnnConfig;

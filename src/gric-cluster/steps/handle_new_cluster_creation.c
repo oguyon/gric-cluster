@@ -9,6 +9,7 @@
 #include "cluster_core.h"
 #include "frameread.h"
 #include "cluster_bounds.h"
+#include "framedistance.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,7 +145,40 @@ static void init_new_cluster_distances(
     }
     else
     {
-        for (int i = 0; i < new_cl; i++)
+        int i = 0;
+        const Frame *batch_anchors[4];
+        double       batch_dists[4];
+
+        while (i + 4 <= new_cl && !config->output.distall_mode && config->optim.use_batch_dist)
+        {
+            batch_anchors[0] = &state->clusters[i].anchor;
+            batch_anchors[1] = &state->clusters[i + 1].anchor;
+            batch_anchors[2] = &state->clusters[i + 2].anchor;
+            batch_anchors[3] = &state->clusters[i + 3].anchor;
+
+            framedist_batch(
+                &state->clusters[new_cl].anchor,
+                batch_anchors,
+                4,
+                batch_dists);
+
+            for (int k = 0; k < 4; k++)
+            {
+                int cl_idx = i + k;
+                double d = batch_dists[k];
+                state->scratch.dcc_min[new_cl * N + cl_idx] = d;
+                state->scratch.dcc_min[cl_idx * N + new_cl] = d;
+                state->scratch.dcc_max[new_cl * N + cl_idx] = d;
+                state->scratch.dcc_max[cl_idx * N + new_cl] = d;
+                state->scratch.dcc_measured[new_cl * N + cl_idx] = 1;
+                state->scratch.dcc_measured[cl_idx * N + new_cl] = 1;
+            }
+            state->telemetry.framedist_calls += 4;
+            state->telemetry.framedist_calls_intercluster += 4;
+            i += 4;
+        }
+
+        for (; i < new_cl; i++)
         {
             double d = get_dist(&state->clusters[new_cl].anchor,
                                 &state->clusters[i].anchor, -1, -1.0, -1.0,

@@ -142,7 +142,7 @@
     let showDistLines = true;   // Toggle distance evaluation and solving lines
     let showDistLabels = true;  // Toggle distance measurement pills & badges
     let showClusterLabels = true; // Toggle C0, C1... cluster text labels
-    let showClusterRadii = true; // Toggle cluster receptive field circles (rlim)
+    let showClusterRadii = false; // Toggle cluster receptive field circles (rlim)
     let showTransitionLines = true; // Toggle Markov transition arcs and paths
     let showKnnLines = true;    // Toggle k-NN graph connection vector lines
     let showMotionTail = false; // Toggle recent points trajectory motion trail (off by default)
@@ -276,6 +276,8 @@
     let knnUseSq16 = true; // 16-Bit Scalar Quantization Filtering (Default: true)
     let clusterUseSq8 = false; // 8-Bit Scalar Quantization Metric Pre-Filter
     let clusterUseSq16 = true; // 16-Bit Scalar Quantization Pre-Filter (Default: true)
+    let clusterUseBatchDist = true; // Multi-Vector SIMD Batch Distance (Default: true)
+    let knnUseBatchDist = true; // Multi-Vector SIMD Batch Distance for k-NN (Default: true)
     let knnResults = null;
     let selectedKnnQuerySample = -1;
     let hoveredKnnNeighborId = -1;
@@ -810,12 +812,72 @@
 
     /**
      * Clamp plotting dimensions to valid range [0, currentDim - 1].
+     * Resolves axis collisions and ensures 3D/High-D views have distinct (X, Y, Z) coordinates.
      */
     function clampPlottingDimensions() {
-      const maxDim = (currentDim > 0) ? currentDim - 1 : 2;
-      if (plotDimX < 0 || plotDimX > maxDim) plotDimX = 0;
-      if (plotDimY < 0 || plotDimY > maxDim) plotDimY = Math.min(1, maxDim);
-      if (plotDimZ < 0 || plotDimZ > maxDim) plotDimZ = Math.min(2, maxDim);
+      if (currentDim <= 2) {
+        if (plotDimX < 0 || plotDimX > 1) plotDimX = 0;
+        if (plotDimY < 0 || plotDimY > 1) plotDimY = 1;
+        if (plotDimX === plotDimY) {
+          plotDimX = 0;
+          plotDimY = 1;
+        }
+        // Do NOT clamp plotDimZ down to 1 in 2D mode; keep at least 2 so returning to 3D is clean
+        if (typeof plotDimZ !== 'number' || isNaN(plotDimZ) || plotDimZ < 2) {
+          plotDimZ = 2;
+        }
+        return;
+      }
+
+      const maxDim = currentDim - 1;
+      if (typeof plotDimX !== 'number' || isNaN(plotDimX) || plotDimX < 0 || plotDimX > maxDim) {
+        plotDimX = 0;
+      }
+      if (typeof plotDimY !== 'number' || isNaN(plotDimY) || plotDimY < 0 || plotDimY > maxDim) {
+        plotDimY = Math.min(1, maxDim);
+      }
+      if (typeof plotDimZ !== 'number' || isNaN(plotDimZ) || plotDimZ < 0 || plotDimZ > maxDim) {
+        plotDimZ = Math.min(2, maxDim);
+      }
+
+      if (currentDim === 3) {
+        // Pure 3D datasets strictly use canonical coordinates (0, 1, 2)
+        plotDimX = 0;
+        plotDimY = 1;
+        plotDimZ = 2;
+      } else {
+        // High-D mode: resolve collisions so X, Y, Z represent distinct dimensions
+        if (plotDimY === plotDimX) {
+          plotDimY = (plotDimX !== 1 && maxDim >= 1) ? 1 : 0;
+          for (let d = 0; d <= maxDim; d++) {
+            if (d !== plotDimX) {
+              plotDimY = d;
+              break;
+            }
+          }
+        }
+        if (plotDimZ === plotDimY || plotDimZ === plotDimX) {
+          let resolvedZ = (plotDimX !== 2 && plotDimY !== 2 && maxDim >= 2) ? 2 : -1;
+          if (resolvedZ === -1) {
+            for (let d = 0; d <= maxDim; d++) {
+              if (d !== plotDimX && d !== plotDimY) {
+                resolvedZ = d;
+                break;
+              }
+            }
+          }
+          if (resolvedZ !== -1) {
+            plotDimZ = resolvedZ;
+          }
+        }
+      }
+
+      if (typeof datasetSlots !== 'undefined' && activeDatasetSlot &&
+          datasetSlots[activeDatasetSlot]) {
+        datasetSlots[activeDatasetSlot].plotDimX = plotDimX;
+        datasetSlots[activeDatasetSlot].plotDimY = plotDimY;
+        datasetSlots[activeDatasetSlot].plotDimZ = plotDimZ;
+      }
     }
 
     /**
@@ -880,6 +942,8 @@
      * Synchronize and populate plotting dimension selectors in viewport bar and sidebar.
      */
     function updatePlottingDimSelectorsUI() {
+      clampPlottingDimensions();
+
       const isHighD = (currentDim > 3);
       const projGroup = document.getElementById('projDimGroup');
       const sideCard = document.getElementById('projDimSidebarCard');
@@ -892,8 +956,6 @@
       }
 
       if (!isHighD) return;
-
-      clampPlottingDimensions();
 
       // Sync High-D Mode Selectors
       const selModeTop = document.getElementById('selectHighDModeTop');
@@ -1351,6 +1413,8 @@
         knnUseSq16: true,
         clusterUseSq8: false,
         clusterUseSq16: true,
+        clusterUseBatchDist: true,
+        knnUseBatchDist: true,
         dimDensityResults: null,
         dimDensitySummary: null,
         isDimDensityComputing: false,
@@ -1498,6 +1562,8 @@
       slot.knnUseSq16 = knnUseSq16;
       slot.clusterUseSq8 = clusterUseSq8;
       slot.clusterUseSq16 = clusterUseSq16;
+      slot.clusterUseBatchDist = clusterUseBatchDist;
+      slot.knnUseBatchDist = knnUseBatchDist;
       slot.dimDensityResults = dimDensityResults;
       slot.dimDensitySummary = dimDensitySummary;
       slot.isDimDensityComputing = isDimDensityComputing;
@@ -1571,6 +1637,9 @@
       plotDimX = (typeof slot.plotDimX === 'number') ? slot.plotDimX : 0;
       plotDimY = (typeof slot.plotDimY === 'number') ? slot.plotDimY : 1;
       plotDimZ = (typeof slot.plotDimZ === 'number') ? slot.plotDimZ : 2;
+      if (currentDim >= 3 && (plotDimZ === plotDimY || plotDimZ < 2)) {
+        plotDimZ = 2;
+      }
       clampPlottingDimensions();
       updatePlottingDimSelectorsUI();
       isDatasetStaged = slot.isDatasetStaged || false;
@@ -1683,6 +1752,8 @@
       knnUseSq16 = (slot.knnUseSq16 !== undefined) ? slot.knnUseSq16 : true;
       clusterUseSq8 = (slot.clusterUseSq8 !== undefined) ? slot.clusterUseSq8 : false;
       clusterUseSq16 = (slot.clusterUseSq16 !== undefined) ? slot.clusterUseSq16 : true;
+      clusterUseBatchDist = (slot.clusterUseBatchDist !== undefined) ? slot.clusterUseBatchDist : true;
+      knnUseBatchDist = (slot.knnUseBatchDist !== undefined) ? slot.knnUseBatchDist : true;
       dimDensityResults = slot.dimDensityResults || null;
       dimDensitySummary = slot.dimDensitySummary || null;
       isDimDensityComputing = slot.isDimDensityComputing || false;
@@ -2084,6 +2155,8 @@
       slot.knnUseSq16 = true;
       slot.clusterUseSq8 = false;
       slot.clusterUseSq16 = true;
+      slot.clusterUseBatchDist = true;
+      slot.knnUseBatchDist = true;
 
       // Update toolbar status pill & indicators
       const pill = document.getElementById(`datasetStatusPill_${slotId}`);
@@ -2516,6 +2589,11 @@
         reconPanelBMode = (v === 'single') ? 'single' : 'targets';
         syncReconPanelModeUI();
       },
+      configurable: true
+    });
+    Object.defineProperty(window, 'currentDim', {
+      get: () => currentDim,
+      set: (v) => { currentDim = Number(v) || 3; },
       configurable: true
     });
     Object.defineProperty(window, 'plotDimX', {

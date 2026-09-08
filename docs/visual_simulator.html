@@ -1528,6 +1528,18 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                 </div>
               </div>
 
+              <!-- Multi-Vector SIMD Batch Distance -->
+              <div class="toggle-group"
+                   style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 2px;">
+                <div id="optBatchDist" class="toggle-btn active"
+                     data-tooltip-title="Multi-Vector SIMD Batch Distance"
+                     data-tooltip-badge="CLI: -batch-dist"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Evaluates 1 query frame against 4 candidate anchors simultaneously using AVX2 SIMD multi-accumulators, reducing query memory load traffic by 75%.">
+                  Multi-Vector Batch SIMD (-batch-dist)
+                </div>
+              </div>
+
               <!-- Prior & Subspace Acceleration -->
               <div class="sub-control-card" id="cardPriorSection">
                 <div class="control-label" style="font-weight: 700; color: var(--accent-purple); margin-bottom: 8px;">
@@ -1806,7 +1818,7 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                      data-tooltip-desc="Draws Markov transition vector arcs between clusters.">
                   Markov Vectors
                 </div>
-                <div id="optToggleClusterRadii" class="toggle-btn toggle-active"
+                <div id="optToggleClusterRadii" class="toggle-btn"
                      data-tooltip-title="Cluster Receptive Boundaries"
                      data-tooltip-badge="Radius: rlim"
                      data-tooltip-color="cyan"
@@ -3007,6 +3019,17 @@ integer lower-bound metric pruning.">
                      data-tooltip-desc="Applies 16-bit scalar quantization with SIMD
 integer lower-bound metric pruning (256x tighter bounds, zero-unpack AVX2).">
                   SQ16 (-sq16)
+                </div>
+              </div>
+
+              <!-- Multi-Vector SIMD Batch Distance -->
+              <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 2px;">
+                <div id="btnKnnBatchDist" class="toggle-btn toggle-active toggle-cyan active"
+                     data-tooltip-title="Multi-Vector SIMD Batch Distance"
+                     data-tooltip-badge="CLI: -batch-dist"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Batches surviving k-NN candidate member distance evaluations into 4-packs using AVX2 SIMD multi-accumulators.">
+                  Multi-Vector Batch SIMD (-batch-dist)
                 </div>
               </div>
 

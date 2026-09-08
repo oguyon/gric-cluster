@@ -1932,6 +1932,11 @@ function buildCliCommand() {
     parts.push('-sq8');
   }
 
+  // Multi-Vector SIMD batch distance
+  if (typeof clusterUseBatchDist === 'boolean' && !clusterUseBatchDist) {
+    parts.push('-no-batch-dist');
+  }
+
   // Input placeholder
   parts.push('<input.fits>');
 
@@ -1960,6 +1965,9 @@ function buildCliCommand() {
       knnParts.push('-sq16');
     } else if (typeof knnUseSq8 === 'boolean') {
       knnParts.push(knnUseSq8 ? '-sq8' : '-no-sq8');
+    }
+    if (typeof knnUseBatchDist === 'boolean' && !knnUseBatchDist) {
+      knnParts.push('-no-batch-dist');
     }
     knnParts.push('-o', 'knn_results.fits');
     return parts.join(' ') + ' && \\\n' + knnParts.join(' ');
