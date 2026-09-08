@@ -113,21 +113,24 @@ void compute_priors_and_mixing(
     {
         sum_prob += state->clusters[i].prob;
     }
-    if (sum_prob > 0)
+
+    if (sum_prob > 0.0)
+    {
+        double inv_sum = 1.0 / sum_prob;
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            state->clusters[i].prob *= inv_sum;
+            state->scratch.current_gprobs[i] = 1.0;
+            state->scratch.clmembflag[i] = 1;
+        }
+    }
+    else
     {
         for (int i = 0; i < state->num_clusters; i++)
         {
-            state->clusters[i].prob /= sum_prob;
+            state->scratch.current_gprobs[i] = 1.0;
+            state->scratch.clmembflag[i] = 1;
         }
-    }
-
-    for (int i = 0; i < state->num_clusters; i++)
-    {
-        state->scratch.current_gprobs[i] = 1.0;
-    }
-    for (int i = 0; i < state->num_clusters; i++)
-    {
-        state->scratch.clmembflag[i] = 1;
     }
 
     if (config->optim.pred_mode == 2)

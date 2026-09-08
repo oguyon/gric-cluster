@@ -103,6 +103,7 @@ typedef struct
     int             use_batch_dist;    /**< 1 to enable multi-vector SIMD batch distance */
     const char     *prof_filename;     /**< Optional path to .gricprof file */
     int             no_prof;           /**< 1 to disable auto-loading .gricprof */
+    int             no_cache_dataset;  /**< 1 to disable automatic dataset caching in RAM */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -159,9 +160,11 @@ typedef struct
     float           *graph_mutual_dists;  /**< [N x (graph_k * (graph_k - 1) / 2)] mutual dists */
     const void     **anchor_ptrs;         /**< [M] array of anchor pointers */
     double          *cluster_radii;       /**< [M] array of cluster radii */
+    void            *dataset_buffer;      /**< [N x D] resident dataset frames in float/double */
     uint8_t         *sq8_dataset_buffer;  /**< [N x D] resident 8-bit quantized dataset */
     SQ8Params        sq8_params;          /**< Calibration parameters for SQ8 */
     int16_t         *sq16_dataset_buffer; /**< [N x D] resident 16-bit quantized dataset */
+    int16_t         *anchor_sq16_buffer;  /**< [M x D] resident quantized anchor vectors */
     SQ16Params       sq16_params;         /**< Calibration parameters for SQ16 */
     GricProfile      profile;             /**< Optional dataset profile (.gricprof) */
     int              has_profile;         /**< 1 if dataset profile was loaded */

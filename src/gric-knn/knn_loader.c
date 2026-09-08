@@ -1529,6 +1529,18 @@ void knn_model_free(
         model->sq16_dataset_buffer = NULL;
     }
 
+    if (model->anchor_sq16_buffer != NULL)
+    {
+        free(model->anchor_sq16_buffer);
+        model->anchor_sq16_buffer = NULL;
+    }
+
+    if (model->dataset_buffer != NULL)
+    {
+        free(model->dataset_buffer);
+        model->dataset_buffer = NULL;
+    }
+
     if (model->has_profile)
     {
         gric_profile_free(&model->profile);
@@ -1921,6 +1933,103 @@ int knn_model_build_or_load_sq16(
             fprintf(stderr, "Warning: Failed to write SQ16 sidecar file '%s'\n",
                     config->sq16_save_path);
         }
+    }
+
+    // Pre-quantize anchor vectors for fast Level 2 anchor lower-bound pruning
+    if (model->clusters != NULL && model->num_clusters > 0)
+    {
+        size_t anchor_elems = (size_t)model->num_clusters * (size_t)dim;
+        model->anchor_sq16_buffer = (int16_t *)malloc(anchor_elems * sizeof(int16_t));
+        if (model->anchor_sq16_buffer != NULL)
+        {
+            for (int c = 0; c < model->num_clusters; c++)
+            {
+                int16_t *dst = model->anchor_sq16_buffer + (size_t)c * (size_t)dim;
+                if (model->is_double)
+                {
+                    sq16_quantize_double(
+                        (const double *)model->clusters[c].anchor_data, dst, &model->sq16_params
+                    );
+                }
+                else
+                {
+                    sq16_quantize_float(
+                        (const float *)model->clusters[c].anchor_data, dst, &model->sq16_params
+                    );
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * knn_model_cache_dataset() - Preload dataset frames into resident RAM buffer if feasible.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success (cached or skipped), -1 on error.
+ */
+int knn_model_cache_dataset(
+    KnnModel  *model,
+    KnnConfig *config)
+{
+    if (model == NULL || config == NULL)
+    {
+        return -1;
+    }
+
+    if (config->memory_data != NULL || config->no_cache_dataset)
+    {
+        return 0;
+    }
+
+    long N = model->total_dataset_frames;
+    long dim = model->frame_elements;
+    size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
+    size_t total_bytes = (size_t)N * (size_t)dim * elem_size;
+
+    // Cache if dataset is <= 2 GB
+    if (total_bytes > 2ULL * 1024 * 1024 * 1024)
+    {
+        return 0;
+    }
+
+    void *buf = malloc(total_bytes);
+    if (buf == NULL)
+    {
+        return 0;
+    }
+
+    KnnFrameReader reader;
+    if (knn_reader_open(&reader, config->input_data_path, N,
+                        model->frame_width, model->frame_height,
+                        model->is_double) != 0)
+    {
+        free(buf);
+        return -1;
+    }
+
+    for (long i = 0; i < N; i++)
+    {
+        char *dst = (char *)buf + (size_t)i * (size_t)dim * elem_size;
+        if (knn_reader_read_frame(&reader, i, dst) != 0)
+        {
+            free(buf);
+            knn_reader_close(&reader);
+            return -1;
+        }
+    }
+
+    knn_reader_close(&reader);
+
+    model->dataset_buffer = buf;
+    config->memory_data = buf;
+    if (config->verbose_level >= 1)
+    {
+        printf("Cached resident dataset in RAM: %ld frames (%.2f MB)\n",
+               N, (double)total_bytes / (1024.0 * 1024.0));
     }
 
     return 0;

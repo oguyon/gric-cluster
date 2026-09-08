@@ -457,6 +457,12 @@ int main(
         {
             config.no_prof = 1;
         }
+        else if (strcmp(argv[arg_idx], "-no-mem") == 0 ||
+                 strcmp(argv[arg_idx], "--no-mem") == 0 ||
+                 strcmp(argv[arg_idx], "-no-cache") == 0)
+        {
+            config.no_cache_dataset = 1;
+        }
         else if (strcmp(argv[arg_idx], "-v") == 0)
         {
             config.verbose_level = 2;
@@ -601,6 +607,8 @@ int main(
         fprintf(stderr, "Error: Failed to load cluster model from '%s'\n", config.cluster_dir);
         return 1;
     }
+
+    knn_model_cache_dataset(&model, &config);
 
     // Profile auto-discovery and loading
     char auto_prof_path[1024];

@@ -23,6 +23,7 @@
 #include "cluster_math.h"
 #include "cluster_prune.h"
 #include "cluster_bounds.h"
+#include "scalar_quant.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -269,6 +270,18 @@ int cluster_frame(
             }
         }
 
+        uint64_t sq16_ssd_thresh = 0;
+        if (config->optim.use_sq16)
+        {
+            double raw_thresh = (config->algo.rlim +
+                                 2.0 * (double)config->optim.sq16_params.err_radius) /
+                                (double)config->optim.sq16_params.scale;
+            if (raw_thresh > 0.0)
+            {
+                sq16_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+            }
+        }
+
         // Step 3: Iterative search loop (Prediction & Standard search).
         while (!found)
         {
@@ -283,6 +296,7 @@ int cluster_frame(
                 compute_priors_and_mixing(
                     config, state, *prev_assigned_cluster, sorting_candidates
                 );
+
                 clock_gettime(CLOCK_MONOTONIC, &step_end);
                 state->telemetry.time_step_3a +=
                     (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
@@ -366,12 +380,12 @@ int cluster_frame(
                 state->current_frame_sq16 != NULL)
             {
                 state->telemetry.sq16_evals++;
-                double d_lb = sq16_compute_lower_bound(
+                uint64_t ssd = sq16_dist_squared_cutoff_i16(
                     state->current_frame_sq16,
                     state->clusters[cj].anchor_sq16,
-                    &config->optim.sq16_params,
-                    0.0);
-                if (d_lb > config->algo.rlim)
+                    config->optim.sq16_params.dim,
+                    sq16_ssd_thresh);
+                if (ssd > sq16_ssd_thresh)
                 {
                     state->telemetry.sq16_pruned++;
                     state->telemetry.clusters_pruned++;

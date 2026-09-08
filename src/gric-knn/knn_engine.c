@@ -167,6 +167,24 @@ static inline double compute_euclidean_distance(
     return framedist_float((const float *)da, (const float *)db, size);
 }
 
+static inline double compute_euclidean_distance_cutoff(
+    const void *restrict da,
+    const void *restrict db,
+    long                 size,
+    int                  is_double,
+    double               cutoff_sq)
+{
+    if (is_double)
+    {
+        return framedist_squared_cutoff_double(
+            (const double *)da, (const double *)db, size, cutoff_sq
+        );
+    }
+    return framedist_squared_cutoff_float(
+        (const float *)da, (const float *)db, size, cutoff_sq
+    );
+}
+
 /**
  * is_member_pruned_by_sq8() - Evaluate SQ8 metric lower bound against current search radius.
  * @query_sq8: Pointer to quantized query vector [dim].
@@ -256,6 +274,74 @@ static inline int is_graph_pruned_by_sq8(
 }
 
 /**
+ * compute_sq16_cutoff_thresh() - Precompute squared integer cutoff threshold for SQ16.
+ * @cur_tau: Current search radius.
+ * @model:   Active KnnModel.
+ * @config:  Active KnnConfig.
+ *
+ * Return: Cutoff SSD threshold, or UINT64_MAX if bounds cannot prune.
+ */
+static inline uint64_t compute_sq16_cutoff_thresh(
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config)
+{
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
+    {
+        cur_tau = config->rlim_cutoff;
+    }
+
+    double eps = config->sq16_approx ? config->epsilon : 0.0;
+    double raw_thresh = (cur_tau * (1.0 + eps) +
+                        2.0 * (double)model->sq16_params.err_radius) *
+                        (double)model->sq16_params.inv_scale;
+    if (raw_thresh >= 4294967295.0)
+    {
+        return UINT64_MAX;
+    }
+
+    return (raw_thresh > 0.0) ? (uint64_t)(raw_thresh * raw_thresh) : 0;
+}
+
+/**
+ * is_member_pruned_by_sq16_cached() - Evaluate SQ16 using precomputed SSD cutoff.
+ * @query_sq16:  Pointer to quantized query vector [dim].
+ * @cand_id:     Index of candidate dataset frame.
+ * @ssd_cutoff:  Precomputed SSD cutoff threshold.
+ * @model:       Active KnnModel.
+ * @telem:       Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+static inline int is_member_pruned_by_sq16_cached(
+    const int16_t  *query_sq16,
+    long            cand_id,
+    uint64_t        ssd_cutoff,
+    const KnnModel *model,
+    KnnTelemetry   *telem)
+{
+    if (ssd_cutoff == UINT64_MAX)
+    {
+        return 0;
+    }
+
+    const int16_t *cand_sq16 = model->sq16_dataset_buffer +
+                               (size_t)cand_id * (size_t)model->frame_elements;
+    telem->sq16_evaluations++;
+    uint64_t ssd = sq16_dist_squared_cutoff_i16(
+        query_sq16, cand_sq16, model->frame_elements, ssd_cutoff
+    );
+
+    if (ssd > ssd_cutoff)
+    {
+        telem->sq16_members_pruned++;
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
  * is_member_pruned_by_sq16() - Evaluate SQ16 metric lower bound against current search radius.
  * @query_sq16: Pointer to quantized query vector [dim].
  * @cand_id:    Index of candidate dataset frame.
@@ -279,24 +365,8 @@ static inline int is_member_pruned_by_sq16(
         return 0;
     }
 
-    const int16_t *cand_sq16 = model->sq16_dataset_buffer +
-                               (size_t)cand_id * (size_t)model->frame_elements;
-    double eps = config->sq16_approx ? config->epsilon : 0.0;
-    telem->sq16_evaluations++;
-    double d_lb = sq16_compute_lower_bound(query_sq16, cand_sq16, &model->sq16_params, eps);
-
-    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
-    {
-        cur_tau = config->rlim_cutoff;
-    }
-
-    if (d_lb > cur_tau)
-    {
-        telem->sq16_members_pruned++;
-        return 1;
-    }
-
-    return 0;
+    uint64_t ssd_cutoff = compute_sq16_cutoff_thresh(cur_tau, model, config);
+    return is_member_pruned_by_sq16_cached(query_sq16, cand_id, ssd_cutoff, model, telem);
 }
 
 /**
@@ -323,18 +393,28 @@ static inline int is_graph_pruned_by_sq16(
         return 0;
     }
 
-    const int16_t *cand_sq16 = model->sq16_dataset_buffer +
-                               (size_t)cand_id * (size_t)model->frame_elements;
-    double eps = config->sq16_approx ? config->epsilon : 0.0;
-    telem->sq16_evaluations++;
-    double d_lb = sq16_compute_lower_bound(query_sq16, cand_sq16, &model->sq16_params, eps);
-
     if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
     {
         cur_tau = config->rlim_cutoff;
     }
 
-    if (d_lb > cur_tau)
+    double eps = config->sq16_approx ? config->epsilon : 0.0;
+    double raw_thresh = (cur_tau * (1.0 + eps) + 2.0 * (double)model->sq16_params.err_radius) *
+                        (double)model->sq16_params.inv_scale;
+    if (raw_thresh >= 4294967295.0)
+    {
+        return 0;
+    }
+    uint64_t ssd_cutoff = (raw_thresh > 0.0) ? (uint64_t)(raw_thresh * raw_thresh) : 0;
+
+    const int16_t *cand_sq16 = model->sq16_dataset_buffer +
+                               (size_t)cand_id * (size_t)model->frame_elements;
+    telem->sq16_evaluations++;
+    uint64_t ssd = sq16_dist_squared_cutoff_i16(
+        query_sq16, cand_sq16, model->frame_elements, ssd_cutoff
+    );
+
+    if (ssd > ssd_cutoff)
     {
         telem->sq16_graph_pruned++;
         return 1;
@@ -744,6 +824,11 @@ static void knn_search_intra_cluster(
     size_t frame_bytes = (size_t)frame_elem *
         (model->is_double ? sizeof(double) : sizeof(float));
 
+    double last_tau = -1.0;
+    uint64_t cached_ssd_cutoff = UINT64_MAX;
+    int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
+                       visited->query_sq16 != NULL);
+
     for (int m = start_m; m < end_m; m++)
     {
         long cand_id = (long)home_cl->members[m].frame_id;
@@ -769,27 +854,58 @@ static void knn_search_intra_cluster(
             continue;
         }
 
+        if (sq16_active)
+        {
+            if (current_tau != last_tau)
+            {
+                last_tau = current_tau;
+                cached_ssd_cutoff = compute_sq16_cutoff_thresh(current_tau, model, config);
+            }
+            if (is_member_pruned_by_sq16_cached(
+                    visited->query_sq16, cand_id, cached_ssd_cutoff, model, telem
+                ))
+            {
+                continue;
+            }
+        }
+        else if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+                                          model, config, telem))
+        {
+            continue;
+        }
+
+        if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                    model, config, telem))
+        {
+            continue;
+        }
+
         if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
         {
             telem->reciprocal_reused++;
             continue;
         }
 
-        if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
-                                     model, config, telem) ||
-            is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
-                                    model, config, telem))
-        {
-            continue;
-        }
-
         if (!config->use_batch_dist)
         {
-            if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+            const void *cand_ptr = NULL;
+            if (reader->memory_data != NULL)
+            {
+                cand_ptr = (const char *)reader->memory_data + (size_t)cand_id * frame_bytes;
+            }
+            else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+            {
+                cand_ptr = cand_buffer;
+            }
+            if (cand_ptr != NULL)
             {
                 telem->framedist_calls++;
-                double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem, model->is_double
+                double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
+                               ? config->rlim_cutoff
+                               : current_tau;
+                double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
+                double d = compute_euclidean_distance_cutoff(
+                    query_data, cand_ptr, frame_elem, model->is_double, cutoff_sq
                 );
                 record_neighbor_and_reciprocal(
                     query_id, cand_id, d, config, model, heap, all_heaps
@@ -801,8 +917,20 @@ static void knn_search_intra_cluster(
             continue;
         }
 
-        void *dest = (char *)cand_buffer + (size_t)batch_count * frame_bytes;
-        if (knn_reader_read_frame(reader, cand_id, dest) == 0)
+        const void *dest = NULL;
+        if (reader->memory_data != NULL)
+        {
+            dest = (const char *)reader->memory_data + (size_t)cand_id * frame_bytes;
+        }
+        else
+        {
+            void *buf_dest = (char *)cand_buffer + (size_t)batch_count * frame_bytes;
+            if (knn_reader_read_frame(reader, cand_id, buf_dest) == 0)
+            {
+                dest = buf_dest;
+            }
+        }
+        if (dest != NULL)
         {
             batch_cand_ids[batch_count] = cand_id;
             batch_ptrs[batch_count] = dest;
@@ -973,11 +1101,6 @@ static int knn_warm_start_nearest_cluster(
             telem->level3_annular_pruned++;
             continue;
         }
-        if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
-        {
-            telem->reciprocal_reused++;
-            continue;
-        }
         if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
                                      model, config, telem) ||
             is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
@@ -985,11 +1108,27 @@ static int knn_warm_start_nearest_cluster(
         {
             continue;
         }
-        if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+        if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
+        {
+            telem->reciprocal_reused++;
+            continue;
+        }
+        const void *cand_data = NULL;
+        if (reader->memory_data != NULL)
+        {
+            size_t el_sz = model->is_double ? sizeof(double) : sizeof(float);
+            cand_data = (const char *)reader->memory_data +
+                        (size_t)cand_id * (size_t)model->frame_elements * el_sz;
+        }
+        else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+        {
+            cand_data = cand_buffer;
+        }
+        if (cand_data != NULL)
         {
             telem->framedist_calls++;
             double d = compute_euclidean_distance(
-                query_data, cand_buffer, model->frame_elements, model->is_double
+                query_data, cand_data, model->frame_elements, model->is_double
             );
             record_neighbor_and_reciprocal(
                 query_id, cand_id, d, config, model, heap, all_heaps
@@ -1194,6 +1333,37 @@ static void knn_search_inter_clusters(
 
         // Level 2: Query-to-Anchor evaluation
         const KnnCluster *cl = &model->clusters[q];
+        if (config->use_sq16 && model->anchor_sq16_buffer != NULL && visited->query_sq16 != NULL)
+        {
+            double tau_eff = current_tau / eps_factor;
+            if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_eff)
+            {
+                tau_eff = config->rlim_cutoff;
+            }
+            double tau_anchor = tau_eff + cl->radius;
+            double eps = config->sq16_approx ? config->epsilon : 0.0;
+            double raw_thresh = (tau_anchor * (1.0 + eps) +
+                                2.0 * (double)model->sq16_params.err_radius) *
+                                (double)model->sq16_params.inv_scale;
+            if (raw_thresh < 4294967295.0)
+            {
+                uint64_t ssd_cutoff = (raw_thresh > 0.0)
+                                      ? (uint64_t)(raw_thresh * raw_thresh)
+                                      : 0;
+                const int16_t *anchor_sq16 = model->anchor_sq16_buffer +
+                                             (size_t)q * (size_t)frame_elem;
+                telem->sq16_evaluations++;
+                uint64_t ssd = sq16_dist_squared_cutoff_i16(
+                    visited->query_sq16, anchor_sq16, frame_elem, ssd_cutoff
+                );
+                if (ssd > ssd_cutoff)
+                {
+                    telem->level2_anchors_pruned++;
+                    continue;
+                }
+            }
+        }
+
         telem->framedist_calls++;
         double d_anchor = compute_euclidean_distance(
             query_data, cl->anchor_data, frame_elem, model->is_double
@@ -1269,6 +1439,10 @@ static void knn_search_inter_clusters(
             (uint64_t)start_m + (uint64_t)(cl->num_members - end_m);
 
         double dcc_home = model->dcc_matrix[home_cluster_id * M + q];
+        double last_tau = -1.0;
+        uint64_t cached_ssd_cutoff = UINT64_MAX;
+        int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
+                           visited->query_sq16 != NULL);
 
         for (int m = start_m; m < end_m; m++)
         {
@@ -1345,28 +1519,59 @@ static void knn_search_inter_clusters(
                 continue;
             }
 
+            if (sq16_active)
+            {
+                if (current_tau != last_tau)
+                {
+                    last_tau = current_tau;
+                    cached_ssd_cutoff = compute_sq16_cutoff_thresh(current_tau, model, config);
+                }
+                if (is_member_pruned_by_sq16_cached(
+                        visited->query_sq16, cand_id, cached_ssd_cutoff, model, telem
+                    ))
+                {
+                    continue;
+                }
+            }
+            else if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+                                              model, config, telem))
+            {
+                continue;
+            }
+
+            if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                        model, config, telem))
+            {
+                continue;
+            }
+
             if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
             {
                 telem->reciprocal_reused++;
                 continue;
             }
 
-            if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
-                                         model, config, telem) ||
-                is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
-                                        model, config, telem))
-            {
-                continue;
-            }
-
             // Level 4: Exact Distance Evaluation
             if (!config->use_batch_dist)
             {
-                if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+                const void *cand_ptr = NULL;
+                if (reader->memory_data != NULL)
+                {
+                    cand_ptr = (const char *)reader->memory_data + (size_t)cand_id * frame_bytes;
+                }
+                else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+                {
+                    cand_ptr = cand_buffer;
+                }
+                if (cand_ptr != NULL)
                 {
                     telem->framedist_calls++;
-                    double d = compute_euclidean_distance(
-                        query_data, cand_buffer, frame_elem, model->is_double
+                    double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
+                                   ? config->rlim_cutoff
+                                   : current_tau;
+                    double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
+                    double d = compute_euclidean_distance_cutoff(
+                        query_data, cand_ptr, frame_elem, model->is_double, cutoff_sq
                     );
                     record_neighbor_and_reciprocal(
                         query_id, cand_id, d, config, model, heap, all_heaps
@@ -1378,8 +1583,20 @@ static void knn_search_inter_clusters(
                 continue;
             }
 
-            void *dest = (char *)cand_buffer + (size_t)batch_count * frame_bytes;
-            if (knn_reader_read_frame(reader, cand_id, dest) == 0)
+            const void *dest = NULL;
+            if (reader->memory_data != NULL)
+            {
+                dest = (const char *)reader->memory_data + (size_t)cand_id * frame_bytes;
+            }
+            else
+            {
+                void *buf_dest = (char *)cand_buffer + (size_t)batch_count * frame_bytes;
+                if (knn_reader_read_frame(reader, cand_id, buf_dest) == 0)
+                {
+                    dest = buf_dest;
+                }
+            }
+            if (dest != NULL)
             {
                 batch_cand_ids[batch_count] = cand_id;
                 batch_ptrs[batch_count] = dest;
@@ -3038,11 +3255,22 @@ static void knn_cross_eval_intra_cluster(
                 continue;
             }
 
-            if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
+            const void *cand_data = NULL;
+            if (cand_reader->memory_data != NULL)
+            {
+                size_t el_sz = model->is_double ? sizeof(double) : sizeof(float);
+                cand_data = (const char *)cand_reader->memory_data +
+                            (size_t)cand_id * (size_t)frame_elem * el_sz;
+            }
+            else if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
+            {
+                cand_data = cand_buffer;
+            }
+            if (cand_data != NULL)
             {
                 telem->framedist_calls++;
                 double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem, model->is_double
+                    query_data, cand_data, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
@@ -3256,11 +3484,22 @@ static void knn_cross_eval_inter_clusters(
                 continue;
             }
 
-            if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
+            const void *cand_data = NULL;
+            if (cand_reader->memory_data != NULL)
+            {
+                size_t el_sz = model->is_double ? sizeof(double) : sizeof(float);
+                cand_data = (const char *)cand_reader->memory_data +
+                            (size_t)cand_id * (size_t)frame_elem * el_sz;
+            }
+            else if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
+            {
+                cand_data = cand_buffer;
+            }
+            if (cand_data != NULL)
             {
                 telem->framedist_calls++;
                 double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem, model->is_double
+                    query_data, cand_data, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
