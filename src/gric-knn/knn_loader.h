@@ -42,6 +42,16 @@ int knn_model_build_or_load_sq16(
     const KnnConfig *config);
 
 /**
+ * @brief Preload dataset frames into resident RAM buffer if feasible.
+ * @param model  Pointer to initialized KnnModel.
+ * @param config Pointer to KnnConfig.
+ * @return 0 on success, -1 on failure.
+ */
+int knn_model_cache_dataset(
+    KnnModel  *model,
+    KnnConfig *config);
+
+/**
  * @brief Free all resident buffers and structures within a KnnModel.
  * @param model Pointer to KnnModel to free.
  */
