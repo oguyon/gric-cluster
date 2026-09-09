@@ -8,6 +8,7 @@
 #include "framedistance.h"
 #include "../../shared/gric_bin_io.h"
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,7 +68,7 @@ static int write_bin_results(
                 for (uint64_t i = 0; i < total_elems; i++)
                 {
                     u32_idx[i] = (results->indices[i] >= 0) ?
-                                 (uint32_t)results->indices[i] : 0;
+                                 (uint32_t)results->indices[i] : UINT32_MAX;
                 }
                 fwrite(u32_idx, sizeof(uint32_t), total_elems, fp_idx);
                 free(u32_idx);
@@ -98,7 +99,15 @@ static int write_bin_results(
             {
                 for (uint64_t i = 0; i < total_elems; i++)
                 {
-                    f32_dst[i] = (float)results->distances[i];
+                    if (results->indices[i] < 0 || results->distances[i] < 0.0 ||
+                        isnan(results->distances[i]))
+                    {
+                        f32_dst[i] = -1.0f;
+                    }
+                    else
+                    {
+                        f32_dst[i] = (float)results->distances[i];
+                    }
                 }
                 fwrite(f32_dst, sizeof(float), total_elems, fp_dst);
                 free(f32_dst);
@@ -263,7 +272,7 @@ static int write_ascii_results(
         {
             int n_id = results->indices[i * k + j];
             double d = results->distances[i * k + j];
-            if (n_id < 0 || isnan(d))
+            if (n_id < 0 || d < 0.0 || isnan(d))
             {
                 fprintf(f, "  %-8d %12.6f", -1, -1.0);
             }

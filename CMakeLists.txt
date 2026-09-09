@@ -550,11 +550,14 @@ set_tests_properties(test_dimdensity PROPERTIES DEPENDS "gric-cluster;gric-mktxt
 
 add_executable(test_knn_cross_dataset
     tests/test_knn_cross_dataset.c
+    src/shared/gric_bin_io.c
 )
+target_include_directories(test_knn_cross_dataset PRIVATE src/shared)
 target_link_libraries(test_knn_cross_dataset m)
 add_test(NAME test_knn_cross_dataset
     COMMAND test_knn_cross_dataset)
-set_tests_properties(test_knn_cross_dataset PROPERTIES DEPENDS "gric-cluster;gric-mktxtseq;gric-knn")
+set_tests_properties(test_knn_cross_dataset PROPERTIES
+    DEPENDS "gric-cluster;gric-mktxtseq;gric-knn")
 
 add_executable(test_scalar_quant
     tests/test_scalar_quant.c

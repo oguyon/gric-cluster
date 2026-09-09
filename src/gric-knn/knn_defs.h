@@ -106,6 +106,9 @@ typedef struct
     int             no_cache_dataset;  /**< 1 to disable automatic dataset caching in RAM */
     int             no_mutual;         /**< 1 to disable knn_mutual_dists.bin output */
     int             no_txt;            /**< 1 to disable ASCII results output */
+    int             refuse_unclustered; /**< 1 to refuse external queries not in any cluster */
+    int             use_cluster_graph;  /**< 1 to enable Graph-Guided Cluster Routing */
+    int             ef_cluster;         /**< Max clusters to evaluate in graph routing */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -126,12 +129,14 @@ typedef struct
     uint64_t global_containment_hits;
     uint64_t framedist_calls;
     uint64_t trajectory_warmstarts;
+    uint64_t out_of_cluster_rejected;
     uint64_t sq8_evaluations;
     uint64_t sq8_members_pruned;
     uint64_t sq8_graph_pruned;
     uint64_t sq16_evaluations;
     uint64_t sq16_members_pruned;
     uint64_t sq16_graph_pruned;
+    uint64_t clusters_graph_evaluated;
     double   time_load_ms;
     double   time_search_ms;
     double   time_write_ms;
@@ -145,6 +150,7 @@ typedef struct
     long             frame_elements;
     int              num_clusters;
     long             total_dataset_frames;
+    double           model_rlim;          /**< Clustering covering radius from gric-cluster */
     int              is_double;           /**< 1 if anchors & queries in double precision */
     KnnCluster      *clusters;
     double          *dcc_matrix;          /**< Dense M x M inter-cluster distance matrix */
@@ -166,10 +172,13 @@ typedef struct
     void            *dataset_mmap_addr;   /**< Base address if mmap'd */
     size_t           dataset_mmap_size;   /**< Size of mmap region */
     uint8_t         *sq8_dataset_buffer;  /**< [N x D] resident 8-bit quantized dataset */
+    uint8_t         *anchor_sq8_buffer;   /**< [M x D] resident quantized anchor vectors */
     SQ8Params        sq8_params;          /**< Calibration parameters for SQ8 */
     int16_t         *sq16_dataset_buffer; /**< [N x D] resident 16-bit quantized dataset */
     int16_t         *anchor_sq16_buffer;  /**< [M x D] resident quantized anchor vectors */
     SQ16Params       sq16_params;         /**< Calibration parameters for SQ16 */
+    int              cluster_graph_k;     /**< Number of neighbors per cluster anchor */
+    int             *cluster_graph_adj;   /**< [M x cluster_graph_k] neighbor cluster IDs */
     GricProfile      profile;             /**< Optional dataset profile (.gricprof) */
     int              has_profile;         /**< 1 if dataset profile was loaded */
 } KnnModel;

@@ -5933,6 +5933,16 @@
           if (typeof knnUseBatchDist !== 'undefined' && !knnUseBatchDist) {
             args.push('-no-batch-dist');
           }
+          if (typeof knnUseClusterGraph !== 'undefined') {
+            if (knnUseClusterGraph) {
+              args.push('-cluster-graph');
+              if (typeof knnEfCluster !== 'undefined') {
+                args.push('-ef-cluster', String(knnEfCluster));
+              }
+            } else {
+              args.push('-no-cluster-graph');
+            }
+          }
           args.push('-progress');
           args.push('-txt');
 
@@ -6488,6 +6498,46 @@
         btnKnnBatchDist.classList.toggle('active', knnUseBatchDist);
         updateCliCommand();
         draw();
+      });
+    }
+
+    const btnKnnClusterGraph = document.getElementById('btnKnnClusterGraph');
+    const rowKnnEfCluster = document.getElementById('rowKnnEfCluster');
+    const sliderKnnEfCluster = document.getElementById('sliderKnnEfCluster');
+    const inputKnnEfCluster = document.getElementById('inputKnnEfCluster');
+
+    if (btnKnnClusterGraph) {
+      btnKnnClusterGraph.addEventListener('click', () => {
+        knnUseClusterGraph = !knnUseClusterGraph;
+        btnKnnClusterGraph.classList.toggle('toggle-active', knnUseClusterGraph);
+        btnKnnClusterGraph.classList.toggle('toggle-cyan', knnUseClusterGraph);
+        btnKnnClusterGraph.classList.toggle('active', knnUseClusterGraph);
+        if (rowKnnEfCluster) {
+          rowKnnEfCluster.style.display = knnUseClusterGraph ? 'flex' : 'none';
+        }
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    if (sliderKnnEfCluster) {
+      sliderKnnEfCluster.addEventListener('input', (e) => {
+        knnEfCluster = parseInt(e.target.value, 10);
+        if (inputKnnEfCluster) inputKnnEfCluster.value = knnEfCluster;
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    if (inputKnnEfCluster) {
+      inputKnnEfCluster.addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v) && v >= 1) {
+          knnEfCluster = v;
+          if (sliderKnnEfCluster) sliderKnnEfCluster.value = Math.min(250, v);
+          updateCliCommand();
+          draw();
+        }
       });
     }
 
@@ -8079,6 +8129,9 @@
       set('reconQuerySq8BreakdownVal',
           `Members: ${sqMembers.toLocaleString()} | Graph: ${sqGraph.toLocaleString()}`);
 
+      const clustersGraph = telem.clustersGraphEvaluated || 0;
+      set('reconQueryClustersGraphVal', clustersGraph.toLocaleString());
+
       const containmentHits = telem.globalContainmentHits || 0;
       const containmentPct = numQ > 0 ? (100.0 * containmentHits / numQ).toFixed(1) : '0.0';
       set('reconQueryContainmentVal',       containmentHits.toLocaleString());
@@ -8291,6 +8344,16 @@
         }
         if (typeof knnUseBatchDist !== 'undefined' && !knnUseBatchDist) {
           args.push('-no-batch-dist');
+        }
+        if (typeof knnUseClusterGraph !== 'undefined') {
+          if (knnUseClusterGraph) {
+            args.push('-cluster-graph');
+            if (typeof knnEfCluster !== 'undefined') {
+              args.push('-ef-cluster', String(knnEfCluster));
+            }
+          } else {
+            args.push('-no-cluster-graph');
+          }
         }
 
         if (consoleEl) {

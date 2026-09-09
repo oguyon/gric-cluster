@@ -298,10 +298,10 @@ void knn_heap_extract_sorted(
         }
     } // for (int i = count - 1; ...)
 
-    // Pad any remaining underfilled slots with -1 and NAN
+    // Pad any remaining underfilled slots with -1 and -1.0
     for (int i = count; i < k; i++)
     {
         out_indices[i] = -1;
-        out_distances[i] = NAN;
+        out_distances[i] = -1.0;
     }
 }

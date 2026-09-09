@@ -190,6 +190,54 @@ static int select_best_first_target(
 }
 
 /**
+ * get_anchor_sq16() - Resolve pointer to SQ16 anchor vector.
+ * @config:         Active locator configuration.
+ * @c:              Cluster index.
+ * @frame_elements: Element count per vector.
+ *
+ * Return: Pointer to SQ16 anchor buffer, or NULL if unavailable.
+ */
+static inline const int16_t *get_anchor_sq16(
+    const ClusterLocatorConfig *config,
+    int                         c,
+    long                        frame_elements)
+{
+    if (config->anchors_sq16_buf != NULL)
+    {
+        return config->anchors_sq16_buf + (size_t)c * (size_t)frame_elements;
+    }
+    if (config->anchors_sq16_ptrs != NULL)
+    {
+        return config->anchors_sq16_ptrs[c];
+    }
+    return NULL;
+}
+
+/**
+ * get_anchor_sq8() - Resolve pointer to SQ8 anchor vector.
+ * @config:         Active locator configuration.
+ * @c:              Cluster index.
+ * @frame_elements: Element count per vector.
+ *
+ * Return: Pointer to SQ8 anchor buffer, or NULL if unavailable.
+ */
+static inline const uint8_t *get_anchor_sq8(
+    const ClusterLocatorConfig *config,
+    int                         c,
+    long                        frame_elements)
+{
+    if (config->anchors_sq8_buf != NULL)
+    {
+        return config->anchors_sq8_buf + (size_t)c * (size_t)frame_elements;
+    }
+    if (config->anchors_sq8_ptrs != NULL)
+    {
+        return config->anchors_sq8_ptrs[c];
+    }
+    return NULL;
+}
+
+/**
  * cluster_locate_sample() - Locates the matching/closest cluster for sample q.
  * @query_data:       Pointer to sample/query frame vector.
  * @frame_elements:   Number of elements per vector.
@@ -200,7 +248,7 @@ static int select_best_first_target(
  * @config:           Tuning and runtime configuration.
  * @result:           Output structure to populate.
  *
- * Return: 0 on success, -1 on error.
+ * Return: CLUSTER_LOCATE_SUCCESS (0), CLUSTER_LOCATE_REJECTED (1), or error (-1).
  */
 int cluster_locate_sample(
     const void                 *query_data,
@@ -215,7 +263,7 @@ int cluster_locate_sample(
     if (query_data == NULL || cluster_anchors == NULL || cluster_radii == NULL ||
         dcc_matrix == NULL || config == NULL || result == NULL || num_clusters <= 0)
     {
-        return -1;
+        return CLUSTER_LOCATE_ERROR;
     }
 
     int max_eval = config->max_targets > 0 ? config->max_targets : 8;
@@ -241,49 +289,212 @@ int cluster_locate_sample(
     }
     else
     {
-        return -1;
+        return CLUSTER_LOCATE_ERROR;
+    }
+
+    uint64_t sq16_ssd_thresh = UINT64_MAX;
+    int sq16_active = 0;
+    if (config->query_sq16 != NULL && config->sq16_params != NULL &&
+        (config->anchors_sq16_buf != NULL || config->anchors_sq16_ptrs != NULL))
+    {
+        double raw_thresh = (tau_eff + 2.0 * (double)config->sq16_params->err_radius) *
+                            (double)config->sq16_params->inv_scale;
+        if (raw_thresh > 0.0 && raw_thresh < 4294967295.0)
+        {
+            sq16_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+            sq16_active = 1;
+        }
+    }
+
+    uint64_t sq8_ssd_thresh = UINT64_MAX;
+    int sq8_active = 0;
+    if (!sq16_active && config->query_sq8 != NULL && config->sq8_params != NULL &&
+        (config->anchors_sq8_buf != NULL || config->anchors_sq8_ptrs != NULL))
+    {
+        double raw_thresh = (tau_eff + 2.0 * (double)config->sq8_params->err_radius) *
+                            (double)config->sq8_params->inv_scale;
+        if (raw_thresh > 0.0 && raw_thresh < 4294967295.0)
+        {
+            sq8_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+            sq8_active = 1;
+        }
     }
 
     // Step 0: Trajectory Warm-Starting (Attempt 0)
     if (config->prev_cluster_id >= 0 && config->prev_cluster_id < num_clusters)
     {
-        int    p_id = config->prev_cluster_id;
-        double d_prev = compute_vector_distance(
-            query_data, cluster_anchors[p_id], frame_elements, config->is_double);
+        int p_id = config->prev_cluster_id;
+        int skip_prev = 0;
 
-        result->evaluated_clusters[0] = p_id;
-        result->evaluated_dists[0] = d_prev;
-        result->num_evaluated_anchors = 1;
-        result->best_cluster_id = p_id;
-        result->best_anchor_dist = d_prev;
-        result->active_cluster_mask[p_id] = 0;
-
-        if (d_prev < tau_eff)
+        if (sq16_active)
         {
-            tau_eff = d_prev;
+            const int16_t *a_sq16 = get_anchor_sq16(config, p_id, frame_elements);
+            if (a_sq16 != NULL)
+            {
+                uint64_t ssd = sq16_dist_squared_cutoff_i16(
+                    config->query_sq16, a_sq16, frame_elements, sq16_ssd_thresh);
+                if (ssd > sq16_ssd_thresh)
+                {
+                    result->active_cluster_mask[p_id] = 0;
+                    skip_prev = 1;
+                }
+            }
+        }
+        else if (sq8_active)
+        {
+            const uint8_t *a_sq8 = get_anchor_sq8(config, p_id, frame_elements);
+            if (a_sq8 != NULL)
+            {
+                uint64_t ssd = sq8_dist_squared_u8(config->query_sq8, a_sq8, frame_elements);
+                if (ssd > sq8_ssd_thresh)
+                {
+                    result->active_cluster_mask[p_id] = 0;
+                    skip_prev = 1;
+                }
+            }
         }
 
-        // Apply 3P metric pruning against prev_cluster
-        for (int c = 0; c < num_clusters; c++)
+        if (!skip_prev)
         {
-            if (c == p_id)
-            {
-                continue;
-            }
-            double dcc = dcc_matrix[p_id * num_clusters + c];
-            double r_c = cluster_radii[c];
-            double lb1 = dcc - r_c - d_prev;
-            double lb2 = d_prev - dcc - r_c;
-            double lb = (lb1 > lb2) ? lb1 : lb2;
+            double d_prev = compute_vector_distance(
+                query_data, cluster_anchors[p_id], frame_elements, config->is_double);
 
-            if (lb >= tau_eff)
+            result->evaluated_clusters[0] = p_id;
+            result->evaluated_dists[0] = d_prev;
+            result->num_evaluated_anchors = 1;
+            result->best_cluster_id = p_id;
+            result->best_anchor_dist = d_prev;
+            result->active_cluster_mask[p_id] = 0;
+
+            if (d_prev < tau_eff)
             {
-                result->active_cluster_mask[c] = 0;
+                tau_eff = d_prev;
+                if (sq16_active)
+                {
+                    double raw_thresh = (tau_eff +
+                                         2.0 * (double)config->sq16_params->err_radius) *
+                                        (double)config->sq16_params->inv_scale;
+                    if (raw_thresh > 0.0 && raw_thresh < 4294967295.0)
+                    {
+                        sq16_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+                    }
+                }
+                else if (sq8_active)
+                {
+                    double raw_thresh = (tau_eff +
+                                         2.0 * (double)config->sq8_params->err_radius) *
+                                        (double)config->sq8_params->inv_scale;
+                    if (raw_thresh > 0.0 && raw_thresh < 4294967295.0)
+                    {
+                        sq8_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+                    }
+                }
+            }
+
+            if (config->rlim > 0.0 && d_prev <= config->rlim)
+            {
+                return CLUSTER_LOCATE_SUCCESS;
+            }
+
+            // Apply 3P metric pruning against prev_cluster
+            for (int c = 0; c < num_clusters; c++)
+            {
+                if (c == p_id || result->active_cluster_mask[c] == 0)
+                {
+                    continue;
+                }
+                double dcc = dcc_matrix[p_id * num_clusters + c];
+                double r_c = cluster_radii[c];
+                double lb1 = dcc - r_c - d_prev;
+                double lb2 = d_prev - dcc - r_c;
+                double lb = (lb1 > lb2) ? lb1 : lb2;
+
+                if (lb >= tau_eff)
+                {
+                    result->active_cluster_mask[c] = 0;
+                }
             }
         }
     }
 
-    // Step 1: Iterative Target Selection & 3P Bounding Loop
+    // Fast initial screening pass with SQ16/SQ8 when strict_rlim is enabled
+    int best_quant_candidate = -1;
+    if (config->strict_rlim && config->rlim > 0.0)
+    {
+        if (sq16_active)
+        {
+            uint64_t min_sq_ssd = UINT64_MAX;
+            int      active_left = 0;
+            for (int c = 0; c < num_clusters; c++)
+            {
+                if (result->active_cluster_mask[c] == 0)
+                {
+                    continue;
+                }
+                const int16_t *a_sq16 = get_anchor_sq16(config, c, frame_elements);
+                if (a_sq16 != NULL)
+                {
+                    uint64_t ssd = sq16_dist_squared_cutoff_i16(
+                        config->query_sq16, a_sq16, frame_elements, sq16_ssd_thresh);
+                    if (ssd > sq16_ssd_thresh)
+                    {
+                        result->active_cluster_mask[c] = 0;
+                    }
+                    else
+                    {
+                        active_left++;
+                        if (ssd < min_sq_ssd)
+                        {
+                            min_sq_ssd = ssd;
+                            best_quant_candidate = c;
+                        }
+                    }
+                }
+            }
+            if (active_left == 0)
+            {
+                result->best_cluster_id = -1;
+                return CLUSTER_LOCATE_REJECTED;
+            }
+        }
+        else if (sq8_active)
+        {
+            uint64_t min_sq_ssd = UINT64_MAX;
+            int      active_left = 0;
+            for (int c = 0; c < num_clusters; c++)
+            {
+                if (result->active_cluster_mask[c] == 0)
+                {
+                    continue;
+                }
+                const uint8_t *a_sq8 = get_anchor_sq8(config, c, frame_elements);
+                if (a_sq8 != NULL)
+                {
+                    uint64_t ssd = sq8_dist_squared_u8(config->query_sq8, a_sq8, frame_elements);
+                    if (ssd > sq8_ssd_thresh)
+                    {
+                        result->active_cluster_mask[c] = 0;
+                    }
+                    else
+                    {
+                        active_left++;
+                        if (ssd < min_sq_ssd)
+                        {
+                            min_sq_ssd = ssd;
+                            best_quant_candidate = c;
+                        }
+                    }
+                }
+            }
+            if (active_left == 0)
+            {
+                result->best_cluster_id = -1;
+                return CLUSTER_LOCATE_REJECTED;
+            }
+        }
+    }
+
+    // Step 1: Iterative Target Selection & Metric Bounding Loop
     while (result->num_evaluated_anchors < max_eval)
     {
         // Count active clusters
@@ -296,17 +507,30 @@ int cluster_locate_sample(
             }
         }
 
-        if (active_count <= 1)
+        if (active_count == 0)
         {
-            break; // Resolved to single or zero candidate
+            break; // All clusters pruned
         }
 
         // Select next measurement target
         int next_target = -1;
         if (result->num_evaluated_anchors == 0)
         {
-            // Initial anchor: Cluster 0 or medoid
-            next_target = 0;
+            if (best_quant_candidate >= 0 && result->active_cluster_mask[best_quant_candidate])
+            {
+                next_target = best_quant_candidate;
+            }
+            else
+            {
+                for (int c = 0; c < num_clusters; c++)
+                {
+                    if (result->active_cluster_mask[c])
+                    {
+                        next_target = c;
+                        break;
+                    }
+                }
+            }
         }
         else
         {
@@ -321,8 +545,8 @@ int cluster_locate_sample(
         }
 
         // Measure distance to selected target
-        double d_target = compute_vector_distance(query_data, cluster_anchors[next_target],
-                                                 frame_elements, config->is_double);
+        double d_target = compute_vector_distance(
+            query_data, cluster_anchors[next_target], frame_elements, config->is_double);
 
         int idx = result->num_evaluated_anchors;
         result->evaluated_clusters[idx] = next_target;
@@ -339,14 +563,35 @@ int cluster_locate_sample(
         if (d_target < tau_eff)
         {
             tau_eff = d_target;
+            if (sq16_active)
+            {
+                double raw_thresh = (tau_eff +
+                                     2.0 * (double)config->sq16_params->err_radius) *
+                                    (double)config->sq16_params->inv_scale;
+                if (raw_thresh > 0.0 && raw_thresh < 4294967295.0)
+                {
+                    sq16_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+                }
+            }
+            else if (sq8_active)
+            {
+                double raw_thresh = (tau_eff +
+                                     2.0 * (double)config->sq8_params->err_radius) *
+                                    (double)config->sq8_params->inv_scale;
+                if (raw_thresh > 0.0 && raw_thresh < 4294967295.0)
+                {
+                    sq8_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+                }
+            }
         }
 
+        // Satisficing exit: matched cluster within rlim
         if ((config->rlim > 0.0 && d_target <= config->rlim) || d_target < 1e-6)
         {
-            return 0; // Matched cluster within tolerance or exact anchor!
+            return CLUSTER_LOCATE_SUCCESS;
         }
 
-        // 3P and 4P Metric Pruning against measured target
+        // 3P, 4P, and 5P Metric Pruning against measured target
         for (int c = 0; c < num_clusters; c++)
         {
             if (result->active_cluster_mask[c] == 0 || c == next_target)
@@ -385,13 +630,59 @@ int cluster_locate_sample(
                     }
                 }
             }
-        }
 
-        if (config->rlim > 0.0 && result->best_anchor_dist <= config->rlim)
+            // 5P (TE5) 3D Triangulation Metric Pruning
+            if (config->te5_mode && result->active_cluster_mask[c] &&
+                result->num_evaluated_anchors >= 3)
+            {
+                int eval_n = result->num_evaluated_anchors;
+                for (int p1 = 0; p1 < eval_n - 2; p1++)
+                {
+                    for (int p2 = p1 + 1; p2 < eval_n - 1; p2++)
+                    {
+                        int    c1 = result->evaluated_clusters[p1];
+                        double d_f_c1 = result->evaluated_dists[p1];
+                        int    c2 = result->evaluated_clusters[p2];
+                        double d_f_c2 = result->evaluated_dists[p2];
+                        int    c3 = next_target;
+                        double d_f_c3 = d_target;
+
+                        double d_t_c1 = dcc_matrix[c * num_clusters + c1];
+                        double d_t_c2 = dcc_matrix[c * num_clusters + c2];
+                        double d_t_c3 = dcc;
+
+                        double d_c1_c2 = dcc_matrix[c1 * num_clusters + c2];
+                        double d_c1_c3 = dcc_matrix[c1 * num_clusters + c3];
+                        double d_c2_c3 = dcc_matrix[c2 * num_clusters + c3];
+
+                        double min_d5 = calc_min_dist_5pt(
+                            d_f_c1, d_f_c2, d_f_c3,
+                            d_t_c1, d_t_c2, d_t_c3,
+                            d_c1_c2, d_c1_c3, d_c2_c3);
+
+                        if (min_d5 - r_c >= tau_eff)
+                        {
+                            result->active_cluster_mask[c] = 0;
+                            break;
+                        }
+                    }
+                    if (result->active_cluster_mask[c] == 0)
+                    {
+                        break;
+                    }
+                }
+            }
+        } // for (int c = 0; ...)
+    } // while (result->num_evaluated_anchors < max_eval)
+
+    if (config->strict_rlim && config->rlim > 0.0)
+    {
+        if (result->best_cluster_id < 0 || result->best_anchor_dist > config->rlim)
         {
-            break; // Resolved within rlim
+            result->best_cluster_id = -1;
+            return CLUSTER_LOCATE_REJECTED;
         }
     }
 
-    return 0;
+    return CLUSTER_LOCATE_SUCCESS;
 }

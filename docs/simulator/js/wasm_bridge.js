@@ -1969,6 +1969,13 @@ function buildCliCommand() {
     if (typeof knnUseBatchDist === 'boolean' && !knnUseBatchDist) {
       knnParts.push('-no-batch-dist');
     }
+    if (typeof knnUseClusterGraph === 'boolean') {
+      if (!knnUseClusterGraph) {
+        knnParts.push('-no-cluster-graph');
+      } else if (typeof knnEfCluster === 'number' && knnEfCluster !== 60) {
+        knnParts.push('-ef-cluster', knnEfCluster.toString());
+      }
+    }
     knnParts.push('-o', 'knn_results.fits');
     return parts.join(' ') + ' && \\\n' + knnParts.join(' ');
   }

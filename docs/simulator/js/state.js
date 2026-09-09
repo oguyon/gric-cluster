@@ -278,6 +278,8 @@
     let clusterUseSq16 = true; // 16-Bit Scalar Quantization Pre-Filter (Default: true)
     let clusterUseBatchDist = true; // Multi-Vector SIMD Batch Distance (Default: true)
     let knnUseBatchDist = true; // Multi-Vector SIMD Batch Distance for k-NN (Default: true)
+    let knnUseClusterGraph = true; // Cluster Graph Routing (Default: true)
+    let knnEfCluster = 60; // Max cluster centroids evaluated in graph routing
     let knnResults = null;
     let selectedKnnQuerySample = -1;
     let hoveredKnnNeighborId = -1;
@@ -1415,6 +1417,8 @@
         clusterUseSq16: true,
         clusterUseBatchDist: true,
         knnUseBatchDist: true,
+        knnUseClusterGraph: true,
+        knnEfCluster: 60,
         dimDensityResults: null,
         dimDensitySummary: null,
         isDimDensityComputing: false,
@@ -1564,6 +1568,8 @@
       slot.clusterUseSq16 = clusterUseSq16;
       slot.clusterUseBatchDist = clusterUseBatchDist;
       slot.knnUseBatchDist = knnUseBatchDist;
+      slot.knnUseClusterGraph = knnUseClusterGraph;
+      slot.knnEfCluster = knnEfCluster;
       slot.dimDensityResults = dimDensityResults;
       slot.dimDensitySummary = dimDensitySummary;
       slot.isDimDensityComputing = isDimDensityComputing;
@@ -1754,6 +1760,9 @@
       clusterUseSq16 = (slot.clusterUseSq16 !== undefined) ? slot.clusterUseSq16 : true;
       clusterUseBatchDist = (slot.clusterUseBatchDist !== undefined) ? slot.clusterUseBatchDist : true;
       knnUseBatchDist = (slot.knnUseBatchDist !== undefined) ? slot.knnUseBatchDist : true;
+      knnUseClusterGraph = (slot.knnUseClusterGraph !== undefined)
+        ? slot.knnUseClusterGraph : true;
+      knnEfCluster = (slot.knnEfCluster !== undefined) ? slot.knnEfCluster : 60;
       dimDensityResults = slot.dimDensityResults || null;
       dimDensitySummary = slot.dimDensitySummary || null;
       isDimDensityComputing = slot.isDimDensityComputing || false;
@@ -2157,6 +2166,8 @@
       slot.clusterUseSq16 = true;
       slot.clusterUseBatchDist = true;
       slot.knnUseBatchDist = true;
+      slot.knnUseClusterGraph = true;
+      slot.knnEfCluster = 60;
 
       // Update toolbar status pill & indicators
       const pill = document.getElementById(`datasetStatusPill_${slotId}`);
