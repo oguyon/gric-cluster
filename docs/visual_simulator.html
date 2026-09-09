@@ -3033,6 +3033,32 @@ integer lower-bound metric pruning (256x tighter bounds, zero-unpack AVX2).">
                 </div>
               </div>
 
+              <!-- Cluster Graph Routing Toggle -->
+              <div class="toggle-group"
+                   style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 2px;">
+                <div id="btnKnnClusterGraph" class="toggle-btn toggle-active toggle-cyan active"
+                     data-tooltip-title="Graph-Guided Cluster Routing"
+                     data-tooltip-badge="CLI: -cluster-graph"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Navigates cluster centroid proximity graph using
+greedy best-first search instead of exhaustive cluster scans.">
+                  Cluster Graph Routing (-cluster-graph)
+                </div>
+              </div>
+
+              <!-- Cluster Search Budget ef_cluster -->
+              <div class="control-row" id="rowKnnEfCluster">
+                <div class="control-label">
+                  <span>Cluster Budget (<span class="badge-pill">-ef-cluster</span>)</span>
+                  <div class="val-box">
+                    <input type="number" id="inputKnnEfCluster" class="val-input"
+                           min="5" max="500" step="5" value="60">
+                    <span class="val-unit">ef</span>
+                  </div>
+                </div>
+                <input type="range" id="sliderKnnEfCluster" min="5" max="250" step="5" value="60">
+              </div>
+
               <!-- Canvas Ray Overlay Toggle -->
               <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 6px;">
                 <div id="optToggleKnnLinesKnnCard" class="toggle-btn toggle-active toggle-green"
@@ -3257,6 +3283,15 @@ lower bounds (d_LB > tau) without full-precision distance computation.">
                        style="font-size: 0.65rem; color: #94a3b8; margin-top: 2px;">
                     Members: 0 | Graph: 0
                   </div>
+                </div>
+                <div class="stat-box"
+                     data-tooltip-title="Graph-Guided Cluster Routing"
+                     data-tooltip-badge="Cluster Graph"
+                     data-tooltip-color="purple"
+                     data-tooltip-desc="Candidate cluster centroids evaluated via greedy
+best-first graph routing instead of brute-force cluster scanning.">
+                  <div id="knnClustersGraphVal" class="num" style="color: #c084fc;">0</div>
+                  <div class="lbl">Cluster Graph Evals</div>
                 </div>
               </div>
 
@@ -4243,6 +4278,18 @@ lower bounds (d_LB > tau) without full-precision distance computation.">
                           <div id="reconQuerySq8BreakdownVal"
                                style="font-size: 0.65rem; color: #94a3b8; margin-top: 2px;">
                             Members: 0 | Graph: 0
+                          </div>
+                        </div>
+                        <div class="stat-box"
+                             data-tooltip-title="Cluster Graph Routing Evaluations"
+                             data-tooltip-badge="Cluster Graph"
+                             data-tooltip-color="purple"
+                             data-tooltip-desc="Candidate cluster centroids evaluated via
+greedy best-first graph routing instead of brute-force cluster scanning.">
+                          <div id="reconQueryClustersGraphVal"
+                               class="num" style="color: #c084fc;">0</div>
+                          <div class="lbl">
+                            Cluster Graph Evals
                           </div>
                         </div>
                       </div>

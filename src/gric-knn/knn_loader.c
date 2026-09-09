@@ -375,6 +375,35 @@ static void parse_radii_file(
 }
 
 /**
+ * parse_cluster_log() - Parse parameters from cluster_run.log if available.
+ * @path:  Path to cluster_run.log.
+ * @model: Pointer to KnnModel.
+ */
+static void parse_cluster_log(
+    const char *path,
+    KnnModel   *model)
+{
+    FILE *f = fopen(path, "r");
+    if (f == NULL)
+    {
+        return;
+    }
+
+    char line[512];
+    while (fgets(line, sizeof(line), f) != NULL)
+    {
+        double rlim_val = 0.0;
+        if (sscanf(line, "PARAM_RLIM: %lf", &rlim_val) == 1)
+        {
+            model->model_rlim = rlim_val;
+            break;
+        }
+    } // while reading cluster log
+
+    fclose(f);
+}
+
+/**
  * propagate_triangle_lower_bounds() - Use triangle inequality to compute
  *                                     tight lower bounds for missing pairs.
  * @model: Pointer to KnnModel with partially populated dcc_matrix.
@@ -1379,6 +1408,10 @@ int knn_model_load(
     snprintf(radii_path, sizeof(radii_path), "%s/cluster_radii.txt", cluster_dir);
     parse_radii_file(radii_path, model);
 
+    char log_path[2048];
+    snprintf(log_path, sizeof(log_path), "%s/cluster_run.log", cluster_dir);
+    parse_cluster_log(log_path, model);
+
     if (parse_dcc_file(cluster_dir, model) != 0)
     {
         knn_model_free(model);
@@ -1420,6 +1453,12 @@ int knn_model_load(
         return -1;
     }
 
+    if (knn_build_cluster_graph(model) != 0)
+    {
+        knn_model_free(model);
+        return -1;
+    }
+
     /* Populate fast lookup pointer arrays for shared cluster locator */
     model->anchor_ptrs =
         (const void **)malloc((size_t)model->num_clusters * sizeof(const void *));
@@ -1453,6 +1492,7 @@ void knn_model_free(
     }
 
     knn_free_super_clusters(model);
+    knn_free_cluster_graph(model);
 
     if (model->clusters != NULL)
     {
@@ -1525,6 +1565,12 @@ void knn_model_free(
     {
         free(model->sq8_dataset_buffer);
         model->sq8_dataset_buffer = NULL;
+    }
+
+    if (model->anchor_sq8_buffer != NULL)
+    {
+        free(model->anchor_sq8_buffer);
+        model->anchor_sq8_buffer = NULL;
     }
 
     if (model->sq16_dataset_buffer != NULL)
@@ -1747,6 +1793,32 @@ int knn_model_build_or_load_sq8(
         {
             fprintf(stderr, "Warning: Failed to write SQ8 sidecar file '%s'\n",
                     config->sq8_save_path);
+        }
+    }
+
+    // Pre-quantize anchor vectors for fast Level 2 anchor lower-bound pruning
+    if (model->clusters != NULL && model->num_clusters > 0)
+    {
+        size_t anchor_elems = (size_t)model->num_clusters * (size_t)dim;
+        model->anchor_sq8_buffer = (uint8_t *)malloc(anchor_elems * sizeof(uint8_t));
+        if (model->anchor_sq8_buffer != NULL)
+        {
+            for (int c = 0; c < model->num_clusters; c++)
+            {
+                uint8_t *dst = model->anchor_sq8_buffer + (size_t)c * (size_t)dim;
+                if (model->is_double)
+                {
+                    sq8_quantize_double(
+                        (const double *)model->clusters[c].anchor_data, dst, &model->sq8_params
+                    );
+                }
+                else
+                {
+                    sq8_quantize_float(
+                        (const float *)model->clusters[c].anchor_data, dst, &model->sq8_params
+                    );
+                }
+            }
         }
     }
 

@@ -6,29 +6,44 @@
 #ifndef CLUSTER_LOCATOR_H
 #define CLUSTER_LOCATOR_H
 
+#include "scalar_quant.h"
 #include <stdbool.h>
 #include <stdint.h>
+
+/** Status return codes for cluster_locate_sample */
+#define CLUSTER_LOCATE_SUCCESS   0
+#define CLUSTER_LOCATE_REJECTED  1
+#define CLUSTER_LOCATE_ERROR    -1
 
 /** Configuration flags matching gric-cluster options */
 typedef struct
 {
-    int    max_targets;     /**< Max anchor distance evaluations (default: 8) */
-    double rlim;            /**< Matching radius cutoff (0 = disabled) */
-    double tau_max;         /**< Current k-NN upper bound distance */
-    double epsilon;         /**< Slack factor (1 + eps) for approximate bounds */
-    int    entropy_mode;    /**< 1 = Shannon entropy, 0 = greedy / gprob */
-    int    entropy_fast;    /**< 1 = fast entropy early exit */
-    int    gprob_mode;      /**< 1 = geometric probability weighting */
-    int    te4_mode;        /**< 1 = 4-point geometric bounding */
-    int    te5_mode;        /**< 1 = 5-point geometric bounding */
-    int    prev_cluster_id; /**< Preceding query cluster ID for trajectory warm-starting */
-    int    is_double;       /**< 1 = double precision, 0 = float */
+    int                   max_targets;       /**< Max anchor distance evaluations (default: 8) */
+    double                rlim;              /**< Matching radius cutoff (0 = disabled) */
+    double                tau_max;           /**< Current k-NN upper bound distance */
+    double                epsilon;           /**< Slack factor (1 + eps) for approximate bounds */
+    int                   entropy_mode;      /**< 1 = Shannon entropy, 0 = greedy / gprob */
+    int                   entropy_fast;      /**< 1 = fast entropy early exit */
+    int                   gprob_mode;        /**< 1 = geometric probability weighting */
+    int                   te4_mode;          /**< 1 = 4-point geometric bounding */
+    int                   te5_mode;          /**< 1 = 5-point geometric bounding */
+    int                   prev_cluster_id;   /**< Preceding query cluster ID for warm-starting */
+    int                   strict_rlim;       /**< 1 = reject sample if no cluster has d <= rlim */
+    int                   is_double;         /**< 1 = double precision, 0 = float */
+    const int16_t        *query_sq16;        /**< Optional pre-quantized SQ16 query vector */
+    const int16_t        *anchors_sq16_buf;  /**< Optional contiguous [M x dim] SQ16 anchors */
+    const int16_t *const *anchors_sq16_ptrs; /**< Optional array of M pointers to SQ16 anchors */
+    const SQ16Params     *sq16_params;       /**< SQ16 calibration parameters */
+    const uint8_t        *query_sq8;         /**< Optional pre-quantized SQ8 query vector */
+    const uint8_t        *anchors_sq8_buf;   /**< Optional contiguous [M x dim] SQ8 anchors */
+    const uint8_t *const *anchors_sq8_ptrs;  /**< Optional array of M pointers to SQ8 anchors */
+    const SQ8Params      *sq8_params;        /**< SQ8 calibration parameters */
 } ClusterLocatorConfig;
 
 /** Results of the coarse cluster localization */
 typedef struct
 {
-    int      best_cluster_id;        /**< Closest cluster index */
+    int      best_cluster_id;        /**< Closest cluster index (-1 if rejected/none) */
     double   best_anchor_dist;       /**< Distance to best cluster anchor */
     int      num_evaluated_anchors;  /**< Number of anchor distances computed */
     int      evaluated_clusters[32]; /**< Array of evaluated cluster indices */
@@ -89,7 +104,7 @@ double calc_min_dist_5pt(
  * @config:           Tuning and runtime configuration.
  * @result:           Output structure to populate.
  *
- * Return: 0 on success, -1 on error.
+ * Return: CLUSTER_LOCATE_SUCCESS (0), CLUSTER_LOCATE_REJECTED (1), or error (-1).
  */
 int cluster_locate_sample(
     const void                 *query_data,

@@ -899,6 +899,7 @@ const DesktopBridge = (function () {
       sq16MembersPruned: 0,
       sq16GraphPruned: 0,
       sq16TotalPruned: 0,
+      clustersGraphEvaluated: 0,
       totalCandidatesConsidered: 0,
       timeSearchMs: 0.0
     };
@@ -920,6 +921,9 @@ const DesktopBridge = (function () {
 
     const mL3 = clean.match(/Level 3 Annular Pruned:\s+(\d+)/);
     if (mL3) telem.level3AnnularPruned = parseInt(mL3[1], 10);
+
+    const mGraphClusters = clean.match(/Clusters Graph Evaluated:\s+(\d+)/);
+    if (mGraphClusters) telem.clustersGraphEvaluated = parseInt(mGraphClusters[1], 10);
 
     const mRecip = clean.match(/Reciprocal Reused:\s+(\d+)/);
     if (mRecip) telem.reciprocalReused = parseInt(mRecip[1], 10);

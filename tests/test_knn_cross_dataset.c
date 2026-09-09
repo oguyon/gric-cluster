@@ -5,9 +5,11 @@
 
 #include <assert.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "gric_bin_io.h"
 
 #define TEST_A_TXT "/tmp/test_cross_A.txt"
 #define TEST_C_TXT "/tmp/test_cross_C.txt"
@@ -299,6 +301,162 @@ int main(void)
     }
     fclose(f_sq8);
     assert(queries_verified == 50);
+
+    // 9. Outlier Query Refusal Test
+    printf("--- Testing Out-of-Cluster Query Refusal ---\n");
+    char outlier_txt[256];
+    snprintf(outlier_txt, sizeof(outlier_txt), "/tmp/test_cross_outlier.txt");
+    FILE *f_outlier = fopen(outlier_txt, "w");
+    assert(f_outlier != NULL);
+    // Query 0: In-cluster point (near A[0])
+    fprintf(f_outlier, "%.8f %.8f\n", a_samples[0][0] + 0.001, a_samples[0][1] + 0.001);
+    // Query 1: Far away outlier 1
+    fprintf(f_outlier, "100.0 100.0\n");
+    // Query 2: Far away outlier 2
+    fprintf(f_outlier, "-80.0 -80.0\n");
+    fclose(f_outlier);
+
+    char outlier_out_txt[256];
+    snprintf(outlier_out_txt, sizeof(outlier_out_txt), "/tmp/test_cross_outlier_out.txt");
+    snprintf(cmd, sizeof(cmd),
+             "./gric-knn %s %s -query %s -k 5 -o %s",
+             TEST_A_TXT, TEST_CLUSTER_DIR, outlier_txt, outlier_out_txt);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    FILE *f_out_res = fopen(outlier_out_txt, "r");
+    assert(f_out_res != NULL);
+    int outlier_q_count = 0;
+    while (fgets(line, sizeof(line), f_out_res) != NULL)
+    {
+        if (line[0] == '#' || line[0] == '\n')
+        {
+            continue;
+        }
+        long q_id = -1;
+        int n_ids[5];
+        double n_dists[5];
+        int scanned = sscanf(line, "%ld %d %lf %d %lf %d %lf %d %lf %d %lf",
+                             &q_id,
+                             &n_ids[0], &n_dists[0],
+                             &n_ids[1], &n_dists[1],
+                             &n_ids[2], &n_dists[2],
+                             &n_ids[3], &n_dists[3],
+                             &n_ids[4], &n_dists[4]);
+        assert(scanned == 11);
+        if (q_id == 0)
+        {
+            // In-cluster query: must be accepted with valid indices >= 0
+            assert(n_ids[0] >= 0);
+            assert(n_dists[0] >= 0.0);
+        }
+        else
+        {
+            // Out-of-cluster queries: must be refused with -1 sentinels
+            for (int p = 0; p < 5; p++)
+            {
+                assert(n_ids[p] == -1);
+                assert(n_dists[p] == -1.0);
+            }
+        }
+        outlier_q_count++;
+    }
+    fclose(f_out_res);
+    assert(outlier_q_count == 3);
+
+    // Validate binary outputs for query refusal
+    char outlier_bin_idx[256];
+    char outlier_bin_dst[256];
+    snprintf(outlier_bin_idx, sizeof(outlier_bin_idx),
+             "/tmp/test_cross_outlier_out_indices.bin");
+    snprintf(outlier_bin_dst, sizeof(outlier_bin_dst),
+             "/tmp/test_cross_outlier_out_distances.bin");
+
+    FILE *f_bidx = fopen(outlier_bin_idx, "rb");
+    assert(f_bidx != NULL);
+    gric_bin_header_t hdr_i;
+    char *comm_i = NULL;
+    assert(gric_bin_read_header(f_bidx, &hdr_i, &comm_i) == 0);
+    assert(hdr_i.dims[0] == 3 && hdr_i.dims[1] == 5);
+    uint32_t b_indices[15];
+    assert(fread(b_indices, sizeof(uint32_t), 15, f_bidx) == 15);
+    fclose(f_bidx);
+    if (comm_i != NULL)
+    {
+        free(comm_i);
+    }
+
+    FILE *f_bdst = fopen(outlier_bin_dst, "rb");
+    assert(f_bdst != NULL);
+    gric_bin_header_t hdr_d;
+    char *comm_d = NULL;
+    assert(gric_bin_read_header(f_bdst, &hdr_d, &comm_d) == 0);
+    assert(hdr_d.dims[0] == 3 && hdr_d.dims[1] == 5);
+    float b_distances[15];
+    assert(fread(b_distances, sizeof(float), 15, f_bdst) == 15);
+    fclose(f_bdst);
+    if (comm_d != NULL)
+    {
+        free(comm_d);
+    }
+
+    for (int p = 0; p < 5; p++)
+    {
+        assert(b_indices[p] != UINT32_MAX);
+        assert(b_distances[p] >= 0.0f);
+    }
+    for (int q = 1; q < 3; q++)
+    {
+        for (int p = 0; p < 5; p++)
+        {
+            assert(b_indices[q * 5 + p] == UINT32_MAX);
+            assert(b_distances[q * 5 + p] == -1.0f);
+        }
+    }
+
+    // 10. Test --all-queries flag to ensure refusal can be disabled
+    printf("--- Testing --all-queries override flag ---\n");
+    char all_q_out_txt[256];
+    snprintf(all_q_out_txt, sizeof(all_q_out_txt), "/tmp/test_cross_all_queries_out.txt");
+    snprintf(cmd, sizeof(cmd),
+             "./gric-knn %s %s -query %s -k 5 --all-queries -o %s",
+             TEST_A_TXT, TEST_CLUSTER_DIR, outlier_txt, all_q_out_txt);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    FILE *f_all_q = fopen(all_q_out_txt, "r");
+    assert(f_all_q != NULL);
+    outlier_q_count = 0;
+    while (fgets(line, sizeof(line), f_all_q) != NULL)
+    {
+        if (line[0] == '#' || line[0] == '\n')
+        {
+            continue;
+        }
+        long q_id = -1;
+        int n_ids[5];
+        double n_dists[5];
+        int scanned = sscanf(line, "%ld %d %lf %d %lf %d %lf %d %lf %d %lf",
+                             &q_id,
+                             &n_ids[0], &n_dists[0],
+                             &n_ids[1], &n_dists[1],
+                             &n_ids[2], &n_dists[2],
+                             &n_ids[3], &n_dists[3],
+                             &n_ids[4], &n_dists[4]);
+        assert(scanned == 11);
+        // With --all-queries, every query must be accepted
+        assert(n_ids[0] >= 0);
+        assert(n_dists[0] >= 0.0);
+        outlier_q_count++;
+    }
+    fclose(f_all_q);
+    assert(outlier_q_count == 3);
+
+    remove(outlier_txt);
+    remove(outlier_out_txt);
+    remove(outlier_bin_idx);
+    remove(outlier_bin_dst);
+    remove(all_q_out_txt);
 
     // Cleanup temporary test files
     remove(TEST_A_TXT);

@@ -1443,6 +1443,7 @@
       const sq8PrunedVal = document.getElementById('knnSq8PrunedVal');
       const sq8PctVal = document.getElementById('knnSq8PctVal');
       const sq8BreakdownVal = document.getElementById('knnSq8BreakdownVal');
+      const clustersGraphVal = document.getElementById('knnClustersGraphVal');
 
       // Progress / Stacked bars
       const pruneSumTxt = document.getElementById('knnPruneSummaryTxt');
@@ -1508,6 +1509,7 @@
         if (sq8PrunedVal) sq8PrunedVal.textContent = '0';
         if (sq8PctVal) sq8PctVal.textContent = '0%';
         if (sq8BreakdownVal) sq8BreakdownVal.textContent = 'Members: 0 | Graph: 0';
+        if (clustersGraphVal) clustersGraphVal.textContent = '0';
 
         if (pruneSumTxt) pruneSumTxt.textContent = '0% Pruned';
         if (barPruned) barPruned.style.width = '0%';
@@ -1640,6 +1642,10 @@
       if (sq8BreakdownVal) {
         sq8BreakdownVal.textContent =
           `Members: ${sqMembers.toLocaleString()} | Graph: ${sqGraph.toLocaleString()}`;
+      }
+      if (clustersGraphVal) {
+        const cgEvals = telem.clustersGraphEvaluated || 0;
+        clustersGraphVal.textContent = cgEvals.toLocaleString();
       }
 
       const totalHierarchy = Math.max(1, l1 + l2 + l3 + temp + sqPruned + dists);
@@ -1804,6 +1810,24 @@
         btnKnnBatchDist.classList.toggle('toggle-active', knnUseBatchDist);
         btnKnnBatchDist.classList.toggle('toggle-cyan', knnUseBatchDist);
         btnKnnBatchDist.classList.toggle('active', knnUseBatchDist);
+      }
+      const btnKnnClusterGraph = document.getElementById('btnKnnClusterGraph');
+      if (btnKnnClusterGraph && typeof knnUseClusterGraph !== 'undefined') {
+        btnKnnClusterGraph.classList.toggle('toggle-active', knnUseClusterGraph);
+        btnKnnClusterGraph.classList.toggle('toggle-cyan', knnUseClusterGraph);
+        btnKnnClusterGraph.classList.toggle('active', knnUseClusterGraph);
+      }
+      const inputKnnEfCluster = document.getElementById('inputKnnEfCluster');
+      const sliderKnnEfCluster = document.getElementById('sliderKnnEfCluster');
+      if (inputKnnEfCluster && typeof knnEfCluster !== 'undefined') {
+        inputKnnEfCluster.value = knnEfCluster;
+      }
+      if (sliderKnnEfCluster && typeof knnEfCluster !== 'undefined') {
+        sliderKnnEfCluster.value = Math.min(250, knnEfCluster);
+      }
+      const rowKnnEfCluster = document.getElementById('rowKnnEfCluster');
+      if (rowKnnEfCluster && typeof knnUseClusterGraph !== 'undefined') {
+        rowKnnEfCluster.style.display = knnUseClusterGraph ? 'flex' : 'none';
       }
 
       const presetBar = document.getElementById('viewPresetBar');

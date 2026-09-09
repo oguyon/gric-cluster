@@ -66,6 +66,8 @@ static void print_help(
     printf("  %s-rlim%s %s<float>%s         Maximum distance cutoff "
            "(ignore neighbors beyond rlim)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s--all-queries%s         Do not refuse out-of-cluster queries (exhaustive)\n",
+           ansi_color_green, ansi_reset);
     printf("  %s-nthreads%s %s<int>%s       Number of OpenMP worker threads "
            "(%sdefault:%s all CPU cores)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
@@ -118,6 +120,16 @@ static void print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-no-batch-dist%s          Disable multi-vector SIMD batch distance\n",
            ansi_color_green, ansi_reset);
+    printf("  %s-cluster-graph%s, %s--cluster-graph%s Enable Graph-Guided Cluster Routing "
+           "(%sdefault:%s on)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("  %s-no-cluster-graph%s, %s--no-cluster-graph%s Disable Graph-Guided Routing\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-ef-cluster%s %s<int>%s       Max clusters to evaluate in graph routing "
+           "(%sdefault:%s 60)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
+           ansi_color_cyan, ansi_reset);
     printf("  %s-prof%s %s<path>%s          Explicit dataset profile file (.gricprof)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-no-prof%s, %s--no-prof%s       Disable auto-loading of .gricprof file\n",
@@ -159,6 +171,8 @@ int main(
     config.use_trajectory = 0; // Disabled by default; enable for smooth trajectories
     config.use_sq8 = 1; // Enabled by default for 8-bit metric pre-filtering
     config.use_batch_dist = 1; // Enabled by default for multi-vector SIMD batching
+    config.use_cluster_graph = 1; // Enabled by default for graph-guided cluster routing
+    config.ef_cluster = 60;       // Default cluster budget in graph routing
 
     int k_explicitly_set = 0;
     int dtmin_explicitly_set = 0;
@@ -252,6 +266,11 @@ int main(
                 fprintf(stderr, "Error: -rlim requires a float argument\n");
                 return 1;
             }
+        }
+        else if (strcmp(argv[arg_idx], "-all-queries") == 0 ||
+                 strcmp(argv[arg_idx], "--all-queries") == 0)
+        {
+            config.refuse_unclustered = -1;
         }
         else if (strcmp(argv[arg_idx], "-nthreads") == 0)
         {
@@ -446,6 +465,26 @@ int main(
         {
             config.use_batch_dist = 0;
         }
+        else if (strcmp(argv[arg_idx], "-cluster-graph") == 0 ||
+                 strcmp(argv[arg_idx], "--cluster-graph") == 0)
+        {
+            config.use_cluster_graph = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-cluster-graph") == 0 ||
+                 strcmp(argv[arg_idx], "--no-cluster-graph") == 0)
+        {
+            config.use_cluster_graph = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-ef-cluster") == 0 ||
+                 strcmp(argv[arg_idx], "--ef-cluster") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -ef-cluster requires an integer argument\n");
+                return 1;
+            }
+            config.ef_cluster = atoi(argv[++arg_idx]);
+        }
         else if (strcmp(argv[arg_idx], "-prof") == 0 ||
                  strcmp(argv[arg_idx], "--prof") == 0)
         {
@@ -572,10 +611,6 @@ int main(
     {
         printf("  ANN Epsilon:   %.4f\n", config.epsilon);
     }
-    if (config.rlim_cutoff > 0.0)
-    {
-        printf("  Radius Cutoff: %.6f\n", config.rlim_cutoff);
-    }
     if (config.use_multi_pivot)
     {
         printf("  Multi-Pivot:   Enabled (AESA/LAESA Indexing)\n");
@@ -624,6 +659,28 @@ int main(
     {
         fprintf(stderr, "Error: Failed to load cluster model from '%s'\n", config.cluster_dir);
         return 1;
+    }
+
+    if (config.query_data_path != NULL)
+    {
+        double effective_rlim = (config.rlim_cutoff > 0.0) ?
+            config.rlim_cutoff : model.model_rlim;
+
+        if (config.refuse_unclustered == 0)
+        {
+            if (effective_rlim > 0.0)
+            {
+                config.refuse_unclustered = 1;
+            }
+        }
+        else if (config.refuse_unclustered == -1)
+        {
+            config.refuse_unclustered = 0;
+        }
+    }
+    else
+    {
+        config.refuse_unclustered = 0;
     }
 
     knn_model_cache_dataset(&model, &config);
@@ -710,8 +767,23 @@ int main(
     {
         printf("\n");
     }
-    printf("  Frame Dimension: %ld x %ld (%ld elements)\n\n",
+    printf("  Frame Dimension: %ld x %ld (%ld elements)\n",
            model.frame_width, model.frame_height, model.frame_elements);
+    if (config.rlim_cutoff > 0.0)
+    {
+        printf("  Radius Cutoff:   %.6f\n", config.rlim_cutoff);
+    }
+    else if (model.model_rlim > 0.0)
+    {
+        printf("  Cluster Radius:  %.6f (Inherited from Pass 1)\n", model.model_rlim);
+    }
+    if (config.query_data_path != NULL)
+    {
+        printf("  Cluster Refusal: %s\n",
+               config.refuse_unclustered ?
+                   "Enabled (Strict r_lim Membership)" : "Disabled (All Queries)");
+    }
+    printf("\n");
 
     KnnResults results;
     memset(&results, 0, sizeof(KnnResults));
@@ -751,6 +823,11 @@ int main(
            (unsigned long)telemetry.framedist_calls, (unsigned long)total_brute_force);
     printf("  Metric Pruning Efficiency: %s%.4f%%%s calls pruned!\n",
            ansi_bold_green, prune_pct, ansi_reset);
+    if (telemetry.out_of_cluster_rejected > 0)
+    {
+        printf("  Out-of-Cluster Refused:    %lu queries\n",
+               (unsigned long)telemetry.out_of_cluster_rejected);
+    }
     if (telemetry.level0_super_clusters_pruned > 0)
     {
         printf("  Level 0 Super-Clusters:    %lu pruned\n",
@@ -759,6 +836,11 @@ int main(
     printf("  Level 1 Clusters Pruned:   %lu\n", (unsigned long)telemetry.level1_clusters_pruned);
     printf("  Level 2 Anchors Pruned:    %lu\n", (unsigned long)telemetry.level2_anchors_pruned);
     printf("  Level 3 Annular Pruned:    %lu\n", (unsigned long)telemetry.level3_annular_pruned);
+    if (telemetry.clusters_graph_evaluated > 0)
+    {
+        printf("  Clusters Graph Evaluated:  %lu\n",
+               (unsigned long)telemetry.clusters_graph_evaluated);
+    }
     if (config.use_sq16)
     {
         uint64_t total_sq16_pruned = telemetry.sq16_members_pruned +
