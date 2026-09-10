@@ -109,6 +109,9 @@ typedef struct
     int             refuse_unclustered; /**< 1 to refuse external queries not in any cluster */
     int             use_cluster_graph;  /**< 1 to enable Graph-Guided Cluster Routing */
     int             ef_cluster;         /**< Max clusters to evaluate in graph routing */
+    int             use_two_hop;        /**< 1 to enable 2-Hop Candidate Injection */
+    int             two_hop_seeds;      /**< Number of top seeds to expand in 2-hop */
+    int             two_hop_max_cands;  /**< Maximum 2-hop candidates evaluated per query */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -137,6 +140,9 @@ typedef struct
     uint64_t sq16_members_pruned;
     uint64_t sq16_graph_pruned;
     uint64_t clusters_graph_evaluated;
+    uint64_t two_hop_evaluations;
+    uint64_t two_hop_pruned;
+    uint64_t two_hop_injected;
     double   time_load_ms;
     double   time_search_ms;
     double   time_write_ms;

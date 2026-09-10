@@ -1632,8 +1632,10 @@
           slotId, px, py, qRect, activeView, activeCam, checkMask = false
         ) {
           const targetSlot = datasetSlots[slotId];
-          const pts = targetSlot
-            ? (targetSlot.benchmarkDataset || targetSlot.pastSamples) : null;
+          const pts = (typeof getSlotPoints === 'function')
+            ? getSlotPoints(targetSlot)
+            : (targetSlot && targetSlot.benchmarkDataset && targetSlot.benchmarkDataset.length > 0
+                ? targetSlot.benchmarkDataset : (targetSlot ? targetSlot.pastSamples : null));
           if (!pts || pts.length === 0) return { index: -1, distSq: Infinity };
 
           const is3D = (targetSlot && targetSlot.currentDim >= 3);
@@ -1643,7 +1645,7 @@
 
           let bestIdx = -1;
           let bestDistSq = Infinity;
-          const checkN = Math.min(pts.length, 100000);
+          const checkN = Math.min(pts.length, 1000000);
           const slotMask = checkMask
             ? (targetSlot.reconQualityMask ||
                (slotId === 'C' ? datasetSlots.C?.reconQualityMask
@@ -1878,7 +1880,7 @@
       let bestPt = null;
       const MAX_PICK_DIST_SQ = 70 * 70; // within 70px
 
-      const maxCheck = Math.min(numPast, 100000);
+      const maxCheck = Math.min(numPast, 1000000);
       for (let i = 0; i < maxCheck; i++) {
         const pt = pastSamples[i];
         const pr = getProjectedCoord(pt);
@@ -2844,7 +2846,9 @@
           }
           currentBenchmark = newBench;
 
-          if (newBench.startsWith('32D')) {
+          if (newBench.startsWith('32D') ||
+              newBench.startsWith('128D') ||
+              newBench.startsWith('512D')) {
             if (typeof setClusteringRlim === 'function') {
               setClusteringRlim(1.0, false);
             } else {
@@ -2878,11 +2882,19 @@
           const selSide = document.getElementById('selectBenchmarkSide');
           if (selSide) selSide.value = newBench;
 
-          if (typeof updateSlotGenState === 'function') {
+          if (typeof stageDataset === 'function') {
+            stageDataset(newBench, sId);
+          } else if (typeof updateSlotGenState === 'function') {
             updateSlotGenState(sId, 'pending');
           }
           if (typeof updateDatasetStatusBadge === 'function') {
             updateDatasetStatusBadge();
+          }
+          if (typeof renderReconstructionDashboard === 'function') {
+            renderReconstructionDashboard();
+          }
+          if (typeof draw === 'function') {
+            draw();
           }
         });
       }
@@ -7417,20 +7429,56 @@
       const slotC = datasetSlots['C'];
       const slotD = datasetSlots['D'];
 
-      const ptsA = slotA ? slotA.benchmarkDataset : null;
-      const ptsB = slotB ? slotB.benchmarkDataset : null;
-      const ptsC = slotC ? slotC.benchmarkDataset : null;
+      let ptsA = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotA)
+        : (slotA && slotA.benchmarkDataset && slotA.benchmarkDataset.length > 0
+            ? slotA.benchmarkDataset : (slotA ? slotA.pastSamples : null));
+      let ptsB = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotB)
+        : (slotB && slotB.benchmarkDataset && slotB.benchmarkDataset.length > 0
+            ? slotB.benchmarkDataset : (slotB ? slotB.pastSamples : null));
+      let ptsC = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotC)
+        : (slotC && slotC.benchmarkDataset && slotC.benchmarkDataset.length > 0
+            ? slotC.benchmarkDataset : (slotC ? slotC.pastSamples : null));
+
+      if (slotA && (!slotA.benchmarkDataset || slotA.benchmarkDataset.length === 0) && ptsA) {
+        slotA.benchmarkDataset = ptsA;
+      }
+      if (slotB && (!slotB.benchmarkDataset || slotB.benchmarkDataset.length === 0) && ptsB) {
+        slotB.benchmarkDataset = ptsB;
+      }
+      if (slotC && (!slotC.benchmarkDataset || slotC.benchmarkDataset.length === 0) && ptsC) {
+        slotC.benchmarkDataset = ptsC;
+      }
 
       if (!ptsA || ptsA.length === 0) {
         showToast('⚠️ Reconstruction Error: Training Input Dataset [A] is empty or not staged.');
         return;
       }
-      if (!ptsB || ptsB.length === 0) {
-        showToast('⚠️ Reconstruction Error: Training Output Dataset [B] is empty or not staged.');
-        return;
-      }
       if (!ptsC || ptsC.length === 0) {
         showToast('⚠️ Reconstruction Error: Query Input Dataset [C] is empty or not staged.');
+        return;
+      }
+
+      // Auto-stage or auto-align Slot B to match Slot A if needed
+      if (slotB && (!ptsB || ptsB.length === 0 || (ptsA && ptsB.length !== ptsA.length))) {
+        if (slotB.benchmarkKey && slotB.benchmarkKey !== 'custom' && slotB.dataMode !== 'image') {
+          slotB.sampleCount = slotA.sampleCount ||
+            Math.round(ptsA.length / (slotA.loopCount || 1));
+          slotB.loopCount = slotA.loopCount || 1;
+          if (typeof stageDataset === 'function') {
+            stageDataset(slotB.benchmarkKey, 'B');
+            ptsB = (typeof getSlotPoints === 'function')
+              ? getSlotPoints(slotB)
+              : (slotB.benchmarkDataset || slotB.pastSamples);
+            if (slotB && ptsB) slotB.benchmarkDataset = ptsB;
+          }
+        }
+      }
+
+      if (!ptsB || ptsB.length === 0) {
+        showToast('⚠️ Reconstruction Error: Training Output Dataset [B] is empty or not staged.');
         return;
       }
       if (ptsA.length !== ptsB.length) {
@@ -7512,7 +7560,7 @@
 
         if (!hasValidNativeKnn) {
           showToast(`⚡ Running native compiled C gric-knn -query C (k=${k})...`);
-          await runNativeReconQueryKnn();
+          await runNativeReconQueryKnn({ autoReconstruct: false });
         }
       }
 
@@ -7548,114 +7596,140 @@
           const offset = i * nativeKnn.k;
           const topNeighbors = [];
 
-          /* Collect the top-k neighbor indices and distances */
-          const rawDists = new Float64Array(kUsed);
-          const rawIdx   = new Int32Array(kUsed);
+          /* Filter and collect valid neighbor indices and distances */
+          const validIdx = [];
+          const validDists = [];
           for (let p = 0; p < kUsed; p++) {
-            rawDists[p] = nativeKnn.distances[offset + p];
-            rawIdx[p]   = nativeKnn.indices[offset + p];
+            const idx = nativeKnn.indices[offset + p];
+            const d = nativeKnn.distances[offset + p];
+            if (idx >= 0 && idx < ptsB.length && ptsB[idx] && d >= 0) {
+              validIdx.push(idx);
+              validDists.push(d);
+            }
           }
+          const numValid = validIdx.length;
 
           if (isImageOutput) {
             const reconBuf = new Float32Array(dimB);
-            if (weightMode === 'idw') {
-              let exactMatchIdx = -1;
-              for (let p = 0; p < kUsed; p++) {
-                if (rawDists[p] < 1e-9) { exactMatchIdx = p; break; }
-              }
-              if (exactMatchIdx >= 0) {
-                const pb = ptsB[rawIdx[exactMatchIdx]];
-                for (let d = 0; d < dimB; d++) {
-                  reconBuf[d] = pb[d];
+            if (numValid > 0) {
+              if (weightMode === 'idw') {
+                let exactMatchIdx = -1;
+                for (let p = 0; p < numValid; p++) {
+                  if (validDists[p] < 1e-9) { exactMatchIdx = p; break; }
                 }
-                for (let p = 0; p < kUsed; p++) {
-                  topNeighbors.push({
-                    id: rawIdx[p], dist: rawDists[p],
-                    weight: (p === exactMatchIdx) ? 1.0 : 0.0
-                  });
-                  totalDistSum += rawDists[p];
-                  totalDistCount++;
+                if (exactMatchIdx >= 0) {
+                  const pb = ptsB[validIdx[exactMatchIdx]];
+                  for (let d = 0; d < dimB; d++) {
+                    reconBuf[d] = pb[d];
+                  }
+                  for (let p = 0; p < numValid; p++) {
+                    topNeighbors.push({
+                      id: validIdx[p], dist: validDists[p],
+                      weight: (p === exactMatchIdx) ? 1.0 : 0.0
+                    });
+                    totalDistSum += validDists[p];
+                    totalDistCount++;
+                  }
+                } else {
+                  let sumW = 0.0;
+                  const weights = new Float64Array(numValid);
+                  for (let p = 0; p < numValid; p++) {
+                    const d = validDists[p];
+                    const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+                    weights[p] = w; sumW += w;
+                    totalDistSum += d; totalDistCount++;
+                  }
+                  const invSumW = sumW > 0 ? (1.0 / sumW) : 0.0;
+                  for (let p = 0; p < numValid; p++) {
+                    const normW = weights[p] * invSumW;
+                    const pb = ptsB[validIdx[p]];
+                    for (let d = 0; d < dimB; d++) {
+                      reconBuf[d] += normW * pb[d];
+                    }
+                    topNeighbors.push({ id: validIdx[p], dist: validDists[p], weight: normW });
+                  }
                 }
               } else {
-                let sumW = 0.0;
-                const weights = new Float64Array(kUsed);
-                for (let p = 0; p < kUsed; p++) {
-                  const d = rawDists[p];
-                  const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
-                  weights[p] = w; sumW += w;
-                  totalDistSum += d; totalDistCount++;
-                }
-                for (let p = 0; p < kUsed; p++) {
-                  const normW = weights[p] / sumW;
-                  const pb = ptsB[rawIdx[p]];
+                const normW = 1.0 / numValid;
+                for (let p = 0; p < numValid; p++) {
+                  const pb = ptsB[validIdx[p]];
                   for (let d = 0; d < dimB; d++) {
                     reconBuf[d] += normW * pb[d];
                   }
-                  topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
+                  topNeighbors.push({ id: validIdx[p], dist: validDists[p], weight: normW });
+                  totalDistSum += validDists[p]; totalDistCount++;
                 }
-              }
-            } else {
-              const normW = 1.0 / kUsed;
-              for (let p = 0; p < kUsed; p++) {
-                const pb = ptsB[rawIdx[p]];
-                for (let d = 0; d < dimB; d++) {
-                  reconBuf[d] += normW * pb[d];
-                }
-                topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
-                totalDistSum += rawDists[p]; totalDistCount++;
               }
             }
             reconstructedPoints[i] = reconBuf;
             sourceNeighbors[i]     = topNeighbors;
           } else {
             let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
-            if (weightMode === 'idw') {
-              let exactMatchIdx = -1;
-              for (let p = 0; p < kUsed; p++) {
-                if (rawDists[p] < 1e-9) { exactMatchIdx = p; break; }
-              }
-              if (exactMatchIdx >= 0) {
-                const pb = ptsB[rawIdx[exactMatchIdx]];
-                avgX = pb.x; avgY = pb.y;
-                avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
-                for (let p = 0; p < kUsed; p++) {
-                  topNeighbors.push({
-                    id: rawIdx[p], dist: rawDists[p],
-                    weight: (p === exactMatchIdx) ? 1.0 : 0.0
-                  });
-                  totalDistSum += rawDists[p];
-                  totalDistCount++;
+            const avgCoords = (dimB > 3) ? new Float64Array(dimB) : null;
+            if (numValid > 0) {
+              if (weightMode === 'idw') {
+                let exactMatchIdx = -1;
+                for (let p = 0; p < numValid; p++) {
+                  if (validDists[p] < 1e-9) { exactMatchIdx = p; break; }
+                }
+                if (exactMatchIdx >= 0) {
+                  const pb = ptsB[validIdx[exactMatchIdx]];
+                  avgX = pb.x; avgY = pb.y;
+                  avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+                  if (avgCoords && pb.coords) {
+                    for (let d = 0; d < dimB; d++) avgCoords[d] = pb.coords[d];
+                  }
+                  for (let p = 0; p < numValid; p++) {
+                    topNeighbors.push({
+                      id: validIdx[p], dist: validDists[p],
+                      weight: (p === exactMatchIdx) ? 1.0 : 0.0
+                    });
+                    totalDistSum += validDists[p];
+                    totalDistCount++;
+                  }
+                } else {
+                  let sumW = 0.0;
+                  const weights = new Float64Array(numValid);
+                  for (let p = 0; p < numValid; p++) {
+                    const d = validDists[p];
+                    const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
+                    weights[p] = w; sumW += w;
+                    totalDistSum += d; totalDistCount++;
+                  }
+                  const invSumW = sumW > 0 ? (1.0 / sumW) : 0.0;
+                  for (let p = 0; p < numValid; p++) {
+                    const normW = weights[p] * invSumW;
+                    const pb = ptsB[validIdx[p]];
+                    avgX += normW * pb.x; avgY += normW * pb.y;
+                    if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+                    if (avgCoords && pb.coords) {
+                      for (let d = 0; d < dimB; d++) avgCoords[d] += normW * pb.coords[d];
+                    }
+                    topNeighbors.push({ id: validIdx[p], dist: validDists[p], weight: normW });
+                  }
                 }
               } else {
-                let sumW = 0.0;
-                const weights = new Float64Array(kUsed);
-                for (let p = 0; p < kUsed; p++) {
-                  const d = rawDists[p];
-                  const w = 1.0 / Math.pow(Math.max(d, 1e-7), alpha);
-                  weights[p] = w; sumW += w;
-                  totalDistSum += d; totalDistCount++;
-                }
-                for (let p = 0; p < kUsed; p++) {
-                  const normW = weights[p] / sumW;
-                  const pb = ptsB[rawIdx[p]];
+                const normW = 1.0 / numValid;
+                for (let p = 0; p < numValid; p++) {
+                  const pb = ptsB[validIdx[p]];
                   avgX += normW * pb.x; avgY += normW * pb.y;
                   if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
-                  topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
+                  if (avgCoords && pb.coords) {
+                    for (let d = 0; d < dimB; d++) avgCoords[d] += normW * pb.coords[d];
+                  }
+                  topNeighbors.push({ id: validIdx[p], dist: validDists[p], weight: normW });
+                  totalDistSum += validDists[p]; totalDistCount++;
                 }
               }
-            } else {
-              const normW = 1.0 / kUsed;
-              for (let p = 0; p < kUsed; p++) {
-                const pb = ptsB[rawIdx[p]];
-                avgX += normW * pb.x; avgY += normW * pb.y;
-                if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
-                topNeighbors.push({ id: rawIdx[p], dist: rawDists[p], weight: normW });
-                totalDistSum += rawDists[p]; totalDistCount++;
-              }
             }
-
             const reconPt = { x: avgX, y: avgY };
             if (dimB >= 3) { reconPt.z = avgZ; }
+            if (avgCoords) {
+              reconPt.coords = avgCoords;
+              reconPt.x = avgCoords[0];
+              reconPt.y = avgCoords[1];
+              reconPt.z = avgCoords[2];
+            }
             reconstructedPoints[i] = reconPt;
             sourceNeighbors[i]     = topNeighbors;
           }
@@ -7771,6 +7845,7 @@
             sourceNeighbors[i]     = topNeighbors;
           } else {
             let avgX = 0.0, avgY = 0.0, avgZ = 0.0;
+            const avgCoords = (dimB > 3) ? new Float64Array(dimB) : null;
             if (weightMode === 'idw') {
               let exactMatchIdx = -1;
               for (let p = 0; p < k; p++) {
@@ -7781,6 +7856,9 @@
                 const pb = ptsB[matchedSampleId];
                 avgX = pb.x; avgY = pb.y;
                 avgZ = (dimB >= 3 && typeof pb.z === 'number') ? pb.z : 0.0;
+                if (avgCoords && pb.coords) {
+                  for (let d = 0; d < dimB; d++) avgCoords[d] = pb.coords[d] || 0.0;
+                }
                 for (let p = 0; p < k; p++) {
                   topNeighbors.push({
                     id: indices[p], dist: dists[p],
@@ -7802,6 +7880,9 @@
                   const pb = ptsB[indices[p]];
                   avgX += normW * pb.x; avgY += normW * pb.y;
                   if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+                  if (avgCoords && pb.coords) {
+                    for (let d = 0; d < dimB; d++) avgCoords[d] += normW * (pb.coords[d] || 0.0);
+                  }
                   topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
                 }
               }
@@ -7811,6 +7892,9 @@
                 const pb = ptsB[indices[p]];
                 avgX += normW * pb.x; avgY += normW * pb.y;
                 if (dimB >= 3 && typeof pb.z === 'number') { avgZ += normW * pb.z; }
+                if (avgCoords && pb.coords) {
+                  for (let d = 0; d < dimB; d++) avgCoords[d] += normW * (pb.coords[d] || 0.0);
+                }
                 topNeighbors.push({ id: indices[p], dist: dists[p], weight: normW });
                 totalDistSum += dists[p]; totalDistCount++;
               }
@@ -7818,6 +7902,12 @@
 
             const reconPt = { x: avgX, y: avgY };
             if (dimB >= 3) { reconPt.z = avgZ; }
+            if (avgCoords) {
+              reconPt.coords = avgCoords;
+              reconPt.x = avgCoords[0];
+              reconPt.y = avgCoords[1];
+              reconPt.z = avgCoords[2];
+            }
             reconstructedPoints[i] = reconPt;
             sourceNeighbors[i]     = topNeighbors;
           }
@@ -7850,11 +7940,12 @@
 
         // Weighted variance of B-samples around mean D[i]
         const rp = reconstructedPoints[i];
+        if (!rp) continue;
         let wvar = 0.0;
         for (let p = 0; p < neighbors.length; p++)
         {
           const nb = neighbors[p];
-          if (!nb) continue;
+          if (!nb || nb.id < 0 || nb.id >= ptsB.length) continue;
           const pb = ptsB[nb.id];
           if (!pb) continue;
           let dxSq = 0.0;
@@ -7913,13 +8004,17 @@
         };
       } else {
         slotD.dataMode = 'coord';
-        slotD.pastSamples = reconstructedPoints.map((p, idx) => ({
-          x: p.x,
-          y: p.y,
-          z: (dimB >= 3 && typeof p.z === 'number') ? p.z : 0.0,
-          clusterId: -1,
-          frameIndex: idx
-        }));
+        slotD.pastSamples = reconstructedPoints.map((p, idx) => {
+          const pt = {
+            x: p.x,
+            y: p.y,
+            z: (dimB >= 3 && typeof p.z === 'number') ? p.z : 0.0,
+            clusterId: -1,
+            frameIndex: idx
+          };
+          if (p.coords) { pt.coords = p.coords; }
+          return pt;
+        });
         slotD.stagedDatasetInfo = {
           name: 'Reconstructed (from A, B, C)',
           count: numQueries,
@@ -8173,27 +8268,65 @@
      * Run native gric-knn -query C via gric-server, showing a live progress
      * bar and populating the Query k-NN Resource Tracker on completion.
      */
-    async function runNativeReconQueryKnn()
+    async function runNativeReconQueryKnn(options = {})
     {
       if (!DesktopBridge.isNativeSupported()) {
         showToast('⚠️ Native runner not available in Web Mode.');
         return;
       }
 
+      const isEvent = options && typeof options.preventDefault === 'function';
+      const autoReconstruct = isEvent ? true :
+        (options && options.autoReconstruct !== undefined ? options.autoReconstruct : true);
+
       const slotA = datasetSlots['A'];
+      const slotB = datasetSlots['B'];
       const slotC = datasetSlots['C'];
 
-      if (!slotA || !slotA.benchmarkDataset || slotA.benchmarkDataset.length === 0) {
+      let ptsA = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotA)
+        : (slotA ? (slotA.benchmarkDataset || slotA.pastSamples) : null);
+      let ptsB = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotB)
+        : (slotB ? (slotB.benchmarkDataset || slotB.pastSamples) : null);
+      let ptsC = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotC)
+        : (slotC ? (slotC.benchmarkDataset || slotC.pastSamples) : null);
+
+      if (slotA && (!slotA.benchmarkDataset || slotA.benchmarkDataset.length === 0) && ptsA) {
+        slotA.benchmarkDataset = ptsA;
+      }
+      if (slotB && (!slotB.benchmarkDataset || slotB.benchmarkDataset.length === 0) && ptsB) {
+        slotB.benchmarkDataset = ptsB;
+      }
+      if (slotC && (!slotC.benchmarkDataset || slotC.benchmarkDataset.length === 0) && ptsC) {
+        slotC.benchmarkDataset = ptsC;
+      }
+
+      if (!ptsA || ptsA.length === 0) {
         showToast('⚠️ Dataset A (Training Input) must be staged first.');
         return;
       }
-      if (!slotC || !slotC.benchmarkDataset || slotC.benchmarkDataset.length === 0) {
+      if (!ptsC || ptsC.length === 0) {
         showToast('⚠️ Dataset C (Query Input) must be staged first.');
         return;
       }
 
-      const ptsA = slotA.benchmarkDataset;
-      const ptsC = slotC.benchmarkDataset;
+      // Auto-align or stage Slot B to match Slot A if needed
+      if (slotB && (!ptsB || ptsB.length === 0 || (ptsA && ptsB.length !== ptsA.length))) {
+        if (slotB.benchmarkKey && slotB.benchmarkKey !== 'custom' && slotB.dataMode !== 'image') {
+          slotB.sampleCount = slotA.sampleCount ||
+            Math.round(ptsA.length / (slotA.loopCount || 1));
+          slotB.loopCount = slotA.loopCount || 1;
+          if (typeof stageDataset === 'function') {
+            stageDataset(slotB.benchmarkKey, 'B');
+            ptsB = (typeof getSlotPoints === 'function')
+              ? getSlotPoints(slotB)
+              : (slotB.benchmarkDataset || slotB.pastSamples);
+            if (slotB && ptsB) slotB.benchmarkDataset = ptsB;
+          }
+        }
+      }
 
       /* Resolve clean dataset base names and full filenames */
       let rawNameA = (slotA.stagedDatasetInfo && slotA.stagedDatasetInfo.name)
@@ -8234,8 +8367,26 @@
 
       try {
         /* 1. Ensure staged coordinates exist on disk in workspace */
-        const dimA = slotA.currentDim || 2;
-        const dimC = slotC.currentDim || 2;
+        function detectLocalDim(slot, pts) {
+          if (slot && slot.dataMode === 'image') return slot.imageDim || 1024;
+          if (pts && pts.length > 0 &&
+              (pts[0] instanceof Float32Array || pts[0] instanceof Float64Array)) {
+            return pts[0].length;
+          }
+          if (slot && slot.benchmarkKey && typeof getBenchmarkDim === 'function') {
+            return getBenchmarkDim(slot.benchmarkKey);
+          }
+          if (slot && slot.currentDim) return slot.currentDim;
+          if (pts && pts.length > 0) {
+            if (pts[0].coords && pts[0].coords.length > 0) return pts[0].coords.length;
+            for (let i = 0; i < Math.min(200, pts.length); i++) {
+              if (pts[i].z !== undefined && Math.abs(pts[i].z) > 1e-6) return 3;
+            }
+          }
+          return 2;
+        }
+        const dimA = detectLocalDim(slotA, ptsA);
+        const dimC = detectLocalDim(slotC, ptsC);
         if (ptsA && ptsA.length > 0) {
           await DesktopBridge.stageDatasetFile(baseA, ptsA, dimA).catch(() => {});
         }
@@ -8313,6 +8464,7 @@
           clusterDir,
           '-query', datasetFileC,
           '-k', String(k),
+          '--all-queries',
           '-progress',
           '-txt',
           '-o', queryOutPrefix
@@ -8453,7 +8605,7 @@
               `(k=${queryData.k}). Auto-reconstructing D...`
             );
             /* Auto-reconstruct Dataset D with the loaded query k-NN neighbors */
-            if (typeof executeDatasetReconstruction === 'function') {
+            if (autoReconstruct && typeof executeDatasetReconstruction === 'function') {
               await executeDatasetReconstruction();
             }
           } else {
@@ -10455,40 +10607,40 @@
           (typeof BENCHMARK_DESCS !== 'undefined' &&
            BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
 
-        const streamFileExists = workspaceFiles &&
-          workspaceFiles.some(f => f.name === dataset && f.size > 0);
+        const existingFile = workspaceFiles &&
+          workspaceFiles.find(f => f.name === dataset);
 
-        if ((isSynthetic || !dataset) && !streamFileExists) {
+        let needStage = false;
+        if (isSynthetic || !dataset) {
+          if (!existingFile || existingFile.size === 0) {
+            needStage = true;
+          } else if (benchmarkDataset && benchmarkDataset.length > 0) {
+            const stagedCount = DesktopBridge.getStagedDatasetCount(dataset);
+            const expectedMin = benchmarkDataset.length * Math.max(2, (currentDim || 2) * 4);
+            if (stagedCount > 0 && stagedCount !== benchmarkDataset.length) {
+              needStage = true;
+            } else if (existingFile.size < expectedMin) {
+              needStage = true;
+            }
+          }
+        }
+
+        if (needStage) {
           dataset = `${currentBenchmark}.txt`;
           if (!benchmarkDataset || benchmarkDataset.length === 0) {
             stageDataset();
           }
-
-          let content = '';
-          for (let i = 0; i < benchmarkDataset.length; i++) {
-            const pt = benchmarkDataset[i];
-            if (Array.isArray(pt) || ArrayBuffer.isView(pt) ||
-                (pt && typeof pt.length === 'number')) {
-              content += Array.from(pt).map(v => Number(v).toFixed(6)).join(' ') + '\n';
-            } else if (pt && typeof pt === 'object') {
-              if (pt.coords &&
-                  (Array.isArray(pt.coords) || ArrayBuffer.isView(pt.coords))) {
-                content +=
-                  Array.from(pt.coords).map(v => Number(v).toFixed(6)).join(' ') + '\n';
-              } else if (currentDim >= 3) {
-                content += `${Number(pt.x || 0).toFixed(6)} ` +
-                           `${Number(pt.y || 0).toFixed(6)} ` +
-                           `${Number(pt.z || 0).toFixed(6)}\n`;
-              } else {
-                content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)}\n`;
-              }
-            }
-          }
           try {
-            await DesktopBridge.writeFile(dataset, content);
+            const countStr = benchmarkDataset.length.toLocaleString();
+            showToast(`📦 Staging ${countStr} pts for streaming...`);
+            await DesktopBridge.stageDatasetFile(
+              currentBenchmark,
+              benchmarkDataset,
+              currentDim
+            );
             await refreshWorkspaceFiles();
           } catch (err) {
-            console.warn('[CLI] Could not write benchmark dataset file:', err);
+            console.warn('[CLI] Could not stage stream dataset file:', err);
           }
         }
 
@@ -10515,49 +10667,60 @@
       } else if (dataset.startsWith('shm:')) {
         const customStreamName = dataset.substring(4);
         isStreamInput = true;
-        args = [rlim.toFixed(3), customStreamName, '-stream', '-outdir', `${customStreamName}.clusterdat`];
+        args = [
+          rlim.toFixed(3),
+          customStreamName,
+          '-stream',
+          '-outdir',
+          `${customStreamName}.clusterdat`
+        ];
       } else {
         // If running active synthetic benchmark, ensure file exists in workspace
         const isSynthetic = !selCli || !selCli.value || dataset === `${currentBenchmark}.txt` ||
           (typeof BENCHMARK_DESCS !== 'undefined' &&
            BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
 
-        const fileAlreadyExists = workspaceFiles &&
-          workspaceFiles.some(f => f.name === dataset && f.size > 0);
+        const existingFile = workspaceFiles &&
+          workspaceFiles.find(f => f.name === dataset);
 
-        if (isSynthetic && !fileAlreadyExists) {
+        let needStage = false;
+        if (isSynthetic) {
+          if (!existingFile || existingFile.size === 0) {
+            needStage = true;
+          } else if (benchmarkDataset && benchmarkDataset.length > 0) {
+            const stagedCount = DesktopBridge.getStagedDatasetCount(dataset);
+            const expectedMin = benchmarkDataset.length * Math.max(2, (currentDim || 2) * 4);
+            if (stagedCount > 0 && stagedCount !== benchmarkDataset.length) {
+              needStage = true;
+            } else if (existingFile.size < expectedMin) {
+              needStage = true;
+            }
+          }
+        }
+
+        if (needStage) {
           dataset = `${currentBenchmark}.txt`;
           if (!benchmarkDataset || benchmarkDataset.length === 0) {
             stageDataset();
           }
-
-          let content = '';
-          for (let i = 0; i < benchmarkDataset.length; i++) {
-            const pt = benchmarkDataset[i];
-            if (Array.isArray(pt) || ArrayBuffer.isView(pt) || (pt && typeof pt.length === 'number')) {
-              content += Array.from(pt).map(v => Number(v).toFixed(6)).join(' ') + '\n';
-            } else if (pt && typeof pt === 'object') {
-              if (pt.coords &&
-                  (Array.isArray(pt.coords) || ArrayBuffer.isView(pt.coords))) {
-                content +=
-                  Array.from(pt.coords).map(v => Number(v).toFixed(6)).join(' ') + '\n';
-              } else if (currentDim >= 3) {
-                content += `${Number(pt.x || 0).toFixed(6)} ` +
-                           `${Number(pt.y || 0).toFixed(6)} ` +
-                           `${Number(pt.z || 0).toFixed(6)}\n`;
-              } else {
-                content += `${Number(pt.x || 0).toFixed(6)} ${Number(pt.y || 0).toFixed(6)}\n`;
-              }
-            }
-          }
           try {
-            await DesktopBridge.writeFile(dataset, content);
+            const countStr = benchmarkDataset.length.toLocaleString();
+            showToast(`📦 Staging ${countStr} pts to workspace...`);
+            await DesktopBridge.stageDatasetFile(
+              currentBenchmark,
+              benchmarkDataset,
+              currentDim
+            );
             await refreshWorkspaceFiles();
           } catch (err) {
-            console.warn('[CLI] Could not write benchmark dataset file:', err);
+            console.warn('[CLI] Could not stage benchmark dataset file:', err);
+            showToast(`❌ Failed to stage dataset: ${err.message}`);
           }
         }
         args = [rlim.toFixed(3), dataset];
+        if (benchmarkDataset && benchmarkDataset.length > 0) {
+          args.push('-maxim', String(benchmarkDataset.length));
+        }
       }
 
       if (pruneMode === '4P' || pruneMode === '5P') args.push('-te4');
@@ -10722,15 +10885,43 @@
             const statTotalDistsEl = document.getElementById('statTotalDists');
             if (statTotalDistsEl) statTotalDistsEl.textContent = (t.framedist_calls || 0).toLocaleString();
 
+            const statDistSampleEl = document.getElementById('statDistSample');
+            if (statDistSampleEl) {
+              statDistSampleEl.textContent =
+                (t.framedist_sample || 0).toLocaleString();
+            }
+
+            const statDistClusterEl = document.getElementById('statDistCluster');
+            if (statDistClusterEl) {
+              statDistClusterEl.textContent =
+                (t.framedist_intercluster || 0).toLocaleString();
+            }
+
             const statDistRatioEl = document.getElementById('statDistRatio');
             if (statDistRatioEl) {
-              statDistRatioEl.textContent = `${(t.framedist_sample || 0).toLocaleString()} / ${(t.framedist_intercluster || 0).toLocaleString()}`;
+              statDistRatioEl.textContent =
+                `${(t.framedist_sample || 0).toLocaleString()} / ` +
+                `${(t.framedist_intercluster || 0).toLocaleString()}`;
             }
+
             const statDccPopBadge = document.getElementById('statDccPopBadge');
             if (statDccPopBadge && t.dcc_entries_populated !== undefined) {
-              statDccPopBadge.textContent = t.dcc_pairs_total > 0
-                ? `[${(t.dcc_entries_populated || 0).toLocaleString()}/${(t.dcc_pairs_total || 0).toLocaleString()} pop]`
-                : `[${(t.dcc_entries_populated || 0).toLocaleString()} pop]`;
+              const pop = t.dcc_entries_populated || 0;
+              const total = t.dcc_pairs_total || 0;
+              const formatCompact = typeof formatCompactNumber === 'function'
+                ? formatCompactNumber
+                : n => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' :
+                        (n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : n));
+
+              if (total > 0) {
+                const pct = ((pop / total) * 100).toFixed(total > 100000 ? 2 : 1);
+                statDccPopBadge.textContent = `${formatCompact(pop)} (${pct}%)`;
+                statDccPopBadge.title =
+                  `${pop.toLocaleString()} / ${total.toLocaleString()} pairs (${pct}%)`;
+              } else {
+                statDccPopBadge.textContent = pop.toLocaleString();
+                statDccPopBadge.title = `${pop.toLocaleString()} pairs populated`;
+              }
             }
 
             const statMemoryTotalEl = document.getElementById('statMemoryTotal');
@@ -10879,15 +11070,23 @@
                     frameIndex: pts.length
                   });
                 }
-                if (pts.length >= 10000) break;
+                if (pts.length >= 1000000) break;
               }
               if (pts.length > 0) {
                 pastSamples = pts;
+                benchmarkDataset = pts;
+                rawBenchmarkDataset = pts;
               }
             }
           } catch (e) {
             /* ignore */
           }
+        }
+
+        if (data.anchors && data.anchors.length > 0 && data.anchors[0].anchor) {
+          currentDim = data.anchors[0].anchor.length;
+        } else if (pastSamples && pastSamples.length > 0 && pastSamples[0].coords) {
+          currentDim = pastSamples[0].coords.length;
         }
 
         if (data.evals && data.evals.length > 0) {
@@ -10964,6 +11163,15 @@
           renderKnnTrace();
         }
 
+        if (typeof saveSlotState === 'function') {
+          saveSlotState(activeDatasetSlot);
+        }
+        if (typeof updateDatasetStatusBadge === 'function') {
+          updateDatasetStatusBadge();
+        }
+        if (typeof renderReconstructionDashboard === 'function') {
+          renderReconstructionDashboard();
+        }
         updateUI();
         if (typeof renderDataStructuresUI === 'function') {
           renderDataStructuresUI();

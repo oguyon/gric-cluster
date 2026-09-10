@@ -146,7 +146,7 @@ int main(int argc, char *argv[])
     config.algo.deltaprob = 0.01;
     config.algo.maxnbclust = 1000;
     config.optim.ncpu = 1;
-    config.input.maxnbfr = 100000;
+    config.input.maxnbfr = 1000000;
     config.optim.fmatch_a = 2.0;
     config.optim.fmatch_b = 0.5;
     config.optim.max_gprob_visitors = 1000;

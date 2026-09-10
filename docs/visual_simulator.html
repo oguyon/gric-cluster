@@ -1986,11 +1986,12 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                   <span>Sample Buffer Capacity</span>
                   <div class="val-box">
                     <input type="number" id="inputSampleBufCap" class="val-input"
-                           min="1000" max="500000" step="5000" value="100000">
+                           min="1000" max="1000000" step="10000" value="500000">
                     <span class="val-unit">pts</span>
                   </div>
                 </div>
-                <input type="range" id="sliderSampleBufCap" min="5000" max="100000" step="5000" value="100000"
+                <input type="range" id="sliderSampleBufCap" min="5000" max="1000000" step="10000"
+                       value="500000"
                        data-tooltip-title="Sample Buffer Capacity"
                        data-tooltip-badge="Display: Buffer"
                        data-tooltip-color="teal"
@@ -1998,8 +1999,8 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
               </div>
               <div style="display:flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: -2px;">
                 <span>5k (Lean)</span>
-                <span>30k (Default)</span>
-                <span>100k (Full)</span>
+                <span>100k (Standard)</span>
+                <span>1M (Max)</span>
               </div>
 
               <div class="control-row">
@@ -2589,15 +2590,26 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                   <div class="lbl" id="lblStatTotalDists">Distances (<span id="statDistRate">0</span>/s)</div>
                 </div>
                 <div class="stat-box"
-                     data-tooltip-title="Distance Breakdown &amp; DCC Matrix"
+                     data-tooltip-title="Distance &amp; D_cc Breakdown"
                      data-tooltip-badge="Compute"
                      data-tooltip-color="green"
-                     data-tooltip-desc="Ratio of sample evaluation calls d(f,c) to explicit inter-cluster matrix maintenance calls d(ci,cj), alongside total DCC entries populated in the distance matrix.">
-                  <div class="num" style="display: flex; justify-content: center; align-items: baseline; gap: 6px; flex-wrap: wrap;">
-                    <span id="statDistRatio" style="color: var(--accent-green); font-size: 1.15rem;">0 / 0</span>
-                    <span id="statDccPopBadge" style="color: #c084fc; font-size: 1.15rem; font-weight: 700;">[0 pop]</span>
+                     data-tooltip-desc="Breakdown of distance calculations: Sample-to-Cluster d(x,c) vs Inter-Cluster d(ci,cj), and populated pairs in D_cc distance matrix.">
+                  <div style="display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 1px 4px;">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; font-family: monospace; font-size: 0.82rem;">
+                      <span style="color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;">Sample</span>
+                      <span id="statDistSample" style="color: var(--accent-green); font-weight: 700;">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; font-family: monospace; font-size: 0.82rem;">
+                      <span style="color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;">Cluster</span>
+                      <span id="statDistCluster" style="color: var(--accent-blue); font-weight: 700;">0</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; font-family: monospace; font-size: 0.78rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 2px; margin-top: 1px;">
+                      <span style="color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;">D<sub>cc</sub> Pop</span>
+                      <span id="statDccPopBadge" style="color: #c084fc; font-weight: 700;" title="Populated cluster pairs in D_cc">0 (0.0%)</span>
+                    </div>
                   </div>
-                  <div class="lbl" id="lblStatDistRatio">SC (Eval) / CC (Expl) • DCC Populated</div>
+                  <span id="statDistRatio" style="display: none;">0 / 0</span>
+                  <div class="lbl" id="lblStatDistRatio" style="margin-top: 3px; font-size: 0.70rem;">Distance &amp; D<sub>cc</sub> Breakdown</div>
                 </div>
                 <div class="stat-box"
                      data-tooltip-title="Model Memory Footprint"

@@ -20,6 +20,8 @@ evaluations by utilizing:
    heaps per query item.
 4. **Symmetric Reciprocal Distance Sharing**: Reuses computed metric distances symmetrically across
    query pairs to cut operations in half.
+5. **2-Hop Candidate Injection**: Explores nearest neighbors of top-ranking candidate seeds to
+   rapidly collapse the search radius $\tau$ before inter-cluster routing.
 
 ---
 
@@ -44,6 +46,10 @@ gric-knn <input_data> <cluster_dir> [options]
 | `-fits` | Flag | Force FITS cube output format | Auto |
 | `-txt` | Flag | Force ASCII text output format | Auto |
 | `-multipivot` | Flag | Enable multi-anchor AESA pivot lower-bounding | Enabled |
+| `-two-hop` | Flag | Enable 2-hop candidate injection | Enabled |
+| `-no-two-hop` | Flag | Disable 2-hop candidate injection | Disabled |
+| `-two-hop-seeds`| `<int>` | Number of top seeds to expand in 2-hop | `2` |
+| `-two-hop-max` | `<int>` | Max 2-hop candidates evaluated per query | `32` |
 | `-no-reciprocal`| Flag | Disable symmetric distance reciprocal push | Disabled |
 | `-progress` | Flag | Display interactive progress bar | Disabled |
 | `-v`, `-vv` | Flag | Verbosity level (summary vs per-chunk telemetry) | Level 0 |

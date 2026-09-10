@@ -1300,6 +1300,255 @@ static int knn_warm_start_nearest_cluster(
 }
 
 /**
+ * knn_inject_two_hop_candidates() - Expand 2-hop neighbors from top heap seeds.
+ * @query_id:     Index of query frame.
+ * @query_data:   Query frame pixel data.
+ * @model:        Active KnnModel.
+ * @config:       Active KnnConfig.
+ * @reader:       KnnFrameReader context.
+ * @cand_buffer:  Scratch buffer for candidate frame pixels.
+ * @heap:         Max-heap for current query.
+ * @all_heaps:    Array of all frame heaps.
+ * @bucket_locks: OpenMP locks (if multithreaded).
+ * @visited:      Per-query frame visited tracker.
+ * @telem:        Telemetry record.
+ */
+static void knn_inject_two_hop_candidates(
+    long                   query_id,
+    const void *restrict   query_data,
+    const KnnModel        *model,
+    const KnnConfig       *config,
+    KnnFrameReader        *reader,
+    void *restrict         cand_buffer,
+    KnnMaxHeap            *heap,
+    KnnMaxHeap            *all_heaps,
+#ifdef _OPENMP
+    omp_lock_t            *bucket_locks,
+#endif
+    KnnVisitedTracker     *visited,
+    KnnTelemetry *restrict telem)
+{
+    if (!config->use_two_hop || heap == NULL || heap->count == 0)
+    {
+        return;
+    }
+
+    int max_seeds = (config->two_hop_seeds > 0) ? config->two_hop_seeds : 2;
+    if (max_seeds > 4)
+    {
+        max_seeds = 4;
+    }
+    if (max_seeds > heap->count)
+    {
+        max_seeds = heap->count;
+    }
+
+    long   seed_ids[4];
+    double seed_dists[4];
+    int    num_seeds = 0;
+
+    for (int j = 0; j < heap->count; j++)
+    {
+        long cand_id = (long)heap->data[j].frame_id;
+        double d = heap->data[j].dist;
+
+        if (cand_id < 0 || cand_id >= model->total_dataset_frames || cand_id == query_id)
+        {
+            continue;
+        }
+
+        if (num_seeds < max_seeds)
+        {
+            int insert_pos = num_seeds;
+            while (insert_pos > 0 && d < seed_dists[insert_pos - 1])
+            {
+                seed_ids[insert_pos] = seed_ids[insert_pos - 1];
+                seed_dists[insert_pos] = seed_dists[insert_pos - 1];
+                insert_pos--;
+            }
+            seed_ids[insert_pos] = cand_id;
+            seed_dists[insert_pos] = d;
+            num_seeds++;
+        }
+        else if (d < seed_dists[max_seeds - 1])
+        {
+            int insert_pos = max_seeds - 1;
+            while (insert_pos > 0 && d < seed_dists[insert_pos - 1])
+            {
+                seed_ids[insert_pos] = seed_ids[insert_pos - 1];
+                seed_dists[insert_pos] = seed_dists[insert_pos - 1];
+                insert_pos--;
+            }
+            seed_ids[insert_pos] = cand_id;
+            seed_dists[insert_pos] = d;
+        }
+    }
+
+    if (num_seeds == 0)
+    {
+        return;
+    }
+
+    int max_evals = (config->two_hop_max_cands > 0) ? config->two_hop_max_cands : 32;
+    int evals_done = 0;
+    double eps_factor = 1.0 + config->epsilon;
+    long frame_elem = model->frame_elements;
+    size_t frame_bytes = (size_t)frame_elem *
+                         (model->is_double ? sizeof(double) : sizeof(float));
+
+    for (int s = 0; s < num_seeds; s++)
+    {
+        long u = seed_ids[s];
+        double d_qu = seed_dists[s];
+
+        long   cands_2hop[64];
+        double dists_2hop[64];
+        int    num_2hop = 0;
+
+        if (all_heaps != NULL)
+        {
+#ifdef _OPENMP
+            if (bucket_locks != NULL)
+            {
+                omp_set_lock(&bucket_locks[u & KNN_BUCKET_LOCK_MASK]);
+            }
+#endif
+            int u_cnt = all_heaps[u].count;
+            if (u_cnt > 32)
+            {
+                u_cnt = 32;
+            }
+            for (int c = 0; c < u_cnt; c++)
+            {
+                cands_2hop[num_2hop] = (long)all_heaps[u].data[c].frame_id;
+                dists_2hop[num_2hop] = all_heaps[u].data[c].dist;
+                num_2hop++;
+            }
+#ifdef _OPENMP
+            if (bucket_locks != NULL)
+            {
+                omp_unset_lock(&bucket_locks[u & KNN_BUCKET_LOCK_MASK]);
+            }
+#endif
+        }
+
+        if (model->has_knn_graph && model->graph_indices != NULL)
+        {
+            int g_k = model->graph_k;
+            int add_k = (g_k < 32) ? g_k : 32;
+            const uint32_t *nb_idx = &model->graph_indices[(size_t)u * (size_t)g_k];
+            const float    *nb_dst = (model->graph_distances != NULL) ?
+                &model->graph_distances[(size_t)u * (size_t)g_k] : NULL;
+
+            for (int c = 0; c < add_k && num_2hop < 64; c++)
+            {
+                long nb = (long)nb_idx[c];
+                if (nb >= 0 && nb < model->total_dataset_frames &&
+                    nb != query_id && nb != u)
+                {
+                    cands_2hop[num_2hop] = nb;
+                    dists_2hop[num_2hop] = (nb_dst != NULL) ? (double)nb_dst[c] : -1.0;
+                    num_2hop++;
+                }
+            }
+        }
+
+        for (int c = 0; c < num_2hop; c++)
+        {
+            long v = cands_2hop[c];
+            double d_uv = dists_2hop[c];
+
+            if (v < 0 || v >= model->total_dataset_frames || v == query_id)
+            {
+                continue;
+            }
+
+            if (knn_visited_check_and_mark(visited, v))
+            {
+                continue;
+            }
+
+            if (!check_temporal_separation(query_id, v, config))
+            {
+                telem->temporal_pruned++;
+                continue;
+            }
+
+            double current_tau = knn_heap_peek_max_dist(heap);
+            if (d_uv >= 0.0)
+            {
+                double lb_2hop = fabs(d_qu - d_uv);
+                if (heap->count >= heap->k && lb_2hop >= current_tau / eps_factor)
+                {
+                    telem->two_hop_pruned++;
+                    continue;
+                }
+            }
+
+            if (is_member_pruned_by_sq16(visited->query_sq16, v, current_tau,
+                                         model, config, telem) ||
+                is_member_pruned_by_sq8(visited->query_sq8, v, current_tau,
+                                        model, config, telem))
+            {
+                continue;
+            }
+
+            if (config->use_reciprocal && knn_heap_contains(heap, (int)v))
+            {
+                telem->reciprocal_reused++;
+                continue;
+            }
+
+            const void *cand_data = NULL;
+            if (reader->memory_data != NULL)
+            {
+                cand_data = (const char *)reader->memory_data + (size_t)v * frame_bytes;
+            }
+            else if (knn_reader_read_frame(reader, v, cand_buffer) == 0)
+            {
+                cand_data = cand_buffer;
+            }
+
+            if (cand_data != NULL)
+            {
+                telem->framedist_calls++;
+                telem->two_hop_evaluations++;
+                evals_done++;
+
+                double c_tau = (config->rlim_cutoff > 0.0 &&
+                                config->rlim_cutoff < current_tau)
+                               ? config->rlim_cutoff
+                               : current_tau;
+                double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
+                double d = compute_euclidean_distance_cutoff(
+                    query_data, cand_data, frame_elem, model->is_double, cutoff_sq
+                );
+
+                if (d < current_tau)
+                {
+                    telem->two_hop_injected++;
+                }
+
+                if (d <= c_tau)
+                {
+                    record_neighbor_and_reciprocal(
+                        query_id, v, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                        , bucket_locks
+#endif
+                    );
+                }
+
+                if (evals_done >= max_evals)
+                {
+                    return;
+                }
+            }
+        } // for (int c = 0; c < num_2hop; ...)
+    } // for (int s = 0; s < num_seeds; ...)
+}
+
+/**
  * knn_score_candidate_clusters() - Filter super-clusters and score candidate clusters.
  * @home_cluster_id: Home cluster index.
  * @pivots:          Array of measured anchor pivots.
@@ -2592,6 +2841,19 @@ static void knn_search_single_frame(
 #endif
         pivots, &num_pivots, visited, telem
     );
+
+    // 2-Hop Candidate Injection: Expand neighbors of top seeds to collapse tau early
+    if (config->use_two_hop)
+    {
+        knn_inject_two_hop_candidates(
+            query_id, query_data, model, config, reader, cand_buffer,
+            heap, all_heaps,
+#ifdef _OPENMP
+            bucket_locks,
+#endif
+            visited, telem
+        );
+    }
 
     if (config->approx_mode)
     {
@@ -4999,6 +5261,9 @@ int knn_run_search(
     uint64_t global_telem_sq16_pruned = 0;
     uint64_t global_telem_sq16_graph_pruned = 0;
     uint64_t global_telem_graph_clusters = 0;
+    uint64_t global_telem_two_hop_evals = 0;
+    uint64_t global_telem_two_hop_pruned = 0;
+    uint64_t global_telem_two_hop_injected = 0;
 
 #ifdef _OPENMP
 #pragma omp parallel reduction(+:global_telem_calls, global_telem_l0, global_telem_l1, \
@@ -5012,7 +5277,10 @@ int knn_run_search(
                                  global_telem_sq8_graph_pruned,                         \
                                  global_telem_sq16_evals, global_telem_sq16_pruned,    \
                                  global_telem_sq16_graph_pruned,                        \
-                                 global_telem_graph_clusters)
+                                 global_telem_graph_clusters,                           \
+                                 global_telem_two_hop_evals,                            \
+                                 global_telem_two_hop_pruned,                           \
+                                 global_telem_two_hop_injected)
 #endif
     {
         KnnFrameReader thread_cand_reader;
@@ -5185,6 +5453,9 @@ int knn_run_search(
         global_telem_sq16_pruned += thread_telem.sq16_members_pruned;
         global_telem_sq16_graph_pruned += thread_telem.sq16_graph_pruned;
         global_telem_graph_clusters += thread_telem.clusters_graph_evaluated;
+        global_telem_two_hop_evals += thread_telem.two_hop_evaluations;
+        global_telem_two_hop_pruned += thread_telem.two_hop_pruned;
+        global_telem_two_hop_injected += thread_telem.two_hop_injected;
 
         if (visited.tags != NULL)
         {
@@ -5286,6 +5557,9 @@ int knn_run_search(
     telemetry->sq16_members_pruned = global_telem_sq16_pruned;
     telemetry->sq16_graph_pruned = global_telem_sq16_graph_pruned;
     telemetry->clusters_graph_evaluated = global_telem_graph_clusters;
+    telemetry->two_hop_evaluations = global_telem_two_hop_evals;
+    telemetry->two_hop_pruned = global_telem_two_hop_pruned;
+    telemetry->two_hop_injected = global_telem_two_hop_injected;
     telemetry->total_candidates_considered = global_telem_cand;
     telemetry->time_search_ms = (end_time.tv_sec - start_time.tv_sec) * 1000.0 +
                                 (end_time.tv_nsec - start_time.tv_nsec) / 1000000.0;

@@ -221,7 +221,7 @@ const DesktopBridge = (function () {
   /**
    * Write text content to a file in the desktop workspace.
    */
-  async function writeFile(relPath, content) {
+  async function writeFile(relPath, content, append = false) {
     if (!_isDesktop) throw new Error('Desktop backend not connected.');
 
     const resp = await _fetchApi('/api/file/write', {
@@ -229,7 +229,8 @@ const DesktopBridge = (function () {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         path: relPath,
-        content: content
+        content: content,
+        append: !!append
       })
     });
 
@@ -395,8 +396,19 @@ const DesktopBridge = (function () {
     return null;
   }
 
+  const _stagedDatasetCounts = {};
+
+  function getStagedDatasetCount(datasetName) {
+    if (!datasetName) return 0;
+    const safeName = datasetName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = safeName.endsWith('.txt') ? safeName : `${safeName}.txt`;
+    return _stagedDatasetCounts[fileName] || 0;
+  }
+
   /**
    * Stage dataset coordinates to a workspace file on disk.
+   * Chunks large datasets into batches of 10,000 points to prevent memory
+   * spikes and HTTP request payload limits.
    */
   async function stageDatasetFile(
     datasetName,
@@ -407,13 +419,18 @@ const DesktopBridge = (function () {
     const safeName = datasetName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const fileName = `${safeName}.txt`;
     const is2D = (forceDim === 2) || (safeName.startsWith('2D') || safeName === 'stream');
-    const total = dataset.length;
-    const lines = [];
+    const total = dataset ? dataset.length : 0;
+    const CHUNK_SIZE = 10000;
+    let lines = [];
+    let isFirstChunk = true;
 
     for (let i = 0; i < total; i++) {
-      if (onProgress && (i === 0 || i % 1000 === 0)) {
+      if (onProgress && (i === 0 || i % 2000 === 0)) {
         const pct = Math.floor((i / Math.max(1, total)) * 100);
-        onProgress(pct, 'Staging dataset coordinates');
+        onProgress(
+          pct,
+          `Staging coords (${i.toLocaleString()} / ${total.toLocaleString()})`
+        );
         await new Promise(r => setTimeout(r, 0));
       }
 
@@ -439,14 +456,34 @@ const DesktopBridge = (function () {
           }
         }
       }
+
+      if (lines.length >= CHUNK_SIZE) {
+        if (onProgress) {
+          const pct = Math.floor(((i + 1) / Math.max(1, total)) * 100);
+          onProgress(
+            pct,
+            `Writing chunk (${(i + 1).toLocaleString()} / ${total.toLocaleString()})`
+          );
+          await new Promise(r => setTimeout(r, 0));
+        }
+        await writeFile(fileName, lines.join('\n') + '\n', !isFirstChunk);
+        lines = [];
+        isFirstChunk = false;
+      }
     }
 
-    if (onProgress) {
-      onProgress(100, 'Writing staged dataset file');
-      await new Promise(r => setTimeout(r, 0));
+    if (lines.length > 0 || isFirstChunk) {
+      if (onProgress) {
+        onProgress(100, 'Writing staged dataset file');
+        await new Promise(r => setTimeout(r, 0));
+      }
+      await writeFile(
+        fileName,
+        lines.length > 0 ? lines.join('\n') + '\n' : '',
+        !isFirstChunk
+      );
     }
-
-    await writeFile(fileName, lines.join('\n') + '\n');
+    _stagedDatasetCounts[fileName] = total;
     return fileName;
   }
 
@@ -1123,7 +1160,9 @@ const DesktopBridge = (function () {
           return { totalFrames: N, k: binK, indices, distances };
         }
       }
-    } catch (_e) { /* fall through to ASCII */ }
+    } catch (_e) {
+      console.warn('[DesktopBridge] Binary read error, falling back to ASCII:', _e);
+    }
 
     /* 2. Fallback to ASCII text file at <outputPrefix>.txt or <outputPrefix> */
     try {
@@ -1462,6 +1501,7 @@ const DesktopBridge = (function () {
     listShmStreams,
     getShmTelemetry,
     stageDatasetFile,
+    getStagedDatasetCount,
     exportClusterDat,
     parseClusterDatDir,
     parseKnnTelemetryLog,
