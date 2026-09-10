@@ -704,9 +704,14 @@
 
         // Collect indices of all points that fall within visible FOV
         const isHighD = (currentDim > 3);
-        const dX = (typeof plotDimX === 'number') ? plotDimX : 0;
-        const dY = (typeof plotDimY === 'number') ? plotDimY : 1;
-        const dZ = (typeof plotDimZ === 'number') ? plotDimZ : 2;
+        const isDecoupled = (isHighD && typeof decoupledQuads !== 'undefined' &&
+          decoupledQuads && qIdx < 3);
+        const pair = isDecoupled
+          ? ((typeof quadAxisPairs !== 'undefined' && quadAxisPairs[qIdx])
+              ? quadAxisPairs[qIdx] : { x: qIdx * 2, y: qIdx * 2 + 1 })
+          : null;
+        const pairX = pair ? pair.x : 0;
+        const pairY = pair ? pair.y : 1;
 
         const hasSlice = (isHighD && typeof sliceDim === 'number' &&
           sliceDim >= 0 && typeof HighDEngine !== 'undefined');
@@ -719,8 +724,28 @@
             );
             if (!inSlice.inside) continue;
           }
-          const pr = getProjectedCoord(pt);
-          if (pr.u >= uMin && pr.u <= uMax && pr.v >= vMin && pr.v <= vMax) {
+          let pu = 0.0, pv = 0.0;
+          if (isDecoupled) {
+            const coords = pt.coords;
+            pu = coords ? (coords[pairX] || 0.0)
+              : (pairX === 0 ? pt.x : (pairX === 1 ? pt.y : (pt.z || 0.0)));
+            pv = coords ? (coords[pairY] || 0.0)
+              : (pairY === 0 ? pt.x : (pairY === 1 ? pt.y : (pt.z || 0.0)));
+          } else if (viewType === "ALONG_Z" || viewType === "2D") {
+            pu = pt.x;
+            pv = pt.y;
+          } else if (viewType === "ALONG_X") {
+            pu = pt.y;
+            pv = (typeof pt.z === 'number') ? pt.z : 0.0;
+          } else if (viewType === "ALONG_Y") {
+            pu = pt.x;
+            pv = (typeof pt.z === 'number') ? pt.z : 0.0;
+          } else {
+            const pr = getProjectedCoord(pt);
+            pu = pr.u;
+            pv = pr.v;
+          }
+          if (pu >= uMin && pu <= uMax && pv >= vMin && pv <= vMax) {
             visibleIndicesBuffer[totalVisiblePoints++] = i;
           }
         }
@@ -2803,8 +2828,14 @@
       }
       const slotA = (typeof datasetSlots !== 'undefined') ? datasetSlots['A'] : null;
       const slotC = (typeof datasetSlots !== 'undefined') ? datasetSlots['C'] : null;
-      const ptsA = slotA ? (slotA.benchmarkDataset || slotA.pastSamples) : null;
-      const ptsC = slotC ? (slotC.benchmarkDataset || slotC.pastSamples) : null;
+      const ptsA = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotA)
+        : (slotA && slotA.benchmarkDataset && slotA.benchmarkDataset.length > 0
+            ? slotA.benchmarkDataset : (slotA ? slotA.pastSamples : null));
+      const ptsC = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotC)
+        : (slotC && slotC.benchmarkDataset && slotC.benchmarkDataset.length > 0
+            ? slotC.benchmarkDataset : (slotC ? slotC.pastSamples : null));
       if (!ptsA || !ptsC || activeQueryIdx < 0 || activeQueryIdx >= ptsC.length) return [];
 
       if (!slotC._onDemandKnnCache) slotC._onDemandKnnCache = new Map();
@@ -2885,8 +2916,14 @@
       const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
       const slotA = (typeof datasetSlots !== 'undefined') ? datasetSlots['A'] : null;
       const slotC = (typeof datasetSlots !== 'undefined') ? datasetSlots['C'] : null;
-      const ptsA = slotA ? (slotA.benchmarkDataset || slotA.pastSamples) : null;
-      const ptsC = slotC ? (slotC.benchmarkDataset || slotC.pastSamples) : null;
+      const ptsA = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotA)
+        : (slotA && slotA.benchmarkDataset && slotA.benchmarkDataset.length > 0
+            ? slotA.benchmarkDataset : (slotA ? slotA.pastSamples : null));
+      const ptsC = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotC)
+        : (slotC && slotC.benchmarkDataset && slotC.benchmarkDataset.length > 0
+            ? slotC.benchmarkDataset : (slotC ? slotC.pastSamples : null));
 
       if (!ptsA || !ptsC || targetTrainingIdx < 0 || targetTrainingIdx >= ptsA.length) {
         return [];
@@ -3083,7 +3120,10 @@
       ctx, slot, slotId, defaultColor, rect, projectPt, mapToScreen,
       activeNeighborSet, isFocusMode, primaryFocusedIdx
     ) {
-      const pts = slot ? (slot.benchmarkDataset || slot.pastSamples || []) : [];
+      const pts = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slot)
+        : (slot && slot.benchmarkDataset && slot.benchmarkDataset.length > 0
+            ? slot.benchmarkDataset : (slot && slot.pastSamples ? slot.pastSamples : []));
       if (!pts || pts.length === 0) return;
 
       const numPts = pts.length;
@@ -3332,9 +3372,19 @@
 
           // D. Left Panel HUD Header
           ctx.save();
-          const ptsA = slotA ? (slotA.benchmarkDataset || slotA.pastSamples || []) : [];
-          const ptsC = slotC ? (slotC.benchmarkDataset || slotC.pastSamples || []) : [];
-          const dimStr = is3D ? '3D' : '2D';
+          const ptsA = (typeof getSlotPoints === 'function')
+            ? getSlotPoints(slotA)
+            : (slotA && slotA.benchmarkDataset && slotA.benchmarkDataset.length > 0
+                ? slotA.benchmarkDataset : (slotA && slotA.pastSamples ? slotA.pastSamples : []));
+          const ptsC = (typeof getSlotPoints === 'function')
+            ? getSlotPoints(slotC)
+            : (slotC && slotC.benchmarkDataset && slotC.benchmarkDataset.length > 0
+                ? slotC.benchmarkDataset : (slotC && slotC.pastSamples ? slotC.pastSamples : []));
+          const effDim = Math.max(
+            slotA ? (slotA.currentDim || 0) : 0,
+            slotC ? (slotC.currentDim || 0) : 0
+          );
+          const dimStr = effDim > 0 ? `${effDim}D` : (is3D ? '3D' : '2D');
 
           // Slot A Pill
           ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
@@ -3459,9 +3509,19 @@
 
           // D. Right Panel HUD Header
           ctx.save();
-          const ptsB = slotB ? (slotB.benchmarkDataset || slotB.pastSamples || []) : [];
-          const ptsD = slotD ? (slotD.benchmarkDataset || slotD.pastSamples || []) : [];
-          const dimStr = is3D ? '3D' : '2D';
+          const ptsB = (typeof getSlotPoints === 'function')
+            ? getSlotPoints(slotB)
+            : (slotB && slotB.benchmarkDataset && slotB.benchmarkDataset.length > 0
+                ? slotB.benchmarkDataset : (slotB && slotB.pastSamples ? slotB.pastSamples : []));
+          const ptsD = (typeof getSlotPoints === 'function')
+            ? getSlotPoints(slotD)
+            : (slotD && slotD.benchmarkDataset && slotD.benchmarkDataset.length > 0
+                ? slotD.benchmarkDataset : (slotD && slotD.pastSamples ? slotD.pastSamples : []));
+          const effDim = Math.max(
+            slotB ? (slotB.currentDim || 0) : 0,
+            slotD ? (slotD.currentDim || 0) : 0
+          );
+          const dimStr = effDim > 0 ? `${effDim}D` : (is3D ? '3D' : '2D');
 
           // Slot B Pill
           ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
@@ -3543,7 +3603,10 @@
           const qConfig = quadRects[q];
           const rect = { x: qConfig.x, y: qConfig.y, w: qConfig.w, h: qConfig.h };
           const slot = datasetSlots[qConfig.slotId];
-          const pts = slot ? (slot.benchmarkDataset || slot.pastSamples || []) : [];
+          const pts = (typeof getSlotPoints === 'function')
+            ? getSlotPoints(slot)
+            : (slot && slot.benchmarkDataset && slot.benchmarkDataset.length > 0
+                ? slot.benchmarkDataset : (slot && slot.pastSamples ? slot.pastSamples : []));
           const is3D = (slot && slot.currentDim >= 3);
 
           const isInputSpace = (q === 0 || q === 2);
@@ -3585,7 +3648,8 @@
           // C. Quadrant Header HUD
           ctx.save();
           const ptCount = pts ? pts.length : 0;
-          const dimStr = is3D ? '3D' : '2D';
+          const dimVal = (slot && slot.currentDim) ? slot.currentDim : (is3D ? 3 : 2);
+          const dimStr = `${dimVal}D`;
           const benchName = (slot && slot.stagedDatasetInfo && slot.stagedDatasetInfo.name)
             ? slot.stagedDatasetInfo.name
             : (slot ? (slot.benchmarkKey || 'None') : 'None');
@@ -3762,10 +3826,22 @@
       const slotC = datasetSlots['C'];
       const slotD = datasetSlots['D'];
 
-      const ptsA = slotA ? (slotA.benchmarkDataset || slotA.pastSamples) : null;
-      const ptsB = slotB ? (slotB.benchmarkDataset || slotB.pastSamples) : null;
-      const ptsC = slotC ? (slotC.benchmarkDataset || slotC.pastSamples) : null;
-      const ptsD = slotD ? (slotD.benchmarkDataset || slotD.pastSamples) : null;
+      const ptsA = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotA)
+        : (slotA && slotA.benchmarkDataset && slotA.benchmarkDataset.length > 0
+            ? slotA.benchmarkDataset : (slotA ? slotA.pastSamples : null));
+      const ptsB = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotB)
+        : (slotB && slotB.benchmarkDataset && slotB.benchmarkDataset.length > 0
+            ? slotB.benchmarkDataset : (slotB ? slotB.pastSamples : null));
+      const ptsC = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotC)
+        : (slotC && slotC.benchmarkDataset && slotC.benchmarkDataset.length > 0
+            ? slotC.benchmarkDataset : (slotC ? slotC.pastSamples : null));
+      const ptsD = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotD)
+        : (slotD && slotD.benchmarkDataset && slotD.benchmarkDataset.length > 0
+            ? slotD.benchmarkDataset : (slotD ? slotD.pastSamples : null));
 
       const dimA = slotA ? (slotA.currentDim || 2) : 2;
       const dimB = slotB ? (slotB.currentDim || 2) : 2;

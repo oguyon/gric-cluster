@@ -346,7 +346,7 @@ static void print_help_raw(
            ANSI_BOLD, ANSI_COLOR_RESET);
     print_colored_line("    -dprob <val>             Delta probability (default: 0.01)");
     print_colored_line("    -maxcl <val>             Max number of clusters (default: 1000)");
-    print_colored_line("    -maxim <val>             Max number of frames (default: 100000)");
+    print_colored_line("    -maxim <val>             Max number of frames (default: 1000000)");
     print_colored_line("    -ncpu <val>              Number of CPUs to use (default: 1)");
 
     printf("    %sTiling:%s\n",

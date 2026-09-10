@@ -335,7 +335,23 @@ void handle_api_file_write(
         (void)ret;
     }
 
-    FILE *f = fopen(full_path, "wb");
+    int is_append = 0;
+    const char *app_key = "\"append\":";
+    const char *a_start = strstr(body, app_key);
+    if (a_start)
+    {
+        a_start += strlen(app_key);
+        while (*a_start == ' ')
+        {
+            a_start++;
+        }
+        if (strncmp(a_start, "true", 4) == 0 || *a_start == '1')
+        {
+            is_append = 1;
+        }
+    }
+
+    FILE *f = fopen(full_path, is_append ? "ab" : "wb");
     if (!f)
     {
         api_send_json(client_fd, 500, "{\"error\":\"Failed to create file for writing\"}");
@@ -345,31 +361,47 @@ void handle_api_file_write(
     if (*c_start == '"')
     {
         c_start++;
-        const char *c_end = body + body_len - 1;
-        while (c_end > c_start && (*c_end == ' ' || *c_end == '}' ||
-                                   *c_end == '\n' || *c_end == '\r' || *c_end == '"'))
+        const char *p = c_start;
+        const char *body_end = body + body_len;
+        while (p < body_end)
         {
-            if (*c_end == '"')
+            if (*p == '"')
             {
                 break;
             }
-            c_end--;
-        }
-        for (const char *p = c_start; p < c_end; p++)
-        {
-            if (*p == '\\' && (p + 1 < c_end))
+            if (*p == '\\' && (p + 1 < body_end))
             {
-                if (*(p + 1) == 'n') { fputc('\n', f); p++; }
-                else if (*(p + 1) == 't') { fputc('\t', f); p++; }
-                else if (*(p + 1) == 'r') { fputc('\r', f); p++; }
-                else if (*(p + 1) == '"') { fputc('"', f); p++; }
-                else if (*(p + 1) == '\\') { fputc('\\', f); p++; }
-                else { fputc(*p, f); }
+                p++;
+                if (*p == 'n')
+                {
+                    fputc('\n', f);
+                }
+                else if (*p == 't')
+                {
+                    fputc('\t', f);
+                }
+                else if (*p == 'r')
+                {
+                    fputc('\r', f);
+                }
+                else if (*p == '"')
+                {
+                    fputc('"', f);
+                }
+                else if (*p == '\\')
+                {
+                    fputc('\\', f);
+                }
+                else
+                {
+                    fputc(*p, f);
+                }
             }
             else
             {
                 fputc(*p, f);
             }
+            p++;
         }
     }
     else

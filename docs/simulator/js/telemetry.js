@@ -53,6 +53,15 @@
       return Math.round(num).toLocaleString();
     }
 
+    function formatCompactNumber(num) {
+      if (num === null || num === undefined || isNaN(num)) return "0";
+      const abs = Math.abs(num);
+      if (abs >= 1e6) return (num / 1e6).toFixed(1) + "M";
+      if (abs >= 1e3) return (num / 1e3).toFixed(1) + "k";
+      return Math.round(num).toString();
+    }
+    window.formatCompactNumber = formatCompactNumber;
+
     function formatBytes(bytes) {
       if (bytes === 0 || isNaN(bytes)) return "0 B";
       if (bytes < 1024) return `${bytes} B`;
@@ -2223,15 +2232,31 @@
       const statTotalDists = document.getElementById('statTotalDists');
       if (statTotalDists) statTotalDists.innerText = formatNumber(distSampleCluster + distClusterCluster);
 
+      const statDistSample = document.getElementById('statDistSample');
+      if (statDistSample) statDistSample.innerText = formatNumber(distSampleCluster);
+
+      const statDistCluster = document.getElementById('statDistCluster');
+      if (statDistCluster) statDistCluster.innerText = formatNumber(distClusterCluster);
+
       const statDistRatio = document.getElementById('statDistRatio');
-      if (statDistRatio) statDistRatio.innerText = `${formatNumber(distSampleCluster)} / ${formatNumber(distClusterCluster)}`;
+      if (statDistRatio) {
+        statDistRatio.innerText =
+          `${formatNumber(distSampleCluster)} / ${formatNumber(distClusterCluster)}`;
+      }
+
       const statDccPopBadge = document.getElementById('statDccPopBadge');
       if (statDccPopBadge) {
         const K = clusters.length;
         const maxPairs = dccPairsTotal || (K > 1 ? (K * (K - 1) / 2) : 0);
-        statDccPopBadge.innerText = maxPairs > 0
-          ? `[${formatNumber(dccPopulated)}/${formatNumber(maxPairs)} pop]`
-          : `[${formatNumber(dccPopulated)} pop]`;
+        if (maxPairs > 0) {
+          const pct = ((dccPopulated / maxPairs) * 100).toFixed(maxPairs > 100000 ? 2 : 1);
+          statDccPopBadge.innerText = `${formatCompactNumber(dccPopulated)} (${pct}%)`;
+          statDccPopBadge.title =
+            `${formatNumber(dccPopulated)} / ${formatNumber(maxPairs)} pairs (${pct}%)`;
+        } else {
+          statDccPopBadge.innerText = formatNumber(dccPopulated);
+          statDccPopBadge.title = `${formatNumber(dccPopulated)} pairs populated`;
+        }
       }
 
       const statMemoryTotal = document.getElementById('statMemoryTotal');
@@ -3089,8 +3114,11 @@
           }
 
           // Slot Gen state sync
-          const sGen = slot.genState ||
-            ((slot.benchmarkDataset && slot.benchmarkDataset.length > 0) ? 'ready' : 'pending');
+          const slotPts = (typeof getSlotPoints === 'function')
+            ? getSlotPoints(slot)
+            : ((slot.benchmarkDataset && slot.benchmarkDataset.length > 0)
+                ? slot.benchmarkDataset : (slot.pastSamples || []));
+          const sGen = slot.genState || (slotPts.length > 0 ? 'ready' : 'pending');
           const btnStageSlot = document.getElementById(`btnStageDataset_${sId}`);
           if (sGen === 'pending') {
             if (sel) sel.classList.add('pending-gen');
@@ -3209,11 +3237,16 @@
 
           // 3. Staged / Points Status Pill (Compact)
           if (pill) {
-            const count = isActive
-              ? (benchmarkDataset ? benchmarkDataset.length : 0)
-              : (slot.benchmarkDataset
-                   ? slot.benchmarkDataset.length
-                   : (slot.stagedDatasetInfo ? slot.stagedDatasetInfo.count : 0));
+            const pts = isActive
+              ? ((benchmarkDataset && benchmarkDataset.length > 0)
+                  ? benchmarkDataset : (typeof pastSamples !== 'undefined' ? pastSamples : []))
+              : ((typeof getSlotPoints === 'function')
+                  ? getSlotPoints(slot)
+                  : ((slot.benchmarkDataset && slot.benchmarkDataset.length > 0)
+                      ? slot.benchmarkDataset : (slot.pastSamples || [])));
+            const count = pts.length > 0
+              ? pts.length
+              : (slot.stagedDatasetInfo ? slot.stagedDatasetInfo.count : 0);
             const bmName = isActive ? currentBenchmark : slot.benchmarkKey;
             const dim = isActive ? currentDim : slot.currentDim;
             const mode = isActive ? dataMode : slot.dataMode;
@@ -3397,14 +3430,58 @@
         if (isActive && btnSide) {
           btnSide.classList.remove('btn-gen-pending', 'btn-gen-generating');
           btnSide.classList.add('btn-gen-ready');
-          btnStage.innerHTML = '<span class="gen-check-icon">✓</span> Ready';
+          btnSide.innerHTML = '<span class="gen-check-icon">✓</span> Ready';
           btnSide.title =
             'Dataset generated and loaded. Click again to regenerate/reload.';
         }
       }
     }
 
-    function stageDataset(benchmarkKey = null, targetSlot = null) {
+    function invalidateReconstructionSlotD() {
+      const slotD = (typeof datasetSlots !== 'undefined') ? datasetSlots['D'] : null;
+      if (!slotD) return;
+      slotD.benchmarkDataset = [];
+      slotD.rawBenchmarkDataset = [];
+      slotD.pastSamples = [];
+      slotD.isDatasetStaged = false;
+      slotD.reconstructionInfo = null;
+      slotD.reconstructionSourceNeighbors = null;
+      slotD.reconKthDist = null;
+      slotD.reconVariance = null;
+      slotD.reconQualityMask = null;
+      slotD.reconQualityIndices = null;
+      slotD.knnResults = null;
+      slotD.genState = 'empty';
+      slotD.stagedDatasetInfo = {
+        name: 'Empty',
+        count: 0,
+        dim: slotD.currentDim || 3,
+        passes: 1,
+        noise: 0
+      };
+      if (typeof updateSlotGenState === 'function') {
+        updateSlotGenState('D', 'empty');
+      }
+    }
+
+    function syncSlotBWithSlotA() {
+      if (typeof datasetSlots === 'undefined') return;
+      const slotA = datasetSlots['A'];
+      const slotB = datasetSlots['B'];
+      if (!slotA || !slotB) return;
+      if (slotB.benchmarkKey && slotB.benchmarkKey !== 'custom' && slotB.dataMode !== 'image') {
+        const desiredCount = slotA.sampleCount || 10000;
+        const desiredLoop = slotA.loopCount || 1;
+        if (slotB.sampleCount !== desiredCount || slotB.loopCount !== desiredLoop ||
+            !slotB.benchmarkDataset || slotB.benchmarkDataset.length === 0) {
+          slotB.sampleCount = desiredCount;
+          slotB.loopCount = desiredLoop;
+          stageDataset(slotB.benchmarkKey, 'B', true);
+        }
+      }
+    }
+
+    function stageDataset(benchmarkKey = null, targetSlot = null, isSyncCall = false) {
       const slotId = (targetSlot && DATASET_SLOTS.includes(targetSlot))
         ? targetSlot : activeDatasetSlot;
 
@@ -3434,7 +3511,10 @@
           slot.dataMode = 'coord';
           slot.currentDim = (typeof getBenchmarkDim === 'function')
             ? getBenchmarkDim(bKey) : (is3DBenchmark(bKey) ? 3 : 2);
-          if (bKey.startsWith('32D') || slot.currentDim === 32) {
+          if (bKey.startsWith('32D') ||
+              bKey.startsWith('128D') ||
+              bKey.startsWith('512D') ||
+              slot.currentDim >= 32) {
             slot.rlim = 1.0;
             slot.noiseSigma = 0.005;
           } else if ((slot.rlim === 1.0 || slot.rlim >= 5.0) && slot.currentDim <= 3) {
@@ -3497,7 +3577,7 @@
 
         slot.pastSamples = [];
         if (slot.dataMode === 'coord' && slot.benchmarkDataset && slot.benchmarkDataset.length > 0) {
-          const maxStagedPreview = 100000;
+          const maxStagedPreview = 1000000;
           const stride = slot.benchmarkDataset.length > maxStagedPreview
             ? Math.ceil(slot.benchmarkDataset.length / maxStagedPreview) : 1;
           for (let i = 0; i < slot.benchmarkDataset.length; i += stride) {
@@ -3534,6 +3614,12 @@
           passes: slot.loopCount || 1,
           noise: slot.noiseSigma || 0.02
         };
+        if (slotId === 'A' && !isSyncCall) {
+          syncSlotBWithSlotA();
+        }
+        if (slotId === 'A' || slotId === 'B' || slotId === 'C') {
+          invalidateReconstructionSlotD();
+        }
         updateDatasetStatusBadge();
         return;
       }
@@ -3616,7 +3702,10 @@
               resetView();
             }
           }
-          if (currentBenchmark.startsWith('32D') || currentDim === 32) {
+          if (currentBenchmark.startsWith('32D') ||
+              currentBenchmark.startsWith('128D') ||
+              currentBenchmark.startsWith('512D') ||
+              currentDim >= 32) {
             if (typeof setClusteringRlim === 'function') {
               setClusteringRlim(1.0, false);
             } else {
@@ -3664,7 +3753,7 @@
       // Populate pastSamples for immediate point cloud preview in viewports
       pastSamples = [];
       if (dataMode === 'coord' && benchmarkDataset && benchmarkDataset.length > 0) {
-        const maxStagedPreview = 100000;
+        const maxStagedPreview = 1000000;
         const stride = benchmarkDataset.length > maxStagedPreview
           ? Math.ceil(benchmarkDataset.length / maxStagedPreview) : 1;
         for (let i = 0; i < benchmarkDataset.length; i += stride) {
@@ -3681,6 +3770,14 @@
         }
       } else if (dataMode === 'image' && benchmarkDataset && benchmarkDataset.length > 0) {
         currentImageFrame = benchmarkDataset[0];
+      }
+
+      if (benchmarkDataset && benchmarkDataset.length > sampleBufferCap) {
+        sampleBufferCap = benchmarkDataset.length;
+        const inputCap = document.getElementById('inputSampleBufCap');
+        if (inputCap) inputCap.value = sampleBufferCap;
+        const sliderCap = document.getElementById('sliderSampleBufCap');
+        if (sliderCap) sliderCap.value = Math.min(sliderCap.max, sampleBufferCap);
       }
 
       isDatasetStaged = true;
@@ -3702,6 +3799,13 @@
       // Also save to datasetSlots dictionary
       saveSlotState(activeDatasetSlot);
 
+      if (activeDatasetSlot === 'A' && !isSyncCall) {
+        syncSlotBWithSlotA();
+      }
+      if (activeDatasetSlot === 'A' || activeDatasetSlot === 'B' || activeDatasetSlot === 'C') {
+        invalidateReconstructionSlotD();
+      }
+
       // Hide/Show 3D Viewport Preset Bar in image mode
       const presetBar = document.getElementById('viewPresetBar');
       if (presetBar) {
@@ -3719,7 +3823,7 @@
       // Auto-export staged dataset to native desktop workspace if connected
       if (typeof DesktopBridge !== 'undefined' && DesktopBridge.isAvailable() &&
           dataMode === 'coord' && benchmarkDataset.length > 0) {
-        DesktopBridge.stageDatasetFile(currentBenchmark, benchmarkDataset)
+        DesktopBridge.stageDatasetFile(currentBenchmark, benchmarkDataset, currentDim)
           .catch(err => console.warn('[DesktopBridge] Auto-stage export failed:', err));
       }
       if (currentBenchmark.startsWith('32D') || currentDim === 32) {
@@ -3785,7 +3889,11 @@
       const dInfo = document.getElementById('reconSlotDInfo');
 
       if (aInfo && slotA) {
-        const countA = slotA.benchmarkDataset ? slotA.benchmarkDataset.length : 0;
+        const ptsA = (typeof getSlotPoints === 'function')
+          ? getSlotPoints(slotA)
+          : ((slotA.benchmarkDataset && slotA.benchmarkDataset.length > 0)
+              ? slotA.benchmarkDataset : (slotA.pastSamples || []));
+        const countA = ptsA.length;
         const isImgA = slotA.dataMode === 'image';
         aInfo.textContent = isImgA
           ? `${countA.toLocaleString()} frames ` +
@@ -3794,7 +3902,11 @@
         aInfo.style.color = countA > 0 ? '#38bdf8' : 'var(--text-muted)';
       }
       if (bInfo && slotB) {
-        const countB = slotB.benchmarkDataset ? slotB.benchmarkDataset.length : 0;
+        const ptsB = (typeof getSlotPoints === 'function')
+          ? getSlotPoints(slotB)
+          : ((slotB.benchmarkDataset && slotB.benchmarkDataset.length > 0)
+              ? slotB.benchmarkDataset : (slotB.pastSamples || []));
+        const countB = ptsB.length;
         const isImgB = slotB.dataMode === 'image';
         bInfo.textContent = isImgB
           ? `${countB.toLocaleString()} frames ` +
@@ -3803,7 +3915,11 @@
         bInfo.style.color = countB > 0 ? '#4ade80' : 'var(--text-muted)';
       }
       if (cInfo && slotC) {
-        const countC = slotC.benchmarkDataset ? slotC.benchmarkDataset.length : 0;
+        const ptsC = (typeof getSlotPoints === 'function')
+          ? getSlotPoints(slotC)
+          : ((slotC.benchmarkDataset && slotC.benchmarkDataset.length > 0)
+              ? slotC.benchmarkDataset : (slotC.pastSamples || []));
+        const countC = ptsC.length;
         const isImgC = slotC.dataMode === 'image';
         cInfo.textContent = isImgC
           ? `${countC.toLocaleString()} frames ` +
@@ -3812,7 +3928,11 @@
         cInfo.style.color = countC > 0 ? '#fbbf24' : 'var(--text-muted)';
       }
       if (dInfo && slotD) {
-        const countD = slotD.benchmarkDataset ? slotD.benchmarkDataset.length : 0;
+        const ptsD = (typeof getSlotPoints === 'function')
+          ? getSlotPoints(slotD)
+          : ((slotD.benchmarkDataset && slotD.benchmarkDataset.length > 0)
+              ? slotD.benchmarkDataset : (slotD.pastSamples || []));
+        const countD = ptsD.length;
         const isImgD = slotD.dataMode === 'image';
         dInfo.textContent = (countD > 0)
           ? (isImgD
@@ -3930,7 +4050,9 @@
       }
 
       // Query Coordinates in C
-      const ptsC = slotC ? slotC.benchmarkDataset : null;
+      const ptsC = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotC)
+        : (slotC ? (slotC.benchmarkDataset || slotC.pastSamples) : null);
       if (ptsC && qIdx < ptsC.length && queryCoordsEl) {
         const qc = ptsC[qIdx];
         if (slotC.dataMode === 'image' || qc instanceof Float32Array ||
@@ -3946,8 +4068,10 @@
       }
 
       // Reconstructed Coordinates in D
-      const ptsD = slotD.benchmarkDataset;
-      if (qIdx < ptsD.length && outputCoordsEl) {
+      const ptsD = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotD)
+        : (slotD ? (slotD.benchmarkDataset || slotD.pastSamples) : null);
+      if (ptsD && qIdx < ptsD.length && outputCoordsEl) {
         const qd = ptsD[qIdx];
         if (slotD.dataMode === 'image' || qd instanceof Float32Array ||
             qd instanceof Float64Array) {
@@ -3967,7 +4091,9 @@
 
       const neighbors = mapping[qIdx];
       let html = '';
-      const ptsB = slotB ? slotB.benchmarkDataset : null;
+      const ptsB = (typeof getSlotPoints === 'function')
+        ? getSlotPoints(slotB)
+        : (slotB ? (slotB.benchmarkDataset || slotB.pastSamples) : null);
 
       for (let r = 0; r < neighbors.length; r++) {
         const item = neighbors[r];
@@ -3982,14 +4108,22 @@
               pb instanceof Float64Array) {
             bCoordStr = `Frame #${nId}`;
           } else {
-            bCoordStr = (typeof pb.z === 'number')
-              ? `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)}, ${pb.z.toFixed(2)})`
-              : `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)})`;
+            const bDim = slotB.currentDim || (pb.coords ? pb.coords.length : 2);
+            if (bDim > 3) {
+              const pz = (pb.z || 0).toFixed(2);
+              bCoordStr = `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)}, ${pz}...) [${bDim}D]`;
+            } else if (typeof pb.z === 'number') {
+              bCoordStr = `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)}, ${pb.z.toFixed(2)})`;
+            } else {
+              bCoordStr = `(${pb.x.toFixed(2)}, ${pb.y.toFixed(2)})`;
+            }
           }
         }
 
         const isHovered = (hoveredKnnNeighborId === nId);
-        const bg = isHovered ? 'background: rgba(168, 85, 247, 0.25);' : (r % 2 === 1 ? 'background: rgba(15, 23, 42, 0.4);' : '');
+        const bg = isHovered
+          ? 'background: rgba(168, 85, 247, 0.25);'
+          : (r % 2 === 1 ? 'background: rgba(15, 23, 42, 0.4);' : '');
 
         html += `
           <tr style="${bg} cursor: pointer; transition: background 0.15s;"

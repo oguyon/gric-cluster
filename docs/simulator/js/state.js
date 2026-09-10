@@ -137,7 +137,7 @@
     let clusterSpawnRipples = []; // Active expanding ripple animations for new clusters
     let clusterMilestoneFrames = []; // Frame indices where new cluster anchors were established
     let activeSidebarMode = 'all'; // 'all', 'clustering', 'knn', 'files', 'telemetry'
-    let sampleBufferCap = 100000; // Rolling buffer capacity for pastSamples
+    let sampleBufferCap = 500000; // Rolling buffer capacity for pastSamples
     let batchThinRate = 1;      // In batch mode, keep every Nth frame (1 = all / none)
     let showDistLines = true;   // Toggle distance evaluation and solving lines
     let showDistLabels = true;  // Toggle distance measurement pills & badges
@@ -1453,6 +1453,21 @@
       D: createInitialDatasetSlot('D')
     };
 
+    function getSlotPoints(slot) {
+      if (!slot) return [];
+      if (slot.benchmarkDataset && slot.benchmarkDataset.length > 0) {
+        return slot.benchmarkDataset;
+      }
+      if (slot.pastSamples && slot.pastSamples.length > 0) {
+        return slot.pastSamples;
+      }
+      if (slot.rawBenchmarkDataset && slot.rawBenchmarkDataset.length > 0) {
+        return slot.rawBenchmarkDataset;
+      }
+      return [];
+    }
+    window.getSlotPoints = getSlotPoints;
+
     function saveSlotState(slotId) {
       if (!datasetSlots[slotId]) return;
       const slot = datasetSlots[slotId];
@@ -1478,13 +1493,24 @@
       slot.currentDim = currentDim;
       slot.genState = slot.genState || 'ready';
       slot.isDatasetStaged = isDatasetStaged;
+      if ((!benchmarkDataset || benchmarkDataset.length === 0) &&
+          pastSamples && pastSamples.length > 0) {
+        benchmarkDataset = pastSamples;
+      }
+      const effectiveCount = (benchmarkDataset && benchmarkDataset.length > 0)
+        ? benchmarkDataset.length
+        : (pastSamples ? pastSamples.length : 0);
       slot.stagedDatasetInfo = stagedDatasetInfo ? { ...stagedDatasetInfo } : {
         name: currentBenchmark,
-        count: benchmarkDataset ? benchmarkDataset.length : 0,
+        count: effectiveCount,
         dim: currentDim,
         passes: loopCount || 1,
         noise: noiseSigma
       };
+      if (slot.stagedDatasetInfo &&
+          (!slot.stagedDatasetInfo.count || slot.stagedDatasetInfo.count === 0)) {
+        slot.stagedDatasetInfo.count = effectiveCount;
+      }
       slot.rawBenchmarkDataset = rawBenchmarkDataset;
       slot.benchmarkDataset = benchmarkDataset;
       slot.currentFrameIdx = currentFrameIdx;
@@ -1661,10 +1687,15 @@
       currentFrameIdx = slot.currentFrameIdx || 0;
       if (typeof currentLoop !== 'undefined') currentLoop = slot.currentLoop || 1;
       pastSamples = slot.pastSamples || [];
+      if ((!benchmarkDataset || benchmarkDataset.length === 0) &&
+          pastSamples && pastSamples.length > 0) {
+        benchmarkDataset = pastSamples;
+        slot.benchmarkDataset = benchmarkDataset;
+      }
       if ((!pastSamples || pastSamples.length === 0) &&
           benchmarkDataset && benchmarkDataset.length > 0 &&
           dataMode === 'coord') {
-        const maxStagedPreview = 100000;
+        const maxStagedPreview = 1000000;
         const stride = benchmarkDataset.length > maxStagedPreview
           ? Math.ceil(benchmarkDataset.length / maxStagedPreview) : 1;
         pastSamples = [];
@@ -1681,6 +1712,13 @@
           pastSamples.push(newPt);
         }
         slot.pastSamples = pastSamples;
+      }
+      const effectiveCount = (benchmarkDataset && benchmarkDataset.length > 0)
+        ? benchmarkDataset.length
+        : (pastSamples ? pastSamples.length : 0);
+      if (effectiveCount > 0 && (!stagedDatasetInfo.count || stagedDatasetInfo.count === 0)) {
+        stagedDatasetInfo.count = effectiveCount;
+        slot.stagedDatasetInfo.count = effectiveCount;
       }
       clusters = slot.clusters || [];
       dcc = slot.dcc || [];
@@ -2478,7 +2516,7 @@
           currentImageFrame = ds[0];
           slot.currentImageFrame = ds[0];
         } else {
-          const maxStagedPreview = 100000;
+          const maxStagedPreview = 1000000;
           const stride = ds.length > maxStagedPreview
             ? Math.ceil(ds.length / maxStagedPreview) : 1;
           pastSamples = [];
@@ -2505,7 +2543,7 @@
         if (slot.dataMode === 'image') {
           slot.currentImageFrame = ds[0];
         } else {
-          const maxStagedPreview = 100000;
+          const maxStagedPreview = 1000000;
           const stride = ds.length > maxStagedPreview
             ? Math.ceil(ds.length / maxStagedPreview) : 1;
           slot.pastSamples = [];

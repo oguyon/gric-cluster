@@ -295,7 +295,7 @@ static void handle_client_connection(
     if (content_len > 0 && (size_t)nread < hdr_len + content_len)
     {
         size_t total_expected = hdr_len + content_len;
-        if (total_expected > 128 * 1024 * 1024)
+        if (total_expected > (size_t)1024 * 1024 * 1024)
         {
             free(req_buf);
             close(client_fd);
