@@ -89,6 +89,17 @@ static void print_help(
            ansi_color_green, ansi_reset);
     printf("  %s-no-reciprocal%s         Disable Symmetric Distance Reciprocal Push\n",
            ansi_color_green, ansi_reset);
+    printf("  %s-two-hop%s, %s--two-hop%s       Enable 2-Hop Candidate Injection "
+           "(%sdefault: on%s)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("  %s-no-two-hop%s, %s--no-two-hop%s Disable 2-Hop Candidate Injection\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-two-hop-seeds%s %s<int>%s    Number of top seeds to expand (default: 2)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-two-hop-max%s %s<int>%s      Max 2-hop candidates evaluated per query "
+           "(default: 32)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-approx%s, %s--approx%s         Fast Approximate Graph Search "
            "(10-20 evals/query)\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
@@ -173,6 +184,9 @@ int main(
     config.use_batch_dist = 1; // Enabled by default for multi-vector SIMD batching
     config.use_cluster_graph = 1; // Enabled by default for graph-guided cluster routing
     config.ef_cluster = 60;       // Default cluster budget in graph routing
+    config.use_two_hop = 1;       // Enabled by default for 2-hop candidate injection
+    config.two_hop_seeds = 2;     // Expand top 2 closest seeds
+    config.two_hop_max_cands = 32;// Maximum 2-hop candidate evaluations per query
 
     int k_explicitly_set = 0;
     int dtmin_explicitly_set = 0;
@@ -485,6 +499,34 @@ int main(
             }
             config.ef_cluster = atoi(argv[++arg_idx]);
         }
+        else if (strcmp(argv[arg_idx], "-two-hop") == 0 ||
+                 strcmp(argv[arg_idx], "--two-hop") == 0)
+        {
+            config.use_two_hop = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-two-hop") == 0 ||
+                 strcmp(argv[arg_idx], "--no-two-hop") == 0)
+        {
+            config.use_two_hop = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-two-hop-seeds") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -two-hop-seeds requires an integer argument\n");
+                return 1;
+            }
+            config.two_hop_seeds = atoi(argv[++arg_idx]);
+        }
+        else if (strcmp(argv[arg_idx], "-two-hop-max") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -two-hop-max requires an integer argument\n");
+                return 1;
+            }
+            config.two_hop_max_cands = atoi(argv[++arg_idx]);
+        }
         else if (strcmp(argv[arg_idx], "-prof") == 0 ||
                  strcmp(argv[arg_idx], "--prof") == 0)
         {
@@ -622,6 +664,11 @@ int main(
     if (config.use_angular_bound)
     {
         printf("  Angular Bound: Enabled (Directional Cosine Bounding)\n");
+    }
+    if (config.use_two_hop)
+    {
+        printf("  2-Hop Injection: Enabled (seeds=%d, max=%d)\n",
+               config.two_hop_seeds, config.two_hop_max_cands);
     }
     if (config.query_data_path != NULL && config.use_trajectory)
     {
@@ -907,6 +954,15 @@ int main(
     {
         printf("  Reciprocal Reused:         %lu\n",
                (unsigned long)telemetry.reciprocal_reused);
+    }
+    if (telemetry.two_hop_evaluations > 0 || telemetry.two_hop_pruned > 0)
+    {
+        printf("  2-Hop Evaluated:           %lu\n",
+               (unsigned long)telemetry.two_hop_evaluations);
+        printf("  2-Hop Injected to Heap:    %lu\n",
+               (unsigned long)telemetry.two_hop_injected);
+        printf("  2-Hop Triangle Pruned:     %lu\n",
+               (unsigned long)telemetry.two_hop_pruned);
     }
     printf("  Temporal Exclusions:       %lu\n", (unsigned long)telemetry.temporal_pruned);
     printf("  Search Wall Time:          %.2f ms (%.1f fps)\n", telemetry.time_search_ms, fps);
