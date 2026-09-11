@@ -901,12 +901,32 @@ async function setupAsteroidReconTest(numTotalFrames = 10000, split = 0.80)
       slot.currentPruned = [];
       slot.currentPredicted = [];
 
-      const sel = document.getElementById(`selectBenchmark_${slotId}`);
+      slot.stagedDatasetInfo = {
+        name: bKey,
+        count: frames.length,
+        dim: 1024,
+        passes: 1,
+        noise: 0
+      };
+
+      const sel = document.getElementById(`selectBenchmark_${slotId}`) ||
+        (slotId === 'A' ? document.getElementById('selectBenchmark') : null);
       if (sel) sel.value = bKey;
       slot.genState = 'ready';
 
       if (typeof activeDatasetSlot !== 'undefined' && activeDatasetSlot === slotId)
       {
+        if (typeof currentBenchmark !== 'undefined')
+        {
+          currentBenchmark = bKey;
+        }
+        stagedDatasetInfo = {
+          name: bKey,
+          count: frames.length,
+          dim: 1024,
+          passes: 1,
+          noise: 0
+        };
         totalFrames = 0;
         clusters = [];
         totalEvals = 0;
@@ -926,6 +946,15 @@ async function setupAsteroidReconTest(numTotalFrames = 10000, split = 0.80)
         dataMode = 'image';
         currentImageFrame = frames[0];
         isDatasetStaged = true;
+
+        const selSide = document.getElementById('selectBenchmarkSide');
+        if (selSide) selSide.value = bKey;
+
+        const descEl = document.getElementById('benchmarkDesc');
+        if (descEl && typeof BENCHMARK_DESCS !== 'undefined')
+        {
+          descEl.innerHTML = BENCHMARK_DESCS[bKey] || `<b>${bKey}</b>`;
+        }
       }
     }
   }
@@ -983,13 +1012,47 @@ async function setupAsteroidReconTest(numTotalFrames = 10000, split = 0.80)
     slotD.rawBenchmarkDataset = [];
     slotD.reconstructionInfo = null;
     slotD.reconstructionSourceNeighbors = null;
+    slotD.stagedDatasetInfo = {
+      name: 'reconstructed',
+      count: 0,
+      dim: 1024,
+      passes: 1,
+      noise: 0
+    };
     const selD = document.getElementById('selectBenchmark_D');
     if (selD) selD.value = 'reconstructed';
+  }
+
+  if (typeof activeDatasetSlot !== 'undefined' && datasetSlots[activeDatasetSlot])
+  {
+    const activeSlot = datasetSlots[activeDatasetSlot];
+    if (activeSlot && activeSlot.benchmarkKey)
+    {
+      if (typeof currentBenchmark !== 'undefined')
+      {
+        currentBenchmark = activeSlot.benchmarkKey;
+      }
+      const descEl = document.getElementById('benchmarkDesc');
+      if (descEl && typeof BENCHMARK_DESCS !== 'undefined')
+      {
+        descEl.innerHTML = BENCHMARK_DESCS[currentBenchmark] ||
+          `<b>${currentBenchmark}</b>`;
+      }
+      const selSide = document.getElementById('selectBenchmarkSide');
+      if (selSide)
+      {
+        selSide.value = currentBenchmark;
+      }
+    }
   }
 
   if (typeof updateDatasetStatusBadge === 'function')
   {
     updateDatasetStatusBadge();
+  }
+  if (typeof updateUI === 'function')
+  {
+    updateUI();
   }
 
   if (typeof setRecon4PanelView === 'function')

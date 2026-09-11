@@ -6,6 +6,18 @@
 //  4. STATE & ENGINE INITIALIZATION
     // =========================================================================
 
+    // Provide selectBenchmark_A alias for Slot A selectBenchmark element
+    if (typeof document !== 'undefined' && document.getElementById) {
+      const _origGetElementById = document.getElementById.bind(document);
+      document.getElementById = function(id) {
+        if (id === 'selectBenchmark_A') {
+          return _origGetElementById('selectBenchmark_A') ||
+                 _origGetElementById('selectBenchmark');
+        }
+        return _origGetElementById(id);
+      };
+    }
+
     const canvas = document.getElementById('simCanvas');
     const ctx = canvas.getContext('2d');
     window.canvas = canvas;

@@ -3496,7 +3496,8 @@
         slot.genState = state;
       }
 
-      const selSlot = document.getElementById(`selectBenchmark_${slotId}`);
+      const selSlot = document.getElementById(`selectBenchmark_${slotId}`) ||
+        (slotId === 'A' ? document.getElementById('selectBenchmark') : null);
       const btnStage = document.getElementById(`btnStageDataset_${slotId}`);
       const isActive = (slotId === activeDatasetSlot);
       const selSide = document.getElementById('selectBenchmarkSide');

@@ -4700,7 +4700,8 @@
           descEl.innerHTML = BENCHMARK_DESCS[newBench] || `<b>${newBench}</b>`;
         }
 
-        const selSlot = document.getElementById(`selectBenchmark_${activeDatasetSlot}`);
+        const selSlot = document.getElementById(`selectBenchmark_${activeDatasetSlot}`) ||
+          (activeDatasetSlot === 'A' ? document.getElementById('selectBenchmark') : null);
         if (selSlot) selSlot.value = newBench;
 
         if (typeof updateSlotGenState === 'function') {
