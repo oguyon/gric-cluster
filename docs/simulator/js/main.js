@@ -6,6 +6,104 @@
 //  WASM ENGINE TOGGLE
     // =========================================================================
 
+    function updateClusteringButtonUI() {
+      const btnPlay = document.getElementById('btnPlay');
+      if (!btnPlay) return;
+
+      if (typeof engineMode !== 'undefined' && engineMode === 'cli') {
+        if (typeof isCliRunning !== 'undefined' && isCliRunning) {
+          btnPlay.innerHTML = '⏳ Stop gric-cluster';
+          btnPlay.title = 'Native gric-cluster is running. Click to terminate.';
+          btnPlay.classList.add('danger');
+          btnPlay.classList.remove('primary', 'btn-clustered');
+          btnPlay.style.background = 'rgba(239, 68, 68, 0.25)';
+          btnPlay.style.color = '#f87171';
+          btnPlay.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+        } else {
+          btnPlay.innerHTML = '▶ Run gric-cluster';
+          btnPlay.title = 'Run native compiled gric-cluster executable';
+          btnPlay.classList.remove('danger', 'primary', 'btn-clustered');
+          btnPlay.classList.add('btn-action');
+          btnPlay.style.background = 'rgba(74, 222, 128, 0.25)';
+          btnPlay.style.color = '#4ade80';
+          btnPlay.style.borderColor = 'rgba(74, 222, 128, 0.5)';
+        }
+        return;
+      }
+
+      if (typeof isComputeAllRunning !== 'undefined' && isComputeAllRunning) {
+        btnPlay.innerHTML = '⏳ Computing... (Stop)';
+        btnPlay.title = 'Batch clustering in progress. Click to stop.';
+        btnPlay.classList.add('danger');
+        btnPlay.classList.remove('primary', 'btn-clustered');
+        btnPlay.style.background = 'rgba(239, 68, 68, 0.25)';
+        btnPlay.style.color = '#f87171';
+        btnPlay.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+        return;
+      }
+
+      if (isRunning) {
+        btnPlay.innerHTML = '❚❚ Pause';
+        btnPlay.title = 'Clustering in progress. Click to pause.';
+        btnPlay.classList.add('danger');
+        btnPlay.classList.remove('primary', 'btn-clustered');
+        btnPlay.style.background = '';
+        btnPlay.style.color = '';
+        btnPlay.style.borderColor = '';
+        return;
+      }
+
+      // Check cluster count in active dataset
+      let nClust = 0;
+      if (typeof useTiles !== 'undefined' && useTiles) {
+        nClust = (typeof jointTuplesMap !== 'undefined' && jointTuplesMap)
+          ? jointTuplesMap.size
+          : (typeof tileEngineX !== 'undefined' && tileEngineX.clusters
+              ? tileEngineX.clusters.length : 0);
+      } else if (typeof clusters !== 'undefined' && clusters && clusters.length > 0) {
+        nClust = clusters.length;
+      } else if (typeof GricWasm !== 'undefined' &&
+                 GricWasm.isLoaded() &&
+                 GricWasm.isReady() &&
+                 wasmSessionActive) {
+        nClust = GricWasm.getNumClusters();
+      }
+
+      const finished = (typeof hasMoreFrames === 'function') ? !hasMoreFrames() : false;
+
+      if (nClust > 0 && finished) {
+        // Clustered and complete: Status pill + Re-cluster trigger
+        btnPlay.innerHTML = `🟢 Clustered (${nClust}c) • Re-cluster`;
+        btnPlay.title =
+          `Dataset is clustered (${nClust} clusters). Click to re-cluster from beginning.`;
+        btnPlay.classList.remove('danger', 'primary');
+        btnPlay.classList.add('btn-clustered');
+        btnPlay.style.background = 'rgba(34, 197, 94, 0.18)';
+        btnPlay.style.color = '#4ade80';
+        btnPlay.style.borderColor = 'rgba(34, 197, 94, 0.5)';
+      } else if (nClust > 0 && !finished &&
+                 typeof currentFrameIdx !== 'undefined' && currentFrameIdx > 0) {
+        // Paused mid-stream: Resume
+        btnPlay.innerHTML = `⏸ Paused (${nClust}c) • Resume`;
+        btnPlay.title = 'Clustering is paused. Click to resume stream.';
+        btnPlay.classList.remove('danger', 'btn-clustered');
+        btnPlay.classList.add('primary');
+        btnPlay.style.background = 'rgba(245, 158, 11, 0.2)';
+        btnPlay.style.color = '#fbbf24';
+        btnPlay.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+      } else {
+        // Unclustered
+        btnPlay.innerHTML = '▶ Cluster (Unclustered)';
+        btnPlay.title = 'Click to run clustering on active dataset';
+        btnPlay.classList.remove('danger', 'btn-clustered');
+        btnPlay.classList.add('primary');
+        btnPlay.style.background = '';
+        btnPlay.style.color = '';
+        btnPlay.style.borderColor = '';
+      }
+    }
+    window.updateClusteringButtonUI = updateClusteringButtonUI;
+
     function updateWasmBadge() {
       updateEngineModeUI();
     }
@@ -52,15 +150,7 @@
         }
 
         // Toolbar Play / Step buttons
-        if (btnPlay) {
-          btnPlay.innerHTML = '▶ Run gric-cluster';
-          btnPlay.classList.remove('primary');
-          btnPlay.classList.add('btn-action');
-          btnPlay.style.background = 'rgba(74, 222, 128, 0.25)';
-          btnPlay.style.color = '#4ade80';
-          btnPlay.style.borderColor = 'rgba(74, 222, 128, 0.5)';
-          btnPlay.title = 'Run native compiled gric-cluster executable';
-        }
+        updateClusteringButtonUI();
         if (btnStep) {
           btnStep.disabled = true;
           btnStep.title = 'Step inspection is only available in WASM Interactive Simulation mode';
@@ -109,15 +199,7 @@
           }
         }
 
-        if (btnPlay) {
-          btnPlay.innerHTML = isRunning ? '⏸ Pause' : '▶ Cluster';
-          btnPlay.classList.add('primary');
-          btnPlay.classList.remove('btn-action');
-          btnPlay.style.background = '';
-          btnPlay.style.color = '';
-          btnPlay.style.borderColor = '';
-          btnPlay.title = 'Run / Pause Clustering';
-        }
+        updateClusteringButtonUI();
         if (btnStep) {
           btnStep.disabled = false;
           btnStep.title = 'Step Ingest Single Frame';
@@ -242,12 +324,7 @@
       sessionIsActive = true;
       sessionAvgFps = 0.0;
 
-      const btn = document.getElementById('btnPlay');
-      if (btn) {
-        btn.innerText = "❚❚ Pause";
-        btn.classList.add('danger');
-        btn.classList.remove('primary');
-      }
+      updateClusteringButtonUI();
 
       // Mode 1: Instant Run to Completion (playSpeed === 0)
       if (playSpeed === 0) {
@@ -349,12 +426,7 @@
       knnResults = null;
       setComputeAllButtonActive();
 
-      const btnPlay = document.getElementById('btnPlay');
-      if (btnPlay) {
-        btnPlay.innerText = "❚❚ Pause";
-        btnPlay.classList.add('danger');
-        btnPlay.classList.remove('primary');
-      }
+      updateClusteringButtonUI();
 
       const tStart = performance.now();
       const startFrames = totalFrames;
@@ -653,12 +725,7 @@
         sessionIsActive = false;
       }
 
-      const btn = document.getElementById('btnPlay');
-      if (btn) {
-        btn.innerText = "► Cluster";
-        btn.classList.remove('danger');
-        btn.classList.add('primary');
-      }
+      updateClusteringButtonUI();
       if (typeof GricWasmWorker !== 'undefined' && GricWasmWorker.isBusy()) {
         GricWasmWorker.pauseBatch();
       }
@@ -852,8 +919,10 @@
       BENCHMARK_DESCS["custom"] =
         `<b>Custom File (${filename})</b>: ${benchmarkDataset.length} ` +
         `${dimLabel} frames loaded from upload.`;
-      const selMain = document.getElementById('selectBenchmark');
-      if (selMain) selMain.value = 'custom';
+      if (activeDatasetSlot === 'A') {
+        const selMain = document.getElementById('selectBenchmark');
+        if (selMain) selMain.value = 'custom';
+      }
       const selSlot = document.getElementById(`selectBenchmark_${activeDatasetSlot}`);
       if (selSlot) selSlot.value = 'custom';
       const selSide = document.getElementById('selectBenchmarkSide');
@@ -994,6 +1063,141 @@
       if (px < W / 2 && py >= H / 2) return 2; // Along Z / Bottom-Left
       return 3; // Custom 3D / Bottom-Right
     }
+
+    let hoverDrawRafId = null;
+    function requestHoverDraw() {
+      if (hoverDrawRafId === null) {
+        hoverDrawRafId = requestAnimationFrame(() => {
+          hoverDrawRafId = null;
+          if (typeof draw === 'function') draw();
+        });
+      }
+    }
+    window.requestHoverDraw = requestHoverDraw;
+
+    function updatePanelPointer(clientX, clientY) {
+      if (typeof currentDim === 'undefined' || currentDim < 3) {
+        if (hoveredPanelPointer !== null) {
+          hoveredPanelPointer = null;
+          requestHoverDraw();
+        }
+        return;
+      }
+      if (typeof maximizedQuad !== 'undefined' && maximizedQuad !== null) {
+        if (hoveredPanelPointer !== null) {
+          hoveredPanelPointer = null;
+          requestHoverDraw();
+        }
+        return;
+      }
+      if (typeof dataMode !== 'undefined' && dataMode === 'image') {
+        if (hoveredPanelPointer !== null) {
+          hoveredPanelPointer = null;
+          requestHoverDraw();
+        }
+        return;
+      }
+      if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView) {
+        if (hoveredPanelPointer !== null) {
+          hoveredPanelPointer = null;
+          requestHoverDraw();
+        }
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const px = clientX - rect.left;
+      const py = clientY - rect.top;
+      const W = rect.width;
+      const H = rect.height;
+
+      if (px < 0 || px > W || py < 0 || py > H) {
+        if (hoveredPanelPointer !== null) {
+          hoveredPanelPointer = null;
+          requestHoverDraw();
+        }
+        return;
+      }
+
+      const qIdx = getQuadrantAt(clientX, clientY);
+      const qRect = getQuadRect(qIdx, W, H);
+      if (px < qRect.x || px > qRect.x + qRect.w || py < qRect.y || py > qRect.y + qRect.h) {
+        if (hoveredPanelPointer !== null) {
+          hoveredPanelPointer = null;
+          requestHoverDraw();
+        }
+        return;
+      }
+
+      const metric = mapQuadToMetric(px, py, qIdx, qRect);
+      const u = metric.u;
+      const v = metric.v;
+
+      // Check if hovering near a sample point for exact snapping
+      let snapped = null;
+      const activeHl = (typeof lockedClosestSample !== 'undefined' && lockedClosestSample)
+        ? null : (typeof hoveredClosestSample !== 'undefined' ? hoveredClosestSample : null);
+      if (activeHl && activeHl.point) {
+        const pt = activeHl.point;
+        const pCoord = (typeof getPlotCoords === 'function') ? getPlotCoords(pt) : pt;
+        snapped = {
+          x: pCoord.x,
+          y: pCoord.y,
+          z: (typeof pCoord.z === 'number') ? pCoord.z : 0.0
+        };
+      }
+
+      if (snapped) {
+        persistentCursor3D.x = snapped.x;
+        persistentCursor3D.y = snapped.y;
+        persistentCursor3D.z = snapped.z;
+      } else {
+        if (qIdx === 0) {
+          // ALONG_X: horizontal is Y, vertical is Z
+          persistentCursor3D.y = u;
+          persistentCursor3D.z = v;
+        } else if (qIdx === 1) {
+          // ALONG_Y: horizontal is X, vertical is Z
+          persistentCursor3D.x = u;
+          persistentCursor3D.z = v;
+        } else if (qIdx === 2) {
+          // ALONG_Z: horizontal is X, vertical is Y
+          persistentCursor3D.x = u;
+          persistentCursor3D.y = v;
+        } else if (qIdx === 3) {
+          // CUSTOM_3D: unproject from orbit camera with depth = 0
+          const az = orbitCamera.azimuth, el = orbitCamera.elevation;
+          const cosT = Math.cos(az), sinT = Math.sin(az);
+          const cosP = Math.cos(el), sinP = Math.sin(el);
+          let tx = 0, ty = 0, tz = 0;
+          if (orbitCamera && orbitCamera.isLocked) {
+            tx = orbitCamera.targetX || 0;
+            ty = orbitCamera.targetY || 0;
+            tz = orbitCamera.targetZ || 0;
+          }
+          const dx = u * cosT - v * sinT * sinP;
+          const dy = u * sinT + v * cosT * sinP;
+          const dz = v * cosP;
+          persistentCursor3D.x = tx + dx;
+          persistentCursor3D.y = ty + dy;
+          persistentCursor3D.z = tz + dz;
+        }
+      }
+
+      hoveredPanelPointer = {
+        qIdx: qIdx,
+        screenX: px,
+        screenY: py,
+        u: u,
+        v: v,
+        x: persistentCursor3D.x,
+        y: persistentCursor3D.y,
+        z: persistentCursor3D.z
+      };
+
+      requestHoverDraw();
+    }
+    window.updatePanelPointer = updatePanelPointer;
 
     let mouseDownTime = 0;
     let mouseDownClientX = 0;
@@ -1150,8 +1354,24 @@
         return;
       }
 
+      // Check if grabbing 3D view projection vector handle (in panels 0, 1, 2)
+      if (typeof hoveredViewVectorHandle !== 'undefined' && hoveredViewVectorHandle !== null) {
+        isDragging = true;
+        dragMode = 'viewVector';
+        draggingViewVectorHandle = { ...hoveredViewVectorHandle };
+        activeDragQuad = hoveredViewVectorHandle.qIdx;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        canvas.classList.add('grabbing');
+        canvas.style.cursor = 'grabbing';
+        if (typeof hoveredPanelPointer !== 'undefined') hoveredPanelPointer = null;
+        draw();
+        return;
+      }
+
       // Normal Navigation / Drag Mode
       isDragging = true;
+      if (typeof hoveredPanelPointer !== 'undefined') hoveredPanelPointer = null;
       activeDragQuad = qIdx;
       dragStartX = e.clientX;
       dragStartY = e.clientY;
@@ -1210,6 +1430,95 @@
       const dy = e.clientY - dragStartY;
       dragStartX = e.clientX;
       dragStartY = e.clientY;
+
+      // Dragging 3D View Projection Vector in Panels 0, 1, 2
+      if (dragMode === 'viewVector' && typeof draggingViewVectorHandle !== 'undefined' &&
+          draggingViewVectorHandle) {
+        const qIdx = draggingViewVectorHandle.qIdx;
+        const end = draggingViewVectorHandle.end;
+        const hInfo = (typeof viewVectorHandles !== 'undefined' && viewVectorHandles)
+          ? viewVectorHandles[qIdx] : null;
+
+        if (hInfo) {
+          const rect = canvas.getBoundingClientRect();
+          const px = e.clientX - rect.left;
+          const py = e.clientY - rect.top;
+          const qRect = getQuadRect(qIdx, rect.width, rect.height);
+          const m = mapQuadToMetric(px, py, qIdx, qRect);
+
+          const uT = hInfo.uT || 0;
+          const vT = hInfo.vT || 0;
+          const dU = m.u - uT;
+          const dV = m.v - vT;
+
+          const L = (end === 'cam') ? (hInfo.L_cam || 0.85) : (hInfo.L_fwd || 0.40);
+          const inU = (end === 'cam') ? (-dU / L) : (dU / L);
+          const inV = (end === 'cam') ? (-dV / L) : (dV / L);
+
+          const curAz = orbitCamera.azimuth;
+          const curEl = orbitCamera.elevation;
+          const curCosT = Math.cos(curAz), curSinT = Math.sin(curAz);
+          const curCosP = Math.cos(curEl), curSinP = Math.sin(curEl);
+          const curVx = -curSinT * curCosP;
+          const curVy = curCosT * curCosP;
+          const curVz = -curSinP;
+
+          let vxNew = 0, vyNew = 0, vzNew = 0;
+
+          if (qIdx === 0) {
+            // Panel X: inU is vy, inV is vz, perp is vx
+            vyNew = inU;
+            vzNew = inV;
+            const r2 = vyNew * vyNew + vzNew * vzNew;
+            if (r2 > 0.998 * 0.998) {
+              const s = 0.998 / Math.sqrt(r2);
+              vyNew *= s;
+              vzNew *= s;
+            }
+            const r2Clamped = Math.min(0.998 * 0.998, vyNew * vyNew + vzNew * vzNew);
+            const signVx = (curVx >= 0) ? 1 : -1;
+            vxNew = signVx * Math.sqrt(Math.max(0, 1 - r2Clamped));
+          } else if (qIdx === 1) {
+            // Panel Y: inU is vx, inV is vz, perp is vy
+            vxNew = inU;
+            vzNew = inV;
+            const r2 = vxNew * vxNew + vzNew * vzNew;
+            if (r2 > 0.998 * 0.998) {
+              const s = 0.998 / Math.sqrt(r2);
+              vxNew *= s;
+              vzNew *= s;
+            }
+            const r2Clamped = Math.min(0.998 * 0.998, vxNew * vxNew + vzNew * vzNew);
+            const signVy = (curVy >= 0) ? 1 : -1;
+            vyNew = signVy * Math.sqrt(Math.max(0, 1 - r2Clamped));
+          } else if (qIdx === 2) {
+            // Panel Z: inU is vx, inV is vy, perp is vz
+            vxNew = inU;
+            vyNew = inV;
+            const r2 = vxNew * vxNew + vyNew * vyNew;
+            if (r2 > 0.998 * 0.998) {
+              const s = 0.998 / Math.sqrt(r2);
+              vxNew *= s;
+              vyNew *= s;
+            }
+            const r2Clamped = Math.min(0.998 * 0.998, vxNew * vxNew + vyNew * vyNew);
+            const signVz = (curVz >= 0) ? 1 : -1;
+            vzNew = signVz * Math.sqrt(Math.max(0, 1 - r2Clamped));
+          }
+
+          const newEl = Math.max(
+            -1.52,
+            Math.min(1.52, -Math.asin(Math.max(-0.999, Math.min(0.999, vzNew))))
+          );
+          const rawAz = Math.atan2(-vxNew, vyNew);
+          const dAz = Math.atan2(Math.sin(rawAz - curAz), Math.cos(rawAz - curAz));
+
+          orbitCamera.elevation = newEl;
+          orbitCamera.azimuth = curAz + dAz;
+          draw();
+        }
+        return;
+      }
 
       if (dataMode === 'image') {
         const targetQ = (maximizedQuad !== null) ? maximizedQuad : activeDragQuad;
@@ -1309,6 +1618,16 @@
 
     window.addEventListener('mouseup', (e) => {
       if (typeof stopPanelSliderDrag === 'function' && stopPanelSliderDrag()) {
+        draw();
+        return;
+      }
+
+      if (dragMode === 'viewVector') {
+        isDragging = false;
+        dragMode = null;
+        draggingViewVectorHandle = null;
+        canvas.classList.remove('grabbing');
+        canvas.style.cursor = hoveredViewVectorHandle ? 'grab' : '';
         draw();
         return;
       }
@@ -1821,13 +2140,8 @@
 
       // If user has locked a selection, keep locked selection steady
       if (lockedClosestSample !== null) {
-        return;
-      }
-
-      if (!highlightClosestSample) {
-        if (hoveredClosestSample !== null) {
-          hoveredClosestSample = null;
-          draw();
+        if (typeof updatePanelPointer === 'function') {
+          updatePanelPointer(e.clientX, e.clientY);
         }
         return;
       }
@@ -1843,6 +2157,12 @@
           hoveredClosestSample = null;
           draw();
         }
+        if (typeof hoveredViewVectorHandle !== 'undefined' &&
+            hoveredViewVectorHandle !== null) {
+          hoveredViewVectorHandle = null;
+          canvas.style.cursor = '';
+          draw();
+        }
         return;
       }
 
@@ -1853,6 +2173,72 @@
           hoveredClosestSample = null;
           draw();
         }
+        if (typeof hoveredViewVectorHandle !== 'undefined' &&
+            hoveredViewVectorHandle !== null) {
+          hoveredViewVectorHandle = null;
+          canvas.style.cursor = '';
+          draw();
+        }
+        return;
+      }
+
+      // Check for hover over 3D View Axis handles (in orthogonal panels 0, 1, 2)
+      let hitVectorHandle = null;
+      if (currentDim >= 3 && maximizedQuad === null &&
+          (typeof isRecon4PanelView === 'undefined' || !isRecon4PanelView) &&
+          (typeof dataMode === 'undefined' || dataMode !== 'image') &&
+          (typeof showCameraViewAxis === 'undefined' || showCameraViewAxis) &&
+          (qIdx === 0 || qIdx === 1 || qIdx === 2)) {
+        const hInfo = (typeof viewVectorHandles !== 'undefined' && viewVectorHandles)
+          ? viewVectorHandles[qIdx] : null;
+        if (hInfo) {
+          if (hInfo.isPerp) {
+            const dTarget = Math.hypot(px - hInfo.targetPos.px, py - hInfo.targetPos.py);
+            if (dTarget <= 14) {
+              hitVectorHandle = { qIdx, end: 'perp' };
+            }
+          } else {
+            const dFwd = Math.hypot(px - hInfo.pFwd.px, py - hInfo.pFwd.py);
+            const dCam = Math.hypot(px - hInfo.pCam.px, py - hInfo.pCam.py);
+            if (dFwd <= 15) {
+              hitVectorHandle = { qIdx, end: 'fwd' };
+            } else if (dCam <= 15) {
+              hitVectorHandle = { qIdx, end: 'cam' };
+            }
+          }
+        }
+      }
+
+      const prevHandle = hoveredViewVectorHandle;
+      if (hitVectorHandle) {
+        hoveredViewVectorHandle = hitVectorHandle;
+        canvas.style.cursor = 'grab';
+        if (!prevHandle || prevHandle.qIdx !== hitVectorHandle.qIdx ||
+            prevHandle.end !== hitVectorHandle.end) {
+          draw();
+        }
+        if (hoveredClosestSample !== null) {
+          hoveredClosestSample = null;
+          draw();
+        }
+        if (typeof updatePanelPointer === 'function') {
+          updatePanelPointer(e.clientX, e.clientY);
+        }
+        return;
+      } else if (prevHandle !== null) {
+        hoveredViewVectorHandle = null;
+        canvas.style.cursor = '';
+        draw();
+      }
+
+      if (!highlightClosestSample) {
+        if (hoveredClosestSample !== null) {
+          hoveredClosestSample = null;
+          draw();
+        }
+        if (typeof updatePanelPointer === 'function') {
+          updatePanelPointer(e.clientX, e.clientY);
+        }
         return;
       }
 
@@ -1861,6 +2247,9 @@
         if (hoveredClosestSample !== null) {
           hoveredClosestSample = null;
           draw();
+        }
+        if (typeof updatePanelPointer === 'function') {
+          updatePanelPointer(e.clientX, e.clientY);
         }
         return;
       }
@@ -1929,6 +2318,10 @@
           draw();
         }
       }
+
+      if (typeof updatePanelPointer === 'function') {
+        updatePanelPointer(e.clientX, e.clientY);
+      }
     });
 
     canvas.addEventListener('mouseleave', () => {
@@ -1940,6 +2333,16 @@
           draw();
         }
         return;
+      }
+      if (typeof hoveredPanelPointer !== 'undefined' && hoveredPanelPointer !== null) {
+        hoveredPanelPointer = null;
+        draw();
+      }
+      if (typeof hoveredViewVectorHandle !== 'undefined' &&
+          hoveredViewVectorHandle !== null) {
+        hoveredViewVectorHandle = null;
+        canvas.style.cursor = '';
+        draw();
       }
       if (lockedClosestSample !== null) {
         return;
@@ -2083,6 +2486,10 @@
       }
 
       updateZoomBadge();
+      if (typeof updatePanelPointer === 'function' &&
+          typeof hoveredPanelPointer !== 'undefined' && hoveredPanelPointer !== null) {
+        updatePanelPointer(e.clientX, e.clientY);
+      }
       draw();
     }, { passive: false });
 
@@ -2797,6 +3204,90 @@
     }
     window.handleGenButtonClick = handleGenButtonClick;
 
+    async function runPredefinedTest(testKey) {
+      if (!testKey) return;
+
+      if (testKey === 'asteroid-recon' || testKey === 'asteroid-recon-10k') {
+        if (typeof setupAsteroidReconTest === 'function') {
+          await setupAsteroidReconTest(10000, 0.80);
+        }
+        return;
+      }
+
+      if (testKey === 'asteroid-recon-2k') {
+        if (typeof setupAsteroidReconTest === 'function') {
+          await setupAsteroidReconTest(2000, 0.80);
+        }
+        return;
+      }
+
+      // If in 4-Panel ABCD View, exit to single panel view
+      if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView) {
+        if (typeof setRecon4PanelView === 'function') {
+          setRecon4PanelView(false);
+        }
+      }
+
+      // Single slot benchmark tests
+      const targetSlot = activeDatasetSlot || 'A';
+      const slot = (typeof datasetSlots !== 'undefined') ? datasetSlots[targetSlot] : null;
+      if (slot) {
+        slot.benchmarkKey = testKey;
+      }
+      currentBenchmark = testKey;
+
+      const selBench = document.getElementById('selectBenchmark');
+      if (selBench) {
+        selBench.value = testKey;
+      }
+      const selBenchSide = document.getElementById('selectBenchmarkSide');
+      if (selBenchSide) {
+        selBenchSide.value = testKey;
+      }
+
+      // Adjust parameters based on benchmark type
+      if (testKey.startsWith('32D') || testKey.startsWith('128D') || testKey.startsWith('512D')) {
+        if (typeof setClusteringRlim === 'function') {
+          setClusteringRlim(1.0, false);
+        } else {
+          rlim = 1.0;
+        }
+        if (typeof setNoiseSigma === 'function') {
+          setNoiseSigma(0.005, false);
+        } else {
+          noiseSigma = 0.005;
+        }
+      } else if (testKey.startsWith('img-asteroid')) {
+        if (typeof setClusteringRlim === 'function') {
+          setClusteringRlim(2.98, false);
+        } else {
+          rlim = 2.98;
+        }
+      } else if (testKey.startsWith('img-ball')) {
+        const imgRlim = (testKey === 'img-ball-3') ? 11.0 : 8.0;
+        if (typeof setClusteringRlim === 'function') {
+          setClusteringRlim(imgRlim, false);
+        } else {
+          rlim = imgRlim;
+        }
+      }
+
+      // Switch 2D / 3D view mode if needed
+      if (typeof is3DBenchmark === 'function' && is3DBenchmark(testKey)) {
+        if (typeof setViewMode3D === 'function' && !is3DView) {
+          setViewMode3D(true);
+        }
+      }
+
+      // Auto-generate and stage
+      if (typeof handleGenButtonClick === 'function') {
+        await handleGenButtonClick(targetSlot);
+      } else if (typeof stageDataset === 'function') {
+        stageDataset(testKey, targetSlot);
+      }
+    }
+    window.runPredefinedTest = runPredefinedTest;
+
     // Multi-Dataset (A, B, C) Toolbar & Sidebar Handlers
     DATASET_SLOTS.forEach(sId => {
       // Toggle button in toolbar
@@ -2833,7 +3324,8 @@
       }
 
       // Benchmark dropdown per slot
-      const selBench = document.getElementById(`selectBenchmark_${sId}`);
+      const selBench = document.getElementById(`selectBenchmark_${sId}`) ||
+        (sId === 'A' ? document.getElementById('selectBenchmark') : null);
       if (selBench) {
         selBench.addEventListener('change', (e) => {
           if (activeDatasetSlot !== sId) {
@@ -2900,7 +3392,8 @@
       }
 
       // Loop count dropdown per slot
-      const selLoop = document.getElementById(`selectLoop_${sId}`);
+      const selLoop = document.getElementById(`selectLoop_${sId}`) ||
+        (sId === 'A' ? document.getElementById('selectLoop') : null);
       if (selLoop) {
         selLoop.addEventListener('change', (e) => {
           if (activeDatasetSlot !== sId) {
@@ -2961,7 +3454,59 @@
           triggerDatasetProbe(sId);
         });
       }
+
+      // Clustering status button: switch to slot (if needed) and (re)run clustering
+      const btnClustPill = document.getElementById(`datasetClusteredPill_${sId}`);
+      if (btnClustPill) {
+        btnClustPill.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (activeDatasetSlot !== sId) {
+            switchDatasetSlot(sId);
+          }
+          if (engineMode === 'cli') {
+            if (isCliRunning) {
+              killNativeCli();
+            } else {
+              runNativeCli();
+            }
+          } else {
+            const btnPlayEl = document.getElementById('btnPlay');
+            if (btnPlayEl) {
+              btnPlayEl.click();
+            }
+          }
+        });
+      }
+
+      // k-NN status button: switch to slot (if needed) and (re)run k-NN
+      const btnKnnPill = document.getElementById(`datasetKnnPill_${sId}`);
+      if (btnKnnPill) {
+        btnKnnPill.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (activeDatasetSlot !== sId) {
+            switchDatasetSlot(sId);
+          }
+          const btnRunKnn = document.getElementById('btnRunKnn');
+          if (btnRunKnn) {
+            btnRunKnn.click();
+          }
+        });
+      }
     });
+
+    // Active Dataset Slot Badge in CTRL row: click to cycle slot
+    const ctrlSlotBadge = document.getElementById('ctrlSelectedSlotBadge');
+    if (ctrlSlotBadge) {
+      ctrlSlotBadge.addEventListener('click', () => {
+        if (!multiDatasetEnabled && typeof setMultiDatasetEnabled === 'function') {
+          setMultiDatasetEnabled(true);
+        }
+        const slots = DATASET_SLOTS;
+        const idx = slots.indexOf(activeDatasetSlot || 'A');
+        const nextSlot = slots[(idx + 1) % slots.length];
+        switchDatasetSlot(nextSlot);
+      });
+    }
 
     // Multi-Dataset Toggle Buttons
     const btnToggleMulti = document.getElementById('btnToggleMultiDataset');
@@ -2977,10 +3522,30 @@
       });
     }
 
+    const selectPredefinedTests = document.getElementById('selectPredefinedTests');
+    if (selectPredefinedTests) {
+      selectPredefinedTests.addEventListener('change', async (e) => {
+        const val = e.target.value;
+        if (!val) return;
+        try {
+          await runPredefinedTest(val);
+        } finally {
+          e.target.value = '';
+        }
+      });
+    }
+
     const selectBenchmarkLegacy = document.getElementById('selectBenchmark');
     if (selectBenchmarkLegacy) {
-      selectBenchmarkLegacy.addEventListener('change', (e) => {
+      selectBenchmarkLegacy.addEventListener('change', async (e) => {
         const newBench = e.target.value;
+        if (newBench === 'asteroid-recon') {
+          if (typeof setupAsteroidReconTest === 'function') {
+            await setupAsteroidReconTest(10000, 0.80);
+          }
+          return;
+        }
+
         const slot = datasetSlots[activeDatasetSlot];
         if (slot) {
           slot.benchmarkKey = newBench;
@@ -3028,22 +3593,53 @@
       });
     }
 
-    document.getElementById('btnPlay').addEventListener('click', () => {
-      if (engineMode === 'cli') {
-        if (isCliRunning) {
-          killNativeCli();
-        } else {
-          runNativeCli();
+    const btnPlayEl = document.getElementById('btnPlay');
+    if (btnPlayEl) {
+      btnPlayEl.addEventListener('click', () => {
+        if (engineMode === 'cli') {
+          if (isCliRunning) {
+            killNativeCli();
+          } else {
+            runNativeCli();
+          }
+          return;
         }
-        return;
-      }
-      if (isComputeAllRunning) {
-        abortComputeAll();
-        return;
-      }
-      if (isRunning) pauseSimulation();
-      else startSimulation();
-    });
+        if (isComputeAllRunning) {
+          abortComputeAll();
+          return;
+        }
+        if (isRunning) {
+          pauseSimulation();
+          return;
+        }
+
+        // If clustering is finished, re-cluster from beginning
+        let nClust = 0;
+        if (typeof useTiles !== 'undefined' && useTiles) {
+          nClust = (typeof jointTuplesMap !== 'undefined' && jointTuplesMap)
+            ? jointTuplesMap.size
+            : (typeof tileEngineX !== 'undefined' && tileEngineX.clusters
+                ? tileEngineX.clusters.length : 0);
+        } else if (typeof clusters !== 'undefined' && clusters && clusters.length > 0) {
+          nClust = clusters.length;
+        } else if (typeof GricWasm !== 'undefined' &&
+                   GricWasm.isLoaded() &&
+                   GricWasm.isReady() &&
+                   wasmSessionActive) {
+          nClust = GricWasm.getNumClusters();
+        }
+
+        if (nClust > 0 && typeof hasMoreFrames === 'function' && !hasMoreFrames()) {
+          resetClustering(true);
+          currentFrameIdx = 0;
+          if (typeof showToast === 'function') {
+            showToast('↺ Re-clustering active dataset from frame 0...');
+          }
+        }
+
+        startSimulation();
+      });
+    }
 
     const btnComputeAll = document.getElementById('btnComputeAll');
     if (btnComputeAll) {
@@ -3512,18 +4108,24 @@
       });
     }
 
-    document.getElementById('btnReset').addEventListener('click', () => {
-      pauseSimulation();
-      resetSimulation();
-      currentFrameIdx = 0;
-      updateUI();
-      draw();
-      if (typeof showToast === 'function') {
-        showToast('⟲ Simulator reset completely to clean blank canvas.');
-      }
-    });
+    const btnReset = document.getElementById('btnReset');
+    if (btnReset) {
+      btnReset.addEventListener('click', () => {
+        pauseSimulation();
+        resetSimulation();
+        currentFrameIdx = 0;
+        updateUI();
+        draw();
+        if (typeof showToast === 'function') {
+          showToast('⟲ Simulator reset completely to clean blank canvas.');
+        }
+      });
+    }
 
-    document.getElementById('btnResetView').addEventListener('click', resetView);
+    const btnResetViewEl = document.getElementById('btnResetView');
+    if (btnResetViewEl) {
+      btnResetViewEl.addEventListener('click', resetView);
+    }
 
     const sliderRlim = document.getElementById('sliderRlim');
     const inputRlim = document.getElementById('inputRlim');
@@ -3653,6 +4255,8 @@
                       v => showTransitionLines = v);
     setupSingleToggle('optToggleClusterRadii', () => showClusterRadii, v => showClusterRadii = v);
     setupSingleToggle('optToggleGridAxes', () => showGridAxes, v => showGridAxes = v);
+    setupSingleToggle('optToggleCameraViewAxis', () => showCameraViewAxis,
+                      v => showCameraViewAxis = v);
     setupSingleToggle('optToggleClusterLabels', () => showClusterLabels,
                       v => showClusterLabels = v);
     setupSingleToggle('optToggleDistLabels', () => showDistLabels, v => showDistLabels = v);
@@ -3700,6 +4304,7 @@
       syncBtn('optToggleTransitionLines', showTransitionLines);
       syncBtn('optToggleClusterRadii', showClusterRadii);
       syncBtn('optToggleGridAxes', showGridAxes);
+      syncBtn('optToggleCameraViewAxis', showCameraViewAxis);
       syncBtn('optToggleClusterLabels', showClusterLabels);
       syncBtn('optToggleDistLabels', showDistLabels);
       syncBtn('optToggleViewportHUD', showViewportHUD);
@@ -5704,6 +6309,32 @@
             : (typeof pastSamples !== 'undefined' ? pastSamples : []));
       const hasPoints = (pts && pts.length > 0);
 
+      const activeKnnObj = (typeof knnResults !== 'undefined') ? knnResults : null;
+      const slotKnnObj = slot ? slot.knnResults : null;
+      const hasActiveKnn = Boolean(
+        activeKnnObj && (
+          activeKnnObj.indices ||
+          activeKnnObj.queries ||
+          (Array.isArray(activeKnnObj) && activeKnnObj.length > 0) ||
+          (typeof activeKnnObj.totalFrames === 'number' && activeKnnObj.totalFrames > 0)
+        )
+      ) || (typeof reconstructionInfo !== 'undefined' && Boolean(reconstructionInfo))
+        || (typeof reconstructionSourceNeighbors !== 'undefined' &&
+            Boolean(reconstructionSourceNeighbors));
+      const hasSlotKnn = Boolean(
+        slotKnnObj && (
+          slotKnnObj.indices ||
+          slotKnnObj.queries ||
+          (Array.isArray(slotKnnObj) && slotKnnObj.length > 0) ||
+          (typeof slotKnnObj.totalFrames === 'number' && slotKnnObj.totalFrames > 0)
+        )
+      ) || (slot && Boolean(slot.reconstructionInfo))
+        || (slot && Boolean(slot.reconstructionSourceNeighbors));
+      const hasKnn = hasActiveKnn || hasSlotKnn;
+      const kVal = (activeKnnObj?.k ||
+                    (typeof reconstructionInfo !== 'undefined' && reconstructionInfo?.k) ||
+                    knnK || 10);
+
       if (computing) {
         if (btnTop) {
           btnTop.disabled = false;
@@ -5714,6 +6345,7 @@
           btnTop.style.opacity = '1.0';
           btnTop.style.cursor = 'pointer';
           btnTop.title = 'Click to stop / cancel k-NN computation';
+          btnTop.classList.remove('btn-knn-computed');
         }
         if (btnSide) {
           btnSide.disabled = false;
@@ -5730,8 +6362,8 @@
         }
       } else {
         if (btnTop) {
-          btnTop.innerHTML = '▶ Compute k-NN';
           if (!hasPoints) {
+            btnTop.innerHTML = '⚡ Run k-NN';
             btnTop.disabled = true;
             btnTop.style.background = 'rgba(71, 85, 105, 0.2)';
             btnTop.style.color = '#94a3b8';
@@ -5739,25 +6371,46 @@
             btnTop.style.opacity = '0.5';
             btnTop.style.cursor = 'not-allowed';
             btnTop.title = 'No dataset staged: Stage or generate a dataset first';
-          } else {
+            btnTop.classList.remove('btn-knn-computed');
+          } else if (hasKnn) {
+            btnTop.innerHTML = `🟢 k-NN (k=${kVal}) • Re-run`;
             btnTop.disabled = false;
-            btnTop.style.background = 'rgba(34, 197, 94, 0.2)';
-            btnTop.style.color = '#4ade80';
-            btnTop.style.borderColor = 'rgba(34, 197, 94, 0.5)';
+            btnTop.style.background = 'rgba(56, 189, 248, 0.2)';
+            btnTop.style.color = '#38bdf8';
+            btnTop.style.borderColor = 'rgba(56, 189, 248, 0.55)';
             btnTop.style.opacity = '1.0';
             btnTop.style.cursor = 'pointer';
-            btnTop.title = 'Compute k-Nearest Neighbors';
+            btnTop.title = `k-NN graph computed (k=${kVal}). Click to re-run k-NN solver.`;
+            btnTop.classList.add('btn-knn-computed');
+          } else {
+            btnTop.innerHTML = '⚡ Run k-NN';
+            btnTop.disabled = false;
+            btnTop.style.background = 'rgba(14, 165, 233, 0.18)';
+            btnTop.style.color = '#38bdf8';
+            btnTop.style.borderColor = 'rgba(14, 165, 233, 0.45)';
+            btnTop.style.opacity = '1.0';
+            btnTop.style.cursor = 'pointer';
+            btnTop.title = 'Compute k-Nearest Neighbors graph';
+            btnTop.classList.remove('btn-knn-computed');
           }
         }
         if (btnSide) {
-          btnSide.innerHTML = '▶ Compute k-NN';
           if (!hasPoints) {
+            btnSide.innerHTML = '⚡ Run k-NN';
             btnSide.disabled = true;
             btnSide.style.background = 'linear-gradient(135deg, #475569, #334155)';
             btnSide.style.opacity = '0.5';
             btnSide.style.cursor = 'not-allowed';
             btnSide.title = 'No dataset staged: Stage or generate a dataset first';
+          } else if (hasKnn) {
+            btnSide.innerHTML = `🟢 k-NN (k=${kVal}) • Re-run`;
+            btnSide.disabled = false;
+            btnSide.style.background = 'linear-gradient(135deg, #0284c7, #0369a1)';
+            btnSide.style.opacity = '1.0';
+            btnSide.style.cursor = 'pointer';
+            btnSide.title = `k-NN graph computed (k=${kVal}). Click to re-run out-of-core solver.`;
           } else {
+            btnSide.innerHTML = '⚡ Run k-NN';
             btnSide.disabled = false;
             btnSide.style.background = 'linear-gradient(135deg, #10b981, #059669)';
             btnSide.style.opacity = '1.0';
@@ -5778,6 +6431,7 @@
         }
       }
     }
+    window.updateKnnButtonUI = updateKnnButtonUI;
 
     function openKnnSetup() {
       const card = document.getElementById('cardKnnSettings');
@@ -7423,6 +8077,14 @@
      * Mapping Input A -> Output B, evaluating queries C to reconstruct D.
      */
     async function executeDatasetReconstruction() {
+      if (typeof checkReconstructionConditions === 'function') {
+        const cond = checkReconstructionConditions();
+        if (!cond.ready) {
+          showToast(`⚠️ Reconstruction Error: ${cond.reason}`);
+          return;
+        }
+      }
+
       // 1. Validate Slots
       const slotA = datasetSlots['A'];
       const slotB = datasetSlots['B'];
@@ -8070,10 +8732,13 @@
       // Update Toolbar status pill for D
       const pillD = document.getElementById('datasetStatusPill_D');
       if (pillD) {
+        const countFormatted = numQueries >= 1000
+          ? `${(numQueries / 1000).toFixed(numQueries % 1000 === 0 ? 0 : 1)}k`
+          : numQueries;
         pillD.textContent = isImageOutput
-          ? `📦 Reconstructed: ${numQueries.toLocaleString()} frames ` +
-            `(${slotD.imageWidth}×${slotD.imageHeight}, k=${k})`
-          : `📦 Reconstructed: ${numQueries.toLocaleString()} pts (${dimB}D, k=${k})`;
+          ? `📦 ${countFormatted} frames (${slotD.imageWidth}×${slotD.imageHeight})`
+          : `📦 ${countFormatted} pts (${dimB}D)`;
+        pillD.title = `Reconstructed (${numQueries.toLocaleString()} points, ${dimB}D, k=${k})`;
         pillD.style.background = 'rgba(168, 85, 247, 0.2)';
         pillD.style.color = '#c084fc';
         pillD.style.borderColor = 'rgba(168, 85, 247, 0.5)';
@@ -8104,6 +8769,9 @@
       }
       if (typeof updateReconQualityBar === 'function') {
         updateReconQualityBar();
+      }
+      if (typeof updateReconstructionButtonState === 'function') {
+        updateReconstructionButtonState();
       }
 
       showToast(
@@ -8662,6 +9330,13 @@
     if (btnReconTop) {
       btnReconTop.addEventListener('click', executeDatasetReconstruction);
     }
+    const btnReconArrow = document.getElementById('btnReconstructArrow');
+    if (btnReconArrow) {
+      btnReconArrow.addEventListener('click', (e) => {
+        e.stopPropagation();
+        executeDatasetReconstruction();
+      });
+    }
     const btnAsteroidReconTop = document.getElementById('btnPresetAsteroidReconTop');
     if (btnAsteroidReconTop) {
       btnAsteroidReconTop.addEventListener('click', () => {
@@ -9203,13 +9878,18 @@
       const pillD = document.getElementById('datasetStatusPill_D');
       if (pillD && slotD)
       {
-        pillD.textContent =
-          `📦 Reconstructed: ${newCount.toLocaleString()} pts (${dimB}D, pruned)`;
+        const countD = newCount >= 1000
+          ? `${(newCount / 1000).toFixed(newCount % 1000 === 0 ? 0 : 1)}k`
+          : newCount;
+        pillD.textContent = `📦 ${countD} pts (${dimB}D)`;
       }
       const pillC = document.getElementById('datasetStatusPill_C');
-      if (pillC && slotC && slotC.stagedDatasetInfo)
+      if (pillC && slotC)
       {
-        pillC.textContent = `📦 ${slotC.stagedDatasetInfo.name}: ${newCount.toLocaleString()} pts`;
+        const countC = newCount >= 1000
+          ? `${(newCount / 1000).toFixed(newCount % 1000 === 0 ? 0 : 1)}k`
+          : newCount;
+        pillC.textContent = `📦 ${countC} pts (${slotC.currentDim || 2}D)`;
       }
       const statPts = document.getElementById('reconStatsPoints');
       if (statPts) statPts.textContent = newCount.toLocaleString();
@@ -9247,17 +9927,18 @@
       const pillD = document.getElementById('datasetStatusPill_D');
       if (pillD && slotD)
       {
-        const k = (slotD.reconstructionInfo && slotD.reconstructionInfo.k) || 10;
-        pillD.textContent =
-          `📦 Reconstructed: ${slotD.sampleCount.toLocaleString()} pts ` +
-          `(${slotD.currentDim}D, k=${k})`;
+        const countD = slotD.sampleCount >= 1000
+          ? `${(slotD.sampleCount / 1000).toFixed(slotD.sampleCount % 1000 === 0 ? 0 : 1)}k`
+          : slotD.sampleCount;
+        pillD.textContent = `📦 ${countD} pts (${slotD.currentDim}D)`;
       }
       const pillC = document.getElementById('datasetStatusPill_C');
-      if (pillC && slotC && slotC.stagedDatasetInfo)
+      if (pillC && slotC)
       {
-        pillC.textContent =
-          `📦 ${slotC.stagedDatasetInfo.name}: ` +
-          `${slotC.sampleCount.toLocaleString()} pts`;
+        const countC = slotC.sampleCount >= 1000
+          ? `${(slotC.sampleCount / 1000).toFixed(slotC.sampleCount % 1000 === 0 ? 0 : 1)}k`
+          : slotC.sampleCount;
+        pillC.textContent = `📦 ${countC} pts (${slotC.currentDim || 2}D)`;
       }
       const statPts = document.getElementById('reconStatsPoints');
       if (statPts && slotD) statPts.textContent = slotD.sampleCount.toLocaleString();
@@ -9304,6 +9985,7 @@
       { id: 'cardInputData', btnId: 'btnCollapseInputData', defaultFlex: 1.0, savedFlex: 1.0 },
       { id: 'cardSettings', btnId: 'btnCollapseSettings', defaultFlex: 1.1, savedFlex: 1.1 },
       { id: 'cardDisplay', btnId: 'btnCollapseDisplay', defaultFlex: 1.0, savedFlex: 1.0 },
+      { id: 'cardDataFiles', btnId: 'btnCollapseDataFiles', defaultFlex: 1.0, savedFlex: 1.0 },
       { id: 'cardCli', btnId: 'btnCollapseCli', defaultFlex: 1.0, savedFlex: 1.0 },
       { id: 'cardResources', btnId: 'btnCollapseResources', defaultFlex: 1.0, savedFlex: 1.0 },
       { id: 'cardTrace', btnId: 'btnCollapseTrace', defaultFlex: 1.1, savedFlex: 1.1 },
@@ -9502,28 +10184,17 @@
         knnControlsContainer.style.display = enableKnn ? 'flex' : 'none';
       }
 
-      // Show or hide the 3 k-NN sidebar panels and their resizers
-      const knnCardIds = ['cardKnnSettings', 'cardKnnResources', 'cardKnnTrace'];
-      knnCardIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-          el.style.display = enableKnn ? 'flex' : 'none';
-        }
-      });
-
-      const knnResizerIds = ['resizer6', 'resizer7', 'resizer8'];
-      knnResizerIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-          el.style.display = enableKnn ? '' : 'none';
-        }
-      });
+      // Show or hide sidebar panels according to active sidebar mode
+      if (typeof switchSidebarMode === 'function') {
+        switchSidebarMode(activeSidebarMode || 'clustering');
+      }
 
       if (typeof updateResizersVisibility === 'function') {
         updateResizersVisibility();
       }
 
       updateKnnButtonUI(isKnnComputing);
+      updateClusteringButtonUI();
 
       // 7. Ball seed & shuffle options sync
       const rowBallSeedOptions = document.getElementById('rowBallSeedOptions');
@@ -11101,6 +11772,28 @@
               imageClusterMembers[cId] = [];
             }
             imageClusterMembers[cId].push(fIdx);
+            if (pastSamples && fIdx < pastSamples.length) {
+              pastSamples[fIdx].clusterId = cId;
+            }
+            if (benchmarkDataset && fIdx < benchmarkDataset.length) {
+              benchmarkDataset[fIdx].clusterId = cId;
+            }
+          });
+        } else if (clusters && clusters.length > 0 && pastSamples && pastSamples.length > 0) {
+          pastSamples.forEach((pt, idx) => {
+            if (pt.clusterId === undefined || pt.clusterId < 0) {
+              let bestK = 0, bestD2 = Infinity;
+              for (let k = 0; k < clusters.length; k++) {
+                const c = clusters[k];
+                const dx = pt.x - c.x, dy = pt.y - c.y, dz = (pt.z || 0) - (c.z || 0);
+                const d2 = dx * dx + dy * dy + dz * dz;
+                if (d2 < bestD2) { bestD2 = d2; bestK = k; }
+              }
+              pt.clusterId = bestK;
+              if (benchmarkDataset && idx < benchmarkDataset.length) {
+                benchmarkDataset[idx].clusterId = bestK;
+              }
+            }
           });
         }
 
@@ -11110,6 +11803,7 @@
 
         if (data.stats && data.stats.frames > 0) {
           totalFrames = data.stats.frames;
+          currentFrameIdx = totalFrames;
           sessionStartFrames = 0;
           distSampleCluster = data.stats.sampleDists;
           distClusterCluster = data.stats.interclusterDists;
@@ -11134,6 +11828,12 @@
           }
         } else if (sumMembers > 0) {
           totalFrames = sumMembers;
+          currentFrameIdx = totalFrames;
+          sessionStartFrames = 0;
+          sessionIsActive = false;
+        } else if (pastSamples && pastSamples.length > 0) {
+          totalFrames = pastSamples.length;
+          currentFrameIdx = totalFrames;
           sessionStartFrames = 0;
           sessionIsActive = false;
         }
@@ -11565,10 +12265,16 @@
         btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
       });
 
+      if (mode === 'knn' && !enableKnn) {
+        if (typeof toggleKnnModule === 'function') {
+          toggleKnnModule(true);
+        }
+      }
+
       const cards = {
-        cardInputData: ['all', 'clustering'],
+        cardInputData: ['all', 'clustering', 'knn', 'recon'],
         cardSettings: ['all', 'clustering'],
-        cardDisplay: ['all', 'clustering'],
+        cardDisplay: ['all', 'clustering', 'knn', 'recon'],
         cardDataFiles: ['all', 'files'],
         cardCli: ['all', 'files'],
         cardResources: ['all', 'clustering', 'telemetry'],
@@ -11577,21 +12283,31 @@
         cardKnnResources: ['all', 'knn', 'telemetry'],
         cardKnnTrace: ['all', 'knn', 'telemetry'],
         cardDimDensity: ['all', 'knn', 'telemetry'],
-        cardReconstruction: ['all', 'knn', 'clustering', 'telemetry', 'files']
+        cardReconstruction: ['all', 'recon']
       };
 
       Object.entries(cards).forEach(([cardId, allowedModes]) => {
         const el = document.getElementById(cardId);
         if (!el) return;
-        const isKnnCard = cardId.startsWith('cardKnn');
+        const isKnnCard = cardId.startsWith('cardKnn') || cardId === 'cardDimDensity';
         const allowed = allowedModes.includes(mode);
 
-        if (isKnnCard && !enableKnn) {
+        if (isKnnCard && !enableKnn && mode !== 'knn') {
           el.style.display = 'none';
         } else {
           el.style.display = allowed ? '' : 'none';
         }
       });
+
+      if (typeof updateResizersVisibility === 'function') {
+        updateResizersVisibility();
+      }
+
+      const reconActions = document.getElementById('reconRowDShortcutActions');
+      if (reconActions) {
+        reconActions.style.display =
+          (mode === 'recon' || activeDatasetSlot === 'D') ? 'inline-flex' : 'none';
+      }
     }
     window.switchSidebarMode = switchSidebarMode;
 
@@ -12296,26 +13012,27 @@
     // -------------------------------------------------------------------------
     const commandPaletteCommands = [
       // Actions
-      { id: 'act-play', group: 'Actions', icon: '▶', name: 'Cluster / Play Simulation',
+      { id: 'act-play', group: 'Actions', icon: '▶',
+        name: 'Cluster Active Dataset (Run or Re-cluster)',
         hint: 'Space', action: () => document.getElementById('btnPlay')?.click() },
-      { id: 'act-compute-all', group: 'Actions', icon: '⚡', name: 'Compute All / Run to Completion (or Stop)',
-        hint: 'Batch', action: () => document.getElementById('btnComputeAll')?.click() },
+      { id: 'act-compute-all', group: 'Actions', icon: '⚡',
+        name: 'Instant Cluster / Re-cluster to Completion',
+        hint: 'Batch', action: () => document.getElementById('btnPlay')?.click() },
       { id: 'act-step', group: 'Actions', icon: '⏭', name: 'Step Single Frame',
         hint: 'S', action: () => document.getElementById('btnStep')?.click() },
       { id: 'act-reset-clusters', group: 'Actions', icon: '↺',
         name: 'Reset Clusters (Keep Dataset)', hint: 'Reset Model',
         action: () => document.getElementById('btnResetClusters')?.click() },
       { id: 'act-reset-all', group: 'Actions', icon: '⟲',
-        name: 'Reset All (Clear Dataset & Clusters)', hint: 'R',
-        action: () => document.getElementById('btnReset')?.click() },
+        name: 'Clear Active Dataset & Clusters', hint: 'Clear',
+        action: () => document.getElementById('btnClearDataset_A')?.click() },
       { id: 'act-pass2', group: 'Actions', icon: '🔄',
         name: '2nd Pass Nearest Anchor Reallocation', hint: '2 / P',
         action: () => document.getElementById('btnPass2Nearest')?.click() },
       { id: 'act-explain', group: 'Actions', icon: '💬', name: 'Toggle Decision Explain Mode',
         hint: 'E', action: () => document.getElementById('btnExplain')?.click() },
-      { id: 'act-knn-toggle', group: 'Actions', icon: '⚡', name: 'Toggle k-NN Module',
-        hint: 'K', action: () => document.getElementById('btnToggleKnnModule')?.click() },
-      { id: 'act-knn-run', group: 'Actions', icon: '▶', name: 'Compute k-Nearest Neighbors',
+      { id: 'act-knn-run', group: 'Actions', icon: '⚡',
+        name: 'Compute / Re-run k-Nearest Neighbors',
         hint: 'k-NN', action: () => document.getElementById('btnRunKnn')?.click() },
       { id: 'act-multi-dataset-toggle', group: 'Actions', icon: '🗂️', name: 'Toggle Multi-Dataset Mode (A, B, C)',
         hint: 'Multi-DS', action: () => {
@@ -12420,15 +13137,15 @@
       // Panels & Modes
       { id: 'nav-clustering', group: 'Navigation', icon: '📊', name: 'Switch to Clustering Mode',
         hint: 'Sidebar', action: () => switchSidebarMode('clustering') },
-      { id: 'nav-knn', group: 'Navigation', icon: '⚡', name: 'Switch to k-NN Mode',
+      { id: 'nav-knn', group: 'Navigation', icon: '⚡', name: 'Switch to k-NN & Topology Mode',
         hint: 'Sidebar', action: () => {
-          if (!enableKnn) document.getElementById('btnToggleKnnModule')?.click();
+          if (!enableKnn && typeof toggleKnnModule === 'function') toggleKnnModule(true);
           switchSidebarMode('knn');
         } },
+      { id: 'nav-recon', group: 'Navigation', icon: '⚡', name: 'Switch to Reconstruction Mode',
+        hint: 'Sidebar', action: () => switchSidebarMode('recon') },
       { id: 'nav-files', group: 'Navigation', icon: '📂', name: 'Switch to Files & CLI Mode',
         hint: 'Sidebar', action: () => switchSidebarMode('files') },
-      { id: 'nav-telemetry', group: 'Navigation', icon: '📈', name: 'Switch to Telemetry Mode',
-        hint: 'Sidebar', action: () => switchSidebarMode('telemetry') },
       { id: 'nav-all', group: 'Navigation', icon: '📑', name: 'Show All Panels',
         hint: 'Sidebar', action: () => switchSidebarMode('all') }
     ];
@@ -12586,6 +13303,10 @@
     initTimelineScrubber();
     initImageScrubber();
     initCommandPalette();
+    switchSidebarMode('clustering');
+    if (typeof updateReconstructionButtonState === 'function') {
+      updateReconstructionButtonState();
+    }
 
     setTimeout(() => { updateTMCanvasDimensions(); resizeCanvas(); }, 50);
     setTimeout(() => { updateTMCanvasDimensions(); resizeCanvas(); }, 250);

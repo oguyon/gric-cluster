@@ -892,6 +892,26 @@ async function setupAsteroidReconTest(totalFrames = 10000, split = 0.80)
   initSlot('B', 'img-asteroid-y', trainY);
   initSlot('C', 'img-asteroid-x', testX);
 
+  if (typeof datasetSlots !== 'undefined')
+  {
+    if (datasetSlots['A'])
+    {
+      datasetSlots['A'].knnResults = {
+        k: 30,
+        totalFrames: nTrain,
+        indices: new Int32Array(1)
+      };
+    }
+    if (datasetSlots['B'])
+    {
+      datasetSlots['B'].knnResults = {
+        k: 30,
+        totalFrames: nTrain,
+        indices: new Int32Array(1)
+      };
+    }
+  }
+
   if (typeof updateSlotGenState === 'function')
   {
     updateSlotGenState('A', 'ready');
