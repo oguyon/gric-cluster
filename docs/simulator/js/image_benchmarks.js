@@ -729,12 +729,12 @@ function generateAsteroidSequence(view = 'X', numFrames = 10000, options = {})
  * Sets Dataset C: Asteroid View X (Test split: 2,000 frames)
  * Activates ABCD 4-Panel view and runs reconstruction.
  */
-async function setupAsteroidReconTest(totalFrames = 10000, split = 0.80)
+async function setupAsteroidReconTest(numTotalFrames = 10000, split = 0.80)
 {
   if (typeof showToast === 'function')
   {
     showToast(
-      `🪐 Synthesizing ${totalFrames.toLocaleString()}-frame ` +
+      `🪐 Synthesizing ${numTotalFrames.toLocaleString()}-frame ` +
       `Asteroid X & Y sequences...`
     );
   }
@@ -748,62 +748,104 @@ async function setupAsteroidReconTest(totalFrames = 10000, split = 0.80)
 
   await new Promise(r => setTimeout(r, 40));
 
-  const nTrain = Math.floor(totalFrames * split);
-  const nTest  = totalFrames - nTrain;
+  const nTrain = Math.floor(numTotalFrames * split);
+  const nTest  = numTotalFrames - nTrain;
 
   let trainX = null;
   let trainY = null;
   let testX  = null;
   let useNative = false;
 
+  function parseTxtLines(txt, expectedDim = 1024)
+  {
+    const lines = txt.trim().split('\n');
+    const outFrames = [];
+    for (let i = 0; i < lines.length; i++)
+    {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const parts = line.split(/\s+/);
+      const arr = new Float32Array(expectedDim);
+      for (let p = 0; p < expectedDim; p++)
+      {
+        arr[p] = parseFloat(parts[p]);
+      }
+      outFrames.push(arr);
+    }
+    return outFrames;
+  }
+
   if (typeof DesktopBridge !== 'undefined' && DesktopBridge.isNativeSupported())
   {
     try
     {
-      if (typeof showToast === 'function')
+      let needGenerate = true;
+      try
       {
-        showToast(
-          `⚡ Offloading to native OpenMP gric-gen-asteroid ` +
-          `(${totalFrames.toLocaleString()} frames)...`
-        );
-      }
-      await DesktopBridge.runCliJob({
-        cmd: 'gric-gen-asteroid',
-        args: [
-          '-f', String(totalFrames),
-          '-split', String(split),
-          '-txt',
-          '-o', 'datasets/asteroid'
-        ]
-      });
-
-      const txtTrnX = await DesktopBridge.readFile('datasets/asteroid/asteroid_train_X.txt');
-      const txtTrnY = await DesktopBridge.readFile('datasets/asteroid/asteroid_train_Y.txt');
-      const txtTstX = await DesktopBridge.readFile('datasets/asteroid/asteroid_test_X.txt');
-
-      function parseTxtLines(txt, expectedDim = 1024)
-      {
-        const lines = txt.trim().split('\n');
-        const outFrames = [];
-        for (let i = 0; i < lines.length; i++)
+        const trnX = await DesktopBridge.readFile('datasets/asteroid/asteroid_train_X.txt');
+        const trnY = await DesktopBridge.readFile('datasets/asteroid/asteroid_train_Y.txt');
+        const tstX = await DesktopBridge.readFile('datasets/asteroid/asteroid_test_X.txt');
+        if (trnX && trnY && tstX)
         {
-          const line = lines[i].trim();
-          if (!line) continue;
-          const parts = line.split(/\s+/);
-          const arr = new Float32Array(expectedDim);
-          for (let p = 0; p < expectedDim; p++)
+          const parsedTrnX = parseTxtLines(trnX, 1024);
+          const parsedTrnY = parseTxtLines(trnY, 1024);
+          const parsedTstX = parseTxtLines(tstX, 1024);
+          if (parsedTrnX.length >= nTrain &&
+              parsedTrnY.length >= nTrain &&
+              parsedTstX.length >= nTest)
           {
-            arr[p] = parseFloat(parts[p]);
+            trainX = parsedTrnX.slice(0, nTrain);
+            trainY = parsedTrnY.slice(0, nTrain);
+            testX  = parsedTstX.slice(0, nTest);
+            needGenerate = false;
+            useNative = true;
           }
-          outFrames.push(arr);
         }
-        return outFrames;
+      }
+      catch (_)
+      {
+        needGenerate = true;
       }
 
-      trainX = parseTxtLines(txtTrnX, 1024);
-      trainY = parseTxtLines(txtTrnY, 1024);
-      testX  = parseTxtLines(txtTstX, 1024);
-      useNative = true;
+      if (needGenerate)
+      {
+        if (typeof showToast === 'function')
+        {
+          showToast(
+            `⚡ Offloading to native OpenMP gric-gen-asteroid ` +
+            `(${numTotalFrames.toLocaleString()} frames)...`
+          );
+        }
+        const cliRes = await DesktopBridge.runCliJob({
+          cmd: 'gric-gen-asteroid',
+          args: [
+            '-f', String(numTotalFrames),
+            '-split', String(split),
+            '-txt',
+            '-o', 'datasets/asteroid'
+          ]
+        });
+
+        if (cliRes && cliRes.exitCode !== 0)
+        {
+          throw new Error(`gric-gen-asteroid exited with code ${cliRes.exitCode}`);
+        }
+
+        const txtTrnX = await DesktopBridge.readFile(
+          'datasets/asteroid/asteroid_train_X.txt'
+        );
+        const txtTrnY = await DesktopBridge.readFile(
+          'datasets/asteroid/asteroid_train_Y.txt'
+        );
+        const txtTstX = await DesktopBridge.readFile(
+          'datasets/asteroid/asteroid_test_X.txt'
+        );
+
+        trainX = parseTxtLines(txtTrnX, 1024).slice(0, nTrain);
+        trainY = parseTxtLines(txtTrnY, 1024).slice(0, nTrain);
+        testX  = parseTxtLines(txtTstX, 1024).slice(0, nTest);
+        useNative = true;
+      }
     }
     catch (err)
     {
@@ -814,7 +856,7 @@ async function setupAsteroidReconTest(totalFrames = 10000, split = 0.80)
 
   if (!useNative)
   {
-    const seqX = generateAsteroidSequence('X', totalFrames);
+    const seqX = generateAsteroidSequence('X', numTotalFrames);
     const seqY = generateAsteroidSequence('Y', nTrain);
 
     trainX = seqX.slice(0, nTrain);

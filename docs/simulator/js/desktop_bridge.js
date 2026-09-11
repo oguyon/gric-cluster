@@ -11,6 +11,7 @@ const DesktopBridge = (function () {
   let _isDesktop = false;
   let _serverInfo = null;
   let _activeJobId = null;
+  let _activeJobResolve = null;
   let _pollTimer = null;
 
   let _baseUrl = '';
@@ -296,45 +297,66 @@ const DesktopBridge = (function () {
 
     let currentOffset = 0;
 
-    async function pollStatus() {
-      if (!_activeJobId) return;
+    return new Promise((resolve) => {
+      _activeJobResolve = resolve;
 
-      try {
-        const encId = encodeURIComponent(_activeJobId);
-        const statUrl = `/api/cli/status?job_id=${encId}&offset=${currentOffset}`;
-        const statResp = await _fetchApi(statUrl, { cache: 'no-store' });
-        if (statResp.ok) {
-          const statData = await statResp.json();
-
-          if (statData.output && statData.output.length > 0) {
-            onOutput(statData.output);
-            currentOffset = statData.offset || (currentOffset + statData.output.length);
+      async function pollStatus() {
+        if (!_activeJobId) {
+          if (_activeJobResolve) {
+            const cb = _activeJobResolve;
+            _activeJobResolve = null;
+            cb({ exitCode: -1, status: 'inactive' });
           }
-
-          if (statData.telemetry) {
-            onTelemetry(statData.telemetry);
-          }
-
-          if (!statData.active) {
-            _activeJobId = null;
-            if (_pollTimer) {
-              clearInterval(_pollTimer);
-              _pollTimer = null;
-            }
-            onFinish({
-              exitCode: statData.exit_code,
-              status: statData.status
-            });
-            return;
-          }
+          return;
         }
-      } catch (err) {
-        console.error('[DesktopBridge] Poll error:', err);
-      }
-    }
 
-    _pollTimer = setInterval(pollStatus, 150);
-    pollStatus();
+        try {
+          const encId = encodeURIComponent(_activeJobId);
+          const statUrl = `/api/cli/status?job_id=${encId}&offset=${currentOffset}`;
+          const statResp = await _fetchApi(statUrl, { cache: 'no-store' });
+          if (statResp.ok) {
+            const statData = await statResp.json();
+
+            if (statData.output && statData.output.length > 0) {
+              onOutput(statData.output);
+              currentOffset = statData.offset || (currentOffset + statData.output.length);
+            }
+
+            if (statData.telemetry) {
+              onTelemetry(statData.telemetry);
+            }
+
+            if (!statData.active) {
+              _activeJobId = null;
+              if (_pollTimer) {
+                clearInterval(_pollTimer);
+                _pollTimer = null;
+              }
+              const res = {
+                exitCode: statData.exit_code,
+                status: statData.status
+              };
+              try {
+                await onFinish(res);
+              } catch (err) {
+                console.error('[DesktopBridge] onFinish error:', err);
+              }
+              if (_activeJobResolve) {
+                const cb = _activeJobResolve;
+                _activeJobResolve = null;
+                cb(res);
+              }
+              return;
+            }
+          }
+        } catch (err) {
+          console.error('[DesktopBridge] Poll error:', err);
+        }
+      }
+
+      _pollTimer = setInterval(pollStatus, 150);
+      pollStatus();
+    });
   }
 
   /**
@@ -357,6 +379,11 @@ const DesktopBridge = (function () {
     if (_pollTimer) {
       clearInterval(_pollTimer);
       _pollTimer = null;
+    }
+    if (_activeJobResolve) {
+      const cb = _activeJobResolve;
+      _activeJobResolve = null;
+      cb({ exitCode: -1, status: 'killed' });
     }
   }
 

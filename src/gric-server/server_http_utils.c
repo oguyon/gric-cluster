@@ -48,13 +48,35 @@ void api_send_response(
 
     if (header_len > 0)
     {
-        ssize_t nw = write(client_fd, header, (size_t)header_len);
-        (void)nw;
+        size_t total_sent = 0;
+        while (total_sent < (size_t)header_len)
+        {
+            ssize_t nw = write(
+                client_fd,
+                header + total_sent,
+                (size_t)header_len - total_sent);
+            if (nw <= 0)
+            {
+                break;
+            }
+            total_sent += (size_t)nw;
+        }
     }
     if (data && data_len > 0)
     {
-        ssize_t nw = write(client_fd, data, data_len);
-        (void)nw;
+        size_t total_sent = 0;
+        while (total_sent < data_len)
+        {
+            ssize_t nw = write(
+                client_fd,
+                data + total_sent,
+                data_len - total_sent);
+            if (nw <= 0)
+            {
+                break;
+            }
+            total_sent += (size_t)nw;
+        }
     }
 } // api_send_response
 

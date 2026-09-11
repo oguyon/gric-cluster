@@ -9339,17 +9339,17 @@
     }
     const btnAsteroidReconTop = document.getElementById('btnPresetAsteroidReconTop');
     if (btnAsteroidReconTop) {
-      btnAsteroidReconTop.addEventListener('click', () => {
+      btnAsteroidReconTop.addEventListener('click', async () => {
         if (typeof setupAsteroidReconTest === 'function') {
-          setupAsteroidReconTest(10000, 0.80);
+          await setupAsteroidReconTest(10000, 0.80);
         }
       });
     }
     const btnAsteroidReconSide = document.getElementById('btnPresetAsteroidReconSide');
     if (btnAsteroidReconSide) {
-      btnAsteroidReconSide.addEventListener('click', () => {
+      btnAsteroidReconSide.addEventListener('click', async () => {
         if (typeof setupAsteroidReconTest === 'function') {
-          setupAsteroidReconTest(10000, 0.80);
+          await setupAsteroidReconTest(10000, 0.80);
         }
       });
     }
