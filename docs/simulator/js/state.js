@@ -147,6 +147,7 @@
     let showKnnLines = true;    // Toggle k-NN graph connection vector lines
     let showMotionTail = false; // Toggle recent points trajectory motion trail (off by default)
     let showGridAxes = true;    // Toggle 2D/3D coordinate grids, axes & bounding box
+    let showCameraViewAxis = true; // Toggle 3D view axis of view in panels X, Y, Z
     let showViewportHUD = true; // Toggle viewport header title, stats & zoom badge
     let showColorPerCluster = true; // Toggle per-cluster point colors vs uniform
     let showPrunedMarks = true; // Toggle pruned cluster crosshair marks
@@ -206,7 +207,7 @@
     const DATASET_SLOTS = ['A', 'B', 'C', 'D'];
     window.DATASET_SLOTS = DATASET_SLOTS;
     let activeDatasetSlot = 'A';
-    let multiDatasetEnabled = false; // Multi-Dataset mode option: Off by default
+    let multiDatasetEnabled = true; // Multi-Dataset mode option: Enabled by default
     let reconstructionInfo = null; // Staged reconstruction metadata & stats for Slot D
     let reconstructionSourceNeighbors = null; // Mapping of D query -> contributing B neighbors
     let isRecon4PanelView = false; // 4-Panel Synchronized View (A, B, C, D)
@@ -265,7 +266,7 @@
     let wasmSessionActive = false; // True if GricWasm handle is live
 
     // k-Nearest Neighbors (gric-knn) Post-Processing Options
-    let enableKnn = false;
+    let enableKnn = true;
     let knnK = 50;
     let knnDtmin = 1;
     let knnDirection = 'all'; // 'all', 'past', 'future'
@@ -302,6 +303,11 @@
     let highlightClosestSample = true; // Toggle closest sample highlight on hover (ON by default)
     let hoveredClosestSample = null;   // { index, point, qIdx, screenX, screenY, distPx, clusterId }
     let lockedClosestSample = null;    // { index, point, qIdx, screenX, screenY, distPx, clusterId } - locked/pinned on click
+    let hoveredPanelPointer = null;    // { qIdx, screenX, screenY, u, v, x, y, z }
+    let hoveredViewVectorHandle = null;  // { qIdx, end: 'fwd'|'cam'|'perp' }
+    let draggingViewVectorHandle = null; // { qIdx, end: 'fwd'|'cam'|'perp' }
+    let viewVectorHandles = [null, null, null]; // Handles for quads 0, 1, 2
+    let persistentCursor3D = { x: 0.0, y: 0.0, z: 0.0 };
     let frameEvaluationsLog = [];      // Frame distance evaluation records: [frameIndex -> [{ clusterId, dist, match }]]
 
     // Cluster Table Column Visibility & Sorting State
@@ -1404,7 +1410,7 @@
         knnResults: null,
         selectedKnnQuerySample: -1,
         hoveredKnnNeighborId: -1,
-        enableKnn: false,
+        enableKnn: true,
         knnK: 50,
         knnDtmin: 1,
         knnDirection: 'all',
@@ -1467,6 +1473,225 @@
       return [];
     }
     window.getSlotPoints = getSlotPoints;
+
+    function slotHasKnn(slotId) {
+      if (typeof datasetSlots === 'undefined' || !datasetSlots || !datasetSlots[slotId]) {
+        return false;
+      }
+      const slot = datasetSlots[slotId];
+      const isActive = (typeof activeDatasetSlot !== 'undefined')
+        ? (activeDatasetSlot === slotId)
+        : (typeof currentDatasetSlot !== 'undefined' && currentDatasetSlot === slotId);
+
+      const activeKnnObj = (typeof knnResults !== 'undefined') ? knnResults : null;
+      const targetObj = (isActive && activeKnnObj) ? activeKnnObj : slot.knnResults;
+
+      if (!targetObj) return false;
+
+      if (targetObj.indices && (targetObj.indices.length > 0 ||
+          (typeof targetObj.totalFrames === 'number' && targetObj.totalFrames > 0))) {
+        return true;
+      }
+      if (targetObj.queries && targetObj.queries.length > 0) {
+        return true;
+      }
+      if (Array.isArray(targetObj) && targetObj.length > 0) {
+        return true;
+      }
+      if (typeof targetObj.totalFrames === 'number' && targetObj.totalFrames > 0) {
+        return true;
+      }
+      return false;
+    }
+    window.slotHasKnn = slotHasKnn;
+
+    function checkReconstructionConditions() {
+      const slotA = datasetSlots['A'];
+      const slotB = datasetSlots['B'];
+      const slotC = datasetSlots['C'];
+
+      if (!slotA) return { ready: false, reason: 'Dataset [A] is not initialized.' };
+      if (!slotB) return { ready: false, reason: 'Dataset [B] is not initialized.' };
+      if (!slotC) return { ready: false, reason: 'Dataset [C] is not initialized.' };
+
+      const ptsA = getSlotPoints(slotA);
+      const ptsB = getSlotPoints(slotB);
+      const ptsC = getSlotPoints(slotC);
+
+      const nA = ptsA ? ptsA.length : 0;
+      const nB = ptsB ? ptsB.length : 0;
+      const nC = ptsC ? ptsC.length : 0;
+
+      if (nA === 0) {
+        return {
+          ready: false,
+          reason: 'Training Input [A] is empty (stage or generate dataset A).'
+        };
+      }
+      if (nB === 0) {
+        return {
+          ready: false,
+          reason: 'Training Output [B] is empty (stage or generate dataset B).'
+        };
+      }
+      if (nC === 0) {
+        return {
+          ready: false,
+          reason: 'Query Input [C] is empty (stage or generate dataset C).'
+        };
+      }
+
+      // Check that training input [A] and training output [B] have been kNN-ed
+      const hasKnnA = slotHasKnn('A');
+      const hasKnnB = slotHasKnn('B');
+
+      if (!hasKnnA && !hasKnnB) {
+        return {
+          ready: false,
+          reason: 'Datasets [A] and [B] have not been kNN-ed (run k-NN on A and B first).'
+        };
+      }
+      if (!hasKnnA) {
+        return {
+          ready: false,
+          reason: 'Dataset [A] has not been kNN-ed (run k-NN on A first).'
+        };
+      }
+      if (!hasKnnB) {
+        return {
+          ready: false,
+          reason: 'Dataset [B] has not been kNN-ed (run k-NN on B first).'
+        };
+      }
+
+      // Check sample count between A and B
+      const canAutoAlignB = slotB.benchmarkKey &&
+                            slotB.benchmarkKey !== 'custom' &&
+                            slotB.dataMode !== 'image';
+      if (nA !== nB && !canAutoAlignB) {
+        return {
+          ready: false,
+          reason: `Sample count mismatch: [A] has ${nA.toLocaleString()} pts, ` +
+                  `[B] has ${nB.toLocaleString()} pts.`
+        };
+      }
+
+      // Check dimensions between A and C
+      function getDim(slot, pts) {
+        if (slot && slot.dataMode === 'image') return slot.imageDim || 1024;
+        if (pts && pts.length > 0 &&
+            (pts[0] instanceof Float32Array || pts[0] instanceof Float64Array)) {
+          return pts[0].length;
+        }
+        if (pts && pts.length > 0 && pts[0] && pts[0].coords) return pts[0].coords.length;
+        if (slot && slot.currentDim) return slot.currentDim;
+        if (pts && pts.length > 0 && pts[0] && typeof pts[0].z === 'number') return 3;
+        return 2;
+      }
+
+      const dimA = getDim(slotA, ptsA);
+      const dimC = getDim(slotC, ptsC);
+      if (dimA !== dimC) {
+        return {
+          ready: false,
+          reason: `Dimension mismatch: [A] is ${dimA}D, [C] is ${dimC}D (must match).`
+        };
+      }
+
+      const countBFormatted = (canAutoAlignB && nA !== nB ? nA : nB).toLocaleString();
+      return {
+        ready: true,
+        reason: `Reconstruction Ready (A: ${nA.toLocaleString()} pts, ` +
+                `B: ${countBFormatted} pts, C: ${nC.toLocaleString()} queries → D)`
+      };
+    }
+    window.checkReconstructionConditions = checkReconstructionConditions;
+
+    function updateReconstructionButtonState() {
+      const cond = checkReconstructionConditions();
+      const btnArrow = document.getElementById('btnReconstructArrow');
+      const btnTop = document.getElementById('btnReconstructDTop');
+      const btnSide = document.getElementById('btnRunReconstructionSide');
+      const statusBadge = document.getElementById('reconStatusBadge');
+
+      [btnArrow, btnTop, btnSide].forEach(btn => {
+        if (!btn) return;
+        btn.disabled = !cond.ready;
+        btn.classList.toggle('disabled', !cond.ready);
+        btn.title = cond.ready
+          ? (cond.reason || 'Run Reconstruction (A + B + C ➔ D)')
+          : ('Reconstruction disabled: ' + cond.reason);
+      });
+
+      if (btnArrow) {
+        if (!cond.ready) {
+          btnArrow.setAttribute('data-tooltip-title', 'Reconstruction Disabled');
+          btnArrow.setAttribute('data-tooltip-badge', 'Requires k-NN (A & B)');
+          btnArrow.setAttribute('data-tooltip-desc', cond.reason);
+          btnArrow.setAttribute('data-tooltip-color', 'yellow');
+        } else {
+          btnArrow.setAttribute('data-tooltip-title', 'Run Reconstruction (➔ Recon)');
+          btnArrow.setAttribute('data-tooltip-badge', 'Ready');
+          btnArrow.setAttribute('data-tooltip-desc', cond.reason);
+          btnArrow.setAttribute('data-tooltip-color', 'purple');
+        }
+      }
+
+      if (btnTop) {
+        if (!cond.ready) {
+          btnTop.setAttribute('data-tooltip-title', 'Reconstruction Disabled');
+          btnTop.setAttribute('data-tooltip-badge', 'Requires k-NN (A & B)');
+          btnTop.setAttribute('data-tooltip-desc', cond.reason);
+          btnTop.setAttribute('data-tooltip-color', 'yellow');
+        } else {
+          btnTop.setAttribute('data-tooltip-title', 'Run Reconstruction (A+B+C → D)');
+          btnTop.setAttribute('data-tooltip-badge', 'Ready');
+          btnTop.setAttribute('data-tooltip-desc', cond.reason);
+          btnTop.setAttribute('data-tooltip-color', 'purple');
+        }
+      }
+
+      if (btnSide) {
+        if (!cond.ready) {
+          btnSide.setAttribute('data-tooltip-title', 'Reconstruction Disabled');
+          btnSide.setAttribute('data-tooltip-badge', 'Disabled');
+          btnSide.setAttribute('data-tooltip-desc', cond.reason);
+          btnSide.setAttribute('data-tooltip-color', 'yellow');
+        } else {
+          btnSide.setAttribute('data-tooltip-title', 'Reconstruct Dataset D');
+          btnSide.setAttribute('data-tooltip-badge', 'Ready');
+          btnSide.setAttribute('data-tooltip-desc', cond.reason);
+          btnSide.setAttribute('data-tooltip-color', 'purple');
+        }
+      }
+
+      if (statusBadge) {
+        if (datasetSlots['D'] && datasetSlots['D'].reconstructionInfo) {
+          statusBadge.textContent = 'Done: ' +
+            (datasetSlots['D'].sampleCount || 0).toLocaleString() + ' pts';
+          statusBadge.style.color = '#4ade80';
+          statusBadge.style.background = 'rgba(34, 197, 94, 0.15)';
+        } else if (cond.ready) {
+          statusBadge.textContent = 'Ready: A+B+C → D';
+          statusBadge.style.color = '#c084fc';
+          statusBadge.style.background = 'rgba(168, 85, 247, 0.15)';
+        } else {
+          const reason = cond.reason || '';
+          if (reason.includes('[A] and [B] have not been kNN-ed')) {
+            statusBadge.textContent = 'Needs k-NN (A & B)';
+          } else if (reason.includes('[A] has not been kNN-ed')) {
+            statusBadge.textContent = 'Needs k-NN (A)';
+          } else if (reason.includes('[B] has not been kNN-ed')) {
+            statusBadge.textContent = 'Needs k-NN (B)';
+          } else {
+            statusBadge.textContent = 'Needs A, B, C';
+          }
+          statusBadge.style.color = '#f59e0b';
+          statusBadge.style.background = 'rgba(245, 158, 11, 0.15)';
+        }
+      }
+    }
+    window.updateReconstructionButtonState = updateReconstructionButtonState;
 
     function saveSlotState(slotId) {
       if (!datasetSlots[slotId]) return;
@@ -1785,7 +2010,7 @@
       knnResults = slot.knnResults || null;
       selectedKnnQuerySample = (slot.selectedKnnQuerySample !== undefined) ? slot.selectedKnnQuerySample : -1;
       hoveredKnnNeighborId = (slot.hoveredKnnNeighborId !== undefined) ? slot.hoveredKnnNeighborId : -1;
-      enableKnn = slot.enableKnn || false;
+      enableKnn = (slot.enableKnn !== undefined) ? slot.enableKnn : true;
       knnK = slot.knnK || 50;
       knnDtmin = (slot.knnDtmin !== undefined) ? slot.knnDtmin : 1;
       knnDirection = slot.knnDirection || 'all';
@@ -1880,6 +2105,76 @@
       }
 
       // Update UI controls & highlights
+      document.querySelectorAll('.dataset-slot-toggle').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-slot') === newSlotId);
+      });
+      DATASET_SLOTS.forEach(s => {
+        const r = document.getElementById(`datasetRow${s}`);
+        if (r) r.classList.toggle('active', s === newSlotId);
+      });
+      const ctrlSlotBadge = document.getElementById('ctrlSelectedSlotBadge');
+      if (ctrlSlotBadge) {
+        ctrlSlotBadge.textContent = `[Slot ${newSlotId}]`;
+        ctrlSlotBadge.setAttribute('data-slot', newSlotId);
+        ctrlSlotBadge.setAttribute('data-tooltip-badge', `Selected: Slot ${newSlotId}`);
+        const slotStyles = {
+          A: {
+            color: '#38bdf8',
+            bg: 'rgba(14, 165, 233, 0.2)',
+            border: 'rgba(56, 189, 248, 0.45)'
+          },
+          B: {
+            color: '#4ade80',
+            bg: 'rgba(34, 197, 94, 0.2)',
+            border: 'rgba(74, 222, 128, 0.45)'
+          },
+          C: {
+            color: '#fbbf24',
+            bg: 'rgba(245, 158, 11, 0.2)',
+            border: 'rgba(251, 191, 36, 0.45)'
+          },
+          D: {
+            color: '#c084fc',
+            bg: 'rgba(168, 85, 247, 0.2)',
+            border: 'rgba(192, 132, 252, 0.45)'
+          }
+        };
+        const st = slotStyles[newSlotId] || slotStyles.A;
+        ctrlSlotBadge.style.color = st.color;
+        ctrlSlotBadge.style.background = st.bg;
+        ctrlSlotBadge.style.borderColor = st.border;
+      }
+      const reconActions = document.getElementById('reconRowDShortcutActions');
+      if (reconActions) {
+        reconActions.style.display = (newSlotId === 'D' ||
+          (typeof activeSidebarMode !== 'undefined' && activeSidebarMode === 'recon'))
+            ? 'inline-flex' : 'none';
+      }
+      DATASET_SLOTS.forEach(sId => {
+        const slot = datasetSlots[sId];
+        const sel = document.getElementById(`selectBenchmark_${sId}`) ||
+          (sId === 'A' ? document.getElementById('selectBenchmark') : null);
+        if (sel && slot && slot.benchmarkKey) {
+          sel.value = slot.benchmarkKey;
+        }
+      });
+      const selBenchSide = document.getElementById('selectBenchmarkSide');
+      if (selBenchSide && currentBenchmark) {
+        selBenchSide.value = currentBenchmark;
+      }
+      if (typeof updateReconstructionButtonState === 'function') {
+        updateReconstructionButtonState();
+      }
+      DATASET_SLOTS.forEach(sId => {
+        const lblWs = document.getElementById(`lblWorkspaceSlot_${sId}`);
+        if (lblWs) {
+          lblWs.textContent = `ws/${sId}`;
+          if (datasetSlots[sId] && datasetSlots[sId].workspaceName) {
+            lblWs.title = `Workspace: ${datasetSlots[sId].workspaceName}`;
+          }
+        }
+      });
+
       if (typeof updateDatasetStatusBadge === 'function') {
         updateDatasetStatusBadge();
       }
@@ -1925,6 +2220,10 @@
       const rowC = document.getElementById('datasetRowC');
       const rowD = document.getElementById('datasetRowD');
       const slotBtnA = document.getElementById('btnToggleSlotA');
+      const slotBtnB = document.getElementById('btnToggleSlotB');
+      const slotBtnC = document.getElementById('btnToggleSlotC');
+      const slotBtnD = document.getElementById('btnToggleSlotD');
+      const btnReconArrow = document.getElementById('btnReconstructArrow');
       const btnToggle = document.getElementById('btnToggleMultiDataset');
       const btnToggleSide = document.getElementById('btnToggleMultiDatasetSide');
       const slotGroupSide = document.getElementById('datasetSlotTogglesSide');
@@ -1932,7 +2231,11 @@
       if (rowB) rowB.style.display = multiDatasetEnabled ? 'flex' : 'none';
       if (rowC) rowC.style.display = multiDatasetEnabled ? 'flex' : 'none';
       if (rowD) rowD.style.display = multiDatasetEnabled ? 'flex' : 'none';
-      if (slotBtnA) slotBtnA.style.display = multiDatasetEnabled ? 'inline-flex' : 'none';
+      if (slotBtnA) slotBtnA.style.display = 'inline-flex';
+      if (slotBtnB) slotBtnB.style.display = multiDatasetEnabled ? 'inline-flex' : 'none';
+      if (slotBtnC) slotBtnC.style.display = multiDatasetEnabled ? 'inline-flex' : 'none';
+      if (btnReconArrow) btnReconArrow.style.display = multiDatasetEnabled ? 'inline-flex' : 'none';
+      if (slotBtnD) slotBtnD.style.display = multiDatasetEnabled ? 'inline-flex' : 'none';
       if (slotGroupSide) slotGroupSide.style.display = multiDatasetEnabled ? 'flex' : 'none';
 
       if (btnToggle) {
@@ -1965,6 +2268,10 @@
           btnToggleSide.style.borderColor = 'var(--card-border)';
           btnToggleSide.textContent = '🗂️ 4 Datasets: OFF';
         }
+      }
+
+      if (typeof updateReconstructionButtonState === 'function') {
+        updateReconstructionButtonState();
       }
     }
 
@@ -2033,7 +2340,8 @@
         if (selBench) selBench.value = '3Dtorus';
         const selBenchSide = document.getElementById('selectBenchmarkSide');
         if (selBenchSide) selBenchSide.value = '3Dtorus';
-        const selSlotA = document.getElementById('selectBenchmark_A');
+        const selSlotA = document.getElementById('selectBenchmark_A') ||
+          document.getElementById('selectBenchmark');
         if (selSlotA) selSlotA.value = '3Dtorus';
 
         if (typeof stageDataset === 'function') {
@@ -2747,6 +3055,36 @@
     Object.defineProperty(window, 'imagePanelViewModes', {
       get: () => imagePanelViewModes,
       set: (v) => { if (Array.isArray(v)) imagePanelViewModes = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'hoveredPanelPointer', {
+      get: () => hoveredPanelPointer,
+      set: (v) => { hoveredPanelPointer = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'persistentCursor3D', {
+      get: () => persistentCursor3D,
+      set: (v) => { if (v && typeof v === 'object') persistentCursor3D = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'showCameraViewAxis', {
+      get: () => showCameraViewAxis,
+      set: (v) => { showCameraViewAxis = !!v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'hoveredViewVectorHandle', {
+      get: () => hoveredViewVectorHandle,
+      set: (v) => { hoveredViewVectorHandle = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'draggingViewVectorHandle', {
+      get: () => draggingViewVectorHandle,
+      set: (v) => { draggingViewVectorHandle = v; },
+      configurable: true
+    });
+    Object.defineProperty(window, 'viewVectorHandles', {
+      get: () => viewVectorHandles,
+      set: (v) => { viewVectorHandles = v; },
       configurable: true
     });
     Object.defineProperty(window, 'inspectedImageMemberIdx', {

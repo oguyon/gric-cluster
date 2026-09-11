@@ -1771,6 +1771,96 @@
       if (typeof updatePlottingDimSelectorsUI === 'function') {
         updatePlottingDimSelectorsUI();
       }
+      if (typeof updateClusteringButtonUI === 'function') {
+        updateClusteringButtonUI();
+      } else if (window.updateClusteringButtonUI) {
+        window.updateClusteringButtonUI();
+      }
+      if (typeof updateKnnButtonUI === 'function') {
+        updateKnnButtonUI(typeof isKnnComputing !== 'undefined' && isKnnComputing);
+      } else if (window.updateKnnButtonUI) {
+        window.updateKnnButtonUI(typeof isKnnComputing !== 'undefined' && isKnnComputing);
+      }
+
+      if (typeof DATASET_SLOTS !== 'undefined' && typeof datasetSlots !== 'undefined') {
+        DATASET_SLOTS.forEach(sId => {
+          const slot = datasetSlots[sId];
+          const sel = document.getElementById(`selectBenchmark_${sId}`) ||
+            (sId === 'A' ? document.getElementById('selectBenchmark') : null);
+          if (sel && slot && slot.benchmarkKey) {
+            sel.value = slot.benchmarkKey;
+          }
+        });
+      } else {
+        const selMain = document.getElementById('selectBenchmark');
+        if (selMain && typeof currentBenchmark !== 'undefined' && currentBenchmark) {
+          selMain.value = currentBenchmark;
+        }
+      }
+      const selSide = document.getElementById('selectBenchmarkSide');
+      if (selSide && typeof currentBenchmark !== 'undefined' && currentBenchmark) {
+        selSide.value = currentBenchmark;
+      }
+      if (typeof updateReconstructionButtonState === 'function') {
+        updateReconstructionButtonState();
+      }
+      const selLoopA = document.getElementById('selectLoop_A');
+      if (selLoopA && typeof loopCount !== 'undefined') {
+        selLoopA.value = String(loopCount);
+      }
+      if (typeof activeDatasetSlot !== 'undefined') {
+        document.querySelectorAll('.dataset-slot-toggle').forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-slot') === activeDatasetSlot);
+        });
+        const ctrlSlotBadge = document.getElementById('ctrlSelectedSlotBadge');
+        if (ctrlSlotBadge) {
+          const s = activeDatasetSlot || 'A';
+          ctrlSlotBadge.textContent = `[Slot ${s}]`;
+          ctrlSlotBadge.setAttribute('data-slot', s);
+          ctrlSlotBadge.setAttribute('data-tooltip-badge', `Selected: Slot ${s}`);
+          const slotStyles = {
+            A: {
+              color: '#38bdf8',
+              bg: 'rgba(14, 165, 233, 0.2)',
+              border: 'rgba(56, 189, 248, 0.45)'
+            },
+            B: {
+              color: '#4ade80',
+              bg: 'rgba(34, 197, 94, 0.2)',
+              border: 'rgba(74, 222, 128, 0.45)'
+            },
+            C: {
+              color: '#fbbf24',
+              bg: 'rgba(245, 158, 11, 0.2)',
+              border: 'rgba(251, 191, 36, 0.45)'
+            },
+            D: {
+              color: '#c084fc',
+              bg: 'rgba(168, 85, 247, 0.2)',
+              border: 'rgba(192, 132, 252, 0.45)'
+            }
+          };
+          const st = slotStyles[s] || slotStyles.A;
+          ctrlSlotBadge.style.color = st.color;
+          ctrlSlotBadge.style.background = st.bg;
+          ctrlSlotBadge.style.borderColor = st.border;
+        }
+        DATASET_SLOTS.forEach(sId => {
+          const el = document.getElementById(`lblWorkspaceSlot_${sId}`);
+          if (el) {
+            el.textContent = `ws/${sId}`;
+            if (datasetSlots[sId] && datasetSlots[sId].workspaceName) {
+              el.title = `Workspace: ${datasetSlots[sId].workspaceName}`;
+            }
+          }
+        });
+        const reconActions = document.getElementById('reconRowDShortcutActions');
+        if (reconActions) {
+          reconActions.style.display = (activeDatasetSlot === 'D' ||
+            (typeof activeSidebarMode !== 'undefined' && activeSidebarMode === 'recon'))
+              ? 'inline-flex' : 'none';
+        }
+      }
 
       const inputKnnK = document.getElementById('inputKnnK');
       const sliderKnnK = document.getElementById('sliderKnnK');
@@ -3084,8 +3174,10 @@
         const btnToggleSide = document.getElementById(`btnToggleSlotSide${sId}`);
         const wsLabel = document.getElementById(`lblWorkspaceSlot_${sId}`);
         const pill = document.getElementById(`datasetStatusPill_${sId}`);
-        const sel = document.getElementById(`selectBenchmark_${sId}`);
-        const loopSel = document.getElementById(`selectLoop_${sId}`);
+        const sel = document.getElementById(`selectBenchmark_${sId}`) ||
+          (sId === 'A' ? document.getElementById('selectBenchmark') : null);
+        const loopSel = document.getElementById(`selectLoop_${sId}`) ||
+          (sId === 'A' ? document.getElementById('selectLoop') : null);
 
         const isActive = (sId === activeDatasetSlot);
         if (row) {
@@ -3106,8 +3198,8 @@
         const slot = datasetSlots[sId];
         if (slot) {
           if (wsLabel) wsLabel.textContent = `ws/${sId}`;
-          if (sel && (!isActive || sel.value !== currentBenchmark)) {
-            sel.value = isActive ? currentBenchmark : slot.benchmarkKey;
+          if (sel && slot && slot.benchmarkKey) {
+            sel.value = slot.benchmarkKey;
           }
           if (loopSel) {
             loopSel.value = String(isActive ? (loopCount || 10) : (slot.loopCount || 10));
@@ -3175,13 +3267,13 @@
             if (isClust) {
               clustPill.textContent = `🟢 Clust (${nClust}c)`;
               clustPill.title =
-                `Dataset ${sId} clustered: ${nClust} clusters, ${framesCount} frames`;
+                `Dataset ${sId} clustered (${nClust}c, ${framesCount} pts). Click to re-run.`;
               clustPill.style.background = 'rgba(34, 197, 94, 0.15)';
               clustPill.style.color = '#4ade80';
               clustPill.style.borderColor = 'rgba(34, 197, 94, 0.4)';
             } else {
               clustPill.textContent = '⚪ Unclustered';
-              clustPill.title = `Dataset ${sId} has not been clustered`;
+              clustPill.title = `Dataset ${sId} is unclustered. Click to run clustering.`;
               clustPill.style.background = 'rgba(100, 116, 139, 0.12)';
               clustPill.style.color = '#64748b';
               clustPill.style.borderColor = 'rgba(100, 116, 139, 0.25)';
@@ -3190,27 +3282,13 @@
 
           // 2. k-NN Indicator
           if (knnPill) {
+            const hasKnn = (typeof slotHasKnn === 'function')
+              ? ((sId === 'D')
+                  ? (slotHasKnn('D') || Boolean(slot.reconstructionInfo))
+                  : slotHasKnn(sId))
+              : Boolean(slot.knnResults);
             const activeKnnObj = knnResults;
             const slotKnnObj = slot.knnResults;
-            const hasActiveKnn = Boolean(
-              activeKnnObj && (
-                activeKnnObj.indices ||
-                activeKnnObj.queries ||
-                (Array.isArray(activeKnnObj) && activeKnnObj.length > 0) ||
-                (typeof activeKnnObj.totalFrames === 'number' && activeKnnObj.totalFrames > 0)
-              )
-            ) || Boolean(reconstructionInfo) || Boolean(reconstructionSourceNeighbors);
-
-            const hasSlotKnn = Boolean(
-              slotKnnObj && (
-                slotKnnObj.indices ||
-                slotKnnObj.queries ||
-                (Array.isArray(slotKnnObj) && slotKnnObj.length > 0) ||
-                (typeof slotKnnObj.totalFrames === 'number' && slotKnnObj.totalFrames > 0)
-              )
-            ) || Boolean(slot.reconstructionInfo) || Boolean(slot.reconstructionSourceNeighbors);
-
-            const hasKnn = isActive ? hasActiveKnn : hasSlotKnn;
             const kVal = isActive
               ? (activeKnnObj?.k || reconstructionInfo?.k || knnK || 10)
               : (slotKnnObj?.k || slot.reconstructionInfo?.k || slot.knnK || 10);
@@ -3220,7 +3298,7 @@
                 ? Boolean(reconstructionInfo)
                 : Boolean(slot.reconstructionInfo);
               knnPill.textContent = isRecon ? `⚡ k-NN (k=${kVal})` : `🔵 k-NN (k=${kVal})`;
-              knnPill.title = `Dataset ${sId} has k-NN graph computed (k=${kVal})`;
+              knnPill.title = `Dataset ${sId} has k-NN (k=${kVal}). Click to re-run k-NN.`;
               knnPill.style.background =
                 isRecon ? 'rgba(168, 85, 247, 0.15)' : 'rgba(56, 189, 248, 0.15)';
               knnPill.style.color = isRecon ? '#c084fc' : '#38bdf8';
@@ -3228,7 +3306,7 @@
                 isRecon ? 'rgba(168, 85, 247, 0.4)' : 'rgba(56, 189, 248, 0.4)';
             } else {
               knnPill.textContent = '⚪ No k-NN';
-              knnPill.title = `Dataset ${sId} has not had k-NN computed`;
+              knnPill.title = `Dataset ${sId} has no k-NN computed. Click to run k-NN.`;
               knnPill.style.background = 'rgba(100, 116, 139, 0.12)';
               knnPill.style.color = '#64748b';
               knnPill.style.borderColor = 'rgba(100, 116, 139, 0.25)';
@@ -3264,8 +3342,10 @@
               const isShuf = isActive ? isShuffled : slot.isShuffled;
               const shufTag = isShuf ? ', 🔀 Shuffled' : '';
               pill.textContent = isImg
-                ? `📦 ${countFormatted} frames (${dimStr}, ${bmName}${shufTag})`
-                : `📦 ${countFormatted} pts (${dimStr}, ${bmName}${shufTag})`;
+                ? `📦 ${countFormatted} frames (${dimStr})`
+                : `📦 ${countFormatted} pts (${dimStr})`;
+              pill.title = `${bmName}${shufTag} (${count.toLocaleString()} ` +
+                `${isImg ? 'frames' : 'points'}, ${dimStr})`;
               if (sId === 'D' && (slot.reconstructionInfo || bmName === 'reconstructed')) {
                 pill.style.background = 'rgba(168, 85, 247, 0.2)';
                 pill.style.color = '#c084fc';
@@ -3354,6 +3434,53 @@
           ? '1024D Img' : (currentDim > 3 ? `${currentDim}D` : (currentDim === 3 ? '3D' : '2D'));
         const shufTag = isShuffled ? ' • 🔀' : '';
         dimBadge.textContent = `[${activeDatasetSlot}] ${dimStr} • ${countStr} pts${shufTag}`;
+      }
+      const ctrlSlotBadge = document.getElementById('ctrlSelectedSlotBadge');
+      if (ctrlSlotBadge) {
+        const s = activeDatasetSlot || 'A';
+        ctrlSlotBadge.textContent = `[Slot ${s}]`;
+        ctrlSlotBadge.setAttribute('data-slot', s);
+        ctrlSlotBadge.setAttribute('data-tooltip-badge', `Selected: Slot ${s}`);
+        const slotStyles = {
+          A: {
+            color: '#38bdf8',
+            bg: 'rgba(14, 165, 233, 0.2)',
+            border: 'rgba(56, 189, 248, 0.45)'
+          },
+          B: {
+            color: '#4ade80',
+            bg: 'rgba(34, 197, 94, 0.2)',
+            border: 'rgba(74, 222, 128, 0.45)'
+          },
+          C: {
+            color: '#fbbf24',
+            bg: 'rgba(245, 158, 11, 0.2)',
+            border: 'rgba(251, 191, 36, 0.45)'
+          },
+          D: {
+            color: '#c084fc',
+            bg: 'rgba(168, 85, 247, 0.2)',
+            border: 'rgba(192, 132, 252, 0.45)'
+          }
+        };
+        const st = slotStyles[s] || slotStyles.A;
+        ctrlSlotBadge.style.color = st.color;
+        ctrlSlotBadge.style.background = st.bg;
+        ctrlSlotBadge.style.borderColor = st.border;
+      }
+
+      if (typeof updateClusteringButtonUI === 'function') {
+        updateClusteringButtonUI();
+      } else if (window.updateClusteringButtonUI) {
+        window.updateClusteringButtonUI();
+      }
+      if (typeof updateKnnButtonUI === 'function') {
+        updateKnnButtonUI(typeof isKnnComputing !== 'undefined' && isKnnComputing);
+      } else if (window.updateKnnButtonUI) {
+        window.updateKnnButtonUI(typeof isKnnComputing !== 'undefined' && isKnnComputing);
+      }
+      if (typeof updateReconstructionButtonState === 'function') {
+        updateReconstructionButtonState();
       }
     }
 
@@ -3597,6 +3724,7 @@
         slot.isDatasetStaged = true;
         slot.genState = 'ready';
         slot.clusters = [];
+        slot.knnResults = null;
         slot.totalFrames = 0;
         slot.totalEvals = 0;
         slot.naiveEvals = 0;
@@ -3794,6 +3922,12 @@
       }
       if (typeof updatePlottingDimSelectorsUI === 'function') {
         updatePlottingDimSelectorsUI();
+      }
+
+      // Clear any previous k-NN results since new dataset was staged
+      knnResults = null;
+      if (typeof datasetSlots !== 'undefined' && datasetSlots[activeDatasetSlot]) {
+        datasetSlots[activeDatasetSlot].knnResults = null;
       }
 
       // Also save to datasetSlots dictionary

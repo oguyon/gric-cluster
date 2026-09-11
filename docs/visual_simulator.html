@@ -52,51 +52,113 @@
       <div id="dropzone" class="dropzone-overlay">Drop 2D/3D Coordinate File (.txt, .csv, .dat) Here</div>
       
       <div class="canvas-toolbar">
-        <!-- Row 1: Engine & Workspace (Top Row) + Corner Help -->
+        <!-- Row 1: Engine & Configuration Ribbon -->
         <div class="toolbar-row">
           <div class="toolbar-row-content">
-            <span class="toolbar-row-label">ENGINE:</span>
+            <span class="toolbar-row-label">ENGINE &amp; CONF:</span>
             <div class="engine-toggle-slider" id="engineToggleSlider"
                  data-tooltip-title="Engine Toggle-Slider"
                  data-tooltip-badge="WASM (Left) ⇄ Native (Right)"
                  data-tooltip-color="green"
-                 data-tooltip-desc="Click to toggle between In-Browser WebAssembly (WASM) on the left and host Native Compiled C (gric-cluster CLI) on the right.">
+                 data-tooltip-desc="Toggle between In-Browser WASM and Native Compiled C CLI.">
               <div class="engine-toggle-slider-thumb" id="engineSliderThumb"></div>
               <span id="btnEngineWasm" class="engine-toggle-opt active">⚡ WASM</span>
               <span id="btnEngineCli" class="engine-toggle-opt">💻 Native</span>
             </div>
 
-            <span id="badgeNativeTmux" class="badge-pill mode-cli" style="display: none; background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); font-family: monospace; font-size: 0.72rem; padding: 2px 8px; cursor: pointer;"
+            <span id="badgeNativeTmux" class="badge-pill mode-cli"
+                  style="display: none; background: rgba(34, 197, 94, 0.15); color: #4ade80;
+                         border: 1px solid rgba(34, 197, 94, 0.4); font-family: monospace;
+                         font-size: 0.72rem; padding: 2px 8px; cursor: pointer;"
                   data-tooltip-title="Native CLI tmux Session"
                   data-tooltip-badge="tmux: gric_cli"
                   data-tooltip-color="green"
-                  data-tooltip-desc="Native CLI runs directly inside tmux session 'gric_cli'. Click to copy 'tmux attach -t gric_cli' to clipboard.">🖥️ tmux: gric_cli 📋</span>
+                  data-tooltip-desc="Native CLI runs in tmux 'gric_cli'. Click to copy attach cmd."
+            >🖥️ tmux: gric_cli 📋</span>
 
             <button id="btnToggleMultiDataset" class="btn-toggle btn-mini-action btn-multi-dataset"
                     data-tooltip-title="Toggle Multi-Dataset Mode" 
                     data-tooltip-badge="Multi-Dataset (A, B, C, D)" 
                     data-tooltip-color="blue" 
-                    data-tooltip-desc="Toggle between Single Dataset mode and Multi-Dataset mode with 4 concurrent slots (A, B, C, and D) and separate workspaces.">🗂️ Multi-Dataset: OFF</button>
+                    data-tooltip-desc="Toggle between Single Dataset and 4 slots (A, B, C, D)."
+            >🗂️ Multi-Dataset: OFF</button>
+
+            <!-- Pre-defined Tests Pull-Down Menu -->
+            <div class="predefined-tests-wrap"
+                 style="display: inline-flex; align-items: center; gap: 3px;">
+              <span style="font-size: 0.68rem; color: #38bdf8; font-weight: 700;">TEST:</span>
+              <select id="selectPredefinedTests" class="select-predefined-tests"
+                      data-tooltip-title="Pre-defined Tests &amp; Pipelines"
+                      data-tooltip-badge="Automated Tests"
+                      data-tooltip-color="cyan"
+                      data-tooltip-desc="Select an automated pipeline to stage and run."
+                      aria-label="Pre-defined Tests Selection">
+                <option value="" disabled selected>⚡ Pre-defined Tests...</option>
+                <optgroup label="Asteroid Reconstruction Test Sets">
+                  <option value="asteroid-recon">🪐 Asteroid X→Y Test Set (10k frames)</option>
+                  <option value="asteroid-recon-2k">🪐 Asteroid X→Y Test Set (Quick 2k)</option>
+                </optgroup>
+                <optgroup label="Asteroid Single-View Sequences">
+                  <option value="img-asteroid-x">📸 Asteroid View X (32×32, 10k frames)</option>
+                  <option value="img-asteroid-y">📸 Asteroid View Y (32×32, 10k frames)</option>
+                  <option value="img-asteroid-z">📸 Asteroid View Z (32×32, 10k frames)</option>
+                </optgroup>
+                <optgroup label="Vision &amp; Image Benchmarks">
+                  <option value="img-ball-1">🏀 Single Bouncing Ball (32×32 vision)</option>
+                  <option value="img-ball-2">🏀 2 Colliding Balls (32×32 vision)</option>
+                  <option value="img-ball-3">🏀 3 Colliding Balls (32×32 vision)</option>
+                </optgroup>
+                <optgroup label="3D Manifolds &amp; Trajectories">
+                  <option value="3Dtorus">🍩 3D Torus Manifold Knot (10k pts)</option>
+                  <option value="3Dspiral">🌀 3D Helical Spiral (5k pts)</option>
+                  <option value="3Dsphere">🌐 3D Spherical Shell S² (5k pts)</option>
+                  <option value="3Dlorenz">🦋 3D Chaotic Lorenz Attractor (10k pts)</option>
+                </optgroup>
+                <optgroup label="High-Dimensional Embeddings">
+                  <option value="32Dtorus">🌌 32-D Torus Manifold (10k pts)</option>
+                  <option value="128Dspiral">🌌 128-D Helical Spiral (5k pts)</option>
+                  <option value="512Drand">🌌 512-D High-Dim Uniform Volume</option>
+                </optgroup>
+                <optgroup label="2D Geometric Benchmarks">
+                  <option value="2Dspiral">🌀 2D Archimedean Spiral (Sequential)</option>
+                  <option value="2DcircleP10n">🔄 Periodic Circle + Noise (10 cycles)</option>
+                  <option value="2Dwalk">🚶 2D Bounded Brownian Walk</option>
+                </optgroup>
+              </select>
+            </div>
 
             <div class="toolbar-divider"></div>
 
-            <span style="font-size: 0.70rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">WORKSPACE:</span>
-            <span id="lblWorkspacePath" class="workspace-path" style="font-size: 0.72rem; padding: 2px 7px; background: rgba(15,23,42,0.6); border: 1px solid var(--card-border); border-radius: 4px; color: var(--text-main); font-family: monospace; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle;" title="Workspace Directory">Local Browser Sandbox</span>
+            <span style="font-size: 0.70rem; color: var(--text-muted); font-weight: 700;
+                         text-transform: uppercase; letter-spacing: 0.5px;">WORKSPACE:</span>
+            <span id="lblWorkspacePath" class="workspace-path"
+                  style="font-size: 0.72rem; padding: 2px 7px; background: rgba(15,23,42,0.6);
+                         border: 1px solid var(--card-border); border-radius: 4px;
+                         color: var(--text-main); font-family: monospace; max-width: 170px;
+                         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                         display: inline-block; vertical-align: middle;"
+                  title="Workspace Directory">Local Browser Sandbox</span>
             <button id="btnOpenLocalFolder" class="btn-mini-action" 
                     data-tooltip-title="Select Local Client-Side Directory"
                     data-tooltip-badge="Web Mode: W3C File System Access"
                     data-tooltip-color="cyan"
-                    data-tooltip-desc="Open a local directory on your computer to read datasets and write cluster outputs directly to disk without any server.">📂 Open</button>
+                    data-tooltip-desc="Open a local directory on your computer for datasets.">
+              📂 Open
+            </button>
             <button id="btnRefreshWorkspace" class="btn-mini-action"
                     data-tooltip-title="Scan Workspace Directory"
                     data-tooltip-badge="File Scanner"
                     data-tooltip-color="cyan"
-                    data-tooltip-desc="Rescans the local workspace directory for new dataset files (.txt, .csv, .fits) and .clusterdat results folders.">🔄 Scan</button>
+                    data-tooltip-desc="Rescans workspace for new dataset files.">
+              🔄 Scan
+            </button>
             <button id="btnSaveToWorkspace" class="btn-mini-action btn-save-workspace"
                     data-tooltip-title="Export Run to Local Workspace"
                     data-tooltip-badge="Export .clusterdat"
                     data-tooltip-color="green"
-                    data-tooltip-desc="Saves current clustering centroids, D_cc matrix, membership indices, and telemetry log directly into a <dataset>.clusterdat/ folder in the workspace.">💾 Export</button>
+                    data-tooltip-desc="Saves current clustering outputs to workspace.">
+              💾 Export
+            </button>
           </div>
         </div>
 
@@ -104,16 +166,19 @@
         <div class="toolbar-row dataset-row active" id="datasetRowA" data-slot="A">
           <div class="toolbar-row-content">
             <button id="btnToggleSlotA" class="dataset-slot-toggle btn-toggle active" data-slot="A"
-                    data-tooltip-title="Activate Dataset A"
-                    data-tooltip-badge="Active Dataset"
+                    data-tooltip-title="Activate Dataset A (Primary / Training Input)"
+                    data-tooltip-badge="Slot A"
                     data-tooltip-color="blue"
-                    data-tooltip-desc="Click to make Dataset A the active workspace and clustering dataset.">A</button>
-            <select id="selectBenchmark_A" class="select-benchmark" data-slot="A">
+                    data-tooltip-desc="Click to make Dataset A the active workspace and dataset."
+            >A</button>
+
+            <select id="selectBenchmark" class="select-benchmark" data-slot="A"
+                    aria-label="Dataset Benchmark Selection">
               <optgroup label="2D Benchmark Datasets">
                 <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
                 <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
                 <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
-                <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
+                <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise</option>
                 <option value="2Drand">2Drand — 2D Uniform Random</option>
                 <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
                 <option value="stream">stream — 2D Lissajous Orbit</option>
@@ -154,12 +219,16 @@
             <input type="file" id="fileUpload_A" accept=".txt,.csv,.dat" style="display: none;">
             <button id="btnUpload_A" class="secondary btn-dataset-upload" data-slot="A"
                     data-tooltip-title="Upload Custom File (Slot A)" 
-                    data-tooltip-badge="Dataset A" 
+                    data-tooltip-badge="Slot A" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Load custom 2D or 3D coordinate streams into Dataset A.">📁</button>
-            <span class="dataset-loop-wrap" style="display:inline-flex; align-items:center; gap:2px;">
-              <span class="dataset-loop-label" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 700;">N:</span>
-              <select id="selectLoop_A" class="select-loop" data-slot="A" style="padding: 1px 4px; font-size: 0.74rem;">
+            <span class="dataset-loop-wrap"
+                  style="display:inline-flex; align-items:center; gap:2px;">
+              <span class="dataset-loop-label"
+                    style="font-size: 0.72rem; color: var(--text-muted); font-weight: 700;"
+              >N:</span>
+              <select id="selectLoop_A" class="select-loop" data-slot="A"
+                      style="padding: 1px 4px; font-size: 0.74rem;" aria-label="Loop Count">
                 <option value="1">1</option>
                 <option value="2">2</option>
                 <option value="3">3</option>
@@ -170,15 +239,18 @@
                 <option value="100">100</option>
               </select>
             </span>
-            <button id="btnStageDataset_A" class="secondary btn-dataset-stage" data-slot="A" style="background: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.4); color: #38bdf8; font-weight: 600;"
+            <button id="btnStageDataset_A" class="secondary btn-dataset-stage" data-slot="A"
+                    style="background: rgba(14, 165, 233, 0.15);
+                           border-color: rgba(14, 165, 233, 0.4);
+                           color: #38bdf8; font-weight: 600;"
                     data-tooltip-title="Generate Dataset A" 
                     data-tooltip-badge="Slot A" 
                     data-tooltip-color="cyan" 
-                    data-tooltip-desc="Generates or reloads Dataset A into memory and workspace.">🎲 Gen</button>
+                    data-tooltip-desc="Generates or reloads Dataset A into memory.">🎲 Gen</button>
             <button id="btnShuffle_A" class="secondary btn-dataset-shuffle" data-slot="A"
                     style="background: rgba(168, 85, 247, 0.12); color: #c084fc; font-weight: 600;
                            border-color: rgba(168, 85, 247, 0.35);"
-                    data-tooltip-title="Shuffle Dataset A"
+                    data-tooltip-title="Shuffle Dataset A Order"
                     data-tooltip-badge="Slot A"
                     data-tooltip-color="purple"
                     data-tooltip-desc="Randomly permutes frame/point order in Dataset A.">🔀</button>
@@ -190,18 +262,38 @@
                     data-tooltip-badge="Profile &amp; Calibrate"
                     data-tooltip-color="amber"
                     data-tooltip-desc="Runs single-pass gric-probe: variance, presets, SQ8."
-                    >🔍</button>
-            <button id="btnClearDataset_A" class="secondary btn-dataset-clear" data-slot="A" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
+            >🔍</button>
+            <button id="btnClearDataset_A" class="secondary btn-dataset-clear" data-slot="A"
+                    style="background: rgba(239, 68, 68, 0.12);
+                           border-color: rgba(239, 68, 68, 0.35);
+                           color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset A"
                     data-tooltip-badge="Slot A"
                     data-tooltip-color="amber"
-                    data-tooltip-desc="Resets and clears all data for Dataset A and clears viewport if active.">🗑️</button>
-            <span id="lblWorkspaceSlot_A" class="dataset-ws-path" title="Unique workspace for Dataset A">ws/A</span>
+                    data-tooltip-desc="Resets and clears all data for Dataset A.">🗑️</button>
+
+            <span id="lblWorkspaceSlot_A" class="dataset-ws-path"
+                  title="Active workspace slot">ws/A</span>
           </div>
           <div class="dataset-row-status">
-            <span id="datasetClusteredPill_A" class="badge-pill dataset-clustered-pill" style="background: rgba(100, 116, 139, 0.12); color: #64748b; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.25);">⚪ Unclustered</span>
-            <span id="datasetKnnPill_A" class="badge-pill dataset-knn-pill" style="background: rgba(100, 116, 139, 0.12); color: #64748b; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.25);">⚪ No k-NN</span>
-            <span id="datasetStatusPill_A" class="badge-pill dataset-status-pill" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; font-size: 0.68rem; border: 1px solid rgba(56, 189, 248, 0.35);">📦 Staged: 10,000 pts (3D, 3Dtorus)</span>
+            <button id="datasetClusteredPill_A"
+                    class="badge-pill btn-dataset-action dataset-clustered-pill" data-slot="A"
+                    data-tooltip-title="Clustering Status (Slot A)"
+                    data-tooltip-badge="Click to (Re)Run Clustering"
+                    data-tooltip-color="green"
+                    data-tooltip-desc="Click to switch to Slot A and run or re-run clustering."
+            >⚪ Unclustered</button>
+            <button id="datasetKnnPill_A"
+                    class="badge-pill btn-dataset-action dataset-knn-pill" data-slot="A"
+                    data-tooltip-title="k-NN Status (Slot A)"
+                    data-tooltip-badge="Click to (Re)Run k-NN"
+                    data-tooltip-color="cyan"
+                    data-tooltip-desc="Click to switch to Slot A and compute or re-run k-NN graph."
+            >⚪ No k-NN</button>
+            <span id="datasetStatusPill_A" class="badge-pill dataset-status-pill"
+                  style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; font-size: 0.68rem;
+                         border: 1px solid rgba(56, 189, 248, 0.35);"
+            >📦 10k pts (3D)</span>
           </div>
         </div>
 
@@ -209,25 +301,30 @@
         <div class="toolbar-row dataset-row" id="datasetRowB" data-slot="B" style="display: none;">
           <div class="toolbar-row-content">
             <button id="btnToggleSlotB" class="dataset-slot-toggle btn-toggle" data-slot="B"
-                    data-tooltip-title="Activate Dataset B"
-                    data-tooltip-badge="Switch Dataset"
+                    style="background: rgba(34, 197, 94, 0.2); color: #4ade80;
+                           border-color: rgba(34, 197, 94, 0.45);"
+                    data-tooltip-title="Activate Dataset B (Target / Training Output)"
+                    data-tooltip-badge="Slot B"
                     data-tooltip-color="green"
-                    data-tooltip-desc="Click to switch active workspace and clustering to Dataset B.">B</button>
-            <select id="selectBenchmark_B" class="select-benchmark" data-slot="B">
+                    data-tooltip-desc="Click to switch active workspace to Dataset B."
+            >B</button>
+
+            <select id="selectBenchmark_B" class="select-benchmark" data-slot="B"
+                    aria-label="Dataset B Benchmark Selection">
               <optgroup label="2D Benchmark Datasets">
                 <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
                 <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
                 <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
-                <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
+                <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise</option>
                 <option value="2Drand">2Drand — 2D Uniform Random</option>
                 <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
                 <option value="stream">stream — 2D Lissajous Orbit</option>
               </optgroup>
               <optgroup label="3D Benchmark Datasets (Quad-Split View)">
-                <option value="3Dspiral">3Dspiral — 3D Helical/Conical Spiral</option>
+                <option value="3Dspiral" selected>3Dspiral — 3D Helical/Conical Spiral</option>
                 <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
                 <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
-                <option value="3Dtorus" selected>3Dtorus — 3D Torus Manifold Knot</option>
+                <option value="3Dtorus">3Dtorus — 3D Torus Manifold Knot</option>
                 <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
                 <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
                 <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
@@ -259,12 +356,16 @@
             <input type="file" id="fileUpload_B" accept=".txt,.csv,.dat" style="display: none;">
             <button id="btnUpload_B" class="secondary btn-dataset-upload" data-slot="B"
                     data-tooltip-title="Upload Custom File (Slot B)" 
-                    data-tooltip-badge="Dataset B" 
+                    data-tooltip-badge="Slot B" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Load custom 2D or 3D coordinate streams into Dataset B.">📁</button>
-            <span class="dataset-loop-wrap" style="display:inline-flex; align-items:center; gap:2px;">
-              <span class="dataset-loop-label" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 700;">N:</span>
-              <select id="selectLoop_B" class="select-loop" data-slot="B" style="padding: 1px 4px; font-size: 0.74rem;">
+            <span class="dataset-loop-wrap"
+                  style="display:inline-flex; align-items:center; gap:2px;">
+              <span class="dataset-loop-label"
+                    style="font-size: 0.72rem; color: var(--text-muted); font-weight: 700;"
+              >N:</span>
+              <select id="selectLoop_B" class="select-loop" data-slot="B"
+                      style="padding: 1px 4px; font-size: 0.74rem;" aria-label="Loop Count">
                 <option value="1">1</option>
                 <option value="2">2</option>
                 <option value="3">3</option>
@@ -275,15 +376,18 @@
                 <option value="100">100</option>
               </select>
             </span>
-            <button id="btnStageDataset_B" class="secondary btn-dataset-stage" data-slot="B" style="background: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.4); color: #38bdf8; font-weight: 600;"
+            <button id="btnStageDataset_B" class="secondary btn-dataset-stage" data-slot="B"
+                    style="background: rgba(34, 197, 94, 0.15);
+                           border-color: rgba(34, 197, 94, 0.4);
+                           color: #4ade80; font-weight: 600;"
                     data-tooltip-title="Generate Dataset B" 
                     data-tooltip-badge="Slot B" 
                     data-tooltip-color="cyan" 
-                    data-tooltip-desc="Generates or reloads Dataset B into memory and workspace.">🎲 Gen</button>
+                    data-tooltip-desc="Generates or reloads Dataset B into memory.">🎲 Gen</button>
             <button id="btnShuffle_B" class="secondary btn-dataset-shuffle" data-slot="B"
                     style="background: rgba(168, 85, 247, 0.12); color: #c084fc; font-weight: 600;
                            border-color: rgba(168, 85, 247, 0.35);"
-                    data-tooltip-title="Shuffle Dataset B"
+                    data-tooltip-title="Shuffle Dataset B Order"
                     data-tooltip-badge="Slot B"
                     data-tooltip-color="purple"
                     data-tooltip-desc="Randomly permutes frame/point order in Dataset B.">🔀</button>
@@ -295,18 +399,38 @@
                     data-tooltip-badge="Profile &amp; Calibrate"
                     data-tooltip-color="amber"
                     data-tooltip-desc="Runs single-pass gric-probe: variance, presets, SQ8."
-                    >🔍</button>
-            <button id="btnClearDataset_B" class="secondary btn-dataset-clear" data-slot="B" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
+            >🔍</button>
+            <button id="btnClearDataset_B" class="secondary btn-dataset-clear" data-slot="B"
+                    style="background: rgba(239, 68, 68, 0.12);
+                           border-color: rgba(239, 68, 68, 0.35);
+                           color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset B"
                     data-tooltip-badge="Slot B"
                     data-tooltip-color="amber"
-                    data-tooltip-desc="Resets and clears all data for Dataset B and clears viewport if active.">🗑️</button>
-            <span id="lblWorkspaceSlot_B" class="dataset-ws-path" title="Unique workspace for Dataset B">ws/B</span>
+                    data-tooltip-desc="Resets and clears all data for Dataset B.">🗑️</button>
+
+            <span id="lblWorkspaceSlot_B" class="dataset-ws-path"
+                  title="Unique workspace for Dataset B">ws/B</span>
           </div>
           <div class="dataset-row-status">
-            <span id="datasetClusteredPill_B" class="badge-pill dataset-clustered-pill" style="background: rgba(100, 116, 139, 0.12); color: #64748b; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.25);">⚪ Unclustered</span>
-            <span id="datasetKnnPill_B" class="badge-pill dataset-knn-pill" style="background: rgba(100, 116, 139, 0.12); color: #64748b; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.25);">⚪ No k-NN</span>
-            <span id="datasetStatusPill_B" class="badge-pill dataset-status-pill" style="background: rgba(100, 116, 139, 0.2); color: #94a3b8; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.4);">⚪ Empty</span>
+            <button id="datasetClusteredPill_B"
+                    class="badge-pill btn-dataset-action dataset-clustered-pill" data-slot="B"
+                    data-tooltip-title="Clustering Status (Slot B)"
+                    data-tooltip-badge="Click to (Re)Run Clustering"
+                    data-tooltip-color="green"
+                    data-tooltip-desc="Click to switch to Slot B and run or re-run clustering."
+            >⚪ Unclustered</button>
+            <button id="datasetKnnPill_B"
+                    class="badge-pill btn-dataset-action dataset-knn-pill" data-slot="B"
+                    data-tooltip-title="k-NN Status (Slot B)"
+                    data-tooltip-badge="Click to (Re)Run k-NN"
+                    data-tooltip-color="cyan"
+                    data-tooltip-desc="Click to switch to Slot B and compute or re-run k-NN graph."
+            >⚪ No k-NN</button>
+            <span id="datasetStatusPill_B" class="badge-pill dataset-status-pill"
+                  style="background: rgba(100, 116, 139, 0.2); color: #94a3b8; font-size: 0.68rem;
+                         border: 1px solid rgba(100, 116, 139, 0.4);"
+            >⚪ Cleared</span>
           </div>
         </div>
 
@@ -314,16 +438,21 @@
         <div class="toolbar-row dataset-row" id="datasetRowC" data-slot="C" style="display: none;">
           <div class="toolbar-row-content">
             <button id="btnToggleSlotC" class="dataset-slot-toggle btn-toggle" data-slot="C"
+                    style="background: rgba(245, 158, 11, 0.2); color: #fbbf24;
+                           border-color: rgba(245, 158, 11, 0.45);"
                     data-tooltip-title="Activate Dataset C (Query Input)"
-                    data-tooltip-badge="Switch Dataset"
+                    data-tooltip-badge="Slot C"
                     data-tooltip-color="amber"
-                    data-tooltip-desc="Click to switch active workspace and clustering to Dataset C (Query dataset).">C</button>
-            <select id="selectBenchmark_C" class="select-benchmark" data-slot="C">
+                    data-tooltip-desc="Click to switch active workspace to Dataset C."
+            >C</button>
+
+            <select id="selectBenchmark_C" class="select-benchmark" data-slot="C"
+                    aria-label="Dataset C Benchmark Selection">
               <optgroup label="2D Benchmark Datasets">
                 <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
                 <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
                 <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
-                <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
+                <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise</option>
                 <option value="2Drand">2Drand — 2D Uniform Random</option>
                 <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
                 <option value="stream">stream — 2D Lissajous Orbit</option>
@@ -332,9 +461,9 @@
                 <option value="3Dspiral">3Dspiral — 3D Helical/Conical Spiral</option>
                 <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
                 <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
-                <option value="3Dtorus" selected>3Dtorus — 3D Torus Manifold Knot</option>
+                <option value="3Dtorus">3Dtorus — 3D Torus Manifold Knot</option>
                 <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
-                <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
+                <option value="3Drand" selected>3Drand — 3D Uniform Random Volume</option>
                 <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
                 <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
               </optgroup>
@@ -364,12 +493,16 @@
             <input type="file" id="fileUpload_C" accept=".txt,.csv,.dat" style="display: none;">
             <button id="btnUpload_C" class="secondary btn-dataset-upload" data-slot="C"
                     data-tooltip-title="Upload Custom File (Slot C)" 
-                    data-tooltip-badge="Dataset C" 
+                    data-tooltip-badge="Slot C" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Load custom 2D or 3D coordinate streams into Dataset C.">📁</button>
-            <span class="dataset-loop-wrap" style="display:inline-flex; align-items:center; gap:2px;">
-              <span class="dataset-loop-label" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 700;">N:</span>
-              <select id="selectLoop_C" class="select-loop" data-slot="C" style="padding: 1px 4px; font-size: 0.74rem;">
+            <span class="dataset-loop-wrap"
+                  style="display:inline-flex; align-items:center; gap:2px;">
+              <span class="dataset-loop-label"
+                    style="font-size: 0.72rem; color: var(--text-muted); font-weight: 700;"
+              >N:</span>
+              <select id="selectLoop_C" class="select-loop" data-slot="C"
+                      style="padding: 1px 4px; font-size: 0.74rem;" aria-label="Loop Count">
                 <option value="1">1</option>
                 <option value="2">2</option>
                 <option value="3">3</option>
@@ -380,15 +513,18 @@
                 <option value="100">100</option>
               </select>
             </span>
-            <button id="btnStageDataset_C" class="secondary btn-dataset-stage" data-slot="C" style="background: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.4); color: #38bdf8; font-weight: 600;"
+            <button id="btnStageDataset_C" class="secondary btn-dataset-stage" data-slot="C"
+                    style="background: rgba(245, 158, 11, 0.15);
+                           border-color: rgba(245, 158, 11, 0.4);
+                           color: #fbbf24; font-weight: 600;"
                     data-tooltip-title="Generate Dataset C" 
                     data-tooltip-badge="Slot C" 
                     data-tooltip-color="cyan" 
-                    data-tooltip-desc="Generates or reloads Dataset C into memory and workspace.">🎲 Gen</button>
+                    data-tooltip-desc="Generates or reloads Dataset C into memory.">🎲 Gen</button>
             <button id="btnShuffle_C" class="secondary btn-dataset-shuffle" data-slot="C"
                     style="background: rgba(168, 85, 247, 0.12); color: #c084fc; font-weight: 600;
                            border-color: rgba(168, 85, 247, 0.35);"
-                    data-tooltip-title="Shuffle Dataset C"
+                    data-tooltip-title="Shuffle Dataset C Order"
                     data-tooltip-badge="Slot C"
                     data-tooltip-color="purple"
                     data-tooltip-desc="Randomly permutes frame/point order in Dataset C.">🔀</button>
@@ -400,18 +536,38 @@
                     data-tooltip-badge="Profile &amp; Calibrate"
                     data-tooltip-color="amber"
                     data-tooltip-desc="Runs single-pass gric-probe: variance, presets, SQ8."
-                    >🔍</button>
-            <button id="btnClearDataset_C" class="secondary btn-dataset-clear" data-slot="C" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
+            >🔍</button>
+            <button id="btnClearDataset_C" class="secondary btn-dataset-clear" data-slot="C"
+                    style="background: rgba(239, 68, 68, 0.12);
+                           border-color: rgba(239, 68, 68, 0.35);
+                           color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset C"
                     data-tooltip-badge="Slot C"
                     data-tooltip-color="amber"
-                    data-tooltip-desc="Resets and clears all data for Dataset C and clears viewport if active.">🗑️</button>
-            <span id="lblWorkspaceSlot_C" class="dataset-ws-path" title="Unique workspace for Dataset C">ws/C</span>
+                    data-tooltip-desc="Resets and clears all data for Dataset C.">🗑️</button>
+
+            <span id="lblWorkspaceSlot_C" class="dataset-ws-path"
+                  title="Unique workspace for Dataset C">ws/C</span>
           </div>
           <div class="dataset-row-status">
-            <span id="datasetClusteredPill_C" class="badge-pill dataset-clustered-pill" style="background: rgba(100, 116, 139, 0.12); color: #64748b; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.25);">⚪ Unclustered</span>
-            <span id="datasetKnnPill_C" class="badge-pill dataset-knn-pill" style="background: rgba(100, 116, 139, 0.12); color: #64748b; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.25);">⚪ No k-NN</span>
-            <span id="datasetStatusPill_C" class="badge-pill dataset-status-pill" style="background: rgba(100, 116, 139, 0.2); color: #94a3b8; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.4);">⚪ Empty</span>
+            <button id="datasetClusteredPill_C"
+                    class="badge-pill btn-dataset-action dataset-clustered-pill" data-slot="C"
+                    data-tooltip-title="Clustering Status (Slot C)"
+                    data-tooltip-badge="Click to (Re)Run Clustering"
+                    data-tooltip-color="green"
+                    data-tooltip-desc="Click to switch to Slot C and run or re-run clustering."
+            >⚪ Unclustered</button>
+            <button id="datasetKnnPill_C"
+                    class="badge-pill btn-dataset-action dataset-knn-pill" data-slot="C"
+                    data-tooltip-title="k-NN Status (Slot C)"
+                    data-tooltip-badge="Click to (Re)Run k-NN"
+                    data-tooltip-color="cyan"
+                    data-tooltip-desc="Click to switch to Slot C and compute or re-run k-NN graph."
+            >⚪ No k-NN</button>
+            <span id="datasetStatusPill_C" class="badge-pill dataset-status-pill"
+                  style="background: rgba(100, 116, 139, 0.2); color: #94a3b8; font-size: 0.68rem;
+                         border: 1px solid rgba(100, 116, 139, 0.4);"
+            >⚪ Cleared</span>
           </div>
         </div>
 
@@ -419,20 +575,31 @@
         <div class="toolbar-row dataset-row" id="datasetRowD" data-slot="D" style="display: none;">
           <div class="toolbar-row-content">
             <button id="btnToggleSlotD" class="dataset-slot-toggle btn-toggle" data-slot="D"
-                    style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.5);"
+                    style="background: rgba(168, 85, 247, 0.2); color: #c084fc;
+                           border-color: rgba(168, 85, 247, 0.5);"
                     data-tooltip-title="Activate Dataset D (Reconstructed Output)"
-                    data-tooltip-badge="Reconstruction Slot"
+                    data-tooltip-badge="Slot D"
                     data-tooltip-color="purple"
-                    data-tooltip-desc="Click to switch active workspace and view the Reconstructed Dataset D.">D</button>
-            <select id="selectBenchmark_D" class="select-benchmark" data-slot="D">
+                    data-tooltip-desc="Click to switch active workspace to Reconstructed Dataset D."
+            >D</button>
+            <button id="btnReconstructArrow" class="dataset-slot-recon-arrow"
+                    data-tooltip-title="Run Reconstruction (A + B + C ➔ D)"
+                    data-tooltip-badge="Reconstruction"
+                    data-tooltip-color="purple"
+                    data-tooltip-desc="Finds k-NN in A, averages samples in B, writes to D."
+                    aria-label="Run Reconstruction from (A, B, C) to D">&#10140; Recon</button>
+
+            <select id="selectBenchmark_D" class="select-benchmark" data-slot="D"
+                    aria-label="Dataset D Benchmark Selection">
               <optgroup label="Reconstructed Dataset">
                 <option value="reconstructed" selected>⚡ Reconstructed from (A, B, C)</option>
+                <option value="asteroid-recon">🪐 Asteroid X→Y Test Set (A, B, C → D)</option>
               </optgroup>
               <optgroup label="2D Benchmark Datasets">
                 <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
                 <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
                 <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
-                <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
+                <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise</option>
                 <option value="2Drand">2Drand — 2D Uniform Random</option>
                 <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
                 <option value="stream">stream — 2D Lissajous Orbit</option>
@@ -473,28 +640,38 @@
             <input type="file" id="fileUpload_D" accept=".txt,.csv,.dat" style="display: none;">
             <button id="btnUpload_D" class="secondary btn-dataset-upload" data-slot="D"
                     data-tooltip-title="Upload Custom File (Slot D)" 
-                    data-tooltip-badge="Dataset D" 
+                    data-tooltip-badge="Slot D" 
                     data-tooltip-color="cyan" 
                     data-tooltip-desc="Load custom 2D or 3D coordinate streams into Dataset D.">📁</button>
-            <span class="dataset-loop-wrap" style="display:inline-flex; align-items:center; gap:2px;">
-              <span class="dataset-loop-label" style="font-size: 0.72rem; color: var(--text-muted); font-weight: 700;">N:</span>
-              <select id="selectLoop_D" class="select-loop" data-slot="D" style="padding: 1px 4px; font-size: 0.74rem;">
+            <span class="dataset-loop-wrap"
+                  style="display:inline-flex; align-items:center; gap:2px;">
+              <span class="dataset-loop-label"
+                    style="font-size: 0.72rem; color: var(--text-muted); font-weight: 700;"
+              >N:</span>
+              <select id="selectLoop_D" class="select-loop" data-slot="D"
+                      style="padding: 1px 4px; font-size: 0.74rem;" aria-label="Loop Count">
                 <option value="1">1</option>
                 <option value="2">2</option>
                 <option value="3">3</option>
                 <option value="5">5</option>
                 <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
               </select>
             </span>
-            <button id="btnStageDataset_D" class="secondary btn-dataset-stage" data-slot="D" style="background: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.4); color: #c084fc; font-weight: 600;"
+            <button id="btnStageDataset_D" class="secondary btn-dataset-stage" data-slot="D"
+                    style="background: rgba(168, 85, 247, 0.15);
+                           border-color: rgba(168, 85, 247, 0.4);
+                           color: #c084fc; font-weight: 600;"
                     data-tooltip-title="Reload / Generate Dataset D" 
                     data-tooltip-badge="Slot D" 
                     data-tooltip-color="purple" 
-                    data-tooltip-desc="Generates or reloads Dataset D into memory and workspace.">🎲 Gen</button>
+                    data-tooltip-desc="Generates or reloads Dataset D into memory.">🎲 Gen</button>
             <button id="btnShuffle_D" class="secondary btn-dataset-shuffle" data-slot="D"
                     style="background: rgba(168, 85, 247, 0.12); color: #c084fc; font-weight: 600;
                            border-color: rgba(168, 85, 247, 0.35);"
-                    data-tooltip-title="Shuffle Dataset D"
+                    data-tooltip-title="Shuffle Dataset D Order"
                     data-tooltip-badge="Slot D"
                     data-tooltip-color="purple"
                     data-tooltip-desc="Randomly permutes frame/point order in Dataset D.">🔀</button>
@@ -506,142 +683,155 @@
                     data-tooltip-badge="Profile &amp; Calibrate"
                     data-tooltip-color="amber"
                     data-tooltip-desc="Runs single-pass gric-probe: variance, presets, SQ8."
-                    >🔍</button>
-            <button id="btnClearDataset_D" class="secondary btn-dataset-clear" data-slot="D" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
+            >🔍</button>
+            <button id="btnClearDataset_D" class="secondary btn-dataset-clear" data-slot="D"
+                    style="background: rgba(239, 68, 68, 0.12);
+                           border-color: rgba(239, 68, 68, 0.35);
+                           color: #f87171; font-weight: 600;"
                     data-tooltip-title="Clear Dataset D"
                     data-tooltip-badge="Slot D"
                     data-tooltip-color="amber"
-                    data-tooltip-desc="Resets and clears all reconstructed points and data for Dataset D.">🗑️</button>
-            <button id="btnPresetAsteroidReconTop" class="btn-action"
-                    style="background: rgba(14, 165, 233, 0.22); color: #38bdf8;
-                           border: 1px solid rgba(14, 165, 233, 0.55); font-weight: 700;
-                           padding: 2px 7px; font-size: 0.72rem; border-radius: 4px;"
-                    data-tooltip-title="1-Click Asteroid X→Y Test (10k Frames)" 
-                    data-tooltip-badge="Auto A, B, C" 
-                    data-tooltip-color="cyan" 
-                    data-tooltip-desc="Sets A=TrainX, B=TrainY, C=TestX, opens ABCD view, and runs."
-            >🪐 Asteroid X→Y</button>
-            <button id="btnReconstructDTop" class="btn-action" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.5); font-weight: 700; padding: 2px 6px; font-size: 0.72rem;"
-                    data-tooltip-title="Run Reconstruction (A+B+C → D)" 
-                    data-tooltip-badge="Reconstruction" 
-                    data-tooltip-color="purple" 
-                    data-tooltip-desc="For each query in C, finds k-NN in A, averages corresponding samples in B, and writes reconstructed output D.">⚡ Recon D</button>
-            <button id="btnToggleRecon4PanelTop" class="btn-toggle toggle-cyan"
-                    style="padding: 2px 6px; font-size: 0.72rem; font-weight: 600;"
-                    data-tooltip-title="Toggle 4-Panel (A, B, C, D) View" 
-                    data-tooltip-badge="ABCD View" 
-                    data-tooltip-color="cyan" 
-                    data-tooltip-desc="Shows datasets A, B, C, and D simultaneously in synchronized 4-panel quadrants.">⊞ ABCD</button>
-            <button id="btnToggleReconOverlayTop" class="btn-toggle toggle-purple"
-                    style="padding: 2px 6px; font-size: 0.72rem; font-weight: 600;"
-                    data-tooltip-title="Overlay A+C &amp; B+D in ABCD View" 
-                    data-tooltip-badge="Shortcut: O" 
-                    data-tooltip-color="purple" 
-                    data-tooltip-desc="In ABCD view, overlays A+C (Input) and B+D (Output).">⧉ A+C | B+D</button>
-            <button id="btnToggleReconKnnTop" class="btn-toggle toggle-green active" style="padding: 2px 6px; font-size: 0.72rem; font-weight: 600;"
-                    data-tooltip-title="Toggle k-NN Highlights &amp; Rays in ABCD View" 
-                    data-tooltip-badge="Shortcut: K" 
-                    data-tooltip-color="green" 
-                    data-tooltip-desc="When enabled in ABCD view, hovering a point highlights its k-NN neighbors brightly and fades all other points grey.">⚡ k-NN</button>
-            <span id="lblWorkspaceSlot_D" class="dataset-ws-path" title="Unique workspace for Dataset D">ws/D</span>
+                    data-tooltip-desc="Resets and clears all data for Dataset D.">🗑️</button>
+
+            <span id="lblWorkspaceSlot_D" class="dataset-ws-path"
+                  title="Unique workspace for Dataset D">ws/D</span>
           </div>
           <div class="dataset-row-status">
-            <span id="datasetClusteredPill_D" class="badge-pill dataset-clustered-pill" style="background: rgba(100, 116, 139, 0.12); color: #64748b; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.25);">⚪ Unclustered</span>
-            <span id="datasetKnnPill_D" class="badge-pill dataset-knn-pill" style="background: rgba(100, 116, 139, 0.12); color: #64748b; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.25);">⚪ No k-NN</span>
-            <span id="datasetStatusPill_D" class="badge-pill dataset-status-pill" style="background: rgba(100, 116, 139, 0.2); color: #94a3b8; font-size: 0.68rem; border: 1px solid rgba(100, 116, 139, 0.4);">⚪ Empty</span>
+            <button id="datasetClusteredPill_D"
+                    class="badge-pill btn-dataset-action dataset-clustered-pill" data-slot="D"
+                    data-tooltip-title="Clustering Status (Slot D)"
+                    data-tooltip-badge="Click to (Re)Run Clustering"
+                    data-tooltip-color="green"
+                    data-tooltip-desc="Click to switch to Slot D and run or re-run clustering."
+            >⚪ Unclustered</button>
+            <button id="datasetKnnPill_D"
+                    class="badge-pill btn-dataset-action dataset-knn-pill" data-slot="D"
+                    data-tooltip-title="k-NN Status (Slot D)"
+                    data-tooltip-badge="Click to (Re)Run k-NN"
+                    data-tooltip-color="cyan"
+                    data-tooltip-desc="Click to switch to Slot D and compute or re-run k-NN graph."
+            >⚪ No k-NN</button>
+            <span id="datasetStatusPill_D" class="badge-pill dataset-status-pill"
+                  style="background: rgba(100, 116, 139, 0.2); color: #94a3b8; font-size: 0.68rem;
+                         border: 1px solid rgba(100, 116, 139, 0.4);"
+            >⚪ Cleared</span>
           </div>
         </div>
 
-        <!-- Row 2: Simulation Transport & Playback Ribbon -->
+        <!-- Row 3: CTRL (Detailed control and options for selected dataset) -->
         <div class="toolbar-row" id="transportRow">
           <div class="toolbar-row-content">
+            <span class="toolbar-row-label">CTRL:</span>
+            <span id="ctrlSelectedSlotBadge" class="ctrl-selected-slot-badge"
+                  data-tooltip-title="Active Dataset Slot"
+                  data-tooltip-badge="Selected: Slot A"
+                  data-tooltip-color="blue"
+                  data-tooltip-desc="Controls apply to selected dataset. Click to cycle slot."
+            >[Slot A]</span>
+
             <div class="btn-group">
-              <button id="btnPlay" class="primary" 
-                      data-tooltip-title="Run / Pause Clustering" 
+              <button id="btnPlay" class="primary btn-cluster-action" 
+                      data-tooltip-title="Cluster Active Dataset (Run or Re-cluster)" 
                       data-tooltip-badge="Shortcut: Space" 
                       data-tooltip-color="cyan" 
-                      data-tooltip-desc="Start or pause sequential frame clustering through the GRIC pipeline at the selected playback speed.">&#9658; Cluster</button>
+                      data-tooltip-desc="Displays clustering state. Click to run or re-cluster."
+              >&#9658; Cluster (Unclustered)</button>
               <button id="btnStep" class="btn-action" 
                       data-tooltip-title="Step Ingest Single Frame" 
                       data-tooltip-badge="Shortcut: S / ➔" 
                       data-tooltip-color="cyan" 
-                      data-tooltip-desc="Pushes exactly one coordinate vector from the stream, evaluating distance bounds, updating priors, and advancing the frame index.">&#8677; Step</button>
-              <button id="btnComputeAll" class="btn-action" 
-                      style="background: rgba(34, 197, 94, 0.18); color: #4ade80; 
-                             border: 1px solid rgba(34, 197, 94, 0.4); font-weight: 700;"
-                      data-tooltip-title="Compute All (Run to Completion)" 
-                      data-tooltip-badge="Instant WASM Batch" 
-                      data-tooltip-color="green" 
-                      data-tooltip-desc="Computes clustering instantly in WASM memory.">
-                ⚡ Compute All
-              </button>
+                      data-tooltip-desc="Pushes exactly one coordinate vector from the stream."
+              >&#8677; Step</button>
               <button id="btnResetClusters" class="btn-action"
                       data-tooltip-title="Reset Clusters (Keep Staged Dataset)"
                       data-tooltip-badge="Reset Model Only"
-                      data-tooltip-color="cyan"
-                      data-tooltip-desc="Clears cluster centroids, D_cc matrix, and assignments while preserving the staged dataset in memory so you can immediately re-cluster with new parameters.">&#8634; Reset</button>
-              <button id="btnReset" class="btn-action"
-                      data-tooltip-title="Reset All (Clear Dataset &amp; Clusters)"
-                      data-tooltip-badge="Shortcut: R"
-                      data-tooltip-color="cyan"
-                      data-tooltip-desc="Clears both the staged dataset and established cluster models, returning the canvas to a clean blank grid.">&#8635; Reset All</button>
+                      data-tooltip-color="cyan" 
+                      data-tooltip-desc="Clears clusters while preserving staged data."
+              >&#8634; Reset</button>
             </div>
 
             <div class="toolbar-divider"></div>
 
             <div class="btn-group">
+              <button id="btnRunKnn" class="btn-action btn-knn-action"
+                      style="background: rgba(14, 165, 233, 0.18); color: #38bdf8;
+                             border: 1px solid rgba(14, 165, 233, 0.45); font-weight: 700;"
+                      data-tooltip-title="Compute k-Nearest Neighbors" 
+                      data-tooltip-badge="Run k-NN" 
+                      data-tooltip-color="green" 
+                      data-tooltip-desc="Executes out-of-core metric-pruned k-NN solver."
+              >⚡ Run k-NN</button>
               <button id="btnPass2Nearest" class="btn-action"
                       data-tooltip-title="Run 2nd Pass (Nearest Anchor Reallocation)"
                       data-tooltip-badge="Shortcut: 2 / P"
-                      data-tooltip-color="green"
-                      data-tooltip-desc="Reallocates all points in the dataset to their globally closest cluster anchor using triangle-inequality bounds, updating cluster assignments and quality metrics.">🔄 2nd Pass</button>
+                      data-tooltip-color="green" 
+                      data-tooltip-desc="Reallocates points to globally closest cluster anchor."
+              >🔄 2nd Pass</button>
               <button id="btnAddPoint" class="btn-toggle toggle-amber" 
                       data-tooltip-title="Toggle Interactive Point Injection" 
                       data-tooltip-badge="Shortcut: Click Canvas" 
                       data-tooltip-color="amber" 
-                      data-tooltip-desc="Click anywhere on the 2D canvas or 3D orthogonal projection planes to inject custom query points into the active clustering model.">＋ Point</button>
+                      data-tooltip-desc="Click canvas to inject custom query points."
+              >＋ Point</button>
               <button id="btnExplain" class="btn-toggle toggle-cyan" 
                       data-tooltip-title="Toggle Decision Narrative Explanations" 
                       data-tooltip-badge="Shortcut: E" 
                       data-tooltip-color="green" 
-                      data-tooltip-desc="Enables rich step-by-step diagnostic telemetry explaining anchor choices, triangle inequality bounds, entropy calculations, and prunings.">💬 Explain</button>
-              <button id="btnToggleKnnModule" class="btn-toggle toggle-green"
-                      data-tooltip-title="Toggle k-Nearest Neighbors Module" 
-                      data-tooltip-badge="Shortcut: K" 
-                      data-tooltip-color="green" 
-                      data-tooltip-desc="Enables k-Nearest Neighbors (k-NN) mode, revealing configuration options and on-demand metric solver execution.">⚡ k-NN</button>
+                      data-tooltip-desc="Enables rich diagnostic telemetry for decisions."
+              >💬 Explain</button>
             </div>
 
-            <!-- Expanded k-NN action group (visible when k-NN is enabled) -->
-            <div id="knnExpandedGroup" style="display: none; align-items: center; gap: 4px; flex-wrap: wrap;">
-              <button id="btnRunKnn" class="btn-action" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.5); font-weight: 700;"
-                      data-tooltip-title="Compute k-Nearest Neighbors" 
-                      data-tooltip-badge="Run k-NN" 
-                      data-tooltip-color="green" 
-                      data-tooltip-desc="Executes the out-of-core metric-pruned k-NN solver on the current dataset.">▶ Run k-NN</button>
-              <button id="btnResetKnn" class="btn-action"
-                      data-tooltip-title="Reset k-NN Results (Keep Clusters)"
-                      data-tooltip-badge="Clear k-NN"
-                      data-tooltip-color="cyan"
-                      data-tooltip-desc="Clears computed k-NN neighbor indices and ray overlays without resetting clusters.">↺ Clear</button>
-              <button id="btnKnnSetup" class="btn-action"
-                      data-tooltip-title="Open k-NN Settings in Sidebar" 
-                      data-tooltip-badge="Configure k-NN" 
+            <!-- Contextual Reconstruction Actions (shown in Line 3 when Slot D is selected) -->
+            <div id="reconRowDShortcutActions"
+                 style="display: none; align-items: center; gap: 4px;">
+              <button id="btnPresetAsteroidReconTop" class="btn-action"
+                      style="background: rgba(14, 165, 233, 0.22); color: #38bdf8;
+                             border: 1px solid rgba(14, 165, 233, 0.55); font-weight: 700;
+                             padding: 2px 7px; font-size: 0.72rem; border-radius: 4px;"
+                      data-tooltip-title="1-Click Asteroid X→Y Test (10k Frames)" 
+                      data-tooltip-badge="Auto A, B, C" 
                       data-tooltip-color="cyan" 
-                      data-tooltip-desc="Opens and focuses the k-Nearest Neighbors parameter card in the right sidebar (k, dtmin, direction, epsilon).">⚙️</button>
-              <span id="knnStatusBadgeTop" class="badge-pill" style="background: rgba(192, 132, 252, 0.15); color: #c084fc; border: 1px solid rgba(192, 132, 252, 0.3); font-size: 0.70rem;">k=10</span>
-              <div id="dimDensityColorGroup" style="display: none; align-items: center; gap: 4px;">
-                <div class="toggle-group" style="grid-template-columns: repeat(3, 1fr);">
-                  <div id="colorByCluster" class="toggle-btn active">Clust</div>
-                  <div id="colorByDim" class="toggle-btn">Dim</div>
-                  <div id="colorByDensity" class="toggle-btn">Dens</div>
-                </div>
-              </div>
+                      data-tooltip-desc="Sets A=TrainX, B=TrainY, C=TestX, opens ABCD view."
+              >🪐 Asteroid X→Y</button>
+              <button id="btnReconstructDTop" class="btn-action"
+                      style="background: rgba(168, 85, 247, 0.2); color: #c084fc;
+                             border: 1px solid rgba(168, 85, 247, 0.5); font-weight: 700;
+                             padding: 2px 6px; font-size: 0.72rem;"
+                      data-tooltip-title="Run Reconstruction (A+B+C → D)" 
+                      data-tooltip-badge="Reconstruction" 
+                      data-tooltip-color="purple" 
+                      data-tooltip-desc="Queries k-NN in A, averages samples in B, writes to D."
+              >⚡ Recon D</button>
+              <button id="btnToggleRecon4PanelTop" class="btn-toggle toggle-cyan"
+                      style="padding: 2px 6px; font-size: 0.72rem; font-weight: 600;"
+                      data-tooltip-title="Toggle 4-Panel (A, B, C, D) View" 
+                      data-tooltip-badge="ABCD View" 
+                      data-tooltip-color="cyan" 
+                      data-tooltip-desc="Shows datasets A, B, C, and D in 4-panel quadrants."
+              >⊞ ABCD</button>
+              <button id="btnToggleReconOverlayTop" class="btn-toggle toggle-purple"
+                      style="padding: 2px 6px; font-size: 0.72rem; font-weight: 600;"
+                      data-tooltip-title="Overlay A+C &amp; B+D in ABCD View" 
+                      data-tooltip-badge="Shortcut: O" 
+                      data-tooltip-color="purple" 
+                      data-tooltip-desc="In ABCD view, overlays A+C (Input) and B+D (Output)."
+              >⧉ A+C | B+D</button>
+              <button id="btnToggleReconKnnTop" class="btn-toggle toggle-green active"
+                      style="padding: 2px 6px; font-size: 0.72rem; font-weight: 600;"
+                      data-tooltip-title="Toggle k-NN Highlights &amp; Rays in ABCD View" 
+                      data-tooltip-badge="Shortcut: K" 
+                      data-tooltip-color="green" 
+                      data-tooltip-desc="Hovering a point highlights its k-NN neighbors."
+              >⚡ Rays</button>
             </div>
           </div>
 
           <div class="btn-group" style="margin-left: auto;">
-            <div id="benchmarkDesc" class="benchmark-desc" style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; color: var(--text-muted);" title="Dataset Description"><b>3Dtorus</b>: Continuous knot trajectory around a 3D torus manifold (R=0.60, r=0.24).</div>
+            <div id="benchmarkDesc" class="benchmark-desc"
+                 style="max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+                        white-space: nowrap; font-size: 0.72rem; color: var(--text-muted);"
+                 title="Dataset Description"
+            ><b>3Dtorus</b>: Continuous knot trajectory around 3D torus manifold.</div>
             <div class="toolbar-divider"></div>
             <span style="font-size: 0.70rem; color: var(--text-muted); font-weight: 600;">Speed:</span>
             <select id="selectSpeed" style="padding: 1px 4px; font-size: 0.72rem; height: 22px;" 
@@ -656,7 +846,10 @@
               <option value="50">3x (50ms)</option>
               <option value="150">1x (150ms)</option>
             </select>
-            <span id="frameCounter" class="badge-pill frame-counter" style="font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border); color: #f8fafc; padding: 2px 7px;">0 / 10,000</span>
+            <span id="frameCounter" class="badge-pill frame-counter"
+                  style="font-family: 'JetBrains Mono', monospace; font-size: 0.74rem;
+                         background: rgba(15, 23, 42, 0.6); border: 1px solid var(--card-border);
+                         color: #f8fafc; padding: 2px 7px;">0 / 10,000</span>
           </div>
         </div>
       </div>
@@ -1039,7 +1232,9 @@
         </div>
       </div>
 
-      <div style="padding: 8px 14px; background: #172033; border-top: 1px solid var(--card-border);">
+      <div id="canvasLegendWrap"
+           style="padding: 4px 10px; background: #172033;
+                  border-top: 1px solid var(--card-border);">
         <div class="legend">
           <div class="legend-item"><div class="legend-dot" style="background: rgba(148, 163, 184, 0.6);"></div> Past Samples Point Cloud</div>
           <div class="legend-item"><div class="legend-dot" style="background: #38bdf8;"></div> Anchor Node</div>
@@ -1067,16 +1262,21 @@
     <div class="side-panel" id="sidePanel">
       <!-- Sidebar Master Mode Navigation Filter Bar -->
       <div class="sidebar-mode-nav" id="sidebarModeNav">
-        <button class="sidebar-mode-btn active" data-mode="all"
-                onclick="switchSidebarMode('all')">All</button>
-        <button class="sidebar-mode-btn" data-mode="clustering"
+        <button class="sidebar-mode-btn active" data-mode="clustering"
+                title="Clustering Algorithm &amp; Data Stream"
                 onclick="switchSidebarMode('clustering')">Clustering</button>
         <button class="sidebar-mode-btn mode-knn" data-mode="knn"
+                title="k-NN Neighborhood Graph &amp; Topology"
                 onclick="switchSidebarMode('knn')">k-NN</button>
+        <button class="sidebar-mode-btn mode-recon" data-mode="recon"
+                title="Cross-Dataset Reconstruction (A+B+C → D)"
+                onclick="switchSidebarMode('recon')">Recon</button>
         <button class="sidebar-mode-btn" data-mode="files"
+                title="Workspace Data Files &amp; CLI Commands"
                 onclick="switchSidebarMode('files')">Files &amp; CLI</button>
-        <button class="sidebar-mode-btn" data-mode="telemetry"
-                onclick="switchSidebarMode('telemetry')">Telemetry</button>
+        <button class="sidebar-mode-btn" data-mode="all"
+                title="Show All Panels"
+                onclick="switchSidebarMode('all')">All</button>
       </div>
 
       <!-- 1. Input Data -->
@@ -1098,69 +1298,12 @@
 
         <div class="card-body">
           <div class="card-body-scroll" style="display: flex; flex-direction: column; gap: 8px;">
-            <!-- Dataset & Input Source -->
+            <!-- Dataset Sampling & Sequence Options -->
             <div class="sub-control-card">
               <div class="control-label" style="font-weight: 700; color: var(--accent-blue); display: flex; justify-content: space-between; align-items: center;">
-                <span>Dataset &amp; Input Source</span>
-                <div style="display: flex; gap: 4px; align-items: center;">
-                  <button id="btnToggleMultiDatasetSide" class="btn-toggle btn-mini-action" style="font-size: 0.68rem; padding: 2px 6px;" title="Toggle 4 concurrent dataset slots (A, B, C, D)">🗂️ 4 Datasets: OFF</button>
-                  <div id="datasetSlotTogglesSide" style="display: none; gap: 4px; align-items: center;">
-                    <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: 600;">SLOT:</span>
-                    <button id="btnToggleSlotSideA" class="dataset-slot-toggle btn-toggle active" data-slot="A" style="width: 22px; height: 20px; font-size: 0.74rem;">A</button>
-                    <button id="btnToggleSlotSideB" class="dataset-slot-toggle btn-toggle" data-slot="B" style="width: 22px; height: 20px; font-size: 0.74rem;">B</button>
-                    <button id="btnToggleSlotSideC" class="dataset-slot-toggle btn-toggle" data-slot="C" style="width: 22px; height: 20px; font-size: 0.74rem;">C</button>
-                    <button id="btnToggleSlotSideD" class="dataset-slot-toggle btn-toggle" data-slot="D" style="width: 22px; height: 20px; font-size: 0.74rem; background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.5);">D</button>
-                  </div>
-                </div>
+                <span>Dataset Sampling &amp; Sequence</span>
               </div>
               <div style="display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; gap: 6px; align-items: center;">
-                  <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600; width: 60px;">Select:</label>
-                  <select id="selectBenchmarkSide" style="flex: 1; padding: 5px 8px; font-size: 0.78rem;">
-                    <optgroup label="2D Benchmark Datasets">
-                      <option value="2Dspiral">2Dspiral — 2D Archimedean Spiral</option>
-                      <option value="2Dspiral-shuffle">2Dspiral-shuffle — 2D Spiral (Shuffled)</option>
-                      <option value="2Dcircle-shuffle">2Dcircle-shuffle — 2D Circle (Shuffled)</option>
-                      <option value="2DcircleP10n">2DcircleP10n — Periodic Circle + Noise (10 Cycles)</option>
-                      <option value="2Drand">2Drand — 2D Uniform Random</option>
-                      <option value="2Dwalk">2Dwalk — 2D Bounded Random Walk</option>
-                      <option value="stream">stream — 2D Lissajous Orbit</option>
-                    </optgroup>
-                    <optgroup label="3D Benchmark Datasets (Quad-Split View)">
-                      <option value="3Dspiral">3Dspiral — 3D Helical/Conical Spiral</option>
-                      <option value="3Dspiral-shuffle">3Dspiral-shuffle — 3D Spiral (Shuffled)</option>
-                      <option value="3Dsphere">3Dsphere — 3D Spherical Shell Manifold (S²)</option>
-                      <option value="3Dtorus" selected>3Dtorus — 3D Torus Manifold Knot</option>
-                      <option value="3Dstar">3Dstar — 3D Multi-Spoke Radial Star</option>
-                      <option value="3Drand">3Drand — 3D Uniform Random Volume</option>
-                      <option value="3Dwalk">3Dwalk — 3D Brownian Random Walk</option>
-                      <option value="3Dlorenz">3Dlorenz — 3D Lorenz Attractor</option>
-                    </optgroup>
-                    <optgroup label="High-Dimensional Benchmarks (50% 3D Variance)">
-                      <option value="32Dtorus">32Dtorus — 32D Torus Knot</option>
-                      <option value="32Dspiral">32Dspiral — 32D Spiral</option>
-                      <option value="32Drand">32Drand — 32D Random Volume</option>
-                      <option value="128Dtorus">128Dtorus — 128D Torus Knot</option>
-                      <option value="128Dspiral">128Dspiral — 128D Spiral</option>
-                      <option value="128Drand">128Drand — 128D Random Volume</option>
-                      <option value="512Dtorus">512Dtorus — 512D Torus Knot</option>
-                      <option value="512Dspiral">512Dspiral — 512D Spiral</option>
-                      <option value="512Drand">512Drand — 512D Random Volume</option>
-                    </optgroup>
-                    <optgroup label="Image Time-Series Benchmarks (32×32)">
-                      <option value="img-asteroid-x">🪐 Asteroid View X (32×32, D=1024)</option>
-                      <option value="img-asteroid-y">🪐 Asteroid View Y (32×32, D=1024)</option>
-                      <option value="img-asteroid-z">🪐 Asteroid View Z (32×32, D=1024)</option>
-                      <option value="img-ball-1">Single Bouncing Ball (32×32, D=1024)</option>
-                      <option value="img-ball-2">2 Colliding Balls (32×32, D=1024)</option>
-                      <option value="img-ball-3">3 Colliding Balls (32×32, D=1024)</option>
-                    </optgroup>
-                    <optgroup label="Custom Dataset">
-                      <option value="custom">📁 Upload Custom 2D/3D File (.txt / .csv)...</option>
-                    </optgroup>
-                  </select>
-                </div>
-
                 <div class="control-row" id="rowSampleCount">
                   <div class="control-label">
                     <span>Number of Samples (<span class="badge-pill">N</span>)</span>
@@ -1176,24 +1319,6 @@
                          data-tooltip-badge="Dataset Size"
                          data-tooltip-color="blue"
                          data-tooltip-desc="Sets how many coordinate points are generated along the chosen pattern curve. Does not apply to custom uploaded datasets.">
-                </div>
-
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Loop Passes (N):</label>
-                  <select id="selectLoopSide" style="padding: 3px 8px; font-size: 0.76rem;" 
-                          data-tooltip-title="Dataset Loop Iterations" 
-                          data-tooltip-badge="Multi-Pass" 
-                          data-tooltip-color="cyan" 
-                          data-tooltip-desc="Sets the number of sequential passes over the dataset. Multiple passes demonstrate Markov matrix convergence and steady-state cluster stabilization.">
-                    <option value="1">1 pass (N=1)</option>
-                    <option value="2">2 passes (N=2)</option>
-                    <option value="3">3 passes (N=3)</option>
-                    <option value="5">5 passes (N=5)</option>
-                    <option value="10" selected>10 passes (N=10)</option>
-                    <option value="20">20 passes (N=20)</option>
-                    <option value="50">50 passes (N=50)</option>
-                    <option value="100">100 passes (N=100)</option>
-                  </select>
                 </div>
 
                 <div id="rowBallSeedOptions"
@@ -1249,24 +1374,6 @@
                     🔀 Shuffle Now
                   </button>
                 </div>
-
-                <div style="display: flex; gap: 6px; margin-top: 2px;">
-                  <button id="btnStageDatasetSide" class="secondary" style="flex: 1; padding: 5px 8px; font-size: 0.76rem; background: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.4); color: #38bdf8; font-weight: 600;"
-                          data-tooltip-title="Generate Dataset &amp; Preview" 
-                          data-tooltip-badge="Generate Points" 
-                          data-tooltip-color="cyan" 
-                          data-tooltip-desc="Generates or reloads the dataset into memory and workspace, rendering the raw unclustered point cloud in the viewports.">🎲 Generate</button>
-                  <button id="btnUploadSide" class="secondary" style="flex: 1; padding: 5px 8px; font-size: 0.76rem;" 
-                          data-tooltip-title="Upload Custom Coordinate Dataset" 
-                          data-tooltip-badge="File: .txt / .csv" 
-                          data-tooltip-color="cyan" 
-                          data-tooltip-desc="Load custom 2D or 3D coordinate streams formatted as space- or comma-delimited columns (X, Y[, Z]). Normalizes and centers coordinate bounds.">📁 Upload File</button>
-                  <button id="btnClearDatasetSide" class="secondary" style="flex: 0.8; padding: 5px 8px; font-size: 0.76rem; background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.35); color: #f87171; font-weight: 600;"
-                          data-tooltip-title="Clear Active Dataset"
-                          data-tooltip-badge="Reset Data"
-                          data-tooltip-color="amber"
-                          data-tooltip-desc="Clears all points and models for the active dataset slot, returning viewport to a clean blank view.">🗑️ Clear</button>
-                </div>
               </div>
             </div>
 
@@ -1317,22 +1424,6 @@
                     <span style="color: #94a3b8;">Ring Buffer:</span>
                     <span id="badgeStreamShmStatus" class="badge-pill" style="color: #38bdf8; font-family: monospace;">/dev/shm/gric_stream</span>
                   </div>
-                </div>
-
-                <div id="rowWasmPlaybackSpeed" style="display: flex; justify-content: space-between; align-items: center;">
-                  <label style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">Playback Speed:</label>
-                  <select id="selectSpeedSide" style="padding: 3px 8px; font-size: 0.76rem;" 
-                          data-tooltip-title="Simulation Playback Speed" 
-                          data-tooltip-badge="Rate Control" 
-                          data-tooltip-color="cyan" 
-                          data-tooltip-desc="Select Instant batch or 60 FPS preview.">
-                    <option value="0">⚡ Instant (Compute All, then Render)</option>
-                    <option value="-1" selected>🚀 Fast Streaming Preview (60 FPS)</option>
-                    <option value="5">30x Paced (5ms)</option>
-                    <option value="15">10x Paced (15ms)</option>
-                    <option value="50">3x Paced (50ms)</option>
-                    <option value="150">1x Step (150ms)</option>
-                  </select>
                 </div>
               </div>
             </div>
@@ -1540,8 +1631,16 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                 </div>
               </div>
 
-              <!-- Prior & Subspace Acceleration -->
-              <div class="sub-control-card" id="cardPriorSection">
+              <!-- Advanced Math & Prior Accelerations (Collapsible Details) -->
+              <details id="detailsAdvancedAlgorithm" class="advanced-settings-details"
+                       style="margin-top: 8px;">
+                <summary class="advanced-settings-summary">
+                  <span>⚙️ Advanced Math &amp; Prior Accelerations</span>
+                  <span class="advanced-settings-badge">Markov • Entropy • maxcl</span>
+                </summary>
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                  <!-- Prior & Subspace Acceleration -->
+                  <div class="sub-control-card" id="cardPriorSection">
                 <div class="control-label" style="font-weight: 700; color: var(--accent-purple); margin-bottom: 8px;">
                   <span>Prior &amp; Subspace Acceleration</span>
                 </div>
@@ -1762,8 +1861,10 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                 </div>
               </div>
             </div>
-          </div>
+          </details>
         </div>
+      </div>
+    </div>
 
       <!-- Resizer 2 (between Clustering Algorithm and Display & View) -->
       <div class="panel-resizer" id="resizer2" 
@@ -1840,12 +1941,18 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                   Cluster Colors
                 </div>
                 <div id="optToggleGridAxes" class="toggle-btn toggle-active toggle-teal"
-                     style="grid-column: span 2;"
                      data-tooltip-title="Grid &amp; Coordinate Axes"
                      data-tooltip-badge="Background Grid"
                      data-tooltip-color="teal"
                      data-tooltip-desc="Draws axes, floor grid, and 3D bounding box.">
-                  Grid &amp; Coordinate Axes
+                  Grid &amp; Axes
+                </div>
+                <div id="optToggleCameraViewAxis" class="toggle-btn toggle-active toggle-amber"
+                     data-tooltip-title="3D Camera View Axis"
+                     data-tooltip-badge="Line of Sight"
+                     data-tooltip-color="amber"
+                     data-tooltip-desc="Shows 3D camera line of sight and view axis in X, Y, Z.">
+                  3D View Axis
                 </div>
               </div>
             </div>
@@ -2062,32 +2169,30 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
             <!-- 3D Orbit Camera & Center Lock -->
             <div class="sub-control-card">
               <div class="control-label" style="font-weight: 700; color: var(--accent-cyan);">
-                <span>3D Orbit Camera &amp; Center Lock</span>
+                <span>3D Orbit Camera &amp; Navigation</span>
               </div>
-              <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 8px;">
-                Lock a sample point or cluster centroid at the center of the 3D view and rotate around that point.
+              <p style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.35;
+                        margin-bottom: 6px;">
+                Orbit camera presets (<b>Iso</b>, <b>Front</b>, <b>Top</b>, <b>Side</b>) are
+                located in the canvas toolbar. Use below to lock center or reset.
               </p>
-              <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 6px;">
-                <button class="btn-action primary" id="btnLockCenter3DSide" style="flex: 1.2; padding: 5px 8px; font-size: 0.74rem;"
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button class="btn-action primary" id="btnLockCenter3DSide"
+                        style="flex: 1.2; padding: 4px 8px; font-size: 0.74rem;"
                         data-tooltip-title="Lock 3D Rotation Center"
                         data-tooltip-badge="Shortcut: C"
                         data-tooltip-color="cyan"
                         data-tooltip-desc="Locks a point at the center of the 3D view and rotates around that point. Click with a selected point or click any point on canvas to set rotation center.">
                   🎯 Lock 3D Center
                 </button>
-                <button class="btn-action" id="presetReset3DSide" style="flex: 0.8; padding: 5px 8px; font-size: 0.74rem;"
+                <button class="btn-action" id="presetReset3DSide"
+                        style="flex: 0.8; padding: 4px 8px; font-size: 0.74rem;"
                         data-tooltip-title="Reset 3D Orbit Camera"
                         data-tooltip-badge="Reset Camera"
                         data-tooltip-color="teal"
                         data-tooltip-desc="Resets 3D orbit azimuth, elevation angles, pan offsets, and camera zoom back to default orientation.">
                   ↺ Reset 3D
                 </button>
-              </div>
-              <div class="toggle-group" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0;">
-                <div id="presetIsoSide" class="toggle-btn active" style="font-size: 0.70rem;">Iso</div>
-                <div id="presetFrontSide" class="toggle-btn" style="font-size: 0.70rem;">Front</div>
-                <div id="presetTopSide" class="toggle-btn" style="font-size: 0.70rem;">Top</div>
-                <div id="presetSideSide" class="toggle-btn" style="font-size: 0.70rem;">Side</div>
               </div>
             </div>
 
@@ -2254,7 +2359,7 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
            data-tooltip-desc="Adjust proportional height distribution."></div>
 
       <!-- 4. Data Files & Workspace Tracker -->
-      <div id="cardDataFiles" class="card collapsed" style="flex: 0 0 auto;">
+      <div id="cardDataFiles" class="card collapsed" style="flex: 0 0 auto; display: none;">
         <div class="card-title" onclick="togglePanelCollapse('cardDataFiles')">
           <div style="display: flex; align-items: center; gap: 6px;">
             <button class="card-collapse-btn" id="btnCollapseDataFiles" 
@@ -2369,7 +2474,7 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
            data-tooltip-desc="Adjust proportional height distribution."></div>
 
       <!-- 5. CLI Console & Command -->
-      <div id="cardCli" class="card collapsed" style="flex: 0 0 auto;">
+      <div id="cardCli" class="card collapsed" style="flex: 0 0 auto; display: none;">
         <div class="card-title" onclick="togglePanelCollapse('cardCli')">
           <div style="display: flex; align-items: center; gap: 6px;">
             <button class="card-collapse-btn" id="btnCollapseCli" 
@@ -3712,7 +3817,7 @@ best-first graph routing instead of brute-force cluster scanning.">
       </div>
 
       <!-- 8. k-NN Reconstruction: Multi-Dataset Interpolator & Inspector -->
-      <div id="cardReconstruction" class="card collapsed" style="flex: 0 0 auto;">
+      <div id="cardReconstruction" class="card collapsed" style="flex: 0 0 auto; display: none;">
         <div class="card-title" style="margin-bottom: 6px;"
              onclick="togglePanelCollapse('cardReconstruction')">
           <div style="display: flex; align-items: center; gap: 6px;">
@@ -4526,7 +4631,6 @@ greedy best-first graph routing instead of brute-force cluster scanning.">
         </div>
       </div>
     </div>
-  </div>
 
   <!-- File Content & Structure Viewer Modal -->
   <div id="modalFileViewer" class="file-modal-overlay" style="display: none;">

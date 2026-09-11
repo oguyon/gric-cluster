@@ -272,6 +272,53 @@
       };
     }
 
+    window.mapMetricToQuad = mapMetricToQuad;
+    window.mapQuadToMetric = mapQuadToMetric;
+
+    /**
+     * Helper to render a stylized coordinate pill badge with colored axis labels.
+     */
+    function drawColoredCoordBadge(ctx, x, y, parts, isHovered, clampRect) {
+      ctx.font = 'bold 9px monospace';
+      let totalW = 0;
+      for (let i = 0; i < parts.length; i++) {
+        totalW += ctx.measureText(parts[i].text).width;
+      }
+      const pillW = totalW + 12;
+      const pillH = 16;
+
+      let drawX = x;
+      let drawY = y;
+      if (clampRect) {
+        if (drawX + pillW > clampRect.x + clampRect.w - 6) {
+          drawX = clampRect.x + clampRect.w - pillW - 6;
+        }
+        if (drawX < clampRect.x + 6) drawX = clampRect.x + 6;
+        if (drawY < clampRect.y + 28) drawY = clampRect.y + 28;
+        if (drawY + pillH > clampRect.y + clampRect.h - 6) {
+          drawY = clampRect.y + clampRect.h - pillH - 6;
+        }
+      }
+
+      ctx.fillStyle = isHovered ? 'rgba(15, 23, 42, 0.92)' : 'rgba(15, 23, 42, 0.88)';
+      ctx.strokeStyle = isHovered ? 'rgba(56, 189, 248, 0.60)' : 'rgba(56, 189, 248, 0.35)';
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      ctx.roundRect(drawX, drawY, pillW, pillH, 3);
+      ctx.fill();
+      ctx.stroke();
+
+      let curX = drawX + 6;
+      const midY = drawY + pillH / 2 + 0.5;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      for (let i = 0; i < parts.length; i++) {
+        ctx.fillStyle = parts[i].color;
+        ctx.fillText(parts[i].text, curX, midY);
+        curX += ctx.measureText(parts[i].text).width;
+      }
+    }
+
     function updateViewPresetBarPosition() {
       const bar = document.getElementById('viewPresetBar');
       if (!bar) return;
@@ -443,6 +490,9 @@
       }
 
       // --- 3D MODE: Quad-Split or Maximized View ---
+      if (typeof viewVectorHandles !== 'undefined') {
+        viewVectorHandles = [null, null, null];
+      }
       if (maximizedQuad !== null) {
         const types = ["ALONG_X", "ALONG_Y", "ALONG_Z", "CUSTOM_3D"];
         renderSubViewport(maximizedQuad, types[maximizedQuad], { x: 0, y: 0, w: W, h: H });
@@ -528,6 +578,43 @@
         }
         // CUSTOM_3D
         return project3D(pt.x, pt.y, pt.z, orbitCamera.azimuth, orbitCamera.elevation);
+      }
+
+      function resolvePointClusterId(p, i) {
+        if (!p) return -1;
+        if (typeof p.clusterId === 'number' && p.clusterId >= 0) {
+          return p.clusterId;
+        }
+        if (typeof assignmentHistory !== 'undefined' && assignmentHistory &&
+            typeof assignmentHistory[i] === 'number' && assignmentHistory[i] >= 0) {
+          p.clusterId = assignmentHistory[i];
+          return p.clusterId;
+        }
+        if (typeof benchmarkDataset !== 'undefined' && benchmarkDataset &&
+            benchmarkDataset[i] && typeof benchmarkDataset[i].clusterId === 'number' &&
+            benchmarkDataset[i].clusterId >= 0) {
+          p.clusterId = benchmarkDataset[i].clusterId;
+          return p.clusterId;
+        }
+        if (typeof clusters !== 'undefined' && clusters && clusters.length > 0) {
+          let bestK = -1;
+          let bestD2 = Infinity;
+          const px = p.x, py = p.y, pz = p.z || 0;
+          for (let k = 0; k < clusters.length; k++) {
+            const c = clusters[k];
+            const dx = px - c.x, dy = py - c.y, dz = pz - (c.z || 0);
+            const d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 < bestD2) {
+              bestD2 = d2;
+              bestK = k;
+            }
+          }
+          if (bestK >= 0) {
+            p.clusterId = bestK;
+            return bestK;
+          }
+        }
+        return -1;
       }
 
       // 1. Grid & Axes
@@ -787,9 +874,12 @@
           for (let k = 0; k < drawCount; k++) {
             const idx = visibleIndicesBuffer[Math.floor(k * step)];
             const pt = pastSamples[idx];
-            const isProcessed = (pt.clusterId !== undefined && pt.clusterId >= 0) ||
+            const cId = resolvePointClusterId(pt, idx);
+            const isProcessed = (cId >= 0) ||
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
-                                (idx < currentFrameIdx);
+                                (idx < currentFrameIdx) ||
+                                (clusters && clusters.length > 0 && totalFrames > 0 &&
+                                 currentFrameIdx >= totalFrames);
             if (isProcessed) continue;
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
@@ -837,9 +927,12 @@
           for (let k = 0; k < drawCount; k++) {
             const idx = visibleIndicesBuffer[Math.floor(k * step)];
             const pt = pastSamples[idx];
-            const isProcessed = (pt.clusterId !== undefined && pt.clusterId >= 0) ||
+            const cId = resolvePointClusterId(pt, idx);
+            const isProcessed = (cId >= 0) ||
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
-                                (idx < currentFrameIdx);
+                                (idx < currentFrameIdx) ||
+                                (clusters && clusters.length > 0 && totalFrames > 0 &&
+                                 currentFrameIdx >= totalFrames);
             if (!isProcessed) continue;
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
@@ -875,10 +968,8 @@
                 );
               }
             } else {
-              fillColor = (showColorPerCluster &&
-                pt.clusterId !== undefined &&
-                pt.clusterId >= 0)
-                ? getCachedColor(pt.clusterId)
+              fillColor = (showColorPerCluster && cId >= 0)
+                ? getCachedColor(cId)
                 : procDefaultColor;
             }
             if (fillColor !== lastFill) {
@@ -900,9 +991,12 @@
           for (let k = 0; k < drawCount; k++) {
             const idx = visibleIndicesBuffer[Math.floor(k * step)];
             const pt = pastSamples[idx];
-            const isProcessed = (pt.clusterId !== undefined && pt.clusterId >= 0) ||
+            const cId = resolvePointClusterId(pt, idx);
+            const isProcessed = (cId >= 0) ||
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
-                                (idx < currentFrameIdx);
+                                (idx < currentFrameIdx) ||
+                                (clusters && clusters.length > 0 && totalFrames > 0 &&
+                                 currentFrameIdx >= totalFrames);
             if (isProcessed) continue;
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
             const pr = getProjectedCoord(pt);
@@ -957,9 +1051,12 @@
           for (let k = 0; k < drawCount; k++) {
             const idx = visibleIndicesBuffer[Math.floor(k * step)];
             const pt = pastSamples[idx];
-            const isProcessed = (pt.clusterId !== undefined && pt.clusterId >= 0) ||
+            const cId = resolvePointClusterId(pt, idx);
+            const isProcessed = (cId >= 0) ||
                                 (pt.frameIndex !== undefined && pt.frameIndex < currentFrameIdx) ||
-                                (idx < currentFrameIdx);
+                                (idx < currentFrameIdx) ||
+                                (clusters && clusters.length > 0 && totalFrames > 0 &&
+                                 currentFrameIdx >= totalFrames);
             if (!isProcessed) continue;
             if (qMask && idx < qMask.length && !qMask[idx]) continue;
 
@@ -1001,10 +1098,8 @@
                 );
               }
             } else {
-              fillColor = (showColorPerCluster &&
-                pt.clusterId !== undefined &&
-                pt.clusterId >= 0)
-                ? getCachedColor(pt.clusterId)
+              fillColor = (showColorPerCluster && cId >= 0)
+                ? getCachedColor(cId)
                 : procDefaultColor;
             }
             if (fillColor !== lastFill) {
@@ -2062,10 +2157,14 @@
             ctx.stroke();
 
             // 32-Bar Equalizer HUD for Hovered / Locked Sample
-            if (currentDim > 3 && typeof HighDEngine !== 'undefined' &&
-                HighDEngine.renderEqualizerHUD) {
+            // (Render once at top-left to avoid toolbar collision)
+            const shouldDrawEqualizer = (maximizedQuad !== null)
+              ? (qIdx === maximizedQuad)
+              : (qIdx === 0);
+            if (shouldDrawEqualizer && currentDim > 3 &&
+                typeof HighDEngine !== 'undefined' && HighDEngine.renderEqualizerHUD) {
               const hudX = rect.x + 10;
-              const hudY = rect.y + rect.h - 86;
+              const hudY = rect.y + 26;
               const label = isLocked ? `Sample #${sampleIdx} (Locked)` : `Sample #${sampleIdx}`;
               HighDEngine.renderEqualizerHUD(
                 ctx, hudX, hudY, pt, label, reticleColor, currentDim
@@ -2076,13 +2175,16 @@
           }
         }
 
-        // 32-Bar Equalizer HUD for Hovered Cluster (when no sample is hovered)
-        if (currentDim > 3 && hoveredClusterId !== -1 &&
+        // 32-Bar Equalizer HUD for Hovered Cluster (render once at top-left)
+        const shouldDrawClusterEqualizer = (maximizedQuad !== null)
+          ? (qIdx === maximizedQuad)
+          : (qIdx === 0);
+        if (shouldDrawClusterEqualizer && currentDim > 3 && hoveredClusterId !== -1 &&
             (!activeSampleHighlight || !activeSampleHighlight.point)) {
           const hovCl = clusters.find(c => c.id === hoveredClusterId);
           if (hovCl && typeof HighDEngine !== 'undefined' && HighDEngine.renderEqualizerHUD) {
             const hudX = rect.x + 10;
-            const hudY = rect.y + rect.h - 86;
+            const hudY = rect.y + 26;
             const cnt = typeof hovCl.members === 'number'
               ? hovCl.members
               : (hovCl.members ? hovCl.members.length : 1);
@@ -2437,6 +2539,396 @@
         ctx.fill();
       }
 
+      // 5C. Axis of View of the 3D View (in orthogonal panels X, Y, and Z)
+      if (!is3DCustom && currentDim >= 3 && maximizedQuad === null &&
+          (typeof isRecon4PanelView === 'undefined' || !isRecon4PanelView) &&
+          (typeof dataMode === 'undefined' || dataMode !== 'image') &&
+          (typeof showCameraViewAxis === 'undefined' || showCameraViewAxis)) {
+
+        let tx = 0, ty = 0, tz = 0;
+        if (typeof orbitCamera !== 'undefined' && orbitCamera && orbitCamera.isLocked) {
+          tx = orbitCamera.targetX || 0;
+          ty = orbitCamera.targetY || 0;
+          tz = orbitCamera.targetZ || 0;
+        }
+
+        const az = (typeof orbitCamera !== 'undefined')
+          ? orbitCamera.azimuth : -35 * (Math.PI / 180);
+        const el = (typeof orbitCamera !== 'undefined')
+          ? orbitCamera.elevation : 25 * (Math.PI / 180);
+        const cosT = Math.cos(az), sinT = Math.sin(az);
+        const cosP = Math.cos(el), sinP = Math.sin(el);
+
+        // Line-of-sight unit vector looking from camera through target:
+        const vx = -sinT * cosP;
+        const vy = cosT * cosP;
+        const vz = -sinP;
+
+        let uT = 0, vT = 0;
+        let du = 0, dv = 0;
+        let perpComp = 0;
+
+        if (qIdx === 0) {
+          // Panel X: ALONG_X (Y-Z plane)
+          uT = ty;
+          vT = tz;
+          du = vy;
+          dv = vz;
+          perpComp = vx;
+        } else if (qIdx === 1) {
+          // Panel Y: ALONG_Y (X-Z plane)
+          uT = tx;
+          vT = tz;
+          du = vx;
+          dv = vz;
+          perpComp = vy;
+        } else if (qIdx === 2) {
+          // Panel Z: ALONG_Z (X-Y plane)
+          uT = tx;
+          vT = ty;
+          du = vx;
+          dv = vy;
+          perpComp = vz;
+        }
+
+        const targetPos = mapMetricToQuad(uT, vT, qIdx, rect);
+        const dirLen2D = Math.hypot(du, dv);
+
+        const z3 = (typeof quadViews !== 'undefined' && quadViews[3] && quadViews[3].zoom)
+          ? quadViews[3].zoom
+          : ((typeof orbitCamera !== 'undefined' && orbitCamera.zoom) ? orbitCamera.zoom : 1.0);
+        const spanFactor = 1.0 / Math.max(0.05, Math.min(20.0, z3));
+
+        ctx.save();
+
+        if (dirLen2D < 0.035) {
+          if (typeof viewVectorHandles !== 'undefined') {
+            viewVectorHandles[qIdx] = {
+              qIdx: qIdx,
+              isPerp: true,
+              targetPos: { px: targetPos.px, py: targetPos.py },
+              uT: uT,
+              vT: vT,
+              du: du,
+              dv: dv,
+              L_fwd: 0.40 * spanFactor,
+              L_cam: 0.85 * spanFactor,
+              perpComp: perpComp
+            };
+          }
+
+          const isHovered = (typeof hoveredViewVectorHandle !== 'undefined' &&
+                             hoveredViewVectorHandle &&
+                             hoveredViewVectorHandle.qIdx === qIdx);
+          const isDraggingThis = (typeof draggingViewVectorHandle !== 'undefined' &&
+                                  draggingViewVectorHandle &&
+                                  draggingViewVectorHandle.qIdx === qIdx);
+
+          if (isHovered || isDraggingThis) {
+            ctx.save();
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 9;
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.0;
+            ctx.beginPath();
+            ctx.arc(targetPos.px, targetPos.py, 11, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = isDraggingThis
+              ? 'rgba(56, 189, 248, 0.45)'
+              : 'rgba(56, 189, 248, 0.22)';
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // Viewing axis is perpendicular to this panel (into or out of screen)
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(targetPos.px, targetPos.py, 7, 0, Math.PI * 2);
+          ctx.stroke();
+
+          if (perpComp > 0) {
+            // Pointing into screen: X cross
+            const r7 = 4.5;
+            ctx.beginPath();
+            ctx.moveTo(targetPos.px - r7, targetPos.py - r7);
+            ctx.lineTo(targetPos.px + r7, targetPos.py + r7);
+            ctx.moveTo(targetPos.px + r7, targetPos.py - r7);
+            ctx.lineTo(targetPos.px - r7, targetPos.py + r7);
+            ctx.stroke();
+          } else {
+            // Pointing out of screen: center dot
+            ctx.beginPath();
+            ctx.arc(targetPos.px, targetPos.py, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#f59e0b';
+            ctx.fill();
+          }
+
+          // Small perpendicular view badge with live angles
+          const degAz = Math.round(az * 180 / Math.PI);
+          const degEl = Math.round(el * 180 / Math.PI);
+          const dragSuffix = isDraggingThis ? ' (rotating)' : ' (⟂)';
+          ctx.font = 'bold 8.5px monospace';
+          const pText = `📷 3D View [θ:${degAz}°, φ:${degEl}°]${dragSuffix}`;
+          const bW = ctx.measureText(pText).width + 12;
+          const bH = 16;
+          const bX = Math.max(rect.x + 6,
+            Math.min(rect.x + rect.w - bW - 6, targetPos.px + 10));
+          const bY = Math.max(rect.y + 28,
+            Math.min(rect.y + rect.h - bH - 6, targetPos.py - 8));
+
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+          ctx.strokeStyle = 'rgba(245, 158, 11, 0.50)';
+          ctx.lineWidth = 1.0;
+          ctx.beginPath();
+          ctx.roundRect(bX, bY, bW, bH, 3);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#fbbf24';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(pText, bX + 6, bY + bH / 2 + 0.5);
+
+        } else {
+          // Scale back to camera and forward along line of sight scaled to 3D panel span
+          const L_cam = 0.85 * spanFactor;
+          const L_fwd = 0.40 * spanFactor;
+
+          // du and dv are the un-normalized projected components of the 3D unit viewing vector
+          const camU = uT - du * L_cam;
+          const camV = vT - dv * L_cam;
+          const fwdU = uT + du * L_fwd;
+          const fwdV = vT + dv * L_fwd;
+
+          const pCam = mapMetricToQuad(camU, camV, qIdx, rect);
+          const pFwd = mapMetricToQuad(fwdU, fwdV, qIdx, rect);
+          const pTarget = targetPos;
+
+          if (typeof viewVectorHandles !== 'undefined') {
+            viewVectorHandles[qIdx] = {
+              qIdx: qIdx,
+              isPerp: false,
+              targetPos: { px: targetPos.px, py: targetPos.py },
+              pFwd: { px: pFwd.px, py: pFwd.py },
+              pCam: { px: pCam.px, py: pCam.py },
+              uT: uT,
+              vT: vT,
+              du: du,
+              dv: dv,
+              L_fwd: L_fwd,
+              L_cam: L_cam,
+              perpComp: perpComp
+            };
+          }
+
+          const isHovered = (typeof hoveredViewVectorHandle !== 'undefined' &&
+                             hoveredViewVectorHandle &&
+                             hoveredViewVectorHandle.qIdx === qIdx);
+          const isDraggingThis = (typeof draggingViewVectorHandle !== 'undefined' &&
+                                  draggingViewVectorHandle &&
+                                  draggingViewVectorHandle.qIdx === qIdx);
+          const activeEnd = isDraggingThis
+            ? draggingViewVectorHandle.end
+            : (isHovered ? hoveredViewVectorHandle.end : null);
+
+          const spDx = pFwd.px - pCam.px;
+          const spDy = pFwd.py - pCam.py;
+          const spLen = Math.hypot(spDx, spDy);
+
+          const distCam = Math.hypot(pTarget.px - pCam.px, pTarget.py - pCam.py);
+          const distFwd = Math.hypot(pFwd.px - pTarget.px, pFwd.py - pTarget.py);
+
+          if (spLen > 5) {
+            const sUx = spDx / spLen;
+            const sUy = spDy / spLen;
+
+            // 1. Subtle glow halo behind line
+            ctx.strokeStyle = 'rgba(245, 158, 11, 0.18)';
+            ctx.lineWidth = 4.0;
+            ctx.beginPath();
+            ctx.moveTo(pCam.px, pCam.py);
+            ctx.lineTo(pFwd.px, pFwd.py);
+            ctx.stroke();
+
+            // 2. Main dashed viewing axis line
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([5, 3]);
+            ctx.beginPath();
+            ctx.moveTo(pCam.px, pCam.py);
+            ctx.lineTo(pFwd.px, pFwd.py);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 3. Arrowhead at forward tip pointing in look direction
+            const aLen = Math.min(9.0, Math.max(3.5, distFwd * 0.8));
+            const aWid = aLen * 0.5;
+            const perpX = -sUy * aWid;
+            const perpY = sUx * aWid;
+
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.moveTo(pFwd.px, pFwd.py);
+            ctx.lineTo(pFwd.px - sUx * aLen + perpX, pFwd.py - sUy * aLen + perpY);
+            ctx.lineTo(pFwd.px - sUx * aLen - perpX, pFwd.py - sUy * aLen - perpY);
+            ctx.closePath();
+            ctx.fill();
+
+            // Draggable handle highlight or grip ring at forward tip
+            if (activeEnd === 'fwd') {
+              ctx.save();
+              ctx.shadowColor = '#38bdf8';
+              ctx.shadowBlur = 9;
+              ctx.strokeStyle = '#38bdf8';
+              ctx.lineWidth = 2.0;
+              ctx.beginPath();
+              ctx.arc(pFwd.px, pFwd.py, 9.5, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.fillStyle = isDraggingThis
+                ? 'rgba(56, 189, 248, 0.45)'
+                : 'rgba(56, 189, 248, 0.22)';
+              ctx.fill();
+              ctx.restore();
+            } else {
+              ctx.save();
+              ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+              ctx.lineWidth = 1.0;
+              ctx.beginPath();
+              ctx.arc(pFwd.px, pFwd.py, 5.0, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            // 4. Camera icon & FOV frustum cone at pCam
+            if (distCam >= 14) {
+              const cBoxW = 9;
+              const cBoxH = 7;
+              ctx.fillStyle = 'rgba(217, 119, 6, 0.9)';
+              ctx.strokeStyle = '#fbbf24';
+              ctx.lineWidth = 1.0;
+              ctx.beginPath();
+              ctx.roundRect(pCam.px - cBoxW / 2, pCam.py - cBoxH / 2, cBoxW, cBoxH, 2);
+              ctx.fill();
+              ctx.stroke();
+
+              // Lens circle
+              ctx.beginPath();
+              ctx.arc(
+                pCam.px + sUx * (cBoxW / 2 + 1),
+                pCam.py + sUy * (cBoxH / 2 + 1),
+                2, 0, Math.PI * 2
+              );
+              ctx.fillStyle = '#fbbf24';
+              ctx.fill();
+
+              // Diverging FOV frustum lines
+              const fovLen = Math.min(16.0, distCam * 0.8);
+              const fovAngle = 20 * (Math.PI / 180);
+              const cosA = Math.cos(fovAngle), sinA = Math.sin(fovAngle);
+
+              const r1x = sUx * cosA - sUy * sinA;
+              const r1y = sUx * sinA + sUy * cosA;
+              const r2x = sUx * cosA + sUy * sinA;
+              const r2y = -sUx * sinA + sUy * cosA;
+
+              ctx.strokeStyle = 'rgba(251, 191, 36, 0.55)';
+              ctx.lineWidth = 1.0;
+              ctx.setLineDash([2, 3]);
+              ctx.beginPath();
+              ctx.moveTo(pCam.px, pCam.py);
+              ctx.lineTo(pCam.px + r1x * fovLen, pCam.py + r1y * fovLen);
+              ctx.moveTo(pCam.px, pCam.py);
+              ctx.lineTo(pCam.px + r2x * fovLen, pCam.py + r2y * fovLen);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            } else if (distCam >= 5) {
+              // Compact camera circle dot when foreshortened
+              ctx.fillStyle = '#fbbf24';
+              ctx.strokeStyle = '#0f172a';
+              ctx.lineWidth = 1.0;
+              ctx.beginPath();
+              ctx.arc(pCam.px, pCam.py, 2.5, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+            }
+
+            // Draggable handle highlight or grip ring at camera position
+            if (activeEnd === 'cam') {
+              ctx.save();
+              ctx.shadowColor = '#38bdf8';
+              ctx.shadowBlur = 9;
+              ctx.strokeStyle = '#38bdf8';
+              ctx.lineWidth = 2.0;
+              ctx.beginPath();
+              ctx.arc(pCam.px, pCam.py, 10.5, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.fillStyle = isDraggingThis
+                ? 'rgba(56, 189, 248, 0.45)'
+                : 'rgba(56, 189, 248, 0.22)';
+              ctx.fill();
+              ctx.restore();
+            } else {
+              ctx.save();
+              ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+              ctx.lineWidth = 1.0;
+              ctx.beginPath();
+              ctx.arc(pCam.px, pCam.py, 6.0, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            // 5. Look-at target pivot dot
+            ctx.beginPath();
+            ctx.arc(pTarget.px, pTarget.py, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#fbbf24';
+            ctx.fill();
+            ctx.strokeStyle = '#0f172a';
+            ctx.lineWidth = 1.0;
+            ctx.stroke();
+
+            // 6. Camera View Angle Badge
+            const degAz = Math.round(az * 180 / Math.PI);
+            const degEl = Math.round(el * 180 / Math.PI);
+            const dragSuffix = isDraggingThis ? ' (rotating)' : '';
+            const badgeText = `📷 3D View [θ:${degAz}°, φ:${degEl}°]${dragSuffix}`;
+
+            ctx.font = 'bold 8.5px monospace';
+            const bW = ctx.measureText(badgeText).width + 12;
+            const bH = 16;
+
+            let bX, bY;
+            if (distCam >= 25) {
+              bX = pCam.px + 10;
+              bY = pCam.py - bH - 4;
+              if (bX + bW > rect.x + rect.w - 6) bX = pCam.px - bW - 10;
+            } else {
+              bX = pTarget.px + 12;
+              bY = pTarget.py - bH - 6;
+              if (bX + bW > rect.x + rect.w - 6) bX = pTarget.px - bW - 12;
+            }
+            if (bX < rect.x + 6) bX = rect.x + 6;
+            if (bY < rect.y + 28) bY = pTarget.py + 12;
+            if (bY + bH > rect.y + rect.h - 6) bY = rect.y + rect.h - bH - 6;
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+            ctx.strokeStyle = 'rgba(245, 158, 11, 0.50)';
+            ctx.lineWidth = 1.0;
+            ctx.beginPath();
+            ctx.roundRect(bX, bY, bW, bH, 3);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#fbbf24';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(badgeText, bX + 6, bY + bH / 2 + 0.5);
+          }
+        }
+
+        ctx.restore();
+      }
+
       // 5B. 3D Biplot Basis Rays (for High-D)
       if (is3DCustom && typeof showBiplotRays !== 'undefined' && showBiplotRays && currentDim > 3) {
         if (typeof HighDEngine !== 'undefined' && HighDEngine.getBiplotRays) {
@@ -2569,6 +3061,208 @@
           label, barX + barW / 2, barY - 4
         );
       } // color-bar legend
+
+      // 5.9 Pointer Crosshair & Multi-Panel Coordinate Hover Overlay
+      if (typeof hoveredPanelPointer !== 'undefined' && hoveredPanelPointer !== null &&
+          currentDim >= 3 && maximizedQuad === null &&
+          (typeof isRecon4PanelView === 'undefined' || !isRecon4PanelView) &&
+          (typeof dataMode === 'undefined' || dataMode !== 'image')) {
+
+        const isHoveredQuad = (qIdx === hoveredPanelPointer.qIdx);
+        const isHighD = (currentDim > 3);
+        const dX = (typeof plotDimX === 'number') ? plotDimX : 0;
+        const dY = (typeof plotDimY === 'number') ? plotDimY : 1;
+        const dZ = (typeof plotDimZ === 'number') ? plotDimZ : 2;
+        const isCustomAxes = (isHighD || dX !== 0 || dY !== 1 || dZ !== 2);
+
+        let nameX = isCustomAxes ? `D${dX}` : 'X';
+        let nameY = isCustomAxes ? `D${dY}` : 'Y';
+        let nameZ = isCustomAxes ? `D${dZ}` : 'Z';
+        if (isHighD && typeof highDProjMode !== 'undefined' && highDProjMode === 'pca') {
+          const i0 = (typeof pcaComponentIndices !== 'undefined' &&
+            pcaComponentIndices[0] !== undefined) ? pcaComponentIndices[0] + 1 : 1;
+          const i1 = (typeof pcaComponentIndices !== 'undefined' &&
+            pcaComponentIndices[1] !== undefined) ? pcaComponentIndices[1] + 1 : 2;
+          const i2 = (typeof pcaComponentIndices !== 'undefined' &&
+            pcaComponentIndices[2] !== undefined) ? pcaComponentIndices[2] + 1 : 3;
+          nameX = `PC${i0}`;
+          nameY = `PC${i1}`;
+          nameZ = `PC${i2}`;
+        }
+
+        function formatCoordVal(val) {
+          if (typeof val !== 'number' || isNaN(val)) return '0.000';
+          const sign = val >= 0 ? '+' : '';
+          if (Math.abs(val) >= 100) return sign + val.toFixed(1);
+          if (Math.abs(val) >= 10) return sign + val.toFixed(2);
+          return sign + val.toFixed(3);
+        }
+
+        ctx.save();
+
+        if (isHoveredQuad) {
+          const px = hoveredPanelPointer.screenX;
+          const py = hoveredPanelPointer.screenY;
+
+          // Faint crosshair across hovered quadrant
+          ctx.strokeStyle = 'rgba(148, 163, 184, 0.30)';
+          ctx.lineWidth = 1.0;
+          ctx.setLineDash([3, 4]);
+
+          ctx.beginPath();
+          ctx.moveTo(rect.x, py);
+          ctx.lineTo(rect.x + rect.w, py);
+          ctx.moveTo(px, rect.y);
+          ctx.lineTo(px, rect.y + rect.h);
+          ctx.stroke();
+
+          // Subtle pointer reticle
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.arc(px, py, 4.0, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.70)';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.arc(px, py, 1.5, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.90)';
+          ctx.fill();
+
+          // Coordinate badge for hovered panel
+          let parts = [];
+          if (qIdx === 0) {
+            parts = [
+              { text: `${nameY}: `, color: '#c084fc' },
+              { text: formatCoordVal(hoveredPanelPointer.y) + '  ', color: '#f8fafc' },
+              { text: `${nameZ}: `, color: '#4ade80' },
+              { text: formatCoordVal(hoveredPanelPointer.z), color: '#f8fafc' }
+            ];
+          } else if (qIdx === 1) {
+            parts = [
+              { text: `${nameX}: `, color: '#38bdf8' },
+              { text: formatCoordVal(hoveredPanelPointer.x) + '  ', color: '#f8fafc' },
+              { text: `${nameZ}: `, color: '#4ade80' },
+              { text: formatCoordVal(hoveredPanelPointer.z), color: '#f8fafc' }
+            ];
+          } else if (qIdx === 2) {
+            parts = [
+              { text: `${nameX}: `, color: '#38bdf8' },
+              { text: formatCoordVal(hoveredPanelPointer.x) + '  ', color: '#f8fafc' },
+              { text: `${nameY}: `, color: '#c084fc' },
+              { text: formatCoordVal(hoveredPanelPointer.y), color: '#f8fafc' }
+            ];
+          } else {
+            parts = [
+              { text: `${nameX}: `, color: '#38bdf8' },
+              { text: formatCoordVal(hoveredPanelPointer.x) + ' ', color: '#f8fafc' },
+              { text: `${nameY}: `, color: '#c084fc' },
+              { text: formatCoordVal(hoveredPanelPointer.y) + ' ', color: '#f8fafc' },
+              { text: `${nameZ}: `, color: '#4ade80' },
+              { text: formatCoordVal(hoveredPanelPointer.z), color: '#f8fafc' }
+            ];
+          }
+
+          drawColoredCoordBadge(ctx, px + 10, py - 20, parts, true, rect);
+
+        } else {
+          let u = 0, v = 0;
+          let parts = [];
+
+          if (qIdx === 0) {
+            // ALONG_X (Y-Z plane)
+            u = hoveredPanelPointer.y;
+            v = hoveredPanelPointer.z;
+            parts = [
+              { text: `${nameY}: `, color: '#c084fc' },
+              { text: formatCoordVal(u) + '  ', color: '#f8fafc' },
+              { text: `${nameZ}: `, color: '#4ade80' },
+              { text: formatCoordVal(v), color: '#f8fafc' }
+            ];
+          } else if (qIdx === 1) {
+            // ALONG_Y (X-Z plane)
+            u = hoveredPanelPointer.x;
+            v = hoveredPanelPointer.z;
+            parts = [
+              { text: `${nameX}: `, color: '#38bdf8' },
+              { text: formatCoordVal(u) + '  ', color: '#f8fafc' },
+              { text: `${nameZ}: `, color: '#4ade80' },
+              { text: formatCoordVal(v), color: '#f8fafc' }
+            ];
+          } else if (qIdx === 2) {
+            // ALONG_Z (X-Y plane)
+            u = hoveredPanelPointer.x;
+            v = hoveredPanelPointer.y;
+            parts = [
+              { text: `${nameX}: `, color: '#38bdf8' },
+              { text: formatCoordVal(u) + '  ', color: '#f8fafc' },
+              { text: `${nameY}: `, color: '#c084fc' },
+              { text: formatCoordVal(v), color: '#f8fafc' }
+            ];
+          } else if (qIdx === 3) {
+            // CUSTOM_3D (3D Orbit)
+            const pr = project3D(
+              hoveredPanelPointer.x, hoveredPanelPointer.y, hoveredPanelPointer.z,
+              orbitCamera.azimuth, orbitCamera.elevation
+            );
+            u = pr.u;
+            v = pr.v;
+            parts = [
+              { text: `${nameX}: `, color: '#38bdf8' },
+              { text: formatCoordVal(hoveredPanelPointer.x) + ' ', color: '#f8fafc' },
+              { text: `${nameY}: `, color: '#c084fc' },
+              { text: formatCoordVal(hoveredPanelPointer.y) + ' ', color: '#f8fafc' },
+              { text: `${nameZ}: `, color: '#4ade80' },
+              { text: formatCoordVal(hoveredPanelPointer.z), color: '#f8fafc' }
+            ];
+          }
+
+          const pos = mapMetricToQuad(u, v, qIdx, rect);
+          const px = pos.px;
+          const py = pos.py;
+
+          const inX = (px >= rect.x && px <= rect.x + rect.w);
+          const inY = (py >= rect.y && py <= rect.y + rect.h);
+
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+          ctx.lineWidth = 1.0;
+          ctx.setLineDash([2, 4]);
+
+          ctx.beginPath();
+          if (inY) {
+            ctx.moveTo(rect.x, py);
+            ctx.lineTo(rect.x + rect.w, py);
+          }
+          if (inX) {
+            ctx.moveTo(px, rect.y);
+            ctx.lineTo(px, rect.y + rect.h);
+          }
+          ctx.stroke();
+
+          // Tracking reticle in other panel
+          if (inX && inY) {
+            ctx.setLineDash([]);
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+            ctx.lineWidth = 1.1;
+            ctx.beginPath();
+            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(px, py, 1.2, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.85)';
+            ctx.fill();
+          }
+
+          // Coordinate badge positioned near crosshair and clamped within viewport
+          ctx.setLineDash([]);
+          const badgeX = inX ? (px + 8) : (px < rect.x ? rect.x + 6 : rect.x + rect.w - 120);
+          const badgeY = inY ? (py - 20) : (py < rect.y ? rect.y + 28 : rect.y + rect.h - 22);
+          drawColoredCoordBadge(ctx, badgeX, badgeY, parts, false, rect);
+        }
+
+        ctx.restore();
+      }
 
       if (showViewportHUD) {
         // 6. Viewport Header Overlay & Maximize Button
