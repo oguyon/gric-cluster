@@ -296,7 +296,7 @@
     let clusterUseBatchDist = true; // Multi-Vector SIMD Batch Distance (Default: true)
     let knnUseBatchDist = true; // Multi-Vector SIMD Batch Distance for k-NN (Default: true)
     let knnUseClusterGraph = true; // Cluster Graph Routing (Default: true)
-    let knnEfCluster = 60; // Max cluster centroids evaluated in graph routing
+    let knnEfCluster = 0; // 0 = dynamic auto-calculated cluster budget
     let knnResults = null;
     let selectedKnnQuerySample = -1;
     let hoveredKnnNeighborId = -1;
@@ -1448,7 +1448,7 @@
         clusterUseBatchDist: true,
         knnUseBatchDist: true,
         knnUseClusterGraph: true,
-        knnEfCluster: 60,
+        knnEfCluster: 0,
         dimDensityResults: null,
         dimDensitySummary: null,
         isDimDensityComputing: false,
@@ -2065,7 +2065,7 @@
       knnUseBatchDist = (slot.knnUseBatchDist !== undefined) ? slot.knnUseBatchDist : true;
       knnUseClusterGraph = (slot.knnUseClusterGraph !== undefined)
         ? slot.knnUseClusterGraph : true;
-      knnEfCluster = (slot.knnEfCluster !== undefined) ? slot.knnEfCluster : 60;
+      knnEfCluster = (slot.knnEfCluster !== undefined) ? slot.knnEfCluster : 0;
       dimDensityResults = slot.dimDensityResults || null;
       dimDensitySummary = slot.dimDensitySummary || null;
       isDimDensityComputing = slot.isDimDensityComputing || false;
@@ -2561,7 +2561,7 @@
       slot.clusterUseBatchDist = true;
       slot.knnUseBatchDist = true;
       slot.knnUseClusterGraph = true;
-      slot.knnEfCluster = 60;
+      slot.knnEfCluster = 0;
 
       // Update toolbar status pill & indicators
       const pill = document.getElementById(`datasetStatusPill_${slotId}`);

@@ -1984,7 +1984,7 @@ function buildCliCommand() {
     if (typeof knnUseClusterGraph === 'boolean') {
       if (!knnUseClusterGraph) {
         knnParts.push('-no-cluster-graph');
-      } else if (typeof knnEfCluster === 'number' && knnEfCluster !== 60) {
+      } else if (typeof knnEfCluster === 'number' && knnEfCluster > 0) {
         knnParts.push('-ef-cluster', knnEfCluster.toString());
       }
     }

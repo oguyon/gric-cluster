@@ -3218,11 +3218,12 @@ greedy best-first search instead of exhaustive cluster scans.">
                   <span>Cluster Budget (<span class="badge-pill">-ef-cluster</span>)</span>
                   <div class="val-box">
                     <input type="number" id="inputKnnEfCluster" class="val-input"
-                           min="5" max="500" step="5" value="60">
-                    <span class="val-unit">ef</span>
+                           min="0" max="500" step="5" value="0" placeholder="0=Auto"
+                           title="0 = Dynamic Auto scaling based on k and cluster density">
+                    <span class="val-unit" id="unitKnnEfCluster" style="color: #34d399; font-weight: 600;">Auto</span>
                   </div>
                 </div>
-                <input type="range" id="sliderKnnEfCluster" min="5" max="250" step="5" value="60">
+                <input type="range" id="sliderKnnEfCluster" min="0" max="250" step="5" value="0">
               </div>
 
               <!-- Canvas Ray Overlay Toggle -->

@@ -1951,6 +1951,11 @@
       if (sliderKnnEfCluster && typeof knnEfCluster !== 'undefined') {
         sliderKnnEfCluster.value = Math.min(250, knnEfCluster);
       }
+      const unitKnnEf = document.getElementById('unitKnnEfCluster');
+      if (unitKnnEf && typeof knnEfCluster !== 'undefined') {
+        unitKnnEf.textContent = (knnEfCluster === 0) ? 'Auto' : 'ef';
+        unitKnnEf.style.color = (knnEfCluster === 0) ? '#34d399' : '';
+      }
       const rowKnnEfCluster = document.getElementById('rowKnnEfCluster');
       if (rowKnnEfCluster && typeof knnUseClusterGraph !== 'undefined') {
         rowKnnEfCluster.style.display = knnUseClusterGraph ? 'flex' : 'none';

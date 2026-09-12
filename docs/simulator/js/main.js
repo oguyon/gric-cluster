@@ -6640,7 +6640,7 @@
           if (typeof knnUseClusterGraph !== 'undefined') {
             if (knnUseClusterGraph) {
               args.push('-cluster-graph');
-              if (typeof knnEfCluster !== 'undefined') {
+              if (typeof knnEfCluster !== 'undefined' && knnEfCluster > 0) {
                 args.push('-ef-cluster', String(knnEfCluster));
               }
             } else {
@@ -6648,7 +6648,7 @@
             }
           }
           args.push('-progress');
-          args.push('-txt');
+          args.push('-no-txt');
 
           const consoleEl = document.getElementById('cliConsoleLog');
           const btnRunCli = document.getElementById('btnRunCli');
@@ -7257,10 +7257,19 @@
       });
     }
 
+    const updateEfClusterDisplay = () => {
+      const unitKnnEf = document.getElementById('unitKnnEfCluster');
+      if (unitKnnEf) {
+        unitKnnEf.textContent = (knnEfCluster === 0) ? 'Auto' : 'ef';
+        unitKnnEf.style.color = (knnEfCluster === 0) ? '#34d399' : '';
+      }
+    };
+
     if (sliderKnnEfCluster) {
       sliderKnnEfCluster.addEventListener('input', (e) => {
-        knnEfCluster = parseInt(e.target.value, 10);
+        knnEfCluster = parseInt(e.target.value, 10) || 0;
         if (inputKnnEfCluster) inputKnnEfCluster.value = knnEfCluster;
+        updateEfClusterDisplay();
         updateCliCommand();
         draw();
       });
@@ -7269,9 +7278,10 @@
     if (inputKnnEfCluster) {
       inputKnnEfCluster.addEventListener('input', (e) => {
         const v = parseInt(e.target.value, 10);
-        if (!isNaN(v) && v >= 1) {
+        if (!isNaN(v) && v >= 0) {
           knnEfCluster = v;
           if (sliderKnnEfCluster) sliderKnnEfCluster.value = Math.min(250, v);
+          updateEfClusterDisplay();
           updateCliCommand();
           draw();
         }
@@ -9205,7 +9215,7 @@
           '-k', String(k),
           '--all-queries',
           '-progress',
-          '-txt',
+          '-no-txt',
           '-o', queryOutPrefix
         ];
 
@@ -9245,7 +9255,7 @@
         if (typeof knnUseClusterGraph !== 'undefined') {
           if (knnUseClusterGraph) {
             args.push('-cluster-graph');
-            if (typeof knnEfCluster !== 'undefined') {
+            if (typeof knnEfCluster !== 'undefined' && knnEfCluster > 0) {
               args.push('-ef-cluster', String(knnEfCluster));
             }
           } else {
