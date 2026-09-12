@@ -4700,7 +4700,8 @@
           descEl.innerHTML = BENCHMARK_DESCS[newBench] || `<b>${newBench}</b>`;
         }
 
-        const selSlot = document.getElementById(`selectBenchmark_${activeDatasetSlot}`);
+        const selSlot = document.getElementById(`selectBenchmark_${activeDatasetSlot}`) ||
+          (activeDatasetSlot === 'A' ? document.getElementById('selectBenchmark') : null);
         if (selSlot) selSlot.value = newBench;
 
         if (typeof updateSlotGenState === 'function') {
@@ -9339,17 +9340,17 @@
     }
     const btnAsteroidReconTop = document.getElementById('btnPresetAsteroidReconTop');
     if (btnAsteroidReconTop) {
-      btnAsteroidReconTop.addEventListener('click', () => {
+      btnAsteroidReconTop.addEventListener('click', async () => {
         if (typeof setupAsteroidReconTest === 'function') {
-          setupAsteroidReconTest(10000, 0.80);
+          await setupAsteroidReconTest(10000, 0.80);
         }
       });
     }
     const btnAsteroidReconSide = document.getElementById('btnPresetAsteroidReconSide');
     if (btnAsteroidReconSide) {
-      btnAsteroidReconSide.addEventListener('click', () => {
+      btnAsteroidReconSide.addEventListener('click', async () => {
         if (typeof setupAsteroidReconTest === 'function') {
-          setupAsteroidReconTest(10000, 0.80);
+          await setupAsteroidReconTest(10000, 0.80);
         }
       });
     }
