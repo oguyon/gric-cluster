@@ -869,18 +869,10 @@ static void knn_search_intra_cluster(
     telem->total_candidates_considered += (uint64_t)home_cl->num_members;
     double eps_factor = 1.0 + config->epsilon;
 
-    int start_m = 0;
-    int end_m = home_cl->num_members;
-    double tau_init = knn_heap_peek_max_dist(heap);
-    if (tau_init < 1e20)
-    {
-        float r_min = (float)fmax(0.0, r_home - tau_init / eps_factor);
-        float r_max = (float)(r_home + tau_init / eps_factor);
-        start_m = find_member_lower_bound(home_cl->members, home_cl->num_members, r_min);
-        end_m = find_member_upper_bound(home_cl->members, home_cl->num_members, r_max);
-        telem->level3_annular_pruned +=
-            (uint64_t)start_m + (uint64_t)(home_cl->num_members - end_m);
-    }
+    int num_m = home_cl->num_members;
+    int mid = find_member_lower_bound(home_cl->members, num_m, (float)r_home);
+    int left = mid - 1;
+    int right = mid;
 
     long batch_cand_ids[4];
     const void *batch_ptrs[4];
@@ -894,8 +886,34 @@ static void knn_search_intra_cluster(
     int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
                        visited->query_sq16 != NULL);
 
-    for (int m = start_m; m < end_m; m++)
+    while (left >= 0 || right < num_m)
     {
+        double d_left = (left >= 0) ?
+            fabs(r_home - (double)home_cl->members[left].r_anchor) : 1e30;
+        double d_right = (right < num_m) ?
+            fabs(r_home - (double)home_cl->members[right].r_anchor) : 1e30;
+
+        double min_lb = (d_left <= d_right) ? d_left : d_right;
+        double current_tau = knn_heap_peek_max_dist(heap);
+
+        if (min_lb >= current_tau / eps_factor ||
+            (config->rlim_cutoff > 0.0 && min_lb >= config->rlim_cutoff))
+        {
+            telem->level3_annular_pruned +=
+                (uint64_t)(left + 1) + (uint64_t)(num_m - right);
+            break;
+        }
+
+        int m;
+        if (d_left <= d_right)
+        {
+            m = left--;
+        }
+        else
+        {
+            m = right++;
+        }
+
         long cand_id = (long)home_cl->members[m].frame_id;
 
         if (knn_visited_check_and_mark(visited, cand_id))
@@ -906,16 +924,6 @@ static void knn_search_intra_cluster(
         if (!check_temporal_separation(query_id, cand_id, config))
         {
             telem->temporal_pruned++;
-            continue;
-        }
-
-        double current_tau = knn_heap_peek_max_dist(heap);
-        double r_cand = (double)home_cl->members[m].r_anchor;
-        double lb_annular = fabs(r_home - r_cand);
-
-        if (lb_annular >= current_tau / eps_factor)
-        {
-            telem->level3_annular_pruned++;
             continue;
         }
 
@@ -1060,7 +1068,7 @@ static void knn_search_intra_cluster(
                 batch_count = 0;
             }
         }
-    } // for (int m = start_m; ...)
+    } // while (left >= 0 || right < num_m)
 
     if (batch_count > 0)
     {
@@ -2061,34 +2069,94 @@ static void knn_eval_candidate_cluster_members(
                     continue;
                 }
 
-                const void *cand_ptr = NULL;
-                if (reader->memory_data != NULL)
+                if (!config->use_batch_dist)
                 {
-                    cand_ptr = (const char *)reader->memory_data + (size_t)cand_id * frame_bytes;
-                }
-                else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
-                {
-                    cand_ptr = cand_buffer;
+                    const void *cand_ptr = NULL;
+                    if (reader->memory_data != NULL)
+                    {
+                        cand_ptr = (const char *)reader->memory_data +
+                                   (size_t)cand_id * frame_bytes;
+                    }
+                    else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+                    {
+                        cand_ptr = cand_buffer;
+                    }
+
+                    if (cand_ptr != NULL)
+                    {
+                        telem->framedist_calls++;
+                        double c_tau = (config->rlim_cutoff > 0.0 &&
+                                        config->rlim_cutoff < current_tau)
+                                       ? config->rlim_cutoff
+                                       : current_tau;
+                        double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
+                        double d = compute_euclidean_distance_cutoff(
+                            query_data, cand_ptr, frame_elem, model->is_double, cutoff_sq
+                        );
+                        if (d <= c_tau)
+                        {
+                            record_neighbor_and_reciprocal(
+                                query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                                , bucket_locks
+#endif
+                            );
+                        }
+                    }
+                    continue;
                 }
 
-                if (cand_ptr != NULL)
+                const void *dest = NULL;
+                if (reader->memory_data != NULL)
                 {
-                    telem->framedist_calls++;
-                    double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
-                                   ? config->rlim_cutoff
-                                   : current_tau;
-                    double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
-                    double d = compute_euclidean_distance_cutoff(
-                        query_data, cand_ptr, frame_elem, model->is_double, cutoff_sq
-                    );
-                    if (d <= c_tau)
+                    dest = (const char *)reader->memory_data +
+                           (size_t)cand_id * frame_bytes;
+                }
+                else
+                {
+                    void *buf_dest = (char *)cand_buffer +
+                                     (size_t)(*batch_count) * frame_bytes;
+                    if (knn_reader_read_frame(reader, cand_id, buf_dest) == 0)
                     {
-                        record_neighbor_and_reciprocal(
-                            query_id, cand_id, d, config, model, heap, all_heaps
+                        dest = buf_dest;
+                    }
+                }
+                if (dest != NULL)
+                {
+                    batch_cand_ids[*batch_count] = cand_id;
+                    batch_ptrs[*batch_count] = dest;
+                    (*batch_count)++;
+                    if (*batch_count == 4)
+                    {
+                        double dists[4];
+                        if (model->is_double)
+                        {
+                            framedist_batch_1x4_double(
+                                (const double *)query_data,
+                                (const double *const *)batch_ptrs,
+                                dists,
+                                frame_elem);
+                        }
+                        else
+                        {
+                            framedist_batch_1x4_float(
+                                (const float *)query_data,
+                                (const float *const *)batch_ptrs,
+                                dists,
+                                frame_elem);
+                        }
+                        telem->framedist_calls += 4;
+                        for (int b = 0; b < 4; b++)
+                        {
+                            record_neighbor_and_reciprocal(
+                                query_id, batch_cand_ids[b], dists[b],
+                                config, model, heap, all_heaps
 #ifdef _OPENMP
-                            , bucket_locks
+                                , bucket_locks
 #endif
-                        );
+                            );
+                        }
+                        *batch_count = 0;
                     }
                 }
             } // for (int i = 0; ...)

@@ -186,6 +186,51 @@ static inline uint64_t sq16_dist_squared_cutoff_i16(
     long                    dim,
     uint64_t                ssd_cutoff)
 {
+    if (dim == 3)
+    {
+        int32_t d0 = (int32_t)a[0] - (int32_t)b[0];
+        uint64_t total = (uint64_t)(d0 * d0);
+        if (total > ssd_cutoff)
+        {
+            return ssd_cutoff + 1;
+        }
+        int32_t d1 = (int32_t)a[1] - (int32_t)b[1];
+        total += (uint64_t)(d1 * d1);
+        if (total > ssd_cutoff)
+        {
+            return ssd_cutoff + 1;
+        }
+        int32_t d2 = (int32_t)a[2] - (int32_t)b[2];
+        total += (uint64_t)(d2 * d2);
+        return total;
+    }
+    if (dim == 2)
+    {
+        int32_t d0 = (int32_t)a[0] - (int32_t)b[0];
+        uint64_t total = (uint64_t)(d0 * d0);
+        if (total > ssd_cutoff)
+        {
+            return ssd_cutoff + 1;
+        }
+        int32_t d1 = (int32_t)a[1] - (int32_t)b[1];
+        total += (uint64_t)(d1 * d1);
+        return total;
+    }
+    if (dim < 16)
+    {
+        uint64_t total = 0;
+        for (long k = 0; k < dim; k++)
+        {
+            int32_t diff = (int32_t)a[k] - (int32_t)b[k];
+            total += (uint64_t)(diff * diff);
+            if (total > ssd_cutoff)
+            {
+                return ssd_cutoff + 1;
+            }
+        }
+        return total;
+    }
+
     uint64_t total = 0;
     long i = 0;
 
