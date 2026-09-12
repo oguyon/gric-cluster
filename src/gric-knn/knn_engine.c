@@ -1931,6 +1931,25 @@ static void knn_eval_candidate_cluster_members(
     int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
                        visited->query_sq16 != NULL);
 
+    int    num_active_pivots = 0;
+    double pivot_diffs[MAX_MEASURED_PIVOTS];
+    if (config->use_multi_pivot && num_pivots != NULL && *num_pivots > 0)
+    {
+        for (int p = 0; p < *num_pivots; p++)
+        {
+            int p_cl = pivots[p].cluster_id;
+            if (p_cl == q || p_cl == home_cluster_id)
+            {
+                continue;
+            }
+            double dcc_pq = model->dcc_matrix[(size_t)p_cl * (size_t)M + (size_t)q];
+            if (dcc_pq > 0.0)
+            {
+                pivot_diffs[num_active_pivots++] = fabs(dcc_pq - pivots[p].d_anchor);
+            }
+        }
+    }
+
     while (left >= 0 || right < num_m)
     {
         double d_left = (left >= 0) ?
@@ -2002,33 +2021,21 @@ static void knn_eval_candidate_cluster_members(
             }
         }
 
-        // Multi-Anchor Pivot Bounding (AESA / LAESA Indexing)
-        if (config->use_multi_pivot && *num_pivots > 0)
+        // Multi-Anchor Pivot Bounding (AESA / LAESA Indexing) - Member Level
+        if (num_active_pivots > 0)
         {
             int pruned_by_pivot = 0;
-            for (int p = 0; p < *num_pivots; p++)
+            for (int p = 0; p < num_active_pivots; p++)
             {
-                int p_cl = pivots[p].cluster_id;
-                if (p_cl == q || p_cl == home_cluster_id)
+                double lb_p = fabs(pivot_diffs[p] - r_cand);
+                if (lb_p - sq16_delta >= current_tau / eps_factor ||
+                    (config->rlim_cutoff > 0.0 &&
+                     lb_p - sq16_delta >= config->rlim_cutoff))
                 {
-                    continue;
+                    pruned_by_pivot = 1;
+                    break;
                 }
-                double d_qp = pivots[p].d_anchor;
-                double dcc_pq = model->dcc_matrix[(size_t)p_cl * (size_t)M + (size_t)q];
-                if (dcc_pq > 0.0)
-                {
-                    double lb_p1 = dcc_pq - d_qp - r_cand;
-                    double lb_p2 = d_qp - (dcc_pq + r_cand);
-                    double max_lb_p = (lb_p1 > lb_p2) ? lb_p1 : lb_p2;
-                    if (max_lb_p - sq16_delta >= current_tau / eps_factor ||
-                        (config->rlim_cutoff > 0.0 &&
-                         max_lb_p - sq16_delta >= config->rlim_cutoff))
-                    {
-                        pruned_by_pivot = 1;
-                        break;
-                    }
-                }
-            } // for (int p = 0; ...)
+            }
 
             if (pruned_by_pivot)
             {
