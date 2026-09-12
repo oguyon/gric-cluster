@@ -295,7 +295,15 @@ static void assign_new_cluster_anchor(
     if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
     {
         long dim = current_frame->width * current_frame->height;
-        state->clusters[cl_idx].anchor_sq8 = (uint8_t *)malloc((size_t)dim);
+        if (state->anchor_matrix_sq8 != NULL)
+        {
+            state->clusters[cl_idx].anchor_sq8 =
+                state->anchor_matrix_sq8 + (size_t)cl_idx * (size_t)dim;
+        }
+        else
+        {
+            state->clusters[cl_idx].anchor_sq8 = (uint8_t *)malloc((size_t)dim);
+        }
         if (state->clusters[cl_idx].anchor_sq8 != NULL)
         {
             memcpy(state->clusters[cl_idx].anchor_sq8, state->current_frame_sq8,
@@ -309,7 +317,16 @@ static void assign_new_cluster_anchor(
     if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
     {
         long dim = current_frame->width * current_frame->height;
-        state->clusters[cl_idx].anchor_sq16 = (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+        if (state->anchor_matrix_sq16 != NULL)
+        {
+            state->clusters[cl_idx].anchor_sq16 =
+                state->anchor_matrix_sq16 + (size_t)cl_idx * (size_t)dim;
+        }
+        else
+        {
+            state->clusters[cl_idx].anchor_sq16 =
+                (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+        }
         if (state->clusters[cl_idx].anchor_sq16 != NULL)
         {
             memcpy(state->clusters[cl_idx].anchor_sq16, state->current_frame_sq16,

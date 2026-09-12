@@ -94,6 +94,12 @@ typedef struct
     /* DCC Population telemetry fields */
     uint64_t dcc_entries_populated;    // Populated exact inter-cluster distance pairs
     uint64_t dcc_pairs_total;          // Total possible inter-cluster pairs K*(K-1)/2
+
+    /* Quantized Memoization telemetry fields */
+    uint64_t memo_hits;                // Duplicate samples falling on same quantized cell
+    uint64_t memo_lookups;             // Total lookups in quantized memo cache
+    uint64_t memo_cache_entries;       // Unique quantized cells stored in cache
+    uint64_t memo_cache_capacity;      // Maximum capacity of memoization cache
 } GricClusterShmStatus;
 
 /**

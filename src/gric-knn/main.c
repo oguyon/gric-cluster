@@ -129,6 +129,14 @@ static void print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-sq16-load%s %s<path>%s     Load 16-bit quantized dataset from sidecar file\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-sq16-ratio%s %s<alpha>%s   Max quantization step ratio alpha "
+           "(%sdefault:%s 0.05)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("  %s-memo%s, %s--memo%s             Enable quantized memoization cache\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-no-memo%s, %s--no-memo%s       Disable quantized memoization cache\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-no-batch-dist%s          Disable multi-vector SIMD batch distance\n",
            ansi_color_green, ansi_reset);
     printf("  %s-cluster-graph%s, %s--cluster-graph%s Enable Graph-Guided Cluster Routing "
@@ -181,9 +189,11 @@ int main(
     config.use_angular_bound = 1; // Enabled by default for directional pruning
     config.use_trajectory = 0; // Disabled by default; enable for smooth trajectories
     config.use_sq8 = 1; // Enabled by default for 8-bit metric pre-filtering
+    config.sq16_ratio = 0.05; // Enforce sqrt(D)*scale <= alpha*rlim
+    config.use_memo = 1;      // Enabled by default for quantized memoization
     config.use_batch_dist = 1; // Enabled by default for multi-vector SIMD batching
     config.use_cluster_graph = 1; // Enabled by default for graph-guided cluster routing
-    config.ef_cluster = 60;       // Default cluster budget in graph routing
+    config.ef_cluster = 0;        // 0 = dynamic auto-scaled cluster budget
     config.use_two_hop = 1;       // Enabled by default for 2-hop candidate injection
     config.two_hop_seeds = 2;     // Expand top 2 closest seeds
     config.two_hop_max_cands = 32;// Maximum 2-hop candidate evaluations per query
@@ -466,6 +476,30 @@ int main(
             config.use_sq16 = 1;
             config.use_sq8 = 0;
             config.sq16_approx = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-sq16-ratio") == 0 ||
+                 strcmp(argv[arg_idx], "--sq16-ratio") == 0)
+        {
+            if (arg_idx + 1 < argc)
+            {
+                config.sq16_ratio = atof(argv[++arg_idx]);
+            }
+            else
+            {
+                fprintf(stderr, "Error: -sq16-ratio requires a float argument\n");
+                return 1;
+            }
+        }
+        else if (strcmp(argv[arg_idx], "-memo") == 0 ||
+                 strcmp(argv[arg_idx], "--memo") == 0)
+        {
+            config.use_memo = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-no-memo") == 0 ||
+                 strcmp(argv[arg_idx], "--no-memo") == 0 ||
+                 strcmp(argv[arg_idx], "-nomemo") == 0)
+        {
+            config.use_memo = 0;
         }
         else if (strcmp(argv[arg_idx], "-batch-dist") == 0 ||
                  strcmp(argv[arg_idx], "--batch-dist") == 0 ||
@@ -887,6 +921,16 @@ int main(
                (unsigned long)telemetry.sq16_members_pruned);
         printf("  SQ16 Graph Pruned:         %lu\n",
                (unsigned long)telemetry.sq16_graph_pruned);
+        if (config.use_memo)
+        {
+            printf("  SQ16 Memo Hits:            %lu\n",
+                   (unsigned long)telemetry.memo_hits);
+            if (model.num_unique_frames > 0)
+            {
+                printf("  SQ16 Unique Frames:        %ld / %ld\n",
+                       model.num_unique_frames, model.total_dataset_frames);
+            }
+        }
     }
     else if (config.use_sq8)
     {

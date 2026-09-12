@@ -166,7 +166,11 @@ int format_shm_telemetry_json(
         "      \"last_initial\": %.4f,\n"
         "      \"avg_initial\": %.4f,\n"
         "      \"gate_ratio\": %.4f\n"
-        "    }\n"
+        "    },\n"
+        "    \"memo_hits\": %llu,\n"
+        "    \"memo_lookups\": %llu,\n"
+        "    \"memo_cache_entries\": %llu,\n"
+        "    \"memo_cache_capacity\": %llu\n"
         "  }",
         st.version,
         st.pid,
@@ -203,7 +207,11 @@ int format_shm_telemetry_json(
         st.time_step_refine,
         st.entropy_last_initial,
         st.entropy_avg_initial,
-        st.entropy_gate_ratio);
+        st.entropy_gate_ratio,
+        (unsigned long long)st.memo_hits,
+        (unsigned long long)st.memo_lookups,
+        (unsigned long long)st.memo_cache_entries,
+        (unsigned long long)st.memo_cache_capacity);
 } // format_shm_telemetry_json
 
 void handle_api_cli_status(

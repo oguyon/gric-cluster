@@ -172,6 +172,8 @@ int main(int argc, char *argv[])
     config.optim.xtile_decay = 1.0;
     config.optim.use_sq8 = 1; // Enabled by default for 8-bit metric pre-filtering
     config.optim.use_sq16 = 0;
+    config.optim.use_memo = 1; // Enabled by default when SQ16 is used
+    config.optim.sq16_ratio = 0.05; // Default ratio: sqrt(D)*scale <= 0.05*rlim
     config.optim.use_batch_dist = 1; // Enabled by default for multi-vector SIMD batching
 
     // Tiling defaults (M=1, no tiling)

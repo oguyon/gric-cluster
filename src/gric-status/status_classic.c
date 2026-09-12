@@ -40,6 +40,13 @@ void print_status_classic(
            status->dcc_pairs_total,
            status->framedist_calls_intercluster);
     printf("Candidates Pruned:    %" PRIu64 "\n", status->clusters_pruned);
+    if (status->memo_lookups > 0 || status->memo_cache_entries > 0)
+    {
+        printf("Memo Hits / Lookups:  %" PRIu64 " / %" PRIu64
+               " (cache: %" PRIu64 " / %" PRIu64 ")\n",
+               status->memo_hits, status->memo_lookups,
+               status->memo_cache_entries, status->memo_cache_capacity);
+    }
     printf("Missed Frames:        %" PRIu64 "\n", status->total_missed_frames);
 
     double avg_dists = (status->total_frames_processed > 0)

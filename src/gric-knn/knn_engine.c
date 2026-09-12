@@ -953,6 +953,28 @@ static void knn_search_intra_cluster(
 
         if (!config->use_batch_dist)
         {
+            long rep_id = (model->frame_to_unique_map != NULL) ?
+                          model->frame_to_unique_map[cand_id] : cand_id;
+            double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
+                           ? config->rlim_cutoff
+                           : current_tau;
+            if (visited != NULL && visited->rep_tags != NULL &&
+                visited->rep_tags[rep_id] == visited->epoch)
+            {
+                telem->memo_hits++;
+                double d = (double)visited->rep_dists[rep_id];
+                if (d <= c_tau)
+                {
+                    record_neighbor_and_reciprocal(
+                        query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                        , bucket_locks
+#endif
+                    );
+                }
+                continue;
+            }
+
             const void *cand_ptr = NULL;
             if (reader->memory_data != NULL)
             {
@@ -965,13 +987,15 @@ static void knn_search_intra_cluster(
             if (cand_ptr != NULL)
             {
                 telem->framedist_calls++;
-                double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
-                               ? config->rlim_cutoff
-                               : current_tau;
                 double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
                 double d = compute_euclidean_distance_cutoff(
                     query_data, cand_ptr, frame_elem, model->is_double, cutoff_sq
                 );
+                if (visited != NULL && visited->rep_tags != NULL)
+                {
+                    visited->rep_dists[rep_id] = (float)d;
+                    visited->rep_tags[rep_id] = visited->epoch;
+                }
                 if (d <= c_tau)
                 {
                     record_neighbor_and_reciprocal(
@@ -1267,6 +1291,22 @@ static int knn_warm_start_nearest_cluster(
                 telem->reciprocal_reused++;
                 continue;
             }
+            long rep_id = (model->frame_to_unique_map != NULL) ?
+                          model->frame_to_unique_map[cand_id] : cand_id;
+            if (visited != NULL && visited->rep_tags != NULL &&
+                visited->rep_tags[rep_id] == visited->epoch)
+            {
+                telem->memo_hits++;
+                double d = (double)visited->rep_dists[rep_id];
+                record_neighbor_and_reciprocal(
+                    query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                    , bucket_locks
+#endif
+                );
+                continue;
+            }
+
             const void *cand_data = NULL;
             if (reader->memory_data != NULL)
             {
@@ -1284,6 +1324,11 @@ static int knn_warm_start_nearest_cluster(
                 double d = compute_euclidean_distance(
                     query_data, cand_data, model->frame_elements, model->is_double
                 );
+                if (visited != NULL && visited->rep_tags != NULL)
+                {
+                    visited->rep_dists[rep_id] = (float)d;
+                    visited->rep_tags[rep_id] = visited->epoch;
+                }
                 record_neighbor_and_reciprocal(
                     query_id, cand_id, d, config, model, heap, all_heaps
 #ifdef _OPENMP
@@ -2586,8 +2631,28 @@ static void knn_search_cluster_graph(
     const void *batch_ptrs[4];
     int batch_count = 0;
 
-    int ef_limit = (config->ef_cluster > 0) ? config->ef_cluster : 60;
-    if (ef_limit > M)
+    int ef_limit = config->ef_cluster;
+    if (ef_limit <= 0)
+    {
+        double avg_size = (model->avg_cluster_size > 0.0)
+                          ? model->avg_cluster_size : 50.0;
+        int c_needed = (int)ceil((double)config->k / avg_size);
+        int target = 4 * c_needed;
+        if (target < 12)
+        {
+            target = 12;
+        }
+        if (target > 48)
+        {
+            target = 48;
+        }
+        if (target > M)
+        {
+            target = M;
+        }
+        ef_limit = target;
+    }
+    else if (ef_limit > M)
     {
         ef_limit = M;
     }
@@ -2610,9 +2675,8 @@ static void knn_search_cluster_graph(
             lb_anchor = 0.0;
         }
 
-        /* Early termination: if heap is full and anchor distance is far beyond tau + rlim */
-        if (heap->count >= heap->k && clusters_evaluated >= 20 &&
-            d_anchor > current_tau / eps_factor + rlim)
+        /* Early termination: if heap is full and anchor distance is beyond tau + rlim */
+        if (heap->count >= heap->k && d_anchor > current_tau / eps_factor + rlim)
         {
             break;
         }
@@ -4328,6 +4392,20 @@ static void knn_cross_eval_intra_cluster(
                 continue;
             }
 
+            long rep_id = (model->frame_to_unique_map != NULL) ?
+                          model->frame_to_unique_map[cand_id] : cand_id;
+            if (visited != NULL && visited->rep_tags != NULL &&
+                visited->rep_tags[rep_id] == visited->epoch)
+            {
+                telem->memo_hits++;
+                double d = (double)visited->rep_dists[rep_id];
+                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                {
+                    knn_heap_push(heap, (int)cand_id, d);
+                }
+                continue;
+            }
+
             const void *cand_data = NULL;
             if (cand_reader->memory_data != NULL)
             {
@@ -4345,6 +4423,11 @@ static void knn_cross_eval_intra_cluster(
                 double d = compute_euclidean_distance(
                     query_data, cand_data, frame_elem, model->is_double
                 );
+                if (visited != NULL && visited->rep_tags != NULL)
+                {
+                    visited->rep_dists[rep_id] = (float)d;
+                    visited->rep_tags[rep_id] = visited->epoch;
+                }
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
                     knn_heap_push(heap, (int)cand_id, d);
@@ -4561,6 +4644,20 @@ static void knn_cross_eval_inter_clusters(
                 continue;
             }
 
+            long rep_id = (model->frame_to_unique_map != NULL) ?
+                          model->frame_to_unique_map[cand_id] : cand_id;
+            if (visited != NULL && visited->rep_tags != NULL &&
+                visited->rep_tags[rep_id] == visited->epoch)
+            {
+                telem->memo_hits++;
+                double d = (double)visited->rep_dists[rep_id];
+                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                {
+                    knn_heap_push(heap, (int)cand_id, d);
+                }
+                continue;
+            }
+
             const void *cand_data = NULL;
             if (cand_reader->memory_data != NULL)
             {
@@ -4578,6 +4675,11 @@ static void knn_cross_eval_inter_clusters(
                 double d = compute_euclidean_distance(
                     query_data, cand_data, frame_elem, model->is_double
                 );
+                if (visited != NULL && visited->rep_tags != NULL)
+                {
+                    visited->rep_dists[rep_id] = (float)d;
+                    visited->rep_tags[rep_id] = visited->epoch;
+                }
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
                     knn_heap_push(heap, (int)cand_id, d);
@@ -5205,6 +5307,7 @@ int knn_run_search(
     uint64_t global_telem_two_hop_evals = 0;
     uint64_t global_telem_two_hop_pruned = 0;
     uint64_t global_telem_two_hop_injected = 0;
+    uint64_t global_telem_memo_hits = 0;
 
 #ifdef _OPENMP
 #pragma omp parallel reduction(+:global_telem_calls, global_telem_l1,                   \
@@ -5221,7 +5324,8 @@ int knn_run_search(
                                  global_telem_graph_clusters,                           \
                                  global_telem_two_hop_evals,                            \
                                  global_telem_two_hop_pruned,                           \
-                                 global_telem_two_hop_injected)
+                                 global_telem_two_hop_injected,                         \
+                                 global_telem_memo_hits)
 #endif
     {
         KnnFrameReader thread_cand_reader;
@@ -5279,6 +5383,13 @@ int knn_run_search(
         visited.epoch = 1;
         visited.query_sq8 = query_sq8;
         visited.query_sq16 = query_sq16;
+        visited.rep_tags = NULL;
+        visited.rep_dists = NULL;
+        if (config->use_memo && model->frame_to_unique_map != NULL)
+        {
+            visited.rep_tags = (uint32_t *)calloc((size_t)N_cand, sizeof(uint32_t));
+            visited.rep_dists = (float *)malloc((size_t)N_cand * sizeof(float));
+        }
 
 #ifdef _OPENMP
 #pragma omp for schedule(guided, 16)
@@ -5291,6 +5402,10 @@ int knn_run_search(
                 if (visited.tags != NULL)
                 {
                     memset(visited.tags, 0, (size_t)N_cand * sizeof(uint32_t));
+                }
+                if (visited.rep_tags != NULL)
+                {
+                    memset(visited.rep_tags, 0, (size_t)N_cand * sizeof(uint32_t));
                 }
                 visited.epoch = 1;
             }
@@ -5396,10 +5511,21 @@ int knn_run_search(
         global_telem_two_hop_evals += thread_telem.two_hop_evaluations;
         global_telem_two_hop_pruned += thread_telem.two_hop_pruned;
         global_telem_two_hop_injected += thread_telem.two_hop_injected;
+        global_telem_memo_hits += thread_telem.memo_hits;
 
         if (visited.tags != NULL)
         {
             free(visited.tags);
+        }
+
+        if (visited.rep_tags != NULL)
+        {
+            free(visited.rep_tags);
+        }
+
+        if (visited.rep_dists != NULL)
+        {
+            free(visited.rep_dists);
         }
 
         if (query_sq8 != NULL)
@@ -5499,6 +5625,8 @@ int knn_run_search(
     telemetry->two_hop_evaluations = global_telem_two_hop_evals;
     telemetry->two_hop_pruned = global_telem_two_hop_pruned;
     telemetry->two_hop_injected = global_telem_two_hop_injected;
+    telemetry->memo_hits = global_telem_memo_hits;
+    telemetry->memo_unique_frames = (uint64_t)model->num_unique_frames;
     telemetry->total_candidates_considered = global_telem_cand;
     telemetry->time_search_ms = (end_time.tv_sec - start_time.tv_sec) * 1000.0 +
                                 (end_time.tv_nsec - start_time.tv_nsec) / 1000000.0;

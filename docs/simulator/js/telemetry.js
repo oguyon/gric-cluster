@@ -16,6 +16,10 @@
     let pruneCount4P = 0;           // Pruned candidates via 4-Point
     let pruneCount5P = 0;           // Pruned candidates via 5-Point
     let predHitCount = 0;           // Successful sequence/TM predictor hits
+    let memoHits = 0;               // Quantized memoization cache hits
+    let memoLookups = 0;            // Quantized memoization lookup attempts
+    let memoCacheEntries = 0;       // Quantized memoization hash table entries
+    let memoCacheCapacity = 0;      // Quantized memoization hash table capacity
 
     // High-Resolution Execution Profiling
     let totalComputeTimeMs = 0.0;
@@ -1453,6 +1457,8 @@
       const sq8PctVal = document.getElementById('knnSq8PctVal');
       const sq8BreakdownVal = document.getElementById('knnSq8BreakdownVal');
       const clustersGraphVal = document.getElementById('knnClustersGraphVal');
+      const knnMemoHitsVal = document.getElementById('knnStatMemoHitsVal');
+      const knnLblMemoHits = document.getElementById('knnLblMemoHits');
 
       // Progress / Stacked bars
       const pruneSumTxt = document.getElementById('knnPruneSummaryTxt');
@@ -1476,6 +1482,8 @@
       const memResultsEl = document.getElementById('knnMemResultsVal');
       const memTotalEl = document.getElementById('knnMemTotalVal');
       const memPerFrameEl = document.getElementById('knnMemPerFrameVal');
+      const knnMemHashCacheVal = document.getElementById('knnMemHashCacheVal');
+      const knnMemUniqueVal = document.getElementById('knnMemUniqueVal');
 
       // Scaling tab elements
       const evalRateEl = document.getElementById('knnEvalRateVal');
@@ -1519,6 +1527,8 @@
         if (sq8PctVal) sq8PctVal.textContent = '0%';
         if (sq8BreakdownVal) sq8BreakdownVal.textContent = 'Members: 0 | Graph: 0';
         if (clustersGraphVal) clustersGraphVal.textContent = '0';
+        if (knnMemoHitsVal) knnMemoHitsVal.textContent = '0';
+        if (knnLblMemoHits) knnLblMemoHits.textContent = 'Memo Hits';
 
         if (pruneSumTxt) pruneSumTxt.textContent = '0% Pruned';
         if (barPruned) barPruned.style.width = '0%';
@@ -1540,6 +1550,8 @@
         if (memResultsEl) memResultsEl.textContent = '0 B';
         if (memTotalEl) memTotalEl.textContent = '0 KB';
         if (memPerFrameEl) memPerFrameEl.textContent = '0 bytes / frame';
+        if (knnMemHashCacheVal) knnMemHashCacheVal.textContent = '0 B';
+        if (knnMemUniqueVal) knnMemUniqueVal.textContent = '0 unq';
 
         if (evalRateEl) evalRateEl.textContent = '0 M/s';
         if (perQueryLatEl) perQueryLatEl.textContent = '0.0 µs';
@@ -1656,6 +1668,13 @@
         const cgEvals = telem.clustersGraphEvaluated || 0;
         clustersGraphVal.textContent = cgEvals.toLocaleString();
       }
+      const memoHits = telem.memoHits || 0;
+      if (knnMemoHitsVal) knnMemoHitsVal.textContent = memoHits.toLocaleString();
+      if (knnLblMemoHits) {
+        const totalCandidates = telem.framedistCalls + memoHits;
+        const pct = totalCandidates > 0 ? ((memoHits / totalCandidates) * 100).toFixed(1) : '0.0';
+        knnLblMemoHits.textContent = `Memo Hits (${pct}%)`;
+      }
 
       const totalHierarchy = Math.max(1, l1 + l2 + l3 + temp + sqPruned + dists);
       if (barL1) barL1.style.width = `${((l1 / totalHierarchy) * 100).toFixed(1)}%`;
@@ -1681,6 +1700,14 @@
       if (memResultsEl) memResultsEl.textContent = formatBytes(memResults);
       if (memTotalEl) memTotalEl.textContent = formatBytes(memTotal);
       if (memPerFrameEl) memPerFrameEl.textContent = `${(memTotal / Math.max(1, N)).toFixed(1)} bytes / frame`;
+
+      const uniqueFrames = (typeof telem.memoUniqueFrames === 'number' && telem.memoUniqueFrames > 0)
+        ? telem.memoUniqueFrames : N;
+      if (knnMemUniqueVal) knnMemUniqueVal.textContent = `${uniqueFrames.toLocaleString()} unq`;
+      if (knnMemHashCacheVal) {
+        const poolBytes = (N * 4) + (uniqueFrames * D * 2);
+        knnMemHashCacheVal.textContent = formatBytes(poolBytes);
+      }
 
       // 4. Scaling Tab
       const evalRate = timeCompute > 0
@@ -2494,6 +2521,30 @@
       const statPredHits = document.getElementById('statPredHits');
       if (statPredHits) statPredHits.innerText = formatNumber(predHitCount);
 
+      // Quantized Memoization Telemetry
+      const statMemoHitsEl = document.getElementById('statMemoHits');
+      if (statMemoHitsEl) statMemoHitsEl.textContent = (memoHits || 0).toLocaleString();
+      const statMemoHitsOverview = document.getElementById('statMemoHitsOverview');
+      const memoPct = memoLookups > 0 ? (((memoHits || 0) / memoLookups) * 100).toFixed(1) : '0.0';
+      if (statMemoHitsOverview) {
+        statMemoHitsOverview.textContent = `${(memoHits || 0).toLocaleString()} (${memoPct}%)`;
+      }
+      const lblMemoHitsEl = document.getElementById('lblMemoHits');
+      if (lblMemoHitsEl) {
+        lblMemoHitsEl.textContent = `Memo Hits (${memoPct}%)`;
+      }
+
+      const memHashCacheEl = document.getElementById('memHashCache');
+      const cacheBytes = (memoCacheCapacity || 0) * 32;
+      const cacheStr = cacheBytes > 0 ? formatBytes(cacheBytes) : '0 B';
+      if (memHashCacheEl) memHashCacheEl.textContent = cacheStr;
+      const statHashCacheOverview = document.getElementById('statHashCacheOverview');
+      if (statHashCacheOverview) statHashCacheOverview.textContent = `Cache: ${cacheStr}`;
+      const lblHashCacheEl = document.getElementById('lblHashCache');
+      if (lblHashCacheEl) {
+        lblHashCacheEl.textContent = `Hash Cache (${(memoCacheEntries || 0).toLocaleString()} entries)`;
+      }
+
       // Shannon Entropy Diagnostics in Compute Panel
       const statDiagAvgInfoGain = document.getElementById('statDiagAvgInfoGain');
       if (statDiagAvgInfoGain) {
@@ -3049,6 +3100,10 @@
       pruneCount4P = 0;
       pruneCount5P = 0;
       predHitCount = 0;
+      memoHits = 0;
+      memoLookups = 0;
+      memoCacheEntries = 0;
+      memoCacheCapacity = 0;
       totalComputeTimeMs = 0.0;
       lastComputeTimeMs = 0.0;
       avgComputeTimeMs = 0.0;

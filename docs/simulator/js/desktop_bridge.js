@@ -768,7 +768,11 @@ const DesktopBridge = (function () {
       pruned: 0,
       rssKb: 0,
       predHits: 0,
-      predAttempts: 0
+      predAttempts: 0,
+      memoLookups: 0,
+      memoHits: 0,
+      memoCacheEntries: 0,
+      memoCacheCapacity: 0
     };
 
     try {
@@ -802,6 +806,14 @@ const DesktopBridge = (function () {
             results.stats.predHits = parseInt(trimmed.substring(16).trim(), 10) || 0;
           } else if (trimmed.startsWith('STATS_PRED_ATTEMPTS:')) {
             results.stats.predAttempts = parseInt(trimmed.substring(20).trim(), 10) || 0;
+          } else if (trimmed.startsWith('STATS_MEMO_LOOKUPS:')) {
+            results.stats.memoLookups = parseInt(trimmed.substring(19).trim(), 10) || 0;
+          } else if (trimmed.startsWith('STATS_MEMO_HITS:')) {
+            results.stats.memoHits = parseInt(trimmed.substring(16).trim(), 10) || 0;
+          } else if (trimmed.startsWith('STATS_MEMO_CACHE_ENTRIES:')) {
+            results.stats.memoCacheEntries = parseInt(trimmed.substring(25).trim(), 10) || 0;
+          } else if (trimmed.startsWith('STATS_MEMO_CACHE_CAPACITY:')) {
+            results.stats.memoCacheCapacity = parseInt(trimmed.substring(26).trim(), 10) || 0;
           }
         }
       }
@@ -1040,6 +1052,15 @@ const DesktopBridge = (function () {
 
     if (telem.sq16TotalPruned && !telem.sq16MembersPruned && !telem.sq16GraphPruned) {
       telem.sq16MembersPruned = telem.sq16TotalPruned;
+    }
+
+    const mMemoHits = clean.match(/SQ16 Memo Hits:\s+(\d+)/);
+    if (mMemoHits) telem.memoHits = parseInt(mMemoHits[1], 10);
+
+    const mUnique = clean.match(/SQ16 Unique Frames:\s+(\d+)\s*\/\s*(\d+)/);
+    if (mUnique) {
+      telem.memoUniqueFrames = parseInt(mUnique[1], 10);
+      telem.memoTotalFrames = parseInt(mUnique[2], 10);
     }
 
     const mTime = clean.match(/Search Wall Time:\s+([\d.]+)\s*ms/);

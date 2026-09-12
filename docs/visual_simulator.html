@@ -1619,6 +1619,24 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                 </div>
               </div>
 
+              <!-- SQ16 Ratio & Memoization Cache Controls -->
+              <div class="toggle-slider-row" id="rowSq16Ratio" style="margin-top: 4px; margin-bottom: 2px;">
+                <div id="optMemo" class="toggle-btn active"
+                     data-tooltip-title="Quantized Memoization Cache"
+                     data-tooltip-badge="CLI: -memo"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Enables open-addressing hash cache on SQ16 vectors for O(1) duplicate frame membership lookup.">
+                  -memo
+                </div>
+                <div class="param-slider-col" id="colSq16Ratio">
+                  <div class="param-label">
+                    <span>SQ16 Ratio (<span class="badge-pill">--sq16-ratio</span>)</span>
+                    <input type="number" id="inputSq16Ratio" class="val-input" min="0.005" max="0.50" step="0.005" value="0.05">
+                  </div>
+                  <input type="range" id="sliderSq16Ratio" min="0.005" max="0.50" step="0.005" value="0.05">
+                </div>
+              </div>
+
               <!-- Multi-Vector SIMD Batch Distance -->
               <div class="toggle-group"
                    style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 2px;">
@@ -2712,6 +2730,10 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                       <span style="color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;">D<sub>cc</sub> Pop</span>
                       <span id="statDccPopBadge" style="color: #c084fc; font-weight: 700;" title="Populated cluster pairs in D_cc">0 (0.0%)</span>
                     </div>
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; font-family: monospace; font-size: 0.78rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 2px; margin-top: 1px;">
+                      <span style="color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;">Memo Hits</span>
+                      <span id="statMemoHitsOverview" style="color: #34d399; font-weight: 700;" title="Quantized memoization cache hits">0 (0.0%)</span>
+                    </div>
                   </div>
                   <span id="statDistRatio" style="display: none;">0 / 0</span>
                   <div class="lbl" id="lblStatDistRatio" style="margin-top: 3px; font-size: 0.70rem;">Distance &amp; D<sub>cc</sub> Breakdown</div>
@@ -2723,6 +2745,7 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                      data-tooltip-desc="Total estimated memory occupied by cluster centroids, inter-cluster matrix, and transition probabilities.">
                   <div id="statMemoryTotal" class="num" style="color: var(--accent-purple); font-size: 1.05rem;">0 KB</div>
                   <div class="lbl">Total Memory</div>
+                  <div id="statHashCacheOverview" style="font-size: 0.68rem; color: #38bdf8; margin-top: 2px; font-family: monospace;" title="Quantized memoization hash table memory">Cache: 0 B</div>
                 </div>
               </div>
 
@@ -2768,12 +2791,16 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                   <div id="memHeap" class="num" style="color: var(--accent-amber);">0 MB</div>
                   <div class="lbl">Browser JS Heap</div>
                 </div>
+                <div class="stat-box" style="grid-column: span 2;">
+                  <div id="memHashCache" class="num" style="color: #38bdf8;">0 B</div>
+                  <div id="lblHashCache" class="lbl">Hash Cache (0 entries)</div>
+                </div>
               </div>
             </div>
 
             <!-- Sub-Tab 4: Compute Latency & Pruning Counters -->
             <div id="resComputePanel" style="display: none;">
-              <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+              <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
                 <div class="stat-box">
                   <div id="statPrune3P" class="num" style="color: #f87171;">0</div>
                   <div class="lbl">3P Pruned</div>
@@ -2785,6 +2812,10 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                 <div class="stat-box">
                   <div id="statPrune5P" class="num" style="color: #facc15;">0</div>
                   <div class="lbl">5P Pruned</div>
+                </div>
+                <div class="stat-box">
+                  <div id="statMemoHits" class="num" style="color: #34d399;">0</div>
+                  <div id="lblMemoHits" class="lbl">Memo Hits (0.0%)</div>
                 </div>
               </div>
               <div style="margin-top: 8px; background: #0f172a; border-radius: 4px; padding: 8px; border: 1px solid var(--card-border);">
@@ -3139,6 +3170,24 @@ integer lower-bound metric pruning (256x tighter bounds, zero-unpack AVX2).">
                 </div>
               </div>
 
+              <!-- KNN SQ16 Ratio & Memoization Cache Controls -->
+              <div class="toggle-slider-row" id="rowKnnSq16Ratio" style="margin-top: 4px; margin-bottom: 2px;">
+                <div id="btnKnnMemo" class="toggle-btn toggle-active toggle-cyan active"
+                     data-tooltip-title="Quantized Memoization & Unique Vector Pool"
+                     data-tooltip-badge="CLI: -memo"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Deduplicates dataset frames into unique SQ16 vectors and memoizes query distances.">
+                  -memo
+                </div>
+                <div class="param-slider-col" id="colKnnSq16Ratio">
+                  <div class="param-label">
+                    <span>SQ16 Ratio (<span class="badge-pill">--sq16-ratio</span>)</span>
+                    <input type="number" id="inputKnnSq16Ratio" class="val-input" min="0.005" max="0.50" step="0.005" value="0.05">
+                  </div>
+                  <input type="range" id="sliderKnnSq16Ratio" min="0.005" max="0.50" step="0.005" value="0.05">
+                </div>
+              </div>
+
               <!-- Multi-Vector SIMD Batch Distance -->
               <div class="toggle-group" style="grid-template-columns: 1fr; margin-top: 4px; margin-bottom: 2px;">
                 <div id="btnKnnBatchDist" class="toggle-btn toggle-active toggle-cyan active"
@@ -3410,6 +3459,14 @@ best-first graph routing instead of brute-force cluster scanning.">
                   <div id="knnClustersGraphVal" class="num" style="color: #c084fc;">0</div>
                   <div class="lbl">Cluster Graph Evals</div>
                 </div>
+                <div class="stat-box"
+                     data-tooltip-title="Quantized Memoization Cache Hits"
+                     data-tooltip-badge="Memo Hits"
+                     data-tooltip-color="green"
+                     data-tooltip-desc="Candidate distance calculations bypassed through identical SQ16 vector memoization.">
+                  <div id="knnStatMemoHitsVal" class="num" style="color: #34d399;">0</div>
+                  <div class="lbl" id="knnLblMemoHits">Memo Hits</div>
+                </div>
               </div>
 
               <!-- Multi-Level Stacked Hierarchy Bar -->
@@ -3477,6 +3534,14 @@ best-first graph routing instead of brute-force cluster scanning.">
                      data-tooltip-desc="Output table holding top-k neighbor indices (int32) and Euclidean distances (float64) for all N queries.">
                   <div id="knnMemResultsVal" class="num" style="color: #fbbf24;">0 B</div>
                   <div class="lbl">Top-k Results Buffer</div>
+                </div>
+                <div class="stat-box" style="grid-column: span 2;"
+                     data-tooltip-title="SQ16 Unique Vector Pool &amp; Deduplication"
+                     data-tooltip-badge="RAM"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Unique vector representative pool deduplicating identical quantized frames.">
+                  <div id="knnMemHashCacheVal" class="num" style="color: #38bdf8;">0 B</div>
+                  <div class="lbl">Unique Pool (<span id="knnMemUniqueVal">0 unq</span>)</div>
                 </div>
               </div>
               <div style="margin-top: 8px; background: #0f172a; border-radius: 4px; padding: 8px; border: 1px solid var(--card-border);">
