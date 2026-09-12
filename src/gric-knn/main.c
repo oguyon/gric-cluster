@@ -186,6 +186,7 @@ int main(
     config.progress_mode = 0;
     config.verbose_level = 1;
     config.use_reciprocal = 1; // Enabled by default for bidirectional search
+    config.use_multi_pivot = 1; // Enabled by default for multi-anchor pivot bounding
     config.use_angular_bound = 1; // Enabled by default for directional pruning
     config.use_trajectory = 0; // Disabled by default; enable for smooth trajectories
     config.use_sq8 = 1; // Enabled by default for 8-bit metric pre-filtering
