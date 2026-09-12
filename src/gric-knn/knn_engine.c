@@ -38,7 +38,7 @@ typedef struct
     double dcc;
 } ClusterScore;
 
-#define MAX_MEASURED_PIVOTS 8
+#define MAX_MEASURED_PIVOTS 16
 #define GRAPH_FRONTIER_MAX 256
 #define KNN_NUM_BUCKET_LOCKS 4096
 #define KNN_BUCKET_LOCK_MASK (KNN_NUM_BUCKET_LOCKS - 1)
@@ -117,6 +117,62 @@ static inline int is_in_pivots(
             return 1;
         }
     }
+    return 0;
+}
+
+/**
+ * is_cluster_pruned_by_pivots() - Check if all cluster members are pruned via pivots.
+ * @c:           Candidate cluster index.
+ * @cl_radius:   Radius of candidate cluster c.
+ * @current_tau: Current search horizon.
+ * @eps_factor:  1.0 + epsilon slack factor.
+ * @model:       Active KnnModel.
+ * @config:      Active KnnConfig.
+ * @pivots:      Array of measured anchor pivots.
+ * @num_pivots:  Number of active pivots.
+ * @sq16_delta:  Quantization error allowance.
+ *
+ * Return: 1 if cluster is guaranteed to have no members within current_tau, 0 otherwise.
+ */
+static inline int is_cluster_pruned_by_pivots(
+    int                  c,
+    double               cl_radius,
+    double               current_tau,
+    double               eps_factor,
+    const KnnModel      *model,
+    const KnnConfig     *config,
+    const MeasuredPivot *pivots,
+    int                  num_pivots,
+    double               sq16_delta)
+{
+    if (!config->use_multi_pivot || pivots == NULL || num_pivots <= 0)
+    {
+        return 0;
+    }
+
+    size_t M = (size_t)model->num_clusters;
+    for (int p = 0; p < num_pivots; p++)
+    {
+        int p_cl = pivots[p].cluster_id;
+        if (p_cl == c)
+        {
+            continue;
+        }
+
+        double dcc_pc = model->dcc_matrix[(size_t)p_cl * M + (size_t)c];
+        if (dcc_pc > 0.0)
+        {
+            double d_qp = pivots[p].d_anchor;
+            double lb_p = fabs(d_qp - dcc_pc) - cl_radius;
+            if (lb_p - sq16_delta >= current_tau / eps_factor ||
+                (config->rlim_cutoff > 0.0 &&
+                 lb_p - sq16_delta >= config->rlim_cutoff))
+            {
+                return 1;
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -863,14 +919,27 @@ static void knn_search_intra_cluster(
         double d_right = (right < num_m) ?
             fabs(r_home - (double)home_cl->members[right].r_anchor) : 1e30;
 
-        double min_lb = (d_left <= d_right) ? d_left : d_right;
         double current_tau = knn_heap_peek_max_dist(heap);
-
-        if (min_lb >= current_tau / eps_factor ||
-            (config->rlim_cutoff > 0.0 && min_lb >= config->rlim_cutoff))
+        double tau_thresh = current_tau / eps_factor;
+        if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
         {
-            telem->level3_annular_pruned +=
-                (uint64_t)(left + 1) + (uint64_t)(num_m - right);
+            tau_thresh = config->rlim_cutoff;
+        }
+
+        if (left >= 0 && d_left >= tau_thresh)
+        {
+            telem->level3_annular_pruned += (uint64_t)(left + 1);
+            left = -1;
+            d_left = 1e30;
+        }
+        if (right < num_m && d_right >= tau_thresh)
+        {
+            telem->level3_annular_pruned += (uint64_t)(num_m - right);
+            right = num_m;
+            d_right = 1e30;
+        }
+        if (left < 0 && right >= num_m)
+        {
             break;
         }
 
@@ -1875,6 +1944,25 @@ static void knn_eval_candidate_cluster_members(
     int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
                        visited->query_sq16 != NULL);
 
+    int    num_active_pivots = 0;
+    double pivot_diffs[MAX_MEASURED_PIVOTS];
+    if (config->use_multi_pivot && num_pivots != NULL && *num_pivots > 0)
+    {
+        for (int p = 0; p < *num_pivots; p++)
+        {
+            int p_cl = pivots[p].cluster_id;
+            if (p_cl == q || p_cl == home_cluster_id)
+            {
+                continue;
+            }
+            double dcc_pq = model->dcc_matrix[(size_t)p_cl * (size_t)M + (size_t)q];
+            if (dcc_pq > 0.0)
+            {
+                pivot_diffs[num_active_pivots++] = fabs(dcc_pq - pivots[p].d_anchor);
+            }
+        }
+    }
+
     while (left >= 0 || right < num_m)
     {
         double d_left = (left >= 0) ?
@@ -1882,14 +1970,27 @@ static void knn_eval_candidate_cluster_members(
         double d_right = (right < num_m) ?
             fabs(d_anchor - (double)cl->members[right].r_anchor) : 1e30;
 
-        double min_lb = (d_left <= d_right) ? d_left : d_right;
         current_tau = knn_heap_peek_max_dist(heap);
-
-        if (min_lb - sq16_delta >= current_tau / eps_factor ||
-            (config->rlim_cutoff > 0.0 && min_lb - sq16_delta >= config->rlim_cutoff))
+        double tau_thresh = current_tau / eps_factor;
+        if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
         {
-            telem->level3_annular_pruned +=
-                (uint64_t)(left + 1) + (uint64_t)(num_m - right);
+            tau_thresh = config->rlim_cutoff;
+        }
+
+        if (left >= 0 && (d_left - sq16_delta >= tau_thresh))
+        {
+            telem->level3_annular_pruned += (uint64_t)(left + 1);
+            left = -1;
+            d_left = 1e30;
+        }
+        if (right < num_m && (d_right - sq16_delta >= tau_thresh))
+        {
+            telem->level3_annular_pruned += (uint64_t)(num_m - right);
+            right = num_m;
+            d_right = 1e30;
+        }
+        if (left < 0 && right >= num_m)
+        {
             break;
         }
 
@@ -1924,8 +2025,7 @@ static void knn_eval_candidate_cluster_members(
         {
             lb1 = 0.0;
         }
-        if (lb1 >= current_tau / eps_factor ||
-            (config->rlim_cutoff > 0.0 && lb1 >= config->rlim_cutoff))
+        if (lb1 >= tau_thresh)
         {
             telem->level3_annular_pruned++;
             continue;
@@ -1934,45 +2034,33 @@ static void knn_eval_candidate_cluster_members(
         // Secondary pivot lower bound: home anchor A_home
         if (dcc_home > 0.0)
         {
-            double lb_home1 = dcc_home - r_cand - r_home;
-            double lb_home2 = r_home - (dcc_home + r_cand);
-            double max_lb_home = (lb_home1 > lb_home2) ? lb_home1 : lb_home2;
-            if (max_lb_home - sq16_delta >= current_tau / eps_factor ||
-                (config->rlim_cutoff > 0.0 &&
-                 max_lb_home - sq16_delta >= config->rlim_cutoff))
+            double diff_home = dcc_home - r_cand;
+            double lb_home = fabs(diff_home) - r_home;
+            if (lb_home - sq16_delta >= tau_thresh)
             {
                 telem->level3_annular_pruned++;
                 continue;
             }
         }
 
-        // Multi-Anchor Pivot Bounding (AESA / LAESA Indexing)
-        if (config->use_multi_pivot && *num_pivots > 0)
+        // Multi-Anchor Pivot Bounding (AESA / LAESA Indexing) - Member Level
+        if (num_active_pivots > 0)
         {
             int pruned_by_pivot = 0;
-            for (int p = 0; p < *num_pivots; p++)
+            double target_thresh = tau_thresh + sq16_delta;
+            for (int p = 0; p < num_active_pivots; p++)
             {
-                int p_cl = pivots[p].cluster_id;
-                if (p_cl == q || p_cl == home_cluster_id)
+                double diff = pivot_diffs[p] - r_cand;
+                if (diff < 0.0)
                 {
-                    continue;
+                    diff = -diff;
                 }
-                double d_qp = pivots[p].d_anchor;
-                double dcc_pq = model->dcc_matrix[(size_t)p_cl * (size_t)M + (size_t)q];
-                if (dcc_pq > 0.0)
+                if (diff >= target_thresh)
                 {
-                    double lb_p1 = dcc_pq - d_qp - r_cand;
-                    double lb_p2 = d_qp - (dcc_pq + r_cand);
-                    double max_lb_p = (lb_p1 > lb_p2) ? lb_p1 : lb_p2;
-                    if (max_lb_p - sq16_delta >= current_tau / eps_factor ||
-                        (config->rlim_cutoff > 0.0 &&
-                         max_lb_p - sq16_delta >= config->rlim_cutoff))
-                    {
-                        pruned_by_pivot = 1;
-                        break;
-                    }
+                    pruned_by_pivot = 1;
+                    break;
                 }
-            } // for (int p = 0; ...)
+            }
 
             if (pruned_by_pivot)
             {
@@ -2177,6 +2265,9 @@ static void knn_search_inter_clusters(
     long batch_cand_ids[4];
     const void *batch_ptrs[4];
     int batch_count = 0;
+    double sq16_delta = (config->use_sq16 && model->sq16_dataset_buffer != NULL)
+                        ? 2.0 * (double)model->sq16_params.err_radius
+                        : 0.0;
 
     for (int idx = 0; idx < num_cand_clusters; idx++)
     {
@@ -2291,6 +2382,15 @@ static void knn_search_inter_clusters(
         if (lb_anchor >= current_tau / eps_factor)
         {
             telem->level2_anchors_pruned++;
+            continue;
+        }
+
+        if (is_cluster_pruned_by_pivots(
+                q, cl->radius, current_tau, eps_factor, model, config,
+                pivots, (num_pivots != NULL) ? *num_pivots : 0, sq16_delta))
+        {
+            telem->level1_clusters_pruned++;
+            telem->multi_pivot_pruned++;
             continue;
         }
 
@@ -2481,6 +2581,9 @@ static void knn_search_cluster_graph(
         ef_limit = M;
     }
     int clusters_evaluated = 0;
+    double sq16_delta = (config->use_sq16 && model->sq16_dataset_buffer != NULL)
+                        ? 2.0 * (double)model->sq16_params.err_radius
+                        : 0.0;
 
     while (pq_size > 0 && clusters_evaluated < ef_limit)
     {
@@ -2505,25 +2608,32 @@ static void knn_search_cluster_graph(
             break;
         }
 
+        /* Record measured anchor pivot if useful */
+        if (num_pivots != NULL && *num_pivots < MAX_MEASURED_PIVOTS)
+        {
+            if (!is_in_pivots(c, pivots, *num_pivots))
+            {
+                pivots[*num_pivots].cluster_id = c;
+                pivots[*num_pivots].d_anchor = d_anchor;
+                (*num_pivots)++;
+            }
+        }
+
         if (lb_anchor >= current_tau / eps_factor)
         {
             telem->level2_anchors_pruned++;
+        }
+        else if (is_cluster_pruned_by_pivots(
+                     c, cl->radius, current_tau, eps_factor, model, config,
+                     pivots, (num_pivots != NULL) ? *num_pivots : 0, sq16_delta))
+        {
+            telem->level1_clusters_pruned++;
+            telem->multi_pivot_pruned++;
         }
         else
         {
             clusters_evaluated++;
             telem->clusters_graph_evaluated++;
-
-            /* Record measured anchor pivot if useful */
-            if (num_pivots != NULL && *num_pivots < MAX_MEASURED_PIVOTS)
-            {
-                if (!is_in_pivots(c, pivots, *num_pivots))
-                {
-                    pivots[*num_pivots].cluster_id = c;
-                    pivots[*num_pivots].d_anchor = d_anchor;
-                    (*num_pivots)++;
-                }
-            }
 
             /* Evaluate members of cluster c */
             knn_eval_candidate_cluster_members(
