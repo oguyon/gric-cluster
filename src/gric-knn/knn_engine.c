@@ -38,7 +38,7 @@ typedef struct
     double dcc;
 } ClusterScore;
 
-#define MAX_MEASURED_PIVOTS 8
+#define MAX_MEASURED_PIVOTS 16
 #define GRAPH_FRONTIER_MAX 256
 #define KNN_NUM_BUCKET_LOCKS 4096
 #define KNN_BUCKET_LOCK_MASK (KNN_NUM_BUCKET_LOCKS - 1)
@@ -919,14 +919,27 @@ static void knn_search_intra_cluster(
         double d_right = (right < num_m) ?
             fabs(r_home - (double)home_cl->members[right].r_anchor) : 1e30;
 
-        double min_lb = (d_left <= d_right) ? d_left : d_right;
         double current_tau = knn_heap_peek_max_dist(heap);
-
-        if (min_lb >= current_tau / eps_factor ||
-            (config->rlim_cutoff > 0.0 && min_lb >= config->rlim_cutoff))
+        double tau_thresh = current_tau / eps_factor;
+        if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
         {
-            telem->level3_annular_pruned +=
-                (uint64_t)(left + 1) + (uint64_t)(num_m - right);
+            tau_thresh = config->rlim_cutoff;
+        }
+
+        if (left >= 0 && d_left >= tau_thresh)
+        {
+            telem->level3_annular_pruned += (uint64_t)(left + 1);
+            left = -1;
+            d_left = 1e30;
+        }
+        if (right < num_m && d_right >= tau_thresh)
+        {
+            telem->level3_annular_pruned += (uint64_t)(num_m - right);
+            right = num_m;
+            d_right = 1e30;
+        }
+        if (left < 0 && right >= num_m)
+        {
             break;
         }
 
@@ -1957,14 +1970,27 @@ static void knn_eval_candidate_cluster_members(
         double d_right = (right < num_m) ?
             fabs(d_anchor - (double)cl->members[right].r_anchor) : 1e30;
 
-        double min_lb = (d_left <= d_right) ? d_left : d_right;
         current_tau = knn_heap_peek_max_dist(heap);
-
-        if (min_lb - sq16_delta >= current_tau / eps_factor ||
-            (config->rlim_cutoff > 0.0 && min_lb - sq16_delta >= config->rlim_cutoff))
+        double tau_thresh = current_tau / eps_factor;
+        if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
         {
-            telem->level3_annular_pruned +=
-                (uint64_t)(left + 1) + (uint64_t)(num_m - right);
+            tau_thresh = config->rlim_cutoff;
+        }
+
+        if (left >= 0 && (d_left - sq16_delta >= tau_thresh))
+        {
+            telem->level3_annular_pruned += (uint64_t)(left + 1);
+            left = -1;
+            d_left = 1e30;
+        }
+        if (right < num_m && (d_right - sq16_delta >= tau_thresh))
+        {
+            telem->level3_annular_pruned += (uint64_t)(num_m - right);
+            right = num_m;
+            d_right = 1e30;
+        }
+        if (left < 0 && right >= num_m)
+        {
             break;
         }
 
@@ -1999,8 +2025,7 @@ static void knn_eval_candidate_cluster_members(
         {
             lb1 = 0.0;
         }
-        if (lb1 >= current_tau / eps_factor ||
-            (config->rlim_cutoff > 0.0 && lb1 >= config->rlim_cutoff))
+        if (lb1 >= tau_thresh)
         {
             telem->level3_annular_pruned++;
             continue;
@@ -2009,12 +2034,9 @@ static void knn_eval_candidate_cluster_members(
         // Secondary pivot lower bound: home anchor A_home
         if (dcc_home > 0.0)
         {
-            double lb_home1 = dcc_home - r_cand - r_home;
-            double lb_home2 = r_home - (dcc_home + r_cand);
-            double max_lb_home = (lb_home1 > lb_home2) ? lb_home1 : lb_home2;
-            if (max_lb_home - sq16_delta >= current_tau / eps_factor ||
-                (config->rlim_cutoff > 0.0 &&
-                 max_lb_home - sq16_delta >= config->rlim_cutoff))
+            double diff_home = dcc_home - r_cand;
+            double lb_home = fabs(diff_home) - r_home;
+            if (lb_home - sq16_delta >= tau_thresh)
             {
                 telem->level3_annular_pruned++;
                 continue;
@@ -2025,12 +2047,15 @@ static void knn_eval_candidate_cluster_members(
         if (num_active_pivots > 0)
         {
             int pruned_by_pivot = 0;
+            double target_thresh = tau_thresh + sq16_delta;
             for (int p = 0; p < num_active_pivots; p++)
             {
-                double lb_p = fabs(pivot_diffs[p] - r_cand);
-                if (lb_p - sq16_delta >= current_tau / eps_factor ||
-                    (config->rlim_cutoff > 0.0 &&
-                     lb_p - sq16_delta >= config->rlim_cutoff))
+                double diff = pivot_diffs[p] - r_cand;
+                if (diff < 0.0)
+                {
+                    diff = -diff;
+                }
+                if (diff >= target_thresh)
                 {
                     pruned_by_pivot = 1;
                     break;

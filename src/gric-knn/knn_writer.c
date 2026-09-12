@@ -169,56 +169,74 @@ static int write_bin_results(
                 if (gric_bin_write_header(fp_mut, &hdr_mut,
                                           "k-NN mutual distances [N x k*(k-1)/2]") == 0)
                 {
-                    float *f32_mut = (float *)calloc(total_mut, sizeof(float));
-                    if (f32_mut != NULL)
+                    long chunk_max_queries = 8192;
+                    if (chunk_max_queries > N)
                     {
+                        chunk_max_queries = N;
+                    }
+                    size_t chunk_elements = (size_t)chunk_max_queries * m_pairs;
+                    float *chunk_buf = (float *)malloc(chunk_elements * sizeof(float));
+                    if (chunk_buf != NULL)
+                    {
+                        for (long u_base = 0; u_base < N; u_base += chunk_max_queries)
+                        {
+                            long cur_chunk_n = N - u_base;
+                            if (cur_chunk_n > chunk_max_queries)
+                            {
+                                cur_chunk_n = chunk_max_queries;
+                            }
+
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic)
 #endif
-                        for (long u = 0; u < N; u++)
-                        {
-                            for (int i = 0; i < (int)k; i++)
+                            for (long c = 0; c < cur_chunk_n; c++)
                             {
-                                long id_i = (long)results->indices[u * k + i];
-                                if (id_i < 0 || id_i >= N)
+                                long u = u_base + c;
+                                for (int i = 0; i < (int)k; i++)
                                 {
-                                    continue;
-                                }
-                                const void *f_i =
-                                    (const char *)frames + (size_t)id_i * (size_t)elem * elem_size;
-
-                                for (int j = i + 1; j < (int)k; j++)
-                                {
-                                    long id_j = (long)results->indices[u * k + j];
-                                    if (id_j < 0 || id_j >= N)
+                                    long id_i = (long)results->indices[u * k + i];
+                                    if (id_i < 0 || id_i >= N)
                                     {
                                         continue;
                                     }
-                                    const void *f_j = (const char *)frames +
-                                        (size_t)id_j * (size_t)elem * elem_size;
+                                    const void *f_i = (const char *)frames +
+                                        (size_t)id_i * (size_t)elem * elem_size;
 
-                                    double dist;
-                                    if (model->is_double)
+                                    for (int j = i + 1; j < (int)k; j++)
                                     {
-                                        dist = framedist_double(
-                                            (const double *)f_i, (const double *)f_j, elem);
-                                    }
-                                    else
-                                    {
-                                        dist = framedist_float(
-                                            (const float *)f_i, (const float *)f_j, elem);
-                                    }
+                                        long id_j = (long)results->indices[u * k + j];
+                                        if (id_j < 0 || id_j >= N)
+                                        {
+                                            continue;
+                                        }
+                                        const void *f_j = (const char *)frames +
+                                            (size_t)id_j * (size_t)elem * elem_size;
 
-                                    long pair_idx = (long)i * (long)k -
-                                        ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
-                                    f32_mut[(uint64_t)u * m_pairs + (uint64_t)pair_idx] =
-                                        (float)dist;
+                                        double dist;
+                                        if (model->is_double)
+                                        {
+                                            dist = framedist_double(
+                                                (const double *)f_i, (const double *)f_j, elem);
+                                        }
+                                        else
+                                        {
+                                            dist = framedist_float(
+                                                (const float *)f_i, (const float *)f_j, elem);
+                                        }
+
+                                        long pair_idx = (long)i * (long)k -
+                                            ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
+                                        chunk_buf[(size_t)c * m_pairs + (size_t)pair_idx] =
+                                            (float)dist;
+                                    }
                                 }
-                            }
-                        } // for (long u = 0; ...)
+                            } // for (long c = 0; ...)
 
-                        fwrite(f32_mut, sizeof(float), total_mut, fp_mut);
-                        free(f32_mut);
+                            fwrite(chunk_buf, sizeof(float),
+                                   (size_t)cur_chunk_n * m_pairs, fp_mut);
+                        } // for (long u_base = 0; ...)
+
+                        free(chunk_buf);
                     }
                 }
                 fclose(fp_mut);
