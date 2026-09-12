@@ -121,6 +121,62 @@ static inline int is_in_pivots(
 }
 
 /**
+ * is_cluster_pruned_by_pivots() - Check if all cluster members are pruned via pivots.
+ * @c:           Candidate cluster index.
+ * @cl_radius:   Radius of candidate cluster c.
+ * @current_tau: Current search horizon.
+ * @eps_factor:  1.0 + epsilon slack factor.
+ * @model:       Active KnnModel.
+ * @config:      Active KnnConfig.
+ * @pivots:      Array of measured anchor pivots.
+ * @num_pivots:  Number of active pivots.
+ * @sq16_delta:  Quantization error allowance.
+ *
+ * Return: 1 if cluster is guaranteed to have no members within current_tau, 0 otherwise.
+ */
+static inline int is_cluster_pruned_by_pivots(
+    int                  c,
+    double               cl_radius,
+    double               current_tau,
+    double               eps_factor,
+    const KnnModel      *model,
+    const KnnConfig     *config,
+    const MeasuredPivot *pivots,
+    int                  num_pivots,
+    double               sq16_delta)
+{
+    if (!config->use_multi_pivot || pivots == NULL || num_pivots <= 0)
+    {
+        return 0;
+    }
+
+    size_t M = (size_t)model->num_clusters;
+    for (int p = 0; p < num_pivots; p++)
+    {
+        int p_cl = pivots[p].cluster_id;
+        if (p_cl == c)
+        {
+            continue;
+        }
+
+        double dcc_pc = model->dcc_matrix[(size_t)p_cl * M + (size_t)c];
+        if (dcc_pc > 0.0)
+        {
+            double d_qp = pivots[p].d_anchor;
+            double lb_p = fabs(d_qp - dcc_pc) - cl_radius;
+            if (lb_p - sq16_delta >= current_tau / eps_factor ||
+                (config->rlim_cutoff > 0.0 &&
+                 lb_p - sq16_delta >= config->rlim_cutoff))
+            {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+/**
  * find_member_lower_bound() - Binary search for first member with r_anchor >= val.
  * @members: Sorted array of MemberMeta records.
  * @n:       Total number of members.
@@ -2177,6 +2233,9 @@ static void knn_search_inter_clusters(
     long batch_cand_ids[4];
     const void *batch_ptrs[4];
     int batch_count = 0;
+    double sq16_delta = (config->use_sq16 && model->sq16_dataset_buffer != NULL)
+                        ? 2.0 * (double)model->sq16_params.err_radius
+                        : 0.0;
 
     for (int idx = 0; idx < num_cand_clusters; idx++)
     {
@@ -2291,6 +2350,15 @@ static void knn_search_inter_clusters(
         if (lb_anchor >= current_tau / eps_factor)
         {
             telem->level2_anchors_pruned++;
+            continue;
+        }
+
+        if (is_cluster_pruned_by_pivots(
+                q, cl->radius, current_tau, eps_factor, model, config,
+                pivots, (num_pivots != NULL) ? *num_pivots : 0, sq16_delta))
+        {
+            telem->level1_clusters_pruned++;
+            telem->multi_pivot_pruned++;
             continue;
         }
 
@@ -2481,6 +2549,9 @@ static void knn_search_cluster_graph(
         ef_limit = M;
     }
     int clusters_evaluated = 0;
+    double sq16_delta = (config->use_sq16 && model->sq16_dataset_buffer != NULL)
+                        ? 2.0 * (double)model->sq16_params.err_radius
+                        : 0.0;
 
     while (pq_size > 0 && clusters_evaluated < ef_limit)
     {
@@ -2505,25 +2576,32 @@ static void knn_search_cluster_graph(
             break;
         }
 
+        /* Record measured anchor pivot if useful */
+        if (num_pivots != NULL && *num_pivots < MAX_MEASURED_PIVOTS)
+        {
+            if (!is_in_pivots(c, pivots, *num_pivots))
+            {
+                pivots[*num_pivots].cluster_id = c;
+                pivots[*num_pivots].d_anchor = d_anchor;
+                (*num_pivots)++;
+            }
+        }
+
         if (lb_anchor >= current_tau / eps_factor)
         {
             telem->level2_anchors_pruned++;
+        }
+        else if (is_cluster_pruned_by_pivots(
+                     c, cl->radius, current_tau, eps_factor, model, config,
+                     pivots, (num_pivots != NULL) ? *num_pivots : 0, sq16_delta))
+        {
+            telem->level1_clusters_pruned++;
+            telem->multi_pivot_pruned++;
         }
         else
         {
             clusters_evaluated++;
             telem->clusters_graph_evaluated++;
-
-            /* Record measured anchor pivot if useful */
-            if (num_pivots != NULL && *num_pivots < MAX_MEASURED_PIVOTS)
-            {
-                if (!is_in_pivots(c, pivots, *num_pivots))
-                {
-                    pivots[*num_pivots].cluster_id = c;
-                    pivots[*num_pivots].d_anchor = d_anchor;
-                    (*num_pivots)++;
-                }
-            }
 
             /* Evaluate members of cluster c */
             knn_eval_candidate_cluster_members(
