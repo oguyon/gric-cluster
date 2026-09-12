@@ -8,6 +8,7 @@
 #include "knn_reader.h"
 #include "knn_tree.h"
 #include "gric_bin_io.h"
+#include "gric_hash.h"
 #include <ctype.h>
 #include <fcntl.h>
 #include <math.h>
@@ -334,44 +335,100 @@ static int parse_membership_file(
 }
 
 /**
- * parse_radii_file() - Parse cluster_radii.txt if available.
- * @path:  Path to cluster_radii.txt.
- * @model: Pointer to KnnModel.
+ * parse_radii_file() - Parse cluster_radii.bin or cluster_radii.txt if available.
+ * @cluster_dir: Path to directory containing cluster output files.
+ * @model:       Pointer to resident KnnModel.
  */
 static void parse_radii_file(
-    const char *path,
+    const char *cluster_dir,
     KnnModel   *model)
 {
-    FILE *f = fopen(path, "r");
-    if (f == NULL)
+    char bin_path[2048];
+    snprintf(bin_path, sizeof(bin_path), "%s/cluster_radii.bin", cluster_dir);
+    FILE *f_bin = fopen(bin_path, "rb");
+    if (f_bin != NULL)
     {
-        return; // Optional file
-    }
-
-    char line[1024];
-    while (fgets(line, sizeof(line), f) != NULL)
-    {
-        if (line[0] == '#' || line[0] == '\n' || line[0] == '\0')
+        gric_bin_header_t hdr;
+        char *comment = NULL;
+        if (gric_bin_read_header(f_bin, &hdr, &comment) == 0 &&
+            hdr.num_elements == (size_t)model->num_clusters &&
+            hdr.data_type == GRIC_BIN_DTYPE_FLOAT32)
         {
-            continue;
-        }
-
-        int    c_id = -1;
-        int    count = 0;
-        double radius = 0.0;
-        if (sscanf(line, "%d %d %lf", &c_id, &count, &radius) == 3)
-        {
-            if (c_id >= 0 && c_id < model->num_clusters)
+            float *buf = (float *)malloc(hdr.data_bytes);
+            if (buf != NULL && fread(buf, 1, hdr.data_bytes, f_bin) == hdr.data_bytes)
             {
-                if (radius > model->clusters[c_id].radius)
+                for (int c = 0; c < model->num_clusters; c++)
                 {
-                    model->clusters[c_id].radius = radius;
+                    model->clusters[c].radius = (double)buf[c];
                 }
+                free(buf);
+                if (comment != NULL)
+                {
+                    free(comment);
+                }
+                fclose(f_bin);
+                return;
+            }
+            if (buf != NULL)
+            {
+                free(buf);
             }
         }
-    } // while parsing radii
+        if (comment != NULL)
+        {
+            free(comment);
+        }
+        fclose(f_bin);
+    }
 
-    fclose(f);
+    char txt_path[2048];
+    snprintf(txt_path, sizeof(txt_path), "%s/cluster_radii.txt", cluster_dir);
+    FILE *f = fopen(txt_path, "r");
+    if (f != NULL)
+    {
+        char line[1024];
+        while (fgets(line, sizeof(line), f) != NULL)
+        {
+            if (line[0] == '#' || line[0] == '\n' || line[0] == '\0')
+            {
+                continue;
+            }
+
+            int    c_id = -1;
+            int    count = 0;
+            double radius = 0.0;
+            if (sscanf(line, "%d %d %lf", &c_id, &count, &radius) == 3)
+            {
+                if (c_id >= 0 && c_id < model->num_clusters)
+                {
+                    if (radius > model->clusters[c_id].radius)
+                    {
+                        model->clusters[c_id].radius = radius;
+                    }
+                }
+            }
+        } // while parsing radii
+        fclose(f);
+        return;
+    }
+
+    /* Fallback: if radii file not found, use member metadata if populated */
+    for (int c = 0; c < model->num_clusters; c++)
+    {
+        if (model->clusters[c].radius <= 0.0)
+        {
+            double max_r = 0.0;
+            for (int m = 0; m < model->clusters[c].num_members; m++)
+            {
+                double r = (double)model->clusters[c].members[m].r_anchor;
+                if (r > max_r)
+                {
+                    max_r = r;
+                }
+            }
+            model->clusters[c].radius = (max_r > 0.0) ? max_r : model->model_rlim;
+        }
+    }
 }
 
 /**
@@ -1404,13 +1461,24 @@ int knn_model_load(
         }
     }
 
-    char radii_path[2048];
-    snprintf(radii_path, sizeof(radii_path), "%s/cluster_radii.txt", cluster_dir);
-    parse_radii_file(radii_path, model);
+    parse_radii_file(cluster_dir, model);
 
     char log_path[2048];
     snprintf(log_path, sizeof(log_path), "%s/cluster_run.log", cluster_dir);
     parse_cluster_log(log_path, model);
+
+    long total_members = 0;
+    for (int c = 0; c < model->num_clusters; c++)
+    {
+        total_members += (long)model->clusters[c].num_members;
+        if (model->clusters[c].radius <= 0.0 && model->model_rlim > 0.0)
+        {
+            model->clusters[c].radius = model->model_rlim;
+        }
+    }
+    model->avg_cluster_size = (model->num_clusters > 0)
+                              ? (double)total_members / (double)model->num_clusters
+                              : 1.0;
 
     if (parse_dcc_file(cluster_dir, model) != 0)
     {
@@ -1594,6 +1662,12 @@ void knn_model_free(
     {
         gric_profile_free(&model->profile);
         model->has_profile = 0;
+    }
+
+    if (model->frame_to_unique_map != NULL)
+    {
+        free(model->frame_to_unique_map);
+        model->frame_to_unique_map = NULL;
     }
 }
 
@@ -1819,6 +1893,110 @@ int knn_model_build_or_load_sq8(
 }
 
 /**
+ * knn_deduplicate_sq16_frames() - Deduplicate SQ16 frames into unique representative pool.
+ * @model:  Pointer to KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int knn_deduplicate_sq16_frames(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (model == NULL || model->sq16_dataset_buffer == NULL || model->total_dataset_frames <= 0)
+    {
+        return 0;
+    }
+
+    long N = model->total_dataset_frames;
+    long dim = model->frame_elements;
+
+    model->frame_to_unique_map = (int *)malloc((size_t)N * sizeof(int));
+    if (model->frame_to_unique_map == NULL)
+    {
+        return -1;
+    }
+
+    /* Size hash table as power of two >= 2*N (minimum 1024) */
+    size_t cap = 1024;
+    while (cap < (size_t)N * 2)
+    {
+        cap <<= 1;
+    }
+    size_t mask = cap - 1;
+
+    typedef struct
+    {
+        uint64_t hash;
+        int32_t  frame_id;
+    } DedupSlot;
+
+    DedupSlot *slots = (DedupSlot *)malloc(cap * sizeof(DedupSlot));
+    if (slots == NULL)
+    {
+        for (long i = 0; i < N; i++)
+        {
+            model->frame_to_unique_map[i] = (int)i;
+        }
+        model->num_unique_frames = N;
+        return 0;
+    }
+
+    for (size_t c = 0; c < cap; c++)
+    {
+        slots[c].frame_id = -1;
+    }
+
+    long unique_count = 0;
+    for (long i = 0; i < N; i++)
+    {
+        const int16_t *cur_vec = model->sq16_dataset_buffer + (size_t)i * (size_t)dim;
+        uint64_t h = gric_hash_i16(cur_vec, dim);
+        size_t idx = (size_t)(h & mask);
+        int match_id = -1;
+
+        while (slots[idx].frame_id != -1)
+        {
+            if (slots[idx].hash == h)
+            {
+                const int16_t *match_vec =
+                    model->sq16_dataset_buffer + (size_t)slots[idx].frame_id * (size_t)dim;
+                if (memcmp(cur_vec, match_vec, (size_t)dim * sizeof(int16_t)) == 0)
+                {
+                    match_id = (int)slots[idx].frame_id;
+                    break;
+                }
+            }
+            idx = (idx + 1) & mask;
+        }
+
+        if (match_id != -1)
+        {
+            model->frame_to_unique_map[i] = match_id;
+        }
+        else
+        {
+            slots[idx].hash = h;
+            slots[idx].frame_id = (int32_t)i;
+            model->frame_to_unique_map[i] = (int)i;
+            unique_count++;
+        }
+    } // for (long i = 0; i < N; i++)
+
+    free(slots);
+    model->num_unique_frames = unique_count;
+
+    if (config->verbose_level >= 1)
+    {
+        double dup_pct = (N > 0) ? (100.0 * (1.0 - (double)unique_count / (double)N)) : 0.0;
+        printf("  SQ16 Deduplication: %ld unique frames / %ld total (%.1f%% duplicate)\n",
+               unique_count, N, dup_pct);
+    }
+
+    return 0;
+}
+
+/**
  * knn_model_build_or_load_sq16() - Build or load quantized SQ16 dataset buffer into KnnModel.
  * @model:  Pointer to initialized KnnModel.
  * @config: Pointer to KnnConfig.
@@ -1953,6 +2131,25 @@ int knn_model_build_or_load_sq16(
         } // for (long i = 0; i < N; i++)
 
         sq16_init_params(&model->sq16_params, global_min, global_max, dim);
+
+        /* Enforce --sq16-ratio bound: scale = alpha*rlim / sqrt(D) */
+        double eff_rlim = (config->rlim_cutoff > 0.0) ? config->rlim_cutoff : model->model_rlim;
+        if (config->sq16_ratio > 0.0 && eff_rlim > 0.0)
+        {
+            float target_scale = (float)((config->sq16_ratio * eff_rlim) / sqrt((double)dim));
+            float span = global_max - global_min;
+            float min_scale = (span > 0.0f) ? (span / 32767.0f) : 1e-6f;
+            if (target_scale < min_scale)
+            {
+                target_scale = min_scale;
+            }
+            float center = 0.5f * (global_min + global_max);
+            model->sq16_params.scale = target_scale;
+            model->sq16_params.inv_scale = 1.0f / target_scale;
+            model->sq16_params.min_val = center - 16384.0f * target_scale;
+            model->sq16_params.max_val = center + 16383.0f * target_scale;
+            model->sq16_params.err_radius = sqrtf((float)dim) * target_scale * 0.5f;
+        }
     }
 
     // Allocate resident int16 buffer [N x dim]
@@ -2034,6 +2231,11 @@ int knn_model_build_or_load_sq16(
                 }
             }
         }
+    }
+
+    if (config->use_memo)
+    {
+        knn_deduplicate_sq16_frames(model, config);
     }
 
     return 0;

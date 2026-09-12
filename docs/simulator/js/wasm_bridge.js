@@ -1925,9 +1925,15 @@ function buildCliCommand() {
     }
   }
 
-  // Scalar quantization pre-filtering
+  // Scalar quantization pre-filtering & memoization
   if (typeof clusterUseSq16 === 'boolean' && clusterUseSq16) {
     parts.push('-sq16');
+    if (typeof clusterSq16Ratio === 'number' && clusterSq16Ratio !== 0.05) {
+      parts.push('-sq16-ratio', clusterSq16Ratio.toFixed(3));
+    }
+    if (typeof clusterUseMemo === 'boolean' && !clusterUseMemo) {
+      parts.push('-no-memo');
+    }
   } else if (typeof clusterUseSq8 === 'boolean' && clusterUseSq8) {
     parts.push('-sq8');
   }
@@ -1963,6 +1969,12 @@ function buildCliCommand() {
     }
     if (typeof knnUseSq16 === 'boolean' && knnUseSq16) {
       knnParts.push('-sq16');
+      if (typeof knnSq16Ratio === 'number' && knnSq16Ratio !== 0.05) {
+        knnParts.push('-sq16-ratio', knnSq16Ratio.toFixed(3));
+      }
+      if (typeof knnUseMemo === 'boolean' && !knnUseMemo) {
+        knnParts.push('-no-memo');
+      }
     } else if (typeof knnUseSq8 === 'boolean') {
       knnParts.push(knnUseSq8 ? '-sq8' : '-no-sq8');
     }
@@ -1972,7 +1984,7 @@ function buildCliCommand() {
     if (typeof knnUseClusterGraph === 'boolean') {
       if (!knnUseClusterGraph) {
         knnParts.push('-no-cluster-graph');
-      } else if (typeof knnEfCluster === 'number' && knnEfCluster !== 60) {
+      } else if (typeof knnEfCluster === 'number' && knnEfCluster > 0) {
         knnParts.push('-ef-cluster', knnEfCluster.toString());
       }
     }

@@ -175,6 +175,14 @@ void write_run_log(
                 (unsigned long)state->telemetry.pred_hits);
         fprintf(f, "STATS_PRED_SAME_AS_LAST: %lu\n",
                 (unsigned long)state->telemetry.pred_same_as_last);
+        fprintf(f, "STATS_MEMO_LOOKUPS: %lu\n",
+                (unsigned long)state->telemetry.memo_lookups);
+        fprintf(f, "STATS_MEMO_HITS: %lu\n",
+                (unsigned long)state->telemetry.memo_hits);
+        fprintf(f, "STATS_MEMO_CACHE_ENTRIES: %lu\n",
+                (unsigned long)state->telemetry.memo_cache_entries);
+        fprintf(f, "STATS_MEMO_CACHE_CAPACITY: %lu\n",
+                (unsigned long)state->telemetry.memo_cache_capacity);
 
         fprintf(f, "STATS_DIST_HIST_START\n");
         for (int k = 0; k <= config->algo.maxnbclust; k++)

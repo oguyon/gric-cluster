@@ -120,22 +120,62 @@ void remove_cluster(
     {
         free(state->clusters[index_to_remove].anchor.data);
     }
-    if (state->clusters[index_to_remove].anchor_sq8)
+    if (state->anchor_matrix_sq8 != NULL)
+    {
+        size_t dim = (size_t)state->clusters[index_to_remove].anchor.width *
+                     (size_t)state->clusters[index_to_remove].anchor.height;
+        int remaining = state->num_clusters - 1 - index_to_remove;
+        if (remaining > 0 && dim > 0)
+        {
+            memmove(state->anchor_matrix_sq8 + (size_t)index_to_remove * dim,
+                    state->anchor_matrix_sq8 + (size_t)(index_to_remove + 1) * dim,
+                    (size_t)remaining * dim * sizeof(uint8_t));
+        }
+    }
+    else if (state->clusters[index_to_remove].anchor_sq8)
     {
         free(state->clusters[index_to_remove].anchor_sq8);
         state->clusters[index_to_remove].anchor_sq8 = NULL;
     }
-    if (state->clusters[index_to_remove].anchor_sq16)
+
+    if (state->anchor_matrix_sq16 != NULL)
+    {
+        size_t dim = (size_t)state->clusters[index_to_remove].anchor.width *
+                     (size_t)state->clusters[index_to_remove].anchor.height;
+        int remaining = state->num_clusters - 1 - index_to_remove;
+        if (remaining > 0 && dim > 0)
+        {
+            memmove(state->anchor_matrix_sq16 + (size_t)index_to_remove * dim,
+                    state->anchor_matrix_sq16 + (size_t)(index_to_remove + 1) * dim,
+                    (size_t)remaining * dim * sizeof(int16_t));
+        }
+    }
+    else if (state->clusters[index_to_remove].anchor_sq16)
     {
         free(state->clusters[index_to_remove].anchor_sq16);
         state->clusters[index_to_remove].anchor_sq16 = NULL;
     }
+
     // Shift clusters down
     for (int cl_idx = index_to_remove; cl_idx < state->num_clusters - 1; cl_idx++)
     {
         state->clusters[cl_idx] = state->clusters[cl_idx + 1];
         state->clusters[cl_idx].id = cl_idx; // Update ID
-    }
+        if (state->anchor_matrix_sq8 != NULL)
+        {
+            size_t dim = (size_t)state->clusters[cl_idx].anchor.width *
+                         (size_t)state->clusters[cl_idx].anchor.height;
+            state->clusters[cl_idx].anchor_sq8 =
+                state->anchor_matrix_sq8 + (size_t)cl_idx * dim;
+        }
+        if (state->anchor_matrix_sq16 != NULL)
+        {
+            size_t dim = (size_t)state->clusters[cl_idx].anchor.width *
+                         (size_t)state->clusters[cl_idx].anchor.height;
+            state->clusters[cl_idx].anchor_sq16 =
+                state->anchor_matrix_sq16 + (size_t)cl_idx * dim;
+        }
+    } // for (int cl_idx = index_to_remove; cl_idx < state->num_clusters - 1; cl_idx++)
 
     // 3. Shift Visitor Lists
     if (state->cluster_visitors[index_to_remove].frames)

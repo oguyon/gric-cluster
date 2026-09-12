@@ -49,6 +49,7 @@ SRCS = \
 	src/shared/cluster_locator.c \
 	src/shared/gric_bin_io.c \
 	src/shared/scalar_quant.c \
+	src/shared/quant_memo.c \
 	src/wasm/gric_wasm_api.c
 
 OUT_DIR_SITE = site/simulator/wasm

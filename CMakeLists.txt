@@ -137,6 +137,7 @@ set(CLUSTER_SRCS
     src/shared/gric_bin_io.c
     src/shared/cluster_locator.c
     src/shared/scalar_quant.c
+    src/shared/quant_memo.c
     src/shared/gric_profile.c
 )
 
@@ -284,6 +285,7 @@ add_executable(gric-knn
     src/shared/cli_colors.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
+    src/shared/quant_memo.c
     src/shared/gric_profile.c
 )
 target_include_directories(gric-knn PRIVATE src/gric-knn src/gric-cluster/math src/shared src)

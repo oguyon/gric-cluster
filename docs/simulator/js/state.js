@@ -287,12 +287,16 @@
     let knnMvp = false; // Multi-Anchor Pivot Bounding (AESA)
     let knnUseSq8 = false; // 8-Bit Scalar Quantization Filtering
     let knnUseSq16 = true; // 16-Bit Scalar Quantization Filtering (Default: true)
+    let knnSq16Ratio = 0.05; // SQ16 Quantization Bound Ratio (Default: 0.05)
+    let knnUseMemo = true; // Quantized Memoization & Unique Vector Pool (Default: true)
     let clusterUseSq8 = false; // 8-Bit Scalar Quantization Metric Pre-Filter
     let clusterUseSq16 = true; // 16-Bit Scalar Quantization Pre-Filter (Default: true)
+    let clusterSq16Ratio = 0.05; // SQ16 Quantization Bound Ratio (Default: 0.05)
+    let clusterUseMemo = true; // Quantized Memoization Cache (Default: true)
     let clusterUseBatchDist = true; // Multi-Vector SIMD Batch Distance (Default: true)
     let knnUseBatchDist = true; // Multi-Vector SIMD Batch Distance for k-NN (Default: true)
     let knnUseClusterGraph = true; // Cluster Graph Routing (Default: true)
-    let knnEfCluster = 60; // Max cluster centroids evaluated in graph routing
+    let knnEfCluster = 0; // 0 = dynamic auto-calculated cluster budget
     let knnResults = null;
     let selectedKnnQuerySample = -1;
     let hoveredKnnNeighborId = -1;
@@ -1379,6 +1383,10 @@
         pruneCount4P: 0,
         pruneCount5P: 0,
         predHitCount: 0,
+        memoHits: 0,
+        memoLookups: 0,
+        memoCacheEntries: 0,
+        memoCacheCapacity: 0,
         totalComputeTimeMs: 0.0,
         lastComputeTimeMs: 0.0,
         avgComputeTimeMs: 0.0,
@@ -1431,12 +1439,16 @@
         knnMvp: false,
         knnUseSq8: false,
         knnUseSq16: true,
+        knnSq16Ratio: 0.05,
+        knnUseMemo: true,
         clusterUseSq8: false,
         clusterUseSq16: true,
+        clusterSq16Ratio: 0.05,
+        clusterUseMemo: true,
         clusterUseBatchDist: true,
         knnUseBatchDist: true,
         knnUseClusterGraph: true,
-        knnEfCluster: 60,
+        knnEfCluster: 0,
         dimDensityResults: null,
         dimDensitySummary: null,
         isDimDensityComputing: false,
@@ -1775,6 +1787,10 @@
       slot.pruneCount4P = (typeof pruneCount4P !== 'undefined') ? pruneCount4P : 0;
       slot.pruneCount5P = (typeof pruneCount5P !== 'undefined') ? pruneCount5P : 0;
       slot.predHitCount = (typeof predHitCount !== 'undefined') ? predHitCount : 0;
+      slot.memoHits = (typeof memoHits !== 'undefined') ? memoHits : 0;
+      slot.memoLookups = (typeof memoLookups !== 'undefined') ? memoLookups : 0;
+      slot.memoCacheEntries = (typeof memoCacheEntries !== 'undefined') ? memoCacheEntries : 0;
+      slot.memoCacheCapacity = (typeof memoCacheCapacity !== 'undefined') ? memoCacheCapacity : 0;
       slot.totalComputeTimeMs = (typeof totalComputeTimeMs !== 'undefined') ? totalComputeTimeMs : 0;
       slot.lastComputeTimeMs = (typeof lastComputeTimeMs !== 'undefined') ? lastComputeTimeMs : 0;
       slot.avgComputeTimeMs = (typeof avgComputeTimeMs !== 'undefined') ? avgComputeTimeMs : 0;
@@ -1827,8 +1843,12 @@
       slot.knnMvp = knnMvp;
       slot.knnUseSq8 = knnUseSq8;
       slot.knnUseSq16 = knnUseSq16;
+      slot.knnSq16Ratio = knnSq16Ratio;
+      slot.knnUseMemo = knnUseMemo;
       slot.clusterUseSq8 = clusterUseSq8;
       slot.clusterUseSq16 = clusterUseSq16;
+      slot.clusterSq16Ratio = clusterSq16Ratio;
+      slot.clusterUseMemo = clusterUseMemo;
       slot.clusterUseBatchDist = clusterUseBatchDist;
       slot.knnUseBatchDist = knnUseBatchDist;
       slot.knnUseClusterGraph = knnUseClusterGraph;
@@ -1979,6 +1999,10 @@
       if (typeof pruneCount4P !== 'undefined') pruneCount4P = slot.pruneCount4P || 0;
       if (typeof pruneCount5P !== 'undefined') pruneCount5P = slot.pruneCount5P || 0;
       if (typeof predHitCount !== 'undefined') predHitCount = slot.predHitCount || 0;
+      if (typeof memoHits !== 'undefined') memoHits = slot.memoHits || 0;
+      if (typeof memoLookups !== 'undefined') memoLookups = slot.memoLookups || 0;
+      if (typeof memoCacheEntries !== 'undefined') memoCacheEntries = slot.memoCacheEntries || 0;
+      if (typeof memoCacheCapacity !== 'undefined') memoCacheCapacity = slot.memoCacheCapacity || 0;
       if (typeof totalComputeTimeMs !== 'undefined') totalComputeTimeMs = slot.totalComputeTimeMs || 0;
       if (typeof lastComputeTimeMs !== 'undefined') lastComputeTimeMs = slot.lastComputeTimeMs || 0;
       if (typeof avgComputeTimeMs !== 'undefined') avgComputeTimeMs = slot.avgComputeTimeMs || 0;
@@ -2031,13 +2055,17 @@
       knnMvp = slot.knnMvp || false;
       knnUseSq8 = (slot.knnUseSq8 !== undefined) ? slot.knnUseSq8 : false;
       knnUseSq16 = (slot.knnUseSq16 !== undefined) ? slot.knnUseSq16 : true;
+      knnSq16Ratio = (slot.knnSq16Ratio !== undefined) ? slot.knnSq16Ratio : 0.05;
+      knnUseMemo = (slot.knnUseMemo !== undefined) ? slot.knnUseMemo : true;
       clusterUseSq8 = (slot.clusterUseSq8 !== undefined) ? slot.clusterUseSq8 : false;
       clusterUseSq16 = (slot.clusterUseSq16 !== undefined) ? slot.clusterUseSq16 : true;
+      clusterSq16Ratio = (slot.clusterSq16Ratio !== undefined) ? slot.clusterSq16Ratio : 0.05;
+      clusterUseMemo = (slot.clusterUseMemo !== undefined) ? slot.clusterUseMemo : true;
       clusterUseBatchDist = (slot.clusterUseBatchDist !== undefined) ? slot.clusterUseBatchDist : true;
       knnUseBatchDist = (slot.knnUseBatchDist !== undefined) ? slot.knnUseBatchDist : true;
       knnUseClusterGraph = (slot.knnUseClusterGraph !== undefined)
         ? slot.knnUseClusterGraph : true;
-      knnEfCluster = (slot.knnEfCluster !== undefined) ? slot.knnEfCluster : 60;
+      knnEfCluster = (slot.knnEfCluster !== undefined) ? slot.knnEfCluster : 0;
       dimDensityResults = slot.dimDensityResults || null;
       dimDensitySummary = slot.dimDensitySummary || null;
       isDimDensityComputing = slot.isDimDensityComputing || false;
@@ -2451,6 +2479,10 @@
       slot.pruneCount4P = 0;
       slot.pruneCount5P = 0;
       slot.predHitCount = 0;
+      slot.memoHits = 0;
+      slot.memoLookups = 0;
+      slot.memoCacheEntries = 0;
+      slot.memoCacheCapacity = 0;
       slot.totalComputeTimeMs = 0;
       slot.lastComputeTimeMs = 0;
       slot.avgComputeTimeMs = 0;
@@ -2520,12 +2552,16 @@
       slot._unprunedBackup = null;
       slot.knnUseSq8 = false;
       slot.knnUseSq16 = true;
+      slot.knnSq16Ratio = 0.05;
+      slot.knnUseMemo = true;
       slot.clusterUseSq8 = false;
       slot.clusterUseSq16 = true;
+      slot.clusterSq16Ratio = 0.05;
+      slot.clusterUseMemo = true;
       slot.clusterUseBatchDist = true;
       slot.knnUseBatchDist = true;
       slot.knnUseClusterGraph = true;
-      slot.knnEfCluster = 60;
+      slot.knnEfCluster = 0;
 
       // Update toolbar status pill & indicators
       const pill = document.getElementById(`datasetStatusPill_${slotId}`);
@@ -2577,6 +2613,32 @@
         currentPredicted = [];
 
         loadSlotState(slotId);
+
+        if (typeof memoHits !== 'undefined') memoHits = 0;
+        if (typeof memoLookups !== 'undefined') memoLookups = 0;
+        if (typeof memoCacheEntries !== 'undefined') memoCacheEntries = 0;
+        if (typeof memoCacheCapacity !== 'undefined') memoCacheCapacity = 0;
+
+        const statMemoHitsEl = document.getElementById('statMemoHits');
+        if (statMemoHitsEl) statMemoHitsEl.textContent = '0';
+        const statMemoHitsOverview = document.getElementById('statMemoHitsOverview');
+        if (statMemoHitsOverview) statMemoHitsOverview.textContent = '0 (0.0%)';
+        const lblMemoHitsEl = document.getElementById('lblMemoHits');
+        if (lblMemoHitsEl) lblMemoHitsEl.textContent = 'Memo Hits (0.0%)';
+        const memHashCacheEl = document.getElementById('memHashCache');
+        if (memHashCacheEl) memHashCacheEl.textContent = '0 B';
+        const lblHashCacheEl = document.getElementById('lblHashCache');
+        if (lblHashCacheEl) lblHashCacheEl.textContent = 'Hash Cache (0 entries)';
+        const statHashCacheOverview = document.getElementById('statHashCacheOverview');
+        if (statHashCacheOverview) statHashCacheOverview.textContent = 'Cache: 0 B';
+        const knnMemoHitsVal = document.getElementById('knnStatMemoHitsVal');
+        if (knnMemoHitsVal) knnMemoHitsVal.textContent = '0';
+        const knnLblMemoHits = document.getElementById('knnLblMemoHits');
+        if (knnLblMemoHits) knnLblMemoHits.textContent = 'Memo Hits';
+        const knnMemHashCacheVal = document.getElementById('knnMemHashCacheVal');
+        if (knnMemHashCacheVal) knnMemHashCacheVal.textContent = '0 B';
+        const knnMemUniqueVal = document.getElementById('knnMemUniqueVal');
+        if (knnMemUniqueVal) knnMemUniqueVal.textContent = '0 unq';
 
         // Reset WASM session if available
         if (useWasm && typeof GricWasm !== 'undefined' && GricWasm.isLoaded()) {

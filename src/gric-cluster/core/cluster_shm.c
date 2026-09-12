@@ -227,6 +227,12 @@ void gric_shm_update(
     status->dcc_entries_populated = state->telemetry.dcc_entries_populated;
     status->dcc_pairs_total = state->telemetry.dcc_pairs_total;
 
+    /* Quantized memoization telemetry */
+    status->memo_hits = state->telemetry.memo_hits;
+    status->memo_lookups = state->telemetry.memo_lookups;
+    status->memo_cache_entries = state->telemetry.memo_cache_entries;
+    status->memo_cache_capacity = state->telemetry.memo_cache_capacity;
+
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
     status->last_update_time = (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;

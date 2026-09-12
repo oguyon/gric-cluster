@@ -90,6 +90,8 @@ typedef struct
     char           *sq16_save_path;    /**< Optional path to save .sq16 sidecar file */
     char           *sq16_load_path;     /**< Optional path to load .sq16 sidecar file */
     int             sq16_approx;       /**< 1 to relax lower bounds with epsilon */
+    double          sq16_ratio;        /**< Max ratio sqrt(D)*scale / rlim (default 0.05) */
+    int             use_memo;          /**< 1 to enable memoization/deduplication */
     int             use_batch_dist;    /**< 1 to enable multi-vector SIMD batch distance */
     const char     *prof_filename;     /**< Optional path to .gricprof file */
     int             no_prof;           /**< 1 to disable auto-loading .gricprof */
@@ -132,6 +134,8 @@ typedef struct
     uint64_t two_hop_evaluations;
     uint64_t two_hop_pruned;
     uint64_t two_hop_injected;
+    uint64_t memo_hits;
+    uint64_t memo_unique_frames;
     double   time_load_ms;
     double   time_search_ms;
     double   time_write_ms;
@@ -170,8 +174,11 @@ typedef struct
     SQ16Params       sq16_params;         /**< Calibration parameters for SQ16 */
     int              cluster_graph_k;     /**< Number of neighbors per cluster anchor */
     int             *cluster_graph_adj;   /**< [M x cluster_graph_k] neighbor cluster IDs */
+    double           avg_cluster_size;    /**< Mean number of members per cluster */
     GricProfile      profile;             /**< Optional dataset profile (.gricprof) */
     int              has_profile;         /**< 1 if dataset profile was loaded */
+    int             *frame_to_unique_map; /**< [N] Map from dataset frame to unique SQ16 frame ID */
+    long             num_unique_frames;   /**< Number of unique SQ16 frames in pool */
 } KnnModel;
 
 /** Per-query result structure containing top-k neighbors */
@@ -188,6 +195,8 @@ typedef struct
  * @epoch:      Monotonically increasing query epoch counter.
  * @query_sq8:  Quantized 8-bit representation of active query frame.
  * @query_sq16: Quantized 16-bit representation of active query frame.
+ * @rep_tags:   Array of query epochs indexed by unique frame ID [N_cand].
+ * @rep_dists:  Cached computed distances indexed by unique frame ID [N_cand].
  */
 typedef struct
 {
@@ -195,6 +204,8 @@ typedef struct
     uint32_t        epoch;
     const uint8_t  *query_sq8;  /**< Quantized 8-bit representation of active query frame */
     const int16_t  *query_sq16; /**< Quantized 16-bit representation of active query frame */
+    uint32_t       *rep_tags;   /**< Per-unique representative query epoch tracker */
+    float          *rep_dists;  /**< Per-unique representative cached distance to query */
 } KnnVisitedTracker;
 
 /**

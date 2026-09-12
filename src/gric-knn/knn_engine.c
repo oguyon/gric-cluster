@@ -92,36 +92,6 @@ static int compare_cluster_scores(
     return 0;
 }
 
-/** Quantized member candidate record for query-centric evaluation ordering */
-typedef struct
-{
-    long     cand_id;
-    uint64_t ssd;
-} Sq16MemberCandidate;
-
-/**
- * compare_sq16_candidates() - Sort SQ16 candidates by ascending quantized SSD.
- * @a: Pointer to first Sq16MemberCandidate.
- * @b: Pointer to second Sq16MemberCandidate.
- *
- * Return: -1 if a < b, 1 if a > b, 0 if equal.
- */
-static int compare_sq16_candidates(
-    const void *a,
-    const void *b)
-{
-    const Sq16MemberCandidate *ca = (const Sq16MemberCandidate *)a;
-    const Sq16MemberCandidate *cb = (const Sq16MemberCandidate *)b;
-    if (ca->ssd < cb->ssd)
-    {
-        return -1;
-    }
-    if (ca->ssd > cb->ssd)
-    {
-        return 1;
-    }
-    return 0;
-}
 
 /**
  * is_in_pivots() - Check if a cluster ID is already in measured pivots.
@@ -869,18 +839,10 @@ static void knn_search_intra_cluster(
     telem->total_candidates_considered += (uint64_t)home_cl->num_members;
     double eps_factor = 1.0 + config->epsilon;
 
-    int start_m = 0;
-    int end_m = home_cl->num_members;
-    double tau_init = knn_heap_peek_max_dist(heap);
-    if (tau_init < 1e20)
-    {
-        float r_min = (float)fmax(0.0, r_home - tau_init / eps_factor);
-        float r_max = (float)(r_home + tau_init / eps_factor);
-        start_m = find_member_lower_bound(home_cl->members, home_cl->num_members, r_min);
-        end_m = find_member_upper_bound(home_cl->members, home_cl->num_members, r_max);
-        telem->level3_annular_pruned +=
-            (uint64_t)start_m + (uint64_t)(home_cl->num_members - end_m);
-    }
+    int num_m = home_cl->num_members;
+    int mid = find_member_lower_bound(home_cl->members, num_m, (float)r_home);
+    int left = mid - 1;
+    int right = mid;
 
     long batch_cand_ids[4];
     const void *batch_ptrs[4];
@@ -894,8 +856,34 @@ static void knn_search_intra_cluster(
     int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
                        visited->query_sq16 != NULL);
 
-    for (int m = start_m; m < end_m; m++)
+    while (left >= 0 || right < num_m)
     {
+        double d_left = (left >= 0) ?
+            fabs(r_home - (double)home_cl->members[left].r_anchor) : 1e30;
+        double d_right = (right < num_m) ?
+            fabs(r_home - (double)home_cl->members[right].r_anchor) : 1e30;
+
+        double min_lb = (d_left <= d_right) ? d_left : d_right;
+        double current_tau = knn_heap_peek_max_dist(heap);
+
+        if (min_lb >= current_tau / eps_factor ||
+            (config->rlim_cutoff > 0.0 && min_lb >= config->rlim_cutoff))
+        {
+            telem->level3_annular_pruned +=
+                (uint64_t)(left + 1) + (uint64_t)(num_m - right);
+            break;
+        }
+
+        int m;
+        if (d_left <= d_right)
+        {
+            m = left--;
+        }
+        else
+        {
+            m = right++;
+        }
+
         long cand_id = (long)home_cl->members[m].frame_id;
 
         if (knn_visited_check_and_mark(visited, cand_id))
@@ -906,16 +894,6 @@ static void knn_search_intra_cluster(
         if (!check_temporal_separation(query_id, cand_id, config))
         {
             telem->temporal_pruned++;
-            continue;
-        }
-
-        double current_tau = knn_heap_peek_max_dist(heap);
-        double r_cand = (double)home_cl->members[m].r_anchor;
-        double lb_annular = fabs(r_home - r_cand);
-
-        if (lb_annular >= current_tau / eps_factor)
-        {
-            telem->level3_annular_pruned++;
             continue;
         }
 
@@ -953,6 +931,28 @@ static void knn_search_intra_cluster(
 
         if (!config->use_batch_dist)
         {
+            long rep_id = (model->frame_to_unique_map != NULL) ?
+                          model->frame_to_unique_map[cand_id] : cand_id;
+            double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
+                           ? config->rlim_cutoff
+                           : current_tau;
+            if (visited != NULL && visited->rep_tags != NULL &&
+                visited->rep_tags[rep_id] == visited->epoch)
+            {
+                telem->memo_hits++;
+                double d = (double)visited->rep_dists[rep_id];
+                if (d <= c_tau)
+                {
+                    record_neighbor_and_reciprocal(
+                        query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                        , bucket_locks
+#endif
+                    );
+                }
+                continue;
+            }
+
             const void *cand_ptr = NULL;
             if (reader->memory_data != NULL)
             {
@@ -965,13 +965,15 @@ static void knn_search_intra_cluster(
             if (cand_ptr != NULL)
             {
                 telem->framedist_calls++;
-                double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
-                               ? config->rlim_cutoff
-                               : current_tau;
                 double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
                 double d = compute_euclidean_distance_cutoff(
                     query_data, cand_ptr, frame_elem, model->is_double, cutoff_sq
                 );
+                if (visited != NULL && visited->rep_tags != NULL)
+                {
+                    visited->rep_dists[rep_id] = (float)d;
+                    visited->rep_tags[rep_id] = visited->epoch;
+                }
                 if (d <= c_tau)
                 {
                     record_neighbor_and_reciprocal(
@@ -1036,7 +1038,7 @@ static void knn_search_intra_cluster(
                 batch_count = 0;
             }
         }
-    } // for (int m = start_m; ...)
+    } // while (left >= 0 || right < num_m)
 
     if (batch_count > 0)
     {
@@ -1267,6 +1269,22 @@ static int knn_warm_start_nearest_cluster(
                 telem->reciprocal_reused++;
                 continue;
             }
+            long rep_id = (model->frame_to_unique_map != NULL) ?
+                          model->frame_to_unique_map[cand_id] : cand_id;
+            if (visited != NULL && visited->rep_tags != NULL &&
+                visited->rep_tags[rep_id] == visited->epoch)
+            {
+                telem->memo_hits++;
+                double d = (double)visited->rep_dists[rep_id];
+                record_neighbor_and_reciprocal(
+                    query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                    , bucket_locks
+#endif
+                );
+                continue;
+            }
+
             const void *cand_data = NULL;
             if (reader->memory_data != NULL)
             {
@@ -1284,6 +1302,11 @@ static int knn_warm_start_nearest_cluster(
                 double d = compute_euclidean_distance(
                     query_data, cand_data, model->frame_elements, model->is_double
                 );
+                if (visited != NULL && visited->rep_tags != NULL)
+                {
+                    visited->rep_dists[rep_id] = (float)d;
+                    visited->rep_tags[rep_id] = visited->epoch;
+                }
                 record_neighbor_and_reciprocal(
                     query_id, cand_id, d, config, model, heap, all_heaps
 #ifdef _OPENMP
@@ -1831,30 +1854,19 @@ static void knn_eval_candidate_cluster_members(
         (model->is_double ? sizeof(double) : sizeof(float));
     double current_tau = knn_heap_peek_max_dist(heap);
 
-    // Level 3: Radially-Sorted Annular Window Slicing & Multi-Pivot Filter
-    telem->total_candidates_considered += (uint64_t)cl->num_members;
-
-    double tau_eff = current_tau / eps_factor;
-    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_eff)
-    {
-        tau_eff = config->rlim_cutoff;
-    }
-
-    double sq16_delta = anchor_is_sq16 ? 2.0 * (double)model->sq16_params.err_radius : 0.0;
-    float r_min = (float)fmax(0.0, d_anchor - tau_eff - sq16_delta);
-    float r_max = (float)(d_anchor + tau_eff + sq16_delta);
-
-    int start_m = find_member_lower_bound(cl->members, cl->num_members, r_min);
-    int end_m = find_member_upper_bound(cl->members, cl->num_members, r_max);
-
-    telem->level3_annular_pruned +=
-        (uint64_t)start_m + (uint64_t)(cl->num_members - end_m);
-
-    int count_m = end_m - start_m;
-    if (count_m <= 0)
+    int num_m = cl->num_members;
+    if (num_m <= 0)
     {
         return;
     }
+
+    // Level 3: Center-Outward Annular Window Expansion & Multi-Pivot Filter
+    telem->total_candidates_considered += (uint64_t)num_m;
+
+    double sq16_delta = anchor_is_sq16 ? 2.0 * (double)model->sq16_params.err_radius : 0.0;
+    int mid = find_member_lower_bound(cl->members, num_m, (float)d_anchor);
+    int left = mid - 1;
+    int right = mid;
 
     double dcc_home = (home_cluster_id >= 0 && home_cluster_id < M) ?
         model->dcc_matrix[(size_t)home_cluster_id * (size_t)M + (size_t)q] : 0.0;
@@ -1863,197 +1875,34 @@ static void knn_eval_candidate_cluster_members(
     int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
                        visited->query_sq16 != NULL);
 
-    if (sq16_active)
+    while (left >= 0 || right < num_m)
     {
-        for (int chunk_start = start_m; chunk_start < end_m; chunk_start += 256)
+        double d_left = (left >= 0) ?
+            fabs(d_anchor - (double)cl->members[left].r_anchor) : 1e30;
+        double d_right = (right < num_m) ?
+            fabs(d_anchor - (double)cl->members[right].r_anchor) : 1e30;
+
+        double min_lb = (d_left <= d_right) ? d_left : d_right;
+        current_tau = knn_heap_peek_max_dist(heap);
+
+        if (min_lb - sq16_delta >= current_tau / eps_factor ||
+            (config->rlim_cutoff > 0.0 && min_lb - sq16_delta >= config->rlim_cutoff))
         {
-            int chunk_end = chunk_start + 256;
-            if (chunk_end > end_m)
-            {
-                chunk_end = end_m;
-            }
+            telem->level3_annular_pruned +=
+                (uint64_t)(left + 1) + (uint64_t)(num_m - right);
+            break;
+        }
 
-            Sq16MemberCandidate cand_list[256];
-            int num_cands = 0;
+        int m;
+        if (d_left <= d_right)
+        {
+            m = left--;
+        }
+        else
+        {
+            m = right++;
+        }
 
-            current_tau = knn_heap_peek_max_dist(heap);
-            if (current_tau != last_tau)
-            {
-                last_tau = current_tau;
-                cached_ssd_cutoff = compute_sq16_cutoff_thresh(current_tau, model, config);
-            }
-
-            for (int m = chunk_start; m < chunk_end; m++)
-            {
-                long cand_id = (long)cl->members[m].frame_id;
-
-                if (knn_visited_check_and_mark(visited, cand_id))
-                {
-                    continue;
-                }
-
-                if (!check_temporal_separation(query_id, cand_id, config))
-                {
-                    telem->temporal_pruned++;
-                    continue;
-                }
-
-                double r_cand = (double)cl->members[m].r_anchor;
-
-                // Primary pivot lower bound: anchor A_q
-                double lb1 = fabs(d_anchor - r_cand) - sq16_delta;
-                if (lb1 < 0.0)
-                {
-                    lb1 = 0.0;
-                }
-                if (lb1 >= current_tau / eps_factor)
-                {
-                    telem->level3_annular_pruned++;
-                    continue;
-                }
-
-                // Secondary pivot lower bound: home anchor A_home
-                double lb_home = dcc_home - r_cand - r_home;
-                if (lb_home >= current_tau / eps_factor)
-                {
-                    telem->level3_annular_pruned++;
-                    continue;
-                }
-
-                if (config->rlim_cutoff > 0.0 &&
-                    (lb1 >= config->rlim_cutoff || lb_home >= config->rlim_cutoff))
-                {
-                    telem->level3_annular_pruned++;
-                    continue;
-                }
-
-                // Multi-Anchor Pivot Bounding (AESA / LAESA Indexing)
-                if (config->use_multi_pivot && *num_pivots > 0)
-                {
-                    int pruned_by_pivot = 0;
-                    for (int p = 0; p < *num_pivots; p++)
-                    {
-                        int p_cl = pivots[p].cluster_id;
-                        if (p_cl == q || p_cl == home_cluster_id)
-                        {
-                            continue;
-                        }
-                        double d_qp = pivots[p].d_anchor;
-                        double dcc_pq = model->dcc_matrix[(size_t)p_cl * (size_t)M + (size_t)q];
-                        if (dcc_pq > 0.0)
-                        {
-                            double lb_p1 = dcc_pq - d_qp - r_cand;
-                            double lb_p2 = d_qp - (dcc_pq + r_cand);
-                            double max_lb_p = (lb_p1 > lb_p2) ? lb_p1 : lb_p2;
-                            if (max_lb_p >= current_tau / eps_factor ||
-                                (config->rlim_cutoff > 0.0 && max_lb_p >= config->rlim_cutoff))
-                            {
-                                pruned_by_pivot = 1;
-                                break;
-                            }
-                        }
-                    } // for (int p = 0; ...)
-
-                    if (pruned_by_pivot)
-                    {
-                        telem->level3_annular_pruned++;
-                        continue;
-                    }
-                }
-
-                if (m + 4 < chunk_end)
-                {
-                    long pref_id = (long)cl->members[m + 4].frame_id;
-                    GRIC_PREFETCH_T0(
-                        model->sq16_dataset_buffer + (size_t)pref_id * (size_t)frame_elem
-                    );
-                }
-
-                const int16_t *cand_sq16 = model->sq16_dataset_buffer +
-                                           (size_t)cand_id * (size_t)frame_elem;
-                telem->sq16_evaluations++;
-                uint64_t ssd = sq16_dist_squared_cutoff_i16(
-                    visited->query_sq16, cand_sq16, frame_elem, cached_ssd_cutoff
-                );
-
-                if (ssd > cached_ssd_cutoff)
-                {
-                    telem->sq16_members_pruned++;
-                    continue;
-                }
-
-                cand_list[num_cands].cand_id = cand_id;
-                cand_list[num_cands].ssd = ssd;
-                num_cands++;
-            } // for (int m = chunk_start; ...)
-
-            if (num_cands > 1)
-            {
-                qsort(cand_list, (size_t)num_cands, sizeof(Sq16MemberCandidate),
-                      compare_sq16_candidates);
-            }
-
-            for (int i = 0; i < num_cands; i++)
-            {
-                long cand_id = cand_list[i].cand_id;
-
-                current_tau = knn_heap_peek_max_dist(heap);
-                if (current_tau != last_tau)
-                {
-                    last_tau = current_tau;
-                    cached_ssd_cutoff = compute_sq16_cutoff_thresh(current_tau, model, config);
-                }
-
-                if (cand_list[i].ssd > cached_ssd_cutoff)
-                {
-                    telem->sq16_members_pruned += (uint64_t)(num_cands - i);
-                    break;
-                }
-
-                if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
-                {
-                    telem->reciprocal_reused++;
-                    continue;
-                }
-
-                const void *cand_ptr = NULL;
-                if (reader->memory_data != NULL)
-                {
-                    cand_ptr = (const char *)reader->memory_data + (size_t)cand_id * frame_bytes;
-                }
-                else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
-                {
-                    cand_ptr = cand_buffer;
-                }
-
-                if (cand_ptr != NULL)
-                {
-                    telem->framedist_calls++;
-                    double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
-                                   ? config->rlim_cutoff
-                                   : current_tau;
-                    double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
-                    double d = compute_euclidean_distance_cutoff(
-                        query_data, cand_ptr, frame_elem, model->is_double, cutoff_sq
-                    );
-                    if (d <= c_tau)
-                    {
-                        record_neighbor_and_reciprocal(
-                            query_id, cand_id, d, config, model, heap, all_heaps
-#ifdef _OPENMP
-                            , bucket_locks
-#endif
-                        );
-                    }
-                }
-            } // for (int i = 0; ...)
-        } // for (int chunk_start = ...)
-
-        return;
-    } // if (sq16_active)
-
-    for (int m = start_m; m < end_m; m++)
-    {
         long cand_id = (long)cl->members[m].frame_id;
 
         if (knn_visited_check_and_mark(visited, cand_id))
@@ -2067,7 +1916,6 @@ static void knn_eval_candidate_cluster_members(
             continue;
         }
 
-        current_tau = knn_heap_peek_max_dist(heap);
         double r_cand = (double)cl->members[m].r_anchor;
 
         // Primary pivot lower bound: anchor A_q
@@ -2076,18 +1924,26 @@ static void knn_eval_candidate_cluster_members(
         {
             lb1 = 0.0;
         }
-        if (lb1 >= current_tau / eps_factor)
+        if (lb1 >= current_tau / eps_factor ||
+            (config->rlim_cutoff > 0.0 && lb1 >= config->rlim_cutoff))
         {
             telem->level3_annular_pruned++;
             continue;
         }
 
         // Secondary pivot lower bound: home anchor A_home
-        double lb_home = dcc_home - r_cand - r_home;
-        if (lb_home >= current_tau / eps_factor)
+        if (dcc_home > 0.0)
         {
-            telem->level3_annular_pruned++;
-            continue;
+            double lb_home1 = dcc_home - r_cand - r_home;
+            double lb_home2 = r_home - (dcc_home + r_cand);
+            double max_lb_home = (lb_home1 > lb_home2) ? lb_home1 : lb_home2;
+            if (max_lb_home - sq16_delta >= current_tau / eps_factor ||
+                (config->rlim_cutoff > 0.0 &&
+                 max_lb_home - sq16_delta >= config->rlim_cutoff))
+            {
+                telem->level3_annular_pruned++;
+                continue;
+            }
         }
 
         // Multi-Anchor Pivot Bounding (AESA / LAESA Indexing)
@@ -2108,8 +1964,9 @@ static void knn_eval_candidate_cluster_members(
                     double lb_p1 = dcc_pq - d_qp - r_cand;
                     double lb_p2 = d_qp - (dcc_pq + r_cand);
                     double max_lb_p = (lb_p1 > lb_p2) ? lb_p1 : lb_p2;
-                    if (max_lb_p >= current_tau / eps_factor ||
-                        (config->rlim_cutoff > 0.0 && max_lb_p >= config->rlim_cutoff))
+                    if (max_lb_p - sq16_delta >= current_tau / eps_factor ||
+                        (config->rlim_cutoff > 0.0 &&
+                         max_lb_p - sq16_delta >= config->rlim_cutoff))
                     {
                         pruned_by_pivot = 1;
                         break;
@@ -2120,24 +1977,25 @@ static void knn_eval_candidate_cluster_members(
             if (pruned_by_pivot)
             {
                 telem->level3_annular_pruned++;
+                telem->multi_pivot_pruned++;
                 continue;
             }
         }
 
-        if (config->rlim_cutoff > 0.0 &&
-            (lb1 >= config->rlim_cutoff || lb_home >= config->rlim_cutoff))
-        {
-            telem->level3_annular_pruned++;
-            continue;
-        }
-
         if (sq16_active)
         {
-            if (m + 4 < end_m)
+            if (left >= 0)
             {
-                long pref_id = (long)cl->members[m + 4].frame_id;
+                long pref_l = (long)cl->members[left].frame_id;
                 GRIC_PREFETCH_T0(
-                    model->sq16_dataset_buffer + (size_t)pref_id * (size_t)frame_elem
+                    model->sq16_dataset_buffer + (size_t)pref_l * (size_t)frame_elem
+                );
+            }
+            if (right < num_m)
+            {
+                long pref_r = (long)cl->members[right].frame_id;
+                GRIC_PREFETCH_T0(
+                    model->sq16_dataset_buffer + (size_t)pref_r * (size_t)frame_elem
                 );
             }
 
@@ -2146,10 +2004,17 @@ static void knn_eval_candidate_cluster_members(
                 last_tau = current_tau;
                 cached_ssd_cutoff = compute_sq16_cutoff_thresh(current_tau, model, config);
             }
-            if (is_member_pruned_by_sq16_cached(
-                    visited->query_sq16, cand_id, cached_ssd_cutoff, model, telem
-                ))
+
+            const int16_t *cand_sq16 = model->sq16_dataset_buffer +
+                                       (size_t)cand_id * (size_t)frame_elem;
+            telem->sq16_evaluations++;
+            uint64_t ssd = sq16_dist_squared_cutoff_i16(
+                visited->query_sq16, cand_sq16, frame_elem, cached_ssd_cutoff
+            );
+
+            if (ssd > cached_ssd_cutoff)
             {
+                telem->sq16_members_pruned++;
                 continue;
             }
         }
@@ -2171,22 +2036,24 @@ static void knn_eval_candidate_cluster_members(
             continue;
         }
 
-        // Level 4: Exact Distance Evaluation
         if (!config->use_batch_dist)
         {
             const void *cand_ptr = NULL;
             if (reader->memory_data != NULL)
             {
-                cand_ptr = (const char *)reader->memory_data + (size_t)cand_id * frame_bytes;
+                cand_ptr = (const char *)reader->memory_data +
+                           (size_t)cand_id * frame_bytes;
             }
             else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
             {
                 cand_ptr = cand_buffer;
             }
+
             if (cand_ptr != NULL)
             {
                 telem->framedist_calls++;
-                double c_tau = (config->rlim_cutoff > 0.0 && config->rlim_cutoff < current_tau)
+                double c_tau = (config->rlim_cutoff > 0.0 &&
+                                config->rlim_cutoff < current_tau)
                                ? config->rlim_cutoff
                                : current_tau;
                 double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
@@ -2209,11 +2076,13 @@ static void knn_eval_candidate_cluster_members(
         const void *dest = NULL;
         if (reader->memory_data != NULL)
         {
-            dest = (const char *)reader->memory_data + (size_t)cand_id * frame_bytes;
+            dest = (const char *)reader->memory_data +
+                   (size_t)cand_id * frame_bytes;
         }
         else
         {
-            void *buf_dest = (char *)cand_buffer + (size_t)(*batch_count) * frame_bytes;
+            void *buf_dest = (char *)cand_buffer +
+                             (size_t)(*batch_count) * frame_bytes;
             if (knn_reader_read_frame(reader, cand_id, buf_dest) == 0)
             {
                 dest = buf_dest;
@@ -2257,7 +2126,7 @@ static void knn_eval_candidate_cluster_members(
                 *batch_count = 0;
             }
         }
-    } // for (int m = start_m; ...)
+    } // while (left >= 0 || right < num_m)
 }
 
 /**
@@ -2586,8 +2455,28 @@ static void knn_search_cluster_graph(
     const void *batch_ptrs[4];
     int batch_count = 0;
 
-    int ef_limit = (config->ef_cluster > 0) ? config->ef_cluster : 60;
-    if (ef_limit > M)
+    int ef_limit = config->ef_cluster;
+    if (ef_limit <= 0)
+    {
+        double avg_size = (model->avg_cluster_size > 0.0)
+                          ? model->avg_cluster_size : 50.0;
+        int c_needed = (int)ceil((double)config->k / avg_size);
+        int target = 4 * c_needed;
+        if (target < 12)
+        {
+            target = 12;
+        }
+        if (target > 48)
+        {
+            target = 48;
+        }
+        if (target > M)
+        {
+            target = M;
+        }
+        ef_limit = target;
+    }
+    else if (ef_limit > M)
     {
         ef_limit = M;
     }
@@ -2610,9 +2499,8 @@ static void knn_search_cluster_graph(
             lb_anchor = 0.0;
         }
 
-        /* Early termination: if heap is full and anchor distance is far beyond tau + rlim */
-        if (heap->count >= heap->k && clusters_evaluated >= 20 &&
-            d_anchor > current_tau / eps_factor + rlim)
+        /* Early termination: if heap is full and anchor distance is beyond tau + rlim */
+        if (heap->count >= heap->k && d_anchor > current_tau / eps_factor + rlim)
         {
             break;
         }
@@ -2627,18 +2515,9 @@ static void knn_search_cluster_graph(
             telem->clusters_graph_evaluated++;
 
             /* Record measured anchor pivot if useful */
-            if (num_pivots != NULL && *num_pivots < MAX_MEASURED_PIVOTS && !anchor_is_sq16)
+            if (num_pivots != NULL && *num_pivots < MAX_MEASURED_PIVOTS)
             {
-                int already_present = 0;
-                for (int p = 0; p < *num_pivots; p++)
-                {
-                    if (pivots[p].cluster_id == c)
-                    {
-                        already_present = 1;
-                        break;
-                    }
-                }
-                if (!already_present)
+                if (!is_in_pivots(c, pivots, *num_pivots))
                 {
                     pivots[*num_pivots].cluster_id = c;
                     pivots[*num_pivots].d_anchor = d_anchor;
@@ -2753,6 +2632,12 @@ static void knn_search_single_frame(
     double r_home = (double)model->frame_r_anchor[query_id];
     int M = model->num_clusters;
 
+    /* Pre-seed visited tracker with frames already in heap (from reciprocal pushes) */
+    for (int h = 0; h < heap->count; h++)
+    {
+        knn_visited_check_and_mark(visited, (long)heap->data[h].frame_id);
+    }
+
     MeasuredPivot pivots[MAX_MEASURED_PIVOTS];
     int           num_pivots = 0;
     if (home_cluster_id >= 0 && home_cluster_id < M)
@@ -2760,6 +2645,19 @@ static void knn_search_single_frame(
         pivots[num_pivots].cluster_id = home_cluster_id;
         pivots[num_pivots].d_anchor = r_home;
         num_pivots++;
+    }
+
+    /* Fast Graph Warm-Start: if precomputed k-NN graph is resident, load it first */
+    if (model->has_knn_graph && model->graph_indices != NULL)
+    {
+        knn_warm_start_nearest_cluster(
+            query_id, query_data, home_cluster_id, model, config, reader,
+            cand_buffer, heap, all_heaps,
+#ifdef _OPENMP
+            bucket_locks,
+#endif
+            pivots, &num_pivots, visited, telem
+        );
     }
 
     // Step 1: Intra-Cluster Search (Home cluster c_p)
@@ -2775,15 +2673,18 @@ static void knn_search_single_frame(
         );
     }
 
-    // Fast tau-Contraction: Warm-start tau by searching closest neighbor cluster
-    knn_warm_start_nearest_cluster(
-        query_id, query_data, home_cluster_id, model, config, reader,
-        cand_buffer, heap, all_heaps,
+    /* If heap is still not full, search nearest neighbor clusters */
+    if (heap->count < heap->k)
+    {
+        knn_warm_start_nearest_cluster(
+            query_id, query_data, home_cluster_id, model, config, reader,
+            cand_buffer, heap, all_heaps,
 #ifdef _OPENMP
-        bucket_locks,
+            bucket_locks,
 #endif
-        pivots, &num_pivots, visited, telem
-    );
+            pivots, &num_pivots, visited, telem
+        );
+    }
 
     // 2-Hop Candidate Injection: Expand neighbors of top seeds to collapse tau early
     if (config->use_two_hop)
@@ -4328,6 +4229,20 @@ static void knn_cross_eval_intra_cluster(
                 continue;
             }
 
+            long rep_id = (model->frame_to_unique_map != NULL) ?
+                          model->frame_to_unique_map[cand_id] : cand_id;
+            if (visited != NULL && visited->rep_tags != NULL &&
+                visited->rep_tags[rep_id] == visited->epoch)
+            {
+                telem->memo_hits++;
+                double d = (double)visited->rep_dists[rep_id];
+                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                {
+                    knn_heap_push(heap, (int)cand_id, d);
+                }
+                continue;
+            }
+
             const void *cand_data = NULL;
             if (cand_reader->memory_data != NULL)
             {
@@ -4345,6 +4260,11 @@ static void knn_cross_eval_intra_cluster(
                 double d = compute_euclidean_distance(
                     query_data, cand_data, frame_elem, model->is_double
                 );
+                if (visited != NULL && visited->rep_tags != NULL)
+                {
+                    visited->rep_dists[rep_id] = (float)d;
+                    visited->rep_tags[rep_id] = visited->epoch;
+                }
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
                     knn_heap_push(heap, (int)cand_id, d);
@@ -4561,6 +4481,20 @@ static void knn_cross_eval_inter_clusters(
                 continue;
             }
 
+            long rep_id = (model->frame_to_unique_map != NULL) ?
+                          model->frame_to_unique_map[cand_id] : cand_id;
+            if (visited != NULL && visited->rep_tags != NULL &&
+                visited->rep_tags[rep_id] == visited->epoch)
+            {
+                telem->memo_hits++;
+                double d = (double)visited->rep_dists[rep_id];
+                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                {
+                    knn_heap_push(heap, (int)cand_id, d);
+                }
+                continue;
+            }
+
             const void *cand_data = NULL;
             if (cand_reader->memory_data != NULL)
             {
@@ -4578,6 +4512,11 @@ static void knn_cross_eval_inter_clusters(
                 double d = compute_euclidean_distance(
                     query_data, cand_data, frame_elem, model->is_double
                 );
+                if (visited != NULL && visited->rep_tags != NULL)
+                {
+                    visited->rep_dists[rep_id] = (float)d;
+                    visited->rep_tags[rep_id] = visited->epoch;
+                }
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
                     knn_heap_push(heap, (int)cand_id, d);
@@ -5205,6 +5144,7 @@ int knn_run_search(
     uint64_t global_telem_two_hop_evals = 0;
     uint64_t global_telem_two_hop_pruned = 0;
     uint64_t global_telem_two_hop_injected = 0;
+    uint64_t global_telem_memo_hits = 0;
 
 #ifdef _OPENMP
 #pragma omp parallel reduction(+:global_telem_calls, global_telem_l1,                   \
@@ -5221,7 +5161,8 @@ int knn_run_search(
                                  global_telem_graph_clusters,                           \
                                  global_telem_two_hop_evals,                            \
                                  global_telem_two_hop_pruned,                           \
-                                 global_telem_two_hop_injected)
+                                 global_telem_two_hop_injected,                         \
+                                 global_telem_memo_hits)
 #endif
     {
         KnnFrameReader thread_cand_reader;
@@ -5279,6 +5220,13 @@ int knn_run_search(
         visited.epoch = 1;
         visited.query_sq8 = query_sq8;
         visited.query_sq16 = query_sq16;
+        visited.rep_tags = NULL;
+        visited.rep_dists = NULL;
+        if (config->use_memo && model->frame_to_unique_map != NULL)
+        {
+            visited.rep_tags = (uint32_t *)calloc((size_t)N_cand, sizeof(uint32_t));
+            visited.rep_dists = (float *)malloc((size_t)N_cand * sizeof(float));
+        }
 
 #ifdef _OPENMP
 #pragma omp for schedule(guided, 16)
@@ -5291,6 +5239,10 @@ int knn_run_search(
                 if (visited.tags != NULL)
                 {
                     memset(visited.tags, 0, (size_t)N_cand * sizeof(uint32_t));
+                }
+                if (visited.rep_tags != NULL)
+                {
+                    memset(visited.rep_tags, 0, (size_t)N_cand * sizeof(uint32_t));
                 }
                 visited.epoch = 1;
             }
@@ -5396,10 +5348,21 @@ int knn_run_search(
         global_telem_two_hop_evals += thread_telem.two_hop_evaluations;
         global_telem_two_hop_pruned += thread_telem.two_hop_pruned;
         global_telem_two_hop_injected += thread_telem.two_hop_injected;
+        global_telem_memo_hits += thread_telem.memo_hits;
 
         if (visited.tags != NULL)
         {
             free(visited.tags);
+        }
+
+        if (visited.rep_tags != NULL)
+        {
+            free(visited.rep_tags);
+        }
+
+        if (visited.rep_dists != NULL)
+        {
+            free(visited.rep_dists);
         }
 
         if (query_sq8 != NULL)
@@ -5499,6 +5462,8 @@ int knn_run_search(
     telemetry->two_hop_evaluations = global_telem_two_hop_evals;
     telemetry->two_hop_pruned = global_telem_two_hop_pruned;
     telemetry->two_hop_injected = global_telem_two_hop_injected;
+    telemetry->memo_hits = global_telem_memo_hits;
+    telemetry->memo_unique_frames = (uint64_t)model->num_unique_frames;
     telemetry->total_candidates_considered = global_telem_cand;
     telemetry->time_search_ms = (end_time.tv_sec - start_time.tv_sec) * 1000.0 +
                                 (end_time.tv_nsec - start_time.tv_nsec) / 1000000.0;

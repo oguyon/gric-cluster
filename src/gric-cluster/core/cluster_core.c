@@ -214,6 +214,15 @@ void run_clustering(
             (long *)calloc(config->algo.maxnbclust + 1, sizeof(long));
         state->telemetry.cluster_query_counts =
             (long *)calloc(config->algo.maxnbclust, sizeof(long));
+
+        if (config->optim.use_sq16 && config->optim.use_memo)
+        {
+            quant_memo_init(&state->scratch.memo_table,
+                            QUANT_MEMO_DEFAULT_CAPACITY,
+                            config->optim.sq16_params.err_radius,
+                            config->algo.rlim);
+            state->telemetry.memo_cache_capacity = state->scratch.memo_table.capacity;
+        }
     } // Allocate telemetry and scratch tracking matrices
 
     int       *temp_indices = NULL;
@@ -569,8 +578,26 @@ void run_clustering(
         printf("Scalar Quantization (SQ16) Diagnostics:\n");
         printf("  SQ16 Evaluated: %8lu\n",
                (unsigned long)state->telemetry.sq16_evals);
-        printf("  SQ16 Pruned:    %8lu\n\n",
+        printf("  SQ16 Pruned:    %8lu\n",
                (unsigned long)state->telemetry.sq16_pruned);
+        if (config->optim.use_memo)
+        {
+            double hit_pct = state->telemetry.memo_lookups > 0
+                ? (100.0 * (double)state->telemetry.memo_hits /
+                   (double)state->telemetry.memo_lookups)
+                : 0.0;
+            double mb = (double)(state->telemetry.memo_cache_capacity *
+                                 sizeof(QuantizedMemoEntry)) / (1024.0 * 1024.0);
+            printf("  Memo Cache:     %8lu / %lu entries (%.2f MB)\n",
+                   (unsigned long)state->telemetry.memo_cache_entries,
+                   (unsigned long)state->telemetry.memo_cache_capacity,
+                   mb);
+            printf("  Cell Hits:      %8lu / %lu lookups (%5.1f%%)\n",
+                   (unsigned long)state->telemetry.memo_hits,
+                   (unsigned long)state->telemetry.memo_lookups,
+                   hit_pct);
+        }
+        printf("\n");
     }
     else if (config->optim.use_sq8)
     {
@@ -617,7 +644,16 @@ void run_clustering(
         free(state->current_frame_sq16);
         state->current_frame_sq16 = NULL;
     }
-    if (state->clusters)
+    if (config->optim.use_sq16 && config->optim.use_memo)
+    {
+        quant_memo_free(&state->scratch.memo_table);
+    }
+    if (state->anchor_matrix_sq8)
+    {
+        free(state->anchor_matrix_sq8);
+        state->anchor_matrix_sq8 = NULL;
+    }
+    else if (state->clusters)
     {
         for (int i = 0; i < state->num_clusters; i++)
         {
@@ -626,6 +662,18 @@ void run_clustering(
                 free(state->clusters[i].anchor_sq8);
                 state->clusters[i].anchor_sq8 = NULL;
             }
+        }
+    }
+
+    if (state->anchor_matrix_sq16)
+    {
+        free(state->anchor_matrix_sq16);
+        state->anchor_matrix_sq16 = NULL;
+    }
+    else if (state->clusters)
+    {
+        for (int i = 0; i < state->num_clusters; i++)
+        {
             if (state->clusters[i].anchor_sq16)
             {
                 free(state->clusters[i].anchor_sq16);

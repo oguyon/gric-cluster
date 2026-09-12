@@ -4539,6 +4539,7 @@
         }
         optSq8El.classList.toggle('active', clusterUseSq8);
         if (optSq16El) optSq16El.classList.toggle('active', clusterUseSq16);
+        syncControlDependencies();
         updateCliCommand();
         draw();
       });
@@ -4552,8 +4553,38 @@
         }
         optSq16El.classList.toggle('active', clusterUseSq16);
         if (optSq8El) optSq8El.classList.toggle('active', clusterUseSq8);
+        syncControlDependencies();
         updateCliCommand();
         draw();
+      });
+    }
+
+    const optMemoEl = document.getElementById('optMemo');
+    if (optMemoEl) {
+      optMemoEl.addEventListener('click', () => {
+        clusterUseMemo = !clusterUseMemo;
+        optMemoEl.classList.toggle('active', clusterUseMemo);
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    const inputSq16RatioEl = document.getElementById('inputSq16Ratio');
+    const sliderSq16RatioEl = document.getElementById('sliderSq16Ratio');
+    if (inputSq16RatioEl && sliderSq16RatioEl) {
+      inputSq16RatioEl.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val >= 0.005 && val <= 0.50) {
+          clusterSq16Ratio = val;
+          sliderSq16RatioEl.value = val;
+          updateCliCommand();
+        }
+      });
+      sliderSq16RatioEl.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        clusterSq16Ratio = val;
+        inputSq16RatioEl.value = val.toFixed(3);
+        updateCliCommand();
       });
     }
 
@@ -6594,6 +6625,12 @@
           if (typeof knnMvp !== 'undefined' && knnMvp) args.push('-multipivot');
           if (typeof knnUseSq16 !== 'undefined' && knnUseSq16) {
             args.push('-sq16');
+            if (typeof knnSq16Ratio !== 'undefined') {
+              args.push('-sq16-ratio', String(knnSq16Ratio));
+            }
+            if (typeof knnUseMemo !== 'undefined') {
+              args.push(knnUseMemo ? '-memo' : '-no-memo');
+            }
           } else if (typeof knnUseSq8 !== 'undefined') {
             args.push(knnUseSq8 ? '-sq8' : '-no-sq8');
           }
@@ -6603,7 +6640,7 @@
           if (typeof knnUseClusterGraph !== 'undefined') {
             if (knnUseClusterGraph) {
               args.push('-cluster-graph');
-              if (typeof knnEfCluster !== 'undefined') {
+              if (typeof knnEfCluster !== 'undefined' && knnEfCluster > 0) {
                 args.push('-ef-cluster', String(knnEfCluster));
               }
             } else {
@@ -6611,7 +6648,7 @@
             }
           }
           args.push('-progress');
-          args.push('-txt');
+          args.push('-no-txt');
 
           const consoleEl = document.getElementById('cliConsoleLog');
           const btnRunCli = document.getElementById('btnRunCli');
@@ -7132,6 +7169,7 @@
           btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
           btnKnnSq16.classList.toggle('active', knnUseSq16);
         }
+        syncControlDependencies();
         updateCliCommand();
         draw();
       });
@@ -7151,8 +7189,40 @@
           btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
           btnKnnSq8.classList.toggle('active', knnUseSq8);
         }
+        syncControlDependencies();
         updateCliCommand();
         draw();
+      });
+    }
+
+    const btnKnnMemo = document.getElementById('btnKnnMemo');
+    if (btnKnnMemo) {
+      btnKnnMemo.addEventListener('click', () => {
+        knnUseMemo = !knnUseMemo;
+        btnKnnMemo.classList.toggle('toggle-active', knnUseMemo);
+        btnKnnMemo.classList.toggle('toggle-cyan', knnUseMemo);
+        btnKnnMemo.classList.toggle('active', knnUseMemo);
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    const inputKnnSq16RatioEl = document.getElementById('inputKnnSq16Ratio');
+    const sliderKnnSq16RatioEl = document.getElementById('sliderKnnSq16Ratio');
+    if (inputKnnSq16RatioEl && sliderKnnSq16RatioEl) {
+      inputKnnSq16RatioEl.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val >= 0.005 && val <= 0.50) {
+          knnSq16Ratio = val;
+          sliderKnnSq16RatioEl.value = val;
+          updateCliCommand();
+        }
+      });
+      sliderKnnSq16RatioEl.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        knnSq16Ratio = val;
+        inputKnnSq16RatioEl.value = val.toFixed(3);
+        updateCliCommand();
       });
     }
 
@@ -7187,10 +7257,19 @@
       });
     }
 
+    const updateEfClusterDisplay = () => {
+      const unitKnnEf = document.getElementById('unitKnnEfCluster');
+      if (unitKnnEf) {
+        unitKnnEf.textContent = (knnEfCluster === 0) ? 'Auto' : 'ef';
+        unitKnnEf.style.color = (knnEfCluster === 0) ? '#34d399' : '';
+      }
+    };
+
     if (sliderKnnEfCluster) {
       sliderKnnEfCluster.addEventListener('input', (e) => {
-        knnEfCluster = parseInt(e.target.value, 10);
+        knnEfCluster = parseInt(e.target.value, 10) || 0;
         if (inputKnnEfCluster) inputKnnEfCluster.value = knnEfCluster;
+        updateEfClusterDisplay();
         updateCliCommand();
         draw();
       });
@@ -7199,9 +7278,10 @@
     if (inputKnnEfCluster) {
       inputKnnEfCluster.addEventListener('input', (e) => {
         const v = parseInt(e.target.value, 10);
-        if (!isNaN(v) && v >= 1) {
+        if (!isNaN(v) && v >= 0) {
           knnEfCluster = v;
           if (sliderKnnEfCluster) sliderKnnEfCluster.value = Math.min(250, v);
+          updateEfClusterDisplay();
           updateCliCommand();
           draw();
         }
@@ -9135,7 +9215,7 @@
           '-k', String(k),
           '--all-queries',
           '-progress',
-          '-txt',
+          '-no-txt',
           '-o', queryOutPrefix
         ];
 
@@ -9156,6 +9236,12 @@
         const chkSq8 = document.getElementById('chkReconQuerySq8');
         if (radSq16 && radSq16.checked) {
           args.push('-sq16');
+          if (typeof knnSq16Ratio !== 'undefined') {
+            args.push('-sq16-ratio', String(knnSq16Ratio));
+          }
+          if (typeof knnUseMemo !== 'undefined') {
+            args.push(knnUseMemo ? '-memo' : '-no-memo');
+          }
         } else if (radSq8 && radSq8.checked) {
           args.push('-sq8');
         } else if (chkSq8 && chkSq8.checked) {
@@ -9169,7 +9255,7 @@
         if (typeof knnUseClusterGraph !== 'undefined') {
           if (knnUseClusterGraph) {
             args.push('-cluster-graph');
-            if (typeof knnEfCluster !== 'undefined') {
+            if (typeof knnEfCluster !== 'undefined' && knnEfCluster > 0) {
               args.push('-ef-cluster', String(knnEfCluster));
             }
           } else {
@@ -10211,6 +10297,43 @@
       const chkShuffleEl = document.getElementById('chkShuffleFrames');
       if (chkShuffleEl && typeof shuffleFrames !== 'undefined') {
         chkShuffleEl.checked = !!shuffleFrames;
+      }
+
+      // 8. SQ16 Ratio & Memoization controls
+      const rowSq16Ratio = document.getElementById('rowSq16Ratio');
+      if (rowSq16Ratio) {
+        rowSq16Ratio.style.display = (typeof clusterUseSq16 === 'boolean' && clusterUseSq16) ? 'flex' : 'none';
+      }
+      const optMemo = document.getElementById('optMemo');
+      if (optMemo && typeof clusterUseMemo === 'boolean') {
+        optMemo.classList.toggle('active', clusterUseMemo);
+      }
+      const inputSq16Ratio = document.getElementById('inputSq16Ratio');
+      const sliderSq16Ratio = document.getElementById('sliderSq16Ratio');
+      if (inputSq16Ratio && typeof clusterSq16Ratio === 'number') {
+        inputSq16Ratio.value = clusterSq16Ratio.toFixed(3);
+      }
+      if (sliderSq16Ratio && typeof clusterSq16Ratio === 'number') {
+        sliderSq16Ratio.value = clusterSq16Ratio;
+      }
+
+      const rowKnnSq16Ratio = document.getElementById('rowKnnSq16Ratio');
+      if (rowKnnSq16Ratio) {
+        rowKnnSq16Ratio.style.display = (enableKnn && typeof knnUseSq16 === 'boolean' && knnUseSq16) ? 'flex' : 'none';
+      }
+      const btnKnnMemo = document.getElementById('btnKnnMemo');
+      if (btnKnnMemo && typeof knnUseMemo === 'boolean') {
+        btnKnnMemo.classList.toggle('toggle-active', knnUseMemo);
+        btnKnnMemo.classList.toggle('toggle-cyan', knnUseMemo);
+        btnKnnMemo.classList.toggle('active', knnUseMemo);
+      }
+      const inputKnnSq16Ratio = document.getElementById('inputKnnSq16Ratio');
+      const sliderKnnSq16Ratio = document.getElementById('sliderKnnSq16Ratio');
+      if (inputKnnSq16Ratio && typeof knnSq16Ratio === 'number') {
+        inputKnnSq16Ratio.value = knnSq16Ratio.toFixed(3);
+      }
+      if (sliderKnnSq16Ratio && typeof knnSq16Ratio === 'number') {
+        sliderKnnSq16Ratio.value = knnSq16Ratio;
       }
 
       if (typeof updateCliCommand === 'function') {
@@ -11431,6 +11554,12 @@
       }
       if (typeof clusterUseSq16 === 'boolean' && clusterUseSq16) {
         args.push('-sq16');
+        if (typeof clusterSq16Ratio !== 'undefined') {
+          args.push('-sq16-ratio', String(clusterSq16Ratio));
+        }
+        if (typeof clusterUseMemo !== 'undefined') {
+          args.push(clusterUseMemo ? '-memo' : '-no-memo');
+        }
       } else if (typeof clusterUseSq8 === 'boolean') {
         args.push(clusterUseSq8 ? '-sq8' : '-no-sq8');
       }
@@ -11620,6 +11749,41 @@
             if (statPredRateEl && t.pred_attempts > 0) {
               const rate = ((t.pred_hits / t.pred_attempts) * 100).toFixed(1);
               statPredRateEl.textContent = `${rate}%`;
+            }
+
+            const statMemoHitsEl = document.getElementById('statMemoHits');
+            const statMemoHitsOverview = document.getElementById('statMemoHitsOverview');
+            if (t.memo_hits !== undefined) {
+              if (typeof memoHits !== 'undefined') memoHits = t.memo_hits || 0;
+              if (typeof memoLookups !== 'undefined') memoLookups = t.memo_lookups || 0;
+              const hitsStr = (t.memo_hits || 0).toLocaleString();
+              if (statMemoHitsEl) statMemoHitsEl.textContent = hitsStr;
+              if (statMemoHitsOverview) {
+                const pct = t.memo_lookups > 0
+                  ? ((t.memo_hits / t.memo_lookups) * 100).toFixed(1)
+                  : '0.0';
+                statMemoHitsOverview.textContent = `${hitsStr} (${pct}%)`;
+              }
+            }
+
+            const lblMemoHitsEl = document.getElementById('lblMemoHits');
+            if (lblMemoHitsEl && t.memo_lookups > 0) {
+              const pct = ((t.memo_hits / t.memo_lookups) * 100).toFixed(1);
+              lblMemoHitsEl.textContent = `Memo Hits (${pct}%)`;
+            }
+
+            const memHashCacheEl = document.getElementById('memHashCache');
+            const lblHashCacheEl = document.getElementById('lblHashCache');
+            const statHashCacheOverview = document.getElementById('statHashCacheOverview');
+            if (t.memo_cache_capacity > 0) {
+              if (typeof memoCacheCapacity !== 'undefined') memoCacheCapacity = t.memo_cache_capacity || 0;
+              const cacheStr = formatBytes(t.memo_cache_capacity * 32);
+              if (memHashCacheEl) memHashCacheEl.textContent = cacheStr;
+              if (statHashCacheOverview) statHashCacheOverview.textContent = `Cache: ${cacheStr}`;
+            }
+            if (lblHashCacheEl && t.memo_cache_entries !== undefined) {
+              if (typeof memoCacheEntries !== 'undefined') memoCacheEntries = t.memo_cache_entries || 0;
+              lblHashCacheEl.textContent = `Hash Cache (${t.memo_cache_entries.toLocaleString()} entries)`;
             }
 
             // Mobile HUD overlay
@@ -11825,6 +11989,45 @@
             const statMemoryTotalEl = document.getElementById('statMemoryTotal');
             if (statMemoryTotalEl) {
               statMemoryTotalEl.textContent = formatBytes(data.stats.rssKb * 1024);
+            }
+          }
+
+          if (data.stats.memoHits !== undefined) {
+            if (typeof memoHits !== 'undefined') memoHits = data.stats.memoHits || 0;
+            if (typeof memoLookups !== 'undefined') memoLookups = data.stats.memoLookups || 0;
+            const statMemoHitsEl = document.getElementById('statMemoHits');
+            const statMemoHitsOverview = document.getElementById('statMemoHitsOverview');
+            const hitsStr = data.stats.memoHits.toLocaleString();
+            if (statMemoHitsEl) {
+              statMemoHitsEl.textContent = hitsStr;
+            }
+            if (statMemoHitsOverview) {
+              const pct = data.stats.memoLookups > 0
+                ? ((data.stats.memoHits / data.stats.memoLookups) * 100).toFixed(1)
+                : '0.0';
+              statMemoHitsOverview.textContent = `${hitsStr} (${pct}%)`;
+            }
+            const lblMemoHitsEl = document.getElementById('lblMemoHits');
+            if (lblMemoHitsEl && data.stats.memoLookups > 0) {
+              const pct = ((data.stats.memoHits / data.stats.memoLookups) * 100).toFixed(1);
+              lblMemoHitsEl.textContent = `Memo Hits (${pct}%)`;
+            }
+          }
+          if (data.stats.memoCacheCapacity !== undefined) {
+            if (typeof memoCacheCapacity !== 'undefined') memoCacheCapacity = data.stats.memoCacheCapacity || 0;
+            if (typeof memoCacheEntries !== 'undefined') memoCacheEntries = data.stats.memoCacheEntries || 0;
+            const cacheStr = formatBytes(data.stats.memoCacheCapacity * 32);
+            const memHashCacheEl = document.getElementById('memHashCache');
+            if (memHashCacheEl) {
+              memHashCacheEl.textContent = cacheStr;
+            }
+            const statHashCacheOverview = document.getElementById('statHashCacheOverview');
+            if (statHashCacheOverview) {
+              statHashCacheOverview.textContent = `Cache: ${cacheStr}`;
+            }
+            const lblHashCacheEl = document.getElementById('lblHashCache');
+            if (lblHashCacheEl && data.stats.memoCacheEntries !== undefined) {
+              lblHashCacheEl.textContent = `Hash Cache (${data.stats.memoCacheEntries.toLocaleString()} entries)`;
             }
           }
         } else if (sumMembers > 0) {

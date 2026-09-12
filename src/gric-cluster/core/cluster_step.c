@@ -24,6 +24,7 @@
 #include "cluster_prune.h"
 #include "cluster_bounds.h"
 #include "scalar_quant.h"
+#include "gric_hash.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -71,6 +72,9 @@ int cluster_frame(
     long start_dfc_calls = state->telemetry.framedist_calls_sample;
     long start_dcc_calls = state->telemetry.framedist_calls_intercluster;
     int  temp_count = 0;
+    uint64_t memo_h = 0;
+    uint64_t memo_h_aux = 0;
+    int  memo_lookup_done = 0;
 
     if (config->optim.use_sq16)
     {
@@ -78,6 +82,11 @@ int cluster_frame(
         if (state->current_frame_sq16 == NULL)
         {
             state->current_frame_sq16 = (int16_t *)malloc((size_t)frame_dim * sizeof(int16_t));
+        }
+        if (state->anchor_matrix_sq16 == NULL)
+        {
+            size_t total_sq16 = (size_t)config->algo.maxnbclust * (size_t)frame_dim;
+            state->anchor_matrix_sq16 = (int16_t *)malloc(total_sq16 * sizeof(int16_t));
         }
         if (!state->sq16_calibrated)
         {
@@ -93,6 +102,29 @@ int cluster_frame(
                                      (const float *)current_frame->data,
                                      frame_dim, frame_dim);
             }
+
+            /* Enforce --sq16-ratio bound: scale = alpha*rlim / sqrt(D) */
+            if (config->optim.sq16_ratio > 0.0 && config->algo.rlim > 0.0)
+            {
+                float target_scale = (float)((config->optim.sq16_ratio * config->algo.rlim) /
+                                             sqrt((double)frame_dim));
+                float center = 0.5f * (config->optim.sq16_params.min_val +
+                                       config->optim.sq16_params.max_val);
+                config->optim.sq16_params.scale = target_scale;
+                config->optim.sq16_params.inv_scale = 1.0f / target_scale;
+                config->optim.sq16_params.min_val = center - 16384.0f * target_scale;
+                config->optim.sq16_params.max_val = center + 16383.0f * target_scale;
+                config->optim.sq16_params.err_radius =
+                    sqrtf((float)frame_dim) * target_scale * 0.5f;
+            }
+
+            if (config->optim.use_memo)
+            {
+                state->scratch.memo_table.err_radius =
+                    (double)config->optim.sq16_params.err_radius;
+                state->scratch.memo_table.rlim = config->algo.rlim;
+            }
+
             state->sq16_calibrated = 1;
         }
         if (current_frame->is_double)
@@ -114,6 +146,11 @@ int cluster_frame(
         if (state->current_frame_sq8 == NULL)
         {
             state->current_frame_sq8 = (uint8_t *)malloc((size_t)frame_dim);
+        }
+        if (state->anchor_matrix_sq8 == NULL)
+        {
+            size_t total_sq8 = (size_t)config->algo.maxnbclust * (size_t)frame_dim;
+            state->anchor_matrix_sq8 = (uint8_t *)malloc(total_sq8 * sizeof(uint8_t));
         }
         if (!state->sq8_calibrated)
         {
@@ -282,6 +319,57 @@ int cluster_frame(
             }
         }
 
+        /* Step 3 Fast-Path: Quantized Memoization Cache Lookup */
+        if (config->optim.use_sq16 && config->optim.use_memo &&
+            state->current_frame_sq16 != NULL)
+        {
+            memo_lookup_done = 1;
+            long fdim = config->optim.sq16_params.dim;
+            memo_h = gric_hash_i16(state->current_frame_sq16, fdim);
+            memo_h_aux = gric_hash_bytes(state->current_frame_sq16,
+                                         (size_t)fdim * sizeof(int16_t),
+                                         GRIC_HASH_SEED ^ 0x517cc1b727220a95ULL);
+
+            int memo_cid = -1;
+            float memo_adist = 0.0f;
+            int memo_needs_verify = 0;
+
+            if (quant_memo_lookup(&state->scratch.memo_table,
+                                  memo_h, memo_h_aux,
+                                  &memo_cid, &memo_adist,
+                                  &memo_needs_verify))
+            {
+                if (memo_cid >= 0 && memo_cid < state->num_clusters)
+                {
+                    int valid = 1;
+                    if (memo_needs_verify)
+                    {
+                        double d_check = measure_distance_to_cluster(
+                            memo_cid, current_frame, config, state,
+                            temp_indices, temp_dists, &temp_count, 0);
+                        if (d_check >= config->algo.rlim)
+                        {
+                            valid = 0;
+                        }
+                        else
+                        {
+                            memo_adist = (float)d_check;
+                        }
+                    }
+
+                    if (valid)
+                    {
+                        assigned_cluster = memo_cid;
+                        state->telemetry.last_assignment_dist = (double)memo_adist;
+                        found = 1;
+                    }
+                }
+            }
+            state->telemetry.memo_hits = state->scratch.memo_table.hit_count;
+            state->telemetry.memo_lookups = state->scratch.memo_table.lookup_count;
+            state->telemetry.memo_cache_entries = state->scratch.memo_table.entry_count;
+        }
+
         // Step 3: Iterative search loop (Prediction & Standard search).
         while (!found)
         {
@@ -300,46 +388,65 @@ int cluster_frame(
                 if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
                 {
                     long dim = config->optim.sq16_params.dim;
-                    for (int i = 0; i < state->num_clusters; i++)
+                    const int16_t *cur_sq16 = state->current_frame_sq16;
+                    const int16_t *mat_sq16 = state->anchor_matrix_sq16;
+                    int num_cl = state->num_clusters;
+
+                    for (int i = 0; i < num_cl; i++)
                     {
-                        if (state->scratch.clmembflag[i] &&
-                            state->clusters[i].anchor_sq16 != NULL)
+                        if (state->scratch.clmembflag[i])
                         {
-                            state->telemetry.sq16_evals++;
-                            uint64_t ssd = sq16_dist_squared_cutoff_i16(
-                                state->current_frame_sq16,
-                                state->clusters[i].anchor_sq16,
-                                dim,
-                                sq16_ssd_thresh
-                            );
-                            if (ssd > sq16_ssd_thresh)
+                            const int16_t *a_ptr = mat_sq16
+                                                   ? (mat_sq16 + (size_t)i * (size_t)dim)
+                                                   : state->clusters[i].anchor_sq16;
+                            if (a_ptr != NULL)
                             {
-                                state->scratch.clmembflag[i] = 0;
-                                state->telemetry.sq16_pruned++;
-                                state->telemetry.clusters_pruned++;
+                                state->telemetry.sq16_evals++;
+                                uint64_t ssd = sq16_dist_squared_cutoff_i16(
+                                    cur_sq16,
+                                    a_ptr,
+                                    dim,
+                                    sq16_ssd_thresh
+                                );
+                                if (ssd > sq16_ssd_thresh)
+                                {
+                                    state->scratch.clmembflag[i] = 0;
+                                    state->telemetry.sq16_pruned++;
+                                    state->telemetry.clusters_pruned++;
+                                }
                             }
                         }
                     }
                 }
                 else if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
                 {
-                    for (int i = 0; i < state->num_clusters; i++)
+                    const uint8_t *cur_sq8 = state->current_frame_sq8;
+                    const uint8_t *mat_sq8 = state->anchor_matrix_sq8;
+                    long dim = config->optim.sq8_params.dim;
+                    int num_cl = state->num_clusters;
+
+                    for (int i = 0; i < num_cl; i++)
                     {
-                        if (state->scratch.clmembflag[i] &&
-                            state->clusters[i].anchor_sq8 != NULL)
+                        if (state->scratch.clmembflag[i])
                         {
-                            state->telemetry.sq8_evals++;
-                            double d_lb = sq8_compute_lower_bound(
-                                state->current_frame_sq8,
-                                state->clusters[i].anchor_sq8,
-                                &config->optim.sq8_params,
-                                0.0
-                            );
-                            if (d_lb > config->algo.rlim)
+                            const uint8_t *a_ptr = mat_sq8
+                                                   ? (mat_sq8 + (size_t)i * (size_t)dim)
+                                                   : state->clusters[i].anchor_sq8;
+                            if (a_ptr != NULL)
                             {
-                                state->scratch.clmembflag[i] = 0;
-                                state->telemetry.sq8_pruned++;
-                                state->telemetry.clusters_pruned++;
+                                state->telemetry.sq8_evals++;
+                                double d_lb = sq8_compute_lower_bound(
+                                    cur_sq8,
+                                    a_ptr,
+                                    &config->optim.sq8_params,
+                                    0.0
+                                );
+                                if (d_lb > config->algo.rlim)
+                                {
+                                    state->scratch.clmembflag[i] = 0;
+                                    state->telemetry.sq8_pruned++;
+                                    state->telemetry.clusters_pruned++;
+                                }
                             }
                         }
                     }
@@ -560,6 +667,16 @@ int cluster_frame(
         clock_gettime(CLOCK_MONOTONIC, &s5_end);
         state->telemetry.time_step_5 += (s5_end.tv_sec - s5_start.tv_sec) * 1000.0 +
                                         (s5_end.tv_nsec - s5_start.tv_nsec) / 1000000.0;
+
+        if (memo_lookup_done)
+        {
+            quant_memo_insert(&state->scratch.memo_table,
+                              memo_h, memo_h_aux,
+                              assigned_cluster,
+                              (float)state->telemetry.last_assignment_dist,
+                              (uint32_t)state->telemetry.total_frames_processed);
+            state->telemetry.memo_cache_entries = state->scratch.memo_table.entry_count;
+        }
     }
 
     if (config->optim.sparse_dcc_mode && config->optim.sparse_dcc_extra_evals > 0)

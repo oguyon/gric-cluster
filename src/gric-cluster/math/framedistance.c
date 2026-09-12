@@ -535,6 +535,54 @@ void framedist_batch_1x4_float(
     const float *restrict a2 = anchors[2];
     const float *restrict a3 = anchors[3];
 
+#if defined(__SSE__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (size == 3)
+    {
+        __m128 vqx = _mm_set1_ps(q[0]);
+        __m128 vqy = _mm_set1_ps(q[1]);
+        __m128 vqz = _mm_set1_ps(q[2]);
+        __m128 va0 = _mm_set_ps(a3[0], a2[0], a1[0], a0[0]);
+        __m128 va1 = _mm_set_ps(a3[1], a2[1], a1[1], a0[1]);
+        __m128 va2 = _mm_set_ps(a3[2], a2[2], a1[2], a0[2]);
+        __m128 dx = _mm_sub_ps(vqx, va0);
+        __m128 dy = _mm_sub_ps(vqy, va1);
+        __m128 dz = _mm_sub_ps(vqz, va2);
+#ifdef __FMA__
+        __m128 dsq = _mm_fmadd_ps(dz, dz, _mm_fmadd_ps(dy, dy, _mm_mul_ps(dx, dx)));
+#else
+        __m128 dsq = _mm_add_ps(_mm_mul_ps(dx, dx),
+                                _mm_add_ps(_mm_mul_ps(dy, dy), _mm_mul_ps(dz, dz)));
+#endif
+        __m128 vd = _mm_sqrt_ps(dsq);
+        out_dists[0] = (double)_mm_cvtss_f32(vd);
+        out_dists[1] = (double)_mm_cvtss_f32(_mm_shuffle_ps(vd, vd, _MM_SHUFFLE(1, 1, 1, 1)));
+        out_dists[2] = (double)_mm_cvtss_f32(_mm_shuffle_ps(vd, vd, _MM_SHUFFLE(2, 2, 2, 2)));
+        out_dists[3] = (double)_mm_cvtss_f32(_mm_shuffle_ps(vd, vd, _MM_SHUFFLE(3, 3, 3, 3)));
+        return;
+    }
+    if (size == 2)
+    {
+        __m128 vqx = _mm_set1_ps(q[0]);
+        __m128 vqy = _mm_set1_ps(q[1]);
+        __m128 va0 = _mm_set_ps(a3[0], a2[0], a1[0], a0[0]);
+        __m128 va1 = _mm_set_ps(a3[1], a2[1], a1[1], a0[1]);
+        __m128 dx = _mm_sub_ps(vqx, va0);
+        __m128 dy = _mm_sub_ps(vqy, va1);
+#ifdef __FMA__
+        __m128 dsq = _mm_fmadd_ps(dy, dy, _mm_mul_ps(dx, dx));
+#else
+        __m128 dsq = _mm_add_ps(_mm_mul_ps(dx, dx), _mm_mul_ps(dy, dy));
+#endif
+        __m128 vd = _mm_sqrt_ps(dsq);
+        out_dists[0] = (double)_mm_cvtss_f32(vd);
+        out_dists[1] = (double)_mm_cvtss_f32(_mm_shuffle_ps(vd, vd, _MM_SHUFFLE(1, 1, 1, 1)));
+        out_dists[2] = (double)_mm_cvtss_f32(_mm_shuffle_ps(vd, vd, _MM_SHUFFLE(2, 2, 2, 2)));
+        out_dists[3] = (double)_mm_cvtss_f32(_mm_shuffle_ps(vd, vd, _MM_SHUFFLE(3, 3, 3, 3)));
+        return;
+    }
+#endif
+
 #if defined(__AVX__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     if (size >= 16)

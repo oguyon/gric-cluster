@@ -110,6 +110,28 @@ static int apply_algo_option(
         config->optim.use_sq16 = 0;
         return 0;
     }
+    else if (matches(key, "-sq16-ratio") || matches(key, "--sq16-ratio") ||
+             matches(key, "-sq16_ratio") || matches(key, "--sq16_ratio") ||
+             matches(key, "sq16_ratio"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.sq16_ratio = atof(value);
+        return 1;
+    }
+    else if (matches(key, "-memo") || matches(key, "--memo") || matches(key, "use_memo"))
+    {
+        config->optim.use_memo = 1;
+        return 0;
+    }
+    else if (matches(key, "-no-memo") || matches(key, "--no-memo") ||
+             matches(key, "-nomemo") || matches(key, "no_memo"))
+    {
+        config->optim.use_memo = 0;
+        return 0;
+    }
     else if (matches(key, "-batch-dist") || matches(key, "--batch-dist") ||
              matches(key, "-batchdist"))
     {
@@ -912,6 +934,18 @@ int write_config_file(const char *filename, ClusterConfig *config)
     if (config->optim.use_sq16)
     {
         fprintf(f, "sq16\n");
+        if (config->optim.sq16_ratio > 0.0)
+        {
+            fprintf(f, "sq16_ratio %f\n", config->optim.sq16_ratio);
+        }
+        if (config->optim.use_memo)
+        {
+            fprintf(f, "use_memo 1\n");
+        }
+        else
+        {
+            fprintf(f, "use_memo 0\n");
+        }
     }
     else if (config->optim.use_sq8)
     {

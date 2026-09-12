@@ -9,6 +9,7 @@
 
 #include "common.h"
 #include "scalar_quant.h"
+#include "quant_memo.h"
 #include <signal.h>
 #include <stdio.h>
 
@@ -84,6 +85,8 @@ typedef struct
     SQ8Params sq8_params;              /**< Uniform scalar quantization parameters */
     int       use_sq16;                /**< 1 to enable 16-bit scalar quantization pruning */
     SQ16Params sq16_params;            /**< Uniform 16-bit scalar quantization parameters */
+    int       use_memo;                /**< 1 to enable quantized hash memoization cache */
+    double    sq16_ratio;              /**< Max ratio sqrt(D)*scale / rlim (default 0.05) */
     int       use_batch_dist;          /**< 1 to enable multi-vector SIMD batch distance */
     char     *prof_filename;           /**< Path to explicitly loaded .gricprof */
     int       no_prof;                 /**< 1 to disable automatic .gricprof loading */
@@ -185,6 +188,10 @@ typedef struct
     uint64_t sq8_pruned;            /**< Cluster checks pruned by SQ8 lower bound */
     uint64_t sq16_evals;            /**< Cluster candidates evaluated with SQ16 lower bound */
     uint64_t sq16_pruned;           /**< Cluster checks pruned by SQ16 lower bound */
+    uint64_t memo_lookups;          /**< Total queries to quantized memoization table */
+    uint64_t memo_hits;             /**< Duplicate cell hits (multiple samples on same cell) */
+    uint64_t memo_cache_entries;    /**< Number of unique quantized cells in cache */
+    uint64_t memo_cache_capacity;   /**< Maximum capacity of the memoization cache */
 } ClusterTelemetry;
 
 // Candidate structure for sorting
@@ -230,6 +237,7 @@ typedef struct
     const int16_t **sq16_anchor_ptrs;  /**< Pre-allocated anchor pointers for bulk SQ16 */
     double      *d_min_scratch;        /**< Pre-allocated scratch row for DCC bounds */
     double      *d_max_scratch;        /**< Pre-allocated scratch row for DCC bounds */
+    QuantizedMemoTable memo_table;     /**< Quantized hash memoization cache */
 } ClusterScratch;
 
 /* Forward declaration — full definition in cluster_trace.h */
@@ -256,6 +264,8 @@ typedef struct
     int                 sq8_calibrated;     /**< 1 if global SQ8 params are calibrated */
     int16_t            *current_frame_sq16; /**< Scratch buffer for SQ16 current frame */
     int                 sq16_calibrated;    /**< 1 if global SQ16 params are calibrated */
+    uint8_t            *anchor_matrix_sq8;  /**< Contiguous [maxnbclust x dim] SQ8 anchors */
+    int16_t            *anchor_matrix_sq16; /**< Contiguous [maxnbclust x dim] SQ16 anchors */
     long               *perm_dim;           /**< Spectral dimension ordering [dim] */
     double             *residual_tail;      /**< Precomputed residual tail array [dim] */
 } ClusterState;
