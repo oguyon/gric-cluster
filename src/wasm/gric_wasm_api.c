@@ -2367,11 +2367,6 @@ int wasm_knn_run_search(
         }
     }
 
-    if (knn_build_super_clusters(&model) != 0)
-    {
-        goto cleanup_model_alloc;
-    }
-
     model.anchor_ptrs = (const void **)malloc((size_t)M * sizeof(const void *));
     model.cluster_radii = (double *)malloc((size_t)M * sizeof(double));
     if (model.anchor_ptrs == NULL || model.cluster_radii == NULL)
@@ -2437,8 +2432,6 @@ int wasm_knn_run_search(
     knn_results_free(&results);
 
     /* Free model buffers */
-    knn_free_super_clusters(&model);
-
     for (int c = 0; c < M; c++)
     {
         if (model.clusters[c].anchor_data != NULL)
@@ -2466,8 +2459,6 @@ int wasm_knn_run_search(
     return 0;
 
 cleanup_model_alloc:
-    knn_free_super_clusters(&model);
-
     if (model.clusters != NULL)
     {
         for (int c = 0; c < M; c++)

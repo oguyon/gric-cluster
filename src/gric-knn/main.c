@@ -805,15 +805,7 @@ int main(
 
     printf("Loaded Pass 1 Model in %.2f ms:\n", load_time_ms);
     printf("  Total Frames:    %ld\n", model.total_dataset_frames);
-    printf("  Total Clusters:  %d", model.num_clusters);
-    if (model.num_super_clusters > 0)
-    {
-        printf(" (%d super-clusters)\n", model.num_super_clusters);
-    }
-    else
-    {
-        printf("\n");
-    }
+    printf("  Total Clusters:  %d\n", model.num_clusters);
     printf("  Frame Dimension: %ld x %ld (%ld elements)\n",
            model.frame_width, model.frame_height, model.frame_elements);
     if (config.rlim_cutoff > 0.0)
@@ -874,11 +866,6 @@ int main(
     {
         printf("  Out-of-Cluster Refused:    %lu queries\n",
                (unsigned long)telemetry.out_of_cluster_rejected);
-    }
-    if (telemetry.level0_super_clusters_pruned > 0)
-    {
-        printf("  Level 0 Super-Clusters:    %lu pruned\n",
-               (unsigned long)telemetry.level0_super_clusters_pruned);
     }
     printf("  Level 1 Clusters Pruned:   %lu\n", (unsigned long)telemetry.level1_clusters_pruned);
     printf("  Level 2 Anchors Pruned:    %lu\n", (unsigned long)telemetry.level2_anchors_pruned);

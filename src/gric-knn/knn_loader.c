@@ -1447,12 +1447,6 @@ int knn_model_load(
         return -1;
     }
 
-    if (knn_build_super_clusters(model) != 0)
-    {
-        knn_model_free(model);
-        return -1;
-    }
-
     if (knn_build_cluster_graph(model) != 0)
     {
         knn_model_free(model);
@@ -1491,7 +1485,6 @@ void knn_model_free(
         return;
     }
 
-    knn_free_super_clusters(model);
     knn_free_cluster_graph(model);
 
     if (model->clusters != NULL)
