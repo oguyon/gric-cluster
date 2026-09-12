@@ -1578,145 +1578,57 @@ static int knn_score_candidate_clusters(
     double eps_factor = 1.0 + config->epsilon;
     double current_tau = knn_heap_peek_max_dist(heap);
 
-    if (model->num_super_clusters > 1 && home_cluster_id >= 0 &&
-        model->cluster_super_map != NULL)
+    for (int q = 0; q < M; q++)
     {
-        int home_super_id = model->cluster_super_map[home_cluster_id];
-        double r_home_super = model->super_clusters[home_super_id].radius;
-        int K = model->num_super_clusters;
-
-        for (int s = 0; s < K; s++)
+        if (q == home_cluster_id || is_in_pivots(q, pivots, num_pivots) ||
+            model->clusters[q].num_members == 0)
         {
-            if (s != home_super_id)
-            {
-                double dss = model->dss_matrix[home_super_id * K + s];
-                double r_s = model->super_clusters[s].radius;
-                double lb_super = dss - r_home_super - r_s;
-                if (lb_super < 0.0)
-                {
-                    lb_super = 0.0;
-                }
+            continue;
+        }
 
-                // Level 0: Super-Cluster Pruning
-                if (lb_super >= current_tau / eps_factor)
-                {
-                    telem->level0_super_clusters_pruned++;
-                    telem->level1_clusters_pruned +=
-                        (uint64_t)model->super_clusters[s].num_clusters;
-                    continue; // Skip all child clusters in super-cluster s
-                }
-            }
-
-            // Populate child clusters of surviving super-clusters
-            const KnnSuperCluster *sc = &model->super_clusters[s];
-            for (int ci = 0; ci < sc->num_clusters; ci++)
-            {
-                int q = sc->cluster_ids[ci];
-                if (q == home_cluster_id || is_in_pivots(q, pivots, num_pivots) ||
-                    model->clusters[q].num_members == 0)
-                {
-                    continue;
-                }
-
-                double dcc = model->dcc_matrix[home_cluster_id * M + q];
-                double r_q = model->clusters[q].radius;
-                double lb = dcc - r_home - r_q;
-                if (lb < 0.0)
-                {
-                    lb = 0.0;
-                }
-
-                // Level 1: Cluster-level DCC bound
-                if (current_tau < 1e18 && lb >= current_tau / eps_factor)
-                {
-                    telem->level1_clusters_pruned++;
-                    continue;
-                }
-
-                // Multi-Point TE4 Triangulation against measured pivots
-                if (num_pivots >= 2)
-                {
-                    int    c1 = pivots[0].cluster_id;
-                    int    c2 = pivots[1].cluster_id;
-                    double d1 = pivots[0].d_anchor;
-                    double d2 = pivots[1].d_anchor;
-                    double d12 = model->dcc_matrix[c1 * M + c2];
-                    double d1q = model->dcc_matrix[c1 * M + q];
-                    double d2q = model->dcc_matrix[c2 * M + q];
-
-                    double min_d = calc_min_dist_4pt(d1, d2, d12, d1q, d2q);
-                    if (min_d - r_q - 1e-5 >= current_tau / eps_factor)
-                    {
-                        telem->level1_clusters_pruned++;
-                        continue;
-                    }
-                    if (min_d - r_q > lb)
-                    {
-                        lb = min_d - r_q;
-                    }
-                }
-
-                scores_buffer[num_cand_clusters].id = q;
-                scores_buffer[num_cand_clusters].lb = lb;
-                scores_buffer[num_cand_clusters].dcc = dcc;
-                num_cand_clusters++;
-            } // for (int ci = 0; ...)
-        } // for (int s = 0; ...)
-    }
-    else
-    {
-        for (int q = 0; q < M; q++)
+        double dcc = model->dcc_matrix[home_cluster_id * M + q];
+        double r_q = model->clusters[q].radius;
+        double lb = dcc - r_home - r_q;
+        if (lb < 0.0)
         {
-            if (q == home_cluster_id || is_in_pivots(q, pivots, num_pivots) ||
-                model->clusters[q].num_members == 0)
-            {
-                continue;
-            }
+            lb = 0.0;
+        }
 
-            double dcc = model->dcc_matrix[home_cluster_id * M + q];
-            double r_q = model->clusters[q].radius;
-            double lb = dcc - r_home - r_q;
-            if (lb < 0.0)
-            {
-                lb = 0.0;
-            }
+        // Level 1: Cluster-level DCC bound
+        if (current_tau < 1e18 && lb >= current_tau / eps_factor)
+        {
+            telem->level1_clusters_pruned++;
+            continue;
+        }
 
-            // Level 1: Cluster-level DCC bound
-            if (current_tau < 1e18 && lb >= current_tau / eps_factor)
+        // Multi-Point TE4 Triangulation against measured pivots
+        if (num_pivots >= 2)
+        {
+            int    c1 = pivots[0].cluster_id;
+            int    c2 = pivots[1].cluster_id;
+            double d1 = pivots[0].d_anchor;
+            double d2 = pivots[1].d_anchor;
+            double d12 = model->dcc_matrix[c1 * M + c2];
+            double d1q = model->dcc_matrix[c1 * M + q];
+            double d2q = model->dcc_matrix[c2 * M + q];
+
+            double min_d = calc_min_dist_4pt(d1, d2, d12, d1q, d2q);
+            if (min_d - r_q - 1e-5 >= current_tau / eps_factor)
             {
                 telem->level1_clusters_pruned++;
                 continue;
             }
-
-            // Multi-Point TE4 Triangulation against measured pivots
-            if (num_pivots >= 2)
+            if (min_d - r_q > lb)
             {
-                int    c1 = pivots[0].cluster_id;
-                int    c2 = pivots[1].cluster_id;
-                double d1 = pivots[0].d_anchor;
-                double d2 = pivots[1].d_anchor;
-                double d12 = model->dcc_matrix[c1 * M + c2];
-                double d1q = model->dcc_matrix[c1 * M + q];
-                double d2q = model->dcc_matrix[c2 * M + q];
-
-                double min_d = calc_min_dist_4pt(d1, d2, d12, d1q, d2q);
-                if (min_d - r_q - 1e-5 >= current_tau / eps_factor)
-                {
-                    telem->level1_clusters_pruned++;
-                    continue;
-                }
-                if (min_d - r_q > lb)
-                {
-                    lb = min_d - r_q;
-                }
+                lb = min_d - r_q;
             }
+        }
 
-            scores_buffer[num_cand_clusters].id = q;
-            scores_buffer[num_cand_clusters].lb = lb;
-            scores_buffer[num_cand_clusters].dcc = dcc;
-            num_cand_clusters++;
-        } // for (int q = 0; ...)
-    }
+        scores_buffer[num_cand_clusters].id = q;
+        scores_buffer[num_cand_clusters].lb = lb;
+        scores_buffer[num_cand_clusters].dcc = dcc;
+        num_cand_clusters++;
+    } // for (int q = 0; ...)
 
     qsort(scores_buffer, (size_t)num_cand_clusters, sizeof(ClusterScore),
           compare_cluster_scores);
@@ -4246,7 +4158,6 @@ static int knn_cross_explore_graph_frontier(
                 }
             } // for (int k_idx = 0; ...)
 
-            telem->level0_super_clusters_pruned += (uint64_t)model->num_super_clusters;
             telem->level1_clusters_pruned += (uint64_t)model->num_clusters;
             telem->global_containment_hits++;
             return 1;
@@ -5240,7 +5151,6 @@ int knn_run_search(
     }
 
     uint64_t global_telem_calls = 0;
-    uint64_t global_telem_l0 = 0;
     uint64_t global_telem_l1 = 0;
     uint64_t global_telem_l2 = 0;
     uint64_t global_telem_l3 = 0;
@@ -5266,7 +5176,7 @@ int knn_run_search(
     uint64_t global_telem_two_hop_injected = 0;
 
 #ifdef _OPENMP
-#pragma omp parallel reduction(+:global_telem_calls, global_telem_l0, global_telem_l1, \
+#pragma omp parallel reduction(+:global_telem_calls, global_telem_l1,                   \
                                  global_telem_l2, global_telem_l3, global_telem_temp,   \
                                  global_telem_recip, global_telem_graph_seeds,          \
                                  global_telem_graph_edges, global_telem_multi_pivot,    \
@@ -5432,7 +5342,6 @@ int knn_run_search(
         } // for (long i = 0; ...)
 
         global_telem_calls += thread_telem.framedist_calls;
-        global_telem_l0 += thread_telem.level0_super_clusters_pruned;
         global_telem_l1 += thread_telem.level1_clusters_pruned;
         global_telem_l2 += thread_telem.level2_anchors_pruned;
         global_telem_l3 += thread_telem.level3_annular_pruned;
@@ -5537,7 +5446,6 @@ int knn_run_search(
 
     telemetry->total_queries = (uint64_t)N_query;
     telemetry->framedist_calls = global_telem_calls;
-    telemetry->level0_super_clusters_pruned = global_telem_l0;
     telemetry->level1_clusters_pruned = global_telem_l1;
     telemetry->level2_anchors_pruned = global_telem_l2;
     telemetry->level3_annular_pruned = global_telem_l3;
