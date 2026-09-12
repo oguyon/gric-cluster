@@ -30,6 +30,12 @@
 #include <time.h>
 #include <string.h>
 
+#if defined(__GNUC__) || defined(__clang__)
+#define GRIC_PREFETCH_T0(addr) __builtin_prefetch((const void *)(addr), 0, 3)
+#else
+#define GRIC_PREFETCH_T0(addr) ((void)0)
+#endif
+
 /**
  * cluster_frame() - Process one frame through the full clustering
  *                   pipeline (Steps 1-5).
@@ -370,6 +376,82 @@ int cluster_frame(
             state->telemetry.memo_cache_entries = state->scratch.memo_table.entry_count;
         }
 
+        /* Step 3 Fast-Path: Test prediction candidates directly before running Step 3a */
+        if (!found && num_preds > 0 && pred_candidates != NULL)
+        {
+            while (current_pred_idx < num_preds && !found)
+            {
+                int cj = pred_candidates[current_pred_idx++];
+                if (cj < 0 || cj >= state->num_clusters)
+                {
+                    continue;
+                }
+
+                // Fast SQ16 pre-filtering for prediction candidate
+                if (config->optim.use_sq16 &&
+                    state->clusters[cj].anchor_sq16 != NULL &&
+                    state->current_frame_sq16 != NULL)
+                {
+                    state->telemetry.sq16_evals++;
+                    uint64_t ssd = sq16_dist_squared_cutoff_i16(
+                        state->current_frame_sq16,
+                        state->clusters[cj].anchor_sq16,
+                        config->optim.sq16_params.dim,
+                        sq16_ssd_thresh);
+                    if (ssd > sq16_ssd_thresh)
+                    {
+                        state->telemetry.sq16_pruned++;
+                        state->telemetry.clusters_pruned++;
+                        continue;
+                    }
+                }
+                else if (config->optim.use_sq8 &&
+                         state->clusters[cj].anchor_sq8 != NULL &&
+                         state->current_frame_sq8 != NULL)
+                {
+                    state->telemetry.sq8_evals++;
+                    double d_lb = sq8_compute_lower_bound(
+                        state->current_frame_sq8,
+                        state->clusters[cj].anchor_sq8,
+                        &config->optim.sq8_params,
+                        0.0);
+                    if (d_lb > config->algo.rlim)
+                    {
+                        state->telemetry.sq8_pruned++;
+                        state->telemetry.clusters_pruned++;
+                        continue;
+                    }
+                }
+
+                struct timespec s3c_start, s3c_end;
+                clock_gettime(CLOCK_MONOTONIC, &s3c_start);
+                dfc = measure_distance_to_cluster(cj, current_frame, config, state,
+                                                  temp_indices, temp_dists, &temp_count, 1);
+                meas_idx++;
+                clock_gettime(CLOCK_MONOTONIC, &s3c_end);
+                state->telemetry.time_step_3c +=
+                    (s3c_end.tv_sec - s3c_start.tv_sec) * 1000.0 +
+                    (s3c_end.tv_nsec - s3c_start.tv_nsec) / 1000000.0;
+
+                if (dfc < config->algo.rlim)
+                {
+                    assigned_cluster = cj;
+                    state->telemetry.last_assignment_dist = dfc;
+                    found = 1;
+                    break;
+                }
+                else
+                {
+#ifdef _OPENMP
+#pragma omp atomic
+#endif
+                    state->telemetry.cluster_query_counts[cj]++;
+                    last_cj = cj;
+                    need_prune_update = 1;
+                }
+            }
+        }
+
         // Step 3: Iterative search loop (Prediction & Standard search).
         while (!found)
         {
@@ -396,6 +478,10 @@ int cluster_frame(
                     {
                         if (state->scratch.clmembflag[i])
                         {
+                            if (mat_sq16 != NULL && i + 4 < num_cl)
+                            {
+                                GRIC_PREFETCH_T0(mat_sq16 + (size_t)(i + 4) * (size_t)dim);
+                            }
                             const int16_t *a_ptr = mat_sq16
                                                    ? (mat_sq16 + (size_t)i * (size_t)dim)
                                                    : state->clusters[i].anchor_sq16;
@@ -457,6 +543,17 @@ int cluster_frame(
                     (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
                     (step_end.tv_nsec - step_start.tv_nsec) / 1000000.0;
                 first_iter = 0;
+
+                if (need_prune_update && last_cj >= 0)
+                {
+                    if (last_cj < state->num_clusters)
+                    {
+                        state->scratch.clmembflag[last_cj] = 0;
+                    }
+                    update_probabilities_and_pruning(last_cj, dfc, config, state, temp_indices,
+                                                     temp_dists, temp_count);
+                    need_prune_update = 0;
+                }
             }
             else if (need_prune_update && last_cj >= 0)
             {
