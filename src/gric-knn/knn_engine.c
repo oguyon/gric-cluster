@@ -23,6 +23,11 @@
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <immintrin.h>
+#define GRIC_PREFETCH_T0(addr) _mm_prefetch((const char *)(addr), _MM_HINT_T0)
+#elif defined(__GNUC__) || defined(__clang__)
+#define GRIC_PREFETCH_T0(addr) __builtin_prefetch((const void *)(addr), 0, 3)
+#else
+#define GRIC_PREFETCH_T0(addr) ((void)0)
 #endif
 
 /** Cluster candidate record for sorting by ascending lower bound and center proximity */
@@ -1959,9 +1964,9 @@ static void knn_eval_candidate_cluster_members(
                 if (m + 4 < chunk_end)
                 {
                     long pref_id = (long)cl->members[m + 4].frame_id;
-                    _mm_prefetch((const char *)(model->sq16_dataset_buffer +
-                                 (size_t)pref_id * (size_t)frame_elem),
-                                 _MM_HINT_T0);
+                    GRIC_PREFETCH_T0(
+                        model->sq16_dataset_buffer + (size_t)pref_id * (size_t)frame_elem
+                    );
                 }
 
                 const int16_t *cand_sq16 = model->sq16_dataset_buffer +
@@ -2131,9 +2136,9 @@ static void knn_eval_candidate_cluster_members(
             if (m + 4 < end_m)
             {
                 long pref_id = (long)cl->members[m + 4].frame_id;
-                _mm_prefetch((const char *)(model->sq16_dataset_buffer +
-                             (size_t)pref_id * (size_t)frame_elem),
-                             _MM_HINT_T0);
+                GRIC_PREFETCH_T0(
+                    model->sq16_dataset_buffer + (size_t)pref_id * (size_t)frame_elem
+                );
             }
 
             if (current_tau != last_tau)
