@@ -211,12 +211,6 @@ void *wasm_cluster_init(
     h->state.cross_tile_hook = NULL;
     h->state.cross_tile_ctx = NULL;
 
-    /* Initialize assignments to -1 */
-    for (long i = 0; i < maxnbfr; i++)
-    {
-        h->state.assignments[i] = -1;
-    }
-
     /* Transition matrix */
     h->state.transition_matrix =
         (long *)calloc((size_t)N * N, sizeof(long));
@@ -309,6 +303,48 @@ void *wasm_cluster_init(
     h->frame.height = 1;
     h->frame.id = 0;
     h->frame.cnt0 = 0;
+
+    if (h->state.clusters == NULL ||
+        h->state.cluster_visitors == NULL ||
+        h->state.assignments == NULL ||
+        h->state.frame_infos == NULL ||
+        h->state.transition_matrix == NULL ||
+        h->state.scratch.mixed_probs == NULL ||
+        h->state.scratch.clmembflag == NULL ||
+        h->state.scratch.probsortedclindex == NULL ||
+        h->state.scratch.current_gprobs == NULL ||
+        h->state.scratch.dcc_min == NULL ||
+        h->state.scratch.dcc_max == NULL ||
+        h->state.scratch.dcc_measured == NULL ||
+        h->state.scratch.consistency_mask == NULL ||
+        h->state.scratch.entropy_p_current == NULL ||
+        h->state.scratch.entropy_candidates == NULL ||
+        h->state.scratch.entropy_prob_scores == NULL ||
+        h->state.scratch.entropy_prune_scores == NULL ||
+        h->state.scratch.entropy_active_indices == NULL ||
+        h->state.scratch.entropy_plog2p == NULL ||
+        h->state.scratch.entropy_visited == NULL ||
+        h->state.scratch.refine_queue == NULL ||
+        h->state.scratch.tuple_pred_candidates == NULL ||
+        h->state.telemetry.pruned_fraction_sum == NULL ||
+        h->state.telemetry.step_counts == NULL ||
+        h->state.telemetry.dist_counts == NULL ||
+        h->state.telemetry.pruned_counts_by_dist == NULL ||
+        h->state.telemetry.cluster_query_counts == NULL ||
+        h->temp_indices == NULL ||
+        h->temp_dists == NULL ||
+        h->sorting_candidates == NULL ||
+        h->frame.data == NULL)
+    {
+        wasm_cluster_free(h);
+        return NULL;
+    }
+
+    /* Initialize assignments to -1 */
+    for (long i = 0; i < maxnbfr; i++)
+    {
+        h->state.assignments[i] = -1;
+    }
 
     return h;
 }
@@ -1051,22 +1087,28 @@ void wasm_cluster_free(void *ptr)
     }
 
     /* Free per-cluster anchor data */
-    for (int i = 0; i < N; i++)
+    if (h->state.clusters != NULL)
     {
-        if (h->state.clusters[i].anchor.data)
+        for (int i = 0; i < N; i++)
         {
-            free(h->state.clusters[i].anchor.data);
+            if (h->state.clusters[i].anchor.data)
+            {
+                free(h->state.clusters[i].anchor.data);
+            }
         }
     }
 
     /* Free visitor list arrays */
-    for (int i = 0; i < N; i++)
+    if (h->state.cluster_visitors != NULL)
     {
-        if (h->state.cluster_visitors[i].frames)
+        for (int i = 0; i < N; i++)
         {
-            free(
-                h->state.cluster_visitors[i].frames
-            );
+            if (h->state.cluster_visitors[i].frames)
+            {
+                free(
+                    h->state.cluster_visitors[i].frames
+                );
+            }
         }
     }
 
