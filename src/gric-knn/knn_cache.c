@@ -33,8 +33,7 @@ int knn_model_build_or_load_sq8(
     KnnModel        *model,
     const KnnConfig *config)
 {
-    if (!config->use_sq8 || model == NULL || config == NULL)
-    {
+    if (model == NULL || config == NULL || !config->use_sq8)
         return 0;
     }
 
