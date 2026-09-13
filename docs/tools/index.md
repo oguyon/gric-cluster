@@ -16,6 +16,7 @@ data synthesis, visualization, and native GUI serving.
 | **`gric-bin2ascii`** | Format | Decoder & inspection tool for self-describing `.bin` files | [Binary Format](bin_io.md) |
 | **`gric-server`** | GUI / Web | High-concurrency native C HTTP/REST micro-server | [Server & GUI](server_gui.md) |
 | **`gric-gui`** | Desktop | Native desktop app launcher for the GRIC simulator | [Server & GUI](server_gui.md) |
+| **`gric_cluster.wasm`** | WASM | Client-side C clustering and k-NN search engine | [WASM Guide](wasm.md) |
 | **`gric-status`** | Monitoring| Real-time TUI dashboard for shared-memory telemetry | [Benchmarks & Telemetry](benchmark_tune.md) |
 | **`gric-benchmark`** | Diagnostics| Automated benchmarking suite across synthetic manifolds | [Benchmarks & Telemetry](benchmark_tune.md) |
 | **`gric-tune`** | Optimization| Grid and parameter exploration search optimizer | [Benchmarks & Telemetry](benchmark_tune.md) |
