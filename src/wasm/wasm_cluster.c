@@ -543,7 +543,8 @@ int wasm_cluster_process_batch(
     int     ndim)
 {
     WasmHandle *h = (WasmHandle *)ptr;
-    if (!h || !coords_flat || num_frames <= 0)
+    if (!h || !coords_flat || num_frames <= 0 ||
+        ndim != h->ndim)
     {
         return -1;
     }
