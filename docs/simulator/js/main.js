@@ -8,12 +8,32 @@
 
     function updateClusteringButtonUI() {
       const btnPlay = document.getElementById('btnPlay');
+      const btnStop = document.getElementById('btnStop');
       if (!btnPlay) return;
 
-      if (typeof engineMode !== 'undefined' && engineMode === 'cli') {
-        if (typeof isCliRunning !== 'undefined' && isCliRunning) {
+      const isCli = (typeof engineMode !== 'undefined' && engineMode === 'cli');
+      const isCliActive = (typeof isCliRunning !== 'undefined' && isCliRunning);
+      const isBatchActive = (typeof isComputeAllRunning !== 'undefined' && isComputeAllRunning);
+      const isSimActive = (typeof isRunning !== 'undefined' && isRunning);
+      const isWorkerActive = (typeof GricWasmWorker !== 'undefined' &&
+                              typeof GricWasmWorker.isBusy === 'function' &&
+                              GricWasmWorker.isBusy());
+      const isClusteringActive = isCliActive || isBatchActive || isSimActive || isWorkerActive;
+
+      if (btnStop) {
+        btnStop.disabled = !isClusteringActive;
+        if (isClusteringActive) {
+          btnStop.title = 'Stop clustering (Esc)';
+        } else {
+          btnStop.title = 'Clustering is not running';
+        }
+      }
+
+      if (isCli) {
+        if (isCliActive) {
           btnPlay.innerHTML = '⏳ Stop gric-cluster';
           btnPlay.title = 'Native gric-cluster is running. Click to terminate.';
+          btnPlay.disabled = false;
           btnPlay.classList.add('danger');
           btnPlay.classList.remove('primary', 'btn-clustered');
           btnPlay.style.background = 'rgba(239, 68, 68, 0.25)';
@@ -22,6 +42,7 @@
         } else {
           btnPlay.innerHTML = '▶ Run gric-cluster';
           btnPlay.title = 'Run native compiled gric-cluster executable';
+          btnPlay.disabled = false;
           btnPlay.classList.remove('danger', 'primary', 'btn-clustered');
           btnPlay.classList.add('btn-action');
           btnPlay.style.background = 'rgba(74, 222, 128, 0.25)';
@@ -751,6 +772,87 @@
       draw();
       draw();
     }
+
+    async function killNativeCli() {
+      if (typeof DesktopBridge !== 'undefined' && DesktopBridge.killActiveJob) {
+        try {
+          await DesktopBridge.killActiveJob();
+        } catch (err) {
+          console.error('Failed to terminate native CLI job:', err);
+        }
+      }
+      isCliRunning = false;
+      const btnRun = document.getElementById('btnRunCli');
+      const btnRunKnn = document.getElementById('btnRunCliKnn');
+      const btnKill = document.getElementById('btnKillCli');
+      const btnPlay = document.getElementById('btnPlay');
+      const btnStop = document.getElementById('btnStop');
+      const badgeStatus = document.getElementById('badgeCliStatus');
+      const consoleEl = document.getElementById('cliConsoleLog');
+
+      if (btnRun) btnRun.disabled = false;
+      if (btnRunKnn) btnRunKnn.disabled = false;
+      if (btnKill) btnKill.disabled = true;
+      if (btnPlay) {
+        btnPlay.innerHTML = '▶ Run gric-cluster';
+        btnPlay.disabled = false;
+        btnPlay.classList.remove('danger');
+        btnPlay.classList.add('btn-action');
+      }
+      if (btnStop) {
+        btnStop.disabled = true;
+      }
+      if (badgeStatus) {
+        badgeStatus.textContent = 'Stopped';
+        badgeStatus.style.background = 'rgba(239, 68, 68, 0.2)';
+        badgeStatus.style.color = '#f87171';
+      }
+      if (consoleEl) {
+        consoleEl.textContent += '\n⏹ CLI clustering stopped by user.\n';
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+      showToast('🛑 Native CLI clustering stopped');
+      updateClusteringButtonUI();
+    }
+    window.killNativeCli = killNativeCli;
+
+    async function stopClustering() {
+      let stoppedAny = false;
+
+      // 1. Native CLI execution
+      if (typeof isCliRunning !== 'undefined' && isCliRunning) {
+        await killNativeCli();
+        stoppedAny = true;
+      }
+
+      // 2. Batch compute-all execution
+      if (typeof isComputeAllRunning !== 'undefined' && isComputeAllRunning) {
+        abortComputeAll();
+        stoppedAny = true;
+      }
+
+      // 3. Interactive simulation streaming
+      if (isRunning) {
+        pauseSimulation();
+        showToast(`⏹ Clustering stopped at frame ${totalFrames.toLocaleString()}`);
+        stoppedAny = true;
+      }
+
+      // 4. Background worker
+      if (typeof GricWasmWorker !== 'undefined' &&
+          typeof GricWasmWorker.isBusy === 'function' &&
+          GricWasmWorker.isBusy()) {
+        GricWasmWorker.pauseBatch();
+        stoppedAny = true;
+      }
+
+      if (stoppedAny) {
+        updateClusteringButtonUI();
+        updateUI();
+        draw();
+      }
+    }
+    window.stopClustering = stopClustering;
 
     function setAddPointMode(enabled) {
       isAddPointMode = enabled;
@@ -3640,6 +3742,13 @@
       });
     }
 
+    const btnStopEl = document.getElementById('btnStop');
+    if (btnStopEl) {
+      btnStopEl.addEventListener('click', () => {
+        stopClustering();
+      });
+    }
+
     const btnComputeAll = document.getElementById('btnComputeAll');
     if (btnComputeAll) {
       btnComputeAll.addEventListener('click', () => {
@@ -3829,9 +3938,12 @@
       }
 
       if (e.key === 'Escape') {
-        if (isComputeAllRunning) {
+        const isClusteringRunning = (typeof isRunning !== 'undefined' && isRunning) ||
+          (typeof isComputeAllRunning !== 'undefined' && isComputeAllRunning) ||
+          (typeof isCliRunning !== 'undefined' && isCliRunning);
+        if (isClusteringRunning) {
           e.preventDefault();
-          abortComputeAll();
+          stopClustering();
           return;
         }
         if (typeof isRecon4PanelView !== 'undefined' && isRecon4PanelView &&
@@ -11353,8 +11465,7 @@
 
       if (btnKill) {
         btnKill.addEventListener('click', async () => {
-          await DesktopBridge.killActiveJob();
-          showToast('🛑 Abort signal sent to CLI job');
+          await killNativeCli();
         });
       }
 
@@ -11618,15 +11729,19 @@
       const btnRunKnn = document.getElementById('btnRunCliKnn');
       const btnKill = document.getElementById('btnKillCli');
       const btnPlay = document.getElementById('btnPlay');
+      const btnStop = document.getElementById('btnStop');
       const badgeStatus = document.getElementById('badgeCliStatus');
       const consoleEl = document.getElementById('cliConsoleLog');
 
       if (btnRun) btnRun.disabled = true;
       if (btnRunKnn) btnRunKnn.disabled = true;
       if (btnKill) btnKill.disabled = false;
+      if (btnStop) btnStop.disabled = false;
       if (btnPlay) {
-        btnPlay.innerHTML = '⏳ Running...';
-        btnPlay.disabled = true;
+        btnPlay.innerHTML = '⏳ Stop gric-cluster';
+        btnPlay.title = 'Native gric-cluster is running. Click to terminate.';
+        btnPlay.disabled = false;
+        btnPlay.classList.add('danger');
       }
       if (badgeStatus) {
         badgeStatus.textContent = '● tmux: gric_cli';
@@ -11830,10 +11945,12 @@
           },
           onFinish: async (res) => {
             isCliRunning = false;
+            updateClusteringButtonUI();
             const elapsed = ((performance.now() - tStart) / 1000).toFixed(2);
             if (btnRun) btnRun.disabled = false;
             if (btnRunKnn) btnRunKnn.disabled = false;
             if (btnKill) btnKill.disabled = true;
+            if (btnStop) btnStop.disabled = true;
             if (btnPlay) {
               btnPlay.innerHTML = '▶ Run gric-cluster';
               btnPlay.disabled = false;
@@ -11868,8 +11985,10 @@
         });
       } catch (err) {
         isCliRunning = false;
+        updateClusteringButtonUI();
         if (btnRun) btnRun.disabled = false;
         if (btnKill) btnKill.disabled = true;
+        if (btnStop) btnStop.disabled = true;
         if (btnPlay) {
           btnPlay.innerHTML = '▶ Run gric-cluster';
           btnPlay.disabled = false;
@@ -13256,6 +13375,9 @@
       { id: 'act-compute-all', group: 'Actions', icon: '⚡',
         name: 'Instant Cluster / Re-cluster to Completion',
         hint: 'Batch', action: () => document.getElementById('btnPlay')?.click() },
+      { id: 'act-stop', group: 'Actions', icon: '⏹',
+        name: 'Stop Clustering',
+        hint: 'Esc', action: () => document.getElementById('btnStop')?.click() },
       { id: 'act-step', group: 'Actions', icon: '⏭', name: 'Step Single Frame',
         hint: 'S', action: () => document.getElementById('btnStep')?.click() },
       { id: 'act-reset-clusters', group: 'Actions', icon: '↺',
