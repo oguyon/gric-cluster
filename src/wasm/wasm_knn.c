@@ -259,6 +259,7 @@ int wasm_knn_run_search(
     int status = knn_run_search(&config, &model, &results, &telemetry);
     if (status != 0)
     {
+        knn_results_free(&results);
         goto cleanup_model_alloc;
     }
 
