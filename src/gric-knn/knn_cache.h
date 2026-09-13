@@ -68,6 +68,28 @@ int knn_model_build_transposed_rq8(
     const KnnConfig *config);
 
 /**
+ * knn_model_build_or_load_pq() - Build or load PQ codebook and codes into KnnModel.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_or_load_pq(
+    KnnModel        *model,
+    const KnnConfig *config);
+
+/**
+ * knn_model_build_transposed_pq() - Build cluster-local transposed PQ FastScan blocks.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_transposed_pq(
+    KnnModel        *model,
+    const KnnConfig *config);
+
+/**
  * knn_model_cache_dataset() - Preload dataset frames into resident RAM buffer if feasible.
  * @model:  Pointer to initialized KnnModel.
  * @config: Pointer to KnnConfig.

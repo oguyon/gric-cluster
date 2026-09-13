@@ -113,7 +113,16 @@ int main(
         }
     }
 
-    if (config.use_rq8)
+    if (config.use_pq)
+    {
+        if (knn_model_build_or_load_pq(&model, &config) != 0)
+        {
+            fprintf(stderr, "Error: Failed to initialize PQ codebook and dataset buffer\n");
+            knn_model_free(&model);
+            return 1;
+        }
+    }
+    else if (config.use_rq8)
     {
         if (knn_model_build_or_load_rq8(&model, &config) != 0)
         {
@@ -217,7 +226,14 @@ int main(
         printf("  Clusters Graph Evaluated:  %lu\n",
                (unsigned long)telemetry.clusters_graph_evaluated);
     }
-    if (config.use_rq8)
+    if (config.use_pq)
+    {
+        printf("  PQ Evaluations:            %lu\n",
+               (unsigned long)telemetry.pq_evaluations);
+        printf("  PQ Members Pruned:         %lu\n",
+               (unsigned long)telemetry.pq_members_pruned);
+    }
+    else if (config.use_rq8)
     {
         uint64_t total_rq8_pruned = telemetry.rq8_members_pruned +
                                      telemetry.rq8_graph_pruned;

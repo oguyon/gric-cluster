@@ -1060,6 +1060,24 @@ void knn_model_free(
         model->rq8_transposed_buffer = NULL;
     }
 
+    if (model->pq_codebook != NULL)
+    {
+        pq_codebook_free(model->pq_codebook);
+        model->pq_codebook = NULL;
+    }
+
+    if (model->pq_dataset_buffer != NULL)
+    {
+        free(model->pq_dataset_buffer);
+        model->pq_dataset_buffer = NULL;
+    }
+
+    if (model->pq_transposed_buffer != NULL)
+    {
+        free(model->pq_transposed_buffer);
+        model->pq_transposed_buffer = NULL;
+    }
+
     if (model->dataset_mmap_addr != NULL)
     {
         munmap(model->dataset_mmap_addr, model->dataset_mmap_size);

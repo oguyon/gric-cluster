@@ -196,6 +196,8 @@ int knn_run_search(
     uint64_t global_telem_rq8_evals = 0;
     uint64_t global_telem_rq8_pruned = 0;
     uint64_t global_telem_rq8_graph_pruned = 0;
+    uint64_t global_telem_pq_evals = 0;
+    uint64_t global_telem_pq_pruned = 0;
     uint64_t global_telem_graph_clusters = 0;
     uint64_t global_telem_two_hop_evals = 0;
     uint64_t global_telem_two_hop_pruned = 0;
@@ -216,6 +218,7 @@ int knn_run_search(
                                  global_telem_sq16_graph_pruned,                        \
                                  global_telem_rq8_evals, global_telem_rq8_pruned,      \
                                  global_telem_rq8_graph_pruned,                         \
+                                 global_telem_pq_evals, global_telem_pq_pruned,        \
                                  global_telem_graph_clusters,                           \
                                  global_telem_two_hop_evals,                            \
                                  global_telem_two_hop_pruned,                           \
@@ -245,6 +248,10 @@ int knn_run_search(
         int16_t *query_rq8 =
             config->use_rq8 ? (int16_t *)malloc((size_t)model->frame_elements *
                                                 sizeof(int16_t)) : NULL;
+        uint8_t *query_pq_lut =
+            (config->use_pq && model->pq_codebook != NULL) ?
+                (uint8_t *)malloc((size_t)model->pq_codebook->m *
+                                  (size_t)model->pq_codebook->k_centroids) : NULL;
         double *anchor_dists =
             (double *)malloc((size_t)model->num_clusters * sizeof(double));
         ClusterScore *scores_buf =
@@ -283,6 +290,14 @@ int knn_run_search(
         visited.query_sq16 = query_sq16;
         visited.query_rq8 = query_rq8;
         visited.query_rq8_clipped = 0;
+        visited.query_pq_lut = query_pq_lut;
+        memset(&visited.query_pq_table, 0, sizeof(PQLookupTable));
+        if (query_pq_lut != NULL && model->pq_codebook != NULL)
+        {
+            visited.query_pq_table.lut_u8 = query_pq_lut;
+            visited.query_pq_table.m = model->pq_codebook->m;
+            visited.query_pq_table.k_centroids = model->pq_codebook->k_centroids;
+        }
         visited.rep_tags = NULL;
         visited.rep_dists = NULL;
         if (config->use_memo && model->frame_to_unique_map != NULL)
@@ -341,6 +356,22 @@ int knn_run_search(
                     {
                         sq16_quantize_float(
                             (const float *)query_buffer, query_sq16, &model->sq16_params);
+                    }
+                }
+
+                if (config->use_pq && query_pq_lut != NULL && model->pq_codebook != NULL)
+                {
+                    if (model->is_double)
+                    {
+                        pq_build_query_lut_double(
+                            (const double *)query_buffer, model->pq_codebook,
+                            &visited.query_pq_table, config->rlim_cutoff);
+                    }
+                    else
+                    {
+                        pq_build_query_lut_float(
+                            (const float *)query_buffer, model->pq_codebook,
+                            &visited.query_pq_table, config->rlim_cutoff);
                     }
                 }
 
@@ -411,6 +442,8 @@ int knn_run_search(
         global_telem_rq8_evals += thread_telem.rq8_evaluations;
         global_telem_rq8_pruned += thread_telem.rq8_members_pruned;
         global_telem_rq8_graph_pruned += thread_telem.rq8_graph_pruned;
+        global_telem_pq_evals += thread_telem.pq_evaluations;
+        global_telem_pq_pruned += thread_telem.pq_members_pruned;
         global_telem_graph_clusters += thread_telem.clusters_graph_evaluated;
         global_telem_two_hop_evals += thread_telem.two_hop_evaluations;
         global_telem_two_hop_pruned += thread_telem.two_hop_pruned;
@@ -445,6 +478,11 @@ int knn_run_search(
         if (query_rq8 != NULL)
         {
             free(query_rq8);
+        }
+
+        if (query_pq_lut != NULL)
+        {
+            free(query_pq_lut);
         }
 
         if (graph_scratch.pq != NULL)
@@ -533,6 +571,8 @@ int knn_run_search(
     telemetry->rq8_evaluations = global_telem_rq8_evals;
     telemetry->rq8_members_pruned = global_telem_rq8_pruned;
     telemetry->rq8_graph_pruned = global_telem_rq8_graph_pruned;
+    telemetry->pq_evaluations = global_telem_pq_evals;
+    telemetry->pq_members_pruned = global_telem_pq_pruned;
     telemetry->clusters_graph_evaluated = global_telem_graph_clusters;
     telemetry->two_hop_evaluations = global_telem_two_hop_evals;
     telemetry->two_hop_pruned = global_telem_two_hop_pruned;

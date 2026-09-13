@@ -122,6 +122,20 @@ void knn_cli_print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-rq8-approx%s, %s--rq8-approx%s Enable approximate lower bound in RQ8\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-pq%s, %s--pq%s                 Enable Product Quantization (PQ) FastScan\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-no-pq%s, %s--no-pq%s           Disable Product Quantization FastScan\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-pq-m%s %s<int>%s               Number of subquantizers (default: dim/4)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-pq-bits%s %s<4|8>%s            PQ codebook bits (default: 4)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-pq-save%s %s<path>%s           Save PQ codebook and codes to sidecar\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-pq-load%s %s<path>%s           Load PQ codebook and codes from sidecar\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-pq-rerank%s %s<int>%s          Top candidates to re-evaluate with exact dist\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-sq8%s, %s--sq8%s               Enable 8-bit scalar quantization filtering\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-no-sq8%s, %s--no-sq8%s         Disable 8-bit scalar quantization filtering\n",
@@ -451,7 +465,89 @@ int knn_cli_parse(
             config->use_rq8 = 1;
             config->use_sq16 = 0;
             config->use_sq8 = 0;
+            config->use_pq = 0;
             config->rq8_approx = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-pq") == 0 ||
+                 strcmp(argv[arg_idx], "--pq") == 0)
+        {
+            config->use_pq = 1;
+            config->use_rq8 = 0;
+            config->use_sq16 = 0;
+            config->use_sq8 = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-no-pq") == 0 ||
+                 strcmp(argv[arg_idx], "--no-pq") == 0 ||
+                 strcmp(argv[arg_idx], "-nopq") == 0)
+        {
+            config->use_pq = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-pq-m") == 0 ||
+                 strcmp(argv[arg_idx], "--pq-m") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -pq-m requires an integer argument\n");
+                return 1;
+            }
+            config->use_pq = 1;
+            config->use_rq8 = 0;
+            config->use_sq16 = 0;
+            config->use_sq8 = 0;
+            config->pq_m = atoi(argv[++arg_idx]);
+        }
+        else if (strcmp(argv[arg_idx], "-pq-bits") == 0 ||
+                 strcmp(argv[arg_idx], "--pq-bits") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -pq-bits requires an integer argument (4 or 8)\n");
+                return 1;
+            }
+            config->use_pq = 1;
+            config->use_rq8 = 0;
+            config->use_sq16 = 0;
+            config->use_sq8 = 0;
+            config->pq_bits = atoi(argv[++arg_idx]);
+        }
+        else if (strcmp(argv[arg_idx], "-pq-save") == 0 ||
+                 strcmp(argv[arg_idx], "--pq-save") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -pq-save requires a filepath argument\n");
+                return 1;
+            }
+            config->use_pq = 1;
+            config->use_rq8 = 0;
+            config->use_sq16 = 0;
+            config->use_sq8 = 0;
+            config->pq_save_path = argv[++arg_idx];
+        }
+        else if (strcmp(argv[arg_idx], "-pq-load") == 0 ||
+                 strcmp(argv[arg_idx], "--pq-load") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -pq-load requires a filepath argument\n");
+                return 1;
+            }
+            config->use_pq = 1;
+            config->use_rq8 = 0;
+            config->use_sq16 = 0;
+            config->use_sq8 = 0;
+            config->pq_load_path = argv[++arg_idx];
+        }
+        else if (strcmp(argv[arg_idx], "-pq-rerank") == 0 ||
+                 strcmp(argv[arg_idx], "--pq-rerank") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -pq-rerank requires an integer argument\n");
+                return 1;
+            }
+            config->use_pq = 1;
+            config->pq_rerank = atoi(argv[++arg_idx]);
         }
         else if (strcmp(argv[arg_idx], "-sq8") == 0 ||
                  strcmp(argv[arg_idx], "--sq8") == 0)

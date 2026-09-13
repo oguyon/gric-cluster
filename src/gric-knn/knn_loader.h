@@ -52,6 +52,16 @@ int knn_model_build_or_load_rq8(
     const KnnConfig *config);
 
 /**
+ * @brief Build or load quantized PQ codebook and dataset buffer into KnnModel.
+ * @param model  Pointer to initialized KnnModel.
+ * @param config Pointer to KnnConfig.
+ * @return 0 on success, -1 on failure.
+ */
+int knn_model_build_or_load_pq(
+    KnnModel        *model,
+    const KnnConfig *config);
+
+/**
  * @brief Preload dataset frames into resident RAM buffer if feasible.
  * @param model  Pointer to initialized KnnModel.
  * @param config Pointer to KnnConfig.
