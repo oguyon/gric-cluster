@@ -676,6 +676,17 @@ int knn_model_build_transposed_sq16(
     size_t total_transposed_elems = 0;
     int skipped_clusters = 0;
 
+    if (model->sq16_transposed_buffer != NULL)
+    {
+        free(model->sq16_transposed_buffer);
+        model->sq16_transposed_buffer = NULL;
+    }
+    for (int c = 0; c < M; c++)
+    {
+        model->clusters[c].sq16_transposed = NULL;
+        model->clusters[c].num_sq16_blocks = 0;
+    }
+
     for (int c = 0; c < M; c++)
     {
         int num_m = model->clusters[c].num_members;
