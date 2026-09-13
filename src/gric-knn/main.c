@@ -219,12 +219,19 @@ int main(
     }
     if (config.use_rq8)
     {
+        uint64_t total_rq8_pruned = telemetry.rq8_members_pruned +
+                                     telemetry.rq8_graph_pruned;
         printf("  RQ8 Evaluations:           %lu\n",
                (unsigned long)telemetry.rq8_evaluations);
         printf("  RQ8 Lower-Bound Pruned:    %lu\n",
-               (unsigned long)telemetry.rq8_members_pruned);
-        printf("  RQ8 Member Pruned:         %lu\n",
-               (unsigned long)telemetry.rq8_members_pruned);
+               (unsigned long)total_rq8_pruned);
+        if (telemetry.rq8_graph_pruned > 0)
+        {
+            printf("  RQ8 Member Pruned:         %lu\n",
+                   (unsigned long)telemetry.rq8_members_pruned);
+            printf("  RQ8 Graph Pruned:          %lu\n",
+                   (unsigned long)telemetry.rq8_graph_pruned);
+        }
     }
     else if (config.use_sq16)
     {

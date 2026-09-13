@@ -791,7 +791,7 @@ static void knn_search_intra_cluster(
                 continue;
             }
         }
-        else if (sq16_active)
+        else if (!config->use_rq8 && sq16_active)
         {
             if (current_tau != last_tau)
             {
@@ -805,13 +805,15 @@ static void knn_search_intra_cluster(
                 continue;
             }
         }
-        else if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+        else if (!config->use_rq8 &&
+                 is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
                                           model, config, telem))
         {
             continue;
         }
 
-        if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+        if (!config->use_rq8 &&
+            is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                     model, config, telem))
         {
             continue;
@@ -1174,10 +1176,12 @@ static int knn_warm_start_nearest_cluster(
             if ((!visited->query_rq8_clipped &&
                  is_member_pruned_by_rq8(visited->query_rq8, cand_id, current_tau,
                                          model, config, telem)) ||
-                is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
-                                         model, config, telem) ||
-                is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
-                                        model, config, telem))
+                (!config->use_rq8 &&
+                 is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+                                          model, config, telem)) ||
+                (!config->use_rq8 &&
+                 is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                         model, config, telem)))
             {
                 continue;
             }
@@ -2448,7 +2452,7 @@ static void knn_eval_candidate_cluster_members(
                 continue;
             }
         }
-        else if (sq16_active)
+        else if (!config->use_rq8 && sq16_active)
         {
             if (left >= 0)
             {
@@ -2484,13 +2488,15 @@ static void knn_eval_candidate_cluster_members(
                 continue;
             }
         }
-        else if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+        else if (!config->use_rq8 &&
+                 is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
                                           model, config, telem))
         {
             continue;
         }
 
-        if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+        if (!config->use_rq8 &&
+            is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                     model, config, telem))
         {
             continue;

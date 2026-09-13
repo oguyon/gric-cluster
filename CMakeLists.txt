@@ -601,6 +601,19 @@ target_link_libraries(test_residual_quant m)
 add_test(NAME test_residual_quant
     COMMAND test_residual_quant)
 
+add_executable(test_knn_rq8_sidecar_mismatch
+    tests/test_knn_rq8_sidecar_mismatch.c
+    src/gric-knn/knn_cache.c
+    src/gric-knn/knn_reader.c
+    src/shared/gric_bin_io.c
+    src/shared/scalar_quant.c
+    src/shared/residual_quant.c
+)
+target_include_directories(test_knn_rq8_sidecar_mismatch PRIVATE src/gric-knn src/shared)
+target_link_libraries(test_knn_rq8_sidecar_mismatch m)
+add_test(NAME test_knn_rq8_sidecar_mismatch
+    COMMAND test_knn_rq8_sidecar_mismatch)
+
 add_executable(test_gric_probe
     tests/test_gric_probe.c
     src/gric-probe/probe_engine.c
@@ -644,4 +657,3 @@ add_custom_target(wasm
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Compiling WebAssembly module and deploying to site/ and docs/"
 )
-
