@@ -185,6 +185,7 @@ static void knn_search_intra_cluster(
 
                 int m = m_start + lane;
                 long cand_id = (long)home_cl->members[m].frame_id;
+                double r_cand = (double)home_cl->members[m].r_anchor;
 
                 if (knn_visited_check_and_mark(visited, cand_id))
                 {
@@ -194,6 +195,18 @@ static void knn_search_intra_cluster(
                 if (!check_temporal_separation(query_id, cand_id, config))
                 {
                     telem->temporal_pruned++;
+                    continue;
+                }
+
+                if (fabs(r_home - r_cand) >= tau_thresh)
+                {
+                    telem->level3_annular_pruned++;
+                    continue;
+                }
+
+                if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                            model, config, telem))
+                {
                     continue;
                 }
 
@@ -1401,6 +1414,7 @@ static void knn_eval_candidate_cluster_members(
 
                 int m = m_start + lane;
                 long cand_id = (long)cl->members[m].frame_id;
+                double r_cand = (double)cl->members[m].r_anchor;
 
                 if (knn_visited_check_and_mark(visited, cand_id))
                 {
@@ -1413,7 +1427,17 @@ static void knn_eval_candidate_cluster_members(
                     continue;
                 }
 
-                double r_cand = (double)cl->members[m].r_anchor;
+                double lb1 = fabs(d_anchor - r_cand) - sq16_delta;
+                if (lb1 < 0.0)
+                {
+                    lb1 = 0.0;
+                }
+                if (lb1 >= tau_thresh)
+                {
+                    telem->level3_annular_pruned++;
+                    continue;
+                }
+
                 if (dcc_home > 0.0)
                 {
                     double diff_home = fabs(dcc_home - r_cand);
@@ -1443,6 +1467,12 @@ static void knn_eval_candidate_cluster_members(
                         telem->multi_pivot_pruned++;
                         continue;
                     }
+                }
+
+                if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                            model, config, telem))
+                {
+                    continue;
                 }
 
                 if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))

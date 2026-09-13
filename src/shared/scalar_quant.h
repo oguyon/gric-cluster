@@ -471,7 +471,7 @@ static inline uint32_t sq16_fastscan_32x_3d_avx2(
 {
     if (ssd_cutoff > (uint64_t)INT32_MAX)
     {
-        return 0xFFFFFFFFU;
+        return sq16_fastscan_32x_3d_scalar(query_sq16, block_x, block_y, block_z, ssd_cutoff);
     }
 
     __m256i qx = _mm256_set1_epi16(query_sq16[0]);
@@ -554,7 +554,7 @@ static inline uint32_t sq16_fastscan_32x_generic_avx2(
 {
     if (ssd_cutoff > (uint64_t)INT32_MAX)
     {
-        return 0xFFFFFFFFU;
+        return sq16_fastscan_32x_generic_scalar(query_sq16, block_coords, dim, ssd_cutoff);
     }
 
     uint32_t cut32 = (uint32_t)ssd_cutoff;
@@ -626,7 +626,7 @@ static inline uint32_t sq16_fastscan_32x_3d_avx512(
 {
     if (ssd_cutoff > (uint64_t)INT32_MAX)
     {
-        return 0xFFFFFFFFU;
+        return sq16_fastscan_32x_3d_scalar(query_sq16, block_x, block_y, block_z, ssd_cutoff);
     }
 
     __m512i qx = _mm512_set1_epi16(query_sq16[0]);
@@ -674,7 +674,7 @@ static inline uint32_t sq16_fastscan_32x_generic_avx512(
 {
     if (ssd_cutoff > (uint64_t)INT32_MAX)
     {
-        return 0xFFFFFFFFU;
+        return sq16_fastscan_32x_generic_scalar(query_sq16, block_coords, dim, ssd_cutoff);
     }
 
     uint32_t cut32 = (uint32_t)ssd_cutoff;
