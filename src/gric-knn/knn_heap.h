@@ -35,10 +35,69 @@ void knn_heap_reset(
 /**
  * @brief Peek at the maximum distance currently stored at root of the heap.
  * @param heap Pointer to the KnnMaxHeap structure.
- * @return Maximum distance in heap, or 1e20 if heap is empty.
+ * @return Maximum distance in heap if full, or 1e30 if not full or empty.
  */
-double knn_heap_peek_max_dist(
-    const KnnMaxHeap *heap);
+static inline double knn_heap_peek_max_dist(
+    const KnnMaxHeap *heap)
+{
+    if (heap == NULL || heap->count < heap->k)
+    {
+        return 1e30;
+    }
+
+    if (heap->capacity > 0)
+    {
+        return (double)heap->tau;
+    }
+
+    return heap->data[0].dist;
+}
+
+/**
+ * @brief Get candidate frame index at rank idx.
+ * @param heap Pointer to the KnnMaxHeap structure.
+ * @param idx  Neighbor rank index.
+ * @return Candidate frame index, or -1 on error.
+ */
+static inline int knn_heap_get_id(
+    const KnnMaxHeap *heap,
+    int               idx)
+{
+    if (heap == NULL || idx < 0 || idx >= heap->count)
+    {
+        return -1;
+    }
+
+    if (heap->capacity > 0)
+    {
+        return heap->simd_id[idx];
+    }
+
+    return heap->data[idx].frame_id;
+}
+
+/**
+ * @brief Get candidate distance at rank idx.
+ * @param heap Pointer to the KnnMaxHeap structure.
+ * @param idx  Neighbor rank index.
+ * @return Candidate distance, or 1e30 on error.
+ */
+static inline double knn_heap_get_dist(
+    const KnnMaxHeap *heap,
+    int               idx)
+{
+    if (heap == NULL || idx < 0 || idx >= heap->count)
+    {
+        return 1e30;
+    }
+
+    if (heap->capacity > 0)
+    {
+        return (double)heap->simd_dist[idx];
+    }
+
+    return heap->data[idx].dist;
+}
 
 /**
  * @brief Test whether a specific frame_id is already present in the heap.

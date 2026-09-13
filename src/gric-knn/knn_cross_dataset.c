@@ -681,7 +681,7 @@ static void knn_direct_basin_expansion(
 
     for (int i = 0; i < heap->count && num_top_seeds < 3; i++)
     {
-        int cand = heap->data[i].frame_id;
+        int cand = knn_heap_get_id(heap, i);
         if (cand != (int)center_u && (num_top_seeds == 0 || cand != top_seeds[0]))
         {
             top_seeds[num_top_seeds++] = cand;
@@ -696,9 +696,9 @@ static void knn_direct_basin_expansion(
             double s_dist = -1.0;
             for (int h = 0; h < heap->count; h++)
             {
-                if (heap->data[h].frame_id == (int)s_node)
+                if (knn_heap_get_id(heap, h) == (int)s_node)
                 {
-                    s_dist = heap->data[h].dist;
+                    s_dist = knn_heap_get_dist(heap, h);
                     break;
                 }
             }
@@ -1810,8 +1810,8 @@ static inline void knn_update_trajectory_tracker(
     tracker->num_cached = copy_k;
     for (int j = 0; j < copy_k; j++)
     {
-        tracker->cached_ids[j] = heap->data[j].frame_id;
-        tracker->cached_dists[j] = heap->data[j].dist;
+        tracker->cached_ids[j] = knn_heap_get_id(heap, j);
+        tracker->cached_dists[j] = knn_heap_get_dist(heap, j);
     }
 }
 
@@ -2164,10 +2164,11 @@ void knn_search_cross_dataset_frame(
 
     for (int j = 0; j < heap->count; j++)
     {
-        if (heap->data[j].dist < best_seed_dist)
+        double d = knn_heap_get_dist(heap, j);
+        if (d < best_seed_dist)
         {
-            best_seed_dist = heap->data[j].dist;
-            best_seed_id = heap->data[j].frame_id;
+            best_seed_dist = d;
+            best_seed_id = knn_heap_get_id(heap, j);
         }
     }
 
@@ -2199,10 +2200,11 @@ void knn_search_cross_dataset_frame(
 
     for (int j = 0; j < heap->count; j++)
     {
-        if (heap->data[j].dist < best_seed_dist)
+        double d = knn_heap_get_dist(heap, j);
+        if (d < best_seed_dist)
         {
-            best_seed_dist = heap->data[j].dist;
-            best_seed_id = heap->data[j].frame_id;
+            best_seed_dist = d;
+            best_seed_id = knn_heap_get_id(heap, j);
         }
     }
 

@@ -11,6 +11,7 @@
 #include "product_quant.h"
 #include "gric_profile.h"
 #include <math.h>
+#include <stdalign.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -56,12 +57,19 @@ typedef struct
     double dist;
 } KnnNeighbor;
 
-/** Bounded Max-Heap for tracking top-k nearest neighbors */
+#define KNN_SIMD_HEAP_MAX 64
+
+/** Bounded Max-Heap and SIMD Bitonic Top-k Candidate Tracker */
 typedef struct
 {
-    int          k;
-    int          count;
-    KnnNeighbor *data;
+    int                 k;        /**< Target neighbor count */
+    int                 count;    /**< Number of valid neighbors currently inserted */
+    int                 capacity; /**< SIMD padded capacity (16, 32, 64) or 0 if fallback */
+    float               tau;      /**< Max bounding distance in top-k (dist[k-1]) */
+    alignas(32) float   simd_dist[KNN_SIMD_HEAP_MAX]; /**< Vector-aligned candidate distances */
+    alignas(32) int32_t simd_id[KNN_SIMD_HEAP_MAX];   /**< Vector-aligned candidate frame IDs */
+    KnnNeighbor        *data;     /**< Fallback buffer pointer when k > 64, else NULL */
+    char                padding[8]; /**< Align total struct size to 32 bytes (544 bytes) */
 } KnnMaxHeap;
 
 /** Runtime configuration parameters for gric-knn */

@@ -862,7 +862,7 @@ static inline void record_neighbor_and_reciprocal(
         cand_id < model->total_dataset_frames && all_heaps != NULL)
     {
         KnnMaxHeap *target_heap = &all_heaps[cand_id];
-        if (target_heap->count < target_heap->k || dist < target_heap->data[0].dist)
+        if (target_heap->count < target_heap->k || dist < knn_heap_peek_max_dist(target_heap))
         {
 #ifdef _OPENMP
             if (bucket_locks != NULL)

@@ -79,8 +79,8 @@ int knn_run_search(
         return -1;
     }
 
-    KnnMaxHeap *all_heaps = (KnnMaxHeap *)malloc((size_t)N_query * sizeof(KnnMaxHeap));
-    if (all_heaps == NULL)
+    KnnMaxHeap *all_heaps = NULL;
+    if (posix_memalign((void **)&all_heaps, 32, (size_t)N_query * sizeof(KnnMaxHeap)) != 0)
     {
         fprintf(stderr, "Error: Memory allocation failed for heaps array\n");
         knn_results_free(results);
