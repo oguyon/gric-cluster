@@ -96,6 +96,10 @@ void *wasm_multitile_init(
     WasmMultiTileHandle *h = calloc(
         1, sizeof(WasmMultiTileHandle)
     );
+    if (!h)
+    {
+        return NULL;
+    }
 
     h->ndim = ndim;
     h->maxnbfr = maxnbfr;

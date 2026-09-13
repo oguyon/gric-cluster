@@ -71,7 +71,10 @@ int knn_parse_membership_file(
                                 "Error: membership file '%s' contains out-of-range cluster IDs\n",
                                 path);
                         free(ubuf);
-                        if (comment != NULL) free(comment);
+                        if (comment != NULL)
+                        {
+                            free(comment);
+                        }
                         fclose(f_bin);
                         return -1;
                     }

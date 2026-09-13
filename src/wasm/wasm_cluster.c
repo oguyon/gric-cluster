@@ -638,6 +638,7 @@ int wasm_cluster_process_batch(
         }
 
         h->current_frame_id++;
+    }
 
     return num_frames;
 }
