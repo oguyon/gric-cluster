@@ -580,6 +580,32 @@ static void test_sq16_fastscan()
         assert(sq16_fastscan_32x(q_vec, block_coords, dim, 4294705156ULL) == 0xFFFFFFFFU);
     }
 
+    {
+        long dim = 2048;
+        int16_t *q_vec = (int16_t *)calloc((size_t)dim, sizeof(int16_t));
+        int16_t *block_coords = (int16_t *)malloc((size_t)dim * 32 * sizeof(int16_t));
+        assert(q_vec != NULL && block_coords != NULL);
+
+        for (long d = 0; d < dim; d++)
+        {
+            for (int i = 0; i < 32; i++)
+            {
+                block_coords[d * 32 + i] = (i & 1) ? 32767 : 0;
+            }
+        }
+
+        uint32_t mask_gen = sq16_fastscan_32x(q_vec, block_coords, dim, (uint64_t)INT32_MAX);
+        for (int i = 0; i < 32; i++)
+        {
+            int expected = ((i & 1) == 0) ? 1 : 0;
+            int actual = (int)((mask_gen >> i) & 1);
+            assert(expected == actual);
+        }
+
+        free(q_vec);
+        free(block_coords);
+    }
+
     printf("  -> Multi-dim FastScan passed bit-exactness across all test dimensions.\n");
 }
 

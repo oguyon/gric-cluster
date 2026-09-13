@@ -673,6 +673,7 @@ int knn_model_build_transposed_sq16(
 
     long dim = model->frame_elements;
     int M = model->num_clusters;
+    size_t transposed_budget_elems = 0;
     size_t total_transposed_elems = 0;
     int skipped_clusters = 0;
 
@@ -686,14 +687,18 @@ int knn_model_build_transposed_sq16(
         model->clusters[c].sq16_transposed = NULL;
         model->clusters[c].num_sq16_blocks = 0;
     }
+    if (knn_size_mul((size_t)model->total_dataset_frames, (size_t)dim, &transposed_budget_elems) != 0)
+    {
+        return -1;
+    }
 
     for (int c = 0; c < M; c++)
     {
         int num_m = model->clusters[c].num_members;
         int n_blocks = (num_m + SQ16_FASTSCAN_BLOCK_SIZE - 1) / SQ16_FASTSCAN_BLOCK_SIZE;
-        size_t raw_elems = (size_t)num_m * (size_t)dim;
         size_t padded_members = 0;
         size_t padded_elems = 0;
+        size_t next_total = 0;
 
         if (knn_size_mul((size_t)n_blocks, SQ16_FASTSCAN_BLOCK_SIZE, &padded_members) != 0 ||
             knn_size_mul(padded_members, (size_t)dim, &padded_elems) != 0)
@@ -701,7 +706,7 @@ int knn_model_build_transposed_sq16(
             return -1;
         }
 
-        if (num_m <= 0 || (raw_elems > 0 && padded_members > (size_t)num_m * 2U))
+        if (num_m <= 0)
         {
             model->clusters[c].sq16_transposed = NULL;
             model->clusters[c].num_sq16_blocks = 0;
@@ -709,11 +714,18 @@ int knn_model_build_transposed_sq16(
             continue;
         }
 
-        model->clusters[c].num_sq16_blocks = n_blocks;
-        if (knn_size_add(total_transposed_elems, padded_elems, &total_transposed_elems) != 0)
+        if (knn_size_add(total_transposed_elems, padded_elems, &next_total) != 0)
         {
             return -1;
         }
+        if (next_total > transposed_budget_elems)
+        {
+            skipped_clusters++;
+            continue;
+        }
+
+        model->clusters[c].num_sq16_blocks = n_blocks;
+        total_transposed_elems = next_total;
     } // for (int c = 0; c < M; c++)
 
     if (total_transposed_elems == 0)
@@ -790,7 +802,8 @@ int knn_model_build_transposed_sq16(
                sq16_get_simd_mode_str(), mb);
         if (skipped_clusters > 0)
         {
-            printf(" (%d sparse clusters kept on per-candidate SQ16)", skipped_clusters);
+            printf(" (%d clusters kept on per-candidate SQ16 due to memory budget)",
+                   skipped_clusters);
         }
         printf("\n");
     }
