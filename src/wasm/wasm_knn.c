@@ -151,7 +151,8 @@ int wasm_knn_run_search(
         const double *f_coords = &dataset_points[i * ndim];
         int home_c = -1;
 
-        if (h->state.assignments != NULL && i < (long)h->current_frame_id)
+        if (h->state.assignments != NULL &&
+            i < (long)h->current_frame_id && i < h->maxnbfr)
         {
             home_c = h->state.assignments[i];
         }
