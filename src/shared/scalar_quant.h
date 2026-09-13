@@ -108,6 +108,8 @@ int sq8_load_sidecar(
 
 /** Magic identifier for .sq16 sidecar files */
 #define SQ16_FILE_MAGIC "SQ16_0001"
+#define SQ16_MAX_DIFF_U16 32767ULL
+#define SQ16_FASTSCAN_MAX_3D_SSD (3ULL * SQ16_MAX_DIFF_U16 * SQ16_MAX_DIFF_U16)
 
 /**
  * @brief Parameters defining uniform 16-bit scalar quantization into [0, 32767].
@@ -369,5 +371,410 @@ int sq16_load_sidecar(
     SQ16Params  *params,
     int16_t    **data,
     long        *num_frames);
+
+/** Universal transposed SIMD block size (32 candidates, 64 bytes per dimension) */
+#define SQ16_FASTSCAN_BLOCK_SIZE 32
+
+/**
+ * @brief Detected CPU SIMD vector register width for FastScan.
+ */
+typedef enum
+{
+    SQ16_SIMD_SCALAR = 0,
+    SQ16_SIMD_AVX2   = 1,
+    SQ16_SIMD_AVX512 = 2
+} SQ16SimdMode;
+
+/**
+ * @brief Query the active SIMD register mode available on the host CPU.
+ */
+SQ16SimdMode sq16_get_simd_mode(void);
+
+/**
+ * @brief Human-readable string for the active SIMD register mode.
+ */
+const char *sq16_get_simd_mode_str(void);
+
+/**
+ * sq16_fastscan_32x_3d_scalar() - Scalar fallback for 32 3D candidate evaluation.
+ */
+static inline uint32_t sq16_fastscan_32x_3d_scalar(
+    const int16_t *restrict query_sq16,
+    const int16_t *restrict block_x,
+    const int16_t *restrict block_y,
+    const int16_t *restrict block_z,
+    uint64_t                ssd_cutoff)
+{
+    uint32_t mask = 0;
+    int32_t qx = query_sq16[0];
+    int32_t qy = query_sq16[1];
+    int32_t qz = query_sq16[2];
+
+    for (int i = 0; i < 32; i++)
+    {
+        int32_t dx = qx - block_x[i];
+        int32_t dy = qy - block_y[i];
+        int32_t dz = qz - block_z[i];
+        uint64_t dist = (uint64_t)((int64_t)dx * dx + (int64_t)dy * dy + (int64_t)dz * dz);
+        if (dist <= ssd_cutoff)
+        {
+            mask |= (1U << i);
+        }
+    } // for (int i = 0; i < 32; i++)
+
+    return mask;
+}
+
+/**
+ * sq16_fastscan_32x_generic_scalar() - Scalar fallback for 32 D-dim candidate evaluation.
+ */
+static inline uint32_t sq16_fastscan_32x_generic_scalar(
+    const int16_t *restrict query_sq16,
+    const int16_t *restrict block_coords,
+    long                    dim,
+    uint64_t                ssd_cutoff)
+{
+    uint32_t mask = 0;
+
+    for (int i = 0; i < 32; i++)
+    {
+        uint64_t dist = 0;
+        for (long d = 0; d < dim; d++)
+        {
+            int32_t diff = (int32_t)query_sq16[d] - (int32_t)block_coords[d * 32 + i];
+            dist += (uint64_t)((int64_t)diff * diff);
+            if (dist > ssd_cutoff)
+            {
+                break;
+            }
+        } // for (long d = 0; d < dim; d++)
+
+        if (dist <= ssd_cutoff)
+        {
+            mask |= (1U << i);
+        }
+    } // for (int i = 0; i < 32; i++)
+
+    return mask;
+}
+
+#if defined(__AVX2__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+
+/**
+ * sq16_fastscan_32x_3d_avx2() - AVX2 256-bit SIMD kernel for 32 3D candidates.
+ */
+static inline uint32_t sq16_fastscan_32x_3d_avx2(
+    const int16_t *restrict query_sq16,
+    const int16_t *restrict block_x,
+    const int16_t *restrict block_y,
+    const int16_t *restrict block_z,
+    uint64_t                ssd_cutoff)
+{
+    if (ssd_cutoff >= SQ16_FASTSCAN_MAX_3D_SSD)
+    {
+        return 0xFFFFFFFFU;
+    }
+
+    __m256i qx = _mm256_set1_epi16(query_sq16[0]);
+    __m256i qy = _mm256_set1_epi16(query_sq16[1]);
+    __m256i qz = _mm256_set1_epi16(query_sq16[2]);
+    __m256i v_bias = _mm256_set1_epi32((int32_t)0x80000000U);
+    __m256i v_cut = _mm256_set1_epi32((int32_t)((uint32_t)ssd_cutoff ^ 0x80000000U));
+
+    // Sub-block 0: candidates 0..15
+    __m256i cx0 = _mm256_loadu_si256((const __m256i *)block_x);
+    __m256i cy0 = _mm256_loadu_si256((const __m256i *)block_y);
+    __m256i cz0 = _mm256_loadu_si256((const __m256i *)block_z);
+
+    __m256i dx0 = _mm256_sub_epi16(qx, cx0);
+    __m256i dy0 = _mm256_sub_epi16(qy, cy0);
+    __m256i dz0 = _mm256_sub_epi16(qz, cz0);
+
+    __m256i dx0_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dx0));
+    __m256i dx0_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dx0, 1));
+    __m256i sum0_lo = _mm256_mullo_epi32(dx0_lo, dx0_lo);
+    __m256i sum0_hi = _mm256_mullo_epi32(dx0_hi, dx0_hi);
+
+    __m256i dy0_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dy0));
+    __m256i dy0_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dy0, 1));
+    sum0_lo = _mm256_add_epi32(sum0_lo, _mm256_mullo_epi32(dy0_lo, dy0_lo));
+    sum0_hi = _mm256_add_epi32(sum0_hi, _mm256_mullo_epi32(dy0_hi, dy0_hi));
+
+    __m256i dz0_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dz0));
+    __m256i dz0_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dz0, 1));
+    sum0_lo = _mm256_add_epi32(sum0_lo, _mm256_mullo_epi32(dz0_lo, dz0_lo));
+    sum0_hi = _mm256_add_epi32(sum0_hi, _mm256_mullo_epi32(dz0_hi, dz0_hi));
+
+    __m256i fail0_lo = _mm256_cmpgt_epi32(_mm256_xor_si256(sum0_lo, v_bias), v_cut);
+    __m256i fail0_hi = _mm256_cmpgt_epi32(_mm256_xor_si256(sum0_hi, v_bias), v_cut);
+    int m0_lo = _mm256_movemask_ps(_mm256_castsi256_ps(fail0_lo));
+    int m0_hi = _mm256_movemask_ps(_mm256_castsi256_ps(fail0_hi));
+    uint32_t pass0 = (~(uint32_t)((m0_hi << 8) | m0_lo)) & 0xFFFFU;
+
+    // Sub-block 1: candidates 16..31
+    __m256i cx1 = _mm256_loadu_si256((const __m256i *)(block_x + 16));
+    __m256i cy1 = _mm256_loadu_si256((const __m256i *)(block_y + 16));
+    __m256i cz1 = _mm256_loadu_si256((const __m256i *)(block_z + 16));
+
+    __m256i dx1 = _mm256_sub_epi16(qx, cx1);
+    __m256i dy1 = _mm256_sub_epi16(qy, cy1);
+    __m256i dz1 = _mm256_sub_epi16(qz, cz1);
+
+    __m256i dx1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dx1));
+    __m256i dx1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dx1, 1));
+    __m256i sum1_lo = _mm256_mullo_epi32(dx1_lo, dx1_lo);
+    __m256i sum1_hi = _mm256_mullo_epi32(dx1_hi, dx1_hi);
+
+    __m256i dy1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dy1));
+    __m256i dy1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dy1, 1));
+    sum1_lo = _mm256_add_epi32(sum1_lo, _mm256_mullo_epi32(dy1_lo, dy1_lo));
+    sum1_hi = _mm256_add_epi32(sum1_hi, _mm256_mullo_epi32(dy1_hi, dy1_hi));
+
+    __m256i dz1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dz1));
+    __m256i dz1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dz1, 1));
+    sum1_lo = _mm256_add_epi32(sum1_lo, _mm256_mullo_epi32(dz1_lo, dz1_lo));
+    sum1_hi = _mm256_add_epi32(sum1_hi, _mm256_mullo_epi32(dz1_hi, dz1_hi));
+
+    __m256i fail1_lo = _mm256_cmpgt_epi32(_mm256_xor_si256(sum1_lo, v_bias), v_cut);
+    __m256i fail1_hi = _mm256_cmpgt_epi32(_mm256_xor_si256(sum1_hi, v_bias), v_cut);
+    int m1_lo = _mm256_movemask_ps(_mm256_castsi256_ps(fail1_lo));
+    int m1_hi = _mm256_movemask_ps(_mm256_castsi256_ps(fail1_hi));
+    uint32_t pass1 = (~(uint32_t)((m1_hi << 8) | m1_lo)) & 0xFFFFU;
+
+    return (pass1 << 16) | pass0;
+}
+
+/**
+ * sq16_fastscan_32x_generic_avx2() - AVX2 256-bit SIMD kernel for 32 D-dim candidates.
+ */
+static inline uint32_t sq16_fastscan_32x_generic_avx2(
+    const int16_t *restrict query_sq16,
+    const int16_t *restrict block_coords,
+    long                    dim,
+    uint64_t                ssd_cutoff)
+{
+    if (ssd_cutoff > (uint64_t)INT32_MAX)
+    {
+        return sq16_fastscan_32x_generic_scalar(query_sq16, block_coords, dim, ssd_cutoff);
+    }
+
+    uint32_t cut32 = (uint32_t)ssd_cutoff;
+    __m256i v_bias = _mm256_set1_epi32((int32_t)0x80000000U);
+    __m256i v_cut = _mm256_set1_epi32((int32_t)(cut32 ^ 0x80000000U));
+    __m256i v_clamp = _mm256_set1_epi32((int32_t)(cut32 + 1));
+
+    __m256i sum0_lo = _mm256_setzero_si256();
+    __m256i sum0_hi = _mm256_setzero_si256();
+    __m256i sum1_lo = _mm256_setzero_si256();
+    __m256i sum1_hi = _mm256_setzero_si256();
+
+    for (long d = 0; d < dim; d++)
+    {
+        __m256i qd = _mm256_set1_epi16(query_sq16[d]);
+        const int16_t *cd_ptr = block_coords + d * 32;
+
+        __m256i c0 = _mm256_loadu_si256((const __m256i *)cd_ptr);
+        __m256i diff0 = _mm256_sub_epi16(qd, c0);
+        __m256i d0_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(diff0));
+        __m256i d0_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(diff0, 1));
+        sum0_lo = _mm256_add_epi32(sum0_lo, _mm256_mullo_epi32(d0_lo, d0_lo));
+        sum0_hi = _mm256_add_epi32(sum0_hi, _mm256_mullo_epi32(d0_hi, d0_hi));
+
+        __m256i c1 = _mm256_loadu_si256((const __m256i *)(cd_ptr + 16));
+        __m256i diff1 = _mm256_sub_epi16(qd, c1);
+        __m256i d1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(diff1));
+        __m256i d1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(diff1, 1));
+        sum1_lo = _mm256_add_epi32(sum1_lo, _mm256_mullo_epi32(d1_lo, d1_lo));
+        sum1_hi = _mm256_add_epi32(sum1_hi, _mm256_mullo_epi32(d1_hi, d1_hi));
+
+        if ((d & 1) == 1 && d + 1 < dim)
+        {
+            sum0_lo = _mm256_min_epu32(sum0_lo, v_clamp);
+            sum0_hi = _mm256_min_epu32(sum0_hi, v_clamp);
+            sum1_lo = _mm256_min_epu32(sum1_lo, v_clamp);
+            sum1_hi = _mm256_min_epu32(sum1_hi, v_clamp);
+        }
+    } // for (long d = 0; d < dim; d++)
+
+    __m256i fail0_lo = _mm256_cmpgt_epi32(_mm256_xor_si256(sum0_lo, v_bias), v_cut);
+    __m256i fail0_hi = _mm256_cmpgt_epi32(_mm256_xor_si256(sum0_hi, v_bias), v_cut);
+    int m0_lo = _mm256_movemask_ps(_mm256_castsi256_ps(fail0_lo));
+    int m0_hi = _mm256_movemask_ps(_mm256_castsi256_ps(fail0_hi));
+    uint32_t pass0 = (~(uint32_t)((m0_hi << 8) | m0_lo)) & 0xFFFFU;
+
+    __m256i fail1_lo = _mm256_cmpgt_epi32(_mm256_xor_si256(sum1_lo, v_bias), v_cut);
+    __m256i fail1_hi = _mm256_cmpgt_epi32(_mm256_xor_si256(sum1_hi, v_bias), v_cut);
+    int m1_lo = _mm256_movemask_ps(_mm256_castsi256_ps(fail1_lo));
+    int m1_hi = _mm256_movemask_ps(_mm256_castsi256_ps(fail1_hi));
+    uint32_t pass1 = (~(uint32_t)((m1_hi << 8) | m1_lo)) & 0xFFFFU;
+
+    return (pass1 << 16) | pass0;
+}
+#endif // __AVX2__
+
+#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+
+/**
+ * sq16_fastscan_32x_3d_avx512() - AVX-512 512-bit SIMD kernel for 32 3D candidates.
+ */
+static inline uint32_t sq16_fastscan_32x_3d_avx512(
+    const int16_t *restrict query_sq16,
+    const int16_t *restrict block_x,
+    const int16_t *restrict block_y,
+    const int16_t *restrict block_z,
+    uint64_t                ssd_cutoff)
+{
+    if (ssd_cutoff >= SQ16_FASTSCAN_MAX_3D_SSD)
+    {
+        return 0xFFFFFFFFU;
+    }
+
+    __m512i qx = _mm512_set1_epi16(query_sq16[0]);
+    __m512i qy = _mm512_set1_epi16(query_sq16[1]);
+    __m512i qz = _mm512_set1_epi16(query_sq16[2]);
+    __m512i v_cut_u = _mm512_set1_epi32((int32_t)(uint32_t)ssd_cutoff);
+
+    __m512i cx = _mm512_loadu_si512((const void *)block_x);
+    __m512i cy = _mm512_loadu_si512((const void *)block_y);
+    __m512i cz = _mm512_loadu_si512((const void *)block_z);
+
+    __m512i dx = _mm512_sub_epi16(qx, cx);
+    __m512i dy = _mm512_sub_epi16(qy, cy);
+    __m512i dz = _mm512_sub_epi16(qz, cz);
+
+    __m512i dx_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(dx));
+    __m512i dx_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64(dx, 1));
+    __m512i sum_lo = _mm512_mullo_epi32(dx_lo, dx_lo);
+    __m512i sum_hi = _mm512_mullo_epi32(dx_hi, dx_hi);
+
+    __m512i dy_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(dy));
+    __m512i dy_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64(dy, 1));
+    sum_lo = _mm512_add_epi32(sum_lo, _mm512_mullo_epi32(dy_lo, dy_lo));
+    sum_hi = _mm512_add_epi32(sum_hi, _mm512_mullo_epi32(dy_hi, dy_hi));
+
+    __m512i dz_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(dz));
+    __m512i dz_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64(dz, 1));
+    sum_lo = _mm512_add_epi32(sum_lo, _mm512_mullo_epi32(dz_lo, dz_lo));
+    sum_hi = _mm512_add_epi32(sum_hi, _mm512_mullo_epi32(dz_hi, dz_hi));
+
+    __mmask16 pass_lo = _mm512_cmple_epu32_mask(sum_lo, v_cut_u);
+    __mmask16 pass_hi = _mm512_cmple_epu32_mask(sum_hi, v_cut_u);
+
+    return ((uint32_t)pass_hi << 16) | (uint32_t)pass_lo;
+}
+
+/**
+ * sq16_fastscan_32x_generic_avx512() - AVX-512 512-bit SIMD kernel for 32 D-dim candidates.
+ */
+static inline uint32_t sq16_fastscan_32x_generic_avx512(
+    const int16_t *restrict query_sq16,
+    const int16_t *restrict block_coords,
+    long                    dim,
+    uint64_t                ssd_cutoff)
+{
+    if (ssd_cutoff > (uint64_t)INT32_MAX)
+    {
+        return sq16_fastscan_32x_generic_scalar(query_sq16, block_coords, dim, ssd_cutoff);
+    }
+
+    uint32_t cut32 = (uint32_t)ssd_cutoff;
+    __m512i v_cut_u = _mm512_set1_epi32((int32_t)cut32);
+    __m512i v_clamp = _mm512_set1_epi32((int32_t)(cut32 + 1));
+
+    __m512i sum_lo = _mm512_setzero_si512();
+    __m512i sum_hi = _mm512_setzero_si512();
+
+    for (long d = 0; d < dim; d++)
+    {
+        __m512i qd = _mm512_set1_epi16(query_sq16[d]);
+        __m512i cd = _mm512_loadu_si512((const void *)(block_coords + d * 32));
+        __m512i diff = _mm512_sub_epi16(qd, cd);
+
+        __m512i d_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(diff));
+        __m512i d_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64(diff, 1));
+
+        sum_lo = _mm512_add_epi32(sum_lo, _mm512_mullo_epi32(d_lo, d_lo));
+        sum_hi = _mm512_add_epi32(sum_hi, _mm512_mullo_epi32(d_hi, d_hi));
+
+        if ((d & 1) == 1 && d + 1 < dim)
+        {
+            sum_lo = _mm512_min_epu32(sum_lo, v_clamp);
+            sum_hi = _mm512_min_epu32(sum_hi, v_clamp);
+        }
+    } // for (long d = 0; d < dim; d++)
+
+    __mmask16 pass_lo = _mm512_cmple_epu32_mask(sum_lo, v_cut_u);
+    __mmask16 pass_hi = _mm512_cmple_epu32_mask(sum_hi, v_cut_u);
+
+    return ((uint32_t)pass_hi << 16) | (uint32_t)pass_lo;
+}
+#endif // __AVX512F__
+
+/**
+ * sq16_fastscan_32x_3d() - Evaluate SQ16 squared distance for 32 3D candidates in SIMD.
+ * @query_sq16: Pointer to query's 3 quantized coordinates.
+ * @block_x:    Pointer to 32 transposed X coordinates.
+ * @block_y:    Pointer to 32 transposed Y coordinates.
+ * @block_z:    Pointer to 32 transposed Z coordinates.
+ * @ssd_cutoff: Squared distance threshold for candidate survival.
+ *
+ * Return: 32-bit bitmask where bit i is 1 if candidate i satisfies dist^2 <= ssd_cutoff.
+ */
+static inline uint32_t sq16_fastscan_32x_3d(
+    const int16_t *restrict query_sq16,
+    const int16_t *restrict block_x,
+    const int16_t *restrict block_y,
+    const int16_t *restrict block_z,
+    uint64_t                ssd_cutoff)
+{
+#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    return sq16_fastscan_32x_3d_avx512(query_sq16, block_x, block_y, block_z, ssd_cutoff);
+#elif defined(__AVX2__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    return sq16_fastscan_32x_3d_avx2(query_sq16, block_x, block_y, block_z, ssd_cutoff);
+#else
+    return sq16_fastscan_32x_3d_scalar(query_sq16, block_x, block_y, block_z, ssd_cutoff);
+#endif
+}
+
+/**
+ * sq16_fastscan_32x() - Evaluate SQ16 squared distance for 32 D-dim candidates in SIMD.
+ * @query_sq16:   Pointer to query's dim quantized coordinates.
+ * @block_coords: Pointer to 32*dim transposed coordinates.
+ * @dim:          Vector dimensionality.
+ * @ssd_cutoff:   Squared distance threshold for candidate survival.
+ *
+ * Return: 32-bit bitmask where bit i is 1 if candidate i satisfies dist^2 <= ssd_cutoff.
+ */
+static inline uint32_t sq16_fastscan_32x(
+    const int16_t *restrict query_sq16,
+    const int16_t *restrict block_coords,
+    long                    dim,
+    uint64_t                ssd_cutoff)
+{
+    if (dim == 3)
+    {
+        return sq16_fastscan_32x_3d(
+            query_sq16,
+            block_coords,
+            block_coords + 32,
+            block_coords + 64,
+            ssd_cutoff
+        );
+    }
+
+#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    return sq16_fastscan_32x_generic_avx512(query_sq16, block_coords, dim, ssd_cutoff);
+#elif defined(__AVX2__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    return sq16_fastscan_32x_generic_avx2(query_sq16, block_coords, dim, ssd_cutoff);
+#else
+    return sq16_fastscan_32x_generic_scalar(query_sq16, block_coords, dim, ssd_cutoff);
+#endif
+}
 
 #endif // SCALAR_QUANT_H

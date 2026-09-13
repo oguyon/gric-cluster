@@ -34,11 +34,13 @@ typedef struct
 typedef struct
 {
     int         cluster_id;
-    void       *anchor_data; /**< Cluster anchor frame pixel vector */
-    double      radius;      /**< Max Euclidean distance from anchor to any member */
+    void       *anchor_data;     /**< Cluster anchor frame pixel vector */
+    double      radius;          /**< Max Euclidean distance from anchor to any member */
     int         num_members;
     int         capacity;
-    MemberMeta *members;     /**< Array of member metadata records */
+    MemberMeta *members;         /**< Array of member metadata records */
+    int16_t    *sq16_transposed; /**< [num_sq16_blocks * dim * 32] FastScan block coords */
+    int         num_sq16_blocks; /**< Number of 32-candidate FastScan blocks */
 } KnnCluster;
 
 /** Single nearest neighbor record */
@@ -169,9 +171,10 @@ typedef struct
     uint8_t         *sq8_dataset_buffer;  /**< [N x D] resident 8-bit quantized dataset */
     uint8_t         *anchor_sq8_buffer;   /**< [M x D] resident quantized anchor vectors */
     SQ8Params        sq8_params;          /**< Calibration parameters for SQ8 */
-    int16_t         *sq16_dataset_buffer; /**< [N x D] resident 16-bit quantized dataset */
-    int16_t         *anchor_sq16_buffer;  /**< [M x D] resident quantized anchor vectors */
-    SQ16Params       sq16_params;         /**< Calibration parameters for SQ16 */
+    int16_t         *sq16_dataset_buffer;    /**< [N x D] resident 16-bit quantized dataset */
+    int16_t         *anchor_sq16_buffer;     /**< [M x D] resident quantized anchor vectors */
+    SQ16Params       sq16_params;            /**< Calibration parameters for SQ16 */
+    int16_t         *sq16_transposed_buffer; /**< Contiguous memory for FastScan blocks */
     int              cluster_graph_k;     /**< Number of neighbors per cluster anchor */
     int             *cluster_graph_adj;   /**< [M x cluster_graph_k] neighbor cluster IDs */
     double           avg_cluster_size;    /**< Mean number of members per cluster */

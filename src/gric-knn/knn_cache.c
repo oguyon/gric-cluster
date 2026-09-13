@@ -22,6 +22,56 @@
 #include <omp.h>
 #endif
 
+static int knn_size_mul(
+    size_t  a,
+    size_t  b,
+    size_t *out)
+{
+    if (out == NULL)
+    {
+        return -1;
+    }
+    if (a != 0 && b > SIZE_MAX / a)
+    {
+        return -1;
+    }
+    *out = a * b;
+    return 0;
+}
+
+static int knn_size_add(
+    size_t  a,
+    size_t  b,
+    size_t *out)
+{
+    if (out == NULL || a > SIZE_MAX - b)
+    {
+        return -1;
+    }
+    *out = a + b;
+    return 0;
+}
+
+static int knn_alloc_sq16_transposed_buffer(
+    int16_t **buffer,
+    size_t    bytes)
+{
+    if (buffer == NULL)
+    {
+        return -1;
+    }
+
+#if defined(_POSIX_VERSION)
+    if (posix_memalign((void **)buffer, 64, bytes) == 0)
+    {
+        return 0;
+    }
+#endif
+
+    *buffer = (int16_t *)malloc(bytes);
+    return (*buffer != NULL) ? 0 : -1;
+}
+
 /**
  * knn_model_build_or_load_sq8() - Build or load quantized SQ8 dataset buffer into KnnModel.
  * @model:  Pointer to initialized KnnModel.
@@ -395,7 +445,7 @@ int knn_model_build_or_load_sq16(
                    N, model->sq16_params.min_val, model->sq16_params.max_val,
                    model->sq16_params.scale);
         }
-        return 0;
+        goto sq16_postprocess;
     }
 
     // Path 2: Build SQ16 representation by scanning dataset frames
@@ -558,6 +608,7 @@ int knn_model_build_or_load_sq16(
         }
     }
 
+sq16_postprocess:
     // Pre-quantize anchor vectors for fast Level 2 anchor lower-bound pruning
     if (model->clusters != NULL && model->num_clusters > 0)
     {
@@ -587,6 +638,174 @@ int knn_model_build_or_load_sq16(
     if (config->use_memo)
     {
         knn_deduplicate_sq16_frames(model, config);
+    }
+
+    // Build transposed SIMD FastScan blocks for all clusters
+    if (knn_model_build_transposed_sq16(model, config) != 0)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * knn_model_build_transposed_sq16() - Build cluster-local transposed SQ16 FastScan blocks.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_transposed_sq16(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (model == NULL || config == NULL || !config->use_sq16)
+    {
+        return 0;
+    }
+
+    if (model->sq16_dataset_buffer == NULL || model->clusters == NULL ||
+        model->num_clusters <= 0)
+    {
+        return 0;
+    }
+
+    long dim = model->frame_elements;
+    int M = model->num_clusters;
+    size_t transposed_budget_elems = 0;
+    size_t total_transposed_elems = 0;
+    int skipped_clusters = 0;
+
+    if (model->sq16_transposed_buffer != NULL)
+    {
+        free(model->sq16_transposed_buffer);
+        model->sq16_transposed_buffer = NULL;
+    }
+    for (int c = 0; c < M; c++)
+    {
+        model->clusters[c].sq16_transposed = NULL;
+        model->clusters[c].num_sq16_blocks = 0;
+    }
+    if (knn_size_mul((size_t)model->total_dataset_frames, (size_t)dim, &transposed_budget_elems) != 0)
+    {
+        return -1;
+    }
+
+    for (int c = 0; c < M; c++)
+    {
+        int num_m = model->clusters[c].num_members;
+        int n_blocks = (num_m + SQ16_FASTSCAN_BLOCK_SIZE - 1) / SQ16_FASTSCAN_BLOCK_SIZE;
+        size_t padded_members = 0;
+        size_t padded_elems = 0;
+        size_t next_total = 0;
+
+        if (knn_size_mul((size_t)n_blocks, SQ16_FASTSCAN_BLOCK_SIZE, &padded_members) != 0 ||
+            knn_size_mul(padded_members, (size_t)dim, &padded_elems) != 0)
+        {
+            return -1;
+        }
+
+        if (num_m <= 0)
+        {
+            model->clusters[c].sq16_transposed = NULL;
+            model->clusters[c].num_sq16_blocks = 0;
+            skipped_clusters++;
+            continue;
+        }
+
+        if (knn_size_add(total_transposed_elems, padded_elems, &next_total) != 0)
+        {
+            return -1;
+        }
+        if (next_total > transposed_budget_elems)
+        {
+            skipped_clusters++;
+            continue;
+        }
+
+        model->clusters[c].num_sq16_blocks = n_blocks;
+        total_transposed_elems = next_total;
+    } // for (int c = 0; c < M; c++)
+
+    if (total_transposed_elems == 0)
+    {
+        return 0;
+    }
+
+    size_t alloc_bytes = 0;
+    if (knn_size_mul(total_transposed_elems, sizeof(int16_t), &alloc_bytes) != 0)
+    {
+        return -1;
+    }
+
+    if (knn_alloc_sq16_transposed_buffer(&model->sq16_transposed_buffer, alloc_bytes) != 0)
+    {
+        return -1;
+    }
+
+    size_t cur_offset = 0;
+    for (int c = 0; c < M; c++)
+    {
+        int n_blocks = model->clusters[c].num_sq16_blocks;
+        if (n_blocks <= 0)
+        {
+            model->clusters[c].sq16_transposed = NULL;
+            continue;
+        }
+        int16_t *cl_buf = model->sq16_transposed_buffer + cur_offset;
+        model->clusters[c].sq16_transposed = cl_buf;
+        cur_offset += (size_t)n_blocks * (size_t)dim * SQ16_FASTSCAN_BLOCK_SIZE;
+
+        int num_m = model->clusters[c].num_members;
+        for (int b = 0; b < n_blocks; b++)
+        {
+            int16_t *block_ptr = cl_buf + (size_t)b * (size_t)dim * SQ16_FASTSCAN_BLOCK_SIZE;
+            int m_start = b * SQ16_FASTSCAN_BLOCK_SIZE;
+            int m_count = num_m - m_start;
+            if (m_count > SQ16_FASTSCAN_BLOCK_SIZE)
+            {
+                m_count = SQ16_FASTSCAN_BLOCK_SIZE;
+            }
+
+            for (int i = 0; i < SQ16_FASTSCAN_BLOCK_SIZE; i++)
+            {
+                if (i < m_count)
+                {
+                    long cand_id = (long)model->clusters[c].members[m_start + i].frame_id;
+                    if (cand_id < 0 || cand_id >= model->total_dataset_frames)
+                    {
+                        return -1;
+                    }
+                    const int16_t *cand_src = model->sq16_dataset_buffer + cand_id * dim;
+                    for (long d = 0; d < dim; d++)
+                    {
+                        block_ptr[d * SQ16_FASTSCAN_BLOCK_SIZE + i] = cand_src[d];
+                    }
+                }
+                else
+                {
+                    // Pad dummy lanes with 32767 so they never pass cutoff
+                    for (long d = 0; d < dim; d++)
+                    {
+                        block_ptr[d * SQ16_FASTSCAN_BLOCK_SIZE + i] = 32767;
+                    }
+                }
+            } // for (int i = 0; i < SQ16_FASTSCAN_BLOCK_SIZE; i++)
+        } // for (int b = 0; b < n_blocks; b++)
+    } // for (int c = 0; c < M; c++)
+
+    if (config->verbose_level >= 1)
+    {
+        double mb = (double)(total_transposed_elems * sizeof(int16_t)) / (1024.0 * 1024.0);
+        printf("  [FASTSCAN] Built SIMD transposed blocks (%s): %.2f MB",
+               sq16_get_simd_mode_str(), mb);
+        if (skipped_clusters > 0)
+        {
+            printf(" (%d clusters kept on per-candidate SQ16 due to memory budget)",
+                   skipped_clusters);
+        }
+        printf("\n");
     }
 
     return 0;

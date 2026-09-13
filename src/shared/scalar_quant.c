@@ -1112,3 +1112,37 @@ int sq16_load_sidecar(
     *data = buf;
     return 0;
 }
+
+/**
+ * sq16_get_simd_mode() - Query the build-selected FastScan implementation.
+ *
+ * Return: SQ16SimdMode indicating the compiled AVX-512, AVX2, or scalar path.
+ */
+SQ16SimdMode sq16_get_simd_mode(void)
+{
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    return SQ16_SIMD_AVX512;
+#elif defined(__AVX2__)
+    return SQ16_SIMD_AVX2;
+#else
+    return SQ16_SIMD_SCALAR;
+#endif
+}
+
+/**
+ * sq16_get_simd_mode_str() - Human-readable description of the compiled FastScan mode.
+ *
+ * Return: Constant string describing the compiled instruction set and register width.
+ */
+const char *sq16_get_simd_mode_str(void)
+{
+    switch (sq16_get_simd_mode())
+    {
+        case SQ16_SIMD_AVX512:
+            return "AVX-512 (512-bit, 32-way SIMD)";
+        case SQ16_SIMD_AVX2:
+            return "AVX2 (256-bit, 16-way dual SIMD)";
+        default:
+            return "Scalar (Portable Fallback)";
+    }
+}
