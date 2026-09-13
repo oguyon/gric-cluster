@@ -53,6 +53,17 @@ else()
     message(WARNING "OpenMP not found. Multithreading disabled.")
 endif()
 
+option(USE_BLAS "Enable external BLAS library acceleration" OFF)
+if (USE_BLAS)
+    find_package(BLAS)
+    if (BLAS_FOUND)
+        add_definitions(-DUSE_BLAS)
+        message(STATUS "BLAS found. External GEMM acceleration enabled.")
+    else()
+        message(WARNING "BLAS requested but not found. Using in-tree micro-kernel.")
+    endif()
+endif()
+
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 file(GLOB HELP_TOPIC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/help/*.md")
@@ -109,6 +120,7 @@ set(CLUSTER_SRCS
     src/gric-cluster/math/cluster_prune.c
     src/gric-cluster/math/cluster_scandist.c
     src/gric-cluster/math/framedistance.c
+    src/gric-cluster/math/cluster_gemm_dist.c
     src/gric-cluster/math/tuple_retrieval.c
     src/gric-cluster/io/cluster_io.c
     src/gric-cluster/io/cluster_io_log.c
@@ -154,6 +166,9 @@ target_link_libraries(gric-cluster
     ${IMAGESTREAMIO_LIBRARIES}
     m
 )
+if (USE_BLAS AND BLAS_FOUND)
+    target_link_libraries(gric-cluster ${BLAS_LIBRARIES})
+endif()
 if (PNG_FOUND)
     target_link_libraries(gric-cluster ${PNG_LIBRARIES})
 endif()
@@ -290,6 +305,7 @@ add_executable(gric-knn
     src/gric-knn/knn_cross_dataset.c
     src/gric-knn/knn_writer.c
     src/gric-cluster/math/framedistance.c
+    src/gric-cluster/math/cluster_gemm_dist.c
     src/shared/cluster_locator.c
     src/shared/cli_colors.c
     src/shared/gric_bin_io.c
@@ -303,6 +319,9 @@ target_include_directories(gric-knn PRIVATE src/gric-knn src/gric-cluster/math s
 target_link_libraries(gric-knn m)
 if (OpenMP_C_FOUND)
     target_link_libraries(gric-knn OpenMP::OpenMP_C)
+endif()
+if (USE_BLAS AND BLAS_FOUND)
+    target_link_libraries(gric-knn ${BLAS_LIBRARIES})
 endif()
 if (CFITSIO_FOUND)
     target_link_libraries(gric-knn ${CFITSIO_LIBRARIES})
@@ -629,6 +648,18 @@ if (CFITSIO_FOUND)
 endif()
 add_test(NAME test_knn_rq8_sidecar_mismatch
     COMMAND test_knn_rq8_sidecar_mismatch)
+
+add_executable(test_gemm_dist
+    tests/test_gemm_dist.c
+    src/gric-cluster/math/cluster_gemm_dist.c
+)
+target_include_directories(test_gemm_dist PRIVATE src/gric-cluster/math)
+target_link_libraries(test_gemm_dist m)
+if (USE_BLAS AND BLAS_FOUND)
+    target_link_libraries(test_gemm_dist ${BLAS_LIBRARIES})
+endif()
+add_test(NAME test_gemm_dist
+    COMMAND test_gemm_dist)
 
 add_executable(test_gric_probe
     tests/test_gric_probe.c
