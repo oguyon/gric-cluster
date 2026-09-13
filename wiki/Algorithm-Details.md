@@ -27,13 +27,13 @@ Then loop over frame index `fi` until all frames clustered:
       - Mix: `P_mixed(cj) = (1 - coeff) * prob(cj) + coeff * P_trans(cj)`.
     - Otherwise, `P_mixed(cj) = prob(cj)`.
 3.  **Rank Candidates**: Sort clusters by total probability.
-    - If `-gprob` is used, rank derived from sorting `P_mixed(cj) * gprob(fi, cj)`
+    - If `-gprob` is used, candidates are dynamically selected using `entropy_p_current`.
     - Otherwise, rank derived from sorting `P_mixed(cj)`.
 4.  **Check Candidates**: Iterate through ranked clusters:
     - Compute `dfc(fi, cj)`.
     - If `dfc < rlim` (in cluster):
         - **Assign**: `fi` -> `cj`.
-        - **Reward**: `prob(cj) += dprob`.
+        - **Reward**: `prob(cj) += dprob` (or +0.3 with 0.2/K floor when prediction is active).
         - **Update Transition**: Increment `tm(prev_cluster, cj)`.
         - Update `gprob` history.
         - Proceed to next frame.
@@ -82,7 +82,8 @@ The `-tm <coeff>` option allows the algorithm to learn the temporal structure of
 
 ### The `FrameInfo` Structure
 
-The algorithm maintains a history of computations in the `FrameInfo` structure (implemented as `frame_infos[k]` in `src/cluster.c`). For a processed frame `k`, it stores:
+The algorithm maintains a history of computations in the `FrameInfo` structure
+(implemented as `frame_infos[k]` in `src/gric-cluster/`). For a processed frame `k`, it stores:
 
 - `cluster_indices`: Array of cluster indices `cj` for which a distance was computed.
 - `distances`: Array of the corresponding measured distances.

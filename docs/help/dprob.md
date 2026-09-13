@@ -16,9 +16,14 @@ This creates a 'recency bias': active clusters rise to the top of the
 search list, minimizing the number of distance calculations needed to find
 a match.
 
+When sequence prediction (-pred or -predf) is active, this standard
+update is replaced by +0.3 on the assigned cluster followed by adding a
+uniform floor of 0.2/K across all clusters.
+
 ## USE
 -dprob 0.05 (Stronger bias, faster adaptation to changing scenes)
 
 ## SEE ALSO
 - `-gprob`: Use geometrical probability
+- `-pred`: Sequence prediction
 - `-maxcl`: Max number of clusters
