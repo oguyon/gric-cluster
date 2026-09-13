@@ -1009,7 +1009,9 @@ int wasm_cluster_reassign_nearest(
     int          *out_assignments)
 {
     WasmHandle *h = (WasmHandle *)ptr;
-    if (h == NULL || h->state.num_clusters <= 0 || num_frames <= 0 || coords_flat == NULL)
+    if (h == NULL || h->state.num_clusters <= 0 ||
+        num_frames <= 0 || ndim <= 0 || ndim != h->ndim ||
+        coords_flat == NULL)
     {
         return 0;
     }
