@@ -690,7 +690,7 @@ void wasm_cluster_get_dcc(
     int     K)
 {
     WasmHandle *h = (WasmHandle *)ptr;
-    if (!h || !out_dcc)
+    if (!h || !out_dcc || K < 0)
     {
         return;
     }
