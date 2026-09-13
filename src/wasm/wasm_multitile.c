@@ -88,13 +88,14 @@ void *wasm_multitile_init(
     double discard_fraction,
     int    max_gprob_visitors)
 {
-    WasmMultiTileHandle *h = calloc(
-        1, sizeof(WasmMultiTileHandle)
-    );
-    if (!h)
+    if (ndim != 2 && ndim != 3)
     {
         return NULL;
     }
+
+    WasmMultiTileHandle *h = calloc(
+        1, sizeof(WasmMultiTileHandle)
+    );
 
     h->ndim = ndim;
     h->maxnbfr = maxnbfr;
