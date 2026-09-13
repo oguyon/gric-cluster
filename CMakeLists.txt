@@ -611,6 +611,10 @@ add_executable(test_knn_rq8_sidecar_mismatch
 )
 target_include_directories(test_knn_rq8_sidecar_mismatch PRIVATE src/gric-knn src/shared)
 target_link_libraries(test_knn_rq8_sidecar_mismatch m)
+if (CFITSIO_FOUND)
+    target_link_libraries(test_knn_rq8_sidecar_mismatch ${CFITSIO_LIBRARIES})
+    target_include_directories(test_knn_rq8_sidecar_mismatch PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
 add_test(NAME test_knn_rq8_sidecar_mismatch
     COMMAND test_knn_rq8_sidecar_mismatch)
 
