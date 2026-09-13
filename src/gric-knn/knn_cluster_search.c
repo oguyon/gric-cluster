@@ -6,6 +6,32 @@
 #include "knn_cluster_search.h"
 #include <alloca.h>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
+static inline int knn_popcount32(
+    uint32_t value)
+{
+#ifdef _MSC_VER
+    return (int)__popcnt(value);
+#else
+    return __builtin_popcount(value);
+#endif
+}
+
+static inline int knn_ctz32(
+    uint32_t value)
+{
+#ifdef _MSC_VER
+    unsigned long index = 0;
+    _BitScanForward(&index, value);
+    return (int)index;
+#else
+    return __builtin_ctz(value);
+#endif
+}
+
 /**
  * knn_search_intra_cluster() - Search members of the query's home cluster.
  * @query_id:        Index of query frame.
@@ -175,12 +201,12 @@ static void knn_search_intra_cluster(
                 continue;
             }
 
-            int passed_count = __builtin_popcount(pass_mask);
+            int passed_count = knn_popcount32(pass_mask);
             telem->sq16_members_pruned += (uint64_t)(m_count - passed_count);
 
             while (pass_mask)
             {
-                int lane = __builtin_ctz(pass_mask);
+                int lane = knn_ctz32(pass_mask);
                 pass_mask &= pass_mask - 1;
 
                 int m = m_start + lane;
@@ -1404,12 +1430,12 @@ static void knn_eval_candidate_cluster_members(
                 continue;
             }
 
-            int passed_count = __builtin_popcount(pass_mask);
+            int passed_count = knn_popcount32(pass_mask);
             telem->sq16_members_pruned += (uint64_t)(m_count - passed_count);
 
             while (pass_mask)
             {
-                int lane = __builtin_ctz(pass_mask);
+                int lane = knn_ctz32(pass_mask);
                 pass_mask &= pass_mask - 1;
 
                 int m = m_start + lane;

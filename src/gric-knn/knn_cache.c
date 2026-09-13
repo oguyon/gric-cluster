@@ -22,6 +22,56 @@
 #include <omp.h>
 #endif
 
+static int knn_size_mul(
+    size_t  a,
+    size_t  b,
+    size_t *out)
+{
+    if (out == NULL)
+    {
+        return -1;
+    }
+    if (a != 0 && b > SIZE_MAX / a)
+    {
+        return -1;
+    }
+    *out = a * b;
+    return 0;
+}
+
+static int knn_size_add(
+    size_t  a,
+    size_t  b,
+    size_t *out)
+{
+    if (out == NULL || a > SIZE_MAX - b)
+    {
+        return -1;
+    }
+    *out = a + b;
+    return 0;
+}
+
+static int knn_alloc_sq16_transposed_buffer(
+    int16_t **buffer,
+    size_t    bytes)
+{
+    if (buffer == NULL)
+    {
+        return -1;
+    }
+
+#if defined(_POSIX_VERSION)
+    if (posix_memalign((void **)buffer, 64, bytes) == 0)
+    {
+        return 0;
+    }
+#endif
+
+    *buffer = (int16_t *)malloc(bytes);
+    return (*buffer != NULL) ? 0 : -1;
+}
+
 /**
  * knn_model_build_or_load_sq8() - Build or load quantized SQ8 dataset buffer into KnnModel.
  * @model:  Pointer to initialized KnnModel.
@@ -631,9 +681,16 @@ int knn_model_build_transposed_sq16(
         int num_m = model->clusters[c].num_members;
         int n_blocks = (num_m + SQ16_FASTSCAN_BLOCK_SIZE - 1) / SQ16_FASTSCAN_BLOCK_SIZE;
         size_t raw_elems = (size_t)num_m * (size_t)dim;
-        size_t padded_elems = (size_t)n_blocks * (size_t)dim * SQ16_FASTSCAN_BLOCK_SIZE;
+        size_t padded_members = 0;
+        size_t padded_elems = 0;
 
-        if (num_m <= 0 || (raw_elems > 0 && padded_elems > raw_elems * 2))
+        if (knn_size_mul((size_t)n_blocks, SQ16_FASTSCAN_BLOCK_SIZE, &padded_members) != 0 ||
+            knn_size_mul(padded_members, (size_t)dim, &padded_elems) != 0)
+        {
+            return -1;
+        }
+
+        if (num_m <= 0 || (raw_elems > 0 && padded_members > (size_t)num_m * 2U))
         {
             model->clusters[c].sq16_transposed = NULL;
             model->clusters[c].num_sq16_blocks = 0;
@@ -642,7 +699,10 @@ int knn_model_build_transposed_sq16(
         }
 
         model->clusters[c].num_sq16_blocks = n_blocks;
-        total_transposed_elems += padded_elems;
+        if (knn_size_add(total_transposed_elems, padded_elems, &total_transposed_elems) != 0)
+        {
+            return -1;
+        }
     } // for (int c = 0; c < M; c++)
 
     if (total_transposed_elems == 0)
@@ -650,16 +710,15 @@ int knn_model_build_transposed_sq16(
         return 0;
     }
 
-    if (posix_memalign((void **)&model->sq16_transposed_buffer, 64,
-                       total_transposed_elems * sizeof(int16_t)) != 0)
+    size_t alloc_bytes = 0;
+    if (knn_size_mul(total_transposed_elems, sizeof(int16_t), &alloc_bytes) != 0)
     {
-        model->sq16_transposed_buffer = (int16_t *)malloc(
-            total_transposed_elems * sizeof(int16_t)
-        );
-        if (model->sq16_transposed_buffer == NULL)
-        {
-            return -1;
-        }
+        return -1;
+    }
+
+    if (knn_alloc_sq16_transposed_buffer(&model->sq16_transposed_buffer, alloc_bytes) != 0)
+    {
+        return -1;
     }
 
     size_t cur_offset = 0;
@@ -691,6 +750,10 @@ int knn_model_build_transposed_sq16(
                 if (i < m_count)
                 {
                     long cand_id = (long)model->clusters[c].members[m_start + i].frame_id;
+                    if (cand_id < 0 || cand_id >= model->total_dataset_frames)
+                    {
+                        return -1;
+                    }
                     const int16_t *cand_src = model->sq16_dataset_buffer + cand_id * dim;
                     for (long d = 0; d < dim; d++)
                     {

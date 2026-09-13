@@ -108,6 +108,8 @@ int sq8_load_sidecar(
 
 /** Magic identifier for .sq16 sidecar files */
 #define SQ16_FILE_MAGIC "SQ16_0001"
+#define SQ16_MAX_DIFF_U16 32767ULL
+#define SQ16_FASTSCAN_MAX_3D_SSD (3ULL * SQ16_MAX_DIFF_U16 * SQ16_MAX_DIFF_U16)
 
 /**
  * @brief Parameters defining uniform 16-bit scalar quantization into [0, 32767].
@@ -469,9 +471,9 @@ static inline uint32_t sq16_fastscan_32x_3d_avx2(
     const int16_t *restrict block_z,
     uint64_t                ssd_cutoff)
 {
-    if (ssd_cutoff > (uint64_t)INT32_MAX)
+    if (ssd_cutoff >= SQ16_FASTSCAN_MAX_3D_SSD)
     {
-        return sq16_fastscan_32x_3d_scalar(query_sq16, block_x, block_y, block_z, ssd_cutoff);
+        return 0xFFFFFFFFU;
     }
 
     __m256i qx = _mm256_set1_epi16(query_sq16[0]);
@@ -624,9 +626,9 @@ static inline uint32_t sq16_fastscan_32x_3d_avx512(
     const int16_t *restrict block_z,
     uint64_t                ssd_cutoff)
 {
-    if (ssd_cutoff > (uint64_t)INT32_MAX)
+    if (ssd_cutoff >= SQ16_FASTSCAN_MAX_3D_SSD)
     {
-        return sq16_fastscan_32x_3d_scalar(query_sq16, block_x, block_y, block_z, ssd_cutoff);
+        return 0xFFFFFFFFU;
     }
 
     __m512i qx = _mm512_set1_epi16(query_sq16[0]);
