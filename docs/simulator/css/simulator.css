@@ -2633,6 +2633,27 @@
       color: #86efac !important;
     }
 
+    .btn-stop-action {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.4);
+      font-weight: 700;
+    }
+
+    .btn-stop-action:not(:disabled) {
+      background: rgba(239, 68, 68, 0.3) !important;
+      color: #fee2e2 !important;
+      border-color: rgba(239, 68, 68, 0.75) !important;
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.4) !important;
+    }
+
+    .btn-stop-action:not(:disabled):hover {
+      background: rgba(239, 68, 68, 0.5) !important;
+      border-color: rgba(248, 113, 113, 0.9) !important;
+      color: #ffffff !important;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.6) !important;
+    }
+
     .btn-action:disabled,
     .btn-action.disabled {
       opacity: 0.38 !important;
