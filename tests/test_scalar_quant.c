@@ -440,6 +440,90 @@ static void test_sq16_cutoff()
     printf("  -> SQ16 early cutoff passed across 1,000 random vectors.\n");
 }
 
+static void test_sq16_fastscan()
+{
+    printf("[TEST] Testing SQ16 FastScan SIMD bit-exactness...\n");
+    printf("  -> Detected SIMD Hardware Mode: %s\n", sq16_get_simd_mode_str());
+
+    // 1. Test 3D FastScan vs exact SQ16 squared distance
+    int16_t bx[32], by[32], bz[32];
+    int16_t q[3];
+
+    for (int rep = 0; rep < 10000; rep++)
+    {
+        q[0] = (int16_t)(rand() % 32768);
+        q[1] = (int16_t)(rand() % 32768);
+        q[2] = (int16_t)(rand() % 32768);
+
+        for (int i = 0; i < 32; i++)
+        {
+            bx[i] = (int16_t)(rand() % 32768);
+            by[i] = (int16_t)(rand() % 32768);
+            bz[i] = (int16_t)(rand() % 32768);
+        }
+
+        uint64_t cutoff = (uint64_t)(rand() % 40000000);
+        uint32_t mask_3d = sq16_fastscan_32x_3d(q, bx, by, bz, cutoff);
+
+        for (int i = 0; i < 32; i++)
+        {
+            int16_t cand[3] = {bx[i], by[i], bz[i]};
+            uint64_t exact_ssd = sq16_dist_squared_i16(q, cand, 3);
+            int expected = (exact_ssd <= cutoff) ? 1 : 0;
+            int actual = (int)((mask_3d >> i) & 1);
+            assert(expected == actual);
+        }
+    } // for (int rep = 0; rep < 10000; rep++)
+
+    printf("  -> 3D FastScan passed 10,000 random candidate blocks bit-for-bit.\n");
+
+    // 2. Test generic dimensional FastScan
+    long test_dims[] = {1, 2, 3, 4, 8, 16, 32, 64, 128};
+    int num_dims = sizeof(test_dims) / sizeof(test_dims[0]);
+
+    for (int di = 0; di < num_dims; di++)
+    {
+        long dim = test_dims[di];
+        int16_t *q_vec = (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+        int16_t *block_coords = (int16_t *)malloc((size_t)dim * 32 * sizeof(int16_t));
+        assert(q_vec != NULL && block_coords != NULL);
+
+        for (int rep = 0; rep < 2000; rep++)
+        {
+            for (long d = 0; d < dim; d++)
+            {
+                q_vec[d] = (int16_t)(rand() % 32768);
+            }
+            for (long j = 0; j < dim * 32; j++)
+            {
+                block_coords[j] = (int16_t)(rand() % 32768);
+            }
+
+            uint64_t cutoff = (uint64_t)(rand() % 20000000);
+            uint32_t mask_gen = sq16_fastscan_32x(q_vec, block_coords, dim, cutoff);
+
+            for (int i = 0; i < 32; i++)
+            {
+                int16_t *cand_v = (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+                for (long d = 0; d < dim; d++)
+                {
+                    cand_v[d] = block_coords[d * 32 + i];
+                }
+                uint64_t exact_ssd = sq16_dist_squared_i16(q_vec, cand_v, dim);
+                int expected = (exact_ssd <= cutoff) ? 1 : 0;
+                int actual = (int)((mask_gen >> i) & 1);
+                assert(expected == actual);
+                free(cand_v);
+            }
+        } // for (int rep = 0; rep < 2000; rep++)
+
+        free(q_vec);
+        free(block_coords);
+    } // for (int di = 0; di < num_dims; di++)
+
+    printf("  -> Multi-dim FastScan passed bit-exactness across all test dimensions.\n");
+}
+
 int main()
 {
     printf("=== Running Scalar Quantization (SQ8 & SQ16) Unit Tests ===\n");
@@ -454,6 +538,7 @@ int main()
     test_sq16_sidecar_roundtrip();
     test_sq16_batch_and_filter();
     test_sq16_cutoff();
+    test_sq16_fastscan();
     printf("=== All SQ8 & SQ16 Unit Tests Passed Successfully ===\n");
     return 0;
 }
