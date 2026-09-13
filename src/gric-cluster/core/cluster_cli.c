@@ -417,6 +417,7 @@ int cluster_cli_parse(
             print_usage(argv[0]);
             if (cmdline)
                 free(cmdline);
+            gric_profile_free(&dataset_prof);
             return 1;
         }
     
