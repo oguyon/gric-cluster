@@ -85,6 +85,333 @@ static void knn_search_intra_cluster(
     uint64_t cached_ssd_cutoff = UINT64_MAX;
     int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
                        visited->query_sq16 != NULL);
+    int rq8_active = (config->use_rq8 && model->rq8_dataset_buffer != NULL &&
+                      visited->query_rq8 != NULL && !visited->query_rq8_clipped);
+
+    if (rq8_active)
+    {
+        if (model->is_double)
+        {
+            visited->query_rq8_clipped = rq8_quantize_query_residual_double(
+                (const double *)query_data,
+                (const double *)home_cl->anchor_data,
+                visited->query_rq8,
+                &model->rq8_params);
+        }
+        else
+        {
+            visited->query_rq8_clipped = rq8_quantize_query_residual_float(
+                (const float *)query_data,
+                (const float *)home_cl->anchor_data,
+                visited->query_rq8,
+                &model->rq8_params);
+        }
+        rq8_active = !visited->query_rq8_clipped;
+    }
+
+    if (rq8_active && home_cl->rq8_transposed != NULL && home_cl->num_rq8_blocks > 0)
+    {
+        int num_b = home_cl->num_rq8_blocks;
+        int mid_b = 0;
+        int b_lo = 0;
+        int b_hi = num_b - 1;
+        while (b_lo <= b_hi)
+        {
+            int b_m = b_lo + (b_hi - b_lo) / 2;
+            if (home_cl->members[b_m * RQ8_FASTSCAN_BLOCK_SIZE].r_anchor <= (float)r_home)
+            {
+                mid_b = b_m;
+                b_lo = b_m + 1;
+            }
+            else
+            {
+                b_hi = b_m - 1;
+            }
+        } // while (b_lo <= b_hi)
+        int left_b = mid_b - 1;
+        int right_b = mid_b;
+
+        while (left_b >= 0 || right_b < num_b)
+        {
+            double d_left_b = 1e30;
+            if (left_b >= 0)
+            {
+                int m_end_l = (left_b == num_b - 1) ? (num_m - 1) :
+                    (left_b * RQ8_FASTSCAN_BLOCK_SIZE + RQ8_FASTSCAN_BLOCK_SIZE - 1);
+                float r_max_l = home_cl->members[m_end_l].r_anchor;
+                d_left_b = (r_home > (double)r_max_l) ? (r_home - (double)r_max_l) : 0.0;
+            }
+
+            double d_right_b = 1e30;
+            if (right_b < num_b)
+            {
+                float r_min_r = home_cl->members[right_b * RQ8_FASTSCAN_BLOCK_SIZE].r_anchor;
+                d_right_b = ((double)r_min_r > r_home) ?
+                    ((double)r_min_r - r_home) : 0.0;
+            }
+
+            double current_tau = knn_heap_peek_max_dist(heap);
+            double tau_thresh = current_tau / eps_factor;
+            if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
+            {
+                tau_thresh = config->rlim_cutoff;
+            }
+
+            if (left_b >= 0 && d_left_b >= tau_thresh)
+            {
+                int pruned_count = (left_b + 1) * RQ8_FASTSCAN_BLOCK_SIZE;
+                if (pruned_count > num_m)
+                {
+                    pruned_count = num_m;
+                }
+                telem->level3_annular_pruned += (uint64_t)pruned_count;
+                left_b = -1;
+                d_left_b = 1e30;
+            }
+            if (right_b < num_b && d_right_b >= tau_thresh)
+            {
+                int pruned_count = num_m - right_b * RQ8_FASTSCAN_BLOCK_SIZE;
+                if (pruned_count > 0)
+                {
+                    telem->level3_annular_pruned += (uint64_t)pruned_count;
+                }
+                right_b = num_b;
+                d_right_b = 1e30;
+            }
+            if (left_b < 0 && right_b >= num_b)
+            {
+                break;
+            }
+
+            int b;
+            if (d_left_b <= d_right_b)
+            {
+                b = left_b--;
+            }
+            else
+            {
+                b = right_b++;
+            }
+
+            int m_start = b * RQ8_FASTSCAN_BLOCK_SIZE;
+            int m_count = num_m - m_start;
+            if (m_count > RQ8_FASTSCAN_BLOCK_SIZE)
+            {
+                m_count = RQ8_FASTSCAN_BLOCK_SIZE;
+            }
+
+            if (current_tau != last_tau)
+            {
+                last_tau = current_tau;
+                cached_ssd_cutoff = compute_rq8_cutoff_thresh(current_tau, model, config);
+            }
+
+            const int8_t *b_coords = home_cl->rq8_transposed +
+                (size_t)b * (size_t)frame_elem * RQ8_FASTSCAN_BLOCK_SIZE;
+            telem->rq8_evaluations += (uint64_t)m_count;
+
+            uint32_t pass_mask = rq8_fastscan_32x(
+                visited->query_rq8, b_coords, frame_elem, cached_ssd_cutoff
+            );
+            if (m_count < RQ8_FASTSCAN_BLOCK_SIZE)
+            {
+                pass_mask &= ((1U << m_count) - 1);
+            }
+
+            if (!pass_mask)
+            {
+                telem->rq8_members_pruned += (uint64_t)m_count;
+                continue;
+            }
+
+            int passed_count = knn_popcount32(pass_mask);
+            telem->rq8_members_pruned += (uint64_t)(m_count - passed_count);
+
+            while (pass_mask)
+            {
+                int lane = knn_ctz32(pass_mask);
+                pass_mask &= pass_mask - 1;
+
+                int m = m_start + lane;
+                long cand_id = (long)home_cl->members[m].frame_id;
+                double r_cand = (double)home_cl->members[m].r_anchor;
+
+                if (knn_visited_check_and_mark(visited, cand_id))
+                {
+                    continue;
+                }
+
+                if (!check_temporal_separation(query_id, cand_id, config))
+                {
+                    telem->temporal_pruned++;
+                    continue;
+                }
+
+                if (fabs(r_home - r_cand) >= tau_thresh)
+                {
+                    telem->level3_annular_pruned++;
+                    continue;
+                }
+
+                if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
+                {
+                    telem->reciprocal_reused++;
+                    continue;
+                }
+
+                if (!config->use_batch_dist)
+                {
+                    long rep_id = (model->frame_to_unique_map != NULL) ?
+                                  model->frame_to_unique_map[cand_id] : cand_id;
+                    double c_tau = (config->rlim_cutoff > 0.0 &&
+                                    config->rlim_cutoff < current_tau)
+                                   ? config->rlim_cutoff
+                                   : current_tau;
+                    if (visited != NULL && visited->rep_tags != NULL &&
+                        visited->rep_tags[rep_id] == visited->epoch)
+                    {
+                        telem->memo_hits++;
+                        double d = (double)visited->rep_dists[rep_id];
+                        if (d <= c_tau)
+                        {
+                            record_neighbor_and_reciprocal(
+                                query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                                , bucket_locks
+#endif
+                            );
+                        }
+                        continue;
+                    }
+
+                    const void *cand_ptr = NULL;
+                    if (reader->memory_data != NULL)
+                    {
+                        cand_ptr = (const char *)reader->memory_data +
+                                   (size_t)cand_id * frame_bytes;
+                    }
+                    else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+                    {
+                        cand_ptr = cand_buffer;
+                    }
+
+                    if (cand_ptr != NULL)
+                    {
+                        telem->framedist_calls++;
+                        double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
+                        double d = compute_euclidean_distance_cutoff(
+                            query_data, cand_ptr, frame_elem, model->is_double, cutoff_sq
+                        );
+                        if (visited != NULL && visited->rep_tags != NULL)
+                        {
+                            visited->rep_dists[rep_id] = (float)d;
+                            visited->rep_tags[rep_id] = visited->epoch;
+                        }
+                        if (d <= c_tau)
+                        {
+                            record_neighbor_and_reciprocal(
+                                query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                                , bucket_locks
+#endif
+                            );
+                        }
+                    }
+                    continue;
+                }
+
+                const void *dest = NULL;
+                if (reader->memory_data != NULL)
+                {
+                    dest = (const char *)reader->memory_data +
+                           (size_t)cand_id * frame_bytes;
+                }
+                else
+                {
+                    void *buf_dest = (char *)cand_buffer +
+                                     (size_t)batch_count * frame_bytes;
+                    if (knn_reader_read_frame(reader, cand_id, buf_dest) == 0)
+                    {
+                        dest = buf_dest;
+                    }
+                }
+                if (dest != NULL)
+                {
+                    batch_cand_ids[batch_count] = cand_id;
+                    batch_ptrs[batch_count] = dest;
+                    batch_count++;
+                    if (batch_count == 4)
+                    {
+                        double dists[4];
+                        if (model->is_double)
+                        {
+                            framedist_batch_1x4_double(
+                                (const double *)query_data,
+                                (const double *const *)batch_ptrs,
+                                dists,
+                                frame_elem);
+                        }
+                        else
+                        {
+                            framedist_batch_1x4_float(
+                                (const float *)query_data,
+                                (const float *const *)batch_ptrs,
+                                dists,
+                                frame_elem);
+                        }
+                        telem->framedist_calls += 4;
+                        for (int b_idx = 0; b_idx < 4; b_idx++)
+                        {
+                            record_neighbor_and_reciprocal(
+                                query_id, batch_cand_ids[b_idx], dists[b_idx],
+                                config, model, heap, all_heaps
+#ifdef _OPENMP
+                                , bucket_locks
+#endif
+                            );
+                        }
+                        batch_count = 0;
+                    }
+                }
+            } // while (pass_mask)
+        } // while (left_b >= 0 || right_b < num_b)
+
+        if (batch_count > 0)
+        {
+            double dists[4];
+            if (model->is_double)
+            {
+                framedist_batch_double(
+                    (const double *)query_data,
+                    (const double *const *)batch_ptrs,
+                    batch_count,
+                    dists,
+                    frame_elem);
+            }
+            else
+            {
+                framedist_batch_float(
+                    (const float *)query_data,
+                    (const float *const *)batch_ptrs,
+                    batch_count,
+                    dists,
+                    frame_elem);
+            }
+            telem->framedist_calls += (uint64_t)batch_count;
+            for (int b_idx = 0; b_idx < batch_count; b_idx++)
+            {
+                record_neighbor_and_reciprocal(
+                    query_id, batch_cand_ids[b_idx], dists[b_idx],
+                    config, model, heap, all_heaps
+#ifdef _OPENMP
+                    , bucket_locks
+#endif
+                );
+            }
+        }
+
+        return;
+    } // if (rq8_active && home_cl->rq8_transposed != NULL)
 
     if (sq16_active && home_cl->sq16_transposed != NULL && home_cl->num_sq16_blocks > 0)
     {
@@ -450,7 +777,21 @@ static void knn_search_intra_cluster(
             continue;
         }
 
-        if (sq16_active)
+        if (rq8_active)
+        {
+            if (current_tau != last_tau)
+            {
+                last_tau = current_tau;
+                cached_ssd_cutoff = compute_rq8_cutoff_thresh(current_tau, model, config);
+            }
+            if (is_member_pruned_by_rq8_cached(
+                    visited->query_rq8, cand_id, cached_ssd_cutoff, model, telem
+                ))
+            {
+                continue;
+            }
+        }
+        else if (!config->use_rq8 && sq16_active)
         {
             if (current_tau != last_tau)
             {
@@ -464,13 +805,15 @@ static void knn_search_intra_cluster(
                 continue;
             }
         }
-        else if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+        else if (!config->use_rq8 &&
+                 is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
                                           model, config, telem))
         {
             continue;
         }
 
-        if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+        if (!config->use_rq8 &&
+            is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                     model, config, telem))
         {
             continue;
@@ -788,6 +1131,26 @@ static int knn_warm_start_nearest_cluster(
             query_data, warm_cl->anchor_data, model->frame_elements, model->is_double
         );
 
+        if (config->use_rq8 && model->rq8_dataset_buffer != NULL && visited->query_rq8 != NULL)
+        {
+            if (model->is_double)
+            {
+                visited->query_rq8_clipped = rq8_quantize_query_residual_double(
+                    (const double *)query_data,
+                    (const double *)warm_cl->anchor_data,
+                    visited->query_rq8,
+                    &model->rq8_params);
+            }
+            else
+            {
+                visited->query_rq8_clipped = rq8_quantize_query_residual_float(
+                    (const float *)query_data,
+                    (const float *)warm_cl->anchor_data,
+                    visited->query_rq8,
+                    &model->rq8_params);
+            }
+        }
+
         for (int m = 0; m < warm_cl->num_members; m++)
         {
             long cand_id = (long)warm_cl->members[m].frame_id;
@@ -810,10 +1173,15 @@ static int knn_warm_start_nearest_cluster(
                 telem->level3_annular_pruned++;
                 continue;
             }
-            if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
-                                         model, config, telem) ||
-                is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
-                                        model, config, telem))
+            if ((!visited->query_rq8_clipped &&
+                 is_member_pruned_by_rq8(visited->query_rq8, cand_id, current_tau,
+                                         model, config, telem)) ||
+                (!config->use_rq8 &&
+                 is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+                                          model, config, telem)) ||
+                (!config->use_rq8 &&
+                 is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+                                         model, config, telem)))
             {
                 continue;
             }
@@ -1295,6 +1663,29 @@ static void knn_eval_candidate_cluster_members(
     uint64_t cached_ssd_cutoff = UINT64_MAX;
     int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
                        visited->query_sq16 != NULL);
+    int rq8_active = (config->use_rq8 && model->rq8_dataset_buffer != NULL &&
+                      visited->query_rq8 != NULL && !visited->query_rq8_clipped);
+
+    if (rq8_active)
+    {
+        if (model->is_double)
+        {
+            visited->query_rq8_clipped = rq8_quantize_query_residual_double(
+                (const double *)query_data,
+                (const double *)cl->anchor_data,
+                visited->query_rq8,
+                &model->rq8_params);
+        }
+        else
+        {
+            visited->query_rq8_clipped = rq8_quantize_query_residual_float(
+                (const float *)query_data,
+                (const float *)cl->anchor_data,
+                visited->query_rq8,
+                &model->rq8_params);
+        }
+        rq8_active = !visited->query_rq8_clipped;
+    }
 
     int    num_active_pivots = 0;
     double pivot_diffs[MAX_MEASURED_PIVOTS];
@@ -1314,6 +1705,321 @@ static void knn_eval_candidate_cluster_members(
             }
         }
     }
+
+    if (rq8_active && cl->rq8_transposed != NULL && cl->num_rq8_blocks > 0)
+    {
+        int num_b = cl->num_rq8_blocks;
+        int mid_b = 0;
+        int b_lo = 0;
+        int b_hi = num_b - 1;
+        while (b_lo <= b_hi)
+        {
+            int b_m = b_lo + (b_hi - b_lo) / 2;
+            if (cl->members[b_m * RQ8_FASTSCAN_BLOCK_SIZE].r_anchor <= (float)d_anchor)
+            {
+                mid_b = b_m;
+                b_lo = b_m + 1;
+            }
+            else
+            {
+                b_hi = b_m - 1;
+            }
+        } // while (b_lo <= b_hi)
+        int left_b = mid_b - 1;
+        int right_b = mid_b;
+
+        while (left_b >= 0 || right_b < num_b)
+        {
+            double d_left_b = 1e30;
+            if (left_b >= 0)
+            {
+                int m_end_l = (left_b == num_b - 1) ? (num_m - 1) :
+                    (left_b * RQ8_FASTSCAN_BLOCK_SIZE + RQ8_FASTSCAN_BLOCK_SIZE - 1);
+                float r_max_l = cl->members[m_end_l].r_anchor;
+                d_left_b = (d_anchor > (double)r_max_l) ? (d_anchor - (double)r_max_l) : 0.0;
+            }
+
+            double d_right_b = 1e30;
+            if (right_b < num_b)
+            {
+                float r_min_r = cl->members[right_b * RQ8_FASTSCAN_BLOCK_SIZE].r_anchor;
+                d_right_b = ((double)r_min_r > d_anchor) ?
+                    ((double)r_min_r - d_anchor) : 0.0;
+            }
+
+            current_tau = knn_heap_peek_max_dist(heap);
+            double tau_thresh = current_tau / eps_factor;
+            if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
+            {
+                tau_thresh = config->rlim_cutoff;
+            }
+
+            if (left_b >= 0 && (d_left_b - sq16_delta >= tau_thresh))
+            {
+                int pruned_count = (left_b + 1) * RQ8_FASTSCAN_BLOCK_SIZE;
+                if (pruned_count > num_m)
+                {
+                    pruned_count = num_m;
+                }
+                telem->level3_annular_pruned += (uint64_t)pruned_count;
+                left_b = -1;
+                d_left_b = 1e30;
+            }
+            if (right_b < num_b && (d_right_b - sq16_delta >= tau_thresh))
+            {
+                int pruned_count = num_m - right_b * RQ8_FASTSCAN_BLOCK_SIZE;
+                if (pruned_count > 0)
+                {
+                    telem->level3_annular_pruned += (uint64_t)pruned_count;
+                }
+                right_b = num_b;
+                d_right_b = 1e30;
+            }
+            if (left_b < 0 && right_b >= num_b)
+            {
+                break;
+            }
+
+            int b;
+            if (d_left_b <= d_right_b)
+            {
+                b = left_b--;
+            }
+            else
+            {
+                b = right_b++;
+            }
+
+            int m_start = b * RQ8_FASTSCAN_BLOCK_SIZE;
+            int m_count = num_m - m_start;
+            if (m_count > RQ8_FASTSCAN_BLOCK_SIZE)
+            {
+                m_count = RQ8_FASTSCAN_BLOCK_SIZE;
+            }
+
+            if (current_tau != last_tau)
+            {
+                last_tau = current_tau;
+                cached_ssd_cutoff = compute_rq8_cutoff_thresh(current_tau, model, config);
+            }
+
+            const int8_t *b_coords = cl->rq8_transposed +
+                (size_t)b * (size_t)frame_elem * RQ8_FASTSCAN_BLOCK_SIZE;
+            telem->rq8_evaluations += (uint64_t)m_count;
+
+            uint32_t pass_mask = rq8_fastscan_32x(
+                visited->query_rq8, b_coords, frame_elem, cached_ssd_cutoff
+            );
+            if (m_count < RQ8_FASTSCAN_BLOCK_SIZE)
+            {
+                pass_mask &= ((1U << m_count) - 1);
+            }
+
+            if (!pass_mask)
+            {
+                telem->rq8_members_pruned += (uint64_t)m_count;
+                continue;
+            }
+
+            int passed_count = knn_popcount32(pass_mask);
+            telem->rq8_members_pruned += (uint64_t)(m_count - passed_count);
+
+            while (pass_mask)
+            {
+                int lane = knn_ctz32(pass_mask);
+                pass_mask &= pass_mask - 1;
+
+                int m = m_start + lane;
+                long cand_id = (long)cl->members[m].frame_id;
+                double r_cand = (double)cl->members[m].r_anchor;
+
+                if (knn_visited_check_and_mark(visited, cand_id))
+                {
+                    continue;
+                }
+
+                if (!check_temporal_separation(query_id, cand_id, config))
+                {
+                    telem->temporal_pruned++;
+                    continue;
+                }
+
+                double lb1 = fabs(d_anchor - r_cand) - sq16_delta;
+                if (lb1 < 0.0)
+                {
+                    lb1 = 0.0;
+                }
+                if (lb1 >= tau_thresh)
+                {
+                    telem->level3_annular_pruned++;
+                    continue;
+                }
+
+                if (dcc_home > 0.0)
+                {
+                    double diff_home = fabs(dcc_home - r_cand);
+                    if (diff_home - r_home - sq16_delta >= tau_thresh)
+                    {
+                        telem->level3_annular_pruned++;
+                        continue;
+                    }
+                }
+
+                if (num_active_pivots > 0)
+                {
+                    int pruned_by_pivot = 0;
+                    double target_thresh = tau_thresh + sq16_delta;
+                    for (int p = 0; p < num_active_pivots; p++)
+                    {
+                        double diff = fabs(pivot_diffs[p] - r_cand);
+                        if (diff >= target_thresh)
+                        {
+                            pruned_by_pivot = 1;
+                            break;
+                        }
+                    }
+                    if (pruned_by_pivot)
+                    {
+                        telem->level3_annular_pruned++;
+                        telem->multi_pivot_pruned++;
+                        continue;
+                    }
+                }
+
+                if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
+                {
+                    telem->reciprocal_reused++;
+                    continue;
+                }
+
+                if (!config->use_batch_dist)
+                {
+                    const void *cand_ptr = NULL;
+                    if (reader->memory_data != NULL)
+                    {
+                        cand_ptr = (const char *)reader->memory_data +
+                                   (size_t)cand_id * frame_bytes;
+                    }
+                    else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
+                    {
+                        cand_ptr = cand_buffer;
+                    }
+
+                    if (cand_ptr != NULL)
+                    {
+                        telem->framedist_calls++;
+                        double c_tau = (config->rlim_cutoff > 0.0 &&
+                                        config->rlim_cutoff < current_tau)
+                                       ? config->rlim_cutoff
+                                       : current_tau;
+                        double cutoff_sq = (c_tau > 0.0) ? (c_tau * c_tau) : 0.0;
+                        double d = compute_euclidean_distance_cutoff(
+                            query_data, cand_ptr, frame_elem, model->is_double, cutoff_sq
+                        );
+                        if (d <= c_tau)
+                        {
+                            record_neighbor_and_reciprocal(
+                                query_id, cand_id, d, config, model, heap, all_heaps
+#ifdef _OPENMP
+                                , bucket_locks
+#endif
+                            );
+                        }
+                    }
+                    continue;
+                }
+
+                const void *dest = NULL;
+                if (reader->memory_data != NULL)
+                {
+                    dest = (const char *)reader->memory_data +
+                           (size_t)cand_id * frame_bytes;
+                }
+                else
+                {
+                    void *buf_dest = (char *)cand_buffer +
+                                     (size_t)(*batch_count) * frame_bytes;
+                    if (knn_reader_read_frame(reader, cand_id, buf_dest) == 0)
+                    {
+                        dest = buf_dest;
+                    }
+                }
+                if (dest != NULL)
+                {
+                    batch_cand_ids[*batch_count] = cand_id;
+                    batch_ptrs[*batch_count] = dest;
+                    (*batch_count)++;
+                    if (*batch_count == 4)
+                    {
+                        double dists[4];
+                        if (model->is_double)
+                        {
+                            framedist_batch_1x4_double(
+                                (const double *)query_data,
+                                (const double *const *)batch_ptrs,
+                                dists,
+                                frame_elem);
+                        }
+                        else
+                        {
+                            framedist_batch_1x4_float(
+                                (const float *)query_data,
+                                (const float *const *)batch_ptrs,
+                                dists,
+                                frame_elem);
+                        }
+                        telem->framedist_calls += 4;
+                        for (int b_idx = 0; b_idx < 4; b_idx++)
+                        {
+                            record_neighbor_and_reciprocal(
+                                query_id, batch_cand_ids[b_idx], dists[b_idx],
+                                config, model, heap, all_heaps
+#ifdef _OPENMP
+                                , bucket_locks
+#endif
+                            );
+                        }
+                        *batch_count = 0;
+                    }
+                }
+            } // while (pass_mask)
+        } // while (left_b >= 0 || right_b < num_b)
+
+        if (*batch_count > 0)
+        {
+            double dists[4];
+            if (model->is_double)
+            {
+                framedist_batch_double(
+                    (const double *)query_data,
+                    (const double *const *)batch_ptrs,
+                    *batch_count, dists, frame_elem
+                );
+            }
+            else
+            {
+                framedist_batch_float(
+                    (const float *)query_data,
+                    (const float *const *)batch_ptrs,
+                    *batch_count, dists, frame_elem
+                );
+            }
+            telem->framedist_calls += (uint64_t)(*batch_count);
+            for (int b = 0; b < *batch_count; b++)
+            {
+                record_neighbor_and_reciprocal(
+                    query_id, batch_cand_ids[b], dists[b],
+                    config, model, heap, all_heaps
+#ifdef _OPENMP
+                    , bucket_locks
+#endif
+                );
+            }
+            *batch_count = 0;
+        }
+
+        return;
+    } // if (rq8_active && cl->rq8_transposed != NULL)
 
     if (sq16_active && cl->sq16_transposed != NULL && cl->num_sq16_blocks > 0)
     {
@@ -1710,7 +2416,43 @@ static void knn_eval_candidate_cluster_members(
             }
         }
 
-        if (sq16_active)
+        if (rq8_active)
+        {
+            if (left >= 0)
+            {
+                long pref_l = (long)cl->members[left].frame_id;
+                GRIC_PREFETCH_T0(
+                    model->rq8_dataset_buffer + (size_t)pref_l * (size_t)frame_elem
+                );
+            }
+            if (right < num_m)
+            {
+                long pref_r = (long)cl->members[right].frame_id;
+                GRIC_PREFETCH_T0(
+                    model->rq8_dataset_buffer + (size_t)pref_r * (size_t)frame_elem
+                );
+            }
+
+            if (current_tau != last_tau)
+            {
+                last_tau = current_tau;
+                cached_ssd_cutoff = compute_rq8_cutoff_thresh(current_tau, model, config);
+            }
+
+            const int8_t *cand_rq8 = model->rq8_dataset_buffer +
+                                     (size_t)cand_id * (size_t)frame_elem;
+            telem->rq8_evaluations++;
+            uint64_t ssd = rq8_dist_squared_cutoff_i8(
+                visited->query_rq8, cand_rq8, frame_elem, cached_ssd_cutoff
+            );
+
+            if (ssd > cached_ssd_cutoff)
+            {
+                telem->rq8_members_pruned++;
+                continue;
+            }
+        }
+        else if (!config->use_rq8 && sq16_active)
         {
             if (left >= 0)
             {
@@ -1746,13 +2488,15 @@ static void knn_eval_candidate_cluster_members(
                 continue;
             }
         }
-        else if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+        else if (!config->use_rq8 &&
+                 is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
                                           model, config, telem))
         {
             continue;
         }
 
-        if (is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
+        if (!config->use_rq8 &&
+            is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                     model, config, telem))
         {
             continue;

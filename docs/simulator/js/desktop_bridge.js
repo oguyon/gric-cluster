@@ -975,6 +975,10 @@ const DesktopBridge = (function () {
       sq16MembersPruned: 0,
       sq16GraphPruned: 0,
       sq16TotalPruned: 0,
+      rq8Evaluations: 0,
+      rq8MembersPruned: 0,
+      rq8GraphPruned: 0,
+      rq8TotalPruned: 0,
       clustersGraphEvaluated: 0,
       totalCandidatesConsidered: 0,
       timeSearchMs: 0.0
@@ -1052,6 +1056,22 @@ const DesktopBridge = (function () {
 
     if (telem.sq16TotalPruned && !telem.sq16MembersPruned && !telem.sq16GraphPruned) {
       telem.sq16MembersPruned = telem.sq16TotalPruned;
+    }
+
+    const mRq8Evals = clean.match(/RQ8 Evaluations:\s+(\d+)/);
+    if (mRq8Evals) telem.rq8Evaluations = parseInt(mRq8Evals[1], 10);
+
+    const mRq8TotalPruned = clean.match(/RQ8 Lower-Bound Pruned:\s+(\d+)/);
+    if (mRq8TotalPruned) telem.rq8TotalPruned = parseInt(mRq8TotalPruned[1], 10);
+
+    const mRq8MemberPruned = clean.match(/RQ8 Member Pruned:\s+(\d+)/);
+    if (mRq8MemberPruned) telem.rq8MembersPruned = parseInt(mRq8MemberPruned[1], 10);
+
+    const mRq8GraphPruned = clean.match(/RQ8 Graph Pruned:\s+(\d+)/);
+    if (mRq8GraphPruned) telem.rq8GraphPruned = parseInt(mRq8GraphPruned[1], 10);
+
+    if (telem.rq8TotalPruned && !telem.rq8MembersPruned && !telem.rq8GraphPruned) {
+      telem.rq8MembersPruned = telem.rq8TotalPruned;
     }
 
     const mMemoHits = clean.match(/SQ16 Memo Hits:\s+(\d+)/);

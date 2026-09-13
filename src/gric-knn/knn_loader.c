@@ -1048,6 +1048,18 @@ void knn_model_free(
         model->anchor_sq16_buffer = NULL;
     }
 
+    if (model->rq8_dataset_buffer != NULL)
+    {
+        free(model->rq8_dataset_buffer);
+        model->rq8_dataset_buffer = NULL;
+    }
+
+    if (model->rq8_transposed_buffer != NULL)
+    {
+        free(model->rq8_transposed_buffer);
+        model->rq8_transposed_buffer = NULL;
+    }
+
     if (model->dataset_mmap_addr != NULL)
     {
         munmap(model->dataset_mmap_addr, model->dataset_mmap_size);

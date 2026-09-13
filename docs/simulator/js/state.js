@@ -285,8 +285,9 @@
     let knnEpsilon = 0.0;
     let knnRlim = 0.0;
     let knnMvp = false; // Multi-Anchor Pivot Bounding (AESA)
+    let knnUseRq8 = true; // 8-Bit Residual Vector Quantization Filtering
     let knnUseSq8 = false; // 8-Bit Scalar Quantization Filtering
-    let knnUseSq16 = true; // 16-Bit Scalar Quantization Filtering (Default: true)
+    let knnUseSq16 = false; // 16-Bit Scalar Quantization Filtering
     let knnSq16Ratio = 0.05; // SQ16 Quantization Bound Ratio (Default: 0.05)
     let knnUseMemo = true; // Quantized Memoization & Unique Vector Pool (Default: true)
     let clusterUseSq8 = false; // 8-Bit Scalar Quantization Metric Pre-Filter
@@ -1437,8 +1438,9 @@
         knnEpsilon: 0.0,
         knnRlim: 0.0,
         knnMvp: false,
+        knnUseRq8: true,
         knnUseSq8: false,
-        knnUseSq16: true,
+        knnUseSq16: false,
         knnSq16Ratio: 0.05,
         knnUseMemo: true,
         clusterUseSq8: false,
@@ -1841,6 +1843,7 @@
       slot.knnEpsilon = knnEpsilon;
       slot.knnRlim = knnRlim;
       slot.knnMvp = knnMvp;
+      slot.knnUseRq8 = knnUseRq8;
       slot.knnUseSq8 = knnUseSq8;
       slot.knnUseSq16 = knnUseSq16;
       slot.knnSq16Ratio = knnSq16Ratio;
@@ -2053,8 +2056,9 @@
       knnEpsilon = (slot.knnEpsilon !== undefined) ? slot.knnEpsilon : 0.0;
       knnRlim = (slot.knnRlim !== undefined) ? slot.knnRlim : 0.0;
       knnMvp = slot.knnMvp || false;
+      knnUseRq8 = (slot.knnUseRq8 !== undefined) ? slot.knnUseRq8 : true;
       knnUseSq8 = (slot.knnUseSq8 !== undefined) ? slot.knnUseSq8 : false;
-      knnUseSq16 = (slot.knnUseSq16 !== undefined) ? slot.knnUseSq16 : true;
+      knnUseSq16 = (slot.knnUseSq16 !== undefined) ? slot.knnUseSq16 : false;
       knnSq16Ratio = (slot.knnSq16Ratio !== undefined) ? slot.knnSq16Ratio : 0.05;
       knnUseMemo = (slot.knnUseMemo !== undefined) ? slot.knnUseMemo : true;
       clusterUseSq8 = (slot.clusterUseSq8 !== undefined) ? slot.clusterUseSq8 : false;
@@ -2550,8 +2554,9 @@
       slot.reconQualityMask = null;
       slot.reconQualityIndices = null;
       slot._unprunedBackup = null;
+      slot.knnUseRq8 = true;
       slot.knnUseSq8 = false;
-      slot.knnUseSq16 = true;
+      slot.knnUseSq16 = false;
       slot.knnSq16Ratio = 0.05;
       slot.knnUseMemo = true;
       slot.clusterUseSq8 = false;
@@ -3261,4 +3266,3 @@
       set: (v) => { imageReconKnnScrollY = Math.max(0, Number(v) || 0); },
       configurable: true
     });
-

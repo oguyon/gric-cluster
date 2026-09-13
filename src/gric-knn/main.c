@@ -113,7 +113,16 @@ int main(
         }
     }
 
-    if (config.use_sq16)
+    if (config.use_rq8)
+    {
+        if (knn_model_build_or_load_rq8(&model, &config) != 0)
+        {
+            fprintf(stderr, "Error: Failed to initialize RQ8 dataset buffer\n");
+            knn_model_free(&model);
+            return 1;
+        }
+    }
+    else if (config.use_sq16)
     {
         if (knn_model_build_or_load_sq16(&model, &config) != 0)
         {
@@ -208,7 +217,23 @@ int main(
         printf("  Clusters Graph Evaluated:  %lu\n",
                (unsigned long)telemetry.clusters_graph_evaluated);
     }
-    if (config.use_sq16)
+    if (config.use_rq8)
+    {
+        uint64_t total_rq8_pruned = telemetry.rq8_members_pruned +
+                                     telemetry.rq8_graph_pruned;
+        printf("  RQ8 Evaluations:           %lu\n",
+               (unsigned long)telemetry.rq8_evaluations);
+        printf("  RQ8 Lower-Bound Pruned:    %lu\n",
+               (unsigned long)total_rq8_pruned);
+        if (telemetry.rq8_graph_pruned > 0)
+        {
+            printf("  RQ8 Member Pruned:         %lu\n",
+                   (unsigned long)telemetry.rq8_members_pruned);
+            printf("  RQ8 Graph Pruned:          %lu\n",
+                   (unsigned long)telemetry.rq8_graph_pruned);
+        }
+    }
+    else if (config.use_sq16)
     {
         uint64_t total_sq16_pruned = telemetry.sq16_members_pruned +
                                      telemetry.sq16_graph_pruned;

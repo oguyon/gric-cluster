@@ -335,6 +335,94 @@ static inline uint64_t compute_sq16_cutoff_thresh(
 }
 
 /**
+ * compute_rq8_cutoff_thresh() - Compute RQ8 squared distance cutoff threshold.
+ * @cur_tau: Current search radius (heap max dist or rlim_cutoff).
+ * @model:   Active KnnModel.
+ * @config:  Active KnnConfig.
+ *
+ * Return: Threshold on integer sum-of-squared differences, or UINT64_MAX if disabled.
+ */
+static inline uint64_t compute_rq8_cutoff_thresh(
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config)
+{
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
+    {
+        cur_tau = config->rlim_cutoff;
+    }
+
+    double eps = config->rq8_approx ? config->epsilon : 0.0;
+    return rq8_compute_cutoff_thresh(cur_tau, &model->rq8_params, eps);
+}
+
+/**
+ * is_member_pruned_by_rq8_cached() - Evaluate RQ8 using precomputed SSD cutoff.
+ * @query_rq8:   Pointer to quantized int16 query residual [dim].
+ * @cand_id:     Index of candidate dataset frame.
+ * @ssd_cutoff:  Precomputed SSD cutoff threshold.
+ * @model:       Active KnnModel.
+ * @telem:       Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+static inline int is_member_pruned_by_rq8_cached(
+    const int16_t  *query_rq8,
+    long            cand_id,
+    uint64_t        ssd_cutoff,
+    const KnnModel *model,
+    KnnTelemetry   *telem)
+{
+    if (ssd_cutoff == UINT64_MAX || query_rq8 == NULL || model->rq8_dataset_buffer == NULL)
+    {
+        return 0;
+    }
+
+    const int8_t *cand_res = model->rq8_dataset_buffer +
+                             (size_t)cand_id * (size_t)model->frame_elements;
+    telem->rq8_evaluations++;
+    uint64_t ssd = rq8_dist_squared_cutoff_i8(
+        query_rq8, cand_res, model->frame_elements, ssd_cutoff
+    );
+
+    if (ssd > ssd_cutoff)
+    {
+        telem->rq8_members_pruned++;
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * is_member_pruned_by_rq8() - Evaluate RQ8 metric lower bound against current search radius.
+ * @query_rq8: Pointer to quantized int16 query residual [dim].
+ * @cand_id:   Index of candidate dataset frame.
+ * @cur_tau:   Current distance to k-th nearest neighbor (or cutoff radius).
+ * @model:     Active KnnModel.
+ * @config:    Active KnnConfig.
+ * @telem:     Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+static inline int is_member_pruned_by_rq8(
+    const int16_t   *query_rq8,
+    long             cand_id,
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config,
+    KnnTelemetry    *telem)
+{
+    if (!config->use_rq8 || model->rq8_dataset_buffer == NULL || query_rq8 == NULL)
+    {
+        return 0;
+    }
+
+    uint64_t ssd_cutoff = compute_rq8_cutoff_thresh(cur_tau, model, config);
+    return is_member_pruned_by_rq8_cached(query_rq8, cand_id, ssd_cutoff, model, telem);
+}
+
+/**
  * is_member_pruned_by_sq16_cached() - Evaluate SQ16 using precomputed SSD cutoff.
  * @query_sq16:  Pointer to quantized query vector [dim].
  * @cand_id:     Index of candidate dataset frame.

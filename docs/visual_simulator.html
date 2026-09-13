@@ -3149,24 +3149,29 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                 </div>
               </div>
 
-              <!-- Scalar Quantization Toggle -->
+              <!-- Quantization Filter Toggles (SQ8, SQ16, RQ8) -->
               <div class="toggle-group"
-                   style="grid-template-columns: 1fr 1fr; margin-top: 4px; margin-bottom: 2px;">
+                   style="grid-template-columns: 1fr 1fr 1fr; margin-top: 4px; margin-bottom: 2px;">
                 <div id="btnKnnSq8" class="toggle-btn toggle-active toggle-cyan"
                      data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
                      data-tooltip-badge="CLI: -sq8"
                      data-tooltip-color="cyan"
-                     data-tooltip-desc="Applies 8-bit scalar quantization with SIMD
-integer lower-bound metric pruning.">
+                     data-tooltip-desc="Applies 8-bit scalar quantization with SIMD integer lower-bound metric pruning.">
                   SQ8 (-sq8)
                 </div>
-                <div id="btnKnnSq16" class="toggle-btn toggle-active toggle-cyan active"
+                <div id="btnKnnSq16" class="toggle-btn toggle-active toggle-cyan"
                      data-tooltip-title="16-Bit Scalar Quantization Metric Filter"
                      data-tooltip-badge="CLI: -sq16"
                      data-tooltip-color="cyan"
-                     data-tooltip-desc="Applies 16-bit scalar quantization with SIMD
-integer lower-bound metric pruning (256x tighter bounds, zero-unpack AVX2).">
+                     data-tooltip-desc="Applies 16-bit scalar quantization with SIMD integer lower-bound metric pruning (256x tighter bounds, zero-unpack AVX2).">
                   SQ16 (-sq16)
+                </div>
+                <div id="btnKnnRq8" class="toggle-btn toggle-active toggle-cyan active"
+                     data-tooltip-title="8-Bit Residual Vector Quantization (FastScan)"
+                     data-tooltip-badge="CLI: -rq8"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Applies 8-bit residual vector quantization centered on cluster anchors. Halves cache footprint to 1 byte/dim with 16-bit equivalent precision and zero false dismissals.">
+                  RQ8 (-rq8)
                 </div>
               </div>
 
@@ -4147,17 +4152,24 @@ before full-precision distance computation.">
                     <span>Off</span>
                   </label>
                   <label style="display: flex; align-items: center; gap: 3px; font-size: 0.70rem;
-                                color: #cffafe; cursor: pointer;">
+                                color: #cffafe; font-weight: 600; cursor: pointer;">
                     <input type="radio" name="reconQuerySq" id="radReconQuerySq8" value="sq8"
                            style="accent-color: #06b6d4; cursor: pointer;">
                     <span>SQ8</span>
                   </label>
                   <label style="display: flex; align-items: center; gap: 3px; font-size: 0.70rem;
-                                color: #38bdf8; font-weight: 600; cursor: pointer;">
+                                color: #cffafe; font-weight: 600; cursor: pointer;">
                     <input type="radio" name="reconQuerySq" id="radReconQuerySq16"
-                           value="sq16" checked
+                           value="sq16"
                            style="accent-color: #06b6d4; cursor: pointer;">
                     <span>SQ16</span>
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 3px; font-size: 0.70rem;
+                                color: #38bdf8; font-weight: 600; cursor: pointer;">
+                    <input type="radio" name="reconQuerySq" id="radReconQueryRq8"
+                           value="rq8" checked
+                           style="accent-color: #06b6d4; cursor: pointer;">
+                    <span>RQ8</span>
                   </label>
                 </div>
                 <input type="checkbox" id="chkReconQuerySq8" style="display: none;">

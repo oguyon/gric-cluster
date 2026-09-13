@@ -7,6 +7,7 @@
  */
 
 #include "scalar_quant.h"
+#include "residual_quant.h"
 #include "gric_profile.h"
 #include <math.h>
 #include <stdbool.h>
@@ -41,6 +42,8 @@ typedef struct
     MemberMeta *members;         /**< Array of member metadata records */
     int16_t    *sq16_transposed; /**< [num_sq16_blocks * dim * 32] FastScan block coords */
     int         num_sq16_blocks; /**< Number of 32-candidate FastScan blocks */
+    int8_t     *rq8_transposed;  /**< [num_rq8_blocks * dim * 32] RQ8 FastScan coords */
+    int         num_rq8_blocks;  /**< Number of 32-candidate FastScan blocks for RQ8 */
 } KnnCluster;
 
 /** Single nearest neighbor record */
@@ -93,6 +96,10 @@ typedef struct
     char           *sq16_load_path;     /**< Optional path to load .sq16 sidecar file */
     int             sq16_approx;       /**< 1 to relax lower bounds with epsilon */
     double          sq16_ratio;        /**< Max ratio sqrt(D)*scale / rlim (default 0.05) */
+    int             use_rq8;           /**< 1 to enable 8-bit residual quantization filtering */
+    char           *rq8_save_path;     /**< Optional path to save .rq8 sidecar file */
+    char           *rq8_load_path;     /**< Optional path to load .rq8 sidecar file */
+    int             rq8_approx;        /**< 1 to relax lower bounds with epsilon */
     int             use_memo;          /**< 1 to enable memoization/deduplication */
     int             use_batch_dist;    /**< 1 to enable multi-vector SIMD batch distance */
     const char     *prof_filename;     /**< Optional path to .gricprof file */
@@ -132,6 +139,9 @@ typedef struct
     uint64_t sq16_evaluations;
     uint64_t sq16_members_pruned;
     uint64_t sq16_graph_pruned;
+    uint64_t rq8_evaluations;
+    uint64_t rq8_members_pruned;
+    uint64_t rq8_graph_pruned;
     uint64_t clusters_graph_evaluated;
     uint64_t two_hop_evaluations;
     uint64_t two_hop_pruned;
@@ -175,6 +185,9 @@ typedef struct
     int16_t         *anchor_sq16_buffer;     /**< [M x D] resident quantized anchor vectors */
     SQ16Params       sq16_params;            /**< Calibration parameters for SQ16 */
     int16_t         *sq16_transposed_buffer; /**< Contiguous memory for FastScan blocks */
+    int8_t          *rq8_dataset_buffer;     /**< [N x D] resident 8-bit quantized residuals */
+    RQ8Params        rq8_params;             /**< Calibration parameters for RQ8 */
+    int8_t          *rq8_transposed_buffer;  /**< Contiguous memory for RQ8 FastScan blocks */
     int              cluster_graph_k;     /**< Number of neighbors per cluster anchor */
     int             *cluster_graph_adj;   /**< [M x cluster_graph_k] neighbor cluster IDs */
     double           avg_cluster_size;    /**< Mean number of members per cluster */
@@ -198,6 +211,7 @@ typedef struct
  * @epoch:      Monotonically increasing query epoch counter.
  * @query_sq8:  Quantized 8-bit representation of active query frame.
  * @query_sq16: Quantized 16-bit representation of active query frame.
+ * @query_rq8:  Quantized int16 representation of active query residual.
  * @rep_tags:   Array of query epochs indexed by unique frame ID [N_cand].
  * @rep_dists:  Cached computed distances indexed by unique frame ID [N_cand].
  */
@@ -207,6 +221,8 @@ typedef struct
     uint32_t        epoch;
     const uint8_t  *query_sq8;  /**< Quantized 8-bit representation of active query frame */
     const int16_t  *query_sq16; /**< Quantized 16-bit representation of active query frame */
+    int16_t        *query_rq8;  /**< Quantized int16 representation of query residual */
+    int             query_rq8_clipped; /**< 1 when query residual quantization saturated */
     uint32_t       *rep_tags;   /**< Per-unique representative query epoch tracker */
     float          *rep_dists;  /**< Per-unique representative cached distance to query */
 } KnnVisitedTracker;

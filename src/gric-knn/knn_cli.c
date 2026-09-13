@@ -110,10 +110,20 @@ void knn_cli_print_help(
            "(%sdefault:%s float)\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
            ansi_color_cyan, ansi_reset);
-    printf("  %s-sq8%s, %s--sq8%s               Enable 8-bit scalar quantization filtering "
+    printf("  %s-rq8%s, %s--rq8%s               Enable 8-bit residual vector quantization "
            "(%sdefault:%s on)\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
            ansi_color_cyan, ansi_reset);
+    printf("  %s-no-rq8%s, %s--no-rq8%s         Disable 8-bit residual quantization filtering\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-rq8-save%s %s<path>%s      Save 8-bit residual quantized dataset to sidecar\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-rq8-load%s %s<path>%s      Load 8-bit residual quantized dataset from sidecar\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-rq8-approx%s, %s--rq8-approx%s Enable approximate lower bound in RQ8\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-sq8%s, %s--sq8%s               Enable 8-bit scalar quantization filtering\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-no-sq8%s, %s--no-sq8%s         Disable 8-bit scalar quantization filtering\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-sq8-save%s %s<path>%s      Save quantized dataset to sidecar file\n",
@@ -191,7 +201,9 @@ int knn_cli_parse(
     config->use_multi_pivot = 1; // Enabled by default for multi-anchor pivot bounding
     config->use_angular_bound = 1; // Enabled by default for directional pruning
     config->use_trajectory = 0; // Disabled by default; enable for smooth trajectories
-    config->use_sq8 = 1; // Enabled by default for 8-bit metric pre-filtering
+    config->use_rq8 = 1; // Enabled by default for 8-bit residual quantization
+    config->use_sq8 = 0; // Fallback scalar quantization
+    config->use_sq16 = 0;
     config->sq16_ratio = 0.05; // Enforce sqrt(D)*scale <= alpha*rlim
     config->use_memo = 1;      // Enabled by default for quantized memoization
     config->use_batch_dist = 1; // Enabled by default for multi-vector SIMD batching
@@ -394,10 +406,58 @@ int knn_cli_parse(
         {
             config->use_double = 1;
         }
+        else if (strcmp(argv[arg_idx], "-rq8") == 0 ||
+                 strcmp(argv[arg_idx], "--rq8") == 0)
+        {
+            config->use_rq8 = 1;
+            config->use_sq16 = 0;
+            config->use_sq8 = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-no-rq8") == 0 ||
+                 strcmp(argv[arg_idx], "--no-rq8") == 0 ||
+                 strcmp(argv[arg_idx], "-norq8") == 0)
+        {
+            config->use_rq8 = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-rq8-save") == 0 ||
+                 strcmp(argv[arg_idx], "--rq8-save") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -rq8-save requires a filepath argument\n");
+                return 1;
+            }
+            config->use_rq8 = 1;
+            config->use_sq16 = 0;
+            config->use_sq8 = 0;
+            config->rq8_save_path = argv[++arg_idx];
+        }
+        else if (strcmp(argv[arg_idx], "-rq8-load") == 0 ||
+                 strcmp(argv[arg_idx], "--rq8-load") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -rq8-load requires a filepath argument\n");
+                return 1;
+            }
+            config->use_rq8 = 1;
+            config->use_sq16 = 0;
+            config->use_sq8 = 0;
+            config->rq8_load_path = argv[++arg_idx];
+        }
+        else if (strcmp(argv[arg_idx], "-rq8-approx") == 0 ||
+                 strcmp(argv[arg_idx], "--rq8-approx") == 0)
+        {
+            config->use_rq8 = 1;
+            config->use_sq16 = 0;
+            config->use_sq8 = 0;
+            config->rq8_approx = 1;
+        }
         else if (strcmp(argv[arg_idx], "-sq8") == 0 ||
                  strcmp(argv[arg_idx], "--sq8") == 0)
         {
             config->use_sq8 = 1;
+            config->use_rq8 = 0;
             config->use_sq16 = 0;
         }
         else if (strcmp(argv[arg_idx], "-no-sq8") == 0 ||
@@ -415,6 +475,7 @@ int knn_cli_parse(
                 return 1;
             }
             config->use_sq8 = 1;
+            config->use_rq8 = 0;
             config->use_sq16 = 0;
             config->sq8_save_path = argv[++arg_idx];
         }
@@ -427,6 +488,7 @@ int knn_cli_parse(
                 return 1;
             }
             config->use_sq8 = 1;
+            config->use_rq8 = 0;
             config->use_sq16 = 0;
             config->sq8_load_path = argv[++arg_idx];
         }
@@ -434,6 +496,7 @@ int knn_cli_parse(
                  strcmp(argv[arg_idx], "--sq8-approx") == 0)
         {
             config->use_sq8 = 1;
+            config->use_rq8 = 0;
             config->use_sq16 = 0;
             config->sq8_approx = 1;
         }
@@ -441,6 +504,7 @@ int knn_cli_parse(
                  strcmp(argv[arg_idx], "--sq16") == 0)
         {
             config->use_sq16 = 1;
+            config->use_rq8 = 0;
             config->use_sq8 = 0;
         }
         else if (strcmp(argv[arg_idx], "-no-sq16") == 0 ||
@@ -458,6 +522,7 @@ int knn_cli_parse(
                 return 1;
             }
             config->use_sq16 = 1;
+            config->use_rq8 = 0;
             config->use_sq8 = 0;
             config->sq16_save_path = argv[++arg_idx];
         }
@@ -470,6 +535,7 @@ int knn_cli_parse(
                 return 1;
             }
             config->use_sq16 = 1;
+            config->use_rq8 = 0;
             config->use_sq8 = 0;
             config->sq16_load_path = argv[++arg_idx];
         }
@@ -477,6 +543,7 @@ int knn_cli_parse(
                  strcmp(argv[arg_idx], "--sq16-approx") == 0)
         {
             config->use_sq16 = 1;
+            config->use_rq8 = 0;
             config->use_sq8 = 0;
             config->sq16_approx = 1;
         }
@@ -729,14 +796,19 @@ void knn_cli_print_banner(
     {
         printf("  Search Pool:   ef_search = %d\n", config->ef_search);
     }
-    if (config->use_sq16)
+    if (config->use_rq8)
+    {
+        printf("  RQ8 Filtering:  Enabled (%s)\n",
+               config->rq8_approx ? "Relaxed Approx Mode" : "Exact Lower-Bound Mode");
+    }
+    else if (config->use_sq16)
     {
         printf("  SQ16 Filtering: Enabled (%s)\n",
                config->sq16_approx ? "Relaxed Approx Mode" : "Exact Lower-Bound Mode");
     }
     else if (config->use_sq8)
     {
-        printf("  SQ8 Filtering: Enabled (%s)\n",
+        printf("  SQ8 Filtering:  Enabled (%s)\n",
                config->sq8_approx ? "Relaxed Approx Mode" : "Exact Lower-Bound Mode");
     }
     printf("  Precision:     %s\n",

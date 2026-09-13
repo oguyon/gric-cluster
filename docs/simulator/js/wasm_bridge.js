@@ -275,7 +275,7 @@ const GricWasm = (function () {
     _fn.knnRunSearch = M.cwrap('wasm_knn_run_search', 'number', [
       'number', 'number', 'number', 'number', 'number', 'number',
       'number', 'number', 'number', 'number', 'number', 'number',
-      'number', 'number'
+      'number', 'number', 'number'
     ]);
   }
 
@@ -1647,6 +1647,7 @@ const GricWasm = (function () {
     const futureOnly = (config.direction === 'future') ? 1 : 0;
     const eps = config.epsilon || 0.0;
     const rlimCutoff = config.rlim || 0.0;
+    const useRq8 = config.useRq8 ? 1 : 0;
     const useMultiPivot =
       (config.multiPivot || (typeof knnMvp !== 'undefined' && knnMvp)) ? 1 : 0;
 
@@ -1712,6 +1713,7 @@ const GricWasm = (function () {
         futureOnly,
         eps,
         rlimCutoff,
+        useRq8,
         useMultiPivot,
         indicesPtr,
         distsPtr,
@@ -1967,7 +1969,9 @@ function buildCliCommand() {
     if (typeof knnMvp === 'boolean' && knnMvp) {
       knnParts.push('-multipivot');
     }
-    if (typeof knnUseSq16 === 'boolean' && knnUseSq16) {
+    if (typeof knnUseRq8 === 'boolean' && knnUseRq8) {
+      knnParts.push('-rq8');
+    } else if (typeof knnUseSq16 === 'boolean' && knnUseSq16) {
       knnParts.push('-sq16');
       if (typeof knnSq16Ratio === 'number' && knnSq16Ratio !== 0.05) {
         knnParts.push('-sq16-ratio', knnSq16Ratio.toFixed(3));
@@ -2168,4 +2172,3 @@ const GricWasmWorker = (function () {
     isBusy: isBusy
   };
 })();
-

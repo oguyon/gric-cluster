@@ -193,6 +193,9 @@ int knn_run_search(
     uint64_t global_telem_sq16_evals = 0;
     uint64_t global_telem_sq16_pruned = 0;
     uint64_t global_telem_sq16_graph_pruned = 0;
+    uint64_t global_telem_rq8_evals = 0;
+    uint64_t global_telem_rq8_pruned = 0;
+    uint64_t global_telem_rq8_graph_pruned = 0;
     uint64_t global_telem_graph_clusters = 0;
     uint64_t global_telem_two_hop_evals = 0;
     uint64_t global_telem_two_hop_pruned = 0;
@@ -211,6 +214,8 @@ int knn_run_search(
                                  global_telem_sq8_graph_pruned,                         \
                                  global_telem_sq16_evals, global_telem_sq16_pruned,    \
                                  global_telem_sq16_graph_pruned,                        \
+                                 global_telem_rq8_evals, global_telem_rq8_pruned,      \
+                                 global_telem_rq8_graph_pruned,                         \
                                  global_telem_graph_clusters,                           \
                                  global_telem_two_hop_evals,                            \
                                  global_telem_two_hop_pruned,                           \
@@ -237,6 +242,9 @@ int knn_run_search(
         int16_t *query_sq16 =
             config->use_sq16 ? (int16_t *)malloc((size_t)model->frame_elements *
                                                  sizeof(int16_t)) : NULL;
+        int16_t *query_rq8 =
+            config->use_rq8 ? (int16_t *)malloc((size_t)model->frame_elements *
+                                                sizeof(int16_t)) : NULL;
         double *anchor_dists =
             (double *)malloc((size_t)model->num_clusters * sizeof(double));
         ClusterScore *scores_buf =
@@ -273,6 +281,8 @@ int knn_run_search(
         visited.epoch = 1;
         visited.query_sq8 = query_sq8;
         visited.query_sq16 = query_sq16;
+        visited.query_rq8 = query_rq8;
+        visited.query_rq8_clipped = 0;
         visited.rep_tags = NULL;
         visited.rep_dists = NULL;
         if (config->use_memo && model->frame_to_unique_map != NULL)
@@ -302,6 +312,7 @@ int knn_run_search(
 
             KnnFrameReader *active_qreader = is_cross_dataset ? &thread_query_reader :
                                                                 &thread_cand_reader;
+            visited.query_rq8_clipped = 0;
 
             if (knn_reader_read_frame(active_qreader, i, query_buffer) == 0)
             {
@@ -397,6 +408,9 @@ int knn_run_search(
         global_telem_sq16_evals += thread_telem.sq16_evaluations;
         global_telem_sq16_pruned += thread_telem.sq16_members_pruned;
         global_telem_sq16_graph_pruned += thread_telem.sq16_graph_pruned;
+        global_telem_rq8_evals += thread_telem.rq8_evaluations;
+        global_telem_rq8_pruned += thread_telem.rq8_members_pruned;
+        global_telem_rq8_graph_pruned += thread_telem.rq8_graph_pruned;
         global_telem_graph_clusters += thread_telem.clusters_graph_evaluated;
         global_telem_two_hop_evals += thread_telem.two_hop_evaluations;
         global_telem_two_hop_pruned += thread_telem.two_hop_pruned;
@@ -426,6 +440,11 @@ int knn_run_search(
         if (query_sq16 != NULL)
         {
             free(query_sq16);
+        }
+
+        if (query_rq8 != NULL)
+        {
+            free(query_rq8);
         }
 
         if (graph_scratch.pq != NULL)
@@ -511,6 +530,9 @@ int knn_run_search(
     telemetry->sq16_evaluations = global_telem_sq16_evals;
     telemetry->sq16_members_pruned = global_telem_sq16_pruned;
     telemetry->sq16_graph_pruned = global_telem_sq16_graph_pruned;
+    telemetry->rq8_evaluations = global_telem_rq8_evals;
+    telemetry->rq8_members_pruned = global_telem_rq8_pruned;
+    telemetry->rq8_graph_pruned = global_telem_rq8_graph_pruned;
     telemetry->clusters_graph_evaluated = global_telem_graph_clusters;
     telemetry->two_hop_evaluations = global_telem_two_hop_evals;
     telemetry->two_hop_pruned = global_telem_two_hop_pruned;
@@ -548,4 +570,3 @@ void knn_results_free(
         results->distances = NULL;
     }
 }
-

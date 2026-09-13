@@ -1617,15 +1617,18 @@
       const l2 = telem.level2AnchorsPruned || 0;
       const l3 = telem.level3AnnularPruned || 0;
       const temp = telem.temporalPruned || 0;
+      const isRq8 = Boolean(
+        telem.rq8Evaluations || telem.rq8MembersPruned || telem.rq8GraphPruned
+      );
       const isSq16 = Boolean(
         telem.sq16Evaluations || telem.sq16MembersPruned || telem.sq16GraphPruned
       );
-      const sqType = isSq16 ? 'SQ16' : 'SQ8';
-      const sqEvals = (telem.sq16Evaluations || 0) + (telem.sq8Evaluations || 0);
-      const sqMembers = (telem.sq16MembersPruned || 0) + (telem.sq8MembersPruned || 0);
-      const sqGraph = (telem.sq16GraphPruned || 0) + (telem.sq8GraphPruned || 0);
-      const sqPruned = (telem.sq16TotalPruned || telem.sq8TotalPruned !== undefined)
-        ? ((telem.sq16TotalPruned || 0) + (telem.sq8TotalPruned || 0))
+      const sqType = isRq8 ? 'RQ8' : (isSq16 ? 'SQ16' : 'SQ8');
+      const sqEvals = (telem.rq8Evaluations || 0) + (telem.sq16Evaluations || 0) + (telem.sq8Evaluations || 0);
+      const sqMembers = (telem.rq8MembersPruned || 0) + (telem.sq16MembersPruned || 0) + (telem.sq8MembersPruned || 0);
+      const sqGraph = (telem.rq8GraphPruned || 0) + (telem.sq16GraphPruned || 0) + (telem.sq8GraphPruned || 0);
+      const sqPruned = (telem.rq8TotalPruned || telem.sq16TotalPruned || telem.sq8TotalPruned !== undefined)
+        ? ((telem.rq8TotalPruned || 0) + (telem.sq16TotalPruned || 0) + (telem.sq8TotalPruned || 0))
         : (sqMembers + sqGraph);
 
       const lblKnnSqPrecType = document.getElementById('lblKnnSqPrecType');
@@ -1926,6 +1929,12 @@
         btnKnnSq16.classList.toggle('toggle-active', knnUseSq16);
         btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
         btnKnnSq16.classList.toggle('active', knnUseSq16);
+      }
+      const btnKnnRq8 = document.getElementById('btnKnnRq8');
+      if (btnKnnRq8 && typeof knnUseRq8 !== 'undefined') {
+        btnKnnRq8.classList.toggle('toggle-active', knnUseRq8);
+        btnKnnRq8.classList.toggle('toggle-cyan', knnUseRq8);
+        btnKnnRq8.classList.toggle('active', knnUseRq8);
       }
       const optBatchDistEl = document.getElementById('optBatchDist');
       if (optBatchDistEl && typeof clusterUseBatchDist !== 'undefined') {
@@ -4341,4 +4350,3 @@
     window.updateSlotGenState = updateSlotGenState;
     window.stageDataset = stageDataset;
     window.updateDatasetStatusBadge = updateDatasetStatusBadge;
-

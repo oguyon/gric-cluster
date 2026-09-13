@@ -2935,7 +2935,6 @@
         draw();
       });
     }
-
     // Auto-3D Dimension Optimization button
     const btnAuto3D = document.getElementById('btnHighDAutoPick');
     if (btnAuto3D) {
@@ -6623,7 +6622,9 @@
           if (knnEpsilon > 0) args.push('-eps', String(knnEpsilon));
           if (knnRlim > 0) args.push('-rlim', String(knnRlim));
           if (typeof knnMvp !== 'undefined' && knnMvp) args.push('-multipivot');
-          if (typeof knnUseSq16 !== 'undefined' && knnUseSq16) {
+          if (typeof knnUseRq8 !== 'undefined' && knnUseRq8) {
+            args.push('-rq8');
+          } else if (typeof knnUseSq16 !== 'undefined' && knnUseSq16) {
             args.push('-sq16');
             if (typeof knnSq16Ratio !== 'undefined') {
               args.push('-sq16-ratio', String(knnSq16Ratio));
@@ -6631,8 +6632,10 @@
             if (typeof knnUseMemo !== 'undefined') {
               args.push(knnUseMemo ? '-memo' : '-no-memo');
             }
-          } else if (typeof knnUseSq8 !== 'undefined') {
-            args.push(knnUseSq8 ? '-sq8' : '-no-sq8');
+          } else if (typeof knnUseSq8 !== 'undefined' && knnUseSq8) {
+            args.push('-sq8');
+          } else {
+            args.push('-no-rq8');
           }
           if (typeof knnUseBatchDist !== 'undefined' && !knnUseBatchDist) {
             args.push('-no-batch-dist');
@@ -6753,6 +6756,7 @@
               direction: knnDirection,
               epsilon: knnEpsilon,
               rlim: knnRlim,
+              useRq8: (typeof knnUseRq8 !== 'undefined' && knnUseRq8),
               multiPivot: (typeof knnMvp !== 'undefined' && knnMvp)
             };
             const wasmRes = GricWasm.runKnn(config, pts);
@@ -6817,6 +6821,7 @@
             direction: knnDirection,
             epsilon: knnEpsilon,
             rlim: knnRlim,
+            useRq8: (typeof knnUseRq8 !== 'undefined' && knnUseRq8),
             multiPivot: (typeof knnMvp !== 'undefined' && knnMvp)
           };
 
@@ -7154,21 +7159,48 @@
 
     const btnKnnSq8 = document.getElementById('btnKnnSq8');
     const btnKnnSq16 = document.getElementById('btnKnnSq16');
+    const btnKnnRq8 = document.getElementById('btnKnnRq8');
+
+    function updateKnnQuantToggles() {
+      if (btnKnnRq8) {
+        btnKnnRq8.classList.toggle('toggle-active', knnUseRq8);
+        btnKnnRq8.classList.toggle('toggle-cyan', knnUseRq8);
+        btnKnnRq8.classList.toggle('active', knnUseRq8);
+      }
+      if (btnKnnSq16) {
+        btnKnnSq16.classList.toggle('toggle-active', knnUseSq16);
+        btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
+        btnKnnSq16.classList.toggle('active', knnUseSq16);
+      }
+      if (btnKnnSq8) {
+        btnKnnSq8.classList.toggle('toggle-active', knnUseSq8);
+        btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
+        btnKnnSq8.classList.toggle('active', knnUseSq8);
+      }
+    }
+
+    if (btnKnnRq8) {
+      btnKnnRq8.addEventListener('click', () => {
+        knnUseRq8 = !knnUseRq8;
+        if (knnUseRq8) {
+          knnUseSq16 = false;
+          knnUseSq8 = false;
+        }
+        updateKnnQuantToggles();
+        syncControlDependencies();
+        updateCliCommand();
+        draw();
+      });
+    }
 
     if (btnKnnSq8) {
       btnKnnSq8.addEventListener('click', () => {
         knnUseSq8 = !knnUseSq8;
         if (knnUseSq8) {
+          knnUseRq8 = false;
           knnUseSq16 = false;
         }
-        btnKnnSq8.classList.toggle('toggle-active', knnUseSq8);
-        btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
-        btnKnnSq8.classList.toggle('active', knnUseSq8);
-        if (btnKnnSq16) {
-          btnKnnSq16.classList.toggle('toggle-active', knnUseSq16);
-          btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
-          btnKnnSq16.classList.toggle('active', knnUseSq16);
-        }
+        updateKnnQuantToggles();
         syncControlDependencies();
         updateCliCommand();
         draw();
@@ -7179,21 +7211,17 @@
       btnKnnSq16.addEventListener('click', () => {
         knnUseSq16 = !knnUseSq16;
         if (knnUseSq16) {
+          knnUseRq8 = false;
           knnUseSq8 = false;
         }
-        btnKnnSq16.classList.toggle('toggle-active', knnUseSq16);
-        btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
-        btnKnnSq16.classList.toggle('active', knnUseSq16);
-        if (btnKnnSq8) {
-          btnKnnSq8.classList.toggle('toggle-active', knnUseSq8);
-          btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
-          btnKnnSq8.classList.toggle('active', knnUseSq8);
-        }
+        updateKnnQuantToggles();
         syncControlDependencies();
         updateCliCommand();
         draw();
       });
     }
+
+    updateKnnQuantToggles();
 
     const btnKnnMemo = document.getElementById('btnKnnMemo');
     if (btnKnnMemo) {
@@ -8901,15 +8929,18 @@
       const angular = telem.angularPruned || 0;
       const multiPivot = telem.multiPivotPruned || 0;
       const gSeeds = telem.graphSeedsEvaluated || 0;
+      const isRq8 = Boolean(
+        telem.rq8Evaluations || telem.rq8MembersPruned || telem.rq8GraphPruned
+      );
       const isSq16 = Boolean(
         telem.sq16Evaluations || telem.sq16MembersPruned || telem.sq16GraphPruned
       );
-      const sqType = isSq16 ? 'SQ16' : 'SQ8';
-      const sqEvals = (telem.sq16Evaluations || 0) + (telem.sq8Evaluations || 0);
-      const sqMembers = (telem.sq16MembersPruned || 0) + (telem.sq8MembersPruned || 0);
-      const sqGraph = (telem.sq16GraphPruned || 0) + (telem.sq8GraphPruned || 0);
-      const sqPruned = (telem.sq16TotalPruned || telem.sq8TotalPruned !== undefined)
-        ? ((telem.sq16TotalPruned || 0) + (telem.sq8TotalPruned || 0))
+      const sqType = isRq8 ? 'RQ8' : (isSq16 ? 'SQ16' : 'SQ8');
+      const sqEvals = (telem.rq8Evaluations || 0) + (telem.sq16Evaluations || 0) + (telem.sq8Evaluations || 0);
+      const sqMembers = (telem.rq8MembersPruned || 0) + (telem.sq16MembersPruned || 0) + (telem.sq8MembersPruned || 0);
+      const sqGraph = (telem.rq8GraphPruned || 0) + (telem.sq16GraphPruned || 0) + (telem.sq8GraphPruned || 0);
+      const sqPruned = (telem.rq8TotalPruned || telem.sq16TotalPruned || telem.sq8TotalPruned !== undefined)
+        ? ((telem.rq8TotalPruned || 0) + (telem.sq16TotalPruned || 0) + (telem.sq8TotalPruned || 0))
         : (sqMembers + sqGraph);
       const exact = Math.max(0, telem.framedistCalls || 0);
       const totalAll = l1 + l3 + gPruned + angular + multiPivot + gSeeds + sqPruned + exact;
@@ -9231,10 +9262,13 @@
           args.push('--no-trajectory');
         }
 
+        const radRq8 = document.getElementById('radReconQueryRq8');
         const radSq16 = document.getElementById('radReconQuerySq16');
         const radSq8 = document.getElementById('radReconQuerySq8');
         const chkSq8 = document.getElementById('chkReconQuerySq8');
-        if (radSq16 && radSq16.checked) {
+        if (radRq8 && radRq8.checked) {
+          args.push('-rq8');
+        } else if (radSq16 && radSq16.checked) {
           args.push('-sq16');
           if (typeof knnSq16Ratio !== 'undefined') {
             args.push('-sq16-ratio', String(knnSq16Ratio));
@@ -9247,7 +9281,7 @@
         } else if (chkSq8 && chkSq8.checked) {
           args.push('-sq8');
         } else {
-          args.push('-no-sq16', '-no-sq8');
+          args.push('-no-rq8', '-no-sq16', '-no-sq8');
         }
         if (typeof knnUseBatchDist !== 'undefined' && !knnUseBatchDist) {
           args.push('-no-batch-dist');

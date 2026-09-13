@@ -46,6 +46,7 @@ SRCS = \
 	src/gric-knn/knn_tree.c \
 	src/gric-knn/knn_reader.c \
 	src/gric-knn/knn_parser.c \
+	src/gric-knn/knn_cache.c \
 	src/gric-knn/knn_engine.c \
 	src/gric-knn/knn_pruning.c \
 	src/gric-knn/knn_cluster_search.c \
@@ -53,6 +54,7 @@ SRCS = \
 	src/shared/cluster_locator.c \
 	src/shared/gric_bin_io.c \
 	src/shared/scalar_quant.c \
+	src/shared/residual_quant.c \
 	src/shared/quant_memo.c \
 	src/wasm/wasm_cluster.c \
 	src/wasm/wasm_multitile.c \
@@ -93,4 +95,3 @@ dirs:
 clean:
 	rm -rf $(OUT_DIR_SITE)
 	rm -f $(OUT_DIR_DOCS)/gric_cluster.js $(OUT_DIR_DOCS)/gric_cluster.wasm
-
