@@ -45,6 +45,7 @@ SRCS = \
 	src/gric-knn/knn_heap.c \
 	src/gric-knn/knn_tree.c \
 	src/gric-knn/knn_reader.c \
+	src/gric-knn/knn_parser.c \
 	src/gric-knn/knn_engine.c \
 	src/gric-knn/knn_pruning.c \
 	src/gric-knn/knn_cluster_search.c \

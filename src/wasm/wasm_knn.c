@@ -4,6 +4,7 @@
  */
 
 #include "wasm_internal.h"
+#include "knn_parser.h"
 
 
 /* -------------------------------------------------------
@@ -204,19 +205,10 @@ int wasm_knn_run_search(
     {
         if (model.clusters[c].num_members > 1)
         {
-            for (int a = 0; a < model.clusters[c].num_members - 1; a++)
-            {
-                for (int b = a + 1; b < model.clusters[c].num_members; b++)
-                {
-                    if (model.clusters[c].members[a].r_anchor >
-                        model.clusters[c].members[b].r_anchor)
-                    {
-                        MemberMeta tmp = model.clusters[c].members[a];
-                        model.clusters[c].members[a] = model.clusters[c].members[b];
-                        model.clusters[c].members[b] = tmp;
-                    }
-                }
-            }
+            qsort(model.clusters[c].members,
+                  (size_t)model.clusters[c].num_members,
+                  sizeof(MemberMeta),
+                  knn_compare_member_meta_radii);
         }
     }
 
