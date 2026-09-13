@@ -109,12 +109,13 @@ Deciding *which* cluster to measure next determines how fast ambiguity is resolv
 When `-entropy` is enabled, GRIC treats target selection as an information-theoretic optimization:
 
 \[
-H(X \mid \text{measure } c_j) = P(\text{match}) \cdot 0 + P(\text{mismatch}) \cdot H(X \mid \text{mismatch})
+\mathbb{E}[H(T)] = \sum_{c_j} P(c_j) \cdot H(T \mid c_j \text{ is true})
 \]
 
-- **Adaptive Gating (`-entropy_gate <t>`)**: Bypasses entropy computation when distribution is sharp.
+- **Adaptive Gating (`-entropy_gate <t>`)**: Bypasses entropy computation when distribution is
+  sufficiently concentrated.
 - **Dominant Leader Bypass (`-entropy_leader`)**: Directly measures leader when $P(c_j) \ge 0.50$.
-- **Fast Surrogate (`-entropy_fast`)**: Uses popcount bitmasks for ultra-fast surrogate entropy evaluations.
+- **Fast Surrogate (`-entropy_fast`)**: Uses popcount bitmasks for fast surrogate entropy evals.
 
 ---
 
@@ -131,8 +132,8 @@ GRIC builds and refines cluster probabilities through four complementary layers:
    patterns in historical assignment logs and tests top predictions first.
 4. **Visitor Co-Measurement Geometry (`-gprob`)**: Dynamically updates spatial likelihoods by
    comparing partial measurements against historical frame visitors.
-5. **Soft Bayesian Fading (`-soft_bayesian`)**: Replaces hard threshold cutoffs with smooth Gaussian
-   likelihood decay to tolerate sensor noise and jitter.
+5. **Soft Bayesian Fading (`-soft_bayesian`)**: Fades posterior probabilities of surviving
+   candidates using smooth Gaussian likelihood to handle sensor noise and jitter.
 
 ---
 

@@ -71,8 +71,9 @@ matrices.
 <img src="docs/figures/gric_target_selection_entropy.svg" alt="Target Selection Entropy" width="100%">
 
 - **Greedy Mode (Default)**: Tests candidate anchors in descending order of prior probability.
-- **Entropy Mode (`-entropy`)**: Schedules the pivot anchor that minimizes expected posterior Shannon entropy:
-  $$H(X \mid \text{measure } c_j) = P(\text{match}) \cdot 0 + P(\text{mismatch}) \cdot H(X \mid \text{mismatch})$$
+- **Entropy Mode (`-entropy`)**: Schedules the pivot anchor that minimizes expected posterior
+  Shannon entropy across candidate true-cluster hypotheses:
+  $$\mathbb{E}[H(T)] = \sum_{c_j} P(c_j) \cdot H(T \mid c_j \text{ is true})$$
 - **Spiral Center Pivot**: On non-linear manifolds like the benchmark 2D spiral, measuring distance to
   the center directly yields the radius, **unambiguously resolving the exact trajectory position in 1 measurement**.
 
@@ -85,7 +86,8 @@ matrices.
 - **Markov Transitions (`-tm <coeff>`)**: Learns pairwise cluster transition probabilities over time.
 - **Sequence Predictor (`-pred[len,h,n]`)**: Scans historical assignment logs to forecast multi-step paths.
 - **Visitor Geometry (`-gprob`)**: Discovers manifold topology by cross-correlating co-measurement visitors.
-- **Soft Bayesian Likelihoods (`-soft_bayesian`)**: Smooth Gaussian likelihood fading for noisy sensor streams.
+- **Soft Bayesian Likelihoods (`-soft_bayesian`)**: Gaussian likelihood fading on surviving
+  candidates for noisy sensor streams.
 
 ---
 

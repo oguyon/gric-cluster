@@ -1,31 +1,33 @@
 # algorithm/soft_bayesian
 
 ## SOFT BAYESIAN LIKELIHOOD UPDATES
-Soft Bayesian mode replaces binary candidate pruning with soft probability
-likelihood updates. Candidates fade out gradually over multiple steps
-instead of being eliminated instantly.
+Soft Bayesian mode applies smooth Gaussian likelihood updates to the
+posterior probabilities of candidate clusters surviving triangle
+inequality pruning, rather than treating all surviving candidates equally.
 
 ## GAUSSIAN LIKELIHOOD
-The posterior probabilities are scaled by a
-Gaussian likelihood factor:
-  likelihood = exp(-(d_measured - d_anchor)^2
-                   / (2 * sigma^2))
+For each surviving candidate cluster i after measuring anchor cj:
+  likelihood = exp(-(dfc - dcc)^2 / (2 * sigma^2))
 
-where sigma = rlim * sigma_coeff (default 1.0,
-tunable via -soft_bayesian_sigma).
+where:
+  dfc   = distance from current frame to measured anchor cj
+  dcc   = inter-cluster distance between anchor cj and candidate i
+  sigma = rlim * sigma_coeff (default 1.0, tunable via -soft_bayesian_sigma)
 
-The exponential is approximated using a minimax
-polynomial on the interval [0, 2], avoiding slow
-library exp() calls. Returns 0.0 for large
+The exponential is approximated using a minimax polynomial on the
+interval [0, 2], avoiding slow library exp() calls. Returns 0.0 for large
 deviations (hard cutoff).
 
+Candidates pruned by the triangle inequality (|dfc - dcc| > rlim) are
+hard-set to 0.0, while surviving candidates have their posterior
+probability scaled by the likelihood and renormalized.
+
 ## RATIONALE
-Hard pruning is binary: a candidate is either
-alive or dead. When clusters are close together,
-a small measurement error can wrongly eliminate
-the true cluster. Soft Bayesian gradually fades
-candidates, making the algorithm robust to
-near-boundary measurements.
+Standard pruning is binary: surviving candidates retain their prior
+probabilities regardless of whether they were close to the pruning
+boundary. Soft Bayesian weights surviving candidates by how closely their
+inter-cluster distance matches the observed measurement, accelerating
+entropy and dynamic greedy convergence.
 
 Most beneficial when:
   - Clusters overlap geometrically

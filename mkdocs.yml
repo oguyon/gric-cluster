@@ -151,6 +151,7 @@ nav:
           - analysis: help/analysis.md
   - Tools & Utilities:
       - Overview: tools/index.md
+      - WebAssembly & Native Parity: tools/wasm.md
       - k-NN Solver (gric-knn): tools/knn.md
       - Binary Formats & I/O: tools/bin_io.md
       - Server & Desktop GUI: tools/server_gui.md

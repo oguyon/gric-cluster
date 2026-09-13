@@ -1,7 +1,8 @@
 # Algorithm Overview & Modes
 
 > [!TIP]
-> For detailed visual diagrams, animated video explanations, and an interactive 2D simulator, see the **[Visual Architecture & Options Guide](visual_guide.md)**.
+> For visual diagrams, animated video explanations, and an interactive 2D simulator, see
+> the **[Visual Architecture & Options Guide](visual_guide.md)**.
 
 The GRIC clustering algorithm is designed for high-speed, sequential distance-based clustering. It
 processes incoming data frames one by one, grouping them into clusters defined by **anchor frames**
@@ -47,19 +48,19 @@ flowchart TD
 
 1.  **Normalize Probabilities**: Normalize the prior assignment probabilities `prob(cj)` of existing
     clusters so they sum to 1.0.
-2.  **Calculate Mixed Probabilities**: If temporal prediction is active, mix the prior probabilities
-    with the transition matrix probabilities:
-    `P_mixed(cj) = (1 - coeff) * prob(cj) + coeff * P_trans(cj)`.
+2.  **Calculate Mixed Probabilities**: If temporal prediction is active, mix priors with
+    Markov transitions (`-tm`) or fuzzy trajectory similarity (`-predf`). When binary sequence
+    prediction (`-pred`) is active, the top predicted cluster IDs are tested first.
 3.  **Rank Candidate Clusters**: Sort the existing clusters to determine the initial search order.
-    If geometrical probability (`-gprob`) is active, candidates are ranked using the combined
-    probability `P_mixed(cj) * gprob(fi, cj)`.
+    If geometrical probability (`-gprob`) is active, candidates are dynamically tracked using the
+    normalized running posterior distribution `entropy_p_current`.
 4.  **Select & Check Candidates**: Iterate through candidates using either **Greedy** or
     **Entropy** target selection:
     - Compute the distance `dfc(fi, cj)` to the candidate anchor.
     - If `dfc < rlim`, assign the frame to this cluster and update transition/recency probabilities.
     - If `dfc > rlim`, use geometric pruning to eliminate other impossible candidate clusters.
-5.  **Create New Cluster**: If all existing candidate clusters are checked or pruned, establish a new
-    cluster with `fi` as its anchor.
+5.  **Create New Cluster**: If all existing candidate clusters are checked or pruned,
+    establish a new cluster with `fi` as its anchor.
 
 ---
 
@@ -73,8 +74,8 @@ In Greedy Mode, the algorithm selects targets solely by prioritizing the most li
 - **Standard Greedy (no `-gprob`)**: It sequentially checks candidates in a static order sorted by
   prior probability.
 - **Dynamic Greedy (with `-gprob`)**: It dynamically updates the candidates' geometrical probability
-  after each distance measurement and selects the candidate with the highest combined probability
-  (`P_mixed * current_gprobs`).
+  after each distance measurement and selects the active candidate with the highest current
+  posterior probability (`entropy_p_current`).
 
 **Advantage**: Very low computation overhead per step. It works exceptionally well when there is a
 high-probability candidate (e.g., in continuous streams with high temporal correlation).
@@ -88,22 +89,25 @@ selection as an information-theory optimization problem:
 - **Adaptive Entropy Gating (`-entropy_gate`, `-entropy_first_gate`)**: If posterior Shannon
   entropy is already lower than the gating threshold (e.g., confident distribution), the engine
   measures the top candidate directly, saving evaluation overhead.
-- **Dominant Leader Shortcut (`-entropy_leader`)**: When active, if a candidate's probability meets
-  or exceeds `-entropy_leader_cutoff` (default: 0.50), it is measured immediately without evaluation.
+- **Dominant Leader Shortcut (`-entropy_leader`)**: When active, if a candidate's probability
+  meets or exceeds `-entropy_leader_cutoff` (default: 0.50), it is measured immediately.
 - Otherwise, it evaluates a subset of active candidates (up to `-entropy_max_targets`, default 15)
-  and calculates the **Expected Shannon Entropy** of the posterior probability distribution:
+  and calculates the **Expected Shannon Entropy** across all active candidate hypotheses:
   
   \[
-  H(X \mid \text{measure } c_j) = P(\text{match}) \cdot H(X \mid \text{match}) + P(\text{mismatch}) \cdot H(X \mid \text{mismatch})
+  \mathbb{E}[H(T)] = \sum_{c_j} P(c_j) \cdot H(T \mid c_j \text{ is true})
   \]
 
-- **Match Scenario**: If the measurement is a match, the search terminates (entropy falls to 0).
-- **Mismatch Scenario**: If the measurement is a mismatch, the candidate is eliminated, and others
-  may be pruned via geometric constraints, reducing the probability distribution to the remaining active set.
-- The algorithm selects the target candidate that **minimizes** the expected Shannon entropy (maximizing information gain per distance calculation).
+- **Hypothesis Evaluation**: For each hypothetical true cluster $c_j$, the precomputed
+  `consistency_mask` identifies which candidate clusters $k$ survive triangle inequality pruning
+  ($|d(k, T) - d(c_j, T)| \le 2 r_{\text{lim}}$).
+- **Posterior Entropy**: The normalized probabilities of surviving candidates define the
+  conditional posterior distribution, computing hypothetical Shannon entropy $H(T \mid c_j)$.
+- The algorithm selects the candidate target $T$ that **minimizes** $\mathbb{E}[H(T)]$ (maximizing
+  expected information gain per distance calculation).
 
-**Advantage**: Significantly reduces the number of expensive distance computations in high-dimensional
-or noisy datasets where simple greedy paths struggle.
+**Advantage**: Significantly reduces the number of expensive distance computations in
+high-dimensional or noisy datasets where simple greedy paths struggle.
 
 ---
 

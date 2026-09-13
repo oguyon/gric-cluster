@@ -11,6 +11,9 @@ interactive web simulator. `gric-gui` is a desktop application wrapper.
 built-in HTML5/WASM simulator UI and exposes REST endpoints for workspace file I/O and running
 native clustering CLI tools.
 
+> For details on the in-browser WebAssembly engine and its differences with native C execution,
+> see the [WebAssembly Engine & Native Parity](wasm.md) guide.
+
 ```bash
 gric-server [options]
 ```

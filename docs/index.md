@@ -7,9 +7,12 @@ data (images, sensor logs, etc.).
 
 ## Sections
 
-*   **[Visual Architecture & Options Guide](algorithm/visual_guide.md)**: Visual diagrams, animated explainer video, and interactive 2D & 3D simulator for understanding GRIC and all its options.
+*   **[Visual Architecture & Options Guide](algorithm/visual_guide.md)**: Visual diagrams,
+    animated explainer video, and interactive 2D & 3D simulator for understanding GRIC.
 *   **[Algorithm Overview & Modes](algorithm/index.md)**: High-level overview, steps, and
     modes (Greedy vs. Entropy).
+*   **[WebAssembly Engine & Native Parity](tools/wasm.md)**: Architecture, algorithmic
+    equivalence, and technical differences between client-side WASM and native C execution.
 *   **[Benchmarks](benchmarks/index.md)**: Performance analysis and timing results on synthetic
     datasets.
 *   **[Practical Use Cases](practical-use.md)**: Real-world scenarios, workflows, and tips

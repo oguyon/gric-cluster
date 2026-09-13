@@ -75,7 +75,7 @@ Frame
 2. SELECT TARGET
    Pick the cluster to measure next:
    - Greedy: highest posterior probability
-   - Entropy (-entropy): min expected posterior entropy after measurement
+   - Entropy (-entropy): min expected posterior entropy across hypotheses
 
 3. MEASURE DISTANCE
    Compute d(frame, anchor). This is the
@@ -107,6 +107,9 @@ BASE CASE (no -pred, no -tm, no -gprob):
   starts at 1.0 when the cluster is created.
   Each time a frame matches cluster i, its
   score increases by dprob (default 0.01).
+  (Note: when -pred or -predf is active, this
+  update is replaced by +0.3 and a uniform floor
+  0.2/K across all clusters).
   Before each new frame, scores are normalized
   to sum to 1:
 
@@ -129,16 +132,20 @@ WITH -tm (transition matrix mixing):
   trans(prev,i) = fraction of times the system
   went from cluster 'prev' to cluster i.
 
-WITH -pred (sequence prediction):
+WITH -predf (fuzzy sequence prediction):
   Multiplies the frequency prior by a sequence
-  match score from pattern detection:
+  match score from continuous trajectory matching:
 
     P(i) = freq(i) * seq_match(i) / Z
 
-  where Z is a normalization constant ensuring the sum of probabilities
-  equals 1.0, and seq_match(i) measures how well the
-  recent assignment history matches past
-  patterns that led to cluster i.
+  where Z is a normalization constant ensuring the sum
+  of probabilities equals 1.0, and seq_match(i)
+  measures continuous trajectory similarity mAB.
+
+WITH -pred (binary sequence prediction):
+  Does not alter P(i); instead scans recent assignment
+  history for matching ID patterns and tests the top n
+  predicted candidates first, bypassing standard search.
 
 WITH -gprob (geometric probability):
   During the search loop, each measurement
@@ -150,13 +157,14 @@ WITH -gprob (geometric probability):
 PROBABILITY LAYERING:
     The probability distribution P is constructed and refined in layers:
     1. Baseline: Frequency prior (always active; recency-weighted)
-    2. Temporal: + -pred OR -tm (blends in temporal sequence patterns at frame start)
-    3. Spatial:  + -gprob (refines dynamically during the search loop using visitor history)
+    2. Temporal: + -predf OR -tm (blends temporal sequence patterns at frame start)
+                 (Note: -pred prioritizes checking top candidates directly)
+    3. Spatial:  + -gprob (refines dynamically during search via visitor history)
 
   TARGET SELECTION (using the probability distribution):
     The target selection strategy determines how P is used to pick the next candidate:
-    - Greedy (default): Pick the candidate with the highest posterior probability P(i).
-    - Entropy (-entropy): Pick the candidate minimizing expected Shannon entropy of P after the measurement, maximizing information gain.
+    - Greedy (default): Pick candidate with highest posterior probability P(i).
+    - Entropy (-entropy): Pick candidate minimizing expected posterior Shannon entropy.
 
 ## KEY OPTIMIZATIONS
 Triangle inequality (always active)
@@ -183,9 +191,9 @@ Sparse DCC (-sparse_dcc)
   Critical for large numbers of clusters.
 
 Soft Bayesian (-soft_bayesian)
-  Replaces hard binary pruning with smooth
-  Gaussian-like likelihood updates. Candidates
-  fade out gradually instead of being eliminated.
+  Applies smooth Gaussian-like likelihood fading to
+  the posterior probabilities of surviving candidates.
+  Operates alongside hard metric pruning.
 
 Recency bias (-dprob)
   Recently active clusters rise in the search
