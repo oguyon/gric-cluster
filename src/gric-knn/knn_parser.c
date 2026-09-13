@@ -7,6 +7,7 @@
 #include "knn_parser.h"
 #include "gric_bin_io.h"
 #include <ctype.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,6 +65,16 @@ int knn_parse_membership_file(
                 int max_c = -1;
                 for (long i = 0; i < nframes; i++)
                 {
+                    if (ubuf[i] > (uint32_t)INT_MAX)
+                    {
+                        fprintf(stderr,
+                                "Error: membership file '%s' contains out-of-range cluster IDs\n",
+                                path);
+                        free(ubuf);
+                        if (comment != NULL) free(comment);
+                        fclose(f_bin);
+                        return -1;
+                    }
                     if ((int)ubuf[i] > max_c)
                     {
                         max_c = (int)ubuf[i];
