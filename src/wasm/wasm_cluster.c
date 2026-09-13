@@ -661,7 +661,7 @@ void wasm_cluster_get_anchors(
     int     ndim)
 {
     WasmHandle *h = (WasmHandle *)ptr;
-    if (!h || !out_coords || !out_members)
+    if (!h || !out_coords || !out_members || ndim != h->ndim)
     {
         return;
     }
