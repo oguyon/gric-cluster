@@ -139,6 +139,7 @@ set(CLUSTER_SRCS
     src/shared/cluster_locator.c
     src/shared/scalar_quant.c
     src/shared/residual_quant.c
+    src/shared/product_quant.c
     src/shared/quant_memo.c
     src/shared/gric_profile.c
 )
@@ -294,6 +295,7 @@ add_executable(gric-knn
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
     src/shared/residual_quant.c
+    src/shared/product_quant.c
     src/shared/quant_memo.c
     src/shared/gric_profile.c
 )
@@ -601,6 +603,15 @@ target_link_libraries(test_residual_quant m)
 add_test(NAME test_residual_quant
     COMMAND test_residual_quant)
 
+add_executable(test_product_quant
+    tests/test_product_quant.c
+    src/shared/product_quant.c
+)
+target_include_directories(test_product_quant PRIVATE src/shared)
+target_link_libraries(test_product_quant m)
+add_test(NAME test_product_quant
+    COMMAND test_product_quant)
+
 add_executable(test_knn_rq8_sidecar_mismatch
     tests/test_knn_rq8_sidecar_mismatch.c
     src/gric-knn/knn_cache.c
@@ -608,6 +619,7 @@ add_executable(test_knn_rq8_sidecar_mismatch
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
     src/shared/residual_quant.c
+    src/shared/product_quant.c
 )
 target_include_directories(test_knn_rq8_sidecar_mismatch PRIVATE src/gric-knn src/shared)
 target_link_libraries(test_knn_rq8_sidecar_mismatch m)

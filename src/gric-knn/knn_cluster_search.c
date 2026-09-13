@@ -109,6 +109,255 @@ static void knn_search_intra_cluster(
         rq8_active = !visited->query_rq8_clipped;
     }
 
+    int pq_active = (config->use_pq && model->pq_codebook != NULL &&
+                     home_cl->pq_transposed != NULL && home_cl->num_pq_blocks > 0 &&
+                     visited->query_pq_lut != NULL);
+
+    if (pq_active)
+    {
+        int num_b = home_cl->num_pq_blocks;
+        int mid_b = 0;
+        int b_lo = 0;
+        int b_hi = num_b - 1;
+        while (b_lo <= b_hi)
+        {
+            int b_m = b_lo + (b_hi - b_lo) / 2;
+            if (home_cl->members[b_m * PQ_FASTSCAN_BLOCK_SIZE].r_anchor <= (float)r_home)
+            {
+                mid_b = b_m;
+                b_lo = b_m + 1;
+            }
+            else
+            {
+                b_hi = b_m - 1;
+            }
+        } // while (b_lo <= b_hi)
+        int left_b = mid_b - 1;
+        int right_b = mid_b;
+
+        while (left_b >= 0 || right_b < num_b)
+        {
+            double d_left_b = 1e30;
+            if (left_b >= 0)
+            {
+                int m_end_l = (left_b == num_b - 1) ? (num_m - 1) :
+                    (left_b * PQ_FASTSCAN_BLOCK_SIZE + PQ_FASTSCAN_BLOCK_SIZE - 1);
+                float r_max_l = home_cl->members[m_end_l].r_anchor;
+                d_left_b = (r_home > (double)r_max_l) ? (r_home - (double)r_max_l) : 0.0;
+            }
+
+            double d_right_b = 1e30;
+            if (right_b < num_b)
+            {
+                float r_min_r = home_cl->members[right_b * PQ_FASTSCAN_BLOCK_SIZE].r_anchor;
+                d_right_b = ((double)r_min_r > r_home) ?
+                    ((double)r_min_r - r_home) : 0.0;
+            }
+
+            double current_tau = knn_heap_peek_max_dist(heap);
+            double tau_thresh = current_tau / eps_factor;
+            if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
+            {
+                tau_thresh = config->rlim_cutoff;
+            }
+
+            if (left_b >= 0 && d_left_b >= tau_thresh)
+            {
+                int pruned_count = (left_b + 1) * PQ_FASTSCAN_BLOCK_SIZE;
+                if (pruned_count > num_m)
+                {
+                    pruned_count = num_m;
+                }
+                telem->level3_annular_pruned += (uint64_t)pruned_count;
+                left_b = -1;
+                d_left_b = 1e30;
+            }
+            if (right_b < num_b && d_right_b >= tau_thresh)
+            {
+                int pruned_count = num_m - right_b * PQ_FASTSCAN_BLOCK_SIZE;
+                if (pruned_count > 0)
+                {
+                    telem->level3_annular_pruned += (uint64_t)pruned_count;
+                }
+                right_b = num_b;
+                d_right_b = 1e30;
+            }
+            if (left_b < 0 && right_b >= num_b)
+            {
+                break;
+            }
+
+            int b;
+            if (d_left_b <= d_right_b)
+            {
+                b = left_b--;
+            }
+            else
+            {
+                b = right_b++;
+            }
+
+            int m_start = b * PQ_FASTSCAN_BLOCK_SIZE;
+            int m_count = num_m - m_start;
+            if (m_count > PQ_FASTSCAN_BLOCK_SIZE)
+            {
+                m_count = PQ_FASTSCAN_BLOCK_SIZE;
+            }
+
+            const uint8_t *b_codes = home_cl->pq_transposed +
+                (size_t)b * (size_t)model->pq_codebook->m * PQ_FASTSCAN_BLOCK_SIZE;
+            telem->pq_evaluations += (uint64_t)m_count;
+
+            uint8_t cutoff_u8 = 255;
+            if (current_tau > 0.0)
+            {
+                double eff_tau = current_tau / eps_factor;
+                double tau_scaled = eff_tau * eff_tau * (double)visited->query_pq_table.scale;
+                if (tau_scaled < 255.0)
+                {
+                    cutoff_u8 = (uint8_t)tau_scaled;
+                }
+            }
+
+            uint32_t pass_mask = pq_fastscan_32x(
+                visited->query_pq_table.lut_u8,
+                b_codes,
+                model->pq_codebook->m,
+                cutoff_u8
+            );
+            if (m_count < PQ_FASTSCAN_BLOCK_SIZE)
+            {
+                pass_mask &= ((1U << m_count) - 1);
+            }
+
+            if (!pass_mask)
+            {
+                telem->pq_members_pruned += (uint64_t)m_count;
+                continue;
+            }
+
+            int passed_count = knn_popcount32(pass_mask);
+            telem->pq_members_pruned += (uint64_t)(m_count - passed_count);
+
+            while (pass_mask)
+            {
+                int lane = knn_ctz32(pass_mask);
+                pass_mask &= pass_mask - 1;
+
+                int m_idx = m_start + lane;
+                long cand_id = (long)home_cl->members[m_idx].frame_id;
+                double r_cand = (double)home_cl->members[m_idx].r_anchor;
+
+                if (knn_visited_check_and_mark(visited, cand_id))
+                {
+                    continue;
+                }
+
+                if (!check_temporal_separation(query_id, cand_id, config))
+                {
+                    telem->temporal_pruned++;
+                    continue;
+                }
+
+                if (fabs(r_home - r_cand) >= tau_thresh)
+                {
+                    telem->level3_annular_pruned++;
+                    continue;
+                }
+
+                if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
+                {
+                    telem->reciprocal_reused++;
+                    continue;
+                }
+
+                const void *cand_data = NULL;
+                if (model->dataset_buffer != NULL)
+                {
+                    cand_data = (const char *)model->dataset_buffer +
+                        (size_t)cand_id * frame_bytes;
+                }
+                else
+                {
+                    void *dst_slot = (char *)cand_buffer +
+                        (size_t)batch_count * frame_bytes;
+                    if (knn_reader_read_frame(reader, cand_id, dst_slot) != 0)
+                    {
+                        continue;
+                    }
+                    cand_data = dst_slot;
+                }
+
+                batch_cand_ids[batch_count] = cand_id;
+                batch_ptrs[batch_count] = cand_data;
+                batch_count++;
+
+                if (batch_count == 4)
+                {
+                    double dists[4];
+                    if (model->is_double)
+                    {
+                        framedist_batch_1x4_double(
+                            (const double *)query_data,
+                            (const double *const *)batch_ptrs,
+                            dists, frame_elem);
+                    }
+                    else
+                    {
+                        framedist_batch_1x4_float(
+                            (const float *)query_data,
+                            (const float *const *)batch_ptrs,
+                            dists, frame_elem);
+                    }
+                    telem->framedist_calls += 4;
+                    for (int b_idx = 0; b_idx < 4; b_idx++)
+                    {
+                        record_neighbor_and_reciprocal(
+                            query_id, batch_cand_ids[b_idx], dists[b_idx],
+                            config, model, heap, all_heaps
+#ifdef _OPENMP
+                            , bucket_locks
+#endif
+                        );
+                    } // for (int b_idx = 0; b_idx < 4; b_idx++)
+                    batch_count = 0;
+                }
+            } // while (pass_mask)
+        } // while (left_b >= 0 || right_b < num_b)
+
+        if (batch_count > 0)
+        {
+            double dists[4];
+            if (model->is_double)
+            {
+                framedist_batch_double(
+                    (const double *)query_data,
+                    (const double *const *)batch_ptrs,
+                    batch_count, dists, frame_elem);
+            }
+            else
+            {
+                framedist_batch_float(
+                    (const float *)query_data,
+                    (const float *const *)batch_ptrs,
+                    batch_count, dists, frame_elem);
+            }
+            telem->framedist_calls += (uint64_t)batch_count;
+            for (int b_idx = 0; b_idx < batch_count; b_idx++)
+            {
+                record_neighbor_and_reciprocal(
+                    query_id, batch_cand_ids[b_idx], dists[b_idx],
+                    config, model, heap, all_heaps
+#ifdef _OPENMP
+                    , bucket_locks
+#endif
+                );
+            }
+        }
+
+        return;
+    } // if (pq_active)
+
     if (rq8_active && home_cl->rq8_transposed != NULL && home_cl->num_rq8_blocks > 0)
     {
         int num_b = home_cl->num_rq8_blocks;
@@ -1705,6 +1954,267 @@ static void knn_eval_candidate_cluster_members(
             }
         }
     }
+
+    int pq_active = (config->use_pq && model->pq_codebook != NULL &&
+                     cl->pq_transposed != NULL && cl->num_pq_blocks > 0 &&
+                     visited->query_pq_lut != NULL);
+
+    if (pq_active)
+    {
+        int num_b = cl->num_pq_blocks;
+        int mid_b = 0;
+        int b_lo = 0;
+        int b_hi = num_b - 1;
+        while (b_lo <= b_hi)
+        {
+            int b_m = b_lo + (b_hi - b_lo) / 2;
+            if (cl->members[b_m * PQ_FASTSCAN_BLOCK_SIZE].r_anchor <= (float)d_anchor)
+            {
+                mid_b = b_m;
+                b_lo = b_m + 1;
+            }
+            else
+            {
+                b_hi = b_m - 1;
+            }
+        } // while (b_lo <= b_hi)
+        int left_b = mid_b - 1;
+        int right_b = mid_b;
+
+        while (left_b >= 0 || right_b < num_b)
+        {
+            double d_left_b = 1e30;
+            if (left_b >= 0)
+            {
+                int m_end_l = (left_b == num_b - 1) ? (num_m - 1) :
+                    (left_b * PQ_FASTSCAN_BLOCK_SIZE + PQ_FASTSCAN_BLOCK_SIZE - 1);
+                float r_max_l = cl->members[m_end_l].r_anchor;
+                d_left_b = (d_anchor > (double)r_max_l) ? (d_anchor - (double)r_max_l) : 0.0;
+            }
+
+            double d_right_b = 1e30;
+            if (right_b < num_b)
+            {
+                float r_min_r = cl->members[right_b * PQ_FASTSCAN_BLOCK_SIZE].r_anchor;
+                d_right_b = ((double)r_min_r > d_anchor) ?
+                    ((double)r_min_r - d_anchor) : 0.0;
+            }
+
+            current_tau = knn_heap_peek_max_dist(heap);
+            double tau_thresh = current_tau / eps_factor;
+            if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
+            {
+                tau_thresh = config->rlim_cutoff;
+            }
+
+            if (left_b >= 0 && d_left_b >= tau_thresh)
+            {
+                int pruned_count = (left_b + 1) * PQ_FASTSCAN_BLOCK_SIZE;
+                if (pruned_count > num_m)
+                {
+                    pruned_count = num_m;
+                }
+                telem->level3_annular_pruned += (uint64_t)pruned_count;
+                left_b = -1;
+                d_left_b = 1e30;
+            }
+            if (right_b < num_b && d_right_b >= tau_thresh)
+            {
+                int pruned_count = num_m - right_b * PQ_FASTSCAN_BLOCK_SIZE;
+                if (pruned_count > 0)
+                {
+                    telem->level3_annular_pruned += (uint64_t)pruned_count;
+                }
+                right_b = num_b;
+                d_right_b = 1e30;
+            }
+            if (left_b < 0 && right_b >= num_b)
+            {
+                break;
+            }
+
+            int b;
+            if (d_left_b <= d_right_b)
+            {
+                b = left_b--;
+            }
+            else
+            {
+                b = right_b++;
+            }
+
+            int m_start = b * PQ_FASTSCAN_BLOCK_SIZE;
+            int m_count = num_m - m_start;
+            if (m_count > PQ_FASTSCAN_BLOCK_SIZE)
+            {
+                m_count = PQ_FASTSCAN_BLOCK_SIZE;
+            }
+
+            const uint8_t *b_codes = cl->pq_transposed +
+                (size_t)b * (size_t)model->pq_codebook->m * PQ_FASTSCAN_BLOCK_SIZE;
+            telem->pq_evaluations += (uint64_t)m_count;
+
+            uint8_t cutoff_u8 = 255;
+            if (current_tau > 0.0)
+            {
+                double eff_tau = current_tau / eps_factor;
+                double tau_scaled = eff_tau * eff_tau * (double)visited->query_pq_table.scale;
+                if (tau_scaled < 255.0)
+                {
+                    cutoff_u8 = (uint8_t)tau_scaled;
+                }
+            }
+
+            uint32_t pass_mask = pq_fastscan_32x(
+                visited->query_pq_table.lut_u8,
+                b_codes,
+                model->pq_codebook->m,
+                cutoff_u8
+            );
+            if (m_count < PQ_FASTSCAN_BLOCK_SIZE)
+            {
+                pass_mask &= ((1U << m_count) - 1);
+            }
+
+            if (!pass_mask)
+            {
+                telem->pq_members_pruned += (uint64_t)m_count;
+                continue;
+            }
+
+            int passed_count = knn_popcount32(pass_mask);
+            telem->pq_members_pruned += (uint64_t)(m_count - passed_count);
+
+            while (pass_mask)
+            {
+                int lane = knn_ctz32(pass_mask);
+                pass_mask &= pass_mask - 1;
+
+                int m_idx = m_start + lane;
+                long cand_id = (long)cl->members[m_idx].frame_id;
+                double r_cand = (double)cl->members[m_idx].r_anchor;
+
+                if (knn_visited_check_and_mark(visited, cand_id))
+                {
+                    continue;
+                }
+
+                if (!check_temporal_separation(query_id, cand_id, config))
+                {
+                    telem->temporal_pruned++;
+                    continue;
+                }
+
+                double lb1 = fabs(d_anchor - r_cand);
+                if (lb1 >= tau_thresh)
+                {
+                    telem->level3_annular_pruned++;
+                    continue;
+                }
+
+                if (dcc_home > 0.0)
+                {
+                    double diff_home = fabs(dcc_home - r_cand);
+                    if (diff_home - r_home >= tau_thresh)
+                    {
+                        telem->level1_clusters_pruned++;
+                        continue;
+                    }
+                }
+
+                if (config->use_reciprocal && knn_heap_contains(heap, (int)cand_id))
+                {
+                    telem->reciprocal_reused++;
+                    continue;
+                }
+
+                const void *cand_data = NULL;
+                if (model->dataset_buffer != NULL)
+                {
+                    cand_data = (const char *)model->dataset_buffer +
+                        (size_t)cand_id * frame_bytes;
+                }
+                else
+                {
+                    void *dst_slot = (char *)cand_buffer +
+                        (size_t)(*batch_count) * frame_bytes;
+                    if (knn_reader_read_frame(reader, cand_id, dst_slot) != 0)
+                    {
+                        continue;
+                    }
+                    cand_data = dst_slot;
+                }
+
+                batch_cand_ids[*batch_count] = cand_id;
+                batch_ptrs[*batch_count] = cand_data;
+                (*batch_count)++;
+
+                if (*batch_count == 4)
+                {
+                    double dists[4];
+                    if (model->is_double)
+                    {
+                        framedist_batch_1x4_double(
+                            (const double *)query_data,
+                            (const double *const *)batch_ptrs,
+                            dists, frame_elem);
+                    }
+                    else
+                    {
+                        framedist_batch_1x4_float(
+                            (const float *)query_data,
+                            (const float *const *)batch_ptrs,
+                            dists, frame_elem);
+                    }
+                    telem->framedist_calls += 4;
+                    for (int b_idx = 0; b_idx < 4; b_idx++)
+                    {
+                        record_neighbor_and_reciprocal(
+                            query_id, batch_cand_ids[b_idx], dists[b_idx],
+                            config, model, heap, all_heaps
+#ifdef _OPENMP
+                            , bucket_locks
+#endif
+                        );
+                    } // for (int b_idx = 0; b_idx < 4; b_idx++)
+                    *batch_count = 0;
+                }
+            } // while (pass_mask)
+        } // while (left_b >= 0 || right_b < num_b)
+
+        if (*batch_count > 0)
+        {
+            double dists[4];
+            if (model->is_double)
+            {
+                framedist_batch_double(
+                    (const double *)query_data,
+                    (const double *const *)batch_ptrs,
+                    *batch_count, dists, frame_elem);
+            }
+            else
+            {
+                framedist_batch_float(
+                    (const float *)query_data,
+                    (const float *const *)batch_ptrs,
+                    *batch_count, dists, frame_elem);
+            }
+            telem->framedist_calls += (uint64_t)(*batch_count);
+            for (int b_idx = 0; b_idx < *batch_count; b_idx++)
+            {
+                record_neighbor_and_reciprocal(
+                    query_id, batch_cand_ids[b_idx], dists[b_idx],
+                    config, model, heap, all_heaps
+#ifdef _OPENMP
+                    , bucket_locks
+#endif
+                );
+            }
+            *batch_count = 0;
+        }
+
+        return;
+    } // if (pq_active)
 
     if (rq8_active && cl->rq8_transposed != NULL && cl->num_rq8_blocks > 0)
     {

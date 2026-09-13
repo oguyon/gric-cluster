@@ -136,7 +136,8 @@ static uint64_t knn_rq8_sidecar_fingerprint(
     }
 
     hash = knn_hash_bytes_u64(hash, &model->num_clusters, sizeof(model->num_clusters));
-    hash = knn_hash_bytes_u64(hash, &model->total_dataset_frames, sizeof(model->total_dataset_frames));
+    hash = knn_hash_bytes_u64(
+        hash, &model->total_dataset_frames, sizeof(model->total_dataset_frames));
     hash = knn_hash_bytes_u64(hash, &model->frame_elements, sizeof(model->frame_elements));
     hash = knn_hash_bytes_u64(hash, &model->is_double, sizeof(model->is_double));
 
@@ -1112,7 +1113,8 @@ int knn_model_build_or_load_rq8(
             loaded_fingerprint != expected_fingerprint)
         {
             fprintf(stderr,
-                    "Error: RQ8 sidecar mismatch (loaded %ld frames, dim %ld, fingerprint 0x%016llx; expected %ld, %ld, 0x%016llx)\n",
+                    "Error: RQ8 sidecar mismatch (loaded %ld frames, dim %ld, "
+                    "fingerprint 0x%016llx; expected %ld, %ld, 0x%016llx)\n",
                     loaded_frames, model->rq8_params.dim,
                     (unsigned long long)loaded_fingerprint, N, dim,
                     (unsigned long long)expected_fingerprint);
@@ -1390,3 +1392,365 @@ int knn_model_cache_dataset(
 
     return 0;
 }
+
+/**
+ * knn_model_build_transposed_pq() - Build cluster-local transposed PQ FastScan blocks.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_transposed_pq(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (model == NULL || config == NULL || !config->use_pq ||
+        model->pq_dataset_buffer == NULL || model->pq_codebook == NULL)
+    {
+        return 0;
+    }
+
+    int M = model->num_clusters;
+    int m = model->pq_codebook->m;
+    if (M <= 0 || m <= 0)
+    {
+        return 0;
+    }
+
+    size_t total_transposed_bytes = 0;
+    if (model->pq_transposed_buffer != NULL)
+    {
+        free(model->pq_transposed_buffer);
+        model->pq_transposed_buffer = NULL;
+    }
+
+    for (int c = 0; c < M; c++)
+    {
+        int num_m = model->clusters[c].num_members;
+        int n_blocks = (num_m + PQ_FASTSCAN_BLOCK_SIZE - 1) / PQ_FASTSCAN_BLOCK_SIZE;
+        model->clusters[c].pq_transposed = NULL;
+        model->clusters[c].num_pq_blocks = n_blocks;
+        total_transposed_bytes += (size_t)n_blocks * (size_t)m * PQ_FASTSCAN_BLOCK_SIZE;
+    } // for (int c = 0; c < M; c++)
+
+    if (total_transposed_bytes == 0)
+    {
+        return 0;
+    }
+
+    model->pq_transposed_buffer = (uint8_t *)malloc(total_transposed_bytes);
+    if (model->pq_transposed_buffer == NULL)
+    {
+        return -1;
+    }
+
+    size_t cur_offset = 0;
+    uint8_t *temp_row_codes = (uint8_t *)malloc((size_t)PQ_FASTSCAN_BLOCK_SIZE * (size_t)m);
+    if (temp_row_codes == NULL)
+    {
+        free(model->pq_transposed_buffer);
+        model->pq_transposed_buffer = NULL;
+        return -1;
+    }
+
+    for (int c = 0; c < M; c++)
+    {
+        int n_blocks = model->clusters[c].num_pq_blocks;
+        if (n_blocks <= 0)
+        {
+            continue;
+        }
+
+        uint8_t *cl_buf = model->pq_transposed_buffer + cur_offset;
+        model->clusters[c].pq_transposed = cl_buf;
+        cur_offset += (size_t)n_blocks * (size_t)m * PQ_FASTSCAN_BLOCK_SIZE;
+
+        int num_m = model->clusters[c].num_members;
+        for (int b = 0; b < n_blocks; b++)
+        {
+            int m_start = b * PQ_FASTSCAN_BLOCK_SIZE;
+            int m_count = num_m - m_start;
+            if (m_count > PQ_FASTSCAN_BLOCK_SIZE)
+            {
+                m_count = PQ_FASTSCAN_BLOCK_SIZE;
+            }
+
+            for (int i = 0; i < PQ_FASTSCAN_BLOCK_SIZE; i++)
+            {
+                uint8_t *dst_code = temp_row_codes + i * m;
+                if (i < m_count)
+                {
+                    long cand_id = (long)model->clusters[c].members[m_start + i].frame_id;
+                    const uint8_t *src_code = model->pq_dataset_buffer + cand_id * m;
+                    memcpy(dst_code, src_code, (size_t)m);
+                }
+                else
+                {
+                    memset(dst_code, 0, (size_t)m);
+                }
+            } // for (int i = 0; i < PQ_FASTSCAN_BLOCK_SIZE; i++)
+
+            uint8_t *dst_block = cl_buf + (size_t)b * (size_t)m * PQ_FASTSCAN_BLOCK_SIZE;
+            pq_transpose_block_codes(temp_row_codes, dst_block, m, m_count);
+        } // for (int b = 0; b < n_blocks; b++)
+    } // for (int c = 0; c < M; c++)
+
+    free(temp_row_codes);
+
+    if (config->verbose_level >= 1)
+    {
+        double mb = (double)total_transposed_bytes / (1024.0 * 1024.0);
+        printf("  [FASTSCAN] Built PQ SIMD transposed blocks (%s): %.2f MB\n",
+               pq_get_simd_mode_str(), mb);
+    }
+
+    return 0;
+}
+
+/**
+ * knn_model_build_or_load_pq() - Build or load PQ codebook and codes into KnnModel.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_or_load_pq(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (model == NULL || config == NULL || !config->use_pq)
+    {
+        return 0;
+    }
+
+    long N = model->total_dataset_frames;
+    long dim = model->frame_elements;
+    if (N <= 0 || dim <= 0)
+    {
+        return 0;
+    }
+
+    /* Path 1: Load from sidecar */
+    if (config->pq_load_path != NULL)
+    {
+        long loaded_frames = 0;
+        if (pq_load_sidecar(config->pq_load_path, &model->pq_codebook,
+                            &model->pq_transposed_buffer, &loaded_frames) != 0)
+        {
+            fprintf(stderr, "Error: Failed to load PQ sidecar '%s'\n", config->pq_load_path);
+            return -1;
+        }
+
+        if (loaded_frames != N || model->pq_codebook->dim != dim)
+        {
+            fprintf(stderr, "Error: PQ sidecar dimension mismatch (%ldx%ld vs %ldx%ld)\n",
+                    loaded_frames, model->pq_codebook->dim, N, dim);
+            return -1;
+        }
+
+        /* Re-map transposed pointers to clusters */
+        int M = model->num_clusters;
+        int m = model->pq_codebook->m;
+        size_t cur_offset = 0;
+        for (int c = 0; c < M; c++)
+        {
+            int num_m = model->clusters[c].num_members;
+            int n_blocks = (num_m + PQ_FASTSCAN_BLOCK_SIZE - 1) / PQ_FASTSCAN_BLOCK_SIZE;
+            model->clusters[c].num_pq_blocks = n_blocks;
+            model->clusters[c].pq_transposed = (n_blocks > 0) ?
+                (model->pq_transposed_buffer + cur_offset) : NULL;
+            cur_offset += (size_t)n_blocks * (size_t)m * PQ_FASTSCAN_BLOCK_SIZE;
+        } // for (int c = 0; c < M; c++)
+
+        if (config->verbose_level >= 1)
+        {
+            printf("Loaded PQ sidecar: %ld frames, m=%d, d_sub=%d, K=%d\n",
+                   N, m, model->pq_codebook->d_sub, model->pq_codebook->k_centroids);
+        }
+        return 0;
+    } // if (config->pq_load_path != NULL)
+
+    /* Path 2: Train codebook and quantize */
+    int m = config->pq_m;
+    if (m <= 0)
+    {
+        if (dim >= 64 && (dim % 16 == 0))
+        {
+            m = 16;
+        }
+        else if (dim >= 32 && (dim % 8 == 0))
+        {
+            m = 8;
+        }
+        else if (dim >= 16 && (dim % 4 == 0))
+        {
+            m = (int)(dim / 4);
+        }
+        else if (dim % 2 == 0)
+        {
+            m = (int)(dim / 2);
+        }
+        else
+        {
+            m = 1;
+        }
+    }
+
+    if ((dim % m) != 0)
+    {
+        fprintf(stderr, "Error: PQ subquantizers m=%d does not divide dim=%ld\n", m, dim);
+        return -1;
+    }
+
+    int K = (config->pq_bits == 8) ? 256 : 16;
+    model->pq_codebook = pq_codebook_alloc(dim, m, K);
+    if (model->pq_codebook == NULL)
+    {
+        return -1;
+    }
+
+    /* Collect training sample */
+    long num_train = (N < 1000) ? N : 1000;
+    float *train_data = (float *)malloc((size_t)num_train * (size_t)dim * sizeof(float));
+    if (train_data == NULL)
+    {
+        return -1;
+    }
+
+    if (model->dataset_buffer != NULL)
+    {
+        for (long i = 0; i < num_train; i++)
+        {
+            if (model->is_double)
+            {
+                const double *src = (const double *)model->dataset_buffer + i * dim;
+                for (long d = 0; d < dim; d++)
+                {
+                    train_data[i * dim + d] = (float)src[d];
+                }
+            }
+            else
+            {
+                const float *src = (const float *)model->dataset_buffer + i * dim;
+                memcpy(train_data + i * dim, src, (size_t)dim * sizeof(float));
+            }
+        } // for (long i = 0; i < num_train; i++)
+    }
+    else
+    {
+        KnnFrameReader reader;
+        if (knn_reader_open(&reader, config->input_data_path, N,
+                            model->frame_width, model->frame_height, model->is_double) != 0)
+        {
+            free(train_data);
+            return -1;
+        }
+        void *tmp_frame = malloc((size_t)dim * (model->is_double ? sizeof(double) : sizeof(float)));
+        for (long i = 0; i < num_train; i++)
+        {
+            if (knn_reader_read_frame(&reader, i, tmp_frame) == 0)
+            {
+                if (model->is_double)
+                {
+                    const double *dptr = (const double *)tmp_frame;
+                    for (long d = 0; d < dim; d++)
+                    {
+                        train_data[i * dim + d] = (float)dptr[d];
+                    }
+                }
+                else
+                {
+                    memcpy(train_data + i * dim, tmp_frame, (size_t)dim * sizeof(float));
+                }
+            }
+        } // for (long i = 0; i < num_train; i++)
+        free(tmp_frame);
+        knn_reader_close(&reader);
+    }
+
+    if (config->verbose_level >= 1)
+    {
+        printf("Training PQ codebook on %ld sample frames (m=%d, d_sub=%d, K=%d)...\n",
+               num_train, m, model->pq_codebook->d_sub, K);
+    }
+
+    if (pq_train_codebook(model->pq_codebook, train_data, num_train, 15) != 0)
+    {
+        free(train_data);
+        return -1;
+    }
+    free(train_data);
+
+    /* Allocate and quantize full dataset */
+    model->pq_dataset_buffer = (uint8_t *)malloc((size_t)N * (size_t)m);
+    if (model->pq_dataset_buffer == NULL)
+    {
+        return -1;
+    }
+
+    if (model->dataset_buffer != NULL)
+    {
+        for (long i = 0; i < N; i++)
+        {
+            uint8_t *dst = model->pq_dataset_buffer + i * m;
+            if (model->is_double)
+            {
+                const double *src = (const double *)model->dataset_buffer + i * dim;
+                pq_quantize_frame_double(src, dst, model->pq_codebook);
+            }
+            else
+            {
+                const float *src = (const float *)model->dataset_buffer + i * dim;
+                pq_quantize_frame_float(src, dst, model->pq_codebook);
+            }
+        } // for (long i = 0; i < N; i++)
+    }
+    else
+    {
+        KnnFrameReader reader;
+        if (knn_reader_open(&reader, config->input_data_path, N,
+                            model->frame_width, model->frame_height, model->is_double) != 0)
+        {
+            return -1;
+        }
+        void *tmp_frame = malloc((size_t)dim * (model->is_double ? sizeof(double) : sizeof(float)));
+        for (long i = 0; i < N; i++)
+        {
+            if (knn_reader_read_frame(&reader, i, tmp_frame) == 0)
+            {
+                uint8_t *dst = model->pq_dataset_buffer + i * m;
+                if (model->is_double)
+                {
+                    pq_quantize_frame_double((const double *)tmp_frame, dst, model->pq_codebook);
+                }
+                else
+                {
+                    pq_quantize_frame_float((const float *)tmp_frame, dst, model->pq_codebook);
+                }
+            }
+        } // for (long i = 0; i < N; i++)
+        free(tmp_frame);
+        knn_reader_close(&reader);
+    }
+
+    if (knn_model_build_transposed_pq(model, config) != 0)
+    {
+        return -1;
+    }
+
+    if (config->pq_save_path != NULL)
+    {
+        if (pq_save_sidecar(config->pq_save_path, model->pq_codebook,
+                            model->pq_transposed_buffer, N) != 0)
+        {
+            fprintf(stderr, "Warning: Failed to save PQ sidecar to '%s'\n", config->pq_save_path);
+        }
+        else if (config->verbose_level >= 1)
+        {
+            printf("Saved PQ sidecar to '%s'\n", config->pq_save_path);
+        }
+    }
+
+    return 0;
+}
+

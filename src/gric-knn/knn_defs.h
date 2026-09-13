@@ -8,6 +8,7 @@
 
 #include "scalar_quant.h"
 #include "residual_quant.h"
+#include "product_quant.h"
 #include "gric_profile.h"
 #include <math.h>
 #include <stdbool.h>
@@ -44,6 +45,8 @@ typedef struct
     int         num_sq16_blocks; /**< Number of 32-candidate FastScan blocks */
     int8_t     *rq8_transposed;  /**< [num_rq8_blocks * dim * 32] RQ8 FastScan coords */
     int         num_rq8_blocks;  /**< Number of 32-candidate FastScan blocks for RQ8 */
+    uint8_t    *pq_transposed;   /**< [num_pq_blocks * m * 32] PQ FastScan codes */
+    int         num_pq_blocks;   /**< Number of 32-candidate FastScan blocks for PQ */
 } KnnCluster;
 
 /** Single nearest neighbor record */
@@ -100,6 +103,12 @@ typedef struct
     char           *rq8_save_path;     /**< Optional path to save .rq8 sidecar file */
     char           *rq8_load_path;     /**< Optional path to load .rq8 sidecar file */
     int             rq8_approx;        /**< 1 to relax lower bounds with epsilon */
+    int             use_pq;            /**< 1 to enable Product Quantization FastScan filtering */
+    int             pq_m;              /**< Number of subquantizers (0 = auto dim/4) */
+    int             pq_bits;           /**< Codebook bit depth: 4 (FastScan) or 8 */
+    char           *pq_save_path;      /**< Optional path to save .pq sidecar file */
+    char           *pq_load_path;      /**< Optional path to load .pq sidecar file */
+    int             pq_rerank;         /**< Number of top candidates to re-evaluate */
     int             use_memo;          /**< 1 to enable memoization/deduplication */
     int             use_batch_dist;    /**< 1 to enable multi-vector SIMD batch distance */
     const char     *prof_filename;     /**< Optional path to .gricprof file */
@@ -142,6 +151,8 @@ typedef struct
     uint64_t rq8_evaluations;
     uint64_t rq8_members_pruned;
     uint64_t rq8_graph_pruned;
+    uint64_t pq_evaluations;
+    uint64_t pq_members_pruned;
     uint64_t clusters_graph_evaluated;
     uint64_t two_hop_evaluations;
     uint64_t two_hop_pruned;
@@ -188,6 +199,9 @@ typedef struct
     int8_t          *rq8_dataset_buffer;     /**< [N x D] resident 8-bit quantized residuals */
     RQ8Params        rq8_params;             /**< Calibration parameters for RQ8 */
     int8_t          *rq8_transposed_buffer;  /**< Contiguous memory for RQ8 FastScan blocks */
+    PQCodebook      *pq_codebook;            /**< Trained PQ codebook */
+    uint8_t         *pq_dataset_buffer;      /**< [N x m] resident quantized codes */
+    uint8_t         *pq_transposed_buffer;   /**< Contiguous memory for PQ FastScan blocks */
     int              cluster_graph_k;     /**< Number of neighbors per cluster anchor */
     int             *cluster_graph_adj;   /**< [M x cluster_graph_k] neighbor cluster IDs */
     double           avg_cluster_size;    /**< Mean number of members per cluster */
@@ -223,6 +237,8 @@ typedef struct
     const int16_t  *query_sq16; /**< Quantized 16-bit representation of active query frame */
     int16_t        *query_rq8;  /**< Quantized int16 representation of query residual */
     int             query_rq8_clipped; /**< 1 when query residual quantization saturated */
+    uint8_t        *query_pq_lut; /**< Precomputed query distance LUT for PQ FastScan */
+    PQLookupTable   query_pq_table; /**< Active query LUT state */
     uint32_t       *rep_tags;   /**< Per-unique representative query epoch tracker */
     float          *rep_dists;  /**< Per-unique representative cached distance to query */
 } KnnVisitedTracker;
