@@ -63,7 +63,7 @@ int wasm_knn_run_search(
     WasmHandle *h = (WasmHandle *)handle;
     if (h == NULL || dataset_points == NULL || out_indices == NULL ||
         out_distances == NULL || out_telemetry == NULL || total_frames <= 0 ||
-        ndim <= 0 || k <= 0)
+        ndim <= 0 || k <= 0 || ndim != h->ndim)
     {
         return -1;
     }
