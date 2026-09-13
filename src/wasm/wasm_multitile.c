@@ -177,6 +177,15 @@ void *wasm_multitile_init(
 
     /* Reusable source frame */
     h->src_frame.data = calloc(ndim, sizeof(double));
+    if (!h->src_frame.data)
+    {
+        frame_scatter_free(h->scatter_buf, h->ndim);
+        free(h->scatter_buf);
+        multitile_free(h->mts);
+        tilemap_free(h->tile_map);
+        free(h);
+        return NULL;
+    }
     h->src_frame.is_double = 1;
     h->src_frame.width = ndim;
     h->src_frame.height = 1;
