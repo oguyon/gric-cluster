@@ -92,6 +92,7 @@ link_directories(
 # Sources
 set(CLUSTER_SRCS
     src/gric-cluster/core/main.c
+    src/gric-cluster/core/cluster_cli.c
     src/gric-cluster/core/cluster_core.c
     src/gric-cluster/core/cluster_step.c
     src/gric-cluster/core/cluster_mgmt.c
@@ -274,11 +275,17 @@ target_include_directories(gric-server PRIVATE src/gric-server src src/gric-clus
 # gric-knn tool
 add_executable(gric-knn
     src/gric-knn/main.c
+    src/gric-knn/knn_cli.c
     src/gric-knn/knn_heap.c
     src/gric-knn/knn_loader.c
+    src/gric-knn/knn_parser.c
+    src/gric-knn/knn_cache.c
     src/gric-knn/knn_tree.c
     src/gric-knn/knn_reader.c
     src/gric-knn/knn_engine.c
+    src/gric-knn/knn_pruning.c
+    src/gric-knn/knn_cluster_search.c
+    src/gric-knn/knn_cross_dataset.c
     src/gric-knn/knn_writer.c
     src/gric-cluster/math/framedistance.c
     src/shared/cluster_locator.c
