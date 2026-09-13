@@ -39,6 +39,31 @@
 #define GRIC_BUILD_DATE "unknown"
 #endif
 
+/* Telemetry layout indices */
+enum
+{
+    TELEM_FRAMEDIST_CALLS = 0,
+    TELEM_FRAMEDIST_SAMPLE,
+    TELEM_FRAMEDIST_INTERCLUSTER,
+    TELEM_CLUSTERS_PRUNED,
+    TELEM_TOTAL_FRAMES,
+    TELEM_LAST_FRAME_DISTS,
+    TELEM_LAST_FRAME_DFC,
+    TELEM_LAST_FRAME_DCC,
+    TELEM_LAST_ASSIGNMENT_DIST,
+    TELEM_NUM_NEW_CLUSTERS,
+    TELEM_PRED_ATTEMPTS,
+    TELEM_PRED_HITS,
+    TELEM_ENTROPY_GATED,
+    TELEM_ENTROPY_EVALUATED,
+    TELEM_ENTROPY_SUM_INITIAL,
+    TELEM_ENTROPY_MAX_INITIAL,
+    TELEM_ENTROPY_LAST_INITIAL,
+    TELEM_DCC_ENTRIES_POPULATED,
+    TELEM_DCC_PAIRS_TOTAL,
+    TELEM_COUNT
+};
+
 /**
  * struct WasmHandle - Bundled single-tile state for the WASM API.
  */
@@ -80,7 +105,7 @@ extern volatile sig_atomic_t stop_requested;
 double get_dist(
     Frame         *a,
     Frame         *b,
-    long           cluster_idx,
+    int            cluster_idx,
     double         cluster_prob,
     double         current_gprob,
     ClusterConfig *config,

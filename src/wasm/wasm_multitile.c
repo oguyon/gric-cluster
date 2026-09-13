@@ -6,37 +6,6 @@
 #include "wasm_internal.h"
 #include "tuple_retrieval.h"
 
-
-#include "tile_state.h"
-#include "tile_map.h"
-#include "frame_scatter.h"
-#include "tuple_retrieval.h"
-
-/**
- * struct WasmMultiTileHandle - Bundled state for
- *        multi-tile WASM API.
- * @config:           Global clustering configuration.
- * @mts:              Multi-tile state (per-tile states,
- *                    tuple history, CPT, etc.).
- * @tile_map:         Axis-decomposition tile map.
- * @scatter_buf:      Per-tile scatter sub-frames.
- * @ndim:             Number of dimensions (2 or 3).
- * @maxnbfr:          Max frames to track.
- * @current_frame_id: Monotonic frame counter.
- * @src_frame:        Reusable source frame.
- */
-typedef struct
-{
-    ClusterConfig   config;
-    MultiTileState *mts;
-    TileMap        *tile_map;
-    Frame          *scatter_buf;
-    int             ndim;
-    long            maxnbfr;
-    int             current_frame_id;
-    Frame           src_frame;
-} WasmMultiTileHandle;
-
 /**
  * tilemap_create_axis_decomposition() - Create a TileMap
  * that decomposes N-dim input into N independent 1D tiles.

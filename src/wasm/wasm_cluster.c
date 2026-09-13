@@ -10,34 +10,6 @@
  * ------------------------------------------------------- */
 volatile sig_atomic_t stop_requested = 0;
 
-/**
- * struct WasmHandle - Bundled state for the WASM API.
- * @config:              Algorithm configuration.
- * @state:               Mutable clustering runtime state.
- * @frame:               Reusable Frame for current input.
- * @ndim:                Dimensionality (2 or 3).
- * @maxnbfr:             Maximum frames to track.
- * @current_frame_id:    Monotonic frame counter.
- * @prev_assigned:       Previous cluster assignment.
- * @temp_indices:        Scratch: measured cluster indices.
- * @temp_dists:          Scratch: measured distances.
- * @sorting_candidates:  Scratch: candidate sort buffer.
- */
-typedef struct
-{
-    ClusterConfig  config;
-    ClusterState   state;
-    Frame          frame;
-    int            ndim;
-    long           maxnbfr;
-    int            current_frame_id;
-    int            prev_assigned;
-    int            user_maxcl;
-    int           *temp_indices;
-    double        *temp_dists;
-    Candidate     *sorting_candidates;
-} WasmHandle;
-
 /* -------------------------------------------------------
  * get_dist() — must match cluster_core.h signature.
  * Called by measure_distance_to_cluster.c and
@@ -727,30 +699,6 @@ void wasm_cluster_get_transition_matrix(
     }
 }
 
-/* Telemetry layout indices */
-enum
-{
-    TELEM_FRAMEDIST_CALLS = 0,
-    TELEM_FRAMEDIST_SAMPLE,
-    TELEM_FRAMEDIST_INTERCLUSTER,
-    TELEM_CLUSTERS_PRUNED,
-    TELEM_TOTAL_FRAMES,
-    TELEM_LAST_FRAME_DISTS,
-    TELEM_LAST_FRAME_DFC,
-    TELEM_LAST_FRAME_DCC,
-    TELEM_LAST_ASSIGNMENT_DIST,
-    TELEM_NUM_NEW_CLUSTERS,
-    TELEM_PRED_ATTEMPTS,
-    TELEM_PRED_HITS,
-    TELEM_ENTROPY_GATED,
-    TELEM_ENTROPY_EVALUATED,
-    TELEM_ENTROPY_SUM_INITIAL,
-    TELEM_ENTROPY_MAX_INITIAL,
-    TELEM_ENTROPY_LAST_INITIAL,
-    TELEM_DCC_ENTRIES_POPULATED,
-    TELEM_DCC_PAIRS_TOTAL,
-    TELEM_COUNT
-};
 
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_get_telemetry(
