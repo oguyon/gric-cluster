@@ -138,6 +138,7 @@ set(CLUSTER_SRCS
     src/shared/gric_bin_io.c
     src/shared/cluster_locator.c
     src/shared/scalar_quant.c
+    src/shared/residual_quant.c
     src/shared/quant_memo.c
     src/shared/gric_profile.c
 )
@@ -292,6 +293,7 @@ add_executable(gric-knn
     src/shared/cli_colors.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
+    src/shared/residual_quant.c
     src/shared/quant_memo.c
     src/shared/gric_profile.c
 )
@@ -368,6 +370,7 @@ add_executable(gric-probe
     src/shared/cluster_locator.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
+    src/shared/residual_quant.c
     src/shared/cli_colors.c
 )
 target_include_directories(gric-probe PRIVATE src/gric-probe src/shared src)
@@ -495,6 +498,18 @@ add_test(NAME test_knn_spiral_sq16_load
             -o /tmp/ctest_knn_spiral_sq16_load.txt)
 set_tests_properties(test_knn_spiral_sq16_load PROPERTIES DEPENDS test_knn_spiral_sq16)
 
+add_test(NAME test_knn_spiral_rq8
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_sq16_out
+            -k 10 -dtmin 5 -no-reciprocal -rq8 -rq8-save /tmp/ctest_spiral.rq8
+            -o /tmp/ctest_knn_spiral_rq8.txt)
+set_tests_properties(test_knn_spiral_rq8 PROPERTIES DEPENDS test_spiral_clustering_sq16)
+
+add_test(NAME test_knn_spiral_rq8_load
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_sq16_out
+            -k 10 -dtmin 5 -no-reciprocal -rq8 -rq8-load /tmp/ctest_spiral.rq8
+            -o /tmp/ctest_knn_spiral_rq8_load.txt)
+set_tests_properties(test_knn_spiral_rq8_load PROPERTIES DEPENDS test_knn_spiral_rq8)
+
 if (CFITSIO_FOUND)
     add_test(NAME test_bouncing_balls_single_gen
         COMMAND gric-gen-balls -n 1 -r 5.0 -W 32 -H 32 -f 500 -s 42 /tmp/ctest_balls_1.fits)
@@ -577,6 +592,15 @@ target_link_libraries(test_scalar_quant m)
 add_test(NAME test_scalar_quant
     COMMAND test_scalar_quant)
 
+add_executable(test_residual_quant
+    tests/test_residual_quant.c
+    src/shared/residual_quant.c
+)
+target_include_directories(test_residual_quant PRIVATE src/shared)
+target_link_libraries(test_residual_quant m)
+add_test(NAME test_residual_quant
+    COMMAND test_residual_quant)
+
 add_executable(test_gric_probe
     tests/test_gric_probe.c
     src/gric-probe/probe_engine.c
@@ -585,6 +609,7 @@ add_executable(test_gric_probe
     src/shared/cluster_locator.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
+    src/shared/residual_quant.c
     src/shared/cli_colors.c
 )
 target_include_directories(test_gric_probe PRIVATE src/gric-probe src/shared src)
