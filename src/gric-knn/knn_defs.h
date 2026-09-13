@@ -222,6 +222,7 @@ typedef struct
     const uint8_t  *query_sq8;  /**< Quantized 8-bit representation of active query frame */
     const int16_t  *query_sq16; /**< Quantized 16-bit representation of active query frame */
     int16_t        *query_rq8;  /**< Quantized int16 representation of query residual */
+    int             query_rq8_clipped; /**< 1 when query residual quantization saturated */
     uint32_t       *rep_tags;   /**< Per-unique representative query epoch tracker */
     float          *rep_dists;  /**< Per-unique representative cached distance to query */
 } KnnVisitedTracker;

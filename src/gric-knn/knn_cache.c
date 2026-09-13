@@ -92,6 +92,76 @@ static int knn_alloc_rq8_transposed_buffer(
     return (*buffer != NULL) ? 0 : -1;
 }
 
+static uint64_t knn_hash_bytes_u64(
+    uint64_t      hash,
+    const void   *data,
+    size_t        len)
+{
+    const unsigned char *bytes = (const unsigned char *)data;
+    for (size_t i = 0; i < len; i++)
+    {
+        hash ^= (uint64_t)bytes[i];
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+static double knn_model_max_cluster_radius(
+    const KnnModel *model)
+{
+    double max_radius = (model != NULL) ? model->model_rlim : 0.0;
+    if (model == NULL || model->clusters == NULL)
+    {
+        return max_radius;
+    }
+
+    for (int c = 0; c < model->num_clusters; c++)
+    {
+        double radius = (double)model->clusters[c].radius;
+        if (radius > max_radius)
+        {
+            max_radius = radius;
+        }
+    }
+    return max_radius;
+}
+
+static uint64_t knn_rq8_sidecar_fingerprint(
+    const KnnModel *model)
+{
+    uint64_t hash = 1469598103934665603ULL;
+    if (model == NULL || model->clusters == NULL || model->frame_cluster_map == NULL)
+    {
+        return hash;
+    }
+
+    hash = knn_hash_bytes_u64(hash, &model->num_clusters, sizeof(model->num_clusters));
+    hash = knn_hash_bytes_u64(hash, &model->total_dataset_frames, sizeof(model->total_dataset_frames));
+    hash = knn_hash_bytes_u64(hash, &model->frame_elements, sizeof(model->frame_elements));
+    hash = knn_hash_bytes_u64(hash, &model->is_double, sizeof(model->is_double));
+
+    hash = knn_hash_bytes_u64(
+        hash, model->frame_cluster_map,
+        (size_t)model->total_dataset_frames * sizeof(int)
+    );
+
+    size_t anchor_elem_size = model->is_double ? sizeof(double) : sizeof(float);
+    for (int c = 0; c < model->num_clusters; c++)
+    {
+        if (model->clusters[c].anchor_data == NULL)
+        {
+            continue;
+        }
+        hash = knn_hash_bytes_u64(hash, &c, sizeof(c));
+        hash = knn_hash_bytes_u64(
+            hash, model->clusters[c].anchor_data,
+            (size_t)model->frame_elements * anchor_elem_size
+        );
+    }
+
+    return hash;
+}
+
 /**
  * knn_model_build_or_load_sq8() - Build or load quantized SQ8 dataset buffer into KnnModel.
  * @model:  Pointer to initialized KnnModel.
@@ -1005,7 +1075,7 @@ int knn_model_build_or_load_rq8(
     KnnModel        *model,
     const KnnConfig *config)
 {
-    if (!config->use_rq8 || model == NULL || config == NULL)
+    if (model == NULL || config == NULL || !config->use_rq8)
     {
         return 0;
     }
@@ -1017,29 +1087,35 @@ int knn_model_build_or_load_rq8(
         return 0;
     }
 
-    double eff_rlim = (config->rlim_cutoff > 0.0) ? config->rlim_cutoff : model->model_rlim;
+    double eff_rlim = knn_model_max_cluster_radius(model);
     if (eff_rlim <= 0.0)
     {
         eff_rlim = 1.0;
     }
     rq8_init_params(&model->rq8_params, (float)eff_rlim, dim);
+    uint64_t expected_fingerprint = knn_rq8_sidecar_fingerprint(model);
 
     // Path 1: Load precomputed sidecar file if path specified
     if (config->rq8_load_path != NULL)
     {
         long loaded_frames = 0;
+        uint64_t loaded_fingerprint = 0;
         if (rq8_load_sidecar(config->rq8_load_path, &model->rq8_params,
-                             &model->rq8_dataset_buffer, &loaded_frames) != 0)
+                             &model->rq8_dataset_buffer, &loaded_frames,
+                             &loaded_fingerprint) != 0)
         {
             fprintf(stderr, "Error: Failed to load RQ8 sidecar file '%s'\n",
                     config->rq8_load_path);
             return -1;
         }
-        if (loaded_frames != N || model->rq8_params.dim != dim)
+        if (loaded_frames != N || model->rq8_params.dim != dim ||
+            loaded_fingerprint != expected_fingerprint)
         {
             fprintf(stderr,
-                    "Error: RQ8 sidecar mismatch (loaded %ld frames, dim %ld; expected %ld, %ld)\n",
-                    loaded_frames, model->rq8_params.dim, N, dim);
+                    "Error: RQ8 sidecar mismatch (loaded %ld frames, dim %ld, fingerprint 0x%016llx; expected %ld, %ld, 0x%016llx)\n",
+                    loaded_frames, model->rq8_params.dim,
+                    (unsigned long long)loaded_fingerprint, N, dim,
+                    (unsigned long long)expected_fingerprint);
             free(model->rq8_dataset_buffer);
             model->rq8_dataset_buffer = NULL;
             return -1;
@@ -1094,8 +1170,21 @@ int knn_model_build_or_load_rq8(
     {
         // Reader fallback for non-cached dataset
         KnnFrameReader reader;
-        if (knn_reader_open(&reader, config->input_data_path, model->is_fits_input,
-                            model->frame_width, model->frame_height, model->is_double) != 0)
+        int open_res = -1;
+        if (config->memory_data != NULL)
+        {
+            open_res = knn_reader_open_memory(
+                &reader, config->memory_data, N, dim, model->is_double
+            );
+        }
+        else
+        {
+            open_res = knn_reader_open(
+                &reader, config->input_data_path, N,
+                model->frame_width, model->frame_height, model->is_double
+            );
+        }
+        if (open_res != 0)
         {
             free(model->rq8_dataset_buffer);
             model->rq8_dataset_buffer = NULL;
@@ -1114,26 +1203,32 @@ int knn_model_build_or_load_rq8(
 
         for (long i = 0; i < N; i++)
         {
-            if (knn_reader_read_frame(&reader, i, frame_buf) == 0)
+            if (knn_reader_read_frame(&reader, i, frame_buf) != 0)
             {
-                int c = model->frame_cluster_map ? model->frame_cluster_map[i] : 0;
-                if (c < 0 || c >= model->num_clusters)
-                {
-                    c = 0;
-                }
-                const void *anchor = model->clusters[c].anchor_data;
-                int8_t *dst = model->rq8_dataset_buffer + (size_t)i * (size_t)dim;
+                free(frame_buf);
+                knn_reader_close(&reader);
+                free(model->rq8_dataset_buffer);
+                model->rq8_dataset_buffer = NULL;
+                return -1;
+            }
 
-                if (model->is_double)
-                {
-                    rq8_quantize_residual_double((const double *)frame_buf,
-                                                 (const double *)anchor, dst, &model->rq8_params);
-                }
-                else
-                {
-                    rq8_quantize_residual_float((const float *)frame_buf,
-                                                (const float *)anchor, dst, &model->rq8_params);
-                }
+            int c = model->frame_cluster_map ? model->frame_cluster_map[i] : 0;
+            if (c < 0 || c >= model->num_clusters)
+            {
+                c = 0;
+            }
+            const void *anchor = model->clusters[c].anchor_data;
+            int8_t *dst = model->rq8_dataset_buffer + (size_t)i * (size_t)dim;
+
+            if (model->is_double)
+            {
+                rq8_quantize_residual_double((const double *)frame_buf,
+                                             (const double *)anchor, dst, &model->rq8_params);
+            }
+            else
+            {
+                rq8_quantize_residual_float((const float *)frame_buf,
+                                            (const float *)anchor, dst, &model->rq8_params);
             }
         } // for (long i = 0; i < N; i++)
 
@@ -1152,7 +1247,7 @@ int knn_model_build_or_load_rq8(
     if (config->rq8_save_path != NULL)
     {
         if (rq8_save_sidecar(config->rq8_save_path, &model->rq8_params,
-                             model->rq8_dataset_buffer, N) == 0)
+                             model->rq8_dataset_buffer, N, expected_fingerprint) == 0)
         {
             if (config->verbose_level >= 1)
             {

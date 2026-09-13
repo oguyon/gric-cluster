@@ -2935,7 +2935,6 @@
         draw();
       });
     }
-
     // Auto-3D Dimension Optimization button
     const btnAuto3D = document.getElementById('btnHighDAutoPick');
     if (btnAuto3D) {
@@ -6757,6 +6756,7 @@
               direction: knnDirection,
               epsilon: knnEpsilon,
               rlim: knnRlim,
+              useRq8: (typeof knnUseRq8 !== 'undefined' && knnUseRq8),
               multiPivot: (typeof knnMvp !== 'undefined' && knnMvp)
             };
             const wasmRes = GricWasm.runKnn(config, pts);
@@ -6821,6 +6821,7 @@
             direction: knnDirection,
             epsilon: knnEpsilon,
             rlim: knnRlim,
+            useRq8: (typeof knnUseRq8 !== 'undefined' && knnUseRq8),
             multiPivot: (typeof knnMvp !== 'undefined' && knnMvp)
           };
 
@@ -7156,7 +7157,6 @@
       });
     }
 
-    let knnUseRq8 = true;
     const btnKnnSq8 = document.getElementById('btnKnnSq8');
     const btnKnnSq16 = document.getElementById('btnKnnSq16');
     const btnKnnRq8 = document.getElementById('btnKnnRq8');
@@ -7220,6 +7220,8 @@
         draw();
       });
     }
+
+    updateKnnQuantToggles();
 
     const btnKnnMemo = document.getElementById('btnKnnMemo');
     if (btnKnnMemo) {

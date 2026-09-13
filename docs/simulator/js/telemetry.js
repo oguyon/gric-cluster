@@ -1930,6 +1930,12 @@
         btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
         btnKnnSq16.classList.toggle('active', knnUseSq16);
       }
+      const btnKnnRq8 = document.getElementById('btnKnnRq8');
+      if (btnKnnRq8 && typeof knnUseRq8 !== 'undefined') {
+        btnKnnRq8.classList.toggle('toggle-active', knnUseRq8);
+        btnKnnRq8.classList.toggle('toggle-cyan', knnUseRq8);
+        btnKnnRq8.classList.toggle('active', knnUseRq8);
+      }
       const optBatchDistEl = document.getElementById('optBatchDist');
       if (optBatchDistEl && typeof clusterUseBatchDist !== 'undefined') {
         optBatchDistEl.classList.toggle('active', clusterUseBatchDist);
@@ -4344,4 +4350,3 @@
     window.updateSlotGenState = updateSlotGenState;
     window.stageDataset = stageDataset;
     window.updateDatasetStatusBadge = updateDatasetStatusBadge;
-

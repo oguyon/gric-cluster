@@ -4,6 +4,7 @@
  */
 
 #include "wasm_internal.h"
+#include "knn_cache.h"
 #include "knn_parser.h"
 
 
@@ -55,6 +56,7 @@ int wasm_knn_run_search(
     int           future_only,
     double        epsilon,
     double        rlim_cutoff,
+    int           use_rq8,
     int           use_multi_pivot,
     int          *out_indices,
     double       *out_distances,
@@ -235,6 +237,7 @@ int wasm_knn_run_search(
     config.epsilon = epsilon;
     config.rlim_cutoff = rlim_cutoff;
     config.memory_data = dataset_points;
+    config.use_rq8 = use_rq8 ? 1 : 0;
     config.use_multi_pivot = use_multi_pivot;
     config.use_reciprocal = (!past_only && !future_only) ? 1 : 0;
     config.use_double = 1;
@@ -242,6 +245,11 @@ int wasm_knn_run_search(
     config.nthreads = 1;
     config.progress_mode = 0;
     config.verbose_level = 0;
+
+    if (config.use_rq8 && knn_model_build_or_load_rq8(&model, &config) != 0)
+    {
+        goto cleanup_model_alloc;
+    }
 
     /* 3. Run the exact C Knn search engine */
     KnnResults results;
@@ -302,6 +310,14 @@ int wasm_knn_run_search(
     {
         free(model.cluster_radii);
     }
+    if (model.rq8_dataset_buffer != NULL)
+    {
+        free(model.rq8_dataset_buffer);
+    }
+    if (model.rq8_transposed_buffer != NULL)
+    {
+        free(model.rq8_transposed_buffer);
+    }
 
     return 0;
 
@@ -341,6 +357,13 @@ cleanup_model_alloc:
     {
         free(model.cluster_radii);
     }
+    if (model.rq8_dataset_buffer != NULL)
+    {
+        free(model.rq8_dataset_buffer);
+    }
+    if (model.rq8_transposed_buffer != NULL)
+    {
+        free(model.rq8_transposed_buffer);
+    }
     return -1;
 }
-

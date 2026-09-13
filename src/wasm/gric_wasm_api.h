@@ -199,6 +199,7 @@ int wasm_knn_run_search(
     int           future_only,
     double        epsilon,
     double        rlim_cutoff,
+    int           use_rq8,
     int           use_multi_pivot,
     int          *out_indices,
     double       *out_distances,
@@ -210,4 +211,3 @@ int wasm_knn_run_search(
 #endif
 
 #endif /* GRIC_WASM_API_H */
-

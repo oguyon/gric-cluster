@@ -282,6 +282,7 @@ int knn_run_search(
         visited.query_sq8 = query_sq8;
         visited.query_sq16 = query_sq16;
         visited.query_rq8 = query_rq8;
+        visited.query_rq8_clipped = 0;
         visited.rep_tags = NULL;
         visited.rep_dists = NULL;
         if (config->use_memo && model->frame_to_unique_map != NULL)
@@ -311,6 +312,7 @@ int knn_run_search(
 
             KnnFrameReader *active_qreader = is_cross_dataset ? &thread_query_reader :
                                                                 &thread_cand_reader;
+            visited.query_rq8_clipped = 0;
 
             if (knn_reader_read_frame(active_qreader, i, query_buffer) == 0)
             {
@@ -568,4 +570,3 @@ void knn_results_free(
         results->distances = NULL;
     }
 }
-

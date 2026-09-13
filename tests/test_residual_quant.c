@@ -33,7 +33,7 @@ static uint64_t reference_rq8_ssd(
     uint64_t sum = 0;
     for (long i = 0; i < dim; i++)
     {
-        int32_t diff = (int32_t)q_res[i] - (int32_t)cand_res[i];
+        int64_t diff = (int64_t)q_res[i] - (int64_t)cand_res[i];
         sum += (uint64_t)(diff * diff);
     }
     return sum;
@@ -262,12 +262,61 @@ static void test_fastscan_32x(void)
     printf("  -> FastScan 32x bitmask exact match verified.\n");
 }
 
+static void test_saturated_edge_cases(void)
+{
+    printf("[TEST] Testing saturated RQ8 edge cases...\n");
+
+    {
+        int16_t query_res[3] = {32767, 32767, 32767};
+        int8_t cand_res[3] = {-127, -127, -127};
+        uint64_t ref_ssd = reference_rq8_ssd(query_res, cand_res, 3);
+        uint64_t ssd = rq8_dist_squared_cutoff_i8(query_res, cand_res, 3, ref_ssd);
+        assert(ssd == ref_ssd);
+        assert(rq8_dist_squared_cutoff_i8(query_res, cand_res, 3, ref_ssd - 1) > ref_ssd - 1);
+
+        int8_t block_x[32] = {0};
+        int8_t block_y[32] = {0};
+        int8_t block_z[32] = {0};
+        block_x[0] = -127;
+        block_y[0] = -127;
+        block_z[0] = -127;
+        uint32_t mask = rq8_fastscan_32x_3d(query_res, block_x, block_y, block_z, ref_ssd - 1);
+        assert((mask & 1U) == 0U);
+    }
+
+    {
+        long dim = 64;
+        int16_t query_res[64];
+        int8_t cand_res[64];
+        int8_t block_coords[64 * 32];
+        memset(block_coords, 0, sizeof(block_coords));
+
+        for (long d = 0; d < dim; d++)
+        {
+            query_res[d] = 32767;
+            cand_res[d] = -127;
+            block_coords[d * 32] = -127;
+        }
+
+        uint64_t ref_ssd = reference_rq8_ssd(query_res, cand_res, dim);
+        uint64_t ssd = rq8_dist_squared_cutoff_i8(query_res, cand_res, dim, ref_ssd);
+        assert(ssd == ref_ssd);
+        assert(rq8_dist_squared_cutoff_i8(query_res, cand_res, dim, ref_ssd - 1) > ref_ssd - 1);
+
+        uint32_t mask = rq8_fastscan_32x(query_res, block_coords, dim, ref_ssd - 1);
+        assert((mask & 1U) == 0U);
+    }
+
+    printf("  -> Saturated edge cases passed.\n");
+}
+
 static void test_sidecar_roundtrip(void)
 {
     printf("[TEST] Testing .rq8 sidecar serialization...\n");
     const char *tmp_path = "test_sidecar.rq8";
     long dim = 32;
     long num_frames = 100;
+    uint64_t fingerprint = UINT64_C(0x123456789abcdef0);
     RQ8Params params;
     rq8_init_params(&params, 0.25f, dim);
 
@@ -278,17 +327,21 @@ static void test_sidecar_roundtrip(void)
         data_out[i] = (int8_t)((rand() % 255) - 127);
     }
 
-    int ret_save = rq8_save_sidecar(tmp_path, &params, data_out, num_frames);
+    int ret_save = rq8_save_sidecar(tmp_path, &params, data_out, num_frames, fingerprint);
     assert(ret_save == 0);
 
     RQ8Params loaded_params;
     int8_t *data_in = NULL;
     long loaded_frames = 0;
-    int ret_load = rq8_load_sidecar(tmp_path, &loaded_params, &data_in, &loaded_frames);
+    uint64_t loaded_fingerprint = 0;
+    int ret_load = rq8_load_sidecar(
+        tmp_path, &loaded_params, &data_in, &loaded_frames, &loaded_fingerprint
+    );
     assert(ret_load == 0);
     assert(loaded_frames == num_frames);
     assert(loaded_params.dim == params.dim);
     assert(fabsf(loaded_params.rlim - params.rlim) < 1e-6f);
+    assert(loaded_fingerprint == fingerprint);
     assert(memcmp(data_out, data_in, total_elements * sizeof(int8_t)) == 0);
 
     remove(tmp_path);
@@ -307,6 +360,7 @@ int main(void)
     test_metric_lower_bound_safety();
     test_cutoff_kernel_consistency();
     test_fastscan_32x();
+    test_saturated_edge_cases();
     test_sidecar_roundtrip();
 
     printf("=== All Residual Quantization (RQ8) Unit Tests Passed! ===\n");

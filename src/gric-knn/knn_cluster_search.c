@@ -86,13 +86,13 @@ static void knn_search_intra_cluster(
     int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
                        visited->query_sq16 != NULL);
     int rq8_active = (config->use_rq8 && model->rq8_dataset_buffer != NULL &&
-                      visited->query_rq8 != NULL);
+                      visited->query_rq8 != NULL && !visited->query_rq8_clipped);
 
     if (rq8_active)
     {
         if (model->is_double)
         {
-            rq8_quantize_query_residual_double(
+            visited->query_rq8_clipped = rq8_quantize_query_residual_double(
                 (const double *)query_data,
                 (const double *)home_cl->anchor_data,
                 visited->query_rq8,
@@ -100,12 +100,13 @@ static void knn_search_intra_cluster(
         }
         else
         {
-            rq8_quantize_query_residual_float(
+            visited->query_rq8_clipped = rq8_quantize_query_residual_float(
                 (const float *)query_data,
                 (const float *)home_cl->anchor_data,
                 visited->query_rq8,
                 &model->rq8_params);
         }
+        rq8_active = !visited->query_rq8_clipped;
     }
 
     if (rq8_active && home_cl->rq8_transposed != NULL && home_cl->num_rq8_blocks > 0)
@@ -1132,7 +1133,7 @@ static int knn_warm_start_nearest_cluster(
         {
             if (model->is_double)
             {
-                rq8_quantize_query_residual_double(
+                visited->query_rq8_clipped = rq8_quantize_query_residual_double(
                     (const double *)query_data,
                     (const double *)warm_cl->anchor_data,
                     visited->query_rq8,
@@ -1140,7 +1141,7 @@ static int knn_warm_start_nearest_cluster(
             }
             else
             {
-                rq8_quantize_query_residual_float(
+                visited->query_rq8_clipped = rq8_quantize_query_residual_float(
                     (const float *)query_data,
                     (const float *)warm_cl->anchor_data,
                     visited->query_rq8,
@@ -1170,8 +1171,9 @@ static int knn_warm_start_nearest_cluster(
                 telem->level3_annular_pruned++;
                 continue;
             }
-            if (is_member_pruned_by_rq8(visited->query_rq8, cand_id, current_tau,
-                                        model, config, telem) ||
+            if ((!visited->query_rq8_clipped &&
+                 is_member_pruned_by_rq8(visited->query_rq8, cand_id, current_tau,
+                                         model, config, telem)) ||
                 is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
                                          model, config, telem) ||
                 is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
@@ -1658,13 +1660,13 @@ static void knn_eval_candidate_cluster_members(
     int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
                        visited->query_sq16 != NULL);
     int rq8_active = (config->use_rq8 && model->rq8_dataset_buffer != NULL &&
-                      visited->query_rq8 != NULL);
+                      visited->query_rq8 != NULL && !visited->query_rq8_clipped);
 
     if (rq8_active)
     {
         if (model->is_double)
         {
-            rq8_quantize_query_residual_double(
+            visited->query_rq8_clipped = rq8_quantize_query_residual_double(
                 (const double *)query_data,
                 (const double *)cl->anchor_data,
                 visited->query_rq8,
@@ -1672,12 +1674,13 @@ static void knn_eval_candidate_cluster_members(
         }
         else
         {
-            rq8_quantize_query_residual_float(
+            visited->query_rq8_clipped = rq8_quantize_query_residual_float(
                 (const float *)query_data,
                 (const float *)cl->anchor_data,
                 visited->query_rq8,
                 &model->rq8_params);
         }
+        rq8_active = !visited->query_rq8_clipped;
     }
 
     int    num_active_pivots = 0;
@@ -1977,6 +1980,39 @@ static void knn_eval_candidate_cluster_members(
                 }
             } // while (pass_mask)
         } // while (left_b >= 0 || right_b < num_b)
+
+        if (*batch_count > 0)
+        {
+            double dists[4];
+            if (model->is_double)
+            {
+                framedist_batch_double(
+                    (const double *)query_data,
+                    (const double *const *)batch_ptrs,
+                    *batch_count, dists, frame_elem
+                );
+            }
+            else
+            {
+                framedist_batch_float(
+                    (const float *)query_data,
+                    (const float *const *)batch_ptrs,
+                    *batch_count, dists, frame_elem
+                );
+            }
+            telem->framedist_calls += (uint64_t)(*batch_count);
+            for (int b = 0; b < *batch_count; b++)
+            {
+                record_neighbor_and_reciprocal(
+                    query_id, batch_cand_ids[b], dists[b],
+                    config, model, heap, all_heaps
+#ifdef _OPENMP
+                    , bucket_locks
+#endif
+                );
+            }
+            *batch_count = 0;
+        }
 
         return;
     } // if (rq8_active && cl->rq8_transposed != NULL)

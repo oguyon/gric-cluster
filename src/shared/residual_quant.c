@@ -157,7 +157,7 @@ void rq8_quantize_residual_double(
  * @dst:    Pointer to destination int16_t vector [dim].
  * @params: Pointer to initialized RQ8Params.
  */
-void rq8_quantize_query_residual_float(
+int rq8_quantize_query_residual_float(
     const float     *restrict query,
     const float     *restrict anchor,
     int16_t         *restrict dst,
@@ -166,6 +166,7 @@ void rq8_quantize_query_residual_float(
     long dim = params->dim;
     float inv_scale = params->inv_scale;
     long i = 0;
+    int clipped = 0;
 
 #if defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
@@ -182,14 +183,28 @@ void rq8_quantize_query_residual_float(
         __m256 a0 = _mm256_loadu_ps(&anchor[i]);
         __m256 res0 = _mm256_mul_ps(_mm256_sub_ps(q0, a0), v_inv);
         __m256 round0 = _mm256_blendv_ps(v_nhalf, v_half, _mm256_cmp_ps(res0, v_zero, _CMP_GE_OQ));
-        res0 = _mm256_max_ps(v_min, _mm256_min_ps(_mm256_add_ps(res0, round0), v_max));
+        res0 = _mm256_add_ps(res0, round0);
+        if (_mm256_movemask_ps(_mm256_or_ps(
+                _mm256_cmp_ps(res0, v_min, _CMP_LT_OQ),
+                _mm256_cmp_ps(res0, v_max, _CMP_GT_OQ))) != 0)
+        {
+            clipped = 1;
+        }
+        res0 = _mm256_max_ps(v_min, _mm256_min_ps(res0, v_max));
         __m256i i32_0 = _mm256_cvttps_epi32(res0);
 
         __m256 q1 = _mm256_loadu_ps(&query[i + 8]);
         __m256 a1 = _mm256_loadu_ps(&anchor[i + 8]);
         __m256 res1 = _mm256_mul_ps(_mm256_sub_ps(q1, a1), v_inv);
         __m256 round1 = _mm256_blendv_ps(v_nhalf, v_half, _mm256_cmp_ps(res1, v_zero, _CMP_GE_OQ));
-        res1 = _mm256_max_ps(v_min, _mm256_min_ps(_mm256_add_ps(res1, round1), v_max));
+        res1 = _mm256_add_ps(res1, round1);
+        if (_mm256_movemask_ps(_mm256_or_ps(
+                _mm256_cmp_ps(res1, v_min, _CMP_LT_OQ),
+                _mm256_cmp_ps(res1, v_max, _CMP_GT_OQ))) != 0)
+        {
+            clipped = 1;
+        }
+        res1 = _mm256_max_ps(v_min, _mm256_min_ps(res1, v_max));
         __m256i i32_1 = _mm256_cvttps_epi32(res1);
 
         __m128i lo0 = _mm256_castsi256_si128(i32_0);
@@ -213,13 +228,16 @@ void rq8_quantize_query_residual_float(
         if (r_val < -32767.0f)
         {
             r_val = -32767.0f;
+            clipped = 1;
         }
         else if (r_val > 32767.0f)
         {
             r_val = 32767.0f;
+            clipped = 1;
         }
         dst[i] = (int16_t)r_val;
     } // for (; i < dim; i++)
+    return clipped;
 }
 
 /**
@@ -229,7 +247,7 @@ void rq8_quantize_query_residual_float(
  * @dst:    Pointer to destination int16_t vector [dim].
  * @params: Pointer to initialized RQ8Params.
  */
-void rq8_quantize_query_residual_double(
+int rq8_quantize_query_residual_double(
     const double    *restrict query,
     const double    *restrict anchor,
     int16_t         *restrict dst,
@@ -237,6 +255,7 @@ void rq8_quantize_query_residual_double(
 {
     long dim = params->dim;
     double inv_scale = (double)params->inv_scale;
+    int clipped = 0;
 
     for (long i = 0; i < dim; i++)
     {
@@ -246,13 +265,16 @@ void rq8_quantize_query_residual_double(
         if (r_val < -32767.0)
         {
             r_val = -32767.0;
+            clipped = 1;
         }
         else if (r_val > 32767.0)
         {
             r_val = 32767.0;
+            clipped = 1;
         }
         dst[i] = (int16_t)r_val;
     } // for (long i = 0; i < dim; i++)
+    return clipped;
 }
 
 /**
@@ -268,7 +290,8 @@ int rq8_save_sidecar(
     const char      *filepath,
     const RQ8Params *params,
     const int8_t    *data,
-    long             num_frames)
+    long             num_frames,
+    uint64_t         fingerprint)
 {
     if (filepath == NULL || params == NULL || data == NULL || num_frames <= 0)
     {
@@ -287,23 +310,36 @@ int rq8_save_sidecar(
         return -2;
     }
 
-    if (fwrite(params, sizeof(RQ8Params), 1, f) != 1)
+    float meta_f[4] = {
+        params->rlim,
+        params->scale,
+        params->inv_scale,
+        params->err_radius
+    };
+    if (fwrite(meta_f, sizeof(float), 4, f) != 4)
     {
         fclose(f);
         return -3;
     }
 
-    if (fwrite(&num_frames, sizeof(long), 1, f) != 1)
+    int64_t meta_i[2] = {(int64_t)params->dim, (int64_t)num_frames};
+    if (fwrite(meta_i, sizeof(int64_t), 2, f) != 2)
     {
         fclose(f);
         return -4;
+    }
+
+    if (fwrite(&fingerprint, sizeof(uint64_t), 1, f) != 1)
+    {
+        fclose(f);
+        return -5;
     }
 
     size_t total_elements = (size_t)num_frames * (size_t)params->dim;
     if (fwrite(data, sizeof(int8_t), total_elements, f) != total_elements)
     {
         fclose(f);
-        return -5;
+        return -6;
     }
 
     fclose(f);
@@ -323,9 +359,11 @@ int rq8_load_sidecar(
     const char *filepath,
     RQ8Params  *params,
     int8_t    **data,
-    long       *num_frames)
+    long       *num_frames,
+    uint64_t   *fingerprint)
 {
-    if (filepath == NULL || params == NULL || data == NULL || num_frames == NULL)
+    if (filepath == NULL || params == NULL || data == NULL || num_frames == NULL ||
+        fingerprint == NULL)
     {
         return -1;
     }
@@ -343,16 +381,36 @@ int rq8_load_sidecar(
         return -2;
     }
 
-    if (fread(params, sizeof(RQ8Params), 1, f) != 1)
+    float meta_f[4];
+    if (fread(meta_f, sizeof(float), 4, f) != 4)
     {
         fclose(f);
         return -3;
     }
 
-    if (fread(num_frames, sizeof(long), 1, f) != 1 || *num_frames <= 0)
+    int64_t meta_i[2];
+    if (fread(meta_i, sizeof(int64_t), 2, f) != 2)
     {
         fclose(f);
         return -4;
+    }
+
+    if (fread(fingerprint, sizeof(uint64_t), 1, f) != 1)
+    {
+        fclose(f);
+        return -5;
+    }
+
+    params->rlim = meta_f[0];
+    params->scale = meta_f[1];
+    params->inv_scale = meta_f[2];
+    params->err_radius = meta_f[3];
+    params->dim = (long)meta_i[0];
+    *num_frames = (long)meta_i[1];
+    if (*num_frames <= 0)
+    {
+        fclose(f);
+        return -6;
     }
 
     size_t total_elements = (size_t)(*num_frames) * (size_t)params->dim;
@@ -360,14 +418,14 @@ int rq8_load_sidecar(
     if (buf == NULL)
     {
         fclose(f);
-        return -5;
+        return -7;
     }
 
     if (fread(buf, sizeof(int8_t), total_elements, f) != total_elements)
     {
         free(buf);
         fclose(f);
-        return -6;
+        return -8;
     }
 
     *data = buf;
