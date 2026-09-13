@@ -587,13 +587,21 @@ int wasm_cluster_process_batch(
             NULL
         );
 
+        if (assigned == -2)
+        {
+            if (out_assignments)
+            {
+                out_assignments[f] = -2;
+            }
+            return f;
+        }
+
         if (out_assignments)
         {
             out_assignments[f] = assigned;
         }
 
         h->current_frame_id++;
-    }
 
     return num_frames;
 }
