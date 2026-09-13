@@ -1547,8 +1547,8 @@ static void knn_inject_two_hop_candidates(
 
     for (int j = 0; j < heap->count; j++)
     {
-        long cand_id = (long)heap->data[j].frame_id;
-        double d = heap->data[j].dist;
+        long cand_id = (long)knn_heap_get_id(heap, j);
+        double d = knn_heap_get_dist(heap, j);
 
         if (cand_id < 0 || cand_id >= model->total_dataset_frames || cand_id == query_id)
         {
@@ -1618,8 +1618,8 @@ static void knn_inject_two_hop_candidates(
             }
             for (int c = 0; c < u_cnt; c++)
             {
-                cands_2hop[num_2hop] = (long)all_heaps[u].data[c].frame_id;
-                dists_2hop[num_2hop] = all_heaps[u].data[c].dist;
+                cands_2hop[num_2hop] = (long)knn_heap_get_id(&all_heaps[u], c);
+                dists_2hop[num_2hop] = knn_heap_get_dist(&all_heaps[u], c);
                 num_2hop++;
             }
 #ifdef _OPENMP
@@ -3639,7 +3639,7 @@ void knn_search_single_frame(
     /* Pre-seed visited tracker with frames already in heap (from reciprocal pushes) */
     for (int h = 0; h < heap->count; h++)
     {
-        knn_visited_check_and_mark(visited, (long)heap->data[h].frame_id);
+        knn_visited_check_and_mark(visited, (long)knn_heap_get_id(heap, h));
     }
 
     MeasuredPivot pivots[MAX_MEASURED_PIVOTS];

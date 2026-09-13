@@ -1,14 +1,53 @@
 /**
  * @file knn_heap.c
- * @brief Bounded binary max-heap implementation for k-nearest neighbors tracking.
+ * @brief SIMD Bitonic Top-k Candidate Tracker & Bounded Max-Heap Implementation.
  */
 
 #include "knn_heap.h"
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#endif
+
+#if defined(__AVX2__)
+/**
+ * simd_bitonic_cas() - Conditional compare-and-swap of 8 distance and ID lanes.
+ * @dist_a: Pointer to first distance vector.
+ * @dist_b: Pointer to second distance vector.
+ * @id_a:   Pointer to first ID vector.
+ * @id_b:   Pointer to second ID vector.
+ */
+static inline void simd_bitonic_cas(
+    __m256  *restrict dist_a,
+    __m256  *restrict dist_b,
+    __m256i *restrict id_a,
+    __m256i *restrict id_b)
+{
+    __m256 da = *dist_a;
+    __m256 db = *dist_b;
+
+    __m256 cmp = _mm256_cmp_ps(da, db, _CMP_GT_OQ);
+    __m256 min_d = _mm256_blendv_ps(da, db, cmp);
+    __m256 max_d = _mm256_blendv_ps(db, da, cmp);
+
+    __m256 ia = _mm256_castsi256_ps(*id_a);
+    __m256 ib = _mm256_castsi256_ps(*id_b);
+    __m256 min_i = _mm256_blendv_ps(ia, ib, cmp);
+    __m256 max_i = _mm256_blendv_ps(ib, ia, cmp);
+
+    *dist_a = min_d;
+    *dist_b = max_d;
+    *id_a = _mm256_castps_si256(min_i);
+    *id_b = _mm256_castps_si256(max_i);
+}
+#endif // __AVX2__
 
 /**
- * knn_heap_init() - Allocate and initialize a bounded max-heap of capacity k.
+ * knn_heap_init() - Allocate and initialize a bounded heap / SIMD candidate tracker.
  * @heap: Pointer to the KnnMaxHeap structure.
  * @k:    Capacity of the heap (number of nearest neighbors).
  *
@@ -25,6 +64,33 @@ int knn_heap_init(
 
     heap->k = k;
     heap->count = 0;
+
+    if (k <= KNN_SIMD_HEAP_MAX)
+    {
+        int cap = 16;
+        if (k > 32)
+        {
+            cap = 64;
+        }
+        else if (k > 16)
+        {
+            cap = 32;
+        }
+        heap->capacity = cap;
+        heap->tau = 1e30f;
+        heap->data = NULL;
+
+        for (int i = 0; i < cap; i++)
+        {
+            heap->simd_dist[i] = 1e30f;
+            heap->simd_id[i] = -1;
+        }
+
+        return 0;
+    }
+
+    heap->capacity = 0;
+    heap->tau = 1e30f;
     heap->data = (KnnNeighbor *)malloc((size_t)k * sizeof(KnnNeighbor));
     if (heap->data == NULL)
     {
@@ -41,12 +107,16 @@ int knn_heap_init(
 void knn_heap_free(
     KnnMaxHeap *heap)
 {
-    if (heap != NULL && heap->data != NULL)
+    if (heap != NULL)
     {
-        free(heap->data);
-        heap->data = NULL;
+        if (heap->data != NULL)
+        {
+            free(heap->data);
+            heap->data = NULL;
+        }
         heap->count = 0;
         heap->k = 0;
+        heap->capacity = 0;
     }
 }
 
@@ -57,27 +127,21 @@ void knn_heap_free(
 void knn_heap_reset(
     KnnMaxHeap *heap)
 {
-    if (heap != NULL)
+    if (heap == NULL)
     {
-        heap->count = 0;
-    }
-}
-
-/**
- * knn_heap_peek_max_dist() - Return maximum distance currently in heap.
- * @heap: Pointer to the KnnMaxHeap structure.
- *
- * Return: The largest distance in the heap if full, or 1e30 if not full.
- */
-double knn_heap_peek_max_dist(
-    const KnnMaxHeap *heap)
-{
-    if (heap == NULL || heap->count < heap->k)
-    {
-        return 1e30;
+        return;
     }
 
-    return heap->data[0].dist;
+    heap->count = 0;
+    if (heap->capacity > 0)
+    {
+        heap->tau = 1e30f;
+        for (int i = 0; i < heap->capacity; i++)
+        {
+            heap->simd_dist[i] = 1e30f;
+            heap->simd_id[i] = -1;
+        }
+    }
 }
 
 /**
@@ -96,6 +160,33 @@ int knn_heap_contains(
         return 0;
     }
 
+    if (heap->capacity > 0)
+    {
+#if defined(__AVX2__)
+        __m256i v_id = _mm256_set1_epi32(frame_id);
+        __m256i match = _mm256_setzero_si256();
+        const __m256i *ids = (const __m256i *)heap->simd_id;
+        int num_regs = heap->capacity / 8;
+
+        for (int r = 0; r < num_regs; r++)
+        {
+            __m256i eq = _mm256_cmpeq_epi32(_mm256_load_si256(&ids[r]), v_id);
+            match = _mm256_or_si256(match, eq);
+        }
+
+        return !_mm256_testz_si256(match, match);
+#else
+        for (int i = 0; i < heap->count; i++)
+        {
+            if (heap->simd_id[i] == frame_id)
+            {
+                return 1;
+            }
+        }
+        return 0;
+#endif
+    }
+
     for (int i = 0; i < heap->count; i++)
     {
         if (heap->data[i].frame_id == frame_id)
@@ -108,7 +199,7 @@ int knn_heap_contains(
 }
 
 /**
- * knn_heap_push() - Insert a neighbor candidate into the bounded max-heap.
+ * knn_heap_push() - Insert a neighbor candidate into the bounded heap / tracker.
  * @heap:     Pointer to the KnnMaxHeap structure.
  * @frame_id: Candidate frame index.
  * @dist:     Computed distance between query and candidate.
@@ -123,12 +214,90 @@ void knn_heap_push(
         return;
     }
 
-    // Check if frame_id is already in heap
+    if (heap->capacity > 0)
+    {
+        float fdist = (float)dist;
+        if (heap->count >= heap->k && fdist >= heap->tau)
+        {
+            return;
+        }
+
+#if defined(__AVX2__)
+        __m256i v_id = _mm256_set1_epi32(frame_id);
+        __m256i match = _mm256_setzero_si256();
+        const __m256i *ids = (const __m256i *)heap->simd_id;
+        int num_regs = heap->capacity / 8;
+
+        for (int r = 0; r < num_regs; r++)
+        {
+            __m256i eq = _mm256_cmpeq_epi32(_mm256_load_si256(&ids[r]), v_id);
+            match = _mm256_or_si256(match, eq);
+        }
+
+        if (!_mm256_testz_si256(match, match))
+        {
+            return;
+        }
+
+        __m256 vd = _mm256_set1_ps(fdist);
+        const __m256 *dists = (const __m256 *)heap->simd_dist;
+        uint64_t full_mask = 0;
+
+        for (int r = 0; r < num_regs; r++)
+        {
+            __m256 cmp = _mm256_cmp_ps(vd, _mm256_load_ps((const float *)&dists[r]), _CMP_LT_OQ);
+            uint32_t m = (uint32_t)_mm256_movemask_ps(cmp);
+            full_mask |= ((uint64_t)m << (r * 8));
+        }
+
+        int pos = full_mask ? __builtin_ctzll(full_mask) : (heap->capacity - 1);
+#else
+        for (int i = 0; i < heap->count; i++)
+        {
+            if (heap->simd_id[i] == frame_id)
+            {
+                return;
+            }
+        }
+
+        int pos = heap->count;
+        for (int i = 0; i < heap->count; i++)
+        {
+            if (fdist < heap->simd_dist[i])
+            {
+                pos = i;
+                break;
+            }
+        }
+#endif
+
+        if (pos >= heap->k && heap->count >= heap->k)
+        {
+            return;
+        }
+
+        int cap = heap->capacity;
+        memmove(&heap->simd_dist[pos + 1], &heap->simd_dist[pos],
+                (size_t)(cap - 1 - pos) * sizeof(float));
+        memmove(&heap->simd_id[pos + 1], &heap->simd_id[pos],
+                (size_t)(cap - 1 - pos) * sizeof(int32_t));
+
+        heap->simd_dist[pos] = fdist;
+        heap->simd_id[pos] = frame_id;
+
+        if (heap->count < heap->k)
+        {
+            heap->count++;
+        }
+        heap->tau = heap->simd_dist[heap->k - 1];
+        return;
+    }
+
+    // Binary heap fallback for k > KNN_SIMD_HEAP_MAX
     for (int i = 0; i < heap->count; i++)
     {
         if (heap->data[i].frame_id == frame_id)
         {
-            // Already present: ignore duplicate
             return;
         }
     }
@@ -140,7 +309,6 @@ void knn_heap_push(
         heap->data[idx].dist = dist;
         heap->count++;
 
-        // Sift-up
         while (idx > 0)
         {
             int parent = (idx - 1) / 2;
@@ -159,7 +327,6 @@ void knn_heap_push(
     }
     else
     {
-        // Heap is full: only insert if distance is smaller than current max
         if (dist >= heap->data[0].dist)
         {
             return;
@@ -168,7 +335,6 @@ void knn_heap_push(
         heap->data[0].frame_id = frame_id;
         heap->data[0].dist = dist;
 
-        // Sift-down
         int idx = 0;
         int n = heap->k;
         while (1)
@@ -219,7 +385,23 @@ void knn_heap_extract_sorted(
         return;
     }
 
-    // Discard largest elements beyond requested k
+    if (heap->capacity > 0)
+    {
+        int valid_count = (heap->count < k) ? heap->count : k;
+        for (int i = 0; i < valid_count; i++)
+        {
+            out_indices[i] = heap->simd_id[i];
+            out_distances[i] = (double)heap->simd_dist[i];
+        }
+        for (int i = valid_count; i < k; i++)
+        {
+            out_indices[i] = -1;
+            out_distances[i] = -1.0;
+        }
+        return;
+    }
+
+    // Binary heap fallback heapsort
     while (heap->count > k)
     {
         heap->data[0] = heap->data[heap->count - 1];
@@ -257,7 +439,6 @@ void knn_heap_extract_sorted(
 
     int count = heap->count;
 
-    // Repeatedly extract max and place from back to front of valid count
     for (int i = count - 1; i >= 0; i--)
     {
         out_indices[i] = heap->data[0].frame_id;
@@ -298,7 +479,6 @@ void knn_heap_extract_sorted(
         }
     } // for (int i = count - 1; ...)
 
-    // Pad any remaining underfilled slots with -1 and -1.0
     for (int i = count; i < k; i++)
     {
         out_indices[i] = -1;
