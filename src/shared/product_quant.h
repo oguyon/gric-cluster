@@ -13,7 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 #include <immintrin.h>
 #endif
 
@@ -242,7 +243,7 @@ static inline uint32_t pq_fastscan_32x_scalar(
     return mask;
 }
 
-#if defined(__AVX2__) && \
+#if !defined(__CUDACC__) && defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 
 /**
@@ -296,7 +297,7 @@ static inline uint32_t pq_fastscan_32x_avx2(
 }
 #endif // __AVX2__
 
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 
 /**
@@ -348,10 +349,10 @@ static inline uint32_t pq_fastscan_32x(
     int                     m,
     uint8_t                 cutoff_u8)
 {
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     return pq_fastscan_32x_avx512(query_lut, block_codes, m, cutoff_u8);
-#elif defined(__AVX2__) && \
+#elif !defined(__CUDACC__) && defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     return pq_fastscan_32x_avx2(query_lut, block_codes, m, cutoff_u8);
 #else

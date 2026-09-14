@@ -20,6 +20,10 @@
 #include <omp.h>
 #endif
 
+#ifdef USE_CUDA
+#include "knn_cuda.h"
+#endif
+
 /**
  * knn_run_search() - Multi-threaded driver executing k-NN search across all frames.
  * @config:    Active KnnConfig.
@@ -39,6 +43,32 @@ int knn_run_search(
     {
         return -1;
     }
+
+#ifdef USE_CUDA
+    if (config->use_gpu)
+    {
+        if (knn_cuda_is_available())
+        {
+            int rc = knn_cuda_run_search(config, model, results, telemetry);
+            if (rc == 0)
+            {
+                return 0;
+            }
+            fprintf(stderr, "Warning: GPU search failed, falling back to CPU engine.\n");
+        }
+        else
+        {
+            fprintf(stderr, "Warning: CUDA GPU requested but no available device found. "
+                            "Falling back to CPU engine.\n");
+        }
+    }
+#else
+    if (config->use_gpu)
+    {
+        fprintf(stderr, "Warning: GPU acceleration requested (--gpu), but gric-knn was built "
+                        "without CUDA support (ENABLE_CUDA=OFF). Running on CPU.\n");
+    }
+#endif
 
     memset(telemetry, 0, sizeof(KnnTelemetry));
 

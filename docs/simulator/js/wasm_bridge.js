@@ -1945,11 +1945,29 @@ function buildCliCommand() {
     parts.push('-no-batch-dist');
   }
 
+  // GPU Acceleration (NVIDIA CUDA)
+  if (typeof useGpu === 'boolean' && useGpu) {
+    parts.push('--gpu');
+    const batchSel = document.getElementById('selectToolbarGpuBatchSize') ||
+                     document.getElementById('selectCliGpuBatchSize');
+    if (batchSel && batchSel.value) {
+      parts.push('--gpu-batch-size', batchSel.value);
+    }
+  }
+
   // Input placeholder
   parts.push('<input.fits>');
 
   if (typeof enableKnn !== 'undefined' && enableKnn) {
     const knnParts = ['gric-knn', '<input.fits>', '<cluster_dir>'];
+    if (typeof useGpu === 'boolean' && useGpu) {
+      knnParts.push('--gpu');
+      const batchSel = document.getElementById('selectToolbarGpuBatchSize') ||
+                       document.getElementById('selectCliGpuBatchSize');
+      if (batchSel && batchSel.value) {
+        knnParts.push('--gpu-batch-size', batchSel.value);
+      }
+    }
     if (typeof knnK === 'number' && knnK !== 10) {
       knnParts.push('-k', knnK.toString());
     }

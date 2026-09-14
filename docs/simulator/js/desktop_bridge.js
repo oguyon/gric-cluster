@@ -173,6 +173,24 @@ const DesktopBridge = (function () {
   }
 
   /**
+   * Check if the native server backend has an active CUDA GPU available.
+   *
+   * @returns {boolean} True if host has CUDA-capable GPU.
+   */
+  function hasGpu() {
+    return Boolean(_serverInfo && _serverInfo.gpu && _serverInfo.gpu.available);
+  }
+
+  /**
+   * Get GPU device metadata (name, total_memory_mb, free_memory_mb) or null.
+   *
+   * @returns {Object|null}
+   */
+  function getGpuInfo() {
+    return (_serverInfo && _serverInfo.gpu) ? _serverInfo.gpu : null;
+  }
+
+  /**
    * List files in the active desktop workspace directory or a subdirectory.
    */
   async function listFiles(subDir = '') {
@@ -1555,6 +1573,8 @@ const DesktopBridge = (function () {
     isAvailable,
     isMobileDevice,
     isNativeSupported,
+    hasGpu,
+    getGpuInfo,
     getServerInfo,
     getWorkspaceDir,
     listFiles,

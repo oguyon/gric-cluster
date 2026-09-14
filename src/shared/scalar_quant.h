@@ -12,6 +12,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef __cplusplus
+#ifndef restrict
+#define restrict __restrict__
+#endif
+#endif
+
 /** Magic identifier for .sq8 sidecar files */
 #define SQ8_FILE_MAGIC "SQ8_0001"
 
@@ -175,7 +181,8 @@ uint64_t sq16_dist_squared_i16(
     const int16_t *restrict b,
     long                    dim);
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 #include <immintrin.h>
 #endif
 
@@ -236,7 +243,7 @@ static inline uint64_t sq16_dist_squared_cutoff_i16(
     uint64_t total = 0;
     long i = 0;
 
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     __m512i sum_vec512_0 = _mm512_setzero_si512();
     __m512i sum_vec512_1 = _mm512_setzero_si512();
@@ -266,7 +273,7 @@ static inline uint64_t sq16_dist_squared_cutoff_i16(
 
     __m512i sum_tot = _mm512_add_epi64(sum_vec512_0, sum_vec512_1);
     total += (uint64_t)_mm512_reduce_add_epi64(sum_tot);
-#elif defined(__AVX2__) && \
+#elif !defined(__CUDACC__) && defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     __m256i sum_lo = _mm256_setzero_si256();
     __m256i sum_hi = _mm256_setzero_si256();
@@ -458,7 +465,7 @@ static inline uint32_t sq16_fastscan_32x_generic_scalar(
     return mask;
 }
 
-#if defined(__AVX2__) && \
+#if !defined(__CUDACC__) && defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 
 /**
@@ -613,7 +620,7 @@ static inline uint32_t sq16_fastscan_32x_generic_avx2(
 }
 #endif // __AVX2__
 
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 
 /**
@@ -729,10 +736,10 @@ static inline uint32_t sq16_fastscan_32x_3d(
     const int16_t *restrict block_z,
     uint64_t                ssd_cutoff)
 {
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     return sq16_fastscan_32x_3d_avx512(query_sq16, block_x, block_y, block_z, ssd_cutoff);
-#elif defined(__AVX2__) && \
+#elif !defined(__CUDACC__) && defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     return sq16_fastscan_32x_3d_avx2(query_sq16, block_x, block_y, block_z, ssd_cutoff);
 #else
@@ -766,10 +773,10 @@ static inline uint32_t sq16_fastscan_32x(
         );
     }
 
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     return sq16_fastscan_32x_generic_avx512(query_sq16, block_coords, dim, ssd_cutoff);
-#elif defined(__AVX2__) && \
+#elif !defined(__CUDACC__) && defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     return sq16_fastscan_32x_generic_avx2(query_sq16, block_coords, dim, ssd_cutoff);
 #else

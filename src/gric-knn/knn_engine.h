@@ -9,6 +9,10 @@
 #include "knn_defs.h"
 #include "knn_reader.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Execute metric-pruned k-nearest neighbor search across all queries.
  * @param config    Pointer to active KnnConfig configuration.
@@ -29,5 +33,9 @@ int knn_run_search(
  */
 void knn_results_free(
     KnnResults *results);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // KNN_ENGINE_H

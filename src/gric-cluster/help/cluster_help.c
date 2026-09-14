@@ -145,6 +145,11 @@ static const struct help_entry help_entries[] = {
      "(alias for jtf)"},
     {"cpt",
      "Conditional Probability Table (CPT) for cross-tile dependencies"},
+#ifdef USE_CUDA
+    {"gpu",        "Enable CUDA GPU acceleration (Pass 2)"},
+    {"cpu",        "Force CPU execution (disable GPU)"},
+    {"gpu-device", "Select GPU device ID (default: 0)"},
+#endif
     /* Topics */
     {"intro",      "Getting started with GRIC"},
     {"input",      "Input formats and options"},
@@ -405,6 +410,15 @@ static void print_help_raw(
     print_colored_line("    -no-sq16                 Disable 16-bit scalar quantization pruning");
     print_colored_line("    -pass2nearest            Run second pass closest-anchor reallocation "
                        "(-reassign)");
+#ifdef USE_CUDA
+    print_colored_line("    -gpu, --gpu              Enable CUDA GPU acceleration (Pass 1 & 2)");
+    print_colored_line("    -gpu-pass2               Enable GPU acceleration only for Pass 2");
+    print_colored_line("    -cpu-pass1               Run Pass 1 on CPU (use with -gpu -pass2)");
+    print_colored_line("    -gpu-batch-size <size>   Micro-batch size for GPU execution "
+                       "(-gpu-micro-batch, default: 64)");
+    print_colored_line("    -cpu, --cpu              Force CPU execution (disable GPU)");
+    print_colored_line("    -gpu-device <id>         Select GPU device ID (default: 0)");
+#endif
 
     printf("    %sGeometric Probability:%s\n",
            ANSI_BOLD, ANSI_COLOR_RESET);

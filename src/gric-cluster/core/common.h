@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include <time.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct
 {
     void           *data;
@@ -33,6 +37,10 @@ typedef struct
     double *distances;
 } FrameInfo;
 
-int is_ascii_input_mode();
+int is_ascii_input_mode(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // COMMON_H

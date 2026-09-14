@@ -91,6 +91,10 @@ typedef struct
     char     *prof_filename;           /**< Path to explicitly loaded .gricprof */
     int       no_prof;                 /**< 1 to disable automatic .gricprof loading */
     char      preset_name[32];         /**< Calibrated radius preset name ("fine", etc.) */
+    int       use_gpu;                 /**< 1 to enable CUDA GPU acceleration */
+    int       use_gpu_pass1;           /**< 1 to enable GPU brute-force online Pass 1 */
+    int       gpu_micro_batch_size;    /**< Micro-batch size for GPU Pass 1 (default: 64) */
+    int       gpu_device_id;           /**< GPU device index (default 0) */
 } ConfigOptim;
 
 /** Cross-tile injection callback signature. */

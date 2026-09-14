@@ -273,6 +273,11 @@
     let isCliRunning = false; // True while native CLI subprocess is active
     let autoLoadCliResults = true; // Auto-load clusters into visualizer when CLI finishes
 
+    // GPU Acceleration Options (NVIDIA CUDA)
+    let useGpu = false; // Enable NVIDIA CUDA GPU acceleration for native CLI jobs
+    let gpuAvailable = false; // True if host has CUDA-capable GPU detected by gric-server
+    let gpuInfo = null; // Object { name: '...', total_memory_mb: ..., free_memory_mb: ... }
+
     // WASM Engine Mode
     let useWasm = true; // Use C/WASM backend when available
     let wasmSessionActive = false; // True if GricWasm handle is live

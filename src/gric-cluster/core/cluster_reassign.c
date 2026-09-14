@@ -36,6 +36,26 @@
  *
  * Return: Number of frames reassigned to a different cluster, or -1 on error.
  */
+#ifdef USE_CUDA
+#include "cluster_cuda.h"
+#endif
+
+/**
+ * run_second_pass_clustering() - Reassign all frames to their nearest cluster anchor.
+ * @config: Pointer to the active ClusterConfig.
+ * @state:  Pointer to the active ClusterState.
+ *
+ * Performs a second pass over all processed frames:
+ * - Keeps already computed distances from Pass 1 in memory.
+ * - Uses triangle-inequality lower bounds against inter-cluster anchor distances
+ *   (DCC matrix) to prune anchors guaranteed to be farther than the current best anchor.
+ * - Computes distances to remaining unmeasured cluster anchors.
+ * - Reassigns each frame to the cluster anchor with the minimum distance.
+ * - Updates assignments, frame_infos, transition matrix, and telemetry.
+ * - Rewrites frame_membership.txt if membership logging is enabled.
+ *
+ * Return: Number of frames reassigned to a different cluster, or -1 on error.
+ */
 long run_second_pass_clustering(
     ClusterConfig *config,
     ClusterState  *state)
@@ -52,6 +72,32 @@ long run_second_pass_clustering(
     {
         return 0;
     }
+
+#ifdef USE_CUDA
+    if (config->optim.use_gpu)
+    {
+        if (cluster_cuda_is_available())
+        {
+            long res = cluster_cuda_run_pass2(config, state);
+            if (res >= 0)
+            {
+                return res;
+            }
+            fprintf(stderr, "Warning: GPU Pass 2 failed, falling back to CPU Pass 2.\n");
+        }
+        else
+        {
+            fprintf(stderr, "Warning: CUDA GPU requested for Pass 2 but no available device found. "
+                            "Falling back to CPU.\n");
+        }
+    }
+#else
+    if (config->optim.use_gpu)
+    {
+        fprintf(stderr, "Warning: GPU acceleration requested (--gpu), but gric-cluster was built "
+                        "without CUDA support (ENABLE_CUDA=OFF). Running on CPU.\n");
+    }
+#endif
 
     /* Scratch buffers allocated once before the frame loop */
     double *frame_dists = (double *)malloc((size_t)K * sizeof(double));

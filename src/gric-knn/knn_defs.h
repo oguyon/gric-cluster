@@ -130,6 +130,11 @@ typedef struct
     int             use_two_hop;        /**< 1 to enable 2-Hop Candidate Injection */
     int             two_hop_seeds;      /**< Number of top seeds to expand in 2-hop */
     int             two_hop_max_cands;  /**< Maximum 2-hop candidates evaluated per query */
+    int             use_gpu;            /**< 1 to enable GPU acceleration */
+    int             gpu_device_id;      /**< GPU device index (default 0) */
+    int             gpu_batch_size;     /**< Micro-batch size for GPU queries (0=auto) */
+    int             gpu_nprobe;         /**< Max clusters to probe on GPU (0=adaptive) */
+    int             use_gpu_bruteforce; /**< 1 to force dense GEMM brute-force on GPU */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */

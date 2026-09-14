@@ -15,6 +15,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#ifdef USE_CUDA
+#include "gpu/cuda_common.h"
+#endif
+
 void handle_api_info(
     int                 client_fd,
     const ServerConfig *config)
@@ -51,7 +55,30 @@ void handle_api_info(
         ncpus = 1;
     }
 
-    char resp[PATH_MAX + 1024];
+    int has_gpu = 0;
+    char gpu_name[128] = "";
+    size_t gpu_total_mem = 0;
+    size_t gpu_free_mem = 0;
+#ifdef USE_CUDA
+    if (gric_cuda_is_available())
+    {
+        has_gpu = 1;
+        gric_cuda_get_device_info(
+            0, gpu_name, sizeof(gpu_name),
+            &gpu_total_mem, &gpu_free_mem);
+
+        /* Sanitize quotes or backslashes in GPU name for valid JSON */
+        for (size_t ii = 0; gpu_name[ii] != '\0'; ii++)
+        {
+            if (gpu_name[ii] == '"' || gpu_name[ii] == '\\')
+            {
+                gpu_name[ii] = ' ';
+            }
+        }
+    }
+#endif
+
+    char resp[PATH_MAX + 2048];
     snprintf(resp, sizeof(resp),
              "{\n"
              "  \"status\": \"ok\",\n"
@@ -65,6 +92,12 @@ void handle_api_info(
              "    \"gric-txt2stream\": %s,\n"
              "    \"gric-dimdensity\": %s,\n"
              "    \"gric-gen-asteroid\": %s\n"
+             "  },\n"
+             "  \"gpu\": {\n"
+             "    \"available\": %s,\n"
+             "    \"name\": \"%s\",\n"
+             "    \"total_memory_mb\": %zu,\n"
+             "    \"free_memory_mb\": %zu\n"
              "  }\n"
              "}\n",
              config->workdir, ncpus,
@@ -73,7 +106,11 @@ void handle_api_info(
              has_status ? "true" : "false",
              has_txt2stream ? "true" : "false",
              has_dimdensity ? "true" : "false",
-             has_gen_asteroid ? "true" : "false");
+             has_gen_asteroid ? "true" : "false",
+             has_gpu ? "true" : "false",
+             gpu_name,
+             gpu_total_mem / (1024 * 1024),
+             gpu_free_mem / (1024 * 1024));
 
     api_send_json(client_fd, 200, resp);
 } // handle_api_info
