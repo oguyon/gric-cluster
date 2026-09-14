@@ -552,6 +552,60 @@ static int apply_optim_tile_option(
         config->optim.ncpu = atoi(value);
         return 1;
     }
+    else if (matches(key, "-gpu") || matches(key, "--gpu"))
+    {
+        config->optim.use_gpu = 1;
+        config->optim.use_gpu_pass1 = 1;
+        return 0;
+    }
+    else if (matches(key, "-gpu-pass2") || matches(key, "--gpu-pass2"))
+    {
+        config->optim.use_gpu = 1;
+        config->optim.use_gpu_pass1 = 0;
+        return 0;
+    }
+    else if (matches(key, "-cpu-pass1") || matches(key, "--cpu-pass1") ||
+             matches(key, "-no-gpu-pass1") || matches(key, "--no-gpu-pass1"))
+    {
+        config->optim.use_gpu_pass1 = 0;
+        return 0;
+    }
+    else if (matches(key, "-gpu-brute-force") || matches(key, "--gpu-brute-force") ||
+             matches(key, "-gpu-pass1") || matches(key, "--gpu-pass1") ||
+             matches(key, "-gpu-bf") || matches(key, "--gpu-bf"))
+    {
+        config->optim.use_gpu = 1;
+        config->optim.use_gpu_pass1 = 1;
+        return 0;
+    }
+    else if (matches(key, "-gpu-batch-size") || matches(key, "--gpu-batch-size") ||
+             matches(key, "-gpu-micro-batch") || matches(key, "--gpu-micro-batch"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.use_gpu = 1;
+        config->optim.use_gpu_pass1 = 1;
+        config->optim.gpu_micro_batch_size = atoi(value);
+        return 1;
+    }
+    else if (matches(key, "-cpu") || matches(key, "--cpu"))
+    {
+        config->optim.use_gpu = 0;
+        config->optim.use_gpu_pass1 = 0;
+        return 0;
+    }
+    else if (matches(key, "-gpu-device") || matches(key, "--gpu-device"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.use_gpu = 1;
+        config->optim.gpu_device_id = atoi(value);
+        return 1;
+    }
     else if (matches(key, "-fmatcha"))
     {
         if (!value)

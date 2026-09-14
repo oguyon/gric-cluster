@@ -16,6 +16,9 @@
 #include "cluster_shm.h"
 #include "tile_map.h"
 #include "tile_state.h"
+#ifdef USE_CUDA
+#include "cluster_cuda.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -308,91 +311,145 @@ void run_clustering(
 
     printf("Clustering sequence\n");
 
-    // Main clustering loop: reads and assigns each frame sequentially
-    for (long i = 0; i < actual_frames; i++)
+#ifdef USE_CUDA
+    int gpu_pass1_executed = 0;
+    if (config->optim.use_gpu_pass1)
     {
-        // Stop execution if SIGINT interrupt signal was received
-        if (stop_requested)
+        if (cluster_cuda_is_available())
         {
-            break;
-        }
-
-        // Fetch the next frame from the configured input source (FITS, MP4, or Stream)
-        struct timespec io_start, io_end;
-        clock_gettime(CLOCK_MONOTONIC, &io_start);
-        Frame *current_frame = getframe();
-        clock_gettime(CLOCK_MONOTONIC, &io_end);
-        state->telemetry.time_io_ms += (io_end.tv_sec - io_start.tv_sec) * 1000.0 +
-                                       (io_end.tv_nsec - io_start.tv_nsec) / 1000000.0;
-        if (!current_frame)
-        {
-            break;
-        }
-
-        // Perform assignment logic: match to existing clusters, prune, or create a new cluster
-        int res = cluster_frame(config, state, current_frame, &prev_assigned_cluster,
-                                ascii_out, temp_indices, temp_dists, sorting_candidates,
-                                verbose_candidates);
-        // Exit loop if the max cluster count was reached and the strategy is to stop
-        if (res == -2)
-        {
-            break;
-        }
-
-        if (state->shm_ptr != NULL)
-        {
-            struct timespec now;
-            clock_gettime(CLOCK_MONOTONIC, &now);
-            double elapsed = (now.tv_sec - start.tv_sec) * 1000.0 +
-                             (now.tv_nsec - start.tv_nsec) / 1000000.0;
-            gric_shm_update(state, GRIC_STATUS_RUNNING, elapsed);
-        }
-
-        // Periodically print progress, telemetry stats, and streaming frame rates (fps)
-        if (config->output.progress_mode &&
-            (state->telemetry.total_frames_processed % 10 == 0 ||
-             state->telemetry.total_frames_processed == actual_frames))
-        {
-            state->telemetry.total_missed_frames = get_missed_frames();
-            double avg_dists = (state->telemetry.total_frames_processed > 0)
-                                   ? (double)state->telemetry.framedist_calls /
-                                     state->telemetry.total_frames_processed
-                                   : 0.0;
-
-            printf("\rProcessing frame %ld / %ld (Clusters: %d, Dists: %ld, Avg Dists/Frame: %.3f, "
-                   "Pruned: %ld, ",
-                   state->telemetry.total_frames_processed, actual_frames, state->num_clusters,
-                   state->telemetry.framedist_calls, avg_dists, state->telemetry.clusters_pruned);
-
-            if (state->telemetry.total_missed_frames > prev_missed_frames)
+            if (ascii_out != NULL)
             {
-                printf("\x1b[1;37;41mMissed: %ld\x1b[0m", state->telemetry.total_missed_frames);
+                fclose(ascii_out);
+                ascii_out = NULL;
+            }
+            if (cluster_cuda_run_pass1_bruteforce(config, state) == 0)
+            {
+                gpu_pass1_executed = 1;
             }
             else
             {
-                printf("Missed: %ld", state->telemetry.total_missed_frames);
+                fprintf(stderr,
+                        "Warning: GPU Pass 1 failed, falling back to CPU.\n");
+                if (config->output.output_membership && !config->output.no_txt)
+                {
+                    char out_path[1024];
+                    if (config->output.user_outdir != NULL)
+                    {
+                        snprintf(out_path, sizeof(out_path), "%s/frame_membership.txt",
+                                 config->output.user_outdir);
+                    }
+                    else
+                    {
+                        snprintf(out_path, sizeof(out_path), "frame_membership.txt");
+                    }
+                    ascii_out = fopen(out_path, "w");
+                    if (ascii_out != NULL)
+                    {
+                        setvbuf(ascii_out, NULL, _IOFBF, 65536);
+                    }
+                }
             }
-
-            if (config->input.stream_input_mode)
-            {
-                struct timespec now;
-                clock_gettime(CLOCK_MONOTONIC, &now);
-                double rate = (now.tv_sec - start.tv_sec) + (now.tv_nsec - start.tv_nsec) / 1e9;
-                printf(", fps: %.1f", (rate > 0.0) ?
-                       state->telemetry.total_frames_processed / rate : 0.0);
-            }
-
-            printf(")");
-            fflush(stdout);
-
-            prev_missed_frames = state->telemetry.total_missed_frames;
+        }
+        else
+        {
+            fprintf(stderr,
+                    "Warning: GPU Pass 1 requested but CUDA not available. "
+                    "Falling back to CPU.\n");
         }
     }
 
-    if (config->output.progress_mode)
+    if (!gpu_pass1_executed)
+#endif
     {
-        printf("\n");
-    }
+        // Main clustering loop: reads and assigns each frame sequentially
+        for (long i = 0; i < actual_frames; i++)
+        {
+            // Stop execution if SIGINT interrupt signal was received
+            if (stop_requested)
+            {
+                break;
+            }
+
+            // Fetch the next frame from the configured input source (FITS, MP4, or Stream)
+            struct timespec io_start, io_end;
+            clock_gettime(CLOCK_MONOTONIC, &io_start);
+            Frame *current_frame = getframe();
+            clock_gettime(CLOCK_MONOTONIC, &io_end);
+            state->telemetry.time_io_ms += (io_end.tv_sec - io_start.tv_sec) * 1000.0 +
+                                           (io_end.tv_nsec - io_start.tv_nsec) / 1000000.0;
+            if (!current_frame)
+            {
+                break;
+            }
+
+            // Perform assignment logic: match to existing clusters, prune, or create a new cluster
+            int res = cluster_frame(config, state, current_frame, &prev_assigned_cluster,
+                                    ascii_out, temp_indices, temp_dists, sorting_candidates,
+                                    verbose_candidates);
+            // Exit loop if the max cluster count was reached and the strategy is to stop
+            if (res == -2)
+            {
+                break;
+            }
+
+            if (state->shm_ptr != NULL)
+            {
+                struct timespec now;
+                clock_gettime(CLOCK_MONOTONIC, &now);
+                double elapsed = (now.tv_sec - start.tv_sec) * 1000.0 +
+                                 (now.tv_nsec - start.tv_nsec) / 1000000.0;
+                gric_shm_update(state, GRIC_STATUS_RUNNING, elapsed);
+            }
+
+            // Periodically print progress, telemetry stats, and streaming frame rates (fps)
+            if (config->output.progress_mode &&
+                (state->telemetry.total_frames_processed % 10 == 0 ||
+                 state->telemetry.total_frames_processed == actual_frames))
+            {
+                state->telemetry.total_missed_frames = get_missed_frames();
+                double avg_dists = (state->telemetry.total_frames_processed > 0)
+                                       ? (double)state->telemetry.framedist_calls /
+                                         state->telemetry.total_frames_processed
+                                       : 0.0;
+
+                printf("\rProcessing frame %ld / %ld (Clusters: %d, Dists: %ld, "
+                       "Avg Dists/Frame: %.3f, Pruned: %ld, ",
+                       state->telemetry.total_frames_processed, actual_frames,
+                       state->num_clusters, state->telemetry.framedist_calls,
+                       avg_dists, state->telemetry.clusters_pruned);
+
+                if (state->telemetry.total_missed_frames > prev_missed_frames)
+                {
+                    printf("\x1b[1;37;41mMissed: %ld\x1b[0m",
+                           state->telemetry.total_missed_frames);
+                }
+                else
+                {
+                    printf("Missed: %ld", state->telemetry.total_missed_frames);
+                }
+
+                if (config->input.stream_input_mode)
+                {
+                    struct timespec now;
+                    clock_gettime(CLOCK_MONOTONIC, &now);
+                    double rate = (now.tv_sec - start.tv_sec) +
+                                  (now.tv_nsec - start.tv_nsec) / 1e9;
+                    printf(", fps: %.1f", (rate > 0.0) ?
+                           state->telemetry.total_frames_processed / rate : 0.0);
+                }
+
+                printf(")");
+                fflush(stdout);
+
+                prev_missed_frames = state->telemetry.total_missed_frames;
+            }
+        } // for (long i = 0; i < actual_frames; i++)
+
+        if (config->output.progress_mode)
+        {
+            printf("\n");
+        }
+    } // if (!gpu_pass1_executed)
 
     if (ascii_out)
     {

@@ -51,6 +51,11 @@ gric-knn <input_data> <cluster_dir> [options]
 | `-two-hop-seeds`| `<int>` | Number of top seeds to expand in 2-hop | `2` |
 | `-two-hop-max` | `<int>` | Max 2-hop candidates evaluated per query | `32` |
 | `-no-reciprocal`| Flag | Disable symmetric distance reciprocal push | Disabled |
+| `-gpu`, `--gpu` | Flag | Enable CUDA GPU acceleration (Tensor Cores / cuBLAS) | Disabled |
+| `-gpu-batch-size`| `<int>` | Micro-batch size for GPU queries (1=stream, 64..256=batch) | `Auto` |
+| `-gpu-micro-batch`| `[int]` | Alias for `-gpu-batch-size` | `Auto` |
+| `-cpu`, `--cpu` | Flag | Force CPU execution (disable GPU acceleration) | Enabled |
+| `-gpu-device` | `<id>` | Select CUDA GPU device index | `0` |
 | `-progress` | Flag | Display interactive progress bar | Disabled |
 | `-v`, `-vv` | Flag | Verbosity level (summary vs per-chunk telemetry) | Level 0 |
 
@@ -66,4 +71,27 @@ gric-knn spiral.txt spiral_out/ -k 10 -dtmin 5 -o knn_results.txt
 # 2. High-dimensional image k-NN search on FITS cube
 gric-cluster a1.5 observations.fits -outdir obs_out/
 gric-knn observations.fits obs_out/ -k 20 -eps 0.05 -nthreads 8 -progress
+
+# 3. GPU-accelerated Tensor Core k-NN search (high-throughput batch)
+gric-knn observations.fits obs_out/ -k 50 -dtmin 10 --gpu -gpu-batch-size 128
+
+# 4. Low-latency per-frame GPU query evaluation (streaming mode B=1)
+gric-knn observations.fits obs_out/ -k 50 --gpu -gpu-batch-size 1
 ```
+
+---
+
+## 4. CUDA GPU Acceleration
+
+When compiled with `-DENABLE_CUDA=ON`, `gric-knn` provides massive throughput via:
+- **cuBLAS Batched GEMM**: Exploits hardware Tensor Cores (TF32/FP32 math mode) for
+  Euclidean cross-term computation: $\|q - c\|^2 = \|q\|^2 + \|c\|^2 - 2 \langle q, c \rangle$.
+- **User-Settable Micro-Batching**: Specifying `-gpu-batch-size <size>` (or `-gpu-micro-batch`)
+  tunes between low-latency per-frame streaming (`-gpu-batch-size 1`) and high-throughput
+  batched GEMM (`-gpu-batch-size 64` or `256`) for offline processing.
+- **Fused Metric & Temporal Masking**: Custom CUDA device kernels enforce `-dtmin`, `-past`,
+  `-future`, and `-rlim` directly in GPU global memory without host synchronization.
+- **Top-$k$ Register Priority Heap**: Evaluates the nearest $k$ neighbors per query in fast
+  register heaps entirely on-chip, returning sorted candidate indices and Euclidean distances.
+- **Strictly Opt-In**: GPU is only active when `--gpu` is specified, falling back gracefully
+  to multi-core OpenMP CPU processing otherwise.

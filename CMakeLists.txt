@@ -64,6 +64,26 @@ if (USE_BLAS)
     endif()
 endif()
 
+option(ENABLE_CUDA "Enable NVIDIA CUDA GPU acceleration" OFF)
+if (ENABLE_CUDA)
+    include(CheckLanguage)
+    check_language(CUDA)
+    if (CMAKE_CUDA_COMPILER)
+        enable_language(CUDA)
+        find_package(CUDAToolkit REQUIRED)
+        add_definitions(-DUSE_CUDA)
+        set(CMAKE_CUDA_STANDARD 17)
+        set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+        if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+            set(CMAKE_CUDA_ARCHITECTURES "75;80;86;89")
+        endif()
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -mno-avx512bf16 -Xcompiler -mno-amx-tile")
+        message(STATUS "CUDA found: ${CMAKE_CUDA_COMPILER} (Architectures: ${CMAKE_CUDA_ARCHITECTURES})")
+    else()
+        message(FATAL_ERROR "ENABLE_CUDA=ON requested but CUDA compiler (nvcc) not found.")
+    endif()
+endif()
+
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 file(GLOB HELP_TOPIC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/help/*.md")
@@ -91,6 +111,9 @@ include_directories(
     src/gric-cluster/help
     src/gric-cluster/steps
     src/gric-cluster/trace
+    src/gpu
+    src/gric-knn/gpu
+    src/gric-cluster/gpu
 )
 
 link_directories(
@@ -171,6 +194,14 @@ if (USE_BLAS AND BLAS_FOUND)
 endif()
 if (PNG_FOUND)
     target_link_libraries(gric-cluster ${PNG_LIBRARIES})
+endif()
+if (ENABLE_CUDA)
+    target_sources(gric-cluster PRIVATE
+        src/gpu/cuda_common.cu
+        src/gpu/cuda_anchor_store.cu
+        src/gric-cluster/gpu/cluster_cuda.cu
+    )
+    target_link_libraries(gric-cluster CUDA::cublas CUDA::cudart)
 endif()
 
 add_executable(gric-mktxtseq
@@ -288,6 +319,12 @@ add_executable(gric-server
     src/shared/cli_colors.c
 )
 target_include_directories(gric-server PRIVATE src/gric-server src src/gric-cluster/core)
+if (ENABLE_CUDA)
+    target_sources(gric-server PRIVATE
+        src/gpu/cuda_common.cu
+    )
+    target_link_libraries(gric-server CUDA::cublas CUDA::cudart)
+endif()
 
 # gric-knn tool
 add_executable(gric-knn
@@ -326,6 +363,16 @@ endif()
 if (CFITSIO_FOUND)
     target_link_libraries(gric-knn ${CFITSIO_LIBRARIES})
     target_include_directories(gric-knn PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (ENABLE_CUDA)
+    target_sources(gric-knn PRIVATE
+        src/gpu/cuda_common.cu
+        src/gpu/cuda_anchor_store.cu
+        src/gpu/cuda_ivf_index.cu
+        src/gric-knn/gpu/knn_cuda.cu
+        src/gric-knn/gpu/knn_cuda_ivf.cu
+    )
+    target_link_libraries(gric-knn CUDA::cublas CUDA::cudart)
 endif()
 
 # gric-knn-avg reconstruction tool
@@ -688,6 +735,37 @@ endif()
 add_test(NAME test_gric_probe
     COMMAND test_gric_probe)
 set_tests_properties(test_gric_probe PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+if (ENABLE_CUDA)
+    add_executable(test_cluster_cuda tests/test_cluster_cuda.c)
+    target_link_libraries(test_cluster_cuda m)
+    add_test(NAME test_cluster_cuda COMMAND test_cluster_cuda)
+    set_tests_properties(test_cluster_cuda PROPERTIES DEPENDS gric-cluster)
+
+    add_executable(test_knn_cuda tests/test_knn_cuda.c)
+    target_link_libraries(test_knn_cuda m)
+    add_test(NAME test_knn_cuda COMMAND test_knn_cuda)
+    set_tests_properties(test_knn_cuda PROPERTIES DEPENDS "gric-cluster;gric-knn")
+
+    add_executable(test_knn_cuda_ivf tests/test_knn_cuda_ivf.c)
+    target_link_libraries(test_knn_cuda_ivf m)
+    add_test(NAME test_knn_cuda_ivf COMMAND test_knn_cuda_ivf)
+    set_tests_properties(test_knn_cuda_ivf PROPERTIES DEPENDS "gric-cluster;gric-knn")
+
+    add_executable(test_cluster_cuda_pass1
+        tests/test_cluster_cuda_pass1.c
+        src/gpu/cuda_anchor_store.cu
+        src/gpu/cuda_common.cu
+    )
+    target_include_directories(test_cluster_cuda_pass1 PRIVATE src src/gpu)
+    target_link_libraries(test_cluster_cuda_pass1
+        CUDA::cudart
+        CUDA::cublas
+        m
+    )
+    add_test(NAME test_cluster_cuda_pass1 COMMAND test_cluster_cuda_pass1)
+    set_tests_properties(test_cluster_cuda_pass1 PROPERTIES DEPENDS gric-cluster)
+endif()
 
 # Target to regenerate benchmark figures and documentation pages
 find_package(Python3 COMPONENTS Interpreter REQUIRED)

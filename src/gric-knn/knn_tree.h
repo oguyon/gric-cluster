@@ -8,6 +8,10 @@
 
 #include "knn_defs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * knn_build_cluster_graph() - Build proximity graph on cluster anchors from DCC matrix.
  * @model: Pointer to resident KnnModel with populated dcc_matrix.
@@ -23,5 +27,9 @@ int knn_build_cluster_graph(
  */
 void knn_free_cluster_graph(
     KnnModel *model);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // KNN_TREE_H

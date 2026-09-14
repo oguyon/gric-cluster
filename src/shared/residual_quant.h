@@ -13,7 +13,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 #include <immintrin.h>
 #endif
 
@@ -227,7 +228,7 @@ static inline uint32_t rq8_fastscan_32x_generic_scalar(
     return mask;
 }
 
-#if defined(__AVX2__) && \
+#if !defined(__CUDACC__) && defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 
 /**
@@ -256,7 +257,7 @@ static inline uint32_t rq8_fastscan_32x_generic_avx2(
 }
 #endif // __AVX2__
 
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 
 /**
@@ -295,10 +296,10 @@ static inline uint32_t rq8_fastscan_32x_3d(
     const int8_t  *restrict block_z,
     uint64_t                ssd_cutoff)
 {
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     return rq8_fastscan_32x_3d_avx512(query_res, block_x, block_y, block_z, ssd_cutoff);
-#elif defined(__AVX2__) && \
+#elif !defined(__CUDACC__) && defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     return rq8_fastscan_32x_3d_avx2(query_res, block_x, block_y, block_z, ssd_cutoff);
 #else
@@ -325,10 +326,10 @@ static inline uint32_t rq8_fastscan_32x(
             ssd_cutoff);
     }
 
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
+#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     return rq8_fastscan_32x_generic_avx512(query_res, block_coords, dim, ssd_cutoff);
-#elif defined(__AVX2__) && \
+#elif !defined(__CUDACC__) && defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     return rq8_fastscan_32x_generic_avx2(query_res, block_coords, dim, ssd_cutoff);
 #else

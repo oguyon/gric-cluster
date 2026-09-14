@@ -180,6 +180,20 @@ void knn_cli_print_help(
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-no-txt%s, %s--no-txt%s         Disable ASCII knn_results.txt output\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-gpu%s, %s--gpu%s               Enable CUDA GPU acceleration\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-gpu-batch-size%s %s<size>%s    Micro-batch size for GPU queries (default: auto)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-gpu-micro-batch%s %s[size]%s   Alias for -gpu-batch-size\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-cpu%s, %s--cpu%s               Force CPU execution (disable GPU)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-gpu-device%s %s<id>%s          Select GPU device ID (default: 0)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-gpu-nprobe%s %s<int>%s         Max clusters to probe on GPU (default: adaptive)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-gpu-bf%s, %s--gpu-brute-force%s Force dense GEMM brute-force on GPU\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-v, -vv%s               Verbosity level\n",
            ansi_color_green, ansi_reset);
     printf("  %s-h, --help%s            Show this help message\n\n",
@@ -770,6 +784,62 @@ int knn_cli_parse(
         {
             config->verbose_level = 3;
         }
+        else if (strcmp(argv[arg_idx], "-gpu") == 0 ||
+                 strcmp(argv[arg_idx], "--gpu") == 0)
+        {
+            config->use_gpu = 1;
+        }
+        else if (strcmp(argv[arg_idx], "-cpu") == 0 ||
+                 strcmp(argv[arg_idx], "--cpu") == 0)
+        {
+            config->use_gpu = 0;
+        }
+        else if (strcmp(argv[arg_idx], "-gpu-device") == 0 ||
+                 strcmp(argv[arg_idx], "--gpu-device") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: --gpu-device requires an integer argument\n");
+                return 1;
+            }
+            config->use_gpu = 1;
+            config->gpu_device_id = atoi(argv[++arg_idx]);
+        }
+        else if (strcmp(argv[arg_idx], "-gpu-batch-size") == 0 ||
+                 strcmp(argv[arg_idx], "--gpu-batch-size") == 0 ||
+                 strcmp(argv[arg_idx], "-gpu-micro-batch") == 0 ||
+                 strcmp(argv[arg_idx], "--gpu-micro-batch") == 0)
+        {
+            config->use_gpu = 1;
+            if (arg_idx + 1 < argc && argv[arg_idx + 1][0] != '-')
+            {
+                config->gpu_batch_size = atoi(argv[++arg_idx]);
+            }
+            else
+            {
+                config->gpu_batch_size = 64;
+            }
+        }
+        else if (strcmp(argv[arg_idx], "-gpu-nprobe") == 0 ||
+                 strcmp(argv[arg_idx], "--gpu-nprobe") == 0 ||
+                 strcmp(argv[arg_idx], "-nprobe") == 0)
+        {
+            if (arg_idx + 1 >= argc)
+            {
+                fprintf(stderr, "Error: -gpu-nprobe requires an integer argument\n");
+                return 1;
+            }
+            config->use_gpu = 1;
+            config->gpu_nprobe = atoi(argv[++arg_idx]);
+        }
+        else if (strcmp(argv[arg_idx], "-gpu-bf") == 0 ||
+                 strcmp(argv[arg_idx], "--gpu-bf") == 0 ||
+                 strcmp(argv[arg_idx], "-gpu-brute-force") == 0 ||
+                 strcmp(argv[arg_idx], "--gpu-brute-force") == 0)
+        {
+            config->use_gpu = 1;
+            config->use_gpu_bruteforce = 1;
+        }
         else if (argv[arg_idx][0] == '-')
         {
             fprintf(stderr, "Error: Unknown option '%s'\n", argv[arg_idx]);
@@ -909,6 +979,19 @@ void knn_cli_print_banner(
     }
     printf("  Precision:     %s\n",
            config->use_double ? "64-bit Double Precision" : "32-bit Single Precision (Default)");
+    if (config->use_gpu)
+    {
+        if (config->gpu_batch_size > 0)
+        {
+            printf("  Acceleration:  CUDA GPU (Device %d, Batch Size %d)\n",
+                   config->gpu_device_id, config->gpu_batch_size);
+        }
+        else
+        {
+            printf("  Acceleration:  CUDA GPU (Device %d, Batch Size Auto)\n",
+                   config->gpu_device_id);
+        }
+    }
     printf("\n");
 
 }

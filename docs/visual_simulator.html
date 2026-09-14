@@ -76,6 +76,35 @@
                   data-tooltip-desc="Native CLI runs in tmux 'gric_cli'. Click to copy attach cmd."
             >🖥️ tmux: gric_cli 📋</span>
 
+            <button id="btnToggleGpu" class="btn-toggle btn-mini-action btn-gpu-toggle"
+                    style="display: none;"
+                    data-tooltip-title="NVIDIA CUDA Acceleration"
+                    data-tooltip-badge="GPU: OFF"
+                    data-tooltip-color="purple"
+                    data-tooltip-desc="Toggle NVIDIA CUDA GPU acceleration for native clustering and k-NN search."
+            >🚀 GPU: OFF</button>
+
+            <!-- Top Toolbar GPU Micro-Batch Selector -->
+            <div id="toolbarGpuBatchWrap"
+                 style="display: none; align-items: center; gap: 4px; background: rgba(168, 85, 247, 0.12); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(168, 85, 247, 0.35);">
+              <span style="font-size: 0.68rem; color: #c084fc; font-weight: 700;">BATCH:</span>
+              <select id="selectToolbarGpuBatchSize"
+                      style="padding: 1px 4px; font-size: 0.70rem; border-radius: 3px; background: rgba(15, 23, 42, 0.9); color: #e2e8f0; border: 1px solid rgba(168, 85, 247, 0.4); cursor: pointer;"
+                      data-tooltip-title="GPU Micro-Batch Size"
+                      data-tooltip-badge="B: 64"
+                      data-tooltip-color="purple"
+                      data-tooltip-desc="Set GPU query micro-batch size (1 = real-time streaming, 64..256 = high-throughput batch).">
+                <option value="1">1 (Streaming)</option>
+                <option value="16">16 (Micro)</option>
+                <option value="32">32</option>
+                <option value="64" selected>64 (Default)</option>
+                <option value="128">128</option>
+                <option value="256">256</option>
+                <option value="512">512</option>
+                <option value="1024">1024</option>
+              </select>
+            </div>
+
             <button id="btnToggleMultiDataset" class="btn-toggle btn-mini-action btn-multi-dataset"
                     data-tooltip-title="Toggle Multi-Dataset Mode" 
                     data-tooltip-badge="Multi-Dataset (A, B, C, D)" 
@@ -2557,6 +2586,37 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                           data-tooltip-badge="tmux attach -t gric_cli"
                           data-tooltip-color="green"
                           data-tooltip-desc="Copies 'tmux attach -t gric_cli' to clipboard so you can attach from terminal.">📋 Copy Attach</button>
+                </div>
+
+                <!-- GPU Hardware Acceleration Option Banner -->
+                <div id="cliGpuRow" style="display: none; justify-content: space-between; align-items: center; background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 5px; padding: 5px 8px;">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 0.85rem;">🚀</span>
+                    <div>
+                      <span style="font-size: 0.72rem; color: #c084fc; font-weight: 600;">CUDA GPU Acceleration:</span>
+                      <span id="lblGpuDeviceName" style="font-size: 0.68rem; color: #94a3b8; display: block;">NVIDIA GPU Detected</span>
+                    </div>
+                  </div>
+                  <button id="btnToggleGpuSide" class="btn-toggle btn-mini-action btn-gpu-toggle"
+                          data-tooltip-title="NVIDIA CUDA Acceleration"
+                          data-tooltip-badge="GPU: OFF"
+                          data-tooltip-color="purple"
+                          data-tooltip-desc="Toggle CUDA GPU acceleration for native gric-cluster and gric-knn.">🚀 GPU: OFF</button>
+                </div>
+
+                <!-- GPU Micro-Batch Size Selector (Shown when GPU active) -->
+                <div id="cliGpuBatchRow" style="display: none; justify-content: space-between; align-items: center; background: rgba(168, 85, 247, 0.05); border: 1px dashed rgba(168, 85, 247, 0.25); border-radius: 5px; padding: 4px 8px;">
+                  <span style="font-size: 0.72rem; color: #c084fc; font-weight: 500;">Micro-Batch Size:</span>
+                  <select id="selectCliGpuBatchSize" style="padding: 2px 6px; font-size: 0.72rem; border-radius: 4px; background: rgba(15, 23, 42, 0.8); color: var(--text-color); border: 1px solid rgba(168, 85, 247, 0.4);">
+                    <option value="1">1 (Streaming / Real-Time)</option>
+                    <option value="16">16 (Micro)</option>
+                    <option value="32">32</option>
+                    <option value="64" selected>64 (Default Batch)</option>
+                    <option value="128">128</option>
+                    <option value="256">256</option>
+                    <option value="512">512 (High Throughput)</option>
+                    <option value="1024">1024 (Batch Max)</option>
+                  </select>
                 </div>
 
                 <div style="display: flex; gap: 6px; align-items: center;">

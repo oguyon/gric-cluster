@@ -12,6 +12,10 @@
 #include <fitsio.h>
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** Context for random-access dataset reading */
 typedef struct
 {
@@ -117,5 +121,9 @@ void knn_reader_close_thread(
  */
 void knn_reader_close(
     KnnFrameReader *reader);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // KNN_READER_H

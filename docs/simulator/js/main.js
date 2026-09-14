@@ -185,6 +185,8 @@
         if (btnCli) btnCli.classList.add('active');
 
         if (badgeNativeTmux) badgeNativeTmux.style.display = 'inline-flex';
+        const btnToggleGpu = document.getElementById('btnToggleGpu');
+        if (btnToggleGpu && gpuAvailable) btnToggleGpu.style.display = 'inline-flex';
 
         // Resource Tracker
         if (badgeWasm) {
@@ -193,7 +195,9 @@
           badgeWasm.style.color = '#4ade80';
         }
         if (labelBackend) {
-          labelBackend.innerText = 'Native Compiled C (OpenMP / AVX)';
+          labelBackend.innerText = useGpu
+            ? 'Native Compiled C (NVIDIA CUDA GPU)'
+            : 'Native Compiled C (OpenMP / AVX)';
         }
       } else {
         // WASM Mode
@@ -231,6 +235,8 @@
         if (engineToggleSlider) engineToggleSlider.classList.remove('mode-cli');
         if (btnWasm) btnWasm.classList.add('active');
         if (badgeNativeTmux) badgeNativeTmux.style.display = 'none';
+        const btnToggleGpu = document.getElementById('btnToggleGpu');
+        if (btnToggleGpu) btnToggleGpu.style.display = 'none';
         if (btnWasm) btnWasm.classList.add('active');
         if (btnCli) btnCli.classList.remove('active');
 
@@ -6705,10 +6711,16 @@
             } else {
               // Run native gric-cluster in workspace first to generate cluster anchors
               showToast(`⚡ Clustering ${datasetFile} for k-NN metric bounds...`);
+              const clusterArgs = ['-outdir', clusterDir, '0.15', datasetFile];
+              if (useGpu) {
+                clusterArgs.push('--gpu');
+                const bSize = document.getElementById('selectCliGpuBatchSize')?.value;
+                if (bSize) clusterArgs.push('--gpu-batch-size', bSize);
+              }
               await new Promise((resolve) => {
                 DesktopBridge.runCliJob({
                   cmd: 'gric-cluster',
-                  args: ['-outdir', clusterDir, '0.15', datasetFile],
+                  args: clusterArgs,
                   onOutput: (chunk) => {
                     const consoleEl = document.getElementById('cliConsoleLog');
                     if (consoleEl) {
@@ -6761,6 +6773,11 @@
             } else {
               args.push('-no-cluster-graph');
             }
+          }
+          if (useGpu) {
+            args.push('--gpu');
+            const bSize = document.getElementById('selectCliGpuBatchSize')?.value;
+            if (bSize) args.push('--gpu-batch-size', bSize);
           }
           args.push('-progress');
           args.push('-no-txt');
@@ -9327,10 +9344,16 @@
             await DesktopBridge.exportClusterDat(baseA, exportFiles).catch(() => {});
           } else {
             showToast(`⚡ Clustering Dataset A (${datasetFileA}) for metric bounds...`);
+            const clusterArgs = ['-outdir', clusterDir, '0.15', datasetFileA];
+            if (useGpu) {
+              clusterArgs.push('--gpu');
+              const bSize = document.getElementById('selectCliGpuBatchSize')?.value;
+              if (bSize) clusterArgs.push('--gpu-batch-size', bSize);
+            }
             await new Promise((resolve) => {
               DesktopBridge.runCliJob({
                 cmd: 'gric-cluster',
-                args: ['-outdir', clusterDir, '0.15', datasetFileA],
+                args: clusterArgs,
                 onOutput: (chunk) => {
                   if (consoleEl) {
                     consoleEl.textContent += chunk;
@@ -9407,6 +9430,11 @@
           } else {
             args.push('-no-cluster-graph');
           }
+        }
+        if (useGpu) {
+          args.push('--gpu');
+          const bSize = document.getElementById('selectCliGpuBatchSize')?.value;
+          if (bSize) args.push('--gpu-batch-size', bSize);
         }
 
         if (consoleEl) {
@@ -11140,6 +11168,26 @@
         }
         await refreshWorkspaceFiles();
 
+        // Detect GPU availability from native server
+        if (DesktopBridge.hasGpu()) {
+          gpuAvailable = true;
+          gpuInfo = DesktopBridge.getGpuInfo();
+          const btnGpu = document.getElementById('btnToggleGpu');
+          const cliGpuRow = document.getElementById('cliGpuRow');
+          const lblGpuName = document.getElementById('lblGpuDeviceName');
+          if (btnGpu) {
+            btnGpu.style.display = 'inline-flex';
+            const vramGb = (gpuInfo.total_memory_mb / 1024).toFixed(1);
+            btnGpu.setAttribute('data-tooltip-desc',
+              `Toggle CUDA GPU acceleration (${gpuInfo.name}, ${vramGb} GB VRAM) for native clustering and k-NN.`);
+          }
+          if (cliGpuRow) cliGpuRow.style.display = 'flex';
+          if (lblGpuName && gpuInfo.name) {
+            const vramGb = (gpuInfo.total_memory_mb / 1024).toFixed(1);
+            lblGpuName.textContent = `${gpuInfo.name} (${vramGb} GB VRAM)`;
+          }
+        }
+
         // Default to Native C Engine mode when desktop backend is available
         await setEngineMode('cli', true);
       } else {
@@ -11211,6 +11259,80 @@
           }
           setEngineMode('cli');
         });
+      }
+
+      // GPU Hardware Acceleration Controller
+      function setGpuState(enabled) {
+        useGpu = Boolean(enabled);
+        const btnGpu = document.getElementById('btnToggleGpu');
+        const btnGpuSide = document.getElementById('btnToggleGpuSide');
+        const btns = [btnGpu, btnGpuSide].filter(Boolean);
+
+        for (const btn of btns) {
+          if (useGpu) {
+            btn.classList.add('active');
+            btn.textContent = '🚀 GPU: ON';
+            btn.setAttribute('data-tooltip-badge', 'GPU: ON (CUDA)');
+            btn.setAttribute('data-tooltip-color', 'green');
+          } else {
+            btn.classList.remove('active');
+            btn.textContent = '🚀 GPU: OFF';
+            btn.setAttribute('data-tooltip-badge', 'GPU: OFF (CPU)');
+            btn.setAttribute('data-tooltip-color', 'purple');
+          }
+        }
+        const cliGpuBatchRow = document.getElementById('cliGpuBatchRow');
+        if (cliGpuBatchRow) {
+          cliGpuBatchRow.style.display = useGpu ? 'flex' : 'none';
+        }
+        const toolbarGpuBatchWrap = document.getElementById('toolbarGpuBatchWrap');
+        if (toolbarGpuBatchWrap) {
+          toolbarGpuBatchWrap.style.display = useGpu ? 'inline-flex' : 'none';
+        }
+        updateEngineModeUI();
+        if (typeof updateCliCommand === 'function') {
+          updateCliCommand();
+        }
+      }
+      window.setGpuState = setGpuState;
+
+      const btnToggleGpu = document.getElementById('btnToggleGpu');
+      const btnToggleGpuSide = document.getElementById('btnToggleGpuSide');
+      function onGpuToggleClick() {
+        setGpuState(!useGpu);
+        if (useGpu) {
+          const vramStr = (gpuInfo && gpuInfo.total_memory_mb)
+            ? ` (${(gpuInfo.total_memory_mb / 1024).toFixed(1)} GB VRAM)`
+            : '';
+          showToast(`🚀 NVIDIA CUDA GPU acceleration enabled${vramStr}`);
+        } else {
+          showToast('💻 Switched to host CPU multi-threading (OpenMP + AVX)');
+        }
+      }
+      if (btnToggleGpu) btnToggleGpu.addEventListener('click', onGpuToggleClick);
+      if (btnToggleGpuSide) btnToggleGpuSide.addEventListener('click', onGpuToggleClick);
+
+      const selectCliGpuBatchSize = document.getElementById('selectCliGpuBatchSize');
+      const selectToolbarGpuBatchSize = document.getElementById('selectToolbarGpuBatchSize');
+
+      function syncGpuBatchSize(val) {
+        if (selectCliGpuBatchSize && selectCliGpuBatchSize.value !== val) {
+          selectCliGpuBatchSize.value = val;
+        }
+        if (selectToolbarGpuBatchSize && selectToolbarGpuBatchSize.value !== val) {
+          selectToolbarGpuBatchSize.value = val;
+          selectToolbarGpuBatchSize.setAttribute('data-tooltip-badge', `B: ${val}`);
+        }
+        if (typeof updateCliCommand === 'function') {
+          updateCliCommand();
+        }
+      }
+
+      if (selectCliGpuBatchSize) {
+        selectCliGpuBatchSize.addEventListener('change', (e) => syncGpuBatchSize(e.target.value));
+      }
+      if (selectToolbarGpuBatchSize) {
+        selectToolbarGpuBatchSize.addEventListener('change', (e) => syncGpuBatchSize(e.target.value));
       }
 
       // Bind Workspace buttons
@@ -11724,6 +11846,11 @@
         args.push('-discard_frac', discardFraction.toFixed(2));
       }
       args.push('-evals');
+      if (useGpu) {
+        args.push('--gpu');
+        const bSize = document.getElementById('selectCliGpuBatchSize')?.value;
+        if (bSize) args.push('--gpu-batch-size', bSize);
+      }
 
       const btnRun = document.getElementById('btnRunCli');
       const btnRunKnn = document.getElementById('btnRunCliKnn');
@@ -11752,14 +11879,21 @@
         const streamNote = isStreamingMode
           ? `📡 Streamer: gric-txt2stream ${dataset} ${streamName} -fps ${streamFps}${streamLoop ? ' -loop' : ''}\n`
           : '';
+        const bSize = document.getElementById('selectCliGpuBatchSize')?.value || '64';
+        const gpuNote = useGpu
+          ? `🚀 Hardware Engine: NVIDIA CUDA Acceleration (--gpu --gpu-batch-size ${bSize})\n`
+          : `💻 Hardware Engine: Host CPU Multi-threading (OpenMP + AVX)\n`;
         consoleEl.textContent = `🚀 Dispatched in tmux session: gric_cli\n` +
           `🖥️ Attach live: tmux attach -t gric_cli\n` +
           `📄 Log stream: /tmp/gric_latest.log\n` +
+          gpuNote +
           streamNote +
           `⚙️ Command: gric-cluster ${args.join(' ')}\n` +
           `─────────────────────────────────────────────────────────────\n`;
       }
-      showToast('🚀 Native CLI launched in tmux session "gric_cli" (tmux attach -t gric_cli)');
+      showToast(useGpu
+        ? '🚀 Native CLI launched with NVIDIA CUDA GPU acceleration'
+        : '🚀 Native CLI launched in tmux session "gric_cli"');
 
       const tStart = performance.now();
       isCliRunning = true;

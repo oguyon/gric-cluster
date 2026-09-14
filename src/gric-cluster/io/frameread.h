@@ -3,6 +3,10 @@
 
 #include "common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Initialize the frame reader with the specified source and options.
  */
@@ -104,5 +108,9 @@ int is_stream_input_mode(void);
  * @brief Check if the reader is in binary (.bin) input mode.
  */
 int is_bin_input_mode(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // FRAMEREAD_H
