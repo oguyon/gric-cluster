@@ -14,33 +14,28 @@ For every new frame `fi` in a sequence, the algorithm performs the following ove
 
 ```mermaid
 flowchart TD
-    classDef startEnd fill:#e1f5fe,stroke:#0288D1,stroke-width:2px,color:#01579B;
-    classDef process fill:#f5f5f5,stroke:#424242,stroke-width:1.5px,color:#212121;
-    classDef decision fill:#fffde7,stroke:#fbc02d,stroke-width:1.5px,color:#212121;
-    classDef action fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
-
-    Start([New Frame fi]):::startEnd --> Step1[1. Normalize Probabilities]:::process
-    Step1 --> Step2[2. Calculate Mixed Probabilities]:::process
-    Step2 --> Step3[3. Rank Candidate Clusters]:::process
+    Start([New Frame fi]) --> Step1[1. Normalize Probabilities]
+    Step1 --> Step2[2. Calculate Mixed Probabilities]
+    Step2 --> Step3[3. Rank Candidate Clusters]
     
-    Step3 --> Step4{Target Selection Mode?}:::decision
+    Step3 --> Step4{Target Selection Mode?}
     
-    Step4 -->|Greedy Mode| Greedy[Greedy Priority<br/>mixed_probs * gprobs]:::process
-    Step4 -->|Entropy Mode| Entropy[Entropy Minimization<br/>Shannon Info Gain]:::process
+    Step4 -->|Greedy Mode| Greedy[Greedy Priority<br/>mixed_probs * gprobs]
+    Step4 -->|Entropy Mode| Entropy[Entropy Minimization<br/>Shannon Info Gain]
     
-    Greedy --> Check[Compute Distance dfc]:::process
+    Greedy --> Check[Compute Distance dfc]
     Entropy --> Check
     
-    Check --> Match{dfc < rlim?}:::decision
+    Check --> Match{dfc < rlim?}
     
-    Match -->|Yes| Assign[Assign fi to Cluster]:::action
-    Match -->|No| Prune[Prune Candidates via Geometry]:::process
+    Match -->|Yes| Assign[Assign fi to Cluster]
+    Match -->|No| Prune[Prune Candidates via Geometry]
     
-    Prune --> Remaining{Any active candidates?}:::decision
+    Prune --> Remaining{Any active candidates?}
     Remaining -->|Yes| Step4
-    Remaining -->|No| Create[5. Create New Cluster]:::action
+    Remaining -->|No| Create[5. Create New Cluster]
     
-    Assign --> End([Frame Processed]):::startEnd
+    Assign --> End([Frame Processed])
     Create --> End
 ```
 
