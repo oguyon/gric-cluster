@@ -11,6 +11,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#endif
+
 /**
  * calc_min_dist_4pt() - Computes minimum distance using a 4-point configuration.
  * @d14: Distance between point 1 and 4.
@@ -105,7 +109,7 @@ double calc_min_dist_5pt(
  *
  * Return: Euclidean distance.
  */
-static inline double compute_vector_distance(
+double compute_vector_distance(
     const void *restrict a,
     const void *restrict b,
     long                 n,
@@ -116,7 +120,51 @@ static inline double compute_vector_distance(
         const double *restrict da = (const double *)a;
         const double *restrict db = (const double *)b;
         double sum = 0.0;
-        for (long i = 0; i < n; i++)
+        long i = 0;
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+        if (n >= 8)
+        {
+            __m256d acc0 = _mm256_setzero_pd();
+            __m256d acc1 = _mm256_setzero_pd();
+
+            for (; i <= n - 8; i += 8)
+            {
+                __m256d d0 = _mm256_sub_pd(_mm256_loadu_pd(&da[i]),
+                                           _mm256_loadu_pd(&db[i]));
+                __m256d d1 = _mm256_sub_pd(_mm256_loadu_pd(&da[i + 4]),
+                                           _mm256_loadu_pd(&db[i + 4]));
+#ifdef __FMA__
+                acc0 = _mm256_fmadd_pd(d0, d0, acc0);
+                acc1 = _mm256_fmadd_pd(d1, d1, acc1);
+#else
+                acc0 = _mm256_add_pd(acc0, _mm256_mul_pd(d0, d0));
+                acc1 = _mm256_add_pd(acc1, _mm256_mul_pd(d1, d1));
+#endif
+            }
+
+            for (; i <= n - 4; i += 4)
+            {
+                __m256d d0 = _mm256_sub_pd(_mm256_loadu_pd(&da[i]),
+                                           _mm256_loadu_pd(&db[i]));
+#ifdef __FMA__
+                acc0 = _mm256_fmadd_pd(d0, d0, acc0);
+#else
+                acc0 = _mm256_add_pd(acc0, _mm256_mul_pd(d0, d0));
+#endif
+            }
+
+            __m256d sum_vec = _mm256_add_pd(acc0, acc1);
+            __m128d lo = _mm256_castpd256_pd128(sum_vec);
+            __m128d hi = _mm256_extractf128_pd(sum_vec, 1);
+            __m128d s128 = _mm_add_pd(lo, hi);
+            __m128d shuf = _mm_unpackhi_pd(s128, s128);
+            sum += _mm_cvtsd_f64(_mm_add_sd(s128, shuf));
+        }
+#endif
+
+        for (; i < n; i++)
         {
             double diff = da[i] - db[i];
             sum += diff * diff;
@@ -128,7 +176,53 @@ static inline double compute_vector_distance(
         const float *restrict fa = (const float *)a;
         const float *restrict fb = (const float *)b;
         float sum = 0.0f;
-        for (long i = 0; i < n; i++)
+        long i = 0;
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+        if (n >= 16)
+        {
+            __m256 acc0 = _mm256_setzero_ps();
+            __m256 acc1 = _mm256_setzero_ps();
+
+            for (; i <= n - 16; i += 16)
+            {
+                __m256 d0 = _mm256_sub_ps(_mm256_loadu_ps(&fa[i]),
+                                          _mm256_loadu_ps(&fb[i]));
+                __m256 d1 = _mm256_sub_ps(_mm256_loadu_ps(&fa[i + 8]),
+                                          _mm256_loadu_ps(&fb[i + 8]));
+#ifdef __FMA__
+                acc0 = _mm256_fmadd_ps(d0, d0, acc0);
+                acc1 = _mm256_fmadd_ps(d1, d1, acc1);
+#else
+                acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0, d0));
+                acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1, d1));
+#endif
+            }
+
+            for (; i <= n - 8; i += 8)
+            {
+                __m256 d0 = _mm256_sub_ps(_mm256_loadu_ps(&fa[i]),
+                                          _mm256_loadu_ps(&fb[i]));
+#ifdef __FMA__
+                acc0 = _mm256_fmadd_ps(d0, d0, acc0);
+#else
+                acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0, d0));
+#endif
+            }
+
+            __m256 sum_vec = _mm256_add_ps(acc0, acc1);
+            __m128 lo = _mm256_castps256_ps128(sum_vec);
+            __m128 hi = _mm256_extractf128_ps(sum_vec, 1);
+            __m128 s128 = _mm_add_ps(lo, hi);
+            __m128 shuf = _mm_movehl_ps(s128, s128);
+            __m128 squad = _mm_add_ps(s128, shuf);
+            shuf = _mm_shuffle_ps(squad, squad, 1);
+            sum += _mm_cvtss_f32(_mm_add_ss(squad, shuf));
+        }
+#endif
+
+        for (; i < n; i++)
         {
             float diff = fa[i] - fb[i];
             sum += diff * diff;

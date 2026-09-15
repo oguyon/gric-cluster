@@ -132,8 +132,60 @@ void rq8_quantize_residual_double(
 {
     long dim = params->dim;
     double inv_scale = (double)params->inv_scale;
+    long i = 0;
 
-    for (long i = 0; i < dim; i++)
+#if defined(__AVX2__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    __m256d v_inv = _mm256_set1_pd(inv_scale);
+    __m256d v_half = _mm256_set1_pd(0.5);
+    __m256d v_nhalf = _mm256_set1_pd(-0.5);
+    __m256d v_zero = _mm256_setzero_pd();
+    __m256d v_min = _mm256_set1_pd(-127.0);
+    __m256d v_max = _mm256_set1_pd(127.0);
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m256d s0 = _mm256_loadu_pd(&src[i]);
+        __m256d a0 = _mm256_loadu_pd(&anchor[i]);
+        __m256d res0 = _mm256_mul_pd(_mm256_sub_pd(s0, a0), v_inv);
+        __m256d round0 = _mm256_blendv_pd(
+            v_nhalf, v_half, _mm256_cmp_pd(res0, v_zero, _CMP_GE_OQ));
+        res0 = _mm256_max_pd(v_min, _mm256_min_pd(_mm256_add_pd(res0, round0), v_max));
+        __m128i i32_0 = _mm256_cvttpd_epi32(res0);
+
+        __m256d s1 = _mm256_loadu_pd(&src[i + 4]);
+        __m256d a1 = _mm256_loadu_pd(&anchor[i + 4]);
+        __m256d res1 = _mm256_mul_pd(_mm256_sub_pd(s1, a1), v_inv);
+        __m256d round1 = _mm256_blendv_pd(
+            v_nhalf, v_half, _mm256_cmp_pd(res1, v_zero, _CMP_GE_OQ));
+        res1 = _mm256_max_pd(v_min, _mm256_min_pd(_mm256_add_pd(res1, round1), v_max));
+        __m128i i32_1 = _mm256_cvttpd_epi32(res1);
+
+        __m256d s2 = _mm256_loadu_pd(&src[i + 8]);
+        __m256d a2 = _mm256_loadu_pd(&anchor[i + 8]);
+        __m256d res2 = _mm256_mul_pd(_mm256_sub_pd(s2, a2), v_inv);
+        __m256d round2 = _mm256_blendv_pd(
+            v_nhalf, v_half, _mm256_cmp_pd(res2, v_zero, _CMP_GE_OQ));
+        res2 = _mm256_max_pd(v_min, _mm256_min_pd(_mm256_add_pd(res2, round2), v_max));
+        __m128i i32_2 = _mm256_cvttpd_epi32(res2);
+
+        __m256d s3 = _mm256_loadu_pd(&src[i + 12]);
+        __m256d a3 = _mm256_loadu_pd(&anchor[i + 12]);
+        __m256d res3 = _mm256_mul_pd(_mm256_sub_pd(s3, a3), v_inv);
+        __m256d round3 = _mm256_blendv_pd(
+            v_nhalf, v_half, _mm256_cmp_pd(res3, v_zero, _CMP_GE_OQ));
+        res3 = _mm256_max_pd(v_min, _mm256_min_pd(_mm256_add_pd(res3, round3), v_max));
+        __m128i i32_3 = _mm256_cvttpd_epi32(res3);
+
+        __m128i p16_0 = _mm_packs_epi32(i32_0, i32_1);
+        __m128i p16_1 = _mm_packs_epi32(i32_2, i32_3);
+        __m128i p8 = _mm_packs_epi16(p16_0, p16_1);
+
+        _mm_storeu_si128((__m128i *)(dst + i), p8);
+    } // for (; i <= dim - 16; i += 16)
+#endif
+
+    for (; i < dim; i++)
     {
         double delta = src[i] - anchor[i];
         double val = delta * inv_scale;
@@ -182,7 +234,8 @@ int rq8_quantize_query_residual_float(
         __m256 q0 = _mm256_loadu_ps(&query[i]);
         __m256 a0 = _mm256_loadu_ps(&anchor[i]);
         __m256 res0 = _mm256_mul_ps(_mm256_sub_ps(q0, a0), v_inv);
-        __m256 round0 = _mm256_blendv_ps(v_nhalf, v_half, _mm256_cmp_ps(res0, v_zero, _CMP_GE_OQ));
+        __m256 round0 = _mm256_blendv_ps(
+            v_nhalf, v_half, _mm256_cmp_ps(res0, v_zero, _CMP_GE_OQ));
         res0 = _mm256_add_ps(res0, round0);
         if (_mm256_movemask_ps(_mm256_or_ps(
                 _mm256_cmp_ps(res0, v_min, _CMP_LT_OQ),
@@ -196,7 +249,8 @@ int rq8_quantize_query_residual_float(
         __m256 q1 = _mm256_loadu_ps(&query[i + 8]);
         __m256 a1 = _mm256_loadu_ps(&anchor[i + 8]);
         __m256 res1 = _mm256_mul_ps(_mm256_sub_ps(q1, a1), v_inv);
-        __m256 round1 = _mm256_blendv_ps(v_nhalf, v_half, _mm256_cmp_ps(res1, v_zero, _CMP_GE_OQ));
+        __m256 round1 = _mm256_blendv_ps(
+            v_nhalf, v_half, _mm256_cmp_ps(res1, v_zero, _CMP_GE_OQ));
         res1 = _mm256_add_ps(res1, round1);
         if (_mm256_movemask_ps(_mm256_or_ps(
                 _mm256_cmp_ps(res1, v_min, _CMP_LT_OQ),
@@ -255,9 +309,56 @@ int rq8_quantize_query_residual_double(
 {
     long dim = params->dim;
     double inv_scale = (double)params->inv_scale;
+    long i = 0;
     int clipped = 0;
 
-    for (long i = 0; i < dim; i++)
+#if defined(__AVX2__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    __m256d v_inv = _mm256_set1_pd(inv_scale);
+    __m256d v_half = _mm256_set1_pd(0.5);
+    __m256d v_nhalf = _mm256_set1_pd(-0.5);
+    __m256d v_zero = _mm256_setzero_pd();
+    __m256d v_min = _mm256_set1_pd(-32767.0);
+    __m256d v_max = _mm256_set1_pd(32767.0);
+
+    for (; i <= dim - 8; i += 8)
+    {
+        __m256d q0 = _mm256_loadu_pd(&query[i]);
+        __m256d a0 = _mm256_loadu_pd(&anchor[i]);
+        __m256d res0 = _mm256_mul_pd(_mm256_sub_pd(q0, a0), v_inv);
+        __m256d round0 = _mm256_blendv_pd(
+            v_nhalf, v_half, _mm256_cmp_pd(res0, v_zero, _CMP_GE_OQ));
+        res0 = _mm256_add_pd(res0, round0);
+        if (_mm256_movemask_pd(_mm256_or_pd(
+                _mm256_cmp_pd(res0, v_min, _CMP_LT_OQ),
+                _mm256_cmp_pd(res0, v_max, _CMP_GT_OQ))) != 0)
+        {
+            clipped = 1;
+        }
+        res0 = _mm256_max_pd(v_min, _mm256_min_pd(res0, v_max));
+        __m128i i32_0 = _mm256_cvttpd_epi32(res0);
+
+        __m256d q1 = _mm256_loadu_pd(&query[i + 4]);
+        __m256d a1 = _mm256_loadu_pd(&anchor[i + 4]);
+        __m256d res1 = _mm256_mul_pd(_mm256_sub_pd(q1, a1), v_inv);
+        __m256d round1 = _mm256_blendv_pd(
+            v_nhalf, v_half, _mm256_cmp_pd(res1, v_zero, _CMP_GE_OQ));
+        res1 = _mm256_add_pd(res1, round1);
+        if (_mm256_movemask_pd(_mm256_or_pd(
+                _mm256_cmp_pd(res1, v_min, _CMP_LT_OQ),
+                _mm256_cmp_pd(res1, v_max, _CMP_GT_OQ))) != 0)
+        {
+            clipped = 1;
+        }
+        res1 = _mm256_max_pd(v_min, _mm256_min_pd(res1, v_max));
+        __m128i i32_1 = _mm256_cvttpd_epi32(res1);
+
+        __m128i p16 = _mm_packs_epi32(i32_0, i32_1);
+        _mm_storeu_si128((__m128i *)(dst + i), p16);
+    } // for (; i <= dim - 8; i += 8)
+#endif
+
+    for (; i < dim; i++)
     {
         double delta = query[i] - anchor[i];
         double val = delta * inv_scale;
