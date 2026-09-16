@@ -10,6 +10,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_gemm_dist.h"
+#include "gric_simd.h"
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -24,8 +25,9 @@
 #include <cblas.h>
 #endif
 
-#if defined(__AVX__) && \
+#if (defined(__AVX__) || GRIC_HAVE_AVX512_TARGET) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+GRIC_TARGET_AVX2
 static inline float hadd_m256_ps(__m256 v)
 {
     __m128 lo = _mm256_castps256_ps128(v);
@@ -37,12 +39,111 @@ static inline float hadd_m256_ps(__m256 v)
     return _mm_cvtss_f32(_mm_add_ss(squad, shuf));
 }
 
+GRIC_TARGET_AVX2
 static inline double hadd_m256d_pd(__m256d v)
 {
     __m128d lo = _mm256_castpd256_pd128(v);
     __m128d hi = _mm256_extractf128_pd(v, 1);
     __m128d s = _mm_add_pd(lo, hi);
     return _mm_cvtsd_f64(_mm_add_sd(s, _mm_unpackhi_pd(s, s)));
+}
+#endif
+
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static int compute_l2_norms_float_avx512(
+    const float *restrict mat,
+    int                   count,
+    int                   dim,
+    float       *restrict out_norms)
+{
+    for (int i = 0; i < count; i++)
+    {
+        const float *v = mat + (size_t)i * (size_t)dim;
+        float sum = 0.0f;
+        int d = 0;
+
+        if (dim >= 64)
+        {
+            __m512 acc0 = _mm512_setzero_ps();
+            __m512 acc1 = _mm512_setzero_ps();
+            __m512 acc2 = _mm512_setzero_ps();
+            __m512 acc3 = _mm512_setzero_ps();
+            for (; d <= dim - 64; d += 64)
+            {
+                __m512 v0 = _mm512_loadu_ps(&v[d]);
+                __m512 v1 = _mm512_loadu_ps(&v[d + 16]);
+                __m512 v2 = _mm512_loadu_ps(&v[d + 32]);
+                __m512 v3 = _mm512_loadu_ps(&v[d + 48]);
+                acc0 = _mm512_fmadd_ps(v0, v0, acc0);
+                acc1 = _mm512_fmadd_ps(v1, v1, acc1);
+                acc2 = _mm512_fmadd_ps(v2, v2, acc2);
+                acc3 = _mm512_fmadd_ps(v3, v3, acc3);
+            }
+            __m512 s01 = _mm512_add_ps(acc0, acc1);
+            __m512 s23 = _mm512_add_ps(acc2, acc3);
+            sum += _mm512_reduce_add_ps(_mm512_add_ps(s01, s23));
+        }
+        for (; d <= dim - 16; d += 16)
+        {
+            __m512 v0 = _mm512_loadu_ps(&v[d]);
+            sum += _mm512_reduce_add_ps(_mm512_mul_ps(v0, v0));
+        }
+        for (; d < dim; d++)
+        {
+            sum += v[d] * v[d];
+        }
+        out_norms[i] = sum;
+    }
+    return 0;
+}
+
+GRIC_TARGET_AVX512
+static int compute_l2_norms_double_avx512(
+    const double *restrict mat,
+    int                    count,
+    int                    dim,
+    double       *restrict out_norms)
+{
+    for (int i = 0; i < count; i++)
+    {
+        const double *v = mat + (size_t)i * (size_t)dim;
+        double sum = 0.0;
+        int d = 0;
+
+        if (dim >= 32)
+        {
+            __m512d acc0 = _mm512_setzero_pd();
+            __m512d acc1 = _mm512_setzero_pd();
+            __m512d acc2 = _mm512_setzero_pd();
+            __m512d acc3 = _mm512_setzero_pd();
+            for (; d <= dim - 32; d += 32)
+            {
+                __m512d v0 = _mm512_loadu_pd(&v[d]);
+                __m512d v1 = _mm512_loadu_pd(&v[d + 8]);
+                __m512d v2 = _mm512_loadu_pd(&v[d + 16]);
+                __m512d v3 = _mm512_loadu_pd(&v[d + 24]);
+                acc0 = _mm512_fmadd_pd(v0, v0, acc0);
+                acc1 = _mm512_fmadd_pd(v1, v1, acc1);
+                acc2 = _mm512_fmadd_pd(v2, v2, acc2);
+                acc3 = _mm512_fmadd_pd(v3, v3, acc3);
+            }
+            __m512d s01 = _mm512_add_pd(acc0, acc1);
+            __m512d s23 = _mm512_add_pd(acc2, acc3);
+            sum += _mm512_reduce_add_pd(_mm512_add_pd(s01, s23));
+        }
+        for (; d <= dim - 8; d += 8)
+        {
+            __m512d v0 = _mm512_loadu_pd(&v[d]);
+            sum += _mm512_reduce_add_pd(_mm512_mul_pd(v0, v0));
+        }
+        for (; d < dim; d++)
+        {
+            sum += v[d] * v[d];
+        }
+        out_norms[i] = sum;
+    }
+    return 0;
 }
 #endif
 
@@ -65,6 +166,13 @@ int cluster_compute_l2_norms_float(
     {
         return -1;
     }
+
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 64)
+    {
+        return compute_l2_norms_float_avx512(mat, count, dim, out_norms);
+    }
+#endif
 
     for (int i = 0; i < count; i++)
     {
@@ -144,6 +252,13 @@ int cluster_compute_l2_norms_double(
     {
         return -1;
     }
+
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 32)
+    {
+        return compute_l2_norms_double_avx512(mat, count, dim, out_norms);
+    }
+#endif
 
     for (int i = 0; i < count; i++)
     {
@@ -314,11 +429,12 @@ static inline void gemm_dist_scalar_double(
     }
 }
 
-#if defined(__AVX__) && \
+#if (defined(__AVX__) || GRIC_HAVE_AVX512_TARGET) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 /**
  * gemm_dist_tile_4x4_float() - 4x4 register-tiled fused distance microkernel.
  */
+GRIC_TARGET_AVX2
 static void gemm_dist_tile_4x4_float(
     const float *const *restrict q_ptrs,
     const float *const *restrict x_ptrs,
@@ -475,6 +591,7 @@ static void gemm_dist_tile_4x4_float(
 /**
  * gemm_dist_tile_2x4_double() - 2x4 register-tiled fused distance microkernel (double).
  */
+GRIC_TARGET_AVX2
 static void gemm_dist_tile_2x4_double(
     const double *const *restrict q_ptrs,
     const double *const *restrict x_ptrs,
@@ -583,6 +700,238 @@ static void gemm_dist_tile_2x4_double(
 }
 #endif // defined(__AVX__)
 
+#if GRIC_HAVE_AVX512_TARGET
+/**
+ * gemm_dist_tile_4x4_float_avx512() - 4x4 register-tiled distance microkernel (AVX-512).
+ */
+GRIC_TARGET_AVX512
+static void gemm_dist_tile_4x4_float_avx512(
+    const float *const *restrict q_ptrs,
+    const float *const *restrict x_ptrs,
+    const float        *restrict qn,
+    const float        *restrict xn,
+    int                          dim,
+    int                          out_stride,
+    float              *restrict out_dist_sq,
+    double             *restrict out_dists)
+{
+    __m512 c00 = _mm512_setzero_ps();
+    __m512 c01 = _mm512_setzero_ps();
+    __m512 c02 = _mm512_setzero_ps();
+    __m512 c03 = _mm512_setzero_ps();
+
+    __m512 c10 = _mm512_setzero_ps();
+    __m512 c11 = _mm512_setzero_ps();
+    __m512 c12 = _mm512_setzero_ps();
+    __m512 c13 = _mm512_setzero_ps();
+
+    __m512 c20 = _mm512_setzero_ps();
+    __m512 c21 = _mm512_setzero_ps();
+    __m512 c22 = _mm512_setzero_ps();
+    __m512 c23 = _mm512_setzero_ps();
+
+    __m512 c30 = _mm512_setzero_ps();
+    __m512 c31 = _mm512_setzero_ps();
+    __m512 c32 = _mm512_setzero_ps();
+    __m512 c33 = _mm512_setzero_ps();
+
+    int d = 0;
+    for (; d <= dim - 16; d += 16)
+    {
+        if (dim >= 1024 && (d & 31) == 0)
+        {
+            _mm_prefetch((const char *)&x_ptrs[0][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[1][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[2][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[3][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[0][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[1][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[2][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[3][d + 64], _MM_HINT_T0);
+        }
+
+        __m512 vx0 = _mm512_loadu_ps(&x_ptrs[0][d]);
+        __m512 vx1 = _mm512_loadu_ps(&x_ptrs[1][d]);
+        __m512 vx2 = _mm512_loadu_ps(&x_ptrs[2][d]);
+        __m512 vx3 = _mm512_loadu_ps(&x_ptrs[3][d]);
+
+        __m512 vq0 = _mm512_loadu_ps(&q_ptrs[0][d]);
+        c00 = _mm512_fmadd_ps(vq0, vx0, c00);
+        c01 = _mm512_fmadd_ps(vq0, vx1, c01);
+        c02 = _mm512_fmadd_ps(vq0, vx2, c02);
+        c03 = _mm512_fmadd_ps(vq0, vx3, c03);
+
+        __m512 vq1 = _mm512_loadu_ps(&q_ptrs[1][d]);
+        c10 = _mm512_fmadd_ps(vq1, vx0, c10);
+        c11 = _mm512_fmadd_ps(vq1, vx1, c11);
+        c12 = _mm512_fmadd_ps(vq1, vx2, c12);
+        c13 = _mm512_fmadd_ps(vq1, vx3, c13);
+
+        __m512 vq2 = _mm512_loadu_ps(&q_ptrs[2][d]);
+        c20 = _mm512_fmadd_ps(vq2, vx0, c20);
+        c21 = _mm512_fmadd_ps(vq2, vx1, c21);
+        c22 = _mm512_fmadd_ps(vq2, vx2, c22);
+        c23 = _mm512_fmadd_ps(vq2, vx3, c23);
+
+        __m512 vq3 = _mm512_loadu_ps(&q_ptrs[3][d]);
+        c30 = _mm512_fmadd_ps(vq3, vx0, c30);
+        c31 = _mm512_fmadd_ps(vq3, vx1, c31);
+        c32 = _mm512_fmadd_ps(vq3, vx2, c32);
+        c33 = _mm512_fmadd_ps(vq3, vx3, c33);
+    }
+
+    float dots[4][4] = {
+        { _mm512_reduce_add_ps(c00), _mm512_reduce_add_ps(c01),
+          _mm512_reduce_add_ps(c02), _mm512_reduce_add_ps(c03) },
+        { _mm512_reduce_add_ps(c10), _mm512_reduce_add_ps(c11),
+          _mm512_reduce_add_ps(c12), _mm512_reduce_add_ps(c13) },
+        { _mm512_reduce_add_ps(c20), _mm512_reduce_add_ps(c21),
+          _mm512_reduce_add_ps(c22), _mm512_reduce_add_ps(c23) },
+        { _mm512_reduce_add_ps(c30), _mm512_reduce_add_ps(c31),
+          _mm512_reduce_add_ps(c32), _mm512_reduce_add_ps(c33) }
+    };
+
+    for (; d < dim; d++)
+    {
+        for (int r = 0; r < 4; r++)
+        {
+            float qval = q_ptrs[r][d];
+            for (int c = 0; c < 4; c++)
+            {
+                dots[r][c] += qval * x_ptrs[c][d];
+            }
+        }
+    }
+
+    __m128 vxn = _mm_loadu_ps(xn);
+    __m128 vzero_f = _mm_setzero_ps();
+    __m128 vtwo_f = _mm_set1_ps(2.0f);
+
+    for (int r = 0; r < 4; r++)
+    {
+        float *row_sq = out_dist_sq ? (out_dist_sq + (size_t)r * (size_t)out_stride) : NULL;
+        double *row_d  = out_dists   ? (out_dists   + (size_t)r * (size_t)out_stride) : NULL;
+
+        __m128 vqn = _mm_set1_ps(qn[r]);
+        __m128 vdot = _mm_loadu_ps(dots[r]);
+        __m128 vd2 = _mm_max_ps(vzero_f,
+            _mm_sub_ps(_mm_add_ps(vqn, vxn), _mm_mul_ps(vtwo_f, vdot)));
+
+        if (row_sq != NULL)
+        {
+            _mm_storeu_ps(row_sq, vd2);
+        }
+        if (row_d != NULL)
+        {
+            __m128 vsqrt = _mm_sqrt_ps(vd2);
+            __m128d d_lo = _mm_cvtps_pd(vsqrt);
+            __m128d d_hi = _mm_cvtps_pd(_mm_movehl_ps(vsqrt, vsqrt));
+            _mm_storeu_pd(&row_d[0], d_lo);
+            _mm_storeu_pd(&row_d[2], d_hi);
+        }
+    }
+}
+
+/**
+ * gemm_dist_tile_2x4_double_avx512() - 2x4 distance microkernel (AVX-512).
+ */
+GRIC_TARGET_AVX512
+static void gemm_dist_tile_2x4_double_avx512(
+    const double *const *restrict q_ptrs,
+    const double *const *restrict x_ptrs,
+    const double        *restrict qn,
+    const double        *restrict xn,
+    int                           dim,
+    int                           out_stride,
+    double              *restrict out_dist_sq,
+    double              *restrict out_dists)
+{
+    __m512d c00 = _mm512_setzero_pd();
+    __m512d c01 = _mm512_setzero_pd();
+    __m512d c02 = _mm512_setzero_pd();
+    __m512d c03 = _mm512_setzero_pd();
+
+    __m512d c10 = _mm512_setzero_pd();
+    __m512d c11 = _mm512_setzero_pd();
+    __m512d c12 = _mm512_setzero_pd();
+    __m512d c13 = _mm512_setzero_pd();
+
+    int d = 0;
+    for (; d <= dim - 8; d += 8)
+    {
+        if (dim >= 512 && (d & 15) == 0)
+        {
+            _mm_prefetch((const char *)&x_ptrs[0][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[1][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[2][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[3][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[0][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[1][d + 64], _MM_HINT_T0);
+        }
+
+        __m512d vx0 = _mm512_loadu_pd(&x_ptrs[0][d]);
+        __m512d vx1 = _mm512_loadu_pd(&x_ptrs[1][d]);
+        __m512d vx2 = _mm512_loadu_pd(&x_ptrs[2][d]);
+        __m512d vx3 = _mm512_loadu_pd(&x_ptrs[3][d]);
+
+        __m512d vq0 = _mm512_loadu_pd(&q_ptrs[0][d]);
+        c00 = _mm512_fmadd_pd(vq0, vx0, c00);
+        c01 = _mm512_fmadd_pd(vq0, vx1, c01);
+        c02 = _mm512_fmadd_pd(vq0, vx2, c02);
+        c03 = _mm512_fmadd_pd(vq0, vx3, c03);
+
+        __m512d vq1 = _mm512_loadu_pd(&q_ptrs[1][d]);
+        c10 = _mm512_fmadd_pd(vq1, vx0, c10);
+        c11 = _mm512_fmadd_pd(vq1, vx1, c11);
+        c12 = _mm512_fmadd_pd(vq1, vx2, c12);
+        c13 = _mm512_fmadd_pd(vq1, vx3, c13);
+    }
+
+    double dots[2][4] = {
+        { _mm512_reduce_add_pd(c00), _mm512_reduce_add_pd(c01),
+          _mm512_reduce_add_pd(c02), _mm512_reduce_add_pd(c03) },
+        { _mm512_reduce_add_pd(c10), _mm512_reduce_add_pd(c11),
+          _mm512_reduce_add_pd(c12), _mm512_reduce_add_pd(c13) }
+    };
+
+    for (; d < dim; d++)
+    {
+        for (int r = 0; r < 2; r++)
+        {
+            double qval = q_ptrs[r][d];
+            for (int c = 0; c < 4; c++)
+            {
+                dots[r][c] += qval * x_ptrs[c][d];
+            }
+        }
+    }
+
+    __m256d vxn = _mm256_loadu_pd(xn);
+    __m256d vzero = _mm256_setzero_pd();
+    __m256d vtwo = _mm256_set1_pd(2.0);
+
+    for (int r = 0; r < 2; r++)
+    {
+        double *row_sq = out_dist_sq ? (out_dist_sq + (size_t)r * (size_t)out_stride) : NULL;
+        double *row_d  = out_dists   ? (out_dists   + (size_t)r * (size_t)out_stride) : NULL;
+
+        __m256d vqn = _mm256_set1_pd(qn[r]);
+        __m256d vdot = _mm256_loadu_pd(dots[r]);
+        __m256d vd2 = _mm256_max_pd(vzero,
+            _mm256_sub_pd(_mm256_add_pd(vqn, vxn), _mm256_mul_pd(vtwo, vdot)));
+
+        if (row_sq != NULL)
+        {
+            _mm256_storeu_pd(row_sq, vd2);
+        }
+        if (row_d != NULL)
+        {
+            _mm256_storeu_pd(row_d, _mm256_sqrt_pd(vd2));
+        }
+    }
+}
+#endif
+
 /**
  * cluster_gemm_dist_ptrs_float() - Batched Euclidean distance with non-contiguous candidates.
  * @Q:           Contiguous query matrix [M x D].
@@ -630,7 +979,7 @@ int cluster_gemm_dist_ptrs_float(
 
     int i = 0;
 
-#if defined(__AVX__) && \
+#if (defined(__AVX__) || GRIC_HAVE_AVX512_TARGET) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     for (; i <= M - 4; i += 4)
     {
@@ -666,7 +1015,18 @@ int cluster_gemm_dist_ptrs_float(
             float *sq_dest = out_dist_sq ? (out_dist_sq + (size_t)i * (size_t)N + j) : NULL;
             double *d_dest = out_dists   ? (out_dists   + (size_t)i * (size_t)N + j) : NULL;
 
-            gemm_dist_tile_4x4_float(q_ptrs, x_sub_ptrs, cur_qn, cur_xn, D, N, sq_dest, d_dest);
+#if GRIC_HAVE_AVX512_TARGET
+            if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && D >= 16)
+            {
+                gemm_dist_tile_4x4_float_avx512(
+                    q_ptrs, x_sub_ptrs, cur_qn, cur_xn, D, N, sq_dest, d_dest);
+            }
+            else
+#endif
+            {
+                gemm_dist_tile_4x4_float(
+                    q_ptrs, x_sub_ptrs, cur_qn, cur_xn, D, N, sq_dest, d_dest);
+            }
         } // for (; j <= N - 4; j += 4)
 
         /* Handle remainder candidate columns */
@@ -923,7 +1283,7 @@ int cluster_gemm_dist_ptrs_double(
         active_q_norms = local_q_norms;
     }
 
-#if defined(__AVX__) && \
+#if (defined(__AVX__) || GRIC_HAVE_AVX512_TARGET) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     int i = 0;
     for (; i <= M - 2; i += 2)
@@ -943,9 +1303,20 @@ int cluster_gemm_dist_ptrs_double(
             size_t row_off = (size_t)i * (size_t)N + (size_t)j;
             double *sq_dest = out_dist_sq ? (out_dist_sq + row_off) : NULL;
             double *d_dest  = out_dists   ? (out_dists   + row_off) : NULL;
-            gemm_dist_tile_2x4_double(
-                q_block, &cand_ptrs[j], qn_block, &x_norms[j], D, N, sq_dest, d_dest
-            );
+#if GRIC_HAVE_AVX512_TARGET
+            if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && D >= 8)
+            {
+                gemm_dist_tile_2x4_double_avx512(
+                    q_block, &cand_ptrs[j], qn_block, &x_norms[j], D, N, sq_dest, d_dest
+                );
+            }
+            else
+#endif
+            {
+                gemm_dist_tile_2x4_double(
+                    q_block, &cand_ptrs[j], qn_block, &x_norms[j], D, N, sq_dest, d_dest
+                );
+            }
         }
 
         for (; j < N; j++)

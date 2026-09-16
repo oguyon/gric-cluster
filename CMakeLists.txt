@@ -177,6 +177,7 @@ set(CLUSTER_SRCS
     src/shared/product_quant.c
     src/shared/quant_memo.c
     src/shared/gric_profile.c
+    src/shared/gric_simd.c
 )
 
 add_executable(gric-cluster ${CLUSTER_SRCS})
@@ -290,6 +291,14 @@ add_executable(gric-benchmark
     src/shared/cli_colors.c
 )
 
+# gric-simd-bench tool
+add_executable(gric-simd-bench
+    tools/bench_simd_scaling.c
+    src/shared/gric_simd.c
+)
+target_include_directories(gric-simd-bench PRIVATE src/shared src)
+target_link_libraries(gric-simd-bench m)
+
 # gric-tune tool
 add_executable(gric-tune
     src/gric-tune/gric-tune.c
@@ -351,6 +360,7 @@ add_executable(gric-knn
     src/shared/product_quant.c
     src/shared/quant_memo.c
     src/shared/gric_profile.c
+    src/shared/gric_simd.c
 )
 target_include_directories(gric-knn PRIVATE src/gric-knn src/gric-cluster/math src/shared src)
 target_link_libraries(gric-knn m)
@@ -699,8 +709,9 @@ add_test(NAME test_knn_rq8_sidecar_mismatch
 add_executable(test_gemm_dist
     tests/test_gemm_dist.c
     src/gric-cluster/math/cluster_gemm_dist.c
+    src/shared/gric_simd.c
 )
-target_include_directories(test_gemm_dist PRIVATE src/gric-cluster/math)
+target_include_directories(test_gemm_dist PRIVATE src/gric-cluster/math src/shared)
 target_link_libraries(test_gemm_dist m)
 if (USE_BLAS AND BLAS_FOUND)
     target_link_libraries(test_gemm_dist ${BLAS_LIBRARIES})
