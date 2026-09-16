@@ -5,6 +5,7 @@
 #include "cluster_math.h"
 #include "cluster_mgmt.h"
 #include "cluster_prune.h"
+#include "cluster_bounds.h"
 
 extern volatile sig_atomic_t stop_requested;
 

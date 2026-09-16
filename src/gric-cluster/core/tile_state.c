@@ -100,12 +100,27 @@ MultiTileState *multitile_init(
                 pairs * sizeof(double));
             ts->state.scratch.dcc_measured = malloc(
                 pairs * sizeof(char));
+            ts->state.scratch.dcc_sq16 = malloc(
+                pairs * sizeof(uint16_t));
+            ts->state.scratch.dcc_sq16_scale = 16384.0 / global->algo.rlim;
             ts->state.scratch.current_gprobs = malloc(
                 mc * sizeof(double));
             ts->state.scratch.probsortedclindex = malloc(
                 mc * sizeof(int));
+            if (posix_memalign((void **)&ts->state.scratch.cluster_probs, 64,
+                               (size_t)mc * sizeof(double)) != 0)
+            {
+                ts->state.scratch.cluster_probs = NULL;
+            }
+            else
+            {
+                memset(ts->state.scratch.cluster_probs, 0, (size_t)mc * sizeof(double));
+            }
             ts->state.scratch.clmembflag = malloc(
                 mc * sizeof(int));
+            ts->state.scratch.active_clusters = malloc(
+                mc * sizeof(int));
+            ts->state.scratch.num_active_clusters = 0;
             ts->state.scratch.mixed_probs = calloc(
                 mc, sizeof(double));
             ts->state.scratch.consistency_mask = calloc(
@@ -155,6 +170,11 @@ MultiTileState *multitile_init(
                 ts->state.scratch.dcc_min[ii] = -1.0;
                 ts->state.scratch.dcc_max[ii] = -1.0;
                 ts->state.scratch.dcc_measured[ii] = 0;
+                ts->state.scratch.dcc_sq16[ii] = DCC_SQ16_UNMEASURED;
+            }
+            for (size_t r = 0; r < mc; r++)
+            {
+                ts->state.scratch.dcc_sq16[r * mc + r] = 0;
             }
 
             ts->state.transition_matrix = calloc(
@@ -307,6 +327,22 @@ void multitile_free(MultiTileState *mts)
             if (ts->state.scratch.d_max_scratch)
             {
                 free(ts->state.scratch.d_max_scratch);
+            }
+            if (ts->state.scratch.clmembflag)
+            {
+                free(ts->state.scratch.clmembflag);
+            }
+            if (ts->state.scratch.active_clusters)
+            {
+                free(ts->state.scratch.active_clusters);
+            }
+            if (ts->state.scratch.cluster_probs)
+            {
+                free(ts->state.scratch.cluster_probs);
+            }
+            if (ts->state.scratch.dcc_sq16)
+            {
+                free(ts->state.scratch.dcc_sq16);
             }
         } // for each tile m
 

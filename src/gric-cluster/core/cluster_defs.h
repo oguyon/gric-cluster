@@ -11,7 +11,11 @@
 #include "scalar_quant.h"
 #include "quant_memo.h"
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
+
+/** Sentinel value for unmeasured distance in 16-bit quantized DCC cache */
+#define DCC_SQ16_UNMEASURED 0xFFFF
 
 // Max Cluster Strategy Enum
 typedef enum
@@ -166,6 +170,9 @@ typedef struct
     double  time_step_1;           /**< Step 1: initial cluster setup (ms) */
     double  time_step_2;           /**< Step 2: prediction candidate retrieval (ms) */
     double  time_step_3a;          /**< Step 3a: prior mixing and pruning (ms) */
+    double  time_step_3a_priors;   /**< Step 3a sub: priors and mixing (ms) */
+    double  time_step_3a_sq_filter;/**< Step 3a sub: SQ lower-bound filter (ms) */
+    double  time_step_3a_subsequent;/**< Step 3a sub: subsequent iterations pruning (ms) */
     double  time_step_3b;          /**< Step 3b: target selection (ms) */
     double  time_step_3b_score;    /**< Step 3b sub: scoring phase (ms) */
     double  time_step_3b_filter;   /**< Step 3b sub: filtering phase (ms) */
@@ -219,8 +226,13 @@ typedef struct
     double *dcc_min;            /**< Pairwise inter-cluster minimum distance bounds */
     double *dcc_max;            /**< Pairwise inter-cluster maximum distance bounds */
     char   *dcc_measured;       /**< 1 if exactly measured, 0 if unmeasured */
+    uint16_t *dcc_sq16;         /**< 16-bit quantized DCC cache for L3 residency */
+    double  dcc_sq16_scale;     /**< Scale factor: 16384.0 / rlim */
     int    *probsortedclindex;  /**< Cluster indices sorted by descending prior probability */
+    double *cluster_probs;     /**< Contiguous aligned array of cluster prior probabilities */
     int    *clmembflag;         /**< Flag indicating if a cluster is an active candidate */
+    int    *active_clusters;    /**< Dense array of currently active candidate indices */
+    int     num_active_clusters; /**< Number of currently active cluster candidates */
     double *mixed_probs;        /**< Prior predictive probabilities (frequency * sequence) */
     uint64_t *consistency_mask; /**< Precomputed 3D geometric consistency bitmask */
     double *entropy_p_current;  /**< Pre-allocated buffer for entropy search probabilities */

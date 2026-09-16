@@ -225,6 +225,8 @@ void *wasm_cluster_init(
             (int *)calloc(N, sizeof(int));
         s->probsortedclindex =
             (int *)calloc(N, sizeof(int));
+        s->cluster_probs =
+            (double *)calloc(N, sizeof(double));
         s->current_gprobs =
             (double *)calloc(N, sizeof(double));
 
@@ -316,6 +318,7 @@ void *wasm_cluster_init(
         h->state.scratch.mixed_probs == NULL ||
         h->state.scratch.clmembflag == NULL ||
         h->state.scratch.probsortedclindex == NULL ||
+        h->state.scratch.cluster_probs == NULL ||
         h->state.scratch.current_gprobs == NULL ||
         h->state.scratch.dcc_min == NULL ||
         h->state.scratch.dcc_max == NULL ||
@@ -423,6 +426,7 @@ static int grow_capacity(WasmHandle *h)
     GROW_LINEAR(s->mixed_probs, double);
     GROW_LINEAR(s->clmembflag, int);
     GROW_LINEAR(s->probsortedclindex, int);
+    GROW_LINEAR(s->cluster_probs, double);
     GROW_LINEAR(s->current_gprobs, double);
     GROW_LINEAR(s->entropy_p_current, double);
     GROW_LINEAR(s->entropy_candidates, Candidate);
@@ -1141,6 +1145,7 @@ void wasm_cluster_free(void *ptr)
         free(s->mixed_probs);
         free(s->clmembflag);
         free(s->probsortedclindex);
+        free(s->cluster_probs);
         free(s->current_gprobs);
         free(s->dcc_min);
         free(s->dcc_max);

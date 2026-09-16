@@ -510,81 +510,195 @@ int cluster_frame(
             // geometric probabilities using the last measured target and distance.
             if (first_iter)
             {
-                struct timespec step_start, step_end;
+                struct timespec step_start, step_end, t_mid1, t_mid2;
                 clock_gettime(CLOCK_MONOTONIC, &step_start);
-                compute_priors_and_mixing(
-                    config, state, *prev_assigned_cluster, sorting_candidates
-                );
 
-                if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
+                int tm_active = (config->algo.tm_mixing_coeff > 0.0 &&
+                                 *prev_assigned_cluster != -1);
+                int fast_sq16 = (config->optim.use_sq16 &&
+                                 state->current_frame_sq16 != NULL &&
+                                 state->anchor_matrix_sq16 != NULL &&
+                                 config->optim.pred_mode != 2 &&
+                                 !tm_active &&
+                                 config->optim.gprob_mode &&
+                                 !state->trace);
+
+                if (fast_sq16)
                 {
-                    long dim = config->optim.sq16_params.dim;
-                    const int16_t *cur_sq16 = state->current_frame_sq16;
-                    const int16_t *mat_sq16 = state->anchor_matrix_sq16;
-                    int num_cl = state->num_clusters;
-
-                    for (int i = 0; i < num_cl; i++)
+                    if (state->scratch.cluster_probs != NULL)
                     {
-                        if (state->scratch.clmembflag[i])
-                        {
-                            if (mat_sq16 != NULL && i + 4 < num_cl)
-                            {
-                                GRIC_PREFETCH_T0(mat_sq16 + (size_t)(i + 4) * (size_t)dim);
-                            }
-                            const int16_t *a_ptr = mat_sq16
-                                                   ? (mat_sq16 + (size_t)i * (size_t)dim)
-                                                   : state->clusters[i].anchor_sq16;
-                            if (a_ptr != NULL)
-                            {
-                                state->telemetry.sq16_evals++;
-                                uint64_t ssd = sq16_dist_squared_cutoff_i16(
-                                    cur_sq16,
-                                    a_ptr,
-                                    dim,
-                                    sq16_ssd_thresh
-                                );
-                                if (ssd > sq16_ssd_thresh)
-                                {
-                                    state->scratch.clmembflag[i] = 0;
-                                    state->telemetry.sq16_pruned++;
-                                    state->telemetry.clusters_pruned++;
-                                }
-                            }
-                        }
+                        cluster_normalize_probs(state->scratch.cluster_probs,
+                                                state->num_clusters);
+                    }
+                    else
+                    {
+                        compute_priors_and_mixing(
+                            config, state, *prev_assigned_cluster, sorting_candidates
+                        );
+                    }
+                    clock_gettime(CLOCK_MONOTONIC, &t_mid1);
+                    state->telemetry.time_step_3a_priors +=
+                        (t_mid1.tv_sec - step_start.tv_sec) * 1000.0 +
+                        (t_mid1.tv_nsec - step_start.tv_nsec) / 1000000.0;
+
+                    int num_active = 0;
+                    int pruned_count = 0;
+                    long dim = config->optim.sq16_params.dim;
+                    sq16_filter_anchor_matrix(
+                        state->current_frame_sq16,
+                        state->anchor_matrix_sq16,
+                        state->num_clusters,
+                        dim,
+                        sq16_ssd_thresh,
+                        state->scratch.clmembflag,
+                        state->scratch.active_clusters,
+                        &num_active,
+                        &pruned_count
+                    );
+                    state->scratch.num_active_clusters = num_active;
+                    state->telemetry.sq16_evals += state->num_clusters;
+                    state->telemetry.sq16_pruned += pruned_count;
+                    state->telemetry.clusters_pruned += pruned_count;
+
+                    clock_gettime(CLOCK_MONOTONIC, &t_mid2);
+                    state->telemetry.time_step_3a_sq_filter +=
+                        (t_mid2.tv_sec - t_mid1.tv_sec) * 1000.0 +
+                        (t_mid2.tv_nsec - t_mid1.tv_nsec) / 1000000.0;
+
+                    const double *probs = state->scratch.cluster_probs;
+                    for (int idx = 0; idx < num_active; idx++)
+                    {
+                        int c = state->scratch.active_clusters[idx];
+                        double p = probs ? probs[c] : state->clusters[c].prob;
+                        state->scratch.current_gprobs[c] = 1.0;
+                        state->scratch.mixed_probs[c] = p;
+                        state->scratch.entropy_p_current[c] = p;
                     }
                 }
-                else if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
+                else
                 {
-                    const uint8_t *cur_sq8 = state->current_frame_sq8;
-                    const uint8_t *mat_sq8 = state->anchor_matrix_sq8;
-                    long dim = config->optim.sq8_params.dim;
-                    int num_cl = state->num_clusters;
+                    compute_priors_and_mixing(
+                        config, state, *prev_assigned_cluster, sorting_candidates
+                    );
+                    clock_gettime(CLOCK_MONOTONIC, &t_mid1);
+                    state->telemetry.time_step_3a_priors +=
+                        (t_mid1.tv_sec - step_start.tv_sec) * 1000.0 +
+                        (t_mid1.tv_nsec - step_start.tv_nsec) / 1000000.0;
 
-                    for (int i = 0; i < num_cl; i++)
+                    if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
                     {
-                        if (state->scratch.clmembflag[i])
+                        long dim = config->optim.sq16_params.dim;
+                        const int16_t *cur_sq16 = state->current_frame_sq16;
+                        const int16_t *mat_sq16 = state->anchor_matrix_sq16;
+                        int num_cl = state->num_clusters;
+
+                        if (mat_sq16 != NULL)
                         {
-                            const uint8_t *a_ptr = mat_sq8
-                                                   ? (mat_sq8 + (size_t)i * (size_t)dim)
-                                                   : state->clusters[i].anchor_sq8;
-                            if (a_ptr != NULL)
+                            int num_active = 0;
+                            int pruned_count = 0;
+                            sq16_filter_anchor_matrix(
+                                cur_sq16,
+                                mat_sq16,
+                                num_cl,
+                                dim,
+                                sq16_ssd_thresh,
+                                state->scratch.clmembflag,
+                                state->scratch.active_clusters,
+                                &num_active,
+                                &pruned_count
+                            );
+                            state->scratch.num_active_clusters = num_active;
+                            state->telemetry.sq16_evals += num_cl;
+                            state->telemetry.sq16_pruned += pruned_count;
+                            state->telemetry.clusters_pruned += pruned_count;
+                        }
+                        else
+                        {
+                            for (int i = 0; i < num_cl; i++)
                             {
-                                state->telemetry.sq8_evals++;
-                                double d_lb = sq8_compute_lower_bound(
-                                    cur_sq8,
-                                    a_ptr,
-                                    &config->optim.sq8_params,
-                                    0.0
-                                );
-                                if (d_lb > config->algo.rlim)
+                                if (state->scratch.clmembflag[i])
                                 {
-                                    state->scratch.clmembflag[i] = 0;
-                                    state->telemetry.sq8_pruned++;
-                                    state->telemetry.clusters_pruned++;
+                                    const int16_t *a_ptr = state->clusters[i].anchor_sq16;
+                                    if (a_ptr != NULL)
+                                    {
+                                        state->telemetry.sq16_evals++;
+                                        uint64_t ssd = sq16_dist_squared_cutoff_i16(
+                                            cur_sq16,
+                                            a_ptr,
+                                            dim,
+                                            sq16_ssd_thresh
+                                        );
+                                        if (ssd > sq16_ssd_thresh)
+                                        {
+                                            state->scratch.clmembflag[i] = 0;
+                                            state->telemetry.sq16_pruned++;
+                                            state->telemetry.clusters_pruned++;
+                                        }
+                                    }
+                                }
+                            }
+
+                            int compact_idx = 0;
+                            for (int idx = 0; idx < state->scratch.num_active_clusters; idx++)
+                            {
+                                int c = state->scratch.active_clusters[idx];
+                                if (state->scratch.clmembflag[c])
+                                {
+                                    state->scratch.active_clusters[compact_idx++] = c;
+                                }
+                            }
+                            state->scratch.num_active_clusters = compact_idx;
+                        }
+                    }
+                    else if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
+                    {
+                        const uint8_t *cur_sq8 = state->current_frame_sq8;
+                        const uint8_t *mat_sq8 = state->anchor_matrix_sq8;
+                        long dim = config->optim.sq8_params.dim;
+                        int num_cl = state->num_clusters;
+
+                        for (int i = 0; i < num_cl; i++)
+                        {
+                            if (state->scratch.clmembflag[i])
+                            {
+                                const uint8_t *a_ptr = mat_sq8
+                                                       ? (mat_sq8 + (size_t)i * (size_t)dim)
+                                                       : state->clusters[i].anchor_sq8;
+                                if (a_ptr != NULL)
+                                {
+                                    state->telemetry.sq8_evals++;
+                                    double d_lb = sq8_compute_lower_bound(
+                                        cur_sq8,
+                                        a_ptr,
+                                        &config->optim.sq8_params,
+                                        0.0
+                                    );
+                                    if (d_lb > config->algo.rlim)
+                                    {
+                                        state->scratch.clmembflag[i] = 0;
+                                        state->telemetry.sq8_pruned++;
+                                        state->telemetry.clusters_pruned++;
+                                    }
                                 }
                             }
                         }
+
+                        int compact_idx = 0;
+                        for (int idx = 0; idx < state->scratch.num_active_clusters; idx++)
+                        {
+                            int c = state->scratch.active_clusters[idx];
+                            if (state->scratch.clmembflag[c])
+                            {
+                                state->scratch.active_clusters[compact_idx++] = c;
+                            }
+                        }
+                        state->scratch.num_active_clusters = compact_idx;
                     }
+
+                    clock_gettime(CLOCK_MONOTONIC, &t_mid2);
+                    state->telemetry.time_step_3a_sq_filter +=
+                        (t_mid2.tv_sec - t_mid1.tv_sec) * 1000.0 +
+                        (t_mid2.tv_nsec - t_mid1.tv_nsec) / 1000000.0;
                 }
 
                 clock_gettime(CLOCK_MONOTONIC, &step_end);
@@ -611,9 +725,10 @@ int cluster_frame(
                 update_probabilities_and_pruning(last_cj, dfc, config, state, temp_indices,
                                                  temp_dists, temp_count);
                 clock_gettime(CLOCK_MONOTONIC, &step_end);
-                state->telemetry.time_step_3a +=
-                    (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
-                    (step_end.tv_nsec - step_start.tv_nsec) / 1000000.0;
+                double elapsed = (step_end.tv_sec - step_start.tv_sec) * 1000.0 +
+                                 (step_end.tv_nsec - step_start.tv_nsec) / 1000000.0;
+                state->telemetry.time_step_3a += elapsed;
+                state->telemetry.time_step_3a_subsequent += elapsed;
                 need_prune_update = 0;
             }
 

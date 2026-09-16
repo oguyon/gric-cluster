@@ -459,6 +459,7 @@ add_executable(gric-probe
     src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
     src/shared/cli_colors.c
+    src/shared/gric_simd.c
 )
 target_include_directories(gric-probe PRIVATE src/gric-probe src/shared src)
 target_link_libraries(gric-probe m)
@@ -674,6 +675,7 @@ add_executable(test_scalar_quant
     tests/test_scalar_quant.c
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
+    src/shared/gric_simd.c
 )
 target_include_directories(test_scalar_quant PRIVATE src/shared)
 target_link_libraries(test_scalar_quant m)
@@ -708,6 +710,7 @@ add_executable(test_knn_rq8_sidecar_mismatch
     src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
     src/shared/product_quant.c
+    src/shared/gric_simd.c
 )
 target_include_directories(test_knn_rq8_sidecar_mismatch PRIVATE src/gric-knn src/shared)
 target_link_libraries(test_knn_rq8_sidecar_mismatch m)
@@ -742,6 +745,7 @@ add_executable(test_gric_probe
     src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
     src/shared/cli_colors.c
+    src/shared/gric_simd.c
 )
 target_include_directories(test_gric_probe PRIVATE src/gric-probe src/shared src)
 target_link_libraries(test_gric_probe m)

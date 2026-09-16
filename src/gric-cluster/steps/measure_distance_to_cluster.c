@@ -87,6 +87,10 @@ double measure_distance_to_cluster(
         if (!config->optim.pred_mode)
         {
             state->clusters[cj].prob += config->algo.deltaprob;
+            if (state->scratch.cluster_probs != NULL)
+            {
+                state->scratch.cluster_probs[cj] += config->algo.deltaprob;
+            }
         }
         if (config->output.verbose_level >= 2)
         {

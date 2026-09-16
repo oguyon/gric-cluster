@@ -230,6 +230,20 @@ int sq16_batch_filter_candidates(
     int *restrict                  clmembflag);
 
 /**
+ * @brief Bulk filter contiguous cluster anchors using SQ16 lower bounds and SIMD.
+ */
+void sq16_filter_anchor_matrix(
+    const int16_t *restrict cur_sq16,
+    const int16_t *restrict anchor_matrix,
+    int                     num_clusters,
+    long                    dim,
+    uint64_t                sq16_ssd_thresh,
+    int           *restrict clmembflag,
+    int           *restrict active_clusters,
+    int           *restrict out_num_active,
+    int           *restrict out_pruned_count);
+
+/**
  * @brief Save quantized dataset buffer and parameters to a binary .sq16 file.
  */
 int sq16_save_sidecar(

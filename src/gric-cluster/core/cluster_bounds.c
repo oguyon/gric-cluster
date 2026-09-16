@@ -34,12 +34,7 @@ void update_dcc_bounds(
         state->telemetry.dcc_entries_populated++;
     }
 
-    state->scratch.dcc_min[i * N + j] = d_exact;
-    state->scratch.dcc_min[j * N + i] = d_exact;
-    state->scratch.dcc_max[i * N + j] = d_exact;
-    state->scratch.dcc_max[j * N + i] = d_exact;
-    state->scratch.dcc_measured[i * N + j] = 1;
-    state->scratch.dcc_measured[j * N + i] = 1;
+    set_dcc_pair(state, N, i, j, d_exact);
 
     for (int k = 0; k < state->num_clusters; k++)
     {

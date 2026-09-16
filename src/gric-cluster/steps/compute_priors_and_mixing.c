@@ -12,6 +12,161 @@
 #include <string.h>
 #include "../trace/cluster_trace.h"
 
+#include "gric_simd.h"
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && \
+    (defined(__GNUC__) || defined(__clang__)) && !defined(__CUDACC__)
+#include <immintrin.h>
+
+GRIC_TARGET_AVX512
+static void cluster_normalize_probs_avx512(
+    double *restrict probs,
+    int              num_clusters)
+{
+    __m512d acc = _mm512_setzero_pd();
+    int i = 0;
+    for (; i <= num_clusters - 8; i += 8)
+    {
+        acc = _mm512_add_pd(acc, _mm512_loadu_pd(probs + i));
+    }
+    double sum = _mm512_reduce_add_pd(acc);
+    for (; i < num_clusters; i++)
+    {
+        sum += probs[i];
+    }
+
+    if (sum <= 0.0)
+    {
+        double flat_p = 1.0 / (double)num_clusters;
+        for (int j = 0; j < num_clusters; j++)
+        {
+            probs[j] = flat_p;
+        }
+        return;
+    }
+
+    double inv = 1.0 / sum;
+    __m512d vinv = _mm512_set1_pd(inv);
+    i = 0;
+    for (; i <= num_clusters - 8; i += 8)
+    {
+        __m512d p = _mm512_loadu_pd(probs + i);
+        _mm512_storeu_pd(probs + i, _mm512_mul_pd(p, vinv));
+    }
+    for (; i < num_clusters; i++)
+    {
+        probs[i] *= inv;
+    }
+}
+
+GRIC_TARGET_AVX2
+static void cluster_normalize_probs_avx2(
+    double *restrict probs,
+    int              num_clusters)
+{
+    __m256d acc0 = _mm256_setzero_pd();
+    __m256d acc1 = _mm256_setzero_pd();
+    int i = 0;
+    for (; i <= num_clusters - 8; i += 8)
+    {
+        acc0 = _mm256_add_pd(acc0, _mm256_loadu_pd(probs + i));
+        acc1 = _mm256_add_pd(acc1, _mm256_loadu_pd(probs + i + 4));
+    }
+    acc0 = _mm256_add_pd(acc0, acc1);
+    __m128d hi = _mm256_extractf128_pd(acc0, 1);
+    __m128d lo = _mm256_castpd256_pd128(acc0);
+    __m128d s = _mm_add_pd(lo, hi);
+    s = _mm_add_sd(s, _mm_unpackhi_pd(s, s));
+    double sum = _mm_cvtsd_f64(s);
+    for (; i < num_clusters; i++)
+    {
+        sum += probs[i];
+    }
+
+    if (sum <= 0.0)
+    {
+        double flat_p = 1.0 / (double)num_clusters;
+        for (int j = 0; j < num_clusters; j++)
+        {
+            probs[j] = flat_p;
+        }
+        return;
+    }
+
+    double inv = 1.0 / sum;
+    __m256d vinv = _mm256_set1_pd(inv);
+    i = 0;
+    for (; i <= num_clusters - 8; i += 8)
+    {
+        __m256d p0 = _mm256_loadu_pd(probs + i);
+        __m256d p1 = _mm256_loadu_pd(probs + i + 4);
+        _mm256_storeu_pd(probs + i, _mm256_mul_pd(p0, vinv));
+        _mm256_storeu_pd(probs + i + 4, _mm256_mul_pd(p1, vinv));
+    }
+    for (; i < num_clusters; i++)
+    {
+        probs[i] *= inv;
+    }
+}
+#endif
+
+static void cluster_normalize_probs_scalar(
+    double *restrict probs,
+    int              num_clusters)
+{
+    double sum = 0.0;
+    for (int i = 0; i < num_clusters; i++)
+    {
+        sum += probs[i];
+    }
+    if (sum <= 0.0)
+    {
+        double flat_p = 1.0 / (double)num_clusters;
+        for (int i = 0; i < num_clusters; i++)
+        {
+            probs[i] = flat_p;
+        }
+        return;
+    }
+    double inv = 1.0 / sum;
+    for (int i = 0; i < num_clusters; i++)
+    {
+        probs[i] *= inv;
+    }
+}
+
+/**
+ * cluster_normalize_probs() - Fast SIMD normalization of cluster prior probabilities.
+ * @probs:        Contiguous array of cluster prior probabilities.
+ * @num_clusters: Number of active clusters.
+ */
+void cluster_normalize_probs(
+    double *restrict probs,
+    int              num_clusters)
+{
+    if (probs == NULL || num_clusters <= 0)
+    {
+        return;
+    }
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && \
+    (defined(__GNUC__) || defined(__clang__)) && !defined(__CUDACC__)
+    GricSimdLevel simd = gric_get_simd_level();
+    if (simd >= GRIC_SIMD_AVX512)
+    {
+        cluster_normalize_probs_avx512(probs, num_clusters);
+        return;
+    }
+    if (simd >= GRIC_SIMD_AVX2)
+    {
+        cluster_normalize_probs_avx2(probs, num_clusters);
+        return;
+    }
+#endif
+
+    cluster_normalize_probs_scalar(probs, num_clusters);
+}
+
 /**
  * calculate_sequence_match_metric - Compute match metric mAB between two cluster histories.
  * @seq_A_cl: Array of cluster assignments for sequence A.
@@ -113,28 +268,77 @@ void compute_priors_and_mixing(
     int            prev_assigned_cluster,
     Candidate     *sorting_candidates)
 {
-    double sum_prob = 0.0;
-    for (int i = 0; i < state->num_clusters; i++)
-    {
-        sum_prob += state->clusters[i].prob;
-    }
+    int num_cl = state->num_clusters;
+    state->scratch.num_active_clusters = num_cl;
 
-    if (sum_prob > 0.0)
+    int tm_active = (config->algo.tm_mixing_coeff > 0.0 && prev_assigned_cluster != -1);
+    if (config->optim.pred_mode != 2 && !tm_active)
     {
-        double inv_sum = 1.0 / sum_prob;
-        for (int i = 0; i < state->num_clusters; i++)
+        if (state->scratch.cluster_probs != NULL)
         {
-            state->clusters[i].prob *= inv_sum;
-            state->scratch.current_gprobs[i] = 1.0;
-            state->scratch.clmembflag[i] = 1;
+            cluster_normalize_probs(state->scratch.cluster_probs, num_cl);
+            for (int i = 0; i < num_cl; i++)
+            {
+                double prior = state->scratch.cluster_probs[i];
+                state->clusters[i].prob = prior;
+                state->scratch.current_gprobs[i] = 1.0;
+                state->scratch.clmembflag[i] = 1;
+                state->scratch.active_clusters[i] = i;
+                state->scratch.mixed_probs[i] = prior;
+                state->scratch.entropy_p_current[i] = prior;
+            }
+        }
+        else
+        {
+            double sum_prob = 0.0;
+            for (int i = 0; i < num_cl; i++)
+            {
+                sum_prob += state->clusters[i].prob;
+            }
+            double inv_sum = (sum_prob > 0.0) ? (1.0 / sum_prob) : 1.0;
+            for (int i = 0; i < num_cl; i++)
+            {
+                double prior = (sum_prob > 0.0) ? (state->clusters[i].prob * inv_sum)
+                                                : (1.0 / (double)num_cl);
+                state->clusters[i].prob = prior;
+                state->scratch.current_gprobs[i] = 1.0;
+                state->scratch.clmembflag[i] = 1;
+                state->scratch.active_clusters[i] = i;
+                state->scratch.mixed_probs[i] = prior;
+                state->scratch.entropy_p_current[i] = prior;
+            }
         }
     }
     else
     {
-        for (int i = 0; i < state->num_clusters; i++)
+        double sum_prob = 0.0;
+        for (int i = 0; i < num_cl; i++)
         {
-            state->scratch.current_gprobs[i] = 1.0;
-            state->scratch.clmembflag[i] = 1;
+            sum_prob += state->clusters[i].prob;
+        }
+        if (sum_prob > 0.0)
+        {
+            double inv_sum = 1.0 / sum_prob;
+            for (int i = 0; i < num_cl; i++)
+            {
+                state->clusters[i].prob *= inv_sum;
+                if (state->scratch.cluster_probs != NULL)
+                {
+                    state->scratch.cluster_probs[i] = state->clusters[i].prob;
+                }
+                state->scratch.current_gprobs[i] = 1.0;
+                state->scratch.clmembflag[i] = 1;
+                state->scratch.active_clusters[i] = i;
+            }
+        }
+        else
+        {
+            for (int i = 0; i < num_cl; i++)
+            {
+                state->scratch.current_gprobs[i] = 1.0;
+                state->scratch.clmembflag[i] = 1;
+                state->scratch.active_clusters[i] = i;
+            }
         }
     }
 
@@ -338,24 +542,20 @@ void compute_priors_and_mixing(
             }
         }
     }
-    else
+    else if (tm_active)
     {
         double trans_prob_sum = 0.0;
-        if (config->algo.tm_mixing_coeff > 0.0 && prev_assigned_cluster != -1)
+        for (int i = 0; i < state->num_clusters; i++)
         {
-            for (int i = 0; i < state->num_clusters; i++)
-            {
-                trans_prob_sum += (double)state->transition_matrix[
-                    prev_assigned_cluster * config->algo.maxnbclust + i];
-            }
+            trans_prob_sum += (double)state->transition_matrix[
+                prev_assigned_cluster * config->algo.maxnbclust + i];
         }
 
         for (int i = 0; i < state->num_clusters; i++)
         {
             double prior = state->clusters[i].prob;
             double tp = 0.0;
-            if (config->algo.tm_mixing_coeff > 0.0 && prev_assigned_cluster != -1 &&
-                trans_prob_sum > 0.0)
+            if (trans_prob_sum > 0.0)
             {
                 tp = (double)state->transition_matrix[
                     prev_assigned_cluster * config->algo.maxnbclust + i] / trans_prob_sum;
@@ -367,6 +567,7 @@ void compute_priors_and_mixing(
             {
                 state->scratch.mixed_probs[i] = prior;
             }
+            state->scratch.entropy_p_current[i] = state->scratch.mixed_probs[i];
         }
     }
 
@@ -391,8 +592,11 @@ void compute_priors_and_mixing(
      * the starting point that the entropy search
      * progressively refines as measurements are taken.
      */
-    memcpy(state->scratch.entropy_p_current, state->scratch.mixed_probs,
-           (size_t)state->num_clusters * sizeof(double));
+    if (config->optim.pred_mode == 2)
+    {
+        memcpy(state->scratch.entropy_p_current, state->scratch.mixed_probs,
+               (size_t)state->num_clusters * sizeof(double));
+    }
 
     if (state->trace)
     {

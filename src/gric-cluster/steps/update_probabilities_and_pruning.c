@@ -7,6 +7,7 @@
 #include "cluster_steps.h"
 #include "cluster_core.h"
 #include "cluster_prune.h"
+#include "cluster_bounds.h"
 #include "cluster_math.h"
 #include "cluster_locator.h"
 #include <math.h>
@@ -41,129 +42,128 @@ void update_probabilities_and_pruning(
     int            temp_count)
 {
     long local_pruned = 0;
+    int maxnbc = config->algo.maxnbclust;
+    double rlim = config->algo.rlim;
+
     if (config->optim.sparse_dcc_mode)
     {
-        for (int cl = 0; cl < state->num_clusters; cl++)
+        int active_cnt = state->scratch.num_active_clusters;
+        int *act = state->scratch.active_clusters;
+        int idx = 0;
+
+        while (idx < active_cnt)
         {
-            if (state->scratch.clmembflag[cl] == 0)
-            {
-                continue;
-            }
+            int cl = act[idx];
+            double d_min = state->scratch.dcc_min[cj * maxnbc + cl];
+            double d_max = state->scratch.dcc_max[cj * maxnbc + cl];
 
-            double d_min = state->scratch.dcc_min[cj * config->algo.maxnbclust + cl];
-            double d_max = state->scratch.dcc_max[cj * config->algo.maxnbclust + cl];
-
-            if (d_min - dfc > config->algo.rlim)
+            if (d_min - dfc > rlim || (d_max < 1e18 && dfc - d_max > rlim))
             {
                 state->scratch.clmembflag[cl] = 0;
+                state->scratch.entropy_p_current[cl] = 0.0;
                 local_pruned++;
+                active_cnt--;
+                act[idx] = act[active_cnt];
             }
-            else if (d_max < 1e18 && dfc - d_max > config->algo.rlim)
+            else
             {
-                state->scratch.clmembflag[cl] = 0;
-                local_pruned++;
+                idx++;
             }
         }
+        state->scratch.num_active_clusters = active_cnt;
     }
     else
     {
-        const double *row_dcc = &state->scratch.dcc_min[cj * config->algo.maxnbclust];
-        int cl = 0;
+        const uint16_t *row_sq16 = (state->scratch.dcc_sq16 != NULL)
+            ? &state->scratch.dcc_sq16[cj * maxnbc]
+            : NULL;
+        const double *row_dcc = &state->scratch.dcc_min[cj * maxnbc];
+        int active_cnt = state->scratch.num_active_clusters;
+        int *act = state->scratch.active_clusters;
+        int idx = 0;
 
-#if defined(__AVX2__)
-        __m256d v_dfc = _mm256_set1_pd(dfc);
-        __m256d v_rlim = _mm256_set1_pd(config->algo.rlim);
-        __m256d v_sign_mask = _mm256_set1_pd(-0.0);
-        __m256d v_zero = _mm256_setzero_pd();
-
-        for (; cl <= state->num_clusters - 4; cl += 4)
+        if (row_sq16 != NULL)
         {
-            if (!state->scratch.clmembflag[cl] &&
-                !state->scratch.clmembflag[cl + 1] &&
-                !state->scratch.clmembflag[cl + 2] &&
-                !state->scratch.clmembflag[cl + 3])
-            {
-                continue;
-            }
+            double scale = state->scratch.dcc_sq16_scale;
+            int q_dfc = (int)(dfc * scale + 0.5);
+            int q_rlim = (int)(rlim * scale);
 
-            __m256d vdcc = _mm256_loadu_pd(&row_dcc[cl]);
-            if (_mm256_movemask_pd(_mm256_cmp_pd(vdcc, v_zero, _CMP_LT_OQ)) != 0)
+            while (idx < active_cnt)
             {
-                for (int sub = 0; sub < 4; sub++)
+                int cl = act[idx];
+                uint16_t q_dcc = row_sq16[cl];
+
+                if (q_dcc == DCC_SQ16_UNMEASURED)
                 {
-                    int c = cl + sub;
-                    if (!state->scratch.clmembflag[c])
+                    double dcc = get_dist(
+                        &state->clusters[cj].anchor,
+                        &state->clusters[cl].anchor,
+                        -1, -1.0, -1.0, config, state);
+                    set_dcc_pair(state, maxnbc, cj, cl, dcc);
+                    q_dcc = row_sq16[cl];
+                }
+
+                int diff = abs((int)q_dcc - q_dfc);
+                int prune = 0;
+
+                if (diff > q_rlim + 1)
+                {
+                    prune = 1;
+                }
+                else if (diff >= q_rlim - 1)
+                {
+                    /* Boundary verification against exact double */
+                    double dcc = row_dcc[cl];
+                    if (fabs(dcc - dfc) > rlim)
                     {
-                        continue;
-                    }
-                    double dcc = row_dcc[c];
-                    if (dcc < 0.0)
-                    {
-                        dcc = get_dist(&state->clusters[cj].anchor, &state->clusters[c].anchor,
-                                       -1, -1.0, -1.0, config, state);
-                        state->scratch.dcc_min[cj * config->algo.maxnbclust + c] = dcc;
-                        state->scratch.dcc_min[c * config->algo.maxnbclust + cj] = dcc;
-                        state->scratch.dcc_max[cj * config->algo.maxnbclust + c] = dcc;
-                        state->scratch.dcc_max[c * config->algo.maxnbclust + cj] = dcc;
-                        state->scratch.dcc_measured[cj * config->algo.maxnbclust + c] = 1;
-                        state->scratch.dcc_measured[c * config->algo.maxnbclust + cj] = 1;
-                    }
-                    if (fabs(dcc - dfc) > config->algo.rlim)
-                    {
-                        state->scratch.clmembflag[c] = 0;
-                        local_pruned++;
+                        prune = 1;
                     }
                 }
-                continue;
-            }
 
-            __m256d vdiff = _mm256_sub_pd(vdcc, v_dfc);
-            __m256d vabs = _mm256_andnot_pd(v_sign_mask, vdiff);
-            __m256d vprune = _mm256_cmp_pd(vabs, v_rlim, _CMP_GT_OQ);
-            int pmask = _mm256_movemask_pd(vprune);
-            if (pmask != 0)
-            {
-                for (int sub = 0; sub < 4; sub++)
+                if (prune)
                 {
-                    if (pmask & (1 << sub))
-                    {
-                        int c = cl + sub;
-                        if (state->scratch.clmembflag[c])
-                        {
-                            state->scratch.clmembflag[c] = 0;
-                            local_pruned++;
-                        }
-                    }
+                    state->scratch.clmembflag[cl] = 0;
+                    state->scratch.entropy_p_current[cl] = 0.0;
+                    local_pruned++;
+                    active_cnt--;
+                    act[idx] = act[active_cnt];
+                }
+                else
+                {
+                    idx++;
                 }
             }
         }
-#endif
-
-        for (; cl < state->num_clusters; cl++)
+        else
         {
-            if (state->scratch.clmembflag[cl] == 0)
+            while (idx < active_cnt)
             {
-                continue;
-            }
-            double dcc = row_dcc[cl];
-            if (dcc < 0.0)
-            {
-                dcc = get_dist(&state->clusters[cj].anchor, &state->clusters[cl].anchor, -1,
-                               -1.0, -1.0, config, state);
-                state->scratch.dcc_min[cj * config->algo.maxnbclust + cl] = dcc;
-                state->scratch.dcc_min[cl * config->algo.maxnbclust + cj] = dcc;
-                state->scratch.dcc_max[cj * config->algo.maxnbclust + cl] = dcc;
-                state->scratch.dcc_max[cl * config->algo.maxnbclust + cj] = dcc;
-                state->scratch.dcc_measured[cj * config->algo.maxnbclust + cl] = 1;
-                state->scratch.dcc_measured[cl * config->algo.maxnbclust + cj] = 1;
-            }
+                int cl = act[idx];
+                double dcc = row_dcc[cl];
+                if (dcc < 0.0)
+                {
+                    dcc = get_dist(
+                        &state->clusters[cj].anchor,
+                        &state->clusters[cl].anchor,
+                        -1, -1.0, -1.0, config, state);
+                    set_dcc_pair(state, maxnbc, cj, cl, dcc);
+                }
 
-            if (fabs(dcc - dfc) > config->algo.rlim)
-            {
-                state->scratch.clmembflag[cl] = 0;
-                local_pruned++;
+                if (fabs(dcc - dfc) > rlim)
+                {
+                    state->scratch.clmembflag[cl] = 0;
+                    state->scratch.entropy_p_current[cl] = 0.0;
+                    local_pruned++;
+                    active_cnt--;
+                    act[idx] = act[active_cnt];
+                }
+                else
+                {
+                    idx++;
+                }
             }
         }
+        state->scratch.num_active_clusters = active_cnt;
     }
     state->telemetry.clusters_pruned += local_pruned;
 
@@ -174,12 +174,7 @@ void update_probabilities_and_pruning(
         {
             ev->pruned_count = local_pruned;
             ev->cluster_id = cj;
-            int active_cnt = 0;
-            for (int i = 0; i < state->num_clusters; i++)
-            {
-                if (state->scratch.clmembflag[i]) active_cnt++;
-            }
-            ev->active_remaining = active_cnt;
+            ev->active_remaining = state->scratch.num_active_clusters;
         }
     }
 
@@ -207,12 +202,7 @@ void update_probabilities_and_pruning(
                     d_ci_cprev = get_dist(&state->clusters[cj].anchor,
                                           &state->clusters[cprev].anchor, -1, -1.0, -1.0,
                                           config, state);
-                    state->scratch.dcc_min[cj * config->algo.maxnbclust + cprev] = d_ci_cprev;
-                    state->scratch.dcc_min[cprev * config->algo.maxnbclust + cj] = d_ci_cprev;
-                    state->scratch.dcc_max[cj * config->algo.maxnbclust + cprev] = d_ci_cprev;
-                    state->scratch.dcc_max[cprev * config->algo.maxnbclust + cj] = d_ci_cprev;
-                    state->scratch.dcc_measured[cj * config->algo.maxnbclust + cprev] = 1;
-                    state->scratch.dcc_measured[cprev * config->algo.maxnbclust + cj] = 1;
+                    set_dcc_pair(state, config->algo.maxnbclust, cj, cprev, d_ci_cprev);
                 }
             }
 
@@ -258,12 +248,7 @@ void update_probabilities_and_pruning(
                                 d_ci_ck = get_dist(&state->clusters[cj].anchor,
                                                    &state->clusters[kk].anchor, -1, -1.0, -1.0,
                                                    config, state);
-                                state->scratch.dcc_min[cj * config->algo.maxnbclust + kk] = d_ci_ck;
-                                state->scratch.dcc_min[kk * config->algo.maxnbclust + cj] = d_ci_ck;
-                                state->scratch.dcc_max[cj * config->algo.maxnbclust + kk] = d_ci_ck;
-                                state->scratch.dcc_max[kk * config->algo.maxnbclust + cj] = d_ci_ck;
-                                state->scratch.dcc_measured[cj * config->algo.maxnbclust + kk] = 1;
-                                state->scratch.dcc_measured[kk * config->algo.maxnbclust + cj] = 1;
+                                set_dcc_pair(state, config->algo.maxnbclust, cj, kk, d_ci_ck);
                             }
                             double d_cprev_ck = row_dcc_cprev[kk];
                             if (d_cprev_ck < 0.0)
@@ -271,18 +256,7 @@ void update_probabilities_and_pruning(
                                 d_cprev_ck = get_dist(&state->clusters[cprev].anchor,
                                                       &state->clusters[kk].anchor,
                                                       -1, -1.0, -1.0, config, state);
-                                state->scratch.dcc_min[cprev * config->algo.maxnbclust + kk] =
-                                    d_cprev_ck;
-                                state->scratch.dcc_min[kk * config->algo.maxnbclust + cprev] =
-                                    d_cprev_ck;
-                                state->scratch.dcc_max[cprev * config->algo.maxnbclust + kk] =
-                                    d_cprev_ck;
-                                state->scratch.dcc_max[kk * config->algo.maxnbclust + cprev] =
-                                    d_cprev_ck;
-                                 state->scratch.dcc_measured[
-                                     cprev * config->algo.maxnbclust + kk] = 1;
-                                 state->scratch.dcc_measured[
-                                     kk * config->algo.maxnbclust + cprev] = 1;
+                                set_dcc_pair(state, config->algo.maxnbclust, cprev, kk, d_cprev_ck);
                             }
                             double min_d = calc_min_dist_4pt_ref(&te4_ref, d_ci_ck, d_cprev_ck);
                             if (min_d > config->algo.rlim)
@@ -423,15 +397,21 @@ void update_probabilities_and_pruning(
     }
 
     state->scratch.clmembflag[cj] = 0;
+    state->scratch.entropy_p_current[cj] = 0.0;
 
-    int active_cluster_count = 0;
-    for (int i = 0; i < state->num_clusters; i++)
+    /* Ensure cj itself is removed from active list */
+    for (int idx = 0; idx < state->scratch.num_active_clusters; idx++)
     {
-        if (state->scratch.clmembflag[i])
+        if (state->scratch.active_clusters[idx] == cj)
         {
-            active_cluster_count++;
+            state->scratch.num_active_clusters--;
+            state->scratch.active_clusters[idx] =
+                state->scratch.active_clusters[state->scratch.num_active_clusters];
+            break;
         }
     }
+
+    int active_cluster_count = state->scratch.num_active_clusters;
 
     if ((config->optim.gprob_mode || (config->output.distall_mode && state->distall_out) ||
          config->output.verbose_level >= 2) &&
@@ -448,57 +428,49 @@ void update_probabilities_and_pruning(
         double sigma = config->optim.soft_bayesian_sigma_coeff * config->algo.rlim;
         double two_sigma_sq = 2.0 * sigma * sigma;
         int N = config->algo.maxnbclust;
+        int act_cnt = state->scratch.num_active_clusters;
+        int *act = state->scratch.active_clusters;
+        int idx = 0;
 
-        for (int i = 0; i < state->num_clusters; i++)
+        while (idx < act_cnt)
         {
-            if (state->scratch.clmembflag[i] == 0)
+            int i = act[idx];
+            double dcc = state->scratch.dcc_min[cj * N + i];
+            if (dcc < 0.0)
             {
+                dcc = get_dist(&state->clusters[cj].anchor, &state->clusters[i].anchor, -1,
+                               -1.0, -1.0, config, state);
+                set_dcc_pair(state, N, cj, i, dcc);
+            }
+            double diff = dfc - dcc;
+            double x = (diff * diff) / two_sigma_sq;
+            double likelihood = 0.0;
+            if (x <= 2.0)
+            {
+                likelihood = 1.0 - x * (0.978371 - x * (0.419481 - x * 0.073231));
+            }
+            state->scratch.entropy_p_current[i] *= likelihood;
+            if (state->scratch.entropy_p_current[i] < 1e-15)
+            {
+                state->scratch.clmembflag[i] = 0;
                 state->scratch.entropy_p_current[i] = 0.0;
+                act_cnt--;
+                act[idx] = act[act_cnt];
             }
             else
             {
-                double dcc = state->scratch.dcc_min[cj * N + i];
-                if (dcc < 0.0)
-                {
-                    dcc = get_dist(&state->clusters[cj].anchor, &state->clusters[i].anchor, -1,
-                                   -1.0, -1.0, config, state);
-                    state->scratch.dcc_min[cj * N + i] = dcc;
-                    state->scratch.dcc_min[i * N + cj] = dcc;
-                    state->scratch.dcc_max[cj * N + i] = dcc;
-                    state->scratch.dcc_max[i * N + cj] = dcc;
-                    state->scratch.dcc_measured[cj * N + i] = 1;
-                    state->scratch.dcc_measured[i * N + cj] = 1;
-                }
-                double diff = dfc - dcc;
-                double x = (diff * diff) / two_sigma_sq;
-                double likelihood = 0.0;
-                /*
-                 * Minimax polynomial approximation of
-                 * exp(-x) on [0, 2], accurate to ~1e-4.
-                 * Avoids expensive exp() in the inner
-                 * loop.
-                 */
-                if (x <= 2.0)
-                {
-                    likelihood = 1.0 - x * (0.978371 - x * (0.419481 - x * 0.073231));
-                }
-                state->scratch.entropy_p_current[i] *= likelihood;
                 sum_p += state->scratch.entropy_p_current[i];
+                idx++;
             }
         }
+        state->scratch.num_active_clusters = act_cnt;
     }
     else
     {
-        for (int i = 0; i < state->num_clusters; i++)
+        for (int idx = 0; idx < state->scratch.num_active_clusters; idx++)
         {
-            if (state->scratch.clmembflag[i] == 0)
-            {
-                state->scratch.entropy_p_current[i] = 0.0;
-            }
-            else
-            {
-                sum_p += state->scratch.entropy_p_current[i];
-            }
+            int i = state->scratch.active_clusters[idx];
+            sum_p += state->scratch.entropy_p_current[i];
         }
     }
 
@@ -506,40 +478,23 @@ void update_probabilities_and_pruning(
     if (sum_p > 0.0)
     {
         double inv_sum_p = 1.0 / sum_p;
-        int i = 0;
-
-#if defined(__AVX__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-        __m256d v_inv = _mm256_set1_pd(inv_sum_p);
-        for (; i <= state->num_clusters - 4; i += 4)
+        for (int idx = 0; idx < state->scratch.num_active_clusters; idx++)
         {
-            __m256d vp = _mm256_loadu_pd(&state->scratch.entropy_p_current[i]);
-            _mm256_storeu_pd(&state->scratch.entropy_p_current[i], _mm256_mul_pd(vp, v_inv));
-        }
-#endif
-
-        for (; i < state->num_clusters; i++)
-        {
+            int i = state->scratch.active_clusters[idx];
             state->scratch.entropy_p_current[i] *= inv_sum_p;
         }
     }
     else
     {
         /* Fallback: flat distribution over remaining active clusters */
-        int active_cnt = 0;
-        for (int i = 0; i < state->num_clusters; i++)
-        {
-            if (state->scratch.clmembflag[i])
-            {
-                active_cnt++;
-            }
-        }
+        int active_cnt = state->scratch.num_active_clusters;
         if (active_cnt > 0)
         {
-            for (int i = 0; i < state->num_clusters; i++)
+            double flat_p = 1.0 / active_cnt;
+            for (int idx = 0; idx < active_cnt; idx++)
             {
-                state->scratch.entropy_p_current[i] =
-                    state->scratch.clmembflag[i] ? (1.0 / active_cnt) : 0.0;
+                int i = state->scratch.active_clusters[idx];
+                state->scratch.entropy_p_current[i] = flat_p;
             }
         }
     }
