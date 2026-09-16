@@ -209,667 +209,745 @@ void knn_cli_print_help(
     cli_print_color_mode();
 }
 
-int knn_cli_parse(
-    int        argc,
-    char     **argv,
+/**
+ * knn_cli_set_defaults() - Initialize KnnConfig with default parameter values.
+ * @config: Pointer to KnnConfig to initialize.
+ */
+static void knn_cli_set_defaults(
     KnnConfig *config)
 {
-    if (config == NULL)
-    {
-        return 1;
-    }
-
     memset(config, 0, sizeof(KnnConfig));
     config->k = 50;
-    config->min_temporal_sep = 1; // Exclude self-matching by default
+    config->min_temporal_sep = 1;   // Exclude self-matching by default
     config->output_format = KNN_FORMAT_AUTO;
     config->progress_mode = 0;
     config->verbose_level = 1;
-    config->use_reciprocal = 1; // Enabled by default for bidirectional search
-    config->use_multi_pivot = 1; // Enabled by default for multi-anchor pivot bounding
-    config->use_angular_bound = 1; // Enabled by default for directional pruning
-    config->use_trajectory = 0; // Disabled by default; enable for smooth trajectories
-    config->use_rq8 = 1; // Enabled by default for 8-bit residual quantization
-    config->use_sq8 = 0; // Fallback scalar quantization
+    config->use_reciprocal = 1;     // Enabled by default for bidirectional search
+    config->use_multi_pivot = 1;    // Enabled by default for multi-anchor pivot bounding
+    config->use_angular_bound = 1;  // Enabled by default for directional pruning
+    config->use_trajectory = 0;     // Disabled by default; enable for smooth trajectories
+    config->use_rq8 = 1;            // Enabled by default for 8-bit residual quantization
+    config->use_sq8 = 0;            // Fallback scalar quantization
     config->use_sq16 = 0;
-    config->sq16_ratio = 0.05; // Enforce sqrt(D)*scale <= alpha*rlim
-    config->use_memo = 1;      // Enabled by default for quantized memoization
-    config->use_batch_dist = 1; // Enabled by default for multi-vector SIMD batching
-    config->use_cluster_graph = 1; // Enabled by default for graph-guided cluster routing
-    config->ef_cluster = 0;        // 0 = dynamic auto-scaled cluster budget
-    config->use_two_hop = 1;       // Enabled by default for 2-hop candidate injection
-    config->two_hop_seeds = 2;     // Expand top 2 closest seeds
-    config->two_hop_max_cands = 32;// Maximum 2-hop candidate evaluations per query
+    config->sq16_ratio = 0.05;      // Enforce sqrt(D)*scale <= alpha*rlim
+    config->use_memo = 1;           // Enabled by default for quantized memoization
+    config->use_batch_dist = 1;     // Enabled by default for multi-vector SIMD batching
+    config->use_cluster_graph = 1;  // Enabled by default for graph-guided cluster routing
+    config->ef_cluster = 0;         // 0 = dynamic auto-scaled cluster budget
+    config->use_two_hop = 1;        // Enabled by default for 2-hop candidate injection
+    config->two_hop_seeds = 2;      // Expand top 2 closest seeds
+    config->two_hop_max_cands = 32; // Maximum 2-hop candidate evaluations per query
+}
 
-    int k_explicitly_set = 0;
-    int dtmin_explicitly_set = 0;
+/**
+ * knn_cli_parse_io_opt() - Parse I/O, format, execution, and profiling options.
+ * @argc:      Total argument count.
+ * @argv:      Argument strings array.
+ * @arg_idx:   Pointer to current argument index.
+ * @config:    Pointer to KnnConfig.
+ * @k_set:     Flag indicating -k was explicitly passed.
+ * @dtmin_set: Flag indicating -dtmin was explicitly passed.
+ *
+ * Return: 1 if option was recognized, 0 if not, -1 on error.
+ */
+static int knn_cli_parse_io_opt(
+    int        argc,
+    char     **argv,
+    int       *arg_idx,
+    KnnConfig *config,
+    int       *k_set,
+    int       *dtmin_set)
+{
+    int i = *arg_idx;
 
-    int arg_idx = 1;
-    while (arg_idx < argc)
+    if (strcmp(argv[i], "-query") == 0 || strcmp(argv[i], "--query") == 0)
     {
-        if (strcmp(argv[arg_idx], "-h") == 0 || strcmp(argv[arg_idx], "--help") == 0)
-        {
-            knn_cli_print_help(argv[0]);
-            return 2;
-        }
-        else if (strcmp(argv[arg_idx], "-query") == 0 || strcmp(argv[arg_idx], "--query") == 0)
-        {
-            if (arg_idx + 1 < argc)
-            {
-                config->query_data_path = argv[++arg_idx];
-            }
-            else
-            {
-                fprintf(stderr, "Error: -query requires a path argument\n");
-                return 1;
-            }
-        }
-        else if (strcmp(argv[arg_idx], "-k") == 0)
-        {
-            if (arg_idx + 1 < argc)
-            {
-                config->k = atoi(argv[++arg_idx]);
-                k_explicitly_set = 1;
-            }
-            else
-            {
-                fprintf(stderr, "Error: -k requires an integer argument\n");
-                return 1;
-            }
-        }
-        else if (strcmp(argv[arg_idx], "-o") == 0 || strcmp(argv[arg_idx], "--output") == 0)
-        {
-            if (arg_idx + 1 < argc)
-            {
-                config->output_path = argv[++arg_idx];
-            }
-            else
-            {
-                fprintf(stderr, "Error: -o requires a path argument\n");
-                return 1;
-            }
-        }
-        else if (strcmp(argv[arg_idx], "-dtmin") == 0)
-        {
-            if (arg_idx + 1 < argc)
-            {
-                config->min_temporal_sep = atoi(argv[++arg_idx]);
-                dtmin_explicitly_set = 1;
-            }
-            else
-            {
-                fprintf(stderr, "Error: -dtmin requires an integer argument\n");
-                return 1;
-            }
-        }
-        else if (strcmp(argv[arg_idx], "-past") == 0)
-        {
-            config->past_only = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-future") == 0)
-        {
-            config->future_only = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-eps") == 0)
-        {
-            if (arg_idx + 1 < argc)
-            {
-                config->epsilon = atof(argv[++arg_idx]);
-            }
-            else
-            {
-                fprintf(stderr, "Error: -eps requires a float argument\n");
-                return 1;
-            }
-        }
-        else if (strcmp(argv[arg_idx], "-rlim") == 0)
-        {
-            if (arg_idx + 1 < argc)
-            {
-                config->rlim_cutoff = atof(argv[++arg_idx]);
-            }
-            else
-            {
-                fprintf(stderr, "Error: -rlim requires a float argument\n");
-                return 1;
-            }
-        }
-        else if (strcmp(argv[arg_idx], "-all-queries") == 0 ||
-                 strcmp(argv[arg_idx], "--all-queries") == 0)
-        {
-            config->refuse_unclustered = -1;
-        }
-        else if (strcmp(argv[arg_idx], "-nthreads") == 0)
-        {
-            if (arg_idx + 1 < argc)
-            {
-                config->nthreads = atoi(argv[++arg_idx]);
-            }
-            else
-            {
-                fprintf(stderr, "Error: -nthreads requires an integer argument\n");
-                return 1;
-            }
-        }
-        else if (strcmp(argv[arg_idx], "-fits") == 0)
-        {
-            config->output_format = KNN_FORMAT_FITS;
-        }
-        else if (strcmp(argv[arg_idx], "-txt") == 0)
-        {
-            config->output_format = KNN_FORMAT_TXT;
-        }
-        else if (strcmp(argv[arg_idx], "-multipivot") == 0 ||
-                 strcmp(argv[arg_idx], "--multipivot") == 0 ||
-                 strcmp(argv[arg_idx], "-multi_pivot") == 0 ||
-                 strcmp(argv[arg_idx], "--multi-pivot") == 0)
-        {
-            config->use_multi_pivot = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-multipivot") == 0 ||
-                 strcmp(argv[arg_idx], "-no_multipivot") == 0)
-        {
-            config->use_multi_pivot = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-angular") == 0 ||
-                 strcmp(argv[arg_idx], "--angular") == 0 ||
-                 strcmp(argv[arg_idx], "-direction") == 0 ||
-                 strcmp(argv[arg_idx], "--direction") == 0)
-        {
-            config->use_angular_bound = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-angular") == 0 ||
-                 strcmp(argv[arg_idx], "--no-angular") == 0 ||
-                 strcmp(argv[arg_idx], "-no-direction") == 0 ||
-                 strcmp(argv[arg_idx], "--no-direction") == 0)
-        {
-            config->use_angular_bound = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-trajectory") == 0 ||
-                 strcmp(argv[arg_idx], "--trajectory") == 0)
-        {
-            config->use_trajectory = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-trajectory") == 0 ||
-                 strcmp(argv[arg_idx], "--no-trajectory") == 0 ||
-                 strcmp(argv[arg_idx], "-notrajectory") == 0)
-        {
-            config->use_trajectory = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-reciprocal") == 0 ||
-                 strcmp(argv[arg_idx], "--reciprocal") == 0)
-        {
-            config->use_reciprocal = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-reciprocal") == 0 ||
-                 strcmp(argv[arg_idx], "--no-reciprocal") == 0 ||
-                 strcmp(argv[arg_idx], "-noreciprocal") == 0)
-        {
-            config->use_reciprocal = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-approx") == 0 ||
-                 strcmp(argv[arg_idx], "--approx") == 0 ||
-                 strcmp(argv[arg_idx], "-fast") == 0 ||
-                 strcmp(argv[arg_idx], "--fast") == 0)
-        {
-            config->approx_mode = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-ef-search") == 0 ||
-                 strcmp(argv[arg_idx], "--ef-search") == 0 ||
-                 strcmp(argv[arg_idx], "-ef") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -ef-search requires an integer argument\n");
-                return 1;
-            }
-            config->ef_search = atoi(argv[++arg_idx]);
-        }
-        else if (strcmp(argv[arg_idx], "-progress") == 0)
-        {
-            config->progress_mode = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-double") == 0 ||
-                 strcmp(argv[arg_idx], "--double") == 0)
-        {
-            config->use_double = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-rq8") == 0 ||
-                 strcmp(argv[arg_idx], "--rq8") == 0)
-        {
-            config->use_rq8 = 1;
-            config->use_sq16 = 0;
-            config->use_sq8 = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-no-rq8") == 0 ||
-                 strcmp(argv[arg_idx], "--no-rq8") == 0 ||
-                 strcmp(argv[arg_idx], "-norq8") == 0)
-        {
-            config->use_rq8 = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-rq8-save") == 0 ||
-                 strcmp(argv[arg_idx], "--rq8-save") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -rq8-save requires a filepath argument\n");
-                return 1;
-            }
-            config->use_rq8 = 1;
-            config->use_sq16 = 0;
-            config->use_sq8 = 0;
-            config->rq8_save_path = argv[++arg_idx];
-        }
-        else if (strcmp(argv[arg_idx], "-rq8-load") == 0 ||
-                 strcmp(argv[arg_idx], "--rq8-load") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -rq8-load requires a filepath argument\n");
-                return 1;
-            }
-            config->use_rq8 = 1;
-            config->use_sq16 = 0;
-            config->use_sq8 = 0;
-            config->rq8_load_path = argv[++arg_idx];
-        }
-        else if (strcmp(argv[arg_idx], "-rq8-approx") == 0 ||
-                 strcmp(argv[arg_idx], "--rq8-approx") == 0)
-        {
-            config->use_rq8 = 1;
-            config->use_sq16 = 0;
-            config->use_sq8 = 0;
-            config->use_pq = 0;
-            config->rq8_approx = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-pq") == 0 ||
-                 strcmp(argv[arg_idx], "--pq") == 0)
-        {
-            config->use_pq = 1;
-            config->use_rq8 = 0;
-            config->use_sq16 = 0;
-            config->use_sq8 = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-no-pq") == 0 ||
-                 strcmp(argv[arg_idx], "--no-pq") == 0 ||
-                 strcmp(argv[arg_idx], "-nopq") == 0)
-        {
-            config->use_pq = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-pq-m") == 0 ||
-                 strcmp(argv[arg_idx], "--pq-m") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -pq-m requires an integer argument\n");
-                return 1;
-            }
-            config->use_pq = 1;
-            config->use_rq8 = 0;
-            config->use_sq16 = 0;
-            config->use_sq8 = 0;
-            config->pq_m = atoi(argv[++arg_idx]);
-        }
-        else if (strcmp(argv[arg_idx], "-pq-bits") == 0 ||
-                 strcmp(argv[arg_idx], "--pq-bits") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -pq-bits requires an integer argument (4 or 8)\n");
-                return 1;
-            }
-            config->use_pq = 1;
-            config->use_rq8 = 0;
-            config->use_sq16 = 0;
-            config->use_sq8 = 0;
-            config->pq_bits = atoi(argv[++arg_idx]);
-        }
-        else if (strcmp(argv[arg_idx], "-pq-save") == 0 ||
-                 strcmp(argv[arg_idx], "--pq-save") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -pq-save requires a filepath argument\n");
-                return 1;
-            }
-            config->use_pq = 1;
-            config->use_rq8 = 0;
-            config->use_sq16 = 0;
-            config->use_sq8 = 0;
-            config->pq_save_path = argv[++arg_idx];
-        }
-        else if (strcmp(argv[arg_idx], "-pq-load") == 0 ||
-                 strcmp(argv[arg_idx], "--pq-load") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -pq-load requires a filepath argument\n");
-                return 1;
-            }
-            config->use_pq = 1;
-            config->use_rq8 = 0;
-            config->use_sq16 = 0;
-            config->use_sq8 = 0;
-            config->pq_load_path = argv[++arg_idx];
-        }
-        else if (strcmp(argv[arg_idx], "-pq-rerank") == 0 ||
-                 strcmp(argv[arg_idx], "--pq-rerank") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -pq-rerank requires an integer argument\n");
-                return 1;
-            }
-            config->use_pq = 1;
-            config->pq_rerank = atoi(argv[++arg_idx]);
-        }
-        else if (strcmp(argv[arg_idx], "-sq8") == 0 ||
-                 strcmp(argv[arg_idx], "--sq8") == 0)
-        {
-            config->use_sq8 = 1;
-            config->use_rq8 = 0;
-            config->use_sq16 = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-no-sq8") == 0 ||
-                 strcmp(argv[arg_idx], "--no-sq8") == 0 ||
-                 strcmp(argv[arg_idx], "-nosq8") == 0)
-        {
-            config->use_sq8 = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-sq8-save") == 0 ||
-                 strcmp(argv[arg_idx], "--sq8-save") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -sq8-save requires a filepath argument\n");
-                return 1;
-            }
-            config->use_sq8 = 1;
-            config->use_rq8 = 0;
-            config->use_sq16 = 0;
-            config->sq8_save_path = argv[++arg_idx];
-        }
-        else if (strcmp(argv[arg_idx], "-sq8-load") == 0 ||
-                 strcmp(argv[arg_idx], "--sq8-load") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -sq8-load requires a filepath argument\n");
-                return 1;
-            }
-            config->use_sq8 = 1;
-            config->use_rq8 = 0;
-            config->use_sq16 = 0;
-            config->sq8_load_path = argv[++arg_idx];
-        }
-        else if (strcmp(argv[arg_idx], "-sq8-approx") == 0 ||
-                 strcmp(argv[arg_idx], "--sq8-approx") == 0)
-        {
-            config->use_sq8 = 1;
-            config->use_rq8 = 0;
-            config->use_sq16 = 0;
-            config->sq8_approx = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-sq16") == 0 ||
-                 strcmp(argv[arg_idx], "--sq16") == 0)
-        {
-            config->use_sq16 = 1;
-            config->use_rq8 = 0;
-            config->use_sq8 = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-no-sq16") == 0 ||
-                 strcmp(argv[arg_idx], "--no-sq16") == 0 ||
-                 strcmp(argv[arg_idx], "-nosq16") == 0)
-        {
-            config->use_sq16 = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-sq16-save") == 0 ||
-                 strcmp(argv[arg_idx], "--sq16-save") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -sq16-save requires a filepath argument\n");
-                return 1;
-            }
-            config->use_sq16 = 1;
-            config->use_rq8 = 0;
-            config->use_sq8 = 0;
-            config->sq16_save_path = argv[++arg_idx];
-        }
-        else if (strcmp(argv[arg_idx], "-sq16-load") == 0 ||
-                 strcmp(argv[arg_idx], "--sq16-load") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -sq16-load requires a filepath argument\n");
-                return 1;
-            }
-            config->use_sq16 = 1;
-            config->use_rq8 = 0;
-            config->use_sq8 = 0;
-            config->sq16_load_path = argv[++arg_idx];
-        }
-        else if (strcmp(argv[arg_idx], "-sq16-approx") == 0 ||
-                 strcmp(argv[arg_idx], "--sq16-approx") == 0)
-        {
-            config->use_sq16 = 1;
-            config->use_rq8 = 0;
-            config->use_sq8 = 0;
-            config->sq16_approx = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-sq16-ratio") == 0 ||
-                 strcmp(argv[arg_idx], "--sq16-ratio") == 0)
-        {
-            if (arg_idx + 1 < argc)
-            {
-                config->sq16_ratio = atof(argv[++arg_idx]);
-            }
-            else
-            {
-                fprintf(stderr, "Error: -sq16-ratio requires a float argument\n");
-                return 1;
-            }
-        }
-        else if (strcmp(argv[arg_idx], "-memo") == 0 ||
-                 strcmp(argv[arg_idx], "--memo") == 0)
-        {
-            config->use_memo = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-memo") == 0 ||
-                 strcmp(argv[arg_idx], "--no-memo") == 0 ||
-                 strcmp(argv[arg_idx], "-nomemo") == 0)
-        {
-            config->use_memo = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-batch-dist") == 0 ||
-                 strcmp(argv[arg_idx], "--batch-dist") == 0 ||
-                 strcmp(argv[arg_idx], "-batchdist") == 0)
-        {
-            config->use_batch_dist = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-batch-dist") == 0 ||
-                 strcmp(argv[arg_idx], "--no-batch-dist") == 0 ||
-                 strcmp(argv[arg_idx], "-nobatchdist") == 0)
-        {
-            config->use_batch_dist = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-cluster-graph") == 0 ||
-                 strcmp(argv[arg_idx], "--cluster-graph") == 0)
-        {
-            config->use_cluster_graph = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-cluster-graph") == 0 ||
-                 strcmp(argv[arg_idx], "--no-cluster-graph") == 0)
-        {
-            config->use_cluster_graph = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-ef-cluster") == 0 ||
-                 strcmp(argv[arg_idx], "--ef-cluster") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -ef-cluster requires an integer argument\n");
-                return 1;
-            }
-            config->ef_cluster = atoi(argv[++arg_idx]);
-        }
-        else if (strcmp(argv[arg_idx], "-two-hop") == 0 ||
-                 strcmp(argv[arg_idx], "--two-hop") == 0)
-        {
-            config->use_two_hop = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-two-hop") == 0 ||
-                 strcmp(argv[arg_idx], "--no-two-hop") == 0)
-        {
-            config->use_two_hop = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-two-hop-seeds") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -two-hop-seeds requires an integer argument\n");
-                return 1;
-            }
-            config->two_hop_seeds = atoi(argv[++arg_idx]);
-        }
-        else if (strcmp(argv[arg_idx], "-two-hop-max") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -two-hop-max requires an integer argument\n");
-                return 1;
-            }
-            config->two_hop_max_cands = atoi(argv[++arg_idx]);
-        }
-        else if (strcmp(argv[arg_idx], "-prof") == 0 ||
-                 strcmp(argv[arg_idx], "--prof") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -prof requires a filepath argument\n");
-                return 1;
-            }
-            config->prof_filename = argv[++arg_idx];
-        }
-        else if (strcmp(argv[arg_idx], "-no-prof") == 0 ||
-                 strcmp(argv[arg_idx], "--no-prof") == 0)
-        {
-            config->no_prof = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-mem") == 0 ||
-                 strcmp(argv[arg_idx], "--no-mem") == 0 ||
-                 strcmp(argv[arg_idx], "-no-cache") == 0)
-        {
-            config->no_cache_dataset = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-mutual") == 0 ||
-                 strcmp(argv[arg_idx], "--no-mutual") == 0 ||
-                 strcmp(argv[arg_idx], "-no_mutual") == 0 ||
-                 strcmp(argv[arg_idx], "-nomutual") == 0)
-        {
-            config->no_mutual = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-no-txt") == 0 ||
-                 strcmp(argv[arg_idx], "--no-txt") == 0 ||
-                 strcmp(argv[arg_idx], "-no_txt") == 0 ||
-                 strcmp(argv[arg_idx], "-notxt") == 0)
-        {
-            config->no_txt = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-v") == 0)
-        {
-            config->verbose_level = 2;
-        }
-        else if (strcmp(argv[arg_idx], "-vv") == 0)
-        {
-            config->verbose_level = 3;
-        }
-        else if (strcmp(argv[arg_idx], "-gpu") == 0 ||
-                 strcmp(argv[arg_idx], "--gpu") == 0)
-        {
-            config->use_gpu = 1;
-        }
-        else if (strcmp(argv[arg_idx], "-cpu") == 0 ||
-                 strcmp(argv[arg_idx], "--cpu") == 0)
-        {
-            config->use_gpu = 0;
-        }
-        else if (strcmp(argv[arg_idx], "-gpu-device") == 0 ||
-                 strcmp(argv[arg_idx], "--gpu-device") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: --gpu-device requires an integer argument\n");
-                return 1;
-            }
-            config->use_gpu = 1;
-            config->gpu_device_id = atoi(argv[++arg_idx]);
-        }
-        else if (strcmp(argv[arg_idx], "-gpu-batch-size") == 0 ||
-                 strcmp(argv[arg_idx], "--gpu-batch-size") == 0 ||
-                 strcmp(argv[arg_idx], "-gpu-micro-batch") == 0 ||
-                 strcmp(argv[arg_idx], "--gpu-micro-batch") == 0)
-        {
-            config->use_gpu = 1;
-            if (arg_idx + 1 < argc && argv[arg_idx + 1][0] != '-')
-            {
-                config->gpu_batch_size = atoi(argv[++arg_idx]);
-            }
-            else
-            {
-                config->gpu_batch_size = 64;
-            }
-        }
-        else if (strcmp(argv[arg_idx], "-gpu-nprobe") == 0 ||
-                 strcmp(argv[arg_idx], "--gpu-nprobe") == 0 ||
-                 strcmp(argv[arg_idx], "-nprobe") == 0)
-        {
-            if (arg_idx + 1 >= argc)
-            {
-                fprintf(stderr, "Error: -gpu-nprobe requires an integer argument\n");
-                return 1;
-            }
-            config->use_gpu = 1;
-            config->gpu_nprobe = atoi(argv[++arg_idx]);
-        }
-        else if (strcmp(argv[arg_idx], "-gpu-bf") == 0 ||
-                 strcmp(argv[arg_idx], "--gpu-bf") == 0 ||
-                 strcmp(argv[arg_idx], "-gpu-brute-force") == 0 ||
-                 strcmp(argv[arg_idx], "--gpu-brute-force") == 0)
-        {
-            config->use_gpu = 1;
-            config->use_gpu_bruteforce = 1;
-        }
-        else if (argv[arg_idx][0] == '-')
-        {
-            fprintf(stderr, "Error: Unknown option '%s'\n", argv[arg_idx]);
-            knn_cli_print_usage(argv[0]);
-            return 1;
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -query requires a path argument\n");
+            return -1;
+        }
+        config->query_data_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-k") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -k requires an integer argument\n");
+            return -1;
+        }
+        config->k = atoi(argv[++(*arg_idx)]);
+        *k_set = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -o requires a path argument\n");
+            return -1;
+        }
+        config->output_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-dtmin") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -dtmin requires an integer argument\n");
+            return -1;
+        }
+        config->min_temporal_sep = atoi(argv[++(*arg_idx)]);
+        *dtmin_set = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-past") == 0)
+    {
+        config->past_only = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-future") == 0)
+    {
+        config->future_only = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-eps") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -eps requires a float argument\n");
+            return -1;
+        }
+        config->epsilon = atof(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-rlim") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -rlim requires a float argument\n");
+            return -1;
+        }
+        config->rlim_cutoff = atof(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-all-queries") == 0 || strcmp(argv[i], "--all-queries") == 0)
+    {
+        config->refuse_unclustered = -1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-nthreads") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -nthreads requires an integer argument\n");
+            return -1;
+        }
+        config->nthreads = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-fits") == 0)
+    {
+        config->output_format = KNN_FORMAT_FITS;
+        return 1;
+    }
+    if (strcmp(argv[i], "-txt") == 0)
+    {
+        config->output_format = KNN_FORMAT_TXT;
+        return 1;
+    }
+    if (strcmp(argv[i], "-progress") == 0)
+    {
+        config->progress_mode = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-double") == 0 || strcmp(argv[i], "--double") == 0)
+    {
+        config->use_double = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-prof") == 0 || strcmp(argv[i], "--prof") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -prof requires a filepath argument\n");
+            return -1;
+        }
+        config->prof_filename = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-prof") == 0 || strcmp(argv[i], "--no-prof") == 0)
+    {
+        config->no_prof = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-mem") == 0 || strcmp(argv[i], "--no-mem") == 0 ||
+        strcmp(argv[i], "-no-cache") == 0)
+    {
+        config->no_cache_dataset = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-mutual") == 0 || strcmp(argv[i], "--no-mutual") == 0 ||
+        strcmp(argv[i], "-no_mutual") == 0 || strcmp(argv[i], "-nomutual") == 0)
+    {
+        config->no_mutual = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-txt") == 0 || strcmp(argv[i], "--no-txt") == 0 ||
+        strcmp(argv[i], "-no_txt") == 0 || strcmp(argv[i], "-notxt") == 0)
+    {
+        config->no_txt = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-v") == 0)
+    {
+        config->verbose_level = 2;
+        return 1;
+    }
+    if (strcmp(argv[i], "-vv") == 0)
+    {
+        config->verbose_level = 3;
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * knn_cli_parse_pruning_opt() - Parse pruning heuristics and graph search options.
+ * @argc:    Total argument count.
+ * @argv:    Argument strings array.
+ * @arg_idx: Pointer to current argument index.
+ * @config:  Pointer to KnnConfig.
+ *
+ * Return: 1 if option was recognized, 0 if not, -1 on error.
+ */
+static int knn_cli_parse_pruning_opt(
+    int        argc,
+    char     **argv,
+    int       *arg_idx,
+    KnnConfig *config)
+{
+    int i = *arg_idx;
+
+    if (strcmp(argv[i], "-multipivot") == 0 || strcmp(argv[i], "--multipivot") == 0 ||
+        strcmp(argv[i], "-multi_pivot") == 0 || strcmp(argv[i], "--multi-pivot") == 0)
+    {
+        config->use_multi_pivot = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-multipivot") == 0 || strcmp(argv[i], "-no_multipivot") == 0)
+    {
+        config->use_multi_pivot = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-angular") == 0 || strcmp(argv[i], "--angular") == 0 ||
+        strcmp(argv[i], "-direction") == 0 || strcmp(argv[i], "--direction") == 0)
+    {
+        config->use_angular_bound = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-angular") == 0 || strcmp(argv[i], "--no-angular") == 0 ||
+        strcmp(argv[i], "-no-direction") == 0 || strcmp(argv[i], "--no-direction") == 0)
+    {
+        config->use_angular_bound = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-trajectory") == 0 || strcmp(argv[i], "--trajectory") == 0)
+    {
+        config->use_trajectory = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-trajectory") == 0 || strcmp(argv[i], "--no-trajectory") == 0 ||
+        strcmp(argv[i], "-notrajectory") == 0)
+    {
+        config->use_trajectory = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-reciprocal") == 0 || strcmp(argv[i], "--reciprocal") == 0)
+    {
+        config->use_reciprocal = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-reciprocal") == 0 || strcmp(argv[i], "--no-reciprocal") == 0 ||
+        strcmp(argv[i], "-noreciprocal") == 0)
+    {
+        config->use_reciprocal = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-approx") == 0 || strcmp(argv[i], "--approx") == 0 ||
+        strcmp(argv[i], "-fast") == 0 || strcmp(argv[i], "--fast") == 0)
+    {
+        config->approx_mode = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-ef-search") == 0 || strcmp(argv[i], "--ef-search") == 0 ||
+        strcmp(argv[i], "-ef") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -ef-search requires an integer argument\n");
+            return -1;
+        }
+        config->ef_search = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-cluster-graph") == 0 || strcmp(argv[i], "--cluster-graph") == 0)
+    {
+        config->use_cluster_graph = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-cluster-graph") == 0 || strcmp(argv[i], "--no-cluster-graph") == 0)
+    {
+        config->use_cluster_graph = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-ef-cluster") == 0 || strcmp(argv[i], "--ef-cluster") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -ef-cluster requires an integer argument\n");
+            return -1;
+        }
+        config->ef_cluster = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-two-hop") == 0 || strcmp(argv[i], "--two-hop") == 0)
+    {
+        config->use_two_hop = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-two-hop") == 0 || strcmp(argv[i], "--no-two-hop") == 0)
+    {
+        config->use_two_hop = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-two-hop-seeds") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -two-hop-seeds requires an integer argument\n");
+            return -1;
+        }
+        config->two_hop_seeds = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-two-hop-max") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -two-hop-max requires an integer argument\n");
+            return -1;
+        }
+        config->two_hop_max_cands = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * knn_cli_parse_quant_opt() - Parse quantization algorithms, sidecars, and SIMD memoization.
+ * @argc:    Total argument count.
+ * @argv:    Argument strings array.
+ * @arg_idx: Pointer to current argument index.
+ * @config:  Pointer to KnnConfig.
+ *
+ * Return: 1 if option was recognized, 0 if not, -1 on error.
+ */
+static int knn_cli_parse_quant_opt(
+    int        argc,
+    char     **argv,
+    int       *arg_idx,
+    KnnConfig *config)
+{
+    int i = *arg_idx;
+
+    if (strcmp(argv[i], "-rq8") == 0 || strcmp(argv[i], "--rq8") == 0)
+    {
+        config->use_rq8 = 1;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-rq8") == 0 || strcmp(argv[i], "--no-rq8") == 0 ||
+        strcmp(argv[i], "-norq8") == 0)
+    {
+        config->use_rq8 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-rq8-save") == 0 || strcmp(argv[i], "--rq8-save") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -rq8-save requires a filepath argument\n");
+            return -1;
+        }
+        config->use_rq8 = 1;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->rq8_save_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-rq8-load") == 0 || strcmp(argv[i], "--rq8-load") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -rq8-load requires a filepath argument\n");
+            return -1;
+        }
+        config->use_rq8 = 1;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->rq8_load_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-rq8-approx") == 0 || strcmp(argv[i], "--rq8-approx") == 0)
+    {
+        config->use_rq8 = 1;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->use_pq = 0;
+        config->rq8_approx = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-pq") == 0 || strcmp(argv[i], "--pq") == 0)
+    {
+        config->use_pq = 1;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-pq") == 0 || strcmp(argv[i], "--no-pq") == 0 ||
+        strcmp(argv[i], "-nopq") == 0)
+    {
+        config->use_pq = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-pq-m") == 0 || strcmp(argv[i], "--pq-m") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -pq-m requires an integer argument\n");
+            return -1;
+        }
+        config->use_pq = 1;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->pq_m = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-pq-bits") == 0 || strcmp(argv[i], "--pq-bits") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -pq-bits requires an integer argument (4 or 8)\n");
+            return -1;
+        }
+        config->use_pq = 1;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->pq_bits = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-pq-save") == 0 || strcmp(argv[i], "--pq-save") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -pq-save requires a filepath argument\n");
+            return -1;
+        }
+        config->use_pq = 1;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->pq_save_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-pq-load") == 0 || strcmp(argv[i], "--pq-load") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -pq-load requires a filepath argument\n");
+            return -1;
+        }
+        config->use_pq = 1;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->pq_load_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-pq-rerank") == 0 || strcmp(argv[i], "--pq-rerank") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -pq-rerank requires an integer argument\n");
+            return -1;
+        }
+        config->use_pq = 1;
+        config->pq_rerank = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq8") == 0 || strcmp(argv[i], "--sq8") == 0)
+    {
+        config->use_sq8 = 1;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-sq8") == 0 || strcmp(argv[i], "--no-sq8") == 0 ||
+        strcmp(argv[i], "-nosq8") == 0)
+    {
+        config->use_sq8 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq8-save") == 0 || strcmp(argv[i], "--sq8-save") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -sq8-save requires a filepath argument\n");
+            return -1;
+        }
+        config->use_sq8 = 1;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->sq8_save_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq8-load") == 0 || strcmp(argv[i], "--sq8-load") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -sq8-load requires a filepath argument\n");
+            return -1;
+        }
+        config->use_sq8 = 1;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->sq8_load_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq8-approx") == 0 || strcmp(argv[i], "--sq8-approx") == 0)
+    {
+        config->use_sq8 = 1;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->sq8_approx = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq16") == 0 || strcmp(argv[i], "--sq16") == 0)
+    {
+        config->use_sq16 = 1;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-sq16") == 0 || strcmp(argv[i], "--no-sq16") == 0 ||
+        strcmp(argv[i], "-nosq16") == 0)
+    {
+        config->use_sq16 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq16-save") == 0 || strcmp(argv[i], "--sq16-save") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -sq16-save requires a filepath argument\n");
+            return -1;
+        }
+        config->use_sq16 = 1;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        config->sq16_save_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq16-load") == 0 || strcmp(argv[i], "--sq16-load") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -sq16-load requires a filepath argument\n");
+            return -1;
+        }
+        config->use_sq16 = 1;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        config->sq16_load_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq16-approx") == 0 || strcmp(argv[i], "--sq16-approx") == 0)
+    {
+        config->use_sq16 = 1;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        config->sq16_approx = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq16-ratio") == 0 || strcmp(argv[i], "--sq16-ratio") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -sq16-ratio requires a float argument\n");
+            return -1;
+        }
+        config->sq16_ratio = atof(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-memo") == 0 || strcmp(argv[i], "--memo") == 0)
+    {
+        config->use_memo = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-memo") == 0 || strcmp(argv[i], "--no-memo") == 0 ||
+        strcmp(argv[i], "-nomemo") == 0)
+    {
+        config->use_memo = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-batch-dist") == 0 || strcmp(argv[i], "--batch-dist") == 0 ||
+        strcmp(argv[i], "-batchdist") == 0)
+    {
+        config->use_batch_dist = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-batch-dist") == 0 || strcmp(argv[i], "--no-batch-dist") == 0 ||
+        strcmp(argv[i], "-nobatchdist") == 0)
+    {
+        config->use_batch_dist = 0;
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * knn_cli_parse_gpu_opt() - Parse CUDA and GPU acceleration options.
+ * @argc:    Total argument count.
+ * @argv:    Argument strings array.
+ * @arg_idx: Pointer to current argument index.
+ * @config:  Pointer to KnnConfig.
+ *
+ * Return: 1 if option was recognized, 0 if not, -1 on error.
+ */
+static int knn_cli_parse_gpu_opt(
+    int        argc,
+    char     **argv,
+    int       *arg_idx,
+    KnnConfig *config)
+{
+    int i = *arg_idx;
+
+    if (strcmp(argv[i], "-gpu") == 0 || strcmp(argv[i], "--gpu") == 0)
+    {
+        config->use_gpu = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-cpu") == 0 || strcmp(argv[i], "--cpu") == 0)
+    {
+        config->use_gpu = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-gpu-device") == 0 || strcmp(argv[i], "--gpu-device") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: --gpu-device requires an integer argument\n");
+            return -1;
+        }
+        config->use_gpu = 1;
+        config->gpu_device_id = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-gpu-batch-size") == 0 || strcmp(argv[i], "--gpu-batch-size") == 0 ||
+        strcmp(argv[i], "-gpu-micro-batch") == 0 || strcmp(argv[i], "--gpu-micro-batch") == 0)
+    {
+        config->use_gpu = 1;
+        if (i + 1 < argc && argv[i + 1][0] != '-')
+        {
+            config->gpu_batch_size = atoi(argv[++(*arg_idx)]);
         }
         else
         {
-            if (config->input_data_path == NULL)
-            {
-                config->input_data_path = argv[arg_idx];
-            }
-            else if (config->cluster_dir == NULL)
-            {
-                config->cluster_dir = argv[arg_idx];
-            }
-            else
-            {
-                fprintf(stderr, "Error: Too many positional arguments\n");
-                knn_cli_print_usage(argv[0]);
-                return 1;
-            }
+            config->gpu_batch_size = 64;
         }
-        arg_idx++;
-    } // while parsing arguments
+        return 1;
+    }
+    if (strcmp(argv[i], "-gpu-nprobe") == 0 || strcmp(argv[i], "--gpu-nprobe") == 0 ||
+        strcmp(argv[i], "-nprobe") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -gpu-nprobe requires an integer argument\n");
+            return -1;
+        }
+        config->use_gpu = 1;
+        config->gpu_nprobe = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-gpu-bf") == 0 || strcmp(argv[i], "--gpu-bf") == 0 ||
+        strcmp(argv[i], "-gpu-brute-force") == 0 || strcmp(argv[i], "--gpu-brute-force") == 0)
+    {
+        config->use_gpu = 1;
+        config->use_gpu_bruteforce = 1;
+        return 1;
+    }
 
+    return 0;
+}
+
+/**
+ * knn_cli_parse_positional() - Assign non-option positional arguments to KnnConfig.
+ * @arg:      Positional argument string.
+ * @config:   Pointer to KnnConfig.
+ * @progname: Name of the program for error output.
+ *
+ * Return: 0 on success, 1 on error.
+ */
+static int knn_cli_parse_positional(
+    char       *arg,
+    KnnConfig  *config,
+    const char *progname)
+{
+    if (config->input_data_path == NULL)
+    {
+        config->input_data_path = arg;
+    }
+    else if (config->cluster_dir == NULL)
+    {
+        config->cluster_dir = arg;
+    }
+    else
+    {
+        fprintf(stderr, "Error: Too many positional arguments\n");
+        knn_cli_print_usage(progname);
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * knn_cli_validate() - Validate consistency of parsed parameters and apply mode adjustments.
+ * @config:    Pointer to KnnConfig to validate.
+ * @progname:  Name of the program for error output.
+ * @k_set:     Flag indicating -k was explicitly passed.
+ * @dtmin_set: Flag indicating -dtmin was explicitly passed.
+ *
+ * Return: 0 on success, 1 on validation error.
+ */
+static int knn_cli_validate(
+    KnnConfig  *config,
+    const char *progname,
+    int         k_set,
+    int         dtmin_set)
+{
     if (config->input_data_path == NULL || config->cluster_dir == NULL)
     {
         fprintf(stderr, "Error: Missing required arguments <input_data> and <cluster_dir>\n");
-        knn_cli_print_usage(argv[0]);
+        knn_cli_print_usage(progname);
         return 1;
     }
 
@@ -881,11 +959,11 @@ int knn_cli_parse(
 
     if (config->query_data_path != NULL)
     {
-        if (!k_explicitly_set)
+        if (!k_set)
         {
             config->k = 30; // Default k=30 for cross-dataset query mode
         }
-        if (!dtmin_explicitly_set)
+        if (!dtmin_set)
         {
             config->min_temporal_sep = 0; // Cross-dataset query has no temporal self-exclusion
         }
@@ -898,6 +976,92 @@ int knn_cli_parse(
     }
 
     return 0;
+}
+
+int knn_cli_parse(
+    int        argc,
+    char     **argv,
+    KnnConfig *config)
+{
+    if (config == NULL)
+    {
+        return 1;
+    }
+
+    knn_cli_set_defaults(config);
+
+    int k_explicitly_set = 0;
+    int dtmin_explicitly_set = 0;
+    int arg_idx = 1;
+
+    while (arg_idx < argc)
+    {
+        if (strcmp(argv[arg_idx], "-h") == 0 || strcmp(argv[arg_idx], "--help") == 0)
+        {
+            knn_cli_print_help(argv[0]);
+            return 2;
+        }
+
+        int res = knn_cli_parse_io_opt(argc, argv, &arg_idx, config,
+                                       &k_explicitly_set, &dtmin_explicitly_set);
+        if (res < 0)
+        {
+            return 1;
+        }
+        if (res > 0)
+        {
+            arg_idx++;
+            continue;
+        }
+
+        res = knn_cli_parse_pruning_opt(argc, argv, &arg_idx, config);
+        if (res < 0)
+        {
+            return 1;
+        }
+        if (res > 0)
+        {
+            arg_idx++;
+            continue;
+        }
+
+        res = knn_cli_parse_quant_opt(argc, argv, &arg_idx, config);
+        if (res < 0)
+        {
+            return 1;
+        }
+        if (res > 0)
+        {
+            arg_idx++;
+            continue;
+        }
+
+        res = knn_cli_parse_gpu_opt(argc, argv, &arg_idx, config);
+        if (res < 0)
+        {
+            return 1;
+        }
+        if (res > 0)
+        {
+            arg_idx++;
+            continue;
+        }
+
+        if (argv[arg_idx][0] == '-')
+        {
+            fprintf(stderr, "Error: Unknown option '%s'\n", argv[arg_idx]);
+            knn_cli_print_usage(argv[0]);
+            return 1;
+        }
+
+        if (knn_cli_parse_positional(argv[arg_idx], config, argv[0]) != 0)
+        {
+            return 1;
+        }
+        arg_idx++;
+    } // while (arg_idx < argc)
+
+    return knn_cli_validate(config, argv[0], k_explicitly_set, dtmin_explicitly_set);
 }
 
 void knn_cli_print_banner(

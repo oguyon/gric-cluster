@@ -37,6 +37,11 @@ typedef struct
     double *distances;
 } FrameInfo;
 
+/**
+ * is_ascii_input_mode() - Check if input mode is configured for ASCII text stream.
+ *
+ * Return: 1 if ASCII input mode is active, 0 otherwise.
+ */
 int is_ascii_input_mode(void);
 
 #ifdef __cplusplus

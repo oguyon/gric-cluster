@@ -127,15 +127,29 @@ void setup_signals(void);
  * handle_sigint() - Set exit flag on SIGINT/SIGTERM.
  * @sig: Signal number received.
  */
-/* Classic Mode & Help */
+/**
+ * print_status_classic() - Display one-shot snapshot of clustering SHM status.
+ * @status: Pointer to shared memory status structure.
+ */
 void print_status_classic(
     const GricClusterShmStatus *status);
 
+/**
+ * print_help_standard() - Print help and option syntax for gric-status CLI.
+ * @progname: Program executable name.
+ * @color:    Non-zero to enable ANSI color escapes.
+ */
 void print_help_standard(
     const char *progname,
     int         color);
 
-/* Watch Mode */
+/**
+ * run_status_watch() - Continuously update terminal dashboard with status metrics.
+ * @status:  Pointer to shared memory status structure.
+ * @rate_hz: Refresh rate in updates per second.
+ *
+ * Return: 0 on clean exit, non-zero on error.
+ */
 int run_status_watch(
     const GricClusterShmStatus *status,
     double                      rate_hz);

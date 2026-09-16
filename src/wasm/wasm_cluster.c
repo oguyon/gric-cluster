@@ -269,6 +269,10 @@ void *wasm_cluster_init(
         s->tuple_pred_candidates =
             (int *)calloc(N, sizeof(int));
         s->tuple_pred_count = 0;
+        s->pred_candidates =
+            (int *)calloc(N, sizeof(int));
+        s->local_candidates =
+            (int *)calloc(N, sizeof(int));
     } // Scratch buffers
 
     /* Telemetry arrays */
@@ -326,6 +330,8 @@ void *wasm_cluster_init(
         h->state.scratch.entropy_visited == NULL ||
         h->state.scratch.refine_queue == NULL ||
         h->state.scratch.tuple_pred_candidates == NULL ||
+        h->state.scratch.pred_candidates == NULL ||
+        h->state.scratch.local_candidates == NULL ||
         h->state.telemetry.pruned_fraction_sum == NULL ||
         h->state.telemetry.step_counts == NULL ||
         h->state.telemetry.dist_counts == NULL ||
@@ -402,12 +408,16 @@ static int grow_capacity(WasmHandle *h)
     h->state.cluster_visitors = new_visitors;
 
     ClusterScratch *s = &h->state.scratch;
-#define GROW_LINEAR(ptr, type) \
-    do { \
-        type *tmp = (type *)realloc(ptr, (size_t)new_N * sizeof(type)); \
-        if (!tmp) return -1; \
-        memset(tmp + old_N, 0, (size_t)(new_N - old_N) * sizeof(type)); \
-        ptr = tmp; \
+#define GROW_LINEAR(ptr, type)                                             \
+    do                                                                     \
+    {                                                                      \
+        type *tmp = (type *)realloc(ptr, (size_t)new_N * sizeof(type));    \
+        if (!tmp)                                                          \
+        {                                                                  \
+            return -1;                                                     \
+        }                                                                  \
+        memset(tmp + old_N, 0, (size_t)(new_N - old_N) * sizeof(type));     \
+        ptr = tmp;                                                         \
     } while (0)
 
     GROW_LINEAR(s->mixed_probs, double);
@@ -431,12 +441,16 @@ static int grow_capacity(WasmHandle *h)
     GROW_LINEAR(t->step_counts, long);
     GROW_LINEAR(t->cluster_query_counts, long);
 
-#define GROW_LINEAR_N1(ptr, type) \
-    do { \
+#define GROW_LINEAR_N1(ptr, type)                                          \
+    do                                                                     \
+    {                                                                      \
         type *tmp = (type *)realloc(ptr, (size_t)(new_N + 1) * sizeof(type)); \
-        if (!tmp) return -1; \
+        if (!tmp)                                                          \
+        {                                                                  \
+            return -1;                                                     \
+        }                                                                  \
         memset(tmp + (old_N + 1), 0, (size_t)(new_N - old_N) * sizeof(type)); \
-        ptr = tmp; \
+        ptr = tmp;                                                         \
     } while (0)
 
     GROW_LINEAR_N1(t->dist_counts, long);
@@ -1141,6 +1155,8 @@ void wasm_cluster_free(void *ptr)
         free(s->entropy_visited);
         free(s->refine_queue);
         free(s->tuple_pred_candidates);
+        free(s->pred_candidates);
+        free(s->local_candidates);
     } // Free scratch
 
     /* Free telemetry arrays */

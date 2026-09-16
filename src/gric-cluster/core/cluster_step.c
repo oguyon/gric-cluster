@@ -37,51 +37,18 @@
 #endif
 
 /**
- * cluster_frame() - Process one frame through the full clustering
- *                   pipeline (Steps 1-5).
- * @config:              Clustering configuration (algorithm, optim, I/O).
- * @state:               Mutable clustering state (clusters, telemetry,
- *                       scratch buffers).
- * @current_frame:       Pixel data of the frame to assign.
- * @prev_assigned_cluster: In/out pointer to the previously assigned
- *                       cluster index; updated on new assignment.
- * @ascii_out:           Open file handle for membership text log
- *                       (may be NULL).
- * @temp_indices:        Scratch array recording cluster indices
- *                       measured this frame.
- * @temp_dists:          Scratch array recording distances measured
- *                       this frame.
- * @sorting_candidates:  Scratch array for candidate sorting.
- * @verbose_candidates:  Scratch array for verbose-mode ranking
- *                       (may be NULL).
- *
- * Executes the sequential steps: base-case setup, prediction
- * retrieval, iterative search with pruning and measurement,
- * new-cluster creation / eviction, and telemetry recording.
- *
- * Return: Assigned cluster index (>= 0), or -2 to signal stop.
+ * prepare_frame_quantization() - Prepares scalar quantization buffers and
+ *                                quantizes the current frame if SQ16 or SQ8
+ *                                is enabled.
+ * @config:        Clustering configuration.
+ * @state:         Clustering state.
+ * @current_frame: Input frame to quantize.
  */
-int cluster_frame(
+static void prepare_frame_quantization(
     ClusterConfig *config,
     ClusterState  *state,
-    Frame         *current_frame,
-    int           *prev_assigned_cluster,
-    FILE          *ascii_out,
-    int           *temp_indices,
-    double        *temp_dists,
-    Candidate     *sorting_candidates,
-    Candidate     *verbose_candidates)
+    const Frame   *current_frame)
 {
-    int  assigned_cluster = -1;
-    long start_pruned_val = state->telemetry.clusters_pruned;
-    long start_dist_calls = state->telemetry.framedist_calls;
-    long start_dfc_calls = state->telemetry.framedist_calls_sample;
-    long start_dcc_calls = state->telemetry.framedist_calls_intercluster;
-    int  temp_count = 0;
-    uint64_t memo_h = 0;
-    uint64_t memo_h_aux = 0;
-    int  memo_lookup_done = 0;
-
     if (config->optim.use_sq16)
     {
         long frame_dim = current_frame->width * current_frame->height;
@@ -203,6 +170,145 @@ int cluster_frame(
                                &config->optim.sq8_params);
         }
     }
+}
+
+/**
+ * retrieve_prediction_candidates() - Retrieves prediction candidates into
+ *                                    pre-allocated scratch buffers.
+ * @config:          Clustering configuration.
+ * @state:           Clustering state with pre-allocated scratch buffers.
+ * @pred_candidates: Pre-allocated output array of candidate cluster indices.
+ *
+ * Return: Number of prediction candidates written to @pred_candidates.
+ */
+static int retrieve_prediction_candidates(
+    ClusterConfig *config,
+    ClusterState  *state,
+    int           *pred_candidates)
+{
+    int num_preds = 0;
+    if (!config->optim.pred_mode ||
+        state->telemetry.total_frames_processed < config->optim.pred_len)
+    {
+        return 0;
+    }
+
+    int *local_candidates = state->scratch.local_candidates;
+    int num_local = 0;
+    if (local_candidates != NULL)
+    {
+        num_local = get_prediction_candidates(state, config, local_candidates,
+                                              config->optim.pred_n);
+    }
+
+    if (pred_candidates == NULL)
+    {
+        return 0;
+    }
+
+    if (num_local == 1)
+    {
+        /* Unambiguous local prediction: prioritize it first */
+        pred_candidates[num_preds++] = local_candidates[0];
+
+        /* Append joint predictions as fallback */
+        if (state->scratch.tuple_pred_count > 0)
+        {
+            for (int j = 0; j < state->scratch.tuple_pred_count &&
+                 num_preds < config->optim.pred_n; j++)
+            {
+                int jc = state->scratch.tuple_pred_candidates[j];
+                if (jc != local_candidates[0])
+                {
+                    pred_candidates[num_preds++] = jc;
+                }
+            }
+        }
+    }
+    else
+    {
+        /* Ambiguous or no local match: prioritize joint predictions to resolve it */
+        if (state->scratch.tuple_pred_count > 0)
+        {
+            int n_out = (state->scratch.tuple_pred_count < config->optim.pred_n) ?
+                        state->scratch.tuple_pred_count : config->optim.pred_n;
+            for (int i = 0; i < n_out; i++)
+            {
+                pred_candidates[num_preds++] = state->scratch.tuple_pred_candidates[i];
+            }
+        }
+        if (num_preds < config->optim.pred_n && num_local > 0)
+        {
+            for (int i = 0; i < num_local && num_preds < config->optim.pred_n; i++)
+            {
+                int lc = local_candidates[i];
+                int dup = 0;
+                for (int k = 0; k < num_preds; k++)
+                {
+                    if (pred_candidates[k] == lc)
+                    {
+                        dup = 1;
+                        break;
+                    }
+                }
+                if (!dup)
+                {
+                    pred_candidates[num_preds++] = lc;
+                }
+            }
+        }
+    }
+
+    return num_preds;
+}
+
+/**
+ * cluster_frame() - Process one frame through the full clustering
+ *                   pipeline (Steps 1-5).
+ * @config:              Clustering configuration (algorithm, optim, I/O).
+ * @state:               Mutable clustering state (clusters, telemetry,
+ *                       scratch buffers).
+ * @current_frame:       Pixel data of the frame to assign.
+ * @prev_assigned_cluster: In/out pointer to the previously assigned
+ *                       cluster index; updated on new assignment.
+ * @ascii_out:           Open file handle for membership text log
+ *                       (may be NULL).
+ * @temp_indices:        Scratch array recording cluster indices
+ *                       measured this frame.
+ * @temp_dists:          Scratch array recording distances measured
+ *                       this frame.
+ * @sorting_candidates:  Scratch array for candidate sorting.
+ * @verbose_candidates:  Scratch array for verbose-mode ranking
+ *                       (may be NULL).
+ *
+ * Executes the sequential steps: base-case setup, prediction
+ * retrieval, iterative search with pruning and measurement,
+ * new-cluster creation / eviction, and telemetry recording.
+ *
+ * Return: Assigned cluster index (>= 0), or -2 to signal stop.
+ */
+int cluster_frame(
+    ClusterConfig *config,
+    ClusterState  *state,
+    Frame         *current_frame,
+    int           *prev_assigned_cluster,
+    FILE          *ascii_out,
+    int           *temp_indices,
+    double        *temp_dists,
+    Candidate     *sorting_candidates,
+    Candidate     *verbose_candidates)
+{
+    int  assigned_cluster = -1;
+    long start_pruned_val = state->telemetry.clusters_pruned;
+    long start_dist_calls = state->telemetry.framedist_calls;
+    long start_dfc_calls = state->telemetry.framedist_calls_sample;
+    long start_dcc_calls = state->telemetry.framedist_calls_intercluster;
+    int  temp_count = 0;
+    uint64_t memo_h = 0;
+    uint64_t memo_h_aux = 0;
+    int  memo_lookup_done = 0;
+
+    prepare_frame_quantization(config, state, current_frame);
 
     // Step 1: Base case setup.
     // If no clusters exist yet, the very first ingested frame serves as the anchor frame
@@ -232,94 +338,21 @@ int cluster_frame(
         int need_prune_update = 0;
         int meas_idx = 0;  /* measurement depth within this frame */
 
-        int *pred_candidates = NULL;
-        int num_preds = 0;
+        int *pred_candidates = state->scratch.pred_candidates;
         int current_pred_idx = 0;
         int first_pred = -1;  /* first prediction candidate */
 
         // Step 2: Retrieve prediction candidates.
-        // Retrieves prediction candidates at the very start of processing the frame if
-        // prediction mode is active.
+        // Retrieves prediction candidates using pre-allocated scratch buffers.
         struct timespec s2_start, s2_end;
         clock_gettime(CLOCK_MONOTONIC, &s2_start);
-        if (config->optim.pred_mode &&
-            state->telemetry.total_frames_processed >= config->optim.pred_len)
-        {
-            int *local_candidates = (int *)malloc((size_t)config->optim.pred_n * sizeof(int));
-            int num_local = 0;
-            if (local_candidates != NULL)
-            {
-                num_local = get_prediction_candidates(state, config, local_candidates,
-                                                      config->optim.pred_n);
-            }
-
-            pred_candidates = (int *)malloc((size_t)config->optim.pred_n * sizeof(int));
-            if (pred_candidates != NULL)
-            {
-                if (num_local == 1)
-                {
-                    /* Unambiguous local prediction: prioritize it first */
-                    pred_candidates[num_preds++] = local_candidates[0];
-
-                    /* Append joint predictions as fallback */
-                    if (state->scratch.tuple_pred_count > 0)
-                    {
-                        for (int j = 0; j < state->scratch.tuple_pred_count &&
-                             num_preds < config->optim.pred_n; j++)
-                        {
-                            int jc = state->scratch.tuple_pred_candidates[j];
-                            if (jc != local_candidates[0])
-                            {
-                                pred_candidates[num_preds++] = jc;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    /* Ambiguous or no local match: prioritize joint predictions to resolve it */
-                    if (state->scratch.tuple_pred_count > 0)
-                    {
-                        int n_out = (state->scratch.tuple_pred_count < config->optim.pred_n) ?
-                                    state->scratch.tuple_pred_count : config->optim.pred_n;
-                        for (int i = 0; i < n_out; i++)
-                        {
-                            pred_candidates[num_preds++] = state->scratch.tuple_pred_candidates[i];
-                        }
-                    }
-                    if (num_preds < config->optim.pred_n && num_local > 0)
-                    {
-                        for (int i = 0; i < num_local && num_preds < config->optim.pred_n; i++)
-                        {
-                            int lc = local_candidates[i];
-                            int dup = 0;
-                            for (int k = 0; k < num_preds; k++)
-                            {
-                                if (pred_candidates[k] == lc)
-                                {
-                                    dup = 1;
-                                    break;
-                                }
-                            }
-                            if (!dup)
-                            {
-                                pred_candidates[num_preds++] = lc;
-                            }
-                        }
-                    }
-                }
-            }
-            if (local_candidates != NULL)
-            {
-                free(local_candidates);
-            }
-        }
+        int num_preds = retrieve_prediction_candidates(config, state, pred_candidates);
         clock_gettime(CLOCK_MONOTONIC, &s2_end);
         state->telemetry.time_step_2 += (s2_end.tv_sec - s2_start.tv_sec) * 1000.0 +
                                         (s2_end.tv_nsec - s2_start.tv_nsec) / 1000000.0;
 
         /* Record prediction telemetry baseline */
-        if (num_preds > 0)
+        if (num_preds > 0 && pred_candidates != NULL)
         {
             first_pred = pred_candidates[0];
             state->telemetry.pred_attempts++;
@@ -732,11 +765,6 @@ int cluster_frame(
         if (first_pred >= 0 && assigned_cluster == first_pred)
         {
             state->telemetry.pred_hits++;
-        }
-
-        if (pred_candidates)
-        {
-            free(pred_candidates);
         }
 
         // Step 4: Handling of new cluster creation and cache limits.

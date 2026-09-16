@@ -467,7 +467,10 @@ int knn_write_results(
             if (olen >= 4 && strcasecmp(config->output_path + olen - 4, ".txt") == 0)
             {
                 size_t blen = olen - 4;
-                if (blen >= sizeof(base)) { blen = sizeof(base) - 1; }
+                if (blen >= sizeof(base))
+                {
+                    blen = sizeof(base) - 1;
+                }
                 memcpy(base, config->output_path, blen);
                 base[blen] = '\0';
             }

@@ -22,6 +22,8 @@ INCLUDES = \
 
 SRCS = \
 	src/gric-cluster/math/framedistance.c \
+	src/gric-cluster/math/framedistance_cutoff.c \
+	src/gric-cluster/math/framedistance_batch.c \
 	src/gric-cluster/math/cluster_math.c \
 	src/gric-cluster/math/cluster_prune.c \
 	src/gric-cluster/math/cluster_scandist.c \
@@ -47,13 +49,16 @@ SRCS = \
 	src/gric-knn/knn_reader.c \
 	src/gric-knn/knn_parser.c \
 	src/gric-knn/knn_cache.c \
+	src/gric-knn/knn_cache_layout.c \
 	src/gric-knn/knn_engine.c \
 	src/gric-knn/knn_pruning.c \
+	src/gric-knn/knn_member_search.c \
 	src/gric-knn/knn_cluster_search.c \
 	src/gric-knn/knn_cross_dataset.c \
 	src/shared/cluster_locator.c \
 	src/shared/gric_bin_io.c \
 	src/shared/scalar_quant.c \
+	src/shared/scalar_quant_fastscan.c \
 	src/shared/residual_quant.c \
 	src/shared/product_quant.c \
 	src/shared/quant_memo.c \

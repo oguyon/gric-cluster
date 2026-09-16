@@ -78,17 +78,42 @@ typedef struct
     int    valid;
 } TE5Ref;
 
+/**
+ * calc_te4_ref_init() - Initialize precomputed 4-point reference geometry.
+ * @ref: Output reference structure.
+ * @d14: Distance between point 1 and 4.
+ * @d24: Distance between point 2 and 4.
+ * @d12: Distance between point 1 and 2.
+ */
 void calc_te4_ref_init(
     TE4Ref *ref,
     double  d14,
     double  d24,
     double  d12);
 
+/**
+ * calc_min_dist_4pt_ref() - Compute min 4-point distance using cached geometry.
+ * @ref: Initialized 4-point reference structure.
+ * @d13: Distance between point 1 and 3.
+ * @d23: Distance between point 2 and 3.
+ *
+ * Return: Minimum reconstructed distance between points 3 and 4.
+ */
 double calc_min_dist_4pt_ref(
     const TE4Ref *ref,
     double        d13,
     double        d23);
 
+/**
+ * calc_te5_ref_init() - Initialize precomputed 5-point reference geometry.
+ * @ref:     Output reference structure.
+ * @d_f_c1:  Distance between frame and cluster 1.
+ * @d_f_c2:  Distance between frame and cluster 2.
+ * @d_f_c3:  Distance between frame and cluster 3.
+ * @d_c1_c2: Mutual distance between cluster 1 and 2.
+ * @d_c1_c3: Mutual distance between cluster 1 and 3.
+ * @d_c2_c3: Mutual distance between cluster 2 and 3.
+ */
 void calc_te5_ref_init(
     TE5Ref *ref,
     double  d_f_c1,
@@ -98,6 +123,15 @@ void calc_te5_ref_init(
     double  d_c1_c3,
     double  d_c2_c3);
 
+/**
+ * calc_min_dist_5pt_ref() - Compute min 5-point distance using cached geometry.
+ * @ref:    Initialized 5-point reference structure.
+ * @d_t_c1: Distance between target and cluster 1.
+ * @d_t_c2: Distance between target and cluster 2.
+ * @d_t_c3: Distance between target and cluster 3.
+ *
+ * Return: Minimum reconstructed 3D distance between frame and target.
+ */
 double calc_min_dist_5pt_ref(
     const TE5Ref *ref,
     double        d_t_c1,
@@ -105,12 +139,27 @@ double calc_min_dist_5pt_ref(
     double        d_t_c3);
 
 #if defined(__AVX2__)
+/**
+ * calc_min_dist_4pt_batch4_avx2() - AVX2 vectorized 4-way 4-point evaluation.
+ * @ref:       Initialized 4-point reference structure.
+ * @d13:       Array of 4 distance values to point 1.
+ * @d23:       Array of 4 distance values to point 2.
+ * @out_dists: Output array for 4 computed min distances.
+ */
 void calc_min_dist_4pt_batch4_avx2(
     const TE4Ref          *ref,
     const double *restrict d13,
     const double *restrict d23,
     double       *restrict out_dists);
 
+/**
+ * calc_min_dist_5pt_batch4_avx2() - AVX2 vectorized 4-way 5-point evaluation.
+ * @ref:       Initialized 5-point reference structure.
+ * @d_t_c1:    Array of 4 distance values to cluster 1.
+ * @d_t_c2:    Array of 4 distance values to cluster 2.
+ * @d_t_c3:    Array of 4 distance values to cluster 3.
+ * @out_dists: Output array for 4 computed min distances.
+ */
 void calc_min_dist_5pt_batch4_avx2(
     const TE5Ref          *ref,
     const double *restrict d_t_c1,

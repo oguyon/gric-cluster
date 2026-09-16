@@ -130,6 +130,16 @@ MultiTileState *multitile_init(
             ts->state.scratch.tuple_pred_candidates = malloc(
                 mc * sizeof(int));
             ts->state.scratch.tuple_pred_count = 0;
+            size_t pred_cap = (size_t)(global->optim.pred_n > 0 ?
+                                       global->optim.pred_n : 16);
+            if (pred_cap < (size_t)mc)
+            {
+                pred_cap = (size_t)mc;
+            }
+            ts->state.scratch.pred_candidates = malloc(
+                pred_cap * sizeof(int));
+            ts->state.scratch.local_candidates = malloc(
+                pred_cap * sizeof(int));
             ts->state.scratch.sq16_cand_indices = malloc(
                 mc * sizeof(int));
             ts->state.scratch.sq16_anchor_ptrs = malloc(
@@ -273,6 +283,14 @@ void multitile_free(MultiTileState *mts)
             if (ts->state.scratch.tuple_pred_candidates)
             {
                 free(ts->state.scratch.tuple_pred_candidates);
+            }
+            if (ts->state.scratch.pred_candidates)
+            {
+                free(ts->state.scratch.pred_candidates);
+            }
+            if (ts->state.scratch.local_candidates)
+            {
+                free(ts->state.scratch.local_candidates);
             }
             if (ts->state.scratch.sq16_cand_indices)
             {
