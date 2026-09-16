@@ -54,11 +54,20 @@ static void init_new_cluster_distances(
             state->scratch.dcc_max[r * N + new_cl] = 1e19;
             state->scratch.dcc_measured[new_cl * N + r] = 0;
             state->scratch.dcc_measured[r * N + new_cl] = 0;
+            if (state->scratch.dcc_sq16 != NULL)
+            {
+                state->scratch.dcc_sq16[new_cl * N + r] = DCC_SQ16_UNMEASURED;
+                state->scratch.dcc_sq16[r * N + new_cl] = DCC_SQ16_UNMEASURED;
+            }
         }
 
         state->scratch.dcc_min[new_cl * N + new_cl] = 0.0;
         state->scratch.dcc_max[new_cl * N + new_cl] = 0.0;
         state->scratch.dcc_measured[new_cl * N + new_cl] = 1;
+        if (state->scratch.dcc_sq16 != NULL)
+        {
+            state->scratch.dcc_sq16[new_cl * N + new_cl] = 0;
+        }
 
         // 2. Populate exact distances from the search loop
         char is_temp_index[new_cl];
@@ -70,12 +79,7 @@ static void init_new_cluster_distances(
             if (j >= 0 && j < new_cl)
             {
                 double d = temp_dists[idx];
-                state->scratch.dcc_min[new_cl * N + j] = d;
-                state->scratch.dcc_min[j * N + new_cl] = d;
-                state->scratch.dcc_max[new_cl * N + j] = d;
-                state->scratch.dcc_max[j * N + new_cl] = d;
-                state->scratch.dcc_measured[new_cl * N + j] = 1;
-                state->scratch.dcc_measured[j * N + new_cl] = 1;
+                set_dcc_pair(state, N, new_cl, j, d);
                 is_temp_index[j] = 1;
             }
         }
@@ -154,12 +158,7 @@ static void init_new_cluster_distances(
             if (j >= 0 && j < new_cl)
             {
                 double d = temp_dists[idx];
-                state->scratch.dcc_min[new_cl * N + j] = d;
-                state->scratch.dcc_min[j * N + new_cl] = d;
-                state->scratch.dcc_max[new_cl * N + j] = d;
-                state->scratch.dcc_max[j * N + new_cl] = d;
-                state->scratch.dcc_measured[new_cl * N + j] = 1;
-                state->scratch.dcc_measured[j * N + new_cl] = 1;
+                set_dcc_pair(state, N, new_cl, j, d);
                 is_temp_index[j] = 1;
             }
         }
@@ -219,13 +218,7 @@ static void init_new_cluster_distances(
                 for (int k = 0; k < 8; k++)
                 {
                     int cl_idx = unvisited[b_idx + k];
-                    double d = batch_dists[k];
-                    state->scratch.dcc_min[new_cl * N + cl_idx] = d;
-                    state->scratch.dcc_min[cl_idx * N + new_cl] = d;
-                    state->scratch.dcc_max[new_cl * N + cl_idx] = d;
-                    state->scratch.dcc_max[cl_idx * N + new_cl] = d;
-                    state->scratch.dcc_measured[new_cl * N + cl_idx] = 1;
-                    state->scratch.dcc_measured[cl_idx * N + new_cl] = 1;
+                    set_dcc_pair(state, N, new_cl, cl_idx, batch_dists[k]);
                 }
             } // for (int b = 0; b < b_count8; b++)
             processed_count = b_count8 * 8;
@@ -268,13 +261,7 @@ static void init_new_cluster_distances(
                 for (int k = 0; k < 4; k++)
                 {
                     int cl_idx = unvisited[b_idx + k];
-                    double d = batch_dists[k];
-                    state->scratch.dcc_min[new_cl * N + cl_idx] = d;
-                    state->scratch.dcc_min[cl_idx * N + new_cl] = d;
-                    state->scratch.dcc_max[new_cl * N + cl_idx] = d;
-                    state->scratch.dcc_max[cl_idx * N + new_cl] = d;
-                    state->scratch.dcc_measured[new_cl * N + cl_idx] = 1;
-                    state->scratch.dcc_measured[cl_idx * N + new_cl] = 1;
+                    set_dcc_pair(state, N, new_cl, cl_idx, batch_dists[k]);
                 }
             }
             processed_count += b_count4 * 4;
@@ -285,12 +272,7 @@ static void init_new_cluster_distances(
                 double d = get_dist(&state->clusters[new_cl].anchor,
                                     &state->clusters[cl_idx].anchor, -1, -1.0, -1.0,
                                     config, state);
-                state->scratch.dcc_min[new_cl * N + cl_idx] = d;
-                state->scratch.dcc_min[cl_idx * N + new_cl] = d;
-                state->scratch.dcc_max[new_cl * N + cl_idx] = d;
-                state->scratch.dcc_max[cl_idx * N + new_cl] = d;
-                state->scratch.dcc_measured[new_cl * N + cl_idx] = 1;
-                state->scratch.dcc_measured[cl_idx * N + new_cl] = 1;
+                set_dcc_pair(state, N, new_cl, cl_idx, d);
             }
             state->telemetry.framedist_calls += (uint64_t)unvisited_count;
             state->telemetry.framedist_calls_intercluster += (uint64_t)unvisited_count;
@@ -303,12 +285,7 @@ static void init_new_cluster_distances(
                 double d = get_dist(&state->clusters[new_cl].anchor,
                                     &state->clusters[cl_idx].anchor, -1, -1.0, -1.0,
                                     config, state);
-                state->scratch.dcc_min[new_cl * N + cl_idx] = d;
-                state->scratch.dcc_min[cl_idx * N + new_cl] = d;
-                state->scratch.dcc_max[new_cl * N + cl_idx] = d;
-                state->scratch.dcc_max[cl_idx * N + new_cl] = d;
-                state->scratch.dcc_measured[new_cl * N + cl_idx] = 1;
-                state->scratch.dcc_measured[cl_idx * N + new_cl] = 1;
+                set_dcc_pair(state, N, new_cl, cl_idx, d);
             }
             state->telemetry.framedist_calls += (uint64_t)unvisited_count;
             state->telemetry.framedist_calls_intercluster += (uint64_t)unvisited_count;
@@ -317,6 +294,10 @@ static void init_new_cluster_distances(
         state->scratch.dcc_min[new_cl * N + new_cl] = 0.0;
         state->scratch.dcc_max[new_cl * N + new_cl] = 0.0;
         state->scratch.dcc_measured[new_cl * N + new_cl] = 1;
+        if (state->scratch.dcc_sq16 != NULL)
+        {
+            state->scratch.dcc_sq16[new_cl * N + new_cl] = 0;
+        }
         state->telemetry.dcc_entries_populated += (uint64_t)new_cl;
     }
 }
@@ -391,6 +372,10 @@ static void assign_new_cluster_anchor(
     current_frame->data = NULL;
     state->clusters[cl_idx].id = cl_idx;
     state->clusters[cl_idx].prob = 1.0;
+    if (state->scratch.cluster_probs != NULL)
+    {
+        state->scratch.cluster_probs[cl_idx] = 1.0;
+    }
 }
 
 int handle_new_cluster_creation(

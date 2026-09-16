@@ -4,6 +4,7 @@
  */
 
 #include "scalar_quant.h"
+#include "gric_simd.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -578,4 +579,1038 @@ uint32_t sq16_fastscan_32x(
     return sq16_fastscan_32x_generic_scalar(query_sq16, block_coords, dim, ssd_cutoff);
 #endif
 }
+
+#if !defined(__CUDACC__) && defined(__AVX2__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * sq16_reduce_add_epi32_avx2() - Horizontal add of 8 32-bit vector elements using AVX2.
+ * @v: 256-bit SIMD vector holding 8 int32 lanes.
+ *
+ * Return: Sum of all 8 lanes as unsigned 32-bit integer.
+ */
+static inline uint32_t sq16_reduce_add_epi32_avx2(
+    __m256i v)
+{
+    __m128i lo = _mm256_castsi256_si128(v);
+    __m128i hi = _mm256_extracti128_si256(v, 1);
+    __m128i s = _mm_add_epi32(lo, hi);
+    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, _MM_SHUFFLE(1, 0, 3, 2)));
+    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, _MM_SHUFFLE(2, 3, 0, 1)));
+    return (uint32_t)_mm_cvtsi128_si32(s);
+}
+#endif // __AVX2__
+
+#if GRIC_HAVE_AVX512_TARGET
+/**
+ * sq16_filter_anchor_matrix_avx512() - AVX-512 kernel for anchor filtering.
+ * @cur_sq16:         Query int16 array [dim].
+ * @anchor_matrix:    Contiguous anchor matrix [num_clusters x dim].
+ * @num_clusters:     Cluster count.
+ * @dim:              Vector dimensionality.
+ * @sq16_ssd_thresh:  Squared distance cutoff threshold.
+ * @clmembflag:       Candidate flags array (0 = pruned).
+ * @active_clusters:  Surviving cluster indices array.
+ * @out_num_active:   Count of surviving clusters.
+ * @out_pruned_count: Count of pruned clusters.
+ */
+GRIC_TARGET_AVX512
+static void sq16_filter_anchor_matrix_avx512(
+    const int16_t *restrict cur_sq16,
+    const int16_t *restrict anchor_matrix,
+    int                     num_clusters,
+    long                    dim,
+    uint64_t                sq16_ssd_thresh,
+    int           *restrict clmembflag,
+    int           *restrict active_clusters,
+    int           *restrict out_num_active,
+    int           *restrict out_pruned_count)
+{
+    uint32_t thresh32 = (sq16_ssd_thresh > 0xFFFFFFFFULL)
+                        ? 0xFFFFFFFFU
+                        : (uint32_t)sq16_ssd_thresh;
+    int num_active = 0;
+    int pruned_count = 0;
+
+    if (dim == 128)
+    {
+        __m512i q0 = _mm512_loadu_si512((const void *)(cur_sq16 + 0));
+        __m512i q1 = _mm512_loadu_si512((const void *)(cur_sq16 + 32));
+        __m512i q2 = _mm512_loadu_si512((const void *)(cur_sq16 + 64));
+        __m512i q3 = _mm512_loadu_si512((const void *)(cur_sq16 + 96));
+
+        int i = 0;
+        for (; i + 3 < num_clusters; i += 4)
+        {
+            if (i + 12 < num_clusters)
+            {
+                _mm_prefetch((const char *)(anchor_matrix + (size_t)(i + 8) * 128),
+                             _MM_HINT_T0);
+                _mm_prefetch((const char *)(anchor_matrix + (size_t)(i + 10) * 128),
+                             _MM_HINT_T0);
+            }
+
+            const int16_t *a0_ptr = anchor_matrix + (size_t)(i + 0) * 128;
+            const int16_t *a1_ptr = anchor_matrix + (size_t)(i + 1) * 128;
+            const int16_t *a2_ptr = anchor_matrix + (size_t)(i + 2) * 128;
+            const int16_t *a3_ptr = anchor_matrix + (size_t)(i + 3) * 128;
+
+            __m512i a0 = _mm512_loadu_si512((const void *)(a0_ptr + 0));
+            __m512i a1 = _mm512_loadu_si512((const void *)(a1_ptr + 0));
+            __m512i a2 = _mm512_loadu_si512((const void *)(a2_ptr + 0));
+            __m512i a3 = _mm512_loadu_si512((const void *)(a3_ptr + 0));
+
+            __m512i d0 = _mm512_sub_epi16(q0, a0);
+            __m512i d1 = _mm512_sub_epi16(q0, a1);
+            __m512i d2 = _mm512_sub_epi16(q0, a2);
+            __m512i d3 = _mm512_sub_epi16(q0, a3);
+
+            __m512i acc0 = _mm512_madd_epi16(d0, d0);
+            __m512i acc1 = _mm512_madd_epi16(d1, d1);
+            __m512i acc2 = _mm512_madd_epi16(d2, d2);
+            __m512i acc3 = _mm512_madd_epi16(d3, d3);
+
+            uint32_t s0 = (uint32_t)_mm512_reduce_add_epi32(acc0);
+            uint32_t s1 = (uint32_t)_mm512_reduce_add_epi32(acc1);
+            uint32_t s2 = (uint32_t)_mm512_reduce_add_epi32(acc2);
+            uint32_t s3 = (uint32_t)_mm512_reduce_add_epi32(acc3);
+
+            if (s0 > thresh32 && s1 > thresh32 && s2 > thresh32 && s3 > thresh32)
+            {
+                clmembflag[i + 0] = 0;
+                clmembflag[i + 1] = 0;
+                clmembflag[i + 2] = 0;
+                clmembflag[i + 3] = 0;
+                pruned_count += 4;
+                continue;
+            }
+
+            uint32_t sums[4] = {s0, s1, s2, s3};
+            for (int k = 0; k < 4; k++)
+            {
+                if (sums[k] > thresh32)
+                {
+                    clmembflag[i + k] = 0;
+                    pruned_count++;
+                    continue;
+                }
+
+                const int16_t *ak_ptr = anchor_matrix + (size_t)(i + k) * 128;
+                uint32_t total = sums[k];
+
+                // Block 1: dims 32..63
+                __m512i b1 = _mm512_loadu_si512((const void *)(ak_ptr + 32));
+                __m512i db1 = _mm512_sub_epi16(q1, b1);
+                total += (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(db1, db1));
+                if (total > thresh32)
+                {
+                    clmembflag[i + k] = 0;
+                    pruned_count++;
+                    continue;
+                }
+
+                // Block 2: dims 64..95
+                __m512i b2 = _mm512_loadu_si512((const void *)(ak_ptr + 64));
+                __m512i db2 = _mm512_sub_epi16(q2, b2);
+                total += (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(db2, db2));
+                if (total > thresh32)
+                {
+                    clmembflag[i + k] = 0;
+                    pruned_count++;
+                    continue;
+                }
+
+                // Block 3: dims 96..127
+                __m512i b3 = _mm512_loadu_si512((const void *)(ak_ptr + 96));
+                __m512i db3 = _mm512_sub_epi16(q3, b3);
+                total += (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(db3, db3));
+                if (total > thresh32)
+                {
+                    clmembflag[i + k] = 0;
+                    pruned_count++;
+                    continue;
+                }
+
+                clmembflag[i + k] = 1;
+                active_clusters[num_active++] = i + k;
+            }
+        }
+
+        // Remainder loop
+        for (; i < num_clusters; i++)
+        {
+            const int16_t *a_ptr = anchor_matrix + (size_t)i * 128;
+
+            __m512i a0 = _mm512_loadu_si512((const void *)(a_ptr + 0));
+            __m512i d0 = _mm512_sub_epi16(q0, a0);
+            __m512i acc = _mm512_madd_epi16(d0, d0);
+            if ((uint32_t)_mm512_reduce_add_epi32(acc) > thresh32)
+            {
+                clmembflag[i] = 0;
+                pruned_count++;
+                continue;
+            }
+
+            __m512i a1 = _mm512_loadu_si512((const void *)(a_ptr + 32));
+            __m512i d1 = _mm512_sub_epi16(q1, a1);
+            acc = _mm512_add_epi32(acc, _mm512_madd_epi16(d1, d1));
+            if ((uint32_t)_mm512_reduce_add_epi32(acc) > thresh32)
+            {
+                clmembflag[i] = 0;
+                pruned_count++;
+                continue;
+            }
+
+            __m512i a2 = _mm512_loadu_si512((const void *)(a_ptr + 64));
+            __m512i d2 = _mm512_sub_epi16(q2, a2);
+            acc = _mm512_add_epi32(acc, _mm512_madd_epi16(d2, d2));
+            if ((uint32_t)_mm512_reduce_add_epi32(acc) > thresh32)
+            {
+                clmembflag[i] = 0;
+                pruned_count++;
+                continue;
+            }
+
+            __m512i a3 = _mm512_loadu_si512((const void *)(a_ptr + 96));
+            __m512i d3 = _mm512_sub_epi16(q3, a3);
+            acc = _mm512_add_epi32(acc, _mm512_madd_epi16(d3, d3));
+            if ((uint32_t)_mm512_reduce_add_epi32(acc) > thresh32)
+            {
+                clmembflag[i] = 0;
+                pruned_count++;
+                continue;
+            }
+
+            clmembflag[i] = 1;
+            active_clusters[num_active++] = i;
+        }
+    }
+    else if (dim <= 64)
+    {
+        if (dim <= 32)
+        {
+            __m512i q0 = _mm512_loadu_si512((const void *)cur_sq16);
+            int i = 0;
+            for (; i + 3 < num_clusters; i += 4)
+            {
+                const int16_t *a0_ptr = anchor_matrix + (size_t)(i + 0) * dim;
+                const int16_t *a1_ptr = anchor_matrix + (size_t)(i + 1) * dim;
+                const int16_t *a2_ptr = anchor_matrix + (size_t)(i + 2) * dim;
+                const int16_t *a3_ptr = anchor_matrix + (size_t)(i + 3) * dim;
+
+                __m512i d0 = _mm512_sub_epi16(q0, _mm512_loadu_si512((const void *)a0_ptr));
+                __m512i d1 = _mm512_sub_epi16(q0, _mm512_loadu_si512((const void *)a1_ptr));
+                __m512i d2 = _mm512_sub_epi16(q0, _mm512_loadu_si512((const void *)a2_ptr));
+                __m512i d3 = _mm512_sub_epi16(q0, _mm512_loadu_si512((const void *)a3_ptr));
+
+                uint32_t s0 = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(d0, d0));
+                uint32_t s1 = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(d1, d1));
+                uint32_t s2 = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(d2, d2));
+                uint32_t s3 = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(d3, d3));
+
+                uint32_t sums[4] = {s0, s1, s2, s3};
+                for (int k = 0; k < 4; k++)
+                {
+                    if (sums[k] > thresh32)
+                    {
+                        clmembflag[i + k] = 0;
+                        pruned_count++;
+                    }
+                    else
+                    {
+                        clmembflag[i + k] = 1;
+                        active_clusters[num_active++] = i + k;
+                    }
+                }
+            }
+            for (; i < num_clusters; i++)
+            {
+                const int16_t *a_ptr = anchor_matrix + (size_t)i * dim;
+                __m512i d = _mm512_sub_epi16(q0, _mm512_loadu_si512((const void *)a_ptr));
+                uint32_t s = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(d, d));
+                if (s > thresh32)
+                {
+                    clmembflag[i] = 0;
+                    pruned_count++;
+                }
+                else
+                {
+                    clmembflag[i] = 1;
+                    active_clusters[num_active++] = i;
+                }
+            }
+        }
+        else // 32 < dim <= 64
+        {
+            __m512i q0 = _mm512_loadu_si512((const void *)(cur_sq16 + 0));
+            __m512i q1 = _mm512_loadu_si512((const void *)(cur_sq16 + 32));
+            int i = 0;
+            for (; i + 3 < num_clusters; i += 4)
+            {
+                const int16_t *a0_ptr = anchor_matrix + (size_t)(i + 0) * dim;
+                const int16_t *a1_ptr = anchor_matrix + (size_t)(i + 1) * dim;
+                const int16_t *a2_ptr = anchor_matrix + (size_t)(i + 2) * dim;
+                const int16_t *a3_ptr = anchor_matrix + (size_t)(i + 3) * dim;
+
+                __m512i d0 = _mm512_sub_epi16(q0, _mm512_loadu_si512((const void *)a0_ptr));
+                __m512i d1 = _mm512_sub_epi16(q0, _mm512_loadu_si512((const void *)a1_ptr));
+                __m512i d2 = _mm512_sub_epi16(q0, _mm512_loadu_si512((const void *)a2_ptr));
+                __m512i d3 = _mm512_sub_epi16(q0, _mm512_loadu_si512((const void *)a3_ptr));
+
+                uint32_t s0 = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(d0, d0));
+                uint32_t s1 = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(d1, d1));
+                uint32_t s2 = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(d2, d2));
+                uint32_t s3 = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(d3, d3));
+
+                if (s0 > thresh32 && s1 > thresh32 && s2 > thresh32 && s3 > thresh32)
+                {
+                    clmembflag[i + 0] = 0;
+                    clmembflag[i + 1] = 0;
+                    clmembflag[i + 2] = 0;
+                    clmembflag[i + 3] = 0;
+                    pruned_count += 4;
+                    continue;
+                }
+
+                uint32_t sums[4] = {s0, s1, s2, s3};
+                for (int k = 0; k < 4; k++)
+                {
+                    if (sums[k] > thresh32)
+                    {
+                        clmembflag[i + k] = 0;
+                        pruned_count++;
+                        continue;
+                    }
+                    const int16_t *ak_ptr = anchor_matrix + (size_t)(i + k) * dim;
+                    __m512i db1 = _mm512_sub_epi16(q1,
+                                                   _mm512_loadu_si512((const void *)(ak_ptr + 32)));
+                    uint32_t tot = sums[k] +
+                        (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(db1, db1));
+                    if (tot > thresh32)
+                    {
+                        clmembflag[i + k] = 0;
+                        pruned_count++;
+                        continue;
+                    }
+                    clmembflag[i + k] = 1;
+                    active_clusters[num_active++] = i + k;
+                }
+            }
+            for (; i < num_clusters; i++)
+            {
+                const int16_t *a_ptr = anchor_matrix + (size_t)i * dim;
+                __m512i d0 = _mm512_sub_epi16(q0, _mm512_loadu_si512((const void *)(a_ptr + 0)));
+                __m512i acc = _mm512_madd_epi16(d0, d0);
+                if ((uint32_t)_mm512_reduce_add_epi32(acc) > thresh32)
+                {
+                    clmembflag[i] = 0;
+                    pruned_count++;
+                    continue;
+                }
+                __m512i d1 = _mm512_sub_epi16(q1, _mm512_loadu_si512((const void *)(a_ptr + 32)));
+                acc = _mm512_add_epi32(acc, _mm512_madd_epi16(d1, d1));
+                if ((uint32_t)_mm512_reduce_add_epi32(acc) > thresh32)
+                {
+                    clmembflag[i] = 0;
+                    pruned_count++;
+                    continue;
+                }
+                clmembflag[i] = 1;
+                active_clusters[num_active++] = i;
+            }
+        }
+    }
+    else
+    {
+        // Arbitrary dimension (including D > 128): 32-element dimension-block streaming
+        for (int i = 0; i < num_clusters; i++)
+        {
+            if (i + 16 < num_clusters)
+            {
+                _mm_prefetch((const char *)(anchor_matrix + (size_t)(i + 16) * dim),
+                             _MM_HINT_T0);
+            }
+            const int16_t *a_ptr = anchor_matrix + (size_t)i * dim;
+            uint32_t total = 0;
+            int pruned = 0;
+
+            for (long d = 0; d < dim; d += 32)
+            {
+                if (d + 32 <= dim)
+                {
+                    __m512i q = _mm512_loadu_si512((const void *)(cur_sq16 + d));
+                    __m512i a = _mm512_loadu_si512((const void *)(a_ptr + d));
+                    __m512i diff = _mm512_sub_epi16(q, a);
+                    total += (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(diff, diff));
+                }
+                else
+                {
+                    for (long rem = d; rem < dim; rem++)
+                    {
+                        int32_t df = (int32_t)cur_sq16[rem] - (int32_t)a_ptr[rem];
+                        total += (uint32_t)(df * df);
+                    }
+                }
+                if (total > thresh32)
+                {
+                    pruned = 1;
+                    break;
+                }
+            } // for (long d = 0; d < dim; d += 32)
+
+            if (pruned)
+            {
+                clmembflag[i] = 0;
+                pruned_count++;
+            }
+            else
+            {
+                clmembflag[i] = 1;
+                active_clusters[num_active++] = i;
+            }
+        }
+    }
+
+    *out_num_active = num_active;
+    if (out_pruned_count)
+    {
+        *out_pruned_count = pruned_count;
+    }
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * sq16_filter_anchor_matrix_avx2() - AVX2 kernel for anchor filtering.
+ * @cur_sq16:         Query int16 array [dim].
+ * @anchor_matrix:    Contiguous anchor matrix [num_clusters x dim].
+ * @num_clusters:     Cluster count.
+ * @dim:              Vector dimensionality.
+ * @sq16_ssd_thresh:  Squared distance cutoff threshold.
+ * @clmembflag:       Candidate flags array (0 = pruned).
+ * @active_clusters:  Surviving cluster indices array.
+ * @out_num_active:   Count of surviving clusters.
+ * @out_pruned_count: Count of pruned clusters.
+ */
+GRIC_TARGET_AVX2
+static void sq16_filter_anchor_matrix_avx2(
+    const int16_t *restrict cur_sq16,
+    const int16_t *restrict anchor_matrix,
+    int                     num_clusters,
+    long                    dim,
+    uint64_t                sq16_ssd_thresh,
+    int           *restrict clmembflag,
+    int           *restrict active_clusters,
+    int           *restrict out_num_active,
+    int           *restrict out_pruned_count)
+{
+    uint32_t thresh32 = (sq16_ssd_thresh > 0xFFFFFFFFULL)
+                        ? 0xFFFFFFFFU
+                        : (uint32_t)sq16_ssd_thresh;
+    int num_active = 0;
+    int pruned_count = 0;
+    __m128i v_bias = _mm_set1_epi32((int32_t)0x80000000U);
+    __m128i v_cut  = _mm_set1_epi32((int32_t)(thresh32 ^ 0x80000000U));
+
+    if (dim == 128)
+    {
+        __m256i q0 = _mm256_load_si256((const __m256i *)(cur_sq16 + 0));
+        __m256i q1 = _mm256_load_si256((const __m256i *)(cur_sq16 + 16));
+        __m256i q2 = _mm256_load_si256((const __m256i *)(cur_sq16 + 32));
+        __m256i q3 = _mm256_load_si256((const __m256i *)(cur_sq16 + 48));
+        __m256i q4 = _mm256_load_si256((const __m256i *)(cur_sq16 + 64));
+        __m256i q5 = _mm256_load_si256((const __m256i *)(cur_sq16 + 80));
+        __m256i q6 = _mm256_load_si256((const __m256i *)(cur_sq16 + 96));
+        __m256i q7 = _mm256_load_si256((const __m256i *)(cur_sq16 + 112));
+        int i = 0;
+
+        for (; i + 3 < num_clusters; i += 4)
+        {
+            if (i + 12 < num_clusters)
+            {
+                _mm_prefetch((const char *)(anchor_matrix + (size_t)(i + 8) * 128),
+                             _MM_HINT_T0);
+                _mm_prefetch((const char *)(anchor_matrix + (size_t)(i + 10) * 128),
+                             _MM_HINT_T0);
+            }
+
+            const int16_t *a0_ptr = anchor_matrix + (size_t)(i + 0) * 128;
+            const int16_t *a1_ptr = anchor_matrix + (size_t)(i + 1) * 128;
+            const int16_t *a2_ptr = anchor_matrix + (size_t)(i + 2) * 128;
+            const int16_t *a3_ptr = anchor_matrix + (size_t)(i + 3) * 128;
+
+            // Chunk 0: Anchor 0
+            __m256i a0_0 = _mm256_load_si256((const __m256i *)(a0_ptr + 0));
+            __m256i a0_1 = _mm256_load_si256((const __m256i *)(a0_ptr + 16));
+            __m256i d0_0 = _mm256_sub_epi16(q0, a0_0);
+            __m256i d0_1 = _mm256_sub_epi16(q1, a0_1);
+            __m256i acc0 = _mm256_add_epi32(_mm256_madd_epi16(d0_0, d0_0),
+                                            _mm256_madd_epi16(d0_1, d0_1));
+
+            // Chunk 0: Anchor 1
+            __m256i a1_0 = _mm256_load_si256((const __m256i *)(a1_ptr + 0));
+            __m256i a1_1 = _mm256_load_si256((const __m256i *)(a1_ptr + 16));
+            __m256i d1_0 = _mm256_sub_epi16(q0, a1_0);
+            __m256i d1_1 = _mm256_sub_epi16(q1, a1_1);
+            __m256i acc1 = _mm256_add_epi32(_mm256_madd_epi16(d1_0, d1_0),
+                                            _mm256_madd_epi16(d1_1, d1_1));
+
+            __m256i h01 = _mm256_hadd_epi32(acc0, acc1);
+
+            // Chunk 0: Anchor 2
+            __m256i a2_0 = _mm256_load_si256((const __m256i *)(a2_ptr + 0));
+            __m256i a2_1 = _mm256_load_si256((const __m256i *)(a2_ptr + 16));
+            __m256i d2_0 = _mm256_sub_epi16(q0, a2_0);
+            __m256i d2_1 = _mm256_sub_epi16(q1, a2_1);
+            __m256i acc2 = _mm256_add_epi32(_mm256_madd_epi16(d2_0, d2_0),
+                                            _mm256_madd_epi16(d2_1, d2_1));
+
+            // Chunk 0: Anchor 3
+            __m256i a3_0 = _mm256_load_si256((const __m256i *)(a3_ptr + 0));
+            __m256i a3_1 = _mm256_load_si256((const __m256i *)(a3_ptr + 16));
+            __m256i d3_0 = _mm256_sub_epi16(q0, a3_0);
+            __m256i d3_1 = _mm256_sub_epi16(q1, a3_1);
+            __m256i acc3 = _mm256_add_epi32(_mm256_madd_epi16(d3_0, d3_0),
+                                            _mm256_madd_epi16(d3_1, d3_1));
+
+            __m256i h23 = _mm256_hadd_epi32(acc2, acc3);
+            __m256i h_all = _mm256_hadd_epi32(h01, h23);
+            __m128i sum4 = _mm_add_epi32(_mm256_castsi256_si128(h_all),
+                                         _mm256_extracti128_si256(h_all, 1));
+
+            __m128i v_sum_b = _mm_xor_si128(sum4, v_bias);
+            __m128i cmp = _mm_cmpgt_epi32(v_sum_b, v_cut);
+            int mask = _mm_movemask_ps(_mm_castsi128_ps(cmp));
+
+            if (mask == 0xF)
+            {
+                clmembflag[i + 0] = 0;
+                clmembflag[i + 1] = 0;
+                clmembflag[i + 2] = 0;
+                clmembflag[i + 3] = 0;
+                pruned_count += 4;
+                continue;
+            }
+
+            uint32_t s4[4];
+            _mm_storeu_si128((__m128i *)s4, sum4);
+
+            for (int k = 0; k < 4; k++)
+            {
+                if ((mask & (1 << k)) != 0)
+                {
+                    clmembflag[i + k] = 0;
+                    pruned_count++;
+                    continue;
+                }
+
+                const int16_t *ak_ptr = anchor_matrix + (size_t)(i + k) * 128;
+                uint32_t total = s4[k];
+
+                // Chunk 1: dims 32..63
+                __m256i a2 = _mm256_load_si256((const __m256i *)(ak_ptr + 32));
+                __m256i a3 = _mm256_load_si256((const __m256i *)(ak_ptr + 48));
+                __m256i d2 = _mm256_sub_epi16(q2, a2);
+                __m256i d3 = _mm256_sub_epi16(q3, a3);
+                __m256i acc_c1 = _mm256_add_epi32(_mm256_madd_epi16(d2, d2),
+                                                  _mm256_madd_epi16(d3, d3));
+                total += sq16_reduce_add_epi32_avx2(acc_c1);
+                if (total > thresh32)
+                {
+                    clmembflag[i + k] = 0;
+                    pruned_count++;
+                    continue;
+                }
+
+                // Chunk 2 & 3: dims 64..127
+                __m256i a4 = _mm256_load_si256((const __m256i *)(ak_ptr + 64));
+                __m256i a5 = _mm256_load_si256((const __m256i *)(ak_ptr + 80));
+                __m256i d4 = _mm256_sub_epi16(q4, a4);
+                __m256i d5 = _mm256_sub_epi16(q5, a5);
+                __m256i acc_c23 = _mm256_add_epi32(_mm256_madd_epi16(d4, d4),
+                                                   _mm256_madd_epi16(d5, d5));
+
+                __m256i a6 = _mm256_load_si256((const __m256i *)(ak_ptr + 96));
+                __m256i a7 = _mm256_load_si256((const __m256i *)(ak_ptr + 112));
+                __m256i d6 = _mm256_sub_epi16(q6, a6);
+                __m256i d7 = _mm256_sub_epi16(q7, a7);
+                acc_c23 = _mm256_add_epi32(acc_c23, _mm256_madd_epi16(d6, d6));
+                acc_c23 = _mm256_add_epi32(acc_c23, _mm256_madd_epi16(d7, d7));
+
+                total += sq16_reduce_add_epi32_avx2(acc_c23);
+                if (total > thresh32)
+                {
+                    clmembflag[i + k] = 0;
+                    pruned_count++;
+                    continue;
+                }
+
+                clmembflag[i + k] = 1;
+                active_clusters[num_active++] = i + k;
+            }
+        }
+
+        // Remainder loop
+        for (; i < num_clusters; i++)
+        {
+            const int16_t *a_ptr = anchor_matrix + (size_t)i * 128;
+
+            // Chunk 0: dims 0..31
+            __m256i a0 = _mm256_load_si256((const __m256i *)(a_ptr + 0));
+            __m256i a1 = _mm256_load_si256((const __m256i *)(a_ptr + 16));
+            __m256i d0 = _mm256_sub_epi16(q0, a0);
+            __m256i d1 = _mm256_sub_epi16(q1, a1);
+            __m256i acc = _mm256_add_epi32(_mm256_madd_epi16(d0, d0),
+                                           _mm256_madd_epi16(d1, d1));
+            if (sq16_reduce_add_epi32_avx2(acc) > thresh32)
+            {
+                clmembflag[i] = 0;
+                pruned_count++;
+                continue;
+            }
+
+            // Chunk 1: dims 32..63
+            __m256i a2 = _mm256_load_si256((const __m256i *)(a_ptr + 32));
+            __m256i a3 = _mm256_load_si256((const __m256i *)(a_ptr + 48));
+            __m256i d2 = _mm256_sub_epi16(q2, a2);
+            __m256i d3 = _mm256_sub_epi16(q3, a3);
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d2, d2));
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d3, d3));
+            if (sq16_reduce_add_epi32_avx2(acc) > thresh32)
+            {
+                clmembflag[i] = 0;
+                pruned_count++;
+                continue;
+            }
+
+            // Chunk 2 & 3: dims 64..127
+            __m256i a4 = _mm256_load_si256((const __m256i *)(a_ptr + 64));
+            __m256i a5 = _mm256_load_si256((const __m256i *)(a_ptr + 80));
+            __m256i d4 = _mm256_sub_epi16(q4, a4);
+            __m256i d5 = _mm256_sub_epi16(q5, a5);
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d4, d4));
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d5, d5));
+
+            __m256i a6 = _mm256_load_si256((const __m256i *)(a_ptr + 96));
+            __m256i a7 = _mm256_load_si256((const __m256i *)(a_ptr + 112));
+            __m256i d6 = _mm256_sub_epi16(q6, a6);
+            __m256i d7 = _mm256_sub_epi16(q7, a7);
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d6, d6));
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d7, d7));
+            if (sq16_reduce_add_epi32_avx2(acc) > thresh32)
+            {
+                clmembflag[i] = 0;
+                pruned_count++;
+                continue;
+            }
+
+            clmembflag[i] = 1;
+            active_clusters[num_active++] = i;
+        }
+    }
+    else if (dim <= 64)
+    {
+        if (dim <= 32)
+        {
+            __m256i q0 = (dim >= 16) ? _mm256_loadu_si256((const __m256i *)(cur_sq16 + 0))
+                                     : _mm256_setzero_si256();
+            __m256i q1 = (dim > 16)  ? _mm256_loadu_si256((const __m256i *)(cur_sq16 + 16))
+                                     : _mm256_setzero_si256();
+            int i = 0;
+            for (; i + 3 < num_clusters; i += 4)
+            {
+                const int16_t *a0_ptr = anchor_matrix + (size_t)(i + 0) * dim;
+                const int16_t *a1_ptr = anchor_matrix + (size_t)(i + 1) * dim;
+                const int16_t *a2_ptr = anchor_matrix + (size_t)(i + 2) * dim;
+                const int16_t *a3_ptr = anchor_matrix + (size_t)(i + 3) * dim;
+
+                __m256i d0_0 = _mm256_sub_epi16(q0, _mm256_loadu_si256((const __m256i *)a0_ptr));
+                __m256i acc0 = _mm256_madd_epi16(d0_0, d0_0);
+                __m256i d1_0 = _mm256_sub_epi16(q0, _mm256_loadu_si256((const __m256i *)a1_ptr));
+                __m256i acc1 = _mm256_madd_epi16(d1_0, d1_0);
+                __m256i d2_0 = _mm256_sub_epi16(q0, _mm256_loadu_si256((const __m256i *)a2_ptr));
+                __m256i acc2 = _mm256_madd_epi16(d2_0, d2_0);
+                __m256i d3_0 = _mm256_sub_epi16(q0, _mm256_loadu_si256((const __m256i *)a3_ptr));
+                __m256i acc3 = _mm256_madd_epi16(d3_0, d3_0);
+
+                if (dim > 16)
+                {
+                    __m256i d0_1 = _mm256_sub_epi16(q1,
+                        _mm256_loadu_si256((const __m256i *)(a0_ptr + 16)));
+                    acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(d0_1, d0_1));
+                    __m256i d1_1 = _mm256_sub_epi16(q1,
+                        _mm256_loadu_si256((const __m256i *)(a1_ptr + 16)));
+                    acc1 = _mm256_add_epi32(acc1, _mm256_madd_epi16(d1_1, d1_1));
+                    __m256i d2_1 = _mm256_sub_epi16(q1,
+                        _mm256_loadu_si256((const __m256i *)(a2_ptr + 16)));
+                    acc2 = _mm256_add_epi32(acc2, _mm256_madd_epi16(d2_1, d2_1));
+                    __m256i d3_1 = _mm256_sub_epi16(q1,
+                        _mm256_loadu_si256((const __m256i *)(a3_ptr + 16)));
+                    acc3 = _mm256_add_epi32(acc3, _mm256_madd_epi16(d3_1, d3_1));
+                }
+
+                __m256i h01 = _mm256_hadd_epi32(acc0, acc1);
+                __m256i h23 = _mm256_hadd_epi32(acc2, acc3);
+                __m256i h_all = _mm256_hadd_epi32(h01, h23);
+                __m128i sum4 = _mm_add_epi32(_mm256_castsi256_si128(h_all),
+                                             _mm256_extracti128_si256(h_all, 1));
+
+                __m128i v_sum_b = _mm_xor_si128(sum4, v_bias);
+                __m128i cmp = _mm_cmpgt_epi32(v_sum_b, v_cut);
+                int mask = _mm_movemask_ps(_mm_castsi128_ps(cmp));
+
+                for (int k = 0; k < 4; k++)
+                {
+                    if ((mask & (1 << k)) != 0)
+                    {
+                        clmembflag[i + k] = 0;
+                        pruned_count++;
+                    }
+                    else
+                    {
+                        clmembflag[i + k] = 1;
+                        active_clusters[num_active++] = i + k;
+                    }
+                }
+            }
+            for (; i < num_clusters; i++)
+            {
+                const int16_t *a_ptr = anchor_matrix + (size_t)i * dim;
+                __m256i d0 = _mm256_sub_epi16(q0, _mm256_loadu_si256((const __m256i *)a_ptr));
+                __m256i acc = _mm256_madd_epi16(d0, d0);
+                if (dim > 16)
+                {
+                    __m256i da1 = _mm256_loadu_si256((const __m256i *)(a_ptr + 16));
+                    __m256i d1 = _mm256_sub_epi16(q1, da1);
+                    acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d1, d1));
+                }
+                if (sq16_reduce_add_epi32_avx2(acc) > thresh32)
+                {
+                    clmembflag[i] = 0;
+                    pruned_count++;
+                }
+                else
+                {
+                    clmembflag[i] = 1;
+                    active_clusters[num_active++] = i;
+                }
+            }
+        }
+        else // 32 < dim <= 64
+        {
+            __m256i q0 = _mm256_loadu_si256((const __m256i *)(cur_sq16 + 0));
+            __m256i q1 = _mm256_loadu_si256((const __m256i *)(cur_sq16 + 16));
+            __m256i q2 = _mm256_loadu_si256((const __m256i *)(cur_sq16 + 32));
+            __m256i q3 = _mm256_loadu_si256((const __m256i *)(cur_sq16 + 48));
+
+            int i = 0;
+            for (; i + 3 < num_clusters; i += 4)
+            {
+                const int16_t *a0_ptr = anchor_matrix + (size_t)(i + 0) * dim;
+                const int16_t *a1_ptr = anchor_matrix + (size_t)(i + 1) * dim;
+                const int16_t *a2_ptr = anchor_matrix + (size_t)(i + 2) * dim;
+                const int16_t *a3_ptr = anchor_matrix + (size_t)(i + 3) * dim;
+
+                __m256i a0_0 = _mm256_loadu_si256((const __m256i *)(a0_ptr + 0));
+                __m256i a0_1 = _mm256_loadu_si256((const __m256i *)(a0_ptr + 16));
+                __m256i d0_0 = _mm256_sub_epi16(q0, a0_0);
+                __m256i d0_1 = _mm256_sub_epi16(q1, a0_1);
+                __m256i acc0 = _mm256_add_epi32(_mm256_madd_epi16(d0_0, d0_0),
+                                                _mm256_madd_epi16(d0_1, d0_1));
+
+                __m256i a1_0 = _mm256_loadu_si256((const __m256i *)(a1_ptr + 0));
+                __m256i a1_1 = _mm256_loadu_si256((const __m256i *)(a1_ptr + 16));
+                __m256i d1_0 = _mm256_sub_epi16(q0, a1_0);
+                __m256i d1_1 = _mm256_sub_epi16(q1, a1_1);
+                __m256i acc1 = _mm256_add_epi32(_mm256_madd_epi16(d1_0, d1_0),
+                                                _mm256_madd_epi16(d1_1, d1_1));
+
+                __m256i h01 = _mm256_hadd_epi32(acc0, acc1);
+
+                __m256i a2_0 = _mm256_loadu_si256((const __m256i *)(a2_ptr + 0));
+                __m256i a2_1 = _mm256_loadu_si256((const __m256i *)(a2_ptr + 16));
+                __m256i d2_0 = _mm256_sub_epi16(q0, a2_0);
+                __m256i d2_1 = _mm256_sub_epi16(q1, a2_1);
+                __m256i acc2 = _mm256_add_epi32(_mm256_madd_epi16(d2_0, d2_0),
+                                                _mm256_madd_epi16(d2_1, d2_1));
+
+                __m256i a3_0 = _mm256_loadu_si256((const __m256i *)(a3_ptr + 0));
+                __m256i a3_1 = _mm256_loadu_si256((const __m256i *)(a3_ptr + 16));
+                __m256i d3_0 = _mm256_sub_epi16(q0, a3_0);
+                __m256i d3_1 = _mm256_sub_epi16(q1, a3_1);
+                __m256i acc3 = _mm256_add_epi32(_mm256_madd_epi16(d3_0, d3_0),
+                                                _mm256_madd_epi16(d3_1, d3_1));
+
+                __m256i h23 = _mm256_hadd_epi32(acc2, acc3);
+                __m256i h_all = _mm256_hadd_epi32(h01, h23);
+                __m128i sum4 = _mm_add_epi32(_mm256_castsi256_si128(h_all),
+                                             _mm256_extracti128_si256(h_all, 1));
+
+                __m128i v_sum_b = _mm_xor_si128(sum4, v_bias);
+                __m128i cmp = _mm_cmpgt_epi32(v_sum_b, v_cut);
+                int mask = _mm_movemask_ps(_mm_castsi128_ps(cmp));
+
+                if (mask == 0xF)
+                {
+                    clmembflag[i + 0] = 0;
+                    clmembflag[i + 1] = 0;
+                    clmembflag[i + 2] = 0;
+                    clmembflag[i + 3] = 0;
+                    pruned_count += 4;
+                    continue;
+                }
+
+                uint32_t s4[4];
+                _mm_storeu_si128((__m128i *)s4, sum4);
+
+                for (int k = 0; k < 4; k++)
+                {
+                    if ((mask & (1 << k)) != 0)
+                    {
+                        clmembflag[i + k] = 0;
+                        pruned_count++;
+                        continue;
+                    }
+
+                    const int16_t *ak_ptr = anchor_matrix + (size_t)(i + k) * dim;
+                    uint32_t total = s4[k];
+
+                    __m256i a2 = _mm256_loadu_si256((const __m256i *)(ak_ptr + 32));
+                    __m256i a3 = _mm256_loadu_si256((const __m256i *)(ak_ptr + 48));
+                    __m256i d2 = _mm256_sub_epi16(q2, a2);
+                    __m256i d3 = _mm256_sub_epi16(q3, a3);
+                    __m256i acc_c1 = _mm256_add_epi32(_mm256_madd_epi16(d2, d2),
+                                                      _mm256_madd_epi16(d3, d3));
+                    total += sq16_reduce_add_epi32_avx2(acc_c1);
+                    if (total > thresh32)
+                    {
+                        clmembflag[i + k] = 0;
+                        pruned_count++;
+                        continue;
+                    }
+
+                    clmembflag[i + k] = 1;
+                    active_clusters[num_active++] = i + k;
+                }
+            }
+            for (; i < num_clusters; i++)
+            {
+                const int16_t *a_ptr = anchor_matrix + (size_t)i * dim;
+                __m256i a0 = _mm256_loadu_si256((const __m256i *)(a_ptr + 0));
+                __m256i a1 = _mm256_loadu_si256((const __m256i *)(a_ptr + 16));
+                __m256i d0 = _mm256_sub_epi16(q0, a0);
+                __m256i d1 = _mm256_sub_epi16(q1, a1);
+                __m256i acc = _mm256_add_epi32(_mm256_madd_epi16(d0, d0),
+                                               _mm256_madd_epi16(d1, d1));
+                if (sq16_reduce_add_epi32_avx2(acc) > thresh32)
+                {
+                    clmembflag[i] = 0;
+                    pruned_count++;
+                    continue;
+                }
+                __m256i a2 = _mm256_loadu_si256((const __m256i *)(a_ptr + 32));
+                __m256i a3 = _mm256_loadu_si256((const __m256i *)(a_ptr + 48));
+                __m256i d2 = _mm256_sub_epi16(q2, a2);
+                __m256i d3 = _mm256_sub_epi16(q3, a3);
+                acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d2, d2));
+                acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d3, d3));
+                if (sq16_reduce_add_epi32_avx2(acc) > thresh32)
+                {
+                    clmembflag[i] = 0;
+                    pruned_count++;
+                    continue;
+                }
+                clmembflag[i] = 1;
+                active_clusters[num_active++] = i;
+            }
+        }
+    }
+    else
+    {
+        // Arbitrary dimension (including D > 128): 32-element dimension-block streaming
+        for (int i = 0; i < num_clusters; i++)
+        {
+            if (i + 16 < num_clusters)
+            {
+                _mm_prefetch((const char *)(anchor_matrix + (size_t)(i + 16) * dim),
+                             _MM_HINT_T0);
+            }
+            const int16_t *a_ptr = anchor_matrix + (size_t)i * dim;
+            uint32_t total = 0;
+            int pruned = 0;
+
+            for (long d = 0; d < dim; d += 32)
+            {
+                if (d + 32 <= dim)
+                {
+                    __m256i q0 = _mm256_loadu_si256((const __m256i *)(cur_sq16 + d));
+                    __m256i q1 = _mm256_loadu_si256((const __m256i *)(cur_sq16 + d + 16));
+                    __m256i a0 = _mm256_loadu_si256((const __m256i *)(a_ptr + d));
+                    __m256i a1 = _mm256_loadu_si256((const __m256i *)(a_ptr + d + 16));
+                    __m256i d0 = _mm256_sub_epi16(q0, a0);
+                    __m256i d1 = _mm256_sub_epi16(q1, a1);
+                    __m256i acc = _mm256_add_epi32(_mm256_madd_epi16(d0, d0),
+                                                   _mm256_madd_epi16(d1, d1));
+                    total += sq16_reduce_add_epi32_avx2(acc);
+                }
+                else
+                {
+                    for (long rem = d; rem < dim; rem++)
+                    {
+                        int32_t df = (int32_t)cur_sq16[rem] - (int32_t)a_ptr[rem];
+                        total += (uint32_t)(df * df);
+                    }
+                }
+                if (total > thresh32)
+                {
+                    pruned = 1;
+                    break;
+                }
+            }
+
+            if (pruned)
+            {
+                clmembflag[i] = 0;
+                pruned_count++;
+            }
+            else
+            {
+                clmembflag[i] = 1;
+                active_clusters[num_active++] = i;
+            }
+        }
+    }
+
+    *out_num_active = num_active;
+    if (out_pruned_count)
+    {
+        *out_pruned_count = pruned_count;
+    }
+}
+#endif // AVX2
+
+/**
+ * sq16_filter_anchor_matrix_scalar() - Scalar fallback for anchor filtering.
+ * @cur_sq16:         Query int16 array [dim].
+ * @anchor_matrix:    Contiguous anchor matrix [num_clusters x dim].
+ * @num_clusters:     Cluster count.
+ * @dim:              Vector dimensionality.
+ * @sq16_ssd_thresh:  Squared distance cutoff threshold.
+ * @clmembflag:       Candidate flags array (0 = pruned).
+ * @active_clusters:  Surviving cluster indices array.
+ * @out_num_active:   Count of surviving clusters.
+ * @out_pruned_count: Count of pruned clusters.
+ */
+static void sq16_filter_anchor_matrix_scalar(
+    const int16_t *restrict cur_sq16,
+    const int16_t *restrict anchor_matrix,
+    int                     num_clusters,
+    long                    dim,
+    uint64_t                sq16_ssd_thresh,
+    int           *restrict clmembflag,
+    int           *restrict active_clusters,
+    int           *restrict out_num_active,
+    int           *restrict out_pruned_count)
+{
+    int num_active = 0;
+    int pruned_count = 0;
+
+    for (int i = 0; i < num_clusters; i++)
+    {
+        const int16_t *a_ptr = anchor_matrix + (size_t)i * dim;
+        uint64_t total = 0;
+        int pruned = 0;
+
+        for (long d = 0; d < dim; d++)
+        {
+            int32_t diff = (int32_t)cur_sq16[d] - (int32_t)a_ptr[d];
+            total += (uint64_t)(diff * diff);
+            if (total > sq16_ssd_thresh)
+            {
+                pruned = 1;
+                break;
+            }
+        }
+
+        if (pruned)
+        {
+            clmembflag[i] = 0;
+            pruned_count++;
+        }
+        else
+        {
+            clmembflag[i] = 1;
+            active_clusters[num_active++] = i;
+        }
+    }
+
+    *out_num_active = num_active;
+    if (out_pruned_count)
+    {
+        *out_pruned_count = pruned_count;
+    }
+}
+
+/**
+ * sq16_filter_anchor_matrix() - Bulk filter cluster anchors using SQ16 lower bounds.
+ * @cur_sq16:         Query int16 array [dim].
+ * @anchor_matrix:    Contiguous anchor matrix [num_clusters x dim].
+ * @num_clusters:     Cluster count.
+ * @dim:              Vector dimensionality.
+ * @sq16_ssd_thresh:  Squared distance cutoff threshold.
+ * @clmembflag:       Candidate flags array (0 = pruned).
+ * @active_clusters:  Surviving cluster indices array.
+ * @out_num_active:   Count of surviving clusters.
+ * @out_pruned_count: Count of pruned clusters.
+ */
+void sq16_filter_anchor_matrix(
+    const int16_t *restrict cur_sq16,
+    const int16_t *restrict anchor_matrix,
+    int                     num_clusters,
+    long                    dim,
+    uint64_t                sq16_ssd_thresh,
+    int           *restrict clmembflag,
+    int           *restrict active_clusters,
+    int           *restrict out_num_active,
+    int           *restrict out_pruned_count)
+{
+    if (num_clusters <= 0 || cur_sq16 == NULL || anchor_matrix == NULL)
+    {
+        if (out_num_active)
+        {
+            *out_num_active = 0;
+        }
+        if (out_pruned_count)
+        {
+            *out_pruned_count = 0;
+        }
+        return;
+    }
+
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        sq16_filter_anchor_matrix_avx512(cur_sq16, anchor_matrix, num_clusters, dim,
+                                         sq16_ssd_thresh, clmembflag, active_clusters,
+                                         out_num_active, out_pruned_count);
+        return;
+    }
+#endif
+
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        sq16_filter_anchor_matrix_avx2(cur_sq16, anchor_matrix, num_clusters, dim,
+                                       sq16_ssd_thresh, clmembflag, active_clusters,
+                                       out_num_active, out_pruned_count);
+        return;
+    }
+#endif
+
+    sq16_filter_anchor_matrix_scalar(cur_sq16, anchor_matrix, num_clusters, dim,
+                                     sq16_ssd_thresh, clmembflag, active_clusters,
+                                     out_num_active, out_pruned_count);
+}
+
 

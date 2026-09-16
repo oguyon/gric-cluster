@@ -816,8 +816,12 @@ int select_next_measurement_target(
     {
         double max_p = -1.0;
         int cj = -1;
-        for (int i = 0; i < state->num_clusters; i++)
+        int num_active = state->scratch.num_active_clusters;
+        const int *active = state->scratch.active_clusters;
+
+        for (int idx = 0; idx < num_active; idx++)
         {
+            int i = active[idx];
             if (state->scratch.clmembflag[i] &&
                 state->scratch.entropy_p_current[i] > max_p)
             {

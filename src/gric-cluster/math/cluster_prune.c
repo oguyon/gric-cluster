@@ -123,29 +123,6 @@ int get_prediction_candidates(
 }
 
 /**
- * set_dcc_pair() - Update symmetric pairwise distance cache entries.
- * @state: Clustering state.
- * @maxnb: Maximum cluster capacity dimension.
- * @c1:    First cluster index.
- * @c2:    Second cluster index.
- * @d:     Pairwise Euclidean distance.
- */
-static inline void set_dcc_pair(
-    ClusterState *state,
-    uint64_t      maxnb,
-    int           c1,
-    int           c2,
-    double        d)
-{
-    state->scratch.dcc_min[c1 * maxnb + c2] = d;
-    state->scratch.dcc_min[c2 * maxnb + c1] = d;
-    state->scratch.dcc_max[c1 * maxnb + c2] = d;
-    state->scratch.dcc_max[c2 * maxnb + c1] = d;
-    state->scratch.dcc_measured[c1 * maxnb + c2] = 1;
-    state->scratch.dcc_measured[c2 * maxnb + c1] = 1;
-}
-
-/**
  * prune_candidates_te5() - Prune candidates using the
  *     5-point triangle inequality.
  * @config:       Clustering configuration (rlim, te5_mode,

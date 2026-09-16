@@ -156,6 +156,17 @@ void remove_cluster(
         state->clusters[index_to_remove].anchor_sq16 = NULL;
     }
 
+    if (state->scratch.cluster_probs != NULL)
+    {
+        int remaining = state->num_clusters - 1 - index_to_remove;
+        if (remaining > 0)
+        {
+            memmove(state->scratch.cluster_probs + index_to_remove,
+                    state->scratch.cluster_probs + index_to_remove + 1,
+                    (size_t)remaining * sizeof(double));
+        }
+    }
+
     // Shift clusters down
     for (int cl_idx = index_to_remove; cl_idx < state->num_clusters - 1; cl_idx++)
     {
@@ -201,6 +212,11 @@ void remove_cluster(
                config->algo.maxnbclust * sizeof(double));
         memcpy(&state->scratch.dcc_measured[r * N], &state->scratch.dcc_measured[(r + 1) * N],
                config->algo.maxnbclust * sizeof(char));
+        if (state->scratch.dcc_sq16 != NULL)
+        {
+            memcpy(&state->scratch.dcc_sq16[r * N], &state->scratch.dcc_sq16[(r + 1) * N],
+                   config->algo.maxnbclust * sizeof(uint16_t));
+        }
     }
     // Shift Columns left for ALL rows
     for (int r = 0; r < state->num_clusters - 1; r++)
@@ -216,6 +232,11 @@ void remove_cluster(
                     count * sizeof(double));
             memmove(&state->scratch.dcc_measured[dest_idx], &state->scratch.dcc_measured[src_idx],
                     count * sizeof(char));
+            if (state->scratch.dcc_sq16 != NULL)
+            {
+                memmove(&state->scratch.dcc_sq16[dest_idx], &state->scratch.dcc_sq16[src_idx],
+                        count * sizeof(uint16_t));
+            }
         }
     } // for (int r = 0; r < state->num_clusters - 1; r++)
 
@@ -245,6 +266,11 @@ void remove_cluster(
     {
         state->transition_matrix[last * N + r] = 0;
         state->transition_matrix[r * N + last] = 0;
+        if (state->scratch.dcc_sq16 != NULL)
+        {
+            state->scratch.dcc_sq16[last * N + r] = DCC_SQ16_UNMEASURED;
+            state->scratch.dcc_sq16[r * N + last] = DCC_SQ16_UNMEASURED;
+        }
         if (config->optim.sparse_dcc_mode)
         {
             state->scratch.dcc_min[last * N + r] = 0.0;
@@ -267,6 +293,10 @@ void remove_cluster(
     state->scratch.dcc_min[last * N + last] = 0.0;
     state->scratch.dcc_max[last * N + last] = 0.0;
     state->scratch.dcc_measured[last * N + last] = 1;
+    if (state->scratch.dcc_sq16 != NULL)
+    {
+        state->scratch.dcc_sq16[last * N + last] = 0;
+    }
     memset(&state->clusters[last], 0, sizeof(Cluster));
 
     // 6. Correct Assignments Update Loop

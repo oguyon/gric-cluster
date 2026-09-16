@@ -19,6 +19,13 @@ void initialize_initial_cluster(
     int           *assigned_cluster);
 
 /**
+ * @brief Fast SIMD normalization of cluster prior probabilities.
+ */
+void cluster_normalize_probs(
+    double *restrict probs,
+    int              num_clusters);
+
+/**
  * @brief Compute predictive prior probabilities mixing frequency and sequence transitions.
  */
 void compute_priors_and_mixing(

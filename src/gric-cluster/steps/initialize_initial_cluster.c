@@ -69,6 +69,10 @@ void initialize_initial_cluster(
     current_frame->data = NULL;
     state->clusters[0].id = 0;
     state->clusters[0].prob = 1.0;
+    if (state->scratch.cluster_probs != NULL)
+    {
+        state->scratch.cluster_probs[0] = 1.0;
+    }
     state->num_clusters = 1;
     state->scratch.dcc_min[0] = 0.0;
     state->scratch.dcc_max[0] = 0.0;

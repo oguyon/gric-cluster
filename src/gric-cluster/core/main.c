@@ -234,6 +234,8 @@ int main(int argc, char *argv[])
     state.scratch.dcc_min = (double *)malloc(cluster_pairs * sizeof(double));
     state.scratch.dcc_max = (double *)malloc(cluster_pairs * sizeof(double));
     state.scratch.dcc_measured = (char *)malloc(cluster_pairs * sizeof(char));
+    state.scratch.dcc_sq16 = (uint16_t *)malloc(cluster_pairs * sizeof(uint16_t));
+    state.scratch.dcc_sq16_scale = 16384.0 / config.algo.rlim;
 
     if (config.optim.sparse_dcc_mode)
     {
@@ -247,12 +249,14 @@ int main(int argc, char *argv[])
                     state.scratch.dcc_min[idx] = 0.0;
                     state.scratch.dcc_max[idx] = 0.0;
                     state.scratch.dcc_measured[idx] = 1;
+                    state.scratch.dcc_sq16[idx] = 0;
                 }
                 else
                 {
                     state.scratch.dcc_min[idx] = 0.0;
                     state.scratch.dcc_max[idx] = 1e19;
                     state.scratch.dcc_measured[idx] = 0;
+                    state.scratch.dcc_sq16[idx] = DCC_SQ16_UNMEASURED;
                 }
             }
         }
@@ -264,13 +268,29 @@ int main(int argc, char *argv[])
             state.scratch.dcc_min[ii] = -1.0;
             state.scratch.dcc_max[ii] = -1.0;
             state.scratch.dcc_measured[ii] = 0;
+            state.scratch.dcc_sq16[ii] = DCC_SQ16_UNMEASURED;
+        }
+        for (size_t r = 0; r < max_clusters; r++)
+        {
+            state.scratch.dcc_sq16[r * max_clusters + r] = 0;
         }
     }
 
     state.scratch.current_gprobs = (double *)malloc(max_clusters * sizeof(double));
     state.cluster_visitors = (VisitorList *)calloc(max_clusters, sizeof(VisitorList));
     state.scratch.probsortedclindex = (int *)malloc(max_clusters * sizeof(int));
+    if (posix_memalign((void **)&state.scratch.cluster_probs, 64,
+                       (size_t)max_clusters * sizeof(double)) != 0)
+    {
+        state.scratch.cluster_probs = NULL;
+    }
+    else
+    {
+        memset(state.scratch.cluster_probs, 0, (size_t)max_clusters * sizeof(double));
+    }
     state.scratch.clmembflag = (int *)malloc(max_clusters * sizeof(int));
+    state.scratch.active_clusters = (int *)malloc(max_clusters * sizeof(int));
+    state.scratch.num_active_clusters = 0;
     state.scratch.consistency_mask =
         (config.optim.gprob_mode || config.optim.entropy_mode)
             ? (uint64_t *)calloc(consistency_words, sizeof(uint64_t))
@@ -369,8 +389,14 @@ int main(int argc, char *argv[])
     free(state.scratch.dcc_min);
     free(state.scratch.dcc_max);
     free(state.scratch.dcc_measured);
+    free(state.scratch.dcc_sq16);
     free(state.scratch.probsortedclindex);
+    if (state.scratch.cluster_probs)
+    {
+        free(state.scratch.cluster_probs);
+    }
     free(state.scratch.clmembflag);
+    free(state.scratch.active_clusters);
     if (state.scratch.consistency_mask)
         free(state.scratch.consistency_mask);
     free(state.scratch.entropy_p_current);

@@ -451,6 +451,14 @@ void run_clustering(
         }
     } // if (!gpu_pass1_executed)
 
+    if (state->scratch.cluster_probs != NULL)
+    {
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            state->clusters[i].prob = state->scratch.cluster_probs[i];
+        }
+    }
+
     if (ascii_out)
     {
         fclose(ascii_out);
@@ -502,6 +510,21 @@ void run_clustering(
         printf("  Step 3a (Priors/Prune):  %9.3f ms (%5.1f%%)\n",
                state->telemetry.time_step_3a,
                100.0 * state->telemetry.time_step_3a / total_steps_ms);
+        if (state->telemetry.time_step_3a > 0.0)
+        {
+            printf("    - Priors & Mixing:     %9.3f ms (%5.1f%% of 3a)\n",
+                   state->telemetry.time_step_3a_priors,
+                   100.0 * state->telemetry.time_step_3a_priors /
+                   state->telemetry.time_step_3a);
+            printf("    - SQ Lower-Bound:      %9.3f ms (%5.1f%% of 3a)\n",
+                   state->telemetry.time_step_3a_sq_filter,
+                   100.0 * state->telemetry.time_step_3a_sq_filter /
+                   state->telemetry.time_step_3a);
+            printf("    - Subsequent Prune:    %9.3f ms (%5.1f%% of 3a)\n",
+                   state->telemetry.time_step_3a_subsequent,
+                   100.0 * state->telemetry.time_step_3a_subsequent /
+                   state->telemetry.time_step_3a);
+        }
         printf("  Step 3b (Select Target): %9.3f ms (%5.1f%%)\n",
                state->telemetry.time_step_3b,
                100.0 * state->telemetry.time_step_3b / total_steps_ms);
