@@ -41,6 +41,21 @@ double framedist_float(
     const float *restrict db,
     long                  size)
 {
+    if (size == 2)
+    {
+        float d0 = da[0] - db[0];
+        float d1 = da[1] - db[1];
+        return (double)sqrtf(d0 * d0 + d1 * d1);
+    }
+
+    if (size == 3)
+    {
+        float d0 = da[0] - db[0];
+        float d1 = da[1] - db[1];
+        float d2 = da[2] - db[2];
+        return (double)sqrtf(d0 * d0 + d1 * d1 + d2 * d2);
+    }
+
     float sum = 0.0f;
     long i = 0;
 
@@ -199,6 +214,21 @@ double framedist_double(
     const double *restrict db,
     long                   size)
 {
+    if (size == 2)
+    {
+        double d0 = da[0] - db[0];
+        double d1 = da[1] - db[1];
+        return sqrt(d0 * d0 + d1 * d1);
+    }
+
+    if (size == 3)
+    {
+        double d0 = da[0] - db[0];
+        double d1 = da[1] - db[1];
+        double d2 = da[2] - db[2];
+        return sqrt(d0 * d0 + d1 * d1 + d2 * d2);
+    }
+
     double sum = 0.0;
     long i = 0;
 
@@ -357,6 +387,31 @@ double framedist_squared_cutoff_float(
     long                  size,
     double                cutoff_sq)
 {
+    if (size == 2)
+    {
+        float d0 = da[0] - db[0];
+        float d1 = da[1] - db[1];
+        float s = d0 * d0 + d1 * d1;
+        if (cutoff_sq > 0.0 && (double)s > cutoff_sq)
+        {
+            return cutoff_sq + 1.0;
+        }
+        return (double)sqrtf(s);
+    }
+
+    if (size == 3)
+    {
+        float d0 = da[0] - db[0];
+        float d1 = da[1] - db[1];
+        float d2 = da[2] - db[2];
+        float s = d0 * d0 + d1 * d1 + d2 * d2;
+        if (cutoff_sq > 0.0 && (double)s > cutoff_sq)
+        {
+            return cutoff_sq + 1.0;
+        }
+        return (double)sqrtf(s);
+    }
+
     float sum = 0.0f;
     long i = 0;
 
@@ -399,21 +454,33 @@ double framedist_squared_cutoff_float(
             acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3, d3));
 #endif
 
-            if (cutoff_sq > 0.0 && ((i + 32) % 64 == 0 || i + 32 >= size))
+            if (cutoff_sq > 0.0)
             {
-                __m256 s01 = _mm256_add_ps(acc0, acc1);
-                __m256 s23 = _mm256_add_ps(acc2, acc3);
-                __m256 s256 = _mm256_add_ps(s01, s23);
-                __m128 s128 = _mm_add_ps(_mm256_castps256_ps128(s256),
-                                         _mm256_extractf128_ps(s256, 1));
-                __m128 shuf = _mm_movehl_ps(s128, s128);
-                __m128 squad = _mm_add_ps(s128, shuf);
-                shuf = _mm_shuffle_ps(squad, squad, 1);
-                __m128 sscalar = _mm_add_ss(squad, shuf);
-                float partial = _mm_cvtss_f32(sscalar);
-                if ((double)partial > cutoff_sq)
+                __m256 vcut = _mm256_set1_ps((float)cutoff_sq);
+                __m256 max01 = _mm256_max_ps(acc0, acc1);
+                __m256 max23 = _mm256_max_ps(acc2, acc3);
+                __m256 max_lane = _mm256_max_ps(max01, max23);
+                if (_mm256_movemask_ps(_mm256_cmp_ps(max_lane, vcut, _CMP_GT_OQ)) != 0)
                 {
                     return cutoff_sq + 1.0;
+                }
+
+                if ((i + 32) % 128 == 0 || i + 32 >= size)
+                {
+                    __m256 s01 = _mm256_add_ps(acc0, acc1);
+                    __m256 s23 = _mm256_add_ps(acc2, acc3);
+                    __m256 s256 = _mm256_add_ps(s01, s23);
+                    __m128 s128 = _mm_add_ps(_mm256_castps256_ps128(s256),
+                                             _mm256_extractf128_ps(s256, 1));
+                    __m128 shuf = _mm_movehl_ps(s128, s128);
+                    __m128 squad = _mm_add_ps(s128, shuf);
+                    shuf = _mm_shuffle_ps(squad, squad, 1);
+                    __m128 sscalar = _mm_add_ss(squad, shuf);
+                    float partial = _mm_cvtss_f32(sscalar);
+                    if ((double)partial > cutoff_sq)
+                    {
+                        return cutoff_sq + 1.0;
+                    }
                 }
             }
         } // for (; i <= size - 32; i += 32)
@@ -474,6 +541,31 @@ double framedist_squared_cutoff_double(
     long                   size,
     double                 cutoff_sq)
 {
+    if (size == 2)
+    {
+        double d0 = da[0] - db[0];
+        double d1 = da[1] - db[1];
+        double s = d0 * d0 + d1 * d1;
+        if (cutoff_sq > 0.0 && s > cutoff_sq)
+        {
+            return cutoff_sq + 1.0;
+        }
+        return sqrt(s);
+    }
+
+    if (size == 3)
+    {
+        double d0 = da[0] - db[0];
+        double d1 = da[1] - db[1];
+        double d2 = da[2] - db[2];
+        double s = d0 * d0 + d1 * d1 + d2 * d2;
+        if (cutoff_sq > 0.0 && s > cutoff_sq)
+        {
+            return cutoff_sq + 1.0;
+        }
+        return sqrt(s);
+    }
+
     double sum = 0.0;
     long i = 0;
 
@@ -516,18 +608,30 @@ double framedist_squared_cutoff_double(
             acc3 = _mm256_add_pd(acc3, _mm256_mul_pd(d3, d3));
 #endif
 
-            if (cutoff_sq > 0.0 && ((i + 16) % 32 == 0 || i + 16 >= size))
+            if (cutoff_sq > 0.0)
             {
-                __m256d s01 = _mm256_add_pd(acc0, acc1);
-                __m256d s23 = _mm256_add_pd(acc2, acc3);
-                __m256d s256 = _mm256_add_pd(s01, s23);
-                __m128d vlow = _mm256_castpd256_pd128(s256);
-                __m128d vhigh = _mm256_extractf128_pd(s256, 1);
-                __m128d vsum = _mm_add_pd(vlow, vhigh);
-                double partial = _mm_cvtsd_f64(_mm_add_sd(vsum, _mm_unpackhi_pd(vsum, vsum)));
-                if (partial > cutoff_sq)
+                __m256d vcut = _mm256_set1_pd(cutoff_sq);
+                __m256d max01 = _mm256_max_pd(acc0, acc1);
+                __m256d max23 = _mm256_max_pd(acc2, acc3);
+                __m256d max_lane = _mm256_max_pd(max01, max23);
+                if (_mm256_movemask_pd(_mm256_cmp_pd(max_lane, vcut, _CMP_GT_OQ)) != 0)
                 {
                     return cutoff_sq + 1.0;
+                }
+
+                if ((i + 16) % 64 == 0 || i + 16 >= size)
+                {
+                    __m256d s01 = _mm256_add_pd(acc0, acc1);
+                    __m256d s23 = _mm256_add_pd(acc2, acc3);
+                    __m256d s256 = _mm256_add_pd(s01, s23);
+                    __m128d vlow = _mm256_castpd256_pd128(s256);
+                    __m128d vhigh = _mm256_extractf128_pd(s256, 1);
+                    __m128d vsum = _mm_add_pd(vlow, vhigh);
+                    double partial = _mm_cvtsd_f64(_mm_add_sd(vsum, _mm_unpackhi_pd(vsum, vsum)));
+                    if (partial > cutoff_sq)
+                    {
+                        return cutoff_sq + 1.0;
+                    }
                 }
             }
         } // for (; i <= size - 16; i += 16)
@@ -834,6 +938,33 @@ void framedist_batch_1x8_float(
 
 #if defined(__AVX__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+#if defined(__AVX2__)
+    if (size == 2)
+    {
+        __m256 vq0 = _mm256_set1_ps(q[0]);
+        __m256 va0 = _mm256_set_ps(a7[0], a6[0], a5[0], a4[0],
+                                   a3[0], a2[0], a1[0], a0[0]);
+        __m256 diff0 = _mm256_sub_ps(vq0, va0);
+        __m256 sum_vec = _mm256_mul_ps(diff0, diff0);
+
+        __m256 vq1 = _mm256_set1_ps(q[1]);
+        __m256 va1 = _mm256_set_ps(a7[1], a6[1], a5[1], a4[1],
+                                   a3[1], a2[1], a1[1], a0[1]);
+        __m256 diff1 = _mm256_sub_ps(vq1, va1);
+#ifdef __FMA__
+        sum_vec = _mm256_fmadd_ps(diff1, diff1, sum_vec);
+#else
+        sum_vec = _mm256_add_ps(sum_vec, _mm256_mul_ps(diff1, diff1));
+#endif
+        __m256 vdist = _mm256_sqrt_ps(sum_vec);
+        __m128 vlo = _mm256_castps256_ps128(vdist);
+        __m128 vhi = _mm256_extractf128_ps(vdist, 1);
+        _mm256_storeu_pd(&out_dists[0], _mm256_cvtps_pd(vlo));
+        _mm256_storeu_pd(&out_dists[4], _mm256_cvtps_pd(vhi));
+        return;
+    }
+#endif
+
     if (size >= 8)
     {
         __m256 acc0 = _mm256_setzero_ps();
@@ -847,6 +978,19 @@ void framedist_batch_1x8_float(
 
         for (; i <= size - 8; i += 8)
         {
+            if (size >= 1024 && (i & 15) == 0)
+            {
+                _mm_prefetch((const char *)&q[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a0[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a1[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a2[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a3[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a4[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a5[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a6[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a7[i + 64], _MM_HINT_T0);
+            }
+
             __m256 vq = _mm256_loadu_ps(&q[i]);
             __m256 d0 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a0[i]));
             __m256 d1 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a1[i]));
@@ -1121,6 +1265,200 @@ void framedist_batch_float(
 }
 
 /**
+ * framedist_batch_1x8_double() - Vectorized 1-query vs 8-anchor Euclidean distance (double).
+ * @q:         Pointer to query array.
+ * @anchors:   Array of 8 pointers to candidate anchor arrays.
+ * @out_dists: Array of 8 doubles to receive computed distances.
+ * @size:      Number of elements in each array.
+ */
+void framedist_batch_1x8_double(
+    const double *restrict        q,
+    const double *const *restrict anchors,
+    double *restrict              out_dists,
+    long                          size)
+{
+    double sum0 = 0.0;
+    double sum1 = 0.0;
+    double sum2 = 0.0;
+    double sum3 = 0.0;
+    double sum4 = 0.0;
+    double sum5 = 0.0;
+    double sum6 = 0.0;
+    double sum7 = 0.0;
+    long i = 0;
+
+    const double *restrict a0 = anchors[0];
+    const double *restrict a1 = anchors[1];
+    const double *restrict a2 = anchors[2];
+    const double *restrict a3 = anchors[3];
+    const double *restrict a4 = anchors[4];
+    const double *restrict a5 = anchors[5];
+    const double *restrict a6 = anchors[6];
+    const double *restrict a7 = anchors[7];
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+#if defined(__AVX2__)
+    if (size == 2)
+    {
+        __m256d vq0 = _mm256_set1_pd(q[0]);
+        __m256d va0_lo = _mm256_set_pd(a3[0], a2[0], a1[0], a0[0]);
+        __m256d va0_hi = _mm256_set_pd(a7[0], a6[0], a5[0], a4[0]);
+        __m256d d0_lo = _mm256_sub_pd(vq0, va0_lo);
+        __m256d d0_hi = _mm256_sub_pd(vq0, va0_hi);
+        __m256d s_lo = _mm256_mul_pd(d0_lo, d0_lo);
+        __m256d s_hi = _mm256_mul_pd(d0_hi, d0_hi);
+
+        __m256d vq1 = _mm256_set1_pd(q[1]);
+        __m256d va1_lo = _mm256_set_pd(a3[1], a2[1], a1[1], a0[1]);
+        __m256d va1_hi = _mm256_set_pd(a7[1], a6[1], a5[1], a4[1]);
+        __m256d d1_lo = _mm256_sub_pd(vq1, va1_lo);
+        __m256d d1_hi = _mm256_sub_pd(vq1, va1_hi);
+#ifdef __FMA__
+        s_lo = _mm256_fmadd_pd(d1_lo, d1_lo, s_lo);
+        s_hi = _mm256_fmadd_pd(d1_hi, d1_hi, s_hi);
+#else
+        s_lo = _mm256_add_pd(s_lo, _mm256_mul_pd(d1_lo, d1_lo));
+        s_hi = _mm256_add_pd(s_hi, _mm256_mul_pd(d1_hi, d1_hi));
+#endif
+        _mm256_storeu_pd(&out_dists[0], _mm256_sqrt_pd(s_lo));
+        _mm256_storeu_pd(&out_dists[4], _mm256_sqrt_pd(s_hi));
+        return;
+    }
+#endif
+
+    if (size >= 4)
+    {
+        __m256d acc0 = _mm256_setzero_pd();
+        __m256d acc1 = _mm256_setzero_pd();
+        __m256d acc2 = _mm256_setzero_pd();
+        __m256d acc3 = _mm256_setzero_pd();
+        __m256d acc4 = _mm256_setzero_pd();
+        __m256d acc5 = _mm256_setzero_pd();
+        __m256d acc6 = _mm256_setzero_pd();
+        __m256d acc7 = _mm256_setzero_pd();
+
+        for (; i <= size - 4; i += 4)
+        {
+            if (size >= 512 && (i & 7) == 0)
+            {
+                _mm_prefetch((const char *)&q[i + 32], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a0[i + 32], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a1[i + 32], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a2[i + 32], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a3[i + 32], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a4[i + 32], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a5[i + 32], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a6[i + 32], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a7[i + 32], _MM_HINT_T0);
+            }
+
+            __m256d vq = _mm256_loadu_pd(&q[i]);
+            __m256d d0 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a0[i]));
+            __m256d d1 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a1[i]));
+            __m256d d2 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a2[i]));
+            __m256d d3 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a3[i]));
+            __m256d d4 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a4[i]));
+            __m256d d5 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a5[i]));
+            __m256d d6 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a6[i]));
+            __m256d d7 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a7[i]));
+
+#ifdef __FMA__
+            acc0 = _mm256_fmadd_pd(d0, d0, acc0);
+            acc1 = _mm256_fmadd_pd(d1, d1, acc1);
+            acc2 = _mm256_fmadd_pd(d2, d2, acc2);
+            acc3 = _mm256_fmadd_pd(d3, d3, acc3);
+            acc4 = _mm256_fmadd_pd(d4, d4, acc4);
+            acc5 = _mm256_fmadd_pd(d5, d5, acc5);
+            acc6 = _mm256_fmadd_pd(d6, d6, acc6);
+            acc7 = _mm256_fmadd_pd(d7, d7, acc7);
+#else
+            acc0 = _mm256_add_pd(acc0, _mm256_mul_pd(d0, d0));
+            acc1 = _mm256_add_pd(acc1, _mm256_mul_pd(d1, d1));
+            acc2 = _mm256_add_pd(acc2, _mm256_mul_pd(d2, d2));
+            acc3 = _mm256_add_pd(acc3, _mm256_mul_pd(d3, d3));
+            acc4 = _mm256_add_pd(acc4, _mm256_mul_pd(d4, d4));
+            acc5 = _mm256_add_pd(acc5, _mm256_mul_pd(d5, d5));
+            acc6 = _mm256_add_pd(acc6, _mm256_mul_pd(d6, d6));
+            acc7 = _mm256_add_pd(acc7, _mm256_mul_pd(d7, d7));
+#endif
+        }
+
+        __m128d lo0 = _mm256_castpd256_pd128(acc0);
+        __m128d hi0 = _mm256_extractf128_pd(acc0, 1);
+        __m128d s0 = _mm_add_pd(lo0, hi0);
+
+        __m128d lo1 = _mm256_castpd256_pd128(acc1);
+        __m128d hi1 = _mm256_extractf128_pd(acc1, 1);
+        __m128d s1 = _mm_add_pd(lo1, hi1);
+
+        __m128d lo2 = _mm256_castpd256_pd128(acc2);
+        __m128d hi2 = _mm256_extractf128_pd(acc2, 1);
+        __m128d s2 = _mm_add_pd(lo2, hi2);
+
+        __m128d lo3 = _mm256_castpd256_pd128(acc3);
+        __m128d hi3 = _mm256_extractf128_pd(acc3, 1);
+        __m128d s3 = _mm_add_pd(lo3, hi3);
+
+        __m128d lo4 = _mm256_castpd256_pd128(acc4);
+        __m128d hi4 = _mm256_extractf128_pd(acc4, 1);
+        __m128d s4 = _mm_add_pd(lo4, hi4);
+
+        __m128d lo5 = _mm256_castpd256_pd128(acc5);
+        __m128d hi5 = _mm256_extractf128_pd(acc5, 1);
+        __m128d s5 = _mm_add_pd(lo5, hi5);
+
+        __m128d lo6 = _mm256_castpd256_pd128(acc6);
+        __m128d hi6 = _mm256_extractf128_pd(acc6, 1);
+        __m128d s6 = _mm_add_pd(lo6, hi6);
+
+        __m128d lo7 = _mm256_castpd256_pd128(acc7);
+        __m128d hi7 = _mm256_extractf128_pd(acc7, 1);
+        __m128d s7 = _mm_add_pd(lo7, hi7);
+
+        sum0 += _mm_cvtsd_f64(_mm_add_sd(s0, _mm_unpackhi_pd(s0, s0)));
+        sum1 += _mm_cvtsd_f64(_mm_add_sd(s1, _mm_unpackhi_pd(s1, s1)));
+        sum2 += _mm_cvtsd_f64(_mm_add_sd(s2, _mm_unpackhi_pd(s2, s2)));
+        sum3 += _mm_cvtsd_f64(_mm_add_sd(s3, _mm_unpackhi_pd(s3, s3)));
+        sum4 += _mm_cvtsd_f64(_mm_add_sd(s4, _mm_unpackhi_pd(s4, s4)));
+        sum5 += _mm_cvtsd_f64(_mm_add_sd(s5, _mm_unpackhi_pd(s5, s5)));
+        sum6 += _mm_cvtsd_f64(_mm_add_sd(s6, _mm_unpackhi_pd(s6, s6)));
+        sum7 += _mm_cvtsd_f64(_mm_add_sd(s7, _mm_unpackhi_pd(s7, s7)));
+    }
+#endif
+
+    for (; i < size; i++)
+    {
+        double q_val = q[i];
+        double d0 = q_val - a0[i];
+        double d1 = q_val - a1[i];
+        double d2 = q_val - a2[i];
+        double d3 = q_val - a3[i];
+        double d4 = q_val - a4[i];
+        double d5 = q_val - a5[i];
+        double d6 = q_val - a6[i];
+        double d7 = q_val - a7[i];
+        sum0 += d0 * d0;
+        sum1 += d1 * d1;
+        sum2 += d2 * d2;
+        sum3 += d3 * d3;
+        sum4 += d4 * d4;
+        sum5 += d5 * d5;
+        sum6 += d6 * d6;
+        sum7 += d7 * d7;
+    }
+
+    out_dists[0] = sqrt(sum0);
+    out_dists[1] = sqrt(sum1);
+    out_dists[2] = sqrt(sum2);
+    out_dists[3] = sqrt(sum3);
+    out_dists[4] = sqrt(sum4);
+    out_dists[5] = sqrt(sum5);
+    out_dists[6] = sqrt(sum6);
+    out_dists[7] = sqrt(sum7);
+}
+
+/**
  * framedist_batch_double() - Batch Euclidean distance from query to N candidate anchors.
  * @q:         Pointer to query array.
  * @anchors:   Array of N pointers to candidate anchor arrays.
@@ -1136,6 +1474,12 @@ void framedist_batch_double(
     long                         size)
 {
     int k = 0;
+    while (k + 8 <= n_anchors)
+    {
+        framedist_batch_1x8_double(q, &anchors[k], &out_dists[k], size);
+        k += 8;
+    }
+
     while (k + 4 <= n_anchors)
     {
         framedist_batch_1x4_double(q, &anchors[k], &out_dists[k], size);

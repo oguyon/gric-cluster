@@ -6,6 +6,23 @@
 #include "knn_cross_dataset.h"
 #include <alloca.h>
 
+/**
+ * knn_cross_seed_frontier() - Populate search frontier with nearest evaluated anchor seeds.
+ * @loc_res:         Cluster locator result with evaluated anchors.
+ * @best_c:          Best anchor cluster ID.
+ * @query_data:      Query frame pixel data.
+ * @model:           Active KnnModel.
+ * @config:          Active KnnConfig.
+ * @cand_reader:     Candidate frame reader.
+ * @cand_buffer:     Candidate frame pixel buffer.
+ * @heap:            Max-heap for current query.
+ * @frontier:        Output frontier node array.
+ * @frontier_count:  Pointer to frontier count.
+ * @best_seed_id:    Pointer to best seed frame ID.
+ * @best_seed_dist:  Pointer to best seed distance.
+ * @visited:         Per-query frame visited tracker.
+ * @telem:           Telemetry record.
+ */
 static void knn_cross_seed_frontier(
     const ClusterLocatorResult *loc_res,
     int                         best_c,

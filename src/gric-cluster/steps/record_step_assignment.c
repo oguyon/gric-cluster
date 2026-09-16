@@ -114,30 +114,14 @@ void record_step_assignment(
         {
             sum_p += state->clusters[i].prob;
         }
+
         if (sum_p > 0.0)
         {
+            double alpha = 1.0 / (1.2 * sum_p);
+            double beta = 1.0 / (6.0 * (double)state->num_clusters);
             for (int i = 0; i < state->num_clusters; i++)
             {
-                state->clusters[i].prob /= sum_p;
-            }
-        }
-
-        double floor_val = 0.2 / state->num_clusters;
-        for (int i = 0; i < state->num_clusters; i++)
-        {
-            state->clusters[i].prob += floor_val;
-        }
-
-        sum_p = 0.0;
-        for (int i = 0; i < state->num_clusters; i++)
-        {
-            sum_p += state->clusters[i].prob;
-        }
-        if (sum_p > 0.0)
-        {
-            for (int i = 0; i < state->num_clusters; i++)
-            {
-                state->clusters[i].prob /= sum_p;
+                state->clusters[i].prob = state->clusters[i].prob * alpha + beta;
             }
         }
     }

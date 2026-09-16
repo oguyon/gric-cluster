@@ -7,6 +7,7 @@
 #include "knn_reader.h"
 #include "shared/cli_colors.h"
 #include "../../shared/gric_bin_io.h"
+#include <immintrin.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -269,14 +270,25 @@ int main(
             }
         }
 
-        float* restrict out_D = D + i * b_dim;
+        float *restrict out_D = D + i * b_dim;
         for (uint64_t j = 0; j < k; j++)
         {
             uint32_t neighbor_idx = idx[j];
             float w = weights[j];
-            float* restrict neighbor_b = data_b + neighbor_idx * b_dim;
-            
-            for (uint64_t d = 0; d < b_dim; d++)
+            const float *restrict neighbor_b = data_b + neighbor_idx * b_dim;
+
+            uint64_t d = 0;
+#ifdef __AVX2__
+            __m256 vw = _mm256_set1_ps(w);
+            for (; d + 7 < b_dim; d += 8)
+            {
+                __m256 vnb = _mm256_loadu_ps(neighbor_b + d);
+                __m256 vout = _mm256_loadu_ps(out_D + d);
+                vout = _mm256_fmadd_ps(vw, vnb, vout);
+                _mm256_storeu_ps(out_D + d, vout);
+            }
+#endif
+            for (; d < b_dim; d++)
             {
                 out_D[d] += w * neighbor_b[d];
             }
@@ -287,10 +299,27 @@ int main(
         {
             uint32_t neighbor_idx = idx[j];
             float w = weights[j];
-            float* restrict neighbor_b = data_b + neighbor_idx * b_dim;
-            
+            const float *restrict neighbor_b = data_b + neighbor_idx * b_dim;
+
             float dist_sq = 0.0f;
-            for (uint64_t d = 0; d < b_dim; d++)
+            uint64_t d = 0;
+#ifdef __AVX2__
+            __m256 vsum = _mm256_setzero_ps();
+            for (; d + 7 < b_dim; d += 8)
+            {
+                __m256 vnb = _mm256_loadu_ps(neighbor_b + d);
+                __m256 vout = _mm256_loadu_ps(out_D + d);
+                __m256 diff = _mm256_sub_ps(vnb, vout);
+                vsum = _mm256_fmadd_ps(diff, diff, vsum);
+            }
+            __m128 vlow = _mm256_castps256_ps128(vsum);
+            __m128 vhigh = _mm256_extractf128_ps(vsum, 1);
+            __m128 vsum128 = _mm_add_ps(vlow, vhigh);
+            vsum128 = _mm_hadd_ps(vsum128, vsum128);
+            vsum128 = _mm_hadd_ps(vsum128, vsum128);
+            dist_sq = _mm_cvtss_f32(vsum128);
+#endif
+            for (; d < b_dim; d++)
             {
                 float diff = neighbor_b[d] - out_D[d];
                 dist_sq += diff * diff;

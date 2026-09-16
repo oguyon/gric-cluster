@@ -60,6 +60,12 @@ void framedist_batch_1x8_float(
     double *restrict             out_dists,
     long                         size);
 
+void framedist_batch_1x8_double(
+    const double *restrict        q,
+    const double *const *restrict anchors,
+    double *restrict              out_dists,
+    long                          size);
+
 void framedist_batch_float(
     const float *restrict        q,
     const float *const *restrict anchors,

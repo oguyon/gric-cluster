@@ -11,6 +11,7 @@
 #include "knn_tree.h"
 #include "gric_bin_io.h"
 #include "gric_hash.h"
+#include "framedistance.h"
 #include <ctype.h>
 #include <fcntl.h>
 #include <math.h>
@@ -73,28 +74,9 @@ static inline double calc_euclidean_dist(
 {
     if (is_double)
     {
-        const double *restrict da = (const double *)a;
-        const double *restrict db = (const double *)b;
-        double sum = 0.0;
-        for (long i = 0; i < n; i++)
-        {
-            double diff = da[i] - db[i];
-            sum += diff * diff;
-        }
-        return sqrt(sum);
+        return framedist_double((const double *)a, (const double *)b, n);
     }
-    else
-    {
-        const float *restrict fa = (const float *)a;
-        const float *restrict fb = (const float *)b;
-        float sum = 0.0f;
-        for (long i = 0; i < n; i++)
-        {
-            float diff = fa[i] - fb[i];
-            sum += diff * diff;
-        }
-        return (double)sqrtf(sum);
-    }
+    return framedist_float((const float *)a, (const float *)b, n);
 }
 
 
@@ -1088,6 +1070,12 @@ void knn_model_free(
     {
         free(model->dataset_buffer);
         model->dataset_buffer = NULL;
+    }
+
+    if (model->ivf_dataset_buffer != NULL)
+    {
+        free(model->ivf_dataset_buffer);
+        model->ivf_dataset_buffer = NULL;
     }
 
     if (model->has_profile)

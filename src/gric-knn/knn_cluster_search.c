@@ -6,6 +6,15 @@
 #include "knn_cluster_search.h"
 #include <alloca.h>
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#define KNN_PREFETCH_T0(addr) _mm_prefetch((const char *)(addr), _MM_HINT_T0)
+#elif defined(__GNUC__) || defined(__clang__)
+#define KNN_PREFETCH_T0(addr) __builtin_prefetch((const void *)(addr), 0, 3)
+#else
+#define KNN_PREFETCH_T0(addr) ((void)0)
+#endif
+
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
@@ -74,8 +83,8 @@ static void knn_search_intra_cluster(
     int left = mid - 1;
     int right = mid;
 
-    long batch_cand_ids[4];
-    const void *batch_ptrs[4];
+    long batch_cand_ids[8];
+    const void *batch_ptrs[8];
     int batch_count = 0;
     long frame_elem = model->frame_elements;
     size_t frame_bytes = (size_t)frame_elem *
@@ -272,10 +281,17 @@ static void knn_search_intra_cluster(
                 }
 
                 const void *cand_data = NULL;
-                if (model->dataset_buffer != NULL)
+                if (home_cl->ivf_vectors != NULL)
+                {
+                    cand_data = (const char *)home_cl->ivf_vectors +
+                        (size_t)m_idx * frame_bytes;
+                    KNN_PREFETCH_T0(cand_data);
+                }
+                else if (model->dataset_buffer != NULL)
                 {
                     cand_data = (const char *)model->dataset_buffer +
                         (size_t)cand_id * frame_bytes;
+                    KNN_PREFETCH_T0(cand_data);
                 }
                 else
                 {
@@ -292,25 +308,25 @@ static void knn_search_intra_cluster(
                 batch_ptrs[batch_count] = cand_data;
                 batch_count++;
 
-                if (batch_count == 4)
+                if (batch_count == 8)
                 {
-                    double dists[4];
+                    double dists[8];
                     if (model->is_double)
                     {
-                        framedist_batch_1x4_double(
+                        framedist_batch_1x8_double(
                             (const double *)query_data,
                             (const double *const *)batch_ptrs,
                             dists, frame_elem);
                     }
                     else
                     {
-                        framedist_batch_1x4_float(
+                        framedist_batch_1x8_float(
                             (const float *)query_data,
                             (const float *const *)batch_ptrs,
                             dists, frame_elem);
                     }
-                    telem->framedist_calls += 4;
-                    for (int b_idx = 0; b_idx < 4; b_idx++)
+                    telem->framedist_calls += 8;
+                    for (int b_idx = 0; b_idx < 8; b_idx++)
                     {
                         record_neighbor_and_reciprocal(
                             query_id, batch_cand_ids[b_idx], dists[b_idx],
@@ -319,7 +335,7 @@ static void knn_search_intra_cluster(
                             , bucket_locks
 #endif
                         );
-                    } // for (int b_idx = 0; b_idx < 4; b_idx++)
+                    } // for (int b_idx = 0; b_idx < 8; b_idx++)
                     batch_count = 0;
                 }
             } // while (pass_mask)
@@ -327,7 +343,7 @@ static void knn_search_intra_cluster(
 
         if (batch_count > 0)
         {
-            double dists[4];
+            double dists[8];
             if (model->is_double)
             {
                 framedist_batch_double(
@@ -534,10 +550,17 @@ static void knn_search_intra_cluster(
                     }
 
                     const void *cand_ptr = NULL;
-                    if (reader->memory_data != NULL)
+                    if (home_cl->ivf_vectors != NULL)
+                    {
+                        cand_ptr = (const char *)home_cl->ivf_vectors +
+                                   (size_t)m * frame_bytes;
+                        KNN_PREFETCH_T0(cand_ptr);
+                    }
+                    else if (reader->memory_data != NULL)
                     {
                         cand_ptr = (const char *)reader->memory_data +
                                    (size_t)cand_id * frame_bytes;
+                        KNN_PREFETCH_T0(cand_ptr);
                     }
                     else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
                     {
@@ -570,10 +593,17 @@ static void knn_search_intra_cluster(
                 }
 
                 const void *dest = NULL;
-                if (reader->memory_data != NULL)
+                if (home_cl->ivf_vectors != NULL)
+                {
+                    dest = (const char *)home_cl->ivf_vectors +
+                           (size_t)m * frame_bytes;
+                    KNN_PREFETCH_T0(dest);
+                }
+                else if (reader->memory_data != NULL)
                 {
                     dest = (const char *)reader->memory_data +
                            (size_t)cand_id * frame_bytes;
+                    KNN_PREFETCH_T0(dest);
                 }
                 else
                 {
@@ -589,12 +619,12 @@ static void knn_search_intra_cluster(
                     batch_cand_ids[batch_count] = cand_id;
                     batch_ptrs[batch_count] = dest;
                     batch_count++;
-                    if (batch_count == 4)
+                    if (batch_count == 8)
                     {
-                        double dists[4];
+                        double dists[8];
                         if (model->is_double)
                         {
-                            framedist_batch_1x4_double(
+                            framedist_batch_1x8_double(
                                 (const double *)query_data,
                                 (const double *const *)batch_ptrs,
                                 dists,
@@ -602,14 +632,14 @@ static void knn_search_intra_cluster(
                         }
                         else
                         {
-                            framedist_batch_1x4_float(
+                            framedist_batch_1x8_float(
                                 (const float *)query_data,
                                 (const float *const *)batch_ptrs,
                                 dists,
                                 frame_elem);
                         }
-                        telem->framedist_calls += 4;
-                        for (int b_idx = 0; b_idx < 4; b_idx++)
+                        telem->framedist_calls += 8;
+                        for (int b_idx = 0; b_idx < 8; b_idx++)
                         {
                             record_neighbor_and_reciprocal(
                                 query_id, batch_cand_ids[b_idx], dists[b_idx],
@@ -627,7 +657,7 @@ static void knn_search_intra_cluster(
 
         if (batch_count > 0)
         {
-            double dists[4];
+            double dists[8];
             if (model->is_double)
             {
                 framedist_batch_double(
@@ -844,10 +874,17 @@ static void knn_search_intra_cluster(
                     }
 
                     const void *cand_ptr = NULL;
-                    if (reader->memory_data != NULL)
+                    if (home_cl->ivf_vectors != NULL)
+                    {
+                        cand_ptr = (const char *)home_cl->ivf_vectors +
+                                   (size_t)m * frame_bytes;
+                        KNN_PREFETCH_T0(cand_ptr);
+                    }
+                    else if (reader->memory_data != NULL)
                     {
                         cand_ptr = (const char *)reader->memory_data +
                                    (size_t)cand_id * frame_bytes;
+                        KNN_PREFETCH_T0(cand_ptr);
                     }
                     else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
                     {
@@ -880,10 +917,17 @@ static void knn_search_intra_cluster(
                 }
 
                 const void *dest = NULL;
-                if (reader->memory_data != NULL)
+                if (home_cl->ivf_vectors != NULL)
+                {
+                    dest = (const char *)home_cl->ivf_vectors +
+                           (size_t)m * frame_bytes;
+                    KNN_PREFETCH_T0(dest);
+                }
+                else if (reader->memory_data != NULL)
                 {
                     dest = (const char *)reader->memory_data +
                            (size_t)cand_id * frame_bytes;
+                    KNN_PREFETCH_T0(dest);
                 }
                 else
                 {
@@ -899,12 +943,12 @@ static void knn_search_intra_cluster(
                     batch_cand_ids[batch_count] = cand_id;
                     batch_ptrs[batch_count] = dest;
                     batch_count++;
-                    if (batch_count == 4)
+                    if (batch_count == 8)
                     {
-                        double dists[4];
+                        double dists[8];
                         if (model->is_double)
                         {
-                            framedist_batch_1x4_double(
+                            framedist_batch_1x8_double(
                                 (const double *)query_data,
                                 (const double *const *)batch_ptrs,
                                 dists,
@@ -912,14 +956,14 @@ static void knn_search_intra_cluster(
                         }
                         else
                         {
-                            framedist_batch_1x4_float(
+                            framedist_batch_1x8_float(
                                 (const float *)query_data,
                                 (const float *const *)batch_ptrs,
                                 dists,
                                 frame_elem);
                         }
-                        telem->framedist_calls += 4;
-                        for (int b_idx = 0; b_idx < 4; b_idx++)
+                        telem->framedist_calls += 8;
+                        for (int b_idx = 0; b_idx < 8; b_idx++)
                         {
                             record_neighbor_and_reciprocal(
                                 query_id, batch_cand_ids[b_idx], dists[b_idx],
@@ -937,7 +981,7 @@ static void knn_search_intra_cluster(
 
         if (batch_count > 0)
         {
-            double dists[4];
+            double dists[8];
             if (model->is_double)
             {
                 framedist_batch_double(
@@ -1099,9 +1143,15 @@ static void knn_search_intra_cluster(
             }
 
             const void *cand_ptr = NULL;
-            if (reader->memory_data != NULL)
+            if (home_cl->ivf_vectors != NULL)
+            {
+                cand_ptr = (const char *)home_cl->ivf_vectors + (size_t)m * frame_bytes;
+                KNN_PREFETCH_T0(cand_ptr);
+            }
+            else if (reader->memory_data != NULL)
             {
                 cand_ptr = (const char *)reader->memory_data + (size_t)cand_id * frame_bytes;
+                KNN_PREFETCH_T0(cand_ptr);
             }
             else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
             {
@@ -1133,9 +1183,15 @@ static void knn_search_intra_cluster(
         }
 
         const void *dest = NULL;
-        if (reader->memory_data != NULL)
+        if (home_cl->ivf_vectors != NULL)
+        {
+            dest = (const char *)home_cl->ivf_vectors + (size_t)m * frame_bytes;
+            KNN_PREFETCH_T0(dest);
+        }
+        else if (reader->memory_data != NULL)
         {
             dest = (const char *)reader->memory_data + (size_t)cand_id * frame_bytes;
+            KNN_PREFETCH_T0(dest);
         }
         else
         {
@@ -1150,12 +1206,12 @@ static void knn_search_intra_cluster(
             batch_cand_ids[batch_count] = cand_id;
             batch_ptrs[batch_count] = dest;
             batch_count++;
-            if (batch_count == 4)
+            if (batch_count == 8)
             {
-                double dists[4];
+                double dists[8];
                 if (model->is_double)
                 {
-                    framedist_batch_1x4_double(
+                    framedist_batch_1x8_double(
                         (const double *)query_data,
                         (const double *const *)batch_ptrs,
                         dists,
@@ -1163,14 +1219,14 @@ static void knn_search_intra_cluster(
                 }
                 else
                 {
-                    framedist_batch_1x4_float(
+                    framedist_batch_1x8_float(
                         (const float *)query_data,
                         (const float *const *)batch_ptrs,
                         dists,
                         frame_elem);
                 }
-                telem->framedist_calls += 4;
-                for (int b = 0; b < 4; b++)
+                telem->framedist_calls += 8;
+                for (int b = 0; b < 8; b++)
                 {
                     record_neighbor_and_reciprocal(
                         query_id, batch_cand_ids[b], dists[b],
@@ -1187,7 +1243,7 @@ static void knn_search_intra_cluster(
 
     if (batch_count > 0)
     {
-        double dists[4];
+        double dists[8];
         if (model->is_double)
         {
             framedist_batch_double(
@@ -1325,48 +1381,61 @@ static int knn_warm_start_nearest_cluster(
     // Multi-Cluster Nearest Warm-Start until heap saturates
     int M = model->num_clusters;
     int visited_warm[8];
-    int num_warm = 0;
+    double warm_dcc[8];
+    int num_warm_found = 0;
     int first_warm_c = -1;
     double eps_factor = 1.0 + config->epsilon;
 
-    while (heap->count < heap->k && num_warm < 8)
+    const double *home_dcc = &model->dcc_matrix[home_cluster_id * M];
+    for (int c = 0; c < M; c++)
     {
-        int best_c = -1;
-        double min_dcc = 1e19;
-
-        for (int c = 0; c < M; c++)
+        if (c == home_cluster_id || model->clusters[c].num_members == 0)
         {
-            if (c == home_cluster_id || model->clusters[c].num_members == 0)
-            {
-                continue;
-            }
-            int already_w = 0;
-            for (int w = 0; w < num_warm; w++)
-            {
-                if (visited_warm[w] == c)
-                {
-                    already_w = 1;
-                    break;
-                }
-            }
-            if (already_w)
-            {
-                continue;
-            }
-
-            double dcc = model->dcc_matrix[home_cluster_id * M + c];
-            if (dcc > 0.0 && dcc < min_dcc)
-            {
-                min_dcc = dcc;
-                best_c = c;
-            }
+            continue;
         }
 
-        if (best_c < 0)
+        double dcc = home_dcc[c];
+        if (dcc <= 0.0)
+        {
+            continue;
+        }
+
+        /* Maintain up to 8 closest clusters in sorted order */
+        if (num_warm_found < 8)
+        {
+            int pos = num_warm_found;
+            while (pos > 0 && warm_dcc[pos - 1] > dcc)
+            {
+                warm_dcc[pos] = warm_dcc[pos - 1];
+                visited_warm[pos] = visited_warm[pos - 1];
+                pos--;
+            }
+            warm_dcc[pos] = dcc;
+            visited_warm[pos] = c;
+            num_warm_found++;
+        }
+        else if (dcc < warm_dcc[7])
+        {
+            int pos = 7;
+            while (pos > 0 && warm_dcc[pos - 1] > dcc)
+            {
+                warm_dcc[pos] = warm_dcc[pos - 1];
+                visited_warm[pos] = visited_warm[pos - 1];
+                pos--;
+            }
+            warm_dcc[pos] = dcc;
+            visited_warm[pos] = c;
+        }
+    }
+
+    for (int w = 0; w < num_warm_found; w++)
+    {
+        if (heap->count >= heap->k)
         {
             break;
         }
-        visited_warm[num_warm++] = best_c;
+
+        int best_c = visited_warm[w];
         if (first_warm_c < 0)
         {
             first_warm_c = best_c;
@@ -1492,7 +1561,7 @@ static int knn_warm_start_nearest_cluster(
             pivots[*num_pivots].d_anchor = d_anchor;
             (*num_pivots)++;
         }
-    } // while (heap->count < heap->k && num_warm < 8)
+    } // for (int w = 0; w < num_warm_found; w++)
 
     return first_warm_c;
 }
@@ -1776,7 +1845,83 @@ static int knn_score_candidate_clusters(
     double eps_factor = 1.0 + config->epsilon;
     double current_tau = knn_heap_peek_max_dist(heap);
 
-    for (int q = 0; q < M; q++)
+    TE4Ref te4_ref;
+    const double *d1_row = NULL;
+    const double *d2_row = NULL;
+    if (num_pivots >= 2)
+    {
+        int    c1 = pivots[0].cluster_id;
+        int    c2 = pivots[1].cluster_id;
+        double d1 = pivots[0].d_anchor;
+        double d2 = pivots[1].d_anchor;
+        double d12 = model->dcc_matrix[c1 * M + c2];
+        calc_te4_ref_init(&te4_ref, d1, d2, d12);
+        d1_row = &model->dcc_matrix[c1 * M];
+        d2_row = &model->dcc_matrix[c2 * M];
+    }
+    const double *home_dcc_row = &model->dcc_matrix[home_cluster_id * M];
+    const double *radii = model->cluster_radii;
+    double cutoff = (current_tau < 1e18) ? (current_tau / eps_factor) : 1e30;
+    int q = 0;
+
+#if defined(__AVX2__)
+    if (num_pivots < 2 && radii != NULL && cutoff < 1e20)
+    {
+        __m256d vr_home = _mm256_set1_pd(r_home);
+        __m256d v_cutoff = _mm256_set1_pd(cutoff);
+        __m256d v_zero = _mm256_setzero_pd();
+
+        for (; q <= M - 4; q += 4)
+        {
+            if (home_cluster_id >= q && home_cluster_id < q + 4)
+            {
+                break;
+            }
+            if (num_pivots > 0 && pivots[0].cluster_id >= q && pivots[0].cluster_id < q + 4)
+            {
+                break;
+            }
+
+            __m256d vdcc = _mm256_loadu_pd(&home_dcc_row[q]);
+            __m256d vr_q = _mm256_loadu_pd(&radii[q]);
+            __m256d sum_r = _mm256_add_pd(vr_home, vr_q);
+            __m256d v_lb = _mm256_max_pd(v_zero, _mm256_sub_pd(vdcc, sum_r));
+            __m256d v_prune = _mm256_cmp_pd(v_lb, v_cutoff, _CMP_GE_OQ);
+            int pmask = _mm256_movemask_pd(v_prune);
+
+            if (pmask == 0x0F)
+            {
+                telem->level1_clusters_pruned += 4;
+                continue;
+            }
+
+            for (int sub = 0; sub < 4; sub++)
+            {
+                int cl = q + sub;
+                if (pmask & (1 << sub))
+                {
+                    telem->level1_clusters_pruned++;
+                }
+                else if (model->clusters[cl].num_members > 0)
+                {
+                    double dcc = home_dcc_row[cl];
+                    double rq = radii[cl];
+                    double lb = dcc - r_home - rq;
+                    if (lb < 0.0)
+                    {
+                        lb = 0.0;
+                    }
+                    scores_buffer[num_cand_clusters].id = cl;
+                    scores_buffer[num_cand_clusters].lb = lb;
+                    scores_buffer[num_cand_clusters].dcc = dcc;
+                    num_cand_clusters++;
+                }
+            }
+        } // for (; q <= M - 4; q += 4)
+    }
+#endif
+
+    for (; q < M; q++)
     {
         if (q == home_cluster_id || is_in_pivots(q, pivots, num_pivots) ||
             model->clusters[q].num_members == 0)
@@ -1784,8 +1929,8 @@ static int knn_score_candidate_clusters(
             continue;
         }
 
-        double dcc = model->dcc_matrix[home_cluster_id * M + q];
-        double r_q = model->clusters[q].radius;
+        double dcc = home_dcc_row[q];
+        double r_q = radii ? radii[q] : model->clusters[q].radius;
         double lb = dcc - r_home - r_q;
         if (lb < 0.0)
         {
@@ -1802,15 +1947,10 @@ static int knn_score_candidate_clusters(
         // Multi-Point TE4 Triangulation against measured pivots
         if (num_pivots >= 2)
         {
-            int    c1 = pivots[0].cluster_id;
-            int    c2 = pivots[1].cluster_id;
-            double d1 = pivots[0].d_anchor;
-            double d2 = pivots[1].d_anchor;
-            double d12 = model->dcc_matrix[c1 * M + c2];
-            double d1q = model->dcc_matrix[c1 * M + q];
-            double d2q = model->dcc_matrix[c2 * M + q];
+            double d1q = d1_row[q];
+            double d2q = d2_row[q];
 
-            double min_d = calc_min_dist_4pt(d1, d2, d12, d1q, d2q);
+            double min_d = calc_min_dist_4pt_ref(&te4_ref, d1q, d2q);
             if (min_d - r_q - 1e-5 >= current_tau / eps_factor)
             {
                 telem->level1_clusters_pruned++;
@@ -1826,7 +1966,7 @@ static int knn_score_candidate_clusters(
         scores_buffer[num_cand_clusters].lb = lb;
         scores_buffer[num_cand_clusters].dcc = dcc;
         num_cand_clusters++;
-    } // for (int q = 0; ...)
+    } // for (; q < M; q++)
 
     qsort(scores_buffer, (size_t)num_cand_clusters, sizeof(ClusterScore),
           compare_cluster_scores);
@@ -1880,8 +2020,8 @@ static void knn_eval_candidate_cluster_members(
     int                   *num_pivots,
     KnnVisitedTracker     *visited,
     int                   *batch_count,
-    long                   batch_cand_ids[4],
-    const void            *batch_ptrs[4],
+    long                   batch_cand_ids[8],
+    const void            *batch_ptrs[8],
     KnnTelemetry  *restrict telem)
 {
     const KnnCluster *cl = &model->clusters[q];
@@ -2129,10 +2269,17 @@ static void knn_eval_candidate_cluster_members(
                 }
 
                 const void *cand_data = NULL;
-                if (model->dataset_buffer != NULL)
+                if (cl->ivf_vectors != NULL)
+                {
+                    cand_data = (const char *)cl->ivf_vectors +
+                        (size_t)m_idx * frame_bytes;
+                    KNN_PREFETCH_T0(cand_data);
+                }
+                else if (model->dataset_buffer != NULL)
                 {
                     cand_data = (const char *)model->dataset_buffer +
                         (size_t)cand_id * frame_bytes;
+                    KNN_PREFETCH_T0(cand_data);
                 }
                 else
                 {
@@ -2149,25 +2296,25 @@ static void knn_eval_candidate_cluster_members(
                 batch_ptrs[*batch_count] = cand_data;
                 (*batch_count)++;
 
-                if (*batch_count == 4)
+                if (*batch_count == 8)
                 {
-                    double dists[4];
+                    double dists[8];
                     if (model->is_double)
                     {
-                        framedist_batch_1x4_double(
+                        framedist_batch_1x8_double(
                             (const double *)query_data,
                             (const double *const *)batch_ptrs,
                             dists, frame_elem);
                     }
                     else
                     {
-                        framedist_batch_1x4_float(
+                        framedist_batch_1x8_float(
                             (const float *)query_data,
                             (const float *const *)batch_ptrs,
                             dists, frame_elem);
                     }
-                    telem->framedist_calls += 4;
-                    for (int b_idx = 0; b_idx < 4; b_idx++)
+                    telem->framedist_calls += 8;
+                    for (int b_idx = 0; b_idx < 8; b_idx++)
                     {
                         record_neighbor_and_reciprocal(
                             query_id, batch_cand_ids[b_idx], dists[b_idx],
@@ -2176,7 +2323,7 @@ static void knn_eval_candidate_cluster_members(
                             , bucket_locks
 #endif
                         );
-                    } // for (int b_idx = 0; b_idx < 4; b_idx++)
+                    } // for (int b_idx = 0; b_idx < 8; b_idx++)
                     *batch_count = 0;
                 }
             } // while (pass_mask)
@@ -2405,10 +2552,17 @@ static void knn_eval_candidate_cluster_members(
                 if (!config->use_batch_dist)
                 {
                     const void *cand_ptr = NULL;
-                    if (reader->memory_data != NULL)
+                    if (cl->ivf_vectors != NULL)
+                    {
+                        cand_ptr = (const char *)cl->ivf_vectors +
+                                   (size_t)m * frame_bytes;
+                        KNN_PREFETCH_T0(cand_ptr);
+                    }
+                    else if (reader->memory_data != NULL)
                     {
                         cand_ptr = (const char *)reader->memory_data +
                                    (size_t)cand_id * frame_bytes;
+                        KNN_PREFETCH_T0(cand_ptr);
                     }
                     else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
                     {
@@ -2440,10 +2594,17 @@ static void knn_eval_candidate_cluster_members(
                 }
 
                 const void *dest = NULL;
-                if (reader->memory_data != NULL)
+                if (cl->ivf_vectors != NULL)
+                {
+                    dest = (const char *)cl->ivf_vectors +
+                           (size_t)m * frame_bytes;
+                    KNN_PREFETCH_T0(dest);
+                }
+                else if (reader->memory_data != NULL)
                 {
                     dest = (const char *)reader->memory_data +
                            (size_t)cand_id * frame_bytes;
+                    KNN_PREFETCH_T0(dest);
                 }
                 else
                 {
@@ -2459,12 +2620,12 @@ static void knn_eval_candidate_cluster_members(
                     batch_cand_ids[*batch_count] = cand_id;
                     batch_ptrs[*batch_count] = dest;
                     (*batch_count)++;
-                    if (*batch_count == 4)
+                    if (*batch_count == 8)
                     {
-                        double dists[4];
+                        double dists[8];
                         if (model->is_double)
                         {
-                            framedist_batch_1x4_double(
+                            framedist_batch_1x8_double(
                                 (const double *)query_data,
                                 (const double *const *)batch_ptrs,
                                 dists,
@@ -2472,14 +2633,14 @@ static void knn_eval_candidate_cluster_members(
                         }
                         else
                         {
-                            framedist_batch_1x4_float(
+                            framedist_batch_1x8_float(
                                 (const float *)query_data,
                                 (const float *const *)batch_ptrs,
                                 dists,
                                 frame_elem);
                         }
-                        telem->framedist_calls += 4;
-                        for (int b_idx = 0; b_idx < 4; b_idx++)
+                        telem->framedist_calls += 8;
+                        for (int b_idx = 0; b_idx < 8; b_idx++)
                         {
                             record_neighbor_and_reciprocal(
                                 query_id, batch_cand_ids[b_idx], dists[b_idx],
@@ -2726,10 +2887,17 @@ static void knn_eval_candidate_cluster_members(
                 if (!config->use_batch_dist)
                 {
                     const void *cand_ptr = NULL;
-                    if (reader->memory_data != NULL)
+                    if (cl->ivf_vectors != NULL)
+                    {
+                        cand_ptr = (const char *)cl->ivf_vectors +
+                                   (size_t)m * frame_bytes;
+                        KNN_PREFETCH_T0(cand_ptr);
+                    }
+                    else if (reader->memory_data != NULL)
                     {
                         cand_ptr = (const char *)reader->memory_data +
                                    (size_t)cand_id * frame_bytes;
+                        KNN_PREFETCH_T0(cand_ptr);
                     }
                     else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
                     {
@@ -2761,10 +2929,17 @@ static void knn_eval_candidate_cluster_members(
                 }
 
                 const void *dest = NULL;
-                if (reader->memory_data != NULL)
+                if (cl->ivf_vectors != NULL)
+                {
+                    dest = (const char *)cl->ivf_vectors +
+                           (size_t)m * frame_bytes;
+                    KNN_PREFETCH_T0(dest);
+                }
+                else if (reader->memory_data != NULL)
                 {
                     dest = (const char *)reader->memory_data +
                            (size_t)cand_id * frame_bytes;
+                    KNN_PREFETCH_T0(dest);
                 }
                 else
                 {
@@ -2780,12 +2955,12 @@ static void knn_eval_candidate_cluster_members(
                     batch_cand_ids[*batch_count] = cand_id;
                     batch_ptrs[*batch_count] = dest;
                     (*batch_count)++;
-                    if (*batch_count == 4)
+                    if (*batch_count == 8)
                     {
-                        double dists[4];
+                        double dists[8];
                         if (model->is_double)
                         {
-                            framedist_batch_1x4_double(
+                            framedist_batch_1x8_double(
                                 (const double *)query_data,
                                 (const double *const *)batch_ptrs,
                                 dists,
@@ -2793,14 +2968,14 @@ static void knn_eval_candidate_cluster_members(
                         }
                         else
                         {
-                            framedist_batch_1x4_float(
+                            framedist_batch_1x8_float(
                                 (const float *)query_data,
                                 (const float *const *)batch_ptrs,
                                 dists,
                                 frame_elem);
                         }
-                        telem->framedist_calls += 4;
-                        for (int b_idx = 0; b_idx < 4; b_idx++)
+                        telem->framedist_calls += 8;
+                        for (int b_idx = 0; b_idx < 8; b_idx++)
                         {
                             record_neighbor_and_reciprocal(
                                 query_id, batch_cand_ids[b_idx], dists[b_idx],
@@ -3021,10 +3196,16 @@ static void knn_eval_candidate_cluster_members(
         if (!config->use_batch_dist)
         {
             const void *cand_ptr = NULL;
-            if (reader->memory_data != NULL)
+            if (cl->ivf_vectors != NULL)
+            {
+                cand_ptr = (const char *)cl->ivf_vectors + (size_t)m * frame_bytes;
+                KNN_PREFETCH_T0(cand_ptr);
+            }
+            else if (reader->memory_data != NULL)
             {
                 cand_ptr = (const char *)reader->memory_data +
                            (size_t)cand_id * frame_bytes;
+                KNN_PREFETCH_T0(cand_ptr);
             }
             else if (knn_reader_read_frame(reader, cand_id, cand_buffer) == 0)
             {
@@ -3056,10 +3237,16 @@ static void knn_eval_candidate_cluster_members(
         }
 
         const void *dest = NULL;
-        if (reader->memory_data != NULL)
+        if (cl->ivf_vectors != NULL)
+        {
+            dest = (const char *)cl->ivf_vectors + (size_t)m * frame_bytes;
+            KNN_PREFETCH_T0(dest);
+        }
+        else if (reader->memory_data != NULL)
         {
             dest = (const char *)reader->memory_data +
                    (size_t)cand_id * frame_bytes;
+            KNN_PREFETCH_T0(dest);
         }
         else
         {
@@ -3075,12 +3262,12 @@ static void knn_eval_candidate_cluster_members(
             batch_cand_ids[*batch_count] = cand_id;
             batch_ptrs[*batch_count] = dest;
             (*batch_count)++;
-            if (*batch_count == 4)
+            if (*batch_count == 8)
             {
-                double dists[4];
+                double dists[8];
                 if (model->is_double)
                 {
-                    framedist_batch_1x4_double(
+                    framedist_batch_1x8_double(
                         (const double *)query_data,
                         (const double *const *)batch_ptrs,
                         dists,
@@ -3088,14 +3275,14 @@ static void knn_eval_candidate_cluster_members(
                 }
                 else
                 {
-                    framedist_batch_1x4_float(
+                    framedist_batch_1x8_float(
                         (const float *)query_data,
                         (const float *const *)batch_ptrs,
                         dists,
                         frame_elem);
                 }
-                telem->framedist_calls += 4;
-                for (int b = 0; b < 4; b++)
+                telem->framedist_calls += 8;
+                for (int b = 0; b < 8; b++)
                 {
                     record_neighbor_and_reciprocal(
                         query_id, batch_cand_ids[b], dists[b],
@@ -3156,12 +3343,14 @@ static void knn_search_inter_clusters(
     long frame_elem = model->frame_elements;
     double eps_factor = 1.0 + config->epsilon;
 
-    long batch_cand_ids[4];
-    const void *batch_ptrs[4];
+    long batch_cand_ids[8];
+    const void *batch_ptrs[8];
     int batch_count = 0;
     double sq16_delta = (config->use_sq16 && model->sq16_dataset_buffer != NULL)
                         ? 2.0 * (double)model->sq16_params.err_radius
                         : 0.0;
+    TE4Ref te4_pivots[8][8];
+    int n_p_cached = 0;
 
     for (int idx = 0; idx < num_cand_clusters; idx++)
     {
@@ -3180,21 +3369,35 @@ static void knn_search_inter_clusters(
         const KnnCluster *cl = &model->clusters[q];
         if (num_pivots != NULL && *num_pivots >= 2)
         {
-            int pruned_by_te4 = 0;
             int n_p = (*num_pivots > 8) ? 8 : *num_pivots;
+            if (n_p > n_p_cached)
+            {
+                for (int p1 = 0; p1 < n_p - 1; p1++)
+                {
+                    int    c1 = pivots[p1].cluster_id;
+                    double d1 = pivots[p1].d_anchor;
+                    for (int p2 = (p1 >= n_p_cached ? p1 + 1 : n_p_cached); p2 < n_p; p2++)
+                    {
+                        int    c2 = pivots[p2].cluster_id;
+                        double d2 = pivots[p2].d_anchor;
+                        double d12 = model->dcc_matrix[(size_t)c1 * (size_t)M + (size_t)c2];
+                        calc_te4_ref_init(&te4_pivots[p1][p2], d1, d2, d12);
+                    }
+                }
+                n_p_cached = n_p;
+            }
+
+            int pruned_by_te4 = 0;
             for (int p1 = 0; p1 < n_p - 1; p1++)
             {
                 int    c1 = pivots[p1].cluster_id;
-                double d1 = pivots[p1].d_anchor;
                 for (int p2 = p1 + 1; p2 < n_p; p2++)
                 {
                     int    c2 = pivots[p2].cluster_id;
-                    double d2 = pivots[p2].d_anchor;
-                    double d12 = model->dcc_matrix[(size_t)c1 * (size_t)M + (size_t)c2];
                     double d1q = model->dcc_matrix[(size_t)c1 * (size_t)M + (size_t)q];
                     double d2q = model->dcc_matrix[(size_t)c2 * (size_t)M + (size_t)q];
 
-                    double min_d = calc_min_dist_4pt(d1, d2, d12, d1q, d2q);
+                    double min_d = calc_min_dist_4pt_ref(&te4_pivots[p1][p2], d1q, d2q);
                     if (min_d - cl->radius - 1e-5 >= current_tau / eps_factor)
                     {
                         pruned_by_te4 = 1;
@@ -3303,7 +3506,7 @@ static void knn_search_inter_clusters(
 
     if (batch_count > 0)
     {
-        double dists[4];
+        double dists[8];
         if (model->is_double)
         {
             framedist_batch_double(
@@ -3445,8 +3648,8 @@ static void knn_search_cluster_graph(
         }
     }
 
-    long batch_cand_ids[4];
-    const void *batch_ptrs[4];
+    long batch_cand_ids[8];
+    const void *batch_ptrs[8];
     int batch_count = 0;
 
     int ef_limit = config->ef_cluster;
@@ -3569,7 +3772,7 @@ static void knn_search_cluster_graph(
     /* Flush any pending batched distance computations */
     if (batch_count > 0)
     {
-        double dists[4];
+        double dists[8];
         if (model->is_double)
         {
             framedist_batch_double(
@@ -3739,21 +3942,3 @@ void knn_search_single_frame(
         );
     }
 }
-
-/**
- * knn_cross_seed_frontier() - Populate dynamic search frontier with nearest evaluated anchor seeds.
- * @loc_res:         Cluster locator result with evaluated anchors.
- * @best_c:          Best anchor cluster ID.
- * @query_data:      Query frame pixel data.
- * @model:           Active KnnModel.
- * @config:          Active KnnConfig.
- * @cand_reader:     Candidate frame reader.
- * @cand_buffer:     Candidate frame pixel buffer.
- * @heap:            Max-heap for current query.
- * @frontier:        Output frontier node array.
- * @frontier_count:  Pointer to frontier count.
- * @best_seed_id:    Pointer to best seed frame ID.
- * @best_seed_dist:  Pointer to best seed distance.
- * @visited:         Per-query frame visited tracker.
- * @telem:           Telemetry record.
- */

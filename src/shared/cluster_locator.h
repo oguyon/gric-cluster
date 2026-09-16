@@ -51,6 +51,74 @@ typedef struct
     uint8_t *active_cluster_mask;    /**< Array: 1 = surviving, 0 = pruned */
 } ClusterLocatorResult;
 
+/** Precomputed reference coordinates for 4-point inequality */
+typedef struct
+{
+    double x4;
+    double y4;
+    double d12;
+    double inv_2d12;
+    double d12_sq;
+    int    valid;
+} TE4Ref;
+
+/** Precomputed reference coordinates for 5-point inequality */
+typedef struct
+{
+    double x3;
+    double y3;
+    double xF;
+    double yF;
+    double zF;
+    double d12;
+    double inv_2d12;
+    double inv_2y3;
+    double d12_sq;
+    double d13_sq;
+    int    valid;
+} TE5Ref;
+
+void calc_te4_ref_init(
+    TE4Ref *ref,
+    double  d14,
+    double  d24,
+    double  d12);
+
+double calc_min_dist_4pt_ref(
+    const TE4Ref *ref,
+    double        d13,
+    double        d23);
+
+void calc_te5_ref_init(
+    TE5Ref *ref,
+    double  d_f_c1,
+    double  d_f_c2,
+    double  d_f_c3,
+    double  d_c1_c2,
+    double  d_c1_c3,
+    double  d_c2_c3);
+
+double calc_min_dist_5pt_ref(
+    const TE5Ref *ref,
+    double        d_t_c1,
+    double        d_t_c2,
+    double        d_t_c3);
+
+#if defined(__AVX2__)
+void calc_min_dist_4pt_batch4_avx2(
+    const TE4Ref          *ref,
+    const double *restrict d13,
+    const double *restrict d23,
+    double       *restrict out_dists);
+
+void calc_min_dist_5pt_batch4_avx2(
+    const TE5Ref          *ref,
+    const double *restrict d_t_c1,
+    const double *restrict d_t_c2,
+    const double *restrict d_t_c3,
+    double       *restrict out_dists);
+#endif
+
 /**
  * calc_min_dist_4pt() - Computes minimum distance using a 4-point configuration.
  * @d14: Distance between point 1 and 4.
