@@ -290,6 +290,13 @@ int main(int argc, char *argv[])
     state.scratch.refine_queue_last_num_clusters = 0;
     state.scratch.tuple_pred_candidates = (int *)malloc(max_clusters * sizeof(int));
     state.scratch.tuple_pred_count = 0;
+    size_t pred_cap = config.optim.pred_n > 0 ? (size_t)config.optim.pred_n : 16;
+    if (pred_cap < max_clusters)
+    {
+        pred_cap = max_clusters;
+    }
+    state.scratch.pred_candidates = (int *)malloc(pred_cap * sizeof(int));
+    state.scratch.local_candidates = (int *)malloc(pred_cap * sizeof(int));
     state.scratch.sq16_cand_indices = (int *)malloc(max_clusters * sizeof(int));
     state.scratch.sq16_anchor_ptrs =
         (const int16_t **)malloc(max_clusters * sizeof(const int16_t *));
@@ -375,6 +382,14 @@ int main(int argc, char *argv[])
     free(state.scratch.entropy_visited);
     free(state.scratch.refine_queue);
     free(state.scratch.tuple_pred_candidates);
+    if (state.scratch.pred_candidates)
+    {
+        free(state.scratch.pred_candidates);
+    }
+    if (state.scratch.local_candidates)
+    {
+        free(state.scratch.local_candidates);
+    }
     free(state.scratch.sq16_cand_indices);
     free((void *)state.scratch.sq16_anchor_ptrs);
     free(state.scratch.d_min_scratch);

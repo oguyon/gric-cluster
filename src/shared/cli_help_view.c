@@ -394,7 +394,9 @@ void cli_print_help_section(
     int plen = 0;
     int para_indent = 0;
 
-    #define FLUSH_PARA() do {                          \
+    #define FLUSH_PARA()                               \
+    do                                                 \
+    {                                                  \
         if (plen > 0)                                  \
         {                                              \
             cli_print_wrapped_line(                    \

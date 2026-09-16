@@ -143,6 +143,8 @@ set(CLUSTER_SRCS
     src/gric-cluster/math/cluster_prune.c
     src/gric-cluster/math/cluster_scandist.c
     src/gric-cluster/math/framedistance.c
+    src/gric-cluster/math/framedistance_cutoff.c
+    src/gric-cluster/math/framedistance_batch.c
     src/gric-cluster/math/cluster_gemm_dist.c
     src/gric-cluster/math/tuple_retrieval.c
     src/gric-cluster/io/cluster_io.c
@@ -173,6 +175,7 @@ set(CLUSTER_SRCS
     src/shared/gric_bin_io.c
     src/shared/cluster_locator.c
     src/shared/scalar_quant.c
+    src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
     src/shared/product_quant.c
     src/shared/quant_memo.c
@@ -343,19 +346,24 @@ add_executable(gric-knn
     src/gric-knn/knn_loader.c
     src/gric-knn/knn_parser.c
     src/gric-knn/knn_cache.c
+    src/gric-knn/knn_cache_layout.c
     src/gric-knn/knn_tree.c
     src/gric-knn/knn_reader.c
     src/gric-knn/knn_engine.c
     src/gric-knn/knn_pruning.c
+    src/gric-knn/knn_member_search.c
     src/gric-knn/knn_cluster_search.c
     src/gric-knn/knn_cross_dataset.c
     src/gric-knn/knn_writer.c
     src/gric-cluster/math/framedistance.c
+    src/gric-cluster/math/framedistance_cutoff.c
+    src/gric-cluster/math/framedistance_batch.c
     src/gric-cluster/math/cluster_gemm_dist.c
     src/shared/cluster_locator.c
     src/shared/cli_colors.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
+    src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
     src/shared/product_quant.c
     src/shared/quant_memo.c
@@ -448,6 +456,7 @@ add_executable(gric-probe
     src/shared/cluster_locator.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
+    src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
     src/shared/cli_colors.c
 )
@@ -664,6 +673,7 @@ set_tests_properties(test_knn_cross_dataset PROPERTIES
 add_executable(test_scalar_quant
     tests/test_scalar_quant.c
     src/shared/scalar_quant.c
+    src/shared/scalar_quant_fastscan.c
 )
 target_include_directories(test_scalar_quant PRIVATE src/shared)
 target_link_libraries(test_scalar_quant m)
@@ -691,9 +701,11 @@ add_test(NAME test_product_quant
 add_executable(test_knn_rq8_sidecar_mismatch
     tests/test_knn_rq8_sidecar_mismatch.c
     src/gric-knn/knn_cache.c
+    src/gric-knn/knn_cache_layout.c
     src/gric-knn/knn_reader.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
+    src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
     src/shared/product_quant.c
 )
@@ -727,6 +739,7 @@ add_executable(test_gric_probe
     src/shared/cluster_locator.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
+    src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
     src/shared/cli_colors.c
 )

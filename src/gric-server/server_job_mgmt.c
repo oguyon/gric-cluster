@@ -353,13 +353,35 @@ void handle_api_cli_status(
         for (size_t i = 0; i < chunk_len && jlen + 8 < json_cap; i++)
         {
             unsigned char c = (unsigned char)chunk[i];
-            if (c == '"') { json_resp[jlen++] = '\\'; json_resp[jlen++] = '"'; }
-            else if (c == '\\') { json_resp[jlen++] = '\\'; json_resp[jlen++] = '\\'; }
-            else if (c == '\n') { json_resp[jlen++] = '\\'; json_resp[jlen++] = 'n'; }
-            else if (c == '\r') { json_resp[jlen++] = '\\'; json_resp[jlen++] = 'r'; }
-            else if (c == '\t') { json_resp[jlen++] = '\\'; json_resp[jlen++] = 't'; }
-            else if (c < 32) { /* skip non-printable */ }
-            else { json_resp[jlen++] = (char)c; }
+            switch (c)
+            {
+                case '"':
+                    json_resp[jlen++] = '\\';
+                    json_resp[jlen++] = '"';
+                    break;
+                case '\\':
+                    json_resp[jlen++] = '\\';
+                    json_resp[jlen++] = '\\';
+                    break;
+                case '\n':
+                    json_resp[jlen++] = '\\';
+                    json_resp[jlen++] = 'n';
+                    break;
+                case '\r':
+                    json_resp[jlen++] = '\\';
+                    json_resp[jlen++] = 'r';
+                    break;
+                case '\t':
+                    json_resp[jlen++] = '\\';
+                    json_resp[jlen++] = 't';
+                    break;
+                default:
+                    if (c >= 32)
+                    {
+                        json_resp[jlen++] = (char)c;
+                    }
+                    break;
+            }
         }
     }
     json_resp[jlen++] = '"';
