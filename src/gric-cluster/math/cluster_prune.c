@@ -12,6 +12,7 @@
 #include "cluster_prune.h"
 #include "cluster_core.h"
 #include "cluster_math.h"
+#include "cluster_locator.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -233,16 +234,31 @@ void prune_candidates_te5(
                 }
             }
 
+            TE5Ref te5_ref;
+            calc_te5_ref_init(&te5_ref, d_f_c1, d_f_c2, d_f_c3, d_c1_c2, d_c1_c3, d_c2_c3);
+
+            const double *row_dcc_c1 = &state->scratch.dcc_min[c1 * maxnb];
+            const double *row_dcc_c2 = &state->scratch.dcc_min[c2 * maxnb];
+            const double *row_dcc_c3 = &state->scratch.dcc_min[c3 * maxnb];
+            const char   *row_meas_c1 = &state->scratch.dcc_measured[c1 * maxnb];
+            const char   *row_meas_c2 = &state->scratch.dcc_measured[c2 * maxnb];
+            const char   *row_meas_c3 = &state->scratch.dcc_measured[c3 * maxnb];
+
             long local_pruned_te5 = 0;
 #ifdef _OPENMP
-#pragma omp parallel for reduction(+ : local_pruned_te5) if(state->num_clusters >= OMP_MIN_CLUSTERS)
+#pragma omp parallel for reduction(+ : local_pruned_te5) \
+    if(state->num_clusters >= OMP_MIN_CLUSTERS)
 #endif
             for (int cl_idx = 0; cl_idx < state->num_clusters; cl_idx++)
             {
                 if (!state->scratch.clmembflag[cl_idx])
+                {
                     continue;
+                }
                 if (cl_idx == c1 || cl_idx == c2 || cl_idx == c3)
+                {
                     continue;
+                }
 
                 double d_k_c1 = 0.0;
                 double d_k_c2 = 0.0;
@@ -250,26 +266,26 @@ void prune_candidates_te5(
 
                 if (config->optim.sparse_dcc_mode)
                 {
-                    if (!state->scratch.dcc_measured[cl_idx * maxnb + c1] ||
-                        !state->scratch.dcc_measured[cl_idx * maxnb + c2] ||
-                        !state->scratch.dcc_measured[cl_idx * maxnb + c3])
+                    if (!row_meas_c1[cl_idx] ||
+                        !row_meas_c2[cl_idx] ||
+                        !row_meas_c3[cl_idx])
                     {
                         continue;
                     }
-                    d_k_c1 = state->scratch.dcc_min[cl_idx * maxnb + c1];
-                    d_k_c2 = state->scratch.dcc_min[cl_idx * maxnb + c2];
-                    d_k_c3 = state->scratch.dcc_min[cl_idx * maxnb + c3];
+                    d_k_c1 = row_dcc_c1[cl_idx];
+                    d_k_c2 = row_dcc_c2[cl_idx];
+                    d_k_c3 = row_dcc_c3[cl_idx];
                 }
                 else
                 {
-                    d_k_c1 = state->scratch.dcc_min[cl_idx * maxnb + c1];
+                    d_k_c1 = row_dcc_c1[cl_idx];
                     if (d_k_c1 < 0.0)
                     {
 #ifdef _OPENMP
 #pragma omp critical(dcc_cache)
 #endif
                         {
-                            d_k_c1 = state->scratch.dcc_min[cl_idx * maxnb + c1];
+                            d_k_c1 = row_dcc_c1[cl_idx];
                             if (d_k_c1 < 0.0)
                             {
                                 d_k_c1 = get_dist(
@@ -281,14 +297,14 @@ void prune_candidates_te5(
                         }
                     }
 
-                    d_k_c2 = state->scratch.dcc_min[cl_idx * maxnb + c2];
+                    d_k_c2 = row_dcc_c2[cl_idx];
                     if (d_k_c2 < 0.0)
                     {
 #ifdef _OPENMP
 #pragma omp critical(dcc_cache)
 #endif
                         {
-                            d_k_c2 = state->scratch.dcc_min[cl_idx * maxnb + c2];
+                            d_k_c2 = row_dcc_c2[cl_idx];
                             if (d_k_c2 < 0.0)
                             {
                                 d_k_c2 = get_dist(
@@ -300,14 +316,14 @@ void prune_candidates_te5(
                         }
                     }
 
-                    d_k_c3 = state->scratch.dcc_min[cl_idx * maxnb + c3];
+                    d_k_c3 = row_dcc_c3[cl_idx];
                     if (d_k_c3 < 0.0)
                     {
 #ifdef _OPENMP
 #pragma omp critical(dcc_cache)
 #endif
                         {
-                            d_k_c3 = state->scratch.dcc_min[cl_idx * maxnb + c3];
+                            d_k_c3 = row_dcc_c3[cl_idx];
                             if (d_k_c3 < 0.0)
                             {
                                 d_k_c3 = get_dist(
@@ -320,9 +336,8 @@ void prune_candidates_te5(
                     }
                 }
 
-                double min_d = calc_min_dist_5pt(
-                    d_f_c1, d_f_c2, d_f_c3, d_k_c1, d_k_c2, d_k_c3,
-                    d_c1_c2, d_c1_c3, d_c2_c3
+                double min_d = calc_min_dist_5pt_ref(
+                    &te5_ref, d_k_c1, d_k_c2, d_k_c3
                 );
 
                 if (min_d > config->algo.rlim)
@@ -330,7 +345,7 @@ void prune_candidates_te5(
                     state->scratch.clmembflag[cl_idx] = 0;
                     local_pruned_te5++;
                 }
-            }
+            } // for (int cl_idx = 0; ...)
             state->telemetry.clusters_pruned += local_pruned_te5;
         }
     }

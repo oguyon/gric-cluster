@@ -14,6 +14,7 @@
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <cpuid.h>
+#include <immintrin.h>
 #endif
 
 PQSimdMode pq_get_simd_mode(void)
@@ -352,7 +353,32 @@ void pq_build_query_lut_float(
         {
             const float *cent = c_base + k * d_sub;
             float d2 = 0.0f;
-            for (int j = 0; j < d_sub; j++)
+            int j = 0;
+
+#if defined(__AVX__)
+            if (d_sub >= 8)
+            {
+                __m256 vacc = _mm256_setzero_ps();
+                for (; j <= d_sub - 8; j += 8)
+                {
+                    __m256 vq = _mm256_loadu_ps(&q_sub[j]);
+                    __m256 vc = _mm256_loadu_ps(&cent[j]);
+                    __m256 diff = _mm256_sub_ps(vq, vc);
+#ifdef __FMA__
+                    vacc = _mm256_fmadd_ps(diff, diff, vacc);
+#else
+                    vacc = _mm256_add_ps(vacc, _mm256_mul_ps(diff, diff));
+#endif
+                }
+                __m128 lo = _mm256_castps256_ps128(vacc);
+                __m128 hi = _mm256_extractf128_ps(vacc, 1);
+                __m128 s128 = _mm_add_ps(lo, hi);
+                s128 = _mm_add_ps(s128, _mm_movehl_ps(s128, s128));
+                s128 = _mm_add_ss(s128, _mm_shuffle_ps(s128, s128, 1));
+                d2 += _mm_cvtss_f32(s128);
+            }
+#endif
+            for (; j < d_sub; j++)
             {
                 float diff = q_sub[j] - cent[j];
                 d2 += diff * diff;
@@ -385,18 +411,45 @@ void pq_build_query_lut_float(
     lut->scale = 255.0f / target_max;
     lut->inv_scale = target_max / 255.0f;
 
-    for (int s = 0; s < m; s++)
+    int total_lut = m * K;
+    int idx = 0;
+
+#if defined(__SSE2__)
+    __m128 vscale = _mm_set1_ps(lut->scale);
+    __m128 vzero = _mm_setzero_ps();
+    __m128 v255 = _mm_set1_ps(255.0f);
+    for (; idx <= total_lut - 16; idx += 16)
     {
-        for (int k = 0; k < K; k++)
+        __m128 f0 = _mm_min_ps(v255, _mm_max_ps(vzero,
+            _mm_mul_ps(_mm_loadu_ps(&d2_float[idx]), vscale)));
+        __m128 f1 = _mm_min_ps(v255, _mm_max_ps(vzero,
+            _mm_mul_ps(_mm_loadu_ps(&d2_float[idx + 4]), vscale)));
+        __m128 f2 = _mm_min_ps(v255, _mm_max_ps(vzero,
+            _mm_mul_ps(_mm_loadu_ps(&d2_float[idx + 8]), vscale)));
+        __m128 f3 = _mm_min_ps(v255, _mm_max_ps(vzero,
+            _mm_mul_ps(_mm_loadu_ps(&d2_float[idx + 12]), vscale)));
+
+        __m128i i0 = _mm_cvttps_epi32(f0);
+        __m128i i1 = _mm_cvttps_epi32(f1);
+        __m128i i2 = _mm_cvttps_epi32(f2);
+        __m128i i3 = _mm_cvttps_epi32(f3);
+
+        __m128i p01 = _mm_packus_epi32(i0, i1);
+        __m128i p23 = _mm_packus_epi32(i2, i3);
+        __m128i u8 = _mm_packus_epi16(p01, p23);
+        _mm_storeu_si128((__m128i *)&lut->lut_u8[idx], u8);
+    }
+#endif
+
+    for (; idx < total_lut; idx++)
+    {
+        float val = d2_float[idx] * lut->scale;
+        if (val > 255.0f)
         {
-            float val = d2_float[s * K + k] * lut->scale;
-            if (val > 255.0f)
-            {
-                val = 255.0f;
-            }
-            lut->lut_u8[s * K + k] = (uint8_t)val;
-        } // for (int k = 0; k < K; k++)
-    } // for (int s = 0; s < m; s++)
+            val = 255.0f;
+        }
+        lut->lut_u8[idx] = (uint8_t)val;
+    }
 }
 
 void pq_build_query_lut_double(
@@ -424,7 +477,31 @@ void pq_build_query_lut_double(
         {
             const float *cent = c_base + k * d_sub;
             float d2 = 0.0f;
-            for (int j = 0; j < d_sub; j++)
+            int j = 0;
+
+#if defined(__AVX__)
+            if (d_sub >= 4)
+            {
+                __m256d vacc = _mm256_setzero_pd();
+                for (; j <= d_sub - 4; j += 4)
+                {
+                    __m256d vq = _mm256_loadu_pd(&q_sub[j]);
+                    __m128 vc_f = _mm_loadu_ps(&cent[j]);
+                    __m256d vc = _mm256_cvtps_pd(vc_f);
+                    __m256d diff = _mm256_sub_pd(vq, vc);
+#ifdef __FMA__
+                    vacc = _mm256_fmadd_pd(diff, diff, vacc);
+#else
+                    vacc = _mm256_add_pd(vacc, _mm256_mul_pd(diff, diff));
+#endif
+                }
+                __m128d lo = _mm256_castpd256_pd128(vacc);
+                __m128d hi = _mm256_extractf128_pd(vacc, 1);
+                __m128d s128 = _mm_add_pd(lo, hi);
+                d2 += (float)_mm_cvtsd_f64(_mm_add_sd(s128, _mm_unpackhi_pd(s128, s128)));
+            }
+#endif
+            for (; j < d_sub; j++)
             {
                 float diff = (float)q_sub[j] - cent[j];
                 d2 += diff * diff;
@@ -456,18 +533,45 @@ void pq_build_query_lut_double(
     lut->scale = 255.0f / target_max;
     lut->inv_scale = target_max / 255.0f;
 
-    for (int s = 0; s < m; s++)
+    int total_lut_d = m * K;
+    int idx_d = 0;
+
+#if defined(__SSE2__)
+    __m128 vscale_d = _mm_set1_ps(lut->scale);
+    __m128 vzero_d = _mm_setzero_ps();
+    __m128 v255_d = _mm_set1_ps(255.0f);
+    for (; idx_d <= total_lut_d - 16; idx_d += 16)
     {
-        for (int k = 0; k < K; k++)
+        __m128 f0 = _mm_min_ps(v255_d, _mm_max_ps(vzero_d,
+            _mm_mul_ps(_mm_loadu_ps(&d2_float[idx_d]), vscale_d)));
+        __m128 f1 = _mm_min_ps(v255_d, _mm_max_ps(vzero_d,
+            _mm_mul_ps(_mm_loadu_ps(&d2_float[idx_d + 4]), vscale_d)));
+        __m128 f2 = _mm_min_ps(v255_d, _mm_max_ps(vzero_d,
+            _mm_mul_ps(_mm_loadu_ps(&d2_float[idx_d + 8]), vscale_d)));
+        __m128 f3 = _mm_min_ps(v255_d, _mm_max_ps(vzero_d,
+            _mm_mul_ps(_mm_loadu_ps(&d2_float[idx_d + 12]), vscale_d)));
+
+        __m128i i0 = _mm_cvttps_epi32(f0);
+        __m128i i1 = _mm_cvttps_epi32(f1);
+        __m128i i2 = _mm_cvttps_epi32(f2);
+        __m128i i3 = _mm_cvttps_epi32(f3);
+
+        __m128i p01 = _mm_packus_epi32(i0, i1);
+        __m128i p23 = _mm_packus_epi32(i2, i3);
+        __m128i u8 = _mm_packus_epi16(p01, p23);
+        _mm_storeu_si128((__m128i *)&lut->lut_u8[idx_d], u8);
+    }
+#endif
+
+    for (; idx_d < total_lut_d; idx_d++)
+    {
+        float val = d2_float[idx_d] * lut->scale;
+        if (val > 255.0f)
         {
-            float val = d2_float[s * K + k] * lut->scale;
-            if (val > 255.0f)
-            {
-                val = 255.0f;
-            }
-            lut->lut_u8[s * K + k] = (uint8_t)val;
-        } // for (int k = 0; k < K; k++)
-    } // for (int s = 0; s < m; s++)
+            val = 255.0f;
+        }
+        lut->lut_u8[idx_d] = (uint8_t)val;
+    }
 }
 
 void pq_transpose_block_codes(

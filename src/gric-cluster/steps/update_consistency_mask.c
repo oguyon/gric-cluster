@@ -9,6 +9,58 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#endif
+
+static inline void update_consistency_mask_range(
+    uint64_t     *mask,
+    const double *dists,
+    int           count,
+    double        measured_dist,
+    double        rc2)
+{
+    double min_bound = measured_dist - rc2;
+    double max_bound = measured_dist + rc2;
+    int k = 0;
+
+#if defined(__AVX2__)
+    __m256d vlo = _mm256_set1_pd(min_bound);
+    __m256d vhi = _mm256_set1_pd(max_bound);
+    __m256d vzero = _mm256_setzero_pd();
+
+    for (; k <= count - 4; k += 4)
+    {
+        __m256d vk = _mm256_loadu_pd(&dists[k]);
+        __m256d valid = _mm256_cmp_pd(vk, vzero, _CMP_GE_OQ);
+        __m256d ge = _mm256_cmp_pd(vk, vlo, _CMP_GE_OQ);
+        __m256d le = _mm256_cmp_pd(vk, vhi, _CMP_LE_OQ);
+        __m256d match = _mm256_and_pd(valid, _mm256_and_pd(ge, le));
+        int bitmask = _mm256_movemask_pd(match);
+        if (bitmask != 0)
+        {
+            for (int b = 0; b < 4; b++)
+            {
+                if (bitmask & (1 << b))
+                {
+                    int idx = k + b;
+                    mask[idx / 64] |= (1ULL << (idx % 64));
+                }
+            }
+        }
+    }
+#endif
+
+    for (; k < count; k++)
+    {
+        double dist = dists[k];
+        if (dist >= 0.0 && dist >= min_bound && dist <= max_bound)
+        {
+            mask[k / 64] |= (1ULL << (k % 64));
+        }
+    }
+}
+
 /**
  * recompute_consistency_mask - Rebuild the entire geometric consistency mask from scratch.
  * @config: Config parameters of the clustering execution.
@@ -76,24 +128,12 @@ void recompute_consistency_mask(
             else
             {
                 double measured_dist = state->scratch.dcc_min[i * N + j];
-                if (measured_dist < 0.0)
+                if (measured_dist >= 0.0)
                 {
-                    continue;
-                }
-
-                for (int k = 0; k < state->num_clusters; k++)
-                {
-                    double dist_ti_k = state->scratch.dcc_min[i * N + k];
-                    if (dist_ti_k < 0.0)
-                    {
-                        continue;
-                    }
-
-                    if (dist_ti_k >= (measured_dist - 2.0 * rc) &&
-                        dist_ti_k <= (measured_dist + 2.0 * rc))
-                    {
-                        mask[k / 64] |= (1ULL << (k % 64));
-                    }
+                    update_consistency_mask_range(
+                        mask, &state->scratch.dcc_min[i * N],
+                        state->num_clusters, measured_dist, 2.0 * rc
+                    );
                 }
             }
         }
@@ -192,16 +232,9 @@ void update_consistency_mask_for_new_cluster(
             double measured_dist = state->scratch.dcc_min[new_cl * N + j];
             if (measured_dist >= 0.0)
             {
-                for (int k = 0; k <= new_cl; k++)
-                {
-                    double dist_ti_k = d_min_new_k[k];
-                    if (dist_ti_k >= 0.0 &&
-                        dist_ti_k >= (measured_dist - 2.0 * rc) &&
-                        dist_ti_k <= (measured_dist + 2.0 * rc))
-                    {
-                        mask[k / 64] |= (1ULL << (k % 64));
-                    }
-                }
+                update_consistency_mask_range(
+                    mask, d_min_new_k, new_cl + 1, measured_dist, 2.0 * rc
+                );
             }
         }
     }
@@ -241,16 +274,9 @@ void update_consistency_mask_for_new_cluster(
             double measured_dist = d_min_i[new_cl];
             if (measured_dist >= 0.0)
             {
-                for (int k = 0; k <= new_cl; k++)
-                {
-                    double dist_ti_k = d_min_i[k];
-                    if (dist_ti_k >= 0.0 &&
-                        dist_ti_k >= (measured_dist - 2.0 * rc) &&
-                        dist_ti_k <= (measured_dist + 2.0 * rc))
-                    {
-                        mask[k / 64] |= (1ULL << (k % 64));
-                    }
-                }
+                update_consistency_mask_range(
+                    mask, d_min_i, new_cl + 1, measured_dist, 2.0 * rc
+                );
             }
         }
     }

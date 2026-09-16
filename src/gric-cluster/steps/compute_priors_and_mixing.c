@@ -9,6 +9,7 @@
 #include "framedistance.h"
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 #include "../trace/cluster_trace.h"
 
 /**
@@ -38,6 +39,8 @@ static double calculate_sequence_match_metric(
 {
     double sum_dmax = 0.0;
     double a_param = 1.0 - 1.0 / n_p;
+    double a_weight = 1.0;
+    double inv_rc = 1.0 / r_c;
 
     for (int j = 0; j < n_p; j++)
     {
@@ -49,6 +52,7 @@ static double calculate_sequence_match_metric(
         if (clA < 0 || clA >= state->num_clusters ||
             clB < 0 || clB >= state->num_clusters)
         {
+            a_weight *= a_param;
             continue;
         }
 
@@ -85,7 +89,8 @@ static double calculate_sequence_match_metric(
         {
             return 0.0;
         }
-        sum_dmax += pow(a_param, j) * (dmax / r_c);
+        sum_dmax += a_weight * (dmax * inv_rc);
+        a_weight *= a_param;
     }
 
     /* 1 - 1/e : exponential CDF complement at the mean */
@@ -141,7 +146,13 @@ void compute_priors_and_mixing(
         int K = state->num_clusters;
         double rc = config->algo.rlim;
 
-        double *p_seq = (double *)malloc(K * sizeof(double));
+#define MAX_STACK_K 1024
+#define MAX_STACK_NP 64
+
+        double p_seq_stack[MAX_STACK_K];
+        double *p_seq = (K <= MAX_STACK_K)
+            ? p_seq_stack
+            : (double *)malloc(K * sizeof(double));
         if (!p_seq)
         {
             for (int i = 0; i < K; i++)
@@ -157,11 +168,24 @@ void compute_priors_and_mixing(
             }
             if (t >= np)
             {
-                double *match_scores = (double *)calloc(K, sizeof(double));
+                double match_scores_stack[MAX_STACK_K];
+                double *match_scores = (K <= MAX_STACK_K)
+                    ? match_scores_stack
+                    : (double *)calloc(K, sizeof(double));
                 if (match_scores)
                 {
-                    int *seq_A_cl = (int *)malloc(np * sizeof(int));
-                    double *seq_A_d = (double *)malloc(np * sizeof(double));
+                    if (K <= MAX_STACK_K)
+                    {
+                        memset(match_scores, 0, K * sizeof(double));
+                    }
+                    int seq_A_cl_stack[MAX_STACK_NP];
+                    double seq_A_d_stack[MAX_STACK_NP];
+                    int *seq_A_cl = (np <= MAX_STACK_NP)
+                        ? seq_A_cl_stack
+                        : (int *)malloc(np * sizeof(int));
+                    double *seq_A_d = (np <= MAX_STACK_NP)
+                        ? seq_A_d_stack
+                        : (double *)malloc(np * sizeof(double));
                     if (seq_A_cl && seq_A_d)
                     {
                         for (int j = 0; j < np; j++)
@@ -189,8 +213,14 @@ void compute_priors_and_mixing(
                             start_s = np;
                         }
 
-                        int *seq_B_cl = (int *)malloc(np * sizeof(int));
-                        double *seq_B_d = (double *)malloc(np * sizeof(double));
+                        int seq_B_cl_stack[MAX_STACK_NP];
+                        double seq_B_d_stack[MAX_STACK_NP];
+                        int *seq_B_cl = (np <= MAX_STACK_NP)
+                            ? seq_B_cl_stack
+                            : (int *)malloc(np * sizeof(int));
+                        double *seq_B_d = (np <= MAX_STACK_NP)
+                            ? seq_B_d_stack
+                            : (double *)malloc(np * sizeof(double));
                         if (seq_B_cl && seq_B_d)
                         {
                             for (long s = start_s; s < t; s++)
@@ -225,11 +255,23 @@ void compute_priors_and_mixing(
                                     np, rc, state, config);
                                 match_scores[target_cl] += mAB;
                             }
-                            free(seq_B_cl);
-                            free(seq_B_d);
+                            if (seq_B_cl != seq_B_cl_stack)
+                            {
+                                free(seq_B_cl);
+                            }
+                            if (seq_B_d != seq_B_d_stack)
+                            {
+                                free(seq_B_d);
+                            }
                         }
-                        free(seq_A_cl);
-                        free(seq_A_d);
+                        if (seq_A_cl != seq_A_cl_stack)
+                        {
+                            free(seq_A_cl);
+                        }
+                        if (seq_A_d != seq_A_d_stack)
+                        {
+                            free(seq_A_d);
+                        }
                     }
 
                     double total_score = 0.0;
@@ -251,7 +293,10 @@ void compute_priors_and_mixing(
                             p_seq[i] = 1.0 / K;
                         }
                     }
-                    free(match_scores);
+                    if (match_scores != match_scores_stack)
+                    {
+                        free(match_scores);
+                    }
                 }
             }
 
@@ -287,7 +332,10 @@ void compute_priors_and_mixing(
                     state->scratch.mixed_probs[i] = 1.0 / K;
                 }
             }
-            free(p_seq);
+            if (p_seq != p_seq_stack)
+            {
+                free(p_seq);
+            }
         }
     }
     else
@@ -343,10 +391,8 @@ void compute_priors_and_mixing(
      * the starting point that the entropy search
      * progressively refines as measurements are taken.
      */
-    for (int i = 0; i < state->num_clusters; i++)
-    {
-        state->scratch.entropy_p_current[i] = state->scratch.mixed_probs[i];
-    }
+    memcpy(state->scratch.entropy_p_current, state->scratch.mixed_probs,
+           (size_t)state->num_clusters * sizeof(double));
 
     if (state->trace)
     {

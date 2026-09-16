@@ -87,12 +87,20 @@ int cluster_frame(
         long frame_dim = current_frame->width * current_frame->height;
         if (state->current_frame_sq16 == NULL)
         {
-            state->current_frame_sq16 = (int16_t *)malloc((size_t)frame_dim * sizeof(int16_t));
+            if (posix_memalign((void **)&state->current_frame_sq16, 64,
+                               (size_t)frame_dim * sizeof(int16_t)) != 0)
+            {
+                state->current_frame_sq16 = NULL;
+            }
         }
         if (state->anchor_matrix_sq16 == NULL)
         {
             size_t total_sq16 = (size_t)config->algo.maxnbclust * (size_t)frame_dim;
-            state->anchor_matrix_sq16 = (int16_t *)malloc(total_sq16 * sizeof(int16_t));
+            if (posix_memalign((void **)&state->anchor_matrix_sq16, 64,
+                               total_sq16 * sizeof(int16_t)) != 0)
+            {
+                state->anchor_matrix_sq16 = NULL;
+            }
         }
         if (!state->sq16_calibrated)
         {
@@ -151,12 +159,20 @@ int cluster_frame(
         long frame_dim = current_frame->width * current_frame->height;
         if (state->current_frame_sq8 == NULL)
         {
-            state->current_frame_sq8 = (uint8_t *)malloc((size_t)frame_dim);
+            if (posix_memalign((void **)&state->current_frame_sq8, 64,
+                               (size_t)frame_dim) != 0)
+            {
+                state->current_frame_sq8 = NULL;
+            }
         }
         if (state->anchor_matrix_sq8 == NULL)
         {
             size_t total_sq8 = (size_t)config->algo.maxnbclust * (size_t)frame_dim;
-            state->anchor_matrix_sq8 = (uint8_t *)malloc(total_sq8 * sizeof(uint8_t));
+            if (posix_memalign((void **)&state->anchor_matrix_sq8, 64,
+                               total_sq8 * sizeof(uint8_t)) != 0)
+            {
+                state->anchor_matrix_sq8 = NULL;
+            }
         }
         if (!state->sq8_calibrated)
         {

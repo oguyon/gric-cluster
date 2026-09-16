@@ -150,7 +150,44 @@ static inline uint64_t rq8_dist_squared_cutoff_i8(
     uint64_t                ssd_cutoff)
 {
     uint64_t total = 0;
-    for (long i = 0; i < dim; i++)
+    long i = 0;
+
+#if defined(__AVX2__) && !defined(__CUDACC__)
+    if (dim >= 8)
+    {
+        __m256i acc64 = _mm256_setzero_si256();
+        for (; i <= dim - 8; i += 8)
+        {
+            __m128i c8 = _mm_loadl_epi64((const __m128i *)&cand_res[i]);
+            __m256i c256 = _mm256_cvtepi8_epi32(c8);
+            __m128i q8 = _mm_loadu_si128((const __m128i *)&q_res[i]);
+            __m256i q256 = _mm256_cvtepi16_epi32(q8);
+            __m256i diff = _mm256_sub_epi32(q256, c256);
+            __m256i p32 = _mm256_mullo_epi32(diff, diff);
+            __m256i sq64_lo = _mm256_cvtepu32_epi64(_mm256_castsi256_si128(p32));
+            __m256i sq64_hi = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(p32, 1));
+            acc64 = _mm256_add_epi64(acc64, _mm256_add_epi64(sq64_lo, sq64_hi));
+
+            if ((i & 31) == 24 || i == dim - 8)
+            {
+                uint64_t partial = (uint64_t)_mm256_extract_epi64(acc64, 0) +
+                                   (uint64_t)_mm256_extract_epi64(acc64, 1) +
+                                   (uint64_t)_mm256_extract_epi64(acc64, 2) +
+                                   (uint64_t)_mm256_extract_epi64(acc64, 3);
+                if (partial > ssd_cutoff)
+                {
+                    return ssd_cutoff + 1;
+                }
+            }
+        }
+        total = (uint64_t)_mm256_extract_epi64(acc64, 0) +
+                (uint64_t)_mm256_extract_epi64(acc64, 1) +
+                (uint64_t)_mm256_extract_epi64(acc64, 2) +
+                (uint64_t)_mm256_extract_epi64(acc64, 3);
+    }
+#endif
+
+    for (; i < dim; i++)
     {
         int64_t diff = (int64_t)q_res[i] - (int64_t)cand_res[i];
         total += (uint64_t)(diff * diff);

@@ -74,19 +74,43 @@ int cluster_compute_l2_norms_float(
 
 #if defined(__AVX__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-        if (dim >= 8)
+        if (dim >= 32)
         {
-            __m256 acc = _mm256_setzero_ps();
-            for (; d <= dim - 8; d += 8)
+            __m256 acc0 = _mm256_setzero_ps();
+            __m256 acc1 = _mm256_setzero_ps();
+            __m256 acc2 = _mm256_setzero_ps();
+            __m256 acc3 = _mm256_setzero_ps();
+            for (; d <= dim - 32; d += 32)
             {
-                __m256 val = _mm256_loadu_ps(&v[d]);
+                __m256 val0 = _mm256_loadu_ps(&v[d]);
+                __m256 val1 = _mm256_loadu_ps(&v[d + 8]);
+                __m256 val2 = _mm256_loadu_ps(&v[d + 16]);
+                __m256 val3 = _mm256_loadu_ps(&v[d + 24]);
 #ifdef __FMA__
-                acc = _mm256_fmadd_ps(val, val, acc);
+                acc0 = _mm256_fmadd_ps(val0, val0, acc0);
+                acc1 = _mm256_fmadd_ps(val1, val1, acc1);
+                acc2 = _mm256_fmadd_ps(val2, val2, acc2);
+                acc3 = _mm256_fmadd_ps(val3, val3, acc3);
 #else
-                acc = _mm256_add_ps(acc, _mm256_mul_ps(val, val));
+                acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(val0, val0));
+                acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(val1, val1));
+                acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(val2, val2));
+                acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(val3, val3));
 #endif
             }
-            sum += hadd_m256_ps(acc);
+            __m256 sum01 = _mm256_add_ps(acc0, acc1);
+            __m256 sum23 = _mm256_add_ps(acc2, acc3);
+            sum += hadd_m256_ps(_mm256_add_ps(sum01, sum23));
+        }
+        for (; d <= dim - 8; d += 8)
+        {
+            __m256 val = _mm256_loadu_ps(&v[d]);
+#ifdef __FMA__
+            __m256 a = _mm256_fmadd_ps(val, val, _mm256_setzero_ps());
+#else
+            __m256 a = _mm256_mul_ps(val, val);
+#endif
+            sum += hadd_m256_ps(a);
         }
 #endif
 
@@ -129,19 +153,43 @@ int cluster_compute_l2_norms_double(
 
 #if defined(__AVX__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-        if (dim >= 4)
+        if (dim >= 16)
         {
-            __m256d acc = _mm256_setzero_pd();
-            for (; d <= dim - 4; d += 4)
+            __m256d acc0 = _mm256_setzero_pd();
+            __m256d acc1 = _mm256_setzero_pd();
+            __m256d acc2 = _mm256_setzero_pd();
+            __m256d acc3 = _mm256_setzero_pd();
+            for (; d <= dim - 16; d += 16)
             {
-                __m256d val = _mm256_loadu_pd(&v[d]);
+                __m256d val0 = _mm256_loadu_pd(&v[d]);
+                __m256d val1 = _mm256_loadu_pd(&v[d + 4]);
+                __m256d val2 = _mm256_loadu_pd(&v[d + 8]);
+                __m256d val3 = _mm256_loadu_pd(&v[d + 12]);
 #ifdef __FMA__
-                acc = _mm256_fmadd_pd(val, val, acc);
+                acc0 = _mm256_fmadd_pd(val0, val0, acc0);
+                acc1 = _mm256_fmadd_pd(val1, val1, acc1);
+                acc2 = _mm256_fmadd_pd(val2, val2, acc2);
+                acc3 = _mm256_fmadd_pd(val3, val3, acc3);
 #else
-                acc = _mm256_add_pd(acc, _mm256_mul_pd(val, val));
+                acc0 = _mm256_add_pd(acc0, _mm256_mul_pd(val0, val0));
+                acc1 = _mm256_add_pd(acc1, _mm256_mul_pd(val1, val1));
+                acc2 = _mm256_add_pd(acc2, _mm256_mul_pd(val2, val2));
+                acc3 = _mm256_add_pd(acc3, _mm256_mul_pd(val3, val3));
 #endif
             }
-            sum += hadd_m256d_pd(acc);
+            __m256d sum01 = _mm256_add_pd(acc0, acc1);
+            __m256d sum23 = _mm256_add_pd(acc2, acc3);
+            sum += hadd_m256d_pd(_mm256_add_pd(sum01, sum23));
+        }
+        for (; d <= dim - 4; d += 4)
+        {
+            __m256d val = _mm256_loadu_pd(&v[d]);
+#ifdef __FMA__
+            __m256d a = _mm256_fmadd_pd(val, val, _mm256_setzero_pd());
+#else
+            __m256d a = _mm256_mul_pd(val, val);
+#endif
+            sum += hadd_m256d_pd(a);
         }
 #endif
 
@@ -304,6 +352,18 @@ static void gemm_dist_tile_4x4_float(
     int d = 0;
     for (; d <= dim - 8; d += 8)
     {
+        if (dim >= 1024 && (d & 15) == 0)
+        {
+            _mm_prefetch((const char *)&x_ptrs[0][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[1][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[2][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[3][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[0][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[1][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[2][d + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[3][d + 64], _MM_HINT_T0);
+        }
+
         __m256 vx0 = _mm256_loadu_ps(&x_ptrs[0][d]);
         __m256 vx1 = _mm256_loadu_ps(&x_ptrs[1][d]);
         __m256 vx2 = _mm256_loadu_ps(&x_ptrs[2][d]);
@@ -382,29 +442,142 @@ static void gemm_dist_tile_4x4_float(
         }
     }
 
-    /* Assemble and store distances */
+    /* Assemble and store distances using vector operations */
+    __m128 vxn = _mm_loadu_ps(xn);
+    __m128 vzero_f = _mm_setzero_ps();
+    __m128 vtwo_f = _mm_set1_ps(2.0f);
+
     for (int r = 0; r < 4; r++)
     {
-        float q_norm = qn[r];
         float *row_sq = out_dist_sq ? (out_dist_sq + (size_t)r * (size_t)out_stride) : NULL;
         double *row_d = out_dists   ? (out_dists   + (size_t)r * (size_t)out_stride) : NULL;
 
-        for (int c = 0; c < 4; c++)
-        {
-            float d2 = q_norm + xn[c] - 2.0f * dots[r][c];
-            if (d2 < 0.0f)
-            {
-                d2 = 0.0f;
-            }
+        __m128 vqn = _mm_set1_ps(qn[r]);
+        __m128 vdot = _mm_loadu_ps(dots[r]);
+        __m128 vd2 = _mm_max_ps(vzero_f,
+            _mm_sub_ps(_mm_add_ps(vqn, vxn), _mm_mul_ps(vtwo_f, vdot)));
 
-            if (row_sq != NULL)
+        if (row_sq != NULL)
+        {
+            _mm_storeu_ps(row_sq, vd2);
+        }
+        if (row_d != NULL)
+        {
+            __m128 vsqrt = _mm_sqrt_ps(vd2);
+            __m128d d_lo = _mm_cvtps_pd(vsqrt);
+            __m128d d_hi = _mm_cvtps_pd(_mm_movehl_ps(vsqrt, vsqrt));
+            _mm_storeu_pd(&row_d[0], d_lo);
+            _mm_storeu_pd(&row_d[2], d_hi);
+        }
+    }
+}
+
+/**
+ * gemm_dist_tile_2x4_double() - 2x4 register-tiled fused distance microkernel (double).
+ */
+static void gemm_dist_tile_2x4_double(
+    const double *const *restrict q_ptrs,
+    const double *const *restrict x_ptrs,
+    const double        *restrict qn,
+    const double        *restrict xn,
+    int                           dim,
+    int                           out_stride,
+    double              *restrict out_dist_sq,
+    double              *restrict out_dists)
+{
+    __m256d c00 = _mm256_setzero_pd();
+    __m256d c01 = _mm256_setzero_pd();
+    __m256d c02 = _mm256_setzero_pd();
+    __m256d c03 = _mm256_setzero_pd();
+
+    __m256d c10 = _mm256_setzero_pd();
+    __m256d c11 = _mm256_setzero_pd();
+    __m256d c12 = _mm256_setzero_pd();
+    __m256d c13 = _mm256_setzero_pd();
+
+    int d = 0;
+    for (; d <= dim - 4; d += 4)
+    {
+        if (dim >= 512 && (d & 7) == 0)
+        {
+            _mm_prefetch((const char *)&x_ptrs[0][d + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[1][d + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[2][d + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&x_ptrs[3][d + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[0][d + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&q_ptrs[1][d + 32], _MM_HINT_T0);
+        }
+
+        __m256d vx0 = _mm256_loadu_pd(&x_ptrs[0][d]);
+        __m256d vx1 = _mm256_loadu_pd(&x_ptrs[1][d]);
+        __m256d vx2 = _mm256_loadu_pd(&x_ptrs[2][d]);
+        __m256d vx3 = _mm256_loadu_pd(&x_ptrs[3][d]);
+
+        __m256d vq0 = _mm256_loadu_pd(&q_ptrs[0][d]);
+#ifdef __FMA__
+        c00 = _mm256_fmadd_pd(vq0, vx0, c00);
+        c01 = _mm256_fmadd_pd(vq0, vx1, c01);
+        c02 = _mm256_fmadd_pd(vq0, vx2, c02);
+        c03 = _mm256_fmadd_pd(vq0, vx3, c03);
+#else
+        c00 = _mm256_add_pd(c00, _mm256_mul_pd(vq0, vx0));
+        c01 = _mm256_add_pd(c01, _mm256_mul_pd(vq0, vx1));
+        c02 = _mm256_add_pd(c02, _mm256_mul_pd(vq0, vx2));
+        c03 = _mm256_add_pd(c03, _mm256_mul_pd(vq0, vx3));
+#endif
+
+        __m256d vq1 = _mm256_loadu_pd(&q_ptrs[1][d]);
+#ifdef __FMA__
+        c10 = _mm256_fmadd_pd(vq1, vx0, c10);
+        c11 = _mm256_fmadd_pd(vq1, vx1, c11);
+        c12 = _mm256_fmadd_pd(vq1, vx2, c12);
+        c13 = _mm256_fmadd_pd(vq1, vx3, c13);
+#else
+        c10 = _mm256_add_pd(c10, _mm256_mul_pd(vq1, vx0));
+        c11 = _mm256_add_pd(c11, _mm256_mul_pd(vq1, vx1));
+        c12 = _mm256_add_pd(c12, _mm256_mul_pd(vq1, vx2));
+        c13 = _mm256_add_pd(c13, _mm256_mul_pd(vq1, vx3));
+#endif
+    } // for (; d <= dim - 4; d += 4)
+
+    double dots[2][4] = {
+        { hadd_m256d_pd(c00), hadd_m256d_pd(c01), hadd_m256d_pd(c02), hadd_m256d_pd(c03) },
+        { hadd_m256d_pd(c10), hadd_m256d_pd(c11), hadd_m256d_pd(c12), hadd_m256d_pd(c13) }
+    };
+
+    for (; d < dim; d++)
+    {
+        for (int r = 0; r < 2; r++)
+        {
+            double qval = q_ptrs[r][d];
+            for (int c = 0; c < 4; c++)
             {
-                row_sq[c] = d2;
+                dots[r][c] += qval * x_ptrs[c][d];
             }
-            if (row_d != NULL)
-            {
-                row_d[c] = (double)sqrtf(d2);
-            }
+        }
+    }
+
+    __m256d vxn = _mm256_loadu_pd(xn);
+    __m256d vzero = _mm256_setzero_pd();
+    __m256d vtwo = _mm256_set1_pd(2.0);
+
+    for (int r = 0; r < 2; r++)
+    {
+        double *row_sq = out_dist_sq ? (out_dist_sq + (size_t)r * (size_t)out_stride) : NULL;
+        double *row_d  = out_dists   ? (out_dists   + (size_t)r * (size_t)out_stride) : NULL;
+
+        __m256d vqn = _mm256_set1_pd(qn[r]);
+        __m256d vdot = _mm256_loadu_pd(dots[r]);
+        __m256d vd2 = _mm256_max_pd(vzero,
+            _mm256_sub_pd(_mm256_add_pd(vqn, vxn), _mm256_mul_pd(vtwo, vdot)));
+
+        if (row_sq != NULL)
+        {
+            _mm256_storeu_pd(row_sq, vd2);
+        }
+        if (row_d != NULL)
+        {
+            _mm256_storeu_pd(row_d, _mm256_sqrt_pd(vd2));
         }
     }
 }
@@ -616,8 +789,39 @@ int cluster_gemm_dist_float(
             float qn = active_q_norms[i];
             float *row_sq = dist_sq_buf + (size_t)i * (size_t)N;
             double *row_d = out_dists ? (out_dists + (size_t)i * (size_t)N) : NULL;
+            int j = 0;
 
-            for (int j = 0; j < N; j++)
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+            __m256 v_qn = _mm256_set1_ps(qn);
+            __m256 vzero = _mm256_setzero_ps();
+            __m256 vtwo = _mm256_set1_ps(2.0f);
+            for (; j <= N - 8; j += 8)
+            {
+                __m256 v_xn = _mm256_loadu_ps(&x_norms[j]);
+                __m256 v_dot = _mm256_loadu_ps(&row_sq[j]);
+#ifdef __FMA__
+                __m256 vd2 = _mm256_max_ps(vzero,
+                    _mm256_fnmadd_ps(vtwo, v_dot, _mm256_add_ps(v_qn, v_xn)));
+#else
+                __m256 vd2 = _mm256_max_ps(vzero,
+                    _mm256_sub_ps(_mm256_add_ps(v_qn, v_xn), _mm256_mul_ps(vtwo, v_dot)));
+#endif
+                _mm256_storeu_ps(&row_sq[j], vd2);
+                if (row_d != NULL)
+                {
+                    __m256 vsqrt = _mm256_sqrt_ps(vd2);
+                    __m128 lo = _mm256_castps256_ps128(vsqrt);
+                    __m128 hi = _mm256_extractf128_ps(vsqrt, 1);
+                    _mm_storeu_pd(&row_d[j], _mm_cvtps_pd(lo));
+                    _mm_storeu_pd(&row_d[j + 2], _mm_cvtps_pd(_mm_movehl_ps(lo, lo)));
+                    _mm_storeu_pd(&row_d[j + 4], _mm_cvtps_pd(hi));
+                    _mm_storeu_pd(&row_d[j + 6], _mm_cvtps_pd(_mm_movehl_ps(hi, hi)));
+                }
+            }
+#endif
+
+            for (; j < N; j++)
             {
                 float d2 = qn + x_norms[j] - 2.0f * row_sq[j];
                 if (d2 < 0.0f)
@@ -719,6 +923,61 @@ int cluster_gemm_dist_ptrs_double(
         active_q_norms = local_q_norms;
     }
 
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    int i = 0;
+    for (; i <= M - 2; i += 2)
+    {
+        const double *q_block[2] = {
+            Q + (size_t)i * (size_t)D,
+            Q + (size_t)(i + 1) * (size_t)D
+        };
+        const double qn_block[2] = {
+            active_q_norms[i],
+            active_q_norms[i + 1]
+        };
+
+        int j = 0;
+        for (; j <= N - 4; j += 4)
+        {
+            size_t row_off = (size_t)i * (size_t)N + (size_t)j;
+            double *sq_dest = out_dist_sq ? (out_dist_sq + row_off) : NULL;
+            double *d_dest  = out_dists   ? (out_dists   + row_off) : NULL;
+            gemm_dist_tile_2x4_double(
+                q_block, &cand_ptrs[j], qn_block, &x_norms[j], D, N, sq_dest, d_dest
+            );
+        }
+
+        for (; j < N; j++)
+        {
+            for (int r = 0; r < 2; r++)
+            {
+                size_t out_idx = (size_t)(i + r) * (size_t)N + (size_t)j;
+                double *sq_dest = out_dist_sq ? &out_dist_sq[out_idx] : NULL;
+                double *d_dest  = out_dists   ? &out_dists[out_idx]   : NULL;
+                gemm_dist_scalar_double(
+                    q_block[r], cand_ptrs[j], qn_block[r], x_norms[j], D, sq_dest, d_dest
+                );
+            }
+        }
+    }
+
+    for (; i < M; i++)
+    {
+        const double *q_vec = Q + (size_t)i * (size_t)D;
+        double qn = active_q_norms[i];
+
+        for (int j = 0; j < N; j++)
+        {
+            size_t out_idx = (size_t)i * (size_t)N + (size_t)j;
+            double *sq_dest = out_dist_sq ? &out_dist_sq[out_idx] : NULL;
+            double *d_dest  = out_dists   ? &out_dists[out_idx]   : NULL;
+            gemm_dist_scalar_double(
+                q_vec, cand_ptrs[j], qn, x_norms[j], D, sq_dest, d_dest
+            );
+        }
+    }
+#else
     for (int i = 0; i < M; i++)
     {
         const double *q_vec = Q + (size_t)i * (size_t)D;
@@ -734,6 +993,7 @@ int cluster_gemm_dist_ptrs_double(
             );
         }
     } // for (int i = 0; i < M; i++)
+#endif
 
     if (local_q_norms != NULL)
     {
@@ -820,8 +1080,33 @@ int cluster_gemm_dist_double(
             double qn = active_q_norms[i];
             double *row_sq = dist_sq_buf + (size_t)i * (size_t)N;
             double *row_d = out_dists ? (out_dists + (size_t)i * (size_t)N) : NULL;
+            int j = 0;
 
-            for (int j = 0; j < N; j++)
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+            __m256d v_qn = _mm256_set1_pd(qn);
+            __m256d vzero = _mm256_setzero_pd();
+            __m256d vtwo = _mm256_set1_pd(2.0);
+            for (; j <= N - 4; j += 4)
+            {
+                __m256d v_xn = _mm256_loadu_pd(&x_norms[j]);
+                __m256d v_dot = _mm256_loadu_pd(&row_sq[j]);
+#ifdef __FMA__
+                __m256d vd2 = _mm256_max_pd(vzero,
+                    _mm256_fnmadd_pd(vtwo, v_dot, _mm256_add_pd(v_qn, v_xn)));
+#else
+                __m256d vd2 = _mm256_max_pd(vzero,
+                    _mm256_sub_pd(_mm256_add_pd(v_qn, v_xn), _mm256_mul_pd(vtwo, v_dot)));
+#endif
+                _mm256_storeu_pd(&row_sq[j], vd2);
+                if (row_d != NULL)
+                {
+                    _mm256_storeu_pd(&row_d[j], _mm256_sqrt_pd(vd2));
+                }
+            }
+#endif
+
+            for (; j < N; j++)
             {
                 double d2 = qn + x_norms[j] - 2.0 * row_sq[j];
                 if (d2 < 0.0)

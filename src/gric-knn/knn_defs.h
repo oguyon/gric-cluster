@@ -42,6 +42,7 @@ typedef struct
     int         num_members;
     int         capacity;
     MemberMeta *members;         /**< Array of member metadata records */
+    void       *ivf_vectors;     /**< Contiguous [num_members x D] float/double vector buffer */
     int16_t    *sq16_transposed; /**< [num_sq16_blocks * dim * 32] FastScan block coords */
     int         num_sq16_blocks; /**< Number of 32-candidate FastScan blocks */
     int8_t     *rq8_transposed;  /**< [num_rq8_blocks * dim * 32] RQ8 FastScan coords */
@@ -200,6 +201,7 @@ typedef struct
     const void     **anchor_ptrs;         /**< [M] array of anchor pointers */
     double          *cluster_radii;       /**< [M] array of cluster radii */
     void            *dataset_buffer;      /**< [N x D] resident dataset frames in float/double */
+    void            *ivf_dataset_buffer;  /**< [N x D] resident inverted file vectors by cluster */
     void            *dataset_mmap_addr;   /**< Base address if mmap'd */
     size_t           dataset_mmap_size;   /**< Size of mmap region */
     uint8_t         *sq8_dataset_buffer;  /**< [N x D] resident 8-bit quantized dataset */

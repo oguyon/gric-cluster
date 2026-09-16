@@ -180,6 +180,14 @@ long run_second_pass_clustering(
 
             /* Calculate lower bound on distance from frame t to anchor u */
             double lb = 0.0;
+            size_t u_row_offset = (size_t)u * (size_t)config->algo.maxnbclust;
+            const double *dcc_row = (state->scratch.dcc_min != NULL)
+                ? &state->scratch.dcc_min[u_row_offset]
+                : NULL;
+            const char *measured_row = (state->scratch.dcc_measured != NULL)
+                ? &state->scratch.dcc_measured[u_row_offset]
+                : NULL;
+
             for (int m = 0; m < K; m++)
             {
                 if (!measured[m])
@@ -187,12 +195,11 @@ long run_second_pass_clustering(
                     continue;
                 }
 
-                size_t dcc_idx = (size_t)m * (size_t)config->algo.maxnbclust + (size_t)u;
-                if (state->scratch.dcc_measured != NULL
-                    && state->scratch.dcc_measured[dcc_idx]
-                    && state->scratch.dcc_min != NULL)
+                if (measured_row != NULL
+                    && measured_row[m]
+                    && dcc_row != NULL)
                 {
-                    double dcc = state->scratch.dcc_min[dcc_idx];
+                    double dcc = dcc_row[m];
                     if (dcc >= 0.0)
                     {
                         double bound = fabs(frame_dists[m] - dcc);

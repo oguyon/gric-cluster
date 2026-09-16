@@ -3,6 +3,7 @@
  * @brief Dispatcher for coordinate and image frame reader formats.
  */
 
+#define _POSIX_C_SOURCE 200809L
 #include "common.h"
 #include "frameread.h"
 #include "png_io.h"
@@ -492,7 +493,10 @@ Frame *getframe_at(
         }
         if (!got_from_pool)
         {
-            frame_struct->data = malloc(nelements * elem_size);
+            if (posix_memalign((void **)&frame_struct->data, 64, nelements * elem_size) != 0)
+            {
+                frame_struct->data = NULL;
+            }
         }
         if (frame_struct->data == NULL)
         {

@@ -16,6 +16,218 @@
 #endif
 
 /**
+ * calc_te4_ref_init() - Precomputes reference anchor geometry for TE4 bounding.
+ * @ref: Pointer to TE4Ref structure to initialize.
+ * @d14: Distance between point 1 and 4.
+ * @d24: Distance between point 2 and 4.
+ * @d12: Distance between point 1 and 2.
+ */
+void calc_te4_ref_init(
+    TE4Ref *ref,
+    double  d14,
+    double  d24,
+    double  d12)
+{
+    if (ref == NULL)
+    {
+        return;
+    }
+    ref->d12 = d12;
+    ref->d12_sq = d12 * d12;
+    if (d12 < 1e-9)
+    {
+        ref->valid = 0;
+        ref->x4 = d14;
+        ref->y4 = 0.0;
+        ref->inv_2d12 = 0.0;
+        return;
+    }
+    ref->inv_2d12 = 1.0 / (2.0 * d12);
+    ref->x4 = (d14 * d14 + ref->d12_sq - d24 * d24) * ref->inv_2d12;
+    double y4_sq = d14 * d14 - ref->x4 * ref->x4;
+    ref->y4 = (y4_sq > 0.0) ? sqrt(y4_sq) : 0.0;
+    ref->valid = 1;
+}
+
+double calc_min_dist_4pt_ref(
+    const TE4Ref *ref,
+    double        d13,
+    double        d23)
+{
+    if (!ref->valid)
+    {
+        return fabs(ref->x4 - d13);
+    }
+
+    double x3 = (d13 * d13 + ref->d12_sq - d23 * d23) * ref->inv_2d12;
+    double y3_sq = d13 * d13 - x3 * x3;
+    double y3 = (y3_sq > 0.0) ? sqrt(y3_sq) : 0.0;
+    double dx = x3 - ref->x4;
+    double dy = y3 - ref->y4;
+    return sqrt(dx * dx + dy * dy);
+}
+
+void calc_te5_ref_init(
+    TE5Ref *ref,
+    double  d_f_c1,
+    double  d_f_c2,
+    double  d_f_c3,
+    double  d_c1_c2,
+    double  d_c1_c3,
+    double  d_c2_c3)
+{
+    if (ref == NULL)
+    {
+        return;
+    }
+    ref->d12 = d_c1_c2;
+    ref->d12_sq = d_c1_c2 * d_c1_c2;
+    ref->d13_sq = d_c1_c3 * d_c1_c3;
+    if (d_c1_c2 < 1e-9)
+    {
+        ref->valid = 0;
+        return;
+    }
+    ref->inv_2d12 = 1.0 / (2.0 * d_c1_c2);
+    ref->x3 = (ref->d13_sq + ref->d12_sq - d_c2_c3 * d_c2_c3) * ref->inv_2d12;
+    double y3_sq = ref->d13_sq - ref->x3 * ref->x3;
+    if (y3_sq < 1e-9)
+    {
+        ref->valid = 0;
+        return;
+    }
+    ref->y3 = sqrt(y3_sq);
+    ref->inv_2y3 = 1.0 / (2.0 * ref->y3);
+
+    ref->xF = (d_f_c1 * d_f_c1 + ref->d12_sq - d_f_c2 * d_f_c2) * ref->inv_2d12;
+    ref->yF = (d_f_c1 * d_f_c1 + ref->d13_sq - d_f_c3 * d_f_c3 - 2.0 * ref->xF * ref->x3) *
+              ref->inv_2y3;
+    double zF_sq = d_f_c1 * d_f_c1 - ref->xF * ref->xF - ref->yF * ref->yF;
+    ref->zF = (zF_sq > 0.0) ? sqrt(zF_sq) : 0.0;
+    ref->valid = 1;
+}
+
+double calc_min_dist_5pt_ref(
+    const TE5Ref *ref,
+    double        d_t_c1,
+    double        d_t_c2,
+    double        d_t_c3)
+{
+    if (!ref->valid)
+    {
+        return 0.0;
+    }
+
+    double xT = (d_t_c1 * d_t_c1 + ref->d12_sq - d_t_c2 * d_t_c2) * ref->inv_2d12;
+    double yT = (d_t_c1 * d_t_c1 + ref->d13_sq - d_t_c3 * d_t_c3 - 2.0 * xT * ref->x3) *
+                ref->inv_2y3;
+    double zT_sq = d_t_c1 * d_t_c1 - xT * xT - yT * yT;
+    double zT = (zT_sq > 0.0) ? sqrt(zT_sq) : 0.0;
+
+    double dx = ref->xF - xT;
+    double dy = ref->yF - yT;
+    double dz = ref->zF - zT;
+    return sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+#if defined(__AVX2__)
+void calc_min_dist_4pt_batch4_avx2(
+    const TE4Ref          *ref,
+    const double *restrict d13,
+    const double *restrict d23,
+    double       *restrict out_dists)
+{
+    if (!ref->valid)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            out_dists[i] = fabs(ref->x4 - d13[i]);
+        }
+        return;
+    }
+
+    __m256d vd13 = _mm256_loadu_pd(d13);
+    __m256d vd23 = _mm256_loadu_pd(d23);
+    __m256d vd12_sq = _mm256_set1_pd(ref->d12_sq);
+    __m256d vinv_2d12 = _mm256_set1_pd(ref->inv_2d12);
+    __m256d vx4 = _mm256_set1_pd(ref->x4);
+    __m256d vy4 = _mm256_set1_pd(ref->y4);
+    __m256d vzero = _mm256_setzero_pd();
+
+    __m256d vd13_sq = _mm256_mul_pd(vd13, vd13);
+    __m256d vd23_sq = _mm256_mul_pd(vd23, vd23);
+    __m256d vx3 = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(vd13_sq, vd12_sq), vd23_sq),
+                                vinv_2d12);
+    __m256d vy3_sq = _mm256_sub_pd(vd13_sq, _mm256_mul_pd(vx3, vx3));
+    __m256d vy3 = _mm256_sqrt_pd(_mm256_max_pd(vzero, vy3_sq));
+
+    __m256d vdx = _mm256_sub_pd(vx3, vx4);
+    __m256d vdy = _mm256_sub_pd(vy3, vy4);
+    __m256d vdist = _mm256_sqrt_pd(_mm256_add_pd(_mm256_mul_pd(vdx, vdx),
+                                                 _mm256_mul_pd(vdy, vdy)));
+
+    _mm256_storeu_pd(out_dists, vdist);
+}
+
+void calc_min_dist_5pt_batch4_avx2(
+    const TE5Ref          *ref,
+    const double *restrict d_t_c1,
+    const double *restrict d_t_c2,
+    const double *restrict d_t_c3,
+    double       *restrict out_dists)
+{
+    if (!ref->valid)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            out_dists[i] = 0.0;
+        }
+        return;
+    }
+
+    __m256d vt1 = _mm256_loadu_pd(d_t_c1);
+    __m256d vt2 = _mm256_loadu_pd(d_t_c2);
+    __m256d vt3 = _mm256_loadu_pd(d_t_c3);
+    __m256d vt1_sq = _mm256_mul_pd(vt1, vt1);
+    __m256d vt2_sq = _mm256_mul_pd(vt2, vt2);
+    __m256d vt3_sq = _mm256_mul_pd(vt3, vt3);
+
+    __m256d vd12_sq = _mm256_set1_pd(ref->d12_sq);
+    __m256d vd13_sq = _mm256_set1_pd(ref->d13_sq);
+    __m256d vinv_2d12 = _mm256_set1_pd(ref->inv_2d12);
+    __m256d vinv_2y3 = _mm256_set1_pd(ref->inv_2y3);
+    __m256d vx3 = _mm256_set1_pd(ref->x3);
+    __m256d vtwo = _mm256_set1_pd(2.0);
+    __m256d vzero = _mm256_setzero_pd();
+
+    __m256d vxT = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(vt1_sq, vd12_sq), vt2_sq),
+                                vinv_2d12);
+    __m256d vyT_num = _mm256_sub_pd(_mm256_sub_pd(_mm256_add_pd(vt1_sq, vd13_sq), vt3_sq),
+                                    _mm256_mul_pd(_mm256_mul_pd(vtwo, vxT), vx3));
+    __m256d vyT = _mm256_mul_pd(vyT_num, vinv_2y3);
+
+    __m256d vzT_sq = _mm256_sub_pd(_mm256_sub_pd(vt1_sq, _mm256_mul_pd(vxT, vxT)),
+                                   _mm256_mul_pd(vyT, vyT));
+    __m256d vzT = _mm256_sqrt_pd(_mm256_max_pd(vzero, vzT_sq));
+
+    __m256d vxF = _mm256_set1_pd(ref->xF);
+    __m256d vyF = _mm256_set1_pd(ref->yF);
+    __m256d vzF = _mm256_set1_pd(ref->zF);
+
+    __m256d vdx = _mm256_sub_pd(vxF, vxT);
+    __m256d vdy = _mm256_sub_pd(vyF, vyT);
+    __m256d vdz = _mm256_sub_pd(vzF, vzT);
+
+    __m256d vdist_sq = _mm256_add_pd(_mm256_add_pd(_mm256_mul_pd(vdx, vdx),
+                                                   _mm256_mul_pd(vdy, vdy)),
+                                     _mm256_mul_pd(vdz, vdz));
+    __m256d vdist = _mm256_sqrt_pd(vdist_sq);
+
+    _mm256_storeu_pd(out_dists, vdist);
+}
+#endif
+
+/**
  * calc_min_dist_4pt() - Computes minimum distance using a 4-point configuration.
  * @d14: Distance between point 1 and 4.
  * @d24: Distance between point 2 and 4.
@@ -32,20 +244,9 @@ double calc_min_dist_4pt(
     double d13,
     double d23)
 {
-    if (d12 < 1e-9)
-    {
-        return fabs(d14 - d13);
-    }
-
-    double x3 = (d13 * d13 + d12 * d12 - d23 * d23) / (2.0 * d12);
-    double y3_sq = d13 * d13 - x3 * x3;
-    double y3 = (y3_sq > 0.0) ? sqrt(y3_sq) : 0.0;
-
-    double x4 = (d14 * d14 + d12 * d12 - d24 * d24) / (2.0 * d12);
-    double y4_sq = d14 * d14 - x4 * x4;
-    double y4 = (y4_sq > 0.0) ? sqrt(y4_sq) : 0.0;
-
-    return sqrt((x3 - x4) * (x3 - x4) + (y3 - y4) * (y3 - y4));
+    TE4Ref ref;
+    calc_te4_ref_init(&ref, d14, d24, d12);
+    return calc_min_dist_4pt_ref(&ref, d13, d23);
 }
 
 /**
@@ -73,32 +274,9 @@ double calc_min_dist_5pt(
     double d_c1_c3,
     double d_c2_c3)
 {
-    if (d_c1_c2 < 1e-9)
-    {
-        return 0.0;
-    }
-
-    double x3 = (d_c1_c3 * d_c1_c3 + d_c1_c2 * d_c1_c2 - d_c2_c3 * d_c2_c3) / (2.0 * d_c1_c2);
-    double y3_sq = d_c1_c3 * d_c1_c3 - x3 * x3;
-    if (y3_sq < 1e-9)
-    {
-        return 0.0;
-    }
-    double y3 = sqrt(y3_sq);
-
-    double xF = (d_f_c1 * d_f_c1 + d_c1_c2 * d_c1_c2 - d_f_c2 * d_f_c2) / (2.0 * d_c1_c2);
-    double yF =
-        (d_f_c1 * d_f_c1 + d_c1_c3 * d_c1_c3 - d_f_c3 * d_f_c3 - 2.0 * xF * x3) / (2.0 * y3);
-    double zF_sq = d_f_c1 * d_f_c1 - xF * xF - yF * yF;
-    double zF = (zF_sq > 0.0) ? sqrt(zF_sq) : 0.0;
-
-    double xT = (d_t_c1 * d_t_c1 + d_c1_c2 * d_c1_c2 - d_t_c2 * d_t_c2) / (2.0 * d_c1_c2);
-    double yT =
-        (d_t_c1 * d_t_c1 + d_c1_c3 * d_c1_c3 - d_t_c3 * d_t_c3 - 2.0 * xT * x3) / (2.0 * y3);
-    double zT_sq = d_t_c1 * d_t_c1 - xT * xT - yT * yT;
-    double zT = (zT_sq > 0.0) ? sqrt(zT_sq) : 0.0;
-
-    return sqrt((xF - xT) * (xF - xT) + (yF - yT) * (yF - yT) + (zF - zT) * (zF - zT));
+    TE5Ref ref;
+    calc_te5_ref_init(&ref, d_f_c1, d_f_c2, d_f_c3, d_c1_c2, d_c1_c3, d_c2_c3);
+    return calc_min_dist_5pt_ref(&ref, d_t_c1, d_t_c2, d_t_c3);
 }
 
 /**

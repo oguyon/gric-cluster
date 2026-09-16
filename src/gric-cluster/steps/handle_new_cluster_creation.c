@@ -174,16 +174,66 @@ static void init_new_cluster_distances(
             }
         }
 
-        int b_count = unvisited_count / 4;
+        int b_count8 = unvisited_count / 8;
         long frame_elem = (long)state->clusters[new_cl].anchor.width *
                           (long)state->clusters[new_cl].anchor.height;
         int is_double = state->clusters[new_cl].anchor.is_double;
+        int processed_count = 0;
 
         if (!config->output.distall_mode && config->optim.use_batch_dist)
         {
-            for (int b = 0; b < b_count; b++)
+            for (int b = 0; b < b_count8; b++)
             {
-                int b_idx = b * 4;
+                int b_idx = b * 8;
+                double batch_dists[8];
+
+                if (is_double)
+                {
+                    const double *b_anchors[8];
+                    for (int k = 0; k < 8; k++)
+                    {
+                        int cl_k = unvisited[b_idx + k];
+                        b_anchors[k] = (const double *)state->clusters[cl_k].anchor.data;
+                    }
+                    framedist_batch_1x8_double(
+                        (const double *)state->clusters[new_cl].anchor.data,
+                        b_anchors,
+                        batch_dists,
+                        frame_elem);
+                }
+                else
+                {
+                    const float *b_anchors[8];
+                    for (int k = 0; k < 8; k++)
+                    {
+                        int cl_k = unvisited[b_idx + k];
+                        b_anchors[k] = (const float *)state->clusters[cl_k].anchor.data;
+                    }
+                    framedist_batch_1x8_float(
+                        (const float *)state->clusters[new_cl].anchor.data,
+                        b_anchors,
+                        batch_dists,
+                        frame_elem);
+                }
+
+                for (int k = 0; k < 8; k++)
+                {
+                    int cl_idx = unvisited[b_idx + k];
+                    double d = batch_dists[k];
+                    state->scratch.dcc_min[new_cl * N + cl_idx] = d;
+                    state->scratch.dcc_min[cl_idx * N + new_cl] = d;
+                    state->scratch.dcc_max[new_cl * N + cl_idx] = d;
+                    state->scratch.dcc_max[cl_idx * N + new_cl] = d;
+                    state->scratch.dcc_measured[new_cl * N + cl_idx] = 1;
+                    state->scratch.dcc_measured[cl_idx * N + new_cl] = 1;
+                }
+            } // for (int b = 0; b < b_count8; b++)
+            processed_count = b_count8 * 8;
+
+            int b_count4 = (unvisited_count - processed_count) / 4;
+            for (int b = 0; b < b_count4; b++)
+            {
+                int b_idx = processed_count + b * 4;
                 double batch_dists[4];
 
                 if (is_double)
@@ -226,9 +276,10 @@ static void init_new_cluster_distances(
                     state->scratch.dcc_measured[new_cl * N + cl_idx] = 1;
                     state->scratch.dcc_measured[cl_idx * N + new_cl] = 1;
                 }
-            } // for (int b = 0; b < b_count; b++)
+            }
+            processed_count += b_count4 * 4;
 
-            for (int i = b_count * 4; i < unvisited_count; i++)
+            for (int i = processed_count; i < unvisited_count; i++)
             {
                 int cl_idx = unvisited[i];
                 double d = get_dist(&state->clusters[new_cl].anchor,

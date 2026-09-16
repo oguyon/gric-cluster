@@ -843,20 +843,23 @@ static inline void record_neighbor_and_reciprocal(
         return;
     }
 
+    if (heap->count < heap->k || (float)dist < heap->tau)
+    {
 #ifdef _OPENMP
-    if (bucket_locks != NULL)
-    {
-        omp_set_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
-        knn_heap_push(heap, (int)cand_id, dist);
-        omp_unset_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
-    }
-    else
-    {
-        knn_heap_push(heap, (int)cand_id, dist);
-    }
+        if (bucket_locks != NULL)
+        {
+            omp_set_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
+            knn_heap_push(heap, (int)cand_id, dist);
+            omp_unset_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
+        }
+        else
+        {
+            knn_heap_push(heap, (int)cand_id, dist);
+        }
 #else
-    knn_heap_push(heap, (int)cand_id, dist);
+        knn_heap_push(heap, (int)cand_id, dist);
 #endif
+    }
 
     if (config->use_reciprocal && cand_id > query_id &&
         cand_id < model->total_dataset_frames && all_heaps != NULL)
@@ -992,9 +995,11 @@ static inline double knn_compute_anchor_distance(
         return sqrt((double)ssd) * (double)model->sq8_params.scale;
     }
 
+    const void *anchor_data = (model->anchor_ptrs != NULL) ?
+                              model->anchor_ptrs[c] : model->clusters[c].anchor_data;
     telem->framedist_calls++;
     return compute_euclidean_distance(
-        query_data, model->clusters[c].anchor_data, frame_elem, model->is_double
+        query_data, anchor_data, frame_elem, model->is_double
     );
 }
 

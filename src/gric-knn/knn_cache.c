@@ -1342,6 +1342,7 @@ int knn_model_cache_dataset(
                                    "zero-copy)\n",
                                    N, (double)total_bytes / (1024.0 * 1024.0));
                         }
+                        knn_model_build_ivf_layout(model, config);
                         return 0;
                     }
                 }
@@ -1388,6 +1389,91 @@ int knn_model_cache_dataset(
     {
         printf("Cached resident dataset in RAM: %ld frames (%.2f MB)\n",
                N, (double)total_bytes / (1024.0 * 1024.0));
+    }
+
+    knn_model_build_ivf_layout(model, config);
+
+    return 0;
+}
+
+/**
+ * knn_model_build_ivf_layout() - Reorganize dataset into contiguous per-cluster IVF layout.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Reorganizes resident frames into contiguous per-cluster arrays (Inverted File layout),
+ * so that all members of a cluster are stored contiguously in memory in annular order.
+ * This transforms random DRAM frame gathers during candidate evaluation into linear
+ * streaming memory accesses that maximize CPU L1/L2 prefetcher hit rates.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_ivf_layout(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (model == NULL || model->dataset_buffer == NULL ||
+        model->clusters == NULL || model->num_clusters <= 0)
+    {
+        return 0;
+    }
+
+    if (model->ivf_dataset_buffer != NULL)
+    {
+        free(model->ivf_dataset_buffer);
+        model->ivf_dataset_buffer = NULL;
+    }
+
+    int M = model->num_clusters;
+    long dim = model->frame_elements;
+    size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
+    size_t frame_bytes = (size_t)dim * elem_size;
+
+    size_t total_members = 0;
+    for (int c = 0; c < M; c++)
+    {
+        total_members += (size_t)model->clusters[c].num_members;
+    }
+
+    if (total_members == 0)
+    {
+        return 0;
+    }
+
+    size_t total_bytes = total_members * frame_bytes;
+    void *buf = NULL;
+    if (posix_memalign(&buf, 64, total_bytes) != 0 || buf == NULL)
+    {
+        return -1;
+    }
+
+    model->ivf_dataset_buffer = buf;
+    char *cursor = (char *)buf;
+
+    for (int c = 0; c < M; c++)
+    {
+        KnnCluster *cl = &model->clusters[c];
+        int num_m = cl->num_members;
+        if (num_m <= 0)
+        {
+            cl->ivf_vectors = NULL;
+            continue;
+        }
+
+        cl->ivf_vectors = (void *)cursor;
+        for (int m = 0; m < num_m; m++)
+        {
+            uint32_t fid = cl->members[m].frame_id;
+            const char *src = (const char *)model->dataset_buffer + (size_t)fid * frame_bytes;
+            memcpy(cursor + (size_t)m * frame_bytes, src, frame_bytes);
+        }
+        cursor += (size_t)num_m * frame_bytes;
+    }
+
+    if (config != NULL && config->verbose_level >= 1)
+    {
+        printf("Built CPU contiguous IVF layout: %zu frames (%.2f MB)\n",
+               total_members, (double)total_bytes / (1024.0 * 1024.0));
     }
 
     return 0;
