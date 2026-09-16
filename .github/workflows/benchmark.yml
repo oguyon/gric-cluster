@@ -26,6 +26,9 @@ jobs:
         make -j$(nproc)
         cd ../benchmarks
         ../build/gric-benchmark
+        echo "## SIMD Hardware Acceleration & Scaling" >> $GITHUB_STEP_SUMMARY
+        echo "Scalar baseline vs. AVX2 vs. AVX-512" >> $GITHUB_STEP_SUMMARY
+        ../build/gric-simd-bench --markdown >> $GITHUB_STEP_SUMMARY || true
 
     - name: Upload Results
       uses: actions/upload-artifact@v4

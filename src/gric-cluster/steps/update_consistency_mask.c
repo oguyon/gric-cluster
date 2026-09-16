@@ -6,11 +6,49 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_steps.h"
 #include "cluster_core.h"
+#include "gric_simd.h"
 #include <stdlib.h>
 #include <string.h>
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <immintrin.h>
+#endif
+
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static inline int update_consistency_mask_range_avx512(
+    uint64_t     *mask,
+    const double *dists,
+    int           count,
+    double        min_bound,
+    double        max_bound)
+{
+    __m512d vlo = _mm512_set1_pd(min_bound);
+    __m512d vhi = _mm512_set1_pd(max_bound);
+    __m512d vzero = _mm512_setzero_pd();
+    int k = 0;
+
+    for (; k <= count - 8; k += 8)
+    {
+        __m512d vk = _mm512_loadu_pd(&dists[k]);
+        __mmask8 valid = _mm512_cmp_pd_mask(vk, vzero, _CMP_GE_OQ);
+        __mmask8 ge    = _mm512_cmp_pd_mask(vk, vlo, _CMP_GE_OQ);
+        __mmask8 le    = _mm512_cmp_pd_mask(vk, vhi, _CMP_LE_OQ);
+        uint8_t bitmask = (uint8_t)(valid & ge & le);
+        if (bitmask != 0)
+        {
+            for (int b = 0; b < 8; b++)
+            {
+                if (bitmask & (1 << b))
+                {
+                    int idx = k + b;
+                    mask[idx / 64] |= (1ULL << (idx % 64));
+                }
+            }
+        }
+    }
+    return k;
+}
 #endif
 
 static inline void update_consistency_mask_range(
@@ -23,6 +61,13 @@ static inline void update_consistency_mask_range(
     double min_bound = measured_dist - rc2;
     double max_bound = measured_dist + rc2;
     int k = 0;
+
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        k = update_consistency_mask_range_avx512(mask, dists, count, min_bound, max_bound);
+    }
+#endif
 
 #if defined(__AVX2__)
     __m256d vlo = _mm256_set1_pd(min_bound);
