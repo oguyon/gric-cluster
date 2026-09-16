@@ -31,9 +31,10 @@ static inline float hadd_m256_ps(__m256 v)
     __m128 lo = _mm256_castps256_ps128(v);
     __m128 hi = _mm256_extractf128_ps(v, 1);
     __m128 s = _mm_add_ps(lo, hi);
-    s = _mm_hadd_ps(s, s);
-    s = _mm_hadd_ps(s, s);
-    return _mm_cvtss_f32(s);
+    __m128 shuf = _mm_movehl_ps(s, s);
+    __m128 squad = _mm_add_ps(s, shuf);
+    shuf = _mm_shuffle_ps(squad, squad, 1);
+    return _mm_cvtss_f32(_mm_add_ss(squad, shuf));
 }
 
 static inline double hadd_m256d_pd(__m256d v)
@@ -41,8 +42,7 @@ static inline double hadd_m256d_pd(__m256d v)
     __m128d lo = _mm256_castpd256_pd128(v);
     __m128d hi = _mm256_extractf128_pd(v, 1);
     __m128d s = _mm_add_pd(lo, hi);
-    s = _mm_hadd_pd(s, s);
-    return _mm_cvtsd_f64(s);
+    return _mm_cvtsd_f64(_mm_add_sd(s, _mm_unpackhi_pd(s, s)));
 }
 #endif
 

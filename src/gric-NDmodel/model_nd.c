@@ -12,6 +12,11 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#endif
+
 #include "shared/cli_colors.h"
 
 #define MAX_CLUSTERS 2000
@@ -38,7 +43,32 @@ static double dist_nd(
     PointND p2)
 {
     double sum = 0.0;
-    for (int k = 0; k < p1.dim; k++)
+    int k = 0;
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (p1.dim >= 32)
+    {
+        __m256d v_sum = _mm256_setzero_pd();
+        for (; k <= p1.dim - 4; k += 4)
+        {
+            __m256d v1 = _mm256_loadu_pd(&p1.coords[k]);
+            __m256d v2 = _mm256_loadu_pd(&p2.coords[k]);
+            __m256d diff = _mm256_sub_pd(v1, v2);
+#ifdef __FMA__
+            v_sum = _mm256_fmadd_pd(diff, diff, v_sum);
+#else
+            v_sum = _mm256_add_pd(v_sum, _mm256_mul_pd(diff, diff));
+#endif
+        }
+        __m128d lo = _mm256_castpd256_pd128(v_sum);
+        __m128d hi = _mm256_extractf128_pd(v_sum, 1);
+        __m128d s128 = _mm_add_pd(lo, hi);
+        sum += _mm_cvtsd_f64(_mm_add_sd(s128, _mm_unpackhi_pd(s128, s128)));
+    }
+#endif
+
+    for (; k < p1.dim; k++)
     {
         double d = p1.coords[k] - p2.coords[k];
         sum += d * d;

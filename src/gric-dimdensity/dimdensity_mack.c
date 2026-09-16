@@ -12,6 +12,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#endif
+
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -102,8 +106,35 @@ int dimdensity_compute_mack_density(
             // Epanechnikov kernel weighting
             double sum_k = 0.0;
             double inv_rk = 1.0 / r_k;
+            int j = 0;
 
-            for (int j = 0; j < target_k - 1; j++)
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+            if (target_k - 1 >= 4)
+            {
+                __m256d v_inv = _mm256_set1_pd(inv_rk);
+                __m256d v_one = _mm256_set1_pd(1.0);
+                __m256d v_zero = _mm256_setzero_pd();
+                __m256d v_sum = _mm256_setzero_pd();
+
+                for (; j <= target_k - 1 - 4; j += 4)
+                {
+                    __m256d v_row = _mm256_loadu_pd(&row[j]);
+                    __m256d u = _mm256_mul_pd(v_row, v_inv);
+                    __m256d u2 = _mm256_mul_pd(u, u);
+                    __m256d diff = _mm256_sub_pd(v_one, u2);
+                    __m256d weight = _mm256_max_pd(v_zero, diff);
+                    v_sum = _mm256_add_pd(v_sum, weight);
+                }
+
+                __m128d lo = _mm256_castpd256_pd128(v_sum);
+                __m128d hi = _mm256_extractf128_pd(v_sum, 1);
+                __m128d s128 = _mm_add_pd(lo, hi);
+                sum_k += _mm_cvtsd_f64(_mm_add_sd(s128, _mm_unpackhi_pd(s128, s128)));
+            }
+#endif
+
+            for (; j < target_k - 1; j++)
             {
                 double u = row[j] * inv_rk;
                 if (u < 1.0)

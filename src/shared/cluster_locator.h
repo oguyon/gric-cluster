@@ -116,4 +116,13 @@ int cluster_locate_sample(
     const ClusterLocatorConfig *config,
     ClusterLocatorResult       *result);
 
+/**
+ * @brief Computes Euclidean distance between two vectors.
+ */
+double compute_vector_distance(
+    const void *restrict a,
+    const void *restrict b,
+    long                 n,
+    int                  is_double);
+
 #endif // CLUSTER_LOCATOR_H

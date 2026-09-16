@@ -46,6 +46,130 @@ void sq8_init_params(
 }
 
 /**
+ * find_min_max_float() - Vectorized min/max scan across a float array using AVX.
+ * @data:         Input float array.
+ * @num_elements: Number of elements in array.
+ * @out_min:      Pointer to receive minimum value.
+ * @out_max:      Pointer to receive maximum value.
+ */
+static inline void find_min_max_float(
+    const float *data,
+    long         num_elements,
+    float       *out_min,
+    float       *out_max)
+{
+    float min_v = data[0];
+    float max_v = data[0];
+    long i = 0;
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (num_elements >= 8)
+    {
+        __m256 vmin = _mm256_loadu_ps(data);
+        __m256 vmax = vmin;
+        i = 8;
+        for (; i <= num_elements - 8; i += 8)
+        {
+            __m256 v = _mm256_loadu_ps(&data[i]);
+            vmin = _mm256_min_ps(vmin, v);
+            vmax = _mm256_max_ps(vmax, v);
+        }
+        __m128 min_lo = _mm256_castps256_ps128(vmin);
+        __m128 min_hi = _mm256_extractf128_ps(vmin, 1);
+        __m128 min_128 = _mm_min_ps(min_lo, min_hi);
+        min_128 = _mm_min_ps(min_128, _mm_movehl_ps(min_128, min_128));
+        min_128 = _mm_min_ss(min_128, _mm_shuffle_ps(min_128, min_128, 1));
+        min_v = _mm_cvtss_f32(min_128);
+
+        __m128 max_lo = _mm256_castps256_ps128(vmax);
+        __m128 max_hi = _mm256_extractf128_ps(vmax, 1);
+        __m128 max_128 = _mm_max_ps(max_lo, max_hi);
+        max_128 = _mm_max_ps(max_128, _mm_movehl_ps(max_128, max_128));
+        max_128 = _mm_max_ss(max_128, _mm_shuffle_ps(max_128, max_128, 1));
+        max_v = _mm_cvtss_f32(max_128);
+    }
+#endif
+
+    for (; i < num_elements; i++)
+    {
+        float val = data[i];
+        if (val < min_v)
+        {
+            min_v = val;
+        }
+        if (val > max_v)
+        {
+            max_v = val;
+        }
+    }
+
+    *out_min = min_v;
+    *out_max = max_v;
+}
+
+/**
+ * find_min_max_double() - Vectorized min/max scan across a double array using AVX.
+ * @data:         Input double array.
+ * @num_elements: Number of elements in array.
+ * @out_min:      Pointer to receive minimum value.
+ * @out_max:      Pointer to receive maximum value.
+ */
+static inline void find_min_max_double(
+    const double *data,
+    long          num_elements,
+    double       *out_min,
+    double       *out_max)
+{
+    double min_v = data[0];
+    double max_v = data[0];
+    long i = 0;
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (num_elements >= 4)
+    {
+        __m256d vmin = _mm256_loadu_pd(data);
+        __m256d vmax = vmin;
+        i = 4;
+        for (; i <= num_elements - 4; i += 4)
+        {
+            __m256d v = _mm256_loadu_pd(&data[i]);
+            vmin = _mm256_min_pd(vmin, v);
+            vmax = _mm256_max_pd(vmax, v);
+        }
+        __m128d min_lo = _mm256_castpd256_pd128(vmin);
+        __m128d min_hi = _mm256_extractf128_pd(vmin, 1);
+        __m128d min_128 = _mm_min_pd(min_lo, min_hi);
+        min_128 = _mm_min_sd(min_128, _mm_unpackhi_pd(min_128, min_128));
+        min_v = _mm_cvtsd_f64(min_128);
+
+        __m128d max_lo = _mm256_castpd256_pd128(vmax);
+        __m128d max_hi = _mm256_extractf128_pd(vmax, 1);
+        __m128d max_128 = _mm_max_pd(max_lo, max_hi);
+        max_128 = _mm_max_sd(max_128, _mm_unpackhi_pd(max_128, max_128));
+        max_v = _mm_cvtsd_f64(max_128);
+    }
+#endif
+
+    for (; i < num_elements; i++)
+    {
+        double val = data[i];
+        if (val < min_v)
+        {
+            min_v = val;
+        }
+        if (val > max_v)
+        {
+            max_v = val;
+        }
+    }
+
+    *out_min = min_v;
+    *out_max = max_v;
+}
+
+/**
  * sq8_calibrate_float() - Calibrate SQ8 parameters by scanning a float array.
  * @params:       Pointer to SQ8Params structure to populate.
  * @data:         Pointer to input float array.
@@ -63,22 +187,9 @@ void sq8_calibrate_float(
         return;
     }
 
-    float min_v = data[0];
-    float max_v = data[0];
-
-    for (long i = 1; i < num_elements; i++)
-    {
-        float val = data[i];
-        if (val < min_v)
-        {
-            min_v = val;
-        }
-        if (val > max_v)
-        {
-            max_v = val;
-        }
-    } // for (long i = 1; i < num_elements; i++)
-
+    float min_v = 0.0f;
+    float max_v = 0.0f;
+    find_min_max_float(data, num_elements, &min_v, &max_v);
     sq8_init_params(params, min_v, max_v, dim);
 }
 
@@ -100,22 +211,9 @@ void sq8_calibrate_double(
         return;
     }
 
-    double min_v = data[0];
-    double max_v = data[0];
-
-    for (long i = 1; i < num_elements; i++)
-    {
-        double val = data[i];
-        if (val < min_v)
-        {
-            min_v = val;
-        }
-        if (val > max_v)
-        {
-            max_v = val;
-        }
-    } // for (long i = 1; i < num_elements; i++)
-
+    double min_v = 0.0;
+    double max_v = 0.0;
+    find_min_max_double(data, num_elements, &min_v, &max_v);
     sq8_init_params(params, (float)min_v, (float)max_v, dim);
 }
 
@@ -192,8 +290,41 @@ void sq8_quantize_double(
     long dim = params->dim;
     double min_val = (double)params->min_val;
     double inv_scale = (double)params->inv_scale;
+    long i = 0;
 
-    for (long i = 0; i < dim; i++)
+#if defined(__AVX2__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    __m256d v_min = _mm256_set1_pd(min_val);
+    __m256d v_inv = _mm256_set1_pd(inv_scale);
+    __m256d v_half = _mm256_set1_pd(0.5);
+    __m256d v_zero = _mm256_setzero_pd();
+    __m256d v_max = _mm256_set1_pd(255.0);
+
+    for (; i <= dim - 8; i += 8)
+    {
+        __m256d d0 = _mm256_loadu_pd(&src[i]);
+        __m256d d1 = _mm256_loadu_pd(&src[i + 4]);
+
+        __m256d n0 = _mm256_mul_pd(_mm256_sub_pd(d0, v_min), v_inv);
+        n0 = _mm256_add_pd(n0, v_half);
+        n0 = _mm256_max_pd(v_zero, _mm256_min_pd(n0, v_max));
+
+        __m256d n1 = _mm256_mul_pd(_mm256_sub_pd(d1, v_min), v_inv);
+        n1 = _mm256_add_pd(n1, v_half);
+        n1 = _mm256_max_pd(v_zero, _mm256_min_pd(n1, v_max));
+
+        __m128i i0 = _mm256_cvttpd_epi32(n0);
+        __m128i i1 = _mm256_cvttpd_epi32(n1);
+
+        __m128i p16 = _mm_packs_epi32(i0, i1);
+        __m128i p8 = _mm_packus_epi16(p16, p16);
+
+        uint64_t bytes8 = (uint64_t)_mm_cvtsi128_si64(p8);
+        memcpy(&dst[i], &bytes8, 8);
+    }
+#endif
+
+    for (; i < dim; i++)
     {
         double val = (src[i] - min_val) * inv_scale + 0.5;
         if (val < 0.0)
@@ -205,7 +336,7 @@ void sq8_quantize_double(
             val = 255.0;
         }
         dst[i] = (uint8_t)val;
-    } // for (long i = 0; i < dim; i++)
+    } // for (; i < dim; i++)
 }
 
 /**
@@ -262,8 +393,54 @@ uint64_t sq8_dist_squared_u8(
 #elif defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     const __m256i zero256 = _mm256_setzero_si256();
-    __m256i sum_vec256 = _mm256_setzero_si256();
+    __m256i sum_vec256_0 = _mm256_setzero_si256();
+    __m256i sum_vec256_1 = _mm256_setzero_si256();
     long chunk_count256 = 0;
+
+    for (; i <= dim - 64; i += 64)
+    {
+        __m256i va0 = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+        __m256i vb0 = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+
+        __m256i va_lo0 = _mm256_unpacklo_epi8(va0, zero256);
+        __m256i vb_lo0 = _mm256_unpacklo_epi8(vb0, zero256);
+        __m256i diff_lo0 = _mm256_sub_epi16(va_lo0, vb_lo0);
+
+        __m256i va_hi0 = _mm256_unpackhi_epi8(va0, zero256);
+        __m256i vb_hi0 = _mm256_unpackhi_epi8(vb0, zero256);
+        __m256i diff_hi0 = _mm256_sub_epi16(va_hi0, vb_hi0);
+
+        sum_vec256_0 = _mm256_add_epi32(sum_vec256_0, _mm256_madd_epi16(diff_lo0, diff_lo0));
+        sum_vec256_1 = _mm256_add_epi32(sum_vec256_1, _mm256_madd_epi16(diff_hi0, diff_hi0));
+
+        __m256i va1 = _mm256_loadu_si256((const __m256i *)(const void *)(a + i + 32));
+        __m256i vb1 = _mm256_loadu_si256((const __m256i *)(const void *)(b + i + 32));
+
+        __m256i va_lo1 = _mm256_unpacklo_epi8(va1, zero256);
+        __m256i vb_lo1 = _mm256_unpacklo_epi8(vb1, zero256);
+        __m256i diff_lo1 = _mm256_sub_epi16(va_lo1, vb_lo1);
+
+        __m256i va_hi1 = _mm256_unpackhi_epi8(va1, zero256);
+        __m256i vb_hi1 = _mm256_unpackhi_epi8(vb1, zero256);
+        __m256i diff_hi1 = _mm256_sub_epi16(va_hi1, vb_hi1);
+
+        sum_vec256_0 = _mm256_add_epi32(sum_vec256_0, _mm256_madd_epi16(diff_lo1, diff_lo1));
+        sum_vec256_1 = _mm256_add_epi32(sum_vec256_1, _mm256_madd_epi16(diff_hi1, diff_hi1));
+
+        chunk_count256 += 64;
+        if (chunk_count256 >= 16384)
+        {
+            __m256i sum_tot = _mm256_add_epi32(sum_vec256_0, sum_vec256_1);
+            __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(sum_tot),
+                                         _mm256_extracti128_si256(sum_tot, 1));
+            s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
+            s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
+            total += (uint64_t)(uint32_t)_mm_cvtsi128_si32(s128);
+            sum_vec256_0 = _mm256_setzero_si256();
+            sum_vec256_1 = _mm256_setzero_si256();
+            chunk_count256 = 0;
+        }
+    }
 
     for (; i <= dim - 32; i += 32)
     {
@@ -278,27 +455,13 @@ uint64_t sq8_dist_squared_u8(
         __m256i vb_hi = _mm256_unpackhi_epi8(vb, zero256);
         __m256i diff_hi = _mm256_sub_epi16(va_hi, vb_hi);
 
-        __m256i prod_lo = _mm256_madd_epi16(diff_lo, diff_lo);
-        __m256i prod_hi = _mm256_madd_epi16(diff_hi, diff_hi);
+        sum_vec256_0 = _mm256_add_epi32(sum_vec256_0, _mm256_madd_epi16(diff_lo, diff_lo));
+        sum_vec256_1 = _mm256_add_epi32(sum_vec256_1, _mm256_madd_epi16(diff_hi, diff_hi));
+    }
 
-        sum_vec256 = _mm256_add_epi32(sum_vec256, prod_lo);
-        sum_vec256 = _mm256_add_epi32(sum_vec256, prod_hi);
-
-        chunk_count256 += 32;
-        if (chunk_count256 >= 16384)
-        {
-            __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(sum_vec256),
-                                         _mm256_extracti128_si256(sum_vec256, 1));
-            s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
-            s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
-            total += (uint64_t)(uint32_t)_mm_cvtsi128_si32(s128);
-            sum_vec256 = _mm256_setzero_si256();
-            chunk_count256 = 0;
-        }
-    } // for (; i <= dim - 32; i += 32)
-
-    __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(sum_vec256),
-                                 _mm256_extracti128_si256(sum_vec256, 1));
+    __m256i sum_tot = _mm256_add_epi32(sum_vec256_0, sum_vec256_1);
+    __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(sum_tot),
+                                 _mm256_extracti128_si256(sum_tot, 1));
     s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
     s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
     total += (uint64_t)(uint32_t)_mm_cvtsi128_si32(s128);
@@ -309,6 +472,135 @@ uint64_t sq8_dist_squared_u8(
         int32_t diff = (int32_t)a[i] - (int32_t)b[i];
         total += (uint64_t)(diff * diff);
     } // for (; i < dim; i++)
+
+    return total;
+}
+
+/**
+ * sq8_dot_product_u8() - Compute dot product between two uint8 vectors.
+ * @a:   Pointer to first uint8 array [dim].
+ * @b:   Pointer to second uint8 array [dim].
+ * @dim: Vector dimension.
+ *
+ * Return: Dot product as uint64_t.
+ */
+uint64_t sq8_dot_product_u8(
+    const uint8_t *restrict a,
+    const uint8_t *restrict b,
+    long                    dim)
+{
+    uint64_t total = 0;
+    long i = 0;
+
+#if defined(__AVXVNNI__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (dim >= 32)
+    {
+        const __m256i v128 = _mm256_set1_epi8((char)128);
+        const __m256i zero256 = _mm256_setzero_si256();
+        __m256i acc_vnni = _mm256_setzero_si256();
+        __m256i acc_sum_a = _mm256_setzero_si256();
+        long chunk_count = 0;
+
+        for (; i <= dim - 32; i += 32)
+        {
+            __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+            __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+
+            /* b_signed = vb - 128 */
+            __m256i vb_s = _mm256_sub_epi8(vb, v128);
+
+            /* acc_vnni += va * vb_s (4-byte dot product in 32-bit dwords) */
+            acc_vnni = _mm256_dpbusd_epi32(acc_vnni, va, vb_s);
+
+            /* Accumulate sum of va elements using sad_epu8 */
+            acc_sum_a = _mm256_add_epi64(acc_sum_a, _mm256_sad_epu8(va, zero256));
+
+            chunk_count += 32;
+            if (chunk_count >= 16384)
+            {
+                __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(acc_vnni),
+                                             _mm256_extracti128_si256(acc_vnni, 1));
+                s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
+                s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
+                int64_t term_vnni = (int64_t)(int32_t)_mm_cvtsi128_si32(s128);
+
+                __m128i a_lo = _mm256_castsi256_si128(acc_sum_a);
+                __m128i a_hi = _mm256_extracti128_si256(acc_sum_a, 1);
+                __m128i a_sum = _mm_add_epi64(a_lo, a_hi);
+                uint64_t sum_a = (uint64_t)_mm_cvtsi128_si64(a_sum) +
+                                 (uint64_t)_mm_extract_epi64(a_sum, 1);
+
+                total += (uint64_t)(term_vnni + (int64_t)(sum_a * 128ULL));
+                acc_vnni = _mm256_setzero_si256();
+                acc_sum_a = _mm256_setzero_si256();
+                chunk_count = 0;
+            }
+        } // for (; i <= dim - 32; i += 32)
+
+        __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(acc_vnni),
+                                     _mm256_extracti128_si256(acc_vnni, 1));
+        s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
+        s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
+        int64_t term_vnni = (int64_t)(int32_t)_mm_cvtsi128_si32(s128);
+
+        __m128i a_lo = _mm256_castsi256_si128(acc_sum_a);
+        __m128i a_hi = _mm256_extracti128_si256(acc_sum_a, 1);
+        __m128i a_sum = _mm_add_epi64(a_lo, a_hi);
+        uint64_t sum_a = (uint64_t)_mm_cvtsi128_si64(a_sum) +
+                         (uint64_t)_mm_extract_epi64(a_sum, 1);
+
+        total += (uint64_t)(term_vnni + (int64_t)(sum_a * 128ULL));
+    }
+#elif defined(__AVX2__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (dim >= 32)
+    {
+        const __m256i zero256 = _mm256_setzero_si256();
+        __m256i sum_vec256 = _mm256_setzero_si256();
+        long chunk_count256 = 0;
+
+        for (; i <= dim - 32; i += 32)
+        {
+            __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+            __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+
+            __m256i va_lo = _mm256_unpacklo_epi8(va, zero256);
+            __m256i vb_lo = _mm256_unpacklo_epi8(vb, zero256);
+            __m256i prod_lo = _mm256_madd_epi16(va_lo, vb_lo);
+
+            __m256i va_hi = _mm256_unpackhi_epi8(va, zero256);
+            __m256i vb_hi = _mm256_unpackhi_epi8(vb, zero256);
+            __m256i prod_hi = _mm256_madd_epi16(va_hi, vb_hi);
+
+            sum_vec256 = _mm256_add_epi32(sum_vec256, prod_lo);
+            sum_vec256 = _mm256_add_epi32(sum_vec256, prod_hi);
+
+            chunk_count256 += 32;
+            if (chunk_count256 >= 16384)
+            {
+                __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(sum_vec256),
+                                             _mm256_extracti128_si256(sum_vec256, 1));
+                s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
+                s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
+                total += (uint64_t)(uint32_t)_mm_cvtsi128_si32(s128);
+                sum_vec256 = _mm256_setzero_si256();
+                chunk_count256 = 0;
+            }
+        } // for (; i <= dim - 32; i += 32)
+
+        __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(sum_vec256),
+                                     _mm256_extracti128_si256(sum_vec256, 1));
+        s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
+        s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
+        total += (uint64_t)(uint32_t)_mm_cvtsi128_si32(s128);
+    }
+#endif
+
+    for (; i < dim; i++)
+    {
+        total += (uint64_t)((uint32_t)a[i] * (uint32_t)b[i]);
+    }
 
     return total;
 }
@@ -534,22 +826,9 @@ void sq16_calibrate_float(
         return;
     }
 
-    float min_v = data[0];
-    float max_v = data[0];
-
-    for (long i = 1; i < num_elements; i++)
-    {
-        float val = data[i];
-        if (val < min_v)
-        {
-            min_v = val;
-        }
-        if (val > max_v)
-        {
-            max_v = val;
-        }
-    } // for (long i = 1; i < num_elements; i++)
-
+    float min_v = 0.0f;
+    float max_v = 0.0f;
+    find_min_max_float(data, num_elements, &min_v, &max_v);
     sq16_init_params(params, min_v, max_v, dim);
 }
 
@@ -571,22 +850,9 @@ void sq16_calibrate_double(
         return;
     }
 
-    double min_v = data[0];
-    double max_v = data[0];
-
-    for (long i = 1; i < num_elements; i++)
-    {
-        double val = data[i];
-        if (val < min_v)
-        {
-            min_v = val;
-        }
-        if (val > max_v)
-        {
-            max_v = val;
-        }
-    } // for (long i = 1; i < num_elements; i++)
-
+    double min_v = 0.0;
+    double max_v = 0.0;
+    find_min_max_double(data, num_elements, &min_v, &max_v);
     sq16_init_params(params, (float)min_v, (float)max_v, dim);
 }
 
@@ -670,8 +936,38 @@ void sq16_quantize_double(
     long dim = params->dim;
     double min_val = (double)params->min_val;
     double inv_scale = (double)params->inv_scale;
+    long i = 0;
 
-    for (long i = 0; i < dim; i++)
+#if defined(__AVX2__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    __m256d v_min = _mm256_set1_pd(min_val);
+    __m256d v_inv = _mm256_set1_pd(inv_scale);
+    __m256d v_half = _mm256_set1_pd(0.5);
+    __m256d v_zero = _mm256_setzero_pd();
+    __m256d v_max = _mm256_set1_pd(32767.0);
+
+    for (; i <= dim - 8; i += 8)
+    {
+        __m256d d0 = _mm256_loadu_pd(&src[i]);
+        __m256d d1 = _mm256_loadu_pd(&src[i + 4]);
+
+        __m256d n0 = _mm256_mul_pd(_mm256_sub_pd(d0, v_min), v_inv);
+        n0 = _mm256_add_pd(n0, v_half);
+        n0 = _mm256_max_pd(v_zero, _mm256_min_pd(n0, v_max));
+
+        __m256d n1 = _mm256_mul_pd(_mm256_sub_pd(d1, v_min), v_inv);
+        n1 = _mm256_add_pd(n1, v_half);
+        n1 = _mm256_max_pd(v_zero, _mm256_min_pd(n1, v_max));
+
+        __m128i i0 = _mm256_cvttpd_epi32(n0);
+        __m128i i1 = _mm256_cvttpd_epi32(n1);
+
+        __m128i p16 = _mm_packs_epi32(i0, i1);
+        _mm_storeu_si128((__m128i *)(dst + i), p16);
+    }
+#endif
+
+    for (; i < dim; i++)
     {
         double val = (src[i] - min_val) * inv_scale + 0.5;
         if (val < 0.0)
@@ -683,7 +979,7 @@ void sq16_quantize_double(
             val = 32767.0;
         }
         dst[i] = (int16_t)val;
-    } // for (long i = 0; i < dim; i++)
+    } // for (; i < dim; i++)
 }
 
 /**
