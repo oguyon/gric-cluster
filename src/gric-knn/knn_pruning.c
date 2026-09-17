@@ -252,6 +252,41 @@ uint64_t compute_sq16_cutoff_thresh(
 }
 
 /**
+ * compute_rq8_cutoff_thresh_cluster() - Compute RQ8 squared distance cutoff for a cluster.
+ * @cur_tau: Current search radius (heap max dist or rlim_cutoff).
+ * @params:  Cluster RQ8Params.
+ * @config:  Active KnnConfig.
+ *
+ * Return: Threshold on integer sum-of-squared differences, or UINT64_MAX if disabled.
+ */
+uint64_t compute_rq8_cutoff_thresh_cluster(
+    double           cur_tau,
+    const RQ8Params *params,
+    const KnnConfig *config)
+{
+    if (params == NULL || params->scale <= 0.0f)
+    {
+        return UINT64_MAX;
+    }
+
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
+    {
+        cur_tau = config->rlim_cutoff;
+    }
+
+    double eps = config->rq8_approx ? config->epsilon : 0.0;
+    double raw_thresh = (cur_tau * (1.0 + eps) +
+                        2.0 * (double)params->err_radius) *
+                        (double)params->inv_scale;
+    if (raw_thresh >= 4294967295.0)
+    {
+        return UINT64_MAX;
+    }
+
+    return (raw_thresh > 0.0) ? (uint64_t)(raw_thresh * raw_thresh) : 0;
+}
+
+/**
  * compute_rq8_cutoff_thresh() - Compute RQ8 squared distance cutoff threshold.
  * @cur_tau: Current search radius (heap max dist or rlim_cutoff).
  * @model:   Active KnnModel.
@@ -264,21 +299,12 @@ uint64_t compute_rq8_cutoff_thresh(
     const KnnModel  *model,
     const KnnConfig *config)
 {
-    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
-    {
-        cur_tau = config->rlim_cutoff;
-    }
-
-    double eps = config->rq8_approx ? config->epsilon : 0.0;
-    double raw_thresh = (cur_tau * (1.0 + eps) +
-                        2.0 * (double)model->rq8_params.err_radius) *
-                        (double)model->rq8_params.inv_scale;
-    if (raw_thresh >= 4294967295.0)
+    if (model == NULL)
     {
         return UINT64_MAX;
     }
 
-    return (raw_thresh > 0.0) ? (uint64_t)(raw_thresh * raw_thresh) : 0;
+    return compute_rq8_cutoff_thresh_cluster(cur_tau, &model->rq8_params, config);
 }
 
 /**
@@ -305,7 +331,17 @@ int is_member_pruned_by_rq8(
         return 0;
     }
 
-    uint64_t ssd_cutoff = compute_rq8_cutoff_thresh(cur_tau, model, config);
+    const RQ8Params *params = &model->rq8_params;
+    if (model->frame_cluster_map != NULL && model->clusters != NULL)
+    {
+        int c = model->frame_cluster_map[cand_id];
+        if (c >= 0 && c < model->num_clusters)
+        {
+            params = &model->clusters[c].rq8_params;
+        }
+    }
+
+    uint64_t ssd_cutoff = compute_rq8_cutoff_thresh_cluster(cur_tau, params, config);
     return is_member_pruned_by_rq8_cached(query_rq8, cand_id, ssd_cutoff, model, telem);
 }
 

@@ -47,6 +47,7 @@ typedef struct
     int         num_sq16_blocks; /**< Number of 32-candidate FastScan blocks */
     int8_t     *rq8_transposed;  /**< [num_rq8_blocks * dim * 32] RQ8 FastScan coords */
     int         num_rq8_blocks;  /**< Number of 32-candidate FastScan blocks for RQ8 */
+    RQ8Params   rq8_params;      /**< Cluster-adaptive RQ8 parameters */
     uint8_t    *pq_transposed;   /**< [num_pq_blocks * m * 32] PQ FastScan codes */
     int         num_pq_blocks;   /**< Number of 32-candidate FastScan blocks for PQ */
 } KnnCluster;
