@@ -286,7 +286,7 @@ typedef struct
     int                 sq16_calibrated;    /**< 1 if global SQ16 params are calibrated */
     uint8_t            *anchor_matrix_sq8;  /**< Contiguous [maxnbclust x dim] SQ8 anchors */
     int16_t            *anchor_matrix_sq16;  /**< Contiguous [maxnbclust x dim] SQ16 anchors */
-    int16_t            *anchor_matrix_sq16_chunk0; /**< Contiguous [maxnbclust x 32] SQ16 chunk 0 */
+    int32_t            *anchor_matrix_sq16_interleaved; /**< Block-8 interleaved SQ16 matrix */
     long               *perm_dim;           /**< Spectral dimension ordering [dim] */
     double             *residual_tail;      /**< Precomputed residual tail array [dim] */
 } ClusterState;

@@ -69,13 +69,20 @@ static void prepare_frame_quantization(
                 state->anchor_matrix_sq16 = NULL;
             }
         }
-        if (frame_dim >= 32 && state->anchor_matrix_sq16_chunk0 == NULL)
+        if (state->anchor_matrix_sq16_interleaved == NULL)
         {
-            size_t total_c0 = (size_t)config->algo.maxnbclust * 32;
-            if (posix_memalign((void **)&state->anchor_matrix_sq16_chunk0, 64,
-                               total_c0 * sizeof(int16_t)) != 0)
+            size_t num_blocks = ((size_t)config->algo.maxnbclust + 7) / 8;
+            size_t num_pairs = ((size_t)frame_dim + 1) / 2;
+            size_t total_interleaved = num_blocks * num_pairs * 8;
+            if (posix_memalign((void **)&state->anchor_matrix_sq16_interleaved, 64,
+                               total_interleaved * sizeof(int32_t)) != 0)
             {
-                state->anchor_matrix_sq16_chunk0 = NULL;
+                state->anchor_matrix_sq16_interleaved = NULL;
+            }
+            else
+            {
+                memset(state->anchor_matrix_sq16_interleaved, 0,
+                       total_interleaved * sizeof(int32_t));
             }
         }
         if (!state->sq16_calibrated)
@@ -441,6 +448,9 @@ int cluster_frame(
                         if (d_check >= config->algo.rlim)
                         {
                             valid = 0;
+                            last_cj = memo_cid;
+                            dfc = d_check;
+                            need_prune_update = 1;
                         }
                         else
                         {
@@ -559,7 +569,158 @@ int cluster_frame(
                                  config->optim.gprob_mode &&
                                  !state->trace);
 
-                if (fast_sq16)
+                if (need_prune_update && last_cj >= 0)
+                {
+                    int num_cl = state->num_clusters;
+                    if (state->scratch.cluster_probs != NULL)
+                    {
+                        cluster_normalize_probs(state->scratch.cluster_probs, num_cl);
+                    }
+                    const double *probs = state->scratch.cluster_probs;
+                    state->scratch.num_active_clusters = num_cl;
+                    for (int i = 0; i < num_cl; i++)
+                    {
+                        state->scratch.clmembflag[i] = 1;
+                        state->scratch.active_clusters[i] = i;
+                        double p = probs ? probs[i] : state->clusters[i].prob;
+                        state->scratch.current_gprobs[i] = 1.0;
+                        state->scratch.mixed_probs[i] = p;
+                        state->scratch.entropy_p_current[i] = p;
+                    }
+
+                    struct timespec t_pr_s, t_pr_e;
+                    clock_gettime(CLOCK_MONOTONIC, &t_pr_s);
+                    if (last_cj < num_cl)
+                    {
+                        state->scratch.clmembflag[last_cj] = 0;
+                    }
+                    update_probabilities_and_pruning(
+                        last_cj, dfc, config, state, temp_indices,
+                        temp_dists, temp_count
+                    );
+                    clock_gettime(CLOCK_MONOTONIC, &t_pr_e);
+                    double el_pr = (t_pr_e.tv_sec - t_pr_s.tv_sec) * 1000.0 +
+                                   (t_pr_e.tv_nsec - t_pr_s.tv_nsec) / 1000000.0;
+                    state->telemetry.time_step_3a_subsequent += el_pr;
+                    need_prune_update = 0;
+
+                    /* Filter ONLY the surviving candidates with SQ16/SQ8 lower bounds */
+                    struct timespec t_sq_s, t_sq_e;
+                    clock_gettime(CLOCK_MONOTONIC, &t_sq_s);
+                    if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
+                    {
+                        long dim = config->optim.sq16_params.dim;
+                        const int16_t *cur_sq16 = state->current_frame_sq16;
+                        const int16_t *mat_sq16 = state->anchor_matrix_sq16;
+                        int act_cnt = state->scratch.num_active_clusters;
+                        int *act = state->scratch.active_clusters;
+                        int compact_cnt = 0;
+                        int local_pruned = 0;
+
+                        state->telemetry.sq16_evals += act_cnt;
+
+                        for (int idx = 0; idx < act_cnt; idx++)
+                        {
+                            int c = act[idx];
+                            const int16_t *a_ptr = mat_sq16
+                                ? (mat_sq16 + (size_t)c * (size_t)dim)
+                                : state->clusters[c].anchor_sq16;
+                            if (a_ptr != NULL)
+                            {
+                                uint64_t ssd = sq16_dist_squared_cutoff_i16(
+                                    cur_sq16, a_ptr, dim, sq16_ssd_thresh
+                                );
+                                if (ssd > sq16_ssd_thresh)
+                                {
+                                    state->scratch.clmembflag[c] = 0;
+                                    state->scratch.entropy_p_current[c] = 0.0;
+                                    local_pruned++;
+                                    continue;
+                                }
+                            }
+                            act[compact_cnt++] = c;
+                        }
+                        state->scratch.num_active_clusters = compact_cnt;
+                        state->telemetry.sq16_pruned += local_pruned;
+                        state->telemetry.clusters_pruned += local_pruned;
+
+                        if (local_pruned > 0)
+                        {
+                            double sum_p = 0.0;
+                            for (int idx = 0; idx < compact_cnt; idx++)
+                            {
+                                sum_p += state->scratch.entropy_p_current[act[idx]];
+                            }
+                            if (sum_p > 0.0)
+                            {
+                                double inv_sum_p = 1.0 / sum_p;
+                                for (int idx = 0; idx < compact_cnt; idx++)
+                                {
+                                    state->scratch.entropy_p_current[act[idx]] *= inv_sum_p;
+                                }
+                            }
+                        }
+                    }
+                    else if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
+                    {
+                        long dim = config->optim.sq8_params.dim;
+                        const uint8_t *cur_sq8 = state->current_frame_sq8;
+                        const uint8_t *mat_sq8 = state->anchor_matrix_sq8;
+                        int act_cnt = state->scratch.num_active_clusters;
+                        int *act = state->scratch.active_clusters;
+                        int compact_cnt = 0;
+                        int local_pruned = 0;
+
+                        state->telemetry.sq8_evals += act_cnt;
+
+                        for (int idx = 0; idx < act_cnt; idx++)
+                        {
+                            int c = act[idx];
+                            const uint8_t *a_ptr = mat_sq8
+                                ? (mat_sq8 + (size_t)c * (size_t)dim)
+                                : state->clusters[c].anchor_sq8;
+                            if (a_ptr != NULL)
+                            {
+                                double d_lb = sq8_compute_lower_bound(
+                                    cur_sq8, a_ptr, &config->optim.sq8_params, 0.0
+                                );
+                                if (d_lb > config->algo.rlim)
+                                {
+                                    state->scratch.clmembflag[c] = 0;
+                                    state->scratch.entropy_p_current[c] = 0.0;
+                                    local_pruned++;
+                                    continue;
+                                }
+                            }
+                            act[compact_cnt++] = c;
+                        }
+                        state->scratch.num_active_clusters = compact_cnt;
+                        state->telemetry.sq8_pruned += local_pruned;
+                        state->telemetry.clusters_pruned += local_pruned;
+
+                        if (local_pruned > 0)
+                        {
+                            double sum_p = 0.0;
+                            for (int idx = 0; idx < compact_cnt; idx++)
+                            {
+                                sum_p += state->scratch.entropy_p_current[act[idx]];
+                            }
+                            if (sum_p > 0.0)
+                            {
+                                double inv_sum_p = 1.0 / sum_p;
+                                for (int idx = 0; idx < compact_cnt; idx++)
+                                {
+                                    state->scratch.entropy_p_current[act[idx]] *= inv_sum_p;
+                                }
+                            }
+                        }
+                    }
+                    clock_gettime(CLOCK_MONOTONIC, &t_sq_e);
+                    state->telemetry.time_step_3a_sq_filter +=
+                        (t_sq_e.tv_sec - t_sq_s.tv_sec) * 1000.0 +
+                        (t_sq_e.tv_nsec - t_sq_s.tv_nsec) / 1000000.0;
+                }
+                else if (fast_sq16)
                 {
                     if (state->scratch.cluster_probs != NULL)
                     {
@@ -583,7 +744,7 @@ int cluster_frame(
                     sq16_filter_anchor_matrix(
                         state->current_frame_sq16,
                         state->anchor_matrix_sq16,
-                        state->anchor_matrix_sq16_chunk0,
+                        state->anchor_matrix_sq16_interleaved,
                         state->num_clusters,
                         dim,
                         sq16_ssd_thresh,
@@ -636,7 +797,7 @@ int cluster_frame(
                             sq16_filter_anchor_matrix(
                                 cur_sq16,
                                 mat_sq16,
-                                state->anchor_matrix_sq16_chunk0,
+                                state->anchor_matrix_sq16_interleaved,
                                 num_cl,
                                 dim,
                                 sq16_ssd_thresh,
