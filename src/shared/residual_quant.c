@@ -541,15 +541,16 @@ int rq8_load_sidecar(
  */
 RQ8SimdMode rq8_get_simd_mode(void)
 {
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    return RQ8_SIMD_AVX512;
-#elif defined(__AVX2__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    return RQ8_SIMD_AVX2;
-#else
+    GricSimdLevel lvl = gric_get_simd_level();
+    if (lvl >= GRIC_SIMD_AVX512)
+    {
+        return RQ8_SIMD_AVX512;
+    }
+    if (lvl >= GRIC_SIMD_AVX2)
+    {
+        return RQ8_SIMD_AVX2;
+    }
     return RQ8_SIMD_SCALAR;
-#endif
 }
 
 /**

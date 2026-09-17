@@ -322,6 +322,20 @@ static int entropy_evaluate_hypotheses(
     int best_target_ci = -1;
     double min_expected_entropy = 1e30;
 
+    /* Precompute word-level sums for fast-path hypothesis evaluation */
+    double word_p_sum[words];
+    double word_plogp_sum[words];
+    memset(word_p_sum, 0, words * sizeof(double));
+    memset(word_plogp_sum, 0, words * sizeof(double));
+
+    for (int idx = 0; idx < active_idx_count; idx++)
+    {
+        int k = active_indices[idx];
+        int w = k / 64;
+        word_p_sum[w] += p_current[k];
+        word_plogp_sum[w] += plog2p[k];
+    }
+
     #pragma omp parallel for
     for (int tc_idx = 0; tc_idx < num_targets; tc_idx++)
     {
@@ -353,13 +367,44 @@ static int entropy_evaluate_hypotheses(
             for (int w = 0; w < words; w++)
             {
                 uint64_t mask_val = mask[w] & active_mask[w];
-                while (mask_val > 0)
+                if (mask_val == 0)
                 {
-                    int bit = __builtin_ctzll(mask_val);
-                    int k = w * 64 + bit;
-                    hypo_sum += p_current[k];
-                    plogp_sum += plog2p[k];
-                    mask_val &= (mask_val - 1);
+                    continue;
+                }
+                if (mask_val == active_mask[w])
+                {
+                    hypo_sum += word_p_sum[w];
+                    plogp_sum += word_plogp_sum[w];
+                    continue;
+                }
+
+                if (__builtin_popcountll(mask_val) <= 32)
+                {
+                    uint64_t mv = mask_val;
+                    while (mv > 0)
+                    {
+                        int bit = __builtin_ctzll(mv);
+                        int k = w * 64 + bit;
+                        hypo_sum += p_current[k];
+                        plogp_sum += plog2p[k];
+                        mv &= (mv - 1);
+                    }
+                }
+                else
+                {
+                    double sub_hypo = 0.0;
+                    double sub_plogp = 0.0;
+                    uint64_t cleared = active_mask[w] & (~mask_val);
+                    while (cleared > 0)
+                    {
+                        int bit = __builtin_ctzll(cleared);
+                        int k = w * 64 + bit;
+                        sub_hypo += p_current[k];
+                        sub_plogp += plog2p[k];
+                        cleared &= (cleared - 1);
+                    }
+                    hypo_sum += word_p_sum[w] - sub_hypo;
+                    plogp_sum += word_plogp_sum[w] - sub_plogp;
                 }
             }
 

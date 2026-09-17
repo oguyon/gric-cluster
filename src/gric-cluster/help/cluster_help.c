@@ -473,18 +473,19 @@ static void print_help_raw(
 #else
     print_colored_line("    -fitsout                 Force FITS output format [DISABLED]");
 #endif
-    print_colored_line("    -dcc                     Enable dcc.txt output (default: enabled)");
-    print_colored_line("    -no_dcc                  Disable dcc.txt output");
-    print_colored_line("    -no-txt                  Suppress all ASCII text output (binary only)");
-    print_colored_line("    -tm_out                  Enable transition_matrix.txt output "
+    print_colored_line("    -dcc                     Enable dcc output (default: enabled)");
+    print_colored_line("    -no_dcc                  Disable dcc output");
+    print_colored_line("    -txt                     Enable ASCII text output (binary default)");
+    print_colored_line("    -no-txt                  Suppress ASCII text output (binary only)");
+    print_colored_line("    -tm_out                  Enable transition_matrix output "
                        "(default: disabled)");
-    print_colored_line("    -anchors                 Enable anchors output (default: disabled)");
-    print_colored_line("    -counts                  Enable cluster_counts.txt output "
-                       "(default: disabled)");
+    print_colored_line("    -anchors                 Enable anchors output (default: enabled)");
+    print_colored_line("    -counts                  Enable cluster_counts output "
+                       "(default: enabled)");
     print_colored_line("    -shm <file>              Enable shared-memory status output file");
     print_colored_line("    -shm-file <file>         Alias for -shm");
-    print_colored_line("    -no_membership           Disable frame_membership.txt output");
-    print_colored_line("    -membership              Enable frame_membership.txt output "
+    print_colored_line("    -no_membership           Disable frame_membership output");
+    print_colored_line("    -membership              Enable frame_membership output "
                        "(default: enabled)");
     print_colored_line("    -discarded               Enable discarded_frames.txt output "
                        "(default: disabled)");

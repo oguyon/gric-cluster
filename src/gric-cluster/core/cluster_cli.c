@@ -78,8 +78,8 @@ void cluster_cli_init_config_defaults(
         config->output.output_discarded = 0;
         config->output.output_clustered = 0;
         config->output.output_clusters = 0;
-    
-}
+        config->output.no_txt = 1; // Binary (.bin) format is default; use -txt to write ASCII text
+    }
 
 int cluster_cli_parse(
     int            argc,

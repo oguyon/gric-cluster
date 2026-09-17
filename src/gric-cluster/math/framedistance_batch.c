@@ -220,7 +220,7 @@ GRIC_TARGET_AVX512
 static void calc_dist8_f32_avx512(
     const float *restrict        q,
     const float *const *restrict anchors,
-    double              *restrict out_dists,
+    double *restrict             out_dists,
     long                         size)
 {
     const float *restrict a0 = anchors[0];
@@ -232,17 +232,17 @@ static void calc_dist8_f32_avx512(
     const float *restrict a6 = anchors[6];
     const float *restrict a7 = anchors[7];
 
-    __m512 acc0 = _mm512_setzero_ps();
-    __m512 acc1 = _mm512_setzero_ps();
-    __m512 acc2 = _mm512_setzero_ps();
-    __m512 acc3 = _mm512_setzero_ps();
-    __m512 acc4 = _mm512_setzero_ps();
-    __m512 acc5 = _mm512_setzero_ps();
-    __m512 acc6 = _mm512_setzero_ps();
-    __m512 acc7 = _mm512_setzero_ps();
+    __m512 acc0_0 = _mm512_setzero_ps(), acc0_1 = _mm512_setzero_ps();
+    __m512 acc1_0 = _mm512_setzero_ps(), acc1_1 = _mm512_setzero_ps();
+    __m512 acc2_0 = _mm512_setzero_ps(), acc2_1 = _mm512_setzero_ps();
+    __m512 acc3_0 = _mm512_setzero_ps(), acc3_1 = _mm512_setzero_ps();
+    __m512 acc4_0 = _mm512_setzero_ps(), acc4_1 = _mm512_setzero_ps();
+    __m512 acc5_0 = _mm512_setzero_ps(), acc5_1 = _mm512_setzero_ps();
+    __m512 acc6_0 = _mm512_setzero_ps(), acc6_1 = _mm512_setzero_ps();
+    __m512 acc7_0 = _mm512_setzero_ps(), acc7_1 = _mm512_setzero_ps();
 
     long i = 0;
-    for (; i <= size - 16; i += 16)
+    for (; i <= size - 32; i += 32)
     {
         if (size >= 1024 && (i & 31) == 0)
         {
@@ -257,6 +257,56 @@ static void calc_dist8_f32_avx512(
             _mm_prefetch((const char *)&a7[i + 64], _MM_HINT_T0);
         }
 
+        __m512 vq0 = _mm512_loadu_ps(&q[i]);
+        __m512 d0_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a0[i]));
+        __m512 d1_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a1[i]));
+        __m512 d2_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a2[i]));
+        __m512 d3_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a3[i]));
+        __m512 d4_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a4[i]));
+        __m512 d5_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a5[i]));
+        __m512 d6_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a6[i]));
+        __m512 d7_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a7[i]));
+
+        acc0_0 = _mm512_fmadd_ps(d0_0, d0_0, acc0_0);
+        acc1_0 = _mm512_fmadd_ps(d1_0, d1_0, acc1_0);
+        acc2_0 = _mm512_fmadd_ps(d2_0, d2_0, acc2_0);
+        acc3_0 = _mm512_fmadd_ps(d3_0, d3_0, acc3_0);
+        acc4_0 = _mm512_fmadd_ps(d4_0, d4_0, acc4_0);
+        acc5_0 = _mm512_fmadd_ps(d5_0, d5_0, acc5_0);
+        acc6_0 = _mm512_fmadd_ps(d6_0, d6_0, acc6_0);
+        acc7_0 = _mm512_fmadd_ps(d7_0, d7_0, acc7_0);
+
+        __m512 vq1 = _mm512_loadu_ps(&q[i + 16]);
+        __m512 d0_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a0[i + 16]));
+        __m512 d1_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a1[i + 16]));
+        __m512 d2_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a2[i + 16]));
+        __m512 d3_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a3[i + 16]));
+        __m512 d4_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a4[i + 16]));
+        __m512 d5_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a5[i + 16]));
+        __m512 d6_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a6[i + 16]));
+        __m512 d7_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a7[i + 16]));
+
+        acc0_1 = _mm512_fmadd_ps(d0_1, d0_1, acc0_1);
+        acc1_1 = _mm512_fmadd_ps(d1_1, d1_1, acc1_1);
+        acc2_1 = _mm512_fmadd_ps(d2_1, d2_1, acc2_1);
+        acc3_1 = _mm512_fmadd_ps(d3_1, d3_1, acc3_1);
+        acc4_1 = _mm512_fmadd_ps(d4_1, d4_1, acc4_1);
+        acc5_1 = _mm512_fmadd_ps(d5_1, d5_1, acc5_1);
+        acc6_1 = _mm512_fmadd_ps(d6_1, d6_1, acc6_1);
+        acc7_1 = _mm512_fmadd_ps(d7_1, d7_1, acc7_1);
+    } // for (; i <= size - 32; i += 32)
+
+    float s0 = _mm512_reduce_add_ps(_mm512_add_ps(acc0_0, acc0_1));
+    float s1 = _mm512_reduce_add_ps(_mm512_add_ps(acc1_0, acc1_1));
+    float s2 = _mm512_reduce_add_ps(_mm512_add_ps(acc2_0, acc2_1));
+    float s3 = _mm512_reduce_add_ps(_mm512_add_ps(acc3_0, acc3_1));
+    float s4 = _mm512_reduce_add_ps(_mm512_add_ps(acc4_0, acc4_1));
+    float s5 = _mm512_reduce_add_ps(_mm512_add_ps(acc5_0, acc5_1));
+    float s6 = _mm512_reduce_add_ps(_mm512_add_ps(acc6_0, acc6_1));
+    float s7 = _mm512_reduce_add_ps(_mm512_add_ps(acc7_0, acc7_1));
+
+    for (; i <= size - 16; i += 16)
+    {
         __m512 vq = _mm512_loadu_ps(&q[i]);
         __m512 d0 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a0[i]));
         __m512 d1 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a1[i]));
@@ -267,24 +317,15 @@ static void calc_dist8_f32_avx512(
         __m512 d6 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a6[i]));
         __m512 d7 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a7[i]));
 
-        acc0 = _mm512_fmadd_ps(d0, d0, acc0);
-        acc1 = _mm512_fmadd_ps(d1, d1, acc1);
-        acc2 = _mm512_fmadd_ps(d2, d2, acc2);
-        acc3 = _mm512_fmadd_ps(d3, d3, acc3);
-        acc4 = _mm512_fmadd_ps(d4, d4, acc4);
-        acc5 = _mm512_fmadd_ps(d5, d5, acc5);
-        acc6 = _mm512_fmadd_ps(d6, d6, acc6);
-        acc7 = _mm512_fmadd_ps(d7, d7, acc7);
-    }
-
-    float s0 = _mm512_reduce_add_ps(acc0);
-    float s1 = _mm512_reduce_add_ps(acc1);
-    float s2 = _mm512_reduce_add_ps(acc2);
-    float s3 = _mm512_reduce_add_ps(acc3);
-    float s4 = _mm512_reduce_add_ps(acc4);
-    float s5 = _mm512_reduce_add_ps(acc5);
-    float s6 = _mm512_reduce_add_ps(acc6);
-    float s7 = _mm512_reduce_add_ps(acc7);
+        s0 += _mm512_reduce_add_ps(_mm512_mul_ps(d0, d0));
+        s1 += _mm512_reduce_add_ps(_mm512_mul_ps(d1, d1));
+        s2 += _mm512_reduce_add_ps(_mm512_mul_ps(d2, d2));
+        s3 += _mm512_reduce_add_ps(_mm512_mul_ps(d3, d3));
+        s4 += _mm512_reduce_add_ps(_mm512_mul_ps(d4, d4));
+        s5 += _mm512_reduce_add_ps(_mm512_mul_ps(d5, d5));
+        s6 += _mm512_reduce_add_ps(_mm512_mul_ps(d6, d6));
+        s7 += _mm512_reduce_add_ps(_mm512_mul_ps(d7, d7));
+    } // for (; i <= size - 16; i += 16)
 
     for (; i < size; i++)
     {
@@ -308,7 +349,180 @@ static void calc_dist8_f32_avx512(
     out_dists[6] = (double)sqrtf(s6);
     out_dists[7] = (double)sqrtf(s7);
 }
+
+GRIC_TARGET_AVX512
+static void calc_dist16_f32_avx512(
+    const float *restrict        q,
+    const float *const *restrict anchors,
+    double *restrict             out_dists,
+    long                         size)
+{
+    const float *restrict a0  = anchors[0];
+    const float *restrict a1  = anchors[1];
+    const float *restrict a2  = anchors[2];
+    const float *restrict a3  = anchors[3];
+    const float *restrict a4  = anchors[4];
+    const float *restrict a5  = anchors[5];
+    const float *restrict a6  = anchors[6];
+    const float *restrict a7  = anchors[7];
+    const float *restrict a8  = anchors[8];
+    const float *restrict a9  = anchors[9];
+    const float *restrict a10 = anchors[10];
+    const float *restrict a11 = anchors[11];
+    const float *restrict a12 = anchors[12];
+    const float *restrict a13 = anchors[13];
+    const float *restrict a14 = anchors[14];
+    const float *restrict a15 = anchors[15];
+
+    __m512 acc0  = _mm512_setzero_ps(), acc1  = _mm512_setzero_ps();
+    __m512 acc2  = _mm512_setzero_ps(), acc3  = _mm512_setzero_ps();
+    __m512 acc4  = _mm512_setzero_ps(), acc5  = _mm512_setzero_ps();
+    __m512 acc6  = _mm512_setzero_ps(), acc7  = _mm512_setzero_ps();
+    __m512 acc8  = _mm512_setzero_ps(), acc9  = _mm512_setzero_ps();
+    __m512 acc10 = _mm512_setzero_ps(), acc11 = _mm512_setzero_ps();
+    __m512 acc12 = _mm512_setzero_ps(), acc13 = _mm512_setzero_ps();
+    __m512 acc14 = _mm512_setzero_ps(), acc15 = _mm512_setzero_ps();
+
+    long i = 0;
+    for (; i <= size - 16; i += 16)
+    {
+        if (size >= 1024 && (i & 31) == 0)
+        {
+            _mm_prefetch((const char *)&q[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a0[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a1[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a2[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a3[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a4[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a5[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a6[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a7[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a8[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a9[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a10[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a11[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a12[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a13[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a14[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a15[i + 64], _MM_HINT_T0);
+        }
+
+        __m512 vq = _mm512_loadu_ps(&q[i]);
+        __m512 d0  = _mm512_sub_ps(vq, _mm512_loadu_ps(&a0[i]));
+        __m512 d1  = _mm512_sub_ps(vq, _mm512_loadu_ps(&a1[i]));
+        __m512 d2  = _mm512_sub_ps(vq, _mm512_loadu_ps(&a2[i]));
+        __m512 d3  = _mm512_sub_ps(vq, _mm512_loadu_ps(&a3[i]));
+        __m512 d4  = _mm512_sub_ps(vq, _mm512_loadu_ps(&a4[i]));
+        __m512 d5  = _mm512_sub_ps(vq, _mm512_loadu_ps(&a5[i]));
+        __m512 d6  = _mm512_sub_ps(vq, _mm512_loadu_ps(&a6[i]));
+        __m512 d7  = _mm512_sub_ps(vq, _mm512_loadu_ps(&a7[i]));
+        __m512 d8  = _mm512_sub_ps(vq, _mm512_loadu_ps(&a8[i]));
+        __m512 d9  = _mm512_sub_ps(vq, _mm512_loadu_ps(&a9[i]));
+        __m512 d10 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a10[i]));
+        __m512 d11 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a11[i]));
+        __m512 d12 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a12[i]));
+        __m512 d13 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a13[i]));
+        __m512 d14 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a14[i]));
+        __m512 d15 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a15[i]));
+
+        acc0  = _mm512_fmadd_ps(d0,  d0,  acc0);
+        acc1  = _mm512_fmadd_ps(d1,  d1,  acc1);
+        acc2  = _mm512_fmadd_ps(d2,  d2,  acc2);
+        acc3  = _mm512_fmadd_ps(d3,  d3,  acc3);
+        acc4  = _mm512_fmadd_ps(d4,  d4,  acc4);
+        acc5  = _mm512_fmadd_ps(d5,  d5,  acc5);
+        acc6  = _mm512_fmadd_ps(d6,  d6,  acc6);
+        acc7  = _mm512_fmadd_ps(d7,  d7,  acc7);
+        acc8  = _mm512_fmadd_ps(d8,  d8,  acc8);
+        acc9  = _mm512_fmadd_ps(d9,  d9,  acc9);
+        acc10 = _mm512_fmadd_ps(d10, d10, acc10);
+        acc11 = _mm512_fmadd_ps(d11, d11, acc11);
+        acc12 = _mm512_fmadd_ps(d12, d12, acc12);
+        acc13 = _mm512_fmadd_ps(d13, d13, acc13);
+        acc14 = _mm512_fmadd_ps(d14, d14, acc14);
+        acc15 = _mm512_fmadd_ps(d15, d15, acc15);
+    } // for (; i <= size - 16; i += 16)
+
+    float s0  = _mm512_reduce_add_ps(acc0);
+    float s1  = _mm512_reduce_add_ps(acc1);
+    float s2  = _mm512_reduce_add_ps(acc2);
+    float s3  = _mm512_reduce_add_ps(acc3);
+    float s4  = _mm512_reduce_add_ps(acc4);
+    float s5  = _mm512_reduce_add_ps(acc5);
+    float s6  = _mm512_reduce_add_ps(acc6);
+    float s7  = _mm512_reduce_add_ps(acc7);
+    float s8  = _mm512_reduce_add_ps(acc8);
+    float s9  = _mm512_reduce_add_ps(acc9);
+    float s10 = _mm512_reduce_add_ps(acc10);
+    float s11 = _mm512_reduce_add_ps(acc11);
+    float s12 = _mm512_reduce_add_ps(acc12);
+    float s13 = _mm512_reduce_add_ps(acc13);
+    float s14 = _mm512_reduce_add_ps(acc14);
+    float s15 = _mm512_reduce_add_ps(acc15);
+
+    for (; i < size; i++)
+    {
+        float q_val = q[i];
+        float diff0  = q_val - a0[i];  s0  += diff0  * diff0;
+        float diff1  = q_val - a1[i];  s1  += diff1  * diff1;
+        float diff2  = q_val - a2[i];  s2  += diff2  * diff2;
+        float diff3  = q_val - a3[i];  s3  += diff3  * diff3;
+        float diff4  = q_val - a4[i];  s4  += diff4  * diff4;
+        float diff5  = q_val - a5[i];  s5  += diff5  * diff5;
+        float diff6  = q_val - a6[i];  s6  += diff6  * diff6;
+        float diff7  = q_val - a7[i];  s7  += diff7  * diff7;
+        float diff8  = q_val - a8[i];  s8  += diff8  * diff8;
+        float diff9  = q_val - a9[i];  s9  += diff9  * diff9;
+        float diff10 = q_val - a10[i]; s10 += diff10 * diff10;
+        float diff11 = q_val - a11[i]; s11 += diff11 * diff11;
+        float diff12 = q_val - a12[i]; s12 += diff12 * diff12;
+        float diff13 = q_val - a13[i]; s13 += diff13 * diff13;
+        float diff14 = q_val - a14[i]; s14 += diff14 * diff14;
+        float diff15 = q_val - a15[i]; s15 += diff15 * diff15;
+    } // for (; i < size; i++)
+
+    out_dists[0]  = (double)sqrtf(s0);
+    out_dists[1]  = (double)sqrtf(s1);
+    out_dists[2]  = (double)sqrtf(s2);
+    out_dists[3]  = (double)sqrtf(s3);
+    out_dists[4]  = (double)sqrtf(s4);
+    out_dists[5]  = (double)sqrtf(s5);
+    out_dists[6]  = (double)sqrtf(s6);
+    out_dists[7]  = (double)sqrtf(s7);
+    out_dists[8]  = (double)sqrtf(s8);
+    out_dists[9]  = (double)sqrtf(s9);
+    out_dists[10] = (double)sqrtf(s10);
+    out_dists[11] = (double)sqrtf(s11);
+    out_dists[12] = (double)sqrtf(s12);
+    out_dists[13] = (double)sqrtf(s13);
+    out_dists[14] = (double)sqrtf(s14);
+    out_dists[15] = (double)sqrtf(s15);
+}
 #endif
+
+/**
+ * framedist_batch_1x16_float() - Vectorized 1-query vs 16-anchor Euclidean distance (single).
+ * @q:         Pointer to query array.
+ * @anchors:   Array of 16 pointers to candidate anchor arrays.
+ * @out_dists: Array of 16 doubles to receive computed distances.
+ * @size:      Number of elements in each array.
+ */
+void framedist_batch_1x16_float(
+    const float *restrict        q,
+    const float *const *restrict anchors,
+    double *restrict             out_dists,
+    long                         size)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    {
+        calc_dist16_f32_avx512(q, anchors, out_dists, size);
+        return;
+    }
+#endif
+    framedist_batch_1x8_float(q, anchors, out_dists, size);
+    framedist_batch_1x8_float(q, anchors + 8, out_dists + 8, size);
+}
 
 /**
  * framedist_batch_1x8_float() - Vectorized 1-query vs 8-anchor Euclidean distance (single).
@@ -497,6 +711,94 @@ void framedist_batch_1x8_float(
     out_dists[7] = (double)sqrtf(sum7);
 }
 
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static void calc_dist4_d64_avx512(
+    const double *restrict        q,
+    const double *const *restrict anchors,
+    double *restrict              out_dists,
+    long                          size)
+{
+    const double *restrict a0 = anchors[0];
+    const double *restrict a1 = anchors[1];
+    const double *restrict a2 = anchors[2];
+    const double *restrict a3 = anchors[3];
+
+    __m512d acc0_0 = _mm512_setzero_pd(), acc0_1 = _mm512_setzero_pd();
+    __m512d acc1_0 = _mm512_setzero_pd(), acc1_1 = _mm512_setzero_pd();
+    __m512d acc2_0 = _mm512_setzero_pd(), acc2_1 = _mm512_setzero_pd();
+    __m512d acc3_0 = _mm512_setzero_pd(), acc3_1 = _mm512_setzero_pd();
+
+    long i = 0;
+    for (; i <= size - 16; i += 16)
+    {
+        if (size >= 512 && (i & 31) == 0)
+        {
+            _mm_prefetch((const char *)&q[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a0[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a1[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a2[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a3[i + 32], _MM_HINT_T0);
+        }
+
+        __m512d vq0 = _mm512_loadu_pd(&q[i]);
+        __m512d d0_0 = _mm512_sub_pd(vq0, _mm512_loadu_pd(&a0[i]));
+        __m512d d1_0 = _mm512_sub_pd(vq0, _mm512_loadu_pd(&a1[i]));
+        __m512d d2_0 = _mm512_sub_pd(vq0, _mm512_loadu_pd(&a2[i]));
+        __m512d d3_0 = _mm512_sub_pd(vq0, _mm512_loadu_pd(&a3[i]));
+
+        acc0_0 = _mm512_fmadd_pd(d0_0, d0_0, acc0_0);
+        acc1_0 = _mm512_fmadd_pd(d1_0, d1_0, acc1_0);
+        acc2_0 = _mm512_fmadd_pd(d2_0, d2_0, acc2_0);
+        acc3_0 = _mm512_fmadd_pd(d3_0, d3_0, acc3_0);
+
+        __m512d vq1 = _mm512_loadu_pd(&q[i + 8]);
+        __m512d d0_1 = _mm512_sub_pd(vq1, _mm512_loadu_pd(&a0[i + 8]));
+        __m512d d1_1 = _mm512_sub_pd(vq1, _mm512_loadu_pd(&a1[i + 8]));
+        __m512d d2_1 = _mm512_sub_pd(vq1, _mm512_loadu_pd(&a2[i + 8]));
+        __m512d d3_1 = _mm512_sub_pd(vq1, _mm512_loadu_pd(&a3[i + 8]));
+
+        acc0_1 = _mm512_fmadd_pd(d0_1, d0_1, acc0_1);
+        acc1_1 = _mm512_fmadd_pd(d1_1, d1_1, acc1_1);
+        acc2_1 = _mm512_fmadd_pd(d2_1, d2_1, acc2_1);
+        acc3_1 = _mm512_fmadd_pd(d3_1, d3_1, acc3_1);
+    } // for (; i <= size - 16; i += 16)
+
+    double s0 = _mm512_reduce_add_pd(_mm512_add_pd(acc0_0, acc0_1));
+    double s1 = _mm512_reduce_add_pd(_mm512_add_pd(acc1_0, acc1_1));
+    double s2 = _mm512_reduce_add_pd(_mm512_add_pd(acc2_0, acc2_1));
+    double s3 = _mm512_reduce_add_pd(_mm512_add_pd(acc3_0, acc3_1));
+
+    for (; i <= size - 8; i += 8)
+    {
+        __m512d vq = _mm512_loadu_pd(&q[i]);
+        __m512d d0 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a0[i]));
+        __m512d d1 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a1[i]));
+        __m512d d2 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a2[i]));
+        __m512d d3 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a3[i]));
+
+        s0 += _mm512_reduce_add_pd(_mm512_mul_pd(d0, d0));
+        s1 += _mm512_reduce_add_pd(_mm512_mul_pd(d1, d1));
+        s2 += _mm512_reduce_add_pd(_mm512_mul_pd(d2, d2));
+        s3 += _mm512_reduce_add_pd(_mm512_mul_pd(d3, d3));
+    } // for (; i <= size - 8; i += 8)
+
+    for (; i < size; i++)
+    {
+        double q_val = q[i];
+        double diff0 = q_val - a0[i]; s0 += diff0 * diff0;
+        double diff1 = q_val - a1[i]; s1 += diff1 * diff1;
+        double diff2 = q_val - a2[i]; s2 += diff2 * diff2;
+        double diff3 = q_val - a3[i]; s3 += diff3 * diff3;
+    }
+
+    out_dists[0] = sqrt(s0);
+    out_dists[1] = sqrt(s1);
+    out_dists[2] = sqrt(s2);
+    out_dists[3] = sqrt(s3);
+}
+#endif
+
 /**
  * framedist_batch_1x4_double() - Vectorized 1-query vs 4-anchor Euclidean distance (double).
  * @q:         Pointer to query array.
@@ -510,6 +812,13 @@ void framedist_batch_1x4_double(
     double *restrict              out_dists,
     long                          size)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 8)
+    {
+        calc_dist4_d64_avx512(q, anchors, out_dists, size);
+        return;
+    }
+#endif
     double sum0 = 0.0;
     double sum1 = 0.0;
     double sum2 = 0.0;
@@ -659,6 +968,16 @@ void framedist_batch_float(
     long                         size)
 {
     int k = 0;
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    {
+        while (k + 16 <= n_anchors)
+        {
+            calc_dist16_f32_avx512(q, &anchors[k], &out_dists[k], size);
+            k += 16;
+        }
+    }
+#endif
     while (k + 8 <= n_anchors)
     {
         framedist_batch_1x8_float(q, &anchors[k], &out_dists[k], size);
@@ -677,6 +996,101 @@ void framedist_batch_float(
     }
 }
 
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static void calc_dist8_d64_avx512(
+    const double *restrict        q,
+    const double *const *restrict anchors,
+    double *restrict              out_dists,
+    long                          size)
+{
+    const double *restrict a0 = anchors[0];
+    const double *restrict a1 = anchors[1];
+    const double *restrict a2 = anchors[2];
+    const double *restrict a3 = anchors[3];
+    const double *restrict a4 = anchors[4];
+    const double *restrict a5 = anchors[5];
+    const double *restrict a6 = anchors[6];
+    const double *restrict a7 = anchors[7];
+
+    __m512d acc0 = _mm512_setzero_pd();
+    __m512d acc1 = _mm512_setzero_pd();
+    __m512d acc2 = _mm512_setzero_pd();
+    __m512d acc3 = _mm512_setzero_pd();
+    __m512d acc4 = _mm512_setzero_pd();
+    __m512d acc5 = _mm512_setzero_pd();
+    __m512d acc6 = _mm512_setzero_pd();
+    __m512d acc7 = _mm512_setzero_pd();
+
+    long i = 0;
+    for (; i <= size - 8; i += 8)
+    {
+        if (size >= 512 && (i & 31) == 0)
+        {
+            _mm_prefetch((const char *)&q[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a0[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a1[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a2[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a3[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a4[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a5[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a6[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a7[i + 32], _MM_HINT_T0);
+        }
+
+        __m512d vq = _mm512_loadu_pd(&q[i]);
+        __m512d d0 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a0[i]));
+        __m512d d1 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a1[i]));
+        __m512d d2 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a2[i]));
+        __m512d d3 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a3[i]));
+        __m512d d4 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a4[i]));
+        __m512d d5 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a5[i]));
+        __m512d d6 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a6[i]));
+        __m512d d7 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a7[i]));
+
+        acc0 = _mm512_fmadd_pd(d0, d0, acc0);
+        acc1 = _mm512_fmadd_pd(d1, d1, acc1);
+        acc2 = _mm512_fmadd_pd(d2, d2, acc2);
+        acc3 = _mm512_fmadd_pd(d3, d3, acc3);
+        acc4 = _mm512_fmadd_pd(d4, d4, acc4);
+        acc5 = _mm512_fmadd_pd(d5, d5, acc5);
+        acc6 = _mm512_fmadd_pd(d6, d6, acc6);
+        acc7 = _mm512_fmadd_pd(d7, d7, acc7);
+    } // for (; i <= size - 8; i += 8)
+
+    double s0 = _mm512_reduce_add_pd(acc0);
+    double s1 = _mm512_reduce_add_pd(acc1);
+    double s2 = _mm512_reduce_add_pd(acc2);
+    double s3 = _mm512_reduce_add_pd(acc3);
+    double s4 = _mm512_reduce_add_pd(acc4);
+    double s5 = _mm512_reduce_add_pd(acc5);
+    double s6 = _mm512_reduce_add_pd(acc6);
+    double s7 = _mm512_reduce_add_pd(acc7);
+
+    for (; i < size; i++)
+    {
+        double q_val = q[i];
+        double diff0 = q_val - a0[i]; s0 += diff0 * diff0;
+        double diff1 = q_val - a1[i]; s1 += diff1 * diff1;
+        double diff2 = q_val - a2[i]; s2 += diff2 * diff2;
+        double diff3 = q_val - a3[i]; s3 += diff3 * diff3;
+        double diff4 = q_val - a4[i]; s4 += diff4 * diff4;
+        double diff5 = q_val - a5[i]; s5 += diff5 * diff5;
+        double diff6 = q_val - a6[i]; s6 += diff6 * diff6;
+        double diff7 = q_val - a7[i]; s7 += diff7 * diff7;
+    }
+
+    out_dists[0] = sqrt(s0);
+    out_dists[1] = sqrt(s1);
+    out_dists[2] = sqrt(s2);
+    out_dists[3] = sqrt(s3);
+    out_dists[4] = sqrt(s4);
+    out_dists[5] = sqrt(s5);
+    out_dists[6] = sqrt(s6);
+    out_dists[7] = sqrt(s7);
+}
+#endif
+
 /**
  * framedist_batch_1x8_double() - Vectorized 1-query vs 8-anchor Euclidean distance (double).
  * @q:         Pointer to query array.
@@ -690,6 +1104,13 @@ void framedist_batch_1x8_double(
     double *restrict              out_dists,
     long                          size)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 8)
+    {
+        calc_dist8_d64_avx512(q, anchors, out_dists, size);
+        return;
+    }
+#endif
     double sum0 = 0.0;
     double sum1 = 0.0;
     double sum2 = 0.0;

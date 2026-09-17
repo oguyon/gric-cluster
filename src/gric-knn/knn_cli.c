@@ -237,6 +237,7 @@ static void knn_cli_set_defaults(
     config->use_two_hop = 1;        // Enabled by default for 2-hop candidate injection
     config->two_hop_seeds = 2;      // Expand top 2 closest seeds
     config->two_hop_max_cands = 32; // Maximum 2-hop candidate evaluations per query
+    config->no_txt = 1;             // Binary output by default (.bin); use -txt for text output
 }
 
 /**
@@ -289,6 +290,12 @@ static int knn_cli_parse_io_opt(
             return -1;
         }
         config->output_path = argv[++(*arg_idx)];
+        char *ext = strrchr(config->output_path, '.');
+        if (ext != NULL && strcmp(ext, ".txt") == 0)
+        {
+            config->output_format = KNN_FORMAT_TXT;
+            config->no_txt = 0;
+        }
         return 1;
     }
     if (strcmp(argv[i], "-dtmin") == 0)
@@ -352,9 +359,10 @@ static int knn_cli_parse_io_opt(
         config->output_format = KNN_FORMAT_FITS;
         return 1;
     }
-    if (strcmp(argv[i], "-txt") == 0)
+    if (strcmp(argv[i], "-txt") == 0 || strcmp(argv[i], "--txt") == 0)
     {
         config->output_format = KNN_FORMAT_TXT;
+        config->no_txt = 0;
         return 1;
     }
     if (strcmp(argv[i], "-progress") == 0)

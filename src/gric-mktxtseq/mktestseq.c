@@ -5,6 +5,8 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "shared/gric_gen_patterns.h"
+#include "shared/gric_bin_header.h"
+#include "shared/gric_bin_io.h"
 #include "shared/cli_colors.h"
 #include <ctype.h>
 #include <math.h>
@@ -271,7 +273,14 @@ int main(
         }
     }
 
-    FILE *f = fopen(filename, "w");
+    int is_bin_out = 0;
+    const char *ext = strrchr(filename, '.');
+    if (ext != NULL && strcmp(ext, ".bin") == 0)
+    {
+        is_bin_out = 1;
+    }
+
+    FILE *f = fopen(filename, is_bin_out ? "wb" : "w");
     if (!f)
     {
         perror("Failed to open output file");
@@ -360,14 +369,49 @@ int main(
         }
     }
 
-    for (long i = 0; i < total_points; i++)
+    if (is_bin_out)
     {
-        for (int d = 0; d < config.dim; d++)
+        gric_bin_header_t hdr;
+        memset(&hdr, 0, sizeof(hdr));
+        hdr.file_type = GRIC_BIN_TYPE_COORDINATES;
+        hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
+        hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+        hdr.ndim = 2;
+        hdr.dims[0] = (uint64_t)total_points;
+        hdr.dims[1] = (uint64_t)config.dim;
+        hdr.num_elements = (uint64_t)total_points * (uint64_t)config.dim;
+        hdr.data_bytes = hdr.num_elements * sizeof(float);
+
+        if (gric_bin_write_header(f, &hdr, "Generated synthetic sequence") != 0)
         {
-            fprintf(f, "%.6f%s", final_buffer[i * config.dim + d],
-                    (d == config.dim - 1) ? "" : " ");
+            fprintf(stderr, "Error: Failed to write GRIC binary header\n");
+            free(final_buffer);
+            fclose(f);
+            return 1;
         }
-        fprintf(f, "\n");
+
+        float *fbuf = (float *)malloc(hdr.num_elements * sizeof(float));
+        if (fbuf != NULL)
+        {
+            for (long i = 0; i < total_points * config.dim; i++)
+            {
+                fbuf[i] = (float)final_buffer[i];
+            }
+            fwrite(fbuf, sizeof(float), hdr.num_elements, f);
+            free(fbuf);
+        }
+    }
+    else
+    {
+        for (long i = 0; i < total_points; i++)
+        {
+            for (int d = 0; d < config.dim; d++)
+            {
+                fprintf(f, "%.6f%s", final_buffer[i * config.dim + d],
+                        (d == config.dim - 1) ? "" : " ");
+            }
+            fprintf(f, "\n");
+        }
     }
 
     free(final_buffer);

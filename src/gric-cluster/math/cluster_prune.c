@@ -13,6 +13,7 @@
 #include "cluster_core.h"
 #include "cluster_math.h"
 #include "cluster_locator.h"
+#include "gric_simd.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -222,11 +223,188 @@ void prune_candidates_te5(
             const char   *row_meas_c3 = &state->scratch.dcc_measured[c3 * maxnb];
 
             long local_pruned_te5 = 0;
-#ifdef _OPENMP
-#pragma omp parallel for reduction(+ : local_pruned_te5) \
-    if(state->num_clusters >= OMP_MIN_CLUSTERS)
+            int cl_idx = 0;
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+            if (!config->optim.sparse_dcc_mode && gric_get_simd_level() >= GRIC_SIMD_AVX512)
+            {
+                for (; cl_idx <= state->num_clusters - 8; cl_idx += 8)
+                {
+                    int any_alive = 0;
+                    for (int sub = 0; sub < 8; sub++)
+                    {
+                        if (state->scratch.clmembflag[cl_idx + sub])
+                        {
+                            any_alive = 1;
+                            break;
+                        }
+                    }
+                    if (!any_alive)
+                    {
+                        continue;
+                    }
+
+                    int any_missing = 0;
+                    for (int sub = 0; sub < 8; sub++)
+                    {
+                        int kk = cl_idx + sub;
+                        if (row_dcc_c1[kk] < 0.0 || row_dcc_c2[kk] < 0.0 || row_dcc_c3[kk] < 0.0)
+                        {
+                            any_missing = 1;
+                            break;
+                        }
+                    }
+
+                    if (any_missing)
+                    {
+                        for (int sub = 0; sub < 8; sub++)
+                        {
+                            int kk = cl_idx + sub;
+                            if (!state->scratch.clmembflag[kk] || kk == c1 || kk == c2 || kk == c3)
+                            {
+                                continue;
+                            }
+                            double d_k_c1 = row_dcc_c1[kk];
+                            if (d_k_c1 < 0.0)
+                            {
+                                d_k_c1 = get_dist(&state->clusters[kk].anchor,
+                                                  &state->clusters[c1].anchor, -1, -1.0, -1.0,
+                                                  config, state);
+                                set_dcc_pair(state, maxnb, kk, c1, d_k_c1);
+                            }
+                            double d_k_c2 = row_dcc_c2[kk];
+                            if (d_k_c2 < 0.0)
+                            {
+                                d_k_c2 = get_dist(&state->clusters[kk].anchor,
+                                                  &state->clusters[c2].anchor, -1, -1.0, -1.0,
+                                                  config, state);
+                                set_dcc_pair(state, maxnb, kk, c2, d_k_c2);
+                            }
+                            double d_k_c3 = row_dcc_c3[kk];
+                            if (d_k_c3 < 0.0)
+                            {
+                                d_k_c3 = get_dist(&state->clusters[kk].anchor,
+                                                  &state->clusters[c3].anchor, -1, -1.0, -1.0,
+                                                  config, state);
+                                set_dcc_pair(state, maxnb, kk, c3, d_k_c3);
+                            }
+                            double min_d = calc_min_dist_5pt_ref(&te5_ref, d_k_c1,
+                                                                 d_k_c2, d_k_c3);
+                            if (min_d > config->algo.rlim)
+                            {
+                                state->scratch.clmembflag[kk] = 0;
+                                local_pruned_te5++;
+                            }
+                        }
+                        continue;
+                    }
+
+                    double b_out[8];
+                    calc_min_dist_5pt_batch8_avx512(&te5_ref,
+                                                    &row_dcc_c1[cl_idx],
+                                                    &row_dcc_c2[cl_idx],
+                                                    &row_dcc_c3[cl_idx],
+                                                    b_out);
+                    for (int sub = 0; sub < 8; sub++)
+                    {
+                        int kk = cl_idx + sub;
+                        if (kk == c1 || kk == c2 || kk == c3)
+                        {
+                            continue;
+                        }
+                        if (state->scratch.clmembflag[kk] && b_out[sub] > config->algo.rlim)
+                        {
+                            state->scratch.clmembflag[kk] = 0;
+                            local_pruned_te5++;
+                        }
+                    }
+                }
+            }
+
+            if (!config->optim.sparse_dcc_mode && gric_get_simd_level() >= GRIC_SIMD_AVX2)
+            {
+                for (; cl_idx <= state->num_clusters - 4; cl_idx += 4)
+                {
+                    if (!state->scratch.clmembflag[cl_idx] &&
+                        !state->scratch.clmembflag[cl_idx + 1] &&
+                        !state->scratch.clmembflag[cl_idx + 2] &&
+                        !state->scratch.clmembflag[cl_idx + 3])
+                    {
+                        continue;
+                    }
+                    if (row_dcc_c1[cl_idx] < 0.0 || row_dcc_c1[cl_idx + 1] < 0.0 ||
+                        row_dcc_c1[cl_idx + 2] < 0.0 || row_dcc_c1[cl_idx + 3] < 0.0 ||
+                        row_dcc_c2[cl_idx] < 0.0 || row_dcc_c2[cl_idx + 1] < 0.0 ||
+                        row_dcc_c2[cl_idx + 2] < 0.0 || row_dcc_c2[cl_idx + 3] < 0.0 ||
+                        row_dcc_c3[cl_idx] < 0.0 || row_dcc_c3[cl_idx + 1] < 0.0 ||
+                        row_dcc_c3[cl_idx + 2] < 0.0 || row_dcc_c3[cl_idx + 3] < 0.0)
+                    {
+                        for (int sub = 0; sub < 4; sub++)
+                        {
+                            int kk = cl_idx + sub;
+                            if (!state->scratch.clmembflag[kk] || kk == c1 || kk == c2 || kk == c3)
+                            {
+                                continue;
+                            }
+                            double d_k_c1 = row_dcc_c1[kk];
+                            if (d_k_c1 < 0.0)
+                            {
+                                d_k_c1 = get_dist(&state->clusters[kk].anchor,
+                                                  &state->clusters[c1].anchor, -1, -1.0, -1.0,
+                                                  config, state);
+                                set_dcc_pair(state, maxnb, kk, c1, d_k_c1);
+                            }
+                            double d_k_c2 = row_dcc_c2[kk];
+                            if (d_k_c2 < 0.0)
+                            {
+                                d_k_c2 = get_dist(&state->clusters[kk].anchor,
+                                                  &state->clusters[c2].anchor, -1, -1.0, -1.0,
+                                                  config, state);
+                                set_dcc_pair(state, maxnb, kk, c2, d_k_c2);
+                            }
+                            double d_k_c3 = row_dcc_c3[kk];
+                            if (d_k_c3 < 0.0)
+                            {
+                                d_k_c3 = get_dist(&state->clusters[kk].anchor,
+                                                  &state->clusters[c3].anchor, -1, -1.0, -1.0,
+                                                  config, state);
+                                set_dcc_pair(state, maxnb, kk, c3, d_k_c3);
+                            }
+                            double min_d = calc_min_dist_5pt_ref(&te5_ref, d_k_c1,
+                                                                 d_k_c2, d_k_c3);
+                            if (min_d > config->algo.rlim)
+                            {
+                                state->scratch.clmembflag[kk] = 0;
+                                local_pruned_te5++;
+                            }
+                        }
+                        continue;
+                    }
+
+                    double b_out[4];
+                    calc_min_dist_5pt_batch4_avx2(&te5_ref,
+                                                  &row_dcc_c1[cl_idx],
+                                                  &row_dcc_c2[cl_idx],
+                                                  &row_dcc_c3[cl_idx],
+                                                  b_out);
+                    for (int sub = 0; sub < 4; sub++)
+                    {
+                        int kk = cl_idx + sub;
+                        if (kk == c1 || kk == c2 || kk == c3)
+                        {
+                            continue;
+                        }
+                        if (state->scratch.clmembflag[kk] && b_out[sub] > config->algo.rlim)
+                        {
+                            state->scratch.clmembflag[kk] = 0;
+                            local_pruned_te5++;
+                        }
+                    }
+                }
+            }
 #endif
-            for (int cl_idx = 0; cl_idx < state->num_clusters; cl_idx++)
+
+            for (; cl_idx < state->num_clusters; cl_idx++)
             {
                 if (!state->scratch.clmembflag[cl_idx])
                 {

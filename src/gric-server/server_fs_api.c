@@ -302,9 +302,63 @@ void handle_api_file_read(
 void handle_api_file_write(
     int                 client_fd,
     const ServerConfig *config,
+    const char         *query,
     const char         *body,
     size_t              body_len)
 {
+    char rel_path[PATH_MAX];
+    rel_path[0] = '\0';
+
+    if (query != NULL && get_query_param(query, "path", rel_path, sizeof(rel_path)))
+    {
+        /* Direct binary write path */
+        int is_append = 0;
+        char app_val[16];
+        if (get_query_param(query, "append", app_val, sizeof(app_val)))
+        {
+            if (strcmp(app_val, "true") == 0 || strcmp(app_val, "1") == 0)
+            {
+                is_append = 1;
+            }
+        }
+
+        char full_path[PATH_MAX];
+        if (!sanitize_path(config->workdir, rel_path, full_path, sizeof(full_path)))
+        {
+            api_send_json(client_fd, 400, "{\"error\":\"Invalid target file path\"}");
+            return;
+        }
+
+        char dir_copy[PATH_MAX];
+        strncpy(dir_copy, full_path, sizeof(dir_copy) - 1);
+        dir_copy[sizeof(dir_copy) - 1] = '\0';
+        char *slash = strrchr(dir_copy, '/');
+        if (slash != NULL)
+        {
+            *slash = '\0';
+            char cmd[PATH_MAX + 32];
+            snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", dir_copy);
+            int ret = system(cmd);
+            (void)ret;
+        }
+
+        FILE *f = fopen(full_path, is_append ? "ab" : "wb");
+        if (!f)
+        {
+            api_send_json(client_fd, 500, "{\"error\":\"Failed to open file for writing\"}");
+            return;
+        }
+
+        if (body != NULL && body_len > 0)
+        {
+            fwrite(body, 1, body_len, f);
+        }
+        fclose(f);
+
+        api_send_json(client_fd, 200, "{\"status\":\"ok\",\"written\":true}");
+        return;
+    }
+
     if (!body || body_len == 0)
     {
         api_send_json(client_fd, 400, "{\"error\":\"Empty write payload\"}");
@@ -330,7 +384,6 @@ void handle_api_file_write(
         return;
     }
 
-    char rel_path[PATH_MAX];
     size_t path_len = (size_t)(p_end - p_start);
     if (path_len >= sizeof(rel_path))
     {

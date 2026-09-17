@@ -10,6 +10,7 @@
 #include "frameread.h"
 #include "cluster_bounds.h"
 #include "framedistance.h"
+#include "gric_simd.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -173,7 +174,6 @@ static void init_new_cluster_distances(
             }
         }
 
-        int b_count8 = unvisited_count / 8;
         long frame_elem = (long)state->clusters[new_cl].anchor.width *
                           (long)state->clusters[new_cl].anchor.height;
         int is_double = state->clusters[new_cl].anchor.is_double;
@@ -181,9 +181,41 @@ static void init_new_cluster_distances(
 
         if (!config->output.distall_mode && config->optim.use_batch_dist)
         {
+#if GRIC_HAVE_AVX512_TARGET
+            if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && !is_double)
+            {
+                int b_count16 = unvisited_count / 16;
+                #pragma omp parallel for if(b_count16 >= 8) schedule(static)
+                for (int b = 0; b < b_count16; b++)
+                {
+                    int b_idx = b * 16;
+                    double batch_dists[16];
+                    const float *b_anchors[16];
+                    for (int k = 0; k < 16; k++)
+                    {
+                        int cl_k = unvisited[b_idx + k];
+                        b_anchors[k] = (const float *)state->clusters[cl_k].anchor.data;
+                    }
+                    framedist_batch_1x16_float(
+                        (const float *)state->clusters[new_cl].anchor.data,
+                        b_anchors,
+                        batch_dists,
+                        frame_elem);
+
+                    for (int k = 0; k < 16; k++)
+                    {
+                        int cl_idx = unvisited[b_idx + k];
+                        set_dcc_pair(state, N, new_cl, cl_idx, batch_dists[k]);
+                    }
+                } // for (int b = 0; b < b_count16; b++)
+                processed_count = b_count16 * 16;
+            }
+#endif
+            int b_count8 = (unvisited_count - processed_count) / 8;
+            #pragma omp parallel for if(b_count8 >= 8) schedule(static)
             for (int b = 0; b < b_count8; b++)
             {
-                int b_idx = b * 8;
+                int b_idx = processed_count + b * 8;
                 double batch_dists[8];
 
                 if (is_double)
@@ -221,7 +253,7 @@ static void init_new_cluster_distances(
                     set_dcc_pair(state, N, new_cl, cl_idx, batch_dists[k]);
                 }
             } // for (int b = 0; b < b_count8; b++)
-            processed_count = b_count8 * 8;
+            processed_count += b_count8 * 8;
 
             int b_count4 = (unvisited_count - processed_count) / 4;
             for (int b = 0; b < b_count4; b++)

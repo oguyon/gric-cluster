@@ -103,3 +103,38 @@ const char *gric_simd_level_to_string(
             return "Scalar / Generic Baseline";
     }
 }
+
+/**
+ * gric_has_avx512_vnni() - Check if host CPU supports AVX-512 VNNI.
+ *
+ * Return: true if AVX-512 VNNI is supported, false otherwise.
+ */
+bool gric_has_avx512_vnni(void)
+{
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if defined(__GNUC__) || defined(__clang__)
+    __builtin_cpu_init();
+    return __builtin_cpu_supports("avx512vnni") &&
+           __builtin_cpu_supports("avx512f") &&
+           __builtin_cpu_supports("avx512bw");
+#endif
+#endif
+    return false;
+}
+
+/**
+ * gric_has_avx_vnni() - Check if host CPU supports AVX-VNNI.
+ *
+ * Return: true if AVX-VNNI is supported, false otherwise.
+ */
+bool gric_has_avx_vnni(void)
+{
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if defined(__GNUC__) || defined(__clang__)
+    __builtin_cpu_init();
+    return __builtin_cpu_supports("avxvnni") &&
+           __builtin_cpu_supports("avx2");
+#endif
+#endif
+    return false;
+}

@@ -6659,10 +6659,11 @@
             : (slot && slot.benchmarkKey ? slot.benchmarkKey : currentBenchmark);
           if (!rawDatasetName) {
             const selCli = document.getElementById('selectCliDataset');
-            rawDatasetName = selCli ? selCli.value : `${currentBenchmark}.txt`;
+            rawDatasetName = selCli ? selCli.value : `${currentBenchmark}.bin`;
           }
-          const datasetBase = rawDatasetName.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
-          const datasetFile = `${datasetBase}.txt`;
+          const reExt = /\.(bin|txt|csv|fits|dat|mp4|fits\.fz)$/i;
+          const datasetBase = rawDatasetName.replace(reExt, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
+          const datasetFile = `${datasetBase}.bin`;
           const clusterDir = `${datasetBase}.clusterdat`;
 
           // 1. Ensure staged coordinates exist in workspace file
@@ -7479,10 +7480,10 @@
       );
       let datasetName = selCli ? selCli.value : '';
       if (!datasetName) {
-        datasetName = `${currentBenchmark}.txt`;
+        datasetName = `${currentBenchmark}.bin`;
       }
       const dsBase = datasetName.replace(
-        /\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, ''
+        /\.(bin|txt|csv|fits|dat|mp4|fits\.fz)$/i, ''
       );
       const clusterDir = `${dsBase}.clusterdat`;
 
@@ -9245,12 +9246,13 @@
         ? slotC.stagedDatasetInfo.name
         : (slotC.benchmarkKey || 'dataset_C');
 
-      const baseA = rawNameA.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
-      const baseC = rawNameC.replace(/\.(txt|csv|fits|dat|mp4|fits\.fz)$/i, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const reExt = /\.(bin|txt|csv|fits|dat|mp4|fits\.fz)$/i;
+      const baseA = rawNameA.replace(reExt, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const baseC = rawNameC.replace(reExt, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
 
       const stagedNameC = (baseA === baseC) ? `${baseC}_query_C` : baseC;
-      const datasetFileA = `${baseA}.txt`;
-      const datasetFileC = `${stagedNameC}.txt`;
+      const datasetFileA = `${baseA}.bin`;
+      const datasetFileC = `${stagedNameC}.bin`;
       const clusterDir   = `${baseA}.clusterdat`;
 
       const btnRun  = document.getElementById('btnRunNativeReconQuery');
@@ -11459,12 +11461,18 @@
         }
 
         const fileGroup = document.createElement('optgroup');
-        fileGroup.label = '📁 Local Workspace Files';
-        files.forEach(f => {
+        fileGroup.label = '📁 Local Workspace Files (.bin default)';
+        const sortedFiles = [...files].sort((a, b) => {
+          const aBin = a.name.endsWith('.bin') ? 0 : 1;
+          const bBin = b.name.endsWith('.bin') ? 0 : 1;
+          return aBin - bBin || a.name.localeCompare(b.name);
+        });
+        sortedFiles.forEach(f => {
           if (!f.isDir) {
             const opt = document.createElement('option');
             opt.value = f.name;
-            opt.textContent = `${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
+            const icon = f.name.endsWith('.bin') ? '📦 ' : '';
+            opt.textContent = `${icon}${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
             fileGroup.appendChild(opt);
           }
         });
@@ -11648,7 +11656,7 @@
       const selCli = document.getElementById('selectCliDataset');
       let dataset = selCli ? selCli.value : '';
       if (!dataset) {
-        dataset = `${currentBenchmark}.txt`;
+        dataset = `${currentBenchmark}.bin`;
       }
 
       let args = [];
@@ -11665,7 +11673,8 @@
 
       if (isStreamingMode) {
         isStreamInput = true;
-        const isSynthetic = !selCli || !selCli.value || dataset === `${currentBenchmark}.txt` ||
+        const isSynthetic = !selCli || !selCli.value ||
+          dataset === `${currentBenchmark}.bin` || dataset === `${currentBenchmark}.txt` ||
           (typeof BENCHMARK_DESCS !== 'undefined' &&
            BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
 
@@ -11688,7 +11697,7 @@
         }
 
         if (needStage) {
-          dataset = `${currentBenchmark}.txt`;
+          dataset = `${currentBenchmark}.bin`;
           if (!benchmarkDataset || benchmarkDataset.length === 0) {
             stageDataset();
           }
@@ -11738,7 +11747,8 @@
         ];
       } else {
         // If running active synthetic benchmark, ensure file exists in workspace
-        const isSynthetic = !selCli || !selCli.value || dataset === `${currentBenchmark}.txt` ||
+        const isSynthetic = !selCli || !selCli.value ||
+          dataset === `${currentBenchmark}.bin` || dataset === `${currentBenchmark}.txt` ||
           (typeof BENCHMARK_DESCS !== 'undefined' &&
            BENCHMARK_DESCS[dataset.replace(/\.[^/.]+$/, '')]);
 
@@ -11761,13 +11771,13 @@
         }
 
         if (needStage) {
-          dataset = `${currentBenchmark}.txt`;
+          dataset = `${currentBenchmark}.bin`;
           if (!benchmarkDataset || benchmarkDataset.length === 0) {
             stageDataset();
           }
           try {
             const countStr = benchmarkDataset.length.toLocaleString();
-            showToast(`📦 Staging ${countStr} pts to workspace...`);
+            showToast(`📦 Staging ${countStr} pts to workspace (.bin)...`);
             await DesktopBridge.stageDatasetFile(
               currentBenchmark,
               benchmarkDataset,

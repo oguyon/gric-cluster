@@ -1298,8 +1298,6 @@ static void sq16_filter_anchor_matrix_avx2(
                 __m256i acc1 = _mm256_add_epi32(_mm256_madd_epi16(d1_0, d1_0),
                                                 _mm256_madd_epi16(d1_1, d1_1));
 
-                __m256i h01 = _mm256_hadd_epi32(acc0, acc1);
-
                 // Chunk 0: Anchor 2
                 __m256i a2_0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 64));
                 __m256i a2_1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 80));
@@ -1316,10 +1314,27 @@ static void sq16_filter_anchor_matrix_avx2(
                 __m256i acc3 = _mm256_add_epi32(_mm256_madd_epi16(d3_0, d3_0),
                                                 _mm256_madd_epi16(d3_1, d3_1));
 
-                __m256i h23 = _mm256_hadd_epi32(acc2, acc3);
-                __m256i h_all = _mm256_hadd_epi32(h01, h23);
-                __m128i sum4 = _mm_add_epi32(_mm256_castsi256_si128(h_all),
-                                             _mm256_extracti128_si256(h_all, 1));
+                __m128i s0 = _mm_add_epi32(_mm256_castsi256_si128(acc0),
+                                           _mm256_extracti128_si256(acc0, 1));
+                __m128i s1 = _mm_add_epi32(_mm256_castsi256_si128(acc1),
+                                           _mm256_extracti128_si256(acc1, 1));
+                __m128i s2 = _mm_add_epi32(_mm256_castsi256_si128(acc2),
+                                           _mm256_extracti128_si256(acc2, 1));
+                __m128i s3 = _mm_add_epi32(_mm256_castsi256_si128(acc3),
+                                           _mm256_extracti128_si256(acc3, 1));
+
+                __m128i t0 = _mm_unpacklo_epi32(s0, s1);
+                __m128i t1 = _mm_unpackhi_epi32(s0, s1);
+                __m128i t2 = _mm_unpacklo_epi32(s2, s3);
+                __m128i t3 = _mm_unpackhi_epi32(s2, s3);
+
+                __m128i u0 = _mm_unpacklo_epi64(t0, t2);
+                __m128i u1 = _mm_unpackhi_epi64(t0, t2);
+                __m128i u2 = _mm_unpacklo_epi64(t1, t3);
+                __m128i u3 = _mm_unpackhi_epi64(t1, t3);
+
+                __m128i sum4 = _mm_add_epi32(_mm_add_epi32(u0, u1),
+                                             _mm_add_epi32(u2, u3));
 
                 __m128i v_sum_b = _mm_xor_si128(sum4, v_bias);
                 __m128i cmp = _mm_cmpgt_epi32(v_sum_b, v_cut);
@@ -1327,10 +1342,7 @@ static void sq16_filter_anchor_matrix_avx2(
 
                 if (mask == 0xF)
                 {
-                    clmembflag[i + 0] = 0;
-                    clmembflag[i + 1] = 0;
-                    clmembflag[i + 2] = 0;
-                    clmembflag[i + 3] = 0;
+                    _mm_storeu_si128((__m128i *)(clmembflag + i), _mm_setzero_si128());
                     pruned_count += 4;
                     continue;
                 }

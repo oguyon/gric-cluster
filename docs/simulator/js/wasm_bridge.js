@@ -1956,10 +1956,10 @@ function buildCliCommand() {
   }
 
   // Input placeholder
-  parts.push('<input.fits>');
+  parts.push('<input.bin>');
 
   if (typeof enableKnn !== 'undefined' && enableKnn) {
-    const knnParts = ['gric-knn', '<input.fits>', '<cluster_dir>'];
+    const knnParts = ['gric-knn', '<input.bin>', '<cluster_dir>'];
     if (typeof useGpu === 'boolean' && useGpu) {
       knnParts.push('--gpu');
       const batchSel = document.getElementById('selectToolbarGpuBatchSize') ||

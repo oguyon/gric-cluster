@@ -6,6 +6,7 @@
  * @brief Product Quantization (PQ) and Asymmetric Distance Computation (ADC) FastScan.
  */
 
+#include "gric_simd.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -243,7 +244,7 @@ static inline uint32_t pq_fastscan_32x_scalar(
     return mask;
 }
 
-#if !defined(__CUDACC__) && defined(__AVX2__) && \
+#if !defined(__CUDACC__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 
 /**
@@ -255,6 +256,7 @@ static inline uint32_t pq_fastscan_32x_scalar(
  *
  * Return: 32-bit bitmask where bit i is 1 if candidate i dist <= cutoff_u8.
  */
+GRIC_TARGET_AVX2
 static inline uint32_t pq_fastscan_32x_avx2(
     const uint8_t *restrict query_lut,
     const uint8_t *restrict block_codes,
@@ -295,10 +297,9 @@ static inline uint32_t pq_fastscan_32x_avx2(
     int fail_mask = _mm256_movemask_epi8(fail);
     return (~(uint32_t)fail_mask);
 }
-#endif // __AVX2__
+#endif // x86_64
 
-#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+#if !defined(__CUDACC__) && GRIC_HAVE_AVX512_TARGET
 
 /**
  * pq_fastscan_32x_avx512() - AVX-512 evaluation of 32 candidates using pshufb.
@@ -309,6 +310,7 @@ static inline uint32_t pq_fastscan_32x_avx2(
  *
  * Return: 32-bit bitmask where bit i is 1 if candidate i dist <= cutoff_u8.
  */
+GRIC_TARGET_AVX512
 static inline uint32_t pq_fastscan_32x_avx512(
     const uint8_t *restrict query_lut,
     const uint8_t *restrict block_codes,
@@ -332,7 +334,39 @@ static inline uint32_t pq_fastscan_32x_avx512(
     __mmask32 pass = _mm256_cmple_epu8_mask(acc, v_cutoff);
     return (uint32_t)pass;
 }
-#endif // __AVX512BW__
+
+/**
+ * pq_fastscan_64x_avx512() - AVX-512 evaluation of 64 candidates in 512-bit vector.
+ * @query_lut:   Array of m 16-byte lookup tables: [m * 16].
+ * @block_codes: Transposed candidate codes: [m * 64].
+ * @m:           Number of subquantizers.
+ * @cutoff_u8:   Cutoff distance threshold in uint8 accumulator units.
+ *
+ * Return: 64-bit bitmask where bit i is 1 if candidate i dist <= cutoff_u8.
+ */
+GRIC_TARGET_AVX512
+static inline uint64_t pq_fastscan_64x_avx512(
+    const uint8_t *restrict query_lut,
+    const uint8_t *restrict block_codes,
+    int                     m,
+    uint8_t                 cutoff_u8)
+{
+    __m512i acc = _mm512_setzero_si512();
+
+    for (int s = 0; s < m; s++)
+    {
+        __m128i lut128 = _mm_loadu_si128((const __m128i *)(const void *)(query_lut + s * 16));
+        __m512i lut512 = _mm512_broadcast_i32x4(lut128);
+        __m512i codes = _mm512_loadu_si512((const void *)(block_codes + s * 64));
+        __m512i looked_up = _mm512_shuffle_epi8(lut512, codes);
+        acc = _mm512_adds_epu8(acc, looked_up);
+    } // for (int s = 0; s < m; s++)
+
+    __m512i v_cutoff = _mm512_set1_epi8((int8_t)cutoff_u8);
+    __mmask64 pass = _mm512_cmple_epu8_mask(acc, v_cutoff);
+    return (uint64_t)pass;
+}
+#endif // GRIC_HAVE_AVX512_TARGET
 
 /**
  * pq_fastscan_32x() - Universal dispatcher for 32 candidate evaluations.
@@ -349,15 +383,67 @@ static inline uint32_t pq_fastscan_32x(
     int                     m,
     uint8_t                 cutoff_u8)
 {
-#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    return pq_fastscan_32x_avx512(query_lut, block_codes, m, cutoff_u8);
-#elif !defined(__CUDACC__) && defined(__AVX2__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    return pq_fastscan_32x_avx2(query_lut, block_codes, m, cutoff_u8);
-#else
-    return pq_fastscan_32x_scalar(query_lut, block_codes, m, cutoff_u8);
+#if !defined(__CUDACC__) && GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        return pq_fastscan_32x_avx512(query_lut, block_codes, m, cutoff_u8);
+    }
 #endif
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        return pq_fastscan_32x_avx2(query_lut, block_codes, m, cutoff_u8);
+    }
+#endif
+    return pq_fastscan_32x_scalar(query_lut, block_codes, m, cutoff_u8);
+}
+
+/**
+ * pq_fastscan_64x_scalar() - Scalar evaluation of 64 candidates.
+ */
+static inline uint64_t pq_fastscan_64x_scalar(
+    const uint8_t *restrict query_lut,
+    const uint8_t *restrict block_codes,
+    int                     m,
+    uint8_t                 cutoff_u8)
+{
+    uint32_t lo = pq_fastscan_32x_scalar(query_lut, block_codes, m, cutoff_u8);
+    uint32_t hi = pq_fastscan_32x_scalar(query_lut, block_codes + 32, m, cutoff_u8);
+    return (uint64_t)lo | ((uint64_t)hi << 32);
+}
+
+/**
+ * pq_fastscan_64x() - Universal dispatcher for 64 candidate evaluations.
+ * @query_lut:   Array of m 16-byte lookup tables: [m * 16].
+ * @block_codes: Transposed candidate codes: [m * 64].
+ * @m:           Number of subquantizers.
+ * @cutoff_u8:   Cutoff distance threshold in uint8 accumulator units.
+ *
+ * Return: 64-bit bitmask where bit i is 1 if candidate i passes cutoff.
+ */
+static inline uint64_t pq_fastscan_64x(
+    const uint8_t *restrict query_lut,
+    const uint8_t *restrict block_codes,
+    int                     m,
+    uint8_t                 cutoff_u8)
+{
+#if !defined(__CUDACC__) && GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        return pq_fastscan_64x_avx512(query_lut, block_codes, m, cutoff_u8);
+    }
+#endif
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        uint32_t lo = pq_fastscan_32x_avx2(query_lut, block_codes, m, cutoff_u8);
+        uint32_t hi = pq_fastscan_32x_avx2(query_lut, block_codes + 32, m, cutoff_u8);
+        return (uint64_t)lo | ((uint64_t)hi << 32);
+    }
+#endif
+    return pq_fastscan_64x_scalar(query_lut, block_codes, m, cutoff_u8);
 }
 
 #ifdef __cplusplus

@@ -736,9 +736,9 @@ static void gemm_dist_tile_4x4_float_avx512(
     __m512 c33 = _mm512_setzero_ps();
 
     int d = 0;
-    for (; d <= dim - 16; d += 16)
+    for (; d <= dim - 32; d += 32)
     {
-        if (dim >= 1024 && (d & 31) == 0)
+        if (dim >= 1024 && (d & 63) == 0)
         {
             _mm_prefetch((const char *)&x_ptrs[0][d + 64], _MM_HINT_T0);
             _mm_prefetch((const char *)&x_ptrs[1][d + 64], _MM_HINT_T0);
@@ -750,6 +750,73 @@ static void gemm_dist_tile_4x4_float_avx512(
             _mm_prefetch((const char *)&q_ptrs[3][d + 64], _MM_HINT_T0);
         }
 
+        /* First 16 elements */
+        {
+            __m512 vx0 = _mm512_loadu_ps(&x_ptrs[0][d]);
+            __m512 vx1 = _mm512_loadu_ps(&x_ptrs[1][d]);
+            __m512 vx2 = _mm512_loadu_ps(&x_ptrs[2][d]);
+            __m512 vx3 = _mm512_loadu_ps(&x_ptrs[3][d]);
+
+            __m512 vq0 = _mm512_loadu_ps(&q_ptrs[0][d]);
+            c00 = _mm512_fmadd_ps(vq0, vx0, c00);
+            c01 = _mm512_fmadd_ps(vq0, vx1, c01);
+            c02 = _mm512_fmadd_ps(vq0, vx2, c02);
+            c03 = _mm512_fmadd_ps(vq0, vx3, c03);
+
+            __m512 vq1 = _mm512_loadu_ps(&q_ptrs[1][d]);
+            c10 = _mm512_fmadd_ps(vq1, vx0, c10);
+            c11 = _mm512_fmadd_ps(vq1, vx1, c11);
+            c12 = _mm512_fmadd_ps(vq1, vx2, c12);
+            c13 = _mm512_fmadd_ps(vq1, vx3, c13);
+
+            __m512 vq2 = _mm512_loadu_ps(&q_ptrs[2][d]);
+            c20 = _mm512_fmadd_ps(vq2, vx0, c20);
+            c21 = _mm512_fmadd_ps(vq2, vx1, c21);
+            c22 = _mm512_fmadd_ps(vq2, vx2, c22);
+            c23 = _mm512_fmadd_ps(vq2, vx3, c23);
+
+            __m512 vq3 = _mm512_loadu_ps(&q_ptrs[3][d]);
+            c30 = _mm512_fmadd_ps(vq3, vx0, c30);
+            c31 = _mm512_fmadd_ps(vq3, vx1, c31);
+            c32 = _mm512_fmadd_ps(vq3, vx2, c32);
+            c33 = _mm512_fmadd_ps(vq3, vx3, c33);
+        }
+
+        /* Second 16 elements */
+        {
+            __m512 vx0 = _mm512_loadu_ps(&x_ptrs[0][d + 16]);
+            __m512 vx1 = _mm512_loadu_ps(&x_ptrs[1][d + 16]);
+            __m512 vx2 = _mm512_loadu_ps(&x_ptrs[2][d + 16]);
+            __m512 vx3 = _mm512_loadu_ps(&x_ptrs[3][d + 16]);
+
+            __m512 vq0 = _mm512_loadu_ps(&q_ptrs[0][d + 16]);
+            c00 = _mm512_fmadd_ps(vq0, vx0, c00);
+            c01 = _mm512_fmadd_ps(vq0, vx1, c01);
+            c02 = _mm512_fmadd_ps(vq0, vx2, c02);
+            c03 = _mm512_fmadd_ps(vq0, vx3, c03);
+
+            __m512 vq1 = _mm512_loadu_ps(&q_ptrs[1][d + 16]);
+            c10 = _mm512_fmadd_ps(vq1, vx0, c10);
+            c11 = _mm512_fmadd_ps(vq1, vx1, c11);
+            c12 = _mm512_fmadd_ps(vq1, vx2, c12);
+            c13 = _mm512_fmadd_ps(vq1, vx3, c13);
+
+            __m512 vq2 = _mm512_loadu_ps(&q_ptrs[2][d + 16]);
+            c20 = _mm512_fmadd_ps(vq2, vx0, c20);
+            c21 = _mm512_fmadd_ps(vq2, vx1, c21);
+            c22 = _mm512_fmadd_ps(vq2, vx2, c22);
+            c23 = _mm512_fmadd_ps(vq2, vx3, c23);
+
+            __m512 vq3 = _mm512_loadu_ps(&q_ptrs[3][d + 16]);
+            c30 = _mm512_fmadd_ps(vq3, vx0, c30);
+            c31 = _mm512_fmadd_ps(vq3, vx1, c31);
+            c32 = _mm512_fmadd_ps(vq3, vx2, c32);
+            c33 = _mm512_fmadd_ps(vq3, vx3, c33);
+        }
+    }
+
+    for (; d <= dim - 16; d += 16)
+    {
         __m512 vx0 = _mm512_loadu_ps(&x_ptrs[0][d]);
         __m512 vx1 = _mm512_loadu_ps(&x_ptrs[1][d]);
         __m512 vx2 = _mm512_loadu_ps(&x_ptrs[2][d]);
@@ -857,9 +924,9 @@ static void gemm_dist_tile_2x4_double_avx512(
     __m512d c13 = _mm512_setzero_pd();
 
     int d = 0;
-    for (; d <= dim - 8; d += 8)
+    for (; d <= dim - 16; d += 16)
     {
-        if (dim >= 512 && (d & 15) == 0)
+        if (dim >= 512 && (d & 31) == 0)
         {
             _mm_prefetch((const char *)&x_ptrs[0][d + 64], _MM_HINT_T0);
             _mm_prefetch((const char *)&x_ptrs[1][d + 64], _MM_HINT_T0);
@@ -869,6 +936,49 @@ static void gemm_dist_tile_2x4_double_avx512(
             _mm_prefetch((const char *)&q_ptrs[1][d + 64], _MM_HINT_T0);
         }
 
+        /* First 8 doubles */
+        {
+            __m512d vx0 = _mm512_loadu_pd(&x_ptrs[0][d]);
+            __m512d vx1 = _mm512_loadu_pd(&x_ptrs[1][d]);
+            __m512d vx2 = _mm512_loadu_pd(&x_ptrs[2][d]);
+            __m512d vx3 = _mm512_loadu_pd(&x_ptrs[3][d]);
+
+            __m512d vq0 = _mm512_loadu_pd(&q_ptrs[0][d]);
+            c00 = _mm512_fmadd_pd(vq0, vx0, c00);
+            c01 = _mm512_fmadd_pd(vq0, vx1, c01);
+            c02 = _mm512_fmadd_pd(vq0, vx2, c02);
+            c03 = _mm512_fmadd_pd(vq0, vx3, c03);
+
+            __m512d vq1 = _mm512_loadu_pd(&q_ptrs[1][d]);
+            c10 = _mm512_fmadd_pd(vq1, vx0, c10);
+            c11 = _mm512_fmadd_pd(vq1, vx1, c11);
+            c12 = _mm512_fmadd_pd(vq1, vx2, c12);
+            c13 = _mm512_fmadd_pd(vq1, vx3, c13);
+        }
+
+        /* Second 8 doubles */
+        {
+            __m512d vx0 = _mm512_loadu_pd(&x_ptrs[0][d + 8]);
+            __m512d vx1 = _mm512_loadu_pd(&x_ptrs[1][d + 8]);
+            __m512d vx2 = _mm512_loadu_pd(&x_ptrs[2][d + 8]);
+            __m512d vx3 = _mm512_loadu_pd(&x_ptrs[3][d + 8]);
+
+            __m512d vq0 = _mm512_loadu_pd(&q_ptrs[0][d + 8]);
+            c00 = _mm512_fmadd_pd(vq0, vx0, c00);
+            c01 = _mm512_fmadd_pd(vq0, vx1, c01);
+            c02 = _mm512_fmadd_pd(vq0, vx2, c02);
+            c03 = _mm512_fmadd_pd(vq0, vx3, c03);
+
+            __m512d vq1 = _mm512_loadu_pd(&q_ptrs[1][d + 8]);
+            c10 = _mm512_fmadd_pd(vq1, vx0, c10);
+            c11 = _mm512_fmadd_pd(vq1, vx1, c11);
+            c12 = _mm512_fmadd_pd(vq1, vx2, c12);
+            c13 = _mm512_fmadd_pd(vq1, vx3, c13);
+        }
+    }
+
+    for (; d <= dim - 8; d += 8)
+    {
         __m512d vx0 = _mm512_loadu_pd(&x_ptrs[0][d]);
         __m512d vx1 = _mm512_loadu_pd(&x_ptrs[1][d]);
         __m512d vx2 = _mm512_loadu_pd(&x_ptrs[2][d]);

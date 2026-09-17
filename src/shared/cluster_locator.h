@@ -138,7 +138,7 @@ double calc_min_dist_5pt_ref(
     double        d_t_c2,
     double        d_t_c3);
 
-#if defined(__AVX2__)
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 /**
  * calc_min_dist_4pt_batch4_avx2() - AVX2 vectorized 4-way 4-point evaluation.
  * @ref:       Initialized 4-point reference structure.
@@ -161,6 +161,34 @@ void calc_min_dist_4pt_batch4_avx2(
  * @out_dists: Output array for 4 computed min distances.
  */
 void calc_min_dist_5pt_batch4_avx2(
+    const TE5Ref          *ref,
+    const double *restrict d_t_c1,
+    const double *restrict d_t_c2,
+    const double *restrict d_t_c3,
+    double       *restrict out_dists);
+
+/**
+ * calc_min_dist_4pt_batch8_avx512() - AVX-512 vectorized 8-way 4-point evaluation.
+ * @ref:       Initialized 4-point reference structure.
+ * @d13:       Array of 8 distance values to point 1.
+ * @d23:       Array of 8 distance values to point 2.
+ * @out_dists: Output array for 8 computed min distances.
+ */
+void calc_min_dist_4pt_batch8_avx512(
+    const TE4Ref          *ref,
+    const double *restrict d13,
+    const double *restrict d23,
+    double       *restrict out_dists);
+
+/**
+ * calc_min_dist_5pt_batch8_avx512() - AVX-512 vectorized 8-way 5-point evaluation.
+ * @ref:       Initialized 5-point reference structure.
+ * @d_t_c1:    Array of 8 distance values to cluster 1.
+ * @d_t_c2:    Array of 8 distance values to cluster 2.
+ * @d_t_c3:    Array of 8 distance values to cluster 3.
+ * @out_dists: Output array for 8 computed min distances.
+ */
+void calc_min_dist_5pt_batch8_avx512(
     const TE5Ref          *ref,
     const double *restrict d_t_c1,
     const double *restrict d_t_c2,
