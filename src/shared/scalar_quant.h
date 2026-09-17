@@ -253,6 +253,7 @@ int sq16_batch_filter_candidates(
 void sq16_filter_anchor_matrix(
     const int16_t *restrict cur_sq16,
     const int16_t *restrict anchor_matrix,
+    const int16_t *restrict anchor_chunk0,
     int                     num_clusters,
     long                    dim,
     uint64_t                sq16_ssd_thresh,

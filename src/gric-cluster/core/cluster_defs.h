@@ -285,7 +285,8 @@ typedef struct
     int16_t            *current_frame_sq16; /**< Scratch buffer for SQ16 current frame */
     int                 sq16_calibrated;    /**< 1 if global SQ16 params are calibrated */
     uint8_t            *anchor_matrix_sq8;  /**< Contiguous [maxnbclust x dim] SQ8 anchors */
-    int16_t            *anchor_matrix_sq16; /**< Contiguous [maxnbclust x dim] SQ16 anchors */
+    int16_t            *anchor_matrix_sq16;  /**< Contiguous [maxnbclust x dim] SQ16 anchors */
+    int16_t            *anchor_matrix_sq16_chunk0; /**< Contiguous [maxnbclust x 32] SQ16 chunk 0 */
     long               *perm_dim;           /**< Spectral dimension ordering [dim] */
     double             *residual_tail;      /**< Precomputed residual tail array [dim] */
 } ClusterState;

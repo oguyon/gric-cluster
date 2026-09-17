@@ -69,6 +69,15 @@ static void prepare_frame_quantization(
                 state->anchor_matrix_sq16 = NULL;
             }
         }
+        if (frame_dim >= 32 && state->anchor_matrix_sq16_chunk0 == NULL)
+        {
+            size_t total_c0 = (size_t)config->algo.maxnbclust * 32;
+            if (posix_memalign((void **)&state->anchor_matrix_sq16_chunk0, 64,
+                               total_c0 * sizeof(int16_t)) != 0)
+            {
+                state->anchor_matrix_sq16_chunk0 = NULL;
+            }
+        }
         if (!state->sq16_calibrated)
         {
             if (current_frame->is_double)
@@ -574,6 +583,7 @@ int cluster_frame(
                     sq16_filter_anchor_matrix(
                         state->current_frame_sq16,
                         state->anchor_matrix_sq16,
+                        state->anchor_matrix_sq16_chunk0,
                         state->num_clusters,
                         dim,
                         sq16_ssd_thresh,
@@ -626,6 +636,7 @@ int cluster_frame(
                             sq16_filter_anchor_matrix(
                                 cur_sq16,
                                 mat_sq16,
+                                state->anchor_matrix_sq16_chunk0,
                                 num_cl,
                                 dim,
                                 sq16_ssd_thresh,
