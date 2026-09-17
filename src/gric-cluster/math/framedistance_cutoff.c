@@ -9,12 +9,105 @@
 
 #include "framedistance.h"
 #include "common.h"
+#include "gric_simd.h"
 #include <math.h>
 #include <stddef.h>
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <immintrin.h>
 #endif
+
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static double framedist_squared_cutoff_float_avx512(
+    const float *restrict da,
+    const float *restrict db,
+    long                  size,
+    double                cutoff_sq)
+{
+    float sum = 0.0f;
+    long i = 0;
+
+    __m512 acc0 = _mm512_setzero_ps();
+    __m512 acc1 = _mm512_setzero_ps();
+    __m512 acc2 = _mm512_setzero_ps();
+    __m512 acc3 = _mm512_setzero_ps();
+
+    for (; i <= size - 64; i += 64)
+    {
+        __m512 va0 = _mm512_loadu_ps(&da[i]);
+        __m512 vb0 = _mm512_loadu_ps(&db[i]);
+        __m512 d0 = _mm512_sub_ps(va0, vb0);
+
+        __m512 va1 = _mm512_loadu_ps(&da[i + 16]);
+        __m512 vb1 = _mm512_loadu_ps(&db[i + 16]);
+        __m512 d1 = _mm512_sub_ps(va1, vb1);
+
+        __m512 va2 = _mm512_loadu_ps(&da[i + 32]);
+        __m512 vb2 = _mm512_loadu_ps(&db[i + 32]);
+        __m512 d2 = _mm512_sub_ps(va2, vb2);
+
+        __m512 va3 = _mm512_loadu_ps(&da[i + 48]);
+        __m512 vb3 = _mm512_loadu_ps(&db[i + 48]);
+        __m512 d3 = _mm512_sub_ps(va3, vb3);
+
+        acc0 = _mm512_fmadd_ps(d0, d0, acc0);
+        acc1 = _mm512_fmadd_ps(d1, d1, acc1);
+        acc2 = _mm512_fmadd_ps(d2, d2, acc2);
+        acc3 = _mm512_fmadd_ps(d3, d3, acc3);
+
+        if (cutoff_sq > 0.0)
+        {
+            __m512 vcut = _mm512_set1_ps((float)cutoff_sq);
+            __m512 max01 = _mm512_max_ps(acc0, acc1);
+            __m512 max23 = _mm512_max_ps(acc2, acc3);
+            __m512 max_lane = _mm512_max_ps(max01, max23);
+            if (_mm512_cmp_ps_mask(max_lane, vcut, _CMP_GT_OQ) != 0)
+            {
+                return cutoff_sq + 1.0;
+            }
+
+            if ((i + 64) % 128 == 0 || i + 64 >= size)
+            {
+                __m512 s01 = _mm512_add_ps(acc0, acc1);
+                __m512 s23 = _mm512_add_ps(acc2, acc3);
+                __m512 s512 = _mm512_add_ps(s01, s23);
+                float partial = _mm512_reduce_add_ps(s512);
+                if ((double)partial > cutoff_sq)
+                {
+                    return cutoff_sq + 1.0;
+                }
+            }
+        }
+    } // for (; i <= size - 64; i += 64)
+
+    for (; i <= size - 16; i += 16)
+    {
+        __m512 va = _mm512_loadu_ps(&da[i]);
+        __m512 vb = _mm512_loadu_ps(&db[i]);
+        __m512 diff = _mm512_sub_ps(va, vb);
+        acc0 = _mm512_fmadd_ps(diff, diff, acc0);
+    }
+
+    __m512 sum01 = _mm512_add_ps(acc0, acc1);
+    __m512 sum23 = _mm512_add_ps(acc2, acc3);
+    __m512 sum_vec = _mm512_add_ps(sum01, sum23);
+    sum += _mm512_reduce_add_ps(sum_vec);
+
+    for (; i < size; i++)
+    {
+        float diff = da[i] - db[i];
+        sum += diff * diff;
+    }
+
+    if (cutoff_sq > 0.0 && (double)sum > cutoff_sq)
+    {
+        return cutoff_sq + 1.0;
+    }
+
+    return sqrt((double)sum);
+}
+#endif // GRIC_HAVE_AVX512_TARGET
 
 /**
  * framedist_squared_cutoff_float() - Vectorized single-precision L2 distance with early cutoff.
@@ -35,6 +128,13 @@ double framedist_squared_cutoff_float(
     long                  size,
     double                cutoff_sq)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 64)
+    {
+        return framedist_squared_cutoff_float_avx512(da, db, size, cutoff_sq);
+    }
+#endif
+
     if (size == 2)
     {
         float d0 = da[0] - db[0];
@@ -174,6 +274,98 @@ double framedist_squared_cutoff_float(
     return sqrt((double)sum);
 }
 
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static double framedist_squared_cutoff_double_avx512(
+    const double *restrict da,
+    const double *restrict db,
+    long                   size,
+    double                 cutoff_sq)
+{
+    double sum = 0.0;
+    long i = 0;
+
+    __m512d acc0 = _mm512_setzero_pd();
+    __m512d acc1 = _mm512_setzero_pd();
+    __m512d acc2 = _mm512_setzero_pd();
+    __m512d acc3 = _mm512_setzero_pd();
+
+    for (; i <= size - 32; i += 32)
+    {
+        __m512d va0 = _mm512_loadu_pd(&da[i]);
+        __m512d vb0 = _mm512_loadu_pd(&db[i]);
+        __m512d d0 = _mm512_sub_pd(va0, vb0);
+
+        __m512d va1 = _mm512_loadu_pd(&da[i + 8]);
+        __m512d vb1 = _mm512_loadu_pd(&db[i + 8]);
+        __m512d d1 = _mm512_sub_pd(va1, vb1);
+
+        __m512d va2 = _mm512_loadu_pd(&da[i + 16]);
+        __m512d vb2 = _mm512_loadu_pd(&db[i + 16]);
+        __m512d d2 = _mm512_sub_pd(va2, vb2);
+
+        __m512d va3 = _mm512_loadu_pd(&da[i + 24]);
+        __m512d vb3 = _mm512_loadu_pd(&db[i + 24]);
+        __m512d d3 = _mm512_sub_pd(va3, vb3);
+
+        acc0 = _mm512_fmadd_pd(d0, d0, acc0);
+        acc1 = _mm512_fmadd_pd(d1, d1, acc1);
+        acc2 = _mm512_fmadd_pd(d2, d2, acc2);
+        acc3 = _mm512_fmadd_pd(d3, d3, acc3);
+
+        if (cutoff_sq > 0.0)
+        {
+            __m512d vcut = _mm512_set1_pd(cutoff_sq);
+            __m512d max01 = _mm512_max_pd(acc0, acc1);
+            __m512d max23 = _mm512_max_pd(acc2, acc3);
+            __m512d max_lane = _mm512_max_pd(max01, max23);
+            if (_mm512_cmp_pd_mask(max_lane, vcut, _CMP_GT_OQ) != 0)
+            {
+                return cutoff_sq + 1.0;
+            }
+
+            if ((i + 32) % 64 == 0 || i + 32 >= size)
+            {
+                __m512d s01 = _mm512_add_pd(acc0, acc1);
+                __m512d s23 = _mm512_add_pd(acc2, acc3);
+                __m512d s512 = _mm512_add_pd(s01, s23);
+                double partial = _mm512_reduce_add_pd(s512);
+                if (partial > cutoff_sq)
+                {
+                    return cutoff_sq + 1.0;
+                }
+            }
+        }
+    } // for (; i <= size - 32; i += 32)
+
+    for (; i <= size - 8; i += 8)
+    {
+        __m512d va = _mm512_loadu_pd(&da[i]);
+        __m512d vb = _mm512_loadu_pd(&db[i]);
+        __m512d diff = _mm512_sub_pd(va, vb);
+        acc0 = _mm512_fmadd_pd(diff, diff, acc0);
+    }
+
+    __m512d sum01 = _mm512_add_pd(acc0, acc1);
+    __m512d sum23 = _mm512_add_pd(acc2, acc3);
+    __m512d sum_vec = _mm512_add_pd(sum01, sum23);
+    sum += _mm512_reduce_add_pd(sum_vec);
+
+    for (; i < size; i++)
+    {
+        double diff = da[i] - db[i];
+        sum += diff * diff;
+    }
+
+    if (cutoff_sq > 0.0 && sum > cutoff_sq)
+    {
+        return cutoff_sq + 1.0;
+    }
+
+    return sqrt(sum);
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
 /**
  * framedist_squared_cutoff_double() - Vectorized double-precision L2 distance with early cutoff.
  * @da:        Pointer to first pixel array.
@@ -189,6 +381,12 @@ double framedist_squared_cutoff_double(
     long                   size,
     double                 cutoff_sq)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 32)
+    {
+        return framedist_squared_cutoff_double_avx512(da, db, size, cutoff_sq);
+    }
+#endif
     if (size == 2)
     {
         double d0 = da[0] - db[0];

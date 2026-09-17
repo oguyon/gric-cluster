@@ -44,12 +44,14 @@ void handle_api_file_read(
  * handle_api_file_write() - Handle POST /api/file/write request saving file.
  * @client_fd: Connected client socket descriptor.
  * @config:    Server configuration.
+ * @query:     HTTP query string specifying target filename/options.
  * @body:      Raw request payload containing path and contents.
  * @body_len:  Payload length in bytes.
  */
 void handle_api_file_write(
     int                 client_fd,
     const ServerConfig *config,
+    const char         *query,
     const char         *body,
     size_t              body_len);
 

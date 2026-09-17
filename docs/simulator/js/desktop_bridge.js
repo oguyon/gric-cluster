@@ -260,6 +260,41 @@ const DesktopBridge = (function () {
   }
 
   /**
+   * Write raw binary buffer to a file in the desktop workspace.
+   */
+  async function writeBinaryFile(relPath, buffer, byteOffset = 0, byteLength = null) {
+    if (!_isDesktop) throw new Error('Desktop backend not connected.');
+
+    let bodyPayload;
+    if (buffer instanceof ArrayBuffer) {
+      const off = byteOffset || 0;
+      const len = (byteLength !== null && byteLength !== undefined)
+        ? byteLength : (buffer.byteLength - off);
+      bodyPayload = (off === 0 && len === buffer.byteLength)
+        ? buffer : buffer.slice(off, off + len);
+    } else if (ArrayBuffer.isView(buffer)) {
+      const off = (byteOffset || 0) + buffer.byteOffset;
+      const len = (byteLength !== null && byteLength !== undefined)
+        ? byteLength : buffer.byteLength;
+      bodyPayload = buffer.buffer.slice(off, off + len);
+    } else {
+      bodyPayload = buffer;
+    }
+
+    const url = `/api/file/write?path=${encodeURIComponent(relPath)}`;
+    const resp = await _fetchApi(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: bodyPayload
+    });
+
+    if (!resp.ok) {
+      throw new Error(`Failed to write binary file ${relPath} (HTTP ${resp.status})`);
+    }
+    return await resp.json();
+  }
+
+  /**
    * Run a native CLI process (gric-cluster or gric-knn) via gric-server.
    */
   async function runCliJob(options) {
@@ -446,14 +481,67 @@ const DesktopBridge = (function () {
   function getStagedDatasetCount(datasetName) {
     if (!datasetName) return 0;
     const safeName = datasetName.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const fileName = safeName.endsWith('.txt') ? safeName : `${safeName}.txt`;
-    return _stagedDatasetCounts[fileName] || 0;
+    const binName = safeName.endsWith('.bin') ? safeName : `${safeName}.bin`;
+    const txtName = safeName.endsWith('.txt') ? safeName : `${safeName}.txt`;
+    return _stagedDatasetCounts[binName] ||
+           _stagedDatasetCounts[txtName] ||
+           _stagedDatasetCounts[datasetName] ||
+           0;
   }
 
   /**
-   * Stage dataset coordinates to a workspace file on disk.
-   * Chunks large datasets into batches of 10,000 points to prevent memory
-   * spikes and HTTP request payload limits.
+   * Constructs a self-describing 64-byte GRIC binary buffer with payload.
+   */
+  function buildGricBinaryCoords(numPoints, dim, f32Coords, comment = 'Staged coordinates') {
+    const enc = new TextEncoder();
+    const commentBytes = comment ? enc.encode(comment) : new Uint8Array(0);
+    const headerBytes = 64 + commentBytes.length;
+    const dataBytes = f32Coords.byteLength;
+    const totalBytes = headerBytes + dataBytes;
+
+    const buffer = new ArrayBuffer(totalBytes);
+    const view = new DataView(buffer);
+    const u8 = new Uint8Array(buffer);
+
+    /* Magic "GRIC" */
+    u8[0] = 0x47; u8[1] = 0x52; u8[2] = 0x49; u8[3] = 0x43;
+    /* Version 1 */
+    view.setUint8(4, 1);
+    /* File Type: 6 = GRIC_BIN_TYPE_COORDINATES */
+    view.setUint8(5, 6);
+    /* Data Type: 1 = GRIC_BIN_DTYPE_FLOAT32 */
+    view.setUint8(6, 1);
+    /* Endianness: 1 = Little-Endian */
+    view.setUint8(7, 1);
+    /* Header bytes (uint16) */
+    view.setUint16(8, headerBytes, true);
+    /* ndim: 2 = (points, dimensions) */
+    view.setUint16(10, 2, true);
+    /* flags (uint32) - Row-Major (0x0001) */
+    view.setUint32(12, 0x0001, true);
+    /* num_elements (uint64) */
+    view.setBigUint64(16, BigInt(f32Coords.length), true);
+    /* data_bytes (uint64) */
+    view.setBigUint64(24, BigInt(dataBytes), true);
+    /* dims[0] = numPoints, dims[1] = dim */
+    view.setBigUint64(32, BigInt(numPoints), true);
+    view.setBigUint64(40, BigInt(dim), true);
+    view.setBigUint64(48, 0n, true);
+    view.setBigUint64(56, 0n, true);
+
+    if (commentBytes.length > 0) {
+      u8.set(commentBytes, 64);
+    }
+    u8.set(
+      new Uint8Array(f32Coords.buffer, f32Coords.byteOffset, f32Coords.byteLength),
+      headerBytes
+    );
+    return u8;
+  }
+
+  /**
+   * Stage dataset coordinates to a workspace binary file on disk.
+   * Uses high-throughput zero-copy GRIC binary format (.bin) by default.
    */
   async function stageDatasetFile(
     datasetName,
@@ -462,73 +550,68 @@ const DesktopBridge = (function () {
     onProgress = null
   ) {
     const safeName = datasetName.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const fileName = `${safeName}.txt`;
+    const fileName = `${safeName}.bin`;
     const is2D = (forceDim === 2) || (safeName.startsWith('2D') || safeName === 'stream');
     const total = dataset ? dataset.length : 0;
-    const CHUNK_SIZE = 10000;
-    let lines = [];
-    let isFirstChunk = true;
 
+    let dim = forceDim ? forceDim : (is2D ? 2 : 2);
+    if (!forceDim && total > 0) {
+      const p0 = dataset[0];
+      if (Array.isArray(p0) || ArrayBuffer.isView(p0)) {
+        dim = is2D ? 2 : p0.length;
+      } else if (p0 && p0.coords &&
+                 (Array.isArray(p0.coords) || ArrayBuffer.isView(p0.coords))) {
+        dim = is2D ? 2 : p0.coords.length;
+      } else if (p0 && typeof p0 === 'object') {
+        dim = (!is2D && typeof p0.z === 'number' && !isNaN(p0.z)) ? 3 : 2;
+      }
+    }
+
+    const f32 = new Float32Array(total * dim);
     for (let i = 0; i < total; i++) {
-      if (onProgress && (i === 0 || i % 2000 === 0)) {
-        const pct = Math.floor((i / Math.max(1, total)) * 100);
+      if (onProgress && (i === 0 || i % 10000 === 0)) {
+        const pct = Math.floor((i / Math.max(1, total)) * 75);
         onProgress(
           pct,
-          `Staging coords (${i.toLocaleString()} / ${total.toLocaleString()})`
+          `Packing binary coordinates (${i.toLocaleString()} / ${total.toLocaleString()})`
         );
         await new Promise(r => setTimeout(r, 0));
       }
 
       const pt = dataset[i];
-      if (Array.isArray(pt) || ArrayBuffer.isView(pt) ||
-          (pt && typeof pt.length === 'number')) {
-        const slice = is2D ? Array.from(pt).slice(0, 2) : Array.from(pt);
-        lines.push(slice.map(v => Number(v).toFixed(6)).join(' '));
+      if (Array.isArray(pt) || ArrayBuffer.isView(pt)) {
+        for (let d = 0; d < dim; d++) {
+          f32[i * dim + d] = Number(pt[d] || 0);
+        }
+      } else if (pt && pt.coords) {
+        for (let d = 0; d < dim; d++) {
+          f32[i * dim + d] = Number(pt.coords[d] || 0);
+        }
       } else if (pt && typeof pt === 'object') {
-        if (pt.coords &&
-            (Array.isArray(pt.coords) || ArrayBuffer.isView(pt.coords))) {
-          const coords = forceDim ?
-            Array.from(pt.coords).slice(0, forceDim) : Array.from(pt.coords);
-          lines.push(coords.map(v => Number(v).toFixed(6)).join(' '));
-        } else {
-          const px = Number(pt.x || 0).toFixed(6);
-          const py = Number(pt.y || 0).toFixed(6);
-          if (!is2D && typeof pt.z === 'number' && !isNaN(pt.z)) {
-            const pz = Number(pt.z).toFixed(6);
-            lines.push(`${px} ${py} ${pz}`);
-          } else {
-            lines.push(`${px} ${py}`);
-          }
+        f32[i * dim + 0] = Number(pt.x || 0);
+        f32[i * dim + 1] = Number(pt.y || 0);
+        if (dim >= 3) {
+          f32[i * dim + 2] = Number(pt.z || 0);
         }
-      }
-
-      if (lines.length >= CHUNK_SIZE) {
-        if (onProgress) {
-          const pct = Math.floor(((i + 1) / Math.max(1, total)) * 100);
-          onProgress(
-            pct,
-            `Writing chunk (${(i + 1).toLocaleString()} / ${total.toLocaleString()})`
-          );
-          await new Promise(r => setTimeout(r, 0));
-        }
-        await writeFile(fileName, lines.join('\n') + '\n', !isFirstChunk);
-        lines = [];
-        isFirstChunk = false;
       }
     }
 
-    if (lines.length > 0 || isFirstChunk) {
-      if (onProgress) {
-        onProgress(100, 'Writing staged dataset file');
-        await new Promise(r => setTimeout(r, 0));
-      }
-      await writeFile(
-        fileName,
-        lines.length > 0 ? lines.join('\n') + '\n' : '',
-        !isFirstChunk
-      );
+    if (onProgress) {
+      onProgress(85, `Encoding GRIC header (${total.toLocaleString()} × ${dim}D)...`);
+      await new Promise(r => setTimeout(r, 0));
     }
+
+    const binPayload = buildGricBinaryCoords(total, dim, f32, `Staged ${safeName}`);
+
+    if (onProgress) {
+      onProgress(90, `Uploading ${fileName} to workspace...`);
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    await writeBinaryFile(fileName, binPayload);
+
     _stagedDatasetCounts[fileName] = total;
+    _stagedDatasetCounts[`${safeName}.txt`] = total;
     return fileName;
   }
 
@@ -1581,6 +1664,7 @@ const DesktopBridge = (function () {
     readFile,
     readBinaryFile,
     writeFile,
+    writeBinaryFile,
     initCliSession,
     stopCliSession,
     getCliSessionStatus,

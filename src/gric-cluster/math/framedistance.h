@@ -116,6 +116,19 @@ void framedist_batch_1x8_float(
     long                         size);
 
 /**
+ * framedist_batch_1x16_float() - Vectorized batch distance from 1 query to 16 anchor float frames.
+ * @q:         Query vector pointer.
+ * @anchors:   Array of 16 anchor vector pointers.
+ * @out_dists: Output array for 16 computed distances.
+ * @size:      Vector length.
+ */
+void framedist_batch_1x16_float(
+    const float *restrict        q,
+    const float *const *restrict anchors,
+    double *restrict             out_dists,
+    long                         size);
+
+/**
  * framedist_batch_1x8_double() - Vectorized batch distance from 1 query to 8 anchor double frames.
  * @q:         Query vector pointer.
  * @anchors:   Array of 8 anchor vector pointers.

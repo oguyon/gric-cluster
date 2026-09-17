@@ -113,7 +113,7 @@ static void test_streaming_pipeline(void)
     /* Run gric-cluster in stream mode */
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
-             "%s 0.08 %s -stream -cnt2sync -maxim %d -outdir %s > /dev/null 2>&1",
+             "%s 0.08 %s -stream -cnt2sync -txt -maxim %d -outdir %s > /dev/null 2>&1",
              cluster_bin, stream_name, npoints, out_dir);
     int res = system(cmd);
     assert(res == 0);

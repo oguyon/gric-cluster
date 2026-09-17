@@ -4,6 +4,7 @@
  */
 
 #include "cluster_locator.h"
+#include "gric_simd.h"
 #include <alloca.h>
 #include <math.h>
 #include <stdint.h>
@@ -130,7 +131,8 @@ double calc_min_dist_5pt_ref(
     return sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-#if defined(__AVX2__)
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+GRIC_TARGET_AVX2
 void calc_min_dist_4pt_batch4_avx2(
     const TE4Ref          *ref,
     const double *restrict d13,
@@ -169,6 +171,7 @@ void calc_min_dist_4pt_batch4_avx2(
     _mm256_storeu_pd(out_dists, vdist);
 }
 
+GRIC_TARGET_AVX2
 void calc_min_dist_5pt_batch4_avx2(
     const TE5Ref          *ref,
     const double *restrict d_t_c1,
@@ -225,7 +228,104 @@ void calc_min_dist_5pt_batch4_avx2(
 
     _mm256_storeu_pd(out_dists, vdist);
 }
-#endif
+#endif // x86_64
+
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+void calc_min_dist_4pt_batch8_avx512(
+    const TE4Ref          *ref,
+    const double *restrict d13,
+    const double *restrict d23,
+    double       *restrict out_dists)
+{
+    if (!ref->valid)
+    {
+        for (int i = 0; i < 8; i++)
+        {
+            out_dists[i] = fabs(ref->x4 - d13[i]);
+        }
+        return;
+    }
+
+    __m512d vd13 = _mm512_loadu_pd(d13);
+    __m512d vd23 = _mm512_loadu_pd(d23);
+    __m512d vd12_sq = _mm512_set1_pd(ref->d12_sq);
+    __m512d vinv_2d12 = _mm512_set1_pd(ref->inv_2d12);
+    __m512d vx4 = _mm512_set1_pd(ref->x4);
+    __m512d vy4 = _mm512_set1_pd(ref->y4);
+    __m512d vzero = _mm512_setzero_pd();
+
+    __m512d vd13_sq = _mm512_mul_pd(vd13, vd13);
+    __m512d vd23_sq = _mm512_mul_pd(vd23, vd23);
+    __m512d vx3 = _mm512_mul_pd(_mm512_sub_pd(_mm512_add_pd(vd13_sq, vd12_sq), vd23_sq),
+                                vinv_2d12);
+    __m512d vy3_sq = _mm512_sub_pd(vd13_sq, _mm512_mul_pd(vx3, vx3));
+    __m512d vy3 = _mm512_sqrt_pd(_mm512_max_pd(vzero, vy3_sq));
+
+    __m512d vdx = _mm512_sub_pd(vx3, vx4);
+    __m512d vdy = _mm512_sub_pd(vy3, vy4);
+    __m512d vdist = _mm512_sqrt_pd(_mm512_fmadd_pd(vdx, vdx, _mm512_mul_pd(vdy, vdy)));
+
+    _mm512_storeu_pd(out_dists, vdist);
+}
+
+GRIC_TARGET_AVX512
+void calc_min_dist_5pt_batch8_avx512(
+    const TE5Ref          *ref,
+    const double *restrict d_t_c1,
+    const double *restrict d_t_c2,
+    const double *restrict d_t_c3,
+    double       *restrict out_dists)
+{
+    if (!ref->valid)
+    {
+        for (int i = 0; i < 8; i++)
+        {
+            out_dists[i] = 0.0;
+        }
+        return;
+    }
+
+    __m512d vt1 = _mm512_loadu_pd(d_t_c1);
+    __m512d vt2 = _mm512_loadu_pd(d_t_c2);
+    __m512d vt3 = _mm512_loadu_pd(d_t_c3);
+    __m512d vt1_sq = _mm512_mul_pd(vt1, vt1);
+    __m512d vt2_sq = _mm512_mul_pd(vt2, vt2);
+    __m512d vt3_sq = _mm512_mul_pd(vt3, vt3);
+
+    __m512d vd12_sq = _mm512_set1_pd(ref->d12_sq);
+    __m512d vd13_sq = _mm512_set1_pd(ref->d13_sq);
+    __m512d vinv_2d12 = _mm512_set1_pd(ref->inv_2d12);
+    __m512d vinv_2y3 = _mm512_set1_pd(ref->inv_2y3);
+    __m512d vx3 = _mm512_set1_pd(ref->x3);
+    __m512d vtwo = _mm512_set1_pd(2.0);
+    __m512d vzero = _mm512_setzero_pd();
+
+    __m512d vxT = _mm512_mul_pd(_mm512_sub_pd(_mm512_add_pd(vt1_sq, vd12_sq), vt2_sq),
+                                vinv_2d12);
+    __m512d vyT_num = _mm512_sub_pd(_mm512_sub_pd(_mm512_add_pd(vt1_sq, vd13_sq), vt3_sq),
+                                    _mm512_mul_pd(_mm512_mul_pd(vtwo, vxT), vx3));
+    __m512d vyT = _mm512_mul_pd(vyT_num, vinv_2y3);
+
+    __m512d vzT_sq = _mm512_sub_pd(_mm512_sub_pd(vt1_sq, _mm512_mul_pd(vxT, vxT)),
+                                   _mm512_mul_pd(vyT, vyT));
+    __m512d vzT = _mm512_sqrt_pd(_mm512_max_pd(vzero, vzT_sq));
+
+    __m512d vxF = _mm512_set1_pd(ref->xF);
+    __m512d vyF = _mm512_set1_pd(ref->yF);
+    __m512d vzF = _mm512_set1_pd(ref->zF);
+
+    __m512d vdx = _mm512_sub_pd(vxF, vxT);
+    __m512d vdy = _mm512_sub_pd(vyF, vyT);
+    __m512d vdz = _mm512_sub_pd(vzF, vzT);
+
+    __m512d vdist_sq = _mm512_fmadd_pd(vdx, vdx,
+                                       _mm512_fmadd_pd(vdy, vdy, _mm512_mul_pd(vdz, vdz)));
+    __m512d vdist = _mm512_sqrt_pd(vdist_sq);
+
+    _mm512_storeu_pd(out_dists, vdist);
+}
+#endif // GRIC_HAVE_AVX512_TARGET
 
 /**
  * calc_min_dist_4pt() - Computes minimum distance using a 4-point configuration.

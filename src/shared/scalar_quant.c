@@ -4,6 +4,7 @@
  */
 
 #include "scalar_quant.h"
+#include "gric_simd.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -347,16 +348,15 @@ void sq8_quantize_double(
  *
  * Return: Total sum of squared differences as uint64_t.
  */
-uint64_t sq8_dist_squared_u8(
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static uint64_t sq8_dist_squared_u8_avx512(
     const uint8_t *restrict a,
     const uint8_t *restrict b,
     long                    dim)
 {
     uint64_t total = 0;
     long i = 0;
-
-#if defined(__AVX512BW__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     const __m512i zero512 = _mm512_setzero_si512();
     __m512i sum_vec512 = _mm512_setzero_si512();
     long chunk_count512 = 0;
@@ -387,11 +387,29 @@ uint64_t sq8_dist_squared_u8(
             sum_vec512 = _mm512_setzero_si512();
             chunk_count512 = 0;
         }
-    } // for (; i <= dim - 64; i += 64)
+    }
 
     total += (uint64_t)_mm512_reduce_add_epi32(sum_vec512);
-#elif defined(__AVX2__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+
+    for (; i < dim; i++)
+    {
+        int32_t diff = (int32_t)a[i] - (int32_t)b[i];
+        total += (uint64_t)(diff * diff);
+    }
+
+    return total;
+}
+#endif
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+GRIC_TARGET_AVX2
+static uint64_t sq8_dist_squared_u8_avx2(
+    const uint8_t *restrict a,
+    const uint8_t *restrict b,
+    long                    dim)
+{
+    uint64_t total = 0;
+    long i = 0;
     const __m256i zero256 = _mm256_setzero_si256();
     __m256i sum_vec256_0 = _mm256_setzero_si256();
     __m256i sum_vec256_1 = _mm256_setzero_si256();
@@ -465,15 +483,49 @@ uint64_t sq8_dist_squared_u8(
     s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
     s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
     total += (uint64_t)(uint32_t)_mm_cvtsi128_si32(s128);
-#endif
 
     for (; i < dim; i++)
     {
         int32_t diff = (int32_t)a[i] - (int32_t)b[i];
         total += (uint64_t)(diff * diff);
-    } // for (; i < dim; i++)
+    }
 
     return total;
+}
+#endif
+
+static uint64_t sq8_dist_squared_u8_scalar(
+    const uint8_t *restrict a,
+    const uint8_t *restrict b,
+    long                    dim)
+{
+    uint64_t total = 0;
+    for (long i = 0; i < dim; i++)
+    {
+        int32_t diff = (int32_t)a[i] - (int32_t)b[i];
+        total += (uint64_t)(diff * diff);
+    }
+    return total;
+}
+
+uint64_t sq8_dist_squared_u8(
+    const uint8_t *restrict a,
+    const uint8_t *restrict b,
+    long                    dim)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 64)
+    {
+        return sq8_dist_squared_u8_avx512(a, b, dim);
+    }
+#endif
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 32)
+    {
+        return sq8_dist_squared_u8_avx2(a, b, dim);
+    }
+#endif
+    return sq8_dist_squared_u8_scalar(a, b, dim);
 }
 
 /**
@@ -484,118 +536,45 @@ uint64_t sq8_dist_squared_u8(
  *
  * Return: Dot product as uint64_t.
  */
-uint64_t sq8_dot_product_u8(
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512_VNNI
+static uint64_t sq8_dot_product_u8_avx512_vnni(
     const uint8_t *restrict a,
     const uint8_t *restrict b,
     long                    dim)
 {
     uint64_t total = 0;
     long i = 0;
+    const __m512i v128 = _mm512_set1_epi8((char)128);
+    const __m512i zero512 = _mm512_setzero_si512();
+    __m512i acc_vnni = _mm512_setzero_si512();
+    __m512i acc_sum_a = _mm512_setzero_si512();
+    long chunk_count = 0;
 
-#if defined(__AVXVNNI__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    if (dim >= 32)
+    for (; i <= dim - 64; i += 64)
     {
-        const __m256i v128 = _mm256_set1_epi8((char)128);
-        const __m256i zero256 = _mm256_setzero_si256();
-        __m256i acc_vnni = _mm256_setzero_si256();
-        __m256i acc_sum_a = _mm256_setzero_si256();
-        long chunk_count = 0;
+        __m512i va = _mm512_loadu_si512((const void *)(a + i));
+        __m512i vb = _mm512_loadu_si512((const void *)(b + i));
 
-        for (; i <= dim - 32; i += 32)
+        __m512i vb_s = _mm512_sub_epi8(vb, v128);
+        acc_vnni = _mm512_dpbusd_epi32(acc_vnni, va, vb_s);
+        acc_sum_a = _mm512_add_epi64(acc_sum_a, _mm512_sad_epu8(va, zero512));
+
+        chunk_count += 64;
+        if (chunk_count >= 16384)
         {
-            __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
-            __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
-
-            /* b_signed = vb - 128 */
-            __m256i vb_s = _mm256_sub_epi8(vb, v128);
-
-            /* acc_vnni += va * vb_s (4-byte dot product in 32-bit dwords) */
-            acc_vnni = _mm256_dpbusd_epi32(acc_vnni, va, vb_s);
-
-            /* Accumulate sum of va elements using sad_epu8 */
-            acc_sum_a = _mm256_add_epi64(acc_sum_a, _mm256_sad_epu8(va, zero256));
-
-            chunk_count += 32;
-            if (chunk_count >= 16384)
-            {
-                __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(acc_vnni),
-                                             _mm256_extracti128_si256(acc_vnni, 1));
-                s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
-                s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
-                int64_t term_vnni = (int64_t)(int32_t)_mm_cvtsi128_si32(s128);
-
-                __m128i a_lo = _mm256_castsi256_si128(acc_sum_a);
-                __m128i a_hi = _mm256_extracti128_si256(acc_sum_a, 1);
-                __m128i a_sum = _mm_add_epi64(a_lo, a_hi);
-                uint64_t sum_a = (uint64_t)_mm_cvtsi128_si64(a_sum) +
-                                 (uint64_t)_mm_extract_epi64(a_sum, 1);
-
-                total += (uint64_t)(term_vnni + (int64_t)(sum_a * 128ULL));
-                acc_vnni = _mm256_setzero_si256();
-                acc_sum_a = _mm256_setzero_si256();
-                chunk_count = 0;
-            }
-        } // for (; i <= dim - 32; i += 32)
-
-        __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(acc_vnni),
-                                     _mm256_extracti128_si256(acc_vnni, 1));
-        s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
-        s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
-        int64_t term_vnni = (int64_t)(int32_t)_mm_cvtsi128_si32(s128);
-
-        __m128i a_lo = _mm256_castsi256_si128(acc_sum_a);
-        __m128i a_hi = _mm256_extracti128_si256(acc_sum_a, 1);
-        __m128i a_sum = _mm_add_epi64(a_lo, a_hi);
-        uint64_t sum_a = (uint64_t)_mm_cvtsi128_si64(a_sum) +
-                         (uint64_t)_mm_extract_epi64(a_sum, 1);
-
-        total += (uint64_t)(term_vnni + (int64_t)(sum_a * 128ULL));
+            int64_t term_vnni = (int64_t)_mm512_reduce_add_epi32(acc_vnni);
+            uint64_t sum_a = (uint64_t)_mm512_reduce_add_epi64(acc_sum_a);
+            total += (uint64_t)(term_vnni + (int64_t)(sum_a * 128ULL));
+            acc_vnni = _mm512_setzero_si512();
+            acc_sum_a = _mm512_setzero_si512();
+            chunk_count = 0;
+        }
     }
-#elif defined(__AVX2__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    if (dim >= 32)
-    {
-        const __m256i zero256 = _mm256_setzero_si256();
-        __m256i sum_vec256 = _mm256_setzero_si256();
-        long chunk_count256 = 0;
 
-        for (; i <= dim - 32; i += 32)
-        {
-            __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
-            __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
-
-            __m256i va_lo = _mm256_unpacklo_epi8(va, zero256);
-            __m256i vb_lo = _mm256_unpacklo_epi8(vb, zero256);
-            __m256i prod_lo = _mm256_madd_epi16(va_lo, vb_lo);
-
-            __m256i va_hi = _mm256_unpackhi_epi8(va, zero256);
-            __m256i vb_hi = _mm256_unpackhi_epi8(vb, zero256);
-            __m256i prod_hi = _mm256_madd_epi16(va_hi, vb_hi);
-
-            sum_vec256 = _mm256_add_epi32(sum_vec256, prod_lo);
-            sum_vec256 = _mm256_add_epi32(sum_vec256, prod_hi);
-
-            chunk_count256 += 32;
-            if (chunk_count256 >= 16384)
-            {
-                __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(sum_vec256),
-                                             _mm256_extracti128_si256(sum_vec256, 1));
-                s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
-                s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
-                total += (uint64_t)(uint32_t)_mm_cvtsi128_si32(s128);
-                sum_vec256 = _mm256_setzero_si256();
-                chunk_count256 = 0;
-            }
-        } // for (; i <= dim - 32; i += 32)
-
-        __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(sum_vec256),
-                                     _mm256_extracti128_si256(sum_vec256, 1));
-        s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
-        s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
-        total += (uint64_t)(uint32_t)_mm_cvtsi128_si32(s128);
-    }
-#endif
+    int64_t term_vnni = (int64_t)_mm512_reduce_add_epi32(acc_vnni);
+    uint64_t sum_a = (uint64_t)_mm512_reduce_add_epi64(acc_sum_a);
+    total += (uint64_t)(term_vnni + (int64_t)(sum_a * 128ULL));
 
     for (; i < dim; i++)
     {
@@ -603,6 +582,168 @@ uint64_t sq8_dot_product_u8(
     }
 
     return total;
+}
+#endif
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+GRIC_TARGET_AVX_VNNI
+static uint64_t sq8_dot_product_u8_avx_vnni(
+    const uint8_t *restrict a,
+    const uint8_t *restrict b,
+    long                    dim)
+{
+    uint64_t total = 0;
+    long i = 0;
+    const __m256i v128 = _mm256_set1_epi8((char)128);
+    const __m256i zero256 = _mm256_setzero_si256();
+    __m256i acc_vnni = _mm256_setzero_si256();
+    __m256i acc_sum_a = _mm256_setzero_si256();
+    long chunk_count = 0;
+
+    for (; i <= dim - 32; i += 32)
+    {
+        __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+        __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+
+        __m256i vb_s = _mm256_sub_epi8(vb, v128);
+        acc_vnni = _mm256_dpbusd_epi32(acc_vnni, va, vb_s);
+        acc_sum_a = _mm256_add_epi64(acc_sum_a, _mm256_sad_epu8(va, zero256));
+
+        chunk_count += 32;
+        if (chunk_count >= 16384)
+        {
+            __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(acc_vnni),
+                                         _mm256_extracti128_si256(acc_vnni, 1));
+            s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
+            s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
+            int64_t t_vnni = (int64_t)(int32_t)_mm_cvtsi128_si32(s128);
+
+            __m128i a_lo = _mm256_castsi256_si128(acc_sum_a);
+            __m128i a_hi = _mm256_extracti128_si256(acc_sum_a, 1);
+            __m128i a_sum = _mm_add_epi64(a_lo, a_hi);
+            uint64_t sum_a = (uint64_t)_mm_cvtsi128_si64(a_sum) +
+                             (uint64_t)_mm_extract_epi64(a_sum, 1);
+
+            total += (uint64_t)(t_vnni + (int64_t)(sum_a * 128ULL));
+            acc_vnni = _mm256_setzero_si256();
+            acc_sum_a = _mm256_setzero_si256();
+            chunk_count = 0;
+        }
+    }
+
+    __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(acc_vnni),
+                                 _mm256_extracti128_si256(acc_vnni, 1));
+    s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
+    s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
+    int64_t t_vnni = (int64_t)(int32_t)_mm_cvtsi128_si32(s128);
+
+    __m128i a_lo = _mm256_castsi256_si128(acc_sum_a);
+    __m128i a_hi = _mm256_extracti128_si256(acc_sum_a, 1);
+    __m128i a_sum = _mm_add_epi64(a_lo, a_hi);
+    uint64_t sum_a = (uint64_t)_mm_cvtsi128_si64(a_sum) +
+                     (uint64_t)_mm_extract_epi64(a_sum, 1);
+
+    total += (uint64_t)(t_vnni + (int64_t)(sum_a * 128ULL));
+
+    for (; i < dim; i++)
+    {
+        total += (uint64_t)((uint32_t)a[i] * (uint32_t)b[i]);
+    }
+
+    return total;
+}
+
+GRIC_TARGET_AVX2
+static uint64_t sq8_dot_product_u8_avx2(
+    const uint8_t *restrict a,
+    const uint8_t *restrict b,
+    long                    dim)
+{
+    uint64_t total = 0;
+    long i = 0;
+    const __m256i zero256 = _mm256_setzero_si256();
+    __m256i sum_vec256 = _mm256_setzero_si256();
+    long chunk_count256 = 0;
+
+    for (; i <= dim - 32; i += 32)
+    {
+        __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+        __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+
+        __m256i va_lo = _mm256_unpacklo_epi8(va, zero256);
+        __m256i vb_lo = _mm256_unpacklo_epi8(vb, zero256);
+        __m256i prod_lo = _mm256_madd_epi16(va_lo, vb_lo);
+
+        __m256i va_hi = _mm256_unpackhi_epi8(va, zero256);
+        __m256i vb_hi = _mm256_unpackhi_epi8(vb, zero256);
+        __m256i prod_hi = _mm256_madd_epi16(va_hi, vb_hi);
+
+        sum_vec256 = _mm256_add_epi32(sum_vec256, prod_lo);
+        sum_vec256 = _mm256_add_epi32(sum_vec256, prod_hi);
+
+        chunk_count256 += 32;
+        if (chunk_count256 >= 16384)
+        {
+            __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(sum_vec256),
+                                         _mm256_extracti128_si256(sum_vec256, 1));
+            s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
+            s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
+            total += (uint64_t)(uint32_t)_mm_cvtsi128_si32(s128);
+            sum_vec256 = _mm256_setzero_si256();
+            chunk_count256 = 0;
+        }
+    }
+
+    __m128i s128 = _mm_add_epi32(_mm256_castsi256_si128(sum_vec256),
+                                 _mm256_extracti128_si256(sum_vec256, 1));
+    s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(1, 0, 3, 2)));
+    s128 = _mm_add_epi32(s128, _mm_shuffle_epi32(s128, _MM_SHUFFLE(2, 3, 0, 1)));
+    total += (uint64_t)(uint32_t)_mm_cvtsi128_si32(s128);
+
+    for (; i < dim; i++)
+    {
+        total += (uint64_t)((uint32_t)a[i] * (uint32_t)b[i]);
+    }
+
+    return total;
+}
+#endif
+
+static uint64_t sq8_dot_product_u8_scalar(
+    const uint8_t *restrict a,
+    const uint8_t *restrict b,
+    long                    dim)
+{
+    uint64_t total = 0;
+    for (long i = 0; i < dim; i++)
+    {
+        total += (uint64_t)((uint32_t)a[i] * (uint32_t)b[i]);
+    }
+    return total;
+}
+
+uint64_t sq8_dot_product_u8(
+    const uint8_t *restrict a,
+    const uint8_t *restrict b,
+    long                    dim)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_has_avx512_vnni() && dim >= 64)
+    {
+        return sq8_dot_product_u8_avx512_vnni(a, b, dim);
+    }
+#endif
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_has_avx_vnni() && dim >= 32)
+    {
+        return sq8_dot_product_u8_avx_vnni(a, b, dim);
+    }
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 32)
+    {
+        return sq8_dot_product_u8_avx2(a, b, dim);
+    }
+#endif
+    return sq8_dot_product_u8_scalar(a, b, dim);
 }
 
 /**
@@ -1166,16 +1307,15 @@ void sq16_quantize_double_perm(
  *
  * Return: Total sum of squared differences as uint64_t.
  */
-uint64_t sq16_dist_squared_i16(
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static uint64_t sq16_dist_squared_i16_avx512(
     const int16_t *restrict a,
     const int16_t *restrict b,
     long                    dim)
 {
     uint64_t total = 0;
     long i = 0;
-
-#if defined(__AVX512F__) && defined(__AVX512BW__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     __m512i sum_vec512_0 = _mm512_setzero_si512();
     __m512i sum_vec512_1 = _mm512_setzero_si512();
 
@@ -1194,12 +1334,30 @@ uint64_t sq16_dist_squared_i16(
 
         sum_vec512_0 = _mm512_add_epi64(sum_vec512_0, q0);
         sum_vec512_1 = _mm512_add_epi64(sum_vec512_1, q1);
-    } // for (; i <= dim - 32; i += 32)
+    }
 
     __m512i sum_tot = _mm512_add_epi64(sum_vec512_0, sum_vec512_1);
     total += (uint64_t)_mm512_reduce_add_epi64(sum_tot);
-#elif defined(__AVX2__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+
+    for (; i < dim; i++)
+    {
+        int32_t diff = (int32_t)a[i] - (int32_t)b[i];
+        total += (uint64_t)(diff * diff);
+    }
+
+    return total;
+}
+#endif
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+GRIC_TARGET_AVX2
+static uint64_t sq16_dist_squared_i16_avx2(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim)
+{
+    uint64_t total = 0;
+    long i = 0;
     __m256i sum_lo = _mm256_setzero_si256();
     __m256i sum_hi = _mm256_setzero_si256();
 
@@ -1215,7 +1373,7 @@ uint64_t sq16_dist_squared_i16(
 
         sum_lo = _mm256_add_epi64(sum_lo, plo);
         sum_hi = _mm256_add_epi64(sum_hi, phi);
-    } // for (; i <= dim - 16; i += 16)
+    }
 
     __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
     __m128i slo = _mm256_castsi256_si128(sum);
@@ -1223,15 +1381,49 @@ uint64_t sq16_dist_squared_i16(
     __m128i s128 = _mm_add_epi64(slo, shi);
     total += (uint64_t)_mm_cvtsi128_si64(s128) +
              (uint64_t)_mm_extract_epi64(s128, 1);
-#endif
 
     for (; i < dim; i++)
     {
         int32_t diff = (int32_t)a[i] - (int32_t)b[i];
         total += (uint64_t)(diff * diff);
-    } // for (; i < dim; i++)
+    }
 
     return total;
+}
+#endif
+
+static uint64_t sq16_dist_squared_i16_scalar(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim)
+{
+    uint64_t total = 0;
+    for (long i = 0; i < dim; i++)
+    {
+        int32_t diff = (int32_t)a[i] - (int32_t)b[i];
+        total += (uint64_t)(diff * diff);
+    }
+    return total;
+}
+
+uint64_t sq16_dist_squared_i16(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 32)
+    {
+        return sq16_dist_squared_i16_avx512(a, b, dim);
+    }
+#endif
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 16)
+    {
+        return sq16_dist_squared_i16_avx2(a, b, dim);
+    }
+#endif
+    return sq16_dist_squared_i16_scalar(a, b, dim);
 }
 
 
@@ -1268,25 +1460,90 @@ double sq16_compute_lower_bound(
     return lb;
 }
 
-/**
- * sq16_dist_squared_batch_1x4_i16() - Compute sum of squared diffs for 1 query vs 4 anchors.
- * @q:            Pointer to query int16 array [dim].
- * @anchors:      Array of 4 pointers to candidate anchor int16 arrays [dim].
- * @out_sq_dists: Array of 4 uint64_t to receive squared integer distances.
- * @dim:          Vector dimension.
- *
- * Employs AVX2 SIMD to evaluate 1 query against 4 candidate anchors simultaneously.
- */
-void sq16_dist_squared_batch_1x4_i16(
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static void sq16_dist_squared_batch_1x4_i16_avx512(
     const int16_t *restrict        q,
     const int16_t *const *restrict anchors,
     uint64_t *restrict             out_sq_dists,
     long                           dim)
 {
     long i = 0;
+    __m512i sum0_lo = _mm512_setzero_si512(), sum0_hi = _mm512_setzero_si512();
+    __m512i sum1_lo = _mm512_setzero_si512(), sum1_hi = _mm512_setzero_si512();
+    __m512i sum2_lo = _mm512_setzero_si512(), sum2_hi = _mm512_setzero_si512();
+    __m512i sum3_lo = _mm512_setzero_si512(), sum3_hi = _mm512_setzero_si512();
 
-#if defined(__AVX2__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    const int16_t *a0 = anchors[0];
+    const int16_t *a1 = anchors[1];
+    const int16_t *a2 = anchors[2];
+    const int16_t *a3 = anchors[3];
+
+    for (; i <= dim - 32; i += 32)
+    {
+        __m512i vq = _mm512_loadu_si512((const void *)(q + i));
+
+        __m512i va0 = _mm512_loadu_si512((const void *)(a0 + i));
+        __m512i va1 = _mm512_loadu_si512((const void *)(a1 + i));
+        __m512i va2 = _mm512_loadu_si512((const void *)(a2 + i));
+        __m512i va3 = _mm512_loadu_si512((const void *)(a3 + i));
+
+        __m512i d0 = _mm512_sub_epi16(vq, va0);
+        __m512i d1 = _mm512_sub_epi16(vq, va1);
+        __m512i d2 = _mm512_sub_epi16(vq, va2);
+        __m512i d3 = _mm512_sub_epi16(vq, va3);
+
+        __m512i p0 = _mm512_madd_epi16(d0, d0);
+        __m512i p1 = _mm512_madd_epi16(d1, d1);
+        __m512i p2 = _mm512_madd_epi16(d2, d2);
+        __m512i p3 = _mm512_madd_epi16(d3, d3);
+
+        sum0_lo = _mm512_add_epi64(sum0_lo, _mm512_cvtepi32_epi64(_mm512_castsi512_si256(p0)));
+        sum0_hi = _mm512_add_epi64(sum0_hi,
+                                   _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(p0, 1)));
+
+        sum1_lo = _mm512_add_epi64(sum1_lo, _mm512_cvtepi32_epi64(_mm512_castsi512_si256(p1)));
+        sum1_hi = _mm512_add_epi64(sum1_hi,
+                                   _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(p1, 1)));
+
+        sum2_lo = _mm512_add_epi64(sum2_lo, _mm512_cvtepi32_epi64(_mm512_castsi512_si256(p2)));
+        sum2_hi = _mm512_add_epi64(sum2_hi,
+                                   _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(p2, 1)));
+
+        sum3_lo = _mm512_add_epi64(sum3_lo, _mm512_cvtepi32_epi64(_mm512_castsi512_si256(p3)));
+        sum3_hi = _mm512_add_epi64(sum3_hi,
+                                   _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(p3, 1)));
+    } // for (; i <= dim - 32; i += 32)
+
+    out_sq_dists[0] = (uint64_t)_mm512_reduce_add_epi64(_mm512_add_epi64(sum0_lo, sum0_hi));
+    out_sq_dists[1] = (uint64_t)_mm512_reduce_add_epi64(_mm512_add_epi64(sum1_lo, sum1_hi));
+    out_sq_dists[2] = (uint64_t)_mm512_reduce_add_epi64(_mm512_add_epi64(sum2_lo, sum2_hi));
+    out_sq_dists[3] = (uint64_t)_mm512_reduce_add_epi64(_mm512_add_epi64(sum3_lo, sum3_hi));
+
+    for (; i < dim; i++)
+    {
+        int32_t qv = (int32_t)q[i];
+        int32_t diff0 = qv - (int32_t)a0[i];
+        int32_t diff1 = qv - (int32_t)a1[i];
+        int32_t diff2 = qv - (int32_t)a2[i];
+        int32_t diff3 = qv - (int32_t)a3[i];
+        out_sq_dists[0] += (uint64_t)(diff0 * diff0);
+        out_sq_dists[1] += (uint64_t)(diff1 * diff1);
+        out_sq_dists[2] += (uint64_t)(diff2 * diff2);
+        out_sq_dists[3] += (uint64_t)(diff3 * diff3);
+    } // for (; i < dim; i++)
+}
+#endif
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+GRIC_TARGET_AVX2
+static void sq16_dist_squared_batch_1x4_i16_avx2(
+    const int16_t *restrict        q,
+    const int16_t *const *restrict anchors,
+    uint64_t *restrict             out_sq_dists,
+    long                           dim)
+{
+    long i = 0;
     __m256i sum0_lo = _mm256_setzero_si256(), sum0_hi = _mm256_setzero_si256();
     __m256i sum1_lo = _mm256_setzero_si256(), sum1_hi = _mm256_setzero_si256();
     __m256i sum2_lo = _mm256_setzero_si256(), sum2_hi = _mm256_setzero_si256();
@@ -1317,16 +1574,20 @@ void sq16_dist_squared_batch_1x4_i16(
         __m256i p3 = _mm256_madd_epi16(d3, d3);
 
         sum0_lo = _mm256_add_epi64(sum0_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p0)));
-        sum0_hi = _mm256_add_epi64(sum0_hi, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p0, 1)));
+        sum0_hi = _mm256_add_epi64(sum0_hi,
+                                   _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p0, 1)));
 
         sum1_lo = _mm256_add_epi64(sum1_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p1)));
-        sum1_hi = _mm256_add_epi64(sum1_hi, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p1, 1)));
+        sum1_hi = _mm256_add_epi64(sum1_hi,
+                                   _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p1, 1)));
 
         sum2_lo = _mm256_add_epi64(sum2_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p2)));
-        sum2_hi = _mm256_add_epi64(sum2_hi, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p2, 1)));
+        sum2_hi = _mm256_add_epi64(sum2_hi,
+                                   _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p2, 1)));
 
         sum3_lo = _mm256_add_epi64(sum3_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p3)));
-        sum3_hi = _mm256_add_epi64(sum3_hi, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p3, 1)));
+        sum3_hi = _mm256_add_epi64(sum3_hi,
+                                   _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p3, 1)));
     } // for (; i <= dim - 16; i += 16)
 
     __m256i s0 = _mm256_add_epi64(sum0_lo, sum0_hi);
@@ -1344,16 +1605,6 @@ void sq16_dist_squared_batch_1x4_i16(
     __m256i s3 = _mm256_add_epi64(sum3_lo, sum3_hi);
     __m128i r3 = _mm_add_epi64(_mm256_castsi256_si128(s3), _mm256_extracti128_si256(s3, 1));
     out_sq_dists[3] = (uint64_t)_mm_cvtsi128_si64(r3) + (uint64_t)_mm_extract_epi64(r3, 1);
-#else
-    out_sq_dists[0] = 0;
-    out_sq_dists[1] = 0;
-    out_sq_dists[2] = 0;
-    out_sq_dists[3] = 0;
-    const int16_t *a0 = anchors[0];
-    const int16_t *a1 = anchors[1];
-    const int16_t *a2 = anchors[2];
-    const int16_t *a3 = anchors[3];
-#endif
 
     for (; i < dim; i++)
     {
@@ -1367,6 +1618,68 @@ void sq16_dist_squared_batch_1x4_i16(
         out_sq_dists[2] += (uint64_t)(diff2 * diff2);
         out_sq_dists[3] += (uint64_t)(diff3 * diff3);
     } // for (; i < dim; i++)
+}
+#endif
+
+static void sq16_dist_squared_batch_1x4_i16_scalar(
+    const int16_t *restrict        q,
+    const int16_t *const *restrict anchors,
+    uint64_t *restrict             out_sq_dists,
+    long                           dim)
+{
+    out_sq_dists[0] = 0;
+    out_sq_dists[1] = 0;
+    out_sq_dists[2] = 0;
+    out_sq_dists[3] = 0;
+    const int16_t *a0 = anchors[0];
+    const int16_t *a1 = anchors[1];
+    const int16_t *a2 = anchors[2];
+    const int16_t *a3 = anchors[3];
+
+    for (long i = 0; i < dim; i++)
+    {
+        int32_t qv = (int32_t)q[i];
+        int32_t diff0 = qv - (int32_t)a0[i];
+        int32_t diff1 = qv - (int32_t)a1[i];
+        int32_t diff2 = qv - (int32_t)a2[i];
+        int32_t diff3 = qv - (int32_t)a3[i];
+        out_sq_dists[0] += (uint64_t)(diff0 * diff0);
+        out_sq_dists[1] += (uint64_t)(diff1 * diff1);
+        out_sq_dists[2] += (uint64_t)(diff2 * diff2);
+        out_sq_dists[3] += (uint64_t)(diff3 * diff3);
+    }
+}
+
+/**
+ * sq16_dist_squared_batch_1x4_i16() - Compute sum of squared diffs for 1 query vs 4 anchors.
+ * @q:            Pointer to query int16 array [dim].
+ * @anchors:      Array of 4 pointers to candidate anchor int16 arrays [dim].
+ * @out_sq_dists: Array of 4 uint64_t to receive squared integer distances.
+ * @dim:          Vector dimension.
+ *
+ * Employs SIMD (AVX-512 / AVX2) to evaluate 1 query against 4 candidate anchors simultaneously.
+ */
+void sq16_dist_squared_batch_1x4_i16(
+    const int16_t *restrict        q,
+    const int16_t *const *restrict anchors,
+    uint64_t *restrict             out_sq_dists,
+    long                           dim)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 32)
+    {
+        sq16_dist_squared_batch_1x4_i16_avx512(q, anchors, out_sq_dists, dim);
+        return;
+    }
+#endif
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 16)
+    {
+        sq16_dist_squared_batch_1x4_i16_avx2(q, anchors, out_sq_dists, dim);
+        return;
+    }
+#endif
+    sq16_dist_squared_batch_1x4_i16_scalar(q, anchors, out_sq_dists, dim);
 }
 
 /**

@@ -82,7 +82,7 @@ static void test_pass2_nearest_accuracy(void)
     {
         char cmd[512];
         snprintf(cmd, sizeof(cmd),
-                 "%s %s -rlim 0.05 -pass2nearest -outdir %s > /dev/null",
+                 "%s %s -rlim 0.05 -pass2nearest -txt -outdir %s > /dev/null",
                  bin, test_file, out_dir_p2);
         int res = system(cmd);
         assert(res == 0);

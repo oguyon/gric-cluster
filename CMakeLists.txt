@@ -213,6 +213,7 @@ endif()
 add_executable(gric-mktxtseq
     src/gric-mktxtseq/mktestseq.c
     src/shared/gric_gen_patterns.c
+    src/shared/gric_bin_io.c
     src/shared/cli_colors.c
 )
 target_link_libraries(gric-mktxtseq m)
@@ -687,6 +688,7 @@ add_test(NAME test_scalar_quant
 add_executable(test_residual_quant
     tests/test_residual_quant.c
     src/shared/residual_quant.c
+    src/shared/gric_simd.c
 )
 target_include_directories(test_residual_quant PRIVATE src/shared)
 target_link_libraries(test_residual_quant m)
@@ -696,6 +698,7 @@ add_test(NAME test_residual_quant
 add_executable(test_product_quant
     tests/test_product_quant.c
     src/shared/product_quant.c
+    src/shared/gric_simd.c
 )
 target_include_directories(test_product_quant PRIVATE src/shared)
 target_link_libraries(test_product_quant m)

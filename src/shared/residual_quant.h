@@ -6,6 +6,7 @@
  * @brief 8-bit Residual Vector Quantization (RQ8) with metric lower-bounding.
  */
 
+#include "gric_simd.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -265,12 +266,13 @@ static inline uint32_t rq8_fastscan_32x_generic_scalar(
     return mask;
 }
 
-#if !defined(__CUDACC__) && defined(__AVX2__) && \
+#if !defined(__CUDACC__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 
 /**
  * @brief AVX2 256-bit SIMD kernel for 32 3D candidates in transposed layout.
  */
+GRIC_TARGET_AVX2
 static inline uint32_t rq8_fastscan_32x_3d_avx2(
     const int16_t *restrict query_res,
     const int8_t  *restrict block_x,
@@ -375,6 +377,7 @@ static inline uint32_t rq8_fastscan_32x_3d_avx2(
 /**
  * @brief AVX2 256-bit SIMD kernel for 32 D-dim candidates in transposed layout.
  */
+GRIC_TARGET_AVX2
 static inline uint32_t rq8_fastscan_32x_generic_avx2(
     const int16_t *restrict query_res,
     const int8_t  *restrict block_coords,
@@ -450,12 +453,12 @@ static inline uint32_t rq8_fastscan_32x_generic_avx2(
 }
 #endif // __AVX2__
 
-#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+#if !defined(__CUDACC__) && GRIC_HAVE_AVX512_TARGET
 
 /**
  * @brief AVX-512 512-bit SIMD kernel for 32 3D candidates in transposed layout.
  */
+GRIC_TARGET_AVX512
 static inline uint32_t rq8_fastscan_32x_3d_avx512(
     const int16_t *restrict query_res,
     const int8_t  *restrict block_x,
@@ -508,6 +511,7 @@ static inline uint32_t rq8_fastscan_32x_3d_avx512(
 /**
  * @brief AVX-512 512-bit SIMD kernel for 32 D-dim candidates in transposed layout.
  */
+GRIC_TARGET_AVX512
 static inline uint32_t rq8_fastscan_32x_generic_avx512(
     const int16_t *restrict query_res,
     const int8_t  *restrict block_coords,
@@ -535,9 +539,11 @@ static inline uint32_t rq8_fastscan_32x_generic_avx512(
         __m512i p1 = _mm512_mullo_epi32(diff1, diff1);
 
         acc0 = _mm512_add_epi64(acc0, _mm512_cvtepu32_epi64(_mm512_castsi512_si256(p0)));
-        acc1 = _mm512_add_epi64(acc1, _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(p0, 1)));
+        acc1 = _mm512_add_epi64(acc1,
+                                _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(p0, 1)));
         acc2 = _mm512_add_epi64(acc2, _mm512_cvtepu32_epi64(_mm512_castsi512_si256(p1)));
-        acc3 = _mm512_add_epi64(acc3, _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(p1, 1)));
+        acc3 = _mm512_add_epi64(acc3,
+                                _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(p1, 1)));
     } // for (long d = 0; d < dim; d++)
 
     __m512i v_cut = _mm512_set1_epi64((int64_t)ssd_cutoff);
@@ -548,7 +554,7 @@ static inline uint32_t rq8_fastscan_32x_generic_avx512(
 
     return (uint32_t)m0 | ((uint32_t)m1 << 8) | ((uint32_t)m2 << 16) | ((uint32_t)m3 << 24);
 }
-#endif // __AVX512F__ && __AVX512BW__
+#endif // GRIC_HAVE_AVX512_TARGET
 
 /**
  * @brief Dispatch FastScan for 32 3D candidates.
@@ -560,15 +566,20 @@ static inline uint32_t rq8_fastscan_32x_3d(
     const int8_t  *restrict block_z,
     uint64_t                ssd_cutoff)
 {
-#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    return rq8_fastscan_32x_3d_avx512(query_res, block_x, block_y, block_z, ssd_cutoff);
-#elif !defined(__CUDACC__) && defined(__AVX2__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    return rq8_fastscan_32x_3d_avx2(query_res, block_x, block_y, block_z, ssd_cutoff);
-#else
-    return rq8_fastscan_32x_3d_scalar(query_res, block_x, block_y, block_z, ssd_cutoff);
+#if !defined(__CUDACC__) && GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        return rq8_fastscan_32x_3d_avx512(query_res, block_x, block_y, block_z, ssd_cutoff);
+    }
 #endif
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        return rq8_fastscan_32x_3d_avx2(query_res, block_x, block_y, block_z, ssd_cutoff);
+    }
+#endif
+    return rq8_fastscan_32x_3d_scalar(query_res, block_x, block_y, block_z, ssd_cutoff);
 }
 
 /**
@@ -590,15 +601,20 @@ static inline uint32_t rq8_fastscan_32x(
             ssd_cutoff);
     }
 
-#if !defined(__CUDACC__) && defined(__AVX512F__) && defined(__AVX512BW__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    return rq8_fastscan_32x_generic_avx512(query_res, block_coords, dim, ssd_cutoff);
-#elif !defined(__CUDACC__) && defined(__AVX2__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    return rq8_fastscan_32x_generic_avx2(query_res, block_coords, dim, ssd_cutoff);
-#else
-    return rq8_fastscan_32x_generic_scalar(query_res, block_coords, dim, ssd_cutoff);
+#if !defined(__CUDACC__) && GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        return rq8_fastscan_32x_generic_avx512(query_res, block_coords, dim, ssd_cutoff);
+    }
 #endif
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        return rq8_fastscan_32x_generic_avx2(query_res, block_coords, dim, ssd_cutoff);
+    }
+#endif
+    return rq8_fastscan_32x_generic_scalar(query_res, block_coords, dim, ssd_cutoff);
 }
 
 /**

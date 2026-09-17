@@ -448,6 +448,11 @@ static int apply_io_option(
         config->output.no_txt = 1;
         return 0;
     }
+    else if (matches(key, "-txt") || matches(key, "--txt"))
+    {
+        config->output.no_txt = 0;
+        return 0;
+    }
     else if (matches(key, "-anchors"))
     {
         config->output.output_anchors = 1;

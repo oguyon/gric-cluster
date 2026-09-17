@@ -19,13 +19,16 @@
 
 PQSimdMode pq_get_simd_mode(void)
 {
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-    return PQ_SIMD_AVX512;
-#elif defined(__AVX2__)
-    return PQ_SIMD_AVX2;
-#else
+    GricSimdLevel lvl = gric_get_simd_level();
+    if (lvl >= GRIC_SIMD_AVX512)
+    {
+        return PQ_SIMD_AVX512;
+    }
+    if (lvl >= GRIC_SIMD_AVX2)
+    {
+        return PQ_SIMD_AVX2;
+    }
     return PQ_SIMD_SCALAR;
-#endif
 }
 
 const char *pq_get_simd_mode_str(void)

@@ -186,7 +186,7 @@ static void test_gpu_pass1_e2e(void)
 
     char cmd[512];
     snprintf(cmd, sizeof(cmd),
-             "%s %s -rlim %.4f --gpu-brute-force --gpu-batch-size 64 -outdir %s > /dev/null",
+             "%s %s -rlim %.4f --gpu-brute-force --gpu-batch-size 64 -txt -outdir %s > /dev/null",
              bin, test_file, rlim, out_dir);
     int res = system(cmd);
     assert(res == 0);
@@ -239,7 +239,7 @@ static void test_gpu_pass1_and_pass2(void)
 
     char cmd[512];
     snprintf(cmd, sizeof(cmd),
-             "%s %s -rlim %.4f --gpu-brute-force -pass2nearest -outdir %s > /dev/null",
+             "%s %s -rlim %.4f --gpu-brute-force -pass2nearest -txt -outdir %s > /dev/null",
              bin, test_file, rlim, out_dir);
     int res = system(cmd);
     assert(res == 0);

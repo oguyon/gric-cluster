@@ -67,7 +67,7 @@ int handle_api_request(
     if ((strcmp(path, "/api/file/write") == 0 || strcmp(path, "/api/files/write") == 0) &&
         strcmp(method, "POST") == 0)
     {
-        handle_api_file_write(client_fd, config, body, body_len);
+        handle_api_file_write(client_fd, config, query, body, body_len);
         return 1;
     }
     if (strcmp(path, "/api/heartbeat") == 0 &&

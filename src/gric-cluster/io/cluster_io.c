@@ -14,10 +14,10 @@
 
 /**
  * create_output_dir_name() - Build output directory path from input filename.
- * @input_file: Path to the input file (FITS, MP4, or text).
+ * @input_file: Path to the input file (FITS, MP4, text, or binary).
  *
  * Strips the directory prefix and recognized extensions
- * (.fits.fz, .fits, .mp4, .txt) from @input_file, then
+ * (.fits.fz, .fits, .mp4, .txt, .bin) from @input_file, then
  * appends ".clusterdat" to form the output directory name.
  *
  * Return: Heap-allocated directory name string, or NULL on
@@ -59,6 +59,10 @@ char *create_output_dir_name(
         name[len - 4] = '\0';
     }
     else if (len > 4 && strcmp(name + len - 4, ".txt") == 0)
+    {
+        name[len - 4] = '\0';
+    }
+    else if (len > 4 && strcmp(name + len - 4, ".bin") == 0)
     {
         name[len - 4] = '\0';
     }

@@ -16,7 +16,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #ifdef USE_CFITSIO
 fitsfile *fptr = NULL;
@@ -26,10 +29,12 @@ FILE *ascii_ptr = NULL;
 long *ascii_line_offsets = NULL;
 int is_ascii_mode = 0;
 
-static FILE *bin_input_ptr = NULL;
-static uint64_t bin_input_data_offset = 64;
+static FILE                *bin_input_ptr = NULL;
+static void                *bin_mmap_addr = NULL;
+static size_t               bin_mmap_size = 0;
+static uint64_t             bin_input_data_offset = 64;
 static gric_bin_data_type_t bin_input_dtype = GRIC_BIN_DTYPE_FLOAT32;
-static int is_bin_mode = 0;
+static int                  is_bin_mode = 0;
 
 char **file_list = NULL;
 int is_filelist_mode = 0;
@@ -208,8 +213,27 @@ static int init_bin(
     bin_input_ptr = fp;
     is_bin_mode = 1;
 
-    printf("Binary dataset mode initialized. %ld frames, %ld dimensions (%s)\n",
-           num_frames, frame_width, gric_bin_data_type_str(bin_input_dtype));
+    /* Setup zero-copy mmap if file size permits */
+    struct stat st;
+    if (fstat(fileno(fp), &st) == 0 && st.st_size > (off_t)hdr.header_bytes)
+    {
+        bin_mmap_size = (size_t)st.st_size;
+        bin_mmap_addr = mmap(NULL, bin_mmap_size, PROT_READ, MAP_SHARED, fileno(fp), 0);
+        if (bin_mmap_addr != MAP_FAILED)
+        {
+            posix_madvise(bin_mmap_addr, bin_mmap_size,
+                          POSIX_MADV_SEQUENTIAL | POSIX_MADV_WILLNEED);
+        }
+        else
+        {
+            bin_mmap_addr = NULL;
+            bin_mmap_size = 0;
+        }
+    }
+
+    printf("Binary dataset mode initialized. %ld frames, %ld dimensions (%s)%s\n",
+           num_frames, frame_width, gric_bin_data_type_str(bin_input_dtype),
+           (bin_mmap_addr != NULL) ? " [zero-copy mmap]" : "");
     return 0;
 }
 
@@ -224,14 +248,76 @@ static int getframe_bin(
     Frame *frame_struct,
     long   index)
 {
-    if (bin_input_ptr == NULL || index < 0 || index >= num_frames)
+    if ((bin_input_ptr == NULL && bin_mmap_addr == NULL) || index < 0 || index >= num_frames)
     {
         return -1;
     }
 
     size_t elem_size = gric_bin_data_type_size(bin_input_dtype);
-    off_t offset = (off_t)bin_input_data_offset +
-                   (off_t)index * (off_t)frame_width * (off_t)elem_size;
+    size_t frame_bytes = (size_t)frame_width * elem_size;
+
+    if (bin_mmap_addr != NULL)
+    {
+        const char *src_bytes = (const char *)bin_mmap_addr + bin_input_data_offset +
+                                (size_t)index * frame_bytes;
+
+        if (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT32)
+        {
+            const float *src = (const float *)src_bytes;
+            if (!frame_struct->is_double)
+            {
+                memcpy(frame_struct->data, src, frame_width * sizeof(float));
+            }
+            else
+            {
+                double *dptr = (double *)frame_struct->data;
+                for (long k = 0; k < frame_width; k++)
+                {
+                    dptr[k] = (double)src[k];
+                }
+            }
+        }
+        else if (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT64)
+        {
+            const double *src = (const double *)src_bytes;
+            if (frame_struct->is_double)
+            {
+                memcpy(frame_struct->data, src, frame_width * sizeof(double));
+            }
+            else
+            {
+                float *fptr = (float *)frame_struct->data;
+                for (long k = 0; k < frame_width; k++)
+                {
+                    fptr[k] = (float)src[k];
+                }
+            }
+        }
+        else
+        {
+            const uint32_t *src = (const uint32_t *)src_bytes;
+            if (frame_struct->is_double)
+            {
+                double *dptr = (double *)frame_struct->data;
+                for (long k = 0; k < frame_width; k++)
+                {
+                    dptr[k] = (double)src[k];
+                }
+            }
+            else
+            {
+                float *fptr = (float *)frame_struct->data;
+                for (long k = 0; k < frame_width; k++)
+                {
+                    fptr[k] = (float)src[k];
+                }
+            }
+        }
+        return 0;
+    }
+
+    /* Fallback to file seek/read if mmap is unavailable */
+    off_t offset = (off_t)bin_input_data_offset + (off_t)index * (off_t)frame_bytes;
     if (fseeko(bin_input_ptr, offset, SEEK_SET) != 0)
     {
         return -1;
@@ -249,22 +335,15 @@ static int getframe_bin(
         }
         else
         {
-            float *fbuf = (float *)malloc(frame_width * sizeof(float));
-            if (fbuf == NULL)
-            {
-                return -1;
-            }
-            if (fread(fbuf, sizeof(float), frame_width, bin_input_ptr) != (size_t)frame_width)
-            {
-                free(fbuf);
-                return -1;
-            }
-            double *dptr = (double *)frame_struct->data;
             for (long k = 0; k < frame_width; k++)
             {
-                dptr[k] = (double)fbuf[k];
+                float val;
+                if (fread(&val, sizeof(float), 1, bin_input_ptr) != 1)
+                {
+                    return -1;
+                }
+                ((double *)frame_struct->data)[k] = (double)val;
             }
-            free(fbuf);
         }
     }
     else if (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT64)
@@ -279,63 +358,51 @@ static int getframe_bin(
         }
         else
         {
-            double *dbuf = (double *)malloc(frame_width * sizeof(double));
-            if (dbuf == NULL)
-            {
-                return -1;
-            }
-            if (fread(dbuf, sizeof(double), frame_width, bin_input_ptr) != (size_t)frame_width)
-            {
-                free(dbuf);
-                return -1;
-            }
-            float *fptr = (float *)frame_struct->data;
             for (long k = 0; k < frame_width; k++)
             {
-                fptr[k] = (float)dbuf[k];
+                double val;
+                if (fread(&val, sizeof(double), 1, bin_input_ptr) != 1)
+                {
+                    return -1;
+                }
+                ((float *)frame_struct->data)[k] = (float)val;
             }
-            free(dbuf);
         }
     }
     else
     {
-        uint32_t *ubuf = (uint32_t *)malloc(frame_width * sizeof(uint32_t));
-        if (ubuf == NULL)
+        for (long k = 0; k < frame_width; k++)
         {
-            return -1;
-        }
-        if (fread(ubuf, sizeof(uint32_t), frame_width, bin_input_ptr) != (size_t)frame_width)
-        {
-            free(ubuf);
-            return -1;
-        }
-        if (frame_struct->is_double)
-        {
-            double *dptr = (double *)frame_struct->data;
-            for (long k = 0; k < frame_width; k++)
+            uint32_t val;
+            if (fread(&val, sizeof(uint32_t), 1, bin_input_ptr) != 1)
             {
-                dptr[k] = (double)ubuf[k];
+                return -1;
+            }
+            if (frame_struct->is_double)
+            {
+                ((double *)frame_struct->data)[k] = (double)val;
+            }
+            else
+            {
+                ((float *)frame_struct->data)[k] = (float)val;
             }
         }
-        else
-        {
-            float *fptr = (float *)frame_struct->data;
-            for (long k = 0; k < frame_width; k++)
-            {
-                fptr[k] = (float)ubuf[k];
-            }
-        }
-        free(ubuf);
     }
 
     return 0;
 }
 
 /**
- * close_bin() - Close binary dataset file handle.
+ * close_bin() - Close binary dataset and release memory mappings.
  */
 static void close_bin(void)
 {
+    if (bin_mmap_addr != NULL)
+    {
+        munmap(bin_mmap_addr, bin_mmap_size);
+        bin_mmap_addr = NULL;
+        bin_mmap_size = 0;
+    }
     if (bin_input_ptr != NULL)
     {
         fclose(bin_input_ptr);
@@ -349,7 +416,7 @@ static void close_bin(void)
  */
 static void reset_bin(void)
 {
-    if (bin_input_ptr != NULL)
+    if (bin_mmap_addr == NULL && bin_input_ptr != NULL)
     {
         fseeko(bin_input_ptr, (off_t)bin_input_data_offset, SEEK_SET);
     }
@@ -393,6 +460,21 @@ int init_frameread(
 #endif
 
     {
+        /* Check if target file begins with GRIC self-describing binary magic */
+        FILE *magic_fp = fopen(filename, "rb");
+        if (magic_fp != NULL)
+        {
+            char magic[4];
+            if (fread(magic, 1, 4, magic_fp) == 4 && memcmp(magic, "GRIC", 4) == 0)
+            {
+                fclose(magic_fp);
+                return init_bin(filename);
+            }
+            fclose(magic_fp);
+        }
+    }
+
+    {
         /* Check file extension for BIN, TXT, or video formats */
         char *ext = strrchr(filename, '.');
         if (ext != NULL)
@@ -415,6 +497,21 @@ int init_frameread(
                         "Error: FFmpeg support is not compiled in. Cannot read video file.\n");
                 return -1;
 #endif
+            }
+        }
+        else
+        {
+            /* Extensionless filename: check for .bin, then .txt */
+            char candidate[PATH_MAX];
+            snprintf(candidate, sizeof(candidate), "%s.bin", filename);
+            if (access(candidate, F_OK) == 0)
+            {
+                return init_bin(candidate);
+            }
+            snprintf(candidate, sizeof(candidate), "%s.txt", filename);
+            if (access(candidate, F_OK) == 0)
+            {
+                return init_ascii(candidate);
             }
         }
     }

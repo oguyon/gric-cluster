@@ -10,6 +10,7 @@
 #include "cluster_bounds.h"
 #include "cluster_math.h"
 #include "cluster_locator.h"
+#include "gric_simd.h"
 #include <math.h>
 #include "cluster_trace.h"
 
@@ -218,8 +219,91 @@ void update_probabilities_and_pruning(
             long local_pruned_te4 = 0;
             int k = 0;
 
-#if defined(__AVX2__)
-            if (!config->optim.sparse_dcc_mode)
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+            if (!config->optim.sparse_dcc_mode && gric_get_simd_level() >= GRIC_SIMD_AVX512)
+            {
+                for (; k <= state->num_clusters - 8; k += 8)
+                {
+                    int any_alive = 0;
+                    for (int sub = 0; sub < 8; sub++)
+                    {
+                        if (state->scratch.clmembflag[k + sub])
+                        {
+                            any_alive = 1;
+                            break;
+                        }
+                    }
+                    if (!any_alive)
+                    {
+                        continue;
+                    }
+
+                    int any_missing = 0;
+                    for (int sub = 0; sub < 8; sub++)
+                    {
+                        int kk = k + sub;
+                        if (row_dcc_cj[kk] < 0.0 || row_dcc_cprev[kk] < 0.0)
+                        {
+                            any_missing = 1;
+                            break;
+                        }
+                    }
+
+                    if (any_missing)
+                    {
+                        for (int sub = 0; sub < 8; sub++)
+                        {
+                            int kk = k + sub;
+                            if (!state->scratch.clmembflag[kk] || kk == cj || kk == cprev)
+                            {
+                                continue;
+                            }
+                            double d_ci_ck = row_dcc_cj[kk];
+                            if (d_ci_ck < 0.0)
+                            {
+                                d_ci_ck = get_dist(&state->clusters[cj].anchor,
+                                                   &state->clusters[kk].anchor, -1, -1.0, -1.0,
+                                                   config, state);
+                                set_dcc_pair(state, config->algo.maxnbclust, cj, kk, d_ci_ck);
+                            }
+                            double d_cprev_ck = row_dcc_cprev[kk];
+                            if (d_cprev_ck < 0.0)
+                            {
+                                d_cprev_ck = get_dist(&state->clusters[cprev].anchor,
+                                                      &state->clusters[kk].anchor,
+                                                      -1, -1.0, -1.0, config, state);
+                                set_dcc_pair(state, config->algo.maxnbclust, cprev, kk, d_cprev_ck);
+                            }
+                            double min_d = calc_min_dist_4pt_ref(&te4_ref, d_ci_ck, d_cprev_ck);
+                            if (min_d > config->algo.rlim)
+                            {
+                                state->scratch.clmembflag[kk] = 0;
+                                local_pruned_te4++;
+                            }
+                        }
+                        continue;
+                    }
+
+                    double b_out[8];
+                    calc_min_dist_4pt_batch8_avx512(&te4_ref, &row_dcc_cj[k],
+                                                    &row_dcc_cprev[k], b_out);
+                    for (int sub = 0; sub < 8; sub++)
+                    {
+                        int kk = k + sub;
+                        if (kk == cj || kk == cprev)
+                        {
+                            continue;
+                        }
+                        if (state->scratch.clmembflag[kk] && b_out[sub] > config->algo.rlim)
+                        {
+                            state->scratch.clmembflag[kk] = 0;
+                            local_pruned_te4++;
+                        }
+                    }
+                }
+            }
+
+            if (!config->optim.sparse_dcc_mode && gric_get_simd_level() >= GRIC_SIMD_AVX2)
             {
                 for (; k <= state->num_clusters - 4; k += 4)
                 {
