@@ -111,6 +111,7 @@ include_directories(
     src/gric-cluster/help
     src/gric-cluster/steps
     src/gric-cluster/trace
+    src/gric-probe
     src/gpu
     src/gric-knn/gpu
     src/gric-cluster/gpu
@@ -181,6 +182,7 @@ set(CLUSTER_SRCS
     src/shared/quant_memo.c
     src/shared/gric_profile.c
     src/shared/gric_simd.c
+    src/gric-probe/probe_engine.c
 )
 
 add_executable(gric-cluster ${CLUSTER_SRCS})

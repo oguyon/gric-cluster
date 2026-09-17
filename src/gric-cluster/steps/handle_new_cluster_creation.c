@@ -364,6 +364,12 @@ static void assign_new_cluster_anchor(
             memcpy(state->clusters[cl_idx].anchor_sq16, state->current_frame_sq16,
                    (size_t)dim * sizeof(int16_t));
         }
+        if (state->anchor_matrix_sq16_chunk0 != NULL)
+        {
+            memcpy(state->anchor_matrix_sq16_chunk0 + (size_t)cl_idx * 32,
+                   state->current_frame_sq16,
+                   32 * sizeof(int16_t));
+        }
     }
     else
     {

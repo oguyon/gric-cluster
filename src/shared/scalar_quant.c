@@ -983,6 +983,182 @@ void sq16_quantize_double(
 }
 
 /**
+ * sq16_quantize_float_perm() - Quantize float frame with spectral dimension permutation.
+ * @src:      Pointer to source float vector [dim].
+ * @dst:      Pointer to destination int16 vector [dim].
+ * @params:   Pointer to initialized SQ16Params.
+ * @perm_dim: Pointer to dimension permutation array [dim].
+ */
+void sq16_quantize_float_perm(
+    const float      *restrict src,
+    int16_t          *restrict dst,
+    const SQ16Params *restrict params,
+    const long       *restrict perm_dim)
+{
+    long dim = params->dim;
+    float min_val = params->min_val;
+    float inv_scale = params->inv_scale;
+    long i = 0;
+
+    for (; i + 3 < dim; i += 4)
+    {
+        long idx0 = perm_dim[i + 0];
+        long idx1 = perm_dim[i + 1];
+        long idx2 = perm_dim[i + 2];
+        long idx3 = perm_dim[i + 3];
+
+        float v0 = (src[idx0] - min_val) * inv_scale + 0.5f;
+        float v1 = (src[idx1] - min_val) * inv_scale + 0.5f;
+        float v2 = (src[idx2] - min_val) * inv_scale + 0.5f;
+        float v3 = (src[idx3] - min_val) * inv_scale + 0.5f;
+
+        if (v0 < 0.0f)
+        {
+            v0 = 0.0f;
+        }
+        else if (v0 > 32767.0f)
+        {
+            v0 = 32767.0f;
+        }
+
+        if (v1 < 0.0f)
+        {
+            v1 = 0.0f;
+        }
+        else if (v1 > 32767.0f)
+        {
+            v1 = 32767.0f;
+        }
+
+        if (v2 < 0.0f)
+        {
+            v2 = 0.0f;
+        }
+        else if (v2 > 32767.0f)
+        {
+            v2 = 32767.0f;
+        }
+
+        if (v3 < 0.0f)
+        {
+            v3 = 0.0f;
+        }
+        else if (v3 > 32767.0f)
+        {
+            v3 = 32767.0f;
+        }
+
+        dst[i + 0] = (int16_t)v0;
+        dst[i + 1] = (int16_t)v1;
+        dst[i + 2] = (int16_t)v2;
+        dst[i + 3] = (int16_t)v3;
+    } // for (; i + 3 < dim; i += 4)
+
+    for (; i < dim; i++)
+    {
+        long idx = perm_dim[i];
+        float val = (src[idx] - min_val) * inv_scale + 0.5f;
+        if (val < 0.0f)
+        {
+            val = 0.0f;
+        }
+        else if (val > 32767.0f)
+        {
+            val = 32767.0f;
+        }
+        dst[i] = (int16_t)val;
+    } // for (; i < dim; i++)
+}
+
+/**
+ * sq16_quantize_double_perm() - Quantize a double frame with spectral dimension permutation.
+ * @src:      Pointer to source double vector [dim].
+ * @dst:      Pointer to destination int16 vector [dim].
+ * @params:   Pointer to initialized SQ16Params.
+ * @perm_dim: Pointer to dimension permutation array [dim].
+ */
+void sq16_quantize_double_perm(
+    const double     *restrict src,
+    int16_t          *restrict dst,
+    const SQ16Params *restrict params,
+    const long       *restrict perm_dim)
+{
+    long dim = params->dim;
+    double min_val = (double)params->min_val;
+    double inv_scale = (double)params->inv_scale;
+    long i = 0;
+
+    for (; i + 3 < dim; i += 4)
+    {
+        long idx0 = perm_dim[i + 0];
+        long idx1 = perm_dim[i + 1];
+        long idx2 = perm_dim[i + 2];
+        long idx3 = perm_dim[i + 3];
+
+        double v0 = (src[idx0] - min_val) * inv_scale + 0.5;
+        double v1 = (src[idx1] - min_val) * inv_scale + 0.5;
+        double v2 = (src[idx2] - min_val) * inv_scale + 0.5;
+        double v3 = (src[idx3] - min_val) * inv_scale + 0.5;
+
+        if (v0 < 0.0)
+        {
+            v0 = 0.0;
+        }
+        else if (v0 > 32767.0)
+        {
+            v0 = 32767.0;
+        }
+
+        if (v1 < 0.0)
+        {
+            v1 = 0.0;
+        }
+        else if (v1 > 32767.0)
+        {
+            v1 = 32767.0;
+        }
+
+        if (v2 < 0.0)
+        {
+            v2 = 0.0;
+        }
+        else if (v2 > 32767.0)
+        {
+            v2 = 32767.0;
+        }
+
+        if (v3 < 0.0)
+        {
+            v3 = 0.0;
+        }
+        else if (v3 > 32767.0)
+        {
+            v3 = 32767.0;
+        }
+
+        dst[i + 0] = (int16_t)v0;
+        dst[i + 1] = (int16_t)v1;
+        dst[i + 2] = (int16_t)v2;
+        dst[i + 3] = (int16_t)v3;
+    } // for (; i + 3 < dim; i += 4)
+
+    for (; i < dim; i++)
+    {
+        long idx = perm_dim[i];
+        double val = (src[idx] - min_val) * inv_scale + 0.5;
+        if (val < 0.0)
+        {
+            val = 0.0;
+        }
+        else if (val > 32767.0)
+        {
+            val = 32767.0;
+        }
+        dst[i] = (int16_t)val;
+    } // for (; i < dim; i++)
+}
+
+/**
  * sq16_dist_squared_i16() - Compute sum of squared differences between two int16 vectors.
  * @a:   Pointer to first int16 array [dim].
  * @b:   Pointer to second int16 array [dim].

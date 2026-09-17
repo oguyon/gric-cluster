@@ -156,6 +156,17 @@ void remove_cluster(
         state->clusters[index_to_remove].anchor_sq16 = NULL;
     }
 
+    if (state->anchor_matrix_sq16_chunk0 != NULL)
+    {
+        int remaining = state->num_clusters - 1 - index_to_remove;
+        if (remaining > 0)
+        {
+            memmove(state->anchor_matrix_sq16_chunk0 + (size_t)index_to_remove * 32,
+                    state->anchor_matrix_sq16_chunk0 + (size_t)(index_to_remove + 1) * 32,
+                    (size_t)remaining * 32 * sizeof(int16_t));
+        }
+    }
+
     if (state->scratch.cluster_probs != NULL)
     {
         int remaining = state->num_clusters - 1 - index_to_remove;

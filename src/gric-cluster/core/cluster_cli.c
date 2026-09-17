@@ -8,6 +8,7 @@
 #include "cluster_help.h"
 #include "config_utils.h"
 #include "gric_profile.h"
+#include "probe_engine.h"
 #include "cli_colors.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -299,13 +300,56 @@ int cluster_cli_parse(
             {
                 has_prof = (gric_profile_read_json(located_prof_path, &dataset_prof) == 0);
             }
-    
+
+            /* Automatic micro-probe fallback for file inputs when SQ16 is requested
+             * or rlim is omitted. */
+            if (!has_prof && !config->optim.no_prof && !config->input.stream_input_mode &&
+                !config->input.filelist_mode && (config->optim.use_sq16 || !rlim_set))
+            {
+                ProbeConfig pcfg;
+                memset(&pcfg, 0, sizeof(pcfg));
+                snprintf(pcfg.dataset_path, sizeof(pcfg.dataset_path), "%s",
+                         config->input.fits_filename);
+                pcfg.sample_limit = 500;
+                pcfg.verbose_level = 0;
+                pcfg.use_double = config->algo.use_double;
+                ProbeResults pres;
+                memset(&pres, 0, sizeof(pres));
+                if (probe_run(&pcfg, &pres) == 0)
+                {
+                    dataset_prof = pres.profile;
+                    memset(&pres.profile, 0, sizeof(pres.profile));
+                    dataset_prof.tiles_x = 1;
+                    dataset_prof.tiles_y = 1;
+                    has_prof = 1;
+
+                    char auto_save_path[1024];
+                    snprintf(auto_save_path, sizeof(auto_save_path), "%s.gricprof",
+                             config->input.fits_filename);
+                    if (gric_profile_write_json(auto_save_path, &dataset_prof) == 0)
+                    {
+                        printf("%s[INFO]%s Auto-profiled dataset (500 frames) -> "
+                               "generated %s%s%s\n",
+                               ANSI_BOLD_GREEN, ANSI_COLOR_RESET,
+                               ANSI_BOLD, auto_save_path, ANSI_COLOR_RESET);
+                    }
+                    else
+                    {
+                        printf("%s[INFO]%s Auto-profiled dataset (500 frames) in memory\n",
+                               ANSI_BOLD_GREEN, ANSI_COLOR_RESET);
+                    }
+                }
+            }
+
             if (has_prof)
             {
-                printf("%s[INFO]%s Auto-loaded dataset profile: %s%s%s\n",
-                       ANSI_BOLD_GREEN, ANSI_COLOR_RESET,
-                       ANSI_BOLD, located_prof_path, ANSI_COLOR_RESET);
-    
+                if (located_prof_path[0] != '\0')
+                {
+                    printf("%s[INFO]%s Auto-loaded dataset profile: %s%s%s\n",
+                           ANSI_BOLD_GREEN, ANSI_COLOR_RESET,
+                           ANSI_BOLD, located_prof_path, ANSI_COLOR_RESET);
+                }
+
                 if (!rlim_set)
                 {
                     if (strcasecmp(config->optim.preset_name, "p01") == 0 ||
@@ -338,14 +382,31 @@ int cluster_cli_parse(
                     }
                     rlim_set = 1;
                 }
-    
+
                 if (config->optim.use_sq16 && dataset_prof.use_sq16)
                 {
                     config->optim.sq16_params = dataset_prof.sq16_params;
+                    config->optim.sq16_calibrated = 1;
+                    long fdim = dataset_prof.dim;
+                    if (config->optim.sq16_ratio > 0.0 && config->algo.rlim > 0.0 && fdim > 0)
+                    {
+                        float target_scale = (float)((config->optim.sq16_ratio *
+                                                      config->algo.rlim) /
+                                                     sqrt((double)fdim));
+                        float center = 0.5f * (config->optim.sq16_params.min_val +
+                                               config->optim.sq16_params.max_val);
+                        config->optim.sq16_params.scale = target_scale;
+                        config->optim.sq16_params.inv_scale = 1.0f / target_scale;
+                        config->optim.sq16_params.min_val = center - 16384.0f * target_scale;
+                        config->optim.sq16_params.max_val = center + 16383.0f * target_scale;
+                        config->optim.sq16_params.err_radius =
+                            sqrtf((float)fdim) * target_scale * 0.5f;
+                    }
                 }
                 else if (config->optim.use_sq8 && dataset_prof.use_sq8)
                 {
                     config->optim.sq8_params = dataset_prof.sq8_params;
+                    config->optim.sq8_calibrated = 1;
                 }
     
                 if (config->input.tile_grid_x == 0 && config->input.tile_grid_y == 0 &&

@@ -762,6 +762,12 @@ void run_clustering(
         }
     }
 
+    if (state->anchor_matrix_sq16_chunk0)
+    {
+        free(state->anchor_matrix_sq16_chunk0);
+        state->anchor_matrix_sq16_chunk0 = NULL;
+    }
+
     free(sorting_candidates);
     if (verbose_candidates)
     {

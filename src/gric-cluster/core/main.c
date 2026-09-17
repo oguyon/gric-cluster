@@ -170,6 +170,15 @@ int main(int argc, char *argv[])
     ClusterState state;
     memset(&state, 0, sizeof(ClusterState));
 
+    if (config.optim.sq16_calibrated)
+    {
+        state.sq16_calibrated = 1;
+    }
+    if (config.optim.sq8_calibrated)
+    {
+        state.sq8_calibrated = 1;
+    }
+
     if (dataset_prof.perm_dim != NULL)
     {
         state.perm_dim = dataset_prof.perm_dim;

@@ -69,6 +69,15 @@ static void prepare_frame_quantization(
                 state->anchor_matrix_sq16 = NULL;
             }
         }
+        if (frame_dim >= 32 && state->anchor_matrix_sq16_chunk0 == NULL)
+        {
+            size_t total_c0 = (size_t)config->algo.maxnbclust * 32;
+            if (posix_memalign((void **)&state->anchor_matrix_sq16_chunk0, 64,
+                               total_c0 * sizeof(int16_t)) != 0)
+            {
+                state->anchor_matrix_sq16_chunk0 = NULL;
+            }
+        }
         if (!state->sq16_calibrated)
         {
             if (current_frame->is_double)
@@ -108,17 +117,44 @@ static void prepare_frame_quantization(
 
             state->sq16_calibrated = 1;
         }
-        if (current_frame->is_double)
+        if (config->optim.use_memo && state->scratch.memo_table.rlim == 0.0)
         {
-            sq16_quantize_double((const double *)current_frame->data,
-                                 state->current_frame_sq16,
-                                 &config->optim.sq16_params);
+            state->scratch.memo_table.err_radius =
+                (double)config->optim.sq16_params.err_radius;
+            state->scratch.memo_table.rlim = config->algo.rlim;
+        }
+
+        if (state->perm_dim != NULL)
+        {
+            if (current_frame->is_double)
+            {
+                sq16_quantize_double_perm((const double *)current_frame->data,
+                                          state->current_frame_sq16,
+                                          &config->optim.sq16_params,
+                                          state->perm_dim);
+            }
+            else
+            {
+                sq16_quantize_float_perm((const float *)current_frame->data,
+                                         state->current_frame_sq16,
+                                         &config->optim.sq16_params,
+                                         state->perm_dim);
+            }
         }
         else
         {
-            sq16_quantize_float((const float *)current_frame->data,
-                                state->current_frame_sq16,
-                                &config->optim.sq16_params);
+            if (current_frame->is_double)
+            {
+                sq16_quantize_double((const double *)current_frame->data,
+                                     state->current_frame_sq16,
+                                     &config->optim.sq16_params);
+            }
+            else
+            {
+                sq16_quantize_float((const float *)current_frame->data,
+                                    state->current_frame_sq16,
+                                    &config->optim.sq16_params);
+            }
         }
     }
     else if (config->optim.use_sq8)
@@ -547,6 +583,7 @@ int cluster_frame(
                     sq16_filter_anchor_matrix(
                         state->current_frame_sq16,
                         state->anchor_matrix_sq16,
+                        state->anchor_matrix_sq16_chunk0,
                         state->num_clusters,
                         dim,
                         sq16_ssd_thresh,
@@ -599,6 +636,7 @@ int cluster_frame(
                             sq16_filter_anchor_matrix(
                                 cur_sq16,
                                 mat_sq16,
+                                state->anchor_matrix_sq16_chunk0,
                                 num_cl,
                                 dim,
                                 sq16_ssd_thresh,

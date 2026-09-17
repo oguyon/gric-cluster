@@ -174,12 +174,30 @@ void sq16_quantize_float(
     const SQ16Params *restrict params);
 
 /**
+ * @brief Quantize float frame with spectral dimension permutation.
+ */
+void sq16_quantize_float_perm(
+    const float      *restrict src,
+    int16_t          *restrict dst,
+    const SQ16Params *restrict params,
+    const long       *restrict perm_dim);
+
+/**
  * @brief Quantize a double-precision frame to 16-bit signed integers in [0, 32767].
  */
 void sq16_quantize_double(
     const double     *restrict src,
     int16_t          *restrict dst,
     const SQ16Params *restrict params);
+
+/**
+ * @brief Quantize double frame with spectral dimension permutation.
+ */
+void sq16_quantize_double_perm(
+    const double     *restrict src,
+    int16_t          *restrict dst,
+    const SQ16Params *restrict params,
+    const long       *restrict perm_dim);
 
 /**
  * @brief Compute sum of squared differences between two int16 vectors using SIMD.
@@ -235,6 +253,7 @@ int sq16_batch_filter_candidates(
 void sq16_filter_anchor_matrix(
     const int16_t *restrict cur_sq16,
     const int16_t *restrict anchor_matrix,
+    const int16_t *restrict anchor_chunk0,
     int                     num_clusters,
     long                    dim,
     uint64_t                sq16_ssd_thresh,

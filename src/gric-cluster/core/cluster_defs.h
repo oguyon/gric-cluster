@@ -87,8 +87,10 @@ typedef struct
     double    xtile_decay;             /**< Decay coefficient for CPT history (0.0 to 1.0] */
     int       use_sq8;                 /**< 1 to enable 8-bit scalar quantization pruning */
     SQ8Params sq8_params;              /**< Uniform scalar quantization parameters */
+    int       sq8_calibrated;          /**< 1 if SQ8 parameters are pre-calibrated */
     int       use_sq16;                /**< 1 to enable 16-bit scalar quantization pruning */
     SQ16Params sq16_params;            /**< Uniform 16-bit scalar quantization parameters */
+    int       sq16_calibrated;         /**< 1 if SQ16 parameters are pre-calibrated */
     int       use_memo;                /**< 1 to enable quantized hash memoization cache */
     double    sq16_ratio;              /**< Max ratio sqrt(D)*scale / rlim (default 0.05) */
     int       use_batch_dist;          /**< 1 to enable multi-vector SIMD batch distance */
@@ -283,7 +285,8 @@ typedef struct
     int16_t            *current_frame_sq16; /**< Scratch buffer for SQ16 current frame */
     int                 sq16_calibrated;    /**< 1 if global SQ16 params are calibrated */
     uint8_t            *anchor_matrix_sq8;  /**< Contiguous [maxnbclust x dim] SQ8 anchors */
-    int16_t            *anchor_matrix_sq16; /**< Contiguous [maxnbclust x dim] SQ16 anchors */
+    int16_t            *anchor_matrix_sq16;  /**< Contiguous [maxnbclust x dim] SQ16 anchors */
+    int16_t            *anchor_matrix_sq16_chunk0; /**< Contiguous [maxnbclust x 32] SQ16 chunk 0 */
     long               *perm_dim;           /**< Spectral dimension ordering [dim] */
     double             *residual_tail;      /**< Precomputed residual tail array [dim] */
 } ClusterState;
