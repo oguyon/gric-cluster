@@ -119,6 +119,7 @@ typedef struct
     int   fitsout_mode;      /**< 1 to write results as FITS files */
     int   pngout_mode;       /**< 1 to write results as PNG files */
     int   output_dcc;        /**< 1 to write inter-cluster distance matrix */
+    int   dcc_sq16_output;   /**< 1 to write dcc.bin as uint16 SQ16 matrix */
     int   output_tm;         /**< 1 to write transition matrix */
     int   output_anchors;    /**< 1 to write cluster anchor frames */
     int   output_counts;     /**< 1 to write cluster member counts */

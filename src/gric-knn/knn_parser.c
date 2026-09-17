@@ -540,11 +540,62 @@ int knn_parse_dcc_file(
         char *comment = NULL;
         if (gric_bin_read_header(f_bin, &hdr, &comment) == 0)
         {
-            if (hdr.data_type == GRIC_BIN_DTYPE_FLOAT64)
+            if (hdr.data_type == GRIC_BIN_DTYPE_UINT16)
+            {
+                model->dcc_sq16 = (uint16_t *)malloc((size_t)M * (size_t)M * sizeof(uint16_t));
+                if (model->dcc_sq16 != NULL)
+                {
+                    if (fread(model->dcc_sq16, sizeof(uint16_t), (size_t)M * (size_t)M, f_bin) ==
+                        (size_t)M * (size_t)M)
+                    {
+                        double scale = 0.0;
+                        if (comment != NULL)
+                        {
+                            const char *sp = strstr(comment, "scale=");
+                            if (sp != NULL)
+                            {
+                                sscanf(sp, "scale=%lf", &scale);
+                            }
+                        }
+                        if (scale <= 0.0)
+                        {
+                            scale = (model->model_rlim > 0.0)
+                                ? (16384.0 / model->model_rlim) : 1000.0;
+                        }
+                        model->dcc_sq16_scale = scale;
+                        model->dcc_sq16_inv_scale = 1.0 / scale;
+                        for (int i = 0; i < M * M; i++)
+                        {
+                            model->dcc_matrix[i] =
+                                (double)model->dcc_sq16[i] * model->dcc_sq16_inv_scale;
+                        }
+                        if (comment != NULL) free(comment);
+                        fclose(f_bin);
+                        return 0;
+                    }
+                    free(model->dcc_sq16);
+                    model->dcc_sq16 = NULL;
+                }
+            }
+            else if (hdr.data_type == GRIC_BIN_DTYPE_FLOAT64)
             {
                 if (fread(model->dcc_matrix, sizeof(double), (size_t)M * (size_t)M, f_bin) ==
                     (size_t)M * (size_t)M)
                 {
+                    double scale = (model->model_rlim > 0.0)
+                        ? (16384.0 / model->model_rlim) : 1000.0;
+                    model->dcc_sq16_scale = scale;
+                    model->dcc_sq16_inv_scale = 1.0 / scale;
+                    model->dcc_sq16 = (uint16_t *)malloc((size_t)M * (size_t)M * sizeof(uint16_t));
+                    if (model->dcc_sq16 != NULL)
+                    {
+                        for (int i = 0; i < M * M; i++)
+                        {
+                            double d = model->dcc_matrix[i];
+                            model->dcc_sq16[i] = (d <= 0.0) ? 0 :
+                                ((d * scale >= 65534.0) ? 65534 : (uint16_t)(d * scale + 0.5));
+                        }
+                    }
                     if (comment != NULL) free(comment);
                     fclose(f_bin);
                     return 0;
@@ -558,9 +609,23 @@ int knn_parse_dcc_file(
                     if (fread(fbuf, sizeof(float), (size_t)M * (size_t)M, f_bin) ==
                         (size_t)M * (size_t)M)
                     {
+                        double scale = (model->model_rlim > 0.0)
+                            ? (16384.0 / model->model_rlim) : 1000.0;
+                        model->dcc_sq16_scale = scale;
+                        model->dcc_sq16_inv_scale = 1.0 / scale;
+                        model->dcc_sq16 =
+                            (uint16_t *)malloc((size_t)M * (size_t)M * sizeof(uint16_t));
+
                         for (int i = 0; i < M * M; i++)
                         {
-                            model->dcc_matrix[i] = (double)fbuf[i];
+                            double d = (double)fbuf[i];
+                            model->dcc_matrix[i] = d;
+                            if (model->dcc_sq16 != NULL)
+                            {
+                                model->dcc_sq16[i] = (d <= 0.0) ? 0 :
+                                    ((d * scale >= 65534.0) ? 65534 :
+                                     (uint16_t)(d * scale + 0.5));
+                            }
                         }
                         free(fbuf);
                         if (comment != NULL) free(comment);
@@ -622,6 +687,24 @@ int knn_parse_dcc_file(
     if (!using_dccmin && entries_read < total_pairs && entries_read > 0)
     {
         propagate_triangle_lower_bounds(model);
+    }
+
+    if (model->dcc_sq16 == NULL)
+    {
+        double scale = (model->model_rlim > 0.0)
+            ? (16384.0 / model->model_rlim) : 1000.0;
+        model->dcc_sq16_scale = scale;
+        model->dcc_sq16_inv_scale = 1.0 / scale;
+        model->dcc_sq16 = (uint16_t *)malloc((size_t)M * (size_t)M * sizeof(uint16_t));
+        if (model->dcc_sq16 != NULL)
+        {
+            for (int i = 0; i < M * M; i++)
+            {
+                double d = model->dcc_matrix[i];
+                model->dcc_sq16[i] = (d <= 0.0) ? 0 :
+                    ((d * scale >= 65534.0) ? 65534 : (uint16_t)(d * scale + 0.5));
+            }
+        }
     }
 
     return 0;

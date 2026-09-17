@@ -886,6 +886,30 @@ int knn_model_load(
         }
     }
 
+    double s = (model->model_rlim > 0.0) ? (16384.0 / model->model_rlim) : 1000.0;
+    model->dcc_sq16_scale = s;
+    model->dcc_sq16_inv_scale = 1.0 / s;
+    if (model->dcc_sq16 == NULL)
+    {
+        model->dcc_sq16 = (uint16_t *)malloc((size_t)model->num_clusters *
+                                             (size_t)model->num_clusters * sizeof(uint16_t));
+    }
+    if (model->dcc_sq16 != NULL)
+    {
+        for (int i = 0; i < model->num_clusters; i++)
+        {
+            model->dcc_sq16[i * model->num_clusters + i] = 0;
+            for (int j = i + 1; j < model->num_clusters; j++)
+            {
+                double d = model->dcc_matrix[i * model->num_clusters + j];
+                uint16_t q = (d <= 0.0) ? 0 :
+                    ((d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5));
+                model->dcc_sq16[i * model->num_clusters + j] = q;
+                model->dcc_sq16[j * model->num_clusters + i] = q;
+            }
+        }
+    }
+
     /* Compute exact frame-to-anchor distances and exact cluster enclosing radii */
     if (compute_exact_frame_anchor_radii(input_data_path, model) != 0)
     {
@@ -904,12 +928,18 @@ int knn_model_load(
         (const void **)malloc((size_t)model->num_clusters * sizeof(const void *));
     model->cluster_radii =
         (double *)malloc((size_t)model->num_clusters * sizeof(double));
+    model->cluster_radii_sq16 =
+        (uint16_t *)malloc((size_t)model->num_clusters * sizeof(uint16_t));
     if (model->anchor_ptrs != NULL && model->cluster_radii != NULL)
     {
         for (int c = 0; c < model->num_clusters; c++)
         {
             model->anchor_ptrs[c] = model->clusters[c].anchor_data;
             model->cluster_radii[c] = model->clusters[c].radius;
+            if (model->cluster_radii_sq16 != NULL)
+            {
+                model->cluster_radii_sq16[c] = (uint16_t)(model->clusters[c].radius * s + 0.5);
+            }
         }
     }
 
@@ -998,6 +1028,18 @@ void knn_model_free(
     {
         free(model->cluster_radii);
         model->cluster_radii = NULL;
+    }
+
+    if (model->dcc_sq16 != NULL)
+    {
+        free(model->dcc_sq16);
+        model->dcc_sq16 = NULL;
+    }
+
+    if (model->cluster_radii_sq16 != NULL)
+    {
+        free(model->cluster_radii_sq16);
+        model->cluster_radii_sq16 = NULL;
     }
 
     if (model->sq8_dataset_buffer != NULL)

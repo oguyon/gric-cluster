@@ -443,6 +443,16 @@ static int apply_io_option(
         config->output.output_dcc = 0;
         return 0;
     }
+    else if (matches(key, "-dcc-sq16") || matches(key, "--dcc-sq16"))
+    {
+        config->output.dcc_sq16_output = 1;
+        return 0;
+    }
+    else if (matches(key, "-no-dcc-sq16") || matches(key, "--no-dcc-sq16"))
+    {
+        config->output.dcc_sq16_output = 0;
+        return 0;
+    }
     else if (matches(key, "-no-txt") || matches(key, "-no_txt") || matches(key, "--no-txt"))
     {
         config->output.no_txt = 1;

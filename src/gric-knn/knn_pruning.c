@@ -78,6 +78,36 @@ int is_cluster_pruned_by_pivots(
     }
 
     size_t M = (size_t)model->num_clusters;
+
+    if (config->use_dcc_sq16 && model->dcc_sq16 != NULL)
+    {
+        double inv_scale = model->dcc_sq16_inv_scale;
+        double total_slack = sq16_delta + inv_scale;
+        for (int p = 0; p < num_pivots; p++)
+        {
+            int p_cl = pivots[p].cluster_id;
+            if (p_cl == c)
+            {
+                continue;
+            }
+
+            uint16_t q_dcc = model->dcc_sq16[(size_t)p_cl * M + (size_t)c];
+            if (q_dcc > 0)
+            {
+                double dcc_pc = (double)q_dcc * inv_scale;
+                double d_qp = pivots[p].d_anchor;
+                double lb_p = fabs(d_qp - dcc_pc) - cl_radius;
+                if (lb_p - total_slack >= current_tau / eps_factor ||
+                    (config->rlim_cutoff > 0.0 &&
+                     lb_p - total_slack >= config->rlim_cutoff))
+                {
+                    return 1;
+                }
+            }
+        } // for (int p = 0; p < num_pivots; p++)
+        return 0;
+    }
+
     for (int p = 0; p < num_pivots; p++)
     {
         int p_cl = pivots[p].cluster_id;
