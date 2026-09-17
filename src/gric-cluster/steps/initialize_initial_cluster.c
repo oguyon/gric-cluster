@@ -61,10 +61,10 @@ void initialize_initial_cluster(
             memcpy(state->clusters[0].anchor_sq16, state->current_frame_sq16,
                    (size_t)dim * sizeof(int16_t));
         }
-        if (state->anchor_matrix_sq16_chunk0 != NULL)
+        if (state->anchor_matrix_sq16_interleaved != NULL)
         {
-            memcpy(state->anchor_matrix_sq16_chunk0, state->current_frame_sq16,
-                   32 * sizeof(int16_t));
+            sq16_set_anchor_interleaved(state->anchor_matrix_sq16_interleaved, 0,
+                                        state->current_frame_sq16, dim);
         }
     }
     else

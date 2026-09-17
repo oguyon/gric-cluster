@@ -248,12 +248,30 @@ int sq16_batch_filter_candidates(
     int *restrict                  clmembflag);
 
 /**
+ * @brief Set coordinates for a cluster into Block-8 interleaved format across all dimensions.
+ */
+void sq16_set_anchor_interleaved(
+    int32_t       *restrict matrix_interleaved,
+    int                     cl_idx,
+    const int16_t *restrict anchor_coords,
+    long                    dim);
+
+/**
+ * @brief Rebuild Block-8 interleaved buffer from row-major anchor matrix.
+ */
+void sq16_rebuild_anchor_interleaved(
+    int32_t       *restrict matrix_interleaved,
+    const int16_t *restrict anchor_matrix,
+    int                     num_clusters,
+    long                    dim);
+
+/**
  * @brief Bulk filter contiguous cluster anchors using SQ16 lower bounds and SIMD.
  */
 void sq16_filter_anchor_matrix(
     const int16_t *restrict cur_sq16,
     const int16_t *restrict anchor_matrix,
-    const int16_t *restrict anchor_chunk0,
+    const int32_t *restrict anchor_interleaved,
     int                     num_clusters,
     long                    dim,
     uint64_t                sq16_ssd_thresh,

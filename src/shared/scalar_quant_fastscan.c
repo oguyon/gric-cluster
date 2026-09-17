@@ -7,6 +7,7 @@
 #include "gric_simd.h"
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 
 #if !defined(__CUDACC__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
@@ -600,10 +601,79 @@ static inline uint32_t sq16_reduce_add_epi32_avx2(
 }
 #endif // __AVX2__
 
+/**
+ * sq16_set_anchor_interleaved() - Set coordinates into Block-8 interleaved format across all dim.
+ * @matrix_interleaved: Interleaved buffer [num_blocks x num_pairs x 8].
+ * @cl_idx:             Cluster index.
+ * @anchor_coords:      Pointer to cluster's int16_t coordinates [dim].
+ * @dim:                Dimension count.
+ */
+void sq16_set_anchor_interleaved(
+    int32_t       *restrict matrix_interleaved,
+    int                     cl_idx,
+    const int16_t *restrict anchor_coords,
+    long                    dim)
+{
+    if (matrix_interleaved == NULL || anchor_coords == NULL || dim <= 0)
+    {
+        return;
+    }
+
+    int b = cl_idx / 8;
+    int k = cl_idx % 8;
+    size_t num_pairs = ((size_t)dim + 1) / 2;
+    size_t base = (size_t)b * (num_pairs * 8) + (size_t)k;
+
+    for (size_t j = 0; j < num_pairs; j++)
+    {
+        uint32_t v0 = (uint32_t)(uint16_t)anchor_coords[2 * j];
+        uint32_t v1 = 0;
+        if (2 * j + 1 < (size_t)dim)
+        {
+            v1 = (uint32_t)(uint16_t)anchor_coords[2 * j + 1];
+        }
+        matrix_interleaved[base + j * 8] = (int32_t)((v1 << 16) | v0);
+    }
+}
+
+/**
+ * sq16_rebuild_anchor_interleaved() - Rebuild Block-8 interleaved buffer.
+ * @matrix_interleaved: Interleaved buffer [num_blocks x num_pairs x 8].
+ * @anchor_matrix:      Row-major anchor matrix [num_clusters x dim].
+ * @num_clusters:       Number of clusters.
+ * @dim:                Dimension of each cluster anchor.
+ */
+void sq16_rebuild_anchor_interleaved(
+    int32_t       *restrict matrix_interleaved,
+    const int16_t *restrict anchor_matrix,
+    int                     num_clusters,
+    long                    dim)
+{
+    if (matrix_interleaved == NULL || anchor_matrix == NULL || num_clusters <= 0 || dim <= 0)
+    {
+        return;
+    }
+
+    size_t num_blocks = ((size_t)num_clusters + 7) / 8;
+    size_t num_pairs = ((size_t)dim + 1) / 2;
+    size_t total_elements = num_blocks * num_pairs * 8;
+    memset(matrix_interleaved, 0, total_elements * sizeof(int32_t));
+
+    for (int c = 0; c < num_clusters; c++)
+    {
+        sq16_set_anchor_interleaved(
+            matrix_interleaved,
+            c,
+            anchor_matrix + (size_t)c * (size_t)dim,
+            dim
+        );
+    }
+}
+
 static void sq16_filter_anchor_matrix_scalar(
     const int16_t *restrict cur_sq16,
     const int16_t *restrict anchor_matrix,
-    const int16_t *restrict anchor_chunk0,
+    const int32_t *restrict anchor_interleaved,
     int                     num_clusters,
     long                    dim,
     uint64_t                sq16_ssd_thresh,
@@ -612,24 +682,40 @@ static void sq16_filter_anchor_matrix_scalar(
     int           *restrict out_num_active,
     int           *restrict out_pruned_count);
 
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+static void sq16_filter_anchor_matrix_avx2(
+    const int16_t *restrict cur_sq16,
+    const int16_t *restrict anchor_matrix,
+    const int32_t *restrict anchor_interleaved,
+    int                     num_clusters,
+    long                    dim,
+    uint64_t                sq16_ssd_thresh,
+    int           *restrict clmembflag,
+    int           *restrict active_clusters,
+    int           *restrict out_num_active,
+    int           *restrict out_pruned_count);
+#endif
+
 #if GRIC_HAVE_AVX512_TARGET
 /**
  * sq16_filter_anchor_matrix_avx512() - AVX-512 kernel for anchor filtering.
- * @cur_sq16:         Query int16 array [dim].
- * @anchor_matrix:    Contiguous anchor matrix [num_clusters x dim].
- * @num_clusters:     Cluster count.
- * @dim:              Vector dimensionality.
- * @sq16_ssd_thresh:  Squared distance cutoff threshold.
- * @clmembflag:       Candidate flags array (0 = pruned).
- * @active_clusters:  Surviving cluster indices array.
- * @out_num_active:   Count of surviving clusters.
- * @out_pruned_count: Count of pruned clusters.
+ * @cur_sq16:           Query int16 array [dim].
+ * @anchor_matrix:      Contiguous anchor matrix [num_clusters x dim].
+ * @anchor_interleaved: Interleaved anchor matrix [num_blocks x num_pairs x 8].
+ * @num_clusters:       Cluster count.
+ * @dim:                Vector dimensionality.
+ * @sq16_ssd_thresh:    Squared distance cutoff threshold.
+ * @clmembflag:         Candidate flags array (0 = pruned).
+ * @active_clusters:    Surviving cluster indices array.
+ * @out_num_active:     Count of surviving clusters.
+ * @out_pruned_count:   Count of pruned clusters.
  */
 GRIC_TARGET_AVX512
 static void sq16_filter_anchor_matrix_avx512(
     const int16_t *restrict cur_sq16,
     const int16_t *restrict anchor_matrix,
-    const int16_t *restrict anchor_chunk0,
+    const int32_t *restrict anchor_interleaved,
     int                     num_clusters,
     long                    dim,
     uint64_t                sq16_ssd_thresh,
@@ -638,6 +724,15 @@ static void sq16_filter_anchor_matrix_avx512(
     int           *restrict out_num_active,
     int           *restrict out_pruned_count)
 {
+    if (anchor_interleaved != NULL)
+    {
+        sq16_filter_anchor_matrix_avx2(cur_sq16, anchor_matrix, anchor_interleaved,
+                                       num_clusters, dim, sq16_ssd_thresh,
+                                       clmembflag, active_clusters,
+                                       out_num_active, out_pruned_count);
+        return;
+    }
+
     uint32_t thresh32 = (sq16_ssd_thresh > 0xFFFFFFFFULL)
                         ? 0xFFFFFFFFU
                         : (uint32_t)sq16_ssd_thresh;
@@ -651,174 +746,7 @@ static void sq16_filter_anchor_matrix_avx512(
         __m512i q2 = _mm512_loadu_si512((const void *)(cur_sq16 + 64));
         __m512i q3 = _mm512_loadu_si512((const void *)(cur_sq16 + 96));
 
-        if (anchor_chunk0 != NULL)
-        {
-            int i = 0;
-            for (; i + 7 < num_clusters; i += 8)
-            {
-                if (i + 16 < num_clusters)
-                {
-                    _mm_prefetch((const char *)(anchor_chunk0 + (size_t)(i + 8) * 32),
-                                 _MM_HINT_T0);
-                    _mm_prefetch((const char *)(anchor_chunk0 + (size_t)(i + 12) * 32),
-                                 _MM_HINT_T0);
-                }
-
-                const int16_t *c0_ptr = anchor_chunk0 + (size_t)i * 32;
-
-                __m512i a0 = _mm512_loadu_si512((const void *)(c0_ptr + 0));
-                __m512i a1 = _mm512_loadu_si512((const void *)(c0_ptr + 32));
-                __m512i a2 = _mm512_loadu_si512((const void *)(c0_ptr + 64));
-                __m512i a3 = _mm512_loadu_si512((const void *)(c0_ptr + 96));
-                __m512i a4 = _mm512_loadu_si512((const void *)(c0_ptr + 128));
-                __m512i a5 = _mm512_loadu_si512((const void *)(c0_ptr + 160));
-                __m512i a6 = _mm512_loadu_si512((const void *)(c0_ptr + 192));
-                __m512i a7 = _mm512_loadu_si512((const void *)(c0_ptr + 224));
-
-                __m512i d0 = _mm512_sub_epi16(q0, a0);
-                __m512i d1 = _mm512_sub_epi16(q0, a1);
-                __m512i d2 = _mm512_sub_epi16(q0, a2);
-                __m512i d3 = _mm512_sub_epi16(q0, a3);
-                __m512i d4 = _mm512_sub_epi16(q0, a4);
-                __m512i d5 = _mm512_sub_epi16(q0, a5);
-                __m512i d6 = _mm512_sub_epi16(q0, a6);
-                __m512i d7 = _mm512_sub_epi16(q0, a7);
-
-                __m512i acc0 = _mm512_madd_epi16(d0, d0);
-                __m512i acc1 = _mm512_madd_epi16(d1, d1);
-                __m512i acc2 = _mm512_madd_epi16(d2, d2);
-                __m512i acc3 = _mm512_madd_epi16(d3, d3);
-                __m512i acc4 = _mm512_madd_epi16(d4, d4);
-                __m512i acc5 = _mm512_madd_epi16(d5, d5);
-                __m512i acc6 = _mm512_madd_epi16(d6, d6);
-                __m512i acc7 = _mm512_madd_epi16(d7, d7);
-
-                uint32_t s0 = (uint32_t)_mm512_reduce_add_epi32(acc0);
-                uint32_t s1 = (uint32_t)_mm512_reduce_add_epi32(acc1);
-                uint32_t s2 = (uint32_t)_mm512_reduce_add_epi32(acc2);
-                uint32_t s3 = (uint32_t)_mm512_reduce_add_epi32(acc3);
-                uint32_t s4 = (uint32_t)_mm512_reduce_add_epi32(acc4);
-                uint32_t s5 = (uint32_t)_mm512_reduce_add_epi32(acc5);
-                uint32_t s6 = (uint32_t)_mm512_reduce_add_epi32(acc6);
-                uint32_t s7 = (uint32_t)_mm512_reduce_add_epi32(acc7);
-
-                if (s0 > thresh32 && s1 > thresh32 && s2 > thresh32 && s3 > thresh32 &&
-                    s4 > thresh32 && s5 > thresh32 && s6 > thresh32 && s7 > thresh32)
-                {
-                    clmembflag[i + 0] = 0;
-                    clmembflag[i + 1] = 0;
-                    clmembflag[i + 2] = 0;
-                    clmembflag[i + 3] = 0;
-                    clmembflag[i + 4] = 0;
-                    clmembflag[i + 5] = 0;
-                    clmembflag[i + 6] = 0;
-                    clmembflag[i + 7] = 0;
-                    pruned_count += 8;
-                    continue;
-                }
-
-                uint32_t sums[8] = {s0, s1, s2, s3, s4, s5, s6, s7};
-                for (int k = 0; k < 8; k++)
-                {
-                    if (sums[k] > thresh32)
-                    {
-                        clmembflag[i + k] = 0;
-                        pruned_count++;
-                        continue;
-                    }
-
-                    const int16_t *ak_ptr = anchor_matrix + (size_t)(i + k) * 128;
-                    uint32_t total = sums[k];
-
-                    // Block 1: dims 32..63
-                    __m512i b1 = _mm512_loadu_si512((const void *)(ak_ptr + 32));
-                    __m512i db1 = _mm512_sub_epi16(q1, b1);
-                    total += (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(db1, db1));
-                    if (total > thresh32)
-                    {
-                        clmembflag[i + k] = 0;
-                        pruned_count++;
-                        continue;
-                    }
-
-                    // Block 2: dims 64..95
-                    __m512i b2 = _mm512_loadu_si512((const void *)(ak_ptr + 64));
-                    __m512i db2 = _mm512_sub_epi16(q2, b2);
-                    total += (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(db2, db2));
-                    if (total > thresh32)
-                    {
-                        clmembflag[i + k] = 0;
-                        pruned_count++;
-                        continue;
-                    }
-
-                    // Block 3: dims 96..127
-                    __m512i b3 = _mm512_loadu_si512((const void *)(ak_ptr + 96));
-                    __m512i db3 = _mm512_sub_epi16(q3, b3);
-                    total += (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(db3, db3));
-                    if (total > thresh32)
-                    {
-                        clmembflag[i + k] = 0;
-                        pruned_count++;
-                        continue;
-                    }
-
-                    clmembflag[i + k] = 1;
-                    active_clusters[num_active++] = i + k;
-                }
-            } // for (; i + 7 < num_clusters; i += 8)
-
-            for (; i < num_clusters; i++)
-            {
-                const int16_t *c0_ptr = anchor_chunk0 + (size_t)i * 32;
-                __m512i a0 = _mm512_loadu_si512((const void *)c0_ptr);
-                __m512i d0 = _mm512_sub_epi16(q0, a0);
-                uint32_t total = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(d0, d0));
-                if (total > thresh32)
-                {
-                    clmembflag[i] = 0;
-                    pruned_count++;
-                    continue;
-                }
-
-                const int16_t *ak_ptr = anchor_matrix + (size_t)i * 128;
-                __m512i b1 = _mm512_loadu_si512((const void *)(ak_ptr + 32));
-                __m512i db1 = _mm512_sub_epi16(q1, b1);
-                total += (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(db1, db1));
-                if (total > thresh32)
-                {
-                    clmembflag[i] = 0;
-                    pruned_count++;
-                    continue;
-                }
-
-                __m512i b2 = _mm512_loadu_si512((const void *)(ak_ptr + 64));
-                __m512i db2 = _mm512_sub_epi16(q2, b2);
-                total += (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(db2, db2));
-                if (total > thresh32)
-                {
-                    clmembflag[i] = 0;
-                    pruned_count++;
-                    continue;
-                }
-
-                __m512i b3 = _mm512_loadu_si512((const void *)(ak_ptr + 96));
-                __m512i db3 = _mm512_sub_epi16(q3, b3);
-                total += (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(db3, db3));
-                if (total > thresh32)
-                {
-                    clmembflag[i] = 0;
-                    pruned_count++;
-                    continue;
-                }
-
-                clmembflag[i] = 1;
-                active_clusters[num_active++] = i;
-            } // for (; i < num_clusters; i++)
-        }
-        else
-        {
-            int i = 0;
+        int i = 0;
             for (; i + 3 < num_clusters; i += 4)
             {
                 if (i + 12 < num_clusters)
@@ -962,7 +890,6 @@ static void sq16_filter_anchor_matrix_avx512(
                 clmembflag[i] = 1;
                 active_clusters[num_active++] = i;
             } // for (; i < num_clusters; i++)
-        }
     }
     else if (dim <= 64)
     {
@@ -1035,22 +962,14 @@ static void sq16_filter_anchor_matrix_avx512(
             int i = 0;
             for (; i + 3 < num_clusters; i += 4)
             {
-                __m512i a0, a1, a2, a3;
-                if (anchor_chunk0 != NULL)
-                {
-                    const int16_t *c0_ptr = anchor_chunk0 + (size_t)i * 32;
-                    a0 = _mm512_loadu_si512((const void *)(c0_ptr + 0));
-                    a1 = _mm512_loadu_si512((const void *)(c0_ptr + 32));
-                    a2 = _mm512_loadu_si512((const void *)(c0_ptr + 64));
-                    a3 = _mm512_loadu_si512((const void *)(c0_ptr + 96));
-                }
-                else
-                {
-                    a0 = _mm512_loadu_si512((const void *)(anchor_matrix + (size_t)(i + 0) * dim));
-                    a1 = _mm512_loadu_si512((const void *)(anchor_matrix + (size_t)(i + 1) * dim));
-                    a2 = _mm512_loadu_si512((const void *)(anchor_matrix + (size_t)(i + 2) * dim));
-                    a3 = _mm512_loadu_si512((const void *)(anchor_matrix + (size_t)(i + 3) * dim));
-                }
+                __m512i a0 = _mm512_loadu_si512((const void *)(anchor_matrix +
+                                                              (size_t)(i + 0) * dim));
+                __m512i a1 = _mm512_loadu_si512((const void *)(anchor_matrix +
+                                                              (size_t)(i + 1) * dim));
+                __m512i a2 = _mm512_loadu_si512((const void *)(anchor_matrix +
+                                                              (size_t)(i + 2) * dim));
+                __m512i a3 = _mm512_loadu_si512((const void *)(anchor_matrix +
+                                                              (size_t)(i + 3) * dim));
 
                 __m512i d0 = _mm512_sub_epi16(q0, a0);
                 __m512i d1 = _mm512_sub_epi16(q0, a1);
@@ -1098,15 +1017,8 @@ static void sq16_filter_anchor_matrix_avx512(
             } // for (; i + 3 < num_clusters; i += 4)
             for (; i < num_clusters; i++)
             {
-                __m512i a0;
-                if (anchor_chunk0 != NULL)
-                {
-                    a0 = _mm512_loadu_si512((const void *)(anchor_chunk0 + (size_t)i * 32));
-                }
-                else
-                {
-                    a0 = _mm512_loadu_si512((const void *)(anchor_matrix + (size_t)i * dim));
-                }
+                __m512i a0 = _mm512_loadu_si512((const void *)(anchor_matrix +
+                                                              (size_t)i * dim));
                 __m512i d0 = _mm512_sub_epi16(q0, a0);
                 __m512i acc = _mm512_madd_epi16(d0, d0);
                 if ((uint32_t)_mm512_reduce_add_epi32(acc) > thresh32)
@@ -1144,18 +1056,6 @@ static void sq16_filter_anchor_matrix_avx512(
             int pruned = 0;
             long d = 0;
 
-            if (anchor_chunk0 != NULL && dim >= 32)
-            {
-                __m512i q = _mm512_loadu_si512((const void *)cur_sq16);
-                __m512i a = _mm512_loadu_si512((const void *)(anchor_chunk0 + (size_t)i * 32));
-                __m512i diff = _mm512_sub_epi16(q, a);
-                total = (uint32_t)_mm512_reduce_add_epi32(_mm512_madd_epi16(diff, diff));
-                if (total > thresh32)
-                {
-                    pruned = 1;
-                }
-                d = 32;
-            }
 
             if (!pruned)
             {
@@ -1224,7 +1124,7 @@ GRIC_TARGET_AVX2
 static void sq16_filter_anchor_matrix_avx2(
     const int16_t *restrict cur_sq16,
     const int16_t *restrict anchor_matrix,
-    const int16_t *restrict anchor_chunk0,
+    const int32_t *restrict anchor_interleaved,
     int                     num_clusters,
     long                    dim,
     uint64_t                sq16_ssd_thresh,
@@ -1239,11 +1139,11 @@ static void sq16_filter_anchor_matrix_avx2(
     int num_active = 0;
     int pruned_count = 0;
 
-    if (dim < 32)
+    if (dim < 16)
     {
         sq16_filter_anchor_matrix_scalar(cur_sq16,
                                          anchor_matrix,
-                                         anchor_chunk0,
+                                         anchor_interleaved,
                                          num_clusters,
                                          dim,
                                          sq16_ssd_thresh,
@@ -1257,6 +1157,414 @@ static void sq16_filter_anchor_matrix_avx2(
     __m128i v_bias = _mm_set1_epi32((int32_t)0x80000000U);
     __m128i v_cut  = _mm_set1_epi32((int32_t)(thresh32 ^ 0x80000000U));
 
+    if (anchor_interleaved != NULL)
+    {
+        __m256i v_bias256 = _mm256_set1_epi32((int32_t)0x80000000U);
+        __m256i v_cut256  = _mm256_set1_epi32((int32_t)(thresh32 ^ 0x80000000U));
+
+        if (dim == 128)
+        {
+            const uint32_t *q_u32 = (const uint32_t *)cur_sq16;
+            __m256i q0 = _mm256_set1_epi32((int32_t)q_u32[0]);
+            __m256i q1 = _mm256_set1_epi32((int32_t)q_u32[1]);
+            __m256i q2 = _mm256_set1_epi32((int32_t)q_u32[2]);
+            __m256i q3 = _mm256_set1_epi32((int32_t)q_u32[3]);
+            __m256i q4 = _mm256_set1_epi32((int32_t)q_u32[4]);
+            __m256i q5 = _mm256_set1_epi32((int32_t)q_u32[5]);
+            __m256i q6 = _mm256_set1_epi32((int32_t)q_u32[6]);
+            __m256i q7 = _mm256_set1_epi32((int32_t)q_u32[7]);
+
+            int num_blocks = num_clusters / 8;
+            int rem_start = num_blocks * 8;
+
+            for (int b = 0; b < num_blocks; b++)
+            {
+                const int32_t *blk_ptr = anchor_interleaved + (size_t)b * 512;
+
+                if (b + 1 < num_blocks)
+                {
+                    _mm_prefetch((const char *)(blk_ptr + 512), _MM_HINT_T0);
+                    _mm_prefetch((const char *)(blk_ptr + 512 + 64), _MM_HINT_T0);
+                }
+
+                /* Phase 1: pairs 0..7 (dims 0..15) with dual accumulators */
+                __m256i c0 = _mm256_load_si256((const __m256i *)(blk_ptr + 0 * 8));
+                __m256i c1 = _mm256_load_si256((const __m256i *)(blk_ptr + 1 * 8));
+                __m256i d0 = _mm256_sub_epi16(q0, c0);
+                __m256i d1 = _mm256_sub_epi16(q1, c1);
+                __m256i acc0 = _mm256_madd_epi16(d0, d0);
+                __m256i acc1 = _mm256_madd_epi16(d1, d1);
+
+                __m256i c2 = _mm256_load_si256((const __m256i *)(blk_ptr + 2 * 8));
+                __m256i c3 = _mm256_load_si256((const __m256i *)(blk_ptr + 3 * 8));
+                __m256i d2 = _mm256_sub_epi16(q2, c2);
+                __m256i d3 = _mm256_sub_epi16(q3, c3);
+                acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(d2, d2));
+                acc1 = _mm256_add_epi32(acc1, _mm256_madd_epi16(d3, d3));
+
+                __m256i c4 = _mm256_load_si256((const __m256i *)(blk_ptr + 4 * 8));
+                __m256i c5 = _mm256_load_si256((const __m256i *)(blk_ptr + 5 * 8));
+                __m256i d4 = _mm256_sub_epi16(q4, c4);
+                __m256i d5 = _mm256_sub_epi16(q5, c5);
+                acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(d4, d4));
+                acc1 = _mm256_add_epi32(acc1, _mm256_madd_epi16(d5, d5));
+
+                __m256i c6 = _mm256_load_si256((const __m256i *)(blk_ptr + 6 * 8));
+                __m256i c7 = _mm256_load_si256((const __m256i *)(blk_ptr + 7 * 8));
+                __m256i d6 = _mm256_sub_epi16(q6, c6);
+                __m256i d7 = _mm256_sub_epi16(q7, c7);
+                acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(d6, d6));
+                acc1 = _mm256_add_epi32(acc1, _mm256_madd_epi16(d7, d7));
+
+                __m256i acc = _mm256_add_epi32(acc0, acc1);
+
+                /* Checkpoint 1: 16 dims */
+                __m256i v_acc_b16 = _mm256_xor_si256(acc, v_bias256);
+                __m256i cmp16 = _mm256_cmpgt_epi32(v_acc_b16, v_cut256);
+                if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp16)) == 0xFF)
+                {
+                    int base = b * 8;
+                    _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                        _mm256_setzero_si256());
+                    pruned_count += 8;
+                    continue;
+                }
+
+                /* Phase 2: pairs 8..15 (dims 16..31) */
+                __m256i acc2_0 = _mm256_setzero_si256();
+                __m256i acc2_1 = _mm256_setzero_si256();
+                #pragma GCC unroll 4
+                for (int j = 8; j < 16; j += 2)
+                {
+                    __m256i qj0 = _mm256_set1_epi32((int32_t)q_u32[j]);
+                    __m256i cj0 = _mm256_load_si256((const __m256i *)(blk_ptr + j * 8));
+                    __m256i dj0 = _mm256_sub_epi16(qj0, cj0);
+                    acc2_0 = _mm256_add_epi32(acc2_0, _mm256_madd_epi16(dj0, dj0));
+
+                    __m256i qj1 = _mm256_set1_epi32((int32_t)q_u32[j + 1]);
+                    __m256i cj1 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 1) * 8));
+                    __m256i dj1 = _mm256_sub_epi16(qj1, cj1);
+                    acc2_1 = _mm256_add_epi32(acc2_1, _mm256_madd_epi16(dj1, dj1));
+                }
+                acc = _mm256_add_epi32(acc, _mm256_add_epi32(acc2_0, acc2_1));
+
+                /* Checkpoint 2: 32 dims */
+                __m256i v_acc_b32 = _mm256_xor_si256(acc, v_bias256);
+                __m256i cmp32 = _mm256_cmpgt_epi32(v_acc_b32, v_cut256);
+                if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp32)) == 0xFF)
+                {
+                    int base = b * 8;
+                    _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                        _mm256_setzero_si256());
+                    pruned_count += 8;
+                    continue;
+                }
+
+                /* Phase 3: pairs 16..31 (dims 32..63) */
+                __m256i acc3_0 = _mm256_setzero_si256();
+                __m256i acc3_1 = _mm256_setzero_si256();
+                #pragma GCC unroll 8
+                for (int j = 16; j < 32; j += 2)
+                {
+                    __m256i qj0 = _mm256_set1_epi32((int32_t)q_u32[j]);
+                    __m256i cj0 = _mm256_load_si256((const __m256i *)(blk_ptr + j * 8));
+                    __m256i dj0 = _mm256_sub_epi16(qj0, cj0);
+                    acc3_0 = _mm256_add_epi32(acc3_0, _mm256_madd_epi16(dj0, dj0));
+
+                    __m256i qj1 = _mm256_set1_epi32((int32_t)q_u32[j + 1]);
+                    __m256i cj1 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 1) * 8));
+                    __m256i dj1 = _mm256_sub_epi16(qj1, cj1);
+                    acc3_1 = _mm256_add_epi32(acc3_1, _mm256_madd_epi16(dj1, dj1));
+                }
+                acc = _mm256_add_epi32(acc, _mm256_add_epi32(acc3_0, acc3_1));
+
+                /* Checkpoint 3: 64 dims */
+                __m256i v_acc_b64 = _mm256_xor_si256(acc, v_bias256);
+                __m256i cmp64 = _mm256_cmpgt_epi32(v_acc_b64, v_cut256);
+                if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp64)) == 0xFF)
+                {
+                    int base = b * 8;
+                    _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                        _mm256_setzero_si256());
+                    pruned_count += 8;
+                    continue;
+                }
+
+                /* Phase 4: pairs 32..47 (dims 64..95) */
+                __m256i acc4_0 = _mm256_setzero_si256();
+                __m256i acc4_1 = _mm256_setzero_si256();
+                #pragma GCC unroll 8
+                for (int j = 32; j < 48; j += 2)
+                {
+                    __m256i qj0 = _mm256_set1_epi32((int32_t)q_u32[j]);
+                    __m256i cj0 = _mm256_load_si256((const __m256i *)(blk_ptr + j * 8));
+                    __m256i dj0 = _mm256_sub_epi16(qj0, cj0);
+                    acc4_0 = _mm256_add_epi32(acc4_0, _mm256_madd_epi16(dj0, dj0));
+
+                    __m256i qj1 = _mm256_set1_epi32((int32_t)q_u32[j + 1]);
+                    __m256i cj1 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 1) * 8));
+                    __m256i dj1 = _mm256_sub_epi16(qj1, cj1);
+                    acc4_1 = _mm256_add_epi32(acc4_1, _mm256_madd_epi16(dj1, dj1));
+                }
+                acc = _mm256_add_epi32(acc, _mm256_add_epi32(acc4_0, acc4_1));
+
+                /* Checkpoint 4: 96 dims */
+                __m256i v_acc_b96 = _mm256_xor_si256(acc, v_bias256);
+                __m256i cmp96 = _mm256_cmpgt_epi32(v_acc_b96, v_cut256);
+                if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp96)) == 0xFF)
+                {
+                    int base = b * 8;
+                    _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                        _mm256_setzero_si256());
+                    pruned_count += 8;
+                    continue;
+                }
+
+                /* Phase 5: pairs 48..63 (dims 96..127) */
+                __m256i acc5_0 = _mm256_setzero_si256();
+                __m256i acc5_1 = _mm256_setzero_si256();
+                #pragma GCC unroll 8
+                for (int j = 48; j < 64; j += 2)
+                {
+                    __m256i qj0 = _mm256_set1_epi32((int32_t)q_u32[j]);
+                    __m256i cj0 = _mm256_load_si256((const __m256i *)(blk_ptr + j * 8));
+                    __m256i dj0 = _mm256_sub_epi16(qj0, cj0);
+                    acc5_0 = _mm256_add_epi32(acc5_0, _mm256_madd_epi16(dj0, dj0));
+
+                    __m256i qj1 = _mm256_set1_epi32((int32_t)q_u32[j + 1]);
+                    __m256i cj1 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 1) * 8));
+                    __m256i dj1 = _mm256_sub_epi16(qj1, cj1);
+                    acc5_1 = _mm256_add_epi32(acc5_1, _mm256_madd_epi16(dj1, dj1));
+                }
+                acc = _mm256_add_epi32(acc, _mm256_add_epi32(acc5_0, acc5_1));
+
+                /* Final check: 128 dims */
+                __m256i v_acc_b128 = _mm256_xor_si256(acc, v_bias256);
+                __m256i cmp128 = _mm256_cmpgt_epi32(v_acc_b128, v_cut256);
+                int mask128 = _mm256_movemask_ps(_mm256_castsi256_ps(cmp128));
+
+                int base = b * 8;
+                if (mask128 == 0xFF)
+                {
+                    _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                        _mm256_setzero_si256());
+                    pruned_count += 8;
+                    continue;
+                }
+
+                for (int k = 0; k < 8; k++)
+                {
+                    if ((mask128 & (1 << k)) != 0)
+                    {
+                        clmembflag[base + k] = 0;
+                        pruned_count++;
+                    }
+                    else
+                    {
+                        clmembflag[base + k] = 1;
+                        active_clusters[num_active++] = base + k;
+                    }
+                }
+            } // for (int b = 0; b < num_blocks; b++)
+
+            /* Remainder clusters (< 8) */
+            for (int i = rem_start; i < num_clusters; i++)
+            {
+                const int16_t *ak_ptr = anchor_matrix + (size_t)i * 128;
+                uint32_t total = 0;
+                int pruned = 0;
+                for (long d = 0; d < 128; d += 16)
+                {
+                    __m256i qd = _mm256_load_si256((const __m256i *)(cur_sq16 + d));
+                    __m256i ad = _mm256_load_si256((const __m256i *)(ak_ptr + d));
+                    __m256i diff = _mm256_sub_epi16(qd, ad);
+                    __m256i madd = _mm256_madd_epi16(diff, diff);
+                    total += sq16_reduce_add_epi32_avx2(madd);
+                    if (total > thresh32)
+                    {
+                        pruned = 1;
+                        break;
+                    }
+                }
+                if (pruned)
+                {
+                    clmembflag[i] = 0;
+                    pruned_count++;
+                }
+                else
+                {
+                    clmembflag[i] = 1;
+                    active_clusters[num_active++] = i;
+                }
+            }
+
+            *out_num_active = num_active;
+            if (out_pruned_count)
+            {
+                *out_pruned_count = pruned_count;
+            }
+            return;
+        }
+        else
+        {
+            /* Arbitrary dimension with Block-8 interleaved vertical SIMD */
+            int num_pairs = (int)((dim + 1) / 2);
+            int num_blocks = num_clusters / 8;
+            int rem_start = num_blocks * 8;
+            size_t blk_stride = (size_t)num_pairs * 8;
+
+            #define SQ16_PREBROADCAST_PAIRS 512
+            __m256i q_pairs_stack[SQ16_PREBROADCAST_PAIRS];
+            int pre_broadcast_count = (num_pairs < SQ16_PREBROADCAST_PAIRS)
+                                      ? num_pairs
+                                      : SQ16_PREBROADCAST_PAIRS;
+
+            for (int j = 0; j < pre_broadcast_count; j++)
+            {
+                uint32_t v0 = (uint32_t)(uint16_t)cur_sq16[2 * j];
+                uint32_t v1 = 0;
+                if (2 * j + 1 < dim)
+                {
+                    v1 = (uint32_t)(uint16_t)cur_sq16[2 * j + 1];
+                }
+                uint32_t p = (v1 << 16) | v0;
+                q_pairs_stack[j] = _mm256_set1_epi32((int32_t)p);
+            }
+
+            for (int b = 0; b < num_blocks; b++)
+            {
+                const int32_t *blk_ptr = anchor_interleaved + (size_t)b * blk_stride;
+
+                if (b + 1 < num_blocks)
+                {
+                    _mm_prefetch((const char *)(blk_ptr + blk_stride), _MM_HINT_T0);
+                    _mm_prefetch((const char *)(blk_ptr + blk_stride + 64), _MM_HINT_T0);
+                }
+
+                __m256i acc = _mm256_setzero_si256();
+                int pruned = 0;
+
+                for (int j = 0; j < num_pairs; j++)
+                {
+                    __m256i q_p;
+                    if (j < SQ16_PREBROADCAST_PAIRS)
+                    {
+                        q_p = q_pairs_stack[j];
+                    }
+                    else
+                    {
+                        uint32_t v0 = (uint32_t)(uint16_t)cur_sq16[2 * j];
+                        uint32_t v1 = (2 * j + 1 < dim)
+                                      ? (uint32_t)(uint16_t)cur_sq16[2 * j + 1]
+                                      : 0;
+                        q_p = _mm256_set1_epi32((int32_t)((v1 << 16) | v0));
+                    }
+
+                    __m256i c_pair = _mm256_load_si256((const __m256i *)(blk_ptr + j * 8));
+                    __m256i diff = _mm256_sub_epi16(q_p, c_pair);
+                    acc = _mm256_add_epi32(acc, _mm256_madd_epi16(diff, diff));
+
+                    /* Checkpoint every 8 pairs (16 dimensions) */
+                    if ((j & 7) == 7 && j + 1 < num_pairs)
+                    {
+                        __m256i v_acc_b = _mm256_xor_si256(acc, v_bias256);
+                        __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);
+                        if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp)) == 0xFF)
+                        {
+                            int base = b * 8;
+                            _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                                _mm256_setzero_si256());
+                            pruned_count += 8;
+                            pruned = 1;
+                            break;
+                        }
+                    }
+                } // for (int j = 0; j < num_pairs; j++)
+
+                if (!pruned)
+                {
+                    __m256i v_acc_b = _mm256_xor_si256(acc, v_bias256);
+                    __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);
+                    int mask = _mm256_movemask_ps(_mm256_castsi256_ps(cmp));
+
+                    int base = b * 8;
+                    if (mask == 0xFF)
+                    {
+                        _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                            _mm256_setzero_si256());
+                        pruned_count += 8;
+                    }
+                    else
+                    {
+                        for (int k = 0; k < 8; k++)
+                        {
+                            if ((mask & (1 << k)) != 0)
+                            {
+                                clmembflag[base + k] = 0;
+                                pruned_count++;
+                            }
+                            else
+                            {
+                                clmembflag[base + k] = 1;
+                                active_clusters[num_active++] = base + k;
+                            }
+                        }
+                    }
+                }
+            } // for (int b = 0; b < num_blocks; b++)
+
+            /* Remainder clusters (< 8) */
+            for (int i = rem_start; i < num_clusters; i++)
+            {
+                const int16_t *ak_ptr = anchor_matrix + (size_t)i * dim;
+                uint32_t total = 0;
+                int rem_pruned = 0;
+                for (long d = 0; d < dim; d += 16)
+                {
+                    if (d + 16 <= dim)
+                    {
+                        __m256i qd = _mm256_loadu_si256((const __m256i *)(cur_sq16 + d));
+                        __m256i ad = _mm256_loadu_si256((const __m256i *)(ak_ptr + d));
+                        __m256i diff = _mm256_sub_epi16(qd, ad);
+                        __m256i madd = _mm256_madd_epi16(diff, diff);
+                        total += sq16_reduce_add_epi32_avx2(madd);
+                    }
+                    else
+                    {
+                        for (long rem = d; rem < dim; rem++)
+                        {
+                            int32_t df = (int32_t)cur_sq16[rem] - (int32_t)ak_ptr[rem];
+                            total += (uint32_t)(df * df);
+                        }
+                    }
+                    if (total > thresh32)
+                    {
+                        rem_pruned = 1;
+                        break;
+                    }
+                }
+                if (rem_pruned)
+                {
+                    clmembflag[i] = 0;
+                    pruned_count++;
+                }
+                else
+                {
+                    clmembflag[i] = 1;
+                    active_clusters[num_active++] = i;
+                }
+            }
+
+            #undef SQ16_PREBROADCAST_PAIRS
+            *out_num_active = num_active;
+            if (out_pruned_count)
+            {
+                *out_pruned_count = pruned_count;
+            }
+            return;
+        }
+    } // if (anchor_interleaved != NULL)
+
     if (dim == 128)
     {
         __m256i q0 = _mm256_load_si256((const __m256i *)(cur_sq16 + 0));
@@ -1267,208 +1575,10 @@ static void sq16_filter_anchor_matrix_avx2(
         __m256i q5 = _mm256_load_si256((const __m256i *)(cur_sq16 + 80));
         __m256i q6 = _mm256_load_si256((const __m256i *)(cur_sq16 + 96));
         __m256i q7 = _mm256_load_si256((const __m256i *)(cur_sq16 + 112));
-        if (anchor_chunk0 != NULL)
+
+        int i = 0;
+        for (; i + 3 < num_clusters; i += 4)
         {
-            int i = 0;
-            for (; i + 3 < num_clusters; i += 4)
-            {
-                if (i + 12 < num_clusters)
-                {
-                    _mm_prefetch((const char *)(anchor_chunk0 + (size_t)(i + 8) * 32),
-                                 _MM_HINT_T0);
-                    _mm_prefetch((const char *)(anchor_chunk0 + (size_t)(i + 10) * 32),
-                                 _MM_HINT_T0);
-                }
-
-                const int16_t *c0_ptr = anchor_chunk0 + (size_t)i * 32;
-
-                // Chunk 0: Anchor 0
-                __m256i a0_0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 0));
-                __m256i a0_1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 16));
-                __m256i d0_0 = _mm256_sub_epi16(q0, a0_0);
-                __m256i d0_1 = _mm256_sub_epi16(q1, a0_1);
-                __m256i acc0 = _mm256_add_epi32(_mm256_madd_epi16(d0_0, d0_0),
-                                                _mm256_madd_epi16(d0_1, d0_1));
-
-                // Chunk 0: Anchor 1
-                __m256i a1_0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 32));
-                __m256i a1_1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 48));
-                __m256i d1_0 = _mm256_sub_epi16(q0, a1_0);
-                __m256i d1_1 = _mm256_sub_epi16(q1, a1_1);
-                __m256i acc1 = _mm256_add_epi32(_mm256_madd_epi16(d1_0, d1_0),
-                                                _mm256_madd_epi16(d1_1, d1_1));
-
-                // Chunk 0: Anchor 2
-                __m256i a2_0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 64));
-                __m256i a2_1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 80));
-                __m256i d2_0 = _mm256_sub_epi16(q0, a2_0);
-                __m256i d2_1 = _mm256_sub_epi16(q1, a2_1);
-                __m256i acc2 = _mm256_add_epi32(_mm256_madd_epi16(d2_0, d2_0),
-                                                _mm256_madd_epi16(d2_1, d2_1));
-
-                // Chunk 0: Anchor 3
-                __m256i a3_0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 96));
-                __m256i a3_1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 112));
-                __m256i d3_0 = _mm256_sub_epi16(q0, a3_0);
-                __m256i d3_1 = _mm256_sub_epi16(q1, a3_1);
-                __m256i acc3 = _mm256_add_epi32(_mm256_madd_epi16(d3_0, d3_0),
-                                                _mm256_madd_epi16(d3_1, d3_1));
-
-                __m128i s0 = _mm_add_epi32(_mm256_castsi256_si128(acc0),
-                                           _mm256_extracti128_si256(acc0, 1));
-                __m128i s1 = _mm_add_epi32(_mm256_castsi256_si128(acc1),
-                                           _mm256_extracti128_si256(acc1, 1));
-                __m128i s2 = _mm_add_epi32(_mm256_castsi256_si128(acc2),
-                                           _mm256_extracti128_si256(acc2, 1));
-                __m128i s3 = _mm_add_epi32(_mm256_castsi256_si128(acc3),
-                                           _mm256_extracti128_si256(acc3, 1));
-
-                __m128i t0 = _mm_unpacklo_epi32(s0, s1);
-                __m128i t1 = _mm_unpackhi_epi32(s0, s1);
-                __m128i t2 = _mm_unpacklo_epi32(s2, s3);
-                __m128i t3 = _mm_unpackhi_epi32(s2, s3);
-
-                __m128i u0 = _mm_unpacklo_epi64(t0, t2);
-                __m128i u1 = _mm_unpackhi_epi64(t0, t2);
-                __m128i u2 = _mm_unpacklo_epi64(t1, t3);
-                __m128i u3 = _mm_unpackhi_epi64(t1, t3);
-
-                __m128i sum4 = _mm_add_epi32(_mm_add_epi32(u0, u1),
-                                             _mm_add_epi32(u2, u3));
-
-                __m128i v_sum_b = _mm_xor_si128(sum4, v_bias);
-                __m128i cmp = _mm_cmpgt_epi32(v_sum_b, v_cut);
-                int mask = _mm_movemask_ps(_mm_castsi128_ps(cmp));
-
-                if (mask == 0xF)
-                {
-                    _mm_storeu_si128((__m128i *)(clmembflag + i), _mm_setzero_si128());
-                    pruned_count += 4;
-                    continue;
-                }
-
-                uint32_t s4[4];
-                _mm_storeu_si128((__m128i *)s4, sum4);
-
-                for (int k = 0; k < 4; k++)
-                {
-                    if ((mask & (1 << k)) != 0)
-                    {
-                        clmembflag[i + k] = 0;
-                        pruned_count++;
-                        continue;
-                    }
-
-                    const int16_t *ak_ptr = anchor_matrix + (size_t)(i + k) * 128;
-                    uint32_t total = s4[k];
-
-                    // Chunk 1: dims 32..63
-                    __m256i a2 = _mm256_load_si256((const __m256i *)(ak_ptr + 32));
-                    __m256i a3 = _mm256_load_si256((const __m256i *)(ak_ptr + 48));
-                    __m256i d2 = _mm256_sub_epi16(q2, a2);
-                    __m256i d3 = _mm256_sub_epi16(q3, a3);
-                    __m256i acc_c1 = _mm256_add_epi32(_mm256_madd_epi16(d2, d2),
-                                                      _mm256_madd_epi16(d3, d3));
-                    total += sq16_reduce_add_epi32_avx2(acc_c1);
-                    if (total > thresh32)
-                    {
-                        clmembflag[i + k] = 0;
-                        pruned_count++;
-                        continue;
-                    }
-
-                    // Chunk 2 & 3: dims 64..127
-                    __m256i a4 = _mm256_load_si256((const __m256i *)(ak_ptr + 64));
-                    __m256i a5 = _mm256_load_si256((const __m256i *)(ak_ptr + 80));
-                    __m256i d4 = _mm256_sub_epi16(q4, a4);
-                    __m256i d5 = _mm256_sub_epi16(q5, a5);
-                    __m256i acc_c23 = _mm256_add_epi32(_mm256_madd_epi16(d4, d4),
-                                                       _mm256_madd_epi16(d5, d5));
-
-                    __m256i a6 = _mm256_load_si256((const __m256i *)(ak_ptr + 96));
-                    __m256i a7 = _mm256_load_si256((const __m256i *)(ak_ptr + 112));
-                    __m256i d6 = _mm256_sub_epi16(q6, a6);
-                    __m256i d7 = _mm256_sub_epi16(q7, a7);
-                    acc_c23 = _mm256_add_epi32(acc_c23, _mm256_madd_epi16(d6, d6));
-                    acc_c23 = _mm256_add_epi32(acc_c23, _mm256_madd_epi16(d7, d7));
-
-                    total += sq16_reduce_add_epi32_avx2(acc_c23);
-                    if (total > thresh32)
-                    {
-                        clmembflag[i + k] = 0;
-                        pruned_count++;
-                        continue;
-                    }
-
-                    clmembflag[i + k] = 1;
-                    active_clusters[num_active++] = i + k;
-                }
-            } // for (; i + 3 < num_clusters; i += 4)
-
-            for (; i < num_clusters; i++)
-            {
-                const int16_t *c0_ptr = anchor_chunk0 + (size_t)i * 32;
-
-                // Chunk 0: dims 0..31
-                __m256i a0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 0));
-                __m256i a1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 16));
-                __m256i d0 = _mm256_sub_epi16(q0, a0);
-                __m256i d1 = _mm256_sub_epi16(q1, a1);
-                __m256i acc = _mm256_add_epi32(_mm256_madd_epi16(d0, d0),
-                                               _mm256_madd_epi16(d1, d1));
-                if (sq16_reduce_add_epi32_avx2(acc) > thresh32)
-                {
-                    clmembflag[i] = 0;
-                    pruned_count++;
-                    continue;
-                }
-
-                const int16_t *ak_ptr = anchor_matrix + (size_t)i * 128;
-
-                // Chunk 1: dims 32..63
-                __m256i a2 = _mm256_load_si256((const __m256i *)(ak_ptr + 32));
-                __m256i a3 = _mm256_load_si256((const __m256i *)(ak_ptr + 48));
-                __m256i d2 = _mm256_sub_epi16(q2, a2);
-                __m256i d3 = _mm256_sub_epi16(q3, a3);
-                acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d2, d2));
-                acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d3, d3));
-                if (sq16_reduce_add_epi32_avx2(acc) > thresh32)
-                {
-                    clmembflag[i] = 0;
-                    pruned_count++;
-                    continue;
-                }
-
-                // Chunk 2 & 3: dims 64..127
-                __m256i a4 = _mm256_load_si256((const __m256i *)(ak_ptr + 64));
-                __m256i a5 = _mm256_load_si256((const __m256i *)(ak_ptr + 80));
-                __m256i d4 = _mm256_sub_epi16(q4, a4);
-                __m256i d5 = _mm256_sub_epi16(q5, a5);
-                acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d4, d4));
-                acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d5, d5));
-
-                __m256i a6 = _mm256_load_si256((const __m256i *)(ak_ptr + 96));
-                __m256i a7 = _mm256_load_si256((const __m256i *)(ak_ptr + 112));
-                __m256i d6 = _mm256_sub_epi16(q6, a6);
-                __m256i d7 = _mm256_sub_epi16(q7, a7);
-                acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d6, d6));
-                acc = _mm256_add_epi32(acc, _mm256_madd_epi16(d7, d7));
-                if (sq16_reduce_add_epi32_avx2(acc) > thresh32)
-                {
-                    clmembflag[i] = 0;
-                    pruned_count++;
-                    continue;
-                }
-
-                clmembflag[i] = 1;
-                active_clusters[num_active++] = i;
-            } // for (; i < num_clusters; i++)
-        }
-        else
-        {
-            int i = 0;
-            for (; i + 3 < num_clusters; i += 4)
-            {
                 if (i + 12 < num_clusters)
                 {
                     _mm_prefetch((const char *)(anchor_matrix + (size_t)(i + 8) * 128),
@@ -1649,7 +1759,6 @@ static void sq16_filter_anchor_matrix_avx2(
                 clmembflag[i] = 1;
                 active_clusters[num_active++] = i;
             } // for (; i < num_clusters; i++)
-        }
     }
     else if (dim <= 64)
     {
@@ -1657,7 +1766,7 @@ static void sq16_filter_anchor_matrix_avx2(
         {
             __m256i q0 = _mm256_loadu_si256((const __m256i *)(cur_sq16 + 0));
             __m256i q1 = _mm256_loadu_si256((const __m256i *)(cur_sq16 + 16));
-            const int16_t *src = (anchor_chunk0 != NULL) ? anchor_chunk0 : anchor_matrix;
+            const int16_t *src = anchor_matrix;
             int i = 0;
             for (; i + 3 < num_clusters; i += 4)
             {
@@ -1745,34 +1854,18 @@ static void sq16_filter_anchor_matrix_avx2(
             int i = 0;
             for (; i + 3 < num_clusters; i += 4)
             {
-                __m256i a0_0, a0_1, a1_0, a1_1, a2_0, a2_1, a3_0, a3_1;
-                if (anchor_chunk0 != NULL)
-                {
-                    const int16_t *c0_ptr = anchor_chunk0 + (size_t)i * 32;
-                    a0_0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 0));
-                    a0_1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 16));
-                    a1_0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 32));
-                    a1_1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 48));
-                    a2_0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 64));
-                    a2_1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 80));
-                    a3_0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 96));
-                    a3_1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 112));
-                }
-                else
-                {
-                    const int16_t *a0_ptr = anchor_matrix + (size_t)(i + 0) * dim;
-                    const int16_t *a1_ptr = anchor_matrix + (size_t)(i + 1) * dim;
-                    const int16_t *a2_ptr = anchor_matrix + (size_t)(i + 2) * dim;
-                    const int16_t *a3_ptr = anchor_matrix + (size_t)(i + 3) * dim;
-                    a0_0 = _mm256_loadu_si256((const __m256i *)(a0_ptr + 0));
-                    a0_1 = _mm256_loadu_si256((const __m256i *)(a0_ptr + 16));
-                    a1_0 = _mm256_loadu_si256((const __m256i *)(a1_ptr + 0));
-                    a1_1 = _mm256_loadu_si256((const __m256i *)(a1_ptr + 16));
-                    a2_0 = _mm256_loadu_si256((const __m256i *)(a2_ptr + 0));
-                    a2_1 = _mm256_loadu_si256((const __m256i *)(a2_ptr + 16));
-                    a3_0 = _mm256_loadu_si256((const __m256i *)(a3_ptr + 0));
-                    a3_1 = _mm256_loadu_si256((const __m256i *)(a3_ptr + 16));
-                }
+                const int16_t *a0_ptr = anchor_matrix + (size_t)(i + 0) * dim;
+                const int16_t *a1_ptr = anchor_matrix + (size_t)(i + 1) * dim;
+                const int16_t *a2_ptr = anchor_matrix + (size_t)(i + 2) * dim;
+                const int16_t *a3_ptr = anchor_matrix + (size_t)(i + 3) * dim;
+                __m256i a0_0 = _mm256_loadu_si256((const __m256i *)(a0_ptr + 0));
+                __m256i a0_1 = _mm256_loadu_si256((const __m256i *)(a0_ptr + 16));
+                __m256i a1_0 = _mm256_loadu_si256((const __m256i *)(a1_ptr + 0));
+                __m256i a1_1 = _mm256_loadu_si256((const __m256i *)(a1_ptr + 16));
+                __m256i a2_0 = _mm256_loadu_si256((const __m256i *)(a2_ptr + 0));
+                __m256i a2_1 = _mm256_loadu_si256((const __m256i *)(a2_ptr + 16));
+                __m256i a3_0 = _mm256_loadu_si256((const __m256i *)(a3_ptr + 0));
+                __m256i a3_1 = _mm256_loadu_si256((const __m256i *)(a3_ptr + 16));
 
                 __m256i d0_0 = _mm256_sub_epi16(q0, a0_0);
                 __m256i d0_1 = _mm256_sub_epi16(q1, a0_1);
@@ -1851,9 +1944,7 @@ static void sq16_filter_anchor_matrix_avx2(
 
             for (; i < num_clusters; i++)
             {
-                const int16_t *c0 = (anchor_chunk0 != NULL)
-                                    ? (anchor_chunk0 + (size_t)i * 32)
-                                    : (anchor_matrix + (size_t)i * dim);
+                const int16_t *c0 = anchor_matrix + (size_t)i * dim;
                 __m256i a0 = _mm256_loadu_si256((const __m256i *)(c0 + 0));
                 __m256i a1 = _mm256_loadu_si256((const __m256i *)(c0 + 16));
                 __m256i d0 = _mm256_sub_epi16(q0, a0);
@@ -1898,24 +1989,6 @@ static void sq16_filter_anchor_matrix_avx2(
             int pruned = 0;
             long d = 0;
 
-            if (anchor_chunk0 != NULL && dim >= 32)
-            {
-                __m256i q0 = _mm256_loadu_si256((const __m256i *)(cur_sq16 + 0));
-                __m256i q1 = _mm256_loadu_si256((const __m256i *)(cur_sq16 + 16));
-                const int16_t *c0_ptr = anchor_chunk0 + (size_t)i * 32;
-                __m256i a0 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 0));
-                __m256i a1 = _mm256_loadu_si256((const __m256i *)(c0_ptr + 16));
-                __m256i d0 = _mm256_sub_epi16(q0, a0);
-                __m256i d1 = _mm256_sub_epi16(q1, a1);
-                __m256i acc = _mm256_add_epi32(_mm256_madd_epi16(d0, d0),
-                                               _mm256_madd_epi16(d1, d1));
-                total = sq16_reduce_add_epi32_avx2(acc);
-                if (total > thresh32)
-                {
-                    pruned = 1;
-                }
-                d = 32;
-            }
 
             if (!pruned)
             {
@@ -1986,7 +2059,7 @@ static void sq16_filter_anchor_matrix_avx2(
 static void sq16_filter_anchor_matrix_scalar(
     const int16_t *restrict cur_sq16,
     const int16_t *restrict anchor_matrix,
-    const int16_t *restrict anchor_chunk0,
+    const int32_t *restrict anchor_interleaved,
     int                     num_clusters,
     long                    dim,
     uint64_t                sq16_ssd_thresh,
@@ -1997,20 +2070,31 @@ static void sq16_filter_anchor_matrix_scalar(
 {
     int num_active = 0;
     int pruned_count = 0;
+    int num_pairs = (int)((dim + 1) / 2);
+    size_t blk_stride = (size_t)num_pairs * 8;
 
     for (int i = 0; i < num_clusters; i++)
     {
         uint64_t total = 0;
         int pruned = 0;
-        long d = 0;
 
-        if (anchor_chunk0 != NULL && dim >= 32)
+        if (anchor_interleaved != NULL)
         {
-            const int16_t *c0_ptr = anchor_chunk0 + (size_t)i * 32;
-            for (; d < 32; d++)
+            int b = i / 8;
+            int k = i % 8;
+            size_t blk_base = (size_t)b * blk_stride + (size_t)k;
+            for (int j = 0; j < num_pairs; j++)
             {
-                int32_t diff = (int32_t)cur_sq16[d] - (int32_t)c0_ptr[d];
-                total += (uint64_t)(diff * diff);
+                uint32_t pair = (uint32_t)anchor_interleaved[blk_base + (size_t)j * 8];
+                int32_t c0 = (int32_t)(int16_t)(pair & 0xFFFF);
+                int32_t c1 = (int32_t)(int16_t)(pair >> 16);
+                int32_t diff0 = (int32_t)cur_sq16[2 * j] - c0;
+                total += (uint64_t)(diff0 * diff0);
+                if (2 * j + 1 < dim)
+                {
+                    int32_t diff1 = (int32_t)cur_sq16[2 * j + 1] - c1;
+                    total += (uint64_t)(diff1 * diff1);
+                }
                 if (total > sq16_ssd_thresh)
                 {
                     pruned = 1;
@@ -2018,11 +2102,10 @@ static void sq16_filter_anchor_matrix_scalar(
                 }
             }
         }
-
-        if (!pruned)
+        else
         {
             const int16_t *a_ptr = anchor_matrix + (size_t)i * dim;
-            for (; d < dim; d++)
+            for (long d = 0; d < dim; d++)
             {
                 int32_t diff = (int32_t)cur_sq16[d] - (int32_t)a_ptr[d];
                 total += (uint64_t)(diff * diff);
@@ -2055,20 +2138,21 @@ static void sq16_filter_anchor_matrix_scalar(
 
 /**
  * sq16_filter_anchor_matrix() - Bulk filter cluster anchors using SQ16 lower bounds.
- * @cur_sq16:         Query int16 array [dim].
- * @anchor_matrix:    Contiguous anchor matrix [num_clusters x dim].
- * @num_clusters:     Cluster count.
- * @dim:              Vector dimensionality.
- * @sq16_ssd_thresh:  Squared distance cutoff threshold.
- * @clmembflag:       Candidate flags array (0 = pruned).
- * @active_clusters:  Surviving cluster indices array.
- * @out_num_active:   Count of surviving clusters.
- * @out_pruned_count: Count of pruned clusters.
+ * @cur_sq16:           Query int16 array [dim].
+ * @anchor_matrix:      Contiguous anchor matrix [num_clusters x dim].
+ * @anchor_interleaved: Interleaved anchor matrix [num_blocks x num_pairs x 8].
+ * @num_clusters:       Cluster count.
+ * @dim:                Vector dimensionality.
+ * @sq16_ssd_thresh:    Squared distance cutoff threshold.
+ * @clmembflag:         Candidate flags array (0 = pruned).
+ * @active_clusters:    Surviving cluster indices array.
+ * @out_num_active:     Count of surviving clusters.
+ * @out_pruned_count:   Count of pruned clusters.
  */
 void sq16_filter_anchor_matrix(
     const int16_t *restrict cur_sq16,
     const int16_t *restrict anchor_matrix,
-    const int16_t *restrict anchor_chunk0,
+    const int32_t *restrict anchor_interleaved,
     int                     num_clusters,
     long                    dim,
     uint64_t                sq16_ssd_thresh,
@@ -2093,7 +2177,7 @@ void sq16_filter_anchor_matrix(
 #if GRIC_HAVE_AVX512_TARGET
     if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
     {
-        sq16_filter_anchor_matrix_avx512(cur_sq16, anchor_matrix, anchor_chunk0,
+        sq16_filter_anchor_matrix_avx512(cur_sq16, anchor_matrix, anchor_interleaved,
                                          num_clusters, dim, sq16_ssd_thresh,
                                          clmembflag, active_clusters,
                                          out_num_active, out_pruned_count);
@@ -2103,9 +2187,9 @@ void sq16_filter_anchor_matrix(
 
 #if !defined(__CUDACC__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 32)
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 16)
     {
-        sq16_filter_anchor_matrix_avx2(cur_sq16, anchor_matrix, anchor_chunk0,
+        sq16_filter_anchor_matrix_avx2(cur_sq16, anchor_matrix, anchor_interleaved,
                                        num_clusters, dim, sq16_ssd_thresh,
                                        clmembflag, active_clusters,
                                        out_num_active, out_pruned_count);
@@ -2113,7 +2197,7 @@ void sq16_filter_anchor_matrix(
     }
 #endif
 
-    sq16_filter_anchor_matrix_scalar(cur_sq16, anchor_matrix, anchor_chunk0,
+    sq16_filter_anchor_matrix_scalar(cur_sq16, anchor_matrix, anchor_interleaved,
                                      num_clusters, dim, sq16_ssd_thresh,
                                      clmembflag, active_clusters,
                                      out_num_active, out_pruned_count);

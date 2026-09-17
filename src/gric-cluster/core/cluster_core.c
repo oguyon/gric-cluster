@@ -762,10 +762,10 @@ void run_clustering(
         }
     }
 
-    if (state->anchor_matrix_sq16_chunk0)
+    if (state->anchor_matrix_sq16_interleaved)
     {
-        free(state->anchor_matrix_sq16_chunk0);
-        state->anchor_matrix_sq16_chunk0 = NULL;
+        free(state->anchor_matrix_sq16_interleaved);
+        state->anchor_matrix_sq16_interleaved = NULL;
     }
 
     free(sorting_candidates);
