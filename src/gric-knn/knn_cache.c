@@ -228,6 +228,7 @@ static uint64_t knn_rq8_sidecar_fingerprint(
             continue;
         }
         hash = knn_hash_bytes_u64(hash, &c, sizeof(c));
+        hash = knn_hash_bytes_u64(hash, &model->clusters[c].radius, sizeof(double));
         hash = knn_hash_bytes_u64(
             hash, model->clusters[c].anchor_data,
             (size_t)model->frame_elements * anchor_elem_size
@@ -733,6 +734,17 @@ int knn_model_build_or_load_rq8(
         eff_rlim = 1.0;
     }
     rq8_init_params(&model->rq8_params, (float)eff_rlim, dim);
+
+    for (int c = 0; c < model->num_clusters; c++)
+    {
+        double cl_r = model->clusters[c].radius;
+        if (cl_r <= 0.0)
+        {
+            cl_r = (model->model_rlim > 0.0) ? model->model_rlim : eff_rlim;
+        }
+        rq8_init_params(&model->clusters[c].rq8_params, (float)cl_r, dim);
+    }
+
     uint64_t expected_fingerprint = knn_rq8_sidecar_fingerprint(model);
 
     // Path 1: Load precomputed sidecar file if path specified
@@ -798,12 +810,14 @@ int knn_model_build_or_load_rq8(
             if (model->is_double)
             {
                 const double *src = (const double *)model->dataset_buffer + (size_t)i * (size_t)dim;
-                rq8_quantize_residual_double(src, (const double *)anchor, dst, &model->rq8_params);
+                rq8_quantize_residual_double(src, (const double *)anchor, dst,
+                                             &model->clusters[c].rq8_params);
             }
             else
             {
                 const float *src = (const float *)model->dataset_buffer + (size_t)i * (size_t)dim;
-                rq8_quantize_residual_float(src, (const float *)anchor, dst, &model->rq8_params);
+                rq8_quantize_residual_float(src, (const float *)anchor, dst,
+                                            &model->clusters[c].rq8_params);
             }
         } // for (long i = 0; i < N; i++)
     }
@@ -864,12 +878,14 @@ int knn_model_build_or_load_rq8(
             if (model->is_double)
             {
                 rq8_quantize_residual_double((const double *)frame_buf,
-                                             (const double *)anchor, dst, &model->rq8_params);
+                                             (const double *)anchor, dst,
+                                             &model->clusters[c].rq8_params);
             }
             else
             {
                 rq8_quantize_residual_float((const float *)frame_buf,
-                                            (const float *)anchor, dst, &model->rq8_params);
+                                            (const float *)anchor, dst,
+                                            &model->clusters[c].rq8_params);
             }
         } // for (long i = 0; i < N; i++)
 

@@ -190,6 +190,30 @@ void run_clustering(
         }
     } // Check for multi-tile mode
 
+    /* Resolve automatic quantization default if not explicitly set */
+    if (config->optim.use_sq8 < 0 && config->optim.use_sq16 < 0)
+    {
+        long dim = get_frame_width() * get_frame_height();
+        if (dim >= 32)
+        {
+            config->optim.use_sq16 = 1;
+            config->optim.use_sq8 = 0;
+        }
+        else
+        {
+            config->optim.use_sq8 = 1;
+            config->optim.use_sq16 = 0;
+        }
+    }
+    else if (config->optim.use_sq8 < 0)
+    {
+        config->optim.use_sq8 = 0;
+    }
+    else if (config->optim.use_sq16 < 0)
+    {
+        config->optim.use_sq16 = 0;
+    }
+
     long actual_frames = get_num_frames();
     if (actual_frames > config->input.maxnbfr)
     {

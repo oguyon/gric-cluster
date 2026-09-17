@@ -49,6 +49,29 @@ static void prepare_frame_quantization(
     ClusterState  *state,
     const Frame   *current_frame)
 {
+    if (config->optim.use_sq8 < 0 && config->optim.use_sq16 < 0)
+    {
+        long frame_dim = current_frame->width * current_frame->height;
+        if (frame_dim >= 32)
+        {
+            config->optim.use_sq16 = 1;
+            config->optim.use_sq8 = 0;
+        }
+        else
+        {
+            config->optim.use_sq8 = 1;
+            config->optim.use_sq16 = 0;
+        }
+    }
+    else if (config->optim.use_sq8 < 0)
+    {
+        config->optim.use_sq8 = 0;
+    }
+    else if (config->optim.use_sq16 < 0)
+    {
+        config->optim.use_sq16 = 0;
+    }
+
     if (config->optim.use_sq16)
     {
         long frame_dim = current_frame->width * current_frame->height;

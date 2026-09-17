@@ -622,7 +622,9 @@ static void knn_eval_members_rq8_blocks(
         if (current_tau != last_tau)
         {
             last_tau = current_tau;
-            cached_ssd_cutoff = compute_rq8_cutoff_thresh(current_tau, model, config);
+            cached_ssd_cutoff = compute_rq8_cutoff_thresh_cluster(
+                current_tau, &cl->rq8_params, config
+            );
         }
 
         const int8_t *b_coords = cl->rq8_transposed +
@@ -971,7 +973,9 @@ static void knn_eval_members_annular(
             if (current_tau != last_tau)
             {
                 last_tau = current_tau;
-                cached_ssd_cutoff = compute_rq8_cutoff_thresh(current_tau, model, config);
+                cached_ssd_cutoff = compute_rq8_cutoff_thresh_cluster(
+                    current_tau, &cl->rq8_params, config
+                );
             }
 
             const int8_t *cand_rq8 = model->rq8_dataset_buffer +
@@ -1103,7 +1107,7 @@ void knn_eval_cluster_members(
                 (const double *)query_data,
                 (const double *)cl->anchor_data,
                 visited->query_rq8,
-                &model->rq8_params);
+                &cl->rq8_params);
         }
         else
         {
@@ -1111,7 +1115,7 @@ void knn_eval_cluster_members(
                 (const float *)query_data,
                 (const float *)cl->anchor_data,
                 visited->query_rq8,
-                &model->rq8_params);
+                &cl->rq8_params);
         }
         rq8_active = !visited->query_rq8_clipped;
     }

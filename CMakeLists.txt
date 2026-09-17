@@ -726,6 +726,37 @@ endif()
 add_test(NAME test_knn_rq8_sidecar_mismatch
     COMMAND test_knn_rq8_sidecar_mismatch)
 
+add_executable(test_knn_adaptive_rq8
+    tests/test_knn_adaptive_rq8.c
+    src/gric-knn/knn_cache.c
+    src/gric-knn/knn_cache_layout.c
+    src/gric-knn/knn_reader.c
+    src/gric-knn/knn_pruning.c
+    src/gric-knn/knn_heap.c
+    src/gric-cluster/math/framedistance.c
+    src/gric-cluster/math/framedistance_cutoff.c
+    src/gric-cluster/math/framedistance_batch.c
+    src/gric-cluster/math/cluster_gemm_dist.c
+    src/shared/gric_bin_io.c
+    src/shared/scalar_quant.c
+    src/shared/scalar_quant_fastscan.c
+    src/shared/residual_quant.c
+    src/shared/product_quant.c
+    src/shared/gric_simd.c
+)
+target_include_directories(test_knn_adaptive_rq8
+    PRIVATE src/gric-knn src/gric-cluster/math src/shared)
+target_link_libraries(test_knn_adaptive_rq8 m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_knn_adaptive_rq8 OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_knn_adaptive_rq8 ${CFITSIO_LIBRARIES})
+    target_include_directories(test_knn_adaptive_rq8 PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_knn_adaptive_rq8
+    COMMAND test_knn_adaptive_rq8)
+
 add_executable(test_gemm_dist
     tests/test_gemm_dist.c
     src/gric-cluster/math/cluster_gemm_dist.c

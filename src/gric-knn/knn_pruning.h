@@ -281,6 +281,11 @@ uint64_t compute_rq8_cutoff_thresh(
     const KnnModel  *model,
     const KnnConfig *config);
 
+uint64_t compute_rq8_cutoff_thresh_cluster(
+    double           cur_tau,
+    const RQ8Params *params,
+    const KnnConfig *config);
+
 int is_member_pruned_by_rq8(
     const int16_t   *query_rq8,
     long             cand_id,
