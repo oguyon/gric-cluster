@@ -87,8 +87,10 @@ typedef struct
     double    xtile_decay;             /**< Decay coefficient for CPT history (0.0 to 1.0] */
     int       use_sq8;                 /**< 1 to enable 8-bit scalar quantization pruning */
     SQ8Params sq8_params;              /**< Uniform scalar quantization parameters */
+    int       sq8_calibrated;          /**< 1 if SQ8 parameters are pre-calibrated */
     int       use_sq16;                /**< 1 to enable 16-bit scalar quantization pruning */
     SQ16Params sq16_params;            /**< Uniform 16-bit scalar quantization parameters */
+    int       sq16_calibrated;         /**< 1 if SQ16 parameters are pre-calibrated */
     int       use_memo;                /**< 1 to enable quantized hash memoization cache */
     double    sq16_ratio;              /**< Max ratio sqrt(D)*scale / rlim (default 0.05) */
     int       use_batch_dist;          /**< 1 to enable multi-vector SIMD batch distance */

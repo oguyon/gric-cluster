@@ -108,17 +108,44 @@ static void prepare_frame_quantization(
 
             state->sq16_calibrated = 1;
         }
-        if (current_frame->is_double)
+        if (config->optim.use_memo && state->scratch.memo_table.rlim == 0.0)
         {
-            sq16_quantize_double((const double *)current_frame->data,
-                                 state->current_frame_sq16,
-                                 &config->optim.sq16_params);
+            state->scratch.memo_table.err_radius =
+                (double)config->optim.sq16_params.err_radius;
+            state->scratch.memo_table.rlim = config->algo.rlim;
+        }
+
+        if (state->perm_dim != NULL)
+        {
+            if (current_frame->is_double)
+            {
+                sq16_quantize_double_perm((const double *)current_frame->data,
+                                          state->current_frame_sq16,
+                                          &config->optim.sq16_params,
+                                          state->perm_dim);
+            }
+            else
+            {
+                sq16_quantize_float_perm((const float *)current_frame->data,
+                                         state->current_frame_sq16,
+                                         &config->optim.sq16_params,
+                                         state->perm_dim);
+            }
         }
         else
         {
-            sq16_quantize_float((const float *)current_frame->data,
-                                state->current_frame_sq16,
-                                &config->optim.sq16_params);
+            if (current_frame->is_double)
+            {
+                sq16_quantize_double((const double *)current_frame->data,
+                                     state->current_frame_sq16,
+                                     &config->optim.sq16_params);
+            }
+            else
+            {
+                sq16_quantize_float((const float *)current_frame->data,
+                                    state->current_frame_sq16,
+                                    &config->optim.sq16_params);
+            }
         }
     }
     else if (config->optim.use_sq8)
