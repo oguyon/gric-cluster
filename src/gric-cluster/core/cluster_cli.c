@@ -70,6 +70,7 @@ void cluster_cli_init_config_defaults(
     
         // Output defaults (enabled by default: dcc, anchors, counts, membership)
         config->output.output_dcc = 1;
+        config->output.dcc_sq16_output = 0;
         config->output.output_tm = 0;
         config->output.output_anchors = 1;
         config->output.output_counts = 1;

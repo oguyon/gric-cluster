@@ -136,6 +136,7 @@ typedef struct
     int             gpu_batch_size;     /**< Micro-batch size for GPU queries (0=auto) */
     int             gpu_nprobe;         /**< Max clusters to probe on GPU (0=adaptive) */
     int             use_gpu_bruteforce; /**< 1 to force dense GEMM brute-force on GPU */
+    int             use_dcc_sq16;       /**< 1 to enable 16-bit quantized DCC matrix filtering */
 } KnnConfig;
 
 /** Telemetry statistics for performance diagnostics */
@@ -190,6 +191,10 @@ typedef struct
     int              is_double;           /**< 1 if anchors & queries in double precision */
     KnnCluster      *clusters;
     double          *dcc_matrix;          /**< Dense M x M inter-cluster distance matrix */
+    uint16_t        *dcc_sq16;            /**< 16-bit quantized DCC matrix [M x M] */
+    double           dcc_sq16_scale;      /**< Scale factor (16384.0 / rlim) */
+    double           dcc_sq16_inv_scale;  /**< Inverse scale factor (1.0 / scale) */
+    uint16_t        *cluster_radii_sq16;  /**< Pre-quantized cluster radii [M] */
     int             *frame_cluster_map;   /**< Cluster ID for each frame index [0..N-1] */
     float           *frame_r_anchor;      /**< Distance to anchor for each frame [0..N-1] */
     int              is_fits_input;       /**< 1 if input dataset is FITS, 0 if ASCII */

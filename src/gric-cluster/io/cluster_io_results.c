@@ -47,7 +47,45 @@ static void write_dcc_results(
         dcc_hdr.dims[1] = state->num_clusters;
         dcc_hdr.num_elements = (uint64_t)state->num_clusters * (uint64_t)state->num_clusters;
 
-        if (config->algo.use_double)
+        if (config->output.dcc_sq16_output || config->optim.use_sq16)
+        {
+            dcc_hdr.data_type = GRIC_BIN_DTYPE_UINT16;
+            dcc_hdr.data_bytes = dcc_hdr.num_elements * sizeof(uint16_t);
+            char comment[128];
+            double s = (state->scratch.dcc_sq16_scale > 0.0)
+                ? state->scratch.dcc_sq16_scale
+                : (16384.0 / config->algo.rlim);
+            snprintf(comment, sizeof(comment), "DCC SQ16 scale=%.6f", s);
+            if (gric_bin_write_header(dcc_bin_fp, &dcc_hdr, comment) == 0)
+            {
+                uint16_t *dcc_buf = malloc(dcc_hdr.num_elements * sizeof(uint16_t));
+                if (dcc_buf != NULL)
+                {
+                    int maxnbc = config->algo.maxnbclust;
+                    for (int i = 0; i < state->num_clusters; i++)
+                    {
+                        for (int j = 0; j < state->num_clusters; j++)
+                        {
+                            if (state->scratch.dcc_sq16 != NULL)
+                            {
+                                dcc_buf[i * state->num_clusters + j] =
+                                    state->scratch.dcc_sq16[i * maxnbc + j];
+                            }
+                            else
+                            {
+                                double d = state->scratch.dcc_min[i * maxnbc + j];
+                                uint16_t q = (d <= 0.0) ? 0 :
+                                    ((d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5));
+                                dcc_buf[i * state->num_clusters + j] = q;
+                            }
+                        }
+                    }
+                    fwrite(dcc_buf, sizeof(uint16_t), dcc_hdr.num_elements, dcc_bin_fp);
+                    free(dcc_buf);
+                }
+            }
+        }
+        else if (config->algo.use_double)
         {
             dcc_hdr.data_type = GRIC_BIN_DTYPE_FLOAT64;
             dcc_hdr.data_bytes = dcc_hdr.num_elements * sizeof(double);

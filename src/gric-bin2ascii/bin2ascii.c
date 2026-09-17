@@ -229,6 +229,28 @@ int main(
             free(i32buf);
         }
     }
+    else if (dtype == GRIC_BIN_DTYPE_UINT16)
+    {
+        const char *fmt = (custom_fmt != NULL) ? custom_fmt : "%u";
+        uint16_t *u16buf = (uint16_t *)malloc(ncols * sizeof(uint16_t));
+        if (u16buf != NULL)
+        {
+            for (size_t r = 0; r < nrows; r++)
+            {
+                if (fread(u16buf, sizeof(uint16_t), ncols, in_fp) != ncols)
+                {
+                    break;
+                }
+                for (size_t c = 0; c < ncols; c++)
+                {
+                    fprintf(out_fp, fmt, (unsigned int)u16buf[c]);
+                    if (c + 1 < ncols) fprintf(out_fp, " ");
+                }
+                fprintf(out_fp, "\n");
+            }
+            free(u16buf);
+        }
+    }
     else
     {
         fprintf(stderr, "Error: Unsupported binary data type code %u\n", dtype);

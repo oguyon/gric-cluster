@@ -229,6 +229,7 @@ static void knn_cli_set_defaults(
     config->use_rq8 = 1;            // Enabled by default for 8-bit residual quantization
     config->use_sq8 = 0;            // Fallback scalar quantization
     config->use_sq16 = 0;
+    config->use_dcc_sq16 = 1;       // Enabled by default for 16-bit quantized DCC matrix
     config->sq16_ratio = 0.05;      // Enforce sqrt(D)*scale <= alpha*rlim
     config->use_memo = 1;           // Enabled by default for quantized memoization
     config->use_batch_dist = 1;     // Enabled by default for multi-vector SIMD batching
@@ -803,6 +804,16 @@ static int knn_cli_parse_quant_opt(
             return -1;
         }
         config->sq16_ratio = atof(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-dcc-sq16") == 0 || strcmp(argv[i], "--dcc-sq16") == 0)
+    {
+        config->use_dcc_sq16 = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-dcc-sq16") == 0 || strcmp(argv[i], "--no-dcc-sq16") == 0)
+    {
+        config->use_dcc_sq16 = 0;
         return 1;
     }
     if (strcmp(argv[i], "-memo") == 0 || strcmp(argv[i], "--memo") == 0)
