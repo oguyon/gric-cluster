@@ -109,14 +109,26 @@ const char *gric_simd_level_to_string(
  *
  * Return: true if AVX-512 VNNI is supported, false otherwise.
  */
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#if defined(__GNUC__) || defined(__clang__)
+#include <cpuid.h>
+#endif
+#endif
+
 bool gric_has_avx512_vnni(void)
 {
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #if defined(__GNUC__) || defined(__clang__)
-    __builtin_cpu_init();
-    return __builtin_cpu_supports("avx512vnni") &&
-           __builtin_cpu_supports("avx512f") &&
-           __builtin_cpu_supports("avx512bw");
+    unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
+    __cpuid(0, eax, ebx, ecx, edx);
+    if (eax >= 7)
+    {
+        __cpuid_count(7, 0, eax, ebx, ecx, edx);
+        bool has_vnni = (ecx & (1u << 11)) != 0;
+        bool has_f    = (ebx & (1u << 16)) != 0;
+        bool has_bw   = (ebx & (1u << 30)) != 0;
+        return has_vnni && has_f && has_bw;
+    }
 #endif
 #endif
     return false;
@@ -131,9 +143,13 @@ bool gric_has_avx_vnni(void)
 {
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #if defined(__GNUC__) || defined(__clang__)
-    __builtin_cpu_init();
-    return __builtin_cpu_supports("avxvnni") &&
-           __builtin_cpu_supports("avx2");
+    unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
+    __cpuid(0, eax, ebx, ecx, edx);
+    if (eax >= 7)
+    {
+        __cpuid_count(7, 1, eax, ebx, ecx, edx);
+        return (eax & (1u << 4)) != 0;
+    }
 #endif
 #endif
     return false;
