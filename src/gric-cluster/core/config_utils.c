@@ -284,6 +284,11 @@ static int apply_algo_option(
         config->algo.pass2_nearest_mode = 0;
         return 0;
     }
+    else if (matches(key, "-no_tm") || matches(key, "-no-tm") || matches(key, "--no-tm"))
+    {
+        config->algo.tm_mixing_coeff = -1.0;
+        return 0;
+    }
     else if (matches(key, "-tm") || matches(key, "-tm_mix"))
     {
         if (!value)
@@ -701,6 +706,12 @@ static int apply_optim_tile_option(
         config->optim.xtile_decay = atof(value);
         return 1;
     }
+    else if (matches(key, "-no_tiles") || matches(key, "-no-tiles") || matches(key, "--no-tiles"))
+    {
+        config->input.tile_grid_x = -1;
+        config->input.tile_grid_y = -1;
+        return 0;
+    }
     else if (matches(key, "-tiles"))
     {
         if (!value)
@@ -786,6 +797,11 @@ static int apply_prediction_option(
                 config->optim.pred_n = n;
             }
         }
+        return 0;
+    }
+    else if (matches(key, "-no_pred") || matches(key, "-no-pred") || matches(key, "--no-pred"))
+    {
+        config->optim.pred_mode = -1;
         return 0;
     }
     else if (strncmp(key, "-pred", 5) == 0 || strncmp(key, "pred", 4) == 0)

@@ -3687,6 +3687,7 @@
         if (typeof updateSlotGenState === 'function') {
           updateSlotGenState(activeDatasetSlot, 'pending');
         }
+        await tryAutoLoadCompanionProfile(newBench, activeDatasetSlot);
       });
     }
 
@@ -4642,6 +4643,8 @@
         pruneMode = p;
         ['3P', '4P', '5P'].forEach(other => document.getElementById(`prune${other}`).classList.remove('active'));
         document.getElementById(`prune${p}`).classList.add('active');
+        syncControlDependencies();
+        updateCliCommand();
       });
     });
 
@@ -4809,7 +4812,7 @@
     // Sync Side Panel Input Stream Selectors
     const selBenchSide = document.getElementById('selectBenchmarkSide');
     if (selBenchSide) {
-      selBenchSide.addEventListener('change', (e) => {
+      selBenchSide.addEventListener('change', async (e) => {
         const newBench = e.target.value;
         const slot = datasetSlots[activeDatasetSlot];
         if (slot) {
@@ -4855,6 +4858,7 @@
         if (typeof updateSlotGenState === 'function') {
           updateSlotGenState(activeDatasetSlot, 'pending');
         }
+        await tryAutoLoadCompanionProfile(newBench, activeDatasetSlot);
       });
     }
 
@@ -5644,6 +5648,7 @@
         useSparseDcc: useSparseDcc,
         useTM: useTM,
         tmMixingCoeff: (typeof tmMixingCoeff === 'number') ? tmMixingCoeff : 0.50,
+        useTiles: (typeof useTiles !== 'undefined') ? useTiles : false,
         plotDimX: (typeof plotDimX === 'number') ? plotDimX : 0,
         plotDimY: (typeof plotDimY === 'number') ? plotDimY : 1,
         plotDimZ: (typeof plotDimZ === 'number') ? plotDimZ : 2
@@ -5761,6 +5766,14 @@
         if (slTM) slTM.value = tmMixingCoeff;
         if (inpTM) inpTM.value = tmMixingCoeff.toFixed(2);
       }
+
+      if (profile.tiles_x > 1 || profile.tiles_y > 1) {
+        useTiles = true;
+      } else if (profile.tiles_x !== undefined || profile.tiles_y !== undefined) {
+        useTiles = false;
+      }
+      const optTiles = document.getElementById('optTiles');
+      if (optTiles) optTiles.classList.toggle('active', useTiles);
 
       if (profile.perm_dim && profile.perm_dim.length >= 3 && currentDim > 3) {
         if (typeof setPlottingDimensions === 'function') {
@@ -5882,6 +5895,11 @@
         if (slTM) slTM.value = tmMixingCoeff;
         if (inpTM) inpTM.value = tmMixingCoeff.toFixed(2);
       }
+      if (prev.useTiles !== undefined) {
+        useTiles = prev.useTiles;
+        const optTiles = document.getElementById('optTiles');
+        if (optTiles) optTiles.classList.toggle('active', useTiles);
+      }
 
       if (typeof setPlottingDimensions === 'function') {
         setPlottingDimensions(prev.plotDimX, prev.plotDimY, prev.plotDimZ);
@@ -5896,6 +5914,46 @@
       draw();
     }
     window.undoProbeConfiguration = undoProbeConfiguration;
+
+    async function tryAutoLoadCompanionProfile(datasetName, slotId) {
+      if (!datasetName) return false;
+      if (typeof datasetName !== 'string' || datasetName.startsWith('shm:')) return false;
+
+      const sId = slotId || (typeof activeDatasetSlot !== 'undefined' ? activeDatasetSlot : 'A');
+      const baseStem = datasetName.replace(/\.(bin|txt|csv|fits|dat|mp4|fits\.fz)$/i, '');
+      const candidates = [
+        `${datasetName}.gricprof`,
+        `${baseStem}.gricprof`,
+        `${baseStem}.bin.gricprof`,
+        `${baseStem}.txt.gricprof`
+      ];
+      const uniqueCandidates = [...new Set(candidates)];
+
+      for (const cand of uniqueCandidates) {
+        try {
+          let rawText = null;
+          if (isDesktopBackend && DesktopBridge.isAvailable()) {
+            rawText = await DesktopBridge.readFile(cand);
+          } else if (typeof WebFs !== 'undefined' && WebFs.isOpen()) {
+            rawText = await WebFs.readFile(cand);
+          }
+          if (rawText && typeof rawText === 'string' && rawText.trim().startsWith('{')) {
+            const parsed = JSON.parse(rawText);
+            if (parsed && (parsed.clustering || parsed.acceleration ||
+                           parsed.rlim_recommended !== undefined ||
+                           parsed.dataset !== undefined)) {
+              console.log(`[AutoProfile] Loaded companion profile: ${cand}`);
+              handleAutoConfigureFromProbe(parsed, sId);
+              return true;
+            }
+          }
+        } catch (e) {
+          // File not found or unparseable; try next candidate
+        }
+      }
+      return false;
+    }
+    window.tryAutoLoadCompanionProfile = tryAutoLoadCompanionProfile;
 
     function setProbeButtonState(state, slotId, pct = null, phaseText = '') {
       const sId = slotId || activeDatasetSlot || 'A';
@@ -11567,6 +11625,17 @@
       }
       updateIngestionStatus();
 
+      const selCliDataset = document.getElementById('selectCliDataset');
+      if (selCliDataset) {
+        selCliDataset.addEventListener('change', async (e) => {
+          const ds = e.target.value;
+          updateCliCommand();
+          if (ds) {
+            await tryAutoLoadCompanionProfile(ds, activeDatasetSlot);
+          }
+        });
+      }
+
       if (chkAutoLoad) {
         chkAutoLoad.addEventListener('change', (e) => {
           autoLoadCliResults = e.target.checked;
@@ -11795,51 +11864,86 @@
         }
       }
 
-      if (pruneMode === '4P' || pruneMode === '5P') args.push('-te4');
-      if (pruneMode === '5P') args.push('-te5');
+      if (pruneMode === '3P') {
+        args.push('-no-te4', '-no-te5');
+      } else if (pruneMode === '4P') {
+        args.push('-te4', '-no-te5');
+      } else if (pruneMode === '5P') {
+        args.push('-te4', '-te5');
+      }
+
       if (targetMode === 'entropy') {
         args.push('-entropy');
         if (entropyGate !== 2.0) args.push('-entropy_gate', entropyGate.toFixed(2));
-        if (entropyFirstGate !== 4.0) args.push('-entropy_first_gate', entropyFirstGate.toFixed(2));
+        if (entropyFirstGate !== 4.0) {
+          args.push('-entropy_first_gate', entropyFirstGate.toFixed(2));
+        }
         if (entropyFastMode) args.push('-entropy_fast');
+      } else {
+        args.push('-no-entropy');
       }
-      if (useTM && tmMixingCoeff > 0) args.push('-tm', tmMixingCoeff.toFixed(2));
+
+      if (useTM && tmMixingCoeff > 0) {
+        args.push('-tm', tmMixingCoeff.toFixed(2));
+      } else {
+        args.push('-no-tm');
+      }
+
       if (usePred) {
         if (predHorizon !== 2) {
           args.push('-pred[,,' + predHorizon + ']');
         } else {
           args.push('-pred');
         }
+      } else {
+        args.push('-no-pred');
       }
+
       if (useGprob) {
         args.push('-gprob');
         if (maxVisitors !== 1000) args.push('-maxvis', maxVisitors.toString());
       }
+
       if (useSoftBayesian) {
         args.push('-soft_bayesian');
         if (softBayesianSigmaCoeff !== 1.0) {
           args.push('-soft_bayesian_sigma', softBayesianSigmaCoeff.toFixed(2));
         }
+      } else {
+        args.push('-no-soft-bayesian');
       }
-      if (useTiles) args.push('-tiles');
-      if (useXTile) args.push('-xtile');
+
+      if (typeof useTiles !== 'undefined' && useTiles) {
+        args.push('-tiles');
+        if (useXTile) args.push('-xtile');
+      } else {
+        args.push('-no-tiles');
+      }
+
       if (useSparseDcc) {
         args.push('-sparse_dcc');
         if (sparseDccExtraEvals > 0) {
           args.push('-sparse_dcc_extra_evals', sparseDccExtraEvals.toString());
         }
+      } else {
+        args.push('-no-sparse-dcc');
       }
+
       if (typeof clusterUseSq16 === 'boolean' && clusterUseSq16) {
         args.push('-sq16');
-        if (typeof clusterSq16Ratio !== 'undefined') {
+        if (typeof clusterSq16Ratio !== 'undefined' && clusterSq16Ratio !== 0.05) {
           args.push('-sq16-ratio', String(clusterSq16Ratio));
         }
-        if (typeof clusterUseMemo !== 'undefined') {
-          args.push(clusterUseMemo ? '-memo' : '-no-memo');
+        if (typeof clusterUseMemo !== 'undefined' && !clusterUseMemo) {
+          args.push('-no-memo');
         }
-      } else if (typeof clusterUseSq8 === 'boolean') {
-        args.push(clusterUseSq8 ? '-sq8' : '-no-sq8');
+        args.push('-no-sq8');
+      } else if (typeof clusterUseSq8 === 'boolean' && clusterUseSq8) {
+        args.push('-sq8', '-no-sq16');
+      } else {
+        args.push('-no-sq16', '-no-sq8');
       }
+
       if (typeof clusterUseBatchDist === 'boolean' && !clusterUseBatchDist) {
         args.push('-no-batch-dist');
       }

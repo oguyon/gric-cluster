@@ -1839,12 +1839,13 @@ function buildCliCommand() {
   // Positional: rlim
   parts.push(rlim.toFixed(3));
 
-  // Pruning mode
-  if (pruneMode === '4P' || pruneMode === '5P') {
-    parts.push('-te4');
-  }
-  if (pruneMode === '5P') {
-    parts.push('-te5');
+  // Pruning mode (explicit overrides against profile defaults)
+  if (pruneMode === '3P') {
+    parts.push('-no-te4', '-no-te5');
+  } else if (pruneMode === '4P') {
+    parts.push('-te4', '-no-te5');
+  } else if (pruneMode === '5P') {
+    parts.push('-te4', '-te5');
   }
 
   // Target selection
@@ -1861,11 +1862,15 @@ function buildCliCommand() {
     if (entropyFastMode) {
       parts.push('-entropy_fast');
     }
+  } else {
+    parts.push('-no-entropy');
   }
 
   // Transition matrix
   if (useTM && tmMixingCoeff > 0) {
     parts.push('-tm', tmMixingCoeff.toFixed(2));
+  } else {
+    parts.push('-no-tm');
   }
 
   // Prediction
@@ -1875,6 +1880,8 @@ function buildCliCommand() {
     } else {
       parts.push('-pred');
     }
+  } else {
+    parts.push('-no-pred');
   }
 
   // Geometric probability
@@ -1894,11 +1901,18 @@ function buildCliCommand() {
         softBayesianSigmaCoeff.toFixed(2)
       );
     }
+  } else {
+    parts.push('-no-soft-bayesian');
   }
 
-  // Cross-tile
-  if (useXTile) {
-    parts.push('-xtile');
+  // Tiles
+  if (typeof useTiles !== 'undefined' && useTiles) {
+    parts.push('-tiles');
+    if (useXTile) {
+      parts.push('-xtile');
+    }
+  } else {
+    parts.push('-no-tiles');
   }
 
   // Sparse DCC
@@ -1910,6 +1924,8 @@ function buildCliCommand() {
         sparseDccExtraEvals.toString()
       );
     }
+  } else {
+    parts.push('-no-sparse-dcc');
   }
 
   // Max clusters & eviction
@@ -1936,8 +1952,11 @@ function buildCliCommand() {
     if (typeof clusterUseMemo === 'boolean' && !clusterUseMemo) {
       parts.push('-no-memo');
     }
+    parts.push('-no-sq8');
   } else if (typeof clusterUseSq8 === 'boolean' && clusterUseSq8) {
-    parts.push('-sq8');
+    parts.push('-sq8', '-no-sq16');
+  } else {
+    parts.push('-no-sq16', '-no-sq8');
   }
 
   // Multi-Vector SIMD batch distance
