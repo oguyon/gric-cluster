@@ -471,6 +471,10 @@ int cluster_cli_parse(
         if (config->optim.entropy_mode < 0) config->optim.entropy_mode = 0;
         if (config->optim.sparse_dcc_mode < 0) config->optim.sparse_dcc_mode = 0;
         if (config->optim.soft_bayesian_mode < 0) config->optim.soft_bayesian_mode = 0;
+        if (config->optim.pred_mode < 0) config->optim.pred_mode = 0;
+        if (config->algo.tm_mixing_coeff < 0.0) config->algo.tm_mixing_coeff = 0.0;
+        if (config->input.tile_grid_x < 0) config->input.tile_grid_x = 0;
+        if (config->input.tile_grid_y < 0) config->input.tile_grid_y = 0;
     
         if (!config->input.scandist_mode && !rlim_set)
         {
