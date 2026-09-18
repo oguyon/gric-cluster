@@ -181,7 +181,11 @@ void update_probabilities_and_pruning(
 
     if (config->optim.te4_mode && temp_count > 1)
     {
-        for (int p = 0; p < temp_count - 1; p++)
+        int active_cnt = state->scratch.num_active_clusters;
+        int *act = state->scratch.active_clusters;
+        long total_pruned_te4 = 0;
+
+        for (int p = 0; p < temp_count - 1 && active_cnt > 0; p++)
         {
             int    cprev = temp_indices[p];
             double d_m_cprev = temp_dists[p];
@@ -200,9 +204,10 @@ void update_probabilities_and_pruning(
                 d_ci_cprev = state->scratch.dcc_min[cj * config->algo.maxnbclust + cprev];
                 if (d_ci_cprev < 0.0)
                 {
-                    d_ci_cprev = get_dist(&state->clusters[cj].anchor,
-                                          &state->clusters[cprev].anchor, -1, -1.0, -1.0,
-                                          config, state);
+                    d_ci_cprev = get_dist(
+                        &state->clusters[cj].anchor,
+                        &state->clusters[cprev].anchor,
+                        -1, -1.0, -1.0, config, state);
                     set_dcc_pair(state, config->algo.maxnbclust, cj, cprev, d_ci_cprev);
                 }
             }
@@ -211,175 +216,22 @@ void update_probabilities_and_pruning(
             calc_te4_ref_init(&te4_ref, dfc, d_m_cprev, d_ci_cprev);
 
             const double *row_dcc_cj = &state->scratch.dcc_min[cj * config->algo.maxnbclust];
-            const double *row_dcc_cprev = &state->scratch.dcc_min[cprev * config->algo.maxnbclust];
-            const char   *row_meas_cj = &state->scratch.dcc_measured[cj * config->algo.maxnbclust];
-            const char   *row_meas_cprev =
+            const double *row_dcc_cprev =
+                &state->scratch.dcc_min[cprev * config->algo.maxnbclust];
+            const char *row_meas_cj =
+                &state->scratch.dcc_measured[cj * config->algo.maxnbclust];
+            const char *row_meas_cprev =
                 &state->scratch.dcc_measured[cprev * config->algo.maxnbclust];
 
+            int idx = 0;
             long local_pruned_te4 = 0;
-            int k = 0;
 
-#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-            if (!config->optim.sparse_dcc_mode && gric_get_simd_level() >= GRIC_SIMD_AVX512)
+            while (idx < active_cnt)
             {
-                for (; k <= state->num_clusters - 8; k += 8)
+                int kk = act[idx];
+                if (kk == cj || kk == cprev)
                 {
-                    int any_alive = 0;
-                    for (int sub = 0; sub < 8; sub++)
-                    {
-                        if (state->scratch.clmembflag[k + sub])
-                        {
-                            any_alive = 1;
-                            break;
-                        }
-                    }
-                    if (!any_alive)
-                    {
-                        continue;
-                    }
-
-                    int any_missing = 0;
-                    for (int sub = 0; sub < 8; sub++)
-                    {
-                        int kk = k + sub;
-                        if (row_dcc_cj[kk] < 0.0 || row_dcc_cprev[kk] < 0.0)
-                        {
-                            any_missing = 1;
-                            break;
-                        }
-                    }
-
-                    if (any_missing)
-                    {
-                        for (int sub = 0; sub < 8; sub++)
-                        {
-                            int kk = k + sub;
-                            if (!state->scratch.clmembflag[kk] || kk == cj || kk == cprev)
-                            {
-                                continue;
-                            }
-                            double d_ci_ck = row_dcc_cj[kk];
-                            if (d_ci_ck < 0.0)
-                            {
-                                d_ci_ck = get_dist(&state->clusters[cj].anchor,
-                                                   &state->clusters[kk].anchor, -1, -1.0, -1.0,
-                                                   config, state);
-                                set_dcc_pair(state, config->algo.maxnbclust, cj, kk, d_ci_ck);
-                            }
-                            double d_cprev_ck = row_dcc_cprev[kk];
-                            if (d_cprev_ck < 0.0)
-                            {
-                                d_cprev_ck = get_dist(&state->clusters[cprev].anchor,
-                                                      &state->clusters[kk].anchor,
-                                                      -1, -1.0, -1.0, config, state);
-                                set_dcc_pair(state, config->algo.maxnbclust, cprev, kk, d_cprev_ck);
-                            }
-                            double min_d = calc_min_dist_4pt_ref(&te4_ref, d_ci_ck, d_cprev_ck);
-                            if (min_d > config->algo.rlim)
-                            {
-                                state->scratch.clmembflag[kk] = 0;
-                                local_pruned_te4++;
-                            }
-                        }
-                        continue;
-                    }
-
-                    double b_out[8];
-                    calc_min_dist_4pt_batch8_avx512(&te4_ref, &row_dcc_cj[k],
-                                                    &row_dcc_cprev[k], b_out);
-                    for (int sub = 0; sub < 8; sub++)
-                    {
-                        int kk = k + sub;
-                        if (kk == cj || kk == cprev)
-                        {
-                            continue;
-                        }
-                        if (state->scratch.clmembflag[kk] && b_out[sub] > config->algo.rlim)
-                        {
-                            state->scratch.clmembflag[kk] = 0;
-                            local_pruned_te4++;
-                        }
-                    }
-                }
-            }
-
-            if (!config->optim.sparse_dcc_mode && gric_get_simd_level() >= GRIC_SIMD_AVX2)
-            {
-                for (; k <= state->num_clusters - 4; k += 4)
-                {
-                    if (!state->scratch.clmembflag[k] &&
-                        !state->scratch.clmembflag[k + 1] &&
-                        !state->scratch.clmembflag[k + 2] &&
-                        !state->scratch.clmembflag[k + 3])
-                    {
-                        continue;
-                    }
-                    if (row_dcc_cj[k] < 0.0 || row_dcc_cj[k + 1] < 0.0 ||
-                        row_dcc_cj[k + 2] < 0.0 || row_dcc_cj[k + 3] < 0.0 ||
-                        row_dcc_cprev[k] < 0.0 || row_dcc_cprev[k + 1] < 0.0 ||
-                        row_dcc_cprev[k + 2] < 0.0 || row_dcc_cprev[k + 3] < 0.0)
-                    {
-                        for (int sub = 0; sub < 4; sub++)
-                        {
-                            int kk = k + sub;
-                            if (!state->scratch.clmembflag[kk] || kk == cj || kk == cprev)
-                            {
-                                continue;
-                            }
-                            double d_ci_ck = row_dcc_cj[kk];
-                            if (d_ci_ck < 0.0)
-                            {
-                                d_ci_ck = get_dist(&state->clusters[cj].anchor,
-                                                   &state->clusters[kk].anchor, -1, -1.0, -1.0,
-                                                   config, state);
-                                set_dcc_pair(state, config->algo.maxnbclust, cj, kk, d_ci_ck);
-                            }
-                            double d_cprev_ck = row_dcc_cprev[kk];
-                            if (d_cprev_ck < 0.0)
-                            {
-                                d_cprev_ck = get_dist(&state->clusters[cprev].anchor,
-                                                      &state->clusters[kk].anchor,
-                                                      -1, -1.0, -1.0, config, state);
-                                set_dcc_pair(state, config->algo.maxnbclust, cprev, kk, d_cprev_ck);
-                            }
-                            double min_d = calc_min_dist_4pt_ref(&te4_ref, d_ci_ck, d_cprev_ck);
-                            if (min_d > config->algo.rlim)
-                            {
-                                state->scratch.clmembflag[kk] = 0;
-                                local_pruned_te4++;
-                            }
-                        }
-                        continue;
-                    }
-
-                    double b_out[4];
-                    calc_min_dist_4pt_batch4_avx2(&te4_ref, &row_dcc_cj[k],
-                                                  &row_dcc_cprev[k], b_out);
-                    for (int sub = 0; sub < 4; sub++)
-                    {
-                        int kk = k + sub;
-                        if (kk == cj || kk == cprev)
-                        {
-                            continue;
-                        }
-                        if (state->scratch.clmembflag[kk] && b_out[sub] > config->algo.rlim)
-                        {
-                            state->scratch.clmembflag[kk] = 0;
-                            local_pruned_te4++;
-                        }
-                    }
-                }
-            }
-#endif
-
-            for (; k < state->num_clusters; k++)
-            {
-                if (!state->scratch.clmembflag[k])
-                {
-                    continue;
-                }
-                if (k == cj || k == cprev)
-                {
+                    idx++;
                     continue;
                 }
 
@@ -388,53 +240,53 @@ void update_probabilities_and_pruning(
 
                 if (config->optim.sparse_dcc_mode)
                 {
-                    if (!row_meas_cj[k] || !row_meas_cprev[k])
+                    if (!row_meas_cj[kk] || !row_meas_cprev[kk])
                     {
+                        idx++;
                         continue;
                     }
-                    d_ci_ck = row_dcc_cj[k];
-                    d_cprev_ck = row_dcc_cprev[k];
+                    d_ci_ck = row_dcc_cj[kk];
+                    d_cprev_ck = row_dcc_cprev[kk];
                 }
                 else
                 {
-                    d_ci_ck = row_dcc_cj[k];
+                    d_ci_ck = row_dcc_cj[kk];
                     if (d_ci_ck < 0.0)
                     {
-                        d_ci_ck = get_dist(&state->clusters[cj].anchor,
-                                           &state->clusters[k].anchor, -1, -1.0, -1.0,
-                                           config, state);
-                        state->scratch.dcc_min[cj * config->algo.maxnbclust + k] = d_ci_ck;
-                        state->scratch.dcc_min[k * config->algo.maxnbclust + cj] = d_ci_ck;
-                        state->scratch.dcc_max[cj * config->algo.maxnbclust + k] = d_ci_ck;
-                        state->scratch.dcc_max[k * config->algo.maxnbclust + cj] = d_ci_ck;
-                        state->scratch.dcc_measured[cj * config->algo.maxnbclust + k] = 1;
-                        state->scratch.dcc_measured[k * config->algo.maxnbclust + cj] = 1;
+                        d_ci_ck = get_dist(
+                            &state->clusters[cj].anchor,
+                            &state->clusters[kk].anchor,
+                            -1, -1.0, -1.0, config, state);
+                        set_dcc_pair(state, config->algo.maxnbclust, cj, kk, d_ci_ck);
                     }
 
-                    d_cprev_ck = row_dcc_cprev[k];
+                    d_cprev_ck = row_dcc_cprev[kk];
                     if (d_cprev_ck < 0.0)
                     {
                         d_cprev_ck = get_dist(
-                            &state->clusters[cprev].anchor, &state->clusters[k].anchor,
+                            &state->clusters[cprev].anchor,
+                            &state->clusters[kk].anchor,
                             -1, -1.0, -1.0, config, state);
-                        state->scratch.dcc_min[cprev * config->algo.maxnbclust + k] = d_cprev_ck;
-                        state->scratch.dcc_min[k * config->algo.maxnbclust + cprev] = d_cprev_ck;
-                        state->scratch.dcc_max[cprev * config->algo.maxnbclust + k] = d_cprev_ck;
-                        state->scratch.dcc_max[k * config->algo.maxnbclust + cprev] = d_cprev_ck;
-                        state->scratch.dcc_measured[cprev * config->algo.maxnbclust + k] = 1;
-                        state->scratch.dcc_measured[k * config->algo.maxnbclust + cprev] = 1;
+                        set_dcc_pair(state, config->algo.maxnbclust, cprev, kk, d_cprev_ck);
                     }
                 }
 
                 double min_d = calc_min_dist_4pt_ref(&te4_ref, d_ci_ck, d_cprev_ck);
                 if (min_d > config->algo.rlim)
                 {
-                    state->scratch.clmembflag[k] = 0;
+                    state->scratch.clmembflag[kk] = 0;
+                    state->scratch.entropy_p_current[kk] = 0.0;
                     local_pruned_te4++;
+                    active_cnt--;
+                    act[idx] = act[active_cnt];
                 }
-            } // for (int k = 0; ...)
-            state->telemetry.clusters_pruned += local_pruned_te4;
+                else
+                {
+                    idx++;
+                }
+            } // while (idx < active_cnt)
 
+            total_pruned_te4 += local_pruned_te4;
             if (state->trace)
             {
                 TraceEvent *ev = trace_emit(state->trace, TRACE_PRUNE_4P);
@@ -442,15 +294,13 @@ void update_probabilities_and_pruning(
                 {
                     ev->pruned_count = local_pruned_te4;
                     ev->cluster_id = cj;
-                    int active_cnt = 0;
-                    for (int i = 0; i < state->num_clusters; i++)
-                    {
-                        if (state->scratch.clmembflag[i]) active_cnt++;
-                    }
                     ev->active_remaining = active_cnt;
                 }
             }
-        }
+        } // for (int p = 0; ...)
+
+        state->scratch.num_active_clusters = active_cnt;
+        state->telemetry.clusters_pruned += total_pruned_te4;
     }
 
     if (config->optim.te5_mode)

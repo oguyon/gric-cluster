@@ -1441,10 +1441,52 @@ static void sq16_filter_anchor_matrix_avx2(
                     _mm_prefetch((const char *)(blk_ptr + blk_stride + 64), _MM_HINT_T0);
                 }
 
-                __m256i acc = _mm256_setzero_si256();
+                __m256i acc0 = _mm256_setzero_si256();
+                __m256i acc1 = _mm256_setzero_si256();
+                __m256i acc2 = _mm256_setzero_si256();
+                __m256i acc3 = _mm256_setzero_si256();
                 int pruned = 0;
+                int j = 0;
 
-                for (int j = 0; j < num_pairs; j++)
+                for (; j + 4 <= num_pairs; j += 4)
+                {
+                    __m256i c0 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 0) * 8));
+                    __m256i d0 = _mm256_sub_epi16(q_pairs_stack[j + 0], c0);
+                    acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(d0, d0));
+
+                    __m256i c1 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 1) * 8));
+                    __m256i d1 = _mm256_sub_epi16(q_pairs_stack[j + 1], c1);
+                    acc1 = _mm256_add_epi32(acc1, _mm256_madd_epi16(d1, d1));
+
+                    __m256i c2 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 2) * 8));
+                    __m256i d2 = _mm256_sub_epi16(q_pairs_stack[j + 2], c2);
+                    acc2 = _mm256_add_epi32(acc2, _mm256_madd_epi16(d2, d2));
+
+                    __m256i c3 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 3) * 8));
+                    __m256i d3 = _mm256_sub_epi16(q_pairs_stack[j + 3], c3);
+                    acc3 = _mm256_add_epi32(acc3, _mm256_madd_epi16(d3, d3));
+
+                    /* Checkpoint every 16 pairs (32 dimensions) */
+                    if ((j & 15) == 12 && j + 4 < num_pairs)
+                    {
+                        __m256i a_sum = _mm256_add_epi32(
+                            _mm256_add_epi32(acc0, acc1),
+                            _mm256_add_epi32(acc2, acc3));
+                        __m256i v_acc_b = _mm256_xor_si256(a_sum, v_bias256);
+                        __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);
+                        if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp)) == 0xFF)
+                        {
+                            int base = b * 8;
+                            _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                                _mm256_setzero_si256());
+                            pruned_count += 8;
+                            pruned = 1;
+                            break;
+                        }
+                    }
+                } // for (; j + 4 <= num_pairs; j += 4)
+
+                for (; j < num_pairs && !pruned; j++)
                 {
                     __m256i q_p;
                     if (j < SQ16_PREBROADCAST_PAIRS)
@@ -1462,24 +1504,12 @@ static void sq16_filter_anchor_matrix_avx2(
 
                     __m256i c_pair = _mm256_load_si256((const __m256i *)(blk_ptr + j * 8));
                     __m256i diff = _mm256_sub_epi16(q_p, c_pair);
-                    acc = _mm256_add_epi32(acc, _mm256_madd_epi16(diff, diff));
+                    acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(diff, diff));
+                }
 
-                    /* Checkpoint every 8 pairs (16 dimensions) */
-                    if ((j & 7) == 7 && j + 1 < num_pairs)
-                    {
-                        __m256i v_acc_b = _mm256_xor_si256(acc, v_bias256);
-                        __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);
-                        if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp)) == 0xFF)
-                        {
-                            int base = b * 8;
-                            _mm256_storeu_si256((__m256i *)(clmembflag + base),
-                                                _mm256_setzero_si256());
-                            pruned_count += 8;
-                            pruned = 1;
-                            break;
-                        }
-                    }
-                } // for (int j = 0; j < num_pairs; j++)
+                __m256i acc = _mm256_add_epi32(
+                    _mm256_add_epi32(acc0, acc1),
+                    _mm256_add_epi32(acc2, acc3));
 
                 if (!pruned)
                 {

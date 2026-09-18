@@ -129,6 +129,32 @@ void framedist_batch_1x16_float(
     long                         size);
 
 /**
+ * framedist_batch_1x8_contiguous_float() - Distance from 1 query to 8 contiguous float anchors.
+ * @q:              Query vector pointer.
+ * @anchors_matrix: Pointer to 8 contiguous row vectors [8 x size].
+ * @out_dists:      Output array for 8 computed distances.
+ * @size:           Vector length.
+ */
+void framedist_batch_1x8_contiguous_float(
+    const float *restrict q,
+    const float *restrict anchors_matrix,
+    double *restrict      out_dists,
+    long                  size);
+
+/**
+ * framedist_batch_1x16_contiguous_float() - Distance from 1 query to 16 contiguous float anchors.
+ * @q:              Query vector pointer.
+ * @anchors_matrix: Pointer to 16 contiguous row vectors [16 x size].
+ * @out_dists:      Output array for 16 computed distances.
+ * @size:           Vector length.
+ */
+void framedist_batch_1x16_contiguous_float(
+    const float *restrict q,
+    const float *restrict anchors_matrix,
+    double *restrict      out_dists,
+    long                  size);
+
+/**
  * framedist_batch_1x8_double() - Vectorized batch distance from 1 query to 8 anchor double frames.
  * @q:         Query vector pointer.
  * @anchors:   Array of 8 anchor vector pointers.

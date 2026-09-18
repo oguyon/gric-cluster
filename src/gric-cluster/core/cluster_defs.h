@@ -288,6 +288,7 @@ typedef struct
     uint8_t            *anchor_matrix_sq8;  /**< Contiguous [maxnbclust x dim] SQ8 anchors */
     int16_t            *anchor_matrix_sq16;  /**< Contiguous [maxnbclust x dim] SQ16 anchors */
     int32_t            *anchor_matrix_sq16_interleaved; /**< Block-8 interleaved SQ16 matrix */
+    float              *anchor_matrix_float; /**< Contiguous [maxnbclust x dim] float anchors */
     long               *perm_dim;           /**< Spectral dimension ordering [dim] */
     double             *residual_tail;      /**< Precomputed residual tail array [dim] */
 } ClusterState;
