@@ -259,10 +259,18 @@ static void write_anchors_results(
             a_hdr.data_bytes = a_hdr.num_elements * sizeof(float);
             if (gric_bin_write_header(a_bin_fp, &a_hdr, "Cluster centroids") == 0)
             {
-                for (int i = 0; i < state->num_clusters; i++)
+                if (state->anchor_matrix_float != NULL)
                 {
-                    fwrite(state->clusters[i].anchor.data, sizeof(float),
-                           (size_t)nelements, a_bin_fp);
+                    fwrite(state->anchor_matrix_float, sizeof(float),
+                           a_hdr.num_elements, a_bin_fp);
+                }
+                else
+                {
+                    for (int i = 0; i < state->num_clusters; i++)
+                    {
+                        fwrite(state->clusters[i].anchor.data, sizeof(float),
+                               (size_t)nelements, a_bin_fp);
+                    }
                 }
             }
         }
