@@ -21,6 +21,174 @@
 /* OMP_MIN_CLUSTERS — defined in cluster_defs.h */
 
 /**
+ * select_te4_historical_anchors() - Select top informative and orthogonal anchors.
+ * @cj:           Current cluster index.
+ * @dfc:          Distance from current frame to cj.
+ * @config:       Clustering config.
+ * @state:        Clustering state.
+ * @temp_indices: Array of cluster indices measured so far in this frame.
+ * @temp_dists:   Array of frame-to-cluster distances.
+ * @num_hist:     Number of historical anchors (temp_count - 1).
+ * @max_anchors:  Maximum number of anchors to select.
+ * @selected:     Output array to store selected historical indices.
+ *
+ * Return: Number of selected anchors written to @selected.
+ */
+static int select_te4_historical_anchors(
+    int           cj,
+    double        dfc,
+    ClusterConfig *config,
+    ClusterState  *state,
+    const int     *temp_indices,
+    const double  *temp_dists,
+    int           num_hist,
+    int           max_anchors,
+    int          *selected)
+{
+    if (num_hist <= 0 || max_anchors <= 0)
+    {
+        return 0;
+    }
+
+    if (num_hist <= max_anchors)
+    {
+        int count = 0;
+        for (int p = 0; p < num_hist; p++)
+        {
+            int cprev = temp_indices[p];
+            if (config->optim.sparse_dcc_mode &&
+                !state->scratch.dcc_measured[cj * config->algo.maxnbclust + cprev])
+            {
+                continue;
+            }
+            selected[count++] = p;
+        }
+        return count;
+    }
+
+    /* Candidate pool size: check closest anchors */
+    int max_pool = max_anchors * 2;
+    if (max_pool > 8)
+    {
+        max_pool = 8;
+    }
+    if (max_pool > num_hist)
+    {
+        max_pool = num_hist;
+    }
+
+    int pool[8];
+    int pool_sz = 0;
+    int maxnbc = config->algo.maxnbclust;
+
+    for (int p = 0; p < num_hist; p++)
+    {
+        int cprev = temp_indices[p];
+        if (config->optim.sparse_dcc_mode &&
+            !state->scratch.dcc_measured[cj * maxnbc + cprev])
+        {
+            continue;
+        }
+
+        double d = temp_dists[p];
+        if (pool_sz < max_pool)
+        {
+            int ins = pool_sz;
+            while (ins > 0 && temp_dists[pool[ins - 1]] > d)
+            {
+                pool[ins] = pool[ins - 1];
+                ins--;
+            }
+            pool[ins] = p;
+            pool_sz++;
+        }
+        else if (d < temp_dists[pool[pool_sz - 1]])
+        {
+            int ins = pool_sz - 1;
+            while (ins > 0 && temp_dists[pool[ins - 1]] > d)
+            {
+                pool[ins] = pool[ins - 1];
+                ins--;
+            }
+            pool[ins] = p;
+        }
+    }
+
+    if (pool_sz <= max_anchors)
+    {
+        for (int i = 0; i < pool_sz; i++)
+        {
+            selected[i] = pool[i];
+        }
+        return pool_sz;
+    }
+
+    /* 1. Pick nearest anchor (pool[0]) for maximum spatial informativeness */
+    selected[0] = pool[0];
+    int num_sel = 1;
+
+    /* 2. From remaining candidates, pick the one most orthogonal to cj */
+    int best_ortho_idx = -1;
+    double min_cos_theta = 2.0;
+
+    for (int i = 1; i < pool_sz; i++)
+    {
+        int p = pool[i];
+        int cprev = temp_indices[p];
+        double d_ci_cprev = state->scratch.dcc_min[cj * maxnbc + cprev];
+
+        if (d_ci_cprev < 0.0 && !config->optim.sparse_dcc_mode)
+        {
+            d_ci_cprev = get_dist(
+                &state->clusters[cj].anchor,
+                &state->clusters[cprev].anchor,
+                -1, -1.0, -1.0, config, state);
+            set_dcc_pair(state, maxnbc, cj, cprev, d_ci_cprev);
+        }
+
+        if (d_ci_cprev <= 1e-9)
+        {
+            continue;
+        }
+
+        double cos_theta = 1.0;
+        if (dfc > 1e-9 && temp_dists[p] > 1e-9)
+        {
+            double num = dfc * dfc + temp_dists[p] * temp_dists[p] - d_ci_cprev * d_ci_cprev;
+            double denom = 2.0 * dfc * temp_dists[p];
+            cos_theta = fabs(num / denom);
+            if (cos_theta > 1.0)
+            {
+                cos_theta = 1.0;
+            }
+        }
+
+        if (cos_theta < min_cos_theta)
+        {
+            min_cos_theta = cos_theta;
+            best_ortho_idx = i;
+        }
+    }
+
+    if (best_ortho_idx >= 0)
+    {
+        selected[num_sel++] = pool[best_ortho_idx];
+    }
+
+    /* 3. Fill remaining slots up to max_anchors with other candidates from pool */
+    for (int i = 1; i < pool_sz && num_sel < max_anchors; i++)
+    {
+        if (i == best_ortho_idx)
+        {
+            continue;
+        }
+        selected[num_sel++] = pool[i];
+    }
+
+    return num_sel;
+}
+
+/**
  * update_probabilities_and_pruning - Prune search space and update geometric priorities.
  * @cj: Cluster index measured in the last step.
  * @dfc: Computed distance to cluster index cj.
@@ -184,9 +352,21 @@ void update_probabilities_and_pruning(
         int active_cnt = state->scratch.num_active_clusters;
         int *act = state->scratch.active_clusters;
         long total_pruned_te4 = 0;
-
-        for (int p = 0; p < temp_count - 1 && active_cnt > 0; p++)
+        int num_hist = temp_count - 1;
+        int max_te4_anchors = config->optim.te4_max_anchors;
+        if (max_te4_anchors <= 0)
         {
+            max_te4_anchors = num_hist;
+        }
+
+        int selected_anchors[16];
+        int num_selected = select_te4_historical_anchors(
+            cj, dfc, config, state, temp_indices, temp_dists,
+            num_hist, max_te4_anchors, selected_anchors);
+
+        for (int s = 0; s < num_selected && active_cnt > 0; s++)
+        {
+            int    p = selected_anchors[s];
             int    cprev = temp_indices[p];
             double d_m_cprev = temp_dists[p];
             double d_ci_cprev = 0.0;
@@ -297,7 +477,7 @@ void update_probabilities_and_pruning(
                     ev->active_remaining = active_cnt;
                 }
             }
-        } // for (int p = 0; ...)
+        } // for (int s = 0; ...)
 
         state->scratch.num_active_clusters = active_cnt;
         state->telemetry.clusters_pruned += total_pruned_te4;

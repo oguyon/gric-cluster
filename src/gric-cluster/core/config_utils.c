@@ -658,6 +658,15 @@ static int apply_optim_tile_option(
         config->optim.te4_mode = 1;
         return 0;
     }
+    else if (matches(key, "-te4_max_anchors"))
+    {
+        if (!value)
+        {
+            return -1;
+        }
+        config->optim.te4_max_anchors = atoi(value);
+        return 1;
+    }
     else if (matches(key, "-no_te4") || matches(key, "-no-te4"))
     {
         config->optim.te4_mode = -1;
@@ -983,7 +992,13 @@ int write_config_file(const char *filename, ClusterConfig *config)
     fprintf(f, "maxvis %d\n", config->optim.max_gprob_visitors);
 
     if (config->optim.te4_mode)
+    {
         fprintf(f, "te4\n");
+        if (config->optim.te4_max_anchors > 0)
+        {
+            fprintf(f, "te4_max_anchors %d\n", config->optim.te4_max_anchors);
+        }
+    }
     if (config->optim.te5_mode)
         fprintf(f, "te5\n");
     if (config->optim.entropy_mode)

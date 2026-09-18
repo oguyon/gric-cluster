@@ -69,6 +69,7 @@ typedef struct
     int    pred_h;                  /**< History horizon for pattern search */
     int    pred_n;                  /**< Max prediction candidates returned */
     int    te4_mode;                /**< 1 to enable 4-point triangle ineq. */
+    int    te4_max_anchors;         /**< Max historical anchors in TE4 (default 3, 0=all) */
     int    te5_mode;                /**< 1 to enable 5-point triangle ineq. */
     int    entropy_mode;            /**< 1 to enable entropy-guided search */
     int    entropy_max_targets;     /**< Max targets evaluated per entropy step */
