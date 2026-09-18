@@ -7,6 +7,10 @@
 #include "knn_tree.h"
 #include <stdlib.h>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 /** Helper record for sorting cluster neighbors by DCC distance */
 typedef struct
 {
@@ -66,38 +70,60 @@ int knn_build_cluster_graph(
         return -1;
     }
 
-    DccNeighborPair *pairs = (DccNeighborPair *)malloc((size_t)M * sizeof(DccNeighborPair));
-    if (pairs == NULL)
+    int alloc_failed = 0;
+#if defined(_OPENMP)
+#pragma omp parallel
+#endif
+    {
+        DccNeighborPair *local_pairs =
+            (DccNeighborPair *)malloc((size_t)M * sizeof(DccNeighborPair));
+        if (local_pairs == NULL)
+        {
+#if defined(_OPENMP)
+#pragma omp atomic write
+#endif
+            alloc_failed = 1;
+        }
+        else
+        {
+#if defined(_OPENMP)
+#pragma omp for schedule(static)
+#endif
+            for (int c = 0; c < M; c++)
+            {
+                int count = 0;
+                for (int other = 0; other < M; other++)
+                {
+                    if (other == c)
+                    {
+                        continue;
+                    }
+                    local_pairs[count].cluster_id = other;
+                    local_pairs[count].dist =
+                        model->dcc_matrix[(size_t)c * (size_t)M + (size_t)other];
+                    count++;
+                }
+
+                qsort(local_pairs, (size_t)count, sizeof(DccNeighborPair), compare_dcc_pairs);
+
+                int *row_adj = model->cluster_graph_adj + (size_t)c * (size_t)k_adj;
+                for (int i = 0; i < k_adj; i++)
+                {
+                    row_adj[i] = local_pairs[i].cluster_id;
+                }
+            } // for (int c = 0; c < M; c++)
+
+            free(local_pairs);
+        }
+    }
+
+    if (alloc_failed)
     {
         free(model->cluster_graph_adj);
         model->cluster_graph_adj = NULL;
         return -1;
     }
 
-    for (int c = 0; c < M; c++)
-    {
-        int count = 0;
-        for (int other = 0; other < M; other++)
-        {
-            if (other == c)
-            {
-                continue;
-            }
-            pairs[count].cluster_id = other;
-            pairs[count].dist = model->dcc_matrix[(size_t)c * (size_t)M + (size_t)other];
-            count++;
-        }
-
-        qsort(pairs, (size_t)count, sizeof(DccNeighborPair), compare_dcc_pairs);
-
-        int *row_adj = model->cluster_graph_adj + (size_t)c * (size_t)k_adj;
-        for (int i = 0; i < k_adj; i++)
-        {
-            row_adj[i] = pairs[i].cluster_id;
-        }
-    } // for (int c = 0; c < M; c++)
-
-    free(pairs);
     return 0;
 }
 

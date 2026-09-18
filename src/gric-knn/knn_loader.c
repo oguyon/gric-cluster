@@ -264,98 +264,108 @@ static int load_anchors(
             model->frame_height = 1;
             model->frame_elements = model->frame_width * model->frame_height;
 
-            size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
+            size_t total_elements = (size_t)M * (size_t)model->frame_elements;
             int ok = 1;
 
             if (!model->is_double && hdr.data_type == GRIC_BIN_DTYPE_FLOAT32)
             {
-                for (int c = 0; c < M; c++)
+                model->anchor_matrix = malloc(total_elements * sizeof(float));
+                if (model->anchor_matrix != NULL &&
+                    fread(model->anchor_matrix, sizeof(float), total_elements, a_bin) ==
+                    total_elements)
                 {
-                    model->clusters[c].anchor_data =
-                        malloc((size_t)model->frame_elements * elem_size);
-                    if (model->clusters[c].anchor_data == NULL ||
-                        fread(model->clusters[c].anchor_data, sizeof(float),
-                              (size_t)model->frame_elements, a_bin) !=
-                              (size_t)model->frame_elements)
+                    float *base = (float *)model->anchor_matrix;
+                    for (int c = 0; c < M; c++)
                     {
-                        ok = 0;
-                        break;
+                        model->clusters[c].anchor_data =
+                            base + (size_t)c * (size_t)model->frame_elements;
                     }
+                }
+                else
+                {
+                    ok = 0;
                 }
             }
             else if (model->is_double && hdr.data_type == GRIC_BIN_DTYPE_FLOAT64)
             {
-                for (int c = 0; c < M; c++)
+                model->anchor_matrix = malloc(total_elements * sizeof(double));
+                if (model->anchor_matrix != NULL &&
+                    fread(model->anchor_matrix, sizeof(double), total_elements, a_bin) ==
+                    total_elements)
                 {
-                    model->clusters[c].anchor_data =
-                        malloc((size_t)model->frame_elements * elem_size);
-                    if (model->clusters[c].anchor_data == NULL ||
-                        fread(model->clusters[c].anchor_data, sizeof(double),
-                              (size_t)model->frame_elements, a_bin) !=
-                              (size_t)model->frame_elements)
+                    double *base = (double *)model->anchor_matrix;
+                    for (int c = 0; c < M; c++)
                     {
-                        ok = 0;
-                        break;
+                        model->clusters[c].anchor_data =
+                            base + (size_t)c * (size_t)model->frame_elements;
                     }
+                }
+                else
+                {
+                    ok = 0;
                 }
             }
             else if (hdr.data_type == GRIC_BIN_DTYPE_FLOAT32)
             {
-                float *fbuf = (float *)malloc((size_t)model->frame_elements * sizeof(float));
-                if (fbuf != NULL)
+                /* File is float32, model requested double */
+                model->anchor_matrix = malloc(total_elements * sizeof(double));
+                float *fbuf = (float *)malloc(total_elements * sizeof(float));
+                if (model->anchor_matrix != NULL && fbuf != NULL &&
+                    fread(fbuf, sizeof(float), total_elements, a_bin) == total_elements)
                 {
+                    double *base = (double *)model->anchor_matrix;
+                    for (size_t k = 0; k < total_elements; k++)
+                    {
+                        base[k] = (double)fbuf[k];
+                    }
                     for (int c = 0; c < M; c++)
                     {
                         model->clusters[c].anchor_data =
-                            malloc((size_t)model->frame_elements * elem_size);
-                        if (model->clusters[c].anchor_data == NULL ||
-                            fread(fbuf, sizeof(float), (size_t)model->frame_elements, a_bin) !=
-                            (size_t)model->frame_elements)
-                        {
-                            ok = 0;
-                            break;
-                        }
-                        double *dptr = (double *)model->clusters[c].anchor_data;
-                        for (long k = 0; k < model->frame_elements; k++)
-                        {
-                            dptr[k] = (double)fbuf[k];
-                        }
+                            base + (size_t)c * (size_t)model->frame_elements;
                     }
-                    free(fbuf);
                 }
                 else
                 {
                     ok = 0;
+                }
+                if (fbuf != NULL)
+                {
+                    free(fbuf);
                 }
             }
             else
             {
-                double *dbuf = (double *)malloc((size_t)model->frame_elements * sizeof(double));
-                if (dbuf != NULL)
+                /* File is float64, model requested float32 */
+                model->anchor_matrix = malloc(total_elements * sizeof(float));
+                double *dbuf = (double *)malloc(total_elements * sizeof(double));
+                if (model->anchor_matrix != NULL && dbuf != NULL &&
+                    fread(dbuf, sizeof(double), total_elements, a_bin) == total_elements)
                 {
+                    float *base = (float *)model->anchor_matrix;
+                    for (size_t k = 0; k < total_elements; k++)
+                    {
+                        base[k] = (float)dbuf[k];
+                    }
                     for (int c = 0; c < M; c++)
                     {
                         model->clusters[c].anchor_data =
-                            malloc((size_t)model->frame_elements * elem_size);
-                        if (model->clusters[c].anchor_data == NULL ||
-                            fread(dbuf, sizeof(double), (size_t)model->frame_elements, a_bin) !=
-                            (size_t)model->frame_elements)
-                        {
-                            ok = 0;
-                            break;
-                        }
-                        float *fptr = (float *)model->clusters[c].anchor_data;
-                        for (long k = 0; k < model->frame_elements; k++)
-                        {
-                            fptr[k] = (float)dbuf[k];
-                        }
+                            base + (size_t)c * (size_t)model->frame_elements;
                     }
-                    free(dbuf);
                 }
                 else
                 {
                     ok = 0;
                 }
+                if (dbuf != NULL)
+                {
+                    free(dbuf);
+                }
+            }
+
+            if (!ok && model->anchor_matrix != NULL)
+            {
+                free(model->anchor_matrix);
+                model->anchor_matrix = NULL;
             }
 
             if (comment != NULL) free(comment);
@@ -870,42 +880,53 @@ int knn_model_load(
         return -1;
     }
 
-    /* Compute exact pairwise inter-cluster anchor distances */
-    for (int i = 0; i < model->num_clusters; i++)
+    /* Compute exact pairwise inter-cluster anchor distances if not already loaded from DCC */
+    if (model->dcc_matrix == NULL || model->dcc_sq16 == NULL)
     {
-        model->dcc_matrix[i * model->num_clusters + i] = 0.0;
-        for (int j = i + 1; j < model->num_clusters; j++)
+        if (model->dcc_matrix == NULL)
         {
-            double d = calc_euclidean_dist(
-                model->clusters[i].anchor_data,
-                model->clusters[j].anchor_data,
-                model->frame_elements,
-                model->is_double);
-            model->dcc_matrix[i * model->num_clusters + j] = d;
-            model->dcc_matrix[j * model->num_clusters + i] = d;
+            model->dcc_matrix = (double *)malloc((size_t)model->num_clusters *
+                                                 (size_t)model->num_clusters * sizeof(double));
         }
-    }
-
-    double s = (model->model_rlim > 0.0) ? (16384.0 / model->model_rlim) : 1000.0;
-    model->dcc_sq16_scale = s;
-    model->dcc_sq16_inv_scale = 1.0 / s;
-    if (model->dcc_sq16 == NULL)
-    {
-        model->dcc_sq16 = (uint16_t *)malloc((size_t)model->num_clusters *
-                                             (size_t)model->num_clusters * sizeof(uint16_t));
-    }
-    if (model->dcc_sq16 != NULL)
-    {
-        for (int i = 0; i < model->num_clusters; i++)
+        if (model->dcc_matrix != NULL)
         {
-            model->dcc_sq16[i * model->num_clusters + i] = 0;
-            for (int j = i + 1; j < model->num_clusters; j++)
+            for (int i = 0; i < model->num_clusters; i++)
             {
-                double d = model->dcc_matrix[i * model->num_clusters + j];
-                uint16_t q = (d <= 0.0) ? 0 :
-                    ((d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5));
-                model->dcc_sq16[i * model->num_clusters + j] = q;
-                model->dcc_sq16[j * model->num_clusters + i] = q;
+                model->dcc_matrix[i * model->num_clusters + i] = 0.0;
+                for (int j = i + 1; j < model->num_clusters; j++)
+                {
+                    double d = calc_euclidean_dist(
+                        model->clusters[i].anchor_data,
+                        model->clusters[j].anchor_data,
+                        model->frame_elements,
+                        model->is_double);
+                    model->dcc_matrix[i * model->num_clusters + j] = d;
+                    model->dcc_matrix[j * model->num_clusters + i] = d;
+                }
+            }
+        }
+
+        double s = (model->model_rlim > 0.0) ? (16384.0 / model->model_rlim) : 1000.0;
+        model->dcc_sq16_scale = s;
+        model->dcc_sq16_inv_scale = 1.0 / s;
+        if (model->dcc_sq16 == NULL)
+        {
+            model->dcc_sq16 = (uint16_t *)malloc((size_t)model->num_clusters *
+                                                 (size_t)model->num_clusters * sizeof(uint16_t));
+        }
+        if (model->dcc_sq16 != NULL && model->dcc_matrix != NULL)
+        {
+            for (int i = 0; i < model->num_clusters; i++)
+            {
+                model->dcc_sq16[i * model->num_clusters + i] = 0;
+                for (int j = i + 1; j < model->num_clusters; j++)
+                {
+                    double d = model->dcc_matrix[i * model->num_clusters + j];
+                    uint16_t q = (d <= 0.0) ? 0 :
+                        ((d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5));
+                    model->dcc_sq16[i * model->num_clusters + j] = q;
+                    model->dcc_sq16[j * model->num_clusters + i] = q;
+                }
             }
         }
     }
@@ -932,13 +953,16 @@ int knn_model_load(
         (uint16_t *)malloc((size_t)model->num_clusters * sizeof(uint16_t));
     if (model->anchor_ptrs != NULL && model->cluster_radii != NULL)
     {
+        double scale = (model->dcc_sq16_scale > 0.0) ? model->dcc_sq16_scale :
+                       ((model->model_rlim > 0.0) ? (16384.0 / model->model_rlim) : 1000.0);
         for (int c = 0; c < model->num_clusters; c++)
         {
             model->anchor_ptrs[c] = model->clusters[c].anchor_data;
             model->cluster_radii[c] = model->clusters[c].radius;
             if (model->cluster_radii_sq16 != NULL)
             {
-                model->cluster_radii_sq16[c] = (uint16_t)(model->clusters[c].radius * s + 0.5);
+                model->cluster_radii_sq16[c] =
+                    (uint16_t)(model->clusters[c].radius * scale + 0.5);
             }
         }
     }
@@ -963,7 +987,12 @@ void knn_model_free(
 
     knn_free_cluster_graph(model);
 
-    if (model->clusters != NULL)
+    if (model->anchor_matrix != NULL)
+    {
+        free(model->anchor_matrix);
+        model->anchor_matrix = NULL;
+    }
+    else if (model->clusters != NULL)
     {
         for (int c = 0; c < model->num_clusters; c++)
         {
@@ -972,6 +1001,13 @@ void knn_model_free(
                 free(model->clusters[c].anchor_data);
                 model->clusters[c].anchor_data = NULL;
             }
+        }
+    }
+
+    if (model->clusters != NULL)
+    {
+        for (int c = 0; c < model->num_clusters; c++)
+        {
             if (model->clusters[c].members != NULL)
             {
                 free(model->clusters[c].members);

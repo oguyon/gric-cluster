@@ -62,17 +62,7 @@ static int write_bin_results(
 
         if (gric_bin_write_header(fp_idx, &hdr_idx, "k-NN neighbor indices [N x k]") == 0)
         {
-            uint32_t *u32_idx = (uint32_t *)malloc(total_elems * sizeof(uint32_t));
-            if (u32_idx != NULL)
-            {
-                for (uint64_t i = 0; i < total_elems; i++)
-                {
-                    u32_idx[i] = (results->indices[i] >= 0) ?
-                                 (uint32_t)results->indices[i] : UINT32_MAX;
-                }
-                fwrite(u32_idx, sizeof(uint32_t), total_elems, fp_idx);
-                free(u32_idx);
-            }
+            fwrite(results->indices, sizeof(uint32_t), total_elems, fp_idx);
         }
         fclose(fp_idx);
     }
@@ -97,16 +87,19 @@ static int write_bin_results(
             float *f32_dst = (float *)malloc(total_elems * sizeof(float));
             if (f32_dst != NULL)
             {
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static) if(total_elems >= 65536)
+#endif
                 for (uint64_t i = 0; i < total_elems; i++)
                 {
-                    if (results->indices[i] < 0 || results->distances[i] < 0.0 ||
-                        isnan(results->distances[i]))
+                    double d = results->distances[i];
+                    if (results->indices[i] < 0 || d < 0.0 || isnan(d))
                     {
                         f32_dst[i] = -1.0f;
                     }
                     else
                     {
-                        f32_dst[i] = (float)results->distances[i];
+                        f32_dst[i] = (float)d;
                     }
                 }
                 fwrite(f32_dst, sizeof(float), total_elems, fp_dst);
