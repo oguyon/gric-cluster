@@ -148,6 +148,77 @@ static void init_new_cluster_distances(
         }
         state->telemetry.dcc_entries_populated += (uint64_t)valid_count;
     }
+    else if (!config->output.distall_mode && config->optim.use_batch_dist &&
+             !state->clusters[new_cl].anchor.is_double &&
+             state->anchor_matrix_float != NULL)
+    {
+        long frame_elem = (long)state->clusters[new_cl].anchor.width *
+                          (long)state->clusters[new_cl].anchor.height;
+        const float *q = (const float *)state->clusters[new_cl].anchor.data;
+        const float *anchors_mat = state->anchor_matrix_float;
+
+        int b_count8 = new_cl / 8;
+
+        #pragma omp parallel for schedule(static) if(b_count8 >= 8)
+        for (int b = 0; b < b_count8; b++)
+        {
+            int b_idx = b * 8;
+            double batch_dists[8];
+            framedist_batch_1x8_contiguous_float(
+                q,
+                anchors_mat + (size_t)b_idx * (size_t)frame_elem,
+                batch_dists,
+                frame_elem
+            );
+            for (int k = 0; k < 8; k++)
+            {
+                int cl_idx = b_idx + k;
+                set_dcc_pair(state, N, new_cl, cl_idx, batch_dists[k]);
+            }
+        } // for (int b = 0; b < b_count8; b++)
+
+        for (int cl_idx = b_count8 * 8; cl_idx < new_cl; cl_idx++)
+        {
+            double d = framedist_float(
+                q,
+                anchors_mat + (size_t)cl_idx * (size_t)frame_elem,
+                frame_elem
+            );
+            set_dcc_pair(state, N, new_cl, cl_idx, d);
+        }
+
+        int unique_visited = 0;
+        char is_temp_index[new_cl > 0 ? new_cl : 1];
+        memset(is_temp_index, 0, (new_cl > 0 ? new_cl : 1) * sizeof(char));
+
+        for (int idx = 0; idx < temp_count; idx++)
+        {
+            int j = temp_indices[idx];
+            if (j >= 0 && j < new_cl)
+            {
+                double d = temp_dists[idx];
+                set_dcc_pair(state, N, new_cl, j, d);
+                if (!is_temp_index[j])
+                {
+                    is_temp_index[j] = 1;
+                    unique_visited++;
+                }
+            }
+        }
+
+        state->scratch.dcc_min[new_cl * N + new_cl] = 0.0;
+        state->scratch.dcc_max[new_cl * N + new_cl] = 0.0;
+        state->scratch.dcc_measured[new_cl * N + new_cl] = 1;
+        if (state->scratch.dcc_sq16)
+        {
+            state->scratch.dcc_sq16[new_cl * N + new_cl] = 0;
+        }
+
+        int unvisited_count = new_cl - unique_visited;
+        state->telemetry.framedist_calls += (uint64_t)unvisited_count;
+        state->telemetry.framedist_calls_intercluster += (uint64_t)unvisited_count;
+        state->telemetry.dcc_entries_populated += (uint64_t)new_cl;
+    }
     else
     {
         char is_temp_index[new_cl > 0 ? new_cl : 1];
@@ -405,6 +476,13 @@ static void assign_new_cluster_anchor(
     else
     {
         state->clusters[cl_idx].anchor_sq16 = NULL;
+    }
+    if (state->anchor_matrix_float != NULL && !current_frame->is_double)
+    {
+        long dim = current_frame->width * current_frame->height;
+        memcpy(state->anchor_matrix_float + (size_t)cl_idx * (size_t)dim,
+               state->clusters[cl_idx].anchor.data,
+               (size_t)dim * sizeof(float));
     }
     current_frame->data = NULL;
     state->clusters[cl_idx].id = cl_idx;

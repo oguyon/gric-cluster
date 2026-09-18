@@ -166,6 +166,19 @@ void remove_cluster(
                                         dim);
     }
 
+    if (state->anchor_matrix_float != NULL)
+    {
+        size_t dim = (size_t)state->clusters[index_to_remove].anchor.width *
+                     (size_t)state->clusters[index_to_remove].anchor.height;
+        int remaining = state->num_clusters - 1 - index_to_remove;
+        if (remaining > 0 && dim > 0)
+        {
+            memmove(state->anchor_matrix_float + (size_t)index_to_remove * dim,
+                    state->anchor_matrix_float + (size_t)(index_to_remove + 1) * dim,
+                    (size_t)remaining * dim * sizeof(float));
+        }
+    }
+
     if (state->scratch.cluster_probs != NULL)
     {
         int remaining = state->num_clusters - 1 - index_to_remove;

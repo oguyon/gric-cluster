@@ -71,6 +71,12 @@ void initialize_initial_cluster(
     {
         state->clusters[0].anchor_sq16 = NULL;
     }
+    if (state->anchor_matrix_float != NULL && !current_frame->is_double)
+    {
+        long dim = current_frame->width * current_frame->height;
+        memcpy(state->anchor_matrix_float, state->clusters[0].anchor.data,
+               (size_t)dim * sizeof(float));
+    }
     current_frame->data = NULL;
     state->clusters[0].id = 0;
     state->clusters[0].prob = 1.0;

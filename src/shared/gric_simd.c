@@ -46,11 +46,17 @@ static GricSimdLevel detect_hardware_simd(void)
  *
  * Return: Effective GricSimdLevel to use for compute kernels.
  */
+static int g_cached_simd_level = -1;
+
 GricSimdLevel gric_get_simd_level(void)
 {
     if (g_simd_override >= 0)
     {
         return (GricSimdLevel)g_simd_override;
+    }
+    if (g_cached_simd_level >= 0)
+    {
+        return (GricSimdLevel)g_cached_simd_level;
     }
 
     const char *env = getenv("GRIC_SIMD_MODE");
@@ -58,19 +64,23 @@ GricSimdLevel gric_get_simd_level(void)
     {
         if (strcasecmp(env, "scalar") == 0 || strcmp(env, "0") == 0)
         {
+            g_cached_simd_level = GRIC_SIMD_SCALAR;
             return GRIC_SIMD_SCALAR;
         }
         if (strcasecmp(env, "avx2") == 0 || strcmp(env, "1") == 0)
         {
+            g_cached_simd_level = GRIC_SIMD_AVX2;
             return GRIC_SIMD_AVX2;
         }
         if (strcasecmp(env, "avx512") == 0 || strcmp(env, "2") == 0)
         {
+            g_cached_simd_level = GRIC_SIMD_AVX512;
             return GRIC_SIMD_AVX512;
         }
     }
 
-    return detect_hardware_simd();
+    g_cached_simd_level = (int)detect_hardware_simd();
+    return (GricSimdLevel)g_cached_simd_level;
 }
 
 /**
@@ -81,6 +91,7 @@ void gric_set_simd_level(
     int level)
 {
     g_simd_override = level;
+    g_cached_simd_level = level;
 }
 
 /**

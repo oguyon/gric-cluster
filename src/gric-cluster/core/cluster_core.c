@@ -792,6 +792,12 @@ void run_clustering(
         state->anchor_matrix_sq16_interleaved = NULL;
     }
 
+    if (state->anchor_matrix_float)
+    {
+        free(state->anchor_matrix_float);
+        state->anchor_matrix_float = NULL;
+    }
+
     free(sorting_candidates);
     if (verbose_candidates)
     {

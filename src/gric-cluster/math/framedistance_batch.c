@@ -531,19 +531,19 @@ void framedist_batch_1x16_float(
  * @out_dists: Array of 8 doubles to receive computed distances.
  * @size:      Number of elements in each array.
  */
-void framedist_batch_1x8_float(
-    const float *restrict        q,
-    const float *const *restrict anchors,
-    double *restrict             out_dists,
-    long                         size)
+static inline __attribute__((always_inline)) void calc_dist8_f32_core(
+    const float *restrict q,
+    const float *restrict a0,
+    const float *restrict a1,
+    const float *restrict a2,
+    const float *restrict a3,
+    const float *restrict a4,
+    const float *restrict a5,
+    const float *restrict a6,
+    const float *restrict a7,
+    double *restrict      out_dists,
+    long                  size)
 {
-#if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
-    {
-        calc_dist8_f32_avx512(q, anchors, out_dists, size);
-        return;
-    }
-#endif
     float sum0 = 0.0f;
     float sum1 = 0.0f;
     float sum2 = 0.0f;
@@ -553,15 +553,6 @@ void framedist_batch_1x8_float(
     float sum6 = 0.0f;
     float sum7 = 0.0f;
     long i = 0;
-
-    const float *restrict a0 = anchors[0];
-    const float *restrict a1 = anchors[1];
-    const float *restrict a2 = anchors[2];
-    const float *restrict a3 = anchors[3];
-    const float *restrict a4 = anchors[4];
-    const float *restrict a5 = anchors[5];
-    const float *restrict a6 = anchors[6];
-    const float *restrict a7 = anchors[7];
 
 #if defined(__AVX__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
@@ -709,6 +700,83 @@ void framedist_batch_1x8_float(
     out_dists[5] = (double)sqrtf(sum5);
     out_dists[6] = (double)sqrtf(sum6);
     out_dists[7] = (double)sqrtf(sum7);
+}
+
+void framedist_batch_1x8_float(
+    const float *restrict        q,
+    const float *const *restrict anchors,
+    double *restrict             out_dists,
+    long                         size)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    {
+        calc_dist8_f32_avx512(q, anchors, out_dists, size);
+        return;
+    }
+#endif
+    calc_dist8_f32_core(
+        q,
+        anchors[0], anchors[1], anchors[2], anchors[3],
+        anchors[4], anchors[5], anchors[6], anchors[7],
+        out_dists, size
+    );
+}
+
+void framedist_batch_1x8_contiguous_float(
+    const float *restrict q,
+    const float *restrict anchors_matrix,
+    double *restrict      out_dists,
+    long                  size)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    {
+        const float *a_ptrs[8];
+        for (int k = 0; k < 8; k++)
+        {
+            a_ptrs[k] = anchors_matrix + (size_t)k * (size_t)size;
+        }
+        calc_dist8_f32_avx512(q, a_ptrs, out_dists, size);
+        return;
+    }
+#endif
+    calc_dist8_f32_core(
+        q,
+        anchors_matrix,
+        anchors_matrix + size,
+        anchors_matrix + 2 * size,
+        anchors_matrix + 3 * size,
+        anchors_matrix + 4 * size,
+        anchors_matrix + 5 * size,
+        anchors_matrix + 6 * size,
+        anchors_matrix + 7 * size,
+        out_dists, size
+    );
+}
+
+void framedist_batch_1x16_contiguous_float(
+    const float *restrict q,
+    const float *restrict anchors_matrix,
+    double *restrict      out_dists,
+    long                  size)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    {
+        const float *a_ptrs[16];
+        for (int k = 0; k < 16; k++)
+        {
+            a_ptrs[k] = anchors_matrix + (size_t)k * (size_t)size;
+        }
+        calc_dist16_f32_avx512(q, a_ptrs, out_dists, size);
+        return;
+    }
+#endif
+    framedist_batch_1x8_contiguous_float(q, anchors_matrix, out_dists, size);
+    framedist_batch_1x8_contiguous_float(
+        q, anchors_matrix + 8 * size, out_dists + 8, size
+    );
 }
 
 #if GRIC_HAVE_AVX512_TARGET

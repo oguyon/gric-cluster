@@ -236,6 +236,17 @@ static void prepare_frame_quantization(
                                &config->optim.sq8_params);
         }
     }
+
+    if (!current_frame->is_double && state->anchor_matrix_float == NULL)
+    {
+        long frame_dim = current_frame->width * current_frame->height;
+        size_t total_float = (size_t)config->algo.maxnbclust * (size_t)frame_dim;
+        if (posix_memalign((void **)&state->anchor_matrix_float, 64,
+                           total_float * sizeof(float)) != 0)
+        {
+            state->anchor_matrix_float = NULL;
+        }
+    }
 }
 
 /**
