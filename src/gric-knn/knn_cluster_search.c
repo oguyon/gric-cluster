@@ -878,7 +878,7 @@ static void knn_search_inter_clusters(
         const KnnCluster *cl = &model->clusters[q];
         if (num_pivots != NULL && *num_pivots >= 2)
         {
-            int n_p = (*num_pivots > 8) ? 8 : *num_pivots;
+            int n_p = (*num_pivots > 3) ? 3 : *num_pivots;
             if (n_p > n_p_cached)
             {
                 for (int p1 = 0; p1 < n_p - 1; p1++)

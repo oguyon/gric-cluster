@@ -39,6 +39,7 @@ void cluster_cli_init_config_defaults(
         config->optim.pred_len = 10;
         config->optim.pred_h = 1000;
         config->optim.pred_n = 2;
+        config->optim.te4_max_anchors = 3;
         config->algo.maxcl_strategy = MAXCL_STOP;
         config->algo.discard_fraction = 0.5;
         config->optim.entropy_max_targets = 15;
@@ -467,6 +468,7 @@ int cluster_cli_parse(
         } // if (!config->optim.no_prof)
     
         if (config->optim.te4_mode < 0) config->optim.te4_mode = 0;
+        if (config->optim.te4_max_anchors < 0) config->optim.te4_max_anchors = 0;
         if (config->optim.te5_mode < 0) config->optim.te5_mode = 0;
         if (config->optim.entropy_mode < 0) config->optim.entropy_mode = 0;
         if (config->optim.sparse_dcc_mode < 0) config->optim.sparse_dcc_mode = 0;
