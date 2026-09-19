@@ -46,6 +46,17 @@ int knn_model_build_transposed_pq(
     const KnnConfig *config);
 
 /**
+ * knn_model_build_transposed_rabitq() - Build cluster-local transposed RaBitQ FastScan blocks.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_transposed_rabitq(
+    KnnModel        *model,
+    const KnnConfig *config);
+
+/**
  * knn_model_build_ivf_layout() - Reorganize dataset into contiguous per-cluster IVF layout.
  * @model:  Pointer to initialized KnnModel.
  * @config: Pointer to KnnConfig.

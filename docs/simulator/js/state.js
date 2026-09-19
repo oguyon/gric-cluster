@@ -293,6 +293,7 @@
     let knnUseRq8 = true; // 8-Bit Residual Vector Quantization Filtering
     let knnUseSq8 = false; // 8-Bit Scalar Quantization Filtering
     let knnUseSq16 = false; // 16-Bit Scalar Quantization Filtering
+    let knnUseSq16Sparse = true; // SQ16 SparseCache On-Demand Scratchpad (Default: true)
     let knnSq16Ratio = 0.05; // SQ16 Quantization Bound Ratio (Default: 0.05)
     let knnUseMemo = true; // Quantized Memoization & Unique Vector Pool (Default: true)
     let clusterUseSq8 = false; // 8-Bit Scalar Quantization Metric Pre-Filter
@@ -1446,6 +1447,7 @@
         knnUseRq8: true,
         knnUseSq8: false,
         knnUseSq16: false,
+        knnUseSq16Sparse: true,
         knnSq16Ratio: 0.05,
         knnUseMemo: true,
         clusterUseSq8: false,
@@ -1851,6 +1853,7 @@
       slot.knnUseRq8 = knnUseRq8;
       slot.knnUseSq8 = knnUseSq8;
       slot.knnUseSq16 = knnUseSq16;
+      slot.knnUseSq16Sparse = knnUseSq16Sparse;
       slot.knnSq16Ratio = knnSq16Ratio;
       slot.knnUseMemo = knnUseMemo;
       slot.clusterUseSq8 = clusterUseSq8;
@@ -2064,6 +2067,7 @@
       knnUseRq8 = (slot.knnUseRq8 !== undefined) ? slot.knnUseRq8 : true;
       knnUseSq8 = (slot.knnUseSq8 !== undefined) ? slot.knnUseSq8 : false;
       knnUseSq16 = (slot.knnUseSq16 !== undefined) ? slot.knnUseSq16 : false;
+      knnUseSq16Sparse = (slot.knnUseSq16Sparse !== undefined) ? slot.knnUseSq16Sparse : true;
       knnSq16Ratio = (slot.knnSq16Ratio !== undefined) ? slot.knnSq16Ratio : 0.05;
       knnUseMemo = (slot.knnUseMemo !== undefined) ? slot.knnUseMemo : true;
       clusterUseSq8 = (slot.clusterUseSq8 !== undefined) ? slot.clusterUseSq8 : false;
@@ -2562,6 +2566,7 @@
       slot.knnUseRq8 = true;
       slot.knnUseSq8 = false;
       slot.knnUseSq16 = false;
+      slot.knnUseSq16Sparse = true;
       slot.knnSq16Ratio = 0.05;
       slot.knnUseMemo = true;
       slot.clusterUseSq8 = false;

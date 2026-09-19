@@ -321,6 +321,185 @@ static inline void knn_append_or_eval_candidate(
 }
 
 /**
+ * knn_eval_members_rabitq() - Evaluate cluster members using RaBitQ FastScan.
+ */
+static void knn_eval_members_rabitq(
+    const KnnCluster       *cl,
+    double                  d_anchor,
+    double                  r_home,
+    double                  dcc_home,
+    double                  sq16_delta,
+    int                     num_active_pivots,
+    const double           *pivot_diffs,
+    long                    query_id,
+    const void *restrict    query_data,
+    const KnnModel         *model,
+    const KnnConfig        *config,
+    KnnFrameReader         *reader,
+    void          *restrict cand_buffer,
+    KnnMaxHeap             *heap,
+    KnnMaxHeap             *all_heaps,
+#ifdef _OPENMP
+    omp_lock_t             *bucket_locks,
+#endif
+    KnnVisitedTracker      *visited,
+    KnnCandidateBatch      *batch,
+    KnnTelemetry  *restrict telem)
+{
+    int num_m = cl->num_members;
+    int num_b = cl->num_rabitq_blocks;
+    long frame_elem = model->frame_elements;
+    int num_nibbles = (model->rabitq_params.bits == 2) ?
+        (int)(model->rabitq_params.dim_pad / 2) :
+        (int)(model->rabitq_params.dim_pad / 4);
+    double eps_factor = 1.0 + config->epsilon;
+    size_t frame_bytes = (size_t)frame_elem *
+        (model->is_double ? sizeof(double) : sizeof(float));
+
+    int mid_b = 0;
+    int b_lo = 0;
+    int b_hi = num_b - 1;
+    while (b_lo <= b_hi)
+    {
+        int b_m = b_lo + (b_hi - b_lo) / 2;
+        if (cl->members[b_m * RABITQ_FASTSCAN_BLOCK_SIZE].r_anchor <= (float)d_anchor)
+        {
+            mid_b = b_m;
+            b_lo = b_m + 1;
+        }
+        else
+        {
+            b_hi = b_m - 1;
+        }
+    } // while (b_lo <= b_hi)
+
+    int left_b = mid_b - 1;
+    int right_b = mid_b;
+
+    while (left_b >= 0 || right_b < num_b)
+    {
+        double d_left_b = 1e30;
+        if (left_b >= 0)
+        {
+            int m_end_l = (left_b == num_b - 1) ? (num_m - 1) :
+                (left_b * RABITQ_FASTSCAN_BLOCK_SIZE + RABITQ_FASTSCAN_BLOCK_SIZE - 1);
+            float r_max_l = cl->members[m_end_l].r_anchor;
+            d_left_b = (d_anchor > (double)r_max_l) ? (d_anchor - (double)r_max_l) : 0.0;
+        }
+
+        double d_right_b = 1e30;
+        if (right_b < num_b)
+        {
+            float r_min_r = cl->members[right_b * RABITQ_FASTSCAN_BLOCK_SIZE].r_anchor;
+            d_right_b = ((double)r_min_r > d_anchor) ? ((double)r_min_r - d_anchor) : 0.0;
+        }
+
+        double current_tau = knn_heap_peek_max_dist(heap);
+        double tau_thresh = current_tau / eps_factor;
+        if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
+        {
+            tau_thresh = config->rlim_cutoff;
+        }
+
+        if (left_b >= 0 && d_left_b >= tau_thresh)
+        {
+            int pruned = (left_b + 1) * RABITQ_FASTSCAN_BLOCK_SIZE;
+            if (pruned > num_m)
+            {
+                pruned = num_m;
+            }
+            telem->level3_annular_pruned += (uint64_t)pruned;
+            left_b = -1;
+            d_left_b = 1e30;
+        }
+        if (right_b < num_b && d_right_b >= tau_thresh)
+        {
+            int pruned = num_m - right_b * RABITQ_FASTSCAN_BLOCK_SIZE;
+            if (pruned > 0)
+            {
+                telem->level3_annular_pruned += (uint64_t)pruned;
+            }
+            right_b = num_b;
+            d_right_b = 1e30;
+        }
+        if (left_b < 0 && right_b >= num_b)
+        {
+            break;
+        }
+
+        int b = (d_left_b <= d_right_b) ? left_b-- : right_b++;
+        int m_start = b * RABITQ_FASTSCAN_BLOCK_SIZE;
+        int m_count = num_m - m_start;
+        if (m_count > RABITQ_FASTSCAN_BLOCK_SIZE)
+        {
+            m_count = RABITQ_FASTSCAN_BLOCK_SIZE;
+        }
+
+        const uint8_t *b_codes = cl->rabitq_transposed +
+            (size_t)b * (size_t)num_nibbles * 16;
+        const RaBitQMeta *b_meta = &cl->rabitq_meta[m_start];
+
+        telem->rabitq_evaluations += (uint64_t)m_count;
+
+        uint32_t pass_mask = rabitq_fastscan_32x(
+            &visited->query_rabitq_lut,
+            b_codes,
+            b_meta,
+            tau_thresh,
+            config->epsilon
+        );
+        if (m_count < RABITQ_FASTSCAN_BLOCK_SIZE)
+        {
+            pass_mask &= ((1U << m_count) - 1);
+        }
+
+        if (!pass_mask)
+        {
+            telem->rabitq_members_pruned += (uint64_t)m_count;
+            continue;
+        }
+
+        int passed_count = knn_popcount32(pass_mask);
+        telem->rabitq_members_pruned += (uint64_t)(m_count - passed_count);
+
+        while (pass_mask)
+        {
+            int lane = knn_ctz32(pass_mask);
+            pass_mask &= pass_mask - 1;
+
+            int m = m_start + lane;
+            long cand_id = (long)cl->members[m].frame_id;
+            double r_cand = (double)cl->members[m].r_anchor;
+
+            if (knn_is_candidate_pruned(
+                    query_id, cand_id, r_cand, d_anchor, r_home, dcc_home,
+                    tau_thresh, sq16_delta, num_active_pivots, pivot_diffs,
+                    config, heap, visited, telem))
+            {
+                continue;
+            }
+
+            void *slot = (char *)cand_buffer + (size_t)batch->count * frame_bytes;
+            const void *cand_ptr = knn_resolve_candidate_data(
+                cand_id, m, cl, model, reader, slot, frame_bytes
+            );
+            if (cand_ptr == NULL)
+            {
+                continue;
+            }
+
+            knn_append_or_eval_candidate(
+                cand_id, cand_ptr, query_id, query_data, model, config,
+                heap, all_heaps,
+#ifdef _OPENMP
+                bucket_locks,
+#endif
+                batch, telem);
+        } // while (pass_mask)
+    } // while (left_b >= 0 || right_b < num_b)
+}
+
+/**
  * knn_eval_members_pq() - Evaluate cluster members using Product Quantization FastScan.
  */
 static void knn_eval_members_pq(
@@ -806,16 +985,111 @@ static void knn_eval_members_sq16_blocks(
             cached_ssd_cutoff = compute_sq16_cutoff_thresh(current_tau, model, config);
         }
 
-        const int16_t *b_coords = cl->sq16_transposed +
-            (size_t)b * (size_t)frame_elem * SQ16_FASTSCAN_BLOCK_SIZE;
-        telem->sq16_evaluations += (uint64_t)m_count;
-
-        uint32_t pass_mask = sq16_fastscan_32x(
-            visited->query_sq16, b_coords, frame_elem, cached_ssd_cutoff
-        );
-        if (m_count < SQ16_FASTSCAN_BLOCK_SIZE)
+        uint32_t pass_mask = 0;
+        if (cl->sq16_transposed != NULL)
         {
-            pass_mask &= ((1U << m_count) - 1);
+            const int16_t *b_coords = cl->sq16_transposed +
+                (size_t)b * (size_t)frame_elem * SQ16_FASTSCAN_BLOCK_SIZE;
+            telem->sq16_evaluations += (uint64_t)m_count;
+            pass_mask = sq16_fastscan_32x(
+                visited->query_sq16, b_coords, frame_elem, cached_ssd_cutoff
+            );
+            if (m_count < SQ16_FASTSCAN_BLOCK_SIZE)
+            {
+                pass_mask &= ((1U << m_count) - 1);
+            }
+        }
+        else if (config->use_sq16_sparse && config->use_sq16_sparse_lru &&
+                 visited->sq16_lru_cache != NULL)
+        {
+            /* 16-block LRU Transposed FastScan in L2 cache */
+            KnnSparseLruCache *lru = visited->sq16_lru_cache;
+            int cl_idx = (int)(cl - model->clusters);
+            int hit_slot = -1;
+            int lru_slot = 0;
+            uint64_t min_seq = UINT64_MAX;
+
+            for (int s = 0; s < KNN_SPARSE_LRU_BLOCKS; s++)
+            {
+                if (lru->blocks[s].cl_id == cl_idx && lru->blocks[s].block_id == b)
+                {
+                    hit_slot = s;
+                    break;
+                }
+                if (lru->blocks[s].access_seq < min_seq)
+                {
+                    min_seq = lru->blocks[s].access_seq;
+                    lru_slot = s;
+                }
+            }
+
+            int16_t *b_coords = NULL;
+            if (hit_slot >= 0)
+            {
+                lru->blocks[hit_slot].access_seq = ++lru->access_clock;
+                b_coords = lru->blocks[hit_slot].data;
+            }
+            else
+            {
+                b_coords = lru->blocks[lru_slot].data;
+                lru->blocks[lru_slot].cl_id = cl_idx;
+                lru->blocks[lru_slot].block_id = b;
+                lru->blocks[lru_slot].access_seq = ++lru->access_clock;
+
+                const int16_t *cand_ptrs[SQ16_FASTSCAN_BLOCK_SIZE];
+                for (int i = 0; i < SQ16_FASTSCAN_BLOCK_SIZE; i++)
+                {
+                    if (i < m_count)
+                    {
+                        long cand_id = (long)cl->members[m_start + i].frame_id;
+                        cand_ptrs[i] = model->sq16_dataset_buffer + cand_id * frame_elem;
+                    }
+                    else
+                    {
+                        cand_ptrs[i] = NULL;
+                    }
+                }
+
+                for (long d = 0; d < frame_elem; d++)
+                {
+                    int16_t *dst = b_coords + d * SQ16_FASTSCAN_BLOCK_SIZE;
+                    for (int i = 0; i < SQ16_FASTSCAN_BLOCK_SIZE; i++)
+                    {
+                        dst[i] = cand_ptrs[i] ? cand_ptrs[i][d] : 32767;
+                    }
+                }
+            }
+
+            telem->sq16_evaluations += (uint64_t)m_count;
+            pass_mask = sq16_fastscan_32x(
+                visited->query_sq16, b_coords, frame_elem, cached_ssd_cutoff
+            );
+            if (m_count < SQ16_FASTSCAN_BLOCK_SIZE)
+            {
+                pass_mask &= ((1U << m_count) - 1);
+            }
+        }
+        else if (config->use_sq16_sparse && model->sq16_dataset_buffer != NULL)
+        {
+            /* Direct Row-Major SIMD with early cutoff (0 MB resident index) */
+            telem->sq16_evaluations += (uint64_t)m_count;
+            for (int i = 0; i < m_count; i++)
+            {
+                long cand_id = (long)cl->members[m_start + i].frame_id;
+                const int16_t *cand_sq16 = model->sq16_dataset_buffer +
+                                           (size_t)cand_id * (size_t)frame_elem;
+                uint64_t ssd = sq16_dist_squared_cutoff_i16(
+                    visited->query_sq16, cand_sq16, frame_elem, cached_ssd_cutoff
+                );
+                if (ssd <= cached_ssd_cutoff)
+                {
+                    pass_mask |= (1U << i);
+                }
+            }
+        }
+        else
+        {
+            continue;
         }
 
         if (!pass_mask)
@@ -1139,6 +1413,24 @@ void knn_eval_cluster_members(
         }
     }
 
+    int rabitq_active = (config->use_rabitq &&
+                         cl->rabitq_transposed != NULL &&
+                         cl->num_rabitq_blocks > 0 &&
+                         visited->query_rabitq_lut.lut_i8 != NULL);
+
+    if (rabitq_active)
+    {
+        knn_eval_members_rabitq(
+            cl, d_anchor, r_home, dcc_home, sq16_delta,
+            num_active_pivots, pivot_diffs, query_id, query_data, model,
+            config, reader, cand_buffer, heap, all_heaps,
+#ifdef _OPENMP
+            bucket_locks,
+#endif
+            visited, batch, telem);
+        return;
+    }
+
     int pq_active = (config->use_pq && model->pq_codebook != NULL &&
                      cl->pq_transposed != NULL && cl->num_pq_blocks > 0 &&
                      visited->query_pq_lut != NULL);
@@ -1169,7 +1461,8 @@ void knn_eval_cluster_members(
         return;
     }
 
-    if (sq16_active && cl->sq16_transposed != NULL && cl->num_sq16_blocks > 0)
+    if (sq16_active && cl->num_sq16_blocks > 0 &&
+        (cl->sq16_transposed != NULL || config->use_sq16_sparse))
     {
         knn_eval_members_sq16_blocks(
             cl, d_anchor, r_home, dcc_home, sq16_delta,

@@ -1013,6 +1013,11 @@ void knn_model_free(
                 free(model->clusters[c].members);
                 model->clusters[c].members = NULL;
             }
+            if (model->clusters[c].rabitq_meta != NULL)
+            {
+                free(model->clusters[c].rabitq_meta);
+                model->clusters[c].rabitq_meta = NULL;
+            }
         } // for (int c = 0; ...)
         free(model->clusters);
         model->clusters = NULL;
@@ -1136,6 +1141,26 @@ void knn_model_free(
     {
         free(model->pq_transposed_buffer);
         model->pq_transposed_buffer = NULL;
+    }
+
+    rabitq_free_params(&model->rabitq_params);
+
+    if (model->rabitq_meta_buffer != NULL)
+    {
+        free(model->rabitq_meta_buffer);
+        model->rabitq_meta_buffer = NULL;
+    }
+
+    if (model->rabitq_dataset_buffer != NULL)
+    {
+        free(model->rabitq_dataset_buffer);
+        model->rabitq_dataset_buffer = NULL;
+    }
+
+    if (model->rabitq_transposed_buffer != NULL)
+    {
+        free(model->rabitq_transposed_buffer);
+        model->rabitq_transposed_buffer = NULL;
     }
 
     if (model->dataset_mmap_addr != NULL)

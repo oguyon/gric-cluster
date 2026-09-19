@@ -58,6 +58,17 @@ int knn_model_build_or_load_pq(
     const KnnConfig *config);
 
 /**
+ * knn_model_build_or_load_rabitq() - Build or load RaBitQ bit codes into KnnModel.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_or_load_rabitq(
+    KnnModel        *model,
+    const KnnConfig *config);
+
+/**
  * knn_model_cache_dataset() - Preload dataset frames into resident RAM buffer if feasible.
  * @model:  Pointer to initialized KnnModel.
  * @config: Pointer to KnnConfig.

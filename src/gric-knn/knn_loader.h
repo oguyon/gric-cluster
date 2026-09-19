@@ -62,6 +62,16 @@ int knn_model_build_or_load_pq(
     const KnnConfig *config);
 
 /**
+ * @brief Build or load quantized RaBitQ dataset buffer into KnnModel.
+ * @param model  Pointer to initialized KnnModel.
+ * @param config Pointer to KnnConfig.
+ * @return 0 on success, -1 on failure.
+ */
+int knn_model_build_or_load_rabitq(
+    KnnModel        *model,
+    const KnnConfig *config);
+
+/**
  * @brief Preload dataset frames into resident RAM buffer if feasible.
  * @param model  Pointer to initialized KnnModel.
  * @param config Pointer to KnnConfig.

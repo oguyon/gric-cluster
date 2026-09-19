@@ -62,6 +62,7 @@ SRCS = \
 	src/shared/scalar_quant_fastscan.c \
 	src/shared/residual_quant.c \
 	src/shared/product_quant.c \
+	src/shared/rabit_quant.c \
 	src/shared/quant_memo.c \
 	src/wasm/wasm_cluster.c \
 	src/wasm/wasm_multitile.c \
