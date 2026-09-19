@@ -94,12 +94,39 @@ int is_cluster_pruned_by_pivots(
             uint16_t q_dcc = model->dcc_sq16[(size_t)p_cl * M + (size_t)c];
             if (q_dcc > 0)
             {
-                double dcc_pc = (double)q_dcc * inv_scale;
+                double dcc_pc;
+                double slack = total_slack;
+                if (q_dcc < 65534)
+                {
+                    dcc_pc = (double)q_dcc * inv_scale;
+                }
+                else if (model->dcc_matrix != NULL)
+                {
+                    dcc_pc = model->dcc_matrix[(size_t)p_cl * M + (size_t)c];
+                    slack = sq16_delta;
+                }
+                else
+                {
+                    double dcc_sat = 65534.0 * inv_scale;
+                    double d_qp = pivots[p].d_anchor;
+                    if (d_qp < dcc_sat)
+                    {
+                        double lb_p = (dcc_sat - d_qp) - cl_radius;
+                        if (lb_p - total_slack >= current_tau / eps_factor ||
+                            (config->rlim_cutoff > 0.0 &&
+                             lb_p - total_slack >= config->rlim_cutoff))
+                        {
+                            return 1;
+                        }
+                    }
+                    continue;
+                }
+
                 double d_qp = pivots[p].d_anchor;
                 double lb_p = fabs(d_qp - dcc_pc) - cl_radius;
-                if (lb_p - total_slack >= current_tau / eps_factor ||
+                if (lb_p - slack >= current_tau / eps_factor ||
                     (config->rlim_cutoff > 0.0 &&
-                     lb_p - total_slack >= config->rlim_cutoff))
+                     lb_p - slack >= config->rlim_cutoff))
                 {
                     return 1;
                 }

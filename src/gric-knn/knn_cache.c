@@ -319,7 +319,9 @@ int knn_model_build_or_load_sq8(
     }
 
     // Calibrate min and max by scanning frames or using profile
-    if (model->has_profile && model->profile.sq8_params.scale > 0.0f)
+    if (model->has_profile && model->profile.use_sq8 &&
+        model->profile.num_frames >= N &&
+        model->profile.sq8_params.scale > 0.0f)
     {
         model->sq8_params = model->profile.sq8_params;
         model->sq8_params.dim = dim;
@@ -589,7 +591,9 @@ int knn_model_build_or_load_sq16(
     }
 
     // Calibrate SQ16 min/max
-    if (model->has_profile && model->profile.sq16_params.scale > 0.0f)
+    if (model->has_profile && model->profile.use_sq16 &&
+        model->profile.num_frames >= N &&
+        model->profile.sq16_params.scale > 0.0f)
     {
         model->sq16_params = model->profile.sq16_params;
         model->sq16_params.dim = dim;
