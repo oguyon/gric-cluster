@@ -3250,6 +3250,13 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                      data-tooltip-desc="Deduplicates dataset frames into unique SQ16 vectors and memoizes query distances.">
                   -memo
                 </div>
+                <div id="btnKnnSparse" class="toggle-btn toggle-active toggle-cyan active"
+                     data-tooltip-title="SQ16 SparseCache On-Demand Scratchpad"
+                     data-tooltip-badge="CLI: -sq16-sparse"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="0 MB resident index; transposes blocks into 32KB scratchpad.">
+                  SparseCache
+                </div>
                 <div class="param-slider-col" id="colKnnSq16Ratio">
                   <div class="param-label">
                     <span>SQ16 Ratio (<span class="badge-pill">--sq16-ratio</span>)</span>

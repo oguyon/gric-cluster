@@ -9,6 +9,7 @@
 #include "scalar_quant.h"
 #include "residual_quant.h"
 #include "product_quant.h"
+#include "rabit_quant.h"
 #include "gric_profile.h"
 #include <math.h>
 #include <stdalign.h>
@@ -37,19 +38,22 @@ typedef struct
 typedef struct
 {
     int         cluster_id;
-    void       *anchor_data;     /**< Cluster anchor frame pixel vector */
-    double      radius;          /**< Max Euclidean distance from anchor to any member */
+    void       *anchor_data;        /**< Cluster anchor frame pixel vector */
+    double      radius;             /**< Max Euclidean distance from anchor to any member */
     int         num_members;
     int         capacity;
-    MemberMeta *members;         /**< Array of member metadata records */
-    void       *ivf_vectors;     /**< Contiguous [num_members x D] float/double vector buffer */
-    int16_t    *sq16_transposed; /**< [num_sq16_blocks * dim * 32] FastScan block coords */
-    int         num_sq16_blocks; /**< Number of 32-candidate FastScan blocks */
-    int8_t     *rq8_transposed;  /**< [num_rq8_blocks * dim * 32] RQ8 FastScan coords */
-    int         num_rq8_blocks;  /**< Number of 32-candidate FastScan blocks for RQ8 */
-    RQ8Params   rq8_params;      /**< Cluster-adaptive RQ8 parameters */
-    uint8_t    *pq_transposed;   /**< [num_pq_blocks * m * 32] PQ FastScan codes */
-    int         num_pq_blocks;   /**< Number of 32-candidate FastScan blocks for PQ */
+    MemberMeta *members;            /**< Array of member metadata records */
+    void       *ivf_vectors;        /**< Contiguous [num_members x D] vector buffer */
+    int16_t    *sq16_transposed;    /**< [num_sq16_blocks * dim * 32] FastScan block coords */
+    int         num_sq16_blocks;    /**< Number of 32-candidate FastScan blocks */
+    int8_t     *rq8_transposed;     /**< [num_rq8_blocks * dim * 32] RQ8 FastScan coords */
+    int         num_rq8_blocks;     /**< Number of 32-candidate FastScan blocks for RQ8 */
+    RQ8Params   rq8_params;         /**< Cluster-adaptive RQ8 parameters */
+    uint8_t    *pq_transposed;      /**< [num_pq_blocks * m * 32] PQ FastScan codes */
+    int         num_pq_blocks;      /**< Number of 32-candidate FastScan blocks for PQ */
+    uint8_t    *rabitq_transposed;  /**< Transposed RaBitQ FastScan codes */
+    RaBitQMeta *rabitq_meta;        /**< [num_members] metadata records */
+    int         num_rabitq_blocks;  /**< Number of 32-candidate FastScan blocks for RaBitQ */
 } KnnCluster;
 
 /** Single nearest neighbor record */
@@ -109,6 +113,8 @@ typedef struct
     char           *sq16_load_path;     /**< Optional path to load .sq16 sidecar file */
     int             sq16_approx;       /**< 1 to relax lower bounds with epsilon */
     double          sq16_ratio;        /**< Max ratio sqrt(D)*scale / rlim (default 0.05) */
+    int             use_sq16_sparse;   /**< 1 to enable on-demand SparseCache FastScan */
+    int             use_sq16_sparse_lru; /**< 1 to enable 16-block LRU Transposed FastScan */
     int             use_rq8;           /**< 1 to enable 8-bit residual quantization filtering */
     char           *rq8_save_path;     /**< Optional path to save .rq8 sidecar file */
     char           *rq8_load_path;     /**< Optional path to load .rq8 sidecar file */
@@ -119,6 +125,11 @@ typedef struct
     char           *pq_save_path;      /**< Optional path to save .pq sidecar file */
     char           *pq_load_path;      /**< Optional path to load .pq sidecar file */
     int             pq_rerank;         /**< Number of top candidates to re-evaluate */
+    int             use_rabitq;        /**< 1 to enable RaBitQ filtering */
+    int             rabitq_bits;       /**< RaBitQ bit depth: 1 or 2 (default 2) */
+    char           *rabitq_save_path;  /**< Optional path to save .rabitq sidecar file */
+    char           *rabitq_load_path;  /**< Optional path to load .rabitq sidecar file */
+    int             rabitq_approx;     /**< 1 to relax lower bounds with epsilon */
     int             use_memo;          /**< 1 to enable memoization/deduplication */
     int             use_batch_dist;    /**< 1 to enable multi-vector SIMD batch distance */
     const char     *prof_filename;     /**< Optional path to .gricprof file */
@@ -169,6 +180,8 @@ typedef struct
     uint64_t rq8_graph_pruned;
     uint64_t pq_evaluations;
     uint64_t pq_members_pruned;
+    uint64_t rabitq_evaluations;
+    uint64_t rabitq_members_pruned;
     uint64_t clusters_graph_evaluated;
     uint64_t two_hop_evaluations;
     uint64_t two_hop_pruned;
@@ -224,6 +237,10 @@ typedef struct
     PQCodebook      *pq_codebook;            /**< Trained PQ codebook */
     uint8_t         *pq_dataset_buffer;      /**< [N x m] resident quantized codes */
     uint8_t         *pq_transposed_buffer;   /**< Contiguous memory for PQ FastScan blocks */
+    RaBitQParams     rabitq_params;          /**< Parameters for RaBitQ */
+    RaBitQMeta      *rabitq_meta_buffer;     /**< [N] metadata records */
+    uint8_t         *rabitq_dataset_buffer;  /**< [N x code_bytes] packed bit codes */
+    uint8_t         *rabitq_transposed_buffer; /**< Contiguous memory for RaBitQ FastScan blocks */
     int              cluster_graph_k;     /**< Number of neighbors per cluster anchor */
     int             *cluster_graph_adj;   /**< [M x cluster_graph_k] neighbor cluster IDs */
     double           avg_cluster_size;    /**< Mean number of members per cluster */
@@ -251,18 +268,42 @@ typedef struct
  * @rep_tags:   Array of query epochs indexed by unique frame ID [N_cand].
  * @rep_dists:  Cached computed distances indexed by unique frame ID [N_cand].
  */
+#define KNN_SPARSE_LRU_BLOCKS 16
+
+/** Single cached transposed SQ16 block in L2 cache */
 typedef struct
 {
-    uint32_t       *tags;
-    uint32_t        epoch;
-    const uint8_t  *query_sq8;  /**< Quantized 8-bit representation of active query frame */
-    const int16_t  *query_sq16; /**< Quantized 16-bit representation of active query frame */
-    int16_t        *query_rq8;  /**< Quantized int16 representation of query residual */
-    int             query_rq8_clipped; /**< 1 when query residual quantization saturated */
-    uint8_t        *query_pq_lut; /**< Precomputed query distance LUT for PQ FastScan */
-    PQLookupTable   query_pq_table; /**< Active query LUT state */
-    uint32_t       *rep_tags;   /**< Per-unique representative query epoch tracker */
-    float          *rep_dists;  /**< Per-unique representative cached distance to query */
+    int      cl_id;       /**< Cluster ID (-1 if empty) */
+    int      block_id;    /**< Block index inside cluster */
+    uint64_t access_seq;  /**< Sequence clock for LRU replacement */
+    int16_t *data;        /**< [dim * 32] transposed FastScan block */
+} KnnCachedBlock;
+
+/** Thread-local 16-block LRU Transposed Cache */
+typedef struct
+{
+    KnnCachedBlock blocks[KNN_SPARSE_LRU_BLOCKS];
+    int16_t       *buffer_pool;  /**< Contiguous pool [16 * dim * 32] */
+    uint64_t       access_clock; /**< Monotonic access counter */
+} KnnSparseLruCache;
+
+typedef struct
+{
+    uint32_t          *tags;
+    uint32_t           epoch;
+    const uint8_t     *query_sq8;  /**< Quantized 8-bit representation of active query frame */
+    const int16_t     *query_sq16; /**< Quantized 16-bit representation of active query frame */
+    int16_t           *query_rq8;  /**< Quantized int16 representation of query residual */
+    int                query_rq8_clipped; /**< 1 when query residual quantization saturated */
+    uint8_t           *query_pq_lut; /**< Precomputed query distance LUT for PQ FastScan */
+    PQLookupTable      query_pq_table; /**< Active query LUT state */
+    float             *query_rabitq_rot;  /**< [dim_pad] Rotated query float vector */
+    float              query_rabitq_norm; /**< Query Euclidean norm ||q|| */
+    RaBitQLookupTable  query_rabitq_lut;  /**< Precomputed query LUT for RaBitQ FastScan */
+    int16_t           *sq16_scratch_block;/**< Thread-local on-demand scratchpad [dim * 32] */
+    KnnSparseLruCache *sq16_lru_cache;    /**< Thread-local 16-block LRU Transposed Cache */
+    uint32_t          *rep_tags;   /**< Per-unique representative query epoch tracker */
+    float             *rep_dists;  /**< Per-unique representative cached distance to query */
 } KnnVisitedTracker;
 
 /**

@@ -136,6 +136,18 @@ void knn_cli_print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-pq-rerank%s %s<int>%s          Top candidates to re-evaluate with exact dist\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-rabitq%s, %s--rabitq%s         Enable Randomized Bit Quantization (RaBitQ)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-no-rabitq%s, %s--no-rabitq%s   Disable RaBitQ filtering\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-rabitq-bits%s %s<1|2>%s        RaBitQ bit depth (default: 2)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-rabitq-save%s %s<path>%s       Save RaBitQ dataset to sidecar\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-rabitq-load%s %s<path>%s       Load RaBitQ dataset from sidecar\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-rabitq-approx%s                Enable approximate lower bound in RaBitQ\n",
+           ansi_color_green, ansi_reset);
     printf("  %s-sq8%s, %s--sq8%s               Enable 8-bit scalar quantization filtering\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-no-sq8%s, %s--no-sq8%s         Disable 8-bit scalar quantization filtering\n",
@@ -156,6 +168,12 @@ void knn_cli_print_help(
            "(%sdefault:%s 0.05)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
            ansi_color_cyan, ansi_reset);
+    printf("  %s-sq16-sparse%s, %s--sq16-sparse%s Enable SQ16 SparseCache Direct SIMD\n"
+           "                                (0 MB resident transposed index)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-sq16-sparse-lru%s            Enable 16-block LRU Transposed FastScan\n"
+           "                                (512 KB per thread in L2 cache)\n",
+           ansi_color_green, ansi_reset);
     printf("  %s-memo%s, %s--memo%s             Enable quantized memoization cache\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-no-memo%s, %s--no-memo%s       Disable quantized memoization cache\n",
@@ -229,6 +247,10 @@ static void knn_cli_set_defaults(
     config->use_rq8 = 1;            // Enabled by default for 8-bit residual quantization
     config->use_sq8 = 0;            // Fallback scalar quantization
     config->use_sq16 = 0;
+    config->use_sq16_sparse = 0;    // On-demand FastScan block transpose
+    config->use_sq16_sparse_lru = 0; // 16-block LRU Transposed FastScan
+    config->use_rabitq = 0;         // RaBitQ randomized bit quantization (optional)
+    config->rabitq_bits = 2;        // Default 2-bit Extended RaBitQ
     config->use_dcc_sq16 = 1;       // Enabled by default for 16-bit quantized DCC matrix
     config->sq16_ratio = 0.05;      // Enforce sqrt(D)*scale <= alpha*rlim
     config->use_memo = 1;           // Enabled by default for quantized memoization
@@ -702,6 +724,76 @@ static int knn_cli_parse_quant_opt(
         config->pq_rerank = atoi(argv[++(*arg_idx)]);
         return 1;
     }
+    if (strcmp(argv[i], "-rabitq") == 0 || strcmp(argv[i], "--rabitq") == 0)
+    {
+        config->use_rabitq = 1;
+        config->use_pq = 0;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-rabitq") == 0 || strcmp(argv[i], "--no-rabitq") == 0 ||
+        strcmp(argv[i], "-norabitq") == 0)
+    {
+        config->use_rabitq = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-rabitq-bits") == 0 || strcmp(argv[i], "--rabitq-bits") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -rabitq-bits requires an integer argument (1 or 2)\n");
+            return -1;
+        }
+        config->use_rabitq = 1;
+        config->use_pq = 0;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->rabitq_bits = atoi(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-rabitq-save") == 0 || strcmp(argv[i], "--rabitq-save") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -rabitq-save requires a filepath argument\n");
+            return -1;
+        }
+        config->use_rabitq = 1;
+        config->use_pq = 0;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->rabitq_save_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-rabitq-load") == 0 || strcmp(argv[i], "--rabitq-load") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -rabitq-load requires a filepath argument\n");
+            return -1;
+        }
+        config->use_rabitq = 1;
+        config->use_pq = 0;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->rabitq_load_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-rabitq-approx") == 0 || strcmp(argv[i], "--rabitq-approx") == 0)
+    {
+        config->use_rabitq = 1;
+        config->use_pq = 0;
+        config->use_rq8 = 0;
+        config->use_sq16 = 0;
+        config->use_sq8 = 0;
+        config->rabitq_approx = 1;
+        return 1;
+    }
     if (strcmp(argv[i], "-sq8") == 0 || strcmp(argv[i], "--sq8") == 0)
     {
         config->use_sq8 = 1;
@@ -804,6 +896,23 @@ static int knn_cli_parse_quant_opt(
             return -1;
         }
         config->sq16_ratio = atof(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq16-sparse") == 0 || strcmp(argv[i], "--sq16-sparse") == 0)
+    {
+        config->use_sq16 = 1;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        config->use_sq16_sparse = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-sq16-sparse-lru") == 0 || strcmp(argv[i], "--sq16-sparse-lru") == 0)
+    {
+        config->use_sq16 = 1;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        config->use_sq16_sparse = 1;
+        config->use_sq16_sparse_lru = 1;
         return 1;
     }
     if (strcmp(argv[i], "-dcc-sq16") == 0 || strcmp(argv[i], "--dcc-sq16") == 0)

@@ -2010,6 +2010,9 @@ function buildCliCommand() {
       knnParts.push('-rq8');
     } else if (typeof knnUseSq16 === 'boolean' && knnUseSq16) {
       knnParts.push('-sq16');
+      if (typeof knnUseSq16Sparse === 'boolean' && knnUseSq16Sparse) {
+        knnParts.push('-sq16-sparse');
+      }
       if (typeof knnSq16Ratio === 'number' && knnSq16Ratio !== 0.05) {
         knnParts.push('-sq16-ratio', knnSq16Ratio.toFixed(3));
       }

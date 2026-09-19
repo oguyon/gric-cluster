@@ -180,6 +180,7 @@ set(CLUSTER_SRCS
     src/shared/residual_quant.c
     src/shared/product_quant.c
     src/shared/quant_memo.c
+    src/shared/rabit_quant.c
     src/shared/gric_profile.c
     src/shared/gric_simd.c
     src/gric-probe/probe_engine.c
@@ -370,6 +371,7 @@ add_executable(gric-knn
     src/shared/residual_quant.c
     src/shared/product_quant.c
     src/shared/quant_memo.c
+    src/shared/rabit_quant.c
     src/shared/gric_profile.c
     src/shared/gric_simd.c
 )
@@ -589,6 +591,19 @@ add_test(NAME test_knn_spiral_sq16_load
             -o /tmp/ctest_knn_spiral_sq16_load.txt)
 set_tests_properties(test_knn_spiral_sq16_load PROPERTIES DEPENDS test_knn_spiral_sq16)
 
+add_test(NAME test_knn_spiral_sq16_sparse
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_sq16_out
+            -k 10 -dtmin 5 -no-reciprocal -sq16 -sq16-sparse
+            -o /tmp/ctest_knn_spiral_sq16_sparse.txt)
+set_tests_properties(test_knn_spiral_sq16_sparse PROPERTIES DEPENDS test_spiral_clustering_sq16)
+
+add_test(NAME test_knn_spiral_sq16_sparse_lru
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_sq16_out
+            -k 10 -dtmin 5 -no-reciprocal -sq16 -sq16-sparse-lru
+            -o /tmp/ctest_knn_spiral_sq16_sparse_lru.txt)
+set_tests_properties(test_knn_spiral_sq16_sparse_lru
+    PROPERTIES DEPENDS test_spiral_clustering_sq16)
+
 add_test(NAME test_knn_spiral_rq8
     COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_sq16_out
             -k 10 -dtmin 5 -no-reciprocal -rq8 -rq8-save /tmp/ctest_spiral.rq8
@@ -600,6 +615,20 @@ add_test(NAME test_knn_spiral_rq8_load
             -k 10 -dtmin 5 -no-reciprocal -rq8 -rq8-load /tmp/ctest_spiral.rq8
             -o /tmp/ctest_knn_spiral_rq8_load.txt)
 set_tests_properties(test_knn_spiral_rq8_load PROPERTIES DEPENDS test_knn_spiral_rq8)
+
+add_test(NAME test_knn_spiral_rabitq
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_sq16_out
+            -k 10 -dtmin 5 -no-reciprocal -rabitq -rabitq-bits 1
+            -rabitq-save /tmp/ctest_spiral.rabitq
+            -o /tmp/ctest_knn_spiral_rabitq.txt)
+set_tests_properties(test_knn_spiral_rabitq PROPERTIES DEPENDS test_spiral_clustering_sq16)
+
+add_test(NAME test_knn_spiral_rabitq_load
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_sq16_out
+            -k 10 -dtmin 5 -no-reciprocal -rabitq
+            -rabitq-load /tmp/ctest_spiral.rabitq
+            -o /tmp/ctest_knn_spiral_rabitq_load.txt)
+set_tests_properties(test_knn_spiral_rabitq_load PROPERTIES DEPENDS test_knn_spiral_rabitq)
 
 if (CFITSIO_FOUND)
     add_test(NAME test_bouncing_balls_single_gen
@@ -705,6 +734,16 @@ target_link_libraries(test_product_quant m)
 add_test(NAME test_product_quant
     COMMAND test_product_quant)
 
+add_executable(test_rabit_quant
+    tests/test_rabit_quant.c
+    src/shared/rabit_quant.c
+    src/shared/gric_simd.c
+)
+target_include_directories(test_rabit_quant PRIVATE src/shared)
+target_link_libraries(test_rabit_quant m)
+add_test(NAME test_rabit_quant
+    COMMAND test_rabit_quant)
+
 add_executable(test_knn_rq8_sidecar_mismatch
     tests/test_knn_rq8_sidecar_mismatch.c
     src/gric-knn/knn_cache.c
@@ -715,6 +754,7 @@ add_executable(test_knn_rq8_sidecar_mismatch
     src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
     src/shared/product_quant.c
+    src/shared/rabit_quant.c
     src/shared/gric_simd.c
 )
 target_include_directories(test_knn_rq8_sidecar_mismatch PRIVATE src/gric-knn src/shared)
@@ -742,6 +782,7 @@ add_executable(test_knn_adaptive_rq8
     src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
     src/shared/product_quant.c
+    src/shared/rabit_quant.c
     src/shared/gric_simd.c
 )
 target_include_directories(test_knn_adaptive_rq8

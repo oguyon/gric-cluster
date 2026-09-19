@@ -113,7 +113,16 @@ int main(
         }
     }
 
-    if (config.use_pq)
+    if (config.use_rabitq)
+    {
+        if (knn_model_build_or_load_rabitq(&model, &config) != 0)
+        {
+            fprintf(stderr, "Error: Failed to initialize RaBitQ dataset buffer\n");
+            knn_model_free(&model);
+            return 1;
+        }
+    }
+    else if (config.use_pq)
     {
         if (knn_model_build_or_load_pq(&model, &config) != 0)
         {
@@ -226,7 +235,14 @@ int main(
         printf("  Clusters Graph Evaluated:  %lu\n",
                (unsigned long)telemetry.clusters_graph_evaluated);
     }
-    if (config.use_pq)
+    if (config.use_rabitq)
+    {
+        printf("  RaBitQ Evaluations:        %lu\n",
+               (unsigned long)telemetry.rabitq_evaluations);
+        printf("  RaBitQ Lower-Bound Pruned: %lu\n",
+               (unsigned long)telemetry.rabitq_members_pruned);
+    }
+    else if (config.use_pq)
     {
         printf("  PQ Evaluations:            %lu\n",
                (unsigned long)telemetry.pq_evaluations);

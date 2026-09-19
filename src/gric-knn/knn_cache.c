@@ -7,6 +7,7 @@
 #include "knn_cache.h"
 #include "knn_reader.h"
 #include "scalar_quant.h"
+#include "rabit_quant.h"
 #include "gric_bin_io.h"
 #include "gric_hash.h"
 #include <fcntl.h>
@@ -1297,4 +1298,161 @@ int knn_model_build_or_load_pq(
 
     return 0;
 }
+
+/**
+ * knn_model_build_or_load_rabitq() - Build or load RaBitQ bit codes into KnnModel.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_or_load_rabitq(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (model == NULL || config == NULL || !config->use_rabitq)
+    {
+        return 0;
+    }
+
+    long N = model->total_dataset_frames;
+    long dim = model->frame_elements;
+    if (N <= 0 || dim <= 0)
+    {
+        return 0;
+    }
+
+    /* Path 1: Load from precomputed sidecar file */
+    if (config->rabitq_load_path != NULL)
+    {
+        long loaded_frames = 0;
+        if (rabitq_load_sidecar(config->rabitq_load_path, &model->rabitq_params,
+                                &model->rabitq_meta_buffer, &model->rabitq_dataset_buffer,
+                                &loaded_frames) != 0)
+        {
+            fprintf(stderr, "Error: Failed to load RaBitQ sidecar '%s'\n",
+                    config->rabitq_load_path);
+            return -1;
+        }
+
+        if (loaded_frames != N || model->rabitq_params.dim != dim)
+        {
+            fprintf(stderr, "Error: RaBitQ sidecar dimension mismatch (%ldx%ld vs %ldx%ld)\n",
+                    loaded_frames, model->rabitq_params.dim, N, dim);
+            return -1;
+        }
+
+        if (knn_model_build_transposed_rabitq(model, config) != 0)
+        {
+            return -1;
+        }
+
+        if (config->verbose_level >= 1)
+        {
+            printf("Loaded RaBitQ sidecar: %ld frames, dim=%ld (pad=%ld), bits=%d\n",
+                   N, dim, model->rabitq_params.dim_pad, model->rabitq_params.bits);
+        }
+        return 0;
+    } // if (config->rabitq_load_path != NULL)
+
+    /* Path 2: Initialize RaBitQ params and quantize dataset */
+    int bits = (config->rabitq_bits == 1) ? 1 : 2;
+    if (rabitq_init_params(&model->rabitq_params, dim, bits, 0) != 0)
+    {
+        return -1;
+    }
+
+    size_t code_bytes = model->rabitq_params.code_bytes_per_vec;
+    model->rabitq_dataset_buffer = (uint8_t *)malloc((size_t)N * code_bytes);
+    model->rabitq_meta_buffer = (RaBitQMeta *)malloc((size_t)N * sizeof(RaBitQMeta));
+
+    if (model->rabitq_dataset_buffer == NULL || model->rabitq_meta_buffer == NULL)
+    {
+        return -1;
+    }
+
+    if (model->dataset_buffer != NULL)
+    {
+        for (long i = 0; i < N; i++)
+        {
+            uint8_t *dst_code = model->rabitq_dataset_buffer + (size_t)i * code_bytes;
+            RaBitQMeta *dst_meta = &model->rabitq_meta_buffer[i];
+
+            if (model->is_double)
+            {
+                const double *src = (const double *)model->dataset_buffer + i * dim;
+                rabitq_quantize_vector_double(src, dst_code, dst_meta, &model->rabitq_params);
+            }
+            else
+            {
+                const float *src = (const float *)model->dataset_buffer + i * dim;
+                rabitq_quantize_vector_float(src, dst_code, dst_meta, &model->rabitq_params);
+            }
+        } // for (long i = 0; i < N; i++)
+    }
+    else
+    {
+        KnnFrameReader reader;
+        if (knn_reader_open(&reader, config->input_data_path, N,
+                            model->frame_width, model->frame_height, model->is_double) != 0)
+        {
+            return -1;
+        }
+
+        size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
+        void *tmp_frame = malloc((size_t)dim * elem_size);
+        if (tmp_frame == NULL)
+        {
+            knn_reader_close(&reader);
+            return -1;
+        }
+
+        for (long i = 0; i < N; i++)
+        {
+            if (knn_reader_read_frame(&reader, i, tmp_frame) == 0)
+            {
+                uint8_t *dst_code = model->rabitq_dataset_buffer + (size_t)i * code_bytes;
+                RaBitQMeta *dst_meta = &model->rabitq_meta_buffer[i];
+
+                if (model->is_double)
+                {
+                    rabitq_quantize_vector_double(
+                        (const double *)tmp_frame, dst_code, dst_meta, &model->rabitq_params
+                    );
+                }
+                else
+                {
+                    rabitq_quantize_vector_float(
+                        (const float *)tmp_frame, dst_code, dst_meta, &model->rabitq_params
+                    );
+                }
+            }
+        } // for (long i = 0; i < N; i++)
+
+        free(tmp_frame);
+        knn_reader_close(&reader);
+    }
+
+    if (knn_model_build_transposed_rabitq(model, config) != 0)
+    {
+        return -1;
+    }
+
+    if (config->rabitq_save_path != NULL)
+    {
+        if (rabitq_save_sidecar(config->rabitq_save_path, &model->rabitq_params,
+                                model->rabitq_meta_buffer, model->rabitq_dataset_buffer, N) != 0)
+        {
+            fprintf(stderr, "Warning: Failed to save RaBitQ sidecar to '%s'\n",
+                    config->rabitq_save_path);
+        }
+        else if (config->verbose_level >= 1)
+        {
+            printf("Saved RaBitQ sidecar to '%s'\n", config->rabitq_save_path);
+        }
+    }
+
+    return 0;
+}
+
 

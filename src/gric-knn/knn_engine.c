@@ -228,6 +228,8 @@ int knn_run_search(
     uint64_t global_telem_rq8_graph_pruned = 0;
     uint64_t global_telem_pq_evals = 0;
     uint64_t global_telem_pq_pruned = 0;
+    uint64_t global_telem_rabitq_evals = 0;
+    uint64_t global_telem_rabitq_pruned = 0;
     uint64_t global_telem_graph_clusters = 0;
     uint64_t global_telem_two_hop_evals = 0;
     uint64_t global_telem_two_hop_pruned = 0;
@@ -249,6 +251,7 @@ int knn_run_search(
                                  global_telem_rq8_evals, global_telem_rq8_pruned,      \
                                  global_telem_rq8_graph_pruned,                         \
                                  global_telem_pq_evals, global_telem_pq_pruned,        \
+                                 global_telem_rabitq_evals, global_telem_rabitq_pruned, \
                                  global_telem_graph_clusters,                           \
                                  global_telem_two_hop_evals,                            \
                                  global_telem_two_hop_pruned,                           \
@@ -282,6 +285,16 @@ int knn_run_search(
             (config->use_pq && model->pq_codebook != NULL) ?
                 (uint8_t *)malloc((size_t)model->pq_codebook->m *
                                   (size_t)model->pq_codebook->k_centroids) : NULL;
+        float *query_rabitq_rot =
+            (config->use_rabitq && model->rabitq_dataset_buffer != NULL) ?
+                (float *)malloc((size_t)model->rabitq_params.dim_pad * sizeof(float)) : NULL;
+        int rabitq_num_nibbles = (model->rabitq_params.bits == 2) ?
+            (int)(model->rabitq_params.dim_pad / 2) :
+            (int)(model->rabitq_params.dim_pad / 4);
+        int8_t *query_rabitq_lut_buf =
+            (config->use_rabitq && model->rabitq_dataset_buffer != NULL) ?
+                (int8_t *)malloc((size_t)rabitq_num_nibbles * 16 *
+                                 sizeof(int8_t)) : NULL;
         double *anchor_dists =
             (double *)malloc((size_t)model->num_clusters * sizeof(double));
         ClusterScore *scores_buf =
@@ -328,6 +341,13 @@ int knn_run_search(
             visited.query_pq_table.m = model->pq_codebook->m;
             visited.query_pq_table.k_centroids = model->pq_codebook->k_centroids;
         }
+        visited.query_rabitq_rot = query_rabitq_rot;
+        visited.query_rabitq_norm = 0.0f;
+        memset(&visited.query_rabitq_lut, 0, sizeof(RaBitQLookupTable));
+        if (query_rabitq_lut_buf != NULL)
+        {
+            visited.query_rabitq_lut.lut_i8 = query_rabitq_lut_buf;
+        }
         visited.rep_tags = NULL;
         visited.rep_dists = NULL;
         if (config->use_memo && model->frame_to_unique_map != NULL)
@@ -335,6 +355,43 @@ int knn_run_search(
             visited.rep_tags = (uint32_t *)calloc((size_t)N_cand, sizeof(uint32_t));
             visited.rep_dists = (float *)malloc((size_t)N_cand * sizeof(float));
         }
+
+        int16_t *sq16_scratch = NULL;
+        KnnSparseLruCache *sq16_lru = NULL;
+        if (config->use_sq16 && config->use_sq16_sparse)
+        {
+            if (config->use_sq16_sparse_lru)
+            {
+                sq16_lru = (KnnSparseLruCache *)calloc(1, sizeof(KnnSparseLruCache));
+                if (sq16_lru != NULL)
+                {
+                    size_t blk_elems = (size_t)model->frame_elements * SQ16_FASTSCAN_BLOCK_SIZE;
+                    sq16_lru->buffer_pool = (int16_t *)malloc(
+                        (size_t)KNN_SPARSE_LRU_BLOCKS * blk_elems * sizeof(int16_t));
+                    for (int s = 0; s < KNN_SPARSE_LRU_BLOCKS; s++)
+                    {
+                        sq16_lru->blocks[s].cl_id = -1;
+                        sq16_lru->blocks[s].block_id = -1;
+                        sq16_lru->blocks[s].access_seq = 0;
+                        if (sq16_lru->buffer_pool != NULL)
+                        {
+                            sq16_lru->blocks[s].data = sq16_lru->buffer_pool + s * blk_elems;
+                        }
+                        else
+                        {
+                            sq16_lru->blocks[s].data = NULL;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                sq16_scratch = (int16_t *)malloc((size_t)model->frame_elements *
+                                                 SQ16_FASTSCAN_BLOCK_SIZE * sizeof(int16_t));
+            }
+        }
+        visited.sq16_scratch_block = sq16_scratch;
+        visited.sq16_lru_cache = sq16_lru;
 
 #ifdef _OPENMP
 #pragma omp for schedule(guided, 16)
@@ -403,6 +460,47 @@ int knn_run_search(
                             (const float *)query_buffer, model->pq_codebook,
                             &visited.query_pq_table, config->rlim_cutoff);
                     }
+                }
+
+                if (config->use_rabitq && query_rabitq_rot != NULL &&
+                    model->rabitq_dataset_buffer != NULL)
+                {
+                    if (model->is_double)
+                    {
+                        rabitq_rotate_vector_double(
+                            (const double *)query_buffer, query_rabitq_rot,
+                            &model->rabitq_params);
+                    }
+                    else
+                    {
+                        rabitq_rotate_vector_float(
+                            (const float *)query_buffer, query_rabitq_rot,
+                            &model->rabitq_params);
+                    }
+
+                    double q_norm_sq = 0.0;
+                    long d = model->frame_elements;
+                    if (model->is_double)
+                    {
+                        const double *q_d = (const double *)query_buffer;
+                        for (long k = 0; k < d; k++)
+                        {
+                            q_norm_sq += q_d[k] * q_d[k];
+                        }
+                    }
+                    else
+                    {
+                        const float *q_f = (const float *)query_buffer;
+                        for (long k = 0; k < d; k++)
+                        {
+                            q_norm_sq += (double)(q_f[k] * q_f[k]);
+                        }
+                    }
+                    visited.query_rabitq_norm = (float)sqrt(q_norm_sq);
+
+                    rabitq_build_query_lut(
+                        query_rabitq_rot, visited.query_rabitq_norm,
+                        &model->rabitq_params, &visited.query_rabitq_lut);
                 }
 
                 if (is_cross_dataset)
@@ -474,6 +572,8 @@ int knn_run_search(
         global_telem_rq8_graph_pruned += thread_telem.rq8_graph_pruned;
         global_telem_pq_evals += thread_telem.pq_evaluations;
         global_telem_pq_pruned += thread_telem.pq_members_pruned;
+        global_telem_rabitq_evals += thread_telem.rabitq_evaluations;
+        global_telem_rabitq_pruned += thread_telem.rabitq_members_pruned;
         global_telem_graph_clusters += thread_telem.clusters_graph_evaluated;
         global_telem_two_hop_evals += thread_telem.two_hop_evaluations;
         global_telem_two_hop_pruned += thread_telem.two_hop_pruned;
@@ -495,6 +595,20 @@ int knn_run_search(
             free(visited.rep_dists);
         }
 
+        if (sq16_lru != NULL)
+        {
+            if (sq16_lru->buffer_pool != NULL)
+            {
+                free(sq16_lru->buffer_pool);
+            }
+            free(sq16_lru);
+        }
+
+        if (sq16_scratch != NULL)
+        {
+            free(sq16_scratch);
+        }
+
         if (query_sq8 != NULL)
         {
             free(query_sq8);
@@ -513,6 +627,16 @@ int knn_run_search(
         if (query_pq_lut != NULL)
         {
             free(query_pq_lut);
+        }
+
+        if (query_rabitq_rot != NULL)
+        {
+            free(query_rabitq_rot);
+        }
+
+        if (query_rabitq_lut_buf != NULL)
+        {
+            free(query_rabitq_lut_buf);
         }
 
         if (graph_scratch.pq != NULL)
@@ -603,6 +727,8 @@ int knn_run_search(
     telemetry->rq8_graph_pruned = global_telem_rq8_graph_pruned;
     telemetry->pq_evaluations = global_telem_pq_evals;
     telemetry->pq_members_pruned = global_telem_pq_pruned;
+    telemetry->rabitq_evaluations = global_telem_rabitq_evals;
+    telemetry->rabitq_members_pruned = global_telem_rabitq_pruned;
     telemetry->clusters_graph_evaluated = global_telem_graph_clusters;
     telemetry->two_hop_evaluations = global_telem_two_hop_evals;
     telemetry->two_hop_pruned = global_telem_two_hop_pruned;

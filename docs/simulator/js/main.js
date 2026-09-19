@@ -6809,6 +6809,9 @@
             args.push('-rq8');
           } else if (typeof knnUseSq16 !== 'undefined' && knnUseSq16) {
             args.push('-sq16');
+            if (typeof knnUseSq16Sparse !== 'undefined' && knnUseSq16Sparse) {
+              args.push('-sq16-sparse');
+            }
             if (typeof knnSq16Ratio !== 'undefined') {
               args.push('-sq16-ratio', String(knnSq16Ratio));
             }
@@ -7348,6 +7351,7 @@
     const btnKnnSq8 = document.getElementById('btnKnnSq8');
     const btnKnnSq16 = document.getElementById('btnKnnSq16');
     const btnKnnRq8 = document.getElementById('btnKnnRq8');
+    const btnKnnSparse = document.getElementById('btnKnnSparse');
 
     function updateKnnQuantToggles() {
       if (btnKnnRq8) {
@@ -7364,6 +7368,11 @@
         btnKnnSq8.classList.toggle('toggle-active', knnUseSq8);
         btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
         btnKnnSq8.classList.toggle('active', knnUseSq8);
+      }
+      if (btnKnnSparse) {
+        btnKnnSparse.classList.toggle('toggle-active', knnUseSq16Sparse);
+        btnKnnSparse.classList.toggle('toggle-cyan', knnUseSq16Sparse);
+        btnKnnSparse.classList.toggle('active', knnUseSq16Sparse);
       }
     }
 
@@ -7418,6 +7427,17 @@
         btnKnnMemo.classList.toggle('toggle-active', knnUseMemo);
         btnKnnMemo.classList.toggle('toggle-cyan', knnUseMemo);
         btnKnnMemo.classList.toggle('active', knnUseMemo);
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    if (btnKnnSparse) {
+      btnKnnSparse.addEventListener('click', () => {
+        knnUseSq16Sparse = !knnUseSq16Sparse;
+        btnKnnSparse.classList.toggle('toggle-active', knnUseSq16Sparse);
+        btnKnnSparse.classList.toggle('toggle-cyan', knnUseSq16Sparse);
+        btnKnnSparse.classList.toggle('active', knnUseSq16Sparse);
         updateCliCommand();
         draw();
       });
@@ -9465,6 +9485,9 @@
           args.push('-rq8');
         } else if (radSq16 && radSq16.checked) {
           args.push('-sq16');
+          if (typeof knnUseSq16Sparse !== 'undefined' && knnUseSq16Sparse) {
+            args.push('-sq16-sparse');
+          }
           if (typeof knnSq16Ratio !== 'undefined') {
             args.push('-sq16-ratio', String(knnSq16Ratio));
           }

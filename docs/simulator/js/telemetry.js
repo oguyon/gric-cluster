@@ -1930,6 +1930,12 @@
         btnKnnSq16.classList.toggle('toggle-cyan', knnUseSq16);
         btnKnnSq16.classList.toggle('active', knnUseSq16);
       }
+      const btnKnnSparse = document.getElementById('btnKnnSparse');
+      if (btnKnnSparse && typeof knnUseSq16Sparse !== 'undefined') {
+        btnKnnSparse.classList.toggle('toggle-active', knnUseSq16Sparse);
+        btnKnnSparse.classList.toggle('toggle-cyan', knnUseSq16Sparse);
+        btnKnnSparse.classList.toggle('active', knnUseSq16Sparse);
+      }
       const btnKnnRq8 = document.getElementById('btnKnnRq8');
       if (btnKnnRq8 && typeof knnUseRq8 !== 'undefined') {
         btnKnnRq8.classList.toggle('toggle-active', knnUseRq8);
