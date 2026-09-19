@@ -253,7 +253,7 @@ static inline int knn_is_candidate_pruned(
         double target_thresh = tau_thresh + sq16_delta;
         for (int p = 0; p < num_active_pivots; p++)
         {
-            double diff = fabs(pivot_diffs[p] - r_cand);
+            double diff = pivot_diffs[p] - r_cand;
             if (diff >= target_thresh)
             {
                 telem->level3_annular_pruned++;

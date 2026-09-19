@@ -712,7 +712,11 @@ static int knn_score_candidate_clusters(
                 continue;
             }
 
-            double dcc_val = (double)dcc_home_q * inv_scale;
+            double dcc_val = (dcc_home_q < 65534)
+                             ? ((double)dcc_home_q * inv_scale)
+                             : ((model->dcc_matrix != NULL)
+                                ? model->dcc_matrix[home_cluster_id * M + q]
+                                : ((double)dcc_home_q * inv_scale));
             double r_q = model->clusters[q].radius;
             double lb = fabs(dcc_val - r_home) - r_q;
 
@@ -724,7 +728,11 @@ static int knn_score_candidate_clusters(
                     uint16_t dcc_pq = model->dcc_sq16[p_cl * M + q];
                     if (dcc_pq > 0)
                     {
-                        double d_pq = (double)dcc_pq * inv_scale;
+                        double d_pq = (dcc_pq < 65534)
+                                      ? ((double)dcc_pq * inv_scale)
+                                      : ((model->dcc_matrix != NULL)
+                                         ? model->dcc_matrix[p_cl * M + q]
+                                         : ((double)dcc_pq * inv_scale));
                         double lb_p = fabs(d_pq - p_d_anchors[p]) - r_q;
                         if (lb_p > lb)
                         {

@@ -156,8 +156,10 @@ void knn_cli_print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-sq8-load%s %s<path>%s      Load quantized dataset from sidecar file\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-sq16%s, %s--sq16%s             Enable 16-bit scalar quantization filtering\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-sq16%s, %s--sq16%s             Enable 16-bit scalar quantization filtering "
+           "(%sdefault:%s on)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_cyan, ansi_reset);
     printf("  %s-no-sq16%s, %s--no-sq16%s       Disable 16-bit scalar quantization filtering\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-sq16-save%s %s<path>%s     Save 16-bit quantized dataset to sidecar file\n",
@@ -168,9 +170,13 @@ void knn_cli_print_help(
            "(%sdefault:%s 0.05)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
            ansi_color_cyan, ansi_reset);
-    printf("  %s-sq16-sparse%s, %s--sq16-sparse%s Enable SQ16 SparseCache Direct SIMD\n"
+    printf("  %s-sq16-sparse%s, %s--sq16-sparse%s Enable SQ16 SparseCache Direct SIMD "
+           "(%sdefault:%s on)\n"
            "                                (0 MB resident transposed index)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("  %s-no-sq16-sparse%s           Disable SQ16 SparseCache Direct SIMD\n",
+           ansi_color_green, ansi_reset);
     printf("  %s-sq16-sparse-lru%s            Enable 16-block LRU Transposed FastScan\n"
            "                                (512 KB per thread in L2 cache)\n",
            ansi_color_green, ansi_reset);
@@ -187,7 +193,7 @@ void knn_cli_print_help(
     printf("  %s-no-cluster-graph%s, %s--no-cluster-graph%s Disable Graph-Guided Routing\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-ef-cluster%s %s<int>%s       Max clusters to evaluate in graph routing "
-           "(%sdefault:%s 60)\n",
+           "(%sdefault:%s 128)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
            ansi_color_cyan, ansi_reset);
     printf("  %s-prof%s %s<path>%s          Explicit dataset profile file (.gricprof)\n",
@@ -244,10 +250,10 @@ static void knn_cli_set_defaults(
     config->use_multi_pivot = 1;    // Enabled by default for multi-anchor pivot bounding
     config->use_angular_bound = 1;  // Enabled by default for directional pruning
     config->use_trajectory = 0;     // Disabled by default; enable for smooth trajectories
-    config->use_rq8 = 1;            // Enabled by default for 8-bit residual quantization
+    config->use_rq8 = 0;            // RQ8 filtering (disabled by default in Option A)
     config->use_sq8 = 0;            // Fallback scalar quantization
-    config->use_sq16 = 0;
-    config->use_sq16_sparse = 0;    // On-demand FastScan block transpose
+    config->use_sq16 = 1;           // Option A default: 16-bit scalar quantization
+    config->use_sq16_sparse = 1;    // Option A default: on-demand FastScan block transpose
     config->use_sq16_sparse_lru = 0; // 16-block LRU Transposed FastScan
     config->use_rabitq = 0;         // RaBitQ randomized bit quantization (optional)
     config->rabitq_bits = 2;        // Default 2-bit Extended RaBitQ
@@ -256,7 +262,7 @@ static void knn_cli_set_defaults(
     config->use_memo = 1;           // Enabled by default for quantized memoization
     config->use_batch_dist = 1;     // Enabled by default for multi-vector SIMD batching
     config->use_cluster_graph = 1;  // Enabled by default for graph-guided cluster routing
-    config->ef_cluster = 0;         // 0 = dynamic auto-scaled cluster budget
+    config->ef_cluster = 128;       // Option A default: 128 clusters in graph routing
     config->use_two_hop = 1;        // Enabled by default for 2-hop candidate injection
     config->two_hop_seeds = 2;      // Expand top 2 closest seeds
     config->two_hop_max_cands = 32; // Maximum 2-hop candidate evaluations per query
@@ -599,6 +605,8 @@ static int knn_cli_parse_quant_opt(
     {
         config->use_rq8 = 1;
         config->use_sq16 = 0;
+        config->use_sq16_sparse = 0;
+        config->use_sq16_sparse_lru = 0;
         config->use_sq8 = 0;
         return 1;
     }
@@ -648,6 +656,8 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_sq16_sparse = 0;
+        config->use_sq16_sparse_lru = 0;
         config->use_sq8 = 0;
         return 1;
     }
@@ -730,6 +740,8 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 0;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_sq16_sparse = 0;
+        config->use_sq16_sparse_lru = 0;
         config->use_sq8 = 0;
         return 1;
     }
@@ -799,6 +811,8 @@ static int knn_cli_parse_quant_opt(
         config->use_sq8 = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_sq16_sparse = 0;
+        config->use_sq16_sparse_lru = 0;
         return 1;
     }
     if (strcmp(argv[i], "-no-sq8") == 0 || strcmp(argv[i], "--no-sq8") == 0 ||
@@ -817,6 +831,8 @@ static int knn_cli_parse_quant_opt(
         config->use_sq8 = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_sq16_sparse = 0;
+        config->use_sq16_sparse_lru = 0;
         config->sq8_save_path = argv[++(*arg_idx)];
         return 1;
     }
@@ -830,6 +846,8 @@ static int knn_cli_parse_quant_opt(
         config->use_sq8 = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_sq16_sparse = 0;
+        config->use_sq16_sparse_lru = 0;
         config->sq8_load_path = argv[++(*arg_idx)];
         return 1;
     }
@@ -838,6 +856,8 @@ static int knn_cli_parse_quant_opt(
         config->use_sq8 = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_sq16_sparse = 0;
+        config->use_sq16_sparse_lru = 0;
         config->sq8_approx = 1;
         return 1;
     }
@@ -852,6 +872,8 @@ static int knn_cli_parse_quant_opt(
         strcmp(argv[i], "-nosq16") == 0)
     {
         config->use_sq16 = 0;
+        config->use_sq16_sparse = 0;
+        config->use_sq16_sparse_lru = 0;
         return 1;
     }
     if (strcmp(argv[i], "-sq16-save") == 0 || strcmp(argv[i], "--sq16-save") == 0)
@@ -904,6 +926,12 @@ static int knn_cli_parse_quant_opt(
         config->use_rq8 = 0;
         config->use_sq8 = 0;
         config->use_sq16_sparse = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-sq16-sparse") == 0 || strcmp(argv[i], "--no-sq16-sparse") == 0)
+    {
+        config->use_sq16_sparse = 0;
+        config->use_sq16_sparse_lru = 0;
         return 1;
     }
     if (strcmp(argv[i], "-sq16-sparse-lru") == 0 || strcmp(argv[i], "--sq16-sparse-lru") == 0)
