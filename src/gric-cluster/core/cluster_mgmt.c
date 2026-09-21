@@ -138,6 +138,24 @@ void remove_cluster(
         state->clusters[index_to_remove].anchor_sq8 = NULL;
     }
 
+    if (state->anchor_matrix_eq16 != NULL)
+    {
+        size_t dim = (size_t)state->clusters[index_to_remove].anchor.width *
+                     (size_t)state->clusters[index_to_remove].anchor.height;
+        int remaining = state->num_clusters - 1 - index_to_remove;
+        if (remaining > 0 && dim > 0)
+        {
+            memmove(state->anchor_matrix_eq16 + (size_t)index_to_remove * dim,
+                    state->anchor_matrix_eq16 + (size_t)(index_to_remove + 1) * dim,
+                    (size_t)remaining * dim * sizeof(int16_t));
+        }
+    }
+    else if (state->clusters[index_to_remove].anchor_eq16)
+    {
+        free(state->clusters[index_to_remove].anchor_eq16);
+        state->clusters[index_to_remove].anchor_eq16 = NULL;
+    }
+
     if (state->anchor_matrix_sq16 != NULL)
     {
         size_t dim = (size_t)state->clusters[index_to_remove].anchor.width *
@@ -164,6 +182,26 @@ void remove_cluster(
                                         state->anchor_matrix_sq16,
                                         state->num_clusters - 1,
                                         dim);
+    }
+
+    if (state->anchor_matrix_eq16_interleaved != NULL && state->anchor_matrix_eq16 != NULL)
+    {
+        long dim = (long)state->clusters[index_to_remove].anchor.width *
+                   (long)state->clusters[index_to_remove].anchor.height;
+        eq16_rebuild_anchor_interleaved(state->anchor_matrix_eq16_interleaved,
+                                        state->anchor_matrix_eq16,
+                                        state->num_clusters - 1,
+                                        dim);
+    }
+
+    if (state->anchor_matrix_adc_interleaved != NULL && state->anchor_matrix_eq16 != NULL)
+    {
+        long dim = (long)state->clusters[index_to_remove].anchor.width *
+                   (long)state->clusters[index_to_remove].anchor.height;
+        eq16_rebuild_anchor_adc_interleaved(state->anchor_matrix_adc_interleaved,
+                                            state->anchor_matrix_eq16,
+                                            state->num_clusters - 1,
+                                            dim);
     }
 
     if (state->anchor_matrix_float != NULL)
@@ -201,6 +239,13 @@ void remove_cluster(
                          (size_t)state->clusters[cl_idx].anchor.height;
             state->clusters[cl_idx].anchor_sq8 =
                 state->anchor_matrix_sq8 + (size_t)cl_idx * dim;
+        }
+        if (state->anchor_matrix_eq16 != NULL)
+        {
+            size_t dim = (size_t)state->clusters[cl_idx].anchor.width *
+                         (size_t)state->clusters[cl_idx].anchor.height;
+            state->clusters[cl_idx].anchor_eq16 =
+                state->anchor_matrix_eq16 + (size_t)cl_idx * dim;
         }
         if (state->anchor_matrix_sq16 != NULL)
         {

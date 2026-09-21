@@ -48,6 +48,8 @@ static int compare_dcc_pairs(
  *
  * Return: 0 on success, -1 on error.
  */
+#include "e8_lattice.h"
+
 int knn_build_cluster_graph(
     KnnModel *model)
 {
@@ -57,7 +59,7 @@ int knn_build_cluster_graph(
     }
 
     int M = model->num_clusters;
-    int k_adj = 48;
+    int k_adj = (model->use_e8_graph) ? E8_NUM_ROOTS : 48;
     if (k_adj >= M)
     {
         k_adj = M - 1;

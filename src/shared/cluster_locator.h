@@ -6,6 +6,7 @@
 #ifndef CLUSTER_LOCATOR_H
 #define CLUSTER_LOCATOR_H
 
+#include "eq16_quant.h"
 #include "scalar_quant.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -30,6 +31,10 @@ typedef struct
     int                   prev_cluster_id;   /**< Preceding query cluster ID for warm-starting */
     int                   strict_rlim;       /**< 1 = reject sample if no cluster has d <= rlim */
     int                   is_double;         /**< 1 = double precision, 0 = float */
+    const int16_t        *query_eq16;        /**< Optional pre-quantized EQ16 query vector */
+    const int16_t        *anchors_eq16_buf;  /**< Optional contiguous [M x dim] EQ16 anchors */
+    const int16_t *const *anchors_eq16_ptrs; /**< Optional array of M pointers to EQ16 anchors */
+    const EQ16Params     *eq16_params;       /**< EQ16 calibration parameters */
     const int16_t        *query_sq16;        /**< Optional pre-quantized SQ16 query vector */
     const int16_t        *anchors_sq16_buf;  /**< Optional contiguous [M x dim] SQ16 anchors */
     const int16_t *const *anchors_sq16_ptrs; /**< Optional array of M pointers to SQ16 anchors */

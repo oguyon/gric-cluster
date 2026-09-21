@@ -199,6 +199,69 @@ static inline int is_member_pruned_by_sq16_cached(
 }
 
 /**
+ * is_member_pruned_by_eq16_cached() - Evaluate EQ16 using precomputed SSD cutoff.
+ * @query_eq16:  Pointer to quantized query vector [dim].
+ * @cand_id:     Index of candidate dataset frame.
+ * @ssd_cutoff:  Precomputed SSD cutoff threshold.
+ * @model:       Active KnnModel.
+ * @telem:       Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+static inline int is_member_pruned_by_eq16_cached(
+    const int16_t  *query_eq16,
+    const float    *query_eq16_adc,
+    long            cand_id,
+    uint64_t        ssd_cutoff,
+    const KnnModel *model,
+    KnnTelemetry   *telem)
+{
+    if (ssd_cutoff == UINT64_MAX || model->eq16_dataset_buffer == NULL)
+    {
+        return 0;
+    }
+
+    if (query_eq16_adc != NULL)
+    {
+        const int16_t *cand_eq16 = model->eq16_dataset_buffer +
+                                   (size_t)cand_id * (size_t)model->frame_elements;
+        telem->eq16_evaluations++;
+        float cutoff_f = (float)ssd_cutoff;
+        float dist_sq = eq16_dist_asym_cutoff_f32(
+            query_eq16_adc, cand_eq16, model->frame_elements, cutoff_f
+        );
+
+        if (dist_sq > cutoff_f)
+        {
+            telem->eq16_members_pruned++;
+            return 1;
+        }
+
+        return 0;
+    }
+
+    if (query_eq16 == NULL)
+    {
+        return 0;
+    }
+
+    const int16_t *cand_eq16 = model->eq16_dataset_buffer +
+                               (size_t)cand_id * (size_t)model->frame_elements;
+    telem->eq16_evaluations++;
+    uint64_t ssd = eq16_dist_squared_cutoff_i16(
+        query_eq16, cand_eq16, model->frame_elements, ssd_cutoff
+    );
+
+    if (ssd > ssd_cutoff)
+    {
+        telem->eq16_members_pruned++;
+        return 1;
+    }
+
+    return 0;
+}
+
+/**
  * is_member_pruned_by_rq8_cached() - Evaluate RQ8 using precomputed SSD cutoff.
  * @query_rq8:  Pointer to quantized query residual [dim].
  * @cand_id:    Index of candidate dataset frame.
@@ -276,6 +339,11 @@ uint64_t compute_sq16_cutoff_thresh(
     const KnnModel  *model,
     const KnnConfig *config);
 
+uint64_t compute_eq16_cutoff_thresh(
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config);
+
 uint64_t compute_rq8_cutoff_thresh(
     double           cur_tau,
     const KnnModel  *model,
@@ -302,8 +370,26 @@ int is_member_pruned_by_sq16(
     const KnnConfig *config,
     KnnTelemetry    *telem);
 
+int is_member_pruned_by_eq16(
+    const int16_t   *query_eq16,
+    const float     *query_eq16_adc,
+    long             cand_id,
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config,
+    KnnTelemetry    *telem);
+
 int is_graph_pruned_by_sq16(
     const int16_t   *query_sq16,
+    long             cand_id,
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config,
+    KnnTelemetry    *telem);
+
+int is_graph_pruned_by_eq16(
+    const int16_t   *query_eq16,
+    const float     *query_eq16_adc,
     long             cand_id,
     double           cur_tau,
     const KnnModel  *model,

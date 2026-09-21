@@ -1633,39 +1633,51 @@
                      data-tooltip-desc="Evaluates 5-point Cayley-Menger metric determinant geometry across 3 measured anchors for highest pruning power.">5-Point</div>
               </div>
 
-              <!-- Scalar Quantization Candidate Pre-Filtering -->
+              <!-- Quantization Candidate Pre-Filtering -->
               <div class="toggle-group"
-                   style="grid-template-columns: 1fr 1fr; margin-top: 6px; margin-bottom: 2px;">
+                   style="grid-template-columns: 1fr 1fr 1fr; margin-top: 6px; margin-bottom: 2px;">
                 <div id="optSq8" class="toggle-btn"
                      data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
                      data-tooltip-badge="CLI: -sq8"
                      data-tooltip-color="cyan"
-                     data-tooltip-desc="Pre-filters candidate anchors using 8-bit SIMD
-integer lower bounds against rlim.">
+                     data-tooltip-desc="Pre-filters candidate anchors using 8-bit SIMD integer lower bounds against rlim.">
                   SQ8 (-sq8)
                 </div>
-                <div id="optSq16" class="toggle-btn active"
+                <div id="optSq16" class="toggle-btn"
                      data-tooltip-title="16-Bit Scalar Quantization Metric Filter"
                      data-tooltip-badge="CLI: -sq16"
                      data-tooltip-color="cyan"
-                     data-tooltip-desc="Pre-filters candidate anchors using 16-bit SIMD
-integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
+                     data-tooltip-desc="Pre-filters candidate anchors using 16-bit SIMD integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                   SQ16 (-sq16)
+                </div>
+                <div id="optEq16" class="toggle-btn active"
+                     data-tooltip-title="16-Bit E8 Lattice Quantization Metric Filter"
+                     data-tooltip-badge="CLI: -eq16"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Pre-filters candidate anchors using 16-bit E8 lattice quantization (&radic;2 tighter bounds, Asymmetric Distance Computation).">
+                  EQ16 (-eq16)
                 </div>
               </div>
 
-              <!-- SQ16 Ratio & Memoization Cache Controls -->
+              <!-- Quantization Options & Ratio Controls -->
               <div class="toggle-slider-row" id="rowSq16Ratio" style="margin-top: 4px; margin-bottom: 2px;">
+                <div id="optEq16Adc" class="toggle-btn active"
+                     data-tooltip-title="Asymmetric Distance Computation (ADC)"
+                     data-tooltip-badge="CLI: -eq16-adc"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Enables Asymmetric Distance Computation (ADC) with cascaded two-tier screening for EQ16.">
+                  ADC
+                </div>
                 <div id="optMemo" class="toggle-btn active"
                      data-tooltip-title="Quantized Memoization Cache"
                      data-tooltip-badge="CLI: -memo"
                      data-tooltip-color="cyan"
-                     data-tooltip-desc="Enables open-addressing hash cache on SQ16 vectors for O(1) duplicate frame membership lookup.">
+                     data-tooltip-desc="Enables open-addressing hash cache on quantized vectors for O(1) duplicate frame membership lookup.">
                   -memo
                 </div>
                 <div class="param-slider-col" id="colSq16Ratio">
                   <div class="param-label">
-                    <span>SQ16 Ratio (<span class="badge-pill">--sq16-ratio</span>)</span>
+                    <span>Ratio (<span class="badge-pill" id="badgeQuantRatio">--eq16-ratio</span>)</span>
                     <input type="number" id="inputSq16Ratio" class="val-input" min="0.005" max="0.50" step="0.005" value="0.05">
                   </div>
                   <input type="range" id="sliderSq16Ratio" min="0.005" max="0.50" step="0.005" value="0.05">
@@ -3215,9 +3227,9 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                 </div>
               </div>
 
-              <!-- Quantization Filter Toggles (SQ8, SQ16, RQ8) -->
+              <!-- Quantization Filter Toggles (SQ8, SQ16, RQ8, EQ16) -->
               <div class="toggle-group"
-                   style="grid-template-columns: 1fr 1fr 1fr; margin-top: 4px; margin-bottom: 2px;">
+                   style="grid-template-columns: 1fr 1fr 1fr 1fr; margin-top: 4px; margin-bottom: 2px;">
                 <div id="btnKnnSq8" class="toggle-btn toggle-active toggle-cyan"
                      data-tooltip-title="8-Bit Scalar Quantization Metric Filter"
                      data-tooltip-badge="CLI: -sq8"
@@ -3239,15 +3251,29 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                      data-tooltip-desc="Applies 8-bit residual vector quantization centered on cluster anchors. Halves cache footprint to 1 byte/dim with 16-bit equivalent precision and zero false dismissals.">
                   RQ8 (-rq8)
                 </div>
+                <div id="btnKnnEq16" class="toggle-btn toggle-active toggle-cyan"
+                     data-tooltip-title="16-Bit E8 Lattice Quantization (EQ16)"
+                     data-tooltip-badge="CLI: -eq16"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Applies 16-bit E8 lattice quantization (&radic;2 tighter bounds, Asymmetric Distance Computation).">
+                  EQ16 (-eq16)
+                </div>
               </div>
 
-              <!-- KNN SQ16 Ratio & Memoization Cache Controls -->
+              <!-- KNN Quantization Options & Memoization Cache Controls -->
               <div class="toggle-slider-row" id="rowKnnSq16Ratio" style="margin-top: 4px; margin-bottom: 2px;">
+                <div id="btnKnnEq16Adc" class="toggle-btn toggle-active toggle-cyan active"
+                     data-tooltip-title="Asymmetric Distance Computation (ADC)"
+                     data-tooltip-badge="CLI: -eq16-adc"
+                     data-tooltip-color="cyan"
+                     data-tooltip-desc="Enables Asymmetric Distance Computation for EQ16 in gric-knn.">
+                  ADC
+                </div>
                 <div id="btnKnnMemo" class="toggle-btn toggle-active toggle-cyan active"
                      data-tooltip-title="Quantized Memoization & Unique Vector Pool"
                      data-tooltip-badge="CLI: -memo"
                      data-tooltip-color="cyan"
-                     data-tooltip-desc="Deduplicates dataset frames into unique SQ16 vectors and memoizes query distances.">
+                     data-tooltip-desc="Deduplicates dataset frames into unique quantized vectors and memoizes query distances.">
                   -memo
                 </div>
                 <div id="btnKnnSparse" class="toggle-btn toggle-active toggle-cyan active"
@@ -3259,7 +3285,7 @@ integer lower bounds (256x tighter bounds, zero-unpack AVX2).">
                 </div>
                 <div class="param-slider-col" id="colKnnSq16Ratio">
                   <div class="param-label">
-                    <span>SQ16 Ratio (<span class="badge-pill">--sq16-ratio</span>)</span>
+                    <span>Ratio (<span class="badge-pill" id="badgeKnnQuantRatio">--sq16-ratio</span>)</span>
                     <input type="number" id="inputKnnSq16Ratio" class="val-input" min="0.005" max="0.50" step="0.005" value="0.05">
                   </div>
                   <input type="range" id="sliderKnnSq16Ratio" min="0.005" max="0.50" step="0.005" value="0.05">
@@ -4243,6 +4269,13 @@ before full-precision distance computation.">
                            value="rq8" checked
                            style="accent-color: #06b6d4; cursor: pointer;">
                     <span>RQ8</span>
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 3px; font-size: 0.70rem;
+                                color: #a78bfa; font-weight: 600; cursor: pointer;">
+                    <input type="radio" name="reconQuerySq" id="radReconQueryEq16"
+                           value="eq16"
+                           style="accent-color: #06b6d4; cursor: pointer;">
+                    <span>EQ16</span>
                   </label>
                 </div>
                 <input type="checkbox" id="chkReconQuerySq8" style="display: none;">

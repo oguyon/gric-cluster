@@ -223,6 +223,9 @@ int knn_run_search(
     uint64_t global_telem_sq16_evals = 0;
     uint64_t global_telem_sq16_pruned = 0;
     uint64_t global_telem_sq16_graph_pruned = 0;
+    uint64_t global_telem_eq16_evals = 0;
+    uint64_t global_telem_eq16_pruned = 0;
+    uint64_t global_telem_eq16_graph_pruned = 0;
     uint64_t global_telem_rq8_evals = 0;
     uint64_t global_telem_rq8_pruned = 0;
     uint64_t global_telem_rq8_graph_pruned = 0;
@@ -248,6 +251,8 @@ int knn_run_search(
                                  global_telem_sq8_graph_pruned,                         \
                                  global_telem_sq16_evals, global_telem_sq16_pruned,    \
                                  global_telem_sq16_graph_pruned,                        \
+                                 global_telem_eq16_evals, global_telem_eq16_pruned,    \
+                                 global_telem_eq16_graph_pruned,                        \
                                  global_telem_rq8_evals, global_telem_rq8_pruned,      \
                                  global_telem_rq8_graph_pruned,                         \
                                  global_telem_pq_evals, global_telem_pq_pruned,        \
@@ -278,6 +283,12 @@ int knn_run_search(
         int16_t *query_sq16 =
             config->use_sq16 ? (int16_t *)malloc((size_t)model->frame_elements *
                                                  sizeof(int16_t)) : NULL;
+        int16_t *query_eq16 =
+            config->use_eq16 ? (int16_t *)malloc((size_t)model->frame_elements *
+                                                 sizeof(int16_t)) : NULL;
+        float *query_eq16_adc =
+            (config->use_eq16 && config->use_eq16_adc) ?
+                (float *)malloc((size_t)model->frame_elements * sizeof(float)) : NULL;
         int16_t *query_rq8 =
             config->use_rq8 ? (int16_t *)malloc((size_t)model->frame_elements *
                                                 sizeof(int16_t)) : NULL;
@@ -331,6 +342,8 @@ int knn_run_search(
         visited.epoch = 1;
         visited.query_sq8 = query_sq8;
         visited.query_sq16 = query_sq16;
+        visited.query_eq16 = query_eq16;
+        visited.query_eq16_adc = query_eq16_adc;
         visited.query_rq8 = query_rq8;
         visited.query_rq8_clipped = 0;
         visited.query_pq_lut = query_pq_lut;
@@ -432,7 +445,36 @@ int knn_run_search(
                     }
                 }
 
-                if (config->use_sq16 && query_sq16 != NULL)
+                if (config->use_eq16)
+                {
+                    if (config->use_eq16_adc && query_eq16_adc != NULL)
+                    {
+                        if (model->is_double)
+                        {
+                            eq16_prepare_query_adc_double(
+                                (const double *)query_buffer, query_eq16_adc, &model->eq16_params);
+                        }
+                        else
+                        {
+                            eq16_prepare_query_adc_float(
+                                (const float *)query_buffer, query_eq16_adc, &model->eq16_params);
+                        }
+                    }
+                    else if (query_eq16 != NULL)
+                    {
+                        if (model->is_double)
+                        {
+                            eq16_quantize_double(
+                                (const double *)query_buffer, query_eq16, &model->eq16_params);
+                        }
+                        else
+                        {
+                            eq16_quantize_float(
+                                (const float *)query_buffer, query_eq16, &model->eq16_params);
+                        }
+                    }
+                }
+                else if (config->use_sq16 && query_sq16 != NULL)
                 {
                     if (model->is_double)
                     {
@@ -567,6 +609,9 @@ int knn_run_search(
         global_telem_sq16_evals += thread_telem.sq16_evaluations;
         global_telem_sq16_pruned += thread_telem.sq16_members_pruned;
         global_telem_sq16_graph_pruned += thread_telem.sq16_graph_pruned;
+        global_telem_eq16_evals += thread_telem.eq16_evaluations;
+        global_telem_eq16_pruned += thread_telem.eq16_members_pruned;
+        global_telem_eq16_graph_pruned += thread_telem.eq16_graph_pruned;
         global_telem_rq8_evals += thread_telem.rq8_evaluations;
         global_telem_rq8_pruned += thread_telem.rq8_members_pruned;
         global_telem_rq8_graph_pruned += thread_telem.rq8_graph_pruned;
@@ -617,6 +662,16 @@ int knn_run_search(
         if (query_sq16 != NULL)
         {
             free(query_sq16);
+        }
+
+        if (query_eq16 != NULL)
+        {
+            free(query_eq16);
+        }
+
+        if (query_eq16_adc != NULL)
+        {
+            free(query_eq16_adc);
         }
 
         if (query_rq8 != NULL)
@@ -722,6 +777,9 @@ int knn_run_search(
     telemetry->sq16_evaluations = global_telem_sq16_evals;
     telemetry->sq16_members_pruned = global_telem_sq16_pruned;
     telemetry->sq16_graph_pruned = global_telem_sq16_graph_pruned;
+    telemetry->eq16_evaluations = global_telem_eq16_evals;
+    telemetry->eq16_members_pruned = global_telem_eq16_pruned;
+    telemetry->eq16_graph_pruned = global_telem_eq16_graph_pruned;
     telemetry->rq8_evaluations = global_telem_rq8_evals;
     telemetry->rq8_members_pruned = global_telem_rq8_pruned;
     telemetry->rq8_graph_pruned = global_telem_rq8_graph_pruned;

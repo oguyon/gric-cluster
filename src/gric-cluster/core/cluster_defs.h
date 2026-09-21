@@ -9,6 +9,7 @@
 
 #include "common.h"
 #include "scalar_quant.h"
+#include "eq16_quant.h"
 #include "quant_memo.h"
 #include <signal.h>
 #include <stdint.h>
@@ -92,6 +93,10 @@ typedef struct
     int       use_sq16;                /**< 1 to enable 16-bit scalar quantization pruning */
     SQ16Params sq16_params;            /**< Uniform 16-bit scalar quantization parameters */
     int       sq16_calibrated;         /**< 1 if SQ16 parameters are pre-calibrated */
+    int       use_eq16;                /**< 1 to enable 16-bit E8 lattice quantization */
+    int       use_eq16_adc;            /**< 1 to enable Asymmetric Distance Computation */
+    EQ16Params eq16_params;            /**< Uniform 16-bit E8 lattice parameters */
+    int       eq16_calibrated;         /**< 1 if EQ16 parameters are pre-calibrated */
     int       use_memo;                /**< 1 to enable quantized hash memoization cache */
     double    sq16_ratio;              /**< Max ratio sqrt(D)*scale / rlim (default 0.05) */
     int       use_batch_dist;          /**< 1 to enable multi-vector SIMD batch distance */
@@ -176,6 +181,8 @@ typedef struct
     double  time_step_3a;          /**< Step 3a: prior mixing and pruning (ms) */
     double  time_step_3a_priors;   /**< Step 3a sub: priors and mixing (ms) */
     double  time_step_3a_sq_filter;/**< Step 3a sub: SQ lower-bound filter (ms) */
+    double  time_step_3a_sq_tier1; /**< Step 3a sub: SQ coarse Tier 1 filter (ms) */
+    double  time_step_3a_sq_tier2; /**< Step 3a sub: SQ refinement Tier 2 filter (ms) */
     double  time_step_3a_subsequent;/**< Step 3a sub: subsequent iterations pruning (ms) */
     double  time_step_3b;          /**< Step 3b: target selection (ms) */
     double  time_step_3b_score;    /**< Step 3b sub: scoring phase (ms) */
@@ -203,6 +210,8 @@ typedef struct
     uint64_t sq8_pruned;            /**< Cluster checks pruned by SQ8 lower bound */
     uint64_t sq16_evals;            /**< Cluster candidates evaluated with SQ16 lower bound */
     uint64_t sq16_pruned;           /**< Cluster checks pruned by SQ16 lower bound */
+    uint64_t eq16_evals;            /**< Cluster candidates evaluated with EQ16 lower bound */
+    uint64_t eq16_pruned;           /**< Cluster checks pruned by EQ16 lower bound */
     uint64_t memo_lookups;          /**< Total queries to quantized memoization table */
     uint64_t memo_hits;             /**< Duplicate cell hits (multiple samples on same cell) */
     uint64_t memo_cache_entries;    /**< Number of unique quantized cells in cache */
@@ -286,9 +295,15 @@ typedef struct
     int                 sq8_calibrated;     /**< 1 if global SQ8 params are calibrated */
     int16_t            *current_frame_sq16; /**< Scratch buffer for SQ16 current frame */
     int                 sq16_calibrated;    /**< 1 if global SQ16 params are calibrated */
+    int16_t            *current_frame_eq16; /**< Scratch buffer for EQ16 current frame */
+    float              *current_frame_eq16_adc; /**< Normalized float query for EQ16 ADC */
+    int                 eq16_calibrated;    /**< 1 if global EQ16 params are calibrated */
     uint8_t            *anchor_matrix_sq8;  /**< Contiguous [maxnbclust x dim] SQ8 anchors */
     int16_t            *anchor_matrix_sq16;  /**< Contiguous [maxnbclust x dim] SQ16 anchors */
+    int16_t            *anchor_matrix_eq16;  /**< Contiguous [maxnbclust x dim] EQ16 anchors */
     int32_t            *anchor_matrix_sq16_interleaved; /**< Block-8 interleaved SQ16 matrix */
+    int32_t            *anchor_matrix_eq16_interleaved; /**< Block-8 interleaved EQ16 matrix */
+    float              *anchor_matrix_adc_interleaved; /**< Block-16 interleaved float ADC matrix */
     float              *anchor_matrix_float; /**< Contiguous [maxnbclust x dim] float anchors */
     long               *perm_dim;           /**< Spectral dimension ordering [dim] */
     double             *residual_tail;      /**< Precomputed residual tail array [dim] */

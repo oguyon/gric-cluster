@@ -11,6 +11,7 @@
  */
 
 #include "scalar_quant.h"
+#include "eq16_quant.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -57,6 +58,8 @@ typedef struct
     SQ8Params sq8_params;            /**< Calibrated SQ8 parameters */
     int      use_sq16;               /**< 1 if 16-bit scalar quantization recommended */
     SQ16Params sq16_params;          /**< Calibrated SQ16 parameters */
+    int      use_eq16;               /**< 1 if 16-bit E8 lattice quantization recommended */
+    EQ16Params eq16_params;          /**< Calibrated EQ16 parameters */
     int      te4_enabled;            /**< 1 if 4-point pruning recommended */
     int      te5_enabled;            /**< 1 if 5-point pruning recommended */
     int      sparse_dcc_enabled;     /**< 1 if sparse DCC recommended for memory */

@@ -122,6 +122,11 @@ void knn_cli_print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-rq8-approx%s, %s--rq8-approx%s Enable approximate lower bound in RQ8\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-e8%s, %s--e8%s, %s-e8-quant%s    Enable E8 block lattice residual quantization\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_green, ansi_reset);
+    printf("  %s-e8-graph%s, %s--e8-graph%s       Enable 240-NN E8 proximity graph routing\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-pq%s, %s--pq%s                 Enable Product Quantization (PQ) FastScan\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-no-pq%s, %s--no-pq%s           Disable Product Quantization FastScan\n",
@@ -170,6 +175,24 @@ void knn_cli_print_help(
            "(%sdefault:%s 0.05)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
            ansi_color_cyan, ansi_reset);
+    printf("  %s-eq16%s, %s--eq16%s             Enable 16-bit E8 lattice quantization filtering\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-no-eq16%s, %s--no-eq16%s       Disable 16-bit E8 lattice quantization\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-eq16-adc%s, %s--eq16-adc%s     Enable Asymmetric Distance Computation for EQ16 "
+           "(%sdefault:%s on)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("  %s-no-eq16-adc%s                  Disable ADC (use symmetric EQ16)\n",
+           ansi_color_green, ansi_reset);
+    printf("  %s-eq16-save%s %s<path>%s     Save 16-bit EQ16 dataset to sidecar file\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-eq16-load%s %s<path>%s     Load 16-bit EQ16 dataset from sidecar file\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
+    printf("  %s-eq16-ratio%s %s<alpha>%s   Max EQ16 quantization step ratio alpha "
+           "(%sdefault:%s 0.05)\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
+           ansi_color_cyan, ansi_reset);
     printf("  %s-sq16-sparse%s, %s--sq16-sparse%s Enable SQ16 SparseCache Direct SIMD "
            "(%sdefault:%s on)\n"
            "                                (0 MB resident transposed index)\n",
@@ -193,7 +216,7 @@ void knn_cli_print_help(
     printf("  %s-no-cluster-graph%s, %s--no-cluster-graph%s Disable Graph-Guided Routing\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-ef-cluster%s %s<int>%s       Max clusters to evaluate in graph routing "
-           "(%sdefault:%s 128)\n",
+           "(%sdefault:%s 0 = auto)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
            ansi_color_cyan, ansi_reset);
     printf("  %s-prof%s %s<path>%s          Explicit dataset profile file (.gricprof)\n",
@@ -251,10 +274,15 @@ static void knn_cli_set_defaults(
     config->use_angular_bound = 1;  // Enabled by default for directional pruning
     config->use_trajectory = 0;     // Disabled by default; enable for smooth trajectories
     config->use_rq8 = 0;            // RQ8 filtering (disabled by default in Option A)
+    config->use_e8_quant = 0;       // E8 block lattice quantization
+    config->use_e8_graph = 0;       // E8 240-NN proximity graph routing
     config->use_sq8 = 0;            // Fallback scalar quantization
-    config->use_sq16 = 1;           // Option A default: 16-bit scalar quantization
+    config->use_sq16 = -1;          // Auto-detect: 1 if D < 8 or D % 8 != 0
     config->use_sq16_sparse = 1;    // Option A default: on-demand FastScan block transpose
     config->use_sq16_sparse_lru = 0; // 16-block LRU Transposed FastScan
+    config->use_eq16 = -1;          // Auto-detect: 1 if D >= 8 and D % 8 == 0
+    config->use_eq16_adc = 1;      // Default enabled: Asymmetric Distance Computation
+    config->eq16_ratio = 0.05;      // Enforce scale <= alpha*rlim
     config->use_rabitq = 0;         // RaBitQ randomized bit quantization (optional)
     config->rabitq_bits = 2;        // Default 2-bit Extended RaBitQ
     config->use_dcc_sq16 = 1;       // Enabled by default for 16-bit quantized DCC matrix
@@ -262,7 +290,7 @@ static void knn_cli_set_defaults(
     config->use_memo = 1;           // Enabled by default for quantized memoization
     config->use_batch_dist = 1;     // Enabled by default for multi-vector SIMD batching
     config->use_cluster_graph = 1;  // Enabled by default for graph-guided cluster routing
-    config->ef_cluster = 128;       // Option A default: 128 clusters in graph routing
+    config->ef_cluster = 0;         // 0 = dynamic auto-scaled cluster budget
     config->use_two_hop = 1;        // Enabled by default for 2-hop candidate injection
     config->two_hop_seeds = 2;      // Expand top 2 closest seeds
     config->two_hop_max_cands = 32; // Maximum 2-hop candidate evaluations per query
@@ -605,6 +633,7 @@ static int knn_cli_parse_quant_opt(
     {
         config->use_rq8 = 1;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq16_sparse = 0;
         config->use_sq16_sparse_lru = 0;
         config->use_sq8 = 0;
@@ -625,6 +654,7 @@ static int knn_cli_parse_quant_opt(
         }
         config->use_rq8 = 1;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->rq8_save_path = argv[++(*arg_idx)];
         return 1;
@@ -638,6 +668,7 @@ static int knn_cli_parse_quant_opt(
         }
         config->use_rq8 = 1;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->rq8_load_path = argv[++(*arg_idx)];
         return 1;
@@ -646,9 +677,27 @@ static int knn_cli_parse_quant_opt(
     {
         config->use_rq8 = 1;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->use_pq = 0;
         config->rq8_approx = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-e8") == 0 || strcmp(argv[i], "--e8") == 0 ||
+        strcmp(argv[i], "-e8-quant") == 0 || strcmp(argv[i], "--e8-quant") == 0)
+    {
+        config->use_rq8 = 1;
+        config->use_e8_quant = 1;
+        config->use_sq16 = 0;
+        config->use_eq16 = 0;
+        config->use_sq16_sparse = 0;
+        config->use_sq16_sparse_lru = 0;
+        config->use_sq8 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-e8-graph") == 0 || strcmp(argv[i], "--e8-graph") == 0)
+    {
+        config->use_e8_graph = 1;
         return 1;
     }
     if (strcmp(argv[i], "-pq") == 0 || strcmp(argv[i], "--pq") == 0)
@@ -656,6 +705,7 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq16_sparse = 0;
         config->use_sq16_sparse_lru = 0;
         config->use_sq8 = 0;
@@ -677,6 +727,7 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->pq_m = atoi(argv[++(*arg_idx)]);
         return 1;
@@ -691,6 +742,7 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->pq_bits = atoi(argv[++(*arg_idx)]);
         return 1;
@@ -705,6 +757,7 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->pq_save_path = argv[++(*arg_idx)];
         return 1;
@@ -719,6 +772,7 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->pq_load_path = argv[++(*arg_idx)];
         return 1;
@@ -740,6 +794,7 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 0;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq16_sparse = 0;
         config->use_sq16_sparse_lru = 0;
         config->use_sq8 = 0;
@@ -762,6 +817,7 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 0;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->rabitq_bits = atoi(argv[++(*arg_idx)]);
         return 1;
@@ -777,6 +833,7 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 0;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->rabitq_save_path = argv[++(*arg_idx)];
         return 1;
@@ -792,6 +849,7 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 0;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->rabitq_load_path = argv[++(*arg_idx)];
         return 1;
@@ -802,6 +860,7 @@ static int knn_cli_parse_quant_opt(
         config->use_pq = 0;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq8 = 0;
         config->rabitq_approx = 1;
         return 1;
@@ -811,6 +870,7 @@ static int knn_cli_parse_quant_opt(
         config->use_sq8 = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq16_sparse = 0;
         config->use_sq16_sparse_lru = 0;
         return 1;
@@ -831,6 +891,7 @@ static int knn_cli_parse_quant_opt(
         config->use_sq8 = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq16_sparse = 0;
         config->use_sq16_sparse_lru = 0;
         config->sq8_save_path = argv[++(*arg_idx)];
@@ -846,6 +907,7 @@ static int knn_cli_parse_quant_opt(
         config->use_sq8 = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq16_sparse = 0;
         config->use_sq16_sparse_lru = 0;
         config->sq8_load_path = argv[++(*arg_idx)];
@@ -856,6 +918,7 @@ static int knn_cli_parse_quant_opt(
         config->use_sq8 = 1;
         config->use_rq8 = 0;
         config->use_sq16 = 0;
+        config->use_eq16 = 0;
         config->use_sq16_sparse = 0;
         config->use_sq16_sparse_lru = 0;
         config->sq8_approx = 1;
@@ -864,6 +927,7 @@ static int knn_cli_parse_quant_opt(
     if (strcmp(argv[i], "-sq16") == 0 || strcmp(argv[i], "--sq16") == 0)
     {
         config->use_sq16 = 1;
+        config->use_eq16 = 0;
         config->use_rq8 = 0;
         config->use_sq8 = 0;
         return 1;
@@ -874,6 +938,78 @@ static int knn_cli_parse_quant_opt(
         config->use_sq16 = 0;
         config->use_sq16_sparse = 0;
         config->use_sq16_sparse_lru = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-eq16") == 0 || strcmp(argv[i], "--eq16") == 0)
+    {
+        config->use_eq16 = 1;
+        config->use_sq16 = 0;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-eq16") == 0 || strcmp(argv[i], "--no-eq16") == 0 ||
+        strcmp(argv[i], "-noeq16") == 0)
+    {
+        config->use_eq16 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-eq16-save") == 0 || strcmp(argv[i], "--eq16-save") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -eq16-save requires a filepath argument\n");
+            return -1;
+        }
+        config->use_eq16 = 1;
+        config->use_sq16 = 0;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        config->eq16_save_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-eq16-load") == 0 || strcmp(argv[i], "--eq16-load") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -eq16-load requires a filepath argument\n");
+            return -1;
+        }
+        config->use_eq16 = 1;
+        config->use_sq16 = 0;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        config->eq16_load_path = argv[++(*arg_idx)];
+        return 1;
+    }
+    if (strcmp(argv[i], "-eq16-adc") == 0 || strcmp(argv[i], "--eq16-adc") == 0)
+    {
+        config->use_eq16 = 1;
+        config->use_eq16_adc = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-eq16-adc") == 0 || strcmp(argv[i], "--no-eq16-adc") == 0)
+    {
+        config->use_eq16_adc = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-eq16-approx") == 0 || strcmp(argv[i], "--eq16-approx") == 0)
+    {
+        config->use_eq16 = 1;
+        config->use_sq16 = 0;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        config->eq16_approx = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-eq16-ratio") == 0 || strcmp(argv[i], "--eq16-ratio") == 0)
+    {
+        if (i + 1 >= argc)
+        {
+            fprintf(stderr, "Error: -eq16-ratio requires a float argument\n");
+            return -1;
+        }
+        config->eq16_ratio = atof(argv[++(*arg_idx)]);
         return 1;
     }
     if (strcmp(argv[i], "-sq16-save") == 0 || strcmp(argv[i], "--sq16-save") == 0)
@@ -1284,8 +1420,13 @@ void knn_cli_print_banner(
     }
     if (config->use_rq8)
     {
-        printf("  RQ8 Filtering:  Enabled (%s)\n",
-               config->rq8_approx ? "Relaxed Approx Mode" : "Exact Lower-Bound Mode");
+        printf("  RQ8 Filtering:  Enabled (%s, %s)\n",
+               config->rq8_approx ? "Relaxed Approx Mode" : "Exact Lower-Bound Mode",
+               config->use_e8_quant ? "E8 Block Lattice" : "Cubic Z^D Lattice");
+    }
+    if (config->use_e8_graph)
+    {
+        printf("  E8 Graph:       Enabled (240-NN Gosset Polytope Routing)\n");
     }
     else if (config->use_sq16)
     {

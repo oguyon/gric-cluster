@@ -27,6 +27,7 @@ static void print_usage(
     printf("  -uint32             Encode as unsigned 32-bit integers\n");
     printf("  -int32              Encode as signed 32-bit integers\n");
     printf("  -uint16, -sq16      Encode as unsigned 16-bit integers (SQ16)\n");
+    printf("  -int16, -eq16       Encode as signed 16-bit integers (EQ16)\n");
     printf("  -dim <D>            Explicit column count (default: auto-detected)\n");
     printf("  -comment <text>     Embed description string in header\n");
     printf("  -v, --verbose       Print verbose encoding details\n");
@@ -113,6 +114,10 @@ int main(
         else if (strcmp(argv[i], "-uint16") == 0 || strcmp(argv[i], "-sq16") == 0)
         {
             dtype = GRIC_BIN_DTYPE_UINT16;
+        }
+        else if (strcmp(argv[i], "-int16") == 0 || strcmp(argv[i], "-eq16") == 0)
+        {
+            dtype = GRIC_BIN_DTYPE_INT16;
         }
         else if (strcmp(argv[i], "-type") == 0 && i + 1 < argc)
         {
@@ -382,6 +387,26 @@ int main(
                 write_ok = 0;
             }
             free(u16buf);
+        }
+        else
+        {
+            write_ok = 0;
+        }
+    }
+    else if (dtype == GRIC_BIN_DTYPE_INT16)
+    {
+        int16_t *i16buf = (int16_t *)malloc(num_elements * sizeof(int16_t));
+        if (i16buf != NULL)
+        {
+            for (size_t i = 0; i < num_elements; i++)
+            {
+                i16buf[i] = (int16_t)raw_data[i];
+            }
+            if (fwrite(i16buf, sizeof(int16_t), num_elements, out_fp) != num_elements)
+            {
+                write_ok = 0;
+            }
+            free(i16buf);
         }
         else
         {

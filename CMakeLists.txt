@@ -183,6 +183,8 @@ set(CLUSTER_SRCS
     src/shared/rabit_quant.c
     src/shared/gric_profile.c
     src/shared/gric_simd.c
+    src/shared/e8_lattice.c
+    src/shared/eq16_quant.c
     src/gric-probe/probe_engine.c
 )
 
@@ -374,6 +376,8 @@ add_executable(gric-knn
     src/shared/rabit_quant.c
     src/shared/gric_profile.c
     src/shared/gric_simd.c
+    src/shared/e8_lattice.c
+    src/shared/eq16_quant.c
 )
 target_include_directories(gric-knn PRIVATE src/gric-knn src/gric-cluster/math src/shared src)
 target_link_libraries(gric-knn m)
@@ -463,6 +467,8 @@ add_executable(gric-probe
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
+    src/shared/e8_lattice.c
+    src/shared/eq16_quant.c
     src/shared/cli_colors.c
     src/shared/gric_simd.c
 )
@@ -630,6 +636,26 @@ add_test(NAME test_knn_spiral_rabitq_load
             -o /tmp/ctest_knn_spiral_rabitq_load.txt)
 set_tests_properties(test_knn_spiral_rabitq_load PROPERTIES DEPENDS test_knn_spiral_rabitq)
 
+add_test(NAME test_8d_sequence_generator
+    COMMAND gric-mktxtseq 1000 /tmp/ctest_8d.txt 8Drandom)
+
+add_test(NAME test_8d_clustering_eq16
+    COMMAND gric-cluster 0.3 /tmp/ctest_8d.txt -maxim 1000
+            -outdir /tmp/ctest_8d_eq16_out -eq16)
+set_tests_properties(test_8d_clustering_eq16 PROPERTIES DEPENDS test_8d_sequence_generator)
+
+add_test(NAME test_knn_8d_eq16
+    COMMAND gric-knn /tmp/ctest_8d.txt /tmp/ctest_8d_eq16_out
+            -k 10 -dtmin 5 -no-reciprocal -eq16 -eq16-save /tmp/ctest_8d.eq16
+            -o /tmp/ctest_knn_8d_eq16.txt)
+set_tests_properties(test_knn_8d_eq16 PROPERTIES DEPENDS test_8d_clustering_eq16)
+
+add_test(NAME test_knn_8d_eq16_load
+    COMMAND gric-knn /tmp/ctest_8d.txt /tmp/ctest_8d_eq16_out
+            -k 10 -dtmin 5 -no-reciprocal -eq16 -eq16-load /tmp/ctest_8d.eq16
+            -o /tmp/ctest_knn_8d_eq16_load.txt)
+set_tests_properties(test_knn_8d_eq16_load PROPERTIES DEPENDS test_knn_8d_eq16)
+
 if (CFITSIO_FOUND)
     add_test(NAME test_bouncing_balls_single_gen
         COMMAND gric-gen-balls -n 1 -r 5.0 -W 32 -H 32 -f 500 -s 42 /tmp/ctest_balls_1.fits)
@@ -717,6 +743,7 @@ add_test(NAME test_scalar_quant
 add_executable(test_residual_quant
     tests/test_residual_quant.c
     src/shared/residual_quant.c
+    src/shared/e8_lattice.c
     src/shared/gric_simd.c
 )
 target_include_directories(test_residual_quant PRIVATE src/shared)
@@ -744,6 +771,40 @@ target_link_libraries(test_rabit_quant m)
 add_test(NAME test_rabit_quant
     COMMAND test_rabit_quant)
 
+add_executable(test_e8_lattice
+    tests/test_e8_lattice.c
+    src/shared/e8_lattice.c
+    src/shared/gric_simd.c
+)
+target_include_directories(test_e8_lattice PRIVATE src/shared)
+target_link_libraries(test_e8_lattice m)
+add_test(NAME test_e8_lattice
+    COMMAND test_e8_lattice)
+
+add_executable(test_rq8_e8
+    tests/test_rq8_e8.c
+    src/shared/residual_quant.c
+    src/shared/e8_lattice.c
+    src/shared/gric_simd.c
+)
+target_include_directories(test_rq8_e8 PRIVATE src/shared)
+target_link_libraries(test_rq8_e8 m)
+add_test(NAME test_rq8_e8
+    COMMAND test_rq8_e8)
+
+add_executable(test_eq16_quant
+    tests/test_eq16_quant.c
+    src/shared/eq16_quant.c
+    src/shared/scalar_quant.c
+    src/shared/scalar_quant_fastscan.c
+    src/shared/e8_lattice.c
+    src/shared/gric_simd.c
+)
+target_include_directories(test_eq16_quant PRIVATE src/shared)
+target_link_libraries(test_eq16_quant m)
+add_test(NAME test_eq16_quant
+    COMMAND test_eq16_quant)
+
 add_executable(test_knn_rq8_sidecar_mismatch
     tests/test_knn_rq8_sidecar_mismatch.c
     src/gric-knn/knn_cache.c
@@ -753,6 +814,8 @@ add_executable(test_knn_rq8_sidecar_mismatch
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
+    src/shared/e8_lattice.c
+    src/shared/eq16_quant.c
     src/shared/product_quant.c
     src/shared/rabit_quant.c
     src/shared/gric_simd.c
@@ -781,6 +844,8 @@ add_executable(test_knn_adaptive_rq8
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
+    src/shared/e8_lattice.c
+    src/shared/eq16_quant.c
     src/shared/product_quant.c
     src/shared/rabit_quant.c
     src/shared/gric_simd.c
@@ -821,6 +886,8 @@ add_executable(test_gric_probe
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
     src/shared/residual_quant.c
+    src/shared/e8_lattice.c
+    src/shared/eq16_quant.c
     src/shared/cli_colors.c
     src/shared/gric_simd.c
 )

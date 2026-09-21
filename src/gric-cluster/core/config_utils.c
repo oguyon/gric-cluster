@@ -90,6 +90,7 @@ static int apply_algo_option(
     {
         config->optim.use_sq8 = 1;
         config->optim.use_sq16 = 0;
+        config->optim.use_eq16 = 0;
         return 0;
     }
     else if (matches(key, "-no-sq8") || matches(key, "--no-sq8") ||
@@ -102,6 +103,7 @@ static int apply_algo_option(
     {
         config->optim.use_sq16 = 1;
         config->optim.use_sq8 = 0;
+        config->optim.use_eq16 = 0;
         return 0;
     }
     else if (matches(key, "-no-sq16") || matches(key, "--no-sq16") ||
@@ -110,9 +112,37 @@ static int apply_algo_option(
         config->optim.use_sq16 = 0;
         return 0;
     }
+    else if (matches(key, "-eq16") || matches(key, "--eq16"))
+    {
+        config->optim.use_eq16 = 1;
+        config->optim.use_sq16 = 0;
+        config->optim.use_sq8 = 0;
+        return 0;
+    }
+    else if (matches(key, "-no-eq16") || matches(key, "--no-eq16") ||
+             matches(key, "no_eq16") || matches(key, "-noeq16"))
+    {
+        config->optim.use_eq16 = 0;
+        return 0;
+    }
+    else if (matches(key, "-eq16-adc") || matches(key, "--eq16-adc") ||
+             matches(key, "eq16_adc"))
+    {
+        config->optim.use_eq16_adc = 1;
+        return 0;
+    }
+    else if (matches(key, "-no-eq16-adc") || matches(key, "--no-eq16-adc") ||
+             matches(key, "no_eq16_adc"))
+    {
+        config->optim.use_eq16_adc = 0;
+        return 0;
+    }
     else if (matches(key, "-sq16-ratio") || matches(key, "--sq16-ratio") ||
              matches(key, "-sq16_ratio") || matches(key, "--sq16_ratio") ||
-             matches(key, "sq16_ratio"))
+             matches(key, "sq16_ratio") ||
+             matches(key, "-eq16-ratio") || matches(key, "--eq16-ratio") ||
+             matches(key, "-eq16_ratio") || matches(key, "--eq16_ratio") ||
+             matches(key, "eq16_ratio"))
     {
         if (!value)
         {

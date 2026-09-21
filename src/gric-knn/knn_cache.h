@@ -36,6 +36,17 @@ int knn_model_build_or_load_sq16(
     const KnnConfig *config);
 
 /**
+ * knn_model_build_or_load_eq16() - Build or load quantized EQ16 dataset buffer into KnnModel.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_or_load_eq16(
+    KnnModel        *model,
+    const KnnConfig *config);
+
+/**
  * knn_model_build_or_load_rq8() - Build or load quantized RQ8 dataset buffer into KnnModel.
  * @model:  Pointer to initialized KnnModel.
  * @config: Pointer to KnnConfig.

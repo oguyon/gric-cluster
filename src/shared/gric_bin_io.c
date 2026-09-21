@@ -202,6 +202,7 @@ const char *gric_bin_data_type_str(
         case GRIC_BIN_DTYPE_INT32:   return "INT32";
         case GRIC_BIN_DTYPE_UINT16:  return "UINT16";
         case GRIC_BIN_DTYPE_UINT8:   return "UINT8";
+        case GRIC_BIN_DTYPE_INT16:   return "INT16";
         case GRIC_BIN_DTYPE_UNKNOWN:
         default:                     return "UNKNOWN";
     }
@@ -224,6 +225,7 @@ size_t gric_bin_data_type_size(
         case GRIC_BIN_DTYPE_INT32:   return sizeof(int32_t);
         case GRIC_BIN_DTYPE_UINT16:  return sizeof(uint16_t);
         case GRIC_BIN_DTYPE_UINT8:   return sizeof(uint8_t);
+        case GRIC_BIN_DTYPE_INT16:   return sizeof(int16_t);
         case GRIC_BIN_DTYPE_UNKNOWN:
         default:                     return 0;
     }

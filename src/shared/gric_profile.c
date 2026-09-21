@@ -169,6 +169,12 @@ int gric_profile_write_json(
     fprintf(fp, "    \"sq16_max\": %.6f,\n", (double)prof->sq16_params.max_val);
     fprintf(fp, "    \"sq16_scale\": %.6f,\n", (double)prof->sq16_params.scale);
     fprintf(fp, "    \"sq16_err_radius\": %.6f,\n", (double)prof->sq16_params.err_radius);
+    fprintf(fp, "    \"use_eq16\": %s,\n", prof->use_eq16 ? "true" : "false");
+    fprintf(fp, "    \"eq16_min\": %.6f,\n", (double)prof->eq16_params.min_val);
+    fprintf(fp, "    \"eq16_max\": %.6f,\n", (double)prof->eq16_params.max_val);
+    fprintf(fp, "    \"eq16_scale\": %.6f,\n", (double)prof->eq16_params.scale);
+    fprintf(fp, "    \"eq16_center\": %.6f,\n", (double)prof->eq16_params.center);
+    fprintf(fp, "    \"eq16_err_radius\": %.6f,\n", (double)prof->eq16_params.err_radius);
     fprintf(fp, "    \"te4\": %s,\n", prof->te4_enabled ? "true" : "false");
     fprintf(fp, "    \"te5\": %s,\n", prof->te5_enabled ? "true" : "false");
     fprintf(fp, "    \"sparse_dcc\": %s,\n", prof->sparse_dcc_enabled ? "true" : "false");
@@ -438,6 +444,20 @@ int gric_profile_read_json(
     if (prof->sq16_params.scale > 0.0f)
     {
         prof->sq16_params.inv_scale = 1.0f / prof->sq16_params.scale;
+    }
+
+    prof->use_eq16 = parse_json_bool(buf, "use_eq16", 0);
+    prof->eq16_params.min_val = (float)parse_json_double(buf, "eq16_min", 0.0);
+    prof->eq16_params.max_val = (float)parse_json_double(buf, "eq16_max", 1.0);
+    prof->eq16_params.scale = (float)parse_json_double(buf, "eq16_scale", 1.0f / 32767.0f);
+    prof->eq16_params.center = (float)parse_json_double(
+        buf, "eq16_center", 0.5 * (prof->eq16_params.min_val + prof->eq16_params.max_val)
+    );
+    prof->eq16_params.err_radius = (float)parse_json_double(buf, "eq16_err_radius", 0.0);
+    prof->eq16_params.dim = dim;
+    if (prof->eq16_params.scale > 0.0f)
+    {
+        prof->eq16_params.inv_scale = 1.0f / prof->eq16_params.scale;
     }
 
     prof->te4_enabled = parse_json_bool(buf, "te4", 0);

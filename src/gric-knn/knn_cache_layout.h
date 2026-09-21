@@ -24,6 +24,17 @@ int knn_model_build_transposed_sq16(
     const KnnConfig *config);
 
 /**
+ * knn_model_build_transposed_eq16() - Build cluster-local transposed EQ16 FastScan blocks.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_transposed_eq16(
+    KnnModel        *model,
+    const KnnConfig *config);
+
+/**
  * knn_model_build_transposed_rq8() - Build cluster-local transposed RQ8 FastScan blocks.
  * @model:  Pointer to initialized KnnModel.
  * @config: Pointer to KnnConfig.

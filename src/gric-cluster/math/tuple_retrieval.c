@@ -22,10 +22,9 @@
  * @cluster_a: First cluster index.
  * @cluster_b: Second cluster index.
  *
- * Returns 1.0 for exact match, 0.0 otherwise.
- * A future enhancement will use inter-cluster DCC
- * distances for soft matching; Phase 6 uses exact
- * matching for simplicity.
+ * Returns 1.0 for exact match, 0.5 for adjacent cluster index (+/-1,
+ * corresponding to an E8 root step where sum of squared differences is 2),
+ * and 0.0 otherwise.
  *
  * Return: Match weight in [0.0, 1.0].
  */
@@ -33,7 +32,16 @@ static double soft_match_weight(
     int cluster_a,
     int cluster_b)
 {
-    return (cluster_a == cluster_b) ? 1.0 : 0.0;
+    if (cluster_a == cluster_b)
+    {
+        return 1.0;
+    }
+    int diff = cluster_a - cluster_b;
+    if (diff == 1 || diff == -1)
+    {
+        return 0.5;
+    }
+    return 0.0;
 }
 
 /**

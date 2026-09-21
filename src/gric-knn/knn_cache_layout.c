@@ -300,6 +300,146 @@ int knn_model_build_transposed_sq16(
 }
 
 /**
+ * knn_model_build_transposed_eq16() - Build cluster-local transposed EQ16 FastScan blocks.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_transposed_eq16(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (model == NULL || config == NULL || !config->use_eq16)
+    {
+        return 0;
+    }
+
+    if (model->eq16_dataset_buffer == NULL || model->clusters == NULL ||
+        model->num_clusters <= 0)
+    {
+        return 0;
+    }
+
+    long dim = model->frame_elements;
+    int M = model->num_clusters;
+    size_t total_transposed_elems = 0;
+
+    if (model->eq16_transposed_buffer != NULL)
+    {
+        free(model->eq16_transposed_buffer);
+        model->eq16_transposed_buffer = NULL;
+    }
+
+    for (int c = 0; c < M; c++)
+    {
+        model->clusters[c].eq16_transposed = NULL;
+        model->clusters[c].num_eq16_blocks = 0;
+    }
+
+    for (int c = 0; c < M; c++)
+    {
+        int num_m = model->clusters[c].num_members;
+        if (num_m <= 0)
+        {
+            model->clusters[c].eq16_transposed = NULL;
+            model->clusters[c].num_eq16_blocks = 0;
+            continue;
+        }
+
+        int n_blocks = (num_m + EQ16_FASTSCAN_BLOCK_SIZE - 1) / EQ16_FASTSCAN_BLOCK_SIZE;
+        size_t padded_members = 0;
+        size_t padded_elems = 0;
+        size_t next_total = 0;
+
+        if (knn_size_mul((size_t)n_blocks, EQ16_FASTSCAN_BLOCK_SIZE, &padded_members) != 0 ||
+            knn_size_mul(padded_members, (size_t)dim, &padded_elems) != 0 ||
+            knn_size_add(total_transposed_elems, padded_elems, &next_total) != 0)
+        {
+            return -1;
+        }
+
+        model->clusters[c].num_eq16_blocks = n_blocks;
+        total_transposed_elems = next_total;
+    } // for (int c = 0; c < M; c++)
+
+    if (total_transposed_elems == 0)
+    {
+        return 0;
+    }
+
+    size_t alloc_bytes = 0;
+    if (knn_size_mul(total_transposed_elems, sizeof(int16_t), &alloc_bytes) != 0)
+    {
+        return -1;
+    }
+
+    if (knn_alloc_sq16_transposed_buffer(&model->eq16_transposed_buffer, alloc_bytes) != 0)
+    {
+        return -1;
+    }
+
+    size_t cur_offset = 0;
+    for (int c = 0; c < M; c++)
+    {
+        int n_blocks = model->clusters[c].num_eq16_blocks;
+        if (n_blocks <= 0)
+        {
+            model->clusters[c].eq16_transposed = NULL;
+            continue;
+        }
+        int16_t *cl_buf = model->eq16_transposed_buffer + cur_offset;
+        model->clusters[c].eq16_transposed = cl_buf;
+        cur_offset += (size_t)n_blocks * (size_t)dim * EQ16_FASTSCAN_BLOCK_SIZE;
+
+        int num_m = model->clusters[c].num_members;
+        for (int b = 0; b < n_blocks; b++)
+        {
+            int16_t *block_ptr = cl_buf + (size_t)b * (size_t)dim * EQ16_FASTSCAN_BLOCK_SIZE;
+            int m_start = b * EQ16_FASTSCAN_BLOCK_SIZE;
+            int m_count = num_m - m_start;
+            if (m_count > EQ16_FASTSCAN_BLOCK_SIZE)
+            {
+                m_count = EQ16_FASTSCAN_BLOCK_SIZE;
+            }
+
+            for (int i = 0; i < EQ16_FASTSCAN_BLOCK_SIZE; i++)
+            {
+                if (i < m_count)
+                {
+                    long cand_id = (long)model->clusters[c].members[m_start + i].frame_id;
+                    if (cand_id < 0 || cand_id >= model->total_dataset_frames)
+                    {
+                        return -1;
+                    }
+                    const int16_t *cand_src = model->eq16_dataset_buffer + cand_id * dim;
+                    for (long d = 0; d < dim; d++)
+                    {
+                        block_ptr[d * EQ16_FASTSCAN_BLOCK_SIZE + i] = cand_src[d];
+                    }
+                }
+                else
+                {
+                    // Pad dummy lanes with 32767 so they never pass cutoff
+                    for (long d = 0; d < dim; d++)
+                    {
+                        block_ptr[d * EQ16_FASTSCAN_BLOCK_SIZE + i] = 32767;
+                    }
+                }
+            } // for (int i = 0; i < EQ16_FASTSCAN_BLOCK_SIZE; i++)
+        } // for (int b = 0; b < n_blocks; b++)
+    } // for (int c = 0; c < M; c++)
+
+    if (config->verbose_level >= 1)
+    {
+        double mb = (double)(total_transposed_elems * sizeof(int16_t)) / (1024.0 * 1024.0);
+        printf("  [FASTSCAN] Built EQ16 SIMD transposed blocks: %.2f MB\n", mb);
+    }
+
+    return 0;
+}
+
+/**
  * knn_model_build_transposed_rq8() - Build cluster-local transposed RQ8 FastScan blocks.
  * @model:  Pointer to initialized KnnModel.
  * @config: Pointer to KnnConfig.

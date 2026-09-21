@@ -1076,6 +1076,10 @@ const DesktopBridge = (function () {
       sq16MembersPruned: 0,
       sq16GraphPruned: 0,
       sq16TotalPruned: 0,
+      eq16Evaluations: 0,
+      eq16MembersPruned: 0,
+      eq16GraphPruned: 0,
+      eq16TotalPruned: 0,
       rq8Evaluations: 0,
       rq8MembersPruned: 0,
       rq8GraphPruned: 0,
@@ -1157,6 +1161,22 @@ const DesktopBridge = (function () {
 
     if (telem.sq16TotalPruned && !telem.sq16MembersPruned && !telem.sq16GraphPruned) {
       telem.sq16MembersPruned = telem.sq16TotalPruned;
+    }
+
+    const mEq16Evals = clean.match(/EQ16 Evaluat(?:ions|ed):\s+(\d+)/);
+    if (mEq16Evals) telem.eq16Evaluations = parseInt(mEq16Evals[1], 10);
+
+    const mEq16TotalPruned = clean.match(/EQ16 (?:Lower-Bound Pruned|Pruned):\s+(\d+)/);
+    if (mEq16TotalPruned) telem.eq16TotalPruned = parseInt(mEq16TotalPruned[1], 10);
+
+    const mEq16MemberPruned = clean.match(/EQ16 Member Pruned:\s+(\d+)/);
+    if (mEq16MemberPruned) telem.eq16MembersPruned = parseInt(mEq16MemberPruned[1], 10);
+
+    const mEq16GraphPruned = clean.match(/EQ16 Graph Pruned:\s+(\d+)/);
+    if (mEq16GraphPruned) telem.eq16GraphPruned = parseInt(mEq16GraphPruned[1], 10);
+
+    if (telem.eq16TotalPruned && !telem.eq16MembersPruned && !telem.eq16GraphPruned) {
+      telem.eq16MembersPruned = telem.eq16TotalPruned;
     }
 
     const mRq8Evals = clean.match(/RQ8 Evaluations:\s+(\d+)/);

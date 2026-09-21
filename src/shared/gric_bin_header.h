@@ -41,7 +41,8 @@ typedef enum
     GRIC_BIN_DTYPE_UINT32  = 3,
     GRIC_BIN_DTYPE_INT32   = 4,
     GRIC_BIN_DTYPE_UINT16  = 5,
-    GRIC_BIN_DTYPE_UINT8   = 6
+    GRIC_BIN_DTYPE_UINT8   = 6,
+    GRIC_BIN_DTYPE_INT16   = 7
 } gric_bin_data_type_t;
 
 /**

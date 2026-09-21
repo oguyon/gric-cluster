@@ -7,6 +7,7 @@
  */
 
 #include "scalar_quant.h"
+#include "eq16_quant.h"
 #include "residual_quant.h"
 #include "product_quant.h"
 #include "rabit_quant.h"
@@ -46,6 +47,8 @@ typedef struct
     void       *ivf_vectors;        /**< Contiguous [num_members x D] vector buffer */
     int16_t    *sq16_transposed;    /**< [num_sq16_blocks * dim * 32] FastScan block coords */
     int         num_sq16_blocks;    /**< Number of 32-candidate FastScan blocks */
+    int16_t    *eq16_transposed;    /**< [num_eq16_blocks * dim * 32] EQ16 FastScan coords */
+    int         num_eq16_blocks;    /**< Number of 32-candidate FastScan blocks for EQ16 */
     int8_t     *rq8_transposed;     /**< [num_rq8_blocks * dim * 32] RQ8 FastScan coords */
     int         num_rq8_blocks;     /**< Number of 32-candidate FastScan blocks for RQ8 */
     RQ8Params   rq8_params;         /**< Cluster-adaptive RQ8 parameters */
@@ -110,15 +113,23 @@ typedef struct
     int             sq8_approx;        /**< 1 to relax lower bounds with epsilon */
     int             use_sq16;          /**< 1 to enable 16-bit scalar quantization filtering */
     char           *sq16_save_path;    /**< Optional path to save .sq16 sidecar file */
-    char           *sq16_load_path;     /**< Optional path to load .sq16 sidecar file */
+    char           *sq16_load_path;    /**< Optional path to load .sq16 sidecar file */
     int             sq16_approx;       /**< 1 to relax lower bounds with epsilon */
     double          sq16_ratio;        /**< Max ratio sqrt(D)*scale / rlim (default 0.05) */
     int             use_sq16_sparse;   /**< 1 to enable on-demand SparseCache FastScan */
     int             use_sq16_sparse_lru; /**< 1 to enable 16-block LRU Transposed FastScan */
+    int             use_eq16;          /**< 1 to enable 16-bit E8 lattice quantization */
+    int             use_eq16_adc;      /**< 1 to enable Asymmetric Distance Computation */
+    char           *eq16_save_path;    /**< Optional path to save .eq16 sidecar file */
+    char           *eq16_load_path;    /**< Optional path to load .eq16 sidecar file */
+    int             eq16_approx;       /**< 1 to relax lower bounds with epsilon */
+    double          eq16_ratio;        /**< Max ratio scale / rlim (default 0.05) */
     int             use_rq8;           /**< 1 to enable 8-bit residual quantization filtering */
     char           *rq8_save_path;     /**< Optional path to save .rq8 sidecar file */
     char           *rq8_load_path;     /**< Optional path to load .rq8 sidecar file */
     int             rq8_approx;        /**< 1 to relax lower bounds with epsilon */
+    int             use_e8_quant;      /**< 1 to enable E8 block lattice quantization in RQ8 */
+    int             use_e8_graph;      /**< 1 to enable 240-NN E8 proximity graph routing */
     int             use_pq;            /**< 1 to enable Product Quantization FastScan filtering */
     int             pq_m;              /**< Number of subquantizers (0 = auto dim/4) */
     int             pq_bits;           /**< Codebook bit depth: 4 (FastScan) or 8 */
@@ -175,6 +186,9 @@ typedef struct
     uint64_t sq16_evaluations;
     uint64_t sq16_members_pruned;
     uint64_t sq16_graph_pruned;
+    uint64_t eq16_evaluations;
+    uint64_t eq16_members_pruned;
+    uint64_t eq16_graph_pruned;
     uint64_t rq8_evaluations;
     uint64_t rq8_members_pruned;
     uint64_t rq8_graph_pruned;
@@ -231,6 +245,10 @@ typedef struct
     int16_t         *anchor_sq16_buffer;     /**< [M x D] resident quantized anchor vectors */
     SQ16Params       sq16_params;            /**< Calibration parameters for SQ16 */
     int16_t         *sq16_transposed_buffer; /**< Contiguous memory for FastScan blocks */
+    int16_t         *eq16_dataset_buffer;    /**< [N x D] resident 16-bit EQ16 quantized dataset */
+    int16_t         *anchor_eq16_buffer;     /**< [M x D] resident quantized EQ16 anchor vectors */
+    EQ16Params       eq16_params;            /**< Calibration parameters for EQ16 */
+    int16_t         *eq16_transposed_buffer; /**< Contiguous memory for EQ16 FastScan blocks */
     int8_t          *rq8_dataset_buffer;     /**< [N x D] resident 8-bit quantized residuals */
     RQ8Params        rq8_params;             /**< Calibration parameters for RQ8 */
     int8_t          *rq8_transposed_buffer;  /**< Contiguous memory for RQ8 FastScan blocks */
@@ -243,6 +261,7 @@ typedef struct
     uint8_t         *rabitq_transposed_buffer; /**< Contiguous memory for RaBitQ FastScan blocks */
     int              cluster_graph_k;     /**< Number of neighbors per cluster anchor */
     int             *cluster_graph_adj;   /**< [M x cluster_graph_k] neighbor cluster IDs */
+    int              use_e8_graph;        /**< 1 if cluster graph degree aligns to E8 (240 NNs) */
     double           avg_cluster_size;    /**< Mean number of members per cluster */
     GricProfile      profile;             /**< Optional dataset profile (.gricprof) */
     int              has_profile;         /**< 1 if dataset profile was loaded */
@@ -293,6 +312,8 @@ typedef struct
     uint32_t           epoch;
     const uint8_t     *query_sq8;  /**< Quantized 8-bit representation of active query frame */
     const int16_t     *query_sq16; /**< Quantized 16-bit representation of active query frame */
+    const int16_t     *query_eq16; /**< Quantized EQ16 representation of active query frame */
+    const float       *query_eq16_adc; /**< Normalized float vector for EQ16 ADC */
     int16_t           *query_rq8;  /**< Quantized int16 representation of query residual */
     int                query_rq8_clipped; /**< 1 when query residual quantization saturated */
     uint8_t           *query_pq_lut; /**< Precomputed query distance LUT for PQ FastScan */

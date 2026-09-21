@@ -4650,15 +4650,31 @@
 
     const optSq8El = document.getElementById('optSq8');
     const optSq16El = document.getElementById('optSq16');
+    const optEq16El = document.getElementById('optEq16');
+    const optEq16AdcEl = document.getElementById('optEq16Adc');
+    const badgeQuantRatioEl = document.getElementById('badgeQuantRatio');
+
+    function updateClusteringQuantToggles() {
+      if (optSq8El) optSq8El.classList.toggle('active', clusterUseSq8);
+      if (optSq16El) optSq16El.classList.toggle('active', clusterUseSq16);
+      if (optEq16El) optEq16El.classList.toggle('active', clusterUseEq16);
+      if (optEq16AdcEl) {
+        optEq16AdcEl.classList.toggle('active', clusterUseEq16 && clusterUseEq16Adc);
+        optEq16AdcEl.style.display = clusterUseEq16 ? 'inline-flex' : 'none';
+      }
+      if (badgeQuantRatioEl) {
+        badgeQuantRatioEl.textContent = clusterUseEq16 ? '--eq16-ratio' : '--sq16-ratio';
+      }
+    }
 
     if (optSq8El) {
       optSq8El.addEventListener('click', () => {
         clusterUseSq8 = !clusterUseSq8;
         if (clusterUseSq8) {
           clusterUseSq16 = false;
+          clusterUseEq16 = false;
         }
-        optSq8El.classList.toggle('active', clusterUseSq8);
-        if (optSq16El) optSq16El.classList.toggle('active', clusterUseSq16);
+        updateClusteringQuantToggles();
         syncControlDependencies();
         updateCliCommand();
         draw();
@@ -4670,10 +4686,33 @@
         clusterUseSq16 = !clusterUseSq16;
         if (clusterUseSq16) {
           clusterUseSq8 = false;
+          clusterUseEq16 = false;
         }
-        optSq16El.classList.toggle('active', clusterUseSq16);
-        if (optSq8El) optSq8El.classList.toggle('active', clusterUseSq8);
+        updateClusteringQuantToggles();
         syncControlDependencies();
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    if (optEq16El) {
+      optEq16El.addEventListener('click', () => {
+        clusterUseEq16 = !clusterUseEq16;
+        if (clusterUseEq16) {
+          clusterUseSq8 = false;
+          clusterUseSq16 = false;
+        }
+        updateClusteringQuantToggles();
+        syncControlDependencies();
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    if (optEq16AdcEl) {
+      optEq16AdcEl.addEventListener('click', () => {
+        clusterUseEq16Adc = !clusterUseEq16Adc;
+        optEq16AdcEl.classList.toggle('active', clusterUseEq16 && clusterUseEq16Adc);
         updateCliCommand();
         draw();
       });
@@ -4696,6 +4735,7 @@
         const val = parseFloat(e.target.value);
         if (!isNaN(val) && val >= 0.005 && val <= 0.50) {
           clusterSq16Ratio = val;
+          clusterEq16Ratio = val;
           sliderSq16RatioEl.value = val;
           updateCliCommand();
         }
@@ -4703,6 +4743,7 @@
       sliderSq16RatioEl.addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
         clusterSq16Ratio = val;
+        clusterEq16Ratio = val;
         inputSq16RatioEl.value = val.toFixed(3);
         updateCliCommand();
       });
@@ -6807,6 +6848,17 @@
           if (typeof knnMvp !== 'undefined' && knnMvp) args.push('-multipivot');
           if (typeof knnUseRq8 !== 'undefined' && knnUseRq8) {
             args.push('-rq8');
+          } else if (typeof knnUseEq16 !== 'undefined' && knnUseEq16) {
+            args.push('-eq16');
+            if (typeof knnUseEq16Adc !== 'undefined' && knnUseEq16Adc) {
+              args.push('-eq16-adc');
+            } else {
+              args.push('-no-eq16-adc');
+            }
+            if (typeof knnSq16Ratio !== 'undefined' && knnSq16Ratio !== 0.05) {
+              args.push('-eq16-ratio', String(knnSq16Ratio));
+            }
+            args.push('-no-sq16', '-no-sq8', '-no-rq8');
           } else if (typeof knnUseSq16 !== 'undefined' && knnUseSq16) {
             args.push('-sq16');
             if (typeof knnUseSq16Sparse !== 'undefined' && knnUseSq16Sparse) {
@@ -6821,7 +6873,7 @@
           } else if (typeof knnUseSq8 !== 'undefined' && knnUseSq8) {
             args.push('-sq8');
           } else {
-            args.push('-no-rq8');
+            args.push('-no-rq8', '-no-sq16', '-no-sq8', '-no-eq16');
           }
           if (typeof knnUseBatchDist !== 'undefined' && !knnUseBatchDist) {
             args.push('-no-batch-dist');
@@ -6829,7 +6881,7 @@
           if (typeof knnUseClusterGraph !== 'undefined') {
             if (knnUseClusterGraph) {
               args.push('-cluster-graph');
-              if (typeof knnEfCluster !== 'undefined' && knnEfCluster > 0) {
+              if (typeof knnEfCluster !== 'undefined' && knnEfCluster >= 0) {
                 args.push('-ef-cluster', String(knnEfCluster));
               }
             } else {
@@ -7351,6 +7403,8 @@
     const btnKnnSq8 = document.getElementById('btnKnnSq8');
     const btnKnnSq16 = document.getElementById('btnKnnSq16');
     const btnKnnRq8 = document.getElementById('btnKnnRq8');
+    const btnKnnEq16 = document.getElementById('btnKnnEq16');
+    const btnKnnEq16Adc = document.getElementById('btnKnnEq16Adc');
     const btnKnnSparse = document.getElementById('btnKnnSparse');
 
     function updateKnnQuantToggles() {
@@ -7369,6 +7423,17 @@
         btnKnnSq8.classList.toggle('toggle-cyan', knnUseSq8);
         btnKnnSq8.classList.toggle('active', knnUseSq8);
       }
+      if (btnKnnEq16) {
+        btnKnnEq16.classList.toggle('toggle-active', knnUseEq16);
+        btnKnnEq16.classList.toggle('toggle-cyan', knnUseEq16);
+        btnKnnEq16.classList.toggle('active', knnUseEq16);
+      }
+      if (btnKnnEq16Adc) {
+        btnKnnEq16Adc.classList.toggle('toggle-active', knnUseEq16 && knnUseEq16Adc);
+        btnKnnEq16Adc.classList.toggle('toggle-cyan', knnUseEq16 && knnUseEq16Adc);
+        btnKnnEq16Adc.classList.toggle('active', knnUseEq16 && knnUseEq16Adc);
+        btnKnnEq16Adc.style.display = knnUseEq16 ? 'inline-flex' : 'none';
+      }
       if (btnKnnSparse) {
         btnKnnSparse.classList.toggle('toggle-active', knnUseSq16Sparse);
         btnKnnSparse.classList.toggle('toggle-cyan', knnUseSq16Sparse);
@@ -7382,6 +7447,7 @@
         if (knnUseRq8) {
           knnUseSq16 = false;
           knnUseSq8 = false;
+          knnUseEq16 = false;
         }
         updateKnnQuantToggles();
         syncControlDependencies();
@@ -7396,6 +7462,7 @@
         if (knnUseSq8) {
           knnUseRq8 = false;
           knnUseSq16 = false;
+          knnUseEq16 = false;
         }
         updateKnnQuantToggles();
         syncControlDependencies();
@@ -7410,9 +7477,34 @@
         if (knnUseSq16) {
           knnUseRq8 = false;
           knnUseSq8 = false;
+          knnUseEq16 = false;
         }
         updateKnnQuantToggles();
         syncControlDependencies();
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    if (btnKnnEq16) {
+      btnKnnEq16.addEventListener('click', () => {
+        knnUseEq16 = !knnUseEq16;
+        if (knnUseEq16) {
+          knnUseRq8 = false;
+          knnUseSq8 = false;
+          knnUseSq16 = false;
+        }
+        updateKnnQuantToggles();
+        syncControlDependencies();
+        updateCliCommand();
+        draw();
+      });
+    }
+
+    if (btnKnnEq16Adc) {
+      btnKnnEq16Adc.addEventListener('click', () => {
+        knnUseEq16Adc = !knnUseEq16Adc;
+        updateKnnQuantToggles();
         updateCliCommand();
         draw();
       });
@@ -9140,15 +9232,30 @@
       const isRq8 = Boolean(
         telem.rq8Evaluations || telem.rq8MembersPruned || telem.rq8GraphPruned
       );
+      const isEq16 = Boolean(
+        telem.eq16Evaluations || telem.eq16MembersPruned || telem.eq16GraphPruned
+      );
       const isSq16 = Boolean(
         telem.sq16Evaluations || telem.sq16MembersPruned || telem.sq16GraphPruned
       );
-      const sqType = isRq8 ? 'RQ8' : (isSq16 ? 'SQ16' : 'SQ8');
-      const sqEvals = (telem.rq8Evaluations || 0) + (telem.sq16Evaluations || 0) + (telem.sq8Evaluations || 0);
-      const sqMembers = (telem.rq8MembersPruned || 0) + (telem.sq16MembersPruned || 0) + (telem.sq8MembersPruned || 0);
-      const sqGraph = (telem.rq8GraphPruned || 0) + (telem.sq16GraphPruned || 0) + (telem.sq8GraphPruned || 0);
-      const sqPruned = (telem.rq8TotalPruned || telem.sq16TotalPruned || telem.sq8TotalPruned !== undefined)
-        ? ((telem.rq8TotalPruned || 0) + (telem.sq16TotalPruned || 0) + (telem.sq8TotalPruned || 0))
+      const sqType = isRq8 ? 'RQ8' : (isEq16 ? 'EQ16' : (isSq16 ? 'SQ16' : 'SQ8'));
+      const sqEvals = (telem.rq8Evaluations || 0) +
+                      (telem.eq16Evaluations || 0) +
+                      (telem.sq16Evaluations || 0) +
+                      (telem.sq8Evaluations || 0);
+      const sqMembers = (telem.rq8MembersPruned || 0) +
+                        (telem.eq16MembersPruned || 0) +
+                        (telem.sq16MembersPruned || 0) +
+                        (telem.sq8MembersPruned || 0);
+      const sqGraph = (telem.rq8GraphPruned || 0) +
+                      (telem.eq16GraphPruned || 0) +
+                      (telem.sq16GraphPruned || 0) +
+                      (telem.sq8GraphPruned || 0);
+      const hasTotalPruned = (telem.rq8TotalPruned || telem.eq16TotalPruned ||
+                              telem.sq16TotalPruned || telem.sq8TotalPruned !== undefined);
+      const sqPruned = hasTotalPruned
+        ? ((telem.rq8TotalPruned || 0) + (telem.eq16TotalPruned || 0) +
+           (telem.sq16TotalPruned || 0) + (telem.sq8TotalPruned || 0))
         : (sqMembers + sqGraph);
       const exact = Math.max(0, telem.framedistCalls || 0);
       const totalAll = l1 + l3 + gPruned + angular + multiPivot + gSeeds + sqPruned + exact;
@@ -9478,11 +9585,18 @@
         }
 
         const radRq8 = document.getElementById('radReconQueryRq8');
+        const radEq16 = document.getElementById('radReconQueryEq16');
         const radSq16 = document.getElementById('radReconQuerySq16');
         const radSq8 = document.getElementById('radReconQuerySq8');
         const chkSq8 = document.getElementById('chkReconQuerySq8');
         if (radRq8 && radRq8.checked) {
           args.push('-rq8');
+        } else if (radEq16 && radEq16.checked) {
+          args.push('-eq16', '-eq16-adc');
+          if (typeof knnSq16Ratio !== 'undefined' && knnSq16Ratio !== 0.05) {
+            args.push('-eq16-ratio', String(knnSq16Ratio));
+          }
+          args.push('-no-sq16', '-no-sq8', '-no-rq8');
         } else if (radSq16 && radSq16.checked) {
           args.push('-sq16');
           if (typeof knnUseSq16Sparse !== 'undefined' && knnUseSq16Sparse) {
@@ -9499,7 +9613,7 @@
         } else if (chkSq8 && chkSq8.checked) {
           args.push('-sq8');
         } else {
-          args.push('-no-rq8', '-no-sq16', '-no-sq8');
+          args.push('-no-rq8', '-no-sq16', '-no-sq8', '-no-eq16');
         }
         if (typeof knnUseBatchDist !== 'undefined' && !knnUseBatchDist) {
           args.push('-no-batch-dist');
@@ -9507,7 +9621,7 @@
         if (typeof knnUseClusterGraph !== 'undefined') {
           if (knnUseClusterGraph) {
             args.push('-cluster-graph');
-            if (typeof knnEfCluster !== 'undefined' && knnEfCluster > 0) {
+            if (typeof knnEfCluster !== 'undefined' && knnEfCluster >= 0) {
               args.push('-ef-cluster', String(knnEfCluster));
             }
           } else {
@@ -10556,10 +10670,32 @@
         chkShuffleEl.checked = !!shuffleFrames;
       }
 
-      // 8. SQ16 Ratio & Memoization controls
+      // 8. SQ16 / EQ16 Ratio & Memoization controls
       const rowSq16Ratio = document.getElementById('rowSq16Ratio');
       if (rowSq16Ratio) {
-        rowSq16Ratio.style.display = (typeof clusterUseSq16 === 'boolean' && clusterUseSq16) ? 'flex' : 'none';
+        rowSq16Ratio.style.display = ((typeof clusterUseSq16 === 'boolean' && clusterUseSq16) ||
+                                      (typeof clusterUseEq16 === 'boolean' && clusterUseEq16)) ? 'flex' : 'none';
+      }
+      const optSq8 = document.getElementById('optSq8');
+      if (optSq8 && typeof clusterUseSq8 === 'boolean') {
+        optSq8.classList.toggle('active', clusterUseSq8);
+      }
+      const optSq16 = document.getElementById('optSq16');
+      if (optSq16 && typeof clusterUseSq16 === 'boolean') {
+        optSq16.classList.toggle('active', clusterUseSq16);
+      }
+      const optEq16 = document.getElementById('optEq16');
+      if (optEq16 && typeof clusterUseEq16 === 'boolean') {
+        optEq16.classList.toggle('active', clusterUseEq16);
+      }
+      const optEq16Adc = document.getElementById('optEq16Adc');
+      if (optEq16Adc && typeof clusterUseEq16Adc === 'boolean') {
+        optEq16Adc.classList.toggle('active', clusterUseEq16 && clusterUseEq16Adc);
+        optEq16Adc.style.display = (typeof clusterUseEq16 === 'boolean' && clusterUseEq16) ? 'inline-flex' : 'none';
+      }
+      const badgeQuantRatio = document.getElementById('badgeQuantRatio');
+      if (badgeQuantRatio) {
+        badgeQuantRatio.textContent = (typeof clusterUseEq16 === 'boolean' && clusterUseEq16) ? '--eq16-ratio' : '--sq16-ratio';
       }
       const optMemo = document.getElementById('optMemo');
       if (optMemo && typeof clusterUseMemo === 'boolean') {
@@ -10567,16 +10703,37 @@
       }
       const inputSq16Ratio = document.getElementById('inputSq16Ratio');
       const sliderSq16Ratio = document.getElementById('sliderSq16Ratio');
-      if (inputSq16Ratio && typeof clusterSq16Ratio === 'number') {
-        inputSq16Ratio.value = clusterSq16Ratio.toFixed(3);
+      const activeRatio = (typeof clusterUseEq16 === 'boolean' && clusterUseEq16)
+        ? clusterEq16Ratio : clusterSq16Ratio;
+      if (inputSq16Ratio && typeof activeRatio === 'number') {
+        inputSq16Ratio.value = activeRatio.toFixed(3);
       }
-      if (sliderSq16Ratio && typeof clusterSq16Ratio === 'number') {
-        sliderSq16Ratio.value = clusterSq16Ratio;
+      if (sliderSq16Ratio && typeof activeRatio === 'number') {
+        sliderSq16Ratio.value = activeRatio;
       }
 
       const rowKnnSq16Ratio = document.getElementById('rowKnnSq16Ratio');
       if (rowKnnSq16Ratio) {
-        rowKnnSq16Ratio.style.display = (enableKnn && typeof knnUseSq16 === 'boolean' && knnUseSq16) ? 'flex' : 'none';
+        rowKnnSq16Ratio.style.display = (enableKnn &&
+          ((typeof knnUseSq16 === 'boolean' && knnUseSq16) ||
+           (typeof knnUseEq16 === 'boolean' && knnUseEq16))) ? 'flex' : 'none';
+      }
+      const btnKnnEq16 = document.getElementById('btnKnnEq16');
+      if (btnKnnEq16 && typeof knnUseEq16 === 'boolean') {
+        btnKnnEq16.classList.toggle('toggle-active', knnUseEq16);
+        btnKnnEq16.classList.toggle('toggle-cyan', knnUseEq16);
+        btnKnnEq16.classList.toggle('active', knnUseEq16);
+      }
+      const btnKnnEq16Adc = document.getElementById('btnKnnEq16Adc');
+      if (btnKnnEq16Adc && typeof knnUseEq16Adc === 'boolean') {
+        btnKnnEq16Adc.classList.toggle('toggle-active', knnUseEq16 && knnUseEq16Adc);
+        btnKnnEq16Adc.classList.toggle('toggle-cyan', knnUseEq16 && knnUseEq16Adc);
+        btnKnnEq16Adc.classList.toggle('active', knnUseEq16 && knnUseEq16Adc);
+        btnKnnEq16Adc.style.display = (typeof knnUseEq16 === 'boolean' && knnUseEq16) ? 'inline-flex' : 'none';
+      }
+      const badgeKnnQuantRatio = document.getElementById('badgeKnnQuantRatio');
+      if (badgeKnnQuantRatio) {
+        badgeKnnQuantRatio.textContent = (typeof knnUseEq16 === 'boolean' && knnUseEq16) ? '--eq16-ratio' : '--sq16-ratio';
       }
       const btnKnnMemo = document.getElementById('btnKnnMemo');
       if (btnKnnMemo && typeof knnUseMemo === 'boolean') {
@@ -10586,11 +10743,14 @@
       }
       const inputKnnSq16Ratio = document.getElementById('inputKnnSq16Ratio');
       const sliderKnnSq16Ratio = document.getElementById('sliderKnnSq16Ratio');
-      if (inputKnnSq16Ratio && typeof knnSq16Ratio === 'number') {
-        inputKnnSq16Ratio.value = knnSq16Ratio.toFixed(3);
+      const activeKnnRatio = (typeof knnUseEq16 === 'boolean' && knnUseEq16)
+        ? (typeof knnEq16Ratio === 'number' ? knnEq16Ratio : 0.05)
+        : (typeof knnSq16Ratio === 'number' ? knnSq16Ratio : 0.05);
+      if (inputKnnSq16Ratio) {
+        inputKnnSq16Ratio.value = activeKnnRatio.toFixed(3);
       }
-      if (sliderKnnSq16Ratio && typeof knnSq16Ratio === 'number') {
-        sliderKnnSq16Ratio.value = knnSq16Ratio;
+      if (sliderKnnSq16Ratio) {
+        sliderKnnSq16Ratio.value = activeKnnRatio;
       }
 
       if (typeof updateCliCommand === 'function') {
@@ -11952,7 +12112,18 @@
         args.push('-no-sparse-dcc');
       }
 
-      if (typeof clusterUseSq16 === 'boolean' && clusterUseSq16) {
+      if (typeof clusterUseEq16 === 'boolean' && clusterUseEq16) {
+        args.push('-eq16');
+        if (typeof clusterUseEq16Adc === 'boolean' && clusterUseEq16Adc) {
+          args.push('-eq16-adc');
+        } else {
+          args.push('-no-eq16-adc');
+        }
+        if (typeof clusterSq16Ratio !== 'undefined' && clusterSq16Ratio !== 0.05) {
+          args.push('-eq16-ratio', String(clusterSq16Ratio));
+        }
+        args.push('-no-sq16', '-no-sq8');
+      } else if (typeof clusterUseSq16 === 'boolean' && clusterUseSq16) {
         args.push('-sq16');
         if (typeof clusterSq16Ratio !== 'undefined' && clusterSq16Ratio !== 0.05) {
           args.push('-sq16-ratio', String(clusterSq16Ratio));
@@ -11960,11 +12131,11 @@
         if (typeof clusterUseMemo !== 'undefined' && !clusterUseMemo) {
           args.push('-no-memo');
         }
-        args.push('-no-sq8');
+        args.push('-no-sq8', '-no-eq16');
       } else if (typeof clusterUseSq8 === 'boolean' && clusterUseSq8) {
-        args.push('-sq8', '-no-sq16');
+        args.push('-sq8', '-no-sq16', '-no-eq16');
       } else {
-        args.push('-no-sq16', '-no-sq8');
+        args.push('-no-sq16', '-no-sq8', '-no-eq16');
       }
 
       if (typeof clusterUseBatchDist === 'boolean' && !clusterUseBatchDist) {

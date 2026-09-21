@@ -191,27 +191,47 @@ void run_clustering(
     } // Check for multi-tile mode
 
     /* Resolve automatic quantization default if not explicitly set */
-    if (config->optim.use_sq8 < 0 && config->optim.use_sq16 < 0)
+    if (config->optim.use_sq8 < 0 && config->optim.use_sq16 < 0 && config->optim.use_eq16 < 0)
     {
         long dim = get_frame_width() * get_frame_height();
-        if (dim >= 32)
+        if (dim >= 8 && (dim % 8 == 0))
+        {
+            config->optim.use_eq16 = 1;
+            config->optim.use_sq16 = 0;
+            config->optim.use_sq8 = 0;
+        }
+        else if (dim >= 32)
         {
             config->optim.use_sq16 = 1;
+            config->optim.use_eq16 = 0;
             config->optim.use_sq8 = 0;
         }
         else
         {
             config->optim.use_sq8 = 1;
             config->optim.use_sq16 = 0;
+            config->optim.use_eq16 = 0;
         }
     }
-    else if (config->optim.use_sq8 < 0)
+    else
     {
-        config->optim.use_sq8 = 0;
+        if (config->optim.use_sq8 < 0)
+        {
+            config->optim.use_sq8 = 0;
+        }
+        if (config->optim.use_sq16 < 0)
+        {
+            config->optim.use_sq16 = 0;
+        }
+        if (config->optim.use_eq16 < 0)
+        {
+            config->optim.use_eq16 = 0;
+        }
     }
-    else if (config->optim.use_sq16 < 0)
+
+    if (config->optim.use_eq16 && config->optim.use_eq16_adc < 0)
     {
-        config->optim.use_sq16 = 0;
+        config->optim.use_eq16_adc = 1;
     }
 
     long actual_frames = get_num_frames();
@@ -544,6 +564,18 @@ void run_clustering(
                    state->telemetry.time_step_3a_sq_filter,
                    100.0 * state->telemetry.time_step_3a_sq_filter /
                    state->telemetry.time_step_3a);
+            if (state->telemetry.time_step_3a_sq_tier1 > 0.0 ||
+                state->telemetry.time_step_3a_sq_tier2 > 0.0)
+            {
+                printf("        * Tier 1 (SDC Coarse): %7.3f ms (%5.1f%% of SQ)\n",
+                       state->telemetry.time_step_3a_sq_tier1,
+                       100.0 * state->telemetry.time_step_3a_sq_tier1 /
+                       state->telemetry.time_step_3a_sq_filter);
+                printf("        * Tier 2 (ADC Refine): %7.3f ms (%5.1f%% of SQ)\n",
+                       state->telemetry.time_step_3a_sq_tier2,
+                       100.0 * state->telemetry.time_step_3a_sq_tier2 /
+                       state->telemetry.time_step_3a_sq_filter);
+            }
             printf("    - Subsequent Prune:    %9.3f ms (%5.1f%% of 3a)\n",
                    state->telemetry.time_step_3a_subsequent,
                    100.0 * state->telemetry.time_step_3a_subsequent /
@@ -676,8 +708,24 @@ void run_clustering(
         printf("\n");
     }
 
-    /* SQ8 / SQ16 diagnostics */
-    if (config->optim.use_sq16)
+    /* EQ16 / SQ16 / SQ8 diagnostics */
+    if (config->optim.use_eq16)
+    {
+        printf("E8 Lattice Quantization (EQ16) Diagnostics:\n");
+        printf("  Mode:           %s\n",
+               config->optim.use_eq16_adc ? "Asymmetric Distance Computation (ADC)"
+                                          : "Symmetric Distance Computation (SDC)");
+        printf("  Slack Margin:   %s\n",
+               config->optim.use_eq16_adc ? "1.0 * R_c (tight lower bound)"
+                                          : "2.0 * R_c (symmetric bound)");
+        printf("  EQ16 Evaluated: %8lu\n",
+               (unsigned long)state->telemetry.eq16_evals);
+        printf("  EQ16 Pruned:    %8lu\n",
+               (unsigned long)state->telemetry.eq16_pruned);
+        eq16_print_checkpoint_stats();
+        printf("\n");
+    }
+    else if (config->optim.use_sq16)
     {
         printf("Scalar Quantization (SQ16) Diagnostics:\n");
         printf("  SQ16 Evaluated: %8lu\n",
@@ -748,6 +796,16 @@ void run_clustering(
         free(state->current_frame_sq16);
         state->current_frame_sq16 = NULL;
     }
+    if (state->current_frame_eq16)
+    {
+        free(state->current_frame_eq16);
+        state->current_frame_eq16 = NULL;
+    }
+    if (state->current_frame_eq16_adc)
+    {
+        free(state->current_frame_eq16_adc);
+        state->current_frame_eq16_adc = NULL;
+    }
     if (config->optim.use_sq16 && config->optim.use_memo)
     {
         quant_memo_free(&state->scratch.memo_table);
@@ -765,6 +823,23 @@ void run_clustering(
             {
                 free(state->clusters[i].anchor_sq8);
                 state->clusters[i].anchor_sq8 = NULL;
+            }
+        }
+    }
+
+    if (state->anchor_matrix_eq16)
+    {
+        free(state->anchor_matrix_eq16);
+        state->anchor_matrix_eq16 = NULL;
+    }
+    else if (state->clusters)
+    {
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            if (state->clusters[i].anchor_eq16)
+            {
+                free(state->clusters[i].anchor_eq16);
+                state->clusters[i].anchor_eq16 = NULL;
             }
         }
     }
@@ -790,6 +865,18 @@ void run_clustering(
     {
         free(state->anchor_matrix_sq16_interleaved);
         state->anchor_matrix_sq16_interleaved = NULL;
+    }
+
+    if (state->anchor_matrix_eq16_interleaved)
+    {
+        free(state->anchor_matrix_eq16_interleaved);
+        state->anchor_matrix_eq16_interleaved = NULL;
+    }
+
+    if (state->anchor_matrix_adc_interleaved)
+    {
+        free(state->anchor_matrix_adc_interleaved);
+        state->anchor_matrix_adc_interleaved = NULL;
     }
 
     if (state->anchor_matrix_float)

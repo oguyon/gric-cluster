@@ -157,34 +157,72 @@ static void init_new_cluster_distances(
         const float *q = (const float *)state->clusters[new_cl].anchor.data;
         const float *anchors_mat = state->anchor_matrix_float;
 
-        int b_count8 = new_cl / 8;
+        double   *dcc_min_row = &state->scratch.dcc_min[(size_t)new_cl * N];
+        double   *dcc_max_row = &state->scratch.dcc_max[(size_t)new_cl * N];
+        char     *dcc_meas_row = &state->scratch.dcc_measured[(size_t)new_cl * N];
+        uint16_t *dcc_sq16_row = (state->scratch.dcc_sq16 != NULL)
+                                 ? &state->scratch.dcc_sq16[(size_t)new_cl * N]
+                                 : NULL;
 
-        #pragma omp parallel for schedule(static) if(b_count8 >= 8)
-        for (int b = 0; b < b_count8; b++)
+#if GRIC_HAVE_AVX512_TARGET
+        if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && frame_elem >= 16)
         {
-            int b_idx = b * 8;
-            double batch_dists[8];
-            framedist_batch_1x8_contiguous_float(
-                q,
-                anchors_mat + (size_t)b_idx * (size_t)frame_elem,
-                batch_dists,
-                frame_elem
-            );
-            for (int k = 0; k < 8; k++)
+            int b_count16 = new_cl / 16;
+            #pragma omp parallel for schedule(static) if(b_count16 >= 4)
+            for (int b = 0; b < b_count16; b++)
             {
-                int cl_idx = b_idx + k;
-                set_dcc_pair(state, N, new_cl, cl_idx, batch_dists[k]);
+                int b_idx = b * 16;
+                framedist_batch_1x16_contiguous_float(
+                    q,
+                    anchors_mat + (size_t)b_idx * (size_t)frame_elem,
+                    dcc_min_row + b_idx,
+                    frame_elem
+                );
             }
-        } // for (int b = 0; b < b_count8; b++)
-
-        for (int cl_idx = b_count8 * 8; cl_idx < new_cl; cl_idx++)
+            int rem_start = b_count16 * 16;
+            int rem_b8 = (new_cl - rem_start) / 8;
+            for (int b = 0; b < rem_b8; b++)
+            {
+                int b_idx = rem_start + b * 8;
+                framedist_batch_1x8_contiguous_float(
+                    q,
+                    anchors_mat + (size_t)b_idx * (size_t)frame_elem,
+                    dcc_min_row + b_idx,
+                    frame_elem
+                );
+            }
+            for (int cl_idx = rem_start + rem_b8 * 8; cl_idx < new_cl; cl_idx++)
+            {
+                dcc_min_row[cl_idx] = framedist_float(
+                    q,
+                    anchors_mat + (size_t)cl_idx * (size_t)frame_elem,
+                    frame_elem
+                );
+            }
+        }
+        else
+#endif
         {
-            double d = framedist_float(
-                q,
-                anchors_mat + (size_t)cl_idx * (size_t)frame_elem,
-                frame_elem
-            );
-            set_dcc_pair(state, N, new_cl, cl_idx, d);
+            int b_count8 = new_cl / 8;
+            #pragma omp parallel for schedule(static) if(b_count8 >= 4)
+            for (int b = 0; b < b_count8; b++)
+            {
+                int b_idx = b * 8;
+                framedist_batch_1x8_contiguous_float(
+                    q,
+                    anchors_mat + (size_t)b_idx * (size_t)frame_elem,
+                    dcc_min_row + b_idx,
+                    frame_elem
+                );
+            }
+            for (int cl_idx = b_count8 * 8; cl_idx < new_cl; cl_idx++)
+            {
+                dcc_min_row[cl_idx] = framedist_float(
+                    q,
+                    anchors_mat + (size_t)cl_idx * (size_t)frame_elem,
+                    frame_elem
+                );
+            }
         }
 
         int unique_visited = 0;
@@ -196,8 +234,7 @@ static void init_new_cluster_distances(
             int j = temp_indices[idx];
             if (j >= 0 && j < new_cl)
             {
-                double d = temp_dists[idx];
-                set_dcc_pair(state, N, new_cl, j, d);
+                dcc_min_row[j] = temp_dists[idx];
                 if (!is_temp_index[j])
                 {
                     is_temp_index[j] = 1;
@@ -206,12 +243,49 @@ static void init_new_cluster_distances(
             }
         }
 
-        state->scratch.dcc_min[new_cl * N + new_cl] = 0.0;
-        state->scratch.dcc_max[new_cl * N + new_cl] = 0.0;
-        state->scratch.dcc_measured[new_cl * N + new_cl] = 1;
-        if (state->scratch.dcc_sq16)
+        dcc_min_row[new_cl] = 0.0;
+        memcpy(dcc_max_row, dcc_min_row, (size_t)(new_cl + 1) * sizeof(double));
+        memset(dcc_meas_row, 1, (size_t)(new_cl + 1) * sizeof(char));
+
+        if (dcc_sq16_row != NULL)
         {
-            state->scratch.dcc_sq16[new_cl * N + new_cl] = 0;
+            double s = state->scratch.dcc_sq16_scale;
+            for (int k = 0; k < new_cl; k++)
+            {
+                double d = dcc_min_row[k];
+                dcc_sq16_row[k] = (d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5);
+            }
+            dcc_sq16_row[new_cl] = 0;
+        }
+
+        /* Sequential scatter to symmetric columns */
+        double   *dcc_min = state->scratch.dcc_min;
+        double   *dcc_max = state->scratch.dcc_max;
+        char     *dcc_meas = state->scratch.dcc_measured;
+        uint16_t *dcc_sq16 = state->scratch.dcc_sq16;
+
+        if (dcc_sq16 != NULL)
+        {
+            for (int k = 0; k < new_cl; k++)
+            {
+                size_t col_idx = (size_t)k * N + new_cl;
+                double d = dcc_min_row[k];
+                dcc_min[col_idx] = d;
+                dcc_max[col_idx] = d;
+                dcc_meas[col_idx] = 1;
+                dcc_sq16[col_idx] = dcc_sq16_row[k];
+            }
+        }
+        else
+        {
+            for (int k = 0; k < new_cl; k++)
+            {
+                size_t col_idx = (size_t)k * N + new_cl;
+                double d = dcc_min_row[k];
+                dcc_min[col_idx] = d;
+                dcc_max[col_idx] = d;
+                dcc_meas[col_idx] = 1;
+            }
         }
 
         int unvisited_count = new_cl - unique_visited;
@@ -256,7 +330,7 @@ static void init_new_cluster_distances(
             if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && !is_double)
             {
                 int b_count16 = unvisited_count / 16;
-                #pragma omp parallel for if(b_count16 >= 8) schedule(static)
+                #pragma omp parallel for if(b_count16 >= 4) schedule(static)
                 for (int b = 0; b < b_count16; b++)
                 {
                     int b_idx = b * 16;
@@ -283,7 +357,7 @@ static void init_new_cluster_distances(
             }
 #endif
             int b_count8 = (unvisited_count - processed_count) / 8;
-            #pragma omp parallel for if(b_count8 >= 8) schedule(static)
+            #pragma omp parallel for if(b_count8 >= 4) schedule(static)
             for (int b = 0; b < b_count8; b++)
             {
                 int b_idx = processed_count + b * 8;
@@ -448,6 +522,39 @@ static void assign_new_cluster_anchor(
     else
     {
         state->clusters[cl_idx].anchor_sq8 = NULL;
+    }
+    if (config->optim.use_eq16 && state->current_frame_eq16 != NULL)
+    {
+        long dim = current_frame->width * current_frame->height;
+        if (state->anchor_matrix_eq16 != NULL)
+        {
+            state->clusters[cl_idx].anchor_eq16 =
+                state->anchor_matrix_eq16 + (size_t)cl_idx * (size_t)dim;
+        }
+        else
+        {
+            state->clusters[cl_idx].anchor_eq16 =
+                (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+        }
+        if (state->clusters[cl_idx].anchor_eq16 != NULL)
+        {
+            memcpy(state->clusters[cl_idx].anchor_eq16, state->current_frame_eq16,
+                   (size_t)dim * sizeof(int16_t));
+        }
+        if (state->anchor_matrix_eq16_interleaved != NULL)
+        {
+            eq16_set_anchor_interleaved(state->anchor_matrix_eq16_interleaved, cl_idx,
+                                        state->current_frame_eq16, dim);
+        }
+        if (state->anchor_matrix_adc_interleaved != NULL)
+        {
+            eq16_set_anchor_adc_interleaved(state->anchor_matrix_adc_interleaved, cl_idx,
+                                            state->current_frame_eq16, dim);
+        }
+    }
+    else
+    {
+        state->clusters[cl_idx].anchor_eq16 = NULL;
     }
     if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
     {

@@ -45,6 +45,37 @@ void initialize_initial_cluster(
     {
         state->clusters[0].anchor_sq8 = NULL;
     }
+    if (config->optim.use_eq16 && state->current_frame_eq16 != NULL)
+    {
+        long dim = current_frame->width * current_frame->height;
+        if (state->anchor_matrix_eq16 != NULL)
+        {
+            state->clusters[0].anchor_eq16 = state->anchor_matrix_eq16;
+        }
+        else
+        {
+            state->clusters[0].anchor_eq16 = (int16_t *)malloc((size_t)dim * sizeof(int16_t));
+        }
+        if (state->clusters[0].anchor_eq16 != NULL)
+        {
+            memcpy(state->clusters[0].anchor_eq16, state->current_frame_eq16,
+                   (size_t)dim * sizeof(int16_t));
+        }
+        if (state->anchor_matrix_eq16_interleaved != NULL)
+        {
+            eq16_set_anchor_interleaved(state->anchor_matrix_eq16_interleaved, 0,
+                                        state->current_frame_eq16, dim);
+        }
+        if (state->anchor_matrix_adc_interleaved != NULL)
+        {
+            eq16_set_anchor_adc_interleaved(state->anchor_matrix_adc_interleaved, 0,
+                                            state->current_frame_eq16, dim);
+        }
+    }
+    else
+    {
+        state->clusters[0].anchor_eq16 = NULL;
+    }
     if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
     {
         long dim = current_frame->width * current_frame->height;

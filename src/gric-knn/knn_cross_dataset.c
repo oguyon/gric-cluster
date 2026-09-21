@@ -93,7 +93,9 @@ static void knn_cross_seed_frontier(
                         {
                             tau = *best_seed_dist;
                         }
-                        if (is_graph_pruned_by_sq16(visited->query_sq16, s_frame, tau,
+                        if (is_graph_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
+                                                    s_frame, tau, model, config, telem) ||
+                            is_graph_pruned_by_sq16(visited->query_sq16, s_frame, tau,
                                                     model, config, telem) ||
                             is_graph_pruned_by_sq8(visited->query_sq8, s_frame, tau,
                                                    model, config, telem))
@@ -296,7 +298,9 @@ static void knn_greedy_route_to_basin(
             {
                 routing_tau = tau_heap;
             }
-            if (is_graph_pruned_by_sq16(visited->query_sq16, nb_id, routing_tau,
+            if (is_graph_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
+                                        nb_id, routing_tau, model, config, telem) ||
+                is_graph_pruned_by_sq16(visited->query_sq16, nb_id, routing_tau,
                                         model, config, telem) ||
                 is_graph_pruned_by_sq8(visited->query_sq8, nb_id, routing_tau,
                                        model, config, telem))
@@ -552,7 +556,9 @@ static void knn_direct_basin_expansion(
             continue;
         }
 
-        if (is_graph_pruned_by_sq16(visited->query_sq16, nb_id, current_tau,
+        if (is_graph_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
+                                    nb_id, current_tau, model, config, telem) ||
+            is_graph_pruned_by_sq16(visited->query_sq16, nb_id, current_tau,
                                     model, config, telem) ||
             is_graph_pruned_by_sq8(visited->query_sq8, nb_id, current_tau,
                                    model, config, telem))
@@ -846,7 +852,9 @@ static void knn_direct_basin_expansion(
                     continue;
                 }
 
-                if (is_graph_pruned_by_sq16(visited->query_sq16, nb2, current_tau,
+                if (is_graph_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
+                                            nb2, current_tau, model, config, telem) ||
+                    is_graph_pruned_by_sq16(visited->query_sq16, nb2, current_tau,
                                             model, config, telem) ||
                     is_graph_pruned_by_sq8(visited->query_sq8, nb2, current_tau,
                                            model, config, telem))
@@ -1139,7 +1147,9 @@ static int knn_cross_explore_graph_frontier(
             {
                 sq_tau = *best_seed_dist;
             }
-            if (is_graph_pruned_by_sq16(visited->query_sq16, nb_id, sq_tau,
+            if (is_graph_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
+                                        nb_id, sq_tau, model, config, telem) ||
+                is_graph_pruned_by_sq16(visited->query_sq16, nb_id, sq_tau,
                                         model, config, telem) ||
                 is_graph_pruned_by_sq8(visited->query_sq8, nb_id, sq_tau,
                                        model, config, telem))
@@ -1314,7 +1324,9 @@ static int knn_cross_explore_graph_frontier(
                     continue;
                 }
 
-                if (is_graph_pruned_by_sq16(visited->query_sq16, nb_id, current_tau,
+                if (is_graph_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
+                                            nb_id, current_tau, model, config, telem) ||
+                    is_graph_pruned_by_sq16(visited->query_sq16, nb_id, current_tau,
                                             model, config, telem) ||
                     is_graph_pruned_by_sq8(visited->query_sq8, nb_id, current_tau,
                                            model, config, telem))
@@ -1491,7 +1503,9 @@ static void knn_cross_eval_intra_cluster(
                 continue;
             }
 
-            if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+            if (is_member_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
+                                         cand_id, current_tau, model, config, telem) ||
+                is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
                                          model, config, telem) ||
                 is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                         model, config, telem))
@@ -1743,7 +1757,9 @@ static void knn_cross_eval_inter_clusters(
                 continue;
             }
 
-            if (is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+            if (is_member_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
+                                         cand_id, current_tau, model, config, telem) ||
+                is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
                                          model, config, telem) ||
                 is_member_pruned_by_sq8(visited->query_sq8, cand_id, current_tau,
                                         model, config, telem))
@@ -1900,6 +1916,11 @@ void knn_search_cross_dataset_frame(
     loc_cfg.epsilon = config->epsilon;
     loc_cfg.prev_cluster_id = prev_c;
     loc_cfg.is_double = model->is_double;
+    loc_cfg.query_eq16 = visited->query_eq16;
+    loc_cfg.eq16_params =
+        (config->use_eq16 && model->anchor_eq16_buffer != NULL) ?
+            &model->eq16_params : NULL;
+    loc_cfg.anchors_eq16_buf = model->anchor_eq16_buffer;
     loc_cfg.query_sq16 = visited->query_sq16;
     loc_cfg.query_sq8 = visited->query_sq8;
     loc_cfg.sq16_params =

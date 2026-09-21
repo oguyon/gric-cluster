@@ -279,6 +279,43 @@ uint64_t compute_sq16_cutoff_thresh(
 }
 
 /**
+ * compute_eq16_cutoff_thresh() - Precompute squared integer cutoff threshold for EQ16.
+ * @cur_tau: Current search radius.
+ * @model:   Active KnnModel.
+ * @config:  Active KnnConfig.
+ *
+ * Return: Cutoff SSD threshold, or UINT64_MAX if bounds cannot prune.
+ */
+uint64_t compute_eq16_cutoff_thresh(
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config)
+{
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
+    {
+        cur_tau = config->rlim_cutoff;
+    }
+
+    double eps = config->eq16_approx ? config->epsilon : 0.0;
+    double err_slack = (config->use_eq16_adc) ?
+                       1.0 * (double)model->eq16_params.err_radius :
+                       2.0 * (double)model->eq16_params.err_radius;
+    double raw_thresh = (cur_tau * (1.0 + eps) + err_slack) *
+                        (2.0 * (double)model->eq16_params.inv_scale);
+    if (raw_thresh >= 4294967295.0)
+    {
+        return UINT64_MAX;
+    }
+
+    if (config->use_eq16_adc)
+    {
+        raw_thresh *= 1.00005;
+    }
+
+    return (raw_thresh > 0.0) ? (uint64_t)(raw_thresh * raw_thresh) : 0;
+}
+
+/**
  * compute_rq8_cutoff_thresh_cluster() - Compute RQ8 squared distance cutoff for a cluster.
  * @cur_tau: Current search radius (heap max dist or rlim_cutoff).
  * @params:  Cluster RQ8Params.
@@ -450,6 +487,109 @@ int is_graph_pruned_by_sq16(
     {
         telem->sq16_graph_pruned++;
         return 1;
+    }
+
+    return 0;
+}
+
+/**
+ * is_member_pruned_by_eq16() - Evaluate EQ16 metric lower bound against search radius.
+ * @query_eq16: Pointer to quantized query vector [dim].
+ * @cand_id:    Index of candidate dataset frame.
+ * @cur_tau:    Current distance to k-th nearest neighbor (or cutoff radius).
+ * @model:      Active KnnModel.
+ * @config:     Active KnnConfig.
+ * @telem:      Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+int is_member_pruned_by_eq16(
+    const int16_t   *query_eq16,
+    const float     *query_eq16_adc,
+    long             cand_id,
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config,
+    KnnTelemetry    *telem)
+{
+    if (!config->use_eq16 || model->eq16_dataset_buffer == NULL)
+    {
+        return 0;
+    }
+    if (query_eq16_adc == NULL && query_eq16 == NULL)
+    {
+        return 0;
+    }
+
+    uint64_t ssd_cutoff = compute_eq16_cutoff_thresh(cur_tau, model, config);
+    return is_member_pruned_by_eq16_cached(
+        query_eq16, query_eq16_adc, cand_id, ssd_cutoff, model, telem);
+}
+
+/**
+ * is_graph_pruned_by_eq16() - Evaluate EQ16 metric lower bound for graph candidate pruning.
+ * @query_eq16:     Pointer to quantized query vector [dim].
+ * @query_eq16_adc: Pointer to normalized query float vector [dim] for ADC.
+ * @cand_id:        Index of candidate dataset frame.
+ * @cur_tau:        Current distance threshold (e.g. heap max or routing threshold).
+ * @model:          Active KnnModel.
+ * @config:         Active KnnConfig.
+ * @telem:          Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+int is_graph_pruned_by_eq16(
+    const int16_t   *query_eq16,
+    const float     *query_eq16_adc,
+    long             cand_id,
+    double           cur_tau,
+    const KnnModel  *model,
+    const KnnConfig *config,
+    KnnTelemetry    *telem)
+{
+    if (!config->use_eq16 || model->eq16_dataset_buffer == NULL)
+    {
+        return 0;
+    }
+    if (query_eq16_adc == NULL && query_eq16 == NULL)
+    {
+        return 0;
+    }
+
+    uint64_t ssd_cutoff = compute_eq16_cutoff_thresh(cur_tau, model, config);
+    if (ssd_cutoff == UINT64_MAX)
+    {
+        return 0;
+    }
+
+    const int16_t *cand_eq16 = model->eq16_dataset_buffer +
+                               (size_t)cand_id * (size_t)model->frame_elements;
+    telem->eq16_evaluations++;
+
+    if (config->use_eq16_adc && query_eq16_adc != NULL)
+    {
+        float cutoff_f = (float)ssd_cutoff;
+        float dist_sq = eq16_dist_asym_cutoff_f32(
+            query_eq16_adc, cand_eq16, model->frame_elements, cutoff_f
+        );
+        if (dist_sq > cutoff_f)
+        {
+            telem->eq16_graph_pruned++;
+            return 1;
+        }
+        return 0;
+    }
+
+    if (query_eq16 != NULL)
+    {
+        uint64_t ssd = eq16_dist_squared_cutoff_i16(
+            query_eq16, cand_eq16, model->frame_elements, ssd_cutoff
+        );
+        if (ssd > ssd_cutoff)
+        {
+            telem->eq16_graph_pruned++;
+            return 1;
+        }
     }
 
     return 0;
@@ -886,7 +1026,29 @@ double knn_compute_anchor_distance(
     KnnTelemetry        *telem)
 {
     long frame_elem = model->frame_elements;
-    if (config->use_sq16 && model->anchor_sq16_buffer != NULL && visited->query_sq16 != NULL)
+    if (config->use_eq16 && model->anchor_eq16_buffer != NULL)
+    {
+        const int16_t *anchor_eq16 = model->anchor_eq16_buffer +
+                                     (size_t)c * (size_t)frame_elem;
+        telem->eq16_evaluations++;
+        if (config->use_eq16_adc && visited->query_eq16_adc != NULL)
+        {
+            float dist_sq = eq16_dist_asym_cutoff_f32(
+                visited->query_eq16_adc, anchor_eq16, frame_elem, 1e30f
+            );
+            *anchor_is_sq16 = 1;
+            return sqrt((double)dist_sq) * ((double)model->eq16_params.scale * 0.5);
+        }
+        else if (visited->query_eq16 != NULL)
+        {
+            uint64_t ssd = eq16_dist_squared_i16(
+                visited->query_eq16, anchor_eq16, frame_elem
+            );
+            *anchor_is_sq16 = 1;
+            return sqrt((double)ssd) * ((double)model->eq16_params.scale * 0.5);
+        }
+    }
+    else if (config->use_sq16 && model->anchor_sq16_buffer != NULL && visited->query_sq16 != NULL)
     {
         const int16_t *anchor_sq16 = model->anchor_sq16_buffer +
                                      (size_t)c * (size_t)frame_elem;
