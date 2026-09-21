@@ -22,19 +22,31 @@
 /** Magic identifier for .rq8 sidecar files */
 #define RQ8_FILE_MAGIC "RQ8_0002"
 
+#include "e8_lattice.h"
+
 /** Universal transposed SIMD block size (32 candidates, 32 bytes per dimension) */
 #define RQ8_FASTSCAN_BLOCK_SIZE 32
+
+/**
+ * @brief Lattice quantization geometry mode for RQ8.
+ */
+typedef enum
+{
+    RQ8_LATTICE_CUBIC = 0, /**< Standard Z^D scalar hypercube */
+    RQ8_LATTICE_E8    = 1  /**< E8 block lattice quantization */
+} RQ8LatticeMode;
 
 /**
  * @brief Parameters defining 8-bit residual quantization within a cluster ball.
  */
 typedef struct
 {
-    float rlim;       /**< Maximum cluster covering radius */
-    float scale;      /**< Step delta: rlim / 127.0f */
-    float inv_scale;  /**< Reciprocal step: 127.0f / rlim */
-    float err_radius; /**< Max single-vector Euclidean error: sqrt(dim) * scale * 0.5f */
-    long  dim;        /**< Vector dimension (element count per frame) */
+    float          rlim;         /**< Maximum cluster covering radius */
+    float          scale;        /**< Step delta: rlim / 127.0f */
+    float          inv_scale;    /**< Reciprocal step: 127.0f / rlim */
+    float          err_radius;   /**< Max Euclidean error: sqrt(dim) * scale * 0.5f */
+    long           dim;          /**< Vector dimension (element count per frame) */
+    RQ8LatticeMode lattice_mode; /**< Lattice quantization mode */
 } RQ8Params;
 
 /**
@@ -54,6 +66,15 @@ void rq8_init_params(
     RQ8Params *params,
     float      rlim,
     long       dim);
+
+/**
+ * @brief Initialize RQ8 parameters with specific lattice geometry (Cubic or E8).
+ */
+void rq8_init_params_ex(
+    RQ8Params      *params,
+    float           rlim,
+    long            dim,
+    RQ8LatticeMode  lattice_mode);
 
 /**
  * @brief Quantize a single-precision float residual (src - anchor) to int8_t [-127, 127].

@@ -8,6 +8,7 @@
 #include "knn_cli.h"
 #include "knn_engine.h"
 #include "knn_loader.h"
+#include "knn_tree.h"
 #include "knn_writer.h"
 #include "shared/cli_colors.h"
 #include <stdio.h>
@@ -39,6 +40,16 @@ int main(
     {
         fprintf(stderr, "Error: Failed to load cluster model from '%s'\n", config.cluster_dir);
         return 1;
+    }
+
+    if (config.use_e8_graph)
+    {
+        model.use_e8_graph = 1;
+        knn_free_cluster_graph(&model);
+        if (knn_build_cluster_graph(&model) != 0)
+        {
+            fprintf(stderr, "Warning: Failed to build E8 240-NN cluster graph\n");
+        }
     }
 
     if (config.query_data_path != NULL)
@@ -98,7 +109,13 @@ int main(
             model.has_profile = 1;
             printf("%s[PROFILE]%s Auto-loaded dataset profile: %s\n",
                    ansi_bold_cyan, ansi_reset, prof_to_load);
-            if (model.profile.use_sq16)
+            if (model.profile.use_eq16)
+            {
+                printf("  Range: [%.4f, %.4f], EQ16 scale: %.6f, suggested rlim: %.4f\n",
+                       model.profile.eq16_params.min_val, model.profile.eq16_params.max_val,
+                       model.profile.eq16_params.scale, model.profile.rlim_recommended);
+            }
+            else if (model.profile.use_sq16)
             {
                 printf("  Range: [%.4f, %.4f], SQ16 scale: %.6f, suggested rlim: %.4f\n",
                        model.profile.sq16_params.min_val, model.profile.sq16_params.max_val,
@@ -110,6 +127,32 @@ int main(
                        model.profile.sq8_params.min_val, model.profile.sq8_params.max_val,
                        model.profile.sq8_params.scale, model.profile.rlim_recommended);
             }
+        }
+    }
+
+    /* Auto-detect EQ16 / SQ16 if neither was explicitly chosen */
+    if (config.use_eq16 < 0 && config.use_sq16 < 0)
+    {
+        if (model.frame_elements >= 8 && (model.frame_elements % 8 == 0))
+        {
+            config.use_eq16 = 1;
+            config.use_sq16 = 0;
+        }
+        else
+        {
+            config.use_eq16 = 0;
+            config.use_sq16 = 1;
+        }
+    }
+    else
+    {
+        if (config.use_eq16 < 0)
+        {
+            config.use_eq16 = 0;
+        }
+        if (config.use_sq16 < 0)
+        {
+            config.use_sq16 = 0;
         }
     }
 
@@ -136,6 +179,15 @@ int main(
         if (knn_model_build_or_load_rq8(&model, &config) != 0)
         {
             fprintf(stderr, "Error: Failed to initialize RQ8 dataset buffer\n");
+            knn_model_free(&model);
+            return 1;
+        }
+    }
+    else if (config.use_eq16)
+    {
+        if (knn_model_build_or_load_eq16(&model, &config) != 0)
+        {
+            fprintf(stderr, "Error: Failed to initialize EQ16 dataset buffer\n");
             knn_model_free(&model);
             return 1;
         }
@@ -264,6 +316,19 @@ int main(
             printf("  RQ8 Graph Pruned:          %lu\n",
                    (unsigned long)telemetry.rq8_graph_pruned);
         }
+    }
+    else if (config.use_eq16)
+    {
+        uint64_t total_eq16_pruned = telemetry.eq16_members_pruned +
+                                     telemetry.eq16_graph_pruned;
+        printf("  EQ16 Evaluations:          %lu\n",
+               (unsigned long)telemetry.eq16_evaluations);
+        printf("  EQ16 Lower-Bound Pruned:   %lu\n",
+               (unsigned long)total_eq16_pruned);
+        printf("  EQ16 Member Pruned:        %lu\n",
+               (unsigned long)telemetry.eq16_members_pruned);
+        printf("  EQ16 Graph Pruned:         %lu\n",
+               (unsigned long)telemetry.eq16_graph_pruned);
     }
     else if (config.use_sq16)
     {

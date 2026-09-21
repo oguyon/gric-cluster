@@ -1620,15 +1620,30 @@
       const isRq8 = Boolean(
         telem.rq8Evaluations || telem.rq8MembersPruned || telem.rq8GraphPruned
       );
+      const isEq16 = Boolean(
+        telem.eq16Evaluations || telem.eq16MembersPruned || telem.eq16GraphPruned
+      );
       const isSq16 = Boolean(
         telem.sq16Evaluations || telem.sq16MembersPruned || telem.sq16GraphPruned
       );
-      const sqType = isRq8 ? 'RQ8' : (isSq16 ? 'SQ16' : 'SQ8');
-      const sqEvals = (telem.rq8Evaluations || 0) + (telem.sq16Evaluations || 0) + (telem.sq8Evaluations || 0);
-      const sqMembers = (telem.rq8MembersPruned || 0) + (telem.sq16MembersPruned || 0) + (telem.sq8MembersPruned || 0);
-      const sqGraph = (telem.rq8GraphPruned || 0) + (telem.sq16GraphPruned || 0) + (telem.sq8GraphPruned || 0);
-      const sqPruned = (telem.rq8TotalPruned || telem.sq16TotalPruned || telem.sq8TotalPruned !== undefined)
-        ? ((telem.rq8TotalPruned || 0) + (telem.sq16TotalPruned || 0) + (telem.sq8TotalPruned || 0))
+      const sqType = isRq8 ? 'RQ8' : (isEq16 ? 'EQ16' : (isSq16 ? 'SQ16' : 'SQ8'));
+      const sqEvals = (telem.rq8Evaluations || 0) +
+                      (telem.eq16Evaluations || 0) +
+                      (telem.sq16Evaluations || 0) +
+                      (telem.sq8Evaluations || 0);
+      const sqMembers = (telem.rq8MembersPruned || 0) +
+                        (telem.eq16MembersPruned || 0) +
+                        (telem.sq16MembersPruned || 0) +
+                        (telem.sq8MembersPruned || 0);
+      const sqGraph = (telem.rq8GraphPruned || 0) +
+                      (telem.eq16GraphPruned || 0) +
+                      (telem.sq16GraphPruned || 0) +
+                      (telem.sq8GraphPruned || 0);
+      const hasTotalPruned = (telem.rq8TotalPruned || telem.eq16TotalPruned ||
+                              telem.sq16TotalPruned || telem.sq8TotalPruned !== undefined);
+      const sqPruned = hasTotalPruned
+        ? ((telem.rq8TotalPruned || 0) + (telem.eq16TotalPruned || 0) +
+           (telem.sq16TotalPruned || 0) + (telem.sq8TotalPruned || 0))
         : (sqMembers + sqGraph);
 
       const lblKnnSqPrecType = document.getElementById('lblKnnSqPrecType');
@@ -1918,6 +1933,15 @@
       if (optSq16El && typeof clusterUseSq16 !== 'undefined') {
         optSq16El.classList.toggle('active', clusterUseSq16);
       }
+      const optEq16El = document.getElementById('optEq16');
+      if (optEq16El && typeof clusterUseEq16 !== 'undefined') {
+        optEq16El.classList.toggle('active', clusterUseEq16);
+      }
+      const optEq16AdcEl = document.getElementById('optEq16Adc');
+      if (optEq16AdcEl && typeof clusterUseEq16Adc !== 'undefined') {
+        optEq16AdcEl.classList.toggle('active', clusterUseEq16 && clusterUseEq16Adc);
+        optEq16AdcEl.style.display = clusterUseEq16 ? 'inline-flex' : 'none';
+      }
       const btnKnnSq8 = document.getElementById('btnKnnSq8');
       if (btnKnnSq8 && typeof knnUseSq8 !== 'undefined') {
         btnKnnSq8.classList.toggle('toggle-active', knnUseSq8);
@@ -1941,6 +1965,19 @@
         btnKnnRq8.classList.toggle('toggle-active', knnUseRq8);
         btnKnnRq8.classList.toggle('toggle-cyan', knnUseRq8);
         btnKnnRq8.classList.toggle('active', knnUseRq8);
+      }
+      const btnKnnEq16 = document.getElementById('btnKnnEq16');
+      if (btnKnnEq16 && typeof knnUseEq16 !== 'undefined') {
+        btnKnnEq16.classList.toggle('toggle-active', knnUseEq16);
+        btnKnnEq16.classList.toggle('toggle-cyan', knnUseEq16);
+        btnKnnEq16.classList.toggle('active', knnUseEq16);
+      }
+      const btnKnnEq16Adc = document.getElementById('btnKnnEq16Adc');
+      if (btnKnnEq16Adc && typeof knnUseEq16Adc !== 'undefined') {
+        btnKnnEq16Adc.classList.toggle('toggle-active', knnUseEq16 && knnUseEq16Adc);
+        btnKnnEq16Adc.classList.toggle('toggle-cyan', knnUseEq16 && knnUseEq16Adc);
+        btnKnnEq16Adc.classList.toggle('active', knnUseEq16 && knnUseEq16Adc);
+        btnKnnEq16Adc.style.display = knnUseEq16 ? 'inline-flex' : 'none';
       }
       const optBatchDistEl = document.getElementById('optBatchDist');
       if (optBatchDistEl && typeof clusterUseBatchDist !== 'undefined') {

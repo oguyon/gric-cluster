@@ -47,44 +47,91 @@ static int knn_calibrate_dataset_minmax(
     float global_min = 1e30f;
     float global_max = -1e30f;
 
-    for (long i = 0; i < num_frames; i++)
+    if (reader->memory_data != NULL)
     {
-        if (knn_reader_read_frame(reader, i, frame_buf) == 0)
+        size_t total_elements = (size_t)num_frames * (size_t)dim;
+        if (is_double)
         {
-            if (is_double)
+            const double *da = (const double *)reader->memory_data;
+#ifdef _OPENMP
+            #pragma omp parallel for reduction(min:global_min) reduction(max:global_max) \
+                schedule(static)
+#endif
+            for (size_t i = 0; i < total_elements; i++)
             {
-                const double *da = (const double *)frame_buf;
-                for (long d = 0; d < dim; d++)
+                float v = (float)da[i];
+                if (v < global_min)
                 {
-                    float v = (float)da[d];
-                    if (v < global_min)
-                    {
-                        global_min = v;
-                    }
-                    if (v > global_max)
-                    {
-                        global_max = v;
-                    }
+                    global_min = v;
                 }
-            }
-            else
-            {
-                const float *fa = (const float *)frame_buf;
-                for (long d = 0; d < dim; d++)
+                if (v > global_max)
                 {
-                    float v = fa[d];
-                    if (v < global_min)
-                    {
-                        global_min = v;
-                    }
-                    if (v > global_max)
-                    {
-                        global_max = v;
-                    }
+                    global_max = v;
                 }
             }
         }
-    } // for (long i = 0; i < num_frames; i++)
+        else
+        {
+            const float *fa = (const float *)reader->memory_data;
+#ifdef _OPENMP
+            #pragma omp parallel for reduction(min:global_min) reduction(max:global_max) \
+                schedule(static)
+#endif
+            for (size_t i = 0; i < total_elements; i++)
+            {
+                float v = fa[i];
+                if (v < global_min)
+                {
+                    global_min = v;
+                }
+                if (v > global_max)
+                {
+                    global_max = v;
+                }
+            }
+        }
+    }
+    else
+    {
+        for (long i = 0; i < num_frames; i++)
+        {
+            if (knn_reader_read_frame(reader, i, frame_buf) == 0)
+            {
+                if (is_double)
+                {
+                    const double *da = (const double *)frame_buf;
+                    for (long d = 0; d < dim; d++)
+                    {
+                        float v = (float)da[d];
+                        if (v < global_min)
+                        {
+                            global_min = v;
+                        }
+                        if (v > global_max)
+                        {
+                            global_max = v;
+                        }
+                    }
+                }
+                else
+                {
+                    const float *fa = (const float *)frame_buf;
+                    for (long d = 0; d < dim; d++)
+                    {
+                        float v = fa[d];
+                        if (v < global_min)
+                        {
+                            global_min = v;
+                        }
+                        if (v > global_max)
+                        {
+                            global_max = v;
+                        }
+                    }
+                }
+            }
+        } // for (long i = 0; i < num_frames; i++)
+    }
 
     *out_min = global_min;
     *out_max = global_max;
@@ -149,6 +196,9 @@ static void knn_quantize_cluster_anchors_sq16(
         return;
     }
 
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (int c = 0; c < model->num_clusters; c++)
     {
         int16_t *dst = model->anchor_sq16_buffer + (size_t)c * (size_t)dim;
@@ -162,6 +212,47 @@ static void knn_quantize_cluster_anchors_sq16(
         {
             sq16_quantize_float(
                 (const float *)model->clusters[c].anchor_data, dst, &model->sq16_params
+            );
+        }
+    }
+}
+
+/**
+ * knn_quantize_cluster_anchors_eq16() - Pre-quantize anchor vectors into EQ16 buffer.
+ * @model: Pointer to initialized KnnModel.
+ */
+static void knn_quantize_cluster_anchors_eq16(
+    KnnModel *model)
+{
+    if (model->clusters == NULL || model->num_clusters <= 0)
+    {
+        return;
+    }
+
+    long dim = model->frame_elements;
+    size_t anchor_elems = (size_t)model->num_clusters * (size_t)dim;
+    model->anchor_eq16_buffer = (int16_t *)malloc(anchor_elems * sizeof(int16_t));
+    if (model->anchor_eq16_buffer == NULL)
+    {
+        return;
+    }
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
+    for (int c = 0; c < model->num_clusters; c++)
+    {
+        int16_t *dst = model->anchor_eq16_buffer + (size_t)c * (size_t)dim;
+        if (model->is_double)
+        {
+            eq16_quantize_double(
+                (const double *)model->clusters[c].anchor_data, dst, &model->eq16_params
+            );
+        }
+        else
+        {
+            eq16_quantize_float(
+                (const float *)model->clusters[c].anchor_data, dst, &model->eq16_params
             );
         }
     }
@@ -357,21 +448,46 @@ int knn_model_build_or_load_sq8(
     }
 
     // Quantize all frames
-    for (long i = 0; i < N; i++)
+    if (config->memory_data != NULL)
     {
-        if (knn_reader_read_frame(&reader, i, frame_buf) == 0)
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
+        for (long i = 0; i < N; i++)
         {
             uint8_t *dst = model->sq8_dataset_buffer + (size_t)i * (size_t)dim;
             if (model->is_double)
             {
-                sq8_quantize_double((const double *)frame_buf, dst, &model->sq8_params);
+                const double *src =
+                    ((const double *)config->memory_data) + (size_t)i * (size_t)dim;
+                sq8_quantize_double(src, dst, &model->sq8_params);
             }
             else
             {
-                sq8_quantize_float((const float *)frame_buf, dst, &model->sq8_params);
+                const float *src =
+                    ((const float *)config->memory_data) + (size_t)i * (size_t)dim;
+                sq8_quantize_float(src, dst, &model->sq8_params);
             }
         }
-    } // for (long i = 0; i < N; i++)
+    }
+    else
+    {
+        for (long i = 0; i < N; i++)
+        {
+            if (knn_reader_read_frame(&reader, i, frame_buf) == 0)
+            {
+                uint8_t *dst = model->sq8_dataset_buffer + (size_t)i * (size_t)dim;
+                if (model->is_double)
+                {
+                    sq8_quantize_double((const double *)frame_buf, dst, &model->sq8_params);
+                }
+                else
+                {
+                    sq8_quantize_float((const float *)frame_buf, dst, &model->sq8_params);
+                }
+            }
+        } // for (long i = 0; i < N; i++)
+    }
 
     free(frame_buf);
     knn_reader_close(&reader);
@@ -478,8 +594,29 @@ static int knn_deduplicate_sq16_frames(
                     model->sq16_dataset_buffer + (size_t)slots[idx].frame_id * (size_t)dim;
                 if (memcmp(cur_vec, match_vec, (size_t)dim * sizeof(int16_t)) == 0)
                 {
-                    match_id = (int)slots[idx].frame_id;
-                    break;
+                    int is_exact = 1;
+                    if (model->dataset_buffer != NULL)
+                    {
+                        size_t el_sz = model->is_double ? sizeof(double) : sizeof(float);
+                        const void *raw_cur = (const char *)model->dataset_buffer +
+                            (size_t)i * (size_t)dim * el_sz;
+                        const void *raw_match = (const char *)model->dataset_buffer +
+                            (size_t)slots[idx].frame_id * (size_t)dim * el_sz;
+                        if (memcmp(raw_cur, raw_match, (size_t)dim * el_sz) != 0)
+                        {
+                            is_exact = 0;
+                        }
+                    }
+                    else
+                    {
+                        is_exact = 0;
+                    }
+
+                    if (is_exact)
+                    {
+                        match_id = (int)slots[idx].frame_id;
+                        break;
+                    }
                 }
             }
             idx = (idx + 1) & mask;
@@ -648,21 +785,46 @@ int knn_model_build_or_load_sq16(
     }
 
     // Quantize all frames
-    for (long i = 0; i < N; i++)
+    if (config->memory_data != NULL)
     {
-        if (knn_reader_read_frame(&reader, i, frame_buf) == 0)
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
+        for (long i = 0; i < N; i++)
         {
             int16_t *dst = model->sq16_dataset_buffer + (size_t)i * (size_t)dim;
             if (model->is_double)
             {
-                sq16_quantize_double((const double *)frame_buf, dst, &model->sq16_params);
+                const double *src =
+                    ((const double *)config->memory_data) + (size_t)i * (size_t)dim;
+                sq16_quantize_double(src, dst, &model->sq16_params);
             }
             else
             {
-                sq16_quantize_float((const float *)frame_buf, dst, &model->sq16_params);
+                const float *src =
+                    ((const float *)config->memory_data) + (size_t)i * (size_t)dim;
+                sq16_quantize_float(src, dst, &model->sq16_params);
             }
         }
-    } // for (long i = 0; i < N; i++)
+    }
+    else
+    {
+        for (long i = 0; i < N; i++)
+        {
+            if (knn_reader_read_frame(&reader, i, frame_buf) == 0)
+            {
+                int16_t *dst = model->sq16_dataset_buffer + (size_t)i * (size_t)dim;
+                if (model->is_double)
+                {
+                    sq16_quantize_double((const double *)frame_buf, dst, &model->sq16_params);
+                }
+                else
+                {
+                    sq16_quantize_float((const float *)frame_buf, dst, &model->sq16_params);
+                }
+            }
+        } // for (long i = 0; i < N; i++)
+    }
 
     free(frame_buf);
     knn_reader_close(&reader);
@@ -711,6 +873,229 @@ sq16_postprocess:
 }
 
 /**
+ * knn_model_build_or_load_eq16() - Build or load quantized EQ16 dataset buffer into KnnModel.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_or_load_eq16(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (!config->use_eq16 || model == NULL || config == NULL)
+    {
+        return 0;
+    }
+
+    long N = model->total_dataset_frames;
+    long dim = model->frame_elements;
+    if (N <= 0 || dim <= 0)
+    {
+        return 0;
+    }
+
+    // Path 1: Load precomputed sidecar file if path specified
+    if (config->eq16_load_path != NULL)
+    {
+        long loaded_frames = 0;
+        if (eq16_load_sidecar(config->eq16_load_path, &model->eq16_params,
+                              &model->eq16_dataset_buffer, &loaded_frames) != 0)
+        {
+            fprintf(stderr, "Error: Failed to load EQ16 sidecar file '%s'\n",
+                    config->eq16_load_path);
+            return -1;
+        }
+        if (loaded_frames != N || model->eq16_params.dim != dim)
+        {
+            fprintf(stderr, "Error: EQ16 sidecar dimensions mismatch (%ldx%ld vs %ldx%ld)\n",
+                    loaded_frames, model->eq16_params.dim, N, dim);
+            free(model->eq16_dataset_buffer);
+            model->eq16_dataset_buffer = NULL;
+            return -1;
+        }
+        if (config->verbose_level >= 1)
+        {
+            printf("Loaded EQ16 sidecar: %ld frames, range [%.4f, %.4f], scale=%.6f\n",
+                   N, model->eq16_params.min_val, model->eq16_params.max_val,
+                   model->eq16_params.scale);
+        }
+        goto eq16_postprocess;
+    }
+
+    // Path 2: Build EQ16 representation by scanning dataset frames
+    KnnFrameReader reader;
+    int open_res = 0;
+    if (config->memory_data != NULL)
+    {
+        open_res = knn_reader_open_memory(
+            &reader, config->memory_data, N, dim, model->is_double);
+    }
+    else
+    {
+        open_res = knn_reader_open(
+            &reader, config->input_data_path, N, model->frame_width,
+            model->frame_height, model->is_double);
+    }
+    if (open_res != 0)
+    {
+        fprintf(stderr, "Error: Failed to open dataset reader for EQ16 quantization\n");
+        return -1;
+    }
+
+    size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
+    void *frame_buf = malloc((size_t)dim * elem_size);
+    if (frame_buf == NULL)
+    {
+        knn_reader_close(&reader);
+        return -1;
+    }
+
+    // Calibrate EQ16 min/max
+    if (model->has_profile && model->profile.use_eq16 &&
+        model->profile.num_frames >= N &&
+        model->profile.eq16_params.scale > 0.0f)
+    {
+        model->eq16_params = model->profile.eq16_params;
+        model->eq16_params.dim = dim;
+        if (config->verbose_level >= 1)
+        {
+            printf("  [PROFILE] Fast EQ16 init using profile range [%.4f, %.4f]\n",
+                   model->profile.eq16_params.min_val, model->profile.eq16_params.max_val);
+        }
+    }
+    else
+    {
+        float global_min = 0.0f;
+        float global_max = 0.0f;
+        if (knn_calibrate_dataset_minmax(&reader, frame_buf, N, dim, model->is_double,
+                                         &global_min, &global_max) != 0)
+        {
+            free(frame_buf);
+            knn_reader_close(&reader);
+            return -1;
+        }
+
+        eq16_init_params(&model->eq16_params, global_min, global_max, dim);
+
+        /* Enforce --eq16-ratio bound: scale = alpha*rlim / sqrt(D) */
+        double eff_rlim = (config->rlim_cutoff > 0.0) ? config->rlim_cutoff : model->model_rlim;
+        if (config->eq16_ratio > 0.0 && eff_rlim > 0.0)
+        {
+            float target_scale = (float)((config->eq16_ratio * eff_rlim) / sqrt((double)dim));
+            float span = global_max - global_min;
+            float min_scale = (span > 0.0f) ? (span / 32767.0f) : 1e-6f;
+            if (target_scale < min_scale)
+            {
+                target_scale = min_scale;
+            }
+            float center = 0.5f * (global_min + global_max);
+            model->eq16_params.scale = target_scale;
+            model->eq16_params.inv_scale = 1.0f / target_scale;
+            model->eq16_params.center = center;
+            model->eq16_params.min_val = center - 16384.0f * target_scale;
+            model->eq16_params.max_val = center + 16383.0f * target_scale;
+            long k = dim / 8;
+            long rem = dim % 8;
+            float covering_sq = (float)k * 1.0f + (float)rem * 0.25f;
+            model->eq16_params.err_radius = sqrtf(covering_sq) * target_scale;
+        }
+    }
+
+    // Allocate resident int16 buffer [N x dim]
+    size_t total_elements = (size_t)N * (size_t)dim;
+    model->eq16_dataset_buffer = (int16_t *)malloc(total_elements * sizeof(int16_t));
+    if (model->eq16_dataset_buffer == NULL)
+    {
+        free(frame_buf);
+        knn_reader_close(&reader);
+        return -1;
+    }
+
+    // Quantize all frames
+    if (config->memory_data != NULL)
+    {
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
+        for (long i = 0; i < N; i++)
+        {
+            int16_t *dst = model->eq16_dataset_buffer + (size_t)i * (size_t)dim;
+            if (model->is_double)
+            {
+                const double *src =
+                    ((const double *)config->memory_data) + (size_t)i * (size_t)dim;
+                eq16_quantize_double(src, dst, &model->eq16_params);
+            }
+            else
+            {
+                const float *src =
+                    ((const float *)config->memory_data) + (size_t)i * (size_t)dim;
+                eq16_quantize_float(src, dst, &model->eq16_params);
+            }
+        }
+    }
+    else
+    {
+        for (long i = 0; i < N; i++)
+        {
+            if (knn_reader_read_frame(&reader, i, frame_buf) == 0)
+            {
+                int16_t *dst = model->eq16_dataset_buffer + (size_t)i * (size_t)dim;
+                if (model->is_double)
+                {
+                    eq16_quantize_double((const double *)frame_buf, dst, &model->eq16_params);
+                }
+                else
+                {
+                    eq16_quantize_float((const float *)frame_buf, dst, &model->eq16_params);
+                }
+            }
+        } // for (long i = 0; i < N; i++)
+    }
+
+    free(frame_buf);
+    knn_reader_close(&reader);
+
+    if (config->verbose_level >= 1)
+    {
+        printf("Built EQ16 dataset cache: %ld frames (%.2f MB), range [%.4f, %.4f]\n",
+               N, (double)(total_elements * sizeof(int16_t)) / (1024.0 * 1024.0),
+               model->eq16_params.min_val, model->eq16_params.max_val);
+    }
+
+    // Optional: Save sidecar file
+    if (config->eq16_save_path != NULL)
+    {
+        if (eq16_save_sidecar(config->eq16_save_path, &model->eq16_params,
+                              model->eq16_dataset_buffer, N) == 0)
+        {
+            if (config->verbose_level >= 1)
+            {
+                printf("Saved EQ16 sidecar file to '%s'\n", config->eq16_save_path);
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Warning: Failed to write EQ16 sidecar file '%s'\n",
+                    config->eq16_save_path);
+        }
+    }
+
+eq16_postprocess:
+    // Pre-quantize anchor vectors for fast Level 2 anchor lower-bound pruning
+    knn_quantize_cluster_anchors_eq16(model);
+
+    // Build transposed SIMD FastScan blocks for all clusters
+    if (knn_model_build_transposed_eq16(model, config) != 0)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
  * knn_model_build_or_load_rq8() - Build or load quantized RQ8 dataset buffer into KnnModel.
  * @model:  Pointer to initialized KnnModel.
  * @config: Pointer to KnnConfig.
@@ -738,7 +1123,8 @@ int knn_model_build_or_load_rq8(
     {
         eff_rlim = 1.0;
     }
-    rq8_init_params(&model->rq8_params, (float)eff_rlim, dim);
+    RQ8LatticeMode lat_mode = (config->use_e8_quant) ? RQ8_LATTICE_E8 : RQ8_LATTICE_CUBIC;
+    rq8_init_params_ex(&model->rq8_params, (float)eff_rlim, dim, lat_mode);
 
     for (int c = 0; c < model->num_clusters; c++)
     {
@@ -747,7 +1133,7 @@ int knn_model_build_or_load_rq8(
         {
             cl_r = (model->model_rlim > 0.0) ? model->model_rlim : eff_rlim;
         }
-        rq8_init_params(&model->clusters[c].rq8_params, (float)cl_r, dim);
+        rq8_init_params_ex(&model->clusters[c].rq8_params, (float)cl_r, dim, lat_mode);
     }
 
     uint64_t expected_fingerprint = knn_rq8_sidecar_fingerprint(model);

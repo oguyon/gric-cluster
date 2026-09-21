@@ -58,6 +58,8 @@ void cluster_cli_init_config_defaults(
         config->optim.xtile_decay = 1.0;
         config->optim.use_sq8 = -1; // Auto-detect: SQ8 for D < 32, SQ16 for D >= 32
         config->optim.use_sq16 = -1;
+        config->optim.use_eq16 = -1;
+        config->optim.use_eq16_adc = 1; // Enabled by default when EQ16 is used
         config->optim.use_memo = 1; // Enabled by default when SQ16 is used
         config->optim.sq16_ratio = 0.05; // Default ratio: sqrt(D)*scale <= 0.05*rlim
         config->optim.use_batch_dist = 1; // Enabled by default for multi-vector SIMD batching
@@ -303,10 +305,11 @@ int cluster_cli_parse(
                 has_prof = (gric_profile_read_json(located_prof_path, &dataset_prof) == 0);
             }
 
-            /* Automatic micro-probe fallback for file inputs when SQ16 is requested
+            /* Automatic micro-probe fallback for file inputs when SQ16/EQ16 is requested
              * or rlim is omitted. */
             if (!has_prof && !config->optim.no_prof && !config->input.stream_input_mode &&
-                !config->input.filelist_mode && (config->optim.use_sq16 || !rlim_set))
+                !config->input.filelist_mode &&
+                (config->optim.use_eq16 || config->optim.use_sq16 || !rlim_set))
             {
                 ProbeConfig pcfg;
                 memset(&pcfg, 0, sizeof(pcfg));
@@ -385,7 +388,29 @@ int cluster_cli_parse(
                     rlim_set = 1;
                 }
 
-                if (config->optim.use_sq16 && dataset_prof.use_sq16)
+                if (config->optim.use_eq16 && (dataset_prof.use_sq16 || dataset_prof.dim >= 8))
+                {
+                    float min_v = dataset_prof.sq16_params.min_val;
+                    float max_v = dataset_prof.sq16_params.max_val;
+                    long fdim = dataset_prof.dim;
+                    eq16_init_params(&config->optim.eq16_params, min_v, max_v, fdim);
+                    config->optim.eq16_calibrated = 1;
+                    if (config->optim.sq16_ratio > 0.0 && config->algo.rlim > 0.0 && fdim > 0)
+                    {
+                        float target_scale = (float)((config->optim.sq16_ratio *
+                                                      config->algo.rlim) /
+                                                     sqrt((double)fdim));
+                        float center = 0.5f * (min_v + max_v);
+                        config->optim.eq16_params.scale = target_scale;
+                        config->optim.eq16_params.inv_scale = 1.0f / target_scale;
+                        config->optim.eq16_params.center = center;
+                        long k = fdim / 8;
+                        long rem = fdim % 8;
+                        float cov_sq = (float)k * 1.0f + (float)rem * 0.25f;
+                        config->optim.eq16_params.err_radius = sqrtf(cov_sq) * target_scale;
+                    }
+                }
+                else if (config->optim.use_sq16 && dataset_prof.use_sq16)
                 {
                     config->optim.sq16_params = dataset_prof.sq16_params;
                     config->optim.sq16_calibrated = 1;

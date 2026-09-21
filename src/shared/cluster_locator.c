@@ -562,6 +562,30 @@ static int select_best_first_target(
 }
 
 /**
+ * get_anchor_eq16() - Resolve pointer to EQ16 anchor vector.
+ * @config:         Active locator configuration.
+ * @c:              Cluster index.
+ * @frame_elements: Element count per vector.
+ *
+ * Return: Pointer to EQ16 anchor buffer, or NULL if unavailable.
+ */
+static inline const int16_t *get_anchor_eq16(
+    const ClusterLocatorConfig *config,
+    int                         c,
+    long                        frame_elements)
+{
+    if (config->anchors_eq16_buf != NULL)
+    {
+        return config->anchors_eq16_buf + (size_t)c * (size_t)frame_elements;
+    }
+    if (config->anchors_eq16_ptrs != NULL)
+    {
+        return config->anchors_eq16_ptrs[c];
+    }
+    return NULL;
+}
+
+/**
  * get_anchor_sq16() - Resolve pointer to SQ16 anchor vector.
  * @config:         Active locator configuration.
  * @c:              Cluster index.
@@ -664,9 +688,23 @@ int cluster_locate_sample(
         return CLUSTER_LOCATE_ERROR;
     }
 
+    uint64_t eq16_ssd_thresh = UINT64_MAX;
+    int eq16_active = 0;
+    if (config->query_eq16 != NULL && config->eq16_params != NULL &&
+        (config->anchors_eq16_buf != NULL || config->anchors_eq16_ptrs != NULL))
+    {
+        double raw_thresh = (tau_eff + 2.0 * (double)config->eq16_params->err_radius) *
+                            (2.0 * (double)config->eq16_params->inv_scale);
+        if (raw_thresh > 0.0 && raw_thresh < 4294967295.0)
+        {
+            eq16_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+            eq16_active = 1;
+        }
+    }
+
     uint64_t sq16_ssd_thresh = UINT64_MAX;
     int sq16_active = 0;
-    if (config->query_sq16 != NULL && config->sq16_params != NULL &&
+    if (!eq16_active && config->query_sq16 != NULL && config->sq16_params != NULL &&
         (config->anchors_sq16_buf != NULL || config->anchors_sq16_ptrs != NULL))
     {
         double raw_thresh = (tau_eff + 2.0 * (double)config->sq16_params->err_radius) *
@@ -680,7 +718,8 @@ int cluster_locate_sample(
 
     uint64_t sq8_ssd_thresh = UINT64_MAX;
     int sq8_active = 0;
-    if (!sq16_active && config->query_sq8 != NULL && config->sq8_params != NULL &&
+    if (!eq16_active && !sq16_active && config->query_sq8 != NULL &&
+        config->sq8_params != NULL &&
         (config->anchors_sq8_buf != NULL || config->anchors_sq8_ptrs != NULL))
     {
         double raw_thresh = (tau_eff + 2.0 * (double)config->sq8_params->err_radius) *
@@ -698,7 +737,21 @@ int cluster_locate_sample(
         int p_id = config->prev_cluster_id;
         int skip_prev = 0;
 
-        if (sq16_active)
+        if (eq16_active)
+        {
+            const int16_t *a_eq16 = get_anchor_eq16(config, p_id, frame_elements);
+            if (a_eq16 != NULL)
+            {
+                uint64_t ssd = eq16_dist_squared_cutoff_i16(
+                    config->query_eq16, a_eq16, frame_elements, eq16_ssd_thresh);
+                if (ssd > eq16_ssd_thresh)
+                {
+                    result->active_cluster_mask[p_id] = 0;
+                    skip_prev = 1;
+                }
+            }
+        }
+        else if (sq16_active)
         {
             const int16_t *a_sq16 = get_anchor_sq16(config, p_id, frame_elements);
             if (a_sq16 != NULL)
@@ -741,7 +794,17 @@ int cluster_locate_sample(
             if (d_prev < tau_eff)
             {
                 tau_eff = d_prev;
-                if (sq16_active)
+                if (eq16_active)
+                {
+                    double raw_thresh = (tau_eff +
+                                         2.0 * (double)config->eq16_params->err_radius) *
+                                        (2.0 * (double)config->eq16_params->inv_scale);
+                    if (raw_thresh > 0.0 && raw_thresh < 4294967295.0)
+                    {
+                        eq16_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+                    }
+                }
+                else if (sq16_active)
                 {
                     double raw_thresh = (tau_eff +
                                          2.0 * (double)config->sq16_params->err_radius) *
@@ -793,7 +856,43 @@ int cluster_locate_sample(
     int best_quant_candidate = -1;
     if (config->strict_rlim && config->rlim > 0.0)
     {
-        if (sq16_active)
+        if (eq16_active)
+        {
+            uint64_t min_eq_ssd = UINT64_MAX;
+            int      active_left = 0;
+            for (int c = 0; c < num_clusters; c++)
+            {
+                if (result->active_cluster_mask[c] == 0)
+                {
+                    continue;
+                }
+                const int16_t *a_eq16 = get_anchor_eq16(config, c, frame_elements);
+                if (a_eq16 != NULL)
+                {
+                    uint64_t ssd = eq16_dist_squared_cutoff_i16(
+                        config->query_eq16, a_eq16, frame_elements, eq16_ssd_thresh);
+                    if (ssd > eq16_ssd_thresh)
+                    {
+                        result->active_cluster_mask[c] = 0;
+                    }
+                    else
+                    {
+                        active_left++;
+                        if (ssd < min_eq_ssd)
+                        {
+                            min_eq_ssd = ssd;
+                            best_quant_candidate = c;
+                        }
+                    }
+                }
+            }
+            if (active_left == 0)
+            {
+                result->best_cluster_id = -1;
+                return CLUSTER_LOCATE_REJECTED;
+            }
+        }
+        else if (sq16_active)
         {
             uint64_t min_sq_ssd = UINT64_MAX;
             int      active_left = 0;
@@ -935,7 +1034,17 @@ int cluster_locate_sample(
         if (d_target < tau_eff)
         {
             tau_eff = d_target;
-            if (sq16_active)
+            if (eq16_active)
+            {
+                double raw_thresh = (tau_eff +
+                                     2.0 * (double)config->eq16_params->err_radius) *
+                                    (2.0 * (double)config->eq16_params->inv_scale);
+                if (raw_thresh > 0.0 && raw_thresh < 4294967295.0)
+                {
+                    eq16_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+                }
+            }
+            else if (sq16_active)
             {
                 double raw_thresh = (tau_eff +
                                      2.0 * (double)config->sq16_params->err_radius) *

@@ -352,6 +352,9 @@ static int knn_warm_start_nearest_cluster(
                  is_member_pruned_by_rq8(visited->query_rq8, cand_id, current_tau,
                                          model, config, telem)) ||
                 (!config->use_rq8 &&
+                 is_member_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
+                                          cand_id, current_tau, model, config, telem)) ||
+                (!config->use_rq8 &&
                  is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
                                           model, config, telem)) ||
                 (!config->use_rq8 &&
@@ -547,7 +550,10 @@ static void knn_inject_two_hop_candidates(
                     }
                 }
 
-                if (is_member_pruned_by_sq16(
+                if (is_member_pruned_by_eq16(
+                        visited->query_eq16, visited->query_eq16_adc,
+                        nb, cur_tau, model, config, telem) ||
+                    is_member_pruned_by_sq16(
                         visited->query_sq16, nb, cur_tau, model, config, telem))
                 {
                     continue;
@@ -606,7 +612,10 @@ static void knn_inject_two_hop_candidates(
                 }
 
                 double cur_tau = knn_heap_peek_max_dist(heap);
-                if (is_member_pruned_by_sq16(
+                if (is_member_pruned_by_eq16(
+                        visited->query_eq16, visited->query_eq16_adc,
+                        nb, cur_tau, model, config, telem) ||
+                    is_member_pruned_by_sq16(
                         visited->query_sq16, nb, cur_tau, model, config, telem))
                 {
                     continue;
@@ -865,9 +874,15 @@ static void knn_search_inter_clusters(
     KnnCandidateBatch batch;
     knn_batch_init(&batch);
 
-    double sq16_delta = (config->use_sq16 && model->sq16_dataset_buffer != NULL)
-                        ? 2.0 * (double)model->sq16_params.err_radius
-                        : 0.0;
+    double sq16_delta = 0.0;
+    if (config->use_eq16 && model->eq16_dataset_buffer != NULL)
+    {
+        sq16_delta = (config->use_eq16_adc ? 1.0 : 2.0) * (double)model->eq16_params.err_radius;
+    }
+    else if (config->use_sq16 && model->sq16_dataset_buffer != NULL)
+    {
+        sq16_delta = 2.0 * (double)model->sq16_params.err_radius;
+    }
     TE4Ref te4_pivots[8][8];
     int n_p_cached = 0;
 
@@ -978,7 +993,13 @@ static void knn_search_inter_clusters(
             }
         } // if (!anchor_is_sq16)
 
-        double sq_err = anchor_is_sq16 ? (double)model->sq16_params.err_radius : 0.0;
+        double sq_err = 0.0;
+        if (anchor_is_sq16)
+        {
+            sq_err = (config->use_eq16 && model->anchor_eq16_buffer != NULL)
+                     ? (config->use_eq16_adc ? 1.0 : 2.0) * (double)model->eq16_params.err_radius
+                     : 2.0 * (double)model->sq16_params.err_radius;
+        }
         double lb_anchor = d_anchor - cl->radius - sq_err;
         if (lb_anchor < 0.0)
         {
@@ -1141,9 +1162,15 @@ static void knn_search_cluster_graph(
         ef_limit = M;
     }
     int clusters_evaluated = 0;
-    double sq16_delta = (config->use_sq16 && model->sq16_dataset_buffer != NULL)
-                        ? 2.0 * (double)model->sq16_params.err_radius
-                        : 0.0;
+    double sq16_delta = 0.0;
+    if (config->use_eq16 && model->eq16_dataset_buffer != NULL)
+    {
+        sq16_delta = (config->use_eq16_adc ? 1.0 : 2.0) * (double)model->eq16_params.err_radius;
+    }
+    else if (config->use_sq16 && model->sq16_dataset_buffer != NULL)
+    {
+        sq16_delta = 2.0 * (double)model->sq16_params.err_radius;
+    }
 
     while (pq_size > 0 && clusters_evaluated < ef_limit)
     {
@@ -1155,7 +1182,13 @@ static void knn_search_cluster_graph(
         double current_tau = knn_heap_peek_max_dist(heap);
         const KnnCluster *cl = &model->clusters[c];
 
-        double sq_err = anchor_is_sq16 ? (double)model->sq16_params.err_radius : 0.0;
+        double sq_err = 0.0;
+        if (anchor_is_sq16)
+        {
+            sq_err = (config->use_eq16 && model->anchor_eq16_buffer != NULL)
+                     ? (config->use_eq16_adc ? 1.0 : 2.0) * (double)model->eq16_params.err_radius
+                     : 2.0 * (double)model->sq16_params.err_radius;
+        }
         double lb_anchor = d_anchor - cl->radius - sq_err;
         if (lb_anchor < 0.0)
         {
@@ -1163,7 +1196,7 @@ static void knn_search_cluster_graph(
         }
 
         /* Early termination: if heap is full and anchor distance is beyond tau + rlim */
-        if (heap->count >= heap->k && d_anchor > current_tau / eps_factor + rlim)
+        if (heap->count >= heap->k && d_anchor - sq_err > current_tau / eps_factor + rlim)
         {
             break;
         }

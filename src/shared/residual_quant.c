@@ -15,15 +15,17 @@
 #endif
 
 /**
- * rq8_init_params() - Initialize RQ8 parameters from cluster radius and dimension.
- * @params: Pointer to RQ8Params structure to initialize.
- * @rlim:   Maximum cluster covering radius.
- * @dim:    Vector dimension.
+ * rq8_init_params_ex() - Initialize RQ8 parameters with specific lattice geometry.
+ * @params:       Pointer to RQ8Params structure to initialize.
+ * @rlim:         Maximum cluster covering radius.
+ * @dim:          Vector dimension.
+ * @lattice_mode: Lattice quantization mode (RQ8_LATTICE_CUBIC or RQ8_LATTICE_E8).
  */
-void rq8_init_params(
-    RQ8Params *params,
-    float      rlim,
-    long       dim)
+void rq8_init_params_ex(
+    RQ8Params      *params,
+    float           rlim,
+    long            dim,
+    RQ8LatticeMode  lattice_mode)
 {
     if (params == NULL)
     {
@@ -39,7 +41,30 @@ void rq8_init_params(
     params->scale = rlim / 127.0f;
     params->inv_scale = 127.0f / rlim;
     params->dim = dim;
-    params->err_radius = sqrtf((float)dim) * params->scale * 0.5f;
+    params->lattice_mode = lattice_mode;
+
+    if (lattice_mode == RQ8_LATTICE_E8)
+    {
+        params->err_radius = e8_covering_radius(dim, params->scale);
+    }
+    else
+    {
+        params->err_radius = sqrtf((float)dim) * params->scale * 0.5f;
+    }
+}
+
+/**
+ * rq8_init_params() - Initialize RQ8 parameters from cluster radius and dimension.
+ * @params: Pointer to RQ8Params structure to initialize.
+ * @rlim:   Maximum cluster covering radius.
+ * @dim:    Vector dimension.
+ */
+void rq8_init_params(
+    RQ8Params *params,
+    float      rlim,
+    long       dim)
+{
+    rq8_init_params_ex(params, rlim, dim, RQ8_LATTICE_CUBIC);
 }
 
 /**
@@ -58,6 +83,52 @@ void rq8_quantize_residual_float(
     long dim = params->dim;
     float inv_scale = params->inv_scale;
     long i = 0;
+
+    if (params->lattice_mode == RQ8_LATTICE_E8)
+    {
+        for (; i <= dim - 8; i += 8)
+        {
+            float block_in[8];
+            for (int k = 0; k < 8; k++)
+            {
+                block_in[k] = (src[i + k] - anchor[i + k]) * inv_scale;
+            }
+
+            float block_out[8];
+            e8_quantize_point_float(block_in, block_out);
+
+            for (int k = 0; k < 8; k++)
+            {
+                float val = block_out[k];
+                if (val < -127.0f)
+                {
+                    val = -127.0f;
+                }
+                else if (val > 127.0f)
+                {
+                    val = 127.0f;
+                }
+                dst[i + k] = (int8_t)roundf(val);
+            }
+        } // for (; i <= dim - 8; i += 8)
+
+        for (; i < dim; i++)
+        {
+            float delta = src[i] - anchor[i];
+            float val = delta * inv_scale;
+            float r_val = (val >= 0.0f) ? (val + 0.5f) : (val - 0.5f);
+            if (r_val < -127.0f)
+            {
+                r_val = -127.0f;
+            }
+            else if (r_val > 127.0f)
+            {
+                r_val = 127.0f;
+            }
+            dst[i] = (int8_t)r_val;
+        }
+        return;
+    } // if (params->lattice_mode == RQ8_LATTICE_E8)
 
 #if defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
@@ -133,6 +204,52 @@ void rq8_quantize_residual_double(
     long dim = params->dim;
     double inv_scale = (double)params->inv_scale;
     long i = 0;
+
+    if (params->lattice_mode == RQ8_LATTICE_E8)
+    {
+        for (; i <= dim - 8; i += 8)
+        {
+            double block_in[8];
+            for (int k = 0; k < 8; k++)
+            {
+                block_in[k] = (src[i + k] - anchor[i + k]) * inv_scale;
+            }
+
+            double block_out[8];
+            e8_quantize_point_double(block_in, block_out);
+
+            for (int k = 0; k < 8; k++)
+            {
+                double val = block_out[k];
+                if (val < -127.0)
+                {
+                    val = -127.0;
+                }
+                else if (val > 127.0)
+                {
+                    val = 127.0;
+                }
+                dst[i + k] = (int8_t)round(val);
+            }
+        } // for (; i <= dim - 8; i += 8)
+
+        for (; i < dim; i++)
+        {
+            double delta = src[i] - anchor[i];
+            double val = delta * inv_scale;
+            double r_val = (val >= 0.0) ? (val + 0.5) : (val - 0.5);
+            if (r_val < -127.0)
+            {
+                r_val = -127.0;
+            }
+            else if (r_val > 127.0)
+            {
+                r_val = 127.0;
+            }
+            dst[i] = (int8_t)r_val;
+        }
+        return;
+    } // if (params->lattice_mode == RQ8_LATTICE_E8)
 
 #if defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
@@ -219,6 +336,56 @@ int rq8_quantize_query_residual_float(
     float inv_scale = params->inv_scale;
     long i = 0;
     int clipped = 0;
+
+    if (params->lattice_mode == RQ8_LATTICE_E8)
+    {
+        for (; i <= dim - 8; i += 8)
+        {
+            float block_in[8];
+            for (int k = 0; k < 8; k++)
+            {
+                block_in[k] = (query[i + k] - anchor[i + k]) * inv_scale;
+            }
+
+            float block_out[8];
+            e8_quantize_point_float(block_in, block_out);
+
+            for (int k = 0; k < 8; k++)
+            {
+                float val = block_out[k];
+                if (val < -32767.0f)
+                {
+                    val = -32767.0f;
+                    clipped = 1;
+                }
+                else if (val > 32767.0f)
+                {
+                    val = 32767.0f;
+                    clipped = 1;
+                }
+                dst[i + k] = (int16_t)roundf(val);
+            }
+        } // for (; i <= dim - 8; i += 8)
+
+        for (; i < dim; i++)
+        {
+            float delta = query[i] - anchor[i];
+            float val = delta * inv_scale;
+            float r_val = (val >= 0.0f) ? (val + 0.5f) : (val - 0.5f);
+            if (r_val < -32767.0f)
+            {
+                r_val = -32767.0f;
+                clipped = 1;
+            }
+            else if (r_val > 32767.0f)
+            {
+                r_val = 32767.0f;
+                clipped = 1;
+            }
+            dst[i] = (int16_t)r_val;
+        }
+        return clipped;
+    } // if (params->lattice_mode == RQ8_LATTICE_E8)
 
 #if defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
@@ -311,6 +478,56 @@ int rq8_quantize_query_residual_double(
     double inv_scale = (double)params->inv_scale;
     long i = 0;
     int clipped = 0;
+
+    if (params->lattice_mode == RQ8_LATTICE_E8)
+    {
+        for (; i <= dim - 8; i += 8)
+        {
+            double block_in[8];
+            for (int k = 0; k < 8; k++)
+            {
+                block_in[k] = (query[i + k] - anchor[i + k]) * inv_scale;
+            }
+
+            double block_out[8];
+            e8_quantize_point_double(block_in, block_out);
+
+            for (int k = 0; k < 8; k++)
+            {
+                double val = block_out[k];
+                if (val < -32767.0)
+                {
+                    val = -32767.0;
+                    clipped = 1;
+                }
+                else if (val > 32767.0)
+                {
+                    val = 32767.0;
+                    clipped = 1;
+                }
+                dst[i + k] = (int16_t)round(val);
+            }
+        } // for (; i <= dim - 8; i += 8)
+
+        for (; i < dim; i++)
+        {
+            double delta = query[i] - anchor[i];
+            double val = delta * inv_scale;
+            double r_val = (val >= 0.0) ? (val + 0.5) : (val - 0.5);
+            if (r_val < -32767.0)
+            {
+                r_val = -32767.0;
+                clipped = 1;
+            }
+            else if (r_val > 32767.0)
+            {
+                r_val = 32767.0;
+                clipped = 1;
+            }
+            dst[i] = (int16_t)r_val;
+        }
+        return clipped;
+    } // if (params->lattice_mode == RQ8_LATTICE_E8)
 
 #if defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))

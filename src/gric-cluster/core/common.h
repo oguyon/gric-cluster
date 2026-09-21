@@ -27,6 +27,7 @@ typedef struct
     double   prob;        /**< Prior frequency probability distribution (CFPD/DFPD) */
     uint8_t *anchor_sq8;  /**< Optional 8-bit quantized anchor buffer */
     int16_t *anchor_sq16; /**< Optional 16-bit quantized anchor buffer */
+    int16_t *anchor_eq16; /**< Optional 16-bit E8 quantized anchor buffer */
 } Cluster;
 
 typedef struct

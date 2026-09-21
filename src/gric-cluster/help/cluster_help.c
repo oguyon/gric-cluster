@@ -408,6 +408,12 @@ static void print_help_raw(
     print_colored_line("    -no-sq8                  Disable 8-bit scalar quantization pruning");
     print_colored_line("    -sq16                    Use 16-bit scalar quantization pruning");
     print_colored_line("    -no-sq16                 Disable 16-bit scalar quantization pruning");
+    print_colored_line("    -eq16                    Use 16-bit E8 lattice quantization pruning");
+    print_colored_line("    -no-eq16                 Disable 16-bit E8 lattice quantization "
+                       "pruning");
+    print_colored_line("    -eq16-adc                Use Asymmetric Distance Computation for EQ16 "
+                       "(default)");
+    print_colored_line("    -no-eq16-adc             Disable ADC (use symmetric EQ16)");
     print_colored_line("    -pass2nearest            Run second pass closest-anchor reallocation "
                        "(-reassign)");
 #ifdef USE_CUDA

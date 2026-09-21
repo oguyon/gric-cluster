@@ -6,6 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_steps.h"
 #include "cluster_core.h"
+#include "e8_lattice.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -242,6 +243,17 @@ static void entropy_rank_popcount_scores(
         return;
     }
 
+    int leader_id = (prob_count > 0) ? prob_scores[0].id : -1;
+    long frame_dim = 0;
+    int is_double = 0;
+    if (leader_id >= 0 && leader_id < state->num_clusters &&
+        state->clusters[leader_id].anchor.data != NULL)
+    {
+        frame_dim = state->clusters[leader_id].anchor.width *
+                    state->clusters[leader_id].anchor.height;
+        is_double = state->clusters[leader_id].anchor.is_double;
+    }
+
     #pragma omp parallel for if(M >= 16)
     for (int idx_p = 0; idx_p < M; idx_p++)
     {
@@ -264,6 +276,43 @@ static void entropy_rank_popcount_scores(
                 }
             }
             prune_scores[idx_p].score = (double)total_pop;
+
+            /* E8 Gosset alignment bonus: when dim >= 8, slightly prioritize candidate
+             * anchors whose displacement aligns with an E8 root kissing direction. */
+            if (frame_dim >= 8 && leader_id >= 0 && i != leader_id &&
+                state->clusters[i].anchor.data != NULL)
+            {
+                if (is_double)
+                {
+                    double dir8[8];
+                    const double *data_i = (const double *)state->clusters[i].anchor.data;
+                    const double *data_l = (const double *)state->clusters[leader_id].anchor.data;
+                    for (int d = 0; d < 8; d++)
+                    {
+                        dir8[d] = data_i[d] - data_l[d];
+                    }
+                    double cos_sim = e8_find_nearest_root_double(dir8, NULL);
+                    if (cos_sim > 0.0)
+                    {
+                        prune_scores[idx_p].score -= cos_sim * 0.05;
+                    }
+                }
+                else
+                {
+                    float dir8[8];
+                    const float *data_i = (const float *)state->clusters[i].anchor.data;
+                    const float *data_l = (const float *)state->clusters[leader_id].anchor.data;
+                    for (int d = 0; d < 8; d++)
+                    {
+                        dir8[d] = data_i[d] - data_l[d];
+                    }
+                    float cos_sim = e8_find_nearest_root_float(dir8, NULL);
+                    if (cos_sim > 0.0f)
+                    {
+                        prune_scores[idx_p].score -= (double)(cos_sim * 0.05f);
+                    }
+                }
+            }
         }
     }
 

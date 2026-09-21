@@ -49,30 +49,197 @@ static void prepare_frame_quantization(
     ClusterState  *state,
     const Frame   *current_frame)
 {
-    if (config->optim.use_sq8 < 0 && config->optim.use_sq16 < 0)
+    if (config->optim.use_sq8 < 0 && config->optim.use_sq16 < 0 && config->optim.use_eq16 < 0)
     {
         long frame_dim = current_frame->width * current_frame->height;
-        if (frame_dim >= 32)
+        if (frame_dim >= 8 && (frame_dim % 8 == 0))
+        {
+            config->optim.use_eq16 = 1;
+            config->optim.use_sq16 = 0;
+            config->optim.use_sq8 = 0;
+        }
+        else if (frame_dim >= 32)
         {
             config->optim.use_sq16 = 1;
+            config->optim.use_eq16 = 0;
             config->optim.use_sq8 = 0;
         }
         else
         {
             config->optim.use_sq8 = 1;
             config->optim.use_sq16 = 0;
+            config->optim.use_eq16 = 0;
         }
     }
-    else if (config->optim.use_sq8 < 0)
+    else
     {
-        config->optim.use_sq8 = 0;
-    }
-    else if (config->optim.use_sq16 < 0)
-    {
-        config->optim.use_sq16 = 0;
+        if (config->optim.use_sq8 < 0)
+        {
+            config->optim.use_sq8 = 0;
+        }
+        if (config->optim.use_sq16 < 0)
+        {
+            config->optim.use_sq16 = 0;
+        }
+        if (config->optim.use_eq16 < 0)
+        {
+            config->optim.use_eq16 = 0;
+        }
     }
 
-    if (config->optim.use_sq16)
+    if (config->optim.use_eq16)
+    {
+        long frame_dim = current_frame->width * current_frame->height;
+        if (state->current_frame_eq16 == NULL)
+        {
+            if (posix_memalign((void **)&state->current_frame_eq16, 64,
+                               (size_t)frame_dim * sizeof(int16_t)) != 0)
+            {
+                state->current_frame_eq16 = NULL;
+            }
+        }
+        if (state->current_frame_eq16_adc == NULL)
+        {
+            if (posix_memalign((void **)&state->current_frame_eq16_adc, 64,
+                               (size_t)frame_dim * sizeof(float)) != 0)
+            {
+                state->current_frame_eq16_adc = NULL;
+            }
+        }
+        if (state->anchor_matrix_eq16 == NULL)
+        {
+            size_t total_eq16 = (size_t)config->algo.maxnbclust * (size_t)frame_dim;
+            if (posix_memalign((void **)&state->anchor_matrix_eq16, 64,
+                               total_eq16 * sizeof(int16_t)) != 0)
+            {
+                state->anchor_matrix_eq16 = NULL;
+            }
+        }
+        if (state->anchor_matrix_eq16_interleaved == NULL)
+        {
+            size_t num_blocks = ((size_t)config->algo.maxnbclust + 7) / 8;
+            size_t num_pairs = ((size_t)frame_dim + 1) / 2;
+            size_t total_interleaved = num_blocks * num_pairs * 8;
+            if (posix_memalign((void **)&state->anchor_matrix_eq16_interleaved, 64,
+                               total_interleaved * sizeof(int32_t)) != 0)
+            {
+                state->anchor_matrix_eq16_interleaved = NULL;
+            }
+            else
+            {
+                memset(state->anchor_matrix_eq16_interleaved, 0,
+                       total_interleaved * sizeof(int32_t));
+            }
+        }
+        if (state->anchor_matrix_adc_interleaved == NULL && config->optim.use_eq16_adc)
+        {
+            size_t num_blocks_adc = ((size_t)config->algo.maxnbclust + 15) / 16;
+            size_t total_adc = num_blocks_adc * (size_t)frame_dim * 16;
+            if (posix_memalign((void **)&state->anchor_matrix_adc_interleaved, 64,
+                               total_adc * sizeof(float)) != 0)
+            {
+                state->anchor_matrix_adc_interleaved = NULL;
+            }
+            else
+            {
+                memset(state->anchor_matrix_adc_interleaved, 0,
+                       total_adc * sizeof(float));
+            }
+        }
+        if (!state->eq16_calibrated)
+        {
+            if (current_frame->is_double)
+            {
+                eq16_calibrate_double(&config->optim.eq16_params,
+                                      (const double *)current_frame->data,
+                                      frame_dim, frame_dim);
+            }
+            else
+            {
+                eq16_calibrate_float(&config->optim.eq16_params,
+                                     (const float *)current_frame->data,
+                                     frame_dim, frame_dim);
+            }
+
+            /* Enforce --sq16-ratio bound: scale = alpha*rlim / sqrt(D) */
+            if (config->optim.sq16_ratio > 0.0 && config->algo.rlim > 0.0)
+            {
+                float target_scale = (float)((config->optim.sq16_ratio * config->algo.rlim) /
+                                             sqrt((double)frame_dim));
+                float center = 0.5f * (config->optim.eq16_params.min_val +
+                                       config->optim.eq16_params.max_val);
+                config->optim.eq16_params.scale = target_scale;
+                config->optim.eq16_params.inv_scale = 1.0f / target_scale;
+                config->optim.eq16_params.center = center;
+                long k = frame_dim / 8;
+                long rem = frame_dim % 8;
+                float covering_sq = (float)k * 1.0f + (float)rem * 0.25f;
+                config->optim.eq16_params.err_radius = sqrtf(covering_sq) * target_scale;
+            }
+
+            state->eq16_calibrated = 1;
+        }
+
+        if (state->perm_dim != NULL)
+        {
+            if (current_frame->is_double)
+            {
+                eq16_quantize_double_perm((const double *)current_frame->data,
+                                          state->current_frame_eq16,
+                                          &config->optim.eq16_params,
+                                          state->perm_dim);
+                if (state->current_frame_eq16_adc != NULL)
+                {
+                    eq16_prepare_query_adc_double_perm((const double *)current_frame->data,
+                                                       state->current_frame_eq16_adc,
+                                                       &config->optim.eq16_params,
+                                                       state->perm_dim);
+                }
+            }
+            else
+            {
+                eq16_quantize_float_perm((const float *)current_frame->data,
+                                         state->current_frame_eq16,
+                                         &config->optim.eq16_params,
+                                         state->perm_dim);
+                if (state->current_frame_eq16_adc != NULL)
+                {
+                    eq16_prepare_query_adc_float_perm((const float *)current_frame->data,
+                                                      state->current_frame_eq16_adc,
+                                                      &config->optim.eq16_params,
+                                                      state->perm_dim);
+                }
+            }
+        }
+        else
+        {
+            if (current_frame->is_double)
+            {
+                eq16_quantize_double((const double *)current_frame->data,
+                                     state->current_frame_eq16,
+                                     &config->optim.eq16_params);
+                if (state->current_frame_eq16_adc != NULL)
+                {
+                    eq16_prepare_query_adc_double((const double *)current_frame->data,
+                                                  state->current_frame_eq16_adc,
+                                                  &config->optim.eq16_params);
+                }
+            }
+            else
+            {
+                eq16_quantize_float((const float *)current_frame->data,
+                                    state->current_frame_eq16,
+                                    &config->optim.eq16_params);
+                if (state->current_frame_eq16_adc != NULL)
+                {
+                    eq16_prepare_query_adc_float((const float *)current_frame->data,
+                                                 state->current_frame_eq16_adc,
+                                                 &config->optim.eq16_params);
+                }
+            }
+        }
+    }
+    else if (config->optim.use_sq16)
     {
         long frame_dim = current_frame->width * current_frame->height;
         if (state->current_frame_sq16 == NULL)
@@ -451,14 +618,41 @@ int cluster_frame(
             }
         }
 
+        uint64_t eq16_ssd_thresh = 0;
+        float eq16_adc_cutoff = 0.0f;
+        if (config->optim.use_eq16)
+        {
+            double raw_thresh_sdc = (config->algo.rlim +
+                                     2.0 * (double)config->optim.eq16_params.err_radius) /
+                                    ((double)config->optim.eq16_params.scale * 0.5);
+            if (raw_thresh_sdc > 0.0)
+            {
+                eq16_ssd_thresh = (uint64_t)(raw_thresh_sdc * raw_thresh_sdc);
+            }
+
+            double raw_thresh_adc = (config->algo.rlim +
+                                     1.0 * (double)config->optim.eq16_params.err_radius) /
+                                    ((double)config->optim.eq16_params.scale * 0.5);
+            if (raw_thresh_adc > 0.0)
+            {
+                eq16_adc_cutoff = (float)(raw_thresh_adc * raw_thresh_adc);
+            }
+        }
+
         /* Step 3 Fast-Path: Quantized Memoization Cache Lookup */
-        if (config->optim.use_sq16 && config->optim.use_memo &&
-            state->current_frame_sq16 != NULL)
+        if (((config->optim.use_eq16 && state->current_frame_eq16 != NULL) ||
+             (config->optim.use_sq16 && state->current_frame_sq16 != NULL)) &&
+            config->optim.use_memo)
         {
             memo_lookup_done = 1;
-            long fdim = config->optim.sq16_params.dim;
-            memo_h = gric_hash_i16(state->current_frame_sq16, fdim);
-            memo_h_aux = gric_hash_bytes(state->current_frame_sq16,
+            const int16_t *memo_buf = (config->optim.use_eq16 && state->current_frame_eq16 != NULL)
+                                      ? state->current_frame_eq16
+                                      : state->current_frame_sq16;
+            long fdim = (config->optim.use_eq16 && state->current_frame_eq16 != NULL)
+                        ? config->optim.eq16_params.dim
+                        : config->optim.sq16_params.dim;
+            memo_h = gric_hash_i16(memo_buf, fdim);
+            memo_h_aux = gric_hash_bytes(memo_buf,
                                          (size_t)fdim * sizeof(int16_t),
                                          GRIC_HASH_SEED ^ 0x517cc1b727220a95ULL);
 
@@ -516,8 +710,39 @@ int cluster_frame(
                     continue;
                 }
 
-                // Fast SQ16 pre-filtering for prediction candidate
-                if (config->optim.use_sq16 &&
+                // Fast EQ16 / SQ16 pre-filtering for prediction candidate
+                if (config->optim.use_eq16 &&
+                    state->clusters[cj].anchor_eq16 != NULL)
+                {
+                    state->telemetry.eq16_evals++;
+                    int is_pruned = 0;
+                    if (config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL)
+                    {
+                        float dsq = eq16_dist_asym_cutoff_f32(
+                            state->current_frame_eq16_adc,
+                            state->clusters[cj].anchor_eq16,
+                            config->optim.eq16_params.dim,
+                            eq16_adc_cutoff);
+                        is_pruned = (dsq > eq16_adc_cutoff);
+                    }
+                    else if (state->current_frame_eq16 != NULL)
+                    {
+                        uint64_t ssd = eq16_dist_squared_cutoff_i16(
+                            state->current_frame_eq16,
+                            state->clusters[cj].anchor_eq16,
+                            config->optim.eq16_params.dim,
+                            eq16_ssd_thresh);
+                        is_pruned = (ssd > eq16_ssd_thresh);
+                    }
+
+                    if (is_pruned)
+                    {
+                        state->telemetry.eq16_pruned++;
+                        state->telemetry.clusters_pruned++;
+                        continue;
+                    }
+                }
+                else if (config->optim.use_sq16 &&
                     state->clusters[cj].anchor_sq16 != NULL &&
                     state->current_frame_sq16 != NULL)
                 {
@@ -595,6 +820,14 @@ int cluster_frame(
 
                 int tm_active = (config->algo.tm_mixing_coeff > 0.0 &&
                                  *prev_assigned_cluster != -1);
+                int fast_eq16 = (config->optim.use_eq16 &&
+                                 (state->current_frame_eq16 != NULL ||
+                                  state->current_frame_eq16_adc != NULL) &&
+                                 state->anchor_matrix_eq16 != NULL &&
+                                 config->optim.pred_mode != 2 &&
+                                 !tm_active &&
+                                 config->optim.gprob_mode &&
+                                 !state->trace);
                 int fast_sq16 = (config->optim.use_sq16 &&
                                  state->current_frame_sq16 != NULL &&
                                  state->anchor_matrix_sq16 != NULL &&
@@ -638,10 +871,80 @@ int cluster_frame(
                     state->telemetry.time_step_3a_subsequent += el_pr;
                     need_prune_update = 0;
 
-                    /* Filter ONLY the surviving candidates with SQ16/SQ8 lower bounds */
+                    /* Filter ONLY the surviving candidates with EQ16/SQ16/SQ8 lower bounds */
                     struct timespec t_sq_s, t_sq_e;
                     clock_gettime(CLOCK_MONOTONIC, &t_sq_s);
-                    if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
+                    if (config->optim.use_eq16 &&
+                        ((config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL) ||
+                         state->current_frame_eq16 != NULL))
+                    {
+                        long dim = config->optim.eq16_params.dim;
+                        int use_adc = (config->optim.use_eq16_adc &&
+                                       state->current_frame_eq16_adc != NULL);
+                        const float *cur_adc = state->current_frame_eq16_adc;
+                        const int16_t *cur_eq16 = state->current_frame_eq16;
+                        const int16_t *mat_eq16 = state->anchor_matrix_eq16;
+                        int act_cnt = state->scratch.num_active_clusters;
+                        int *act = state->scratch.active_clusters;
+                        int compact_cnt = 0;
+                        int local_pruned = 0;
+
+                        state->telemetry.eq16_evals += act_cnt;
+
+                        for (int idx = 0; idx < act_cnt; idx++)
+                        {
+                            int c = act[idx];
+                            const int16_t *a_ptr = mat_eq16
+                                ? (mat_eq16 + (size_t)c * (size_t)dim)
+                                : state->clusters[c].anchor_eq16;
+                            if (a_ptr != NULL)
+                            {
+                                int is_pruned = 0;
+                                if (use_adc)
+                                {
+                                    float dsq = eq16_dist_asym_cutoff_f32(
+                                        cur_adc, a_ptr, dim, eq16_adc_cutoff);
+                                    is_pruned = (dsq > eq16_adc_cutoff);
+                                }
+                                else
+                                {
+                                    uint64_t ssd = eq16_dist_squared_cutoff_i16(
+                                        cur_eq16, a_ptr, dim, eq16_ssd_thresh);
+                                    is_pruned = (ssd > eq16_ssd_thresh);
+                                }
+
+                                if (is_pruned)
+                                {
+                                    state->scratch.clmembflag[c] = 0;
+                                    state->scratch.entropy_p_current[c] = 0.0;
+                                    local_pruned++;
+                                    continue;
+                                }
+                            }
+                            act[compact_cnt++] = c;
+                        }
+                        state->scratch.num_active_clusters = compact_cnt;
+                        state->telemetry.eq16_pruned += local_pruned;
+                        state->telemetry.clusters_pruned += local_pruned;
+
+                        if (local_pruned > 0)
+                        {
+                            double sum_p = 0.0;
+                            for (int idx = 0; idx < compact_cnt; idx++)
+                            {
+                                sum_p += state->scratch.entropy_p_current[act[idx]];
+                            }
+                            if (sum_p > 0.0)
+                            {
+                                double inv_sum_p = 1.0 / sum_p;
+                                for (int idx = 0; idx < compact_cnt; idx++)
+                                {
+                                    state->scratch.entropy_p_current[act[idx]] *= inv_sum_p;
+                                }
+                            }
+                        }
+                    }
+                    else if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
                     {
                         long dim = config->optim.sq16_params.dim;
                         const int16_t *cur_sq16 = state->current_frame_sq16;
@@ -754,6 +1057,122 @@ int cluster_frame(
                         (t_sq_e.tv_sec - t_sq_s.tv_sec) * 1000.0 +
                         (t_sq_e.tv_nsec - t_sq_s.tv_nsec) / 1000000.0;
                 }
+                else if (fast_eq16)
+                {
+                    if (state->scratch.cluster_probs != NULL)
+                    {
+                        cluster_normalize_probs(state->scratch.cluster_probs,
+                                                state->num_clusters);
+                    }
+                    else
+                    {
+                        compute_priors_and_mixing(
+                            config, state, *prev_assigned_cluster, sorting_candidates
+                        );
+                    }
+                    clock_gettime(CLOCK_MONOTONIC, &t_mid1);
+                    state->telemetry.time_step_3a_priors +=
+                        (t_mid1.tv_sec - step_start.tv_sec) * 1000.0 +
+                        (t_mid1.tv_nsec - step_start.tv_nsec) / 1000000.0;
+
+                    int num_active = 0;
+                    long pruned_count = 0;
+                    long dim = config->optim.eq16_params.dim;
+                    if (config->optim.use_eq16_adc &&
+                        state->current_frame_eq16_adc != NULL &&
+                        state->current_frame_eq16 != NULL)
+                    {
+                        /* Tier 1: Integer SIMD coarse screening with SDC (2.0 slack) */
+                        struct timespec t_t1_s, t_t1_e;
+                        clock_gettime(CLOCK_MONOTONIC, &t_t1_s);
+                        eq16_filter_anchor_matrix(
+                            state->current_frame_eq16,
+                            state->anchor_matrix_eq16,
+                            state->anchor_matrix_eq16_interleaved,
+                            state->num_clusters,
+                            dim,
+                            eq16_ssd_thresh,
+                            state->scratch.clmembflag,
+                            state->scratch.active_clusters,
+                            &num_active,
+                            &pruned_count
+                        );
+                        clock_gettime(CLOCK_MONOTONIC, &t_t1_e);
+                        state->telemetry.time_step_3a_sq_tier1 +=
+                            (t_t1_e.tv_sec - t_t1_s.tv_sec) * 1000.0 +
+                            (t_t1_e.tv_nsec - t_t1_s.tv_nsec) / 1000000.0;
+
+                        /* Tier 2: Exact ADC float refinement on surviving candidates (1.0 slack) */
+                        struct timespec t_t2_s, t_t2_e;
+                        clock_gettime(CLOCK_MONOTONIC, &t_t2_s);
+                        const float *cur_adc = state->current_frame_eq16_adc;
+                        const int16_t *mat_eq16 = state->anchor_matrix_eq16;
+                        eq16_refine_candidates_adc(
+                            cur_adc,
+                            mat_eq16,
+                            state->scratch.active_clusters,
+                            num_active,
+                            dim,
+                            eq16_adc_cutoff,
+                            state->scratch.clmembflag,
+                            &num_active,
+                            &pruned_count
+                        );
+                        clock_gettime(CLOCK_MONOTONIC, &t_t2_e);
+                        state->telemetry.time_step_3a_sq_tier2 +=
+                            (t_t2_e.tv_sec - t_t2_s.tv_sec) * 1000.0 +
+                            (t_t2_e.tv_nsec - t_t2_s.tv_nsec) / 1000000.0;
+                    }
+                    else if (config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL)
+                    {
+                        eq16_filter_anchor_matrix_adc(
+                            state->current_frame_eq16_adc,
+                            state->anchor_matrix_eq16,
+                            state->anchor_matrix_adc_interleaved,
+                            state->num_clusters,
+                            dim,
+                            eq16_adc_cutoff,
+                            state->scratch.clmembflag,
+                            state->scratch.active_clusters,
+                            &num_active,
+                            &pruned_count
+                        );
+                    }
+                    else
+                    {
+                        eq16_filter_anchor_matrix(
+                            state->current_frame_eq16,
+                            state->anchor_matrix_eq16,
+                            state->anchor_matrix_eq16_interleaved,
+                            state->num_clusters,
+                            dim,
+                            eq16_ssd_thresh,
+                            state->scratch.clmembflag,
+                            state->scratch.active_clusters,
+                            &num_active,
+                            &pruned_count
+                        );
+                    }
+                    state->scratch.num_active_clusters = num_active;
+                    state->telemetry.eq16_evals += state->num_clusters;
+                    state->telemetry.eq16_pruned += (uint64_t)pruned_count;
+                    state->telemetry.clusters_pruned += (uint64_t)pruned_count;
+
+                    clock_gettime(CLOCK_MONOTONIC, &t_mid2);
+                    state->telemetry.time_step_3a_sq_filter +=
+                        (t_mid2.tv_sec - t_mid1.tv_sec) * 1000.0 +
+                        (t_mid2.tv_nsec - t_mid1.tv_nsec) / 1000000.0;
+
+                    const double *probs = state->scratch.cluster_probs;
+                    for (int idx = 0; idx < num_active; idx++)
+                    {
+                        int c = state->scratch.active_clusters[idx];
+                        double p = probs ? probs[c] : state->clusters[c].prob;
+                        state->scratch.current_gprobs[c] = 1.0;
+                        state->scratch.mixed_probs[c] = p;
+                        state->scratch.entropy_p_current[c] = p;
+                    }
+                }
                 else if (fast_sq16)
                 {
                     if (state->scratch.cluster_probs != NULL)
@@ -817,7 +1236,140 @@ int cluster_frame(
                         (t_mid1.tv_sec - step_start.tv_sec) * 1000.0 +
                         (t_mid1.tv_nsec - step_start.tv_nsec) / 1000000.0;
 
-                    if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
+                    if (config->optim.use_eq16 &&
+                        ((config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL) ||
+                         state->current_frame_eq16 != NULL))
+                    {
+                        long dim = config->optim.eq16_params.dim;
+                        int use_adc = (config->optim.use_eq16_adc &&
+                                       state->current_frame_eq16_adc != NULL);
+                        const float *cur_adc = state->current_frame_eq16_adc;
+                        const int16_t *cur_eq16 = state->current_frame_eq16;
+                        const int16_t *mat_eq16 = state->anchor_matrix_eq16;
+                        int num_cl = state->num_clusters;
+
+                        if (mat_eq16 != NULL)
+                        {
+                            int num_active = 0;
+                            long pruned_count = 0;
+                            if (use_adc && cur_eq16 != NULL)
+                            {
+                                /* Tier 1: Integer SIMD coarse screening with SDC (2.0 slack) */
+                                eq16_filter_anchor_matrix(
+                                    cur_eq16,
+                                    mat_eq16,
+                                    state->anchor_matrix_eq16_interleaved,
+                                    num_cl,
+                                    dim,
+                                    eq16_ssd_thresh,
+                                    state->scratch.clmembflag,
+                                    state->scratch.active_clusters,
+                                    &num_active,
+                                    &pruned_count
+                                );
+
+                                /* Tier 2: ADC float refinement on surviving candidates */
+                                eq16_refine_candidates_adc(
+                                    cur_adc,
+                                    mat_eq16,
+                                    state->scratch.active_clusters,
+                                    num_active,
+                                    dim,
+                                    eq16_adc_cutoff,
+                                    state->scratch.clmembflag,
+                                    &num_active,
+                                    &pruned_count
+                                );
+                            }
+                            else if (use_adc)
+                            {
+                                eq16_filter_anchor_matrix_adc(
+                                    cur_adc,
+                                    mat_eq16,
+                                    state->anchor_matrix_adc_interleaved,
+                                    num_cl,
+                                    dim,
+                                    eq16_adc_cutoff,
+                                    state->scratch.clmembflag,
+                                    state->scratch.active_clusters,
+                                    &num_active,
+                                    &pruned_count
+                                );
+                            }
+                            else
+                            {
+                                eq16_filter_anchor_matrix(
+                                    cur_eq16,
+                                    mat_eq16,
+                                    state->anchor_matrix_eq16_interleaved,
+                                    num_cl,
+                                    dim,
+                                    eq16_ssd_thresh,
+                                    state->scratch.clmembflag,
+                                    state->scratch.active_clusters,
+                                    &num_active,
+                                    &pruned_count
+                                );
+                            }
+                            state->scratch.num_active_clusters = num_active;
+                            state->telemetry.eq16_evals += num_cl;
+                            state->telemetry.eq16_pruned += (uint64_t)pruned_count;
+                            state->telemetry.clusters_pruned += (uint64_t)pruned_count;
+                        }
+                        else
+                        {
+                            for (int i = 0; i < num_cl; i++)
+                            {
+                                if (state->scratch.clmembflag[i])
+                                {
+                                    const int16_t *a_ptr = state->clusters[i].anchor_eq16;
+                                    if (a_ptr != NULL)
+                                    {
+                                        state->telemetry.eq16_evals++;
+                                        int is_pruned = 0;
+                                        if (use_adc)
+                                        {
+                                            float dsq = eq16_dist_asym_cutoff_f32(
+                                                cur_adc,
+                                                a_ptr,
+                                                dim,
+                                                eq16_adc_cutoff
+                                            );
+                                            is_pruned = (dsq > eq16_adc_cutoff);
+                                        }
+                                        else
+                                        {
+                                            uint64_t ssd = eq16_dist_squared_cutoff_i16(
+                                                cur_eq16,
+                                                a_ptr,
+                                                dim,
+                                                eq16_ssd_thresh
+                                            );
+                                            is_pruned = (ssd > eq16_ssd_thresh);
+                                        }
+                                        if (is_pruned)
+                                        {
+                                            state->scratch.clmembflag[i] = 0;
+                                            state->telemetry.eq16_pruned++;
+                                            state->telemetry.clusters_pruned++;
+                                        }
+                                    }
+                                }
+                            }
+
+                            int compact_idx = 0;
+                            for (int idx = 0; idx < state->scratch.num_active_clusters; idx++)
+                            {
+                                int c = state->scratch.active_clusters[idx];
+                                if (state->scratch.clmembflag[c])
+                                {
+                                    state->scratch.active_clusters[compact_idx++] = c;
+                                }
+                            }
+                            state->scratch.num_active_clusters = compact_idx;
+                        }
+                    }
+                    else if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
                     {
                         long dim = config->optim.sq16_params.dim;
                         const int16_t *cur_sq16 = state->current_frame_sq16;
@@ -1023,8 +1575,44 @@ int cluster_frame(
                 break;
             }
 
-            // Fast SQ16 / SQ8 metric lower-bound pre-filtering
-            if (config->optim.use_sq16 &&
+            // Fast EQ16 / SQ16 / SQ8 metric lower-bound pre-filtering
+            if (config->optim.use_eq16 &&
+                state->clusters[cj].anchor_eq16 != NULL &&
+                ((config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL) ||
+                 state->current_frame_eq16 != NULL))
+            {
+                state->telemetry.eq16_evals++;
+                int is_pruned = 0;
+                if (config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL)
+                {
+                    float dsq = eq16_dist_asym_cutoff_f32(
+                        state->current_frame_eq16_adc,
+                        state->clusters[cj].anchor_eq16,
+                        config->optim.eq16_params.dim,
+                        eq16_adc_cutoff
+                    );
+                    is_pruned = (dsq > eq16_adc_cutoff);
+                }
+                else
+                {
+                    uint64_t ssd = eq16_dist_squared_cutoff_i16(
+                        state->current_frame_eq16,
+                        state->clusters[cj].anchor_eq16,
+                        config->optim.eq16_params.dim,
+                        eq16_ssd_thresh
+                    );
+                    is_pruned = (ssd > eq16_ssd_thresh);
+                }
+
+                if (is_pruned)
+                {
+                    state->telemetry.eq16_pruned++;
+                    state->telemetry.clusters_pruned++;
+                    state->scratch.clmembflag[cj] = 0;
+                    continue;
+                }
+            }
+            else if (config->optim.use_sq16 &&
                 state->clusters[cj].anchor_sq16 != NULL &&
                 state->current_frame_sq16 != NULL)
             {

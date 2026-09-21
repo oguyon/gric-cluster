@@ -1113,6 +1113,24 @@ void knn_model_free(
         model->anchor_sq16_buffer = NULL;
     }
 
+    if (model->eq16_dataset_buffer != NULL)
+    {
+        free(model->eq16_dataset_buffer);
+        model->eq16_dataset_buffer = NULL;
+    }
+
+    if (model->anchor_eq16_buffer != NULL)
+    {
+        free(model->anchor_eq16_buffer);
+        model->anchor_eq16_buffer = NULL;
+    }
+
+    if (model->eq16_transposed_buffer != NULL)
+    {
+        free(model->eq16_transposed_buffer);
+        model->eq16_transposed_buffer = NULL;
+    }
+
     if (model->rq8_dataset_buffer != NULL)
     {
         free(model->rq8_dataset_buffer);

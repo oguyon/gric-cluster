@@ -321,6 +321,47 @@ static inline void knn_append_or_eval_candidate(
 }
 
 /**
+ * knn_init_annular_block_pointers() - Initialize two-pointer annular block search.
+ * @members:     Array of member metadata sorted by r_anchor.
+ * @num_m:       Total number of members.
+ * @num_b:       Total number of candidate blocks.
+ * @block_size:  Number of candidates per block (e.g. 32).
+ * @d_anchor:    Distance from query to cluster anchor.
+ * @out_left_b:  Output pointer to left block index.
+ * @out_right_b: Output pointer to right block index.
+ */
+static inline void knn_init_annular_block_pointers(
+    const MemberMeta *members,
+    int               num_m,
+    int               num_b,
+    int               block_size,
+    double            d_anchor,
+    int              *out_left_b,
+    int              *out_right_b)
+{
+    int m_star = find_member_lower_bound(members, num_m, (float)d_anchor);
+    if (m_star >= num_m)
+    {
+        /* All members have r_anchor < d_anchor: traverse leftward from last block */
+        *out_left_b = num_b - 1;
+        *out_right_b = num_b;
+    }
+    else if (m_star == 0)
+    {
+        /* All members have r_anchor >= d_anchor: traverse rightward from first block */
+        *out_left_b = -1;
+        *out_right_b = 0;
+    }
+    else
+    {
+        /* d_anchor falls within member radius range: start at enclosing block */
+        int mid_b = m_star / block_size;
+        *out_left_b = mid_b - 1;
+        *out_right_b = mid_b;
+    }
+}
+
+/**
  * knn_eval_members_rabitq() - Evaluate cluster members using RaBitQ FastScan.
  */
 static void knn_eval_members_rabitq(
@@ -356,25 +397,11 @@ static void knn_eval_members_rabitq(
     size_t frame_bytes = (size_t)frame_elem *
         (model->is_double ? sizeof(double) : sizeof(float));
 
-    int mid_b = 0;
-    int b_lo = 0;
-    int b_hi = num_b - 1;
-    while (b_lo <= b_hi)
-    {
-        int b_m = b_lo + (b_hi - b_lo) / 2;
-        if (cl->members[b_m * RABITQ_FASTSCAN_BLOCK_SIZE].r_anchor <= (float)d_anchor)
-        {
-            mid_b = b_m;
-            b_lo = b_m + 1;
-        }
-        else
-        {
-            b_hi = b_m - 1;
-        }
-    } // while (b_lo <= b_hi)
-
-    int left_b = mid_b - 1;
-    int right_b = mid_b;
+    int left_b = -1;
+    int right_b = 0;
+    knn_init_annular_block_pointers(
+        cl->members, num_m, num_b, RABITQ_FASTSCAN_BLOCK_SIZE, d_anchor, &left_b, &right_b
+    );
 
     while (left_b >= 0 || right_b < num_b)
     {
@@ -532,25 +559,11 @@ static void knn_eval_members_pq(
     size_t frame_bytes = (size_t)frame_elem *
         (model->is_double ? sizeof(double) : sizeof(float));
 
-    int mid_b = 0;
-    int b_lo = 0;
-    int b_hi = num_b - 1;
-    while (b_lo <= b_hi)
-    {
-        int b_m = b_lo + (b_hi - b_lo) / 2;
-        if (cl->members[b_m * PQ_FASTSCAN_BLOCK_SIZE].r_anchor <= (float)d_anchor)
-        {
-            mid_b = b_m;
-            b_lo = b_m + 1;
-        }
-        else
-        {
-            b_hi = b_m - 1;
-        }
-    } // while (b_lo <= b_hi)
-
-    int left_b = mid_b - 1;
-    int right_b = mid_b;
+    int left_b = -1;
+    int right_b = 0;
+    knn_init_annular_block_pointers(
+        cl->members, num_m, num_b, PQ_FASTSCAN_BLOCK_SIZE, d_anchor, &left_b, &right_b
+    );
 
     while (left_b >= 0 || right_b < num_b)
     {
@@ -719,25 +732,11 @@ static void knn_eval_members_rq8_blocks(
     double last_tau = -1.0;
     uint64_t cached_ssd_cutoff = UINT64_MAX;
 
-    int mid_b = 0;
-    int b_lo = 0;
-    int b_hi = num_b - 1;
-    while (b_lo <= b_hi)
-    {
-        int b_m = b_lo + (b_hi - b_lo) / 2;
-        if (cl->members[b_m * RQ8_FASTSCAN_BLOCK_SIZE].r_anchor <= (float)d_anchor)
-        {
-            mid_b = b_m;
-            b_lo = b_m + 1;
-        }
-        else
-        {
-            b_hi = b_m - 1;
-        }
-    } // while (b_lo <= b_hi)
-
-    int left_b = mid_b - 1;
-    int right_b = mid_b;
+    int left_b = -1;
+    int right_b = 0;
+    knn_init_annular_block_pointers(
+        cl->members, num_m, num_b, RQ8_FASTSCAN_BLOCK_SIZE, d_anchor, &left_b, &right_b
+    );
 
     while (left_b >= 0 || right_b < num_b)
     {
@@ -865,6 +864,182 @@ static void knn_eval_members_rq8_blocks(
 }
 
 /**
+ * knn_eval_members_eq16_blocks() - Evaluate cluster members using EQ16 FastScan blocks.
+ */
+static void knn_eval_members_eq16_blocks(
+    const KnnCluster       *cl,
+    double                  d_anchor,
+    double                  r_home,
+    double                  dcc_home,
+    double                  sq16_delta,
+    int                     num_active_pivots,
+    const double           *pivot_diffs,
+    long                    query_id,
+    const void *restrict    query_data,
+    const KnnModel         *model,
+    const KnnConfig        *config,
+    KnnFrameReader         *reader,
+    void          *restrict cand_buffer,
+    KnnMaxHeap             *heap,
+    KnnMaxHeap             *all_heaps,
+#ifdef _OPENMP
+    omp_lock_t             *bucket_locks,
+#endif
+    KnnVisitedTracker      *visited,
+    KnnCandidateBatch      *batch,
+    KnnTelemetry  *restrict telem)
+{
+    int num_m = cl->num_members;
+    int num_b = cl->num_eq16_blocks;
+    long frame_elem = model->frame_elements;
+    double eps_factor = 1.0 + config->epsilon;
+    size_t frame_bytes = (size_t)frame_elem *
+        (model->is_double ? sizeof(double) : sizeof(float));
+
+    double last_tau = -1.0;
+    uint64_t cached_ssd_cutoff = UINT64_MAX;
+
+    int left_b = -1;
+    int right_b = 0;
+    knn_init_annular_block_pointers(
+        cl->members, num_m, num_b, EQ16_FASTSCAN_BLOCK_SIZE, d_anchor, &left_b, &right_b
+    );
+
+    while (left_b >= 0 || right_b < num_b)
+    {
+        double d_left_b = 1e30;
+        if (left_b >= 0)
+        {
+            int m_end_l = (left_b == num_b - 1) ? (num_m - 1) :
+                (left_b * EQ16_FASTSCAN_BLOCK_SIZE + EQ16_FASTSCAN_BLOCK_SIZE - 1);
+            float r_max_l = cl->members[m_end_l].r_anchor;
+            d_left_b = (d_anchor > (double)r_max_l) ? (d_anchor - (double)r_max_l) : 0.0;
+        }
+
+        double d_right_b = 1e30;
+        if (right_b < num_b)
+        {
+            float r_min_r = cl->members[right_b * EQ16_FASTSCAN_BLOCK_SIZE].r_anchor;
+            d_right_b = ((double)r_min_r > d_anchor) ? ((double)r_min_r - d_anchor) : 0.0;
+        }
+
+        double current_tau = knn_heap_peek_max_dist(heap);
+        double tau_thresh = current_tau / eps_factor;
+        if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
+        {
+            tau_thresh = config->rlim_cutoff;
+        }
+
+        if (left_b >= 0 && (d_left_b - sq16_delta >= tau_thresh))
+        {
+            int pruned = (left_b + 1) * EQ16_FASTSCAN_BLOCK_SIZE;
+            if (pruned > num_m)
+            {
+                pruned = num_m;
+            }
+            telem->level3_annular_pruned += (uint64_t)pruned;
+            left_b = -1;
+            d_left_b = 1e30;
+        }
+        if (right_b < num_b && (d_right_b - sq16_delta >= tau_thresh))
+        {
+            int pruned = num_m - right_b * EQ16_FASTSCAN_BLOCK_SIZE;
+            if (pruned > 0)
+            {
+                telem->level3_annular_pruned += (uint64_t)pruned;
+            }
+            right_b = num_b;
+            d_right_b = 1e30;
+        }
+        if (left_b < 0 && right_b >= num_b)
+        {
+            break;
+        }
+
+        int b = (d_left_b <= d_right_b) ? left_b-- : right_b++;
+        int m_start = b * EQ16_FASTSCAN_BLOCK_SIZE;
+        int m_count = num_m - m_start;
+        if (m_count > EQ16_FASTSCAN_BLOCK_SIZE)
+        {
+            m_count = EQ16_FASTSCAN_BLOCK_SIZE;
+        }
+
+        if (current_tau != last_tau)
+        {
+            last_tau = current_tau;
+            cached_ssd_cutoff = compute_eq16_cutoff_thresh(current_tau, model, config);
+        }
+
+        const int16_t *b_coords = cl->eq16_transposed +
+            (size_t)b * (size_t)frame_elem * EQ16_FASTSCAN_BLOCK_SIZE;
+        telem->eq16_evaluations += (uint64_t)m_count;
+
+        uint32_t pass_mask = 0;
+        if (config->use_eq16_adc && visited->query_eq16_adc != NULL)
+        {
+            pass_mask = eq16_fastscan_32x_adc(
+                visited->query_eq16_adc, b_coords, frame_elem, (float)cached_ssd_cutoff
+            );
+        }
+        else if (visited->query_eq16 != NULL)
+        {
+            pass_mask = eq16_fastscan_32x_i16(
+                visited->query_eq16, b_coords, frame_elem, cached_ssd_cutoff
+            );
+        }
+
+        if (m_count < EQ16_FASTSCAN_BLOCK_SIZE)
+        {
+            pass_mask &= ((1U << m_count) - 1);
+        }
+
+        if (!pass_mask)
+        {
+            telem->eq16_members_pruned += (uint64_t)m_count;
+            continue;
+        }
+
+        int passed_count = knn_popcount32(pass_mask);
+        telem->eq16_members_pruned += (uint64_t)(m_count - passed_count);
+
+        while (pass_mask)
+        {
+            int lane = knn_ctz32(pass_mask);
+            pass_mask &= pass_mask - 1;
+
+            int m = m_start + lane;
+            long cand_id = (long)cl->members[m].frame_id;
+            double r_cand = (double)cl->members[m].r_anchor;
+
+            if (knn_is_candidate_pruned(
+                    query_id, cand_id, r_cand, d_anchor, r_home, dcc_home,
+                    tau_thresh, sq16_delta, num_active_pivots, pivot_diffs,
+                    config, heap, visited, telem))
+            {
+                continue;
+            }
+
+            void *slot = (char *)cand_buffer + (size_t)batch->count * frame_bytes;
+            const void *cand_ptr = knn_resolve_candidate_data(
+                cand_id, m, cl, model, reader, slot, frame_bytes
+            );
+            if (cand_ptr == NULL)
+            {
+                continue;
+            }
+
+            knn_append_or_eval_candidate(
+                cand_id, cand_ptr, query_id, query_data, model, config,
+                heap, all_heaps,
+#ifdef _OPENMP
+                bucket_locks,
+#endif
+                batch, telem);
+        } // while (pass_mask)
+    } // while (left_b >= 0 || right_b < num_b)
+}
+
+/**
  * knn_eval_members_sq16_blocks() - Evaluate cluster members using SQ16 FastScan blocks.
  */
 static void knn_eval_members_sq16_blocks(
@@ -900,25 +1075,11 @@ static void knn_eval_members_sq16_blocks(
     double last_tau = -1.0;
     uint64_t cached_ssd_cutoff = UINT64_MAX;
 
-    int mid_b = 0;
-    int b_lo = 0;
-    int b_hi = num_b - 1;
-    while (b_lo <= b_hi)
-    {
-        int b_m = b_lo + (b_hi - b_lo) / 2;
-        if (cl->members[b_m * SQ16_FASTSCAN_BLOCK_SIZE].r_anchor <= (float)d_anchor)
-        {
-            mid_b = b_m;
-            b_lo = b_m + 1;
-        }
-        else
-        {
-            b_hi = b_m - 1;
-        }
-    } // while (b_lo <= b_hi)
-
-    int left_b = mid_b - 1;
-    int right_b = mid_b;
+    int left_b = -1;
+    int right_b = 0;
+    knn_init_annular_block_pointers(
+        cl->members, num_m, num_b, SQ16_FASTSCAN_BLOCK_SIZE, d_anchor, &left_b, &right_b
+    );
 
     while (left_b >= 0 || right_b < num_b)
     {
@@ -1147,6 +1308,7 @@ static void knn_eval_members_annular(
     double                  r_home,
     double                  dcc_home,
     double                  sq16_delta,
+    int                     eq16_active,
     int                     sq16_active,
     int                     rq8_active,
     int                     num_active_pivots,
@@ -1264,6 +1426,32 @@ static void knn_eval_members_annular(
                 continue;
             }
         }
+        else if (!config->use_rq8 && eq16_active)
+        {
+            if (left >= 0)
+            {
+                long pref_l = (long)cl->members[left].frame_id;
+                KNN_PREFETCH_T0(model->eq16_dataset_buffer + (size_t)pref_l * (size_t)frame_elem);
+            }
+            if (right < num_m)
+            {
+                long pref_r = (long)cl->members[right].frame_id;
+                KNN_PREFETCH_T0(model->eq16_dataset_buffer + (size_t)pref_r * (size_t)frame_elem);
+            }
+
+            if (current_tau != last_tau)
+            {
+                last_tau = current_tau;
+                cached_ssd_cutoff = compute_eq16_cutoff_thresh(current_tau, model, config);
+            }
+
+            if (is_member_pruned_by_eq16_cached(
+                    visited->query_eq16, visited->query_eq16_adc,
+                    cand_id, cached_ssd_cutoff, model, telem))
+            {
+                continue;
+            }
+        }
         else if (!config->use_rq8 && sq16_active)
         {
             if (left >= 0)
@@ -1296,8 +1484,10 @@ static void knn_eval_members_annular(
             }
         }
         else if (!config->use_rq8 &&
-                 is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
-                                          model, config, telem))
+                 (is_member_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
+                                           cand_id, current_tau, model, config, telem) ||
+                  is_member_pruned_by_sq16(visited->query_sq16, cand_id, current_tau,
+                                           model, config, telem)))
         {
             continue;
         }
@@ -1364,10 +1554,20 @@ void knn_eval_cluster_members(
     telem->total_candidates_considered += (uint64_t)num_m;
 
     int M = model->num_clusters;
-    double sq16_delta = anchor_is_sq16 ? 2.0 * (double)model->sq16_params.err_radius : 0.0;
+    double quant_err = (config->use_eq16 && model->anchor_eq16_buffer != NULL)
+                       ? (double)model->eq16_params.err_radius
+                       : (double)model->sq16_params.err_radius;
+    double sq16_delta = 0.0;
+    if (anchor_is_sq16)
+    {
+        sq16_delta = (config->use_eq16 && config->use_eq16_adc) ? quant_err : 2.0 * quant_err;
+    }
     double dcc_home = (home_cluster_id >= 0 && home_cluster_id < M && home_cluster_id != c) ?
         model->dcc_matrix[(size_t)home_cluster_id * (size_t)M + (size_t)c] : 0.0;
 
+    int eq16_active = (config->use_eq16 && model->eq16_dataset_buffer != NULL &&
+                       ((config->use_eq16_adc && visited->query_eq16_adc != NULL) ||
+                        visited->query_eq16 != NULL));
     int sq16_active = (config->use_sq16 && model->sq16_dataset_buffer != NULL &&
                        visited->query_sq16 != NULL);
     int rq8_active = (config->use_rq8 && model->rq8_dataset_buffer != NULL &&
@@ -1461,6 +1661,19 @@ void knn_eval_cluster_members(
         return;
     }
 
+    if (eq16_active && cl->eq16_transposed != NULL && cl->num_eq16_blocks > 0)
+    {
+        knn_eval_members_eq16_blocks(
+            cl, d_anchor, r_home, dcc_home, sq16_delta,
+            num_active_pivots, pivot_diffs, query_id, query_data, model,
+            config, reader, cand_buffer, heap, all_heaps,
+#ifdef _OPENMP
+            bucket_locks,
+#endif
+            visited, batch, telem);
+        return;
+    }
+
     if (sq16_active && cl->num_sq16_blocks > 0 &&
         (cl->sq16_transposed != NULL || config->use_sq16_sparse))
     {
@@ -1477,7 +1690,7 @@ void knn_eval_cluster_members(
 
     knn_eval_members_annular(
         cl, d_anchor, r_home, dcc_home, sq16_delta,
-        sq16_active, rq8_active, num_active_pivots, pivot_diffs,
+        eq16_active, sq16_active, rq8_active, num_active_pivots, pivot_diffs,
         query_id, query_data, model, config, reader, cand_buffer,
         heap, all_heaps,
 #ifdef _OPENMP

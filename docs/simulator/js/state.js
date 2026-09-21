@@ -298,9 +298,14 @@
     let knnUseMemo = true; // Quantized Memoization & Unique Vector Pool (Default: true)
     let clusterUseSq8 = false; // 8-Bit Scalar Quantization Metric Pre-Filter
     let clusterUseSq16 = true; // 16-Bit Scalar Quantization Pre-Filter (Default: true)
+    let clusterUseEq16 = false; // 16-Bit E8 Lattice Quantization Pre-Filter
+    let clusterUseEq16Adc = true; // EQ16 Asymmetric Distance Computation (Default: true)
     let clusterSq16Ratio = 0.05; // SQ16 Quantization Bound Ratio (Default: 0.05)
+    let clusterEq16Ratio = 0.05; // EQ16 Quantization Bound Ratio (Default: 0.05)
     let clusterUseMemo = true; // Quantized Memoization Cache (Default: true)
     let clusterUseBatchDist = true; // Multi-Vector SIMD Batch Distance (Default: true)
+    let knnUseEq16 = false; // 16-Bit E8 Lattice Quantization Filtering for k-NN
+    let knnUseEq16Adc = true; // EQ16 ADC for k-NN (Default: true)
     let knnUseBatchDist = true; // Multi-Vector SIMD Batch Distance for k-NN (Default: true)
     let knnUseClusterGraph = true; // Cluster Graph Routing (Default: true)
     let knnEfCluster = 0; // 0 = dynamic auto-calculated cluster budget
@@ -1452,9 +1457,14 @@
         knnUseMemo: true,
         clusterUseSq8: false,
         clusterUseSq16: true,
+        clusterUseEq16: false,
+        clusterUseEq16Adc: true,
         clusterSq16Ratio: 0.05,
+        clusterEq16Ratio: 0.05,
         clusterUseMemo: true,
         clusterUseBatchDist: true,
+        knnUseEq16: false,
+        knnUseEq16Adc: true,
         knnUseBatchDist: true,
         knnUseClusterGraph: true,
         knnEfCluster: 0,
@@ -1858,9 +1868,14 @@
       slot.knnUseMemo = knnUseMemo;
       slot.clusterUseSq8 = clusterUseSq8;
       slot.clusterUseSq16 = clusterUseSq16;
+      slot.clusterUseEq16 = clusterUseEq16;
+      slot.clusterUseEq16Adc = clusterUseEq16Adc;
       slot.clusterSq16Ratio = clusterSq16Ratio;
+      slot.clusterEq16Ratio = clusterEq16Ratio;
       slot.clusterUseMemo = clusterUseMemo;
       slot.clusterUseBatchDist = clusterUseBatchDist;
+      slot.knnUseEq16 = knnUseEq16;
+      slot.knnUseEq16Adc = knnUseEq16Adc;
       slot.knnUseBatchDist = knnUseBatchDist;
       slot.knnUseClusterGraph = knnUseClusterGraph;
       slot.knnEfCluster = knnEfCluster;
@@ -2072,9 +2087,14 @@
       knnUseMemo = (slot.knnUseMemo !== undefined) ? slot.knnUseMemo : true;
       clusterUseSq8 = (slot.clusterUseSq8 !== undefined) ? slot.clusterUseSq8 : false;
       clusterUseSq16 = (slot.clusterUseSq16 !== undefined) ? slot.clusterUseSq16 : true;
+      clusterUseEq16 = (slot.clusterUseEq16 !== undefined) ? slot.clusterUseEq16 : false;
+      clusterUseEq16Adc = (slot.clusterUseEq16Adc !== undefined) ? slot.clusterUseEq16Adc : true;
       clusterSq16Ratio = (slot.clusterSq16Ratio !== undefined) ? slot.clusterSq16Ratio : 0.05;
+      clusterEq16Ratio = (slot.clusterEq16Ratio !== undefined) ? slot.clusterEq16Ratio : 0.05;
       clusterUseMemo = (slot.clusterUseMemo !== undefined) ? slot.clusterUseMemo : true;
       clusterUseBatchDist = (slot.clusterUseBatchDist !== undefined) ? slot.clusterUseBatchDist : true;
+      knnUseEq16 = (slot.knnUseEq16 !== undefined) ? slot.knnUseEq16 : false;
+      knnUseEq16Adc = (slot.knnUseEq16Adc !== undefined) ? slot.knnUseEq16Adc : true;
       knnUseBatchDist = (slot.knnUseBatchDist !== undefined) ? slot.knnUseBatchDist : true;
       knnUseClusterGraph = (slot.knnUseClusterGraph !== undefined)
         ? slot.knnUseClusterGraph : true;
@@ -2571,9 +2591,14 @@
       slot.knnUseMemo = true;
       slot.clusterUseSq8 = false;
       slot.clusterUseSq16 = true;
+      slot.clusterUseEq16 = false;
+      slot.clusterUseEq16Adc = true;
       slot.clusterSq16Ratio = 0.05;
+      slot.clusterEq16Ratio = 0.05;
       slot.clusterUseMemo = true;
       slot.clusterUseBatchDist = true;
+      slot.knnUseEq16 = false;
+      slot.knnUseEq16Adc = true;
       slot.knnUseBatchDist = true;
       slot.knnUseClusterGraph = true;
       slot.knnEfCluster = 0;
