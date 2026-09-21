@@ -9,7 +9,10 @@
 #include "e8_lattice_simd.h"
 #include "gric_simd.h"
 #include "scalar_quant.h"
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 #include <immintrin.h>
+#endif
 #include <math.h>
 #include <string.h>
 
