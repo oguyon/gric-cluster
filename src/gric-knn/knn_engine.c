@@ -292,6 +292,9 @@ int knn_run_search(
         int16_t *query_rq8 =
             config->use_rq8 ? (int16_t *)malloc((size_t)model->frame_elements *
                                                 sizeof(int16_t)) : NULL;
+        float *query_rq8_adc =
+            (config->use_rq8 && config->use_rq8_adc) ?
+                (float *)malloc((size_t)model->frame_elements * sizeof(float)) : NULL;
         uint8_t *query_pq_lut =
             (config->use_pq && model->pq_codebook != NULL) ?
                 (uint8_t *)malloc((size_t)model->pq_codebook->m *
@@ -345,6 +348,7 @@ int knn_run_search(
         visited.query_eq16 = query_eq16;
         visited.query_eq16_adc = query_eq16_adc;
         visited.query_rq8 = query_rq8;
+        visited.query_rq8_adc = query_rq8_adc;
         visited.query_rq8_clipped = 0;
         visited.query_pq_lut = query_pq_lut;
         memset(&visited.query_pq_table, 0, sizeof(PQLookupTable));
@@ -677,6 +681,11 @@ int knn_run_search(
         if (query_rq8 != NULL)
         {
             free(query_rq8);
+        }
+
+        if (query_rq8_adc != NULL)
+        {
+            free(query_rq8_adc);
         }
 
         if (query_pq_lut != NULL)

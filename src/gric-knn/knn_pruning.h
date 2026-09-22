@@ -299,6 +299,44 @@ static inline int is_member_pruned_by_rq8_cached(
     return 0;
 }
 
+/**
+ * is_member_pruned_by_rq8_adc_cached() - Evaluate RQ8 ADC using precomputed float cutoff.
+ * @query_rq8_adc: Pointer to normalized query residual [dim].
+ * @cand_id:       Index of candidate dataset frame.
+ * @cutoff_sq:     Precomputed squared float cutoff threshold.
+ * @model:         Active KnnModel.
+ * @telem:         Active KnnTelemetry.
+ *
+ * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
+ */
+static inline int is_member_pruned_by_rq8_adc_cached(
+    const float    *query_rq8_adc,
+    long            cand_id,
+    float           cutoff_sq,
+    const KnnModel *model,
+    KnnTelemetry   *telem)
+{
+    if (cutoff_sq >= 1e29f || query_rq8_adc == NULL || model->rq8_dataset_buffer == NULL)
+    {
+        return 0;
+    }
+
+    const int8_t *cand_res = model->rq8_dataset_buffer +
+                             (size_t)cand_id * (size_t)model->frame_elements;
+    telem->rq8_evaluations++;
+    float dist_sq = rq8_dist_asym_cutoff_f32(
+        query_rq8_adc, cand_res, model->frame_elements, cutoff_sq
+    );
+
+    if (dist_sq > cutoff_sq)
+    {
+        telem->rq8_members_pruned++;
+        return 1;
+    }
+
+    return 0;
+}
+
 /* -------------------------------------------------------------------------
  * Metric Pruning & Distance Predicate Prototypes (Defined in knn_pruning.c)
  * ------------------------------------------------------------------------- */
@@ -354,8 +392,14 @@ uint64_t compute_rq8_cutoff_thresh_cluster(
     const RQ8Params *params,
     const KnnConfig *config);
 
+float compute_rq8_cutoff_thresh_adc_cluster(
+    double           cur_tau,
+    const RQ8Params *params,
+    const KnnConfig *config);
+
 int is_member_pruned_by_rq8(
     const int16_t   *query_rq8,
+    const float     *query_rq8_adc,
     long             cand_id,
     double           cur_tau,
     const KnnModel  *model,

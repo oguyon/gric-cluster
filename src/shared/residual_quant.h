@@ -163,6 +163,94 @@ static inline double rq8_compute_lower_bound(
 }
 
 /**
+ * @brief Compute guaranteed metric cutoff threshold in squared float units for ADC.
+ */
+static inline float rq8_compute_cutoff_thresh_adc(
+    double           cur_tau,
+    const RQ8Params *params,
+    double           eps)
+{
+    if (params == NULL || params->scale <= 0.0f)
+    {
+        return 1e30f;
+    }
+
+    double eff_tau = cur_tau * (1.0 + eps);
+    double raw_thresh = (eff_tau + 1.0 * (double)params->err_radius) * (double)params->inv_scale;
+    return (raw_thresh > 0.0) ? (float)(raw_thresh * raw_thresh) : 0.0f;
+}
+
+/**
+ * @brief Compute guaranteed metric lower bound between query and candidate residual in ADC.
+ */
+static inline double rq8_compute_lower_bound_adc(
+    float            dist_sq,
+    const RQ8Params *params,
+    double           eps)
+{
+    if (params == NULL || params->scale <= 0.0f)
+    {
+        return 0.0;
+    }
+
+    double d_quant = sqrt((double)dist_sq) * (double)params->scale;
+    double d_lb = d_quant - 1.0 * (double)params->err_radius;
+    if (d_lb < 0.0)
+    {
+        d_lb = 0.0;
+    }
+
+    if (eps > 0.0)
+    {
+        d_lb /= (1.0 + eps);
+    }
+
+    return d_lb;
+}
+
+/**
+ * rq8_prepare_query_residual_float() - Compute normalized float residual vector for ADC.
+ * @query:  Pointer to query float vector [dim].
+ * @anchor: Pointer to cluster anchor float vector [dim].
+ * @dst:    Pointer to destination float vector [dim].
+ * @params: Pointer to initialized RQ8Params.
+ */
+static inline void rq8_prepare_query_residual_float(
+    const float     *restrict query,
+    const float     *restrict anchor,
+    float           *restrict dst,
+    const RQ8Params *restrict params)
+{
+    long dim = params->dim;
+    float inv_scale = params->inv_scale;
+    for (long i = 0; i < dim; i++)
+    {
+        dst[i] = (query[i] - anchor[i]) * inv_scale;
+    }
+}
+
+/**
+ * rq8_prepare_query_residual_double() - Compute normalized float residual vector for ADC.
+ * @query:  Pointer to query double vector [dim].
+ * @anchor: Pointer to cluster anchor double vector [dim].
+ * @dst:    Pointer to destination float vector [dim].
+ * @params: Pointer to initialized RQ8Params.
+ */
+static inline void rq8_prepare_query_residual_double(
+    const double    *restrict query,
+    const double    *restrict anchor,
+    float           *restrict dst,
+    const RQ8Params *restrict params)
+{
+    long dim = params->dim;
+    double inv_scale = (double)params->inv_scale;
+    for (long i = 0; i < dim; i++)
+    {
+        dst[i] = (float)((query[i] - anchor[i]) * inv_scale);
+    }
+}
+
+/**
  * @brief Compute sum of squared differences between int16 query residual and int8 candidate.
  */
 static inline uint64_t rq8_dist_squared_cutoff_i8(
@@ -220,6 +308,184 @@ static inline uint64_t rq8_dist_squared_cutoff_i8(
     } // for (; i < dim; i++)
 
     return total;
+}
+
+/**
+ * @brief Compute squared difference between float query residual and int8 candidate with cutoff.
+ */
+static inline float rq8_dist_asym_cutoff_f32(
+    const float  *restrict q_res,
+    const int8_t *restrict cand_res,
+    long                   dim,
+    float                  cutoff_f)
+{
+    float total = 0.0f;
+    long i = 0;
+
+#if defined(__AVX2__) && !defined(__CUDACC__)
+    if (dim >= 8)
+    {
+        __m256 acc = _mm256_setzero_ps();
+        for (; i <= dim - 8; i += 8)
+        {
+            __m128i c8 = _mm_loadl_epi64((const __m128i *)(const void *)&cand_res[i]);
+            __m256 c256 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(c8));
+            __m256 q256 = _mm256_loadu_ps(&q_res[i]);
+            __m256 diff = _mm256_sub_ps(q256, c256);
+            acc = _mm256_fmadd_ps(diff, diff, acc);
+
+            if ((i & 31) == 24 || i == dim - 8)
+            {
+                __m128 lo = _mm256_castps256_ps128(acc);
+                __m128 hi = _mm256_extractf128_ps(acc, 1);
+                __m128 sum4 = _mm_add_ps(lo, hi);
+                sum4 = _mm_hadd_ps(sum4, sum4);
+                sum4 = _mm_hadd_ps(sum4, sum4);
+                if (_mm_cvtss_f32(sum4) > cutoff_f)
+                {
+                    return cutoff_f + 1.0f;
+                }
+            }
+        }
+        __m128 lo = _mm256_castps256_ps128(acc);
+        __m128 hi = _mm256_extractf128_ps(acc, 1);
+        __m128 sum4 = _mm_add_ps(lo, hi);
+        sum4 = _mm_hadd_ps(sum4, sum4);
+        sum4 = _mm_hadd_ps(sum4, sum4);
+        total = _mm_cvtss_f32(sum4);
+    }
+#endif
+
+    for (; i < dim; i++)
+    {
+        float diff = q_res[i] - (float)cand_res[i];
+        total += diff * diff;
+        if (total > cutoff_f)
+        {
+            return cutoff_f + 1.0f;
+        }
+    }
+    return total;
+}
+
+/**
+ * @brief Batched 1x4 evaluation of query residual against 4 int8 candidates with early cutoff.
+ */
+static inline void rq8_dist_asym_cutoff_batch_1x4(
+    const float        *restrict q_res,
+    const int8_t *const *restrict cands,
+    long                         dim,
+    float                        cutoff_f,
+    float                        out_dist_sq[4])
+{
+    out_dist_sq[0] = 0.0f;
+    out_dist_sq[1] = 0.0f;
+    out_dist_sq[2] = 0.0f;
+    out_dist_sq[3] = 0.0f;
+
+    long i = 0;
+
+#if defined(__AVX2__) && !defined(__CUDACC__)
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    __m256 acc2 = _mm256_setzero_ps();
+    __m256 acc3 = _mm256_setzero_ps();
+
+    for (; i <= dim - 8; i += 8)
+    {
+        __m256 q = _mm256_loadu_ps(&q_res[i]);
+
+        __m128i c0_8 = _mm_loadl_epi64((const __m128i *)(const void *)&cands[0][i]);
+        __m256 c0_ps = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(c0_8));
+        __m256 diff0 = _mm256_sub_ps(q, c0_ps);
+        acc0 = _mm256_fmadd_ps(diff0, diff0, acc0);
+
+        __m128i c1_8 = _mm_loadl_epi64((const __m128i *)(const void *)&cands[1][i]);
+        __m256 c1_ps = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(c1_8));
+        __m256 diff1 = _mm256_sub_ps(q, c1_ps);
+        acc1 = _mm256_fmadd_ps(diff1, diff1, acc1);
+
+        __m128i c2_8 = _mm_loadl_epi64((const __m128i *)(const void *)&cands[2][i]);
+        __m256 c2_ps = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(c2_8));
+        __m256 diff2 = _mm256_sub_ps(q, c2_ps);
+        acc2 = _mm256_fmadd_ps(diff2, diff2, acc2);
+
+        __m128i c3_8 = _mm_loadl_epi64((const __m128i *)(const void *)&cands[3][i]);
+        __m256 c3_ps = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(c3_8));
+        __m256 diff3 = _mm256_sub_ps(q, c3_ps);
+        acc3 = _mm256_fmadd_ps(diff3, diff3, acc3);
+
+        if ((i & 63) == 56 || i == dim - 8)
+        {
+            __m128 sum0 = _mm_add_ps(
+                _mm256_castps256_ps128(acc0), _mm256_extractf128_ps(acc0, 1)
+            );
+            sum0 = _mm_hadd_ps(sum0, sum0);
+            sum0 = _mm_hadd_ps(sum0, sum0);
+
+            __m128 sum1 = _mm_add_ps(
+                _mm256_castps256_ps128(acc1), _mm256_extractf128_ps(acc1, 1)
+            );
+            sum1 = _mm_hadd_ps(sum1, sum1);
+            sum1 = _mm_hadd_ps(sum1, sum1);
+
+            __m128 sum2 = _mm_add_ps(
+                _mm256_castps256_ps128(acc2), _mm256_extractf128_ps(acc2, 1)
+            );
+            sum2 = _mm_hadd_ps(sum2, sum2);
+            sum2 = _mm_hadd_ps(sum2, sum2);
+
+            __m128 sum3 = _mm_add_ps(
+                _mm256_castps256_ps128(acc3), _mm256_extractf128_ps(acc3, 1)
+            );
+            sum3 = _mm_hadd_ps(sum3, sum3);
+            sum3 = _mm_hadd_ps(sum3, sum3);
+
+            if (_mm_cvtss_f32(sum0) > cutoff_f && _mm_cvtss_f32(sum1) > cutoff_f &&
+                _mm_cvtss_f32(sum2) > cutoff_f && _mm_cvtss_f32(sum3) > cutoff_f)
+            {
+                out_dist_sq[0] = cutoff_f + 1.0f;
+                out_dist_sq[1] = cutoff_f + 1.0f;
+                out_dist_sq[2] = cutoff_f + 1.0f;
+                out_dist_sq[3] = cutoff_f + 1.0f;
+                return;
+            }
+        }
+    } // for (; i <= dim - 8; i += 8)
+
+    __m128 s0 = _mm_add_ps(_mm256_castps256_ps128(acc0), _mm256_extractf128_ps(acc0, 1));
+    s0 = _mm_hadd_ps(s0, s0);
+    s0 = _mm_hadd_ps(s0, s0);
+    out_dist_sq[0] = _mm_cvtss_f32(s0);
+
+    __m128 s1 = _mm_add_ps(_mm256_castps256_ps128(acc1), _mm256_extractf128_ps(acc1, 1));
+    s1 = _mm_hadd_ps(s1, s1);
+    s1 = _mm_hadd_ps(s1, s1);
+    out_dist_sq[1] = _mm_cvtss_f32(s1);
+
+    __m128 s2 = _mm_add_ps(_mm256_castps256_ps128(acc2), _mm256_extractf128_ps(acc2, 1));
+    s2 = _mm_hadd_ps(s2, s2);
+    s2 = _mm_hadd_ps(s2, s2);
+    out_dist_sq[2] = _mm_cvtss_f32(s2);
+
+    __m128 s3 = _mm_add_ps(_mm256_castps256_ps128(acc3), _mm256_extractf128_ps(acc3, 1));
+    s3 = _mm_hadd_ps(s3, s3);
+    s3 = _mm_hadd_ps(s3, s3);
+    out_dist_sq[3] = _mm_cvtss_f32(s3);
+#endif
+
+    for (; i < dim; i++)
+    {
+        float q = q_res[i];
+        float d0 = q - (float)cands[0][i];
+        out_dist_sq[0] += d0 * d0;
+        float d1 = q - (float)cands[1][i];
+        out_dist_sq[1] += d1 * d1;
+        float d2 = q - (float)cands[2][i];
+        out_dist_sq[2] += d2 * d2;
+        float d3 = q - (float)cands[3][i];
+        out_dist_sq[3] += d3 * d3;
+    }
 }
 
 /**
@@ -446,6 +712,47 @@ static inline uint32_t rq8_fastscan_32x_generic_avx2(
         acc5 = _mm256_add_epi64(acc5, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(p2, 1)));
         acc6 = _mm256_add_epi64(acc6, _mm256_cvtepu32_epi64(_mm256_castsi256_si128(p3)));
         acc7 = _mm256_add_epi64(acc7, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(p3, 1)));
+
+        if (d == 31 || d == 63 || d == 127 || d == 255)
+        {
+            __m256i v_cut = _mm256_set1_epi64x((int64_t)ssd_cutoff);
+            __m256i v_bias = _mm256_set1_epi64x((int64_t)0x8000000000000000ULL);
+            __m256i cut_b = _mm256_xor_si256(v_cut, v_bias);
+
+            __m256d cmp0 = _mm256_castsi256_pd(
+                _mm256_cmpgt_epi64(_mm256_xor_si256(acc0, v_bias), cut_b)
+            );
+            __m256d cmp1 = _mm256_castsi256_pd(
+                _mm256_cmpgt_epi64(_mm256_xor_si256(acc1, v_bias), cut_b)
+            );
+            __m256d cmp2 = _mm256_castsi256_pd(
+                _mm256_cmpgt_epi64(_mm256_xor_si256(acc2, v_bias), cut_b)
+            );
+            __m256d cmp3 = _mm256_castsi256_pd(
+                _mm256_cmpgt_epi64(_mm256_xor_si256(acc3, v_bias), cut_b)
+            );
+            __m256d cmp4 = _mm256_castsi256_pd(
+                _mm256_cmpgt_epi64(_mm256_xor_si256(acc4, v_bias), cut_b)
+            );
+            __m256d cmp5 = _mm256_castsi256_pd(
+                _mm256_cmpgt_epi64(_mm256_xor_si256(acc5, v_bias), cut_b)
+            );
+            __m256d cmp6 = _mm256_castsi256_pd(
+                _mm256_cmpgt_epi64(_mm256_xor_si256(acc6, v_bias), cut_b)
+            );
+            __m256d cmp7 = _mm256_castsi256_pd(
+                _mm256_cmpgt_epi64(_mm256_xor_si256(acc7, v_bias), cut_b)
+            );
+
+            __m256d all_gt = _mm256_and_pd(
+                _mm256_and_pd(_mm256_and_pd(cmp0, cmp1), _mm256_and_pd(cmp2, cmp3)),
+                _mm256_and_pd(_mm256_and_pd(cmp4, cmp5), _mm256_and_pd(cmp6, cmp7))
+            );
+            if ((_mm256_movemask_pd(all_gt) & 0x0F) == 0x0F)
+            {
+                return 0;
+            }
+        }
     } // for (long d = 0; d < dim; d++)
 
     __m256i v_cut = _mm256_set1_epi64x((int64_t)ssd_cutoff);
@@ -565,6 +872,19 @@ static inline uint32_t rq8_fastscan_32x_generic_avx512(
         acc2 = _mm512_add_epi64(acc2, _mm512_cvtepu32_epi64(_mm512_castsi512_si256(p1)));
         acc3 = _mm512_add_epi64(acc3,
                                 _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(p1, 1)));
+
+        if (d == 31 || d == 63 || d == 127 || d == 255)
+        {
+            __m512i v_cut = _mm512_set1_epi64((int64_t)ssd_cutoff);
+            __mmask8 m0 = _mm512_cmple_epu64_mask(acc0, v_cut);
+            __mmask8 m1 = _mm512_cmple_epu64_mask(acc1, v_cut);
+            __mmask8 m2 = _mm512_cmple_epu64_mask(acc2, v_cut);
+            __mmask8 m3 = _mm512_cmple_epu64_mask(acc3, v_cut);
+            if ((m0 | m1 | m2 | m3) == 0)
+            {
+                return 0;
+            }
+        }
     } // for (long d = 0; d < dim; d++)
 
     __m512i v_cut = _mm512_set1_epi64((int64_t)ssd_cutoff);
@@ -636,6 +956,121 @@ static inline uint32_t rq8_fastscan_32x(
     }
 #endif
     return rq8_fastscan_32x_generic_scalar(query_res, block_coords, dim, ssd_cutoff);
+}
+
+/**
+ * @brief Scalar fallback for 32-candidate RQ8 ADC FastScan.
+ */
+static inline uint32_t rq8_fastscan_32x_adc_scalar(
+    const float  *restrict q_adc,
+    const int8_t *restrict block_coords,
+    long                  dim,
+    float                 cutoff_f)
+{
+    uint32_t mask = 0;
+    for (int i = 0; i < 32; i++)
+    {
+        float dist = 0.0f;
+        for (long d = 0; d < dim; d++)
+        {
+            float diff = q_adc[d] - (float)block_coords[d * 32 + i];
+            dist += diff * diff;
+            if (dist > cutoff_f)
+            {
+                break;
+            }
+        }
+        if (dist <= cutoff_f)
+        {
+            mask |= (1U << i);
+        }
+    }
+    return mask;
+}
+
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+GRIC_TARGET_AVX2
+static inline uint32_t rq8_fastscan_32x_adc_avx2(
+    const float  *restrict q_adc,
+    const int8_t *restrict block_coords,
+    long                  dim,
+    float                 cutoff_f)
+{
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    __m256 acc2 = _mm256_setzero_ps();
+    __m256 acc3 = _mm256_setzero_ps();
+
+    for (long d = 0; d < dim; d++)
+    {
+        __m256 v_qd = _mm256_set1_ps(q_adc[d]);
+        const int8_t *cd_ptr = block_coords + d * 32;
+
+        __m256i raw32 = _mm256_loadu_si256((const __m256i *)(const void *)cd_ptr);
+        __m128i b_lo = _mm256_castsi256_si128(raw32);
+        __m128i b_hi = _mm256_extracti128_si256(raw32, 1);
+
+        __m256 c0 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(b_lo));
+        __m256 c1 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(b_lo, 8)));
+        __m256 c2 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(b_hi));
+        __m256 c3 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(_mm_srli_si128(b_hi, 8)));
+
+        __m256 diff0 = _mm256_sub_ps(v_qd, c0);
+        __m256 diff1 = _mm256_sub_ps(v_qd, c1);
+        __m256 diff2 = _mm256_sub_ps(v_qd, c2);
+        __m256 diff3 = _mm256_sub_ps(v_qd, c3);
+
+        acc0 = _mm256_fmadd_ps(diff0, diff0, acc0);
+        acc1 = _mm256_fmadd_ps(diff1, diff1, acc1);
+        acc2 = _mm256_fmadd_ps(diff2, diff2, acc2);
+        acc3 = _mm256_fmadd_ps(diff3, diff3, acc3);
+
+        if (d == 31 || d == 63 || d == 127 || d == 255)
+        {
+            __m256 v_cut = _mm256_set1_ps(cutoff_f);
+            __m256 cmp0 = _mm256_cmp_ps(acc0, v_cut, _CMP_LE_OQ);
+            __m256 cmp1 = _mm256_cmp_ps(acc1, v_cut, _CMP_LE_OQ);
+            __m256 cmp2 = _mm256_cmp_ps(acc2, v_cut, _CMP_LE_OQ);
+            __m256 cmp3 = _mm256_cmp_ps(acc3, v_cut, _CMP_LE_OQ);
+            __m256 any_le = _mm256_or_ps(
+                _mm256_or_ps(cmp0, cmp1), _mm256_or_ps(cmp2, cmp3)
+            );
+            if (_mm256_movemask_ps(any_le) == 0)
+            {
+                return 0;
+            }
+        }
+    } // for (long d = 0; d < dim; d++)
+
+    __m256 v_cut = _mm256_set1_ps(cutoff_f);
+    int m0 = _mm256_movemask_ps(_mm256_cmp_ps(acc0, v_cut, _CMP_LE_OQ));
+    int m1 = _mm256_movemask_ps(_mm256_cmp_ps(acc1, v_cut, _CMP_LE_OQ));
+    int m2 = _mm256_movemask_ps(_mm256_cmp_ps(acc2, v_cut, _CMP_LE_OQ));
+    int m3 = _mm256_movemask_ps(_mm256_cmp_ps(acc3, v_cut, _CMP_LE_OQ));
+
+    return (uint32_t)m0 | ((uint32_t)m1 << 8) |
+           ((uint32_t)m2 << 16) | ((uint32_t)m3 << 24);
+}
+#endif // AVX2
+
+/**
+ * @brief Dispatch FastScan for 32 candidates using Asymmetric Distance Computation (ADC).
+ */
+static inline uint32_t rq8_fastscan_32x_adc(
+    const float  *restrict query_res,
+    const int8_t *restrict block_coords,
+    long                  dim,
+    float                 cutoff_f)
+{
+#if !defined(__CUDACC__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        return rq8_fastscan_32x_adc_avx2(query_res, block_coords, dim, cutoff_f);
+    }
+#endif
+    return rq8_fastscan_32x_adc_scalar(query_res, block_coords, dim, cutoff_f);
 }
 
 /**

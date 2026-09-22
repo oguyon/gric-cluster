@@ -306,23 +306,46 @@ static int knn_warm_start_nearest_cluster(
             query_data, warm_cl->anchor_data, model->frame_elements, model->is_double
         );
 
-        if (config->use_rq8 && model->rq8_dataset_buffer != NULL && visited->query_rq8 != NULL)
+        if (config->use_rq8 && model->rq8_dataset_buffer != NULL)
         {
-            if (model->is_double)
+            if (config->use_rq8_adc && visited->query_rq8_adc != NULL)
             {
-                visited->query_rq8_clipped = rq8_quantize_query_residual_double(
-                    (const double *)query_data,
-                    (const double *)warm_cl->anchor_data,
-                    visited->query_rq8,
-                    &model->rq8_params);
+                if (model->is_double)
+                {
+                    rq8_prepare_query_residual_double(
+                        (const double *)query_data,
+                        (const double *)warm_cl->anchor_data,
+                        visited->query_rq8_adc,
+                        &model->rq8_params);
+                }
+                else
+                {
+                    rq8_prepare_query_residual_float(
+                        (const float *)query_data,
+                        (const float *)warm_cl->anchor_data,
+                        visited->query_rq8_adc,
+                        &model->rq8_params);
+                }
+                visited->query_rq8_clipped = 0;
             }
-            else
+            else if (visited->query_rq8 != NULL)
             {
-                visited->query_rq8_clipped = rq8_quantize_query_residual_float(
-                    (const float *)query_data,
-                    (const float *)warm_cl->anchor_data,
-                    visited->query_rq8,
-                    &model->rq8_params);
+                if (model->is_double)
+                {
+                    visited->query_rq8_clipped = rq8_quantize_query_residual_double(
+                        (const double *)query_data,
+                        (const double *)warm_cl->anchor_data,
+                        visited->query_rq8,
+                        &model->rq8_params);
+                }
+                else
+                {
+                    visited->query_rq8_clipped = rq8_quantize_query_residual_float(
+                        (const float *)query_data,
+                        (const float *)warm_cl->anchor_data,
+                        visited->query_rq8,
+                        &model->rq8_params);
+                }
             }
         }
 
@@ -349,8 +372,8 @@ static int knn_warm_start_nearest_cluster(
                 continue;
             }
             if ((!visited->query_rq8_clipped &&
-                 is_member_pruned_by_rq8(visited->query_rq8, cand_id, current_tau,
-                                         model, config, telem)) ||
+                 is_member_pruned_by_rq8(visited->query_rq8, visited->query_rq8_adc,
+                                         cand_id, current_tau, model, config, telem)) ||
                 (!config->use_rq8 &&
                  is_member_pruned_by_eq16(visited->query_eq16, visited->query_eq16_adc,
                                           cand_id, current_tau, model, config, telem)) ||
