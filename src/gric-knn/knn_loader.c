@@ -730,8 +730,8 @@ static int load_knn_graph(
     fclose(fp_idx);
     fclose(fp_dst);
 
-    printf("  k-NN Metric Graph:   Loaded %lu frames x %lu neighbors from cluster directory%s\n",
-           n_frames, graph_k,
+    printf("  k-NN Metric Graph:   Loaded %llu frames x %llu neighbors from cluster directory%s\n",
+           (unsigned long long)n_frames, (unsigned long long)graph_k,
            (model->graph_idx_mmap_addr != NULL) ? " (zero-copy)" : "");
 
     /* Opportunistically load precomputed mutual distances */
@@ -765,9 +765,10 @@ static int load_knn_graph(
                         model->graph_mut_mmap_size = (size_t)st_mut.st_size;
                         model->graph_mutual_dists =
                             (float *)((char *)mmap_mut + hdr_mut.header_bytes);
-                        printf("  k-NN Mutual Dists:   Loaded %lu frames x %lu pairs from %s "
+                        printf("  k-NN Mutual Dists:   Loaded %llu frames x %llu pairs from %s "
                                "(zero-copy)\n",
-                               n_frames, m_pairs, mut_path);
+                               (unsigned long long)n_frames, (unsigned long long)m_pairs,
+                               mut_path);
                     }
                 }
 
@@ -779,8 +780,10 @@ static int load_knn_graph(
                         if (fread(mut_dists, sizeof(float), total_mut, fp_mut) == total_mut)
                         {
                             model->graph_mutual_dists = mut_dists;
-                            printf("  k-NN Mutual Dists:   Loaded %lu frames x %lu pairs from %s\n",
-                                   n_frames, m_pairs, mut_path);
+                            printf("  k-NN Mutual Dists:   Loaded %llu frames x %llu pairs "
+                                   "from %s\n",
+                                   (unsigned long long)n_frames, (unsigned long long)m_pairs,
+                                   mut_path);
                         }
                         else
                         {
@@ -857,8 +860,8 @@ static int load_knn_graph(
                         } // for (long u = 0; ...)
 
                         model->graph_mutual_dists = mut_dists;
-                        printf("  k-NN Mutual Dists:   Computed %lu frames x %lu pairs\n",
-                               n_frames, m_pairs);
+                        printf("  k-NN Mutual Dists:   Computed %llu frames x %llu pairs\n",
+                               (unsigned long long)n_frames, (unsigned long long)m_pairs);
 
                         FILE *fp_w = fopen(mut_path, "wb");
                         if (fp_w != NULL)

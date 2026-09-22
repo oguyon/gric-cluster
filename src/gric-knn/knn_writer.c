@@ -318,6 +318,12 @@ static int write_bin_results(
 
                     if (fd_mut >= 0)
                     {
+#if defined(__APPLE__) || defined(__darwin__)
+                        if (ftruncate(fd_mut, (off_t)total_file_bytes) != 0)
+                        {
+                            /* Truncate failed, mmap will handle error */
+                        }
+#else
                         if (posix_fallocate(fd_mut, 0, (off_t)total_file_bytes) != 0)
                         {
                             if (ftruncate(fd_mut, (off_t)total_file_bytes) != 0)
@@ -325,6 +331,7 @@ static int write_bin_results(
                                 /* Truncate failed, mmap will handle error */
                             }
                         }
+#endif
                         mmap_mut = mmap(NULL, total_file_bytes, PROT_READ | PROT_WRITE,
                                         MAP_SHARED, fd_mut, 0);
                     }
