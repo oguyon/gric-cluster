@@ -193,6 +193,14 @@ void knn_cli_print_help(
            "(%sdefault:%s 0.05)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
            ansi_color_cyan, ansi_reset);
+    printf("  %s-eq16-sparse%s, %s--eq16-sparse%s Enable EQ16 SparseCache Direct SIMD "
+           "(%sdefault:%s on)\n"
+           "                                (0 MB resident transposed index)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("  %s-no-eq16-sparse%s, %s-eq16-fastscan%s Disable SparseCache "
+           "(pre-build index)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-sq16-sparse%s, %s--sq16-sparse%s Enable SQ16 SparseCache Direct SIMD "
            "(%sdefault:%s on)\n"
            "                                (0 MB resident transposed index)\n",
@@ -282,6 +290,7 @@ static void knn_cli_set_defaults(
     config->use_sq16_sparse_lru = 0; // 16-block LRU Transposed FastScan
     config->use_eq16 = -1;          // Auto-detect: 1 if D >= 8 and D % 8 == 0
     config->use_eq16_adc = 1;      // Default enabled: Asymmetric Distance Computation
+    config->use_eq16_sparse = 1;   // Default 1: SparseCache active (0 MB resident index)
     config->eq16_ratio = 0.05;      // Enforce scale <= alpha*rlim
     config->use_rabitq = 0;         // RaBitQ randomized bit quantization (optional)
     config->rabitq_bits = 2;        // Default 2-bit Extended RaBitQ
@@ -952,6 +961,7 @@ static int knn_cli_parse_quant_opt(
         strcmp(argv[i], "-noeq16") == 0)
     {
         config->use_eq16 = 0;
+        config->use_eq16_sparse = 0;
         return 1;
     }
     if (strcmp(argv[i], "-eq16-save") == 0 || strcmp(argv[i], "--eq16-save") == 0)
@@ -1010,6 +1020,21 @@ static int knn_cli_parse_quant_opt(
             return -1;
         }
         config->eq16_ratio = atof(argv[++(*arg_idx)]);
+        return 1;
+    }
+    if (strcmp(argv[i], "-eq16-sparse") == 0 || strcmp(argv[i], "--eq16-sparse") == 0)
+    {
+        config->use_eq16 = 1;
+        config->use_sq16 = 0;
+        config->use_rq8 = 0;
+        config->use_sq8 = 0;
+        config->use_eq16_sparse = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-eq16-sparse") == 0 || strcmp(argv[i], "--no-eq16-sparse") == 0 ||
+        strcmp(argv[i], "-eq16-fastscan") == 0 || strcmp(argv[i], "--eq16-fastscan") == 0)
+    {
+        config->use_eq16_sparse = 0;
         return 1;
     }
     if (strcmp(argv[i], "-sq16-save") == 0 || strcmp(argv[i], "--sq16-save") == 0)

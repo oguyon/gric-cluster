@@ -331,6 +331,30 @@ int knn_model_build_transposed_eq16(
         model->eq16_transposed_buffer = NULL;
     }
 
+    if (config->use_eq16_sparse)
+    {
+        for (int c = 0; c < M; c++)
+        {
+            int num_m = model->clusters[c].num_members;
+            if (num_m > 0)
+            {
+                model->clusters[c].num_eq16_blocks =
+                    (num_m + EQ16_FASTSCAN_BLOCK_SIZE - 1) / EQ16_FASTSCAN_BLOCK_SIZE;
+            }
+            else
+            {
+                model->clusters[c].num_eq16_blocks = 0;
+            }
+            model->clusters[c].eq16_transposed = NULL;
+        }
+        if (config->verbose_level >= 1)
+        {
+            printf("  [FASTSCAN] EQ16 SparseCache Active: 0.00 MB resident index\n"
+                   "             (On-demand direct SIMD evaluation with early cutoff)\n");
+        }
+        return 0;
+    }
+
     for (int c = 0; c < M; c++)
     {
         model->clusters[c].eq16_transposed = NULL;
