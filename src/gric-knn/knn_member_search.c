@@ -840,75 +840,147 @@ static void knn_eval_members_rq8_blocks(
                 pass_mask &= ((1U << m_count) - 1);
             }
         }
-        else if (config->use_rq8_sparse && model->rq8_dataset_buffer != NULL)
+        else if (config->use_rq8_sparse &&
+                 (cl->rq8_vectors != NULL || model->rq8_dataset_buffer != NULL))
         {
             telem->rq8_evaluations += (uint64_t)m_count;
             if (config->use_rq8_adc && visited->query_rq8_adc != NULL)
             {
                 int i = 0;
-                for (; i <= m_count - 4; i += 4)
+                if (cl->rq8_vectors != NULL)
                 {
-                    const int8_t *cands[4];
-                    cands[0] = model->rq8_dataset_buffer +
-                        (size_t)cl->members[m_start + i + 0].frame_id * (size_t)frame_elem;
-                    cands[1] = model->rq8_dataset_buffer +
-                        (size_t)cl->members[m_start + i + 1].frame_id * (size_t)frame_elem;
-                    cands[2] = model->rq8_dataset_buffer +
-                        (size_t)cl->members[m_start + i + 2].frame_id * (size_t)frame_elem;
-                    cands[3] = model->rq8_dataset_buffer +
-                        (size_t)cl->members[m_start + i + 3].frame_id * (size_t)frame_elem;
+                    const int8_t *cl_cands = cl->rq8_vectors +
+                        (size_t)m_start * (size_t)frame_elem;
+                    for (; i <= m_count - 4; i += 4)
+                    {
+                        const int8_t *cands[4];
+                        const int8_t *p = cl_cands + (size_t)i * (size_t)frame_elem;
+                        cands[0] = p;
+                        cands[1] = p + frame_elem;
+                        cands[2] = p + 2 * frame_elem;
+                        cands[3] = p + 3 * frame_elem;
 
-                    float dsq[4];
-                    rq8_dist_asym_cutoff_batch_1x4(
-                        visited->query_rq8_adc, cands, frame_elem,
-                        cached_cutoff_adc, dsq
-                    );
-                    if (dsq[0] <= cached_cutoff_adc)
-                    {
-                        pass_mask |= (1U << (i + 0));
-                    }
-                    if (dsq[1] <= cached_cutoff_adc)
-                    {
-                        pass_mask |= (1U << (i + 1));
-                    }
-                    if (dsq[2] <= cached_cutoff_adc)
-                    {
-                        pass_mask |= (1U << (i + 2));
-                    }
-                    if (dsq[3] <= cached_cutoff_adc)
-                    {
-                        pass_mask |= (1U << (i + 3));
-                    }
-                } // for (; i <= m_count - 4; i += 4)
+                        float dsq[4];
+                        rq8_dist_asym_cutoff_batch_1x4(
+                            visited->query_rq8_adc, cands, frame_elem,
+                            cached_cutoff_adc, dsq
+                        );
+                        if (dsq[0] <= cached_cutoff_adc)
+                        {
+                            pass_mask |= (1U << (i + 0));
+                        }
+                        if (dsq[1] <= cached_cutoff_adc)
+                        {
+                            pass_mask |= (1U << (i + 1));
+                        }
+                        if (dsq[2] <= cached_cutoff_adc)
+                        {
+                            pass_mask |= (1U << (i + 2));
+                        }
+                        if (dsq[3] <= cached_cutoff_adc)
+                        {
+                            pass_mask |= (1U << (i + 3));
+                        }
+                    } // for (; i <= m_count - 4; i += 4)
 
-                for (; i < m_count; i++)
+                    for (; i < m_count; i++)
+                    {
+                        const int8_t *cand_rq8 = cl_cands + (size_t)i * (size_t)frame_elem;
+                        float dist_sq = rq8_dist_asym_cutoff_f32(
+                            visited->query_rq8_adc, cand_rq8, frame_elem,
+                            cached_cutoff_adc
+                        );
+                        if (dist_sq <= cached_cutoff_adc)
+                        {
+                            pass_mask |= (1U << i);
+                        }
+                    }
+                }
+                else
                 {
-                    long cand_id = (long)cl->members[m_start + i].frame_id;
-                    const int8_t *cand_rq8 = model->rq8_dataset_buffer +
-                        (size_t)cand_id * (size_t)frame_elem;
-                    float dist_sq = rq8_dist_asym_cutoff_f32(
-                        visited->query_rq8_adc, cand_rq8, frame_elem,
-                        cached_cutoff_adc
-                    );
-                    if (dist_sq <= cached_cutoff_adc)
+                    for (; i <= m_count - 4; i += 4)
                     {
-                        pass_mask |= (1U << i);
+                        const int8_t *cands[4];
+                        cands[0] = model->rq8_dataset_buffer +
+                            (size_t)cl->members[m_start + i + 0].frame_id * (size_t)frame_elem;
+                        cands[1] = model->rq8_dataset_buffer +
+                            (size_t)cl->members[m_start + i + 1].frame_id * (size_t)frame_elem;
+                        cands[2] = model->rq8_dataset_buffer +
+                            (size_t)cl->members[m_start + i + 2].frame_id * (size_t)frame_elem;
+                        cands[3] = model->rq8_dataset_buffer +
+                            (size_t)cl->members[m_start + i + 3].frame_id * (size_t)frame_elem;
+
+                        float dsq[4];
+                        rq8_dist_asym_cutoff_batch_1x4(
+                            visited->query_rq8_adc, cands, frame_elem,
+                            cached_cutoff_adc, dsq
+                        );
+                        if (dsq[0] <= cached_cutoff_adc)
+                        {
+                            pass_mask |= (1U << (i + 0));
+                        }
+                        if (dsq[1] <= cached_cutoff_adc)
+                        {
+                            pass_mask |= (1U << (i + 1));
+                        }
+                        if (dsq[2] <= cached_cutoff_adc)
+                        {
+                            pass_mask |= (1U << (i + 2));
+                        }
+                        if (dsq[3] <= cached_cutoff_adc)
+                        {
+                            pass_mask |= (1U << (i + 3));
+                        }
+                    } // for (; i <= m_count - 4; i += 4)
+
+                    for (; i < m_count; i++)
+                    {
+                        long cand_id = (long)cl->members[m_start + i].frame_id;
+                        const int8_t *cand_rq8 = model->rq8_dataset_buffer +
+                            (size_t)cand_id * (size_t)frame_elem;
+                        float dist_sq = rq8_dist_asym_cutoff_f32(
+                            visited->query_rq8_adc, cand_rq8, frame_elem,
+                            cached_cutoff_adc
+                        );
+                        if (dist_sq <= cached_cutoff_adc)
+                        {
+                            pass_mask |= (1U << i);
+                        }
                     }
                 }
             }
             else if (visited->query_rq8 != NULL)
             {
-                for (int i = 0; i < m_count; i++)
+                if (cl->rq8_vectors != NULL)
                 {
-                    long cand_id = (long)cl->members[m_start + i].frame_id;
-                    const int8_t *cand_rq8 = model->rq8_dataset_buffer +
-                        (size_t)cand_id * (size_t)frame_elem;
-                    uint64_t ssd = rq8_dist_squared_cutoff_i8(
-                        visited->query_rq8, cand_rq8, frame_elem, cached_ssd_cutoff
-                    );
-                    if (ssd <= cached_ssd_cutoff)
+                    const int8_t *cl_cands = cl->rq8_vectors +
+                        (size_t)m_start * (size_t)frame_elem;
+                    for (int i = 0; i < m_count; i++)
                     {
-                        pass_mask |= (1U << i);
+                        const int8_t *cand_rq8 = cl_cands + (size_t)i * (size_t)frame_elem;
+                        uint64_t ssd = rq8_dist_squared_cutoff_i8(
+                            visited->query_rq8, cand_rq8, frame_elem, cached_ssd_cutoff
+                        );
+                        if (ssd <= cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << i);
+                        }
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < m_count; i++)
+                    {
+                        long cand_id = (long)cl->members[m_start + i].frame_id;
+                        const int8_t *cand_rq8 = model->rq8_dataset_buffer +
+                            (size_t)cand_id * (size_t)frame_elem;
+                        uint64_t ssd = rq8_dist_squared_cutoff_i8(
+                            visited->query_rq8, cand_rq8, frame_elem, cached_ssd_cutoff
+                        );
+                        if (ssd <= cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << i);
+                        }
                     }
                 }
             }
@@ -1092,75 +1164,147 @@ static void knn_eval_members_eq16_blocks(
                 pass_mask &= ((1U << m_count) - 1);
             }
         }
-        else if (config->use_eq16_sparse && model->eq16_dataset_buffer != NULL)
+        else if (config->use_eq16_sparse &&
+                 (cl->eq16_vectors != NULL || model->eq16_dataset_buffer != NULL))
         {
             telem->eq16_evaluations += (uint64_t)m_count;
             if (config->use_eq16_adc && visited->query_eq16_adc != NULL)
             {
                 int i = 0;
-                for (; i <= m_count - 4; i += 4)
+                if (cl->eq16_vectors != NULL)
                 {
-                    const int16_t *cands[4];
-                    cands[0] = model->eq16_dataset_buffer +
-                        (size_t)cl->members[m_start + i + 0].frame_id * (size_t)frame_elem;
-                    cands[1] = model->eq16_dataset_buffer +
-                        (size_t)cl->members[m_start + i + 1].frame_id * (size_t)frame_elem;
-                    cands[2] = model->eq16_dataset_buffer +
-                        (size_t)cl->members[m_start + i + 2].frame_id * (size_t)frame_elem;
-                    cands[3] = model->eq16_dataset_buffer +
-                        (size_t)cl->members[m_start + i + 3].frame_id * (size_t)frame_elem;
+                    const int16_t *cl_cands = cl->eq16_vectors +
+                        (size_t)m_start * (size_t)frame_elem;
+                    for (; i <= m_count - 4; i += 4)
+                    {
+                        const int16_t *cands[4];
+                        const int16_t *p = cl_cands + (size_t)i * (size_t)frame_elem;
+                        cands[0] = p;
+                        cands[1] = p + frame_elem;
+                        cands[2] = p + 2 * frame_elem;
+                        cands[3] = p + 3 * frame_elem;
 
-                    float dsq[4];
-                    eq16_dist_asym_cutoff_batch_1x4(
-                        visited->query_eq16_adc, cands, frame_elem,
-                        (float)cached_ssd_cutoff, dsq
-                    );
-                    if (dsq[0] <= (float)cached_ssd_cutoff)
-                    {
-                        pass_mask |= (1U << (i + 0));
-                    }
-                    if (dsq[1] <= (float)cached_ssd_cutoff)
-                    {
-                        pass_mask |= (1U << (i + 1));
-                    }
-                    if (dsq[2] <= (float)cached_ssd_cutoff)
-                    {
-                        pass_mask |= (1U << (i + 2));
-                    }
-                    if (dsq[3] <= (float)cached_ssd_cutoff)
-                    {
-                        pass_mask |= (1U << (i + 3));
-                    }
-                } // for (; i <= m_count - 4; i += 4)
+                        float dsq[4];
+                        eq16_dist_asym_cutoff_batch_1x4(
+                            visited->query_eq16_adc, cands, frame_elem,
+                            (float)cached_ssd_cutoff, dsq
+                        );
+                        if (dsq[0] <= (float)cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << (i + 0));
+                        }
+                        if (dsq[1] <= (float)cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << (i + 1));
+                        }
+                        if (dsq[2] <= (float)cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << (i + 2));
+                        }
+                        if (dsq[3] <= (float)cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << (i + 3));
+                        }
+                    } // for (; i <= m_count - 4; i += 4)
 
-                for (; i < m_count; i++)
+                    for (; i < m_count; i++)
+                    {
+                        const int16_t *cand_eq16 = cl_cands + (size_t)i * (size_t)frame_elem;
+                        float dist_sq = eq16_dist_asym_cutoff_f32(
+                            visited->query_eq16_adc, cand_eq16, frame_elem,
+                            (float)cached_ssd_cutoff
+                        );
+                        if (dist_sq <= (float)cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << i);
+                        }
+                    }
+                }
+                else
                 {
-                    long cand_id = (long)cl->members[m_start + i].frame_id;
-                    const int16_t *cand_eq16 = model->eq16_dataset_buffer +
-                        (size_t)cand_id * (size_t)frame_elem;
-                    float dist_sq = eq16_dist_asym_cutoff_f32(
-                        visited->query_eq16_adc, cand_eq16, frame_elem,
-                        (float)cached_ssd_cutoff
-                    );
-                    if (dist_sq <= (float)cached_ssd_cutoff)
+                    for (; i <= m_count - 4; i += 4)
                     {
-                        pass_mask |= (1U << i);
+                        const int16_t *cands[4];
+                        cands[0] = model->eq16_dataset_buffer +
+                            (size_t)cl->members[m_start + i + 0].frame_id * (size_t)frame_elem;
+                        cands[1] = model->eq16_dataset_buffer +
+                            (size_t)cl->members[m_start + i + 1].frame_id * (size_t)frame_elem;
+                        cands[2] = model->eq16_dataset_buffer +
+                            (size_t)cl->members[m_start + i + 2].frame_id * (size_t)frame_elem;
+                        cands[3] = model->eq16_dataset_buffer +
+                            (size_t)cl->members[m_start + i + 3].frame_id * (size_t)frame_elem;
+
+                        float dsq[4];
+                        eq16_dist_asym_cutoff_batch_1x4(
+                            visited->query_eq16_adc, cands, frame_elem,
+                            (float)cached_ssd_cutoff, dsq
+                        );
+                        if (dsq[0] <= (float)cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << (i + 0));
+                        }
+                        if (dsq[1] <= (float)cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << (i + 1));
+                        }
+                        if (dsq[2] <= (float)cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << (i + 2));
+                        }
+                        if (dsq[3] <= (float)cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << (i + 3));
+                        }
+                    } // for (; i <= m_count - 4; i += 4)
+
+                    for (; i < m_count; i++)
+                    {
+                        long cand_id = (long)cl->members[m_start + i].frame_id;
+                        const int16_t *cand_eq16 = model->eq16_dataset_buffer +
+                            (size_t)cand_id * (size_t)frame_elem;
+                        float dist_sq = eq16_dist_asym_cutoff_f32(
+                            visited->query_eq16_adc, cand_eq16, frame_elem,
+                            (float)cached_ssd_cutoff
+                        );
+                        if (dist_sq <= (float)cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << i);
+                        }
                     }
                 }
             }
             else if (visited->query_eq16 != NULL)
             {
-                for (int i = 0; i < m_count; i++)
+                if (cl->eq16_vectors != NULL)
                 {
-                    long cand_id = (long)cl->members[m_start + i].frame_id;
-                    const int16_t *cand_eq16 = model->eq16_dataset_buffer +
-                        (size_t)cand_id * (size_t)frame_elem;
-                    uint64_t ssd = eq16_dist_squared_cutoff_i16(
-                        visited->query_eq16, cand_eq16, frame_elem, cached_ssd_cutoff
-                    );
-                    if (ssd <= cached_ssd_cutoff)
+                    const int16_t *cl_cands = cl->eq16_vectors +
+                        (size_t)m_start * (size_t)frame_elem;
+                    for (int i = 0; i < m_count; i++)
                     {
-                        pass_mask |= (1U << i);
+                        const int16_t *cand_eq16 = cl_cands + (size_t)i * (size_t)frame_elem;
+                        uint64_t ssd = eq16_dist_squared_cutoff_i16(
+                            visited->query_eq16, cand_eq16, frame_elem, cached_ssd_cutoff
+                        );
+                        if (ssd <= cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << i);
+                        }
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < m_count; i++)
+                    {
+                        long cand_id = (long)cl->members[m_start + i].frame_id;
+                        const int16_t *cand_eq16 = model->eq16_dataset_buffer +
+                            (size_t)cand_id * (size_t)frame_elem;
+                        uint64_t ssd = eq16_dist_squared_cutoff_i16(
+                            visited->query_eq16, cand_eq16, frame_elem, cached_ssd_cutoff
+                        );
+                        if (ssd <= cached_ssd_cutoff)
+                        {
+                            pass_mask |= (1U << i);
+                        }
                     }
                 }
             }
@@ -1573,15 +1717,33 @@ static void knn_eval_members_annular(
 
         if (rq8_active)
         {
-            if (left >= 0)
+            if (cl->rq8_vectors != NULL)
             {
-                long pref_l = (long)cl->members[left].frame_id;
-                KNN_PREFETCH_T0(model->rq8_dataset_buffer + (size_t)pref_l * (size_t)frame_elem);
+                if (left >= 0)
+                {
+                    KNN_PREFETCH_T0(cl->rq8_vectors + (size_t)left * (size_t)frame_elem);
+                }
+                if (right < num_m)
+                {
+                    KNN_PREFETCH_T0(cl->rq8_vectors + (size_t)right * (size_t)frame_elem);
+                }
             }
-            if (right < num_m)
+            else
             {
-                long pref_r = (long)cl->members[right].frame_id;
-                KNN_PREFETCH_T0(model->rq8_dataset_buffer + (size_t)pref_r * (size_t)frame_elem);
+                if (left >= 0)
+                {
+                    long pref_l = (long)cl->members[left].frame_id;
+                    const int8_t *p_l = model->rq8_dataset_buffer +
+                        (size_t)pref_l * (size_t)frame_elem;
+                    KNN_PREFETCH_T0(p_l);
+                }
+                if (right < num_m)
+                {
+                    long pref_r = (long)cl->members[right].frame_id;
+                    const int8_t *p_r = model->rq8_dataset_buffer +
+                        (size_t)pref_r * (size_t)frame_elem;
+                    KNN_PREFETCH_T0(p_r);
+                }
             }
 
             if (current_tau != last_tau)
@@ -1611,8 +1773,9 @@ static void knn_eval_members_annular(
             }
             else
             {
-                const int8_t *cand_rq8 = model->rq8_dataset_buffer +
-                                         (size_t)cand_id * (size_t)frame_elem;
+                const int8_t *cand_rq8 = (cl->rq8_vectors != NULL)
+                    ? (cl->rq8_vectors + (size_t)m * (size_t)frame_elem)
+                    : (model->rq8_dataset_buffer + (size_t)cand_id * (size_t)frame_elem);
                 telem->rq8_evaluations++;
                 uint64_t ssd = rq8_dist_squared_cutoff_i8(
                     visited->query_rq8, cand_rq8, frame_elem, cached_ssd_cutoff
@@ -1626,15 +1789,33 @@ static void knn_eval_members_annular(
         }
         else if (!config->use_rq8 && eq16_active)
         {
-            if (left >= 0)
+            if (cl->eq16_vectors != NULL)
             {
-                long pref_l = (long)cl->members[left].frame_id;
-                KNN_PREFETCH_T0(model->eq16_dataset_buffer + (size_t)pref_l * (size_t)frame_elem);
+                if (left >= 0)
+                {
+                    KNN_PREFETCH_T0(cl->eq16_vectors + (size_t)left * (size_t)frame_elem);
+                }
+                if (right < num_m)
+                {
+                    KNN_PREFETCH_T0(cl->eq16_vectors + (size_t)right * (size_t)frame_elem);
+                }
             }
-            if (right < num_m)
+            else
             {
-                long pref_r = (long)cl->members[right].frame_id;
-                KNN_PREFETCH_T0(model->eq16_dataset_buffer + (size_t)pref_r * (size_t)frame_elem);
+                if (left >= 0)
+                {
+                    long pref_l = (long)cl->members[left].frame_id;
+                    const int16_t *p_l = model->eq16_dataset_buffer +
+                        (size_t)pref_l * (size_t)frame_elem;
+                    KNN_PREFETCH_T0(p_l);
+                }
+                if (right < num_m)
+                {
+                    long pref_r = (long)cl->members[right].frame_id;
+                    const int16_t *p_r = model->eq16_dataset_buffer +
+                        (size_t)pref_r * (size_t)frame_elem;
+                    KNN_PREFETCH_T0(p_r);
+                }
             }
 
             if (current_tau != last_tau)

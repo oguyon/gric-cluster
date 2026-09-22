@@ -1143,6 +1143,12 @@ void knn_model_free(
         model->rq8_transposed_buffer = NULL;
     }
 
+    if (model->frame_to_cluster_pos != NULL)
+    {
+        free(model->frame_to_cluster_pos);
+        model->frame_to_cluster_pos = NULL;
+    }
+
     if (model->pq_codebook != NULL)
     {
         pq_codebook_free(model->pq_codebook);
