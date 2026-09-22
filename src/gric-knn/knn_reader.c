@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 /**
  * check_is_fits_path() - Check if path has FITS extension.
@@ -279,6 +281,25 @@ int knn_reader_open(
             {
                 free(comment);
             }
+
+            int type_matches = (use_double && hdr.data_type == GRIC_BIN_DTYPE_FLOAT64) ||
+                               (!use_double && hdr.data_type == GRIC_BIN_DTYPE_FLOAT32);
+            if (type_matches)
+            {
+                int fd = fileno(fp_bin);
+                struct stat st;
+                if (fd >= 0 && fstat(fd, &st) == 0 && st.st_size > (off_t)hdr.header_bytes)
+                {
+                    void *addr = mmap(NULL, (size_t)st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+                    if (addr != MAP_FAILED)
+                    {
+                        posix_madvise(addr, (size_t)st.st_size, POSIX_MADV_WILLNEED);
+                        reader->bin_mmap_addr = addr;
+                        reader->bin_mmap_size = (size_t)st.st_size;
+                        reader->memory_data = (const char *)addr + hdr.header_bytes;
+                    }
+                }
+            }
             return 0;
         }
         if (comment != NULL)
@@ -363,6 +384,8 @@ int knn_reader_clone_thread(
     }
 
     memcpy(dst, src, sizeof(KnnFrameReader));
+    dst->bin_mmap_addr = NULL;
+    dst->bin_mmap_size = 0;
 
     if (src->memory_data != NULL)
     {
@@ -669,6 +692,14 @@ void knn_reader_close(
     if (reader == NULL)
     {
         return;
+    }
+
+    if (reader->bin_mmap_addr != NULL)
+    {
+        munmap(reader->bin_mmap_addr, reader->bin_mmap_size);
+        reader->bin_mmap_addr = NULL;
+        reader->bin_mmap_size = 0;
+        reader->memory_data = NULL;
     }
 
     knn_reader_close_thread(reader);

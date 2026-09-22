@@ -1263,6 +1263,76 @@ static inline __m128 eq16_reduce_4x256_ps(
     return _mm_hadd_ps(h01, h23);
 }
 
+/**
+ * eq16_dist_asym_resume_cutoff_avx2() - Resume single candidate asymmetric distance.
+ * @q_scaled:  Normalized query float vector.
+ * @cand_eq16: Quantized candidate int16 vector.
+ * @start_dim: Starting dimension index (multiple of 16).
+ * @dim:       Vector dimension.
+ * @init_sum:  Accumulated distance from earlier dimensions.
+ * @cutoff:    Cutoff threshold on sum of squared differences.
+ *
+ * Return: Sum of squared differences as float, or cutoff + 1.0f if exceeded.
+ */
+GRIC_TARGET_AVX2
+static float eq16_dist_asym_resume_cutoff_avx2(
+    const float   *restrict q_scaled,
+    const int16_t *restrict cand_eq16,
+    long                    start_dim,
+    long                    dim,
+    float                   init_sum,
+    float                   cutoff)
+{
+    long i = start_dim;
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    float total = init_sum;
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m128i c16_0 = _mm_loadu_si128((const __m128i *)(const void *)(cand_eq16 + i));
+        __m256i c32_0 = _mm256_cvtepi16_epi32(c16_0);
+        __m256  cf_0  = _mm256_cvtepi32_ps(c32_0);
+        __m256  q_0   = _mm256_loadu_ps(q_scaled + i);
+        __m256  diff0 = _mm256_sub_ps(q_0, cf_0);
+        acc0 = _mm256_fmadd_ps(diff0, diff0, acc0);
+
+        __m128i c16_1 = _mm_loadu_si128((const __m128i *)(const void *)(cand_eq16 + i + 8));
+        __m256i c32_1 = _mm256_cvtepi16_epi32(c16_1);
+        __m256  cf_1  = _mm256_cvtepi32_ps(c32_1);
+        __m256  q_1   = _mm256_loadu_ps(q_scaled + i + 8);
+        __m256  diff1 = _mm256_sub_ps(q_1, cf_1);
+        acc1 = _mm256_fmadd_ps(diff1, diff1, acc1);
+
+        if ((i & 63) == 48)
+        {
+            float partial = total + hsum256_ps(_mm256_add_ps(acc0, acc1));
+            if (partial > cutoff)
+            {
+                return cutoff * 1.01f + 1.0f;
+            }
+        }
+    } // for (; i <= dim - 16; i += 16)
+
+    total += hsum256_ps(_mm256_add_ps(acc0, acc1));
+    if (total > cutoff)
+    {
+        return cutoff * 1.01f + 1.0f;
+    }
+
+    for (; i < dim; i++)
+    {
+        float diff = q_scaled[i] - (float)cand_eq16[i];
+        total += diff * diff;
+        if (total > cutoff)
+        {
+            return cutoff * 1.01f + 1.0f;
+        }
+    } // for (; i < dim; i++)
+
+    return total;
+}
+
 GRIC_TARGET_AVX2
 static void eq16_dist_asym_cutoff_batch_1x4_avx2(
     const float         *restrict  q_scaled,
@@ -1340,9 +1410,25 @@ static void eq16_dist_asym_cutoff_batch_1x4_avx2(
         {
             __m128 sums = eq16_reduce_4x256_ps(acc0, acc1, acc2, acc3);
             __m128 cmp = _mm_cmpgt_ps(sums, vcutoff);
-            if (_mm_movemask_ps(cmp) == 0xF)
+            int dead_mask = _mm_movemask_ps(cmp);
+            if (dead_mask == 0xF)
             {
                 _mm_storeu_ps(out_dists, sums);
+                return;
+            }
+
+            int dead_count = __builtin_popcount((unsigned int)dead_mask);
+            if (dead_count >= 3 && i + 16 < dim)
+            {
+                _mm_storeu_ps(out_dists, sums);
+                for (int k = 0; k < 4; k++)
+                {
+                    if (!(dead_mask & (1 << k)))
+                    {
+                        out_dists[k] = eq16_dist_asym_resume_cutoff_avx2(
+                            q_scaled, cands[k], i + 16, dim, out_dists[k], cutoff);
+                    }
+                }
                 return;
             }
         }
@@ -1502,10 +1588,31 @@ static void eq16_dist_asym_cutoff_batch_1x8_avx2(
             __m128 sums_hi = eq16_reduce_4x256_ps(acc4, acc5, acc6, acc7);
             __m128 cmp_lo = _mm_cmpgt_ps(sums_lo, vcutoff);
             __m128 cmp_hi = _mm_cmpgt_ps(sums_hi, vcutoff);
-            if ((_mm_movemask_ps(cmp_lo) == 0xF) && (_mm_movemask_ps(cmp_hi) == 0xF))
+            int m_lo = _mm_movemask_ps(cmp_lo);
+            int m_hi = _mm_movemask_ps(cmp_hi);
+            int dead_mask = m_lo | (m_hi << 4);
+
+            if (dead_mask == 0xFF)
             {
                 _mm_storeu_ps(out_dists, sums_lo);
                 _mm_storeu_ps(out_dists + 4, sums_hi);
+                return;
+            }
+
+            int dead_count = __builtin_popcount((unsigned int)dead_mask);
+            if (dead_count >= 6 && i + 16 < dim)
+            {
+                _mm_storeu_ps(out_dists, sums_lo);
+                _mm_storeu_ps(out_dists + 4, sums_hi);
+
+                for (int k = 0; k < 8; k++)
+                {
+                    if (!(dead_mask & (1 << k)))
+                    {
+                        out_dists[k] = eq16_dist_asym_resume_cutoff_avx2(
+                            q_scaled, cands[k], i + 16, dim, out_dists[k], cutoff);
+                    }
+                }
                 return;
             }
         }
@@ -1542,6 +1649,76 @@ static void eq16_dist_asym_cutoff_batch_1x8_avx2(
 #endif // x86 AVX2
 
 #if GRIC_HAVE_AVX512_TARGET
+/**
+ * eq16_dist_asym_resume_cutoff_avx512() - Resume single candidate distance.
+ * @q_scaled:  Normalized query float vector.
+ * @cand_eq16: Quantized candidate int16 vector.
+ * @start_dim: Starting dimension index (multiple of 32).
+ * @dim:       Vector dimension.
+ * @init_sum:  Accumulated distance from earlier dimensions.
+ * @cutoff:    Cutoff threshold on sum of squared differences.
+ *
+ * Return: Sum of squared differences as float, or cutoff + 1.0f if exceeded.
+ */
+GRIC_TARGET_AVX512
+static float eq16_dist_asym_resume_cutoff_avx512(
+    const float   *restrict q_scaled,
+    const int16_t *restrict cand_eq16,
+    long                    start_dim,
+    long                    dim,
+    float                   init_sum,
+    float                   cutoff)
+{
+    long i = start_dim;
+    __m512 acc0 = _mm512_setzero_ps();
+    __m512 acc1 = _mm512_setzero_ps();
+    float total = init_sum;
+
+    for (; i <= dim - 32; i += 32)
+    {
+        __m256i c16_0 = _mm256_loadu_si256((const __m256i *)(const void *)(cand_eq16 + i));
+        __m512i c32_0 = _mm512_cvtepi16_epi32(c16_0);
+        __m512  cf_0  = _mm512_cvtepi32_ps(c32_0);
+        __m512  q_0   = _mm512_loadu_ps(q_scaled + i);
+        __m512  diff0 = _mm512_sub_ps(q_0, cf_0);
+        acc0 = _mm512_fmadd_ps(diff0, diff0, acc0);
+
+        __m256i c16_1 = _mm256_loadu_si256((const __m256i *)(const void *)(cand_eq16 + i + 16));
+        __m512i c32_1 = _mm512_cvtepi16_epi32(c16_1);
+        __m512  cf_1  = _mm512_cvtepi32_ps(c32_1);
+        __m512  q_1   = _mm512_loadu_ps(q_scaled + i + 16);
+        __m512  diff1 = _mm512_sub_ps(q_1, cf_1);
+        acc1 = _mm512_fmadd_ps(diff1, diff1, acc1);
+
+        if ((i & 63) == 32)
+        {
+            float partial = total + _mm512_reduce_add_ps(_mm512_add_ps(acc0, acc1));
+            if (partial > cutoff)
+            {
+                return cutoff * 1.01f + 1.0f;
+            }
+        }
+    } // for (; i <= dim - 32; i += 32)
+
+    total += _mm512_reduce_add_ps(_mm512_add_ps(acc0, acc1));
+    if (total > cutoff)
+    {
+        return cutoff * 1.01f + 1.0f;
+    }
+
+    for (; i < dim; i++)
+    {
+        float diff = q_scaled[i] - (float)cand_eq16[i];
+        total += diff * diff;
+        if (total > cutoff)
+        {
+            return cutoff * 1.01f + 1.0f;
+        }
+    } // for (; i < dim; i++)
+
+    return total;
+}
+
 GRIC_TARGET_AVX512
 static void eq16_dist_asym_cutoff_batch_1x4_avx512(
     const float         *restrict  q_scaled,
@@ -1623,9 +1800,25 @@ static void eq16_dist_asym_cutoff_batch_1x4_avx512(
                 _mm512_reduce_add_ps(acc1),
                 _mm512_reduce_add_ps(acc0));
             __m128 cmp = _mm_cmpgt_ps(sums, vcutoff);
-            if (_mm_movemask_ps(cmp) == 0xF)
+            int dead_mask = _mm_movemask_ps(cmp);
+            if (dead_mask == 0xF)
             {
                 _mm_storeu_ps(out_dists, sums);
+                return;
+            }
+
+            int dead_count = __builtin_popcount((unsigned int)dead_mask);
+            if (dead_count >= 3 && i + 32 < dim)
+            {
+                _mm_storeu_ps(out_dists, sums);
+                for (int k = 0; k < 4; k++)
+                {
+                    if (!(dead_mask & (1 << k)))
+                    {
+                        out_dists[k] = eq16_dist_asym_resume_cutoff_avx512(
+                            q_scaled, cands[k], i + 32, dim, out_dists[k], cutoff);
+                    }
+                }
                 return;
             }
         }
@@ -1797,10 +1990,31 @@ static void eq16_dist_asym_cutoff_batch_1x8_avx512(
                 _mm512_reduce_add_ps(acc4));
             __m128 cmp_lo = _mm_cmpgt_ps(sums_lo, vcutoff);
             __m128 cmp_hi = _mm_cmpgt_ps(sums_hi, vcutoff);
-            if ((_mm_movemask_ps(cmp_lo) == 0xF) && (_mm_movemask_ps(cmp_hi) == 0xF))
+            int m_lo = _mm_movemask_ps(cmp_lo);
+            int m_hi = _mm_movemask_ps(cmp_hi);
+            int dead_mask = m_lo | (m_hi << 4);
+
+            if (dead_mask == 0xFF)
             {
                 _mm_storeu_ps(out_dists, sums_lo);
                 _mm_storeu_ps(out_dists + 4, sums_hi);
+                return;
+            }
+
+            int dead_count = __builtin_popcount((unsigned int)dead_mask);
+            if (dead_count >= 6 && i + 32 < dim)
+            {
+                _mm_storeu_ps(out_dists, sums_lo);
+                _mm_storeu_ps(out_dists + 4, sums_hi);
+
+                for (int k = 0; k < 8; k++)
+                {
+                    if (!(dead_mask & (1 << k)))
+                    {
+                        out_dists[k] = eq16_dist_asym_resume_cutoff_avx512(
+                            q_scaled, cands[k], i + 32, dim, out_dists[k], cutoff);
+                    }
+                }
                 return;
             }
         }

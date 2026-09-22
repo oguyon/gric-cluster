@@ -269,10 +269,35 @@ static int load_anchors(
 
             if (!model->is_double && hdr.data_type == GRIC_BIN_DTYPE_FLOAT32)
             {
-                model->anchor_matrix = malloc(total_elements * sizeof(float));
-                if (model->anchor_matrix != NULL &&
-                    fread(model->anchor_matrix, sizeof(float), total_elements, a_bin) ==
-                    total_elements)
+                size_t exp_bytes = hdr.header_bytes + total_elements * sizeof(float);
+                int fd_a = fileno(a_bin);
+                struct stat st_a;
+                void *a_mmap = MAP_FAILED;
+
+                if (fd_a >= 0 && fstat(fd_a, &st_a) == 0 && (size_t)st_a.st_size >= exp_bytes)
+                {
+                    a_mmap = mmap(NULL, (size_t)st_a.st_size, PROT_READ, MAP_SHARED, fd_a, 0);
+                    if (a_mmap != MAP_FAILED)
+                    {
+                        posix_madvise(a_mmap, (size_t)st_a.st_size, POSIX_MADV_WILLNEED);
+                        model->anchor_mmap_addr = a_mmap;
+                        model->anchor_mmap_size = (size_t)st_a.st_size;
+                        model->anchor_matrix = (char *)a_mmap + hdr.header_bytes;
+                    }
+                }
+
+                if (model->anchor_matrix == NULL)
+                {
+                    model->anchor_matrix = malloc(total_elements * sizeof(float));
+                    if (model->anchor_matrix == NULL ||
+                        fread(model->anchor_matrix, sizeof(float), total_elements, a_bin) !=
+                        total_elements)
+                    {
+                        ok = 0;
+                    }
+                }
+
+                if (ok)
                 {
                     float *base = (float *)model->anchor_matrix;
                     for (int c = 0; c < M; c++)
@@ -281,17 +306,38 @@ static int load_anchors(
                             base + (size_t)c * (size_t)model->frame_elements;
                     }
                 }
-                else
-                {
-                    ok = 0;
-                }
             }
             else if (model->is_double && hdr.data_type == GRIC_BIN_DTYPE_FLOAT64)
             {
-                model->anchor_matrix = malloc(total_elements * sizeof(double));
-                if (model->anchor_matrix != NULL &&
-                    fread(model->anchor_matrix, sizeof(double), total_elements, a_bin) ==
-                    total_elements)
+                size_t exp_bytes = hdr.header_bytes + total_elements * sizeof(double);
+                int fd_a = fileno(a_bin);
+                struct stat st_a;
+                void *a_mmap = MAP_FAILED;
+
+                if (fd_a >= 0 && fstat(fd_a, &st_a) == 0 && (size_t)st_a.st_size >= exp_bytes)
+                {
+                    a_mmap = mmap(NULL, (size_t)st_a.st_size, PROT_READ, MAP_SHARED, fd_a, 0);
+                    if (a_mmap != MAP_FAILED)
+                    {
+                        posix_madvise(a_mmap, (size_t)st_a.st_size, POSIX_MADV_WILLNEED);
+                        model->anchor_mmap_addr = a_mmap;
+                        model->anchor_mmap_size = (size_t)st_a.st_size;
+                        model->anchor_matrix = (char *)a_mmap + hdr.header_bytes;
+                    }
+                }
+
+                if (model->anchor_matrix == NULL)
+                {
+                    model->anchor_matrix = malloc(total_elements * sizeof(double));
+                    if (model->anchor_matrix == NULL ||
+                        fread(model->anchor_matrix, sizeof(double), total_elements, a_bin) !=
+                        total_elements)
+                    {
+                        ok = 0;
+                    }
+                }
+
+                if (ok)
                 {
                     double *base = (double *)model->anchor_matrix;
                     for (int c = 0; c < M; c++)
@@ -299,10 +345,6 @@ static int load_anchors(
                         model->clusters[c].anchor_data =
                             base + (size_t)c * (size_t)model->frame_elements;
                     }
-                }
-                else
-                {
-                    ok = 0;
                 }
             }
             else if (hdr.data_type == GRIC_BIN_DTYPE_FLOAT32)
@@ -364,7 +406,16 @@ static int load_anchors(
 
             if (!ok && model->anchor_matrix != NULL)
             {
-                free(model->anchor_matrix);
+                if (model->anchor_mmap_addr != NULL)
+                {
+                    munmap(model->anchor_mmap_addr, model->anchor_mmap_size);
+                    model->anchor_mmap_addr = NULL;
+                    model->anchor_mmap_size = 0;
+                }
+                else
+                {
+                    free(model->anchor_matrix);
+                }
                 model->anchor_matrix = NULL;
             }
 
@@ -520,60 +571,96 @@ static int compute_exact_frame_anchor_radii(
         return -1;
     }
 
-    size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
-    void *fbuf = malloc((size_t)model->frame_elements * elem_size);
-    if (fbuf == NULL)
-    {
-        knn_reader_close(&reader);
-        return -1;
-    }
+    long N = model->total_dataset_frames;
+    long elem = model->frame_elements;
+    int is_double = model->is_double;
+    size_t elem_size = is_double ? sizeof(double) : sizeof(float);
 
-    for (int c = 0; c < model->num_clusters; c++)
+    if (reader.memory_data != NULL)
     {
-        model->clusters[c].radius = 0.0;
-        model->clusters[c].num_members = 0;
-    }
+        const char *mem = (const char *)reader.memory_data;
+        size_t frame_stride = (size_t)elem * elem_size;
 
-    for (long i = 0; i < model->total_dataset_frames; i++)
-    {
-        if (knn_reader_read_frame(&reader, i, fbuf) == 0)
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+        for (long i = 0; i < N; i++)
         {
             int c = model->frame_cluster_map[i];
             if (c >= 0 && c < model->num_clusters)
             {
+                const void *f_ptr = mem + (size_t)i * frame_stride;
                 double r = calc_euclidean_dist(
-                    fbuf,
+                    f_ptr,
                     model->clusters[c].anchor_data,
-                    model->frame_elements,
-                    model->is_double);
+                    elem,
+                    is_double);
                 model->frame_r_anchor[i] = (float)r;
+            }
+        }
+    }
+    else
+    {
+        void *fbuf = malloc((size_t)elem * elem_size);
+        if (fbuf == NULL)
+        {
+            knn_reader_close(&reader);
+            return -1;
+        }
 
-                int slot = model->clusters[c].num_members++;
-                model->clusters[c].members[slot].frame_id = (uint32_t)i;
-                model->clusters[c].members[slot].r_anchor = (float)r;
-
-                if (r > model->clusters[c].radius)
+        for (long i = 0; i < N; i++)
+        {
+            if (knn_reader_read_frame(&reader, i, fbuf) == 0)
+            {
+                int c = model->frame_cluster_map[i];
+                if (c >= 0 && c < model->num_clusters)
                 {
-                    model->clusters[c].radius = r;
+                    double r = calc_euclidean_dist(
+                        fbuf,
+                        model->clusters[c].anchor_data,
+                        elem,
+                        is_double);
+                    model->frame_r_anchor[i] = (float)r;
                 }
             }
         }
-    } // for (long i = 0; ...)
+        free(fbuf);
+    }
 
-    /* Sort each cluster's members array by ascending r_anchor for O(log N) binary search */
+    knn_reader_close(&reader);
+
+    /* Update each cluster's member radii, enclosing radius, and sort */
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(dynamic)
+#endif
     for (int c = 0; c < model->num_clusters; c++)
     {
-        if (model->clusters[c].num_members > 1)
+        double max_r = 0.0;
+        int num_m = model->clusters[c].num_members;
+        MemberMeta *mems = model->clusters[c].members;
+
+        for (int m = 0; m < num_m; m++)
         {
-            qsort(model->clusters[c].members,
-                  (size_t)model->clusters[c].num_members,
+            uint32_t fid = mems[m].frame_id;
+            float r = model->frame_r_anchor[fid];
+            mems[m].r_anchor = r;
+            if ((double)r > max_r)
+            {
+                max_r = (double)r;
+            }
+        }
+
+        model->clusters[c].radius = max_r;
+
+        if (num_m > 1)
+        {
+            qsort(mems,
+                  (size_t)num_m,
                   sizeof(MemberMeta),
                   knn_compare_member_meta_radii);
         }
     }
 
-    free(fbuf);
-    knn_reader_close(&reader);
     return 0;
 }
 
@@ -760,7 +847,6 @@ static int load_knn_graph(
                                           MAP_SHARED, fd_mut, 0);
                     if (mmap_mut != MAP_FAILED)
                     {
-                        posix_madvise(mmap_mut, (size_t)st_mut.st_size, POSIX_MADV_WILLNEED);
                         model->graph_mut_mmap_addr = mmap_mut;
                         model->graph_mut_mmap_size = (size_t)st_mut.st_size;
                         model->graph_mutual_dists =
@@ -1068,7 +1154,16 @@ void knn_model_free(
 
     if (model->anchor_matrix != NULL)
     {
-        free(model->anchor_matrix);
+        if (model->anchor_mmap_addr != NULL)
+        {
+            munmap(model->anchor_mmap_addr, model->anchor_mmap_size);
+            model->anchor_mmap_addr = NULL;
+            model->anchor_mmap_size = 0;
+        }
+        else
+        {
+            free(model->anchor_matrix);
+        }
         model->anchor_matrix = NULL;
     }
     else if (model->clusters != NULL)
