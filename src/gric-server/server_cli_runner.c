@@ -340,7 +340,7 @@ void handle_api_cli_run(
 
         while (access(done_path, F_OK) != 0)
         {
-            usleep(50000);
+            usleep(5000);
         }
 
         int exit_code = 0;

@@ -6765,15 +6765,19 @@
           const datasetFile = `${datasetBase}.bin`;
           const clusterDir = `${datasetBase}.clusterdat`;
 
-          // 1. Ensure staged coordinates exist in workspace file
-          if (pts && pts.length > 0) {
+          // 1. Check workspace files
+          const filesInWorkspace = await DesktopBridge.listFiles().catch(() => []);
+          const hasDatasetFile = filesInWorkspace.some(
+            f => (f.name === datasetFile || f.name === `${datasetBase}.bin`) && f.size > 0
+          );
+          if (!hasDatasetFile && pts && pts.length > 0) {
             await DesktopBridge.stageDatasetFile(datasetBase, pts).catch(() => {});
           }
 
           // 2. Check if clusterdat exists; if not, create clusters first
-          const filesInWorkspace = await DesktopBridge.listFiles().catch(() => []);
           let hasClusterDir = filesInWorkspace.some(
-            f => (f.name === clusterDir || f.name === `${datasetBase}.clusterdat`) && (f.is_dir || f.isDir)
+            f => (f.name === clusterDir || f.name === `${datasetBase}.clusterdat`) &&
+                 (f.is_dir || f.isDir)
           );
           if (!hasClusterDir) {
             const memClusters = (slot && slot.clusters && slot.clusters.length > 0)
@@ -6895,6 +6899,7 @@
           }
           args.push('-progress');
           args.push('-no-txt');
+          args.push('-no-mutual');
 
           const consoleEl = document.getElementById('cliConsoleLog');
           const btnRunCli = document.getElementById('btnRunCli');
@@ -7019,8 +7024,17 @@
 
           const totalWallMs = performance.now() - tKnnStart;
           const timeCompute = parsedTelem.timeSearchMs || 0.0;
+          const timeLoad = parsedTelem.timeLoadMs || 0.0;
+          const timeWrite = parsedTelem.timeWriteMs || 0.0;
+          const timeNative = (timeCompute > 0)
+            ? (timeLoad + timeCompute + timeWrite)
+            : 0.0;
           parsedTelem.timeComputeMs = timeCompute;
+          parsedTelem.timeLoadMs = timeLoad;
+          parsedTelem.timeWriteMs = timeWrite;
+          parsedTelem.timeNativeMs = timeNative;
           parsedTelem.timeTotalMs = totalWallMs;
+          parsedTelem.timeGuiOverheadMs = Math.max(0, totalWallMs - timeNative);
           parsedTelem.timeIoMs = Math.max(0, totalWallMs - timeCompute);
           nativeData.telemetry = parsedTelem;
 
@@ -7051,10 +7065,11 @@
             draw();
           }
           showKnnProgress(100, pts.length, pts.length, 0, totalWallMs / 1000.0, 0, 'Completed!');
+          const nativeNote = timeNative > 0
+            ? ` (Native ELF: ${timeNative.toFixed(1)} ms | GUI: ${totalWallMs.toFixed(1)} ms)`
+            : ` (GUI Wall: ${totalWallMs.toFixed(1)} ms)`;
           showToast(
-            `✅ Native k-NN computed: Total ${totalWallMs.toFixed(1)} ms ` +
-            `(Compute: ${timeCompute.toFixed(1)} ms, ` +
-            `I/O & IPC: ${parsedTelem.timeIoMs.toFixed(1)} ms)`
+            `✅ Native k-NN: Non-UI Compute ${timeCompute.toFixed(1)} ms${nativeNote}`
           );
         } else {
           // WASM / JS Execution
@@ -7090,7 +7105,9 @@
               ? results.telemetry.timeComputeMs
               : (results.telemetry?.timeSearchMs || 0.0);
             results.telemetry.timeComputeMs = timeCompute;
+            results.telemetry.timeNativeMs = timeCompute;
             results.telemetry.timeTotalMs = totalWallMs;
+            results.telemetry.timeGuiOverheadMs = Math.max(0, totalWallMs - timeCompute);
             results.telemetry.timeIoMs = Math.max(0, totalWallMs - timeCompute);
 
             clearKnnError();
@@ -7122,9 +7139,8 @@
             }
             showKnnProgress(100, N, N, 0, totalWallMs / 1000.0, 0, 'Completed!');
             showToast(
-              `⚡ k-NN computed: Total ${totalWallMs.toFixed(1)} ms ` +
-              `(Compute: ${timeCompute.toFixed(1)} ms, ` +
-              `I/O: ${results.telemetry.timeIoMs.toFixed(1)} ms)`
+              `⚡ k-NN computed: Non-UI Compute ${timeCompute.toFixed(1)} ms ` +
+              `(GUI Wall: ${totalWallMs.toFixed(1)} ms)`
             );
           } else {
             const errMsg = (results && results.error)
