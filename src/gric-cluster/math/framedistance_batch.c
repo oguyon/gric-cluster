@@ -217,6 +217,132 @@ void framedist_batch_1x4_float(
 
 #if GRIC_HAVE_AVX512_TARGET
 GRIC_TARGET_AVX512
+static int calc_dist4_cutoff_f32_avx512(
+    const float *restrict        q,
+    const float *const *restrict anchors,
+    long                         size,
+    double                       cutoff_sq,
+    double *restrict             out_dists)
+{
+    const float *restrict a0 = anchors[0];
+    const float *restrict a1 = anchors[1];
+    const float *restrict a2 = anchors[2];
+    const float *restrict a3 = anchors[3];
+
+    __m512 acc0_0 = _mm512_setzero_ps(), acc0_1 = _mm512_setzero_ps();
+    __m512 acc1_0 = _mm512_setzero_ps(), acc1_1 = _mm512_setzero_ps();
+    __m512 acc2_0 = _mm512_setzero_ps(), acc2_1 = _mm512_setzero_ps();
+    __m512 acc3_0 = _mm512_setzero_ps(), acc3_1 = _mm512_setzero_ps();
+
+    long i = 0;
+    for (; i <= size - 32; i += 32)
+    {
+        if (size >= 1024 && (i & 31) == 0)
+        {
+            _mm_prefetch((const char *)&q[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a0[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a1[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a2[i + 64], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a3[i + 64], _MM_HINT_T0);
+        }
+
+        __m512 vq0 = _mm512_loadu_ps(&q[i]);
+        __m512 d0_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a0[i]));
+        __m512 d1_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a1[i]));
+        __m512 d2_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a2[i]));
+        __m512 d3_0 = _mm512_sub_ps(vq0, _mm512_loadu_ps(&a3[i]));
+
+        acc0_0 = _mm512_fmadd_ps(d0_0, d0_0, acc0_0);
+        acc1_0 = _mm512_fmadd_ps(d1_0, d1_0, acc1_0);
+        acc2_0 = _mm512_fmadd_ps(d2_0, d2_0, acc2_0);
+        acc3_0 = _mm512_fmadd_ps(d3_0, d3_0, acc3_0);
+
+        __m512 vq1 = _mm512_loadu_ps(&q[i + 16]);
+        __m512 d0_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a0[i + 16]));
+        __m512 d1_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a1[i + 16]));
+        __m512 d2_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a2[i + 16]));
+        __m512 d3_1 = _mm512_sub_ps(vq1, _mm512_loadu_ps(&a3[i + 16]));
+
+        acc0_1 = _mm512_fmadd_ps(d0_1, d0_1, acc0_1);
+        acc1_1 = _mm512_fmadd_ps(d1_1, d1_1, acc1_1);
+        acc2_1 = _mm512_fmadd_ps(d2_1, d2_1, acc2_1);
+        acc3_1 = _mm512_fmadd_ps(d3_1, d3_1, acc3_1);
+
+        if (cutoff_sq > 0.0 && ((i & 63) == 32))
+        {
+            float s0 = _mm512_reduce_add_ps(_mm512_add_ps(acc0_0, acc0_1));
+            float s1 = _mm512_reduce_add_ps(_mm512_add_ps(acc1_0, acc1_1));
+            float s2 = _mm512_reduce_add_ps(_mm512_add_ps(acc2_0, acc2_1));
+            float s3 = _mm512_reduce_add_ps(_mm512_add_ps(acc3_0, acc3_1));
+            float fcut = (float)cutoff_sq;
+            if (s0 >= fcut && s1 >= fcut && s2 >= fcut && s3 >= fcut)
+            {
+                double dist_exceeded = sqrt(cutoff_sq) + 1.0;
+                out_dists[0] = dist_exceeded;
+                out_dists[1] = dist_exceeded;
+                out_dists[2] = dist_exceeded;
+                out_dists[3] = dist_exceeded;
+                return 0xF;
+            }
+        }
+    } // for (; i <= size - 32; i += 32)
+
+    float s0 = _mm512_reduce_add_ps(_mm512_add_ps(acc0_0, acc0_1));
+    float s1 = _mm512_reduce_add_ps(_mm512_add_ps(acc1_0, acc1_1));
+    float s2 = _mm512_reduce_add_ps(_mm512_add_ps(acc2_0, acc2_1));
+    float s3 = _mm512_reduce_add_ps(_mm512_add_ps(acc3_0, acc3_1));
+
+    for (; i <= size - 16; i += 16)
+    {
+        __m512 vq = _mm512_loadu_ps(&q[i]);
+        __m512 d0 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a0[i]));
+        __m512 d1 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a1[i]));
+        __m512 d2 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a2[i]));
+        __m512 d3 = _mm512_sub_ps(vq, _mm512_loadu_ps(&a3[i]));
+
+        s0 += _mm512_reduce_add_ps(_mm512_mul_ps(d0, d0));
+        s1 += _mm512_reduce_add_ps(_mm512_mul_ps(d1, d1));
+        s2 += _mm512_reduce_add_ps(_mm512_mul_ps(d2, d2));
+        s3 += _mm512_reduce_add_ps(_mm512_mul_ps(d3, d3));
+    } // for (; i <= size - 16; i += 16)
+
+    for (; i < size; i++)
+    {
+        float q_val = q[i];
+        float diff0 = q_val - a0[i]; s0 += diff0 * diff0;
+        float diff1 = q_val - a1[i]; s1 += diff1 * diff1;
+        float diff2 = q_val - a2[i]; s2 += diff2 * diff2;
+        float diff3 = q_val - a3[i]; s3 += diff3 * diff3;
+    }
+
+    int pruned_mask = 0;
+    if (cutoff_sq > 0.0)
+    {
+        double dist_exceeded = sqrt(cutoff_sq) + 1.0;
+        float fcut = (float)cutoff_sq;
+        if (s0 >= fcut) { pruned_mask |= 1; out_dists[0] = dist_exceeded; }
+        else            { out_dists[0] = (double)sqrtf(s0); }
+
+        if (s1 >= fcut) { pruned_mask |= 2; out_dists[1] = dist_exceeded; }
+        else            { out_dists[1] = (double)sqrtf(s1); }
+
+        if (s2 >= fcut) { pruned_mask |= 4; out_dists[2] = dist_exceeded; }
+        else            { out_dists[2] = (double)sqrtf(s2); }
+
+        if (s3 >= fcut) { pruned_mask |= 8; out_dists[3] = dist_exceeded; }
+        else            { out_dists[3] = (double)sqrtf(s3); }
+    }
+    else
+    {
+        out_dists[0] = (double)sqrtf(s0);
+        out_dists[1] = (double)sqrtf(s1);
+        out_dists[2] = (double)sqrtf(s2);
+        out_dists[3] = (double)sqrtf(s3);
+    }
+    return pruned_mask;
+}
+
+GRIC_TARGET_AVX512
 static void calc_dist8_f32_avx512(
     const float *restrict        q,
     const float *const *restrict anchors,
@@ -522,6 +648,265 @@ void framedist_batch_1x16_float(
 #endif
     framedist_batch_1x8_float(q, anchors, out_dists, size);
     framedist_batch_1x8_float(q, anchors + 8, out_dists + 8, size);
+}
+
+/**
+ * framedist_batch_cutoff_1x4_float() - 1 query vs 4 anchors with early-cutoff checkpoints.
+ * @q:         Pointer to query array.
+ * @anchors:   Array of 4 pointers to candidate anchor arrays.
+ * @size:      Number of elements in each array.
+ * @cutoff_sq: Squared distance threshold for early exit (<= 0.0 disables cutoff).
+ * @out_dists: Array of 4 doubles to receive computed distances.
+ *
+ * Checks partial squared distances periodically (every 64 elements). If all 4
+ * candidates exceed @cutoff_sq, aborts immediately.
+ *
+ * Return: Bitmask (0x0 to 0xF) where bit (1 << b) is 1 if candidate b exceeded cutoff_sq.
+ */
+int framedist_batch_cutoff_1x4_float(
+    const float *restrict        q,
+    const float *const *restrict anchors,
+    long                         size,
+    double                       cutoff_sq,
+    double *restrict             out_dists)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    {
+        return calc_dist4_cutoff_f32_avx512(q, anchors, size, cutoff_sq, out_dists);
+    }
+#endif
+    float sum0 = 0.0f;
+    float sum1 = 0.0f;
+    float sum2 = 0.0f;
+    float sum3 = 0.0f;
+    long i = 0;
+
+    const float *restrict a0 = anchors[0];
+    const float *restrict a1 = anchors[1];
+    const float *restrict a2 = anchors[2];
+    const float *restrict a3 = anchors[3];
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (size >= 16)
+    {
+        __m256 a0_0 = _mm256_setzero_ps(), a0_1 = _mm256_setzero_ps();
+        __m256 a1_0 = _mm256_setzero_ps(), a1_1 = _mm256_setzero_ps();
+        __m256 a2_0 = _mm256_setzero_ps(), a2_1 = _mm256_setzero_ps();
+        __m256 a3_0 = _mm256_setzero_ps(), a3_1 = _mm256_setzero_ps();
+
+        for (; i <= size - 16; i += 16)
+        {
+            __m256 vq0 = _mm256_loadu_ps(&q[i]);
+            __m256 d0_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a0[i]));
+            __m256 d1_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a1[i]));
+            __m256 d2_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a2[i]));
+            __m256 d3_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a3[i]));
+
+#ifdef __FMA__
+            a0_0 = _mm256_fmadd_ps(d0_0, d0_0, a0_0);
+            a1_0 = _mm256_fmadd_ps(d1_0, d1_0, a1_0);
+            a2_0 = _mm256_fmadd_ps(d2_0, d2_0, a2_0);
+            a3_0 = _mm256_fmadd_ps(d3_0, d3_0, a3_0);
+#else
+            a0_0 = _mm256_add_ps(a0_0, _mm256_mul_ps(d0_0, d0_0));
+            a1_0 = _mm256_add_ps(a1_0, _mm256_mul_ps(d1_0, d1_0));
+            a2_0 = _mm256_add_ps(a2_0, _mm256_mul_ps(d2_0, d2_0));
+            a3_0 = _mm256_add_ps(a3_0, _mm256_mul_ps(d3_0, d3_0));
+#endif
+
+            __m256 vq1 = _mm256_loadu_ps(&q[i + 8]);
+            __m256 d0_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a0[i + 8]));
+            __m256 d1_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a1[i + 8]));
+            __m256 d2_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a2[i + 8]));
+            __m256 d3_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a3[i + 8]));
+
+#ifdef __FMA__
+            a0_1 = _mm256_fmadd_ps(d0_1, d0_1, a0_1);
+            a1_1 = _mm256_fmadd_ps(d1_1, d1_1, a1_1);
+            a2_1 = _mm256_fmadd_ps(d2_1, d2_1, a2_1);
+            a3_1 = _mm256_fmadd_ps(d3_1, d3_1, a3_1);
+#else
+            a0_1 = _mm256_add_ps(a0_1, _mm256_mul_ps(d0_1, d0_1));
+            a1_1 = _mm256_add_ps(a1_1, _mm256_mul_ps(d1_1, d1_1));
+            a2_1 = _mm256_add_ps(a2_1, _mm256_mul_ps(d2_1, d2_1));
+            a3_1 = _mm256_add_ps(a3_1, _mm256_mul_ps(d3_1, d3_1));
+#endif
+
+            if (cutoff_sq > 0.0 && ((i & 63) == 48))
+            {
+                __m256 acc0 = _mm256_add_ps(a0_0, a0_1);
+                __m256 acc1 = _mm256_add_ps(a1_0, a1_1);
+                __m256 acc2 = _mm256_add_ps(a2_0, a2_1);
+                __m256 acc3 = _mm256_add_ps(a3_0, a3_1);
+
+                __m128 lo0 = _mm256_castps256_ps128(acc0);
+                __m128 hi0 = _mm256_extractf128_ps(acc0, 1);
+                __m128 s0 = _mm_add_ps(lo0, hi0);
+
+                __m128 lo1 = _mm256_castps256_ps128(acc1);
+                __m128 hi1 = _mm256_extractf128_ps(acc1, 1);
+                __m128 s1 = _mm_add_ps(lo1, hi1);
+
+                __m128 lo2 = _mm256_castps256_ps128(acc2);
+                __m128 hi2 = _mm256_extractf128_ps(acc2, 1);
+                __m128 s2 = _mm_add_ps(lo2, hi2);
+
+                __m128 lo3 = _mm256_castps256_ps128(acc3);
+                __m128 hi3 = _mm256_extractf128_ps(acc3, 1);
+                __m128 s3 = _mm_add_ps(lo3, hi3);
+
+                _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
+                __m128 sum01 = _mm_add_ps(s0, s1);
+                __m128 sum23 = _mm_add_ps(s2, s3);
+                __m128 final_sums = _mm_add_ps(sum01, sum23);
+
+                __m128 vcut = _mm_set1_ps((float)cutoff_sq);
+                __m128 cmp = _mm_cmpgt_ps(final_sums, vcut);
+                if (_mm_movemask_ps(cmp) == 0xF)
+                {
+                    double dist_exceeded = sqrt(cutoff_sq) + 1.0;
+                    out_dists[0] = dist_exceeded;
+                    out_dists[1] = dist_exceeded;
+                    out_dists[2] = dist_exceeded;
+                    out_dists[3] = dist_exceeded;
+                    return 0xF;
+                }
+            } // if (cutoff_sq > 0.0 && ((i & 63) == 48))
+        } // for (; i <= size - 16; i += 16)
+
+        for (; i <= size - 8; i += 8)
+        {
+            __m256 vq = _mm256_loadu_ps(&q[i]);
+            __m256 d0 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a0[i]));
+            __m256 d1 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a1[i]));
+            __m256 d2 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a2[i]));
+            __m256 d3 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a3[i]));
+
+#ifdef __FMA__
+            a0_0 = _mm256_fmadd_ps(d0, d0, a0_0);
+            a1_0 = _mm256_fmadd_ps(d1, d1, a1_0);
+            a2_0 = _mm256_fmadd_ps(d2, d2, a2_0);
+            a3_0 = _mm256_fmadd_ps(d3, d3, a3_0);
+#else
+            a0_0 = _mm256_add_ps(a0_0, _mm256_mul_ps(d0, d0));
+            a1_0 = _mm256_add_ps(a1_0, _mm256_mul_ps(d1, d1));
+            a2_0 = _mm256_add_ps(a2_0, _mm256_mul_ps(d2, d2));
+            a3_0 = _mm256_add_ps(a3_0, _mm256_mul_ps(d3, d3));
+#endif
+        } // for (; i <= size - 8; i += 8)
+
+        __m256 acc0 = _mm256_add_ps(a0_0, a0_1);
+        __m256 acc1 = _mm256_add_ps(a1_0, a1_1);
+        __m256 acc2 = _mm256_add_ps(a2_0, a2_1);
+        __m256 acc3 = _mm256_add_ps(a3_0, a3_1);
+
+        __m128 lo0 = _mm256_castps256_ps128(acc0);
+        __m128 hi0 = _mm256_extractf128_ps(acc0, 1);
+        __m128 s0 = _mm_add_ps(lo0, hi0);
+
+        __m128 lo1 = _mm256_castps256_ps128(acc1);
+        __m128 hi1 = _mm256_extractf128_ps(acc1, 1);
+        __m128 s1 = _mm_add_ps(lo1, hi1);
+
+        __m128 lo2 = _mm256_castps256_ps128(acc2);
+        __m128 hi2 = _mm256_extractf128_ps(acc2, 1);
+        __m128 s2 = _mm_add_ps(lo2, hi2);
+
+        __m128 lo3 = _mm256_castps256_ps128(acc3);
+        __m128 hi3 = _mm256_extractf128_ps(acc3, 1);
+        __m128 s3 = _mm_add_ps(lo3, hi3);
+
+        _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
+        __m128 sum01 = _mm_add_ps(s0, s1);
+        __m128 sum23 = _mm_add_ps(s2, s3);
+        __m128 final_sums = _mm_add_ps(sum01, sum23);
+
+        float fsums[4];
+        _mm_storeu_ps(fsums, final_sums);
+        sum0 += fsums[0];
+        sum1 += fsums[1];
+        sum2 += fsums[2];
+        sum3 += fsums[3];
+    } // if (size >= 16)
+#endif
+
+    for (; i < size; i++)
+    {
+        float q_val = q[i];
+        float diff0 = q_val - a0[i]; sum0 += diff0 * diff0;
+        float diff1 = q_val - a1[i]; sum1 += diff1 * diff1;
+        float diff2 = q_val - a2[i]; sum2 += diff2 * diff2;
+        float diff3 = q_val - a3[i]; sum3 += diff3 * diff3;
+
+        if (cutoff_sq > 0.0 && ((i & 63) == 63))
+        {
+            float fcut = (float)cutoff_sq;
+            if (sum0 >= fcut && sum1 >= fcut && sum2 >= fcut && sum3 >= fcut)
+            {
+                double dist_exceeded = sqrt(cutoff_sq) + 1.0;
+                out_dists[0] = dist_exceeded;
+                out_dists[1] = dist_exceeded;
+                out_dists[2] = dist_exceeded;
+                out_dists[3] = dist_exceeded;
+                return 0xF;
+            }
+        }
+    } // for (; i < size; i++)
+
+    int pruned_mask = 0;
+    if (cutoff_sq > 0.0)
+    {
+        double dist_exceeded = sqrt(cutoff_sq) + 1.0;
+        if ((double)sum0 >= cutoff_sq)
+        {
+            pruned_mask |= (1 << 0);
+            out_dists[0] = dist_exceeded;
+        }
+        else
+        {
+            out_dists[0] = (double)sqrtf(sum0);
+        }
+
+        if ((double)sum1 >= cutoff_sq)
+        {
+            pruned_mask |= (1 << 1);
+            out_dists[1] = dist_exceeded;
+        }
+        else
+        {
+            out_dists[1] = (double)sqrtf(sum1);
+        }
+
+        if ((double)sum2 >= cutoff_sq)
+        {
+            pruned_mask |= (1 << 2);
+            out_dists[2] = dist_exceeded;
+        }
+        else
+        {
+            out_dists[2] = (double)sqrtf(sum2);
+        }
+
+        if ((double)sum3 >= cutoff_sq)
+        {
+            pruned_mask |= (1 << 3);
+            out_dists[3] = dist_exceeded;
+        }
+        else
+        {
+            out_dists[3] = (double)sqrtf(sum3);
+        }
+    }
+    else
+    {
+        out_dists[0] = (double)sqrtf(sum0);
+        out_dists[1] = (double)sqrtf(sum1);
+        out_dists[2] = (double)sqrtf(sum2);
+        out_dists[3] = (double)sqrtf(sum3);
+    }
+    return pruned_mask;
 }
 
 /**
@@ -844,6 +1229,130 @@ void framedist_batch_1x16_contiguous_float(
 
 #if GRIC_HAVE_AVX512_TARGET
 GRIC_TARGET_AVX512
+static int calc_dist4_cutoff_d64_avx512(
+    const double *restrict        q,
+    const double *const *restrict anchors,
+    long                          size,
+    double                        cutoff_sq,
+    double *restrict              out_dists)
+{
+    const double *restrict a0 = anchors[0];
+    const double *restrict a1 = anchors[1];
+    const double *restrict a2 = anchors[2];
+    const double *restrict a3 = anchors[3];
+
+    __m512d acc0_0 = _mm512_setzero_pd(), acc0_1 = _mm512_setzero_pd();
+    __m512d acc1_0 = _mm512_setzero_pd(), acc1_1 = _mm512_setzero_pd();
+    __m512d acc2_0 = _mm512_setzero_pd(), acc2_1 = _mm512_setzero_pd();
+    __m512d acc3_0 = _mm512_setzero_pd(), acc3_1 = _mm512_setzero_pd();
+
+    long i = 0;
+    for (; i <= size - 16; i += 16)
+    {
+        if (size >= 512 && (i & 31) == 0)
+        {
+            _mm_prefetch((const char *)&q[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a0[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a1[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a2[i + 32], _MM_HINT_T0);
+            _mm_prefetch((const char *)&a3[i + 32], _MM_HINT_T0);
+        }
+
+        __m512d vq0 = _mm512_loadu_pd(&q[i]);
+        __m512d d0_0 = _mm512_sub_pd(vq0, _mm512_loadu_pd(&a0[i]));
+        __m512d d1_0 = _mm512_sub_pd(vq0, _mm512_loadu_pd(&a1[i]));
+        __m512d d2_0 = _mm512_sub_pd(vq0, _mm512_loadu_pd(&a2[i]));
+        __m512d d3_0 = _mm512_sub_pd(vq0, _mm512_loadu_pd(&a3[i]));
+
+        acc0_0 = _mm512_fmadd_pd(d0_0, d0_0, acc0_0);
+        acc1_0 = _mm512_fmadd_pd(d1_0, d1_0, acc1_0);
+        acc2_0 = _mm512_fmadd_pd(d2_0, d2_0, acc2_0);
+        acc3_0 = _mm512_fmadd_pd(d3_0, d3_0, acc3_0);
+
+        __m512d vq1 = _mm512_loadu_pd(&q[i + 8]);
+        __m512d d0_1 = _mm512_sub_pd(vq1, _mm512_loadu_pd(&a0[i + 8]));
+        __m512d d1_1 = _mm512_sub_pd(vq1, _mm512_loadu_pd(&a1[i + 8]));
+        __m512d d2_1 = _mm512_sub_pd(vq1, _mm512_loadu_pd(&a2[i + 8]));
+        __m512d d3_1 = _mm512_sub_pd(vq1, _mm512_loadu_pd(&a3[i + 8]));
+
+        acc0_1 = _mm512_fmadd_pd(d0_1, d0_1, acc0_1);
+        acc1_1 = _mm512_fmadd_pd(d1_1, d1_1, acc1_1);
+        acc2_1 = _mm512_fmadd_pd(d2_1, d2_1, acc2_1);
+        acc3_1 = _mm512_fmadd_pd(d3_1, d3_1, acc3_1);
+
+        if (cutoff_sq > 0.0 && ((i & 63) == 48))
+        {
+            double s0 = _mm512_reduce_add_pd(_mm512_add_pd(acc0_0, acc0_1));
+            double s1 = _mm512_reduce_add_pd(_mm512_add_pd(acc1_0, acc1_1));
+            double s2 = _mm512_reduce_add_pd(_mm512_add_pd(acc2_0, acc2_1));
+            double s3 = _mm512_reduce_add_pd(_mm512_add_pd(acc3_0, acc3_1));
+            if (s0 >= cutoff_sq && s1 >= cutoff_sq && s2 >= cutoff_sq && s3 >= cutoff_sq)
+            {
+                double dist_exceeded = sqrt(cutoff_sq) + 1.0;
+                out_dists[0] = dist_exceeded;
+                out_dists[1] = dist_exceeded;
+                out_dists[2] = dist_exceeded;
+                out_dists[3] = dist_exceeded;
+                return 0xF;
+            }
+        }
+    } // for (; i <= size - 16; i += 16)
+
+    double s0 = _mm512_reduce_add_pd(_mm512_add_pd(acc0_0, acc0_1));
+    double s1 = _mm512_reduce_add_pd(_mm512_add_pd(acc1_0, acc1_1));
+    double s2 = _mm512_reduce_add_pd(_mm512_add_pd(acc2_0, acc2_1));
+    double s3 = _mm512_reduce_add_pd(_mm512_add_pd(acc3_0, acc3_1));
+
+    for (; i <= size - 8; i += 8)
+    {
+        __m512d vq = _mm512_loadu_pd(&q[i]);
+        __m512d d0 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a0[i]));
+        __m512d d1 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a1[i]));
+        __m512d d2 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a2[i]));
+        __m512d d3 = _mm512_sub_pd(vq, _mm512_loadu_pd(&a3[i]));
+
+        s0 += _mm512_reduce_add_pd(_mm512_mul_pd(d0, d0));
+        s1 += _mm512_reduce_add_pd(_mm512_mul_pd(d1, d1));
+        s2 += _mm512_reduce_add_pd(_mm512_mul_pd(d2, d2));
+        s3 += _mm512_reduce_add_pd(_mm512_mul_pd(d3, d3));
+    } // for (; i <= size - 8; i += 8)
+
+    for (; i < size; i++)
+    {
+        double q_val = q[i];
+        double diff0 = q_val - a0[i]; s0 += diff0 * diff0;
+        double diff1 = q_val - a1[i]; s1 += diff1 * diff1;
+        double diff2 = q_val - a2[i]; s2 += diff2 * diff2;
+        double diff3 = q_val - a3[i]; s3 += diff3 * diff3;
+    }
+
+    int pruned_mask = 0;
+    if (cutoff_sq > 0.0)
+    {
+        double dist_exceeded = sqrt(cutoff_sq) + 1.0;
+        if (s0 >= cutoff_sq) { pruned_mask |= 1; out_dists[0] = dist_exceeded; }
+        else                 { out_dists[0] = sqrt(s0); }
+
+        if (s1 >= cutoff_sq) { pruned_mask |= 2; out_dists[1] = dist_exceeded; }
+        else                 { out_dists[1] = sqrt(s1); }
+
+        if (s2 >= cutoff_sq) { pruned_mask |= 4; out_dists[2] = dist_exceeded; }
+        else                 { out_dists[2] = sqrt(s2); }
+
+        if (s3 >= cutoff_sq) { pruned_mask |= 8; out_dists[3] = dist_exceeded; }
+        else                 { out_dists[3] = sqrt(s3); }
+    }
+    else
+    {
+        out_dists[0] = sqrt(s0);
+        out_dists[1] = sqrt(s1);
+        out_dists[2] = sqrt(s2);
+        out_dists[3] = sqrt(s3);
+    }
+    return pruned_mask;
+}
+
+GRIC_TARGET_AVX512
 static void calc_dist4_d64_avx512(
     const double *restrict        q,
     const double *const *restrict anchors,
@@ -1081,6 +1590,257 @@ void framedist_batch_1x4_double(
     out_dists[1] = sqrt(sum1);
     out_dists[2] = sqrt(sum2);
     out_dists[3] = sqrt(sum3);
+}
+
+/**
+ * framedist_batch_cutoff_1x4_double() - 1 query vs 4 anchors with early-cutoff for double.
+ * @q:         Pointer to query array.
+ * @anchors:   Array of 4 pointers to candidate anchor arrays.
+ * @size:      Number of elements in each array.
+ * @cutoff_sq: Squared distance threshold for early exit (<= 0.0 disables cutoff).
+ * @out_dists: Array of 4 doubles to receive computed distances.
+ *
+ * Checks partial squared distances periodically (every 64 elements). If all 4
+ * candidates exceed @cutoff_sq, aborts immediately.
+ *
+ * Return: Bitmask (0x0 to 0xF) where bit (1 << b) is 1 if candidate b exceeded cutoff_sq.
+ */
+int framedist_batch_cutoff_1x4_double(
+    const double *restrict        q,
+    const double *const *restrict anchors,
+    long                          size,
+    double                        cutoff_sq,
+    double *restrict              out_dists)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 8)
+    {
+        return calc_dist4_cutoff_d64_avx512(q, anchors, size, cutoff_sq, out_dists);
+    }
+#endif
+    double sum0 = 0.0;
+    double sum1 = 0.0;
+    double sum2 = 0.0;
+    double sum3 = 0.0;
+    long i = 0;
+
+    const double *restrict a0 = anchors[0];
+    const double *restrict a1 = anchors[1];
+    const double *restrict a2 = anchors[2];
+    const double *restrict a3 = anchors[3];
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (size >= 8)
+    {
+        __m256d a0_0 = _mm256_setzero_pd(), a0_1 = _mm256_setzero_pd();
+        __m256d a1_0 = _mm256_setzero_pd(), a1_1 = _mm256_setzero_pd();
+        __m256d a2_0 = _mm256_setzero_pd(), a2_1 = _mm256_setzero_pd();
+        __m256d a3_0 = _mm256_setzero_pd(), a3_1 = _mm256_setzero_pd();
+
+        for (; i <= size - 8; i += 8)
+        {
+            __m256d vq0 = _mm256_loadu_pd(&q[i]);
+            __m256d d0_0 = _mm256_sub_pd(vq0, _mm256_loadu_pd(&a0[i]));
+            __m256d d1_0 = _mm256_sub_pd(vq0, _mm256_loadu_pd(&a1[i]));
+            __m256d d2_0 = _mm256_sub_pd(vq0, _mm256_loadu_pd(&a2[i]));
+            __m256d d3_0 = _mm256_sub_pd(vq0, _mm256_loadu_pd(&a3[i]));
+
+#ifdef __FMA__
+            a0_0 = _mm256_fmadd_pd(d0_0, d0_0, a0_0);
+            a1_0 = _mm256_fmadd_pd(d1_0, d1_0, a1_0);
+            a2_0 = _mm256_fmadd_pd(d2_0, d2_0, a2_0);
+            a3_0 = _mm256_fmadd_pd(d3_0, d3_0, a3_0);
+#else
+            a0_0 = _mm256_add_pd(a0_0, _mm256_mul_pd(d0_0, d0_0));
+            a1_0 = _mm256_add_pd(a1_0, _mm256_mul_pd(d1_0, d1_0));
+            a2_0 = _mm256_add_pd(a2_0, _mm256_mul_pd(d2_0, d2_0));
+            a3_0 = _mm256_add_pd(a3_0, _mm256_mul_pd(d3_0, d3_0));
+#endif
+
+            __m256d vq1 = _mm256_loadu_pd(&q[i + 4]);
+            __m256d d0_1 = _mm256_sub_pd(vq1, _mm256_loadu_pd(&a0[i + 4]));
+            __m256d d1_1 = _mm256_sub_pd(vq1, _mm256_loadu_pd(&a1[i + 4]));
+            __m256d d2_1 = _mm256_sub_pd(vq1, _mm256_loadu_pd(&a2[i + 4]));
+            __m256d d3_1 = _mm256_sub_pd(vq1, _mm256_loadu_pd(&a3[i + 4]));
+
+#ifdef __FMA__
+            a0_1 = _mm256_fmadd_pd(d0_1, d0_1, a0_1);
+            a1_1 = _mm256_fmadd_pd(d1_1, d1_1, a1_1);
+            a2_1 = _mm256_fmadd_pd(d2_1, d2_1, a2_1);
+            a3_1 = _mm256_fmadd_pd(d3_1, d3_1, a3_1);
+#else
+            a0_1 = _mm256_add_pd(a0_1, _mm256_mul_pd(d0_1, d0_1));
+            a1_1 = _mm256_add_pd(a1_1, _mm256_mul_pd(d1_1, d1_1));
+            a2_1 = _mm256_add_pd(a2_1, _mm256_mul_pd(d2_1, d2_1));
+            a3_1 = _mm256_add_pd(a3_1, _mm256_mul_pd(d3_1, d3_1));
+#endif
+
+            if (cutoff_sq > 0.0 && ((i & 63) == 56))
+            {
+                __m256d acc0 = _mm256_add_pd(a0_0, a0_1);
+                __m256d acc1 = _mm256_add_pd(a1_0, a1_1);
+                __m256d acc2 = _mm256_add_pd(a2_0, a2_1);
+                __m256d acc3 = _mm256_add_pd(a3_0, a3_1);
+
+                __m128d lo0 = _mm256_castpd256_pd128(acc0);
+                __m128d hi0 = _mm256_extractf128_pd(acc0, 1);
+                __m128d s0 = _mm_add_pd(lo0, hi0);
+
+                __m128d lo1 = _mm256_castpd256_pd128(acc1);
+                __m128d hi1 = _mm256_extractf128_pd(acc1, 1);
+                __m128d s1 = _mm_add_pd(lo1, hi1);
+
+                __m128d lo2 = _mm256_castpd256_pd128(acc2);
+                __m128d hi2 = _mm256_extractf128_pd(acc2, 1);
+                __m128d s2 = _mm_add_pd(lo2, hi2);
+
+                __m128d lo3 = _mm256_castpd256_pd128(acc3);
+                __m128d hi3 = _mm256_extractf128_pd(acc3, 1);
+                __m128d s3 = _mm_add_pd(lo3, hi3);
+
+                double cur0 = _mm_cvtsd_f64(_mm_add_sd(s0, _mm_unpackhi_pd(s0, s0)));
+                double cur1 = _mm_cvtsd_f64(_mm_add_sd(s1, _mm_unpackhi_pd(s1, s1)));
+                double cur2 = _mm_cvtsd_f64(_mm_add_sd(s2, _mm_unpackhi_pd(s2, s2)));
+                double cur3 = _mm_cvtsd_f64(_mm_add_sd(s3, _mm_unpackhi_pd(s3, s3)));
+
+                if (cur0 >= cutoff_sq && cur1 >= cutoff_sq &&
+                    cur2 >= cutoff_sq && cur3 >= cutoff_sq)
+                {
+                    double dist_exceeded = sqrt(cutoff_sq) + 1.0;
+                    out_dists[0] = dist_exceeded;
+                    out_dists[1] = dist_exceeded;
+                    out_dists[2] = dist_exceeded;
+                    out_dists[3] = dist_exceeded;
+                    return 0xF;
+                }
+            } // if (cutoff_sq > 0.0 && ((i & 63) == 56))
+        } // for (; i <= size - 8; i += 8)
+
+        for (; i <= size - 4; i += 4)
+        {
+            __m256d vq = _mm256_loadu_pd(&q[i]);
+            __m256d d0 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a0[i]));
+            __m256d d1 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a1[i]));
+            __m256d d2 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a2[i]));
+            __m256d d3 = _mm256_sub_pd(vq, _mm256_loadu_pd(&a3[i]));
+
+#ifdef __FMA__
+            a0_0 = _mm256_fmadd_pd(d0, d0, a0_0);
+            a1_0 = _mm256_fmadd_pd(d1, d1, a1_0);
+            a2_0 = _mm256_fmadd_pd(d2, d2, a2_0);
+            a3_0 = _mm256_fmadd_pd(d3, d3, a3_0);
+#else
+            a0_0 = _mm256_add_pd(a0_0, _mm256_mul_pd(d0, d0));
+            a1_0 = _mm256_add_pd(a1_0, _mm256_mul_pd(d1, d1));
+            a2_0 = _mm256_add_pd(a2_0, _mm256_mul_pd(d2, d2));
+            a3_0 = _mm256_add_pd(a3_0, _mm256_mul_pd(d3, d3));
+#endif
+        } // for (; i <= size - 4; i += 4)
+
+        __m256d acc0 = _mm256_add_pd(a0_0, a0_1);
+        __m256d acc1 = _mm256_add_pd(a1_0, a1_1);
+        __m256d acc2 = _mm256_add_pd(a2_0, a2_1);
+        __m256d acc3 = _mm256_add_pd(a3_0, a3_1);
+
+        __m128d lo0 = _mm256_castpd256_pd128(acc0);
+        __m128d hi0 = _mm256_extractf128_pd(acc0, 1);
+        __m128d s0 = _mm_add_pd(lo0, hi0);
+
+        __m128d lo1 = _mm256_castpd256_pd128(acc1);
+        __m128d hi1 = _mm256_extractf128_pd(acc1, 1);
+        __m128d s1 = _mm_add_pd(lo1, hi1);
+
+        __m128d lo2 = _mm256_castpd256_pd128(acc2);
+        __m128d hi2 = _mm256_extractf128_pd(acc2, 1);
+        __m128d s2 = _mm_add_pd(lo2, hi2);
+
+        __m128d lo3 = _mm256_castpd256_pd128(acc3);
+        __m128d hi3 = _mm256_extractf128_pd(acc3, 1);
+        __m128d s3 = _mm_add_pd(lo3, hi3);
+
+        sum0 += _mm_cvtsd_f64(_mm_add_sd(s0, _mm_unpackhi_pd(s0, s0)));
+        sum1 += _mm_cvtsd_f64(_mm_add_sd(s1, _mm_unpackhi_pd(s1, s1)));
+        sum2 += _mm_cvtsd_f64(_mm_add_sd(s2, _mm_unpackhi_pd(s2, s2)));
+        sum3 += _mm_cvtsd_f64(_mm_add_sd(s3, _mm_unpackhi_pd(s3, s3)));
+    } // if (size >= 8)
+#endif
+
+    for (; i < size; i++)
+    {
+        double q_val = q[i];
+        double diff0 = q_val - a0[i]; sum0 += diff0 * diff0;
+        double diff1 = q_val - a1[i]; sum1 += diff1 * diff1;
+        double diff2 = q_val - a2[i]; sum2 += diff2 * diff2;
+        double diff3 = q_val - a3[i]; sum3 += diff3 * diff3;
+
+        if (cutoff_sq > 0.0 && ((i & 63) == 63))
+        {
+            if (sum0 >= cutoff_sq && sum1 >= cutoff_sq &&
+                sum2 >= cutoff_sq && sum3 >= cutoff_sq)
+            {
+                double dist_exceeded = sqrt(cutoff_sq) + 1.0;
+                out_dists[0] = dist_exceeded;
+                out_dists[1] = dist_exceeded;
+                out_dists[2] = dist_exceeded;
+                out_dists[3] = dist_exceeded;
+                return 0xF;
+            }
+        }
+    } // for (; i < size; i++)
+
+    int pruned_mask = 0;
+    if (cutoff_sq > 0.0)
+    {
+        double dist_exceeded = sqrt(cutoff_sq) + 1.0;
+        if (sum0 >= cutoff_sq)
+        {
+            pruned_mask |= (1 << 0);
+            out_dists[0] = dist_exceeded;
+        }
+        else
+        {
+            out_dists[0] = sqrt(sum0);
+        }
+
+        if (sum1 >= cutoff_sq)
+        {
+            pruned_mask |= (1 << 1);
+            out_dists[1] = dist_exceeded;
+        }
+        else
+        {
+            out_dists[1] = sqrt(sum1);
+        }
+
+        if (sum2 >= cutoff_sq)
+        {
+            pruned_mask |= (1 << 2);
+            out_dists[2] = dist_exceeded;
+        }
+        else
+        {
+            out_dists[2] = sqrt(sum2);
+        }
+
+        if (sum3 >= cutoff_sq)
+        {
+            pruned_mask |= (1 << 3);
+            out_dists[3] = dist_exceeded;
+        }
+        else
+        {
+            out_dists[3] = sqrt(sum3);
+        }
+    }
+    else
+    {
+        out_dists[0] = sqrt(sum0);
+        out_dists[1] = sqrt(sum1);
+        out_dists[2] = sqrt(sum2);
+        out_dists[3] = sqrt(sum3);
+    }
+    return pruned_mask;
 }
 
 /**

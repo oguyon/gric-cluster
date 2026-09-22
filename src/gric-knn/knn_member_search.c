@@ -88,66 +88,92 @@ void knn_batch_flush(
 
     int count = batch->count;
     long frame_elem = model->frame_elements;
-    double dists[8];
 
-    if (count == 8)
+    double eps_factor = 1.0 + (double)config->epsilon;
+    double tau_thresh = (double)heap->tau / eps_factor;
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
     {
+        tau_thresh = config->rlim_cutoff;
+    }
+
+    double cutoff_sq = 0.0;
+    if (heap->count >= heap->k || config->rlim_cutoff > 0.0)
+    {
+        cutoff_sq = tau_thresh * tau_thresh;
+    }
+
+    int b = 0;
+    for (; b <= count - 4; b += 4)
+    {
+        double chunk_dists[4];
+        int pruned_mask = 0;
+
         if (model->is_double)
         {
-            framedist_batch_1x8_double(
+            pruned_mask = framedist_batch_cutoff_1x4_double(
                 (const double *)query_data,
-                (const double *const *)batch->ptrs,
-                dists,
-                frame_elem);
+                (const double *const *)(batch->ptrs + b),
+                frame_elem,
+                cutoff_sq,
+                chunk_dists);
         }
         else
         {
-            framedist_batch_1x8_float(
+            pruned_mask = framedist_batch_cutoff_1x4_float(
                 (const float *)query_data,
-                (const float *const *)batch->ptrs,
-                dists,
-                frame_elem);
+                (const float *const *)(batch->ptrs + b),
+                frame_elem,
+                cutoff_sq,
+                chunk_dists);
         }
-        telem->framedist_calls += 8;
-    }
-    else
-    {
-        if (model->is_double)
-        {
-            framedist_batch_double(
-                (const double *)query_data,
-                (const double *const *)batch->ptrs,
-                count,
-                dists,
-                frame_elem);
-        }
-        else
-        {
-            framedist_batch_float(
-                (const float *)query_data,
-                (const float *const *)batch->ptrs,
-                count,
-                dists,
-                frame_elem);
-        }
-        telem->framedist_calls += (uint64_t)count;
-    }
+        telem->framedist_calls += 4;
 
-    for (int b = 0; b < count; b++)
-    {
-        record_neighbor_and_reciprocal(
-            query_id,
-            batch->cand_ids[b],
-            dists[b],
-            config,
-            model,
-            heap,
-            all_heaps
+        for (int k = 0; k < 4; k++)
+        {
+            if ((pruned_mask & (1 << k)) == 0)
+            {
+                record_neighbor_and_reciprocal(
+                    query_id,
+                    batch->cand_ids[b + k],
+                    chunk_dists[k],
+                    config,
+                    model,
+                    heap,
+                    all_heaps
 #ifdef _OPENMP
-            , bucket_locks
+                    , bucket_locks
 #endif
-        );
-    } // for (int b = 0; b < count; b++)
+                );
+            }
+        } // for (int k = 0; k < 4; k++)
+    } // for (; b <= count - 4; b += 4)
+
+    for (; b < count; b++)
+    {
+        telem->framedist_calls++;
+        double d_exact = compute_euclidean_distance_cutoff(
+            query_data,
+            batch->ptrs[b],
+            frame_elem,
+            model->is_double,
+            cutoff_sq);
+
+        if (cutoff_sq <= 0.0 || d_exact <= tau_thresh)
+        {
+            record_neighbor_and_reciprocal(
+                query_id,
+                batch->cand_ids[b],
+                d_exact,
+                config,
+                model,
+                heap,
+                all_heaps
+#ifdef _OPENMP
+                , bucket_locks
+#endif
+            );
+        }
+    } // for (; b < count; b++)
 
     batch->count = 0;
 }
@@ -295,7 +321,7 @@ static inline void knn_append_or_eval_candidate(
         batch->cand_ids[batch->count] = cand_id;
         batch->ptrs[batch->count] = cand_ptr;
         batch->count++;
-        if (batch->count == 8)
+        if (batch->count == 4)
         {
             knn_batch_flush(
                 batch, query_id, query_data, model, config, heap, all_heaps,
@@ -308,15 +334,26 @@ static inline void knn_append_or_eval_candidate(
     else
     {
         telem->framedist_calls++;
-        double d_exact = compute_euclidean_distance(
-            query_data, cand_ptr, model->frame_elements, model->is_double
+        double eps_factor = 1.0 + (double)config->epsilon;
+        double tau_thresh = (double)heap->tau / eps_factor;
+        if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
+        {
+            tau_thresh = config->rlim_cutoff;
+        }
+        double cutoff_sq = (heap->count >= heap->k || config->rlim_cutoff > 0.0)
+                         ? (tau_thresh * tau_thresh) : 0.0;
+        double d_exact = compute_euclidean_distance_cutoff(
+            query_data, cand_ptr, model->frame_elements, model->is_double, cutoff_sq
         );
-        record_neighbor_and_reciprocal(
-            query_id, cand_id, d_exact, config, model, heap, all_heaps
+        if (cutoff_sq <= 0.0 || d_exact <= tau_thresh)
+        {
+            record_neighbor_and_reciprocal(
+                query_id, cand_id, d_exact, config, model, heap, all_heaps
 #ifdef _OPENMP
-            , bucket_locks
+                , bucket_locks
 #endif
-        );
+            );
+        }
     }
 }
 
