@@ -312,6 +312,264 @@ static void test_cutoff_1x4_double_mixed(void)
     free(anchors_mem);
 }
 
+static void test_cutoff_1x8_float_unconstrained(void)
+{
+    printf("[TEST] Testing framedist_batch_cutoff_1x8_float (unconstrained cutoff_sq=0)...\n");
+    long test_dims[] = {2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 256, 500, 512, 1024};
+    int num_dims = (int)(sizeof(test_dims) / sizeof(test_dims[0]));
+
+    for (int idx = 0; idx < num_dims; idx++)
+    {
+        long dim = test_dims[idx];
+        float *q = (float *)malloc((size_t)dim * sizeof(float));
+        float *anchors_mem = (float *)malloc((size_t)8 * (size_t)dim * sizeof(float));
+        const float *anchors[8];
+        assert(q != NULL && anchors_mem != NULL);
+
+        for (int k = 0; k < 8; k++)
+        {
+            anchors[k] = anchors_mem + (size_t)k * (size_t)dim;
+        }
+
+        for (long i = 0; i < dim; i++)
+        {
+            q[i] = (float)rand() / (float)RAND_MAX * 2.0f - 1.0f;
+        }
+
+        for (int k = 0; k < 8; k++)
+        {
+            float *a_ptr = (float *)anchors[k];
+            for (long i = 0; i < dim; i++)
+            {
+                a_ptr[i] = (float)rand() / (float)RAND_MAX * 2.0f - 1.0f;
+            }
+        }
+
+        double out_dists[8];
+        int mask = framedist_batch_cutoff_1x8_float(q, anchors, dim, 0.0, out_dists);
+        assert(mask == 0);
+
+        for (int k = 0; k < 8; k++)
+        {
+            double ref = ref_dist_float(q, anchors[k], dim);
+            double diff = fabs(out_dists[k] - ref);
+            if (diff > 1e-4)
+            {
+                fprintf(stderr, "FAIL 1x8: dim=%ld k=%d dist=%f ref=%f diff=%f\n",
+                        dim, k, out_dists[k], ref, diff);
+                assert(diff <= 1e-4);
+            }
+        }
+
+        free(q);
+        free(anchors_mem);
+    }
+}
+
+static void test_cutoff_1x8_float_early_exit(void)
+{
+    printf("[TEST] Testing framedist_batch_cutoff_1x8_float (early cutoff abort)...\n");
+    long test_dims[] = {64, 128, 256, 512, 1024};
+    int num_dims = (int)(sizeof(test_dims) / sizeof(test_dims[0]));
+
+    for (int idx = 0; idx < num_dims; idx++)
+    {
+        long dim = test_dims[idx];
+        float *q = (float *)malloc((size_t)dim * sizeof(float));
+        float *anchors_mem = (float *)malloc((size_t)8 * (size_t)dim * sizeof(float));
+        const float *anchors[8];
+        assert(q != NULL && anchors_mem != NULL);
+
+        for (int k = 0; k < 8; k++)
+        {
+            anchors[k] = anchors_mem + (size_t)k * (size_t)dim;
+        }
+
+        for (long i = 0; i < dim; i++)
+        {
+            q[i] = 0.0f;
+        }
+
+        for (int k = 0; k < 8; k++)
+        {
+            float *a_ptr = (float *)anchors[k];
+            for (long i = 0; i < dim; i++)
+            {
+                a_ptr[i] = 10.0f;
+            }
+        }
+
+        double cutoff = 1.0;
+        double cutoff_sq = cutoff * cutoff;
+        double out_dists[8];
+        int mask = framedist_batch_cutoff_1x8_float(q, anchors, dim, cutoff_sq, out_dists);
+        assert(mask == 0xFF);
+
+        for (int k = 0; k < 8; k++)
+        {
+            assert(out_dists[k] > cutoff);
+        }
+
+        free(q);
+        free(anchors_mem);
+    }
+}
+
+static void test_cutoff_1x8_float_mixed(void)
+{
+    printf("[TEST] Testing framedist_batch_cutoff_1x8_float (mixed cutoff)...\n");
+    long dim = 512;
+    float *q = (float *)malloc((size_t)dim * sizeof(float));
+    float *anchors_mem = (float *)malloc((size_t)8 * (size_t)dim * sizeof(float));
+    const float *anchors[8];
+    assert(q != NULL && anchors_mem != NULL);
+
+    for (int k = 0; k < 8; k++)
+    {
+        anchors[k] = anchors_mem + (size_t)k * (size_t)dim;
+    }
+
+    for (long i = 0; i < dim; i++)
+    {
+        q[i] = 0.0f;
+    }
+
+    for (int k = 0; k < 8; k++)
+    {
+        float *a_ptr = (float *)anchors[k];
+        float val = ((k % 2) == 0) ? 0.5f : 10.0f;
+        for (long i = 0; i < dim; i++)
+        {
+            a_ptr[i] = val / sqrtf((float)dim);
+        }
+    }
+
+    double cutoff = 2.0;
+    double cutoff_sq = cutoff * cutoff;
+    double out_dists[8];
+    int mask = framedist_batch_cutoff_1x8_float(q, anchors, dim, cutoff_sq, out_dists);
+
+    for (int k = 0; k < 8; k++)
+    {
+        if ((k % 2) == 0)
+        {
+            assert((mask & (1 << k)) == 0);
+            double ref = ref_dist_float(q, anchors[k], dim);
+            assert(fabs(out_dists[k] - ref) < 1e-4);
+        }
+        else
+        {
+            assert((mask & (1 << k)) != 0);
+            assert(out_dists[k] > cutoff);
+        }
+    }
+
+    free(q);
+    free(anchors_mem);
+}
+
+static void test_cutoff_1x8_double_unconstrained(void)
+{
+    printf("[TEST] Testing framedist_batch_cutoff_1x8_double (unconstrained cutoff_sq=0)...\n");
+    long test_dims[] = {2, 4, 8, 16, 32, 64, 128, 256, 512};
+    int num_dims = (int)(sizeof(test_dims) / sizeof(test_dims[0]));
+
+    for (int idx = 0; idx < num_dims; idx++)
+    {
+        long dim = test_dims[idx];
+        double *q = (double *)malloc((size_t)dim * sizeof(double));
+        double *anchors_mem = (double *)malloc((size_t)8 * (size_t)dim * sizeof(double));
+        const double *anchors[8];
+        assert(q != NULL && anchors_mem != NULL);
+
+        for (int k = 0; k < 8; k++)
+        {
+            anchors[k] = anchors_mem + (size_t)k * (size_t)dim;
+        }
+
+        for (long i = 0; i < dim; i++)
+        {
+            q[i] = (double)rand() / (double)RAND_MAX * 2.0 - 1.0;
+        }
+
+        for (int k = 0; k < 8; k++)
+        {
+            double *a_ptr = (double *)anchors[k];
+            for (long i = 0; i < dim; i++)
+            {
+                a_ptr[i] = (double)rand() / (double)RAND_MAX * 2.0 - 1.0;
+            }
+        }
+
+        double out_dists[8];
+        int mask = framedist_batch_cutoff_1x8_double(q, anchors, dim, 0.0, out_dists);
+        assert(mask == 0);
+
+        for (int k = 0; k < 8; k++)
+        {
+            double ref = ref_dist_double(q, anchors[k], dim);
+            double diff = fabs(out_dists[k] - ref);
+            assert(diff <= 1e-7);
+        }
+
+        free(q);
+        free(anchors_mem);
+    }
+}
+
+static void test_cutoff_1x8_double_mixed(void)
+{
+    printf("[TEST] Testing framedist_batch_cutoff_1x8_double (mixed cutoff)...\n");
+    long dim = 256;
+    double *q = (double *)malloc((size_t)dim * sizeof(double));
+    double *anchors_mem = (double *)malloc((size_t)8 * (size_t)dim * sizeof(double));
+    const double *anchors[8];
+    assert(q != NULL && anchors_mem != NULL);
+
+    for (int k = 0; k < 8; k++)
+    {
+        anchors[k] = anchors_mem + (size_t)k * (size_t)dim;
+    }
+
+    for (long i = 0; i < dim; i++)
+    {
+        q[i] = 0.0;
+    }
+
+    for (int k = 0; k < 8; k++)
+    {
+        double *a_ptr = (double *)anchors[k];
+        double val = ((k % 2) == 0) ? 0.5 : 10.0;
+        for (long i = 0; i < dim; i++)
+        {
+            a_ptr[i] = val / sqrt((double)dim);
+        }
+    }
+
+    double cutoff = 2.0;
+    double cutoff_sq = cutoff * cutoff;
+    double out_dists[8];
+    int mask = framedist_batch_cutoff_1x8_double(q, anchors, dim, cutoff_sq, out_dists);
+
+    for (int k = 0; k < 8; k++)
+    {
+        if ((k % 2) == 0)
+        {
+            assert((mask & (1 << k)) == 0);
+            double ref = ref_dist_double(q, anchors[k], dim);
+            assert(fabs(out_dists[k] - ref) < 1e-7);
+        }
+        else
+        {
+            assert((mask & (1 << k)) != 0);
+            assert(out_dists[k] > cutoff);
+        }
+    }
+
+    free(q);
+    free(anchors_mem);
+}
+
 int main(void)
 {
     printf("==================================================\n");
@@ -323,6 +581,12 @@ int main(void)
     test_cutoff_1x4_float_mixed();
     test_cutoff_1x4_double_unconstrained();
     test_cutoff_1x4_double_mixed();
+
+    test_cutoff_1x8_float_unconstrained();
+    test_cutoff_1x8_float_early_exit();
+    test_cutoff_1x8_float_mixed();
+    test_cutoff_1x8_double_unconstrained();
+    test_cutoff_1x8_double_mixed();
 
     printf("All Batched Cutoff Framedist Unit Tests PASSED!\n");
     return 0;

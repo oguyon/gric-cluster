@@ -103,6 +103,51 @@ void knn_batch_flush(
     }
 
     int b = 0;
+    for (; b <= count - 8; b += 8)
+    {
+        double chunk_dists[8];
+        int pruned_mask = 0;
+
+        if (model->is_double)
+        {
+            pruned_mask = framedist_batch_cutoff_1x8_double(
+                (const double *)query_data,
+                (const double *const *)(batch->ptrs + b),
+                frame_elem,
+                cutoff_sq,
+                chunk_dists);
+        }
+        else
+        {
+            pruned_mask = framedist_batch_cutoff_1x8_float(
+                (const float *)query_data,
+                (const float *const *)(batch->ptrs + b),
+                frame_elem,
+                cutoff_sq,
+                chunk_dists);
+        }
+        telem->framedist_calls += 8;
+
+        for (int k = 0; k < 8; k++)
+        {
+            if ((pruned_mask & (1 << k)) == 0)
+            {
+                record_neighbor_and_reciprocal(
+                    query_id,
+                    batch->cand_ids[b + k],
+                    chunk_dists[k],
+                    config,
+                    model,
+                    heap,
+                    all_heaps
+#ifdef _OPENMP
+                    , bucket_locks
+#endif
+                );
+            }
+        } // for (int k = 0; k < 8; k++)
+    } // for (; b <= count - 8; b += 8)
+
     for (; b <= count - 4; b += 4)
     {
         double chunk_dists[4];
@@ -321,7 +366,7 @@ static inline void knn_append_or_eval_candidate(
         batch->cand_ids[batch->count] = cand_id;
         batch->ptrs[batch->count] = cand_ptr;
         batch->count++;
-        if (batch->count == 4)
+        if (batch->count == 8)
         {
             knn_batch_flush(
                 batch, query_id, query_data, model, config, heap, all_heaps,

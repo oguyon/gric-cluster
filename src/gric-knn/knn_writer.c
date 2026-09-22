@@ -22,6 +22,8 @@
 #include <fitsio.h>
 #endif
 
+#define KNN_WRITER_STACK_K 1024
+
 /**
  * write_bin_results() - Write results as dual self-describing GRIC binary arrays.
  * @out_indices_path:   Output path for knn_indices.bin.
@@ -185,43 +187,125 @@ static int write_bin_results(
                             for (long c = 0; c < cur_chunk_n; c++)
                             {
                                 long u = u_base + c;
+                                const void *cand_stack[KNN_WRITER_STACK_K];
+                                double dist_stack[KNN_WRITER_STACK_K];
+                                const void **cand_ptrs = (k <= KNN_WRITER_STACK_K) ?
+                                    cand_stack :
+                                    (const void **)malloc((size_t)k * sizeof(void *));
+                                double *tmp_dists = (k <= KNN_WRITER_STACK_K) ?
+                                    dist_stack :
+                                    (double *)malloc((size_t)k * sizeof(double));
+
+                                if (cand_ptrs == NULL || tmp_dists == NULL)
+                                {
+                                    if (cand_ptrs != cand_stack && cand_ptrs != NULL)
+                                    {
+                                        free(cand_ptrs);
+                                    }
+                                    if (tmp_dists != dist_stack && tmp_dists != NULL)
+                                    {
+                                        free(tmp_dists);
+                                    }
+                                    continue;
+                                }
+
+                                int all_valid = 1;
                                 for (int i = 0; i < (int)k; i++)
                                 {
                                     long id_i = (long)results->indices[u * k + i];
                                     if (id_i < 0 || id_i >= N)
                                     {
-                                        continue;
+                                        all_valid = 0;
+                                        break;
                                     }
-                                    const void *f_i = (const char *)frames +
+                                    cand_ptrs[i] = (const char *)frames +
                                         (size_t)id_i * (size_t)elem * elem_size;
+                                }
 
-                                    for (int j = i + 1; j < (int)k; j++)
+                                if (all_valid)
+                                {
+                                    for (int i = 0; i < (int)k - 1; i++)
                                     {
-                                        long id_j = (long)results->indices[u * k + j];
-                                        if (id_j < 0 || id_j >= N)
-                                        {
-                                            continue;
-                                        }
-                                        const void *f_j = (const char *)frames +
-                                            (size_t)id_j * (size_t)elem * elem_size;
-
-                                        double dist;
+                                        int n_targets = (int)k - 1 - i;
                                         if (model->is_double)
                                         {
-                                            dist = framedist_double(
-                                                (const double *)f_i, (const double *)f_j, elem);
+                                            framedist_batch_double(
+                                                (const double *)cand_ptrs[i],
+                                                (const double *const *)(cand_ptrs + i + 1),
+                                                n_targets,
+                                                tmp_dists,
+                                                elem);
                                         }
                                         else
                                         {
-                                            dist = framedist_float(
-                                                (const float *)f_i, (const float *)f_j, elem);
+                                            framedist_batch_float(
+                                                (const float *)cand_ptrs[i],
+                                                (const float *const *)(cand_ptrs + i + 1),
+                                                n_targets,
+                                                tmp_dists,
+                                                elem);
                                         }
 
-                                        long pair_idx = (long)i * (long)k -
-                                            ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
-                                        chunk_buf[(size_t)c * m_pairs + (size_t)pair_idx] =
-                                            (float)dist;
+                                        long base_idx = (long)i * (long)k -
+                                            ((long)i * (long)(i + 1)) / 2;
+                                        float *dst = &chunk_buf[(size_t)c * m_pairs +
+                                            (size_t)base_idx];
+                                        for (int t = 0; t < n_targets; t++)
+                                        {
+                                            dst[t] = (float)tmp_dists[t];
+                                        }
                                     }
+                                }
+                                else
+                                {
+                                    for (int i = 0; i < (int)k; i++)
+                                    {
+                                        long id_i = (long)results->indices[u * k + i];
+                                        if (id_i < 0 || id_i >= N)
+                                        {
+                                            continue;
+                                        }
+                                        const void *f_i = (const char *)frames +
+                                            (size_t)id_i * (size_t)elem * elem_size;
+
+                                        for (int j = i + 1; j < (int)k; j++)
+                                        {
+                                            long id_j = (long)results->indices[u * k + j];
+                                            if (id_j < 0 || id_j >= N)
+                                            {
+                                                continue;
+                                            }
+                                            const void *f_j = (const char *)frames +
+                                                (size_t)id_j * (size_t)elem * elem_size;
+
+                                            double dist;
+                                            if (model->is_double)
+                                            {
+                                                dist = framedist_double(
+                                                    (const double *)f_i,
+                                                    (const double *)f_j,
+                                                    elem);
+                                            }
+                                            else
+                                            {
+                                                dist = framedist_float(
+                                                    (const float *)f_i,
+                                                    (const float *)f_j,
+                                                    elem);
+                                            }
+
+                                            long pair_idx = (long)i * (long)k -
+                                                ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
+                                            chunk_buf[(size_t)c * m_pairs + (size_t)pair_idx] =
+                                                (float)dist;
+                                        }
+                                    }
+                                }
+
+                                if (cand_ptrs != cand_stack)
+                                {
+                                    free(cand_ptrs);
+                                    free(tmp_dists);
                                 }
                             } // for (long c = 0; ...)
 
