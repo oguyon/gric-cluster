@@ -190,6 +190,18 @@ void eq16_dist_asym_cutoff_batch_1x4(
     float               *restrict  out_dists);
 
 /**
+ * @brief Compute asymmetric squared distance with cutoff for 1 query against 8 candidates.
+ *
+ * Evaluates sum((q_scaled[d] - cand[d])^2) concurrently across 8 candidates.
+ */
+void eq16_dist_asym_cutoff_batch_1x8(
+    const float         *restrict  q_scaled,
+    const int16_t *const *restrict cands,
+    long                           dim,
+    float                          cutoff,
+    float               *restrict  out_dists);
+
+/**
  * @brief Refine surviving cluster candidates using batched 1x4 ADC distance computation.
  */
 void eq16_refine_candidates_adc(

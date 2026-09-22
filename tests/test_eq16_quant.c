@@ -704,9 +704,9 @@ static void test_eq16_adc_batch_1x4(void)
 
         float *raw_q = (float *)malloc((size_t)dim * sizeof(float));
         float *q_adc = (float *)malloc((size_t)dim * sizeof(float));
-        int16_t *cands_buf = (int16_t *)malloc(4 * (size_t)dim * sizeof(int16_t));
-        const int16_t *cands[4];
-        for (int k = 0; k < 4; k++)
+        int16_t *cands_buf = (int16_t *)malloc(8 * (size_t)dim * sizeof(int16_t));
+        const int16_t *cands[8];
+        for (int k = 0; k < 8; k++)
         {
             cands[k] = cands_buf + (size_t)k * (size_t)dim;
         }
@@ -721,7 +721,7 @@ static void test_eq16_adc_batch_1x4(void)
             }
             eq16_prepare_query_adc_float(raw_q, q_adc, &params);
 
-            for (int k = 0; k < 4; k++)
+            for (int k = 0; k < 8; k++)
             {
                 float tmp[512];
                 for (long i = 0; i < dim; i++)
@@ -731,28 +731,50 @@ static void test_eq16_adc_batch_1x4(void)
                 eq16_quantize_float(tmp, (int16_t *)cands[k], &params);
             }
 
-            /* 1. Full distance match without early cutoff */
-            float d_batch[4];
-            eq16_dist_asym_cutoff_batch_1x4(q_adc, cands, dim, 1e15f, d_batch);
+            /* 1. Full distance match without early cutoff (1x4 and 1x8) */
+            float d_batch4[4];
+            eq16_dist_asym_cutoff_batch_1x4(q_adc, cands, dim, 1e15f, d_batch4);
 
-            float d_seq[4];
-            for (int k = 0; k < 4; k++)
+            float d_batch8[8];
+            eq16_dist_asym_cutoff_batch_1x8(q_adc, cands, dim, 1e15f, d_batch8);
+
+            float d_seq[8];
+            for (int k = 0; k < 8; k++)
             {
                 d_seq[k] = eq16_dist_asym_cutoff_f32(q_adc, cands[k], dim, 1e15f);
-                float rel_diff = fabsf(d_batch[k] - d_seq[k]) / (d_seq[k] + 1.0f);
+                float rel_diff = fabsf(d_batch8[k] - d_seq[k]) / (d_seq[k] + 1.0f);
                 assert(rel_diff < 1e-4f);
+                if (k < 4)
+                {
+                    float rel_diff4 = fabsf(d_batch4[k] - d_seq[k]) / (d_seq[k] + 1.0f);
+                    assert(rel_diff4 < 1e-4f);
+                }
             }
 
-            /* 2. Pruning decision consistency with realistic cutoff */
-            float mid_cutoff = (d_seq[0] + d_seq[1] + d_seq[2] + d_seq[3]) * 0.25f;
-            float d_batch_cut[4];
-            eq16_dist_asym_cutoff_batch_1x4(q_adc, cands, dim, mid_cutoff, d_batch_cut);
-
-            for (int k = 0; k < 4; k++)
+            /* 2. Pruning decision consistency with realistic cutoff (1x4 and 1x8) */
+            float mid_cutoff = 0.0f;
+            for (int k = 0; k < 8; k++)
             {
-                bool pruned_batch = (d_batch_cut[k] > mid_cutoff);
+                mid_cutoff += d_seq[k];
+            }
+            mid_cutoff *= (1.0f / 8.0f);
+
+            float d_batch8_cut[8];
+            eq16_dist_asym_cutoff_batch_1x8(q_adc, cands, dim, mid_cutoff, d_batch8_cut);
+
+            float d_batch4_cut[4];
+            eq16_dist_asym_cutoff_batch_1x4(q_adc, cands, dim, mid_cutoff, d_batch4_cut);
+
+            for (int k = 0; k < 8; k++)
+            {
+                bool pruned_batch8 = (d_batch8_cut[k] > mid_cutoff);
                 bool pruned_seq = (d_seq[k] > mid_cutoff);
-                assert(pruned_batch == pruned_seq);
+                assert(pruned_batch8 == pruned_seq);
+                if (k < 4)
+                {
+                    bool pruned_batch4 = (d_batch4_cut[k] > mid_cutoff);
+                    assert(pruned_batch4 == pruned_seq);
+                }
             }
         } // for (int trial = 0; trial < 20; trial++)
 

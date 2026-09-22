@@ -882,6 +882,19 @@ endif()
 add_test(NAME test_gemm_dist
     COMMAND test_gemm_dist)
 
+add_executable(test_framedist_cutoff
+    tests/test_framedist_cutoff.c
+    src/gric-cluster/math/framedistance.c
+    src/gric-cluster/math/framedistance_cutoff.c
+    src/gric-cluster/math/framedistance_batch.c
+    src/shared/gric_simd.c
+)
+target_include_directories(test_framedist_cutoff
+    PRIVATE src/gric-cluster/math src/gric-cluster/core src/shared)
+target_link_libraries(test_framedist_cutoff m)
+add_test(NAME test_framedist_cutoff
+    COMMAND test_framedist_cutoff)
+
 add_executable(test_gric_probe
     tests/test_gric_probe.c
     src/gric-probe/probe_engine.c
