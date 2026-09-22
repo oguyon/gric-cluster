@@ -224,6 +224,8 @@ typedef struct
     int              is_double;           /**< 1 if anchors & queries in double precision */
     KnnCluster      *clusters;
     void            *anchor_matrix;       /**< Contiguous [M x D] buffer for all cluster anchors */
+    void            *anchor_mmap_addr;    /**< Base address if anchors.bin mmap'd */
+    size_t           anchor_mmap_size;    /**< Size of anchors.bin mmap region */
     double          *dcc_matrix;          /**< Dense M x M inter-cluster distance matrix */
     uint16_t        *dcc_sq16;            /**< 16-bit quantized DCC matrix [M x M] */
     double           dcc_sq16_scale;      /**< Scale factor (16384.0 / rlim) */

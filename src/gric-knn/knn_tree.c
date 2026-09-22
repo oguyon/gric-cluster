@@ -5,6 +5,8 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "knn_tree.h"
+#include "e8_lattice.h"
+
 #include <stdlib.h>
 
 #ifdef _OPENMP
@@ -19,27 +21,34 @@ typedef struct
 } DccNeighborPair;
 
 /**
- * compare_dcc_pairs() - Compare two DccNeighborPair structs by ascending distance.
- * @a: Pointer to first pair.
- * @b: Pointer to second pair.
- *
- * Return: -1 if a < b, 1 if a > b, 0 if equal.
+ * max_heap_sift_down() - Sift down root element in a max-heap of DccNeighborPair.
+ * @heap: Pointer to array of pairs.
+ * @idx:  Starting index to sift down from.
+ * @n:    Number of elements in the heap.
  */
-static int compare_dcc_pairs(
-    const void *a,
-    const void *b)
+static inline void max_heap_sift_down(
+    DccNeighborPair *heap,
+    int              idx,
+    int              n)
 {
-    const DccNeighborPair *pa = (const DccNeighborPair *)a;
-    const DccNeighborPair *pb = (const DccNeighborPair *)b;
-    if (pa->dist < pb->dist)
+    DccNeighborPair val = heap[idx];
+    while (1)
     {
-        return -1;
+        int left = 2 * idx + 1;
+        if (left >= n)
+        {
+            break;
+        }
+        int right = left + 1;
+        int largest = (right < n && heap[right].dist > heap[left].dist) ? right : left;
+        if (heap[largest].dist <= val.dist)
+        {
+            break;
+        }
+        heap[idx] = heap[largest];
+        idx = largest;
     }
-    if (pa->dist > pb->dist)
-    {
-        return 1;
-    }
-    return 0;
+    heap[idx] = val;
 }
 
 /**
@@ -48,8 +57,6 @@ static int compare_dcc_pairs(
  *
  * Return: 0 on success, -1 on error.
  */
-#include "e8_lattice.h"
-
 int knn_build_cluster_graph(
     KnnModel *model)
 {
@@ -72,24 +79,19 @@ int knn_build_cluster_graph(
         return -1;
     }
 
-    int alloc_failed = 0;
 #if defined(_OPENMP)
 #pragma omp parallel
 #endif
     {
-        DccNeighborPair *local_pairs =
-            (DccNeighborPair *)malloc((size_t)M * sizeof(DccNeighborPair));
-        if (local_pairs == NULL)
+        DccNeighborPair stack_heap[256];
+        DccNeighborPair *heap = (k_adj <= 256)
+            ? stack_heap
+            : (DccNeighborPair *)malloc((size_t)k_adj * sizeof(DccNeighborPair));
+
+        if (heap != NULL)
         {
 #if defined(_OPENMP)
-#pragma omp atomic write
-#endif
-            alloc_failed = 1;
-        }
-        else
-        {
-#if defined(_OPENMP)
-#pragma omp for schedule(static)
+#pragma omp for schedule(dynamic)
 #endif
             for (int c = 0; c < M; c++)
             {
@@ -100,31 +102,50 @@ int knn_build_cluster_graph(
                     {
                         continue;
                     }
-                    local_pairs[count].cluster_id = other;
-                    local_pairs[count].dist =
-                        model->dcc_matrix[(size_t)c * (size_t)M + (size_t)other];
-                    count++;
+                    double d = model->dcc_matrix[(size_t)c * (size_t)M + (size_t)other];
+                    if (count < k_adj)
+                    {
+                        heap[count].cluster_id = other;
+                        heap[count].dist = d;
+                        count++;
+                        if (count == k_adj)
+                        {
+                            for (int i = (k_adj - 2) / 2; i >= 0; i--)
+                            {
+                                max_heap_sift_down(heap, i, k_adj);
+                            }
+                        }
+                    }
+                    else if (d < heap[0].dist)
+                    {
+                        heap[0].cluster_id = other;
+                        heap[0].dist = d;
+                        max_heap_sift_down(heap, 0, k_adj);
+                    }
+                } // for (int other = 0; other < M; other++)
+
+                /* Sort heap ascending via heapsort */
+                for (int i = count - 1; i > 0; i--)
+                {
+                    DccNeighborPair tmp = heap[0];
+                    heap[0] = heap[i];
+                    heap[i] = tmp;
+                    max_heap_sift_down(heap, 0, i);
                 }
 
-                qsort(local_pairs, (size_t)count, sizeof(DccNeighborPair), compare_dcc_pairs);
-
                 int *row_adj = model->cluster_graph_adj + (size_t)c * (size_t)k_adj;
-                for (int i = 0; i < k_adj; i++)
+                for (int i = 0; i < count; i++)
                 {
-                    row_adj[i] = local_pairs[i].cluster_id;
+                    row_adj[i] = heap[i].cluster_id;
                 }
             } // for (int c = 0; c < M; c++)
 
-            free(local_pairs);
+            if (heap != stack_heap)
+            {
+                free(heap);
+            }
         }
-    }
-
-    if (alloc_failed)
-    {
-        free(model->cluster_graph_adj);
-        model->cluster_graph_adj = NULL;
-        return -1;
-    }
+    } // OpenMP parallel
 
     return 0;
 }
@@ -148,4 +169,3 @@ void knn_free_cluster_graph(
     }
     model->cluster_graph_k = 0;
 }
-

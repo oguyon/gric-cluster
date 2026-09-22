@@ -13,6 +13,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 /**
  * knn_compare_member_meta_radii() - Sort member records by ascending anchor distance.
@@ -526,11 +532,6 @@ int knn_parse_dcc_file(
         return -1;
     }
 
-    for (int i = 0; i < M * M; i++)
-    {
-        model->dcc_matrix[i] = 0.0;
-    }
-
     char path[2048];
     snprintf(path, sizeof(path), "%s/dcc.bin", cluster_dir);
     FILE *f_bin = fopen(path, "rb");
@@ -564,7 +565,11 @@ int knn_parse_dcc_file(
                         }
                         model->dcc_sq16_scale = scale;
                         model->dcc_sq16_inv_scale = 1.0 / scale;
-                        for (int i = 0; i < M * M; i++)
+                        size_t total_dcc = (size_t)M * (size_t)M;
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+                        for (size_t i = 0; i < total_dcc; i++)
                         {
                             model->dcc_matrix[i] =
                                 (double)model->dcc_sq16[i] * model->dcc_sq16_inv_scale;
@@ -589,7 +594,11 @@ int knn_parse_dcc_file(
                     model->dcc_sq16 = (uint16_t *)malloc((size_t)M * (size_t)M * sizeof(uint16_t));
                     if (model->dcc_sq16 != NULL)
                     {
-                        for (int i = 0; i < M * M; i++)
+                        size_t total_dcc = (size_t)M * (size_t)M;
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+                        for (size_t i = 0; i < total_dcc; i++)
                         {
                             double d = model->dcc_matrix[i];
                             model->dcc_sq16[i] = (d <= 0.0) ? 0 :
@@ -603,42 +612,84 @@ int knn_parse_dcc_file(
             }
             else if (hdr.data_type == GRIC_BIN_DTYPE_FLOAT32)
             {
-                float *fbuf = (float *)malloc((size_t)M * (size_t)M * sizeof(float));
-                if (fbuf != NULL)
+                size_t exp_bytes = hdr.header_bytes + (size_t)M * (size_t)M * sizeof(float);
+                int fd_dcc = fileno(f_bin);
+                struct stat st_dcc;
+                const float *fbuf = NULL;
+                void *dcc_mmap = MAP_FAILED;
+                float *fbuf_alloc = NULL;
+
+                if (fd_dcc >= 0 && fstat(fd_dcc, &st_dcc) == 0 &&
+                    (size_t)st_dcc.st_size >= exp_bytes)
                 {
-                    if (fread(fbuf, sizeof(float), (size_t)M * (size_t)M, f_bin) ==
+                    dcc_mmap = mmap(NULL, (size_t)st_dcc.st_size, PROT_READ, MAP_SHARED,
+                                    fd_dcc, 0);
+                    if (dcc_mmap != MAP_FAILED)
+                    {
+                        posix_madvise(dcc_mmap, (size_t)st_dcc.st_size, POSIX_MADV_WILLNEED);
+                        fbuf = (const float *)((const char *)dcc_mmap + hdr.header_bytes);
+                    }
+                }
+
+                if (fbuf == NULL)
+                {
+                    fbuf_alloc = (float *)malloc((size_t)M * (size_t)M * sizeof(float));
+                    if (fbuf_alloc != NULL &&
+                        fread(fbuf_alloc, sizeof(float), (size_t)M * (size_t)M, f_bin) ==
                         (size_t)M * (size_t)M)
                     {
-                        double scale = (model->model_rlim > 0.0)
-                            ? (16384.0 / model->model_rlim) : 1000.0;
-                        model->dcc_sq16_scale = scale;
-                        model->dcc_sq16_inv_scale = 1.0 / scale;
-                        model->dcc_sq16 =
-                            (uint16_t *)malloc((size_t)M * (size_t)M * sizeof(uint16_t));
-
-                        for (int i = 0; i < M * M; i++)
-                        {
-                            double d = (double)fbuf[i];
-                            model->dcc_matrix[i] = d;
-                            if (model->dcc_sq16 != NULL)
-                            {
-                                model->dcc_sq16[i] = (d <= 0.0) ? 0 :
-                                    ((d * scale >= 65534.0) ? 65534 :
-                                     (uint16_t)(d * scale + 0.5));
-                            }
-                        }
-                        free(fbuf);
-                        if (comment != NULL) free(comment);
-                        fclose(f_bin);
-                        return 0;
+                        fbuf = fbuf_alloc;
                     }
-                    free(fbuf);
+                }
+
+                if (fbuf != NULL)
+                {
+                    double scale = (model->model_rlim > 0.0)
+                        ? (16384.0 / model->model_rlim) : 1000.0;
+                    model->dcc_sq16_scale = scale;
+                    model->dcc_sq16_inv_scale = 1.0 / scale;
+                    model->dcc_sq16 =
+                        (uint16_t *)malloc((size_t)M * (size_t)M * sizeof(uint16_t));
+
+                    size_t total_dcc = (size_t)M * (size_t)M;
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+                    for (size_t i = 0; i < total_dcc; i++)
+                    {
+                        double d = (double)fbuf[i];
+                        model->dcc_matrix[i] = d;
+                        if (model->dcc_sq16 != NULL)
+                        {
+                            model->dcc_sq16[i] = (d <= 0.0) ? 0 :
+                                ((d * scale >= 65534.0) ? 65534 :
+                                 (uint16_t)(d * scale + 0.5));
+                        }
+                    }
+
+                    if (dcc_mmap != MAP_FAILED)
+                    {
+                        munmap(dcc_mmap, (size_t)st_dcc.st_size);
+                    }
+                    if (fbuf_alloc != NULL)
+                    {
+                        free(fbuf_alloc);
+                    }
+                    if (comment != NULL) free(comment);
+                    fclose(f_bin);
+                    return 0;
+                }
+                if (fbuf_alloc != NULL)
+                {
+                    free(fbuf_alloc);
                 }
             }
         }
         if (comment != NULL) free(comment);
         fclose(f_bin);
     }
+
+    memset(model->dcc_matrix, 0, (size_t)M * (size_t)M * sizeof(double));
 
     snprintf(path, sizeof(path), "%s/dccmin.txt", cluster_dir);
     FILE *f = fopen(path, "r");

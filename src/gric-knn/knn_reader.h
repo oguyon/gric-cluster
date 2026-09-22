@@ -33,6 +33,8 @@ typedef struct
     uint64_t     *line_offsets; /**< 64-bit file byte offsets for ASCII lines */
     FILE         *ascii_file;
     FILE         *bin_file;
+    void         *bin_mmap_addr;   /**< Mmap base address for .bin files */
+    size_t        bin_mmap_size;   /**< Mmap length in bytes */
 #ifdef USE_CFITSIO
     fitsfile     *fits_ptr;
 #endif
