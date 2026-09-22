@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "gric": {
+      "command": "/home/oguyon/src/gric-cluster/build/gric-mcp"
+    }
+  }
+}

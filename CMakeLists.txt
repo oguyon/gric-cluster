@@ -512,6 +512,58 @@ add_custom_command(
     COMMENT "Creating gric-cluster-probe alias symlink"
 )
 
+# gric-mcp Model Context Protocol (MCP) server
+add_executable(gric-mcp
+    src/gric-mcp/gric-mcp.c
+    src/gric-mcp/mcp_dispatch.c
+    src/gric-mcp/mcp_tools.c
+    src/gric-mcp/tools/tool_audit_code_style.c
+    src/gric-mcp/tools/tool_align_parameters.c
+    src/gric-mcp/tools/tool_inspect_simd.c
+    src/gric-mcp/tools/tool_verify_invariants.c
+    src/gric-mcp/tools/tool_inspect_run.c
+    src/gric-mcp/tools/tool_probe_dataset.c
+    src/gric-mcp/tools/tool_probe_shm.c
+    src/shared/cjson/cJSON.c
+    src/shared/cli_colors.c
+    src/gric-cluster-analysis/analysis_parser.c
+    src/gric-cluster-analysis/analysis_stats.c
+    src/gric-probe/probe_engine.c
+    src/gric-probe/probe_report.c
+    src/shared/gric_profile.c
+    src/shared/cluster_locator.c
+    src/shared/gric_bin_io.c
+    src/shared/scalar_quant.c
+    src/shared/scalar_quant_fastscan.c
+    src/shared/scalar_quant_filter.c
+    src/shared/residual_quant.c
+    src/shared/e8_lattice.c
+    src/shared/eq16_quant.c
+    src/shared/eq16_dist.c
+    src/shared/eq16_filter.c
+    src/shared/gric_simd.c
+)
+target_include_directories(gric-mcp PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+)
+target_link_libraries(gric-mcp m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(gric-mcp OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(gric-mcp ${CFITSIO_LIBRARIES})
+    target_include_directories(gric-mcp PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(gric-mcp ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(gric-mcp PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+
 if (CFITSIO_FOUND)
     target_compile_definitions(gric-info PRIVATE USE_CFITSIO)
     target_compile_definitions(gric-info PRIVATE CFITSIO_VERSION_STR=\"${CFITSIO_VERSION}\")
@@ -961,6 +1013,59 @@ endif()
 add_test(NAME test_gric_probe
     COMMAND test_gric_probe)
 set_tests_properties(test_gric_probe PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_executable(test_mcp_protocol
+    tests/test_mcp_protocol.c
+    src/gric-mcp/mcp_dispatch.c
+    src/gric-mcp/mcp_tools.c
+    src/gric-mcp/tools/tool_audit_code_style.c
+    src/gric-mcp/tools/tool_align_parameters.c
+    src/gric-mcp/tools/tool_inspect_simd.c
+    src/gric-mcp/tools/tool_verify_invariants.c
+    src/gric-mcp/tools/tool_inspect_run.c
+    src/gric-mcp/tools/tool_probe_dataset.c
+    src/gric-mcp/tools/tool_probe_shm.c
+    src/shared/cjson/cJSON.c
+    src/shared/cli_colors.c
+    src/gric-cluster-analysis/analysis_parser.c
+    src/gric-cluster-analysis/analysis_stats.c
+    src/gric-probe/probe_engine.c
+    src/gric-probe/probe_report.c
+    src/shared/gric_profile.c
+    src/shared/cluster_locator.c
+    src/shared/gric_bin_io.c
+    src/shared/scalar_quant.c
+    src/shared/scalar_quant_fastscan.c
+    src/shared/scalar_quant_filter.c
+    src/shared/residual_quant.c
+    src/shared/e8_lattice.c
+    src/shared/eq16_quant.c
+    src/shared/eq16_dist.c
+    src/shared/eq16_filter.c
+    src/shared/gric_simd.c
+)
+target_include_directories(test_mcp_protocol PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+)
+target_link_libraries(test_mcp_protocol m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_mcp_protocol OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_mcp_protocol ${CFITSIO_LIBRARIES})
+    target_include_directories(test_mcp_protocol PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_mcp_protocol ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_mcp_protocol PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_mcp_protocol COMMAND test_mcp_protocol)
+set_tests_properties(test_mcp_protocol PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 if (ENABLE_CUDA)
     add_executable(test_cluster_cuda tests/test_cluster_cuda.c)
