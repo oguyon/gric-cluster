@@ -120,6 +120,7 @@ typedef struct
     int             use_sq16_sparse_lru; /**< 1 to enable 16-block LRU Transposed FastScan */
     int             use_eq16;          /**< 1 to enable 16-bit E8 lattice quantization */
     int             use_eq16_adc;      /**< 1 to enable Asymmetric Distance Computation */
+    int             use_eq16_sparse;   /**< 1 to enable on-demand SparseCache FastScan */
     char           *eq16_save_path;    /**< Optional path to save .eq16 sidecar file */
     char           *eq16_load_path;    /**< Optional path to load .eq16 sidecar file */
     int             eq16_approx;       /**< 1 to relax lower bounds with epsilon */

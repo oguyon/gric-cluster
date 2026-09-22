@@ -970,27 +970,107 @@ static void knn_eval_members_eq16_blocks(
             cached_ssd_cutoff = compute_eq16_cutoff_thresh(current_tau, model, config);
         }
 
-        const int16_t *b_coords = cl->eq16_transposed +
-            (size_t)b * (size_t)frame_elem * EQ16_FASTSCAN_BLOCK_SIZE;
-        telem->eq16_evaluations += (uint64_t)m_count;
-
         uint32_t pass_mask = 0;
-        if (config->use_eq16_adc && visited->query_eq16_adc != NULL)
+        if (cl->eq16_transposed != NULL)
         {
-            pass_mask = eq16_fastscan_32x_adc(
-                visited->query_eq16_adc, b_coords, frame_elem, (float)cached_ssd_cutoff
-            );
-        }
-        else if (visited->query_eq16 != NULL)
-        {
-            pass_mask = eq16_fastscan_32x_i16(
-                visited->query_eq16, b_coords, frame_elem, cached_ssd_cutoff
-            );
-        }
+            const int16_t *b_coords = cl->eq16_transposed +
+                (size_t)b * (size_t)frame_elem * EQ16_FASTSCAN_BLOCK_SIZE;
+            telem->eq16_evaluations += (uint64_t)m_count;
 
-        if (m_count < EQ16_FASTSCAN_BLOCK_SIZE)
+            if (config->use_eq16_adc && visited->query_eq16_adc != NULL)
+            {
+                pass_mask = eq16_fastscan_32x_adc(
+                    visited->query_eq16_adc, b_coords, frame_elem, (float)cached_ssd_cutoff
+                );
+            }
+            else if (visited->query_eq16 != NULL)
+            {
+                pass_mask = eq16_fastscan_32x_i16(
+                    visited->query_eq16, b_coords, frame_elem, cached_ssd_cutoff
+                );
+            }
+
+            if (m_count < EQ16_FASTSCAN_BLOCK_SIZE)
+            {
+                pass_mask &= ((1U << m_count) - 1);
+            }
+        }
+        else if (config->use_eq16_sparse && model->eq16_dataset_buffer != NULL)
         {
-            pass_mask &= ((1U << m_count) - 1);
+            telem->eq16_evaluations += (uint64_t)m_count;
+            if (config->use_eq16_adc && visited->query_eq16_adc != NULL)
+            {
+                int i = 0;
+                for (; i <= m_count - 4; i += 4)
+                {
+                    const int16_t *cands[4];
+                    cands[0] = model->eq16_dataset_buffer +
+                        (size_t)cl->members[m_start + i + 0].frame_id * (size_t)frame_elem;
+                    cands[1] = model->eq16_dataset_buffer +
+                        (size_t)cl->members[m_start + i + 1].frame_id * (size_t)frame_elem;
+                    cands[2] = model->eq16_dataset_buffer +
+                        (size_t)cl->members[m_start + i + 2].frame_id * (size_t)frame_elem;
+                    cands[3] = model->eq16_dataset_buffer +
+                        (size_t)cl->members[m_start + i + 3].frame_id * (size_t)frame_elem;
+
+                    float dsq[4];
+                    eq16_dist_asym_cutoff_batch_1x4(
+                        visited->query_eq16_adc, cands, frame_elem,
+                        (float)cached_ssd_cutoff, dsq
+                    );
+                    if (dsq[0] <= (float)cached_ssd_cutoff)
+                    {
+                        pass_mask |= (1U << (i + 0));
+                    }
+                    if (dsq[1] <= (float)cached_ssd_cutoff)
+                    {
+                        pass_mask |= (1U << (i + 1));
+                    }
+                    if (dsq[2] <= (float)cached_ssd_cutoff)
+                    {
+                        pass_mask |= (1U << (i + 2));
+                    }
+                    if (dsq[3] <= (float)cached_ssd_cutoff)
+                    {
+                        pass_mask |= (1U << (i + 3));
+                    }
+                } // for (; i <= m_count - 4; i += 4)
+
+                for (; i < m_count; i++)
+                {
+                    long cand_id = (long)cl->members[m_start + i].frame_id;
+                    const int16_t *cand_eq16 = model->eq16_dataset_buffer +
+                        (size_t)cand_id * (size_t)frame_elem;
+                    float dist_sq = eq16_dist_asym_cutoff_f32(
+                        visited->query_eq16_adc, cand_eq16, frame_elem,
+                        (float)cached_ssd_cutoff
+                    );
+                    if (dist_sq <= (float)cached_ssd_cutoff)
+                    {
+                        pass_mask |= (1U << i);
+                    }
+                }
+            }
+            else if (visited->query_eq16 != NULL)
+            {
+                for (int i = 0; i < m_count; i++)
+                {
+                    long cand_id = (long)cl->members[m_start + i].frame_id;
+                    const int16_t *cand_eq16 = model->eq16_dataset_buffer +
+                        (size_t)cand_id * (size_t)frame_elem;
+                    uint64_t ssd = eq16_dist_squared_cutoff_i16(
+                        visited->query_eq16, cand_eq16, frame_elem, cached_ssd_cutoff
+                    );
+                    if (ssd <= cached_ssd_cutoff)
+                    {
+                        pass_mask |= (1U << i);
+                    }
+                }
+            }
+        }
+        else
+        {
+            continue;
         }
 
         if (!pass_mask)
@@ -1661,7 +1741,8 @@ void knn_eval_cluster_members(
         return;
     }
 
-    if (eq16_active && cl->eq16_transposed != NULL && cl->num_eq16_blocks > 0)
+    if (eq16_active && cl->num_eq16_blocks > 0 &&
+        (cl->eq16_transposed != NULL || config->use_eq16_sparse))
     {
         knn_eval_members_eq16_blocks(
             cl, d_anchor, r_home, dcc_home, sq16_delta,

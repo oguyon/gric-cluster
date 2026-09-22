@@ -656,6 +656,12 @@ add_test(NAME test_knn_8d_eq16_load
             -o /tmp/ctest_knn_8d_eq16_load.txt)
 set_tests_properties(test_knn_8d_eq16_load PROPERTIES DEPENDS test_knn_8d_eq16)
 
+add_test(NAME test_knn_8d_eq16_sparse
+    COMMAND gric-knn /tmp/ctest_8d.txt /tmp/ctest_8d_eq16_out
+            -k 10 -dtmin 5 -no-reciprocal -eq16 -eq16-sparse
+            -o /tmp/ctest_knn_8d_eq16_sparse.txt)
+set_tests_properties(test_knn_8d_eq16_sparse PROPERTIES DEPENDS test_8d_clustering_eq16)
+
 if (CFITSIO_FOUND)
     add_test(NAME test_bouncing_balls_single_gen
         COMMAND gric-gen-balls -n 1 -r 5.0 -W 32 -H 32 -f 500 -s 42 /tmp/ctest_balls_1.fits)
