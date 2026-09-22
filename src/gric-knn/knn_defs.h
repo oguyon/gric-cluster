@@ -237,6 +237,12 @@ typedef struct
     uint32_t        *graph_indices;       /**< [N x graph_k] neighbor node indices in A */
     float           *graph_distances;     /**< [N x graph_k] precomputed neighbor distances */
     float           *graph_mutual_dists;  /**< [N x (graph_k * (graph_k - 1) / 2)] mutual dists */
+    void            *graph_idx_mmap_addr; /**< Base address if graph indices mmap'd */
+    size_t           graph_idx_mmap_size; /**< Size of graph indices mmap region */
+    void            *graph_dst_mmap_addr; /**< Base address if graph distances mmap'd */
+    size_t           graph_dst_mmap_size; /**< Size of graph distances mmap region */
+    void            *graph_mut_mmap_addr; /**< Base address if mutual dists mmap'd */
+    size_t           graph_mut_mmap_size; /**< Size of mutual dists mmap region */
     const void     **anchor_ptrs;         /**< [M] array of anchor pointers */
     double          *cluster_radii;       /**< [M] array of cluster radii */
     void            *dataset_buffer;      /**< [N x D] resident dataset frames in float/double */

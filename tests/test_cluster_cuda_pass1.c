@@ -267,8 +267,30 @@ static void test_gpu_pass1_and_pass2(void)
     printf("Combined GPU Pass 1 + Pass 2 test passed successfully.\n");
 }
 
+static int is_gpu_available(void)
+{
+    GpuAnchorStoreConfig config;
+    config.max_clusters = 64;
+    config.dim = 32;
+    config.device_id = 0;
+    config.max_batch_size = 16;
+    GpuAnchorStore *store = gpu_anchor_store_create(&config);
+    if (store == NULL)
+    {
+        return 0;
+    }
+    gpu_anchor_store_destroy(store);
+    return 1;
+}
+
 int main(void)
 {
+    if (!is_gpu_available())
+    {
+        printf("No CUDA device available on this host. Skipping test.\n");
+        return 0;
+    }
+
     test_gpu_anchor_store_unit();
     test_gpu_pass1_e2e();
     test_gpu_pass1_and_pass2();

@@ -137,6 +137,40 @@ int framedist_batch_cutoff_1x4_double(
     double *restrict              out_dists);
 
 /**
+ * framedist_batch_cutoff_1x8_float() - 1 query vs 8 anchors with early-cutoff checkpoints.
+ * @q:         Query vector pointer.
+ * @anchors:   Array of 8 anchor vector pointers.
+ * @size:      Vector length.
+ * @cutoff_sq: Squared distance threshold for early exit (<= 0.0 disables cutoff).
+ * @out_dists: Output array for 8 computed distances.
+ *
+ * Return: Bitmask (0x00 to 0xFF) where bit (1 << b) is 1 if candidate b exceeded cutoff_sq.
+ */
+int framedist_batch_cutoff_1x8_float(
+    const float *restrict        q,
+    const float *const *restrict anchors,
+    long                         size,
+    double                       cutoff_sq,
+    double *restrict             out_dists);
+
+/**
+ * framedist_batch_cutoff_1x8_double() - 1 query vs 8 anchors with early-cutoff for double.
+ * @q:         Query vector pointer.
+ * @anchors:   Array of 8 anchor vector pointers.
+ * @size:      Vector length.
+ * @cutoff_sq: Squared distance threshold for early exit (<= 0.0 disables cutoff).
+ * @out_dists: Output array for 8 computed distances.
+ *
+ * Return: Bitmask (0x00 to 0xFF) where bit (1 << b) is 1 if candidate b exceeded cutoff_sq.
+ */
+int framedist_batch_cutoff_1x8_double(
+    const double *restrict        q,
+    const double *const *restrict anchors,
+    long                          size,
+    double                        cutoff_sq,
+    double *restrict              out_dists);
+
+/**
  * framedist_batch_1x8_float() - Vectorized batch distance from 1 query to 8 anchor float frames.
  * @q:         Query vector pointer.
  * @anchors:   Array of 8 anchor vector pointers.
