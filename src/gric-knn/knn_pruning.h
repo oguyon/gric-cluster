@@ -221,10 +221,16 @@ static inline int is_member_pruned_by_eq16_cached(
         return 0;
     }
 
+    size_t pos = (size_t)cand_id;
+    if (model->frame_to_cluster_pos != NULL)
+    {
+        pos = (size_t)model->frame_to_cluster_pos[cand_id];
+    }
+
     if (query_eq16_adc != NULL)
     {
         const int16_t *cand_eq16 = model->eq16_dataset_buffer +
-                                   (size_t)cand_id * (size_t)model->frame_elements;
+                                   pos * (size_t)model->frame_elements;
         telem->eq16_evaluations++;
         float cutoff_f = (float)ssd_cutoff;
         float dist_sq = eq16_dist_asym_cutoff_f32(
@@ -246,7 +252,7 @@ static inline int is_member_pruned_by_eq16_cached(
     }
 
     const int16_t *cand_eq16 = model->eq16_dataset_buffer +
-                               (size_t)cand_id * (size_t)model->frame_elements;
+                               pos * (size_t)model->frame_elements;
     telem->eq16_evaluations++;
     uint64_t ssd = eq16_dist_squared_cutoff_i16(
         query_eq16, cand_eq16, model->frame_elements, ssd_cutoff
@@ -283,8 +289,14 @@ static inline int is_member_pruned_by_rq8_cached(
         return 0;
     }
 
+    size_t pos = (size_t)cand_id;
+    if (model->frame_to_cluster_pos != NULL)
+    {
+        pos = (size_t)model->frame_to_cluster_pos[cand_id];
+    }
+
     const int8_t *cand_res = model->rq8_dataset_buffer +
-                             (size_t)cand_id * (size_t)model->frame_elements;
+                             pos * (size_t)model->frame_elements;
     telem->rq8_evaluations++;
     uint64_t ssd = rq8_dist_squared_cutoff_i8(
         query_rq8, cand_res, model->frame_elements, ssd_cutoff
@@ -321,8 +333,14 @@ static inline int is_member_pruned_by_rq8_adc_cached(
         return 0;
     }
 
+    size_t pos = (size_t)cand_id;
+    if (model->frame_to_cluster_pos != NULL)
+    {
+        pos = (size_t)model->frame_to_cluster_pos[cand_id];
+    }
+
     const int8_t *cand_res = model->rq8_dataset_buffer +
-                             (size_t)cand_id * (size_t)model->frame_elements;
+                             pos * (size_t)model->frame_elements;
     telem->rq8_evaluations++;
     float dist_sq = rq8_dist_asym_cutoff_f32(
         query_rq8_adc, cand_res, model->frame_elements, cutoff_sq

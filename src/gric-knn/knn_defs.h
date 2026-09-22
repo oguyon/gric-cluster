@@ -45,6 +45,8 @@ typedef struct
     int         capacity;
     MemberMeta *members;            /**< Array of member metadata records */
     void       *ivf_vectors;        /**< Contiguous [num_members x D] vector buffer */
+    int16_t    *eq16_vectors;       /**< Contiguous [num_members x D] EQ16 vector buffer */
+    int8_t     *rq8_vectors;        /**< Contiguous [num_members x D] RQ8 vector buffer */
     int16_t    *sq16_transposed;    /**< [num_sq16_blocks * dim * 32] FastScan block coords */
     int         num_sq16_blocks;    /**< Number of 32-candidate FastScan blocks */
     int16_t    *eq16_transposed;    /**< [num_eq16_blocks * dim * 32] EQ16 FastScan coords */
@@ -253,6 +255,7 @@ typedef struct
     EQ16Params       eq16_params;            /**< Calibration parameters for EQ16 */
     int16_t         *eq16_transposed_buffer; /**< Contiguous memory for EQ16 FastScan blocks */
     int8_t          *rq8_dataset_buffer;     /**< [N x D] resident 8-bit quantized residuals */
+    uint32_t        *frame_to_cluster_pos;   /**< [N] Map frame_id to cluster-contiguous offset */
     RQ8Params        rq8_params;             /**< Calibration parameters for RQ8 */
     int8_t          *rq8_transposed_buffer;  /**< Contiguous memory for RQ8 FastScan blocks */
     PQCodebook      *pq_codebook;            /**< Trained PQ codebook */

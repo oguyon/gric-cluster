@@ -613,8 +613,14 @@ int is_graph_pruned_by_eq16(
         return 0;
     }
 
+    size_t pos = (size_t)cand_id;
+    if (model->frame_to_cluster_pos != NULL)
+    {
+        pos = (size_t)model->frame_to_cluster_pos[cand_id];
+    }
+
     const int16_t *cand_eq16 = model->eq16_dataset_buffer +
-                               (size_t)cand_id * (size_t)model->frame_elements;
+                               pos * (size_t)model->frame_elements;
     telem->eq16_evaluations++;
 
     if (config->use_eq16_adc && query_eq16_adc != NULL)

@@ -78,6 +78,28 @@ int knn_model_build_ivf_layout(
     KnnModel        *model,
     const KnnConfig *config);
 
+/**
+ * knn_model_build_eq16_cluster_layout() - Reorganize EQ16 vectors into cluster-contiguous order.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_eq16_cluster_layout(
+    KnnModel        *model,
+    const KnnConfig *config);
+
+/**
+ * knn_model_build_rq8_cluster_layout() - Reorganize RQ8 vectors into cluster-contiguous order.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_rq8_cluster_layout(
+    KnnModel        *model,
+    const KnnConfig *config);
+
 #ifdef __cplusplus
 }
 #endif

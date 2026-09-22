@@ -431,12 +431,21 @@ int knn_model_build_transposed_eq16(
             {
                 if (i < m_count)
                 {
-                    long cand_id = (long)model->clusters[c].members[m_start + i].frame_id;
-                    if (cand_id < 0 || cand_id >= model->total_dataset_frames)
+                    const int16_t *cand_src = NULL;
+                    if (model->clusters[c].eq16_vectors != NULL)
                     {
-                        return -1;
+                        cand_src = model->clusters[c].eq16_vectors +
+                            (size_t)(m_start + i) * (size_t)dim;
                     }
-                    const int16_t *cand_src = model->eq16_dataset_buffer + cand_id * dim;
+                    else
+                    {
+                        long cand_id = (long)model->clusters[c].members[m_start + i].frame_id;
+                        if (cand_id < 0 || cand_id >= model->total_dataset_frames)
+                        {
+                            return -1;
+                        }
+                        cand_src = model->eq16_dataset_buffer + cand_id * dim;
+                    }
                     for (long d = 0; d < dim; d++)
                     {
                         block_ptr[d * EQ16_FASTSCAN_BLOCK_SIZE + i] = cand_src[d];
@@ -611,12 +620,21 @@ int knn_model_build_transposed_rq8(
             {
                 if (i < m_count)
                 {
-                    long cand_id = (long)model->clusters[c].members[m_start + i].frame_id;
-                    if (cand_id < 0 || cand_id >= model->total_dataset_frames)
+                    const int8_t *cand_src = NULL;
+                    if (model->clusters[c].rq8_vectors != NULL)
                     {
-                        return -1;
+                        cand_src = model->clusters[c].rq8_vectors +
+                            (size_t)(m_start + i) * (size_t)dim;
                     }
-                    const int8_t *cand_src = model->rq8_dataset_buffer + cand_id * dim;
+                    else
+                    {
+                        long cand_id = (long)model->clusters[c].members[m_start + i].frame_id;
+                        if (cand_id < 0 || cand_id >= model->total_dataset_frames)
+                        {
+                            return -1;
+                        }
+                        cand_src = model->rq8_dataset_buffer + cand_id * dim;
+                    }
                     for (long d = 0; d < dim; d++)
                     {
                         block_ptr[d * RQ8_FASTSCAN_BLOCK_SIZE + i] = cand_src[d];
@@ -966,6 +984,212 @@ int knn_model_build_ivf_layout(
     if (config != NULL && config->verbose_level >= 1)
     {
         printf("Built CPU contiguous IVF layout: %zu frames (%.2f MB)\n",
+               total_members, (double)total_bytes / (1024.0 * 1024.0));
+    }
+
+    return 0;
+}
+
+/**
+ * knn_model_build_eq16_cluster_layout() - Reorganize EQ16 vectors into cluster-contiguous order.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Reorders the EQ16 quantized dataset buffer so that all member vectors of each
+ * cluster are stored sequentially in memory, enabling linear streaming SIMD evaluation.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_eq16_cluster_layout(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (model == NULL || model->eq16_dataset_buffer == NULL ||
+        model->clusters == NULL || model->num_clusters <= 0)
+    {
+        return 0;
+    }
+
+    int M = model->num_clusters;
+    long dim = model->frame_elements;
+    size_t frame_bytes = (size_t)dim * sizeof(int16_t);
+
+    size_t total_members = 0;
+    for (int c = 0; c < M; c++)
+    {
+        total_members += (size_t)model->clusters[c].num_members;
+    }
+
+    if (total_members == 0)
+    {
+        return 0;
+    }
+
+    size_t total_bytes = 0;
+    if (knn_size_mul(total_members, frame_bytes, &total_bytes) != 0)
+    {
+        return -1;
+    }
+
+    void *buf = NULL;
+    if (posix_memalign(&buf, 64, total_bytes) != 0 || buf == NULL)
+    {
+        return -1;
+    }
+
+    if (model->frame_to_cluster_pos == NULL)
+    {
+        size_t map_bytes = 0;
+        if (knn_size_mul((size_t)model->total_dataset_frames, sizeof(uint32_t), &map_bytes) != 0)
+        {
+            free(buf);
+            return -1;
+        }
+        model->frame_to_cluster_pos = (uint32_t *)malloc(map_bytes);
+        if (model->frame_to_cluster_pos == NULL)
+        {
+            free(buf);
+            return -1;
+        }
+    }
+
+    int16_t *cursor = (int16_t *)buf;
+    size_t cur_pos = 0;
+
+    for (int c = 0; c < M; c++)
+    {
+        KnnCluster *cl = &model->clusters[c];
+        int num_m = cl->num_members;
+        if (num_m <= 0)
+        {
+            cl->eq16_vectors = NULL;
+            continue;
+        }
+
+        cl->eq16_vectors = cursor;
+        for (int m = 0; m < num_m; m++)
+        {
+            uint32_t fid = cl->members[m].frame_id;
+            if (fid < (uint32_t)model->total_dataset_frames)
+            {
+                model->frame_to_cluster_pos[fid] = (uint32_t)cur_pos;
+            }
+            const int16_t *src = model->eq16_dataset_buffer + (size_t)fid * (size_t)dim;
+            memcpy(cursor + (size_t)m * (size_t)dim, src, frame_bytes);
+            cur_pos++;
+        }
+        cursor += (size_t)num_m * (size_t)dim;
+    }
+
+    free(model->eq16_dataset_buffer);
+    model->eq16_dataset_buffer = (int16_t *)buf;
+
+    if (config != NULL && config->verbose_level >= 1)
+    {
+        printf("Built cluster-contiguous EQ16 layout: %zu frames (%.2f MB)\n",
+               total_members, (double)total_bytes / (1024.0 * 1024.0));
+    }
+
+    return 0;
+}
+
+/**
+ * knn_model_build_rq8_cluster_layout() - Reorganize RQ8 vectors into cluster-contiguous order.
+ * @model:  Pointer to initialized KnnModel.
+ * @config: Pointer to KnnConfig.
+ *
+ * Reorders the RQ8 quantized dataset buffer so that all member vectors of each
+ * cluster are stored sequentially in memory, enabling linear streaming SIMD evaluation.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+int knn_model_build_rq8_cluster_layout(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (model == NULL || model->rq8_dataset_buffer == NULL ||
+        model->clusters == NULL || model->num_clusters <= 0)
+    {
+        return 0;
+    }
+
+    int M = model->num_clusters;
+    long dim = model->frame_elements;
+    size_t frame_bytes = (size_t)dim * sizeof(int8_t);
+
+    size_t total_members = 0;
+    for (int c = 0; c < M; c++)
+    {
+        total_members += (size_t)model->clusters[c].num_members;
+    }
+
+    if (total_members == 0)
+    {
+        return 0;
+    }
+
+    size_t total_bytes = 0;
+    if (knn_size_mul(total_members, frame_bytes, &total_bytes) != 0)
+    {
+        return -1;
+    }
+
+    void *buf = NULL;
+    if (posix_memalign(&buf, 64, total_bytes) != 0 || buf == NULL)
+    {
+        return -1;
+    }
+
+    if (model->frame_to_cluster_pos == NULL)
+    {
+        size_t map_bytes = 0;
+        if (knn_size_mul((size_t)model->total_dataset_frames, sizeof(uint32_t), &map_bytes) != 0)
+        {
+            free(buf);
+            return -1;
+        }
+        model->frame_to_cluster_pos = (uint32_t *)malloc(map_bytes);
+        if (model->frame_to_cluster_pos == NULL)
+        {
+            free(buf);
+            return -1;
+        }
+    }
+
+    int8_t *cursor = (int8_t *)buf;
+    size_t cur_pos = 0;
+
+    for (int c = 0; c < M; c++)
+    {
+        KnnCluster *cl = &model->clusters[c];
+        int num_m = cl->num_members;
+        if (num_m <= 0)
+        {
+            cl->rq8_vectors = NULL;
+            continue;
+        }
+
+        cl->rq8_vectors = cursor;
+        for (int m = 0; m < num_m; m++)
+        {
+            uint32_t fid = cl->members[m].frame_id;
+            if (fid < (uint32_t)model->total_dataset_frames)
+            {
+                model->frame_to_cluster_pos[fid] = (uint32_t)cur_pos;
+            }
+            const int8_t *src = model->rq8_dataset_buffer + (size_t)fid * (size_t)dim;
+            memcpy(cursor + (size_t)m * (size_t)dim, src, frame_bytes);
+            cur_pos++;
+        }
+        cursor += (size_t)num_m * (size_t)dim;
+    }
+
+    free(model->rq8_dataset_buffer);
+    model->rq8_dataset_buffer = (int8_t *)buf;
+
+    if (config != NULL && config->verbose_level >= 1)
+    {
+        printf("Built cluster-contiguous RQ8 layout: %zu frames (%.2f MB)\n",
                total_members, (double)total_bytes / (1024.0 * 1024.0));
     }
 

@@ -5,6 +5,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "knn_cache.h"
+#include "knn_cache_layout.h"
 #include "knn_reader.h"
 #include "scalar_quant.h"
 #include "rabit_quant.h"
@@ -1086,6 +1087,12 @@ eq16_postprocess:
     // Pre-quantize anchor vectors for fast Level 2 anchor lower-bound pruning
     knn_quantize_cluster_anchors_eq16(model);
 
+    // Reorganize EQ16 vectors into cluster-contiguous order
+    if (knn_model_build_eq16_cluster_layout(model, config) != 0)
+    {
+        return -1;
+    }
+
     // Build transposed SIMD FastScan blocks for all clusters
     if (knn_model_build_transposed_eq16(model, config) != 0)
     {
@@ -1307,6 +1314,12 @@ int knn_model_build_or_load_rq8(
             fprintf(stderr, "Warning: Failed to save RQ8 sidecar file to '%s'\n",
                     config->rq8_save_path);
         }
+    }
+
+    // Reorganize RQ8 vectors into cluster-contiguous order
+    if (knn_model_build_rq8_cluster_layout(model, config) != 0)
+    {
+        return -1;
     }
 
     // Build transposed SIMD FastScan blocks for all clusters
