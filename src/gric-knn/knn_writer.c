@@ -3,16 +3,21 @@
  * @brief Output serialization for gric-knn results into FITS or ASCII formats.
  */
 
+#define _POSIX_C_SOURCE 200809L
 #include "knn_writer.h"
 #include "knn_reader.h"
 #include "framedistance.h"
 #include "../../shared/gric_bin_io.h"
+#include <fcntl.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -23,6 +28,147 @@
 #endif
 
 #define KNN_WRITER_STACK_K 1024
+
+/**
+ * compute_query_mutual_dists() - Compute mutual distances between neighbors of a query.
+ * @u:         Query index [0..N-1].
+ * @N:         Total frames in dataset.
+ * @k:         Number of nearest neighbors.
+ * @elem:      Number of vector elements per frame.
+ * @elem_size: Byte size of each element (float or double).
+ * @frames:    Pointer to resident frames buffer.
+ * @model:     Active KnnModel.
+ * @results:   Computed KnnResults.
+ * @out_slice: Output buffer for k*(k-1)/2 mutual distance floats.
+ */
+static inline void compute_query_mutual_dists(
+    long              u,
+    long              N,
+    long              k,
+    long              elem,
+    size_t            elem_size,
+    const void       *frames,
+    const KnnModel   *model,
+    const KnnResults *results,
+    float            *out_slice)
+{
+    const void *cand_stack[KNN_WRITER_STACK_K];
+    double dist_stack[KNN_WRITER_STACK_K];
+    const void **cand_ptrs = (k <= KNN_WRITER_STACK_K) ?
+        cand_stack :
+        (const void **)malloc((size_t)k * sizeof(void *));
+    double *tmp_dists = (k <= KNN_WRITER_STACK_K) ?
+        dist_stack :
+        (double *)malloc((size_t)k * sizeof(double));
+
+    if (cand_ptrs == NULL || tmp_dists == NULL)
+    {
+        if (cand_ptrs != cand_stack && cand_ptrs != NULL)
+        {
+            free(cand_ptrs);
+        }
+        if (tmp_dists != dist_stack && tmp_dists != NULL)
+        {
+            free(tmp_dists);
+        }
+        return;
+    }
+
+    int all_valid = 1;
+    for (int i = 0; i < (int)k; i++)
+    {
+        long id_i = (long)results->indices[u * k + i];
+        if (id_i < 0 || id_i >= N)
+        {
+            all_valid = 0;
+            break;
+        }
+        cand_ptrs[i] = (const char *)frames + (size_t)id_i * (size_t)elem * elem_size;
+    }
+
+    if (all_valid)
+    {
+        for (int i = 0; i < (int)k - 1; i++)
+        {
+            int n_targets = (int)k - 1 - i;
+            if (model->is_double)
+            {
+                framedist_batch_double(
+                    (const double *)cand_ptrs[i],
+                    (const double *const *)(cand_ptrs + i + 1),
+                    n_targets,
+                    tmp_dists,
+                    elem);
+            }
+            else
+            {
+                framedist_batch_float(
+                    (const float *)cand_ptrs[i],
+                    (const float *const *)(cand_ptrs + i + 1),
+                    n_targets,
+                    tmp_dists,
+                    elem);
+            }
+
+            long base_idx = (long)i * (long)k - ((long)i * (long)(i + 1)) / 2;
+            float *dst = &out_slice[base_idx];
+            for (int t = 0; t < n_targets; t++)
+            {
+                dst[t] = (float)tmp_dists[t];
+            }
+        }
+    }
+    else
+    {
+        for (int i = 0; i < (int)k; i++)
+        {
+            long id_i = (long)results->indices[u * k + i];
+            if (id_i < 0 || id_i >= N)
+            {
+                continue;
+            }
+            const void *f_i = (const char *)frames +
+                (size_t)id_i * (size_t)elem * elem_size;
+
+            for (int j = i + 1; j < (int)k; j++)
+            {
+                long id_j = (long)results->indices[u * k + j];
+                if (id_j < 0 || id_j >= N)
+                {
+                    continue;
+                }
+                const void *f_j = (const char *)frames +
+                    (size_t)id_j * (size_t)elem * elem_size;
+
+                double dist;
+                if (model->is_double)
+                {
+                    dist = framedist_double(
+                        (const double *)f_i,
+                        (const double *)f_j,
+                        elem);
+                }
+                else
+                {
+                    dist = framedist_float(
+                        (const float *)f_i,
+                        (const float *)f_j,
+                        elem);
+                }
+
+                long pair_idx = (long)i * (long)k -
+                    ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
+                out_slice[pair_idx] = (float)dist;
+            }
+        }
+    }
+
+    if (cand_ptrs != cand_stack)
+    {
+        free(cand_ptrs);
+        free(tmp_dists);
+    }
+}
 
 /**
  * write_bin_results() - Write results as dual self-describing GRIC binary arrays.
@@ -147,7 +293,7 @@ static int write_bin_results(
 
         if (frames != NULL)
         {
-            FILE *fp_mut = fopen(out_mutual_path, "wb");
+            FILE *fp_mut = fopen(out_mutual_path, "wb+");
             if (fp_mut != NULL)
             {
                 gric_bin_header_t hdr_mut;
@@ -164,156 +310,78 @@ static int write_bin_results(
                 if (gric_bin_write_header(fp_mut, &hdr_mut,
                                           "k-NN mutual distances [N x k*(k-1)/2]") == 0)
                 {
-                    long chunk_max_queries = 8192;
-                    if (chunk_max_queries > N)
+                    fflush(fp_mut);
+                    long hdr_bytes = ftell(fp_mut);
+                    size_t total_file_bytes = (size_t)hdr_bytes + total_mut * sizeof(float);
+                    int fd_mut = fileno(fp_mut);
+                    void *mmap_mut = MAP_FAILED;
+
+                    if (fd_mut >= 0)
                     {
-                        chunk_max_queries = N;
-                    }
-                    size_t chunk_elements = (size_t)chunk_max_queries * m_pairs;
-                    float *chunk_buf = (float *)malloc(chunk_elements * sizeof(float));
-                    if (chunk_buf != NULL)
-                    {
-                        for (long u_base = 0; u_base < N; u_base += chunk_max_queries)
+                        if (posix_fallocate(fd_mut, 0, (off_t)total_file_bytes) != 0)
                         {
-                            long cur_chunk_n = N - u_base;
-                            if (cur_chunk_n > chunk_max_queries)
+                            if (ftruncate(fd_mut, (off_t)total_file_bytes) != 0)
                             {
-                                cur_chunk_n = chunk_max_queries;
+                                /* Truncate failed, mmap will handle error */
                             }
+                        }
+                        mmap_mut = mmap(NULL, total_file_bytes, PROT_READ | PROT_WRITE,
+                                        MAP_SHARED, fd_mut, 0);
+                    }
+
+                    if (mmap_mut != MAP_FAILED)
+                    {
+                        float *mut_dst = (float *)((char *)mmap_mut + hdr_bytes);
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+                        for (long u = 0; u < N; u++)
+                        {
+                            float *out_slice = &mut_dst[(size_t)u * m_pairs];
+                            compute_query_mutual_dists(
+                                u, N, k, elem, elem_size, frames, model, results, out_slice);
+                        }
+
+                        msync(mmap_mut, total_file_bytes, MS_ASYNC);
+                        munmap(mmap_mut, total_file_bytes);
+                    }
+                    else
+                    {
+                        long chunk_max_queries = 8192;
+                        if (chunk_max_queries > N)
+                        {
+                            chunk_max_queries = N;
+                        }
+                        size_t chunk_elements = (size_t)chunk_max_queries * m_pairs;
+                        float *chunk_buf = (float *)malloc(chunk_elements * sizeof(float));
+                        if (chunk_buf != NULL)
+                        {
+                            for (long u_base = 0; u_base < N; u_base += chunk_max_queries)
+                            {
+                                long cur_chunk_n = N - u_base;
+                                if (cur_chunk_n > chunk_max_queries)
+                                {
+                                    cur_chunk_n = chunk_max_queries;
+                                }
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic)
 #endif
-                            for (long c = 0; c < cur_chunk_n; c++)
-                            {
-                                long u = u_base + c;
-                                const void *cand_stack[KNN_WRITER_STACK_K];
-                                double dist_stack[KNN_WRITER_STACK_K];
-                                const void **cand_ptrs = (k <= KNN_WRITER_STACK_K) ?
-                                    cand_stack :
-                                    (const void **)malloc((size_t)k * sizeof(void *));
-                                double *tmp_dists = (k <= KNN_WRITER_STACK_K) ?
-                                    dist_stack :
-                                    (double *)malloc((size_t)k * sizeof(double));
-
-                                if (cand_ptrs == NULL || tmp_dists == NULL)
+                                for (long c = 0; c < cur_chunk_n; c++)
                                 {
-                                    if (cand_ptrs != cand_stack && cand_ptrs != NULL)
-                                    {
-                                        free(cand_ptrs);
-                                    }
-                                    if (tmp_dists != dist_stack && tmp_dists != NULL)
-                                    {
-                                        free(tmp_dists);
-                                    }
-                                    continue;
-                                }
+                                    long u = u_base + c;
+                                    float *out_slice = &chunk_buf[(size_t)c * m_pairs];
+                                    compute_query_mutual_dists(
+                                        u, N, k, elem, elem_size, frames, model, results,
+                                        out_slice);
+                                } // for (long c = 0; ...)
 
-                                int all_valid = 1;
-                                for (int i = 0; i < (int)k; i++)
-                                {
-                                    long id_i = (long)results->indices[u * k + i];
-                                    if (id_i < 0 || id_i >= N)
-                                    {
-                                        all_valid = 0;
-                                        break;
-                                    }
-                                    cand_ptrs[i] = (const char *)frames +
-                                        (size_t)id_i * (size_t)elem * elem_size;
-                                }
+                                fwrite(chunk_buf, sizeof(float),
+                                       (size_t)cur_chunk_n * m_pairs, fp_mut);
+                            } // for (long u_base = 0; ...)
 
-                                if (all_valid)
-                                {
-                                    for (int i = 0; i < (int)k - 1; i++)
-                                    {
-                                        int n_targets = (int)k - 1 - i;
-                                        if (model->is_double)
-                                        {
-                                            framedist_batch_double(
-                                                (const double *)cand_ptrs[i],
-                                                (const double *const *)(cand_ptrs + i + 1),
-                                                n_targets,
-                                                tmp_dists,
-                                                elem);
-                                        }
-                                        else
-                                        {
-                                            framedist_batch_float(
-                                                (const float *)cand_ptrs[i],
-                                                (const float *const *)(cand_ptrs + i + 1),
-                                                n_targets,
-                                                tmp_dists,
-                                                elem);
-                                        }
-
-                                        long base_idx = (long)i * (long)k -
-                                            ((long)i * (long)(i + 1)) / 2;
-                                        float *dst = &chunk_buf[(size_t)c * m_pairs +
-                                            (size_t)base_idx];
-                                        for (int t = 0; t < n_targets; t++)
-                                        {
-                                            dst[t] = (float)tmp_dists[t];
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    for (int i = 0; i < (int)k; i++)
-                                    {
-                                        long id_i = (long)results->indices[u * k + i];
-                                        if (id_i < 0 || id_i >= N)
-                                        {
-                                            continue;
-                                        }
-                                        const void *f_i = (const char *)frames +
-                                            (size_t)id_i * (size_t)elem * elem_size;
-
-                                        for (int j = i + 1; j < (int)k; j++)
-                                        {
-                                            long id_j = (long)results->indices[u * k + j];
-                                            if (id_j < 0 || id_j >= N)
-                                            {
-                                                continue;
-                                            }
-                                            const void *f_j = (const char *)frames +
-                                                (size_t)id_j * (size_t)elem * elem_size;
-
-                                            double dist;
-                                            if (model->is_double)
-                                            {
-                                                dist = framedist_double(
-                                                    (const double *)f_i,
-                                                    (const double *)f_j,
-                                                    elem);
-                                            }
-                                            else
-                                            {
-                                                dist = framedist_float(
-                                                    (const float *)f_i,
-                                                    (const float *)f_j,
-                                                    elem);
-                                            }
-
-                                            long pair_idx = (long)i * (long)k -
-                                                ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
-                                            chunk_buf[(size_t)c * m_pairs + (size_t)pair_idx] =
-                                                (float)dist;
-                                        }
-                                    }
-                                }
-
-                                if (cand_ptrs != cand_stack)
-                                {
-                                    free(cand_ptrs);
-                                    free(tmp_dists);
-                                }
-                            } // for (long c = 0; ...)
-
-                            fwrite(chunk_buf, sizeof(float),
-                                   (size_t)cur_chunk_n * m_pairs, fp_mut);
-                        } // for (long u_base = 0; ...)
-
-                        free(chunk_buf);
+                            free(chunk_buf);
+                        }
                     }
                 }
                 fclose(fp_mut);

@@ -595,6 +595,12 @@ static int load_knn_graph(
     model->graph_indices = NULL;
     model->graph_distances = NULL;
     model->graph_mutual_dists = NULL;
+    model->graph_idx_mmap_addr = NULL;
+    model->graph_idx_mmap_size = 0;
+    model->graph_dst_mmap_addr = NULL;
+    model->graph_dst_mmap_size = 0;
+    model->graph_mut_mmap_addr = NULL;
+    model->graph_mut_mmap_size = 0;
 
     if (cluster_dir == NULL || model == NULL || model->total_dataset_frames <= 0)
     {
@@ -646,42 +652,87 @@ static int load_knn_graph(
     uint64_t graph_k = hdr_idx.dims[1];
     uint64_t total_elems = n_frames * graph_k;
 
-    uint32_t *indices = (uint32_t *)malloc(total_elems * sizeof(uint32_t));
-    float    *distances = (float *)malloc(total_elems * sizeof(float));
-    if (indices == NULL || distances == NULL)
+    int fd_idx = fileno(fp_idx);
+    int fd_dst = fileno(fp_dst);
+    struct stat st_idx, st_dst;
+    size_t exp_idx_bytes = hdr_idx.header_bytes + total_elems * sizeof(uint32_t);
+    size_t exp_dst_bytes = hdr_dst.header_bytes + total_elems * sizeof(float);
+
+    if (fd_idx >= 0 && fd_dst >= 0 &&
+        fstat(fd_idx, &st_idx) == 0 && fstat(fd_dst, &st_dst) == 0 &&
+        (size_t)st_idx.st_size >= exp_idx_bytes &&
+        (size_t)st_dst.st_size >= exp_dst_bytes)
     {
-        if (indices != NULL)
+        void *mmap_idx = mmap(NULL, (size_t)st_idx.st_size, PROT_READ, MAP_SHARED, fd_idx, 0);
+        void *mmap_dst = mmap(NULL, (size_t)st_dst.st_size, PROT_READ, MAP_SHARED, fd_dst, 0);
+        if (mmap_idx != MAP_FAILED && mmap_dst != MAP_FAILED)
         {
-            free(indices);
+            posix_madvise(mmap_idx, (size_t)st_idx.st_size, POSIX_MADV_WILLNEED);
+            posix_madvise(mmap_dst, (size_t)st_dst.st_size, POSIX_MADV_WILLNEED);
+            model->graph_idx_mmap_addr = mmap_idx;
+            model->graph_idx_mmap_size = (size_t)st_idx.st_size;
+            model->graph_dst_mmap_addr = mmap_dst;
+            model->graph_dst_mmap_size = (size_t)st_dst.st_size;
+            model->graph_indices = (uint32_t *)((char *)mmap_idx + hdr_idx.header_bytes);
+            model->graph_distances = (float *)((char *)mmap_dst + hdr_dst.header_bytes);
+            model->has_knn_graph = 1;
+            model->graph_k = (int)graph_k;
         }
-        if (distances != NULL)
+        else
         {
-            free(distances);
+            if (mmap_idx != MAP_FAILED)
+            {
+                munmap(mmap_idx, (size_t)st_idx.st_size);
+            }
+            if (mmap_dst != MAP_FAILED)
+            {
+                munmap(mmap_dst, (size_t)st_dst.st_size);
+            }
         }
-        fclose(fp_idx);
-        fclose(fp_dst);
-        return 0;
     }
 
-    size_t r_idx = fread(indices, sizeof(uint32_t), total_elems, fp_idx);
-    size_t r_dst = fread(distances, sizeof(float), total_elems, fp_dst);
+    if (!model->has_knn_graph)
+    {
+        uint32_t *indices = (uint32_t *)malloc(total_elems * sizeof(uint32_t));
+        float    *distances = (float *)malloc(total_elems * sizeof(float));
+        if (indices == NULL || distances == NULL)
+        {
+            if (indices != NULL)
+            {
+                free(indices);
+            }
+            if (distances != NULL)
+            {
+                free(distances);
+            }
+            fclose(fp_idx);
+            fclose(fp_dst);
+            return 0;
+        }
+
+        size_t r_idx = fread(indices, sizeof(uint32_t), total_elems, fp_idx);
+        size_t r_dst = fread(distances, sizeof(float), total_elems, fp_dst);
+        if (r_idx != total_elems || r_dst != total_elems)
+        {
+            free(indices);
+            free(distances);
+            fclose(fp_idx);
+            fclose(fp_dst);
+            return 0;
+        }
+
+        model->has_knn_graph = 1;
+        model->graph_k = (int)graph_k;
+        model->graph_indices = indices;
+        model->graph_distances = distances;
+    }
+
     fclose(fp_idx);
     fclose(fp_dst);
 
-    if (r_idx != total_elems || r_dst != total_elems)
-    {
-        free(indices);
-        free(distances);
-        return 0;
-    }
-
-    model->has_knn_graph = 1;
-    model->graph_k = (int)graph_k;
-    model->graph_indices = indices;
-    model->graph_distances = distances;
-
-    printf("  k-NN Metric Graph:   Loaded %lu frames x %lu neighbors from cluster directory\n",
-           n_frames, graph_k);
+    printf("  k-NN Metric Graph:   Loaded %lu frames x %lu neighbors from cluster directory%s\n",
+           n_frames, graph_k,
+           (model->graph_idx_mmap_addr != NULL) ? " (zero-copy)" : "");
 
     /* Opportunistically load precomputed mutual distances */
     char mut_path[2048];
@@ -698,18 +749,43 @@ static int load_knn_graph(
                 hdr_mut.dims[1] == m_pairs)
             {
                 uint64_t total_mut = n_frames * m_pairs;
-                float *mut_dists = (float *)malloc(total_mut * sizeof(float));
-                if (mut_dists != NULL)
+                size_t exp_mut_bytes = hdr_mut.header_bytes + total_mut * sizeof(float);
+                int fd_mut = fileno(fp_mut);
+                struct stat st_mut;
+
+                if (fd_mut >= 0 && fstat(fd_mut, &st_mut) == 0 &&
+                    (size_t)st_mut.st_size >= exp_mut_bytes)
                 {
-                    if (fread(mut_dists, sizeof(float), total_mut, fp_mut) == total_mut)
+                    void *mmap_mut = mmap(NULL, (size_t)st_mut.st_size, PROT_READ,
+                                          MAP_SHARED, fd_mut, 0);
+                    if (mmap_mut != MAP_FAILED)
                     {
-                        model->graph_mutual_dists = mut_dists;
-                        printf("  k-NN Mutual Dists:   Loaded %lu frames x %lu pairs from %s\n",
+                        posix_madvise(mmap_mut, (size_t)st_mut.st_size, POSIX_MADV_WILLNEED);
+                        model->graph_mut_mmap_addr = mmap_mut;
+                        model->graph_mut_mmap_size = (size_t)st_mut.st_size;
+                        model->graph_mutual_dists =
+                            (float *)((char *)mmap_mut + hdr_mut.header_bytes);
+                        printf("  k-NN Mutual Dists:   Loaded %lu frames x %lu pairs from %s "
+                               "(zero-copy)\n",
                                n_frames, m_pairs, mut_path);
                     }
-                    else
+                }
+
+                if (model->graph_mutual_dists == NULL)
+                {
+                    float *mut_dists = (float *)malloc(total_mut * sizeof(float));
+                    if (mut_dists != NULL)
                     {
-                        free(mut_dists);
+                        if (fread(mut_dists, sizeof(float), total_mut, fp_mut) == total_mut)
+                        {
+                            model->graph_mutual_dists = mut_dists;
+                            printf("  k-NN Mutual Dists:   Loaded %lu frames x %lu pairs from %s\n",
+                                   n_frames, m_pairs, mut_path);
+                        }
+                        else
+                        {
+                            free(mut_dists);
+                        }
                     }
                 }
             }
@@ -750,7 +826,7 @@ static int load_knn_graph(
                         {
                             for (int i = 0; i < (int)graph_k; i++)
                             {
-                                long id_i = (long)indices[u * (long)graph_k + i];
+                                long id_i = (long)model->graph_indices[u * (long)graph_k + i];
                                 if (id_i < 0 || id_i >= (long)n_frames)
                                 {
                                     continue;
@@ -760,7 +836,7 @@ static int load_knn_graph(
 
                                 for (int j = i + 1; j < (int)graph_k; j++)
                                 {
-                                    long id_j = (long)indices[u * (long)graph_k + j];
+                                    long id_j = (long)model->graph_indices[u * (long)graph_k + j];
                                     if (id_j < 0 || id_j >= (long)n_frames)
                                     {
                                         continue;
@@ -1043,19 +1119,46 @@ void knn_model_free(
 
     if (model->graph_indices != NULL)
     {
-        free(model->graph_indices);
+        if (model->graph_idx_mmap_addr != NULL)
+        {
+            munmap(model->graph_idx_mmap_addr, model->graph_idx_mmap_size);
+            model->graph_idx_mmap_addr = NULL;
+            model->graph_idx_mmap_size = 0;
+        }
+        else
+        {
+            free(model->graph_indices);
+        }
         model->graph_indices = NULL;
     }
 
     if (model->graph_distances != NULL)
     {
-        free(model->graph_distances);
+        if (model->graph_dst_mmap_addr != NULL)
+        {
+            munmap(model->graph_dst_mmap_addr, model->graph_dst_mmap_size);
+            model->graph_dst_mmap_addr = NULL;
+            model->graph_dst_mmap_size = 0;
+        }
+        else
+        {
+            free(model->graph_distances);
+        }
         model->graph_distances = NULL;
     }
 
     if (model->graph_mutual_dists != NULL)
     {
-        free(model->graph_mutual_dists);
+        if (model->graph_mut_mmap_addr != NULL)
+        {
+            munmap(model->graph_mut_mmap_addr, model->graph_mut_mmap_size);
+            model->graph_mut_mmap_addr = NULL;
+            model->graph_mut_mmap_size = 0;
+        }
+        else
+        {
+            free(model->graph_mutual_dists);
+        }
         model->graph_mutual_dists = NULL;
     }
 
