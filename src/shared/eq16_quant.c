@@ -1153,6 +1153,88 @@ static void eq16_dist_asym_cutoff_batch_1x4_scalar(
     out_dists[3] = d3;
 }
 
+/**
+ * eq16_dist_asym_cutoff_batch_1x8_scalar() - Scalar 1x8 asymmetric distance with cutoff.
+ * @q_scaled:  Normalized query float vector [dim].
+ * @cands:     Array of 8 pointers to candidate int16 vectors.
+ * @dim:       Vector dimension.
+ * @cutoff:    Cutoff threshold on sum of squared differences.
+ * @out_dists: Output array of 8 float squared distances.
+ */
+static void eq16_dist_asym_cutoff_batch_1x8_scalar(
+    const float         *restrict  q_scaled,
+    const int16_t *const *restrict cands,
+    long                           dim,
+    float                          cutoff,
+    float               *restrict  out_dists)
+{
+    const int16_t *c0 = cands[0];
+    const int16_t *c1 = cands[1];
+    const int16_t *c2 = cands[2];
+    const int16_t *c3 = cands[3];
+    const int16_t *c4 = cands[4];
+    const int16_t *c5 = cands[5];
+    const int16_t *c6 = cands[6];
+    const int16_t *c7 = cands[7];
+
+    float d0 = 0.0f;
+    float d1 = 0.0f;
+    float d2 = 0.0f;
+    float d3 = 0.0f;
+    float d4 = 0.0f;
+    float d5 = 0.0f;
+    float d6 = 0.0f;
+    float d7 = 0.0f;
+
+    for (long i = 0; i < dim; i++)
+    {
+        float q = q_scaled[i];
+        float diff0 = q - (float)c0[i];
+        float diff1 = q - (float)c1[i];
+        float diff2 = q - (float)c2[i];
+        float diff3 = q - (float)c3[i];
+        float diff4 = q - (float)c4[i];
+        float diff5 = q - (float)c5[i];
+        float diff6 = q - (float)c6[i];
+        float diff7 = q - (float)c7[i];
+
+        d0 += diff0 * diff0;
+        d1 += diff1 * diff1;
+        d2 += diff2 * diff2;
+        d3 += diff3 * diff3;
+        d4 += diff4 * diff4;
+        d5 += diff5 * diff5;
+        d6 += diff6 * diff6;
+        d7 += diff7 * diff7;
+
+        if ((i & 63) == 63)
+        {
+            if (d0 > cutoff && d1 > cutoff && d2 > cutoff && d3 > cutoff &&
+                d4 > cutoff && d5 > cutoff && d6 > cutoff && d7 > cutoff)
+            {
+                out_dists[0] = d0;
+                out_dists[1] = d1;
+                out_dists[2] = d2;
+                out_dists[3] = d3;
+                out_dists[4] = d4;
+                out_dists[5] = d5;
+                out_dists[6] = d6;
+                out_dists[7] = d7;
+                return;
+            }
+        }
+    } // for (long i = 0; i < dim; i++)
+
+    out_dists[0] = d0;
+    out_dists[1] = d1;
+    out_dists[2] = d2;
+    out_dists[3] = d3;
+    out_dists[4] = d4;
+    out_dists[5] = d5;
+    out_dists[6] = d6;
+    out_dists[7] = d7;
+}
+
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 static inline __m128 eq16_reduce_4x256_ps(
     __m256 acc0,
@@ -1284,6 +1366,179 @@ static void eq16_dist_asym_cutoff_batch_1x4_avx2(
         out_dists[3] += diff3 * diff3;
     } // for (; i < dim; i++)
 }
+
+/**
+ * eq16_dist_asym_cutoff_batch_1x8_avx2() - AVX2 1x8 asymmetric distance with cutoff.
+ * @q_scaled:  Normalized query float vector [dim].
+ * @cands:     Array of 8 pointers to candidate int16 vectors.
+ * @dim:       Vector dimension.
+ * @cutoff:    Cutoff threshold on sum of squared differences.
+ * @out_dists: Output array of 8 float squared distances.
+ */
+GRIC_TARGET_AVX2
+static void eq16_dist_asym_cutoff_batch_1x8_avx2(
+    const float         *restrict  q_scaled,
+    const int16_t *const *restrict cands,
+    long                           dim,
+    float                          cutoff,
+    float               *restrict  out_dists)
+{
+    const int16_t *c0 = cands[0];
+    const int16_t *c1 = cands[1];
+    const int16_t *c2 = cands[2];
+    const int16_t *c3 = cands[3];
+    const int16_t *c4 = cands[4];
+    const int16_t *c5 = cands[5];
+    const int16_t *c6 = cands[6];
+    const int16_t *c7 = cands[7];
+
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    __m256 acc2 = _mm256_setzero_ps();
+    __m256 acc3 = _mm256_setzero_ps();
+    __m256 acc4 = _mm256_setzero_ps();
+    __m256 acc5 = _mm256_setzero_ps();
+    __m256 acc6 = _mm256_setzero_ps();
+    __m256 acc7 = _mm256_setzero_ps();
+    __m128 vcutoff = _mm_set1_ps(cutoff);
+
+    long i = 0;
+    for (; i <= dim - 16; i += 16)
+    {
+        /* First 8 dimensions */
+        {
+            __m256 q_0 = _mm256_loadu_ps(q_scaled + i);
+
+            __m128i c16_0 = _mm_loadu_si128((const __m128i *)(const void *)(c0 + i));
+            __m256  cf_0  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_0));
+            __m256  diff0 = _mm256_sub_ps(q_0, cf_0);
+            acc0 = _mm256_fmadd_ps(diff0, diff0, acc0);
+
+            __m128i c16_1 = _mm_loadu_si128((const __m128i *)(const void *)(c1 + i));
+            __m256  cf_1  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_1));
+            __m256  diff1 = _mm256_sub_ps(q_0, cf_1);
+            acc1 = _mm256_fmadd_ps(diff1, diff1, acc1);
+
+            __m128i c16_2 = _mm_loadu_si128((const __m128i *)(const void *)(c2 + i));
+            __m256  cf_2  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_2));
+            __m256  diff2 = _mm256_sub_ps(q_0, cf_2);
+            acc2 = _mm256_fmadd_ps(diff2, diff2, acc2);
+
+            __m128i c16_3 = _mm_loadu_si128((const __m128i *)(const void *)(c3 + i));
+            __m256  cf_3  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_3));
+            __m256  diff3 = _mm256_sub_ps(q_0, cf_3);
+            acc3 = _mm256_fmadd_ps(diff3, diff3, acc3);
+
+            __m128i c16_4 = _mm_loadu_si128((const __m128i *)(const void *)(c4 + i));
+            __m256  cf_4  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_4));
+            __m256  diff4 = _mm256_sub_ps(q_0, cf_4);
+            acc4 = _mm256_fmadd_ps(diff4, diff4, acc4);
+
+            __m128i c16_5 = _mm_loadu_si128((const __m128i *)(const void *)(c5 + i));
+            __m256  cf_5  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_5));
+            __m256  diff5 = _mm256_sub_ps(q_0, cf_5);
+            acc5 = _mm256_fmadd_ps(diff5, diff5, acc5);
+
+            __m128i c16_6 = _mm_loadu_si128((const __m128i *)(const void *)(c6 + i));
+            __m256  cf_6  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_6));
+            __m256  diff6 = _mm256_sub_ps(q_0, cf_6);
+            acc6 = _mm256_fmadd_ps(diff6, diff6, acc6);
+
+            __m128i c16_7 = _mm_loadu_si128((const __m128i *)(const void *)(c7 + i));
+            __m256  cf_7  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_7));
+            __m256  diff7 = _mm256_sub_ps(q_0, cf_7);
+            acc7 = _mm256_fmadd_ps(diff7, diff7, acc7);
+        }
+
+        /* Second 8 dimensions */
+        {
+            __m256 q_1 = _mm256_loadu_ps(q_scaled + i + 8);
+
+            __m128i c16_0 = _mm_loadu_si128((const __m128i *)(const void *)(c0 + i + 8));
+            __m256  cf_0  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_0));
+            __m256  diff0 = _mm256_sub_ps(q_1, cf_0);
+            acc0 = _mm256_fmadd_ps(diff0, diff0, acc0);
+
+            __m128i c16_1 = _mm_loadu_si128((const __m128i *)(const void *)(c1 + i + 8));
+            __m256  cf_1  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_1));
+            __m256  diff1 = _mm256_sub_ps(q_1, cf_1);
+            acc1 = _mm256_fmadd_ps(diff1, diff1, acc1);
+
+            __m128i c16_2 = _mm_loadu_si128((const __m128i *)(const void *)(c2 + i + 8));
+            __m256  cf_2  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_2));
+            __m256  diff2 = _mm256_sub_ps(q_1, cf_2);
+            acc2 = _mm256_fmadd_ps(diff2, diff2, acc2);
+
+            __m128i c16_3 = _mm_loadu_si128((const __m128i *)(const void *)(c3 + i + 8));
+            __m256  cf_3  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_3));
+            __m256  diff3 = _mm256_sub_ps(q_1, cf_3);
+            acc3 = _mm256_fmadd_ps(diff3, diff3, acc3);
+
+            __m128i c16_4 = _mm_loadu_si128((const __m128i *)(const void *)(c4 + i + 8));
+            __m256  cf_4  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_4));
+            __m256  diff4 = _mm256_sub_ps(q_1, cf_4);
+            acc4 = _mm256_fmadd_ps(diff4, diff4, acc4);
+
+            __m128i c16_5 = _mm_loadu_si128((const __m128i *)(const void *)(c5 + i + 8));
+            __m256  cf_5  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_5));
+            __m256  diff5 = _mm256_sub_ps(q_1, cf_5);
+            acc5 = _mm256_fmadd_ps(diff5, diff5, acc5);
+
+            __m128i c16_6 = _mm_loadu_si128((const __m128i *)(const void *)(c6 + i + 8));
+            __m256  cf_6  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_6));
+            __m256  diff6 = _mm256_sub_ps(q_1, cf_6);
+            acc6 = _mm256_fmadd_ps(diff6, diff6, acc6);
+
+            __m128i c16_7 = _mm_loadu_si128((const __m128i *)(const void *)(c7 + i + 8));
+            __m256  cf_7  = _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(c16_7));
+            __m256  diff7 = _mm256_sub_ps(q_1, cf_7);
+            acc7 = _mm256_fmadd_ps(diff7, diff7, acc7);
+        }
+
+        /* Periodic cutoff checkpoint (every 64 dimensions) */
+        if ((i & 63) == 48)
+        {
+            __m128 sums_lo = eq16_reduce_4x256_ps(acc0, acc1, acc2, acc3);
+            __m128 sums_hi = eq16_reduce_4x256_ps(acc4, acc5, acc6, acc7);
+            __m128 cmp_lo = _mm_cmpgt_ps(sums_lo, vcutoff);
+            __m128 cmp_hi = _mm_cmpgt_ps(sums_hi, vcutoff);
+            if ((_mm_movemask_ps(cmp_lo) == 0xF) && (_mm_movemask_ps(cmp_hi) == 0xF))
+            {
+                _mm_storeu_ps(out_dists, sums_lo);
+                _mm_storeu_ps(out_dists + 4, sums_hi);
+                return;
+            }
+        }
+    } // for (; i <= dim - 16; i += 16)
+
+    __m128 sums_lo = eq16_reduce_4x256_ps(acc0, acc1, acc2, acc3);
+    __m128 sums_hi = eq16_reduce_4x256_ps(acc4, acc5, acc6, acc7);
+    _mm_storeu_ps(out_dists, sums_lo);
+    _mm_storeu_ps(out_dists + 4, sums_hi);
+
+    /* Remainder dimensions */
+    for (; i < dim; i++)
+    {
+        float q = q_scaled[i];
+        float diff0 = q - (float)c0[i];
+        float diff1 = q - (float)c1[i];
+        float diff2 = q - (float)c2[i];
+        float diff3 = q - (float)c3[i];
+        float diff4 = q - (float)c4[i];
+        float diff5 = q - (float)c5[i];
+        float diff6 = q - (float)c6[i];
+        float diff7 = q - (float)c7[i];
+
+        out_dists[0] += diff0 * diff0;
+        out_dists[1] += diff1 * diff1;
+        out_dists[2] += diff2 * diff2;
+        out_dists[3] += diff3 * diff3;
+        out_dists[4] += diff4 * diff4;
+        out_dists[5] += diff5 * diff5;
+        out_dists[6] += diff6 * diff6;
+        out_dists[7] += diff7 * diff7;
+    } // for (; i < dim; i++)
+}
 #endif // x86 AVX2
 
 #if GRIC_HAVE_AVX512_TARGET
@@ -1398,6 +1653,195 @@ static void eq16_dist_asym_cutoff_batch_1x4_avx512(
         out_dists[3] += diff3 * diff3;
     } // for (; i < dim; i++)
 }
+
+/**
+ * eq16_dist_asym_cutoff_batch_1x8_avx512() - AVX512 1x8 asymmetric distance with cutoff.
+ * @q_scaled:  Normalized query float vector [dim].
+ * @cands:     Array of 8 pointers to candidate int16 vectors.
+ * @dim:       Vector dimension.
+ * @cutoff:    Cutoff threshold on sum of squared differences.
+ * @out_dists: Output array of 8 float squared distances.
+ */
+GRIC_TARGET_AVX512
+static void eq16_dist_asym_cutoff_batch_1x8_avx512(
+    const float         *restrict  q_scaled,
+    const int16_t *const *restrict cands,
+    long                           dim,
+    float                          cutoff,
+    float               *restrict  out_dists)
+{
+    const int16_t *c0 = cands[0];
+    const int16_t *c1 = cands[1];
+    const int16_t *c2 = cands[2];
+    const int16_t *c3 = cands[3];
+    const int16_t *c4 = cands[4];
+    const int16_t *c5 = cands[5];
+    const int16_t *c6 = cands[6];
+    const int16_t *c7 = cands[7];
+
+    __m512 acc0 = _mm512_setzero_ps();
+    __m512 acc1 = _mm512_setzero_ps();
+    __m512 acc2 = _mm512_setzero_ps();
+    __m512 acc3 = _mm512_setzero_ps();
+    __m512 acc4 = _mm512_setzero_ps();
+    __m512 acc5 = _mm512_setzero_ps();
+    __m512 acc6 = _mm512_setzero_ps();
+    __m512 acc7 = _mm512_setzero_ps();
+    __m128 vcutoff = _mm_set1_ps(cutoff);
+
+    long i = 0;
+    for (; i <= dim - 32; i += 32)
+    {
+        /* First 16 dimensions */
+        {
+            __m512 q_0 = _mm512_loadu_ps(q_scaled + i);
+
+            __m256i c16_0 = _mm256_loadu_si256((const __m256i *)(const void *)(c0 + i));
+            __m512  cf_0  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_0));
+            __m512  diff0 = _mm512_sub_ps(q_0, cf_0);
+            acc0 = _mm512_fmadd_ps(diff0, diff0, acc0);
+
+            __m256i c16_1 = _mm256_loadu_si256((const __m256i *)(const void *)(c1 + i));
+            __m512  cf_1  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_1));
+            __m512  diff1 = _mm512_sub_ps(q_0, cf_1);
+            acc1 = _mm512_fmadd_ps(diff1, diff1, acc1);
+
+            __m256i c16_2 = _mm256_loadu_si256((const __m256i *)(const void *)(c2 + i));
+            __m512  cf_2  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_2));
+            __m512  diff2 = _mm512_sub_ps(q_0, cf_2);
+            acc2 = _mm512_fmadd_ps(diff2, diff2, acc2);
+
+            __m256i c16_3 = _mm256_loadu_si256((const __m256i *)(const void *)(c3 + i));
+            __m512  cf_3  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_3));
+            __m512  diff3 = _mm512_sub_ps(q_0, cf_3);
+            acc3 = _mm512_fmadd_ps(diff3, diff3, acc3);
+
+            __m256i c16_4 = _mm256_loadu_si256((const __m256i *)(const void *)(c4 + i));
+            __m512  cf_4  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_4));
+            __m512  diff4 = _mm512_sub_ps(q_0, cf_4);
+            acc4 = _mm512_fmadd_ps(diff4, diff4, acc4);
+
+            __m256i c16_5 = _mm256_loadu_si256((const __m256i *)(const void *)(c5 + i));
+            __m512  cf_5  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_5));
+            __m512  diff5 = _mm512_sub_ps(q_0, cf_5);
+            acc5 = _mm512_fmadd_ps(diff5, diff5, acc5);
+
+            __m256i c16_6 = _mm256_loadu_si256((const __m256i *)(const void *)(c6 + i));
+            __m512  cf_6  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_6));
+            __m512  diff6 = _mm512_sub_ps(q_0, cf_6);
+            acc6 = _mm512_fmadd_ps(diff6, diff6, acc6);
+
+            __m256i c16_7 = _mm256_loadu_si256((const __m256i *)(const void *)(c7 + i));
+            __m512  cf_7  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_7));
+            __m512  diff7 = _mm512_sub_ps(q_0, cf_7);
+            acc7 = _mm512_fmadd_ps(diff7, diff7, acc7);
+        }
+
+        /* Second 16 dimensions */
+        {
+            __m512 q_1 = _mm512_loadu_ps(q_scaled + i + 16);
+
+            __m256i c16_0 = _mm256_loadu_si256((const __m256i *)(const void *)(c0 + i + 16));
+            __m512  cf_0  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_0));
+            __m512  diff0 = _mm512_sub_ps(q_1, cf_0);
+            acc0 = _mm512_fmadd_ps(diff0, diff0, acc0);
+
+            __m256i c16_1 = _mm256_loadu_si256((const __m256i *)(const void *)(c1 + i + 16));
+            __m512  cf_1  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_1));
+            __m512  diff1 = _mm512_sub_ps(q_1, cf_1);
+            acc1 = _mm512_fmadd_ps(diff1, diff1, acc1);
+
+            __m256i c16_2 = _mm256_loadu_si256((const __m256i *)(const void *)(c2 + i + 16));
+            __m512  cf_2  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_2));
+            __m512  diff2 = _mm512_sub_ps(q_1, cf_2);
+            acc2 = _mm512_fmadd_ps(diff2, diff2, acc2);
+
+            __m256i c16_3 = _mm256_loadu_si256((const __m256i *)(const void *)(c3 + i + 16));
+            __m512  cf_3  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_3));
+            __m512  diff3 = _mm512_sub_ps(q_1, cf_3);
+            acc3 = _mm512_fmadd_ps(diff3, diff3, acc3);
+
+            __m256i c16_4 = _mm256_loadu_si256((const __m256i *)(const void *)(c4 + i + 16));
+            __m512  cf_4  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_4));
+            __m512  diff4 = _mm512_sub_ps(q_1, cf_4);
+            acc4 = _mm512_fmadd_ps(diff4, diff4, acc4);
+
+            __m256i c16_5 = _mm256_loadu_si256((const __m256i *)(const void *)(c5 + i + 16));
+            __m512  cf_5  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_5));
+            __m512  diff5 = _mm512_sub_ps(q_1, cf_5);
+            acc5 = _mm512_fmadd_ps(diff5, diff5, acc5);
+
+            __m256i c16_6 = _mm256_loadu_si256((const __m256i *)(const void *)(c6 + i + 16));
+            __m512  cf_6  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_6));
+            __m512  diff6 = _mm512_sub_ps(q_1, cf_6);
+            acc6 = _mm512_fmadd_ps(diff6, diff6, acc6);
+
+            __m256i c16_7 = _mm256_loadu_si256((const __m256i *)(const void *)(c7 + i + 16));
+            __m512  cf_7  = _mm512_cvtepi32_ps(_mm512_cvtepi16_epi32(c16_7));
+            __m512  diff7 = _mm512_sub_ps(q_1, cf_7);
+            acc7 = _mm512_fmadd_ps(diff7, diff7, acc7);
+        }
+
+        /* Periodic cutoff checkpoint (every 64 dimensions) */
+        if ((i & 63) == 32)
+        {
+            __m128 sums_lo = _mm_set_ps(
+                _mm512_reduce_add_ps(acc3),
+                _mm512_reduce_add_ps(acc2),
+                _mm512_reduce_add_ps(acc1),
+                _mm512_reduce_add_ps(acc0));
+            __m128 sums_hi = _mm_set_ps(
+                _mm512_reduce_add_ps(acc7),
+                _mm512_reduce_add_ps(acc6),
+                _mm512_reduce_add_ps(acc5),
+                _mm512_reduce_add_ps(acc4));
+            __m128 cmp_lo = _mm_cmpgt_ps(sums_lo, vcutoff);
+            __m128 cmp_hi = _mm_cmpgt_ps(sums_hi, vcutoff);
+            if ((_mm_movemask_ps(cmp_lo) == 0xF) && (_mm_movemask_ps(cmp_hi) == 0xF))
+            {
+                _mm_storeu_ps(out_dists, sums_lo);
+                _mm_storeu_ps(out_dists + 4, sums_hi);
+                return;
+            }
+        }
+    } // for (; i <= dim - 32; i += 32)
+
+    __m128 sums_lo = _mm_set_ps(
+        _mm512_reduce_add_ps(acc3),
+        _mm512_reduce_add_ps(acc2),
+        _mm512_reduce_add_ps(acc1),
+        _mm512_reduce_add_ps(acc0));
+    __m128 sums_hi = _mm_set_ps(
+        _mm512_reduce_add_ps(acc7),
+        _mm512_reduce_add_ps(acc6),
+        _mm512_reduce_add_ps(acc5),
+        _mm512_reduce_add_ps(acc4));
+    _mm_storeu_ps(out_dists, sums_lo);
+    _mm_storeu_ps(out_dists + 4, sums_hi);
+
+    /* Remainder dimensions */
+    for (; i < dim; i++)
+    {
+        float q = q_scaled[i];
+        float diff0 = q - (float)c0[i];
+        float diff1 = q - (float)c1[i];
+        float diff2 = q - (float)c2[i];
+        float diff3 = q - (float)c3[i];
+        float diff4 = q - (float)c4[i];
+        float diff5 = q - (float)c5[i];
+        float diff6 = q - (float)c6[i];
+        float diff7 = q - (float)c7[i];
+
+        out_dists[0] += diff0 * diff0;
+        out_dists[1] += diff1 * diff1;
+        out_dists[2] += diff2 * diff2;
+        out_dists[3] += diff3 * diff3;
+        out_dists[4] += diff4 * diff4;
+        out_dists[5] += diff5 * diff5;
+        out_dists[6] += diff6 * diff6;
+        out_dists[7] += diff7 * diff7;
+    } // for (; i < dim; i++)
+}
 #endif // GRIC_HAVE_AVX512_TARGET
 
 /**
@@ -1440,6 +1884,46 @@ void eq16_dist_asym_cutoff_batch_1x4(
 }
 
 /**
+ * eq16_dist_asym_cutoff_batch_1x8() - 1x8 asymmetric squared distance with early cutoff.
+ * @q_scaled:  Normalized query float vector [dim].
+ * @cands:     Array of 8 pointers to candidate int16 vectors.
+ * @dim:       Vector dimension.
+ * @cutoff:    Cutoff threshold on sum of squared differences.
+ * @out_dists: Output array of 8 float squared distances.
+ */
+void eq16_dist_asym_cutoff_batch_1x8(
+    const float         *restrict  q_scaled,
+    const int16_t *const *restrict cands,
+    long                           dim,
+    float                          cutoff,
+    float               *restrict  out_dists)
+{
+    if (dim < 16)
+    {
+        eq16_dist_asym_cutoff_batch_1x8_scalar(q_scaled, cands, dim, cutoff, out_dists);
+        return;
+    }
+
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 32)
+    {
+        eq16_dist_asym_cutoff_batch_1x8_avx512(q_scaled, cands, dim, cutoff, out_dists);
+        return;
+    }
+#endif
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        eq16_dist_asym_cutoff_batch_1x8_avx2(q_scaled, cands, dim, cutoff, out_dists);
+        return;
+    }
+#endif
+
+    eq16_dist_asym_cutoff_batch_1x8_scalar(q_scaled, cands, dim, cutoff, out_dists);
+}
+
+/**
  * eq16_refine_candidates_adc() - Refine candidate clusters using batched 1x4 ADC computation.
  * @cur_adc:          Normalized query float vector [dim].
  * @mat_eq16:         Quantized anchor matrix [num_clusters * dim].
@@ -1465,6 +1949,33 @@ void eq16_refine_candidates_adc(
     int next_num_active = 0;
     long pruned = 0;
     int idx = 0;
+
+    for (; idx <= num_active - 8; idx += 8)
+    {
+        const int16_t *cands[8];
+        for (int k = 0; k < 8; k++)
+        {
+            int c = active_clusters[idx + k];
+            cands[k] = mat_eq16 + (size_t)c * (size_t)dim;
+        }
+
+        float dsq[8];
+        eq16_dist_asym_cutoff_batch_1x8(cur_adc, cands, dim, cutoff, dsq);
+
+        for (int k = 0; k < 8; k++)
+        {
+            int c = active_clusters[idx + k];
+            if (dsq[k] > cutoff)
+            {
+                clmembflag[c] = 0;
+                pruned++;
+            }
+            else
+            {
+                active_clusters[next_num_active++] = c;
+            }
+        }
+    } // for (; idx <= num_active - 8; idx += 8)
 
     for (; idx <= num_active - 4; idx += 4)
     {

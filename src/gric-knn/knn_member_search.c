@@ -1212,6 +1212,34 @@ static void knn_eval_members_eq16_blocks(
                 {
                     const int16_t *cl_cands = cl->eq16_vectors +
                         (size_t)m_start * (size_t)frame_elem;
+
+                    for (; i <= m_count - 8; i += 8)
+                    {
+                        const int16_t *cands[8];
+                        const int16_t *p = cl_cands + (size_t)i * (size_t)frame_elem;
+                        cands[0] = p;
+                        cands[1] = p + frame_elem;
+                        cands[2] = p + 2 * frame_elem;
+                        cands[3] = p + 3 * frame_elem;
+                        cands[4] = p + 4 * frame_elem;
+                        cands[5] = p + 5 * frame_elem;
+                        cands[6] = p + 6 * frame_elem;
+                        cands[7] = p + 7 * frame_elem;
+
+                        float dsq[8];
+                        eq16_dist_asym_cutoff_batch_1x8(
+                            visited->query_eq16_adc, cands, frame_elem,
+                            (float)cached_ssd_cutoff, dsq
+                        );
+                        for (int k = 0; k < 8; k++)
+                        {
+                            if (dsq[k] <= (float)cached_ssd_cutoff)
+                            {
+                                pass_mask |= (1U << (i + k));
+                            }
+                        }
+                    } // for (; i <= m_count - 8; i += 8)
+
                     for (; i <= m_count - 4; i += 4)
                     {
                         const int16_t *cands[4];
@@ -1259,6 +1287,30 @@ static void knn_eval_members_eq16_blocks(
                 }
                 else
                 {
+                    for (; i <= m_count - 8; i += 8)
+                    {
+                        const int16_t *cands[8];
+                        for (int k = 0; k < 8; k++)
+                        {
+                            long cid = (long)cl->members[m_start + i + k].frame_id;
+                            cands[k] = model->eq16_dataset_buffer +
+                                (size_t)cid * (size_t)frame_elem;
+                        }
+
+                        float dsq[8];
+                        eq16_dist_asym_cutoff_batch_1x8(
+                            visited->query_eq16_adc, cands, frame_elem,
+                            (float)cached_ssd_cutoff, dsq
+                        );
+                        for (int k = 0; k < 8; k++)
+                        {
+                            if (dsq[k] <= (float)cached_ssd_cutoff)
+                            {
+                                pass_mask |= (1U << (i + k));
+                            }
+                        }
+                    } // for (; i <= m_count - 8; i += 8)
+
                     for (; i <= m_count - 4; i += 4)
                     {
                         const int16_t *cands[4];
