@@ -9,67 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-void init_state(
-    AnalysisState *state)
-{
-    memset(state, 0, sizeof(AnalysisState));
-    state->time_clustering_ms = -1.0;
-    state->time_output_ms = -1.0;
-    state->rlim = -1.0;
-    state->dprob = -1.0;
-    state->maxcl = -1;
-    state->maxim = -1;
-
-    state->dist_hist = calloc(MAX_HISTOGRAM_LIMIT, sizeof(long));
-    state->pruned_hist = calloc(MAX_HISTOGRAM_LIMIT, sizeof(long));
-    state->query_hist = calloc(MAX_HISTOGRAM_LIMIT, sizeof(long));
-} // init_state
-
-void free_state(
-    AnalysisState *state)
-{
-    if (state->dist_hist != NULL)
-    {
-        free(state->dist_hist);
-    }
-    if (state->pruned_hist != NULL)
-    {
-        free(state->pruned_hist);
-    }
-    if (state->query_hist != NULL)
-    {
-        free(state->query_hist);
-    }
-    if (state->assignments != NULL)
-    {
-        free(state->assignments);
-    }
-    if (state->cluster_sizes != NULL)
-    {
-        free(state->cluster_sizes);
-    }
-    if (state->birth_frames != NULL)
-    {
-        free(state->birth_frames);
-    }
-    if (state->death_frames != NULL)
-    {
-        free(state->death_frames);
-    }
-    if (state->transition_matrix != NULL)
-    {
-        free(state->transition_matrix);
-    }
-    if (state->dcc_matrix != NULL)
-    {
-        free(state->dcc_matrix);
-    }
-    if (state->dcc_measured != NULL)
-    {
-        free(state->dcc_measured);
-    }
-} // free_state
-
 static void print_usage(
     const char *progname)
 {
