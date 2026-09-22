@@ -130,6 +130,8 @@ set(CLUSTER_SRCS
     src/gric-cluster/core/cluster_cli.c
     src/gric-cluster/core/cluster_core.c
     src/gric-cluster/core/cluster_step.c
+    src/gric-cluster/core/cluster_step_prep.c
+    src/gric-cluster/core/cluster_quant_filter.c
     src/gric-cluster/core/cluster_mgmt.c
     src/gric-cluster/core/config_utils.c
     src/gric-cluster/core/cluster_bounds.c
@@ -146,6 +148,8 @@ set(CLUSTER_SRCS
     src/gric-cluster/math/framedistance.c
     src/gric-cluster/math/framedistance_cutoff.c
     src/gric-cluster/math/framedistance_batch.c
+    src/gric-cluster/math/framedistance_batch_float.c
+    src/gric-cluster/math/framedistance_batch_double.c
     src/gric-cluster/math/cluster_gemm_dist.c
     src/gric-cluster/math/tuple_retrieval.c
     src/gric-cluster/io/cluster_io.c
@@ -177,6 +181,7 @@ set(CLUSTER_SRCS
     src/shared/cluster_locator.c
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
+    src/shared/scalar_quant_filter.c
     src/shared/residual_quant.c
     src/shared/product_quant.c
     src/shared/quant_memo.c
@@ -185,6 +190,8 @@ set(CLUSTER_SRCS
     src/shared/gric_simd.c
     src/shared/e8_lattice.c
     src/shared/eq16_quant.c
+    src/shared/eq16_dist.c
+    src/shared/eq16_filter.c
     src/gric-probe/probe_engine.c
 )
 
@@ -358,18 +365,24 @@ add_executable(gric-knn
     src/gric-knn/knn_engine.c
     src/gric-knn/knn_pruning.c
     src/gric-knn/knn_member_search.c
+    src/gric-knn/knn_member_quant.c
     src/gric-knn/knn_cluster_search.c
     src/gric-knn/knn_cross_dataset.c
+    src/gric-knn/knn_cross_route.c
+    src/gric-knn/knn_cross_eval.c
     src/gric-knn/knn_writer.c
     src/gric-cluster/math/framedistance.c
     src/gric-cluster/math/framedistance_cutoff.c
     src/gric-cluster/math/framedistance_batch.c
+    src/gric-cluster/math/framedistance_batch_float.c
+    src/gric-cluster/math/framedistance_batch_double.c
     src/gric-cluster/math/cluster_gemm_dist.c
     src/shared/cluster_locator.c
     src/shared/cli_colors.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
+    src/shared/scalar_quant_filter.c
     src/shared/residual_quant.c
     src/shared/product_quant.c
     src/shared/quant_memo.c
@@ -378,6 +391,8 @@ add_executable(gric-knn
     src/shared/gric_simd.c
     src/shared/e8_lattice.c
     src/shared/eq16_quant.c
+    src/shared/eq16_dist.c
+    src/shared/eq16_filter.c
 )
 target_include_directories(gric-knn PRIVATE src/gric-knn src/gric-cluster/math src/shared src)
 target_link_libraries(gric-knn m)
@@ -466,9 +481,12 @@ add_executable(gric-probe
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
+    src/shared/scalar_quant_filter.c
     src/shared/residual_quant.c
     src/shared/e8_lattice.c
     src/shared/eq16_quant.c
+    src/shared/eq16_dist.c
+    src/shared/eq16_filter.c
     src/shared/cli_colors.c
     src/shared/gric_simd.c
 )
@@ -739,6 +757,7 @@ add_executable(test_scalar_quant
     tests/test_scalar_quant.c
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
+    src/shared/scalar_quant_filter.c
     src/shared/gric_simd.c
 )
 target_include_directories(test_scalar_quant PRIVATE src/shared)
@@ -801,8 +820,11 @@ add_test(NAME test_rq8_e8
 add_executable(test_eq16_quant
     tests/test_eq16_quant.c
     src/shared/eq16_quant.c
+    src/shared/eq16_dist.c
+    src/shared/eq16_filter.c
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
+    src/shared/scalar_quant_filter.c
     src/shared/e8_lattice.c
     src/shared/gric_simd.c
 )
@@ -819,9 +841,12 @@ add_executable(test_knn_rq8_sidecar_mismatch
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
+    src/shared/scalar_quant_filter.c
     src/shared/residual_quant.c
     src/shared/e8_lattice.c
     src/shared/eq16_quant.c
+    src/shared/eq16_dist.c
+    src/shared/eq16_filter.c
     src/shared/product_quant.c
     src/shared/rabit_quant.c
     src/shared/gric_simd.c
@@ -845,13 +870,18 @@ add_executable(test_knn_adaptive_rq8
     src/gric-cluster/math/framedistance.c
     src/gric-cluster/math/framedistance_cutoff.c
     src/gric-cluster/math/framedistance_batch.c
+    src/gric-cluster/math/framedistance_batch_float.c
+    src/gric-cluster/math/framedistance_batch_double.c
     src/gric-cluster/math/cluster_gemm_dist.c
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
+    src/shared/scalar_quant_filter.c
     src/shared/residual_quant.c
     src/shared/e8_lattice.c
     src/shared/eq16_quant.c
+    src/shared/eq16_dist.c
+    src/shared/eq16_filter.c
     src/shared/product_quant.c
     src/shared/rabit_quant.c
     src/shared/gric_simd.c
@@ -887,6 +917,8 @@ add_executable(test_framedist_cutoff
     src/gric-cluster/math/framedistance.c
     src/gric-cluster/math/framedistance_cutoff.c
     src/gric-cluster/math/framedistance_batch.c
+    src/gric-cluster/math/framedistance_batch_float.c
+    src/gric-cluster/math/framedistance_batch_double.c
     src/shared/gric_simd.c
 )
 target_include_directories(test_framedist_cutoff
@@ -904,9 +936,12 @@ add_executable(test_gric_probe
     src/shared/gric_bin_io.c
     src/shared/scalar_quant.c
     src/shared/scalar_quant_fastscan.c
+    src/shared/scalar_quant_filter.c
     src/shared/residual_quant.c
     src/shared/e8_lattice.c
     src/shared/eq16_quant.c
+    src/shared/eq16_dist.c
+    src/shared/eq16_filter.c
     src/shared/cli_colors.c
     src/shared/gric_simd.c
 )

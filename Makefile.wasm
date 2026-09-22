@@ -24,11 +24,15 @@ SRCS = \
 	src/gric-cluster/math/framedistance.c \
 	src/gric-cluster/math/framedistance_cutoff.c \
 	src/gric-cluster/math/framedistance_batch.c \
+	src/gric-cluster/math/framedistance_batch_float.c \
+	src/gric-cluster/math/framedistance_batch_double.c \
 	src/gric-cluster/math/cluster_math.c \
 	src/gric-cluster/math/cluster_prune.c \
 	src/gric-cluster/math/cluster_scandist.c \
 	src/gric-cluster/math/tuple_retrieval.c \
 	src/gric-cluster/core/cluster_step.c \
+	src/gric-cluster/core/cluster_step_prep.c \
+	src/gric-cluster/core/cluster_quant_filter.c \
 	src/gric-cluster/core/cluster_mgmt.c \
 	src/gric-cluster/core/cluster_bounds.c \
 	src/gric-cluster/core/tile_map.c \
@@ -53,18 +57,24 @@ SRCS = \
 	src/gric-knn/knn_engine.c \
 	src/gric-knn/knn_pruning.c \
 	src/gric-knn/knn_member_search.c \
+	src/gric-knn/knn_member_quant.c \
 	src/gric-knn/knn_cluster_search.c \
 	src/gric-knn/knn_cross_dataset.c \
+	src/gric-knn/knn_cross_route.c \
+	src/gric-knn/knn_cross_eval.c \
 	src/shared/cluster_locator.c \
 	src/shared/gric_bin_io.c \
 	src/shared/gric_simd.c \
 	src/shared/scalar_quant.c \
 	src/shared/scalar_quant_fastscan.c \
+	src/shared/scalar_quant_filter.c \
 	src/shared/residual_quant.c \
 	src/shared/product_quant.c \
 	src/shared/rabit_quant.c \
 	src/shared/e8_lattice.c \
 	src/shared/eq16_quant.c \
+	src/shared/eq16_dist.c \
+	src/shared/eq16_filter.c \
 	src/shared/quant_memo.c \
 	src/wasm/wasm_cluster.c \
 	src/wasm/wasm_multitile.c \

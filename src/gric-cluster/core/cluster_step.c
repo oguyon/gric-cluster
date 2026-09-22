@@ -3,531 +3,46 @@
  * @brief High-level orchestration of a single image frame assignment step.
  *
  * Implements a sequential driver invoking procedurized steps to cluster
- * a single frame: setup, mixing priors, prediction matching, standard matching,
- * and eviction strategy resolution.
- *
- * Distance measurements (calls to get_dist()) are performed at:
- * - Step 3c (Distance measurement during search loop):
- *   - For predicted cluster anchors (if targeting a prediction candidate).
- *   - For standard search candidates (measured in sequence of mixed probability). If a candidate
- *     does not match, distances between cluster anchors are computed to tighten DCC
- *     bounds (dcc_min/dcc_max, tracked by dcc_measured) and prune other candidate
- *     clusters via triangle inequalities.
- * - Step 4 (New cluster creation): Pairwise distances between the new cluster anchor and all
- *   existing cluster anchors are measured and cached to maintain DCC bounds.
+ * a single frame:
+ * - Step 1: Base-case initialization (first cluster anchor frame).
+ * - Step 2: Prediction candidate retrieval from temporal trajectory history.
+ * - Step 3 Fast-Path: Quantized memoization cache lookup and direct candidate test.
+ * - Step 3: Iterative search loop:
+ *   - Step 3a: Prior mixing, geometric probability updates, and quant pruning.
+ *   - Step 3b: Measurement target selection (maximum information gain).
+ *   - Step 3c: Exact full-dimensional distance measurement to target anchor.
+ *   - Step 3d: Threshold check against radius limit (rlim).
+ * - Step 4: New cluster creation and capacity management (eviction strategies).
+ * - Step 5: Telemetry recording, transition matrix updates, and file serialization.
  */
 
 #define _POSIX_C_SOURCE 200809L
+
 #include "cluster_step.h"
+#include "cluster_step_prep.h"
+#include "cluster_quant_filter.h"
 #include "cluster_steps.h"
 #include "cluster_math.h"
-#include "cluster_prune.h"
 #include "cluster_bounds.h"
-#include "scalar_quant.h"
+#include "quant_memo.h"
 #include "gric_hash.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <string.h>
+#include <stdint.h>
 
-#if defined(__GNUC__) || defined(__clang__)
-#define GRIC_PREFETCH_T0(addr) __builtin_prefetch((const void *)(addr), 0, 3)
-#else
-#define GRIC_PREFETCH_T0(addr) ((void)0)
-#endif
 
 /**
- * prepare_frame_quantization() - Prepares scalar quantization buffers and
- *                                quantizes the current frame if SQ16 or SQ8
- *                                is enabled.
- * @config:        Clustering configuration.
- * @state:         Clustering state.
- * @current_frame: Input frame to quantize.
- */
-static void prepare_frame_quantization(
-    ClusterConfig *config,
-    ClusterState  *state,
-    const Frame   *current_frame)
-{
-    if (config->optim.use_sq8 < 0 && config->optim.use_sq16 < 0 && config->optim.use_eq16 < 0)
-    {
-        long frame_dim = current_frame->width * current_frame->height;
-        if (frame_dim >= 8 && (frame_dim % 8 == 0))
-        {
-            config->optim.use_eq16 = 1;
-            config->optim.use_sq16 = 0;
-            config->optim.use_sq8 = 0;
-        }
-        else if (frame_dim >= 32)
-        {
-            config->optim.use_sq16 = 1;
-            config->optim.use_eq16 = 0;
-            config->optim.use_sq8 = 0;
-        }
-        else
-        {
-            config->optim.use_sq8 = 1;
-            config->optim.use_sq16 = 0;
-            config->optim.use_eq16 = 0;
-        }
-    }
-    else
-    {
-        if (config->optim.use_sq8 < 0)
-        {
-            config->optim.use_sq8 = 0;
-        }
-        if (config->optim.use_sq16 < 0)
-        {
-            config->optim.use_sq16 = 0;
-        }
-        if (config->optim.use_eq16 < 0)
-        {
-            config->optim.use_eq16 = 0;
-        }
-    }
-
-    if (config->optim.use_eq16)
-    {
-        long frame_dim = current_frame->width * current_frame->height;
-        if (state->current_frame_eq16 == NULL)
-        {
-            if (posix_memalign((void **)&state->current_frame_eq16, 64,
-                               (size_t)frame_dim * sizeof(int16_t)) != 0)
-            {
-                state->current_frame_eq16 = NULL;
-            }
-        }
-        if (state->current_frame_eq16_adc == NULL)
-        {
-            if (posix_memalign((void **)&state->current_frame_eq16_adc, 64,
-                               (size_t)frame_dim * sizeof(float)) != 0)
-            {
-                state->current_frame_eq16_adc = NULL;
-            }
-        }
-        if (state->anchor_matrix_eq16 == NULL)
-        {
-            size_t total_eq16 = (size_t)config->algo.maxnbclust * (size_t)frame_dim;
-            if (posix_memalign((void **)&state->anchor_matrix_eq16, 64,
-                               total_eq16 * sizeof(int16_t)) != 0)
-            {
-                state->anchor_matrix_eq16 = NULL;
-            }
-        }
-        if (state->anchor_matrix_eq16_interleaved == NULL)
-        {
-            size_t num_blocks = ((size_t)config->algo.maxnbclust + 7) / 8;
-            size_t num_pairs = ((size_t)frame_dim + 1) / 2;
-            size_t total_interleaved = num_blocks * num_pairs * 8;
-            if (posix_memalign((void **)&state->anchor_matrix_eq16_interleaved, 64,
-                               total_interleaved * sizeof(int32_t)) != 0)
-            {
-                state->anchor_matrix_eq16_interleaved = NULL;
-            }
-            else
-            {
-                memset(state->anchor_matrix_eq16_interleaved, 0,
-                       total_interleaved * sizeof(int32_t));
-            }
-        }
-        if (state->anchor_matrix_adc_interleaved == NULL && config->optim.use_eq16_adc)
-        {
-            size_t num_blocks_adc = ((size_t)config->algo.maxnbclust + 15) / 16;
-            size_t total_adc = num_blocks_adc * (size_t)frame_dim * 16;
-            if (posix_memalign((void **)&state->anchor_matrix_adc_interleaved, 64,
-                               total_adc * sizeof(float)) != 0)
-            {
-                state->anchor_matrix_adc_interleaved = NULL;
-            }
-            else
-            {
-                memset(state->anchor_matrix_adc_interleaved, 0,
-                       total_adc * sizeof(float));
-            }
-        }
-        if (!state->eq16_calibrated)
-        {
-            if (current_frame->is_double)
-            {
-                eq16_calibrate_double(&config->optim.eq16_params,
-                                      (const double *)current_frame->data,
-                                      frame_dim, frame_dim);
-            }
-            else
-            {
-                eq16_calibrate_float(&config->optim.eq16_params,
-                                     (const float *)current_frame->data,
-                                     frame_dim, frame_dim);
-            }
-
-            /* Enforce --sq16-ratio bound: scale = alpha*rlim / sqrt(D) */
-            if (config->optim.sq16_ratio > 0.0 && config->algo.rlim > 0.0)
-            {
-                float target_scale = (float)((config->optim.sq16_ratio * config->algo.rlim) /
-                                             sqrt((double)frame_dim));
-                float center = 0.5f * (config->optim.eq16_params.min_val +
-                                       config->optim.eq16_params.max_val);
-                config->optim.eq16_params.scale = target_scale;
-                config->optim.eq16_params.inv_scale = 1.0f / target_scale;
-                config->optim.eq16_params.center = center;
-                long k = frame_dim / 8;
-                long rem = frame_dim % 8;
-                float covering_sq = (float)k * 1.0f + (float)rem * 0.25f;
-                config->optim.eq16_params.err_radius = sqrtf(covering_sq) * target_scale;
-            }
-
-            state->eq16_calibrated = 1;
-        }
-
-        if (state->perm_dim != NULL)
-        {
-            if (current_frame->is_double)
-            {
-                eq16_quantize_double_perm((const double *)current_frame->data,
-                                          state->current_frame_eq16,
-                                          &config->optim.eq16_params,
-                                          state->perm_dim);
-                if (state->current_frame_eq16_adc != NULL)
-                {
-                    eq16_prepare_query_adc_double_perm((const double *)current_frame->data,
-                                                       state->current_frame_eq16_adc,
-                                                       &config->optim.eq16_params,
-                                                       state->perm_dim);
-                }
-            }
-            else
-            {
-                eq16_quantize_float_perm((const float *)current_frame->data,
-                                         state->current_frame_eq16,
-                                         &config->optim.eq16_params,
-                                         state->perm_dim);
-                if (state->current_frame_eq16_adc != NULL)
-                {
-                    eq16_prepare_query_adc_float_perm((const float *)current_frame->data,
-                                                      state->current_frame_eq16_adc,
-                                                      &config->optim.eq16_params,
-                                                      state->perm_dim);
-                }
-            }
-        }
-        else
-        {
-            if (current_frame->is_double)
-            {
-                eq16_quantize_double((const double *)current_frame->data,
-                                     state->current_frame_eq16,
-                                     &config->optim.eq16_params);
-                if (state->current_frame_eq16_adc != NULL)
-                {
-                    eq16_prepare_query_adc_double((const double *)current_frame->data,
-                                                  state->current_frame_eq16_adc,
-                                                  &config->optim.eq16_params);
-                }
-            }
-            else
-            {
-                eq16_quantize_float((const float *)current_frame->data,
-                                    state->current_frame_eq16,
-                                    &config->optim.eq16_params);
-                if (state->current_frame_eq16_adc != NULL)
-                {
-                    eq16_prepare_query_adc_float((const float *)current_frame->data,
-                                                 state->current_frame_eq16_adc,
-                                                 &config->optim.eq16_params);
-                }
-            }
-        }
-    }
-    else if (config->optim.use_sq16)
-    {
-        long frame_dim = current_frame->width * current_frame->height;
-        if (state->current_frame_sq16 == NULL)
-        {
-            if (posix_memalign((void **)&state->current_frame_sq16, 64,
-                               (size_t)frame_dim * sizeof(int16_t)) != 0)
-            {
-                state->current_frame_sq16 = NULL;
-            }
-        }
-        if (state->anchor_matrix_sq16 == NULL)
-        {
-            size_t total_sq16 = (size_t)config->algo.maxnbclust * (size_t)frame_dim;
-            if (posix_memalign((void **)&state->anchor_matrix_sq16, 64,
-                               total_sq16 * sizeof(int16_t)) != 0)
-            {
-                state->anchor_matrix_sq16 = NULL;
-            }
-        }
-        if (state->anchor_matrix_sq16_interleaved == NULL)
-        {
-            size_t num_blocks = ((size_t)config->algo.maxnbclust + 7) / 8;
-            size_t num_pairs = ((size_t)frame_dim + 1) / 2;
-            size_t total_interleaved = num_blocks * num_pairs * 8;
-            if (posix_memalign((void **)&state->anchor_matrix_sq16_interleaved, 64,
-                               total_interleaved * sizeof(int32_t)) != 0)
-            {
-                state->anchor_matrix_sq16_interleaved = NULL;
-            }
-            else
-            {
-                memset(state->anchor_matrix_sq16_interleaved, 0,
-                       total_interleaved * sizeof(int32_t));
-            }
-        }
-        if (!state->sq16_calibrated)
-        {
-            if (current_frame->is_double)
-            {
-                sq16_calibrate_double(&config->optim.sq16_params,
-                                      (const double *)current_frame->data,
-                                      frame_dim, frame_dim);
-            }
-            else
-            {
-                sq16_calibrate_float(&config->optim.sq16_params,
-                                     (const float *)current_frame->data,
-                                     frame_dim, frame_dim);
-            }
-
-            /* Enforce --sq16-ratio bound: scale = alpha*rlim / sqrt(D) */
-            if (config->optim.sq16_ratio > 0.0 && config->algo.rlim > 0.0)
-            {
-                float target_scale = (float)((config->optim.sq16_ratio * config->algo.rlim) /
-                                             sqrt((double)frame_dim));
-                float center = 0.5f * (config->optim.sq16_params.min_val +
-                                       config->optim.sq16_params.max_val);
-                config->optim.sq16_params.scale = target_scale;
-                config->optim.sq16_params.inv_scale = 1.0f / target_scale;
-                config->optim.sq16_params.min_val = center - 16384.0f * target_scale;
-                config->optim.sq16_params.max_val = center + 16383.0f * target_scale;
-                config->optim.sq16_params.err_radius =
-                    sqrtf((float)frame_dim) * target_scale * 0.5f;
-            }
-
-            if (config->optim.use_memo)
-            {
-                state->scratch.memo_table.err_radius =
-                    (double)config->optim.sq16_params.err_radius;
-                state->scratch.memo_table.rlim = config->algo.rlim;
-            }
-
-            state->sq16_calibrated = 1;
-        }
-        if (config->optim.use_memo && state->scratch.memo_table.rlim == 0.0)
-        {
-            state->scratch.memo_table.err_radius =
-                (double)config->optim.sq16_params.err_radius;
-            state->scratch.memo_table.rlim = config->algo.rlim;
-        }
-
-        if (state->perm_dim != NULL)
-        {
-            if (current_frame->is_double)
-            {
-                sq16_quantize_double_perm((const double *)current_frame->data,
-                                          state->current_frame_sq16,
-                                          &config->optim.sq16_params,
-                                          state->perm_dim);
-            }
-            else
-            {
-                sq16_quantize_float_perm((const float *)current_frame->data,
-                                         state->current_frame_sq16,
-                                         &config->optim.sq16_params,
-                                         state->perm_dim);
-            }
-        }
-        else
-        {
-            if (current_frame->is_double)
-            {
-                sq16_quantize_double((const double *)current_frame->data,
-                                     state->current_frame_sq16,
-                                     &config->optim.sq16_params);
-            }
-            else
-            {
-                sq16_quantize_float((const float *)current_frame->data,
-                                    state->current_frame_sq16,
-                                    &config->optim.sq16_params);
-            }
-        }
-    }
-    else if (config->optim.use_sq8)
-    {
-        long frame_dim = current_frame->width * current_frame->height;
-        if (state->current_frame_sq8 == NULL)
-        {
-            if (posix_memalign((void **)&state->current_frame_sq8, 64,
-                               (size_t)frame_dim) != 0)
-            {
-                state->current_frame_sq8 = NULL;
-            }
-        }
-        if (state->anchor_matrix_sq8 == NULL)
-        {
-            size_t total_sq8 = (size_t)config->algo.maxnbclust * (size_t)frame_dim;
-            if (posix_memalign((void **)&state->anchor_matrix_sq8, 64,
-                               total_sq8 * sizeof(uint8_t)) != 0)
-            {
-                state->anchor_matrix_sq8 = NULL;
-            }
-        }
-        if (!state->sq8_calibrated)
-        {
-            if (current_frame->is_double)
-            {
-                sq8_calibrate_double(&config->optim.sq8_params,
-                                     (const double *)current_frame->data,
-                                     frame_dim, frame_dim);
-            }
-            else
-            {
-                sq8_calibrate_float(&config->optim.sq8_params,
-                                    (const float *)current_frame->data,
-                                    frame_dim, frame_dim);
-            }
-            state->sq8_calibrated = 1;
-        }
-        if (current_frame->is_double)
-        {
-            sq8_quantize_double((const double *)current_frame->data,
-                                state->current_frame_sq8,
-                                &config->optim.sq8_params);
-        }
-        else
-        {
-            sq8_quantize_float((const float *)current_frame->data,
-                               state->current_frame_sq8,
-                               &config->optim.sq8_params);
-        }
-    }
-
-    if (!current_frame->is_double && state->anchor_matrix_float == NULL)
-    {
-        long frame_dim = current_frame->width * current_frame->height;
-        size_t total_float = (size_t)config->algo.maxnbclust * (size_t)frame_dim;
-        if (posix_memalign((void **)&state->anchor_matrix_float, 64,
-                           total_float * sizeof(float)) != 0)
-        {
-            state->anchor_matrix_float = NULL;
-        }
-    }
-}
-
-/**
- * retrieve_prediction_candidates() - Retrieves prediction candidates into
- *                                    pre-allocated scratch buffers.
- * @config:          Clustering configuration.
- * @state:           Clustering state with pre-allocated scratch buffers.
- * @pred_candidates: Pre-allocated output array of candidate cluster indices.
- *
- * Return: Number of prediction candidates written to @pred_candidates.
- */
-static int retrieve_prediction_candidates(
-    ClusterConfig *config,
-    ClusterState  *state,
-    int           *pred_candidates)
-{
-    int num_preds = 0;
-    if (!config->optim.pred_mode ||
-        state->telemetry.total_frames_processed < config->optim.pred_len)
-    {
-        return 0;
-    }
-
-    int *local_candidates = state->scratch.local_candidates;
-    int num_local = 0;
-    if (local_candidates != NULL)
-    {
-        num_local = get_prediction_candidates(state, config, local_candidates,
-                                              config->optim.pred_n);
-    }
-
-    if (pred_candidates == NULL)
-    {
-        return 0;
-    }
-
-    if (num_local == 1)
-    {
-        /* Unambiguous local prediction: prioritize it first */
-        pred_candidates[num_preds++] = local_candidates[0];
-
-        /* Append joint predictions as fallback */
-        if (state->scratch.tuple_pred_count > 0)
-        {
-            for (int j = 0; j < state->scratch.tuple_pred_count &&
-                 num_preds < config->optim.pred_n; j++)
-            {
-                int jc = state->scratch.tuple_pred_candidates[j];
-                if (jc != local_candidates[0])
-                {
-                    pred_candidates[num_preds++] = jc;
-                }
-            }
-        }
-    }
-    else
-    {
-        /* Ambiguous or no local match: prioritize joint predictions to resolve it */
-        if (state->scratch.tuple_pred_count > 0)
-        {
-            int n_out = (state->scratch.tuple_pred_count < config->optim.pred_n) ?
-                        state->scratch.tuple_pred_count : config->optim.pred_n;
-            for (int i = 0; i < n_out; i++)
-            {
-                pred_candidates[num_preds++] = state->scratch.tuple_pred_candidates[i];
-            }
-        }
-        if (num_preds < config->optim.pred_n && num_local > 0)
-        {
-            for (int i = 0; i < num_local && num_preds < config->optim.pred_n; i++)
-            {
-                int lc = local_candidates[i];
-                int dup = 0;
-                for (int k = 0; k < num_preds; k++)
-                {
-                    if (pred_candidates[k] == lc)
-                    {
-                        dup = 1;
-                        break;
-                    }
-                }
-                if (!dup)
-                {
-                    pred_candidates[num_preds++] = lc;
-                }
-            }
-        }
-    }
-
-    return num_preds;
-}
-
-/**
- * cluster_frame() - Process one frame through the full clustering
- *                   pipeline (Steps 1-5).
- * @config:              Clustering configuration (algorithm, optim, I/O).
- * @state:               Mutable clustering state (clusters, telemetry,
- *                       scratch buffers).
- * @current_frame:       Pixel data of the frame to assign.
- * @prev_assigned_cluster: In/out pointer to the previously assigned
- *                       cluster index; updated on new assignment.
- * @ascii_out:           Open file handle for membership text log
- *                       (may be NULL).
- * @temp_indices:        Scratch array recording cluster indices
- *                       measured this frame.
- * @temp_dists:          Scratch array recording distances measured
- *                       this frame.
- * @sorting_candidates:  Scratch array for candidate sorting.
- * @verbose_candidates:  Scratch array for verbose-mode ranking
- *                       (may be NULL).
- *
- * Executes the sequential steps: base-case setup, prediction
- * retrieval, iterative search with pruning and measurement,
- * new-cluster creation / eviction, and telemetry recording.
+ * cluster_frame() - Process one frame through the full clustering pipeline (Steps 1-5).
+ * @config:                Clustering configuration (algorithm, optim, I/O).
+ * @state:                 Mutable clustering state (clusters, telemetry, scratch buffers).
+ * @current_frame:         Pixel data of the frame to assign.
+ * @prev_assigned_cluster: In/out pointer to previously assigned cluster index.
+ * @ascii_out:             Open file handle for membership text log (may be NULL).
+ * @temp_indices:          Scratch array recording cluster indices measured this frame.
+ * @temp_dists:            Scratch array recording distances measured this frame.
+ * @sorting_candidates:    Scratch array for candidate sorting.
+ * @verbose_candidates:    Scratch array for verbose-mode ranking (may be NULL).
  *
  * Return: Assigned cluster index (>= 0), or -2 to signal stop.
  */
@@ -554,11 +69,11 @@ int cluster_frame(
 
     prepare_frame_quantization(config, state, current_frame);
 
-    // Step 1: Base case setup.
+    // =========================================================================
+    // Step 1: Base Case Setup
+    // =========================================================================
     // If no clusters exist yet, the very first ingested frame serves as the anchor frame
     // for Cluster 0, initializing our clustering space.
-    // Output: Sets state->num_clusters to 1, sets state->clusters[0], assigns
-    // assigned_cluster = 0, and updates temp_indices, temp_dists, and temp_count.
     if (state->num_clusters == 0)
     {
         struct timespec step_start, step_end;
@@ -580,14 +95,15 @@ int cluster_frame(
         int first_iter = 1;
         int last_cj = -1;
         int need_prune_update = 0;
-        int meas_idx = 0;  /* measurement depth within this frame */
+        int meas_idx = 0;
 
         int *pred_candidates = state->scratch.pred_candidates;
         int current_pred_idx = 0;
-        int first_pred = -1;  /* first prediction candidate */
+        int first_pred = -1;
 
-        // Step 2: Retrieve prediction candidates.
-        // Retrieves prediction candidates using pre-allocated scratch buffers.
+        // =====================================================================
+        // Step 2: Retrieve Prediction Candidates
+        // =====================================================================
         struct timespec s2_start, s2_end;
         clock_gettime(CLOCK_MONOTONIC, &s2_start);
         int num_preds = retrieve_prediction_candidates(config, state, pred_candidates);
@@ -595,7 +111,6 @@ int cluster_frame(
         state->telemetry.time_step_2 += (s2_end.tv_sec - s2_start.tv_sec) * 1000.0 +
                                         (s2_end.tv_nsec - s2_start.tv_nsec) / 1000000.0;
 
-        /* Record prediction telemetry baseline */
         if (num_preds > 0 && pred_candidates != NULL)
         {
             first_pred = pred_candidates[0];
@@ -606,40 +121,15 @@ int cluster_frame(
             }
         }
 
-        uint64_t sq16_ssd_thresh = 0;
-        if (config->optim.use_sq16)
-        {
-            double raw_thresh = (config->algo.rlim +
-                                 2.0 * (double)config->optim.sq16_params.err_radius) /
-                                (double)config->optim.sq16_params.scale;
-            if (raw_thresh > 0.0)
-            {
-                sq16_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
-            }
-        }
-
-        uint64_t eq16_ssd_thresh = 0;
         float eq16_adc_cutoff = 0.0f;
-        if (config->optim.use_eq16)
-        {
-            double raw_thresh_sdc = (config->algo.rlim +
-                                     2.0 * (double)config->optim.eq16_params.err_radius) /
-                                    ((double)config->optim.eq16_params.scale * 0.5);
-            if (raw_thresh_sdc > 0.0)
-            {
-                eq16_ssd_thresh = (uint64_t)(raw_thresh_sdc * raw_thresh_sdc);
-            }
+        uint64_t eq16_ssd_thresh = 0;
+        uint64_t sq16_ssd_thresh = 0;
+        cluster_compute_quant_thresholds(config, &eq16_adc_cutoff,
+                                         &eq16_ssd_thresh, &sq16_ssd_thresh);
 
-            double raw_thresh_adc = (config->algo.rlim +
-                                     1.0 * (double)config->optim.eq16_params.err_radius) /
-                                    ((double)config->optim.eq16_params.scale * 0.5);
-            if (raw_thresh_adc > 0.0)
-            {
-                eq16_adc_cutoff = (float)(raw_thresh_adc * raw_thresh_adc);
-            }
-        }
-
-        /* Step 3 Fast-Path: Quantized Memoization Cache Lookup */
+        // =====================================================================
+        // Step 3 Fast-Path: Quantized Memoization Cache Lookup
+        // =====================================================================
         if (((config->optim.use_eq16 && state->current_frame_eq16 != NULL) ||
              (config->optim.use_sq16 && state->current_frame_sq16 != NULL)) &&
             config->optim.use_memo)
@@ -672,7 +162,8 @@ int cluster_frame(
                     {
                         double d_check = measure_distance_to_cluster(
                             memo_cid, current_frame, config, state,
-                            temp_indices, temp_dists, &temp_count, 0);
+                            temp_indices, temp_dists, &temp_count, 0
+                        );
                         if (d_check >= config->algo.rlim)
                         {
                             valid = 0;
@@ -699,7 +190,9 @@ int cluster_frame(
             state->telemetry.memo_cache_entries = state->scratch.memo_table.entry_count;
         }
 
-        /* Step 3 Fast-Path: Test prediction candidates directly before running Step 3a */
+        // =====================================================================
+        // Step 3 Fast-Path: Direct Prediction Candidate Verification
+        // =====================================================================
         if (!found && num_preds > 0 && pred_candidates != NULL)
         {
             while (current_pred_idx < num_preds && !found)
@@ -710,71 +203,12 @@ int cluster_frame(
                     continue;
                 }
 
-                // Fast EQ16 / SQ16 pre-filtering for prediction candidate
-                if (config->optim.use_eq16 &&
-                    state->clusters[cj].anchor_eq16 != NULL)
+                if (cluster_candidate_is_pruned_by_quant(cj, config, state,
+                                                         eq16_adc_cutoff,
+                                                         eq16_ssd_thresh,
+                                                         sq16_ssd_thresh))
                 {
-                    state->telemetry.eq16_evals++;
-                    int is_pruned = 0;
-                    if (config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL)
-                    {
-                        float dsq = eq16_dist_asym_cutoff_f32(
-                            state->current_frame_eq16_adc,
-                            state->clusters[cj].anchor_eq16,
-                            config->optim.eq16_params.dim,
-                            eq16_adc_cutoff);
-                        is_pruned = (dsq > eq16_adc_cutoff);
-                    }
-                    else if (state->current_frame_eq16 != NULL)
-                    {
-                        uint64_t ssd = eq16_dist_squared_cutoff_i16(
-                            state->current_frame_eq16,
-                            state->clusters[cj].anchor_eq16,
-                            config->optim.eq16_params.dim,
-                            eq16_ssd_thresh);
-                        is_pruned = (ssd > eq16_ssd_thresh);
-                    }
-
-                    if (is_pruned)
-                    {
-                        state->telemetry.eq16_pruned++;
-                        state->telemetry.clusters_pruned++;
-                        continue;
-                    }
-                }
-                else if (config->optim.use_sq16 &&
-                    state->clusters[cj].anchor_sq16 != NULL &&
-                    state->current_frame_sq16 != NULL)
-                {
-                    state->telemetry.sq16_evals++;
-                    uint64_t ssd = sq16_dist_squared_cutoff_i16(
-                        state->current_frame_sq16,
-                        state->clusters[cj].anchor_sq16,
-                        config->optim.sq16_params.dim,
-                        sq16_ssd_thresh);
-                    if (ssd > sq16_ssd_thresh)
-                    {
-                        state->telemetry.sq16_pruned++;
-                        state->telemetry.clusters_pruned++;
-                        continue;
-                    }
-                }
-                else if (config->optim.use_sq8 &&
-                         state->clusters[cj].anchor_sq8 != NULL &&
-                         state->current_frame_sq8 != NULL)
-                {
-                    state->telemetry.sq8_evals++;
-                    double d_lb = sq8_compute_lower_bound(
-                        state->current_frame_sq8,
-                        state->clusters[cj].anchor_sq8,
-                        &config->optim.sq8_params,
-                        0.0);
-                    if (d_lb > config->algo.rlim)
-                    {
-                        state->telemetry.sq8_pruned++;
-                        state->telemetry.clusters_pruned++;
-                        continue;
-                    }
+                    continue;
                 }
 
                 struct timespec s3c_start, s3c_end;
@@ -806,16 +240,15 @@ int cluster_frame(
             }
         }
 
-        // Step 3: Iterative search loop (Prediction & Standard search).
+        // =====================================================================
+        // Step 3: Iterative Search Loop
+        // =====================================================================
         while (!found)
         {
-            // Step 3a: Compute/update probabilities and candidate pruning.
-            // On first iteration, computes the base mixed prior probabilities.
-            // On subsequent iterations, prunes inconsistent candidate clusters and updates
-            // geometric probabilities using the last measured target and distance.
+            // Step 3a: Compute/update probabilities and candidate pruning
             if (first_iter)
             {
-                struct timespec step_start, step_end, t_mid1, t_mid2;
+                struct timespec step_start, step_end;
                 clock_gettime(CLOCK_MONOTONIC, &step_start);
 
                 int tm_active = (config->algo.tm_mixing_coeff > 0.0 &&
@@ -871,619 +304,15 @@ int cluster_frame(
                     state->telemetry.time_step_3a_subsequent += el_pr;
                     need_prune_update = 0;
 
-                    /* Filter ONLY the surviving candidates with EQ16/SQ16/SQ8 lower bounds */
-                    struct timespec t_sq_s, t_sq_e;
-                    clock_gettime(CLOCK_MONOTONIC, &t_sq_s);
-                    if (config->optim.use_eq16 &&
-                        ((config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL) ||
-                         state->current_frame_eq16 != NULL))
-                    {
-                        long dim = config->optim.eq16_params.dim;
-                        int use_adc = (config->optim.use_eq16_adc &&
-                                       state->current_frame_eq16_adc != NULL);
-                        const float *cur_adc = state->current_frame_eq16_adc;
-                        const int16_t *cur_eq16 = state->current_frame_eq16;
-                        const int16_t *mat_eq16 = state->anchor_matrix_eq16;
-                        int act_cnt = state->scratch.num_active_clusters;
-                        int *act = state->scratch.active_clusters;
-                        int compact_cnt = 0;
-                        int local_pruned = 0;
-
-                        state->telemetry.eq16_evals += act_cnt;
-
-                        for (int idx = 0; idx < act_cnt; idx++)
-                        {
-                            int c = act[idx];
-                            const int16_t *a_ptr = mat_eq16
-                                ? (mat_eq16 + (size_t)c * (size_t)dim)
-                                : state->clusters[c].anchor_eq16;
-                            if (a_ptr != NULL)
-                            {
-                                int is_pruned = 0;
-                                if (use_adc)
-                                {
-                                    float dsq = eq16_dist_asym_cutoff_f32(
-                                        cur_adc, a_ptr, dim, eq16_adc_cutoff);
-                                    is_pruned = (dsq > eq16_adc_cutoff);
-                                }
-                                else
-                                {
-                                    uint64_t ssd = eq16_dist_squared_cutoff_i16(
-                                        cur_eq16, a_ptr, dim, eq16_ssd_thresh);
-                                    is_pruned = (ssd > eq16_ssd_thresh);
-                                }
-
-                                if (is_pruned)
-                                {
-                                    state->scratch.clmembflag[c] = 0;
-                                    state->scratch.entropy_p_current[c] = 0.0;
-                                    local_pruned++;
-                                    continue;
-                                }
-                            }
-                            act[compact_cnt++] = c;
-                        }
-                        state->scratch.num_active_clusters = compact_cnt;
-                        state->telemetry.eq16_pruned += local_pruned;
-                        state->telemetry.clusters_pruned += local_pruned;
-
-                        if (local_pruned > 0)
-                        {
-                            double sum_p = 0.0;
-                            for (int idx = 0; idx < compact_cnt; idx++)
-                            {
-                                sum_p += state->scratch.entropy_p_current[act[idx]];
-                            }
-                            if (sum_p > 0.0)
-                            {
-                                double inv_sum_p = 1.0 / sum_p;
-                                for (int idx = 0; idx < compact_cnt; idx++)
-                                {
-                                    state->scratch.entropy_p_current[act[idx]] *= inv_sum_p;
-                                }
-                            }
-                        }
-                    }
-                    else if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
-                    {
-                        long dim = config->optim.sq16_params.dim;
-                        const int16_t *cur_sq16 = state->current_frame_sq16;
-                        const int16_t *mat_sq16 = state->anchor_matrix_sq16;
-                        int act_cnt = state->scratch.num_active_clusters;
-                        int *act = state->scratch.active_clusters;
-                        int compact_cnt = 0;
-                        int local_pruned = 0;
-
-                        state->telemetry.sq16_evals += act_cnt;
-
-                        for (int idx = 0; idx < act_cnt; idx++)
-                        {
-                            int c = act[idx];
-                            const int16_t *a_ptr = mat_sq16
-                                ? (mat_sq16 + (size_t)c * (size_t)dim)
-                                : state->clusters[c].anchor_sq16;
-                            if (a_ptr != NULL)
-                            {
-                                uint64_t ssd = sq16_dist_squared_cutoff_i16(
-                                    cur_sq16, a_ptr, dim, sq16_ssd_thresh
-                                );
-                                if (ssd > sq16_ssd_thresh)
-                                {
-                                    state->scratch.clmembflag[c] = 0;
-                                    state->scratch.entropy_p_current[c] = 0.0;
-                                    local_pruned++;
-                                    continue;
-                                }
-                            }
-                            act[compact_cnt++] = c;
-                        }
-                        state->scratch.num_active_clusters = compact_cnt;
-                        state->telemetry.sq16_pruned += local_pruned;
-                        state->telemetry.clusters_pruned += local_pruned;
-
-                        if (local_pruned > 0)
-                        {
-                            double sum_p = 0.0;
-                            for (int idx = 0; idx < compact_cnt; idx++)
-                            {
-                                sum_p += state->scratch.entropy_p_current[act[idx]];
-                            }
-                            if (sum_p > 0.0)
-                            {
-                                double inv_sum_p = 1.0 / sum_p;
-                                for (int idx = 0; idx < compact_cnt; idx++)
-                                {
-                                    state->scratch.entropy_p_current[act[idx]] *= inv_sum_p;
-                                }
-                            }
-                        }
-                    }
-                    else if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
-                    {
-                        long dim = config->optim.sq8_params.dim;
-                        const uint8_t *cur_sq8 = state->current_frame_sq8;
-                        const uint8_t *mat_sq8 = state->anchor_matrix_sq8;
-                        int act_cnt = state->scratch.num_active_clusters;
-                        int *act = state->scratch.active_clusters;
-                        int compact_cnt = 0;
-                        int local_pruned = 0;
-
-                        state->telemetry.sq8_evals += act_cnt;
-
-                        for (int idx = 0; idx < act_cnt; idx++)
-                        {
-                            int c = act[idx];
-                            const uint8_t *a_ptr = mat_sq8
-                                ? (mat_sq8 + (size_t)c * (size_t)dim)
-                                : state->clusters[c].anchor_sq8;
-                            if (a_ptr != NULL)
-                            {
-                                double d_lb = sq8_compute_lower_bound(
-                                    cur_sq8, a_ptr, &config->optim.sq8_params, 0.0
-                                );
-                                if (d_lb > config->algo.rlim)
-                                {
-                                    state->scratch.clmembflag[c] = 0;
-                                    state->scratch.entropy_p_current[c] = 0.0;
-                                    local_pruned++;
-                                    continue;
-                                }
-                            }
-                            act[compact_cnt++] = c;
-                        }
-                        state->scratch.num_active_clusters = compact_cnt;
-                        state->telemetry.sq8_pruned += local_pruned;
-                        state->telemetry.clusters_pruned += local_pruned;
-
-                        if (local_pruned > 0)
-                        {
-                            double sum_p = 0.0;
-                            for (int idx = 0; idx < compact_cnt; idx++)
-                            {
-                                sum_p += state->scratch.entropy_p_current[act[idx]];
-                            }
-                            if (sum_p > 0.0)
-                            {
-                                double inv_sum_p = 1.0 / sum_p;
-                                for (int idx = 0; idx < compact_cnt; idx++)
-                                {
-                                    state->scratch.entropy_p_current[act[idx]] *= inv_sum_p;
-                                }
-                            }
-                        }
-                    }
-                    clock_gettime(CLOCK_MONOTONIC, &t_sq_e);
-                    state->telemetry.time_step_3a_sq_filter +=
-                        (t_sq_e.tv_sec - t_sq_s.tv_sec) * 1000.0 +
-                        (t_sq_e.tv_nsec - t_sq_s.tv_nsec) / 1000000.0;
-                }
-                else if (fast_eq16)
-                {
-                    if (state->scratch.cluster_probs != NULL)
-                    {
-                        cluster_normalize_probs(state->scratch.cluster_probs,
-                                                state->num_clusters);
-                    }
-                    else
-                    {
-                        compute_priors_and_mixing(
-                            config, state, *prev_assigned_cluster, sorting_candidates
-                        );
-                    }
-                    clock_gettime(CLOCK_MONOTONIC, &t_mid1);
-                    state->telemetry.time_step_3a_priors +=
-                        (t_mid1.tv_sec - step_start.tv_sec) * 1000.0 +
-                        (t_mid1.tv_nsec - step_start.tv_nsec) / 1000000.0;
-
-                    int num_active = 0;
-                    long pruned_count = 0;
-                    long dim = config->optim.eq16_params.dim;
-                    if (config->optim.use_eq16_adc &&
-                        state->current_frame_eq16_adc != NULL &&
-                        state->current_frame_eq16 != NULL)
-                    {
-                        /* Tier 1: Integer SIMD coarse screening with SDC (2.0 slack) */
-                        struct timespec t_t1_s, t_t1_e;
-                        clock_gettime(CLOCK_MONOTONIC, &t_t1_s);
-                        eq16_filter_anchor_matrix(
-                            state->current_frame_eq16,
-                            state->anchor_matrix_eq16,
-                            state->anchor_matrix_eq16_interleaved,
-                            state->num_clusters,
-                            dim,
-                            eq16_ssd_thresh,
-                            state->scratch.clmembflag,
-                            state->scratch.active_clusters,
-                            &num_active,
-                            &pruned_count
-                        );
-                        clock_gettime(CLOCK_MONOTONIC, &t_t1_e);
-                        state->telemetry.time_step_3a_sq_tier1 +=
-                            (t_t1_e.tv_sec - t_t1_s.tv_sec) * 1000.0 +
-                            (t_t1_e.tv_nsec - t_t1_s.tv_nsec) / 1000000.0;
-
-                        /* Tier 2: Exact ADC float refinement on surviving candidates (1.0 slack) */
-                        struct timespec t_t2_s, t_t2_e;
-                        clock_gettime(CLOCK_MONOTONIC, &t_t2_s);
-                        const float *cur_adc = state->current_frame_eq16_adc;
-                        const int16_t *mat_eq16 = state->anchor_matrix_eq16;
-                        eq16_refine_candidates_adc(
-                            cur_adc,
-                            mat_eq16,
-                            state->scratch.active_clusters,
-                            num_active,
-                            dim,
-                            eq16_adc_cutoff,
-                            state->scratch.clmembflag,
-                            &num_active,
-                            &pruned_count
-                        );
-                        clock_gettime(CLOCK_MONOTONIC, &t_t2_e);
-                        state->telemetry.time_step_3a_sq_tier2 +=
-                            (t_t2_e.tv_sec - t_t2_s.tv_sec) * 1000.0 +
-                            (t_t2_e.tv_nsec - t_t2_s.tv_nsec) / 1000000.0;
-                    }
-                    else if (config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL)
-                    {
-                        eq16_filter_anchor_matrix_adc(
-                            state->current_frame_eq16_adc,
-                            state->anchor_matrix_eq16,
-                            state->anchor_matrix_adc_interleaved,
-                            state->num_clusters,
-                            dim,
-                            eq16_adc_cutoff,
-                            state->scratch.clmembflag,
-                            state->scratch.active_clusters,
-                            &num_active,
-                            &pruned_count
-                        );
-                    }
-                    else
-                    {
-                        eq16_filter_anchor_matrix(
-                            state->current_frame_eq16,
-                            state->anchor_matrix_eq16,
-                            state->anchor_matrix_eq16_interleaved,
-                            state->num_clusters,
-                            dim,
-                            eq16_ssd_thresh,
-                            state->scratch.clmembflag,
-                            state->scratch.active_clusters,
-                            &num_active,
-                            &pruned_count
-                        );
-                    }
-                    state->scratch.num_active_clusters = num_active;
-                    state->telemetry.eq16_evals += state->num_clusters;
-                    state->telemetry.eq16_pruned += (uint64_t)pruned_count;
-                    state->telemetry.clusters_pruned += (uint64_t)pruned_count;
-
-                    clock_gettime(CLOCK_MONOTONIC, &t_mid2);
-                    state->telemetry.time_step_3a_sq_filter +=
-                        (t_mid2.tv_sec - t_mid1.tv_sec) * 1000.0 +
-                        (t_mid2.tv_nsec - t_mid1.tv_nsec) / 1000000.0;
-
-                    const double *probs = state->scratch.cluster_probs;
-                    for (int idx = 0; idx < num_active; idx++)
-                    {
-                        int c = state->scratch.active_clusters[idx];
-                        double p = probs ? probs[c] : state->clusters[c].prob;
-                        state->scratch.current_gprobs[c] = 1.0;
-                        state->scratch.mixed_probs[c] = p;
-                        state->scratch.entropy_p_current[c] = p;
-                    }
-                }
-                else if (fast_sq16)
-                {
-                    if (state->scratch.cluster_probs != NULL)
-                    {
-                        cluster_normalize_probs(state->scratch.cluster_probs,
-                                                state->num_clusters);
-                    }
-                    else
-                    {
-                        compute_priors_and_mixing(
-                            config, state, *prev_assigned_cluster, sorting_candidates
-                        );
-                    }
-                    clock_gettime(CLOCK_MONOTONIC, &t_mid1);
-                    state->telemetry.time_step_3a_priors +=
-                        (t_mid1.tv_sec - step_start.tv_sec) * 1000.0 +
-                        (t_mid1.tv_nsec - step_start.tv_nsec) / 1000000.0;
-
-                    int num_active = 0;
-                    int pruned_count = 0;
-                    long dim = config->optim.sq16_params.dim;
-                    sq16_filter_anchor_matrix(
-                        state->current_frame_sq16,
-                        state->anchor_matrix_sq16,
-                        state->anchor_matrix_sq16_interleaved,
-                        state->num_clusters,
-                        dim,
-                        sq16_ssd_thresh,
-                        state->scratch.clmembflag,
-                        state->scratch.active_clusters,
-                        &num_active,
-                        &pruned_count
-                    );
-                    state->scratch.num_active_clusters = num_active;
-                    state->telemetry.sq16_evals += state->num_clusters;
-                    state->telemetry.sq16_pruned += pruned_count;
-                    state->telemetry.clusters_pruned += pruned_count;
-
-                    clock_gettime(CLOCK_MONOTONIC, &t_mid2);
-                    state->telemetry.time_step_3a_sq_filter +=
-                        (t_mid2.tv_sec - t_mid1.tv_sec) * 1000.0 +
-                        (t_mid2.tv_nsec - t_mid1.tv_nsec) / 1000000.0;
-
-                    const double *probs = state->scratch.cluster_probs;
-                    for (int idx = 0; idx < num_active; idx++)
-                    {
-                        int c = state->scratch.active_clusters[idx];
-                        double p = probs ? probs[c] : state->clusters[c].prob;
-                        state->scratch.current_gprobs[c] = 1.0;
-                        state->scratch.mixed_probs[c] = p;
-                        state->scratch.entropy_p_current[c] = p;
-                    }
+                    cluster_quant_filter_subsequent(config, state, eq16_adc_cutoff,
+                                                    eq16_ssd_thresh, sq16_ssd_thresh);
                 }
                 else
                 {
-                    compute_priors_and_mixing(
-                        config, state, *prev_assigned_cluster, sorting_candidates
-                    );
-                    clock_gettime(CLOCK_MONOTONIC, &t_mid1);
-                    state->telemetry.time_step_3a_priors +=
-                        (t_mid1.tv_sec - step_start.tv_sec) * 1000.0 +
-                        (t_mid1.tv_nsec - step_start.tv_nsec) / 1000000.0;
-
-                    if (config->optim.use_eq16 &&
-                        ((config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL) ||
-                         state->current_frame_eq16 != NULL))
-                    {
-                        long dim = config->optim.eq16_params.dim;
-                        int use_adc = (config->optim.use_eq16_adc &&
-                                       state->current_frame_eq16_adc != NULL);
-                        const float *cur_adc = state->current_frame_eq16_adc;
-                        const int16_t *cur_eq16 = state->current_frame_eq16;
-                        const int16_t *mat_eq16 = state->anchor_matrix_eq16;
-                        int num_cl = state->num_clusters;
-
-                        if (mat_eq16 != NULL)
-                        {
-                            int num_active = 0;
-                            long pruned_count = 0;
-                            if (use_adc && cur_eq16 != NULL)
-                            {
-                                /* Tier 1: Integer SIMD coarse screening with SDC (2.0 slack) */
-                                eq16_filter_anchor_matrix(
-                                    cur_eq16,
-                                    mat_eq16,
-                                    state->anchor_matrix_eq16_interleaved,
-                                    num_cl,
-                                    dim,
-                                    eq16_ssd_thresh,
-                                    state->scratch.clmembflag,
-                                    state->scratch.active_clusters,
-                                    &num_active,
-                                    &pruned_count
-                                );
-
-                                /* Tier 2: ADC float refinement on surviving candidates */
-                                eq16_refine_candidates_adc(
-                                    cur_adc,
-                                    mat_eq16,
-                                    state->scratch.active_clusters,
-                                    num_active,
-                                    dim,
-                                    eq16_adc_cutoff,
-                                    state->scratch.clmembflag,
-                                    &num_active,
-                                    &pruned_count
-                                );
-                            }
-                            else if (use_adc)
-                            {
-                                eq16_filter_anchor_matrix_adc(
-                                    cur_adc,
-                                    mat_eq16,
-                                    state->anchor_matrix_adc_interleaved,
-                                    num_cl,
-                                    dim,
-                                    eq16_adc_cutoff,
-                                    state->scratch.clmembflag,
-                                    state->scratch.active_clusters,
-                                    &num_active,
-                                    &pruned_count
-                                );
-                            }
-                            else
-                            {
-                                eq16_filter_anchor_matrix(
-                                    cur_eq16,
-                                    mat_eq16,
-                                    state->anchor_matrix_eq16_interleaved,
-                                    num_cl,
-                                    dim,
-                                    eq16_ssd_thresh,
-                                    state->scratch.clmembflag,
-                                    state->scratch.active_clusters,
-                                    &num_active,
-                                    &pruned_count
-                                );
-                            }
-                            state->scratch.num_active_clusters = num_active;
-                            state->telemetry.eq16_evals += num_cl;
-                            state->telemetry.eq16_pruned += (uint64_t)pruned_count;
-                            state->telemetry.clusters_pruned += (uint64_t)pruned_count;
-                        }
-                        else
-                        {
-                            for (int i = 0; i < num_cl; i++)
-                            {
-                                if (state->scratch.clmembflag[i])
-                                {
-                                    const int16_t *a_ptr = state->clusters[i].anchor_eq16;
-                                    if (a_ptr != NULL)
-                                    {
-                                        state->telemetry.eq16_evals++;
-                                        int is_pruned = 0;
-                                        if (use_adc)
-                                        {
-                                            float dsq = eq16_dist_asym_cutoff_f32(
-                                                cur_adc,
-                                                a_ptr,
-                                                dim,
-                                                eq16_adc_cutoff
-                                            );
-                                            is_pruned = (dsq > eq16_adc_cutoff);
-                                        }
-                                        else
-                                        {
-                                            uint64_t ssd = eq16_dist_squared_cutoff_i16(
-                                                cur_eq16,
-                                                a_ptr,
-                                                dim,
-                                                eq16_ssd_thresh
-                                            );
-                                            is_pruned = (ssd > eq16_ssd_thresh);
-                                        }
-                                        if (is_pruned)
-                                        {
-                                            state->scratch.clmembflag[i] = 0;
-                                            state->telemetry.eq16_pruned++;
-                                            state->telemetry.clusters_pruned++;
-                                        }
-                                    }
-                                }
-                            }
-
-                            int compact_idx = 0;
-                            for (int idx = 0; idx < state->scratch.num_active_clusters; idx++)
-                            {
-                                int c = state->scratch.active_clusters[idx];
-                                if (state->scratch.clmembflag[c])
-                                {
-                                    state->scratch.active_clusters[compact_idx++] = c;
-                                }
-                            }
-                            state->scratch.num_active_clusters = compact_idx;
-                        }
-                    }
-                    else if (config->optim.use_sq16 && state->current_frame_sq16 != NULL)
-                    {
-                        long dim = config->optim.sq16_params.dim;
-                        const int16_t *cur_sq16 = state->current_frame_sq16;
-                        const int16_t *mat_sq16 = state->anchor_matrix_sq16;
-                        int num_cl = state->num_clusters;
-
-                        if (mat_sq16 != NULL)
-                        {
-                            int num_active = 0;
-                            int pruned_count = 0;
-                            sq16_filter_anchor_matrix(
-                                cur_sq16,
-                                mat_sq16,
-                                state->anchor_matrix_sq16_interleaved,
-                                num_cl,
-                                dim,
-                                sq16_ssd_thresh,
-                                state->scratch.clmembflag,
-                                state->scratch.active_clusters,
-                                &num_active,
-                                &pruned_count
-                            );
-                            state->scratch.num_active_clusters = num_active;
-                            state->telemetry.sq16_evals += num_cl;
-                            state->telemetry.sq16_pruned += pruned_count;
-                            state->telemetry.clusters_pruned += pruned_count;
-                        }
-                        else
-                        {
-                            for (int i = 0; i < num_cl; i++)
-                            {
-                                if (state->scratch.clmembflag[i])
-                                {
-                                    const int16_t *a_ptr = state->clusters[i].anchor_sq16;
-                                    if (a_ptr != NULL)
-                                    {
-                                        state->telemetry.sq16_evals++;
-                                        uint64_t ssd = sq16_dist_squared_cutoff_i16(
-                                            cur_sq16,
-                                            a_ptr,
-                                            dim,
-                                            sq16_ssd_thresh
-                                        );
-                                        if (ssd > sq16_ssd_thresh)
-                                        {
-                                            state->scratch.clmembflag[i] = 0;
-                                            state->telemetry.sq16_pruned++;
-                                            state->telemetry.clusters_pruned++;
-                                        }
-                                    }
-                                }
-                            }
-
-                            int compact_idx = 0;
-                            for (int idx = 0; idx < state->scratch.num_active_clusters; idx++)
-                            {
-                                int c = state->scratch.active_clusters[idx];
-                                if (state->scratch.clmembflag[c])
-                                {
-                                    state->scratch.active_clusters[compact_idx++] = c;
-                                }
-                            }
-                            state->scratch.num_active_clusters = compact_idx;
-                        }
-                    }
-                    else if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
-                    {
-                        const uint8_t *cur_sq8 = state->current_frame_sq8;
-                        const uint8_t *mat_sq8 = state->anchor_matrix_sq8;
-                        long dim = config->optim.sq8_params.dim;
-                        int num_cl = state->num_clusters;
-
-                        for (int i = 0; i < num_cl; i++)
-                        {
-                            if (state->scratch.clmembflag[i])
-                            {
-                                const uint8_t *a_ptr = mat_sq8
-                                                       ? (mat_sq8 + (size_t)i * (size_t)dim)
-                                                       : state->clusters[i].anchor_sq8;
-                                if (a_ptr != NULL)
-                                {
-                                    state->telemetry.sq8_evals++;
-                                    double d_lb = sq8_compute_lower_bound(
-                                        cur_sq8,
-                                        a_ptr,
-                                        &config->optim.sq8_params,
-                                        0.0
-                                    );
-                                    if (d_lb > config->algo.rlim)
-                                    {
-                                        state->scratch.clmembflag[i] = 0;
-                                        state->telemetry.sq8_pruned++;
-                                        state->telemetry.clusters_pruned++;
-                                    }
-                                }
-                            }
-                        }
-
-                        int compact_idx = 0;
-                        for (int idx = 0; idx < state->scratch.num_active_clusters; idx++)
-                        {
-                            int c = state->scratch.active_clusters[idx];
-                            if (state->scratch.clmembflag[c])
-                            {
-                                state->scratch.active_clusters[compact_idx++] = c;
-                            }
-                        }
-                        state->scratch.num_active_clusters = compact_idx;
-                    }
-
-                    clock_gettime(CLOCK_MONOTONIC, &t_mid2);
-                    state->telemetry.time_step_3a_sq_filter +=
-                        (t_mid2.tv_sec - t_mid1.tv_sec) * 1000.0 +
-                        (t_mid2.tv_nsec - t_mid1.tv_nsec) / 1000000.0;
+                    cluster_quant_filter_initial(config, state, sorting_candidates,
+                                                 *prev_assigned_cluster, fast_eq16, fast_sq16,
+                                                 eq16_adc_cutoff, eq16_ssd_thresh,
+                                                 sq16_ssd_thresh, step_start);
                 }
 
                 clock_gettime(CLOCK_MONOTONIC, &step_end);
@@ -1557,9 +386,9 @@ int cluster_frame(
                 }
             }
 
-            // Step 3b: Select next measurement target.
-            // Output: Returns the cluster index cj of the next target, or -1 if all
-            // candidates are pruned/exhausted.
+            // =================================================================
+            // Step 3b: Select Next Measurement Target
+            // =================================================================
             struct timespec s3b_start, s3b_end;
             clock_gettime(CLOCK_MONOTONIC, &s3b_start);
             int cj = select_next_measurement_target(config, state, &k_search,
@@ -1575,81 +404,14 @@ int cluster_frame(
                 break;
             }
 
-            // Fast EQ16 / SQ16 / SQ8 metric lower-bound pre-filtering
-            if (config->optim.use_eq16 &&
-                state->clusters[cj].anchor_eq16 != NULL &&
-                ((config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL) ||
-                 state->current_frame_eq16 != NULL))
+            if (cluster_candidate_is_pruned_by_quant(cj, config, state,
+                                                     eq16_adc_cutoff,
+                                                     eq16_ssd_thresh,
+                                                     sq16_ssd_thresh))
             {
-                state->telemetry.eq16_evals++;
-                int is_pruned = 0;
-                if (config->optim.use_eq16_adc && state->current_frame_eq16_adc != NULL)
-                {
-                    float dsq = eq16_dist_asym_cutoff_f32(
-                        state->current_frame_eq16_adc,
-                        state->clusters[cj].anchor_eq16,
-                        config->optim.eq16_params.dim,
-                        eq16_adc_cutoff
-                    );
-                    is_pruned = (dsq > eq16_adc_cutoff);
-                }
-                else
-                {
-                    uint64_t ssd = eq16_dist_squared_cutoff_i16(
-                        state->current_frame_eq16,
-                        state->clusters[cj].anchor_eq16,
-                        config->optim.eq16_params.dim,
-                        eq16_ssd_thresh
-                    );
-                    is_pruned = (ssd > eq16_ssd_thresh);
-                }
-
-                if (is_pruned)
-                {
-                    state->telemetry.eq16_pruned++;
-                    state->telemetry.clusters_pruned++;
-                    state->scratch.clmembflag[cj] = 0;
-                    continue;
-                }
-            }
-            else if (config->optim.use_sq16 &&
-                state->clusters[cj].anchor_sq16 != NULL &&
-                state->current_frame_sq16 != NULL)
-            {
-                state->telemetry.sq16_evals++;
-                uint64_t ssd = sq16_dist_squared_cutoff_i16(
-                    state->current_frame_sq16,
-                    state->clusters[cj].anchor_sq16,
-                    config->optim.sq16_params.dim,
-                    sq16_ssd_thresh);
-                if (ssd > sq16_ssd_thresh)
-                {
-                    state->telemetry.sq16_pruned++;
-                    state->telemetry.clusters_pruned++;
-                    state->scratch.clmembflag[cj] = 0;
-                    continue;
-                }
-            }
-            else if (config->optim.use_sq8 &&
-                     state->clusters[cj].anchor_sq8 != NULL &&
-                     state->current_frame_sq8 != NULL)
-            {
-                state->telemetry.sq8_evals++;
-                double d_lb = sq8_compute_lower_bound(
-                    state->current_frame_sq8,
-                    state->clusters[cj].anchor_sq8,
-                    &config->optim.sq8_params,
-                    0.0);
-                if (d_lb > config->algo.rlim)
-                {
-                    state->telemetry.sq8_pruned++;
-                    state->telemetry.clusters_pruned++;
-                    state->scratch.clmembflag[cj] = 0;
-                    continue;
-                }
+                continue;
             }
 
-            // Check if we are measuring a prediction candidate
             int is_prediction = 0;
             if (pred_candidates)
             {
@@ -1663,9 +425,9 @@ int cluster_frame(
                 }
             }
 
-            // Step 3c: Measure distance to target.
-            // Output: Returns computed distance dfc; updates temp_indices/temp_dists and
-            // increments temp_count.
+            // =================================================================
+            // Step 3c: Measure Distance to Target
+            // =================================================================
             struct timespec s3c_start, s3c_end;
             clock_gettime(CLOCK_MONOTONIC, &s3c_start);
             dfc = measure_distance_to_cluster(cj, current_frame, config, state,
@@ -1675,9 +437,9 @@ int cluster_frame(
             state->telemetry.time_step_3c += (s3c_end.tv_sec - s3c_start.tv_sec) * 1000.0 +
                                              (s3c_end.tv_nsec - s3c_start.tv_nsec) / 1000000.0;
 
-            // Step 3d: Check if solved.
-            // Output: If dfc < rlim, resolves assignment and exits loop. Otherwise, records
-            // last_cj/dfc for Step 3a update.
+            // =================================================================
+            // Step 3d: Check If Solved
+            // =================================================================
             if (dfc < config->algo.rlim)
             {
                 assigned_cluster = cj;
@@ -1695,22 +457,16 @@ int cluster_frame(
 
             last_cj = cj;
             need_prune_update = 1;
-        }
+        } // while (!found)
 
-        /* Record prediction hit if 1st candidate was assigned */
         if (first_pred >= 0 && assigned_cluster == first_pred)
         {
             state->telemetry.pred_hits++;
         }
 
-        // Step 4: Handling of new cluster creation and cache limits.
-        // If no existing cluster matches within 'rlim', we must create a new cluster.
-        // If the max cluster capacity 'maxnbclust' is reached, we execute the configured
-        // eviction strategy (Stop, Discard the oldest/smallest, or Merge the closest pair).
-        // Distance evaluation: Measures and caches pairwise distances between the new
-        // cluster anchor and all existing cluster anchors to populate DCC bounds.
-        // Output: Returns assigned_cluster for new cluster (or -2 to stop); increments
-        // state->num_clusters, updates state->clusters, and updates prev_assigned_cluster.
+        // =====================================================================
+        // Step 4: New Cluster Creation & Capacity Management
+        // =====================================================================
         if (!found)
         {
             struct timespec s4_start, s4_end;
@@ -1723,17 +479,15 @@ int cluster_frame(
                                             (s4_end.tv_nsec - s4_start.tv_nsec) / 1000000.0;
             if (assigned_cluster == -2)
             {
-                return -2; // Propagate stop signal
+                return -2;
             }
             state->telemetry.last_assignment_dist = 0.0;
         }
     }
 
-    // Step 5: Telemetry and file serialization.
-    // Record final assignment outcomes, update distance statistics, update the transition matrix,
-    // and write the results to the frame membership log files if configured.
-    // Output: Updates state->assignments, state->transition_matrix, ascii_out,
-    // state->frame_infos, state->telemetry.total_frames_processed, and telemetry counts.
+    // =========================================================================
+    // Step 5: Telemetry and File Serialization
+    // =========================================================================
     if (assigned_cluster >= 0)
     {
         struct timespec s5_start, s5_end;
