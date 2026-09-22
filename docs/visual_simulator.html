@@ -3461,14 +3461,17 @@ lower-bound evaluations and exact full-precision distance evaluations.">
                   </div>
                 </div>
                 <div class="stat-box"
-                     data-tooltip-title="k-NN Execution Timings"
+                     id="knnTimingStatBox"
+                     data-tooltip-title="k-NN Compute &amp; Latency"
                      data-tooltip-badge="Timers"
                      data-tooltip-color="amber"
-                     data-tooltip-desc="Compute search vs total time with I/O and IPC.">
+                     data-tooltip-desc="Pure non-UI compute time vs total GUI wall clock time.">
                   <div id="knnLatencyVal"
                        class="num"
                        style="color: #fbbf24; font-size: 0.95rem;">0.00 ms</div>
-                  <div class="lbl">Compute (<span id="knnTotalTimeVal">0.00 ms tot</span>)</div>
+                  <div class="lbl">
+                    Non-UI Compute (<span id="knnTotalTimeVal">0.00 ms tot</span>)
+                  </div>
                 </div>
                 <div class="stat-box"
                      data-tooltip-title="Query Throughput"
@@ -3501,6 +3504,47 @@ lower-bound evaluations and exact full-precision distance evaluations.">
                 <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: 5px;">
                   <span style="color: #4ade80;">■ Pruned (<span id="lblKnnPrunedCount">0</span>)</span>
                   <span style="color: #f59e0b;">■ Evaluated (<span id="lblKnnEvalCount">0</span>)</span>
+                </div>
+              </div>
+
+              <!-- Non-UI Compute & Execution Time Breakdown -->
+              <div id="knnTimingBreakdownBox"
+                   style="margin-top: 8px; background: rgba(15, 23, 42, 0.7);
+                          border: 1px solid var(--card-border); border-radius: 6px; padding: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.72rem;
+                            color: var(--text-muted); margin-bottom: 4px;">
+                  <span style="font-weight: 700; color: #fbbf24;">
+                    ⏱️ Non-UI Compute vs GUI Latency
+                  </span>
+                  <span id="knnNonUiComputeSummaryTxt"
+                        style="font-family: monospace; color: #fbbf24;">0.00 ms non-UI</span>
+                </div>
+                <div style="width: 100%; height: 10px; background: #1e293b; border-radius: 5px;
+                            overflow: hidden; display: flex;">
+                  <div id="barKnnComputeTime"
+                       style="height: 100%; width: 0%; background: #fbbf24;"
+                       title="Non-UI Search Compute"></div>
+                  <div id="barKnnNativeIoTime"
+                       style="height: 100%; width: 0%; background: #38bdf8;"
+                       title="Non-UI Native Load/Write"></div>
+                  <div id="barKnnGuiOverheadTime"
+                       style="height: 100%; width: 100%; background: #64748b;"
+                       title="GUI &amp; IPC Overhead"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.66rem;
+                            color: var(--text-muted); margin-top: 5px;">
+                  <span style="color: #fbbf24;">
+                    ■ Non-UI: <span id="lblKnnNonUiCompute">0.00 ms</span>
+                  </span>
+                  <span style="color: #38bdf8;">
+                    ■ Native I/O: <span id="lblKnnNativeIo">0.00 ms</span>
+                  </span>
+                  <span style="color: #94a3b8;">
+                    ■ GUI/IPC: <span id="lblKnnGuiOverhead">0.00 ms</span>
+                  </span>
+                  <span style="color: #4ade80;">
+                    ■ GUI Wall: <span id="lblKnnGuiWall">0.00 ms</span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -3680,21 +3724,41 @@ best-first graph routing instead of brute-force cluster scanning.">
                 </div>
                 <div style="display: flex; justify-content: space-between;
                             color: var(--text-muted); margin-bottom: 2px;">
-                  <span>Compute Search Time:</span>
+                  <span>Non-UI Compute (Search):</span>
                   <span id="knnTimingCompute"
                         style="font-family: monospace; color: #fbbf24;
                                font-weight: 700;">0.00 ms</span>
                 </div>
+                <div id="knnTimingLoadRow" style="display: flex; justify-content: space-between;
+                            color: var(--text-muted); margin-bottom: 2px;">
+                  <span>Non-UI Model / IVF Load:</span>
+                  <span id="knnTimingLoad"
+                        style="font-family: monospace; color: #c084fc;">0.00 ms</span>
+                </div>
+                <div id="knnTimingWriteRow" style="display: flex; justify-content: space-between;
+                            color: var(--text-muted); margin-bottom: 2px;">
+                  <span>Non-UI Binary Output Write:</span>
+                  <span id="knnTimingWrite"
+                        style="font-family: monospace; color: #38bdf8;">0.00 ms</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;
+                            color: var(--text-muted); margin-bottom: 2px;
+                            border-top: 1px dashed #1e293b; padding-top: 2px;">
+                  <span>Total Non-UI Native ELF:</span>
+                  <span id="knnTimingNativeTotal"
+                        style="font-family: monospace; color: #38bdf8;
+                               font-weight: 700;">0.00 ms</span>
+                </div>
                 <div style="display: flex; justify-content: space-between;
                             color: var(--text-muted); margin-bottom: 2px;">
-                  <span>Input / Output &amp; IPC Time:</span>
+                  <span>GUI &amp; IPC Overhead:</span>
                   <span id="knnTimingIo"
-                        style="font-family: monospace; color: #38bdf8;">0.00 ms</span>
+                        style="font-family: monospace; color: #94a3b8;">0.00 ms</span>
                 </div>
                 <div style="display: flex; justify-content: space-between;
                             color: var(--text-muted); border-top: 1px solid #1e293b;
                             padding-top: 3px; margin-top: 3px;">
-                  <span>Total End-to-End Time:</span>
+                  <span>Total End-to-End GUI Wall Time:</span>
                   <span id="knnTimingTotal"
                         style="font-family: monospace; color: #4ade80;
                                font-weight: 700;">0.00 ms</span>
@@ -4426,7 +4490,7 @@ lower-bound evaluations and exact full-precision distance evaluations.">
                           <div id="reconQuerySearchTimeVal"
                                class="num" style="color: #fbbf24;">-- ms</div>
                           <div class="lbl">
-                            Search Time (<span id="reconQueryLoadTimeVal">load --</span>)
+                            Non-UI Search (<span id="reconQueryLoadTimeVal">load --</span>)
                           </div>
                         </div>
                         <div class="stat-box"
@@ -5397,14 +5461,14 @@ greedy best-first graph routing instead of brute-force cluster scanning.">
   <script src="simulator/wasm/gric_cluster.js?v=2026.08.31.0405"></script>
   <script src="simulator/js/wasm_bridge.js?v=2026.08.31.0405"></script>
   <script src="simulator/js/fs_access.js?v=2026.08.31.0405"></script>
-  <script src="simulator/js/desktop_bridge.js?v=2026.08.31.0405"></script>
+  <script src="simulator/js/desktop_bridge.js?v=2026.09.22.04"></script>
   <script src="simulator/js/highd_engine.js?v=2026.09.04"></script>
   <script src="simulator/js/state.js?v=2026.08.31.0405"></script>
-  <script src="simulator/js/telemetry.js?v=2026.08.31.0405"></script>
+  <script src="simulator/js/telemetry.js?v=2026.09.22.04"></script>
   <script src="simulator/js/image_renderer.js?v=2026.09.06.01"></script>
   <script src="simulator/js/renderer.js?v=2026.08.31.0405"></script>
   <script src="simulator/js/clustering_core.js?v=2026.08.31.0405"></script>
-  <script src="simulator/js/main.js?v=2026.09.06.01"></script>
+  <script src="simulator/js/main.js?v=2026.09.22.04"></script>
   <script>
     // Async WASM module and Worker initialization
     (async function() {

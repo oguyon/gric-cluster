@@ -1489,12 +1489,26 @@
       const evalRateEl = document.getElementById('knnEvalRateVal');
       const perQueryLatEl = document.getElementById('knnPerQueryLatVal');
       const timingComputeEl = document.getElementById('knnTimingCompute');
+      const timingLoadEl = document.getElementById('knnTimingLoad');
+      const timingWriteEl = document.getElementById('knnTimingWrite');
+      const timingNativeTotalEl = document.getElementById('knnTimingNativeTotal');
       const timingIoEl = document.getElementById('knnTimingIo');
       const timingTotalEl = document.getElementById('knnTimingTotal');
       const diagBruteEl = document.getElementById('knnDiagBruteOps');
       const diagMetricEl = document.getElementById('knnDiagMetricOps');
       const diagEpsEl = document.getElementById('knnDiagEpsilon');
       const diagTempEl = document.getElementById('knnDiagTemporal');
+
+      // Non-UI & Timing Breakdown elements
+      const nonUiSumTxt = document.getElementById('knnNonUiComputeSummaryTxt');
+      const barCompute = document.getElementById('barKnnComputeTime');
+      const barNativeIo = document.getElementById('barKnnNativeIoTime');
+      const barGuiOverhead = document.getElementById('barKnnGuiOverheadTime');
+      const lblNonUiCompute = document.getElementById('lblKnnNonUiCompute');
+      const lblNativeIo = document.getElementById('lblKnnNativeIo');
+      const lblGuiOverhead = document.getElementById('lblKnnGuiOverhead');
+      const lblGuiWall = document.getElementById('lblKnnGuiWall');
+      const knnTimingStatBox = document.getElementById('knnTimingStatBox');
 
       if (!knnResults || !knnResults.telemetry) {
         if (tbody) {
@@ -1536,6 +1550,15 @@
         if (lblPrunedCount) lblPrunedCount.textContent = '0';
         if (lblEvalCount) lblEvalCount.textContent = '0';
 
+        if (nonUiSumTxt) nonUiSumTxt.textContent = '0.00 ms non-UI';
+        if (lblNonUiCompute) lblNonUiCompute.textContent = '0.00 ms';
+        if (lblNativeIo) lblNativeIo.textContent = '0.00 ms';
+        if (lblGuiOverhead) lblGuiOverhead.textContent = '0.00 ms';
+        if (lblGuiWall) lblGuiWall.textContent = '0.00 ms';
+        if (barCompute) barCompute.style.width = '0%';
+        if (barNativeIo) barNativeIo.style.width = '0%';
+        if (barGuiOverhead) barGuiOverhead.style.width = '100%';
+
         if (barL1) barL1.style.width = '0%';
         if (barL2) barL2.style.width = '0%';
         if (barL3) barL3.style.width = '0%';
@@ -1556,6 +1579,9 @@
         if (evalRateEl) evalRateEl.textContent = '0 M/s';
         if (perQueryLatEl) perQueryLatEl.textContent = '0.0 µs';
         if (timingComputeEl) timingComputeEl.textContent = '0.00 ms';
+        if (timingLoadEl) timingLoadEl.textContent = '0.00 ms';
+        if (timingWriteEl) timingWriteEl.textContent = '0.00 ms';
+        if (timingNativeTotalEl) timingNativeTotalEl.textContent = '0.00 ms';
         if (timingIoEl) timingIoEl.textContent = '0.00 ms';
         if (timingTotalEl) timingTotalEl.textContent = '0.00 ms';
         if (diagBruteEl) diagBruteEl.textContent = '0';
@@ -1577,9 +1603,18 @@
       const timeCompute = (typeof telem.timeComputeMs === 'number')
         ? telem.timeComputeMs
         : (telem.timeSearchMs || 0.0);
+      const timeLoad = (typeof telem.timeLoadMs === 'number') ? telem.timeLoadMs : 0.0;
+      const timeWrite = (typeof telem.timeWriteMs === 'number') ? telem.timeWriteMs : 0.0;
+      const timeNative = (typeof telem.timeNativeMs === 'number' && telem.timeNativeMs > 0)
+        ? telem.timeNativeMs
+        : (timeCompute + timeLoad + timeWrite);
       const timeTotal = (typeof telem.timeTotalMs === 'number')
         ? telem.timeTotalMs
-        : timeCompute;
+        : (timeNative > 0 ? timeNative : timeCompute);
+      const timeNativeIo = Math.max(0, timeNative - timeCompute);
+      const timeGuiOverhead = (typeof telem.timeGuiOverheadMs === 'number')
+        ? telem.timeGuiOverheadMs
+        : Math.max(0, timeTotal - timeNative);
       const timeIo = (typeof telem.timeIoMs === 'number')
         ? telem.timeIoMs
         : Math.max(0, timeTotal - timeCompute);
@@ -1595,7 +1630,25 @@
       if (distVal) distVal.textContent = `${dists.toLocaleString()}`;
       if (distPerQVal) distPerQVal.textContent = `${distsPerQuery}/q`;
       if (latVal) latVal.textContent = `${timeCompute.toFixed(2)} ms`;
-      if (totalTimeVal) totalTimeVal.textContent = `${timeTotal.toFixed(2)} ms tot`;
+      if (totalTimeVal) {
+        if (timeNative > timeCompute && timeTotal > timeNative) {
+          totalTimeVal.textContent =
+            `${timeNative.toFixed(1)} ms ELF · ${timeTotal.toFixed(1)} ms GUI`;
+        } else if (timeTotal > timeCompute) {
+          totalTimeVal.textContent = `${timeTotal.toFixed(2)} ms GUI`;
+        } else {
+          totalTimeVal.textContent = `${timeCompute.toFixed(2)} ms non-UI`;
+        }
+      }
+      if (knnTimingStatBox) {
+        knnTimingStatBox.setAttribute(
+          'data-tooltip-desc',
+          `Non-UI Search Compute: ${timeCompute.toFixed(2)} ms (${fps} QPS)\n` +
+          `Non-UI Load & Write: ${timeNativeIo.toFixed(2)} ms\n` +
+          `Total Non-UI Native ELF: ${timeNative.toFixed(2)} ms\n` +
+          `GUI Wall Clock: ${timeTotal.toFixed(2)} ms (Overhead: ${timeGuiOverhead.toFixed(2)} ms)`
+        );
+      }
       if (qpsVal) qpsVal.textContent = `${fps} QPS`;
       if (queriesVal) queriesVal.textContent = `${N.toLocaleString()}`;
       if (kParamVal) kParamVal.textContent = `k=${k}`;
@@ -1611,6 +1664,36 @@
       if (barEval) barEval.style.width = `${Math.min(100, Math.max(0, 100 - pruneEffNum))}%`;
       if (lblPrunedCount) lblPrunedCount.textContent = pruned.toLocaleString();
       if (lblEvalCount) lblEvalCount.textContent = dists.toLocaleString();
+
+      // Non-UI vs GUI Latency bar
+      if (nonUiSumTxt) {
+        nonUiSumTxt.textContent =
+          `${timeCompute.toFixed(2)} ms non-UI (${timeNative.toFixed(1)} ms native ELF)`;
+      }
+      if (lblNonUiCompute) lblNonUiCompute.textContent = `${timeCompute.toFixed(2)} ms`;
+      if (lblNativeIo) lblNativeIo.textContent = `${timeNativeIo.toFixed(2)} ms`;
+      if (lblGuiOverhead) lblGuiOverhead.textContent = `${timeGuiOverhead.toFixed(2)} ms`;
+      if (lblGuiWall) lblGuiWall.textContent = `${timeTotal.toFixed(2)} ms`;
+
+      const denomTime = Math.max(0.001, timeTotal);
+      if (barCompute) {
+        barCompute.style.width = `${((timeCompute / denomTime) * 100).toFixed(1)}%`;
+        barCompute.title =
+          `Non-UI Search Compute: ${timeCompute.toFixed(2)} ms ` +
+          `(${((timeCompute / denomTime) * 100).toFixed(1)}%)`;
+      }
+      if (barNativeIo) {
+        barNativeIo.style.width = `${((timeNativeIo / denomTime) * 100).toFixed(1)}%`;
+        barNativeIo.title =
+          `Non-UI Native I/O (Load+Write): ${timeNativeIo.toFixed(2)} ms ` +
+          `(${((timeNativeIo / denomTime) * 100).toFixed(1)}%)`;
+      }
+      if (barGuiOverhead) {
+        barGuiOverhead.style.width = `${((timeGuiOverhead / denomTime) * 100).toFixed(1)}%`;
+        barGuiOverhead.title =
+          `GUI & IPC Overhead: ${timeGuiOverhead.toFixed(2)} ms ` +
+          `(${((timeGuiOverhead / denomTime) * 100).toFixed(1)}%)`;
+      }
 
       // 2. Pruning Tab
       const l1 = telem.level1ClustersPruned || 0;
@@ -1738,7 +1821,10 @@
       if (evalRateEl) evalRateEl.textContent = `${evalRate} M/s`;
       if (perQueryLatEl) perQueryLatEl.textContent = `${perQueryLat} µs`;
       if (timingComputeEl) timingComputeEl.textContent = `${timeCompute.toFixed(2)} ms`;
-      if (timingIoEl) timingIoEl.textContent = `${timeIo.toFixed(2)} ms`;
+      if (timingLoadEl) timingLoadEl.textContent = `${timeLoad.toFixed(2)} ms`;
+      if (timingWriteEl) timingWriteEl.textContent = `${timeWrite.toFixed(2)} ms`;
+      if (timingNativeTotalEl) timingNativeTotalEl.textContent = `${timeNative.toFixed(2)} ms`;
+      if (timingIoEl) timingIoEl.textContent = `${timeGuiOverhead.toFixed(2)} ms`;
       if (timingTotalEl) timingTotalEl.textContent = `${timeTotal.toFixed(2)} ms`;
       if (diagBruteEl) diagBruteEl.textContent = `${bruteForce.toLocaleString()} evals`;
       if (diagMetricEl) diagMetricEl.textContent = `${dists.toLocaleString()} evals`;

@@ -407,7 +407,7 @@ const DesktopBridge = (function () {
         }
       }
 
-      _pollTimer = setInterval(pollStatus, 150);
+      _pollTimer = setInterval(pollStatus, 25);
       pollStatus();
     });
   }
@@ -567,6 +567,11 @@ const DesktopBridge = (function () {
       }
     }
 
+    if (_stagedDatasetCounts[fileName] === total &&
+        _stagedDatasetCounts[`${safeName}_dim`] === dim) {
+      return fileName;
+    }
+
     const f32 = new Float32Array(total * dim);
     for (let i = 0; i < total; i++) {
       if (onProgress && (i === 0 || i % 10000 === 0)) {
@@ -612,6 +617,7 @@ const DesktopBridge = (function () {
 
     _stagedDatasetCounts[fileName] = total;
     _stagedDatasetCounts[`${safeName}.txt`] = total;
+    _stagedDatasetCounts[`${safeName}_dim`] = dim;
     return fileName;
   }
 
@@ -1246,15 +1252,14 @@ const DesktopBridge = (function () {
           const N = Number(viewIdx.getBigUint64(32, true));
           const binK = Number(viewIdx.getBigUint64(40, true)) || k;
           const totalElems = N * binK;
-          const rawIndices = new Uint32Array(idxBuf.slice(hdrBytesIdx), 0, totalElems);
-          const rawDistances = new Float32Array(dstBuf.slice(hdrBytesDst), 0, totalElems);
 
-          const indices = new Int32Array(totalElems);
-          const distances = new Float64Array(totalElems);
-          for (let i = 0; i < totalElems; i++) {
-            indices[i] = rawIndices[i];
-            distances[i] = rawDistances[i];
-          }
+          const indices = (hdrBytesIdx % 4 === 0)
+            ? new Int32Array(idxBuf, hdrBytesIdx, totalElems)
+            : new Int32Array(idxBuf.slice(hdrBytesIdx), 0, totalElems);
+
+          const distances = (hdrBytesDst % 4 === 0)
+            ? new Float32Array(dstBuf, hdrBytesDst, totalElems)
+            : new Float32Array(dstBuf.slice(hdrBytesDst), 0, totalElems);
 
           return {
             totalFrames: N,
@@ -1338,14 +1343,15 @@ const DesktopBridge = (function () {
           const N     = Number(viewIdx.getBigUint64(32, true));
           const binK  = Number(viewIdx.getBigUint64(40, true)) || k;
           const total = N * binK;
-          const rawIndices   = new Uint32Array(idxBuf.slice(hdrBytesIdx), 0, total);
-          const rawDistances = new Float32Array(dstBuf.slice(hdrBytesDst), 0, total);
-          const indices   = new Int32Array(total);
-          const distances = new Float64Array(total);
-          for (let i = 0; i < total; i++) {
-            indices[i]   = rawIndices[i];
-            distances[i] = rawDistances[i];
-          }
+
+          const indices = (hdrBytesIdx % 4 === 0)
+            ? new Int32Array(idxBuf, hdrBytesIdx, total)
+            : new Int32Array(idxBuf.slice(hdrBytesIdx), 0, total);
+
+          const distances = (hdrBytesDst % 4 === 0)
+            ? new Float32Array(dstBuf, hdrBytesDst, total)
+            : new Float32Array(dstBuf.slice(hdrBytesDst), 0, total);
+
           return { totalFrames: N, k: binK, indices, distances };
         }
       }

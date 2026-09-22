@@ -972,7 +972,7 @@ static float eq16_dist_asym_cutoff_avx2(
         __m256  diff1 = _mm256_sub_ps(q_1, cf_1);
         acc1 = _mm256_fmadd_ps(diff1, diff1, acc1);
 
-        if ((i & 63) == 48)
+        if ((i & 31) == 16)
         {
             float partial = hsum256_ps(_mm256_add_ps(acc0, acc1));
             if (partial > cutoff)
@@ -1030,13 +1030,10 @@ static float eq16_dist_asym_cutoff_avx512(
         __m512  diff1 = _mm512_sub_ps(q_1, cf_1);
         acc1 = _mm512_fmadd_ps(diff1, diff1, acc1);
 
-        if ((i & 63) == 32)
+        float partial = _mm512_reduce_add_ps(_mm512_add_ps(acc0, acc1));
+        if (partial > cutoff)
         {
-            float partial = _mm512_reduce_add_ps(_mm512_add_ps(acc0, acc1));
-            if (partial > cutoff)
-            {
-                return cutoff * 1.01f + 1.0f;
-            }
+            return cutoff * 1.01f + 1.0f;
         }
     } // for (; i <= dim - 32; i += 32)
 
@@ -1304,7 +1301,7 @@ static float eq16_dist_asym_resume_cutoff_avx2(
         __m256  diff1 = _mm256_sub_ps(q_1, cf_1);
         acc1 = _mm256_fmadd_ps(diff1, diff1, acc1);
 
-        if ((i & 63) == 48)
+        if ((i & 31) == 16)
         {
             float partial = total + hsum256_ps(_mm256_add_ps(acc0, acc1));
             if (partial > cutoff)
@@ -1405,8 +1402,8 @@ static void eq16_dist_asym_cutoff_batch_1x4_avx2(
             acc3 = _mm256_fmadd_ps(diff3, diff3, acc3);
         }
 
-        /* Periodic cutoff checkpoint (every 64 dimensions) */
-        if ((i & 63) == 48)
+        /* Periodic cutoff checkpoint (every 32 dimensions) */
+        if ((i & 31) == 16)
         {
             __m128 sums = eq16_reduce_4x256_ps(acc0, acc1, acc2, acc3);
             __m128 cmp = _mm_cmpgt_ps(sums, vcutoff);
@@ -1581,8 +1578,8 @@ static void eq16_dist_asym_cutoff_batch_1x8_avx2(
             acc7 = _mm256_fmadd_ps(diff7, diff7, acc7);
         }
 
-        /* Periodic cutoff checkpoint (every 64 dimensions) */
-        if ((i & 63) == 48)
+        /* Periodic cutoff checkpoint (every 32 dimensions) */
+        if ((i & 31) == 16)
         {
             __m128 sums_lo = eq16_reduce_4x256_ps(acc0, acc1, acc2, acc3);
             __m128 sums_hi = eq16_reduce_4x256_ps(acc4, acc5, acc6, acc7);
@@ -1690,13 +1687,10 @@ static float eq16_dist_asym_resume_cutoff_avx512(
         __m512  diff1 = _mm512_sub_ps(q_1, cf_1);
         acc1 = _mm512_fmadd_ps(diff1, diff1, acc1);
 
-        if ((i & 63) == 32)
+        float partial = total + _mm512_reduce_add_ps(_mm512_add_ps(acc0, acc1));
+        if (partial > cutoff)
         {
-            float partial = total + _mm512_reduce_add_ps(_mm512_add_ps(acc0, acc1));
-            if (partial > cutoff)
-            {
-                return cutoff * 1.01f + 1.0f;
-            }
+            return cutoff * 1.01f + 1.0f;
         }
     } // for (; i <= dim - 32; i += 32)
 
@@ -1791,8 +1785,7 @@ static void eq16_dist_asym_cutoff_batch_1x4_avx512(
             acc3 = _mm512_fmadd_ps(diff3, diff3, acc3);
         }
 
-        /* Periodic cutoff checkpoint (every 64 dimensions) */
-        if ((i & 63) == 32)
+        /* Periodic cutoff checkpoint (every 32 dimensions) */
         {
             __m128 sums = _mm_set_ps(
                 _mm512_reduce_add_ps(acc3),
@@ -1808,7 +1801,8 @@ static void eq16_dist_asym_cutoff_batch_1x4_avx512(
             }
 
             int dead_count = __builtin_popcount((unsigned int)dead_mask);
-            if (dead_count >= 3 && i + 32 < dim)
+            int thresh = (i == 0) ? 2 : 1;
+            if (dead_count >= thresh && i + 32 < dim)
             {
                 _mm_storeu_ps(out_dists, sums);
                 for (int k = 0; k < 4; k++)
@@ -1975,8 +1969,7 @@ static void eq16_dist_asym_cutoff_batch_1x8_avx512(
             acc7 = _mm512_fmadd_ps(diff7, diff7, acc7);
         }
 
-        /* Periodic cutoff checkpoint (every 64 dimensions) */
-        if ((i & 63) == 32)
+        /* Periodic cutoff checkpoint (every 32 dimensions) */
         {
             __m128 sums_lo = _mm_set_ps(
                 _mm512_reduce_add_ps(acc3),
@@ -2002,7 +1995,8 @@ static void eq16_dist_asym_cutoff_batch_1x8_avx512(
             }
 
             int dead_count = __builtin_popcount((unsigned int)dead_mask);
-            if (dead_count >= 6 && i + 32 < dim)
+            int thresh = (i == 0) ? 4 : ((i == 32) ? 3 : 2);
+            if (dead_count >= thresh && i + 32 < dim)
             {
                 _mm_storeu_ps(out_dists, sums_lo);
                 _mm_storeu_ps(out_dists + 4, sums_hi);
