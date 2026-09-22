@@ -126,6 +126,8 @@ typedef struct
     int             eq16_approx;       /**< 1 to relax lower bounds with epsilon */
     double          eq16_ratio;        /**< Max ratio scale / rlim (default 0.05) */
     int             use_rq8;           /**< 1 to enable 8-bit residual quantization filtering */
+    int             use_rq8_adc;       /**< 1 to enable Asymmetric Distance Computation */
+    int             use_rq8_sparse;    /**< 1 to enable on-demand SparseCache FastScan */
     char           *rq8_save_path;     /**< Optional path to save .rq8 sidecar file */
     char           *rq8_load_path;     /**< Optional path to load .rq8 sidecar file */
     int             rq8_approx;        /**< 1 to relax lower bounds with epsilon */
@@ -316,6 +318,7 @@ typedef struct
     const int16_t     *query_eq16; /**< Quantized EQ16 representation of active query frame */
     const float       *query_eq16_adc; /**< Normalized float vector for EQ16 ADC */
     int16_t           *query_rq8;  /**< Quantized int16 representation of query residual */
+    float             *query_rq8_adc; /**< Normalized float vector for RQ8 ADC */
     int                query_rq8_clipped; /**< 1 when query residual quantization saturated */
     uint8_t           *query_pq_lut; /**< Precomputed query distance LUT for PQ FastScan */
     PQLookupTable      query_pq_table; /**< Active query LUT state */

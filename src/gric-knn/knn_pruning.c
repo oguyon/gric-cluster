@@ -372,25 +372,63 @@ uint64_t compute_rq8_cutoff_thresh(
 }
 
 /**
+ * compute_rq8_cutoff_thresh_adc_cluster() - Compute RQ8 ADC squared distance cutoff for a cluster.
+ * @cur_tau: Current search radius (heap max dist or rlim_cutoff).
+ * @params:  Cluster RQ8Params.
+ * @config:  Active KnnConfig.
+ *
+ * Return: Threshold on float sum-of-squared differences, or 1e30f if disabled.
+ */
+float compute_rq8_cutoff_thresh_adc_cluster(
+    double           cur_tau,
+    const RQ8Params *params,
+    const KnnConfig *config)
+{
+    if (params == NULL || params->scale <= 0.0f)
+    {
+        return 1e30f;
+    }
+
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < cur_tau)
+    {
+        cur_tau = config->rlim_cutoff;
+    }
+
+    double eps = config->rq8_approx ? config->epsilon : 0.0;
+    double raw_thresh = (cur_tau * (1.0 + eps) +
+                        1.0 * (double)params->err_radius) *
+                        (double)params->inv_scale;
+    raw_thresh *= 1.00005;
+    return (raw_thresh > 0.0) ? (float)(raw_thresh * raw_thresh) : 0.0f;
+}
+
+/**
  * is_member_pruned_by_rq8() - Evaluate RQ8 metric lower bound against current search radius.
- * @query_rq8: Pointer to quantized int16 query residual [dim].
- * @cand_id:   Index of candidate dataset frame.
- * @cur_tau:   Current distance to k-th nearest neighbor (or cutoff radius).
- * @model:     Active KnnModel.
- * @config:    Active KnnConfig.
- * @telem:     Active KnnTelemetry.
+ * @query_rq8:     Pointer to quantized int16 query residual [dim].
+ * @query_rq8_adc: Pointer to normalized query residual float vector [dim] for ADC.
+ * @cand_id:       Index of candidate dataset frame.
+ * @cur_tau:       Current distance to k-th nearest neighbor (or cutoff radius).
+ * @model:         Active KnnModel.
+ * @config:        Active KnnConfig.
+ * @telem:         Active KnnTelemetry.
  *
  * Return: 1 if pruned, 0 if candidate must be evaluated in full precision.
  */
 int is_member_pruned_by_rq8(
     const int16_t   *query_rq8,
+    const float     *query_rq8_adc,
     long             cand_id,
     double           cur_tau,
     const KnnModel  *model,
     const KnnConfig *config,
     KnnTelemetry    *telem)
 {
-    if (!config->use_rq8 || model->rq8_dataset_buffer == NULL || query_rq8 == NULL)
+    if (!config->use_rq8 || model->rq8_dataset_buffer == NULL)
+    {
+        return 0;
+    }
+
+    if (query_rq8_adc == NULL && query_rq8 == NULL)
     {
         return 0;
     }
@@ -403,6 +441,19 @@ int is_member_pruned_by_rq8(
         {
             params = &model->clusters[c].rq8_params;
         }
+    }
+
+    if (config->use_rq8_adc && query_rq8_adc != NULL)
+    {
+        float cutoff_f = compute_rq8_cutoff_thresh_adc_cluster(cur_tau, params, config);
+        return is_member_pruned_by_rq8_adc_cached(
+            query_rq8_adc, cand_id, cutoff_f, model, telem
+        );
+    }
+
+    if (query_rq8 == NULL)
+    {
+        return 0;
     }
 
     uint64_t ssd_cutoff = compute_rq8_cutoff_thresh_cluster(cur_tau, params, config);

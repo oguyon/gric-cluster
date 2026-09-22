@@ -122,9 +122,24 @@ void knn_cli_print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-rq8-approx%s, %s--rq8-approx%s Enable approximate lower bound in RQ8\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-e8%s, %s--e8%s, %s-e8-quant%s    Enable E8 block lattice residual quantization\n",
+    printf("  %s-rq8-adc%s, %s--rq8-adc%s       Enable Asymmetric Distance Computation for RQ8 "
+           "(%sdefault:%s on)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("  %s-no-rq8-adc%s                   Disable ADC for RQ8 (use symmetric RQ8)\n",
+           ansi_color_green, ansi_reset);
+    printf("  %s-rq8-sparse%s, %s--rq8-sparse%s Enable RQ8 SparseCache Direct SIMD "
+           "(%sdefault:%s on)\n"
+           "                                (0 MB resident transposed index)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
+           ansi_color_cyan, ansi_reset);
+    printf("  %s-no-rq8-sparse%s, %s-rq8-fastscan%s Disable SparseCache (pre-build index)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
+    printf("  %s-rq8-e8%s, %s--rq8-e8%s, %s-e8%s  Enable E8 block lattice residual quantization\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
            ansi_color_green, ansi_reset);
+    printf("  %s-no-rq8-e8%s, %s-no-e8%s        Disable E8 lattice (use cubic RQ8)\n",
+           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-e8-graph%s, %s--e8-graph%s       Enable 240-NN E8 proximity graph routing\n",
            ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
     printf("  %s-pq%s, %s--pq%s                 Enable Product Quantization (PQ) FastScan\n",
@@ -282,6 +297,8 @@ static void knn_cli_set_defaults(
     config->use_angular_bound = 1;  // Enabled by default for directional pruning
     config->use_trajectory = 0;     // Disabled by default; enable for smooth trajectories
     config->use_rq8 = 0;            // RQ8 filtering (disabled by default in Option A)
+    config->use_rq8_adc = 1;        // Default 1: Asymmetric Distance Computation for RQ8
+    config->use_rq8_sparse = 1;     // Default 1: SparseCache active (0 MB resident index)
     config->use_e8_quant = 0;       // E8 block lattice quantization
     config->use_e8_graph = 0;       // E8 240-NN proximity graph routing
     config->use_sq8 = 0;            // Fallback scalar quantization
@@ -652,6 +669,34 @@ static int knn_cli_parse_quant_opt(
         strcmp(argv[i], "-norq8") == 0)
     {
         config->use_rq8 = 0;
+        config->use_rq8_sparse = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-rq8-adc") == 0 || strcmp(argv[i], "--rq8-adc") == 0)
+    {
+        config->use_rq8_adc = 1;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-rq8-adc") == 0 || strcmp(argv[i], "--no-rq8-adc") == 0)
+    {
+        config->use_rq8_adc = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-rq8-sparse") == 0 || strcmp(argv[i], "--rq8-sparse") == 0)
+    {
+        config->use_rq8 = 1;
+        config->use_rq8_sparse = 1;
+        config->use_sq16 = 0;
+        config->use_eq16 = 0;
+        config->use_sq16_sparse = 0;
+        config->use_eq16_sparse = 0;
+        config->use_sq8 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-rq8-sparse") == 0 || strcmp(argv[i], "--no-rq8-sparse") == 0 ||
+        strcmp(argv[i], "-rq8-fastscan") == 0 || strcmp(argv[i], "--rq8-fastscan") == 0)
+    {
+        config->use_rq8_sparse = 0;
         return 1;
     }
     if (strcmp(argv[i], "-rq8-save") == 0 || strcmp(argv[i], "--rq8-save") == 0)
@@ -692,7 +737,8 @@ static int knn_cli_parse_quant_opt(
         config->rq8_approx = 1;
         return 1;
     }
-    if (strcmp(argv[i], "-e8") == 0 || strcmp(argv[i], "--e8") == 0 ||
+    if (strcmp(argv[i], "-rq8-e8") == 0 || strcmp(argv[i], "--rq8-e8") == 0 ||
+        strcmp(argv[i], "-e8") == 0 || strcmp(argv[i], "--e8") == 0 ||
         strcmp(argv[i], "-e8-quant") == 0 || strcmp(argv[i], "--e8-quant") == 0)
     {
         config->use_rq8 = 1;
@@ -701,7 +747,15 @@ static int knn_cli_parse_quant_opt(
         config->use_eq16 = 0;
         config->use_sq16_sparse = 0;
         config->use_sq16_sparse_lru = 0;
+        config->use_eq16_sparse = 0;
         config->use_sq8 = 0;
+        return 1;
+    }
+    if (strcmp(argv[i], "-no-rq8-e8") == 0 || strcmp(argv[i], "--no-rq8-e8") == 0 ||
+        strcmp(argv[i], "-no-e8") == 0 || strcmp(argv[i], "--no-e8") == 0 ||
+        strcmp(argv[i], "-no-e8-quant") == 0 || strcmp(argv[i], "--no-e8-quant") == 0)
+    {
+        config->use_e8_quant = 0;
         return 1;
     }
     if (strcmp(argv[i], "-e8-graph") == 0 || strcmp(argv[i], "--e8-graph") == 0)
