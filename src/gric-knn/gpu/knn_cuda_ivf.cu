@@ -23,6 +23,7 @@
 
 #define MAX_STATIC_K 128
 #define MAX_ACTIVE_CLUSTERS 256
+#define IVF_MAX_WARPS_PER_BLOCK 8
 #define DEFAULT_QUERY_BATCH 2048
 
 #define CUDA_CHECK(call)                                                      \
@@ -98,37 +99,44 @@ __global__ void select_candidate_clusters_kernel(
     float       *__restrict__ d_active_dists,
     int         *__restrict__ d_active_counts)
 {
-    int q = blockIdx.x * blockDim.x + threadIdx.x;
+    int warps_per_block = blockDim.x / 32;
+    int warp_in_block = threadIdx.x / 32;
+    int lane = threadIdx.x % 32;
+    int q = blockIdx.x * warps_per_block + warp_in_block;
+
+    __shared__ float s_cand_bounds[IVF_MAX_WARPS_PER_BLOCK][MAX_ACTIVE_CLUSTERS];
+    __shared__ float s_cand_dists[IVF_MAX_WARPS_PER_BLOCK][MAX_ACTIVE_CLUSTERS];
+    __shared__ int   s_cand_cls[IVF_MAX_WARPS_PER_BLOCK][MAX_ACTIVE_CLUSTERS];
+
     if (q >= B_q)
     {
         return;
+    }
+
+    int cur_nprobe = (nprobe < MAX_ACTIVE_CLUSTERS) ? nprobe : MAX_ACTIVE_CLUSTERS;
+    if (lane == 0)
+    {
+        for (int i = 0; i < cur_nprobe; i++)
+        {
+            s_cand_bounds[warp_in_block][i] = 1e30f;
+            s_cand_dists[warp_in_block][i]  = 1e30f;
+            s_cand_cls[warp_in_block][i]    = -1;
+        }
     }
 
     int g_q = q_start + q;
     float q_norm = d_Q_norms[g_q];
     const float *p_row = d_P_anchors + (size_t)q * (size_t)K;
 
-    float best_bounds[MAX_ACTIVE_CLUSTERS];
-    float best_dists[MAX_ACTIVE_CLUSTERS];
-    int   best_cls[MAX_ACTIVE_CLUSTERS];
-
-    int cur_nprobe = (nprobe < MAX_ACTIVE_CLUSTERS) ? nprobe : MAX_ACTIVE_CLUSTERS;
-    for (int i = 0; i < cur_nprobe; i++)
-    {
-        best_bounds[i] = 1e30f;
-        best_dists[i]  = 1e30f;
-        best_cls[i]    = -1;
-    }
-
     if (d_cluster_graph_adj != NULL && cluster_graph_k > 0)
     {
-        /* Graph-guided cluster routing */
-        int best_c0 = -1;
-        int best_c1 = -1;
-        float min_d0 = 1e30f;
-        float min_d1 = 1e30f;
+        /* Graph-guided cluster routing: warp-collaborative centroid discovery */
+        int my_best_c0 = -1;
+        int my_best_c1 = -1;
+        float my_min_d0 = 1e30f;
+        float my_min_d1 = 1e30f;
 
-        for (int c = 0; c < K; c++)
+        for (int c = lane; c < K; c += 32)
         {
             float a_norm = d_A_norms[c];
             float dot = p_row[c];
@@ -137,179 +145,257 @@ __global__ void select_candidate_clusters_kernel(
             {
                 dist_sq = 0.0f;
             }
-            if (dist_sq < min_d0)
+            if (dist_sq < my_min_d0)
             {
-                min_d1 = min_d0;
-                best_c1 = best_c0;
-                min_d0 = dist_sq;
-                best_c0 = c;
+                my_min_d1 = my_min_d0;
+                my_best_c1 = my_best_c0;
+                my_min_d0 = dist_sq;
+                my_best_c0 = c;
             }
-            else if (dist_sq < min_d1)
+            else if (dist_sq < my_min_d1)
             {
-                min_d1 = dist_sq;
-                best_c1 = c;
+                my_min_d1 = dist_sq;
+                my_best_c1 = c;
             }
-        } // for (int c = 0; c < K; c++)
+        } // for (int c = lane; c < K; c += 32)
 
-        #define INSERT_GRAPH_CLUSTER(c_cand)                                  \
-            do                                                                \
-            {                                                                 \
-                int cl__ = (c_cand);                                          \
-                if (cl__ >= 0 && cl__ < K)                                    \
-                {                                                             \
-                    bool found__ = false;                                     \
-                    for (int j__ = 0; j__ < cur_nprobe; j__++)                \
-                    {                                                         \
-                        if (best_cls[j__] == cl__)                            \
-                        {                                                     \
-                            found__ = true;                                   \
-                            break;                                            \
-                        }                                                     \
-                    }                                                         \
-                    if (!found__)                                             \
-                    {                                                         \
-                        float anorm__ = d_A_norms[cl__];                      \
-                        float dot__ = p_row[cl__];                            \
-                        float dsq__ = q_norm + anorm__ - 2.0f * dot__;        \
-                        if (dsq__ < 0.0f)                                     \
-                        {                                                     \
-                            dsq__ = 0.0f;                                     \
-                        }                                                     \
-                        float dist__ = sqrtf(dsq__);                          \
-                        float r__ = d_cluster_radii[cl__];                    \
-                        float lb__ = dist__ - r__;                            \
-                        if (lb__ < 0.0f)                                      \
-                        {                                                     \
-                            lb__ = 0.0f;                                      \
-                        }                                                     \
-                        if (lb__ < best_bounds[cur_nprobe - 1])               \
-                        {                                                     \
-                            int pos__ = cur_nprobe - 1;                       \
-                            while (pos__ > 0 &&                               \
-                                   best_bounds[pos__ - 1] > lb__)             \
-                            {                                                 \
-                                best_bounds[pos__] = best_bounds[pos__ - 1];  \
-                                best_dists[pos__]  = best_dists[pos__ - 1];   \
-                                best_cls[pos__]    = best_cls[pos__ - 1];     \
-                                pos__--;                                      \
-                            }                                                 \
-                            best_bounds[pos__] = lb__;                        \
-                            best_dists[pos__]  = dist__;                      \
-                            best_cls[pos__]    = cl__;                        \
-                        }                                                     \
-                    }                                                         \
-                }                                                             \
-            } while (0)
+        /* Intra-warp reduction to find global top 2 centroids */
+        #pragma unroll
+        for (int offset = 16; offset > 0; offset /= 2)
+        {
+            float other_d0 = __shfl_down_sync(0xffffffff, my_min_d0, offset);
+            int   other_c0 = __shfl_down_sync(0xffffffff, my_best_c0, offset);
+            float other_d1 = __shfl_down_sync(0xffffffff, my_min_d1, offset);
+            int   other_c1 = __shfl_down_sync(0xffffffff, my_best_c1, offset);
 
-        /* Insert top 2 seed clusters */
-        if (best_c0 >= 0)
-        {
-            INSERT_GRAPH_CLUSTER(best_c0);
-        }
-        if (best_c1 >= 0)
-        {
-            INSERT_GRAPH_CLUSTER(best_c1);
-        }
-
-        /* Insert 1-hop neighbors of closest centroid */
-        if (best_c0 >= 0)
-        {
-            const int *adj0 = d_cluster_graph_adj +
-                              (size_t)best_c0 * (size_t)cluster_graph_k;
-            for (int i = 0; i < cluster_graph_k; i++)
+            if (other_c0 >= 0)
             {
-                INSERT_GRAPH_CLUSTER(adj0[i]);
-            }
-        }
-
-        /* Insert 1-hop neighbors of second centroid */
-        if (best_c1 >= 0)
-        {
-            const int *adj1 = d_cluster_graph_adj +
-                              (size_t)best_c1 * (size_t)cluster_graph_k;
-            int half_k = cluster_graph_k / 2;
-            for (int i = 0; i < half_k; i++)
-            {
-                INSERT_GRAPH_CLUSTER(adj1[i]);
-            }
-        }
-
-        /* Insert 2-hop neighbors for top neighbors of closest centroid */
-        if (best_c0 >= 0 && cluster_graph_k > 0)
-        {
-            const int *adj0 = d_cluster_graph_adj +
-                              (size_t)best_c0 * (size_t)cluster_graph_k;
-            int n_hops = (cluster_graph_k > 4) ? 4 : cluster_graph_k;
-            for (int h = 0; h < n_hops; h++)
-            {
-                int c_h = adj0[h];
-                if (c_h >= 0 && c_h < K)
+                if (other_d0 < my_min_d0)
                 {
-                    const int *adj_h = d_cluster_graph_adj +
-                                      (size_t)c_h * (size_t)cluster_graph_k;
-                    int sub_k = cluster_graph_k / 2;
-                    for (int j = 0; j < sub_k; j++)
+                    my_min_d1 = my_min_d0;
+                    my_best_c1 = my_best_c0;
+                    my_min_d0 = other_d0;
+                    my_best_c0 = other_c0;
+                    if (other_c1 >= 0 && other_d1 < my_min_d1)
                     {
-                        INSERT_GRAPH_CLUSTER(adj_h[j]);
+                        my_min_d1 = other_d1;
+                        my_best_c1 = other_c1;
+                    }
+                }
+                else if (other_d0 < my_min_d1)
+                {
+                    my_min_d1 = other_d0;
+                    my_best_c1 = other_c0;
+                }
+                else if (other_c1 >= 0 && other_d1 < my_min_d1)
+                {
+                    my_min_d1 = other_d1;
+                    my_best_c1 = other_c1;
+                }
+            }
+        }
+
+        int best_c0 = __shfl_sync(0xffffffff, my_best_c0, 0);
+        int best_c1 = __shfl_sync(0xffffffff, my_best_c1, 0);
+
+        if (lane == 0)
+        {
+            #define INSERT_GRAPH_CLUSTER(c_cand)                              \
+                do                                                            \
+                {                                                             \
+                    int cl__ = (c_cand);                                      \
+                    if (cl__ >= 0 && cl__ < K)                                \
+                    {                                                         \
+                        bool found__ = false;                                 \
+                        for (int j__ = 0; j__ < cur_nprobe; j__++)            \
+                        {                                                     \
+                            if (s_cand_cls[warp_in_block][j__] == cl__)       \
+                            {                                                 \
+                                found__ = true;                               \
+                                break;                                        \
+                            }                                                 \
+                        }                                                     \
+                        if (!found__)                                         \
+                        {                                                     \
+                            float anorm__ = d_A_norms[cl__];                  \
+                            float dot__ = p_row[cl__];                        \
+                            float dsq__ = q_norm + anorm__ - 2.0f * dot__;    \
+                            if (dsq__ < 0.0f)                                 \
+                            {                                                 \
+                                dsq__ = 0.0f;                                 \
+                            }                                                 \
+                            float dist__ = sqrtf(dsq__);                      \
+                            float r__ = d_cluster_radii[cl__];                \
+                            float lb__ = dist__ - r__;                        \
+                            if (lb__ < 0.0f)                                  \
+                            {                                                 \
+                                lb__ = 0.0f;                                  \
+                            }                                                 \
+                            if (lb__ <                                        \
+                                s_cand_bounds[warp_in_block][cur_nprobe - 1]) \
+                            {                                                 \
+                                int pos__ = cur_nprobe - 1;                   \
+                                while (pos__ > 0 &&                           \
+                                       s_cand_bounds[warp_in_block][pos__ - 1] > lb__) \
+                                {                                             \
+                                    s_cand_bounds[warp_in_block][pos__] =     \
+                                        s_cand_bounds[warp_in_block][pos__ - 1]; \
+                                    s_cand_dists[warp_in_block][pos__]  =     \
+                                        s_cand_dists[warp_in_block][pos__ - 1];  \
+                                    s_cand_cls[warp_in_block][pos__]    =     \
+                                        s_cand_cls[warp_in_block][pos__ - 1]; \
+                                    pos__--;                                  \
+                                }                                             \
+                                s_cand_bounds[warp_in_block][pos__] = lb__;   \
+                                s_cand_dists[warp_in_block][pos__]  = dist__; \
+                                s_cand_cls[warp_in_block][pos__]    = cl__;   \
+                            }                                                 \
+                        }                                                     \
+                    }                                                         \
+                } while (0)
+
+            /* Insert top 2 seed clusters */
+            if (best_c0 >= 0)
+            {
+                INSERT_GRAPH_CLUSTER(best_c0);
+            }
+            if (best_c1 >= 0)
+            {
+                INSERT_GRAPH_CLUSTER(best_c1);
+            }
+
+            /* Insert 1-hop neighbors of closest centroid */
+            if (best_c0 >= 0)
+            {
+                const int *adj0 = d_cluster_graph_adj +
+                                  (size_t)best_c0 * (size_t)cluster_graph_k;
+                for (int i = 0; i < cluster_graph_k; i++)
+                {
+                    INSERT_GRAPH_CLUSTER(adj0[i]);
+                }
+            }
+
+            /* Insert 1-hop neighbors of second centroid */
+            if (best_c1 >= 0)
+            {
+                const int *adj1 = d_cluster_graph_adj +
+                                  (size_t)best_c1 * (size_t)cluster_graph_k;
+                int half_k = cluster_graph_k / 2;
+                for (int i = 0; i < half_k; i++)
+                {
+                    INSERT_GRAPH_CLUSTER(adj1[i]);
+                }
+            }
+
+            /* Insert 2-hop neighbors for top neighbors of closest centroid */
+            if (best_c0 >= 0 && cluster_graph_k > 0)
+            {
+                const int *adj0 = d_cluster_graph_adj +
+                                  (size_t)best_c0 * (size_t)cluster_graph_k;
+                int n_hops = (cluster_graph_k > 4) ? 4 : cluster_graph_k;
+                for (int h = 0; h < n_hops; h++)
+                {
+                    int c_h = adj0[h];
+                    if (c_h >= 0 && c_h < K)
+                    {
+                        const int *adj_h = d_cluster_graph_adj +
+                                          (size_t)c_h * (size_t)cluster_graph_k;
+                        int sub_k = cluster_graph_k / 2;
+                        for (int j = 0; j < sub_k; j++)
+                        {
+                            INSERT_GRAPH_CLUSTER(adj_h[j]);
+                        }
                     }
                 }
             }
-        }
 
-        #undef INSERT_GRAPH_CLUSTER
+            #undef INSERT_GRAPH_CLUSTER
+        } // if (lane == 0)
     }
     else
     {
-        /* Fallback: flat scan over all K clusters */
+        /* Fallback: warp-parallel scan over all K clusters (32 clusters per step) */
         float tau_bound = 1e30f;
-        for (int c = 0; c < K; c++)
+
+        for (int c_base = 0; c_base < K; c_base += 32)
         {
-            float a_norm = d_A_norms[c];
-            float dot = p_row[c];
-            float dist_sq = q_norm + a_norm - 2.0f * dot;
-            if (dist_sq < 0.0f)
+            int c = c_base + lane;
+            float lb = 1e30f;
+            float dist = 1e30f;
+            bool cand_valid = false;
+
+            if (c < K)
             {
-                dist_sq = 0.0f;
-            }
-            float dist = sqrtf(dist_sq);
-            float radius = d_cluster_radii[c];
-            float lower_bound = dist - radius;
-            if (lower_bound < 0.0f)
-            {
-                lower_bound = 0.0f;
+                float a_norm = d_A_norms[c];
+                float dot = p_row[c];
+                float dist_sq = q_norm + a_norm - 2.0f * dot;
+                if (dist_sq < 0.0f)
+                {
+                    dist_sq = 0.0f;
+                }
+                dist = sqrtf(dist_sq);
+                float radius = d_cluster_radii[c];
+                lb = dist - radius;
+                if (lb < 0.0f)
+                {
+                    lb = 0.0f;
+                }
+                cand_valid = (lb < tau_bound);
             }
 
-            if (lower_bound < tau_bound)
+            uint32_t mask = __ballot_sync(0xffffffff, cand_valid);
+            while (mask != 0)
             {
-                int pos = cur_nprobe - 1;
-                while (pos > 0 && best_bounds[pos - 1] > lower_bound)
+                int winner_lane = __ffs(mask) - 1;
+                float winner_lb = __shfl_sync(0xffffffff, lb, winner_lane);
+                float winner_dist = __shfl_sync(0xffffffff, dist, winner_lane);
+                int winner_c = c_base + winner_lane;
+
+                if (lane == 0)
                 {
-                    best_bounds[pos] = best_bounds[pos - 1];
-                    best_dists[pos]  = best_dists[pos - 1];
-                    best_cls[pos]    = best_cls[pos - 1];
-                    pos--;
+                    if (winner_lb < s_cand_bounds[warp_in_block][cur_nprobe - 1])
+                    {
+                        int pos = cur_nprobe - 1;
+                        while (pos > 0 &&
+                               s_cand_bounds[warp_in_block][pos - 1] > winner_lb)
+                        {
+                            s_cand_bounds[warp_in_block][pos] =
+                                s_cand_bounds[warp_in_block][pos - 1];
+                            s_cand_dists[warp_in_block][pos]  =
+                                s_cand_dists[warp_in_block][pos - 1];
+                            s_cand_cls[warp_in_block][pos]    =
+                                s_cand_cls[warp_in_block][pos - 1];
+                            pos--;
+                        }
+                        s_cand_bounds[warp_in_block][pos] = winner_lb;
+                        s_cand_dists[warp_in_block][pos]  = winner_dist;
+                        s_cand_cls[warp_in_block][pos]    = winner_c;
+                    }
+                    tau_bound = s_cand_bounds[warp_in_block][cur_nprobe - 1];
                 }
-                best_bounds[pos] = lower_bound;
-                best_dists[pos]  = dist;
-                best_cls[pos]    = c;
-                tau_bound = best_bounds[cur_nprobe - 1];
-            }
-        } // for (int c = 0; c < K; c++)
+
+                tau_bound = __shfl_sync(0xffffffff, tau_bound, 0);
+                mask &= mask - 1;
+            } // while (mask != 0)
+        } // for (int c_base = 0; c_base < K; c_base += 32)
     } // else
 
-    int out_offset = q * cur_nprobe;
-    int count = 0;
-    for (int i = 0; i < cur_nprobe; i++)
+    if (lane == 0)
     {
-        if (best_cls[i] >= 0)
+        int out_offset = q * cur_nprobe;
+        int count = 0;
+        for (int i = 0; i < cur_nprobe; i++)
         {
-            d_active_clusters[out_offset + count] = best_cls[i];
-            d_active_bounds[out_offset + count]   = best_bounds[i];
-            d_active_dists[out_offset + count]    = best_dists[i];
-            count++;
+            if (s_cand_cls[warp_in_block][i] >= 0)
+            {
+                d_active_clusters[out_offset + count] = s_cand_cls[warp_in_block][i];
+                d_active_bounds[out_offset + count]   = s_cand_bounds[warp_in_block][i];
+                d_active_dists[out_offset + count]    = s_cand_dists[warp_in_block][i];
+                count++;
+            }
         }
+        d_active_counts[q] = count;
     }
-    d_active_counts[q] = count;
 }
 
 __global__ void knn_ivf_warp_search_kernel(
@@ -351,19 +437,22 @@ __global__ void knn_ivf_warp_search_kernel(
     int lane = threadIdx.x % 32;
     int q = blockIdx.x * warps_per_block + warp_in_block;
 
+    __shared__ float s_warp_dist_sq[IVF_MAX_WARPS_PER_BLOCK][MAX_STATIC_K];
+    __shared__ int   s_warp_id[IVF_MAX_WARPS_PER_BLOCK][MAX_STATIC_K];
+
     if (q >= B_q)
     {
         return;
     }
 
-    float local_dist_sq[MAX_STATIC_K];
-    int   local_id[MAX_STATIC_K];
-
     float init_tau_sq = (rlim_sq > 0.0f) ? rlim_sq : 1e30f;
-    for (int i = 0; i < k; i++)
+    if (lane == 0)
     {
-        local_dist_sq[i] = init_tau_sq;
-        local_id[i]      = -1;
+        for (int i = 0; i < k; i++)
+        {
+            s_warp_dist_sq[warp_in_block][i] = init_tau_sq;
+            s_warp_id[warp_in_block][i]      = -1;
+        }
     }
 
     float tau_sq = init_tau_sq;
@@ -527,15 +616,18 @@ __global__ void knn_ivf_warp_search_kernel(
                 if (diff_sum < tau_sq)
                 {
                     int pos = k - 1;
-                    while (pos > 0 && local_dist_sq[pos - 1] > diff_sum)
+                    while (pos > 0 &&
+                           s_warp_dist_sq[warp_in_block][pos - 1] > diff_sum)
                     {
-                        local_dist_sq[pos] = local_dist_sq[pos - 1];
-                        local_id[pos]      = local_id[pos - 1];
+                        s_warp_dist_sq[warp_in_block][pos] =
+                            s_warp_dist_sq[warp_in_block][pos - 1];
+                        s_warp_id[warp_in_block][pos]      =
+                            s_warp_id[warp_in_block][pos - 1];
                         pos--;
                     }
-                    local_dist_sq[pos] = diff_sum;
-                    local_id[pos]      = g_c;
-                    tau_sq = local_dist_sq[k - 1];
+                    s_warp_dist_sq[warp_in_block][pos] = diff_sum;
+                    s_warp_id[warp_in_block][pos]      = g_c;
+                    tau_sq = s_warp_dist_sq[warp_in_block][k - 1];
                 }
             } // if (lane == 0)
 
@@ -551,9 +643,10 @@ __global__ void knn_ivf_warp_search_kernel(
         size_t out_base = (size_t)q * (size_t)k;
         for (int i = 0; i < k; i++)
         {
-            d_out_indices[out_base + i] = local_id[i];
-            d_out_dists[out_base + i]   = (local_id[i] >= 0) ? (double)sqrtf(local_dist_sq[i]) :
-                                                              -1.0;
+            int id = s_warp_id[warp_in_block][i];
+            float dsq = s_warp_dist_sq[warp_in_block][i];
+            d_out_indices[out_base + i] = id;
+            d_out_dists[out_base + i]   = (id >= 0) ? (double)sqrtf(dsq) : -1.0;
         }
 
         if (d_total_evals != NULL)
@@ -680,12 +773,13 @@ __global__ void knn_ivf_streaming_single_frame_kernel(
     __syncthreads();
 
     /* Step 3: Initialize warp heaps */
-    float my_dist_sq[MAX_STATIC_K];
-    int   my_id[MAX_STATIC_K];
-    for (int i = 0; i < k; i++)
+    if (lane == 0)
     {
-        my_dist_sq[i] = 1e30f;
-        my_id[i]      = -1;
+        for (int i = 0; i < k; i++)
+        {
+            s_warp_dists[warp_id][i] = 1e30f;
+            s_warp_ids[warp_id][i]   = -1;
+        }
     }
     float my_tau_sq = 1e30f;
 
@@ -728,15 +822,18 @@ __global__ void knn_ivf_streaming_single_frame_kernel(
                     if (diff_sum < my_tau_sq)
                     {
                         int pos = k - 1;
-                        while (pos > 0 && my_dist_sq[pos - 1] > diff_sum)
+                        while (pos > 0 &&
+                               s_warp_dists[warp_id][pos - 1] > diff_sum)
                         {
-                            my_dist_sq[pos] = my_dist_sq[pos - 1];
-                            my_id[pos]      = my_id[pos - 1];
+                            s_warp_dists[warp_id][pos] =
+                                s_warp_dists[warp_id][pos - 1];
+                            s_warp_ids[warp_id][pos]   =
+                                s_warp_ids[warp_id][pos - 1];
                             pos--;
                         }
-                        my_dist_sq[pos] = diff_sum;
-                        my_id[pos]      = g_c;
-                        my_tau_sq = my_dist_sq[k - 1];
+                        s_warp_dists[warp_id][pos] = diff_sum;
+                        s_warp_ids[warp_id][pos]   = g_c;
+                        my_tau_sq = s_warp_dists[warp_id][k - 1];
                     }
                 }
             }
@@ -744,28 +841,11 @@ __global__ void knn_ivf_streaming_single_frame_kernel(
         } // for (int m = 0; ...)
     } // for (int a = warp_id; ...)
 
-    /* Store warp results to shared memory */
-    if (lane == 0)
-    {
-        for (int i = 0; i < k; i++)
-        {
-            s_warp_dists[warp_id][i] = my_dist_sq[i];
-            s_warp_ids[warp_id][i]   = my_id[i];
-        }
-    }
     __syncthreads();
 
     /* Warp 0 merges the 4 heaps and writes the final output */
     if (warp_id == 0 && lane == 0)
     {
-        float final_dist_sq[MAX_STATIC_K];
-        int   final_id[MAX_STATIC_K];
-        for (int i = 0; i < k; i++)
-        {
-            final_dist_sq[i] = s_warp_dists[0][i];
-            final_id[i]      = s_warp_ids[0][i];
-        }
-
         for (int w = 1; w < 4; w++)
         {
             for (int j = 0; j < k; j++)
@@ -774,25 +854,27 @@ __global__ void knn_ivf_streaming_single_frame_kernel(
                 int   cand_g = s_warp_ids[w][j];
                 if (cand_g < 0) continue;
 
-                if (cand_d < final_dist_sq[k - 1])
+                if (cand_d < s_warp_dists[0][k - 1])
                 {
                     int pos = k - 1;
-                    while (pos > 0 && final_dist_sq[pos - 1] > cand_d)
+                    while (pos > 0 && s_warp_dists[0][pos - 1] > cand_d)
                     {
-                        final_dist_sq[pos] = final_dist_sq[pos - 1];
-                        final_id[pos]      = final_id[pos - 1];
+                        s_warp_dists[0][pos] = s_warp_dists[0][pos - 1];
+                        s_warp_ids[0][pos]   = s_warp_ids[0][pos - 1];
                         pos--;
                     }
-                    final_dist_sq[pos] = cand_d;
-                    final_id[pos]      = cand_g;
+                    s_warp_dists[0][pos] = cand_d;
+                    s_warp_ids[0][pos]   = cand_g;
                 }
             }
         }
 
         for (int i = 0; i < k; i++)
         {
-            d_out_indices[i] = final_id[i];
-            d_out_dists[i]   = (double)sqrtf(final_dist_sq[i]);
+            d_out_indices[i] = s_warp_ids[0][i];
+            d_out_dists[i]   = (s_warp_ids[0][i] >= 0)
+                ? (double)sqrtf(s_warp_dists[0][i])
+                : -1.0;
         }
     }
 }
@@ -1064,9 +1146,10 @@ int knn_cuda_run_ivf_search(
                                  d_P_anchors, K));
 
         {
-            int threads = 128;
-            int blocks = (cur_Bq + threads - 1) / threads;
-            select_candidate_clusters_kernel<<<blocks, threads>>>(
+            int threads_per_block = 256;
+            int warps_per_block = threads_per_block / 32;
+            int blocks = (cur_Bq + warps_per_block - 1) / warps_per_block;
+            select_candidate_clusters_kernel<<<blocks, threads_per_block>>>(
                 d_Q_norms, d_anchor_norms, d_P_anchors, ivf_idx->d_cluster_radii,
                 (config->use_cluster_graph ? ivf_idx->d_cluster_graph_adj : NULL),
                 ivf_idx->cluster_graph_k,
@@ -1077,7 +1160,7 @@ int knn_cuda_run_ivf_search(
 
         /* Stage 2: Fused Warp-Scanning over Inverted Index with Metric Pruning */
         {
-            int threads_per_block = 128;
+            int threads_per_block = 256;
             int warps_per_block = threads_per_block / 32;
             int blocks = (cur_Bq + warps_per_block - 1) / warps_per_block;
 
