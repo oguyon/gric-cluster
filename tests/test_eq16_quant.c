@@ -985,6 +985,112 @@ static void test_eq16_fastscan_32x(void)
     printf("  EQ16 FastScan (ADC and SDC): verified (Passed)\n");
 }
 
+/**
+ * test_eq16_dist_squared_i16_kernels() - Verify EQ16 i16 distance kernels against exact math.
+ */
+static void test_eq16_dist_squared_i16_kernels(void)
+{
+    printf("Testing EQ16 dist_squared_i16, cutoff, and batch_1x4 kernels...\n");
+
+    long test_dims[] = {8, 16, 24, 64, 128, 512};
+    long max_dim = 512;
+    int16_t *q = (int16_t *)malloc((size_t)max_dim * sizeof(int16_t));
+    int16_t *anchors[4] = {
+        (int16_t *)malloc((size_t)max_dim * sizeof(int16_t)),
+        (int16_t *)malloc((size_t)max_dim * sizeof(int16_t)),
+        (int16_t *)malloc((size_t)max_dim * sizeof(int16_t)),
+        (int16_t *)malloc((size_t)max_dim * sizeof(int16_t))
+    };
+
+    srand(54321);
+
+    for (size_t di = 0; di < sizeof(test_dims) / sizeof(test_dims[0]); di++)
+    {
+        long dim = test_dims[di];
+
+        /* 1. Test moderate ranges (typical clustering) */
+        for (int trial = 0; trial < 100; trial++)
+        {
+            for (long d = 0; d < dim; d++)
+            {
+                q[d] = (int16_t)(rand() % 4000 - 2000);
+                for (int k = 0; k < 4; k++)
+                {
+                    anchors[k][d] = (int16_t)(rand() % 4000 - 2000);
+                }
+            }
+
+            uint64_t batch_out[4];
+            eq16_dist_squared_batch_1x4_i16(
+                q, (const int16_t *const *)anchors, batch_out, dim);
+
+            for (int k = 0; k < 4; k++)
+            {
+                uint64_t exact = 0;
+                for (long d = 0; d < dim; d++)
+                {
+                    int64_t diff = (int64_t)q[d] - (int64_t)anchors[k][d];
+                    exact += (uint64_t)(diff * diff);
+                }
+
+                uint64_t dist = eq16_dist_squared_i16(q, anchors[k], dim);
+                assert(dist == exact);
+                assert(batch_out[k] == exact);
+
+                uint64_t cut_pass = eq16_dist_squared_cutoff_i16(
+                    q, anchors[k], dim, exact + 10);
+                assert(cut_pass == exact);
+
+                if (exact > 10)
+                {
+                    uint64_t cut_fail = eq16_dist_squared_cutoff_i16(
+                        q, anchors[k], dim, exact - 10);
+                    assert(cut_fail > exact - 10);
+                }
+            }
+        }
+
+        /* 2. Test full-range extreme differences (-32768 to 32767) */
+        for (int trial = 0; trial < 100; trial++)
+        {
+            for (long d = 0; d < dim; d++)
+            {
+                q[d] = (int16_t)(rand() % 65536 - 32768);
+                for (int k = 0; k < 4; k++)
+                {
+                    anchors[k][d] = (int16_t)(rand() % 65536 - 32768);
+                }
+            }
+
+            uint64_t batch_out[4];
+            eq16_dist_squared_batch_1x4_i16(
+                q, (const int16_t *const *)anchors, batch_out, dim);
+
+            for (int k = 0; k < 4; k++)
+            {
+                uint64_t exact = 0;
+                for (long d = 0; d < dim; d++)
+                {
+                    int64_t diff = (int64_t)q[d] - (int64_t)anchors[k][d];
+                    exact += (uint64_t)(diff * diff);
+                }
+
+                uint64_t dist = eq16_dist_squared_i16(q, anchors[k], dim);
+                assert(dist == exact);
+                assert(batch_out[k] == exact);
+            }
+        }
+    } // for (size_t di = 0; di < sizeof(test_dims) / sizeof(test_dims[0]); di++)
+
+    free(q);
+    for (int k = 0; k < 4; k++)
+    {
+        free(anchors[k]);
+    }
+
+    printf("  EQ16 dist_squared_i16, cutoff, and batch_1x4: verified (Passed)\n");
+}
+
 int main(void)
 {
     printf("=========================================\n");
@@ -996,6 +1102,7 @@ int main(void)
     test_eq16_params();
     test_eq16_quantization_accuracy();
     test_eq16_metric_lower_bound();
+    test_eq16_dist_squared_i16_kernels();
     test_eq16_adc_bounding_and_cutoff();
     test_eq16_filter_anchor_matrix_adc();
     test_eq16_cascaded_screening();

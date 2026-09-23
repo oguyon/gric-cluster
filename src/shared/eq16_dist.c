@@ -12,50 +12,51 @@
 #include <math.h>
 #include <string.h>
 
-uint64_t eq16_dist_squared_i16(
+static inline uint64_t eq16_dist_squared_i16_scalar(
     const int16_t *restrict a,
     const int16_t *restrict b,
     long                    dim)
 {
-    long i = 0;
     uint64_t total = 0;
-
-#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 16)
+    for (long i = 0; i < dim; i++)
     {
-        __m256i sum_lo = _mm256_setzero_si256();
-        __m256i sum_hi = _mm256_setzero_si256();
-
-        for (; i <= dim - 16; i += 16)
-        {
-            __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
-            __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
-
-            __m256i a_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(va));
-            __m256i b_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(vb));
-            __m256i d_lo = _mm256_sub_epi32(a_lo, b_lo);
-
-            __m256i a_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(va, 1));
-            __m256i b_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(vb, 1));
-            __m256i d_hi = _mm256_sub_epi32(a_hi, b_hi);
-
-            __m256i p_lo_e = _mm256_mul_epi32(d_lo, d_lo);
-            __m256i d_lo_o = _mm256_srli_si256(d_lo, 4);
-            __m256i p_lo_o = _mm256_mul_epi32(d_lo_o, d_lo_o);
-
-            __m256i p_hi_e = _mm256_mul_epi32(d_hi, d_hi);
-            __m256i d_hi_o = _mm256_srli_si256(d_hi, 4);
-            __m256i p_hi_o = _mm256_mul_epi32(d_hi_o, d_hi_o);
-
-            sum_lo = _mm256_add_epi64(sum_lo, _mm256_add_epi64(p_lo_e, p_lo_o));
-            sum_hi = _mm256_add_epi64(sum_hi, _mm256_add_epi64(p_hi_e, p_hi_o));
-        } // for (; i <= dim - 16; i += 16)
-
-        __m256i s = _mm256_add_epi64(sum_lo, sum_hi);
-        __m128i r = _mm_add_epi64(_mm256_castsi256_si128(s), _mm256_extracti128_si256(s, 1));
-        total = (uint64_t)_mm_cvtsi128_si64(r) + (uint64_t)_mm_extract_epi64(r, 1);
+        int64_t diff = (int64_t)a[i] - (int64_t)b[i];
+        total += (uint64_t)(diff * diff);
     }
-#endif
+    return total;
+}
+
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static uint64_t eq16_dist_squared_i16_avx512(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim)
+{
+    uint64_t total = 0;
+    long i = 0;
+    __m512i sum_vec512_0 = _mm512_setzero_si512();
+    __m512i sum_vec512_1 = _mm512_setzero_si512();
+
+    for (; i <= dim - 32; i += 32)
+    {
+        __m512i va = _mm512_loadu_si512((const void *)(a + i));
+        __m512i vb = _mm512_loadu_si512((const void *)(b + i));
+        __m512i diff = _mm512_sub_epi16(va, vb);
+        __m512i prod = _mm512_madd_epi16(diff, diff);
+
+        __m256i prod_lo = _mm512_castsi512_si256(prod);
+        __m256i prod_hi = _mm512_extracti64x4_epi64(prod, 1);
+
+        __m512i q0 = _mm512_cvtepi32_epi64(prod_lo);
+        __m512i q1 = _mm512_cvtepi32_epi64(prod_hi);
+
+        sum_vec512_0 = _mm512_add_epi64(sum_vec512_0, q0);
+        sum_vec512_1 = _mm512_add_epi64(sum_vec512_1, q1);
+    } // for (; i <= dim - 32; i += 32)
+
+    __m512i sum_tot = _mm512_add_epi64(sum_vec512_0, sum_vec512_1);
+    total += (uint64_t)_mm512_reduce_add_epi64(sum_tot);
 
     for (; i < dim; i++)
     {
@@ -65,6 +66,295 @@ uint64_t eq16_dist_squared_i16(
 
     return total;
 }
+#endif // GRIC_HAVE_AVX512_TARGET
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+GRIC_TARGET_AVX2
+static uint64_t eq16_dist_squared_i16_avx2_exact(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim)
+{
+    long i = 0;
+    uint64_t total = 0;
+    __m256i sum_lo = _mm256_setzero_si256();
+    __m256i sum_hi = _mm256_setzero_si256();
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+        __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+
+        __m256i max_v = _mm256_max_epi16(va, vb);
+        __m256i min_v = _mm256_min_epi16(va, vb);
+        __m256i u = _mm256_sub_epi16(max_v, min_v);
+
+        __m256i lo16 = _mm256_mullo_epi16(u, u);
+        __m256i hi16 = _mm256_mulhi_epu16(u, u);
+
+        __m256i prod_lo = _mm256_unpacklo_epi16(lo16, hi16);
+        __m256i prod_hi = _mm256_unpackhi_epi16(lo16, hi16);
+
+        __m256i p0 = _mm256_cvtepu32_epi64(_mm256_castsi256_si128(prod_lo));
+        __m256i p1 = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(prod_lo, 1));
+        __m256i p2 = _mm256_cvtepu32_epi64(_mm256_castsi256_si128(prod_hi));
+        __m256i p3 = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(prod_hi, 1));
+
+        sum_lo = _mm256_add_epi64(sum_lo, _mm256_add_epi64(p0, p1));
+        sum_hi = _mm256_add_epi64(sum_hi, _mm256_add_epi64(p2, p3));
+    } // for (; i <= dim - 16; i += 16)
+
+    __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
+    __m128i slo = _mm256_castsi256_si128(sum);
+    __m128i shi = _mm256_extracti128_si256(sum, 1);
+    __m128i s128 = _mm_add_epi64(slo, shi);
+    total = (uint64_t)_mm_cvtsi128_si64(s128) + (uint64_t)_mm_extract_epi64(s128, 1);
+
+    for (; i < dim; i++)
+    {
+        int64_t diff = (int64_t)a[i] - (int64_t)b[i];
+        total += (uint64_t)(diff * diff);
+    } // for (; i < dim; i++)
+
+    return total;
+}
+
+GRIC_TARGET_AVX2
+static uint64_t eq16_dist_squared_i16_avx2(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim)
+{
+    uint64_t total = 0;
+    long i = 0;
+    __m256i sum_lo = _mm256_setzero_si256();
+    __m256i sum_hi = _mm256_setzero_si256();
+    __m256i ovf_acc = _mm256_setzero_si256();
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+        __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+
+        __m256i diff = _mm256_sub_epi16(va, vb);
+        __m256i sat = _mm256_subs_epi16(va, vb);
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(diff, sat));
+
+        __m256i prod = _mm256_madd_epi16(diff, diff);
+
+        __m256i plo = _mm256_cvtepi32_epi64(_mm256_castsi256_si128(prod));
+        __m256i phi = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(prod, 1));
+
+        sum_lo = _mm256_add_epi64(sum_lo, plo);
+        sum_hi = _mm256_add_epi64(sum_hi, phi);
+    } // for (; i <= dim - 16; i += 16)
+
+    if (!_mm256_testz_si256(ovf_acc, ovf_acc))
+    {
+        return eq16_dist_squared_i16_avx2_exact(a, b, dim);
+    }
+
+    __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
+    __m128i slo = _mm256_castsi256_si128(sum);
+    __m128i shi = _mm256_extracti128_si256(sum, 1);
+    __m128i s128 = _mm_add_epi64(slo, shi);
+    total = (uint64_t)_mm_cvtsi128_si64(s128) + (uint64_t)_mm_extract_epi64(s128, 1);
+
+    for (; i < dim; i++)
+    {
+        int64_t diff = (int64_t)a[i] - (int64_t)b[i];
+        total += (uint64_t)(diff * diff);
+    } // for (; i < dim; i++)
+
+    return total;
+}
+#endif // x86/x64
+
+/**
+ * eq16_dist_squared_i16() - Compute sum of squared differences between two int16 vectors.
+ * @a:   First vector [dim].
+ * @b:   Second vector [dim].
+ * @dim: Vector dimension.
+ *
+ * Return: Sum of squared differences as uint64_t.
+ */
+uint64_t eq16_dist_squared_i16(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim)
+{
+    if (dim < 16)
+    {
+        return eq16_dist_squared_i16_scalar(a, b, dim);
+    }
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        return eq16_dist_squared_i16_avx512(a, b, dim);
+    }
+#endif
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        return eq16_dist_squared_i16_avx2(a, b, dim);
+    }
+#endif
+
+    return eq16_dist_squared_i16_scalar(a, b, dim);
+}
+
+static inline uint64_t eq16_dist_squared_cutoff_i16_scalar(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim,
+    uint64_t                ssd_cutoff)
+{
+    uint64_t total = 0;
+    for (long k = 0; k < dim; k++)
+    {
+        int64_t diff = (int64_t)a[k] - (int64_t)b[k];
+        total += (uint64_t)(diff * diff);
+        if (total > ssd_cutoff)
+        {
+            return ssd_cutoff + 1;
+        }
+    } // for (long k = 0; k < dim; k++)
+    return total;
+}
+
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static uint64_t eq16_dist_squared_cutoff_i16_avx512(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim,
+    uint64_t                ssd_cutoff)
+{
+    uint64_t total = 0;
+    long i = 0;
+    __m512i sum_vec512_0 = _mm512_setzero_si512();
+    __m512i sum_vec512_1 = _mm512_setzero_si512();
+
+    for (; i <= dim - 32; i += 32)
+    {
+        __m512i va = _mm512_loadu_si512((const void *)(a + i));
+        __m512i vb = _mm512_loadu_si512((const void *)(b + i));
+        __m512i diff = _mm512_sub_epi16(va, vb);
+        __m512i prod = _mm512_madd_epi16(diff, diff);
+
+        __m256i prod_lo = _mm512_castsi512_si256(prod);
+        __m256i prod_hi = _mm512_extracti64x4_epi64(prod, 1);
+
+        __m512i q0 = _mm512_cvtepi32_epi64(prod_lo);
+        __m512i q1 = _mm512_cvtepi32_epi64(prod_hi);
+
+        sum_vec512_0 = _mm512_add_epi64(sum_vec512_0, q0);
+        sum_vec512_1 = _mm512_add_epi64(sum_vec512_1, q1);
+
+        __m512i sum_tot = _mm512_add_epi64(sum_vec512_0, sum_vec512_1);
+        if ((uint64_t)_mm512_reduce_add_epi64(sum_tot) > ssd_cutoff)
+        {
+            return ssd_cutoff + 1;
+        }
+    } // for (; i <= dim - 32; i += 32)
+
+    __m512i sum_tot = _mm512_add_epi64(sum_vec512_0, sum_vec512_1);
+    total = (uint64_t)_mm512_reduce_add_epi64(sum_tot);
+    if (total > ssd_cutoff)
+    {
+        return ssd_cutoff + 1;
+    }
+
+    for (; i < dim; i++)
+    {
+        int64_t diff = (int64_t)a[i] - (int64_t)b[i];
+        total += (uint64_t)(diff * diff);
+        if (total > ssd_cutoff)
+        {
+            return ssd_cutoff + 1;
+        }
+    } // for (; i < dim; i++)
+
+    return total;
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+GRIC_TARGET_AVX2
+static uint64_t eq16_dist_squared_cutoff_i16_avx2(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim,
+    uint64_t                ssd_cutoff)
+{
+    uint64_t total = 0;
+    long i = 0;
+    __m256i sum_lo = _mm256_setzero_si256();
+    __m256i sum_hi = _mm256_setzero_si256();
+    __m256i ovf_acc = _mm256_setzero_si256();
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+        __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+        __m256i diff = _mm256_sub_epi16(va, vb);
+        __m256i sat = _mm256_subs_epi16(va, vb);
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(diff, sat));
+
+        __m256i prod = _mm256_madd_epi16(diff, diff);
+
+        __m256i plo = _mm256_cvtepi32_epi64(_mm256_castsi256_si128(prod));
+        __m256i phi = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(prod, 1));
+
+        sum_lo = _mm256_add_epi64(sum_lo, plo);
+        sum_hi = _mm256_add_epi64(sum_hi, phi);
+
+        if ((i & 31) == 16)
+        {
+            __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
+            __m128i slo = _mm256_castsi256_si128(sum);
+            __m128i shi = _mm256_extracti128_si256(sum, 1);
+            __m128i s128 = _mm_add_epi64(slo, shi);
+            uint64_t partial = (uint64_t)_mm_cvtsi128_si64(s128) +
+                               (uint64_t)_mm_extract_epi64(s128, 1);
+            if (partial > ssd_cutoff)
+            {
+                return ssd_cutoff + 1;
+            }
+        }
+    } // for (; i <= dim - 16; i += 16)
+
+    if (!_mm256_testz_si256(ovf_acc, ovf_acc))
+    {
+        uint64_t full_exact = eq16_dist_squared_i16_avx2_exact(a, b, dim);
+        return (full_exact > ssd_cutoff) ? (ssd_cutoff + 1) : full_exact;
+    }
+
+    __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
+    __m128i slo = _mm256_castsi256_si128(sum);
+    __m128i shi = _mm256_extracti128_si256(sum, 1);
+    __m128i s128 = _mm_add_epi64(slo, shi);
+    total = (uint64_t)_mm_cvtsi128_si64(s128) +
+            (uint64_t)_mm_extract_epi64(s128, 1);
+    if (total > ssd_cutoff)
+    {
+        return ssd_cutoff + 1;
+    }
+
+    for (; i < dim; i++)
+    {
+        int64_t diff = (int64_t)a[i] - (int64_t)b[i];
+        total += (uint64_t)(diff * diff);
+        if (total > ssd_cutoff)
+        {
+            return ssd_cutoff + 1;
+        }
+    } // for (; i < dim; i++)
+
+    return total;
+}
+#endif // x86/x64
 
 /**
  * eq16_dist_squared_cutoff_i16() - Compute squared difference with early cutoff.
@@ -81,92 +371,25 @@ uint64_t eq16_dist_squared_cutoff_i16(
     long                    dim,
     uint64_t                ssd_cutoff)
 {
-    long i = 0;
-    uint64_t total = 0;
-
     if (dim < 16)
     {
-        for (long k = 0; k < dim; k++)
-        {
-            int64_t diff = (int64_t)a[k] - (int64_t)b[k];
-            total += (uint64_t)(diff * diff);
-            if (total > ssd_cutoff)
-            {
-                return ssd_cutoff + 1;
-            }
-        } // for (long k = 0; k < dim; k++)
-        return total;
+        return eq16_dist_squared_cutoff_i16_scalar(a, b, dim, ssd_cutoff);
     }
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        return eq16_dist_squared_cutoff_i16_avx512(a, b, dim, ssd_cutoff);
+    }
+#endif
     if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
     {
-        __m256i sum_lo = _mm256_setzero_si256();
-        __m256i sum_hi = _mm256_setzero_si256();
-
-        for (; i <= dim - 16; i += 16)
-        {
-            __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
-            __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
-
-            __m256i a_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(va));
-            __m256i b_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(vb));
-            __m256i d_lo = _mm256_sub_epi32(a_lo, b_lo);
-
-            __m256i a_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(va, 1));
-            __m256i b_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(vb, 1));
-            __m256i d_hi = _mm256_sub_epi32(a_hi, b_hi);
-
-            __m256i p_lo_e = _mm256_mul_epi32(d_lo, d_lo);
-            __m256i d_lo_o = _mm256_srli_si256(d_lo, 4);
-            __m256i p_lo_o = _mm256_mul_epi32(d_lo_o, d_lo_o);
-
-            __m256i p_hi_e = _mm256_mul_epi32(d_hi, d_hi);
-            __m256i d_hi_o = _mm256_srli_si256(d_hi, 4);
-            __m256i p_hi_o = _mm256_mul_epi32(d_hi_o, d_hi_o);
-
-            sum_lo = _mm256_add_epi64(sum_lo, _mm256_add_epi64(p_lo_e, p_lo_o));
-            sum_hi = _mm256_add_epi64(sum_hi, _mm256_add_epi64(p_hi_e, p_hi_o));
-
-            if ((i & 31) == 16)
-            {
-                __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
-                __m128i slo = _mm256_castsi256_si128(sum);
-                __m128i shi = _mm256_extracti128_si256(sum, 1);
-                __m128i s128 = _mm_add_epi64(slo, shi);
-                uint64_t partial = (uint64_t)_mm_cvtsi128_si64(s128) +
-                                   (uint64_t)_mm_extract_epi64(s128, 1);
-                if (partial > ssd_cutoff)
-                {
-                    return ssd_cutoff + 1;
-                }
-            }
-        } // for (; i <= dim - 16; i += 16)
-
-        __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
-        __m128i slo = _mm256_castsi256_si128(sum);
-        __m128i shi = _mm256_extracti128_si256(sum, 1);
-        __m128i s128 = _mm_add_epi64(slo, shi);
-        total = (uint64_t)_mm_cvtsi128_si64(s128) +
-                (uint64_t)_mm_extract_epi64(s128, 1);
-        if (total > ssd_cutoff)
-        {
-            return ssd_cutoff + 1;
-        }
+        return eq16_dist_squared_cutoff_i16_avx2(a, b, dim, ssd_cutoff);
     }
 #endif
 
-    for (; i < dim; i++)
-    {
-        int64_t diff = (int64_t)a[i] - (int64_t)b[i];
-        total += (uint64_t)(diff * diff);
-        if (total > ssd_cutoff)
-        {
-            return ssd_cutoff + 1;
-        }
-    } // for (; i < dim; i++)
-
-    return total;
+    return eq16_dist_squared_cutoff_i16_scalar(a, b, dim, ssd_cutoff);
 }
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
@@ -1556,6 +1779,198 @@ double eq16_compute_lower_bound(
     return lb;
 }
 
+static inline void eq16_dist_squared_batch_1x4_i16_scalar(
+    const int16_t *restrict        q,
+    const int16_t *const *restrict anchors,
+    uint64_t *restrict             out_sq_dists,
+    long                           dim)
+{
+    out_sq_dists[0] = 0;
+    out_sq_dists[1] = 0;
+    out_sq_dists[2] = 0;
+    out_sq_dists[3] = 0;
+
+    for (long i = 0; i < dim; i++)
+    {
+        int64_t qv = (int64_t)q[i];
+        for (int k = 0; k < 4; k++)
+        {
+            int64_t diff = qv - (int64_t)anchors[k][i];
+            out_sq_dists[k] += (uint64_t)(diff * diff);
+        }
+    } // for (long i = 0; i < dim; i++)
+}
+
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+static void eq16_dist_squared_batch_1x4_i16_avx512(
+    const int16_t *restrict        q,
+    const int16_t *const *restrict anchors,
+    uint64_t *restrict             out_sq_dists,
+    long                           dim)
+{
+    long i = 0;
+    __m512i sum0_0 = _mm512_setzero_si512(), sum0_1 = _mm512_setzero_si512();
+    __m512i sum1_0 = _mm512_setzero_si512(), sum1_1 = _mm512_setzero_si512();
+    __m512i sum2_0 = _mm512_setzero_si512(), sum2_1 = _mm512_setzero_si512();
+    __m512i sum3_0 = _mm512_setzero_si512(), sum3_1 = _mm512_setzero_si512();
+
+    const int16_t *a0 = anchors[0];
+    const int16_t *a1 = anchors[1];
+    const int16_t *a2 = anchors[2];
+    const int16_t *a3 = anchors[3];
+
+    for (; i <= dim - 32; i += 32)
+    {
+        __m512i vq = _mm512_loadu_si512((const void *)(q + i));
+
+        __m512i va0 = _mm512_loadu_si512((const void *)(a0 + i));
+        __m512i va1 = _mm512_loadu_si512((const void *)(a1 + i));
+        __m512i va2 = _mm512_loadu_si512((const void *)(a2 + i));
+        __m512i va3 = _mm512_loadu_si512((const void *)(a3 + i));
+
+        __m512i d0 = _mm512_sub_epi16(vq, va0);
+        __m512i d1 = _mm512_sub_epi16(vq, va1);
+        __m512i d2 = _mm512_sub_epi16(vq, va2);
+        __m512i d3 = _mm512_sub_epi16(vq, va3);
+
+        __m512i p0 = _mm512_madd_epi16(d0, d0);
+        __m512i p1 = _mm512_madd_epi16(d1, d1);
+        __m512i p2 = _mm512_madd_epi16(d2, d2);
+        __m512i p3 = _mm512_madd_epi16(d3, d3);
+
+        sum0_0 = _mm512_add_epi64(sum0_0, _mm512_cvtepi32_epi64(_mm512_castsi512_si256(p0)));
+        sum0_1 = _mm512_add_epi64(sum0_1,
+                                  _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(p0, 1)));
+
+        sum1_0 = _mm512_add_epi64(sum1_0, _mm512_cvtepi32_epi64(_mm512_castsi512_si256(p1)));
+        sum1_1 = _mm512_add_epi64(sum1_1,
+                                  _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(p1, 1)));
+
+        sum2_0 = _mm512_add_epi64(sum2_0, _mm512_cvtepi32_epi64(_mm512_castsi512_si256(p2)));
+        sum2_1 = _mm512_add_epi64(sum2_1,
+                                  _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(p2, 1)));
+
+        sum3_0 = _mm512_add_epi64(sum3_0, _mm512_cvtepi32_epi64(_mm512_castsi512_si256(p3)));
+        sum3_1 = _mm512_add_epi64(sum3_1,
+                                  _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(p3, 1)));
+    } // for (; i <= dim - 32; i += 32)
+
+    out_sq_dists[0] = (uint64_t)_mm512_reduce_add_epi64(_mm512_add_epi64(sum0_0, sum0_1));
+    out_sq_dists[1] = (uint64_t)_mm512_reduce_add_epi64(_mm512_add_epi64(sum1_0, sum1_1));
+    out_sq_dists[2] = (uint64_t)_mm512_reduce_add_epi64(_mm512_add_epi64(sum2_0, sum2_1));
+    out_sq_dists[3] = (uint64_t)_mm512_reduce_add_epi64(_mm512_add_epi64(sum3_0, sum3_1));
+
+    for (; i < dim; i++)
+    {
+        int64_t qv = (int64_t)q[i];
+        for (int k = 0; k < 4; k++)
+        {
+            int64_t diff = qv - (int64_t)anchors[k][i];
+            out_sq_dists[k] += (uint64_t)(diff * diff);
+        }
+    } // for (; i < dim; i++)
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+GRIC_TARGET_AVX2
+static void eq16_dist_squared_batch_1x4_i16_avx2(
+    const int16_t *restrict        q,
+    const int16_t *const *restrict anchors,
+    uint64_t *restrict             out_sq_dists,
+    long                           dim)
+{
+    long i = 0;
+    __m256i sum0_lo = _mm256_setzero_si256(), sum0_hi = _mm256_setzero_si256();
+    __m256i sum1_lo = _mm256_setzero_si256(), sum1_hi = _mm256_setzero_si256();
+    __m256i sum2_lo = _mm256_setzero_si256(), sum2_hi = _mm256_setzero_si256();
+    __m256i sum3_lo = _mm256_setzero_si256(), sum3_hi = _mm256_setzero_si256();
+    __m256i ovf_acc = _mm256_setzero_si256();
+
+    const int16_t *a0 = anchors[0];
+    const int16_t *a1 = anchors[1];
+    const int16_t *a2 = anchors[2];
+    const int16_t *a3 = anchors[3];
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m256i vq = _mm256_loadu_si256((const __m256i *)(const void *)(q + i));
+
+        __m256i va0 = _mm256_loadu_si256((const __m256i *)(const void *)(a0 + i));
+        __m256i va1 = _mm256_loadu_si256((const __m256i *)(const void *)(a1 + i));
+        __m256i va2 = _mm256_loadu_si256((const __m256i *)(const void *)(a2 + i));
+        __m256i va3 = _mm256_loadu_si256((const __m256i *)(const void *)(a3 + i));
+
+        __m256i d0 = _mm256_sub_epi16(vq, va0);
+        __m256i d1 = _mm256_sub_epi16(vq, va1);
+        __m256i d2 = _mm256_sub_epi16(vq, va2);
+        __m256i d3 = _mm256_sub_epi16(vq, va3);
+
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d0, _mm256_subs_epi16(vq, va0)));
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d1, _mm256_subs_epi16(vq, va1)));
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d2, _mm256_subs_epi16(vq, va2)));
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d3, _mm256_subs_epi16(vq, va3)));
+
+        __m256i p0 = _mm256_madd_epi16(d0, d0);
+        __m256i p1 = _mm256_madd_epi16(d1, d1);
+        __m256i p2 = _mm256_madd_epi16(d2, d2);
+        __m256i p3 = _mm256_madd_epi16(d3, d3);
+
+        sum0_lo = _mm256_add_epi64(sum0_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p0)));
+        sum0_hi = _mm256_add_epi64(sum0_hi,
+                                   _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p0, 1)));
+
+        sum1_lo = _mm256_add_epi64(sum1_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p1)));
+        sum1_hi = _mm256_add_epi64(sum1_hi,
+                                   _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p1, 1)));
+
+        sum2_lo = _mm256_add_epi64(sum2_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p2)));
+        sum2_hi = _mm256_add_epi64(sum2_hi,
+                                   _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p2, 1)));
+
+        sum3_lo = _mm256_add_epi64(sum3_lo, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(p3)));
+        sum3_hi = _mm256_add_epi64(sum3_hi,
+                                   _mm256_cvtepi32_epi64(_mm256_extracti128_si256(p3, 1)));
+    } // for (; i <= dim - 16; i += 16)
+
+    if (!_mm256_testz_si256(ovf_acc, ovf_acc))
+    {
+        for (int k = 0; k < 4; k++)
+        {
+            out_sq_dists[k] = eq16_dist_squared_i16_avx2_exact(q, anchors[k], dim);
+        }
+        return;
+    }
+
+    __m256i s0 = _mm256_add_epi64(sum0_lo, sum0_hi);
+    __m128i r0 = _mm_add_epi64(_mm256_castsi256_si128(s0), _mm256_extracti128_si256(s0, 1));
+    out_sq_dists[0] = (uint64_t)_mm_cvtsi128_si64(r0) + (uint64_t)_mm_extract_epi64(r0, 1);
+
+    __m256i s1 = _mm256_add_epi64(sum1_lo, sum1_hi);
+    __m128i r1 = _mm_add_epi64(_mm256_castsi256_si128(s1), _mm256_extracti128_si256(s1, 1));
+    out_sq_dists[1] = (uint64_t)_mm_cvtsi128_si64(r1) + (uint64_t)_mm_extract_epi64(r1, 1);
+
+    __m256i s2 = _mm256_add_epi64(sum2_lo, sum2_hi);
+    __m128i r2 = _mm_add_epi64(_mm256_castsi256_si128(s2), _mm256_extracti128_si256(s2, 1));
+    out_sq_dists[2] = (uint64_t)_mm_cvtsi128_si64(r2) + (uint64_t)_mm_extract_epi64(r2, 1);
+
+    __m256i s3 = _mm256_add_epi64(sum3_lo, sum3_hi);
+    __m128i r3 = _mm_add_epi64(_mm256_castsi256_si128(s3), _mm256_extracti128_si256(s3, 1));
+    out_sq_dists[3] = (uint64_t)_mm_cvtsi128_si64(r3) + (uint64_t)_mm_extract_epi64(r3, 1);
+
+    for (; i < dim; i++)
+    {
+        int64_t qv = (int64_t)q[i];
+        for (int k = 0; k < 4; k++)
+        {
+            int64_t diff = qv - (int64_t)anchors[k][i];
+            out_sq_dists[k] += (uint64_t)(diff * diff);
+        }
+    } // for (; i < dim; i++)
+}
+#endif // x86/x64
+
 /**
  * eq16_dist_squared_batch_1x4_i16() - Compute SSD from 1 query against 4 anchors in SIMD.
  * @q:            Query EQ16 vector.
@@ -1569,130 +1984,28 @@ void eq16_dist_squared_batch_1x4_i16(
     uint64_t *restrict             out_sq_dists,
     long                           dim)
 {
-    long i = 0;
+    if (dim < 16)
+    {
+        eq16_dist_squared_batch_1x4_i16_scalar(q, anchors, out_sq_dists, dim);
+        return;
+    }
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 16)
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
     {
-        __m256i sum0_lo = _mm256_setzero_si256(), sum0_hi = _mm256_setzero_si256();
-        __m256i sum1_lo = _mm256_setzero_si256(), sum1_hi = _mm256_setzero_si256();
-        __m256i sum2_lo = _mm256_setzero_si256(), sum2_hi = _mm256_setzero_si256();
-        __m256i sum3_lo = _mm256_setzero_si256(), sum3_hi = _mm256_setzero_si256();
-
-        const int16_t *a0 = anchors[0];
-        const int16_t *a1 = anchors[1];
-        const int16_t *a2 = anchors[2];
-        const int16_t *a3 = anchors[3];
-
-        for (; i <= dim - 16; i += 16)
-        {
-            __m256i vq = _mm256_loadu_si256((const __m256i *)(const void *)(q + i));
-            __m256i q_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(vq));
-            __m256i q_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(vq, 1));
-
-            /* Anchor 0 */
-            {
-                __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a0 + i));
-                __m256i d_lo = _mm256_sub_epi32(
-                    q_lo, _mm256_cvtepi16_epi32(_mm256_castsi256_si128(va)));
-                __m256i d_hi = _mm256_sub_epi32(
-                    q_hi, _mm256_cvtepi16_epi32(_mm256_extracti128_si256(va, 1)));
-                __m256i p_lo_e = _mm256_mul_epi32(d_lo, d_lo);
-                __m256i p_lo_o = _mm256_mul_epi32(
-                    _mm256_srli_si256(d_lo, 4), _mm256_srli_si256(d_lo, 4));
-                __m256i p_hi_e = _mm256_mul_epi32(d_hi, d_hi);
-                __m256i p_hi_o = _mm256_mul_epi32(
-                    _mm256_srli_si256(d_hi, 4), _mm256_srli_si256(d_hi, 4));
-                sum0_lo = _mm256_add_epi64(sum0_lo, _mm256_add_epi64(p_lo_e, p_lo_o));
-                sum0_hi = _mm256_add_epi64(sum0_hi, _mm256_add_epi64(p_hi_e, p_hi_o));
-            }
-
-            /* Anchor 1 */
-            {
-                __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a1 + i));
-                __m256i d_lo = _mm256_sub_epi32(
-                    q_lo, _mm256_cvtepi16_epi32(_mm256_castsi256_si128(va)));
-                __m256i d_hi = _mm256_sub_epi32(
-                    q_hi, _mm256_cvtepi16_epi32(_mm256_extracti128_si256(va, 1)));
-                __m256i p_lo_e = _mm256_mul_epi32(d_lo, d_lo);
-                __m256i p_lo_o = _mm256_mul_epi32(
-                    _mm256_srli_si256(d_lo, 4), _mm256_srli_si256(d_lo, 4));
-                __m256i p_hi_e = _mm256_mul_epi32(d_hi, d_hi);
-                __m256i p_hi_o = _mm256_mul_epi32(
-                    _mm256_srli_si256(d_hi, 4), _mm256_srli_si256(d_hi, 4));
-                sum1_lo = _mm256_add_epi64(sum1_lo, _mm256_add_epi64(p_lo_e, p_lo_o));
-                sum1_hi = _mm256_add_epi64(sum1_hi, _mm256_add_epi64(p_hi_e, p_hi_o));
-            }
-
-            /* Anchor 2 */
-            {
-                __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a2 + i));
-                __m256i d_lo = _mm256_sub_epi32(
-                    q_lo, _mm256_cvtepi16_epi32(_mm256_castsi256_si128(va)));
-                __m256i d_hi = _mm256_sub_epi32(
-                    q_hi, _mm256_cvtepi16_epi32(_mm256_extracti128_si256(va, 1)));
-                __m256i p_lo_e = _mm256_mul_epi32(d_lo, d_lo);
-                __m256i p_lo_o = _mm256_mul_epi32(
-                    _mm256_srli_si256(d_lo, 4), _mm256_srli_si256(d_lo, 4));
-                __m256i p_hi_e = _mm256_mul_epi32(d_hi, d_hi);
-                __m256i p_hi_o = _mm256_mul_epi32(
-                    _mm256_srli_si256(d_hi, 4), _mm256_srli_si256(d_hi, 4));
-                sum2_lo = _mm256_add_epi64(sum2_lo, _mm256_add_epi64(p_lo_e, p_lo_o));
-                sum2_hi = _mm256_add_epi64(sum2_hi, _mm256_add_epi64(p_hi_e, p_hi_o));
-            }
-
-            /* Anchor 3 */
-            {
-                __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a3 + i));
-                __m256i d_lo = _mm256_sub_epi32(
-                    q_lo, _mm256_cvtepi16_epi32(_mm256_castsi256_si128(va)));
-                __m256i d_hi = _mm256_sub_epi32(
-                    q_hi, _mm256_cvtepi16_epi32(_mm256_extracti128_si256(va, 1)));
-                __m256i p_lo_e = _mm256_mul_epi32(d_lo, d_lo);
-                __m256i p_lo_o = _mm256_mul_epi32(
-                    _mm256_srli_si256(d_lo, 4), _mm256_srli_si256(d_lo, 4));
-                __m256i p_hi_e = _mm256_mul_epi32(d_hi, d_hi);
-                __m256i p_hi_o = _mm256_mul_epi32(
-                    _mm256_srli_si256(d_hi, 4), _mm256_srli_si256(d_hi, 4));
-                sum3_lo = _mm256_add_epi64(sum3_lo, _mm256_add_epi64(p_lo_e, p_lo_o));
-                sum3_hi = _mm256_add_epi64(sum3_hi, _mm256_add_epi64(p_hi_e, p_hi_o));
-            }
-        } // for (; i <= dim - 16; i += 16)
-
-        __m256i s0 = _mm256_add_epi64(sum0_lo, sum0_hi);
-        __m128i r0 = _mm_add_epi64(_mm256_castsi256_si128(s0), _mm256_extracti128_si256(s0, 1));
-        out_sq_dists[0] = (uint64_t)_mm_cvtsi128_si64(r0) + (uint64_t)_mm_extract_epi64(r0, 1);
-
-        __m256i s1 = _mm256_add_epi64(sum1_lo, sum1_hi);
-        __m128i r1 = _mm_add_epi64(_mm256_castsi256_si128(s1), _mm256_extracti128_si256(s1, 1));
-        out_sq_dists[1] = (uint64_t)_mm_cvtsi128_si64(r1) + (uint64_t)_mm_extract_epi64(r1, 1);
-
-        __m256i s2 = _mm256_add_epi64(sum2_lo, sum2_hi);
-        __m128i r2 = _mm_add_epi64(_mm256_castsi256_si128(s2), _mm256_extracti128_si256(s2, 1));
-        out_sq_dists[2] = (uint64_t)_mm_cvtsi128_si64(r2) + (uint64_t)_mm_extract_epi64(r2, 1);
-
-        __m256i s3 = _mm256_add_epi64(sum3_lo, sum3_hi);
-        __m128i r3 = _mm_add_epi64(_mm256_castsi256_si128(s3), _mm256_extracti128_si256(s3, 1));
-        out_sq_dists[3] = (uint64_t)_mm_cvtsi128_si64(r3) + (uint64_t)_mm_extract_epi64(r3, 1);
+        eq16_dist_squared_batch_1x4_i16_avx512(q, anchors, out_sq_dists, dim);
+        return;
     }
-    else
 #endif
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
     {
-        out_sq_dists[0] = 0;
-        out_sq_dists[1] = 0;
-        out_sq_dists[2] = 0;
-        out_sq_dists[3] = 0;
+        eq16_dist_squared_batch_1x4_i16_avx2(q, anchors, out_sq_dists, dim);
+        return;
     }
+#endif
 
-    for (; i < dim; i++)
-    {
-        int64_t qv = (int64_t)q[i];
-        for (int k = 0; k < 4; k++)
-        {
-            int64_t diff = qv - (int64_t)anchors[k][i];
-            out_sq_dists[k] += (uint64_t)(diff * diff);
-        }
-    } // for (; i < dim; i++)
+    eq16_dist_squared_batch_1x4_i16_scalar(q, anchors, out_sq_dists, dim);
 }
 
 /**
