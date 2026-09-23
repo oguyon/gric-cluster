@@ -656,6 +656,25 @@ static int apply_optim_tile_option(
         config->optim.gpu_device_id = atoi(value);
         return 1;
     }
+    else if (matches(key, "-gpu-prune") || matches(key, "--gpu-prune"))
+    {
+        config->optim.use_gpu = 1;
+        config->optim.gpu_prune_mode = 1;
+        return 0;
+    }
+    else if (matches(key, "-gpu-no-prune") || matches(key, "--gpu-no-prune") ||
+             matches(key, "-gpu-gemm") || matches(key, "--gpu-gemm"))
+    {
+        config->optim.use_gpu = 1;
+        config->optim.gpu_prune_mode = 0;
+        return 0;
+    }
+    else if (matches(key, "-gpu-auto-prune") || matches(key, "--gpu-auto-prune"))
+    {
+        config->optim.use_gpu = 1;
+        config->optim.gpu_prune_mode = -1;
+        return 0;
+    }
     else if (matches(key, "-fmatcha"))
     {
         if (!value)

@@ -434,6 +434,8 @@ static void print_help_raw(
                        "(-gpu-micro-batch, default: 64)");
     print_colored_line("    -cpu, --cpu              Force CPU execution (disable GPU)");
     print_colored_line("    -gpu-device <id>         Select GPU device ID (default: 0)");
+    print_colored_line("    -gpu-prune               Force GPU triangle pruning in Pass 2");
+    print_colored_line("    -gpu-no-prune            Force dense GEMM in Pass 2 (-gpu-gemm)");
 #endif
 
     printf("    %sGeometric Probability:%s\n",

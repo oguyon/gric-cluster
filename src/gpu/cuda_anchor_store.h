@@ -21,14 +21,25 @@ typedef struct GpuAnchorStore GpuAnchorStore;
  * @dim:            Dimensionality D of each anchor vector.
  * @device_id:      GPU device index (0 for default).
  * @max_batch_size: Maximum batch size of query frames processed per GEMM call.
+ * @rlim:           Metric cutoff radius threshold (<= 0.0f to disable).
  */
 typedef struct
 {
-    int max_clusters;
-    int dim;
-    int device_id;
-    int max_batch_size;
+    int   max_clusters;
+    int   dim;
+    int   device_id;
+    int   max_batch_size;
+    float rlim;
 } GpuAnchorStoreConfig;
+
+/**
+ * gpu_anchor_store_set_rlim() - Set distance cutoff radius for metric pruning.
+ * @store: Pointer to active GpuAnchorStore.
+ * @rlim:  Metric cutoff radius (<= 0.0f to disable).
+ */
+void gpu_anchor_store_set_rlim(
+    GpuAnchorStore *store,
+    float           rlim);
 
 /**
  * gpu_anchor_store_create() - Allocate and initialize a persistent GPU anchor store.

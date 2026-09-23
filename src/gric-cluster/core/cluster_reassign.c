@@ -19,6 +19,9 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 /**
  * run_second_pass_clustering() - Reassign all frames to their nearest cluster anchor.
@@ -99,24 +102,6 @@ long run_second_pass_clustering(
     }
 #endif
 
-    /* Scratch buffers allocated once before the frame loop */
-    double *frame_dists = (double *)malloc((size_t)K * sizeof(double));
-    char   *measured    = (char *)malloc((size_t)K * sizeof(char));
-
-    if (frame_dists == NULL || measured == NULL)
-    {
-        perror("Memory allocation failed for Pass 2 scratch buffers");
-        if (frame_dists != NULL)
-        {
-            free(frame_dists);
-        }
-        if (measured != NULL)
-        {
-            free(measured);
-        }
-        return -1;
-    }
-
     struct timespec p2_start, p2_end;
     clock_gettime(CLOCK_MONOTONIC, &p2_start);
 
@@ -124,193 +109,223 @@ long run_second_pass_clustering(
     uint64_t new_dist_evals = 0;
     uint64_t dists_pruned   = 0;
 
-    /* Iterate over each frame and reassign to nearest anchor */
-    for (long t = 0; t < N; t++)
+    /* Iterate over each frame and reassign to nearest anchor using OpenMP */
+#ifdef _OPENMP
+#pragma omp parallel reduction(+:frames_reassigned, new_dist_evals, dists_pruned)
+#endif
     {
-        memset(measured, 0, (size_t)K * sizeof(char));
-        for (int k = 0; k < K; k++)
-        {
-            frame_dists[k] = 1e30;
-        }
+        double *frame_dists = (double *)malloc((size_t)K * sizeof(double));
+        char   *measured    = (char *)malloc((size_t)K * sizeof(char));
 
-        /* 1. Retrieve all distances computed during Pass 1 for frame t */
-        if (state->frame_infos != NULL
-            && state->frame_infos[t].cluster_indices != NULL
-            && state->frame_infos[t].distances != NULL)
+        if (frame_dists != NULL && measured != NULL)
         {
-            for (int i = 0; i < state->frame_infos[t].num_dists; i++)
+#ifdef _OPENMP
+#pragma omp for schedule(dynamic, 64)
+#endif
+            for (long t = 0; t < N; t++)
             {
-                int c = state->frame_infos[t].cluster_indices[i];
-                if (c >= 0 && c < K)
+                memset(measured, 0, (size_t)K * sizeof(char));
+                for (int k = 0; k < K; k++)
                 {
-                    frame_dists[c] = state->frame_infos[t].distances[i];
-                    measured[c] = 1;
-                }
-            }
-        } // if frame_infos has recorded distances
-
-        /* 2. Determine initial best distance from already measured anchors */
-        int best_cl = state->assignments[t];
-        double d_best = 1e30;
-
-        if (best_cl >= 0 && best_cl < K && measured[best_cl])
-        {
-            d_best = frame_dists[best_cl];
-        }
-        else
-        {
-            for (int k = 0; k < K; k++)
-            {
-                if (measured[k] && frame_dists[k] < d_best)
-                {
-                    d_best = frame_dists[k];
-                    best_cl = k;
-                }
-            }
-        }
-
-        /* 3. Check unmeasured anchors using triangle-inequality lower bounding */
-        Frame *fr = NULL;
-        for (int u = 0; u < K; u++)
-        {
-            if (measured[u])
-            {
-                continue;
-            }
-
-            /* Calculate lower bound on distance from frame t to anchor u */
-            double lb = 0.0;
-            size_t u_row_offset = (size_t)u * (size_t)config->algo.maxnbclust;
-            const double *dcc_row = (state->scratch.dcc_min != NULL)
-                ? &state->scratch.dcc_min[u_row_offset]
-                : NULL;
-            const char *measured_row = (state->scratch.dcc_measured != NULL)
-                ? &state->scratch.dcc_measured[u_row_offset]
-                : NULL;
-
-            for (int m = 0; m < K; m++)
-            {
-                if (!measured[m])
-                {
-                    continue;
+                    frame_dists[k] = 1e30;
                 }
 
-                if (measured_row != NULL
-                    && measured_row[m]
-                    && dcc_row != NULL)
+                /* 1. Retrieve all distances computed during Pass 1 for frame t */
+                if (state->frame_infos != NULL
+                    && state->frame_infos[t].cluster_indices != NULL
+                    && state->frame_infos[t].distances != NULL)
                 {
-                    double dcc = dcc_row[m];
-                    if (dcc >= 0.0)
+                    for (int i = 0; i < state->frame_infos[t].num_dists; i++)
                     {
-                        double bound = fabs(frame_dists[m] - dcc);
-                        if (bound > lb)
+                        int c = state->frame_infos[t].cluster_indices[i];
+                        if (c >= 0 && c < K)
                         {
-                            lb = bound;
+                            frame_dists[c] = state->frame_infos[t].distances[i];
+                            measured[c] = 1;
+                        }
+                    }
+                } // if frame_infos has recorded distances
+
+                /* 2. Determine initial best distance from already measured anchors */
+                int best_cl = state->assignments[t];
+                double d_best = 1e30;
+
+                if (best_cl >= 0 && best_cl < K && measured[best_cl])
+                {
+                    d_best = frame_dists[best_cl];
+                }
+                else
+                {
+                    for (int k = 0; k < K; k++)
+                    {
+                        if (measured[k] && frame_dists[k] < d_best)
+                        {
+                            d_best = frame_dists[k];
+                            best_cl = k;
                         }
                     }
                 }
-            } // for (int m = 0; m < K; m++)
 
-            if (lb >= d_best)
-            {
-                /* Anchor u cannot possibly be closer than d_best */
-                dists_pruned++;
-                continue;
-            }
-
-            /* Evaluate distance to anchor u */
-            if (fr == NULL)
-            {
-                fr = getframe_at(t);
-                if (fr == NULL)
+                /* 3. Check unmeasured anchors using triangle-inequality lower bounding */
+                Frame *fr = NULL;
+                for (int u = 0; u < K; u++)
                 {
-                    break;
-                }
-            }
-
-            double d = get_dist(
-                fr,
-                &state->clusters[u].anchor,
-                u,
-                0.0,
-                0.0,
-                config,
-                state);
-
-            frame_dists[u] = d;
-            measured[u] = 1;
-            new_dist_evals++;
-
-            if (d < d_best)
-            {
-                d_best = d;
-                best_cl = u;
-            }
-        } // for (int u = 0; u < K; u++)
-
-        if (fr != NULL)
-        {
-            free_frame(fr);
-        }
-
-        /* 4. Update assignment if a closer anchor was found */
-        if (best_cl >= 0 && best_cl != state->assignments[t])
-        {
-            frames_reassigned++;
-            state->assignments[t] = best_cl;
-        }
-
-        /* 5. Update in-memory FrameInfo for frame t with all measured distances */
-        if (state->frame_infos != NULL)
-        {
-            state->frame_infos[t].assignment = best_cl;
-
-            int measured_count = 0;
-            for (int k = 0; k < K; k++)
-            {
-                if (measured[k])
-                {
-                    measured_count++;
-                }
-            }
-
-            if (state->frame_infos[t].cluster_indices == NULL
-                || state->frame_infos[t].num_dists != measured_count)
-            {
-                if (state->frame_infos[t].cluster_indices != NULL)
-                {
-                    free(state->frame_infos[t].cluster_indices);
-                }
-                if (state->frame_infos[t].distances != NULL)
-                {
-                    free(state->frame_infos[t].distances);
-                }
-                state->frame_infos[t].cluster_indices =
-                    (int *)malloc((size_t)measured_count * sizeof(int));
-                state->frame_infos[t].distances =
-                    (double *)malloc((size_t)measured_count * sizeof(double));
-            }
-
-            if (state->frame_infos[t].cluster_indices != NULL
-                && state->frame_infos[t].distances != NULL)
-            {
-                int out_idx = 0;
-                for (int k = 0; k < K; k++)
-                {
-                    if (measured[k])
+                    if (measured[u])
                     {
-                        state->frame_infos[t].cluster_indices[out_idx] = k;
-                        state->frame_infos[t].distances[out_idx] = frame_dists[k];
-                        out_idx++;
+                        continue;
                     }
-                }
-                state->frame_infos[t].num_dists = measured_count;
-            }
-        } // if state->frame_infos != NULL
-    } // for (long t = 0; t < N; t++)
 
-    free(frame_dists);
-    free(measured);
+                    /* Calculate lower bound on distance from frame t to anchor u */
+                    double lb = 0.0;
+                    size_t u_row_offset = (size_t)u * (size_t)config->algo.maxnbclust;
+                    const double *dcc_row = (state->scratch.dcc_min != NULL)
+                        ? &state->scratch.dcc_min[u_row_offset]
+                        : NULL;
+                    const char *measured_row = (state->scratch.dcc_measured != NULL)
+                        ? &state->scratch.dcc_measured[u_row_offset]
+                        : NULL;
+
+                    for (int m = 0; m < K; m++)
+                    {
+                        if (!measured[m])
+                        {
+                            continue;
+                        }
+
+                        if (measured_row != NULL
+                            && measured_row[m]
+                            && dcc_row != NULL)
+                        {
+                            double dcc = dcc_row[m];
+                            if (dcc >= 0.0)
+                            {
+                                double bound = fabs(frame_dists[m] - dcc);
+                                if (bound > lb)
+                                {
+                                    lb = bound;
+                                }
+                            }
+                        }
+                    } // for (int m = 0; m < K; m++)
+
+                    if (lb >= d_best)
+                    {
+                        /* Anchor u cannot possibly be closer than d_best */
+                        dists_pruned++;
+                        continue;
+                    }
+
+                    /* Evaluate distance to anchor u */
+                    if (fr == NULL)
+                    {
+#ifdef _OPENMP
+#pragma omp critical(cluster_getframe)
+#endif
+                        {
+                            fr = getframe_at(t);
+                        }
+                        if (fr == NULL)
+                        {
+                            break;
+                        }
+                    }
+
+                    double d = get_dist(
+                        fr,
+                        &state->clusters[u].anchor,
+                        u,
+                        0.0,
+                        0.0,
+                        config,
+                        state);
+
+                    frame_dists[u] = d;
+                    measured[u] = 1;
+                    new_dist_evals++;
+
+                    if (d < d_best)
+                    {
+                        d_best = d;
+                        best_cl = u;
+                    }
+                } // for (int u = 0; u < K; u++)
+
+                if (fr != NULL)
+                {
+                    free_frame(fr);
+                }
+
+                /* 4. Update assignment if a closer anchor was found */
+                if (best_cl >= 0 && best_cl != state->assignments[t])
+                {
+                    frames_reassigned++;
+                    state->assignments[t] = best_cl;
+                }
+
+                /* 5. Update in-memory FrameInfo for frame t with all measured distances */
+                if (state->frame_infos != NULL)
+                {
+                    state->frame_infos[t].assignment = best_cl;
+
+                    int measured_count = 0;
+                    for (int k = 0; k < K; k++)
+                    {
+                        if (measured[k])
+                        {
+                            measured_count++;
+                        }
+                    }
+
+                    if (state->frame_infos[t].cluster_indices == NULL
+                        || state->frame_infos[t].num_dists != measured_count)
+                    {
+                        if (state->frame_infos[t].cluster_indices != NULL)
+                        {
+                            free(state->frame_infos[t].cluster_indices);
+                        }
+                        if (state->frame_infos[t].distances != NULL)
+                        {
+                            free(state->frame_infos[t].distances);
+                        }
+                        state->frame_infos[t].cluster_indices =
+                            (int *)malloc((size_t)measured_count * sizeof(int));
+                        state->frame_infos[t].distances =
+                            (double *)malloc((size_t)measured_count * sizeof(double));
+                    }
+
+                    if (state->frame_infos[t].cluster_indices != NULL
+                        && state->frame_infos[t].distances != NULL)
+                    {
+                        int out_idx = 0;
+                        for (int k = 0; k < K; k++)
+                        {
+                            if (measured[k])
+                            {
+                                state->frame_infos[t].cluster_indices[out_idx] = k;
+                                state->frame_infos[t].distances[out_idx] = frame_dists[k];
+                                out_idx++;
+                            }
+                        }
+                        state->frame_infos[t].num_dists = measured_count;
+                    }
+                } // if state->frame_infos != NULL
+            } // for (long t = 0; t < N; t++)
+
+            free(frame_dists);
+            free(measured);
+        }
+        else
+        {
+            if (frame_dists != NULL)
+            {
+                free(frame_dists);
+            }
+            if (measured != NULL)
+            {
+                free(measured);
+            }
+        }
+    } // OpenMP parallel region
 
     /* 6. Rebuild Transition Matrix to match the updated assignment sequence */
     if (state->transition_matrix != NULL)

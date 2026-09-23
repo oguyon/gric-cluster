@@ -1672,7 +1672,9 @@
     activeDatasetSlot = 'A';
     loadSelectedBenchmark();
     updateZoomBadge();
-    setExplainMode(false);
+    if (typeof setExplainMode === 'function') {
+      setExplainMode(false);
+    }
     updateCliCommand();
     initWorkspaceAndEngine();
     updateDatasetStatusBadge();

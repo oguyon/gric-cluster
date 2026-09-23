@@ -430,6 +430,10 @@ int main(int argc, char *argv[])
     free(state.scratch.d_min_scratch);
     free(state.scratch.d_max_scratch);
     free(state.assignments);
+    if (state.assignment_dists)
+    {
+        free(state.assignment_dists);
+    }
 
     if (state.telemetry.pruned_fraction_sum)
         free(state.telemetry.pruned_fraction_sum);

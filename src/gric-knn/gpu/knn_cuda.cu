@@ -67,17 +67,30 @@ static __global__ void compute_l2_norms_kernel(
     int                       dim,
     float       *__restrict__ out_norms)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < count)
+    int warp_id = threadIdx.x / 32;
+    int lane = threadIdx.x % 32;
+    int vec_idx = blockIdx.x * (blockDim.x / 32) + warp_id;
+
+    if (vec_idx < count)
     {
-        const float *v = mat + (size_t)idx * (size_t)dim;
+        const float *v = mat + (size_t)vec_idx * (size_t)dim;
         float sum = 0.0f;
-        for (int d = 0; d < dim; d++)
+        for (int d = lane; d < dim; d += 32)
         {
             float val = v[d];
             sum += val * val;
         }
-        out_norms[idx] = sum;
+
+        #pragma unroll
+        for (int offset = 16; offset > 0; offset /= 2)
+        {
+            sum += __shfl_down_sync(0xffffffff, sum, offset);
+        }
+
+        if (lane == 0)
+        {
+            out_norms[vec_idx] = sum;
+        }
     }
 }
 
@@ -477,7 +490,7 @@ int knn_cuda_run_search(
     /* Compute candidate vector squared norms */
     {
         int threads = 256;
-        int blocks = (int)((N_cand + threads - 1) / threads);
+        int blocks = (int)((N_cand + (threads / 32) - 1) / (threads / 32));
         compute_l2_norms_kernel<<<blocks, threads>>>(d_C, (int)N_cand, (int)D, d_C_norms);
         CUDA_CHECK(cudaGetLastError());
     }
@@ -530,7 +543,7 @@ int knn_cuda_run_search(
         host_query_fp32 = NULL;
 
         int threads = 256;
-        int blocks = (int)((N_query + threads - 1) / threads);
+        int blocks = (int)((N_query + (threads / 32) - 1) / (threads / 32));
         compute_l2_norms_kernel<<<blocks, threads>>>(d_Q, (int)N_query, (int)D, d_Q_norms);
         CUDA_CHECK(cudaGetLastError());
     }

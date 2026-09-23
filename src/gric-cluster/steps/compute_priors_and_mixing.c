@@ -108,7 +108,67 @@ static void cluster_normalize_probs_avx2(
         probs[i] *= inv;
     }
 }
+
+GRIC_TARGET_AVX2
+static void reset_search_scratch_avx2(
+    ClusterState *state,
+    int           num_cl)
+{
+    __m256d ones_d = _mm256_set1_pd(1.0);
+    int i = 0;
+    for (; i <= num_cl - 4; i += 4)
+    {
+        _mm256_storeu_pd(state->scratch.current_gprobs + i, ones_d);
+    }
+    for (; i < num_cl; i++)
+    {
+        state->scratch.current_gprobs[i] = 1.0;
+    }
+
+    __m256i ones_i = _mm256_set1_epi32(1);
+    __m256i ramp = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
+    __m256i step8 = _mm256_set1_epi32(8);
+    i = 0;
+    for (; i <= num_cl - 8; i += 8)
+    {
+        _mm256_storeu_si256((__m256i *)(state->scratch.clmembflag + i), ones_i);
+        _mm256_storeu_si256((__m256i *)(state->scratch.active_clusters + i), ramp);
+        ramp = _mm256_add_epi32(ramp, step8);
+    }
+    for (; i < num_cl; i++)
+    {
+        state->scratch.clmembflag[i] = 1;
+        state->scratch.active_clusters[i] = i;
+    }
+}
 #endif
+
+static void reset_search_scratch_scalar(
+    ClusterState *state,
+    int           num_cl)
+{
+    for (int i = 0; i < num_cl; i++)
+    {
+        state->scratch.current_gprobs[i] = 1.0;
+        state->scratch.clmembflag[i] = 1;
+        state->scratch.active_clusters[i] = i;
+    }
+}
+
+static inline void reset_search_scratch(
+    ClusterState *state,
+    int           num_cl)
+{
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && \
+    (defined(__GNUC__) || defined(__clang__)) && !defined(__CUDACC__)
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        reset_search_scratch_avx2(state, num_cl);
+        return;
+    }
+#endif
+    reset_search_scratch_scalar(state, num_cl);
+}
 
 static void cluster_normalize_probs_scalar(
     double *restrict probs,
@@ -252,6 +312,36 @@ static double calculate_sequence_match_metric(
     return exp(-sum_dmax / ((double)n_p * 0.63212055882855767));
 }
 
+
+static void candidate_sort_descending(
+    Candidate    *cands,
+    const double *mixed_probs,
+    int          *sorted_indices,
+    int           num_cl)
+{
+    if (num_cl <= 1)
+    {
+        if (num_cl == 1)
+        {
+            sorted_indices[0] = 0;
+        }
+        return;
+    }
+
+    for (int i = 0; i < num_cl; i++)
+    {
+        cands[i].id = i;
+        cands[i].p = mixed_probs[i];
+    }
+
+    qsort(cands, (size_t)num_cl, sizeof(Candidate), compare_candidates);
+
+    for (int i = 0; i < num_cl; i++)
+    {
+        sorted_indices[i] = cands[i].id;
+    }
+}
+
 /**
  * compute_priors_and_mixing - Compute mixed priors using frequency and sequence transitions.
  * @config: Config parameters of the clustering execution.
@@ -277,15 +367,13 @@ void compute_priors_and_mixing(
         if (state->scratch.cluster_probs != NULL)
         {
             cluster_normalize_probs(state->scratch.cluster_probs, num_cl);
-            for (int i = 0; i < num_cl; i++)
+            memcpy(state->scratch.mixed_probs, state->scratch.cluster_probs,
+                   (size_t)num_cl * sizeof(double));
+            if (config->optim.entropy_mode || config->optim.gprob_mode ||
+                state->cross_tile_hook != NULL)
             {
-                double prior = state->scratch.cluster_probs[i];
-                state->clusters[i].prob = prior;
-                state->scratch.current_gprobs[i] = 1.0;
-                state->scratch.clmembflag[i] = 1;
-                state->scratch.active_clusters[i] = i;
-                state->scratch.mixed_probs[i] = prior;
-                state->scratch.entropy_p_current[i] = prior;
+                memcpy(state->scratch.entropy_p_current, state->scratch.cluster_probs,
+                       (size_t)num_cl * sizeof(double));
             }
         }
         else
@@ -301,45 +389,35 @@ void compute_priors_and_mixing(
                 double prior = (sum_prob > 0.0) ? (state->clusters[i].prob * inv_sum)
                                                 : (1.0 / (double)num_cl);
                 state->clusters[i].prob = prior;
-                state->scratch.current_gprobs[i] = 1.0;
-                state->scratch.clmembflag[i] = 1;
-                state->scratch.active_clusters[i] = i;
                 state->scratch.mixed_probs[i] = prior;
                 state->scratch.entropy_p_current[i] = prior;
             }
         }
+        reset_search_scratch(state, num_cl);
     }
     else
     {
-        double sum_prob = 0.0;
-        for (int i = 0; i < num_cl; i++)
+        if (state->scratch.cluster_probs != NULL)
         {
-            sum_prob += state->clusters[i].prob;
-        }
-        if (sum_prob > 0.0)
-        {
-            double inv_sum = 1.0 / sum_prob;
-            for (int i = 0; i < num_cl; i++)
-            {
-                state->clusters[i].prob *= inv_sum;
-                if (state->scratch.cluster_probs != NULL)
-                {
-                    state->scratch.cluster_probs[i] = state->clusters[i].prob;
-                }
-                state->scratch.current_gprobs[i] = 1.0;
-                state->scratch.clmembflag[i] = 1;
-                state->scratch.active_clusters[i] = i;
-            }
+            cluster_normalize_probs(state->scratch.cluster_probs, num_cl);
         }
         else
         {
+            double sum_prob = 0.0;
             for (int i = 0; i < num_cl; i++)
             {
-                state->scratch.current_gprobs[i] = 1.0;
-                state->scratch.clmembflag[i] = 1;
-                state->scratch.active_clusters[i] = i;
+                sum_prob += state->clusters[i].prob;
+            }
+            if (sum_prob > 0.0)
+            {
+                double inv_sum = 1.0 / sum_prob;
+                for (int i = 0; i < num_cl; i++)
+                {
+                    state->clusters[i].prob *= inv_sum;
+                }
             }
         }
+        reset_search_scratch(state, num_cl);
     }
 
     if (config->optim.pred_mode == 2)
@@ -396,19 +474,9 @@ void compute_priors_and_mixing(
                         {
                             long idxA = t - 1 - j;
                             seq_A_cl[j] = state->assignments[idxA];
-                            double d = -1.0;
-                            for (int d_idx = 0;
-                                 d_idx < state->frame_infos[idxA].num_dists;
-                                 d_idx++)
-                            {
-                                if (state->frame_infos[idxA].cluster_indices[d_idx] ==
-                                    seq_A_cl[j])
-                                {
-                                    d = state->frame_infos[idxA].distances[d_idx];
-                                    break;
-                                }
-                            }
-                            seq_A_d[j] = (d >= 0.0) ? d : 0.0;
+                            seq_A_d[j] = (state->assignment_dists != NULL)
+                                ? state->assignment_dists[idxA]
+                                : state->frame_infos[idxA].assigned_dist;
                         }
 
                         long start_s = t - nl;
@@ -439,19 +507,9 @@ void compute_priors_and_mixing(
                                 {
                                     long idxB = s - 1 - j;
                                     seq_B_cl[j] = state->assignments[idxB];
-                                    double d = -1.0;
-                                    for (int d_idx = 0;
-                                         d_idx < state->frame_infos[idxB].num_dists;
-                                         d_idx++)
-                                    {
-                                        if (state->frame_infos[idxB].cluster_indices[d_idx] ==
-                                            seq_B_cl[j])
-                                        {
-                                            d = state->frame_infos[idxB].distances[d_idx];
-                                            break;
-                                        }
-                                    }
-                                    seq_B_d[j] = (d >= 0.0) ? d : 0.0;
+                                    seq_B_d[j] = (state->assignment_dists != NULL)
+                                        ? state->assignment_dists[idxB]
+                                        : state->frame_infos[idxB].assigned_dist;
                                 }
 
                                 double mAB = calculate_sequence_match_metric(
@@ -573,17 +631,11 @@ void compute_priors_and_mixing(
 
     if (!config->optim.gprob_mode)
     {
-        for (int i = 0; i < state->num_clusters; i++)
-        {
-            sorting_candidates[i].id = i;
-            sorting_candidates[i].p = state->scratch.mixed_probs[i];
-        }
-        qsort(sorting_candidates, state->num_clusters, sizeof(Candidate),
-              compare_candidates);
-        for (int i = 0; i < state->num_clusters; i++)
-        {
-            state->scratch.probsortedclindex[i] = sorting_candidates[i].id;
-        }
+        candidate_sort_descending(
+            sorting_candidates,
+            state->scratch.mixed_probs,
+            state->scratch.probsortedclindex,
+            state->num_clusters);
     }
 
     /*

@@ -107,6 +107,7 @@ typedef struct
     int       use_gpu_pass1;           /**< 1 to enable GPU brute-force online Pass 1 */
     int       gpu_micro_batch_size;    /**< Micro-batch size for GPU Pass 1 (default: 64) */
     int       gpu_device_id;           /**< GPU device index (default 0) */
+    int       gpu_prune_mode;          /**< Pass 2: -1=auto, 0=force GEMM, 1=force prune */
 } ConfigOptim;
 
 /** Cross-tile injection callback signature. */
@@ -280,6 +281,7 @@ typedef struct
     Cluster          *clusters;
     VisitorList      *cluster_visitors;
     int              *assignments;
+    double           *assignment_dists;
     FrameInfo        *frame_infos;
     int               num_clusters;
     FILE             *distall_out;

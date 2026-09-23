@@ -354,9 +354,9 @@ run_browser_and_wait() {
     local elapsed
     elapsed=$(( $(date +%s) - start_ts ))
 
-    # If the browser command returned immediately (e.g. attached to an existing session),
+    # If the browser command returned quickly (e.g. attached to an existing session),
     # keep the script alive so gric-server remains running until interrupted.
-    if [[ $elapsed -lt 2 && -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    if [[ $elapsed -lt 5 && -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
         echo -e "${ANSI_COLOR_CYAN}Simulator is running at ${URL}${ANSI_COLOR_RESET}"
         echo -e "${ANSI_COLOR_GREY}Press Ctrl+C to stop the server.${ANSI_COLOR_RESET}"
         wait "$SERVER_PID" 2>/dev/null || sleep infinity

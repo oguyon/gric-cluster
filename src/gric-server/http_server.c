@@ -25,6 +25,7 @@
 
 static volatile sig_atomic_t s_server_running = 1;
 static time_t                s_last_heartbeat_time = 0;
+static time_t                s_disconnect_time = 0;
 static int                   s_active_client_sessions = 0;
 static int                   s_has_received_heartbeat = 0;
 static int                   s_auto_shutdown_enabled = 0;
@@ -99,6 +100,7 @@ void server_record_heartbeat(
 {
     s_last_heartbeat_time = time(NULL);
     s_has_received_heartbeat = 1;
+    s_disconnect_time = 0;
     if (s_active_client_sessions <= 0)
     {
         s_active_client_sessions = 1;
@@ -112,11 +114,9 @@ void server_client_leave(
     {
         s_active_client_sessions--;
     }
-    if (s_auto_shutdown_enabled && s_active_client_sessions <= 0)
+    if (s_active_client_sessions <= 0)
     {
-        printf("\n%s[gric-server] All client sessions disconnected. Initiating shutdown...%s\n",
-               ansi_color_yellow, ansi_reset);
-        s_server_running = 0;
+        s_disconnect_time = time(NULL);
     }
 }
 
@@ -500,6 +500,20 @@ int server_run(
             {
                 printf("\n%s[gric-server] Inactivity timeout (%d s without ping). Terminating.%s\n",
                        ansi_color_yellow, s_idle_timeout_seconds, ansi_reset);
+                s_server_running = 0;
+                break;
+            }
+        }
+
+        /* 3. Check auto-shutdown on client disconnect (5s grace period for page reloads) */
+        if (s_auto_shutdown_enabled && s_has_received_heartbeat &&
+            s_active_client_sessions <= 0 && s_disconnect_time > 0)
+        {
+            time_t now = time(NULL);
+            if (now - s_disconnect_time >= 5)
+            {
+                printf("\n%s[gric-server] Sessions disconnected. Terminating server.%s\n",
+                       ansi_color_yellow, ansi_reset);
                 s_server_running = 0;
                 break;
             }
