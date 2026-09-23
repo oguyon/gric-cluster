@@ -206,21 +206,32 @@ void pass2_fuse(
         return;
     }
 
-    /* Allocate scratch arrays on the stack or heap */
-    int *spatial_key  = calloc(
-        (size_t) M, sizeof(int));
-    int *spatial_mask = calloc(
-        (size_t) M, sizeof(int));
-    int *temporal_key = calloc(
-        (size_t) M, sizeof(int));
-    double *scores    = calloc(
-        (size_t) maxcl, sizeof(double));
+    /* Allocate scratch arrays on stack for standard sizes, heap for large */
+    int spatial_key_stack[64];
+    int spatial_mask_stack[64];
+    int temporal_key_stack[64];
+    double scores_stack[4096];
+
+    int *spatial_key = (M <= 64)
+        ? spatial_key_stack
+        : (int *)malloc((size_t)M * sizeof(int));
+    int *spatial_mask = (M <= 64)
+        ? spatial_mask_stack
+        : (int *)malloc((size_t)M * sizeof(int));
+    int *temporal_key = (M <= 64)
+        ? temporal_key_stack
+        : (int *)malloc((size_t)M * sizeof(int));
+    double *scores = (maxcl <= 4096)
+        ? scores_stack
+        : (double *)malloc((size_t)maxcl * sizeof(double));
 
     if (spatial_key == NULL || spatial_mask == NULL
         || temporal_key == NULL || scores == NULL)
     {
         goto cleanup;
     }
+
+    memset(scores, 0, (size_t)maxcl * sizeof(double));
 
     /* Build spatial key: all tiles' pass1 assignment */
     for (int m = 0; m < M; m++)
@@ -314,10 +325,22 @@ void pass2_fuse(
     } // fuse block
 
 cleanup:
-    free(spatial_key);
-    free(spatial_mask);
-    free(temporal_key);
-    free(scores);
+    if (spatial_key != spatial_key_stack)
+    {
+        free(spatial_key);
+    }
+    if (spatial_mask != spatial_mask_stack)
+    {
+        free(spatial_mask);
+    }
+    if (temporal_key != temporal_key_stack)
+    {
+        free(temporal_key);
+    }
+    if (scores != scores_stack)
+    {
+        free(scores);
+    }
 }
 
 /**
@@ -569,6 +592,14 @@ static void predict_populate_tile_scratch(
     int M = mts->num_tiles;
     int max_clusters = mts->tile_states[0].config.algo.maxnbclust;
 
+    Candidate cand_stack[1024];
+    Candidate *heap_cand = NULL;
+    if (max_clusters > 1024)
+    {
+        heap_cand = (Candidate *)malloc((size_t)max_clusters * sizeof(Candidate));
+    }
+    Candidate *cand_list = (heap_cand != NULL) ? heap_cand : cand_stack;
+
     for (int m = 0; m < M; m++)
     {
         TileState *ts = &mts->tile_states[m];
@@ -587,25 +618,25 @@ static void predict_populate_tile_scratch(
                 (accum_scores[m * max_clusters + k] + alpha) / sum;
         }
 
-        Candidate *cand_list = malloc((size_t)K * sizeof(Candidate));
-        if (cand_list != NULL)
+        for (int k = 0; k < K; k++)
         {
-            for (int k = 0; k < K; k++)
-            {
-                cand_list[k].id = k;
-                cand_list[k].p = accum_scores[m * max_clusters + k];
-            }
-
-            qsort(cand_list, (size_t)K, sizeof(Candidate), compare_candidates);
-
-            int n_out = (K < pred_n) ? K : pred_n;
-            for (int i = 0; i < n_out; i++)
-            {
-                ts->state.scratch.tuple_pred_candidates[i] = cand_list[i].id;
-            }
-            ts->state.scratch.tuple_pred_count = n_out;
-            free(cand_list);
+            cand_list[k].id = k;
+            cand_list[k].p = accum_scores[m * max_clusters + k];
         }
+
+        qsort(cand_list, (size_t)K, sizeof(Candidate), compare_candidates);
+
+        int n_out = (K < pred_n) ? K : pred_n;
+        for (int i = 0; i < n_out; i++)
+        {
+            ts->state.scratch.tuple_pred_candidates[i] = cand_list[i].id;
+        }
+        ts->state.scratch.tuple_pred_count = n_out;
+    }
+
+    if (heap_cand != NULL)
+    {
+        free(heap_cand);
     }
 }
 

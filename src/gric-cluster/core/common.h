@@ -32,9 +32,10 @@ typedef struct
 
 typedef struct
 {
-    int assignment;
-    int num_dists;
-    int *cluster_indices;
+    int     assignment;
+    double  assigned_dist;
+    int     num_dists;
+    int    *cluster_indices;
     double *distances;
 } FrameInfo;
 

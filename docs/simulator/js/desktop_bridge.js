@@ -101,8 +101,11 @@ const DesktopBridge = (function () {
     }
   }
 
+  let _sentLeave = false;
+
   function _sendHeartbeat() {
     if (!_isDesktop) return;
+    _sentLeave = false;
     _fetchApi('/api/heartbeat', {
       method: 'POST',
       keepalive: true,
@@ -111,8 +114,9 @@ const DesktopBridge = (function () {
   }
 
   function _sendLeaveBeacon() {
-    if (!_isDesktop || typeof navigator === 'undefined' || !navigator.sendBeacon) return;
+    if (!_isDesktop || _sentLeave || typeof navigator === 'undefined' || !navigator.sendBeacon) return;
     try {
+      _sentLeave = true;
       const url = (_baseUrl ? _baseUrl : '') + '/api/heartbeat/leave';
       navigator.sendBeacon(url, '');
     } catch (_) {}

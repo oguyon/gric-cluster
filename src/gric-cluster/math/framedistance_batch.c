@@ -25,10 +25,10 @@ void framedist_batch(
     }
 
     long size = q->width * q->height;
-    const void *ptrs_stack[64];
+    const void *ptrs_stack[256];
     const void **ptrs = ptrs_stack;
 
-    if (n_anchors > 64)
+    if (n_anchors > 256)
     {
         ptrs = (const void **)malloc((size_t)n_anchors * sizeof(const void *));
         if (!ptrs)

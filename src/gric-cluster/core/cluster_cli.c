@@ -63,6 +63,7 @@ void cluster_cli_init_config_defaults(
         config->optim.use_memo = 1; // Enabled by default when SQ16 is used
         config->optim.sq16_ratio = 0.05; // Default ratio: sqrt(D)*scale <= 0.05*rlim
         config->optim.use_batch_dist = 1; // Enabled by default for multi-vector SIMD batching
+        config->optim.gpu_prune_mode = -1; // Auto: prune for D < 128, GEMM for D >= 128
     
         // Tiling defaults (M=1, no tiling)
         config->input.tile_grid_x = 0;

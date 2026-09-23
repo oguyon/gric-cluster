@@ -241,6 +241,7 @@ void run_clustering(
     }
 
     state->assignments = (int *)malloc(actual_frames * sizeof(int));
+    state->assignment_dists = (double *)malloc(actual_frames * sizeof(double));
     state->frame_infos = (FrameInfo *)calloc(actual_frames, sizeof(FrameInfo));
 
     // Allocate telemetry and scratch tracking matrices

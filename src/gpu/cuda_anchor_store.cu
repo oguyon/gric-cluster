@@ -57,7 +57,55 @@ struct GpuAnchorStore
     float          *d_top_dist;
 
     float          *h_frames_float;
+    float           rlim;
 };
+
+static __global__ void direct_find_nearest_cutoff_kernel(
+    const float *__restrict__ d_frames,
+    const float *__restrict__ d_anchors,
+    int         *__restrict__ d_best_cl,
+    float       *__restrict__ d_best_dist,
+    int                       B,
+    int                       K,
+    int                       D)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= B)
+    {
+        return;
+    }
+
+    const float *f_vec = d_frames + (size_t)i * (size_t)D;
+    float min_dist_sq = 1e38f;
+    int min_k = -1;
+
+    for (int k = 0; k < K; k++)
+    {
+        const float *a_vec = d_anchors + (size_t)k * (size_t)D;
+        float dist_sq = 0.0f;
+        int early_exit = 0;
+
+        for (int d = 0; d < D; d++)
+        {
+            float diff = f_vec[d] - a_vec[d];
+            dist_sq += diff * diff;
+            if (dist_sq >= min_dist_sq)
+            {
+                early_exit = 1;
+                break;
+            }
+        }
+
+        if (!early_exit && dist_sq < min_dist_sq)
+        {
+            min_dist_sq = dist_sq;
+            min_k = k;
+        }
+    }
+
+    d_best_cl[i] = min_k;
+    d_best_dist[i] = sqrtf(min_dist_sq);
+}
 
 static __global__ void compute_norms_kernel(
     const float *__restrict__ mat,
@@ -65,17 +113,30 @@ static __global__ void compute_norms_kernel(
     int                       dim,
     float       *__restrict__ out_norms)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < count)
+    int warp_id = threadIdx.x / 32;
+    int lane = threadIdx.x % 32;
+    int vec_idx = blockIdx.x * (blockDim.x / 32) + warp_id;
+
+    if (vec_idx < count)
     {
-        const float *v = mat + (size_t)idx * (size_t)dim;
+        const float *v = mat + (size_t)vec_idx * (size_t)dim;
         float sum = 0.0f;
-        for (int d = 0; d < dim; d++)
+        for (int d = lane; d < dim; d += 32)
         {
             float val = v[d];
             sum += val * val;
         }
-        out_norms[idx] = sum;
+
+        #pragma unroll
+        for (int offset = 16; offset > 0; offset /= 2)
+        {
+            sum += __shfl_down_sync(0xffffffff, sum, offset);
+        }
+
+        if (lane == 0)
+        {
+            out_norms[vec_idx] = sum;
+        }
     }
 }
 
@@ -200,6 +261,7 @@ GpuAnchorStore *gpu_anchor_store_create(
     store->num_clusters = 0;
     store->device_id = config->device_id;
     store->max_batch_size = (config->max_batch_size > 0) ? config->max_batch_size : 64;
+    store->rlim = config->rlim;
 
     if (cublasCreate(&store->cublas) != CUBLAS_STATUS_SUCCESS)
     {
@@ -304,6 +366,16 @@ void gpu_anchor_store_reset(
     if (store != NULL)
     {
         store->num_clusters = 0;
+    }
+}
+
+void gpu_anchor_store_set_rlim(
+    GpuAnchorStore *store,
+    float           rlim)
+{
+    if (store != NULL)
+    {
+        store->rlim = rlim;
     }
 }
 
@@ -412,30 +484,39 @@ int gpu_anchor_store_find_nearest(
     CUDA_CHECK(cudaMemcpy(store->d_frames, h_f, (size_t)B * (size_t)D * sizeof(float),
                           cudaMemcpyHostToDevice));
 
-    /* Compute frame norms */
+    if (D <= 64)
     {
         int threads = 128;
         int blocks = (B + threads - 1) / threads;
-        compute_norms_kernel<<<blocks, threads>>>(store->d_frames, B, D, store->d_frame_norms);
+        direct_find_nearest_cutoff_kernel<<<blocks, threads>>>(
+            store->d_frames, store->d_anchors,
+            store->d_best_cl, store->d_best_dist,
+            B, K, D);
         CUDA_CHECK(cudaGetLastError());
     }
-
-    /* GEMM: d_P[B x K] = d_frames[B x D] * (d_anchors[K x D])^T */
-    float alpha = 1.0f;
-    float beta = 0.0f;
-    CUBLAS_CHECK(cublasSgemm(store->cublas, CUBLAS_OP_T, CUBLAS_OP_N,
-                             K, B, D,
-                             &alpha,
-                             store->d_anchors, D,
-                             store->d_frames, D,
-                             &beta,
-                             store->d_P, K));
-
-    /* Argmin reduction kernel */
+    else
     {
+        /* Compute frame norms */
         int threads = 128;
-        int blocks = (B + threads - 1) / threads;
-        argmin_distance_kernel<<<blocks, threads>>>(
+        int blocks = (B + (threads / 32) - 1) / (threads / 32);
+        compute_norms_kernel<<<blocks, threads>>>(store->d_frames, B, D, store->d_frame_norms);
+        CUDA_CHECK(cudaGetLastError());
+
+        /* GEMM: d_P[B x K] = d_frames[B x D] * (d_anchors[K x D])^T */
+        float alpha = 1.0f;
+        float beta = 0.0f;
+        CUBLAS_CHECK(cublasSgemm(store->cublas, CUBLAS_OP_T, CUBLAS_OP_N,
+                                 K, B, D,
+                                 &alpha,
+                                 store->d_anchors, D,
+                                 store->d_frames, D,
+                                 &beta,
+                                 store->d_P, K));
+
+        /* Argmin reduction kernel */
+        int r_threads = 128;
+        int r_blocks = (B + r_threads - 1) / r_threads;
+        argmin_distance_kernel<<<r_blocks, r_threads>>>(
             store->d_frame_norms, store->d_anchor_norms, store->d_P,
             store->d_best_cl, store->d_best_dist,
             B, K);
@@ -509,7 +590,7 @@ int gpu_anchor_store_find_top_m(
 
     {
         int threads = 128;
-        int blocks = (B + threads - 1) / threads;
+        int blocks = (B + (threads / 32) - 1) / (threads / 32);
         compute_norms_kernel<<<blocks, threads>>>(store->d_frames, B, D, store->d_frame_norms);
         CUDA_CHECK(cudaGetLastError());
     }

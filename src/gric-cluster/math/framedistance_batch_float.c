@@ -1470,97 +1470,205 @@ static inline __attribute__((always_inline)) void calc_dist8_f32_core(
             }
 
             __m256 vq0 = _mm256_loadu_ps(&q[i]);
-            __m256 d0_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a0[i]));
-            __m256 d1_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a1[i]));
-            __m256 d2_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a2[i]));
-            __m256 d3_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a3[i]));
-            __m256 d4_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a4[i]));
-            __m256 d5_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a5[i]));
-            __m256 d6_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a6[i]));
-            __m256 d7_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a7[i]));
-
+            {
+                __m256 d0_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a0[i]));
 #ifdef __FMA__
-            acc0 = _mm256_fmadd_ps(d0_0, d0_0, acc0);
-            acc1 = _mm256_fmadd_ps(d1_0, d1_0, acc1);
-            acc2 = _mm256_fmadd_ps(d2_0, d2_0, acc2);
-            acc3 = _mm256_fmadd_ps(d3_0, d3_0, acc3);
-            acc4 = _mm256_fmadd_ps(d4_0, d4_0, acc4);
-            acc5 = _mm256_fmadd_ps(d5_0, d5_0, acc5);
-            acc6 = _mm256_fmadd_ps(d6_0, d6_0, acc6);
-            acc7 = _mm256_fmadd_ps(d7_0, d7_0, acc7);
+                acc0 = _mm256_fmadd_ps(d0_0, d0_0, acc0);
 #else
-            acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0_0, d0_0));
-            acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1_0, d1_0));
-            acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2_0, d2_0));
-            acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3_0, d3_0));
-            acc4 = _mm256_add_ps(acc4, _mm256_mul_ps(d4_0, d4_0));
-            acc5 = _mm256_add_ps(acc5, _mm256_mul_ps(d5_0, d5_0));
-            acc6 = _mm256_add_ps(acc6, _mm256_mul_ps(d6_0, d6_0));
-            acc7 = _mm256_add_ps(acc7, _mm256_mul_ps(d7_0, d7_0));
+                acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0_0, d0_0));
 #endif
+            }
+            {
+                __m256 d1_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a1[i]));
+#ifdef __FMA__
+                acc1 = _mm256_fmadd_ps(d1_0, d1_0, acc1);
+#else
+                acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1_0, d1_0));
+#endif
+            }
+            {
+                __m256 d2_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a2[i]));
+#ifdef __FMA__
+                acc2 = _mm256_fmadd_ps(d2_0, d2_0, acc2);
+#else
+                acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2_0, d2_0));
+#endif
+            }
+            {
+                __m256 d3_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a3[i]));
+#ifdef __FMA__
+                acc3 = _mm256_fmadd_ps(d3_0, d3_0, acc3);
+#else
+                acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3_0, d3_0));
+#endif
+            }
+            {
+                __m256 d4_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a4[i]));
+#ifdef __FMA__
+                acc4 = _mm256_fmadd_ps(d4_0, d4_0, acc4);
+#else
+                acc4 = _mm256_add_ps(acc4, _mm256_mul_ps(d4_0, d4_0));
+#endif
+            }
+            {
+                __m256 d5_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a5[i]));
+#ifdef __FMA__
+                acc5 = _mm256_fmadd_ps(d5_0, d5_0, acc5);
+#else
+                acc5 = _mm256_add_ps(acc5, _mm256_mul_ps(d5_0, d5_0));
+#endif
+            }
+            {
+                __m256 d6_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a6[i]));
+#ifdef __FMA__
+                acc6 = _mm256_fmadd_ps(d6_0, d6_0, acc6);
+#else
+                acc6 = _mm256_add_ps(acc6, _mm256_mul_ps(d6_0, d6_0));
+#endif
+            }
+            {
+                __m256 d7_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a7[i]));
+#ifdef __FMA__
+                acc7 = _mm256_fmadd_ps(d7_0, d7_0, acc7);
+#else
+                acc7 = _mm256_add_ps(acc7, _mm256_mul_ps(d7_0, d7_0));
+#endif
+            }
 
             __m256 vq1 = _mm256_loadu_ps(&q[i + 8]);
-            __m256 d0_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a0[i + 8]));
-            __m256 d1_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a1[i + 8]));
-            __m256 d2_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a2[i + 8]));
-            __m256 d3_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a3[i + 8]));
-            __m256 d4_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a4[i + 8]));
-            __m256 d5_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a5[i + 8]));
-            __m256 d6_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a6[i + 8]));
-            __m256 d7_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a7[i + 8]));
-
+            {
+                __m256 d0_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a0[i + 8]));
 #ifdef __FMA__
-            acc0 = _mm256_fmadd_ps(d0_1, d0_1, acc0);
-            acc1 = _mm256_fmadd_ps(d1_1, d1_1, acc1);
-            acc2 = _mm256_fmadd_ps(d2_1, d2_1, acc2);
-            acc3 = _mm256_fmadd_ps(d3_1, d3_1, acc3);
-            acc4 = _mm256_fmadd_ps(d4_1, d4_1, acc4);
-            acc5 = _mm256_fmadd_ps(d5_1, d5_1, acc5);
-            acc6 = _mm256_fmadd_ps(d6_1, d6_1, acc6);
-            acc7 = _mm256_fmadd_ps(d7_1, d7_1, acc7);
+                acc0 = _mm256_fmadd_ps(d0_1, d0_1, acc0);
 #else
-            acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0_1, d0_1));
-            acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1_1, d1_1));
-            acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2_1, d2_1));
-            acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3_1, d3_1));
-            acc4 = _mm256_add_ps(acc4, _mm256_mul_ps(d4_1, d4_1));
-            acc5 = _mm256_add_ps(acc5, _mm256_mul_ps(d5_1, d5_1));
-            acc6 = _mm256_add_ps(acc6, _mm256_mul_ps(d6_1, d6_1));
-            acc7 = _mm256_add_ps(acc7, _mm256_mul_ps(d7_1, d7_1));
+                acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0_1, d0_1));
 #endif
+            }
+            {
+                __m256 d1_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a1[i + 8]));
+#ifdef __FMA__
+                acc1 = _mm256_fmadd_ps(d1_1, d1_1, acc1);
+#else
+                acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1_1, d1_1));
+#endif
+            }
+            {
+                __m256 d2_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a2[i + 8]));
+#ifdef __FMA__
+                acc2 = _mm256_fmadd_ps(d2_1, d2_1, acc2);
+#else
+                acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2_1, d2_1));
+#endif
+            }
+            {
+                __m256 d3_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a3[i + 8]));
+#ifdef __FMA__
+                acc3 = _mm256_fmadd_ps(d3_1, d3_1, acc3);
+#else
+                acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3_1, d3_1));
+#endif
+            }
+            {
+                __m256 d4_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a4[i + 8]));
+#ifdef __FMA__
+                acc4 = _mm256_fmadd_ps(d4_1, d4_1, acc4);
+#else
+                acc4 = _mm256_add_ps(acc4, _mm256_mul_ps(d4_1, d4_1));
+#endif
+            }
+            {
+                __m256 d5_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a5[i + 8]));
+#ifdef __FMA__
+                acc5 = _mm256_fmadd_ps(d5_1, d5_1, acc5);
+#else
+                acc5 = _mm256_add_ps(acc5, _mm256_mul_ps(d5_1, d5_1));
+#endif
+            }
+            {
+                __m256 d6_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a6[i + 8]));
+#ifdef __FMA__
+                acc6 = _mm256_fmadd_ps(d6_1, d6_1, acc6);
+#else
+                acc6 = _mm256_add_ps(acc6, _mm256_mul_ps(d6_1, d6_1));
+#endif
+            }
+            {
+                __m256 d7_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a7[i + 8]));
+#ifdef __FMA__
+                acc7 = _mm256_fmadd_ps(d7_1, d7_1, acc7);
+#else
+                acc7 = _mm256_add_ps(acc7, _mm256_mul_ps(d7_1, d7_1));
+#endif
+            }
         }
 
         for (; i <= size - 8; i += 8)
         {
             __m256 vq = _mm256_loadu_ps(&q[i]);
-            __m256 d0 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a0[i]));
-            __m256 d1 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a1[i]));
-            __m256 d2 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a2[i]));
-            __m256 d3 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a3[i]));
-            __m256 d4 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a4[i]));
-            __m256 d5 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a5[i]));
-            __m256 d6 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a6[i]));
-            __m256 d7 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a7[i]));
-
+            {
+                __m256 d0 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a0[i]));
 #ifdef __FMA__
-            acc0 = _mm256_fmadd_ps(d0, d0, acc0);
-            acc1 = _mm256_fmadd_ps(d1, d1, acc1);
-            acc2 = _mm256_fmadd_ps(d2, d2, acc2);
-            acc3 = _mm256_fmadd_ps(d3, d3, acc3);
-            acc4 = _mm256_fmadd_ps(d4, d4, acc4);
-            acc5 = _mm256_fmadd_ps(d5, d5, acc5);
-            acc6 = _mm256_fmadd_ps(d6, d6, acc6);
-            acc7 = _mm256_fmadd_ps(d7, d7, acc7);
+                acc0 = _mm256_fmadd_ps(d0, d0, acc0);
 #else
-            acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0, d0));
-            acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1, d1));
-            acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2, d2));
-            acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3, d3));
-            acc4 = _mm256_add_ps(acc4, _mm256_mul_ps(d4, d4));
-            acc5 = _mm256_add_ps(acc5, _mm256_mul_ps(d5, d5));
-            acc6 = _mm256_add_ps(acc6, _mm256_mul_ps(d6, d6));
-            acc7 = _mm256_add_ps(acc7, _mm256_mul_ps(d7, d7));
+                acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0, d0));
 #endif
+            }
+            {
+                __m256 d1 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a1[i]));
+#ifdef __FMA__
+                acc1 = _mm256_fmadd_ps(d1, d1, acc1);
+#else
+                acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1, d1));
+#endif
+            }
+            {
+                __m256 d2 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a2[i]));
+#ifdef __FMA__
+                acc2 = _mm256_fmadd_ps(d2, d2, acc2);
+#else
+                acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2, d2));
+#endif
+            }
+            {
+                __m256 d3 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a3[i]));
+#ifdef __FMA__
+                acc3 = _mm256_fmadd_ps(d3, d3, acc3);
+#else
+                acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3, d3));
+#endif
+            }
+            {
+                __m256 d4 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a4[i]));
+#ifdef __FMA__
+                acc4 = _mm256_fmadd_ps(d4, d4, acc4);
+#else
+                acc4 = _mm256_add_ps(acc4, _mm256_mul_ps(d4, d4));
+#endif
+            }
+            {
+                __m256 d5 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a5[i]));
+#ifdef __FMA__
+                acc5 = _mm256_fmadd_ps(d5, d5, acc5);
+#else
+                acc5 = _mm256_add_ps(acc5, _mm256_mul_ps(d5, d5));
+#endif
+            }
+            {
+                __m256 d6 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a6[i]));
+#ifdef __FMA__
+                acc6 = _mm256_fmadd_ps(d6, d6, acc6);
+#else
+                acc6 = _mm256_add_ps(acc6, _mm256_mul_ps(d6, d6));
+#endif
+            }
+            {
+                __m256 d7 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a7[i]));
+#ifdef __FMA__
+                acc7 = _mm256_fmadd_ps(d7, d7, acc7);
+#else
+                acc7 = _mm256_add_ps(acc7, _mm256_mul_ps(d7, d7));
+#endif
+            }
         }
 
         __m128 s0 = _mm_add_ps(_mm256_castps256_ps128(acc0), _mm256_extractf128_ps(acc0, 1));

@@ -46,7 +46,12 @@ void record_step_assignment(
     if (frame_idx < config->input.maxnbfr)
     {
         state->assignments[frame_idx] = assigned_cluster;
+        if (state->assignment_dists != NULL)
+        {
+            state->assignment_dists[frame_idx] = state->telemetry.last_assignment_dist;
+        }
         state->frame_infos[frame_idx].assignment = assigned_cluster;
+        state->frame_infos[frame_idx].assigned_dist = state->telemetry.last_assignment_dist;
         state->frame_infos[frame_idx].num_dists = temp_count;
 
         if ((config->optim.gprob_mode || config->optim.pred_mode == 2 ||

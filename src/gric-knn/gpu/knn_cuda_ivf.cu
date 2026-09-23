@@ -55,17 +55,30 @@ __global__ void compute_vector_norms_kernel(
     int                       dim,
     float       *__restrict__ norms)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < num_vectors)
+    int warp_id = threadIdx.x / 32;
+    int lane = threadIdx.x % 32;
+    int vec_idx = blockIdx.x * (blockDim.x / 32) + warp_id;
+
+    if (vec_idx < num_vectors)
     {
-        const float *vec = vectors + (size_t)idx * (size_t)dim;
+        const float *vec = vectors + (size_t)vec_idx * (size_t)dim;
         float sum = 0.0f;
-        for (int d = 0; d < dim; d++)
+        for (int d = lane; d < dim; d += 32)
         {
             float val = vec[d];
             sum += val * val;
         }
-        norms[idx] = sum;
+
+        #pragma unroll
+        for (int offset = 16; offset > 0; offset /= 2)
+        {
+            sum += __shfl_down_sync(0xffffffff, sum, offset);
+        }
+
+        if (lane == 0)
+        {
+            norms[vec_idx] = sum;
+        }
     }
 }
 
@@ -586,6 +599,12 @@ __global__ void knn_ivf_streaming_single_frame_kernel(
     __shared__ float s_warp_dists[4][MAX_STATIC_K];
     __shared__ int   s_warp_ids[4][MAX_STATIC_K];
 
+    if (tid == 0)
+    {
+        s_query_norm = 0.0f;
+    }
+    __syncthreads();
+
     /* Step 1: Compute query norm */
     float local_q_norm = 0.0f;
     for (int d = tid; d < D; d += blockDim.x)
@@ -932,7 +951,7 @@ int knn_cuda_run_ivf_search(
 
     {
         int threads = 128;
-        int blocks = (K + threads - 1) / threads;
+        int blocks = (K + (threads / 32) - 1) / (threads / 32);
         compute_vector_norms_kernel<<<blocks, threads>>>(d_anchors, K, (int)D, d_anchor_norms);
         CUDA_CHECK(cudaGetLastError());
     }
@@ -1029,7 +1048,7 @@ int knn_cuda_run_ivf_search(
 
         {
             int threads = 128;
-            int blocks = (cur_Bq + threads - 1) / threads;
+            int blocks = (cur_Bq + (threads / 32) - 1) / (threads / 32);
             compute_vector_norms_kernel<<<blocks, threads>>>(
                 d_Q, cur_Bq, (int)D, d_Q_norms + q_start);
             CUDA_CHECK(cudaGetLastError());

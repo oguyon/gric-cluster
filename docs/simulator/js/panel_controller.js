@@ -195,7 +195,7 @@
 
       const knnStatusBadgeTop = document.getElementById('knnStatusBadgeTop');
       if (knnStatusBadgeTop) {
-        if (!isKnnComputing) {
+        if (typeof isKnnComputing === 'undefined' || !isKnnComputing) {
           knnStatusBadgeTop.textContent = `k=${knnK} • ${knnDirection} • dt≥${knnDtmin}`;
         }
       }
@@ -218,8 +218,17 @@
         updateResizersVisibility();
       }
 
-      updateKnnButtonUI(isKnnComputing);
-      updateClusteringButtonUI();
+      if (typeof updateKnnButtonUI === 'function') {
+        updateKnnButtonUI(typeof isKnnComputing !== 'undefined' ? isKnnComputing : false);
+      } else if (typeof window !== 'undefined' && typeof window.updateKnnButtonUI === 'function') {
+        window.updateKnnButtonUI(typeof isKnnComputing !== 'undefined' ? isKnnComputing : false);
+      }
+
+      if (typeof updateClusteringButtonUI === 'function') {
+        updateClusteringButtonUI();
+      } else if (typeof window !== 'undefined' && typeof window.updateClusteringButtonUI === 'function') {
+        window.updateClusteringButtonUI();
+      }
 
       // 7. Ball seed & shuffle options sync
       const rowBallSeedOptions = document.getElementById('rowBallSeedOptions');
