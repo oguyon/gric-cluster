@@ -28,6 +28,9 @@ extern fitsfile *fptr;
 extern FILE *ascii_ptr;
 extern long *ascii_line_offsets;
 extern int is_ascii_mode;
+extern void *ascii_mmap_addr;
+extern size_t ascii_mmap_size;
+extern int ascii_fd;
 
 extern char **file_list;
 extern int is_filelist_mode;
@@ -66,6 +69,8 @@ extern int current_frame_idx;
 #define FRAME_DATA_POOL_SIZE 64
 extern void *frame_data_pool[FRAME_DATA_POOL_SIZE];
 extern int frame_data_pool_count;
+extern Frame *frame_struct_pool[FRAME_DATA_POOL_SIZE];
+extern int frame_struct_pool_count;
 extern int frameread_use_double;
 
 /* Format-specific helper prototypes */

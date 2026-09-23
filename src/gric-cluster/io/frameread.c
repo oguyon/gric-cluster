@@ -28,6 +28,9 @@ fitsfile *fptr = NULL;
 FILE *ascii_ptr = NULL;
 long *ascii_line_offsets = NULL;
 int is_ascii_mode = 0;
+void *ascii_mmap_addr = NULL;
+size_t ascii_mmap_size = 0;
+int ascii_fd = -1;
 
 static FILE                *bin_input_ptr = NULL;
 static void                *bin_mmap_addr = NULL;
@@ -71,6 +74,8 @@ long frame_height = 0;
 int current_frame_idx = 0;
 void *frame_data_pool[FRAME_DATA_POOL_SIZE];
 int frame_data_pool_count = 0;
+Frame *frame_struct_pool[FRAME_DATA_POOL_SIZE];
+int frame_struct_pool_count = 0;
 int frameread_use_double = 0;
 
 /**
@@ -563,10 +568,47 @@ Frame *getframe_at(
     }
 
     long nelements = frame_width * frame_height;
-    Frame *frame_struct = (Frame *)malloc(sizeof(Frame));
+    Frame *frame_struct = NULL;
+    void *pooled_data = NULL;
+
+#ifdef _OPENMP
+#pragma omp critical(frame_pool)
+#endif
+    {
+        if (frame_struct_pool_count > 0)
+        {
+            frame_struct = frame_struct_pool[--frame_struct_pool_count];
+        }
+        if (!is_filelist_mode && frame_data_pool_count > 0)
+        {
+            pooled_data = frame_data_pool[--frame_data_pool_count];
+        }
+    }
+
     if (frame_struct == NULL)
     {
-        return NULL;
+        frame_struct = (Frame *)malloc(sizeof(Frame));
+        if (frame_struct == NULL)
+        {
+            if (pooled_data != NULL)
+            {
+#ifdef _OPENMP
+#pragma omp critical(frame_pool)
+#endif
+                {
+                    if (frame_data_pool_count < FRAME_DATA_POOL_SIZE)
+                    {
+                        frame_data_pool[frame_data_pool_count++] = pooled_data;
+                        pooled_data = NULL;
+                    }
+                }
+                if (pooled_data != NULL)
+                {
+                    free(pooled_data);
+                }
+            }
+            return NULL;
+        }
     }
 
     frame_struct->width = frame_width;
@@ -577,18 +619,11 @@ Frame *getframe_at(
     if (!is_filelist_mode)
     {
         size_t elem_size = frameread_use_double ? sizeof(double) : sizeof(float);
-        int got_from_pool = 0;
-#ifdef _OPENMP
-#pragma omp critical(frame_pool)
-#endif
+        if (pooled_data != NULL)
         {
-            if (frame_data_pool_count > 0)
-            {
-                frame_struct->data = frame_data_pool[--frame_data_pool_count];
-                got_from_pool = 1;
-            }
+            frame_struct->data = pooled_data;
         }
-        if (!got_from_pool)
+        else
         {
             if (posix_memalign((void **)&frame_struct->data, 64, nelements * elem_size) != 0)
             {
@@ -597,7 +632,7 @@ Frame *getframe_at(
         }
         if (frame_struct->data == NULL)
         {
-            free(frame_struct);
+            free_frame(frame_struct);
             return NULL;
         }
     }
@@ -618,7 +653,7 @@ Frame *getframe_at(
         if (frame_struct->data == NULL)
         {
             fprintf(stderr, "Error reading frame %ld: %s\n", index, file_list[index]);
-            free(frame_struct);
+            free_frame(frame_struct);
             return NULL;
         }
         if (w != frame_width || h != frame_height)
@@ -626,8 +661,7 @@ Frame *getframe_at(
             fprintf(stderr,
                     "Error: Frame dimension mismatch in file list. Expected %ldx%ld, got %dx%d\n",
                     frame_width, frame_height, w, h);
-            free(frame_struct->data);
-            free(frame_struct);
+            free_frame(frame_struct);
             return NULL;
         }
     }
@@ -635,8 +669,7 @@ Frame *getframe_at(
     {
         if (getframe_ascii(frame_struct, index) != 0)
         {
-            free(frame_struct->data);
-            free(frame_struct);
+            free_frame(frame_struct);
             return NULL;
         }
     }
@@ -644,8 +677,7 @@ Frame *getframe_at(
     {
         if (getframe_bin(frame_struct, index) != 0)
         {
-            free(frame_struct->data);
-            free(frame_struct);
+            free_frame(frame_struct);
             return NULL;
         }
     }
@@ -654,8 +686,7 @@ Frame *getframe_at(
     {
         if (getframe_stream(frame_struct, index) != 0)
         {
-            free(frame_struct->data);
-            free(frame_struct);
+            free_frame(frame_struct);
             return NULL;
         }
     }
@@ -665,8 +696,7 @@ Frame *getframe_at(
     {
         if (getframe_mp4(frame_struct, index) != 0)
         {
-            free(frame_struct->data);
-            free(frame_struct);
+            free_frame(frame_struct);
             return NULL;
         }
     }
@@ -676,16 +706,14 @@ Frame *getframe_at(
     {
         if (getframe_fits(frame_struct, index) != 0)
         {
-            free(frame_struct->data);
-            free(frame_struct);
+            free_frame(frame_struct);
             return NULL;
         }
     }
 #endif
     else
     {
-        free(frame_struct->data);
-        free(frame_struct);
+        free_frame(frame_struct);
         return NULL;
     }
 
@@ -699,27 +727,49 @@ Frame *getframe_at(
 void free_frame(
     Frame *frame_ptr)
 {
-    if (frame_ptr != NULL)
+    if (frame_ptr == NULL)
     {
-        if (frame_ptr->data != NULL)
-        {
-            int returned_to_pool = 0;
+        return;
+    }
+
+    void *data_to_free = NULL;
+    Frame *struct_to_free = NULL;
+
 #ifdef _OPENMP
 #pragma omp critical(frame_pool)
 #endif
+    {
+        if (frame_ptr->data != NULL)
+        {
+            if (!is_filelist_mode && frame_data_pool_count < FRAME_DATA_POOL_SIZE)
             {
-                if (frame_data_pool_count < FRAME_DATA_POOL_SIZE)
-                {
-                    frame_data_pool[frame_data_pool_count++] = frame_ptr->data;
-                    returned_to_pool = 1;
-                }
+                frame_data_pool[frame_data_pool_count++] = frame_ptr->data;
+                frame_ptr->data = NULL;
             }
-            if (!returned_to_pool)
+            else
             {
-                free(frame_ptr->data);
+                data_to_free = frame_ptr->data;
+                frame_ptr->data = NULL;
             }
         }
-        free(frame_ptr);
+
+        if (frame_struct_pool_count < FRAME_DATA_POOL_SIZE)
+        {
+            frame_struct_pool[frame_struct_pool_count++] = frame_ptr;
+        }
+        else
+        {
+            struct_to_free = frame_ptr;
+        }
+    }
+
+    if (data_to_free != NULL)
+    {
+        free(data_to_free);
+    }
+    if (struct_to_free != NULL)
+    {
+        free(struct_to_free);
     }
 }
 
@@ -735,6 +785,10 @@ void close_frameread(void)
         while (frame_data_pool_count > 0)
         {
             free(frame_data_pool[--frame_data_pool_count]);
+        }
+        while (frame_struct_pool_count > 0)
+        {
+            free(frame_struct_pool[--frame_struct_pool_count]);
         }
     }
 
