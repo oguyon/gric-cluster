@@ -15,14 +15,14 @@ They enable zero-copy memory mapping (`mmap`), SIMD alignment, and instant deser
 * **Magic Bytes (4B)**: `0x47 0x52 0x49 0x43` (`"GRIC"`)
 * **Version (2B)**: Version `1`
 * **File Type (2B)**:
-  * `0x0001` (`GRIC_BIN_TYPE_GENERIC`)
-  * `0x0002` (`GRIC_BIN_TYPE_COORDS`)
-  * `0x0003` (`GRIC_BIN_TYPE_ANCHORS`)
-  * `0x0004` (`GRIC_BIN_TYPE_DCC`)
-  * `0x0005` (`GRIC_BIN_TYPE_MEMBERSHIP`)
-  * `0x0006` (`GRIC_BIN_TYPE_COUNTS`)
-  * `0x0007` (`GRIC_BIN_TYPE_KNN`)
-* **Data Type (2B)**: `FLOAT32`, `FLOAT64`, `INT32`, `UINT32`, `INT16`, `UINT16`, `UINT8`
+  * `0x0000` (`GRIC_BIN_TYPE_GENERIC`)
+  * `0x0001` (`GRIC_BIN_TYPE_ANCHORS`)
+  * `0x0002` (`GRIC_BIN_TYPE_DCC`)
+  * `0x0003` (`GRIC_BIN_TYPE_MEMBERSHIP`)
+  * `0x0004` (`GRIC_BIN_TYPE_COUNTS`)
+  * `0x0005` (`GRIC_BIN_TYPE_EVALS`)
+  * `0x0006` (`GRIC_BIN_TYPE_COORDINATES`)
+* **Data Type (2B)**: `FLOAT32`, `FLOAT64`, `UINT32`, `INT32`, `UINT16`, `UINT8`, `INT16`
 * **Flags (2B)**: Byte ordering, row-major layout, compression flags
 * **Dimensions (8B)**: Number of dimensions ($1 \le D \le 4$)
 * **Shape Array (32B)**: Dimensions array `[dim0, dim1, dim2, dim3]`

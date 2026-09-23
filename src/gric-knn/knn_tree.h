@@ -4,6 +4,10 @@
 /**
  * @file knn_tree.h
  * @brief Cluster proximity graph builder for gric-knn.
+ *
+ * Declares functions for building and tearing down cluster proximity graphs. These graphs
+ * link each cluster to its nearest neighboring clusters in anchor coordinate space, enabling
+ * greedy and beam-search graph routing during both single-dataset and cross-dataset search.
  */
 
 #include "knn_defs.h"

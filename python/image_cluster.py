@@ -5,9 +5,19 @@ import shutil
 import re
 
 class ImageCluster:
-    def __init__(self, rlim, binary_path="./build/image-cluster", **kwargs):
+    def __init__(self, rlim, binary_path=None, **kwargs):
         self.rlim = rlim
-        self.binary_path = binary_path
+        if binary_path is None:
+            # Check build directory first, then fallback to PATH
+            local_bin = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "build", "gric-cluster")
+            )
+            if os.path.exists(local_bin):
+                self.binary_path = local_bin
+            else:
+                self.binary_path = "gric-cluster"
+        else:
+            self.binary_path = binary_path
         self.options = kwargs
 
     def run(self, input_file, output_dir=None):
@@ -25,9 +35,12 @@ class ImageCluster:
 
         # Add options
         has_clustered = False
+        has_txt = False
         for k, v in self.options.items():
             if k == 'clustered':
                 has_clustered = True
+            if k == 'txt':
+                has_txt = True
             if v is True:
                 cmd.append(f"-{k}")
             elif v is not False and v is not None:
@@ -36,6 +49,8 @@ class ImageCluster:
 
         if not has_clustered:
             cmd.append("-clustered")
+        if not has_txt:
+            cmd.append("-txt")
 
         if output_dir:
             cmd.append("-outdir")
@@ -43,11 +58,10 @@ class ImageCluster:
 
         cmd.append(input_file)
 
-        # print(f"Running: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode != 0:
-            raise RuntimeError(f"image-cluster failed:\n{result.stderr}")
+            raise RuntimeError(f"gric-cluster failed:\n{result.stderr}")
 
         res = self._parse_stdout(result.stdout)
 
@@ -112,16 +126,12 @@ class ImageCluster:
 
     def _read_clustered_file(self, filepath):
         assignments = []
-        # Clusters dict: id -> list of frames (or just use assignments)
-
         with open(filepath, 'r') as f:
             for line in f:
                 if line.startswith('#'): continue
                 parts = line.strip().split()
                 if len(parts) < 2: continue
-                # FrameIndex ClusterID Data...
                 try:
-                    # fid = int(parts[0])
                     cid = int(parts[1])
                     assignments.append(cid)
                 except ValueError:

@@ -19,6 +19,15 @@ ALIASES = {
     "evals": ["trace", "no_evals"],
     "verbose": ["veryverbose"],
     "entropy_leader": ["entropy_leader_cutoff"],
+    "eq16": ["no_eq16", "no-eq16", "eq16_adc", "eq16-adc"],
+    "sq16": ["no_sq16", "no-sq16", "sq16_ratio", "sq16-ratio"],
+    "sq8": ["no_sq8", "no-sq8"],
+    "memo": ["no_memo", "no-memo"],
+    "batch_dist": ["batch-dist", "no_batch_dist", "no-batch-dist"],
+    "prof": ["no_prof", "no-prof", "profile"],
+    "dcc_sq16": ["dcc-sq16"],
+    "txt": ["no_txt", "no-txt"],
+    "gpu": ["cuda", "cpu", "gpu-device", "gpu_device"],
 }
 
 def escape_c_string(text):

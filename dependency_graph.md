@@ -22,7 +22,7 @@ graph TD
         APP_KNN["gric-knn / gric-knn-avg"]:::l3
         APP_SERVER["gric-server"]:::l3
         APP_STATUS["gric-status"]:::l3
-        APP_TOOLS["gric-benchmark / gric-probe / gric-dimdensity / etc."]:::l3
+        APP_TOOLS["gric-benchmark / gric-probe / gric-dimdensity / gric-mcp / etc."]:::l3
         APP_WASM["WASM Bindings (wasm_cluster, wasm_knn)"]:::l3
     end
 
@@ -37,7 +37,7 @@ graph TD
 
     subgraph Level0 ["Level 0: Foundation & Shared Primitives"]
         LIB_SIMD["shared/gric_simd (CPUID detection, vector attributes)"]:::l0
-        LIB_QUANT["shared (scalar_quant, residual_quant, product_quant)"]:::l0
+        LIB_QUANT["shared (scalar_quant, residual_quant, eq16_quant, rabit_quant)"]:::l0
         LIB_MEMO["shared/quant_memo (distance memoization table)"]:::l0
         LIB_IO["shared/gric_bin_io & gric_bin_header (clusterdat format)"]:::l0
         LIB_LOC["shared/cluster_locator (anchor multi-probe routing)"]:::l0
@@ -58,7 +58,7 @@ graph TD
 
 ### Level 0: Foundation & Shared Primitives (`src/shared/`)
 - **Role**: Pure utility routines, hardware detection, binary file serialization, quantization
-  algorithms (SQ8, SQ16, RQ8, PQ), memoization tables, and terminal formatting.
+  algorithms (SQ8, SQ16, EQ16, RQ8, PQ, RaBitQ), memoization tables, and terminal formatting.
 - **Constraints**:
   - Must **never** include headers from `src/gric-cluster/`, `src/gric-knn/`,
     `src/gpu/`, or any tool.
@@ -87,7 +87,7 @@ graph TD
      - `knn_engine`: Multi-threaded query dispatching and frame iteration.
      - `knn_cluster_search`: Intra- and inter-cluster member filtering and candidate ranking.
      - `knn_cross_dataset`: Trajectory tracking, basin expansion, and graph exploration.
-     - `knn_cache`: Sidecar quantization caches (SQ8, SQ16, RQ8, PQ) and layout builders.
+     - `knn_cache`: Sidecar quantization caches (SQ8, SQ16, EQ16, RQ8, PQ) and layout builders.
      - `knn_pruning`: Metric pruning predicates (triangular inequalities, multi-pivot filters).
      - `knn_heap`: Fixed-capacity max-heaps with branchless sift-down operations.
 - **Constraints**:
@@ -97,7 +97,7 @@ graph TD
 
 ### Level 3: Applications, Tools & Auxiliary Services
 - Executables: `gric-cluster`, `gric-knn`, `gric-knn-avg`, `gric-server`, `gric-status`,
-  `gric-benchmark`, `gric-probe`, `gric-dimdensity`, `gric-tune`, `gric-info`, etc.
+  `gric-benchmark`, `gric-probe`, `gric-mcp`, `gric-dimdensity`, `gric-tune`, `gric-info`, etc.
 - **Constraints**:
   - Command-line parsing, output printing, and process management belong here.
   - No domain logic or math kernels should be implemented directly in application `main.c` files;
@@ -114,6 +114,9 @@ classDiagram
         +scalar_quant
         +residual_quant
         +product_quant
+        +rabit_quant
+        +e8_lattice
+        +eq16_quant
         +quant_memo
         +cluster_locator
         +gric_bin_io

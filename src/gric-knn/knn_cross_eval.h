@@ -1,6 +1,10 @@
 /**
  * @file knn_cross_eval.h
  * @brief Declarations for cross-dataset intra-cluster and inter-cluster candidate evaluation.
+ *
+ * Declares functions that evaluate individual frames belonging to candidate clusters
+ * identified during cross-dataset routing. Includes routines for intra-cluster member
+ * scoring and multi-cluster member evaluation with metric lower-bound pruning.
  */
 
 #ifndef KNN_CROSS_EVAL_H

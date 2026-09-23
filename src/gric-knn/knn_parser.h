@@ -1,6 +1,10 @@
 /**
  * @file knn_parser.h
  * @brief Parsers for Pass 1 clustering artifacts.
+ *
+ * Declares parsing routines for extracting cluster structure and metric metadata from
+ * Pass 1 clustering artifacts. Covers binary and ASCII membership files, cluster radii,
+ * execution logs, and distance-to-cluster-center (DCC) tables.
  */
 
 #ifndef KNN_PARSER_H

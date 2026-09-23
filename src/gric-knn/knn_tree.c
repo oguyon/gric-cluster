@@ -1,6 +1,11 @@
 /**
  * @file knn_tree.c
  * @brief Cluster proximity graph builder for gric-knn.
+ *
+ * Implements cluster adjacency graph construction and heap-based neighbor ranking. Functions
+ * in this file compute pairwise distances between cluster anchors, maintain a bounded
+ * max-heap of nearest clusters per anchor node, and assemble the directed cluster proximity
+ * graph (knn_graph_neighbors and knn_graph_distances) used to guide routing across clusters.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -22,9 +27,12 @@ typedef struct
 
 /**
  * max_heap_sift_down() - Sift down root element in a max-heap of DccNeighborPair.
- * @heap: Pointer to array of pairs.
- * @idx:  Starting index to sift down from.
- * @n:    Number of elements in the heap.
+ * @heap: Pointer to array of pairs forming a binary max-heap.
+ * @idx:  Starting index to sift down from (typically 0 when replacing root).
+ * @n:    Number of valid elements currently in the heap.
+ *
+ * Restores the binary max-heap invariant by iteratively swapping the element at idx
+ * with its larger child until neither child has a greater distance than the element.
  */
 static inline void max_heap_sift_down(
     DccNeighborPair *heap,
@@ -55,7 +63,16 @@ static inline void max_heap_sift_down(
  * knn_build_cluster_graph() - Build proximity graph on cluster anchors from DCC matrix.
  * @model: Pointer to resident KnnModel with populated dcc_matrix.
  *
- * Return: 0 on success, -1 on error.
+ * Constructs a k-nearest cluster proximity graph over all cluster centroids:
+ * 1. Neighborhood degree selection: Chooses k_adj based on whether E8 lattice routing is
+ *    enabled (E8_NUM_ROOTS = 240) or default standard degree (48), bounded by M - 1.
+ * 2. Parallel construction: Employs OpenMP parallel loop across all clusters c in [0..M-1].
+ * 3. Bounded max-heap filtering: For each cluster c, scans all other clusters, maintaining a
+ *    size-k_adj max-heap of closest clusters via max_heap_sift_down().
+ * 4. Heapsort linearization: Sorts the k_adj closest neighbors into ascending distance order
+ *    and writes neighbor cluster IDs into model->cluster_graph_adj.
+ *
+ * Return: 0 on success, -1 on allocation failure.
  */
 int knn_build_cluster_graph(
     KnnModel *model)
@@ -152,7 +169,10 @@ int knn_build_cluster_graph(
 
 /**
  * knn_free_cluster_graph() - Free cluster proximity graph allocations.
- * @model: Pointer to resident KnnModel.
+ * @model: Pointer to resident KnnModel whose graph structures are to be freed.
+ *
+ * Deallocates the cluster adjacency array (model->cluster_graph_adj), nullifies the
+ * pointer, and resets the adjacency degree model->cluster_graph_k to 0.
  */
 void knn_free_cluster_graph(
     KnnModel *model)

@@ -1,6 +1,11 @@
 /**
  * @file knn_cache_layout.h
  * @brief In-memory layout reorganizations for k-NN: FastScan transposed blocks & IVF.
+ *
+ * Declares functions that restructure flat quantized code buffers into SIMD-friendly
+ * blocked formats. This includes 32-vector transposed blocks for AVX2/AVX-512 FastScan
+ * kernels (SQ16, EQ16, RQ8, PQ, RaBitQ) and inverted-file (IVF) index layouts for fast
+ * cluster-oriented candidate lookup.
  */
 
 #ifndef KNN_CACHE_LAYOUT_H

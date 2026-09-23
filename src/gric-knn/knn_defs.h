@@ -4,6 +4,10 @@
 /**
  * @file knn_defs.h
  * @brief Core data structures and configuration types for the gric-knn engine.
+ *
+ * Defines primary structures used throughout the k-NN search pipeline, including KnnConfig,
+ * KnnModel, KnnCluster, KnnMaxHeap, KnnResults, KnnTelemetry, and KnnVisitedBitset. Also
+ * implements inline bitset manipulation and mutual distance matrix indexing helpers.
  */
 
 #include "scalar_quant.h"

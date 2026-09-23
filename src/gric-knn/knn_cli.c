@@ -1,6 +1,11 @@
 /**
  * @file knn_cli.c
  * @brief Command-line interface parser and help renderer for gric-knn.
+ *
+ * Implements command-line option parsing, argument validation, and terminal help
+ * rendering. Functions in this file process input/output paths, distance pruning thresholds,
+ * quantization modes, GPU settings, and execution parameters, validating consistency
+ * and initializing KnnConfig defaults.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -9,16 +14,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <string.h>
 #include <time.h>
 
+/**
+ * knn_cli_print_usage() - Print concise command-line usage
+ * @progname: Name of the executable.
+ *
+ * Prints a one-line synopsis of required positional arguments and common flags.
+ */
 void knn_cli_print_usage(
     const char *progname)
 {
     fprintf(stderr, "Usage: %s <input_data> <cluster_dir> [options]\n", progname);
 }
 
+/**
+ * knn_cli_print_help() - Print detailed colored help and options
+ * @progname: Name of the executable.
+ *
+ * Renders full documentation to standard output including arguments, pruning
+ * flags, quantization presets, GPU controls, and usage examples.
+ */
 void knn_cli_print_help(
     const char *progname)
 {
@@ -280,8 +296,11 @@ void knn_cli_print_help(
 }
 
 /**
- * knn_cli_set_defaults() - Initialize KnnConfig with default parameter values.
+ * knn_cli_set_defaults() - Initialize KnnConfig with default parameter values
  * @config: Pointer to KnnConfig to initialize.
+ *
+ * Sets default values for k (50), temporal separation (1 frame), bidirectional
+ * reciprocal search, multi-pivot metric pruning, angular bounds, and output formats.
  */
 static void knn_cli_set_defaults(
     KnnConfig *config)
@@ -1349,6 +1368,17 @@ static int knn_cli_validate(
     return 0;
 }
 
+/**
+ * knn_cli_parse() - Parse and validate command-line arguments into KnnConfig
+ * @argc:   Argument count from main().
+ * @argv:   Argument vector from main().
+ * @config: Pointer to KnnConfig to initialize and populate.
+ *
+ * Scans options, dispatches to category parsers (I/O, pruning, quantization, GPU),
+ * parses positional arguments, and verifies required parameters.
+ *
+ * Return: 0 on success, 1 on argument error, or 2 if help was displayed.
+ */
 int knn_cli_parse(
     int        argc,
     char     **argv,
@@ -1435,6 +1465,13 @@ int knn_cli_parse(
     return knn_cli_validate(config, argv[0], k_explicitly_set, dtmin_explicitly_set);
 }
 
+/**
+ * knn_cli_print_banner() - Print active configuration parameters
+ * @config: Pointer to active KnnConfig.
+ *
+ * Formats and prints a summary banner of active datasets, search options, pruning
+ * bounds, and hardware configuration to standard output.
+ */
 void knn_cli_print_banner(
     const KnnConfig *config)
 {

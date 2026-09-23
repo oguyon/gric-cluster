@@ -1,6 +1,11 @@
 /**
  * @file knn_loader.c
  * @brief Loader for Pass 1 clustering artifacts into KnnModel resident structure.
+ *
+ * Implements disk artifact loading, format parsing, and in-memory model population.
+ * Functions in this file load binary and ASCII cluster membership tables, memory-map or
+ * load anchor coordinate arrays, recover anchor vectors from raw dataset files when needed,
+ * calculate per-frame anchor radii, and load precomputed k-NN reference graphs.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -59,12 +64,13 @@ static int check_is_fits(
 }
 
 /**
- * calc_euclidean_dist() - Euclidean distance between two coordinate vectors.
- * @a: First vector.
- * @b: Second vector.
- * @n: Vector length.
+ * calc_euclidean_dist() - Euclidean distance between two coordinate vectors
+ * @a:         First vector.
+ * @b:         Second vector.
+ * @n:         Vector length in elements.
+ * @is_double: 1 for double precision, 0 for single-precision float.
  *
- * Return: Euclidean distance.
+ * Return: Euclidean L2 distance.
  */
 static inline double calc_euclidean_dist(
     const void *restrict a,
@@ -79,7 +85,17 @@ static inline double calc_euclidean_dist(
     return framedist_float((const float *)a, (const float *)b, n);
 }
 
-
+/**
+ * reconstruct_anchors_from_input() - Recover anchor coordinate vectors from dataset file
+ * @input_data_path: Path to dataset file (FITS or binary/ASCII).
+ * @model:           Pointer to KnnModel with loaded cluster membership.
+ *
+ * When precomputed anchors.bin is not present, reads each cluster's representative
+ * anchor frame directly from the original dataset file by seeking to its representative
+ * index. Supports FITS cubes and ASCII/binary datasets.
+ *
+ * Return: 0 on success, or -1 on failure.
+ */
 static int reconstruct_anchors_from_input(
     const char *input_data_path,
     KnnModel   *model)
@@ -236,12 +252,16 @@ static int reconstruct_anchors_from_input(
 }
 
 /**
- * load_anchors() - Load anchor frames from cluster dir or fallback to input dataset.
- * @cluster_dir:      Directory containing Pass 1 outputs.
- * @input_data_path:  Original dataset path.
- * @model:            Pointer to KnnModel.
+ * load_anchors() - Load cluster anchor vectors from directory or fallback to dataset
+ * @cluster_dir:     Directory containing Pass 1 outputs.
+ * @input_data_path: Original dataset path.
+ * @model:           Pointer to KnnModel to populate with anchor vectors.
  *
- * Return: 0 on success, -1 on error.
+ * Attempts to load precomputed binary anchor vectors from anchors.bin. If not found or
+ * invalid, falls back to ASCII anchors.txt. If no anchor file exists, reconstructs
+ * anchors directly from the raw dataset frames via reconstruct_anchors_from_input().
+ *
+ * Return: 0 on success, or -1 on error.
  */
 static int load_anchors(
     const char *cluster_dir,
@@ -554,11 +574,15 @@ static int load_anchors(
 }
 
 /**
- * compute_exact_frame_anchor_radii() - Compute distance to cluster anchor for each frame.
+ * compute_exact_frame_anchor_radii() - Compute distance to cluster anchor for each frame
  * @input_data_path: Path to dataset file.
  * @model:           Pointer to KnnModel with populated anchors and assignments.
  *
- * Return: 0 on success, -1 on error.
+ * Iterates through all dataset frames, reads each frame vector, and computes the exact
+ * Euclidean distance to its assigned cluster anchor. Stores the computed distance into
+ * model->frame_anchor_dists for tight triangular inequality metric pruning during search.
+ *
+ * Return: 0 on success, or -1 on error.
  */
 static int compute_exact_frame_anchor_radii(
     const char *input_data_path,
@@ -665,12 +689,16 @@ static int compute_exact_frame_anchor_radii(
 }
 
 /**
- * load_knn_graph() - Opportunistically load pre-computed k-NN graph of dataset A.
+ * load_knn_graph() - Opportunistically load pre-computed k-NN graph of dataset A
  * @cluster_dir:     Path to the cluster directory.
  * @input_data_path: Path to dataset input file.
  * @model:           Pointer to KnnModel.
  *
- * Return: 0 if loaded or not present (non-fatal), -1 on critical parse error.
+ * Searches for pre-computed graph files (knn_indices.bin, knn_distances.bin,
+ * knn_mutual_dists.bin) in the cluster directory or dataset directory. If found,
+ * memory-maps them into model to accelerate cross-dataset graph routing.
+ *
+ * Return: 0 if loaded or not present (non-fatal), or -1 on critical parse error.
  */
 static int load_knn_graph(
     const char *cluster_dir,
@@ -981,12 +1009,17 @@ static int load_knn_graph(
 }
 
 /**
- * knn_model_load() - Load Pass 1 clustering artifacts and prepare resident model.
- * @cluster_dir:      Directory containing Pass 1 artifacts.
- * @input_data_path:  Path to the input dataset.
- * @model:            Pointer to KnnModel.
+ * knn_model_load() - Load Pass 1 clustering artifacts and prepare resident model
+ * @cluster_dir:     Directory containing Pass 1 artifacts.
+ * @input_data_path: Path to the input dataset.
+ * @model:           Pointer to KnnModel to initialize.
+ * @use_double:      1 for double-precision coordinates, 0 for single-precision float.
  *
- * Return: 0 on success, -1 on error.
+ * Loads cluster membership tables (binary or text), anchor vectors, cluster radii,
+ * inter-cluster distance bounds, and optionally pre-computed k-NN graphs. Prepares
+ * the resident KnnModel structure for subsequent search queries.
+ *
+ * Return: 0 on success, or -1 on error.
  */
 int knn_model_load(
     const char *cluster_dir,
@@ -1139,8 +1172,11 @@ int knn_model_load(
 }
 
 /**
- * knn_model_free() - Clean up resident KnnModel allocations.
- * @model: Pointer to KnnModel.
+ * knn_model_free() - Clean up resident KnnModel allocations
+ * @model: Pointer to KnnModel to release.
+ *
+ * Deallocates anchor matrices, unmaps memory-mapped files (anchors, graphs, quantization
+ * caches), frees cluster arrays, member lists, and resets the KnnModel structure.
  */
 void knn_model_free(
     KnnModel *model)

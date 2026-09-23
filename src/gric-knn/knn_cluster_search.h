@@ -1,6 +1,10 @@
 /**
  * @file knn_cluster_search.h
  * @brief Intra-dataset cluster candidate scoring and graph routing.
+ *
+ * Declares high-level search routines for single-dataset queries, including the primary
+ * per-frame solver knn_search_single_frame(). Interfaces between cluster-level pruning
+ * algorithms and frame-level member evaluation kernels.
  */
 
 #ifndef KNN_CLUSTER_SEARCH_H

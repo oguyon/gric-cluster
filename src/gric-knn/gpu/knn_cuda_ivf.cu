@@ -1,6 +1,12 @@
 /**
  * @file knn_cuda_ivf.cu
  * @brief GPU Inverted-File (IVF) hierarchical metric pruned k-NN search engine.
+ *
+ * Implements GPU-accelerated inverted-file candidate searching. Functions in this file
+ * construct device IVF indices, evaluate query-to-centroid distances to select candidate
+ * clusters, dispatch CUDA kernels to compute member distances within candidate posting
+ * lists using triangular metric pruning, maintain top-k priority queues in thread registers,
+ * and merge final sorted k-NN results.
  */
 
 #include "knn_cuda_ivf.h"

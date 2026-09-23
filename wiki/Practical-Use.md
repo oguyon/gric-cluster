@@ -1,33 +1,38 @@
 # Practical Use Cases
 
-This tool is designed for high-speed clustering of sequential image data or high-dimensional vectors. Below are some practical applications.
+This tool is designed for high-speed clustering of sequential image data or high-dimensional
+vectors. Below are some practical applications.
 
 ## 1. Astronomical Imaging
 
-**Scenario**: You have a "cube" of FITS images (e.g., a time-series observation of a star field) and want to group frames based on seeing conditions or shifting alignment.
+**Scenario**: You have a "cube" of FITS images (e.g., a time-series observation of a star field)
+and want to group frames based on seeing conditions or shifting alignment.
 
 **Workflow**:
 1.  **Input**: A 3D FITS cube where each slice is a frame.
-2.  **Run**: Use `image_cluster` to group similar frames.
+2.  **Run**: Use `gric-cluster` to group similar frames.
     ```bash
-    ./image_cluster a1.5 input.fits -outdir results -avg
+    ./gric-cluster a1.5 input.fits -outdir results -avg
     ```
     *   `a1.5`: Auto-sets the radius to 1.5x the median frame-to-frame distance.
-    *   `-avg`: Computes the average image (stack) for each cluster, which can improve Signal-to-Noise Ratio (SNR).
+    *   `-avg`: Computes the average image (stack) for each cluster, which can improve SNR.
 3.  **Result**: You get `average.fits` containing the "lucky imaging" stacks for each cluster.
 
 ## 2. Video Stream Analysis (Data Reduction)
 
-**Scenario**: You have a stream of video frames (converted to ASCII feature vectors or raw pixels) and want to identify unique scenes or remove near-duplicates.
+**Scenario**: You have a stream of video frames (converted to feature vectors or raw pixels)
+and want to identify unique scenes or remove near-duplicates.
 
 **Workflow**:
-1.  **Preprocessing**: Convert frames to downscaled feature vectors (e.g., 64x64 pixels flattened).
+1.  **Preprocessing**: Convert frames to downscaled feature vectors.
 2.  **Run**:
     ```bash
-    ./image_cluster 500.0 video_feats.txt -maxcl 100 -tm 0.8
+    ./gric-cluster 500.0 video_feats.txt -maxcl 100 -tm 0.8
     ```
-    *   `-tm 0.8`: Uses the transition matrix to predict the next scene based on history (80% weight), optimizing speed for structured video.
-3.  **Result**: The tool identifies unique "anchor" frames. Frames within distance `500.0` of an anchor are grouped. You can use the `cluster_counts.txt` to find the most common scenes.
+    *   `-tm 0.8`: Uses the transition matrix to predict the next scene based on history (80%
+        weight), optimizing speed for structured video.
+3.  **Result**: The tool identifies unique "anchor" frames. Frames within distance `500.0` of an
+    anchor are grouped. Use `cluster_counts.txt` or `counts.bin` to find common scenes.
 
 ## 3. Noisy Data Categorization
 
@@ -36,48 +41,49 @@ This tool is designed for high-speed clustering of sequential image data or high
 **Workflow**:
 1.  **Generate Test Data** (to tune parameters):
     ```bash
-    ./image-cluster-mktxtseq 100 test.txt 2Dwalk -repeat 10 -noise 0.1
+    ./gric-mktxtseq 100 test.txt 2Dwalk -repeat 10 -noise 0.1
     ```
 2.  **Tune Radius**:
     ```bash
-    ./image_cluster -scandist test.txt
+    ./gric-cluster -scandist test.txt
     ```
     Use the "Median" or "20%" percentile output to choose a tight `rlim`.
 3.  **Cluster**:
     ```bash
-    ./image_cluster <chosen_rlim> sensor_data.txt -gprob
+    ./gric-cluster <chosen_rlim> sensor_data.txt -gprob
     ```
-    `-gprob` is useful here if the drift is continuous, as it learns the trajectory of the sensor data.
+    `-gprob` is useful here if drift is continuous, as it learns the trajectory of sensor data.
 
 ## 4. High-Dimensional / Expensive Metric Clustering
 
-**Scenario**: You are clustering vectors where the distance metric is extremely expensive to compute (or the dimensionality is very high, e.g., >1000).
+**Scenario**: You are clustering vectors where distance computation is expensive (e.g., $D > 1000$).
 
 **Workflow**:
 1.  **Run**:
     ```bash
-    ./image_cluster <rlim> vectors.txt -te5
+    ./gric-cluster <rlim> vectors.txt -te5 -eq16
     ```
-    *   `-te5`: Enables 5-point pruning. While this adds CPU overhead per candidate check, it significantly reduces the number of distance calculations (by ~45% in some cases). This is a net win if calculating the distance itself is the bottleneck.
+    *   `-te5`: Enables 5-point pruning to reduce distance calculations by ~45%.
+    *   `-eq16`: Enables 16-bit E8 lattice quantization for $4\times$ memory bandwidth savings.
 
 ## 5. Continuous Stream Monitoring (Managing Max Clusters)
 
-**Scenario**: You are processing an infinite stream of data and want to maintain a fixed-size dictionary of clusters (e.g., for vector quantization or anomaly detection) without running out of memory.
+**Scenario**: You are processing an infinite stream of data and want to maintain a fixed-size
+dictionary of clusters without running out of memory.
 
 **Strategies (`-maxcl_strategy`)**:
-*   **Stop** (default): The program exits when `-maxcl` is reached. Useful for batch processing fixed datasets.
-*   **Discard** (`-maxcl_strategy discard`): When the limit is reached, the algorithm identifies "old" clusters with few members and deletes the smallest one to make room for new data. Discarded frames are logged. This acts like a cache eviction policy.
-*   **Merge** (`-maxcl_strategy merge`): Two closest clusters are merged into one (the larger one absorbs the smaller one). This maintains the number of clusters by aggregating similar concepts.
+*   **Stop** (default): The program exits when `-maxcl` is reached.
+*   **Discard** (`-maxcl_strategy discard`): Deletes the oldest/smallest cluster to make room.
+*   **Merge** (`-maxcl_strategy merge`): Two closest clusters are merged into one.
 
 **Workflow**:
 ```bash
-./image_cluster 0.5 stream_data.txt -maxcl 100 -maxcl_strategy discard -discard_frac 0.5
+./gric-cluster 0.5 stream_data.txt -maxcl 100 -maxcl_strategy discard -discard_frac 0.5
 ```
-*   `-discard_frac 0.5`: Only consider the oldest 50% of clusters for deletion, protecting recently created (and potentially growing) clusters.
+*   `-discard_frac 0.5`: Only consider the oldest 50% of clusters for deletion.
 
 ## Tips for Best Results
 
-*   **Auto-Tuning**: Always start with `-scandist` to understand the scale of distances in your dataset.
-*   **Geometric Probability**: Use `-gprob` for time-series data where the signal evolves smoothly (e.g., drifting sensors, planetary rotation).
-*   **Transition Matrix**: Use `-tm` for data with repeating, predictable sequences (e.g. video loops, cyclic processes).
-*   **Memory**: For extremely large datasets (>1M frames), ensure you have enough RAM as `FrameInfo` stores history for all frames.
+*   **Auto-Tuning**: Run `gric-probe <input>` or `-scandist` to understand dataset scale.
+*   **Geometric Probability**: Use `-gprob` for time-series data with smooth trajectories.
+*   **Transition Matrix**: Use `-tm` for repeating sequences (e.g., video loops, cyclic phases).

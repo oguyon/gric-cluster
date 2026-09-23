@@ -1,6 +1,11 @@
 /**
  * @file knn_reader.c
  * @brief Out-of-core random-access frame reader for FITS and ASCII datasets.
+ *
+ * Implements low-overhead random-access frame retrieval from out-of-core storage.
+ * Functions in this file inspect dataset file dimensions, build 64-bit line offset tables
+ * for ASCII files, memory-map binary files, and read individual coordinate frames
+ * across OpenMP threads with thread-safe file descriptors and zero-copy memory access.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -633,8 +638,12 @@ int knn_reader_read_frame(
 }
 
 /**
- * knn_reader_close_thread() - Close thread-local file handles.
+ * knn_reader_close_thread() - Close thread-local file handles
  * @reader: Pointer to thread-local KnnFrameReader.
+ *
+ * Closes thread-local file descriptors (binary file handle, FITS file pointer with
+ * critical section lock, or ASCII file handle) and frees thread-local input path string.
+ * Leaves shared memory mappings intact for other threads.
  */
 void knn_reader_close_thread(
     KnnFrameReader *reader)
@@ -683,8 +692,11 @@ void knn_reader_close_thread(
 }
 
 /**
- * knn_reader_close() - Close master reader and free shared index structures.
- * @reader: Pointer to KnnFrameReader.
+ * knn_reader_close() - Close master reader and free shared index structures
+ * @reader: Pointer to KnnFrameReader context.
+ *
+ * Unmaps memory-mapped binary files, releases thread-local file handles, frees ASCII
+ * line offset tables, and resets reader fields to NULL or zero.
  */
 void knn_reader_close(
     KnnFrameReader *reader)

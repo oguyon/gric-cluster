@@ -4,6 +4,10 @@
 /**
  * @file knn_reader.h
  * @brief Out-of-core random-access frame reader for FITS and ASCII datasets.
+ *
+ * Declares the KnnFrameReader structure and file I/O operations for reading frames on-demand.
+ * Supports binary formats (GRIC .bin via mmap), multi-extension FITS files, and line-indexed
+ * ASCII datasets. Includes thread-local cloning and thread-safe random-access frame retrieval.
  */
 
 #include "knn_defs.h"
@@ -41,12 +45,15 @@ typedef struct
 } KnnFrameReader;
 
 /**
- * @brief Inspect dataset file header to determine total frame count and dimensions.
- * @param path         File path to dataset.
- * @param total_frames Output for total frame count.
- * @param frame_width  Output for frame width in pixels.
- * @param frame_height Output for frame height in pixels.
- * @return 0 on success, -1 on error.
+ * knn_reader_inspect() - Discover dataset sample count and coordinate dimensions
+ * @path:         Path to dataset file.
+ * @total_frames: Output pointer for sample/frame count.
+ * @frame_width:  Output pointer for frame width in pixels.
+ * @frame_height: Output pointer for frame height in pixels.
+ *
+ * Inspects header of binary (.bin), FITS, or ASCII dataset without reading full file.
+ *
+ * Return: 0 on success, or -1 on error.
  */
 int knn_reader_inspect(
     const char *path,
@@ -55,14 +62,17 @@ int knn_reader_inspect(
     long       *frame_height);
 
 /**
- * @brief Open dataset file for random-access frame reading.
- * @param reader       Pointer to KnnFrameReader context.
- * @param input_path   Path to input file.
- * @param total_frames Expected total frames.
- * @param frame_width  Frame width.
- * @param frame_height Frame height.
- * @param use_double   1 for double precision, 0 for float.
- * @return 0 on success, -1 on error.
+ * knn_reader_open() - Open dataset file for random-access frame reading
+ * @reader:       Pointer to KnnFrameReader context to initialize.
+ * @input_path:   Path to input file (.bin, FITS, or ASCII).
+ * @total_frames: Expected total frames in dataset.
+ * @frame_width:  Frame width in elements.
+ * @frame_height: Frame height in elements.
+ * @use_double:   1 for double precision, 0 for single-precision float.
+ *
+ * Initializes file handles, memory mapping, or ASCII byte offsets.
+ *
+ * Return: 0 on success, or -1 on error.
  */
 int knn_reader_open(
     KnnFrameReader *reader,
@@ -73,13 +83,16 @@ int knn_reader_open(
     int             use_double);
 
 /**
- * @brief Open an in-memory dataset buffer for zero-copy random access.
- * @param reader         Pointer to KnnFrameReader context.
- * @param memory_data    Pointer to contiguous frame pixel data.
- * @param total_frames   Number of frames.
- * @param frame_elements Number of elements per frame.
- * @param use_double     1 for double precision, 0 for float.
- * @return 0 on success, -1 on error.
+ * knn_reader_open_memory() - Open an in-memory dataset buffer for zero-copy random access
+ * @reader:         Pointer to KnnFrameReader context to initialize.
+ * @memory_data:    Pointer to contiguous frame pixel data.
+ * @total_frames:   Number of frames in memory.
+ * @frame_elements: Number of elements per frame vector.
+ * @use_double:     1 for double precision, 0 for single-precision float.
+ *
+ * Configures reader for direct memory-backed reading without disk I/O.
+ *
+ * Return: 0 on success, or -1 on error.
  */
 int knn_reader_open_memory(
     KnnFrameReader *reader,
@@ -89,11 +102,14 @@ int knn_reader_open_memory(
     int             use_double);
 
 /**
- * @brief Read a single frame by index into the destination buffer.
- * @param reader   Pointer to KnnFrameReader context.
- * @param frame_id 0-based frame index.
- * @param out_data Output pixel buffer of size frame_elements (float* or double*).
- * @return 0 on success, -1 on error.
+ * knn_reader_read_frame() - Read a single frame by index into destination buffer
+ * @reader:   Pointer to KnnFrameReader context.
+ * @frame_id: 0-based frame index.
+ * @out_data: Output pixel buffer of size frame_elements (float* or double*).
+ *
+ * Reads vector data using mmap, thread-safe FITS reading, or pre-indexed ASCII seek.
+ *
+ * Return: 0 on success, or -1 on error.
  */
 int knn_reader_read_frame(
     KnnFrameReader *reader,
@@ -101,25 +117,32 @@ int knn_reader_read_frame(
     void           *out_data);
 
 /**
- * @brief Clone a reader handle for thread-local usage in parallel OpenMP workers.
- * @param src Source KnnFrameReader.
- * @param dst Destination KnnFrameReader.
- * @return 0 on success, -1 on error.
+ * knn_reader_clone_thread() - Clone a reader handle for thread-local usage in OpenMP
+ * @src: Source KnnFrameReader context.
+ * @dst: Destination KnnFrameReader context to initialize.
+ *
+ * Creates independent thread-local file descriptors sharing base index offsets.
+ *
+ * Return: 0 on success, or -1 on error.
  */
 int knn_reader_clone_thread(
     const KnnFrameReader *src,
     KnnFrameReader       *dst);
 
 /**
- * @brief Close a thread-local cloned reader.
- * @param reader Pointer to KnnFrameReader context.
+ * knn_reader_close_thread() - Close a thread-local cloned reader
+ * @reader: Pointer to thread-local KnnFrameReader context.
+ *
+ * Releases thread-local file descriptors without freeing shared memory maps.
  */
 void knn_reader_close_thread(
     KnnFrameReader *reader);
 
 /**
- * @brief Close master reader and release memory and file handles.
- * @param reader Pointer to KnnFrameReader context.
+ * knn_reader_close() - Close master reader and release memory and file handles
+ * @reader: Pointer to KnnFrameReader context.
+ *
+ * Unmaps binary files, frees index tables, and closes all open file handles.
  */
 void knn_reader_close(
     KnnFrameReader *reader);

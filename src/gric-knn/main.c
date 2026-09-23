@@ -1,6 +1,11 @@
 /**
  * @file main.c
  * @brief Entry point for gric-knn: Out-of-Core Metric-Pruned k-NN Solver.
+ *
+ * Implements the command-line application entry point (main). Orchestrates the overall
+ * workflow: initializes terminal colors and configuration, loads clustering models and
+ * quantization caches, triggers the search engine, serializes results to disk, prints
+ * telemetry statistics, and releases all resident memory.
  */
 
 #define _POSIX_C_SOURCE 200809L

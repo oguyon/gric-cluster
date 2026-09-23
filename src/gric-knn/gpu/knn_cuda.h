@@ -1,6 +1,10 @@
 /**
  * @file knn_cuda.h
  * @brief GPU-accelerated k-NN search engine for gric-knn.
+ *
+ * Declares host-facing CUDA acceleration interfaces for the k-NN engine. Provides GPU
+ * device availability checking and high-level execution entry points to dispatch query
+ * batches to GPU hardware.
  */
 
 #ifndef KNN_CUDA_H

@@ -4,38 +4,50 @@
 /**
  * @file knn_heap.h
  * @brief Bounded binary max-heap for k-nearest neighbors tracking.
+ *
+ * Declares data structures and operations for maintaining a thread-local top-k candidate
+ * collection. Supports SIMD fixed-size sorted registers for small k (k <= 64) and dynamic
+ * binary max-heaps for larger k, providing fast threshold inspection, insertion, and sorting.
  */
 
 #include "knn_defs.h"
 
 /**
- * @brief Allocate and initialize a bounded max-heap with capacity k.
- * @param heap Pointer to the KnnMaxHeap structure.
- * @param k    Capacity of the heap (number of nearest neighbors).
- * @return 0 on success, -1 on allocation failure.
+ * knn_heap_init() - Allocate and initialize a bounded max-heap with capacity k
+ * @heap: Pointer to KnnMaxHeap structure to initialize.
+ * @k:    Capacity of the heap (number of nearest neighbors requested).
+ *
+ * Allocates internal heap storage or configures SIMD registers for top-k tracking.
+ *
+ * Return: 0 on success, or -1 on allocation failure.
  */
 int knn_heap_init(
     KnnMaxHeap *heap,
     int         k);
 
 /**
- * @brief Free heap resources and reset state.
- * @param heap Pointer to the KnnMaxHeap structure.
+ * knn_heap_free() - Free heap resources and reset state
+ * @heap: Pointer to KnnMaxHeap structure.
+ *
+ * Deallocates dynamic storage and resets heap counters to zero.
  */
 void knn_heap_free(
     KnnMaxHeap *heap);
 
 /**
- * @brief Reset element count to 0 for reuse in the next query.
- * @param heap Pointer to the KnnMaxHeap structure.
+ * knn_heap_reset() - Reset element count to 0 for reuse in the next query
+ * @heap: Pointer to KnnMaxHeap structure.
+ *
+ * Clears count and resets threshold distance tau to infinity without freeing memory.
  */
 void knn_heap_reset(
     KnnMaxHeap *heap);
 
 /**
- * @brief Peek at the maximum distance currently stored at root of the heap.
- * @param heap Pointer to the KnnMaxHeap structure.
- * @return Maximum distance in heap if full, or 1e30 if not full or empty.
+ * knn_heap_peek_max_dist() - Peek at the maximum distance currently stored in the heap
+ * @heap: Pointer to KnnMaxHeap structure.
+ *
+ * Return: Maximum distance in heap if full, or 1e30 if not full or empty.
  */
 static inline double knn_heap_peek_max_dist(
     const KnnMaxHeap *heap)
@@ -54,10 +66,11 @@ static inline double knn_heap_peek_max_dist(
 }
 
 /**
- * @brief Get candidate frame index at rank idx.
- * @param heap Pointer to the KnnMaxHeap structure.
- * @param idx  Neighbor rank index.
- * @return Candidate frame index, or -1 on error.
+ * knn_heap_get_id() - Get candidate frame index at rank idx
+ * @heap: Pointer to KnnMaxHeap structure.
+ * @idx:  Neighbor rank index [0..count-1].
+ *
+ * Return: Candidate frame index, or -1 on error.
  */
 static inline int knn_heap_get_id(
     const KnnMaxHeap *heap,
@@ -77,10 +90,11 @@ static inline int knn_heap_get_id(
 }
 
 /**
- * @brief Get candidate distance at rank idx.
- * @param heap Pointer to the KnnMaxHeap structure.
- * @param idx  Neighbor rank index.
- * @return Candidate distance, or 1e30 on error.
+ * knn_heap_get_dist() - Get candidate distance at rank idx
+ * @heap: Pointer to KnnMaxHeap structure.
+ * @idx:  Neighbor rank index [0..count-1].
+ *
+ * Return: Candidate distance, or 1e30 on error.
  */
 static inline double knn_heap_get_dist(
     const KnnMaxHeap *heap,
@@ -100,20 +114,23 @@ static inline double knn_heap_get_dist(
 }
 
 /**
- * @brief Test whether a specific frame_id is already present in the heap.
- * @param heap     Pointer to the KnnMaxHeap structure.
- * @param frame_id Candidate frame index.
- * @return 1 if found, 0 otherwise.
+ * knn_heap_contains() - Test whether a specific frame_id is already present in the heap
+ * @heap:     Pointer to KnnMaxHeap structure.
+ * @frame_id: Candidate frame index.
+ *
+ * Return: 1 if found in heap, 0 otherwise.
  */
 int knn_heap_contains(
     const KnnMaxHeap *heap,
     int               frame_id);
 
 /**
- * @brief Push a new neighbor into the bounded max-heap.
- * @param heap     Pointer to the KnnMaxHeap structure.
- * @param frame_id Candidate frame index.
- * @param dist     Distance from query frame to candidate.
+ * knn_heap_push() - Push a new neighbor into the bounded max-heap
+ * @heap:     Pointer to KnnMaxHeap structure.
+ * @frame_id: Candidate frame index.
+ * @dist:     Distance from query frame to candidate.
+ *
+ * Inserts candidate if distance is strictly smaller than the kth-neighbor distance tau.
  */
 void knn_heap_push(
     KnnMaxHeap *heap,
@@ -121,11 +138,13 @@ void knn_heap_push(
     double      dist);
 
 /**
- * @brief Extract heap elements into arrays sorted in ascending order by distance.
- * @param heap          Pointer to the KnnMaxHeap structure.
- * @param out_indices   Output array for sorted frame indices.
- * @param out_distances Output array for sorted distances.
- * @param k             Number of neighbors requested.
+ * knn_heap_extract_sorted() - Extract heap elements into arrays sorted in ascending order
+ * @heap:          Pointer to KnnMaxHeap structure.
+ * @out_indices:   Output array for sorted frame indices.
+ * @out_distances: Output array for sorted distances.
+ * @k:             Number of neighbors requested.
+ *
+ * Sorts and copies elements in ascending order of distance into output arrays.
  */
 void knn_heap_extract_sorted(
     KnnMaxHeap *heap,

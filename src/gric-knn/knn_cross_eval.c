@@ -1,12 +1,46 @@
 /**
- * @file knn_cross_eval.h
+ * @file knn_cross_eval.c
  * @brief Cross-dataset intra-cluster and inter-cluster candidate evaluation.
+ *
+ * Implements member-level evaluation and metric lower-bound filtering for cross-dataset
+ * searching. Functions in this file evaluate frames within the nearest cluster basin
+ * (knn_cross_eval_intra_cluster) and scan adjacent clusters in distance priority order
+ * (knn_cross_eval_inter_clusters), using pivot distance bounds to prune unnecessary checks.
  */
 
 #include "knn_cross_eval.h"
 #include <alloca.h>
 #include <string.h>
 
+/**
+ * knn_cross_eval_intra_cluster() - Evaluate frames inside best cluster and prune by radius.
+ * @best_c:           Cluster ID containing best seed.
+ * @best_seed_id:     Frame ID of best seed found during routing.
+ * @min_d_anchor:     Distance from query frame to target cluster anchor.
+ * @num_seed_pivots:  Number of evaluated seed pivots.
+ * @seed_pivot_ids:   Array of evaluated pivot frame IDs.
+ * @seed_pivot_dists: Array of computed distances from query to seed pivots.
+ * @query_data:       Raw pixel buffer for query frame.
+ * @model:            Target KnnModel containing candidate dataset.
+ * @config:           Active KnnConfig specifying search options, epsilon slack, and cutoffs.
+ * @cand_reader:      Candidate frame reader context for loading frame vectors.
+ * @cand_buffer:      Thread-local scratch buffer for reading candidate frame data.
+ * @anchor_dists:     Thread-local query-to-anchor distance cache.
+ * @heap:             Per-query max-heap tracking the top-k nearest neighbors found so far.
+ * @visited:          Per-query visited tracker preventing duplicate frame evaluations.
+ * @telem:            Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Evaluates candidate frames within the winning cluster partition for a cross-dataset query:
+ * 1. Target cluster resolution: Maps best_seed_id to its host cluster partition, defaulting to
+ *    best_c if no cluster map exists.
+ * 2. Anchor distance resolution: Retrieves or computes query-to-anchor Euclidean distance.
+ * 3. Annular member scan: Traverses cluster members, checking annular triangle lower bounds
+ *    |d_anchor - r_cand| against current search horizon tau / (1.0 + epsilon).
+ * 4. Multi-pivot seed filtering: Tests candidate against seed pivots via
+ *    is_member_pruned_by_pointwise_pivots().
+ * 5. Exact distance & heap insertion: Evaluates exact Euclidean distance for survivors and
+ *    inserts viable neighbors into the heap.
+ */
 void knn_cross_eval_intra_cluster(
     int                    best_c,
     long                   best_seed_id,
@@ -14,7 +48,7 @@ void knn_cross_eval_intra_cluster(
     int                    num_seed_pivots,
     const long            *seed_pivot_ids,
     const double          *seed_pivot_dists,
-    const void *restrict query_data,
+    const void *restrict   query_data,
     const KnnModel        *model,
     const KnnConfig       *config,
     KnnFrameReader        *cand_reader,
@@ -168,23 +202,31 @@ void knn_cross_eval_intra_cluster(
 
 /**
  * knn_cross_eval_inter_clusters() - Evaluate inter-cluster candidate members for cross dataset.
- * @loc_res:          Cluster locator results.
+ * @loc_res:          Cluster locator results containing evaluated anchors.
  * @best_c:           Best anchor cluster index.
- * @min_d_anchor:     Distance to closest anchor.
+ * @min_d_anchor:     Distance to closest cluster anchor.
  * @num_seed_pivots:  Number of evaluated seed pivots.
- * @seed_pivot_ids:   Evaluated seed pivot frame IDs.
- * @seed_pivot_dists: Distances to evaluated seed pivots.
- * @query_data:       Query frame pixel data.
- * @model:            Active KnnModel.
- * @config:           Active KnnConfig.
- * @cand_reader:      Candidate frame reader.
- * @cand_buffer:      Candidate frame pixel buffer.
- * @anchor_dists:     Query-to-anchor distance cache.
- * @scores_buffer:    Scratch buffer for candidate cluster sorting.
- * @active_mask:      Mask of surviving clusters.
- * @heap:             Max-heap for current query.
- * @visited:          Per-query frame visited tracker.
- * @telem:            Telemetry record.
+ * @seed_pivot_ids:   Array of evaluated seed pivot frame IDs.
+ * @seed_pivot_dists: Array of distances from query to seed pivots.
+ * @query_data:       Raw pixel buffer for query frame.
+ * @model:            Target KnnModel containing candidate dataset.
+ * @config:           Active KnnConfig specifying search options, epsilon slack, and cutoffs.
+ * @cand_reader:      Candidate frame reader context for loading frame vectors.
+ * @cand_buffer:      Thread-local scratch buffer for reading candidate frame data.
+ * @anchor_dists:     Thread-local query-to-anchor distance cache.
+ * @scores_buffer:    Thread-local scratch buffer for candidate cluster sorting.
+ * @active_mask:      Bitmask of surviving candidate clusters.
+ * @heap:             Per-query max-heap tracking the top-k nearest neighbors found so far.
+ * @visited:          Per-query visited tracker preventing duplicate frame evaluations.
+ * @telem:            Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Evaluates non-home candidate clusters for a cross-dataset query in prioritized order:
+ * 1. Lower-bound scoring: Computes distance lower bounds for all clusters q != best_c using
+ *    DCC matrix bounds and measured seed pivots.
+ * 2. Pruning: Discards clusters whose lower bound exceeds tau / (1.0 + epsilon).
+ * 3. Sorting: Sorts surviving clusters ascending by lower bound in scores_buffer.
+ * 4. Priority traversal: Searches candidate clusters in order, terminating early once the
+ *    next cluster's lower bound exceeds the dynamic search horizon.
  */
 void knn_cross_eval_inter_clusters(
     const ClusterLocatorResult *loc_res,

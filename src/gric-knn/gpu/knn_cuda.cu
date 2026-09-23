@@ -1,6 +1,11 @@
 /**
  * @file knn_cuda.cu
  * @brief High-performance GPU-accelerated k-NN solver engine.
+ *
+ * Implements GPU-accelerated k-NN query batching using cuBLAS matrix multiplication
+ * and custom CUDA reduction kernels. Functions in this file manage device memory transfers,
+ * compute query-to-anchor and query-to-frame distance matrices on CUDA cores, sort top-k
+ * candidates in GPU device memory, and copy results back to host KnnResults structures.
  */
 
 #include "cuda_common.h"

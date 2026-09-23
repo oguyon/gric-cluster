@@ -1,6 +1,12 @@
 /**
  * @file knn_cache.c
  * @brief Memory caching and scalar quantization sidecar generation/loading for k-NN.
+ *
+ * Implements sidecar serialization, deserialization, and resident cache generation for
+ * quantized representations (SQ8, SQ16, EQ16, RQ8, PQ, and RaBitQ). Functions in this
+ * file pre-quantize cluster anchor vectors, train and cache codebooks, validate on-disk
+ * sidecar files via cryptographic hashes and fingerprints, and populate resident memory
+ * structures in KnnModel to eliminate redundant encoding during search.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -140,8 +146,13 @@ static int knn_calibrate_dataset_minmax(
 }
 
 /**
- * knn_quantize_cluster_anchors_sq8() - Pre-quantize anchor vectors into SQ8 buffer.
+ * knn_quantize_cluster_anchors_sq8() - Pre-quantize anchor vectors into SQ8 buffer
  * @model: Pointer to initialized KnnModel.
+ *
+ * Allocates a contiguous uint8_t buffer of size (num_clusters * frame_elements) and
+ * quantizes each cluster anchor vector using scalar 8-bit quantization parameters
+ * (model->sq8_params). Enables fast AVX2/AVX-512 integer distance computations during
+ * cluster routing.
  */
 static void knn_quantize_cluster_anchors_sq8(
     KnnModel *model)
@@ -178,8 +189,12 @@ static void knn_quantize_cluster_anchors_sq8(
 }
 
 /**
- * knn_quantize_cluster_anchors_sq16() - Pre-quantize anchor vectors into SQ16 buffer.
+ * knn_quantize_cluster_anchors_sq16() - Pre-quantize anchor vectors into SQ16 buffer
  * @model: Pointer to initialized KnnModel.
+ *
+ * Allocates a contiguous int16_t buffer of size (num_clusters * frame_elements) and
+ * quantizes each cluster anchor vector using scalar 16-bit quantization parameters
+ * (model->sq16_params). Uses OpenMP multi-threading across cluster anchors.
  */
 static void knn_quantize_cluster_anchors_sq16(
     KnnModel *model)
@@ -219,8 +234,12 @@ static void knn_quantize_cluster_anchors_sq16(
 }
 
 /**
- * knn_quantize_cluster_anchors_eq16() - Pre-quantize anchor vectors into EQ16 buffer.
+ * knn_quantize_cluster_anchors_eq16() - Pre-quantize anchor vectors into EQ16 buffer
  * @model: Pointer to initialized KnnModel.
+ *
+ * Allocates a contiguous int16_t buffer of size (num_clusters * frame_elements) and
+ * quantizes each cluster anchor vector using exponential/exact 16-bit quantization
+ * parameters (model->eq16_params). Uses OpenMP multi-threading across cluster anchors.
  */
 static void knn_quantize_cluster_anchors_eq16(
     KnnModel *model)
@@ -259,6 +278,16 @@ static void knn_quantize_cluster_anchors_eq16(
     }
 }
 
+/**
+ * knn_hash_bytes_u64() - 64-bit FNV-1a hash update helper for buffer fingerprints
+ * @hash: Initial 64-bit hash accumulator value.
+ * @data: Pointer to byte buffer to hash.
+ * @len:  Length of buffer in bytes.
+ *
+ * Iterates through each byte, XORing into accumulator and multiplying by FNV prime.
+ *
+ * Return: Updated 64-bit hash value.
+ */
 static uint64_t knn_hash_bytes_u64(
     uint64_t      hash,
     const void   *data,
@@ -273,6 +302,15 @@ static uint64_t knn_hash_bytes_u64(
     return hash;
 }
 
+/**
+ * knn_model_max_cluster_radius() - Compute the maximum radius across all clusters
+ * @model: Pointer to initialized KnnModel.
+ *
+ * Scans all clusters in the model and returns the maximum cluster radius, or
+ * model->model_rlim if greater. Used to determine bounding tolerances and envelope radii.
+ *
+ * Return: Maximum cluster radius value.
+ */
 static double knn_model_max_cluster_radius(
     const KnnModel *model)
 {
@@ -293,6 +331,15 @@ static double knn_model_max_cluster_radius(
     return max_radius;
 }
 
+/**
+ * knn_rq8_sidecar_fingerprint() - Compute invariant fingerprint hash for RQ8 sidecar cache
+ * @model: Pointer to initialized KnnModel.
+ *
+ * Hashes model dimensions, frame count, cluster assignments, anchor coordinates, and
+ * radii into a 64-bit FNV-1a fingerprint to validate on-disk RQ8 sidecar cache files.
+ *
+ * Return: 64-bit hash fingerprint.
+ */
 static uint64_t knn_rq8_sidecar_fingerprint(
     const KnnModel *model)
 {

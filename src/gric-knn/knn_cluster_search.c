@@ -1,6 +1,11 @@
 /**
  * @file knn_cluster_search.c
  * @brief Intra-dataset cluster candidate scoring, graph routing, and search coordination.
+ *
+ * Implements cluster scoring, inter-cluster metric exploration, proximity graph routing,
+ * and overall search orchestration for single-dataset queries. Functions in this file
+ * evaluate intra-cluster members, warm-start search using reciprocal/two-hop graph neighbors,
+ * rank candidate clusters by lower-bound distances, and prune unpromising clusters.
  */
 
 #include "knn_cluster_search.h"
@@ -13,19 +18,27 @@
 
 /**
  * knn_search_intra_cluster() - Search members of the query's home cluster.
- * @query_id:        Index of query frame.
- * @query_data:      Query frame pixel data.
- * @home_cluster_id: Home cluster index.
- * @r_home:          Distance from query to home anchor.
- * @model:           Active KnnModel.
- * @config:          Active KnnConfig.
- * @reader:          KnnFrameReader context.
- * @cand_buffer:     Candidate pixel buffer.
- * @heap:            Max-heap for current query.
- * @all_heaps:       Array of all frame heaps.
- * @bucket_locks:    OpenMP locks.
- * @visited:         Per-query frame visited tracker.
- * @telem:           Telemetry record.
+ * @query_id:        Index of query frame being searched.
+ * @query_data:      Raw pixel vector data for query frame.
+ * @home_cluster_id: Home cluster index the query frame belongs to.
+ * @r_home:          Distance from query frame to its home cluster anchor.
+ * @model:           Active KnnModel containing cluster metadata and member vectors.
+ * @config:          Active KnnConfig specifying search options, epsilon slack, and cutoffs.
+ * @reader:          Streaming frame reader context for fetching candidate vectors if unmapped.
+ * @cand_buffer:     Thread-local scratch buffer for reading candidate frame data.
+ * @heap:            Per-query max-heap tracking the top-k nearest neighbors found so far.
+ * @all_heaps:       Global array of per-query max-heaps (used for mutual neighbor insertion).
+ * @bucket_locks:    OpenMP bucket locks array synchronizing concurrent heap updates (or NULL).
+ * @visited:         Per-query visited tracker preventing duplicate frame evaluations.
+ * @telem:           Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Executes initial search over the query's immediate home cluster partition:
+ * 1. Self-exclusion: Marks the query frame as visited in the visited tracker so it cannot match
+ *    against itself.
+ * 2. Anchor distance resolution: If r_home is not precomputed (e.g. negative), computes the exact
+ *    Euclidean distance between query_data and the home cluster's anchor vector.
+ * 3. Member evaluation: Dispatches home cluster members to knn_eval_cluster_members(), seeding the
+ *    query's max-heap with tight initial nearest-neighbor distance bounds (tau).
  */
 static void knn_search_intra_cluster(
     long                   query_id,
@@ -88,22 +101,32 @@ static void knn_search_intra_cluster(
 
 /**
  * knn_warm_start_nearest_cluster() - Pre-seed heap using nearest neighbor clusters.
- * @query_id:        Index of query frame.
- * @query_data:      Query frame pixel data.
- * @home_cluster_id: Home cluster index.
- * @model:           Active KnnModel.
- * @config:          Active KnnConfig.
- * @reader:          KnnFrameReader context.
- * @cand_buffer:     Candidate frame pixel buffer.
- * @heap:            Max-heap for current query.
- * @all_heaps:       Array of all frame heaps.
- * @bucket_locks:    OpenMP locks.
- * @pivots:          Pivot array.
- * @num_pivots:      Pointer to pivot count.
- * @visited:         Per-query frame visited tracker.
- * @telem:           Telemetry record.
+ * @query_id:        Index of query frame being searched.
+ * @query_data:      Raw pixel vector data for query frame.
+ * @home_cluster_id: Home cluster index the query frame belongs to.
+ * @model:           Active KnnModel containing cluster metadata and DCC matrix.
+ * @config:          Active KnnConfig specifying search options, epsilon slack, and cutoffs.
+ * @reader:          Streaming frame reader context for fetching candidate vectors if unmapped.
+ * @cand_buffer:     Thread-local scratch buffer for reading candidate frame data.
+ * @heap:            Per-query max-heap tracking the top-k nearest neighbors found so far.
+ * @all_heaps:       Global array of per-query max-heaps (used for mutual neighbor insertion).
+ * @bucket_locks:    OpenMP bucket locks array synchronizing concurrent heap updates (or NULL).
+ * @pivots:          Output array of measured anchor pivots for multi-pivot filtering.
+ * @num_pivots:      In/out pointer tracking the number of active pivots registered.
+ * @visited:         Per-query visited tracker preventing duplicate frame evaluations.
+ * @telem:           Thread-local telemetry record accumulating search counters and prunes.
  *
- * Return: Best warm-start cluster index, or -1 if skipped.
+ * Pre-seeds the query heap and establishes initial metric pivots using adjacent clusters:
+ * 1. Eligibility check: Returns -1 immediately if warm-starting is disabled (warm_start <= 0)
+ *    or if the query has no assigned home cluster.
+ * 2. Neighbor selection: Identifies the closest neighboring clusters to home_cluster_id using
+ *    the DCC matrix or cluster proximity graph edges.
+ * 3. Distance computation & pivot registration: Computes exact query-to-anchor Euclidean distances
+ *    for selected neighbors and registers them as active metric pivots in pivots[].
+ * 4. Member evaluation: Evaluates members of the closest neighbor clusters via
+ *    knn_eval_cluster_members(), lowering the search horizon (tau) before broader search begins.
+ *
+ * Return: Best warm-start cluster index, or -1 if warm-start was skipped.
  */
 static int knn_warm_start_nearest_cluster(
     long                   query_id,
@@ -451,17 +474,26 @@ static int knn_warm_start_nearest_cluster(
 
 /**
  * knn_inject_two_hop_candidates() - Expand 2-hop neighbors from top heap seeds.
- * @query_id:     Index of query frame.
- * @query_data:   Query frame pixel data.
- * @model:        Active KnnModel.
- * @config:       Active KnnConfig.
- * @reader:       KnnFrameReader context.
- * @cand_buffer:  Scratch buffer for candidate frame pixels.
- * @heap:         Max-heap for current query.
- * @all_heaps:    Array of all frame heaps.
- * @bucket_locks: OpenMP locks (if multithreaded).
- * @visited:      Per-query frame visited tracker.
- * @telem:        Telemetry record.
+ * @query_id:     Index of query frame being searched.
+ * @query_data:   Raw pixel vector data for query frame.
+ * @model:        Active KnnModel containing cluster metadata and graph structure.
+ * @config:       Active KnnConfig specifying search options, epsilon slack, and cutoffs.
+ * @reader:       Streaming frame reader context for fetching candidate vectors if unmapped.
+ * @cand_buffer:  Thread-local scratch buffer for reading candidate frame data.
+ * @heap:         Per-query max-heap tracking the top-k nearest neighbors found so far.
+ * @all_heaps:    Global array of per-query max-heaps (used for mutual neighbor insertion).
+ * @bucket_locks: OpenMP bucket locks array synchronizing concurrent heap updates (or NULL).
+ * @visited:      Per-query visited tracker preventing duplicate frame evaluations.
+ * @telem:        Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Expands 2-hop graph neighbors from current top heap entries:
+ * 1. Seed extraction: Iterates over the highest-ranked neighbor frames already present in the heap.
+ * 2. Graph neighbor exploration: For each seed, traverses its outgoing edges in the KNN proximity
+ *    graph (model->graph).
+ * 3. Unvisited evaluation: For unvisited 2-hop candidates, checks temporal bounds and evaluates
+ *    exact Euclidean distances against query_data.
+ * 4. Heap insertion: Adds viable candidates to the query heap and updates heaps reciprocally,
+ *    rapidly discovering tight neighbor clusters before exhaustive inter-cluster search.
  */
 static void knn_inject_two_hop_candidates(
     long                   query_id,
@@ -680,6 +712,28 @@ static void knn_inject_two_hop_candidates(
 
 /**
  * knn_score_candidate_clusters() - Compute lower bounds and sort candidate clusters.
+ * @home_cluster_id: Query's home cluster index (or -1 if unassigned).
+ * @pivots:          Array of active measured anchor pivots for triangle inequality bounds.
+ * @num_pivots:      Number of active measured anchor pivots.
+ * @r_home:          Distance from query vector to its home cluster anchor.
+ * @model:           Active KnnModel containing cluster metadata, DCC matrices, and radii.
+ * @config:          Active KnnConfig specifying search options, epsilon slack, and cutoffs.
+ * @heap:            Per-query max-heap tracking the top-k nearest neighbors found so far.
+ * @scores_buffer:   Output array of ClusterScore structures to populate and sort.
+ * @telem:           Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Computes metric lower bounds for all candidate clusters and sorts survivors:
+ * 1. Cluster loop: Iterates over all M clusters in the dataset.
+ * 2. Home cluster exclusion: Skips home_cluster_id (already processed in intra-cluster phase).
+ * 3. Triangle inequality lower bounds: Computes distance lower bound lb to cluster c using
+ *    DCC matrix bounds |dcc(home, c) - r_home| - radius(c), combined with multi-pivot
+ *    projections |d(q, P_i) - d(c, P_i)| - radius(c).
+ * 4. Threshold pruning: Compares lb against current search horizon tau / (1.0 + epsilon).
+ *    Clusters whose lower bound meets or exceeds the cutoff are eliminated immediately.
+ * 5. Sorting: Stores surviving clusters into scores_buffer and sorts them ascending by lower
+ *    bound via qsort(compare_cluster_scores) to prioritize closest clusters first.
+ *
+ * Return: Number of candidate clusters surviving lower bound pruning.
  */
 static int knn_score_candidate_clusters(
     int                     home_cluster_id,
@@ -869,6 +923,36 @@ static int knn_score_candidate_clusters(
 
 /**
  * knn_search_inter_clusters() - Search scored candidate clusters in ascending lower bound.
+ * @query_id:          Index of query frame being searched.
+ * @query_data:        Raw pixel vector data for query frame.
+ * @home_cluster_id:   Query's home cluster index (or -1 if unassigned).
+ * @r_home:            Distance from query vector to its home cluster anchor.
+ * @num_cand_clusters: Number of surviving candidate clusters in scores_buffer.
+ * @model:             Active KnnModel containing cluster metadata and member vectors.
+ * @config:            Active KnnConfig specifying search options, epsilon slack, and cutoffs.
+ * @reader:            Streaming frame reader context for fetching candidate vectors if unmapped.
+ * @cand_buffer:       Thread-local scratch buffer for reading candidate frame data.
+ * @scores_buffer:     Pre-sorted array of candidate cluster scores (ordered by lower bound).
+ * @heap:              Per-query max-heap tracking the top-k nearest neighbors found so far.
+ * @all_heaps:         Global array of per-query max-heaps (used for mutual neighbor insertion).
+ * @bucket_locks:      OpenMP bucket locks array synchronizing concurrent heap updates (or NULL).
+ * @pivots:            Array of active measured anchor pivots for multi-pivot filtering.
+ * @num_pivots:        In/out pointer tracking the number of active pivots registered.
+ * @visited:           Per-query visited tracker preventing duplicate frame evaluations.
+ * @telem:             Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Iterates through candidate clusters in ascending order of distance lower bound:
+ * 1. Monotonic early termination: Compares the cluster's lower bound against current dynamic
+ *    horizon tau / (1.0 + epsilon). Because candidates are sorted by ascending lower bound,
+ *    once lb >= tau_thresh, all remaining clusters in the list are guaranteed incapable of
+ *    improving the heap and are pruned en masse.
+ * 2. Multi-pivot cluster pruning: Calls is_cluster_pruned_by_pivots() to verify if the entire
+ *    cluster can be skipped via triangle inequality without loading member metadata.
+ * 3. Anchor distance resolution: Computes exact or quantized query-to-anchor distance d_anchor.
+ * 4. Pivot registration: Adds the anchor to the pivots[] array to strengthen bounds for
+ *    subsequent clusters.
+ * 5. Member evaluation: Dispatches surviving clusters to knn_eval_cluster_members().
+ * 6. Batch flush: Flushes any residual candidates in the candidate evaluation batch.
  */
 static void knn_search_inter_clusters(
     long                   query_id,
@@ -1066,6 +1150,35 @@ static void knn_search_inter_clusters(
 
 /**
  * knn_search_cluster_graph() - Execute best-first graph routing over cluster proximity graph.
+ * @query_id:        Index of query frame being searched.
+ * @query_data:      Raw pixel vector data for query frame.
+ * @home_cluster_id: Home cluster index the query frame belongs to.
+ * @r_home:          Distance from query vector to its home cluster anchor.
+ * @model:           Active KnnModel containing cluster proximity graph and member vectors.
+ * @config:          Active KnnConfig specifying search options, graph branching, and cutoffs.
+ * @reader:          Streaming frame reader context for fetching candidate vectors if unmapped.
+ * @cand_buffer:     Thread-local scratch buffer for reading candidate frame data.
+ * @scratch:         Thread-local scratch space for cluster graph traversal (priority queue).
+ * @heap:            Per-query max-heap tracking the top-k nearest neighbors found so far.
+ * @all_heaps:       Global array of per-query max-heaps (used for mutual neighbor insertion).
+ * @bucket_locks:    OpenMP bucket locks array synchronizing concurrent heap updates (or NULL).
+ * @pivots:          Array of active measured anchor pivots for multi-pivot filtering.
+ * @num_pivots:      In/out pointer tracking the number of active pivots registered.
+ * @visited:         Per-query visited tracker preventing duplicate frame evaluations.
+ * @telem:           Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Traverses the cluster proximity graph using a best-first greedy routing policy:
+ * 1. Frontier initialization: Seeds the cluster priority queue in scratch with home_cluster_id
+ *    and warm-start neighbor clusters.
+ * 2. Best-first expansion: Pops the cluster with the smallest distance lower bound from the
+ *    priority queue.
+ * 3. Cutoff termination: If the popped cluster's lower bound exceeds tau / (1.0 + epsilon),
+ *    terminates graph search early since all other queued clusters are farther away.
+ * 4. Neighbor relaxation: For each adjacent cluster edge in model->cluster_graph, checks visited
+ *    status and computes lower bounds via metric pivots.
+ * 5. Member evaluation: Dispatches viable clusters to knn_eval_cluster_members(), pushing new
+ *    adjacent clusters into the frontier.
+ * 6. Batch flush: Flushes any residual candidate frames in the candidate evaluation batch.
  */
 static void knn_search_cluster_graph(
     long                    query_id,
@@ -1299,18 +1412,35 @@ static void knn_search_cluster_graph(
 
 /**
  * knn_search_single_frame() - Execute multi-level metric pruned search for one query frame.
- * @query_id:       Index of query frame.
- * @query_data:     Pixel buffer of query frame.
- * @model:          Active KnnModel.
- * @config:         Active KnnConfig.
- * @reader:         Thread-local KnnFrameReader.
- * @cand_buffer:    Scratch buffer for candidate frame pixels.
- * @scores_buffer:  Scratch buffer for cluster sorting.
- * @graph_scratch:  Scratch buffers for cluster graph search.
- * @all_heaps:      Array of KnnMaxHeap structures for all frames.
- * @bucket_locks:   Array of OpenMP bucket locks (if OpenMP enabled).
- * @visited:        Per-query frame visited tracker.
- * @telem:          Thread-local KnnTelemetry.
+ * @query_id:       Index of query frame being searched.
+ * @query_data:     Raw pixel buffer of query frame.
+ * @model:          Active KnnModel containing cluster metadata, graph structure, and indices.
+ * @config:         Active KnnConfig specifying search parameters, tolerances, and mode flags.
+ * @reader:         Streaming frame reader context for loading on-disk frame vectors.
+ * @cand_buffer:    Thread-local scratch buffer for reading candidate frame data.
+ * @scores_buffer:  Thread-local scratch buffer for sorting candidate cluster lower bounds.
+ * @graph_scratch:  Thread-local scratch space for cluster graph traversal (priority queue).
+ * @all_heaps:      Global array of KnnMaxHeap structures for all frames in the dataset.
+ * @bucket_locks:   Array of OpenMP bucket locks synchronizing reciprocal heap updates (or NULL).
+ * @visited:        Per-query visited tracker preventing duplicate candidate evaluations.
+ * @telem:          Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Orchestrates the full metric-pruned k-NN search pipeline for a single query frame:
+ * 1. Visited pre-seeding: Marks all candidate frames already inserted into the query's heap
+ *    (via reciprocal pushes from previously completed queries) to prevent re-evaluation.
+ * 2. Quantization query LUT initialization: Precomputes query projections and lookup tables
+ *    for all active quantizers (RaBitQ, PQ, RQ8, EQ16, SQ16) in L1 CPU cache.
+ * 3. Intra-cluster search: Searches the query's home cluster partition via
+ *    knn_search_intra_cluster(), establishing an initial tight search horizon (tau).
+ * 4. Warm-start & pivot setup: Identifies nearest adjacent clusters via DCC and registers
+ *    initial metric pivots using knn_warm_start_nearest_cluster().
+ * 5. Two-hop neighbor expansion: Dispatches 2-hop graph neighbors via
+ *    knn_inject_two_hop_candidates() to accelerate heap convergence.
+ * 6. Inter-cluster search:
+ *    - If proximity graph routing is configured: routes through the cluster graph using
+ *      best-first search via knn_search_cluster_graph().
+ *    - Otherwise: computes metric lower bounds for all clusters via knn_score_candidate_clusters()
+ *      and searches survivors in ascending lower-bound order via knn_search_inter_clusters().
  */
 void knn_search_single_frame(
     long                    query_id,

@@ -1,6 +1,10 @@
 /**
  * @file knn_engine_internal.h
  * @brief Internal data structures and prototypes shared across k-NN search modules.
+ *
+ * Defines internal tracking structures used across solver modules, including KnnCandidate,
+ * KnnClusterScore, and KnnTrajectoryTracker. Declares internal prototypes shared between
+ * cluster routing, candidate pruning, and distance evaluation subsystems.
  */
 
 #ifndef KNN_ENGINE_INTERNAL_H
