@@ -1,6 +1,11 @@
 /**
  * @file knn_writer.c
  * @brief Output serialization for gric-knn results into FITS or ASCII formats.
+ *
+ * Implements result serialization and file writing in various output formats. Functions
+ * in this file compute condensed pairwise mutual distance slices among nearest neighbors,
+ * format and write binary headers and data arrays (knn_indices.bin, knn_distances.bin,
+ * knn_mutual_dists.bin), export structured text tables, and generate multi-extension FITS cubes.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -30,7 +35,7 @@
 #define KNN_WRITER_STACK_K 1024
 
 /**
- * compute_query_mutual_dists() - Compute mutual distances between neighbors of a query.
+ * compute_query_mutual_dists() - Compute mutual distances between neighbors of a query
  * @u:         Query index [0..N-1].
  * @N:         Total frames in dataset.
  * @k:         Number of nearest neighbors.
@@ -40,6 +45,11 @@
  * @model:     Active KnnModel.
  * @results:   Computed KnnResults.
  * @out_slice: Output buffer for k*(k-1)/2 mutual distance floats.
+ *
+ * Computes pairwise Euclidean distances between the k nearest neighbors found for query u.
+ * For each pair (i, j) with 0 <= i < j < k, resolves neighbor frame vectors from memory
+ * or cache and calculates their mutual L2 distance into an upper-triangular condensed slice.
+ * Uses stack-allocated buffers for k <= 1024 to eliminate dynamic heap allocations.
  */
 static inline void compute_query_mutual_dists(
     long              u,
@@ -171,15 +181,19 @@ static inline void compute_query_mutual_dists(
 }
 
 /**
- * write_bin_results() - Write results as dual self-describing GRIC binary arrays.
- * @out_indices_path:   Output path for knn_indices.bin.
- * @out_distances_path: Output path for knn_distances.bin.
- * @out_mutual_path:    Output path for knn_mutual_dists.bin (if requested).
+ * write_bin_results() - Serialize k-NN results into binary format files
+ * @out_indices_path:   Output file path for knn_indices.bin.
+ * @out_distances_path: Output file path for knn_distances.bin.
+ * @out_mutual_path:    Output file path for knn_mutual_dists.bin (if requested).
  * @config:             Active KnnConfig.
  * @model:              Active KnnModel.
  * @results:            Computed KnnResults.
  *
- * Return: 0 on success, -1 on error.
+ * Writes binary header (gric_bin_header_t) and contiguous arrays for neighbor indices
+ * (UINT32) and distances (FLOAT32 or FLOAT64). Computes and writes mutual distances if
+ * requested.
+ *
+ * Return: 0 on success, or -1 on error.
  */
 static int write_bin_results(
     const char       *out_indices_path,
@@ -405,13 +419,16 @@ static int write_bin_results(
 }
 
 /**
- * write_ascii_results() - Write results as formatted ASCII table.
- * @path:    Output filename.
+ * write_ascii_results() - Serialize k-NN results into human-readable text file
+ * @path:    Output file path.
  * @config:  Active KnnConfig.
  * @model:   Active KnnModel.
  * @results: Computed KnnResults.
  *
- * Return: 0 on success, -1 on error.
+ * Formats results into space-delimited text lines: query_frame_id neighbor_1 dist_1 ...
+ * Uses buffered I/O with a 64KB stream buffer for write efficiency.
+ *
+ * Return: 0 on success, or -1 on error.
  */
 static int write_ascii_results(
     const char       *path,
@@ -460,14 +477,17 @@ static int write_ascii_results(
 
 #ifdef USE_CFITSIO
 /**
- * write_fits_results() - Write results as dual FITS cubes (indices and distances).
+ * write_fits_results() - Serialize k-NN results into FITS format files
  * @out_indices_path:   Output path for knn_indices.fits.
  * @out_distances_path: Output path for knn_distances.fits.
  * @config:             Active KnnConfig.
  * @model:              Active KnnModel.
  * @results:            Computed KnnResults.
  *
- * Return: 0 on success, -1 on error.
+ * Creates 2D FITS image HDUs with dimensions [k, N] for neighbor indices (TINT / 32-bit)
+ * and distances (TDOUBLE or TFLOAT).
+ *
+ * Return: 0 on success, or -1 on error.
  */
 static int write_fits_results(
     const char       *out_indices_path,
@@ -523,12 +543,15 @@ static int write_fits_results(
 #endif // USE_CFITSIO
 
 /**
- * knn_write_results() - Save k-NN results into configured format.
+ * knn_write_results() - Save k-NN results into configured format
  * @config:  Active KnnConfig.
  * @model:   Active KnnModel.
  * @results: Computed KnnResults.
  *
- * Return: 0 on success, -1 on error.
+ * Dispatches serialization to binary (.bin), FITS (.fits), or ASCII (.txt) format
+ * handlers depending on config->output_format and dataset attributes.
+ *
+ * Return: 0 on success, or -1 on error.
  */
 int knn_write_results(
     const KnnConfig  *config,

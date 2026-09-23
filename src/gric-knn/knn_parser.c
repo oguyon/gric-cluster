@@ -1,6 +1,11 @@
 /**
  * @file knn_parser.c
  * @brief Parsers for Pass 1 clustering artifacts and metadata.
+ *
+ * Implements file format parsers for clustering output artifacts. Functions in this file
+ * parse cluster assignments from binary (frame_membership.bin) or ASCII files, extract
+ * cluster radii and sample counts, parse clustering log files for bounding limits,
+ * and load precomputed distance-to-cluster-center (DCC) tables for metric pruning.
  */
 
 #define _POSIX_C_SOURCE 200809L

@@ -1,6 +1,12 @@
 /**
  * @file knn_cache_layout.c
  * @brief Memory layout reorganizations for k-NN: FastScan transposed blocks and IVF buffers.
+ *
+ * Implements cache layout transformations that pack and transpose quantized dataset vectors
+ * into contiguous blocks aligned for vector instructions (AVX2/AVX-512). Functions in this
+ * file construct transposed buffers for SQ16, EQ16, RQ8, PQ, and RaBitQ FastScan kernels,
+ * as well as build inverted file (IVF) posting lists that group quantized codes by cluster
+ * membership for locality during search.
  */
 
 #include "knn_cache_layout.h"

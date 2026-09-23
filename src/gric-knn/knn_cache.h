@@ -1,6 +1,10 @@
 /**
  * @file knn_cache.h
  * @brief Memory caching and quantization sidecar generation/loading for k-NN.
+ *
+ * Declares public APIs for building, caching, and loading quantized dataset buffers
+ * and sidecar files across multiple quantization schemes (SQ8, SQ16, EQ16, RQ8, PQ,
+ * and RaBitQ). Also provides memory preloading for raw dataset frames.
  */
 
 #ifndef KNN_CACHE_H

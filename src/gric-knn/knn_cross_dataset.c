@@ -1,6 +1,11 @@
 /**
  * @file knn_cross_dataset.c
  * @brief Cross-dataset k-NN search driver and orchestrator.
+ *
+ * Implements end-to-end query routing for cross-dataset searching. Functions in this file
+ * maintain temporal coherence across successive queries via trajectory tracking, seed
+ * search frontiers, execute greedy routing towards cluster basins, trigger localized
+ * basin expansion, and evaluate member candidates to find top-k neighbors.
  */
 
 #include "knn_cross_dataset.h"
@@ -9,13 +14,17 @@
 #include <alloca.h>
 
 /**
- * knn_update_trajectory_tracker() - Update thread-local trajectory tracker from heap.
- * @tracker:        Pointer to KnnTrajectoryTracker.
+ * knn_update_trajectory_tracker() - Update thread-local trajectory tracker from heap
+ * @tracker:        Pointer to KnnTrajectoryTracker state to update.
  * @query_id:       Current query index.
- * @best_c:         Best cluster ID.
+ * @best_c:         Best cluster ID found for current query.
  * @best_seed_id:   Best seed node frame ID.
  * @best_seed_dist: Distance to best seed node.
  * @heap:           Current query top-k heap.
+ *
+ * Caches the winning cluster ID and top candidates (up to 64) from the current query's
+ * nearest neighbors to seed the routing frontier for consecutive query frames. Exploits
+ * temporal coherence across adjacent time steps in trajectory mode.
  */
 static inline void knn_update_trajectory_tracker(
     KnnTrajectoryTracker *tracker,
@@ -44,6 +53,35 @@ static inline void knn_update_trajectory_tracker(
     }
 }
 
+/**
+ * knn_search_cross_dataset_frame() - Search single query frame against target dataset model.
+ * @query_id:      Frame index of current query.
+ * @query_data:    Raw pixel buffer of query frame.
+ * @model:         Pointer to target KnnModel containing candidate dataset.
+ * @config:        Pointer to active KnnConfig.
+ * @cand_reader:   Reader context for candidate frames.
+ * @cand_buffer:   Thread-local buffer for reading candidate frames.
+ * @anchor_dists:  Thread-local buffer for query-to-anchor distances.
+ * @scores_buffer: Thread-local buffer for cluster scores.
+ * @heap:          Max-heap for current query.
+ * @tracker:       Thread-local trajectory tracker for temporal warm-starting.
+ * @visited:       Frame visited tracker.
+ * @telem:         Thread-local telemetry record.
+ *
+ * Orchestrates cross-dataset k-NN search for a single query frame against a target dataset:
+ * 1. Temporal trajectory warm-start: Reuses top nearest neighbors from adjacent prior query
+ *    frames recorded in tracker to rapidly lower the initial search threshold tau.
+ * 2. Anchor localization: Invokes cluster_locate_nearest_anchors() to identify nearest target
+ *    anchors and compute initial distances.
+ * 3. Graph frontier routing: Seeds frontier nodes from nearest anchors, performs greedy graph
+ *    routing (knn_greedy_route_to_basin()) to locate the local minimum basin.
+ * 4. Dense basin expansion: Expands the graph neighborhood around the basin minimum via
+ *    knn_direct_basin_expansion() or knn_cross_explore_graph_frontier().
+ * 5. Intra- and inter-cluster evaluation: Searches member candidates in the winning cluster
+ *    (knn_cross_eval_intra_cluster()) and remaining candidate clusters in prioritized order
+ *    (knn_cross_eval_inter_clusters()).
+ * 6. Trajectory caching: Updates tracker with current best seeds and top heap entries.
+ */
 void knn_search_cross_dataset_frame(
     long                  query_id,
     const void *restrict  query_data,

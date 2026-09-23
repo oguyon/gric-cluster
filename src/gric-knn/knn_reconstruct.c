@@ -1,6 +1,11 @@
 /**
  * @file knn_reconstruct.c
  * @brief Computes a reconstructed dataset using k-NN indices and distances.
+ *
+ * Implements post-processing dataset reconstruction from k-NN results. Functions in this
+ * file parse k-NN outputs, compute weighted averages (uniform or inverse distance weighting)
+ * across nearest neighbors to estimate query coordinates, and write reconstructed arrays
+ * and quality metrics to disk.
  */
 
 #include "knn_defs.h"
@@ -16,6 +21,12 @@
 #include <string.h>
 #include <time.h>
 
+/**
+ * print_usage() - Print command-line usage synopsis for knn_reconstruct
+ * @prog_name: Name of executable.
+ *
+ * Prints expected arguments and flags to standard output.
+ */
 static void print_usage(
     const char *prog_name)
 {

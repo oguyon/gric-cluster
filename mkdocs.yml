@@ -83,6 +83,17 @@ nav:
           - verbose: help/verbose.md
           - conf: help/conf.md
           - confw: help/confw.md
+      - Quantization & Hardware:
+          - eq16 (E8 Lattice): help/eq16.md
+          - sq16 (16-bit Scalar): help/sq16.md
+          - sq8 (8-bit Scalar): help/sq8.md
+          - memo (Memoization): help/memo.md
+          - batch_dist (SIMD Batch): help/batch_dist.md
+          - double (64-bit Float): help/double.md
+          - gpu (CUDA Acceleration): help/gpu.md
+      - Profiling & Presets:
+          - prof (Profile Loading): help/prof.md
+          - preset (Radius Presets): help/preset.md
       - Pruning & Geometry:
           - te4 (4-Point): help/te4.md
           - te5 (5-Point): help/te5.md
@@ -92,6 +103,7 @@ nav:
           - Sparse DCC Bounds: help/algorithm_sparse_dcc.md
           - no_dcc: help/no_dcc.md
           - dcc: help/dcc.md
+          - dcc_sq16 (Quantized DCC): help/dcc_sq16.md
       - Entropy & Gating:
           - entropy: help/entropy.md
           - entropy_fast: help/entropy_fast.md
@@ -134,6 +146,7 @@ nav:
       - Output & Analysis:
           - outdir: help/outdir.md
           - output (Overview): help/output.md
+          - txt (ASCII Format): help/txt.md
           - clustered: help/clustered.md
           - membership: help/membership.md
           - no_membership: help/no_membership.md
@@ -149,8 +162,12 @@ nav:
           - maxvis: help/maxvis.md
           - distall: help/distall.md
           - analysis: help/analysis.md
+          - dimdensity (LID & Density): help/dimdensity.md
   - Tools & Utilities:
       - Overview: tools/index.md
+      - Dataset Profiler (gric-probe): tools/probe.md
+      - Model Context Protocol (gric-mcp): tools/mcp.md
+      - Dimension & Density (gric-dimdensity): tools/dimdensity.md
       - WebAssembly & Native Parity: tools/wasm.md
       - k-NN Solver (gric-knn): tools/knn.md
       - Binary Formats & I/O: tools/bin_io.md

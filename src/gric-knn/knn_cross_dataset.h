@@ -1,6 +1,10 @@
 /**
  * @file knn_cross_dataset.h
  * @brief Cross-dataset k-NN search via basin expansion and graph routing.
+ *
+ * Declares the entry-point solver knn_search_cross_dataset_frame() for finding the
+ * nearest neighbors of query frames (dataset C) within a reference dataset (dataset A).
+ * Combines graph routing, cluster basin expansion, and member candidate evaluation.
  */
 
 #ifndef KNN_CROSS_DATASET_H

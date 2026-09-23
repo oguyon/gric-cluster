@@ -1,6 +1,11 @@
 /**
  * @file knn_member_search.c
  * @brief Member candidate evaluation, annular traversal, and distance batching.
+ *
+ * Implements frame-level distance evaluation and candidate pruning within clusters.
+ * Functions in this file perform annular member filtering sorted by distance to cluster
+ * anchor, batch distance calculations to maximize SIMD throughput and cache locality,
+ * and dispatch member scanning across full-precision, float, and quantized formats.
  */
 
 #include "knn_member_search.h"
@@ -12,7 +17,11 @@
 
 /**
  * knn_batch_init() - Zero-initialize a candidate evaluation batch.
- * @batch: Pointer to KnnCandidateBatch struct.
+ * @batch: Pointer to KnnCandidateBatch struct to initialize.
+ *
+ * Resets the candidate counter to zero. The batch structure buffers up to 8 candidate
+ * vectors to allow SIMD 1x8 batched distance kernels (AVX2 / AVX-512) to compute exact
+ * Euclidean distances concurrently against the query vector.
  */
 void knn_batch_init(
     KnnCandidateBatch *batch)
@@ -25,15 +34,26 @@ void knn_batch_init(
 
 /**
  * knn_batch_flush() - Compute distances for accumulated candidates and update heaps.
- * @batch:        Pointer to active KnnCandidateBatch.
- * @query_id:     Frame index of current query.
+ * @batch:        Pointer to active KnnCandidateBatch containing queued candidate vectors.
+ * @query_id:     Global frame index of current query.
  * @query_data:   Raw pixel vector for query frame.
- * @model:        Active KnnModel.
- * @config:       Active KnnConfig.
- * @heap:         Per-query max-heap.
- * @all_heaps:    Global array of all frame heaps (for mutual updates).
- * @bucket_locks: Bucket locks array for thread synchronization (or NULL).
- * @telem:        Thread-local telemetry record.
+ * @model:        Active KnnModel containing frame dimensions and precision configuration.
+ * @config:       Active KnnConfig specifying search options, epsilon slack, and cutoffs.
+ * @heap:         Per-query max-heap tracking the top-k nearest neighbors found so far.
+ * @all_heaps:    Global array of per-query max-heaps (used for mutual neighbor insertion).
+ * @bucket_locks: Bucket locks array synchronizing concurrent heap updates (or NULL).
+ * @telem:        Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Flushes all accumulated candidate frames in the batch:
+ * 1. Vectorized 1x8 batch execution: If exactly 8 candidates are buffered, dispatches
+ *    to compute_framedist_1x8() to compute Euclidean distances concurrently across all 8
+ *    vectors against the query in vector registers.
+ * 2. Scalar fallback / tail handling: Computes distances for remaining candidates using
+ *    compute_euclidean_distance_cutoff() with early termination on squared distance bounds.
+ * 3. Heap update & reciprocal insertion: For any candidate whose distance d <= tau_thresh,
+ *    invokes record_neighbor_and_reciprocal() to insert into the query's heap and optionally
+ *    update the candidate's heap under OpenMP bucket lock synchronization.
+ * 4. Resets the batch count to 0 for subsequent accumulation.
  */
 void knn_batch_flush(
     KnnCandidateBatch      *batch,
@@ -191,20 +211,41 @@ void knn_batch_flush(
 }
 
 /**
- * knn_resolve_candidate_data() - Fetch candidate pixel pointer with optional disk read.
- * @cand_id:     Index of candidate frame.
- * @m_idx:       Index of member within cluster.
- * @cl:          Pointer to candidate cluster.
- * @model:       Active KnnModel.
- * @reader:      Streaming frame reader.
- * @slot_buffer: Target buffer slot if reading from disk.
- * @frame_bytes: Size of frame in bytes.
- *
- * Return: Pointer to frame pixel data, or NULL on read failure.
- */
-
-/**
  * knn_eval_members_annular() - Center-outward annular scalar search over cluster members.
+ * @cl:                Candidate cluster being searched.
+ * @d_anchor:          Distance from query vector to candidate cluster anchor.
+ * @r_home:            Distance from query vector to its home cluster anchor.
+ * @dcc_home:          Inter-anchor distance between query home cluster and candidate cluster.
+ * @sq16_delta:        Quantization error bound margin for conservative metric bounds.
+ * @eq16_active:       1 if member-level EQ16 quantization filtering is active.
+ * @sq16_active:       1 if member-level SQ16 quantization filtering is active.
+ * @rq8_active:        1 if member-level RQ8 quantization filtering is active.
+ * @num_active_pivots: Number of active measured anchor pivots for multi-pivot filtering.
+ * @pivot_diffs:       Array of precomputed query-to-pivot distance differentials.
+ * @query_id:          Global frame index of current query.
+ * @query_data:        Raw pixel buffer of query frame (float or double).
+ * @model:             Active KnnModel containing cluster metadata and quantization structures.
+ * @config:            Active KnnConfig specifying search options, epsilon slack, and cutoffs.
+ * @reader:            Streaming frame reader context for fetching candidate vectors if unmapped.
+ * @cand_buffer:       Thread-local scratch buffer for reading candidate frame data.
+ * @heap:              Per-query max-heap tracking the top-k nearest neighbors found so far.
+ * @all_heaps:         Global array of per-query max-heaps (used for mutual neighbor insertion).
+ * @bucket_locks:      OpenMP bucket locks array synchronizing concurrent heap updates (or NULL).
+ * @visited:           Per-query visited tracker preventing duplicate frame evaluations.
+ * @batch:             Pointer to shared KnnCandidateBatch for vectorized 1x8 exact distances.
+ * @telem:             Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Traverses cluster members radially outward from the query's projection d_anchor:
+ * 1. Binary search initialization: Locates initial member index where r_anchor matches d_anchor
+ *    via find_member_lower_bound(), establishing center-outward left and right pointers.
+ * 2. Annular bounds pruning: At each step, checks lower bound |d_anchor - r_member| against
+ *    tau_thresh = tau / (1.0 + epsilon). Truncates leftward or rightward search when the lower
+ *    bound guarantees no member in that direction can improve on the current heap cutoff.
+ * 3. Pointwise quantization screening: Applies scalar SQ16, EQ16, or RQ8 lower bounding on
+ *    individual candidate coordinates before fetching raw pixel data.
+ * 4. Pivot and temporal validation: Evaluates metric pivots and temporal separation bounds
+ *    using knn_is_candidate_pruned().
+ * 5. Vector resolution: Loads candidate data and dispatches to batch or exact evaluation.
  */
 static void knn_eval_members_annular(
     const KnnCluster       *cl,
@@ -482,6 +523,40 @@ static void knn_eval_members_annular(
 
 /**
  * knn_eval_cluster_members() - Search all members of a cluster with metric and SIMD pruning.
+ * @c:                 Index of target cluster to evaluate.
+ * @d_anchor:          Computed distance from query frame to target cluster anchor.
+ * @home_cluster_id:   Query's home cluster index (or -1 if unassigned).
+ * @r_home:            Distance to query's home cluster anchor.
+ * @anchor_is_sq16:    1 if d_anchor was computed via SQ16, 0 otherwise.
+ * @query_id:          Index of query frame.
+ * @query_data:        Raw pixel buffer for query frame.
+ * @model:             Active KnnModel containing cluster metadata and quantization tables.
+ * @config:            Active KnnConfig specifying search options, epsilon slack, and cutoffs.
+ * @reader:            KnnFrameReader context for reading on-disk frames.
+ * @cand_buffer:       Thread-local scratch buffer for reading frames.
+ * @heap:              Max-heap for current query.
+ * @all_heaps:         Global array of all frame heaps (for mutual updates).
+ * @bucket_locks:      OpenMP bucket locks array for thread synchronization (or NULL).
+ * @pivots:            Array of measured anchor pivots for multi-pivot filtering (or NULL).
+ * @num_pivots:        Number of active anchor pivots.
+ * @visited:           Per-query frame visited tracker.
+ * @batch:             Pointer to shared KnnCandidateBatch for 1x8 distance batching.
+ * @telem:             Thread-local telemetry record accumulating search counters and prunes.
+ *
+ * Coordinates member candidate evaluation for cluster c against the query vector:
+ * 1. Precomputes triangle inequality slack factors from quantization error radii (quant_err).
+ * 2. Computes or looks up inter-anchor distance (dcc_home) to the query's home cluster.
+ * 3. Identifies active metric pivots and precomputes query-to-pivot distance differences.
+ * 4. Quantization fast-path dispatch: If cluster c has block-quantized representations,
+ *    delegates to the specialized SIMD FastScan kernel:
+ *    - knn_eval_members_rabitq() for RaBitQ binary quantization.
+ *    - knn_eval_members_pq() for Product Quantization.
+ *    - knn_eval_members_rq8_blocks() for 8-bit Residual Quantization.
+ *    - knn_eval_members_eq16_blocks() for E8 lattice Gosset quantization.
+ *    - knn_eval_members_sq16_blocks() for 16-bit Scalar Quantization.
+ * 5. Scalar fallback: If no block quantization is available, executes two-pointer annular
+ *    scalar traversal via knn_eval_members_annular().
+ * 6. Flushes any remaining batched candidate distances via knn_batch_flush().
  */
 void knn_eval_cluster_members(
     int                     c,

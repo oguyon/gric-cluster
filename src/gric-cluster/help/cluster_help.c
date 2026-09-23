@@ -145,11 +145,21 @@ static const struct help_entry help_entries[] = {
      "(alias for jtf)"},
     {"cpt",
      "Conditional Probability Table (CPT) for cross-tile dependencies"},
-#ifdef USE_CUDA
-    {"gpu",        "Enable CUDA GPU acceleration (Pass 2)"},
+    /* Quantization & Hardware Acceleration */
+    {"eq16",       "16-bit E8 Gosset lattice quantization"},
+    {"sq16",       "16-bit scalar quantization filtering"},
+    {"sq8",        "8-bit scalar quantization filtering"},
+    {"memo",       "Quantized distance memoization cache"},
+    {"batch_dist", "Multi-vector SIMD batch distance"},
+    {"double",     "64-bit double precision execution mode"},
+    {"prof",       "Load dataset profile file (.gricprof)"},
+    {"preset",     "Radius preset (fine, balanced, coarse)"},
+    {"txt",        "Write output artifacts as ASCII text"},
+    {"dcc_sq16",   "Write 16-bit quantized DCC matrix"},
+    {"gpu",        "Enable CUDA GPU acceleration"},
     {"cpu",        "Force CPU execution (disable GPU)"},
     {"gpu-device", "Select GPU device ID (default: 0)"},
-#endif
+    {"dimdensity", "Local intrinsic dimension & density"},
     /* Topics */
     {"intro",      "Getting started with GRIC"},
     {"input",      "Input formats and options"},

@@ -1,6 +1,11 @@
 /**
  * @file knn_cross_route.c
  * @brief Cross-dataset graph frontier routing and basin expansion.
+ *
+ * Implements graph-guided path finding for locating nearest cluster regions in
+ * cross-dataset search. Functions in this file seed the routing priority queue with
+ * evaluated anchor nodes, execute greedy downhill hops along the cluster proximity graph,
+ * expand candidate basins, and traverse multi-hop graph edges while updating pivot bounds.
  */
 
 #include "knn_cross_route.h"
@@ -23,6 +28,14 @@
  * @best_seed_dist:  Pointer to best seed distance.
  * @visited:         Per-query frame visited tracker.
  * @telem:           Telemetry record.
+ *
+ * Populates the initial search frontier with seed frames from nearest evaluated cluster anchors:
+ * 1. Anchor sorting: Sorts evaluated anchor clusters from the locator in ascending distance order.
+ * 2. Seed selection: Extracts representative frames (cluster medoid or high-density member) from
+ *    the top-ranked clusters.
+ * 3. Distance evaluation: Computes exact query-to-seed distances and adds unvisited seeds to the
+ *    frontier array and query max-heap.
+ * 4. Tracking: Updates best_seed_id and best_seed_dist with the closest seed discovered.
  */
 void knn_cross_seed_frontier(
     const ClusterLocatorResult *loc_res,
@@ -145,13 +158,23 @@ void knn_cross_seed_frontier(
  * @cand_reader:      Candidate frame reader.
  * @cand_buffer:      Scratch buffer for candidate frame pixels.
  * @heap:             Max-heap for current query.
- * @best_seed_id:     Pointer to best seed frame ID.
- * @best_seed_dist:   Pointer to best seed distance.
+ * @best_seed_id:     In/out pointer to best seed frame ID.
+ * @best_seed_dist:   In/out pointer to best seed distance.
+ * @last_parent_id:   Output pointer to previous parent frame ID.
+ * @last_parent_dist: Output pointer to previous parent distance.
  * @seed_pivot_ids:   Array of evaluated seed frame IDs.
  * @seed_pivot_dists: Array of computed distances from query to seed pivots.
  * @num_seed_pivots:  Pointer to seed pivot count.
  * @visited:          Per-query frame visited tracker.
  * @telem:            Telemetry record.
+ *
+ * Traverses the proximity graph greedily from initial seeds toward the nearest neighbor basin:
+ * 1. Neighborhood scan: Inspects all adjacent neighbors of the current best_seed_id in the graph.
+ * 2. Distance computation: Evaluates exact query distances for all unvisited adjacent frames.
+ * 3. Gradient descent: If an adjacent neighbor is closer to query_data than best_seed_dist,
+ *    moves the search to that neighbor and repeats.
+ * 4. Local minimum termination: Stops when no adjacent neighbor yields a lower distance than the
+ *    current node, having converged to a local distance basin.
  */
 void knn_greedy_route_to_basin(
     const void *restrict query_data,
@@ -375,13 +398,22 @@ void knn_greedy_route_to_basin(
  * @cand_reader:      Candidate frame reader.
  * @cand_buffer:      Scratch buffer for candidate frame pixels.
  * @heap:             Max-heap for current query.
- * @best_seed_id:     Pointer to best seed frame ID (u*).
- * @best_seed_dist:   Pointer to best seed distance.
+ * @best_seed_id:     In/out pointer to best seed frame ID (u*).
+ * @best_seed_dist:   In/out pointer to best seed distance.
+ * @parent_id:        Parent frame ID from greedy routing.
+ * @parent_dist:      Parent distance from query.
  * @seed_pivot_ids:   Array of evaluated seed frame IDs.
  * @seed_pivot_dists: Array of computed distances from query to seed pivots.
  * @num_seed_pivots:  Pointer to seed pivot count.
  * @visited:          Per-query frame visited tracker.
  * @telem:            Telemetry record.
+ *
+ * Dense graph expansion around the converged 1-NN basin:
+ * 1. Neighborhood gathering: Gathers 1-hop and 2-hop graph neighbors of best_seed_id and parent_id.
+ * 2. Unvisited evaluation: Computes exact query distances for all unvisited candidate nodes.
+ * 3. Heap updating: Inserts viable candidates into the query heap to populate nearest neighbors.
+ * 4. Seed registration: Adds evaluated candidates into seed_pivot_ids[] to serve as metric pivots
+ *    during subsequent cluster filtering.
  */
 void knn_direct_basin_expansion(
     const void *restrict query_data,
@@ -902,6 +934,14 @@ void knn_direct_basin_expansion(
  * @num_seed_pivots:  Pointer to seed pivot count.
  * @visited:          Per-query frame visited tracker.
  * @telem:            Telemetry record.
+ *
+ * Explores graph frontier nodes to expand the neighborhood for cross-dataset queries:
+ * 1. Frontier traversal: Iterates over frontier nodes ordered by distance to query.
+ * 2. Neighbor exploration: For each node, examines adjacent neighbors in model->graph.
+ * 3. Distance evaluation: Evaluates unvisited candidates using early cutoff distance computation
+ *    and inserts surviving frames into the heap.
+ * 4. Containment stopping: Maintains seed pivots and stops when containment criterion is met
+ *    or maximum expansions are reached.
  *
  * Return: 1 if global containment criterion was satisfied, 0 otherwise.
  */

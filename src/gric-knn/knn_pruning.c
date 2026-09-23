@@ -1,6 +1,12 @@
 /**
  * @file knn_pruning.c
  * @brief Implementation of metric lower bounding, multi-pivot filtering, and pruning.
+ *
+ * Implements mathematical bounding heuristics, cluster candidate scoring, and multi-pivot
+ * pruning. Functions in this file evaluate triangular inequality bounds across multiple
+ * pivot anchors, check quantized coordinate filters, prioritize cluster queues, and
+ * determine whether whole clusters or individual frames can be safely skipped without
+ * computing exact Euclidean distances.
  */
 
 #include "knn_pruning.h"
@@ -58,6 +64,12 @@ int compare_cluster_scores(
  * @pivots:      Array of measured anchor pivots.
  * @num_pivots:  Number of active pivots.
  * @sq16_delta:  Quantization error allowance.
+ *
+ * Evaluates multi-pivot triangle inequality bounds for cluster c:
+ * 1. For each active pivot anchor P_p with known distance d(q, P_p) and DCC distance dcc(P_p, c):
+ *    Any member x of cluster c obeys d(q, x) >= |d(q, P_p) - dcc(P_p, c)| - cl_radius.
+ * 2. Compares lower bounds against current_tau / eps_factor (or rlim_cutoff).
+ * 3. Returns 1 if any pivot proves no member can enter the top-k heap, pruning the cluster.
  *
  * Return: 1 if cluster is guaranteed to have no members within current_tau, 0 otherwise.
  */
@@ -928,12 +940,20 @@ int is_member_pruned_by_pointwise_pivots(
  * record_neighbor_and_reciprocal() - Insert candidate into heap and update reciprocal neighbor.
  * @query_id:     Query frame index.
  * @cand_id:      Candidate frame index.
- * @dist:         Calculated distance.
+ * @dist:         Calculated exact Euclidean distance between query and candidate.
  * @config:       Active KnnConfig.
  * @model:        Active KnnModel.
  * @heap:         Heap for query frame.
  * @all_heaps:    All heaps array.
  * @bucket_locks: OpenMP bucket locks (if multithreaded).
+ *
+ * Records candidate into query's heap and propagates reciprocally:
+ * 1. Cutoff filter: Rejects distance if it exceeds config->rlim_cutoff.
+ * 2. Query heap insertion: If heap is not full or dist < heap->tau, pushes cand_id into heap
+ *    under query_id bucket lock synchronization.
+ * 3. Reciprocal update: If reciprocal mode is enabled and cand_id > query_id (breaking ties to
+ *    prevent redundant evaluations), inserts query_id into cand_id's heap in all_heaps under
+ *    cand_id's bucket lock.
  */
 void record_neighbor_and_reciprocal(
     long             query_id,
@@ -1001,6 +1021,9 @@ void record_neighbor_and_reciprocal(
  * @size:       Pointer to heap size.
  * @cluster_id: Cluster index.
  * @dist:       Cluster anchor distance.
+ *
+ * Inserts a new node into the cluster min-priority queue and sifts it up to preserve
+ * the min-heap invariant (pq[parent].dist <= pq[child].dist).
  */
 void cluster_pq_push(
     ClusterPqNode *pq,

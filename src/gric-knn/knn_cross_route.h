@@ -1,6 +1,10 @@
 /**
  * @file knn_cross_route.h
  * @brief Declarations for cross-dataset graph frontier routing and basin expansion.
+ *
+ * Declares functions for navigating the cluster proximity graph and k-NN graph during
+ * cross-dataset queries. Includes frontier seeding, greedy basin routing, direct basin
+ * expansion, and multi-hop graph exploration to locate target clusters and frames.
  */
 
 #ifndef KNN_CROSS_ROUTE_H

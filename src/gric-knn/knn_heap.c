@@ -1,6 +1,11 @@
 /**
  * @file knn_heap.c
  * @brief SIMD Bitonic Top-k Candidate Tracker & Bounded Max-Heap Implementation.
+ *
+ * Implements bounded top-k neighbor tracking using dual execution paths: AVX2 vectorized
+ * sorted arrays for low k (k <= 64) with SIMD duplicate detection and bitmask insertion,
+ * and a standard binary max-heap with logarithmic sift-up, sift-down, and heapsort extraction
+ * for arbitrary k.
  */
 
 #include "knn_heap.h"
@@ -15,11 +20,16 @@
 
 #if defined(__AVX2__)
 /**
- * simd_bitonic_cas() - Conditional compare-and-swap of 8 distance and ID lanes.
+ * simd_bitonic_cas() - Conditional compare-and-swap of 8 distance and ID lanes
  * @dist_a: Pointer to first distance vector.
  * @dist_b: Pointer to second distance vector.
  * @id_a:   Pointer to first ID vector.
  * @id_b:   Pointer to second ID vector.
+ *
+ * Compares two 8-element floating-point distance registers (dist_a and dist_b).
+ * Computes element-wise minimum into dist_a and element-wise maximum into dist_b.
+ * Permutes corresponding integer neighbor IDs (id_a and id_b) using the exact same
+ * comparison bitmask, maintaining invariant mapping between candidates and distances.
  */
 static inline void simd_bitonic_cas(
     __m256  *restrict dist_a,
@@ -47,11 +57,16 @@ static inline void simd_bitonic_cas(
 #endif // __AVX2__
 
 /**
- * knn_heap_init() - Allocate and initialize a bounded heap / SIMD candidate tracker.
- * @heap: Pointer to the KnnMaxHeap structure.
- * @k:    Capacity of the heap (number of nearest neighbors).
+ * knn_heap_init() - Allocate and initialize a bounded heap / SIMD candidate tracker
+ * @heap: Pointer to the KnnMaxHeap structure to initialize.
+ * @k:    Capacity of the heap (number of nearest neighbors requested).
  *
- * Return: 0 on success, -1 on allocation failure.
+ * For small neighbor counts (k <= KNN_SIMD_HEAP_MAX, i.e., k <= 64), initializes a
+ * contiguous SIMD array padded up to 16, 32, or 64 elements with sentinel distance
+ * tau = 1e30, avoiding dynamic heap allocation. For larger k, dynamically allocates
+ * an array of KnnNeighbor structures for a standard binary max-heap.
+ *
+ * Return: 0 on success, or -1 on allocation failure or invalid parameters.
  */
 int knn_heap_init(
     KnnMaxHeap *heap,
@@ -101,8 +116,11 @@ int knn_heap_init(
 }
 
 /**
- * knn_heap_free() - Free heap resources.
+ * knn_heap_free() - Free heap resources
  * @heap: Pointer to the KnnMaxHeap structure.
+ *
+ * Releases dynamically allocated binary heap buffer if present, and zeroes out
+ * heap capacity, element count, and limit k.
  */
 void knn_heap_free(
     KnnMaxHeap *heap)
@@ -121,8 +139,12 @@ void knn_heap_free(
 }
 
 /**
- * knn_heap_reset() - Reset count to 0 for reuse in next query.
+ * knn_heap_reset() - Reset count to 0 for reuse in next query
  * @heap: Pointer to the KnnMaxHeap structure.
+ *
+ * Resets candidate count to 0 and reinitializes SIMD registers with sentinel
+ * values (-1 ID, 1e30 distance) and threshold tau to infinity. Enables per-query
+ * reuse without heap reallocation.
  */
 void knn_heap_reset(
     KnnMaxHeap *heap)
@@ -145,9 +167,13 @@ void knn_heap_reset(
 }
 
 /**
- * knn_heap_contains() - Check if a frame_id is already in the heap.
+ * knn_heap_contains() - Check if a frame_id is already in the heap
  * @heap:     Pointer to the KnnMaxHeap structure.
  * @frame_id: Frame index to look for.
+ *
+ * When using SIMD storage, broadcasts frame_id into an AVX2 256-bit integer register
+ * and performs vectorized equality comparison across all active slots. For binary
+ * heap fallback, performs a linear scan over registered neighbors.
  *
  * Return: 1 if present, 0 otherwise.
  */
@@ -199,10 +225,19 @@ int knn_heap_contains(
 }
 
 /**
- * knn_heap_push() - Insert a neighbor candidate into the bounded heap / tracker.
+ * knn_heap_push() - Insert a neighbor candidate into the bounded heap / tracker
  * @heap:     Pointer to the KnnMaxHeap structure.
  * @frame_id: Candidate frame index.
  * @dist:     Computed distance between query and candidate.
+ *
+ * Evaluates candidate against current kth-neighbor distance threshold tau:
+ * - If heap is full and dist >= tau, candidate is immediately pruned.
+ * - In SIMD mode: rejects duplicates via vectorized equality check, finds sorted
+ *   insertion index via AVX2 comparison and ctzll bitmask, shifts trailing elements
+ *   using memmove, inserts candidate, and updates tau to simd_dist[k - 1].
+ * - In binary max-heap mode: rejects duplicates, appends candidate with sift-up
+ *   if count < k, or replaces root element (current maximum) and performs sift-down
+ *   if dist < root->dist.
  */
 void knn_heap_push(
     KnnMaxHeap *heap,
@@ -368,11 +403,16 @@ void knn_heap_push(
 }
 
 /**
- * knn_heap_extract_sorted() - Extract elements in ascending distance order.
+ * knn_heap_extract_sorted() - Extract elements in ascending distance order
  * @heap:          Pointer to the KnnMaxHeap structure.
  * @out_indices:   Output array for neighbor frame indices (size k).
  * @out_distances: Output array for neighbor distances (size k).
  * @k:             Requested neighbor capacity.
+ *
+ * Copies nearest neighbors sorted from closest to farthest into the caller's output
+ * arrays. For SIMD storage, elements are already kept in sorted order. For binary
+ * max-heap fallback, executes heapsort by repeatedly moving the root maximum to the end
+ * and sifting down. Remaining unused slots (when count < k) are padded with -1 and -1.0.
  */
 void knn_heap_extract_sorted(
     KnnMaxHeap *heap,

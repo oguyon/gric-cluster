@@ -1,6 +1,10 @@
 /**
  * @file knn_member_search.h
  * @brief Intra-cluster and candidate-cluster member evaluation, fastscan, and batching.
+ *
+ * Declares member evaluation workflows and data structures. Defines KnnDistanceBatch for
+ * buffering raw frame distance computations and provides helpers for candidate lower-bound
+ * filtering, annular distance interval traversal, and batch execution.
  */
 
 #ifndef KNN_MEMBER_SEARCH_H
@@ -33,6 +37,12 @@
 extern "C" {
 #endif
 
+/**
+ * knn_popcount32() - Count the number of set bits in a 32-bit unsigned integer.
+ * @value: 32-bit bitmask to inspect.
+ *
+ * Return: Number of bits set to 1 (population count).
+ */
 static inline int knn_popcount32(
     uint32_t value)
 {
@@ -43,6 +53,12 @@ static inline int knn_popcount32(
 #endif
 }
 
+/**
+ * knn_ctz32() - Count trailing zero bits in a non-zero 32-bit integer.
+ * @value: 32-bit integer bitmask (must be non-zero).
+ *
+ * Return: Number of trailing zero bits (0 to 31), identifying the lowest set bit index.
+ */
 static inline int knn_ctz32(
     uint32_t value)
 {

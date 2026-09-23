@@ -1,6 +1,10 @@
 /**
  * @file knn_cuda_ivf.h
  * @brief GPU Inverted-File (IVF) hierarchical metric pruned k-NN search engine.
+ *
+ * Declares the GPU Inverted-File (IVF) search entry point knn_cuda_run_ivf_search().
+ * Dispatches queries to GPU kernels that perform coarse cluster anchor routing followed
+ * by fine-grained inverted-list member evaluations with dynamic metric bounds on CUDA devices.
  */
 
 #ifndef KNN_CUDA_IVF_H
