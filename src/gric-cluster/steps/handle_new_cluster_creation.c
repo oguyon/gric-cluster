@@ -9,6 +9,7 @@
 #include "cluster_core.h"
 #include "frameread.h"
 #include "cluster_bounds.h"
+#include "cluster_gemm_dist.h"
 #include "framedistance.h"
 #include "gric_simd.h"
 #include <stdio.h>
@@ -164,65 +165,24 @@ static void init_new_cluster_distances(
                                  ? &state->scratch.dcc_sq16[(size_t)new_cl * N]
                                  : NULL;
 
-#if GRIC_HAVE_AVX512_TARGET
-        if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && frame_elem >= 16)
+        if (new_cl > 0)
         {
-            int b_count16 = new_cl / 16;
-            #pragma omp parallel for schedule(static) if(b_count16 >= 4)
-            for (int b = 0; b < b_count16; b++)
-            {
-                int b_idx = b * 16;
-                framedist_batch_1x16_contiguous_float(
-                    q,
-                    anchors_mat + (size_t)b_idx * (size_t)frame_elem,
-                    dcc_min_row + b_idx,
-                    frame_elem
-                );
-            }
-            int rem_start = b_count16 * 16;
-            int rem_b8 = (new_cl - rem_start) / 8;
-            for (int b = 0; b < rem_b8; b++)
-            {
-                int b_idx = rem_start + b * 8;
-                framedist_batch_1x8_contiguous_float(
-                    q,
-                    anchors_mat + (size_t)b_idx * (size_t)frame_elem,
-                    dcc_min_row + b_idx,
-                    frame_elem
-                );
-            }
-            for (int cl_idx = rem_start + rem_b8 * 8; cl_idx < new_cl; cl_idx++)
-            {
-                dcc_min_row[cl_idx] = framedist_float(
-                    q,
-                    anchors_mat + (size_t)cl_idx * (size_t)frame_elem,
-                    frame_elem
-                );
-            }
-        }
-        else
-#endif
-        {
-            int b_count8 = new_cl / 8;
-            #pragma omp parallel for schedule(static) if(b_count8 >= 4)
-            for (int b = 0; b < b_count8; b++)
-            {
-                int b_idx = b * 8;
-                framedist_batch_1x8_contiguous_float(
-                    q,
-                    anchors_mat + (size_t)b_idx * (size_t)frame_elem,
-                    dcc_min_row + b_idx,
-                    frame_elem
-                );
-            }
-            for (int cl_idx = b_count8 * 8; cl_idx < new_cl; cl_idx++)
-            {
-                dcc_min_row[cl_idx] = framedist_float(
-                    q,
-                    anchors_mat + (size_t)cl_idx * (size_t)frame_elem,
-                    frame_elem
-                );
-            }
+            const float *q_norm = (state->anchor_norms_float != NULL)
+                                  ? &state->anchor_norms_float[new_cl]
+                                  : NULL;
+            const float *cand_norms = state->anchor_norms_float;
+
+            cluster_gemm_dist_float(
+                q,
+                anchors_mat,
+                q_norm,
+                cand_norms,
+                1,
+                new_cl,
+                (int)frame_elem,
+                NULL,
+                dcc_min_row
+            );
         }
 
         int unique_visited = 0;
@@ -590,6 +550,14 @@ static void assign_new_cluster_anchor(
         memcpy(state->anchor_matrix_float + (size_t)cl_idx * (size_t)dim,
                state->clusters[cl_idx].anchor.data,
                (size_t)dim * sizeof(float));
+        if (state->anchor_norms_float != NULL)
+        {
+            cluster_compute_l2_norms_float(
+                (const float *)state->clusters[cl_idx].anchor.data,
+                1,
+                (int)dim,
+                &state->anchor_norms_float[cl_idx]);
+        }
     }
     current_frame->data = NULL;
     state->clusters[cl_idx].id = cl_idx;

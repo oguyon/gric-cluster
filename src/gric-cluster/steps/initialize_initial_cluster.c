@@ -107,6 +107,16 @@ void initialize_initial_cluster(
         long dim = current_frame->width * current_frame->height;
         memcpy(state->anchor_matrix_float, state->clusters[0].anchor.data,
                (size_t)dim * sizeof(float));
+        if (state->anchor_norms_float != NULL)
+        {
+            float norm0 = 0.0f;
+            const float *a0 = (const float *)state->clusters[0].anchor.data;
+            for (long d = 0; d < dim; d++)
+            {
+                norm0 += a0[d] * a0[d];
+            }
+            state->anchor_norms_float[0] = norm0;
+        }
     }
     current_frame->data = NULL;
     state->clusters[0].id = 0;

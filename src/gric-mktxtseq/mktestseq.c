@@ -279,6 +279,10 @@ int main(
     {
         is_bin_out = 1;
     }
+    else if (ext == NULL)
+    {
+        is_bin_out = 1;
+    }
 
     FILE *f = fopen(filename, is_bin_out ? "wb" : "w");
     if (!f)

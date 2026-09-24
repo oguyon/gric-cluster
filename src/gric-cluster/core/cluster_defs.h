@@ -307,6 +307,7 @@ typedef struct
     int32_t            *anchor_matrix_eq16_interleaved; /**< Block-8 interleaved EQ16 matrix */
     float              *anchor_matrix_adc_interleaved; /**< Block-16 interleaved float ADC matrix */
     float              *anchor_matrix_float; /**< Contiguous [maxnbclust x dim] float anchors */
+    float              *anchor_norms_float;  /**< Contiguous [maxnbclust] squared L2 norms */
     long               *perm_dim;           /**< Spectral dimension ordering [dim] */
     double             *residual_tail;      /**< Precomputed residual tail array [dim] */
 } ClusterState;

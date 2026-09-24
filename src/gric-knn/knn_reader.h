@@ -39,6 +39,9 @@ typedef struct
     FILE         *bin_file;
     void         *bin_mmap_addr;   /**< Mmap base address for .bin files */
     size_t        bin_mmap_size;   /**< Mmap length in bytes */
+    void         *ascii_mmap_addr; /**< Mmap base address for ASCII files */
+    size_t        ascii_mmap_size; /**< Mmap length in bytes for ASCII */
+    int           ascii_fd;        /**< File descriptor for ASCII mmap */
 #ifdef USE_CFITSIO
     fitsfile     *fits_ptr;
 #endif

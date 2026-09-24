@@ -490,6 +490,20 @@ int init_frameread(
             }
             if (strcmp(ext, ".txt") == 0)
             {
+                /* Check if matching .bin dataset exists to adopt by default */
+                char bin_candidate[PATH_MAX];
+                size_t base_len = (size_t)(ext - filename);
+                if (base_len + 5 < sizeof(bin_candidate))
+                {
+                    snprintf(bin_candidate, sizeof(bin_candidate),
+                             "%.*s.bin", (int)base_len, filename);
+                    struct stat st;
+                    if (stat(bin_candidate, &st) == 0 && st.st_size > 64)
+                    {
+                        printf("Adopting binary dataset by default: %s\n", bin_candidate);
+                        return init_bin(bin_candidate);
+                    }
+                }
                 return init_ascii(filename);
             }
             if (strcmp(ext, ".mp4") == 0 || strcmp(ext, ".avi") == 0 ||

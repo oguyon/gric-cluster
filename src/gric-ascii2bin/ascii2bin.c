@@ -74,10 +74,10 @@ int main(
     int   argc,
     char *argv[])
 {
-    if (argc < 3)
+    if (argc < 2)
     {
         print_usage(argv[0]);
-        return (argc == 1) ? 0 : 1;
+        return 0;
     }
 
     const char *input_path = NULL;
@@ -144,9 +144,31 @@ int main(
         }
     }
 
+    char auto_output_path[1024];
+    if (input_path != NULL && output_path == NULL)
+    {
+        snprintf(auto_output_path, sizeof(auto_output_path), "%s", input_path);
+        char *dot = strrchr(auto_output_path, '.');
+        if (dot != NULL)
+        {
+            strcpy(dot, ".bin");
+        }
+        else
+        {
+            size_t rem = sizeof(auto_output_path) - strlen(auto_output_path) - 1;
+            strncat(auto_output_path, ".bin", rem);
+        }
+        output_path = auto_output_path;
+    }
+    else if (output_path != NULL && strrchr(output_path, '.') == NULL)
+    {
+        snprintf(auto_output_path, sizeof(auto_output_path), "%s.bin", output_path);
+        output_path = auto_output_path;
+    }
+
     if (input_path == NULL || output_path == NULL)
     {
-        fprintf(stderr, "Error: Both <input.txt> and <output.bin> are required.\n");
+        fprintf(stderr, "Error: <input.txt> is required.\n");
         return 1;
     }
 

@@ -803,9 +803,41 @@ int probe_run(
         fflush(stderr);
     }
 
+    char actual_path[1024];
+    snprintf(actual_path, sizeof(actual_path), "%s", config->dataset_path);
+
+    int is_bin = 0;
     if (ext != NULL && (strcasecmp(ext, ".bin") == 0 || strcasecmp(ext, ".clusterdat") == 0))
     {
-        data = load_bin_data(config->dataset_path, max_samples, &num_frames,
+        is_bin = 1;
+    }
+    else
+    {
+        char bin_candidate[1024];
+        snprintf(bin_candidate, sizeof(bin_candidate), "%s.bin", config->dataset_path);
+        if (access(bin_candidate, R_OK) == 0)
+        {
+            snprintf(actual_path, sizeof(actual_path), "%s", bin_candidate);
+            is_bin = 1;
+        }
+        else
+        {
+            FILE *fp = fopen(actual_path, "rb");
+            if (fp != NULL)
+            {
+                char magic[4];
+                if (fread(magic, 1, 4, fp) == 4 && memcmp(magic, GRIC_BIN_MAGIC, 4) == 0)
+                {
+                    is_bin = 1;
+                }
+                fclose(fp);
+            }
+        }
+    }
+
+    if (is_bin)
+    {
+        data = load_bin_data(actual_path, max_samples, &num_frames,
                              &width, &height, &dim, &is_double);
     }
 #ifdef USE_CFITSIO

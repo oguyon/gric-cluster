@@ -44,13 +44,14 @@ static void test_norms_float(void)
     int count = 25;
     int dims[] = {1, 2, 7, 8, 15, 16, 33, 128, 512};
     int num_dims = (int)(sizeof(dims) / sizeof(dims[0]));
+    int max_dim = 512;
+    float *mat = (float *)malloc((size_t)count * (size_t)max_dim * sizeof(float));
+    float *norms = (float *)malloc((size_t)count * sizeof(float));
+    assert(mat && norms);
 
     for (int idx = 0; idx < num_dims; idx++)
     {
         int dim = dims[idx];
-        float *mat = (float *)malloc((size_t)count * (size_t)dim * sizeof(float));
-        float *norms = (float *)malloc((size_t)count * sizeof(float));
-        assert(mat && norms);
 
         for (int i = 0; i < count * dim; i++)
         {
@@ -71,10 +72,9 @@ static void test_norms_float(void)
             double err = fabs((double)norms[i] - ref);
             assert(err < 1e-3);
         }
-
-        free(mat);
-        free(norms);
     }
+    free(mat);
+    free(norms);
     printf("  -> Passed norms float tests\n");
 }
 
@@ -84,13 +84,14 @@ static void test_norms_double(void)
     int count = 25;
     int dims[] = {1, 2, 4, 7, 8, 16, 64};
     int num_dims = (int)(sizeof(dims) / sizeof(dims[0]));
+    int max_dim = 64;
+    double *mat = (double *)malloc((size_t)count * (size_t)max_dim * sizeof(double));
+    double *norms = (double *)malloc((size_t)count * sizeof(double));
+    assert(mat && norms);
 
     for (int idx = 0; idx < num_dims; idx++)
     {
         int dim = dims[idx];
-        double *mat = (double *)malloc((size_t)count * (size_t)dim * sizeof(double));
-        double *norms = (double *)malloc((size_t)count * sizeof(double));
-        assert(mat && norms);
 
         for (int i = 0; i < count * dim; i++)
         {
@@ -111,10 +112,9 @@ static void test_norms_double(void)
             double err = fabs(norms[i] - ref);
             assert(err < 1e-9);
         }
-
-        free(mat);
-        free(norms);
     }
+    free(mat);
+    free(norms);
     printf("  -> Passed norms double tests\n");
 }
 
@@ -352,9 +352,22 @@ int main(void)
     test_matrix_dist_float(64, 4, 1024);
     test_matrix_dist_float(4, 64, 1024);
 
+    /* Test M = 1 streaming query mode / DCC calculation */
+    test_matrix_dist_float(1, 1, 512);
+    test_matrix_dist_float(1, 7, 512);
+    test_matrix_dist_float(1, 8, 512);
+    test_matrix_dist_float(1, 16, 512);
+    test_matrix_dist_float(1, 64, 512);
+    test_matrix_dist_float(1, 250, 512);
+    test_matrix_dist_float(1, 500, 512);
+
     /* Test double precision */
     test_matrix_dist_double(16, 16, 128);
     test_matrix_dist_double(7, 11, 23);
+    test_matrix_dist_double(1, 1, 512);
+    test_matrix_dist_double(1, 7, 512);
+    test_matrix_dist_double(1, 8, 512);
+    test_matrix_dist_double(1, 64, 512);
 
     /* Test self distance zero clamping */
     test_self_distance_zero();

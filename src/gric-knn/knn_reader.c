@@ -4,8 +4,8 @@
  *
  * Implements low-overhead random-access frame retrieval from out-of-core storage.
  * Functions in this file inspect dataset file dimensions, build 64-bit line offset tables
- * for ASCII files, memory-map binary files, and read individual coordinate frames
- * across OpenMP threads with thread-safe file descriptors and zero-copy memory access.
+ * for ASCII files via zero-copy mmap, memory-map binary files, and read individual coordinate
+ * frames across OpenMP threads with thread-safe file descriptors and zero-copy memory access.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -13,12 +13,159 @@
 #include "knn_reader.h"
 #include "gric_bin_io.h"
 #include <ctype.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <unistd.h>
+
+/**
+ * parse_ascii_row_float() - Parse an in-memory row of floating-point values.
+ * @p:         Pointer to start of the row data.
+ * @end:       Pointer to end of the mapped memory buffer.
+ * @out:       Destination array for float values.
+ * @nelements: Number of elements to parse.
+ *
+ * Return: 0 on success, or -1 on parse failure.
+ */
+static inline int parse_ascii_row_float(
+    const char *p,
+    const char *end,
+    float      *out,
+    long        nelements)
+{
+    for (long ii = 0; ii < nelements; ii++)
+    {
+        char *next = NULL;
+        if (end - p < 64)
+        {
+            char tmp[64];
+            size_t rem = (size_t)(end - p);
+            memcpy(tmp, p, rem);
+            tmp[rem] = '\0';
+            out[ii] = strtof(tmp, &next);
+            if (next == tmp)
+            {
+                return -1;
+            }
+            p += (next - tmp);
+        }
+        else
+        {
+            out[ii] = strtof(p, &next);
+            if (next == p)
+            {
+                return -1;
+            }
+            p = next;
+        }
+    }
+    return 0;
+}
+
+/**
+ * parse_ascii_row_double() - Parse an in-memory row of double-precision values.
+ * @p:         Pointer to start of the row data.
+ * @end:       Pointer to end of the mapped memory buffer.
+ * @out:       Destination array for double values.
+ * @nelements: Number of elements to parse.
+ *
+ * Return: 0 on success, or -1 on parse failure.
+ */
+static inline int parse_ascii_row_double(
+    const char *p,
+    const char *end,
+    double     *out,
+    long        nelements)
+{
+    for (long ii = 0; ii < nelements; ii++)
+    {
+        char *next = NULL;
+        if (end - p < 64)
+        {
+            char tmp[64];
+            size_t rem = (size_t)(end - p);
+            memcpy(tmp, p, rem);
+            tmp[rem] = '\0';
+            out[ii] = strtod(tmp, &next);
+            if (next == tmp)
+            {
+                return -1;
+            }
+            p += (next - tmp);
+        }
+        else
+        {
+            out[ii] = strtod(p, &next);
+            if (next == p)
+            {
+                return -1;
+            }
+            p = next;
+        }
+    }
+    return 0;
+}
+
+/**
+ * probe_binary_dataset_path() - Probe if a corresponding .bin dataset exists.
+ * @orig_path: Original input file path.
+ * @bin_path:  Output buffer for probed .bin path.
+ * @max_len:   Size of @bin_path buffer.
+ *
+ * Return: 1 if matching .bin exists and has valid header, 0 otherwise.
+ */
+static int probe_binary_dataset_path(
+    const char *orig_path,
+    char       *bin_path,
+    size_t      max_len)
+{
+    if (orig_path == NULL || bin_path == NULL)
+    {
+        return 0;
+    }
+
+    size_t len = strlen(orig_path);
+    if (len >= 4 && strcasecmp(orig_path + len - 4, ".bin") == 0)
+    {
+        return 0;
+    }
+
+    /* If .txt, check replacing .txt with .bin */
+    if (len >= 4 && strcasecmp(orig_path + len - 4, ".txt") == 0)
+    {
+        if (len + 1 >= max_len)
+        {
+            return 0;
+        }
+        snprintf(bin_path, max_len, "%.*s.bin", (int)(len - 4), orig_path);
+        struct stat st;
+        if (stat(bin_path, &st) == 0 && st.st_size > 64)
+        {
+            return 1;
+        }
+    }
+
+    /* If extensionless, check orig_path.bin */
+    if (strrchr(orig_path, '.') == NULL)
+    {
+        if (len + 5 >= max_len)
+        {
+            return 0;
+        }
+        snprintf(bin_path, max_len, "%s.bin", orig_path);
+        struct stat st;
+        if (stat(bin_path, &st) == 0 && st.st_size > 64)
+        {
+            return 1;
+        }
+    }
+
+    return 0;
+}
 
 /**
  * check_is_fits_path() - Check if path has FITS extension.
@@ -71,7 +218,14 @@ int knn_reader_inspect(
     *frame_width = 0;
     *frame_height = 1;
 
-    FILE *fp_bin = fopen(path, "rb");
+    char auto_bin[1024];
+    const char *effective_path = path;
+    if (probe_binary_dataset_path(path, auto_bin, sizeof(auto_bin)))
+    {
+        effective_path = auto_bin;
+    }
+
+    FILE *fp_bin = fopen(effective_path, "rb");
     if (fp_bin != NULL)
     {
         gric_bin_header_t hdr;
@@ -95,12 +249,12 @@ int knn_reader_inspect(
         fclose(fp_bin);
     }
 
-    if (check_is_fits_path(path))
+    if (check_is_fits_path(effective_path))
     {
 #ifdef USE_CFITSIO
         int status = 0;
         fitsfile *fptr = NULL;
-        fits_open_file(&fptr, path, READONLY, &status);
+        fits_open_file(&fptr, effective_path, READONLY, &status);
         if (status == 0 && fptr != NULL)
         {
             int naxis = 0;
@@ -132,7 +286,7 @@ int knn_reader_inspect(
 #endif
     }
 
-    FILE *f = fopen(path, "r");
+    FILE *f = fopen(effective_path, "r");
     if (f == NULL)
     {
         return -1;
@@ -188,7 +342,7 @@ int knn_reader_inspect(
 }
 
 /**
- * build_ascii_index() - Build 64-bit line offset seek table for ASCII files.
+ * build_ascii_index() - Build 64-bit line offset table via zero-copy mmap.
  * @reader: Pointer to KnnFrameReader.
  *
  * Return: 0 on success, -1 on error.
@@ -196,45 +350,110 @@ int knn_reader_inspect(
 static int build_ascii_index(
     KnnFrameReader *reader)
 {
-    FILE *f = fopen(reader->input_path, "r");
-    if (f == NULL)
+    reader->ascii_fd = open(reader->input_path, O_RDONLY);
+    if (reader->ascii_fd < 0)
     {
         fprintf(stderr, "Error: Could not open ASCII dataset '%s'\n", reader->input_path);
         return -1;
     }
 
-    reader->line_offsets = (uint64_t *)malloc((size_t)reader->total_frames * sizeof(uint64_t));
+    struct stat st;
+    if (fstat(reader->ascii_fd, &st) != 0 || st.st_size <= 0)
+    {
+        close(reader->ascii_fd);
+        reader->ascii_fd = -1;
+        return -1;
+    }
+
+    reader->ascii_mmap_size = (size_t)st.st_size;
+    reader->ascii_mmap_addr = mmap(NULL, reader->ascii_mmap_size, PROT_READ, MAP_PRIVATE,
+                                   reader->ascii_fd, 0);
+    if (reader->ascii_mmap_addr == MAP_FAILED)
+    {
+        reader->ascii_mmap_addr = NULL;
+        reader->ascii_mmap_size = 0;
+        close(reader->ascii_fd);
+        reader->ascii_fd = -1;
+        return -1;
+    }
+
+    posix_madvise(reader->ascii_mmap_addr, reader->ascii_mmap_size,
+                  POSIX_MADV_SEQUENTIAL | POSIX_MADV_WILLNEED);
+
+    size_t line_count = 0;
+    const char *buf = (const char *)reader->ascii_mmap_addr;
+    const char *buf_end = buf + reader->ascii_mmap_size;
+    const char *scan = buf;
+
+    while (scan < buf_end)
+    {
+        const char *nl = (const char *)memchr(scan, '\n', (size_t)(buf_end - scan));
+        if (nl == NULL)
+        {
+            line_count++;
+            break;
+        }
+        line_count++;
+        scan = nl + 1;
+    }
+
+    if (line_count == 0)
+    {
+        line_count = 1;
+    }
+
+    reader->line_offsets = (uint64_t *)malloc(line_count * sizeof(uint64_t));
     if (reader->line_offsets == NULL)
     {
-        fclose(f);
+        munmap(reader->ascii_mmap_addr, reader->ascii_mmap_size);
+        reader->ascii_mmap_addr = NULL;
+        reader->ascii_mmap_size = 0;
+        close(reader->ascii_fd);
+        reader->ascii_fd = -1;
         return -1;
     }
 
-    char line_buf[65536];
-    long frame_idx = 0;
-    off_t offset = ftello(f);
-
-    while (fgets(line_buf, sizeof(line_buf), f) != NULL && frame_idx < reader->total_frames)
     {
-        if (line_buf[0] != '#' && line_buf[0] != '\n' && line_buf[0] != '\0')
+        /* Scan mapped buffer to index lines */
+        size_t pos = 0;
+        long frame_idx = 0;
+
+        while (pos < reader->ascii_mmap_size && frame_idx < reader->total_frames)
         {
-            reader->line_offsets[frame_idx++] = (uint64_t)offset;
+            size_t line_end = pos;
+            while (line_end < reader->ascii_mmap_size &&
+                   buf[line_end] != '\n' && buf[line_end] != '\r')
+            {
+                line_end++;
+            }
+
+            size_t p = pos;
+            while (p < line_end && isspace((unsigned char)buf[p]))
+            {
+                p++;
+            }
+
+            if (p < line_end && buf[p] != '#')
+            {
+                reader->line_offsets[frame_idx++] = (uint64_t)p;
+            }
+
+            pos = line_end;
+            if (pos < reader->ascii_mmap_size && buf[pos] == '\r')
+            {
+                pos++;
+            }
+            if (pos < reader->ascii_mmap_size && buf[pos] == '\n')
+            {
+                pos++;
+            }
+        } // while pos < ascii_mmap_size
+
+        if (frame_idx < reader->total_frames)
+        {
+            fprintf(stderr, "Warning: Expected %ld ASCII frames, indexed %ld\n",
+                    reader->total_frames, frame_idx);
         }
-        offset = ftello(f);
-    } // while indexing
-
-    fclose(f);
-
-    if (frame_idx < reader->total_frames)
-    {
-        fprintf(stderr, "Warning: Expected %ld ASCII frames, indexed %ld\n",
-                reader->total_frames, frame_idx);
-    }
-
-    reader->ascii_file = fopen(reader->input_path, "r");
-    if (reader->ascii_file == NULL)
-    {
-        return -1;
     }
 
     return 0;
@@ -247,6 +466,7 @@ static int build_ascii_index(
  * @total_frames: Total number of frames in dataset.
  * @frame_width:  Frame width in pixels/coordinates.
  * @frame_height: Frame height in pixels.
+ * @use_double:   1 for double precision, 0 for single-precision float.
  *
  * Return: 0 on success, -1 on error.
  */
@@ -264,14 +484,24 @@ int knn_reader_open(
     }
 
     memset(reader, 0, sizeof(KnnFrameReader));
-    reader->input_path = strdup(input_path);
+    reader->ascii_fd = -1;
+
+    char auto_bin[1024];
+    const char *effective_path = input_path;
+    if (probe_binary_dataset_path(input_path, auto_bin, sizeof(auto_bin)))
+    {
+        printf("[READER] Adopting binary dataset by default: %s\n", auto_bin);
+        effective_path = auto_bin;
+    }
+
+    reader->input_path = strdup(effective_path);
     reader->total_frames = total_frames;
     reader->frame_width = frame_width;
     reader->frame_height = frame_height;
     reader->frame_elements = frame_width * frame_height;
     reader->use_double = use_double;
 
-    FILE *fp_bin = fopen(input_path, "rb");
+    FILE *fp_bin = fopen(effective_path, "rb");
     if (fp_bin != NULL)
     {
         gric_bin_header_t hdr;
@@ -314,7 +544,7 @@ int knn_reader_open(
         fclose(fp_bin);
     }
 
-    reader->is_fits = check_is_fits_path(input_path);
+    reader->is_fits = check_is_fits_path(effective_path);
 
     if (reader->is_fits)
     {
@@ -333,10 +563,8 @@ int knn_reader_open(
         return -1;
 #endif
     }
-    else
-    {
-        return build_ascii_index(reader);
-    }
+
+    return build_ascii_index(reader);
 }
 
 /**
@@ -362,6 +590,7 @@ int knn_reader_open_memory(
     }
 
     memset(reader, 0, sizeof(KnnFrameReader));
+    reader->ascii_fd = -1;
     reader->memory_data = memory_data;
     reader->total_frames = total_frames;
     reader->frame_width = frame_elements;
@@ -391,10 +620,22 @@ int knn_reader_clone_thread(
     memcpy(dst, src, sizeof(KnnFrameReader));
     dst->bin_mmap_addr = NULL;
     dst->bin_mmap_size = 0;
+    dst->ascii_fd = -1;
 
     if (src->memory_data != NULL)
     {
         dst->memory_data = src->memory_data;
+        dst->input_path = NULL;
+        dst->ascii_file = NULL;
+        dst->bin_file = NULL;
+        return 0;
+    }
+
+    if (src->ascii_mmap_addr != NULL)
+    {
+        dst->ascii_mmap_addr = src->ascii_mmap_addr;
+        dst->ascii_mmap_size = src->ascii_mmap_size;
+        dst->line_offsets = src->line_offsets;
         dst->input_path = NULL;
         dst->ascii_file = NULL;
         dst->bin_file = NULL;
@@ -472,13 +713,25 @@ int knn_reader_read_frame(
         return 0;
     }
 
+    if (reader->ascii_mmap_addr != NULL && reader->line_offsets != NULL)
+    {
+        const char *p = (const char *)reader->ascii_mmap_addr + reader->line_offsets[frame_id];
+        const char *end = (const char *)reader->ascii_mmap_addr + reader->ascii_mmap_size;
+        if (reader->use_double)
+        {
+            return parse_ascii_row_double(p, end, (double *)out_data, reader->frame_elements);
+        }
+        return parse_ascii_row_float(p, end, (float *)out_data, reader->frame_elements);
+    }
+
     if (reader->is_bin)
     {
         if (reader->bin_file == NULL)
         {
             return -1;
         }
-        size_t bin_elem_size = gric_bin_data_type_size((gric_bin_data_type_t)reader->bin_data_type);
+        size_t bin_elem_size = gric_bin_data_type_size(
+            (gric_bin_data_type_t)reader->bin_data_type);
         if (bin_elem_size == 0)
         {
             return -1;
@@ -553,7 +806,8 @@ int knn_reader_read_frame(
         }
         else if (reader->bin_data_type == GRIC_BIN_DTYPE_UINT32)
         {
-            uint32_t *ubuf = (uint32_t *)malloc((size_t)reader->frame_elements * sizeof(uint32_t));
+            size_t ubytes = (size_t)reader->frame_elements * sizeof(uint32_t);
+            uint32_t *ubuf = (uint32_t *)malloc(ubytes);
             if (ubuf == NULL)
             {
                 return -1;
@@ -582,6 +836,10 @@ int knn_reader_read_frame(
             }
             free(ubuf);
         }
+        else
+        {
+            return -1;
+        }
         return 0;
     }
 
@@ -590,51 +848,49 @@ int knn_reader_read_frame(
 #ifdef USE_CFITSIO
         int status = 0;
         long fpixel[3] = {1, 1, frame_id + 1};
-        int dtype = reader->use_double ? TDOUBLE : TFLOAT;
-        fits_read_pix(reader->fits_ptr, dtype, fpixel, reader->frame_elements, NULL,
+        int datatype = reader->use_double ? TDOUBLE : TFLOAT;
+        fits_read_pix(reader->fits_ptr, datatype, fpixel, reader->frame_elements, NULL,
                       out_data, NULL, &status);
         return (status == 0) ? 0 : -1;
 #else
         return -1;
 #endif
     }
+
+    if (reader->ascii_file == NULL || reader->line_offsets == NULL)
+    {
+        return -1;
+    }
+
+    off_t offset = (off_t)reader->line_offsets[frame_id];
+    if (fseeko(reader->ascii_file, offset, SEEK_SET) != 0)
+    {
+        return -1;
+    }
+
+    if (reader->use_double)
+    {
+        double *dptr = (double *)out_data;
+        for (long k = 0; k < reader->frame_elements; k++)
+        {
+            if (fscanf(reader->ascii_file, "%lf", &dptr[k]) != 1)
+            {
+                dptr[k] = 0.0;
+            }
+        }
+    }
     else
     {
-        if (reader->ascii_file == NULL || reader->line_offsets == NULL)
+        float *fptr = (float *)out_data;
+        for (long k = 0; k < reader->frame_elements; k++)
         {
-            return -1;
-        }
-
-        off_t offset = (off_t)reader->line_offsets[frame_id];
-        if (fseeko(reader->ascii_file, offset, SEEK_SET) != 0)
-        {
-            return -1;
-        }
-
-        if (reader->use_double)
-        {
-            double *dptr = (double *)out_data;
-            for (long k = 0; k < reader->frame_elements; k++)
+            if (fscanf(reader->ascii_file, "%f", &fptr[k]) != 1)
             {
-                if (fscanf(reader->ascii_file, "%lf", &dptr[k]) != 1)
-                {
-                    dptr[k] = 0.0;
-                }
+                fptr[k] = 0.0f;
             }
         }
-        else
-        {
-            float *fptr = (float *)out_data;
-            for (long k = 0; k < reader->frame_elements; k++)
-            {
-                if (fscanf(reader->ascii_file, "%f", &fptr[k]) != 1)
-                {
-                    fptr[k] = 0.0f;
-                }
-            }
-        }
-        return 0;
     }
+    return 0;
 }
 
 /**
@@ -695,8 +951,8 @@ void knn_reader_close_thread(
  * knn_reader_close() - Close master reader and free shared index structures
  * @reader: Pointer to KnnFrameReader context.
  *
- * Unmaps memory-mapped binary files, releases thread-local file handles, frees ASCII
- * line offset tables, and resets reader fields to NULL or zero.
+ * Unmaps memory-mapped binary and ASCII files, releases thread-local file handles,
+ * frees ASCII line offset tables, and resets reader fields to NULL or zero.
  */
 void knn_reader_close(
     KnnFrameReader *reader)
@@ -712,6 +968,19 @@ void knn_reader_close(
         reader->bin_mmap_addr = NULL;
         reader->bin_mmap_size = 0;
         reader->memory_data = NULL;
+    }
+
+    if (reader->ascii_mmap_addr != NULL && reader->ascii_mmap_addr != MAP_FAILED)
+    {
+        munmap(reader->ascii_mmap_addr, reader->ascii_mmap_size);
+        reader->ascii_mmap_addr = NULL;
+        reader->ascii_mmap_size = 0;
+    }
+
+    if (reader->ascii_fd >= 0)
+    {
+        close(reader->ascii_fd);
+        reader->ascii_fd = -1;
     }
 
     knn_reader_close_thread(reader);

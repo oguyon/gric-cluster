@@ -886,6 +886,12 @@ void run_clustering(
         state->anchor_matrix_float = NULL;
     }
 
+    if (state->anchor_norms_float)
+    {
+        free(state->anchor_norms_float);
+        state->anchor_norms_float = NULL;
+    }
+
     free(sorting_candidates);
     if (verbose_candidates)
     {
