@@ -921,6 +921,174 @@ sq16_postprocess:
 }
 
 /**
+ * knn_try_load_eq16_auto() - Attempt loading precomputed EQ16 sidecar cache from standard paths.
+ * @model:  Pointer to KnnModel.
+ * @config: Pointer to KnnConfig.
+ * @N:      Expected number of frames.
+ * @dim:    Expected frame dimension.
+ *
+ * Checks explicit config path, <dataset_stem>.eq16.bin, <dataset_stem>.eq16,
+ * <cluster_dir>/dataset.eq16.bin, and <cluster_dir>/dataset.eq16.
+ *
+ * Return: 0 on success, -1 if no matching cache was found.
+ */
+static int knn_try_load_eq16_auto(
+    KnnModel        *model,
+    const KnnConfig *config,
+    long             N,
+    long             dim)
+{
+    const char *paths[6];
+    int n_paths = 0;
+    char p1[4096];
+    char p2[4096];
+    char p3[4096];
+    char p4[4096];
+
+    if (config->eq16_load_path != NULL)
+    {
+        paths[n_paths++] = config->eq16_load_path;
+    }
+    else
+    {
+        if (config->input_data_path != NULL && config->input_data_path[0] != '\0')
+        {
+            char stem[2048];
+            strncpy(stem, config->input_data_path, sizeof(stem) - 1);
+            stem[sizeof(stem) - 1] = '\0';
+            char *dot = strrchr(stem, '.');
+            if (dot != NULL && (strcmp(dot, ".bin") == 0 || strcmp(dot, ".txt") == 0))
+            {
+                *dot = '\0';
+            }
+            snprintf(p1, sizeof(p1), "%s.eq16.bin", stem);
+            paths[n_paths++] = p1;
+            snprintf(p2, sizeof(p2), "%s.eq16", stem);
+            paths[n_paths++] = p2;
+        }
+
+        if (config->cluster_dir != NULL && config->cluster_dir[0] != '\0')
+        {
+            snprintf(p3, sizeof(p3), "%s/dataset.eq16.bin", config->cluster_dir);
+            paths[n_paths++] = p3;
+            snprintf(p4, sizeof(p4), "%s/dataset.eq16", config->cluster_dir);
+            paths[n_paths++] = p4;
+        }
+    }
+
+    for (int i = 0; i < n_paths; i++)
+    {
+        const char *cand_path = paths[i];
+        if (cand_path == NULL || cand_path[0] == '\0')
+        {
+            continue;
+        }
+        if (access(cand_path, R_OK) != 0)
+        {
+            continue;
+        }
+
+        long loaded_frames = 0;
+        if (eq16_load_sidecar(cand_path, &model->eq16_params,
+                              &model->eq16_dataset_buffer, &loaded_frames) == 0)
+        {
+            if (loaded_frames == N && model->eq16_params.dim == dim)
+            {
+                if (config->verbose_level >= 1)
+                {
+                    double mb = (double)((size_t)N * (size_t)dim * sizeof(int16_t)) /
+                                (1024.0 * 1024.0);
+                    printf("Loaded persistent EQ16 cache: %s (%ld frames, %.2f MB)\n",
+                           cand_path, N, mb);
+                }
+                return 0;
+            }
+            if (model->eq16_dataset_buffer != NULL)
+            {
+                free(model->eq16_dataset_buffer);
+                model->eq16_dataset_buffer = NULL;
+            }
+        }
+    }
+
+    return -1;
+}
+
+/**
+ * knn_auto_save_eq16() - Persist pre-quantized EQ16 dataset buffer for zero-overhead re-use.
+ * @model:  Pointer to KnnModel with active eq16_dataset_buffer.
+ * @config: Pointer to KnnConfig.
+ * @N:      Total frame count.
+ */
+static void knn_auto_save_eq16(
+    const KnnModel  *model,
+    const KnnConfig *config,
+    long             N)
+{
+    if (model->eq16_dataset_buffer == NULL)
+    {
+        return;
+    }
+
+    if (config->eq16_save_path != NULL)
+    {
+        if (eq16_save_sidecar(config->eq16_save_path, &model->eq16_params,
+                              model->eq16_dataset_buffer, N) == 0)
+        {
+            if (config->verbose_level >= 1)
+            {
+                printf("Saved EQ16 sidecar file to '%s'\n", config->eq16_save_path);
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Warning: Failed to write EQ16 sidecar file '%s'\n",
+                    config->eq16_save_path);
+        }
+        return;
+    }
+
+    char save_path[4096];
+    int saved = 0;
+
+    if (config->input_data_path != NULL && config->input_data_path[0] != '\0')
+    {
+        char stem[2048];
+        strncpy(stem, config->input_data_path, sizeof(stem) - 1);
+        stem[sizeof(stem) - 1] = '\0';
+        char *dot = strrchr(stem, '.');
+        if (dot != NULL && (strcmp(dot, ".bin") == 0 || strcmp(dot, ".txt") == 0))
+        {
+            *dot = '\0';
+        }
+        snprintf(save_path, sizeof(save_path), "%s.eq16.bin", stem);
+        if (eq16_save_sidecar(save_path, &model->eq16_params,
+                              model->eq16_dataset_buffer, N) == 0)
+        {
+            if (config->verbose_level >= 1)
+            {
+                printf("Auto-persisted EQ16 cache to '%s'\n", save_path);
+            }
+            saved = 1;
+        }
+    }
+
+    if (!saved && config->cluster_dir != NULL && config->cluster_dir[0] != '\0')
+    {
+        snprintf(save_path, sizeof(save_path), "%s/dataset.eq16.bin", config->cluster_dir);
+        if (eq16_save_sidecar(save_path, &model->eq16_params,
+                              model->eq16_dataset_buffer, N) == 0)
+        {
+            if (config->verbose_level >= 1)
+            {
+                printf("Auto-persisted EQ16 cache to '%s'\n", save_path);
+            }
+            saved = 1;
+        }
+    }
+}
+
+/**
  * knn_model_build_or_load_eq16() - Build or load quantized EQ16 dataset buffer into KnnModel.
  * @model:  Pointer to initialized KnnModel.
  * @config: Pointer to KnnConfig.
@@ -943,31 +1111,9 @@ int knn_model_build_or_load_eq16(
         return 0;
     }
 
-    // Path 1: Load precomputed sidecar file if path specified
-    if (config->eq16_load_path != NULL)
+    // Path 1: Load precomputed sidecar file (explicit path or auto-discovered .eq16.bin)
+    if (knn_try_load_eq16_auto(model, config, N, dim) == 0)
     {
-        long loaded_frames = 0;
-        if (eq16_load_sidecar(config->eq16_load_path, &model->eq16_params,
-                              &model->eq16_dataset_buffer, &loaded_frames) != 0)
-        {
-            fprintf(stderr, "Error: Failed to load EQ16 sidecar file '%s'\n",
-                    config->eq16_load_path);
-            return -1;
-        }
-        if (loaded_frames != N || model->eq16_params.dim != dim)
-        {
-            fprintf(stderr, "Error: EQ16 sidecar dimensions mismatch (%ldx%ld vs %ldx%ld)\n",
-                    loaded_frames, model->eq16_params.dim, N, dim);
-            free(model->eq16_dataset_buffer);
-            model->eq16_dataset_buffer = NULL;
-            return -1;
-        }
-        if (config->verbose_level >= 1)
-        {
-            printf("Loaded EQ16 sidecar: %ld frames, range [%.4f, %.4f], scale=%.6f\n",
-                   N, model->eq16_params.min_val, model->eq16_params.max_val,
-                   model->eq16_params.scale);
-        }
         goto eq16_postprocess;
     }
 
@@ -1112,23 +1258,8 @@ int knn_model_build_or_load_eq16(
                model->eq16_params.min_val, model->eq16_params.max_val);
     }
 
-    // Optional: Save sidecar file
-    if (config->eq16_save_path != NULL)
-    {
-        if (eq16_save_sidecar(config->eq16_save_path, &model->eq16_params,
-                              model->eq16_dataset_buffer, N) == 0)
-        {
-            if (config->verbose_level >= 1)
-            {
-                printf("Saved EQ16 sidecar file to '%s'\n", config->eq16_save_path);
-            }
-        }
-        else
-        {
-            fprintf(stderr, "Warning: Failed to write EQ16 sidecar file '%s'\n",
-                    config->eq16_save_path);
-        }
-    }
+    // Save sidecar file (explicit path or auto-persisted .eq16.bin)
+    knn_auto_save_eq16(model, config, N);
 
 eq16_postprocess:
     // Pre-quantize anchor vectors for fast Level 2 anchor lower-bound pruning
