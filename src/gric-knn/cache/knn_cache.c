@@ -29,6 +29,184 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+#include <immintrin.h>
+#endif
+
+/**
+ * calc_minmax_float() - Compute min and max of a float array using AVX2 when available.
+ * @arr:     Pointer to float array.
+ * @n:       Number of elements in array.
+ * @out_min: In/Out pointer to current minimum value.
+ * @out_max: In/Out pointer to current maximum value.
+ */
+static void calc_minmax_float(
+    const float *restrict arr,
+    size_t                n,
+    float *restrict       out_min,
+    float *restrict       out_max)
+{
+    float lmin = *out_min;
+    float lmax = *out_max;
+    size_t i = 0;
+
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+    if (n >= 16)
+    {
+        __m256 vmin0 = _mm256_set1_ps(lmin);
+        __m256 vmin1 = _mm256_set1_ps(lmin);
+        __m256 vmax0 = _mm256_set1_ps(lmax);
+        __m256 vmax1 = _mm256_set1_ps(lmax);
+
+        for (; i + 15 < n; i += 16)
+        {
+            __m256 v0 = _mm256_loadu_ps(&arr[i]);
+            __m256 v1 = _mm256_loadu_ps(&arr[i + 8]);
+            vmin0 = _mm256_min_ps(vmin0, v0);
+            vmin1 = _mm256_min_ps(vmin1, v1);
+            vmax0 = _mm256_max_ps(vmax0, v0);
+            vmax1 = _mm256_max_ps(vmax1, v1);
+        }
+
+        __m256 vmin = _mm256_min_ps(vmin0, vmin1);
+        __m256 vmax = _mm256_max_ps(vmax0, vmax1);
+
+        for (; i + 7 < n; i += 8)
+        {
+            __m256 v = _mm256_loadu_ps(&arr[i]);
+            vmin = _mm256_min_ps(vmin, v);
+            vmax = _mm256_max_ps(vmax, v);
+        }
+
+        /* Horizontal min across 256-bit vector */
+        __m128 vmin_low = _mm256_castps256_ps128(vmin);
+        __m128 vmin_high = _mm256_extractf128_ps(vmin, 1);
+        __m128 vmin128 = _mm_min_ps(vmin_low, vmin_high);
+        vmin128 = _mm_min_ps(vmin128, _mm_movehl_ps(vmin128, vmin128));
+        vmin128 = _mm_min_ss(vmin128, _mm_shuffle_ps(vmin128, vmin128, 1));
+        float fmin = _mm_cvtss_f32(vmin128);
+
+        /* Horizontal max across 256-bit vector */
+        __m128 vmax_low = _mm256_castps256_ps128(vmax);
+        __m128 vmax_high = _mm256_extractf128_ps(vmax, 1);
+        __m128 vmax128 = _mm_max_ps(vmax_low, vmax_high);
+        vmax128 = _mm_max_ps(vmax128, _mm_movehl_ps(vmax128, vmax128));
+        vmax128 = _mm_max_ss(vmax128, _mm_shuffle_ps(vmax128, vmax128, 1));
+        float fmax = _mm_cvtss_f32(vmax128);
+
+        if (fmin < lmin)
+        {
+            lmin = fmin;
+        }
+        if (fmax > lmax)
+        {
+            lmax = fmax;
+        }
+    }
+#endif
+
+    for (; i < n; i++)
+    {
+        float v = arr[i];
+        if (v < lmin)
+        {
+            lmin = v;
+        }
+        if (v > lmax)
+        {
+            lmax = v;
+        }
+    }
+
+    *out_min = lmin;
+    *out_max = lmax;
+}
+
+/**
+ * calc_minmax_double() - Compute min and max of a double array converting to float.
+ * @arr:     Pointer to double array.
+ * @n:       Number of elements in array.
+ * @out_min: In/Out pointer to current minimum value.
+ * @out_max: In/Out pointer to current maximum value.
+ */
+static void calc_minmax_double(
+    const double *restrict arr,
+    size_t                 n,
+    float *restrict        out_min,
+    float *restrict        out_max)
+{
+    float lmin = *out_min;
+    float lmax = *out_max;
+    size_t i = 0;
+
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+    if (n >= 8)
+    {
+        __m128 vmin0 = _mm_set1_ps(lmin);
+        __m128 vmin1 = _mm_set1_ps(lmin);
+        __m128 vmax0 = _mm_set1_ps(lmax);
+        __m128 vmax1 = _mm_set1_ps(lmax);
+
+        for (; i + 7 < n; i += 8)
+        {
+            __m256d vd0 = _mm256_loadu_pd(&arr[i]);
+            __m256d vd1 = _mm256_loadu_pd(&arr[i + 4]);
+            __m128 vf0 = _mm256_cvtpd_ps(vd0);
+            __m128 vf1 = _mm256_cvtpd_ps(vd1);
+            vmin0 = _mm_min_ps(vmin0, vf0);
+            vmin1 = _mm_min_ps(vmin1, vf1);
+            vmax0 = _mm_max_ps(vmax0, vf0);
+            vmax1 = _mm_max_ps(vmax1, vf1);
+        }
+
+        __m128 vmin = _mm_min_ps(vmin0, vmin1);
+        __m128 vmax = _mm_max_ps(vmax0, vmax1);
+
+        for (; i + 3 < n; i += 4)
+        {
+            __m256d vd = _mm256_loadu_pd(&arr[i]);
+            __m128 vf = _mm256_cvtpd_ps(vd);
+            vmin = _mm_min_ps(vmin, vf);
+            vmax = _mm_max_ps(vmax, vf);
+        }
+
+        /* Horizontal min */
+        vmin = _mm_min_ps(vmin, _mm_movehl_ps(vmin, vmin));
+        vmin = _mm_min_ss(vmin, _mm_shuffle_ps(vmin, vmin, 1));
+        float fmin = _mm_cvtss_f32(vmin);
+
+        /* Horizontal max */
+        vmax = _mm_max_ps(vmax, _mm_movehl_ps(vmax, vmax));
+        vmax = _mm_max_ss(vmax, _mm_shuffle_ps(vmax, vmax, 1));
+        float fmax = _mm_cvtss_f32(vmax);
+
+        if (fmin < lmin)
+        {
+            lmin = fmin;
+        }
+        if (fmax > lmax)
+        {
+            lmax = fmax;
+        }
+    }
+#endif
+
+    for (; i < n; i++)
+    {
+        float v = (float)arr[i];
+        if (v < lmin)
+        {
+            lmin = v;
+        }
+        if (v > lmax)
+        {
+            lmax = v;
+        }
+    }
+
+    *out_min = lmin;
+    *out_max = lmax;
+}
 
 /**
  * knn_calibrate_dataset_minmax() - Scan dataset frames to find global minimum and maximum.
@@ -61,41 +239,49 @@ static int knn_calibrate_dataset_minmax(
         {
             const double *da = (const double *)reader->memory_data;
 #ifdef _OPENMP
-            #pragma omp parallel for reduction(min:global_min) reduction(max:global_max) \
-                schedule(static)
-#endif
-            for (size_t i = 0; i < total_elements; i++)
+#pragma omp parallel reduction(min:global_min) reduction(max:global_max)
             {
-                float v = (float)da[i];
-                if (v < global_min)
+                int tid = omp_get_thread_num();
+                int nthreads = omp_get_num_threads();
+                size_t chunk = (total_elements + (size_t)nthreads - 1) / (size_t)nthreads;
+                size_t start = (size_t)tid * chunk;
+                size_t end = start + chunk;
+                if (end > total_elements)
                 {
-                    global_min = v;
+                    end = total_elements;
                 }
-                if (v > global_max)
+                if (start < end)
                 {
-                    global_max = v;
+                    calc_minmax_double(da + start, end - start, &global_min, &global_max);
                 }
             }
+#else
+            calc_minmax_double(da, total_elements, &global_min, &global_max);
+#endif
         }
         else
         {
             const float *fa = (const float *)reader->memory_data;
 #ifdef _OPENMP
-            #pragma omp parallel for reduction(min:global_min) reduction(max:global_max) \
-                schedule(static)
-#endif
-            for (size_t i = 0; i < total_elements; i++)
+#pragma omp parallel reduction(min:global_min) reduction(max:global_max)
             {
-                float v = fa[i];
-                if (v < global_min)
+                int tid = omp_get_thread_num();
+                int nthreads = omp_get_num_threads();
+                size_t chunk = (total_elements + (size_t)nthreads - 1) / (size_t)nthreads;
+                size_t start = (size_t)tid * chunk;
+                size_t end = start + chunk;
+                if (end > total_elements)
                 {
-                    global_min = v;
+                    end = total_elements;
                 }
-                if (v > global_max)
+                if (start < end)
                 {
-                    global_max = v;
+                    calc_minmax_float(fa + start, end - start, &global_min, &global_max);
                 }
             }
+#else
+            calc_minmax_float(fa, total_elements, &global_min, &global_max);
+#endif
         }
     }
     else
@@ -106,35 +292,15 @@ static int knn_calibrate_dataset_minmax(
             {
                 if (is_double)
                 {
-                    const double *da = (const double *)frame_buf;
-                    for (long d = 0; d < dim; d++)
-                    {
-                        float v = (float)da[d];
-                        if (v < global_min)
-                        {
-                            global_min = v;
-                        }
-                        if (v > global_max)
-                        {
-                            global_max = v;
-                        }
-                    }
+                    calc_minmax_double(
+                        (const double *)frame_buf, (size_t)dim, &global_min, &global_max
+                    );
                 }
                 else
                 {
-                    const float *fa = (const float *)frame_buf;
-                    for (long d = 0; d < dim; d++)
-                    {
-                        float v = fa[d];
-                        if (v < global_min)
-                        {
-                            global_min = v;
-                        }
-                        if (v > global_max)
-                        {
-                            global_max = v;
-                        }
-                    }
+                    calc_minmax_float(
+                        (const float *)frame_buf, (size_t)dim, &global_min, &global_max
+                    );
                 }
             }
         } // for (long i = 0; i < num_frames; i++)

@@ -47,18 +47,23 @@ int get_prediction_candidates(
     int h = config->optim.pred_h;
 
     if (total < len)
+    {
         return 0;
+    }
 
     long search_limit = total - len;
     long search_start = (total > h) ? total - h : 0;
     if (search_start > search_limit)
+    {
         search_start = search_limit;
+    }
 
     int *pattern = &state->assignments[total - len];
 
     /* Thread-local pre-allocated buffers to avoid heap allocations inside the loop */
     static __thread int *counts = NULL;
     static __thread Candidate *cand_list = NULL;
+    static __thread int *touched = NULL;
     static __thread int allocated_size = 0;
 
     int maxcl = config->algo.maxnbclust;
@@ -66,55 +71,93 @@ int get_prediction_candidates(
     {
         free(counts);
         free(cand_list);
-        counts = (int *)malloc((size_t)maxcl * sizeof(int));
+        free(touched);
+        counts = (int *)calloc((size_t)maxcl, sizeof(int));
         cand_list = (Candidate *)malloc((size_t)maxcl * sizeof(Candidate));
+        touched = (int *)malloc((size_t)maxcl * sizeof(int));
         allocated_size = maxcl;
     }
 
-    if (counts == NULL || cand_list == NULL)
+    if (counts == NULL || cand_list == NULL || touched == NULL)
+    {
         return 0;
+    }
 
-    memset(counts, 0, (size_t)state->num_clusters * sizeof(int));
+    int num_touched = 0;
+    int pat0 = pattern[0];
+    int pat1 = (len > 1) ? pattern[1] : 0;
+    int pat2 = (len > 2) ? pattern[2] : 0;
 
     for (long i = search_start; i < search_limit; i++)
     {
-        if (state->assignments[i] == pattern[0])
+        if (state->assignments[i] == pat0)
         {
-            if (memcmp(&state->assignments[i], pattern, (size_t)len * sizeof(int)) == 0)
+            int match = 1;
+            if (len == 2)
+            {
+                match = (state->assignments[i + 1] == pat1);
+            }
+            else if (len == 3)
+            {
+                match = (state->assignments[i + 1] == pat1 &&
+                         state->assignments[i + 2] == pat2);
+            }
+            else
+            {
+                for (int k = 1; k < len; k++)
+                {
+                    if (state->assignments[i + k] != pattern[k])
+                    {
+                        match = 0;
+                        break;
+                    }
+                }
+            }
+
+            if (match)
             {
                 int next_cluster = state->assignments[i + len];
                 if (next_cluster >= 0 && next_cluster < state->num_clusters)
                 {
+                    if (counts[next_cluster] == 0)
+                    {
+                        touched[num_touched++] = next_cluster;
+                    }
                     counts[next_cluster]++;
                 }
             }
         }
     }
 
-    int count_non_zero = 0;
-    for (int cl_idx = 0; cl_idx < state->num_clusters; cl_idx++)
-        if (counts[cl_idx] > 0)
-            count_non_zero++;
-
-    if (count_non_zero == 0)
+    if (num_touched == 0)
     {
         return 0;
     }
 
-    int idx = 0;
-    for (int cl_idx = 0; cl_idx < state->num_clusters; cl_idx++)
+    /* Sort touched cluster indices in ascending order to preserve canonical iteration order */
+    for (int k = 1; k < num_touched; k++)
     {
-        if (counts[cl_idx] > 0)
+        int key = touched[k];
+        int j = k - 1;
+        while (j >= 0 && touched[j] > key)
         {
-            cand_list[idx].id = cl_idx;
-            cand_list[idx].p = (double)counts[cl_idx];
-            idx++;
+            touched[j + 1] = touched[j];
+            j--;
         }
+        touched[j + 1] = key;
     }
 
-    qsort(cand_list, (size_t)count_non_zero, sizeof(Candidate), compare_candidates);
+    for (int k = 0; k < num_touched; k++)
+    {
+        int cl_idx = touched[k];
+        cand_list[k].id = cl_idx;
+        cand_list[k].p = (double)counts[cl_idx];
+        counts[cl_idx] = 0;
+    }
 
-    int n_out = (count_non_zero < max_candidates) ? count_non_zero : max_candidates;
+    qsort(cand_list, (size_t)num_touched, sizeof(Candidate), compare_candidates);
+
+    int n_out = (num_touched < max_candidates) ? num_touched : max_candidates;
     for (int cand_idx = 0; cand_idx < n_out; cand_idx++)
     {
         candidates[cand_idx] = cand_list[cand_idx].id;
