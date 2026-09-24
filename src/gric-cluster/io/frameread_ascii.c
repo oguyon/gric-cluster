@@ -7,12 +7,234 @@
 #include "frameread_internal.h"
 #include <ctype.h>
 #include <fcntl.h>
+#include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+static const double pow10_table[31] = {
+    1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9,
+    1e10, 1e11, 1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19,
+    1e20, 1e21, 1e22, 1e23, 1e24, 1e25, 1e26, 1e27, 1e28, 1e29, 1e30
+};
+
+/**
+ * fast_parse_float_val() - High-speed ASCII float parser for standard decimal tokens.
+ * @p:       Pointer to start of token in memory.
+ * @end:     Pointer to buffer end.
+ * @out_val: Output float receiving parsed value.
+ *
+ * Return: Pointer to next unparsed character on success, or NULL if fallback required.
+ */
+static inline const char *fast_parse_float_val(
+    const char *p,
+    const char *end,
+    float      *out_val)
+{
+    while (p < end && (*p == ' ' || *p == '\t'))
+    {
+        p++;
+    }
+    if (p >= end || *p == '\n' || *p == '\r' || *p == '#')
+    {
+        return NULL;
+    }
+
+    float sign = 1.0f;
+    if (*p == '-')
+    {
+        sign = -1.0f;
+        p++;
+    }
+    else if (*p == '+')
+    {
+        p++;
+    }
+
+    if (p >= end || (!(*p >= '0' && *p <= '9') && *p != '.'))
+    {
+        return NULL;
+    }
+
+    uint64_t int_part = 0;
+    int digits = 0;
+    while (p < end && *p >= '0' && *p <= '9')
+    {
+        int_part = int_part * 10 + (uint64_t)(*p - '0');
+        digits++;
+        p++;
+    }
+
+    double frac_part = 0.0;
+    double scale = 1.0;
+    if (p < end && *p == '.')
+    {
+        p++;
+        while (p < end && *p >= '0' && *p <= '9')
+        {
+            frac_part = frac_part * 10.0 + (double)(*p - '0');
+            scale *= 10.0;
+            digits++;
+            p++;
+        }
+    }
+
+    if (digits == 0)
+    {
+        return NULL;
+    }
+
+    double val = (double)int_part + (frac_part / scale);
+
+    if (p < end && (*p == 'e' || *p == 'E'))
+    {
+        p++;
+        int exp_sign = 1;
+        if (p < end && *p == '-')
+        {
+            exp_sign = -1;
+            p++;
+        }
+        else if (p < end && *p == '+')
+        {
+            p++;
+        }
+        int exp = 0;
+        int exp_digits = 0;
+        while (p < end && *p >= '0' && *p <= '9')
+        {
+            exp = exp * 10 + (*p - '0');
+            exp_digits++;
+            p++;
+        }
+        if (exp_digits == 0)
+        {
+            return NULL;
+        }
+        if (exp <= 30)
+        {
+            val = (exp_sign < 0) ? (val / pow10_table[exp]) : (val * pow10_table[exp]);
+        }
+        else
+        {
+            val *= pow(10.0, exp_sign * exp);
+        }
+    }
+
+    *out_val = (float)(sign * val);
+    return p;
+}
+
+/**
+ * fast_parse_double_val() - High-speed ASCII double parser for standard decimal tokens.
+ * @p:       Pointer to start of token in memory.
+ * @end:     Pointer to buffer end.
+ * @out_val: Output double receiving parsed value.
+ *
+ * Return: Pointer to next unparsed character on success, or NULL if fallback required.
+ */
+static inline const char *fast_parse_double_val(
+    const char *p,
+    const char *end,
+    double     *out_val)
+{
+    while (p < end && (*p == ' ' || *p == '\t'))
+    {
+        p++;
+    }
+    if (p >= end || *p == '\n' || *p == '\r' || *p == '#')
+    {
+        return NULL;
+    }
+
+    double sign = 1.0;
+    if (*p == '-')
+    {
+        sign = -1.0;
+        p++;
+    }
+    else if (*p == '+')
+    {
+        p++;
+    }
+
+    if (p >= end || (!(*p >= '0' && *p <= '9') && *p != '.'))
+    {
+        return NULL;
+    }
+
+    uint64_t int_part = 0;
+    int digits = 0;
+    while (p < end && *p >= '0' && *p <= '9')
+    {
+        int_part = int_part * 10 + (uint64_t)(*p - '0');
+        digits++;
+        p++;
+    }
+
+    double frac_part = 0.0;
+    double scale = 1.0;
+    if (p < end && *p == '.')
+    {
+        p++;
+        while (p < end && *p >= '0' && *p <= '9')
+        {
+            frac_part = frac_part * 10.0 + (double)(*p - '0');
+            scale *= 10.0;
+            digits++;
+            p++;
+        }
+    }
+
+    if (digits == 0)
+    {
+        return NULL;
+    }
+
+    double val = (double)int_part + (frac_part / scale);
+
+    if (p < end && (*p == 'e' || *p == 'E'))
+    {
+        p++;
+        int exp_sign = 1;
+        if (p < end && *p == '-')
+        {
+            exp_sign = -1;
+            p++;
+        }
+        else if (p < end && *p == '+')
+        {
+            p++;
+        }
+        int exp = 0;
+        int exp_digits = 0;
+        while (p < end && *p >= '0' && *p <= '9')
+        {
+            exp = exp * 10 + (*p - '0');
+            exp_digits++;
+            p++;
+        }
+        if (exp_digits == 0)
+        {
+            return NULL;
+        }
+        if (exp <= 30)
+        {
+            val = (exp_sign < 0) ? (val / pow10_table[exp]) : (val * pow10_table[exp]);
+        }
+        else
+        {
+            val *= pow(10.0, exp_sign * exp);
+        }
+    }
+
+    *out_val = sign * val;
+    return p;
+}
 
 /**
  * parse_ascii_row_float() - Parse an in-memory row of floating-point values.
@@ -31,28 +253,36 @@ static inline int parse_ascii_row_float(
 {
     for (long ii = 0; ii < nelements; ii++)
     {
-        char *next = NULL;
+        const char *next = fast_parse_float_val(p, end, &out[ii]);
+        if (next != NULL)
+        {
+            p = next;
+            continue;
+        }
+
+        /* Fallback for edge cases (e.g. hex floats, NaN, Inf) */
+        char *strto_next = NULL;
         if (end - p < 64)
         {
             char tmp[64];
             size_t rem = (size_t)(end - p);
             memcpy(tmp, p, rem);
             tmp[rem] = '\0';
-            out[ii] = strtof(tmp, &next);
-            if (next == tmp)
+            out[ii] = strtof(tmp, &strto_next);
+            if (strto_next == tmp)
             {
                 return -1;
             }
-            p += (next - tmp);
+            p += (strto_next - tmp);
         }
         else
         {
-            out[ii] = strtof(p, &next);
-            if (next == p)
+            out[ii] = strtof(p, &strto_next);
+            if (strto_next == p)
             {
                 return -1;
             }
-            p = next;
+            p = strto_next;
         }
     }
     return 0;
@@ -75,28 +305,36 @@ static inline int parse_ascii_row_double(
 {
     for (long ii = 0; ii < nelements; ii++)
     {
-        char *next = NULL;
+        const char *next = fast_parse_double_val(p, end, &out[ii]);
+        if (next != NULL)
+        {
+            p = next;
+            continue;
+        }
+
+        /* Fallback for edge cases (e.g. hex floats, NaN, Inf) */
+        char *strto_next = NULL;
         if (end - p < 64)
         {
             char tmp[64];
             size_t rem = (size_t)(end - p);
             memcpy(tmp, p, rem);
             tmp[rem] = '\0';
-            out[ii] = strtod(tmp, &next);
-            if (next == tmp)
+            out[ii] = strtod(tmp, &strto_next);
+            if (strto_next == tmp)
             {
                 return -1;
             }
-            p += (next - tmp);
+            p += (strto_next - tmp);
         }
         else
         {
-            out[ii] = strtod(p, &next);
-            if (next == p)
+            out[ii] = strtod(p, &strto_next);
+            if (strto_next == p)
             {
                 return -1;
             }
-            p = next;
+            p = strto_next;
         }
     }
     return 0;

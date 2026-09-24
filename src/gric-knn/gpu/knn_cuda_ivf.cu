@@ -525,16 +525,32 @@ __global__ void knn_ivf_warp_search_kernel(
             q_norm_sq = __shfl_sync(0xffffffff, q_part_sq, 0);
         }
 
-        for (int m = 0; m < count; m++)
+        int m_start = 0;
+        if (r_min > 0.0f)
+        {
+            int low = 0;
+            int high = count;
+            while (low < high)
+            {
+                int mid = low + (high - low) / 2;
+                if (d_member_r_anchors[start_off + mid] < r_min)
+                {
+                    low = mid + 1;
+                }
+                else
+                {
+                    high = mid;
+                }
+            }
+            m_start = low;
+        }
+
+        for (int m = m_start; m < count; m++)
         {
             int cand_idx = start_off + m;
             float r_m = d_member_r_anchors[cand_idx];
 
             /* Level 2 & 3: Annular lower and upper pruning */
-            if (r_m < r_min)
-            {
-                continue;
-            }
             if (r_m > r_max)
             {
                 break; // Members monotonically sorted by r_anchor; all subsequent exceed r_max
