@@ -5,7 +5,7 @@
 
 #include "cuda_ivf_index.h"
 #include "cuda_common.h"
-#include "gric-knn/knn_tree.h"
+#include "knn_tree.h"
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <stdlib.h>

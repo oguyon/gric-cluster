@@ -60,13 +60,16 @@ def main():
 
     topics = []
     
-    # Sort files for deterministic build output
-    files = sorted(os.listdir(help_dir))
-    for fname in files:
-        if not fname.endswith(".md"):
-            continue
-        
-        fpath = os.path.join(help_dir, fname)
+    # Recursively find all markdown files for deterministic build output
+    md_paths = []
+    for root, dirs, files in os.walk(help_dir):
+        for fname in files:
+            if fname.endswith(".md"):
+                md_paths.append(os.path.join(root, fname))
+    md_paths.sort()
+
+    for fpath in md_paths:
+        fname = os.path.basename(fpath)
         with open(fpath, "r", encoding="utf-8") as f:
             content = f.read().strip()
         

@@ -10,7 +10,7 @@
 #ifndef KNN_CUDA_IVF_H
 #define KNN_CUDA_IVF_H
 
-#include "gric-knn/knn_defs.h"
+#include "knn_defs.h"
 
 #ifdef __cplusplus
 extern "C" {

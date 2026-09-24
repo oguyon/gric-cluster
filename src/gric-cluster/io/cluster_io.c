@@ -10,7 +10,7 @@
 #include <sys/types.h>
 
 #include "cluster_io.h"
-#include "shared/cli_colors.h"
+#include "cli_colors.h"
 
 /**
  * create_output_dir_name() - Build output directory path from input filename.

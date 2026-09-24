@@ -22,6 +22,17 @@
 #include "frameread.h"
 #include "gric_bin_io.h"
 
+/**
+ * write_dcc_results() - Export pairwise inter-cluster distance matrix (DCC).
+ * @out_dir: Output directory path.
+ * @config:  Active clustering configuration.
+ * @state:   Active clustering state holding DCC distance buffers.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked at the end of clustering by write_results() to serialize the pairwise cluster
+ * centroid distance matrix to disk (in ASCII, binary, or FITS). Used for post-hoc analysis,
+ * topological trajectory exploration, and k-NN graph routing.
+ */
 static void write_dcc_results(
     const char          *out_dir,
     const ClusterConfig *config,
@@ -181,6 +192,16 @@ static void write_dcc_results(
     }
 } // write_dcc_results
 
+/**
+ * write_transition_matrix_results() - Export cluster Markov transition matrix.
+ * @out_dir: Output directory path.
+ * @config:  Active clustering configuration.
+ * @state:   Active clustering state holding transition matrix.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by write_results() to export empirical transition probabilities between clusters,
+ * used for temporal sequence prediction and trajectory modeling.
+ */
 static void write_transition_matrix_results(
     const char          *out_dir,
     const ClusterConfig *config,
@@ -212,6 +233,19 @@ static void write_transition_matrix_results(
     }
 } // write_transition_matrix_results
 
+/**
+ * write_anchors_results() - Export cluster centroid anchor coordinates to disk.
+ * @out_dir:   Output directory path.
+ * @config:    Active clustering configuration specifying output formats.
+ * @state:     Active clustering state holding cluster anchors.
+ * @width:     Frame width in pixels.
+ * @height:    Frame height in pixels.
+ * @nelements: Total scalar elements per frame vector.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Primary model export routine. Invoked by write_results() to serialize all discovered cluster
+ * anchor vectors to ASCII, FITS, or binary (.clusterdat/anchors.bin) for k-NN search.
+ */
 static void write_anchors_results(
     const char          *out_dir,
     const ClusterConfig *config,
@@ -357,6 +391,17 @@ static void write_anchors_results(
     }
 } // write_anchors_results
 
+/**
+ * write_counts_results() - Export per-cluster member frame count statistics.
+ * @out_dir:        Output directory path.
+ * @config:         Active clustering configuration.
+ * @state:          Active clustering state.
+ * @cluster_counts: Array of member frame counts per cluster.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by write_results() to output population counts for all clusters to ASCII or
+ * binary (.clusterdat/cluster_counts.bin), reflecting relative cluster densities.
+ */
 static void write_counts_results(
     const char          *out_dir,
     const ClusterConfig *config,
@@ -418,6 +463,16 @@ static void write_counts_results(
     }
 } // write_counts_results
 
+/**
+ * write_membership_results() - Export frame-to-cluster assignment trajectory.
+ * @out_dir: Output directory path.
+ * @config:  Active clustering configuration.
+ * @state:   Active clustering state holding assignment arrays.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by write_results() to output frame-by-frame cluster assignment indices to
+ * ASCII or binary (.clusterdat/frame_membership.bin), recording temporal trajectory paths.
+ */
 static void write_membership_results(
     const char          *out_dir,
     const ClusterConfig *config,
@@ -462,6 +517,17 @@ static void write_membership_results(
     }
 } // write_membership_results
 
+/**
+ * write_radii_results() - Export maximum and RMS radii for each cluster.
+ * @out_dir:        Output directory path.
+ * @config:         Active clustering configuration.
+ * @state:          Active clustering state holding cluster assignments.
+ * @cluster_counts: Array of member counts per cluster.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by write_results() to save cluster bounding radii (.clusterdat/cluster_radii.bin),
+ * used by downstream k-NN search for conservative triangular inequality metric pruning.
+ */
 static void write_radii_results(
     const char          *out_dir,
     const ClusterConfig *config,
@@ -929,6 +995,17 @@ static void write_clusters_and_averages(
     }
 } // write_clusters_and_averages
 
+/**
+ * write_clustered_output_file() - Export reconstructed signal stream grouped by cluster.
+ * @out_dir:   Output directory path.
+ * @config:    Active clustering configuration.
+ * @state:     Active clustering state holding assignment records.
+ * @nelements: Total scalar elements per frame vector.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked when -clustered is specified to write frames ordered by cluster ID or
+ * reconstructed from cluster anchor prototypes.
+ */
 static void write_clustered_output_file(
     const char          *out_dir,
     const ClusterConfig *config,
@@ -1054,6 +1131,15 @@ static void write_clustered_output_file(
     }
 } // write_clustered_output_file
 
+/**
+ * write_results() - Top-level coordinator exporting all clustering outputs and artifacts.
+ * @config: Active clustering configuration specifying output flags.
+ * @state:  Final clustering state with anchors, memberships, radii, and DCC.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Called at the completion of run_clustering() to orchestrate writing anchors, membership logs,
+ * counts, radii, distance matrices, and summary reports to the configured output directory.
+ */
 void write_results(
     ClusterConfig *config,
     ClusterState  *state)

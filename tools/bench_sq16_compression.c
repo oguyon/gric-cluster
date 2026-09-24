@@ -19,7 +19,7 @@
 #include <immintrin.h>
 #endif
 
-#include "../src/shared/gric_bin_io.h"
+#include "../src/shared/format/gric_bin_io.h"
 
 #define NUM_FRAMES 30000
 #define NUM_CLUSTERS 3084

@@ -54,9 +54,12 @@ int mcp_tool_inspect_simd(
     snprintf(
         compile_cmd, sizeof(compile_cmd),
         "gcc -S -O3 %s -funroll-loops -fverbose-asm -I%s/src -I%s/src/shared "
+        "-I%s/src/shared/quant -I%s/src/shared/format -I%s/src/shared/sys -I%s/src/shared/cli "
         "-I%s/src/gric-cluster/core -I%s/src/gric-cluster/math -I%s/src/gric-cluster/io "
+        "-I%s/src/gric-knn -I%s/src/gric-knn/core -I%s/src/gric-knn/search -I%s/src/gric-knn/cache "
         "%s -o %s 2>&1",
-        march, root, root, root, root, root, resolved_src, asm_output_path);
+        march, root, root, root, root, root, root, root, root, root, root, root, root, root,
+        resolved_src, asm_output_path);
 
     FILE *pipe = popen(compile_cmd, "r");
     if (pipe == NULL)

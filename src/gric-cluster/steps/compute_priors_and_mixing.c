@@ -19,6 +19,15 @@
 #include <immintrin.h>
 
 GRIC_TARGET_AVX512
+/**
+ * cluster_normalize_probs_avx512() - AVX-512 SIMD vector normalization of cluster probabilities.
+ * @probs: Array of unnormalized probabilities [num_clusters].
+ * @n:     Number of cluster entries.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by cluster_normalize_probs() on AVX-512 hardware to reduce probability sums and
+ * multiply by the reciprocal sum using 512-bit vector registers, ensuring sum(probs) == 1.0.
+ */
 static void cluster_normalize_probs_avx512(
     double *restrict probs,
     int              num_clusters)
@@ -60,6 +69,15 @@ static void cluster_normalize_probs_avx512(
 }
 
 GRIC_TARGET_AVX2
+/**
+ * cluster_normalize_probs_avx2() - AVX2 256-bit SIMD vector normalization of cluster probabilities.
+ * @probs: Array of unnormalized probabilities [num_clusters].
+ * @n:     Number of cluster entries.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by cluster_normalize_probs() on AVX2 hardware to normalize candidate cluster
+ * prior probabilities to sum to 1.0 using 256-bit FMA vector registers.
+ */
 static void cluster_normalize_probs_avx2(
     double *restrict probs,
     int              num_clusters)
@@ -110,6 +128,15 @@ static void cluster_normalize_probs_avx2(
 }
 
 GRIC_TARGET_AVX2
+/**
+ * reset_search_scratch_avx2() - Reset frame candidate scratch buffers using AVX2.
+ * @state:  Active clustering state.
+ * @config: Active clustering configuration.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked at the beginning of each frame step to re-initialize candidate evaluation bitmasks,
+ * distance cutoff arrays, and priority scratch arrays before candidate filtering.
+ */
 static void reset_search_scratch_avx2(
     ClusterState *state,
     int           num_cl)
@@ -143,6 +170,14 @@ static void reset_search_scratch_avx2(
 }
 #endif
 
+/**
+ * reset_search_scratch_scalar() - Scalar fallback resetting frame candidate scratch buffers.
+ * @state:  Active clustering state.
+ * @config: Active clustering configuration.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Portable fallback for reset_search_scratch() when SIMD is unavailable.
+ */
 static void reset_search_scratch_scalar(
     ClusterState *state,
     int           num_cl)
@@ -155,6 +190,15 @@ static void reset_search_scratch_scalar(
     }
 }
 
+/**
+ * reset_search_scratch() - Hardware-dispatched reset of frame candidate scratch buffers.
+ * @state:  Active clustering state holding scratch arrays.
+ * @num_cl: Number of active clusters to initialize.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked at the start of cluster_frame() to clear and prepare per-frame candidate scratch
+ * memory before evaluating incoming vectors. Dispatches to AVX2 or scalar reset.
+ */
 static inline void reset_search_scratch(
     ClusterState *state,
     int           num_cl)
@@ -170,6 +214,14 @@ static inline void reset_search_scratch(
     reset_search_scratch_scalar(state, num_cl);
 }
 
+/**
+ * cluster_normalize_probs_scalar() - Portable scalar normalization of cluster probabilities.
+ * @probs: Array of unnormalized probabilities [num_clusters].
+ * @n:     Number of cluster entries.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Portable fallback for cluster_normalize_probs() when vector hardware is unavailable.
+ */
 static void cluster_normalize_probs_scalar(
     double *restrict probs,
     int              num_clusters)
@@ -313,6 +365,17 @@ static double calculate_sequence_match_metric(
 }
 
 
+/**
+ * candidate_sort_descending() - Sort candidate cluster indices by probability descending.
+ * @indices: In-out array of candidate cluster indices [n].
+ * @probs:   Array of matching probabilities for each cluster.
+ * @left:    Left recursion index.
+ * @right:   Right recursion index.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked in compute_priors_and_mixing() to sort candidate clusters so that highest-probability
+ * clusters are measured first in greedy metric search, maximizing early-cutoff pruning efficiency.
+ */
 static void candidate_sort_descending(
     Candidate    *cands,
     const double *mixed_probs,

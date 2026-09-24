@@ -104,6 +104,39 @@ void free_frame(Frame *frame_ptr)
  * Exported WASM API functions
  * ------------------------------------------------------- */
 
+/**
+ * wasm_cluster_init() - Allocate and initialize a single-tile clustering instance.
+ * @rlim:                       Clustering radius limit for candidate neighborhood.
+ * @maxnbclust:                 Maximum number of clusters (or 0 for dynamic growth).
+ * @maxnbfr:                    Maximum number of frames expected in session.
+ * @ndim:                       Feature dimensionality per frame.
+ * @entropy_mode:               Entropy gating and early-exit mode flag.
+ * @te4_mode:                   Triangle-inequality lower bound test 4 flag.
+ * @te5_mode:                   Triangle-inequality lower bound test 5 flag.
+ * @pred_mode:                  Temporal Markov prediction mode flag.
+ * @pred_h:                     Prediction history horizon.
+ * @gprob_mode:                 Geometric prior probability mode flag.
+ * @tm_mixing_coeff:            Mixing coefficient between transition matrix and priors.
+ * @soft_bayesian_mode:         Soft Bayesian likelihood weighting flag.
+ * @xtile_mode:                 Cross-tile tuple tracking flag.
+ * @sparse_dcc_mode:            Sparse inter-cluster distance cache mode.
+ * @sparse_dcc_extra_evals:     Extra DCC evaluation count limit.
+ * @entropy_gate_bits:          Information entropy gating threshold in bits.
+ * @entropy_first_gate_bits:    First-stage entropy threshold.
+ * @entropy_fast_mode:          Accelerated approximation mode for entropy log2.
+ * @soft_bayesian_sigma_coeff:  Standard deviation scaling for soft likelihood.
+ * @maxcl_strategy:             Cluster eviction or limit strategy.
+ * @discard_fraction:           Fraction of lowest-weight clusters to discard when full.
+ * @max_gprob_visitors:         Maximum visitor depth for geometric probability.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Serves as the primary constructor for the WebAssembly single-tile clustering
+ * engine. Allocates the opaque WasmHandle struct, initializes cluster tables,
+ * distance caches, scratch buffers, and telemetry structures, exposing the
+ * core C clustering algorithm to browser-based interactive tools and Web Workers.
+ *
+ * Return: Opaque pointer to initialized WasmHandle on success, or NULL on failure.
+ */
 EMSCRIPTEN_KEEPALIVE
 void *wasm_cluster_init(
     double rlim,
@@ -362,6 +395,21 @@ void *wasm_cluster_init(
  * Dynamic Growth Helpers
  * ------------------------------------------------------- */
 
+/**
+ * grow_nxn_matrix() - Reallocate and re-stride a 2D N-by-N square matrix.
+ * @old:       Existing square matrix buffer to expand (freed on success).
+ * @old_n:     Current row and column dimension.
+ * @new_n:     New target row and column dimension (must be >= old_n).
+ * @elem_size: Size in bytes of each matrix element.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Used during dynamic capacity expansion when maxnbclust is exceeded in
+ * unlimited-cluster WASM mode. Expands 2D inter-cluster matrices (such as DCC
+ * distance bounds and transition matrices) while properly copying existing rows
+ * to match the wider stride of the enlarged matrix.
+ *
+ * Return: Pointer to newly allocated, re-strided buffer, or NULL on allocation error.
+ */
 static void *grow_nxn_matrix(
     void   *old,
     int     old_n,
@@ -389,6 +437,18 @@ static void *grow_nxn_matrix(
     return new_buf;
 }
 
+/**
+ * grow_capacity() - Double the maximum cluster capacity of a WASM clustering instance.
+ * @h: Opaque WasmHandle instance pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Enables dynamic cluster growth in WebAssembly execution when maxnbclust was
+ * set to 0 (unlimited mode). Doubles array allocations for clusters, scratch
+ * buffers, telemetry tables, and re-strides 2D matrices (DCC, transition matrix)
+ * without losing previously computed cluster anchors or membership statistics.
+ *
+ * Return: 0 on success, or -1 on memory allocation error.
+ */
 static int grow_capacity(WasmHandle *h)
 {
     int old_N = h->config.algo.maxnbclust;
@@ -398,7 +458,10 @@ static int grow_capacity(WasmHandle *h)
         h->state.clusters,
         (size_t)new_N * sizeof(Cluster)
     );
-    if (!new_clusters) return -1;
+    if (!new_clusters)
+    {
+        return -1;
+    }
     memset(new_clusters + old_N, 0, (size_t)(new_N - old_N) * sizeof(Cluster));
     h->state.clusters = new_clusters;
 
@@ -406,7 +469,10 @@ static int grow_capacity(WasmHandle *h)
         h->state.cluster_visitors,
         (size_t)new_N * sizeof(VisitorList)
     );
-    if (!new_visitors) return -1;
+    if (!new_visitors)
+    {
+        return -1;
+    }
     memset(new_visitors + old_N, 0, (size_t)(new_N - old_N) * sizeof(VisitorList));
     h->state.cluster_visitors = new_visitors;
 
@@ -470,30 +536,45 @@ static int grow_capacity(WasmHandle *h)
     long *new_tm = (long *)grow_nxn_matrix(
         h->state.transition_matrix, old_N, new_N, sizeof(long)
     );
-    if (!new_tm) return -1;
+    if (!new_tm)
+    {
+        return -1;
+    }
     h->state.transition_matrix = new_tm;
 
     double *new_dcc_min = (double *)grow_nxn_matrix(
         s->dcc_min, old_N, new_N, sizeof(double)
     );
-    if (!new_dcc_min) return -1;
+    if (!new_dcc_min)
+    {
+        return -1;
+    }
     s->dcc_min = new_dcc_min;
 
     double *new_dcc_max = (double *)grow_nxn_matrix(
         s->dcc_max, old_N, new_N, sizeof(double)
     );
-    if (!new_dcc_max) return -1;
+    if (!new_dcc_max)
+    {
+        return -1;
+    }
     s->dcc_max = new_dcc_max;
 
     char *new_dcc_measured = (char *)grow_nxn_matrix(
         s->dcc_measured, old_N, new_N, sizeof(char)
     );
-    if (!new_dcc_measured) return -1;
+    if (!new_dcc_measured)
+    {
+        return -1;
+    }
     s->dcc_measured = new_dcc_measured;
 
     size_t new_mask_words = (size_t)new_N * new_N * ((new_N + 63) / 64);
     uint64_t *new_mask = (uint64_t *)calloc(new_mask_words, sizeof(uint64_t));
-    if (!new_mask) return -1;
+    if (!new_mask)
+    {
+        return -1;
+    }
     free(s->consistency_mask);
     s->consistency_mask = new_mask;
 
@@ -503,6 +584,63 @@ static int grow_capacity(WasmHandle *h)
     return 0;
 }
 
+/**
+ * wasm_cluster_process_frame() - Cluster a single incoming coordinate frame.
+ * @ptr:    Opaque WasmHandle pointer.
+ * @coords: Array of double-precision coordinates of length ndim.
+ * @ndim:   Dimensionality of the input coordinate vector.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Serves as the real-time frame ingestion entry point for WebAssembly clients.
+ * Feeds a newly arrived coordinate vector into the incremental clustering engine,
+ * executing triangle-inequality pruning, entropy gating, and temporal prediction
+ * to assign the frame to an existing cluster or create a new cluster anchor.
+ *
+ * Return: Assigned cluster index (>= 0), or negative value on error (-1: invalid,
+ *         -2: maximum cluster limit reached).
+ */
+/**
+ * wasm_cluster_ensure_frame_buffer() - Ensure scratch frame buffer is allocated.
+ * @h:    Opaque WasmHandle pointer.
+ * @ndim: Dimensionality of frame.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Replenishes h->frame.data after ownership of the buffer is transferred to a newly
+ * created cluster anchor in cluster_frame(). Reuses existing heap buffer when not stolen.
+ *
+ * Return: 0 on success, or -1 on allocation failure.
+ */
+static int wasm_cluster_ensure_frame_buffer(
+    WasmHandle *h,
+    int         ndim)
+{
+    if (h->frame.data == NULL)
+    {
+        h->frame.data = (double *)malloc((size_t)ndim * sizeof(double));
+        if (!h->frame.data)
+        {
+            return -1;
+        }
+        h->frame.is_double = 1;
+    }
+    return 0;
+}
+
+/**
+ * wasm_cluster_process_frame() - Cluster a single incoming coordinate frame.
+ * @ptr:    Opaque WasmHandle pointer.
+ * @coords: Array of double-precision coordinates of length ndim.
+ * @ndim:   Dimensionality of the input coordinate vector.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Serves as the real-time frame ingestion entry point for WebAssembly clients.
+ * Feeds a newly arrived coordinate vector into the incremental clustering engine,
+ * executing triangle-inequality pruning, entropy gating, and temporal prediction
+ * to assign the frame to an existing cluster or create a new cluster anchor.
+ *
+ * Return: Assigned cluster index (>= 0), or negative value on error (-1: invalid,
+ *         -2: maximum cluster limit reached).
+ */
 EMSCRIPTEN_KEEPALIVE
 int wasm_cluster_process_frame(
     void   *ptr,
@@ -528,18 +666,9 @@ int wasm_cluster_process_frame(
      * After cluster_frame() returns, h->frame.data
      * will be NULL if the step code stole it.
      */
-
-    /* Allocate fresh data buffer (or reuse if not stolen) */
-    if (h->frame.data == NULL)
+    if (wasm_cluster_ensure_frame_buffer(h, ndim) != 0)
     {
-        h->frame.data = (double *)malloc(
-            (size_t)ndim * sizeof(double)
-        );
-        if (!h->frame.data)
-        {
-            return -1;
-        }
-        h->frame.is_double = 1;
+        return -1;
     }
 
     memcpy(h->frame.data, coords,
@@ -581,12 +710,17 @@ int wasm_cluster_process_frame(
 /**
  * wasm_cluster_process_batch() - Process a contiguous batch of coordinate frames.
  * @ptr:             Opaque WasmHandle pointer.
- * @coords_flat:     Flat double array of size (num_frames * ndim).
- * @out_assignments: Optional int array of size num_frames to store assigned cluster IDs (or NULL).
- * @num_frames:      Number of frames in the batch.
- * @ndim:            Dimensionality per frame.
+ * @coords_flat:     Contiguous array of input coordinates [num_frames * ndim].
+ * @out_assignments: Output array to store assigned cluster indices [num_frames] (may be NULL).
+ * @num_frames:      Number of consecutive frames in the batch.
+ * @ndim:            Dimensionality of each frame vector.
  *
- * Return: Number of successfully clustered frames, or negative on error.
+ * Purpose & Context ("What is this used for?"):
+ * Maximizes throughput across the JavaScript-WebAssembly boundary by batching
+ * multiple frames into a single function call, minimizing boundary crossing
+ * overhead. Iterates through all frames and records per-frame cluster assignments.
+ *
+ * Return: Number of successfully processed frames (0..num_frames), or -1 on error.
  */
 EMSCRIPTEN_KEEPALIVE
 int wasm_cluster_process_batch(
@@ -605,14 +739,9 @@ int wasm_cluster_process_batch(
 
     for (int f = 0; f < num_frames; f++)
     {
-        if (h->frame.data == NULL)
+        if (wasm_cluster_ensure_frame_buffer(h, ndim) != 0)
         {
-            h->frame.data = (double *)malloc((size_t)ndim * sizeof(double));
-            if (!h->frame.data)
-            {
-                return f;
-            }
-            h->frame.is_double = 1;
+            return f;
         }
 
         memcpy(h->frame.data, &coords_flat[f * ndim], (size_t)ndim * sizeof(double));
@@ -625,7 +754,8 @@ int wasm_cluster_process_batch(
         {
             if (grow_capacity(h) != 0)
             {
-                return f; /* Return how many frames we processed successfully before OOM */
+                /* Return count of frames processed successfully before OOM */
+                return f;
             }
         }
 
@@ -661,6 +791,17 @@ int wasm_cluster_process_batch(
     return num_frames;
 }
 
+/**
+ * wasm_cluster_get_num_clusters() - Query the current number of active clusters.
+ * @ptr: Opaque WasmHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Allows JavaScript/browser callers to inspect the count of active clusters
+ * formed so far, enabling UI components to adjust visualization scaling and
+ * allocate output buffers of appropriate size.
+ *
+ * Return: Count of active clusters, or 0 if handle is invalid.
+ */
 EMSCRIPTEN_KEEPALIVE
 int wasm_cluster_get_num_clusters(void *ptr)
 {
@@ -672,6 +813,18 @@ int wasm_cluster_get_num_clusters(void *ptr)
     return h->state.num_clusters;
 }
 
+/**
+ * wasm_cluster_get_anchors() - Retrieve cluster anchor coordinates and visitor member counts.
+ * @ptr:         Opaque WasmHandle pointer.
+ * @out_coords:  Output buffer for anchor coordinates [num_clusters * ndim].
+ * @out_members: Output buffer for member visit counts [num_clusters].
+ * @ndim:        Dimensionality of coordinates.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Exports the cluster centroid/anchor vectors and their member counts across the
+ * WebAssembly linear memory boundary, allowing browser renderers (Canvas, WebGL,
+ * Three.js) to display cluster centroids and sizes.
+ */
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_get_anchors(
     void   *ptr,
@@ -702,6 +855,17 @@ void wasm_cluster_get_anchors(
     }
 }
 
+/**
+ * wasm_cluster_get_dcc() - Retrieve the inter-cluster distance (DCC) matrix.
+ * @ptr:     Opaque WasmHandle pointer.
+ * @out_dcc: Output buffer for square distance matrix [K * K].
+ * @K:       Requested matrix dimension (clamped to active cluster count).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Exports pairwise Euclidean distances between cluster centroids to the WebAssembly
+ * host environment, enabling heatmap visualizations, dendrograms, and inter-cluster
+ * geometry analysis in the browser.
+ */
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_get_dcc(
     void   *ptr,
@@ -733,6 +897,17 @@ void wasm_cluster_get_dcc(
     }
 }
 
+/**
+ * wasm_cluster_get_transition_matrix() - Retrieve the Markov transition matrix between clusters.
+ * @ptr:    Opaque WasmHandle pointer.
+ * @out_tm: Output buffer for square transition count matrix [K * K].
+ * @K:      Requested matrix dimension.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Exports empirical state transition frequencies between consecutive cluster
+ * assignments, enabling Markov chain diagram visualizations, temporal transition
+ * graph generation, and sequence predictability evaluation in client UIs.
+ */
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_get_transition_matrix(
     void *ptr,
@@ -763,7 +938,17 @@ void wasm_cluster_get_transition_matrix(
     }
 }
 
-
+/**
+ * wasm_cluster_get_telemetry() - Query performance metrics and pruning telemetry counters.
+ * @ptr:       Opaque WasmHandle pointer.
+ * @out_stats: Output array receiving TELEM_* statistics values.
+ * @out_len:   Pointer receiving the count of telemetry statistics written.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Exposes internal algorithmic telemetry (distance calculation counts, pruning
+ * efficiency, prediction hit rates, entropy gating rates) to browser dashboards
+ * and benchmark runners for real-time monitoring and parameter tuning.
+ */
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_get_telemetry(
     void   *ptr,
@@ -820,6 +1005,17 @@ void wasm_cluster_get_telemetry(
     *out_len = TELEM_COUNT;
 }
 
+/**
+ * wasm_cluster_get_probs() - Retrieve normalized prior probabilities for active clusters.
+ * @ptr:       Opaque WasmHandle pointer.
+ * @out_probs: Output double array for cluster probabilities [K].
+ * @K:         Requested cluster array dimension.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Exports the prior assignment probability distribution of active clusters to
+ * browser tools for Bayesian probability monitoring and cluster distribution
+ * plotting.
+ */
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_get_probs(
     void   *ptr,
@@ -851,8 +1047,10 @@ void wasm_cluster_get_probs(
  * @out_dists:   Output array for evaluated Euclidean distances.
  * @max_evals:   Maximum capacity of output arrays.
  *
+ * Purpose & Context ("What is this used for?"):
  * Copies the sequence of cluster indices and measured distances that were
- * evaluated against the current frame during the search loop.
+ * evaluated against the current frame during the search loop. Used by diagnostic
+ * tools and visualizers to inspect candidate pruning and search paths.
  *
  * Return: Number of evaluations recorded for the most recent frame.
  */
@@ -892,6 +1090,15 @@ int wasm_cluster_get_evaluations(
     return count;
 }
 
+/**
+ * wasm_cluster_reset() - Reset all clustering state while retaining memory allocations.
+ * @ptr: Opaque WasmHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Reinitializes cluster assignments, transition matrices, scratch tables, and
+ * telemetry counters to allow reprocessing a new dataset or restarting a streaming
+ * simulation without incurring reallocation and deallocation overhead.
+ */
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_reset(void *ptr)
 {
@@ -1019,6 +1226,22 @@ void wasm_cluster_reset(void *ptr)
     } // Reset telemetry
 }
 
+/**
+ * wasm_cluster_reassign_nearest() - Reassign all frames to their nearest cluster anchor.
+ * @ptr:             Opaque WasmHandle pointer.
+ * @coords_flat:     Contiguous array of frame coordinates [num_frames * ndim].
+ * @num_frames:      Total number of frames to reassign.
+ * @ndim:            Dimensionality of coordinates.
+ * @out_assignments: Output array to store refined assignments (may be NULL).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Implements Pass 2 nearest-centroid reassignment in WebAssembly. Because online
+ * incremental clustering assigns earlier frames before later clusters exist,
+ * Pass 2 provides an optimal nearest-neighbor partition across all discovered
+ * anchors.
+ *
+ * Return: Total number of frames whose cluster assignment changed during reassignment.
+ */
 EMSCRIPTEN_KEEPALIVE
 int wasm_cluster_reassign_nearest(
     void         *ptr,
@@ -1090,6 +1313,15 @@ int wasm_cluster_reassign_nearest(
     return reassigned;
 }
 
+/**
+ * wasm_cluster_free() - Free all resources and memory associated with a WASM cluster instance.
+ * @ptr: Opaque WasmHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Serves as the destructor for WebAssembly single-tile clustering instances.
+ * Frees cluster anchors, visitor lists, scratch buffers, telemetry structures,
+ * and the top-level WasmHandle to prevent memory leaks in the WASM heap.
+ */
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_free(void *ptr)
 {
@@ -1186,11 +1418,28 @@ void wasm_cluster_free(void *ptr)
     free(h);
 }
 
+/**
+ * wasm_cluster_set_trace() - Enable or disable detailed execution event tracing.
+ * @ptr:      Opaque WasmHandle pointer.
+ * @enabled:  Non-zero to enable trace ring buffer, 0 to disable.
+ * @capacity: Maximum event ring buffer capacity (number of TraceEvent items).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Controls the algorithmic event tracer in WebAssembly. When enabled, records
+ * fine-grained candidate evaluations, distance calculations, and pruning steps
+ * into a circular trace buffer for step-by-step playback in the simulator UI.
+ */
 EMSCRIPTEN_KEEPALIVE
-void wasm_cluster_set_trace(void *ptr, int enabled, int capacity)
+void wasm_cluster_set_trace(
+    void *ptr,
+    int   enabled,
+    int   capacity)
 {
     WasmHandle *h = (WasmHandle *)ptr;
-    if (!h) return;
+    if (!h)
+    {
+        return;
+    }
 
     if (enabled && h->state.trace == NULL)
     {
@@ -1203,54 +1452,136 @@ void wasm_cluster_set_trace(void *ptr, int enabled, int capacity)
     }
 }
 
+/**
+ * wasm_cluster_get_trace_count() - Query the number of events recorded in the trace buffer.
+ * @ptr: Opaque WasmHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Returns the current fill level of the event trace buffer for UI timeline widgets.
+ *
+ * Return: Number of recorded trace events, or 0 if tracing is disabled.
+ */
 EMSCRIPTEN_KEEPALIVE
 int wasm_cluster_get_trace_count(void *ptr)
 {
     WasmHandle *h = (WasmHandle *)ptr;
-    if (!h || !h->state.trace) return 0;
+    if (!h || !h->state.trace)
+    {
+        return 0;
+    }
     return h->state.trace->count;
 }
 
+/**
+ * wasm_cluster_get_trace_events() - Get pointer to trace event ring buffer in WASM memory.
+ * @ptr: Opaque WasmHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Provides direct WebAssembly linear memory access to the TraceEvent array so JavaScript
+ * can construct typed views without copying.
+ *
+ * Return: Pointer to trace events buffer, or NULL if trace disabled.
+ */
 EMSCRIPTEN_KEEPALIVE
 void *wasm_cluster_get_trace_events(void *ptr)
 {
     WasmHandle *h = (WasmHandle *)ptr;
-    if (!h || !h->state.trace) return NULL;
+    if (!h || !h->state.trace)
+    {
+        return NULL;
+    }
     return h->state.trace->events;
 }
 
+/**
+ * wasm_cluster_get_trace_event_size() - Return size in bytes of a single TraceEvent struct.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Informs JavaScript client code of the C struct stride so typed views can correctly
+ * deserialize event records across different WebAssembly compiler targets.
+ *
+ * Return: Stride of TraceEvent in bytes.
+ */
 EMSCRIPTEN_KEEPALIVE
 int wasm_cluster_get_trace_event_size(void)
 {
     return sizeof(TraceEvent);
 }
 
+/**
+ * wasm_cluster_get_trace_head() - Return current head position in trace ring buffer.
+ * @ptr: Opaque WasmHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Supplies the circular buffer write index so JavaScript can display a sliding window
+ * of the most recent clustering decisions.
+ *
+ * Return: Head index within the circular buffer, or 0 if disabled.
+ */
 EMSCRIPTEN_KEEPALIVE
 int wasm_cluster_get_trace_head(void *ptr)
 {
     WasmHandle *h = (WasmHandle *)ptr;
-    if (!h || !h->state.trace) return 0;
+    if (!h || !h->state.trace)
+    {
+        return 0;
+    }
     return h->state.trace->head;
 }
 
+/**
+ * wasm_cluster_get_trace_frame_start() - Query event buffer index where current frame began.
+ * @ptr: Opaque WasmHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Demarcates frame boundaries in the trace buffer so UI visualizers can replay all
+ * evaluations for the current frame in isolation.
+ *
+ * Return: Starting index of the current frame in the trace buffer, or 0.
+ */
 EMSCRIPTEN_KEEPALIVE
 int wasm_cluster_get_trace_frame_start(void *ptr)
 {
     WasmHandle *h = (WasmHandle *)ptr;
-    if (!h || !h->state.trace) return 0;
+    if (!h || !h->state.trace)
+    {
+        return 0;
+    }
     return h->state.trace->frame_start;
 }
 
+/**
+ * wasm_cluster_clear_trace() - Reset the trace buffer without altering clustering state.
+ * @ptr: Opaque WasmHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Empties recorded trace history when starting a new visualization recording or
+ * clearing UI event queues.
+ */
 EMSCRIPTEN_KEEPALIVE
 void wasm_cluster_clear_trace(void *ptr)
 {
     WasmHandle *h = (WasmHandle *)ptr;
-    if (!h || !h->state.trace) return;
+    if (!h || !h->state.trace)
+    {
+        return;
+    }
     trace_buffer_clear(h->state.trace);
 }
 
+/**
+ * wasm_cluster_set_unlimited() - Toggle unlimited cluster capacity mode.
+ * @ptr:       Opaque WasmHandle pointer.
+ * @unlimited: 1 to allow dynamic growth beyond initial maxnbclust, 0 to enforce limit.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Allows browser clients to remove cluster limits dynamically when exploring unknown
+ * datasets without restarting the session.
+ */
 EMSCRIPTEN_KEEPALIVE
-void wasm_cluster_set_unlimited(void *ptr, int unlimited)
+void wasm_cluster_set_unlimited(
+    void *ptr,
+    int   unlimited)
 {
     WasmHandle *h = (WasmHandle *)ptr;
     if (!h)
@@ -1268,6 +1599,16 @@ void wasm_cluster_set_unlimited(void *ptr, int unlimited)
     }
 }
 
+/**
+ * wasm_cluster_get_capacity() - Query current allocated cluster capacity.
+ * @ptr: Opaque WasmHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Returns the currently allocated cluster buffer size, reflecting any dynamic
+ * doublings performed during runtime.
+ *
+ * Return: Current maximum cluster capacity, or 0 on invalid handle.
+ */
 EMSCRIPTEN_KEEPALIVE
 int wasm_cluster_get_capacity(void *ptr)
 {
@@ -1279,6 +1620,15 @@ int wasm_cluster_get_capacity(void *ptr)
     return h->config.algo.maxnbclust;
 }
 
+/**
+ * wasm_cluster_get_version() - Retrieve version and build metadata string.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Provides git commit hash and build timestamp to browser clients and diagnostic logs
+ * to ensure client-side JS and compiled WASM binary versions match.
+ *
+ * Return: Null-terminated version string.
+ */
 EMSCRIPTEN_KEEPALIVE
 const char *wasm_cluster_get_version(void)
 {
@@ -1300,14 +1650,3 @@ const char *wasm_cluster_get_version(void)
     }
     return buf;
 }
-
-/* ================================================================
- * MULTI-TILE WASM API
- *
- * Wraps the C multi-tile clustering engine
- * (MultiTileState, TileMap, frame_scatter) for use
- * from the browser simulator.  Each N-dim input
- * frame is decomposed into N independent 1D tiles
- * (axis decomposition), clustered per-tile via
- * cluster_frame(), then fused with pass2_fuse().
- * ================================================================ */

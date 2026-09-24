@@ -63,106 +63,106 @@ nav:
   - CLI Reference:
       - Index: help/index.md
       - Overviews & Guides:
-          - Introduction: help/intro.md
-          - Performance Tuning: help/performance.md
-          - Algorithm Architecture: help/algorithm.md
-          - Clustering Workflow: help/clustering.md
-          - Compression Concepts: help/compression.md
-          - Tiling Architecture: help/tiling.md
+          - Introduction: help/guides/intro.md
+          - Performance Tuning: help/guides/performance.md
+          - Algorithm Architecture: help/guides/algorithm.md
+          - Clustering Workflow: help/guides/clustering.md
+          - Compression Concepts: help/guides/compression.md
+          - Tiling Architecture: help/guides/tiling.md
       - Core Options:
-          - rlim (Threshold): help/rlim.md
-          - auto_rlim: help/auto_rlim.md
-          - scandist: help/scandist.md
-          - maxcl (Limit): help/maxcl.md
-          - maxcl_strategy: help/maxcl_strategy.md
-          - discard_frac: help/discard_frac.md
-          - discarded: help/discarded.md
-          - maxim: help/maxim.md
-          - ncpu (Threads): help/ncpu.md
-          - progress: help/progress.md
-          - verbose: help/verbose.md
-          - conf: help/conf.md
-          - confw: help/confw.md
+          - rlim (Threshold): help/core/rlim.md
+          - auto_rlim: help/core/auto_rlim.md
+          - scandist: help/core/scandist.md
+          - maxcl (Limit): help/core/maxcl.md
+          - maxcl_strategy: help/core/maxcl_strategy.md
+          - discard_frac: help/core/discard_frac.md
+          - discarded: help/core/discarded.md
+          - maxim: help/core/maxim.md
+          - ncpu (Threads): help/core/ncpu.md
+          - progress: help/core/progress.md
+          - verbose: help/core/verbose.md
+          - conf: help/core/conf.md
+          - confw: help/core/confw.md
       - Quantization & Hardware:
-          - eq16 (E8 Lattice): help/eq16.md
-          - sq16 (16-bit Scalar): help/sq16.md
-          - sq8 (8-bit Scalar): help/sq8.md
-          - memo (Memoization): help/memo.md
-          - batch_dist (SIMD Batch): help/batch_dist.md
-          - double (64-bit Float): help/double.md
-          - gpu (CUDA Acceleration): help/gpu.md
+          - eq16 (E8 Lattice): help/quantization/eq16.md
+          - sq16 (16-bit Scalar): help/quantization/sq16.md
+          - sq8 (8-bit Scalar): help/quantization/sq8.md
+          - memo (Memoization): help/quantization/memo.md
+          - batch_dist (SIMD Batch): help/quantization/batch_dist.md
+          - double (64-bit Float): help/quantization/double.md
+          - gpu (CUDA Acceleration): help/quantization/gpu.md
       - Profiling & Presets:
-          - prof (Profile Loading): help/prof.md
-          - preset (Radius Presets): help/preset.md
+          - prof (Profile Loading): help/profiling/prof.md
+          - preset (Radius Presets): help/profiling/preset.md
       - Pruning & Geometry:
-          - te4 (4-Point): help/te4.md
-          - te5 (5-Point): help/te5.md
-          - Distance Geometry: help/algorithm_pruning.md
-          - sparse_dcc: help/sparse_dcc.md
-          - sparse_dcc_extra_evals: help/sparse_dcc_extra_evals.md
-          - Sparse DCC Bounds: help/algorithm_sparse_dcc.md
-          - no_dcc: help/no_dcc.md
-          - dcc: help/dcc.md
-          - dcc_sq16 (Quantized DCC): help/dcc_sq16.md
+          - te4 (4-Point): help/pruning/te4.md
+          - te5 (5-Point): help/pruning/te5.md
+          - Distance Geometry: help/pruning/algorithm_pruning.md
+          - sparse_dcc: help/pruning/sparse_dcc.md
+          - sparse_dcc_extra_evals: help/pruning/sparse_dcc_extra_evals.md
+          - Sparse DCC Bounds: help/pruning/algorithm_sparse_dcc.md
+          - no_dcc: help/pruning/no_dcc.md
+          - dcc: help/pruning/dcc.md
+          - dcc_sq16 (Quantized DCC): help/pruning/dcc_sq16.md
       - Entropy & Gating:
-          - entropy: help/entropy.md
-          - entropy_fast: help/entropy_fast.md
-          - entropy_gate: help/entropy_gate.md
-          - entropy_first_gate: help/entropy_first_gate.md
-          - entropy_max_targets: help/entropy_max_targets.md
-          - entropy_min_prob: help/entropy_min_prob.md
-          - entropy_leader: help/entropy_leader.md
-          - Target Selection: help/algorithm_entropy.md
-          - Adaptive Gating: help/algorithm_gating.md
+          - entropy: help/entropy/entropy.md
+          - entropy_fast: help/entropy/entropy_fast.md
+          - entropy_gate: help/entropy/entropy_gate.md
+          - entropy_first_gate: help/entropy/entropy_first_gate.md
+          - entropy_max_targets: help/entropy/entropy_max_targets.md
+          - entropy_min_prob: help/entropy/entropy_min_prob.md
+          - entropy_leader: help/entropy/entropy_leader.md
+          - Target Selection: help/entropy/algorithm_entropy.md
+          - Adaptive Gating: help/entropy/algorithm_gating.md
       - Priors & Prediction:
-          - gprob: help/gprob.md
-          - Topology Learning: help/algorithm_gprob.md
-          - dprob: help/dprob.md
-          - fmatcha: help/fmatcha.md
-          - fmatchb: help/fmatchb.md
-          - soft_bayesian: help/soft_bayesian.md
-          - soft_bayesian_sigma: help/soft_bayesian_sigma.md
-          - Bayesian Updates: help/algorithm_soft_bayesian.md
-          - tm (Transitions): help/tm.md
-          - tm_out: help/tm_out.md
-          - pred (Predictor): help/pred.md
-          - pass2nearest: help/pass2nearest.md
+          - gprob: help/priors/gprob.md
+          - Topology Learning: help/priors/algorithm_gprob.md
+          - dprob: help/priors/dprob.md
+          - fmatcha: help/priors/fmatcha.md
+          - fmatchb: help/priors/fmatchb.md
+          - soft_bayesian: help/priors/soft_bayesian.md
+          - soft_bayesian_sigma: help/priors/soft_bayesian_sigma.md
+          - Bayesian Updates: help/priors/algorithm_soft_bayesian.md
+          - tm (Transitions): help/priors/tm.md
+          - tm_out: help/priors/tm_out.md
+          - pred (Predictor): help/priors/pred.md
+          - pass2nearest: help/priors/pass2nearest.md
       - Multi-Tile & JTF:
-          - tiles: help/tiles.md
-          - tilemap: help/tilemap.md
-          - tileconf: help/tileconf.md
-          - jtf (Trajectory Fusion): help/jtf.md
-          - retrieval_window: help/retrieval_window.md
-          - xtile: help/xtile.md
-          - no_xtile: help/no_xtile.md
-          - xtile_decay: help/xtile_decay.md
-          - cpt: help/cpt.md
+          - tiles: help/tiling/tiles.md
+          - tilemap: help/tiling/tilemap.md
+          - tileconf: help/tiling/tileconf.md
+          - jtf (Trajectory Fusion): help/tiling/jtf.md
+          - retrieval_window: help/tiling/retrieval_window.md
+          - xtile: help/tiling/xtile.md
+          - no_xtile: help/tiling/no_xtile.md
+          - xtile_decay: help/tiling/xtile_decay.md
+          - cpt: help/tiling/cpt.md
       - Input & Streams:
-          - input (Formats): help/input.md
-          - filelist: help/filelist.md
-          - stream (ImageStreamIO): help/stream.md
-          - cnt2sync: help/cnt2sync.md
-          - shm: help/shm.md
+          - input (Formats): help/io/input.md
+          - filelist: help/io/filelist.md
+          - stream (ImageStreamIO): help/io/stream.md
+          - cnt2sync: help/io/cnt2sync.md
+          - shm: help/io/shm.md
       - Output & Analysis:
-          - outdir: help/outdir.md
-          - output (Overview): help/output.md
-          - txt (ASCII Format): help/txt.md
-          - clustered: help/clustered.md
-          - membership: help/membership.md
-          - no_membership: help/no_membership.md
-          - anchors: help/anchors.md
-          - no_anchors: help/no_anchors.md
-          - counts: help/counts.md
-          - no_counts: help/no_counts.md
-          - evals: help/evals.md
-          - avg: help/avg.md
-          - fitsout: help/fitsout.md
-          - pngout: help/pngout.md
-          - clusters: help/clusters.md
-          - maxvis: help/maxvis.md
-          - distall: help/distall.md
-          - analysis: help/analysis.md
-          - dimdensity (LID & Density): help/dimdensity.md
+          - outdir: help/output/outdir.md
+          - output (Overview): help/output/output.md
+          - txt (ASCII Format): help/output/txt.md
+          - clustered: help/output/clustered.md
+          - membership: help/output/membership.md
+          - no_membership: help/output/no_membership.md
+          - anchors: help/output/anchors.md
+          - no_anchors: help/output/no_anchors.md
+          - counts: help/output/counts.md
+          - no_counts: help/output/no_counts.md
+          - evals: help/output/evals.md
+          - avg: help/output/avg.md
+          - fitsout: help/output/fitsout.md
+          - pngout: help/output/pngout.md
+          - clusters: help/output/clusters.md
+          - maxvis: help/output/maxvis.md
+          - distall: help/output/distall.md
+          - analysis: help/output/analysis.md
+          - dimdensity (LID & Density): help/output/dimdensity.md
   - Tools & Utilities:
       - Overview: tools/index.md
       - Dataset Profiler (gric-probe): tools/probe.md
@@ -189,5 +189,12 @@ nav:
       - Physics & Image Tiling:
           - Single Bouncing Ball: benchmarks/balls_single.md
           - 3 Colliding Balls: benchmarks/balls_coll.md
+  - Developer Guide:
+      - Overview: dev/index.md
+      - Architecture & Modularity: dev/architecture.md
+      - Code Style & Quality: dev/code_style.md
+      - Engine Internals: dev/engine_internals.md
+      - SIMD & Compute Optimization: dev/simd_guide.md
+      - Shared Memory & IPC: dev/shm_internals.md
   - Practical Use Cases: practical-use.md
   - Satellite Earth Demo: satellite_demo.md

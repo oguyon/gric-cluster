@@ -395,6 +395,15 @@ void prepare_frame_quantization(
             state->anchor_matrix_float = NULL;
         }
     }
+
+    if (!current_frame->is_double && state->anchor_norms_float == NULL)
+    {
+        size_t total_norms = (size_t)config->algo.maxnbclust * sizeof(float);
+        if (posix_memalign((void **)&state->anchor_norms_float, 64, total_norms) != 0)
+        {
+            state->anchor_norms_float = NULL;
+        }
+    }
 }
 
 /**

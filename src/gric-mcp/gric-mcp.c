@@ -8,7 +8,7 @@
 #endif
 
 #include "mcp_dispatch.h"
-#include "shared/cli_colors.h"
+#include "cli_colors.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

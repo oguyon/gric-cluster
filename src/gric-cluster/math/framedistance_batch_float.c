@@ -216,6 +216,20 @@ void framedist_batch_1x4_float(
 }
 
 #if GRIC_HAVE_AVX512_TARGET
+/**
+ * calc_dist4_cutoff_f32_avx512() - AVX-512 1-query vs 4-anchor float distance with early cutoff.
+ * @q:         Query vector [size].
+ * @anchors:   Array of 4 candidate anchor pointers.
+ * @size:      Vector length.
+ * @cutoff_sq: Early cutoff distance squared threshold.
+ * @out_dists: Output array [4] populated with computed Euclidean distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during candidate cluster evaluation on AVX-512 hardware to compute 4 distances
+ * in parallel, pruning evaluation when partial sums exceed the squared cutoff threshold.
+ *
+ * Return: 0 if evaluated, or non-zero if all candidates were pruned.
+ */
 GRIC_TARGET_AVX512
 static int calc_dist4_cutoff_f32_avx512(
     const float *restrict        q,
@@ -342,6 +356,19 @@ static int calc_dist4_cutoff_f32_avx512(
     return pruned_mask;
 }
 
+/**
+ * calc_dist8_cutoff_f32_avx512() - AVX-512 1-query vs 8-anchor float distance with early cutoff.
+ * @q:         Query vector [size].
+ * @anchors:   Array of 8 candidate anchor pointers.
+ * @size:      Vector length.
+ * @cutoff_sq: Early cutoff distance squared threshold.
+ * @out_dists: Output array [8] populated with computed Euclidean distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates 8 candidate anchors simultaneously against 1 query with block-level early cutoff.
+ *
+ * Return: 0 if evaluated, or non-zero if all candidates were pruned.
+ */
 GRIC_TARGET_AVX512
 static int calc_dist8_cutoff_f32_avx512(
     const float *restrict        q,
@@ -523,6 +550,16 @@ static int calc_dist8_cutoff_f32_avx512(
     return pruned_mask;
 }
 
+/**
+ * calc_dist8_f32_avx512() - AVX-512 1-query vs 8-anchor exact float Euclidean distance.
+ * @q:         Query vector [size].
+ * @a0-a7:     Pointers to 8 candidate anchor vectors [size].
+ * @out_dists: Output array [8] populated with computed Euclidean distances.
+ * @size:      Vector length.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Exact unpruned distance evaluation across 8 anchors using 512-bit FMA vector registers.
+ */
 GRIC_TARGET_AVX512
 static void calc_dist8_f32_avx512(
     const float *restrict        q,
@@ -657,6 +694,16 @@ static void calc_dist8_f32_avx512(
     out_dists[7] = (double)sqrtf(s7);
 }
 
+/**
+ * calc_dist16_f32_avx512() - AVX-512 1-query vs 16-anchor exact float Euclidean distance.
+ * @q:         Query vector [size].
+ * @a:         Array of 16 candidate anchor pointers.
+ * @out_dists: Output array [16] populated with computed Euclidean distances.
+ * @size:      Vector length.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * High-throughput kernel utilizing all 32 AVX-512 registers to evaluate 16 anchors in parallel.
+ */
 GRIC_TARGET_AVX512
 static void calc_dist16_f32_avx512(
     const float *restrict        q,
@@ -1385,9 +1432,138 @@ int framedist_batch_cutoff_1x8_float(
 }
 
 /**
- * framedist_batch_1x8_float() - Vectorized 1-query vs 8-anchor Euclidean distance (single).
+ * calc_dist4_f32_core() - Vectorized 1-query vs 4-anchor Euclidean distance (single).
  * @q:         Pointer to query array.
- * @anchors:   Array of 8 pointers to candidate anchor arrays.
+ * @a0-a3:     Pointers to candidate anchor arrays.
+ * @out_dists: Array of 4 doubles to receive computed distances.
+ * @size:      Number of elements in each array.
+ */
+static inline __attribute__((always_inline)) void calc_dist4_f32_core(
+    const float *restrict q,
+    const float *restrict a0,
+    const float *restrict a1,
+    const float *restrict a2,
+    const float *restrict a3,
+    double *restrict      out_dists,
+    long                  size)
+{
+    float sum0 = 0.0f;
+    float sum1 = 0.0f;
+    float sum2 = 0.0f;
+    float sum3 = 0.0f;
+    long i = 0;
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (size >= 8)
+    {
+        __m256 acc0 = _mm256_setzero_ps();
+        __m256 acc1 = _mm256_setzero_ps();
+        __m256 acc2 = _mm256_setzero_ps();
+        __m256 acc3 = _mm256_setzero_ps();
+
+        for (; i <= size - 16; i += 16)
+        {
+            if (size >= 1024 && (i & 31) == 0)
+            {
+                _mm_prefetch((const char *)&q[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a0[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a1[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a2[i + 64], _MM_HINT_T0);
+                _mm_prefetch((const char *)&a3[i + 64], _MM_HINT_T0);
+            }
+
+            __m256 vq0 = _mm256_loadu_ps(&q[i]);
+            __m256 d0_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a0[i]));
+            __m256 d1_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a1[i]));
+            __m256 d2_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a2[i]));
+            __m256 d3_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a3[i]));
+
+#ifdef __FMA__
+            acc0 = _mm256_fmadd_ps(d0_0, d0_0, acc0);
+            acc1 = _mm256_fmadd_ps(d1_0, d1_0, acc1);
+            acc2 = _mm256_fmadd_ps(d2_0, d2_0, acc2);
+            acc3 = _mm256_fmadd_ps(d3_0, d3_0, acc3);
+#else
+            acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0_0, d0_0));
+            acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1_0, d1_0));
+            acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2_0, d2_0));
+            acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3_0, d3_0));
+#endif
+
+            __m256 vq1 = _mm256_loadu_ps(&q[i + 8]);
+            __m256 d0_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a0[i + 8]));
+            __m256 d1_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a1[i + 8]));
+            __m256 d2_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a2[i + 8]));
+            __m256 d3_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a3[i + 8]));
+
+#ifdef __FMA__
+            acc0 = _mm256_fmadd_ps(d0_1, d0_1, acc0);
+            acc1 = _mm256_fmadd_ps(d1_1, d1_1, acc1);
+            acc2 = _mm256_fmadd_ps(d2_1, d2_1, acc2);
+            acc3 = _mm256_fmadd_ps(d3_1, d3_1, acc3);
+#else
+            acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0_1, d0_1));
+            acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1_1, d1_1));
+            acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2_1, d2_1));
+            acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3_1, d3_1));
+#endif
+        }
+
+        for (; i <= size - 8; i += 8)
+        {
+            __m256 vq = _mm256_loadu_ps(&q[i]);
+            __m256 d0 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a0[i]));
+            acc0 = _mm256_fmadd_ps(d0, d0, acc0);
+            __m256 d1 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a1[i]));
+            acc1 = _mm256_fmadd_ps(d1, d1, acc1);
+            __m256 d2 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a2[i]));
+            acc2 = _mm256_fmadd_ps(d2, d2, acc2);
+            __m256 d3 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a3[i]));
+            acc3 = _mm256_fmadd_ps(d3, d3, acc3);
+        }
+
+        __m128 s0 = _mm_add_ps(_mm256_castps256_ps128(acc0), _mm256_extractf128_ps(acc0, 1));
+        __m128 s1 = _mm_add_ps(_mm256_castps256_ps128(acc1), _mm256_extractf128_ps(acc1, 1));
+        __m128 s2 = _mm_add_ps(_mm256_castps256_ps128(acc2), _mm256_extractf128_ps(acc2, 1));
+        __m128 s3 = _mm_add_ps(_mm256_castps256_ps128(acc3), _mm256_extractf128_ps(acc3, 1));
+
+        _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
+
+        __m128 f0123 = _mm_add_ps(_mm_add_ps(s0, s1), _mm_add_ps(s2, s3));
+        float f03[4];
+        _mm_storeu_ps(f03, f0123);
+
+        sum0 += f03[0];
+        sum1 += f03[1];
+        sum2 += f03[2];
+        sum3 += f03[3];
+    }
+#endif
+
+    for (; i < size; i++)
+    {
+        float q_val = q[i];
+        float d0 = q_val - a0[i];
+        float d1 = q_val - a1[i];
+        float d2 = q_val - a2[i];
+        float d3 = q_val - a3[i];
+        sum0 += d0 * d0;
+        sum1 += d1 * d1;
+        sum2 += d2 * d2;
+        sum3 += d3 * d3;
+    }
+
+    out_dists[0] = (double)sqrtf(sum0);
+    out_dists[1] = (double)sqrtf(sum1);
+    out_dists[2] = (double)sqrtf(sum2);
+    out_dists[3] = (double)sqrtf(sum3);
+}
+
+/**
+ * calc_dist8_f32_core() - Vectorized 1-query vs 8-anchor Euclidean distance (single).
+ * @q:         Pointer to query array.
+ * @a0-a7:     Pointers to 8 candidate anchor arrays.
  * @out_dists: Array of 8 doubles to receive computed distances.
  * @size:      Number of elements in each array.
  */
@@ -1404,18 +1580,6 @@ static inline __attribute__((always_inline)) void calc_dist8_f32_core(
     double *restrict      out_dists,
     long                  size)
 {
-    float sum0 = 0.0f;
-    float sum1 = 0.0f;
-    float sum2 = 0.0f;
-    float sum3 = 0.0f;
-    float sum4 = 0.0f;
-    float sum5 = 0.0f;
-    float sum6 = 0.0f;
-    float sum7 = 0.0f;
-    long i = 0;
-
-#if defined(__AVX__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 #if defined(__AVX2__)
     if (size == 2)
     {
@@ -1442,297 +1606,19 @@ static inline __attribute__((always_inline)) void calc_dist8_f32_core(
         return;
     }
 #endif
-
-    if (size >= 8)
-    {
-        __m256 acc0 = _mm256_setzero_ps();
-        __m256 acc1 = _mm256_setzero_ps();
-        __m256 acc2 = _mm256_setzero_ps();
-        __m256 acc3 = _mm256_setzero_ps();
-        __m256 acc4 = _mm256_setzero_ps();
-        __m256 acc5 = _mm256_setzero_ps();
-        __m256 acc6 = _mm256_setzero_ps();
-        __m256 acc7 = _mm256_setzero_ps();
-
-        for (; i <= size - 16; i += 16)
-        {
-            if (size >= 1024 && (i & 31) == 0)
-            {
-                _mm_prefetch((const char *)&q[i + 64], _MM_HINT_T0);
-                _mm_prefetch((const char *)&a0[i + 64], _MM_HINT_T0);
-                _mm_prefetch((const char *)&a1[i + 64], _MM_HINT_T0);
-                _mm_prefetch((const char *)&a2[i + 64], _MM_HINT_T0);
-                _mm_prefetch((const char *)&a3[i + 64], _MM_HINT_T0);
-                _mm_prefetch((const char *)&a4[i + 64], _MM_HINT_T0);
-                _mm_prefetch((const char *)&a5[i + 64], _MM_HINT_T0);
-                _mm_prefetch((const char *)&a6[i + 64], _MM_HINT_T0);
-                _mm_prefetch((const char *)&a7[i + 64], _MM_HINT_T0);
-            }
-
-            __m256 vq0 = _mm256_loadu_ps(&q[i]);
-            {
-                __m256 d0_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a0[i]));
-#ifdef __FMA__
-                acc0 = _mm256_fmadd_ps(d0_0, d0_0, acc0);
-#else
-                acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0_0, d0_0));
-#endif
-            }
-            {
-                __m256 d1_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a1[i]));
-#ifdef __FMA__
-                acc1 = _mm256_fmadd_ps(d1_0, d1_0, acc1);
-#else
-                acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1_0, d1_0));
-#endif
-            }
-            {
-                __m256 d2_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a2[i]));
-#ifdef __FMA__
-                acc2 = _mm256_fmadd_ps(d2_0, d2_0, acc2);
-#else
-                acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2_0, d2_0));
-#endif
-            }
-            {
-                __m256 d3_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a3[i]));
-#ifdef __FMA__
-                acc3 = _mm256_fmadd_ps(d3_0, d3_0, acc3);
-#else
-                acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3_0, d3_0));
-#endif
-            }
-            {
-                __m256 d4_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a4[i]));
-#ifdef __FMA__
-                acc4 = _mm256_fmadd_ps(d4_0, d4_0, acc4);
-#else
-                acc4 = _mm256_add_ps(acc4, _mm256_mul_ps(d4_0, d4_0));
-#endif
-            }
-            {
-                __m256 d5_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a5[i]));
-#ifdef __FMA__
-                acc5 = _mm256_fmadd_ps(d5_0, d5_0, acc5);
-#else
-                acc5 = _mm256_add_ps(acc5, _mm256_mul_ps(d5_0, d5_0));
-#endif
-            }
-            {
-                __m256 d6_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a6[i]));
-#ifdef __FMA__
-                acc6 = _mm256_fmadd_ps(d6_0, d6_0, acc6);
-#else
-                acc6 = _mm256_add_ps(acc6, _mm256_mul_ps(d6_0, d6_0));
-#endif
-            }
-            {
-                __m256 d7_0 = _mm256_sub_ps(vq0, _mm256_loadu_ps(&a7[i]));
-#ifdef __FMA__
-                acc7 = _mm256_fmadd_ps(d7_0, d7_0, acc7);
-#else
-                acc7 = _mm256_add_ps(acc7, _mm256_mul_ps(d7_0, d7_0));
-#endif
-            }
-
-            __m256 vq1 = _mm256_loadu_ps(&q[i + 8]);
-            {
-                __m256 d0_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a0[i + 8]));
-#ifdef __FMA__
-                acc0 = _mm256_fmadd_ps(d0_1, d0_1, acc0);
-#else
-                acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0_1, d0_1));
-#endif
-            }
-            {
-                __m256 d1_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a1[i + 8]));
-#ifdef __FMA__
-                acc1 = _mm256_fmadd_ps(d1_1, d1_1, acc1);
-#else
-                acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1_1, d1_1));
-#endif
-            }
-            {
-                __m256 d2_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a2[i + 8]));
-#ifdef __FMA__
-                acc2 = _mm256_fmadd_ps(d2_1, d2_1, acc2);
-#else
-                acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2_1, d2_1));
-#endif
-            }
-            {
-                __m256 d3_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a3[i + 8]));
-#ifdef __FMA__
-                acc3 = _mm256_fmadd_ps(d3_1, d3_1, acc3);
-#else
-                acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3_1, d3_1));
-#endif
-            }
-            {
-                __m256 d4_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a4[i + 8]));
-#ifdef __FMA__
-                acc4 = _mm256_fmadd_ps(d4_1, d4_1, acc4);
-#else
-                acc4 = _mm256_add_ps(acc4, _mm256_mul_ps(d4_1, d4_1));
-#endif
-            }
-            {
-                __m256 d5_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a5[i + 8]));
-#ifdef __FMA__
-                acc5 = _mm256_fmadd_ps(d5_1, d5_1, acc5);
-#else
-                acc5 = _mm256_add_ps(acc5, _mm256_mul_ps(d5_1, d5_1));
-#endif
-            }
-            {
-                __m256 d6_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a6[i + 8]));
-#ifdef __FMA__
-                acc6 = _mm256_fmadd_ps(d6_1, d6_1, acc6);
-#else
-                acc6 = _mm256_add_ps(acc6, _mm256_mul_ps(d6_1, d6_1));
-#endif
-            }
-            {
-                __m256 d7_1 = _mm256_sub_ps(vq1, _mm256_loadu_ps(&a7[i + 8]));
-#ifdef __FMA__
-                acc7 = _mm256_fmadd_ps(d7_1, d7_1, acc7);
-#else
-                acc7 = _mm256_add_ps(acc7, _mm256_mul_ps(d7_1, d7_1));
-#endif
-            }
-        }
-
-        for (; i <= size - 8; i += 8)
-        {
-            __m256 vq = _mm256_loadu_ps(&q[i]);
-            {
-                __m256 d0 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a0[i]));
-#ifdef __FMA__
-                acc0 = _mm256_fmadd_ps(d0, d0, acc0);
-#else
-                acc0 = _mm256_add_ps(acc0, _mm256_mul_ps(d0, d0));
-#endif
-            }
-            {
-                __m256 d1 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a1[i]));
-#ifdef __FMA__
-                acc1 = _mm256_fmadd_ps(d1, d1, acc1);
-#else
-                acc1 = _mm256_add_ps(acc1, _mm256_mul_ps(d1, d1));
-#endif
-            }
-            {
-                __m256 d2 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a2[i]));
-#ifdef __FMA__
-                acc2 = _mm256_fmadd_ps(d2, d2, acc2);
-#else
-                acc2 = _mm256_add_ps(acc2, _mm256_mul_ps(d2, d2));
-#endif
-            }
-            {
-                __m256 d3 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a3[i]));
-#ifdef __FMA__
-                acc3 = _mm256_fmadd_ps(d3, d3, acc3);
-#else
-                acc3 = _mm256_add_ps(acc3, _mm256_mul_ps(d3, d3));
-#endif
-            }
-            {
-                __m256 d4 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a4[i]));
-#ifdef __FMA__
-                acc4 = _mm256_fmadd_ps(d4, d4, acc4);
-#else
-                acc4 = _mm256_add_ps(acc4, _mm256_mul_ps(d4, d4));
-#endif
-            }
-            {
-                __m256 d5 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a5[i]));
-#ifdef __FMA__
-                acc5 = _mm256_fmadd_ps(d5, d5, acc5);
-#else
-                acc5 = _mm256_add_ps(acc5, _mm256_mul_ps(d5, d5));
-#endif
-            }
-            {
-                __m256 d6 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a6[i]));
-#ifdef __FMA__
-                acc6 = _mm256_fmadd_ps(d6, d6, acc6);
-#else
-                acc6 = _mm256_add_ps(acc6, _mm256_mul_ps(d6, d6));
-#endif
-            }
-            {
-                __m256 d7 = _mm256_sub_ps(vq, _mm256_loadu_ps(&a7[i]));
-#ifdef __FMA__
-                acc7 = _mm256_fmadd_ps(d7, d7, acc7);
-#else
-                acc7 = _mm256_add_ps(acc7, _mm256_mul_ps(d7, d7));
-#endif
-            }
-        }
-
-        __m128 s0 = _mm_add_ps(_mm256_castps256_ps128(acc0), _mm256_extractf128_ps(acc0, 1));
-        __m128 s1 = _mm_add_ps(_mm256_castps256_ps128(acc1), _mm256_extractf128_ps(acc1, 1));
-        __m128 s2 = _mm_add_ps(_mm256_castps256_ps128(acc2), _mm256_extractf128_ps(acc2, 1));
-        __m128 s3 = _mm_add_ps(_mm256_castps256_ps128(acc3), _mm256_extractf128_ps(acc3, 1));
-        __m128 s4 = _mm_add_ps(_mm256_castps256_ps128(acc4), _mm256_extractf128_ps(acc4, 1));
-        __m128 s5 = _mm_add_ps(_mm256_castps256_ps128(acc5), _mm256_extractf128_ps(acc5, 1));
-        __m128 s6 = _mm_add_ps(_mm256_castps256_ps128(acc6), _mm256_extractf128_ps(acc6, 1));
-        __m128 s7 = _mm_add_ps(_mm256_castps256_ps128(acc7), _mm256_extractf128_ps(acc7, 1));
-
-        _MM_TRANSPOSE4_PS(s0, s1, s2, s3);
-        _MM_TRANSPOSE4_PS(s4, s5, s6, s7);
-
-        __m128 f0123 = _mm_add_ps(_mm_add_ps(s0, s1), _mm_add_ps(s2, s3));
-        __m128 f4567 = _mm_add_ps(_mm_add_ps(s4, s5), _mm_add_ps(s6, s7));
-
-        float f03[4];
-        float f47[4];
-        _mm_storeu_ps(f03, f0123);
-        _mm_storeu_ps(f47, f4567);
-
-        sum0 += f03[0];
-        sum1 += f03[1];
-        sum2 += f03[2];
-        sum3 += f03[3];
-        sum4 += f47[0];
-        sum5 += f47[1];
-        sum6 += f47[2];
-        sum7 += f47[3];
-    }
-#endif
-
-    for (; i < size; i++)
-    {
-        float q_val = q[i];
-        float d0 = q_val - a0[i];
-        float d1 = q_val - a1[i];
-        float d2 = q_val - a2[i];
-        float d3 = q_val - a3[i];
-        float d4 = q_val - a4[i];
-        float d5 = q_val - a5[i];
-        float d6 = q_val - a6[i];
-        float d7 = q_val - a7[i];
-        sum0 += d0 * d0;
-        sum1 += d1 * d1;
-        sum2 += d2 * d2;
-        sum3 += d3 * d3;
-        sum4 += d4 * d4;
-        sum5 += d5 * d5;
-        sum6 += d6 * d6;
-        sum7 += d7 * d7;
-    }
-
-    out_dists[0] = (double)sqrtf(sum0);
-    out_dists[1] = (double)sqrtf(sum1);
-    out_dists[2] = (double)sqrtf(sum2);
-    out_dists[3] = (double)sqrtf(sum3);
-    out_dists[4] = (double)sqrtf(sum4);
-    out_dists[5] = (double)sqrtf(sum5);
-    out_dists[6] = (double)sqrtf(sum6);
-    out_dists[7] = (double)sqrtf(sum7);
+    calc_dist4_f32_core(q, a0, a1, a2, a3, out_dists, size);
+    calc_dist4_f32_core(q, a4, a5, a6, a7, out_dists + 4, size);
 }
 
+/**
+ * framedist_batch_1x8_float() - Evaluate distance from 1 query frame to 8 arbitrary anchors.
+ * @query:     Pointer to query Frame structure.
+ * @anchors:   Array of 8 candidate anchor Frame pointers.
+ * @out_dists: Output array [8] populated with Euclidean distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Primary batch distance API for clustering and k-NN search when anchors are non-contiguous.
+ */
 void framedist_batch_1x8_float(
     const float *restrict        q,
     const float *const *restrict anchors,
@@ -1754,6 +1640,15 @@ void framedist_batch_1x8_float(
     );
 }
 
+/**
+ * framedist_batch_1x8_contiguous_float() - Evaluate distance from 1 query to 8 contiguous anchors.
+ * @query:         Pointer to query Frame structure.
+ * @anchor_matrix: Contiguous row-major anchor float matrix [8 x dim].
+ * @out_dists:     Output array [8] populated with Euclidean distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * High-performance batch evaluation exploiting stride-1 contiguous anchor matrix layout.
+ */
 void framedist_batch_1x8_contiguous_float(
     const float *restrict q,
     const float *restrict anchors_matrix,
@@ -1786,6 +1681,15 @@ void framedist_batch_1x8_contiguous_float(
     );
 }
 
+/**
+ * framedist_batch_1x16_contiguous_float() - Distance from 1 query to 16 contiguous anchors.
+ * @query:         Pointer to query Frame structure.
+ * @anchor_matrix: Contiguous row-major anchor float matrix [16 x dim].
+ * @out_dists:     Output array [16] populated with Euclidean distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * 16-way batch evaluation on AVX-512 hardware for maximum SIMD register saturation.
+ */
 void framedist_batch_1x16_contiguous_float(
     const float *restrict q,
     const float *restrict anchors_matrix,

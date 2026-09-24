@@ -6,7 +6,7 @@
 #ifndef STATUS_INTERNAL_H
 #define STATUS_INTERNAL_H
 
-#include "shared/cli_colors.h"
+#include "cli_colors.h"
 #include "gric-cluster/core/cluster_shm.h"
 #include <inttypes.h>
 #include <signal.h>

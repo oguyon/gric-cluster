@@ -27,8 +27,18 @@
 
 #if (defined(__AVX__) || GRIC_HAVE_AVX512_TARGET) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * hadd_m256_ps() - Horizontal sum of 8 float lanes in a 256-bit AVX register.
+ * @v: 256-bit vector holding 8 single-precision floats.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Static helper used in AVX2 inner loops to reduce accumulator vectors into a single scalar sum.
+ *
+ * Return: Sum of all 8 vector lanes.
+ */
 GRIC_TARGET_AVX2
-static inline float hadd_m256_ps(__m256 v)
+static inline float hadd_m256_ps(
+    __m256 v)
 {
     __m128 lo = _mm256_castps256_ps128(v);
     __m128 hi = _mm256_extractf128_ps(v, 1);
@@ -39,8 +49,18 @@ static inline float hadd_m256_ps(__m256 v)
     return _mm_cvtss_f32(_mm_add_ss(squad, shuf));
 }
 
+/**
+ * hadd_m256d_pd() - Horizontal sum of 4 double lanes in a 256-bit AVX register.
+ * @v: 256-bit vector holding 4 double-precision floats.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Static helper used in AVX2 double-precision inner loops to reduce accumulator vectors.
+ *
+ * Return: Sum of all 4 vector lanes.
+ */
 GRIC_TARGET_AVX2
-static inline double hadd_m256d_pd(__m256d v)
+static inline double hadd_m256d_pd(
+    __m256d v)
 {
     __m128d lo = _mm256_castpd256_pd128(v);
     __m128d hi = _mm256_extractf128_pd(v, 1);
@@ -50,6 +70,19 @@ static inline double hadd_m256d_pd(__m256d v)
 #endif
 
 #if GRIC_HAVE_AVX512_TARGET
+/**
+ * compute_l2_norms_float_avx512() - Compute vector L2 squared norms using AVX-512.
+ * @mat:       Pointer to row-major float matrix [count x dim].
+ * @count:     Number of vectors.
+ * @dim:       Vector dimensionality.
+ * @out_norms: Output array [count] populated with ||v||^2 values.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by cluster_compute_l2_norms_float() on AVX-512 hardware to precompute squared
+ * vector norms for GEMM distance expansion (||a - b||^2 = ||a||^2 + ||b||^2 - 2<a,b>).
+ *
+ * Return: 0 on success.
+ */
 GRIC_TARGET_AVX512
 static int compute_l2_norms_float_avx512(
     const float *restrict mat,
@@ -98,6 +131,18 @@ static int compute_l2_norms_float_avx512(
     return 0;
 }
 
+/**
+ * compute_l2_norms_double_avx512() - Compute double vector L2 squared norms using AVX-512.
+ * @mat:       Pointer to row-major double matrix [count x dim].
+ * @count:     Number of vectors.
+ * @dim:       Vector dimensionality.
+ * @out_norms: Output array [count] populated with ||v||^2 values.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Double-precision counterpart to compute_l2_norms_float_avx512().
+ *
+ * Return: 0 on success.
+ */
 GRIC_TARGET_AVX512
 static int compute_l2_norms_double_avx512(
     const double *restrict mat,
@@ -435,6 +480,19 @@ static inline void gemm_dist_scalar_double(
  * gemm_dist_tile_4x4_float() - 4x4 register-tiled fused distance microkernel.
  */
 GRIC_TARGET_AVX2
+/**
+ * gemm_dist_tile_4x4_float() - AVX2 4x4 matrix-multiply microkernel for float distances.
+ * @queries:     Array of 4 query vector pointers.
+ * @anchors:     Array of 4 anchor vector pointers.
+ * @q_norms:     Array of 4 precomputed squared query norms.
+ * @a_norms:     Array of 4 precomputed squared anchor norms.
+ * @dists_sq:    Output 4x4 distance squared matrix.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Register-blocked microkernel evaluating 16 pairwise distances simultaneously via FMA
+ * dot products in AVX2 registers.
+ */
 static void gemm_dist_tile_4x4_float(
     const float *const *restrict q_ptrs,
     const float *const *restrict x_ptrs,
@@ -592,6 +650,18 @@ static void gemm_dist_tile_4x4_float(
  * gemm_dist_tile_2x4_double() - 2x4 register-tiled fused distance microkernel (double).
  */
 GRIC_TARGET_AVX2
+/**
+ * gemm_dist_tile_2x4_double() - AVX2 2x4 matrix-multiply microkernel for double distances.
+ * @queries:     Array of 2 query vector pointers.
+ * @anchors:     Array of 4 anchor vector pointers.
+ * @q_norms:     Array of 2 precomputed squared query norms.
+ * @a_norms:     Array of 4 precomputed squared anchor norms.
+ * @dists_sq:    Output 2x4 distance squared matrix.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Double-precision register-blocked microkernel evaluating 8 pairwise distances simultaneously.
+ */
 static void gemm_dist_tile_2x4_double(
     const double *const *restrict q_ptrs,
     const double *const *restrict x_ptrs,
@@ -698,6 +768,225 @@ static void gemm_dist_tile_2x4_double(
         }
     }
 }
+
+/**
+ * gemm_dist_vec_candidates_float_avx2() - 1-query-to-N-candidates distance microkernel (float).
+ */
+GRIC_TARGET_AVX2
+/**
+ * gemm_dist_vec_candidates_float_avx2() - AVX2 1-query vs 8-candidate GEMM distance kernel.
+ * @query:       Pointer to query float array [dim].
+ * @q_norm:      Precomputed squared query norm.
+ * @anchors:     Array of 8 candidate anchor pointers.
+ * @a_norms:     Array of 8 precomputed squared anchor norms.
+ * @dists:       Output array [8] populated with Euclidean distances.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates distances from 1 query to 8 candidate clusters in parallel using AVX2 FMA.
+ */
+static void gemm_dist_vec_candidates_float_avx2(
+    const float *restrict        q,
+    const float *restrict        X,
+    const float *const *restrict cand_ptrs,
+    float                        qn,
+    const float *restrict        x_norms,
+    int                          N,
+    int                          dim,
+    float       *restrict        out_dist_sq,
+    double      *restrict        out_dists)
+{
+    int j = 0;
+    for (; j <= N - 8; j += 8)
+    {
+        const float *x0 = X ? (X + (size_t)(j + 0) * (size_t)dim) : cand_ptrs[j + 0];
+        const float *x1 = X ? (X + (size_t)(j + 1) * (size_t)dim) : cand_ptrs[j + 1];
+        const float *x2 = X ? (X + (size_t)(j + 2) * (size_t)dim) : cand_ptrs[j + 2];
+        const float *x3 = X ? (X + (size_t)(j + 3) * (size_t)dim) : cand_ptrs[j + 3];
+        const float *x4 = X ? (X + (size_t)(j + 4) * (size_t)dim) : cand_ptrs[j + 4];
+        const float *x5 = X ? (X + (size_t)(j + 5) * (size_t)dim) : cand_ptrs[j + 5];
+        const float *x6 = X ? (X + (size_t)(j + 6) * (size_t)dim) : cand_ptrs[j + 6];
+        const float *x7 = X ? (X + (size_t)(j + 7) * (size_t)dim) : cand_ptrs[j + 7];
+
+        __m256 c0 = _mm256_setzero_ps();
+        __m256 c1 = _mm256_setzero_ps();
+        __m256 c2 = _mm256_setzero_ps();
+        __m256 c3 = _mm256_setzero_ps();
+        __m256 c4 = _mm256_setzero_ps();
+        __m256 c5 = _mm256_setzero_ps();
+        __m256 c6 = _mm256_setzero_ps();
+        __m256 c7 = _mm256_setzero_ps();
+
+        int d = 0;
+        for (; d <= dim - 8; d += 8)
+        {
+            __m256 vq = _mm256_loadu_ps(&q[d]);
+#ifdef __FMA__
+            c0 = _mm256_fmadd_ps(vq, _mm256_loadu_ps(&x0[d]), c0);
+            c1 = _mm256_fmadd_ps(vq, _mm256_loadu_ps(&x1[d]), c1);
+            c2 = _mm256_fmadd_ps(vq, _mm256_loadu_ps(&x2[d]), c2);
+            c3 = _mm256_fmadd_ps(vq, _mm256_loadu_ps(&x3[d]), c3);
+            c4 = _mm256_fmadd_ps(vq, _mm256_loadu_ps(&x4[d]), c4);
+            c5 = _mm256_fmadd_ps(vq, _mm256_loadu_ps(&x5[d]), c5);
+            c6 = _mm256_fmadd_ps(vq, _mm256_loadu_ps(&x6[d]), c6);
+            c7 = _mm256_fmadd_ps(vq, _mm256_loadu_ps(&x7[d]), c7);
+#else
+            c0 = _mm256_add_ps(c0, _mm256_mul_ps(vq, _mm256_loadu_ps(&x0[d])));
+            c1 = _mm256_add_ps(c1, _mm256_mul_ps(vq, _mm256_loadu_ps(&x1[d])));
+            c2 = _mm256_add_ps(c2, _mm256_mul_ps(vq, _mm256_loadu_ps(&x2[d])));
+            c3 = _mm256_add_ps(c3, _mm256_mul_ps(vq, _mm256_loadu_ps(&x3[d])));
+            c4 = _mm256_add_ps(c4, _mm256_mul_ps(vq, _mm256_loadu_ps(&x4[d])));
+            c5 = _mm256_add_ps(c5, _mm256_mul_ps(vq, _mm256_loadu_ps(&x5[d])));
+            c6 = _mm256_add_ps(c6, _mm256_mul_ps(vq, _mm256_loadu_ps(&x6[d])));
+            c7 = _mm256_add_ps(c7, _mm256_mul_ps(vq, _mm256_loadu_ps(&x7[d])));
+#endif
+        }
+
+        float dots[8] = {
+            hadd_m256_ps(c0), hadd_m256_ps(c1), hadd_m256_ps(c2), hadd_m256_ps(c3),
+            hadd_m256_ps(c4), hadd_m256_ps(c5), hadd_m256_ps(c6), hadd_m256_ps(c7)
+        };
+
+        for (; d < dim; d++)
+        {
+            float q_val = q[d];
+            dots[0] += q_val * x0[d];
+            dots[1] += q_val * x1[d];
+            dots[2] += q_val * x2[d];
+            dots[3] += q_val * x3[d];
+            dots[4] += q_val * x4[d];
+            dots[5] += q_val * x5[d];
+            dots[6] += q_val * x6[d];
+            dots[7] += q_val * x7[d];
+        }
+
+        for (int k = 0; k < 8; k++)
+        {
+            float d2 = qn + x_norms[j + k] - 2.0f * dots[k];
+            if (d2 < 0.0f)
+            {
+                d2 = 0.0f;
+            }
+            if (out_dist_sq != NULL)
+            {
+                out_dist_sq[j + k] = d2;
+            }
+            if (out_dists != NULL)
+            {
+                out_dists[j + k] = (double)sqrtf(d2);
+            }
+        }
+    } // for (; j <= N - 8; j += 8)
+
+    for (; j < N; j++)
+    {
+        const float *xj = X ? (X + (size_t)j * (size_t)dim) : cand_ptrs[j];
+        gemm_dist_scalar_float(
+            q, xj, qn, x_norms[j], dim,
+            out_dist_sq ? &out_dist_sq[j] : NULL,
+            out_dists ? &out_dists[j] : NULL
+        );
+    }
+}
+
+/**
+ * gemm_dist_vec_candidates_double_avx2() - 1-query-to-N-candidates distance microkernel (double).
+ */
+GRIC_TARGET_AVX2
+/**
+ * gemm_dist_vec_candidates_double_avx2() - AVX2 1-query vs 4-candidate double GEMM distance kernel.
+ * @query:       Pointer to query double array [dim].
+ * @q_norm:      Precomputed squared query norm.
+ * @anchors:     Array of 4 candidate anchor pointers.
+ * @a_norms:     Array of 4 precomputed squared anchor norms.
+ * @dists:       Output array [4] populated with Euclidean distances.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Double-precision counterpart to gemm_dist_vec_candidates_float_avx2().
+ */
+static void gemm_dist_vec_candidates_double_avx2(
+    const double *restrict        q,
+    const double *restrict        X,
+    const double *const *restrict cand_ptrs,
+    double                        qn,
+    const double *restrict        x_norms,
+    int                           N,
+    int                           dim,
+    double       *restrict        out_dist_sq,
+    double       *restrict        out_dists)
+{
+    int j = 0;
+    for (; j <= N - 4; j += 4)
+    {
+        const double *x0 = X ? (X + (size_t)(j + 0) * (size_t)dim) : cand_ptrs[j + 0];
+        const double *x1 = X ? (X + (size_t)(j + 1) * (size_t)dim) : cand_ptrs[j + 1];
+        const double *x2 = X ? (X + (size_t)(j + 2) * (size_t)dim) : cand_ptrs[j + 2];
+        const double *x3 = X ? (X + (size_t)(j + 3) * (size_t)dim) : cand_ptrs[j + 3];
+
+        __m256d c0 = _mm256_setzero_pd();
+        __m256d c1 = _mm256_setzero_pd();
+        __m256d c2 = _mm256_setzero_pd();
+        __m256d c3 = _mm256_setzero_pd();
+
+        int d = 0;
+        for (; d <= dim - 4; d += 4)
+        {
+            __m256d vq = _mm256_loadu_pd(&q[d]);
+#ifdef __FMA__
+            c0 = _mm256_fmadd_pd(vq, _mm256_loadu_pd(&x0[d]), c0);
+            c1 = _mm256_fmadd_pd(vq, _mm256_loadu_pd(&x1[d]), c1);
+            c2 = _mm256_fmadd_pd(vq, _mm256_loadu_pd(&x2[d]), c2);
+            c3 = _mm256_fmadd_pd(vq, _mm256_loadu_pd(&x3[d]), c3);
+#else
+            c0 = _mm256_add_pd(c0, _mm256_mul_pd(vq, _mm256_loadu_pd(&x0[d])));
+            c1 = _mm256_add_pd(c1, _mm256_mul_pd(vq, _mm256_loadu_pd(&x1[d])));
+            c2 = _mm256_add_pd(c2, _mm256_mul_pd(vq, _mm256_loadu_pd(&x2[d])));
+            c3 = _mm256_add_pd(c3, _mm256_mul_pd(vq, _mm256_loadu_pd(&x3[d])));
+#endif
+        }
+
+        double dots[4] = {
+            hadd_m256d_pd(c0), hadd_m256d_pd(c1), hadd_m256d_pd(c2), hadd_m256d_pd(c3)
+        };
+
+        for (; d < dim; d++)
+        {
+            double q_val = q[d];
+            dots[0] += q_val * x0[d];
+            dots[1] += q_val * x1[d];
+            dots[2] += q_val * x2[d];
+            dots[3] += q_val * x3[d];
+        }
+
+        for (int k = 0; k < 4; k++)
+        {
+            double d2 = qn + x_norms[j + k] - 2.0 * dots[k];
+            if (d2 < 0.0)
+            {
+                d2 = 0.0;
+            }
+            if (out_dist_sq != NULL)
+            {
+                out_dist_sq[j + k] = d2;
+            }
+            if (out_dists != NULL)
+            {
+                out_dists[j + k] = sqrt(d2);
+            }
+        }
+    } // for (; j <= N - 4; j += 4)
+
+    for (; j < N; j++)
+    {
+        const double *xj = X ? (X + (size_t)j * (size_t)dim) : cand_ptrs[j];
+        gemm_dist_scalar_double(
+            q, xj, qn, x_norms[j], dim,
+            out_dist_sq ? &out_dist_sq[j] : NULL,
+            out_dists ? &out_dists[j] : NULL
+        );
+    }
+}
 #endif // defined(__AVX__)
 
 #if GRIC_HAVE_AVX512_TARGET
@@ -705,6 +994,18 @@ static void gemm_dist_tile_2x4_double(
  * gemm_dist_tile_4x4_float_avx512() - 4x4 register-tiled distance microkernel (AVX-512).
  */
 GRIC_TARGET_AVX512
+/**
+ * gemm_dist_tile_4x4_float_avx512() - AVX-512 4x4 matrix-multiply microkernel for float distances.
+ * @queries:     Array of 4 query vector pointers.
+ * @anchors:     Array of 4 anchor vector pointers.
+ * @q_norms:     Array of 4 precomputed squared query norms.
+ * @a_norms:     Array of 4 precomputed squared anchor norms.
+ * @dists_sq:    Output 4x4 distance squared matrix.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * AVX-512 512-bit register-blocked microkernel evaluating 16 pairwise distances simultaneously.
+ */
 static void gemm_dist_tile_4x4_float_avx512(
     const float *const *restrict q_ptrs,
     const float *const *restrict x_ptrs,
@@ -900,7 +1201,16 @@ static void gemm_dist_tile_4x4_float_avx512(
 }
 
 /**
- * gemm_dist_tile_2x4_double_avx512() - 2x4 distance microkernel (AVX-512).
+ * gemm_dist_tile_2x4_double_avx512() - AVX-512 2x4 matrix-multiply kernel for double distances.
+ * @queries:     Array of 2 query vector pointers.
+ * @anchors:     Array of 4 anchor vector pointers.
+ * @q_norms:     Array of 2 precomputed squared query norms.
+ * @a_norms:     Array of 4 precomputed squared anchor norms.
+ * @dists_sq:    Output 2x4 distance squared matrix.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Double-precision AVX-512 register-blocked microkernel evaluating 8 pairwise distances.
  */
 GRIC_TARGET_AVX512
 static void gemm_dist_tile_2x4_double_avx512(
@@ -1040,7 +1350,301 @@ static void gemm_dist_tile_2x4_double_avx512(
         }
     }
 }
+
+/**
+ * gemm_dist_vec_candidates_float_avx512() - Vector-candidate distance (AVX-512, float).
+ */
+GRIC_TARGET_AVX512
+/**
+ * gemm_dist_vec_candidates_float_avx512() - AVX-512 1-query vs 16-candidate GEMM distance kernel.
+ * @query:       Pointer to query float array [dim].
+ * @q_norm:      Precomputed squared query norm.
+ * @anchors:     Array of 16 candidate anchor pointers.
+ * @a_norms:     Array of 16 precomputed squared anchor norms.
+ * @dists:       Output array [16] populated with Euclidean distances.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates distances from 1 query to 16 candidate clusters simultaneously in AVX-512 registers.
+ */
+static void gemm_dist_vec_candidates_float_avx512(
+    const float *restrict        q,
+    const float *restrict        X,
+    const float *const *restrict cand_ptrs,
+    float                        qn,
+    const float *restrict        x_norms,
+    int                          N,
+    int                          dim,
+    float       *restrict        out_dist_sq,
+    double      *restrict        out_dists)
+{
+    int rem_start = (N / 8) * 8;
+    for (int j = 0; j < rem_start; j += 8)
+    {
+        const float *x0 = X ? (X + (size_t)(j + 0) * (size_t)dim) : cand_ptrs[j + 0];
+        const float *x1 = X ? (X + (size_t)(j + 1) * (size_t)dim) : cand_ptrs[j + 1];
+        const float *x2 = X ? (X + (size_t)(j + 2) * (size_t)dim) : cand_ptrs[j + 2];
+        const float *x3 = X ? (X + (size_t)(j + 3) * (size_t)dim) : cand_ptrs[j + 3];
+        const float *x4 = X ? (X + (size_t)(j + 4) * (size_t)dim) : cand_ptrs[j + 4];
+        const float *x5 = X ? (X + (size_t)(j + 5) * (size_t)dim) : cand_ptrs[j + 5];
+        const float *x6 = X ? (X + (size_t)(j + 6) * (size_t)dim) : cand_ptrs[j + 6];
+        const float *x7 = X ? (X + (size_t)(j + 7) * (size_t)dim) : cand_ptrs[j + 7];
+
+        __m512 c0 = _mm512_setzero_ps();
+        __m512 c1 = _mm512_setzero_ps();
+        __m512 c2 = _mm512_setzero_ps();
+        __m512 c3 = _mm512_setzero_ps();
+        __m512 c4 = _mm512_setzero_ps();
+        __m512 c5 = _mm512_setzero_ps();
+        __m512 c6 = _mm512_setzero_ps();
+        __m512 c7 = _mm512_setzero_ps();
+
+        /* Index d carries over into remainder dimension loop */
+        int d = 0;
+        for (; d <= dim - 16; d += 16)
+        {
+            __m512 vq = _mm512_loadu_ps(&q[d]);
+            c0 = _mm512_fmadd_ps(vq, _mm512_loadu_ps(&x0[d]), c0);
+            c1 = _mm512_fmadd_ps(vq, _mm512_loadu_ps(&x1[d]), c1);
+            c2 = _mm512_fmadd_ps(vq, _mm512_loadu_ps(&x2[d]), c2);
+            c3 = _mm512_fmadd_ps(vq, _mm512_loadu_ps(&x3[d]), c3);
+            c4 = _mm512_fmadd_ps(vq, _mm512_loadu_ps(&x4[d]), c4);
+            c5 = _mm512_fmadd_ps(vq, _mm512_loadu_ps(&x5[d]), c5);
+            c6 = _mm512_fmadd_ps(vq, _mm512_loadu_ps(&x6[d]), c6);
+            c7 = _mm512_fmadd_ps(vq, _mm512_loadu_ps(&x7[d]), c7);
+        }
+
+        float dots[8] = {
+            _mm512_reduce_add_ps(c0), _mm512_reduce_add_ps(c1),
+            _mm512_reduce_add_ps(c2), _mm512_reduce_add_ps(c3),
+            _mm512_reduce_add_ps(c4), _mm512_reduce_add_ps(c5),
+            _mm512_reduce_add_ps(c6), _mm512_reduce_add_ps(c7)
+        };
+
+        for (; d < dim; d++)
+        {
+            float q_val = q[d];
+            dots[0] += q_val * x0[d];
+            dots[1] += q_val * x1[d];
+            dots[2] += q_val * x2[d];
+            dots[3] += q_val * x3[d];
+            dots[4] += q_val * x4[d];
+            dots[5] += q_val * x5[d];
+            dots[6] += q_val * x6[d];
+            dots[7] += q_val * x7[d];
+        }
+
+        for (int k = 0; k < 8; k++)
+        {
+            float d2 = qn + x_norms[j + k] - 2.0f * dots[k];
+            if (d2 < 0.0f)
+            {
+                d2 = 0.0f;
+            }
+            if (out_dist_sq != NULL)
+            {
+                out_dist_sq[j + k] = d2;
+            }
+            if (out_dists != NULL)
+            {
+                out_dists[j + k] = (double)sqrtf(d2);
+            }
+        }
+    } // for (int j = 0; j < rem_start; j += 8)
+
+    for (int j = rem_start; j < N; j++)
+    {
+        const float *xj = X ? (X + (size_t)j * (size_t)dim) : cand_ptrs[j];
+        gemm_dist_scalar_float(
+            q, xj, qn, x_norms[j], dim,
+            out_dist_sq ? &out_dist_sq[j] : NULL,
+            out_dists ? &out_dists[j] : NULL
+        );
+    }
+}
+
+/**
+ * gemm_dist_vec_candidates_double_avx512() - Vector-candidate distance (AVX-512, double).
+ */
+GRIC_TARGET_AVX512
+/**
+ * gemm_dist_vec_candidates_double_avx512() - AVX-512 1-query vs 8-candidate double GEMM kernel.
+ * @query:       Pointer to query double array [dim].
+ * @q_norm:      Precomputed squared query norm.
+ * @anchors:     Array of 8 candidate anchor pointers.
+ * @a_norms:     Array of 8 precomputed squared anchor norms.
+ * @dists:       Output array [8] populated with Euclidean distances.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates distances from 1 query to 8 candidate clusters simultaneously in double precision.
+ */
+static void gemm_dist_vec_candidates_double_avx512(
+    const double *restrict        q,
+    const double *restrict        X,
+    const double *const *restrict cand_ptrs,
+    double                        qn,
+    const double *restrict        x_norms,
+    int                           N,
+    int                           dim,
+    double       *restrict        out_dist_sq,
+    double       *restrict        out_dists)
+{
+    int rem_start = (N / 4) * 4;
+    for (int j = 0; j < rem_start; j += 4)
+    {
+        const double *x0 = X ? (X + (size_t)(j + 0) * (size_t)dim) : cand_ptrs[j + 0];
+        const double *x1 = X ? (X + (size_t)(j + 1) * (size_t)dim) : cand_ptrs[j + 1];
+        const double *x2 = X ? (X + (size_t)(j + 2) * (size_t)dim) : cand_ptrs[j + 2];
+        const double *x3 = X ? (X + (size_t)(j + 3) * (size_t)dim) : cand_ptrs[j + 3];
+
+        __m512d c0 = _mm512_setzero_pd();
+        __m512d c1 = _mm512_setzero_pd();
+        __m512d c2 = _mm512_setzero_pd();
+        __m512d c3 = _mm512_setzero_pd();
+
+        /* Index d carries over into remainder dimension loop */
+        int d = 0;
+        for (; d <= dim - 8; d += 8)
+        {
+            __m512d vq = _mm512_loadu_pd(&q[d]);
+            c0 = _mm512_fmadd_pd(vq, _mm512_loadu_pd(&x0[d]), c0);
+            c1 = _mm512_fmadd_pd(vq, _mm512_loadu_pd(&x1[d]), c1);
+            c2 = _mm512_fmadd_pd(vq, _mm512_loadu_pd(&x2[d]), c2);
+            c3 = _mm512_fmadd_pd(vq, _mm512_loadu_pd(&x3[d]), c3);
+        }
+
+        double dots[4] = {
+            _mm512_reduce_add_pd(c0), _mm512_reduce_add_pd(c1),
+            _mm512_reduce_add_pd(c2), _mm512_reduce_add_pd(c3)
+        };
+
+        for (; d < dim; d++)
+        {
+            double q_val = q[d];
+            dots[0] += q_val * x0[d];
+            dots[1] += q_val * x1[d];
+            dots[2] += q_val * x2[d];
+            dots[3] += q_val * x3[d];
+        }
+
+        for (int k = 0; k < 4; k++)
+        {
+            double d2 = qn + x_norms[j + k] - 2.0 * dots[k];
+            if (d2 < 0.0)
+            {
+                d2 = 0.0;
+            }
+            if (out_dist_sq != NULL)
+            {
+                out_dist_sq[j + k] = d2;
+            }
+            if (out_dists != NULL)
+            {
+                out_dists[j + k] = sqrt(d2);
+            }
+        }
+    } // for (int j = 0; j < rem_start; j += 4)
+
+    for (int j = rem_start; j < N; j++)
+    {
+        const double *xj = X ? (X + (size_t)j * (size_t)dim) : cand_ptrs[j];
+        gemm_dist_scalar_double(
+            q, xj, qn, x_norms[j], dim,
+            out_dist_sq ? &out_dist_sq[j] : NULL,
+            out_dists ? &out_dists[j] : NULL
+        );
+    }
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
+/**
+ * gemm_dist_vector_general_float() - Dispatch 1-query-to-N-candidates distance (float).
+ */
+static void gemm_dist_vector_general_float(
+    const float *restrict        q,
+    const float *restrict        X,
+    const float *const *restrict cand_ptrs,
+    float                        qn,
+    const float *restrict        x_norms,
+    int                          N,
+    int                          dim,
+    float       *restrict        out_dist_sq,
+    double      *restrict        out_dists)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 16)
+    {
+        gemm_dist_vec_candidates_float_avx512(
+            q, X, cand_ptrs, qn, x_norms, N, dim, out_dist_sq, out_dists
+        );
+        return;
+    }
 #endif
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (dim >= 8)
+    {
+        gemm_dist_vec_candidates_float_avx2(
+            q, X, cand_ptrs, qn, x_norms, N, dim, out_dist_sq, out_dists
+        );
+        return;
+    }
+#endif
+    for (int j = 0; j < N; j++)
+    {
+        const float *xj = X ? (X + (size_t)j * (size_t)dim) : cand_ptrs[j];
+        gemm_dist_scalar_float(
+            q, xj, qn, x_norms[j], dim,
+            out_dist_sq ? &out_dist_sq[j] : NULL,
+            out_dists ? &out_dists[j] : NULL
+        );
+    }
+}
+
+/**
+ * gemm_dist_vector_general_double() - Dispatch 1-query-to-N-candidates distance (double).
+ */
+static void gemm_dist_vector_general_double(
+    const double *restrict        q,
+    const double *restrict        X,
+    const double *const *restrict cand_ptrs,
+    double                        qn,
+    const double *restrict        x_norms,
+    int                           N,
+    int                           dim,
+    double       *restrict        out_dist_sq,
+    double       *restrict        out_dists)
+{
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 8)
+    {
+        gemm_dist_vec_candidates_double_avx512(
+            q, X, cand_ptrs, qn, x_norms, N, dim, out_dist_sq, out_dists
+        );
+        return;
+    }
+#endif
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (dim >= 4)
+    {
+        gemm_dist_vec_candidates_double_avx2(
+            q, X, cand_ptrs, qn, x_norms, N, dim, out_dist_sq, out_dists
+        );
+        return;
+    }
+#endif
+    for (int j = 0; j < N; j++)
+    {
+        const double *xj = X ? (X + (size_t)j * (size_t)dim) : cand_ptrs[j];
+        gemm_dist_scalar_double(
+            q, xj, qn, x_norms[j], dim,
+            out_dist_sq ? &out_dist_sq[j] : NULL,
+            out_dists ? &out_dists[j] : NULL
+        );
+    }
+}
 
 /**
  * cluster_gemm_dist_ptrs_float() - Batched Euclidean distance with non-contiguous candidates.
@@ -1160,16 +1764,13 @@ int cluster_gemm_dist_ptrs_float(
     {
         const float *q_vec = Q + (size_t)i * (size_t)D;
         float qn = active_q_norms[i];
+        size_t row_off = (size_t)i * (size_t)N;
+        float *sq_dest = out_dist_sq ? (out_dist_sq + row_off) : NULL;
+        double *d_dest = out_dists   ? (out_dists   + row_off) : NULL;
 
-        for (int j = 0; j < N; j++)
-        {
-            size_t out_idx = (size_t)i * (size_t)N + (size_t)j;
-            float *sq_dest = out_dist_sq ? &out_dist_sq[out_idx] : NULL;
-            double *d_dest = out_dists   ? &out_dists[out_idx]   : NULL;
-            gemm_dist_scalar_float(
-                q_vec, cand_ptrs[j], qn, x_norms[j], D, sq_dest, d_dest
-            );
-        }
+        gemm_dist_vector_general_float(
+            q_vec, NULL, cand_ptrs, qn, x_norms, N, D, sq_dest, d_dest
+        );
     } // for (; i < M; i++)
 
     if (local_q_norms != NULL)
@@ -1205,30 +1806,156 @@ int cluster_gemm_dist_float(
     float       *restrict out_dist_sq,
     double      *restrict out_dists)
 {
-    if (Q == NULL || X == NULL || x_norms == NULL ||
+    if (Q == NULL || X == NULL ||
         M <= 0 || N <= 0 || D <= 0 || (out_dist_sq == NULL && out_dists == NULL))
     {
         return -1;
     }
 
+    float *local_q_norms = NULL;
+    const float *active_q_norms = q_norms;
+
+    if (active_q_norms == NULL)
+    {
+        local_q_norms = (float *)malloc((size_t)M * sizeof(float));
+        if (local_q_norms == NULL)
+        {
+            return -1;
+        }
+        cluster_compute_l2_norms_float(Q, M, D, local_q_norms);
+        active_q_norms = local_q_norms;
+    }
+
+    float *local_x_norms = NULL;
+    const float *active_x_norms = x_norms;
+
+    if (active_x_norms == NULL)
+    {
+        local_x_norms = (float *)malloc((size_t)N * sizeof(float));
+        if (local_x_norms == NULL)
+        {
+            if (local_q_norms != NULL)
+            {
+                free(local_q_norms);
+            }
+            return -1;
+        }
+        cluster_compute_l2_norms_float(X, N, D, local_x_norms);
+        active_x_norms = local_x_norms;
+    }
+
+    if (M == 1)
+    {
+#ifdef USE_BLAS
+        if (N >= 16)
+        {
+            float qn = active_q_norms[0];
+            float *dist_sq_buf = out_dist_sq;
+            int free_dist_sq = 0;
+            if (dist_sq_buf == NULL)
+            {
+                dist_sq_buf = (float *)malloc((size_t)N * sizeof(float));
+                if (dist_sq_buf == NULL)
+                {
+                    if (local_q_norms != NULL)
+                    {
+                        free(local_q_norms);
+                    }
+                    if (local_x_norms != NULL)
+                    {
+                        free(local_x_norms);
+                    }
+                    return -1;
+                }
+                free_dist_sq = 1;
+            }
+
+            cblas_sgemv(
+                CblasRowMajor, CblasNoTrans,
+                N, D,
+                1.0f, X, D,
+                Q, 1,
+                0.0f, dist_sq_buf, 1
+            );
+
+            int j = 0;
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+            __m256 v_qn = _mm256_set1_ps(qn);
+            __m256 vzero = _mm256_setzero_ps();
+            __m256 vtwo = _mm256_set1_ps(2.0f);
+            for (; j <= N - 8; j += 8)
+            {
+                __m256 v_xn = _mm256_loadu_ps(&active_x_norms[j]);
+                __m256 v_dot = _mm256_loadu_ps(&dist_sq_buf[j]);
+#ifdef __FMA__
+                __m256 vd2 = _mm256_max_ps(vzero,
+                    _mm256_fnmadd_ps(vtwo, v_dot, _mm256_add_ps(v_qn, v_xn)));
+#else
+                __m256 vd2 = _mm256_max_ps(vzero,
+                    _mm256_sub_ps(_mm256_add_ps(v_qn, v_xn), _mm256_mul_ps(vtwo, v_dot)));
+#endif
+                _mm256_storeu_ps(&dist_sq_buf[j], vd2);
+                if (out_dists != NULL)
+                {
+                    __m256 vsqrt = _mm256_sqrt_ps(vd2);
+                    __m128 lo = _mm256_castps256_ps128(vsqrt);
+                    __m128 hi = _mm256_extractf128_ps(vsqrt, 1);
+                    _mm_storeu_pd(&out_dists[j], _mm_cvtps_pd(lo));
+                    _mm_storeu_pd(&out_dists[j + 2], _mm_cvtps_pd(_mm_movehl_ps(lo, lo)));
+                    _mm_storeu_pd(&out_dists[j + 4], _mm_cvtps_pd(hi));
+                    _mm_storeu_pd(&out_dists[j + 6], _mm_cvtps_pd(_mm_movehl_ps(hi, hi)));
+                }
+            }
+#endif
+            for (; j < N; j++)
+            {
+                float d2 = qn + active_x_norms[j] - 2.0f * dist_sq_buf[j];
+                if (d2 < 0.0f)
+                {
+                    d2 = 0.0f;
+                }
+                dist_sq_buf[j] = d2;
+                if (out_dists != NULL)
+                {
+                    out_dists[j] = (double)sqrtf(d2);
+                }
+            }
+
+            if (free_dist_sq)
+            {
+                free(dist_sq_buf);
+            }
+            if (local_q_norms != NULL)
+            {
+                free(local_q_norms);
+            }
+            if (local_x_norms != NULL)
+            {
+                free(local_x_norms);
+            }
+            return 0;
+        }
+#endif // USE_BLAS
+
+        gemm_dist_vector_general_float(
+            Q, X, NULL, active_q_norms[0], active_x_norms, N, D, out_dist_sq, out_dists
+        );
+        if (local_q_norms != NULL)
+        {
+            free(local_q_norms);
+        }
+        if (local_x_norms != NULL)
+        {
+            free(local_x_norms);
+        }
+        return 0;
+    } // if (M == 1)
+
 #ifdef USE_BLAS
     /* When BLAS is available and matrices are large enough, use cblas_sgemm */
     if (M >= 16 && N >= 16)
     {
-        float *local_q_norms = NULL;
-        const float *active_q_norms = q_norms;
-
-        if (active_q_norms == NULL)
-        {
-            local_q_norms = (float *)malloc((size_t)M * sizeof(float));
-            if (local_q_norms == NULL)
-            {
-                return -1;
-            }
-            cluster_compute_l2_norms_float(Q, M, D, local_q_norms);
-            active_q_norms = local_q_norms;
-        }
-
         float *dist_sq_buf = out_dist_sq;
         int free_dist_sq = 0;
         if (dist_sq_buf == NULL)
@@ -1239,6 +1966,10 @@ int cluster_gemm_dist_float(
                 if (local_q_norms != NULL)
                 {
                     free(local_q_norms);
+                }
+                if (local_x_norms != NULL)
+                {
+                    free(local_x_norms);
                 }
                 return -1;
             }
@@ -1268,7 +1999,7 @@ int cluster_gemm_dist_float(
             __m256 vtwo = _mm256_set1_ps(2.0f);
             for (; j <= N - 8; j += 8)
             {
-                __m256 v_xn = _mm256_loadu_ps(&x_norms[j]);
+                __m256 v_xn = _mm256_loadu_ps(&active_x_norms[j]);
                 __m256 v_dot = _mm256_loadu_ps(&row_sq[j]);
 #ifdef __FMA__
                 __m256 vd2 = _mm256_max_ps(vzero,
@@ -1293,7 +2024,7 @@ int cluster_gemm_dist_float(
 
             for (; j < N; j++)
             {
-                float d2 = qn + x_norms[j] - 2.0f * row_sq[j];
+                float d2 = qn + active_x_norms[j] - 2.0f * row_sq[j];
                 if (d2 < 0.0f)
                 {
                     d2 = 0.0f;
@@ -1314,19 +2045,31 @@ int cluster_gemm_dist_float(
         {
             free(local_q_norms);
         }
+        if (local_x_norms != NULL)
+        {
+            free(local_x_norms);
+        }
         return 0;
     } // if (M >= 16 && N >= 16)
 #endif // USE_BLAS
 
     /* Default in-tree microkernel path via ptrs wrapper */
-    const float *stack_ptrs[128];
+    const float *stack_ptrs[512];
     const float **cand_ptrs = stack_ptrs;
 
-    if (N > 128)
+    if (N > 512)
     {
         cand_ptrs = (const float **)malloc((size_t)N * sizeof(const float *));
         if (cand_ptrs == NULL)
         {
+            if (local_q_norms != NULL)
+            {
+                free(local_q_norms);
+            }
+            if (local_x_norms != NULL)
+            {
+                free(local_x_norms);
+            }
             return -1;
         }
     }
@@ -1337,12 +2080,20 @@ int cluster_gemm_dist_float(
     }
 
     int res = cluster_gemm_dist_ptrs_float(
-        Q, cand_ptrs, q_norms, x_norms, M, N, D, out_dist_sq, out_dists
+        Q, cand_ptrs, active_q_norms, active_x_norms, M, N, D, out_dist_sq, out_dists
     );
 
     if (cand_ptrs != stack_ptrs)
     {
         free(cand_ptrs);
+    }
+    if (local_q_norms != NULL)
+    {
+        free(local_q_norms);
+    }
+    if (local_x_norms != NULL)
+    {
+        free(local_x_norms);
     }
 
     return res;
@@ -1447,32 +2198,26 @@ int cluster_gemm_dist_ptrs_double(
     {
         const double *q_vec = Q + (size_t)i * (size_t)D;
         double qn = active_q_norms[i];
+        size_t row_off = (size_t)i * (size_t)N;
+        double *sq_dest = out_dist_sq ? (out_dist_sq + row_off) : NULL;
+        double *d_dest  = out_dists   ? (out_dists   + row_off) : NULL;
 
-        for (int j = 0; j < N; j++)
-        {
-            size_t out_idx = (size_t)i * (size_t)N + (size_t)j;
-            double *sq_dest = out_dist_sq ? &out_dist_sq[out_idx] : NULL;
-            double *d_dest  = out_dists   ? &out_dists[out_idx]   : NULL;
-            gemm_dist_scalar_double(
-                q_vec, cand_ptrs[j], qn, x_norms[j], D, sq_dest, d_dest
-            );
-        }
+        gemm_dist_vector_general_double(
+            q_vec, NULL, cand_ptrs, qn, x_norms, N, D, sq_dest, d_dest
+        );
     }
 #else
     for (int i = 0; i < M; i++)
     {
         const double *q_vec = Q + (size_t)i * (size_t)D;
         double qn = active_q_norms[i];
+        size_t row_off = (size_t)i * (size_t)N;
+        double *sq_dest = out_dist_sq ? (out_dist_sq + row_off) : NULL;
+        double *d_dest  = out_dists   ? (out_dists   + row_off) : NULL;
 
-        for (int j = 0; j < N; j++)
-        {
-            size_t out_idx = (size_t)i * (size_t)N + (size_t)j;
-            double *sq_dest = out_dist_sq ? &out_dist_sq[out_idx] : NULL;
-            double *d_dest  = out_dists   ? &out_dists[out_idx]   : NULL;
-            gemm_dist_scalar_double(
-                q_vec, cand_ptrs[j], qn, x_norms[j], D, sq_dest, d_dest
-            );
-        }
+        gemm_dist_vector_general_double(
+            q_vec, NULL, cand_ptrs, qn, x_norms, N, D, sq_dest, d_dest
+        );
     } // for (int i = 0; i < M; i++)
 #endif
 
@@ -1509,29 +2254,149 @@ int cluster_gemm_dist_double(
     double       *restrict out_dist_sq,
     double       *restrict out_dists)
 {
-    if (Q == NULL || X == NULL || x_norms == NULL ||
+    if (Q == NULL || X == NULL ||
         M <= 0 || N <= 0 || D <= 0 || (out_dist_sq == NULL && out_dists == NULL))
     {
         return -1;
     }
 
+    double *local_q_norms = NULL;
+    const double *active_q_norms = q_norms;
+
+    if (active_q_norms == NULL)
+    {
+        local_q_norms = (double *)malloc((size_t)M * sizeof(double));
+        if (local_q_norms == NULL)
+        {
+            return -1;
+        }
+        cluster_compute_l2_norms_double(Q, M, D, local_q_norms);
+        active_q_norms = local_q_norms;
+    }
+
+    double *local_x_norms = NULL;
+    const double *active_x_norms = x_norms;
+
+    if (active_x_norms == NULL)
+    {
+        local_x_norms = (double *)malloc((size_t)N * sizeof(double));
+        if (local_x_norms == NULL)
+        {
+            if (local_q_norms != NULL)
+            {
+                free(local_q_norms);
+            }
+            return -1;
+        }
+        cluster_compute_l2_norms_double(X, N, D, local_x_norms);
+        active_x_norms = local_x_norms;
+    }
+
+    if (M == 1)
+    {
+#ifdef USE_BLAS
+        if (N >= 16)
+        {
+            double qn = active_q_norms[0];
+            double *dist_sq_buf = out_dist_sq;
+            int free_dist_sq = 0;
+            if (dist_sq_buf == NULL)
+            {
+                dist_sq_buf = (double *)malloc((size_t)N * sizeof(double));
+                if (dist_sq_buf == NULL)
+                {
+                    if (local_q_norms != NULL)
+                    {
+                        free(local_q_norms);
+                    }
+                    if (local_x_norms != NULL)
+                    {
+                        free(local_x_norms);
+                    }
+                    return -1;
+                }
+                free_dist_sq = 1;
+            }
+
+            cblas_dgemv(
+                CblasRowMajor, CblasNoTrans,
+                N, D,
+                1.0, X, D,
+                Q, 1,
+                0.0, dist_sq_buf, 1
+            );
+
+            int j = 0;
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+            __m256d v_qn = _mm256_set1_pd(qn);
+            __m256d vzero = _mm256_setzero_pd();
+            __m256d vtwo = _mm256_set1_pd(2.0);
+            for (; j <= N - 4; j += 4)
+            {
+                __m256d v_xn = _mm256_loadu_pd(&active_x_norms[j]);
+                __m256d v_dot = _mm256_loadu_pd(&dist_sq_buf[j]);
+#ifdef __FMA__
+                __m256d vd2 = _mm256_max_pd(vzero,
+                    _mm256_fnmadd_pd(vtwo, v_dot, _mm256_add_pd(v_qn, v_xn)));
+#else
+                __m256d vd2 = _mm256_max_pd(vzero,
+                    _mm256_sub_pd(_mm256_add_pd(v_qn, v_xn), _mm256_mul_pd(vtwo, v_dot)));
+#endif
+                _mm256_storeu_pd(&dist_sq_buf[j], vd2);
+                if (out_dists != NULL)
+                {
+                    _mm256_storeu_pd(&out_dists[j], _mm256_sqrt_pd(vd2));
+                }
+            }
+#endif
+            for (; j < N; j++)
+            {
+                double d2 = qn + active_x_norms[j] - 2.0 * dist_sq_buf[j];
+                if (d2 < 0.0)
+                {
+                    d2 = 0.0;
+                }
+                dist_sq_buf[j] = d2;
+                if (out_dists != NULL)
+                {
+                    out_dists[j] = sqrt(d2);
+                }
+            }
+
+            if (free_dist_sq)
+            {
+                free(dist_sq_buf);
+            }
+            if (local_q_norms != NULL)
+            {
+                free(local_q_norms);
+            }
+            if (local_x_norms != NULL)
+            {
+                free(local_x_norms);
+            }
+            return 0;
+        }
+#endif // USE_BLAS
+
+        gemm_dist_vector_general_double(
+            Q, X, NULL, active_q_norms[0], active_x_norms, N, D, out_dist_sq, out_dists
+        );
+        if (local_q_norms != NULL)
+        {
+            free(local_q_norms);
+        }
+        if (local_x_norms != NULL)
+        {
+            free(local_x_norms);
+        }
+        return 0;
+    } // if (M == 1)
+
 #ifdef USE_BLAS
     if (M >= 16 && N >= 16)
     {
-        double *local_q_norms = NULL;
-        const double *active_q_norms = q_norms;
-
-        if (active_q_norms == NULL)
-        {
-            local_q_norms = (double *)malloc((size_t)M * sizeof(double));
-            if (local_q_norms == NULL)
-            {
-                return -1;
-            }
-            cluster_compute_l2_norms_double(Q, M, D, local_q_norms);
-            active_q_norms = local_q_norms;
-        }
-
         double *dist_sq_buf = out_dist_sq;
         int free_dist_sq = 0;
         if (dist_sq_buf == NULL)
@@ -1542,6 +2407,10 @@ int cluster_gemm_dist_double(
                 if (local_q_norms != NULL)
                 {
                     free(local_q_norms);
+                }
+                if (local_x_norms != NULL)
+                {
+                    free(local_x_norms);
                 }
                 return -1;
             }
@@ -1570,7 +2439,7 @@ int cluster_gemm_dist_double(
             __m256d vtwo = _mm256_set1_pd(2.0);
             for (; j <= N - 4; j += 4)
             {
-                __m256d v_xn = _mm256_loadu_pd(&x_norms[j]);
+                __m256d v_xn = _mm256_loadu_pd(&active_x_norms[j]);
                 __m256d v_dot = _mm256_loadu_pd(&row_sq[j]);
 #ifdef __FMA__
                 __m256d vd2 = _mm256_max_pd(vzero,
@@ -1589,7 +2458,7 @@ int cluster_gemm_dist_double(
 
             for (; j < N; j++)
             {
-                double d2 = qn + x_norms[j] - 2.0 * row_sq[j];
+                double d2 = qn + active_x_norms[j] - 2.0 * row_sq[j];
                 if (d2 < 0.0)
                 {
                     d2 = 0.0;
@@ -1610,18 +2479,30 @@ int cluster_gemm_dist_double(
         {
             free(local_q_norms);
         }
+        if (local_x_norms != NULL)
+        {
+            free(local_x_norms);
+        }
         return 0;
     } // if (M >= 16 && N >= 16)
 #endif // USE_BLAS
 
-    const double *stack_ptrs[128];
+    const double *stack_ptrs[512];
     const double **cand_ptrs = stack_ptrs;
 
-    if (N > 128)
+    if (N > 512)
     {
         cand_ptrs = (const double **)malloc((size_t)N * sizeof(const double *));
         if (cand_ptrs == NULL)
         {
+            if (local_q_norms != NULL)
+            {
+                free(local_q_norms);
+            }
+            if (local_x_norms != NULL)
+            {
+                free(local_x_norms);
+            }
             return -1;
         }
     }
@@ -1632,12 +2513,20 @@ int cluster_gemm_dist_double(
     }
 
     int res = cluster_gemm_dist_ptrs_double(
-        Q, cand_ptrs, q_norms, x_norms, M, N, D, out_dist_sq, out_dists
+        Q, cand_ptrs, active_q_norms, active_x_norms, M, N, D, out_dist_sq, out_dists
     );
 
     if (cand_ptrs != stack_ptrs)
     {
         free(cand_ptrs);
+    }
+    if (local_q_norms != NULL)
+    {
+        free(local_q_norms);
+    }
+    if (local_x_norms != NULL)
+    {
+        free(local_x_norms);
     }
 
     return res;

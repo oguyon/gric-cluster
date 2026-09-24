@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "shared/cli_colors.h"
+#include "cli_colors.h"
 
 #define MAX_PATTERNS 32
 #define MAX_OPTIONS  64

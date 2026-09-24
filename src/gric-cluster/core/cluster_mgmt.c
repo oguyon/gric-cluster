@@ -217,6 +217,18 @@ void remove_cluster(
         }
     }
 
+    if (state->anchor_norms_float != NULL)
+    {
+        int remaining = state->num_clusters - 1 - index_to_remove;
+        if (remaining > 0)
+        {
+            memmove(state->anchor_norms_float + index_to_remove,
+                    state->anchor_norms_float + index_to_remove + 1,
+                    (size_t)remaining * sizeof(float));
+        }
+    }
+
+
     if (state->scratch.cluster_probs != NULL)
     {
         int remaining = state->num_clusters - 1 - index_to_remove;

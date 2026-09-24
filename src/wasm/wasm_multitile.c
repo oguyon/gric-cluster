@@ -7,17 +7,41 @@
 #include "tuple_retrieval.h"
 
 /**
- * tilemap_create_axis_decomposition() - Create a TileMap
- * that decomposes N-dim input into N independent 1D tiles.
+ * tilemap_create_axis_decomposition() - Create a TileMap decomposing N-dim input into 1D tiles.
  * @ndim: Number of dimensions (2 or 3).
  *
- * Each tile maps to a single coordinate index:
- *   tile 0 → pixel_indices = {0} (X axis)
- *   tile 1 → pixel_indices = {1} (Y axis)
- *   tile 2 → pixel_indices = {2} (Z axis, if 3D)
+ * Purpose & Context ("What is this used for?"):
+ * Constructs a spatial decomposition map where each dimension of an N-dimensional
+ * coordinate space is mapped to an independent 1D tile. This enables multi-tile
+ * axis-decomposition clustering where each coordinate axis is clustered independently
+ * in parallel and subsequently fused via joint tuple analysis.
  *
- * Return: Pointer to allocated TileMap, or NULL on error.
+ * Return: Pointer to allocated TileMap, or NULL on allocation error.
  */
+/**
+ * tile_init_single_pixel() - Allocate and assign a single pixel index to a TileDef.
+ * @tile:      Pointer to TileDef structure to initialize.
+ * @pixel_idx: 0-based pixel/coordinate index for this 1D tile.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Allocates a 1-element integer buffer for axis-decomposition tile definitions.
+ *
+ * Return: 0 on success, or -1 on allocation failure.
+ */
+static int tile_init_single_pixel(
+    TileDef *tile,
+    int      pixel_idx)
+{
+    tile->num_pixels = 1;
+    tile->pixel_indices = malloc(sizeof(int));
+    if (!tile->pixel_indices)
+    {
+        return -1;
+    }
+    tile->pixel_indices[0] = pixel_idx;
+    return 0;
+}
+
 static TileMap *tilemap_create_axis_decomposition(
     int ndim)
 {
@@ -39,29 +63,48 @@ static TileMap *tilemap_create_axis_decomposition(
 
     for (int m = 0; m < ndim; m++)
     {
-        tm->tiles[m].num_pixels = 1;
-        tm->tiles[m].pixel_indices =
-            malloc(sizeof(int));
-        if (!tm->tiles[m].pixel_indices)
+        if (tile_init_single_pixel(&tm->tiles[m], m) != 0)
         {
             tilemap_free(tm);
             return NULL;
         }
-        tm->tiles[m].pixel_indices[0] = m;
     }
 
     return tm;
 }
 
 /**
- * wasm_multitile_init() - Allocate and initialize a
- * multi-tile clustering handle for WASM.
+ * wasm_multitile_init() - Allocate and initialize a multi-tile clustering handle for WASM.
+ * @rlim:                       Clustering radius limit for candidate neighborhood.
+ * @maxnbclust:                 Maximum number of clusters per tile.
+ * @maxnbfr:                    Maximum number of frames expected in session.
+ * @ndim:                       Feature dimensionality per frame (must be 2 or 3).
+ * @entropy_mode:               Entropy gating and early-exit mode flag.
+ * @te4_mode:                   Triangle-inequality lower bound test 4 flag.
+ * @te5_mode:                   Triangle-inequality lower bound test 5 flag.
+ * @pred_mode:                  Temporal Markov prediction mode flag.
+ * @pred_h:                     Prediction history horizon.
+ * @gprob_mode:                 Geometric prior probability mode flag.
+ * @tm_mixing_coeff:            Mixing coefficient between transition matrix and priors.
+ * @soft_bayesian_mode:         Soft Bayesian likelihood weighting flag.
+ * @xtile_mode:                 Cross-tile tuple tracking flag.
+ * @sparse_dcc_mode:            Sparse inter-cluster distance cache mode.
+ * @sparse_dcc_extra_evals:     Extra DCC evaluation count limit.
+ * @entropy_gate_bits:          Information entropy gating threshold in bits.
+ * @entropy_first_gate_bits:    First-stage entropy threshold.
+ * @entropy_fast_mode:          Accelerated approximation mode for entropy log2.
+ * @soft_bayesian_sigma_coeff:  Standard deviation scaling for soft likelihood.
+ * @maxcl_strategy:             Cluster eviction or limit strategy.
+ * @discard_fraction:           Fraction of lowest-weight clusters to discard when full.
+ * @max_gprob_visitors:         Maximum visitor depth for geometric probability.
  *
- * Creates an axis-decomposition TileMap (ndim tiles),
- * allocates MultiTileState via multitile_init(), and
- * sets up scatter buffers.
+ * Purpose & Context ("What is this used for?"):
+ * Serves as the primary constructor for the WebAssembly multi-tile clustering
+ * engine. Sets up per-tile clustering states, creates the axis-decomposition tile
+ * map, initializes frame scattering buffers, and prepares tuple history trackers
+ * for interactive multi-dimensional clustering in the browser simulator.
  *
- * Return: Opaque handle pointer, or NULL on error.
+ * Return: Opaque WasmMultiTileHandle pointer on success, or NULL on error.
  */
 EMSCRIPTEN_KEEPALIVE
 void *wasm_multitile_init(
@@ -201,11 +244,48 @@ void *wasm_multitile_init(
 }
 
 /**
- * wasm_multitile_process_frame() - Process one N-dim
- * coordinate frame through the multi-tile pipeline.
+ * prepare_tile_task_frame() - Allocate and duplicate scattered frame for tile clustering.
+ * @scatter_frame: Source scattered 1D frame buffer.
+ * @task_frame:    Output task frame structure initialized for cluster_frame().
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Duplicates the scattered 1D coordinate buffer into a dedicated heap allocation.
+ * Because cluster_frame() takes ownership of frame->data when instantiating new
+ * cluster anchors (or calls free_frame() upon assigning to an existing cluster),
+ * each tile clustering step requires an independent heap buffer.
+ *
+ * Return: 0 on success, or -1 on allocation failure.
+ */
+static int prepare_tile_task_frame(
+    const Frame *scatter_frame,
+    Frame       *task_frame)
+{
+    size_t sz = (size_t)(scatter_frame->width * scatter_frame->height) * sizeof(double);
+    task_frame->id = scatter_frame->id;
+    task_frame->cnt0 = scatter_frame->cnt0;
+    task_frame->width = scatter_frame->width;
+    task_frame->height = scatter_frame->height;
+    task_frame->is_double = 1;
+    task_frame->data = (double *)malloc(sz);
+    if (!task_frame->data)
+    {
+        return -1;
+    }
+    memcpy(task_frame->data, scatter_frame->data, sz);
+    return 0;
+}
+
+/**
+ * wasm_multitile_process_frame() - Process one N-dim coordinate frame through multi-tile pipeline.
  * @ptr:    Opaque WasmMultiTileHandle pointer.
  * @coords: Array of ndim doubles (x, y [, z]).
  * @ndim:   Dimensionality (must match init).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Feeds a single multi-dimensional frame into the multi-tile clustering pipeline
+ * across the WASM boundary. Coordinates are scattered into per-tile 1D sub-frames,
+ * clustered independently in Pass 1, fused across tiles in Pass 2, and recorded
+ * into tuple history.
  *
  * Pipeline:
  *   1. Scatter coordinates into per-tile 1D sub-frames
@@ -263,28 +343,11 @@ int wasm_multitile_process_frame(
     for (int m = 0; m < M; m++)
     {
         TileState *ts = &h->mts->tile_states[m];
-
-        /* Allocate fresh data buffer for task frame */
         Frame task_frame;
-        task_frame.id = h->scatter_buf[m].id;
-        task_frame.cnt0 = h->scatter_buf[m].cnt0;
-        task_frame.width = h->scatter_buf[m].width;
-        task_frame.height = h->scatter_buf[m].height;
-        task_frame.is_double = 1;
-        task_frame.data = malloc(
-            (size_t)(task_frame.width
-                     * task_frame.height)
-            * sizeof(double));
-        if (!task_frame.data)
+        if (prepare_tile_task_frame(&h->scatter_buf[m], &task_frame) != 0)
         {
             return -1;
         }
-        memcpy(
-            task_frame.data,
-            h->scatter_buf[m].data,
-            (size_t)(task_frame.width
-                     * task_frame.height)
-            * sizeof(double));
 
         ts->pass1_old_ncl = ts->state.num_clusters;
 
@@ -394,8 +457,14 @@ int wasm_multitile_process_frame(
 }
 
 /**
- * wasm_multitile_get_num_tiles() - Return the number
- * of tiles (== ndim for axis decomposition).
+ * wasm_multitile_get_num_tiles() - Query the number of active tiles in the multi-tile session.
+ * @ptr: Opaque WasmMultiTileHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Informs JavaScript visualizers of the number of active tile dimensions (e.g. 2 for 2D,
+ * 3 for 3D) so caller code can allocate appropriate multi-tile display widgets.
+ *
+ * Return: Number of tiles, or 0 if handle is invalid.
  */
 EMSCRIPTEN_KEEPALIVE
 int wasm_multitile_get_num_tiles(void *ptr)
@@ -410,8 +479,15 @@ int wasm_multitile_get_num_tiles(void *ptr)
 }
 
 /**
- * wasm_multitile_get_num_tile_clusters() - Return the
- * current cluster count for a specific tile.
+ * wasm_multitile_get_num_tile_clusters() - Return current cluster count for a specific tile.
+ * @ptr:     Opaque WasmMultiTileHandle pointer.
+ * @tile_id: Tile index (0..M-1).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Allows client UI code to inspect the cluster count of an individual 1D axis tile
+ * for displaying per-axis cluster statistics.
+ *
+ * Return: Active cluster count for the requested tile, or 0 on error.
  */
 EMSCRIPTEN_KEEPALIVE
 int wasm_multitile_get_num_tile_clusters(
@@ -430,12 +506,16 @@ int wasm_multitile_get_num_tile_clusters(
 }
 
 /**
- * wasm_multitile_get_tile_clusters() - Copy per-tile
- * 1D cluster anchor coordinates and member counts.
- * @ptr:         Opaque handle.
+ * wasm_multitile_get_tile_clusters() - Copy per-tile 1D cluster anchor coordinates and counts.
+ * @ptr:         Opaque WasmMultiTileHandle pointer.
  * @tile_id:     Tile index (0..M-1).
- * @out_coords:  Output double array (1 coord per cluster).
- * @out_members: Output int array (member counts).
+ * @out_coords:  Output double array for cluster coordinates [num_clusters].
+ * @out_members: Output int array for cluster membership visit counts [num_clusters].
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Transfers 1D anchor positions and member counts for a specific tile across the
+ * WebAssembly linear memory boundary, allowing browser graphs to plot 1D cluster
+ * locations along individual coordinate axes.
  */
 EMSCRIPTEN_KEEPALIVE
 void wasm_multitile_get_tile_clusters(
@@ -466,16 +546,19 @@ void wasm_multitile_get_tile_clusters(
 }
 
 /**
- * wasm_multitile_get_tuples() - Aggregate tuple_history
- * into unique joint tuples with occurrence counts.
- * @ptr:             Opaque handle.
- * @out_flat:        Output flat int array [max_tuples × M]
- *                   of per-tile cluster IDs.
- * @out_counts:      Output int array of occurrence counts.
- * @out_last_active: Output int array of last active frame.
- * @max_tuples:      Capacity of output arrays.
+ * wasm_multitile_get_tuples() - Aggregate tuple history into unique joint tuples with counts.
+ * @ptr:             Opaque WasmMultiTileHandle pointer.
+ * @out_flat:        Output flat array [max_tuples * M] of per-tile cluster IDs.
+ * @out_counts:      Output array of occurrence counts for each tuple.
+ * @out_last_active: Output array recording the frame index of last activation (or NULL).
+ * @max_tuples:      Maximum capacity of output arrays.
  *
- * Return: Number of unique tuples written.
+ * Purpose & Context ("What is this used for?"):
+ * Scans the sequence of multi-tile cluster combinations (joint tuples) recorded during
+ * clustering and aggregates them into unique tuples with occurrence frequencies.
+ * Powers joint tuple scatter plots and correlation matrices in the browser simulator.
+ *
+ * Return: Total number of unique joint tuples written to output buffers.
  */
 EMSCRIPTEN_KEEPALIVE
 int wasm_multitile_get_tuples(
@@ -556,8 +639,15 @@ int wasm_multitile_get_tuples(
 }
 
 /**
- * wasm_multitile_get_tile_telemetry() - Retrieve
- * per-tile telemetry counters.
+ * wasm_multitile_get_tile_telemetry() - Query performance telemetry counters for a tile.
+ * @ptr:       Opaque WasmMultiTileHandle pointer.
+ * @tile_id:   Tile index (0..M-1).
+ * @out_stats: Output array receiving TELEM_* statistics values.
+ * @out_len:   Pointer receiving the count of telemetry statistics written.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Exports fine-grained clustering telemetry (distance calculations, pruning counts,
+ * prediction hits, entropy gate stats) for a specific tile to client dashboards.
  */
 EMSCRIPTEN_KEEPALIVE
 void wasm_multitile_get_tile_telemetry(
@@ -624,8 +714,13 @@ void wasm_multitile_get_tile_telemetry(
 }
 
 /**
- * wasm_multitile_reset() - Reset all tile states and
- * tuple history while retaining allocations.
+ * wasm_multitile_reset() - Reset all tile states and tuple history while retaining memory.
+ * @ptr: Opaque WasmMultiTileHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Clears cluster assignments, visitor lists, joint tuple tables, and telemetry
+ * across all tiles so a new multi-tile clustering run can begin immediately without
+ * deallocating and reallocating memory structures.
  */
 EMSCRIPTEN_KEEPALIVE
 void wasm_multitile_reset(void *ptr)
@@ -784,8 +879,12 @@ void wasm_multitile_reset(void *ptr)
 }
 
 /**
- * wasm_multitile_free() - Free all multi-tile
- * resources.
+ * wasm_multitile_free() - Free all multi-tile resources and deallocate handle.
+ * @ptr: Opaque WasmMultiTileHandle pointer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Destructor for the WebAssembly multi-tile engine. Deallocates scatter buffers,
+ * multi-tile clustering states, tile maps, and source frame memory.
  */
 EMSCRIPTEN_KEEPALIVE
 void wasm_multitile_free(void *ptr)

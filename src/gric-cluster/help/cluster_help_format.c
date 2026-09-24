@@ -4,7 +4,7 @@
  */
 
 #include "cluster_help_format.h"
-#include "shared/cli_colors.h"
+#include "cli_colors.h"
 
 void init_colors_help(
     void)

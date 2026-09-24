@@ -19,18 +19,46 @@
 static double png_font_scale = 1.0;
 static FILE  *svg_out_file = NULL;
 
+/**
+ * canvas_set_svg_output() - Configure destination stream for companion SVG generation.
+ * @fp: Open writable file pointer for SVG rendering, or NULL to disable SVG output.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * When gric-plot generates visual diagnostic plots, it can simultaneously emit a vector
+ * SVG file alongside the raster PNG output. This function registers the target FILE stream
+ * so that subsequent drawing calls (rectangles, lines, text) echo their SVG equivalents.
+ */
 void canvas_set_svg_output(
     FILE *fp)
 {
     svg_out_file = fp;
 }
 
+/**
+ * canvas_set_font_scale() - Set global scaling multiplier for software font rendering.
+ * @scale: Font scaling factor (1.0 = standard 8x16 bitmap size).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Adjusts the rendering magnification of embedded bitmap fonts across all text labels,
+ * axis ticks, and titles. Used by gric-plot when generating high-resolution or compact
+ * canvas outputs to ensure annotations remain crisp and readable.
+ */
 void canvas_set_font_scale(
     double scale)
 {
     png_font_scale = scale;
 }
 
+/**
+ * parse_color() - Decode a hexadecimal color string into RGB byte components.
+ * @hex: Hex color string (with or without leading '#', e.g., "#FF8800" or "00AAFF").
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Used to interpret user-supplied command-line color options and theme configurations
+ * for plotting cluster assignments, trajectory paths, and diagnostic overlays.
+ *
+ * Return: ColorRGB structure populated with red, green, and blue byte values (0-255).
+ */
 ColorRGB parse_color(
     const char *hex)
 {
@@ -52,6 +80,17 @@ ColorRGB parse_color(
     return c;
 }
 
+/**
+ * init_canvas() - Allocate and initialize a raster RGB image buffer.
+ * @w: Width of canvas in pixels.
+ * @h: Height of canvas in pixels.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Creates the primary rendering surface for gric-plot. Allocates a 24-bit RGB pixel buffer
+ * and initializes it with an opaque white background (RGB 255, 255, 255).
+ *
+ * Return: Pointer to freshly allocated Canvas structure, or NULL if allocation fails.
+ */
 Canvas *init_canvas(
     int w,
     int h)
@@ -66,6 +105,13 @@ Canvas *init_canvas(
     return c;
 }
 
+/**
+ * free_canvas() - Release canvas pixel buffer and structure memory.
+ * @c: Pointer to Canvas structure to deallocate.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Cleans up allocated raster memory after PNG export or on failure cleanup paths.
+ */
 void free_canvas(
     Canvas *c)
 {
@@ -76,6 +122,17 @@ void free_canvas(
     }
 }
 
+/**
+ * set_pixel_opaque() - Write a single opaque RGB pixel to the canvas raster.
+ * @c:   Target Canvas structure.
+ * @x:   Horizontal pixel coordinate (0-indexed from left).
+ * @y:   Vertical pixel coordinate (0-indexed from top).
+ * @col: ColorRGB value to write.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Fundamental primitive for software rasterization in gric-plot. Performs bounds checking
+ * to clip coordinates outside [0, width) x [0, height) and writes raw RGB bytes.
+ */
 void set_pixel_opaque(
     Canvas   *c,
     int       x,
@@ -93,6 +150,20 @@ void set_pixel_opaque(
     c->data[idx + 2] = col.b;
 }
 
+/**
+ * draw_filled_rect() - Draw solid color filled rectangle on raster or SVG stream.
+ * @c:   Target Canvas structure, or NULL if emitting directly to SVG stream.
+ * @x:   Top-left X coordinate in pixels.
+ * @y:   Top-left Y coordinate in pixels.
+ * @w:   Rectangle width in pixels.
+ * @h:   Rectangle height in pixels.
+ * @col: Solid RGB fill color.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Used across gric-plot for rendering background cards, histogram bins, colorbar
+ * gradients, and matrix heat-map cells. If canvas pointer is NULL but an SVG output
+ * stream is configured, renders an equivalent SVG <rect> element.
+ */
 void draw_filled_rect(
     Canvas   *c,
     int       x,
@@ -122,6 +193,20 @@ void draw_filled_rect(
     }
 }
 
+/**
+ * draw_line() - Draw a 1-pixel line segment using Bresenham's algorithm or SVG stroke.
+ * @c:   Target Canvas structure, or NULL if emitting directly to SVG stream.
+ * @x0:  Starting horizontal coordinate.
+ * @y0:  Starting vertical coordinate.
+ * @x1:  Ending horizontal coordinate.
+ * @y1:  Ending vertical coordinate.
+ * @col: Stroke RGB color.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Used for drawing plot axes, tick marks, grid lines, and cluster boundary borders.
+ * Employs standard integer Bresenham line stepping for raster drawing, or an SVG
+ * <line> element when targeting vector output.
+ */
 void draw_line(
     Canvas   *c,
     int       x0,
@@ -170,6 +255,19 @@ void draw_line(
     }
 }
 
+/**
+ * draw_circle() - Draw circular perimeter ring using midpoint circle algorithm.
+ * @c:         Target Canvas structure.
+ * @cx:        Center X coordinate.
+ * @cy:        Center Y coordinate.
+ * @r:         Outer radius in pixels.
+ * @thickness: Radial stroke thickness in pixels.
+ * @col:       Ring stroke RGB color.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Used to highlight cluster centroids, landmark anchor points, and outlier nodes
+ * in 2D projection scatter plots. Renders concentric integer circle rings.
+ */
 void draw_circle(
     Canvas   *c,
     int       cx,
@@ -219,6 +317,21 @@ void draw_circle(
     }
 }
 
+/**
+ * draw_char() - Render a single ASCII character glyph with 4x4 sub-pixel anti-aliasing.
+ * @c:     Target Canvas structure.
+ * @x:     Top-left X coordinate of bounding box.
+ * @y:     Top-left Y coordinate of bounding box.
+ * @ch:    ASCII character byte (codes 32 to 126).
+ * @col:   Foreground text color.
+ * @scale: Scaling multiplier (e.g. 1.0 = 8x16, 2.0 = 16x32).
+ * @bold:  Non-zero to simulate bold weight by smearing glyph 1 pixel right.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Software font rasterizer used to annotate charts and plots without relying on external
+ * TrueType font libraries. Uses a built-in 8x16 monochrome font table with a 4x4 sub-pixel
+ * supersampling grid to achieve smooth anti-aliased font rendering at any continuous scale.
+ */
 void draw_char(
     Canvas   *c,
     int       x,
@@ -313,6 +426,21 @@ void draw_char(
     }
 }
 
+/**
+ * draw_string() - Render a string of text with horizontal alignment on raster or SVG.
+ * @c:     Target Canvas structure, or NULL if emitting directly to SVG stream.
+ * @x:     Reference anchor horizontal coordinate.
+ * @y:     Top vertical baseline coordinate.
+ * @str:   Null-terminated ASCII string to draw.
+ * @col:   Text RGB color.
+ * @align: Text alignment: 0 = left-aligned, 1 = right-aligned.
+ * @scale: Font scaling factor.
+ * @bold:  Non-zero for bold rendering.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Primary text annotation routine for chart titles, axis labels, tick markers, and
+ * metric readouts. When emitting to SVG, writes a monospace <text> element.
+ */
 void draw_string(
     Canvas     *c,
     int         x,
@@ -349,6 +477,19 @@ void draw_string(
     }
 }
 
+/**
+ * draw_char_rotated90() - Render a glyph rotated 90 degrees counter-clockwise.
+ * @c:     Target Canvas structure.
+ * @x:     Origin X coordinate of rotated glyph.
+ * @y:     Origin Y coordinate of rotated glyph.
+ * @ch:    ASCII character byte.
+ * @col:   Foreground text color.
+ * @scale: Font scaling factor.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Used for vertical text annotations, such as y-axis labels and colorbar tick annotations.
+ * Uses 4x4 sub-pixel anti-aliasing mapped through a 90-degree coordinate rotation.
+ */
 void draw_char_rotated90(
     Canvas   *c,
     int       x,
@@ -422,6 +563,19 @@ void draw_char_rotated90(
     }
 }
 
+/**
+ * draw_string_rotated90() - Render string rotated 90 degrees counter-clockwise.
+ * @c:     Target Canvas structure, or NULL if emitting directly to SVG stream.
+ * @x:     Origin X coordinate.
+ * @y:     Origin Y coordinate.
+ * @str:   Null-terminated ASCII string.
+ * @col:   Text RGB color.
+ * @scale: Font scaling factor.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Annotates vertical axes in 2D scatter plots and histogram graphs. In SVG mode,
+ * emits a <text> element with a CSS transform="rotate(90, x, y)".
+ */
 void draw_string_rotated90(
     Canvas     *c,
     int         x,
@@ -452,6 +606,21 @@ void draw_string_rotated90(
     }
 }
 
+/**
+ * draw_histogram() - Render log-scale histogram of sample distance distribution.
+ * @c:     Target Canvas structure.
+ * @x:     Top-left X coordinate of histogram bounding box.
+ * @y:     Top-left Y coordinate of histogram bounding box.
+ * @w:     Width of histogram bounding box in pixels.
+ * @h:     Height of histogram bounding box in pixels.
+ * @data:  Array of bin counts.
+ * @count: Total number of bins.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Diagnostic visualization of cluster distance metrics in gric-plot. Renders a log-10
+ * scaled bar chart showing frequency counts across distance bins, with labeled logarithmic
+ * decade gridlines and bin index annotations.
+ */
 void draw_histogram(
     Canvas *c,
     int     x,
@@ -563,6 +732,20 @@ void draw_histogram(
                 png_font_scale, 1);
 }
 
+/**
+ * draw_cluster_histogram() - Render bar chart showing population of each cluster.
+ * @c:     Target Canvas structure.
+ * @x:     Top-left X coordinate of bounding box.
+ * @y:     Top-left Y coordinate of bounding box.
+ * @w:     Width of bounding box in pixels.
+ * @h:     Height of bounding box in pixels.
+ * @data:  Array of member counts indexed by cluster ID.
+ * @count: Number of clusters.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Plots sample distribution across all discovered clusters, enabling quick identification
+ * of singleton clusters, empty clusters, or heavily populated clusters.
+ */
 void draw_cluster_histogram(
     Canvas *c,
     int     x,
@@ -649,6 +832,20 @@ void draw_cluster_histogram(
                 png_font_scale, 1);
 }
 
+/**
+ * draw_dcc_matrix() - Render inter-cluster distance heatmap matrix with colorbar.
+ * @c:            Target Canvas structure.
+ * @x:            Top-left X coordinate of matrix area.
+ * @y:            Top-left Y coordinate of matrix area.
+ * @w:            Width of matrix area in pixels.
+ * @h:            Height of matrix area in pixels.
+ * @dcc_file:     Path to DCC text file containing triplet lines (c1 c2 distance).
+ * @num_clusters: Total number of clusters in the model.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Reads inter-cluster center distances from disk and draws a 2D grayscale/color heat map
+ * along with numeric distance labels (for small cluster counts) and a calibrated colorbar.
+ */
 void draw_dcc_matrix(
     Canvas     *c,
     int         x,
@@ -784,6 +981,17 @@ void draw_dcc_matrix(
     free(matrix);
 }
 
+/**
+ * save_png() - Encode and write canvas pixel data to PNG file on disk.
+ * @c:        Canvas structure containing RGB image buffer.
+ * @filename: Destination PNG file path.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Exports the final rasterized plot from gric-plot to disk using libpng with 8-bit RGB
+ * color depth.
+ *
+ * Return: 0 on success, 1 on file I/O or PNG encoding error.
+ */
 int save_png(
     Canvas     *c,
     const char *filename)
