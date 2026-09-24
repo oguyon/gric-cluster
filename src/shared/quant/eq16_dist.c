@@ -126,15 +126,21 @@ static uint64_t eq16_dist_squared_i16_avx2_exact(
         __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
         __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
 
-        __m256i max_v = _mm256_max_epi16(va, vb);
-        __m256i min_v = _mm256_min_epi16(va, vb);
-        __m256i u = _mm256_sub_epi16(max_v, min_v);
+        __m128i va_lo = _mm256_castsi256_si128(va);
+        __m128i va_hi = _mm256_extracti128_si256(va, 1);
+        __m128i vb_lo = _mm256_castsi256_si128(vb);
+        __m128i vb_hi = _mm256_extracti128_si256(vb, 1);
 
-        __m256i lo16 = _mm256_mullo_epi16(u, u);
-        __m256i hi16 = _mm256_mulhi_epu16(u, u);
+        __m256i a32_lo = _mm256_cvtepi16_epi32(va_lo);
+        __m256i a32_hi = _mm256_cvtepi16_epi32(va_hi);
+        __m256i b32_lo = _mm256_cvtepi16_epi32(vb_lo);
+        __m256i b32_hi = _mm256_cvtepi16_epi32(vb_hi);
 
-        __m256i prod_lo = _mm256_unpacklo_epi16(lo16, hi16);
-        __m256i prod_hi = _mm256_unpackhi_epi16(lo16, hi16);
+        __m256i diff_lo = _mm256_sub_epi32(a32_lo, b32_lo);
+        __m256i diff_hi = _mm256_sub_epi32(a32_hi, b32_hi);
+
+        __m256i prod_lo = _mm256_mullo_epi32(diff_lo, diff_lo);
+        __m256i prod_hi = _mm256_mullo_epi32(diff_hi, diff_hi);
 
         __m256i p0 = _mm256_cvtepu32_epi64(_mm256_castsi256_si128(prod_lo));
         __m256i p1 = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(prod_lo, 1));
@@ -494,7 +500,7 @@ static uint64_t eq16_dist_squared_cutoff_i16_avx2(
         sum_lo = _mm256_add_epi64(sum_lo, plo);
         sum_hi = _mm256_add_epi64(sum_hi, phi);
 
-        if ((i & 31) == 16)
+        if ((i & 63) == 48)
         {
             __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
             __m128i slo = _mm256_castsi256_si128(sum);
@@ -586,14 +592,17 @@ static uint64_t eq16_dist_squared_cutoff_i16_avx_vnni(
         sum_hi = _mm256_add_epi64(sum_hi,
                                    _mm256_cvtepu32_epi64(_mm256_extracti128_si256(acc, 1)));
 
-        __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
-        __m128i slo = _mm256_castsi256_si128(sum);
-        __m128i shi = _mm256_extracti128_si256(sum, 1);
-        __m128i s128 = _mm_add_epi64(slo, shi);
-        __m128i s64 = _mm_add_epi64(s128, _mm_srli_si128(s128, 8));
-        if ((uint64_t)_mm_cvtsi128_si64(s64) > ssd_cutoff)
+        if ((i & 63) == 32)
         {
-            return ssd_cutoff + 1;
+            __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
+            __m128i slo = _mm256_castsi256_si128(sum);
+            __m128i shi = _mm256_extracti128_si256(sum, 1);
+            __m128i s128 = _mm_add_epi64(slo, shi);
+            __m128i s64 = _mm_add_epi64(s128, _mm_srli_si128(s128, 8));
+            if ((uint64_t)_mm_cvtsi128_si64(s64) > ssd_cutoff)
+            {
+                return ssd_cutoff + 1;
+            }
         }
     } // for (; i <= dim - 32; i += 32)
 
@@ -1428,8 +1437,8 @@ static void eq16_dist_asym_cutoff_batch_1x8_avx2(
             acc7 = _mm256_fmadd_ps(diff7, diff7, acc7);
         }
 
-        /* Periodic cutoff checkpoint (every 32 dimensions) */
-        if ((i & 31) == 16)
+        /* Periodic cutoff checkpoint (every 64 dimensions) */
+        if ((i & 63) == 48)
         {
             __m128 sums_lo = eq16_reduce_4x256_ps(acc0, acc1, acc2, acc3);
             __m128 sums_hi = eq16_reduce_4x256_ps(acc4, acc5, acc6, acc7);
