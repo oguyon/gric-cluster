@@ -572,93 +572,77 @@ static inline uint32_t rq8_fastscan_32x_3d_avx2(
         return 0xFFFFFFFFU;
     }
 
+    for (int k = 0; k < 3; k++)
+    {
+        if (query_res[k] > 32640 || query_res[k] < -32640)
+        {
+            return rq8_fastscan_32x_3d_scalar(query_res, block_x, block_y, block_z, ssd_cutoff);
+        }
+    }
+
     __m256i raw_x = _mm256_loadu_si256((const __m256i *)(const void *)block_x);
     __m256i raw_y = _mm256_loadu_si256((const __m256i *)(const void *)block_y);
     __m256i raw_z = _mm256_loadu_si256((const __m256i *)(const void *)block_z);
 
-    __m128i bx0 = _mm256_castsi256_si128(raw_x);
-    __m128i bx1 = _mm256_extracti128_si256(raw_x, 1);
-    __m128i by0 = _mm256_castsi256_si128(raw_y);
-    __m128i by1 = _mm256_extracti128_si256(raw_y, 1);
+    __m256i pair_xy_lo = _mm256_unpacklo_epi8(raw_x, raw_y);
+    __m256i pair_xy_hi = _mm256_unpackhi_epi8(raw_x, raw_y);
+
+    __m128i plo0 = _mm256_castsi256_si128(pair_xy_lo);
+    __m128i plo1 = _mm256_extracti128_si256(pair_xy_lo, 1);
+    __m128i phi0 = _mm256_castsi256_si128(pair_xy_hi);
+    __m128i phi1 = _mm256_extracti128_si256(pair_xy_hi, 1);
+
+    __m256i c_0_7 = _mm256_cvtepi8_epi16(plo0);
+    __m256i c_16_23 = _mm256_cvtepi8_epi16(plo1);
+    __m256i c_8_15 = _mm256_cvtepi8_epi16(phi0);
+    __m256i c_24_31 = _mm256_cvtepi8_epi16(phi1);
+
+    int16_t q0 = query_res[0];
+    int16_t q1 = query_res[1];
+    int32_t q_xy = (int32_t)((uint16_t)q0 | ((uint32_t)(uint16_t)q1 << 16));
+    __m256i vq_xy = _mm256_set1_epi32(q_xy);
+
+    __m256i dxy0 = _mm256_sub_epi16(vq_xy, c_0_7);
+    __m256i dxy1 = _mm256_sub_epi16(vq_xy, c_8_15);
+    __m256i dxy2 = _mm256_sub_epi16(vq_xy, c_16_23);
+    __m256i dxy3 = _mm256_sub_epi16(vq_xy, c_24_31);
+
+    __m256i acc0 = _mm256_madd_epi16(dxy0, dxy0);
+    __m256i acc1 = _mm256_madd_epi16(dxy1, dxy1);
+    __m256i acc2 = _mm256_madd_epi16(dxy2, dxy2);
+    __m256i acc3 = _mm256_madd_epi16(dxy3, dxy3);
+
     __m128i bz0 = _mm256_castsi256_si128(raw_z);
     __m128i bz1 = _mm256_extracti128_si256(raw_z, 1);
 
-    __m256i qx = _mm256_set1_epi32((int32_t)query_res[0]);
-    __m256i qy = _mm256_set1_epi32((int32_t)query_res[1]);
+    __m256i cz0 = _mm256_cvtepi8_epi32(bz0);
+    __m256i cz1 = _mm256_cvtepi8_epi32(_mm_srli_si128(bz0, 8));
+    __m256i cz2 = _mm256_cvtepi8_epi32(bz1);
+    __m256i cz3 = _mm256_cvtepi8_epi32(_mm_srli_si128(bz1, 8));
+
     __m256i qz = _mm256_set1_epi32((int32_t)query_res[2]);
+    __m256i dz0 = _mm256_sub_epi32(qz, cz0);
+    __m256i dz1 = _mm256_sub_epi32(qz, cz1);
+    __m256i dz2 = _mm256_sub_epi32(qz, cz2);
+    __m256i dz3 = _mm256_sub_epi32(qz, cz3);
+
+    acc0 = _mm256_add_epi32(acc0, _mm256_mullo_epi32(dz0, dz0));
+    acc1 = _mm256_add_epi32(acc1, _mm256_mullo_epi32(dz1, dz1));
+    acc2 = _mm256_add_epi32(acc2, _mm256_mullo_epi32(dz2, dz2));
+    acc3 = _mm256_add_epi32(acc3, _mm256_mullo_epi32(dz3, dz3));
 
     __m256i vcut = _mm256_set1_epi32((int32_t)(uint32_t)ssd_cutoff);
-    uint32_t mask = 0;
+    __m256i m0 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc0, vcut), acc0);
+    __m256i m1 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc1, vcut), acc1);
+    __m256i m2 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc2, vcut), acc2);
+    __m256i m3 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc3, vcut), acc3);
 
-    /* Chunk 0: Candidates 0..7 */
-    {
-        __m256i x = _mm256_cvtepi8_epi32(bx0);
-        __m256i y = _mm256_cvtepi8_epi32(by0);
-        __m256i z = _mm256_cvtepi8_epi32(bz0);
-        __m256i dx = _mm256_sub_epi32(qx, x);
-        __m256i dy = _mm256_sub_epi32(qy, y);
-        __m256i dz = _mm256_sub_epi32(qz, z);
-        __m256i dsq = _mm256_add_epi32(
-            _mm256_mullo_epi32(dx, dx),
-            _mm256_add_epi32(_mm256_mullo_epi32(dy, dy), _mm256_mullo_epi32(dz, dz))
-        );
-        __m256i min_val = _mm256_min_epu32(dsq, vcut);
-        __m256i cmp = _mm256_cmpeq_epi32(min_val, dsq);
-        mask |= (uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(cmp));
-    }
+    uint32_t mask0 = (uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(m0));
+    uint32_t mask1 = (uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(m1));
+    uint32_t mask2 = (uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(m2));
+    uint32_t mask3 = (uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(m3));
 
-    /* Chunk 1: Candidates 8..15 */
-    {
-        __m256i x = _mm256_cvtepi8_epi32(_mm_srli_si128(bx0, 8));
-        __m256i y = _mm256_cvtepi8_epi32(_mm_srli_si128(by0, 8));
-        __m256i z = _mm256_cvtepi8_epi32(_mm_srli_si128(bz0, 8));
-        __m256i dx = _mm256_sub_epi32(qx, x);
-        __m256i dy = _mm256_sub_epi32(qy, y);
-        __m256i dz = _mm256_sub_epi32(qz, z);
-        __m256i dsq = _mm256_add_epi32(
-            _mm256_mullo_epi32(dx, dx),
-            _mm256_add_epi32(_mm256_mullo_epi32(dy, dy), _mm256_mullo_epi32(dz, dz))
-        );
-        __m256i min_val = _mm256_min_epu32(dsq, vcut);
-        __m256i cmp = _mm256_cmpeq_epi32(min_val, dsq);
-        mask |= ((uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(cmp)) << 8);
-    }
-
-    /* Chunk 2: Candidates 16..23 */
-    {
-        __m256i x = _mm256_cvtepi8_epi32(bx1);
-        __m256i y = _mm256_cvtepi8_epi32(by1);
-        __m256i z = _mm256_cvtepi8_epi32(bz1);
-        __m256i dx = _mm256_sub_epi32(qx, x);
-        __m256i dy = _mm256_sub_epi32(qy, y);
-        __m256i dz = _mm256_sub_epi32(qz, z);
-        __m256i dsq = _mm256_add_epi32(
-            _mm256_mullo_epi32(dx, dx),
-            _mm256_add_epi32(_mm256_mullo_epi32(dy, dy), _mm256_mullo_epi32(dz, dz))
-        );
-        __m256i min_val = _mm256_min_epu32(dsq, vcut);
-        __m256i cmp = _mm256_cmpeq_epi32(min_val, dsq);
-        mask |= ((uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(cmp)) << 16);
-    }
-
-    /* Chunk 3: Candidates 24..31 */
-    {
-        __m256i x = _mm256_cvtepi8_epi32(_mm_srli_si128(bx1, 8));
-        __m256i y = _mm256_cvtepi8_epi32(_mm_srli_si128(by1, 8));
-        __m256i z = _mm256_cvtepi8_epi32(_mm_srli_si128(bz1, 8));
-        __m256i dx = _mm256_sub_epi32(qx, x);
-        __m256i dy = _mm256_sub_epi32(qy, y);
-        __m256i dz = _mm256_sub_epi32(qz, z);
-        __m256i dsq = _mm256_add_epi32(
-            _mm256_mullo_epi32(dx, dx),
-            _mm256_add_epi32(_mm256_mullo_epi32(dy, dy), _mm256_mullo_epi32(dz, dz))
-        );
-        __m256i min_val = _mm256_min_epu32(dsq, vcut);
-        __m256i cmp = _mm256_cmpeq_epi32(min_val, dsq);
-        mask |= ((uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(cmp)) << 24);
-    }
-
-    return mask;
+    return mask0 | (mask1 << 8) | (mask2 << 16) | (mask3 << 24);
 }
 
 /**
@@ -671,27 +655,107 @@ static inline uint32_t rq8_fastscan_32x_generic_avx2(
     long                    dim,
     uint64_t                ssd_cutoff)
 {
+    if (ssd_cutoff >= 0xFFFFFFFFULL)
+    {
+        return rq8_fastscan_32x_generic_scalar(query_res, block_coords, dim, ssd_cutoff);
+    }
+
+    __m256i v_bound = _mm256_set1_epi16(32640);
+    __m256i v_nbound = _mm256_set1_epi16(-32640);
+    long d_check = 0;
+    for (; d_check <= dim - 16; d_check += 16)
+    {
+        __m256i q = _mm256_loadu_si256((const __m256i *)(const void *)(query_res + d_check));
+        __m256i gt = _mm256_cmpgt_epi16(q, v_bound);
+        __m256i lt = _mm256_cmpgt_epi16(v_nbound, q);
+        if (!_mm256_testz_si256(gt, gt) || !_mm256_testz_si256(lt, lt))
+        {
+            return rq8_fastscan_32x_generic_scalar(query_res, block_coords, dim, ssd_cutoff);
+        }
+    } // for (; d_check <= dim - 16; d_check += 16)
+
+    for (; d_check < dim; d_check++)
+    {
+        if (query_res[d_check] > 32640 || query_res[d_check] < -32640)
+        {
+            return rq8_fastscan_32x_generic_scalar(query_res, block_coords, dim, ssd_cutoff);
+        }
+    } // for (; d_check < dim; d_check++)
+
     __m256i acc0 = _mm256_setzero_si256();
     __m256i acc1 = _mm256_setzero_si256();
     __m256i acc2 = _mm256_setzero_si256();
     __m256i acc3 = _mm256_setzero_si256();
-    __m256i acc4 = _mm256_setzero_si256();
-    __m256i acc5 = _mm256_setzero_si256();
-    __m256i acc6 = _mm256_setzero_si256();
-    __m256i acc7 = _mm256_setzero_si256();
 
-    for (long d = 0; d < dim; d++)
+    long d = 0;
+    for (; d <= dim - 2; d += 2)
     {
-        __m256i v32 = _mm256_loadu_si256(
+        __m256i v_d0 = _mm256_loadu_si256(
             (const __m256i *)(const void *)(block_coords + d * 32)
         );
-        __m128i b_lo = _mm256_castsi256_si128(v32);
-        __m128i b_hi = _mm256_extracti128_si256(v32, 1);
+        __m256i v_d1 = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(block_coords + (d + 1) * 32)
+        );
 
-        __m256i c0 = _mm256_cvtepi8_epi32(b_lo);
-        __m256i c1 = _mm256_cvtepi8_epi32(_mm_srli_si128(b_lo, 8));
-        __m256i c2 = _mm256_cvtepi8_epi32(b_hi);
-        __m256i c3 = _mm256_cvtepi8_epi32(_mm_srli_si128(b_hi, 8));
+        __m256i pair_lo = _mm256_unpacklo_epi8(v_d0, v_d1);
+        __m256i pair_hi = _mm256_unpackhi_epi8(v_d0, v_d1);
+
+        __m128i plo0 = _mm256_castsi256_si128(pair_lo);
+        __m128i plo1 = _mm256_extracti128_si256(pair_lo, 1);
+        __m128i phi0 = _mm256_castsi256_si128(pair_hi);
+        __m128i phi1 = _mm256_extracti128_si256(pair_hi, 1);
+
+        __m256i c_0_7 = _mm256_cvtepi8_epi16(plo0);
+        __m256i c_16_23 = _mm256_cvtepi8_epi16(plo1);
+        __m256i c_8_15 = _mm256_cvtepi8_epi16(phi0);
+        __m256i c_24_31 = _mm256_cvtepi8_epi16(phi1);
+
+        int16_t q0 = query_res[d];
+        int16_t q1 = query_res[d + 1];
+        int32_t q_pair = (int32_t)((uint16_t)q0 | ((uint32_t)(uint16_t)q1 << 16));
+        __m256i vq = _mm256_set1_epi32(q_pair);
+
+        __m256i diff0 = _mm256_sub_epi16(vq, c_0_7);
+        __m256i diff1 = _mm256_sub_epi16(vq, c_8_15);
+        __m256i diff2 = _mm256_sub_epi16(vq, c_16_23);
+        __m256i diff3 = _mm256_sub_epi16(vq, c_24_31);
+
+        acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(diff0, diff0));
+        acc1 = _mm256_add_epi32(acc1, _mm256_madd_epi16(diff1, diff1));
+        acc2 = _mm256_add_epi32(acc2, _mm256_madd_epi16(diff2, diff2));
+        acc3 = _mm256_add_epi32(acc3, _mm256_madd_epi16(diff3, diff3));
+
+        if (d == 30 || d == 62 || d == 126 || d == 254)
+        {
+            __m256i vcut = _mm256_set1_epi32((int32_t)(uint32_t)ssd_cutoff);
+            __m256i m0 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc0, vcut), acc0);
+            __m256i m1 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc1, vcut), acc1);
+            __m256i m2 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc2, vcut), acc2);
+            __m256i m3 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc3, vcut), acc3);
+
+            __m256i any_pass = _mm256_or_si256(
+                _mm256_or_si256(m0, m1),
+                _mm256_or_si256(m2, m3)
+            );
+            if (_mm256_testz_si256(any_pass, any_pass))
+            {
+                return 0;
+            }
+        }
+    } // for (; d <= dim - 2; d += 2)
+
+    if (d < dim)
+    {
+        __m256i v_d0 = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(block_coords + d * 32)
+        );
+        __m128i b0 = _mm256_castsi256_si128(v_d0);
+        __m128i b1 = _mm256_extracti128_si256(v_d0, 1);
+
+        __m256i c0 = _mm256_cvtepi8_epi32(b0);
+        __m256i c1 = _mm256_cvtepi8_epi32(_mm_srli_si128(b0, 8));
+        __m256i c2 = _mm256_cvtepi8_epi32(b1);
+        __m256i c3 = _mm256_cvtepi8_epi32(_mm_srli_si128(b1, 8));
 
         __m256i vq = _mm256_set1_epi32((int32_t)query_res[d]);
         __m256i d0 = _mm256_sub_epi32(vq, c0);
@@ -699,85 +763,24 @@ static inline uint32_t rq8_fastscan_32x_generic_avx2(
         __m256i d2 = _mm256_sub_epi32(vq, c2);
         __m256i d3 = _mm256_sub_epi32(vq, c3);
 
-        __m256i p0 = _mm256_mullo_epi32(d0, d0);
-        __m256i p1 = _mm256_mullo_epi32(d1, d1);
-        __m256i p2 = _mm256_mullo_epi32(d2, d2);
-        __m256i p3 = _mm256_mullo_epi32(d3, d3);
+        acc0 = _mm256_add_epi32(acc0, _mm256_mullo_epi32(d0, d0));
+        acc1 = _mm256_add_epi32(acc1, _mm256_mullo_epi32(d1, d1));
+        acc2 = _mm256_add_epi32(acc2, _mm256_mullo_epi32(d2, d2));
+        acc3 = _mm256_add_epi32(acc3, _mm256_mullo_epi32(d3, d3));
+    } // if (d < dim)
 
-        acc0 = _mm256_add_epi64(acc0, _mm256_cvtepu32_epi64(_mm256_castsi256_si128(p0)));
-        acc1 = _mm256_add_epi64(acc1, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(p0, 1)));
-        acc2 = _mm256_add_epi64(acc2, _mm256_cvtepu32_epi64(_mm256_castsi256_si128(p1)));
-        acc3 = _mm256_add_epi64(acc3, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(p1, 1)));
-        acc4 = _mm256_add_epi64(acc4, _mm256_cvtepu32_epi64(_mm256_castsi256_si128(p2)));
-        acc5 = _mm256_add_epi64(acc5, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(p2, 1)));
-        acc6 = _mm256_add_epi64(acc6, _mm256_cvtepu32_epi64(_mm256_castsi256_si128(p3)));
-        acc7 = _mm256_add_epi64(acc7, _mm256_cvtepu32_epi64(_mm256_extracti128_si256(p3, 1)));
+    __m256i vcut = _mm256_set1_epi32((int32_t)(uint32_t)ssd_cutoff);
+    __m256i m0 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc0, vcut), acc0);
+    __m256i m1 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc1, vcut), acc1);
+    __m256i m2 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc2, vcut), acc2);
+    __m256i m3 = _mm256_cmpeq_epi32(_mm256_min_epu32(acc3, vcut), acc3);
 
-        if (d == 31 || d == 63 || d == 127 || d == 255)
-        {
-            __m256i v_cut = _mm256_set1_epi64x((int64_t)ssd_cutoff);
-            __m256i v_bias = _mm256_set1_epi64x((int64_t)0x8000000000000000ULL);
-            __m256i cut_b = _mm256_xor_si256(v_cut, v_bias);
+    uint32_t mask0 = (uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(m0));
+    uint32_t mask1 = (uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(m1));
+    uint32_t mask2 = (uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(m2));
+    uint32_t mask3 = (uint32_t)_mm256_movemask_ps(_mm256_castsi256_ps(m3));
 
-            __m256d cmp0 = _mm256_castsi256_pd(
-                _mm256_cmpgt_epi64(_mm256_xor_si256(acc0, v_bias), cut_b)
-            );
-            __m256d cmp1 = _mm256_castsi256_pd(
-                _mm256_cmpgt_epi64(_mm256_xor_si256(acc1, v_bias), cut_b)
-            );
-            __m256d cmp2 = _mm256_castsi256_pd(
-                _mm256_cmpgt_epi64(_mm256_xor_si256(acc2, v_bias), cut_b)
-            );
-            __m256d cmp3 = _mm256_castsi256_pd(
-                _mm256_cmpgt_epi64(_mm256_xor_si256(acc3, v_bias), cut_b)
-            );
-            __m256d cmp4 = _mm256_castsi256_pd(
-                _mm256_cmpgt_epi64(_mm256_xor_si256(acc4, v_bias), cut_b)
-            );
-            __m256d cmp5 = _mm256_castsi256_pd(
-                _mm256_cmpgt_epi64(_mm256_xor_si256(acc5, v_bias), cut_b)
-            );
-            __m256d cmp6 = _mm256_castsi256_pd(
-                _mm256_cmpgt_epi64(_mm256_xor_si256(acc6, v_bias), cut_b)
-            );
-            __m256d cmp7 = _mm256_castsi256_pd(
-                _mm256_cmpgt_epi64(_mm256_xor_si256(acc7, v_bias), cut_b)
-            );
-
-            __m256d all_gt = _mm256_and_pd(
-                _mm256_and_pd(_mm256_and_pd(cmp0, cmp1), _mm256_and_pd(cmp2, cmp3)),
-                _mm256_and_pd(_mm256_and_pd(cmp4, cmp5), _mm256_and_pd(cmp6, cmp7))
-            );
-            if ((_mm256_movemask_pd(all_gt) & 0x0F) == 0x0F)
-            {
-                return 0;
-            }
-        }
-    } // for (long d = 0; d < dim; d++)
-
-    __m256i v_cut = _mm256_set1_epi64x((int64_t)ssd_cutoff);
-    __m256i v_bias = _mm256_set1_epi64x((int64_t)0x8000000000000000ULL);
-    __m256i cut_b = _mm256_xor_si256(v_cut, v_bias);
-
-    uint32_t m0 = (uint32_t)(~_mm256_movemask_pd(
-        _mm256_castsi256_pd(_mm256_cmpgt_epi64(_mm256_xor_si256(acc0, v_bias), cut_b))) & 0x0F);
-    uint32_t m1 = (uint32_t)(~_mm256_movemask_pd(
-        _mm256_castsi256_pd(_mm256_cmpgt_epi64(_mm256_xor_si256(acc1, v_bias), cut_b))) & 0x0F);
-    uint32_t m2 = (uint32_t)(~_mm256_movemask_pd(
-        _mm256_castsi256_pd(_mm256_cmpgt_epi64(_mm256_xor_si256(acc2, v_bias), cut_b))) & 0x0F);
-    uint32_t m3 = (uint32_t)(~_mm256_movemask_pd(
-        _mm256_castsi256_pd(_mm256_cmpgt_epi64(_mm256_xor_si256(acc3, v_bias), cut_b))) & 0x0F);
-    uint32_t m4 = (uint32_t)(~_mm256_movemask_pd(
-        _mm256_castsi256_pd(_mm256_cmpgt_epi64(_mm256_xor_si256(acc4, v_bias), cut_b))) & 0x0F);
-    uint32_t m5 = (uint32_t)(~_mm256_movemask_pd(
-        _mm256_castsi256_pd(_mm256_cmpgt_epi64(_mm256_xor_si256(acc5, v_bias), cut_b))) & 0x0F);
-    uint32_t m6 = (uint32_t)(~_mm256_movemask_pd(
-        _mm256_castsi256_pd(_mm256_cmpgt_epi64(_mm256_xor_si256(acc6, v_bias), cut_b))) & 0x0F);
-    uint32_t m7 = (uint32_t)(~_mm256_movemask_pd(
-        _mm256_castsi256_pd(_mm256_cmpgt_epi64(_mm256_xor_si256(acc7, v_bias), cut_b))) & 0x0F);
-
-    return m0 | (m1 << 4) | (m2 << 8) | (m3 << 12) |
-           (m4 << 16) | (m5 << 20) | (m6 << 24) | (m7 << 28);
+    return mask0 | (mask1 << 8) | (mask2 << 16) | (mask3 << 24);
 }
 #endif // __AVX2__
 
