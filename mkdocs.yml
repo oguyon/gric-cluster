@@ -189,5 +189,12 @@ nav:
       - Physics & Image Tiling:
           - Single Bouncing Ball: benchmarks/balls_single.md
           - 3 Colliding Balls: benchmarks/balls_coll.md
+  - Developer Guide:
+      - Overview: dev/index.md
+      - Architecture & Modularity: dev/architecture.md
+      - Code Style & Quality: dev/code_style.md
+      - Engine Internals: dev/engine_internals.md
+      - SIMD & Compute Optimization: dev/simd_guide.md
+      - Shared Memory & IPC: dev/shm_internals.md
   - Practical Use Cases: practical-use.md
   - Satellite Earth Demo: satellite_demo.md
