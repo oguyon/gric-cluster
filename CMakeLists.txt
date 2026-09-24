@@ -1,13 +1,16 @@
 cmake_minimum_required(VERSION 3.10)
-project(image_cluster C)
+project(image_cluster C CXX)
 
 set(CMAKE_C_STANDARD 17)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -funroll-loops")
+set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -funroll-loops -g")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -funroll-loops -g")
 
 find_package(PkgConfig REQUIRED)
 
@@ -98,6 +101,8 @@ add_custom_command(
 )
 
 include_directories(
+    include
+    src/libgric
     ${CFITSIO_INCLUDE_DIRS}
     ${PNG_INCLUDE_DIRS}
     ${FFMPEG_INCLUDE_DIRS}
@@ -137,10 +142,9 @@ link_directories(
     ${IMAGESTREAMIO_LIBRARY_DIRS}
 )
 
-# Sources
-set(CLUSTER_SRCS
-    src/gric-cluster/core/main.c
-    src/gric-cluster/core/cluster_cli.c
+# Library Sources (libgric)
+set(LIBGRIC_SRCS
+    src/libgric/gric_api.c
     src/gric-cluster/core/cluster_core.c
     src/gric-cluster/core/cluster_step.c
     src/gric-cluster/core/cluster_step_prep.c
@@ -208,30 +212,62 @@ set(CLUSTER_SRCS
     src/gric-probe/probe_engine.c
 )
 
-add_executable(gric-cluster ${CLUSTER_SRCS})
+add_library(gric SHARED ${LIBGRIC_SRCS})
+add_library(gric_static STATIC ${LIBGRIC_SRCS})
+set_target_properties(gric_static PROPERTIES OUTPUT_NAME "gric")
+
 if (OpenMP_C_FOUND)
-    target_link_libraries(gric-cluster OpenMP::OpenMP_C)
+    target_link_libraries(gric PUBLIC OpenMP::OpenMP_C)
+    target_link_libraries(gric_static PUBLIC OpenMP::OpenMP_C)
 endif()
-target_link_libraries(gric-cluster
+target_link_libraries(gric PUBLIC
+    ${CFITSIO_LIBRARIES}
+    ${FFMPEG_LIBRARIES}
+    ${IMAGESTREAMIO_LIBRARIES}
+    m
+)
+target_link_libraries(gric_static PUBLIC
     ${CFITSIO_LIBRARIES}
     ${FFMPEG_LIBRARIES}
     ${IMAGESTREAMIO_LIBRARIES}
     m
 )
 if (USE_BLAS AND BLAS_FOUND)
-    target_link_libraries(gric-cluster ${BLAS_LIBRARIES})
+    target_link_libraries(gric PUBLIC ${BLAS_LIBRARIES})
+    target_link_libraries(gric_static PUBLIC ${BLAS_LIBRARIES})
 endif()
 if (PNG_FOUND)
-    target_link_libraries(gric-cluster ${PNG_LIBRARIES})
+    target_link_libraries(gric PUBLIC ${PNG_LIBRARIES})
+    target_link_libraries(gric_static PUBLIC ${PNG_LIBRARIES})
 endif()
 if (ENABLE_CUDA)
-    target_sources(gric-cluster PRIVATE
+    target_sources(gric PRIVATE
         src/gpu/cuda_common.cu
         src/gpu/cuda_anchor_store.cu
         src/gric-cluster/gpu/cluster_cuda.cu
     )
-    target_link_libraries(gric-cluster CUDA::cublas CUDA::cudart)
+    target_link_libraries(gric PUBLIC CUDA::cublas CUDA::cudart)
+    target_sources(gric_static PRIVATE
+        src/gpu/cuda_common.cu
+        src/gpu/cuda_anchor_store.cu
+        src/gric-cluster/gpu/cluster_cuda.cu
+    )
+    target_link_libraries(gric_static PUBLIC CUDA::cublas CUDA::cudart)
 endif()
+
+add_executable(gric-cluster
+    src/gric-cluster/core/main.c
+    src/gric-cluster/core/cluster_cli.c
+)
+target_link_libraries(gric-cluster PRIVATE gric)
+
+add_executable(test_libgric_c tests/test_libgric_c.c)
+target_link_libraries(test_libgric_c PRIVATE gric m)
+add_test(NAME test_libgric_c COMMAND test_libgric_c)
+
+add_executable(test_libgric_cpp tests/test_libgric_cpp.cpp)
+target_link_libraries(test_libgric_cpp PRIVATE gric m)
+add_test(NAME test_libgric_cpp COMMAND test_libgric_cpp)
 
 add_executable(gric-mktxtseq
     src/tools/generators/mktestseq.c

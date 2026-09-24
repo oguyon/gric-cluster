@@ -163,6 +163,15 @@ nav:
           - distall: help/output/distall.md
           - analysis: help/output/analysis.md
           - dimdensity (LID & Density): help/output/dimdensity.md
+  - Library & APIs:
+      - Overview & Architecture: library/index.md
+      - C API Reference: library/c.md
+      - C++ API Reference: library/cpp.md
+      - Python Package (NumPy): library/python.md
+      - Rust Crate: library/rust.md
+      - Julia Package (GRIC.jl): library/julia.md
+      - Build & Integration: library/integration.md
+      - Multi-Language Examples: library/examples.md
   - Tools & Utilities:
       - Overview: tools/index.md
       - Dataset Profiler (gric-probe): tools/probe.md

@@ -1,0 +1,11 @@
+name = "GRIC"
+uuid = "a3f5c71e-84b2-4d1a-b620-3e74c10a95f2"
+authors = ["Olivier Guyon <oliv.guyon@gmail.com>"]
+version = "1.0.0"
+
+[deps]
+Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+
+[compat]
+julia = "1.6"

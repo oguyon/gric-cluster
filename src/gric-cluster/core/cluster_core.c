@@ -29,6 +29,8 @@
 #include <omp.h>
 #endif
 
+volatile sig_atomic_t stop_requested = 0;
+
 #define ANSI_COLOR_RED   "\x1b[31m"
 #define ANSI_COLOR_GREEN "\x1b[32m"
 #define ANSI_COLOR_BLUE  "\x1b[34m"
