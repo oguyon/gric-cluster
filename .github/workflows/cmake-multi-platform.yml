@@ -57,7 +57,7 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ matrix.os }}-${{ matrix.c_compiler }}-${{ matrix.build_type }}-${{ matrix.sanitizer }}-v2
+          key: ${{ matrix.os }}-${{ matrix.c_compiler }}-${{ matrix.build_type }}-${{ matrix.sanitizer }}-v3
 
       - name: Install Dependencies (Ubuntu)
         if: runner.os == 'Linux'
@@ -84,6 +84,7 @@ jobs:
         run: |
           EXTRA_FLAGS=()
           if [ "${{ runner.os }}" = "Linux" ]; then
+            EXTRA_FLAGS+=("-DENABLE_NATIVE=OFF")
             if [ "${{ matrix.sanitizer }}" = "true" ]; then
               EXTRA_FLAGS+=(
                 "-DCMAKE_C_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"

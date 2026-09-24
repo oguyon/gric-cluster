@@ -311,12 +311,16 @@ static uint64_t eq16_dist_squared_cutoff_i16_avx512(
     long i = 0;
     __m512i sum_vec512_0 = _mm512_setzero_si512();
     __m512i sum_vec512_1 = _mm512_setzero_si512();
+    __m512i ovf_acc = _mm512_setzero_si512();
 
     for (; i <= dim - 32; i += 32)
     {
         __m512i va = _mm512_loadu_si512((const void *)(a + i));
         __m512i vb = _mm512_loadu_si512((const void *)(b + i));
         __m512i diff = _mm512_sub_epi16(va, vb);
+        __m512i sat = _mm512_subs_epi16(va, vb);
+        ovf_acc = _mm512_or_si512(ovf_acc, _mm512_xor_si512(diff, sat));
+
         __m512i prod = _mm512_madd_epi16(diff, diff);
 
         __m256i prod_lo = _mm512_castsi512_si256(prod);
@@ -334,6 +338,12 @@ static uint64_t eq16_dist_squared_cutoff_i16_avx512(
             return ssd_cutoff + 1;
         }
     } // for (; i <= dim - 32; i += 32)
+
+    if (_mm512_test_epi64_mask(ovf_acc, ovf_acc) != 0)
+    {
+        uint64_t full_exact = eq16_dist_squared_i16_avx512(a, b, dim);
+        return (full_exact > ssd_cutoff) ? (ssd_cutoff + 1) : full_exact;
+    }
 
     __m512i sum_tot = _mm512_add_epi64(sum_vec512_0, sum_vec512_1);
     total = (uint64_t)_mm512_reduce_add_epi64(sum_tot);
@@ -2020,6 +2030,7 @@ static void eq16_dist_squared_batch_1x4_i16_avx512(
     __m512i sum1_0 = _mm512_setzero_si512(), sum1_1 = _mm512_setzero_si512();
     __m512i sum2_0 = _mm512_setzero_si512(), sum2_1 = _mm512_setzero_si512();
     __m512i sum3_0 = _mm512_setzero_si512(), sum3_1 = _mm512_setzero_si512();
+    __m512i ovf_acc = _mm512_setzero_si512();
 
     const int16_t *a0 = anchors[0];
     const int16_t *a1 = anchors[1];
@@ -2039,6 +2050,11 @@ static void eq16_dist_squared_batch_1x4_i16_avx512(
         __m512i d1 = _mm512_sub_epi16(vq, va1);
         __m512i d2 = _mm512_sub_epi16(vq, va2);
         __m512i d3 = _mm512_sub_epi16(vq, va3);
+
+        ovf_acc = _mm512_or_si512(ovf_acc, _mm512_xor_si512(d0, _mm512_subs_epi16(vq, va0)));
+        ovf_acc = _mm512_or_si512(ovf_acc, _mm512_xor_si512(d1, _mm512_subs_epi16(vq, va1)));
+        ovf_acc = _mm512_or_si512(ovf_acc, _mm512_xor_si512(d2, _mm512_subs_epi16(vq, va2)));
+        ovf_acc = _mm512_or_si512(ovf_acc, _mm512_xor_si512(d3, _mm512_subs_epi16(vq, va3)));
 
         __m512i p0 = _mm512_madd_epi16(d0, d0);
         __m512i p1 = _mm512_madd_epi16(d1, d1);
@@ -2061,6 +2077,15 @@ static void eq16_dist_squared_batch_1x4_i16_avx512(
         sum3_1 = _mm512_add_epi64(sum3_1,
                                   _mm512_cvtepi32_epi64(_mm512_extracti64x4_epi64(p3, 1)));
     } // for (; i <= dim - 32; i += 32)
+
+    if (_mm512_test_epi64_mask(ovf_acc, ovf_acc) != 0)
+    {
+        for (int k = 0; k < 4; k++)
+        {
+            out_sq_dists[k] = eq16_dist_squared_i16_avx512(q, anchors[k], dim);
+        }
+        return;
+    }
 
     out_sq_dists[0] = (uint64_t)_mm512_reduce_add_epi64(_mm512_add_epi64(sum0_0, sum0_1));
     out_sq_dists[1] = (uint64_t)_mm512_reduce_add_epi64(_mm512_add_epi64(sum1_0, sum1_1));

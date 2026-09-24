@@ -9,8 +9,12 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -funroll-loops -g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -funroll-loops -g")
+option(ENABLE_NATIVE "Optimize for host CPU (-march=native)" ON)
+
+if(ENABLE_NATIVE)
+    set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -funroll-loops -g")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -funroll-loops -g")
+endif()
 
 find_package(PkgConfig REQUIRED)
 
