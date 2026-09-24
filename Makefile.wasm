@@ -17,6 +17,12 @@ INCLUDES = \
 	-Isrc/gric-cluster/io \
 	-Isrc/gric-cluster/trace \
 	-Isrc/gric-knn \
+	-Isrc/gric-knn/core \
+	-Isrc/gric-knn/search \
+	-Isrc/gric-knn/pruning \
+	-Isrc/gric-knn/cache \
+	-Isrc/gric-knn/cross \
+	-Isrc/gric-knn/io \
 	-Isrc/shared -Isrc/shared/quant -Isrc/shared/format -Isrc/shared/sys -Isrc/shared/cli \
 	-Isrc/wasm
 
@@ -49,20 +55,20 @@ SRCS = \
 	src/gric-cluster/steps/record_step_assignment.c \
 	src/gric-cluster/steps/update_consistency_mask.c \
 	src/gric-cluster/trace/cluster_trace.c \
-	src/gric-knn/knn_heap.c \
-	src/gric-knn/knn_tree.c \
-	src/gric-knn/knn_reader.c \
-	src/gric-knn/knn_parser.c \
-	src/gric-knn/knn_cache.c \
-	src/gric-knn/knn_cache_layout.c \
-	src/gric-knn/knn_engine.c \
-	src/gric-knn/knn_pruning.c \
-	src/gric-knn/knn_member_search.c \
-	src/gric-knn/knn_member_quant.c \
-	src/gric-knn/knn_cluster_search.c \
-	src/gric-knn/knn_cross_dataset.c \
-	src/gric-knn/knn_cross_route.c \
-	src/gric-knn/knn_cross_eval.c \
+	src/gric-knn/core/knn_heap.c \
+	src/gric-knn/core/knn_engine.c \
+	src/gric-knn/search/knn_tree.c \
+	src/gric-knn/search/knn_cluster_search.c \
+	src/gric-knn/search/knn_member_quant.c \
+	src/gric-knn/search/knn_member_search.c \
+	src/gric-knn/io/knn_reader.c \
+	src/gric-knn/io/knn_parser.c \
+	src/gric-knn/cache/knn_cache.c \
+	src/gric-knn/cache/knn_cache_layout.c \
+	src/gric-knn/pruning/knn_pruning.c \
+	src/gric-knn/cross/knn_cross_dataset.c \
+	src/gric-knn/cross/knn_cross_route.c \
+	src/gric-knn/cross/knn_cross_eval.c \
 	src/shared/format/cluster_locator.c \
 	src/shared/format/gric_bin_io.c \
 	src/shared/sys/gric_simd.c \
