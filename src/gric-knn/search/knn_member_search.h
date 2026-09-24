@@ -13,6 +13,7 @@
 #include "knn_engine_internal.h"
 #include "knn_pruning.h"
 #include "knn_reader.h"
+#include "gric_compat.h"
 #include <math.h>
 #include <stdlib.h>
 
@@ -29,10 +30,6 @@
 #define KNN_PREFETCH_T0(addr) ((void)0)
 #endif
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -46,29 +43,19 @@ extern "C" {
 static inline int knn_popcount32(
     uint32_t value)
 {
-#ifdef _MSC_VER
-    return (int)__popcnt(value);
-#else
-    return __builtin_popcount(value);
-#endif
+    return gric_popcount32(value);
 }
 
 /**
- * knn_ctz32() - Count trailing zero bits in a non-zero 32-bit integer.
- * @value: 32-bit integer bitmask (must be non-zero).
+ * knn_ctz32() - Count trailing zero bits in a 32-bit integer.
+ * @value: 32-bit integer bitmask.
  *
- * Return: Number of trailing zero bits (0 to 31), identifying the lowest set bit index.
+ * Return: Number of trailing zero bits (0 to 32), identifying the lowest set bit index.
  */
 static inline int knn_ctz32(
     uint32_t value)
 {
-#ifdef _MSC_VER
-    unsigned long index = 0;
-    _BitScanForward(&index, value);
-    return (int)index;
-#else
-    return __builtin_ctz(value);
-#endif
+    return gric_ctz32(value);
 }
 
 /**

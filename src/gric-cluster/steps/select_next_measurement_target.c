@@ -7,6 +7,7 @@
 #include "cluster_steps.h"
 #include "cluster_core.h"
 #include "e8_lattice.h"
+#include "gric_compat.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,7 +29,8 @@
  *
  * Return: Base-2 logarithm approximation of the value.
  */
-static inline __attribute__((always_inline)) double fast_log2(double val)
+static GRIC_ATTR_ALWAYS_INLINE GRIC_ATTR_CONST double fast_log2(
+    double val)
 {
     union { double d; uint64_t i; } vx = { val };
     double exp = (double)((vx.i >> 52) & 0x7FF) - 1023.0;
@@ -272,7 +274,7 @@ static void entropy_rank_popcount_scores(
                 uint64_t *mask = base_mask_i + cj * words;
                 for (int w = 0; w < words; w++)
                 {
-                    total_pop += __builtin_popcountll(mask[w] & active_mask[w]);
+                    total_pop += (uint64_t)gric_popcount64(mask[w] & active_mask[w]);
                 }
             }
             prune_scores[idx_p].score = (double)total_pop;
@@ -427,12 +429,12 @@ static int entropy_evaluate_hypotheses(
                     continue;
                 }
 
-                if (__builtin_popcountll(mask_val) <= 32)
+                if (gric_popcount64(mask_val) <= 32)
                 {
                     uint64_t mv = mask_val;
                     while (mv > 0)
                     {
-                        int bit = __builtin_ctzll(mv);
+                        int bit = gric_ctz64(mv);
                         int k = w * 64 + bit;
                         hypo_sum += p_current[k];
                         plogp_sum += plog2p[k];
@@ -446,7 +448,7 @@ static int entropy_evaluate_hypotheses(
                     uint64_t cleared = active_mask[w] & (~mask_val);
                     while (cleared > 0)
                     {
-                        int bit = __builtin_ctzll(cleared);
+                        int bit = gric_ctz64(cleared);
                         int k = w * 64 + bit;
                         sub_hypo += p_current[k];
                         sub_plogp += plog2p[k];

@@ -7,6 +7,7 @@
 #define GRIC_SIMD_H
 
 #include <stdbool.h>
+#include "gric_compat.h"
 
 #ifdef __cplusplus
 extern "C" {

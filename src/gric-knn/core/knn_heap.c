@@ -9,6 +9,7 @@
  */
 
 #include "knn_heap.h"
+#include "gric_compat.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -285,7 +286,7 @@ void knn_heap_push(
             full_mask |= ((uint64_t)m << (r * 8));
         }
 
-        int pos = full_mask ? __builtin_ctzll(full_mask) : (heap->capacity - 1);
+        int pos = full_mask ? gric_ctz64(full_mask) : (heap->capacity - 1);
 #else
         for (int i = 0; i < heap->count; i++)
         {
