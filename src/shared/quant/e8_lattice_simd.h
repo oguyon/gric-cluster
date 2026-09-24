@@ -20,7 +20,7 @@ extern "C" {
 /**
  * Align-32 lookup table of single-lane 32-bit selection masks for 8 lanes.
  */
-static const uint32_t s_e8_lane_masks[8][8] __attribute__((aligned(32))) = {
+static const uint32_t s_e8_lane_masks[8][8] GRIC_ALIGNED(32) = {
     {~0u, 0, 0, 0, 0, 0, 0, 0},
     {0, ~0u, 0, 0, 0, 0, 0, 0},
     {0, 0, ~0u, 0, 0, 0, 0, 0},
@@ -37,7 +37,7 @@ static const uint32_t s_e8_lane_masks[8][8] __attribute__((aligned(32))) = {
  *
  * Return: Sum of all 8 elements.
  */
-static inline float hsum256_e8_ps(
+static GRIC_ATTR_ALWAYS_INLINE GRIC_ATTR_CONST float hsum256_e8_ps(
     __m256 v)
 {
     __m128 lo = _mm256_castps256_ps128(v);
@@ -55,7 +55,7 @@ static inline float hsum256_e8_ps(
  * Return: Closest D8 lattice vector (all integer coordinates with even sum).
  */
 GRIC_TARGET_AVX2
-static inline __m256 d8_quantize_avx2(
+static GRIC_ATTR_ALWAYS_INLINE GRIC_ATTR_CONST __m256 d8_quantize_avx2(
     __m256 vx)
 {
     __m256 vr = _mm256_round_ps(vx, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
@@ -78,7 +78,7 @@ static inline __m256 d8_quantize_avx2(
         __m256 max8   = _mm256_broadcastss_ps(max1);
         __m256 is_max = _mm256_cmp_ps(verr, max8, _CMP_EQ_OQ);
         int mask = _mm256_movemask_ps(is_max);
-        int max_k = __builtin_ctz(mask);
+        int max_k = gric_ctz32((uint32_t)mask);
 
         __m256 ge = _mm256_cmp_ps(vx, vr, _CMP_GE_OQ);
         __m256 delta_all = _mm256_blendv_ps(_mm256_set1_ps(-1.0f), _mm256_set1_ps(1.0f), ge);
@@ -97,7 +97,7 @@ static inline __m256 d8_quantize_avx2(
  * Return: Closest E8 vector (evaluating D8 and D8 + 1/2 cosets).
  */
 GRIC_TARGET_AVX2
-static inline __m256 e8_quantize_point_avx2_vec(
+static GRIC_ATTR_ALWAYS_INLINE GRIC_ATTR_CONST __m256 e8_quantize_point_avx2_vec(
     __m256 vx)
 {
     __m256 vp0 = d8_quantize_avx2(vx);

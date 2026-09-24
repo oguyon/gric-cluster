@@ -257,7 +257,7 @@ static inline uint32_t pq_fastscan_32x_scalar(
  * Return: 32-bit bitmask where bit i is 1 if candidate i dist <= cutoff_u8.
  */
 GRIC_TARGET_AVX2
-static inline uint32_t pq_fastscan_32x_avx2(
+static inline GRIC_ATTR_PURE uint32_t pq_fastscan_32x_avx2(
     const uint8_t *restrict query_lut,
     const uint8_t *restrict block_codes,
     int                     m,
@@ -320,7 +320,7 @@ static inline uint32_t pq_fastscan_32x_avx2(
  * Return: 64-bit bitmask where bit i is 1 if candidate i dist <= cutoff_u8.
  */
 GRIC_TARGET_AVX2
-static inline uint64_t pq_fastscan_64x_avx2(
+static inline GRIC_ATTR_PURE uint64_t pq_fastscan_64x_avx2(
     const uint8_t *restrict query_lut,
     const uint8_t *restrict block_codes,
     int                     m,
@@ -389,7 +389,7 @@ static inline uint64_t pq_fastscan_64x_avx2(
  * Return: 32-bit bitmask where bit i is 1 if candidate i dist <= cutoff_u8.
  */
 GRIC_TARGET_AVX512
-static inline uint32_t pq_fastscan_32x_avx512(
+static inline GRIC_ATTR_PURE uint32_t pq_fastscan_32x_avx512(
     const uint8_t *restrict query_lut,
     const uint8_t *restrict block_codes,
     int                     m,
@@ -423,7 +423,7 @@ static inline uint32_t pq_fastscan_32x_avx512(
  * Return: 64-bit bitmask where bit i is 1 if candidate i dist <= cutoff_u8.
  */
 GRIC_TARGET_AVX512
-static inline uint64_t pq_fastscan_64x_avx512(
+static inline GRIC_ATTR_PURE uint64_t pq_fastscan_64x_avx512(
     const uint8_t *restrict query_lut,
     const uint8_t *restrict block_codes,
     int                     m,

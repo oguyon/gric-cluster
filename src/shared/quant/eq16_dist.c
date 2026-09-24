@@ -1264,7 +1264,7 @@ static void eq16_dist_asym_cutoff_batch_1x4_avx2(
                 return;
             }
 
-            int dead_count = __builtin_popcount((unsigned int)dead_mask);
+            int dead_count = gric_popcount32((uint32_t)dead_mask);
             if (dead_count >= 3 && i + 16 < dim)
             {
                 _mm_storeu_ps(out_dists, sums);
@@ -1446,7 +1446,7 @@ static void eq16_dist_asym_cutoff_batch_1x8_avx2(
                 return;
             }
 
-            int dead_count = __builtin_popcount((unsigned int)dead_mask);
+            int dead_count = gric_popcount32((uint32_t)dead_mask);
             if (dead_count >= 6 && i + 16 < dim)
             {
                 _mm_storeu_ps(out_dists, sums_lo);
@@ -1666,7 +1666,7 @@ static void eq16_dist_asym_cutoff_batch_1x4_avx512(
                 return;
             }
 
-            int dead_count = __builtin_popcount((unsigned int)dead_mask);
+            int dead_count = gric_popcount32((uint32_t)dead_mask);
             int thresh = (i == 0) ? 2 : 1;
             if (dead_count >= thresh && i + 32 < dim)
             {
@@ -1860,7 +1860,7 @@ static void eq16_dist_asym_cutoff_batch_1x8_avx512(
                 return;
             }
 
-            int dead_count = __builtin_popcount((unsigned int)dead_mask);
+            int dead_count = gric_popcount32((uint32_t)dead_mask);
             int thresh = (i == 0) ? 4 : ((i == 32) ? 3 : 2);
             if (dead_count >= thresh && i + 32 < dim)
             {
