@@ -19,6 +19,12 @@ static int8_t s_e8_roots_i8[E8_NUM_ROOTS][E8_DIM];
 /** Precomputed 240 roots in float representation */
 static float s_e8_roots_f32[E8_NUM_ROOTS][E8_DIM];
 
+/**
+ * Precomputed 240 roots transposed into 30 groups of 8 roots (SoA format).
+ * s_e8_roots_transposed[group][dim][lane]
+ */
+static float s_e8_roots_transposed[30][8][8] __attribute__((aligned(32)));
+
 /** One-time initialization flag */
 static bool s_roots_initialized = false;
 
@@ -93,6 +99,18 @@ void e8_init_root_table(void)
             idx++;
         } // if ((minus_count & 1) == 0)
     } // for (int mask = 0; mask < 256; mask++)
+
+    /* Populate transposed root array (30 groups of 8 roots) for SIMD SoA */
+    for (int g = 0; g < 30; g++)
+    {
+        for (int d = 0; d < 8; d++)
+        {
+            for (int k = 0; k < 8; k++)
+            {
+                s_e8_roots_transposed[g][d][k] = s_e8_roots_f32[g * 8 + k][d];
+            } // for (int k = 0; k < 8; k++)
+        } // for (int d = 0; d < 8; d++)
+    } // for (int g = 0; g < 30; g++)
 
     s_roots_initialized = true;
 }
@@ -552,6 +570,164 @@ float e8_covering_radius(
 }
 
 /**
+ * e8_find_nearest_root_float_scalar() - Scalar fallback for nearest root search.
+ * @dir:            Input 8D direction vector.
+ * @best_root_idx:  Output index of the nearest root [0, 239].
+ *
+ * Return: Cosine similarity to the best root.
+ */
+static float e8_find_nearest_root_float_scalar(
+    const float *restrict dir,
+    int         *restrict best_root_idx)
+{
+    float norm_sq = 0.0f;
+    for (int i = 0; i < 8; i++)
+    {
+        norm_sq += dir[i] * dir[i];
+    } // for (int i = 0; i < 8; i++)
+
+    if (norm_sq <= 1e-12f)
+    {
+        if (best_root_idx != NULL)
+        {
+            *best_root_idx = 0;
+        }
+        return 0.0f;
+    }
+
+    float inv_norm = 1.0f / sqrtf(norm_sq);
+    float max_dot = -1e30f;
+    int   best_idx = 0;
+
+    for (int r = 0; r < E8_NUM_ROOTS; r++)
+    {
+        float dot = 0.0f;
+        for (int i = 0; i < 8; i++)
+        {
+            dot += dir[i] * s_e8_roots_f32[r][i];
+        } // for (int i = 0; i < 8; i++)
+
+        if (dot > max_dot)
+        {
+            max_dot = dot;
+            best_idx = r;
+        }
+    } // for (int r = 0; r < E8_NUM_ROOTS; r++)
+
+    if (best_root_idx != NULL)
+    {
+        *best_root_idx = best_idx;
+    }
+
+    return (max_dot * inv_norm) * 0.70710678f;
+}
+
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * e8_find_nearest_root_float_avx2() - Find root vector closest to direction dir using AVX2.
+ * @dir:            Input 8D direction vector.
+ * @best_root_idx:  Output index of the nearest root [0, 239].
+ *
+ * Return: Cosine similarity to the best root.
+ */
+GRIC_TARGET_AVX2
+static float e8_find_nearest_root_float_avx2(
+    const float *restrict dir,
+    int         *restrict best_root_idx)
+{
+    __m256 vdir = _mm256_loadu_ps(dir);
+    __m256 vsq = _mm256_mul_ps(vdir, vdir);
+    float  norm_sq = hsum256_e8_ps(vsq);
+
+    if (norm_sq <= 1e-12f)
+    {
+        if (best_root_idx != NULL)
+        {
+            *best_root_idx = 0;
+        }
+        return 0.0f;
+    }
+
+    float  inv_norm = 1.0f / sqrtf(norm_sq);
+    __m256 vd[8];
+    for (int d = 0; d < 8; d++)
+    {
+        vd[d] = _mm256_set1_ps(dir[d]);
+    } // for (int d = 0; d < 8; d++)
+
+    float  max_dot = -1e30f;
+    int    best_idx = 0;
+    __m256 vmax_dot = _mm256_set1_ps(max_dot);
+
+    for (int g = 0; g < 30; g += 2)
+    {
+        __m256 vdot0 = _mm256_mul_ps(vd[0], _mm256_load_ps(&s_e8_roots_transposed[g][0][0]));
+        __m256 vdot1 = _mm256_mul_ps(vd[0], _mm256_load_ps(&s_e8_roots_transposed[g + 1][0][0]));
+
+        vdot0 = _mm256_fmadd_ps(vd[1], _mm256_load_ps(&s_e8_roots_transposed[g][1][0]), vdot0);
+        vdot1 = _mm256_fmadd_ps(vd[1], _mm256_load_ps(&s_e8_roots_transposed[g + 1][1][0]), vdot1);
+
+        vdot0 = _mm256_fmadd_ps(vd[2], _mm256_load_ps(&s_e8_roots_transposed[g][2][0]), vdot0);
+        vdot1 = _mm256_fmadd_ps(vd[2], _mm256_load_ps(&s_e8_roots_transposed[g + 1][2][0]), vdot1);
+
+        vdot0 = _mm256_fmadd_ps(vd[3], _mm256_load_ps(&s_e8_roots_transposed[g][3][0]), vdot0);
+        vdot1 = _mm256_fmadd_ps(vd[3], _mm256_load_ps(&s_e8_roots_transposed[g + 1][3][0]), vdot1);
+
+        vdot0 = _mm256_fmadd_ps(vd[4], _mm256_load_ps(&s_e8_roots_transposed[g][4][0]), vdot0);
+        vdot1 = _mm256_fmadd_ps(vd[4], _mm256_load_ps(&s_e8_roots_transposed[g + 1][4][0]), vdot1);
+
+        vdot0 = _mm256_fmadd_ps(vd[5], _mm256_load_ps(&s_e8_roots_transposed[g][5][0]), vdot0);
+        vdot1 = _mm256_fmadd_ps(vd[5], _mm256_load_ps(&s_e8_roots_transposed[g + 1][5][0]), vdot1);
+
+        vdot0 = _mm256_fmadd_ps(vd[6], _mm256_load_ps(&s_e8_roots_transposed[g][6][0]), vdot0);
+        vdot1 = _mm256_fmadd_ps(vd[6], _mm256_load_ps(&s_e8_roots_transposed[g + 1][6][0]), vdot1);
+
+        vdot0 = _mm256_fmadd_ps(vd[7], _mm256_load_ps(&s_e8_roots_transposed[g][7][0]), vdot0);
+        vdot1 = _mm256_fmadd_ps(vd[7], _mm256_load_ps(&s_e8_roots_transposed[g + 1][7][0]), vdot1);
+
+        __m256 vcmp0 = _mm256_cmp_ps(vdot0, vmax_dot, _CMP_GT_OQ);
+        if (_mm256_movemask_ps(vcmp0) != 0)
+        {
+            float dots[8];
+            _mm256_storeu_ps(dots, vdot0);
+            for (int k = 0; k < 8; k++)
+            {
+                if (dots[k] > max_dot)
+                {
+                    max_dot = dots[k];
+                    best_idx = g * 8 + k;
+                }
+            } // for (int k = 0; k < 8; k++)
+            vmax_dot = _mm256_set1_ps(max_dot);
+        }
+
+        __m256 vcmp1 = _mm256_cmp_ps(vdot1, vmax_dot, _CMP_GT_OQ);
+        if (_mm256_movemask_ps(vcmp1) != 0)
+        {
+            float dots[8];
+            _mm256_storeu_ps(dots, vdot1);
+            for (int k = 0; k < 8; k++)
+            {
+                if (dots[k] > max_dot)
+                {
+                    max_dot = dots[k];
+                    best_idx = (g + 1) * 8 + k;
+                }
+            } // for (int k = 0; k < 8; k++)
+            vmax_dot = _mm256_set1_ps(max_dot);
+        }
+    } // for (int g = 0; g < 30; g += 2)
+
+    if (best_root_idx != NULL)
+    {
+        *best_root_idx = best_idx;
+    }
+
+    return (max_dot * inv_norm) * 0.70710678f;
+}
+#endif // x86 SIMD
+
+/**
  * e8_find_nearest_root_float() - Find root vector among 240 roots closest to direction dir.
  * @dir:            Input 8D direction vector.
  * @best_root_idx:  Output index of the nearest root [0, 239].
@@ -567,48 +743,14 @@ float e8_find_nearest_root_float(
         e8_init_root_table();
     }
 
-    float norm_sq = 0.0f;
-    for (int i = 0; i < 8; i++)
+#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
     {
-        norm_sq += dir[i] * dir[i];
+        return e8_find_nearest_root_float_avx2(dir, best_root_idx);
     }
+#endif
 
-    if (norm_sq <= 1e-12f)
-    {
-        if (best_root_idx != NULL)
-        {
-            *best_root_idx = 0;
-        }
-        return 0.0f;
-    }
-
-    float inv_norm = 1.0f / sqrtf(norm_sq);
-    float max_dot = -2.0f;
-    int   best_idx = 0;
-
-    for (int r = 0; r < E8_NUM_ROOTS; r++)
-    {
-        float dot = 0.0f;
-        for (int i = 0; i < 8; i++)
-        {
-            dot += dir[i] * s_e8_roots_f32[r][i];
-        }
-
-        /* Each root has norm sqrt(2) */
-        float cos_sim = (dot * inv_norm) * 0.70710678f;
-        if (cos_sim > max_dot)
-        {
-            max_dot = cos_sim;
-            best_idx = r;
-        }
-    } // for (int r = 0; r < E8_NUM_ROOTS; r++)
-
-    if (best_root_idx != NULL)
-    {
-        *best_root_idx = best_idx;
-    }
-
-    return max_dot;
+    return e8_find_nearest_root_float_scalar(dir, best_root_idx);
 }
 
 /**
@@ -631,7 +773,7 @@ double e8_find_nearest_root_double(
     for (int i = 0; i < 8; i++)
     {
         norm_sq += dir[i] * dir[i];
-    }
+    } // for (int i = 0; i < 8; i++)
 
     if (norm_sq <= 1e-24)
     {
@@ -643,30 +785,25 @@ double e8_find_nearest_root_double(
     }
 
     double inv_norm = 1.0 / sqrt(norm_sq);
-    double max_dot = -2.0;
-    int    best_idx = 0;
-
-    for (int r = 0; r < E8_NUM_ROOTS; r++)
+    float  fdir[8];
+    for (int i = 0; i < 8; i++)
     {
-        double dot = 0.0;
-        for (int i = 0; i < 8; i++)
-        {
-            dot += dir[i] * (double)s_e8_roots_f32[r][i];
-        }
+        fdir[i] = (float)(dir[i] * inv_norm);
+    } // for (int i = 0; i < 8; i++)
 
-        /* Each root has norm sqrt(2) */
-        double cos_sim = (dot * inv_norm) * 0.7071067811865475;
-        if (cos_sim > max_dot)
-        {
-            max_dot = cos_sim;
-            best_idx = r;
-        }
-    } // for (int r = 0; r < E8_NUM_ROOTS; r++)
+    int best_idx = 0;
+    e8_find_nearest_root_float(fdir, &best_idx);
 
     if (best_root_idx != NULL)
     {
         *best_root_idx = best_idx;
     }
 
-    return max_dot;
+    double dot = 0.0;
+    for (int i = 0; i < 8; i++)
+    {
+        dot += dir[i] * (double)s_e8_roots_f32[best_idx][i];
+    } // for (int i = 0; i < 8; i++)
+
+    return (dot * inv_norm) * 0.7071067811865475;
 }

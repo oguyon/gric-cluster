@@ -266,6 +266,7 @@ static inline uint32_t pq_fastscan_32x_avx2(
     __m256i acc = _mm256_setzero_si256();
     __m256i v_cutoff = _mm256_set1_epi8((int8_t)cutoff_u8);
     __m256i v_bias = _mm256_set1_epi8((int8_t)0x80);
+    __m256i v_all_ones = _mm256_set1_epi8(-1);
 
     for (int s = 0; s < m; s++)
     {
@@ -283,6 +284,17 @@ static inline uint32_t pq_fastscan_32x_avx2(
 
         /* Saturating unsigned 8-bit accumulation */
         acc = _mm256_adds_epu8(acc, looked_up);
+
+        if (((s + 1) & 15) == 0 && s + 1 < m)
+        {
+            __m256i acc_biased = _mm256_xor_si256(acc, v_bias);
+            __m256i cut_biased = _mm256_xor_si256(v_cutoff, v_bias);
+            __m256i fail = _mm256_cmpgt_epi8(acc_biased, cut_biased);
+            if (_mm256_testc_si256(fail, v_all_ones))
+            {
+                return 0;
+            }
+        }
     } // for (int s = 0; s < m; s++)
 
     /*
@@ -296,6 +308,72 @@ static inline uint32_t pq_fastscan_32x_avx2(
 
     int fail_mask = _mm256_movemask_epi8(fail);
     return (~(uint32_t)fail_mask);
+}
+
+/**
+ * pq_fastscan_64x_avx2() - AVX2 SIMD evaluation of 64 candidates concurrently.
+ * @query_lut:   Array of m 16-byte lookup tables: [m * 16].
+ * @block_codes: Transposed candidate codes: [m * 64].
+ * @m:           Number of subquantizers.
+ * @cutoff_u8:   Cutoff distance threshold in uint8 accumulator units.
+ *
+ * Return: 64-bit bitmask where bit i is 1 if candidate i dist <= cutoff_u8.
+ */
+GRIC_TARGET_AVX2
+static inline uint64_t pq_fastscan_64x_avx2(
+    const uint8_t *restrict query_lut,
+    const uint8_t *restrict block_codes,
+    int                     m,
+    uint8_t                 cutoff_u8)
+{
+    __m256i acc0 = _mm256_setzero_si256();
+    __m256i acc1 = _mm256_setzero_si256();
+    __m256i v_cutoff = _mm256_set1_epi8((int8_t)cutoff_u8);
+    __m256i v_bias = _mm256_set1_epi8((int8_t)0x80);
+    __m256i v_all_ones = _mm256_set1_epi8(-1);
+
+    for (int s = 0; s < m; s++)
+    {
+        /* Broadcast 16-byte LUT once for all 64 candidates */
+        __m128i lut128 = _mm_loadu_si128((const __m128i *)(const void *)(query_lut + s * 16));
+        __m256i lut256 = _mm256_broadcastsi128_si256(lut128);
+
+        /* Load 64 candidate codes (32 in block 0, 32 in block 1) */
+        const uint8_t *s_codes = block_codes + s * 64;
+        __m256i codes0 = _mm256_loadu_si256((const __m256i *)(const void *)s_codes);
+        __m256i codes1 = _mm256_loadu_si256((const __m256i *)(const void *)(s_codes + 32));
+
+        /* Dual 32-way parallel table lookups */
+        __m256i looked_up0 = _mm256_shuffle_epi8(lut256, codes0);
+        __m256i looked_up1 = _mm256_shuffle_epi8(lut256, codes1);
+
+        acc0 = _mm256_adds_epu8(acc0, looked_up0);
+        acc1 = _mm256_adds_epu8(acc1, looked_up1);
+
+        if (((s + 1) & 15) == 0 && s + 1 < m)
+        {
+            __m256i cut_biased = _mm256_xor_si256(v_cutoff, v_bias);
+            __m256i fail0 = _mm256_cmpgt_epi8(_mm256_xor_si256(acc0, v_bias), cut_biased);
+            __m256i fail1 = _mm256_cmpgt_epi8(_mm256_xor_si256(acc1, v_bias), cut_biased);
+            __m256i all_fail = _mm256_and_si256(fail0, fail1);
+            if (_mm256_testc_si256(all_fail, v_all_ones))
+            {
+                return 0;
+            }
+        }
+    } // for (int s = 0; s < m; s++)
+
+    __m256i cut_biased = _mm256_xor_si256(v_cutoff, v_bias);
+    __m256i fail0 = _mm256_cmpgt_epi8(_mm256_xor_si256(acc0, v_bias), cut_biased);
+    __m256i fail1 = _mm256_cmpgt_epi8(_mm256_xor_si256(acc1, v_bias), cut_biased);
+
+    int mask0 = _mm256_movemask_epi8(fail0);
+    int mask1 = _mm256_movemask_epi8(fail1);
+
+    uint32_t pass0 = ~(uint32_t)mask0;
+    uint32_t pass1 = ~(uint32_t)mask1;
+
+    return (uint64_t)pass0 | ((uint64_t)pass1 << 32);
 }
 #endif // x86_64
 
@@ -438,9 +516,7 @@ static inline uint64_t pq_fastscan_64x(
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
     {
-        uint32_t lo = pq_fastscan_32x_avx2(query_lut, block_codes, m, cutoff_u8);
-        uint32_t hi = pq_fastscan_32x_avx2(query_lut, block_codes + 32, m, cutoff_u8);
-        return (uint64_t)lo | ((uint64_t)hi << 32);
+        return pq_fastscan_64x_avx2(query_lut, block_codes, m, cutoff_u8);
     }
 #endif
     return pq_fastscan_64x_scalar(query_lut, block_codes, m, cutoff_u8);

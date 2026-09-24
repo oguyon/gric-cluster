@@ -149,16 +149,19 @@ static __global__ void argmin_distance_kernel(
     int                       B,
     int                       K)
 {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int warp_id = threadIdx.x / 32;
+    int lane = threadIdx.x % 32;
+    int i = blockIdx.x * (blockDim.x / 32) + warp_id;
+
     if (i < B)
     {
         float f_norm = d_F_norms[i];
         const float *p_row = d_P + (size_t)i * (size_t)K;
 
         float min_dist_sq = 1e38f;
-        int min_k = -1;
+        int   min_k = -1;
 
-        for (int k = 0; k < K; k++)
+        for (int k = lane; k < K; k += 32)
         {
             float dist_sq = f_norm + d_A_norms[k] - 2.0f * p_row[k];
             if (dist_sq < 0.0f)
@@ -170,10 +173,28 @@ static __global__ void argmin_distance_kernel(
                 min_dist_sq = dist_sq;
                 min_k = k;
             }
-        }
+        } // for (int k = lane; k < K; k += 32)
 
-        d_best_cl[i] = min_k;
-        d_best_dist[i] = sqrtf(min_dist_sq);
+        #pragma unroll
+        for (int offset = 16; offset > 0; offset /= 2)
+        {
+            float other_dist = __shfl_down_sync(0xffffffff, min_dist_sq, offset);
+            int   other_k = __shfl_down_sync(0xffffffff, min_k, offset);
+            bool  take_other = (other_dist < min_dist_sq) ||
+                (other_dist == min_dist_sq && other_k >= 0 &&
+                 (min_k < 0 || other_k < min_k));
+            if (take_other)
+            {
+                min_dist_sq = other_dist;
+                min_k = other_k;
+            }
+        } // for (int offset = 16; offset > 0; offset /= 2)
+
+        if (lane == 0)
+        {
+            d_best_cl[i] = min_k;
+            d_best_dist[i] = sqrtf(min_dist_sq);
+        }
     }
 }
 
@@ -515,7 +536,8 @@ int gpu_anchor_store_find_nearest(
 
         /* Argmin reduction kernel */
         int r_threads = 128;
-        int r_blocks = (B + r_threads - 1) / r_threads;
+        int warps_per_block = r_threads / 32;
+        int r_blocks = (B + warps_per_block - 1) / warps_per_block;
         argmin_distance_kernel<<<r_blocks, r_threads>>>(
             store->d_frame_norms, store->d_anchor_norms, store->d_P,
             store->d_best_cl, store->d_best_dist,
