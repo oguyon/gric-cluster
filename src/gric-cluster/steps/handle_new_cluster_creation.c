@@ -460,7 +460,7 @@ static void assign_new_cluster_anchor(
     int            cl_idx,
     Frame         *current_frame)
 {
-    state->clusters[cl_idx].anchor = *current_frame;
+    frame_assign_to_anchor(&state->clusters[cl_idx], current_frame);
     if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
     {
         long dim = current_frame->width * current_frame->height;

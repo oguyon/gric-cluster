@@ -38,4 +38,13 @@ void remove_cluster(
     int            index_to_remove,
     int            index_target);
 
+/**
+ * @brief Assign an ingested frame to a cluster anchor with zero-copy buffer decoupling.
+ * @param cluster Destination Cluster structure.
+ * @param source_frame Source Frame structure.
+ */
+void frame_assign_to_anchor(
+    Cluster *cluster,
+    Frame   *source_frame);
+
 #endif // CLUSTER_MGMT_H

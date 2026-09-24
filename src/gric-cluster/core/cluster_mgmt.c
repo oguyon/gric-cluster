@@ -9,6 +9,7 @@
  * - add_visitor: Records that a frame index has visited/been assigned to a cluster.
  * - remove_cluster: Prunes and completely deletes a cluster from the active set.
  */
+#define _POSIX_C_SOURCE 200809L
 #include "cluster_mgmt.h"
 #include "cluster_core.h"
 #include "cluster_steps.h"
@@ -422,4 +423,41 @@ void remove_cluster(
         }
     }
     state->telemetry.dcc_entries_populated = pop_count;
+}
+
+/**
+ * frame_assign_to_anchor() - Assign source frame attributes to cluster anchor.
+ * @cluster:      Destination Cluster receiving anchor.
+ * @source_frame: Source Frame to assign.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Transfers frame attributes to a cluster anchor. When source_frame uses zero-copy
+ * memory-mapped data (is_mmap = 1), allocates an aligned owned buffer so the anchor
+ * maintains an independent buffer that can be freed cleanly during cluster cleanup.
+ */
+void frame_assign_to_anchor(
+    Cluster *cluster,
+    Frame   *source_frame)
+{
+    if (cluster == NULL || source_frame == NULL)
+    {
+        return;
+    }
+
+    cluster->anchor = *source_frame;
+    if (source_frame->is_mmap && source_frame->data != NULL)
+    {
+        long dim = source_frame->width * source_frame->height;
+        size_t elem_size = source_frame->is_double ? sizeof(double) : sizeof(float);
+        void *anchor_buf = NULL;
+        if (posix_memalign(&anchor_buf, 64, (size_t)dim * elem_size) == 0)
+        {
+            memcpy(anchor_buf, source_frame->data, (size_t)dim * elem_size);
+            cluster->anchor.data = anchor_buf;
+            cluster->anchor.is_mmap = 0;
+        }
+    }
+
+    source_frame->data = NULL;
+    source_frame->is_mmap = 0;
 }
