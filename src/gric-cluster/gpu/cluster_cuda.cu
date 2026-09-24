@@ -173,136 +173,6 @@ static __global__ void compute_dcc_matrix_kernel(
     }
 }
 
-static __global__ void gpu_pass2_triangle_prune_kernel(
-    const float        *__restrict__ d_F,
-    const float        *__restrict__ d_A,
-    const float        *__restrict__ d_Dcc,
-    const int          *__restrict__ d_init_cl,
-    const float        *__restrict__ d_init_dist,
-    int                *__restrict__ d_best_cl,
-    float              *__restrict__ d_best_dist,
-    unsigned long long *__restrict__ d_pruned_count,
-    int                              B,
-    int                              K,
-    int                              D)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int pruned = 0;
-
-    if (i < B)
-    {
-        int init_c = d_init_cl[i];
-        float best_d = 1e38f;
-        int best_c = -1;
-
-        const float *f_vec = d_F + (size_t)i * (size_t)D;
-        float local_f[64];
-        int eff_d = (D < 64) ? D : 64;
-        for (int d = 0; d < eff_d; d++)
-        {
-            local_f[d] = f_vec[d];
-        }
-
-        if (init_c >= 0 && init_c < K)
-        {
-            best_c = init_c;
-            best_d = d_init_dist[i];
-            if (best_d <= 0.0f)
-            {
-                const float *a_vec = d_A + (size_t)init_c * (size_t)D;
-                float sum_sq = 0.0f;
-                for (int d = 0; d < D; d++)
-                {
-                    float diff = local_f[d] - a_vec[d];
-                    sum_sq += diff * diff;
-                }
-                best_d = sqrtf(sum_sq);
-            }
-        }
-
-        float best_d_sq = best_d * best_d;
-        const float *dcc_row = (init_c >= 0 && init_c < K && d_Dcc != NULL)
-            ? (d_Dcc + (size_t)init_c * (size_t)K)
-            : NULL;
-
-        for (int k = 0; k < K; k++)
-        {
-            if (k == init_c)
-            {
-                continue;
-            }
-
-            /* 1. Triangle Inequality Distance Lower-Bound Pruning */
-            if (dcc_row != NULL)
-            {
-                float dcc = dcc_row[k];
-                float lb = fabsf(best_d - dcc);
-                if (lb >= best_d)
-                {
-                    pruned++;
-                    continue;
-                }
-            }
-
-            /* 2. Metric Cutoff Distance Calculation */
-            const float *a_vec = d_A + (size_t)k * (size_t)D;
-            float dist_sq = 0.0f;
-            int early_exit = 0;
-
-            for (int d = 0; d < D; d++)
-            {
-                float diff = local_f[d] - a_vec[d];
-                dist_sq += diff * diff;
-                if (dist_sq >= best_d_sq)
-                {
-                    early_exit = 1;
-                    break;
-                }
-            }
-
-            if (!early_exit && dist_sq < best_d_sq)
-            {
-                best_d_sq = dist_sq;
-                best_d = sqrtf(dist_sq);
-                best_c = k;
-            }
-        } // for (int k = 0; k < K; k++)
-
-        d_best_cl[i] = best_c;
-        d_best_dist[i] = best_d;
-    } // if (i < B)
-
-    /* Hierarchical block reduction for pruned counter */
-    #pragma unroll
-    for (int offset = 16; offset > 0; offset /= 2)
-    {
-        pruned += __shfl_down_sync(0xffffffff, pruned, offset);
-    }
-
-    __shared__ unsigned int s_block_pruned[32];
-    int lane = threadIdx.x % 32;
-    int warp_in_block = threadIdx.x / 32;
-    if (lane == 0)
-    {
-        s_block_pruned[warp_in_block] = pruned;
-    }
-    __syncthreads();
-
-    if (warp_in_block == 0)
-    {
-        unsigned int val = (lane < (blockDim.x / 32)) ? s_block_pruned[lane] : 0;
-        #pragma unroll
-        for (int offset = 16; offset > 0; offset /= 2)
-        {
-            val += __shfl_down_sync(0xffffffff, val, offset);
-        }
-        if (lane == 0 && val > 0 && d_pruned_count != NULL)
-        {
-            atomicAdd(d_pruned_count, (unsigned long long)val);
-        }
-    }
-}
-
 static __global__ void gpu_pass2_triangle_prune_warp_kernel(
     const float        *__restrict__ d_F,
     const float        *__restrict__ d_A,
@@ -361,88 +231,99 @@ static __global__ void gpu_pass2_triangle_prune_warp_kernel(
 
     unsigned int pruned = 0;
 
-    for (int k = 0; k < K; k++)
+    for (int k_base = 0; k_base < K; k_base += 32)
     {
-        if (k == init_c)
+        int k = k_base + lane;
+        bool can_prune = false;
+        if (k < K && k != init_c)
         {
-            continue;
-        }
-
-        /* 1. Triangle Inequality Lower-Bound Pruning */
-        int skip_k = 0;
-        if (lane == 0 && dcc_row != NULL)
-        {
-            float dcc = dcc_row[k];
-            float lb = fabsf(best_d - dcc);
-            if (lb >= best_d)
+            if (dcc_row != NULL)
             {
-                skip_k = 1;
-                pruned++;
-            }
-        }
-        skip_k = __shfl_sync(0xffffffff, skip_k, 0);
-        if (skip_k)
-        {
-            continue;
-        }
-
-        /* 2. Cooperative Distance Evaluation with Periodic Metric Cutoff */
-        const float *a_vec = d_A + (size_t)k * (size_t)D;
-        float partial_sq = 0.0f;
-        int early_exit = 0;
-
-        for (int d_base = 0; d_base < D; d_base += 64)
-        {
-            int d = d_base + lane;
-            if (d < D)
-            {
-                float diff = f_vec[d] - a_vec[d];
-                partial_sq += diff * diff;
-            }
-            int d2 = d_base + 32 + lane;
-            if (d2 < D)
-            {
-                float diff2 = f_vec[d2] - a_vec[d2];
-                partial_sq += diff2 * diff2;
-            }
-
-            /* Metric cutoff check every 64 dimensions */
-            float block_sum = partial_sq;
-            #pragma unroll
-            for (int offset = 16; offset > 0; offset /= 2)
-            {
-                block_sum += __shfl_down_sync(0xffffffff, block_sum, offset);
-            }
-            if (lane == 0)
-            {
-                if (block_sum >= best_d_sq)
+                float dcc = dcc_row[k];
+                float lb = fabsf(best_d - dcc);
+                if (lb >= best_d)
                 {
-                    early_exit = 1;
+                    can_prune = true;
                 }
             }
-            early_exit = __shfl_sync(0xffffffff, early_exit, 0);
-            if (early_exit)
-            {
-                break;
-            }
-        } // for (int d_base = 0; d_base < D; d_base += 64)
-
-        if (!early_exit)
-        {
-            #pragma unroll
-            for (int offset = 16; offset > 0; offset /= 2)
-            {
-                partial_sq += __shfl_down_sync(0xffffffff, partial_sq, offset);
-            }
-            float total_dist_sq = __shfl_sync(0xffffffff, partial_sq, 0);
-            if (total_dist_sq < best_d_sq)
-            {
-                best_d_sq = total_dist_sq;
-                best_d = sqrtf(total_dist_sq);
-                best_c = k;
-            }
         }
-    } // for (int k = 0; k < K; k++)
+        else
+        {
+            can_prune = true;
+        }
+
+        uint32_t prune_mask = __ballot_sync(0xffffffff, (k < K && k != init_c && can_prune));
+        pruned += (unsigned int)__popc(prune_mask);
+
+        uint32_t cand_mask = __ballot_sync(0xffffffff, (k < K && k != init_c && !can_prune));
+        while (cand_mask != 0)
+        {
+            int winner_lane = __ffs(cand_mask) - 1;
+            int cand_k = k_base + winner_lane;
+
+            /* Cooperative Distance Evaluation with Periodic Metric Cutoff */
+            const float *a_vec = d_A + (size_t)cand_k * (size_t)D;
+            float partial_sq = 0.0f;
+            int early_exit = 0;
+
+            for (int d_base = 0; d_base < D; d_base += 64)
+            {
+                int d = d_base + lane;
+                if (d < D)
+                {
+                    float diff = f_vec[d] - a_vec[d];
+                    partial_sq += diff * diff;
+                }
+                int d2 = d_base + 32 + lane;
+                if (d2 < D)
+                {
+                    float diff2 = f_vec[d2] - a_vec[d2];
+                    partial_sq += diff2 * diff2;
+                }
+
+                /* Metric cutoff check every 64 dimensions */
+                if (D > 64)
+                {
+                    float block_sum = partial_sq;
+                    #pragma unroll
+                    for (int offset = 16; offset > 0; offset /= 2)
+                    {
+                        block_sum += __shfl_down_sync(0xffffffff, block_sum, offset);
+                    }
+                    if (lane == 0)
+                    {
+                        if (block_sum >= best_d_sq)
+                        {
+                            early_exit = 1;
+                        }
+                    }
+                    early_exit = __shfl_sync(0xffffffff, early_exit, 0);
+                    if (early_exit)
+                    {
+                        break;
+                    }
+                }
+            } // for (int d_base = 0; d_base < D; d_base += 64)
+
+            if (!early_exit)
+            {
+                #pragma unroll
+                for (int offset = 16; offset > 0; offset /= 2)
+                {
+                    partial_sq += __shfl_down_sync(0xffffffff, partial_sq, offset);
+                }
+                float total_dist_sq = __shfl_sync(0xffffffff, partial_sq, 0);
+                if (total_dist_sq < best_d_sq)
+                {
+                    best_d_sq = total_dist_sq;
+                    best_d = sqrtf(total_dist_sq);
+                    best_c = cand_k;
+                }
+            }
+
+            cand_mask &= cand_mask - 1;
+        } // while (cand_mask != 0)
+    } // for (int k_base = 0; k_base < K; k_base += 32)
 
     if (lane == 0)
     {
@@ -753,31 +634,16 @@ long cluster_cuda_run_pass2(
 
         if (d_Dcc != NULL)
         {
-            if (D <= 64)
-            {
-                int threads = 128;
-                int blocks = (cur_B + threads - 1) / threads;
-                gpu_pass2_triangle_prune_kernel<<<blocks, threads, 0, streams[slot]>>>(
-                    d_F[slot], d_A, d_Dcc,
-                    d_init_cl[slot], d_init_dist[slot],
-                    d_best_cl[slot], d_best_dist[slot],
-                    d_pruned_count,
-                    cur_B, K, (int)D);
-                CUDA_CHECK(cudaGetLastError());
-            }
-            else
-            {
-                int threads = 128;
-                int warps_per_block = threads / 32;
-                int blocks = (cur_B + warps_per_block - 1) / warps_per_block;
-                gpu_pass2_triangle_prune_warp_kernel<<<blocks, threads, 0, streams[slot]>>>(
-                    d_F[slot], d_A, d_Dcc,
-                    d_init_cl[slot], d_init_dist[slot],
-                    d_best_cl[slot], d_best_dist[slot],
-                    d_pruned_count,
-                    cur_B, K, (int)D);
-                CUDA_CHECK(cudaGetLastError());
-            }
+            int threads = 128;
+            int warps_per_block = threads / 32;
+            int blocks = (cur_B + warps_per_block - 1) / warps_per_block;
+            gpu_pass2_triangle_prune_warp_kernel<<<blocks, threads, 0, streams[slot]>>>(
+                d_F[slot], d_A, d_Dcc,
+                d_init_cl[slot], d_init_dist[slot],
+                d_best_cl[slot], d_best_dist[slot],
+                d_pruned_count,
+                cur_B, K, (int)D);
+            CUDA_CHECK(cudaGetLastError());
         }
         else
         {
