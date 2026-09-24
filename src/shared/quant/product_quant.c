@@ -17,6 +17,16 @@
 #include <immintrin.h>
 #endif
 
+/**
+ * pq_get_simd_mode() - Detect host CPU SIMD acceleration mode for FastScan.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during PQ codebook training, query LUT generation, and k-NN candidate scanning
+ * to identify hardware SIMD capabilities (AVX-512, AVX2, or scalar fallback).
+ * Selects the optimal hardware vector kernels for FastScan byte-level parallel lookups.
+ *
+ * Return: Active PQSimdMode enumeration value.
+ */
 PQSimdMode pq_get_simd_mode(void)
 {
     GricSimdLevel lvl = gric_get_simd_level();
@@ -31,6 +41,15 @@ PQSimdMode pq_get_simd_mode(void)
     return PQ_SIMD_SCALAR;
 }
 
+/**
+ * pq_get_simd_mode_str() - Format active SIMD acceleration mode as human-readable string.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Used by CLI banners, benchmark utilities, and diagnostic logs to print the active
+ * SIMD vectorization level chosen by runtime CPUID auto-detection.
+ *
+ * Return: Constant string describing active SIMD instruction set.
+ */
 const char *pq_get_simd_mode_str(void)
 {
     PQSimdMode mode = pq_get_simd_mode();
@@ -46,6 +65,18 @@ const char *pq_get_simd_mode_str(void)
     }
 }
 
+/**
+ * pq_codebook_alloc() - Allocate memory and initialize PQCodebook structure.
+ * @dim:         Total dimensionality of vectors.
+ * @m:           Number of orthogonal subquantizers.
+ * @k_centroids: Centroids per subquantizer (16 for 4-bit FastScan, 256 for 8-bit).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during codebook training or sidecar loading to initialize the centroid arrays
+ * and error bounds for a Product Quantization index.
+ *
+ * Return: Pointer to newly allocated PQCodebook, or NULL on allocation error.
+ */
 PQCodebook *pq_codebook_alloc(
     long dim,
     int  m,
@@ -81,6 +112,14 @@ PQCodebook *pq_codebook_alloc(
     return cb;
 }
 
+/**
+ * pq_codebook_free() - Deallocate PQCodebook and associated centroid buffers.
+ * @codebook: Pointer to PQCodebook to deallocate.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during engine shutdown, model release, or error teardown paths to safely
+ * release all heap allocations held by the codebook.
+ */
 void pq_codebook_free(
     PQCodebook *codebook)
 {
@@ -104,6 +143,20 @@ void pq_codebook_free(
     free(codebook);
 }
 
+/**
+ * pq_train_codebook() - Train orthogonal subquantizer centroids via k-means.
+ * @codebook:    Allocated PQCodebook to populate with trained centroids.
+ * @train_data:  Contiguous training vectors [num_frames x dim].
+ * @num_frames:  Number of training vectors available.
+ * @max_iters:   Maximum number of Lloyd-Max k-means iterations per subquantizer.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during offline index preparation or profile building to split the high-dimensional
+ * space into m lower-dimensional sub-spaces, clustering each sub-space into k centroids.
+ * Also computes sub-space and global quantization radii for conservative metric distance pruning.
+ *
+ * Return: 0 on success, or -1 on error.
+ */
 int pq_train_codebook(
     PQCodebook  *codebook,
     const float *train_data,
@@ -254,6 +307,16 @@ int pq_train_codebook(
     return 0;
 }
 
+/**
+ * pq_quantize_frame_float() - Quantize a single float vector into m sub-centroid indices.
+ * @src:      Input full-dimensional vector of floats [dim].
+ * @dst_code: Output buffer receiving m 8-bit centroid indices [m].
+ * @codebook: Active trained PQCodebook.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during dataset preprocessing and frame ingestion to compress incoming
+ * full-precision vectors into compact m-byte codes for approximate nearest neighbor search.
+ */
 void pq_quantize_frame_float(
     const float      *restrict src,
     uint8_t          *restrict dst_code,
@@ -292,6 +355,16 @@ void pq_quantize_frame_float(
     } // for (int s = 0; s < m; s++)
 }
 
+/**
+ * pq_quantize_frame_double() - Quantize a double vector into m sub-centroid indices.
+ * @src:      Input full-dimensional vector of doubles [dim].
+ * @dst_code: Output buffer receiving m 8-bit centroid indices [m].
+ * @codebook: Active trained PQCodebook.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Double-precision counterpart to pq_quantize_frame_float(). Invoked when working with
+ * 64-bit datasets or scientific streams requiring higher input dynamic range.
+ */
 void pq_quantize_frame_double(
     const double     *restrict src,
     uint8_t          *restrict dst_code,
@@ -330,6 +403,18 @@ void pq_quantize_frame_double(
     } // for (int s = 0; s < m; s++)
 }
 
+/**
+ * pq_build_query_lut_float() - Build scaled 8-bit query distance lookup table (LUT).
+ * @query:    Active query vector [dim].
+ * @codebook: Active trained PQCodebook.
+ * @lut:      Output PQLookupTable initialized with scaled uint8 distances.
+ * @cur_tau:  Current dynamic k-NN distance pruning threshold.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked once per query frame at the start of Asymmetric Distance Computation (ADC).
+ * Precalculates squared Euclidean distances from each subvector of the query to all centroids,
+ * dynamically quantizing them into an 8-bit LUT that resides in L1 CPU cache for FastScan.
+ */
 void pq_build_query_lut_float(
     const float      *restrict query,
     const PQCodebook *restrict codebook,
@@ -455,6 +540,17 @@ void pq_build_query_lut_float(
     }
 }
 
+/**
+ * pq_build_query_lut_double() - Build scaled 8-bit query LUT from a double query vector.
+ * @query:    Active double-precision query vector [dim].
+ * @codebook: Active trained PQCodebook.
+ * @lut:      Output PQLookupTable initialized with scaled uint8 distances.
+ * @cur_tau:  Current dynamic k-NN distance pruning threshold.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Double-precision variant of pq_build_query_lut_float(). Invoked when running in -double mode
+ * to precompute L1 cache lookup tables for subsequent FastScan scanning.
+ */
 void pq_build_query_lut_double(
     const double     *restrict query,
     const PQCodebook *restrict codebook,
@@ -577,6 +673,18 @@ void pq_build_query_lut_double(
     }
 }
 
+/**
+ * pq_transpose_block_codes() - Transpose a block of 32 frame codes into SIMD interleaved layout.
+ * @src_codes:   Contiguous frame codes [num_vectors x m].
+ * @dst_block:   Output transposed block buffer [m x 32 bytes].
+ * @m:           Number of subquantizers.
+ * @num_vectors: Number of candidate vectors in this block (up to 32).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during sidecar file generation and cache layout construction to reorder codes from
+ * vector-major into subquantizer-major format. Enables AVX2/AVX-512 register shuffle instructions
+ * (pshufb) to evaluate 32 candidates in parallel with zero runtime transposition overhead.
+ */
 void pq_transpose_block_codes(
     const uint8_t *restrict src_codes,
     uint8_t       *restrict dst_block,
@@ -595,6 +703,19 @@ void pq_transpose_block_codes(
     } // for (int s = 0; s < m; s++)
 }
 
+/**
+ * pq_save_sidecar() - Persist trained PQ codebook and transposed dataset codes to disk.
+ * @filepath:    Output path for the .pq sidecar file.
+ * @codebook:    Trained PQCodebook containing centroids and error bounds.
+ * @transposed:  Transposed block-interleaved dataset codes.
+ * @num_frames:  Total number of indexed vectors.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by CLI utilities (-pq-save) or dataset loaders to cache PQ quantization
+ * representations on disk, allowing instant cold-start loading on subsequent runs.
+ *
+ * Return: 0 on success, or -1 on file write error.
+ */
 int pq_save_sidecar(
     const char       *filepath,
     const PQCodebook *codebook,
@@ -670,6 +791,19 @@ int pq_save_sidecar(
     return 0;
 }
 
+/**
+ * pq_load_sidecar() - Read PQ codebook and transposed dataset codes from disk.
+ * @filepath:       Path to the .pq sidecar file.
+ * @codebook_out:   Receives newly allocated PQCodebook populated from disk.
+ * @transposed_out: Receives newly allocated transposed code buffer.
+ * @num_frames_out: Receives total count of vectors stored in sidecar.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during engine initialization when -pq-load is specified. Bypasses codebook
+ * training and frame quantization by directly loading precomputed bit-interleaved buffers.
+ *
+ * Return: 0 on success, or -1 on file read error or header validation failure.
+ */
 int pq_load_sidecar(
     const char   *filepath,
     PQCodebook  **codebook_out,

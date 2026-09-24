@@ -8,12 +8,30 @@
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * rand_double() - Generate uniform pseudorandom double in range [0.0, 1.0).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by synthetic pattern generators to sample random numbers for geometric coordinates,
+ * angles, and radii when producing test datasets for clustering and k-NN benchmarks.
+ *
+ * Return: Pseudorandom value between 0.0 and 1.0.
+ */
 double rand_double(
     void)
 {
     return (double)rand() / (double)RAND_MAX;
 } // rand_double
 
+/**
+ * gen_random_point() - Generate a uniformly distributed random point in N dimensions.
+ * @out: Output coordinate array [dim].
+ * @dim: Number of spatial dimensions.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by gric-mktxtseq to generate uniform hypersphere (2D/3D) or hypercube (>3D)
+ * random point clouds for baseline non-clustered benchmark tests (e.g., 2Drand, 3Drand).
+ */
 void gen_random_point(
     double *out,
     int     dim)
@@ -44,6 +62,15 @@ void gen_random_point(
     }
 } // gen_random_point
 
+/**
+ * gen_randexp_point() - Generate random point with exponentially decaying radial density.
+ * @out: Output coordinate array [dim].
+ * @dim: Number of spatial dimensions.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by gric-mktxtseq to produce non-uniform density distributions with high-density cores
+ * and sparse outer halos, testing adaptive radius scaling and density estimation.
+ */
 void gen_randexp_point(
     double *out,
     int     dim)
@@ -86,6 +113,15 @@ void gen_randexp_point(
     }
 } // gen_randexp_point
 
+/**
+ * gen_sphere_point() - Generate a point on the surface of an N-dimensional unit sphere.
+ * @out: Output coordinate array [dim].
+ * @dim: Number of spatial dimensions.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by synthetic benchmark generators to sample points strictly on spherical manifold
+ * boundaries, testing topological continuity and surface clustering.
+ */
 void gen_sphere_point(
     double *out,
     int     dim)
@@ -124,6 +160,17 @@ void gen_sphere_point(
     }
 } // gen_sphere_point
 
+/**
+ * gen_circle_point() - Generate trajectory point along a circular periodic orbit.
+ * @out:    Output coordinate array [dim].
+ * @index:  Current sample index.
+ * @period: Number of samples per full cycle revolution.
+ * @dim:    Number of dimensions (>= 2).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by gric-mktxtseq to generate 2D circular periodic trajectory datasets,
+ * testing manifold continuity, temporal prediction (gprob), and cycle tracking.
+ */
 void gen_circle_point(
     double *out,
     long    index,
@@ -143,6 +190,18 @@ void gen_circle_point(
     }
 } // gen_circle_point
 
+/**
+ * gen_spiral_point() - Generate trajectory point along an Archimedean spiral manifold.
+ * @out:          Output coordinate array [dim].
+ * @index:        Current point index along trajectory.
+ * @total_points: Total points in trajectory.
+ * @loops:        Number of spiral revolutions.
+ * @dim:          Number of spatial dimensions (2 or 3).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by gric-mktxtseq to generate 2Dspiral and 3Dspiral benchmark datasets,
+ * testing multi-scale manifold clustering, radius preservation, and nearest-neighbor search.
+ */
 void gen_spiral_point(
     double *out,
     long    index,
@@ -188,6 +247,18 @@ void gen_spiral_point(
     }
 } // gen_spiral_point
 
+/**
+ * gen_star_point() - Generate point along radiating star manifold arms.
+ * @out:          Output coordinate array [dim].
+ * @index:        Current point index.
+ * @total_points: Total points in dataset.
+ * @spokes:       Number of radiating spoke arms.
+ * @dim:          Number of spatial dimensions.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by gric-mktxtseq to produce star-shaped manifold datasets (3Dstar) to evaluate
+ * cluster formation at branching singularities and spoke intersections.
+ */
 void gen_star_point(
     double *out,
     long    index,
@@ -229,6 +300,18 @@ void gen_star_point(
     }
 } // gen_star_point
 
+/**
+ * gen_concentric_point() - Generate point in concentric spherical or circular shells.
+ * @out:          Output coordinate array [dim].
+ * @index:        Current point index.
+ * @total_points: Total points in dataset.
+ * @shells:       Number of nested concentric shells.
+ * @dim:          Number of spatial dimensions.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by synthetic generators to evaluate cluster boundary isolation and distance
+ * separation between non-intersecting concentric manifold layers.
+ */
 void gen_concentric_point(
     double *out,
     long    index,
@@ -270,6 +353,18 @@ void gen_concentric_point(
     }
 } // gen_concentric_point
 
+/**
+ * gen_tree_point() - Generate point along a recursive branching binary tree manifold.
+ * @out:          Output coordinate array [dim].
+ * @index:        Current point index.
+ * @total_points: Total points in dataset.
+ * @unused_param: Unused parameter for uniform signature matching.
+ * @dim:          Number of spatial dimensions.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by synthetic generators to test hierarchical manifold clustering and graph
+ * exploration over branching tree networks.
+ */
 void gen_tree_point(
     double *out,
     long    index,
@@ -324,6 +419,18 @@ void gen_tree_point(
     }
 } // gen_tree_point
 
+/**
+ * gen_concentric_dense_point() - Generate point in concentric shells with high density gradients.
+ * @out:          Output coordinate array [dim].
+ * @index:        Current point index.
+ * @total_points: Total points in dataset.
+ * @shells:       Number of nested concentric shells.
+ * @dim:          Number of spatial dimensions.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by synthetic generators to test entropy gating and candidate pruning under
+ * severe non-uniform spatial density conditions.
+ */
 void gen_concentric_dense_point(
     double *out,
     long    index,
@@ -365,6 +472,16 @@ void gen_concentric_dense_point(
     }
 } // gen_concentric_dense_point
 
+/**
+ * gen_walk_point() - Step a Brownian random walk within a unit bounding ball.
+ * @current:   In-out coordinate array [dim] updated with new random step.
+ * @step_size: Maximum distance step per iteration.
+ * @dim:       Number of spatial dimensions.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by gric-mktxtseq to generate continuous random-walk benchmark datasets,
+ * simulating diffusion processes and drift in continuous time series.
+ */
 void gen_walk_point(
     double *current,
     double  step_size,

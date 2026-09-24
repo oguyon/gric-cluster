@@ -11,6 +11,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * cli_print_colored_usage() - Render syntax-highlighted command usage line.
+ * @usage: Raw usage string (e.g., "Usage: gric-cluster [options] <rlim> <input>").
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by CLI help banners and error handlers to display command syntax with styled
+ * command binaries, bracketed optional flags, and angle-bracketed mandatory arguments.
+ */
 void cli_print_colored_usage(
     const char *usage)
 {
@@ -60,6 +68,14 @@ void cli_print_colored_usage(
     printf("\n");
 } // cli_print_colored_usage
 
+/**
+ * cli_print_colored_line() - Parse and print a styled single line with syntax highlights.
+ * @line: Input line to format and print to stdout.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during help rendering to detect parameter flags, default values, and bullet points,
+ * applying theme color escapes while respecting terminal width.
+ */
 void cli_print_colored_line(
     const char *line)
 {
@@ -176,6 +192,14 @@ void cli_print_colored_line(
     }
 } // cli_print_colored_line
 
+/**
+ * cli_print_colored_options() - Format and render a multiline CLI options block.
+ * @options: Raw multiline options text block.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked when displaying tool option lists in --help output, applying column alignment,
+ * bold flag formatting, and dimmed type indicators.
+ */
 void cli_print_colored_options(
     const char *options)
 {
@@ -200,6 +224,14 @@ void cli_print_colored_options(
     }
 } // cli_print_colored_options
 
+/**
+ * cli_print_colored_examples() - Format and render CLI shell invocation examples.
+ * @examples: Multiline string containing example shell commands and commentary.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by help renderers to highlight command lines, flags, file paths, and comments
+ * in documentation example sections.
+ */
 void cli_print_colored_examples(
     const char *examples)
 {
@@ -280,6 +312,14 @@ void cli_print_colored_examples(
     }
 } // cli_print_colored_examples
 
+/**
+ * cli_print_see_also_option() - Print cross-reference link to another help topic.
+ * @option: Topic name or flag keyword.
+ * @desc:   Brief description of the referenced topic.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked at the footer of help topics to suggest related CLI options and algorithmic guides.
+ */
 void cli_print_see_also_option(
     const char *option,
     const char *desc)
@@ -289,6 +329,16 @@ void cli_print_see_also_option(
            ANSI_COLOR_RESET, desc);
 } // cli_print_see_also_option
 
+/**
+ * count_indent() - Measure leading whitespace indentation level of a line segment.
+ * @line: Pointer to beginning of line.
+ * @len:  Length of line segment in bytes.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Static helper used during text wrapping to calculate paragraph and bullet indentation.
+ *
+ * Return: Number of leading space characters.
+ */
 static int count_indent(
     const char *line,
     int         len)
@@ -301,6 +351,17 @@ static int count_indent(
     return n;
 }
 
+/**
+ * is_verbatim_line() - Check if a line should bypass automatic text reflow.
+ * @content: Pointer to line content.
+ * @clen:    Length of line content.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Static helper that detects Markdown code fences (```), tables (|), and ASCII art borders,
+ * preventing the word wrapper from breaking structured blocks.
+ *
+ * Return: 1 if line is verbatim, 0 if wrap-eligible prose.
+ */
 static int is_verbatim_line(
     const char *content,
     int         clen)
@@ -353,6 +414,15 @@ static int is_verbatim_line(
     return 0;
 }
 
+/**
+ * cli_print_help_section() - Format and render a complete structured help section.
+ * @label: Section header title (e.g., "Description", "Parameters", "Notes").
+ * @value: Multiline section content.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Primary section renderer in gric-help and embedded Markdown help viewer.
+ * Outputs section titles with theme accent colors followed by reflowed paragraphs.
+ */
 void cli_print_help_section(
     const char *label,
     const char *value)
@@ -506,6 +576,14 @@ void cli_print_help_section(
     printf("\n");
 } // cli_print_help_section
 
+/**
+ * cli_print_header_box() - Render decorative double-line Unicode border box around title.
+ * @title: Header text to center within the box.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked at the top of gric-help pages and tool startup banners to render visually prominent
+ * bordered header boxes styled with theme colors.
+ */
 void cli_print_header_box(
     const char *title)
 {
@@ -565,6 +643,16 @@ void cli_print_header_box(
     }
 } // cli_print_header_box
 
+/**
+ * get_levenshtein_distance() - Compute string edit distance between two keywords.
+ * @s1: First string.
+ * @s2: Second string.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Static helper used for typo detection when a user enters an unrecognized --help topic.
+ *
+ * Return: Minimum single-character edit operations to transform s1 into s2.
+ */
 static int get_levenshtein_distance(
     const char *s1,
     const char *s2)
@@ -614,6 +702,16 @@ static int get_levenshtein_distance(
     return res;
 }
 
+/**
+ * cli_suggest_similar_topic() - Find closest registered help topic for an unknown query.
+ * @topic:   Mistyped or unrecognized topic keyword.
+ * @topics:  Array of all valid topic keyword strings.
+ * @ntopics: Total number of valid topics.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by gric-help and gric-cluster when an invalid topic is requested, providing
+ * intelligent "Did you mean: <topic>?" suggestions using Levenshtein distance.
+ */
 void cli_suggest_similar_topic(
     const char         *topic,
     const char *const  *topics,

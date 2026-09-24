@@ -27,8 +27,18 @@
 
 #if (defined(__AVX__) || GRIC_HAVE_AVX512_TARGET) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * hadd_m256_ps() - Horizontal sum of 8 float lanes in a 256-bit AVX register.
+ * @v: 256-bit vector holding 8 single-precision floats.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Static helper used in AVX2 inner loops to reduce accumulator vectors into a single scalar sum.
+ *
+ * Return: Sum of all 8 vector lanes.
+ */
 GRIC_TARGET_AVX2
-static inline float hadd_m256_ps(__m256 v)
+static inline float hadd_m256_ps(
+    __m256 v)
 {
     __m128 lo = _mm256_castps256_ps128(v);
     __m128 hi = _mm256_extractf128_ps(v, 1);
@@ -39,8 +49,18 @@ static inline float hadd_m256_ps(__m256 v)
     return _mm_cvtss_f32(_mm_add_ss(squad, shuf));
 }
 
+/**
+ * hadd_m256d_pd() - Horizontal sum of 4 double lanes in a 256-bit AVX register.
+ * @v: 256-bit vector holding 4 double-precision floats.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Static helper used in AVX2 double-precision inner loops to reduce accumulator vectors.
+ *
+ * Return: Sum of all 4 vector lanes.
+ */
 GRIC_TARGET_AVX2
-static inline double hadd_m256d_pd(__m256d v)
+static inline double hadd_m256d_pd(
+    __m256d v)
 {
     __m128d lo = _mm256_castpd256_pd128(v);
     __m128d hi = _mm256_extractf128_pd(v, 1);
@@ -50,6 +70,19 @@ static inline double hadd_m256d_pd(__m256d v)
 #endif
 
 #if GRIC_HAVE_AVX512_TARGET
+/**
+ * compute_l2_norms_float_avx512() - Compute vector L2 squared norms using AVX-512.
+ * @mat:       Pointer to row-major float matrix [count x dim].
+ * @count:     Number of vectors.
+ * @dim:       Vector dimensionality.
+ * @out_norms: Output array [count] populated with ||v||^2 values.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked by cluster_compute_l2_norms_float() on AVX-512 hardware to precompute squared
+ * vector norms for GEMM distance expansion (||a - b||^2 = ||a||^2 + ||b||^2 - 2<a,b>).
+ *
+ * Return: 0 on success.
+ */
 GRIC_TARGET_AVX512
 static int compute_l2_norms_float_avx512(
     const float *restrict mat,
@@ -98,6 +131,18 @@ static int compute_l2_norms_float_avx512(
     return 0;
 }
 
+/**
+ * compute_l2_norms_double_avx512() - Compute double vector L2 squared norms using AVX-512.
+ * @mat:       Pointer to row-major double matrix [count x dim].
+ * @count:     Number of vectors.
+ * @dim:       Vector dimensionality.
+ * @out_norms: Output array [count] populated with ||v||^2 values.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Double-precision counterpart to compute_l2_norms_float_avx512().
+ *
+ * Return: 0 on success.
+ */
 GRIC_TARGET_AVX512
 static int compute_l2_norms_double_avx512(
     const double *restrict mat,
@@ -435,6 +480,19 @@ static inline void gemm_dist_scalar_double(
  * gemm_dist_tile_4x4_float() - 4x4 register-tiled fused distance microkernel.
  */
 GRIC_TARGET_AVX2
+/**
+ * gemm_dist_tile_4x4_float() - AVX2 4x4 matrix-multiply microkernel for float distances.
+ * @queries:     Array of 4 query vector pointers.
+ * @anchors:     Array of 4 anchor vector pointers.
+ * @q_norms:     Array of 4 precomputed squared query norms.
+ * @a_norms:     Array of 4 precomputed squared anchor norms.
+ * @dists_sq:    Output 4x4 distance squared matrix.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Register-blocked microkernel evaluating 16 pairwise distances simultaneously via FMA
+ * dot products in AVX2 registers.
+ */
 static void gemm_dist_tile_4x4_float(
     const float *const *restrict q_ptrs,
     const float *const *restrict x_ptrs,
@@ -592,6 +650,18 @@ static void gemm_dist_tile_4x4_float(
  * gemm_dist_tile_2x4_double() - 2x4 register-tiled fused distance microkernel (double).
  */
 GRIC_TARGET_AVX2
+/**
+ * gemm_dist_tile_2x4_double() - AVX2 2x4 matrix-multiply microkernel for double distances.
+ * @queries:     Array of 2 query vector pointers.
+ * @anchors:     Array of 4 anchor vector pointers.
+ * @q_norms:     Array of 2 precomputed squared query norms.
+ * @a_norms:     Array of 4 precomputed squared anchor norms.
+ * @dists_sq:    Output 2x4 distance squared matrix.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Double-precision register-blocked microkernel evaluating 8 pairwise distances simultaneously.
+ */
 static void gemm_dist_tile_2x4_double(
     const double *const *restrict q_ptrs,
     const double *const *restrict x_ptrs,
@@ -703,6 +773,18 @@ static void gemm_dist_tile_2x4_double(
  * gemm_dist_vec_candidates_float_avx2() - 1-query-to-N-candidates distance microkernel (float).
  */
 GRIC_TARGET_AVX2
+/**
+ * gemm_dist_vec_candidates_float_avx2() - AVX2 1-query vs 8-candidate GEMM distance kernel.
+ * @query:       Pointer to query float array [dim].
+ * @q_norm:      Precomputed squared query norm.
+ * @anchors:     Array of 8 candidate anchor pointers.
+ * @a_norms:     Array of 8 precomputed squared anchor norms.
+ * @dists:       Output array [8] populated with Euclidean distances.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates distances from 1 query to 8 candidate clusters in parallel using AVX2 FMA.
+ */
 static void gemm_dist_vec_candidates_float_avx2(
     const float *restrict        q,
     const float *restrict        X,
@@ -811,6 +893,18 @@ static void gemm_dist_vec_candidates_float_avx2(
  * gemm_dist_vec_candidates_double_avx2() - 1-query-to-N-candidates distance microkernel (double).
  */
 GRIC_TARGET_AVX2
+/**
+ * gemm_dist_vec_candidates_double_avx2() - AVX2 1-query vs 4-candidate double GEMM distance kernel.
+ * @query:       Pointer to query double array [dim].
+ * @q_norm:      Precomputed squared query norm.
+ * @anchors:     Array of 4 candidate anchor pointers.
+ * @a_norms:     Array of 4 precomputed squared anchor norms.
+ * @dists:       Output array [4] populated with Euclidean distances.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Double-precision counterpart to gemm_dist_vec_candidates_float_avx2().
+ */
 static void gemm_dist_vec_candidates_double_avx2(
     const double *restrict        q,
     const double *restrict        X,
@@ -900,6 +994,18 @@ static void gemm_dist_vec_candidates_double_avx2(
  * gemm_dist_tile_4x4_float_avx512() - 4x4 register-tiled distance microkernel (AVX-512).
  */
 GRIC_TARGET_AVX512
+/**
+ * gemm_dist_tile_4x4_float_avx512() - AVX-512 4x4 matrix-multiply microkernel for float distances.
+ * @queries:     Array of 4 query vector pointers.
+ * @anchors:     Array of 4 anchor vector pointers.
+ * @q_norms:     Array of 4 precomputed squared query norms.
+ * @a_norms:     Array of 4 precomputed squared anchor norms.
+ * @dists_sq:    Output 4x4 distance squared matrix.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * AVX-512 512-bit register-blocked microkernel evaluating 16 pairwise distances simultaneously.
+ */
 static void gemm_dist_tile_4x4_float_avx512(
     const float *const *restrict q_ptrs,
     const float *const *restrict x_ptrs,
@@ -1095,7 +1201,16 @@ static void gemm_dist_tile_4x4_float_avx512(
 }
 
 /**
- * gemm_dist_tile_2x4_double_avx512() - 2x4 distance microkernel (AVX-512).
+ * gemm_dist_tile_2x4_double_avx512() - AVX-512 2x4 matrix-multiply kernel for double distances.
+ * @queries:     Array of 2 query vector pointers.
+ * @anchors:     Array of 4 anchor vector pointers.
+ * @q_norms:     Array of 2 precomputed squared query norms.
+ * @a_norms:     Array of 4 precomputed squared anchor norms.
+ * @dists_sq:    Output 2x4 distance squared matrix.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Double-precision AVX-512 register-blocked microkernel evaluating 8 pairwise distances.
  */
 GRIC_TARGET_AVX512
 static void gemm_dist_tile_2x4_double_avx512(
@@ -1240,6 +1355,18 @@ static void gemm_dist_tile_2x4_double_avx512(
  * gemm_dist_vec_candidates_float_avx512() - Vector-candidate distance (AVX-512, float).
  */
 GRIC_TARGET_AVX512
+/**
+ * gemm_dist_vec_candidates_float_avx512() - AVX-512 1-query vs 16-candidate GEMM distance kernel.
+ * @query:       Pointer to query float array [dim].
+ * @q_norm:      Precomputed squared query norm.
+ * @anchors:     Array of 16 candidate anchor pointers.
+ * @a_norms:     Array of 16 precomputed squared anchor norms.
+ * @dists:       Output array [16] populated with Euclidean distances.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates distances from 1 query to 16 candidate clusters simultaneously in AVX-512 registers.
+ */
 static void gemm_dist_vec_candidates_float_avx512(
     const float *restrict        q,
     const float *restrict        X,
@@ -1340,6 +1467,18 @@ static void gemm_dist_vec_candidates_float_avx512(
  * gemm_dist_vec_candidates_double_avx512() - Vector-candidate distance (AVX-512, double).
  */
 GRIC_TARGET_AVX512
+/**
+ * gemm_dist_vec_candidates_double_avx512() - AVX-512 1-query vs 8-candidate double GEMM kernel.
+ * @query:       Pointer to query double array [dim].
+ * @q_norm:      Precomputed squared query norm.
+ * @anchors:     Array of 8 candidate anchor pointers.
+ * @a_norms:     Array of 8 precomputed squared anchor norms.
+ * @dists:       Output array [8] populated with Euclidean distances.
+ * @dim:         Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates distances from 1 query to 8 candidate clusters simultaneously in double precision.
+ */
 static void gemm_dist_vec_candidates_double_avx512(
     const double *restrict        q,
     const double *restrict        X,

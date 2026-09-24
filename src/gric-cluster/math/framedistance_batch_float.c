@@ -216,6 +216,20 @@ void framedist_batch_1x4_float(
 }
 
 #if GRIC_HAVE_AVX512_TARGET
+/**
+ * calc_dist4_cutoff_f32_avx512() - AVX-512 1-query vs 4-anchor float distance with early cutoff.
+ * @q:         Query vector [size].
+ * @anchors:   Array of 4 candidate anchor pointers.
+ * @size:      Vector length.
+ * @cutoff_sq: Early cutoff distance squared threshold.
+ * @out_dists: Output array [4] populated with computed Euclidean distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during candidate cluster evaluation on AVX-512 hardware to compute 4 distances
+ * in parallel, pruning evaluation when partial sums exceed the squared cutoff threshold.
+ *
+ * Return: 0 if evaluated, or non-zero if all candidates were pruned.
+ */
 GRIC_TARGET_AVX512
 static int calc_dist4_cutoff_f32_avx512(
     const float *restrict        q,
@@ -342,6 +356,19 @@ static int calc_dist4_cutoff_f32_avx512(
     return pruned_mask;
 }
 
+/**
+ * calc_dist8_cutoff_f32_avx512() - AVX-512 1-query vs 8-anchor float distance with early cutoff.
+ * @q:         Query vector [size].
+ * @anchors:   Array of 8 candidate anchor pointers.
+ * @size:      Vector length.
+ * @cutoff_sq: Early cutoff distance squared threshold.
+ * @out_dists: Output array [8] populated with computed Euclidean distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates 8 candidate anchors simultaneously against 1 query with block-level early cutoff.
+ *
+ * Return: 0 if evaluated, or non-zero if all candidates were pruned.
+ */
 GRIC_TARGET_AVX512
 static int calc_dist8_cutoff_f32_avx512(
     const float *restrict        q,
@@ -523,6 +550,16 @@ static int calc_dist8_cutoff_f32_avx512(
     return pruned_mask;
 }
 
+/**
+ * calc_dist8_f32_avx512() - AVX-512 1-query vs 8-anchor exact float Euclidean distance.
+ * @q:         Query vector [size].
+ * @a0-a7:     Pointers to 8 candidate anchor vectors [size].
+ * @out_dists: Output array [8] populated with computed Euclidean distances.
+ * @size:      Vector length.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Exact unpruned distance evaluation across 8 anchors using 512-bit FMA vector registers.
+ */
 GRIC_TARGET_AVX512
 static void calc_dist8_f32_avx512(
     const float *restrict        q,
@@ -657,6 +694,16 @@ static void calc_dist8_f32_avx512(
     out_dists[7] = (double)sqrtf(s7);
 }
 
+/**
+ * calc_dist16_f32_avx512() - AVX-512 1-query vs 16-anchor exact float Euclidean distance.
+ * @q:         Query vector [size].
+ * @a:         Array of 16 candidate anchor pointers.
+ * @out_dists: Output array [16] populated with computed Euclidean distances.
+ * @size:      Vector length.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * High-throughput kernel utilizing all 32 AVX-512 registers to evaluate 16 anchors in parallel.
+ */
 GRIC_TARGET_AVX512
 static void calc_dist16_f32_avx512(
     const float *restrict        q,
@@ -1563,6 +1610,15 @@ static inline __attribute__((always_inline)) void calc_dist8_f32_core(
     calc_dist4_f32_core(q, a4, a5, a6, a7, out_dists + 4, size);
 }
 
+/**
+ * framedist_batch_1x8_float() - Evaluate distance from 1 query frame to 8 arbitrary anchors.
+ * @query:     Pointer to query Frame structure.
+ * @anchors:   Array of 8 candidate anchor Frame pointers.
+ * @out_dists: Output array [8] populated with Euclidean distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Primary batch distance API for clustering and k-NN search when anchors are non-contiguous.
+ */
 void framedist_batch_1x8_float(
     const float *restrict        q,
     const float *const *restrict anchors,
@@ -1584,6 +1640,15 @@ void framedist_batch_1x8_float(
     );
 }
 
+/**
+ * framedist_batch_1x8_contiguous_float() - Evaluate distance from 1 query to 8 contiguous anchors.
+ * @query:         Pointer to query Frame structure.
+ * @anchor_matrix: Contiguous row-major anchor float matrix [8 x dim].
+ * @out_dists:     Output array [8] populated with Euclidean distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * High-performance batch evaluation exploiting stride-1 contiguous anchor matrix layout.
+ */
 void framedist_batch_1x8_contiguous_float(
     const float *restrict q,
     const float *restrict anchors_matrix,
@@ -1616,6 +1681,15 @@ void framedist_batch_1x8_contiguous_float(
     );
 }
 
+/**
+ * framedist_batch_1x16_contiguous_float() - Distance from 1 query to 16 contiguous anchors.
+ * @query:         Pointer to query Frame structure.
+ * @anchor_matrix: Contiguous row-major anchor float matrix [16 x dim].
+ * @out_dists:     Output array [16] populated with Euclidean distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * 16-way batch evaluation on AVX-512 hardware for maximum SIMD register saturation.
+ */
 void framedist_batch_1x16_contiguous_float(
     const float *restrict q,
     const float *restrict anchors_matrix,

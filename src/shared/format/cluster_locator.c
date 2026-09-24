@@ -50,6 +50,19 @@ void calc_te4_ref_init(
     ref->valid = 1;
 }
 
+/**
+ * calc_min_dist_4pt_ref() - Compute scalar 4-point Euclidean lower-bound distance.
+ * @ref: Precomputed 4-point reference coordinate structure.
+ * @d13: Distance from candidate anchor to first reference anchor.
+ * @d23: Distance from candidate anchor to second reference anchor.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during sample location and candidate cluster pruning to compute the conservative
+ * Euclidean lower bound between an input frame and a candidate cluster using 2 pivot anchors.
+ * Prunes candidate clusters whose lower bound exceeds the current best distance.
+ *
+ * Return: Conservative Euclidean lower bound distance.
+ */
 double calc_min_dist_4pt_ref(
     const TE4Ref *ref,
     double        d13,
@@ -68,6 +81,20 @@ double calc_min_dist_4pt_ref(
     return sqrt(dx * dx + dy * dy);
 }
 
+/**
+ * calc_te5_ref_init() - Precompute 3D coordinate frame for 5-point tetrahedral pruning.
+ * @ref:    Output TE5Ref structure to initialize.
+ * @d_f_c1: Distance from query frame to reference anchor 1.
+ * @d_f_c2: Distance from query frame to reference anchor 2.
+ * @d_f_c3: Distance from query frame to reference anchor 3.
+ * @d_c1_c2: Inter-anchor distance between anchor 1 and anchor 2.
+ * @d_c1_c3: Inter-anchor distance between anchor 1 and anchor 3.
+ * @d_c2_c3: Inter-anchor distance between anchor 2 and anchor 3.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked at the start of cluster locator routing to project the query vector and 3 reference
+ * anchors into a 3D isometric subspace. Precomputes coordinates for calc_min_dist_5pt_ref().
+ */
 void calc_te5_ref_init(
     TE5Ref *ref,
     double  d_f_c1,
@@ -108,6 +135,19 @@ void calc_te5_ref_init(
     ref->valid = 1;
 }
 
+/**
+ * calc_min_dist_5pt_ref() - Compute scalar 5-point Euclidean lower-bound distance.
+ * @ref:    Precomputed 5-point reference coordinate frame.
+ * @d_t_c1: Distance from candidate target to reference anchor 1.
+ * @d_t_c2: Distance from candidate target to reference anchor 2.
+ * @d_t_c3: Distance from candidate target to reference anchor 3.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during candidate cluster pruning to evaluate 5-point distance geometry bounds
+ * across candidate clusters. Yields tighter bounds than 4-point pruning in high dimensions.
+ *
+ * Return: Conservative 5-point Euclidean lower bound distance.
+ */
 double calc_min_dist_5pt_ref(
     const TE5Ref *ref,
     double        d_t_c1,
@@ -133,6 +173,17 @@ double calc_min_dist_5pt_ref(
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 GRIC_TARGET_AVX2
+/**
+ * calc_min_dist_4pt_batch4_avx2() - AVX2 vectorized evaluation of 4 candidate 4-point bounds.
+ * @ref:       Precomputed 4-point reference coordinates.
+ * @d13:       Array of 4 distances to first reference anchor.
+ * @d23:       Array of 4 distances to second reference anchor.
+ * @out_dists: Output array receiving 4 computed lower-bound distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during batch cluster candidate filtering on AVX2 hardware to compute 4 geometric
+ * lower bounds in parallel, eliminating clusters before floating-point distance calculation.
+ */
 void calc_min_dist_4pt_batch4_avx2(
     const TE4Ref          *ref,
     const double *restrict d13,
@@ -172,6 +223,18 @@ void calc_min_dist_4pt_batch4_avx2(
 }
 
 GRIC_TARGET_AVX2
+/**
+ * calc_min_dist_5pt_batch4_avx2() - AVX2 vectorized evaluation of 4 candidate 5-point bounds.
+ * @ref:       Precomputed 5-point reference coordinate frame.
+ * @d_t_c1:    Array of 4 distances to reference anchor 1.
+ * @d_t_c2:    Array of 4 distances to reference anchor 2.
+ * @d_t_c3:    Array of 4 distances to reference anchor 3.
+ * @out_dists: Output array receiving 4 computed lower-bound distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during batch cluster candidate filtering on AVX2 hardware to evaluate 4 tetrahedral
+ * 5-point geometric lower bounds in parallel.
+ */
 void calc_min_dist_5pt_batch4_avx2(
     const TE5Ref          *ref,
     const double *restrict d_t_c1,
@@ -232,6 +295,17 @@ void calc_min_dist_5pt_batch4_avx2(
 
 #if GRIC_HAVE_AVX512_TARGET
 GRIC_TARGET_AVX512
+/**
+ * calc_min_dist_4pt_batch8_avx512() - AVX-512 vectorized evaluation of 8 candidate 4-point bounds.
+ * @ref:       Precomputed 4-point reference coordinates.
+ * @d13:       Array of 8 distances to first reference anchor.
+ * @d23:       Array of 8 distances to second reference anchor.
+ * @out_dists: Output array receiving 8 computed lower-bound distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during batch cluster candidate filtering on AVX-512 hardware to compute 8 geometric
+ * lower bounds simultaneously using 512-bit vector registers.
+ */
 void calc_min_dist_4pt_batch8_avx512(
     const TE4Ref          *ref,
     const double *restrict d13,
@@ -270,6 +344,18 @@ void calc_min_dist_4pt_batch8_avx512(
 }
 
 GRIC_TARGET_AVX512
+/**
+ * calc_min_dist_5pt_batch8_avx512() - AVX-512 vectorized evaluation of 8 candidate 5-point bounds.
+ * @ref:       Precomputed 5-point reference coordinate frame.
+ * @d_t_c1:    Array of 8 distances to reference anchor 1.
+ * @d_t_c2:    Array of 8 distances to reference anchor 2.
+ * @d_t_c3:    Array of 8 distances to reference anchor 3.
+ * @out_dists: Output array receiving 8 computed lower-bound distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during batch cluster candidate filtering on AVX-512 hardware to evaluate 8 tetrahedral
+ * 5-point geometric lower bounds simultaneously.
+ */
 void calc_min_dist_5pt_batch8_avx512(
     const TE5Ref          *ref,
     const double *restrict d_t_c1,

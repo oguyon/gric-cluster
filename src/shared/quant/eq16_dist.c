@@ -12,6 +12,17 @@
 #include <math.h>
 #include <string.h>
 
+/**
+ * eq16_dist_squared_i16_scalar() - Scalar squared Euclidean distance between two int16 vectors.
+ * @a:   First quantized coordinate vector [dim].
+ * @b:   Second quantized coordinate vector [dim].
+ * @dim: Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Portable fallback computing exact quantized Euclidean distance between two EQ16 vectors.
+ *
+ * Return: Squared integer Euclidean distance.
+ */
 static inline uint64_t eq16_dist_squared_i16_scalar(
     const int16_t *restrict a,
     const int16_t *restrict b,
@@ -27,6 +38,17 @@ static inline uint64_t eq16_dist_squared_i16_scalar(
 }
 
 #if GRIC_HAVE_AVX512_TARGET
+/**
+ * eq16_dist_squared_i16_avx512() - AVX-512 squared Euclidean distance between int16 vectors.
+ * @a:   First quantized coordinate vector [dim].
+ * @b:   Second quantized coordinate vector [dim].
+ * @dim: Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates 32 int16 coordinate differences per iteration using 512-bit vector registers.
+ *
+ * Return: Squared integer Euclidean distance.
+ */
 GRIC_TARGET_AVX512
 static uint64_t eq16_dist_squared_i16_avx512(
     const int16_t *restrict a,
@@ -69,6 +91,17 @@ static uint64_t eq16_dist_squared_i16_avx512(
 #endif // GRIC_HAVE_AVX512_TARGET
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * eq16_dist_squared_i16_avx2_exact() - Exact 64-bit AVX2 distance between int16 vectors.
+ * @a:   First quantized coordinate vector [dim].
+ * @b:   Second quantized coordinate vector [dim].
+ * @dim: Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Uses 256-bit AVX2 vector registers with 64-bit accumulation to prevent overflow for huge vectors.
+ *
+ * Return: Squared integer Euclidean distance.
+ */
 GRIC_TARGET_AVX2
 static uint64_t eq16_dist_squared_i16_avx2_exact(
     const int16_t *restrict a,
@@ -119,6 +152,17 @@ static uint64_t eq16_dist_squared_i16_avx2_exact(
     return total;
 }
 
+/**
+ * eq16_dist_squared_i16_avx2() - High-speed AVX2 squared distance between int16 vectors.
+ * @a:   First quantized coordinate vector [dim].
+ * @b:   Second quantized coordinate vector [dim].
+ * @dim: Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Standard AVX2 SIMD implementation evaluating 16 coordinates per iteration using madd_epi16.
+ *
+ * Return: Squared integer Euclidean distance.
+ */
 GRIC_TARGET_AVX2
 static uint64_t eq16_dist_squared_i16_avx2(
     const int16_t *restrict a,
@@ -204,6 +248,18 @@ uint64_t eq16_dist_squared_i16(
     return eq16_dist_squared_i16_scalar(a, b, dim);
 }
 
+/**
+ * eq16_dist_squared_cutoff_i16_scalar() - Scalar distance with early cutoff threshold.
+ * @a:         First quantized vector [dim].
+ * @b:         Second quantized vector [dim].
+ * @dim:       Vector dimensionality.
+ * @cutoff_sq: Maximum distance squared threshold.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Aborts distance accumulation immediately if the partial sum exceeds cutoff_sq.
+ *
+ * Return: Computed distance squared, or cutoff_sq + 1 on early prune.
+ */
 static inline uint64_t eq16_dist_squared_cutoff_i16_scalar(
     const int16_t *restrict a,
     const int16_t *restrict b,
@@ -224,6 +280,18 @@ static inline uint64_t eq16_dist_squared_cutoff_i16_scalar(
 }
 
 #if GRIC_HAVE_AVX512_TARGET
+/**
+ * eq16_dist_squared_cutoff_i16_avx512() - AVX-512 distance with early cutoff threshold.
+ * @a:         First quantized vector [dim].
+ * @b:         Second quantized vector [dim].
+ * @dim:       Vector dimensionality.
+ * @cutoff_sq: Maximum distance squared threshold.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates 32 coordinate differences per iteration with block-level threshold checking.
+ *
+ * Return: Computed distance squared, or cutoff_sq + 1 on early prune.
+ */
 GRIC_TARGET_AVX512
 static uint64_t eq16_dist_squared_cutoff_i16_avx512(
     const int16_t *restrict a,
@@ -281,6 +349,18 @@ static uint64_t eq16_dist_squared_cutoff_i16_avx512(
 #endif // GRIC_HAVE_AVX512_TARGET
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * eq16_dist_squared_cutoff_i16_avx2() - AVX2 distance with early cutoff threshold.
+ * @a:         First quantized vector [dim].
+ * @b:         Second quantized vector [dim].
+ * @dim:       Vector dimensionality.
+ * @cutoff_sq: Maximum distance squared threshold.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates 16 coordinate differences per iteration using AVX2 with early termination.
+ *
+ * Return: Computed distance squared, or cutoff_sq + 1 on early prune.
+ */
 GRIC_TARGET_AVX2
 static uint64_t eq16_dist_squared_cutoff_i16_avx2(
     const int16_t *restrict a,
@@ -393,6 +473,15 @@ uint64_t eq16_dist_squared_cutoff_i16(
 }
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * hsum256_ps() - Horizontal sum of 8 float lanes in a 256-bit AVX register.
+ * @v: 256-bit vector holding 8 single-precision floats.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Static helper used in AVX2 asymmetric distance inner loops to sum float accumulators.
+ *
+ * Return: Sum of all 8 vector lanes.
+ */
 static inline float hsum256_ps(__m256 v)
 {
     __m128 vlow = _mm256_castps256_ps128(v);
@@ -404,6 +493,20 @@ static inline float hsum256_ps(__m256 v)
 }
 #endif
 
+/**
+ * eq16_dist_asym_cutoff_scalar() - Scalar asymmetric float-to-int16 distance with cutoff.
+ * @q:         Unquantized float query vector [dim].
+ * @c:         EQ16 quantized int16 candidate vector [dim].
+ * @dim:       Vector dimensionality.
+ * @scale:     Quantization step size scaling factor.
+ * @offset:    Quantization min-value offset.
+ * @cutoff_sq: Maximum distance squared threshold.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates Euclidean distance between an uncompressed float query and a compressed EQ16 vector.
+ *
+ * Return: Squared Euclidean distance, or cutoff_sq + 1.0f on prune.
+ */
 static float eq16_dist_asym_cutoff_scalar(
     const float   *restrict q_scaled,
     const int16_t *restrict cand_eq16,
@@ -426,6 +529,20 @@ static float eq16_dist_asym_cutoff_scalar(
 }
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * eq16_dist_asym_cutoff_avx2() - AVX2 asymmetric float-to-int16 distance with cutoff.
+ * @q:         Unquantized float query vector [dim].
+ * @c:         EQ16 quantized int16 candidate vector [dim].
+ * @dim:       Vector dimensionality.
+ * @scale:     Quantization step size scaling factor.
+ * @offset:    Quantization min-value offset.
+ * @cutoff_sq: Maximum distance squared threshold.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * AVX2 FMA accelerated asymmetric distance evaluation with 8 floats per SIMD vector.
+ *
+ * Return: Squared Euclidean distance, or cutoff_sq + 1.0f on prune.
+ */
 GRIC_TARGET_AVX2
 static float eq16_dist_asym_cutoff_avx2(
     const float   *restrict q_scaled,
@@ -484,6 +601,20 @@ static float eq16_dist_asym_cutoff_avx2(
 #endif // x86 / AVX2
 
 #if GRIC_HAVE_AVX512_TARGET
+/**
+ * eq16_dist_asym_cutoff_avx512() - AVX-512 asymmetric float-to-int16 distance with cutoff.
+ * @q:         Unquantized float query vector [dim].
+ * @c:         EQ16 quantized int16 candidate vector [dim].
+ * @dim:       Vector dimensionality.
+ * @scale:     Quantization step size scaling factor.
+ * @offset:    Quantization min-value offset.
+ * @cutoff_sq: Maximum distance squared threshold.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * AVX-512 accelerated asymmetric distance evaluation with 16 floats per SIMD vector.
+ *
+ * Return: Squared Euclidean distance, or cutoff_sq + 1.0f on prune.
+ */
 GRIC_TARGET_AVX512
 static float eq16_dist_asym_cutoff_avx512(
     const float   *restrict q_scaled,
@@ -714,6 +845,18 @@ static void eq16_dist_asym_cutoff_batch_1x8_scalar(
 }
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * eq16_reduce_4x256_ps() - Reduce four 256-bit float accumulators into a 128-bit vector.
+ * @acc0: First 256-bit accumulator.
+ * @acc1: Second 256-bit accumulator.
+ * @acc2: Third 256-bit accumulator.
+ * @acc3: Fourth 256-bit accumulator.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Static helper in batch 1x4 distance calculation using vector transpose and horizontal add.
+ *
+ * Return: 128-bit SIMD vector holding the 4 scalar sums.
+ */
 static inline __m128 eq16_reduce_4x256_ps(
     __m256 acc0,
     __m256 acc1,
@@ -811,6 +954,22 @@ static float eq16_dist_asym_resume_cutoff_avx2(
     return total;
 }
 
+/**
+ * eq16_dist_asym_cutoff_batch_1x4_avx2() - AVX2 1-query vs 4-candidate asymmetric distance.
+ * @q:         Unquantized float query vector [dim].
+ * @c0:        Pointer to candidate vector 0 [dim].
+ * @c1:        Pointer to candidate vector 1 [dim].
+ * @c2:        Pointer to candidate vector 2 [dim].
+ * @c3:        Pointer to candidate vector 3 [dim].
+ * @dim:       Vector dimensionality.
+ * @scale:     Quantization step size scaling factor.
+ * @offset:    Quantization min-value offset.
+ * @cutoff_sq: Maximum distance squared threshold.
+ * @out_dists: Output array [4] populated with computed squared distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates 4 candidate vectors simultaneously against 1 query using AVX2 registers.
+ */
 GRIC_TARGET_AVX2
 static void eq16_dist_asym_cutoff_batch_1x4_avx2(
     const float         *restrict  q_scaled,
@@ -1194,6 +1353,22 @@ static float eq16_dist_asym_resume_cutoff_avx512(
     return total;
 }
 
+/**
+ * eq16_dist_asym_cutoff_batch_1x4_avx512() - AVX-512 1-query vs 4-candidate distance.
+ * @q:         Unquantized float query vector [dim].
+ * @c0:        Pointer to candidate vector 0 [dim].
+ * @c1:        Pointer to candidate vector 1 [dim].
+ * @c2:        Pointer to candidate vector 2 [dim].
+ * @c3:        Pointer to candidate vector 3 [dim].
+ * @dim:       Vector dimensionality.
+ * @scale:     Quantization step size scaling factor.
+ * @offset:    Quantization min-value offset.
+ * @cutoff_sq: Maximum distance squared threshold.
+ * @out_dists: Output array [4] populated with computed squared distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates 4 candidate vectors simultaneously using AVX-512 512-bit registers.
+ */
 GRIC_TARGET_AVX512
 static void eq16_dist_asym_cutoff_batch_1x4_avx512(
     const float         *restrict  q_scaled,
@@ -1779,6 +1954,16 @@ double eq16_compute_lower_bound(
     return lb;
 }
 
+/**
+ * eq16_dist_squared_batch_1x4_i16_scalar() - Scalar batch 1x4 quantized distance.
+ * @q:         Quantized query vector [dim].
+ * @c0-c3:     Pointers to 4 quantized candidate vectors [dim].
+ * @dim:       Vector dimensionality.
+ * @out_dists: Output array [4] populated with computed squared integer distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Scalar fallback computing 4 symmetric quantized vector distances.
+ */
 static inline void eq16_dist_squared_batch_1x4_i16_scalar(
     const int16_t *restrict        q,
     const int16_t *const *restrict anchors,
@@ -1802,6 +1987,19 @@ static inline void eq16_dist_squared_batch_1x4_i16_scalar(
 }
 
 #if GRIC_HAVE_AVX512_TARGET
+/**
+ * eq16_dist_squared_batch_1x4_i16_avx512() - AVX-512 batch 1x4 quantized distance.
+ * @q:         Quantized query vector [dim].
+ * @c0:        Pointer to candidate vector 0 [dim].
+ * @c1:        Pointer to candidate vector 1 [dim].
+ * @c2:        Pointer to candidate vector 2 [dim].
+ * @c3:        Pointer to candidate vector 3 [dim].
+ * @dim:       Vector dimensionality.
+ * @out_dists: Output array [4] populated with computed squared integer distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Computes 4 symmetric quantized vector distances simultaneously using AVX-512 registers.
+ */
 GRIC_TARGET_AVX512
 static void eq16_dist_squared_batch_1x4_i16_avx512(
     const int16_t *restrict        q,
@@ -1874,6 +2072,19 @@ static void eq16_dist_squared_batch_1x4_i16_avx512(
 #endif // GRIC_HAVE_AVX512_TARGET
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+/**
+ * eq16_dist_squared_batch_1x4_i16_avx2() - AVX2 batch 1x4 quantized distance.
+ * @q:         Quantized query vector [dim].
+ * @c0:        Pointer to candidate vector 0 [dim].
+ * @c1:        Pointer to candidate vector 1 [dim].
+ * @c2:        Pointer to candidate vector 2 [dim].
+ * @c3:        Pointer to candidate vector 3 [dim].
+ * @dim:       Vector dimensionality.
+ * @out_dists: Output array [4] populated with computed squared integer distances.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Computes 4 symmetric quantized vector distances simultaneously using AVX2 registers.
+ */
 GRIC_TARGET_AVX2
 static void eq16_dist_squared_batch_1x4_i16_avx2(
     const int16_t *restrict        q,

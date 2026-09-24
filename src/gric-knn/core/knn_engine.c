@@ -66,45 +66,36 @@
  *
  * Return: 0 on success, or -1 on error.
  */
-int knn_run_search(
+/**
+ * knn_search_validate_and_alloc() - Validate inputs and allocate search heap structures.
+ * @config:       Active k-NN search configuration.
+ * @model:        Pre-loaded cluster model.
+ * @results:      Results structure receiving allocated indices and distances buffers.
+ * @out_heaps:    Output pointer receiving array of per-query KnnMaxHeap structures.
+ * @out_is_cross: Output boolean flag (1 for cross-dataset, 0 for single-dataset).
+ * @out_n_query:  Output total number of queries to search.
+ * @out_n_cand:   Output total number of candidates in candidate pool.
+ * @out_q_w:      Output query frame width in pixels.
+ * @out_q_h:      Output query frame height in pixels.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Validates configuration parameters and dataset dimensions, checks query frame size
+ * consistency in cross-dataset mode, allocates result storage for N_query * k items,
+ * and initializes bounded max-heaps with search_k capacity for every query.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int knn_search_validate_and_alloc(
     const KnnConfig *config,
     const KnnModel  *model,
     KnnResults      *results,
-    KnnTelemetry    *telemetry)
+    KnnMaxHeap     **out_heaps,
+    int             *out_is_cross,
+    long            *out_n_query,
+    long            *out_n_cand,
+    long            *out_q_w,
+    long            *out_q_h)
 {
-    if (config == NULL || model == NULL || results == NULL || telemetry == NULL)
-    {
-        return -1;
-    }
-
-#ifdef USE_CUDA
-    if (config->use_gpu)
-    {
-        if (knn_cuda_is_available())
-        {
-            int rc = knn_cuda_run_search(config, model, results, telemetry);
-            if (rc == 0)
-            {
-                return 0;
-            }
-            fprintf(stderr, "Warning: GPU search failed, falling back to CPU engine.\n");
-        }
-        else
-        {
-            fprintf(stderr, "Warning: CUDA GPU requested but no available device found. "
-                            "Falling back to CPU engine.\n");
-        }
-    }
-#else
-    if (config->use_gpu)
-    {
-        fprintf(stderr, "Warning: GPU acceleration requested (--gpu), but gric-knn was built "
-                        "without CUDA support (ENABLE_CUDA=OFF). Running on CPU.\n");
-    }
-#endif
-
-    memset(telemetry, 0, sizeof(KnnTelemetry));
-
     int is_cross_dataset = (config->query_data_path != NULL) ? 1 : 0;
     long N_query = model->total_dataset_frames;
     long N_cand = model->total_dataset_frames;
@@ -170,7 +161,206 @@ int knn_run_search(
             knn_results_free(results);
             return -1;
         }
-    } // for (long i = 0; ...)
+    }
+
+    *out_heaps = all_heaps;
+    *out_is_cross = is_cross_dataset;
+    *out_n_query = N_query;
+    *out_n_cand = N_cand;
+    *out_q_w = q_w;
+    *out_q_h = q_h;
+    return 0;
+}
+
+/**
+ * knn_search_open_readers() - Open candidate and query frame readers.
+ * @config:              Active search configuration.
+ * @model:               Pre-loaded cluster model.
+ * @results:             Results structure to free if opening readers fails.
+ * @is_cross_dataset:    Non-zero if query dataset is distinct.
+ * @N_cand:              Number of candidate frames.
+ * @N_query:             Number of query frames.
+ * @q_w:                 Query frame width.
+ * @q_h:                 Query frame height.
+ * @master_cand_reader:  Output candidate reader handle.
+ * @master_query_reader: Output query reader handle.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Prepares dataset access handles (memory buffer or disk file) for the search phase.
+ * Opens the master reader structures that worker threads clone per-thread.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int knn_search_open_readers(
+    const KnnConfig *config,
+    const KnnModel  *model,
+    KnnResults      *results,
+    int              is_cross_dataset,
+    long             N_cand,
+    long             N_query,
+    long             q_w,
+    long             q_h,
+    KnnFrameReader  *master_cand_reader,
+    KnnFrameReader  *master_query_reader)
+{
+    if (config->memory_data != NULL)
+    {
+        if (knn_reader_open_memory(master_cand_reader, config->memory_data, N_cand,
+                                   model->frame_elements, model->is_double) != 0)
+        {
+            knn_results_free(results);
+            return -1;
+        }
+    }
+    else if (knn_reader_open(master_cand_reader, config->input_data_path, N_cand,
+                             model->frame_width, model->frame_height, model->is_double) != 0)
+    {
+        knn_results_free(results);
+        return -1;
+    }
+
+    if (is_cross_dataset)
+    {
+        if (knn_reader_open(master_query_reader, config->query_data_path, N_query,
+                            q_w, q_h, model->is_double) != 0)
+        {
+            knn_reader_close(master_cand_reader);
+            knn_results_free(results);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * knn_search_extract_and_finalize() - Extract sorted neighbors, close readers, and set time.
+ * @config:              Active search configuration.
+ * @results:             Output results structure.
+ * @telemetry:           Output telemetry structure.
+ * @all_heaps:           Array of per-query max-heaps.
+ * @N_query:             Number of queries.
+ * @is_cross_dataset:    Cross-dataset flag.
+ * @bucket_locks:        OpenMP bucket locks array (single-dataset only).
+ * @master_cand_reader:  Master candidate reader to close.
+ * @master_query_reader: Master query reader to close if cross-dataset.
+ * @start_time:          Start timestamp.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Drains all per-query max-heaps in parallel to extract sorted nearest-neighbor lists,
+ * frees heap allocations, destroys OpenMP synchronization locks, closes file readers,
+ * and records total wall-clock search duration into telemetry.
+ */
+static void knn_search_extract_and_finalize(
+    const KnnConfig *config,
+    KnnResults      *results,
+    KnnTelemetry    *telemetry,
+    KnnMaxHeap      *all_heaps,
+    long             N_query,
+    int              is_cross_dataset,
+#ifdef _OPENMP
+    omp_lock_t      *bucket_locks,
+#endif
+    KnnFrameReader  *master_cand_reader,
+    KnnFrameReader  *master_query_reader,
+    struct timespec  start_time)
+{
+    int k = config->k;
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for (long i = 0; i < N_query; i++)
+    {
+        knn_heap_extract_sorted(&all_heaps[i], &results->indices[i * k],
+                                &results->distances[i * k], k);
+        knn_heap_free(&all_heaps[i]);
+    }
+    free(all_heaps);
+
+#ifdef _OPENMP
+    if (!is_cross_dataset)
+    {
+        for (int b = 0; b < KNN_NUM_BUCKET_LOCKS; b++)
+        {
+            omp_destroy_lock(&bucket_locks[b]);
+        }
+    }
+#endif
+
+    struct timespec end_time;
+    clock_gettime(CLOCK_MONOTONIC, &end_time);
+
+    if (is_cross_dataset)
+    {
+        knn_reader_close(master_query_reader);
+    }
+    knn_reader_close(master_cand_reader);
+
+    if (config->progress_mode)
+    {
+        printf("\rSearching k-NN: [========================================] "
+               "100.0%% (%ld / %ld frames)\n",
+               N_query, N_query);
+        fflush(stdout);
+    }
+
+    telemetry->time_search_ms = (end_time.tv_sec - start_time.tv_sec) * 1000.0 +
+                                (end_time.tv_nsec - start_time.tv_nsec) / 1000000.0;
+}
+
+int knn_run_search(
+    const KnnConfig *config,
+    const KnnModel  *model,
+    KnnResults      *results,
+    KnnTelemetry    *telemetry)
+{
+    if (config == NULL || model == NULL || results == NULL || telemetry == NULL)
+    {
+        return -1;
+    }
+
+#ifdef USE_CUDA
+    if (config->use_gpu)
+    {
+        if (knn_cuda_is_available())
+        {
+            int rc = knn_cuda_run_search(config, model, results, telemetry);
+            if (rc == 0)
+            {
+                return 0;
+            }
+            fprintf(stderr, "Warning: GPU search failed, falling back to CPU engine.\n");
+        }
+        else
+        {
+            fprintf(stderr, "Warning: CUDA GPU requested but no available device found. "
+                            "Falling back to CPU engine.\n");
+        }
+    }
+#else
+    if (config->use_gpu)
+    {
+        fprintf(stderr, "Warning: GPU acceleration requested (--gpu), but gric-knn was built "
+                        "without CUDA support (ENABLE_CUDA=OFF). Running on CPU.\n");
+    }
+#endif
+
+    memset(telemetry, 0, sizeof(KnnTelemetry));
+
+    int         is_cross_dataset = 0;
+    long        N_query = 0;
+    long        N_cand = 0;
+    long        q_w = 0;
+    long        q_h = 0;
+    KnnMaxHeap *all_heaps = NULL;
+
+    if (knn_search_validate_and_alloc(config, model, results, &all_heaps,
+                                      &is_cross_dataset, &N_query, &N_cand,
+                                      &q_w, &q_h) != 0)
+    {
+        return -1;
+    }
 
 #ifdef _OPENMP
     omp_lock_t bucket_locks[KNN_NUM_BUCKET_LOCKS];
@@ -186,31 +376,16 @@ int knn_run_search(
     KnnFrameReader master_cand_reader;
     KnnFrameReader master_query_reader;
 
-    if (config->memory_data != NULL)
+    if (knn_search_open_readers(config, model, results, is_cross_dataset,
+                                N_cand, N_query, q_w, q_h,
+                                &master_cand_reader, &master_query_reader) != 0)
     {
-        if (knn_reader_open_memory(&master_cand_reader, config->memory_data, N_cand,
-                                   model->frame_elements, model->is_double) != 0)
+        for (long j = 0; j < N_query; j++)
         {
-            knn_results_free(results);
-            return -1;
+            knn_heap_free(&all_heaps[j]);
         }
-    }
-    else if (knn_reader_open(&master_cand_reader, config->input_data_path, N_cand,
-                             model->frame_width, model->frame_height, model->is_double) != 0)
-    {
-        knn_results_free(results);
+        free(all_heaps);
         return -1;
-    }
-
-    if (is_cross_dataset)
-    {
-        if (knn_reader_open(&master_query_reader, config->query_data_path, N_query,
-                            q_w, q_h, model->is_double) != 0)
-        {
-            knn_reader_close(&master_cand_reader);
-            knn_results_free(results);
-            return -1;
-        }
     }
 
     int nthreads = config->nthreads;
@@ -227,7 +402,7 @@ int knn_run_search(
     nthreads = 1;
 #endif
 
-    struct timespec start_time, end_time;
+    struct timespec start_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);
 
     long progress_step = N_query / 100;
@@ -761,44 +936,6 @@ int knn_run_search(
         knn_reader_close_thread(&thread_cand_reader);
     } // OpenMP parallel block
 
-    // Extract sorted results in parallel from all heaps
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-    for (long i = 0; i < N_query; i++)
-    {
-        knn_heap_extract_sorted(&all_heaps[i], &results->indices[i * k],
-                                &results->distances[i * k], k);
-        knn_heap_free(&all_heaps[i]);
-    }
-    free(all_heaps);
-
-#ifdef _OPENMP
-    if (!is_cross_dataset)
-    {
-        for (int b = 0; b < KNN_NUM_BUCKET_LOCKS; b++)
-        {
-            omp_destroy_lock(&bucket_locks[b]);
-        }
-    }
-#endif
-
-    clock_gettime(CLOCK_MONOTONIC, &end_time);
-
-    if (is_cross_dataset)
-    {
-        knn_reader_close(&master_query_reader);
-    }
-    knn_reader_close(&master_cand_reader);
-
-    if (config->progress_mode)
-    {
-        printf("\rSearching k-NN: [========================================] "
-               "100.0%% (%ld / %ld frames)\n",
-               N_query, N_query);
-        fflush(stdout);
-    }
-
     telemetry->total_queries = (uint64_t)N_query;
     telemetry->framedist_calls = global_telem_calls;
     telemetry->level1_clusters_pruned = global_telem_l1;
@@ -836,19 +973,27 @@ int knn_run_search(
     telemetry->memo_hits = global_telem_memo_hits;
     telemetry->memo_unique_frames = (uint64_t)model->num_unique_frames;
     telemetry->total_candidates_considered = global_telem_cand;
-    telemetry->time_search_ms = (end_time.tv_sec - start_time.tv_sec) * 1000.0 +
-                                (end_time.tv_nsec - start_time.tv_nsec) / 1000000.0;
+
+    knn_search_extract_and_finalize(config, results, telemetry, all_heaps,
+                                    N_query, is_cross_dataset,
+#ifdef _OPENMP
+                                    bucket_locks,
+#endif
+                                    &master_cand_reader, &master_query_reader,
+                                    start_time);
 
     return 0;
 }
 
 /**
- * knn_results_free() - Clean up KnnResults arrays
+ * knn_results_free() - Clean up KnnResults arrays.
  * @results: Pointer to KnnResults structure to free.
  *
+ * Purpose & Context ("What is this used for?"):
  * Releases dynamic memory allocated for top-k neighbor indices and distances
  * arrays across all queries. Resets buffer pointers to NULL to prevent dangling
- * references.
+ * references. Called by the gric-knn CLI and pipeline orchestrators once search
+ * results are exported or verified.
  */
 void knn_results_free(
     KnnResults *results)
