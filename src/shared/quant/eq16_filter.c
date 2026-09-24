@@ -1619,9 +1619,8 @@ void eq16_filter_anchor_matrix_adc(
 }
 
 /**
- * eq16_save_sidecar() - Save quantized dataset buffer and parameters to a binary .eq16 file.
+ * eq16_print_checkpoint_stats() - Print SIMD early exit statistics.
  */
-
 void eq16_print_checkpoint_stats(void)
 {
 #ifdef EQ16_PROFILE_CHECKPOINTS

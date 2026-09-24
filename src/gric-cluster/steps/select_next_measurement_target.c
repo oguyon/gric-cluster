@@ -67,18 +67,6 @@ static int compare_prune_scores(
     return (sa > sb) - (sa < sb);
 }
 
-
-/**
- * select_next_measurement_target_entropy - Select target based on expected Shannon entropy.
- * @config: Config parameters of the clustering execution.
- * @state: Running state of the clustering execution.
- *
- * Implements the entropy-reduction based optimization. Test hypotheses of true cluster
- * membership for each candidate target, computes hypothetical distributions after triangle
- * inequality pruning, calculates expected Shannon entropy, and returns the target minimizing it.
- *
- * Return: Selected cluster index, or -1 if no active candidates exist.
- */
 /**
  * entropy_compute_initial_h() - Calculate current Shannon entropy of active cluster distribution.
  * @state:       Active ClusterState pointer.

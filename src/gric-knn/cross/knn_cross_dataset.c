@@ -479,12 +479,3 @@ void knn_search_cross_dataset_frame(
     );
 }
 
-/**
- * knn_run_search() - Multi-threaded driver executing k-NN search across all frames.
- * @config:    Active KnnConfig.
- * @model:     Active KnnModel.
- * @results:   Output KnnResults structure to populate.
- * @telemetry: Output aggregated KnnTelemetry structure.
- *
- * Return: 0 on success, -1 on error.
- */

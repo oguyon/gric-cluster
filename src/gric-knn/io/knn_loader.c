@@ -1455,10 +1455,3 @@ void knn_model_free(
     }
 }
 
-/**
- * knn_model_build_or_load_sq8() - Build or load quantized SQ8 dataset buffer into KnnModel.
- * @model:  Pointer to initialized KnnModel.
- * @config: Pointer to KnnConfig.
- *
- * Return: 0 on success, -1 on failure.
- */

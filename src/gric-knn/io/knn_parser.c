@@ -50,7 +50,7 @@ int knn_compare_member_meta_radii(
 }
 
 /**
- * parse_membership_file() - Load frame membership and anchor distance metadata.
+ * knn_parse_membership_file() - Load frame membership and anchor distance metadata.
  * @path:  Path to frame_membership.txt.
  * @model: Pointer to KnnModel.
  *
@@ -278,7 +278,7 @@ int knn_parse_membership_file(
 }
 
 /**
- * parse_radii_file() - Parse cluster_radii.bin or cluster_radii.txt if available.
+ * knn_parse_radii_file() - Parse cluster_radii.bin or cluster_radii.txt if available.
  * @cluster_dir: Path to directory containing cluster output files.
  * @model:       Pointer to resident KnnModel.
  */
@@ -375,7 +375,7 @@ void knn_parse_radii_file(
 }
 
 /**
- * parse_cluster_log() - Parse parameters from cluster_run.log if available.
+ * knn_parse_cluster_log() - Parse parameters from cluster_run.log if available.
  * @path:  Path to cluster_run.log.
  * @model: Pointer to KnnModel.
  */
@@ -519,7 +519,7 @@ static void propagate_triangle_lower_bounds(
 }
 
 /**
- * parse_dcc_file() - Load M x M inter-cluster distance matrix or lower bounds.
+ * knn_parse_dcc_file() - Load M x M inter-cluster distance matrix or lower bounds.
  * @cluster_dir: Directory containing cluster results.
  * @model:       Pointer to KnnModel.
  *
@@ -766,10 +766,3 @@ int knn_parse_dcc_file(
     return 0;
 }
 
-/**
- * reconstruct_anchors_from_input() - Extract anchors directly from input dataset.
- * @input_data_path: Path to original input dataset.
- * @model:           Pointer to KnnModel.
- *
- * Return: 0 on success, -1 on error.
- */

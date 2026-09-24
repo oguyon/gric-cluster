@@ -30,43 +30,6 @@
 #endif
 
 /**
- * knn_run_search() - Multi-threaded driver executing k-NN search across all frames
- * @config:    Active KnnConfig specifying query mode, thread count, and pruning flags.
- * @model:     Active KnnModel containing cluster anchors, graphs, and quantization codes.
- * @results:   Output KnnResults structure to populate with top-k indices and distances.
- * @telemetry: Output aggregated KnnTelemetry structure tracking evaluations and prune counts.
- *
- * Coordinates execution of exact or approximate k-nearest neighbor search across all
- * requested query frames. The algorithm proceeds through the following phases:
- *
- * 1. Hardware Dispatch:
- *    If GPU acceleration is requested and CUDA support is compiled in, dispatches to
- *    the CUDA k-NN pipeline via knn_cuda_run_search(). If GPU execution fails or is
- *    unavailable, gracefully falls back to multi-threaded CPU execution.
- *
- * 2. Result Buffer Allocation:
- *    Allocates contiguous memory for query neighbor indices (int) and distances (double)
- *    sized to total_queries * k elements.
- *
- * 3. Thread-Local Context Setup:
- *    Spawns OpenMP threads, allocating per-thread scratch structures (bounded max-heaps,
- *    visited bitsets, cluster candidate arrays, and independent file reader handles).
- *
- * 4. Query Frame Processing:
- *    Distributes query frames across threads. For each query:
- *    - In cross-dataset mode, reads query vector from query dataset and routes through
- *      cluster graph via knn_search_cross_dataset_frame().
- *    - In single-dataset mode, calls knn_search_single_frame() utilizing intra-cluster
- *      and inter-cluster metric pruning, pivot bounds, and SIMD/quantized distance filters.
- *    - Extracts sorted top-k nearest neighbors from thread max-heap into output arrays.
- *
- * 5. Telemetry & Cleanup:
- *    Reduces per-thread telemetry metrics (pruned clusters, distance calculations, timing)
- *    into the global telemetry structure and releases thread-local scratch memory.
- *
- * Return: 0 on success, or -1 on error.
- */
-/**
  * knn_search_validate_and_alloc() - Validate inputs and allocate search heap structures.
  * @config:       Active k-NN search configuration.
  * @model:        Pre-loaded cluster model.
@@ -309,6 +272,43 @@ static void knn_search_extract_and_finalize(
                                 (end_time.tv_nsec - start_time.tv_nsec) / 1000000.0;
 }
 
+/**
+ * knn_run_search() - Multi-threaded driver executing k-NN search across all frames
+ * @config:    Active KnnConfig specifying query mode, thread count, and pruning flags.
+ * @model:     Active KnnModel containing cluster anchors, graphs, and quantization codes.
+ * @results:   Output KnnResults structure to populate with top-k indices and distances.
+ * @telemetry: Output aggregated KnnTelemetry structure tracking evaluations and prune counts.
+ *
+ * Coordinates execution of exact or approximate k-nearest neighbor search across all
+ * requested query frames. The algorithm proceeds through the following phases:
+ *
+ * 1. Hardware Dispatch:
+ *    If GPU acceleration is requested and CUDA support is compiled in, dispatches to
+ *    the CUDA k-NN pipeline via knn_cuda_run_search(). If GPU execution fails or is
+ *    unavailable, gracefully falls back to multi-threaded CPU execution.
+ *
+ * 2. Result Buffer Allocation:
+ *    Allocates contiguous memory for query neighbor indices (int) and distances (double)
+ *    sized to total_queries * k elements.
+ *
+ * 3. Thread-Local Context Setup:
+ *    Spawns OpenMP threads, allocating per-thread scratch structures (bounded max-heaps,
+ *    visited bitsets, cluster candidate arrays, and independent file reader handles).
+ *
+ * 4. Query Frame Processing:
+ *    Distributes query frames across threads. For each query:
+ *    - In cross-dataset mode, reads query vector from query dataset and routes through
+ *      cluster graph via knn_search_cross_dataset_frame().
+ *    - In single-dataset mode, calls knn_search_single_frame() utilizing intra-cluster
+ *      and inter-cluster metric pruning, pivot bounds, and SIMD/quantized distance filters.
+ *    - Extracts sorted top-k nearest neighbors from thread max-heap into output arrays.
+ *
+ * 5. Telemetry & Cleanup:
+ *    Reduces per-thread telemetry metrics (pruned clusters, distance calculations, timing)
+ *    into the global telemetry structure and releases thread-local scratch memory.
+ *
+ * Return: 0 on success, or -1 on error.
+ */
 int knn_run_search(
     const KnnConfig *config,
     const KnnModel  *model,

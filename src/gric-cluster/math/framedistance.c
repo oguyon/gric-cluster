@@ -18,17 +18,6 @@
 #include <immintrin.h>
 #endif
 
-/**
- * framedist() - Computes the Euclidean distance between two frames.
- * @a: Pointer to the first Frame.
- * @b: Pointer to the second Frame.
- *
- * Checks that the frames have matching dimensions (width and height),
- * and then computes the L2 Euclidean distance between their pixel data.
- * Utilizes SIMD/AVX2 vectorization when compiled on supporting x86 architectures.
- *
- * Return: The Euclidean distance, or -1.0 if the frame dimensions mismatch.
- */
 #if GRIC_HAVE_AVX512_TARGET
 GRIC_TARGET_AVX512
 static double framedist_float_avx512(

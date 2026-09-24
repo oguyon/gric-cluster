@@ -440,19 +440,11 @@ static void init_new_cluster_distances(
 }
 
 /**
- * handle_new_cluster_creation - Manage cluster creation and eviction limits.
- * @config: Config parameters of the clustering execution.
- * @state: Running state of the clustering execution.
- * @current_frame: The frame being clustered.
- * @prev_assigned_cluster: The previous frame's cluster index assignment.
- * @temp_indices: Array tracking measured indices in this step.
- * @temp_dists: Array tracking computed distances in this step.
- * @temp_count: Pointer to total measurement count in this step.
- *
- * Checks if cluster capacity maxnbclust is reached. If not, instantiates a new cluster.
- * If reached, executes the configured eviction strategy (Stop, Discard, or Merge).
- *
- * Return: Cluster index assigned to the new frame, or -2 if stop signal is triggered.
+ * assign_new_cluster_anchor() - Assign current frame as representative anchor for new cluster.
+ * @state:         Running state of the clustering execution.
+ * @config:        Config parameters of the clustering execution.
+ * @cl_idx:        Index of new cluster being instantiated.
+ * @current_frame: Pointer to the frame becoming the cluster anchor.
  */
 static void assign_new_cluster_anchor(
     ClusterState  *state,
@@ -568,6 +560,21 @@ static void assign_new_cluster_anchor(
     }
 }
 
+/**
+ * handle_new_cluster_creation() - Manage cluster creation and eviction limits.
+ * @config:                Config parameters of the clustering execution.
+ * @state:                 Running state of the clustering execution.
+ * @current_frame:         The frame being clustered.
+ * @prev_assigned_cluster: The previous frame's cluster index assignment.
+ * @temp_indices:          Array tracking measured indices in this step.
+ * @temp_dists:            Array tracking computed distances in this step.
+ * @temp_count:            Pointer to total measurement count in this step.
+ *
+ * Checks if cluster capacity maxnbclust is reached. If not, instantiates a new cluster.
+ * If reached, executes the configured eviction strategy (Stop, Discard, or Merge).
+ *
+ * Return: Cluster index assigned to the new frame, or -2 if stop signal is triggered.
+ */
 int handle_new_cluster_creation(
     ClusterConfig *config,
     ClusterState  *state,
