@@ -127,6 +127,9 @@ void setup_signals(void);
  * handle_sigint() - Set exit flag on SIGINT/SIGTERM.
  * @sig: Signal number received.
  */
+void handle_sigint(
+    int sig);
+
 /**
  * print_status_classic() - Display one-shot snapshot of clustering SHM status.
  * @status: Pointer to shared memory status structure.

@@ -7,18 +7,6 @@
 #include "tuple_retrieval.h"
 
 /**
- * tilemap_create_axis_decomposition() - Create a TileMap decomposing N-dim input into 1D tiles.
- * @ndim: Number of dimensions (2 or 3).
- *
- * Purpose & Context ("What is this used for?"):
- * Constructs a spatial decomposition map where each dimension of an N-dimensional
- * coordinate space is mapped to an independent 1D tile. This enables multi-tile
- * axis-decomposition clustering where each coordinate axis is clustered independently
- * in parallel and subsequently fused via joint tuple analysis.
- *
- * Return: Pointer to allocated TileMap, or NULL on allocation error.
- */
-/**
  * tile_init_single_pixel() - Allocate and assign a single pixel index to a TileDef.
  * @tile:      Pointer to TileDef structure to initialize.
  * @pixel_idx: 0-based pixel/coordinate index for this 1D tile.
@@ -42,6 +30,18 @@ static int tile_init_single_pixel(
     return 0;
 }
 
+/**
+ * tilemap_create_axis_decomposition() - Create a TileMap decomposing N-dim input into 1D tiles.
+ * @ndim: Number of dimensions (2 or 3).
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Constructs a spatial decomposition map where each dimension of an N-dimensional
+ * coordinate space is mapped to an independent 1D tile. This enables multi-tile
+ * axis-decomposition clustering where each coordinate axis is clustered independently
+ * in parallel and subsequently fused via joint tuple analysis.
+ *
+ * Return: Pointer to allocated TileMap, or NULL on allocation error.
+ */
 static TileMap *tilemap_create_axis_decomposition(
     int ndim)
 {

@@ -1422,21 +1422,3 @@ int knn_cross_explore_graph_frontier(
     return 0;
 }
 
-/**
- * knn_cross_eval_intra_cluster() - Search target cluster containing best seed for cross dataset.
- * @best_c:           Initial best anchor cluster.
- * @best_seed_id:     Best seed frame ID.
- * @min_d_anchor:     Distance to closest anchor.
- * @num_seed_pivots:  Number of evaluated seed pivots.
- * @seed_pivot_ids:   Evaluated seed pivot frame IDs.
- * @seed_pivot_dists: Computed distances to seed pivots.
- * @query_data:       Query frame pixel data.
- * @model:            Active KnnModel.
- * @config:           Active KnnConfig.
- * @cand_reader:      Candidate frame reader.
- * @cand_buffer:      Candidate frame pixel buffer.
- * @anchor_dists:     Query-to-anchor distance cache.
- * @heap:             Max-heap for current query.
- * @visited:          Per-query frame visited tracker.
- * @telem:            Telemetry record.
- */

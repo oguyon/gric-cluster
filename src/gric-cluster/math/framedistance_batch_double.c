@@ -406,9 +406,12 @@ static void calc_dist4_d64_avx512(
 #endif
 
 /**
- * framedist_batch_1x4_double() - Vectorized 1-query vs 4-anchor Euclidean distance (double).
+ * calc_dist4_d64_core() - Compute 1-vs-4 Euclidean distances for double precision.
  * @q:         Pointer to query array.
- * @anchors:   Array of 4 pointers to candidate anchor arrays.
+ * @a0:        Pointer to first anchor array.
+ * @a1:        Pointer to second anchor array.
+ * @a2:        Pointer to third anchor array.
+ * @a3:        Pointer to fourth anchor array.
  * @out_dists: Array of 4 doubles to receive computed distances.
  * @size:      Number of elements in each array.
  */
@@ -549,6 +552,13 @@ static inline __attribute__((always_inline)) void calc_dist4_d64_core(
     out_dists[3] = sqrt(sum3);
 }
 
+/**
+ * framedist_batch_1x4_double() - Vectorized 1-query vs 4-anchor Euclidean distance (double).
+ * @q:         Pointer to query array.
+ * @anchors:   Array of 4 pointers to candidate anchor arrays.
+ * @out_dists: Array of 4 doubles to receive computed distances.
+ * @size:      Number of elements in each array.
+ */
 void framedist_batch_1x4_double(
     const double *restrict        q,
     const double *const *restrict anchors,

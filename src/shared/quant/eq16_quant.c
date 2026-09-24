@@ -129,12 +129,6 @@ void eq16_calibrate_double(
 }
 
 /**
- * eq16_quantize_float() - Quantize a float frame onto E8 lattice into doubled int16.
- * @src:    Pointer to source float vector [dim].
- * @dst:    Pointer to destination int16 vector [dim].
- * @params: Pointer to initialized EQ16Params.
- */
-/**
  * eq16_quantize_float_scalar() - Scalar quantize float frame onto E8 lattice.
  * @src:    Pointer to source float vector [dim].
  * @dst:    Pointer to destination int16 vector [dim].
@@ -747,14 +741,14 @@ void eq16_prepare_query_adc_double_perm(
 }
 
 /**
- * eq16_dist_squared_i16() - Compute sum of squared differences between two int16 vectors.
- * @a:   First vector [dim].
- * @b:   Second vector [dim].
- * @dim: Vector dimension.
+ * eq16_save_sidecar() - Save quantized dataset buffer and parameters to a binary .eq16 file.
+ * @filepath:   Path to destination .eq16 file.
+ * @params:     Pointer to initialized EQ16Params structure.
+ * @data:       Array of quantized int16 values.
+ * @num_frames: Number of frames in dataset.
  *
- * Return: Sum of squared coordinate differences as uint64_t.
+ * Return: 0 on success, or -1 on write error.
  */
-
 int eq16_save_sidecar(
     const char       *filepath,
     const EQ16Params *params,
@@ -881,6 +875,3 @@ int eq16_load_sidecar(
     return 0;
 }
 
-/**
- * eq16_print_checkpoint_stats() - Print SIMD early exit statistics.
- */

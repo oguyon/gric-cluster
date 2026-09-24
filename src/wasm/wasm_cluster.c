@@ -585,21 +585,6 @@ static int grow_capacity(WasmHandle *h)
 }
 
 /**
- * wasm_cluster_process_frame() - Cluster a single incoming coordinate frame.
- * @ptr:    Opaque WasmHandle pointer.
- * @coords: Array of double-precision coordinates of length ndim.
- * @ndim:   Dimensionality of the input coordinate vector.
- *
- * Purpose & Context ("What is this used for?"):
- * Serves as the real-time frame ingestion entry point for WebAssembly clients.
- * Feeds a newly arrived coordinate vector into the incremental clustering engine,
- * executing triangle-inequality pruning, entropy gating, and temporal prediction
- * to assign the frame to an existing cluster or create a new cluster anchor.
- *
- * Return: Assigned cluster index (>= 0), or negative value on error (-1: invalid,
- *         -2: maximum cluster limit reached).
- */
-/**
  * wasm_cluster_ensure_frame_buffer() - Ensure scratch frame buffer is allocated.
  * @h:    Opaque WasmHandle pointer.
  * @ndim: Dimensionality of frame.

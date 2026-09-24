@@ -341,7 +341,7 @@ void sq8_quantize_double(
 }
 
 /**
- * sq8_dist_squared_u8() - Compute sum of squared differences between two uint8 vectors.
+ * sq8_dist_squared_u8_avx512() - AVX-512 squared Euclidean distance between uint8 vectors.
  * @a:   Pointer to first uint8 array [dim].
  * @b:   Pointer to second uint8 array [dim].
  * @dim: Vector dimension.
@@ -508,6 +508,14 @@ static uint64_t sq8_dist_squared_u8_scalar(
     return total;
 }
 
+/**
+ * sq8_dist_squared_u8() - Compute sum of squared differences between two uint8 vectors.
+ * @a:   Pointer to first uint8 array [dim].
+ * @b:   Pointer to second uint8 array [dim].
+ * @dim: Vector dimension.
+ *
+ * Return: Total sum of squared differences as uint64_t.
+ */
 uint64_t sq8_dist_squared_u8(
     const uint8_t *restrict a,
     const uint8_t *restrict b,
@@ -529,7 +537,7 @@ uint64_t sq8_dist_squared_u8(
 }
 
 /**
- * sq8_dot_product_u8() - Compute dot product between two uint8 vectors.
+ * sq8_dot_product_u8_avx512_vnni() - AVX-512 VNNI dot product between two uint8 vectors.
  * @a:   Pointer to first uint8 array [dim].
  * @b:   Pointer to second uint8 array [dim].
  * @dim: Vector dimension.
@@ -722,6 +730,14 @@ static uint64_t sq8_dot_product_u8_scalar(
     return total;
 }
 
+/**
+ * sq8_dot_product_u8() - Compute dot product between two uint8 vectors.
+ * @a:   Pointer to first uint8 array [dim].
+ * @b:   Pointer to second uint8 array [dim].
+ * @dim: Vector dimension.
+ *
+ * Return: Dot product as uint64_t.
+ */
 uint64_t sq8_dot_product_u8(
     const uint8_t *restrict a,
     const uint8_t *restrict b,
@@ -1300,7 +1316,7 @@ void sq16_quantize_double_perm(
 }
 
 /**
- * sq16_dist_squared_i16() - Compute sum of squared differences between two int16 vectors.
+ * sq16_dist_squared_i16_avx512() - AVX-512 squared Euclidean distance between int16 vectors.
  * @a:   Pointer to first int16 array [dim].
  * @b:   Pointer to second int16 array [dim].
  * @dim: Vector dimension.
@@ -1406,6 +1422,14 @@ static uint64_t sq16_dist_squared_i16_scalar(
     return total;
 }
 
+/**
+ * sq16_dist_squared_i16() - Compute sum of squared differences between two int16 vectors.
+ * @a:   Pointer to first int16 array [dim].
+ * @b:   Pointer to second int16 array [dim].
+ * @dim: Vector dimension.
+ *
+ * Return: Total sum of squared differences as uint64_t.
+ */
 uint64_t sq16_dist_squared_i16(
     const int16_t *restrict a,
     const int16_t *restrict b,
