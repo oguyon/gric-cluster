@@ -14,6 +14,15 @@
 #include <immintrin.h>
 #endif
 
+#if GRIC_HAVE_AVX512_TARGET
+static int calc_dist4_cutoff_f32_avx512(
+    const float *restrict        q,
+    const float *const *restrict anchors,
+    long                         size,
+    double                       cutoff_sq,
+    double *restrict             out_dists);
+#endif
+
 /**
  * framedist_batch_1x4_float() - Vectorized 1-query vs 4-anchor Euclidean distance (single).
  * @q:         Pointer to query array.
@@ -27,6 +36,14 @@ void framedist_batch_1x4_float(
     double *restrict             out_dists,
     long                         size)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    {
+        calc_dist4_cutoff_f32_avx512(q, anchors, size, 0.0, out_dists);
+        return;
+    }
+#endif
+
     float sum0 = 0.0f;
     float sum1 = 0.0f;
     float sum2 = 0.0f;

@@ -127,6 +127,51 @@ static void cluster_normalize_probs_avx2(
     }
 }
 
+#if GRIC_HAVE_AVX512_TARGET
+GRIC_TARGET_AVX512
+/**
+ * reset_search_scratch_avx512() - Reset frame candidate scratch buffers using AVX-512.
+ * @state:  Active clustering state.
+ * @num_cl: Number of active clusters to initialize.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked at the beginning of each frame step to re-initialize candidate evaluation bitmasks,
+ * distance cutoff arrays, and priority scratch arrays using 512-bit vector stores.
+ */
+static void reset_search_scratch_avx512(
+    ClusterState *state,
+    int           num_cl)
+{
+    __m512d ones_d = _mm512_set1_pd(1.0);
+    int i = 0;
+    for (; i <= num_cl - 8; i += 8)
+    {
+        _mm512_storeu_pd(state->scratch.current_gprobs + i, ones_d);
+    }
+    for (; i < num_cl; i++)
+    {
+        state->scratch.current_gprobs[i] = 1.0;
+    }
+
+    __m512i ones_i = _mm512_set1_epi32(1);
+    __m512i ramp = _mm512_setr_epi32(
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+    __m512i step16 = _mm512_set1_epi32(16);
+    i = 0;
+    for (; i <= num_cl - 16; i += 16)
+    {
+        _mm512_storeu_si512((void *)(state->scratch.clmembflag + i), ones_i);
+        _mm512_storeu_si512((void *)(state->scratch.active_clusters + i), ramp);
+        ramp = _mm512_add_epi32(ramp, step16);
+    }
+    for (; i < num_cl; i++)
+    {
+        state->scratch.clmembflag[i] = 1;
+        state->scratch.active_clusters[i] = i;
+    }
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
 GRIC_TARGET_AVX2
 /**
  * reset_search_scratch_avx2() - Reset frame candidate scratch buffers using AVX2.
@@ -205,6 +250,13 @@ static inline void reset_search_scratch(
 {
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && \
     (defined(__GNUC__) || defined(__clang__)) && !defined(__CUDACC__)
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        reset_search_scratch_avx512(state, num_cl);
+        return;
+    }
+#endif
     if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
     {
         reset_search_scratch_avx2(state, num_cl);

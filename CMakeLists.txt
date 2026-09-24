@@ -481,6 +481,7 @@ add_executable(gric-knn-avg
     src/gric-knn/io/knn_reader.c
     src/shared/cli/cli_colors.c
     src/shared/format/gric_bin_io.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(gric-knn-avg PRIVATE src/gric-knn src/shared src)
 target_link_libraries(gric-knn-avg m)

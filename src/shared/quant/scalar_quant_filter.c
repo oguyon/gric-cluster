@@ -193,6 +193,55 @@ static inline void sq16_compact_active_clusters_avx2(
 
 #if GRIC_HAVE_AVX512_TARGET
 /**
+ * sq16_compact_active_clusters_avx512() - Hardware compress-store gather of active clusters.
+ * @clmembflag:       Candidate flags array (0 = pruned, 1 = active).
+ * @active_clusters:  Output array of surviving cluster indices.
+ * @num_clusters:     Total clusters count.
+ * @out_num_active:   Count of surviving clusters.
+ * @out_pruned_count: Count of pruned clusters.
+ */
+GRIC_TARGET_AVX512
+static inline void sq16_compact_active_clusters_avx512(
+    const int *restrict clmembflag,
+    int       *restrict active_clusters,
+    int                 num_clusters,
+    int       *restrict out_num_active,
+    int       *restrict out_pruned_count)
+{
+    int num_active = 0;
+    int i = 0;
+    __m512i vzero = _mm512_setzero_si512();
+    __m512i vramp = _mm512_setr_epi32(
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+
+    for (; i + 16 <= num_clusters; i += 16)
+    {
+        __m512i vf = _mm512_loadu_si512((const void *)(clmembflag + i));
+        __mmask16 mask = _mm512_cmpgt_epi32_mask(vf, vzero);
+        if (mask == 0)
+        {
+            continue;
+        }
+        __m512i vindices = _mm512_add_epi32(_mm512_set1_epi32(i), vramp);
+        _mm512_mask_compressstoreu_epi32(
+            (void *)(active_clusters + num_active), mask, vindices);
+        num_active += (int)_mm_popcnt_u32((uint32_t)mask);
+    }
+    for (; i < num_clusters; i++)
+    {
+        if (clmembflag[i])
+        {
+            active_clusters[num_active++] = i;
+        }
+    }
+    *out_num_active = num_active;
+    if (out_pruned_count)
+    {
+        *out_pruned_count = num_clusters - num_active;
+    }
+}
+
+/**
  * sq16_filter_anchor_matrix_avx512() - AVX-512 kernel for anchor filtering.
  * @cur_sq16:           Query int16 array [dim].
  * @anchor_matrix:      Contiguous anchor matrix [num_clusters x dim].
@@ -442,8 +491,8 @@ static void sq16_filter_anchor_matrix_avx512(
             clmembflag[i] = rem_pruned ? 0 : 1;
         }
 
-        sq16_compact_active_clusters_avx2(clmembflag, active_clusters, num_clusters,
-                                          out_num_active, out_pruned_count);
+        sq16_compact_active_clusters_avx512(clmembflag, active_clusters, num_clusters,
+                                             out_num_active, out_pruned_count);
         return;
     } // if (anchor_interleaved != NULL)
 

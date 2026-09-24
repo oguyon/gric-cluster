@@ -158,6 +158,84 @@ void rabitq_free_params(
     }
 }
 
+#if GRIC_HAVE_AVX512_TARGET
+/**
+ * fwht_in_place_float_avx512() - In-place Fast Walsh-Hadamard Transform using AVX-512.
+ * @data: Float buffer of length N (N must be a power of 2 >= 16).
+ * @n:    Length of buffer.
+ */
+GRIC_TARGET_AVX512
+static void fwht_in_place_float_avx512(
+    float *restrict data,
+    long            n)
+{
+    for (long len = 1; len < n; len <<= 1)
+    {
+        long step = len << 1;
+        for (long i = 0; i < n; i += step)
+        {
+            long j = 0;
+            for (; j <= len - 16; j += 16)
+            {
+                __m512 u = _mm512_loadu_ps(&data[i + j]);
+                __m512 v = _mm512_loadu_ps(&data[i + len + j]);
+                __m512 add = _mm512_add_ps(u, v);
+                __m512 sub = _mm512_sub_ps(u, v);
+                _mm512_storeu_ps(&data[i + j], add);
+                _mm512_storeu_ps(&data[i + len + j], sub);
+            }
+            for (; j < len; j++)
+            {
+                float u = data[i + j];
+                float v = data[i + len + j];
+                data[i + j] = u + v;
+                data[i + len + j] = u - v;
+            }
+        } // for (long i = 0; i < n; i += step)
+    } // for (long len = 1; len < n; len <<= 1)
+
+    float norm_factor = 1.0f / sqrtf((float)n);
+    long k = 0;
+    __m512 v_norm = _mm512_set1_ps(norm_factor);
+    for (; k <= n - 16; k += 16)
+    {
+        __m512 val = _mm512_loadu_ps(&data[k]);
+        _mm512_storeu_ps(&data[k], _mm512_mul_ps(val, v_norm));
+    }
+    for (; k < n; k++)
+    {
+        data[k] *= norm_factor;
+    }
+}
+
+/**
+ * rabitq_apply_signs_float_avx512() - Apply random sign flips using AVX-512.
+ * @src:   Input float array [dim].
+ * @signs: Sign flip array (+1.0f or -1.0f) [dim].
+ * @dst:   Output float array [dim].
+ * @dim:   Number of elements.
+ */
+GRIC_TARGET_AVX512
+static void rabitq_apply_signs_float_avx512(
+    const float *restrict src,
+    const float *restrict signs,
+    float       *restrict dst,
+    long                  dim)
+{
+    long i = 0;
+    for (; i <= dim - 16; i += 16)
+    {
+        __m512 v_src = _mm512_loadu_ps(&src[i]);
+        __m512 v_sgn = _mm512_loadu_ps(&signs[i]);
+        _mm512_storeu_ps(&dst[i], _mm512_mul_ps(v_src, v_sgn));
+    }
+    for (; i < dim; i++)
+    {
+        dst[i] = src[i] * signs[i];
+    }
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
 /**
  * fwht_in_place_float() - In-place Fast Walsh-Hadamard Transform on float array.
  * @data: Float buffer of length N (N must be a power of 2).
@@ -167,6 +245,13 @@ static void fwht_in_place_float(
     float *restrict data,
     long            n)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && n >= 16)
+    {
+        fwht_in_place_float_avx512(data, n);
+        return;
+    }
+#endif
     for (long len = 1; len < n; len <<= 1)
     {
         long step = len << 1;
@@ -226,12 +311,22 @@ void rabitq_rotate_vector_float(
     const float *signs = params->sign_flips;
 
     long i = 0;
-#if defined(__AVX2__) && !defined(__CUDACC__)
-    for (; i <= dim - 8; i += 8)
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 16)
     {
-        __m256 v_src = _mm256_loadu_ps(&src[i]);
-        __m256 v_sgn = _mm256_loadu_ps(&signs[i]);
-        _mm256_storeu_ps(&dst[i], _mm256_mul_ps(v_src, v_sgn));
+        rabitq_apply_signs_float_avx512(src, signs, dst, dim);
+        i = dim;
+    }
+    else
+#endif
+#if defined(__AVX2__) && !defined(__CUDACC__)
+    {
+        for (; i <= dim - 8; i += 8)
+        {
+            __m256 v_src = _mm256_loadu_ps(&src[i]);
+            __m256 v_sgn = _mm256_loadu_ps(&signs[i]);
+            _mm256_storeu_ps(&dst[i], _mm256_mul_ps(v_src, v_sgn));
+        }
     }
 #endif
     for (; i < dim; i++)
@@ -633,6 +728,91 @@ double rabitq_compute_lower_bound(
     return lb;
 }
 
+#if GRIC_HAVE_AVX512_TARGET
+/**
+ * rabitq_accum_32x_avx512() - Accumulate 32-candidate RaBitQ LUT lookups using AVX-512.
+ * @lut:         Precomputed query LUT [num_nibbles * 16].
+ * @block_codes: Transposed candidate codes [num_nibbles * 16].
+ * @num_nibbles: Total number of 4-bit nibbles.
+ * @accum:       Output array of 32 accumulated dot products.
+ */
+GRIC_TARGET_AVX512
+static void rabitq_accum_32x_avx512(
+    const int8_t  *restrict lut,
+    const uint8_t *restrict block_codes,
+    int                     num_nibbles,
+    int32_t       *restrict accum)
+{
+    __m512i v_acc_lo = _mm512_setzero_si512();
+    __m512i v_acc_hi = _mm512_setzero_si512();
+    __m512i v_acc32_0 = _mm512_setzero_si512();
+    __m512i v_acc32_1 = _mm512_setzero_si512();
+    const __m512i low_mask = _mm512_set1_epi8(0x0F);
+
+    int nb = 0;
+    for (; nb <= num_nibbles - 2; nb += 2)
+    {
+        __m256i lut256 = _mm256_loadu_si256((const __m256i *)(const void *)&lut[nb * 16]);
+        __m512i v_lut = _mm512_broadcast_i64x4(lut256);
+
+        __m256i raw256 = _mm256_loadu_si256((const __m256i *)(const void *)&block_codes[nb * 16]);
+        __m512i raw_cand = _mm512_broadcast_i64x4(raw256);
+
+        __m512i cand_lo = _mm512_and_si512(raw_cand, low_mask);
+        __m512i cand_hi = _mm512_and_si512(_mm512_srli_epi16(raw_cand, 4), low_mask);
+
+        __m512i res_lo = _mm512_shuffle_epi8(v_lut, cand_lo);
+        __m512i res_hi = _mm512_shuffle_epi8(v_lut, cand_hi);
+
+        __m512i w_lo = _mm512_cvtepi8_epi16(_mm512_castsi512_si256(res_lo));
+        __m512i w_hi = _mm512_cvtepi8_epi16(_mm512_castsi512_si256(res_hi));
+
+        v_acc_lo = _mm512_add_epi16(v_acc_lo, w_lo);
+        v_acc_hi = _mm512_add_epi16(v_acc_hi, w_hi);
+
+        if ((nb & 126) == 126 && nb + 2 < num_nibbles)
+        {
+            v_acc32_0 = _mm512_add_epi32(
+                v_acc32_0, _mm512_cvtepi16_epi32(_mm512_castsi512_si256(v_acc_lo)));
+            v_acc32_0 = _mm512_add_epi32(
+                v_acc32_0, _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64(v_acc_lo, 1)));
+            v_acc32_1 = _mm512_add_epi32(
+                v_acc32_1, _mm512_cvtepi16_epi32(_mm512_castsi512_si256(v_acc_hi)));
+            v_acc32_1 = _mm512_add_epi32(
+                v_acc32_1, _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64(v_acc_hi, 1)));
+            v_acc_lo = _mm512_setzero_si512();
+            v_acc_hi = _mm512_setzero_si512();
+        }
+    } // for (; nb <= num_nibbles - 2; nb += 2)
+
+    v_acc32_0 = _mm512_add_epi32(
+        v_acc32_0, _mm512_cvtepi16_epi32(_mm512_castsi512_si256(v_acc_lo)));
+    v_acc32_0 = _mm512_add_epi32(
+        v_acc32_0, _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64(v_acc_lo, 1)));
+    v_acc32_1 = _mm512_add_epi32(
+        v_acc32_1, _mm512_cvtepi16_epi32(_mm512_castsi512_si256(v_acc_hi)));
+    v_acc32_1 = _mm512_add_epi32(
+        v_acc32_1, _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64(v_acc_hi, 1)));
+
+    _mm512_storeu_si512((void *)&accum[0], v_acc32_0);
+    _mm512_storeu_si512((void *)&accum[16], v_acc32_1);
+
+    for (; nb < num_nibbles; nb++)
+    {
+        const int8_t *cur_lut = &lut[nb * 16];
+        const uint8_t *cur_codes = &block_codes[nb * 16];
+        for (int c = 0; c < 16; c++)
+        {
+            uint8_t byte_val = cur_codes[c];
+            uint8_t pat_lo = byte_val & 0x0F;
+            uint8_t pat_hi = (byte_val >> 4) & 0x0F;
+            accum[c] += (int32_t)cur_lut[pat_lo];
+            accum[c + 16] += (int32_t)cur_lut[pat_hi];
+        }
+    }
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
 /**
  * rabitq_fastscan_32x() - FastScan evaluation of 32 candidates against query LUT.
  * @q_lut:       Pointer to initialized RaBitQLookupTable.
@@ -661,7 +841,15 @@ uint32_t rabitq_fastscan_32x(
     int32_t accum[RABITQ_FASTSCAN_BLOCK_SIZE];
     memset(accum, 0, sizeof(accum));
 
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        rabitq_accum_32x_avx512(lut, block_codes, num_nibbles, accum);
+    }
+    else
+#endif
 #if defined(__AVX2__) && !defined(__CUDACC__)
+    {
     __m256i v_acc_lo = _mm256_setzero_si256();
     __m256i v_acc_hi = _mm256_setzero_si256();
     __m256i v_acc32_0 = _mm256_setzero_si256();
@@ -727,6 +915,7 @@ uint32_t rabitq_fastscan_32x(
     _mm256_storeu_si256((__m256i *)&accum[8], v_acc32_1);
     _mm256_storeu_si256((__m256i *)&accum[16], v_acc32_2);
     _mm256_storeu_si256((__m256i *)&accum[24], v_acc32_3);
+    }
 #else
     for (int nb = 0; nb < num_nibbles; nb++)
     {
