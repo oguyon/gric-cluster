@@ -2,6 +2,7 @@
 #include "cluster_steps.h"
 #include "cluster_core.h"
 #include "frameread.h"
+#include "frame_info_arena.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,12 +59,13 @@ void record_step_assignment(
              config->output.output_evals || config->algo.pass2_nearest_mode)
             && temp_count > 0)
         {
-            state->frame_infos[frame_idx].cluster_indices =
-                (int *)malloc((size_t)temp_count * sizeof(int));
-            state->frame_infos[frame_idx].distances =
-                (double *)malloc((size_t)temp_count * sizeof(double));
-            if (state->frame_infos[frame_idx].cluster_indices &&
-                state->frame_infos[frame_idx].distances)
+            int rc = frame_info_arena_alloc_records(
+                &state->frame_info_arena,
+                temp_count,
+                &state->frame_infos[frame_idx].cluster_indices,
+                &state->frame_infos[frame_idx].distances);
+            if (rc == 0 && state->frame_infos[frame_idx].cluster_indices != NULL &&
+                state->frame_infos[frame_idx].distances != NULL)
             {
                 memcpy(state->frame_infos[frame_idx].cluster_indices,
                        temp_indices, (size_t)temp_count * sizeof(int));

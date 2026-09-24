@@ -17,6 +17,7 @@
 #include "config_utils.h"
 #include "cluster_shm.h"
 #include "frameread.h"
+#include "frame_info_arena.h"
 #include "gric_profile.h"
 #include "cli_colors.h"
 #include <ctype.h>
@@ -376,13 +377,7 @@ int main(int argc, char *argv[])
     }
     free(state.clusters);
 
-    for (long frame_idx = 0; frame_idx < state.telemetry.total_frames_processed; frame_idx++)
-    {
-        if (state.frame_infos[frame_idx].cluster_indices)
-            free(state.frame_infos[frame_idx].cluster_indices);
-        if (state.frame_infos[frame_idx].distances)
-            free(state.frame_infos[frame_idx].distances);
-    }
+    frame_info_arena_destroy(&state.frame_info_arena);
     free(state.frame_infos);
 
     for (int cl_idx = 0; cl_idx < config.algo.maxnbclust; cl_idx++)

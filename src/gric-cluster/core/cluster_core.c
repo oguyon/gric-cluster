@@ -17,6 +17,7 @@
 #include "tile_map.h"
 #include "tile_state.h"
 #include "eq16_quant.h"
+#include "frame_info_arena.h"
 #ifdef USE_CUDA
 #include "cluster_cuda.h"
 #endif
@@ -249,6 +250,7 @@ static int cluster_core_allocate_state(
     state->assignments = (int *)malloc(actual_frames * sizeof(int));
     state->assignment_dists = (double *)malloc(actual_frames * sizeof(double));
     state->frame_infos = (FrameInfo *)calloc(actual_frames, sizeof(FrameInfo));
+    frame_info_arena_init(&state->frame_info_arena, FRAME_INFO_ARENA_DEFAULT_CHUNK_SIZE);
 
     if (!state->assignments || !state->assignment_dists || !state->frame_infos)
     {

@@ -5,6 +5,7 @@
  */
 
 #include "tile_state.h"
+#include "frame_info_arena.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -185,6 +186,9 @@ MultiTileState *multitile_init(
                 (size_t) maxnbfr * sizeof(int));
             ts->state.frame_infos = calloc(
                 (size_t) maxnbfr, sizeof(FrameInfo));
+            frame_info_arena_init(
+                &ts->state.frame_info_arena,
+                FRAME_INFO_ARENA_DEFAULT_CHUNK_SIZE);
 
             /* Telemetry tracking arrays */
             ts->state.telemetry.max_steps_recorded = maxnbc;
@@ -343,6 +347,12 @@ void multitile_free(MultiTileState *mts)
             if (ts->state.scratch.dcc_sq16)
             {
                 free(ts->state.scratch.dcc_sq16);
+            }
+            frame_info_arena_destroy(&ts->state.frame_info_arena);
+            if (ts->state.frame_infos != NULL)
+            {
+                free(ts->state.frame_infos);
+                ts->state.frame_infos = NULL;
             }
         } // for each tile m
 

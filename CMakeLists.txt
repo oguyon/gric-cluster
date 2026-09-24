@@ -154,6 +154,7 @@ set(LIBGRIC_SRCS
     src/gric-cluster/core/cluster_step_prep.c
     src/gric-cluster/core/cluster_quant_filter.c
     src/gric-cluster/core/cluster_mgmt.c
+    src/gric-cluster/core/frame_info_arena.c
     src/gric-cluster/core/config_utils.c
     src/gric-cluster/core/cluster_bounds.c
     src/gric-cluster/core/cluster_shm.c
@@ -272,6 +273,10 @@ add_test(NAME test_libgric_c COMMAND test_libgric_c)
 add_executable(test_libgric_cpp tests/test_libgric_cpp.cpp)
 target_link_libraries(test_libgric_cpp PRIVATE gric m)
 add_test(NAME test_libgric_cpp COMMAND test_libgric_cpp)
+
+add_executable(test_frame_info_arena tests/test_frame_info_arena.c)
+target_link_libraries(test_frame_info_arena PRIVATE gric m)
+add_test(NAME test_frame_info_arena COMMAND test_frame_info_arena)
 
 add_executable(gric-mktxtseq
     src/tools/generators/mktestseq.c
