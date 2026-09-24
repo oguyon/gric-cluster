@@ -12,7 +12,7 @@
 #include "knn_cuda_ivf.h"
 #include "gpu/cuda_common.h"
 #include "gpu/cuda_ivf_index.h"
-#include "gric-knn/knn_reader.h"
+#include "knn_reader.h"
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <math.h>

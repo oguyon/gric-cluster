@@ -6,7 +6,7 @@
 #define _GNU_SOURCE
 #include "http_server.h"
 #include "api_handlers.h"
-#include "shared/cli_colors.h"
+#include "cli_colors.h"
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <errno.h>

@@ -5,7 +5,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 #include "status_internal.h"
-#include "shared/cli_colors.h"
+#include "cli_colors.h"
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>

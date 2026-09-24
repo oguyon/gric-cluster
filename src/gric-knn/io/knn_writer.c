@@ -1,0 +1,695 @@
+/**
+ * @file knn_writer.c
+ * @brief Output serialization for gric-knn results into FITS or ASCII formats.
+ *
+ * Implements result serialization and file writing in various output formats. Functions
+ * in this file compute condensed pairwise mutual distance slices among nearest neighbors,
+ * format and write binary headers and data arrays (knn_indices.bin, knn_distances.bin,
+ * knn_mutual_dists.bin), export structured text tables, and generate multi-extension FITS cubes.
+ */
+
+#define _POSIX_C_SOURCE 200809L
+#include "knn_writer.h"
+#include "knn_reader.h"
+#include "framedistance.h"
+#include "gric_bin_io.h"
+#include <fcntl.h>
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#ifdef USE_CFITSIO
+#include <fitsio.h>
+#endif
+
+#define KNN_WRITER_STACK_K 1024
+
+/**
+ * compute_query_mutual_dists() - Compute mutual distances between neighbors of a query
+ * @u:         Query index [0..N-1].
+ * @N:         Total frames in dataset.
+ * @k:         Number of nearest neighbors.
+ * @elem:      Number of vector elements per frame.
+ * @elem_size: Byte size of each element (float or double).
+ * @frames:    Pointer to resident frames buffer.
+ * @model:     Active KnnModel.
+ * @results:   Computed KnnResults.
+ * @out_slice: Output buffer for k*(k-1)/2 mutual distance floats.
+ *
+ * Computes pairwise Euclidean distances between the k nearest neighbors found for query u.
+ * For each pair (i, j) with 0 <= i < j < k, resolves neighbor frame vectors from memory
+ * or cache and calculates their mutual L2 distance into an upper-triangular condensed slice.
+ * Uses stack-allocated buffers for k <= 1024 to eliminate dynamic heap allocations.
+ */
+static inline void compute_query_mutual_dists(
+    long              u,
+    long              N,
+    long              k,
+    long              elem,
+    size_t            elem_size,
+    const void       *frames,
+    const KnnModel   *model,
+    const KnnResults *results,
+    float            *out_slice)
+{
+    const void *cand_stack[KNN_WRITER_STACK_K];
+    double dist_stack[KNN_WRITER_STACK_K];
+    const void **cand_ptrs = (k <= KNN_WRITER_STACK_K) ?
+        cand_stack :
+        (const void **)malloc((size_t)k * sizeof(void *));
+    double *tmp_dists = (k <= KNN_WRITER_STACK_K) ?
+        dist_stack :
+        (double *)malloc((size_t)k * sizeof(double));
+
+    if (cand_ptrs == NULL || tmp_dists == NULL)
+    {
+        if (cand_ptrs != cand_stack && cand_ptrs != NULL)
+        {
+            free(cand_ptrs);
+        }
+        if (tmp_dists != dist_stack && tmp_dists != NULL)
+        {
+            free(tmp_dists);
+        }
+        return;
+    }
+
+    int all_valid = 1;
+    for (int i = 0; i < (int)k; i++)
+    {
+        long id_i = (long)results->indices[u * k + i];
+        if (id_i < 0 || id_i >= N)
+        {
+            all_valid = 0;
+            break;
+        }
+        cand_ptrs[i] = (const char *)frames + (size_t)id_i * (size_t)elem * elem_size;
+    }
+
+    if (all_valid)
+    {
+        for (int i = 0; i < (int)k - 1; i++)
+        {
+            int n_targets = (int)k - 1 - i;
+            if (model->is_double)
+            {
+                framedist_batch_double(
+                    (const double *)cand_ptrs[i],
+                    (const double *const *)(cand_ptrs + i + 1),
+                    n_targets,
+                    tmp_dists,
+                    elem);
+            }
+            else
+            {
+                framedist_batch_float(
+                    (const float *)cand_ptrs[i],
+                    (const float *const *)(cand_ptrs + i + 1),
+                    n_targets,
+                    tmp_dists,
+                    elem);
+            }
+
+            long base_idx = (long)i * (long)k - ((long)i * (long)(i + 1)) / 2;
+            float *dst = &out_slice[base_idx];
+            for (int t = 0; t < n_targets; t++)
+            {
+                dst[t] = (float)tmp_dists[t];
+            }
+        }
+    }
+    else
+    {
+        for (int i = 0; i < (int)k; i++)
+        {
+            long id_i = (long)results->indices[u * k + i];
+            if (id_i < 0 || id_i >= N)
+            {
+                continue;
+            }
+            const void *f_i = (const char *)frames +
+                (size_t)id_i * (size_t)elem * elem_size;
+
+            for (int j = i + 1; j < (int)k; j++)
+            {
+                long id_j = (long)results->indices[u * k + j];
+                if (id_j < 0 || id_j >= N)
+                {
+                    continue;
+                }
+                const void *f_j = (const char *)frames +
+                    (size_t)id_j * (size_t)elem * elem_size;
+
+                double dist;
+                if (model->is_double)
+                {
+                    dist = framedist_double(
+                        (const double *)f_i,
+                        (const double *)f_j,
+                        elem);
+                }
+                else
+                {
+                    dist = framedist_float(
+                        (const float *)f_i,
+                        (const float *)f_j,
+                        elem);
+                }
+
+                long pair_idx = (long)i * (long)k -
+                    ((long)i * (long)(i + 1)) / 2 + (long)(j - i - 1);
+                out_slice[pair_idx] = (float)dist;
+            }
+        }
+    }
+
+    if (cand_ptrs != cand_stack)
+    {
+        free(cand_ptrs);
+        free(tmp_dists);
+    }
+}
+
+/**
+ * write_bin_results() - Serialize k-NN results into binary format files
+ * @out_indices_path:   Output file path for knn_indices.bin.
+ * @out_distances_path: Output file path for knn_distances.bin.
+ * @out_mutual_path:    Output file path for knn_mutual_dists.bin (if requested).
+ * @config:             Active KnnConfig.
+ * @model:              Active KnnModel.
+ * @results:            Computed KnnResults.
+ *
+ * Writes binary header (gric_bin_header_t) and contiguous arrays for neighbor indices
+ * (UINT32) and distances (FLOAT32 or FLOAT64). Computes and writes mutual distances if
+ * requested.
+ *
+ * Return: 0 on success, or -1 on error.
+ */
+static int write_bin_results(
+    const char       *out_indices_path,
+    const char       *out_distances_path,
+    const char       *out_mutual_path,
+    const KnnConfig  *config,
+    const KnnModel   *model,
+    const KnnResults *results)
+{
+    long N = (results->num_queries > 0) ? results->num_queries : model->total_dataset_frames;
+    long k = config->k;
+    uint64_t total_elems = (uint64_t)N * (uint64_t)k;
+
+    // 1. Write knn_indices.bin (UINT32 [N, k])
+    FILE *fp_idx = fopen(out_indices_path, "wb");
+    if (fp_idx != NULL)
+    {
+        gric_bin_header_t hdr_idx;
+        memset(&hdr_idx, 0, sizeof(hdr_idx));
+        hdr_idx.file_type = GRIC_BIN_TYPE_GENERIC;
+        hdr_idx.data_type = GRIC_BIN_DTYPE_UINT32;
+        hdr_idx.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+        hdr_idx.ndim = 2;
+        hdr_idx.dims[0] = (uint64_t)N;
+        hdr_idx.dims[1] = (uint64_t)k;
+        hdr_idx.num_elements = total_elems;
+        hdr_idx.data_bytes = total_elems * sizeof(uint32_t);
+
+        if (gric_bin_write_header(fp_idx, &hdr_idx, "k-NN neighbor indices [N x k]") == 0)
+        {
+            fwrite(results->indices, sizeof(uint32_t), total_elems, fp_idx);
+        }
+        fclose(fp_idx);
+    }
+
+    // 2. Write knn_distances.bin (FLOAT32 [N, k])
+    FILE *fp_dst = fopen(out_distances_path, "wb");
+    if (fp_dst != NULL)
+    {
+        gric_bin_header_t hdr_dst;
+        memset(&hdr_dst, 0, sizeof(hdr_dst));
+        hdr_dst.file_type = GRIC_BIN_TYPE_GENERIC;
+        hdr_dst.data_type = GRIC_BIN_DTYPE_FLOAT32;
+        hdr_dst.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+        hdr_dst.ndim = 2;
+        hdr_dst.dims[0] = (uint64_t)N;
+        hdr_dst.dims[1] = (uint64_t)k;
+        hdr_dst.num_elements = total_elems;
+        hdr_dst.data_bytes = total_elems * sizeof(float);
+
+        if (gric_bin_write_header(fp_dst, &hdr_dst, "k-NN metric distances [N x k]") == 0)
+        {
+            float *f32_dst = (float *)malloc(total_elems * sizeof(float));
+            if (f32_dst != NULL)
+            {
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static) if(total_elems >= 65536)
+#endif
+                for (uint64_t i = 0; i < total_elems; i++)
+                {
+                    double d = results->distances[i];
+                    if (results->indices[i] < 0 || d < 0.0 || isnan(d))
+                    {
+                        f32_dst[i] = -1.0f;
+                    }
+                    else
+                    {
+                        f32_dst[i] = (float)d;
+                    }
+                }
+                fwrite(f32_dst, sizeof(float), total_elems, fp_dst);
+                free(f32_dst);
+            }
+        }
+        fclose(fp_dst);
+    }
+
+    // 3. Write knn_mutual_dists.bin (FLOAT32 [N, k*(k-1)/2])
+    if (out_mutual_path != NULL && k >= 2 && model->total_dataset_frames > 0)
+    {
+        uint64_t m_pairs = ((uint64_t)k * (uint64_t)(k - 1)) / 2;
+        uint64_t total_mut = (uint64_t)N * m_pairs;
+        const void *frames = config->memory_data;
+        void *loaded_frames = NULL;
+        long elem = model->frame_elements;
+        size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
+
+        if (frames == NULL && config->input_data_path != NULL && elem > 0)
+        {
+            KnnFrameReader rdr;
+            if (knn_reader_open(&rdr, config->input_data_path, N,
+                                model->frame_width, model->frame_height, model->is_double) == 0)
+            {
+                size_t total_bytes = (size_t)N * (size_t)elem * elem_size;
+                if (total_bytes <= 1024ULL * 1024ULL * 1024ULL) // 1 GB allocation threshold
+                {
+                    loaded_frames = malloc(total_bytes);
+                    if (loaded_frames != NULL)
+                    {
+                        for (long f = 0; f < N; f++)
+                        {
+                            knn_reader_read_frame(&rdr, f,
+                                (char *)loaded_frames + (size_t)f * (size_t)elem * elem_size);
+                        }
+                        frames = loaded_frames;
+                    }
+                }
+                knn_reader_close(&rdr);
+            }
+        }
+
+        if (frames != NULL)
+        {
+            FILE *fp_mut = fopen(out_mutual_path, "wb+");
+            if (fp_mut != NULL)
+            {
+                gric_bin_header_t hdr_mut;
+                memset(&hdr_mut, 0, sizeof(hdr_mut));
+                hdr_mut.file_type = GRIC_BIN_TYPE_GENERIC;
+                hdr_mut.data_type = GRIC_BIN_DTYPE_FLOAT32;
+                hdr_mut.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+                hdr_mut.ndim = 2;
+                hdr_mut.dims[0] = (uint64_t)N;
+                hdr_mut.dims[1] = m_pairs;
+                hdr_mut.num_elements = total_mut;
+                hdr_mut.data_bytes = total_mut * sizeof(float);
+
+                if (gric_bin_write_header(fp_mut, &hdr_mut,
+                                          "k-NN mutual distances [N x k*(k-1)/2]") == 0)
+                {
+                    fflush(fp_mut);
+                    long hdr_bytes = ftell(fp_mut);
+                    size_t total_file_bytes = (size_t)hdr_bytes + total_mut * sizeof(float);
+                    int fd_mut = fileno(fp_mut);
+                    void *mmap_mut = MAP_FAILED;
+
+                    if (fd_mut >= 0)
+                    {
+#if defined(__APPLE__) || defined(__darwin__)
+                        if (ftruncate(fd_mut, (off_t)total_file_bytes) != 0)
+                        {
+                            /* Truncate failed, mmap will handle error */
+                        }
+#else
+                        if (posix_fallocate(fd_mut, 0, (off_t)total_file_bytes) != 0)
+                        {
+                            if (ftruncate(fd_mut, (off_t)total_file_bytes) != 0)
+                            {
+                                /* Truncate failed, mmap will handle error */
+                            }
+                        }
+#endif
+                        mmap_mut = mmap(NULL, total_file_bytes, PROT_READ | PROT_WRITE,
+                                        MAP_SHARED, fd_mut, 0);
+                    }
+
+                    if (mmap_mut != MAP_FAILED)
+                    {
+                        float *mut_dst = (float *)((char *)mmap_mut + hdr_bytes);
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+                        for (long u = 0; u < N; u++)
+                        {
+                            float *out_slice = &mut_dst[(size_t)u * m_pairs];
+                            compute_query_mutual_dists(
+                                u, N, k, elem, elem_size, frames, model, results, out_slice);
+                        }
+
+                        msync(mmap_mut, total_file_bytes, MS_ASYNC);
+                        munmap(mmap_mut, total_file_bytes);
+                    }
+                    else
+                    {
+                        long chunk_max_queries = 8192;
+                        if (chunk_max_queries > N)
+                        {
+                            chunk_max_queries = N;
+                        }
+                        size_t chunk_elements = (size_t)chunk_max_queries * m_pairs;
+                        float *chunk_buf = (float *)malloc(chunk_elements * sizeof(float));
+                        if (chunk_buf != NULL)
+                        {
+                            for (long u_base = 0; u_base < N; u_base += chunk_max_queries)
+                            {
+                                long cur_chunk_n = N - u_base;
+                                if (cur_chunk_n > chunk_max_queries)
+                                {
+                                    cur_chunk_n = chunk_max_queries;
+                                }
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
+                                for (long c = 0; c < cur_chunk_n; c++)
+                                {
+                                    long u = u_base + c;
+                                    float *out_slice = &chunk_buf[(size_t)c * m_pairs];
+                                    compute_query_mutual_dists(
+                                        u, N, k, elem, elem_size, frames, model, results,
+                                        out_slice);
+                                } // for (long c = 0; ...)
+
+                                fwrite(chunk_buf, sizeof(float),
+                                       (size_t)cur_chunk_n * m_pairs, fp_mut);
+                            } // for (long u_base = 0; ...)
+
+                            free(chunk_buf);
+                        }
+                    }
+                }
+                fclose(fp_mut);
+            }
+        }
+
+        if (loaded_frames != NULL)
+        {
+            free(loaded_frames);
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * write_ascii_results() - Serialize k-NN results into human-readable text file
+ * @path:    Output file path.
+ * @config:  Active KnnConfig.
+ * @model:   Active KnnModel.
+ * @results: Computed KnnResults.
+ *
+ * Formats results into space-delimited text lines: query_frame_id neighbor_1 dist_1 ...
+ * Uses buffered I/O with a 64KB stream buffer for write efficiency.
+ *
+ * Return: 0 on success, or -1 on error.
+ */
+static int write_ascii_results(
+    const char       *path,
+    const KnnConfig  *config,
+    const KnnModel   *model,
+    const KnnResults *results)
+{
+    FILE *f = fopen(path, "w");
+    if (f == NULL)
+    {
+        fprintf(stderr, "Error: Could not open output file '%s' for writing\n", path);
+        return -1;
+    }
+
+    char buf[65536];
+    setvbuf(f, buf, _IOFBF, sizeof(buf));
+
+    long N = (results->num_queries > 0) ? results->num_queries : model->total_dataset_frames;
+    int  k = config->k;
+
+    fprintf(f, "# gric-knn results: k = %d, total_queries = %ld\n", k, N);
+    fprintf(f, "# Columns: query_frame_id  [neighbor_1 dist_1  neighbor_2 dist_2 ...]\n");
+
+    for (long i = 0; i < N; i++)
+    {
+        fprintf(f, "%-8ld", i);
+        for (int j = 0; j < k; j++)
+        {
+            int n_id = results->indices[i * k + j];
+            double d = results->distances[i * k + j];
+            if (n_id < 0 || d < 0.0 || isnan(d))
+            {
+                fprintf(f, "  %-8d %12.6f", -1, -1.0);
+            }
+            else
+            {
+                fprintf(f, "  %-8d %12.6f", n_id, d);
+            }
+        }
+        fprintf(f, "\n");
+    } // for (long i = 0; ...)
+
+    fclose(f);
+    return 0;
+}
+
+#ifdef USE_CFITSIO
+/**
+ * write_fits_results() - Serialize k-NN results into FITS format files
+ * @out_indices_path:   Output path for knn_indices.fits.
+ * @out_distances_path: Output path for knn_distances.fits.
+ * @config:             Active KnnConfig.
+ * @model:              Active KnnModel.
+ * @results:            Computed KnnResults.
+ *
+ * Creates 2D FITS image HDUs with dimensions [k, N] for neighbor indices (TINT / 32-bit)
+ * and distances (TDOUBLE or TFLOAT).
+ *
+ * Return: 0 on success, or -1 on error.
+ */
+static int write_fits_results(
+    const char       *out_indices_path,
+    const char       *out_distances_path,
+    const KnnConfig  *config,
+    const KnnModel   *model,
+    const KnnResults *results)
+{
+    int status = 0;
+    fitsfile *f_idx = NULL;
+    fitsfile *f_dst = NULL;
+
+    long N = (results->num_queries > 0) ? results->num_queries : model->total_dataset_frames;
+    long k = config->k;
+    long naxes[2] = {k, N};
+    long n_total_elements = k * N;
+
+    // Remove existing files if any by prepending '!'
+    char path_idx_clobber[4100];
+    char path_dst_clobber[4100];
+    snprintf(path_idx_clobber, sizeof(path_idx_clobber), "!%s", out_indices_path);
+    snprintf(path_dst_clobber, sizeof(path_dst_clobber), "!%s", out_distances_path);
+
+    fits_create_file(&f_idx, path_idx_clobber, &status);
+    if (status != 0)
+    {
+        fprintf(stderr, "Error: Could not create FITS file '%s' (CFITSIO error %d)\n",
+                out_indices_path, status);
+        return -1;
+    }
+
+    fits_create_img(f_idx, LONG_IMG, 2, naxes, &status);
+    long fpixel[2] = {1, 1};
+
+    fits_write_pix(f_idx, TINT, fpixel, n_total_elements, results->indices, &status);
+    fits_close_file(f_idx, &status);
+
+    status = 0;
+    fits_create_file(&f_dst, path_dst_clobber, &status);
+    if (status != 0)
+    {
+        fprintf(stderr, "Error: Could not create FITS file '%s' (CFITSIO error %d)\n",
+                out_distances_path, status);
+        return -1;
+    }
+
+    fits_create_img(f_dst, DOUBLE_IMG, 2, naxes, &status);
+    fits_write_pix(f_dst, TDOUBLE, fpixel, n_total_elements, results->distances, &status);
+    fits_close_file(f_dst, &status);
+
+    return (status == 0) ? 0 : -1;
+}
+#endif // USE_CFITSIO
+
+/**
+ * knn_write_results() - Save k-NN results into configured format
+ * @config:  Active KnnConfig.
+ * @model:   Active KnnModel.
+ * @results: Computed KnnResults.
+ *
+ * Dispatches serialization to binary (.bin), FITS (.fits), or ASCII (.txt) format
+ * handlers depending on config->output_format and dataset attributes.
+ *
+ * Return: 0 on success, or -1 on error.
+ */
+int knn_write_results(
+    const KnnConfig  *config,
+    const KnnModel   *model,
+    const KnnResults *results)
+{
+    if (config == NULL || model == NULL || results == NULL)
+    {
+        return -1;
+    }
+
+    int use_fits = 0;
+    if (config->output_format == KNN_FORMAT_FITS)
+    {
+        use_fits = 1;
+    }
+    else if (config->output_format == KNN_FORMAT_AUTO)
+    {
+        use_fits = model->is_fits_input;
+    }
+
+    char final_out_path[2048];
+    if (config->output_path != NULL)
+    {
+        snprintf(final_out_path, sizeof(final_out_path), "%s", config->output_path);
+    }
+    else
+    {
+        if (use_fits)
+        {
+            snprintf(final_out_path, sizeof(final_out_path), "%s/knn_k%d.fits",
+                     config->cluster_dir, config->k);
+        }
+        else
+        {
+            snprintf(final_out_path, sizeof(final_out_path), "%s/knn_results.txt",
+                     config->cluster_dir);
+        }
+    }
+
+    if (use_fits)
+    {
+#ifdef USE_CFITSIO
+        char idx_path[4096];
+        char dst_path[4096];
+
+        size_t len = strlen(final_out_path);
+        if (len >= 5 && strcasecmp(final_out_path + len - 5, ".fits") == 0)
+        {
+            char base[2048];
+            size_t copy_len = len - 5;
+            if (copy_len >= sizeof(base))
+            {
+                copy_len = sizeof(base) - 1;
+            }
+            memcpy(base, final_out_path, copy_len);
+            base[copy_len] = '\0';
+            snprintf(idx_path, sizeof(idx_path), "%s_indices.fits", base);
+            snprintf(dst_path, sizeof(dst_path), "%s_distances.fits", base);
+        }
+        else
+        {
+            snprintf(idx_path, sizeof(idx_path), "%s/knn_indices.fits", final_out_path);
+            snprintf(dst_path, sizeof(dst_path), "%s/knn_distances.fits", final_out_path);
+        }
+
+        printf("Writing FITS outputs:\n  - %s\n  - %s\n", idx_path, dst_path);
+        return write_fits_results(idx_path, dst_path, config, model, results);
+#else
+        fprintf(stderr, "Warning: CFITSIO not enabled. Falling back to ASCII output.\n");
+        return write_ascii_results(final_out_path, config, model, results);
+#endif
+    }
+    else
+    {
+        /* Write binary outputs.
+         * If -o was explicitly set, derive binary paths from that prefix so that
+         * different runs (e.g. A-vs-A vs -query C) produce distinct files.
+         * Otherwise fall back to the standard clusterDir/knn_indices.bin names. */
+        char bin_idx_path[4096];
+        char bin_dst_path[4096];
+        char bin_mut_path[4096];
+        if (config->output_path != NULL)
+        {
+            /* Strip a trailing .txt extension if present, then add _indices.bin/_distances.bin */
+            char base[2048];
+            size_t olen = strlen(config->output_path);
+            if (olen >= 4 && strcasecmp(config->output_path + olen - 4, ".txt") == 0)
+            {
+                size_t blen = olen - 4;
+                if (blen >= sizeof(base))
+                {
+                    blen = sizeof(base) - 1;
+                }
+                memcpy(base, config->output_path, blen);
+                base[blen] = '\0';
+            }
+            else
+            {
+                snprintf(base, sizeof(base), "%s", config->output_path);
+            }
+            snprintf(bin_idx_path, sizeof(bin_idx_path), "%s_indices.bin", base);
+            snprintf(bin_dst_path, sizeof(bin_dst_path), "%s_distances.bin", base);
+            snprintf(bin_mut_path, sizeof(bin_mut_path), "%s_mutual_dists.bin", base);
+        }
+        else if (config->cluster_dir != NULL)
+        {
+            snprintf(bin_idx_path, sizeof(bin_idx_path), "%s/knn_indices.bin",
+                     config->cluster_dir);
+            snprintf(bin_dst_path, sizeof(bin_dst_path), "%s/knn_distances.bin",
+                     config->cluster_dir);
+            snprintf(bin_mut_path, sizeof(bin_mut_path), "%s/knn_mutual_dists.bin",
+                     config->cluster_dir);
+        }
+        else
+        {
+            snprintf(bin_idx_path, sizeof(bin_idx_path), "knn_indices.bin");
+            snprintf(bin_dst_path, sizeof(bin_dst_path), "knn_distances.bin");
+            snprintf(bin_mut_path, sizeof(bin_mut_path), "knn_mutual_dists.bin");
+        }
+        const char *mut_path = config->no_mutual ? NULL : bin_mut_path;
+        if (mut_path != NULL)
+        {
+            printf("Writing binary outputs:\n  - %s\n  - %s\n  - %s\n",
+                   bin_idx_path, bin_dst_path, bin_mut_path);
+        }
+        else
+        {
+            printf("Writing binary outputs:\n  - %s\n  - %s\n",
+                   bin_idx_path, bin_dst_path);
+        }
+        write_bin_results(bin_idx_path, bin_dst_path, mut_path, config, model, results);
+
+        if (!config->no_txt)
+        {
+            printf("Writing ASCII output: %s\n", final_out_path);
+            return write_ascii_results(final_out_path, config, model, results);
+        }
+        return 0;
+    }
+}

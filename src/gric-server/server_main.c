@@ -5,7 +5,7 @@
 
 #define _GNU_SOURCE
 #include "http_server.h"
-#include "shared/cli_colors.h"
+#include "cli_colors.h"
 #include <libgen.h>
 #include <signal.h>
 #include <stdio.h>

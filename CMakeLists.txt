@@ -86,7 +86,7 @@ endif()
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
-file(GLOB HELP_TOPIC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/help/*.md")
+file(GLOB_RECURSE HELP_TOPIC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/help/*.md")
 set(HELP_TOPICS_GEN_C "${CMAKE_CURRENT_BINARY_DIR}/help_topics_gen.c")
 add_custom_command(
     OUTPUT "${HELP_TOPICS_GEN_C}"
@@ -105,16 +105,29 @@ include_directories(
     ${CMAKE_CURRENT_BINARY_DIR}
     src
     src/shared
+    src/shared/quant
+    src/shared/format
+    src/shared/sys
+    src/shared/cli
     src/gric-cluster/core
     src/gric-cluster/math
     src/gric-cluster/io
     src/gric-cluster/help
     src/gric-cluster/steps
     src/gric-cluster/trace
+    src/gric-knn
+    src/gric-knn/core
+    src/gric-knn/search
+    src/gric-knn/pruning
+    src/gric-knn/cache
+    src/gric-knn/cross
+    src/gric-knn/io
+    src/gric-knn/cli
     src/gric-probe
     src/gpu
     src/gric-knn/gpu
     src/gric-cluster/gpu
+    src/tools/diagnostics/dimdensity
 )
 
 link_directories(
@@ -176,22 +189,22 @@ set(CLUSTER_SRCS
     src/gric-cluster/steps/record_step_assignment.c
     src/gric-cluster/steps/update_consistency_mask.c
     src/gric-cluster/trace/cluster_trace.c
-    src/shared/cli_colors.c
-    src/shared/gric_bin_io.c
-    src/shared/cluster_locator.c
-    src/shared/scalar_quant.c
-    src/shared/scalar_quant_fastscan.c
-    src/shared/scalar_quant_filter.c
-    src/shared/residual_quant.c
-    src/shared/product_quant.c
-    src/shared/quant_memo.c
-    src/shared/rabit_quant.c
-    src/shared/gric_profile.c
-    src/shared/gric_simd.c
-    src/shared/e8_lattice.c
-    src/shared/eq16_quant.c
-    src/shared/eq16_dist.c
-    src/shared/eq16_filter.c
+    src/shared/cli/cli_colors.c
+    src/shared/format/gric_bin_io.c
+    src/shared/format/cluster_locator.c
+    src/shared/quant/scalar_quant.c
+    src/shared/quant/scalar_quant_fastscan.c
+    src/shared/quant/scalar_quant_filter.c
+    src/shared/quant/residual_quant.c
+    src/shared/quant/product_quant.c
+    src/shared/quant/quant_memo.c
+    src/shared/quant/rabit_quant.c
+    src/shared/sys/gric_profile.c
+    src/shared/sys/gric_simd.c
+    src/shared/quant/e8_lattice.c
+    src/shared/quant/eq16_quant.c
+    src/shared/quant/eq16_dist.c
+    src/shared/quant/eq16_filter.c
     src/gric-probe/probe_engine.c
 )
 
@@ -221,10 +234,10 @@ if (ENABLE_CUDA)
 endif()
 
 add_executable(gric-mktxtseq
-    src/gric-mktxtseq/mktestseq.c
-    src/shared/gric_gen_patterns.c
-    src/shared/gric_bin_io.c
-    src/shared/cli_colors.c
+    src/tools/generators/mktestseq.c
+    src/shared/format/gric_gen_patterns.c
+    src/shared/format/gric_bin_io.c
+    src/shared/cli/cli_colors.c
 )
 target_link_libraries(gric-mktxtseq m)
 
@@ -233,7 +246,7 @@ add_executable(gric-plot
     src/gric-plot/plot_log_parser.c
     src/gric-plot/plot_render.c
     src/gric-plot/canvas/canvas.c
-    src/shared/cli_colors.c
+    src/shared/cli/cli_colors.c
 )
 if (PNG_FOUND)
     target_link_libraries(gric-plot ${PNG_LIBRARIES} m)
@@ -241,10 +254,10 @@ else()
     target_link_libraries(gric-plot m)
 endif()
 
-add_executable(gric-mkclusteredfile src/gric-mkclusteredfile/mkclusteredfile.c src/shared/cli_colors.c)
+add_executable(gric-mkclusteredfile src/tools/generators/mkclusteredfile.c src/shared/cli/cli_colors.c)
 target_link_libraries(gric-mkclusteredfile m)
 
-add_executable(gric-NDmodel src/gric-NDmodel/model_nd.c src/shared/cli_colors.c)
+add_executable(gric-NDmodel src/tools/generators/model_nd.c src/shared/cli/cli_colors.c)
 target_link_libraries(gric-NDmodel m)
 
 if (CFITSIO_FOUND)
@@ -267,14 +280,14 @@ if (CFITSIO_FOUND)
     endif()
 endif()
 
-add_executable(gric-ascii-spot-2-video src/gric-ascii-spot-2-video/ascii-spot-2-video.c src/shared/cli_colors.c)
+add_executable(gric-ascii-spot-2-video src/tools/converters/ascii-spot-2-video.c src/shared/cli/cli_colors.c)
 target_link_libraries(gric-ascii-spot-2-video m ${IMAGESTREAMIO_LIBRARIES})
 
 if (IMAGESTREAMIO_FOUND)
-    add_executable(gric-txt2stream src/gric-txt2stream/txt2stream.c src/shared/cli_colors.c)
+    add_executable(gric-txt2stream src/tools/converters/txt2stream.c src/shared/cli/cli_colors.c)
     target_link_libraries(gric-txt2stream ${IMAGESTREAMIO_LIBRARIES} m)
 
-    add_executable(gric-stream-to-pipe src/gric-stream-to-pipe/stream_to_pipe.c src/shared/cli_colors.c)
+    add_executable(gric-stream-to-pipe src/tools/converters/stream_to_pipe.c src/shared/cli/cli_colors.c)
     target_link_libraries(gric-stream-to-pipe ${IMAGESTREAMIO_LIBRARIES} m)
 endif()
 
@@ -286,15 +299,15 @@ add_executable(gric-status
     src/gric-status/status_terminal.c
     src/gric-status/status_shm.c
     src/gric-status/status_tui.c
-    src/shared/cli_colors.c
+    src/shared/cli/cli_colors.c
 )
 
 
 # gric-info tool
-add_executable(gric-info src/gric-info/gric-info.c src/shared/cli_colors.c)
+add_executable(gric-info src/tools/diagnostics/gric-info.c src/shared/cli/cli_colors.c)
 
 # gric-help tool
-add_executable(gric-help src/gric-help/gric-help.c src/shared/cli_colors.c)
+add_executable(gric-help src/tools/diagnostics/gric-help.c src/shared/cli/cli_colors.c)
 
 # gric-benchmark tool
 add_executable(gric-benchmark
@@ -304,21 +317,21 @@ add_executable(gric-benchmark
     src/gric-benchmark/benchmark_report.c
     src/gric-benchmark/benchmark_utils.c
     src/gric-benchmark/test_list.c
-    src/shared/cli_colors.c
+    src/shared/cli/cli_colors.c
 )
 
 # gric-simd-bench tool
 add_executable(gric-simd-bench
     tools/bench_simd_scaling.c
-    src/shared/gric_simd.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(gric-simd-bench PRIVATE src/shared src)
 target_link_libraries(gric-simd-bench m)
 
 # gric-tune tool
 add_executable(gric-tune
-    src/gric-tune/gric-tune.c
-    src/shared/cli_colors.c
+    src/tools/diagnostics/gric-tune.c
+    src/shared/cli/cli_colors.c
 )
 target_link_libraries(gric-tune m)
 
@@ -328,7 +341,7 @@ add_executable(gric-cluster-analysis
     src/gric-cluster-analysis/analysis_parser.c
     src/gric-cluster-analysis/analysis_stats.c
     src/gric-cluster-analysis/analysis_report.c
-    src/shared/cli_colors.c
+    src/shared/cli/cli_colors.c
 )
 target_link_libraries(gric-cluster-analysis m)
 
@@ -341,7 +354,7 @@ add_executable(gric-server
     src/gric-server/server_job_mgmt.c
     src/gric-server/server_fs_api.c
     src/gric-server/server_cli_runner.c
-    src/shared/cli_colors.c
+    src/shared/cli/cli_colors.c
 )
 target_include_directories(gric-server PRIVATE src/gric-server src src/gric-cluster/core)
 if (ENABLE_CUDA)
@@ -353,46 +366,46 @@ endif()
 
 # gric-knn tool
 add_executable(gric-knn
-    src/gric-knn/main.c
-    src/gric-knn/knn_cli.c
-    src/gric-knn/knn_heap.c
-    src/gric-knn/knn_loader.c
-    src/gric-knn/knn_parser.c
-    src/gric-knn/knn_cache.c
-    src/gric-knn/knn_cache_layout.c
-    src/gric-knn/knn_tree.c
-    src/gric-knn/knn_reader.c
-    src/gric-knn/knn_engine.c
-    src/gric-knn/knn_pruning.c
-    src/gric-knn/knn_member_search.c
-    src/gric-knn/knn_member_quant.c
-    src/gric-knn/knn_cluster_search.c
-    src/gric-knn/knn_cross_dataset.c
-    src/gric-knn/knn_cross_route.c
-    src/gric-knn/knn_cross_eval.c
-    src/gric-knn/knn_writer.c
+    src/gric-knn/core/main.c
+    src/gric-knn/cli/knn_cli.c
+    src/gric-knn/core/knn_heap.c
+    src/gric-knn/io/knn_loader.c
+    src/gric-knn/io/knn_parser.c
+    src/gric-knn/cache/knn_cache.c
+    src/gric-knn/cache/knn_cache_layout.c
+    src/gric-knn/search/knn_tree.c
+    src/gric-knn/io/knn_reader.c
+    src/gric-knn/core/knn_engine.c
+    src/gric-knn/pruning/knn_pruning.c
+    src/gric-knn/search/knn_member_search.c
+    src/gric-knn/search/knn_member_quant.c
+    src/gric-knn/search/knn_cluster_search.c
+    src/gric-knn/cross/knn_cross_dataset.c
+    src/gric-knn/cross/knn_cross_route.c
+    src/gric-knn/cross/knn_cross_eval.c
+    src/gric-knn/io/knn_writer.c
     src/gric-cluster/math/framedistance.c
     src/gric-cluster/math/framedistance_cutoff.c
     src/gric-cluster/math/framedistance_batch.c
     src/gric-cluster/math/framedistance_batch_float.c
     src/gric-cluster/math/framedistance_batch_double.c
     src/gric-cluster/math/cluster_gemm_dist.c
-    src/shared/cluster_locator.c
-    src/shared/cli_colors.c
-    src/shared/gric_bin_io.c
-    src/shared/scalar_quant.c
-    src/shared/scalar_quant_fastscan.c
-    src/shared/scalar_quant_filter.c
-    src/shared/residual_quant.c
-    src/shared/product_quant.c
-    src/shared/quant_memo.c
-    src/shared/rabit_quant.c
-    src/shared/gric_profile.c
-    src/shared/gric_simd.c
-    src/shared/e8_lattice.c
-    src/shared/eq16_quant.c
-    src/shared/eq16_dist.c
-    src/shared/eq16_filter.c
+    src/shared/format/cluster_locator.c
+    src/shared/cli/cli_colors.c
+    src/shared/format/gric_bin_io.c
+    src/shared/quant/scalar_quant.c
+    src/shared/quant/scalar_quant_fastscan.c
+    src/shared/quant/scalar_quant_filter.c
+    src/shared/quant/residual_quant.c
+    src/shared/quant/product_quant.c
+    src/shared/quant/quant_memo.c
+    src/shared/quant/rabit_quant.c
+    src/shared/sys/gric_profile.c
+    src/shared/sys/gric_simd.c
+    src/shared/quant/e8_lattice.c
+    src/shared/quant/eq16_quant.c
+    src/shared/quant/eq16_dist.c
+    src/shared/quant/eq16_filter.c
 )
 target_include_directories(gric-knn PRIVATE src/gric-knn src/gric-cluster/math src/shared src)
 target_link_libraries(gric-knn m)
@@ -419,10 +432,10 @@ endif()
 
 # gric-knn-avg reconstruction tool
 add_executable(gric-knn-avg
-    src/gric-knn/knn_reconstruct.c
-    src/gric-knn/knn_reader.c
-    src/shared/cli_colors.c
-    src/shared/gric_bin_io.c
+    src/gric-knn/io/knn_reconstruct.c
+    src/gric-knn/io/knn_reader.c
+    src/shared/cli/cli_colors.c
+    src/shared/format/gric_bin_io.c
 )
 target_include_directories(gric-knn-avg PRIVATE src/gric-knn src/shared src)
 target_link_libraries(gric-knn-avg m)
@@ -436,16 +449,16 @@ endif()
 
 # gric-dimdensity tool
 add_executable(gric-dimdensity
-    src/gric-dimdensity/main.c
-    src/gric-dimdensity/dimdensity_loader.c
-    src/gric-dimdensity/dimdensity_mle.c
-    src/gric-dimdensity/dimdensity_mack.c
-    src/gric-dimdensity/dimdensity_stats.c
-    src/gric-dimdensity/dimdensity_writer.c
-    src/shared/cli_colors.c
-    src/shared/gric_bin_io.c
+    src/tools/diagnostics/dimdensity/main.c
+    src/tools/diagnostics/dimdensity/dimdensity_loader.c
+    src/tools/diagnostics/dimdensity/dimdensity_mle.c
+    src/tools/diagnostics/dimdensity/dimdensity_mack.c
+    src/tools/diagnostics/dimdensity/dimdensity_stats.c
+    src/tools/diagnostics/dimdensity/dimdensity_writer.c
+    src/shared/cli/cli_colors.c
+    src/shared/format/gric_bin_io.c
 )
-target_include_directories(gric-dimdensity PRIVATE src/gric-dimdensity src)
+target_include_directories(gric-dimdensity PRIVATE src/tools/diagnostics/dimdensity src)
 target_link_libraries(gric-dimdensity m)
 if (OpenMP_C_FOUND)
     target_link_libraries(gric-dimdensity OpenMP::OpenMP_C)
@@ -457,17 +470,17 @@ endif()
 
 # gric-ascii2bin tool
 add_executable(gric-ascii2bin
-    src/gric-ascii2bin/ascii2bin.c
-    src/shared/gric_bin_io.c
-    src/shared/cli_colors.c
+    src/tools/converters/ascii2bin.c
+    src/shared/format/gric_bin_io.c
+    src/shared/cli/cli_colors.c
 )
 target_link_libraries(gric-ascii2bin m)
 
 # gric-bin2ascii tool
 add_executable(gric-bin2ascii
-    src/gric-bin2ascii/bin2ascii.c
-    src/shared/gric_bin_io.c
-    src/shared/cli_colors.c
+    src/tools/converters/bin2ascii.c
+    src/shared/format/gric_bin_io.c
+    src/shared/cli/cli_colors.c
 )
 target_link_libraries(gric-bin2ascii m)
 
@@ -476,19 +489,19 @@ add_executable(gric-probe
     src/gric-probe/main.c
     src/gric-probe/probe_engine.c
     src/gric-probe/probe_report.c
-    src/shared/gric_profile.c
-    src/shared/cluster_locator.c
-    src/shared/gric_bin_io.c
-    src/shared/scalar_quant.c
-    src/shared/scalar_quant_fastscan.c
-    src/shared/scalar_quant_filter.c
-    src/shared/residual_quant.c
-    src/shared/e8_lattice.c
-    src/shared/eq16_quant.c
-    src/shared/eq16_dist.c
-    src/shared/eq16_filter.c
-    src/shared/cli_colors.c
-    src/shared/gric_simd.c
+    src/shared/sys/gric_profile.c
+    src/shared/format/cluster_locator.c
+    src/shared/format/gric_bin_io.c
+    src/shared/quant/scalar_quant.c
+    src/shared/quant/scalar_quant_fastscan.c
+    src/shared/quant/scalar_quant_filter.c
+    src/shared/quant/residual_quant.c
+    src/shared/quant/e8_lattice.c
+    src/shared/quant/eq16_quant.c
+    src/shared/quant/eq16_dist.c
+    src/shared/quant/eq16_filter.c
+    src/shared/cli/cli_colors.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(gric-probe PRIVATE src/gric-probe src/shared src)
 target_link_libraries(gric-probe m)
@@ -525,23 +538,23 @@ add_executable(gric-mcp
     src/gric-mcp/tools/tool_probe_dataset.c
     src/gric-mcp/tools/tool_probe_shm.c
     src/shared/cjson/cJSON.c
-    src/shared/cli_colors.c
+    src/shared/cli/cli_colors.c
     src/gric-cluster-analysis/analysis_parser.c
     src/gric-cluster-analysis/analysis_stats.c
     src/gric-probe/probe_engine.c
     src/gric-probe/probe_report.c
-    src/shared/gric_profile.c
-    src/shared/cluster_locator.c
-    src/shared/gric_bin_io.c
-    src/shared/scalar_quant.c
-    src/shared/scalar_quant_fastscan.c
-    src/shared/scalar_quant_filter.c
-    src/shared/residual_quant.c
-    src/shared/e8_lattice.c
-    src/shared/eq16_quant.c
-    src/shared/eq16_dist.c
-    src/shared/eq16_filter.c
-    src/shared/gric_simd.c
+    src/shared/sys/gric_profile.c
+    src/shared/format/cluster_locator.c
+    src/shared/format/gric_bin_io.c
+    src/shared/quant/scalar_quant.c
+    src/shared/quant/scalar_quant_fastscan.c
+    src/shared/quant/scalar_quant_filter.c
+    src/shared/quant/residual_quant.c
+    src/shared/quant/e8_lattice.c
+    src/shared/quant/eq16_quant.c
+    src/shared/quant/eq16_dist.c
+    src/shared/quant/eq16_filter.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(gric-mcp PRIVATE
     src/gric-mcp
@@ -769,7 +782,7 @@ endif()
 
 add_executable(test_bin_ascii_roundtrip
     tests/test_bin_ascii_roundtrip.c
-    src/shared/gric_bin_io.c
+    src/shared/format/gric_bin_io.c
 )
 target_link_libraries(test_bin_ascii_roundtrip m)
 add_test(NAME test_bin_ascii_roundtrip
@@ -778,7 +791,7 @@ set_tests_properties(test_bin_ascii_roundtrip PROPERTIES DEPENDS "gric-ascii2bin
 
 add_executable(test_bin_clustering_pipeline
     tests/test_bin_clustering_pipeline.c
-    src/shared/gric_bin_io.c
+    src/shared/format/gric_bin_io.c
 )
 target_link_libraries(test_bin_clustering_pipeline m)
 add_test(NAME test_bin_clustering_pipeline
@@ -787,7 +800,7 @@ set_tests_properties(test_bin_clustering_pipeline PROPERTIES DEPENDS "gric-clust
 
 add_executable(test_dimdensity
     tests/test_dimdensity.c
-    src/shared/gric_bin_io.c
+    src/shared/format/gric_bin_io.c
 )
 target_link_libraries(test_dimdensity m)
 add_test(NAME test_dimdensity
@@ -796,7 +809,7 @@ set_tests_properties(test_dimdensity PROPERTIES DEPENDS "gric-cluster;gric-mktxt
 
 add_executable(test_knn_cross_dataset
     tests/test_knn_cross_dataset.c
-    src/shared/gric_bin_io.c
+    src/shared/format/gric_bin_io.c
 )
 target_include_directories(test_knn_cross_dataset PRIVATE src/shared)
 target_link_libraries(test_knn_cross_dataset m)
@@ -807,10 +820,10 @@ set_tests_properties(test_knn_cross_dataset PROPERTIES
 
 add_executable(test_scalar_quant
     tests/test_scalar_quant.c
-    src/shared/scalar_quant.c
-    src/shared/scalar_quant_fastscan.c
-    src/shared/scalar_quant_filter.c
-    src/shared/gric_simd.c
+    src/shared/quant/scalar_quant.c
+    src/shared/quant/scalar_quant_fastscan.c
+    src/shared/quant/scalar_quant_filter.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_scalar_quant PRIVATE src/shared)
 target_link_libraries(test_scalar_quant m)
@@ -819,9 +832,9 @@ add_test(NAME test_scalar_quant
 
 add_executable(test_residual_quant
     tests/test_residual_quant.c
-    src/shared/residual_quant.c
-    src/shared/e8_lattice.c
-    src/shared/gric_simd.c
+    src/shared/quant/residual_quant.c
+    src/shared/quant/e8_lattice.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_residual_quant PRIVATE src/shared)
 target_link_libraries(test_residual_quant m)
@@ -830,8 +843,8 @@ add_test(NAME test_residual_quant
 
 add_executable(test_product_quant
     tests/test_product_quant.c
-    src/shared/product_quant.c
-    src/shared/gric_simd.c
+    src/shared/quant/product_quant.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_product_quant PRIVATE src/shared)
 target_link_libraries(test_product_quant m)
@@ -840,8 +853,8 @@ add_test(NAME test_product_quant
 
 add_executable(test_rabit_quant
     tests/test_rabit_quant.c
-    src/shared/rabit_quant.c
-    src/shared/gric_simd.c
+    src/shared/quant/rabit_quant.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_rabit_quant PRIVATE src/shared)
 target_link_libraries(test_rabit_quant m)
@@ -850,8 +863,8 @@ add_test(NAME test_rabit_quant
 
 add_executable(test_e8_lattice
     tests/test_e8_lattice.c
-    src/shared/e8_lattice.c
-    src/shared/gric_simd.c
+    src/shared/quant/e8_lattice.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_e8_lattice PRIVATE src/shared)
 target_link_libraries(test_e8_lattice m)
@@ -860,9 +873,9 @@ add_test(NAME test_e8_lattice
 
 add_executable(test_rq8_e8
     tests/test_rq8_e8.c
-    src/shared/residual_quant.c
-    src/shared/e8_lattice.c
-    src/shared/gric_simd.c
+    src/shared/quant/residual_quant.c
+    src/shared/quant/e8_lattice.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_rq8_e8 PRIVATE src/shared)
 target_link_libraries(test_rq8_e8 m)
@@ -871,14 +884,14 @@ add_test(NAME test_rq8_e8
 
 add_executable(test_eq16_quant
     tests/test_eq16_quant.c
-    src/shared/eq16_quant.c
-    src/shared/eq16_dist.c
-    src/shared/eq16_filter.c
-    src/shared/scalar_quant.c
-    src/shared/scalar_quant_fastscan.c
-    src/shared/scalar_quant_filter.c
-    src/shared/e8_lattice.c
-    src/shared/gric_simd.c
+    src/shared/quant/eq16_quant.c
+    src/shared/quant/eq16_dist.c
+    src/shared/quant/eq16_filter.c
+    src/shared/quant/scalar_quant.c
+    src/shared/quant/scalar_quant_fastscan.c
+    src/shared/quant/scalar_quant_filter.c
+    src/shared/quant/e8_lattice.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_eq16_quant PRIVATE src/shared)
 target_link_libraries(test_eq16_quant m)
@@ -887,21 +900,21 @@ add_test(NAME test_eq16_quant
 
 add_executable(test_knn_rq8_sidecar_mismatch
     tests/test_knn_rq8_sidecar_mismatch.c
-    src/gric-knn/knn_cache.c
-    src/gric-knn/knn_cache_layout.c
-    src/gric-knn/knn_reader.c
-    src/shared/gric_bin_io.c
-    src/shared/scalar_quant.c
-    src/shared/scalar_quant_fastscan.c
-    src/shared/scalar_quant_filter.c
-    src/shared/residual_quant.c
-    src/shared/e8_lattice.c
-    src/shared/eq16_quant.c
-    src/shared/eq16_dist.c
-    src/shared/eq16_filter.c
-    src/shared/product_quant.c
-    src/shared/rabit_quant.c
-    src/shared/gric_simd.c
+    src/gric-knn/cache/knn_cache.c
+    src/gric-knn/cache/knn_cache_layout.c
+    src/gric-knn/io/knn_reader.c
+    src/shared/format/gric_bin_io.c
+    src/shared/quant/scalar_quant.c
+    src/shared/quant/scalar_quant_fastscan.c
+    src/shared/quant/scalar_quant_filter.c
+    src/shared/quant/residual_quant.c
+    src/shared/quant/e8_lattice.c
+    src/shared/quant/eq16_quant.c
+    src/shared/quant/eq16_dist.c
+    src/shared/quant/eq16_filter.c
+    src/shared/quant/product_quant.c
+    src/shared/quant/rabit_quant.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_knn_rq8_sidecar_mismatch PRIVATE src/gric-knn src/shared)
 target_link_libraries(test_knn_rq8_sidecar_mismatch m)
@@ -914,29 +927,29 @@ add_test(NAME test_knn_rq8_sidecar_mismatch
 
 add_executable(test_knn_adaptive_rq8
     tests/test_knn_adaptive_rq8.c
-    src/gric-knn/knn_cache.c
-    src/gric-knn/knn_cache_layout.c
-    src/gric-knn/knn_reader.c
-    src/gric-knn/knn_pruning.c
-    src/gric-knn/knn_heap.c
+    src/gric-knn/cache/knn_cache.c
+    src/gric-knn/cache/knn_cache_layout.c
+    src/gric-knn/io/knn_reader.c
+    src/gric-knn/pruning/knn_pruning.c
+    src/gric-knn/core/knn_heap.c
     src/gric-cluster/math/framedistance.c
     src/gric-cluster/math/framedistance_cutoff.c
     src/gric-cluster/math/framedistance_batch.c
     src/gric-cluster/math/framedistance_batch_float.c
     src/gric-cluster/math/framedistance_batch_double.c
     src/gric-cluster/math/cluster_gemm_dist.c
-    src/shared/gric_bin_io.c
-    src/shared/scalar_quant.c
-    src/shared/scalar_quant_fastscan.c
-    src/shared/scalar_quant_filter.c
-    src/shared/residual_quant.c
-    src/shared/e8_lattice.c
-    src/shared/eq16_quant.c
-    src/shared/eq16_dist.c
-    src/shared/eq16_filter.c
-    src/shared/product_quant.c
-    src/shared/rabit_quant.c
-    src/shared/gric_simd.c
+    src/shared/format/gric_bin_io.c
+    src/shared/quant/scalar_quant.c
+    src/shared/quant/scalar_quant_fastscan.c
+    src/shared/quant/scalar_quant_filter.c
+    src/shared/quant/residual_quant.c
+    src/shared/quant/e8_lattice.c
+    src/shared/quant/eq16_quant.c
+    src/shared/quant/eq16_dist.c
+    src/shared/quant/eq16_filter.c
+    src/shared/quant/product_quant.c
+    src/shared/quant/rabit_quant.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_knn_adaptive_rq8
     PRIVATE src/gric-knn src/gric-cluster/math src/shared)
@@ -954,7 +967,7 @@ add_test(NAME test_knn_adaptive_rq8
 add_executable(test_gemm_dist
     tests/test_gemm_dist.c
     src/gric-cluster/math/cluster_gemm_dist.c
-    src/shared/gric_simd.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_gemm_dist PRIVATE src/gric-cluster/math src/shared)
 target_link_libraries(test_gemm_dist m)
@@ -971,7 +984,7 @@ add_executable(test_framedist_cutoff
     src/gric-cluster/math/framedistance_batch.c
     src/gric-cluster/math/framedistance_batch_float.c
     src/gric-cluster/math/framedistance_batch_double.c
-    src/shared/gric_simd.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_framedist_cutoff
     PRIVATE src/gric-cluster/math src/gric-cluster/core src/shared)
@@ -983,19 +996,19 @@ add_executable(test_gric_probe
     tests/test_gric_probe.c
     src/gric-probe/probe_engine.c
     src/gric-probe/probe_report.c
-    src/shared/gric_profile.c
-    src/shared/cluster_locator.c
-    src/shared/gric_bin_io.c
-    src/shared/scalar_quant.c
-    src/shared/scalar_quant_fastscan.c
-    src/shared/scalar_quant_filter.c
-    src/shared/residual_quant.c
-    src/shared/e8_lattice.c
-    src/shared/eq16_quant.c
-    src/shared/eq16_dist.c
-    src/shared/eq16_filter.c
-    src/shared/cli_colors.c
-    src/shared/gric_simd.c
+    src/shared/sys/gric_profile.c
+    src/shared/format/cluster_locator.c
+    src/shared/format/gric_bin_io.c
+    src/shared/quant/scalar_quant.c
+    src/shared/quant/scalar_quant_fastscan.c
+    src/shared/quant/scalar_quant_filter.c
+    src/shared/quant/residual_quant.c
+    src/shared/quant/e8_lattice.c
+    src/shared/quant/eq16_quant.c
+    src/shared/quant/eq16_dist.c
+    src/shared/quant/eq16_filter.c
+    src/shared/cli/cli_colors.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_gric_probe PRIVATE src/gric-probe src/shared src)
 target_link_libraries(test_gric_probe m)
@@ -1026,23 +1039,23 @@ add_executable(test_mcp_protocol
     src/gric-mcp/tools/tool_probe_dataset.c
     src/gric-mcp/tools/tool_probe_shm.c
     src/shared/cjson/cJSON.c
-    src/shared/cli_colors.c
+    src/shared/cli/cli_colors.c
     src/gric-cluster-analysis/analysis_parser.c
     src/gric-cluster-analysis/analysis_stats.c
     src/gric-probe/probe_engine.c
     src/gric-probe/probe_report.c
-    src/shared/gric_profile.c
-    src/shared/cluster_locator.c
-    src/shared/gric_bin_io.c
-    src/shared/scalar_quant.c
-    src/shared/scalar_quant_fastscan.c
-    src/shared/scalar_quant_filter.c
-    src/shared/residual_quant.c
-    src/shared/e8_lattice.c
-    src/shared/eq16_quant.c
-    src/shared/eq16_dist.c
-    src/shared/eq16_filter.c
-    src/shared/gric_simd.c
+    src/shared/sys/gric_profile.c
+    src/shared/format/cluster_locator.c
+    src/shared/format/gric_bin_io.c
+    src/shared/quant/scalar_quant.c
+    src/shared/quant/scalar_quant_fastscan.c
+    src/shared/quant/scalar_quant_filter.c
+    src/shared/quant/residual_quant.c
+    src/shared/quant/e8_lattice.c
+    src/shared/quant/eq16_quant.c
+    src/shared/quant/eq16_dist.c
+    src/shared/quant/eq16_filter.c
+    src/shared/sys/gric_simd.c
 )
 target_include_directories(test_mcp_protocol PRIVATE
     src/gric-mcp

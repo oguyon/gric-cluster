@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-#include "shared/cli_colors.h"
+#include "cli_colors.h"
 
 /**
  * struct help_entry - keyword lookup table entry

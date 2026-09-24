@@ -8,7 +8,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "gric-knn/knn_defs.h"
+#include "knn_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
