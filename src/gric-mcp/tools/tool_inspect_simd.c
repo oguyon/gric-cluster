@@ -37,7 +37,7 @@ int mcp_tool_inspect_simd(
         return -1;
     }
 
-    char root[1024];
+    char root[256];
     mcp_get_project_root(root, sizeof(root));
 
     const char *march = "-march=native";
@@ -53,12 +53,19 @@ int mcp_tool_inspect_simd(
     char compile_cmd[8192];
     snprintf(
         compile_cmd, sizeof(compile_cmd),
-        "gcc -S -O3 %s -funroll-loops -fverbose-asm -I%s/src -I%s/src/shared "
-        "-I%s/src/shared/quant -I%s/src/shared/format -I%s/src/shared/sys -I%s/src/shared/cli "
-        "-I%s/src/gric-cluster/core -I%s/src/gric-cluster/math -I%s/src/gric-cluster/io "
-        "-I%s/src/gric-knn -I%s/src/gric-knn/core -I%s/src/gric-knn/search -I%s/src/gric-knn/cache "
-        "%s -o %s 2>&1",
-        march, root, root, root, root, root, root, root, root, root, root, root, root, root,
+        "gcc -S -O3 %.64s -funroll-loops -fverbose-asm "
+        "-I%.256s/src -I%.256s/src/shared -I%.256s/src/shared/quant "
+        "-I%.256s/src/shared/format -I%.256s/src/shared/sys -I%.256s/src/shared/cli "
+        "-I%.256s/src/gric-cluster/core -I%.256s/src/gric-cluster/math "
+        "-I%.256s/src/gric-cluster/io -I%.256s/src/gric-knn -I%.256s/src/gric-knn/core "
+        "-I%.256s/src/gric-knn/search -I%.256s/src/gric-knn/cache "
+        "%.512s -o %.256s 2>&1",
+        march,
+        root, root, root,
+        root, root, root,
+        root, root,
+        root, root, root,
+        root, root,
         resolved_src, asm_output_path);
 
     FILE *pipe = popen(compile_cmd, "r");
