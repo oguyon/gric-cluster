@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdbool.h>
 #include <time.h>
 #ifdef _OPENMP
 #include <omp.h>
@@ -117,8 +118,11 @@ long run_second_pass_clustering(
     {
         double *frame_dists = (double *)malloc((size_t)K * sizeof(double));
         char   *measured    = (char *)malloc((size_t)K * sizeof(char));
+        int    *measured_indices = (int *)malloc((size_t)K * sizeof(int));
+        Frame   local_fr;
+        memset(&local_fr, 0, sizeof(local_fr));
 
-        if (frame_dists != NULL && measured != NULL)
+        if (frame_dists != NULL && measured != NULL && measured_indices != NULL)
         {
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic, 64)
@@ -126,6 +130,7 @@ long run_second_pass_clustering(
             for (long t = 0; t < N; t++)
             {
                 memset(measured, 0, (size_t)K * sizeof(char));
+                int num_measured = 0;
                 for (int k = 0; k < K; k++)
                 {
                     frame_dists[k] = 1e30;
@@ -143,6 +148,7 @@ long run_second_pass_clustering(
                         {
                             frame_dists[c] = state->frame_infos[t].distances[i];
                             measured[c] = 1;
+                            measured_indices[num_measured++] = c;
                         }
                     }
                 } // if frame_infos has recorded distances
@@ -157,18 +163,19 @@ long run_second_pass_clustering(
                 }
                 else
                 {
-                    for (int k = 0; k < K; k++)
+                    for (int mi = 0; mi < num_measured; mi++)
                     {
-                        if (measured[k] && frame_dists[k] < d_best)
+                        int k = measured_indices[mi];
+                        if (frame_dists[k] < d_best)
                         {
                             d_best = frame_dists[k];
                             best_cl = k;
                         }
-                    }
+                    } // for (int mi = 0; mi < num_measured; mi++)
                 }
 
                 /* 3. Check unmeasured anchors using triangle-inequality lower bounding */
-                Frame *fr = NULL;
+                bool fr_loaded = false;
                 for (int u = 0; u < K; u++)
                 {
                     if (measured[u])
@@ -186,28 +193,29 @@ long run_second_pass_clustering(
                         ? &state->scratch.dcc_measured[u_row_offset]
                         : NULL;
 
-                    for (int m = 0; m < K; m++)
+                    if (dcc_row != NULL && measured_row != NULL)
                     {
-                        if (!measured[m])
+                        for (int mi = 0; mi < num_measured; mi++)
                         {
-                            continue;
-                        }
-
-                        if (measured_row != NULL
-                            && measured_row[m]
-                            && dcc_row != NULL)
-                        {
-                            double dcc = dcc_row[m];
-                            if (dcc >= 0.0)
+                            int m = measured_indices[mi];
+                            if (measured_row[m])
                             {
-                                double bound = fabs(frame_dists[m] - dcc);
-                                if (bound > lb)
+                                double dcc = dcc_row[m];
+                                if (dcc >= 0.0)
                                 {
-                                    lb = bound;
+                                    double bound = fabs(frame_dists[m] - dcc);
+                                    if (bound > lb)
+                                    {
+                                        lb = bound;
+                                        if (lb >= d_best)
+                                        {
+                                            break;
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    } // for (int m = 0; m < K; m++)
+                        } // for (int mi = 0; mi < num_measured; mi++)
+                    }
 
                     if (lb >= d_best)
                     {
@@ -216,23 +224,18 @@ long run_second_pass_clustering(
                         continue;
                     }
 
-                    /* Evaluate distance to anchor u */
-                    if (fr == NULL)
+                    /* Evaluate distance to anchor u using lock-free buffer */
+                    if (!fr_loaded)
                     {
-#ifdef _OPENMP
-#pragma omp critical(cluster_getframe)
-#endif
-                        {
-                            fr = getframe_at(t);
-                        }
-                        if (fr == NULL)
+                        if (getframe_at_buf(&local_fr, t) != 0)
                         {
                             break;
                         }
+                        fr_loaded = true;
                     }
 
                     double d = get_dist(
-                        fr,
+                        &local_fr,
                         &state->clusters[u].anchor,
                         u,
                         0.0,
@@ -242,6 +245,7 @@ long run_second_pass_clustering(
 
                     frame_dists[u] = d;
                     measured[u] = 1;
+                    measured_indices[num_measured++] = u;
                     new_dist_evals++;
 
                     if (d < d_best)
@@ -251,9 +255,9 @@ long run_second_pass_clustering(
                     }
                 } // for (int u = 0; u < K; u++)
 
-                if (fr != NULL)
+                if (fr_loaded)
                 {
-                    free_frame(fr);
+                    release_frame_buf(&local_fr);
                 }
 
                 /* 4. Update assignment if a closer anchor was found */
@@ -275,7 +279,7 @@ long run_second_pass_clustering(
                         {
                             measured_count++;
                         }
-                    }
+                    } // for (int k = 0; k < K; k++)
 
                     if (state->frame_infos[t].cluster_indices == NULL
                         || state->frame_infos[t].num_dists != measured_count)
@@ -304,14 +308,15 @@ long run_second_pass_clustering(
                                 state->frame_infos[t].distances[out_idx] = frame_dists[k];
                                 out_idx++;
                             }
-                        }
+                        } // for (int k = 0; k < K; k++)
                         state->frame_infos[t].num_dists = measured_count;
                     }
-                } // if state->frame_infos != NULL
+                } // if (state->frame_infos != NULL)
             } // for (long t = 0; t < N; t++)
 
             free(frame_dists);
             free(measured);
+            free(measured_indices);
         }
         else
         {
@@ -322,6 +327,10 @@ long run_second_pass_clustering(
             if (measured != NULL)
             {
                 free(measured);
+            }
+            if (measured_indices != NULL)
+            {
+                free(measured_indices);
             }
         }
     } // OpenMP parallel region

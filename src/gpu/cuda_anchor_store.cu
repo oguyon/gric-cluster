@@ -198,6 +198,8 @@ static __global__ void argmin_distance_kernel(
     }
 }
 
+#define TOP_M_WARPS_PER_BLOCK 4
+
 static __global__ void top_m_distance_kernel(
     const float *__restrict__ d_F_norms,
     const float *__restrict__ d_A_norms,
@@ -208,54 +210,84 @@ static __global__ void top_m_distance_kernel(
     int                       K,
     int                       m)
 {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int warp_id = threadIdx.x / 32;
+    int lane = threadIdx.x % 32;
+    int i = blockIdx.x * (blockDim.x / 32) + warp_id;
+
+    __shared__ float s_top_d[TOP_M_WARPS_PER_BLOCK][32];
+    __shared__ int   s_top_c[TOP_M_WARPS_PER_BLOCK][32];
+
+    int eff_m = (m < 32) ? m : 32;
+
+    /* Initialize shared memory top-m lists */
+    if (lane < 32)
+    {
+        s_top_d[warp_id][lane] = 1e38f;
+        s_top_c[warp_id][lane] = -1;
+    }
+    __syncwarp();
+
     if (i < B)
     {
         float f_norm = d_F_norms[i];
         const float *p_row = d_P + (size_t)i * (size_t)K;
 
+        for (int k_base = 0; k_base < K; k_base += 32)
+        {
+            int k = k_base + lane;
+            float dist_sq = 1e38f;
+            if (k < K)
+            {
+                float a_norm = d_A_norms[k];
+                float p_val = p_row[k];
+                dist_sq = f_norm + a_norm - 2.0f * p_val;
+                if (dist_sq < 0.0f)
+                {
+                    dist_sq = 0.0f;
+                }
+            }
+
+            float tau = s_top_d[warp_id][eff_m - 1];
+            bool cand_valid = (k < K && dist_sq < tau);
+            uint32_t mask = __ballot_sync(0xffffffff, cand_valid);
+
+            while (mask != 0)
+            {
+                int winner_lane = __ffs(mask) - 1;
+                float winner_dist = __shfl_sync(0xffffffff, dist_sq, winner_lane);
+                int winner_k = k_base + winner_lane;
+
+                if (lane == 0)
+                {
+                    if (winner_dist < s_top_d[warp_id][eff_m - 1])
+                    {
+                        int pos = eff_m - 1;
+                        while (pos > 0 && s_top_d[warp_id][pos - 1] > winner_dist)
+                        {
+                            s_top_d[warp_id][pos] = s_top_d[warp_id][pos - 1];
+                            s_top_c[warp_id][pos] = s_top_c[warp_id][pos - 1];
+                            pos--;
+                        }
+                        s_top_d[warp_id][pos] = winner_dist;
+                        s_top_c[warp_id][pos] = winner_k;
+                    }
+                } // if (lane == 0)
+
+                mask &= mask - 1;
+            } // while (mask != 0)
+            __syncwarp();
+        } // for (int k_base = 0; k_base < K; k_base += 32)
+
         int *out_c = d_top_cl + (size_t)i * (size_t)m;
         float *out_d = d_top_dist + (size_t)i * (size_t)m;
 
-        /* Local register arrays for top-m tracking */
-        float local_d[32];
-        int   local_c[32];
-        int eff_m = (m < 32) ? m : 32;
-
-        for (int j = 0; j < eff_m; j++)
+        for (int j = lane; j < eff_m; j += 32)
         {
-            local_d[j] = 1e38f;
-            local_c[j] = -1;
+            float d_val = s_top_d[warp_id][j];
+            out_c[j] = s_top_c[warp_id][j];
+            out_d[j] = (d_val < 1e37f) ? sqrtf(d_val) : 1e38f;
         }
-
-        for (int k = 0; k < K; k++)
-        {
-            float dist_sq = f_norm + d_A_norms[k] - 2.0f * p_row[k];
-            if (dist_sq < 0.0f)
-            {
-                dist_sq = 0.0f;
-            }
-
-            if (dist_sq < local_d[eff_m - 1])
-            {
-                int pos = eff_m - 1;
-                while (pos > 0 && dist_sq < local_d[pos - 1])
-                {
-                    local_d[pos] = local_d[pos - 1];
-                    local_c[pos] = local_c[pos - 1];
-                    pos--;
-                }
-                local_d[pos] = dist_sq;
-                local_c[pos] = k;
-            }
-        }
-
-        for (int j = 0; j < eff_m; j++)
-        {
-            out_c[j] = local_c[j];
-            out_d[j] = (local_d[j] < 1e37f) ? sqrtf(local_d[j]) : 1e38f;
-        }
-    }
+    } // if (i < B)
 }
 
 GpuAnchorStore *gpu_anchor_store_create(
@@ -629,7 +661,8 @@ int gpu_anchor_store_find_top_m(
 
     {
         int threads = 128;
-        int blocks = (B + threads - 1) / threads;
+        int warps_per_block = threads / 32;
+        int blocks = (B + warps_per_block - 1) / warps_per_block;
         top_m_distance_kernel<<<blocks, threads>>>(
             store->d_frame_norms, store->d_anchor_norms, store->d_P,
             store->d_top_cl, store->d_top_dist,
