@@ -34,9 +34,22 @@ Frame *getframe_at(
     long index);
 
 /**
+ * @brief Populate caller-allocated Frame structure at the specified index without locks.
+ */
+int getframe_at_buf(
+    Frame *frame,
+    long   index);
+
+/**
  * @brief Free resources associated with a Frame structure.
  */
 void free_frame(
+    Frame *frame);
+
+/**
+ * @brief Release resources associated with a buffer-populated Frame structure.
+ */
+void release_frame_buf(
     Frame *frame);
 
 /**

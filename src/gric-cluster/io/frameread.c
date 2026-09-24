@@ -861,6 +861,84 @@ void free_frame(
 }
 
 /**
+ * getframe_at_buf() - Populate caller-allocated Frame structure without heap allocation.
+ * @frame_struct: Caller-provided Frame struct to populate.
+ * @index:        Zero-based index of the frame.
+ *
+ * For memory-mapped binary datasets, this provides a completely lock-free, zero-copy
+ * view into the dataset suitable for multi-threaded access without mutex contention.
+ *
+ * Return: 0 on success, -1 on error.
+ */
+int getframe_at_buf(
+    Frame *frame_struct,
+    long   index)
+{
+    if (frame_struct == NULL || index < 0 || index >= num_frames)
+    {
+        return -1;
+    }
+
+    /* Fast path: zero-copy memory-mapped binary dataset with matching precision */
+    if (is_bin_mode && bin_mmap_addr != NULL)
+    {
+        int match32 = (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT32 && !frameread_use_double);
+        int match64 = (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT64 && frameread_use_double);
+        if (match32 || match64)
+        {
+            size_t elem_size = frameread_use_double ? sizeof(double) : sizeof(float);
+            size_t frame_bytes = (size_t)frame_width * elem_size;
+            const char *src_bytes = (const char *)bin_mmap_addr + bin_input_data_offset +
+                                    (size_t)index * frame_bytes;
+
+            frame_struct->width = frame_width;
+            frame_struct->height = frame_height;
+            frame_struct->id = index;
+            frame_struct->is_double = frameread_use_double;
+            frame_struct->data = (void *)src_bytes;
+            frame_struct->is_mmap = 1;
+            frame_struct->cnt0 = 0;
+            frame_struct->atime.tv_sec = 0;
+            frame_struct->atime.tv_nsec = 0;
+
+            return 0;
+        }
+    } // if (is_bin_mode && bin_mmap_addr != NULL)
+
+    /* Fallback for filelist/ASCII/unmatched formats */
+    Frame *fr = getframe_at(index);
+    if (fr == NULL)
+    {
+        return -1;
+    }
+
+    *frame_struct = *fr;
+    fr->data = NULL;
+    fr->is_mmap = 1;
+    free_frame(fr);
+    return 0;
+}
+
+/**
+ * release_frame_buf() - Release resources associated with a buffer-populated Frame structure.
+ * @frame_struct: Pointer to caller-allocated Frame struct.
+ */
+void release_frame_buf(
+    Frame *frame_struct)
+{
+    if (frame_struct == NULL)
+    {
+        return;
+    }
+
+    if (!frame_struct->is_mmap && frame_struct->data != NULL)
+    {
+        free(frame_struct->data);
+        frame_struct->data = NULL;
+    }
+}
+
+/**
  * close_frameread() - Finalize the frame reader, freeing all global state and format readers.
  */
 void close_frameread(void)
