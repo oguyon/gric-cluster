@@ -14,6 +14,7 @@
 #include "cluster_core.h"
 #include "frameread.h"
 #include "common.h"
+#include "frame_info_arena.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -279,18 +280,16 @@ long run_second_pass_clustering(
                     if (state->frame_infos[t].cluster_indices == NULL
                         || state->frame_infos[t].num_dists != measured_count)
                     {
-                        if (state->frame_infos[t].cluster_indices != NULL)
+#ifdef _OPENMP
+#pragma omp critical(frame_info_arena)
+#endif
                         {
-                            free(state->frame_infos[t].cluster_indices);
+                            frame_info_arena_alloc_records(
+                                &state->frame_info_arena,
+                                measured_count,
+                                &state->frame_infos[t].cluster_indices,
+                                &state->frame_infos[t].distances);
                         }
-                        if (state->frame_infos[t].distances != NULL)
-                        {
-                            free(state->frame_infos[t].distances);
-                        }
-                        state->frame_infos[t].cluster_indices =
-                            (int *)malloc((size_t)measured_count * sizeof(int));
-                        state->frame_infos[t].distances =
-                            (double *)malloc((size_t)measured_count * sizeof(double));
                     }
 
                     if (state->frame_infos[t].cluster_indices != NULL

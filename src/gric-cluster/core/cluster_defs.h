@@ -11,6 +11,7 @@
 #include "scalar_quant.h"
 #include "eq16_quant.h"
 #include "quant_memo.h"
+#include "frame_info_arena.h"
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -283,6 +284,7 @@ typedef struct
     int              *assignments;
     double           *assignment_dists;
     FrameInfo        *frame_infos;
+    FrameInfoArena    frame_info_arena;  /**< Chunk arena for frame distance logging */
     int               num_clusters;
     FILE             *distall_out;
     FILE             *evals_out;
