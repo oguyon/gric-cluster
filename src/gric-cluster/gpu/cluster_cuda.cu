@@ -10,6 +10,7 @@ extern "C" {
 #include "cluster_cuda.h"
 #include "cuda_anchor_store.h"
 #include "cluster_core.h"
+#include "cluster_mgmt.h"
 #include "cluster_shm.h"
 #include "framedistance.h"
 #include "frameread.h"
@@ -1148,8 +1149,7 @@ int cluster_cuda_run_pass1_bruteforce(
         }
 
         memset(&state->clusters[0], 0, sizeof(Cluster));
-        state->clusters[0].anchor = *fr0;
-        fr0->data = NULL;
+        frame_assign_to_anchor(&state->clusters[0], fr0);
         state->clusters[0].id = 0;
         state->clusters[0].prob = 1.0;
         state->num_clusters = 1;
@@ -1274,8 +1274,7 @@ int cluster_cuda_run_pass1_bruteforce(
                 {
                     int new_k = state->num_clusters;
                     memset(&state->clusters[new_k], 0, sizeof(Cluster));
-                    state->clusters[new_k].anchor = *fr;
-                    fr->data = NULL;
+                    frame_assign_to_anchor(&state->clusters[new_k], fr);
                     state->clusters[new_k].id = new_k;
                     state->clusters[new_k].prob = 1.0;
                     state->num_clusters = new_k + 1;

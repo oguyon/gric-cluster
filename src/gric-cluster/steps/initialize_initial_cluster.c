@@ -2,6 +2,7 @@
 #include "cluster_steps.h"
 #include "cluster_mgmt.h"
 #include "cluster_trace.h"
+#include "frameread.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -24,7 +25,7 @@ void initialize_initial_cluster(
     Frame         *current_frame,
     int           *assigned_cluster)
 {
-    state->clusters[0].anchor = *current_frame;
+    frame_assign_to_anchor(&state->clusters[0], current_frame);
     if (config->optim.use_sq8 && state->current_frame_sq8 != NULL)
     {
         long dim = current_frame->width * current_frame->height;

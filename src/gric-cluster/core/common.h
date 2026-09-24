@@ -18,6 +18,7 @@ typedef struct
     int             id;
     uint64_t        cnt0;
     struct timespec atime;
+    int             is_mmap;
 } Frame;
 
 typedef struct
