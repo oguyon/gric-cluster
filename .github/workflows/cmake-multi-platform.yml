@@ -108,10 +108,14 @@ jobs:
             -S "${{ github.workspace }}"
 
       - name: Build
-        run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} --parallel
+        run: |
+          cmake --build ${{ steps.strings.outputs.build-output-dir }} \
+            --config ${{ matrix.build_type }} --parallel 4
 
       - name: Test (CTest)
-        run: ctest --test-dir ${{ steps.strings.outputs.build-output-dir }} --output-on-failure --parallel -E "cuda"
+        run: |
+          ctest --test-dir ${{ steps.strings.outputs.build-output-dir }} \
+            --output-on-failure --parallel 4 -E "cuda"
 
       - name: Test (Python Wrapper)
         if: runner.os == 'Linux' && matrix.build_type == 'Release'

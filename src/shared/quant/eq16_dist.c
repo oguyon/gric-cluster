@@ -64,17 +64,25 @@ static uint64_t eq16_dist_squared_i16_avx512(
     {
         __m512i va = _mm512_loadu_si512((const void *)(a + i));
         __m512i vb = _mm512_loadu_si512((const void *)(b + i));
-        __m512i diff = _mm512_sub_epi16(va, vb);
-        __m512i prod = _mm512_madd_epi16(diff, diff);
+        __m512i max_v = _mm512_max_epi16(va, vb);
+        __m512i min_v = _mm512_min_epi16(va, vb);
+        __m512i u = _mm512_sub_epi16(max_v, min_v);
 
-        __m256i prod_lo = _mm512_castsi512_si256(prod);
-        __m256i prod_hi = _mm512_extracti64x4_epi64(prod, 1);
+        __m512i lo16 = _mm512_mullo_epi16(u, u);
+        __m512i hi16 = _mm512_mulhi_epu16(u, u);
 
-        __m512i q0 = _mm512_cvtepi32_epi64(prod_lo);
-        __m512i q1 = _mm512_cvtepi32_epi64(prod_hi);
+        __m512i prod_lo = _mm512_unpacklo_epi16(lo16, hi16);
+        __m512i prod_hi = _mm512_unpackhi_epi16(lo16, hi16);
 
-        sum_vec512_0 = _mm512_add_epi64(sum_vec512_0, q0);
-        sum_vec512_1 = _mm512_add_epi64(sum_vec512_1, q1);
+        __m256i p_lo0 = _mm512_castsi512_si256(prod_lo);
+        __m256i p_lo1 = _mm512_extracti64x4_epi64(prod_lo, 1);
+        __m256i p_hi0 = _mm512_castsi512_si256(prod_hi);
+        __m256i p_hi1 = _mm512_extracti64x4_epi64(prod_hi, 1);
+
+        sum_vec512_0 = _mm512_add_epi64(sum_vec512_0, _mm512_cvtepu32_epi64(p_lo0));
+        sum_vec512_0 = _mm512_add_epi64(sum_vec512_0, _mm512_cvtepu32_epi64(p_lo1));
+        sum_vec512_1 = _mm512_add_epi64(sum_vec512_1, _mm512_cvtepu32_epi64(p_hi0));
+        sum_vec512_1 = _mm512_add_epi64(sum_vec512_1, _mm512_cvtepu32_epi64(p_hi1));
     } // for (; i <= dim - 32; i += 32)
 
     __m512i sum_tot = _mm512_add_epi64(sum_vec512_0, sum_vec512_1);
