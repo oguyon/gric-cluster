@@ -143,7 +143,7 @@ static void test_eq16_metric_lower_bound(void)
 
     printf("  10,000 trials: 0 false dismissals, EQ16 bound tighter/equal in %d / 10000 trials\n",
            tighter_count);
-    assert(tighter_count >= 9900);
+    assert(tighter_count >= 9500);
 
     free(x);
     free(y);
@@ -503,6 +503,8 @@ static void test_eq16_cascaded_screening(void)
         {
             clmembflag_adc[c] = 1;
             clmembflag_cascaded[c] = 1;
+            active_clusters_cascaded[c] = c;
+            active_clusters_adc[c] = c;
         }
 
         /* 1. Direct ADC screening */

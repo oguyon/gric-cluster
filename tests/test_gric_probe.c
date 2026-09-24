@@ -97,14 +97,39 @@ static void test_profile_json_roundtrip(void)
     printf("test_profile_json_roundtrip passed.\n");
 }
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 /**
  * test_probe_execution_synthetic() - Test probe_run on 2Dspiral dataset.
  */
 static void test_probe_execution_synthetic(void)
 {
+    const char *dataset = "benchmarks/2Dspiral.txt";
+    int created_temp = 0;
+    char temp_dataset[256];
+
+    /* Generate synthetic 2D spiral if benchmark file is not present */
+    if (access(dataset, R_OK) != 0)
+    {
+        snprintf(temp_dataset, sizeof(temp_dataset), "/tmp/test_probe_2Dspiral_%d.txt", getpid());
+        FILE *fp = fopen(temp_dataset, "w");
+        assert(fp != NULL);
+        for (long ii = 0; ii < 500; ii++)
+        {
+            double t = (double)ii / 500.0;
+            double theta = 4.0 * M_PI * t;
+            fprintf(fp, "%.6f %.6f\n", t * cos(theta), t * sin(theta));
+        }
+        fclose(fp);
+        dataset = temp_dataset;
+        created_temp = 1;
+    }
+
     ProbeConfig cfg;
     memset(&cfg, 0, sizeof(ProbeConfig));
-    snprintf(cfg.dataset_path, sizeof(cfg.dataset_path), "benchmarks/2Dspiral.txt");
+    snprintf(cfg.dataset_path, sizeof(cfg.dataset_path), "%s", dataset);
     cfg.sample_limit = 500;
     cfg.verbose_level = 0;
     cfg.show_progress = 0;
@@ -128,6 +153,10 @@ static void test_probe_execution_synthetic(void)
     assert(strcmp(res.profile.recommended_prune_mode, "3P") == 0);
 
     probe_results_free(&res);
+    if (created_temp)
+    {
+        unlink(temp_dataset);
+    }
     printf("test_probe_execution_synthetic passed.\n");
 }
 

@@ -93,16 +93,94 @@ static void test_audit_code_style(void)
     printf("PASS: test_audit_code_style\n");
 } // test_audit_code_style
 
+#include <math.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static char g_test_run_dir[256] = "3Dspiral.clusterdat";
+static char g_test_dataset[256] = "benchmarks/3Dspiral.txt";
+static int  g_cleanup_fixture = 0;
+
+static void setup_test_fixtures(void)
+{
+    if (access("3Dspiral.clusterdat/cluster_run.log", R_OK) != 0)
+    {
+        snprintf(g_test_run_dir, sizeof(g_test_run_dir),
+                 "/tmp/test_mcp_fixture_%d.clusterdat", (int)getpid());
+        mkdir(g_test_run_dir, 0755);
+
+        char log_path[512];
+        snprintf(log_path, sizeof(log_path), "%s/cluster_run.log", g_test_run_dir);
+        FILE *lfp = fopen(log_path, "w");
+        assert(lfp != NULL);
+        fprintf(lfp, "CMD: gric-cluster 0.10 test\n");
+        fprintf(lfp, "PARAM_RLIM: 0.100000\n");
+        fprintf(lfp, "STATS_CLUSTERS: 5\n");
+        fprintf(lfp, "STATS_FRAMES: 100\n");
+        fprintf(lfp, "STATS_DISTS: 200\n");
+        fprintf(lfp, "STATS_PRUNED: 50\n");
+        fprintf(lfp, "TIME_CLUSTERING_MS: 15.0\n");
+        fclose(lfp);
+
+        char mem_path[512];
+        snprintf(mem_path, sizeof(mem_path), "%s/frame_membership.txt", g_test_run_dir);
+        FILE *mfp = fopen(mem_path, "w");
+        assert(mfp != NULL);
+        for (int i = 0; i < 100; i++)
+        {
+            fprintf(mfp, "%d %d 0.050000\n", i, i % 5);
+        }
+        fclose(mfp);
+        g_cleanup_fixture = 1;
+    }
+
+    if (access("benchmarks/3Dspiral.txt", R_OK) != 0)
+    {
+        snprintf(g_test_dataset, sizeof(g_test_dataset),
+                 "/tmp/test_mcp_3Dspiral_%d.txt", (int)getpid());
+        FILE *dfp = fopen(g_test_dataset, "w");
+        assert(dfp != NULL);
+        for (long ii = 0; ii < 500; ii++)
+        {
+            double t = (double)ii / 500.0;
+            double theta = 4.0 * 3.14159265358979323846 * t;
+            double x = 0.15 * t * cos(theta);
+            double y = 0.15 * t * sin(theta);
+            double z = 2.0 * t - 1.0;
+            fprintf(dfp, "%.6f %.6f %.6f\n", x, y, z);
+        }
+        fclose(dfp);
+    }
+}
+
+static void cleanup_test_fixtures(void)
+{
+    if (g_cleanup_fixture)
+    {
+        char path[512];
+        snprintf(path, sizeof(path), "%s/cluster_run.log", g_test_run_dir);
+        unlink(path);
+        snprintf(path, sizeof(path), "%s/frame_membership.txt", g_test_run_dir);
+        unlink(path);
+        rmdir(g_test_run_dir);
+    }
+    if (strncmp(g_test_dataset, "/tmp/", 5) == 0)
+    {
+        unlink(g_test_dataset);
+    }
+}
+
 /**
- * test_inspect_run() - Test inspect_run tool on 3Dspiral.clusterdat benchmark run.
+ * test_inspect_run() - Test inspect_run tool on benchmark run directory.
  */
 static void test_inspect_run(void)
 {
-    const char *req =
+    char req[512];
+    snprintf(req, sizeof(req),
         "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{"
         "\"name\":\"gric_inspect_run\","
-        "\"arguments\":{\"run_dir\":\"3Dspiral.clusterdat\"}"
-        "}}";
+        "\"arguments\":{\"run_dir\":\"%s\"}"
+        "}}", g_test_run_dir);
     char *resp = mcp_dispatch_message(req);
     assert(resp != NULL);
     assert(strstr(resp, "num_clusters") != NULL);
@@ -112,15 +190,16 @@ static void test_inspect_run(void)
 } // test_inspect_run
 
 /**
- * test_verify_invariants() - Test invariant verification on 3Dspiral.clusterdat.
+ * test_verify_invariants() - Test invariant verification on benchmark run directory.
  */
 static void test_verify_invariants(void)
 {
-    const char *req =
+    char req[512];
+    snprintf(req, sizeof(req),
         "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{"
         "\"name\":\"gric_verify_invariants\","
-        "\"arguments\":{\"run_dir\":\"3Dspiral.clusterdat\"}"
-        "}}";
+        "\"arguments\":{\"run_dir\":\"%s\"}"
+        "}}", g_test_run_dir);
     char *resp = mcp_dispatch_message(req);
     assert(resp != NULL);
     assert(strstr(resp, "PASS") != NULL);
@@ -148,15 +227,16 @@ static void test_inspect_simd(void)
 } // test_inspect_simd
 
 /**
- * test_probe_dataset() - Test probe dataset tool on benchmarks/3Dspiral.txt.
+ * test_probe_dataset() - Test probe dataset tool.
  */
 static void test_probe_dataset(void)
 {
-    const char *req =
+    char req[512];
+    snprintf(req, sizeof(req),
         "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{"
         "\"name\":\"gric_probe_dataset\","
-        "\"arguments\":{\"dataset_path\":\"benchmarks/3Dspiral.txt\",\"sample_limit\":500}"
-        "}}";
+        "\"arguments\":{\"dataset_path\":\"%s\",\"sample_limit\":500}"
+        "}}", g_test_dataset);
     char *resp = mcp_dispatch_message(req);
     assert(resp != NULL);
     assert(strstr(resp, "recommended_rlim") != NULL);
@@ -179,6 +259,7 @@ static void test_notifications(void)
 int main(void)
 {
     printf("=== Running gric-mcp Protocol Tests ===\n");
+    setup_test_fixtures();
     test_initialize();
     test_ping();
     test_tools_list();
@@ -189,6 +270,7 @@ int main(void)
     test_inspect_simd();
     test_probe_dataset();
     test_notifications();
+    cleanup_test_fixtures();
     printf("=== All gric-mcp Protocol Tests PASSED ===\n");
     return 0;
 } // main

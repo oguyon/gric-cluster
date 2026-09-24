@@ -78,22 +78,27 @@ jobs:
         shell: bash
         run: |
           echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
-          if [ "${{ matrix.sanitizer }}" = "true" ]; then
-            echo "extra-flags=-DCMAKE_C_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined" >> "$GITHUB_OUTPUT"
-          else
-            echo "extra-flags=" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Configure CMake
-        run: >
-          cmake -B ${{ steps.strings.outputs.build-output-dir }}
-          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
-          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          ${{ steps.strings.outputs.extra-flags }}
-          -S ${{ github.workspace }}
+        shell: bash
+        run: |
+          EXTRA_FLAGS=()
+          if [ "${{ matrix.sanitizer }}" = "true" ]; then
+            EXTRA_FLAGS+=(
+              "-DCMAKE_C_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
+              "-DCMAKE_CXX_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
+              "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
+              "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined"
+            )
+          fi
+          cmake -B "${{ steps.strings.outputs.build-output-dir }}" \
+            -DCMAKE_CXX_COMPILER="${{ matrix.cpp_compiler }}" \
+            -DCMAKE_C_COMPILER="${{ matrix.c_compiler }}" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}" \
+            "${EXTRA_FLAGS[@]}" \
+            -S "${{ github.workspace }}"
 
       - name: Build
         run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} --parallel
