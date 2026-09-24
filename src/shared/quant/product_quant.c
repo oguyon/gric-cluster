@@ -403,6 +403,255 @@ void pq_quantize_frame_double(
     } // for (int s = 0; s < m; s++)
 }
 
+#if GRIC_HAVE_AVX512_TARGET
+/**
+ * pq_build_query_lut_float_avx512() - Build scaled 8-bit query LUT using AVX-512.
+ * @query:    Active query float vector [dim].
+ * @codebook: Active trained PQCodebook.
+ * @lut:      Output PQLookupTable initialized with scaled uint8 distances.
+ * @cur_tau:  Current dynamic k-NN distance pruning threshold.
+ */
+GRIC_TARGET_AVX512
+static void pq_build_query_lut_float_avx512(
+    const float      *restrict query,
+    const PQCodebook *restrict codebook,
+    PQLookupTable    *restrict lut,
+    double                     cur_tau)
+{
+    int m = codebook->m;
+    int d_sub = codebook->d_sub;
+    int K = codebook->k_centroids;
+
+    lut->m = m;
+    lut->k_centroids = K;
+
+    /* Compute unscaled float squared distances */
+    float *d2_float = (float *)alloca((size_t)m * (size_t)K * sizeof(float));
+    float max_d2 = 0.0f;
+
+    for (int s = 0; s < m; s++)
+    {
+        const float *q_sub = query + (long)s * d_sub;
+        const float *c_base = codebook->centroids + (size_t)s * (size_t)K * (size_t)d_sub;
+
+        for (int k = 0; k < K; k++)
+        {
+            const float *cent = c_base + k * d_sub;
+            float d2 = 0.0f;
+            int j = 0;
+
+            if (d_sub >= 16)
+            {
+                __m512 vacc = _mm512_setzero_ps();
+                for (; j <= d_sub - 16; j += 16)
+                {
+                    __m512 vq = _mm512_loadu_ps(&q_sub[j]);
+                    __m512 vc = _mm512_loadu_ps(&cent[j]);
+                    __m512 diff = _mm512_sub_ps(vq, vc);
+                    vacc = _mm512_fmadd_ps(diff, diff, vacc);
+                }
+                d2 += _mm512_reduce_add_ps(vacc);
+            }
+
+            if (j <= d_sub - 8)
+            {
+                __m256 vq = _mm256_loadu_ps(&q_sub[j]);
+                __m256 vc = _mm256_loadu_ps(&cent[j]);
+                __m256 diff = _mm256_sub_ps(vq, vc);
+                __m256 vacc256 = _mm256_mul_ps(diff, diff);
+                __m128 lo = _mm256_castps256_ps128(vacc256);
+                __m128 hi = _mm256_extractf128_ps(vacc256, 1);
+                __m128 s128 = _mm_add_ps(lo, hi);
+                s128 = _mm_add_ps(s128, _mm_movehl_ps(s128, s128));
+                s128 = _mm_add_ss(s128, _mm_shuffle_ps(s128, s128, 1));
+                d2 += _mm_cvtss_f32(s128);
+                j += 8;
+            }
+
+            for (; j < d_sub; j++)
+            {
+                float diff = q_sub[j] - cent[j];
+                d2 += diff * diff;
+            }
+
+            d2_float[s * K + k] = d2;
+            if (d2 > max_d2)
+            {
+                max_d2 = d2;
+            }
+        } // for (int k = 0; k < K; k++)
+    } // for (int s = 0; s < m; s++)
+
+    float target_max = (float)(m) * max_d2;
+    if (cur_tau > 0.0)
+    {
+        float tau_sq = (float)(cur_tau * cur_tau);
+        if (tau_sq * 1.5f < target_max)
+        {
+            target_max = tau_sq * 1.5f;
+        }
+    }
+
+    if (target_max < 1e-6f)
+    {
+        target_max = 1.0f;
+    }
+
+    lut->scale = 255.0f / target_max;
+    lut->inv_scale = target_max / 255.0f;
+
+    int total_lut = m * K;
+    int idx = 0;
+
+    __m512 vscale = _mm512_set1_ps(lut->scale);
+    __m512 vzero = _mm512_setzero_ps();
+    __m512 v255 = _mm512_set1_ps(255.0f);
+
+    for (; idx <= total_lut - 16; idx += 16)
+    {
+        __m512 f = _mm512_loadu_ps(&d2_float[idx]);
+        __m512 scaled = _mm512_mul_ps(f, vscale);
+        scaled = _mm512_max_ps(vzero, _mm512_min_ps(v255, scaled));
+        __m512i i32 = _mm512_cvttps_epi32(scaled);
+        __m128i u8 = _mm512_cvtepi32_epi8(i32);
+        _mm_storeu_si128((__m128i *)&lut->lut_u8[idx], u8);
+    }
+
+    for (; idx < total_lut; idx++)
+    {
+        float val = d2_float[idx] * lut->scale;
+        if (val > 255.0f)
+        {
+            val = 255.0f;
+        }
+        lut->lut_u8[idx] = (uint8_t)val;
+    }
+}
+
+/**
+ * pq_build_query_lut_double_avx512() - Build scaled 8-bit query LUT from double using AVX-512.
+ * @query:    Active query double vector [dim].
+ * @codebook: Active trained PQCodebook.
+ * @lut:      Output PQLookupTable initialized with scaled uint8 distances.
+ * @cur_tau:  Current dynamic k-NN distance pruning threshold.
+ */
+GRIC_TARGET_AVX512
+static void pq_build_query_lut_double_avx512(
+    const double     *restrict query,
+    const PQCodebook *restrict codebook,
+    PQLookupTable    *restrict lut,
+    double                     cur_tau)
+{
+    int m = codebook->m;
+    int d_sub = codebook->d_sub;
+    int K = codebook->k_centroids;
+
+    lut->m = m;
+    lut->k_centroids = K;
+
+    float *d2_float = (float *)alloca((size_t)m * (size_t)K * sizeof(float));
+    float max_d2 = 0.0f;
+
+    for (int s = 0; s < m; s++)
+    {
+        const double *q_sub = query + (long)s * d_sub;
+        const float *c_base = codebook->centroids + (size_t)s * (size_t)K * (size_t)d_sub;
+
+        for (int k = 0; k < K; k++)
+        {
+            const float *cent = c_base + k * d_sub;
+            float d2 = 0.0f;
+            int j = 0;
+
+            if (d_sub >= 8)
+            {
+                __m512d vacc = _mm512_setzero_pd();
+                for (; j <= d_sub - 8; j += 8)
+                {
+                    __m512d vq = _mm512_loadu_pd(&q_sub[j]);
+                    __m256 vc_f = _mm256_loadu_ps(&cent[j]);
+                    __m512d vc = _mm512_cvtps_pd(vc_f);
+                    __m512d diff = _mm512_sub_pd(vq, vc);
+                    vacc = _mm512_fmadd_pd(diff, diff, vacc);
+                }
+                d2 += (float)_mm512_reduce_add_pd(vacc);
+            }
+
+            if (j <= d_sub - 4)
+            {
+                __m256d vq = _mm256_loadu_pd(&q_sub[j]);
+                __m128 vc_f = _mm_loadu_ps(&cent[j]);
+                __m256d vc = _mm256_cvtps_pd(vc_f);
+                __m256d diff = _mm256_sub_pd(vq, vc);
+                __m256d vacc256 = _mm256_mul_pd(diff, diff);
+                __m128d lo = _mm256_castpd256_pd128(vacc256);
+                __m128d hi = _mm256_extractf128_pd(vacc256, 1);
+                __m128d s128 = _mm_add_pd(lo, hi);
+                d2 += (float)_mm_cvtsd_f64(_mm_add_sd(s128, _mm_unpackhi_pd(s128, s128)));
+                j += 4;
+            }
+
+            for (; j < d_sub; j++)
+            {
+                float diff = (float)q_sub[j] - cent[j];
+                d2 += diff * diff;
+            }
+
+            d2_float[s * K + k] = d2;
+            if (d2 > max_d2)
+            {
+                max_d2 = d2;
+            }
+        } // for (int k = 0; k < K; k++)
+    } // for (int s = 0; s < m; s++)
+
+    float target_max = (float)(m) * max_d2;
+    if (cur_tau > 0.0)
+    {
+        float tau_sq = (float)(cur_tau * cur_tau);
+        if (tau_sq * 1.5f < target_max)
+        {
+            target_max = tau_sq * 1.5f;
+        }
+    }
+
+    if (target_max < 1e-6f)
+    {
+        target_max = 1.0f;
+    }
+
+    lut->scale = 255.0f / target_max;
+    lut->inv_scale = target_max / 255.0f;
+
+    int total_lut_d = m * K;
+    int idx_d = 0;
+
+    __m512 vscale = _mm512_set1_ps(lut->scale);
+    __m512 vzero = _mm512_setzero_ps();
+    __m512 v255 = _mm512_set1_ps(255.0f);
+
+    for (; idx_d <= total_lut_d - 16; idx_d += 16)
+    {
+        __m512 f = _mm512_loadu_ps(&d2_float[idx_d]);
+        __m512 scaled = _mm512_mul_ps(f, vscale);
+        scaled = _mm512_max_ps(vzero, _mm512_min_ps(v255, scaled));
+        __m512i i32 = _mm512_cvttps_epi32(scaled);
+        __m128i u8 = _mm512_cvtepi32_epi8(i32);
+        _mm_storeu_si128((__m128i *)&lut->lut_u8[idx_d], u8);
+    }
+
+    for (; idx_d < total_lut_d; idx_d++)
+    {
+        float val = d2_float[idx_d] * lut->scale;
+        if (val > 255.0f)
+        {
+            val = 255.0f;
+        }
+        lut->lut_u8[idx_d] = (uint8_t)val;
+    }
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
 /**
  * pq_build_query_lut_float() - Build scaled 8-bit query distance lookup table (LUT).
  * @query:    Active query vector [dim].
@@ -421,6 +670,14 @@ void pq_build_query_lut_float(
     PQLookupTable    *restrict lut,
     double                     cur_tau)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        pq_build_query_lut_float_avx512(query, codebook, lut, cur_tau);
+        return;
+    }
+#endif
+
     int m = codebook->m;
     int d_sub = codebook->d_sub;
     int K = codebook->k_centroids;
@@ -557,6 +814,14 @@ void pq_build_query_lut_double(
     PQLookupTable    *restrict lut,
     double                     cur_tau)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+    {
+        pq_build_query_lut_double_avx512(query, codebook, lut, cur_tau);
+        return;
+    }
+#endif
+
     int m = codebook->m;
     int d_sub = codebook->d_sub;
     int K = codebook->k_centroids;

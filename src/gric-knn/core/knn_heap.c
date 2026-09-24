@@ -10,6 +10,7 @@
 
 #include "knn_heap.h"
 #include "gric_compat.h"
+#include "gric_simd.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -18,6 +19,133 @@
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <immintrin.h>
 #endif
+
+#if GRIC_HAVE_AVX512_TARGET
+/**
+ * simd_bitonic_cas_avx512() - Conditional compare-and-swap of 16 distance and ID lanes
+ * @dist_a: Pointer to first distance vector.
+ * @dist_b: Pointer to second distance vector.
+ * @id_a:   Pointer to first ID vector.
+ * @id_b:   Pointer to second ID vector.
+ *
+ * Compares two 16-element floating-point distance registers (dist_a and dist_b).
+ * Computes element-wise minimum into dist_a and element-wise maximum into dist_b.
+ * Permutes corresponding integer neighbor IDs (id_a and id_b) using the exact same
+ * comparison bitmask, maintaining invariant mapping between candidates and distances.
+ */
+GRIC_TARGET_AVX512
+static inline void simd_bitonic_cas_avx512(
+    __m512  *restrict dist_a,
+    __m512  *restrict dist_b,
+    __m512i *restrict id_a,
+    __m512i *restrict id_b)
+{
+    __m512 da = *dist_a;
+    __m512 db = *dist_b;
+
+    __mmask16 cmp = _mm512_cmp_ps_mask(da, db, _CMP_GT_OQ);
+    __m512 min_d = _mm512_mask_blend_ps(cmp, da, db);
+    __m512 max_d = _mm512_mask_blend_ps(cmp, db, da);
+
+    __m512i ia = *id_a;
+    __m512i ib = *id_b;
+    __m512i min_i = _mm512_mask_blend_epi32(cmp, ia, ib);
+    __m512i max_i = _mm512_mask_blend_epi32(cmp, ib, ia);
+
+    *dist_a = min_d;
+    *dist_b = max_d;
+    *id_a = min_i;
+    *id_b = max_i;
+}
+
+/**
+ * knn_heap_contains_avx512() - Check if a frame_id is in heap using AVX-512.
+ * @heap:     Pointer to the KnnMaxHeap structure.
+ * @frame_id: Frame index to look for.
+ *
+ * Return: 1 if present, 0 otherwise.
+ */
+GRIC_TARGET_AVX512
+static inline int knn_heap_contains_avx512(
+    const KnnMaxHeap *heap,
+    int               frame_id)
+{
+    __m512i v_id = _mm512_set1_epi32(frame_id);
+    const __m512i *ids = (const __m512i *)heap->simd_id;
+    int num_regs = heap->capacity / 16;
+    __mmask16 match = 0;
+
+    for (int r = 0; r < num_regs; r++)
+    {
+        match |= _mm512_cmpeq_epi32_mask(_mm512_loadu_si512(&ids[r]), v_id);
+    }
+
+    return (match != 0);
+}
+
+/**
+ * knn_heap_push_simd_avx512() - Insert neighbor candidate using AVX-512.
+ * @heap:     Pointer to the KnnMaxHeap structure.
+ * @frame_id: Candidate frame index.
+ * @fdist:    Computed candidate distance as float.
+ *
+ * Return: 1 on successful insertion, 0 if rejected or duplicate.
+ */
+GRIC_TARGET_AVX512
+static inline int knn_heap_push_simd_avx512(
+    KnnMaxHeap *heap,
+    int         frame_id,
+    float       fdist)
+{
+    __m512i v_id = _mm512_set1_epi32(frame_id);
+    const __m512i *ids = (const __m512i *)heap->simd_id;
+    int num_regs = heap->capacity / 16;
+    __mmask16 match = 0;
+
+    for (int r = 0; r < num_regs; r++)
+    {
+        match |= _mm512_cmpeq_epi32_mask(_mm512_loadu_si512(&ids[r]), v_id);
+    }
+
+    if (match != 0)
+    {
+        return 0;
+    }
+
+    __m512 vd = _mm512_set1_ps(fdist);
+    const __m512 *dists = (const __m512 *)heap->simd_dist;
+    uint64_t full_mask = 0;
+
+    for (int r = 0; r < num_regs; r++)
+    {
+        __mmask16 cmp = _mm512_cmp_ps_mask(vd, _mm512_loadu_ps(&dists[r]), _CMP_LT_OQ);
+        full_mask |= ((uint64_t)cmp << (r * 16));
+    }
+
+    int pos = full_mask ? gric_ctz64(full_mask) : (heap->capacity - 1);
+
+    if (pos >= heap->k && heap->count >= heap->k)
+    {
+        return 0;
+    }
+
+    int cap = heap->capacity;
+    memmove(&heap->simd_dist[pos + 1], &heap->simd_dist[pos],
+            (size_t)(cap - 1 - pos) * sizeof(float));
+    memmove(&heap->simd_id[pos + 1], &heap->simd_id[pos],
+            (size_t)(cap - 1 - pos) * sizeof(int32_t));
+
+    heap->simd_dist[pos] = fdist;
+    heap->simd_id[pos] = frame_id;
+
+    if (heap->count < heap->k)
+    {
+        heap->count++;
+    }
+    heap->tau = heap->simd_dist[heap->k - 1];
+    return 1;
+}
+#endif // GRIC_HAVE_AVX512_TARGET
 
 #if defined(__AVX2__)
 /**
@@ -189,6 +317,12 @@ int knn_heap_contains(
 
     if (heap->capacity > 0)
     {
+#if GRIC_HAVE_AVX512_TARGET
+        if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+        {
+            return knn_heap_contains_avx512(heap, frame_id);
+        }
+#endif
 #if defined(__AVX2__)
         __m256i v_id = _mm256_set1_epi32(frame_id);
         __m256i match = _mm256_setzero_si256();
@@ -258,6 +392,13 @@ void knn_heap_push(
             return;
         }
 
+#if GRIC_HAVE_AVX512_TARGET
+        if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+        {
+            knn_heap_push_simd_avx512(heap, frame_id, fdist);
+            return;
+        }
+#endif
 #if defined(__AVX2__)
         __m256i v_id = _mm256_set1_epi32(frame_id);
         __m256i match = _mm256_setzero_si256();

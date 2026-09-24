@@ -46,6 +46,90 @@ void sq8_init_params(
     params->err_radius = sqrtf((float)dim) * params->scale * 0.5f;
 }
 
+#if GRIC_HAVE_AVX512_TARGET
+/**
+ * find_min_max_float_avx512() - Min/max scan across a float array using AVX-512.
+ * @data:         Input float array.
+ * @num_elements: Number of elements in array.
+ * @out_min:      Pointer to receive minimum value.
+ * @out_max:      Pointer to receive maximum value.
+ */
+GRIC_TARGET_AVX512
+static inline void find_min_max_float_avx512(
+    const float *data,
+    long         num_elements,
+    float       *out_min,
+    float       *out_max)
+{
+    __m512 vmin = _mm512_loadu_ps(data);
+    __m512 vmax = vmin;
+    long i = 16;
+    for (; i <= num_elements - 16; i += 16)
+    {
+        __m512 v = _mm512_loadu_ps(&data[i]);
+        vmin = _mm512_min_ps(vmin, v);
+        vmax = _mm512_max_ps(vmax, v);
+    }
+    float min_v = _mm512_reduce_min_ps(vmin);
+    float max_v = _mm512_reduce_max_ps(vmax);
+    for (; i < num_elements; i++)
+    {
+        float val = data[i];
+        if (val < min_v)
+        {
+            min_v = val;
+        }
+        if (val > max_v)
+        {
+            max_v = val;
+        }
+    }
+    *out_min = min_v;
+    *out_max = max_v;
+}
+
+/**
+ * find_min_max_double_avx512() - Min/max scan across a double array using AVX-512.
+ * @data:         Input double array.
+ * @num_elements: Number of elements in array.
+ * @out_min:      Pointer to receive minimum value.
+ * @out_max:      Pointer to receive maximum value.
+ */
+GRIC_TARGET_AVX512
+static inline void find_min_max_double_avx512(
+    const double *data,
+    long          num_elements,
+    double       *out_min,
+    double       *out_max)
+{
+    __m512d vmin = _mm512_loadu_pd(data);
+    __m512d vmax = vmin;
+    long i = 8;
+    for (; i <= num_elements - 8; i += 8)
+    {
+        __m512d v = _mm512_loadu_pd(&data[i]);
+        vmin = _mm512_min_pd(vmin, v);
+        vmax = _mm512_max_pd(vmax, v);
+    }
+    double min_v = _mm512_reduce_min_pd(vmin);
+    double max_v = _mm512_reduce_max_pd(vmax);
+    for (; i < num_elements; i++)
+    {
+        double val = data[i];
+        if (val < min_v)
+        {
+            min_v = val;
+        }
+        if (val > max_v)
+        {
+            max_v = val;
+        }
+    }
+    *out_min = min_v;
+    *out_max = max_v;
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
 /**
  * find_min_max_float() - Vectorized min/max scan across a float array using AVX.
  * @data:         Input float array.
@@ -59,6 +143,13 @@ static inline void find_min_max_float(
     float       *out_min,
     float       *out_max)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && num_elements >= 16)
+    {
+        find_min_max_float_avx512(data, num_elements, out_min, out_max);
+        return;
+    }
+#endif
     float min_v = data[0];
     float max_v = data[0];
     long i = 0;
@@ -122,6 +213,13 @@ static inline void find_min_max_double(
     double       *out_min,
     double       *out_max)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && num_elements >= 8)
+    {
+        find_min_max_double_avx512(data, num_elements, out_min, out_max);
+        return;
+    }
+#endif
     double min_v = data[0];
     double max_v = data[0];
     long i = 0;
@@ -218,6 +316,117 @@ void sq8_calibrate_double(
     sq8_init_params(params, (float)min_v, (float)max_v, dim);
 }
 
+#if GRIC_HAVE_AVX512_TARGET
+/**
+ * sq8_quantize_float_avx512() - Quantize single-precision frame to uint8 using AVX-512.
+ * @src:    Pointer to source float vector [dim].
+ * @dst:    Pointer to destination uint8 vector [dim].
+ * @params: Pointer to initialized SQ8Params.
+ */
+GRIC_TARGET_AVX512
+static void sq8_quantize_float_avx512(
+    const float     *restrict src,
+    uint8_t         *restrict dst,
+    const SQ8Params *restrict params)
+{
+    long dim = params->dim;
+    float min_val = params->min_val;
+    float inv_scale = params->inv_scale;
+    long i = 0;
+
+    __m512 v_min = _mm512_set1_ps(min_val);
+    __m512 v_inv = _mm512_set1_ps(inv_scale);
+    __m512 v_half = _mm512_set1_ps(0.5f);
+    __m512 v_zero = _mm512_setzero_ps();
+    __m512 v_max = _mm512_set1_ps(255.0f);
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m512 in_vec = _mm512_loadu_ps(&src[i]);
+        __m512 norm = _mm512_mul_ps(_mm512_sub_ps(in_vec, v_min), v_inv);
+        norm = _mm512_add_ps(norm, v_half);
+        norm = _mm512_max_ps(v_zero, _mm512_min_ps(norm, v_max));
+        __m512i i32 = _mm512_cvttps_epi32(norm);
+
+        __m128i u8 = _mm512_cvtepi32_epi8(i32);
+        _mm_storeu_si128((__m128i *)(dst + i), u8);
+    }
+
+    for (; i < dim; i++)
+    {
+        float val = (src[i] - min_val) * inv_scale + 0.5f;
+        if (val < 0.0f)
+        {
+            val = 0.0f;
+        }
+        else if (val > 255.0f)
+        {
+            val = 255.0f;
+        }
+        dst[i] = (uint8_t)val;
+    }
+}
+
+/**
+ * sq8_quantize_double_avx512() - Quantize double-precision frame to uint8 using AVX-512.
+ * @src:    Pointer to source double vector [dim].
+ * @dst:    Pointer to destination uint8 vector [dim].
+ * @params: Pointer to initialized SQ8Params.
+ */
+GRIC_TARGET_AVX512
+static void sq8_quantize_double_avx512(
+    const double    *restrict src,
+    uint8_t         *restrict dst,
+    const SQ8Params *restrict params)
+{
+    long dim = params->dim;
+    double min_val = (double)params->min_val;
+    double inv_scale = (double)params->inv_scale;
+    long i = 0;
+
+    __m512d v_min = _mm512_set1_pd(min_val);
+    __m512d v_inv = _mm512_set1_pd(inv_scale);
+    __m512d v_half = _mm512_set1_pd(0.5);
+    __m512d v_zero = _mm512_setzero_pd();
+    __m512d v_max = _mm512_set1_pd(255.0);
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m512d d0 = _mm512_loadu_pd(&src[i]);
+        __m512d d1 = _mm512_loadu_pd(&src[i + 8]);
+
+        __m512d n0 = _mm512_mul_pd(_mm512_sub_pd(d0, v_min), v_inv);
+        n0 = _mm512_add_pd(n0, v_half);
+        n0 = _mm512_max_pd(v_zero, _mm512_min_pd(n0, v_max));
+
+        __m512d n1 = _mm512_mul_pd(_mm512_sub_pd(d1, v_min), v_inv);
+        n1 = _mm512_add_pd(n1, v_half);
+        n1 = _mm512_max_pd(v_zero, _mm512_min_pd(n1, v_max));
+
+        __m256i i0 = _mm512_cvttpd_epi32(n0);
+        __m256i i1 = _mm512_cvttpd_epi32(n1);
+
+        __m512i i32 = _mm512_inserti64x4(_mm512_castsi256_si512(i0), i1, 1);
+        __m128i u8 = _mm512_cvtepi32_epi8(i32);
+        _mm_storeu_si128((__m128i *)(dst + i), u8);
+    }
+
+    for (; i < dim; i++)
+    {
+        double val = (src[i] - min_val) * inv_scale + 0.5;
+        if (val < 0.0)
+        {
+            val = 0.0;
+        }
+        else if (val > 255.0)
+        {
+            val = 255.0;
+        }
+        dst[i] = (uint8_t)val;
+    }
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
 /**
  * sq8_quantize_float() - Quantize a single-precision float frame to uint8.
  * @src:    Pointer to source float vector [dim].
@@ -229,6 +438,13 @@ void sq8_quantize_float(
     uint8_t         *restrict dst,
     const SQ8Params *restrict params)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && params->dim >= 16)
+    {
+        sq8_quantize_float_avx512(src, dst, params);
+        return;
+    }
+#endif
     long dim = params->dim;
     float min_val = params->min_val;
     float inv_scale = params->inv_scale;
@@ -288,6 +504,13 @@ void sq8_quantize_double(
     uint8_t         *restrict dst,
     const SQ8Params *restrict params)
 {
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && params->dim >= 16)
+    {
+        sq8_quantize_double_avx512(src, dst, params);
+        return;
+    }
+#endif
     long dim = params->dim;
     double min_val = (double)params->min_val;
     double inv_scale = (double)params->inv_scale;

@@ -67,6 +67,128 @@ void rq8_init_params(
     rq8_init_params_ex(params, rlim, dim, RQ8_LATTICE_CUBIC);
 }
 
+#if GRIC_HAVE_AVX512_TARGET
+/**
+ * rq8_quantize_residual_float_avx512() - Quantize float residual to int8 using AVX-512.
+ * @src:    Pointer to source float vector [dim].
+ * @anchor: Pointer to cluster anchor float vector [dim].
+ * @dst:    Pointer to destination int8_t vector [dim].
+ * @params: Pointer to initialized RQ8Params.
+ */
+GRIC_TARGET_AVX512
+static void rq8_quantize_residual_float_avx512(
+    const float     *restrict src,
+    const float     *restrict anchor,
+    int8_t          *restrict dst,
+    const RQ8Params *restrict params)
+{
+    long dim = params->dim;
+    float inv_scale = params->inv_scale;
+    long i = 0;
+
+    __m512 v_inv = _mm512_set1_ps(inv_scale);
+    __m512 v_half = _mm512_set1_ps(0.5f);
+    __m512 v_nhalf = _mm512_set1_ps(-0.5f);
+    __m512 v_zero = _mm512_setzero_ps();
+    __m512 v_min = _mm512_set1_ps(-127.0f);
+    __m512 v_max = _mm512_set1_ps(127.0f);
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m512 s = _mm512_loadu_ps(&src[i]);
+        __m512 a = _mm512_loadu_ps(&anchor[i]);
+        __m512 res = _mm512_mul_ps(_mm512_sub_ps(s, a), v_inv);
+        __mmask16 ge = _mm512_cmp_ps_mask(res, v_zero, _CMP_GE_OQ);
+        __m512 round_v = _mm512_mask_blend_ps(ge, v_nhalf, v_half);
+        res = _mm512_max_ps(v_min, _mm512_min_ps(_mm512_add_ps(res, round_v), v_max));
+        __m512i i32 = _mm512_cvttps_epi32(res);
+        __m128i p8 = _mm512_cvtepi32_epi8(i32);
+        _mm_storeu_si128((__m128i *)(dst + i), p8);
+    }
+
+    for (; i < dim; i++)
+    {
+        float delta = src[i] - anchor[i];
+        float val = delta * inv_scale;
+        float r_val = (val >= 0.0f) ? (val + 0.5f) : (val - 0.5f);
+        if (r_val < -127.0f)
+        {
+            r_val = -127.0f;
+        }
+        else if (r_val > 127.0f)
+        {
+            r_val = 127.0f;
+        }
+        dst[i] = (int8_t)r_val;
+    }
+}
+
+/**
+ * rq8_quantize_residual_double_avx512() - Quantize double residual to int8 using AVX-512.
+ * @src:    Pointer to source double vector [dim].
+ * @anchor: Pointer to cluster anchor double vector [dim].
+ * @dst:    Pointer to destination int8_t vector [dim].
+ * @params: Pointer to initialized RQ8Params.
+ */
+GRIC_TARGET_AVX512
+static void rq8_quantize_residual_double_avx512(
+    const double    *restrict src,
+    const double    *restrict anchor,
+    int8_t          *restrict dst,
+    const RQ8Params *restrict params)
+{
+    long dim = params->dim;
+    double inv_scale = (double)params->inv_scale;
+    long i = 0;
+
+    __m512d v_inv = _mm512_set1_pd(inv_scale);
+    __m512d v_half = _mm512_set1_pd(0.5);
+    __m512d v_nhalf = _mm512_set1_pd(-0.5);
+    __m512d v_zero = _mm512_setzero_pd();
+    __m512d v_min = _mm512_set1_pd(-127.0);
+    __m512d v_max = _mm512_set1_pd(127.0);
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m512d s0 = _mm512_loadu_pd(&src[i]);
+        __m512d a0 = _mm512_loadu_pd(&anchor[i]);
+        __m512d res0 = _mm512_mul_pd(_mm512_sub_pd(s0, a0), v_inv);
+        __mmask8 ge0 = _mm512_cmp_pd_mask(res0, v_zero, _CMP_GE_OQ);
+        __m512d round0 = _mm512_mask_blend_pd(ge0, v_nhalf, v_half);
+        res0 = _mm512_max_pd(v_min, _mm512_min_pd(_mm512_add_pd(res0, round0), v_max));
+        __m256i i32_0 = _mm512_cvttpd_epi32(res0);
+
+        __m512d s1 = _mm512_loadu_pd(&src[i + 8]);
+        __m512d a1 = _mm512_loadu_pd(&anchor[i + 8]);
+        __m512d res1 = _mm512_mul_pd(_mm512_sub_pd(s1, a1), v_inv);
+        __mmask8 ge1 = _mm512_cmp_pd_mask(res1, v_zero, _CMP_GE_OQ);
+        __m512d round1 = _mm512_mask_blend_pd(ge1, v_nhalf, v_half);
+        res1 = _mm512_max_pd(v_min, _mm512_min_pd(_mm512_add_pd(res1, round1), v_max));
+        __m256i i32_1 = _mm512_cvttpd_epi32(res1);
+
+        __m512i i32 = _mm512_inserti64x4(_mm512_castsi256_si512(i32_0), i32_1, 1);
+        __m128i p8 = _mm512_cvtepi32_epi8(i32);
+        _mm_storeu_si128((__m128i *)(dst + i), p8);
+    }
+
+    for (; i < dim; i++)
+    {
+        double delta = src[i] - anchor[i];
+        double val = delta * inv_scale;
+        double r_val = (val >= 0.0) ? (val + 0.5) : (val - 0.5);
+        if (r_val < -127.0)
+        {
+            r_val = -127.0;
+        }
+        else if (r_val > 127.0)
+        {
+            r_val = 127.0;
+        }
+        dst[i] = (int8_t)r_val;
+    }
+}
+#endif // GRIC_HAVE_AVX512_TARGET
+
 /**
  * rq8_quantize_residual_float() - Quantize a single-precision float residual to int8_t.
  * @src:    Pointer to source float vector [dim].
@@ -130,6 +252,13 @@ void rq8_quantize_residual_float(
         return;
     } // if (params->lattice_mode == RQ8_LATTICE_E8)
 
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 16)
+    {
+        rq8_quantize_residual_float_avx512(src, anchor, dst, params);
+        return;
+    }
+#endif
 #if defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     __m256 v_inv = _mm256_set1_ps(inv_scale);
@@ -251,6 +380,13 @@ void rq8_quantize_residual_double(
         return;
     } // if (params->lattice_mode == RQ8_LATTICE_E8)
 
+#if GRIC_HAVE_AVX512_TARGET
+    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 16)
+    {
+        rq8_quantize_residual_double_avx512(src, anchor, dst, params);
+        return;
+    }
+#endif
 #if defined(__AVX2__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
     __m256d v_inv = _mm256_set1_pd(inv_scale);

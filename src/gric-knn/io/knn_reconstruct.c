@@ -12,6 +12,7 @@
 #include "knn_reader.h"
 #include "cli_colors.h"
 #include "gric_bin_io.h"
+#include "gric_simd.h"
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <immintrin.h>
 #endif
@@ -20,6 +21,69 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#if GRIC_HAVE_AVX512_TARGET
+/**
+ * knn_accum_weighted_frame_avx512() - Accumulate weighted neighbor frame using AVX-512.
+ * @out_d:      Destination output frame buffer [b_dim].
+ * @neighbor_b: Neighbor frame buffer [b_dim].
+ * @w:          Weight multiplier.
+ * @b_dim:      Dimension of the frame.
+ */
+GRIC_TARGET_AVX512
+static void knn_accum_weighted_frame_avx512(
+    float       *restrict out_d,
+    const float *restrict neighbor_b,
+    float                 w,
+    uint64_t              b_dim)
+{
+    uint64_t d = 0;
+    __m512 vw = _mm512_set1_ps(w);
+    for (; d + 15 < b_dim; d += 16)
+    {
+        __m512 vnb = _mm512_loadu_ps(neighbor_b + d);
+        __m512 vout = _mm512_loadu_ps(out_d + d);
+        vout = _mm512_fmadd_ps(vw, vnb, vout);
+        _mm512_storeu_ps(out_d + d, vout);
+    }
+    for (; d < b_dim; d++)
+    {
+        out_d[d] += w * neighbor_b[d];
+    }
+}
+
+/**
+ * knn_calc_dist_sq_avx512() - Compute squared distance between frames using AVX-512.
+ * @out_d:      Output frame buffer [b_dim].
+ * @neighbor_b: Neighbor frame buffer [b_dim].
+ * @b_dim:      Dimension of the frame.
+ *
+ * Return: Sum of squared differences.
+ */
+GRIC_TARGET_AVX512
+static float knn_calc_dist_sq_avx512(
+    const float *restrict out_d,
+    const float *restrict neighbor_b,
+    uint64_t              b_dim)
+{
+    uint64_t d = 0;
+    __m512 vsum = _mm512_setzero_ps();
+    for (; d + 15 < b_dim; d += 16)
+    {
+        __m512 vnb = _mm512_loadu_ps(neighbor_b + d);
+        __m512 vout = _mm512_loadu_ps(out_d + d);
+        __m512 diff = _mm512_sub_ps(vnb, vout);
+        vsum = _mm512_fmadd_ps(diff, diff, vsum);
+    }
+    float dist_sq = _mm512_reduce_add_ps(vsum);
+    for (; d < b_dim; d++)
+    {
+        float diff = neighbor_b[d] - out_d[d];
+        dist_sq += diff * diff;
+    }
+    return dist_sq;
+}
+#endif // GRIC_HAVE_AVX512_TARGET
 
 /**
  * print_usage() - Print command-line usage synopsis for knn_reconstruct
@@ -290,6 +354,13 @@ int main(
             float w = weights[j];
             const float *restrict neighbor_b = data_b + neighbor_idx * b_dim;
 
+#if GRIC_HAVE_AVX512_TARGET
+            if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+            {
+                knn_accum_weighted_frame_avx512(out_D, neighbor_b, w, b_dim);
+                continue;
+            }
+#endif
             uint64_t d = 0;
 #ifdef __AVX2__
             __m256 vw = _mm256_set1_ps(w);
@@ -315,6 +386,14 @@ int main(
             const float *restrict neighbor_b = data_b + neighbor_idx * b_dim;
 
             float dist_sq = 0.0f;
+#if GRIC_HAVE_AVX512_TARGET
+            if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
+            {
+                dist_sq = knn_calc_dist_sq_avx512(out_D, neighbor_b, b_dim);
+                variance += w * dist_sq;
+                continue;
+            }
+#endif
             uint64_t d = 0;
 #ifdef __AVX2__
             __m256 vsum = _mm256_setzero_ps();
