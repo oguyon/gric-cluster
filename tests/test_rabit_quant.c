@@ -75,10 +75,10 @@ static void test_rabitq_fwht_isometry(void)
         RaBitQParams params;
         assert(rabitq_init_params(&params, dim, 1, 9999ULL) == 0);
 
-        float *a = (float *)malloc((size_t)dim * sizeof(float));
-        float *b = (float *)malloc((size_t)dim * sizeof(float));
-        float *rot_a = (float *)malloc((size_t)params.dim_pad * sizeof(float));
-        float *rot_b = (float *)malloc((size_t)params.dim_pad * sizeof(float));
+        float a[1024];
+        float b[1024];
+        float rot_a[1024];
+        float rot_b[1024];
 
         srand((unsigned int)(dim * 17));
         for (long i = 0; i < dim; i++)
@@ -100,10 +100,6 @@ static void test_rabitq_fwht_isometry(void)
         double err_dot = fabs(dot_raw - dot_rot);
         assert(err_dot < 1e-4);
 
-        free(a);
-        free(b);
-        free(rot_a);
-        free(rot_b);
         rabitq_free_params(&params);
     } // for (int d = 0; d < num_dims; d++)
 
@@ -127,10 +123,10 @@ static void test_rabitq_lower_bound_safety(void)
             RaBitQParams params;
             assert(rabitq_init_params(&params, dim, bits, 54321ULL) == 0);
 
-            float *qa = (float *)malloc((size_t)dim * sizeof(float));
-            float *ca = (float *)malloc((size_t)dim * sizeof(float));
-            float *rot_q = (float *)malloc((size_t)params.dim_pad * sizeof(float));
-            uint8_t *codes_c = (uint8_t *)malloc(params.code_bytes_per_vec);
+            float   qa[512];
+            float   ca[512];
+            float   rot_q[512];
+            uint8_t codes_c[256];
             RaBitQMeta meta_c;
 
             srand((unsigned int)(dim * 101 + bits));
@@ -166,10 +162,6 @@ static void test_rabitq_lower_bound_safety(void)
                 }
             } // for (int p = 0; p < pairs_per_case; p++)
 
-            free(qa);
-            free(ca);
-            free(rot_q);
-            free(codes_c);
             rabitq_free_params(&params);
         } // for (int di = 0; di < 4; di++)
     } // for (int bi = 0; bi < 2; bi++)
@@ -186,8 +178,8 @@ static void test_rabitq_fastscan_simd(void)
     RaBitQParams params;
     assert(rabitq_init_params(&params, dim, 1, 88888ULL) == 0);
 
-    float *q = (float *)malloc((size_t)dim * sizeof(float));
-    float *rot_q = (float *)malloc((size_t)params.dim_pad * sizeof(float));
+    float q[256];
+    float rot_q[256];
     for (long i = 0; i < dim; i++)
     {
         q[i] = ((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f;
@@ -208,7 +200,8 @@ static void test_rabitq_fastscan_simd(void)
     // Prepare 32 candidates
     RaBitQMeta meta_32[32];
     int num_nibbles = q_lut.num_nibbles;
-    uint8_t *block_codes = (uint8_t *)calloc((size_t)num_nibbles * 16, 1);
+    uint8_t block_codes[1024 * 16];
+    memset(block_codes, 0, (size_t)num_nibbles * 16);
 
     for (int c = 0; c < 32; c++)
     {
@@ -240,16 +233,43 @@ static void test_rabitq_fastscan_simd(void)
     double tau_cutoff = 10.0;
     uint32_t mask = rabitq_fastscan_32x(&q_lut, block_codes, meta_32, tau_cutoff, 0.0);
 
-    // Verify each candidate bit against individual lower bound
-    for (int c = 0; c < 32; c++)
+    // Compute reference scalar mask
+    int32_t scalar_acc[32] = {0};
+    for (int nb = 0; nb < num_nibbles; nb++)
     {
-        int passed = (mask >> c) & 1;
-        assert(passed == 1 || passed == 0);
+        const int8_t *cur_lut = &q_lut.lut_i8[nb * 16];
+        const uint8_t *cur_codes = &block_codes[nb * 16];
+        for (int c = 0; c < 16; c++)
+        {
+            uint8_t byte_val = cur_codes[c];
+            uint8_t pat_lo = byte_val & 0x0F;
+            uint8_t pat_hi = (byte_val >> 4) & 0x0F;
+            scalar_acc[c] += (int32_t)cur_lut[pat_lo];
+            scalar_acc[c + 16] += (int32_t)cur_lut[pat_hi];
+        }
     }
 
-    free(q);
-    free(rot_q);
-    free(block_codes);
+    double lut_round_err = (double)num_nibbles * 0.5 * (double)q_lut.inv_scale;
+    double q_norm_sq = (double)q_norm * (double)q_norm;
+    double eff_tau_sq = tau_cutoff * tau_cutoff;
+    uint32_t expected_mask = 0;
+    for (int c = 0; c < 32; c++)
+    {
+        double ip_est = (double)scalar_acc[c] * (double)q_lut.inv_scale *
+                        (double)meta_32[c].recon_scale;
+        double max_err = (double)q_norm * (double)meta_32[c].err_norm +
+                         lut_round_err * (double)meta_32[c].recon_scale;
+        double max_ip = ip_est + max_err;
+        double c_norm_sq = (double)meta_32[c].norm * (double)meta_32[c].norm;
+        double d_lb_sq = q_norm_sq + c_norm_sq - (2.0 * max_ip);
+        if (d_lb_sq < 0.0 || d_lb_sq <= eff_tau_sq)
+        {
+            expected_mask |= (1U << c);
+        }
+    }
+
+    assert(mask == expected_mask);
+
     rabitq_free_query_lut(&q_lut);
     rabitq_free_params(&params);
 

@@ -210,6 +210,61 @@ static void test_covering_radius_gain(void)
     }
 }
 
+static void test_e8_find_nearest_root(void)
+{
+    printf("Testing E8 find nearest root vector...\n");
+
+    const float (*roots_f)[8] = e8_get_roots_float();
+
+    /* 1. Finding nearest root to each root must return the root itself */
+    for (int r = 0; r < E8_NUM_ROOTS; r++)
+    {
+        int   best_idx = -1;
+        float cos_sim = e8_find_nearest_root_float(roots_f[r], &best_idx);
+
+        assert(best_idx == r);
+        assert(fabsf(cos_sim - 1.0f) < 1e-5f);
+
+        /* Double precision */
+        double d_root[8];
+        for (int i = 0; i < 8; i++)
+        {
+            d_root[i] = (double)roots_f[r][i];
+        } // for (int i = 0; i < 8; i++)
+
+        int    best_d_idx = -1;
+        double d_cos_sim = e8_find_nearest_root_double(d_root, &best_d_idx);
+
+        assert(best_d_idx == r);
+        assert(fabs(d_cos_sim - 1.0) < 1e-6);
+    } // for (int r = 0; r < E8_NUM_ROOTS; r++)
+
+    /* 2. Test 1,000 random direction vectors */
+    srand(12345);
+    for (int t = 0; t < 1000; t++)
+    {
+        float  f_dir[8];
+        double d_dir[8];
+        for (int i = 0; i < 8; i++)
+        {
+            f_dir[i] = ((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f;
+            d_dir[i] = (double)f_dir[i];
+        } // for (int i = 0; i < 8; i++)
+
+        int   best_f = -1;
+        float sim_f = e8_find_nearest_root_float(f_dir, &best_f);
+        assert(best_f >= 0 && best_f < E8_NUM_ROOTS);
+        assert(sim_f >= -1.0f && sim_f <= 1.0001f);
+
+        int    best_d = -1;
+        double sim_d = e8_find_nearest_root_double(d_dir, &best_d);
+        assert(best_d == best_f);
+        assert(fabs((double)sim_f - sim_d) < 1e-5);
+    } // for (int t = 0; t < 1000; t++)
+
+    printf("  Nearest root search validated on all 240 roots and 1000 random vectors.\n");
+}
+
 int main(void)
 {
     printf("========================================\n");
@@ -219,6 +274,7 @@ int main(void)
     test_e8_roots();
     test_conway_sloane_quantizer();
     test_covering_radius_gain();
+    test_e8_find_nearest_root();
 
     printf("\nAll E8 lattice unit tests passed successfully!\n");
     return 0;

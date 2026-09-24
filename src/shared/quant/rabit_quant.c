@@ -662,10 +662,12 @@ uint32_t rabitq_fastscan_32x(
     memset(accum, 0, sizeof(accum));
 
 #if defined(__AVX2__) && !defined(__CUDACC__)
-    __m256i v_acc0 = _mm256_setzero_si256();
-    __m256i v_acc1 = _mm256_setzero_si256();
-    __m256i v_acc2 = _mm256_setzero_si256();
-    __m256i v_acc3 = _mm256_setzero_si256();
+    __m256i v_acc_lo = _mm256_setzero_si256();
+    __m256i v_acc_hi = _mm256_setzero_si256();
+    __m256i v_acc32_0 = _mm256_setzero_si256();
+    __m256i v_acc32_1 = _mm256_setzero_si256();
+    __m256i v_acc32_2 = _mm256_setzero_si256();
+    __m256i v_acc32_3 = _mm256_setzero_si256();
     const __m256i low_mask = _mm256_set1_epi8(0x0F);
 
     for (int nb = 0; nb < num_nibbles; nb++)
@@ -683,21 +685,48 @@ uint32_t rabitq_fastscan_32x(
         __m256i res_lo = _mm256_shuffle_epi8(v_lut, cand_lo);
         __m256i res_hi = _mm256_shuffle_epi8(v_lut, cand_hi);
 
-        __m256i r0 = _mm256_cvtepi8_epi32(_mm256_castsi256_si128(res_lo));
-        __m256i r1 = _mm256_cvtepi8_epi32(_mm256_extracti128_si256(res_lo, 1));
-        __m256i r2 = _mm256_cvtepi8_epi32(_mm256_castsi256_si128(res_hi));
-        __m256i r3 = _mm256_cvtepi8_epi32(_mm256_extracti128_si256(res_hi, 1));
+        __m256i w_lo = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(res_lo));
+        __m256i w_hi = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(res_hi));
 
-        v_acc0 = _mm256_add_epi32(v_acc0, r0);
-        v_acc1 = _mm256_add_epi32(v_acc1, r1);
-        v_acc2 = _mm256_add_epi32(v_acc2, r2);
-        v_acc3 = _mm256_add_epi32(v_acc3, r3);
+        v_acc_lo = _mm256_add_epi16(v_acc_lo, w_lo);
+        v_acc_hi = _mm256_add_epi16(v_acc_hi, w_hi);
+
+        if ((nb & 127) == 127 && nb + 1 < num_nibbles)
+        {
+            v_acc32_0 = _mm256_add_epi32(
+                v_acc32_0, _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v_acc_lo))
+            );
+            v_acc32_1 = _mm256_add_epi32(
+                v_acc32_1, _mm256_cvtepi16_epi32(_mm256_extracti128_si256(v_acc_lo, 1))
+            );
+            v_acc32_2 = _mm256_add_epi32(
+                v_acc32_2, _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v_acc_hi))
+            );
+            v_acc32_3 = _mm256_add_epi32(
+                v_acc32_3, _mm256_cvtepi16_epi32(_mm256_extracti128_si256(v_acc_hi, 1))
+            );
+            v_acc_lo = _mm256_setzero_si256();
+            v_acc_hi = _mm256_setzero_si256();
+        }
     } // for (int nb = 0; nb < num_nibbles; nb++)
 
-    _mm256_storeu_si256((__m256i *)&accum[0], v_acc0);
-    _mm256_storeu_si256((__m256i *)&accum[8], v_acc1);
-    _mm256_storeu_si256((__m256i *)&accum[16], v_acc2);
-    _mm256_storeu_si256((__m256i *)&accum[24], v_acc3);
+    v_acc32_0 = _mm256_add_epi32(
+        v_acc32_0, _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v_acc_lo))
+    );
+    v_acc32_1 = _mm256_add_epi32(
+        v_acc32_1, _mm256_cvtepi16_epi32(_mm256_extracti128_si256(v_acc_lo, 1))
+    );
+    v_acc32_2 = _mm256_add_epi32(
+        v_acc32_2, _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v_acc_hi))
+    );
+    v_acc32_3 = _mm256_add_epi32(
+        v_acc32_3, _mm256_cvtepi16_epi32(_mm256_extracti128_si256(v_acc_hi, 1))
+    );
+
+    _mm256_storeu_si256((__m256i *)&accum[0], v_acc32_0);
+    _mm256_storeu_si256((__m256i *)&accum[8], v_acc32_1);
+    _mm256_storeu_si256((__m256i *)&accum[16], v_acc32_2);
+    _mm256_storeu_si256((__m256i *)&accum[24], v_acc32_3);
 #else
     for (int nb = 0; nb < num_nibbles; nb++)
     {
