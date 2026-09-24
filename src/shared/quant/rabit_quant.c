@@ -684,27 +684,92 @@ double rabitq_compute_lower_bound(
     int bits = params->bits;
     float dot_accum = 0.0f;
 
+    static const float sign_tab[2] = {-1.0f, 1.0f};
+    static const float level_tab[4] = {-1.0f, 1.0f, -3.0f, 3.0f};
+
     if (bits == 1)
     {
-        for (long i = 0; i < dim_pad; i++)
+        long num_bytes = dim_pad >> 3;
+        long q_idx = 0;
+        for (long b = 0; b < num_bytes; b++)
+        {
+            uint8_t byte = cand_codes[b];
+            dot_accum += rotated_query[q_idx + 0] * sign_tab[(byte >> 0) & 1];
+            dot_accum += rotated_query[q_idx + 1] * sign_tab[(byte >> 1) & 1];
+            dot_accum += rotated_query[q_idx + 2] * sign_tab[(byte >> 2) & 1];
+            dot_accum += rotated_query[q_idx + 3] * sign_tab[(byte >> 3) & 1];
+            dot_accum += rotated_query[q_idx + 4] * sign_tab[(byte >> 4) & 1];
+            dot_accum += rotated_query[q_idx + 5] * sign_tab[(byte >> 5) & 1];
+            dot_accum += rotated_query[q_idx + 6] * sign_tab[(byte >> 6) & 1];
+            dot_accum += rotated_query[q_idx + 7] * sign_tab[(byte >> 7) & 1];
+            q_idx += 8;
+        }
+        for (long i = q_idx; i < dim_pad; i++)
         {
             uint8_t b = (cand_codes[i >> 3] >> (i & 7)) & 1;
-            float sign = b ? 1.0f : -1.0f;
-            dot_accum += rotated_query[i] * sign;
+            dot_accum += rotated_query[i] * sign_tab[b];
         }
     }
     else
     {
-        for (long i = 0; i < dim_pad; i++)
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+        long num_blocks = dim_pad >> 3;
+        __m256 sum_vec = _mm256_setzero_ps();
+        long q_idx = 0;
+
+        for (long blk = 0; blk < num_blocks; blk++)
+        {
+            uint8_t byte0 = cand_codes[blk * 2 + 0];
+            uint8_t byte1 = cand_codes[blk * 2 + 1];
+
+            __m256 q = _mm256_loadu_ps(&rotated_query[q_idx]);
+            __m256 lvl = _mm256_set_ps(
+                level_tab[(byte1 >> 6) & 3],
+                level_tab[(byte1 >> 4) & 3],
+                level_tab[(byte1 >> 2) & 3],
+                level_tab[byte1 & 3],
+                level_tab[(byte0 >> 6) & 3],
+                level_tab[(byte0 >> 4) & 3],
+                level_tab[(byte0 >> 2) & 3],
+                level_tab[byte0 & 3]);
+            sum_vec = _mm256_fmadd_ps(q, lvl, sum_vec);
+            q_idx += 8;
+        }
+
+        __m128 lo = _mm256_castps256_ps128(sum_vec);
+        __m128 hi = _mm256_extractf128_ps(sum_vec, 1);
+        __m128 sum128 = _mm_add_ps(lo, hi);
+        sum128 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
+        sum128 = _mm_add_ss(sum128, _mm_shuffle_ps(sum128, sum128, 1));
+        dot_accum = _mm_cvtss_f32(sum128);
+
+        for (long i = q_idx; i < dim_pad; i++)
         {
             long byte_idx = i >> 2;
             long shift = (i & 3) << 1;
             uint8_t c2 = (cand_codes[byte_idx] >> shift) & 3;
-            uint8_t sign_bit = c2 & 1;
-            uint8_t mag_bit = (c2 >> 1) & 1;
-            float level = (mag_bit ? 3.0f : 1.0f) * (sign_bit ? 1.0f : -1.0f);
-            dot_accum += rotated_query[i] * level;
+            dot_accum += rotated_query[i] * level_tab[c2];
         }
+#else
+        long num_bytes = dim_pad >> 2;
+        long q_idx = 0;
+        for (long b = 0; b < num_bytes; b++)
+        {
+            uint8_t byte = cand_codes[b];
+            dot_accum += rotated_query[q_idx + 0] * level_tab[byte & 3];
+            dot_accum += rotated_query[q_idx + 1] * level_tab[(byte >> 2) & 3];
+            dot_accum += rotated_query[q_idx + 2] * level_tab[(byte >> 4) & 3];
+            dot_accum += rotated_query[q_idx + 3] * level_tab[(byte >> 6) & 3];
+            q_idx += 4;
+        }
+        for (long i = q_idx; i < dim_pad; i++)
+        {
+            long byte_idx = i >> 2;
+            long shift = (i & 3) << 1;
+            uint8_t c2 = (cand_codes[byte_idx] >> shift) & 3;
+            dot_accum += rotated_query[i] * level_tab[c2];
+        }
+#endif
     }
 
     double ip_est = (double)dot_accum * (double)cand_meta->recon_scale;

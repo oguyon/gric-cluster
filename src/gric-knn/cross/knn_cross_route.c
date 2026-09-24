@@ -65,28 +65,31 @@ void knn_cross_seed_frontier(
         sorted_eval_clusters[e] = loc_res->evaluated_clusters[e];
         sorted_eval_dists[e] = loc_res->evaluated_dists[e];
     }
-    for (int i = 0; i < num_eval - 1; i++)
-    {
-        for (int j = i + 1; j < num_eval; j++)
-        {
-            if (sorted_eval_dists[j] < sorted_eval_dists[i])
-            {
-                double tmp_d = sorted_eval_dists[i];
-                sorted_eval_dists[i] = sorted_eval_dists[j];
-                sorted_eval_dists[j] = tmp_d;
-                int tmp_c = sorted_eval_clusters[i];
-                sorted_eval_clusters[i] = sorted_eval_clusters[j];
-                sorted_eval_clusters[j] = tmp_c;
-            }
-        }
-    }
-
     int M = model->num_clusters;
     long frame_elem = model->frame_elements;
 
     int max_frontier_seeds = (config->approx_mode) ? 2 : 8;
     for (int e = 0; e < num_eval && *frontier_count < max_frontier_seeds; e++)
     {
+        /* Partial selection sort: locate smallest remaining element and swap once */
+        int min_idx = e;
+        for (int j = e + 1; j < num_eval; j++)
+        {
+            if (sorted_eval_dists[j] < sorted_eval_dists[min_idx])
+            {
+                min_idx = j;
+            }
+        }
+        if (min_idx != e)
+        {
+            double tmp_d = sorted_eval_dists[e];
+            sorted_eval_dists[e] = sorted_eval_dists[min_idx];
+            sorted_eval_dists[min_idx] = tmp_d;
+            int tmp_c = sorted_eval_clusters[e];
+            sorted_eval_clusters[e] = sorted_eval_clusters[min_idx];
+            sorted_eval_clusters[min_idx] = tmp_c;
+        }
+
         int anc_c = sorted_eval_clusters[e];
         if (anc_c >= 0 && anc_c < M && anc_c != best_c)
         {
