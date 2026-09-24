@@ -220,6 +220,88 @@ static uint64_t eq16_dist_squared_i16_avx2(
 
     return total;
 }
+
+/**
+ * eq16_dist_squared_i16_avx_vnni() - Hardware AVX-VNNI squared distance between int16 vectors.
+ * @a:   First quantized coordinate vector [dim].
+ * @b:   Second quantized coordinate vector [dim].
+ * @dim: Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Leverages hardware AVX-VNNI vpdpwssd to fuse two 16-element difference squares into 32-bit
+ * accumulators without intermediate 64-bit widening, cutting widening operations by 50%.
+ *
+ * Return: Squared integer Euclidean distance.
+ */
+GRIC_TARGET_AVX_VNNI
+static uint64_t eq16_dist_squared_i16_avx_vnni(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim)
+{
+    long i = 0;
+    uint64_t total = 0;
+    __m256i sum_lo = _mm256_setzero_si256();
+    __m256i sum_hi = _mm256_setzero_si256();
+    __m256i ovf_acc = _mm256_setzero_si256();
+
+    for (; i <= dim - 32; i += 32)
+    {
+        __m256i va0 = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+        __m256i vb0 = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+        __m256i d0 = _mm256_sub_epi16(va0, vb0);
+        __m256i s0 = _mm256_subs_epi16(va0, vb0);
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d0, s0));
+
+        __m256i acc = _mm256_dpwssd_epi32(_mm256_setzero_si256(), d0, d0);
+
+        __m256i va1 = _mm256_loadu_si256((const __m256i *)(const void *)(a + i + 16));
+        __m256i vb1 = _mm256_loadu_si256((const __m256i *)(const void *)(b + i + 16));
+        __m256i d1 = _mm256_sub_epi16(va1, vb1);
+        __m256i s1 = _mm256_subs_epi16(va1, vb1);
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d1, s1));
+
+        acc = _mm256_dpwssd_epi32(acc, d1, d1);
+
+        sum_lo = _mm256_add_epi64(sum_lo, _mm256_cvtepu32_epi64(_mm256_castsi256_si128(acc)));
+        sum_hi = _mm256_add_epi64(sum_hi,
+                                   _mm256_cvtepu32_epi64(_mm256_extracti128_si256(acc, 1)));
+    } // for (; i <= dim - 32; i += 32)
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+        __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+        __m256i d = _mm256_sub_epi16(va, vb);
+        __m256i s = _mm256_subs_epi16(va, vb);
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d, s));
+
+        __m256i acc = _mm256_dpwssd_epi32(_mm256_setzero_si256(), d, d);
+        sum_lo = _mm256_add_epi64(sum_lo, _mm256_cvtepu32_epi64(_mm256_castsi256_si128(acc)));
+        sum_hi = _mm256_add_epi64(sum_hi,
+                                   _mm256_cvtepu32_epi64(_mm256_extracti128_si256(acc, 1)));
+    } // for (; i <= dim - 16; i += 16)
+
+    if (!_mm256_testz_si256(ovf_acc, ovf_acc))
+    {
+        return eq16_dist_squared_i16_avx2_exact(a, b, dim);
+    }
+
+    __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
+    __m128i slo = _mm256_castsi256_si128(sum);
+    __m128i shi = _mm256_extracti128_si256(sum, 1);
+    __m128i s128 = _mm_add_epi64(slo, shi);
+    __m128i s64 = _mm_add_epi64(s128, _mm_srli_si128(s128, 8));
+    total = (uint64_t)_mm_cvtsi128_si64(s64);
+
+    for (; i < dim; i++)
+    {
+        int64_t diff = (int64_t)a[i] - (int64_t)b[i];
+        total += (uint64_t)(diff * diff);
+    } // for (; i < dim; i++)
+
+    return total;
+}
 #endif // x86/x64
 
 /**
@@ -247,6 +329,10 @@ uint64_t eq16_dist_squared_i16(
         return eq16_dist_squared_i16_avx512(a, b, dim);
     }
 #endif
+    if (gric_has_avx_vnni() && gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        return eq16_dist_squared_i16_avx_vnni(a, b, dim);
+    }
     if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
     {
         return eq16_dist_squared_i16_avx2(a, b, dim);
@@ -414,9 +500,8 @@ static uint64_t eq16_dist_squared_cutoff_i16_avx2(
             __m128i slo = _mm256_castsi256_si128(sum);
             __m128i shi = _mm256_extracti128_si256(sum, 1);
             __m128i s128 = _mm_add_epi64(slo, shi);
-            uint64_t partial = (uint64_t)_mm_cvtsi128_si64(s128) +
-                               (uint64_t)_mm_extract_epi64(s128, 1);
-            if (partial > ssd_cutoff)
+            __m128i s64 = _mm_add_epi64(s128, _mm_srli_si128(s128, 8));
+            if ((uint64_t)_mm_cvtsi128_si64(s64) > ssd_cutoff)
             {
                 return ssd_cutoff + 1;
             }
@@ -433,8 +518,111 @@ static uint64_t eq16_dist_squared_cutoff_i16_avx2(
     __m128i slo = _mm256_castsi256_si128(sum);
     __m128i shi = _mm256_extracti128_si256(sum, 1);
     __m128i s128 = _mm_add_epi64(slo, shi);
-    total = (uint64_t)_mm_cvtsi128_si64(s128) +
-            (uint64_t)_mm_extract_epi64(s128, 1);
+    __m128i s64 = _mm_add_epi64(s128, _mm_srli_si128(s128, 8));
+    total = (uint64_t)_mm_cvtsi128_si64(s64);
+    if (total > ssd_cutoff)
+    {
+        return ssd_cutoff + 1;
+    }
+
+    for (; i < dim; i++)
+    {
+        int64_t diff = (int64_t)a[i] - (int64_t)b[i];
+        total += (uint64_t)(diff * diff);
+        if (total > ssd_cutoff)
+        {
+            return ssd_cutoff + 1;
+        }
+    } // for (; i < dim; i++)
+
+    return total;
+}
+
+/**
+ * eq16_dist_squared_cutoff_i16_avx_vnni() - AVX-VNNI distance with early cutoff threshold.
+ * @a:          First quantized vector [dim].
+ * @b:          Second quantized vector [dim].
+ * @dim:        Vector dimensionality.
+ * @ssd_cutoff: Maximum distance squared threshold.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Evaluates 32 coordinate differences per iteration with hardware VNNI dpwssd fusing and
+ * vector horizontal reductions for low-latency threshold checking.
+ *
+ * Return: Computed distance squared, or ssd_cutoff + 1 on early prune.
+ */
+GRIC_TARGET_AVX_VNNI
+static uint64_t eq16_dist_squared_cutoff_i16_avx_vnni(
+    const int16_t *restrict a,
+    const int16_t *restrict b,
+    long                    dim,
+    uint64_t                ssd_cutoff)
+{
+    long i = 0;
+    uint64_t total = 0;
+    __m256i sum_lo = _mm256_setzero_si256();
+    __m256i sum_hi = _mm256_setzero_si256();
+    __m256i ovf_acc = _mm256_setzero_si256();
+
+    for (; i <= dim - 32; i += 32)
+    {
+        __m256i va0 = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+        __m256i vb0 = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+        __m256i d0 = _mm256_sub_epi16(va0, vb0);
+        __m256i s0 = _mm256_subs_epi16(va0, vb0);
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d0, s0));
+
+        __m256i acc = _mm256_dpwssd_epi32(_mm256_setzero_si256(), d0, d0);
+
+        __m256i va1 = _mm256_loadu_si256((const __m256i *)(const void *)(a + i + 16));
+        __m256i vb1 = _mm256_loadu_si256((const __m256i *)(const void *)(b + i + 16));
+        __m256i d1 = _mm256_sub_epi16(va1, vb1);
+        __m256i s1 = _mm256_subs_epi16(va1, vb1);
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d1, s1));
+
+        acc = _mm256_dpwssd_epi32(acc, d1, d1);
+
+        sum_lo = _mm256_add_epi64(sum_lo, _mm256_cvtepu32_epi64(_mm256_castsi256_si128(acc)));
+        sum_hi = _mm256_add_epi64(sum_hi,
+                                   _mm256_cvtepu32_epi64(_mm256_extracti128_si256(acc, 1)));
+
+        __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
+        __m128i slo = _mm256_castsi256_si128(sum);
+        __m128i shi = _mm256_extracti128_si256(sum, 1);
+        __m128i s128 = _mm_add_epi64(slo, shi);
+        __m128i s64 = _mm_add_epi64(s128, _mm_srli_si128(s128, 8));
+        if ((uint64_t)_mm_cvtsi128_si64(s64) > ssd_cutoff)
+        {
+            return ssd_cutoff + 1;
+        }
+    } // for (; i <= dim - 32; i += 32)
+
+    for (; i <= dim - 16; i += 16)
+    {
+        __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
+        __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
+        __m256i d = _mm256_sub_epi16(va, vb);
+        __m256i s = _mm256_subs_epi16(va, vb);
+        ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d, s));
+
+        __m256i acc = _mm256_dpwssd_epi32(_mm256_setzero_si256(), d, d);
+        sum_lo = _mm256_add_epi64(sum_lo, _mm256_cvtepu32_epi64(_mm256_castsi256_si128(acc)));
+        sum_hi = _mm256_add_epi64(sum_hi,
+                                   _mm256_cvtepu32_epi64(_mm256_extracti128_si256(acc, 1)));
+    } // for (; i <= dim - 16; i += 16)
+
+    if (!_mm256_testz_si256(ovf_acc, ovf_acc))
+    {
+        uint64_t full_exact = eq16_dist_squared_i16_avx2_exact(a, b, dim);
+        return (full_exact > ssd_cutoff) ? (ssd_cutoff + 1) : full_exact;
+    }
+
+    __m256i sum = _mm256_add_epi64(sum_lo, sum_hi);
+    __m128i slo = _mm256_castsi256_si128(sum);
+    __m128i shi = _mm256_extracti128_si256(sum, 1);
+    __m128i s128 = _mm_add_epi64(slo, shi);
+    __m128i s64 = _mm_add_epi64(s128, _mm_srli_si128(s128, 8));
+    total = (uint64_t)_mm_cvtsi128_si64(s64);
     if (total > ssd_cutoff)
     {
         return ssd_cutoff + 1;
@@ -481,6 +669,10 @@ uint64_t eq16_dist_squared_cutoff_i16(
         return eq16_dist_squared_cutoff_i16_avx512(a, b, dim, ssd_cutoff);
     }
 #endif
+    if (gric_has_avx_vnni() && gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        return eq16_dist_squared_cutoff_i16_avx_vnni(a, b, dim, ssd_cutoff);
+    }
     if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
     {
         return eq16_dist_squared_cutoff_i16_avx2(a, b, dim, ssd_cutoff);
@@ -2189,19 +2381,19 @@ static void eq16_dist_squared_batch_1x4_i16_avx2(
 
     __m256i s0 = _mm256_add_epi64(sum0_lo, sum0_hi);
     __m128i r0 = _mm_add_epi64(_mm256_castsi256_si128(s0), _mm256_extracti128_si256(s0, 1));
-    out_sq_dists[0] = (uint64_t)_mm_cvtsi128_si64(r0) + (uint64_t)_mm_extract_epi64(r0, 1);
+    out_sq_dists[0] = (uint64_t)_mm_cvtsi128_si64(_mm_add_epi64(r0, _mm_srli_si128(r0, 8)));
 
     __m256i s1 = _mm256_add_epi64(sum1_lo, sum1_hi);
     __m128i r1 = _mm_add_epi64(_mm256_castsi256_si128(s1), _mm256_extracti128_si256(s1, 1));
-    out_sq_dists[1] = (uint64_t)_mm_cvtsi128_si64(r1) + (uint64_t)_mm_extract_epi64(r1, 1);
+    out_sq_dists[1] = (uint64_t)_mm_cvtsi128_si64(_mm_add_epi64(r1, _mm_srli_si128(r1, 8)));
 
     __m256i s2 = _mm256_add_epi64(sum2_lo, sum2_hi);
     __m128i r2 = _mm_add_epi64(_mm256_castsi256_si128(s2), _mm256_extracti128_si256(s2, 1));
-    out_sq_dists[2] = (uint64_t)_mm_cvtsi128_si64(r2) + (uint64_t)_mm_extract_epi64(r2, 1);
+    out_sq_dists[2] = (uint64_t)_mm_cvtsi128_si64(_mm_add_epi64(r2, _mm_srli_si128(r2, 8)));
 
     __m256i s3 = _mm256_add_epi64(sum3_lo, sum3_hi);
     __m128i r3 = _mm_add_epi64(_mm256_castsi256_si128(s3), _mm256_extracti128_si256(s3, 1));
-    out_sq_dists[3] = (uint64_t)_mm_cvtsi128_si64(r3) + (uint64_t)_mm_extract_epi64(r3, 1);
+    out_sq_dists[3] = (uint64_t)_mm_cvtsi128_si64(_mm_add_epi64(r3, _mm_srli_si128(r3, 8)));
 
     for (; i < dim; i++)
     {
@@ -2212,6 +2404,129 @@ static void eq16_dist_squared_batch_1x4_i16_avx2(
             out_sq_dists[k] += (uint64_t)(diff * diff);
         }
     } // for (; i < dim; i++)
+}
+
+/**
+ * eq16_dist_squared_batch_1x4_i16_avx_vnni() - AVX-VNNI batch 1x4 quantized distance.
+ * @q:            Quantized query vector [dim].
+ * @anchors:      Array of 4 pointers to candidate vectors [dim].
+ * @out_sq_dists: Output array [4] populated with computed squared integer distances.
+ * @dim:          Vector dimensionality.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Computes 4 symmetric quantized vector distances using hardware AVX-VNNI instructions.
+ * Evaluates candidates in pairs with 32-element unrolling to eliminate register spills.
+ */
+GRIC_TARGET_AVX_VNNI
+static void eq16_dist_squared_batch_1x4_i16_avx_vnni(
+    const int16_t *restrict        q,
+    const int16_t *const *restrict anchors,
+    uint64_t *restrict             out_sq_dists,
+    long                           dim)
+{
+    __m256i ovf_acc = _mm256_setzero_si256();
+
+    for (int pair = 0; pair < 2; pair++)
+    {
+        const int16_t *a0 = anchors[pair * 2];
+        const int16_t *a1 = anchors[pair * 2 + 1];
+        long i = 0;
+
+        __m256i sum0_lo = _mm256_setzero_si256(), sum0_hi = _mm256_setzero_si256();
+        __m256i sum1_lo = _mm256_setzero_si256(), sum1_hi = _mm256_setzero_si256();
+
+        for (; i <= dim - 32; i += 32)
+        {
+            __m256i vq0 = _mm256_loadu_si256((const __m256i *)(const void *)(q + i));
+            __m256i vq1 = _mm256_loadu_si256((const __m256i *)(const void *)(q + i + 16));
+
+            /* Anchor 0 */
+            __m256i va0_0 = _mm256_loadu_si256((const __m256i *)(const void *)(a0 + i));
+            __m256i va0_1 = _mm256_loadu_si256((const __m256i *)(const void *)(a0 + i + 16));
+            __m256i d0_0 = _mm256_sub_epi16(vq0, va0_0);
+            __m256i d0_1 = _mm256_sub_epi16(vq1, va0_1);
+            ovf_acc = _mm256_or_si256(ovf_acc,
+                                      _mm256_xor_si256(d0_0, _mm256_subs_epi16(vq0, va0_0)));
+            ovf_acc = _mm256_or_si256(ovf_acc,
+                                      _mm256_xor_si256(d0_1, _mm256_subs_epi16(vq1, va0_1)));
+            __m256i acc0 = _mm256_dpwssd_epi32(_mm256_setzero_si256(), d0_0, d0_0);
+            acc0 = _mm256_dpwssd_epi32(acc0, d0_1, d0_1);
+            sum0_lo = _mm256_add_epi64(sum0_lo,
+                                       _mm256_cvtepu32_epi64(_mm256_castsi256_si128(acc0)));
+            sum0_hi = _mm256_add_epi64(sum0_hi,
+                                       _mm256_cvtepu32_epi64(_mm256_extracti128_si256(acc0, 1)));
+
+            /* Anchor 1 */
+            __m256i va1_0 = _mm256_loadu_si256((const __m256i *)(const void *)(a1 + i));
+            __m256i va1_1 = _mm256_loadu_si256((const __m256i *)(const void *)(a1 + i + 16));
+            __m256i d1_0 = _mm256_sub_epi16(vq0, va1_0);
+            __m256i d1_1 = _mm256_sub_epi16(vq1, va1_1);
+            ovf_acc = _mm256_or_si256(ovf_acc,
+                                      _mm256_xor_si256(d1_0, _mm256_subs_epi16(vq0, va1_0)));
+            ovf_acc = _mm256_or_si256(ovf_acc,
+                                      _mm256_xor_si256(d1_1, _mm256_subs_epi16(vq1, va1_1)));
+            __m256i acc1 = _mm256_dpwssd_epi32(_mm256_setzero_si256(), d1_0, d1_0);
+            acc1 = _mm256_dpwssd_epi32(acc1, d1_1, d1_1);
+            sum1_lo = _mm256_add_epi64(sum1_lo,
+                                       _mm256_cvtepu32_epi64(_mm256_castsi256_si128(acc1)));
+            sum1_hi = _mm256_add_epi64(sum1_hi,
+                                       _mm256_cvtepu32_epi64(_mm256_extracti128_si256(acc1, 1)));
+        } // for (; i <= dim - 32; i += 32)
+
+        for (; i <= dim - 16; i += 16)
+        {
+            __m256i vq = _mm256_loadu_si256((const __m256i *)(const void *)(q + i));
+
+            __m256i va0 = _mm256_loadu_si256((const __m256i *)(const void *)(a0 + i));
+            __m256i d0 = _mm256_sub_epi16(vq, va0);
+            ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d0, _mm256_subs_epi16(vq, va0)));
+            __m256i acc0 = _mm256_dpwssd_epi32(_mm256_setzero_si256(), d0, d0);
+            sum0_lo = _mm256_add_epi64(sum0_lo,
+                                       _mm256_cvtepu32_epi64(_mm256_castsi256_si128(acc0)));
+            sum0_hi = _mm256_add_epi64(sum0_hi,
+                                       _mm256_cvtepu32_epi64(_mm256_extracti128_si256(acc0, 1)));
+
+            __m256i va1 = _mm256_loadu_si256((const __m256i *)(const void *)(a1 + i));
+            __m256i d1 = _mm256_sub_epi16(vq, va1);
+            ovf_acc = _mm256_or_si256(ovf_acc, _mm256_xor_si256(d1, _mm256_subs_epi16(vq, va1)));
+            __m256i acc1 = _mm256_dpwssd_epi32(_mm256_setzero_si256(), d1, d1);
+            sum1_lo = _mm256_add_epi64(sum1_lo,
+                                       _mm256_cvtepu32_epi64(_mm256_castsi256_si128(acc1)));
+            sum1_hi = _mm256_add_epi64(sum1_hi,
+                                       _mm256_cvtepu32_epi64(_mm256_extracti128_si256(acc1, 1)));
+        } // for (; i <= dim - 16; i += 16)
+
+        __m256i s0 = _mm256_add_epi64(sum0_lo, sum0_hi);
+        __m128i slo0 = _mm256_castsi256_si128(s0);
+        __m128i shi0 = _mm256_extracti128_si256(s0, 1);
+        __m128i r0 = _mm_add_epi64(slo0, shi0);
+        __m128i r0_red = _mm_add_epi64(r0, _mm_srli_si128(r0, 8));
+        out_sq_dists[pair * 2] = (uint64_t)_mm_cvtsi128_si64(r0_red);
+
+        __m256i s1 = _mm256_add_epi64(sum1_lo, sum1_hi);
+        __m128i slo1 = _mm256_castsi256_si128(s1);
+        __m128i shi1 = _mm256_extracti128_si256(s1, 1);
+        __m128i r1 = _mm_add_epi64(slo1, shi1);
+        __m128i r1_red = _mm_add_epi64(r1, _mm_srli_si128(r1, 8));
+        out_sq_dists[pair * 2 + 1] = (uint64_t)_mm_cvtsi128_si64(r1_red);
+
+        for (; i < dim; i++)
+        {
+            int64_t qv = (int64_t)q[i];
+            int64_t diff0 = qv - (int64_t)a0[i];
+            int64_t diff1 = qv - (int64_t)a1[i];
+            out_sq_dists[pair * 2] += (uint64_t)(diff0 * diff0);
+            out_sq_dists[pair * 2 + 1] += (uint64_t)(diff1 * diff1);
+        } // for (; i < dim; i++)
+    } // for (int pair = 0; pair < 2; pair++)
+
+    if (!_mm256_testz_si256(ovf_acc, ovf_acc))
+    {
+        for (int k = 0; k < 4; k++)
+        {
+            out_sq_dists[k] = eq16_dist_squared_i16_avx2_exact(q, anchors[k], dim);
+        }
+    }
 }
 #endif // x86/x64
 
@@ -2242,6 +2557,11 @@ void eq16_dist_squared_batch_1x4_i16(
         return;
     }
 #endif
+    if (gric_has_avx_vnni() && gric_get_simd_level() >= GRIC_SIMD_AVX2)
+    {
+        eq16_dist_squared_batch_1x4_i16_avx_vnni(q, anchors, out_sq_dists, dim);
+        return;
+    }
     if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
     {
         eq16_dist_squared_batch_1x4_i16_avx2(q, anchors, out_sq_dists, dim);
@@ -2251,7 +2571,3 @@ void eq16_dist_squared_batch_1x4_i16(
 
     eq16_dist_squared_batch_1x4_i16_scalar(q, anchors, out_sq_dists, dim);
 }
-
-/**
- * eq16_batch_filter_candidates() - Bulk filter candidates using EQ16 lower bounds.
- */

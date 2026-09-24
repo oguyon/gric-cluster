@@ -87,11 +87,19 @@ GricSimdLevel gric_get_simd_level(void)
  * gric_set_simd_level() - Programmatically override SIMD capability level.
  * @level: Desired SIMD level (-1 to restore automatic detection).
  */
+static int g_cached_has_avx512_vnni = -1;
+static int g_cached_has_avx_vnni = -1;
+
 void gric_set_simd_level(
     int level)
 {
     g_simd_override = level;
     g_cached_simd_level = level;
+    if (level == -1)
+    {
+        g_cached_has_avx512_vnni = -1;
+        g_cached_has_avx_vnni = -1;
+    }
 }
 
 /**
@@ -128,6 +136,12 @@ const char *gric_simd_level_to_string(
 
 bool gric_has_avx512_vnni(void)
 {
+    if (g_cached_has_avx512_vnni >= 0)
+    {
+        return (bool)g_cached_has_avx512_vnni;
+    }
+
+    bool result = false;
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #if defined(__GNUC__) || defined(__clang__)
     unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
@@ -138,11 +152,12 @@ bool gric_has_avx512_vnni(void)
         bool has_vnni = (ecx & (1u << 11)) != 0;
         bool has_f    = (ebx & (1u << 16)) != 0;
         bool has_bw   = (ebx & (1u << 30)) != 0;
-        return has_vnni && has_f && has_bw;
+        result = has_vnni && has_f && has_bw;
     }
 #endif
 #endif
-    return false;
+    g_cached_has_avx512_vnni = (int)result;
+    return result;
 }
 
 /**
@@ -152,6 +167,20 @@ bool gric_has_avx512_vnni(void)
  */
 bool gric_has_avx_vnni(void)
 {
+    if (g_cached_has_avx_vnni >= 0)
+    {
+        return (bool)g_cached_has_avx_vnni;
+    }
+
+    const char *disable_vnni = getenv("GRIC_DISABLE_AVX_VNNI");
+    if (disable_vnni != NULL && (disable_vnni[0] == '1' || disable_vnni[0] == 'y' ||
+                                 disable_vnni[0] == 'Y'))
+    {
+        g_cached_has_avx_vnni = 0;
+        return false;
+    }
+
+    bool result = false;
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #if defined(__GNUC__) || defined(__clang__)
     unsigned int eax = 0, ebx = 0, ecx = 0, edx = 0;
@@ -159,9 +188,10 @@ bool gric_has_avx_vnni(void)
     if (eax >= 7)
     {
         __cpuid_count(7, 1, eax, ebx, ecx, edx);
-        return (eax & (1u << 4)) != 0;
+        result = (eax & (1u << 4)) != 0;
     }
 #endif
 #endif
-    return false;
+    g_cached_has_avx_vnni = (int)result;
+    return result;
 }
