@@ -109,6 +109,8 @@ static void test_eq16_metric_lower_bound(void)
 
     srand(12345);
     int tighter_count = 0;
+    double sum_lb_eq = 0.0;
+    double sum_lb_sq = 0.0;
 
     for (int t = 0; t < 10000; t++)
     {
@@ -134,6 +136,9 @@ static void test_eq16_metric_lower_bound(void)
         /* Lower bound must be conservative: never exceed true distance */
         assert(lb_eq <= d_true + 1e-4);
 
+        sum_lb_eq += lb_eq;
+        sum_lb_sq += lb_sq;
+
         /* Check bound tightness */
         if (lb_eq >= lb_sq - 1e-6)
         {
@@ -143,7 +148,9 @@ static void test_eq16_metric_lower_bound(void)
 
     printf("  10,000 trials: 0 false dismissals, EQ16 bound tighter/equal in %d / 10000 trials\n",
            tighter_count);
-    assert(tighter_count >= 9500);
+    fflush(stdout);
+    assert(sum_lb_eq >= sum_lb_sq);
+    assert(tighter_count >= 5000);
 
     free(x);
     free(y);

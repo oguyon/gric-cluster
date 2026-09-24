@@ -57,7 +57,7 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ matrix.os }}-${{ matrix.c_compiler }}-${{ matrix.build_type }}-${{ matrix.sanitizer }}
+          key: ${{ matrix.os }}-${{ matrix.c_compiler }}-${{ matrix.build_type }}-${{ matrix.sanitizer }}-v2
 
       - name: Install Dependencies (Ubuntu)
         if: runner.os == 'Linux'
@@ -83,13 +83,20 @@ jobs:
         shell: bash
         run: |
           EXTRA_FLAGS=()
-          if [ "${{ matrix.sanitizer }}" = "true" ]; then
-            EXTRA_FLAGS+=(
-              "-DCMAKE_C_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
-              "-DCMAKE_CXX_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
-              "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
-              "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined"
-            )
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            if [ "${{ matrix.sanitizer }}" = "true" ]; then
+              EXTRA_FLAGS+=(
+                "-DCMAKE_C_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
+                "-DCMAKE_CXX_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
+                "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
+                "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined"
+              )
+            else
+              EXTRA_FLAGS+=(
+                "-DCMAKE_C_FLAGS_RELEASE=-O3 -mavx2 -mfma -funroll-loops -g"
+                "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -mavx2 -mfma -funroll-loops -g"
+              )
+            fi
           fi
           cmake -B "${{ steps.strings.outputs.build-output-dir }}" \
             -DCMAKE_CXX_COMPILER="${{ matrix.cpp_compiler }}" \
