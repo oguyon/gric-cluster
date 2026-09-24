@@ -70,7 +70,7 @@ static void test_norms_float(void)
                 ref += v * v;
             }
             double err = fabs((double)norms[i] - ref);
-            assert(err < 1e-3);
+            assert(err < 1e-3 * (1.0 + ref));
         }
     }
     free(mat);

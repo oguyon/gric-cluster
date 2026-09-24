@@ -30,8 +30,6 @@
 #include <time.h>
 #include <unistd.h>
 
-volatile sig_atomic_t stop_requested = 0;
-
 void handle_sigint(int sig)
 {
     (void)sig;

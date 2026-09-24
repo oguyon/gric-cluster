@@ -202,6 +202,7 @@ static void test_rabitq_fastscan_simd(void)
     q_norm = sqrtf(q_norm);
 
     RaBitQLookupTable q_lut;
+    memset(&q_lut, 0, sizeof(q_lut));
     assert(rabitq_build_query_lut(rot_q, q_norm, &params, &q_lut) == 0);
 
     // Prepare 32 candidates

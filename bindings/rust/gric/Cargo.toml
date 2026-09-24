@@ -1,0 +1,9 @@
+[package]
+name = "gric"
+version = "1.0.0"
+edition = "2021"
+description = "Safe, high-performance clustering and distance geometry engine"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+gric-sys = { path = "../gric-sys", version = "1.0.0" }
