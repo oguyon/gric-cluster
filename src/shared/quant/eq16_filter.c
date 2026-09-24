@@ -554,6 +554,276 @@ static void eq16_filter_anchor_matrix_avx2(
     eq16_compact_active_clusters_avx2(clmembflag, active_clusters, num_clusters,
                                       out_num_active, out_pruned_count);
 }
+
+/**
+ * eq16_filter_anchor_matrix_avx_vnni() - AVX-VNNI kernel for anchor filtering.
+ * @cur_eq16:           Quantized query coordinate vector [dim].
+ * @anchor_matrix:      Row-major fallback anchor matrix [num_clusters x dim].
+ * @anchor_interleaved: Block-8 interleaved anchor matrix.
+ * @num_clusters:       Number of clusters.
+ * @dim:                Vector dimensionality.
+ * @eq16_ssd_thresh:    Squared distance cutoff threshold.
+ * @clmembflag:         Candidate flags array (0 = pruned, 1 = active).
+ * @active_clusters:    Surviving cluster indices array.
+ * @out_num_active:     Count of surviving clusters.
+ * @out_pruned_count:   Count of pruned clusters.
+ *
+ * Accelerates EQ16 anchor matrix screening on CPUs with hardware AVX-VNNI
+ * support using _mm256_dpwssd_epi32 and pre-broadcasted query coordinate pairs.
+ */
+GRIC_TARGET_AVX_VNNI
+static void eq16_filter_anchor_matrix_avx_vnni(
+    const int16_t *restrict cur_eq16,
+    const int16_t *restrict anchor_matrix,
+    const int32_t *restrict anchor_interleaved,
+    int                     num_clusters,
+    long                    dim,
+    uint64_t                eq16_ssd_thresh,
+    int           *restrict clmembflag,
+    int           *restrict active_clusters,
+    int           *restrict out_num_active,
+    long          *restrict out_pruned_count)
+{
+    uint32_t thresh32 = (eq16_ssd_thresh > 0xFFFFFFFFULL)
+                        ? 0xFFFFFFFFU
+                        : (uint32_t)eq16_ssd_thresh;
+
+    if (dim < 16 || anchor_interleaved == NULL)
+    {
+        eq16_filter_anchor_matrix_scalar(cur_eq16,
+                                         anchor_matrix,
+                                         num_clusters,
+                                         dim,
+                                         eq16_ssd_thresh,
+                                         clmembflag,
+                                         active_clusters,
+                                         out_num_active,
+                                         out_pruned_count);
+        return;
+    }
+
+    __m256i v_bias256 = _mm256_set1_epi32((int32_t)0x80000000U);
+    __m256i v_cut256  = _mm256_set1_epi32((int32_t)(thresh32 ^ 0x80000000U));
+    __m256i v_min_clamp = _mm256_set1_epi16(-32767);
+
+    int num_pairs = (int)((dim + 1) / 2);
+    int num_full_pairs = (int)(dim / 2);
+    int num_blocks = num_clusters / 8;
+    int rem_start = num_blocks * 8;
+    size_t blk_stride = (size_t)num_pairs * 8;
+
+    #define EQ16_PREBROADCAST_PAIRS_VNNI 512
+    __m256i q_pairs_stack[EQ16_PREBROADCAST_PAIRS_VNNI];
+    int pre_broadcast_count = (num_pairs < EQ16_PREBROADCAST_PAIRS_VNNI)
+                              ? num_pairs
+                              : EQ16_PREBROADCAST_PAIRS_VNNI;
+
+    for (int j = 0; j < pre_broadcast_count; j++)
+    {
+        uint32_t v0 = (uint32_t)(uint16_t)cur_eq16[2 * j];
+        uint32_t v1 = (2 * j + 1 < dim)
+                      ? (uint32_t)(uint16_t)cur_eq16[2 * j + 1]
+                      : 0;
+        uint32_t p = (v1 << 16) | v0;
+        q_pairs_stack[j] = _mm256_set1_epi32((int32_t)p);
+    }
+
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(guided, 8) if(num_blocks >= 16)
+#endif
+    for (int b = 0; b < num_blocks; b++)
+    {
+        const int32_t *blk_ptr = anchor_interleaved + (size_t)b * blk_stride;
+
+        if (b + 1 < num_blocks)
+        {
+            _mm_prefetch((const char *)(blk_ptr + blk_stride), _MM_HINT_T0);
+            _mm_prefetch((const char *)(blk_ptr + blk_stride + 64), _MM_HINT_T0);
+        }
+
+        __m256i acc0 = _mm256_setzero_si256();
+        __m256i acc1 = _mm256_setzero_si256();
+        __m256i acc2 = _mm256_setzero_si256();
+        __m256i acc3 = _mm256_setzero_si256();
+        int pruned = 0;
+
+        /* Checkpoint 0: Early Dim 4 check (pairs 0 and 1) */
+        if (num_pairs >= 2)
+        {
+            __m256i c0 = _mm256_load_si256((const __m256i *)(blk_ptr + 0 * 8));
+            __m256i df0 = _mm256_max_epi16(
+                _mm256_subs_epi16(q_pairs_stack[0], c0), v_min_clamp
+            );
+            acc0 = _mm256_dpwssd_epi32(acc0, df0, df0);
+
+            __m256i c1 = _mm256_load_si256((const __m256i *)(blk_ptr + 1 * 8));
+            __m256i df1 = _mm256_max_epi16(
+                _mm256_subs_epi16(q_pairs_stack[1], c1), v_min_clamp
+            );
+            acc1 = _mm256_dpwssd_epi32(acc1, df1, df1);
+
+            __m256i a_sum01 = _mm256_add_epi32(acc0, acc1);
+            __m256i v_acc_b01 = _mm256_xor_si256(a_sum01, v_bias256);
+            __m256i cmp01 = _mm256_cmpgt_epi32(v_acc_b01, v_cut256);
+            if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp01)) == 0xFF)
+            {
+                int base = b * 8;
+                _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                    _mm256_setzero_si256());
+#ifdef EQ16_PROFILE_CHECKPOINTS
+                g_eq16_exit_pairs[2]++;
+#endif
+                continue;
+            }
+        } // if (num_pairs >= 2)
+
+        /* Pairs 2 and 3 */
+        if (num_pairs >= 4)
+        {
+            __m256i c2 = _mm256_load_si256((const __m256i *)(blk_ptr + 2 * 8));
+            __m256i df2 = _mm256_max_epi16(
+                _mm256_subs_epi16(q_pairs_stack[2], c2), v_min_clamp
+            );
+            acc2 = _mm256_dpwssd_epi32(acc2, df2, df2);
+
+            __m256i c3 = _mm256_load_si256((const __m256i *)(blk_ptr + 3 * 8));
+            __m256i df3 = _mm256_max_epi16(
+                _mm256_subs_epi16(q_pairs_stack[3], c3), v_min_clamp
+            );
+            acc3 = _mm256_dpwssd_epi32(acc3, df3, df3);
+
+            /* Checkpoint 1: Early Dim 8 check (pairs 0..3) */
+            __m256i a_sum03 = _mm256_add_epi32(
+                _mm256_add_epi32(acc0, acc1),
+                _mm256_add_epi32(acc2, acc3)
+            );
+            __m256i v_acc_b03 = _mm256_xor_si256(a_sum03, v_bias256);
+            __m256i cmp03 = _mm256_cmpgt_epi32(v_acc_b03, v_cut256);
+            if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp03)) == 0xFF)
+            {
+                int base = b * 8;
+                _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                    _mm256_setzero_si256());
+#ifdef EQ16_PROFILE_CHECKPOINTS
+                g_eq16_exit_pairs[4]++;
+#endif
+                continue;
+            }
+        } // if (num_pairs >= 4)
+
+        int j = 4;
+        int unroll_limit = (num_full_pairs < pre_broadcast_count)
+                           ? num_full_pairs
+                           : pre_broadcast_count;
+        for (; j + 4 <= unroll_limit; j += 4)
+        {
+            __m256i qp0 = q_pairs_stack[j + 0];
+            __m256i c0 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 0) * 8));
+            __m256i df0 = _mm256_max_epi16(
+                _mm256_subs_epi16(qp0, c0), v_min_clamp
+            );
+            acc0 = _mm256_dpwssd_epi32(acc0, df0, df0);
+
+            __m256i qp1 = q_pairs_stack[j + 1];
+            __m256i c1 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 1) * 8));
+            __m256i df1 = _mm256_max_epi16(
+                _mm256_subs_epi16(qp1, c1), v_min_clamp
+            );
+            acc1 = _mm256_dpwssd_epi32(acc1, df1, df1);
+
+            __m256i qp2 = q_pairs_stack[j + 2];
+            __m256i c2 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 2) * 8));
+            __m256i df2 = _mm256_max_epi16(
+                _mm256_subs_epi16(qp2, c2), v_min_clamp
+            );
+            acc2 = _mm256_dpwssd_epi32(acc2, df2, df2);
+
+            __m256i qp3 = q_pairs_stack[j + 3];
+            __m256i c3 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 3) * 8));
+            __m256i df3 = _mm256_max_epi16(
+                _mm256_subs_epi16(qp3, c3), v_min_clamp
+            );
+            acc3 = _mm256_dpwssd_epi32(acc3, df3, df3);
+
+            /* Checkpoints at Dim 16 (j=4), Dim 24 (j=8), Dim 48 (j=20),
+             * and every 32 dims ((j & 15) == 12) */
+            if ((j == 4 || j == 8 || j == 20 || (j & 15) == 12) && j + 4 < num_pairs)
+            {
+                __m256i a_sum = _mm256_add_epi32(
+                    _mm256_add_epi32(acc0, acc1),
+                    _mm256_add_epi32(acc2, acc3)
+                );
+                __m256i v_acc_b = _mm256_xor_si256(a_sum, v_bias256);
+                __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);
+                if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp)) == 0xFF)
+                {
+                    int base = b * 8;
+                    _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                        _mm256_setzero_si256());
+                    pruned = 1;
+#ifdef EQ16_PROFILE_CHECKPOINTS
+                    if (j + 4 < 512)
+                    {
+                        g_eq16_exit_pairs[j + 4]++;
+                    }
+#endif
+                    break;
+                }
+            }
+        } // for (; j + 4 <= unroll_limit; j += 4)
+
+        if (!pruned)
+        {
+#ifdef EQ16_PROFILE_CHECKPOINTS
+            g_eq16_exit_none++;
+#endif
+            for (; j < num_pairs; j++)
+            {
+                __m256i q_p;
+                if (j < pre_broadcast_count)
+                {
+                    q_p = q_pairs_stack[j];
+                }
+                else
+                {
+                    uint32_t v0 = (uint32_t)(uint16_t)cur_eq16[2 * j];
+                    uint32_t v1 = (2 * j + 1 < dim)
+                                  ? (uint32_t)(uint16_t)cur_eq16[2 * j + 1]
+                                  : 0;
+                    q_p = _mm256_set1_epi32((int32_t)((v1 << 16) | v0));
+                }
+
+                __m256i c = _mm256_load_si256((const __m256i *)(blk_ptr + j * 8));
+                __m256i df = _mm256_max_epi16(
+                    _mm256_subs_epi16(q_p, c), v_min_clamp
+                );
+                acc0 = _mm256_dpwssd_epi32(acc0, df, df);
+            } // for (; j < num_pairs; j++)
+
+            __m256i a_sum01 = _mm256_add_epi32(acc0, acc1);
+            __m256i a_sum23 = _mm256_add_epi32(acc2, acc3);
+            __m256i acc = _mm256_add_epi32(a_sum01, a_sum23);
+            __m256i v_acc_b = _mm256_xor_si256(acc, v_bias256);
+            __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);
+
+            int base = b * 8;
+            __m256i flags = _mm256_andnot_si256(cmp, _mm256_set1_epi32(1));
+            _mm256_storeu_si256((__m256i *)(clmembflag + base), flags);
+        } // if (!pruned)
+    } // for (int b = 0; b < num_blocks; b++)
+
+    /* Remainder clusters (< 8) */
+    for (int i = rem_start; i < num_clusters; i++)
+    {
+        const int16_t *ak_ptr = anchor_matrix + (size_t)i * (size_t)dim;
+        uint64_t ssd = eq16_dist_squared_cutoff_i16(cur_eq16, ak_ptr, dim, eq16_ssd_thresh);
+        clmembflag[i] = (ssd > eq16_ssd_thresh) ? 0 : 1;
+    } // for (int i = rem_start; i < num_clusters; i++)
+
+    #undef EQ16_PREBROADCAST_PAIRS_VNNI
+    eq16_compact_active_clusters_avx2(clmembflag, active_clusters, num_clusters,
+                                      out_num_active, out_pruned_count);
+}
 #endif // x86 / AVX2
 
 #if GRIC_HAVE_AVX512_TARGET
@@ -822,6 +1092,25 @@ void eq16_filter_anchor_matrix(
                                          active_clusters,
                                          out_num_active,
                                          out_pruned_count);
+        return;
+    }
+#endif
+#if !defined(__CUDACC__)
+    if (anchor_interleaved != NULL &&
+        gric_get_simd_level() >= GRIC_SIMD_AVX2 &&
+        gric_has_avx_vnni() &&
+        dim >= 16)
+    {
+        eq16_filter_anchor_matrix_avx_vnni(cur_eq16,
+                                           anchor_matrix,
+                                           anchor_interleaved,
+                                           num_clusters,
+                                           dim,
+                                           eq16_ssd_thresh,
+                                           clmembflag,
+                                           active_clusters,
+                                           out_num_active,
+                                           out_pruned_count);
         return;
     }
 #endif
