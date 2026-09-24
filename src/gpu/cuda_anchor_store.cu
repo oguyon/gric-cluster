@@ -60,52 +60,6 @@ struct GpuAnchorStore
     float           rlim;
 };
 
-static __global__ void direct_find_nearest_cutoff_kernel(
-    const float *__restrict__ d_frames,
-    const float *__restrict__ d_anchors,
-    int         *__restrict__ d_best_cl,
-    float       *__restrict__ d_best_dist,
-    int                       B,
-    int                       K,
-    int                       D)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= B)
-    {
-        return;
-    }
-
-    const float *f_vec = d_frames + (size_t)i * (size_t)D;
-    float min_dist_sq = 1e38f;
-    int min_k = -1;
-
-    for (int k = 0; k < K; k++)
-    {
-        const float *a_vec = d_anchors + (size_t)k * (size_t)D;
-        float dist_sq = 0.0f;
-        int early_exit = 0;
-
-        for (int d = 0; d < D; d++)
-        {
-            float diff = f_vec[d] - a_vec[d];
-            dist_sq += diff * diff;
-            if (dist_sq >= min_dist_sq)
-            {
-                early_exit = 1;
-                break;
-            }
-        }
-
-        if (!early_exit && dist_sq < min_dist_sq)
-        {
-            min_dist_sq = dist_sq;
-            min_k = k;
-        }
-    }
-
-    d_best_cl[i] = min_k;
-    d_best_dist[i] = sqrtf(min_dist_sq);
-}
 
 static __global__ void compute_norms_kernel(
     const float *__restrict__ mat,
@@ -537,45 +491,32 @@ int gpu_anchor_store_find_nearest(
     CUDA_CHECK(cudaMemcpy(store->d_frames, h_f, (size_t)B * (size_t)D * sizeof(float),
                           cudaMemcpyHostToDevice));
 
-    if (D <= 64)
-    {
-        int threads = 128;
-        int blocks = (B + threads - 1) / threads;
-        direct_find_nearest_cutoff_kernel<<<blocks, threads>>>(
-            store->d_frames, store->d_anchors,
-            store->d_best_cl, store->d_best_dist,
-            B, K, D);
-        CUDA_CHECK(cudaGetLastError());
-    }
-    else
-    {
-        /* Compute frame norms */
-        int threads = 128;
-        int blocks = (B + (threads / 32) - 1) / (threads / 32);
-        compute_norms_kernel<<<blocks, threads>>>(store->d_frames, B, D, store->d_frame_norms);
-        CUDA_CHECK(cudaGetLastError());
+    /* Compute frame norms */
+    int threads = 128;
+    int blocks = (B + (threads / 32) - 1) / (threads / 32);
+    compute_norms_kernel<<<blocks, threads>>>(store->d_frames, B, D, store->d_frame_norms);
+    CUDA_CHECK(cudaGetLastError());
 
-        /* GEMM: d_P[B x K] = d_frames[B x D] * (d_anchors[K x D])^T */
-        float alpha = 1.0f;
-        float beta = 0.0f;
-        CUBLAS_CHECK(cublasSgemm(store->cublas, CUBLAS_OP_T, CUBLAS_OP_N,
-                                 K, B, D,
-                                 &alpha,
-                                 store->d_anchors, D,
-                                 store->d_frames, D,
-                                 &beta,
-                                 store->d_P, K));
+    /* GEMM: d_P[B x K] = d_frames[B x D] * (d_anchors[K x D])^T */
+    float alpha = 1.0f;
+    float beta = 0.0f;
+    CUBLAS_CHECK(cublasSgemm(store->cublas, CUBLAS_OP_T, CUBLAS_OP_N,
+                             K, B, D,
+                             &alpha,
+                             store->d_anchors, D,
+                             store->d_frames, D,
+                             &beta,
+                             store->d_P, K));
 
-        /* Argmin reduction kernel */
-        int r_threads = 128;
-        int warps_per_block = r_threads / 32;
-        int r_blocks = (B + warps_per_block - 1) / warps_per_block;
-        argmin_distance_kernel<<<r_blocks, r_threads>>>(
-            store->d_frame_norms, store->d_anchor_norms, store->d_P,
-            store->d_best_cl, store->d_best_dist,
-            B, K);
-        CUDA_CHECK(cudaGetLastError());
-    }
+    /* Argmin reduction kernel */
+    int r_threads = 128;
+    int warps_per_block = r_threads / 32;
+    int r_blocks = (B + warps_per_block - 1) / warps_per_block;
+    argmin_distance_kernel<<<r_blocks, r_threads>>>(
+        store->d_frame_norms, store->d_anchor_norms, store->d_P,
+        store->d_best_cl, store->d_best_dist,
+        B, K);
+    CUDA_CHECK(cudaGetLastError());
 
     CUDA_CHECK(cudaMemcpy(out_best_cl, store->d_best_cl, (size_t)B * sizeof(int),
                           cudaMemcpyDeviceToHost));

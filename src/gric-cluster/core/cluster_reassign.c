@@ -24,6 +24,9 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+#include <immintrin.h>
+#endif
 
 /**
  * run_second_pass_clustering() - Reassign all frames to their nearest cluster anchor.
@@ -195,6 +198,98 @@ long run_second_pass_clustering(
 
                     if (dcc_row != NULL && measured_row != NULL)
                     {
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+                        int mi = 0;
+                        __m256d v_lb = _mm256_set1_pd(lb);
+                        __m256d v_dbest = _mm256_set1_pd(d_best);
+                        __m256d sign_mask = _mm256_castsi256_pd(
+                            _mm256_set1_epi64x(0x7FFFFFFFFFFFFFFFULL));
+
+                        for (; mi <= num_measured - 4; mi += 4)
+                        {
+                            int m0 = measured_indices[mi];
+                            int m1 = measured_indices[mi + 1];
+                            int m2 = measured_indices[mi + 2];
+                            int m3 = measured_indices[mi + 3];
+
+                            if (measured_row[m0] & measured_row[m1] &
+                                measured_row[m2] & measured_row[m3])
+                            {
+                                __m256d v_fd = _mm256_set_pd(
+                                    frame_dists[m3], frame_dists[m2],
+                                    frame_dists[m1], frame_dists[m0]);
+                                __m256d v_dcc = _mm256_set_pd(
+                                    dcc_row[m3], dcc_row[m2],
+                                    dcc_row[m1], dcc_row[m0]);
+                                __m256d v_diff = _mm256_sub_pd(v_fd, v_dcc);
+                                __m256d v_bound = _mm256_and_pd(v_diff, sign_mask);
+                                v_lb = _mm256_max_pd(v_lb, v_bound);
+
+                                __m256d v_cmp = _mm256_cmp_pd(v_lb, v_dbest, _CMP_GE_OQ);
+                                if (_mm256_movemask_pd(v_cmp) != 0)
+                                {
+                                    lb = d_best;
+                                    break;
+                                }
+                            }
+                            else
+                            {
+                                for (int k = 0; k < 4; k++)
+                                {
+                                    int m = measured_indices[mi + k];
+                                    if (measured_row[m] && dcc_row[m] >= 0.0)
+                                    {
+                                        double bound = fabs(frame_dists[m] - dcc_row[m]);
+                                        if (bound > lb)
+                                        {
+                                            lb = bound;
+                                            if (lb >= d_best)
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                } // for (int k = 0; k < 4; k++)
+                                if (lb >= d_best)
+                                {
+                                    break;
+                                }
+                            }
+                        } // for (; mi <= num_measured - 4; mi += 4)
+
+                        if (lb < d_best)
+                        {
+                            double tmp[4];
+                            _mm256_storeu_pd(tmp, v_lb);
+                            for (int k = 0; k < 4; k++)
+                            {
+                                if (tmp[k] > lb)
+                                {
+                                    lb = tmp[k];
+                                }
+                            }
+
+                            if (lb < d_best)
+                            {
+                                for (; mi < num_measured; mi++)
+                                {
+                                    int m = measured_indices[mi];
+                                    if (measured_row[m] && dcc_row[m] >= 0.0)
+                                    {
+                                        double bound = fabs(frame_dists[m] - dcc_row[m]);
+                                        if (bound > lb)
+                                        {
+                                            lb = bound;
+                                            if (lb >= d_best)
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                } // for (; mi < num_measured; mi++)
+                            }
+                        } // if (lb < d_best)
+#else
                         for (int mi = 0; mi < num_measured; mi++)
                         {
                             int m = measured_indices[mi];
@@ -215,6 +310,7 @@ long run_second_pass_clustering(
                                 }
                             }
                         } // for (int mi = 0; mi < num_measured; mi++)
+#endif
                     }
 
                     if (lb >= d_best)
