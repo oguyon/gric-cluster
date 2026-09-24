@@ -296,6 +296,14 @@ int main(
         {
             free(results.local_dim);
         }
+        if (results.local_dim_med != NULL)
+        {
+            free(results.local_dim_med);
+        }
+        if (results.local_dim_mean != NULL)
+        {
+            free(results.local_dim_mean);
+        }
         if (results.rk_dist != NULL)
         {
             free(results.rk_dist);
@@ -336,6 +344,14 @@ int main(
     if (results.local_dim != NULL)
     {
         free(results.local_dim);
+    }
+    if (results.local_dim_med != NULL)
+    {
+        free(results.local_dim_med);
+    }
+    if (results.local_dim_mean != NULL)
+    {
+        free(results.local_dim_mean);
     }
     if (results.density != NULL)
     {

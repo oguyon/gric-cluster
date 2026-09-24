@@ -31,6 +31,8 @@ function getOrCreateMockElement(id) {
         remove: () => {},
         toggle: () => {}
       },
+      setAttribute: () => {},
+      getAttribute: () => null,
       addEventListener: () => {}
     };
   }

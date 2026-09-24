@@ -34,6 +34,7 @@ static void free_test_model(
     free(model->dataset_buffer);
     free(model->rq8_dataset_buffer);
     free(model->rq8_transposed_buffer);
+    free(model->frame_to_cluster_pos);
 }
 
 static void init_adaptive_test_model(

@@ -6,57 +6,102 @@ on:
   pull_request:
     branches: [ "master", "main" ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  lint:
+    name: Code Style & Line Length Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check line lengths (<= 100 cols in C sources and tests)
+        run: |
+          echo "Checking that all C source and header lines are <= 100 columns..."
+          ! git grep -n '.\{101,\}' -- 'src/*.c' 'src/*.h' 'tests/*.c' 'tests/*.h' ':!src/gric-plot/font8x16.h' ':!src/shared/cjson/*'
+
+  build-and-test:
+    needs: [lint]
     runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        build_type: [Release]
-        c_compiler: [gcc, clang]
         include:
           - os: ubuntu-latest
             c_compiler: gcc
             cpp_compiler: g++
+            build_type: Release
+            sanitizer: false
           - os: ubuntu-latest
             c_compiler: clang
             cpp_compiler: clang++
+            build_type: Release
+            sanitizer: false
+          - os: ubuntu-latest
+            c_compiler: clang
+            cpp_compiler: clang++
+            build_type: Debug
+            sanitizer: true
           - os: macos-latest
             c_compiler: clang
             cpp_compiler: clang++
-        exclude:
-          - os: macos-latest
-            c_compiler: gcc
+            build_type: Release
+            sanitizer: false
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Install Dependencies (Ubuntu)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev pkg-config
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.os }}-${{ matrix.c_compiler }}-${{ matrix.build_type }}-${{ matrix.sanitizer }}
 
-    - name: Install Dependencies (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install cfitsio libpng ffmpeg pkg-config
+      - name: Install Dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev pkg-config
 
-    - name: Set reusable strings
-      id: strings
-      shell: bash
-      run: |
-        echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+      - name: Install Dependencies (macOS)
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+        run: |
+          brew install cfitsio libpng ffmpeg pkg-config
 
-    - name: Configure CMake
-      run: >
-        cmake -B ${{ steps.strings.outputs.build-output-dir }}
-        -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
-        -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
-        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-        -S ${{ github.workspace }}
+      - name: Set reusable strings
+        id: strings
+        shell: bash
+        run: |
+          echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+          if [ "${{ matrix.sanitizer }}" = "true" ]; then
+            echo "extra-flags=-DCMAKE_C_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined" >> "$GITHUB_OUTPUT"
+          else
+            echo "extra-flags=" >> "$GITHUB_OUTPUT"
+          fi
 
-    - name: Build
-      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
+      - name: Configure CMake
+        run: >
+          cmake -B ${{ steps.strings.outputs.build-output-dir }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          ${{ steps.strings.outputs.extra-flags }}
+          -S ${{ github.workspace }}
+
+      - name: Build
+        run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} --parallel
+
+      - name: Test (CTest)
+        run: ctest --test-dir ${{ steps.strings.outputs.build-output-dir }} --output-on-failure --parallel -E "cuda"
+
+      - name: Test (Python Wrapper)
+        if: runner.os == 'Linux' && matrix.build_type == 'Release'
+        run: |
+          PATH="${{ steps.strings.outputs.build-output-dir }}:$PATH" python3 python/test_wrapper.py

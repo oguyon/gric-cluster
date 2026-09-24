@@ -325,6 +325,7 @@ static void test_eq16_filter_anchor_matrix_adc(void)
             clmembflag_adc[c] = 1;
             clmembflag_fallback[c] = 1;
             clmembflag_sdc[c] = 1;
+            active_clusters_sdc[c] = c;
         }
 
         int num_active_adc = 0;

@@ -5,36 +5,59 @@ on:
     branches: [ "master", "main" ]
   pull_request:
     branches: [ "master", "main" ]
+  workflow_dispatch:
+    inputs:
+      bench_samples:
+        description: 'Number of samples for benchmark runs'
+        required: false
+        default: '1000'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev pkg-config
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: benchmark-ubuntu-gcc-release
 
-    - name: Run Benchmarks
-      run: |
-        mkdir -p build
-        cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release
-        make -j$(nproc)
-        cd ../benchmarks
-        ../build/gric-benchmark
-        echo "## SIMD Hardware Acceleration & Scaling" >> $GITHUB_STEP_SUMMARY
-        echo "Scalar baseline vs. AVX2 vs. AVX-512" >> $GITHUB_STEP_SUMMARY
-        ../build/gric-simd-bench --markdown | tee -a "$GITHUB_STEP_SUMMARY" || true
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev pkg-config
 
-    - name: Upload Results
-      uses: actions/upload-artifact@v4
-      with:
-        name: benchmark-results
-        path: |
-          benchmarks/benchmark_out/
-          benchmarks/benchmark_summary.md
-          benchmarks/*.png
+      - name: Configure and Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -S .
+          cmake --build build --parallel
+
+      - name: Run SIMD Acceleration Benchmark
+        run: |
+          echo "## SIMD Hardware Acceleration & Scaling" >> "$GITHUB_STEP_SUMMARY"
+          echo "Scalar baseline vs. AVX2 vs. AVX-512" >> "$GITHUB_STEP_SUMMARY"
+          ./build/gric-simd-bench --markdown | tee -a "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Run Clustering Benchmark Suite
+        run: |
+          cd benchmarks
+          ../build/gric-benchmark
+          if [ -f "benchmark_summary.md" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            cat benchmark_summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            benchmarks/benchmark_out/
+            benchmarks/benchmark_summary.md
+            benchmarks/*.png

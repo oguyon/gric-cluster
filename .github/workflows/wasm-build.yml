@@ -6,12 +6,24 @@ on:
     paths:
       - 'src/**'
       - 'Makefile.wasm'
+      - 'tests/wasm_*'
+      - 'tests/dim_switching_test.js'
+      - 'tests/highd_engine_test.js'
+      - '.github/workflows/wasm-build.yml'
   pull_request:
     branches: [main]
     paths:
       - 'src/**'
       - 'Makefile.wasm'
+      - 'tests/wasm_*'
+      - 'tests/dim_switching_test.js'
+      - 'tests/highd_engine_test.js'
+      - '.github/workflows/wasm-build.yml'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   wasm-build:
@@ -39,6 +51,12 @@ jobs:
 
       - name: Run WASM trace test
         run: node tests/wasm_trace_test.js
+
+      - name: Run JS High-D engine test
+        run: node tests/highd_engine_test.js
+
+      - name: Run JS dimension switching test
+        run: node tests/dim_switching_test.js
 
       - name: Verify git hash embedded
         run: |
