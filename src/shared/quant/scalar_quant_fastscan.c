@@ -280,71 +280,69 @@ static inline uint32_t sq16_fastscan_32x_3d_avx2(
         return 0xFFFFFFFFU;
     }
 
-    __m256i qx = _mm256_set1_epi16(query_sq16[0]);
-    __m256i qy = _mm256_set1_epi16(query_sq16[1]);
+    uint32_t q_xy = (uint16_t)query_sq16[0] |
+                    ((uint32_t)(uint16_t)query_sq16[1] << 16);
+    __m256i v_qxy = _mm256_set1_epi32((int32_t)q_xy);
     __m256i qz = _mm256_set1_epi16(query_sq16[2]);
     __m256i v_bias = _mm256_set1_epi32((int32_t)0x80000000U);
     __m256i v_cut = _mm256_set1_epi32((int32_t)((uint32_t)ssd_cutoff ^ 0x80000000U));
+    __m256i v_zero = _mm256_setzero_si256();
 
     // Sub-block 0: candidates 0..15
     __m256i cx0 = _mm256_loadu_si256((const __m256i *)block_x);
     __m256i cy0 = _mm256_loadu_si256((const __m256i *)block_y);
     __m256i cz0 = _mm256_loadu_si256((const __m256i *)block_z);
 
-    __m256i dx0 = _mm256_sub_epi16(qx, cx0);
-    __m256i dy0 = _mm256_sub_epi16(qy, cy0);
+    __m256i p0_lo = _mm256_unpacklo_epi16(cx0, cy0);
+    __m256i p0_hi = _mm256_unpackhi_epi16(cx0, cy0);
+    __m256i d0_lo = _mm256_sub_epi16(v_qxy, p0_lo);
+    __m256i d0_hi = _mm256_sub_epi16(v_qxy, p0_hi);
+    __m256i sum0_lo = _mm256_madd_epi16(d0_lo, d0_lo);
+    __m256i sum0_hi = _mm256_madd_epi16(d0_hi, d0_hi);
+
     __m256i dz0 = _mm256_sub_epi16(qz, cz0);
-
-    __m256i dx0_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dx0));
-    __m256i dx0_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dx0, 1));
-    __m256i sum0_lo = _mm256_mullo_epi32(dx0_lo, dx0_lo);
-    __m256i sum0_hi = _mm256_mullo_epi32(dx0_hi, dx0_hi);
-
-    __m256i dy0_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dy0));
-    __m256i dy0_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dy0, 1));
-    sum0_lo = _mm256_add_epi32(sum0_lo, _mm256_mullo_epi32(dy0_lo, dy0_lo));
-    sum0_hi = _mm256_add_epi32(sum0_hi, _mm256_mullo_epi32(dy0_hi, dy0_hi));
-
-    __m256i dz0_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dz0));
-    __m256i dz0_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dz0, 1));
-    sum0_lo = _mm256_add_epi32(sum0_lo, _mm256_mullo_epi32(dz0_lo, dz0_lo));
-    sum0_hi = _mm256_add_epi32(sum0_hi, _mm256_mullo_epi32(dz0_hi, dz0_hi));
+    __m256i dz0_lo = _mm256_unpacklo_epi16(dz0, v_zero);
+    __m256i dz0_hi = _mm256_unpackhi_epi16(dz0, v_zero);
+    sum0_lo = _mm256_add_epi32(sum0_lo, _mm256_madd_epi16(dz0_lo, dz0_lo));
+    sum0_hi = _mm256_add_epi32(sum0_hi, _mm256_madd_epi16(dz0_hi, dz0_hi));
 
     __m256i fail0_lo = _mm256_cmpgt_epi32(_mm256_xor_si256(sum0_lo, v_bias), v_cut);
     __m256i fail0_hi = _mm256_cmpgt_epi32(_mm256_xor_si256(sum0_hi, v_bias), v_cut);
     int m0_lo = _mm256_movemask_ps(_mm256_castsi256_ps(fail0_lo));
     int m0_hi = _mm256_movemask_ps(_mm256_castsi256_ps(fail0_hi));
-    uint32_t pass0 = (~(uint32_t)((m0_hi << 8) | m0_lo)) & 0xFFFFU;
+    uint32_t fail0 = (uint32_t)(m0_lo & 0x0F) |
+                     ((uint32_t)(m0_hi & 0x0F) << 4) |
+                     ((uint32_t)(m0_lo & 0xF0) << 4) |
+                     ((uint32_t)(m0_hi & 0xF0) << 8);
+    uint32_t pass0 = (~fail0) & 0xFFFFU;
 
     // Sub-block 1: candidates 16..31
     __m256i cx1 = _mm256_loadu_si256((const __m256i *)(block_x + 16));
     __m256i cy1 = _mm256_loadu_si256((const __m256i *)(block_y + 16));
     __m256i cz1 = _mm256_loadu_si256((const __m256i *)(block_z + 16));
 
-    __m256i dx1 = _mm256_sub_epi16(qx, cx1);
-    __m256i dy1 = _mm256_sub_epi16(qy, cy1);
+    __m256i p1_lo = _mm256_unpacklo_epi16(cx1, cy1);
+    __m256i p1_hi = _mm256_unpackhi_epi16(cx1, cy1);
+    __m256i d1_lo = _mm256_sub_epi16(v_qxy, p1_lo);
+    __m256i d1_hi = _mm256_sub_epi16(v_qxy, p1_hi);
+    __m256i sum1_lo = _mm256_madd_epi16(d1_lo, d1_lo);
+    __m256i sum1_hi = _mm256_madd_epi16(d1_hi, d1_hi);
+
     __m256i dz1 = _mm256_sub_epi16(qz, cz1);
-
-    __m256i dx1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dx1));
-    __m256i dx1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dx1, 1));
-    __m256i sum1_lo = _mm256_mullo_epi32(dx1_lo, dx1_lo);
-    __m256i sum1_hi = _mm256_mullo_epi32(dx1_hi, dx1_hi);
-
-    __m256i dy1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dy1));
-    __m256i dy1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dy1, 1));
-    sum1_lo = _mm256_add_epi32(sum1_lo, _mm256_mullo_epi32(dy1_lo, dy1_lo));
-    sum1_hi = _mm256_add_epi32(sum1_hi, _mm256_mullo_epi32(dy1_hi, dy1_hi));
-
-    __m256i dz1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(dz1));
-    __m256i dz1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(dz1, 1));
-    sum1_lo = _mm256_add_epi32(sum1_lo, _mm256_mullo_epi32(dz1_lo, dz1_lo));
-    sum1_hi = _mm256_add_epi32(sum1_hi, _mm256_mullo_epi32(dz1_hi, dz1_hi));
+    __m256i dz1_lo = _mm256_unpacklo_epi16(dz1, v_zero);
+    __m256i dz1_hi = _mm256_unpackhi_epi16(dz1, v_zero);
+    sum1_lo = _mm256_add_epi32(sum1_lo, _mm256_madd_epi16(dz1_lo, dz1_lo));
+    sum1_hi = _mm256_add_epi32(sum1_hi, _mm256_madd_epi16(dz1_hi, dz1_hi));
 
     __m256i fail1_lo = _mm256_cmpgt_epi32(_mm256_xor_si256(sum1_lo, v_bias), v_cut);
     __m256i fail1_hi = _mm256_cmpgt_epi32(_mm256_xor_si256(sum1_hi, v_bias), v_cut);
     int m1_lo = _mm256_movemask_ps(_mm256_castsi256_ps(fail1_lo));
     int m1_hi = _mm256_movemask_ps(_mm256_castsi256_ps(fail1_hi));
-    uint32_t pass1 = (~(uint32_t)((m1_hi << 8) | m1_lo)) & 0xFFFFU;
+    uint32_t fail1 = (uint32_t)(m1_lo & 0x0F) |
+                     ((uint32_t)(m1_hi & 0x0F) << 4) |
+                     ((uint32_t)(m1_lo & 0xF0) << 4) |
+                     ((uint32_t)(m1_hi & 0xF0) << 8);
+    uint32_t pass1 = (~fail1) & 0xFFFFU;
 
     return (pass1 << 16) | pass0;
 }
@@ -367,51 +365,111 @@ static inline uint32_t sq16_fastscan_32x_generic_avx2(
     __m256i v_bias = _mm256_set1_epi32((int32_t)0x80000000U);
     __m256i v_cut = _mm256_set1_epi32((int32_t)(cut32 ^ 0x80000000U));
     __m256i v_clamp = _mm256_set1_epi32((int32_t)(cut32 + 1));
+    __m256i v_all_ones = _mm256_set1_epi32(-1);
 
     __m256i sum0_lo = _mm256_setzero_si256();
     __m256i sum0_hi = _mm256_setzero_si256();
     __m256i sum1_lo = _mm256_setzero_si256();
     __m256i sum1_hi = _mm256_setzero_si256();
 
-    for (long d = 0; d < dim; d++)
+    /*
+     * Dimension index d is declared before loop to track leftover dimension
+     * for odd dimensionality vectors.
+     */
+    long d = 0;
+    for (; d < dim - 1; d += 2)
     {
-        __m256i qd = _mm256_set1_epi16(query_sq16[d]);
-        const int16_t *cd_ptr = block_coords + d * 32;
+        uint32_t q_pair = (uint16_t)query_sq16[d] |
+                          ((uint32_t)(uint16_t)query_sq16[d + 1] << 16);
+        __m256i v_qpair = _mm256_set1_epi32((int32_t)q_pair);
 
-        __m256i c0 = _mm256_loadu_si256((const __m256i *)cd_ptr);
-        __m256i diff0 = _mm256_sub_epi16(qd, c0);
-        __m256i d0_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(diff0));
-        __m256i d0_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(diff0, 1));
-        sum0_lo = _mm256_add_epi32(sum0_lo, _mm256_mullo_epi32(d0_lo, d0_lo));
-        sum0_hi = _mm256_add_epi32(sum0_hi, _mm256_mullo_epi32(d0_hi, d0_hi));
+        const int16_t *cd0_ptr = block_coords + d * 32;
+        const int16_t *cd1_ptr = block_coords + (d + 1) * 32;
 
-        __m256i c1 = _mm256_loadu_si256((const __m256i *)(cd_ptr + 16));
-        __m256i diff1 = _mm256_sub_epi16(qd, c1);
-        __m256i d1_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(diff1));
-        __m256i d1_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(diff1, 1));
-        sum1_lo = _mm256_add_epi32(sum1_lo, _mm256_mullo_epi32(d1_lo, d1_lo));
-        sum1_hi = _mm256_add_epi32(sum1_hi, _mm256_mullo_epi32(d1_hi, d1_hi));
+        __m256i c0_d = _mm256_loadu_si256((const __m256i *)cd0_ptr);
+        __m256i c0_d1 = _mm256_loadu_si256((const __m256i *)cd1_ptr);
+        __m256i p0_lo = _mm256_unpacklo_epi16(c0_d, c0_d1);
+        __m256i p0_hi = _mm256_unpackhi_epi16(c0_d, c0_d1);
+        __m256i diff0_lo = _mm256_sub_epi16(v_qpair, p0_lo);
+        __m256i diff0_hi = _mm256_sub_epi16(v_qpair, p0_hi);
+        sum0_lo = _mm256_add_epi32(sum0_lo, _mm256_madd_epi16(diff0_lo, diff0_lo));
+        sum0_hi = _mm256_add_epi32(sum0_hi, _mm256_madd_epi16(diff0_hi, diff0_hi));
 
-        if ((d & 1) == 1 && d + 1 < dim)
+        __m256i c1_d = _mm256_loadu_si256((const __m256i *)(cd0_ptr + 16));
+        __m256i c1_d1 = _mm256_loadu_si256((const __m256i *)(cd1_ptr + 16));
+        __m256i p1_lo = _mm256_unpacklo_epi16(c1_d, c1_d1);
+        __m256i p1_hi = _mm256_unpackhi_epi16(c1_d, c1_d1);
+        __m256i diff1_lo = _mm256_sub_epi16(v_qpair, p1_lo);
+        __m256i diff1_hi = _mm256_sub_epi16(v_qpair, p1_hi);
+        sum1_lo = _mm256_add_epi32(sum1_lo, _mm256_madd_epi16(diff1_lo, diff1_lo));
+        sum1_hi = _mm256_add_epi32(sum1_hi, _mm256_madd_epi16(diff1_hi, diff1_hi));
+
+        if (d + 2 < dim)
         {
             sum0_lo = _mm256_min_epu32(sum0_lo, v_clamp);
             sum0_hi = _mm256_min_epu32(sum0_hi, v_clamp);
             sum1_lo = _mm256_min_epu32(sum1_lo, v_clamp);
             sum1_hi = _mm256_min_epu32(sum1_hi, v_clamp);
-        }
-    } // for (long d = 0; d < dim; d++)
+
+            if (((d + 2) & 15) == 0)
+            {
+                __m256i f0_lo = _mm256_cmpgt_epi32(_mm256_xor_si256(sum0_lo, v_bias), v_cut);
+                __m256i f0_hi = _mm256_cmpgt_epi32(_mm256_xor_si256(sum0_hi, v_bias), v_cut);
+                __m256i f1_lo = _mm256_cmpgt_epi32(_mm256_xor_si256(sum1_lo, v_bias), v_cut);
+                __m256i f1_hi = _mm256_cmpgt_epi32(_mm256_xor_si256(sum1_hi, v_bias), v_cut);
+
+                __m256i all_fail = _mm256_and_si256(
+                    _mm256_and_si256(f0_lo, f0_hi),
+                    _mm256_and_si256(f1_lo, f1_hi)
+                );
+                if (_mm256_testc_si256(all_fail, v_all_ones))
+                {
+                    return 0;
+                }
+            } // if (((d + 2) & 15) == 0)
+        } // if (d + 2 < dim)
+    } // for (; d < dim - 1; d += 2)
+
+    if (d < dim)
+    {
+        __m256i v_zero = _mm256_setzero_si256();
+        __m256i qd = _mm256_set1_epi16(query_sq16[d]);
+        const int16_t *cd_ptr = block_coords + d * 32;
+
+        __m256i c0 = _mm256_loadu_si256((const __m256i *)cd_ptr);
+        __m256i diff0 = _mm256_sub_epi16(qd, c0);
+        __m256i diff0_lo = _mm256_unpacklo_epi16(diff0, v_zero);
+        __m256i diff0_hi = _mm256_unpackhi_epi16(diff0, v_zero);
+        sum0_lo = _mm256_add_epi32(sum0_lo, _mm256_madd_epi16(diff0_lo, diff0_lo));
+        sum0_hi = _mm256_add_epi32(sum0_hi, _mm256_madd_epi16(diff0_hi, diff0_hi));
+
+        __m256i c1 = _mm256_loadu_si256((const __m256i *)(cd_ptr + 16));
+        __m256i diff1 = _mm256_sub_epi16(qd, c1);
+        __m256i diff1_lo = _mm256_unpacklo_epi16(diff1, v_zero);
+        __m256i diff1_hi = _mm256_unpackhi_epi16(diff1, v_zero);
+        sum1_lo = _mm256_add_epi32(sum1_lo, _mm256_madd_epi16(diff1_lo, diff1_lo));
+        sum1_hi = _mm256_add_epi32(sum1_hi, _mm256_madd_epi16(diff1_hi, diff1_hi));
+    } // if (d < dim)
 
     __m256i fail0_lo = _mm256_cmpgt_epi32(_mm256_xor_si256(sum0_lo, v_bias), v_cut);
     __m256i fail0_hi = _mm256_cmpgt_epi32(_mm256_xor_si256(sum0_hi, v_bias), v_cut);
     int m0_lo = _mm256_movemask_ps(_mm256_castsi256_ps(fail0_lo));
     int m0_hi = _mm256_movemask_ps(_mm256_castsi256_ps(fail0_hi));
-    uint32_t pass0 = (~(uint32_t)((m0_hi << 8) | m0_lo)) & 0xFFFFU;
+    uint32_t fail0 = (uint32_t)(m0_lo & 0x0F) |
+                     ((uint32_t)(m0_hi & 0x0F) << 4) |
+                     ((uint32_t)(m0_lo & 0xF0) << 4) |
+                     ((uint32_t)(m0_hi & 0xF0) << 8);
+    uint32_t pass0 = (~fail0) & 0xFFFFU;
 
     __m256i fail1_lo = _mm256_cmpgt_epi32(_mm256_xor_si256(sum1_lo, v_bias), v_cut);
     __m256i fail1_hi = _mm256_cmpgt_epi32(_mm256_xor_si256(sum1_hi, v_bias), v_cut);
     int m1_lo = _mm256_movemask_ps(_mm256_castsi256_ps(fail1_lo));
     int m1_hi = _mm256_movemask_ps(_mm256_castsi256_ps(fail1_hi));
-    uint32_t pass1 = (~(uint32_t)((m1_hi << 8) | m1_lo)) & 0xFFFFU;
+    uint32_t fail1 = (uint32_t)(m1_lo & 0x0F) |
+                     ((uint32_t)(m1_hi & 0x0F) << 4) |
+                     ((uint32_t)(m1_lo & 0xF0) << 4) |
+                     ((uint32_t)(m1_hi & 0xF0) << 8);
+    uint32_t pass1 = (~fail1) & 0xFFFFU;
 
     return (pass1 << 16) | pass0;
 }
@@ -506,6 +564,16 @@ static inline uint32_t sq16_fastscan_32x_generic_avx512(
         {
             sum_lo = _mm512_min_epu32(sum_lo, v_clamp);
             sum_hi = _mm512_min_epu32(sum_hi, v_clamp);
+
+            if (((d + 1) & 15) == 0)
+            {
+                __mmask16 p_lo = _mm512_cmple_epu32_mask(sum_lo, v_cut_u);
+                __mmask16 p_hi = _mm512_cmple_epu32_mask(sum_hi, v_cut_u);
+                if ((p_lo | p_hi) == 0)
+                {
+                    return 0;
+                }
+            } // if (((d + 1) & 15) == 0)
         }
     } // for (long d = 0; d < dim; d++)
 
