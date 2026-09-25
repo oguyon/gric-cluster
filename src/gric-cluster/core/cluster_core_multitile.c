@@ -72,7 +72,7 @@ static int compare_tuples(
  */
 static Frame *make_task_frame(const Frame *tile_frame)
 {
-    Frame *tf = malloc(sizeof(*tf));
+    Frame *tf = calloc(1, sizeof(*tf));
     if (tf == NULL)
     {
         return NULL;
