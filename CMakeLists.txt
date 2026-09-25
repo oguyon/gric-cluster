@@ -599,6 +599,9 @@ add_executable(gric-mcp
     src/gric-mcp/tools/tool_inspect_run.c
     src/gric-mcp/tools/tool_probe_dataset.c
     src/gric-mcp/tools/tool_probe_shm.c
+    src/gric-mcp/tools/tool_help.c
+    src/gric-mcp/tools/tool_fps_ops.c
+    ${HELP_TOPICS_GEN_C}
     src/shared/cjson/cJSON.c
     src/shared/cli/cli_colors.c
     src/gric-cluster-analysis/analysis_parser.c
@@ -1155,6 +1158,9 @@ add_executable(test_mcp_protocol
     src/gric-mcp/tools/tool_inspect_run.c
     src/gric-mcp/tools/tool_probe_dataset.c
     src/gric-mcp/tools/tool_probe_shm.c
+    src/gric-mcp/tools/tool_help.c
+    src/gric-mcp/tools/tool_fps_ops.c
+    ${HELP_TOPICS_GEN_C}
     src/shared/cjson/cJSON.c
     src/shared/cli/cli_colors.c
     src/gric-cluster-analysis/analysis_parser.c

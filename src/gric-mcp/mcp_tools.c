@@ -200,6 +200,167 @@ cJSON *mcp_tools_get_list(void)
         cJSON_AddItemToArray(list, create_tool_schema("gric_probe_shm", desc, schema));
     }
 
+    /* 8. gric_help */
+    {
+        const char *desc = "Query GRIC embedded help database (95+ topics) by keyword or fuzzy "
+                           "search: algorithms, parameters (rlim, entropy, tiling, milk), flags.";
+        const char *schema =
+            "{"
+            "  \"type\": \"object\","
+            "  \"properties\": {"
+            "    \"topic\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"Topic keyword or flag name (e.g. 'entropy', 'rlim').\""
+            "    },"
+            "    \"query\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"Optional search query to match in documentation.\""
+            "    }"
+            "  }"
+            "}";
+        cJSON_AddItemToArray(list, create_tool_schema("gric_help", desc, schema));
+    }
+
+    /* 9. gric_list_suite */
+    {
+        const char *desc = "List all 18+ programs in the GRIC suite with categories, summaries, "
+                           "and CLI usage prototypes.";
+        const char *schema = "{\"type\": \"object\"}";
+        cJSON_AddItemToArray(list, create_tool_schema("gric_list_suite", desc, schema));
+    }
+
+    /* 10. gric_get_recipe */
+    {
+        const char *desc = "Retrieve step-by-step cookbook instructions for common tasks (e.g. "
+                           "'milk_realtime_streaming', 'image_cube_clustering').";
+        const char *schema =
+            "{"
+            "  \"type\": \"object\","
+            "  \"properties\": {"
+            "    \"recipe\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"Name of recipe, or 'list' to see available recipes.\""
+            "    }"
+            "  }"
+            "}";
+        cJSON_AddItemToArray(list, create_tool_schema("gric_get_recipe", desc, schema));
+    }
+
+    /* 11. gric_fps_status */
+    {
+        const char *desc = "Inspect live status, loop rate, PID, and current parameters of a Milk "
+                           "FPS streaming instance (e.g. gric_cluster).";
+        const char *schema =
+            "{"
+            "  \"type\": \"object\","
+            "  \"properties\": {"
+            "    \"fps_name\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"FPS instance name (default: gric_cluster).\""
+            "    }"
+            "  }"
+            "}";
+        cJSON_AddItemToArray(list, create_tool_schema("gric_fps_status", desc, schema));
+    }
+
+    /* 12. gric_fps_run */
+    {
+        const char *desc = "Launch standalone milk-fpsexec-gric-cluster streaming daemon "
+                           "with input/output streams and initial parameters.";
+        const char *schema =
+            "{"
+            "  \"type\": \"object\","
+            "  \"properties\": {"
+            "    \"in_name\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"Input ImageStreamIO stream name (TRIGGER).\""
+            "    },"
+            "    \"out_name\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"Output assignment stream name (<out>_assign).\""
+            "    },"
+            "    \"fps_name\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"FPS instance name (default: gric_cluster).\""
+            "    },"
+            "    \"rlim\": {"
+            "      \"type\": \"number\","
+            "      \"description\": \"Cluster radius threshold (default: 0.5).\""
+            "    },"
+            "    \"allow_frame_drop\": {"
+            "      \"type\": \"boolean\","
+            "      \"description\": \"Lag policy: true=jump to latest frame, false=sequential.\""
+            "    },"
+            "    \"use_tmux\": {"
+            "      \"type\": \"boolean\","
+            "      \"description\": \"Run inside an isolated tmux session (default: true).\""
+            "    }"
+            "  },"
+            "  \"required\": [\"in_name\"]"
+            "}";
+        cJSON_AddItemToArray(list, create_tool_schema("gric_fps_run", desc, schema));
+    }
+
+    /* 13. gric_fps_set */
+    {
+        const char *desc = "Dynamically update an FPS parameter (e.g. .rlim, .allow_frame_drop, "
+                           ".reset_state) on a live streaming instance using milk-fps-set.";
+        const char *schema =
+            "{"
+            "  \"type\": \"object\","
+            "  \"properties\": {"
+            "    \"fps_name\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"FPS instance name (e.g. gric_cluster).\""
+            "    },"
+            "    \"param\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"Parameter key (e.g. 'rlim', 'allow_frame_drop').\""
+            "    },"
+            "    \"value\": {"
+            "      \"description\": \"New parameter value (number, boolean ON/OFF, or string).\""
+            "    }"
+            "  },"
+            "  \"required\": [\"fps_name\", \"param\", \"value\"]"
+            "}";
+        cJSON_AddItemToArray(list, create_tool_schema("gric_fps_set", desc, schema));
+    }
+
+    /* 14. gric_fps_stop */
+    {
+        const char *desc = "Gracefully stop an active Milk FPS instance (dispatching runstop and "
+                           "confstop to tmux ctrl window).";
+        const char *schema =
+            "{"
+            "  \"type\": \"object\","
+            "  \"properties\": {"
+            "    \"fps_name\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"FPS instance name (default: gric_cluster).\""
+            "    }"
+            "  }"
+            "}";
+        cJSON_AddItemToArray(list, create_tool_schema("gric_fps_stop", desc, schema));
+    }
+
+    /* 15. gric_probe_fps_streams */
+    {
+        const char *desc = "Inspect Milk live streams non-blockingly and decode the 8-element "
+                           "assignment telemetry vector (cluster ID, distance, latency, evals).";
+        const char *schema =
+            "{"
+            "  \"type\": \"object\","
+            "  \"properties\": {"
+            "    \"out_name\": {"
+            "      \"type\": \"string\","
+            "      \"description\": \"Name of output stream (e.g. gric_cluster_assign).\""
+            "    }"
+            "  },"
+            "  \"required\": [\"out_name\"]"
+            "}";
+        cJSON_AddItemToArray(list, create_tool_schema("gric_probe_fps_streams", desc, schema));
+    }
+
     return list;
 } // mcp_tools_get_list
 
