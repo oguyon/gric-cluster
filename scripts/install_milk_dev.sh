@@ -83,7 +83,7 @@ if [ "$INSTALL_DEPS" = true ]; then
     $SUDO apt-get install -y \
         build-essential cmake pkg-config git \
         libcfitsio-dev libreadline-dev libncurses-dev \
-        libgsl-dev libomp-dev
+        libgsl-dev libomp-dev libfftw3-dev bison flex
 fi
 
 echo "==> Preparing Milk source in: ${SRC_DIR}"
@@ -104,7 +104,8 @@ fi
 echo "==> Configuring Milk (Prefix: ${PREFIX})..."
 cmake -B "${SRC_DIR}/_build" -S "${SRC_DIR}" \
     -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
-    -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_BUILD_TYPE=Release \
+    -DUSE_CUDA=OFF
 
 NPROC="$(nproc 2>/dev/null || echo 4)"
 echo "==> Building Milk with ${NPROC} parallel jobs..."

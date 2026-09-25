@@ -74,6 +74,7 @@ static errno_t compute_function(void)
     memset(&out_assign, 0, sizeof(IMAGE));
     memset(&out_anchors, 0, sizeof(IMAGE));
     memset(&out_counts, 0, sizeof(IMAGE));
+    uint64_t frame_count = 0;
 
     if (gric_fps_init_output_streams(xsize, ysize, max_clusters,
                                      &out_assign, &out_anchors, &out_counts) != 0)
@@ -88,7 +89,15 @@ static errno_t compute_function(void)
             sizeof(CLIcmddata.cmdsettings->triggerstreamname) - 1);
     CLIcmddata.cmdsettings->flags |= CLICMDFLAG_PROCINFO;
 
-    INSERT_STD_PROCINFO_COMPUTEFUNC_START
+    INSERT_STD_PROCINFO_COMPUTEFUNC_INIT
+    if (processinfo != NULL)
+    {
+        processinfo->triggermode = PROCESSINFO_TRIGGERMODE_SEMAPHORE;
+        processinfo_waitoninputstream_init(processinfo, &in_img,
+                                           PROCESSINFO_TRIGGERMODE_SEMAPHORE,
+                                           -1);
+    }
+    INSERT_STD_PROCINFO_COMPUTEFUNC_LOOPSTART
     {
         uint64_t cnt0 = in_img.md[0].cnt0;
         uint32_t slice_idx = (in_img.md[0].naxis > 2) ? (uint32_t)in_img.md[0].cnt1 : 0;
@@ -100,6 +109,15 @@ static errno_t compute_function(void)
         struct timespec t_end;
         clock_gettime(CLOCK_MONOTONIC, &t_start);
 
+        frame_count++;
+        if (frame_count < 5)
+        {
+            fprintf(stderr, "DEBUG triggermode=%d, triggersem=%d, triggerstatus=%d, img=%p\n",
+                    processinfo ? processinfo->triggermode : -1,
+                    processinfo ? processinfo->triggersem : -1,
+                    processinfo ? processinfo->triggerstatus : -1,
+                    processinfo ? (void*)processinfo->trigger_image : NULL);
+        }
         gric_fps_process_frame(raw_slice, in_img.md[0].datatype, ndim,
                                cnt0, in_img.md[0].atime, 0.0,
                                &out_assign, &out_anchors, &out_counts);
@@ -115,12 +133,11 @@ static errno_t compute_function(void)
 
         processinfo_update_output_stream(processinfo, &out_assign, &in_img);
 
-        static uint64_t msg_cnt = 0;
-        if (++msg_cnt % 100 == 0)
+        if (frame_count % 100 == 0)
         {
             processinfo_WriteMessage_fmt(processinfo, "K=%ld Frames=%lu",
                                          (long)gric_fps_get_cluster_count(),
-                                         (unsigned long)msg_cnt);
+                                         (unsigned long)frame_count);
         }
     }
     INSERT_STD_PROCINFO_COMPUTEFUNC_END
@@ -128,6 +145,7 @@ static errno_t compute_function(void)
     gric_fps_close_output_streams(&out_assign, &out_anchors, &out_counts);
     ImageStreamIO_closeIm(&in_img);
     gric_fps_cleanup_engine();
+    fprintf(stderr, "TOTAL FRAMES PROCESSED: %lu\n", (unsigned long)frame_count);
 
     return RETURN_SUCCESS;
 }
