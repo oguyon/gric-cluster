@@ -110,14 +110,6 @@ static errno_t compute_function(void)
         clock_gettime(CLOCK_MONOTONIC, &t_start);
 
         frame_count++;
-        if (frame_count < 5)
-        {
-            fprintf(stderr, "DEBUG triggermode=%d, triggersem=%d, triggerstatus=%d, img=%p\n",
-                    processinfo ? processinfo->triggermode : -1,
-                    processinfo ? processinfo->triggersem : -1,
-                    processinfo ? processinfo->triggerstatus : -1,
-                    processinfo ? (void*)processinfo->trigger_image : NULL);
-        }
         gric_fps_process_frame(raw_slice, in_img.md[0].datatype, ndim,
                                cnt0, in_img.md[0].atime, 0.0,
                                &out_assign, &out_anchors, &out_counts);
@@ -145,7 +137,6 @@ static errno_t compute_function(void)
     gric_fps_close_output_streams(&out_assign, &out_anchors, &out_counts);
     ImageStreamIO_closeIm(&in_img);
     gric_fps_cleanup_engine();
-    fprintf(stderr, "TOTAL FRAMES PROCESSED: %lu\n", (unsigned long)frame_count);
 
     return RETURN_SUCCESS;
 }
