@@ -806,6 +806,12 @@ static int knn_score_candidate_clusters(
             double r_q = model->clusters[q].radius;
             double lb = fabs(dcc_val - r_home) - r_q;
 
+            if (lb - inv_scale >= tau_thresh)
+            {
+                telem->level1_clusters_pruned++;
+                continue;
+            }
+
             if (num_p > 0)
             {
                 for (int p = 0; p < num_p; p++)
@@ -838,13 +844,13 @@ static int knn_score_candidate_clusters(
                         lb = lb_te4;
                     }
                 }
-            } // if (num_p > 0)
 
-            if (lb - inv_scale >= tau_thresh)
-            {
-                telem->level1_clusters_pruned++;
-                continue;
-            }
+                if (lb - inv_scale >= tau_thresh)
+                {
+                    telem->level1_clusters_pruned++;
+                    continue;
+                }
+            } // if (num_p > 0)
 
             scores_buffer[num_cand_clusters].id = q;
             scores_buffer[num_cand_clusters].lb = lb;
@@ -873,6 +879,12 @@ static int knn_score_candidate_clusters(
 
         double r_q = model->clusters[q].radius;
         double lb1 = fabs(dcc_home_q - r_home) - r_q;
+
+        if (lb1 >= current_tau / eps_factor)
+        {
+            telem->level1_clusters_pruned++;
+            continue;
+        }
 
         double lb = lb1;
         if (config->use_multi_pivot && num_pivots > 0)
@@ -903,13 +915,13 @@ static int knn_score_candidate_clusters(
                     lb = lb_te4;
                 }
             }
-        } // if (config->use_multi_pivot ...)
 
-        if (lb >= current_tau / eps_factor)
-        {
-            telem->level1_clusters_pruned++;
-            continue;
-        }
+            if (lb >= current_tau / eps_factor)
+            {
+                telem->level1_clusters_pruned++;
+                continue;
+            }
+        } // if (config->use_multi_pivot ...)
 
         scores_buffer[num_cand_clusters].id = q;
         scores_buffer[num_cand_clusters].lb = lb;
