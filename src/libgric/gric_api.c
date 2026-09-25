@@ -188,22 +188,6 @@ static int grow_context_capacity(
     return 0;
 }
 
-static int ensure_frame_buffer(
-    gric_cluster_t *ctx)
-{
-    if (ctx->frame.data == NULL)
-    {
-        ctx->frame.data = (double *)malloc(ctx->ndim * sizeof(double));
-        if (!ctx->frame.data)
-        {
-            return -1;
-        }
-        ctx->frame.is_double = 1;
-        ctx->frame.width = (int)ctx->ndim;
-        ctx->frame.height = 1;
-    }
-    return 0;
-}
 
 gric_cluster_t *gric_cluster_create(
     const gric_cluster_config_t *cfg,
@@ -319,11 +303,13 @@ gric_cluster_t *gric_cluster_create(
     ctx->temp_dists = (double *)calloc(sz_N, sizeof(double));
     ctx->sorting_candidates = (Candidate *)calloc(sz_N, sizeof(Candidate));
 
-    ctx->frame.data = (double *)calloc(ndim, sizeof(double));
+    ctx->frame.data = NULL;
     ctx->frame.is_double = 1;
     ctx->frame.width = (int)ndim;
     ctx->frame.height = 1;
     ctx->frame.id = 0;
+    ctx->frame.is_mmap = 0;
+    ctx->frame.is_borrowed = 1;
 
     for (long i = 0; i < maxfr; i++)
     {
@@ -353,15 +339,13 @@ gric_status_t gric_cluster_feed_frame(
         return GRIC_ERR_INVALID_PARAM;
     }
 
-    if (ensure_frame_buffer(ctx) != 0)
-    {
-        return GRIC_ERR_OUT_OF_MEMORY;
-    }
-
-    memcpy(ctx->frame.data, coords, ctx->ndim * sizeof(double));
+    ctx->frame.data = (void *)coords;
+    ctx->frame.is_double = 1;
     ctx->frame.id = ctx->current_frame_id;
     ctx->frame.width = (int)ctx->ndim;
     ctx->frame.height = 1;
+    ctx->frame.is_mmap = 0;
+    ctx->frame.is_borrowed = 1;
 
     if (ctx->user_maxcl == 0 &&
         ctx->state.num_clusters >= ctx->config.algo.maxnbclust - 1)
@@ -613,10 +597,6 @@ void gric_cluster_destroy(
     free(ctx->temp_dists);
     free(ctx->sorting_candidates);
 
-    if (ctx->frame.data)
-    {
-        free(ctx->frame.data);
-    }
 
     free(ctx);
 }

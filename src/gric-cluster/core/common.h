@@ -19,6 +19,7 @@ typedef struct
     uint64_t        cnt0;
     struct timespec atime;
     int             is_mmap;
+    int             is_borrowed;
 } Frame;
 
 typedef struct

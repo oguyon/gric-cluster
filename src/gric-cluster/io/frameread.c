@@ -849,7 +849,7 @@ Frame *getframe_at(
 void free_frame(
     Frame *frame_ptr)
 {
-    if (frame_ptr == NULL)
+    if (frame_ptr == NULL || frame_ptr->is_borrowed)
     {
         return;
     }

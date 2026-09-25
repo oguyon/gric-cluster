@@ -52,6 +52,17 @@ else()
     message(WARNING "ImageStreamIO not found. Streaming input disabled.")
 endif()
 
+# Check for Milk framework (FPS and processinfo) via pkg-config
+option(ENABLE_MILK "Enable Milk framework (FPS and processinfo) integration" ON)
+if (ENABLE_MILK)
+    pkg_check_modules(MILK milk)
+    if (MILK_FOUND)
+        message(STATUS "Milk framework found. Building milk-fpsexec-gric-cluster and libmilkgric.")
+    else()
+        message(STATUS "Milk framework not found. Milk adapter disabled.")
+    endif()
+endif()
+
 find_package(OpenMP)
 if (OpenMP_C_FOUND)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
@@ -144,6 +155,7 @@ link_directories(
     ${PNG_LIBRARY_DIRS}
     ${FFMPEG_LIBRARY_DIRS}
     ${IMAGESTREAMIO_LIBRARY_DIRS}
+    ${MILK_LIBRARY_DIRS}
 )
 
 # Library Sources (libgric)
@@ -334,6 +346,10 @@ if (IMAGESTREAMIO_FOUND)
 
     add_executable(gric-stream-to-pipe src/tools/converters/stream_to_pipe.c src/shared/cli/cli_colors.c)
     target_link_libraries(gric-stream-to-pipe ${IMAGESTREAMIO_LIBRARIES} m)
+endif()
+
+if (ENABLE_MILK AND MILK_FOUND)
+    add_subdirectory(src/gric-fps)
 endif()
 
 # gric-status tool
