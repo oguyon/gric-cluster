@@ -21,6 +21,9 @@ on:
       - '.github/workflows/wasm-build.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -51,6 +54,21 @@ jobs:
 
       - name: Run WASM trace test
         run: node tests/wasm_trace_test.js
+
+      - name: Run WASM anchor test
+        run: node tests/wasm_anchor_test.js
+
+      - name: Run WASM evaluations test
+        run: node tests/wasm_evaluations_test.js
+
+      - name: Run WASM image test
+        run: node tests/wasm_image_test.js
+
+      - name: Run WASM k-NN test
+        run: node tests/wasm_knn_test.js
+
+      - name: Run WASM multi-tile test
+        run: node tests/wasm_multitile_test.js
 
       - name: Run JS High-D engine test
         run: node tests/highd_engine_test.js

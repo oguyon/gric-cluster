@@ -143,6 +143,10 @@ nav:
           - stream (ImageStreamIO): help/io/stream.md
           - cnt2sync: help/io/cnt2sync.md
           - shm: help/io/shm.md
+      - Milk Framework Integration:
+          - Overview: help/milk/milk.md
+          - FPS Standalone Daemon: help/milk/milk_fpsexec.md
+          - Live Telemetry Streams: help/milk/milk_streams.md
       - Output & Analysis:
           - outdir: help/output/outdir.md
           - output (Overview): help/output/output.md
