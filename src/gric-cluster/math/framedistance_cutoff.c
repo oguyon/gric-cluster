@@ -32,6 +32,7 @@ static double framedist_squared_cutoff_float_avx512(
     __m512 acc1 = _mm512_setzero_ps();
     __m512 acc2 = _mm512_setzero_ps();
     __m512 acc3 = _mm512_setzero_ps();
+    __m512 vcut = _mm512_set1_ps((float)cutoff_sq);
 
     for (; i <= size - 64; i += 64)
     {
@@ -58,7 +59,6 @@ static double framedist_squared_cutoff_float_avx512(
 
         if (cutoff_sq > 0.0)
         {
-            __m512 vcut = _mm512_set1_ps((float)cutoff_sq);
             __m512 max01 = _mm512_max_ps(acc0, acc1);
             __m512 max23 = _mm512_max_ps(acc2, acc3);
             __m512 max_lane = _mm512_max_ps(max01, max23);
@@ -171,6 +171,7 @@ double framedist_squared_cutoff_float(
         __m256 acc1 = _mm256_setzero_ps();
         __m256 acc2 = _mm256_setzero_ps();
         __m256 acc3 = _mm256_setzero_ps();
+        __m256 vcut = _mm256_set1_ps((float)cutoff_sq);
 
         for (; i <= size - 32; i += 32)
         {
@@ -204,7 +205,6 @@ double framedist_squared_cutoff_float(
 
             if (cutoff_sq > 0.0)
             {
-                __m256 vcut = _mm256_set1_ps((float)cutoff_sq);
                 __m256 max01 = _mm256_max_ps(acc0, acc1);
                 __m256 max23 = _mm256_max_ps(acc2, acc3);
                 __m256 max_lane = _mm256_max_ps(max01, max23);
@@ -289,6 +289,7 @@ static double framedist_squared_cutoff_double_avx512(
     __m512d acc1 = _mm512_setzero_pd();
     __m512d acc2 = _mm512_setzero_pd();
     __m512d acc3 = _mm512_setzero_pd();
+    __m512d vcut = _mm512_set1_pd(cutoff_sq);
 
     for (; i <= size - 32; i += 32)
     {
@@ -315,7 +316,6 @@ static double framedist_squared_cutoff_double_avx512(
 
         if (cutoff_sq > 0.0)
         {
-            __m512d vcut = _mm512_set1_pd(cutoff_sq);
             __m512d max01 = _mm512_max_pd(acc0, acc1);
             __m512d max23 = _mm512_max_pd(acc2, acc3);
             __m512d max_lane = _mm512_max_pd(max01, max23);
@@ -423,6 +423,7 @@ double framedist_squared_cutoff_double(
         __m256d acc1 = _mm256_setzero_pd();
         __m256d acc2 = _mm256_setzero_pd();
         __m256d acc3 = _mm256_setzero_pd();
+        __m256d vcut = _mm256_set1_pd(cutoff_sq);
 
         for (; i <= size - 16; i += 16)
         {
@@ -456,7 +457,6 @@ double framedist_squared_cutoff_double(
 
             if (cutoff_sq > 0.0)
             {
-                __m256d vcut = _mm256_set1_pd(cutoff_sq);
                 __m256d max01 = _mm256_max_pd(acc0, acc1);
                 __m256d max23 = _mm256_max_pd(acc2, acc3);
                 __m256d max_lane = _mm256_max_pd(max01, max23);

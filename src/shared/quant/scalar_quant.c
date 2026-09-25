@@ -643,13 +643,9 @@ static uint64_t sq8_dist_squared_u8_avx2(
         __m256i va0 = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
         __m256i vb0 = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
 
-        __m256i va_lo0 = _mm256_unpacklo_epi8(va0, zero256);
-        __m256i vb_lo0 = _mm256_unpacklo_epi8(vb0, zero256);
-        __m256i diff_lo0 = _mm256_sub_epi16(va_lo0, vb_lo0);
-
-        __m256i va_hi0 = _mm256_unpackhi_epi8(va0, zero256);
-        __m256i vb_hi0 = _mm256_unpackhi_epi8(vb0, zero256);
-        __m256i diff_hi0 = _mm256_sub_epi16(va_hi0, vb_hi0);
+        __m256i diff0 = _mm256_sub_epi8(_mm256_max_epu8(va0, vb0), _mm256_min_epu8(va0, vb0));
+        __m256i diff_lo0 = _mm256_unpacklo_epi8(diff0, zero256);
+        __m256i diff_hi0 = _mm256_unpackhi_epi8(diff0, zero256);
 
         sum_vec256_0 = _mm256_add_epi32(sum_vec256_0, _mm256_madd_epi16(diff_lo0, diff_lo0));
         sum_vec256_1 = _mm256_add_epi32(sum_vec256_1, _mm256_madd_epi16(diff_hi0, diff_hi0));
@@ -657,13 +653,9 @@ static uint64_t sq8_dist_squared_u8_avx2(
         __m256i va1 = _mm256_loadu_si256((const __m256i *)(const void *)(a + i + 32));
         __m256i vb1 = _mm256_loadu_si256((const __m256i *)(const void *)(b + i + 32));
 
-        __m256i va_lo1 = _mm256_unpacklo_epi8(va1, zero256);
-        __m256i vb_lo1 = _mm256_unpacklo_epi8(vb1, zero256);
-        __m256i diff_lo1 = _mm256_sub_epi16(va_lo1, vb_lo1);
-
-        __m256i va_hi1 = _mm256_unpackhi_epi8(va1, zero256);
-        __m256i vb_hi1 = _mm256_unpackhi_epi8(vb1, zero256);
-        __m256i diff_hi1 = _mm256_sub_epi16(va_hi1, vb_hi1);
+        __m256i diff1 = _mm256_sub_epi8(_mm256_max_epu8(va1, vb1), _mm256_min_epu8(va1, vb1));
+        __m256i diff_lo1 = _mm256_unpacklo_epi8(diff1, zero256);
+        __m256i diff_hi1 = _mm256_unpackhi_epi8(diff1, zero256);
 
         sum_vec256_0 = _mm256_add_epi32(sum_vec256_0, _mm256_madd_epi16(diff_lo1, diff_lo1));
         sum_vec256_1 = _mm256_add_epi32(sum_vec256_1, _mm256_madd_epi16(diff_hi1, diff_hi1));
@@ -688,13 +680,9 @@ static uint64_t sq8_dist_squared_u8_avx2(
         __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
         __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
 
-        __m256i va_lo = _mm256_unpacklo_epi8(va, zero256);
-        __m256i vb_lo = _mm256_unpacklo_epi8(vb, zero256);
-        __m256i diff_lo = _mm256_sub_epi16(va_lo, vb_lo);
-
-        __m256i va_hi = _mm256_unpackhi_epi8(va, zero256);
-        __m256i vb_hi = _mm256_unpackhi_epi8(vb, zero256);
-        __m256i diff_hi = _mm256_sub_epi16(va_hi, vb_hi);
+        __m256i diff = _mm256_sub_epi8(_mm256_max_epu8(va, vb), _mm256_min_epu8(va, vb));
+        __m256i diff_lo = _mm256_unpacklo_epi8(diff, zero256);
+        __m256i diff_hi = _mm256_unpackhi_epi8(diff, zero256);
 
         sum_vec256_0 = _mm256_add_epi32(sum_vec256_0, _mm256_madd_epi16(diff_lo, diff_lo));
         sum_vec256_1 = _mm256_add_epi32(sum_vec256_1, _mm256_madd_epi16(diff_hi, diff_hi));

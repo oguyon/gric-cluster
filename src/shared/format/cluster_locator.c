@@ -50,36 +50,6 @@ void calc_te4_ref_init(
     ref->valid = 1;
 }
 
-/**
- * calc_min_dist_4pt_ref() - Compute scalar 4-point Euclidean lower-bound distance.
- * @ref: Precomputed 4-point reference coordinate structure.
- * @d13: Distance from candidate anchor to first reference anchor.
- * @d23: Distance from candidate anchor to second reference anchor.
- *
- * Purpose & Context ("What is this used for?"):
- * Invoked during sample location and candidate cluster pruning to compute the conservative
- * Euclidean lower bound between an input frame and a candidate cluster using 2 pivot anchors.
- * Prunes candidate clusters whose lower bound exceeds the current best distance.
- *
- * Return: Conservative Euclidean lower bound distance.
- */
-double calc_min_dist_4pt_ref(
-    const TE4Ref *ref,
-    double        d13,
-    double        d23)
-{
-    if (!ref->valid)
-    {
-        return fabs(ref->x4 - d13);
-    }
-
-    double x3 = (d13 * d13 + ref->d12_sq - d23 * d23) * ref->inv_2d12;
-    double y3_sq = d13 * d13 - x3 * x3;
-    double y3 = (y3_sq > 0.0) ? sqrt(y3_sq) : 0.0;
-    double dx = x3 - ref->x4;
-    double dy = y3 - ref->y4;
-    return sqrt(dx * dx + dy * dy);
-}
 
 /**
  * calc_te5_ref_init() - Precompute 3D coordinate frame for 5-point tetrahedral pruning.

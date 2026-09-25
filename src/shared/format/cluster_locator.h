@@ -8,6 +8,7 @@
 
 #include "eq16_quant.h"
 #include "scalar_quant.h"
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -104,10 +105,24 @@ void calc_te4_ref_init(
  *
  * Return: Minimum reconstructed distance between points 3 and 4.
  */
-double calc_min_dist_4pt_ref(
+static inline double calc_min_dist_4pt_ref(
     const TE4Ref *ref,
     double        d13,
-    double        d23);
+    double        d23)
+{
+    if (!ref->valid)
+    {
+        return fabs(ref->x4 - d13);
+    }
+
+    double d13_sq = d13 * d13;
+    double x3 = (d13_sq + ref->d12_sq - d23 * d23) * ref->inv_2d12;
+    double y3_sq = d13_sq - x3 * x3;
+    double y3 = (y3_sq > 0.0) ? sqrt(y3_sq) : 0.0;
+    double dx = x3 - ref->x4;
+    double dy = y3 - ref->y4;
+    return sqrt(dx * dx + dy * dy);
+}
 
 /**
  * calc_te5_ref_init() - Initialize precomputed 5-point reference geometry.
