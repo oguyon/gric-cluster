@@ -681,6 +681,61 @@ if (OpenMP_C_FOUND)
 endif()
 
 # ==============================================================================
+# Installation
+# ==============================================================================
+install(TARGETS
+    gric-cluster
+    gric-status
+    gric-info
+    gric-help
+    gric-benchmark
+    gric-simd-bench
+    gric-tune
+    gric-cluster-analysis
+    gric-server
+    gric-knn
+    gric-knn-avg
+    gric-dimdensity
+    gric-bin2ascii
+    gric-ascii2bin
+    gric-mktxtseq
+    gric-plot
+    gric-probe
+    gric-mcp
+    gric-ascii-spot-2-video
+    gric-mkclusteredfile
+    gric-NDmodel
+    RUNTIME DESTINATION bin
+)
+
+install(CODE "
+    file(CREATE_LINK gric-probe
+        \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/gric-cluster-probe
+        SYMBOLIC)
+")
+
+install(TARGETS gric gric_static
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)
+
+install(DIRECTORY include/gric
+    DESTINATION include
+)
+
+if (IMAGESTREAMIO_FOUND)
+    install(TARGETS gric-txt2stream gric-stream-to-pipe
+        RUNTIME DESTINATION bin
+    )
+endif()
+
+if (CFITSIO_FOUND)
+    install(TARGETS gric-gen-balls gric-gen-asteroid gric-asteroid-recon-test
+        RUNTIME DESTINATION bin
+    )
+endif()
+
+# ==============================================================================
 # Testing & CTest Integration
 # ==============================================================================
 enable_testing()

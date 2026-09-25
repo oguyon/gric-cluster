@@ -53,6 +53,12 @@ install(TARGETS milk-fpsexec-gric-cluster
     DESTINATION bin
 )
 
+install(CODE "
+    file(CREATE_LINK milk-fpsexec-gric-cluster
+        \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/gric-fps-cluster
+        SYMBOLIC)
+")
+
 # 2. Shared Milk CLI Plugin: libmilkgric.so
 add_library(milkgric SHARED
     gric_module.c
