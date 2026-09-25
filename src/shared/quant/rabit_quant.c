@@ -661,6 +661,37 @@ void rabitq_free_query_lut(
     }
 }
 
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+#include <pthread.h>
+
+#if defined(_MSC_VER)
+__declspec(align(32)) static float rabit_sign_lut256[256][8];
+__declspec(align(16)) static float rabit_level_lut4[256][4];
+#else
+__attribute__((aligned(32))) static float rabit_sign_lut256[256][8];
+__attribute__((aligned(16))) static float rabit_level_lut4[256][4];
+#endif
+static pthread_once_t rabit_lut_once = PTHREAD_ONCE_INIT;
+
+static void rabit_init_luts(void)
+{
+    static const float sign_tab[2] = {-1.0f, 1.0f};
+    static const float level_tab[4] = {-1.0f, 1.0f, -3.0f, 3.0f};
+
+    for (int b = 0; b < 256; b++)
+    {
+        for (int k = 0; k < 8; k++)
+        {
+            rabit_sign_lut256[b][k] = sign_tab[(b >> k) & 1];
+        }
+        for (int k = 0; k < 4; k++)
+        {
+            rabit_level_lut4[b][k] = level_tab[(b >> (k * 2)) & 3];
+        }
+    }
+}
+#endif
+
 /**
  * rabitq_compute_lower_bound() - Guaranteed metric lower bound Euclidean distance.
  * @rotated_query: Rotated query float vector [dim_pad].
@@ -687,65 +718,53 @@ double rabitq_compute_lower_bound(
     static const float sign_tab[2] = {-1.0f, 1.0f};
     static const float level_tab[4] = {-1.0f, 1.0f, -3.0f, 3.0f};
 
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+    pthread_once(&rabit_lut_once, rabit_init_luts);
+#endif
+
     if (bits == 1)
     {
 #if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
         long num_bytes = dim_pad >> 3;
         __m256 sum_vec0 = _mm256_setzero_ps();
         __m256 sum_vec1 = _mm256_setzero_ps();
+        __m256 sum_vec2 = _mm256_setzero_ps();
+        __m256 sum_vec3 = _mm256_setzero_ps();
         long q_idx = 0;
         long b = 0;
 
-        for (; b <= num_bytes - 2; b += 2)
+        for (; b <= num_bytes - 4; b += 4)
         {
-            uint8_t byte0 = cand_codes[b];
-            uint8_t byte1 = cand_codes[b + 1];
-
             __m256 q0 = _mm256_loadu_ps(&rotated_query[q_idx]);
-            __m256 s0 = _mm256_set_ps(
-                sign_tab[(byte0 >> 7) & 1],
-                sign_tab[(byte0 >> 6) & 1],
-                sign_tab[(byte0 >> 5) & 1],
-                sign_tab[(byte0 >> 4) & 1],
-                sign_tab[(byte0 >> 3) & 1],
-                sign_tab[(byte0 >> 2) & 1],
-                sign_tab[(byte0 >> 1) & 1],
-                sign_tab[byte0 & 1]);
+            __m256 s0 = _mm256_load_ps(&rabit_sign_lut256[cand_codes[b + 0]][0]);
             sum_vec0 = _mm256_fmadd_ps(q0, s0, sum_vec0);
 
             __m256 q1 = _mm256_loadu_ps(&rotated_query[q_idx + 8]);
-            __m256 s1 = _mm256_set_ps(
-                sign_tab[(byte1 >> 7) & 1],
-                sign_tab[(byte1 >> 6) & 1],
-                sign_tab[(byte1 >> 5) & 1],
-                sign_tab[(byte1 >> 4) & 1],
-                sign_tab[(byte1 >> 3) & 1],
-                sign_tab[(byte1 >> 2) & 1],
-                sign_tab[(byte1 >> 1) & 1],
-                sign_tab[byte1 & 1]);
+            __m256 s1 = _mm256_load_ps(&rabit_sign_lut256[cand_codes[b + 1]][0]);
             sum_vec1 = _mm256_fmadd_ps(q1, s1, sum_vec1);
 
-            q_idx += 16;
+            __m256 q2 = _mm256_loadu_ps(&rotated_query[q_idx + 16]);
+            __m256 s2 = _mm256_load_ps(&rabit_sign_lut256[cand_codes[b + 2]][0]);
+            sum_vec2 = _mm256_fmadd_ps(q2, s2, sum_vec2);
+
+            __m256 q3 = _mm256_loadu_ps(&rotated_query[q_idx + 24]);
+            __m256 s3 = _mm256_load_ps(&rabit_sign_lut256[cand_codes[b + 3]][0]);
+            sum_vec3 = _mm256_fmadd_ps(q3, s3, sum_vec3);
+
+            q_idx += 32;
         }
 
         for (; b < num_bytes; b++)
         {
-            uint8_t byte = cand_codes[b];
             __m256 q = _mm256_loadu_ps(&rotated_query[q_idx]);
-            __m256 s = _mm256_set_ps(
-                sign_tab[(byte >> 7) & 1],
-                sign_tab[(byte >> 6) & 1],
-                sign_tab[(byte >> 5) & 1],
-                sign_tab[(byte >> 4) & 1],
-                sign_tab[(byte >> 3) & 1],
-                sign_tab[(byte >> 2) & 1],
-                sign_tab[(byte >> 1) & 1],
-                sign_tab[byte & 1]);
+            __m256 s = _mm256_load_ps(&rabit_sign_lut256[cand_codes[b]][0]);
             sum_vec0 = _mm256_fmadd_ps(q, s, sum_vec0);
             q_idx += 8;
         }
 
-        __m256 sum_vec = _mm256_add_ps(sum_vec0, sum_vec1);
+        __m256 sum01 = _mm256_add_ps(sum_vec0, sum_vec1);
+        __m256 sum23 = _mm256_add_ps(sum_vec2, sum_vec3);
+        __m256 sum_vec = _mm256_add_ps(sum01, sum23);
         __m128 lo = _mm256_castps256_ps128(sum_vec);
         __m128 hi = _mm256_extractf128_ps(sum_vec, 1);
         __m128 sum128 = _mm_add_ps(lo, hi);
@@ -785,28 +804,45 @@ double rabitq_compute_lower_bound(
     {
 #if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
         long num_blocks = dim_pad >> 3;
-        __m256 sum_vec = _mm256_setzero_ps();
+        __m256 sum_vec0 = _mm256_setzero_ps();
+        __m256 sum_vec1 = _mm256_setzero_ps();
         long q_idx = 0;
+        long blk = 0;
 
-        for (long blk = 0; blk < num_blocks; blk++)
+        for (; blk <= num_blocks - 2; blk += 2)
+        {
+            uint8_t b0_0 = cand_codes[(blk + 0) * 2 + 0];
+            uint8_t b0_1 = cand_codes[(blk + 0) * 2 + 1];
+            __m128 lo0 = _mm_load_ps(&rabit_level_lut4[b0_0][0]);
+            __m128 hi0 = _mm_load_ps(&rabit_level_lut4[b0_1][0]);
+            __m256 lvl0 = _mm256_set_m128(hi0, lo0);
+            __m256 q0 = _mm256_loadu_ps(&rotated_query[q_idx]);
+            sum_vec0 = _mm256_fmadd_ps(q0, lvl0, sum_vec0);
+
+            uint8_t b1_0 = cand_codes[(blk + 1) * 2 + 0];
+            uint8_t b1_1 = cand_codes[(blk + 1) * 2 + 1];
+            __m128 lo1 = _mm_load_ps(&rabit_level_lut4[b1_0][0]);
+            __m128 hi1 = _mm_load_ps(&rabit_level_lut4[b1_1][0]);
+            __m256 lvl1 = _mm256_set_m128(hi1, lo1);
+            __m256 q1 = _mm256_loadu_ps(&rotated_query[q_idx + 8]);
+            sum_vec1 = _mm256_fmadd_ps(q1, lvl1, sum_vec1);
+
+            q_idx += 16;
+        }
+
+        for (; blk < num_blocks; blk++)
         {
             uint8_t byte0 = cand_codes[blk * 2 + 0];
             uint8_t byte1 = cand_codes[blk * 2 + 1];
-
+            __m128 lo = _mm_load_ps(&rabit_level_lut4[byte0][0]);
+            __m128 hi = _mm_load_ps(&rabit_level_lut4[byte1][0]);
+            __m256 lvl = _mm256_set_m128(hi, lo);
             __m256 q = _mm256_loadu_ps(&rotated_query[q_idx]);
-            __m256 lvl = _mm256_set_ps(
-                level_tab[(byte1 >> 6) & 3],
-                level_tab[(byte1 >> 4) & 3],
-                level_tab[(byte1 >> 2) & 3],
-                level_tab[byte1 & 3],
-                level_tab[(byte0 >> 6) & 3],
-                level_tab[(byte0 >> 4) & 3],
-                level_tab[(byte0 >> 2) & 3],
-                level_tab[byte0 & 3]);
-            sum_vec = _mm256_fmadd_ps(q, lvl, sum_vec);
+            sum_vec0 = _mm256_fmadd_ps(q, lvl, sum_vec0);
             q_idx += 8;
         }
 
+        __m256 sum_vec = _mm256_add_ps(sum_vec0, sum_vec1);
         __m128 lo = _mm256_castps256_ps128(sum_vec);
         __m128 hi = _mm256_extractf128_ps(sum_vec, 1);
         __m128 sum128 = _mm_add_ps(lo, hi);

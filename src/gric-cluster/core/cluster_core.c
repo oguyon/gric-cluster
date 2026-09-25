@@ -41,27 +41,29 @@ volatile sig_atomic_t stop_requested = 0;
 #define ANSI_COLOR_BLACK "\x1b[30m"
 
 /**
- * get_dist() - High-level distance evaluation between a frame and a cluster anchor.
+ * get_dist_cutoff() - High-level distance evaluation with early-exit cutoff.
  * @a:             Pointer to the first Frame.
  * @b:             Pointer to the second Frame (cluster anchor).
  * @cluster_idx:   Index of the cluster.
  * @cluster_prob:  Prior predictive probability of matching the cluster.
  * @current_gprob: Geometric consistency probability.
+ * @cutoff_sq:     Squared distance threshold for early exit (<= 0.0 disables cutoff).
  * @config:        Pointer to the active ClusterConfig.
  * @state:         Pointer to the active ClusterState.
  *
  * Purpose & Context ("What is this used for?"):
- * Wraps the raw `framedist` call, records statistics, writes to the distance log
+ * Wraps framedist_cutoff(), records statistics, writes to the distance log
  * if configured, and prints verbose traces if requested.
  *
- * Return: The Euclidean distance between frames.
+ * Return: Euclidean distance if <= sqrt(cutoff_sq), or value > sqrt(cutoff_sq) on cutoff.
  */
-double get_dist(
+double get_dist_cutoff(
     Frame         *a,
     Frame         *b,
     int            cluster_idx,
     double         cluster_prob,
     double         current_gprob,
+    double         cutoff_sq,
     ClusterConfig *config,
     ClusterState  *state)
 {
@@ -83,7 +85,13 @@ double get_dist(
 #endif
         state->telemetry.framedist_calls_intercluster++;
     }
-    double d = framedist(a, b);
+
+    if (config->output.distall_mode)
+    {
+        cutoff_sq = 0.0;
+    }
+
+    double d = framedist_cutoff(a, b, cutoff_sq);
 
     if (config->output.distall_mode && state->distall_out)
     {
@@ -100,6 +108,41 @@ double get_dist(
     }
 
     return d;
+}
+
+/**
+ * get_dist() - High-level distance evaluation between a frame and a cluster anchor.
+ * @a:             Pointer to the first Frame.
+ * @b:             Pointer to the second Frame (cluster anchor).
+ * @cluster_idx:   Index of the cluster.
+ * @cluster_prob:  Prior predictive probability of matching the cluster.
+ * @current_gprob: Geometric consistency probability.
+ * @config:        Pointer to the active ClusterConfig.
+ * @state:         Pointer to the active ClusterState.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Wraps get_dist_cutoff() with cutoff disabled (cutoff_sq = 0.0).
+ *
+ * Return: The Euclidean distance between frames.
+ */
+double get_dist(
+    Frame         *a,
+    Frame         *b,
+    int            cluster_idx,
+    double         cluster_prob,
+    double         current_gprob,
+    ClusterConfig *config,
+    ClusterState  *state)
+{
+    return get_dist_cutoff(
+        a,
+        b,
+        cluster_idx,
+        cluster_prob,
+        current_gprob,
+        0.0,
+        config,
+        state);
 }
 
 /**

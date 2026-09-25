@@ -523,3 +523,43 @@ double framedist(
     return framedist_float((const float *)a->data, (const float *)b->data, size);
 }
 
+
+/**
+ * framedist_cutoff() - Euclidean distance between two frames with early cutoff.
+ * @a:         Pointer to first frame.
+ * @b:         Pointer to second frame.
+ * @cutoff_sq: Squared distance threshold for early exit (<= 0.0 disables cutoff).
+ *
+ * Checks frame dimension matching, then dispatches to float or double cutoff distance.
+ *
+ * Return: Euclidean distance if <= sqrt(cutoff_sq), or (cutoff_sq + 1.0) on early exit.
+ */
+double framedist_cutoff(
+    const Frame *a,
+    const Frame *b,
+    double       cutoff_sq)
+{
+    if (a->width != b->width || a->height != b->height)
+    {
+        return -1.0;
+    }
+
+    long size = a->width * a->height;
+
+    if (a->is_double)
+    {
+        return framedist_squared_cutoff_double(
+            (const double *)a->data,
+            (const double *)b->data,
+            size,
+            cutoff_sq);
+    }
+
+    return framedist_squared_cutoff_float(
+        (const float *)a->data,
+        (const float *)b->data,
+        size,
+        cutoff_sq);
+}
+
+

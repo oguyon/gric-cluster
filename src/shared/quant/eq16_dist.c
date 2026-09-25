@@ -59,31 +59,30 @@ static uint64_t eq16_dist_squared_i16_avx512(
     long i = 0;
     __m512i sum_vec512_0 = _mm512_setzero_si512();
     __m512i sum_vec512_1 = _mm512_setzero_si512();
+    __m512i ovf_acc = _mm512_setzero_si512();
 
     for (; i <= dim - 32; i += 32)
     {
         __m512i va = _mm512_loadu_si512((const void *)(a + i));
         __m512i vb = _mm512_loadu_si512((const void *)(b + i));
-        __m512i max_v = _mm512_max_epi16(va, vb);
-        __m512i min_v = _mm512_min_epi16(va, vb);
-        __m512i u = _mm512_sub_epi16(max_v, min_v);
 
-        __m512i lo16 = _mm512_mullo_epi16(u, u);
-        __m512i hi16 = _mm512_mulhi_epu16(u, u);
+        __m512i diff = _mm512_sub_epi16(va, vb);
+        __m512i sat  = _mm512_subs_epi16(va, vb);
+        ovf_acc = _mm512_or_si512(ovf_acc, _mm512_xor_si512(diff, sat));
 
-        __m512i prod_lo = _mm512_unpacklo_epi16(lo16, hi16);
-        __m512i prod_hi = _mm512_unpackhi_epi16(lo16, hi16);
+        __m512i prod = _mm512_madd_epi16(diff, diff);
 
-        __m256i p_lo0 = _mm512_castsi512_si256(prod_lo);
-        __m256i p_lo1 = _mm512_extracti64x4_epi64(prod_lo, 1);
-        __m256i p_hi0 = _mm512_castsi512_si256(prod_hi);
-        __m256i p_hi1 = _mm512_extracti64x4_epi64(prod_hi, 1);
+        __m256i p_lo = _mm512_castsi512_si256(prod);
+        __m256i p_hi = _mm512_extracti64x4_epi64(prod, 1);
 
-        sum_vec512_0 = _mm512_add_epi64(sum_vec512_0, _mm512_cvtepu32_epi64(p_lo0));
-        sum_vec512_0 = _mm512_add_epi64(sum_vec512_0, _mm512_cvtepu32_epi64(p_lo1));
-        sum_vec512_1 = _mm512_add_epi64(sum_vec512_1, _mm512_cvtepu32_epi64(p_hi0));
-        sum_vec512_1 = _mm512_add_epi64(sum_vec512_1, _mm512_cvtepu32_epi64(p_hi1));
+        sum_vec512_0 = _mm512_add_epi64(sum_vec512_0, _mm512_cvtepi32_epi64(p_lo));
+        sum_vec512_1 = _mm512_add_epi64(sum_vec512_1, _mm512_cvtepi32_epi64(p_hi));
     } // for (; i <= dim - 32; i += 32)
+
+    if (_mm512_test_epi64_mask(ovf_acc, ovf_acc) != 0)
+    {
+        return eq16_dist_squared_i16_scalar(a, b, dim);
+    }
 
     __m512i sum_tot = _mm512_add_epi64(sum_vec512_0, sum_vec512_1);
     total += (uint64_t)_mm512_reduce_add_epi64(sum_tot);
@@ -126,20 +125,20 @@ static uint64_t eq16_dist_squared_i16_avx2_exact(
         __m256i va = _mm256_loadu_si256((const __m256i *)(const void *)(a + i));
         __m256i vb = _mm256_loadu_si256((const __m256i *)(const void *)(b + i));
 
-        __m256i max_v = _mm256_max_epi16(va, vb);
-        __m256i min_v = _mm256_min_epi16(va, vb);
-        __m256i u = _mm256_sub_epi16(max_v, min_v);
+        __m256i va_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(va));
+        __m256i vb_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(vb));
+        __m256i d_lo  = _mm256_sub_epi32(va_lo, vb_lo);
+        __m256i p_lo  = _mm256_mullo_epi32(d_lo, d_lo);
 
-        __m256i lo16 = _mm256_mullo_epi16(u, u);
-        __m256i hi16 = _mm256_mulhi_epu16(u, u);
+        __m256i va_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(va, 1));
+        __m256i vb_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(vb, 1));
+        __m256i d_hi  = _mm256_sub_epi32(va_hi, vb_hi);
+        __m256i p_hi  = _mm256_mullo_epi32(d_hi, d_hi);
 
-        __m256i prod_lo = _mm256_unpacklo_epi16(lo16, hi16);
-        __m256i prod_hi = _mm256_unpackhi_epi16(lo16, hi16);
-
-        __m256i p0 = _mm256_cvtepu32_epi64(_mm256_castsi256_si128(prod_lo));
-        __m256i p1 = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(prod_lo, 1));
-        __m256i p2 = _mm256_cvtepu32_epi64(_mm256_castsi256_si128(prod_hi));
-        __m256i p3 = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(prod_hi, 1));
+        __m256i p0 = _mm256_cvtepu32_epi64(_mm256_castsi256_si128(p_lo));
+        __m256i p1 = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(p_lo, 1));
+        __m256i p2 = _mm256_cvtepu32_epi64(_mm256_castsi256_si128(p_hi));
+        __m256i p3 = _mm256_cvtepu32_epi64(_mm256_extracti128_si256(p_hi, 1));
 
         sum_lo = _mm256_add_epi64(sum_lo, _mm256_add_epi64(p0, p1));
         sum_hi = _mm256_add_epi64(sum_hi, _mm256_add_epi64(p2, p3));

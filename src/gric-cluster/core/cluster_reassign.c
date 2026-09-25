@@ -235,24 +235,26 @@ long run_second_pass_clustering(
                         fr_loaded = true;
                     }
 
-                    double d = get_dist(
+                    double cutoff_sq = (d_best < INFINITY) ? (d_best * d_best) : 0.0;
+                    double d = get_dist_cutoff(
                         &local_fr,
                         &state->clusters[u].anchor,
                         u,
                         0.0,
                         0.0,
+                        cutoff_sq,
                         config,
                         state);
 
-                    frame_dists[u] = d;
-                    measured[u] = 1;
-                    measured_indices[num_measured++] = u;
                     new_dist_evals++;
 
                     if (d < d_best)
                     {
                         d_best = d;
                         best_cl = u;
+                        frame_dists[u] = d;
+                        measured[u] = 1;
+                        measured_indices[num_measured++] = u;
                     }
                 } // for (int u = 0; u < K; u++)
 
