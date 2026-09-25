@@ -251,6 +251,11 @@ void knn_cross_eval_inter_clusters(
     long frame_elem = model->frame_elements;
     double eps_factor = 1.0 + config->epsilon;
     double current_tau = knn_heap_peek_max_dist(heap);
+    double tau_thresh = current_tau / eps_factor;
+    if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
+    {
+        tau_thresh = config->rlim_cutoff;
+    }
     int num_cand_clusters = 0;
 
     for (int q = 0; q < M; q++)
@@ -274,12 +279,9 @@ void knn_cross_eval_inter_clusters(
             int p = loc_res->evaluated_clusters[e];
             double d_p = loc_res->evaluated_dists[e];
             double dcc = model->dcc_matrix[p * M + q];
-            double lb1 = dcc - r_q - d_p;
-            double lb2 = d_p - dcc - r_q;
-            double lb = (lb1 > lb2) ? lb1 : lb2;
+            double lb = fabs(dcc - d_p) - r_q;
 
-            if (lb >= current_tau / eps_factor ||
-                (config->rlim_cutoff > 0.0 && lb >= config->rlim_cutoff))
+            if (lb >= tau_thresh)
             {
                 active_mask[q] = 0;
                 pruned_3p = 1;
@@ -308,8 +310,7 @@ void knn_cross_eval_inter_clusters(
             lb = 0.0;
         }
 
-        if (lb >= current_tau / eps_factor ||
-            (config->rlim_cutoff > 0.0 && lb >= config->rlim_cutoff))
+        if (lb >= tau_thresh)
         {
             telem->level1_clusters_pruned++;
             continue;
