@@ -445,7 +445,7 @@ void frame_assign_to_anchor(
     }
 
     cluster->anchor = *source_frame;
-    if (source_frame->is_mmap && source_frame->data != NULL)
+    if ((source_frame->is_mmap || source_frame->is_borrowed) && source_frame->data != NULL)
     {
         long dim = source_frame->width * source_frame->height;
         size_t elem_size = source_frame->is_double ? sizeof(double) : sizeof(float);
@@ -455,9 +455,13 @@ void frame_assign_to_anchor(
             memcpy(anchor_buf, source_frame->data, (size_t)dim * elem_size);
             cluster->anchor.data = anchor_buf;
             cluster->anchor.is_mmap = 0;
+            cluster->anchor.is_borrowed = 0;
         }
     }
 
-    source_frame->data = NULL;
-    source_frame->is_mmap = 0;
+    if (!source_frame->is_borrowed)
+    {
+        source_frame->data = NULL;
+        source_frame->is_mmap = 0;
+    }
 }

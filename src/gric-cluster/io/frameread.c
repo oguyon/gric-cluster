@@ -617,7 +617,7 @@ Frame *getframe_at(
 
             if (frame_struct == NULL)
             {
-                frame_struct = (Frame *)malloc(sizeof(Frame));
+                frame_struct = (Frame *)calloc(1, sizeof(Frame));
                 if (frame_struct == NULL)
                 {
                     return NULL;
@@ -635,6 +635,7 @@ Frame *getframe_at(
             frame_struct->is_double = frameread_use_double;
             frame_struct->data = (void *)src_bytes;
             frame_struct->is_mmap = 1;
+            frame_struct->is_borrowed = 0;
             frame_struct->cnt0 = 0;
             frame_struct->atime.tv_sec = 0;
             frame_struct->atime.tv_nsec = 0;
@@ -663,7 +664,7 @@ Frame *getframe_at(
 
             if (frame_struct == NULL)
             {
-                frame_struct = (Frame *)malloc(sizeof(Frame));
+                frame_struct = (Frame *)calloc(1, sizeof(Frame));
                 if (frame_struct == NULL)
                 {
                     return NULL;
@@ -681,6 +682,7 @@ Frame *getframe_at(
             frame_struct->is_double = frameread_use_double;
             frame_struct->data = (void *)src_bytes;
             frame_struct->is_mmap = 1;
+            frame_struct->is_borrowed = 0;
             frame_struct->cnt0 = 0;
             frame_struct->atime.tv_sec = 0;
             frame_struct->atime.tv_nsec = 0;
@@ -708,7 +710,7 @@ Frame *getframe_at(
 
     if (frame_struct == NULL)
     {
-        frame_struct = (Frame *)malloc(sizeof(Frame));
+        frame_struct = (Frame *)calloc(1, sizeof(Frame));
         if (frame_struct == NULL)
         {
             if (pooled_data != NULL)
@@ -737,6 +739,7 @@ Frame *getframe_at(
     frame_struct->id = index;
     frame_struct->is_double = frameread_use_double;
     frame_struct->is_mmap = 0;
+    frame_struct->is_borrowed = 0;
 
     if (!is_filelist_mode)
     {
@@ -849,7 +852,7 @@ Frame *getframe_at(
 void free_frame(
     Frame *frame_ptr)
 {
-    if (frame_ptr == NULL)
+    if (frame_ptr == NULL || frame_ptr->is_borrowed)
     {
         return;
     }
@@ -880,6 +883,8 @@ void free_frame(
             }
         }
     }
+
+    frame_ptr->is_borrowed = 0;
 
 #ifdef _OPENMP
 #pragma omp critical(frame_pool)
@@ -942,6 +947,7 @@ int getframe_at_buf(
             frame_struct->is_double = frameread_use_double;
             frame_struct->data = (void *)src_bytes;
             frame_struct->is_mmap = 1;
+            frame_struct->is_borrowed = 0;
             frame_struct->cnt0 = 0;
             frame_struct->atime.tv_sec = 0;
             frame_struct->atime.tv_nsec = 0;
@@ -960,6 +966,7 @@ int getframe_at_buf(
     *frame_struct = *fr;
     fr->data = NULL;
     fr->is_mmap = 1;
+    fr->is_borrowed = 0;
     free_frame(fr);
     return 0;
 }
@@ -976,7 +983,7 @@ void release_frame_buf(
         return;
     }
 
-    if (!frame_struct->is_mmap && frame_struct->data != NULL)
+    if (!frame_struct->is_mmap && !frame_struct->is_borrowed && frame_struct->data != NULL)
     {
         free(frame_struct->data);
         frame_struct->data = NULL;
