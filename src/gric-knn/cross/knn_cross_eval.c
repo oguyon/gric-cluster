@@ -321,11 +321,35 @@ void knn_cross_eval_inter_clusters(
         num_cand_clusters++;
     } // for (int q = 0; ...)
 
-    qsort(scores_buffer, (size_t)num_cand_clusters, sizeof(ClusterScore),
-          compare_cluster_scores);
-
     // Inter-Cluster Search on surviving candidate clusters
     int max_cands = (config->approx_mode) ? 4 : num_cand_clusters;
+
+    if (config->approx_mode && num_cand_clusters > max_cands)
+    {
+        for (int i = 0; i < max_cands; i++)
+        {
+            int min_idx = i;
+            for (int j = i + 1; j < num_cand_clusters; j++)
+            {
+                if (compare_cluster_scores(&scores_buffer[j], &scores_buffer[min_idx]) < 0)
+                {
+                    min_idx = j;
+                }
+            }
+            if (min_idx != i)
+            {
+                ClusterScore tmp = scores_buffer[i];
+                scores_buffer[i] = scores_buffer[min_idx];
+                scores_buffer[min_idx] = tmp;
+            }
+        }
+    }
+    else
+    {
+        qsort(scores_buffer, (size_t)num_cand_clusters, sizeof(ClusterScore),
+              compare_cluster_scores);
+    }
+
     for (int idx = 0; idx < num_cand_clusters && idx < max_cands; idx++)
     {
         int q = scores_buffer[idx].id;
