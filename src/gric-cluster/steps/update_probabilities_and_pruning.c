@@ -10,13 +10,8 @@
 #include "cluster_bounds.h"
 #include "cluster_math.h"
 #include "cluster_locator.h"
-#include "gric_simd.h"
 #include <math.h>
 #include "cluster_trace.h"
-
-#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-#include <immintrin.h>
-#endif
 
 /* OMP_MIN_CLUSTERS — defined in cluster_defs.h */
 
