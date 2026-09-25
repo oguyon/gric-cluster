@@ -8,6 +8,7 @@
  * Main Functions:
  * - main: Entry point of the stream piping tool.
  */
+#include <errno.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -22,9 +23,16 @@
 #include <ImageStreamIO/ImageStruct.h>
 #endif
 
-volatile sig_atomic_t stop = 0;
+static volatile sig_atomic_t stop = 0;
 
-void handle_sigint(int sig)
+/**
+ * handle_signal - Signal handler for graceful termination
+ * @sig: Signal number received
+ *
+ * Sets the stop flag to notify main processing loop to exit cleanly.
+ */
+static void handle_signal(
+    int sig)
 {
     (void)sig;
     stop = 1;
@@ -66,7 +74,9 @@ static void print_help(const char *progname)
     cli_print_color_mode();
 } // print_help
 
-int main(int argc, char *argv[])
+int main(
+    int   argc,
+    char *argv[])
 {
     cli_colors_init();
 
@@ -94,7 +104,9 @@ int main(int argc, char *argv[])
     char *stream_name = argv[1];
     long max_frames = -1;
     if (argc > 2)
+    {
         max_frames = atol(argv[2]);
+    }
 
     IMAGE stream_image;
     if (ImageStreamIO_read_sharedmem_image_toIMAGE(stream_name, &stream_image) != 0)
@@ -104,19 +116,47 @@ int main(int argc, char *argv[])
     }
 
     long width = stream_image.md[0].size[0];
-    long height = stream_image.md[0].size[1];
+    long height = (stream_image.md[0].naxis > 1) ? (long)stream_image.md[0].size[1] : 1L;
     long nelements = width * height;
+
+    if (nelements <= 0)
+    {
+        fprintf(stderr, "Error: invalid stream dimensions %ldx%ld\n", width, height);
+        ImageStreamIO_closeIm(&stream_image);
+        return 1;
+    }
 
     // Output metadata to stderr for user/script info
     fprintf(stderr, "Connected: %s (%ldx%ld), Type: %d\n", stream_name, width, height,
             stream_image.md[0].datatype);
 
-    signal(SIGINT, handle_sigint);
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = handle_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0; /* Clear SA_RESTART so blocking syscalls return EINTR */
+
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGPIPE, &sa, NULL);
+
+    int sem_idx = ImageStreamIO_getsemwaitindex(&stream_image, -1);
+    if (sem_idx < 0)
+    {
+        sem_idx = 0;
+    }
 
     // Buffer for one frame (doubles)
-    double *buffer = (double *)malloc(nelements * sizeof(double));
+    double *buffer = (double *)malloc((size_t)nelements * sizeof(double));
     if (!buffer)
+    {
+        if (sem_idx >= 0 && stream_image.semReadPID && sem_idx < stream_image.md[0].sem)
+        {
+            stream_image.semReadPID[sem_idx] = 0;
+        }
+        ImageStreamIO_closeIm(&stream_image);
         return 1;
+    }
 
     uint64_t last_cnt0 = stream_image.md[0].cnt0;
     long processed = 0;
@@ -124,52 +164,52 @@ int main(int argc, char *argv[])
     while (!stop && (max_frames < 0 || processed < max_frames))
     {
         // Wait for next frame
-        // Loop to catch up if behind, similar to frameread.c logic
         while (stream_image.md[0].cnt0 <= last_cnt0 && !stop)
         {
-            if (ImageStreamIO_semwait(&stream_image, 0) != 0)
+            struct timespec ts;
+
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_nsec += 100000000; /* 100 ms timeout */
+            if (ts.tv_nsec >= 1000000000)
             {
+                ts.tv_sec += 1;
+                ts.tv_nsec -= 1000000000;
+            }
+
+            int ret = ImageStreamIO_semtimedwait(&stream_image, sem_idx, &ts);
+            if (ret != 0)
+            {
+                if (errno == ETIMEDOUT || errno == EINTR)
+                {
+                    continue;
+                }
                 if (!stop)
-                    fprintf(stderr, "Semwait failed\n");
+                {
+                    fprintf(stderr, "Semwait failed: %s\n", strerror(errno));
+                }
                 break;
             }
-        }
+        } // while (waiting for next frame)
         if (stop)
+        {
             break;
+        }
 
         last_cnt0++;
 
-        // Calculate read index (simplified 2D assumption or circular buffer logic?)
-        // For simple piping, we just want "a frame".
-        // If 3D, we should handle slice.
-        // Let's copy frameread.c's slice logic.
         long current_read_slice = 0;
         if (stream_image.md[0].naxis > 2)
         {
             long depth = stream_image.md[0].size[2];
-            // We need to track slice. Since we increment last_cnt0 1 by 1,
-            // we can just track slice % depth.
-            // However, we need initialized slice.
-            // Let's simplify: read the slice corresponding to last_cnt0?
-            // Usually slice = cnt1. But cnt1 is write pos.
-            // If we assume sequential, we track it.
-            // Ideally we copy frameread.c's stateful logic, but for a simple dumper
-            // let's just grab the latest frame if we want real-time, or sequential if we
-            // want exactness.
-            // User wants "streaming input... just like image-stream".
-            // So I should implement sequential reading.
-
-            // Re-implement slice tracking:
-            // Initial slice was stream_image.md[0].cnt1 at start.
-            // But we didn't capture start state perfectly here.
-            // Let's assume slice 0 for simple 2D, or try to sync.
-            // Actually, for this tool, let's assume 2D streams for now
-            // OR reuse the logic: slice = (initial_slice + processed) % depth.
             static long slice_idx = -1;
             if (slice_idx == -1)
+            {
                 slice_idx = stream_image.md[0].cnt1;
+            }
             else
+            {
                 slice_idx = (slice_idx + 1) % depth;
+            }
 
             current_read_slice = slice_idx;
         }
@@ -177,8 +217,6 @@ int main(int argc, char *argv[])
         long offset = current_read_slice * nelements;
         int dtype = stream_image.md[0].datatype;
 
-// Type conversion to Double
-// Macros (copied from frameread.c/ImageStruct.h knowledge)
 #define _DATATYPE_UINT8 1
 #define _DATATYPE_INT8 2
 #define _DATATYPE_UINT16 3
@@ -190,50 +228,71 @@ int main(int argc, char *argv[])
 #define _DATATYPE_FLOAT 9
 #define _DATATYPE_DOUBLE 10
 
-        // This pointer cast logic depends on type
         switch (dtype)
         {
         case _DATATYPE_FLOAT:
-            for (long i = 0; i < nelements; i++)
-                buffer[i] = (double)((float *)stream_image.array.F)[offset + i];
+            for (long ii = 0; ii < nelements; ii++)
+            {
+                buffer[ii] = (double)((float *)stream_image.array.F)[offset + ii];
+            }
             break;
         case _DATATYPE_DOUBLE:
-            for (long i = 0; i < nelements; i++)
-                buffer[i] = ((double *)stream_image.array.D)[offset + i];
+            for (long ii = 0; ii < nelements; ii++)
+            {
+                buffer[ii] = ((double *)stream_image.array.D)[offset + ii];
+            }
             break;
         case _DATATYPE_UINT8:
-            for (long i = 0; i < nelements; i++)
-                buffer[i] = (double)((uint8_t *)stream_image.array.UI8)[offset + i];
+            for (long ii = 0; ii < nelements; ii++)
+            {
+                buffer[ii] = (double)((uint8_t *)stream_image.array.UI8)[offset + ii];
+            }
             break;
         case _DATATYPE_UINT16:
-            for (long i = 0; i < nelements; i++)
-                buffer[i] = (double)((uint16_t *)stream_image.array.UI16)[offset + i];
+            for (long ii = 0; ii < nelements; ii++)
+            {
+                buffer[ii] = (double)((uint16_t *)stream_image.array.UI16)[offset + ii];
+            }
             break;
         case _DATATYPE_INT16:
-            for (long i = 0; i < nelements; i++)
-                buffer[i] = (double)((int16_t *)stream_image.array.SI16)[offset + i];
+            for (long ii = 0; ii < nelements; ii++)
+            {
+                buffer[ii] = (double)((int16_t *)stream_image.array.SI16)[offset + ii];
+            }
             break;
         case _DATATYPE_UINT32:
-            for (long i = 0; i < nelements; i++)
-                buffer[i] = (double)((uint32_t *)stream_image.array.UI32)[offset + i];
+            for (long ii = 0; ii < nelements; ii++)
+            {
+                buffer[ii] = (double)((uint32_t *)stream_image.array.UI32)[offset + ii];
+            }
             break;
         case _DATATYPE_INT32:
-            for (long i = 0; i < nelements; i++)
-                buffer[i] = (double)((int32_t *)stream_image.array.SI32)[offset + i];
+            for (long ii = 0; ii < nelements; ii++)
+            {
+                buffer[ii] = (double)((int32_t *)stream_image.array.SI32)[offset + ii];
+            }
             break;
         default:
-            // Skip unsupported
             break;
         }
 
         // Write raw bytes to stdout
-        fwrite(buffer, sizeof(double), nelements, stdout);
-        // fflush(stdout); // Optional, maybe better for piping
+        size_t written = fwrite(buffer, sizeof(double), (size_t)nelements, stdout);
+        if (written != (size_t)nelements)
+        {
+            break;
+        }
+        fflush(stdout);
 
         processed++;
-    }
+    } // while (!stop && ...)
 
     free(buffer);
+    if (sem_idx >= 0 && stream_image.semReadPID && sem_idx < stream_image.md[0].sem)
+    {
+        stream_image.semReadPID[sem_idx] = 0;
+    }
+    ImageStreamIO_closeIm(&stream_image);
     return 0;
 #endif
 }
