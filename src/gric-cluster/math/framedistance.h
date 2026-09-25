@@ -21,6 +21,19 @@ double framedist(
     const Frame *b);
 
 /**
+ * framedist_cutoff() - Euclidean distance between two frames with early cutoff.
+ * @a:         Pointer to first frame.
+ * @b:         Pointer to second frame.
+ * @cutoff_sq: Squared distance threshold for early exit (<= 0.0 disables cutoff).
+ *
+ * Return: Euclidean distance if <= sqrt(cutoff_sq), or value > sqrt(cutoff_sq) on cutoff.
+ */
+double framedist_cutoff(
+    const Frame *a,
+    const Frame *b,
+    double       cutoff_sq);
+
+/**
  * framedist_float() - Compute Euclidean distance between two single-precision float arrays.
  * @da:   First array pointer.
  * @db:   Second array pointer.

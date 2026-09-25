@@ -40,6 +40,29 @@ double get_dist(
     ClusterState  *state);
 
 /**
+ * get_dist_cutoff() - Distance evaluation with early-exit cutoff threshold.
+ * @a:             Input frame to classify.
+ * @b:             Candidate cluster anchor frame.
+ * @cluster_idx:   Candidate cluster index.
+ * @cluster_prob:  Prior probability of candidate cluster.
+ * @current_gprob: Current greedy probability.
+ * @cutoff_sq:     Squared distance threshold for early exit (<= 0.0 disables cutoff).
+ * @config:        Clustering runtime configuration.
+ * @state:         Clustering dynamic state.
+ *
+ * Return: Distance between frame and anchor if <= sqrt(cutoff_sq), or value > sqrt(cutoff_sq).
+ */
+double get_dist_cutoff(
+    Frame         *a,
+    Frame         *b,
+    int            cluster_idx,
+    double         cluster_prob,
+    double         current_gprob,
+    double         cutoff_sq,
+    ClusterConfig *config,
+    ClusterState  *state);
+
+/**
  * print_clustering_metrics() - Display runtime telemetry and distance statistics.
  * @state:   Active cluster state containing telemetry counters.
  * @tile_id: Identifier of current tile (-1 if single-stream mode).
