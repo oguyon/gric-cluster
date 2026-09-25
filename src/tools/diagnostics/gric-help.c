@@ -207,6 +207,8 @@ static void print_general_help(void)
            ANSI_BOLD_GREEN, "gric-mkclusteredfile", ANSI_COLOR_RESET);
     printf("    %s%-24s%s Pipes raw data from live ImageStreamIO shared memory to stdout.\n",
            ANSI_BOLD_GREEN, "gric-stream-to-pipe", ANSI_COLOR_RESET);
+    printf("    %s%-24s%s Real-time FPS daemon (alias: gric-fps-cluster).\n",
+           ANSI_BOLD_GREEN, "milk-fpsexec-gric-cluster", ANSI_COLOR_RESET);
 
     print_header("4. TYPICAL ONBOARDING WORKFLOW", 1);
     printf("  Follow these steps to familiarize yourself with GRIC:\n\n");
@@ -560,6 +562,24 @@ static const ProgramHelpDoc PROGRAM_DOCS[] = {
             "  -fps <val>           Target frame rate in frames/sec\n"
             "  -loop                Loop coordinate sequence continuously",
         .examples = "  $ gric-txt2stream spiral.txt spiral_stream -fps 100"
+    },
+    {
+        .canonical_name = "milk-fpsexec-gric-cluster",
+        .aliases = {"gric-fps-cluster", "fps", "milk-fps", NULL},
+        .banner = "milk-fpsexec-gric-cluster - Real-time FPS streaming clustering daemon",
+        .usage = "milk-fpsexec-gric-cluster [options] [fpsname:]<command>",
+        .description = "Runs GRIC clustering as a real-time daemon synchronized to ImageStreamIO\n"
+                       "  frames via semaphores with live parameter control via milk-fps-set.",
+        .options =
+            "  -n <name>            Set custom FPS instance name (default: gric_cluster)\n"
+            "  -tmux                Run process inside isolated tmux session\n"
+            "  -procinfo            Enable ProcessInfo heartbeat and rate telemetry\n"
+            "  -loops               Infinite loop triggered by input semaphores\n"
+            "  -loopd <sec>         Infinite loop triggered on fixed delay timer",
+        .examples =
+            "  $ milk-fpsexec-gric-cluster -procinfo -loops confstart\n"
+            "  $ gric-fps-cluster -tmux runstart\n"
+            "  $ milk-fps-set gric_cluster.rlim 0.35"
     }
 };
 

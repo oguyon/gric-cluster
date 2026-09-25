@@ -192,6 +192,10 @@ static const struct help_entry help_entries[] = {
      "State space compression and trajectory fusion"},
     {"statespace",
      "(alias for compression)"},
+    /* Milk Integration */
+    {"milk",         "Milk framework integration and CLI plugin"},
+    {"milk_fpsexec", "Standalone FPS real-time clustering daemon"},
+    {"milk_streams", "Milk shared memory stream specifications"},
 };
 
 #define N_HELP_ENTRIES \

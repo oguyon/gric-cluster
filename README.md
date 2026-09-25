@@ -149,6 +149,8 @@ The GRIC suite includes several specialized CLI executables:
 | **`gric-mkclusteredfile`** | **Utility** | Reconstructs clustered image cubes from memberships. |
 | **`gric-txt2stream`** | **Streaming**| Ingests ASCII coordinate streams into shared memory SHM. |
 | **`gric-stream-to-pipe`** | **Utility** | Pipes raw frames from SHM stream to stdout. |
+| **`milk-fpsexec-gric-cluster`** | **Milk FPS** | Real-time FPS daemon (`gric-fps-cluster`). |
+| **`libmilkgric.so`** | **Milk CLI** | Dynamic shared plugin for interactive Milk CLI sessions. |
 | **`gric-info`** | **Diagnostics**| Displays compile-time feature flags, libraries, and paths. |
 | **`gric-help`** | **Manual** | Unified CLI onboarding helper and command documentation. |
 
@@ -178,6 +180,38 @@ git clone https://github.com/milk-org/ImageStreamIO.git
 cd ImageStreamIO && mkdir build && cd build
 cmake .. && make && sudo make install && sudo ldconfig
 ```
+
+### Milk Framework Integration (`milk` - Optional)
+
+Required for the standalone Function Parameter Structure (FPS) clustering daemon
+(`milk-fpsexec-gric-cluster`), interactive Milk CLI plugin (`libmilkgric.so`), and dynamic
+real-time parameter tuning (`milk-fps-set`). Installing Milk also provides `ImageStreamIO`.
+
+**Option 1: Automated setup via helper script**
+
+```bash
+./scripts/install_milk_dev.sh --deps
+```
+
+**Option 2: Manual compilation from source**
+
+```bash
+# 1. Install prerequisites
+sudo apt install -y libreadline-dev libncurses-dev libgsl-dev
+
+# 2. Clone Milk (framework-dev branch)
+git clone --recursive -b framework-dev https://github.com/milk-org/milk.git
+cd milk && mkdir _build && cd _build
+
+# 3. Build and install to /usr/local
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
+make -j$(nproc)
+sudo make install && sudo ldconfig
+```
+
+> **Note**: If installed to a custom prefix like `/usr/local/milk`, add
+> `export PKG_CONFIG_PATH=/usr/local/milk/lib/pkgconfig:$PKG_CONFIG_PATH`
+> to your `~/.bashrc`.
 
 ---
 
