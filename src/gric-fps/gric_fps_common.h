@@ -6,7 +6,7 @@
 #ifndef GRIC_FPS_COMMON_H
 #define GRIC_FPS_COMMON_H
 
-#include "milk_compiler.h"
+#include <libmilkcommon/milk_compiler.h>
 #include "fps.h"
 #include "fps_procinfo_macros.h"
 #include "processinfo.h"

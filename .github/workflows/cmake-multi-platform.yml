@@ -205,6 +205,9 @@ jobs:
           if [ ! -e "/usr/local/milk" ]; then
             sudo ln -snf "$MILK_PREFIX" /usr/local/milk
           fi
+          if [ -d "$MILK_PREFIX/include" ] && [ ! -e "$MILK_PREFIX/include/libprocessinfo" ]; then
+            sudo ln -snf . "$MILK_PREFIX/include/libprocessinfo"
+          fi
           echo "$MILK_PREFIX/lib" | sudo tee /etc/ld.so.conf.d/milk.conf
           sudo ldconfig
           echo "PKG_CONFIG_PATH=$MILK_LIBDIR:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"

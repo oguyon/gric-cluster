@@ -142,6 +142,13 @@ if [ -n "${MILK_PC}" ]; then
             ln -snf "${ACTUAL_ROOT}" /usr/local/milk 2>/dev/null || true
         fi
     fi
+    if [ -d "${ACTUAL_ROOT}/include" ] && [ ! -e "${ACTUAL_ROOT}/include/libprocessinfo" ]; then
+        if [ -n "$SUDO" ]; then
+            $SUDO ln -snf . "${ACTUAL_ROOT}/include/libprocessinfo" 2>/dev/null || true
+        else
+            ln -snf . "${ACTUAL_ROOT}/include/libprocessinfo" 2>/dev/null || true
+        fi
+    fi
 fi
 
 if [ "$PKG_MATCH" = true ]; then
