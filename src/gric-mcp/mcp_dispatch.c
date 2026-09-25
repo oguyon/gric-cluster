@@ -6,6 +6,7 @@
 #include "mcp_dispatch.h"
 #include "mcp_tools.h"
 #include "shared/cjson/cJSON.h"
+#include "shared/help_topics.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -80,6 +81,7 @@ static cJSON *handle_initialize(
 
     cJSON *capabilities = cJSON_CreateObject();
     cJSON_AddItemToObject(capabilities, "tools", cJSON_CreateObject());
+    cJSON_AddItemToObject(capabilities, "resources", cJSON_CreateObject());
     cJSON_AddItemToObject(result, "capabilities", capabilities);
 
     cJSON *server_info = cJSON_CreateObject();
@@ -178,6 +180,38 @@ static cJSON *handle_tools_call(
     {
         status = mcp_tool_probe_shm(args, tool_result);
     }
+    else if (strcmp(tool_name, "gric_help") == 0)
+    {
+        status = mcp_tool_help(args, tool_result);
+    }
+    else if (strcmp(tool_name, "gric_list_suite") == 0)
+    {
+        status = mcp_tool_list_suite(args, tool_result);
+    }
+    else if (strcmp(tool_name, "gric_get_recipe") == 0)
+    {
+        status = mcp_tool_get_recipe(args, tool_result);
+    }
+    else if (strcmp(tool_name, "gric_fps_status") == 0)
+    {
+        status = mcp_tool_fps_status(args, tool_result);
+    }
+    else if (strcmp(tool_name, "gric_fps_run") == 0)
+    {
+        status = mcp_tool_fps_run(args, tool_result);
+    }
+    else if (strcmp(tool_name, "gric_fps_set") == 0)
+    {
+        status = mcp_tool_fps_set(args, tool_result);
+    }
+    else if (strcmp(tool_name, "gric_fps_stop") == 0)
+    {
+        status = mcp_tool_fps_stop(args, tool_result);
+    }
+    else if (strcmp(tool_name, "gric_probe_fps_streams") == 0)
+    {
+        status = mcp_tool_probe_fps_streams(args, tool_result);
+    }
     else
     {
         cJSON_Delete(tool_result);
@@ -217,6 +251,256 @@ static cJSON *handle_tools_call(
 
     return resp;
 } // handle_tools_call
+
+/**
+ * handle_resources_list() - Handle resources/list request.
+ * @id: Request ID.
+ *
+ * Return: JSON-RPC response object.
+ */
+static cJSON *handle_resources_list(
+    const cJSON *id)
+{
+    cJSON *resp = cJSON_CreateObject();
+    if (resp == NULL)
+    {
+        return NULL;
+    }
+
+    cJSON_AddStringToObject(resp, "jsonrpc", "2.0");
+    if (id != NULL)
+    {
+        cJSON_AddItemToObject(resp, "id", cJSON_Duplicate(id, 1));
+    }
+    else
+    {
+        cJSON_AddNullToObject(resp, "id");
+    }
+
+    cJSON *result = cJSON_CreateObject();
+    cJSON *resources = cJSON_CreateArray();
+
+    /* 1. Core overview and cheatsheet resources */
+    {
+        cJSON *r = cJSON_CreateObject();
+        cJSON_AddStringToObject(r, "uri", "gric://overview");
+        cJSON_AddStringToObject(r, "name", "GRIC Architecture & Overview");
+        cJSON_AddStringToObject(r, "description", "High-level overview of GRIC clustering engine");
+        cJSON_AddStringToObject(r, "mimeType", "text/markdown");
+        cJSON_AddItemToArray(resources, r);
+    }
+    {
+        cJSON *r = cJSON_CreateObject();
+        cJSON_AddStringToObject(r, "uri", "gric://cheatsheet/cli");
+        cJSON_AddStringToObject(r, "name", "GRIC CLI Quick Reference");
+        cJSON_AddStringToObject(r, "description",
+                                "Command-line syntax, flags, and parameter rules");
+        cJSON_AddStringToObject(r, "mimeType", "text/markdown");
+        cJSON_AddItemToArray(resources, r);
+    }
+    {
+        cJSON *r = cJSON_CreateObject();
+        cJSON_AddStringToObject(r, "uri", "gric://milk/overview");
+        cJSON_AddStringToObject(r, "name", "Milk Framework Integration");
+        cJSON_AddStringToObject(r, "description",
+                                "Guide to Milk CLI, standalone FPS daemon, and SHM");
+        cJSON_AddStringToObject(r, "mimeType", "text/markdown");
+        cJSON_AddItemToArray(resources, r);
+    }
+    {
+        cJSON *r = cJSON_CreateObject();
+        cJSON_AddStringToObject(r, "uri", "gric://milk/fps_params");
+        cJSON_AddStringToObject(r, "name", "Milk FPS Parameters Reference");
+        cJSON_AddStringToObject(r, "description",
+                                "Dictionary of all 16 parameters in gric_cluster FPS");
+        cJSON_AddStringToObject(r, "mimeType", "application/json");
+        cJSON_AddItemToArray(resources, r);
+    }
+
+    /* 2. Embedded Help Topics */
+    const struct HelpTopicEntry *table = help_topic_get_table();
+    if (table != NULL)
+    {
+        for (size_t ii = 0; table[ii].keyword != NULL; ii++)
+        {
+            char uri[256];
+            snprintf(uri, sizeof(uri), "gric://help/%s", table[ii].keyword);
+
+            cJSON *r = cJSON_CreateObject();
+            cJSON_AddStringToObject(r, "uri", uri);
+            cJSON_AddStringToObject(r, "name", table[ii].keyword);
+            cJSON_AddStringToObject(r, "description",
+                                    "Documentation topic from embedded help database");
+            cJSON_AddStringToObject(r, "mimeType", "text/markdown");
+            cJSON_AddItemToArray(resources, r);
+        } // for ii
+    }
+
+    cJSON_AddItemToObject(result, "resources", resources);
+    cJSON_AddItemToObject(resp, "result", result);
+    return resp;
+} // handle_resources_list
+
+/**
+ * handle_resources_read() - Handle resources/read request.
+ * @id:     Request ID.
+ * @params: Request parameters containing uri.
+ *
+ * Return: JSON-RPC response object.
+ */
+static cJSON *handle_resources_read(
+    const cJSON *id,
+    const cJSON *params)
+{
+    if (params == NULL || !cJSON_IsObject(params))
+    {
+        return create_error_response(id, -32602, "Invalid params for resources/read");
+    }
+
+    cJSON *uri_item = cJSON_GetObjectItemCaseSensitive(params, "uri");
+    if (uri_item == NULL || !cJSON_IsString(uri_item))
+    {
+        return create_error_response(id, -32602, "Missing uri in resources/read");
+    }
+    const char *uri = uri_item->valuestring;
+
+    const char *content_text = NULL;
+    char *allocated_content = NULL;
+    const char *mime_type = "text/markdown";
+
+    if (strcmp(uri, "gric://overview") == 0)
+    {
+        content_text =
+            "# GRIC: Geometric Real-Time Image Clustering\n\n"
+            "GRIC is an ultra-high-speed, distance-based clustering engine designed for\n"
+            "sequential image streams and high-dimensional vector data. It leverages metric space\n"
+            "triangle inequality bounds (TE3, TE4, TE5), E8 lattice quantization (EQ16), and\n"
+            "out-of-core nearest neighbors to achieve strictly bounded memory and low latency.\n";
+    }
+    else if (strcmp(uri, "gric://cheatsheet/cli") == 0)
+    {
+        content_text =
+            "# GRIC CLI Cheatsheet\n\n"
+            "## Core Clustering:\n"
+            "  gric-cluster <rlim> <input> [options]\n"
+            "  - a1.0: Auto-scale radius to median distance\n"
+            "  - -maxcl <N>: Cluster allocation budget (e.g. 1000)\n"
+            "  - -tiles 2x2: Spatial tiling for localized image features\n"
+            "  - -te4: 4-point metric pruning\n"
+            "  - -eq16: 16-bit E8 lattice quantization acceleration\n"
+            "  - -entropy: Maximize Shannon information gain\n"
+            "  - -outdir <dir>: Result directory (.clusterdat)\n\n"
+            "## k-Nearest Neighbors:\n"
+            "  gric-knn <input> <cluster_dir> -k 10 [options]\n"
+            "  - -multipivot: AESA multi-anchor distance bounding\n"
+            "  - -angular: Cosine directional bounding\n";
+    }
+    else if (strcmp(uri, "gric://milk/overview") == 0)
+    {
+        content_text = help_topic_lookup("milk");
+    }
+    else if (strcmp(uri, "gric://milk/fps_params") == 0)
+    {
+        mime_type = "application/json";
+        content_text =
+            "{\n"
+            "  \"parameters\": [\n"
+            "    {\"name\": \".in_name\", \"type\": \"STREAMNAME\", "
+            "\"description\": \"Input ImageStreamIO stream\"},\n"
+            "    {\"name\": \".out_name\", \"type\": \"STRING\", "
+            "\"description\": \"Output assignment stream (<out>_assign)\"},\n"
+            "    {\"name\": \".out_anchors\", \"type\": \"STRING\", "
+            "\"description\": \"Output centroids stream\"},\n"
+            "    {\"name\": \".out_counts\", \"type\": \"STRING\", "
+            "\"description\": \"Output cluster counts stream\"},\n"
+            "    {\"name\": \".stream_anchors\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
+            "\"description\": \"Publish anchors live\"},\n"
+            "    {\"name\": \".stream_counts\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
+            "\"description\": \"Publish counts live\"},\n"
+            "    {\"name\": \".allow_frame_drop\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
+            "\"description\": \"1=jump to latest frame\"},\n"
+            "    {\"name\": \".rlim\", \"type\": \"FLOAT64\", \"default\": 0.5, "
+            "\"description\": \"Cluster radius threshold\"},\n"
+            "    {\"name\": \".deltaprob\", \"type\": \"FLOAT64\", \"default\": 0.01, "
+            "\"description\": \"Neighbor search cutoff\"},\n"
+            "    {\"name\": \".maxnbclust\", \"type\": \"UINT32\", \"default\": 256, "
+            "\"description\": \"Maximum cluster capacity\"},\n"
+            "    {\"name\": \".maxcl_strategy\", \"type\": \"INT64\", \"default\": 0, "
+            "\"description\": \"0=stop, 1=discard\"},\n"
+            "    {\"name\": \".ncpu\", \"type\": \"UINT32\", \"default\": 0, "
+            "\"description\": \"Thread count (0=auto)\"},\n"
+            "    {\"name\": \".use_double\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
+            "\"description\": \"64-bit float compute\"},\n"
+            "    {\"name\": \".use_sq16\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
+            "\"description\": \"16-bit scalar quantization\"},\n"
+            "    {\"name\": \".entropy_mode\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
+            "\"description\": \"Shannon entropy search\"},\n"
+            "    {\"name\": \".reset_state\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
+            "\"description\": \"Dynamic reset trigger\"}\n"
+            "  ]\n"
+            "}";
+    }
+    else if (strncmp(uri, "gric://help/", 12) == 0)
+    {
+        const char *topic_name = uri + 12;
+        content_text = help_topic_lookup(topic_name);
+    }
+    else if (strncmp(uri, "gric://recipes/", 15) == 0)
+    {
+        const char *recipe_name = uri + 15;
+        cJSON *r_args = cJSON_CreateObject();
+        cJSON *r_res = cJSON_CreateObject();
+        cJSON_AddStringToObject(r_args, "recipe", recipe_name);
+        mcp_tool_get_recipe(r_args, r_res);
+        cJSON_Delete(r_args);
+
+        cJSON *inst = cJSON_GetObjectItemCaseSensitive(r_res, "instructions");
+        if (inst != NULL && cJSON_IsString(inst))
+        {
+            allocated_content = strdup(inst->valuestring);
+            content_text = allocated_content;
+        }
+        cJSON_Delete(r_res);
+    }
+
+    if (content_text == NULL)
+    {
+        if (allocated_content != NULL)
+        {
+            free(allocated_content);
+        }
+        return create_error_response(id, -32602, "Resource not found");
+    }
+
+    cJSON *resp = cJSON_CreateObject();
+    cJSON_AddStringToObject(resp, "jsonrpc", "2.0");
+    if (id != NULL)
+    {
+        cJSON_AddItemToObject(resp, "id", cJSON_Duplicate(id, 1));
+    }
+    else
+    {
+        cJSON_AddNullToObject(resp, "id");
+    }
+
+    cJSON *result = cJSON_CreateObject();
+    cJSON *contents = cJSON_CreateArray();
+    cJSON *item = cJSON_CreateObject();
+    cJSON_AddStringToObject(item, "uri", uri);
+    cJSON_AddStringToObject(item, "mimeType", mime_type);
+    cJSON_AddStringToObject(item, "text", content_text);
+    cJSON_AddItemToArray(contents, item);
+
+    cJSON_AddItemToObject(result, "contents", contents);
+    cJSON_AddItemToObject(resp, "result", result);
+
+    if (allocated_content != NULL)
+    {
+        free(allocated_content);
+    }
+
+    return resp;
+} // handle_resources_read
 
 char *mcp_dispatch_message(
     const char *input_json)
@@ -279,6 +563,14 @@ char *mcp_dispatch_message(
     else if (strcmp(method, "tools/call") == 0)
     {
         resp_obj = handle_tools_call(id_item, params_item);
+    }
+    else if (strcmp(method, "resources/list") == 0)
+    {
+        resp_obj = handle_resources_list(id_item);
+    }
+    else if (strcmp(method, "resources/read") == 0)
+    {
+        resp_obj = handle_resources_read(id_item, params_item);
     }
     else if (strcmp(method, "ping") == 0)
     {

@@ -20,6 +20,7 @@ static void test_initialize(void)
     assert(strstr(resp, "\"name\":\"gric-mcp\"") != NULL);
     assert(strstr(resp, "\"protocolVersion\":\"2024-11-05\"") != NULL);
     assert(strstr(resp, "\"tools\"") != NULL);
+    assert(strstr(resp, "\"resources\"") != NULL);
     free(resp);
     printf("PASS: test_initialize\n");
 } // test_initialize
@@ -52,6 +53,14 @@ static void test_tools_list(void)
     assert(strstr(resp, "gric_inspect_run") != NULL);
     assert(strstr(resp, "gric_probe_dataset") != NULL);
     assert(strstr(resp, "gric_probe_shm") != NULL);
+    assert(strstr(resp, "gric_help") != NULL);
+    assert(strstr(resp, "gric_list_suite") != NULL);
+    assert(strstr(resp, "gric_get_recipe") != NULL);
+    assert(strstr(resp, "gric_fps_status") != NULL);
+    assert(strstr(resp, "gric_fps_run") != NULL);
+    assert(strstr(resp, "gric_fps_set") != NULL);
+    assert(strstr(resp, "gric_fps_stop") != NULL);
+    assert(strstr(resp, "gric_probe_fps_streams") != NULL);
     free(resp);
     printf("PASS: test_tools_list\n");
 } // test_tools_list
@@ -256,6 +265,155 @@ static void test_notifications(void)
     printf("PASS: test_notifications\n");
 } // test_notifications
 
+/**
+ * test_help_topic() - Verify gric_help tool with exact topic and query search.
+ */
+static void test_help_topic(void)
+{
+    /* 1. Test topic lookup for 'milk' */
+    const char *req1 =
+        "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/call\",\"params\":{"
+        "\"name\":\"gric_help\","
+        "\"arguments\":{\"topic\":\"milk\"}"
+        "}}";
+    char *resp1 = mcp_dispatch_message(req1);
+    assert(resp1 != NULL);
+    assert(strstr(resp1, "FOUND") != NULL);
+    assert(strstr(resp1, "Milk") != NULL);
+    free(resp1);
+
+    /* 2. Test topic lookup for 'milk_fpsexec' */
+    const char *req2 =
+        "{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"tools/call\",\"params\":{"
+        "\"name\":\"gric_help\","
+        "\"arguments\":{\"topic\":\"milk_fpsexec\"}"
+        "}}";
+    char *resp2 = mcp_dispatch_message(req2);
+    assert(resp2 != NULL);
+    assert(strstr(resp2, "FOUND") != NULL);
+    assert(strstr(resp2, "milk-fpsexec-gric-cluster") != NULL);
+    free(resp2);
+
+    /* 3. Test topic search for 'clustering' */
+    const char *req3 =
+        "{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"tools/call\",\"params\":{"
+        "\"name\":\"gric_help\","
+        "\"arguments\":{\"query\":\"clustering\"}"
+        "}}";
+    char *resp3 = mcp_dispatch_message(req3);
+    assert(resp3 != NULL);
+    assert(strstr(resp3, "MATCHES_FOUND") != NULL);
+    free(resp3);
+
+    printf("PASS: test_help_topic\n");
+} // test_help_topic
+
+/**
+ * test_list_suite() - Verify gric_list_suite tool.
+ */
+static void test_list_suite(void)
+{
+    const char *req =
+        "{\"jsonrpc\":\"2.0\",\"id\":13,\"method\":\"tools/call\",\"params\":{"
+        "\"name\":\"gric_list_suite\","
+        "\"arguments\":{}"
+        "}}";
+    char *resp = mcp_dispatch_message(req);
+    assert(resp != NULL);
+    assert(strstr(resp, "SUCCESS") != NULL);
+    assert(strstr(resp, "gric-cluster") != NULL);
+    assert(strstr(resp, "gric-knn") != NULL);
+    assert(strstr(resp, "milk-fpsexec-gric-cluster") != NULL);
+    free(resp);
+    printf("PASS: test_list_suite\n");
+} // test_list_suite
+
+/**
+ * test_get_recipe() - Verify gric_get_recipe tool.
+ */
+static void test_get_recipe(void)
+{
+    const char *req =
+        "{\"jsonrpc\":\"2.0\",\"id\":14,\"method\":\"tools/call\",\"params\":{"
+        "\"name\":\"gric_get_recipe\","
+        "\"arguments\":{\"recipe\":\"milk_realtime_streaming\"}"
+        "}}";
+    char *resp = mcp_dispatch_message(req);
+    assert(resp != NULL);
+    assert(strstr(resp, "Real-Time Milk Stream Clustering") != NULL);
+    assert(strstr(resp, "gric_fps_run") != NULL);
+    free(resp);
+    printf("PASS: test_get_recipe\n");
+} // test_get_recipe
+
+/**
+ * test_resources() - Verify MCP resources/list and resources/read protocol methods.
+ */
+static void test_resources(void)
+{
+    /* 1. Test resources/list */
+    const char *req1 = "{\"jsonrpc\":\"2.0\",\"id\":15,\"method\":\"resources/list\"}";
+    char *resp1 = mcp_dispatch_message(req1);
+    assert(resp1 != NULL);
+    assert(strstr(resp1, "gric://overview") != NULL);
+    assert(strstr(resp1, "gric://cheatsheet/cli") != NULL);
+    assert(strstr(resp1, "gric://milk/overview") != NULL);
+    assert(strstr(resp1, "gric://milk/fps_params") != NULL);
+    assert(strstr(resp1, "gric://help/milk") != NULL);
+    free(resp1);
+
+    /* 2. Test resources/read for gric://help/milk */
+    const char *req2 =
+        "{\"jsonrpc\":\"2.0\",\"id\":16,\"method\":\"resources/read\",\"params\":{"
+        "\"uri\":\"gric://help/milk\""
+        "}}";
+    char *resp2 = mcp_dispatch_message(req2);
+    assert(resp2 != NULL);
+    assert(strstr(resp2, "Milk Framework Integration") != NULL);
+    free(resp2);
+
+    /* 3. Test resources/read for gric://milk/fps_params */
+    const char *req3 =
+        "{\"jsonrpc\":\"2.0\",\"id\":17,\"method\":\"resources/read\",\"params\":{"
+        "\"uri\":\"gric://milk/fps_params\""
+        "}}";
+    char *resp3 = mcp_dispatch_message(req3);
+    assert(resp3 != NULL);
+    assert(strstr(resp3, ".in_name") != NULL);
+    assert(strstr(resp3, ".rlim") != NULL);
+    free(resp3);
+
+    printf("PASS: test_resources\n");
+} // test_resources
+
+/**
+ * test_fps_ops() - Verify gric_fps_status and gric_fps_stop tools.
+ */
+static void test_fps_ops(void)
+{
+    const char *req =
+        "{\"jsonrpc\":\"2.0\",\"id\":18,\"method\":\"tools/call\",\"params\":{"
+        "\"name\":\"gric_fps_status\","
+        "\"arguments\":{\"fps_name\":\"gric_cluster\"}"
+        "}}";
+    char *resp = mcp_dispatch_message(req);
+    assert(resp != NULL);
+    assert(strstr(resp, "fps_name") != NULL);
+    free(resp);
+
+    const char *stop_req =
+        "{\"jsonrpc\":\"2.0\",\"id\":19,\"method\":\"tools/call\",\"params\":{"
+        "\"name\":\"gric_fps_stop\","
+        "\"arguments\":{\"fps_name\":\"gric_cluster\"}"
+        "}}";
+    char *stop_resp = mcp_dispatch_message(stop_req);
+    assert(stop_resp != NULL);
+    assert(strstr(stop_resp, "STOPPED") != NULL);
+    free(stop_resp);
+
+    printf("PASS: test_fps_ops\n");
+} // test_fps_ops
+
 int main(void)
 {
     printf("=== Running gric-mcp Protocol Tests ===\n");
@@ -269,6 +427,11 @@ int main(void)
     test_verify_invariants();
     test_inspect_simd();
     test_probe_dataset();
+    test_help_topic();
+    test_list_suite();
+    test_get_recipe();
+    test_resources();
+    test_fps_ops();
     test_notifications();
     cleanup_test_fixtures();
     printf("=== All gric-mcp Protocol Tests PASSED ===\n");
