@@ -178,20 +178,32 @@ jobs:
         id: cache-milk
         uses: actions/cache@v4
         with:
-          path: /usr/local/milk
-          key: milk-framework-dev-ubuntu-latest-v1
+          path: /usr/local/milk*
+          key: milk-framework-dev-ubuntu-latest-v2
 
       - name: Install Milk Framework
         if: steps.cache-milk.outputs.cache-hit != 'true'
         run: |
-          ./scripts/install_milk_dev.sh --prefix /usr/local/milk --deps
+          ./scripts/install_milk_dev.sh --prefix /usr/local --deps
 
       - name: Set Milk Environment
         run: |
-          echo "PKG_CONFIG_PATH=/usr/local/milk/lib/pkgconfig:/usr/local/milk/lib64/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=/usr/local/milk/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
-          echo "/usr/local/milk/bin" >> "$GITHUB_PATH"
-          sudo ldconfig /usr/local/milk/lib || true
+          MILK_PC="$(find /usr/local -name "milk.pc" 2>/dev/null | head -n 1)"
+          if [ -z "$MILK_PC" ]; then
+            echo "Error: milk.pc not found under /usr/local" >&2
+            exit 1
+          fi
+          MILK_LIBDIR="$(dirname "$MILK_PC")"
+          MILK_PREFIX="$(cd "$MILK_LIBDIR/../.." && pwd)"
+          if [ ! -e "/usr/local/milk" ]; then
+            sudo ln -snf "$MILK_PREFIX" /usr/local/milk
+          fi
+          echo "PKG_CONFIG_PATH=$MILK_LIBDIR:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$MILK_PREFIX/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+          echo "$MILK_PREFIX/bin" >> "$GITHUB_PATH"
+          sudo ldconfig "$MILK_PREFIX/lib" || true
+          pkg-config --modversion milk
+          pkg-config --modversion ImageStreamIO
 
       - name: Configure CMake with Milk
         run: |
