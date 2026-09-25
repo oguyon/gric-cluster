@@ -12,37 +12,15 @@
 
 #include "cluster_math.h"
 #include "framedistance.h"
+#include "gric_compat.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-/**
- * soft_match_weight() - Compute soft match weight
- *     between two cluster indices within one tile.
- * @cluster_a: First cluster index.
- * @cluster_b: Second cluster index.
- *
- * Returns 1.0 for exact match, 0.5 for adjacent cluster index (+/-1,
- * corresponding to an E8 root step where sum of squared differences is 2),
- * and 0.0 otherwise.
- *
- * Return: Match weight in [0.0, 1.0].
- */
-static double soft_match_weight(
-    int cluster_a,
-    int cluster_b)
-{
-    if (cluster_a == cluster_b)
-    {
-        return 1.0;
-    }
-    int diff = cluster_a - cluster_b;
-    if (diff == 1 || diff == -1)
-    {
-        return 0.5;
-    }
-    return 0.0;
-}
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+#include <immintrin.h>
+#endif
+
 
 /**
  * tuple_retrieve() - Scan tuple history for patterns
@@ -100,18 +78,22 @@ void tuple_retrieve(
         /* Spatial match across context tiles */
         for (int m = 0; m < M; m++)
         {
-            if (spatial_mask[m] == 0)
+            if (spatial_mask[m] == 0 || m == target_tile)
             {
                 continue;
             }
-            if (m == target_tile)
+            int diff = spatial_key[m] - h_curr[m];
+            if (diff == 0)
             {
                 continue;
             }
-            w *= soft_match_weight(
-                spatial_key[m], h_curr[m]);
-            if (w == 0.0)
+            if (diff == 1 || diff == -1)
             {
+                w *= 0.5;
+            }
+            else
+            {
+                w = 0.0;
                 break;
             }
         } // for m (spatial)
@@ -133,10 +115,18 @@ void tuple_retrieve(
                 {
                     continue;
                 }
-                w *= soft_match_weight(
-                    temporal_key[m], h_prev[m]);
-                if (w == 0.0)
+                int diff = temporal_key[m] - h_prev[m];
+                if (diff == 0)
                 {
+                    continue;
+                }
+                if (diff == 1 || diff == -1)
+                {
+                    w *= 0.5;
+                }
+                else
+                {
+                    w = 0.0;
                     break;
                 }
             } // for m (temporal)
@@ -156,23 +146,56 @@ void tuple_retrieve(
     {
         double sum = 0.0;
         double alpha = 0.01; /* Small pseudocount to prevent zero probability */
-        for (int k = 0; k < max_clusters; k++)
+        int k = 0;
+
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+        if (max_clusters >= 4)
+        {
+            __m256d vsum = _mm256_setzero_pd();
+            for (; k <= max_clusters - 4; k += 4)
+            {
+                vsum = _mm256_add_pd(vsum, _mm256_loadu_pd(&match_scores[k]));
+            }
+            __m128d lo = _mm256_castpd256_pd128(vsum);
+            __m128d hi = _mm256_extractf128_pd(vsum, 1);
+            __m128d s128 = _mm_add_pd(lo, hi);
+            sum += _mm_cvtsd_f64(_mm_add_sd(s128, _mm_unpackhi_pd(s128, s128)));
+        }
+#endif
+        for (; k < max_clusters; k++)
         {
             sum += match_scores[k];
         }
+
         if (sum > 0.0)
         {
             double total = sum + (double)max_clusters * alpha;
-            for (int k = 0; k < max_clusters; k++)
+            double inv_total = 1.0 / total;
+            k = 0;
+
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+            if (max_clusters >= 4)
             {
-                match_scores[k] = (match_scores[k] + alpha) / total;
+                __m256d valpha = _mm256_set1_pd(alpha);
+                __m256d vinv = _mm256_set1_pd(inv_total);
+                for (; k <= max_clusters - 4; k += 4)
+                {
+                    __m256d vs = _mm256_loadu_pd(&match_scores[k]);
+                    __m256d vres = _mm256_mul_pd(_mm256_add_pd(vs, valpha), vinv);
+                    _mm256_storeu_pd(&match_scores[k], vres);
+                }
+            }
+#endif
+            for (; k < max_clusters; k++)
+            {
+                match_scores[k] = (match_scores[k] + alpha) * inv_total;
             }
         }
         else
         {
-            for (int k = 0; k < max_clusters; k++)
+            for (int j = 0; j < max_clusters; j++)
             {
-                match_scores[k] = 1.0; /* Flat scores if no match in history */
+                match_scores[j] = 1.0; /* Flat scores if no match in history */
             }
         }
     } // normalise block

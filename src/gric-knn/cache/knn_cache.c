@@ -1539,6 +1539,9 @@ int knn_model_build_or_load_rq8(
     // Fast path: Dataset already cached in RAM
     if (model->dataset_buffer != NULL)
     {
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
         for (long i = 0; i < N; i++)
         {
             int c = model->frame_cluster_map ? model->frame_cluster_map[i] : 0;
@@ -1982,6 +1985,9 @@ int knn_model_build_or_load_pq(
 
     if (model->dataset_buffer != NULL)
     {
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
         for (long i = 0; i < N; i++)
         {
             uint8_t *dst = model->pq_dataset_buffer + i * m;
@@ -2120,6 +2126,9 @@ int knn_model_build_or_load_rabitq(
 
     if (model->dataset_buffer != NULL)
     {
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(static)
+#endif
         for (long i = 0; i < N; i++)
         {
             uint8_t *dst_code = model->rabitq_dataset_buffer + (size_t)i * code_bytes;

@@ -144,6 +144,105 @@ void pq_codebook_free(
 }
 
 /**
+ * pq_sub_dist_sq_float() - Compute squared distance between float subvector and centroid.
+ * @sub_vec: Pointer to float subvector.
+ * @cent:    Pointer to centroid float array.
+ * @d_sub:   Subvector dimensionality.
+ *
+ * Return: Squared Euclidean distance.
+ */
+static inline float pq_sub_dist_sq_float(
+    const float *restrict sub_vec,
+    const float *restrict cent,
+    int                   d_sub)
+{
+    float d2 = 0.0f;
+    int j = 0;
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (d_sub >= 8)
+    {
+        __m256 vacc = _mm256_setzero_ps();
+        for (; j <= d_sub - 8; j += 8)
+        {
+            __m256 vq = _mm256_loadu_ps(&sub_vec[j]);
+            __m256 vc = _mm256_loadu_ps(&cent[j]);
+            __m256 diff = _mm256_sub_ps(vq, vc);
+#ifdef __FMA__
+            vacc = _mm256_fmadd_ps(diff, diff, vacc);
+#else
+            vacc = _mm256_add_ps(vacc, _mm256_mul_ps(diff, diff));
+#endif
+        }
+        __m128 lo = _mm256_castps256_ps128(vacc);
+        __m128 hi = _mm256_extractf128_ps(vacc, 1);
+        __m128 s128 = _mm_add_ps(lo, hi);
+        s128 = _mm_add_ps(s128, _mm_movehl_ps(s128, s128));
+        s128 = _mm_add_ss(s128, _mm_shuffle_ps(s128, s128, 1));
+        d2 += _mm_cvtss_f32(s128);
+    }
+#endif
+
+    for (; j < d_sub; j++)
+    {
+        float diff = sub_vec[j] - cent[j];
+        d2 += diff * diff;
+    }
+
+    return d2;
+}
+
+/**
+ * pq_sub_dist_sq_double() - Compute squared distance between double subvector and float centroid.
+ * @sub_vec: Pointer to double subvector.
+ * @cent:    Pointer to centroid float array.
+ * @d_sub:   Subvector dimensionality.
+ *
+ * Return: Squared Euclidean distance as float.
+ */
+static inline float pq_sub_dist_sq_double(
+    const double *restrict sub_vec,
+    const float *restrict  cent,
+    int                    d_sub)
+{
+    float d2 = 0.0f;
+    int j = 0;
+
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+    if (d_sub >= 4)
+    {
+        __m256d vacc = _mm256_setzero_pd();
+        for (; j <= d_sub - 4; j += 4)
+        {
+            __m256d vq = _mm256_loadu_pd(&sub_vec[j]);
+            __m128 vc_f = _mm_loadu_ps(&cent[j]);
+            __m256d vc = _mm256_cvtps_pd(vc_f);
+            __m256d diff = _mm256_sub_pd(vq, vc);
+#ifdef __FMA__
+            vacc = _mm256_fmadd_pd(diff, diff, vacc);
+#else
+            vacc = _mm256_add_pd(vacc, _mm256_mul_pd(diff, diff));
+#endif
+        }
+        __m128d lo = _mm256_castpd256_pd128(vacc);
+        __m128d hi = _mm256_extractf128_pd(vacc, 1);
+        __m128d s128 = _mm_add_pd(lo, hi);
+        d2 += (float)_mm_cvtsd_f64(_mm_add_sd(s128, _mm_unpackhi_pd(s128, s128)));
+    }
+#endif
+
+    for (; j < d_sub; j++)
+    {
+        float diff = (float)sub_vec[j] - cent[j];
+        d2 += diff * diff;
+    }
+
+    return d2;
+}
+
+/**
  * pq_train_codebook() - Train orthogonal subquantizer centroids via k-means.
  * @codebook:    Allocated PQCodebook to populate with trained centroids.
  * @train_data:  Contiguous training vectors [num_frames x dim].
@@ -228,12 +327,7 @@ int pq_train_codebook(
                 for (int k = 0; k < K; k++)
                 {
                     const float *cent = c_base + k * d_sub;
-                    float d2 = 0.0f;
-                    for (int j = 0; j < d_sub; j++)
-                    {
-                        float diff = sub_vec[j] - cent[j];
-                        d2 += diff * diff;
-                    } // for (int j = 0; j < d_sub; j++)
+                    float d2 = pq_sub_dist_sq_float(sub_vec, cent, d_sub);
 
                     if (d2 < min_d2)
                     {
@@ -276,12 +370,7 @@ int pq_train_codebook(
             for (int k = 0; k < K; k++)
             {
                 const float *cent = c_base + k * d_sub;
-                float d2 = 0.0f;
-                for (int j = 0; j < d_sub; j++)
-                {
-                    float diff = sub_vec[j] - cent[j];
-                    d2 += diff * diff;
-                } // for (int j = 0; j < d_sub; j++)
+                float d2 = pq_sub_dist_sq_float(sub_vec, cent, d_sub);
 
                 if (d2 < min_d2)
                 {
@@ -337,12 +426,7 @@ void pq_quantize_frame_float(
         for (int k = 0; k < K; k++)
         {
             const float *cent = c_base + k * d_sub;
-            float d2 = 0.0f;
-            for (int j = 0; j < d_sub; j++)
-            {
-                float diff = sub_vec[j] - cent[j];
-                d2 += diff * diff;
-            } // for (int j = 0; j < d_sub; j++)
+            float d2 = pq_sub_dist_sq_float(sub_vec, cent, d_sub);
 
             if (d2 < min_d2)
             {
@@ -385,12 +469,7 @@ void pq_quantize_frame_double(
         for (int k = 0; k < K; k++)
         {
             const float *cent = c_base + k * d_sub;
-            float d2 = 0.0f;
-            for (int j = 0; j < d_sub; j++)
-            {
-                float diff = (float)sub_vec[j] - cent[j];
-                d2 += diff * diff;
-            } // for (int j = 0; j < d_sub; j++)
+            float d2 = pq_sub_dist_sq_double(sub_vec, cent, d_sub);
 
             if (d2 < min_d2)
             {
