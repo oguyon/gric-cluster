@@ -12,218 +12,7 @@
 #include <string.h>
 #include "../trace/cluster_trace.h"
 
-#include "gric_simd.h"
-
-#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && \
-    (defined(__GNUC__) || defined(__clang__)) && !defined(__CUDACC__)
-#include <immintrin.h>
-
-GRIC_TARGET_AVX512
-/**
- * cluster_normalize_probs_avx512() - AVX-512 SIMD vector normalization of cluster probabilities.
- * @probs: Array of unnormalized probabilities [num_clusters].
- * @n:     Number of cluster entries.
- *
- * Purpose & Context ("What is this used for?"):
- * Invoked by cluster_normalize_probs() on AVX-512 hardware to reduce probability sums and
- * multiply by the reciprocal sum using 512-bit vector registers, ensuring sum(probs) == 1.0.
- */
-static void cluster_normalize_probs_avx512(
-    double *restrict probs,
-    int              num_clusters)
-{
-    __m512d acc = _mm512_setzero_pd();
-    int i = 0;
-    for (; i <= num_clusters - 8; i += 8)
-    {
-        acc = _mm512_add_pd(acc, _mm512_loadu_pd(probs + i));
-    }
-    double sum = _mm512_reduce_add_pd(acc);
-    for (; i < num_clusters; i++)
-    {
-        sum += probs[i];
-    }
-
-    if (sum <= 0.0)
-    {
-        double flat_p = 1.0 / (double)num_clusters;
-        for (int j = 0; j < num_clusters; j++)
-        {
-            probs[j] = flat_p;
-        }
-        return;
-    }
-
-    double inv = 1.0 / sum;
-    __m512d vinv = _mm512_set1_pd(inv);
-    i = 0;
-    for (; i <= num_clusters - 8; i += 8)
-    {
-        __m512d p = _mm512_loadu_pd(probs + i);
-        _mm512_storeu_pd(probs + i, _mm512_mul_pd(p, vinv));
-    }
-    for (; i < num_clusters; i++)
-    {
-        probs[i] *= inv;
-    }
-}
-
-GRIC_TARGET_AVX2
-/**
- * cluster_normalize_probs_avx2() - AVX2 256-bit SIMD vector normalization of cluster probabilities.
- * @probs: Array of unnormalized probabilities [num_clusters].
- * @n:     Number of cluster entries.
- *
- * Purpose & Context ("What is this used for?"):
- * Invoked by cluster_normalize_probs() on AVX2 hardware to normalize candidate cluster
- * prior probabilities to sum to 1.0 using 256-bit FMA vector registers.
- */
-static void cluster_normalize_probs_avx2(
-    double *restrict probs,
-    int              num_clusters)
-{
-    __m256d acc0 = _mm256_setzero_pd();
-    __m256d acc1 = _mm256_setzero_pd();
-    int i = 0;
-    for (; i <= num_clusters - 8; i += 8)
-    {
-        acc0 = _mm256_add_pd(acc0, _mm256_loadu_pd(probs + i));
-        acc1 = _mm256_add_pd(acc1, _mm256_loadu_pd(probs + i + 4));
-    }
-    acc0 = _mm256_add_pd(acc0, acc1);
-    __m128d hi = _mm256_extractf128_pd(acc0, 1);
-    __m128d lo = _mm256_castpd256_pd128(acc0);
-    __m128d s = _mm_add_pd(lo, hi);
-    s = _mm_add_sd(s, _mm_unpackhi_pd(s, s));
-    double sum = _mm_cvtsd_f64(s);
-    for (; i < num_clusters; i++)
-    {
-        sum += probs[i];
-    }
-
-    if (sum <= 0.0)
-    {
-        double flat_p = 1.0 / (double)num_clusters;
-        for (int j = 0; j < num_clusters; j++)
-        {
-            probs[j] = flat_p;
-        }
-        return;
-    }
-
-    double inv = 1.0 / sum;
-    __m256d vinv = _mm256_set1_pd(inv);
-    i = 0;
-    for (; i <= num_clusters - 8; i += 8)
-    {
-        __m256d p0 = _mm256_loadu_pd(probs + i);
-        __m256d p1 = _mm256_loadu_pd(probs + i + 4);
-        _mm256_storeu_pd(probs + i, _mm256_mul_pd(p0, vinv));
-        _mm256_storeu_pd(probs + i + 4, _mm256_mul_pd(p1, vinv));
-    }
-    for (; i < num_clusters; i++)
-    {
-        probs[i] *= inv;
-    }
-}
-
-#if GRIC_HAVE_AVX512_TARGET
-GRIC_TARGET_AVX512
-/**
- * reset_search_scratch_avx512() - Reset frame candidate scratch buffers using AVX-512.
- * @state:  Active clustering state.
- * @num_cl: Number of active clusters to initialize.
- *
- * Purpose & Context ("What is this used for?"):
- * Invoked at the beginning of each frame step to re-initialize candidate evaluation bitmasks,
- * distance cutoff arrays, and priority scratch arrays using 512-bit vector stores.
- */
-static void reset_search_scratch_avx512(
-    ClusterState *state,
-    int           num_cl)
-{
-    __m512d ones_d = _mm512_set1_pd(1.0);
-    int i = 0;
-    for (; i <= num_cl - 8; i += 8)
-    {
-        _mm512_storeu_pd(state->scratch.current_gprobs + i, ones_d);
-    }
-    for (; i < num_cl; i++)
-    {
-        state->scratch.current_gprobs[i] = 1.0;
-    }
-
-    __m512i ones_i = _mm512_set1_epi32(1);
-    __m512i ramp = _mm512_setr_epi32(
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
-    __m512i step16 = _mm512_set1_epi32(16);
-    i = 0;
-    for (; i <= num_cl - 16; i += 16)
-    {
-        _mm512_storeu_si512((void *)(state->scratch.clmembflag + i), ones_i);
-        _mm512_storeu_si512((void *)(state->scratch.active_clusters + i), ramp);
-        ramp = _mm512_add_epi32(ramp, step16);
-    }
-    for (; i < num_cl; i++)
-    {
-        state->scratch.clmembflag[i] = 1;
-        state->scratch.active_clusters[i] = i;
-    }
-}
-#endif // GRIC_HAVE_AVX512_TARGET
-
-GRIC_TARGET_AVX2
-/**
- * reset_search_scratch_avx2() - Reset frame candidate scratch buffers using AVX2.
- * @state:  Active clustering state.
- * @config: Active clustering configuration.
- *
- * Purpose & Context ("What is this used for?"):
- * Invoked at the beginning of each frame step to re-initialize candidate evaluation bitmasks,
- * distance cutoff arrays, and priority scratch arrays before candidate filtering.
- */
-static void reset_search_scratch_avx2(
-    ClusterState *state,
-    int           num_cl)
-{
-    __m256d ones_d = _mm256_set1_pd(1.0);
-    int i = 0;
-    for (; i <= num_cl - 4; i += 4)
-    {
-        _mm256_storeu_pd(state->scratch.current_gprobs + i, ones_d);
-    }
-    for (; i < num_cl; i++)
-    {
-        state->scratch.current_gprobs[i] = 1.0;
-    }
-
-    __m256i ones_i = _mm256_set1_epi32(1);
-    __m256i ramp = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
-    __m256i step8 = _mm256_set1_epi32(8);
-    i = 0;
-    for (; i <= num_cl - 8; i += 8)
-    {
-        _mm256_storeu_si256((__m256i *)(state->scratch.clmembflag + i), ones_i);
-        _mm256_storeu_si256((__m256i *)(state->scratch.active_clusters + i), ramp);
-        ramp = _mm256_add_epi32(ramp, step8);
-    }
-    for (; i < num_cl; i++)
-    {
-        state->scratch.clmembflag[i] = 1;
-        state->scratch.active_clusters[i] = i;
-    }
-}
-#endif
-
-/**
- * reset_search_scratch_scalar() - Scalar fallback resetting frame candidate scratch buffers.
- * @state:  Active clustering state.
- * @config: Active clustering configuration.
- *
- * Purpose & Context ("What is this used for?"):
- * Portable fallback for reset_search_scratch() when SIMD is unavailable.
- */
-static void reset_search_scratch_scalar(
+static inline void reset_search_scratch(
     ClusterState *state,
     int           num_cl)
 {
@@ -236,73 +25,13 @@ static void reset_search_scratch_scalar(
 }
 
 /**
- * reset_search_scratch() - Hardware-dispatched reset of frame candidate scratch buffers.
- * @state:  Active clustering state holding scratch arrays.
- * @num_cl: Number of active clusters to initialize.
- *
- * Purpose & Context ("What is this used for?"):
- * Invoked at the start of cluster_frame() to clear and prepare per-frame candidate scratch
- * memory before evaluating incoming vectors. Dispatches to AVX2 or scalar reset.
- */
-static inline void reset_search_scratch(
-    ClusterState *state,
-    int           num_cl)
-{
-#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && \
-    (defined(__GNUC__) || defined(__clang__)) && !defined(__CUDACC__)
-#if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512)
-    {
-        reset_search_scratch_avx512(state, num_cl);
-        return;
-    }
-#endif
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX2)
-    {
-        reset_search_scratch_avx2(state, num_cl);
-        return;
-    }
-#endif
-    reset_search_scratch_scalar(state, num_cl);
-}
-
-/**
- * cluster_normalize_probs_scalar() - Portable scalar normalization of cluster probabilities.
- * @probs: Array of unnormalized probabilities [num_clusters].
- * @n:     Number of cluster entries.
- *
- * Purpose & Context ("What is this used for?"):
- * Portable fallback for cluster_normalize_probs() when vector hardware is unavailable.
- */
-static void cluster_normalize_probs_scalar(
-    double *restrict probs,
-    int              num_clusters)
-{
-    double sum = 0.0;
-    for (int i = 0; i < num_clusters; i++)
-    {
-        sum += probs[i];
-    }
-    if (sum <= 0.0)
-    {
-        double flat_p = 1.0 / (double)num_clusters;
-        for (int i = 0; i < num_clusters; i++)
-        {
-            probs[i] = flat_p;
-        }
-        return;
-    }
-    double inv = 1.0 / sum;
-    for (int i = 0; i < num_clusters; i++)
-    {
-        probs[i] *= inv;
-    }
-}
-
-/**
- * cluster_normalize_probs() - Fast SIMD normalization of cluster prior probabilities.
+ * cluster_normalize_probs() - Normalize cluster prior probabilities to sum to 1.0.
  * @probs:        Contiguous array of cluster prior probabilities.
  * @num_clusters: Number of active clusters.
+ *
+ * Purpose & Context ("What is this used for?"):
+ * Invoked during cluster frame processing to normalize prior probability weights
+ * so that the sum of all cluster probabilities equals 1.0.
  */
 void cluster_normalize_probs(
     double *restrict probs,
@@ -313,22 +42,27 @@ void cluster_normalize_probs(
         return;
     }
 
-#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && \
-    (defined(__GNUC__) || defined(__clang__)) && !defined(__CUDACC__)
-    GricSimdLevel simd = gric_get_simd_level();
-    if (simd >= GRIC_SIMD_AVX512)
+    double sum = 0.0;
+    for (int i = 0; i < num_clusters; i++)
     {
-        cluster_normalize_probs_avx512(probs, num_clusters);
-        return;
+        sum += probs[i];
     }
-    if (simd >= GRIC_SIMD_AVX2)
-    {
-        cluster_normalize_probs_avx2(probs, num_clusters);
-        return;
-    }
-#endif
 
-    cluster_normalize_probs_scalar(probs, num_clusters);
+    if (sum <= 0.0)
+    {
+        double flat_p = 1.0 / (double)num_clusters;
+        for (int j = 0; j < num_clusters; j++)
+        {
+            probs[j] = flat_p;
+        }
+        return;
+    }
+
+    double inv = 1.0 / sum;
+    for (int i = 0; i < num_clusters; i++)
+    {
+        probs[i] *= inv;
+    }
 }
 
 /**

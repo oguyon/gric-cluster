@@ -10,11 +10,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#if !defined(__CUDACC__) && \
-    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-#include <immintrin.h>
-#endif
-
 /** Prime constants for 64-bit bit-mixing */
 #define GRIC_HASH_P1 0xbf58476d1ce4e5b9ULL
 #define GRIC_HASH_P2 0x94d049bb133111ebULL
