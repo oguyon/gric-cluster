@@ -73,6 +73,7 @@ typedef struct
 {
     double x3;
     double y3;
+    double two_x3;
     double xF;
     double yF;
     double zF;
@@ -152,11 +153,29 @@ void calc_te5_ref_init(
  *
  * Return: Minimum reconstructed 3D distance between frame and target.
  */
-double calc_min_dist_5pt_ref(
+static inline double calc_min_dist_5pt_ref(
     const TE5Ref *ref,
     double        d_t_c1,
     double        d_t_c2,
-    double        d_t_c3);
+    double        d_t_c3)
+{
+    if (!ref->valid)
+    {
+        return 0.0;
+    }
+
+    double d_t_c1_sq = d_t_c1 * d_t_c1;
+    double xT = (d_t_c1_sq + ref->d12_sq - d_t_c2 * d_t_c2) * ref->inv_2d12;
+    double yT = (d_t_c1_sq + ref->d13_sq - d_t_c3 * d_t_c3 - xT * ref->two_x3) *
+                ref->inv_2y3;
+    double zT_sq = d_t_c1_sq - xT * xT - yT * yT;
+    double zT = (zT_sq > 0.0) ? sqrt(zT_sq) : 0.0;
+
+    double dx = ref->xF - xT;
+    double dy = ref->yF - yT;
+    double dz = ref->zF - zT;
+    return sqrt(dx * dx + dy * dy + dz * dz);
+}
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 /**

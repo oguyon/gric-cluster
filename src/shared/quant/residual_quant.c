@@ -208,13 +208,24 @@ void rq8_quantize_residual_float(
 
     if (params->lattice_mode == RQ8_LATTICE_E8)
     {
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+        __m256 vinv = _mm256_set1_ps(inv_scale);
+#endif
         for (; i <= dim - 8; i += 8)
         {
             float block_in[8];
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+            __m256 vs = _mm256_loadu_ps(&src[i]);
+            __m256 va = _mm256_loadu_ps(&anchor[i]);
+            _mm256_storeu_ps(block_in, _mm256_mul_ps(_mm256_sub_ps(vs, va), vinv));
+#else
             for (int k = 0; k < 8; k++)
             {
                 block_in[k] = (src[i + k] - anchor[i + k]) * inv_scale;
             }
+#endif
 
             float block_out[8];
             e8_quantize_point_float(block_in, block_out);
@@ -336,13 +347,27 @@ void rq8_quantize_residual_double(
 
     if (params->lattice_mode == RQ8_LATTICE_E8)
     {
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+        __m256d vinv = _mm256_set1_pd(inv_scale);
+#endif
         for (; i <= dim - 8; i += 8)
         {
             double block_in[8];
+#if defined(__AVX__) && \
+    (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+            __m256d vs0 = _mm256_loadu_pd(&src[i]);
+            __m256d va0 = _mm256_loadu_pd(&anchor[i]);
+            __m256d vs1 = _mm256_loadu_pd(&src[i + 4]);
+            __m256d va1 = _mm256_loadu_pd(&anchor[i + 4]);
+            _mm256_storeu_pd(&block_in[0], _mm256_mul_pd(_mm256_sub_pd(vs0, va0), vinv));
+            _mm256_storeu_pd(&block_in[4], _mm256_mul_pd(_mm256_sub_pd(vs1, va1), vinv));
+#else
             for (int k = 0; k < 8; k++)
             {
                 block_in[k] = (src[i + k] - anchor[i + k]) * inv_scale;
             }
+#endif
 
             double block_out[8];
             e8_quantize_point_double(block_in, block_out);

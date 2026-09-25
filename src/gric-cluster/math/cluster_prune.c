@@ -17,6 +17,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#endif
+
 /**
  * get_prediction_candidates() - Produce a ranked list of
  *     predicted next-cluster candidates.
@@ -273,30 +277,26 @@ void prune_candidates_te5(
             {
                 for (; cl_idx <= state->num_clusters - 8; cl_idx += 8)
                 {
-                    int any_alive = 0;
-                    for (int sub = 0; sub < 8; sub++)
-                    {
-                        if (state->scratch.clmembflag[cl_idx + sub])
-                        {
-                            any_alive = 1;
-                            break;
-                        }
-                    }
-                    if (!any_alive)
+                    __m256i vflags8 = _mm256_loadu_si256(
+                        (const __m256i *)(const void *)&state->scratch.clmembflag[cl_idx]);
+                    if (_mm256_testz_si256(vflags8, vflags8))
                     {
                         continue;
                     }
 
-                    int any_missing = 0;
-                    for (int sub = 0; sub < 8; sub++)
-                    {
-                        int kk = cl_idx + sub;
-                        if (row_dcc_c1[kk] < 0.0 || row_dcc_c2[kk] < 0.0 || row_dcc_c3[kk] < 0.0)
-                        {
-                            any_missing = 1;
-                            break;
-                        }
-                    }
+                    __m256d vdcc1_lo = _mm256_loadu_pd(&row_dcc_c1[cl_idx]);
+                    __m256d vdcc1_hi = _mm256_loadu_pd(&row_dcc_c1[cl_idx + 4]);
+                    __m256d vdcc2_lo = _mm256_loadu_pd(&row_dcc_c2[cl_idx]);
+                    __m256d vdcc2_hi = _mm256_loadu_pd(&row_dcc_c2[cl_idx + 4]);
+                    __m256d vdcc3_lo = _mm256_loadu_pd(&row_dcc_c3[cl_idx]);
+                    __m256d vdcc3_hi = _mm256_loadu_pd(&row_dcc_c3[cl_idx + 4]);
+
+                    __m256d min_lo = _mm256_min_pd(_mm256_min_pd(vdcc1_lo, vdcc2_lo), vdcc3_lo);
+                    __m256d min_hi = _mm256_min_pd(_mm256_min_pd(vdcc1_hi, vdcc2_hi), vdcc3_hi);
+                    __m256d min_all = _mm256_min_pd(min_lo, min_hi);
+                    __m256d vzero = _mm256_setzero_pd();
+                    int any_missing =
+                        (_mm256_movemask_pd(_mm256_cmp_pd(min_all, vzero, _CMP_LT_OQ)) != 0);
 
                     if (any_missing)
                     {
@@ -368,19 +368,22 @@ void prune_candidates_te5(
             {
                 for (; cl_idx <= state->num_clusters - 4; cl_idx += 4)
                 {
-                    if (!state->scratch.clmembflag[cl_idx] &&
-                        !state->scratch.clmembflag[cl_idx + 1] &&
-                        !state->scratch.clmembflag[cl_idx + 2] &&
-                        !state->scratch.clmembflag[cl_idx + 3])
+                    __m128i vflags4 = _mm_loadu_si128(
+                        (const __m128i *)(const void *)&state->scratch.clmembflag[cl_idx]);
+                    if (_mm_testz_si128(vflags4, vflags4))
                     {
                         continue;
                     }
-                    if (row_dcc_c1[cl_idx] < 0.0 || row_dcc_c1[cl_idx + 1] < 0.0 ||
-                        row_dcc_c1[cl_idx + 2] < 0.0 || row_dcc_c1[cl_idx + 3] < 0.0 ||
-                        row_dcc_c2[cl_idx] < 0.0 || row_dcc_c2[cl_idx + 1] < 0.0 ||
-                        row_dcc_c2[cl_idx + 2] < 0.0 || row_dcc_c2[cl_idx + 3] < 0.0 ||
-                        row_dcc_c3[cl_idx] < 0.0 || row_dcc_c3[cl_idx + 1] < 0.0 ||
-                        row_dcc_c3[cl_idx + 2] < 0.0 || row_dcc_c3[cl_idx + 3] < 0.0)
+
+                    __m256d vdcc1 = _mm256_loadu_pd(&row_dcc_c1[cl_idx]);
+                    __m256d vdcc2 = _mm256_loadu_pd(&row_dcc_c2[cl_idx]);
+                    __m256d vdcc3 = _mm256_loadu_pd(&row_dcc_c3[cl_idx]);
+                    __m256d min_dcc = _mm256_min_pd(_mm256_min_pd(vdcc1, vdcc2), vdcc3);
+                    __m256d vzero = _mm256_setzero_pd();
+                    int any_missing =
+                        (_mm256_movemask_pd(_mm256_cmp_pd(min_dcc, vzero, _CMP_LT_OQ)) != 0);
+
+                    if (any_missing)
                     {
                         for (int sub = 0; sub < 4; sub++)
                         {
