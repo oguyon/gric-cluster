@@ -20,6 +20,16 @@ Within the Milk interactive shell:
   milk> loadmodule "milkgric"
   milk> gric_cluster -in_name imrec1 -out_name clust -rlim 0.45
 
+## INSTALLATION
+To build GRIC with Milk integration, install Milk (framework-dev):
+  ./scripts/install_milk_dev.sh --deps
+
+Or install manually from source:
+  git clone --recursive -b framework-dev https://github.com/milk-org/milk.git
+  cd milk && mkdir _build && cd _build
+  cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
+  make -j$(nproc) && sudo make install && sudo ldconfig
+
 ## SEE ALSO
 - `milk_fpsexec`: Standalone FPS clustering daemon manual
 - `milk_streams`: Shared memory stream output specifications
