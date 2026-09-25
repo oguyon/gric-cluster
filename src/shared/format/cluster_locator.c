@@ -96,49 +96,15 @@ void calc_te5_ref_init(
     }
     ref->y3 = sqrt(y3_sq);
     ref->inv_2y3 = 1.0 / (2.0 * ref->y3);
+    ref->two_x3 = 2.0 * ref->x3;
 
-    ref->xF = (d_f_c1 * d_f_c1 + ref->d12_sq - d_f_c2 * d_f_c2) * ref->inv_2d12;
-    ref->yF = (d_f_c1 * d_f_c1 + ref->d13_sq - d_f_c3 * d_f_c3 - 2.0 * ref->xF * ref->x3) *
+    double d_f_c1_sq = d_f_c1 * d_f_c1;
+    ref->xF = (d_f_c1_sq + ref->d12_sq - d_f_c2 * d_f_c2) * ref->inv_2d12;
+    ref->yF = (d_f_c1_sq + ref->d13_sq - d_f_c3 * d_f_c3 - ref->xF * ref->two_x3) *
               ref->inv_2y3;
-    double zF_sq = d_f_c1 * d_f_c1 - ref->xF * ref->xF - ref->yF * ref->yF;
+    double zF_sq = d_f_c1_sq - ref->xF * ref->xF - ref->yF * ref->yF;
     ref->zF = (zF_sq > 0.0) ? sqrt(zF_sq) : 0.0;
     ref->valid = 1;
-}
-
-/**
- * calc_min_dist_5pt_ref() - Compute scalar 5-point Euclidean lower-bound distance.
- * @ref:    Precomputed 5-point reference coordinate frame.
- * @d_t_c1: Distance from candidate target to reference anchor 1.
- * @d_t_c2: Distance from candidate target to reference anchor 2.
- * @d_t_c3: Distance from candidate target to reference anchor 3.
- *
- * Purpose & Context ("What is this used for?"):
- * Invoked during candidate cluster pruning to evaluate 5-point distance geometry bounds
- * across candidate clusters. Yields tighter bounds than 4-point pruning in high dimensions.
- *
- * Return: Conservative 5-point Euclidean lower bound distance.
- */
-double calc_min_dist_5pt_ref(
-    const TE5Ref *ref,
-    double        d_t_c1,
-    double        d_t_c2,
-    double        d_t_c3)
-{
-    if (!ref->valid)
-    {
-        return 0.0;
-    }
-
-    double xT = (d_t_c1 * d_t_c1 + ref->d12_sq - d_t_c2 * d_t_c2) * ref->inv_2d12;
-    double yT = (d_t_c1 * d_t_c1 + ref->d13_sq - d_t_c3 * d_t_c3 - 2.0 * xT * ref->x3) *
-                ref->inv_2y3;
-    double zT_sq = d_t_c1 * d_t_c1 - xT * xT - yT * yT;
-    double zT = (zT_sq > 0.0) ? sqrt(zT_sq) : 0.0;
-
-    double dx = ref->xF - xT;
-    double dy = ref->yF - yT;
-    double dz = ref->zF - zT;
-    return sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
@@ -232,14 +198,13 @@ void calc_min_dist_5pt_batch4_avx2(
     __m256d vd13_sq = _mm256_set1_pd(ref->d13_sq);
     __m256d vinv_2d12 = _mm256_set1_pd(ref->inv_2d12);
     __m256d vinv_2y3 = _mm256_set1_pd(ref->inv_2y3);
-    __m256d vx3 = _mm256_set1_pd(ref->x3);
-    __m256d vtwo = _mm256_set1_pd(2.0);
+    __m256d vtwo_x3 = _mm256_set1_pd(ref->two_x3);
     __m256d vzero = _mm256_setzero_pd();
 
     __m256d vxT = _mm256_mul_pd(_mm256_sub_pd(_mm256_add_pd(vt1_sq, vd12_sq), vt2_sq),
                                 vinv_2d12);
     __m256d vyT_num = _mm256_sub_pd(_mm256_sub_pd(_mm256_add_pd(vt1_sq, vd13_sq), vt3_sq),
-                                    _mm256_mul_pd(_mm256_mul_pd(vtwo, vxT), vx3));
+                                    _mm256_mul_pd(vxT, vtwo_x3));
     __m256d vyT = _mm256_mul_pd(vyT_num, vinv_2y3);
 
     __m256d vzT_sq = _mm256_sub_pd(_mm256_sub_pd(vt1_sq, _mm256_mul_pd(vxT, vxT)),
@@ -353,14 +318,13 @@ void calc_min_dist_5pt_batch8_avx512(
     __m512d vd13_sq = _mm512_set1_pd(ref->d13_sq);
     __m512d vinv_2d12 = _mm512_set1_pd(ref->inv_2d12);
     __m512d vinv_2y3 = _mm512_set1_pd(ref->inv_2y3);
-    __m512d vx3 = _mm512_set1_pd(ref->x3);
-    __m512d vtwo = _mm512_set1_pd(2.0);
+    __m512d vtwo_x3 = _mm512_set1_pd(ref->two_x3);
     __m512d vzero = _mm512_setzero_pd();
 
     __m512d vxT = _mm512_mul_pd(_mm512_sub_pd(_mm512_add_pd(vt1_sq, vd12_sq), vt2_sq),
                                 vinv_2d12);
     __m512d vyT_num = _mm512_sub_pd(_mm512_sub_pd(_mm512_add_pd(vt1_sq, vd13_sq), vt3_sq),
-                                    _mm512_mul_pd(_mm512_mul_pd(vtwo, vxT), vx3));
+                                    _mm512_mul_pd(vxT, vtwo_x3));
     __m512d vyT = _mm512_mul_pd(vyT_num, vinv_2y3);
 
     __m512d vzT_sq = _mm512_sub_pd(_mm512_sub_pd(vt1_sq, _mm512_mul_pd(vxT, vxT)),

@@ -689,6 +689,76 @@ double rabitq_compute_lower_bound(
 
     if (bits == 1)
     {
+#if defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
+        long num_bytes = dim_pad >> 3;
+        __m256 sum_vec0 = _mm256_setzero_ps();
+        __m256 sum_vec1 = _mm256_setzero_ps();
+        long q_idx = 0;
+        long b = 0;
+
+        for (; b <= num_bytes - 2; b += 2)
+        {
+            uint8_t byte0 = cand_codes[b];
+            uint8_t byte1 = cand_codes[b + 1];
+
+            __m256 q0 = _mm256_loadu_ps(&rotated_query[q_idx]);
+            __m256 s0 = _mm256_set_ps(
+                sign_tab[(byte0 >> 7) & 1],
+                sign_tab[(byte0 >> 6) & 1],
+                sign_tab[(byte0 >> 5) & 1],
+                sign_tab[(byte0 >> 4) & 1],
+                sign_tab[(byte0 >> 3) & 1],
+                sign_tab[(byte0 >> 2) & 1],
+                sign_tab[(byte0 >> 1) & 1],
+                sign_tab[byte0 & 1]);
+            sum_vec0 = _mm256_fmadd_ps(q0, s0, sum_vec0);
+
+            __m256 q1 = _mm256_loadu_ps(&rotated_query[q_idx + 8]);
+            __m256 s1 = _mm256_set_ps(
+                sign_tab[(byte1 >> 7) & 1],
+                sign_tab[(byte1 >> 6) & 1],
+                sign_tab[(byte1 >> 5) & 1],
+                sign_tab[(byte1 >> 4) & 1],
+                sign_tab[(byte1 >> 3) & 1],
+                sign_tab[(byte1 >> 2) & 1],
+                sign_tab[(byte1 >> 1) & 1],
+                sign_tab[byte1 & 1]);
+            sum_vec1 = _mm256_fmadd_ps(q1, s1, sum_vec1);
+
+            q_idx += 16;
+        }
+
+        for (; b < num_bytes; b++)
+        {
+            uint8_t byte = cand_codes[b];
+            __m256 q = _mm256_loadu_ps(&rotated_query[q_idx]);
+            __m256 s = _mm256_set_ps(
+                sign_tab[(byte >> 7) & 1],
+                sign_tab[(byte >> 6) & 1],
+                sign_tab[(byte >> 5) & 1],
+                sign_tab[(byte >> 4) & 1],
+                sign_tab[(byte >> 3) & 1],
+                sign_tab[(byte >> 2) & 1],
+                sign_tab[(byte >> 1) & 1],
+                sign_tab[byte & 1]);
+            sum_vec0 = _mm256_fmadd_ps(q, s, sum_vec0);
+            q_idx += 8;
+        }
+
+        __m256 sum_vec = _mm256_add_ps(sum_vec0, sum_vec1);
+        __m128 lo = _mm256_castps256_ps128(sum_vec);
+        __m128 hi = _mm256_extractf128_ps(sum_vec, 1);
+        __m128 sum128 = _mm_add_ps(lo, hi);
+        sum128 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
+        sum128 = _mm_add_ss(sum128, _mm_shuffle_ps(sum128, sum128, 1));
+        dot_accum = _mm_cvtss_f32(sum128);
+
+        for (long i = q_idx; i < dim_pad; i++)
+        {
+            uint8_t bit = (cand_codes[i >> 3] >> (i & 7)) & 1;
+            dot_accum += rotated_query[i] * sign_tab[bit];
+        }
+#else
         long num_bytes = dim_pad >> 3;
         long q_idx = 0;
         for (long b = 0; b < num_bytes; b++)
@@ -706,9 +776,10 @@ double rabitq_compute_lower_bound(
         }
         for (long i = q_idx; i < dim_pad; i++)
         {
-            uint8_t b = (cand_codes[i >> 3] >> (i & 7)) & 1;
-            dot_accum += rotated_query[i] * sign_tab[b];
+            uint8_t b_bit = (cand_codes[i >> 3] >> (i & 7)) & 1;
+            dot_accum += rotated_query[i] * sign_tab[b_bit];
         }
+#endif
     }
     else
     {
