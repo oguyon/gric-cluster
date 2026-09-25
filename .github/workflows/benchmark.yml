@@ -34,7 +34,9 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev pkg-config
+          sudo apt-get install -y \
+            libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev \
+            libswscale-dev libavutil-dev pkg-config
 
       - name: Configure and Build
         run: |

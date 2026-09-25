@@ -98,5 +98,6 @@ jobs:
                docs/simulator/wasm/gric_cluster.wasm \
             && echo "✅ docs/ WASM binary matches" \
             || (echo "❌ docs/ WASM binary is stale" \
-                && echo "Run: make -f Makefile.wasm && cp site/simulator/wasm/* docs/simulator/wasm/" \
+                && echo "Run: make -f Makefile.wasm" \
+                && echo "Then: cp site/simulator/wasm/* docs/simulator/wasm/" \
                 && exit 1)

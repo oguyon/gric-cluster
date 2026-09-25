@@ -23,7 +23,10 @@ jobs:
       - name: Check line lengths (<= 100 cols in C/C++ sources, headers, and tests)
         run: |
           echo "Checking that all C/C++ source and header lines are <= 100 columns..."
-          ! git grep -n '.\{101,\}' -- 'src/**.[ch]' 'include/**.[ch]*' 'tests/**.[ch]*' 'tools/**.[ch]' 'benchmarks/**.[ch]' ':!src/gric-plot/font8x16.h' ':!src/shared/cjson/*'
+          ! git grep -n '.\{101,\}' -- \
+            'src/**.[ch]' 'include/**.[ch]*' 'tests/**.[ch]*' \
+            'tools/**.[ch]' 'benchmarks/**.[ch]' \
+            ':!src/gric-plot/font8x16.h' ':!src/shared/cjson/*'
 
   build-and-test:
     needs: [lint]
@@ -60,13 +63,16 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ matrix.os }}-${{ matrix.c_compiler }}-${{ matrix.build_type }}-${{ matrix.sanitizer }}-v3
+          key: "${{ matrix.os }}-${{ matrix.c_compiler }}-\
+            ${{ matrix.build_type }}-${{ matrix.sanitizer }}-v3"
 
       - name: Install Dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev pkg-config python3-numpy
+          sudo apt-get install -y \
+            libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev \
+            libswscale-dev libavutil-dev pkg-config python3-numpy
 
       - name: Install ImageStreamIO (Ubuntu)
         if: runner.os == 'Linux'
@@ -97,9 +103,10 @@ jobs:
           if [ "${{ runner.os }}" = "Linux" ]; then
             EXTRA_FLAGS+=("-DENABLE_NATIVE=OFF")
             if [ "${{ matrix.sanitizer }}" = "true" ]; then
+              SAN_FLAGS="-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
               EXTRA_FLAGS+=(
-                "-DCMAKE_C_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
-                "-DCMAKE_CXX_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
+                "-DCMAKE_C_FLAGS=${SAN_FLAGS}"
+                "-DCMAKE_CXX_FLAGS=${SAN_FLAGS}"
                 "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
                 "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined"
               )
@@ -198,10 +205,14 @@ jobs:
           if [ ! -e "/usr/local/milk" ]; then
             sudo ln -snf "$MILK_PREFIX" /usr/local/milk
           fi
+          echo "$MILK_PREFIX/lib" | sudo tee /etc/ld.so.conf.d/milk.conf
+          sudo ldconfig
           echo "PKG_CONFIG_PATH=$MILK_LIBDIR:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$MILK_PREFIX/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
           echo "$MILK_PREFIX/bin" >> "$GITHUB_PATH"
-          sudo ldconfig "$MILK_PREFIX/lib" || true
+          export PKG_CONFIG_PATH="$MILK_LIBDIR:$PKG_CONFIG_PATH"
+          export LD_LIBRARY_PATH="$MILK_PREFIX/lib:$LD_LIBRARY_PATH"
+          export PATH="$MILK_PREFIX/bin:$PATH"
           pkg-config --modversion milk
           pkg-config --modversion ImageStreamIO
 
@@ -225,7 +236,9 @@ jobs:
         run: |
           test -x build-milk/src/gric-fps/milk-fpsexec-gric-cluster
           test -f build-milk/src/gric-fps/libmilkgric.so
-          test -L build-milk/src/gric-fps/gric-fps-cluster || test -x build-milk/src/gric-fps/gric-fps-cluster
+          test -L build-milk/src/gric-fps/gric-fps-cluster || \
+            test -x build-milk/src/gric-fps/gric-fps-cluster
+          build-milk/src/gric-fps/milk-fpsexec-gric-cluster -h || true
 
       - name: Test (CTest with Milk & SHM)
         run: |
