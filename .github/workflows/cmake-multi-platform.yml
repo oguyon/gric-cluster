@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ "master", "main" ]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -17,10 +20,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check line lengths (<= 100 cols in C sources and tests)
+      - name: Check line lengths (<= 100 cols in C/C++ sources, headers, and tests)
         run: |
-          echo "Checking that all C source and header lines are <= 100 columns..."
-          ! git grep -n '.\{101,\}' -- 'src/*.c' 'src/*.h' 'tests/*.c' 'tests/*.h' ':!src/gric-plot/font8x16.h' ':!src/shared/cjson/*'
+          echo "Checking that all C/C++ source and header lines are <= 100 columns..."
+          ! git grep -n '.\{101,\}' -- \
+            'src/**.[ch]' 'include/**.[ch]*' 'tests/**.[ch]*' \
+            'tools/**.[ch]' 'benchmarks/**.[ch]' \
+            ':!src/gric-plot/font8x16.h' ':!src/shared/cjson/*'
 
   build-and-test:
     needs: [lint]
@@ -57,13 +63,24 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ matrix.os }}-${{ matrix.c_compiler }}-${{ matrix.build_type }}-${{ matrix.sanitizer }}-v3
+          key: "${{ matrix.os }}-${{ matrix.c_compiler }}-\
+            ${{ matrix.build_type }}-${{ matrix.sanitizer }}-v3"
 
       - name: Install Dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev libswscale-dev libavutil-dev pkg-config
+          sudo apt-get install -y \
+            libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev \
+            libswscale-dev libavutil-dev pkg-config python3-numpy
+
+      - name: Install ImageStreamIO (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          git clone --depth 1 https://github.com/milk-org/ImageStreamIO.git /tmp/ImageStreamIO
+          cmake -B /tmp/ImageStreamIO/build -DCMAKE_INSTALL_PREFIX=/usr/local /tmp/ImageStreamIO
+          sudo cmake --build /tmp/ImageStreamIO/build --target install
+          sudo ldconfig
 
       - name: Install Dependencies (macOS)
         if: runner.os == 'macOS'
@@ -86,9 +103,10 @@ jobs:
           if [ "${{ runner.os }}" = "Linux" ]; then
             EXTRA_FLAGS+=("-DENABLE_NATIVE=OFF")
             if [ "${{ matrix.sanitizer }}" = "true" ]; then
+              SAN_FLAGS="-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
               EXTRA_FLAGS+=(
-                "-DCMAKE_C_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
-                "-DCMAKE_CXX_FLAGS=-mavx2 -mfma -fsanitize=address,undefined -fno-omit-frame-pointer -g"
+                "-DCMAKE_C_FLAGS=${SAN_FLAGS}"
+                "-DCMAKE_CXX_FLAGS=${SAN_FLAGS}"
                 "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
                 "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined"
               )
@@ -118,7 +136,128 @@ jobs:
           ctest --test-dir ${{ steps.strings.outputs.build-output-dir }} \
             --output-on-failure --parallel 4 -E "cuda"
 
-      - name: Test (Python Wrapper)
+      - name: Test (Python Wrappers)
         if: runner.os == 'Linux' && matrix.build_type == 'Release'
         run: |
           PATH="${{ steps.strings.outputs.build-output-dir }}:$PATH" python3 python/test_wrapper.py
+          LD_LIBRARY_PATH="${{ steps.strings.outputs.build-output-dir }}:$LD_LIBRARY_PATH" \
+          PYTHONPATH="${{ github.workspace }}/python:$PYTHONPATH" \
+          python3 python/test_gric_native.py
+
+      - name: Verify Installation Targets
+        if: runner.os == 'Linux' && matrix.build_type == 'Release'
+        run: |
+          cmake --install ${{ steps.strings.outputs.build-output-dir }} --prefix /tmp/gric_install
+          test -x /tmp/gric_install/bin/gric-cluster
+          test -f /tmp/gric_install/include/gric/gric.h
+          test -f /tmp/gric_install/lib/libgric.so || test -f /tmp/gric_install/lib/libgric.dylib
+
+      - name: Upload Test Failure Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs-${{ matrix.os }}-${{ matrix.c_compiler }}-${{ matrix.build_type }}
+          path: |
+            ${{ steps.strings.outputs.build-output-dir }}/Testing/Temporary/LastTest.log
+            /tmp/ctest_*
+
+  milk-adapter:
+    name: Milk Framework Streaming Adapter
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: milk-adapter-ubuntu-gcc-release-v1
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libcfitsio-dev libpng-dev libavformat-dev libavcodec-dev \
+            libswscale-dev libavutil-dev pkg-config python3-numpy \
+            libreadline-dev libncurses-dev bison flex libfftw3-dev libgsl-dev libomp-dev tmux
+
+      - name: Cache Milk Framework
+        id: cache-milk
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/milk*
+          key: milk-framework-dev-ubuntu-latest-v2
+
+      - name: Install Milk Framework
+        if: steps.cache-milk.outputs.cache-hit != 'true'
+        run: |
+          ./scripts/install_milk_dev.sh --prefix /usr/local --deps
+
+      - name: Set Milk Environment
+        run: |
+          MILK_PC="$(find /usr/local -name "milk.pc" 2>/dev/null | head -n 1)"
+          if [ -z "$MILK_PC" ]; then
+            echo "Error: milk.pc not found under /usr/local" >&2
+            exit 1
+          fi
+          MILK_LIBDIR="$(dirname "$MILK_PC")"
+          MILK_PREFIX="$(cd "$MILK_LIBDIR/../.." && pwd)"
+          if [ ! -e "/usr/local/milk" ]; then
+            sudo ln -snf "$MILK_PREFIX" /usr/local/milk
+          fi
+          if [ -d "$MILK_PREFIX/include" ] && [ ! -e "$MILK_PREFIX/include/libprocessinfo" ]; then
+            sudo ln -snf . "$MILK_PREFIX/include/libprocessinfo"
+          fi
+          echo "$MILK_PREFIX/lib" | sudo tee /etc/ld.so.conf.d/milk.conf
+          sudo ldconfig
+          echo "PKG_CONFIG_PATH=$MILK_LIBDIR:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$MILK_PREFIX/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+          echo "$MILK_PREFIX/bin" >> "$GITHUB_PATH"
+          export PKG_CONFIG_PATH="$MILK_LIBDIR:$PKG_CONFIG_PATH"
+          export LD_LIBRARY_PATH="$MILK_PREFIX/lib:$LD_LIBRARY_PATH"
+          export PATH="$MILK_PREFIX/bin:$PATH"
+          pkg-config --modversion milk
+          pkg-config --modversion ImageStreamIO
+
+      - name: Configure CMake with Milk
+        run: |
+          cmake -B build-milk \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DENABLE_NATIVE=OFF \
+            -DCMAKE_C_FLAGS_RELEASE="-O3 -mavx2 -mfma -funroll-loops -g" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O3 -mavx2 -mfma -funroll-loops -g" \
+            -DENABLE_MILK=ON \
+            -S .
+
+      - name: Build GRIC with Milk
+        run: |
+          cmake --build build-milk --parallel 4
+
+      - name: Verify Milk Daemon and Module Built
+        run: |
+          test -x build-milk/src/gric-fps/milk-fpsexec-gric-cluster
+          test -f build-milk/src/gric-fps/libmilkgric.so
+          test -L build-milk/src/gric-fps/gric-fps-cluster || \
+            test -x build-milk/src/gric-fps/gric-fps-cluster
+          build-milk/src/gric-fps/milk-fpsexec-gric-cluster -h || true
+
+      - name: Test (CTest with Milk & SHM)
+        run: |
+          ctest --test-dir build-milk --output-on-failure --parallel 4 -E "cuda"
+
+      - name: Verify Installation of Milk Targets
+        run: |
+          cmake --install build-milk --prefix /tmp/milk_gric_install
+          test -x /tmp/milk_gric_install/bin/milk-fpsexec-gric-cluster
+          test -f /tmp/milk_gric_install/lib/libmilkgric.so
+
+      - name: Upload Test Failure Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs-milk-adapter
+          path: |
+            build-milk/Testing/Temporary/LastTest.log
+            /tmp/ctest_*

@@ -85,7 +85,14 @@ static errno_t compute_function(void)
             sizeof(CLIcmddata.cmdsettings->triggerstreamname) - 1);
     CLIcmddata.cmdsettings->flags |= CLICMDFLAG_PROCINFO;
 
-    INSERT_STD_PROCINFO_COMPUTEFUNC_START
+    INSERT_STD_PROCINFO_COMPUTEFUNC_INIT
+    if (processinfo != NULL && inimg.im != NULL)
+    {
+        processinfo_waitoninputstream_init(processinfo, inimg.im,
+                                           CLIcmddata.cmdsettings->triggermode,
+                                           CLIcmddata.cmdsettings->semindexrequested);
+    }
+    INSERT_STD_PROCINFO_COMPUTEFUNC_LOOPSTART
     {
         uint64_t cnt0 = inimg.im->md[0].cnt0;
         uint32_t slice_idx = (inimg.im->md[0].naxis > 2) ? (uint32_t)inimg.im->md[0].cnt1 : 0;

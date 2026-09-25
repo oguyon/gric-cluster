@@ -83,7 +83,7 @@ if [ "$INSTALL_DEPS" = true ]; then
     $SUDO apt-get install -y \
         build-essential cmake pkg-config git \
         libcfitsio-dev libreadline-dev libncurses-dev \
-        libgsl-dev libomp-dev
+        libgsl-dev libomp-dev libfftw3-dev bison flex
 fi
 
 echo "==> Preparing Milk source in: ${SRC_DIR}"
@@ -104,7 +104,9 @@ fi
 echo "==> Configuring Milk (Prefix: ${PREFIX})..."
 cmake -B "${SRC_DIR}/_build" -S "${SRC_DIR}" \
     -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
-    -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_BUILD_TYPE=Release \
+    -DUSE_CUDA=OFF \
+    -DINSTALLMAKEDEFAULT=ON
 
 NPROC="$(nproc 2>/dev/null || echo 4)"
 echo "==> Building Milk with ${NPROC} parallel jobs..."
@@ -126,21 +128,28 @@ echo " Milk Framework installation complete!"
 echo "=================================================================="
 echo ""
 
-PKG_PATHS=(
-    "${PREFIX}/lib/pkgconfig"
-    "${PREFIX}/lib64/pkgconfig"
-    "${PREFIX}/share/pkgconfig"
-)
-
 PKG_MATCH=false
 PKG_DIR=""
-for p in "${PKG_PATHS[@]}"; do
-    if [ -f "${p}/milk.pc" ]; then
-        PKG_MATCH=true
-        PKG_DIR="${p}"
-        break
+MILK_PC="$(find "${PREFIX}" -name "milk.pc" 2>/dev/null | head -n 1 || true)"
+if [ -n "${MILK_PC}" ]; then
+    PKG_MATCH=true
+    PKG_DIR="$(dirname "${MILK_PC}")"
+    ACTUAL_ROOT="$(cd "${PKG_DIR}/../.." && pwd)"
+    if [ ! -e "/usr/local/milk" ]; then
+        if [ -n "$SUDO" ]; then
+            $SUDO ln -snf "${ACTUAL_ROOT}" /usr/local/milk 2>/dev/null || true
+        else
+            ln -snf "${ACTUAL_ROOT}" /usr/local/milk 2>/dev/null || true
+        fi
     fi
-done
+    if [ -d "${ACTUAL_ROOT}/include" ] && [ ! -e "${ACTUAL_ROOT}/include/libprocessinfo" ]; then
+        if [ -n "$SUDO" ]; then
+            $SUDO ln -snf . "${ACTUAL_ROOT}/include/libprocessinfo" 2>/dev/null || true
+        else
+            ln -snf . "${ACTUAL_ROOT}/include/libprocessinfo" 2>/dev/null || true
+        fi
+    fi
+fi
 
 if [ "$PKG_MATCH" = true ]; then
     echo "Found milk.pc in: ${PKG_DIR}"
