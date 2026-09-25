@@ -73,14 +73,17 @@ static inline int knn_heap_contains_avx512(
     __m512i v_id = _mm512_set1_epi32(frame_id);
     const __m512i *ids = (const __m512i *)heap->simd_id;
     int num_regs = heap->capacity / 16;
-    __mmask16 match = 0;
 
     for (int r = 0; r < num_regs; r++)
     {
-        match |= _mm512_cmpeq_epi32_mask(_mm512_loadu_si512(&ids[r]), v_id);
+        __mmask16 match = _mm512_cmpeq_epi32_mask(_mm512_loadu_si512(&ids[r]), v_id);
+        if (match != 0)
+        {
+            return 1;
+        }
     }
 
-    return (match != 0);
+    return 0;
 }
 
 /**
@@ -100,29 +103,29 @@ static inline int knn_heap_push_simd_avx512(
     __m512i v_id = _mm512_set1_epi32(frame_id);
     const __m512i *ids = (const __m512i *)heap->simd_id;
     int num_regs = heap->capacity / 16;
-    __mmask16 match = 0;
 
     for (int r = 0; r < num_regs; r++)
     {
-        match |= _mm512_cmpeq_epi32_mask(_mm512_loadu_si512(&ids[r]), v_id);
-    }
-
-    if (match != 0)
-    {
-        return 0;
+        __mmask16 match = _mm512_cmpeq_epi32_mask(_mm512_loadu_si512(&ids[r]), v_id);
+        if (match != 0)
+        {
+            return 0;
+        }
     }
 
     __m512 vd = _mm512_set1_ps(fdist);
     const __m512 *dists = (const __m512 *)heap->simd_dist;
-    uint64_t full_mask = 0;
+    int pos = heap->capacity - 1;
 
     for (int r = 0; r < num_regs; r++)
     {
         __mmask16 cmp = _mm512_cmp_ps_mask(vd, _mm512_loadu_ps(&dists[r]), _CMP_LT_OQ);
-        full_mask |= ((uint64_t)cmp << (r * 16));
+        if (cmp != 0)
+        {
+            pos = r * 16 + gric_ctz32((uint32_t)cmp);
+            break;
+        }
     }
-
-    int pos = full_mask ? gric_ctz64(full_mask) : (heap->capacity - 1);
 
     if (pos >= heap->k && heap->count >= heap->k)
     {
@@ -325,17 +328,19 @@ int knn_heap_contains(
 #endif
 #if defined(__AVX2__)
         __m256i v_id = _mm256_set1_epi32(frame_id);
-        __m256i match = _mm256_setzero_si256();
         const __m256i *ids = (const __m256i *)heap->simd_id;
         int num_regs = heap->capacity / 8;
 
         for (int r = 0; r < num_regs; r++)
         {
             __m256i eq = _mm256_cmpeq_epi32(_mm256_load_si256(&ids[r]), v_id);
-            match = _mm256_or_si256(match, eq);
+            if (!_mm256_testz_si256(eq, eq))
+            {
+                return 1;
+            }
         }
 
-        return !_mm256_testz_si256(match, match);
+        return 0;
 #else
         for (int i = 0; i < heap->count; i++)
         {
@@ -401,33 +406,34 @@ void knn_heap_push(
 #endif
 #if defined(__AVX2__)
         __m256i v_id = _mm256_set1_epi32(frame_id);
-        __m256i match = _mm256_setzero_si256();
         const __m256i *ids = (const __m256i *)heap->simd_id;
         int num_regs = heap->capacity / 8;
 
         for (int r = 0; r < num_regs; r++)
         {
             __m256i eq = _mm256_cmpeq_epi32(_mm256_load_si256(&ids[r]), v_id);
-            match = _mm256_or_si256(match, eq);
-        }
-
-        if (!_mm256_testz_si256(match, match))
-        {
-            return;
+            if (!_mm256_testz_si256(eq, eq))
+            {
+                return;
+            }
         }
 
         __m256 vd = _mm256_set1_ps(fdist);
         const __m256 *dists = (const __m256 *)heap->simd_dist;
-        uint64_t full_mask = 0;
+        int pos = heap->capacity - 1;
 
         for (int r = 0; r < num_regs; r++)
         {
-            __m256 cmp = _mm256_cmp_ps(vd, _mm256_load_ps((const float *)&dists[r]), _CMP_LT_OQ);
+            __m256 cmp = _mm256_cmp_ps(
+                vd, _mm256_load_ps((const float *)&dists[r]), _CMP_LT_OQ
+            );
             uint32_t m = (uint32_t)_mm256_movemask_ps(cmp);
-            full_mask |= ((uint64_t)m << (r * 8));
+            if (m != 0)
+            {
+                pos = r * 8 + gric_ctz32(m);
+                break;
+            }
         }
-
-        int pos = full_mask ? gric_ctz64(full_mask) : (heap->capacity - 1);
 #else
         for (int i = 0; i < heap->count; i++)
         {
