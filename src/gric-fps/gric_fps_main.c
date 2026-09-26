@@ -24,6 +24,18 @@ static const int __attribute__((unused)) nb_bindings =
 static CLICMDARGDEF farg[] = { GRIC_FPS_PARAMS(FPS_X_FARG) };
 
 #ifdef FPS_STANDALONE
+/**
+ * init_procinfo_env - Enable procinfo mode by default for standalone FPS.
+ *
+ * Sets MILK_FPSPROCINFO=1 in the environment before standalone CLI options are parsed,
+ * ensuring all fpsexec commands initialize and run with libprocessinfo enabled.
+ */
+__attribute__((constructor))
+static void init_procinfo_env(void)
+{
+    setenv("MILK_FPSPROCINFO", "1", 0);
+}
+
 CLICMDDATA CLIcmddata = {
 #else
 static CLICMDDATA CLIcmddata = {
