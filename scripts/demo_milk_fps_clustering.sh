@@ -306,6 +306,29 @@ except Exception:
         run_cmd "${BIN_BIN2ASCII}" -i "${SAVE_DIR}/anchors.bin"
     fi
 
+    # Decode binary files into ASCII files for all outputs
+    echo -e "\n${BOLD}${CYAN}--- Decoding Binary Outputs to ASCII ---${RESET}"
+    for artifact in anchors cluster_counts cluster_radii dcc; do
+        if [[ -f "${SAVE_DIR}/${artifact}.bin" ]]; then
+            run_cmd "${BIN_BIN2ASCII}" \
+                    "${SAVE_DIR}/${artifact}.bin" \
+                    "${SAVE_DIR}/${artifact}.txt"
+        fi
+    done
+
+    echo -e "\n${BOLD}${CYAN}Decoded ASCII Artifacts in ${GREEN}${SAVE_DIR}${RESET}:"
+    log_cmd "ls -lh ${SAVE_DIR}/anchors.txt ${SAVE_DIR}/dcc.txt" \
+            "${SAVE_DIR}/cluster_counts.txt ${SAVE_DIR}/cluster_radii.txt"
+    ls -lh "${SAVE_DIR}"/anchors.txt "${SAVE_DIR}"/dcc.txt \
+           "${SAVE_DIR}"/cluster_counts.txt "${SAVE_DIR}"/cluster_radii.txt 2>/dev/null || true
+    echo ""
+
+    if [[ -f "${SAVE_DIR}/anchors.txt" ]]; then
+        echo -e "${BOLD}Sample Decoded Anchors (first 2 centroids):${RESET}"
+        head -n 2 "${SAVE_DIR}/anchors.txt"
+        echo ""
+    fi
+
     echo -e "\n${BOLD}${CYAN}====================================================${RESET}"
     echo -e "${BOLD}${CYAN}       Summary of Step-by-Step Replication Commands ${RESET}"
     echo -e "${BOLD}${CYAN}====================================================${RESET}"
@@ -324,9 +347,18 @@ except Exception:
     log_cmd "${BIN_FPSEXEC} -tmux -procinfo -loops ${FPS_NAME}:runstart"
     echo -e "\n# 5. Monitor status (live watch):"
     log_cmd "${BIN_GRIC_STATUS} ${FPS_NAME} -w"
-    echo -e "\n# 6. Inspect binary output artifacts:"
+    echo -e "\n# 6. Inspect binary output header:"
     log_cmd "${BIN_BIN2ASCII} -i ${SAVE_DIR}/anchors.bin"
-    echo -e "\n# 7. Stop clustering daemon and clean up:"
+    echo -e "\n# 7. Decode binary outputs into ASCII files:"
+    log_cmd "${BIN_BIN2ASCII}" \
+            "${SAVE_DIR}/anchors.bin ${SAVE_DIR}/anchors.txt"
+    log_cmd "${BIN_BIN2ASCII}" \
+            "${SAVE_DIR}/cluster_counts.bin ${SAVE_DIR}/cluster_counts.txt"
+    log_cmd "${BIN_BIN2ASCII}" \
+            "${SAVE_DIR}/cluster_radii.bin ${SAVE_DIR}/cluster_radii.txt"
+    log_cmd "${BIN_BIN2ASCII}" \
+            "${SAVE_DIR}/dcc.bin ${SAVE_DIR}/dcc.txt"
+    echo -e "\n# 8. Stop clustering daemon and clean up:"
     log_cmd "${BIN_FPSEXEC} -procinfo ${FPS_NAME}:runstop"
     log_cmd "${BIN_FPSEXEC} -procinfo ${FPS_NAME}:confstop"
     log_cmd "tmux kill-session -t ${FPS_NAME}"
@@ -405,6 +437,7 @@ print_menu() {
     echo "  [5] Reset cluster state dynamically (reset_state ON)"
     echo "  [6] Open milk-procCTRL telemetry dashboard"
     echo "  [7] View tmux daemon log"
+    echo "  [8] Decode binary outputs to ASCII (anchors, counts, radii, dcc)"
     echo "  [q] Quit and clean up"
     echo ""
 }
@@ -425,7 +458,7 @@ for i in range(5):
 
 while true; do
     print_menu
-    read -r -p "Select an option [1-7, q]: " choice
+    read -r -p "Select an option [1-8, q]: " choice
     case "$choice" in
         1)
             log_cmd "${BIN_STREAM2PIPE} ${STREAM_OUT} 5"
@@ -473,12 +506,25 @@ while true; do
                 echo "Unable to read tmux pane."
             echo -e "${CYAN}-------------------------------${RESET}\n"
             ;;
+        8)
+            echo -e "\n${BOLD}${CYAN}--- Decoding Binary Outputs to ASCII ---${RESET}"
+            for artifact in anchors cluster_counts cluster_radii dcc; do
+                if [[ -f "${SAVE_DIR}/${artifact}.bin" ]]; then
+                    run_cmd "${BIN_BIN2ASCII}" \
+                            "${SAVE_DIR}/${artifact}.bin" \
+                            "${SAVE_DIR}/${artifact}.txt"
+                else
+                    echo -e "${YELLOW}File '${SAVE_DIR}/${artifact}.bin' not found.${RESET}"
+                fi
+            done
+            echo ""
+            ;;
         q|Q)
             echo -e "${GREEN}Exiting...${RESET}"
             break
             ;;
         *)
-            echo -e "${RED}Invalid option '${choice}'. Please select 1-7 or q.${RESET}\n"
+            echo -e "${RED}Invalid option '${choice}'. Please select 1-8 or q.${RESET}\n"
             ;;
     esac
 done
