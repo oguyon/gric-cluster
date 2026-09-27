@@ -3,9 +3,10 @@
 # scripts/demo_milk_fps_clustering.sh
 #
 # Demonstration of GRIC stream clustering in Milk framework mode:
-# - Auto mode: runs from start to finish, streams a looping dataset, clusters
-#   10,000 samples, displays real-time telemetry, stops cleanly per milk-fpsexec
-#   conventions, and saves results in local directory in GRIC binary format.
+# - Auto mode: runs from start to finish, streams a 3D spiral dataset (N=1000,
+#   M=20 repeats, noise=0.1 -> 20,000 samples), displays real-time telemetry,
+#   stops cleanly per milk-fpsexec conventions, and saves results in local
+#   directory in GRIC binary format.
 # - Interactive mode: step-by-step setup with interactive control & telemetry.
 # ==============================================================================
 
@@ -25,12 +26,14 @@ AUTO_MODE=0
 FPS_NAME="demo"
 STREAM_IN="demo_in"
 STREAM_OUT="demo_assign"
-PATTERN_FILE="2Dspiral.txt"
-PATTERN_TYPE="2Dspiral"
-NB_POINTS=2000
+PATTERN_FILE="3Dspiral.txt"
+PATTERN_TYPE="3Dspiral"
+NB_POINTS=1000
+NB_REPEATS=20
+NOISE_RADIUS=0.1
 STREAM_FPS=""
-DEFAULT_RLIM=0.40
-MAX_FRAMES=10000
+DEFAULT_RLIM=0.30
+MAX_FRAMES=20000
 SAVE_DIR="."
 
 FEED_PID=""
@@ -55,6 +58,18 @@ while [[ $# -gt 0 ]]; do
             MAX_FRAMES="$2"
             shift 2
             ;;
+        --points)
+            NB_POINTS="$2"
+            shift 2
+            ;;
+        -m|--repeats)
+            NB_REPEATS="$2"
+            shift 2
+            ;;
+        --noise)
+            NOISE_RADIUS="$2"
+            shift 2
+            ;;
         --rlim)
             DEFAULT_RLIM="$2"
             shift 2
@@ -70,9 +85,12 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [options]"
             echo "  -a, --auto        Run automatically from start to finish"
-            echo "  -n, --frames <N>  Number of frames to cluster (default: 10000)"
+            echo "  -n, --frames <N>  Number of frames to cluster (default: 20000)"
+            echo "  --points <N>      Base points per pattern cycle (default: 1000)"
+            echo "  -m, --repeats <M> Number of pattern repeats (default: 20)"
+            echo "  --noise <val>     Random noise radius (default: 0.1)"
             echo "  --fps <N>         Streaming frame rate (default: 2000 auto / 100 interactive)"
-            echo "  --rlim <val>      Clustering radius threshold (default: 0.40)"
+            echo "  --rlim <val>      Clustering radius threshold (default: 0.30)"
             echo "  --save-dir <dir>  Directory to save binary results (default: .)"
             echo "  --name <fpsname>  FPS instance name (default: demo)"
             echo "  -h, --help        Show this help message"
@@ -86,7 +104,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$AUTO_MODE" -eq 1 ]]; then
-    NB_POINTS="${MAX_FRAMES}"
     STREAM_FPS="${STREAM_FPS:-2000}"
 else
     STREAM_FPS="${STREAM_FPS:-100}"
@@ -412,8 +429,11 @@ if [[ "$AUTO_MODE" -eq 1 ]]; then
     echo -e "${BOLD}${MAGENTA}>>> Running in AUTO MODE (${MAX_FRAMES} samples) <<<${RESET}\n"
 
     # Step 1: Generate dataset
-    echo -e "${BOLD}${CYAN}[1/5] Generating dataset:${RESET} ${PATTERN_FILE} (${NB_POINTS} pts)..."
-    run_cmd "${BIN_MKTXTSEQ}" "${NB_POINTS}" "${PATTERN_FILE}" "${PATTERN_TYPE}"
+    local_tot=$((NB_POINTS * NB_REPEATS))
+    echo -e "${BOLD}${CYAN}[1/5] Generating dataset:${RESET} ${PATTERN_FILE}"
+    echo -e "  (${NB_POINTS} pts x ${NB_REPEATS} repeats, noise=${NOISE_RADIUS})"
+    run_cmd "${BIN_MKTXTSEQ}" "${NB_POINTS}" "${PATTERN_FILE}" "${PATTERN_TYPE}" \
+            -repeat "${NB_REPEATS}" -noise "${NOISE_RADIUS}"
 
     # Step 2: Initialize & configure FPS daemon
     echo -e "${BOLD}${CYAN}[2/5] Initializing FPS daemon in procinfo mode:${RESET} ${FPS_NAME}..."
@@ -575,7 +595,8 @@ except Exception:
     echo -e "${BOLD}${CYAN}       Summary of Step-by-Step Replication Commands ${RESET}"
     echo -e "${BOLD}${CYAN}====================================================${RESET}"
     echo -e "# 1. Generate pattern dataset:"
-    log_cmd "${BIN_MKTXTSEQ} ${NB_POINTS} ${PATTERN_FILE} ${PATTERN_TYPE}"
+    log_cmd "${BIN_MKTXTSEQ} ${NB_POINTS} ${PATTERN_FILE} ${PATTERN_TYPE}" \
+            "-repeat ${NB_REPEATS} -noise ${NOISE_RADIUS}"
     echo -e "\n# 2. Initialize FPS daemon and configure parameters:"
     log_cmd "${BIN_FPSEXEC} -procinfo ${FPS_NAME}:fpsinit"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.in_name ${STREAM_IN}"
@@ -621,14 +642,25 @@ fi
 
 # Step 1: Generate Pattern Dataset
 echo -e "${BOLD}${CYAN}--- Step 1: Generate Synthetic Pattern ---${RESET}"
-echo -e "Default pattern: ${GREEN}${PATTERN_TYPE}${RESET} (${NB_POINTS} points)"
-read -r -p "Enter number of points [default: ${NB_POINTS}]: " user_pts
+echo -e "Default pattern: ${GREEN}${PATTERN_TYPE}${RESET} " \
+        "(${NB_POINTS} pts, ${NB_REPEATS} repeats, noise=${NOISE_RADIUS})"
+read -r -p "Enter base points per cycle [default: ${NB_POINTS}]: " user_pts
 if [[ -n "${user_pts}" ]]; then
     NB_POINTS="${user_pts}"
 fi
+read -r -p "Enter number of repeats [default: ${NB_REPEATS}]: " user_rep
+if [[ -n "${user_rep}" ]]; then
+    NB_REPEATS="${user_rep}"
+fi
+read -r -p "Enter noise radius [default: ${NOISE_RADIUS}]: " user_noise
+if [[ -n "${user_noise}" ]]; then
+    NOISE_RADIUS="${user_noise}"
+fi
 
-echo -e "Generating ${GREEN}${PATTERN_FILE}${RESET} (${NB_POINTS} points)..."
-run_cmd "${BIN_MKTXTSEQ}" "${NB_POINTS}" "${PATTERN_FILE}" "${PATTERN_TYPE}"
+TOTAL_DATASET_PTS=$((NB_POINTS * NB_REPEATS))
+echo -e "Generating ${GREEN}${PATTERN_FILE}${RESET} (${TOTAL_DATASET_PTS} total points)..."
+run_cmd "${BIN_MKTXTSEQ}" "${NB_POINTS}" "${PATTERN_FILE}" "${PATTERN_TYPE}" \
+        -repeat "${NB_REPEATS}" -noise "${NOISE_RADIUS}"
 echo -e "Sample data (first 3 points):"
 head -n 3 "${PATTERN_FILE}"
 echo ""
@@ -636,6 +668,10 @@ echo ""
 # Step 2: Initialize & Configure FPS Instance
 echo -e "${BOLD}${CYAN}--- Step 2: Initialize FPS in Procinfo Mode ---${RESET}"
 run_cmd "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:fpsinit"
+
+if [[ "$MAX_FRAMES" -eq 20000 && "$TOTAL_DATASET_PTS" -ne 20000 ]]; then
+    MAX_FRAMES="$TOTAL_DATASET_PTS"
+fi
 
 echo -e "Binding parameters via ${GREEN}milk-fps-set${RESET}:"
 run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.in_name" "${STREAM_IN}"
