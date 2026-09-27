@@ -425,10 +425,8 @@ if (ENABLE_CUDA)
     target_link_libraries(gric-server CUDA::cublas CUDA::cudart)
 endif()
 
-# gric-knn tool
-add_executable(gric-knn
-    src/gric-knn/core/main.c
-    src/gric-knn/cli/knn_cli.c
+# gric-knn core library
+set(KNN_CORE_SRCS
     src/gric-knn/core/knn_heap.c
     src/gric-knn/io/knn_loader.c
     src/gric-knn/io/knn_parser.c
@@ -445,50 +443,54 @@ add_executable(gric-knn
     src/gric-knn/cross/knn_cross_route.c
     src/gric-knn/cross/knn_cross_eval.c
     src/gric-knn/io/knn_writer.c
-    src/gric-cluster/math/framedistance.c
-    src/gric-cluster/math/framedistance_cutoff.c
-    src/gric-cluster/math/framedistance_batch.c
-    src/gric-cluster/math/framedistance_batch_float.c
-    src/gric-cluster/math/framedistance_batch_double.c
-    src/gric-cluster/math/cluster_gemm_dist.c
-    src/shared/format/cluster_locator.c
-    src/shared/cli/cli_colors.c
-    src/shared/format/gric_bin_io.c
-    src/shared/quant/scalar_quant.c
-    src/shared/quant/scalar_quant_fastscan.c
-    src/shared/quant/scalar_quant_filter.c
-    src/shared/quant/residual_quant.c
-    src/shared/quant/product_quant.c
-    src/shared/quant/quant_memo.c
-    src/shared/quant/rabit_quant.c
-    src/shared/sys/gric_profile.c
-    src/shared/sys/gric_simd.c
-    src/shared/quant/e8_lattice.c
-    src/shared/quant/eq16_quant.c
-    src/shared/quant/eq16_dist.c
-    src/shared/quant/eq16_filter.c
 )
-target_include_directories(gric-knn PRIVATE src/gric-knn src/gric-cluster/math src/shared src)
-target_link_libraries(gric-knn m)
+add_library(gric_knn_static STATIC ${KNN_CORE_SRCS})
+target_include_directories(gric_knn_static PUBLIC
+    src/gric-knn
+    src/gric-cluster/math
+    src/shared
+    src
+)
+target_link_libraries(gric_knn_static PUBLIC gric_static m)
 if (OpenMP_C_FOUND)
-    target_link_libraries(gric-knn OpenMP::OpenMP_C)
+    target_link_libraries(gric_knn_static PUBLIC OpenMP::OpenMP_C)
 endif()
 if (USE_BLAS AND BLAS_FOUND)
-    target_link_libraries(gric-knn ${BLAS_LIBRARIES})
+    target_link_libraries(gric_knn_static PUBLIC ${BLAS_LIBRARIES})
 endif()
 if (CFITSIO_FOUND)
-    target_link_libraries(gric-knn ${CFITSIO_LIBRARIES})
-    target_include_directories(gric-knn PRIVATE ${CFITSIO_INCLUDE_DIRS})
+    target_link_libraries(gric_knn_static PUBLIC ${CFITSIO_LIBRARIES})
+    target_include_directories(gric_knn_static PUBLIC ${CFITSIO_INCLUDE_DIRS})
 endif()
 if (ENABLE_CUDA)
-    target_sources(gric-knn PRIVATE
+    target_sources(gric_knn_static PRIVATE
         src/gpu/cuda_common.cu
         src/gpu/cuda_anchor_store.cu
         src/gpu/cuda_ivf_index.cu
         src/gric-knn/gpu/knn_cuda.cu
         src/gric-knn/gpu/knn_cuda_ivf.cu
     )
-    target_link_libraries(gric-knn CUDA::cublas CUDA::cudart)
+    target_link_libraries(gric_knn_static PUBLIC CUDA::cublas CUDA::cudart)
+endif()
+
+# gric-knn tool
+add_executable(gric-knn
+    src/gric-knn/core/main.c
+    src/gric-knn/cli/knn_cli.c
+)
+target_link_libraries(gric-knn PRIVATE gric_knn_static gric_static m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(gric-knn PRIVATE OpenMP::OpenMP_C)
+endif()
+if (USE_BLAS AND BLAS_FOUND)
+    target_link_libraries(gric-knn PRIVATE ${BLAS_LIBRARIES})
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(gric-knn PRIVATE ${CFITSIO_LIBRARIES})
+    target_include_directories(gric-knn PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (ENABLE_CUDA)
+    target_link_libraries(gric-knn PRIVATE CUDA::cublas CUDA::cudart)
 endif()
 
 # gric-knn-avg reconstruction tool
@@ -898,6 +900,14 @@ if (IMAGESTREAMIO_FOUND)
     add_test(NAME test_txt2stream
         COMMAND test_txt2stream)
     set_tests_properties(test_txt2stream PROPERTIES DEPENDS "gric-txt2stream;gric-cluster")
+endif()
+
+if (ENABLE_MILK AND MILK_FOUND)
+    add_test(NAME test_milk_query_knn_e2e
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_milk_query_knn_e2e.sh
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(test_milk_query_knn_e2e PROPERTIES
+        DEPENDS "milk-fpsexec-gric-cluster;milk-fpsexec-gric-knn;milkgric;gric-cluster;gric-knn;gric-txt2stream")
 endif()
 
 add_executable(test_bin_ascii_roundtrip

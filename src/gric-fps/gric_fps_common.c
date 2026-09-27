@@ -22,20 +22,22 @@ char     fps_in_name[FUNCTION_PARAMETER_STRMAXLEN]          = "";
 char     fps_out_assign_name[FUNCTION_PARAMETER_STRMAXLEN]  = "";
 char     fps_out_anchors_name[FUNCTION_PARAMETER_STRMAXLEN] = "";
 char     fps_out_counts_name[FUNCTION_PARAMETER_STRMAXLEN]  = "";
-int32_t  fps_stream_anchors   = 0;
-int32_t  fps_stream_counts    = 0;
-int32_t  fps_allow_frame_drop = 0;
-int32_t  fps_cnt2sync         = 0;
+uint64_t fps_stream_anchors   = 0;
+uint64_t fps_stream_counts    = 0;
+uint64_t fps_allow_frame_drop = 0;
+uint64_t fps_cnt2sync         = 0;
+uint64_t fps_query_mode       = 0;
+char     fps_load_anchors[FUNCTION_PARAMETER_STRMAXLEN] = "";
 double   fps_rlim             = 0.5;
 double   fps_deltaprob        = 0.01;
 uint32_t fps_maxnbclust       = 256;
 int64_t  fps_maxcl_strategy   = 0;
 uint64_t fps_max_frames        = 0;
 uint32_t fps_ncpu             = 0;
-int32_t  fps_use_double       = 0;
-int32_t  fps_use_sq16         = 0;
-int32_t  fps_entropy_mode     = 0;
-int32_t  fps_reset_state      = 0;
+uint64_t fps_use_double       = 0;
+uint64_t fps_use_sq16         = 0;
+uint64_t fps_entropy_mode     = 0;
+uint64_t fps_reset_state      = 0;
 
 uint64_t fps_status_frames_processed                   = 0;
 uint32_t fps_status_num_clusters                       = 0;
@@ -133,6 +135,7 @@ errno_t gric_fps_init_engine(
     cfg.use_sq16 = (int)fps_use_sq16;
     cfg.entropy_mode = (int)fps_entropy_mode;
     cfg.maxcl_strategy = (int)fps_maxcl_strategy;
+    cfg.query_mode = (int)fps_query_mode;
 
     cluster_ctx = gric_cluster_create(&cfg, current_ndim);
     if (!cluster_ctx)
@@ -142,7 +145,19 @@ errno_t gric_fps_init_engine(
         return 1;
     }
 
-    prev_cluster_count = 0;
+    if (fps_load_anchors[0] != '\0')
+    {
+        int64_t loaded = gric_cluster_load_anchors(cluster_ctx, fps_load_anchors);
+        if (loaded > 0)
+        {
+            prev_cluster_count = (uint32_t)loaded;
+            fps_status_num_clusters = (uint32_t)loaded;
+        }
+    }
+    else
+    {
+        prev_cluster_count = 0;
+    }
     return 0;
 }
 
@@ -340,6 +355,7 @@ errno_t gric_fps_process_frame(
     }
 
     /* Ingest frame through libgric clustering pipeline */
+    gric_cluster_set_query_mode(cluster_ctx, (int)fps_query_mode);
     int64_t assigned_cluster_id = -1;
     gric_status_t status = gric_cluster_feed_frame(cluster_ctx, coord_conv_buf,
                                                    &assigned_cluster_id);
@@ -348,6 +364,7 @@ errno_t gric_fps_process_frame(
         return 1;
     }
 
+    double last_dist = gric_cluster_get_last_dist(cluster_ctx);
     int64_t total_clusters = gric_cluster_get_num_clusters(cluster_ctx);
     int is_new = (total_clusters > (int64_t)prev_cluster_count);
 
@@ -358,12 +375,12 @@ errno_t gric_fps_process_frame(
         float *assign_data = (float *)out_assign->array.raw;
         assign_data[0] = (float)frame_index;
         assign_data[1] = (float)assigned_cluster_id;
-        assign_data[2] = 0.0f;
+        assign_data[2] = (float)last_dist;
         assign_data[3] = is_new ? 1.0f : 0.0f;
         assign_data[4] = (float)total_clusters;
         assign_data[5] = (float)latency_us;
-        assign_data[6] = 1.0f;
-        assign_data[7] = 0.0f;
+        assign_data[6] = (last_dist <= fps_rlim) ? 1.0f : 0.0f;
+        assign_data[7] = (float)fps_query_mode;
 
         out_assign->md[0].cnt0++;
         out_assign->md[0].write = 0;

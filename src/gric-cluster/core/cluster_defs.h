@@ -39,6 +39,7 @@ typedef struct
     MaxClustStrategy maxcl_strategy;   /**< Strategy when maxnbclust reached */
     double           discard_fraction;   /**< Fraction of clusters to discard */
     int              pass2_nearest_mode; /**< 1 to run second pass closest-anchor reassignment */
+    int              query_mode;         /**< 1 = query/classification mode (no new clusters) */
     int              use_double;         /**< 1 to run computations in double precision */
 } ConfigAlgorithm;
 

@@ -112,7 +112,7 @@ void record_step_assignment(
         }
     }
 
-    if (config->optim.pred_mode)
+    if (config->optim.pred_mode && assigned_cluster >= 0)
     {
         state->clusters[assigned_cluster].prob += 0.3;
 
