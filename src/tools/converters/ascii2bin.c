@@ -219,6 +219,7 @@ int main(
         if (*p == '#' || (p[0] == '/' && p[1] == '/'))
         {
             if (has_index == -1 && (strstr(p, "anchor_idx") != NULL ||
+                                    strstr(p, "cluster_idx") != NULL ||
                                     strstr(p, "row_idx") != NULL ||
                                     strstr(p, "sample_idx") != NULL))
             {

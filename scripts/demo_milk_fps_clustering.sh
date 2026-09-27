@@ -329,6 +329,12 @@ except Exception:
         echo ""
     fi
 
+    if [[ -f "${SAVE_DIR}/cluster_radii.txt" ]]; then
+        echo -e "${BOLD}Sample Decoded Cluster Radii Header & Values:${RESET}"
+        head -n 16 "${SAVE_DIR}/cluster_radii.txt"
+        echo ""
+    fi
+
     echo -e "\n${BOLD}${CYAN}====================================================${RESET}"
     echo -e "${BOLD}${CYAN}       Summary of Step-by-Step Replication Commands ${RESET}"
     echo -e "${BOLD}${CYAN}====================================================${RESET}"

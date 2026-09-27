@@ -30,10 +30,11 @@ static void print_usage(
     printf("  -h, --help          Display this help message\n\n");
     printf("Notes:\n");
     printf("  If [output.txt] is omitted or '-', decoded ASCII is piped directly to stdout.\n");
-    printf("  Anchor files (ANCHORS) include anchor_idx as first column by default.\n\n");
+    printf("  Anchor and radii files include index column by default (0-indexed).\n\n");
     printf("Examples:\n");
     printf("  %s spiral.bin -info\n", prog);
     printf("  %s anchors.bin anchors.txt -header\n", prog);
+    printf("  %s cluster_radii.bin cluster_radii.txt -header\n", prog);
     printf("  %s spiral.bin spiral_reconstructed.txt -header\n", prog);
     printf("  %s dcc.bin - | head -n 10\n", prog);
 }
@@ -43,12 +44,14 @@ static void print_usage(
  * @out:         Destination file stream.
  * @hdr:         GRIC binary header metadata.
  * @comment:     Optional comment string embedded in binary file.
- * @write_index: Non-zero if row/anchor index is prepended as column 0.
+ * @filename:    Optional input filename for type heuristics.
+ * @write_index: Non-zero if row/anchor/cluster index is prepended as column 0.
  */
 static void write_ascii_header(
     FILE                    *out,
     const gric_bin_header_t *hdr,
     const char              *comment,
+    const char              *filename,
     int                      write_index)
 {
     if (out == NULL || hdr == NULL)
@@ -138,12 +141,22 @@ static void write_ascii_header(
             break;
         case GRIC_BIN_TYPE_GENERIC:
         default:
-            if (comment != NULL && strstr(comment, "radii") != NULL)
+            if ((comment != NULL && strstr(comment, "radii") != NULL) ||
+                (filename != NULL && strstr(filename, "radii") != NULL))
             {
                 fprintf(out,
                         "# Content     : Maximum cluster radii\n"
-                        "# Layout      : 1 row per cluster (distance threshold rlim)\n"
-                        "# Column      : radius\n");
+                        "# Layout      : 1 row per cluster (distance threshold rlim)\n");
+                if (write_index)
+                {
+                    fprintf(out,
+                            "# Columns     : cluster_idx radius\n");
+                }
+                else
+                {
+                    fprintf(out,
+                            "# Column      : radius\n");
+                }
             }
             else
             {
@@ -253,10 +266,12 @@ int main(
 
     if (write_index == -1)
     {
-        write_index = (hdr.file_type == GRIC_BIN_TYPE_ANCHORS ||
-                       (input_path != NULL && strstr(input_path, "anchors") != NULL))
-                          ? 1
-                          : 0;
+        int is_anchors = (hdr.file_type == GRIC_BIN_TYPE_ANCHORS ||
+                          (input_path != NULL && strstr(input_path, "anchors") != NULL));
+        int is_radii = ((comment != NULL && strstr(comment, "radii") != NULL) ||
+                        (input_path != NULL && strstr(input_path, "radii") != NULL));
+
+        write_index = (is_anchors || is_radii) ? 1 : 0;
     }
 
     FILE *out_fp = stdout;
@@ -288,7 +303,7 @@ int main(
 
     if (write_header)
     {
-        write_ascii_header(out_fp, &hdr, comment, write_index);
+        write_ascii_header(out_fp, &hdr, comment, input_path, write_index);
     }
 
     if (dtype == GRIC_BIN_DTYPE_FLOAT32)
