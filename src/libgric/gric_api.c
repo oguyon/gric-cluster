@@ -11,7 +11,9 @@
 #include "cluster_math.h"
 #include "cluster_bounds.h"
 #include "gric_bin_io.h"
+#include "scalar_quant.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <signal.h>
 #include <stdio.h>
@@ -73,6 +75,7 @@ gric_status_t gric_cluster_config_default(
     cfg->sparse_dcc_extra_evals = 0;
     cfg->maxcl_strategy = 0;
     cfg->discard_fraction = 0.0;
+    cfg->query_mode = 0;
     cfg->ncpu = 1;
 
     return GRIC_SUCCESS;
@@ -184,6 +187,60 @@ static int grow_context_capacity(
         ctx->sorting_candidates, new_N * sizeof(Candidate)
     );
 
+    s->entropy_p_current = (double *)realloc(s->entropy_p_current, new_N * sizeof(double));
+    s->entropy_candidates = (Candidate *)realloc(
+        s->entropy_candidates, new_N * sizeof(Candidate));
+    s->entropy_prob_scores = (TargetScore *)realloc(
+        s->entropy_prob_scores, new_N * sizeof(TargetScore));
+    s->entropy_prune_scores = (TargetScore *)realloc(
+        s->entropy_prune_scores, new_N * sizeof(TargetScore));
+    s->entropy_active_indices = (int *)realloc(s->entropy_active_indices, new_N * sizeof(int));
+    s->entropy_plog2p = (double *)realloc(s->entropy_plog2p, new_N * sizeof(double));
+    s->entropy_visited = (uint8_t *)realloc(s->entropy_visited, new_N * sizeof(uint8_t));
+    s->refine_queue = (Candidate *)realloc(s->refine_queue, new_N * sizeof(Candidate));
+    s->refine_queue_capacity = (int)new_N;
+    s->tuple_pred_candidates = (int *)realloc(s->tuple_pred_candidates, new_N * sizeof(int));
+    s->pred_candidates = (int *)realloc(s->pred_candidates, new_N * sizeof(int));
+    s->local_candidates = (int *)realloc(s->local_candidates, new_N * sizeof(int));
+
+    ClusterTelemetry *t = &ctx->state.telemetry;
+    t->pruned_fraction_sum = (double *)realloc(t->pruned_fraction_sum, new_N * sizeof(double));
+    t->step_counts = (long *)realloc(t->step_counts, new_N * sizeof(long));
+    t->dist_counts = (long *)realloc(
+        t->dist_counts, (new_N + 1) * sizeof(long));
+    t->pruned_counts_by_dist = (long *)realloc(
+        t->pruned_counts_by_dist, (new_N + 1) * sizeof(long));
+    t->cluster_query_counts = (long *)realloc(t->cluster_query_counts, new_N * sizeof(long));
+
+    memset(&s->clmembflag[old_N], 0, (new_N - old_N) * sizeof(int));
+    memset(&s->mixed_probs[old_N], 0, (new_N - old_N) * sizeof(double));
+    memset(&s->current_gprobs[old_N], 0, (new_N - old_N) * sizeof(double));
+    memset(&s->probsortedclindex[old_N], 0, (new_N - old_N) * sizeof(int));
+    if (s->entropy_visited)
+    {
+        memset(&s->entropy_visited[old_N], 0, (new_N - old_N) * sizeof(uint8_t));
+    }
+    if (t->pruned_fraction_sum)
+    {
+        memset(&t->pruned_fraction_sum[old_N], 0, (new_N - old_N) * sizeof(double));
+    }
+    if (t->step_counts)
+    {
+        memset(&t->step_counts[old_N], 0, (new_N - old_N) * sizeof(long));
+    }
+    if (t->dist_counts)
+    {
+        memset(&t->dist_counts[old_N + 1], 0, (new_N - old_N) * sizeof(long));
+    }
+    if (t->pruned_counts_by_dist)
+    {
+        memset(&t->pruned_counts_by_dist[old_N + 1], 0, (new_N - old_N) * sizeof(long));
+    }
+    if (t->cluster_query_counts)
+    {
+        memset(&t->cluster_query_counts[old_N], 0, (new_N - old_N) * sizeof(long));
+    }
+
     ctx->config.algo.maxnbclust = (int)new_N;
     ctx->state.telemetry.max_steps_recorded = (int)new_N;
 
@@ -226,6 +283,7 @@ gric_cluster_t *gric_cluster_create(
     ctx->config.algo.tm_mixing_coeff = cfg->tm_mixing_coeff;
     ctx->config.algo.maxcl_strategy = (MaxClustStrategy)cfg->maxcl_strategy;
     ctx->config.algo.discard_fraction = cfg->discard_fraction;
+    ctx->config.algo.query_mode = cfg->query_mode;
     ctx->config.algo.use_double = cfg->use_double;
 
     ctx->config.input.maxnbfr = maxfr;
@@ -525,6 +583,302 @@ gric_status_t gric_cluster_reset(
     memset(ctx->state.transition_matrix, 0, sz_N * sz_N * sizeof(long));
 
     return GRIC_SUCCESS;
+}
+
+gric_status_t gric_cluster_set_query_mode(
+    gric_cluster_t *ctx,
+    int             enabled)
+{
+    if (ctx == NULL)
+    {
+        return GRIC_ERR_INVALID_PARAM;
+    }
+
+    ctx->config.algo.query_mode = enabled ? 1 : 0;
+    return GRIC_SUCCESS;
+}
+
+double gric_cluster_get_last_dist(
+    const gric_cluster_t *ctx)
+{
+    if (ctx == NULL)
+    {
+        return -1.0;
+    }
+
+    return ctx->state.telemetry.last_assignment_dist;
+}
+
+int64_t gric_cluster_load_anchors(
+    gric_cluster_t *ctx,
+    const char     *anchors_path)
+{
+    if (ctx == NULL || anchors_path == NULL || anchors_path[0] == '\0')
+    {
+        return GRIC_ERR_INVALID_PARAM;
+    }
+
+    char file_path[2048];
+    struct stat st;
+    if (stat(anchors_path, &st) == 0 && S_ISDIR(st.st_mode))
+    {
+        snprintf(file_path, sizeof(file_path), "%s/anchors.bin", anchors_path);
+        if (stat(file_path, &st) != 0)
+        {
+            snprintf(file_path, sizeof(file_path), "%s/anchors.txt", anchors_path);
+            if (stat(file_path, &st) != 0)
+            {
+                return GRIC_ERR_INVALID_PARAM;
+            }
+        }
+    }
+    else
+    {
+        strncpy(file_path, anchors_path, sizeof(file_path) - 1);
+        file_path[sizeof(file_path) - 1] = '\0';
+    }
+
+    if (ctx->state.num_clusters > 0)
+    {
+        gric_cluster_reset(ctx);
+    }
+
+    uint64_t K = 0;
+    size_t ndim = ctx->ndim;
+    int is_bin = 0;
+
+    FILE *fp = fopen(file_path, "rb");
+    if (fp == NULL)
+    {
+        return GRIC_ERR_INVALID_PARAM;
+    }
+
+    gric_bin_header_t hdr;
+    char *comment = NULL;
+    if (gric_bin_read_header(fp, &hdr, &comment) == 0)
+    {
+        if (hdr.ndim >= 2 && hdr.dims[1] == (uint64_t)ndim)
+        {
+            is_bin = 1;
+            K = hdr.dims[0];
+        }
+        if (comment)
+        {
+            free(comment);
+        }
+    }
+
+    if (!is_bin)
+    {
+        fclose(fp);
+        fp = fopen(file_path, "r");
+        if (fp == NULL)
+        {
+            return GRIC_ERR_INVALID_PARAM;
+        }
+
+        char line[65536];
+        uint64_t line_count = 0;
+        while (fgets(line, sizeof(line), fp) != NULL)
+        {
+            if (line[0] == '#' || line[0] == '\n' || line[0] == '\0')
+            {
+                continue;
+            }
+            line_count++;
+        }
+        if (line_count == 0)
+        {
+            fclose(fp);
+            return GRIC_ERR_INVALID_PARAM;
+        }
+        K = line_count;
+        rewind(fp);
+    }
+
+    while ((size_t)K >= (size_t)ctx->config.algo.maxnbclust)
+    {
+        if (grow_context_capacity(ctx) != 0)
+        {
+            fclose(fp);
+            return GRIC_ERR_OUT_OF_MEMORY;
+        }
+    }
+
+    size_t elem_size = ctx->config.algo.use_double ? sizeof(double) : sizeof(float);
+
+    for (uint64_t c = 0; c < K; c++)
+    {
+        Cluster *cl = &ctx->state.clusters[c];
+        cl->id = (int)c;
+        cl->anchor.width = (int)ndim;
+        cl->anchor.height = 1;
+        cl->anchor.is_double = ctx->config.algo.use_double;
+        cl->anchor.is_mmap = 0;
+        cl->anchor.is_borrowed = 0;
+        if (posix_memalign(&cl->anchor.data, 64, ndim * elem_size) != 0)
+        {
+            fclose(fp);
+            return GRIC_ERR_OUT_OF_MEMORY;
+        }
+
+        if (is_bin)
+        {
+            if (hdr.data_type == GRIC_BIN_DTYPE_FLOAT32)
+            {
+                if (cl->anchor.is_double)
+                {
+                    float *fbuf = (float *)malloc(ndim * sizeof(float));
+                    if (!fbuf || fread(fbuf, sizeof(float), ndim, fp) != ndim)
+                    {
+                        free(fbuf);
+                        fclose(fp);
+                        return GRIC_ERR_GENERIC;
+                    }
+                    double *ddata = (double *)cl->anchor.data;
+                    for (size_t d = 0; d < ndim; d++)
+                    {
+                        ddata[d] = (double)fbuf[d];
+                    }
+                    free(fbuf);
+                }
+                else
+                {
+                    if (fread(cl->anchor.data, sizeof(float), ndim, fp) != ndim)
+                    {
+                        fclose(fp);
+                        return GRIC_ERR_GENERIC;
+                    }
+                }
+            }
+            else
+            {
+                if (cl->anchor.is_double)
+                {
+                    if (fread(cl->anchor.data, sizeof(double), ndim, fp) != ndim)
+                    {
+                        fclose(fp);
+                        return GRIC_ERR_GENERIC;
+                    }
+                }
+                else
+                {
+                    double *dbuf = (double *)malloc(ndim * sizeof(double));
+                    if (!dbuf || fread(dbuf, sizeof(double), ndim, fp) != ndim)
+                    {
+                        free(dbuf);
+                        fclose(fp);
+                        return GRIC_ERR_GENERIC;
+                    }
+                    float *fdata = (float *)cl->anchor.data;
+                    for (size_t d = 0; d < ndim; d++)
+                    {
+                        fdata[d] = (float)dbuf[d];
+                    }
+                    free(dbuf);
+                }
+            }
+        }
+        else
+        {
+            char line[65536];
+            while (fgets(line, sizeof(line), fp) != NULL)
+            {
+                if (line[0] != '#' && line[0] != '\n' && line[0] != '\0')
+                {
+                    break;
+                }
+            }
+            char *ptr = line;
+            if (cl->anchor.is_double)
+            {
+                double *ddata = (double *)cl->anchor.data;
+                for (size_t d = 0; d < ndim; d++)
+                {
+                    ddata[d] = strtod(ptr, &ptr);
+                }
+            }
+            else
+            {
+                float *fdata = (float *)cl->anchor.data;
+                for (size_t d = 0; d < ndim; d++)
+                {
+                    fdata[d] = strtof(ptr, &ptr);
+                }
+            }
+        }
+
+        cl->prob = 1.0 / (double)K;
+        if (ctx->state.scratch.cluster_probs)
+        {
+            ctx->state.scratch.cluster_probs[c] = 1.0 / (double)K;
+        }
+
+        if (ctx->config.optim.use_sq16)
+        {
+            if (posix_memalign((void **)&cl->anchor_sq16, 64, ndim * sizeof(int16_t)) == 0)
+            {
+                if (cl->anchor.is_double)
+                {
+                    sq16_quantize_double(
+                        (const double *)cl->anchor.data,
+                        cl->anchor_sq16,
+                        &ctx->config.optim.sq16_params);
+                }
+                else
+                {
+                    sq16_quantize_float(
+                        (const float *)cl->anchor.data,
+                        cl->anchor_sq16,
+                        &ctx->config.optim.sq16_params);
+                }
+            }
+        }
+    } // for (uint64_t c = 0; c < K; c++)
+    fclose(fp);
+
+    ctx->state.num_clusters = (int)K;
+
+    /* Compute DCC distances between anchors */
+    int N = ctx->config.algo.maxnbclust;
+    for (int i = 0; i < (int)K; i++)
+    {
+        ctx->state.scratch.dcc_min[i * N + i] = 0.0;
+        ctx->state.scratch.dcc_max[i * N + i] = 0.0;
+        ctx->state.scratch.dcc_measured[i * N + i] = 1;
+        for (int j = i + 1; j < (int)K; j++)
+        {
+            double d = 0.0;
+            if (ctx->config.algo.use_double)
+            {
+                d = framedist_double(
+                    (const double *)ctx->state.clusters[i].anchor.data,
+                    (const double *)ctx->state.clusters[j].anchor.data,
+                    (long)ndim);
+            }
+            else
+            {
+                d = framedist_float(
+                    (const float *)ctx->state.clusters[i].anchor.data,
+                    (const float *)ctx->state.clusters[j].anchor.data,
+                    (long)ndim);
+            }
+            ctx->state.scratch.dcc_min[i * N + j] = d;
+            ctx->state.scratch.dcc_min[j * N + i] = d;
+            ctx->state.scratch.dcc_max[i * N + j] = d;
+            ctx->state.scratch.dcc_max[j * N + i] = d;
+            ctx->state.scratch.dcc_measured[i * N + j] = 1;
+            ctx->state.scratch.dcc_measured[j * N + i] = 1;
+        }
+    }
+
+    for (int c = 0; c < (int)K; c++)
+    {
+        update_consistency_mask_for_new_cluster(&ctx->config, &ctx->state, c);
+    }
+
+    ctx->config.algo.query_mode = 1;
+    return (int64_t)K;
 }
 
 /**

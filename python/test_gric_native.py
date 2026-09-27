@@ -66,6 +66,23 @@ def test_python_bindings():
         assert len(lbls) == 50
         assert cl.num_clusters > 0
 
+    # 6. Test query mode
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as f:
+        f.write("0.0 0.0 0.0 0.0\n5.0 0.0 0.0 0.0\n")
+        tmp_anchors = f.name
+    try:
+        with gric.Clusterer(ndim=4, rlim=1.0, max_clusters=32, query_mode=True) as qm_cl:
+            qm_cl.load_anchors(tmp_anchors)
+            assert qm_cl.num_clusters == 2
+            assert qm_cl.feed(np.array([0.1, 0.0, 0.0, 0.0])) == 0
+            assert qm_cl.feed(np.array([4.9, 0.0, 0.0, 0.0])) == 1
+            assert qm_cl.feed(np.array([5.2, 0.0, 0.0, 0.0])) == 1
+            assert qm_cl.num_clusters == 2
+    finally:
+        if os.path.exists(tmp_anchors):
+            os.remove(tmp_anchors)
+
     clusterer.close()
     print("GRIC Python native wrapper tests passed successfully!")
 

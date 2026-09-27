@@ -40,6 +40,10 @@
     X(".cnt2sync", &fps_cnt2sync, FPTYPE_ONOFF, 1, \
       FPFLAG_DEFAULT_INPUT, "Enable cnt2 flow-control handshaking") \
     /* Clustering parameters */ \
+    X(".query_mode", &fps_query_mode, FPTYPE_ONOFF, 1, \
+      FPFLAG_DEFAULT_INPUT, "Run in fixed-cluster query/classification mode") \
+    X(".load_anchors", fps_load_anchors, FPTYPE_FILENAME, 1, \
+      FPFLAG_DEFAULT_INPUT, "Path to pre-existing anchors.bin or cluster dir") \
     X(".rlim", &fps_rlim, FPTYPE_FLOAT64, 1, \
       FPFLAG_DEFAULT_INPUT, "Cluster radius limit threshold") \
     X(".deltaprob", &fps_deltaprob, FPTYPE_FLOAT64, 1, \

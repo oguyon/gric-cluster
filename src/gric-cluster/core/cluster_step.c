@@ -613,6 +613,11 @@ int cluster_frame(
 
     if (state->num_clusters == 0)
     {
+        if (config->algo.query_mode)
+        {
+            return -1;
+        }
+
         struct timespec step_start, step_end;
         clock_gettime(CLOCK_MONOTONIC, &step_start);
         initialize_initial_cluster(config, state, current_frame, &assigned_cluster);
@@ -707,19 +712,37 @@ int cluster_frame(
 
         if (!found)
         {
-            struct timespec s4_start, s4_end;
-            clock_gettime(CLOCK_MONOTONIC, &s4_start);
-            assigned_cluster = handle_new_cluster_creation(config, state, current_frame,
-                                                           prev_assigned_cluster, temp_indices,
-                                                           temp_dists, &temp_count);
-            clock_gettime(CLOCK_MONOTONIC, &s4_end);
-            state->telemetry.time_step_4 += (s4_end.tv_sec - s4_start.tv_sec) * 1000.0 +
-                                            (s4_end.tv_nsec - s4_start.tv_nsec) / 1000000.0;
-            if (assigned_cluster == -2)
+            if (config->algo.query_mode)
             {
-                return -2;
+                int best_cj = -1;
+                double min_d = 1e30;
+                for (int t = 0; t < temp_count; t++)
+                {
+                    if (temp_dists[t] < min_d)
+                    {
+                        min_d = temp_dists[t];
+                        best_cj = temp_indices[t];
+                    }
+                }
+                assigned_cluster = best_cj;
+                state->telemetry.last_assignment_dist = (best_cj >= 0) ? min_d : 1e30;
             }
-            state->telemetry.last_assignment_dist = 0.0;
+            else
+            {
+                struct timespec s4_start, s4_end;
+                clock_gettime(CLOCK_MONOTONIC, &s4_start);
+                assigned_cluster = handle_new_cluster_creation(config, state, current_frame,
+                                                               prev_assigned_cluster, temp_indices,
+                                                               temp_dists, &temp_count);
+                clock_gettime(CLOCK_MONOTONIC, &s4_end);
+                state->telemetry.time_step_4 += (s4_end.tv_sec - s4_start.tv_sec) * 1000.0 +
+                                                (s4_end.tv_nsec - s4_start.tv_nsec) / 1000000.0;
+                if (assigned_cluster == -2)
+                {
+                    return -2;
+                }
+                state->telemetry.last_assignment_dist = 0.0;
+            }
         }
     }
 

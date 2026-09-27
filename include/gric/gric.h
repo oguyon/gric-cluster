@@ -59,6 +59,7 @@ typedef struct
     int    sparse_dcc_extra_evals; /**< Extra DCC evals in sparse mode */
     int    maxcl_strategy;         /**< 0=stop, 1=discard lowest count */
     double discard_fraction;       /**< Fraction to discard on eviction */
+    int    query_mode;             /**< 1 = query/classification mode (no new clusters) */
     int    ncpu;                   /**< Thread count (0 = default/OpenMP) */
 } gric_cluster_config_t;
 
@@ -177,6 +178,37 @@ GRIC_API gric_status_t gric_cluster_get_dcc(
  */
 GRIC_API gric_status_t gric_cluster_reset(
     gric_cluster_t *ctx);
+
+/**
+ * gric_cluster_set_query_mode() - Enable or disable query / classification mode.
+ * @ctx:     Active clustering handle.
+ * @enabled: 1 to enable query mode (freeze cluster creation), 0 to disable.
+ *
+ * Return: GRIC_SUCCESS on success, or negative error code.
+ */
+GRIC_API gric_status_t gric_cluster_set_query_mode(
+    gric_cluster_t *ctx,
+    int             enabled);
+
+/**
+ * gric_cluster_load_anchors() - Load precomputed cluster anchors into session.
+ * @ctx:          Active clustering handle.
+ * @anchors_path: Path to anchors.bin or directory containing anchors.bin / anchors.txt.
+ *
+ * Return: Number of clusters loaded (>= 0), or negative on error.
+ */
+GRIC_API int64_t gric_cluster_load_anchors(
+    gric_cluster_t *ctx,
+    const char     *anchors_path);
+
+/**
+ * gric_cluster_get_last_dist() - Retrieve distance of last frame assignment.
+ * @ctx: Active clustering handle.
+ *
+ * Return: Distance to assigned cluster anchor, or -1.0 on error.
+ */
+GRIC_API double gric_cluster_get_last_dist(
+    const gric_cluster_t *ctx);
 
 /**
  * struct gric_cluster_stats - Summary telemetry and metrics for an active clustering session.

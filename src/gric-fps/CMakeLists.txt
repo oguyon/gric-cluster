@@ -74,17 +74,80 @@ install(CODE "
         SYMBOLIC)
 ")
 
-# 2. Shared Milk CLI Plugin: libmilkgric.so
+# 2. Standalone FPS Daemon Executable: milk-fpsexec-gric-knn
+add_executable(milk-fpsexec-gric-knn
+    gric_knn_fps_main.c
+    gric_knn_fps_common.c
+)
+
+target_compile_definitions(milk-fpsexec-gric-knn PRIVATE
+    FPS_STANDALONE
+    MILK_NO_CLI
+)
+
+target_include_directories(milk-fpsexec-gric-knn PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${MILK_COMPAT_DIR}
+    ${MILK_INCLUDE_DIRS}
+    ${MILK_INCLUDE_DIRS}/libfps
+    ${MILK_INCLUDE_DIRS}/libmilkcommon
+    ${MILK_INCLUDE_DIRS}/libmilkdata
+    ${MILK_INCLUDE_DIRS}/CommandLineInterface
+    ${IMAGESTREAMIO_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/gric-cluster/core
+    ${CMAKE_SOURCE_DIR}/src/gric-knn
+)
+
+target_link_libraries(milk-fpsexec-gric-knn PRIVATE
+    gric_knn_static
+    gric_static
+    milkfps
+    milkfpsStandalone
+    milkfpsseq
+    milkprocessinfo
+    ${IMAGESTREAMIO_LIBRARIES}
+    milkCOREMODmemory
+    milkCOREMODtools
+    milkCOREMODarith
+    milkcommon
+    milkdata
+    m
+    pthread
+    rt
+    -Wl,--allow-shlib-undefined
+)
+
+# Create convenient symlink: gric-fps-knn -> milk-fpsexec-gric-knn
+add_custom_command(TARGET milk-fpsexec-gric-knn POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        $<TARGET_FILE_NAME:milk-fpsexec-gric-knn>
+        ${CMAKE_CURRENT_BINARY_DIR}/gric-fps-knn
+)
+
+install(TARGETS milk-fpsexec-gric-knn
+    DESTINATION bin
+)
+
+install(CODE "
+    file(CREATE_LINK milk-fpsexec-gric-knn
+        \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/gric-fps-knn
+        SYMBOLIC)
+")
+
+# 3. Shared Milk CLI Plugin: libmilkgric.so
 add_library(milkgric SHARED
     gric_module.c
     gric_fps_common.c
+    gric_knn_module.c
+    gric_knn_fps_common.c
 )
 
 set_target_properties(milkgric PROPERTIES
     PREFIX "lib"
     OUTPUT_NAME "milkgric"
 )
-
 
 target_include_directories(milkgric PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -99,9 +162,11 @@ target_include_directories(milkgric PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/gric-cluster/core
+    ${CMAKE_SOURCE_DIR}/src/gric-knn
 )
 
 target_link_libraries(milkgric PRIVATE
+    gric_knn_static
     gric_static
     CLIcore
     milkfps
