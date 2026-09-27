@@ -78,7 +78,7 @@ int mcp_tool_fps_status(
     get_fps_binary_path(bin_path, sizeof(bin_path));
 
     char cmd[2048];
-    snprintf(cmd, sizeof(cmd), "%s fps %s 2>&1", bin_path, fps_name);
+    snprintf(cmd, sizeof(cmd), "%s -procinfo fps %s 2>&1", bin_path, fps_name);
 
     FILE *pipe = popen(cmd, "r");
     if (pipe == NULL)
@@ -199,7 +199,8 @@ int mcp_tool_fps_run(
 
     /* Step 1: Initialize FPS instance */
     char init_cmd[2048];
-    snprintf(init_cmd, sizeof(init_cmd), "%s fpsinit %s > /dev/null 2>&1", bin_path, fps_name);
+    snprintf(init_cmd, sizeof(init_cmd), "%s -procinfo fpsinit %s > /dev/null 2>&1",
+             bin_path, fps_name);
     (void)run_sys_cmd(init_cmd);
 
     /* Step 2: Configure essential parameters via milk-fps-set */
@@ -355,10 +356,12 @@ int mcp_tool_fps_stop(
 
     /* 2. Direct standalone invocation fallback */
     char stop_cmd[2048];
-    snprintf(stop_cmd, sizeof(stop_cmd), "%s %s:runstop > /dev/null 2>&1", bin_path, fps_name);
+    snprintf(stop_cmd, sizeof(stop_cmd), "%s -procinfo %s:runstop > /dev/null 2>&1",
+             bin_path, fps_name);
     (void)run_sys_cmd(stop_cmd);
 
-    snprintf(stop_cmd, sizeof(stop_cmd), "%s %s:confstop > /dev/null 2>&1", bin_path, fps_name);
+    snprintf(stop_cmd, sizeof(stop_cmd), "%s -procinfo %s:confstop > /dev/null 2>&1",
+             bin_path, fps_name);
     (void)run_sys_cmd(stop_cmd);
 
     cJSON_AddStringToObject(res, "status", "STOPPED");

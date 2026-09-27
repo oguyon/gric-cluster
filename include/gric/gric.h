@@ -179,6 +179,53 @@ GRIC_API gric_status_t gric_cluster_reset(
     gric_cluster_t *ctx);
 
 /**
+ * struct gric_cluster_stats - Summary telemetry and metrics for an active clustering session.
+ */
+typedef struct
+{
+    uint64_t total_frames_processed;
+    uint32_t num_clusters;
+    uint64_t num_new_clusters;
+    uint64_t framedist_calls;
+    uint64_t framedist_calls_sample;
+    uint64_t framedist_calls_intercluster;
+    uint64_t clusters_pruned;
+    double   last_assignment_dist;
+    uint64_t last_frame_dists;
+    uint64_t last_frame_dfc;
+    uint64_t last_frame_dcc;
+    double   time_io_ms;
+    double   time_step_1;
+    double   time_step_2;
+    double   time_step_3a;
+    double   time_step_3b;
+    double   time_step_3c;
+    double   time_step_4;
+    double   time_step_5;
+    double   time_step_refine;
+    double   entropy_last_initial;
+    double   entropy_avg_initial;
+    double   entropy_gate_ratio;
+    uint64_t dcc_entries_populated;
+    uint64_t dcc_pairs_total;
+    uint64_t memo_hits;
+    uint64_t memo_lookups;
+    uint64_t memo_cache_entries;
+    uint64_t memo_cache_capacity;
+} gric_cluster_stats_t;
+
+/**
+ * gric_cluster_get_stats() - Retrieve current telemetry and computation metrics.
+ * @ctx:   Active clustering handle.
+ * @stats: Destination statistics struct pointer.
+ *
+ * Return: GRIC_SUCCESS on success, or negative error code on invalid parameters.
+ */
+GRIC_API gric_status_t gric_cluster_get_stats(
+    const gric_cluster_t *ctx,
+    gric_cluster_stats_t *stats);
+
+/**
  * gric_cluster_destroy() - Free clustering session and all associated memory.
  * @ctx: Clustering handle to destroy (safe to pass NULL).
  */

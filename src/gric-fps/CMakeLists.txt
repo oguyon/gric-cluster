@@ -35,6 +35,8 @@ target_include_directories(milk-fpsexec-gric-cluster PRIVATE
     ${MILK_INCLUDE_DIRS}/CommandLineInterface
     ${IMAGESTREAMIO_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/gric-cluster/core
 )
 
 target_link_libraries(milk-fpsexec-gric-cluster PRIVATE
@@ -95,6 +97,8 @@ target_include_directories(milkgric PRIVATE
     ${MILK_INCLUDE_DIRS}/CommandLineInterface/CLIcore
     ${IMAGESTREAMIO_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/gric-cluster/core
 )
 
 target_link_libraries(milkgric PRIVATE

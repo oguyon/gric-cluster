@@ -577,9 +577,10 @@ static const ProgramHelpDoc PROGRAM_DOCS[] = {
             "  -loops               Infinite loop triggered by input semaphores\n"
             "  -loopd <sec>         Infinite loop triggered on fixed delay timer",
         .examples =
-            "  $ milk-fpsexec-gric-cluster -procinfo -loops confstart\n"
-            "  $ gric-fps-cluster -tmux runstart\n"
-            "  $ milk-fps-set gric_cluster.rlim 0.35"
+            "  $ milk-fpsexec-gric-cluster -procinfo demo:fpsinit\n"
+            "  $ gric-fps-cluster -tmux -procinfo -loops demo:runstart\n"
+            "  $ milk-fps-set demo.rlim 0.35\n"
+            "  $ milk-fpsexec-gric-cluster -procinfo demo:runstop"
     }
 };
 

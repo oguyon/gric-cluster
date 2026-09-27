@@ -6,6 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "status_internal.h"
 #include "cli_colors.h"
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -135,10 +136,42 @@ int main(
 
     ov_detect_color_level(help_mono);
 
-    int fd = open(path, O_RDONLY);
+    char resolved_path[1024];
+    strncpy(resolved_path, path, sizeof(resolved_path) - 1);
+    resolved_path[sizeof(resolved_path) - 1] = '\0';
+
+    int fd = open(resolved_path, O_RDONLY);
     if (fd < 0)
     {
-        perror("Failed to open status SHM file");
+        /* Try candidate paths for convenience if a simple name was provided */
+        const char *candidates[] = {
+            "/dev/shm/fps.%s.status.shm",
+            "/milk/shm/fps.%s.status.shm",
+            "/dev/shm/gric.%s.status.shm",
+            "/dev/shm/%s.status.shm",
+            "/dev/shm/%s",
+            "/milk/shm/%s",
+            "/tmp/fps.%s.status.shm",
+            NULL
+        };
+        for (int p = 0; candidates[p] != NULL; p++)
+        {
+            char test_path[1024];
+            snprintf(test_path, sizeof(test_path), candidates[p], path);
+            fd = open(test_path, O_RDONLY);
+            if (fd >= 0)
+            {
+                strncpy(resolved_path, test_path, sizeof(resolved_path) - 1);
+                resolved_path[sizeof(resolved_path) - 1] = '\0';
+                break;
+            }
+        }
+    }
+
+    if (fd < 0)
+    {
+        fprintf(stderr, "Failed to open status SHM file or FPS name '%s': %s\n",
+                path, strerror(errno));
         return 1;
     }
 

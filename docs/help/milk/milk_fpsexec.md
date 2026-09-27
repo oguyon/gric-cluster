@@ -48,6 +48,19 @@ shared memory for dynamic adjustment via milk-fps-set or milk-fpsCTRL.
 - .entropy_mode           Enable Shannon entropy target selection
 - .reset_state            Dynamic trigger: clears existing clusters on-the-fly
 
+## USAGE EXAMPLES
+Initialize FPS with ProcessInfo telemetry:
+  $ milk-fpsexec-gric-cluster -procinfo demo:fpsinit
+
+Inspect active parameters and ProcessInfo telemetry:
+  $ milk-fpsexec-gric-cluster -procinfo demo:fps
+
+Start real-time frame processing loop:
+  $ milk-fpsexec-gric-cluster -tmux -procinfo -loops demo:runstart
+
+Stop processing loop:
+  $ milk-fpsexec-gric-cluster -procinfo demo:runstop
+
 ## DYNAMIC TUNING
 Parameters can be modified live without stopping the streaming daemon:
   milk-fps-set gric_cluster.rlim 0.35

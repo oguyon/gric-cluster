@@ -73,6 +73,7 @@ static errno_t compute_function(void)
     memset(&out_assign, 0, sizeof(IMAGE));
     memset(&out_anchors, 0, sizeof(IMAGE));
     memset(&out_counts, 0, sizeof(IMAGE));
+    uint64_t frame_count = 0;
 
     if (gric_fps_init_output_streams(xsize, ysize, max_clusters,
                                      &out_assign, &out_anchors, &out_counts) != 0)
@@ -92,6 +93,18 @@ static errno_t compute_function(void)
                                            CLIcmddata.cmdsettings->triggermode,
                                            CLIcmddata.cmdsettings->semindexrequested);
     }
+
+    const char *fps_instance_name = "gric_cluster";
+    if (dcfpsptr != NULL && dcfpsptr->md != NULL && dcfpsptr->md->name[0] != '\0')
+    {
+        fps_instance_name = dcfpsptr->md->name;
+    }
+    else if (processinfo != NULL && processinfo->name[0] != '\0')
+    {
+        fps_instance_name = processinfo->name;
+    }
+    gric_fps_status_init(fps_instance_name, fps_shm_status_file);
+
     INSERT_STD_PROCINFO_COMPUTEFUNC_LOOPSTART
     {
         uint64_t cnt0 = inimg.im->md[0].cnt0;
@@ -104,6 +117,7 @@ static errno_t compute_function(void)
         struct timespec t_end;
         clock_gettime(CLOCK_MONOTONIC, &t_start);
 
+        frame_count++;
         gric_fps_process_frame(raw_slice, inimg.im->md[0].datatype, ndim,
                                cnt0, inimg.im->md[0].atime, 0.0,
                                &out_assign, &out_anchors, &out_counts);
@@ -119,16 +133,28 @@ static errno_t compute_function(void)
 
         processinfo_update_output_stream(processinfo, &out_assign, inimg.im);
 
-        static uint64_t msg_cnt = 0;
-        if (++msg_cnt % 100 == 0)
+        long write_slice = (inimg.im->md[0].naxis > 2) ? (long)inimg.im->md[0].cnt1 : 0;
+        long read_slice = (long)slice_idx;
+        long stream_lag = (inimg.im->md[0].cnt0 > frame_count)
+                              ? (long)(inimg.im->md[0].cnt0 - frame_count)
+                              : 0;
+        gric_fps_status_update(cnt0, latency_us, stream_lag, write_slice, read_slice);
+
+        if (frame_count % 100 == 0)
         {
             processinfo_WriteMessage_fmt(processinfo, "K=%ld Frames=%lu",
                                          (long)gric_fps_get_cluster_count(),
-                                         (unsigned long)msg_cnt);
+                                         (unsigned long)frame_count);
+        }
+
+        if (fps_max_frames > 0 && frame_count >= fps_max_frames)
+        {
+            processloopOK = 0;
         }
     }
     INSERT_STD_PROCINFO_COMPUTEFUNC_END
 
+    gric_fps_status_close(0);
     gric_fps_close_output_streams(&out_assign, &out_anchors, &out_counts);
     gric_fps_cleanup_engine();
 

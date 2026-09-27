@@ -100,14 +100,14 @@ static void print_help_standard_raw(
     printf("\n%s\n", C_STR(MH_HDR, "USAGE"));
     printf("  %s %s [%s]\n",
            pn_colored,
-           C_STR(MH_ARG, "<shm_file_path>"),
+           C_STR(MH_ARG, "<shm_file_path | fps_name>"),
            C_STR(MH_OPT, "[options]"));
 
     printf("\n%s\n", C_STR(MH_HDR, "DESCRIPTION"));
     printf("  Connects to a file-mapped shared memory telemetry file produced by a running\n");
-    printf("  gric-cluster process. Reads and reports real-time metrics, including frame\n");
-    printf("  counts, active/spawned clusters, distance computations, pruning statistics,\n");
-    printf("  and process resource limits.\n");
+    printf("  gric-cluster process or Milk FPS daemon. Reads and reports real-time metrics,\n");
+    printf("  including frame counts, active/spawned clusters, distance computations,\n");
+    printf("  pruning statistics, RSS memory usage, and process state.\n");
 
     printf("\n%s\n", C_STR(MH_HDR, "OPTIONS"));
     printf("  %-30s %s\n",
@@ -140,8 +140,8 @@ static void print_help_standard_raw(
     printf("\n%s\n", C_STR(MH_HDR, "EXAMPLES"));
     printf("  %s %s\n", pn_colored, C_STR(MH_ARG, "/tmp/gric_status.shm"));
     printf("    Print a one-shot telemetry snapshot to stdout.\n");
-    printf("  %s %s %s\n", pn_colored, C_STR(MH_ARG, "/tmp/gric_status.shm"), C_STR(MH_OPT, "-w"));
-    printf("    Launch interactive TUI dashboard at the default 15 Hz refresh rate.\n");
+    printf("  %s %s %s\n", pn_colored, C_STR(MH_ARG, "demo"), C_STR(MH_OPT, "-w"));
+    printf("    Attach to running Milk FPS instance 'demo' in interactive dashboard mode.\n");
     printf("  %s %s %s %s\n",
            pn_colored,
            C_STR(MH_ARG, "/tmp/gric_status.shm"),

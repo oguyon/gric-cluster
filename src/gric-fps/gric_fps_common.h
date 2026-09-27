@@ -31,11 +31,24 @@ extern double   fps_rlim;
 extern double   fps_deltaprob;
 extern uint32_t fps_maxnbclust;
 extern int64_t  fps_maxcl_strategy;
+extern uint64_t fps_max_frames;
 extern uint32_t fps_ncpu;
 extern int32_t  fps_use_double;
 extern int32_t  fps_use_sq16;
 extern int32_t  fps_entropy_mode;
 extern int32_t  fps_reset_state;
+
+/* Status and telemetry parameter variables */
+extern uint64_t fps_status_frames_processed;
+extern uint32_t fps_status_num_clusters;
+extern uint64_t fps_status_new_clusters;
+extern uint64_t fps_status_distance_evals;
+extern double   fps_status_pruning_ratio;
+extern double   fps_status_latency_us;
+extern double   fps_status_fps;
+extern int64_t  fps_status_stream_lag;
+extern double   fps_status_memory_rss_mb;
+extern char     fps_shm_status_file[FUNCTION_PARAMETER_STRMAXLEN];
 
 /* Telemetry packet size for <out>_assign */
 #define GRIC_ASSIGN_PACKET_ELEMS 8
@@ -123,6 +136,41 @@ errno_t gric_fps_process_frame(
  * @return Number of active clusters (>= 0).
  */
 int64_t gric_fps_get_cluster_count(void);
+
+/**
+ * @brief Initialize the status shared memory bridge file.
+ *
+ * @param fps_name    Name of the active FPS daemon instance.
+ * @param custom_path Optional custom SHM status file path.
+ * @return 0 on success, non-zero on error.
+ */
+errno_t gric_fps_status_init(
+    const char *fps_name,
+    const char *custom_path);
+
+/**
+ * @brief Update real-time status parameters and bridge shared memory.
+ *
+ * @param frame_index Frame counter (cnt0).
+ * @param latency_us  Measured algorithm execution time in microseconds.
+ * @param stream_lag  Lag in frame count between stream write and read heads.
+ * @param write_slice Current ring buffer write slice index.
+ * @param read_slice  Current ring buffer read slice index.
+ */
+void gric_fps_status_update(
+    uint64_t frame_index,
+    double   latency_us,
+    long     stream_lag,
+    long     write_slice,
+    long     read_slice);
+
+/**
+ * @brief Finalize and unmap the status shared memory bridge file.
+ *
+ * @param exit_state Exit status code (0 for success, non-zero for error).
+ */
+void gric_fps_status_close(
+    int exit_state);
 
 #ifdef __cplusplus
 }
