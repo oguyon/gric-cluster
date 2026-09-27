@@ -97,15 +97,19 @@ cleanup() {
 trap cleanup EXIT
 
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # Step 0: Generate baseline clustering model for tests
 # ------------------------------------------------------------------------------
 echo "[Setup] Generating baseline cluster model in $TMPDIR/clusterdat..."
 mkdir -p "$TMPDIR/clusterdat"
-"$GRIC_CLUSTER" 0.5 "$ROOT_DIR/tests/test_strat.txt" \
+TEST_DATA="$TMPDIR/ref.txt"
+cp "$ROOT_DIR/tests/test_strat.txt" "$TEST_DATA"
+
+"$GRIC_CLUSTER" 0.5 "$TEST_DATA" \
     -outdir "$TMPDIR/clusterdat" \
     -maxim 1000 >/dev/null 2>&1
 
-"$GRIC_KNN" "$ROOT_DIR/tests/test_strat.txt" "$TMPDIR/clusterdat" \
+"$GRIC_KNN" "$TEST_DATA" "$TMPDIR/clusterdat" \
     -k 5 -dtmin 1 >/dev/null 2>&1
 
 if [ ! -f "$TMPDIR/clusterdat/anchors.bin" ]; then
@@ -137,7 +141,7 @@ if [ -n "$MILK_FPS_SET" ]; then
     "$MILK_FPS_SET" gric_cluster.max_frames 40
 fi
 
-"$GRIC_TXT2STREAM" "$ROOT_DIR/tests/test_strat.txt" e2e_st_q_in -fps 500 -loop >/dev/null 2>&1 &
+"$GRIC_TXT2STREAM" "$TEST_DATA" e2e_st_q_in -fps 500 -loop >/dev/null 2>&1 &
 P1_PID=$!
 sleep 0.3
 
@@ -166,12 +170,12 @@ if [ -n "$MILK_FPS_SET" ]; then
     "$MILK_FPS_SET" gric_knn.in_name e2e_st_knn_in
     "$MILK_FPS_SET" gric_knn.out_name e2e_st_knn_out
     "$MILK_FPS_SET" gric_knn.cluster_dir "$TMPDIR/clusterdat"
-    "$MILK_FPS_SET" gric_knn.ref_data "$ROOT_DIR/tests/test_strat.txt"
+    "$MILK_FPS_SET" gric_knn.ref_data "$TEST_DATA"
     "$MILK_FPS_SET" gric_knn.k 5
     "$MILK_FPS_SET" gric_knn.max_frames 40
 fi
 
-"$GRIC_TXT2STREAM" "$ROOT_DIR/tests/test_strat.txt" e2e_st_knn_in \
+"$GRIC_TXT2STREAM" "$TEST_DATA" e2e_st_knn_in \
     -fps 500 -loop >/dev/null 2>&1 &
 P2_PID=$!
 sleep 0.3
@@ -197,7 +201,7 @@ if [ -n "$MILK_CLI" ] && [ -x "$MILK_CLI" ]; then
     echo "----------------------------------------------------------------------"
     clean_e2e_shm "e2e_cli_q_"
 
-    "$GRIC_TXT2STREAM" "$ROOT_DIR/tests/test_strat.txt" e2e_cli_q_in \
+    "$GRIC_TXT2STREAM" "$TEST_DATA" e2e_cli_q_in \
         -fps 500 -loop >/dev/null 2>&1 &
     P3_PID=$!
     sleep 0.3
@@ -230,7 +234,7 @@ EOF
     echo "----------------------------------------------------------------------"
     clean_e2e_shm "e2e_cli_knn_"
 
-    "$GRIC_TXT2STREAM" "$ROOT_DIR/tests/test_strat.txt" e2e_cli_knn_in \
+    "$GRIC_TXT2STREAM" "$TEST_DATA" e2e_cli_knn_in \
         -fps 500 -loop >/dev/null 2>&1 &
     P4_PID=$!
     sleep 0.3
@@ -239,7 +243,7 @@ EOF
 gric.gric_knn .in_name e2e_cli_knn_in
 gric.gric_knn .out_name e2e_cli_knn_out
 gric.gric_knn .cluster_dir $TMPDIR/clusterdat
-gric.gric_knn .ref_data $ROOT_DIR/tests/test_strat.txt
+gric.gric_knn .ref_data $TEST_DATA
 gric.gric_knn .k 5
 gric.gric_knn .max_frames 30
 gric.gric_knn
