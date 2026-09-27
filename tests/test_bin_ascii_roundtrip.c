@@ -209,6 +209,8 @@ static void test_bin2ascii_header_option(void)
     char line[256];
     int found_header_delim = 0;
     int found_content_desc = 0;
+    int found_anchor_idx_col = 0;
+    int data_rows = 0;
 
     while (fgets(line, sizeof(line), f_out) != NULL)
     {
@@ -220,24 +222,85 @@ static void test_bin2ascii_header_option(void)
         {
             found_content_desc = 1;
         }
+        if (strstr(line, "# Columns     : anchor_idx dim_0 .. dim_1") != NULL)
+        {
+            found_anchor_idx_col = 1;
+        }
+        if (line[0] != '#' && strlen(line) > 1)
+        {
+            int idx = -1;
+            float x = 0.0f, y = 0.0f;
+            assert(sscanf(line, "%d %f %f", &idx, &x, &y) == 3);
+            assert(idx == data_rows);
+            if (data_rows == 0)
+            {
+                assert(fabsf(x - 1.0f) < 1e-5f && fabsf(y - 2.0f) < 1e-5f);
+            }
+            else if (data_rows == 1)
+            {
+                assert(fabsf(x - 3.0f) < 1e-5f && fabsf(y - 4.0f) < 1e-5f);
+            }
+            else if (data_rows == 2)
+            {
+                assert(fabsf(x - 5.0f) < 1e-5f && fabsf(y - 6.0f) < 1e-5f);
+            }
+            data_rows++;
+        }
     }
     fclose(f_out);
 
     assert(found_header_delim >= 2);
     assert(found_content_desc == 1);
+    assert(found_anchor_idx_col == 1);
+    assert(data_rows == 3);
 
-    // Verify gric-ascii2bin can read the file with comments and recreate bin
+    // Verify gric-ascii2bin can auto-detect anchor_idx from comments and recreate bin
     snprintf(cmd, sizeof(cmd),
              "./gric-ascii2bin %s /tmp/test_rt_header.bin -type anchors",
              TMP_TXT_OUT);
     ret = system(cmd);
     assert(ret == 0);
 
+    FILE *f_rt = fopen("/tmp/test_rt_header.bin", "rb");
+    assert(f_rt != NULL);
+    gric_bin_header_t rt_hdr;
+    char *rt_comment = NULL;
+    assert(gric_bin_read_header(f_rt, &rt_hdr, &rt_comment) == 0);
+    assert(rt_hdr.file_type == GRIC_BIN_TYPE_ANCHORS);
+    assert(rt_hdr.ndim == 2);
+    assert(rt_hdr.dims[0] == 3);
+    assert(rt_hdr.dims[1] == 2);
+    assert(rt_hdr.num_elements == 6);
+    float rt_payload[6];
+    assert(fread(rt_payload, sizeof(float), 6, f_rt) == 6);
+    assert(fabsf(rt_payload[0] - 1.0f) < 1e-5f);
+    assert(fabsf(rt_payload[1] - 2.0f) < 1e-5f);
+    assert(fabsf(rt_payload[2] - 3.0f) < 1e-5f);
+    assert(fabsf(rt_payload[3] - 4.0f) < 1e-5f);
+    assert(fabsf(rt_payload[4] - 5.0f) < 1e-5f);
+    assert(fabsf(rt_payload[5] - 6.0f) < 1e-5f);
+    fclose(f_rt);
+    if (rt_comment != NULL) free(rt_comment);
+
+    // Also verify decoding with -no-index omits index
+    snprintf(cmd, sizeof(cmd),
+             "./gric-bin2ascii /tmp/test_rt_header.bin %s -no-index",
+             TMP_TXT_OUT);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    f_out = fopen(TMP_TXT_OUT, "r");
+    assert(f_out != NULL);
+    float no_idx_x = 0.0f, no_idx_y = 0.0f;
+    assert(fscanf(f_out, "%f %f", &no_idx_x, &no_idx_y) == 2);
+    assert(fabsf(no_idx_x - 1.0f) < 1e-5f && fabsf(no_idx_y - 2.0f) < 1e-5f);
+    fclose(f_out);
+
     remove(TMP_TXT_IN);
     remove(TMP_BIN_OUT);
     remove(TMP_TXT_OUT);
     remove("/tmp/test_rt_header.bin");
-    printf("  [PASS] Decoded ASCII header generation and roundtrip verified.\n");
+    printf("  [PASS] Decoded ASCII header generation, anchor_idx, and roundtrip verified.\n");
 }
 
 int main(void)

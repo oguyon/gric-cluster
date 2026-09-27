@@ -325,7 +325,7 @@ except Exception:
 
     if [[ -f "${SAVE_DIR}/anchors.txt" ]]; then
         echo -e "${BOLD}Sample Decoded Anchors Header & Centroids:${RESET}"
-        head -n 12 "${SAVE_DIR}/anchors.txt"
+        head -n 16 "${SAVE_DIR}/anchors.txt"
         echo ""
     fi
 
