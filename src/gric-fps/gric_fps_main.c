@@ -167,6 +167,11 @@ static errno_t compute_function(void)
         {
             processloopOK = 0;
         }
+
+        if (fps_cnt2sync && processloopOK == 1)
+        {
+            in_img.md[0].cnt2++;
+        }
     }
     INSERT_STD_PROCINFO_COMPUTEFUNC_END
 

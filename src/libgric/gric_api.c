@@ -661,7 +661,19 @@ gric_status_t gric_cluster_save_results(
             {
                 for (int i = 0; i < k; i++)
                 {
-                    fwrite(state->clusters[i].anchor.data, sizeof(double), ndim, fp);
+                    if (state->clusters[i].anchor.is_double)
+                    {
+                        fwrite(state->clusters[i].anchor.data, sizeof(double), ndim, fp);
+                    }
+                    else
+                    {
+                        const float *fdata = (const float *)state->clusters[i].anchor.data;
+                        for (size_t d = 0; d < ndim; d++)
+                        {
+                            double v = (double)fdata[d];
+                            fwrite(&v, sizeof(double), 1, fp);
+                        }
+                    }
                 }
             }
         }
@@ -679,7 +691,19 @@ gric_status_t gric_cluster_save_results(
                 {
                     for (int i = 0; i < k; i++)
                     {
-                        fwrite(state->clusters[i].anchor.data, sizeof(float), ndim, fp);
+                        if (state->clusters[i].anchor.is_double)
+                        {
+                            const double *ddata = (const double *)state->clusters[i].anchor.data;
+                            for (size_t d = 0; d < ndim; d++)
+                            {
+                                float v = (float)ddata[d];
+                                fwrite(&v, sizeof(float), 1, fp);
+                            }
+                        }
+                        else
+                        {
+                            fwrite(state->clusters[i].anchor.data, sizeof(float), ndim, fp);
+                        }
                     }
                 }
             }
@@ -772,6 +796,44 @@ gric_status_t gric_cluster_save_results(
             }
         }
         fclose(fp);
+    }
+
+    /* 5. Export frame_membership.bin (Frame-to-cluster assignments [N]) */
+    long total_frames = state->telemetry.total_frames_processed;
+    long nframes = (total_frames > (long)ctx->maxnbfr) ? (long)ctx->maxnbfr : total_frames;
+    if (nframes > 0 && state->assignments != NULL)
+    {
+        snprintf(path, sizeof(path), "%s/frame_membership.bin", target_dir);
+        fp = fopen(path, "wb");
+        if (fp != NULL)
+        {
+            gric_bin_header_t hdr;
+            memset(&hdr, 0, sizeof(hdr));
+            hdr.file_type = GRIC_BIN_TYPE_MEMBERSHIP;
+            hdr.data_type = GRIC_BIN_DTYPE_UINT32;
+            hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+            hdr.ndim = 1;
+            hdr.dims[0] = (uint64_t)nframes;
+            hdr.num_elements = (uint64_t)nframes;
+            hdr.data_bytes = hdr.num_elements * sizeof(uint32_t);
+
+            if (gric_bin_write_header(fp, &hdr, "Frame membership") == 0)
+            {
+                uint32_t *mem_buf = (uint32_t *)malloc(hdr.num_elements * sizeof(uint32_t));
+                if (mem_buf != NULL)
+                {
+                    for (long f = 0; f < nframes; f++)
+                    {
+                        mem_buf[f] = (state->assignments[f] >= 0)
+                                         ? (uint32_t)state->assignments[f]
+                                         : 0;
+                    }
+                    fwrite(mem_buf, sizeof(uint32_t), hdr.num_elements, fp);
+                    free(mem_buf);
+                }
+            }
+            fclose(fp);
+        }
     }
 
     return GRIC_SUCCESS;

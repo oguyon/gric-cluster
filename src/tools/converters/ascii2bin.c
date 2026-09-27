@@ -23,6 +23,8 @@ static void print_usage(
     printf("  %s <input.txt> <output.bin> [options]\n\n", prog);
     printf("Options:\n");
     printf("  -type <type>        Semantic type: anchors, dcc, membership, counts, coords\n");
+    printf("  -has-index          Skip first column (e.g. anchor_idx or row index)\n");
+    printf("  -no-index           Do not skip first column\n");
     printf("  -double             Encode floating-point as float64 (default: float32)\n");
     printf("  -uint32             Encode as unsigned 32-bit integers\n");
     printf("  -int32              Encode as signed 32-bit integers\n");
@@ -87,6 +89,7 @@ int main(
     gric_bin_data_type_t dtype = GRIC_BIN_DTYPE_FLOAT32;
     int explicit_dim = 0;
     int verbose = 0;
+    int has_index = -1;
 
     for (int i = 1; i < argc; i++)
     {
@@ -98,6 +101,14 @@ int main(
         else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0)
         {
             verbose = 1;
+        }
+        else if (strcmp(argv[i], "-has-index") == 0 || strcmp(argv[i], "--has-index") == 0)
+        {
+            has_index = 1;
+        }
+        else if (strcmp(argv[i], "-no-index") == 0)
+        {
+            has_index = 0;
         }
         else if (strcmp(argv[i], "-double") == 0)
         {
@@ -200,23 +211,53 @@ int main(
         {
             p++;
         }
-        if (*p == '\0' || *p == '#' || (p[0] == '/' && p[1] == '/'))
+        if (*p == '\0')
         {
             continue;
         }
 
-        size_t tokens_in_line = count_tokens_in_line(p);
-        if (tokens_in_line == 0)
+        if (*p == '#' || (p[0] == '/' && p[1] == '/'))
+        {
+            if (has_index == -1 && (strstr(p, "anchor_idx") != NULL ||
+                                    strstr(p, "cluster_idx") != NULL ||
+                                    strstr(p, "row_idx") != NULL ||
+                                    strstr(p, "sample_idx") != NULL))
+            {
+                has_index = 1;
+            }
+            continue;
+        }
+
+        if (has_index == -1)
+        {
+            has_index = 0;
+        }
+
+        size_t total_tokens = count_tokens_in_line(p);
+        if (total_tokens == 0)
         {
             continue;
         }
 
+        if (has_index && total_tokens <= 1)
+        {
+            continue;
+        }
+
+        size_t tokens_in_line = has_index ? (total_tokens - 1) : total_tokens;
         if (ncols == 0)
         {
             ncols = tokens_in_line;
         }
 
         char *endptr = NULL;
+        if (has_index)
+        {
+            /* Skip leading index token (anchor_idx / row_idx) */
+            strtod(p, &endptr);
+            p = endptr;
+        }
+
         for (size_t c = 0; c < tokens_in_line; c++)
         {
             double val = strtod(p, &endptr);

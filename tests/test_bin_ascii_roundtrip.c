@@ -158,11 +158,50 @@ static void test_membership_roundtrip(void)
     int ret = system(cmd);
     assert(ret == 0);
 
-    snprintf(cmd, sizeof(cmd), "./gric-bin2ascii %s %s", TMP_BIN_OUT, TMP_TXT_OUT);
+    snprintf(cmd, sizeof(cmd), "./gric-bin2ascii %s %s -header", TMP_BIN_OUT, TMP_TXT_OUT);
     ret = system(cmd);
     assert(ret == 0);
 
     FILE *f_out = fopen(TMP_TXT_OUT, "r");
+    assert(f_out != NULL);
+    char line[256];
+    int found_header_col = 0;
+    int data_rows = 0;
+
+    while (fgets(line, sizeof(line), f_out) != NULL)
+    {
+        if (strstr(line, "# Columns     : sample_idx cluster_id") != NULL)
+        {
+            found_header_col = 1;
+        }
+        if (line[0] != '#' && strlen(line) > 1)
+        {
+            int idx = -1;
+            uint32_t cid = 0;
+            assert(sscanf(line, "%d %u", &idx, &cid) == 2);
+            assert(idx == data_rows);
+            assert(cid == (uint32_t)(data_rows % 7));
+            data_rows++;
+        }
+    }
+    fclose(f_out);
+
+    assert(found_header_col == 1);
+    assert(data_rows == nframes);
+
+    // Verify auto-detect roundtrip with gric-ascii2bin
+    snprintf(cmd, sizeof(cmd),
+             "./gric-ascii2bin %s /tmp/test_rt_memb.bin -type membership -uint32",
+             TMP_TXT_OUT);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    // Also verify -no-index omits sample_idx
+    snprintf(cmd, sizeof(cmd), "./gric-bin2ascii %s %s -no-index", TMP_BIN_OUT, TMP_TXT_OUT);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    f_out = fopen(TMP_TXT_OUT, "r");
     assert(f_out != NULL);
     for (int i = 0; i < nframes; i++)
     {
@@ -173,10 +212,234 @@ static void test_membership_roundtrip(void)
     }
     fclose(f_out);
 
+    remove("/tmp/test_rt_memb.bin");
     remove(TMP_TXT_IN);
     remove(TMP_BIN_OUT);
     remove(TMP_TXT_OUT);
-    printf("  [PASS] Frame membership roundtrip verified.\n");
+    printf("  [PASS] Frame membership roundtrip and indexing verified.\n");
+}
+
+/**
+ * test_bin2ascii_header_option() - Test decoding with explanatory header comments.
+ */
+static void test_bin2ascii_header_option(void)
+{
+    printf("[TEST] Testing gric-bin2ascii with -header option...\n");
+
+    FILE *f_in = fopen(TMP_TXT_IN, "w");
+    assert(f_in != NULL);
+    fprintf(f_in, "1.0 2.0\n");
+    fprintf(f_in, "3.0 4.0\n");
+    fprintf(f_in, "5.0 6.0\n");
+    fclose(f_in);
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd),
+             "./gric-ascii2bin %s %s -type anchors -comment \"Cluster centroids\"",
+             TMP_TXT_IN, TMP_BIN_OUT);
+    int ret = system(cmd);
+    assert(ret == 0);
+
+    snprintf(cmd, sizeof(cmd), "./gric-bin2ascii %s %s -header", TMP_BIN_OUT, TMP_TXT_OUT);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    FILE *f_out = fopen(TMP_TXT_OUT, "r");
+    assert(f_out != NULL);
+    char line[256];
+    int found_header_delim = 0;
+    int found_content_desc = 0;
+    int found_anchor_idx_col = 0;
+    int data_rows = 0;
+
+    while (fgets(line, sizeof(line), f_out) != NULL)
+    {
+        if (strstr(line, "# ========================================================") != NULL)
+        {
+            found_header_delim++;
+        }
+        if (strstr(line, "# Content     : Cluster centroids") != NULL)
+        {
+            found_content_desc = 1;
+        }
+        if (strstr(line, "# Columns     : anchor_idx dim_0 .. dim_1") != NULL)
+        {
+            found_anchor_idx_col = 1;
+        }
+        if (line[0] != '#' && strlen(line) > 1)
+        {
+            int idx = -1;
+            float x = 0.0f, y = 0.0f;
+            assert(sscanf(line, "%d %f %f", &idx, &x, &y) == 3);
+            assert(idx == data_rows);
+            if (data_rows == 0)
+            {
+                assert(fabsf(x - 1.0f) < 1e-5f && fabsf(y - 2.0f) < 1e-5f);
+            }
+            else if (data_rows == 1)
+            {
+                assert(fabsf(x - 3.0f) < 1e-5f && fabsf(y - 4.0f) < 1e-5f);
+            }
+            else if (data_rows == 2)
+            {
+                assert(fabsf(x - 5.0f) < 1e-5f && fabsf(y - 6.0f) < 1e-5f);
+            }
+            data_rows++;
+        }
+    }
+    fclose(f_out);
+
+    assert(found_header_delim >= 2);
+    assert(found_content_desc == 1);
+    assert(found_anchor_idx_col == 1);
+    assert(data_rows == 3);
+
+    // Verify gric-ascii2bin can auto-detect anchor_idx from comments and recreate bin
+    snprintf(cmd, sizeof(cmd),
+             "./gric-ascii2bin %s /tmp/test_rt_header.bin -type anchors",
+             TMP_TXT_OUT);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    FILE *f_rt = fopen("/tmp/test_rt_header.bin", "rb");
+    assert(f_rt != NULL);
+    gric_bin_header_t rt_hdr;
+    char *rt_comment = NULL;
+    assert(gric_bin_read_header(f_rt, &rt_hdr, &rt_comment) == 0);
+    assert(rt_hdr.file_type == GRIC_BIN_TYPE_ANCHORS);
+    assert(rt_hdr.ndim == 2);
+    assert(rt_hdr.dims[0] == 3);
+    assert(rt_hdr.dims[1] == 2);
+    assert(rt_hdr.num_elements == 6);
+    float rt_payload[6];
+    assert(fread(rt_payload, sizeof(float), 6, f_rt) == 6);
+    assert(fabsf(rt_payload[0] - 1.0f) < 1e-5f);
+    assert(fabsf(rt_payload[1] - 2.0f) < 1e-5f);
+    assert(fabsf(rt_payload[2] - 3.0f) < 1e-5f);
+    assert(fabsf(rt_payload[3] - 4.0f) < 1e-5f);
+    assert(fabsf(rt_payload[4] - 5.0f) < 1e-5f);
+    assert(fabsf(rt_payload[5] - 6.0f) < 1e-5f);
+    fclose(f_rt);
+    if (rt_comment != NULL) free(rt_comment);
+
+    // Also verify decoding with -no-index omits index
+    snprintf(cmd, sizeof(cmd),
+             "./gric-bin2ascii /tmp/test_rt_header.bin %s -no-index",
+             TMP_TXT_OUT);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    f_out = fopen(TMP_TXT_OUT, "r");
+    assert(f_out != NULL);
+    float no_idx_x = 0.0f, no_idx_y = 0.0f;
+    assert(fscanf(f_out, "%f %f", &no_idx_x, &no_idx_y) == 2);
+    assert(fabsf(no_idx_x - 1.0f) < 1e-5f && fabsf(no_idx_y - 2.0f) < 1e-5f);
+    fclose(f_out);
+
+    remove(TMP_TXT_IN);
+    remove(TMP_BIN_OUT);
+    remove(TMP_TXT_OUT);
+    remove("/tmp/test_rt_header.bin");
+    printf("  [PASS] Decoded ASCII header generation, anchor_idx, and roundtrip verified.\n");
+}
+
+/**
+ * test_radii_index_roundtrip() - Test cluster radii indexing and auto-detection roundtrip.
+ */
+static void test_radii_index_roundtrip(void)
+{
+    printf("[TEST] Testing cluster_radii indexing, header, and roundtrip...\n");
+
+    const char *bin_path = "/tmp/test_cluster_radii.bin";
+    const char *txt_path = "/tmp/test_cluster_radii.txt";
+    const char *rt_bin_path = "/tmp/test_cluster_radii_rt.bin";
+
+    FILE *f_bin = fopen(bin_path, "wb");
+    assert(f_bin != NULL);
+
+    gric_bin_header_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.file_type = GRIC_BIN_TYPE_GENERIC;
+    hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
+    hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+    hdr.ndim = 1;
+    hdr.dims[0] = 4;
+    hdr.num_elements = 4;
+    hdr.data_bytes = 4 * sizeof(float);
+
+    assert(gric_bin_write_header(f_bin, &hdr, "Cluster max radii") == 0);
+    float radii[4] = {0.25f, 0.35f, 0.45f, 0.55f};
+    assert(fwrite(radii, sizeof(float), 4, f_bin) == 4);
+    fclose(f_bin);
+
+    // Decode with -header (should auto-enable cluster_idx)
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "./gric-bin2ascii %s %s -header", bin_path, txt_path);
+    assert(system(cmd) == 0);
+
+    FILE *f_txt = fopen(txt_path, "r");
+    assert(f_txt != NULL);
+    char line[256];
+    int found_header_col = 0;
+    int data_rows = 0;
+
+    while (fgets(line, sizeof(line), f_txt) != NULL)
+    {
+        if (strstr(line, "# Columns     : cluster_idx radius") != NULL)
+        {
+            found_header_col = 1;
+        }
+        if (line[0] != '#' && strlen(line) > 1)
+        {
+            int idx = -1;
+            float r = 0.0f;
+            assert(sscanf(line, "%d %f", &idx, &r) == 2);
+            assert(idx == data_rows);
+            assert(fabsf(r - radii[data_rows]) < 1e-5f);
+            data_rows++;
+        }
+    }
+    fclose(f_txt);
+
+    assert(found_header_col == 1);
+    assert(data_rows == 4);
+
+    // Roundtrip back to binary (auto-detecting cluster_idx)
+    snprintf(cmd, sizeof(cmd), "./gric-ascii2bin %s %s", txt_path, rt_bin_path);
+    assert(system(cmd) == 0);
+
+    FILE *f_rt = fopen(rt_bin_path, "rb");
+    assert(f_rt != NULL);
+    gric_bin_header_t rt_hdr;
+    char *rt_comment = NULL;
+    assert(gric_bin_read_header(f_rt, &rt_hdr, &rt_comment) == 0);
+    assert(rt_hdr.ndim == 1);
+    assert(rt_hdr.dims[0] == 4);
+    assert(rt_hdr.num_elements == 4);
+    float rt_payload[4];
+    assert(fread(rt_payload, sizeof(float), 4, f_rt) == 4);
+    for (int i = 0; i < 4; i++)
+    {
+        assert(fabsf(rt_payload[i] - radii[i]) < 1e-5f);
+    }
+    fclose(f_rt);
+    if (rt_comment != NULL) free(rt_comment);
+
+    // Verify -no-index omits index
+    snprintf(cmd, sizeof(cmd), "./gric-bin2ascii %s %s -no-index", bin_path, txt_path);
+    assert(system(cmd) == 0);
+
+    f_txt = fopen(txt_path, "r");
+    assert(f_txt != NULL);
+    float no_idx_r = 0.0f;
+    assert(fscanf(f_txt, "%f", &no_idx_r) == 1);
+    assert(fabsf(no_idx_r - radii[0]) < 1e-5f);
+    fclose(f_txt);
+
+    remove(bin_path);
+    remove(txt_path);
+    remove(rt_bin_path);
+    printf("  [PASS] Cluster radii indexing and roundtrip verified.\n");
 }
 
 int main(void)
@@ -185,6 +448,8 @@ int main(void)
     test_coordinates_roundtrip();
     test_dcc_matrix_roundtrip();
     test_membership_roundtrip();
+    test_bin2ascii_header_option();
+    test_radii_index_roundtrip();
     printf("All GRIC Binary <-> ASCII tests passed successfully!\n");
     return 0;
 }
