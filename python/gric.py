@@ -49,6 +49,7 @@ class _GricClusterConfig(ctypes.Structure):
         ("sparse_dcc_extra_evals", ctypes.c_int),
         ("maxcl_strategy", ctypes.c_int),
         ("discard_fraction", ctypes.c_double),
+        ("query_mode", ctypes.c_int),
         ("ncpu", ctypes.c_int),
     ]
 
@@ -113,6 +114,15 @@ class _LibGric:
         self.lib.gric_cluster_reset.restype = ctypes.c_int
         self.lib.gric_cluster_reset.argtypes = [ctypes.c_void_p]
 
+        self.lib.gric_cluster_set_query_mode.restype = ctypes.c_int
+        self.lib.gric_cluster_set_query_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
+        self.lib.gric_cluster_load_anchors.restype = ctypes.c_int64
+        self.lib.gric_cluster_load_anchors.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+
+        self.lib.gric_cluster_get_last_dist.restype = ctypes.c_double
+        self.lib.gric_cluster_get_last_dist.argtypes = [ctypes.c_void_p]
+
         self.lib.gric_cluster_destroy.restype = None
         self.lib.gric_cluster_destroy.argtypes = [ctypes.c_void_p]
 
@@ -163,6 +173,7 @@ class Clusterer:
         use_eq16: bool = False,
         te4_mode: bool = True,
         entropy_mode: bool = False,
+        query_mode: bool = False,
         ncpu: int = 1,
         lib_path: Optional[str] = None,
     ):
@@ -180,6 +191,7 @@ class Clusterer:
         cfg.use_eq16 = 1 if use_eq16 else 0
         cfg.te4_mode = 1 if te4_mode else 0
         cfg.entropy_mode = 1 if entropy_mode else 0
+        cfg.query_mode = 1 if query_mode else 0
         cfg.ncpu = int(ncpu)
 
         self._handle = self._gric.lib.gric_cluster_create(ctypes.byref(cfg), self._ndim)
@@ -233,7 +245,9 @@ class Clusterer:
 
         out_cid = ctypes.c_int64(-1)
         data_ptr = arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-        status = self._gric.lib.gric_cluster_feed_frame(self._handle, data_ptr, ctypes.byref(out_cid))
+        status = self._gric.lib.gric_cluster_feed_frame(
+            self._handle, data_ptr, ctypes.byref(out_cid)
+        )
         if status != 0:
             raise RuntimeError(f"gric_cluster_feed_frame failed with status code {status}")
         return int(out_cid.value)
@@ -348,6 +362,35 @@ class Clusterer:
         status = self._gric.lib.gric_cluster_reset(self._handle)
         if status != 0:
             raise RuntimeError("Failed to reset clusterer")
+
+    def set_query_mode(self, enabled: bool = True):
+        """Enable or disable query/classification mode."""
+        self._check_alive()
+        status = self._gric.lib.gric_cluster_set_query_mode(self._handle, 1 if enabled else 0)
+        if status != 0:
+            raise RuntimeError(f"gric_cluster_set_query_mode failed with status code {status}")
+
+    def load_anchors(self, file_path: str) -> int:
+        """Load pre-computed cluster anchors from a binary (.bin) or ASCII file.
+
+        Returns
+        -------
+        int
+            Number of anchors loaded.
+        """
+        self._check_alive()
+        n_loaded = self._gric.lib.gric_cluster_load_anchors(
+            self._handle, file_path.encode("utf-8")
+        )
+        if n_loaded < 0:
+            raise RuntimeError(f"gric_cluster_load_anchors failed with status code {n_loaded}")
+        return int(n_loaded)
+
+    @property
+    def last_dist(self) -> float:
+        """Distance between the most recently fed sample and its assigned anchor."""
+        self._check_alive()
+        return float(self._gric.lib.gric_cluster_get_last_dist(self._handle))
 
     def _check_alive(self):
         if not hasattr(self, "_handle") or not self._handle:
