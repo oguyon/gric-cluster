@@ -37,6 +37,8 @@
       FPFLAG_DEFAULT_INPUT, "Publish counts stream live") \
     X(".allow_frame_drop", &fps_allow_frame_drop, FPTYPE_ONOFF, 1, \
       FPFLAG_DEFAULT_INPUT, "Drop frames if lagging (1=latest)") \
+    X(".cnt2sync", &fps_cnt2sync, FPTYPE_ONOFF, 1, \
+      FPFLAG_DEFAULT_INPUT, "Enable cnt2 flow-control handshaking") \
     /* Clustering parameters */ \
     X(".rlim", &fps_rlim, FPTYPE_FLOAT64, 1, \
       FPFLAG_DEFAULT_INPUT, "Cluster radius limit threshold") \

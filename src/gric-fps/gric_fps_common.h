@@ -27,6 +27,7 @@ extern char     fps_out_counts_name[FUNCTION_PARAMETER_STRMAXLEN];
 extern int32_t  fps_stream_anchors;
 extern int32_t  fps_stream_counts;
 extern int32_t  fps_allow_frame_drop;
+extern int32_t  fps_cnt2sync;
 extern double   fps_rlim;
 extern double   fps_deltaprob;
 extern uint32_t fps_maxnbclust;

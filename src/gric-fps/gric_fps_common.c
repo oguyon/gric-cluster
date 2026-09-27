@@ -25,6 +25,7 @@ char     fps_out_counts_name[FUNCTION_PARAMETER_STRMAXLEN]  = "";
 int32_t  fps_stream_anchors   = 0;
 int32_t  fps_stream_counts    = 0;
 int32_t  fps_allow_frame_drop = 0;
+int32_t  fps_cnt2sync         = 0;
 double   fps_rlim             = 0.5;
 double   fps_deltaprob        = 0.01;
 uint32_t fps_maxnbclust       = 256;

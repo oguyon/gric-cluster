@@ -382,7 +382,11 @@ int main(
     printf("%s[gric-txt2stream]%s Created stream '%s' (%d x 1 x %d, type: %s)\n",
            ansi_bold_green, ansi_reset, stream_name, dim, buffer_depth,
            use_double ? "DOUBLE" : "FLOAT");
-    if (fps > 0.0)
+    if (cnt2sync)
+    {
+        printf("  Pacing: Consumer flow-control (gated by cnt2 handshaking)\n");
+    }
+    else if (fps > 0.0)
     {
         printf("  Pacing: %.1f FPS (%.2f us/frame)\n", fps, 1000000.0 / fps);
     }

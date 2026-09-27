@@ -210,13 +210,14 @@ if [[ "$AUTO_MODE" -eq 1 ]]; then
     run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.out_name" "${STREAM_OUT}"
     run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.rlim" "${DEFAULT_RLIM}"
     run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.max_frames" "${MAX_FRAMES}"
+    run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.cnt2sync" "ON"
     run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.save_dir" "${SAVE_DIR}"
 
-    # Step 3: Spin up looping feeder stream
-    echo -e "${BOLD}${CYAN}[3/5] Spinning looping feeder stream:${RESET} " \
-            "${STREAM_IN} (${STREAM_FPS} FPS)..."
-    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -fps ${STREAM_FPS} -loop &"
-    "${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -fps "${STREAM_FPS}" -loop &
+    # Step 3: Spin up looping feeder stream (gated by cnt2 flow control)
+    echo -e "${BOLD}${CYAN}[3/5] Spinning feeder stream (flow-controlled by cnt2):${RESET} " \
+            "${STREAM_IN}..."
+    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -cnt2sync -loop &"
+    "${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -cnt2sync -loop &
     FEED_PID=$!
     sleep 0.1
 
@@ -296,7 +297,7 @@ except Exception:
 
     echo -e "\n${BOLD}${GREEN}Clustering completed successfully!${RESET}"
     echo -e "  Clustered samples : ${BOLD}${proc}${RESET} / ${tot} (requested: ${MAX_FRAMES})"
-    echo -e "  (Note: [gric-txt2stream] fed the circular input stream in background)\n"
+    echo -e "  (Feeder was gated via cnt2 flow control at the exact rate of gric-cluster)\n"
 
     # Display final status telemetry
     echo -e "${BOLD}${CYAN}--- Final Status Telemetry ---${RESET}"
@@ -368,9 +369,10 @@ except Exception:
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.out_name ${STREAM_OUT}"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.rlim ${DEFAULT_RLIM}"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.max_frames ${MAX_FRAMES}"
+    log_cmd "${BIN_FPS_SET} ${FPS_NAME}.cnt2sync ON"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.save_dir ${SAVE_DIR}"
-    echo -e "\n# 3. Feed stream into shared memory in background (looping camera feeder):"
-    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -fps ${STREAM_FPS} -loop &"
+    echo -e "\n# 3. Feed stream into shared memory (flow-controlled by consumer cnt2):"
+    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -cnt2sync -loop &"
     echo -e "\n# 4. Launch clustering daemon in tmux session:"
     log_cmd "${BIN_FPSEXEC} -tmux -procinfo -loops ${FPS_NAME}:runstart"
     echo -e "\n# 5. Monitor status (live watch):"
@@ -427,6 +429,7 @@ run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.in_name" "${STREAM_IN}"
 run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.out_name" "${STREAM_OUT}"
 run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.rlim" "${DEFAULT_RLIM}"
 run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.max_frames" "${MAX_FRAMES}"
+run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.cnt2sync" "ON"
 run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.save_dir" "${SAVE_DIR}"
 
 echo -e "\n${BOLD}Active FPS Configuration:${RESET}"
@@ -434,18 +437,13 @@ run_cmd "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:fps"
 echo ""
 
 # Step 3: Feed Input Stream
-echo -e "${BOLD}${CYAN}--- Step 3: Feed ImageStreamIO Ring Buffer ---${RESET}"
-echo -e "Streaming ${GREEN}${PATTERN_FILE}${RESET} to shared memory stream '${STREAM_IN}'."
-read -r -p "Streaming frame rate (FPS) [default: ${STREAM_FPS}]: " user_fps
-if [[ -n "${user_fps}" ]]; then
-    STREAM_FPS="${user_fps}"
-fi
-
-log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -fps ${STREAM_FPS} -loop &"
-"${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -fps "${STREAM_FPS}" -loop &
+echo -e "${BOLD}${CYAN}--- Step 3: Feed ImageStreamIO Ring Buffer (Flow-Controlled) ---${RESET}"
+echo -e "Streaming ${GREEN}${PATTERN_FILE}${RESET} to '${STREAM_IN}' (cnt2 gated)..."
+log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -cnt2sync -loop &"
+"${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -cnt2sync -loop &
 FEED_PID=$!
 sleep 0.3
-echo -e "Feeder started (PID: ${FEED_PID}, stream: ${GREEN}${STREAM_IN}${RESET}).\n"
+echo -e "Feeder started (PID: ${FEED_PID}, stream: ${GREEN}${STREAM_IN}${RESET}, gated by cnt2).\n"
 
 # Step 4: Launch Clustering Daemon
 echo -e "${BOLD}${CYAN}--- Step 4: Launch Clustering Daemon ---${RESET}"
