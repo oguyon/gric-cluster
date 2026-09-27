@@ -2,12 +2,11 @@
 # ==============================================================================
 # scripts/demo_milk_fps_clustering.sh
 #
-# Interactive demonstration of GRIC stream clustering in Milk framework mode:
-# 1. Generates a synthetic dataset (2Dspiral) using gric-mktxtseq.
-# 2. Streams coordinates to ImageStreamIO shared memory using gric-txt2stream.
-# 3. Initializes and configures the FPS instance with procinfo mode enabled.
-# 4. Runs the real-time clustering daemon in an isolated tmux session.
-# 5. Provides an interactive menu to read telemetry, live-tune rlim, and exit.
+# Demonstration of GRIC stream clustering in Milk framework mode:
+# - Auto mode: runs from start to finish, streams a looping dataset, clusters
+#   10,000 samples, displays real-time telemetry, stops cleanly per milk-fpsexec
+#   conventions, and saves results in local directory in GRIC binary format.
+# - Interactive mode: step-by-step setup with interactive control & telemetry.
 # ==============================================================================
 
 set -euo pipefail
@@ -22,19 +21,76 @@ RED="\033[1;31m"
 RESET="\033[0m"
 
 # Default configuration parameters
+AUTO_MODE=0
 FPS_NAME="demo"
 STREAM_IN="demo_in"
 STREAM_OUT="demo_assign"
 PATTERN_FILE="2Dspiral.txt"
 PATTERN_TYPE="2Dspiral"
 NB_POINTS=2000
-STREAM_FPS=100
+STREAM_FPS=""
 DEFAULT_RLIM=0.40
+MAX_FRAMES=10000
+SAVE_DIR="."
 
 FEED_PID=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${ROOT_DIR}/build"
+
+# ------------------------------------------------------------------------------
+# CLI Option Parsing
+# ------------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -a|--auto)
+            AUTO_MODE=1
+            shift
+            ;;
+        --fps)
+            STREAM_FPS="$2"
+            shift 2
+            ;;
+        -n|--frames)
+            MAX_FRAMES="$2"
+            shift 2
+            ;;
+        --rlim)
+            DEFAULT_RLIM="$2"
+            shift 2
+            ;;
+        --save-dir)
+            SAVE_DIR="$2"
+            shift 2
+            ;;
+        --name)
+            FPS_NAME="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [options]"
+            echo "  -a, --auto        Run automatically from start to finish"
+            echo "  -n, --frames <N>  Number of frames to cluster (default: 10000)"
+            echo "  --fps <N>         Streaming frame rate (default: 2000 auto / 100 interactive)"
+            echo "  --rlim <val>      Clustering radius threshold (default: 0.40)"
+            echo "  --save-dir <dir>  Directory to save binary results (default: .)"
+            echo "  --name <fpsname>  FPS instance name (default: demo)"
+            echo "  -h, --help        Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1 (use -h for help)"
+            exit 1
+            ;;
+    esac
+done
+
+if [[ "$AUTO_MODE" -eq 1 ]]; then
+    NB_POINTS="${MAX_FRAMES}"
+    STREAM_FPS="${STREAM_FPS:-2000}"
+else
+    STREAM_FPS="${STREAM_FPS:-100}"
+fi
 
 # ------------------------------------------------------------------------------
 # Resolve Executables (PATH or local build/ directory)
@@ -59,6 +115,7 @@ BIN_FPS_SET="$(resolve_bin milk-fps-set)"
 BIN_STREAM2PIPE="$(resolve_bin gric-stream-to-pipe)"
 BIN_PROCCTRL="$(resolve_bin milk-procCTRL)"
 BIN_GRIC_STATUS="$(resolve_bin gric-status)"
+BIN_BIN2ASCII="$(resolve_bin gric-bin2ascii)"
 
 # ------------------------------------------------------------------------------
 # Cleanup Handler
@@ -67,6 +124,7 @@ cleanup() {
     echo -e "\n${YELLOW}[Cleanup] Stopping processes and freeing shared memory...${RESET}"
     if [[ -n "${BIN_FPSEXEC}" ]]; then
         "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:runstop" >/dev/null 2>&1 || true
+        "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:confstop" >/dev/null 2>&1 || true
     fi
 
     if [[ -n "${FEED_PID}" ]] && kill -0 "${FEED_PID}" 2>/dev/null; then
@@ -76,12 +134,13 @@ cleanup() {
 
     tmux kill-session -t "${FPS_NAME}" 2>/dev/null || true
 
-    # Clean up SHM files created during demo
+    # Clean up SHM streams (preserved binary results on disk are untouched)
     local shm_dirs=("/dev/shm" "${MILK_SHM_DIR:-/milk/shm}")
     for d in "${shm_dirs[@]}"; do
         if [[ -d "$d" ]]; then
             rm -f "${d}/${STREAM_IN}"* "${d}/${STREAM_OUT}"* \
-                  "${d}/fps.${FPS_NAME}"* "${d}/proc.${FPS_NAME}"* 2>/dev/null || true
+                  "${d}/fps.${FPS_NAME}"* "${d}/proc.${FPS_NAME}"* \
+                  "${d}/${FPS_NAME}."* 2>/dev/null || true
         fi
     done
     echo -e "${GREEN}[Cleanup] Done.${RESET}"
@@ -111,11 +170,125 @@ check_dep "milk-fpsexec-gric-cluster" "${BIN_FPSEXEC}"
 check_dep "milk-fps-set" "${BIN_FPS_SET}"
 check_dep "gric-stream-to-pipe" "${BIN_STREAM2PIPE}"
 check_dep "gric-status" "${BIN_GRIC_STATUS}"
+check_dep "gric-bin2ascii" "${BIN_BIN2ASCII}"
 echo ""
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# AUTO MODE EXECUTION
+# ==============================================================================
+if [[ "$AUTO_MODE" -eq 1 ]]; then
+    echo -e "${BOLD}${MAGENTA}>>> Running in AUTO MODE (${MAX_FRAMES} samples) <<<${RESET}\n"
+
+    # Step 1: Generate dataset
+    echo -e "${BOLD}${CYAN}[1/5] Generating dataset:${RESET} ${PATTERN_FILE} (${NB_POINTS} pts)..."
+    "${BIN_MKTXTSEQ}" "${NB_POINTS}" "${PATTERN_FILE}" "${PATTERN_TYPE}"
+
+    # Step 2: Spin up looping feeder stream
+    echo -e "${BOLD}${CYAN}[2/5] Spinning looping feeder stream:${RESET} " \
+            "${STREAM_IN} (${STREAM_FPS} FPS)..."
+    "${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -fps "${STREAM_FPS}" -loop &
+    FEED_PID=$!
+    sleep 0.3
+
+    # Step 3: Initialize & configure FPS daemon
+    echo -e "${BOLD}${CYAN}[3/5] Initializing FPS daemon in procinfo mode:${RESET} ${FPS_NAME}..."
+    "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:fpsinit"
+    "${BIN_FPS_SET}" "${FPS_NAME}.in_name" "${STREAM_IN}"
+    "${BIN_FPS_SET}" "${FPS_NAME}.out_name" "${STREAM_OUT}"
+    "${BIN_FPS_SET}" "${FPS_NAME}.rlim" "${DEFAULT_RLIM}"
+    "${BIN_FPS_SET}" "${FPS_NAME}.max_frames" "${MAX_FRAMES}"
+    "${BIN_FPS_SET}" "${FPS_NAME}.save_dir" "${SAVE_DIR}"
+
+    # Step 4: Launch clustering daemon in tmux
+    echo -e "${BOLD}${CYAN}[4/5] Launching daemon in tmux session '${FPS_NAME}'...${RESET}"
+    "${BIN_FPSEXEC}" -tmux -procinfo -loops "${FPS_NAME}:runstart"
+    sleep 0.5
+
+    # Step 5: Real-time telemetry status display loop
+    echo -e "${BOLD}${CYAN}[5/5] Real-time clustering status:${RESET}\n"
+    SHM_FILE=""
+
+    while true; do
+        if [[ -z "${SHM_FILE}" || ! -f "${SHM_FILE}" ]]; then
+            for cand in "${MILK_SHM_DIR:-/milk/shm}/fps.${FPS_NAME}.status.shm" \
+                        "/dev/shm/fps.${FPS_NAME}.status.shm" \
+                        "/tmp/fps.${FPS_NAME}.status.shm"; do
+                if [[ -f "$cand" ]]; then
+                    SHM_FILE="$cand"
+                    break
+                fi
+            done
+        fi
+
+        if [[ -n "${SHM_FILE}" && -f "${SHM_FILE}" ]]; then
+            read -r proc tot nclust ms state < <(python3 -c '
+import struct, sys
+try:
+    with open(sys.argv[1], "rb") as f:
+        data = f.read(128)
+        magic, ver, pid, state = struct.unpack_from("4I", data, 0)
+        tot, proc = struct.unpack_from("2Q", data, 16)
+        nclust = struct.unpack_from("I", data, 32)[0]
+        ms = struct.unpack_from("d", data, 72)[0]
+        print(f"{proc} {tot} {nclust} {ms:.1f} {state}")
+except Exception:
+    print("0 0 0 0.0 0")
+' "${SHM_FILE}" 2>/dev/null || echo "0 0 0 0.0 0")
+
+            if [[ "$tot" -gt 0 ]]; then
+                pct=$(( (proc * 100) / tot ))
+                rate=0
+                if (( $(echo "$ms > 0" | bc -l 2>/dev/null || echo 0) )); then
+                    rate=$(python3 -c \
+                        "print(int(${proc} / (${ms} / 1000.0)))" 2>/dev/null || echo 0)
+                fi
+                sec=$(python3 -c "print(f'{${ms}/1000.0:.2f}')" 2>/dev/null || echo "0.00")
+                st_label="RUNNING"
+                [[ "$state" -eq 2 ]] && st_label="SUCCESS"
+                [[ "$state" -eq 3 ]] && st_label="ERROR"
+
+                fmt="\r${BOLD}${CYAN}[%s]${RESET} %-7s | "
+                fmt+="Frames: ${BOLD}%'d / %'d${RESET} (%2d%%) | "
+                fmt+="Clusters: ${YELLOW}%'d${RESET} | Rate: %'d FPS | Time: %ss "
+                printf "$fmt" \
+                       "${FPS_NAME}" "${st_label}" "$proc" "$tot" "$pct" "$nclust" "$rate" "$sec"
+            fi
+
+            if [[ "$state" -ge 2 ]] || { [[ "$tot" -gt 0 ]] && [[ "$proc" -ge "$tot" ]]; }; then
+                break
+            fi
+        fi
+        sleep 0.1
+    done
+
+    echo -e "\n\n${BOLD}${GREEN}Clustering completed successfully!${RESET}\n"
+
+    # Display final status telemetry
+    if [[ -n "${BIN_GRIC_STATUS}" ]]; then
+        "${BIN_GRIC_STATUS}" "${FPS_NAME}" || true
+    fi
+
+    # Display saved binary results
+    echo -e "\n${BOLD}${CYAN}--- Saved Binary Clustering Results ---${RESET}"
+    echo -e "Artifacts in ${GREEN}${SAVE_DIR}${RESET}:"
+    ls -lh "${SAVE_DIR}"/anchors.bin "${SAVE_DIR}"/dcc.bin \
+           "${SAVE_DIR}"/cluster_counts.bin "${SAVE_DIR}"/cluster_radii.bin 2>/dev/null || true
+    echo ""
+
+    if [[ -f "${SAVE_DIR}/anchors.bin" ]]; then
+        echo -e "${BOLD}Anchors Binary Header Inspection:${RESET}"
+        "${BIN_BIN2ASCII}" -i "${SAVE_DIR}/anchors.bin"
+    fi
+
+    echo -e "\n${GREEN}Auto mode completed. Cleaning up processes and shared memory...${RESET}"
+    exit 0
+fi
+
+# ==============================================================================
+# INTERACTIVE MODE EXECUTION
+# ==============================================================================
+
 # Step 1: Generate Pattern Dataset
-# ------------------------------------------------------------------------------
 echo -e "${BOLD}${CYAN}--- Step 1: Generate Synthetic Pattern ---${RESET}"
 echo -e "Default pattern: ${GREEN}${PATTERN_TYPE}${RESET} (${NB_POINTS} points)"
 read -r -p "Enter number of points [default: ${NB_POINTS}]: " user_pts
@@ -129,9 +302,7 @@ echo -e "Sample data (first 3 points):"
 head -n 3 "${PATTERN_FILE}"
 echo ""
 
-# ------------------------------------------------------------------------------
 # Step 2: Feed Input Stream
-# ------------------------------------------------------------------------------
 echo -e "${BOLD}${CYAN}--- Step 2: Feed ImageStreamIO Ring Buffer ---${RESET}"
 echo -e "Streaming ${GREEN}${PATTERN_FILE}${RESET} to shared memory stream '${STREAM_IN}'."
 read -r -p "Streaming frame rate (FPS) [default: ${STREAM_FPS}]: " user_fps
@@ -144,9 +315,7 @@ FEED_PID=$!
 sleep 0.5
 echo -e "Feeder started (PID: ${FEED_PID}, stream: ${GREEN}${STREAM_IN}${RESET}).\n"
 
-# ------------------------------------------------------------------------------
 # Step 3: Initialize & Configure FPS Instance
-# ------------------------------------------------------------------------------
 echo -e "${BOLD}${CYAN}--- Step 3: Initialize FPS in Procinfo Mode ---${RESET}"
 echo -e "Executing: ${GREEN}${BIN_FPSEXEC} -procinfo ${FPS_NAME}:fpsinit${RESET}"
 "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:fpsinit"
@@ -155,14 +324,14 @@ echo -e "Binding parameters via ${GREEN}milk-fps-set${RESET}:"
 "${BIN_FPS_SET}" "${FPS_NAME}.in_name" "${STREAM_IN}"
 "${BIN_FPS_SET}" "${FPS_NAME}.out_name" "${STREAM_OUT}"
 "${BIN_FPS_SET}" "${FPS_NAME}.rlim" "${DEFAULT_RLIM}"
+"${BIN_FPS_SET}" "${FPS_NAME}.max_frames" "${MAX_FRAMES}"
+"${BIN_FPS_SET}" "${FPS_NAME}.save_dir" "${SAVE_DIR}"
 
 echo -e "\n${BOLD}Active FPS Configuration:${RESET}"
 "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:fps"
 echo ""
 
-# ------------------------------------------------------------------------------
 # Step 4: Launch Clustering Daemon
-# ------------------------------------------------------------------------------
 echo -e "${BOLD}${CYAN}--- Step 4: Launch Clustering Daemon ---${RESET}"
 echo -e "Starting daemon in isolated tmux session with semaphore triggering..."
 "${BIN_FPSEXEC}" -tmux -procinfo -loops "${FPS_NAME}:runstart"
@@ -174,9 +343,7 @@ else
     echo -e "${RED}Warning: tmux session '${FPS_NAME}' not found.${RESET}\n"
 fi
 
-# ------------------------------------------------------------------------------
 # Step 5: Interactive Control & Telemetry Loop
-# ------------------------------------------------------------------------------
 print_menu() {
     echo -e "${BOLD}${CYAN}=== Interactive Control Menu ===${RESET}"
     echo "  [1] Sample live clustering output (5 frames)"
@@ -214,7 +381,7 @@ while true; do
         2)
             echo -e "\n${BOLD}${CYAN}--- Live FPS Status Parameters (${FPS_NAME}:fps) ---${RESET}"
             "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:fps" | \
-                grep -E "status\.|rlim|in_name|out_name|max_frames" || true
+                grep -E "status\.|rlim|in_name|out_name|max_frames|save_dir" || true
             echo ""
             ;;
         3)

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
+#include <unistd.h>
 
 int main(void)
 {
@@ -77,6 +78,28 @@ int main(void)
     assert(stats.num_clusters == 2);
     assert(stats.num_new_clusters >= 1);
     assert(stats.framedist_calls > 0);
+
+    // Test binary results export
+    status = gric_cluster_save_results(ctx, "/tmp/test_libgric_results");
+    assert(status == GRIC_SUCCESS);
+    FILE *test_fp = fopen("/tmp/test_libgric_results/anchors.bin", "rb");
+    assert(test_fp != NULL);
+    fclose(test_fp);
+    test_fp = fopen("/tmp/test_libgric_results/dcc.bin", "rb");
+    assert(test_fp != NULL);
+    fclose(test_fp);
+    test_fp = fopen("/tmp/test_libgric_results/cluster_counts.bin", "rb");
+    assert(test_fp != NULL);
+    fclose(test_fp);
+    test_fp = fopen("/tmp/test_libgric_results/cluster_radii.bin", "rb");
+    assert(test_fp != NULL);
+    fclose(test_fp);
+
+    unlink("/tmp/test_libgric_results/anchors.bin");
+    unlink("/tmp/test_libgric_results/dcc.bin");
+    unlink("/tmp/test_libgric_results/cluster_counts.bin");
+    unlink("/tmp/test_libgric_results/cluster_radii.bin");
+    rmdir("/tmp/test_libgric_results");
 
     gric_cluster_destroy(ctx);
     printf("libgric C API test passed successfully.\n");

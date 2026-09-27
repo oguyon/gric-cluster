@@ -173,6 +173,10 @@ static errno_t compute_function(void)
     gric_fps_status_close(0);
     gric_fps_close_output_streams(&out_assign, &out_anchors, &out_counts);
     ImageStreamIO_closeIm(&in_img);
+    if (fps_save_dir[0] != '\0')
+    {
+        gric_fps_save_results(fps_save_dir);
+    }
     gric_fps_cleanup_engine();
 
     return RETURN_SUCCESS;

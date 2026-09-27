@@ -10,12 +10,14 @@
 #include "framedistance.h"
 #include "cluster_math.h"
 #include "cluster_bounds.h"
+#include "gric_bin_io.h"
 
 #include <math.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #define DEFAULT_MAX_CLUSTERS 256
 #define DEFAULT_MAX_FRAMES   100000
@@ -593,6 +595,184 @@ gric_status_t gric_cluster_get_stats(
     stats->memo_lookups = t->memo_lookups;
     stats->memo_cache_entries = t->memo_cache_entries;
     stats->memo_cache_capacity = t->memo_cache_capacity;
+
+    return GRIC_SUCCESS;
+}
+
+/**
+ * gric_cluster_save_results() - Export clustering results to disk in GRIC binary format.
+ * @ctx:     Active clustering handle.
+ * @out_dir: Destination directory path (must exist or will be created).
+ *
+ * Return: GRIC_SUCCESS on success, or negative error code on failure.
+ */
+gric_status_t gric_cluster_save_results(
+    const gric_cluster_t *ctx,
+    const char           *out_dir)
+{
+    if (ctx == NULL)
+    {
+        return GRIC_ERR_INVALID_PARAM;
+    }
+
+    const char *target_dir = (out_dir != NULL && out_dir[0] != '\0') ? out_dir : ".";
+
+    /* Ensure destination directory exists */
+    struct stat st;
+    if (stat(target_dir, &st) == -1)
+    {
+        if (mkdir(target_dir, 0777) != 0)
+        {
+            return GRIC_ERR_GENERIC;
+        }
+    }
+
+    const ClusterState  *state = &ctx->state;
+    const ClusterConfig *config = &ctx->config;
+    int                  k = state->num_clusters;
+    size_t               ndim = ctx->ndim;
+
+    if (k <= 0)
+    {
+        return GRIC_SUCCESS;
+    }
+
+    char path[1024];
+
+    /* 1. Export anchors.bin (Centroids matrix [K x ndim]) */
+    snprintf(path, sizeof(path), "%s/anchors.bin", target_dir);
+    FILE *fp = fopen(path, "wb");
+    if (fp != NULL)
+    {
+        gric_bin_header_t hdr;
+        memset(&hdr, 0, sizeof(hdr));
+        hdr.file_type = GRIC_BIN_TYPE_ANCHORS;
+        hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+        hdr.ndim = (ndim > 1) ? 2 : 1;
+        hdr.dims[0] = (uint64_t)k;
+        hdr.dims[1] = (uint64_t)ndim;
+        hdr.num_elements = (uint64_t)k * (uint64_t)ndim;
+
+        if (config->algo.use_double)
+        {
+            hdr.data_type = GRIC_BIN_DTYPE_FLOAT64;
+            hdr.data_bytes = hdr.num_elements * sizeof(double);
+            if (gric_bin_write_header(fp, &hdr, "Cluster centroids") == 0)
+            {
+                for (int i = 0; i < k; i++)
+                {
+                    fwrite(state->clusters[i].anchor.data, sizeof(double), ndim, fp);
+                }
+            }
+        }
+        else
+        {
+            hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
+            hdr.data_bytes = hdr.num_elements * sizeof(float);
+            if (gric_bin_write_header(fp, &hdr, "Cluster centroids") == 0)
+            {
+                if (state->anchor_matrix_float != NULL)
+                {
+                    fwrite(state->anchor_matrix_float, sizeof(float), hdr.num_elements, fp);
+                }
+                else
+                {
+                    for (int i = 0; i < k; i++)
+                    {
+                        fwrite(state->clusters[i].anchor.data, sizeof(float), ndim, fp);
+                    }
+                }
+            }
+        }
+        fclose(fp);
+    }
+
+    /* 2. Export dcc.bin (Pairwise inter-cluster distance matrix [K x K]) */
+    snprintf(path, sizeof(path), "%s/dcc.bin", target_dir);
+    fp = fopen(path, "wb");
+    if (fp != NULL)
+    {
+        gric_bin_header_t hdr;
+        memset(&hdr, 0, sizeof(hdr));
+        hdr.file_type = GRIC_BIN_TYPE_DCC;
+        hdr.data_type = GRIC_BIN_DTYPE_FLOAT64;
+        hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR | GRIC_BIN_FLAG_SYMMETRIC;
+        hdr.ndim = 2;
+        hdr.dims[0] = (uint64_t)k;
+        hdr.dims[1] = (uint64_t)k;
+        hdr.num_elements = (uint64_t)k * (uint64_t)k;
+        hdr.data_bytes = hdr.num_elements * sizeof(double);
+
+        if (gric_bin_write_header(fp, &hdr, "Pairwise DCC matrix") == 0)
+        {
+            int maxnbc = config->algo.maxnbclust;
+            for (int i = 0; i < k; i++)
+            {
+                for (int j = 0; j < k; j++)
+                {
+                    double d = (state->scratch.dcc_min != NULL)
+                                   ? state->scratch.dcc_min[i * maxnbc + j]
+                                   : 0.0;
+                    fwrite(&d, sizeof(double), 1, fp);
+                }
+            }
+        }
+        fclose(fp);
+    }
+
+    /* 3. Export cluster_counts.bin (Member counts [K]) */
+    snprintf(path, sizeof(path), "%s/cluster_counts.bin", target_dir);
+    fp = fopen(path, "wb");
+    if (fp != NULL)
+    {
+        gric_bin_header_t hdr;
+        memset(&hdr, 0, sizeof(hdr));
+        hdr.file_type = GRIC_BIN_TYPE_COUNTS;
+        hdr.data_type = GRIC_BIN_DTYPE_UINT32;
+        hdr.flags = 0;
+        hdr.ndim = 1;
+        hdr.dims[0] = (uint64_t)k;
+        hdr.num_elements = (uint64_t)k;
+        hdr.data_bytes = hdr.num_elements * sizeof(uint32_t);
+
+        if (gric_bin_write_header(fp, &hdr, "Cluster member counts") == 0)
+        {
+            for (int i = 0; i < k; i++)
+            {
+                uint32_t cnt = (state->cluster_visitors != NULL)
+                                   ? (uint32_t)state->cluster_visitors[i].count
+                                   : 0;
+                fwrite(&cnt, sizeof(uint32_t), 1, fp);
+            }
+        }
+        fclose(fp);
+    }
+
+    /* 4. Export cluster_radii.bin (Maximum cluster radii [K]) */
+    snprintf(path, sizeof(path), "%s/cluster_radii.bin", target_dir);
+    fp = fopen(path, "wb");
+    if (fp != NULL)
+    {
+        gric_bin_header_t hdr;
+        memset(&hdr, 0, sizeof(hdr));
+        hdr.file_type = GRIC_BIN_TYPE_GENERIC;
+        hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
+        hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+        hdr.ndim = 1;
+        hdr.dims[0] = (uint64_t)k;
+        hdr.num_elements = (uint64_t)k;
+        hdr.data_bytes = hdr.num_elements * sizeof(float);
+
+        if (gric_bin_write_header(fp, &hdr, "Cluster max radii") == 0)
+        {
+            for (int i = 0; i < k; i++)
+            {
+                float r = (float)config->algo.rlim;
+                fwrite(&r, sizeof(float), 1, fp);
+            }
+        }
+        fclose(fp);
+    }
 
     return GRIC_SUCCESS;
 }

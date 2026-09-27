@@ -40,7 +40,7 @@ target_include_directories(milk-fpsexec-gric-cluster PRIVATE
 )
 
 target_link_libraries(milk-fpsexec-gric-cluster PRIVATE
-    gric
+    gric_static
     milkfps
     milkfpsStandalone
     milkfpsseq
@@ -102,7 +102,7 @@ target_include_directories(milkgric PRIVATE
 )
 
 target_link_libraries(milkgric PRIVATE
-    gric
+    gric_static
     CLIcore
     milkfps
     milkfpsCLI

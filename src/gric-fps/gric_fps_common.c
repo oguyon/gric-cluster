@@ -46,6 +46,7 @@ double   fps_status_fps                                = 0.0;
 int64_t  fps_status_stream_lag                         = 0;
 double   fps_status_memory_rss_mb                      = 0.0;
 char     fps_shm_status_file[FUNCTION_PARAMETER_STRMAXLEN] = "";
+char     fps_save_dir[FUNCTION_PARAMETER_STRMAXLEN]        = "";
 
 static GricClusterShmStatus *status_shm_ptr        = NULL;
 static char                  active_shm_path[PATH_MAX] = "";
@@ -161,6 +162,22 @@ void gric_fps_cleanup_engine(void)
     }
     current_ndim = 0;
     prev_cluster_count = 0;
+}
+
+/**
+ * gric_fps_save_results() - Export clustering results to disk in GRIC binary format.
+ * @out_dir: Destination output directory path.
+ *
+ * Return: 0 on success, non-zero on error.
+ */
+errno_t gric_fps_save_results(
+    const char *out_dir)
+{
+    if (cluster_ctx == NULL || out_dir == NULL || out_dir[0] == '\0')
+    {
+        return 1;
+    }
+    return (gric_cluster_save_results(cluster_ctx, out_dir) == GRIC_SUCCESS) ? 0 : 1;
 }
 
 /**
