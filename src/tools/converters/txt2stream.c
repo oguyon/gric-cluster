@@ -478,6 +478,11 @@ int main(
             write_slice = (write_slice + 1) % buffer_depth;
             total_streamed++;
 
+            if (max_frames > 0 && total_streamed >= max_frames)
+            {
+                break;
+            }
+
             if (verbose && (total_streamed % 1000 == 0))
             {
                 printf("\rStreamed: %ld frames", total_streamed);
