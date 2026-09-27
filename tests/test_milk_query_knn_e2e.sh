@@ -38,6 +38,10 @@ elif [ -x "/usr/local/milk/bin/milk" ]; then
 elif [ -x "/home/oguyon/src/milk/_build/milk-cli" ]; then
     MILK_CLI="/home/oguyon/src/milk/_build/milk-cli"
 fi
+if [ -z "$MILK_CLI" ]; then
+    MILK_CLI="$(find /usr/local /usr -name "milk" -type f -perm -111 2>/dev/null | \
+        grep -E '/bin/milk$' | head -n 1 || true)"
+fi
 
 # Locate milk-fps-set
 MILK_FPS_SET=""
@@ -47,6 +51,10 @@ elif [ -x "/usr/local/bin/milk-fps-set" ]; then
     MILK_FPS_SET="/usr/local/bin/milk-fps-set"
 elif [ -x "/usr/local/milk/bin/milk-fps-set" ]; then
     MILK_FPS_SET="/usr/local/milk/bin/milk-fps-set"
+fi
+if [ -z "$MILK_FPS_SET" ]; then
+    MILK_FPS_SET="$(find /usr/local /usr -name "milk-fps-set" -type f -perm -111 2>/dev/null | \
+        head -n 1 || true)"
 fi
 
 echo "======================================================================"
@@ -61,11 +69,30 @@ for bin in "$FPS_CLUSTER" "$FPS_KNN" "$MILK_SO" "$GRIC_CLUSTER" "$GRIC_KNN" "$GR
     fi
 done
 
+check_stream_exists() {
+    local stream="$1"
+    for dir in "${MILK_SHM_DIR:-}" "/milk/shm" "/dev/shm" "/tmp"; do
+        if [ -n "$dir" ] && [ -f "$dir/${stream}.im.shm" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+clean_e2e_shm() {
+    local prefix="$1"
+    for dir in "${MILK_SHM_DIR:-}" "/milk/shm" "/dev/shm" "/tmp"; do
+        if [ -n "$dir" ] && [ -d "$dir" ]; then
+            rm -f "$dir/${prefix}"*.im.shm 2>/dev/null || true
+        fi
+    done
+}
+
 TMPDIR="$(mktemp -d /tmp/gric_milk_e2e_XXXXXX)"
 cleanup() {
     pkill -f "milk-fpsexec-gric" 2>/dev/null || true
     rm -rf "$TMPDIR"
-    rm -f /milk/shm/e2e_* /dev/shm/e2e_* 2>/dev/null || true
+    clean_e2e_shm "e2e_"
 }
 trap cleanup EXIT
 
@@ -97,30 +124,30 @@ echo "[Setup] Baseline model generated successfully."
 echo "----------------------------------------------------------------------"
 echo "[Test 1] Standalone milk-fpsexec-gric-cluster (Query Mode)"
 echo "----------------------------------------------------------------------"
-rm -f /milk/shm/e2e_st_q_* /dev/shm/e2e_st_q_* 2>/dev/null || true
+clean_e2e_shm "e2e_st_q_"
 
-"$FPS_CLUSTER" fpsinit >/dev/null 2>&1
+"$FPS_CLUSTER" fpsinit
 if [ -n "$MILK_FPS_SET" ]; then
-    "$MILK_FPS_SET" gric_cluster.in_name e2e_st_q_in >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_cluster.out_name e2e_st_q_out >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_cluster.out_anchors e2e_st_q_anc >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_cluster.out_counts e2e_st_q_cnt >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_cluster.query_mode 1 >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_cluster.load_anchors "$TMPDIR/clusterdat/anchors.bin" >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_cluster.max_frames 40 >/dev/null 2>&1
+    "$MILK_FPS_SET" gric_cluster.in_name e2e_st_q_in
+    "$MILK_FPS_SET" gric_cluster.out_name e2e_st_q_out
+    "$MILK_FPS_SET" gric_cluster.out_anchors e2e_st_q_anc
+    "$MILK_FPS_SET" gric_cluster.out_counts e2e_st_q_cnt
+    "$MILK_FPS_SET" gric_cluster.query_mode 1
+    "$MILK_FPS_SET" gric_cluster.load_anchors "$TMPDIR/clusterdat/anchors.bin"
+    "$MILK_FPS_SET" gric_cluster.max_frames 40
 fi
 
 "$GRIC_TXT2STREAM" "$ROOT_DIR/tests/test_strat.txt" e2e_st_q_in -fps 500 -loop >/dev/null 2>&1 &
 P1_PID=$!
 sleep 0.3
 
-"$FPS_CLUSTER" -loops runstart >/dev/null 2>&1
+"$FPS_CLUSTER" -loops runstart
 sleep 0.5
 
 kill -9 "$P1_PID" 2>/dev/null || true
 wait "$P1_PID" 2>/dev/null || true
 
-if [ ! -f "/milk/shm/e2e_st_q_out.im.shm" ] && [ ! -f "/dev/shm/e2e_st_q_out.im.shm" ]; then
+if ! check_stream_exists "e2e_st_q_out"; then
     echo "Error: Test 1 output stream e2e_st_q_out not found in shm"
     exit 1
 fi
@@ -132,16 +159,16 @@ echo "[Test 1] PASSED: Standalone query-mode clustering processed frames cleanly
 echo "----------------------------------------------------------------------"
 echo "[Test 2] Standalone milk-fpsexec-gric-knn (Streaming k-NN)"
 echo "----------------------------------------------------------------------"
-rm -f /milk/shm/e2e_st_knn_* /dev/shm/e2e_st_knn_* 2>/dev/null || true
+clean_e2e_shm "e2e_st_knn_"
 
-"$FPS_KNN" fpsinit >/dev/null 2>&1
+"$FPS_KNN" fpsinit
 if [ -n "$MILK_FPS_SET" ]; then
-    "$MILK_FPS_SET" gric_knn.in_name e2e_st_knn_in >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_knn.out_name e2e_st_knn_out >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_knn.cluster_dir "$TMPDIR/clusterdat" >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_knn.ref_data "$ROOT_DIR/tests/test_strat.txt" >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_knn.k 5 >/dev/null 2>&1
-    "$MILK_FPS_SET" gric_knn.max_frames 40 >/dev/null 2>&1
+    "$MILK_FPS_SET" gric_knn.in_name e2e_st_knn_in
+    "$MILK_FPS_SET" gric_knn.out_name e2e_st_knn_out
+    "$MILK_FPS_SET" gric_knn.cluster_dir "$TMPDIR/clusterdat"
+    "$MILK_FPS_SET" gric_knn.ref_data "$ROOT_DIR/tests/test_strat.txt"
+    "$MILK_FPS_SET" gric_knn.k 5
+    "$MILK_FPS_SET" gric_knn.max_frames 40
 fi
 
 "$GRIC_TXT2STREAM" "$ROOT_DIR/tests/test_strat.txt" e2e_st_knn_in \
@@ -149,13 +176,13 @@ fi
 P2_PID=$!
 sleep 0.3
 
-"$FPS_KNN" -loops runstart >/dev/null 2>&1
+"$FPS_KNN" -loops runstart
 sleep 0.5
 
 kill -9 "$P2_PID" 2>/dev/null || true
 wait "$P2_PID" 2>/dev/null || true
 
-if [ ! -f "/milk/shm/e2e_st_knn_out.im.shm" ] && [ ! -f "/dev/shm/e2e_st_knn_out.im.shm" ]; then
+if ! check_stream_exists "e2e_st_knn_out"; then
     echo "Error: Test 2 output stream e2e_st_knn_out not found in shm"
     exit 1
 fi
@@ -168,7 +195,7 @@ if [ -n "$MILK_CLI" ] && [ -x "$MILK_CLI" ]; then
     echo "----------------------------------------------------------------------"
     echo "[Test 3] Milk CLI Module: gric.gric_cluster (Query Mode)"
     echo "----------------------------------------------------------------------"
-    rm -f /milk/shm/e2e_cli_q_* /dev/shm/e2e_cli_q_* 2>/dev/null || true
+    clean_e2e_shm "e2e_cli_q_"
 
     "$GRIC_TXT2STREAM" "$ROOT_DIR/tests/test_strat.txt" e2e_cli_q_in \
         -fps 500 -loop >/dev/null 2>&1 &
@@ -192,8 +219,7 @@ EOF
     kill -9 "$P3_PID" 2>/dev/null || true
     wait "$P3_PID" 2>/dev/null || true
 
-    if [ ! -f "/milk/shm/e2e_cli_q_out.im.shm" ] && \
-       [ ! -f "/dev/shm/e2e_cli_q_out.im.shm" ]; then
+    if ! check_stream_exists "e2e_cli_q_out"; then
         echo "Error: Test 3 output stream e2e_cli_q_out not found in shm"
         exit 1
     fi
@@ -202,7 +228,7 @@ EOF
     echo "----------------------------------------------------------------------"
     echo "[Test 4] Milk CLI Module: gric.gric_knn (Streaming k-NN)"
     echo "----------------------------------------------------------------------"
-    rm -f /milk/shm/e2e_cli_knn_* /dev/shm/e2e_cli_knn_* 2>/dev/null || true
+    clean_e2e_shm "e2e_cli_knn_"
 
     "$GRIC_TXT2STREAM" "$ROOT_DIR/tests/test_strat.txt" e2e_cli_knn_in \
         -fps 500 -loop >/dev/null 2>&1 &
@@ -225,8 +251,7 @@ EOF
     kill -9 "$P4_PID" 2>/dev/null || true
     wait "$P4_PID" 2>/dev/null || true
 
-    if [ ! -f "/milk/shm/e2e_cli_knn_out.im.shm" ] && \
-       [ ! -f "/dev/shm/e2e_cli_knn_out.im.shm" ]; then
+    if ! check_stream_exists "e2e_cli_knn_out"; then
         echo "Error: Test 4 output stream e2e_cli_knn_out not found in shm"
         exit 1
     fi
