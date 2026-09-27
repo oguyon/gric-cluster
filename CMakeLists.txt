@@ -904,7 +904,7 @@ endif()
 
 if (ENABLE_MILK AND MILK_FOUND)
     add_test(NAME test_milk_query_knn_e2e
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_milk_query_knn_e2e.sh
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_milk_query_knn_e2e.sh ${CMAKE_BINARY_DIR}
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(test_milk_query_knn_e2e PROPERTIES
         DEPENDS "milk-fpsexec-gric-cluster;milk-fpsexec-gric-knn;milkgric;gric-cluster;gric-knn;gric-txt2stream")

@@ -9,7 +9,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build}"
+BUILD_DIR="${1:-${BUILD_DIR:-$PWD}}"
+if [ ! -f "$BUILD_DIR/src/gric-fps/milk-fpsexec-gric-cluster" ]; then
+    if [ -f "$PWD/src/gric-fps/milk-fpsexec-gric-cluster" ]; then
+        BUILD_DIR="$PWD"
+    elif [ -f "$ROOT_DIR/build/src/gric-fps/milk-fpsexec-gric-cluster" ]; then
+        BUILD_DIR="$ROOT_DIR/build"
+    elif [ -f "$ROOT_DIR/build-milk/src/gric-fps/milk-fpsexec-gric-cluster" ]; then
+        BUILD_DIR="$ROOT_DIR/build-milk"
+    fi
+fi
 
 FPS_CLUSTER="$BUILD_DIR/src/gric-fps/milk-fpsexec-gric-cluster"
 FPS_KNN="$BUILD_DIR/src/gric-fps/milk-fpsexec-gric-knn"
@@ -22,6 +31,10 @@ GRIC_TXT2STREAM="$BUILD_DIR/gric-txt2stream"
 MILK_CLI=""
 if command -v milk >/dev/null 2>&1; then
     MILK_CLI="$(command -v milk)"
+elif [ -x "/usr/local/bin/milk" ]; then
+    MILK_CLI="/usr/local/bin/milk"
+elif [ -x "/usr/local/milk/bin/milk" ]; then
+    MILK_CLI="/usr/local/milk/bin/milk"
 elif [ -x "/home/oguyon/src/milk/_build/milk-cli" ]; then
     MILK_CLI="/home/oguyon/src/milk/_build/milk-cli"
 fi
@@ -30,6 +43,8 @@ fi
 MILK_FPS_SET=""
 if command -v milk-fps-set >/dev/null 2>&1; then
     MILK_FPS_SET="$(command -v milk-fps-set)"
+elif [ -x "/usr/local/bin/milk-fps-set" ]; then
+    MILK_FPS_SET="/usr/local/bin/milk-fps-set"
 elif [ -x "/usr/local/milk/bin/milk-fps-set" ]; then
     MILK_FPS_SET="/usr/local/milk/bin/milk-fps-set"
 fi
