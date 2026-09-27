@@ -91,6 +91,7 @@ if [[ "$AUTO_MODE" -eq 1 ]]; then
 else
     STREAM_FPS="${STREAM_FPS:-100}"
 fi
+RUN_ELAPSED_MS="0"
 
 # ------------------------------------------------------------------------------
 # Resolve Executables (PATH or local build/ directory)
@@ -130,10 +131,218 @@ run_cmd() {
 }
 
 # ------------------------------------------------------------------------------
+# Final Results and Output Files Summary
+# ------------------------------------------------------------------------------
+display_final_summary() {
+    # Check if any clustering output files exist
+    if [[ ! -f "${SAVE_DIR}/frame_membership.bin" && \
+          ! -f "${SAVE_DIR}/frame_membership.txt" && \
+          ! -f "${SAVE_DIR}/anchors.bin" && \
+          ! -f "${SAVE_DIR}/anchors.txt" ]]; then
+        return 0
+    fi
+
+    # Ensure all existing .bin files have corresponding decoded .txt files
+    for artifact in anchors cluster_counts cluster_radii dcc frame_membership; do
+        if [[ -f "${SAVE_DIR}/${artifact}.bin" ]]; then
+            if [[ ! -f "${SAVE_DIR}/${artifact}.txt" || \
+                  "${SAVE_DIR}/${artifact}.bin" -nt "${SAVE_DIR}/${artifact}.txt" ]]; then
+                if [[ -n "${BIN_BIN2ASCII}" ]]; then
+                    "${BIN_BIN2ASCII}" -header \
+                            "${SAVE_DIR}/${artifact}.bin" \
+                            "${SAVE_DIR}/${artifact}.txt" >/dev/null 2>&1 || true
+                fi
+            fi
+        fi
+    done
+
+    # Run Python summary formatter
+    python3 - "${SAVE_DIR}" "${RUN_ELAPSED_MS:-0}" << 'EOF'
+import os, re, sys
+from collections import Counter
+
+save_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+ms_str = sys.argv[2] if len(sys.argv) > 2 else "0"
+
+def fmt_size(num_bytes):
+    for unit in ["B", "KB", "MB", "GB"]:
+        if num_bytes < 1024.0:
+            return f"{num_bytes:5.1f} {unit}" if unit != "B" else f"{num_bytes:5d} B "
+        num_bytes /= 1024.0
+    return f"{num_bytes:5.1f} TB"
+
+# 1. Parse frame memberships and cluster distributions
+tot_samples = 0
+cluster_counts = Counter()
+fm_file = os.path.join(save_dir, "frame_membership.txt")
+if os.path.exists(fm_file):
+    with open(fm_file, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                tot_samples += 1
+                try:
+                    cluster_counts[int(parts[1])] += 1
+                except ValueError:
+                    pass
+
+# 2. Parse anchors metadata (dimension and clusters)
+n_clusters = len(cluster_counts)
+n_dim = 0
+anchors_file = os.path.join(save_dir, "anchors.txt")
+if os.path.exists(anchors_file):
+    with open(anchors_file, "r") as f:
+        for line in f:
+            line = line.strip()
+            if "Shape" in line:
+                m = re.search(r"\[(\d+)\s+rows\s+x\s+(\d+)\s+columns\]", line)
+                if m:
+                    n_clusters = int(m.group(1))
+                    n_dim = int(m.group(2))
+            elif not line.startswith("#") and line:
+                parts = line.split()
+                if len(parts) > 1 and n_dim == 0:
+                    n_dim = len(parts) - 1
+
+# 3. Parse cluster radii
+rlim = 0.0
+radii_file = os.path.join(save_dir, "cluster_radii.txt")
+if os.path.exists(radii_file):
+    with open(radii_file, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line.startswith("#") and line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        rlim = float(parts[1])
+                        break
+                    except ValueError:
+                        pass
+
+# 4. Performance metrics
+try:
+    elapsed_ms = float(ms_str)
+except ValueError:
+    elapsed_ms = 0.0
+
+time_fps_str = ""
+if elapsed_ms > 0:
+    elapsed_sec = elapsed_ms / 1000.0
+    fps = tot_samples / elapsed_sec if elapsed_sec > 0 else 0
+    time_fps_str = f"  Total Elapsed Time      : {elapsed_sec:.2f} s ({int(fps):,d} FPS)\n"
+
+# 5. Cluster distribution statistics
+stats_str = ""
+top5_str = ""
+if cluster_counts:
+    counts = list(cluster_counts.values())
+    min_c = min(counts)
+    max_c = max(counts)
+    mean_c = sum(counts) / len(counts)
+    counts_sorted = sorted(counts)
+    median_c = counts_sorted[len(counts_sorted) // 2]
+    stats_str = (
+        f"  Cluster Size Statistics : "
+        f"Min: {min_c:,d} | Max: {max_c:,d} | Mean: {mean_c:.1f} | Median: {median_c:,d}\n"
+    )
+    top5 = cluster_counts.most_common(5)
+    top5_lines = []
+    for cid, cnt in top5:
+        pct = (cnt * 100.0) / tot_samples if tot_samples > 0 else 0
+        top5_lines.append(f"    - Cluster #{cid:<2d} : {cnt:6,d} samples ({pct:4.1f}%)")
+    top5_str = "  Top Largest Clusters    :\n" + "\n".join(top5_lines) + "\n"
+
+# 6. Artifact file table
+artifacts = [
+    ("anchors.bin", "Binary", f"Cluster centroids (float32 [{n_clusters} x {n_dim}])"),
+    ("anchors.txt", "ASCII", f"Decoded centroids with index [{n_clusters} x {n_dim}]"),
+    ("cluster_counts.bin", "Binary", f"Sample counts per cluster (uint32 [{n_clusters}])"),
+    ("cluster_counts.txt", "ASCII", "Decoded sample counts per cluster"),
+    ("cluster_radii.bin", "Binary", f"Cluster radius thresholds (float32 [{n_clusters}])"),
+    ("cluster_radii.txt", "ASCII", "Decoded cluster radii with index"),
+    ("dcc.bin", "Binary", f"Inter-cluster distances (float64 [{n_clusters} x {n_clusters}])"),
+    ("dcc.txt", "ASCII", "Decoded pairwise DCC distance matrix"),
+    ("frame_membership.bin", "Binary", f"Sample assignments (uint32 [{tot_samples}])"),
+    ("frame_membership.txt", "ASCII", "Decoded sample assignments (sample_idx, cluster_id)"),
+]
+
+art_rows = []
+for fname, fmt, desc in artifacts:
+    fpath = os.path.join(save_dir, fname)
+    if os.path.exists(fpath):
+        sz = fmt_size(os.path.getsize(fpath))
+        art_rows.append(f"  {fname:<22} {fmt:<8} {sz}   {desc}")
+
+sep_80 = "=" * 80
+subsep_80 = "-" * 80
+print("\n" + sep_80)
+print("                    GRIC CLUSTERING RUN & OUTPUT SUMMARY")
+print(sep_80)
+print("\n1. Clustering Performance & Results")
+print(subsep_80)
+print(f"  Total Samples Clustered : {tot_samples:,d} frames")
+print(f"  Clusters Discovered     : {n_clusters:,d} clusters")
+if n_dim > 0:
+    print(f"  Feature Dimensionality  : {n_dim}D")
+if rlim > 0:
+    print(f"  Cluster Radius Limit    : rlim = {rlim:.6f}")
+if time_fps_str:
+    sys.stdout.write(time_fps_str)
+if stats_str:
+    sys.stdout.write(stats_str)
+if top5_str:
+    sys.stdout.write(top5_str)
+
+abs_dir = os.path.abspath(save_dir)
+print(f"\n2. Generated Output Files (in {abs_dir})")
+print(subsep_80)
+print("  File Name              Format   Size      Description")
+print("  " + "-" * 76)
+for row in art_rows:
+    print(row)
+
+print("\n3. Quick Inspection Commands")
+print(subsep_80)
+print("  # View decoded cluster centroids (first 25):")
+print(f"  head -n 25 {save_dir}/anchors.txt\n")
+print("  # View sample-to-cluster assignments (first 25):")
+print(f"  head -n 25 {save_dir}/frame_membership.txt\n")
+print("  # View cluster member counts:")
+print(f"  cat {save_dir}/cluster_counts.txt\n")
+print("  # Inspect binary file header metadata:")
+print(f"  gric-bin2ascii -i {save_dir}/anchors.bin\n")
+print("  # View inter-cluster distance matrix:")
+print(f"  head -n 20 {save_dir}/dcc.txt")
+print(sep_80 + "\n")
+EOF
+}
+
+# ------------------------------------------------------------------------------
 # Cleanup Handler
 # ------------------------------------------------------------------------------
 cleanup() {
     echo -e "\n${BOLD}${YELLOW}[Cleanup] Stopping processes and freeing shared memory...${RESET}"
+
+    # Preserve elapsed execution time if not already captured
+    if [[ -z "${RUN_ELAPSED_MS:-}" || "${RUN_ELAPSED_MS}" == "0" ]]; then
+        local sf="${MILK_SHM_DIR:-/milk/shm}/fps.${FPS_NAME}.status.shm"
+        [[ ! -f "$sf" ]] && sf="/dev/shm/fps.${FPS_NAME}.status.shm"
+        if [[ -f "$sf" ]]; then
+            RUN_ELAPSED_MS="$(python3 -c '
+import struct, sys
+try:
+    with open(sys.argv[1], "rb") as f:
+        print(f"{struct.unpack_from(\"d\", f.read(128), 80)[0]:.1f}")
+except Exception:
+    print("0")
+' "$sf" 2>/dev/null || echo "0")"
+        fi
+    fi
+
     if [[ -n "${BIN_FPSEXEC}" ]]; then
         log_cmd "${BIN_FPSEXEC} -procinfo ${FPS_NAME}:runstop"
         "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:runstop" >/dev/null 2>&1 || true
@@ -162,6 +371,9 @@ cleanup() {
         fi
     done
     echo -e "${BOLD}${GREEN}[Cleanup] Done.${RESET}"
+
+    # Display final summary of clustering results and output files
+    display_final_summary
 }
 trap cleanup EXIT INT TERM
 
@@ -280,6 +492,7 @@ except Exception:
             fi
 
             if [[ "$state" -ge 2 ]] || { [[ "$tot" -gt 0 ]] && [[ "$proc" -ge "$tot" ]]; }; then
+                RUN_ELAPSED_MS="${ms:-0}"
                 break
             fi
         fi
