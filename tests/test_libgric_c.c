@@ -69,6 +69,15 @@ int main(void)
     assert(members[0] >= 2);
     assert(members[1] >= 2);
 
+    // Test stats export
+    gric_cluster_stats_t stats;
+    status = gric_cluster_get_stats(ctx, &stats);
+    assert(status == GRIC_SUCCESS);
+    assert(stats.total_frames_processed == 5);
+    assert(stats.num_clusters == 2);
+    assert(stats.num_new_clusters >= 1);
+    assert(stats.framedist_calls > 0);
+
     gric_cluster_destroy(ctx);
     printf("libgric C API test passed successfully.\n");
     return 0;

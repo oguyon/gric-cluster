@@ -525,6 +525,78 @@ gric_status_t gric_cluster_reset(
     return GRIC_SUCCESS;
 }
 
+/**
+ * gric_cluster_get_stats() - Retrieve current telemetry and computation metrics.
+ * @ctx:   Active clustering handle.
+ * @stats: Destination statistics struct pointer.
+ *
+ * Return: GRIC_SUCCESS on success, or negative error code on invalid parameters.
+ */
+gric_status_t gric_cluster_get_stats(
+    const gric_cluster_t *ctx,
+    gric_cluster_stats_t *stats)
+{
+    if (ctx == NULL || stats == NULL)
+    {
+        return GRIC_ERR_INVALID_PARAM;
+    }
+
+    memset(stats, 0, sizeof(gric_cluster_stats_t));
+
+    const ClusterState     *s = &ctx->state;
+    const ClusterTelemetry *t = &s->telemetry;
+
+    stats->total_frames_processed = (uint64_t)t->total_frames_processed;
+    stats->num_clusters = (uint32_t)s->num_clusters;
+    stats->num_new_clusters = t->num_new_clusters;
+    stats->framedist_calls = (uint64_t)t->framedist_calls;
+    stats->framedist_calls_sample = (uint64_t)t->framedist_calls_sample;
+    stats->framedist_calls_intercluster = (uint64_t)t->framedist_calls_intercluster;
+    stats->clusters_pruned = (uint64_t)t->clusters_pruned;
+    stats->last_assignment_dist = t->last_assignment_dist;
+    stats->last_frame_dists = t->last_frame_dists;
+    stats->last_frame_dfc = t->last_frame_dfc;
+    stats->last_frame_dcc = t->last_frame_dcc;
+    stats->time_io_ms = t->time_io_ms;
+    stats->time_step_1 = t->time_step_1;
+    stats->time_step_2 = t->time_step_2;
+    stats->time_step_3a = t->time_step_3a;
+    stats->time_step_3b = t->time_step_3b;
+    stats->time_step_3c = t->time_step_3c;
+    stats->time_step_4 = t->time_step_4;
+    stats->time_step_5 = t->time_step_5;
+    stats->time_step_refine = t->time_step_refine;
+    stats->entropy_last_initial = t->entropy_last_initial;
+
+    if (t->total_frames_processed > 0)
+    {
+        stats->entropy_avg_initial = t->entropy_sum_initial / (double)t->total_frames_processed;
+    }
+    else
+    {
+        stats->entropy_avg_initial = 0.0;
+    }
+
+    uint64_t total_ecalls = t->entropy_frames_gated + t->entropy_frames_evaluated;
+    if (total_ecalls > 0)
+    {
+        stats->entropy_gate_ratio = (double)t->entropy_frames_gated / (double)total_ecalls;
+    }
+    else
+    {
+        stats->entropy_gate_ratio = 0.0;
+    }
+
+    stats->dcc_entries_populated = t->dcc_entries_populated;
+    stats->dcc_pairs_total = t->dcc_pairs_total;
+    stats->memo_hits = t->memo_hits;
+    stats->memo_lookups = t->memo_lookups;
+    stats->memo_cache_entries = t->memo_cache_entries;
+    stats->memo_cache_capacity = t->memo_cache_capacity;
+
+    return GRIC_SUCCESS;
+}
+
 void gric_cluster_destroy(
     gric_cluster_t *ctx)
 {
