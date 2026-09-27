@@ -30,11 +30,12 @@ static void print_usage(
     printf("  -h, --help          Display this help message\n\n");
     printf("Notes:\n");
     printf("  If [output.txt] is omitted or '-', decoded ASCII is piped directly to stdout.\n");
-    printf("  Anchor and radii files include index column by default (0-indexed).\n\n");
+    printf("  Anchors, radii, and membership include index column by default (0-indexed).\n\n");
     printf("Examples:\n");
     printf("  %s spiral.bin -info\n", prog);
     printf("  %s anchors.bin anchors.txt -header\n", prog);
     printf("  %s cluster_radii.bin cluster_radii.txt -header\n", prog);
+    printf("  %s frame_membership.bin frame_membership.txt -header\n", prog);
     printf("  %s spiral.bin spiral_reconstructed.txt -header\n", prog);
     printf("  %s dcc.bin - | head -n 10\n", prog);
 }
@@ -124,8 +125,17 @@ static void write_ascii_header(
         case GRIC_BIN_TYPE_MEMBERSHIP:
             fprintf(out,
                     "# Content     : Sample cluster assignment IDs\n"
-                    "# Layout      : 1 row per sample\n"
-                    "# Column      : cluster_id\n");
+                    "# Layout      : 1 row per sample\n");
+            if (write_index)
+            {
+                fprintf(out,
+                        "# Columns     : sample_idx cluster_id\n");
+            }
+            else
+            {
+                fprintf(out,
+                        "# Column      : cluster_id\n");
+            }
             break;
         case GRIC_BIN_TYPE_COORDINATES:
             fprintf(out,
@@ -270,8 +280,10 @@ int main(
                           (input_path != NULL && strstr(input_path, "anchors") != NULL));
         int is_radii = ((comment != NULL && strstr(comment, "radii") != NULL) ||
                         (input_path != NULL && strstr(input_path, "radii") != NULL));
+        int is_membership = (hdr.file_type == GRIC_BIN_TYPE_MEMBERSHIP ||
+                             (input_path != NULL && strstr(input_path, "membership") != NULL));
 
-        write_index = (is_anchors || is_radii) ? 1 : 0;
+        write_index = (is_anchors || is_radii || is_membership) ? 1 : 0;
     }
 
     FILE *out_fp = stdout;

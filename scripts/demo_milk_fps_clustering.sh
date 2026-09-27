@@ -296,9 +296,11 @@ except Exception:
     echo -e "\n${BOLD}${CYAN}--- Saved Binary Clustering Results ---${RESET}"
     echo -e "Artifacts in ${GREEN}${SAVE_DIR}${RESET}:"
     log_cmd "ls -lh ${SAVE_DIR}/anchors.bin ${SAVE_DIR}/dcc.bin" \
-            "${SAVE_DIR}/cluster_counts.bin ${SAVE_DIR}/cluster_radii.bin"
+            "${SAVE_DIR}/cluster_counts.bin ${SAVE_DIR}/cluster_radii.bin" \
+            "${SAVE_DIR}/frame_membership.bin"
     ls -lh "${SAVE_DIR}"/anchors.bin "${SAVE_DIR}"/dcc.bin \
-           "${SAVE_DIR}"/cluster_counts.bin "${SAVE_DIR}"/cluster_radii.bin 2>/dev/null || true
+           "${SAVE_DIR}"/cluster_counts.bin "${SAVE_DIR}"/cluster_radii.bin \
+           "${SAVE_DIR}"/frame_membership.bin 2>/dev/null || true
     echo ""
 
     if [[ -f "${SAVE_DIR}/anchors.bin" ]]; then
@@ -308,7 +310,7 @@ except Exception:
 
     # Decode binary files into ASCII files for all outputs
     echo -e "\n${BOLD}${CYAN}--- Decoding Binary Outputs to ASCII ---${RESET}"
-    for artifact in anchors cluster_counts cluster_radii dcc; do
+    for artifact in anchors cluster_counts cluster_radii dcc frame_membership; do
         if [[ -f "${SAVE_DIR}/${artifact}.bin" ]]; then
             run_cmd "${BIN_BIN2ASCII}" -header \
                     "${SAVE_DIR}/${artifact}.bin" \
@@ -318,9 +320,11 @@ except Exception:
 
     echo -e "\n${BOLD}${CYAN}Decoded ASCII Artifacts in ${GREEN}${SAVE_DIR}${RESET}:"
     log_cmd "ls -lh ${SAVE_DIR}/anchors.txt ${SAVE_DIR}/dcc.txt" \
-            "${SAVE_DIR}/cluster_counts.txt ${SAVE_DIR}/cluster_radii.txt"
+            "${SAVE_DIR}/cluster_counts.txt ${SAVE_DIR}/cluster_radii.txt" \
+            "${SAVE_DIR}/frame_membership.txt"
     ls -lh "${SAVE_DIR}"/anchors.txt "${SAVE_DIR}"/dcc.txt \
-           "${SAVE_DIR}"/cluster_counts.txt "${SAVE_DIR}"/cluster_radii.txt 2>/dev/null || true
+           "${SAVE_DIR}"/cluster_counts.txt "${SAVE_DIR}"/cluster_radii.txt \
+           "${SAVE_DIR}"/frame_membership.txt 2>/dev/null || true
     echo ""
 
     if [[ -f "${SAVE_DIR}/anchors.txt" ]]; then
@@ -332,6 +336,12 @@ except Exception:
     if [[ -f "${SAVE_DIR}/cluster_radii.txt" ]]; then
         echo -e "${BOLD}Sample Decoded Cluster Radii Header & Values:${RESET}"
         head -n 16 "${SAVE_DIR}/cluster_radii.txt"
+        echo ""
+    fi
+
+    if [[ -f "${SAVE_DIR}/frame_membership.txt" ]]; then
+        echo -e "${BOLD}Sample Decoded Frame Memberships Header & Assignments:${RESET}"
+        head -n 16 "${SAVE_DIR}/frame_membership.txt"
         echo ""
     fi
 
@@ -362,6 +372,8 @@ except Exception:
             "${SAVE_DIR}/cluster_counts.bin ${SAVE_DIR}/cluster_counts.txt"
     log_cmd "${BIN_BIN2ASCII} -header" \
             "${SAVE_DIR}/cluster_radii.bin ${SAVE_DIR}/cluster_radii.txt"
+    log_cmd "${BIN_BIN2ASCII} -header" \
+            "${SAVE_DIR}/frame_membership.bin ${SAVE_DIR}/frame_membership.txt"
     log_cmd "${BIN_BIN2ASCII} -header" \
             "${SAVE_DIR}/dcc.bin ${SAVE_DIR}/dcc.txt"
     echo -e "\n# 8. Stop clustering daemon and clean up:"
@@ -514,7 +526,7 @@ while true; do
             ;;
         8)
             echo -e "\n${BOLD}${CYAN}--- Decoding Binary Outputs to ASCII ---${RESET}"
-            for artifact in anchors cluster_counts cluster_radii dcc; do
+            for artifact in anchors cluster_counts cluster_radii dcc frame_membership; do
                 if [[ -f "${SAVE_DIR}/${artifact}.bin" ]]; then
                     run_cmd "${BIN_BIN2ASCII}" -header \
                             "${SAVE_DIR}/${artifact}.bin" \

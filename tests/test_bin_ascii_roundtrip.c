@@ -158,11 +158,50 @@ static void test_membership_roundtrip(void)
     int ret = system(cmd);
     assert(ret == 0);
 
-    snprintf(cmd, sizeof(cmd), "./gric-bin2ascii %s %s", TMP_BIN_OUT, TMP_TXT_OUT);
+    snprintf(cmd, sizeof(cmd), "./gric-bin2ascii %s %s -header", TMP_BIN_OUT, TMP_TXT_OUT);
     ret = system(cmd);
     assert(ret == 0);
 
     FILE *f_out = fopen(TMP_TXT_OUT, "r");
+    assert(f_out != NULL);
+    char line[256];
+    int found_header_col = 0;
+    int data_rows = 0;
+
+    while (fgets(line, sizeof(line), f_out) != NULL)
+    {
+        if (strstr(line, "# Columns     : sample_idx cluster_id") != NULL)
+        {
+            found_header_col = 1;
+        }
+        if (line[0] != '#' && strlen(line) > 1)
+        {
+            int idx = -1;
+            uint32_t cid = 0;
+            assert(sscanf(line, "%d %u", &idx, &cid) == 2);
+            assert(idx == data_rows);
+            assert(cid == (uint32_t)(data_rows % 7));
+            data_rows++;
+        }
+    }
+    fclose(f_out);
+
+    assert(found_header_col == 1);
+    assert(data_rows == nframes);
+
+    // Verify auto-detect roundtrip with gric-ascii2bin
+    snprintf(cmd, sizeof(cmd),
+             "./gric-ascii2bin %s /tmp/test_rt_memb.bin -type membership -uint32",
+             TMP_TXT_OUT);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    // Also verify -no-index omits sample_idx
+    snprintf(cmd, sizeof(cmd), "./gric-bin2ascii %s %s -no-index", TMP_BIN_OUT, TMP_TXT_OUT);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    f_out = fopen(TMP_TXT_OUT, "r");
     assert(f_out != NULL);
     for (int i = 0; i < nframes; i++)
     {
@@ -173,10 +212,11 @@ static void test_membership_roundtrip(void)
     }
     fclose(f_out);
 
+    remove("/tmp/test_rt_memb.bin");
     remove(TMP_TXT_IN);
     remove(TMP_BIN_OUT);
     remove(TMP_TXT_OUT);
-    printf("  [PASS] Frame membership roundtrip verified.\n");
+    printf("  [PASS] Frame membership roundtrip and indexing verified.\n");
 }
 
 /**
