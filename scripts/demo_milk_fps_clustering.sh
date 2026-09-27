@@ -254,7 +254,7 @@ try:
         magic, ver, pid, state = struct.unpack_from("4I", data, 0)
         tot, proc = struct.unpack_from("2Q", data, 16)
         nclust = struct.unpack_from("I", data, 32)[0]
-        ms = struct.unpack_from("d", data, 72)[0]
+        ms = struct.unpack_from("d", data, 80)[0]
         print(f"{proc} {tot} {nclust} {ms:.1f} {state}")
 except Exception:
     print("0 0 0 0.0 0")
