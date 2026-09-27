@@ -87,7 +87,7 @@ static void print_help(
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-maxfr%s %s<N>%s         Stop after streaming N total frames\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-cnt2sync%s          Enable flow-control handshaking (wait for consumer cnt2)\n",
+    printf("  %s-cnt2sync%s          Flow-control handshake (if -fps set, caps max rate)\n",
            ansi_color_green, ansi_reset);
     printf("  %s-double%s            Write 64-bit double precision (default: 32-bit float)\n",
            ansi_color_green, ansi_reset);
@@ -264,6 +264,7 @@ int main(
     const char *input_file = NULL;
     const char *stream_name = NULL;
     double fps = DEFAULT_FPS;
+    int fps_specified = 0;
     int buffer_depth = DEFAULT_BUFFER_DEPTH;
     int loop_mode = 0;
     int repeats = 1;
@@ -278,6 +279,7 @@ int main(
         if (strcmp(argv[i], "-fps") == 0 && i + 1 < argc)
         {
             fps = atof(argv[++i]);
+            fps_specified = 1;
         }
         else if (strcmp(argv[i], "-depth") == 0 && i + 1 < argc)
         {
@@ -336,6 +338,11 @@ int main(
         }
     } // for (argv)
 
+    if (cnt2sync && !fps_specified)
+    {
+        fps = 0.0;
+    }
+
     if (input_file == NULL || stream_name == NULL)
     {
         fprintf(stderr, "Error: Missing required arguments <input.txt> and <stream_name>.\n");
@@ -382,9 +389,14 @@ int main(
     printf("%s[gric-txt2stream]%s Created stream '%s' (%d x 1 x %d, type: %s)\n",
            ansi_bold_green, ansi_reset, stream_name, dim, buffer_depth,
            use_double ? "DOUBLE" : "FLOAT");
-    if (cnt2sync)
+    if (cnt2sync && fps > 0.0)
     {
-        printf("  Pacing: Consumer flow-control (gated by cnt2 handshaking)\n");
+        printf("  Pacing: Flow-control (cnt2 gated) with max rate %.1f FPS (%.2f us/frame)\n",
+               fps, 1000000.0 / fps);
+    }
+    else if (cnt2sync)
+    {
+        printf("  Pacing: Consumer flow-control (gated by cnt2 handshaking, unthrottled)\n");
     }
     else if (fps > 0.0)
     {
@@ -427,9 +439,10 @@ int main(
                     usleep(10);
                 }
             }
-            else if (us_per_frame > 0)
+
+            /* Rate pacing (enforces maximum FPS ceiling) */
+            if (us_per_frame > 0)
             {
-                /* Rate pacing */
                 struct timespec now;
                 clock_gettime(CLOCK_MONOTONIC, &now);
                 long long elapsed_us = (now.tv_sec - last_time.tv_sec) * 1000000LL +

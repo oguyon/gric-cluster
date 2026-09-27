@@ -445,11 +445,11 @@ if [[ "$AUTO_MODE" -eq 1 ]]; then
     run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.cnt2sync" "ON"
     run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.save_dir" "${SAVE_DIR}"
 
-    # Step 3: Spin up looping feeder stream (gated by cnt2 flow control)
-    echo -e "${BOLD}${CYAN}[3/5] Spinning feeder stream (flow-controlled by cnt2):${RESET} " \
+    # Step 3: Spin up looping feeder stream (cnt2 flow-control with max FPS cap)
+    echo -e "${BOLD}${CYAN}[3/5] Feeder stream (cnt2 gated, max ${STREAM_FPS} FPS):${RESET} " \
             "${STREAM_IN}..."
-    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -cnt2sync -loop &"
-    "${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -cnt2sync -loop &
+    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -cnt2sync -fps ${STREAM_FPS} -loop &"
+    "${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -cnt2sync -fps "${STREAM_FPS}" -loop &
     FEED_PID=$!
     sleep 0.1
 
@@ -605,8 +605,8 @@ except Exception:
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.max_frames ${MAX_FRAMES}"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.cnt2sync ON"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.save_dir ${SAVE_DIR}"
-    echo -e "\n# 3. Feed stream into shared memory (flow-controlled by consumer cnt2):"
-    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -cnt2sync -loop &"
+    echo -e "\n# 3. Feed stream into shared memory (flow-controlled by consumer cnt2, max FPS):"
+    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -cnt2sync -fps ${STREAM_FPS} -loop &"
     echo -e "\n# 4. Launch clustering daemon in tmux session:"
     log_cmd "${BIN_FPSEXEC} -tmux -procinfo -loops ${FPS_NAME}:runstart"
     echo -e "\n# 5. Monitor status (live watch):"
@@ -687,9 +687,9 @@ echo ""
 
 # Step 3: Feed Input Stream
 echo -e "${BOLD}${CYAN}--- Step 3: Feed ImageStreamIO Ring Buffer (Flow-Controlled) ---${RESET}"
-echo -e "Streaming ${GREEN}${PATTERN_FILE}${RESET} to '${STREAM_IN}' (cnt2 gated)..."
-log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -cnt2sync -loop &"
-"${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -cnt2sync -loop &
+echo -e "Streaming ${GREEN}${PATTERN_FILE}${RESET} (cnt2 gated, max ${STREAM_FPS} FPS)..."
+log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -cnt2sync -fps ${STREAM_FPS} -loop &"
+"${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -cnt2sync -fps "${STREAM_FPS}" -loop &
 FEED_PID=$!
 sleep 0.3
 echo -e "Feeder started (PID: ${FEED_PID}, stream: ${GREEN}${STREAM_IN}${RESET}, gated by cnt2).\n"
