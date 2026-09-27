@@ -142,10 +142,11 @@ cleanup() {
         "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:confstop" >/dev/null 2>&1 || true
     fi
 
-    if [[ -n "${FEED_PID}" ]] && kill -0 "${FEED_PID}" 2>/dev/null; then
+    if [[ -n "${FEED_PID:-}" ]] && kill -0 "${FEED_PID}" 2>/dev/null; then
         log_cmd "kill -INT ${FEED_PID}"
         kill -INT "${FEED_PID}" 2>/dev/null || true
         wait "${FEED_PID}" 2>/dev/null || true
+        FEED_PID=""
     fi
 
     log_cmd "tmux kill-session -t ${FPS_NAME}"
@@ -202,16 +203,8 @@ if [[ "$AUTO_MODE" -eq 1 ]]; then
     echo -e "${BOLD}${CYAN}[1/5] Generating dataset:${RESET} ${PATTERN_FILE} (${NB_POINTS} pts)..."
     run_cmd "${BIN_MKTXTSEQ}" "${NB_POINTS}" "${PATTERN_FILE}" "${PATTERN_TYPE}"
 
-    # Step 2: Spin up looping feeder stream
-    echo -e "${BOLD}${CYAN}[2/5] Spinning looping feeder stream:${RESET} " \
-            "${STREAM_IN} (${STREAM_FPS} FPS)..."
-    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -fps ${STREAM_FPS} -loop &"
-    "${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -fps "${STREAM_FPS}" -loop &
-    FEED_PID=$!
-    sleep 0.3
-
-    # Step 3: Initialize & configure FPS daemon
-    echo -e "${BOLD}${CYAN}[3/5] Initializing FPS daemon in procinfo mode:${RESET} ${FPS_NAME}..."
+    # Step 2: Initialize & configure FPS daemon
+    echo -e "${BOLD}${CYAN}[2/5] Initializing FPS daemon in procinfo mode:${RESET} ${FPS_NAME}..."
     run_cmd "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:fpsinit"
     run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.in_name" "${STREAM_IN}"
     run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.out_name" "${STREAM_OUT}"
@@ -219,10 +212,18 @@ if [[ "$AUTO_MODE" -eq 1 ]]; then
     run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.max_frames" "${MAX_FRAMES}"
     run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.save_dir" "${SAVE_DIR}"
 
+    # Step 3: Spin up looping feeder stream
+    echo -e "${BOLD}${CYAN}[3/5] Spinning looping feeder stream:${RESET} " \
+            "${STREAM_IN} (${STREAM_FPS} FPS)..."
+    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -fps ${STREAM_FPS} -loop &"
+    "${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -fps "${STREAM_FPS}" -loop &
+    FEED_PID=$!
+    sleep 0.1
+
     # Step 4: Launch clustering daemon in tmux
     echo -e "${BOLD}${CYAN}[4/5] Launching daemon in tmux session '${FPS_NAME}'...${RESET}"
     run_cmd "${BIN_FPSEXEC}" -tmux -procinfo -loops "${FPS_NAME}:runstart"
-    sleep 0.5
+    sleep 0.3
 
     # Step 5: Real-time telemetry status display loop
     echo -e "${BOLD}${CYAN}[5/5] Real-time clustering status:${RESET}"
@@ -284,7 +285,18 @@ except Exception:
         sleep 0.1
     done
 
-    echo -e "\n\n${BOLD}${GREEN}Clustering completed successfully!${RESET}\n"
+    # Stop background feeder immediately so extra frames are not streamed during post-proc
+    if [[ -n "${FEED_PID:-}" ]] && kill -0 "${FEED_PID}" 2>/dev/null; then
+        echo -e "\n\n${BOLD}${CYAN}[Stream Feeder]${RESET} Stopping background camera feeder..."
+        log_cmd "kill -INT ${FEED_PID}"
+        kill -INT "${FEED_PID}" 2>/dev/null || true
+        wait "${FEED_PID}" 2>/dev/null || true
+        FEED_PID=""
+    fi
+
+    echo -e "\n${BOLD}${GREEN}Clustering completed successfully!${RESET}"
+    echo -e "  Clustered samples : ${BOLD}${proc}${RESET} / ${tot} (requested: ${MAX_FRAMES})"
+    echo -e "  (Note: [gric-txt2stream] fed the circular input stream in background)\n"
 
     # Display final status telemetry
     echo -e "${BOLD}${CYAN}--- Final Status Telemetry ---${RESET}"
@@ -350,22 +362,24 @@ except Exception:
     echo -e "${BOLD}${CYAN}====================================================${RESET}"
     echo -e "# 1. Generate pattern dataset:"
     log_cmd "${BIN_MKTXTSEQ} ${NB_POINTS} ${PATTERN_FILE} ${PATTERN_TYPE}"
-    echo -e "\n# 2. Feed stream into shared memory in background (looping):"
-    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -fps ${STREAM_FPS} -loop &"
-    echo -e "\n# 3. Initialize FPS daemon and configure parameters:"
+    echo -e "\n# 2. Initialize FPS daemon and configure parameters:"
     log_cmd "${BIN_FPSEXEC} -procinfo ${FPS_NAME}:fpsinit"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.in_name ${STREAM_IN}"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.out_name ${STREAM_OUT}"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.rlim ${DEFAULT_RLIM}"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.max_frames ${MAX_FRAMES}"
     log_cmd "${BIN_FPS_SET} ${FPS_NAME}.save_dir ${SAVE_DIR}"
+    echo -e "\n# 3. Feed stream into shared memory in background (looping camera feeder):"
+    log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -fps ${STREAM_FPS} -loop &"
     echo -e "\n# 4. Launch clustering daemon in tmux session:"
     log_cmd "${BIN_FPSEXEC} -tmux -procinfo -loops ${FPS_NAME}:runstart"
     echo -e "\n# 5. Monitor status (live watch):"
     log_cmd "${BIN_GRIC_STATUS} ${FPS_NAME} -w"
-    echo -e "\n# 6. Inspect binary output header:"
+    echo -e "\n# 6. Stop stream feeder (clustering complete):"
+    log_cmd "kill -INT <feeder_pid>"
+    echo -e "\n# 7. Inspect binary output header:"
     log_cmd "${BIN_BIN2ASCII} -i ${SAVE_DIR}/anchors.bin"
-    echo -e "\n# 7. Decode binary outputs into ASCII files (with headers):"
+    echo -e "\n# 8. Decode binary outputs into ASCII files (with headers):"
     log_cmd "${BIN_BIN2ASCII} -header" \
             "${SAVE_DIR}/anchors.bin ${SAVE_DIR}/anchors.txt"
     log_cmd "${BIN_BIN2ASCII} -header" \
@@ -376,7 +390,7 @@ except Exception:
             "${SAVE_DIR}/frame_membership.bin ${SAVE_DIR}/frame_membership.txt"
     log_cmd "${BIN_BIN2ASCII} -header" \
             "${SAVE_DIR}/dcc.bin ${SAVE_DIR}/dcc.txt"
-    echo -e "\n# 8. Stop clustering daemon and clean up:"
+    echo -e "\n# 9. Stop clustering daemon and clean up:"
     log_cmd "${BIN_FPSEXEC} -procinfo ${FPS_NAME}:runstop"
     log_cmd "${BIN_FPSEXEC} -procinfo ${FPS_NAME}:confstop"
     log_cmd "tmux kill-session -t ${FPS_NAME}"
@@ -404,22 +418,8 @@ echo -e "Sample data (first 3 points):"
 head -n 3 "${PATTERN_FILE}"
 echo ""
 
-# Step 2: Feed Input Stream
-echo -e "${BOLD}${CYAN}--- Step 2: Feed ImageStreamIO Ring Buffer ---${RESET}"
-echo -e "Streaming ${GREEN}${PATTERN_FILE}${RESET} to shared memory stream '${STREAM_IN}'."
-read -r -p "Streaming frame rate (FPS) [default: ${STREAM_FPS}]: " user_fps
-if [[ -n "${user_fps}" ]]; then
-    STREAM_FPS="${user_fps}"
-fi
-
-log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -fps ${STREAM_FPS} -loop &"
-"${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -fps "${STREAM_FPS}" -loop &
-FEED_PID=$!
-sleep 0.5
-echo -e "Feeder started (PID: ${FEED_PID}, stream: ${GREEN}${STREAM_IN}${RESET}).\n"
-
-# Step 3: Initialize & Configure FPS Instance
-echo -e "${BOLD}${CYAN}--- Step 3: Initialize FPS in Procinfo Mode ---${RESET}"
+# Step 2: Initialize & Configure FPS Instance
+echo -e "${BOLD}${CYAN}--- Step 2: Initialize FPS in Procinfo Mode ---${RESET}"
 run_cmd "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:fpsinit"
 
 echo -e "Binding parameters via ${GREEN}milk-fps-set${RESET}:"
@@ -432,6 +432,20 @@ run_cmd "${BIN_FPS_SET}" "${FPS_NAME}.save_dir" "${SAVE_DIR}"
 echo -e "\n${BOLD}Active FPS Configuration:${RESET}"
 run_cmd "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:fps"
 echo ""
+
+# Step 3: Feed Input Stream
+echo -e "${BOLD}${CYAN}--- Step 3: Feed ImageStreamIO Ring Buffer ---${RESET}"
+echo -e "Streaming ${GREEN}${PATTERN_FILE}${RESET} to shared memory stream '${STREAM_IN}'."
+read -r -p "Streaming frame rate (FPS) [default: ${STREAM_FPS}]: " user_fps
+if [[ -n "${user_fps}" ]]; then
+    STREAM_FPS="${user_fps}"
+fi
+
+log_cmd "${BIN_TXT2STREAM} ${PATTERN_FILE} ${STREAM_IN} -fps ${STREAM_FPS} -loop &"
+"${BIN_TXT2STREAM}" "${PATTERN_FILE}" "${STREAM_IN}" -fps "${STREAM_FPS}" -loop &
+FEED_PID=$!
+sleep 0.3
+echo -e "Feeder started (PID: ${FEED_PID}, stream: ${GREEN}${STREAM_IN}${RESET}).\n"
 
 # Step 4: Launch Clustering Daemon
 echo -e "${BOLD}${CYAN}--- Step 4: Launch Clustering Daemon ---${RESET}"
