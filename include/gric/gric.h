@@ -226,6 +226,17 @@ GRIC_API gric_status_t gric_cluster_get_stats(
     gric_cluster_stats_t *stats);
 
 /**
+ * gric_cluster_save_results() - Export clustering results to disk in GRIC binary format.
+ * @ctx:     Active clustering handle.
+ * @out_dir: Destination directory path (must exist or will be created).
+ *
+ * Return: GRIC_SUCCESS on success, or negative error code on failure.
+ */
+GRIC_API gric_status_t gric_cluster_save_results(
+    const gric_cluster_t *ctx,
+    const char           *out_dir);
+
+/**
  * gric_cluster_destroy() - Free clustering session and all associated memory.
  * @ctx: Clustering handle to destroy (safe to pass NULL).
  */
