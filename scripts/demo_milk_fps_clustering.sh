@@ -310,7 +310,7 @@ except Exception:
     echo -e "\n${BOLD}${CYAN}--- Decoding Binary Outputs to ASCII ---${RESET}"
     for artifact in anchors cluster_counts cluster_radii dcc; do
         if [[ -f "${SAVE_DIR}/${artifact}.bin" ]]; then
-            run_cmd "${BIN_BIN2ASCII}" \
+            run_cmd "${BIN_BIN2ASCII}" -header \
                     "${SAVE_DIR}/${artifact}.bin" \
                     "${SAVE_DIR}/${artifact}.txt"
         fi
@@ -324,8 +324,8 @@ except Exception:
     echo ""
 
     if [[ -f "${SAVE_DIR}/anchors.txt" ]]; then
-        echo -e "${BOLD}Sample Decoded Anchors (first 2 centroids):${RESET}"
-        head -n 2 "${SAVE_DIR}/anchors.txt"
+        echo -e "${BOLD}Sample Decoded Anchors Header & Centroids:${RESET}"
+        head -n 12 "${SAVE_DIR}/anchors.txt"
         echo ""
     fi
 
@@ -349,14 +349,14 @@ except Exception:
     log_cmd "${BIN_GRIC_STATUS} ${FPS_NAME} -w"
     echo -e "\n# 6. Inspect binary output header:"
     log_cmd "${BIN_BIN2ASCII} -i ${SAVE_DIR}/anchors.bin"
-    echo -e "\n# 7. Decode binary outputs into ASCII files:"
-    log_cmd "${BIN_BIN2ASCII}" \
+    echo -e "\n# 7. Decode binary outputs into ASCII files (with headers):"
+    log_cmd "${BIN_BIN2ASCII} -header" \
             "${SAVE_DIR}/anchors.bin ${SAVE_DIR}/anchors.txt"
-    log_cmd "${BIN_BIN2ASCII}" \
+    log_cmd "${BIN_BIN2ASCII} -header" \
             "${SAVE_DIR}/cluster_counts.bin ${SAVE_DIR}/cluster_counts.txt"
-    log_cmd "${BIN_BIN2ASCII}" \
+    log_cmd "${BIN_BIN2ASCII} -header" \
             "${SAVE_DIR}/cluster_radii.bin ${SAVE_DIR}/cluster_radii.txt"
-    log_cmd "${BIN_BIN2ASCII}" \
+    log_cmd "${BIN_BIN2ASCII} -header" \
             "${SAVE_DIR}/dcc.bin ${SAVE_DIR}/dcc.txt"
     echo -e "\n# 8. Stop clustering daemon and clean up:"
     log_cmd "${BIN_FPSEXEC} -procinfo ${FPS_NAME}:runstop"
@@ -510,7 +510,7 @@ while true; do
             echo -e "\n${BOLD}${CYAN}--- Decoding Binary Outputs to ASCII ---${RESET}"
             for artifact in anchors cluster_counts cluster_radii dcc; do
                 if [[ -f "${SAVE_DIR}/${artifact}.bin" ]]; then
-                    run_cmd "${BIN_BIN2ASCII}" \
+                    run_cmd "${BIN_BIN2ASCII}" -header \
                             "${SAVE_DIR}/${artifact}.bin" \
                             "${SAVE_DIR}/${artifact}.txt"
                 else

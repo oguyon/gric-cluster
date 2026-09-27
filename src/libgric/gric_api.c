@@ -661,7 +661,19 @@ gric_status_t gric_cluster_save_results(
             {
                 for (int i = 0; i < k; i++)
                 {
-                    fwrite(state->clusters[i].anchor.data, sizeof(double), ndim, fp);
+                    if (state->clusters[i].anchor.is_double)
+                    {
+                        fwrite(state->clusters[i].anchor.data, sizeof(double), ndim, fp);
+                    }
+                    else
+                    {
+                        const float *fdata = (const float *)state->clusters[i].anchor.data;
+                        for (size_t d = 0; d < ndim; d++)
+                        {
+                            double v = (double)fdata[d];
+                            fwrite(&v, sizeof(double), 1, fp);
+                        }
+                    }
                 }
             }
         }
@@ -679,7 +691,19 @@ gric_status_t gric_cluster_save_results(
                 {
                     for (int i = 0; i < k; i++)
                     {
-                        fwrite(state->clusters[i].anchor.data, sizeof(float), ndim, fp);
+                        if (state->clusters[i].anchor.is_double)
+                        {
+                            const double *ddata = (const double *)state->clusters[i].anchor.data;
+                            for (size_t d = 0; d < ndim; d++)
+                            {
+                                float v = (float)ddata[d];
+                                fwrite(&v, sizeof(float), 1, fp);
+                            }
+                        }
+                        else
+                        {
+                            fwrite(state->clusters[i].anchor.data, sizeof(float), ndim, fp);
+                        }
                     }
                 }
             }

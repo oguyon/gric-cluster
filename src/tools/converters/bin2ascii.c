@@ -21,6 +21,7 @@ static void print_usage(
     printf("Usage:\n");
     printf("  %s <input.bin> [output.txt] [options]\n\n", prog);
     printf("Options:\n");
+    printf("  -header, --header   Include explanatory header comments at start of ASCII file\n");
     printf("  -info, -i           Display header metadata summary without decoding payload\n");
     printf("  -fmt <specifier>    Custom printf formatting specifier (e.g. '%%.8f', '%%g')\n");
     printf("  -v, --verbose       Print decoding summary to stderr\n");
@@ -29,8 +30,114 @@ static void print_usage(
     printf("  If [output.txt] is omitted or '-', decoded ASCII is piped directly to stdout.\n\n");
     printf("Examples:\n");
     printf("  %s spiral.bin -info\n", prog);
-    printf("  %s spiral.bin spiral_reconstructed.txt\n", prog);
+    printf("  %s spiral.bin spiral_reconstructed.txt -header\n", prog);
     printf("  %s dcc.bin - | head -n 10\n", prog);
+}
+
+/**
+ * write_ascii_header() - Write informative comment header to ASCII output stream.
+ * @out:     Destination file stream.
+ * @hdr:     GRIC binary header metadata.
+ * @comment: Optional comment string embedded in binary file.
+ */
+static void write_ascii_header(
+    FILE                    *out,
+    const gric_bin_header_t *hdr,
+    const char              *comment)
+{
+    if (out == NULL || hdr == NULL)
+    {
+        return;
+    }
+
+    fprintf(out, "# ========================================================\n");
+    fprintf(out, "# GRIC Clustering Output (Decoded ASCII)\n");
+    if (comment != NULL && comment[0] != '\0')
+    {
+        fprintf(out, "# Description : %s\n", comment);
+    }
+    fprintf(out, "# File Type   : %s (type_id: %u)\n",
+            gric_bin_file_type_str((gric_bin_file_type_t)hdr->file_type),
+            hdr->file_type);
+    fprintf(out, "# Data Type   : %s\n",
+            gric_bin_data_type_str((gric_bin_data_type_t)hdr->data_type));
+
+    if (hdr->ndim == 1)
+    {
+        fprintf(out, "# Shape       : [%llu elements]\n",
+                (unsigned long long)hdr->dims[0]);
+    }
+    else if (hdr->ndim == 2)
+    {
+        fprintf(out, "# Shape       : [%llu rows x %llu columns]\n",
+                (unsigned long long)hdr->dims[0],
+                (unsigned long long)hdr->dims[1]);
+    }
+    else
+    {
+        fprintf(out, "# Dimensions  : %u\n", hdr->ndim);
+    }
+
+    switch ((gric_bin_file_type_t)hdr->file_type)
+    {
+        case GRIC_BIN_TYPE_ANCHORS:
+            fprintf(out,
+                    "# Content     : Cluster centroids (coordinates)\n"
+                    "# Layout      : 1 row per cluster centroid, space-separated coordinates\n"
+                    "# Columns     : dim_0 .. dim_%llu\n",
+                    (unsigned long long)(hdr->dims[1] > 0 ? hdr->dims[1] - 1 : 0));
+            break;
+        case GRIC_BIN_TYPE_DCC:
+            fprintf(out,
+                    "# Content     : Pairwise inter-cluster distance matrix\n"
+                    "# Layout      : Symmetric %llu x %llu matrix, entry (i,j) = dist(Ci, Cj)\n"
+                    "# Columns     : cluster_0 .. cluster_%llu\n",
+                    (unsigned long long)hdr->dims[0],
+                    (unsigned long long)hdr->dims[1],
+                    (unsigned long long)(hdr->dims[1] > 0 ? hdr->dims[1] - 1 : 0));
+            break;
+        case GRIC_BIN_TYPE_COUNTS:
+            fprintf(out,
+                    "# Content     : Cluster visitor counts\n"
+                    "# Layout      : 1 row per cluster (integer count of assigned points)\n"
+                    "# Column      : sample_count\n");
+            break;
+        case GRIC_BIN_TYPE_MEMBERSHIP:
+            fprintf(out,
+                    "# Content     : Sample cluster assignment IDs\n"
+                    "# Layout      : 1 row per sample\n"
+                    "# Column      : cluster_id\n");
+            break;
+        case GRIC_BIN_TYPE_COORDINATES:
+            fprintf(out,
+                    "# Content     : Input sample coordinates\n"
+                    "# Layout      : 1 row per sample, space-separated coordinates\n"
+                    "# Columns     : dim_0 .. dim_%llu\n",
+                    (unsigned long long)(hdr->dims[1] > 0 ? hdr->dims[1] - 1 : 0));
+            break;
+        case GRIC_BIN_TYPE_EVALS:
+            fprintf(out,
+                    "# Content     : Distance evaluation counts\n"
+                    "# Layout      : 1 row per sample or cluster\n");
+            break;
+        case GRIC_BIN_TYPE_GENERIC:
+        default:
+            if (comment != NULL && strstr(comment, "radii") != NULL)
+            {
+                fprintf(out,
+                        "# Content     : Maximum cluster radii\n"
+                        "# Layout      : 1 row per cluster (distance threshold rlim)\n"
+                        "# Column      : radius\n");
+            }
+            else
+            {
+                fprintf(out,
+                        "# Content     : Data matrix\n"
+                        "# Layout      : Row-major values separated by spaces\n");
+            }
+            break;
+    }
+    fprintf(out, "# ========================================================\n");
 }
 
 int main(
@@ -48,6 +155,7 @@ int main(
     const char *custom_fmt = NULL;
     int info_only = 0;
     int verbose = 0;
+    int write_header = 0;
 
     for (int i = 1; i < argc; i++)
     {
@@ -55,6 +163,10 @@ int main(
         {
             print_usage(argv[0]);
             return 0;
+        }
+        else if (strcmp(argv[i], "-header") == 0 || strcmp(argv[i], "--header") == 0)
+        {
+            write_header = 1;
         }
         else if (strcmp(argv[i], "-info") == 0 || strcmp(argv[i], "-i") == 0)
         {
@@ -140,6 +252,11 @@ int main(
     }
 
     gric_bin_data_type_t dtype = (gric_bin_data_type_t)hdr.data_type;
+
+    if (write_header)
+    {
+        write_ascii_header(out_fp, &hdr, comment);
+    }
 
     if (dtype == GRIC_BIN_DTYPE_FLOAT32)
     {

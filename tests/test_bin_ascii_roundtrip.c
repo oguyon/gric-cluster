@@ -179,12 +179,74 @@ static void test_membership_roundtrip(void)
     printf("  [PASS] Frame membership roundtrip verified.\n");
 }
 
+/**
+ * test_bin2ascii_header_option() - Test decoding with explanatory header comments.
+ */
+static void test_bin2ascii_header_option(void)
+{
+    printf("[TEST] Testing gric-bin2ascii with -header option...\n");
+
+    FILE *f_in = fopen(TMP_TXT_IN, "w");
+    assert(f_in != NULL);
+    fprintf(f_in, "1.0 2.0\n");
+    fprintf(f_in, "3.0 4.0\n");
+    fprintf(f_in, "5.0 6.0\n");
+    fclose(f_in);
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd),
+             "./gric-ascii2bin %s %s -type anchors -comment \"Cluster centroids\"",
+             TMP_TXT_IN, TMP_BIN_OUT);
+    int ret = system(cmd);
+    assert(ret == 0);
+
+    snprintf(cmd, sizeof(cmd), "./gric-bin2ascii %s %s -header", TMP_BIN_OUT, TMP_TXT_OUT);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    FILE *f_out = fopen(TMP_TXT_OUT, "r");
+    assert(f_out != NULL);
+    char line[256];
+    int found_header_delim = 0;
+    int found_content_desc = 0;
+
+    while (fgets(line, sizeof(line), f_out) != NULL)
+    {
+        if (strstr(line, "# ========================================================") != NULL)
+        {
+            found_header_delim++;
+        }
+        if (strstr(line, "# Content     : Cluster centroids") != NULL)
+        {
+            found_content_desc = 1;
+        }
+    }
+    fclose(f_out);
+
+    assert(found_header_delim >= 2);
+    assert(found_content_desc == 1);
+
+    // Verify gric-ascii2bin can read the file with comments and recreate bin
+    snprintf(cmd, sizeof(cmd),
+             "./gric-ascii2bin %s /tmp/test_rt_header.bin -type anchors",
+             TMP_TXT_OUT);
+    ret = system(cmd);
+    assert(ret == 0);
+
+    remove(TMP_TXT_IN);
+    remove(TMP_BIN_OUT);
+    remove(TMP_TXT_OUT);
+    remove("/tmp/test_rt_header.bin");
+    printf("  [PASS] Decoded ASCII header generation and roundtrip verified.\n");
+}
+
 int main(void)
 {
     printf("Running GRIC Binary <-> ASCII Roundtrip Tests...\n");
     test_coordinates_roundtrip();
     test_dcc_matrix_roundtrip();
     test_membership_roundtrip();
+    test_bin2ascii_header_option();
     printf("All GRIC Binary <-> ASCII tests passed successfully!\n");
     return 0;
 }
