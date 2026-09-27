@@ -3,12 +3,20 @@
  * @brief Common adapter implementation for GRIC Milk streaming integration.
  */
 
+#define _POSIX_C_SOURCE 200809L
 #include "gric_fps_common.h"
 #include "gric_fps_params.h"
+#include "cluster_shm.h"
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
 
 char     fps_in_name[FUNCTION_PARAMETER_STRMAXLEN]          = "";
 char     fps_out_assign_name[FUNCTION_PARAMETER_STRMAXLEN]  = "";
@@ -21,11 +29,29 @@ double   fps_rlim             = 0.5;
 double   fps_deltaprob        = 0.01;
 uint32_t fps_maxnbclust       = 256;
 int64_t  fps_maxcl_strategy   = 0;
+uint64_t fps_max_frames        = 0;
 uint32_t fps_ncpu             = 0;
 int32_t  fps_use_double       = 0;
 int32_t  fps_use_sq16         = 0;
 int32_t  fps_entropy_mode     = 0;
 int32_t  fps_reset_state      = 0;
+
+uint64_t fps_status_frames_processed                   = 0;
+uint32_t fps_status_num_clusters                       = 0;
+uint64_t fps_status_new_clusters                       = 0;
+uint64_t fps_status_distance_evals                     = 0;
+double   fps_status_pruning_ratio                      = 0.0;
+double   fps_status_latency_us                         = 0.0;
+double   fps_status_fps                                = 0.0;
+int64_t  fps_status_stream_lag                         = 0;
+double   fps_status_memory_rss_mb                      = 0.0;
+char     fps_shm_status_file[FUNCTION_PARAMETER_STRMAXLEN] = "";
+
+static GricClusterShmStatus *status_shm_ptr        = NULL;
+static char                  active_shm_path[PATH_MAX] = "";
+static struct timespec       session_start_time;
+static struct timespec       prev_fps_calc_time;
+static uint64_t              prev_fps_calc_frames  = 0;
 
 static gric_cluster_t *cluster_ctx        = NULL;
 static double         *coord_conv_buf     = NULL;
@@ -366,4 +392,265 @@ errno_t gric_fps_process_frame(
 int64_t gric_fps_get_cluster_count(void)
 {
     return cluster_ctx ? gric_cluster_get_num_clusters(cluster_ctx) : 0;
+}
+
+/**
+ * get_current_rss_mb() - Query current process resident set size in megabytes.
+ *
+ * Return: Memory RSS in MB, or 0.0 on error.
+ */
+static double get_current_rss_mb(void)
+{
+    FILE *f = fopen("/proc/self/statm", "r");
+    if (!f)
+    {
+        return 0.0;
+    }
+    long pages = 0;
+    if (fscanf(f, "%*d %ld", &pages) != 1)
+    {
+        fclose(f);
+        return 0.0;
+    }
+    fclose(f);
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size < 0)
+    {
+        page_size = 4096;
+    }
+    return (double)((uint64_t)pages * (uint64_t)page_size) / (1024.0 * 1024.0);
+}
+
+/**
+ * gric_fps_status_init() - Initialize file-mapped shared memory status bridge.
+ * @fps_name:    Name of the active FPS daemon instance.
+ * @custom_path: Optional custom path to SHM status file.
+ *
+ * Return: 0 on success, non-zero on error.
+ */
+errno_t gric_fps_status_init(
+    const char *fps_name,
+    const char *custom_path)
+{
+    if (status_shm_ptr != NULL)
+    {
+        gric_fps_status_close(0);
+    }
+
+    if (custom_path != NULL && custom_path[0] != '\0')
+    {
+        strncpy(active_shm_path, custom_path, sizeof(active_shm_path) - 1);
+        active_shm_path[sizeof(active_shm_path) - 1] = '\0';
+    }
+    else
+    {
+        const char *name = (fps_name && fps_name[0] != '\0') ? fps_name : "gric_cluster";
+        const char *shmdir = getenv("MILK_SHM_DIR");
+        if (shmdir == NULL && access("/milk/shm", W_OK) == 0)
+        {
+            shmdir = "/milk/shm";
+        }
+        if (shmdir == NULL && access("/dev/shm", W_OK) == 0)
+        {
+            shmdir = "/dev/shm";
+        }
+        if (shmdir == NULL)
+        {
+            shmdir = "/tmp";
+        }
+        snprintf(active_shm_path, sizeof(active_shm_path), "%s/fps.%s.status.shm", shmdir, name);
+    }
+
+    int fd = open(active_shm_path, O_RDWR | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0)
+    {
+        const char *name = (fps_name && fps_name[0] != '\0') ? fps_name : "gric_cluster";
+        snprintf(active_shm_path, sizeof(active_shm_path), "/tmp/fps.%s.status.shm", name);
+        fd = open(active_shm_path, O_RDWR | O_CREAT | O_TRUNC, 0666);
+    }
+
+    if (fd < 0)
+    {
+        active_shm_path[0] = '\0';
+        return 1;
+    }
+
+    if (ftruncate(fd, sizeof(GricClusterShmStatus)) < 0)
+    {
+        close(fd);
+        active_shm_path[0] = '\0';
+        return 1;
+    }
+
+    void *ptr = mmap(NULL, sizeof(GricClusterShmStatus), PROT_READ | PROT_WRITE,
+                     MAP_SHARED, fd, 0);
+    close(fd);
+
+    if (ptr == MAP_FAILED)
+    {
+        active_shm_path[0] = '\0';
+        return 1;
+    }
+
+    status_shm_ptr = (GricClusterShmStatus *)ptr;
+    memset(status_shm_ptr, 0, sizeof(GricClusterShmStatus));
+
+    status_shm_ptr->magic = GRIC_SHM_MAGIC;
+    status_shm_ptr->version = GRIC_SHM_VERSION;
+    status_shm_ptr->pid = (uint32_t)getpid();
+    status_shm_ptr->status_state = GRIC_STATUS_RUNNING;
+    status_shm_ptr->total_frames = fps_max_frames;
+    strncpy(status_shm_ptr->input_source, fps_in_name, sizeof(status_shm_ptr->input_source) - 1);
+
+    if (getcwd(status_shm_ptr->config_cwd, sizeof(status_shm_ptr->config_cwd) - 1) == NULL)
+    {
+        status_shm_ptr->config_cwd[0] = '\0';
+    }
+
+    status_shm_ptr->config_rlim = fps_rlim;
+    status_shm_ptr->config_maxnbclust = fps_maxnbclust;
+    status_shm_ptr->config_dprob = fps_deltaprob;
+    status_shm_ptr->config_maxcl_strategy = (uint32_t)fps_maxcl_strategy;
+    status_shm_ptr->config_entropy_mode = (uint32_t)fps_entropy_mode;
+    status_shm_ptr->active_threads = fps_ncpu;
+
+    clock_gettime(CLOCK_MONOTONIC, &session_start_time);
+    prev_fps_calc_time = session_start_time;
+    prev_fps_calc_frames = 0;
+
+    return 0;
+}
+
+/**
+ * gric_fps_status_update() - Update real-time status parameters and bridge shared memory.
+ * @frame_index: Frame counter (cnt0).
+ * @latency_us:  Algorithm execution latency in microseconds.
+ * @stream_lag:  Input stream lag between write and read heads.
+ * @write_slice: Current circular buffer write index.
+ * @read_slice:  Current circular buffer read index.
+ */
+void gric_fps_status_update(
+    uint64_t frame_index,
+    double   latency_us,
+    long     stream_lag,
+    long     write_slice,
+    long     read_slice)
+{
+    (void)frame_index;
+
+    gric_cluster_stats_t stats;
+    memset(&stats, 0, sizeof(stats));
+    if (cluster_ctx)
+    {
+        gric_cluster_get_stats(cluster_ctx, &stats);
+    }
+
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    double elapsed_ms = (now.tv_sec - session_start_time.tv_sec) * 1000.0 +
+                        (now.tv_nsec - session_start_time.tv_nsec) / 1000000.0;
+
+    /* Compute processing throughput (FPS) */
+    double dt_fps = (now.tv_sec - prev_fps_calc_time.tv_sec) +
+                    (now.tv_nsec - prev_fps_calc_time.tv_nsec) / 1000000000.0;
+    if (dt_fps >= 0.1)
+    {
+        uint64_t dframes = stats.total_frames_processed - prev_fps_calc_frames;
+        fps_status_fps = (double)dframes / dt_fps;
+        prev_fps_calc_time = now;
+        prev_fps_calc_frames = stats.total_frames_processed;
+    }
+
+    /* Update FPS parameter variables */
+    fps_status_frames_processed = stats.total_frames_processed;
+    fps_status_num_clusters = stats.num_clusters;
+    fps_status_new_clusters = stats.num_new_clusters;
+    fps_status_distance_evals = stats.framedist_calls;
+
+    uint64_t total_possible = stats.total_frames_processed * (uint64_t)stats.num_clusters;
+    if (total_possible > 0)
+    {
+        double ratio = 1.0 - ((double)stats.framedist_calls / (double)total_possible);
+        fps_status_pruning_ratio = (ratio < 0.0) ? 0.0 : ratio;
+    }
+    else
+    {
+        fps_status_pruning_ratio = 0.0;
+    }
+
+    fps_status_latency_us = latency_us;
+    fps_status_stream_lag = (int64_t)stream_lag;
+    fps_status_memory_rss_mb = get_current_rss_mb();
+
+    /* Update bridge shared memory file if active */
+    if (status_shm_ptr != NULL)
+    {
+        status_shm_ptr->status_state = GRIC_STATUS_RUNNING;
+        status_shm_ptr->total_frames_processed = stats.total_frames_processed;
+        status_shm_ptr->num_clusters = stats.num_clusters;
+        status_shm_ptr->framedist_calls = stats.framedist_calls;
+        status_shm_ptr->framedist_calls_sample = stats.framedist_calls_sample;
+        status_shm_ptr->framedist_calls_intercluster = stats.framedist_calls_intercluster;
+        status_shm_ptr->clusters_pruned = stats.clusters_pruned;
+        status_shm_ptr->elapsed_ms = elapsed_ms;
+
+        status_shm_ptr->stream_read_slice = read_slice;
+        status_shm_ptr->stream_write_slice = write_slice;
+        status_shm_ptr->stream_lag = stream_lag;
+        status_shm_ptr->last_assignment_dist = stats.last_assignment_dist;
+        status_shm_ptr->num_new_clusters = stats.num_new_clusters;
+
+        status_shm_ptr->memory_rss_kb = (uint64_t)(fps_status_memory_rss_mb * 1024.0);
+        status_shm_ptr->active_threads = fps_ncpu;
+
+        status_shm_ptr->last_frame_dists = stats.last_frame_dists;
+        status_shm_ptr->last_frame_dfc = stats.last_frame_dfc;
+        status_shm_ptr->last_frame_dcc = stats.last_frame_dcc;
+        status_shm_ptr->time_io_ms = stats.time_io_ms;
+        status_shm_ptr->time_step_1 = stats.time_step_1;
+        status_shm_ptr->time_step_2 = stats.time_step_2;
+        status_shm_ptr->time_step_3a = stats.time_step_3a;
+        status_shm_ptr->time_step_3b = stats.time_step_3b;
+        status_shm_ptr->time_step_3c = stats.time_step_3c;
+        status_shm_ptr->time_step_4 = stats.time_step_4;
+        status_shm_ptr->time_step_5 = stats.time_step_5;
+        status_shm_ptr->time_step_refine = stats.time_step_refine;
+
+        status_shm_ptr->entropy_last_initial = stats.entropy_last_initial;
+        status_shm_ptr->entropy_avg_initial = stats.entropy_avg_initial;
+        status_shm_ptr->entropy_gate_ratio = stats.entropy_gate_ratio;
+        status_shm_ptr->dcc_entries_populated = stats.dcc_entries_populated;
+        status_shm_ptr->dcc_pairs_total = stats.dcc_pairs_total;
+        status_shm_ptr->memo_hits = stats.memo_hits;
+        status_shm_ptr->memo_lookups = stats.memo_lookups;
+        status_shm_ptr->memo_cache_entries = stats.memo_cache_entries;
+        status_shm_ptr->memo_cache_capacity = stats.memo_cache_capacity;
+
+        status_shm_ptr->config_rlim = fps_rlim;
+        status_shm_ptr->config_maxnbclust = fps_maxnbclust;
+        status_shm_ptr->config_dprob = fps_deltaprob;
+        status_shm_ptr->total_frames = fps_max_frames;
+
+        struct timespec real_now;
+        clock_gettime(CLOCK_REALTIME, &real_now);
+        status_shm_ptr->last_update_time = (uint64_t)real_now.tv_sec * 1000000000ULL +
+                                           (uint64_t)real_now.tv_nsec;
+    }
+}
+
+/**
+ * gric_fps_status_close() - Finalize and unmap the status shared memory bridge.
+ * @exit_state: Exit code (0 for success, non-zero for error).
+ */
+void gric_fps_status_close(
+    int exit_state)
+{
+    if (status_shm_ptr != NULL)
+    {
+        status_shm_ptr->status_state = (exit_state == 0) ? GRIC_STATUS_SUCCESS
+                                                         : GRIC_STATUS_ERROR;
+        munmap(status_shm_ptr, sizeof(GricClusterShmStatus));
+        status_shm_ptr = NULL;
+    }
 }

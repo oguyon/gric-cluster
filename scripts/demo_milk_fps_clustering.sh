@@ -58,6 +58,7 @@ BIN_FPSEXEC="$(resolve_bin milk-fpsexec-gric-cluster)"
 BIN_FPS_SET="$(resolve_bin milk-fps-set)"
 BIN_STREAM2PIPE="$(resolve_bin gric-stream-to-pipe)"
 BIN_PROCCTRL="$(resolve_bin milk-procCTRL)"
+BIN_GRIC_STATUS="$(resolve_bin gric-status)"
 
 # ------------------------------------------------------------------------------
 # Cleanup Handler
@@ -109,6 +110,7 @@ check_dep "gric-txt2stream" "${BIN_TXT2STREAM}"
 check_dep "milk-fpsexec-gric-cluster" "${BIN_FPSEXEC}"
 check_dep "milk-fps-set" "${BIN_FPS_SET}"
 check_dep "gric-stream-to-pipe" "${BIN_STREAM2PIPE}"
+check_dep "gric-status" "${BIN_GRIC_STATUS}"
 echo ""
 
 # ------------------------------------------------------------------------------
@@ -178,10 +180,12 @@ fi
 print_menu() {
     echo -e "${BOLD}${CYAN}=== Interactive Control Menu ===${RESET}"
     echo "  [1] Sample live clustering output (5 frames)"
-    echo "  [2] Adjust clustering radius (rlim) live"
-    echo "  [3] Reset cluster state dynamically (reset_state ON)"
-    echo "  [4] Open milk-procCTRL telemetry dashboard"
-    echo "  [5] View tmux daemon log"
+    echo "  [2] Inspect live FPS status (.status.* parameters)"
+    echo "  [3] Launch gric-status interactive dashboard (gric-status demo -w)"
+    echo "  [4] Adjust clustering radius (rlim) live"
+    echo "  [5] Reset cluster state dynamically (reset_state ON)"
+    echo "  [6] Open milk-procCTRL telemetry dashboard"
+    echo "  [7] View tmux daemon log"
     echo "  [q] Quit and clean up"
     echo ""
 }
@@ -192,9 +196,9 @@ read_telemetry_frames() {
 import sys, struct
 labels = ["cnt0", "cluster_id", "dist", "new_anchor", "nclust", "lat_us", "evals", "aux"]
 for i in range(5):
-    raw = sys.stdin.buffer.read(64)
+    raw = sys.stdin.buffer.read(32)
     if not raw: break
-    vals = struct.unpack("8d", raw)
+    vals = struct.unpack("8f", raw)
     print(f"  Frame {i:2d} -> " + " | ".join(f"{k}: {v:6.2f}" for k, v in zip(labels, vals)))
 ' || echo -e "${YELLOW}Waiting for frames...${RESET}"
     echo ""
@@ -202,24 +206,38 @@ for i in range(5):
 
 while true; do
     print_menu
-    read -r -p "Select an option [1-5, q]: " choice
+    read -r -p "Select an option [1-7, q]: " choice
     case "$choice" in
         1)
             read_telemetry_frames
             ;;
         2)
+            echo -e "\n${BOLD}${CYAN}--- Live FPS Status Parameters (${FPS_NAME}:fps) ---${RESET}"
+            "${BIN_FPSEXEC}" -procinfo "${FPS_NAME}:fps" | \
+                grep -E "status\.|rlim|in_name|out_name|max_frames" || true
+            echo ""
+            ;;
+        3)
+            if [[ -n "${BIN_GRIC_STATUS}" ]]; then
+                echo -e "${CYAN}Launching gric-status dashboard (press 'q' to return)...${RESET}"
+                "${BIN_GRIC_STATUS}" "${FPS_NAME}" -w || true
+            else
+                echo -e "${YELLOW}gric-status not found.${RESET}\n"
+            fi
+            ;;
+        4)
             read -r -p "Enter new clustering radius (rlim) [e.g. 0.20, 0.60]: " new_rlim
             if [[ -n "${new_rlim}" ]]; then
                 "${BIN_FPS_SET}" "${FPS_NAME}.rlim" "${new_rlim}"
                 echo -e "${GREEN}Parameter ${FPS_NAME}.rlim updated to ${new_rlim}.${RESET}\n"
             fi
             ;;
-        3)
+        5)
             echo -e "${YELLOW}Triggering dynamic cluster reset...${RESET}"
             "${BIN_FPS_SET}" "${FPS_NAME}.reset_state" "ON"
             echo -e "${GREEN}Cluster state reset command sent.${RESET}\n"
             ;;
-        4)
+        6)
             if [[ -n "${BIN_PROCCTRL}" ]]; then
                 echo -e "${CYAN}Launching milk-procCTRL (press 'q' inside TUI to return)...${RESET}"
                 "${BIN_PROCCTRL}" || true
@@ -227,8 +245,8 @@ while true; do
                 echo -e "${YELLOW}milk-procCTRL not found in PATH.${RESET}\n"
             fi
             ;;
-        5)
-            echo -e "\n${CYAN}--- tmux pane demo:2 output ---${RESET}"
+        7)
+            echo -e "\n${CYAN}--- tmux pane ${FPS_NAME}:2 output ---${RESET}"
             tmux capture-pane -p -t "${FPS_NAME}:2" 2>/dev/null | tail -n 15 || \
                 echo "Unable to read tmux pane."
             echo -e "${CYAN}-------------------------------${RESET}\n"
@@ -238,7 +256,7 @@ while true; do
             break
             ;;
         *)
-            echo -e "${RED}Invalid option '${choice}'. Please select 1-5 or q.${RESET}\n"
+            echo -e "${RED}Invalid option '${choice}'. Please select 1-7 or q.${RESET}\n"
             ;;
     esac
 done
