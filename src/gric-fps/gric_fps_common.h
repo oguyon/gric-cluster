@@ -49,6 +49,7 @@ extern double   fps_status_fps;
 extern int64_t  fps_status_stream_lag;
 extern double   fps_status_memory_rss_mb;
 extern char     fps_shm_status_file[FUNCTION_PARAMETER_STRMAXLEN];
+extern char     fps_save_dir[FUNCTION_PARAMETER_STRMAXLEN];
 
 /* Telemetry packet size for <out>_assign */
 #define GRIC_ASSIGN_PACKET_ELEMS 8
@@ -73,6 +74,15 @@ errno_t gric_fps_init_engine(
  * @brief Destroy the active libgric clustering session and conversion buffers.
  */
 void gric_fps_cleanup_engine(void);
+
+/**
+ * @brief Export clustering results to disk in GRIC binary format.
+ *
+ * @param out_dir Destination output directory path.
+ * @return 0 on success, non-zero on error.
+ */
+errno_t gric_fps_save_results(
+    const char *out_dir);
 
 /**
  * @brief Create shared memory output streams (_assign, _anchors, _counts).

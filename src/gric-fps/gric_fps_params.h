@@ -81,6 +81,9 @@
       FPFLAG_DEFAULT_OUTPUT, "Process RSS memory consumption (MB)") \
     /* Shared memory telemetry bridge configuration */ \
     X(".shm_status_file", fps_shm_status_file, FPTYPE_STRING, 1, \
-      FPFLAG_DEFAULT_INPUT, "Bridge status SHM file path (blank=default)")
+      FPFLAG_DEFAULT_INPUT, "Bridge status SHM file path (blank=default)") \
+    /* Results persistence configuration */ \
+    X(".save_dir", fps_save_dir, FPTYPE_DIRNAME, 1, \
+      FPFLAG_DEFAULT_INPUT, "Directory to save clustering results (.bin)")
 
 #endif /* GRIC_FPS_PARAMS_H */
