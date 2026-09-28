@@ -1,0 +1,68 @@
+# ==============================================================================
+# demo_milk_4dataset.milk - Interactive 4-Dataset Pipeline in Milk CLI
+#
+# Usage:
+#   milk < demo_milk_4dataset.milk
+#   or inside milk session:
+#   readfile "demo_milk_4dataset.milk"
+#
+# Prerequisites:
+#   Make sure libmilkgric.so is loaded:
+#   MILKCLI_ADD_LIBS=/path/to/libmilkgric.so milk
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Training Phase: Datasets A and B (Pre-Synchronized on Filesystem)
+# ------------------------------------------------------------------------------
+# Datasets A and B are stored on the filesystem (e.g., dataset_A.txt, dataset_B.txt)
+# and are pre-synchronized sample-by-sample (row i in A <-> row i in B).
+#
+# Clustering can be run directly on the filesystem files:
+#   gric-cluster 0.35 dataset_A.txt -outdir a_cluster.dat
+#   gric-knn dataset_A.txt a_cluster.dat -k 10
+#   gric-cluster 0.35 dataset_B.txt -outdir b_cluster.dat
+#   gric-knn dataset_B.txt b_cluster.dat -k 10
+#
+# Or within Milk CLI when loaded into shared memory (e.g., via loadfits):
+# Cluster Training Dataset A (Observation space):
+gric.gric_cluster .in_name demo4_stream_A
+gric.gric_cluster .out_name demo4_a_assign
+gric.gric_cluster .save_dir a_cluster.dat
+gric.gric_cluster .max_frames 1000
+gric.gric_cluster
+
+# Cluster Training Dataset B (Target state space):
+gric.gric_cluster .in_name demo4_stream_B
+gric.gric_cluster .out_name demo4_b_assign
+gric.gric_cluster .save_dir b_cluster.dat
+gric.gric_cluster .max_frames 1000
+gric.gric_cluster
+
+# ------------------------------------------------------------------------------
+# 2. Inference Phase: Stream C -> k-NN on A -> Reconstruct D from B
+# ------------------------------------------------------------------------------
+
+# Step 2a: Configure streaming k-NN search against Reference Dataset A
+gric.gric_knn .in_name demo4_stream_C
+gric.gric_knn .out_name demo4_c_matches
+gric.gric_knn .cluster_dir a_cluster.dat
+gric.gric_knn .ref_data dataset_A.txt
+gric.gric_knn .k 10
+gric.gric_knn .max_frames 200
+
+# Step 2b: Configure streaming Reconstructor from Target Dataset B
+gric.gric_reconstruct .in_name demo4_c_matches
+gric.gric_reconstruct .target_data dataset_B.txt
+gric.gric_reconstruct .out_name demo4_stream_D
+gric.gric_reconstruct .weight_mode idw
+gric.gric_reconstruct .alpha 1.0
+gric.gric_reconstruct .k 10
+gric.gric_reconstruct .max_frames 200
+
+# Launch reconstructor and k-NN search
+# Reconstructor executes synchronously on triggered matches
+gric.gric_reconstruct
+gric.gric_knn
+
+# Exit CLI when processing is complete
+exitCLI
