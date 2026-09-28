@@ -298,6 +298,12 @@ add_executable(gric-mktxtseq
 )
 target_link_libraries(gric-mktxtseq m)
 
+add_executable(gric-mk4dataset
+    src/tools/generators/mk4dataset.c
+    src/shared/cli/cli_colors.c
+)
+target_link_libraries(gric-mk4dataset m)
+
 add_executable(gric-plot
     src/gric-plot/plot_clusters.c
     src/gric-plot/plot_log_parser.c
@@ -704,6 +710,7 @@ install(TARGETS
     gric-bin2ascii
     gric-ascii2bin
     gric-mktxtseq
+    gric-mk4dataset
     gric-plot
     gric-probe
     gric-mcp
@@ -908,6 +915,12 @@ if (ENABLE_MILK AND MILK_FOUND)
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(test_milk_query_knn_e2e PROPERTIES
         DEPENDS "milk-fpsexec-gric-cluster;milk-fpsexec-gric-knn;milkgric;gric-cluster;gric-knn;gric-txt2stream")
+
+    add_test(NAME test_milk_4dataset_e2e
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_milk_4dataset_e2e.sh ${CMAKE_BINARY_DIR}
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_tests_properties(test_milk_4dataset_e2e PROPERTIES
+        DEPENDS "milk-fpsexec-gric-cluster;milk-fpsexec-gric-knn;milk-fpsexec-gric-reconstruct;milkgric;gric-cluster;gric-knn;gric-txt2stream")
 endif()
 
 add_executable(test_bin_ascii_roundtrip

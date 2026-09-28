@@ -79,6 +79,8 @@ static void print_help(
     printf("%sOPTIONS%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s-fps%s %s<val>%s         Streaming frame rate (frames/sec, default: %.1f, 0=max)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset, DEFAULT_FPS);
+    printf("  %s-delay%s %s<sec>%s       Delay streaming by N seconds after stream creation\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-depth%s %s<N>%s         Circular ring buffer depth (default: %d)\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset, DEFAULT_BUFFER_DEPTH);
     printf("  %s-loop%s              Loop dataset indefinitely until stopped (Ctrl+C)\n",
@@ -265,6 +267,7 @@ int main(
     const char *stream_name = NULL;
     double fps = DEFAULT_FPS;
     int fps_specified = 0;
+    double delay_sec = 0.0;
     int buffer_depth = DEFAULT_BUFFER_DEPTH;
     int loop_mode = 0;
     int repeats = 1;
@@ -280,6 +283,10 @@ int main(
         {
             fps = atof(argv[++i]);
             fps_specified = 1;
+        }
+        else if (strcmp(argv[i], "-delay") == 0 && i + 1 < argc)
+        {
+            delay_sec = atof(argv[++i]);
         }
         else if (strcmp(argv[i], "-depth") == 0 && i + 1 < argc)
         {
@@ -417,6 +424,18 @@ int main(
     long total_streamed = 0;
     int current_repeat = 0;
     long write_slice = 0;
+
+    if (delay_sec > 0.0)
+    {
+        if (verbose)
+        {
+            printf("  Holding stream ready for %.2f s before streaming...\n", delay_sec);
+        }
+        struct timespec delay_ts;
+        delay_ts.tv_sec = (time_t)delay_sec;
+        delay_ts.tv_nsec = (long)((delay_sec - (double)delay_ts.tv_sec) * 1e9);
+        nanosleep(&delay_ts, NULL);
+    }
 
     struct timespec last_time;
     clock_gettime(CLOCK_MONOTONIC, &last_time);

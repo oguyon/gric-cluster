@@ -19,6 +19,7 @@ if [ ! -f "$BUILD_DIR/src/gric-fps/milk-fpsexec-gric-cluster" ]; then
         BUILD_DIR="$ROOT_DIR/build-milk"
     fi
 fi
+BUILD_DIR="$(cd "$BUILD_DIR" && pwd)"
 
 FPS_CLUSTER="$BUILD_DIR/src/gric-fps/milk-fpsexec-gric-cluster"
 FPS_KNN="$BUILD_DIR/src/gric-fps/milk-fpsexec-gric-knn"
@@ -84,6 +85,7 @@ clean_e2e_shm() {
     for dir in "${MILK_SHM_DIR:-}" "/milk/shm" "/dev/shm" "/tmp"; do
         if [ -n "$dir" ] && [ -d "$dir" ]; then
             rm -f "$dir/${prefix}"*.im.shm 2>/dev/null || true
+            rm -f "$dir/gric_cluster.fps.shm" "$dir/gric_knn.fps.shm" 2>/dev/null || true
         fi
     done
 }

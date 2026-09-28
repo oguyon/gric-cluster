@@ -136,12 +136,76 @@ install(CODE "
         SYMBOLIC)
 ")
 
-# 3. Shared Milk CLI Plugin: libmilkgric.so
+# 3. Standalone FPS Daemon Executable: milk-fpsexec-gric-reconstruct
+add_executable(milk-fpsexec-gric-reconstruct
+    gric_recon_fps_main.c
+    gric_recon_fps_common.c
+)
+
+target_compile_definitions(milk-fpsexec-gric-reconstruct PRIVATE
+    FPS_STANDALONE
+    MILK_NO_CLI
+)
+
+target_include_directories(milk-fpsexec-gric-reconstruct PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${MILK_COMPAT_DIR}
+    ${MILK_INCLUDE_DIRS}
+    ${MILK_INCLUDE_DIRS}/libfps
+    ${MILK_INCLUDE_DIRS}/libmilkcommon
+    ${MILK_INCLUDE_DIRS}/libmilkdata
+    ${MILK_INCLUDE_DIRS}/CommandLineInterface
+    ${IMAGESTREAMIO_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/gric-cluster/core
+    ${CMAKE_SOURCE_DIR}/src/gric-knn
+)
+
+target_link_libraries(milk-fpsexec-gric-reconstruct PRIVATE
+    gric_knn_static
+    gric_static
+    milkfps
+    milkfpsStandalone
+    milkfpsseq
+    milkprocessinfo
+    ${IMAGESTREAMIO_LIBRARIES}
+    milkCOREMODmemory
+    milkCOREMODtools
+    milkCOREMODarith
+    milkcommon
+    milkdata
+    m
+    pthread
+    rt
+    -Wl,--allow-shlib-undefined
+)
+
+# Create convenient symlink: gric-fps-reconstruct -> milk-fpsexec-gric-reconstruct
+add_custom_command(TARGET milk-fpsexec-gric-reconstruct POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        $<TARGET_FILE_NAME:milk-fpsexec-gric-reconstruct>
+        ${CMAKE_CURRENT_BINARY_DIR}/gric-fps-reconstruct
+)
+
+install(TARGETS milk-fpsexec-gric-reconstruct
+    DESTINATION bin
+)
+
+install(CODE "
+    file(CREATE_LINK milk-fpsexec-gric-reconstruct
+        \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/gric-fps-reconstruct
+        SYMBOLIC)
+")
+
+# 4. Shared Milk CLI Plugin: libmilkgric.so
 add_library(milkgric SHARED
     gric_module.c
     gric_fps_common.c
     gric_knn_module.c
     gric_knn_fps_common.c
+    gric_recon_module.c
+    gric_recon_fps_common.c
 )
 
 set_target_properties(milkgric PROPERTIES
