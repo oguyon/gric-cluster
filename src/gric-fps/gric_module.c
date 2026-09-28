@@ -252,6 +252,7 @@ errno_t CLIADDCMD_gric_cluster(void)
 }
 
 errno_t CLIADDCMD_gric_knn(void);
+errno_t CLIADDCMD_gric_reconstruct(void);
 
 /**
  * init_module_CLI() - Module initializer function called by MILK_MODULE.
@@ -262,6 +263,7 @@ static errno_t init_module_CLI(void)
 {
     CLIADDCMD_gric_cluster();
     CLIADDCMD_gric_knn();
+    CLIADDCMD_gric_reconstruct();
     return RETURN_SUCCESS;
 }
 

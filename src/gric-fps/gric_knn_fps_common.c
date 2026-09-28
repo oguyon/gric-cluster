@@ -342,7 +342,8 @@ errno_t gric_knn_fps_init_output_streams(
     /* Create 2D output stream [k x 2] (Row 0 = indices, Row 1 = distances) */
     uint32_t dims[2] = { k, 2 };
     if (ImageStreamIO_createIm_gpu(out_knn, stream_name, 2, dims,
-                                   _DATATYPE_FLOAT, -1, 1, 10, 0, 0, 0) != 0)
+                                   _DATATYPE_FLOAT, -1, 1, 10,
+                                   IMAGE_NB_SEMAPHORE, 0, 0) != 0)
     {
         return 1;
     }
@@ -544,9 +545,6 @@ errno_t gric_knn_fps_process_frame(
             raw_out[j] = (float)out_indices[j];
             raw_out[k + j] = (float)out_dists[j];
         }
-        out_knn->md[0].cnt0++;
-        out_knn->md[0].write = 0;
-        ImageStreamIO_sempost(out_knn, -1);
     }
 
     fps_knn_status_queries++;
