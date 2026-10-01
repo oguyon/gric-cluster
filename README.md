@@ -7,7 +7,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Documentation](https://img.shields.io/badge/Docs-MkDocs-indigo.svg)][docs]
 
-[c17]: https://en.wikipedia.org/wiki/C17_(C_standard_revision)
 [docs]: https://oguyon.github.io/gric-cluster/
 
 **GRIC** (Geometric Real-Time Image Clustering) is an ultra-fast, distance-based streaming
@@ -18,15 +17,15 @@ target selection and multi-point metric space pruning.
 
 ---
 
-## 🎬 Video Walkthrough & Interactive Simulator
+## Video Walkthrough & Interactive Simulator
 
 Experience GRIC through our narrated HD explainer video or explore algorithms in real-time in your
 browser:
 
-- 🌐 **[Interactive 2D & 3D Simulator](https://oguyon.github.io/gric-cluster/visual_simulator.html)**
-- 📖 **[Read Full MkDocs Documentation](https://oguyon.github.io/gric-cluster/)**
-- 📐 **[Visual Guide & Architecture](https://oguyon.github.io/gric-cluster/algorithm/visual_guide/)**
-- 🎥 **[Download / Watch Full Narrated HD Video (MP4)](docs/figures/gric_explainer.mp4)**
+- **[Interactive 2D & 3D Simulator](https://oguyon.github.io/gric-cluster/visual_simulator.html)**
+- **[Read Full MkDocs Documentation](https://oguyon.github.io/gric-cluster/)**
+- **[Visual Guide & Architecture](https://oguyon.github.io/gric-cluster/algorithm/visual_guide/)**
+- **[Download / Watch Full Narrated HD Video (MP4)](docs/figures/gric_explainer.mp4)**
 
 ![GRIC Algorithm Animated Walkthrough](docs/figures/gric_explainer.gif)
 *Figure 1: Narrated visual walkthrough demonstrating sequential stream ingestion, boundary anchor
@@ -35,7 +34,7 @@ multi-tile rich joint tuples.*
 
 ---
 
-## 🚀 Key Features & Architectural Innovations
+## Key Features & Architectural Innovations
 
 ### 1. 5-Stage Sequential Pipeline
 GRIC clusters incoming frames sequentially in a single pass without storing dense pairwise distance
@@ -120,7 +119,7 @@ matrices.
 
 ---
 
-## 🛠️ Programs & Tools
+## Programs & Tools
 
 The GRIC suite includes several specialized CLI executables:
 
@@ -156,7 +155,7 @@ The GRIC suite includes several specialized CLI executables:
 
 ---
 
-## 📦 Installation & Dependencies
+## Installation & Dependencies
 
 ### System Requirements (Debian / Ubuntu)
 
@@ -215,7 +214,7 @@ sudo make install && sudo ldconfig
 
 ---
 
-## 🔨 Build & Quick Start
+## Build & Quick Start
 
 ```bash
 # 1. Clone repository
@@ -257,20 +256,27 @@ make -j$(nproc)
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 For full theoretical derivations, CLI flag descriptions, and benchmark reports, visit the
 **[GRIC Documentation Site](https://oguyon.github.io/gric-cluster/)**:
 
-- 📖 **[Algorithm Overview & Modes](https://oguyon.github.io/gric-cluster/algorithm/)**
-- 🎨 **[Visual Architecture & Guide](https://oguyon.github.io/gric-cluster/algorithm/visual_guide/)**
-- ⌨️ **[Comprehensive CLI Option Manual](https://oguyon.github.io/gric-cluster/help/)**
-- 🛠️ **[Tools & Utilities Reference](https://oguyon.github.io/gric-cluster/tools/)**
-- 📊 **[Benchmark Performance Suite](https://oguyon.github.io/gric-cluster/benchmarks/)**
-- 🛰️ **[Real-World Earth Observation Demo](https://oguyon.github.io/gric-cluster/satellite_demo/)**
+- **[Algorithm Overview & Modes](https://oguyon.github.io/gric-cluster/algorithm/)**
+- **[Visual Architecture & Guide](https://oguyon.github.io/gric-cluster/algorithm/visual_guide/)**
+- **[Comprehensive CLI Option Manual](https://oguyon.github.io/gric-cluster/help/)**
+- **[Tools & Utilities Reference](https://oguyon.github.io/gric-cluster/tools/)**
+- **[Benchmark Performance Suite](https://oguyon.github.io/gric-cluster/benchmarks/)**
+- **[Real-World Earth Observation Demo](https://oguyon.github.io/gric-cluster/satellite_demo/)**
 
 ---
 
-## 📄 License
+## Funding Acknowledgements
+
+GRIC development is supported by NSF (award 2410616) and NASA (grant 80NSSC24K0098).
+
+
+---
+
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
