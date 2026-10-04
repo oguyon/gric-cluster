@@ -10,6 +10,7 @@
 #include "mcp_dispatch.h"
 #include "mcp_registry.h"
 #include "mcp_tools.h"
+#include "gric_build_info.h"
 #include "shared/cjson/cJSON.h"
 #include "shared/cli/cli_colors.h"
 #include <stdio.h>
@@ -26,8 +27,9 @@
 static void print_usage(
     const char *prog)
 {
-    printf("%sgric-mcp%s v%s - Native C17 Model Context Protocol Server for GRIC\n\n",
-           ANSI_BOLD_CYAN, ANSI_COLOR_RESET, GRIC_MCP_VERSION);
+    printf(
+        "%sgric-mcp%s (%s) - Native C17 Model Context Protocol Server for GRIC\n\n",
+        ANSI_BOLD_CYAN, ANSI_COLOR_RESET, GRIC_GIT_DESCRIBE);
     printf("Usage:\n");
     printf("  %s [options]                     Start stdio JSON-RPC 2.0 MCP server loop\n", prog);
     printf("  %s --list [options]              Print JSON list of available tools\n", prog);
@@ -134,7 +136,9 @@ int main(
         }
         if (strcmp(arg, "-v") == 0 || strcmp(arg, "--version") == 0)
         {
-            printf("gric-mcp version %s (C17 / JSON-RPC 2.0)\n", GRIC_MCP_VERSION);
+            printf(
+                "gric-mcp version %s (%s, HEAD %s)\n",
+                GRIC_MCP_VERSION, GRIC_GIT_DESCRIBE, GRIC_GIT_HEAD);
             return 0;
         }
         if (strcmp(arg, "--read-only") == 0)

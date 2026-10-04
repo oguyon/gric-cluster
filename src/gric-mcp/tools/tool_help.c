@@ -6,6 +6,8 @@
 #include "mcp_tools.h"
 #include "mcp_registry.h"
 #include "mcp_content.h"
+#include "mcp_staleness.h"
+#include "gric_build_info.h"
 #include "shared/help_topics.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -246,6 +248,28 @@ int mcp_tool_server_info(
 
     cJSON_AddStringToObject(res, "name", "gric-mcp");
     cJSON_AddStringToObject(res, "version", "1.0.0");
+    cJSON_AddStringToObject(res, "build_describe", GRIC_GIT_DESCRIBE);
+    cJSON_AddStringToObject(res, "build_commit", GRIC_GIT_HEAD);
+
+    const struct mcp_stale_status *stale = mcp_staleness_check();
+    cJSON_AddBoolToObject(res, "stale", (stale != NULL) ? stale->stale : 0);
+    if (stale != NULL && stale->reason != NULL)
+    {
+        cJSON_AddStringToObject(res, "stale_reason", stale->reason);
+    }
+    else
+    {
+        cJSON_AddNullToObject(res, "stale_reason");
+    }
+    if (stale != NULL && stale->repo_head[0] != '\0')
+    {
+        cJSON_AddStringToObject(res, "current_head", stale->repo_head);
+    }
+    else
+    {
+        cJSON_AddNullToObject(res, "current_head");
+    }
+
     cJSON_AddBoolToObject(res, "read_only", cfg->read_only);
     cJSON_AddBoolToObject(res, "has_source_tree", cfg->has_source_tree);
 

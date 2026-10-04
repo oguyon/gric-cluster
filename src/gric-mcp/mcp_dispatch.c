@@ -7,6 +7,8 @@
 #include "mcp_tools.h"
 #include "mcp_registry.h"
 #include "mcp_fps_schema.h"
+#include "mcp_staleness.h"
+#include "gric_build_info.h"
 #include "shared/cjson/cJSON.h"
 #include "shared/help_topics.h"
 #include <stdio.h>
@@ -88,7 +90,7 @@ static cJSON *handle_initialize(
 
     cJSON *server_info = cJSON_CreateObject();
     cJSON_AddStringToObject(server_info, "name", "gric-mcp");
-    cJSON_AddStringToObject(server_info, "version", "1.0.0");
+    cJSON_AddStringToObject(server_info, "version", GRIC_GIT_DESCRIBE);
     cJSON_AddItemToObject(result, "serverInfo", server_info);
 
     cJSON_AddItemToObject(resp, "result", result);
@@ -182,6 +184,31 @@ static cJSON *handle_tools_call(
     cJSON_AddStringToObject(content_item, "type", "text");
     cJSON_AddStringToObject(content_item, "text", result_text ? result_text : "{}");
     cJSON_AddItemToArray(content_arr, content_item);
+
+    const struct mcp_stale_status *stale = mcp_staleness_check();
+    if (stale != NULL && stale->stale)
+    {
+        cJSON *stale_item = cJSON_CreateObject();
+        cJSON_AddStringToObject(stale_item, "type", "text");
+        char warn[512];
+        if (stale->reason != NULL && strcmp(stale->reason, "binary_rebuilt") == 0)
+        {
+            snprintf(
+                warn, sizeof(warn),
+                "⚠ stale_server: gric-mcp was rebuilt since it started. "
+                "Restart the MCP server (new session) to load current code.");
+        }
+        else
+        {
+            snprintf(
+                warn, sizeof(warn),
+                "⚠ stale_server: repo HEAD moved from %.7s to %.7s. "
+                "Restart the MCP server (new session) to load current code.",
+                GRIC_GIT_HEAD, stale->repo_head);
+        }
+        cJSON_AddStringToObject(stale_item, "text", warn);
+        cJSON_AddItemToArray(content_arr, stale_item);
+    }
 
     cJSON_AddItemToObject(result_obj, "content", content_arr);
     cJSON_AddBoolToObject(result_obj, "isError", (status != 0));

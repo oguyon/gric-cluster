@@ -39,6 +39,8 @@ built-in **`gric-mcp`** server to inspect existing functionality and documentati
 - **Full**: `--toolsets=all` (configured in `.agents/mcp_config.json`).
 - **Read-Only**: `--read-only` hides and rejects all side-effecting operations
   (`gric_fps_run`, `gric_fps_set`, `gric_fps_stop`).
+- **Synchronization**: Follow [.agents/rules/mcp-sync.md](file://.agents/rules/mcp-sync.md)
+  whenever adding CLI flags, FPS parameters, stream layouts, or suite programs.
 
 ---
 

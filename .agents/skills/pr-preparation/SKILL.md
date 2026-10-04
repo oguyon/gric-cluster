@@ -18,3 +18,6 @@ Before opening a PR or merging code:
    - Notice: `Implemented by <model name>. Reviewed and signed off by O. Guyon`
      (e.g., `Implemented by gemini 3.8 flash (high). Reviewed and signed off by O. Guyon`).
    - A short description/summary of what the prompts asked the agent to do.
+6. **MCP synchronization:** If CLI flags, output formats, FPS parameters, stream layout,
+   or installed programs changed: MCP snapshot updated, drift tests pass (`test_mcp_*`,
+   `test_doc_flag_drift`, `test_fps_param_docs`, `test_mcp_suite_catalog`, `test_stream_layout`).
