@@ -185,9 +185,28 @@ errno_t gric_knn_fps_init_engine(
         knn_model_build_or_load_rq8(&knn_model, &knn_cfg);
     }
 
-    if (knn_reader_open(&cand_reader, fps_knn_ref_data, knn_model.total_dataset_frames,
-                        knn_model.frame_width, knn_model.frame_height,
-                        knn_model.is_double) != 0)
+    int open_res = -1;
+    if (knn_model.dataset_buffer != NULL)
+    {
+        open_res = knn_reader_open_memory(
+            &cand_reader,
+            knn_model.dataset_buffer,
+            knn_model.total_dataset_frames,
+            knn_model.frame_elements,
+            knn_model.is_double);
+    }
+    else
+    {
+        open_res = knn_reader_open(
+            &cand_reader,
+            fps_knn_ref_data,
+            knn_model.total_dataset_frames,
+            knn_model.frame_width,
+            knn_model.frame_height,
+            knn_model.is_double);
+    }
+
+    if (open_res != 0)
     {
         fprintf(stderr, "Error: Failed to open candidate reader for '%s'\n",
                 fps_knn_ref_data);
