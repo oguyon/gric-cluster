@@ -9,6 +9,7 @@
 #include "knn_defs.h"
 #include "knn_reader.h"
 #include "cluster_shm.h"
+#include "shared/sys/gric_rss.h"
 #include "shared/sys/gric_simd.h"
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <immintrin.h>
@@ -604,30 +605,6 @@ errno_t gric_recon_fps_process_frame(
 }
 
 /**
- * get_current_rss_mb() - Query current process resident set size in megabytes.
- *
- * Return: Memory RSS in MB, or 0.0 on error.
- */
-static double get_current_rss_mb(void)
-{
-    FILE *f = fopen("/proc/self/statm", "r");
-    if (!f)
-    {
-        return 0.0;
-    }
-    unsigned long size = 0;
-    unsigned long resident = 0;
-    if (fscanf(f, "%lu %lu", &size, &resident) == 2)
-    {
-        long page_size = sysconf(_SC_PAGESIZE);
-        fclose(f);
-        return (double)(resident * (unsigned long)page_size) / (1024.0 * 1024.0);
-    }
-    fclose(f);
-    return 0.0;
-}
-
-/**
  * gric_recon_fps_status_init() - Map shared-memory bridge status file.
  * @instance_name:     FPS instance name.
  * @custom_status_path: Optional explicit status file path.
@@ -711,7 +688,7 @@ void gric_recon_fps_status_update(
 
     fps_recon_status_latency_us = latency_us;
     fps_recon_status_stream_lag = stream_lag;
-    fps_recon_status_memory_rss_mb = get_current_rss_mb();
+    fps_recon_status_memory_rss_mb = gric_rss_mb_sampled();
 
     double elapsed_fps = (now.tv_sec - prev_fps_calc_time.tv_sec) +
                          (now.tv_nsec - prev_fps_calc_time.tv_nsec) * 1e-9;
