@@ -1005,7 +1005,14 @@ void run_clustering(
                                     verbose_candidates, start);
     }
 
-    if (state->scratch.cluster_probs != NULL)
+    if (state->scratch.pred_probs != NULL)
+    {
+        for (int i = 0; i < state->num_clusters; i++)
+        {
+            state->clusters[i].prob = state->scratch.pred_probs[i];
+        }
+    }
+    else if (state->scratch.cluster_probs != NULL)
     {
         for (int i = 0; i < state->num_clusters; i++)
         {

@@ -248,6 +248,7 @@ typedef struct
     int    *probsortedclindex;  /**< Cluster indices sorted by descending prior probability */
     int     probsorted_count;   /**< Number of valid entries in probsortedclindex */
     double *cluster_probs;     /**< Contiguous aligned array of cluster prior probabilities */
+    double *pred_probs;        /**< Contiguous SoA array for prediction-mode probabilities */
     int    *clmembflag;         /**< Flag indicating if a cluster is an active candidate */
     int    *active_clusters;    /**< Dense array of currently active candidate indices */
     int     num_active_clusters; /**< Number of currently active cluster candidates */

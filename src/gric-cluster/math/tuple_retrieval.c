@@ -716,7 +716,9 @@ void predict_joint_tuples(
         int q = recent_seq[(L - 1) * M + m];
         if (q >= 0 && q < ts->state.num_clusters)
         {
-            double p = ts->state.clusters[q].prob;
+            double p = ts->state.scratch.pred_probs
+                       ? ts->state.scratch.pred_probs[q]
+                       : ts->state.clusters[q].prob;
             if (p < min_prob)
             {
                 min_prob = p;

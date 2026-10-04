@@ -113,6 +113,22 @@ MultiTileState *multitile_init(
             {
                 memset(ts->state.scratch.cluster_probs, 0, (size_t)mc * sizeof(double));
             }
+            if (global->optim.pred_mode)
+            {
+                if (posix_memalign((void **)&ts->state.scratch.pred_probs, 64,
+                                   (size_t)mc * sizeof(double)) != 0)
+                {
+                    ts->state.scratch.pred_probs = NULL;
+                }
+                else
+                {
+                    memset(ts->state.scratch.pred_probs, 0, (size_t)mc * sizeof(double));
+                }
+            }
+            else
+            {
+                ts->state.scratch.pred_probs = NULL;
+            }
             ts->state.scratch.clmembflag = malloc(
                 mc * sizeof(int));
             ts->state.scratch.active_clusters = malloc(
@@ -327,6 +343,10 @@ void multitile_free(MultiTileState *mts)
             if (ts->state.scratch.cluster_probs)
             {
                 free(ts->state.scratch.cluster_probs);
+            }
+            if (ts->state.scratch.pred_probs)
+            {
+                free(ts->state.scratch.pred_probs);
             }
             dcc_free_matrix(&ts->state);
             frame_info_arena_destroy(&ts->state.frame_info_arena);

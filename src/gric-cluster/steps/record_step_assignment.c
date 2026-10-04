@@ -114,21 +114,47 @@ void record_step_assignment(
 
     if (config->optim.pred_mode && assigned_cluster >= 0)
     {
-        state->clusters[assigned_cluster].prob += 0.3;
+        double *probs = state->scratch.pred_probs;
+        int num_cl = state->num_clusters;
 
-        double sum_p = 0.0;
-        for (int i = 0; i < state->num_clusters; i++)
+        if (probs != NULL)
         {
-            sum_p += state->clusters[i].prob;
-        }
+            probs[assigned_cluster] += 0.3;
 
-        if (sum_p > 0.0)
-        {
-            double alpha = 1.0 / (1.2 * sum_p);
-            double beta = 1.0 / (6.0 * (double)state->num_clusters);
-            for (int i = 0; i < state->num_clusters; i++)
+            double sum_p = 0.0;
+            for (int i = 0; i < num_cl; i++)
             {
-                state->clusters[i].prob = state->clusters[i].prob * alpha + beta;
+                sum_p += probs[i];
+            }
+
+            if (sum_p > 0.0)
+            {
+                double alpha = 1.0 / (1.2 * sum_p);
+                double beta = 1.0 / (6.0 * (double)num_cl);
+                for (int i = 0; i < num_cl; i++)
+                {
+                    probs[i] = probs[i] * alpha + beta;
+                }
+            }
+        }
+        else
+        {
+            state->clusters[assigned_cluster].prob += 0.3;
+
+            double sum_p = 0.0;
+            for (int i = 0; i < num_cl; i++)
+            {
+                sum_p += state->clusters[i].prob;
+            }
+
+            if (sum_p > 0.0)
+            {
+                double alpha = 1.0 / (1.2 * sum_p);
+                double beta = 1.0 / (6.0 * (double)num_cl);
+                for (int i = 0; i < num_cl; i++)
+                {
+                    state->clusters[i].prob = state->clusters[i].prob * alpha + beta;
+                }
             }
         }
     }

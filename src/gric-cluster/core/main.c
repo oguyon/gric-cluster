@@ -257,6 +257,22 @@ int main(int argc, char *argv[])
     {
         memset(state.scratch.cluster_probs, 0, (size_t)max_clusters * sizeof(double));
     }
+    if (config.optim.pred_mode)
+    {
+        if (posix_memalign((void **)&state.scratch.pred_probs, 64,
+                           (size_t)max_clusters * sizeof(double)) != 0)
+        {
+            state.scratch.pred_probs = NULL;
+        }
+        else
+        {
+            memset(state.scratch.pred_probs, 0, (size_t)max_clusters * sizeof(double));
+        }
+    }
+    else
+    {
+        state.scratch.pred_probs = NULL;
+    }
     state.scratch.clmembflag = (int *)malloc(max_clusters * sizeof(int));
     state.scratch.active_clusters = (int *)malloc(max_clusters * sizeof(int));
     state.scratch.num_active_clusters = 0;
@@ -354,6 +370,10 @@ int main(int argc, char *argv[])
     if (state.scratch.cluster_probs)
     {
         free(state.scratch.cluster_probs);
+    }
+    if (state.scratch.pred_probs)
+    {
+        free(state.scratch.pred_probs);
     }
     free(state.scratch.clmembflag);
     free(state.scratch.active_clusters);

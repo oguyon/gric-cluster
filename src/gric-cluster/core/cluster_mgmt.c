@@ -241,6 +241,16 @@ void remove_cluster(
                     (size_t)remaining * sizeof(double));
         }
     }
+    if (state->scratch.pred_probs != NULL)
+    {
+        int remaining = state->num_clusters - 1 - index_to_remove;
+        if (remaining > 0)
+        {
+            memmove(state->scratch.pred_probs + index_to_remove,
+                    state->scratch.pred_probs + index_to_remove + 1,
+                    (size_t)remaining * sizeof(double));
+        }
+    }
 
     // Shift clusters down
     for (int cl_idx = index_to_remove; cl_idx < state->num_clusters - 1; cl_idx++)
