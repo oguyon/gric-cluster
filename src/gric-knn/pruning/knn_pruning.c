@@ -937,6 +937,42 @@ int is_member_pruned_by_pointwise_pivots(
 }
 
 /**
+ * knn_heap_push_locked() - Push into a heap that other threads may update concurrently.
+ * @heap:         Target max-heap.
+ * @frame_id:     Neighbor frame index to insert.
+ * @dist:         Distance to the neighbor.
+ * @owner_id:     Frame index owning @heap; selects bucket_locks[owner_id & mask].
+ * @bucket_locks: Array of OpenMP bucket mutexes, or NULL when single-threaded.
+ *
+ * Every push into a heap of all_heaps[] must take the owner's bucket lock: with reciprocal
+ * updates enabled, any thread may insert into any frame's heap, including the heap of a
+ * query currently being searched by another thread.
+ */
+void knn_heap_push_locked(
+    KnnMaxHeap   *heap,
+    long          frame_id,
+    double        dist,
+    long          owner_id
+#ifdef _OPENMP
+    , omp_lock_t *bucket_locks
+#endif
+)
+{
+#ifdef _OPENMP
+    if (bucket_locks != NULL)
+    {
+        omp_set_lock(&bucket_locks[owner_id & KNN_BUCKET_LOCK_MASK]);
+        knn_heap_push(heap, (int)frame_id, dist);
+        omp_unset_lock(&bucket_locks[owner_id & KNN_BUCKET_LOCK_MASK]);
+        return;
+    }
+#else
+    (void)owner_id;
+#endif
+    knn_heap_push(heap, (int)frame_id, dist);
+}
+
+/**
  * record_neighbor_and_reciprocal() - Insert candidate into heap and update reciprocal neighbor.
  * @query_id:     Query frame index.
  * @cand_id:      Candidate frame index.
@@ -975,20 +1011,11 @@ void record_neighbor_and_reciprocal(
 
     if (heap->count < heap->k || (float)dist < heap->tau)
     {
+        knn_heap_push_locked(heap, cand_id, dist, query_id
 #ifdef _OPENMP
-        if (bucket_locks != NULL)
-        {
-            omp_set_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
-            knn_heap_push(heap, (int)cand_id, dist);
-            omp_unset_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
-        }
-        else
-        {
-            knn_heap_push(heap, (int)cand_id, dist);
-        }
-#else
-        knn_heap_push(heap, (int)cand_id, dist);
+                             , bucket_locks
 #endif
+                            );
     }
 
     if (config->use_reciprocal && cand_id > query_id &&
@@ -997,20 +1024,11 @@ void record_neighbor_and_reciprocal(
         KnnMaxHeap *target_heap = &all_heaps[cand_id];
         if (target_heap->count < target_heap->k || dist < knn_heap_peek_max_dist(target_heap))
         {
+            knn_heap_push_locked(target_heap, query_id, dist, cand_id
 #ifdef _OPENMP
-            if (bucket_locks != NULL)
-            {
-                omp_set_lock(&bucket_locks[cand_id & KNN_BUCKET_LOCK_MASK]);
-                knn_heap_push(target_heap, (int)query_id, dist);
-                omp_unset_lock(&bucket_locks[cand_id & KNN_BUCKET_LOCK_MASK]);
-            }
-            else
-            {
-                knn_heap_push(target_heap, (int)query_id, dist);
-            }
-#else
-            knn_heap_push(target_heap, (int)query_id, dist);
+                                 , bucket_locks
 #endif
+                                );
         }
     } // if (config->use_reciprocal ...)
 }

@@ -710,6 +710,24 @@ void record_neighbor_and_reciprocal(
 );
 
 /**
+ * knn_heap_push_locked() - Push into a heap that other threads may update concurrently.
+ * @heap:         Target max-heap (all_heaps[owner_id] or the query's own heap).
+ * @frame_id:     Neighbor frame index to insert.
+ * @dist:         Distance to the neighbor.
+ * @owner_id:     Frame index owning @heap (selects the bucket lock).
+ * @bucket_locks: Array of OpenMP bucket mutexes (or NULL when single-threaded).
+ */
+void knn_heap_push_locked(
+    KnnMaxHeap   *heap,
+    long          frame_id,
+    double        dist,
+    long          owner_id
+#ifdef _OPENMP
+    , omp_lock_t *bucket_locks
+#endif
+);
+
+/**
  * cluster_pq_push() - Push cluster node into a min-priority queue ordered by distance.
  * @pq:         Priority queue array.
  * @size:       In/out pointer to current queue size.
