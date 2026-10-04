@@ -28,13 +28,36 @@ static inline void update_consistency_mask_range(
     double min_bound = measured_dist - rc2;
     double max_bound = measured_dist + rc2;
 
-    for (int k = 0; k < count; k++)
+    int full_words = count / 64;
+    for (int w = 0; w < full_words; w++)
     {
-        double dist = dcc_get_dist(state, i, k);
-        if (dist >= 0.0 && dist >= min_bound && dist <= max_bound)
+        uint64_t word = 0;
+        int base_k = w * 64;
+        for (int b = 0; b < 64; b++)
         {
-            mask[k / 64] |= (1ULL << (k % 64));
+            double dist = dcc_get_dist(state, i, base_k + b);
+            if (dist >= 0.0 && dist >= min_bound && dist <= max_bound)
+            {
+                word |= (1ULL << b);
+            }
         }
+        mask[w] |= word;
+    }
+
+    int rem = count % 64;
+    if (rem > 0)
+    {
+        uint64_t word = 0;
+        int base_k = full_words * 64;
+        for (int b = 0; b < rem; b++)
+        {
+            double dist = dcc_get_dist(state, i, base_k + b);
+            if (dist >= 0.0 && dist >= min_bound && dist <= max_bound)
+            {
+                word |= (1ULL << b);
+            }
+        }
+        mask[full_words] |= word;
     }
 }
 
@@ -267,9 +290,9 @@ void update_consistency_mask_for_new_cluster(
         double d_max_inew = dcc_get_max(state, i, new_cl);
         uint64_t *mask_row = &state->scratch.consistency_mask[i * N * words];
 
-        for (int j = 0; j < new_cl; j++)
+        if (config->optim.sparse_dcc_mode)
         {
-            if (config->optim.sparse_dcc_mode)
+            for (int j = 0; j < new_cl; j++)
             {
                 double d_min_ij = dcc_get_min(state, i, j);
                 double d_max_ij = dcc_get_max(state, i, j);
@@ -285,15 +308,19 @@ void update_consistency_mask_for_new_cluster(
                     mask_row[j * words + word_offset] |= bit_mask;
                 }
             }
-            else
+        }
+        else
+        {
+            if (d_min_inew >= 0.0)
             {
-                double measured_dist = dcc_get_dist(state, i, j);
-                if (measured_dist >= 0.0)
+                double min_bound = d_min_inew - 2.0 * rc;
+                double max_bound = d_min_inew + 2.0 * rc;
+                for (int j = 0; j < new_cl; j++)
                 {
-                    double dist_ti_new = d_min_inew;
-                    if (dist_ti_new >= 0.0 &&
-                        dist_ti_new >= (measured_dist - 2.0 * rc) &&
-                        dist_ti_new <= (measured_dist + 2.0 * rc))
+                    double measured_dist = dcc_get_dist(state, i, j);
+                    if (measured_dist >= 0.0 &&
+                        measured_dist >= min_bound &&
+                        measured_dist <= max_bound)
                     {
                         mask_row[j * words + word_offset] |= bit_mask;
                     }

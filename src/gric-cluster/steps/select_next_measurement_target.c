@@ -135,7 +135,7 @@ static int entropy_check_early_gates(
  * entropy_rank_popcount_scores() - Rank candidate targets via fast consistency mask popcount.
  * @config:           Active ClusterConfig.
  * @state:            Active ClusterState.
- * @words:            Bitmask word count.
+ * @active_words:     Active cluster bitmask word count.
  * @active_mask:      Bitmask of active clusters.
  * @active_indices:   Active cluster indices.
  * @active_idx_count: Number of active clusters.
@@ -150,7 +150,7 @@ static int entropy_check_early_gates(
 static void entropy_rank_popcount_scores(
     const ClusterConfig *config,
     ClusterState        *state,
-    int                  words,
+    int                  active_words,
     const uint64_t      *active_mask,
     const int           *active_indices,
     int                  active_idx_count,
@@ -163,6 +163,7 @@ static void entropy_rank_popcount_scores(
     int                 *out_M)
 {
     int N = config->algo.maxnbclust;
+    int mask_words = (N + 63) / 64;
     int nc = state->num_clusters;
 
     int sampled_indices[ENTROPY_PRUNE_SAMPLE_LIMIT];
@@ -211,7 +212,7 @@ static void entropy_rank_popcount_scores(
         is_double = state->clusters[leader_id].anchor.is_double;
     }
 
-    long prune_work = (long)M * sampled_count * words;
+    long prune_work = (long)M * sampled_count * active_words;
     #pragma omp parallel for if(prune_work >= GRIC_OMP_MIN_WORK)
     for (int idx_p = 0; idx_p < M; idx_p++)
     {
@@ -223,12 +224,12 @@ static void entropy_rank_popcount_scores(
         if (p_current[i] >= dynamic_min_prob)
         {
             uint64_t total_pop = 0;
-            uint64_t *base_mask_i = &state->scratch.consistency_mask[i * N * words];
+            uint64_t *base_mask_i = &state->scratch.consistency_mask[i * N * mask_words];
             for (int idx = 0; idx < sampled_count; idx++)
             {
                 int cj = sampled_indices[idx];
-                uint64_t *mask = base_mask_i + cj * words;
-                for (int w = 0; w < words; w++)
+                uint64_t *mask = base_mask_i + cj * mask_words;
+                for (int w = 0; w < active_words; w++)
                 {
                     total_pop += (uint64_t)gric_popcount64(mask[w] & active_mask[w]);
                 }
@@ -292,7 +293,7 @@ static void entropy_rank_popcount_scores(
  * entropy_evaluate_hypotheses() - Simulate hypothesis updates and select target minimizing entropy.
  * @config:               Active ClusterConfig.
  * @state:                Active ClusterState.
- * @words:                Bitmask word count.
+ * @active_words:         Active cluster bitmask word count.
  * @active_mask:          Active cluster bitmask.
  * @active_indices:       Active cluster indices.
  * @active_idx_count:     Active cluster count.
@@ -308,7 +309,7 @@ static void entropy_rank_popcount_scores(
 static int entropy_evaluate_hypotheses(
     const ClusterConfig *config,
     ClusterState        *state,
-    int                  words,
+    int                  active_words,
     const uint64_t      *active_mask,
     const int           *active_indices,
     int                  active_idx_count,
@@ -326,14 +327,15 @@ static int entropy_evaluate_hypotheses(
     }
 
     int N = config->algo.maxnbclust;
+    int mask_words = (N + 63) / 64;
     int best_target_ci = -1;
     double min_expected_entropy = 1e30;
 
     /* Precompute word-level sums for fast-path hypothesis evaluation */
-    double word_p_sum[words];
-    double word_plogp_sum[words];
-    memset(word_p_sum, 0, words * sizeof(double));
-    memset(word_plogp_sum, 0, words * sizeof(double));
+    double word_p_sum[active_words];
+    double word_plogp_sum[active_words];
+    memset(word_p_sum, 0, active_words * sizeof(double));
+    memset(word_plogp_sum, 0, active_words * sizeof(double));
 
     for (int idx = 0; idx < active_idx_count; idx++)
     {
@@ -351,7 +353,7 @@ static int entropy_evaluate_hypotheses(
     {
         int target_ci = candidates[tc_idx].id;
         double expected_entropy_for_ci = 0.0;
-        uint64_t *base_mask_tc = &state->scratch.consistency_mask[target_ci * N * words];
+        uint64_t *base_mask_tc = &state->scratch.consistency_mask[target_ci * N * mask_words];
 
         int early_exit = 0;
 
@@ -366,9 +368,9 @@ static int entropy_evaluate_hypotheses(
             int hypothesis_cj = active_indices[h_idx];
             double hypo_sum = 0.0;
             double plogp_sum = 0.0;
-            uint64_t *mask = base_mask_tc + hypothesis_cj * words;
+            uint64_t *mask = base_mask_tc + hypothesis_cj * mask_words;
 
-            for (int w = 0; w < words; w++)
+            for (int w = 0; w < active_words; w++)
             {
                 uint64_t mask_val = mask[w] & active_mask[w];
                 if (mask_val == 0)
@@ -533,10 +535,9 @@ static int select_next_measurement_target_entropy(
         dynamic_min_prob = config->optim.entropy_min_prob;
     }
 
-    int N = config->algo.maxnbclust;
-    int words = (N + 63) / 64;
-    uint64_t active_mask[words];
-    memset(active_mask, 0, words * sizeof(uint64_t));
+    int active_words = (state->num_clusters + 63) / 64;
+    uint64_t active_mask[active_words];
+    memset(active_mask, 0, active_words * sizeof(uint64_t));
 
     int limit = config->optim.entropy_max_targets;
     if (limit <= 0 || limit > state->num_clusters)
@@ -578,7 +579,7 @@ static int select_next_measurement_target_entropy(
 
     int M = 0;
     entropy_rank_popcount_scores(
-        config, state, words, active_mask, active_indices, active_idx_count,
+        config, state, active_words, active_mask, active_indices, active_idx_count,
         dynamic_min_prob, prob_scores, prob_count, limit, prune_scores,
         p_current, &M
     );
@@ -690,7 +691,7 @@ static int select_next_measurement_target_entropy(
     }
 
     int best_target_ci = entropy_evaluate_hypotheses(
-        config, state, words, active_mask, active_indices, active_idx_count,
+        config, state, active_words, active_mask, active_indices, active_idx_count,
         candidates, num_targets, p_current, plog2p, H_current, expected_h_arr
     );
 
