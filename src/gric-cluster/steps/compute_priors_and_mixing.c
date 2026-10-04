@@ -162,7 +162,7 @@ static double calculate_sequence_match_metric(
  * Invoked in compute_priors_and_mixing() to sort candidate clusters so that highest-probability
  * clusters are measured first in greedy metric search, maximizing early-cutoff pruning efficiency.
  */
-static void candidate_sort_descending(
+void candidate_sort_descending(
     Candidate    *cands,
     const double *mixed_probs,
     int          *sorted_indices,

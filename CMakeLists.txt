@@ -895,6 +895,11 @@ endif()
 add_test(NAME test_benchmark_smoke
     COMMAND gric-benchmark -p 2Dspiral -n 500)
 
+add_test(NAME test_cluster_pred_miss
+    COMMAND gric-cluster -no-prof -pred 0.05
+            "${CMAKE_SOURCE_DIR}/tests/test_strat.txt" -outdir /tmp/ctest_pred_strat)
+set_tests_properties(test_cluster_pred_miss PROPERTIES DEPENDS gric-cluster)
+
 add_executable(test_pass2_reassign tests/test_pass2_reassign.c)
 target_link_libraries(test_pass2_reassign m)
 add_test(NAME test_pass2_reassign
