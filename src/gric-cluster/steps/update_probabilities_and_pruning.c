@@ -469,9 +469,15 @@ void update_probabilities_and_pruning(
     if (config->optim.te5_mode)
     {
         int active_before = 0;
-        for (int i = 0; i < state->num_clusters; i++)
+        if (state->trace)
         {
-            if (state->scratch.clmembflag[i]) active_before++;
+            for (int i = 0; i < state->num_clusters; i++)
+            {
+                if (state->scratch.clmembflag[i])
+                {
+                    active_before++;
+                }
+            }
         }
 
         prune_candidates_te5(config, state, temp_indices, temp_dists, temp_count);
