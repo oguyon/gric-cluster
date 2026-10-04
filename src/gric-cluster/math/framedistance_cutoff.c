@@ -129,7 +129,7 @@ double framedist_squared_cutoff_float(
     double                cutoff_sq)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 64)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && size >= 64)
     {
         return framedist_squared_cutoff_float_avx512(da, db, size, cutoff_sq);
     }
@@ -382,7 +382,7 @@ double framedist_squared_cutoff_double(
     double                 cutoff_sq)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 32)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && size >= 32)
     {
         return framedist_squared_cutoff_double_avx512(da, db, size, cutoff_sq);
     }

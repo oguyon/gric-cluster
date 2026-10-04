@@ -167,7 +167,7 @@ double framedist_float(
     }
 
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && size >= 16)
     {
         return framedist_float_avx512(da, db, size);
     }
@@ -347,7 +347,7 @@ double framedist_double(
     }
 
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 8)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && size >= 8)
     {
         return framedist_double_avx512(da, db, size);
     }

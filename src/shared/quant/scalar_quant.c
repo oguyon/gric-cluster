@@ -144,7 +144,7 @@ static inline void find_min_max_float(
     float       *out_max)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && num_elements >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && num_elements >= 16)
     {
         find_min_max_float_avx512(data, num_elements, out_min, out_max);
         return;
@@ -214,7 +214,7 @@ static inline void find_min_max_double(
     double       *out_max)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && num_elements >= 8)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && num_elements >= 8)
     {
         find_min_max_double_avx512(data, num_elements, out_min, out_max);
         return;
@@ -439,7 +439,7 @@ void sq8_quantize_float(
     const SQ8Params *restrict params)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && params->dim >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && params->dim >= 16)
     {
         sq8_quantize_float_avx512(src, dst, params);
         return;
@@ -505,7 +505,7 @@ void sq8_quantize_double(
     const SQ8Params *restrict params)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && params->dim >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && params->dim >= 16)
     {
         sq8_quantize_double_avx512(src, dst, params);
         return;
@@ -733,13 +733,13 @@ uint64_t sq8_dist_squared_u8(
     long                    dim)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 64)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && dim >= 64)
     {
         return sq8_dist_squared_u8_avx512(a, b, dim);
     }
 #endif
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 32)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX2 && dim >= 32)
     {
         return sq8_dist_squared_u8_avx2(a, b, dim);
     }
@@ -965,7 +965,7 @@ uint64_t sq8_dot_product_u8(
     {
         return sq8_dot_product_u8_avx_vnni(a, b, dim);
     }
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 32)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX2 && dim >= 32)
     {
         return sq8_dot_product_u8_avx2(a, b, dim);
     }
@@ -1647,13 +1647,13 @@ uint64_t sq16_dist_squared_i16(
     long                    dim)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 32)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && dim >= 32)
     {
         return sq16_dist_squared_i16_avx512(a, b, dim);
     }
 #endif
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX2 && dim >= 16)
     {
         return sq16_dist_squared_i16_avx2(a, b, dim);
     }
@@ -1901,14 +1901,14 @@ void sq16_dist_squared_batch_1x4_i16(
     long                           dim)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && dim >= 32)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && dim >= 32)
     {
         sq16_dist_squared_batch_1x4_i16_avx512(q, anchors, out_sq_dists, dim);
         return;
     }
 #endif
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX2 && dim >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX2 && dim >= 16)
     {
         sq16_dist_squared_batch_1x4_i16_avx2(q, anchors, out_sq_dists, dim);
         return;

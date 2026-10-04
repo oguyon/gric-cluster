@@ -49,6 +49,24 @@ typedef enum
  */
 GricSimdLevel gric_get_simd_level(void);
 
+extern int g_gric_effective_simd_level;
+
+/**
+ * gric_simd_level_fast() - Fast inline query of effective SIMD capability level.
+ *
+ * Avoids function call and dynamic linking overhead by reading cached global.
+ *
+ * Return: Effective GricSimdLevel.
+ */
+static inline GricSimdLevel gric_simd_level_fast(void)
+{
+    if (__builtin_expect(g_gric_effective_simd_level >= 0, 1))
+    {
+        return (GricSimdLevel)g_gric_effective_simd_level;
+    }
+    return gric_get_simd_level();
+}
+
 /**
  * gric_set_simd_level() - Programmatically override SIMD capability level.
  * @level: Desired SIMD level (-1 to restore automatic detection).

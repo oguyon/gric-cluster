@@ -916,7 +916,7 @@ int framedist_batch_cutoff_1x4_float(
     double *restrict             out_dists)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && size >= 16)
     {
         return calc_dist4_cutoff_f32_avx512(q, anchors, size, cutoff_sq, out_dists);
     }
@@ -1175,7 +1175,7 @@ int framedist_batch_cutoff_1x8_float(
     double *restrict             out_dists)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && size >= 16)
     {
         return calc_dist8_cutoff_f32_avx512(q, anchors, size, cutoff_sq, out_dists);
     }
@@ -1936,7 +1936,7 @@ void framedist_batch_1x8_float(
     long                         size)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && size >= 16)
     {
         calc_dist8_f32_avx512(q, anchors, out_dists, size);
         return;
@@ -1966,7 +1966,7 @@ void framedist_batch_1x8_contiguous_float(
     long                  size)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && size >= 16)
     {
         const float *a_ptrs[8];
         for (int k = 0; k < 8; k++)
@@ -2007,7 +2007,7 @@ void framedist_batch_1x16_contiguous_float(
     long                  size)
 {
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && size >= 16)
     {
         const float *a_ptrs[16];
         for (int k = 0; k < 16; k++)
@@ -2041,7 +2041,7 @@ void framedist_batch_float(
 {
     int k = 0;
 #if GRIC_HAVE_AVX512_TARGET
-    if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && size >= 16)
+    if (gric_simd_level_fast() >= GRIC_SIMD_AVX512 && size >= 16)
     {
         while (k + 16 <= n_anchors)
         {
