@@ -194,7 +194,12 @@ static int knn_warm_start_nearest_cluster(
                         if (d >= 0.0)
                         {
                             knn_visited_check_and_mark(visited, nb);
-                            knn_heap_push(heap, (int)nb, d);
+                            /* Other threads may push reciprocal neighbors into this heap. */
+                            knn_heap_push_locked(heap, nb, d, query_id
+#ifdef _OPENMP
+                                                 , bucket_locks
+#endif
+                                                );
                         }
                     }
                 }
