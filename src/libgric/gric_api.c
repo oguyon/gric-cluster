@@ -11,6 +11,7 @@
 #include "cluster_math.h"
 #include "cluster_bounds.h"
 #include "gric_bin_io.h"
+#include "gric_omp.h"
 #include "scalar_quant.h"
 
 #include <ctype.h>
@@ -416,6 +417,9 @@ gric_status_t gric_cluster_feed_frame(
         }
     }
 
+    /* Run this frame's parallel regions with the session's ncpu, then restore the caller's
+     * thread count so the library does not change the host application's OpenMP setting. */
+    int prev_threads = gric_omp_set_threads(ctx->config.optim.ncpu);
     int cid = cluster_frame(
         &ctx->config,
         &ctx->state,
@@ -427,6 +431,7 @@ gric_status_t gric_cluster_feed_frame(
         ctx->sorting_candidates,
         NULL
     );
+    gric_omp_set_threads(prev_threads);
 
     if (cid < 0)
     {

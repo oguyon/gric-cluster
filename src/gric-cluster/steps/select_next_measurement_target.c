@@ -8,6 +8,7 @@
 #include "cluster_core.h"
 #include "e8_lattice.h"
 #include "gric_compat.h"
+#include "gric_omp.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -244,7 +245,8 @@ static void entropy_rank_popcount_scores(
         is_double = state->clusters[leader_id].anchor.is_double;
     }
 
-    #pragma omp parallel for if(M >= 16)
+    long prune_work = (long)M * sampled_count * words;
+    #pragma omp parallel for if(prune_work >= GRIC_OMP_MIN_WORK)
     for (int idx_p = 0; idx_p < M; idx_p++)
     {
         int i = prob_scores[idx_p].id;
@@ -375,24 +377,21 @@ static int entropy_evaluate_hypotheses(
         word_plogp_sum[w] += plog2p[k];
     }
 
-    #pragma omp parallel for
+    /* Serial on purpose: there are only a few targets (2-15) per measurement, far too little
+     * work to amortize an OpenMP fork/join, and serial evaluation makes ties deterministic
+     * (the first candidate with the minimum wins). A target stops early once its partial
+     * expected entropy reaches the current minimum, since it can no longer win. */
     for (int tc_idx = 0; tc_idx < num_targets; tc_idx++)
     {
         int target_ci = candidates[tc_idx].id;
         double expected_entropy_for_ci = 0.0;
         uint64_t *base_mask_tc = &state->scratch.consistency_mask[target_ci * N * words];
 
-        double cur_min = 1e30;
         int early_exit = 0;
 
         for (int h_idx = 0; h_idx < active_idx_count; h_idx++)
         {
-            if ((h_idx & 15) == 0)
-            {
-                #pragma omp atomic read
-                cur_min = min_expected_entropy;
-            }
-            if (expected_entropy_for_ci >= cur_min)
+            if (expected_entropy_for_ci >= min_expected_entropy)
             {
                 early_exit = 1;
                 break;
@@ -455,20 +454,18 @@ static int entropy_evaluate_hypotheses(
             expected_entropy_for_ci += p_current[hypothesis_cj] * entropy;
         } // for h_idx
 
-        if (!early_exit)
+        if (early_exit)
         {
-            if (expected_h_arr)
-            {
-                expected_h_arr[tc_idx] = expected_entropy_for_ci;
-            }
-            #pragma omp critical
-            {
-                if (expected_entropy_for_ci < min_expected_entropy)
-                {
-                    min_expected_entropy = expected_entropy_for_ci;
-                    best_target_ci = target_ci;
-                }
-            }
+            continue;
+        }
+        if (expected_h_arr)
+        {
+            expected_h_arr[tc_idx] = expected_entropy_for_ci;
+        }
+        if (expected_entropy_for_ci < min_expected_entropy)
+        {
+            min_expected_entropy = expected_entropy_for_ci;
+            best_target_ci = target_ci;
         }
     } // for tc_idx
 
