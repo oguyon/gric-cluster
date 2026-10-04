@@ -15,6 +15,19 @@
 #include <stdlib.h>
 #include <time.h>
 
+#define _DATATYPE_UINT8 1
+#define _DATATYPE_INT8 2
+#define _DATATYPE_UINT16 3
+#define _DATATYPE_INT16 4
+#define _DATATYPE_UINT32 5
+#define _DATATYPE_INT32 6
+#define _DATATYPE_UINT64 7
+#define _DATATYPE_INT64 8
+#define _DATATYPE_FLOAT 9
+#define _DATATYPE_DOUBLE 10
+
+int stream_can_borrow = 0;
+
 /**
  * init_stream() - Initialize the ImageStreamIO shared memory frame reader.
  * @stream_name: Name of the shared memory stream to connect to.
@@ -57,6 +70,18 @@ int init_stream(
     first_stream_frame = 1;
     stream_read_counter = 0;
 
+    int dtype = stream_image.md[0].datatype;
+    if (is_3d && stream_depth > 1 &&
+        ((dtype == _DATATYPE_FLOAT && !frameread_use_double) ||
+         (dtype == _DATATYPE_DOUBLE && frameread_use_double)))
+    {
+        stream_can_borrow = 1;
+    }
+    else
+    {
+        stream_can_borrow = 0;
+    }
+
     printf("Connected to stream %s (%ld x %ld x %ld)\n", stream_name, frame_width,
            frame_height, stream_depth);
 
@@ -94,6 +119,15 @@ int getframe_stream(
     /* Wait for new data if we caught up */
     while (stream_image.md[0].cnt0 <= last_cnt0)
     {
+        /* Drain any stale semaphore posts accumulated while lagging */
+        while (sem_trywait(stream_image.semptr[0]) == 0)
+        {
+        }
+        if (stream_image.md[0].cnt0 > last_cnt0)
+        {
+            break;
+        }
+
         struct timespec t0;
         struct timespec t1;
         struct timespec ts;
@@ -166,16 +200,19 @@ int getframe_stream(
         long offset = current_read_slice * nelements;
         int dtype = stream_image.md[0].datatype;
 
-#define _DATATYPE_UINT8 1
-#define _DATATYPE_INT8 2
-#define _DATATYPE_UINT16 3
-#define _DATATYPE_INT16 4
-#define _DATATYPE_UINT32 5
-#define _DATATYPE_INT32 6
-#define _DATATYPE_UINT64 7
-#define _DATATYPE_INT64 8
-#define _DATATYPE_FLOAT 9
-#define _DATATYPE_DOUBLE 10
+        if (stream_can_borrow)
+        {
+            if (dtype == _DATATYPE_FLOAT)
+            {
+                frame_struct->data = ((float *)stream_image.array.F) + offset;
+            }
+            else
+            {
+                frame_struct->data = ((double *)stream_image.array.D) + offset;
+            }
+            frame_struct->is_mmap = 1;
+            return 0;
+        }
 
         switch (dtype)
         {
@@ -316,6 +353,7 @@ int getframe_stream(
 void close_stream(void)
 {
     is_stream_mode = 0;
+    stream_can_borrow = 0;
 }
 
 /**

@@ -644,51 +644,13 @@ Frame *getframe_at(
         }
     } // if (is_bin_mode && bin_mmap_addr != NULL)
 
-    /* Fast path: zero-copy memory-mapped binary dataset with matching precision */
-    if (is_bin_mode && bin_mmap_addr != NULL)
+    int can_borrow_stream = 0;
+#ifdef USE_IMAGESTREAMIO
+    if (is_stream_mode && stream_can_borrow)
     {
-        int match32 = (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT32 && !frameread_use_double);
-        int match64 = (bin_input_dtype == GRIC_BIN_DTYPE_FLOAT64 && frameread_use_double);
-        if (match32 || match64)
-        {
-            Frame *frame_struct = NULL;
-#ifdef _OPENMP
-#pragma omp critical(frame_pool)
+        can_borrow_stream = 1;
+    }
 #endif
-            {
-                if (frame_struct_pool_count > 0)
-                {
-                    frame_struct = frame_struct_pool[--frame_struct_pool_count];
-                }
-            }
-
-            if (frame_struct == NULL)
-            {
-                frame_struct = (Frame *)calloc(1, sizeof(Frame));
-                if (frame_struct == NULL)
-                {
-                    return NULL;
-                }
-            }
-
-            size_t elem_size = frameread_use_double ? sizeof(double) : sizeof(float);
-            size_t frame_bytes = (size_t)frame_width * elem_size;
-            const char *src_bytes = (const char *)bin_mmap_addr + bin_input_data_offset +
-                                    (size_t)index * frame_bytes;
-
-            frame_struct->width = frame_width;
-            frame_struct->height = frame_height;
-            frame_struct->id = index;
-            frame_struct->is_double = frameread_use_double;
-            frame_struct->data = (void *)src_bytes;
-            frame_struct->is_mmap = 1;
-            frame_struct->is_borrowed = 0;
-            frame_struct->cnt0 = 0;
-            frame_struct->atime.tv_sec = 0;
-            frame_struct->atime.tv_nsec = 0;
-            return frame_struct;
-        }
-    } // if (is_bin_mode && bin_mmap_addr != NULL)
 
     long nelements = frame_width * frame_height;
     Frame *frame_struct = NULL;
@@ -702,7 +664,7 @@ Frame *getframe_at(
         {
             frame_struct = frame_struct_pool[--frame_struct_pool_count];
         }
-        if (!is_filelist_mode && frame_data_pool_count > 0)
+        if (!is_filelist_mode && !can_borrow_stream && frame_data_pool_count > 0)
         {
             pooled_data = frame_data_pool[--frame_data_pool_count];
         }
@@ -741,7 +703,7 @@ Frame *getframe_at(
     frame_struct->is_mmap = 0;
     frame_struct->is_borrowed = 0;
 
-    if (!is_filelist_mode)
+    if (!is_filelist_mode && !can_borrow_stream)
     {
         size_t elem_size = frameread_use_double ? sizeof(double) : sizeof(float);
         if (pooled_data != NULL)
