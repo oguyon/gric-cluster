@@ -18,7 +18,7 @@ jobs:
     name: Code Style & Line Length Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check line lengths (<= 100 cols in C/C++ sources, headers, and tests)
         run: |
@@ -58,7 +58,7 @@ jobs:
             sanitizer: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -166,7 +166,7 @@ jobs:
     needs: [lint]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
