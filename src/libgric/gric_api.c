@@ -171,10 +171,10 @@ static int grow_context_capacity(
     }
     s->current_gprobs = (double *)realloc(s->current_gprobs, new_N * sizeof(double));
 
-    s->dcc_min = (double *)grow_matrix(s->dcc_min, old_N, new_N, sizeof(double));
-    s->dcc_max = (double *)grow_matrix(s->dcc_max, old_N, new_N, sizeof(double));
-    s->dcc_measured = (char *)grow_matrix(s->dcc_measured, old_N, new_N, sizeof(char));
-    s->dcc_stride = (size_t)new_N;
+    if (dcc_grow_capacity(&ctx->state, new_N, ctx->config.optim.sparse_dcc_mode) != 0)
+    {
+        return -1;
+    }
 
     size_t new_mask_words = new_N * new_N * ((new_N + 63) / 64);
     uint64_t *new_mask = (uint64_t *)calloc(new_mask_words, sizeof(uint64_t));
@@ -334,10 +334,8 @@ gric_cluster_t *gric_cluster_create(
         memset(s->cluster_probs, 0, sz_N * sizeof(double));
     }
     s->current_gprobs = (double *)calloc(sz_N, sizeof(double));
-    s->dcc_min = (double *)calloc(sz_N * sz_N, sizeof(double));
-    s->dcc_max = (double *)calloc(sz_N * sz_N, sizeof(double));
-    s->dcc_measured = (char *)calloc(sz_N * sz_N, sizeof(char));
-    s->dcc_stride = sz_N;
+    dcc_init_matrix(&ctx->state, sz_N, cfg->sparse_dcc_mode, cfg->use_sq16);
+    s->dcc_sq16_scale = 16384.0 / cfg->rlim;
 
     size_t mask_words = sz_N * sz_N * ((sz_N + 63) / 64);
     s->consistency_mask = (uint64_t *)calloc(mask_words, sizeof(uint64_t));
@@ -536,8 +534,7 @@ gric_status_t gric_cluster_get_dcc(
     }
 
     int N = ctx->config.algo.maxnbclust;
-    const double *dcc_min = ctx->state.scratch.dcc_min;
-    if (!dcc_min)
+    if (ctx->state.scratch.dcc_min_rows == NULL)
     {
         return GRIC_ERR_GENERIC;
     }
@@ -590,6 +587,7 @@ gric_status_t gric_cluster_reset(
     }
     memset(ctx->state.frame_infos, 0, ctx->maxnbfr * sizeof(FrameInfo));
     memset(ctx->state.transition_matrix, 0, sz_N * sz_N * sizeof(long));
+    dcc_reset_matrix(&ctx->state, ctx->config.optim.sparse_dcc_mode);
 
     return GRIC_SUCCESS;
 }
@@ -848,6 +846,11 @@ int64_t gric_cluster_load_anchors(
 
     ctx->state.num_clusters = (int)K;
 
+    for (int i = 0; i < (int)K; i++)
+    {
+        dcc_ensure_row(&ctx->state, i, ctx->config.optim.sparse_dcc_mode);
+    }
+
     /* Compute DCC distances between anchors */
     for (int i = 0; i < (int)K; i++)
     {
@@ -1088,7 +1091,7 @@ gric_status_t gric_cluster_save_results(
             {
                 for (int j = 0; j < k; j++)
                 {
-                    double d = (state->scratch.dcc_min != NULL)
+                    double d = (state->scratch.dcc_min_rows != NULL)
                                    ? dcc_get_dist(state, i, j)
                                    : 0.0;
                     fwrite(&d, sizeof(double), 1, fp);
@@ -1238,9 +1241,7 @@ void gric_cluster_destroy(
     free(s->probsortedclindex);
     free(s->cluster_probs);
     free(s->current_gprobs);
-    free(s->dcc_min);
-    free(s->dcc_max);
-    free(s->dcc_measured);
+    dcc_free_matrix(&ctx->state);
     free(s->consistency_mask);
     free(s->entropy_p_current);
     free(s->entropy_candidates);

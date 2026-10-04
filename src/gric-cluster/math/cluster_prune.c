@@ -265,12 +265,30 @@ void prune_candidates_te5(
             TE5Ref te5_ref;
             calc_te5_ref_init(&te5_ref, d_f_c1, d_f_c2, d_f_c3, d_c1_c2, d_c1_c3, d_c2_c3);
 
-            const double *row_dcc_c1 = dcc_row_dist(state, c1);
-            const double *row_dcc_c2 = dcc_row_dist(state, c2);
-            const double *row_dcc_c3 = dcc_row_dist(state, c3);
-            const char   *row_meas_c1 = dcc_row_measured(state, c1);
-            const char   *row_meas_c2 = dcc_row_measured(state, c2);
-            const char   *row_meas_c3 = dcc_row_measured(state, c3);
+            int K = state->num_clusters;
+            double dcc_c1[K > 0 ? K : 1];
+            double dcc_c2[K > 0 ? K : 1];
+            double dcc_c3[K > 0 ? K : 1];
+            char   meas_c1[K > 0 ? K : 1];
+            char   meas_c2[K > 0 ? K : 1];
+            char   meas_c3[K > 0 ? K : 1];
+
+            for (int k = 0; k < K; k++)
+            {
+                dcc_c1[k] = dcc_get_dist(state, c1, k);
+                dcc_c2[k] = dcc_get_dist(state, c2, k);
+                dcc_c3[k] = dcc_get_dist(state, c3, k);
+                meas_c1[k] = (char)dcc_is_measured(state, c1, k);
+                meas_c2[k] = (char)dcc_is_measured(state, c2, k);
+                meas_c3[k] = (char)dcc_is_measured(state, c3, k);
+            }
+
+            const double *row_dcc_c1 = dcc_c1;
+            const double *row_dcc_c2 = dcc_c2;
+            const double *row_dcc_c3 = dcc_c3;
+            const char   *row_meas_c1 = meas_c1;
+            const char   *row_meas_c2 = meas_c2;
+            const char   *row_meas_c3 = meas_c3;
 
             long local_pruned_te5 = 0;
             int cl_idx = 0;
@@ -317,6 +335,7 @@ void prune_candidates_te5(
                                                   &state->clusters[c1].anchor, -1, -1.0, -1.0,
                                                   config, state);
                                 dcc_set_pair(state, kk, c1, d_k_c1);
+                                dcc_c1[kk] = d_k_c1;
                             }
                             double d_k_c2 = row_dcc_c2[kk];
                             if (d_k_c2 < 0.0)
@@ -325,6 +344,7 @@ void prune_candidates_te5(
                                                   &state->clusters[c2].anchor, -1, -1.0, -1.0,
                                                   config, state);
                                 dcc_set_pair(state, kk, c2, d_k_c2);
+                                dcc_c2[kk] = d_k_c2;
                             }
                             double d_k_c3 = row_dcc_c3[kk];
                             if (d_k_c3 < 0.0)
@@ -333,6 +353,7 @@ void prune_candidates_te5(
                                                   &state->clusters[c3].anchor, -1, -1.0, -1.0,
                                                   config, state);
                                 dcc_set_pair(state, kk, c3, d_k_c3);
+                                dcc_c3[kk] = d_k_c3;
                             }
                             double min_d = calc_min_dist_5pt_ref(&te5_ref, d_k_c1,
                                                                  d_k_c2, d_k_c3);
@@ -497,6 +518,7 @@ void prune_candidates_te5(
                                     &state->clusters[c1].anchor, -1, -1.0, -1.0,
                                     config, state);
                                 dcc_set_pair(state, cl_idx, c1, d_k_c1);
+                                dcc_c1[cl_idx] = d_k_c1;
                             }
                         }
                     }
@@ -516,6 +538,7 @@ void prune_candidates_te5(
                                     &state->clusters[c2].anchor, -1, -1.0, -1.0,
                                     config, state);
                                 dcc_set_pair(state, cl_idx, c2, d_k_c2);
+                                dcc_c2[cl_idx] = d_k_c2;
                             }
                         }
                     }
@@ -535,6 +558,7 @@ void prune_candidates_te5(
                                     &state->clusters[c3].anchor, -1, -1.0, -1.0,
                                     config, state);
                                 dcc_set_pair(state, cl_idx, c3, d_k_c3);
+                                dcc_c3[cl_idx] = d_k_c3;
                             }
                         }
                     }

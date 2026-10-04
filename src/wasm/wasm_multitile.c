@@ -791,12 +791,7 @@ void wasm_multitile_reset(void *ptr)
         /* Reset scratch matrices */
         {
             ClusterScratch *s = &ts->state.scratch;
-            memset(s->dcc_min, 0,
-                   (size_t)N * N * sizeof(double));
-            memset(s->dcc_max, 0,
-                   (size_t)N * N * sizeof(double));
-            memset(s->dcc_measured, 0,
-                   (size_t)N * N * sizeof(char));
+            dcc_reset_matrix(&ts->state, ts->config.optim.sparse_dcc_mode);
             size_t mw =
                 (size_t)N * N * ((N + 63) / 64);
             memset(s->consistency_mask, 0,

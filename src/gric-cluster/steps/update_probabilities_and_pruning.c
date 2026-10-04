@@ -238,13 +238,11 @@ void update_probabilities_and_pruning(
     }
     else
     {
-        const uint16_t *row_sq16 = dcc_row_sq16(state, cj);
-        const double   *row_dcc = dcc_row_dist(state, cj);
         int active_cnt = state->scratch.num_active_clusters;
         int *act = state->scratch.active_clusters;
         int idx = 0;
 
-        if (row_sq16 != NULL)
+        if (state->scratch.dcc_sq16_rows != NULL)
         {
             double scale = state->scratch.dcc_sq16_scale;
             int q_dfc = (int)(dfc * scale + 0.5);
@@ -253,7 +251,7 @@ void update_probabilities_and_pruning(
             while (idx < active_cnt)
             {
                 int cl = act[idx];
-                uint16_t q_dcc = row_sq16[cl];
+                uint16_t q_dcc = dcc_get_sq16(state, cj, cl);
 
                 if (q_dcc == DCC_SQ16_UNMEASURED)
                 {
@@ -262,7 +260,7 @@ void update_probabilities_and_pruning(
                         &state->clusters[cl].anchor,
                         -1, -1.0, -1.0, config, state);
                     set_dcc_pair(state, maxnbc, cj, cl, dcc);
-                    q_dcc = row_sq16[cl];
+                    q_dcc = dcc_get_sq16(state, cj, cl);
                 }
 
                 int diff = abs((int)q_dcc - q_dfc);
@@ -275,7 +273,7 @@ void update_probabilities_and_pruning(
                 else if (diff >= q_rlim - 1)
                 {
                     /* Boundary verification against exact double */
-                    double dcc = row_dcc[cl];
+                    double dcc = dcc_get_dist(state, cj, cl);
                     if (fabs(dcc - dfc) > rlim)
                     {
                         prune = 1;
@@ -301,7 +299,7 @@ void update_probabilities_and_pruning(
             while (idx < active_cnt)
             {
                 int cl = act[idx];
-                double dcc = row_dcc[cl];
+                double dcc = dcc_get_dist(state, cj, cl);
                 if (dcc < 0.0)
                 {
                     dcc = get_dist(
@@ -388,11 +386,6 @@ void update_probabilities_and_pruning(
             TE4Ref te4_ref;
             calc_te4_ref_init(&te4_ref, dfc, d_m_cprev, d_ci_cprev);
 
-            const double *row_dcc_cj = dcc_row_dist(state, cj);
-            const double *row_dcc_cprev = dcc_row_dist(state, cprev);
-            const char   *row_meas_cj = dcc_row_measured(state, cj);
-            const char   *row_meas_cprev = dcc_row_measured(state, cprev);
-
             int idx = 0;
             long local_pruned_te4 = 0;
 
@@ -410,17 +403,17 @@ void update_probabilities_and_pruning(
 
                 if (config->optim.sparse_dcc_mode)
                 {
-                    if (!row_meas_cj[kk] || !row_meas_cprev[kk])
+                    if (!dcc_is_measured(state, cj, kk) || !dcc_is_measured(state, cprev, kk))
                     {
                         idx++;
                         continue;
                     }
-                    d_ci_ck = row_dcc_cj[kk];
-                    d_cprev_ck = row_dcc_cprev[kk];
+                    d_ci_ck = dcc_get_dist(state, cj, kk);
+                    d_cprev_ck = dcc_get_dist(state, cprev, kk);
                 }
                 else
                 {
-                    d_ci_ck = row_dcc_cj[kk];
+                    d_ci_ck = dcc_get_dist(state, cj, kk);
                     if (d_ci_ck < 0.0)
                     {
                         d_ci_ck = get_dist(
@@ -430,7 +423,7 @@ void update_probabilities_and_pruning(
                         set_dcc_pair(state, config->algo.maxnbclust, cj, kk, d_ci_ck);
                     }
 
-                    d_cprev_ck = row_dcc_cprev[kk];
+                    d_cprev_ck = dcc_get_dist(state, cprev, kk);
                     if (d_cprev_ck < 0.0)
                     {
                         d_cprev_ck = get_dist(

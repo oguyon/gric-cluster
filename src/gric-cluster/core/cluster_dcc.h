@@ -1,7 +1,7 @@
 /**
  * @file cluster_dcc.h
- * @brief Accessor functions and abstraction layer for the pairwise inter-cluster
- *        distance (DCC) matrix and bounds cache.
+ * @brief Accessor functions and lower-triangular storage abstraction layer for
+ *        pairwise inter-cluster distance (DCC) matrix and bounds cache.
  */
 
 #ifndef CLUSTER_DCC_H
@@ -10,7 +10,310 @@
 #include "cluster_defs.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+
+/**
+ * dcc_alloc_row() - Allocate a row buffer with 64-byte alignment for SIMD vector loads.
+ * @bytes: Number of bytes to allocate.
+ *
+ * Return: Pointer to aligned buffer, or NULL on failure.
+ */
+static inline void *dcc_alloc_row(size_t bytes)
+{
+    void *ptr = NULL;
+    if (posix_memalign(&ptr, 64, bytes) != 0)
+    {
+        ptr = malloc(bytes);
+    }
+    return ptr;
+}
+
+/**
+ * dcc_ensure_row() - Ensure lower-triangular row @r is allocated with padding.
+ * @state:           Running clustering state.
+ * @r:               Row index to ensure.
+ * @sparse_dcc_mode: Non-zero if sparse bounds mode is active.
+ */
+static inline void dcc_ensure_row(
+    ClusterState *state,
+    int           r,
+    int           sparse_dcc_mode)
+{
+    if (r < 0 || state->scratch.dcc_min_rows == NULL)
+    {
+        return;
+    }
+    if ((size_t)r >= state->scratch.dcc_capacity)
+    {
+        return;
+    }
+    if (state->scratch.dcc_min_rows[r] != NULL)
+    {
+        return;
+    }
+
+    size_t alloc_elem = ((size_t)r + 15) & ~7ULL;
+    if (alloc_elem < 8)
+    {
+        alloc_elem = 8;
+    }
+
+    double *min_row = (double *)dcc_alloc_row(alloc_elem * sizeof(double));
+    if (min_row != NULL)
+    {
+        double init_val = sparse_dcc_mode ? 0.0 : -1.0;
+        for (size_t k = 0; k < alloc_elem; k++)
+        {
+            min_row[k] = init_val;
+        }
+        state->scratch.dcc_min_rows[r] = min_row;
+    }
+
+    if (sparse_dcc_mode && state->scratch.dcc_max_rows != NULL)
+    {
+        double *max_row = (double *)dcc_alloc_row(alloc_elem * sizeof(double));
+        if (max_row != NULL)
+        {
+            for (size_t k = 0; k < alloc_elem; k++)
+            {
+                max_row[k] = 1e19;
+            }
+            state->scratch.dcc_max_rows[r] = max_row;
+        }
+    }
+
+    if (sparse_dcc_mode && state->scratch.dcc_measured_rows != NULL)
+    {
+        char *meas_row = (char *)dcc_alloc_row(alloc_elem * sizeof(char));
+        if (meas_row != NULL)
+        {
+            memset(meas_row, 0, alloc_elem * sizeof(char));
+            state->scratch.dcc_measured_rows[r] = meas_row;
+        }
+    }
+
+    if (state->scratch.dcc_sq16_rows != NULL)
+    {
+        uint16_t *sq16_row = (uint16_t *)dcc_alloc_row(alloc_elem * sizeof(uint16_t));
+        if (sq16_row != NULL)
+        {
+            for (size_t k = 0; k < alloc_elem; k++)
+            {
+                sq16_row[k] = DCC_SQ16_UNMEASURED;
+            }
+            state->scratch.dcc_sq16_rows[r] = sq16_row;
+        }
+    }
+}
+
+/**
+ * dcc_init_matrix() - Initialize DCC matrix row pointer tables at startup.
+ * @state:           Running clustering state.
+ * @max_clusters:    Maximum number of clusters.
+ * @sparse_dcc_mode: Non-zero if sparse DCC bounds mode is active.
+ * @use_sq16:        Non-zero if SQ16 cache rows are allocated.
+ */
+static inline void dcc_init_matrix(
+    ClusterState *state,
+    size_t        max_clusters,
+    int           sparse_dcc_mode,
+    int           use_sq16)
+{
+    state->scratch.dcc_capacity = max_clusters;
+    state->scratch.dcc_min_rows = (double **)calloc(max_clusters, sizeof(double *));
+    if (sparse_dcc_mode)
+    {
+        state->scratch.dcc_max_rows = (double **)calloc(max_clusters, sizeof(double *));
+        state->scratch.dcc_measured_rows = (char **)calloc(max_clusters, sizeof(char *));
+    }
+    else
+    {
+        state->scratch.dcc_max_rows = NULL;
+        state->scratch.dcc_measured_rows = NULL;
+    }
+
+    if (use_sq16)
+    {
+        state->scratch.dcc_sq16_rows = (uint16_t **)calloc(max_clusters, sizeof(uint16_t *));
+    }
+    else
+    {
+        state->scratch.dcc_sq16_rows = NULL;
+    }
+
+    /* Allocate dummy row 0 so row 0 pointers are non-NULL */
+    dcc_ensure_row(state, 0, sparse_dcc_mode);
+}
+
+/**
+ * dcc_grow_capacity() - Reallocate row pointer tables for expanded capacity.
+ * @state:           Running clustering state.
+ * @new_capacity:    New maximum cluster capacity.
+ * @sparse_dcc_mode: Non-zero if sparse DCC bounds mode is active.
+ *
+ * Return: 0 on success, or -1 on allocation failure.
+ */
+static inline int dcc_grow_capacity(
+    ClusterState *state,
+    size_t        new_capacity,
+    int           sparse_dcc_mode)
+{
+    size_t old_cap = state->scratch.dcc_capacity;
+    if (new_capacity <= old_cap)
+    {
+        return 0;
+    }
+
+    double **new_min = (double **)realloc(
+        state->scratch.dcc_min_rows, new_capacity * sizeof(double *));
+    if (!new_min)
+    {
+        return -1;
+    }
+    memset(new_min + old_cap, 0, (new_capacity - old_cap) * sizeof(double *));
+    state->scratch.dcc_min_rows = new_min;
+
+    if (sparse_dcc_mode || state->scratch.dcc_max_rows != NULL)
+    {
+        double **new_max = (double **)realloc(
+            state->scratch.dcc_max_rows, new_capacity * sizeof(double *));
+        if (!new_max)
+        {
+            return -1;
+        }
+        memset(new_max + old_cap, 0, (new_capacity - old_cap) * sizeof(double *));
+        state->scratch.dcc_max_rows = new_max;
+
+        char **new_meas = (char **)realloc(
+            state->scratch.dcc_measured_rows, new_capacity * sizeof(char *));
+        if (!new_meas)
+        {
+            return -1;
+        }
+        memset(new_meas + old_cap, 0, (new_capacity - old_cap) * sizeof(char *));
+        state->scratch.dcc_measured_rows = new_meas;
+    }
+
+    if (state->scratch.dcc_sq16_rows != NULL)
+    {
+        uint16_t **new_sq16 = (uint16_t **)realloc(
+            state->scratch.dcc_sq16_rows, new_capacity * sizeof(uint16_t *));
+        if (!new_sq16)
+        {
+            return -1;
+        }
+        memset(new_sq16 + old_cap, 0, (new_capacity - old_cap) * sizeof(uint16_t *));
+        state->scratch.dcc_sq16_rows = new_sq16;
+    }
+
+    state->scratch.dcc_capacity = new_capacity;
+    return 0;
+}
+
+/**
+ * dcc_free_matrix() - Free all allocated row buffers and pointer tables.
+ * @state: Running clustering state.
+ */
+static inline void dcc_free_matrix(ClusterState *state)
+{
+    if (state->scratch.dcc_min_rows != NULL)
+    {
+        for (size_t r = 0; r < state->scratch.dcc_capacity; r++)
+        {
+            if (state->scratch.dcc_min_rows[r] != NULL)
+            {
+                free(state->scratch.dcc_min_rows[r]);
+                state->scratch.dcc_min_rows[r] = NULL;
+            }
+        }
+        free(state->scratch.dcc_min_rows);
+        state->scratch.dcc_min_rows = NULL;
+    }
+
+    if (state->scratch.dcc_max_rows != NULL)
+    {
+        for (size_t r = 0; r < state->scratch.dcc_capacity; r++)
+        {
+            if (state->scratch.dcc_max_rows[r] != NULL)
+            {
+                free(state->scratch.dcc_max_rows[r]);
+                state->scratch.dcc_max_rows[r] = NULL;
+            }
+        }
+        free(state->scratch.dcc_max_rows);
+        state->scratch.dcc_max_rows = NULL;
+    }
+
+    if (state->scratch.dcc_measured_rows != NULL)
+    {
+        for (size_t r = 0; r < state->scratch.dcc_capacity; r++)
+        {
+            if (state->scratch.dcc_measured_rows[r] != NULL)
+            {
+                free(state->scratch.dcc_measured_rows[r]);
+                state->scratch.dcc_measured_rows[r] = NULL;
+            }
+        }
+        free(state->scratch.dcc_measured_rows);
+        state->scratch.dcc_measured_rows = NULL;
+    }
+
+    if (state->scratch.dcc_sq16_rows != NULL)
+    {
+        for (size_t r = 0; r < state->scratch.dcc_capacity; r++)
+        {
+            if (state->scratch.dcc_sq16_rows[r] != NULL)
+            {
+                free(state->scratch.dcc_sq16_rows[r]);
+                state->scratch.dcc_sq16_rows[r] = NULL;
+            }
+        }
+        free(state->scratch.dcc_sq16_rows);
+        state->scratch.dcc_sq16_rows = NULL;
+    }
+
+    state->scratch.dcc_capacity = 0;
+}
+
+/**
+ * dcc_reset_matrix() - Free rows > 0 and reset row 0 for reusable sessions.
+ * @state:           Running clustering state.
+ * @sparse_dcc_mode: Non-zero if sparse DCC bounds mode is active.
+ */
+static inline void dcc_reset_matrix(
+    ClusterState *state,
+    int           sparse_dcc_mode)
+{
+    if (state->scratch.dcc_min_rows == NULL)
+    {
+        return;
+    }
+    for (size_t r = 1; r < state->scratch.dcc_capacity; r++)
+    {
+        if (state->scratch.dcc_min_rows[r] != NULL)
+        {
+            free(state->scratch.dcc_min_rows[r]);
+            state->scratch.dcc_min_rows[r] = NULL;
+        }
+        if (state->scratch.dcc_max_rows != NULL && state->scratch.dcc_max_rows[r] != NULL)
+        {
+            free(state->scratch.dcc_max_rows[r]);
+            state->scratch.dcc_max_rows[r] = NULL;
+        }
+        if (state->scratch.dcc_measured_rows != NULL && state->scratch.dcc_measured_rows[r] != NULL)
+        {
+            free(state->scratch.dcc_measured_rows[r]);
+            state->scratch.dcc_measured_rows[r] = NULL;
+        }
+        if (state->scratch.dcc_sq16_rows != NULL && state->scratch.dcc_sq16_rows[r] != NULL)
+        {
+            free(state->scratch.dcc_sq16_rows[r]);
+            state->scratch.dcc_sq16_rows[r] = NULL;
+        }
+    }
+    dcc_ensure_row(state, 0, sparse_dcc_mode);
+}
 
 /**
  * dcc_get_dist() - Retrieve pairwise distance between cluster @i and cluster @j.
@@ -25,7 +328,17 @@ static inline double dcc_get_dist(
     int                 i,
     int                 j)
 {
-    return state->scratch.dcc_min[(size_t)i * state->scratch.dcc_stride + (size_t)j];
+    if (i == j)
+    {
+        return 0.0;
+    }
+    int r = (i > j) ? i : j;
+    int c = (i > j) ? j : i;
+    if (state->scratch.dcc_min_rows == NULL || state->scratch.dcc_min_rows[r] == NULL)
+    {
+        return -1.0;
+    }
+    return state->scratch.dcc_min_rows[r][c];
 }
 
 /**
@@ -41,7 +354,17 @@ static inline double dcc_get_min(
     int                 i,
     int                 j)
 {
-    return state->scratch.dcc_min[(size_t)i * state->scratch.dcc_stride + (size_t)j];
+    if (i == j)
+    {
+        return 0.0;
+    }
+    int r = (i > j) ? i : j;
+    int c = (i > j) ? j : i;
+    if (state->scratch.dcc_min_rows == NULL || state->scratch.dcc_min_rows[r] == NULL)
+    {
+        return 0.0;
+    }
+    return state->scratch.dcc_min_rows[r][c];
 }
 
 /**
@@ -57,7 +380,21 @@ static inline double dcc_get_max(
     int                 i,
     int                 j)
 {
-    return state->scratch.dcc_max[(size_t)i * state->scratch.dcc_stride + (size_t)j];
+    if (i == j)
+    {
+        return 0.0;
+    }
+    int r = (i > j) ? i : j;
+    int c = (i > j) ? j : i;
+    if (state->scratch.dcc_max_rows != NULL && state->scratch.dcc_max_rows[r] != NULL)
+    {
+        return state->scratch.dcc_max_rows[r][c];
+    }
+    if (state->scratch.dcc_min_rows != NULL && state->scratch.dcc_min_rows[r] != NULL)
+    {
+        return state->scratch.dcc_min_rows[r][c];
+    }
+    return 1e19;
 }
 
 /**
@@ -73,7 +410,21 @@ static inline int dcc_is_measured(
     int                 i,
     int                 j)
 {
-    return state->scratch.dcc_measured[(size_t)i * state->scratch.dcc_stride + (size_t)j];
+    if (i == j)
+    {
+        return 1;
+    }
+    int r = (i > j) ? i : j;
+    int c = (i > j) ? j : i;
+    if (state->scratch.dcc_measured_rows != NULL && state->scratch.dcc_measured_rows[r] != NULL)
+    {
+        return (int)state->scratch.dcc_measured_rows[r][c];
+    }
+    if (state->scratch.dcc_min_rows != NULL && state->scratch.dcc_min_rows[r] != NULL)
+    {
+        return (state->scratch.dcc_min_rows[r][c] >= 0.0) ? 1 : 0;
+    }
+    return 0;
 }
 
 /**
@@ -89,11 +440,21 @@ static inline uint16_t dcc_get_sq16(
     int                 i,
     int                 j)
 {
-    if (state->scratch.dcc_sq16 == NULL)
+    if (i == j)
+    {
+        return 0;
+    }
+    if (state->scratch.dcc_sq16_rows == NULL)
     {
         return DCC_SQ16_UNMEASURED;
     }
-    return state->scratch.dcc_sq16[(size_t)i * state->scratch.dcc_stride + (size_t)j];
+    int r = (i > j) ? i : j;
+    int c = (i > j) ? j : i;
+    if (state->scratch.dcc_sq16_rows[r] == NULL)
+    {
+        return DCC_SQ16_UNMEASURED;
+    }
+    return state->scratch.dcc_sq16_rows[r][c];
 }
 
 /**
@@ -101,13 +462,13 @@ static inline uint16_t dcc_get_sq16(
  * @state: Running clustering state.
  * @i:     Cluster index.
  *
- * Return: Const pointer to distance row @i.
+ * Return: Const pointer to distance row @i (valid for columns 0..i-1).
  */
 static inline const double *dcc_row_dist(
     const ClusterState *state,
     int                 i)
 {
-    return &state->scratch.dcc_min[(size_t)i * state->scratch.dcc_stride];
+    return state->scratch.dcc_min_rows[i];
 }
 
 /**
@@ -115,13 +476,13 @@ static inline const double *dcc_row_dist(
  * @state: Running clustering state.
  * @i:     Cluster index.
  *
- * Return: Mutable pointer to distance row @i.
+ * Return: Mutable pointer to distance row @i (valid for columns 0..i-1).
  */
 static inline double *dcc_row_dist_mut(
     ClusterState *state,
     int           i)
 {
-    return &state->scratch.dcc_min[(size_t)i * state->scratch.dcc_stride];
+    return state->scratch.dcc_min_rows[i];
 }
 
 /**
@@ -129,13 +490,13 @@ static inline double *dcc_row_dist_mut(
  * @state: Running clustering state.
  * @i:     Cluster index.
  *
- * Return: Const pointer to max bound row @i.
+ * Return: Const pointer to max bound row @i, or NULL in dense mode.
  */
 static inline const double *dcc_row_max(
     const ClusterState *state,
     int                 i)
 {
-    return &state->scratch.dcc_max[(size_t)i * state->scratch.dcc_stride];
+    return state->scratch.dcc_max_rows ? state->scratch.dcc_max_rows[i] : NULL;
 }
 
 /**
@@ -143,13 +504,13 @@ static inline const double *dcc_row_max(
  * @state: Running clustering state.
  * @i:     Cluster index.
  *
- * Return: Mutable pointer to max bound row @i.
+ * Return: Mutable pointer to max bound row @i, or NULL in dense mode.
  */
 static inline double *dcc_row_max_mut(
     ClusterState *state,
     int           i)
 {
-    return &state->scratch.dcc_max[(size_t)i * state->scratch.dcc_stride];
+    return state->scratch.dcc_max_rows ? state->scratch.dcc_max_rows[i] : NULL;
 }
 
 /**
@@ -157,13 +518,13 @@ static inline double *dcc_row_max_mut(
  * @state: Running clustering state.
  * @i:     Cluster index.
  *
- * Return: Const pointer to measured flags row @i.
+ * Return: Const pointer to measured flags row @i, or NULL in dense mode.
  */
 static inline const char *dcc_row_measured(
     const ClusterState *state,
     int                 i)
 {
-    return &state->scratch.dcc_measured[(size_t)i * state->scratch.dcc_stride];
+    return state->scratch.dcc_measured_rows ? state->scratch.dcc_measured_rows[i] : NULL;
 }
 
 /**
@@ -171,13 +532,13 @@ static inline const char *dcc_row_measured(
  * @state: Running clustering state.
  * @i:     Cluster index.
  *
- * Return: Mutable pointer to measured flags row @i.
+ * Return: Mutable pointer to measured flags row @i, or NULL in dense mode.
  */
 static inline char *dcc_row_measured_mut(
     ClusterState *state,
     int           i)
 {
-    return &state->scratch.dcc_measured[(size_t)i * state->scratch.dcc_stride];
+    return state->scratch.dcc_measured_rows ? state->scratch.dcc_measured_rows[i] : NULL;
 }
 
 /**
@@ -191,11 +552,7 @@ static inline const uint16_t *dcc_row_sq16(
     const ClusterState *state,
     int                 i)
 {
-    if (state->scratch.dcc_sq16 == NULL)
-    {
-        return NULL;
-    }
-    return &state->scratch.dcc_sq16[(size_t)i * state->scratch.dcc_stride];
+    return state->scratch.dcc_sq16_rows ? state->scratch.dcc_sq16_rows[i] : NULL;
 }
 
 /**
@@ -209,15 +566,11 @@ static inline uint16_t *dcc_row_sq16_mut(
     ClusterState *state,
     int           i)
 {
-    if (state->scratch.dcc_sq16 == NULL)
-    {
-        return NULL;
-    }
-    return &state->scratch.dcc_sq16[(size_t)i * state->scratch.dcc_stride];
+    return state->scratch.dcc_sq16_rows ? state->scratch.dcc_sq16_rows[i] : NULL;
 }
 
 /**
- * dcc_set_pair() - Update symmetric pairwise distance cache entries in float and SQ16.
+ * dcc_set_pair() - Update pairwise distance cache entry in float and SQ16.
  * @state: Running clustering state.
  * @c1:    First cluster index.
  * @c2:    Second cluster index.
@@ -229,28 +582,34 @@ static inline void dcc_set_pair(
     int           c2,
     double        d)
 {
-    size_t stride = state->scratch.dcc_stride;
-    size_t idx12 = (size_t)c1 * stride + (size_t)c2;
-    size_t idx21 = (size_t)c2 * stride + (size_t)c1;
+    if (c1 == c2)
+    {
+        return;
+    }
+    int r = (c1 > c2) ? c1 : c2;
+    int c = (c1 > c2) ? c2 : c1;
 
-    state->scratch.dcc_min[idx12] = d;
-    state->scratch.dcc_min[idx21] = d;
-    state->scratch.dcc_max[idx12] = d;
-    state->scratch.dcc_max[idx21] = d;
-    state->scratch.dcc_measured[idx12] = 1;
-    state->scratch.dcc_measured[idx21] = 1;
+    state->scratch.dcc_min_rows[r][c] = d;
 
-    if (state->scratch.dcc_sq16 != NULL)
+    if (state->scratch.dcc_max_rows != NULL && state->scratch.dcc_max_rows[r] != NULL)
+    {
+        state->scratch.dcc_max_rows[r][c] = d;
+    }
+    if (state->scratch.dcc_measured_rows != NULL && state->scratch.dcc_measured_rows[r] != NULL)
+    {
+        state->scratch.dcc_measured_rows[r][c] = 1;
+    }
+    if (state->scratch.dcc_sq16_rows != NULL && state->scratch.dcc_sq16_rows[r] != NULL)
     {
         double s = state->scratch.dcc_sq16_scale;
-        uint16_t q = (d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5);
-        state->scratch.dcc_sq16[idx12] = q;
-        state->scratch.dcc_sq16[idx21] = q;
+        uint16_t q = (d <= 0.0) ? 0 :
+            ((d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5));
+        state->scratch.dcc_sq16_rows[r][c] = q;
     }
 }
 
 /**
- * dcc_set_bounds() - Set directional bound entries for cluster pair (@i, @j).
+ * dcc_set_bounds() - Set bound entries for cluster pair (@i, @j).
  * @state:    Running clustering state.
  * @i:        First cluster index.
  * @j:        Second cluster index.
@@ -266,16 +625,26 @@ static inline void dcc_set_bounds(
     double        max_d,
     char          measured)
 {
-    size_t stride = state->scratch.dcc_stride;
-    size_t idx = (size_t)i * stride + (size_t)j;
+    if (i == j)
+    {
+        return;
+    }
+    int r = (i > j) ? i : j;
+    int c = (i > j) ? j : i;
 
-    state->scratch.dcc_min[idx] = min_d;
-    state->scratch.dcc_max[idx] = max_d;
-    state->scratch.dcc_measured[idx] = measured;
+    state->scratch.dcc_min_rows[r][c] = min_d;
+    if (state->scratch.dcc_max_rows != NULL && state->scratch.dcc_max_rows[r] != NULL)
+    {
+        state->scratch.dcc_max_rows[r][c] = max_d;
+    }
+    if (state->scratch.dcc_measured_rows != NULL && state->scratch.dcc_measured_rows[r] != NULL)
+    {
+        state->scratch.dcc_measured_rows[r][c] = measured;
+    }
 }
 
 /**
- * dcc_set_min_pair() - Update symmetric minimum distance bounds for pair (@i, @j).
+ * dcc_set_min_pair() - Update minimum distance bound for pair (@i, @j).
  * @state: Running clustering state.
  * @i:     First cluster index.
  * @j:     Second cluster index.
@@ -287,13 +656,17 @@ static inline void dcc_set_min_pair(
     int           j,
     double        min_d)
 {
-    size_t stride = state->scratch.dcc_stride;
-    state->scratch.dcc_min[(size_t)i * stride + (size_t)j] = min_d;
-    state->scratch.dcc_min[(size_t)j * stride + (size_t)i] = min_d;
+    if (i == j)
+    {
+        return;
+    }
+    int r = (i > j) ? i : j;
+    int c = (i > j) ? j : i;
+    state->scratch.dcc_min_rows[r][c] = min_d;
 }
 
 /**
- * dcc_set_max_pair() - Update symmetric maximum distance bounds for pair (@i, @j).
+ * dcc_set_max_pair() - Update maximum distance bound for pair (@i, @j).
  * @state: Running clustering state.
  * @i:     First cluster index.
  * @j:     Second cluster index.
@@ -305,13 +678,20 @@ static inline void dcc_set_max_pair(
     int           j,
     double        max_d)
 {
-    size_t stride = state->scratch.dcc_stride;
-    state->scratch.dcc_max[(size_t)i * stride + (size_t)j] = max_d;
-    state->scratch.dcc_max[(size_t)j * stride + (size_t)i] = max_d;
+    if (i == j)
+    {
+        return;
+    }
+    int r = (i > j) ? i : j;
+    int c = (i > j) ? j : i;
+    if (state->scratch.dcc_max_rows != NULL && state->scratch.dcc_max_rows[r] != NULL)
+    {
+        state->scratch.dcc_max_rows[r][c] = max_d;
+    }
 }
 
 /**
- * dcc_init_sparse_unmeasured_pair() - Initialize symmetric pair as unmeasured [0, 1e19].
+ * dcc_init_sparse_unmeasured_pair() - Initialize pair as unmeasured [0, 1e19].
  * @state: Running clustering state.
  * @c1:    First cluster index.
  * @c2:    Second cluster index.
@@ -321,18 +701,30 @@ static inline void dcc_init_sparse_unmeasured_pair(
     int           c1,
     int           c2)
 {
-    dcc_set_bounds(state, c1, c2, 0.0, 1e19, 0);
-    dcc_set_bounds(state, c2, c1, 0.0, 1e19, 0);
-    if (state->scratch.dcc_sq16 != NULL)
+    if (c1 == c2)
     {
-        size_t stride = state->scratch.dcc_stride;
-        state->scratch.dcc_sq16[(size_t)c1 * stride + (size_t)c2] = DCC_SQ16_UNMEASURED;
-        state->scratch.dcc_sq16[(size_t)c2 * stride + (size_t)c1] = DCC_SQ16_UNMEASURED;
+        return;
+    }
+    int r = (c1 > c2) ? c1 : c2;
+    int c = (c1 > c2) ? c2 : c1;
+
+    state->scratch.dcc_min_rows[r][c] = 0.0;
+    if (state->scratch.dcc_max_rows != NULL && state->scratch.dcc_max_rows[r] != NULL)
+    {
+        state->scratch.dcc_max_rows[r][c] = 1e19;
+    }
+    if (state->scratch.dcc_measured_rows != NULL && state->scratch.dcc_measured_rows[r] != NULL)
+    {
+        state->scratch.dcc_measured_rows[r][c] = 0;
+    }
+    if (state->scratch.dcc_sq16_rows != NULL && state->scratch.dcc_sq16_rows[r] != NULL)
+    {
+        state->scratch.dcc_sq16_rows[r][c] = DCC_SQ16_UNMEASURED;
     }
 }
 
 /**
- * dcc_sync_symmetric_new_cluster() - Scatter newly populated row @new_cl into symmetric columns.
+ * dcc_sync_symmetric_new_cluster() - Symmetrize row into columns (no-op in lower-triangular).
  * @state:  Running clustering state.
  * @new_cl: Index of the newly added cluster.
  */
@@ -340,99 +732,8 @@ static inline void dcc_sync_symmetric_new_cluster(
     ClusterState *state,
     int           new_cl)
 {
-    size_t stride = state->scratch.dcc_stride;
-    double   *dcc_min_row = &state->scratch.dcc_min[(size_t)new_cl * stride];
-    double   *dcc_min = state->scratch.dcc_min;
-    double   *dcc_max = state->scratch.dcc_max;
-    char     *dcc_meas = state->scratch.dcc_measured;
-    uint16_t *dcc_sq16 = state->scratch.dcc_sq16;
-    uint16_t *dcc_sq16_row = (dcc_sq16 != NULL)
-        ? &dcc_sq16[(size_t)new_cl * stride]
-        : NULL;
-
-    if (dcc_sq16 != NULL)
-    {
-        for (int k = 0; k < new_cl; k++)
-        {
-            size_t col_idx = (size_t)k * stride + (size_t)new_cl;
-            double d = dcc_min_row[k];
-            dcc_min[col_idx] = d;
-            dcc_max[col_idx] = d;
-            dcc_meas[col_idx] = 1;
-            dcc_sq16[col_idx] = dcc_sq16_row[k];
-        }
-    }
-    else
-    {
-        for (int k = 0; k < new_cl; k++)
-        {
-            size_t col_idx = (size_t)k * stride + (size_t)new_cl;
-            double d = dcc_min_row[k];
-            dcc_min[col_idx] = d;
-            dcc_max[col_idx] = d;
-            dcc_meas[col_idx] = 1;
-        }
-    }
-}
-
-/**
- * dcc_init_matrix() - Initialize DCC matrix buffers at startup or reset.
- * @state:           Running clustering state.
- * @max_clusters:    Maximum number of clusters.
- * @sparse_dcc_mode: Non-zero if sparse DCC bounds mode is active.
- */
-static inline void dcc_init_matrix(
-    ClusterState *state,
-    size_t        max_clusters,
-    int           sparse_dcc_mode)
-{
-    state->scratch.dcc_stride = max_clusters;
-    size_t total = max_clusters * max_clusters;
-
-    if (sparse_dcc_mode)
-    {
-        for (size_t ii = 0; ii < total; ii++)
-        {
-            state->scratch.dcc_min[ii] = 0.0;
-            state->scratch.dcc_max[ii] = 1e19;
-            state->scratch.dcc_measured[ii] = 0;
-            if (state->scratch.dcc_sq16 != NULL)
-            {
-                state->scratch.dcc_sq16[ii] = DCC_SQ16_UNMEASURED;
-            }
-        }
-        for (size_t r = 0; r < max_clusters; r++)
-        {
-            size_t idx = r * max_clusters + r;
-            state->scratch.dcc_min[idx] = 0.0;
-            state->scratch.dcc_max[idx] = 0.0;
-            state->scratch.dcc_measured[idx] = 1;
-            if (state->scratch.dcc_sq16 != NULL)
-            {
-                state->scratch.dcc_sq16[idx] = 0;
-            }
-        }
-    }
-    else
-    {
-        for (size_t ii = 0; ii < total; ii++)
-        {
-            state->scratch.dcc_min[ii] = -1.0;
-            state->scratch.dcc_max[ii] = -1.0;
-            state->scratch.dcc_measured[ii] = 0;
-            if (state->scratch.dcc_sq16 != NULL)
-            {
-                state->scratch.dcc_sq16[ii] = DCC_SQ16_UNMEASURED;
-            }
-        }
-        for (size_t r = 0; r < max_clusters; r++)
-        {
-            if (state->scratch.dcc_sq16 != NULL)
-            {
-                state->scratch.dcc_sq16[r * max_clusters + r] = 0;
-            }
-        }
-    }
+    (void)state;
+    (void)new_cl;
 }
 
 /**
@@ -446,89 +747,95 @@ static inline void dcc_remove_cluster(
     int           index_to_remove,
     int           sparse_dcc_mode)
 {
-    size_t N = state->scratch.dcc_stride;
+    (void)sparse_dcc_mode;
     int num_clusters = state->num_clusters;
+    int u = index_to_remove;
 
-    // Shift Rows up
-    for (int r = index_to_remove; r < num_clusters - 1; r++)
+    /* Free the removed cluster's row */
+    if (state->scratch.dcc_min_rows[u] != NULL)
     {
-        memcpy(&state->scratch.dcc_min[(size_t)r * N],
-               &state->scratch.dcc_min[(size_t)(r + 1) * N],
-               N * sizeof(double));
-        memcpy(&state->scratch.dcc_max[(size_t)r * N],
-               &state->scratch.dcc_max[(size_t)(r + 1) * N],
-               N * sizeof(double));
-        memcpy(&state->scratch.dcc_measured[(size_t)r * N],
-               &state->scratch.dcc_measured[(size_t)(r + 1) * N],
-               N * sizeof(char));
-        if (state->scratch.dcc_sq16 != NULL)
-        {
-            memcpy(&state->scratch.dcc_sq16[(size_t)r * N],
-                   &state->scratch.dcc_sq16[(size_t)(r + 1) * N],
-                   N * sizeof(uint16_t));
-        }
+        free(state->scratch.dcc_min_rows[u]);
+        state->scratch.dcc_min_rows[u] = NULL;
+    }
+    if (state->scratch.dcc_max_rows != NULL && state->scratch.dcc_max_rows[u] != NULL)
+    {
+        free(state->scratch.dcc_max_rows[u]);
+        state->scratch.dcc_max_rows[u] = NULL;
+    }
+    if (state->scratch.dcc_measured_rows != NULL && state->scratch.dcc_measured_rows[u] != NULL)
+    {
+        free(state->scratch.dcc_measured_rows[u]);
+        state->scratch.dcc_measured_rows[u] = NULL;
+    }
+    if (state->scratch.dcc_sq16_rows != NULL && state->scratch.dcc_sq16_rows[u] != NULL)
+    {
+        free(state->scratch.dcc_sq16_rows[u]);
+        state->scratch.dcc_sq16_rows[u] = NULL;
     }
 
-    // Shift Columns left for ALL rows
-    for (int r = 0; r < num_clusters - 1; r++)
+    /* Shift rows r from u + 1 to num_clusters - 1 down to r - 1 */
+    for (int r = u + 1; r < num_clusters; r++)
     {
-        size_t dest_idx = (size_t)r * N + (size_t)index_to_remove;
-        size_t src_idx = (size_t)r * N + (size_t)index_to_remove + 1;
-        size_t count = N - 1 - (size_t)index_to_remove;
-        if (count > 0)
+        size_t count_after_u = (size_t)(r - 1 - u);
+        if (count_after_u > 0)
         {
-            memmove(&state->scratch.dcc_min[dest_idx],
-                    &state->scratch.dcc_min[src_idx],
-                    count * sizeof(double));
-            memmove(&state->scratch.dcc_max[dest_idx],
-                    &state->scratch.dcc_max[src_idx],
-                    count * sizeof(double));
-            memmove(&state->scratch.dcc_measured[dest_idx],
-                    &state->scratch.dcc_measured[src_idx],
-                    count * sizeof(char));
-            if (state->scratch.dcc_sq16 != NULL)
+            if (state->scratch.dcc_min_rows[r] != NULL)
             {
-                memmove(&state->scratch.dcc_sq16[dest_idx],
-                        &state->scratch.dcc_sq16[src_idx],
-                        count * sizeof(uint16_t));
+                memmove(&state->scratch.dcc_min_rows[r][u],
+                        &state->scratch.dcc_min_rows[r][u + 1],
+                        count_after_u * sizeof(double));
+            }
+            if (state->scratch.dcc_max_rows != NULL && state->scratch.dcc_max_rows[r] != NULL)
+            {
+                memmove(&state->scratch.dcc_max_rows[r][u],
+                        &state->scratch.dcc_max_rows[r][u + 1],
+                        count_after_u * sizeof(double));
+            }
+            if (state->scratch.dcc_measured_rows != NULL &&
+                state->scratch.dcc_measured_rows[r] != NULL)
+            {
+                memmove(&state->scratch.dcc_measured_rows[r][u],
+                        &state->scratch.dcc_measured_rows[r][u + 1],
+                        count_after_u * sizeof(char));
+            }
+            if (state->scratch.dcc_sq16_rows != NULL && state->scratch.dcc_sq16_rows[r] != NULL)
+            {
+                memmove(&state->scratch.dcc_sq16_rows[r][u],
+                        &state->scratch.dcc_sq16_rows[r][u + 1],
+                        count_after_u * sizeof(uint16_t));
             }
         }
+
+        /* Move row pointer to r - 1 */
+        state->scratch.dcc_min_rows[r - 1] = state->scratch.dcc_min_rows[r];
+        if (state->scratch.dcc_max_rows != NULL)
+        {
+            state->scratch.dcc_max_rows[r - 1] = state->scratch.dcc_max_rows[r];
+        }
+        if (state->scratch.dcc_measured_rows != NULL)
+        {
+            state->scratch.dcc_measured_rows[r - 1] = state->scratch.dcc_measured_rows[r];
+        }
+        if (state->scratch.dcc_sq16_rows != NULL)
+        {
+            state->scratch.dcc_sq16_rows[r - 1] = state->scratch.dcc_sq16_rows[r];
+        }
     }
 
-    // Clear the now-unused last row/col
+    /* Clear the vacated last pointer */
     int last = num_clusters - 1;
-    for (size_t r = 0; r < N; r++)
+    state->scratch.dcc_min_rows[last] = NULL;
+    if (state->scratch.dcc_max_rows != NULL)
     {
-        if (state->scratch.dcc_sq16 != NULL)
-        {
-            state->scratch.dcc_sq16[(size_t)last * N + r] = DCC_SQ16_UNMEASURED;
-            state->scratch.dcc_sq16[r * N + (size_t)last] = DCC_SQ16_UNMEASURED;
-        }
-        if (sparse_dcc_mode)
-        {
-            state->scratch.dcc_min[(size_t)last * N + r] = 0.0;
-            state->scratch.dcc_min[r * N + (size_t)last] = 0.0;
-            state->scratch.dcc_max[(size_t)last * N + r] = 1e19;
-            state->scratch.dcc_max[r * N + (size_t)last] = 1e19;
-            state->scratch.dcc_measured[(size_t)last * N + r] = 0;
-            state->scratch.dcc_measured[r * N + (size_t)last] = 0;
-        }
-        else
-        {
-            state->scratch.dcc_min[(size_t)last * N + r] = -1.0;
-            state->scratch.dcc_min[r * N + (size_t)last] = -1.0;
-            state->scratch.dcc_max[(size_t)last * N + r] = -1.0;
-            state->scratch.dcc_max[r * N + (size_t)last] = -1.0;
-            state->scratch.dcc_measured[(size_t)last * N + r] = 0;
-            state->scratch.dcc_measured[r * N + (size_t)last] = 0;
-        }
+        state->scratch.dcc_max_rows[last] = NULL;
     }
-    state->scratch.dcc_min[(size_t)last * N + (size_t)last] = 0.0;
-    state->scratch.dcc_max[(size_t)last * N + (size_t)last] = 0.0;
-    state->scratch.dcc_measured[(size_t)last * N + (size_t)last] = 1;
-    if (state->scratch.dcc_sq16 != NULL)
+    if (state->scratch.dcc_measured_rows != NULL)
     {
-        state->scratch.dcc_sq16[(size_t)last * N + (size_t)last] = 0;
+        state->scratch.dcc_measured_rows[last] = NULL;
+    }
+    if (state->scratch.dcc_sq16_rows != NULL)
+    {
+        state->scratch.dcc_sq16_rows[last] = NULL;
     }
 }
 
@@ -536,17 +843,16 @@ static inline void dcc_remove_cluster(
  * dcc_count_populated_pairs() - Count measured cluster pairs.
  * @state: Running clustering state.
  *
- * Return: Number of unique pairs (i, j) with i < j having measured distance.
+ * Return: Number of unique pairs (i, j) with i > j having measured distance.
  */
 static inline uint64_t dcc_count_populated_pairs(const ClusterState *state)
 {
     uint64_t count = 0;
-    for (int i = 0; i < state->num_clusters; i++)
+    for (int i = 1; i < state->num_clusters; i++)
     {
-        const char *row = dcc_row_measured(state, i);
-        for (int j = i + 1; j < state->num_clusters; j++)
+        for (int j = 0; j < i; j++)
         {
-            if (row[j])
+            if (dcc_is_measured(state, i, j))
             {
                 count++;
             }

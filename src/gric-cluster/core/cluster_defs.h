@@ -239,12 +239,12 @@ typedef struct
 typedef struct
 {
     double *current_gprobs;     /**< Geometric probabilities computed during search */
-    double *dcc_min;            /**< Pairwise inter-cluster minimum distance bounds */
-    double *dcc_max;            /**< Pairwise inter-cluster maximum distance bounds */
-    char   *dcc_measured;       /**< 1 if exactly measured, 0 if unmeasured */
-    uint16_t *dcc_sq16;         /**< 16-bit quantized DCC cache for L3 residency */
-    double  dcc_sq16_scale;     /**< Scale factor: 16384.0 / rlim */
-    size_t  dcc_stride;         /**< Stride / dimension of flat DCC matrix */
+    double    **dcc_min_rows;      /**< Lower-triangular rows: dcc_min_rows[r][c] for r > c */
+    double    **dcc_max_rows;      /**< Upper bounds rows: dcc_max_rows[r][c] (NULL in dense) */
+    char      **dcc_measured_rows; /**< Measured flags rows: [r][c] (NULL in dense) */
+    uint16_t  **dcc_sq16_rows;     /**< 16-bit quantized DCC cache: dcc_sq16_rows[r][c] */
+    double      dcc_sq16_scale;    /**< Scale factor: 16384.0 / rlim */
+    size_t      dcc_capacity;      /**< Capacity of row pointer tables */
     int    *probsortedclindex;  /**< Cluster indices sorted by descending prior probability */
     int     probsorted_count;   /**< Number of valid entries in probsortedclindex */
     double *cluster_probs;     /**< Contiguous aligned array of cluster prior probabilities */

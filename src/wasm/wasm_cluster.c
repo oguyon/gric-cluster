@@ -263,16 +263,7 @@ void *wasm_cluster_init(
         s->current_gprobs =
             (double *)calloc(N, sizeof(double));
 
-        s->dcc_min =
-            (double *)calloc((size_t)N * N,
-                             sizeof(double));
-        s->dcc_max =
-            (double *)calloc((size_t)N * N,
-                             sizeof(double));
-        s->dcc_measured =
-            (char *)calloc((size_t)N * N,
-                           sizeof(char));
-        s->dcc_stride = (size_t)N;
+        dcc_init_matrix(&h->state, (size_t)N, sparse_dcc_mode, 0);
 
         size_t mask_words =
             (size_t)N * N * ((N + 63) / 64);
@@ -354,9 +345,7 @@ void *wasm_cluster_init(
         h->state.scratch.probsortedclindex == NULL ||
         h->state.scratch.cluster_probs == NULL ||
         h->state.scratch.current_gprobs == NULL ||
-        h->state.scratch.dcc_min == NULL ||
-        h->state.scratch.dcc_max == NULL ||
-        h->state.scratch.dcc_measured == NULL ||
+        h->state.scratch.dcc_min_rows == NULL ||
         h->state.scratch.consistency_mask == NULL ||
         h->state.scratch.entropy_p_current == NULL ||
         h->state.scratch.entropy_candidates == NULL ||
@@ -543,33 +532,10 @@ static int grow_capacity(WasmHandle *h)
     }
     h->state.transition_matrix = new_tm;
 
-    double *new_dcc_min = (double *)grow_nxn_matrix(
-        s->dcc_min, old_N, new_N, sizeof(double)
-    );
-    if (!new_dcc_min)
+    if (dcc_grow_capacity(&h->state, (size_t)new_N, h->config.optim.sparse_dcc_mode) != 0)
     {
         return -1;
     }
-    s->dcc_min = new_dcc_min;
-
-    double *new_dcc_max = (double *)grow_nxn_matrix(
-        s->dcc_max, old_N, new_N, sizeof(double)
-    );
-    if (!new_dcc_max)
-    {
-        return -1;
-    }
-    s->dcc_max = new_dcc_max;
-
-    char *new_dcc_measured = (char *)grow_nxn_matrix(
-        s->dcc_measured, old_N, new_N, sizeof(char)
-    );
-    if (!new_dcc_measured)
-    {
-        return -1;
-    }
-    s->dcc_measured = new_dcc_measured;
-    s->dcc_stride = (size_t)new_N;
 
     size_t new_mask_words = (size_t)new_N * new_N * ((new_N + 63) / 64);
     uint64_t *new_mask = (uint64_t *)calloc(new_mask_words, sizeof(uint64_t));
@@ -1145,12 +1111,7 @@ void wasm_cluster_reset(void *ptr)
     {
         ClusterScratch *s = &h->state.scratch;
 
-        memset(s->dcc_min, 0,
-               (size_t)N * N * sizeof(double));
-        memset(s->dcc_max, 0,
-               (size_t)N * N * sizeof(double));
-        memset(s->dcc_measured, 0,
-               (size_t)N * N * sizeof(char));
+        dcc_reset_matrix(&h->state, h->config.optim.sparse_dcc_mode);
 
         size_t mask_words =
             (size_t)N * N * ((N + 63) / 64);
@@ -1363,9 +1324,7 @@ void wasm_cluster_free(void *ptr)
         free(s->probsortedclindex);
         free(s->cluster_probs);
         free(s->current_gprobs);
-        free(s->dcc_min);
-        free(s->dcc_max);
-        free(s->dcc_measured);
+        dcc_free_matrix(&h->state);
         free(s->consistency_mask);
         free(s->entropy_p_current);
         free(s->entropy_candidates);

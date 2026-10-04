@@ -77,7 +77,7 @@ static void write_dcc_results(
                     {
                         for (int j = 0; j < state->num_clusters; j++)
                         {
-                            if (state->scratch.dcc_sq16 != NULL)
+                            if (state->scratch.dcc_sq16_rows != NULL)
                             {
                                 dcc_buf[i * state->num_clusters + j] =
                                     dcc_get_sq16(state, i, j);

@@ -187,36 +187,26 @@ long run_second_pass_clustering(
 
                     /* Calculate lower bound on distance from frame t to anchor u */
                     double lb = 0.0;
-                    const double *dcc_row = (state->scratch.dcc_min != NULL)
-                        ? dcc_row_dist(state, u)
-                        : NULL;
-                    const char *measured_row = (state->scratch.dcc_measured != NULL)
-                        ? dcc_row_measured(state, u)
-                        : NULL;
-
-                    if (dcc_row != NULL && measured_row != NULL)
+                    for (int mi = 0; mi < num_measured; mi++)
                     {
-                        for (int mi = 0; mi < num_measured; mi++)
+                        int m = measured_indices[mi];
+                        if (dcc_is_measured(state, u, m))
                         {
-                            int m = measured_indices[mi];
-                            if (measured_row[m])
+                            double dcc = dcc_get_dist(state, u, m);
+                            if (dcc >= 0.0)
                             {
-                                double dcc = dcc_row[m];
-                                if (dcc >= 0.0)
+                                double bound = fabs(frame_dists[m] - dcc);
+                                if (bound > lb)
                                 {
-                                    double bound = fabs(frame_dists[m] - dcc);
-                                    if (bound > lb)
+                                    lb = bound;
+                                    if (lb >= d_best)
                                     {
-                                        lb = bound;
-                                        if (lb >= d_best)
-                                        {
-                                            break;
-                                        }
+                                        break;
                                     }
                                 }
                             }
-                        } // for (int mi = 0; mi < num_measured; mi++)
-                    } // if (dcc_row != NULL && measured_row != NULL)
+                        }
+                    } // for (int mi = 0; mi < num_measured; mi++)
 
                     if (lb >= d_best)
                     {
