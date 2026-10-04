@@ -46,16 +46,19 @@ static GricSimdLevel detect_hardware_simd(void)
  *
  * Return: Effective GricSimdLevel to use for compute kernels.
  */
+int g_gric_effective_simd_level = -1;
 static int g_cached_simd_level = -1;
 
 GricSimdLevel gric_get_simd_level(void)
 {
     if (g_simd_override >= 0)
     {
+        g_gric_effective_simd_level = g_simd_override;
         return (GricSimdLevel)g_simd_override;
     }
     if (g_cached_simd_level >= 0)
     {
+        g_gric_effective_simd_level = g_cached_simd_level;
         return (GricSimdLevel)g_cached_simd_level;
     }
 
@@ -65,21 +68,25 @@ GricSimdLevel gric_get_simd_level(void)
         if (strcasecmp(env, "scalar") == 0 || strcmp(env, "0") == 0)
         {
             g_cached_simd_level = GRIC_SIMD_SCALAR;
+            g_gric_effective_simd_level = GRIC_SIMD_SCALAR;
             return GRIC_SIMD_SCALAR;
         }
         if (strcasecmp(env, "avx2") == 0 || strcmp(env, "1") == 0)
         {
             g_cached_simd_level = GRIC_SIMD_AVX2;
+            g_gric_effective_simd_level = GRIC_SIMD_AVX2;
             return GRIC_SIMD_AVX2;
         }
         if (strcasecmp(env, "avx512") == 0 || strcmp(env, "2") == 0)
         {
             g_cached_simd_level = GRIC_SIMD_AVX512;
+            g_gric_effective_simd_level = GRIC_SIMD_AVX512;
             return GRIC_SIMD_AVX512;
         }
     }
 
     g_cached_simd_level = (int)detect_hardware_simd();
+    g_gric_effective_simd_level = g_cached_simd_level;
     return (GricSimdLevel)g_cached_simd_level;
 }
 
@@ -99,8 +106,24 @@ void gric_set_simd_level(
     {
         g_cached_has_avx512_vnni = -1;
         g_cached_has_avx_vnni = -1;
+        gric_get_simd_level();
+    }
+    else
+    {
+        g_gric_effective_simd_level = level;
     }
 }
+
+#if defined(__GNUC__) || defined(__clang__)
+/**
+ * gric_simd_init_ctor() - Initialize effective SIMD level at module load.
+ */
+__attribute__((constructor))
+static void gric_simd_init_ctor(void)
+{
+    gric_get_simd_level();
+}
+#endif
 
 /**
  * gric_simd_level_to_string() - Get human-readable description of SIMD level.
