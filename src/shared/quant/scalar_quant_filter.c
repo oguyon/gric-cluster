@@ -1679,6 +1679,10 @@ static void sq16_filter_anchor_matrix_avx_vnni(
         __m256i acc1 = _mm256_setzero_si256();
         __m256i acc2 = _mm256_setzero_si256();
         __m256i acc3 = _mm256_setzero_si256();
+        __m256i acc4 = _mm256_setzero_si256();
+        __m256i acc5 = _mm256_setzero_si256();
+        __m256i acc6 = _mm256_setzero_si256();
+        __m256i acc7 = _mm256_setzero_si256();
         int pruned = 0;
 
         /* Checkpoint 0: Early Dim 4 check (pairs 0 and 1) */
@@ -1717,7 +1721,7 @@ static void sq16_filter_anchor_matrix_avx_vnni(
         }
 
         int j = 4;
-        for (; j + 4 <= num_pairs; j += 4)
+        for (; j + 8 <= num_pairs; j += 8)
         {
             __m256i c0 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 0) * 8));
             __m256i d0 = _mm256_sub_epi16(q_pairs_stack[j + 0], c0);
@@ -1735,13 +1739,33 @@ static void sq16_filter_anchor_matrix_avx_vnni(
             __m256i d3 = _mm256_sub_epi16(q_pairs_stack[j + 3], c3);
             acc3 = _mm256_dpwssd_epi32(acc3, d3, d3);
 
+            __m256i c4 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 4) * 8));
+            __m256i d4 = _mm256_sub_epi16(q_pairs_stack[j + 4], c4);
+            acc4 = _mm256_dpwssd_epi32(acc4, d4, d4);
+
+            __m256i c5 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 5) * 8));
+            __m256i d5 = _mm256_sub_epi16(q_pairs_stack[j + 5], c5);
+            acc5 = _mm256_dpwssd_epi32(acc5, d5, d5);
+
+            __m256i c6 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 6) * 8));
+            __m256i d6 = _mm256_sub_epi16(q_pairs_stack[j + 6], c6);
+            acc6 = _mm256_dpwssd_epi32(acc6, d6, d6);
+
+            __m256i c7 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 7) * 8));
+            __m256i d7 = _mm256_sub_epi16(q_pairs_stack[j + 7], c7);
+            acc7 = _mm256_dpwssd_epi32(acc7, d7, d7);
+
             /* Spaced checkpoints at dims 32, 64, 128, 256, 384 */
             if ((j == 12 || j == 28 || j == 60 || j == 124 || j == 188) &&
-                j + 4 < num_pairs)
+                j + 8 < num_pairs)
             {
+                __m256i a_sum01 = _mm256_add_epi32(acc0, acc1);
+                __m256i a_sum23 = _mm256_add_epi32(acc2, acc3);
+                __m256i a_sum45 = _mm256_add_epi32(acc4, acc5);
+                __m256i a_sum67 = _mm256_add_epi32(acc6, acc7);
                 __m256i a_sum = _mm256_add_epi32(
-                    _mm256_add_epi32(acc0, acc1),
-                    _mm256_add_epi32(acc2, acc3));
+                    _mm256_add_epi32(a_sum01, a_sum23),
+                    _mm256_add_epi32(a_sum45, a_sum67));
                 __m256i v_acc_b = _mm256_xor_si256(a_sum, v_bias256);
                 __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);
                 if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp)) == 0xFF)
@@ -1753,6 +1777,26 @@ static void sq16_filter_anchor_matrix_avx_vnni(
                     break;
                 }
             }
+        }
+
+        if (!pruned && j + 4 <= num_pairs)
+        {
+            __m256i c0 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 0) * 8));
+            __m256i d0 = _mm256_sub_epi16(q_pairs_stack[j + 0], c0);
+            acc0 = _mm256_dpwssd_epi32(acc0, d0, d0);
+
+            __m256i c1 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 1) * 8));
+            __m256i d1 = _mm256_sub_epi16(q_pairs_stack[j + 1], c1);
+            acc1 = _mm256_dpwssd_epi32(acc1, d1, d1);
+
+            __m256i c2 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 2) * 8));
+            __m256i d2 = _mm256_sub_epi16(q_pairs_stack[j + 2], c2);
+            acc2 = _mm256_dpwssd_epi32(acc2, d2, d2);
+
+            __m256i c3 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 3) * 8));
+            __m256i d3 = _mm256_sub_epi16(q_pairs_stack[j + 3], c3);
+            acc3 = _mm256_dpwssd_epi32(acc3, d3, d3);
+            j += 4;
         }
 
         if (!pruned)
@@ -1778,9 +1822,13 @@ static void sq16_filter_anchor_matrix_avx_vnni(
                 acc0 = _mm256_dpwssd_epi32(acc0, diff, diff);
             }
 
+            __m256i a_sum01 = _mm256_add_epi32(acc0, acc1);
+            __m256i a_sum23 = _mm256_add_epi32(acc2, acc3);
+            __m256i a_sum45 = _mm256_add_epi32(acc4, acc5);
+            __m256i a_sum67 = _mm256_add_epi32(acc6, acc7);
             __m256i acc = _mm256_add_epi32(
-                _mm256_add_epi32(acc0, acc1),
-                _mm256_add_epi32(acc2, acc3));
+                _mm256_add_epi32(a_sum01, a_sum23),
+                _mm256_add_epi32(a_sum45, a_sum67));
 
             __m256i v_acc_b = _mm256_xor_si256(acc, v_bias256);
             __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);

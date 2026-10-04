@@ -646,6 +646,10 @@ static void eq16_filter_anchor_matrix_avx_vnni(
         __m256i acc1 = _mm256_setzero_si256();
         __m256i acc2 = _mm256_setzero_si256();
         __m256i acc3 = _mm256_setzero_si256();
+        __m256i acc4 = _mm256_setzero_si256();
+        __m256i acc5 = _mm256_setzero_si256();
+        __m256i acc6 = _mm256_setzero_si256();
+        __m256i acc7 = _mm256_setzero_si256();
         int pruned = 0;
 
         /* Checkpoint 0: Early Dim 4 check (pairs 0 and 1) */
@@ -716,7 +720,79 @@ static void eq16_filter_anchor_matrix_avx_vnni(
         int unroll_limit = (num_full_pairs < pre_broadcast_count)
                            ? num_full_pairs
                            : pre_broadcast_count;
-        for (; j + 4 <= unroll_limit; j += 4)
+        for (; j + 8 <= unroll_limit; j += 8)
+        {
+            __m256i qp0 = q_pairs_stack[j + 0];
+            __m256i c0 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 0) * 8));
+            __m256i df0 = _mm256_max_epi16(_mm256_subs_epi16(qp0, c0), v_min_clamp);
+            acc0 = _mm256_dpwssd_epi32(acc0, df0, df0);
+
+            __m256i qp1 = q_pairs_stack[j + 1];
+            __m256i c1 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 1) * 8));
+            __m256i df1 = _mm256_max_epi16(_mm256_subs_epi16(qp1, c1), v_min_clamp);
+            acc1 = _mm256_dpwssd_epi32(acc1, df1, df1);
+
+            __m256i qp2 = q_pairs_stack[j + 2];
+            __m256i c2 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 2) * 8));
+            __m256i df2 = _mm256_max_epi16(_mm256_subs_epi16(qp2, c2), v_min_clamp);
+            acc2 = _mm256_dpwssd_epi32(acc2, df2, df2);
+
+            __m256i qp3 = q_pairs_stack[j + 3];
+            __m256i c3 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 3) * 8));
+            __m256i df3 = _mm256_max_epi16(_mm256_subs_epi16(qp3, c3), v_min_clamp);
+            acc3 = _mm256_dpwssd_epi32(acc3, df3, df3);
+
+            __m256i qp4 = q_pairs_stack[j + 4];
+            __m256i c4 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 4) * 8));
+            __m256i df4 = _mm256_max_epi16(_mm256_subs_epi16(qp4, c4), v_min_clamp);
+            acc4 = _mm256_dpwssd_epi32(acc4, df4, df4);
+
+            __m256i qp5 = q_pairs_stack[j + 5];
+            __m256i c5 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 5) * 8));
+            __m256i df5 = _mm256_max_epi16(_mm256_subs_epi16(qp5, c5), v_min_clamp);
+            acc5 = _mm256_dpwssd_epi32(acc5, df5, df5);
+
+            __m256i qp6 = q_pairs_stack[j + 6];
+            __m256i c6 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 6) * 8));
+            __m256i df6 = _mm256_max_epi16(_mm256_subs_epi16(qp6, c6), v_min_clamp);
+            acc6 = _mm256_dpwssd_epi32(acc6, df6, df6);
+
+            __m256i qp7 = q_pairs_stack[j + 7];
+            __m256i c7 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 7) * 8));
+            __m256i df7 = _mm256_max_epi16(_mm256_subs_epi16(qp7, c7), v_min_clamp);
+            acc7 = _mm256_dpwssd_epi32(acc7, df7, df7);
+
+            /* Checkpoints at Dim 24 (j=4), Dim 48 (j=20), and spaced checkpoints */
+            if ((j == 4 || (j & 15) == 12) && j + 8 < num_pairs)
+            {
+                __m256i a_sum01 = _mm256_add_epi32(acc0, acc1);
+                __m256i a_sum23 = _mm256_add_epi32(acc2, acc3);
+                __m256i a_sum45 = _mm256_add_epi32(acc4, acc5);
+                __m256i a_sum67 = _mm256_add_epi32(acc6, acc7);
+                __m256i a_sum = _mm256_add_epi32(
+                    _mm256_add_epi32(a_sum01, a_sum23),
+                    _mm256_add_epi32(a_sum45, a_sum67)
+                );
+                __m256i v_acc_b = _mm256_xor_si256(a_sum, v_bias256);
+                __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);
+                if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp)) == 0xFF)
+                {
+                    int base = b * 8;
+                    _mm256_storeu_si256((__m256i *)(clmembflag + base),
+                                        _mm256_setzero_si256());
+                    pruned = 1;
+#ifdef EQ16_PROFILE_CHECKPOINTS
+                    if (j + 8 < 512)
+                    {
+                        g_eq16_exit_pairs[j + 8]++;
+                    }
+#endif
+                    break;
+                }
+            }
+        } // for (; j + 8 <= unroll_limit; j += 8)
+
+        if (!pruned && j + 4 <= unroll_limit)
         {
             __m256i qp0 = q_pairs_stack[j + 0];
             __m256i c0 = _mm256_load_si256((const __m256i *)(blk_ptr + (j + 0) * 8));
@@ -745,33 +821,8 @@ static void eq16_filter_anchor_matrix_avx_vnni(
                 _mm256_subs_epi16(qp3, c3), v_min_clamp
             );
             acc3 = _mm256_dpwssd_epi32(acc3, df3, df3);
-
-            /* Checkpoints at Dim 16 (j=4), Dim 24 (j=8), Dim 48 (j=20),
-             * and every 32 dims ((j & 15) == 12) */
-            if ((j == 4 || j == 8 || j == 20 || (j & 15) == 12) && j + 4 < num_pairs)
-            {
-                __m256i a_sum = _mm256_add_epi32(
-                    _mm256_add_epi32(acc0, acc1),
-                    _mm256_add_epi32(acc2, acc3)
-                );
-                __m256i v_acc_b = _mm256_xor_si256(a_sum, v_bias256);
-                __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);
-                if (_mm256_movemask_ps(_mm256_castsi256_ps(cmp)) == 0xFF)
-                {
-                    int base = b * 8;
-                    _mm256_storeu_si256((__m256i *)(clmembflag + base),
-                                        _mm256_setzero_si256());
-                    pruned = 1;
-#ifdef EQ16_PROFILE_CHECKPOINTS
-                    if (j + 4 < 512)
-                    {
-                        g_eq16_exit_pairs[j + 4]++;
-                    }
-#endif
-                    break;
-                }
-            }
-        } // for (; j + 4 <= unroll_limit; j += 4)
+            j += 4;
+        }
 
         if (!pruned)
         {
@@ -803,7 +854,12 @@ static void eq16_filter_anchor_matrix_avx_vnni(
 
             __m256i a_sum01 = _mm256_add_epi32(acc0, acc1);
             __m256i a_sum23 = _mm256_add_epi32(acc2, acc3);
-            __m256i acc = _mm256_add_epi32(a_sum01, a_sum23);
+            __m256i a_sum45 = _mm256_add_epi32(acc4, acc5);
+            __m256i a_sum67 = _mm256_add_epi32(acc6, acc7);
+            __m256i acc = _mm256_add_epi32(
+                _mm256_add_epi32(a_sum01, a_sum23),
+                _mm256_add_epi32(a_sum45, a_sum67)
+            );
             __m256i v_acc_b = _mm256_xor_si256(acc, v_bias256);
             __m256i cmp = _mm256_cmpgt_epi32(v_acc_b, v_cut256);
 
