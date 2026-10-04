@@ -3,8 +3,19 @@
  * @brief Implementation of rate-limited process resident set size (RSS) query API.
  */
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
+
+#if defined(__APPLE__)
+#ifndef _DARWIN_C_SOURCE
+#define _DARWIN_C_SOURCE
+#endif
+#endif
+
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#endif
 
 #include "gric_rss.h"
 
@@ -15,6 +26,10 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#endif
 
 #ifndef CLOCK_MONOTONIC_COARSE
 #define CLOCK_MONOTONIC_COARSE CLOCK_MONOTONIC
@@ -27,6 +42,31 @@ static uint64_t s_last_time_ns   = 0;
 static uint64_t s_cached_rss_kb  = 0;
 static long     s_page_size_kb   = 0;
 
+#if defined(__APPLE__)
+/**
+ * read_darwin_rss_kb() - Query process resident size via Mach kernel task_info.
+ *
+ * Return: Resident size in KB, or 0 on error.
+ */
+static uint64_t read_darwin_rss_kb(void)
+{
+    struct mach_task_basic_info info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                  (task_info_t)&info, &count) == KERN_SUCCESS)
+    {
+        return (uint64_t)(info.resident_size / 1024ULL);
+    }
+
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) == 0)
+    {
+        return (uint64_t)(usage.ru_maxrss / 1024ULL);
+    }
+    return 0;
+}
+#endif
+
 /**
  * read_statm_rss_kb() - Read resident pages from /proc/self/statm and convert to KB.
  *
@@ -34,6 +74,9 @@ static long     s_page_size_kb   = 0;
  */
 static uint64_t read_statm_rss_kb(void)
 {
+#if defined(__APPLE__)
+    return read_darwin_rss_kb();
+#else
     int fd = __atomic_load_n(&s_statm_fd, __ATOMIC_ACQUIRE);
     if (fd < 0)
     {
@@ -103,6 +146,7 @@ static uint64_t read_statm_rss_kb(void)
     }
 
     return (uint64_t)resident_pages * (uint64_t)s_page_size_kb;
+#endif
 }
 
 /**
