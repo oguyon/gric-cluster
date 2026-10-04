@@ -37,6 +37,7 @@ graph TD
 
     subgraph Level0 ["Level 0: Foundation & Shared Primitives"]
         LIB_SIMD["shared/gric_simd (CPUID detection, vector attributes)"]:::l0
+        LIB_MEM["shared/sys/gric_mem (Large buffer allocation & hugepages)"]:::l0
         LIB_QUANT["shared (scalar_quant, residual_quant, eq16_quant, rabit_quant)"]:::l0
         LIB_MEMO["shared/quant_memo (distance memoization table)"]:::l0
         LIB_IO["shared/gric_bin_io & gric_bin_header (clusterdat format)"]:::l0

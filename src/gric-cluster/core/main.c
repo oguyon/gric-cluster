@@ -18,6 +18,7 @@
 #include "cluster_shm.h"
 #include "frameread.h"
 #include "frame_info_arena.h"
+#include "gric_mem.h"
 #include "gric_profile.h"
 #include "cli_colors.h"
 #include <ctype.h>
@@ -239,10 +240,14 @@ int main(int argc, char *argv[])
     size_t consistency_words = cluster_pairs * (size_t)words;
 
     state.clusters = (Cluster *)malloc(max_clusters * sizeof(Cluster));
-    state.scratch.dcc_min = (double *)malloc(cluster_pairs * sizeof(double));
-    state.scratch.dcc_max = (double *)malloc(cluster_pairs * sizeof(double));
-    state.scratch.dcc_measured = (char *)malloc(cluster_pairs * sizeof(char));
-    state.scratch.dcc_sq16 = (uint16_t *)malloc(cluster_pairs * sizeof(uint16_t));
+    state.scratch.dcc_min = (double *)gric_alloc_large(
+        cluster_pairs * sizeof(double));
+    state.scratch.dcc_max = (double *)gric_alloc_large(
+        cluster_pairs * sizeof(double));
+    state.scratch.dcc_measured = (char *)gric_alloc_large(
+        cluster_pairs * sizeof(char));
+    state.scratch.dcc_sq16 = (uint16_t *)gric_alloc_large(
+        cluster_pairs * sizeof(uint16_t));
     state.scratch.dcc_sq16_scale = 16384.0 / config.algo.rlim;
 
     if (config.optim.sparse_dcc_mode)
@@ -388,10 +393,10 @@ int main(int argc, char *argv[])
     free(state.cluster_visitors);
     free(state.scratch.current_gprobs);
 
-    free(state.scratch.dcc_min);
-    free(state.scratch.dcc_max);
-    free(state.scratch.dcc_measured);
-    free(state.scratch.dcc_sq16);
+    gric_free_large(state.scratch.dcc_min);
+    gric_free_large(state.scratch.dcc_max);
+    gric_free_large(state.scratch.dcc_measured);
+    gric_free_large(state.scratch.dcc_sq16);
     free(state.scratch.probsortedclindex);
     if (state.scratch.cluster_probs)
     {
