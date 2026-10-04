@@ -615,14 +615,29 @@ int handle_new_cluster_creation(
                     ev->cluster_id = min_idx;
                 }
             }
+            int last_cl = state->num_clusters - 1;
             remove_cluster(state, config, min_idx, -1);
-            if (*prev_assigned_cluster == min_idx)
+            if (config->algo.swap_remove)
             {
-                *prev_assigned_cluster = -1;
+                if (*prev_assigned_cluster == min_idx)
+                {
+                    *prev_assigned_cluster = -1;
+                }
+                else if (*prev_assigned_cluster == last_cl)
+                {
+                    *prev_assigned_cluster = min_idx;
+                }
             }
-            else if (*prev_assigned_cluster > min_idx)
+            else
             {
-                (*prev_assigned_cluster)--;
+                if (*prev_assigned_cluster == min_idx)
+                {
+                    *prev_assigned_cluster = -1;
+                }
+                else if (*prev_assigned_cluster > min_idx)
+                {
+                    (*prev_assigned_cluster)--;
+                }
             }
             int assigned_cluster = state->num_clusters;
             assign_new_cluster_anchor(state, config, state->num_clusters, current_frame);
@@ -693,21 +708,37 @@ int handle_new_cluster_creation(
                 }
             }
 
+            int last_cl = state->num_clusters - 1;
+            int adjusted_target = (target == last_cl) ? remove : target;
             remove_cluster(state, config, remove, target);
-            if (*prev_assigned_cluster == remove)
+            if (config->algo.swap_remove)
             {
-                if (target > remove)
+                if (*prev_assigned_cluster == remove)
                 {
-                    *prev_assigned_cluster = target - 1;
+                    *prev_assigned_cluster = adjusted_target;
                 }
-                else
+                else if (*prev_assigned_cluster == last_cl)
                 {
-                    *prev_assigned_cluster = target;
+                    *prev_assigned_cluster = remove;
                 }
             }
-            else if (*prev_assigned_cluster > remove)
+            else
             {
-                (*prev_assigned_cluster)--;
+                if (*prev_assigned_cluster == remove)
+                {
+                    if (target > remove)
+                    {
+                        *prev_assigned_cluster = target - 1;
+                    }
+                    else
+                    {
+                        *prev_assigned_cluster = target;
+                    }
+                }
+                else if (*prev_assigned_cluster > remove)
+                {
+                    (*prev_assigned_cluster)--;
+                }
             }
 
             int assigned_cluster = state->num_clusters;

@@ -361,6 +361,11 @@ static int apply_algo_option(
         config->algo.discard_fraction = atof(value);
         return 1;
     }
+    else if (matches(key, "-swap-remove"))
+    {
+        config->algo.swap_remove = 1;
+        return 0;
+    }
     else if (matches(key, "-rlim"))
     {
         if (!value)

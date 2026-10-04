@@ -41,6 +41,7 @@ typedef struct
     int              pass2_nearest_mode; /**< 1 to run second pass closest-anchor reassignment */
     int              query_mode;         /**< 1 = query/classification mode (no new clusters) */
     int              use_double;         /**< 1 to run computations in double precision */
+    int              swap_remove;        /**< 1 = O(1) swap-remove cluster eviction */
 } ConfigAlgorithm;
 
 /** Input configuration. */

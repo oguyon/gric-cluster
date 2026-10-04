@@ -737,6 +737,135 @@ static inline void dcc_sync_symmetric_new_cluster(
 }
 
 /**
+ * dcc_remove_cluster_swap() - Swap-remove cluster from DCC dynamic rows in O(K).
+ * @state: Running clustering state.
+ * @u:     Index of cluster being removed.
+ */
+static inline void dcc_remove_cluster_swap(
+    ClusterState *state,
+    int           u)
+{
+    int last = state->num_clusters - 1;
+    if (u < 0 || u > last)
+    {
+        return;
+    }
+
+    if (u == last)
+    {
+        if (state->scratch.dcc_min_rows[last] != NULL)
+        {
+            free(state->scratch.dcc_min_rows[last]);
+            state->scratch.dcc_min_rows[last] = NULL;
+        }
+        if (state->scratch.dcc_max_rows != NULL && state->scratch.dcc_max_rows[last] != NULL)
+        {
+            free(state->scratch.dcc_max_rows[last]);
+            state->scratch.dcc_max_rows[last] = NULL;
+        }
+        if (state->scratch.dcc_measured_rows != NULL &&
+            state->scratch.dcc_measured_rows[last] != NULL)
+        {
+            free(state->scratch.dcc_measured_rows[last]);
+            state->scratch.dcc_measured_rows[last] = NULL;
+        }
+        if (state->scratch.dcc_sq16_rows != NULL && state->scratch.dcc_sq16_rows[last] != NULL)
+        {
+            free(state->scratch.dcc_sq16_rows[last]);
+            state->scratch.dcc_sq16_rows[last] = NULL;
+        }
+        return;
+    }
+
+    /* u < last: copy cluster 'last' distances into slot 'u' */
+
+    /* 1. Row u gets distances between cluster 'last' and c < u */
+    if (u > 0)
+    {
+        if (state->scratch.dcc_min_rows[u] != NULL && state->scratch.dcc_min_rows[last] != NULL)
+        {
+            memcpy(state->scratch.dcc_min_rows[u],
+                   state->scratch.dcc_min_rows[last],
+                   (size_t)u * sizeof(double));
+        }
+        if (state->scratch.dcc_max_rows != NULL &&
+            state->scratch.dcc_max_rows[u] != NULL &&
+            state->scratch.dcc_max_rows[last] != NULL)
+        {
+            memcpy(state->scratch.dcc_max_rows[u],
+                   state->scratch.dcc_max_rows[last],
+                   (size_t)u * sizeof(double));
+        }
+        if (state->scratch.dcc_measured_rows != NULL &&
+            state->scratch.dcc_measured_rows[u] != NULL &&
+            state->scratch.dcc_measured_rows[last] != NULL)
+        {
+            memcpy(state->scratch.dcc_measured_rows[u],
+                   state->scratch.dcc_measured_rows[last],
+                   (size_t)u * sizeof(char));
+        }
+        if (state->scratch.dcc_sq16_rows != NULL &&
+            state->scratch.dcc_sq16_rows[u] != NULL &&
+            state->scratch.dcc_sq16_rows[last] != NULL)
+        {
+            memcpy(state->scratch.dcc_sq16_rows[u],
+                   state->scratch.dcc_sq16_rows[last],
+                   (size_t)u * sizeof(uint16_t));
+        }
+    }
+
+    /* 2. For rows r between u + 1 and last - 1, column u receives d(r, last) */
+    for (int r = u + 1; r < last; r++)
+    {
+        if (state->scratch.dcc_min_rows[r] != NULL && state->scratch.dcc_min_rows[last] != NULL)
+        {
+            state->scratch.dcc_min_rows[r][u] = state->scratch.dcc_min_rows[last][r];
+        }
+        if (state->scratch.dcc_max_rows != NULL &&
+            state->scratch.dcc_max_rows[r] != NULL &&
+            state->scratch.dcc_max_rows[last] != NULL)
+        {
+            state->scratch.dcc_max_rows[r][u] = state->scratch.dcc_max_rows[last][r];
+        }
+        if (state->scratch.dcc_measured_rows != NULL &&
+            state->scratch.dcc_measured_rows[r] != NULL &&
+            state->scratch.dcc_measured_rows[last] != NULL)
+        {
+            state->scratch.dcc_measured_rows[r][u] = state->scratch.dcc_measured_rows[last][r];
+        }
+        if (state->scratch.dcc_sq16_rows != NULL &&
+            state->scratch.dcc_sq16_rows[r] != NULL &&
+            state->scratch.dcc_sq16_rows[last] != NULL)
+        {
+            state->scratch.dcc_sq16_rows[r][u] = state->scratch.dcc_sq16_rows[last][r];
+        }
+    }
+
+    /* 3. Free row 'last' */
+    if (state->scratch.dcc_min_rows[last] != NULL)
+    {
+        free(state->scratch.dcc_min_rows[last]);
+        state->scratch.dcc_min_rows[last] = NULL;
+    }
+    if (state->scratch.dcc_max_rows != NULL && state->scratch.dcc_max_rows[last] != NULL)
+    {
+        free(state->scratch.dcc_max_rows[last]);
+        state->scratch.dcc_max_rows[last] = NULL;
+    }
+    if (state->scratch.dcc_measured_rows != NULL &&
+        state->scratch.dcc_measured_rows[last] != NULL)
+    {
+        free(state->scratch.dcc_measured_rows[last]);
+        state->scratch.dcc_measured_rows[last] = NULL;
+    }
+    if (state->scratch.dcc_sq16_rows != NULL && state->scratch.dcc_sq16_rows[last] != NULL)
+    {
+        free(state->scratch.dcc_sq16_rows[last]);
+        state->scratch.dcc_sq16_rows[last] = NULL;
+    }
+}
+
+/**
  * dcc_remove_cluster() - Shift DCC rows and columns when removing a cluster.
  * @state:           Running clustering state.
  * @index_to_remove: Index of cluster being removed.

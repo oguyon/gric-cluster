@@ -79,6 +79,246 @@ void add_visitor(
 }
 
 /**
+ * remove_cluster_swap() - Evict a cluster using O(1) swap-remove with the last cluster.
+ * @state:           Pointer to the active ClusterState.
+ * @config:          Pointer to the active ClusterConfig.
+ * @index_to_remove: The index of the cluster being deleted.
+ * @index_target:    The merge target index, or -1 to discard completely.
+ */
+static void remove_cluster_swap(
+    ClusterState  *state,
+    ClusterConfig *config,
+    int            index_to_remove,
+    int            index_target)
+{
+    int u = index_to_remove;
+    int last = state->num_clusters - 1;
+
+    if (config->output.verbose_level >= 1)
+    {
+        printf("Swap-removing cluster %d (Count: %d). Target: %d\n", u,
+               state->cluster_visitors[u].count, index_target);
+    }
+
+    /* 1. Log or Merge History */
+    if (index_target == -1 && config->output.output_discarded)
+    {
+        FILE *log = fopen("discarded_frames.txt", "a");
+        if (log)
+        {
+            fprintf(log, "# Discarded Cluster %d\n", u);
+            for (int ii = 0; ii < state->cluster_visitors[u].count; ii++)
+            {
+                fprintf(log, "%d ", state->cluster_visitors[u].frames[ii]);
+            }
+            fprintf(log, "\n");
+            fclose(log);
+        }
+    }
+
+    /* 2. Free anchor data for cluster u */
+    if (state->clusters[u].anchor.data)
+    {
+        free(state->clusters[u].anchor.data);
+        state->clusters[u].anchor.data = NULL;
+    }
+
+    if (u < last)
+    {
+        size_t dim = (size_t)state->clusters[last].anchor.width *
+                     (size_t)state->clusters[last].anchor.height;
+
+        if (state->anchor_matrix_sq8 != NULL)
+        {
+            memcpy(state->anchor_matrix_sq8 + (size_t)u * dim,
+                   state->anchor_matrix_sq8 + (size_t)last * dim,
+                   dim * sizeof(uint8_t));
+        }
+        else if (state->clusters[u].anchor_sq8)
+        {
+            free(state->clusters[u].anchor_sq8);
+            state->clusters[u].anchor_sq8 = state->clusters[last].anchor_sq8;
+            state->clusters[last].anchor_sq8 = NULL;
+        }
+
+        if (state->anchor_matrix_eq16 != NULL)
+        {
+            memcpy(state->anchor_matrix_eq16 + (size_t)u * dim,
+                   state->anchor_matrix_eq16 + (size_t)last * dim,
+                   dim * sizeof(int16_t));
+        }
+        else if (state->clusters[u].anchor_eq16)
+        {
+            free(state->clusters[u].anchor_eq16);
+            state->clusters[u].anchor_eq16 = state->clusters[last].anchor_eq16;
+            state->clusters[last].anchor_eq16 = NULL;
+        }
+
+        if (state->anchor_matrix_sq16 != NULL)
+        {
+            memcpy(state->anchor_matrix_sq16 + (size_t)u * dim,
+                   state->anchor_matrix_sq16 + (size_t)last * dim,
+                   dim * sizeof(int16_t));
+        }
+        else if (state->clusters[u].anchor_sq16)
+        {
+            free(state->clusters[u].anchor_sq16);
+            state->clusters[u].anchor_sq16 = state->clusters[last].anchor_sq16;
+            state->clusters[last].anchor_sq16 = NULL;
+        }
+
+        if (state->anchor_matrix_float != NULL)
+        {
+            memcpy(state->anchor_matrix_float + (size_t)u * dim,
+                   state->anchor_matrix_float + (size_t)last * dim,
+                   dim * sizeof(float));
+        }
+
+        if (state->anchor_norms_float != NULL)
+        {
+            state->anchor_norms_float[u] = state->anchor_norms_float[last];
+        }
+
+        if (state->scratch.cluster_probs != NULL)
+        {
+            state->scratch.cluster_probs[u] = state->scratch.cluster_probs[last];
+        }
+
+        /* Move cluster struct */
+        state->clusters[u] = state->clusters[last];
+        state->clusters[u].id = u;
+        if (state->anchor_matrix_sq8 != NULL)
+        {
+            state->clusters[u].anchor_sq8 = state->anchor_matrix_sq8 + (size_t)u * dim;
+        }
+        if (state->anchor_matrix_eq16 != NULL)
+        {
+            state->clusters[u].anchor_eq16 = state->anchor_matrix_eq16 + (size_t)u * dim;
+        }
+        if (state->anchor_matrix_sq16 != NULL)
+        {
+            state->clusters[u].anchor_sq16 = state->anchor_matrix_sq16 + (size_t)u * dim;
+        }
+
+        /* Rebuild interleaved matrices */
+        if (state->anchor_matrix_sq16_interleaved != NULL && state->anchor_matrix_sq16 != NULL)
+        {
+            sq16_rebuild_anchor_interleaved(state->anchor_matrix_sq16_interleaved,
+                                            state->anchor_matrix_sq16,
+                                            state->num_clusters - 1,
+                                            (long)dim);
+        }
+        if (state->anchor_matrix_eq16_interleaved != NULL && state->anchor_matrix_eq16 != NULL)
+        {
+            eq16_rebuild_anchor_interleaved(state->anchor_matrix_eq16_interleaved,
+                                            state->anchor_matrix_eq16,
+                                            state->num_clusters - 1,
+                                            (long)dim);
+        }
+        if (state->anchor_matrix_adc_interleaved != NULL && state->anchor_matrix_eq16 != NULL)
+        {
+            eq16_rebuild_anchor_adc_interleaved(state->anchor_matrix_adc_interleaved,
+                                                state->anchor_matrix_eq16,
+                                                state->num_clusters - 1,
+                                                (long)dim);
+        }
+
+        /* 3. Move Visitor Lists */
+        if (state->cluster_visitors[u].frames)
+        {
+            free(state->cluster_visitors[u].frames);
+        }
+        state->cluster_visitors[u] = state->cluster_visitors[last];
+        memset(&state->cluster_visitors[last], 0, sizeof(VisitorList));
+
+        /* 4. Swap DCC rows and columns in O(K) */
+        dcc_remove_cluster_swap(state, u);
+
+        /* 5. Swap Transition Matrix */
+        int N = config->algo.maxnbclust;
+        memcpy(&state->transition_matrix[u * N],
+               &state->transition_matrix[last * N],
+               (size_t)N * sizeof(long));
+        for (int r = 0; r < state->num_clusters; r++)
+        {
+            state->transition_matrix[r * N + u] = state->transition_matrix[r * N + last];
+        }
+        memset(&state->transition_matrix[last * N], 0, (size_t)N * sizeof(long));
+        for (int r = 0; r < N; r++)
+        {
+            state->transition_matrix[r * N + last] = 0;
+        }
+
+        /* 6. Correct Assignments: only frames with a == u or a == last need updating */
+        int target_adj = (index_target == last) ? u : index_target;
+        for (long f = 0; f < state->telemetry.total_frames_processed; f++)
+        {
+            int a = state->assignments[f];
+            if (a == u)
+            {
+                state->assignments[f] = target_adj;
+            }
+            else if (a == last)
+            {
+                state->assignments[f] = u;
+            }
+        }
+    }
+    else
+    {
+        /* u == last */
+        if (state->clusters[last].anchor_sq8 && state->anchor_matrix_sq8 == NULL)
+        {
+            free(state->clusters[last].anchor_sq8);
+            state->clusters[last].anchor_sq8 = NULL;
+        }
+        if (state->clusters[last].anchor_eq16 && state->anchor_matrix_eq16 == NULL)
+        {
+            free(state->clusters[last].anchor_eq16);
+            state->clusters[last].anchor_eq16 = NULL;
+        }
+        if (state->clusters[last].anchor_sq16 && state->anchor_matrix_sq16 == NULL)
+        {
+            free(state->clusters[last].anchor_sq16);
+            state->clusters[last].anchor_sq16 = NULL;
+        }
+        if (state->cluster_visitors[last].frames)
+        {
+            free(state->cluster_visitors[last].frames);
+        }
+        memset(&state->cluster_visitors[last], 0, sizeof(VisitorList));
+
+        dcc_remove_cluster_swap(state, last);
+
+        int N = config->algo.maxnbclust;
+        memset(&state->transition_matrix[last * N], 0, (size_t)N * sizeof(long));
+        for (int r = 0; r < N; r++)
+        {
+            state->transition_matrix[r * N + last] = 0;
+        }
+
+        for (long f = 0; f < state->telemetry.total_frames_processed; f++)
+        {
+            if (state->assignments[f] == last)
+            {
+                state->assignments[f] = index_target;
+            }
+        }
+    }
+
+    memset(&state->clusters[last], 0, sizeof(Cluster));
+
+    // 7. Decrement Num Clusters
+    state->num_clusters--;
+
+    // 8. Recompute Geometric Consistency Mask and update DCC count
+    recompute_consistency_mask(config, state);
+
+    state->telemetry.dcc_entries_populated = dcc_count_populated_pairs(state);
+    state->scratch.probsorted_count = 0;
+}
+
+/**
  * remove_cluster() - Deletes a cluster from state, optionally merging its history.
  * @state:           Pointer to the active ClusterState.
  * @config:          Pointer to the active ClusterConfig.
@@ -100,7 +340,15 @@ void remove_cluster(
     int            index_target)
 {
     if (index_to_remove < 0 || index_to_remove >= state->num_clusters)
+    {
         return;
+    }
+
+    if (config->algo.swap_remove)
+    {
+        remove_cluster_swap(state, config, index_to_remove, index_target);
+        return;
+    }
 
     if (config->output.verbose_level >= 1)
     {
