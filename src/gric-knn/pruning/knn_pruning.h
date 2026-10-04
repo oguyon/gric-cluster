@@ -728,6 +728,22 @@ void knn_heap_push_locked(
 );
 
 /**
+ * knn_heap_is_full_locked() - Check if heap is full, acquiring bucket lock if provided.
+ * @heap:         Target max-heap.
+ * @owner_id:     Frame index owning @heap.
+ * @bucket_locks: Array of OpenMP bucket mutexes (or NULL when lock-free).
+ *
+ * Return: 1 if heap is full, 0 otherwise.
+ */
+int knn_heap_is_full_locked(
+    const KnnMaxHeap *heap,
+    long              owner_id
+#ifdef _OPENMP
+    , omp_lock_t     *bucket_locks
+#endif
+);
+
+/**
  * cluster_pq_push() - Push cluster node into a min-priority queue ordered by distance.
  * @pq:         Priority queue array.
  * @size:       In/out pointer to current queue size.

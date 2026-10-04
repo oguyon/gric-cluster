@@ -358,13 +358,21 @@ static int knn_warm_start_nearest_cluster(
                 }
             } // if (nb >= 0 ...)
         } // for (int j = 0; j < g_k; j++)
-        if (heap->count >= heap->k)
+        if (knn_heap_is_full_locked(heap, query_id
+#ifdef _OPENMP
+                                    , bucket_locks
+#endif
+        ))
         {
             return -1;
         }
     } // if (model->has_knn_graph ...)
 
-    if (heap->count >= heap->k)
+    if (knn_heap_is_full_locked(heap, query_id
+#ifdef _OPENMP
+                                , bucket_locks
+#endif
+    ))
     {
         return -1;
     }
@@ -480,7 +488,11 @@ static int knn_warm_start_nearest_cluster(
 
     for (int w = 0; w < num_warm_found; w++)
     {
-        if (heap->count >= heap->k)
+        if (knn_heap_is_full_locked(heap, query_id
+#ifdef _OPENMP
+                                    , bucket_locks
+#endif
+        ))
         {
             break;
         }
@@ -690,14 +702,21 @@ static void knn_inject_two_hop_candidates(
     {
         max_seeds = 4;
     }
-    if (max_seeds > heap->count)
-    {
-        max_seeds = heap->count;
-    }
 
     long   seed_ids[4];
     double seed_dists[4];
     int    num_seeds = 0;
+
+#ifdef _OPENMP
+    if (bucket_locks != NULL)
+    {
+        omp_set_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
+    }
+#endif
+    if (max_seeds > heap->count)
+    {
+        max_seeds = heap->count;
+    }
 
     for (int j = 0; j < heap->count; j++)
     {
@@ -724,6 +743,12 @@ static void knn_inject_two_hop_candidates(
             }
         }
     } // for (int j = 0; j < heap->count; j++)
+#ifdef _OPENMP
+    if (bucket_locks != NULL)
+    {
+        omp_unset_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
+    }
+#endif
 
     int max_hop2 = (config->two_hop_max_cands > 0) ? config->two_hop_max_cands : 16;
     int hop2_evals = 0;
@@ -1514,7 +1539,11 @@ static void knn_search_cluster_graph(
         }
 
         /* Early termination: if heap is full and anchor distance is beyond tau + rlim */
-        if (heap->count >= heap->k && d_anchor - sq_err > current_tau / eps_factor + rlim)
+        if (knn_heap_is_full_locked(heap, query_id
+#ifdef _OPENMP
+                                    , bucket_locks
+#endif
+        ) && d_anchor - sq_err > current_tau / eps_factor + rlim)
         {
             break;
         }
@@ -1646,10 +1675,22 @@ void knn_search_single_frame(
     int M = model->num_clusters;
 
     /* Pre-seed visited tracker with frames already in heap (from reciprocal pushes) */
+#ifdef _OPENMP
+    if (bucket_locks != NULL)
+    {
+        omp_set_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
+    }
+#endif
     for (int h = 0; h < heap->count; h++)
     {
         knn_visited_check_and_mark(visited, (long)knn_heap_get_id(heap, h));
     }
+#ifdef _OPENMP
+    if (bucket_locks != NULL)
+    {
+        omp_unset_lock(&bucket_locks[query_id & KNN_BUCKET_LOCK_MASK]);
+    }
+#endif
 
     MeasuredPivot pivots[MAX_MEASURED_PIVOTS];
     int           num_pivots = 0;
@@ -1687,7 +1728,11 @@ void knn_search_single_frame(
     }
 
     /* If heap is still not full, search nearest neighbor clusters */
-    if (heap->count < heap->k)
+    if (!knn_heap_is_full_locked(heap, query_id
+#ifdef _OPENMP
+                                 , bucket_locks
+#endif
+    ))
     {
         knn_warm_start_nearest_cluster(
             query_id, query_data, home_cluster_id, model, config, reader,
