@@ -226,7 +226,7 @@ static int compare_candidates_total(
  * created clusters), giving an O(K) re-sort in the common case. Falls back to qsort with
  * the identical total order (p desc, id asc) if shifts exceed 4*num_cl.
  */
-static void candidate_sort_descending(
+void candidate_sort_descending(
     Candidate    *cands,
     const double *mixed_probs,
     int          *sorted_indices,

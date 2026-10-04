@@ -325,6 +325,16 @@ static int cluster_step_search_loop(
                     state->scratch.entropy_p_current[i] = p;
                 }
 
+                if (!config->optim.gprob_mode)
+                {
+                    candidate_sort_descending(
+                        sorting_candidates,
+                        state->scratch.mixed_probs,
+                        state->scratch.probsortedclindex,
+                        &state->scratch.probsorted_count,
+                        num_cl);
+                }
+
                 struct timespec t_pr_s, t_pr_e;
                 clock_gettime(CLOCK_MONOTONIC, &t_pr_s);
                 if (last_cj < num_cl)

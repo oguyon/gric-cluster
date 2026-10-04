@@ -35,6 +35,16 @@ void compute_priors_and_mixing(
     Candidate     *sorting_candidates);
 
 /**
+ * @brief Sort candidate cluster indices by probability descending.
+ */
+void candidate_sort_descending(
+    Candidate    *cands,
+    const double *mixed_probs,
+    int          *sorted_indices,
+    int          *probsorted_count,
+    int           num_cl);
+
+/**
  * @brief Select the next cluster candidate to target for distance evaluation.
  */
 int select_next_measurement_target(
