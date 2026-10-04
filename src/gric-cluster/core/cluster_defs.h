@@ -245,6 +245,7 @@ typedef struct
     uint16_t *dcc_sq16;         /**< 16-bit quantized DCC cache for L3 residency */
     double  dcc_sq16_scale;     /**< Scale factor: 16384.0 / rlim */
     int    *probsortedclindex;  /**< Cluster indices sorted by descending prior probability */
+    int     probsorted_count;   /**< Number of valid entries in probsortedclindex */
     double *cluster_probs;     /**< Contiguous aligned array of cluster prior probabilities */
     int    *clmembflag;         /**< Flag indicating if a cluster is an active candidate */
     int    *active_clusters;    /**< Dense array of currently active candidate indices */

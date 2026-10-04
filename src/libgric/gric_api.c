@@ -572,6 +572,7 @@ gric_status_t gric_cluster_reset(
     }
     memset(ctx->state.clusters, 0, sz_N * sizeof(Cluster));
     ctx->state.num_clusters = 0;
+    ctx->state.scratch.probsorted_count = 0;
     ctx->current_frame_id = 0;
     ctx->prev_assigned = -1;
 

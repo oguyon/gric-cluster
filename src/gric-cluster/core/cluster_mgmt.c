@@ -423,6 +423,7 @@ void remove_cluster(
         }
     }
     state->telemetry.dcc_entries_populated = pop_count;
+    state->scratch.probsorted_count = 0;
 }
 
 /**

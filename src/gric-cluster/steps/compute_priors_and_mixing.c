@@ -152,43 +152,162 @@ static double calculate_sequence_match_metric(
 
 
 /**
- * candidate_sort_descending() - Sort candidate cluster indices by probability descending.
- * @indices: In-out array of candidate cluster indices [n].
- * @probs:   Array of matching probabilities for each cluster.
- * @left:    Left recursion index.
- * @right:   Right recursion index.
+ * candidate_precedes() - Strict total ordering comparator for cluster candidates.
+ * @id_a:        First cluster ID.
+ * @id_b:        Second cluster ID.
+ * @mixed_probs: Prior predictive probabilities array.
  *
- * Purpose & Context ("What is this used for?"):
- * Invoked in compute_priors_and_mixing() to sort candidate clusters so that highest-probability
- * clusters are measured first in greedy metric search, maximizing early-cutoff pruning efficiency.
+ * Total ordering: probability descending, tie-broken by cluster ID ascending.
+ *
+ * Return: 1 if @id_a strictly precedes @id_b, 0 otherwise.
+ */
+static inline int candidate_precedes(
+    int           id_a,
+    int           id_b,
+    const double *mixed_probs)
+{
+    double pa = mixed_probs[id_a];
+    double pb = mixed_probs[id_b];
+
+    if (pa > pb)
+    {
+        return 1;
+    }
+    if (pa < pb)
+    {
+        return 0;
+    }
+    return id_a < id_b;
+}
+
+/**
+ * compare_candidates_total() - Comparator for Candidate structs under total order (p desc, id asc).
+ * @a: Pointer to first Candidate.
+ * @b: Pointer to second Candidate.
+ *
+ * Return: -1 if a precedes b, 1 if b precedes a, 0 if identical.
+ */
+static int compare_candidates_total(
+    const void *a,
+    const void *b)
+{
+    const Candidate *ca = (const Candidate *)a;
+    const Candidate *cb = (const Candidate *)b;
+
+    if (ca->p > cb->p)
+    {
+        return -1;
+    }
+    if (ca->p < cb->p)
+    {
+        return 1;
+    }
+    if (ca->id < cb->id)
+    {
+        return -1;
+    }
+    if (ca->id > cb->id)
+    {
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * candidate_sort_descending() - Sort candidate cluster indices by probability descending.
+ * @cands:            Scratch candidate buffer used during full qsort fallback.
+ * @mixed_probs:      Prior predictive probability array for active clusters.
+ * @sorted_indices:   In-out array of candidate cluster indices sorted by total order.
+ * @probsorted_count: Pointer to count of valid sorted cluster indices from previous frame.
+ * @num_cl:           Current active cluster count.
+ *
+ * Employs an adaptive insertion re-sort over the permutation from the previous frame.
+ * Between frames, only a few clusters change probability (the assigned cluster and newly
+ * created clusters), giving an O(K) re-sort in the common case. Falls back to qsort with
+ * the identical total order (p desc, id asc) if shifts exceed 4*num_cl.
  */
 static void candidate_sort_descending(
     Candidate    *cands,
     const double *mixed_probs,
     int          *sorted_indices,
+    int          *probsorted_count,
     int           num_cl)
 {
-    if (num_cl <= 1)
+    if (num_cl <= 0)
     {
-        if (num_cl == 1)
-        {
-            sorted_indices[0] = 0;
-        }
+        *probsorted_count = 0;
         return;
     }
 
-    for (int i = 0; i < num_cl; i++)
+    if (num_cl == 1)
     {
-        cands[i].id = i;
-        cands[i].p = mixed_probs[i];
+        sorted_indices[0] = 0;
+        *probsorted_count = 1;
+        return;
     }
 
-    qsort(cands, (size_t)num_cl, sizeof(Candidate), compare_candidates);
-
-    for (int i = 0; i < num_cl; i++)
+    /* First frame or following cluster removal: do a full sort */
+    if (*probsorted_count == 0 || *probsorted_count > num_cl)
     {
-        sorted_indices[i] = cands[i].id;
+        for (int i = 0; i < num_cl; i++)
+        {
+            cands[i].id = i;
+            cands[i].p = mixed_probs[i];
+        }
+        qsort(cands, (size_t)num_cl, sizeof(Candidate), compare_candidates_total);
+        for (int i = 0; i < num_cl; i++)
+        {
+            sorted_indices[i] = cands[i].id;
+        }
+        *probsorted_count = num_cl;
+        return;
     }
+
+    /* Append newly created cluster IDs to the end of the existing permutation */
+    for (int i = *probsorted_count; i < num_cl; i++)
+    {
+        sorted_indices[i] = i;
+    }
+
+    /* Adaptive insertion re-sort with total order (p desc, id asc).
+     * If shifts exceed 4*num_cl, fall back to full qsort. */
+    long shifts = 0;
+    long max_shifts = (long)num_cl * 4;
+
+    for (int i = 1; i < num_cl; i++)
+    {
+        int cur_id = sorted_indices[i];
+        int j = i - 1;
+
+        while (j >= 0 && candidate_precedes(cur_id, sorted_indices[j], mixed_probs))
+        {
+            sorted_indices[j + 1] = sorted_indices[j];
+            j--;
+            shifts++;
+            if (shifts > max_shifts)
+            {
+                break;
+            }
+        }
+        sorted_indices[j + 1] = cur_id;
+
+        if (shifts > max_shifts)
+        {
+            for (int k = 0; k < num_cl; k++)
+            {
+                cands[k].id = k;
+                cands[k].p = mixed_probs[k];
+            }
+            qsort(cands, (size_t)num_cl, sizeof(Candidate), compare_candidates_total);
+            for (int k = 0; k < num_cl; k++)
+            {
+                sorted_indices[k] = cands[k].id;
+            }
+            break;
+        }
+    } // for (int i = 1; i < num_cl; i++)
+
+    *probsorted_count = num_cl;
 }
 
 /**
@@ -484,6 +603,7 @@ void compute_priors_and_mixing(
             sorting_candidates,
             state->scratch.mixed_probs,
             state->scratch.probsortedclindex,
+            &state->scratch.probsorted_count,
             state->num_clusters);
     }
 
