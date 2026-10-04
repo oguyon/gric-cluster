@@ -37,6 +37,8 @@ uint32_t fps_recon_k                                         = 10;
 uint64_t fps_recon_max_frames                                = 0;
 char     fps_recon_out_file[FUNCTION_PARAMETER_STRMAXLEN]   = "";
 static FILE *recon_out_fp                                    = NULL;
+static int   recon_out_is_binary                              = 0;
+static char  recon_out_buf[65536];
 
 uint64_t fps_recon_status_frames                             = 0;
 double   fps_recon_status_latency_us                         = 0.0;
@@ -425,11 +427,17 @@ errno_t gric_recon_fps_init_output_streams(
 
     if (fps_recon_out_file[0] != '\0')
     {
-        recon_out_fp = fopen(fps_recon_out_file, "w");
+        size_t flen = strlen(fps_recon_out_file);
+        recon_out_is_binary = (flen > 4 && strcmp(fps_recon_out_file + flen - 4, ".bin") == 0);
+        recon_out_fp = fopen(fps_recon_out_file, recon_out_is_binary ? "wb" : "w");
         if (!recon_out_fp)
         {
             fprintf(stderr, "Warning: Unable to open output file '%s' for writing\n",
                     fps_recon_out_file);
+        }
+        else
+        {
+            setvbuf(recon_out_fp, recon_out_buf, _IOFBF, sizeof(recon_out_buf));
         }
     }
 
@@ -445,6 +453,7 @@ void gric_recon_fps_close_output_streams(
 {
     if (recon_out_fp != NULL)
     {
+        fflush(recon_out_fp);
         fclose(recon_out_fp);
         recon_out_fp = NULL;
     }
@@ -592,12 +601,22 @@ errno_t gric_recon_fps_process_frame(
     /* 5. Optionally write reconstructed vector to output file */
     if (recon_out_fp != NULL)
     {
-        for (uint64_t d = 0; d < target_b_dim; d++)
+        if (recon_out_is_binary)
         {
-            fprintf(recon_out_fp, (d == target_b_dim - 1) ? "%.6f\n" : "%.6f ",
-                    (double)scratch_out_d[d]);
+            fwrite(scratch_out_d, sizeof(float), (size_t)target_b_dim, recon_out_fp);
         }
-        fflush(recon_out_fp);
+        else
+        {
+            for (uint64_t d = 0; d < target_b_dim; d++)
+            {
+                fprintf(recon_out_fp, (d == target_b_dim - 1) ? "%.6f\n" : "%.6f ",
+                        (double)scratch_out_d[d]);
+            }
+        }
+        if ((fps_recon_status_frames & 63) == 0)
+        {
+            fflush(recon_out_fp);
+        }
     }
 
     fps_recon_status_frames++;
