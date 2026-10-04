@@ -36,6 +36,10 @@
 #include <fitsio.h>
 #endif
 
+#ifdef USE_CUDA
+#include "knn_cuda_ivf.h"
+#endif
+
 /**
  * check_is_fits() - Check if filename has a FITS extension.
  * @filename: Path to the input dataset.
@@ -1507,5 +1511,8 @@ void knn_model_free(
         free(model->warm_cnt);
         model->warm_cnt = NULL;
     }
+#ifdef USE_CUDA
+    knn_cuda_model_free(model);
+#endif
 }
 

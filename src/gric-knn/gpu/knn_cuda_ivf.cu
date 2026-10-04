@@ -463,6 +463,15 @@ __global__ void knn_ivf_warp_search_kernel(
     int active_base = q * nprobe_max;
     int warp_evals = 0;
 
+    float q_reg[32];
+    if (D <= 32 && !has_rq8)
+    {
+        for (int d = 0; d < D; d++)
+        {
+            q_reg[d] = q_vec[d];
+        }
+    }
+
     for (int a = 0; a < num_active; a++)
     {
         float cl_bound = d_active_bounds[active_base + a];
@@ -545,113 +554,211 @@ __global__ void knn_ivf_warp_search_kernel(
             m_start = low;
         }
 
-        for (int m = m_start; m < count; m++)
+        if (D <= 32 && !has_rq8)
         {
-            int cand_idx = start_off + m;
-            float r_m = d_member_r_anchors[cand_idx];
-
-            /* Level 2 & 3: Annular lower and upper pruning */
-            if (r_m > r_max)
+            /* Fast path: 32 members scored concurrently per warp with register arithmetic */
+            for (int m_base = m_start; m_base < count; m_base += 32)
             {
-                break; // Members monotonically sorted by r_anchor; all subsequent exceed r_max
-            }
+                int m = m_base + lane;
+                int cand_idx = start_off + m;
+                bool is_above_rmax = false;
+                bool valid = false;
+                int g_c = -1;
 
-            int g_c = d_member_frame_ids[cand_idx];
+                if (m < count)
+                {
+                    float r_m = d_member_r_anchors[cand_idx];
+                    if (r_m > r_max)
+                    {
+                        is_above_rmax = true;
+                    }
+                    else
+                    {
+                        g_c = d_member_frame_ids[cand_idx];
+                        valid = true;
+                        if (!is_cross_dataset)
+                        {
+                            if (abs(g_q - g_c) < dtmin ||
+                                (past_only && g_c >= g_q) ||
+                                (future_only && g_c <= g_q))
+                            {
+                                valid = false;
+                            }
+                        }
+                    }
+                } // if (m < count)
 
-            if (!is_cross_dataset)
+                uint32_t break_mask = __ballot_sync(0xffffffff, is_above_rmax);
+                uint32_t eval_mask = __ballot_sync(0xffffffff, valid);
+                warp_evals += __popc(eval_mask);
+
+                float diff_sum = 1e30f;
+                bool candidate_beats_tau = false;
+
+                if (valid)
+                {
+                    const float *cand_vec = d_vectors_ivf + (size_t)cand_idx * (size_t)D;
+                    float sum = 0.0f;
+                    for (int d = 0; d < D; d++)
+                    {
+                        float diff = q_reg[d] - cand_vec[d];
+                        sum += diff * diff;
+                    }
+                    diff_sum = sum;
+                    candidate_beats_tau = (diff_sum < tau_sq);
+                }
+
+                uint32_t win_mask = __ballot_sync(0xffffffff, candidate_beats_tau);
+                while (win_mask != 0)
+                {
+                    int winner_lane = __ffs(win_mask) - 1;
+                    float winner_dist = __shfl_sync(0xffffffff, diff_sum, winner_lane);
+                    int winner_gc = __shfl_sync(0xffffffff, g_c, winner_lane);
+
+                    if (lane == 0)
+                    {
+                        if (winner_dist < tau_sq)
+                        {
+                            int pos = k - 1;
+                            while (pos > 0 &&
+                                   s_warp_dist_sq[warp_in_block][pos - 1] > winner_dist)
+                            {
+                                s_warp_dist_sq[warp_in_block][pos] =
+                                    s_warp_dist_sq[warp_in_block][pos - 1];
+                                s_warp_id[warp_in_block][pos]      =
+                                    s_warp_id[warp_in_block][pos - 1];
+                                pos--;
+                            }
+                            s_warp_dist_sq[warp_in_block][pos] = winner_dist;
+                            s_warp_id[warp_in_block][pos]      = winner_gc;
+                            tau_sq = s_warp_dist_sq[warp_in_block][k - 1];
+                        }
+                    } // if (lane == 0)
+
+                    win_mask &= ~(1u << winner_lane);
+                } // while (win_mask != 0)
+
+                tau_sq = __shfl_sync(0xffffffff, tau_sq, 0);
+                tau = sqrtf(tau_sq);
+                r_min = d_qa - tau;
+                r_max = d_qa + tau;
+
+                if (break_mask != 0)
+                {
+                    break;
+                }
+            } // for (int m_base = m_start; ...)
+        } // if (D <= 32 && !has_rq8)
+        else
+        {
+            for (int m = m_start; m < count; m++)
             {
-                if (abs(g_q - g_c) < dtmin)
-                {
-                    continue;
-                }
-                if (past_only && g_c >= g_q)
-                {
-                    continue;
-                }
-                if (future_only && g_c <= g_q)
-                {
-                    continue;
-                }
-            }
+                int cand_idx = start_off + m;
+                float r_m = d_member_r_anchors[cand_idx];
 
-            /* Level 4: INT8 DP4A metric lower-bound register filter */
-            if (has_rq8 && dim_words == 32 && D == 128)
-            {
-                int32_t c_word = d_vectors_rq8_words[(size_t)cand_idx * 32 + (size_t)lane];
-                int32_t prod = __dp4a(q_word, c_word, 0);
+                /* Level 2 & 3: Annular lower and upper pruning */
+                if (r_m > r_max)
+                {
+                    break; // Members monotonically sorted by r_anchor
+                }
 
+                int g_c = d_member_frame_ids[cand_idx];
+
+                if (!is_cross_dataset)
+                {
+                    if (abs(g_q - g_c) < dtmin)
+                    {
+                        continue;
+                    }
+                    if (past_only && g_c >= g_q)
+                    {
+                        continue;
+                    }
+                    if (future_only && g_c <= g_q)
+                    {
+                        continue;
+                    }
+                }
+
+                /* Level 4: INT8 DP4A metric lower-bound register filter */
+                if (has_rq8 && dim_words == 32 && D == 128)
+                {
+                    int32_t c_word = d_vectors_rq8_words[(size_t)cand_idx * 32 + (size_t)lane];
+                    int32_t prod = __dp4a(q_word, c_word, 0);
+
+                    #pragma unroll
+                    for (int offset = 16; offset > 0; offset /= 2)
+                    {
+                        prod += __shfl_down_sync(0xffffffff, prod, offset);
+                    }
+
+                    int skip = 0;
+                    if (lane == 0)
+                    {
+                        int32_t c_norm_sq = d_member_norms_sq[cand_idx];
+                        int32_t ssd = q_norm_sq + c_norm_sq - 2 * prod;
+                        if (ssd < 0)
+                        {
+                            ssd = 0;
+                        }
+                        float d_quant = scale_c * sqrtf((float)ssd);
+                        float d_lb = d_quant - 2.0f * err_radius_c;
+                        if (d_lb > 0.0f && d_lb * d_lb >= tau_sq)
+                        {
+                            skip = 1;
+                        }
+                    }
+                    skip = __shfl_sync(0xffffffff, skip, 0);
+                    if (skip)
+                    {
+                        continue; // Pruned in registers! Zero FP32 VRAM memory reads!
+                    }
+                } // if (has_rq8 && ...)
+
+                warp_evals++;
+                const float *cand_vec = d_vectors_ivf + (size_t)cand_idx * (size_t)D;
+
+                /* Warp-collaborative distance computation with coalesced loads */
+                float diff_sum = 0.0f;
+                for (int d = lane; d < D; d += 32)
+                {
+                    float diff = q_vec[d] - cand_vec[d];
+                    diff_sum += diff * diff;
+                }
+
+                /* Intra-warp reduction */
                 #pragma unroll
                 for (int offset = 16; offset > 0; offset /= 2)
                 {
-                    prod += __shfl_down_sync(0xffffffff, prod, offset);
+                    diff_sum += __shfl_down_sync(0xffffffff, diff_sum, offset);
                 }
 
-                int skip = 0;
                 if (lane == 0)
                 {
-                    int32_t c_norm_sq = d_member_norms_sq[cand_idx];
-                    int32_t ssd = q_norm_sq + c_norm_sq - 2 * prod;
-                    if (ssd < 0)
+                    if (diff_sum < tau_sq)
                     {
-                        ssd = 0;
+                        int pos = k - 1;
+                        while (pos > 0 &&
+                               s_warp_dist_sq[warp_in_block][pos - 1] > diff_sum)
+                        {
+                            s_warp_dist_sq[warp_in_block][pos] =
+                                s_warp_dist_sq[warp_in_block][pos - 1];
+                            s_warp_id[warp_in_block][pos]      =
+                                s_warp_id[warp_in_block][pos - 1];
+                            pos--;
+                        }
+                        s_warp_dist_sq[warp_in_block][pos] = diff_sum;
+                        s_warp_id[warp_in_block][pos]      = g_c;
+                        tau_sq = s_warp_dist_sq[warp_in_block][k - 1];
                     }
-                    float d_quant = scale_c * sqrtf((float)ssd);
-                    float d_lb = d_quant - 2.0f * err_radius_c;
-                    if (d_lb > 0.0f && d_lb * d_lb >= tau_sq)
-                    {
-                        skip = 1;
-                    }
-                }
-                skip = __shfl_sync(0xffffffff, skip, 0);
-                if (skip)
-                {
-                    continue; // Pruned in registers! Zero FP32 VRAM memory reads!
-                }
-            }
+                } // if (lane == 0)
 
-            warp_evals++;
-            const float *cand_vec = d_vectors_ivf + (size_t)cand_idx * (size_t)D;
-
-            /* Warp-collaborative distance computation with coalesced loads */
-            float diff_sum = 0.0f;
-            for (int d = lane; d < D; d += 32)
-            {
-                float diff = q_vec[d] - cand_vec[d];
-                diff_sum += diff * diff;
-            }
-
-            /* Intra-warp reduction */
-            #pragma unroll
-            for (int offset = 16; offset > 0; offset /= 2)
-            {
-                diff_sum += __shfl_down_sync(0xffffffff, diff_sum, offset);
-            }
-
-            if (lane == 0)
-            {
-                if (diff_sum < tau_sq)
-                {
-                    int pos = k - 1;
-                    while (pos > 0 &&
-                           s_warp_dist_sq[warp_in_block][pos - 1] > diff_sum)
-                    {
-                        s_warp_dist_sq[warp_in_block][pos] =
-                            s_warp_dist_sq[warp_in_block][pos - 1];
-                        s_warp_id[warp_in_block][pos]      =
-                            s_warp_id[warp_in_block][pos - 1];
-                        pos--;
-                    }
-                    s_warp_dist_sq[warp_in_block][pos] = diff_sum;
-                    s_warp_id[warp_in_block][pos]      = g_c;
-                    tau_sq = s_warp_dist_sq[warp_in_block][k - 1];
-                }
-            } // if (lane == 0)
-
-            tau_sq = __shfl_sync(0xffffffff, tau_sq, 0);
-            tau = sqrtf(tau_sq);
-            r_min = d_qa - tau;
-            r_max = d_qa + tau;
-        } // for (int m = 0; ...)
+                tau_sq = __shfl_sync(0xffffffff, tau_sq, 0);
+                tau = sqrtf(tau_sq);
+                r_min = d_qa - tau;
+                r_max = d_qa + tau;
+            } // for (int m = 0; ...)
+        } // else (D > 32 or has_rq8)
     } // for (int a = 0; ...)
 
     if (lane == 0)
@@ -975,24 +1082,31 @@ int knn_cuda_run_ivf_search(
     }
 
     int status = -1;
+    KnnModel *mut_model = (KnnModel *)model;
     GpuIvfIndex *ivf_idx = NULL;
     cublasHandle_t cublas_handle = NULL;
     float *d_anchors = NULL;
     float *d_anchor_norms = NULL;
-    float *d_Q = NULL;
-    float *d_Q_norms = NULL;
-    float *d_P_anchors = NULL;
-    int   *d_active_clusters = NULL;
-    float *d_active_bounds = NULL;
-    float *d_active_dists = NULL;
-    int   *d_active_counts = NULL;
-    double *d_out_dists = NULL;
-    int    *d_out_indices = NULL;
-    unsigned long long *d_total_evals = NULL;
     float *host_anchors = NULL;
-    float *host_query_batch = NULL;
-    double *host_out_dists = NULL;
-    int    *host_out_indices = NULL;
+
+    cudaStream_t streams[2] = {NULL, NULL};
+    float  *d_Q[2] = {NULL, NULL};
+    float  *d_P_anchors[2] = {NULL, NULL};
+    int    *d_active_clusters[2] = {NULL, NULL};
+    float  *d_active_bounds[2] = {NULL, NULL};
+    float  *d_active_dists[2] = {NULL, NULL};
+    int    *d_active_counts[2] = {NULL, NULL};
+    double *d_out_dists[2] = {NULL, NULL};
+    int    *d_out_indices[2] = {NULL, NULL};
+
+    float  *host_query_batch[2] = {NULL, NULL};
+    double *host_out_dists[2] = {NULL, NULL};
+    int    *host_out_indices[2] = {NULL, NULL};
+    long    batch_starts[2] = {0, 0};
+    int     batch_lens[2] = {0, 0};
+
+    float *d_Q_norms = NULL;
+    unsigned long long *d_total_evals = NULL;
     void   *frame_scratch = NULL;
     KnnFrameReader query_reader;
     int query_reader_opened = 0;
@@ -1010,76 +1124,145 @@ int knn_cuda_run_ivf_search(
     struct timespec start_time, end_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-    /* Step 1: Build GPU Inverted Index */
-    ivf_idx = gpu_ivf_index_create(model, frames, config->gpu_device_id);
-    if (ivf_idx == NULL)
-    {
-        goto cleanup;
-    }
+    int is_cached = (mut_model->gpu_ivf_index != NULL &&
+                     mut_model->gpu_device_id == config->gpu_device_id);
 
-    CUBLAS_CHECK(cublasCreate(&cublas_handle));
-    cublasSetMathMode(cublas_handle, CUBLAS_TF32_TENSOR_OP_MATH);
+    if (is_cached)
+    {
+        ivf_idx = (GpuIvfIndex *)mut_model->gpu_ivf_index;
+        cublas_handle = (cublasHandle_t)mut_model->gpu_cublas_handle;
+        d_anchors = mut_model->gpu_d_anchors;
+        d_anchor_norms = mut_model->gpu_d_anchor_norms;
+    }
+    else
+    {
+        /* Destroy any previous stale cache on mut_model */
+        if (mut_model->gpu_ivf_index != NULL)
+        {
+            gpu_ivf_index_destroy((GpuIvfIndex *)mut_model->gpu_ivf_index);
+            mut_model->gpu_ivf_index = NULL;
+        }
+        if (mut_model->gpu_cublas_handle != NULL)
+        {
+            cublasDestroy((cublasHandle_t)mut_model->gpu_cublas_handle);
+            mut_model->gpu_cublas_handle = NULL;
+        }
+        if (mut_model->gpu_d_anchors != NULL)
+        {
+            cudaFree(mut_model->gpu_d_anchors);
+            mut_model->gpu_d_anchors = NULL;
+        }
+        if (mut_model->gpu_d_anchor_norms != NULL)
+        {
+            cudaFree(mut_model->gpu_d_anchor_norms);
+            mut_model->gpu_d_anchor_norms = NULL;
+        }
+
+        /* Step 1: Build GPU Inverted Index */
+        ivf_idx = gpu_ivf_index_create(model, frames, config->gpu_device_id);
+        if (ivf_idx == NULL)
+        {
+            goto cleanup;
+        }
+
+        CUBLAS_CHECK(cublasCreate(&cublas_handle));
+        cublasSetMathMode(cublas_handle, CUBLAS_TF32_TENSOR_OP_MATH);
+
+        /* Upload cluster anchors and compute norms */
+        host_anchors = (float *)malloc((size_t)K * (size_t)D * sizeof(float));
+        if (host_anchors == NULL)
+        {
+            goto cleanup;
+        }
+
+        for (int c = 0; c < K; c++)
+        {
+            float *dst = host_anchors + (size_t)c * (size_t)D;
+            if (model->is_double)
+            {
+                const double *src = (const double *)model->clusters[c].anchor_data;
+                for (long d = 0; d < D; d++)
+                {
+                    dst[d] = (float)src[d];
+                }
+            }
+            else
+            {
+                memcpy(dst, model->clusters[c].anchor_data, (size_t)D * sizeof(float));
+            }
+        }
+
+        CUDA_CHECK(cudaMalloc((void **)&d_anchors, (size_t)K * (size_t)D * sizeof(float)));
+        CUDA_CHECK(cudaMalloc((void **)&d_anchor_norms, (size_t)K * sizeof(float)));
+        CUDA_CHECK(cudaMemcpy(d_anchors, host_anchors, (size_t)K * (size_t)D * sizeof(float),
+                              cudaMemcpyHostToDevice));
+        free(host_anchors);
+        host_anchors = NULL;
+
+        {
+            int threads = 128;
+            int blocks = (K + (threads / 32) - 1) / (threads / 32);
+            compute_vector_norms_kernel<<<blocks, threads>>>(d_anchors, K, (int)D, d_anchor_norms);
+            CUDA_CHECK(cudaGetLastError());
+        }
+
+        mut_model->gpu_ivf_index = (void *)ivf_idx;
+        mut_model->gpu_cublas_handle = (void *)cublas_handle;
+        mut_model->gpu_d_anchors = d_anchors;
+        mut_model->gpu_d_anchor_norms = d_anchor_norms;
+        mut_model->gpu_device_id = config->gpu_device_id;
+    } // else (!is_cached)
 
     nprobe = (config->gpu_nprobe > 0) ? config->gpu_nprobe :
              ((ivf_idx->d_cluster_graph_adj != NULL && ivf_idx->cluster_graph_k > 0) ? 48 :
               ((K <= 64) ? K : ((K / 8 > 256) ? 256 : (K / 8 < 64 ? 64 : K / 8))));
-    if (nprobe > MAX_ACTIVE_CLUSTERS) nprobe = MAX_ACTIVE_CLUSTERS;
-    if (nprobe > K) nprobe = K;
+    if (nprobe > MAX_ACTIVE_CLUSTERS)
+    {
+        nprobe = MAX_ACTIVE_CLUSTERS;
+    }
+    if (nprobe > K)
+    {
+        nprobe = K;
+    }
 
     B_q_max = (config->gpu_batch_size > 0) ? config->gpu_batch_size : DEFAULT_QUERY_BATCH;
-    if (B_q_max > N_query) B_q_max = (int)N_query;
+    if (B_q_max > N_query)
+    {
+        B_q_max = (int)N_query;
+    }
 
     rlim_sq = (config->rlim_cutoff > 0.0) ?
               (float)(config->rlim_cutoff * config->rlim_cutoff) : 0.0f;
 
-    /* Upload cluster anchors and compute norms */
-    host_anchors = (float *)malloc((size_t)K * (size_t)D * sizeof(float));
-    if (host_anchors == NULL)
+    /* Allocate batch query buffers for two-stream overlap */
+    for (int s = 0; s < 2; s++)
     {
-        goto cleanup;
+        CUDA_CHECK(cudaStreamCreate(&streams[s]));
+
+        CUDA_CHECK(cudaMalloc((void **)&d_Q[s], (size_t)B_q_max * (size_t)D * sizeof(float)));
+        CUDA_CHECK(cudaMalloc((void **)&d_P_anchors[s],
+                              (size_t)B_q_max * (size_t)K * sizeof(float)));
+        CUDA_CHECK(cudaMalloc((void **)&d_active_clusters[s],
+                              (size_t)B_q_max * (size_t)nprobe * sizeof(int)));
+        CUDA_CHECK(cudaMalloc((void **)&d_active_bounds[s],
+                              (size_t)B_q_max * (size_t)nprobe * sizeof(float)));
+        CUDA_CHECK(cudaMalloc((void **)&d_active_dists[s],
+                              (size_t)B_q_max * (size_t)nprobe * sizeof(float)));
+        CUDA_CHECK(cudaMalloc((void **)&d_active_counts[s], (size_t)B_q_max * sizeof(int)));
+        CUDA_CHECK(cudaMalloc((void **)&d_out_dists[s],
+                              (size_t)B_q_max * (size_t)k * sizeof(double)));
+        CUDA_CHECK(cudaMalloc((void **)&d_out_indices[s],
+                              (size_t)B_q_max * (size_t)k * sizeof(int)));
+
+        CUDA_CHECK(cudaMallocHost((void **)&host_query_batch[s],
+                                  (size_t)B_q_max * (size_t)D * sizeof(float)));
+        CUDA_CHECK(cudaMallocHost((void **)&host_out_dists[s],
+                                  (size_t)B_q_max * (size_t)k * sizeof(double)));
+        CUDA_CHECK(cudaMallocHost((void **)&host_out_indices[s],
+                                  (size_t)B_q_max * (size_t)k * sizeof(int)));
     }
 
-    for (int c = 0; c < K; c++)
-    {
-        float *dst = host_anchors + (size_t)c * (size_t)D;
-        if (model->is_double)
-        {
-            const double *src = (const double *)model->clusters[c].anchor_data;
-            for (long d = 0; d < D; d++) dst[d] = (float)src[d];
-        }
-        else
-        {
-            memcpy(dst, model->clusters[c].anchor_data, (size_t)D * sizeof(float));
-        }
-    }
-
-    CUDA_CHECK(cudaMalloc((void **)&d_anchors, (size_t)K * (size_t)D * sizeof(float)));
-    CUDA_CHECK(cudaMalloc((void **)&d_anchor_norms, (size_t)K * sizeof(float)));
-    CUDA_CHECK(cudaMemcpy(d_anchors, host_anchors, (size_t)K * (size_t)D * sizeof(float),
-                          cudaMemcpyHostToDevice));
-    free(host_anchors);
-    host_anchors = NULL;
-
-    {
-        int threads = 128;
-        int blocks = (K + (threads / 32) - 1) / (threads / 32);
-        compute_vector_norms_kernel<<<blocks, threads>>>(d_anchors, K, (int)D, d_anchor_norms);
-        CUDA_CHECK(cudaGetLastError());
-    }
-
-    /* Allocate batch query buffers */
-    CUDA_CHECK(cudaMalloc((void **)&d_Q, (size_t)B_q_max * (size_t)D * sizeof(float)));
     CUDA_CHECK(cudaMalloc((void **)&d_Q_norms, (size_t)N_query * sizeof(float)));
-    CUDA_CHECK(cudaMalloc((void **)&d_P_anchors, (size_t)B_q_max * (size_t)K * sizeof(float)));
-    CUDA_CHECK(cudaMalloc((void **)&d_active_clusters,
-                          (size_t)B_q_max * (size_t)nprobe * sizeof(int)));
-    CUDA_CHECK(cudaMalloc((void **)&d_active_bounds,
-                          (size_t)B_q_max * (size_t)nprobe * sizeof(float)));
-    CUDA_CHECK(cudaMalloc((void **)&d_active_dists,
-                          (size_t)B_q_max * (size_t)nprobe * sizeof(float)));
-    CUDA_CHECK(cudaMalloc((void **)&d_active_counts, (size_t)B_q_max * sizeof(int)));
-    CUDA_CHECK(cudaMalloc((void **)&d_out_dists, (size_t)B_q_max * (size_t)k * sizeof(double)));
-    CUDA_CHECK(cudaMalloc((void **)&d_out_indices, (size_t)B_q_max * (size_t)k * sizeof(int)));
     CUDA_CHECK(cudaMalloc((void **)&d_total_evals, sizeof(unsigned long long)));
     CUDA_CHECK(cudaMemset(d_total_evals, 0, sizeof(unsigned long long)));
 
@@ -1098,26 +1281,65 @@ int knn_cuda_run_ivf_search(
         }
     }
 
-    host_query_batch = (float *)malloc((size_t)B_q_max * (size_t)D * sizeof(float));
-    host_out_dists   = (double *)malloc((size_t)B_q_max * (size_t)k * sizeof(double));
-    host_out_indices = (int *)malloc((size_t)B_q_max * (size_t)k * sizeof(int));
-
-    if (host_query_batch == NULL || host_out_dists == NULL || host_out_indices == NULL)
-    {
-        goto cleanup;
-    }
-
     alpha = 1.0f;
     beta = 0.0f;
+    progress_step = (N_query / 50 > 0) ? N_query / 50 : 1;
     clock_gettime(CLOCK_MONOTONIC, &loop_start_time);
     prep_time_ms = (loop_start_time.tv_sec - start_time.tv_sec) * 1000.0 +
                    (loop_start_time.tv_nsec - start_time.tv_nsec) / 1000000.0;
 
     for (long q_start = 0; q_start < N_query; q_start += B_q_max)
     {
+        int slot = (int)((q_start / B_q_max) % 2);
         int cur_Bq = (int)((q_start + B_q_max <= N_query) ? B_q_max : (N_query - q_start));
 
-        /* Ingest query batch */
+        /* If previous batch in this slot was launched, wait and harvest results */
+        if (batch_lens[slot] > 0)
+        {
+            CUDA_CHECK(cudaStreamSynchronize(streams[slot]));
+            long prev_q = batch_starts[slot];
+            int  prev_Bq = batch_lens[slot];
+
+            for (int i = 0; i < prev_Bq; i++)
+            {
+                long q_id = prev_q + i;
+                size_t b_off = (size_t)i * (size_t)k;
+                for (int j = 0; j < k; j++)
+                {
+                    results->indices[q_id * k + j]   = host_out_indices[slot][b_off + j];
+                    results->distances[q_id * k + j] = host_out_dists[slot][b_off + j];
+                }
+            }
+
+            if (config->progress_mode)
+            {
+                long done = prev_q + prev_Bq;
+                if (done % progress_step == 0 || done == N_query)
+                {
+                    double pct = 100.0 * (double)done / (double)N_query;
+                    int bar_offset = 40 - (int)(pct * 0.4);
+                    if (bar_offset < 0)
+                    {
+                        bar_offset = 0;
+                    }
+                    if (bar_offset > 40)
+                    {
+                        bar_offset = 40;
+                    }
+                    const char *bar = "========================================";
+                    printf("\rSearching k-NN (GPU IVF): [%-40s] %5.1f%% (%ld / %ld frames)",
+                           &bar[bar_offset], pct, done, N_query);
+                    fflush(stdout);
+                }
+            } // if (config->progress_mode)
+
+            batch_lens[slot] = 0;
+        } // if (batch_lens[slot] > 0)
+
+        batch_starts[slot] = q_start;
+        batch_lens[slot] = cur_Bq;
+
+        /* Ingest query batch into pinned host_query_batch[slot] */
         if (!is_cross_dataset)
         {
             if (model->is_double)
@@ -1125,13 +1347,13 @@ int knn_cuda_run_ivf_search(
                 const double *src = (const double *)frames + (size_t)q_start * (size_t)D;
                 for (size_t i = 0; i < (size_t)cur_Bq * (size_t)D; i++)
                 {
-                    host_query_batch[i] = (float)src[i];
+                    host_query_batch[slot][i] = (float)src[i];
                 }
             }
             else
             {
                 const float *src = (const float *)frames + (size_t)q_start * (size_t)D;
-                memcpy(host_query_batch, src, (size_t)cur_Bq * (size_t)D * sizeof(float));
+                memcpy(host_query_batch[slot], src, (size_t)cur_Bq * (size_t)D * sizeof(float));
             }
         }
         else
@@ -1139,11 +1361,14 @@ int knn_cuda_run_ivf_search(
             for (int i = 0; i < cur_Bq; i++)
             {
                 knn_reader_read_frame(&query_reader, q_start + i, frame_scratch);
-                float *dst = host_query_batch + (size_t)i * (size_t)D;
+                float *dst = host_query_batch[slot] + (size_t)i * (size_t)D;
                 if (model->is_double)
                 {
                     const double *fr_d = (const double *)frame_scratch;
-                    for (long d = 0; d < D; d++) dst[d] = (float)fr_d[d];
+                    for (long d = 0; d < D; d++)
+                    {
+                        dst[d] = (float)fr_d[d];
+                    }
                 }
                 else
                 {
@@ -1152,36 +1377,40 @@ int knn_cuda_run_ivf_search(
             }
         }
 
-        CUDA_CHECK(cudaMemcpy(d_Q, host_query_batch, (size_t)cur_Bq * (size_t)D * sizeof(float),
-                              cudaMemcpyHostToDevice));
+        /* Asynchronous upload to d_Q[slot] on streams[slot] */
+        CUDA_CHECK(cudaMemcpyAsync(d_Q[slot], host_query_batch[slot],
+                                   (size_t)cur_Bq * (size_t)D * sizeof(float),
+                                   cudaMemcpyHostToDevice, streams[slot]));
 
         {
             int threads = 128;
             int blocks = (cur_Bq + (threads / 32) - 1) / (threads / 32);
-            compute_vector_norms_kernel<<<blocks, threads>>>(
-                d_Q, cur_Bq, (int)D, d_Q_norms + q_start);
+            compute_vector_norms_kernel<<<blocks, threads, 0, streams[slot]>>>(
+                d_Q[slot], cur_Bq, (int)D, d_Q_norms + q_start);
             CUDA_CHECK(cudaGetLastError());
         }
 
-        /* Stage 1: Coarse Anchor Filter via cuBLAS TF32 GEMM */
+        /* Stage 1: Coarse Anchor Filter via cuBLAS TF32 GEMM on streams[slot] */
+        CUBLAS_CHECK(cublasSetStream(cublas_handle, streams[slot]));
         CUBLAS_CHECK(cublasSgemm(cublas_handle, CUBLAS_OP_T, CUBLAS_OP_N,
                                  K, cur_Bq, (int)D,
                                  &alpha,
                                  d_anchors, (int)D,
-                                 d_Q, (int)D,
+                                 d_Q[slot], (int)D,
                                  &beta,
-                                 d_P_anchors, K));
+                                 d_P_anchors[slot], K));
 
         {
             int threads_per_block = 256;
             int warps_per_block = threads_per_block / 32;
             int blocks = (cur_Bq + warps_per_block - 1) / warps_per_block;
-            select_candidate_clusters_kernel<<<blocks, threads_per_block>>>(
-                d_Q_norms, d_anchor_norms, d_P_anchors, ivf_idx->d_cluster_radii,
+            select_candidate_clusters_kernel<<<blocks, threads_per_block, 0, streams[slot]>>>(
+                d_Q_norms, d_anchor_norms, d_P_anchors[slot], ivf_idx->d_cluster_radii,
                 (config->use_cluster_graph ? ivf_idx->d_cluster_graph_adj : NULL),
                 ivf_idx->cluster_graph_k,
                 cur_Bq, K, nprobe, (int)q_start,
-                d_active_clusters, d_active_bounds, d_active_dists, d_active_counts);
+                d_active_clusters[slot], d_active_bounds[slot], d_active_dists[slot],
+                d_active_counts[slot]);
             CUDA_CHECK(cudaGetLastError());
         }
 
@@ -1191,8 +1420,9 @@ int knn_cuda_run_ivf_search(
             int warps_per_block = threads_per_block / 32;
             int blocks = (cur_Bq + warps_per_block - 1) / warps_per_block;
 
-            knn_ivf_warp_search_kernel<<<blocks, threads_per_block>>>(
-                d_Q, d_active_clusters, d_active_bounds, d_active_dists, d_active_counts,
+            knn_ivf_warp_search_kernel<<<blocks, threads_per_block, 0, streams[slot]>>>(
+                d_Q[slot], d_active_clusters[slot], d_active_bounds[slot], d_active_dists[slot],
+                d_active_counts[slot],
                 ivf_idx->d_cluster_offsets, ivf_idx->d_cluster_sizes,
                 ivf_idx->d_cluster_radii, ivf_idx->d_member_frame_ids,
                 ivf_idx->d_member_r_anchors, ivf_idx->d_vectors_ivf,
@@ -1207,41 +1437,64 @@ int knn_cuda_run_ivf_search(
                 cur_Bq, (int)q_start, (int)D, k,
                 config->min_temporal_sep, config->past_only, config->future_only,
                 rlim_sq, is_cross_dataset, nprobe,
-                d_total_evals, d_out_dists, d_out_indices);
+                d_total_evals, d_out_dists[slot], d_out_indices[slot]);
             CUDA_CHECK(cudaGetLastError());
         }
 
-        /* Download batch results */
-        CUDA_CHECK(cudaMemcpy(host_out_dists, d_out_dists,
-                              (size_t)cur_Bq * (size_t)k * sizeof(double),
-                              cudaMemcpyDeviceToHost));
-        CUDA_CHECK(cudaMemcpy(host_out_indices, d_out_indices,
-                              (size_t)cur_Bq * (size_t)k * sizeof(int),
-                              cudaMemcpyDeviceToHost));
-
-        for (int i = 0; i < cur_Bq; i++)
-        {
-            long q_id = q_start + i;
-            size_t b_off = (size_t)i * (size_t)k;
-            for (int j = 0; j < k; j++)
-            {
-                results->indices[q_id * k + j]   = host_out_indices[b_off + j];
-                results->distances[q_id * k + j] = host_out_dists[b_off + j];
-            }
-        }
-
-        if (config->progress_mode && (q_start + cur_Bq) % progress_step == 0)
-        {
-            double pct = 100.0 * (double)(q_start + cur_Bq) / (double)N_query;
-            int bar_offset = 40 - (int)(pct * 0.4);
-            if (bar_offset < 0) bar_offset = 0;
-            if (bar_offset > 40) bar_offset = 40;
-            const char *bar = "========================================";
-            printf("\rSearching k-NN (GPU IVF): [%-40s] %5.1f%% (%ld / %ld frames)",
-                   &bar[bar_offset], pct, (long)(q_start + cur_Bq), N_query);
-            fflush(stdout);
-        }
+        /* Download batch results asynchronously */
+        CUDA_CHECK(cudaMemcpyAsync(host_out_dists[slot], d_out_dists[slot],
+                                   (size_t)cur_Bq * (size_t)k * sizeof(double),
+                                   cudaMemcpyDeviceToHost, streams[slot]));
+        CUDA_CHECK(cudaMemcpyAsync(host_out_indices[slot], d_out_indices[slot],
+                                   (size_t)cur_Bq * (size_t)k * sizeof(int),
+                                   cudaMemcpyDeviceToHost, streams[slot]));
     } // for (long q_start = 0; ...)
+
+    /* Drain all in-flight batches remaining in streams */
+    for (int slot = 0; slot < 2; slot++)
+    {
+        if (batch_lens[slot] > 0)
+        {
+            CUDA_CHECK(cudaStreamSynchronize(streams[slot]));
+            long prev_q = batch_starts[slot];
+            int  prev_Bq = batch_lens[slot];
+
+            for (int i = 0; i < prev_Bq; i++)
+            {
+                long q_id = prev_q + i;
+                size_t b_off = (size_t)i * (size_t)k;
+                for (int j = 0; j < k; j++)
+                {
+                    results->indices[q_id * k + j]   = host_out_indices[slot][b_off + j];
+                    results->distances[q_id * k + j] = host_out_dists[slot][b_off + j];
+                }
+            }
+
+            if (config->progress_mode)
+            {
+                long done = prev_q + prev_Bq;
+                if (done % progress_step == 0 || done == N_query)
+                {
+                    double pct = 100.0 * (double)done / (double)N_query;
+                    int bar_offset = 40 - (int)(pct * 0.4);
+                    if (bar_offset < 0)
+                    {
+                        bar_offset = 0;
+                    }
+                    if (bar_offset > 40)
+                    {
+                        bar_offset = 40;
+                    }
+                    const char *bar = "========================================";
+                    printf("\rSearching k-NN (GPU IVF): [%-40s] %5.1f%% (%ld / %ld frames)",
+                           &bar[bar_offset], pct, done, N_query);
+                    fflush(stdout);
+                }
+            } // if (config->progress_mode)
+
+            batch_lens[slot] = 0;
+        } // if (batch_lens[slot] > 0)
+    } // for (int slot = 0; slot < 2; slot++)
 
     if (config->progress_mode)
     {
@@ -1267,33 +1520,118 @@ int knn_cuda_run_ivf_search(
     status = 0;
 
 cleanup:
-    if (query_reader_opened) knn_reader_close(&query_reader);
-    if (frame_scratch) free(frame_scratch);
-    if (host_anchors) free(host_anchors);
-    if (host_query_batch) free(host_query_batch);
-    if (host_out_dists) free(host_out_dists);
-    if (host_out_indices) free(host_out_indices);
+    if (query_reader_opened)
+    {
+        knn_reader_close(&query_reader);
+    }
+    if (frame_scratch)
+    {
+        free(frame_scratch);
+    }
+    if (host_anchors)
+    {
+        free(host_anchors);
+    }
 
-    if (d_total_evals) cudaFree(d_total_evals);
-    if (d_out_indices) cudaFree(d_out_indices);
-    if (d_out_dists) cudaFree(d_out_dists);
-    if (d_active_counts) cudaFree(d_active_counts);
-    if (d_active_dists) cudaFree(d_active_dists);
-    if (d_active_bounds) cudaFree(d_active_bounds);
-    if (d_active_clusters) cudaFree(d_active_clusters);
-    if (d_P_anchors) cudaFree(d_P_anchors);
-    if (d_Q_norms) cudaFree(d_Q_norms);
-    if (d_Q) cudaFree(d_Q);
-    if (d_anchor_norms) cudaFree(d_anchor_norms);
-    if (d_anchors) cudaFree(d_anchors);
+    for (int s = 0; s < 2; s++)
+    {
+        if (host_query_batch[s] != NULL)
+        {
+            cudaFreeHost(host_query_batch[s]);
+        }
+        if (host_out_dists[s] != NULL)
+        {
+            cudaFreeHost(host_out_dists[s]);
+        }
+        if (host_out_indices[s] != NULL)
+        {
+            cudaFreeHost(host_out_indices[s]);
+        }
 
-    if (cublas_handle) cublasDestroy(cublas_handle);
-    if (ivf_idx) gpu_ivf_index_destroy(ivf_idx);
+        if (d_out_indices[s] != NULL)
+        {
+            cudaFree(d_out_indices[s]);
+        }
+        if (d_out_dists[s] != NULL)
+        {
+            cudaFree(d_out_dists[s]);
+        }
+        if (d_active_counts[s] != NULL)
+        {
+            cudaFree(d_active_counts[s]);
+        }
+        if (d_active_dists[s] != NULL)
+        {
+            cudaFree(d_active_dists[s]);
+        }
+        if (d_active_bounds[s] != NULL)
+        {
+            cudaFree(d_active_bounds[s]);
+        }
+        if (d_active_clusters[s] != NULL)
+        {
+            cudaFree(d_active_clusters[s]);
+        }
+        if (d_P_anchors[s] != NULL)
+        {
+            cudaFree(d_P_anchors[s]);
+        }
+        if (d_Q[s] != NULL)
+        {
+            cudaFree(d_Q[s]);
+        }
+        if (streams[s] != NULL)
+        {
+            cudaStreamDestroy(streams[s]);
+        }
+    }
+
+    if (d_total_evals != NULL)
+    {
+        cudaFree(d_total_evals);
+    }
+    if (d_Q_norms != NULL)
+    {
+        cudaFree(d_Q_norms);
+    }
+
+    if (cublas_handle != NULL)
+    {
+        cublasSetStream(cublas_handle, NULL);
+    }
+
+    if (mut_model->gpu_ivf_index == NULL)
+    {
+        if (d_anchor_norms != NULL)
+        {
+            cudaFree(d_anchor_norms);
+        }
+        if (d_anchors != NULL)
+        {
+            cudaFree(d_anchors);
+        }
+        if (cublas_handle != NULL)
+        {
+            cublasDestroy(cublas_handle);
+        }
+        if (ivf_idx != NULL)
+        {
+            gpu_ivf_index_destroy(ivf_idx);
+        }
+    }
 
     if (status != 0 && allocated_results)
     {
-        if (results->indices) { free(results->indices); results->indices = NULL; }
-        if (results->distances) { free(results->distances); results->distances = NULL; }
+        if (results->indices)
+        {
+            free(results->indices);
+            results->indices = NULL;
+        }
+        if (results->distances)
+        {
+            free(results->distances);
+            results->distances = NULL;
+        }
     }
 
     return status;
@@ -1326,3 +1664,64 @@ int knn_cuda_ivf_search_single_frame(
     /* Fallback/Stub to guarantee instant link compatibility with streaming callers */
     return 0;
 }
+
+/**
+ * knn_cuda_model_free() - Free cached GPU resources stored on KnnModel.
+ * @model: Pointer to resident KnnModel.
+ */
+extern "C" void knn_cuda_model_free(
+    KnnModel *model)
+{
+    if (model == NULL)
+    {
+        return;
+    }
+
+    if (model->gpu_ivf_index != NULL || model->gpu_cublas_handle != NULL ||
+        model->gpu_d_anchors != NULL || model->gpu_d_anchor_norms != NULL)
+    {
+        cudaSetDevice(model->gpu_device_id);
+        if (model->gpu_ivf_index != NULL)
+        {
+            gpu_ivf_index_destroy((GpuIvfIndex *)model->gpu_ivf_index);
+            model->gpu_ivf_index = NULL;
+        }
+        if (model->gpu_cublas_handle != NULL)
+        {
+            cublasDestroy((cublasHandle_t)model->gpu_cublas_handle);
+            model->gpu_cublas_handle = NULL;
+        }
+        if (model->gpu_d_anchors != NULL)
+        {
+            cudaFree(model->gpu_d_anchors);
+            model->gpu_d_anchors = NULL;
+        }
+        if (model->gpu_d_anchor_norms != NULL)
+        {
+            cudaFree(model->gpu_d_anchor_norms);
+            model->gpu_d_anchor_norms = NULL;
+        }
+    }
+
+    if (model->gpu_bf_cublas_handle != NULL || model->gpu_d_C != NULL ||
+        model->gpu_d_C_norms != NULL)
+    {
+        cudaSetDevice(model->gpu_bf_device_id);
+        if (model->gpu_bf_cublas_handle != NULL)
+        {
+            cublasDestroy((cublasHandle_t)model->gpu_bf_cublas_handle);
+            model->gpu_bf_cublas_handle = NULL;
+        }
+        if (model->gpu_d_C != NULL)
+        {
+            cudaFree(model->gpu_d_C);
+            model->gpu_d_C = NULL;
+        }
+        if (model->gpu_d_C_norms != NULL)
+        {
+            cudaFree(model->gpu_d_C_norms);
+            model->gpu_d_C_norms = NULL;
+        }
+    }
+}
+

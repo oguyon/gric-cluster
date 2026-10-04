@@ -50,6 +50,15 @@ int knn_cuda_ivf_search_single_frame(
     int            *out_indices,
     float          *out_dists);
 
+#ifdef USE_CUDA
+/**
+ * knn_cuda_model_free() - Free cached GPU resources stored on KnnModel.
+ * @model: Pointer to resident KnnModel.
+ */
+void knn_cuda_model_free(
+    KnnModel *model);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
