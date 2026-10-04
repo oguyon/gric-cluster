@@ -6,6 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_shm.h"
 #include "frameread.h"
+#include "gric_rss.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,33 +19,6 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
-
-/**
- * @brief Query current process Resident Set Size (RSS) in KB.
- *
- * @return Current RSS in KB, or 0 on error.
- */
-static uint64_t get_current_rss_kb(void)
-{
-    FILE *f = fopen("/proc/self/statm", "r");
-    if (!f)
-    {
-        return 0;
-    }
-    long pages = 0;
-    if (fscanf(f, "%*d %ld", &pages) != 1)
-    {
-        fclose(f);
-        return 0;
-    }
-    fclose(f);
-    long page_size = sysconf(_SC_PAGESIZE);
-    if (page_size < 0)
-    {
-        page_size = 4096;
-    }
-    return (uint64_t)pages * (uint64_t)page_size / 1024ULL;
-}
 
 /**
  * @brief Initialize the file-mapped shared memory file.
@@ -166,7 +140,7 @@ void gric_shm_update(
     status->num_new_clusters = (uint64_t)state->telemetry.num_new_clusters;
 
     /* Update memory RSS and OpenMP thread count */
-    status->memory_rss_kb = get_current_rss_kb();
+    status->memory_rss_kb = gric_rss_kb_sampled();
 #ifdef _OPENMP
     status->active_threads = (uint32_t)omp_get_max_threads();
 #else

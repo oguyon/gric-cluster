@@ -13,6 +13,7 @@
 #include "knn_cross_dataset.h"
 #include "knn_heap.h"
 #include "cluster_shm.h"
+#include "shared/sys/gric_rss.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -556,33 +557,6 @@ errno_t gric_knn_fps_process_frame(
 }
 
 /**
- * get_current_rss_mb() - Query current process resident set size in megabytes.
- *
- * Return: Memory RSS in MB, or 0.0 on error.
- */
-static double get_current_rss_mb(void)
-{
-    FILE *f = fopen("/proc/self/statm", "r");
-    if (!f)
-    {
-        return 0.0;
-    }
-    long pages = 0;
-    if (fscanf(f, "%*d %ld", &pages) != 1)
-    {
-        fclose(f);
-        return 0.0;
-    }
-    fclose(f);
-    long page_size = sysconf(_SC_PAGESIZE);
-    if (page_size < 0)
-    {
-        page_size = 4096;
-    }
-    return (double)((uint64_t)pages * (uint64_t)page_size) / (1024.0 * 1024.0);
-}
-
-/**
  * gric_knn_fps_status_init() - Initialize file-mapped shared memory status bridge.
  * @fps_name:    Name of the active FPS daemon instance.
  * @custom_path: Optional custom path to SHM status file.
@@ -673,7 +647,7 @@ void gric_knn_fps_status_update(
 
     fps_knn_status_latency_us = latency_us;
     fps_knn_status_stream_lag = (int64_t)stream_lag;
-    fps_knn_status_memory_rss_mb = get_current_rss_mb();
+    fps_knn_status_memory_rss_mb = gric_rss_mb_sampled();
 
     double elapsed_fps = (now.tv_sec - prev_fps_calc_time.tv_sec) +
                          (now.tv_nsec - prev_fps_calc_time.tv_nsec) * 1e-9;
