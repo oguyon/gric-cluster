@@ -230,6 +230,17 @@ void mcp_parse_ctest_output(
     cJSON      *summary_obj,
     cJSON      *failures_arr);
 
+/**
+ * mcp_tool_dev_golden_compare() - Rapid regression check against golden baseline outputs.
+ * @args:   JSON object containing tool arguments.
+ * @res:    Output JSON object containing comparison metrics and status.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_dev_golden_compare(
+    const cJSON *args,
+    cJSON       *res);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.

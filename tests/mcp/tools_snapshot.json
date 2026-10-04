@@ -57,6 +57,44 @@
     "name": "gric_dev_build_test"
   },
   {
+    "description": "Run rapid regression check comparing clustering outputs against golden benchmarks (spiral, balls, gaussian64) or a baseline directory.",
+    "inputSchema": {
+      "properties": {
+        "baseline_dir": {
+          "description": "Directory with baseline cluster_run.log to compare against.",
+          "type": "string"
+        },
+        "dataset": {
+          "description": "Custom dataset path (overrides preset dataset).",
+          "type": "string"
+        },
+        "max_dist_drift_pct": {
+          "description": "Allowed dist evals increase % (default: 5.0).",
+          "type": "number"
+        },
+        "min_agreement_pct": {
+          "description": "Minimum assignment agreement % (default: 99.0).",
+          "type": "number"
+        },
+        "preset": {
+          "description": "Standard golden regression preset (default: spiral).",
+          "enum": [
+            "spiral",
+            "balls",
+            "gaussian64"
+          ],
+          "type": "string"
+        },
+        "rlim": {
+          "description": "Clustering radius limit (overrides preset rlim).",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_dev_golden_compare"
+  },
+  {
     "description": "Launch standalone Milk streaming daemon (cluster, knn, recon) with input/output streams and initial parameters.",
     "inputSchema": {
       "properties": {
