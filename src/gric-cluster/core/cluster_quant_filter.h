@@ -16,12 +16,14 @@
  * @out_eq16_adc_cutoff: Output pointer for EQ16 Asymmetric Distance (ADC) cutoff.
  * @out_eq16_ssd_thresh: Output pointer for EQ16 Symmetric SSD cutoff.
  * @out_sq16_ssd_thresh: Output pointer for SQ16 Symmetric SSD cutoff.
+ * @out_sq8_ssd_thresh:  Output pointer for SQ8 Symmetric SSD cutoff.
  */
 void cluster_compute_quant_thresholds(
     const ClusterConfig *config,
     float               *out_eq16_adc_cutoff,
     uint64_t            *out_eq16_ssd_thresh,
-    uint64_t            *out_sq16_ssd_thresh);
+    uint64_t            *out_sq16_ssd_thresh,
+    uint64_t            *out_sq8_ssd_thresh);
 
 /**
  * cluster_candidate_is_pruned_by_quant() - Fast metric lower-bound test for a candidate.
@@ -31,6 +33,7 @@ void cluster_compute_quant_thresholds(
  * @eq16_adc_cutoff: Precomputed EQ16 ADC cutoff threshold.
  * @eq16_ssd_thresh: Precomputed EQ16 SSD threshold.
  * @sq16_ssd_thresh: Precomputed SQ16 SSD threshold.
+ * @sq8_ssd_thresh:  Precomputed SQ8 SSD threshold.
  *
  * Return: 1 if candidate is pruned by metric lower bound, 0 if it survives.
  */
@@ -40,7 +43,8 @@ int cluster_candidate_is_pruned_by_quant(
     ClusterState  *state,
     float          eq16_adc_cutoff,
     uint64_t       eq16_ssd_thresh,
-    uint64_t       sq16_ssd_thresh);
+    uint64_t       sq16_ssd_thresh,
+    uint64_t       sq8_ssd_thresh);
 
 /**
  * cluster_quant_filter_initial() - Initial matrix-level screening across all clusters.
@@ -53,6 +57,7 @@ int cluster_candidate_is_pruned_by_quant(
  * @eq16_adc_cutoff:       Precomputed EQ16 ADC cutoff.
  * @eq16_ssd_thresh:       Precomputed EQ16 SSD threshold.
  * @sq16_ssd_thresh:       Precomputed SQ16 SSD threshold.
+ * @sq8_ssd_thresh:        Precomputed SQ8 SSD threshold.
  * @step_start:            Timestamp when Step 3a began.
  */
 void cluster_quant_filter_initial(
@@ -65,6 +70,7 @@ void cluster_quant_filter_initial(
     float           eq16_adc_cutoff,
     uint64_t        eq16_ssd_thresh,
     uint64_t        sq16_ssd_thresh,
+    uint64_t        sq8_ssd_thresh,
     struct timespec step_start);
 
 /**
@@ -74,12 +80,14 @@ void cluster_quant_filter_initial(
  * @eq16_adc_cutoff: Precomputed EQ16 ADC cutoff.
  * @eq16_ssd_thresh: Precomputed EQ16 SSD threshold.
  * @sq16_ssd_thresh: Precomputed SQ16 SSD threshold.
+ * @sq8_ssd_thresh:  Precomputed SQ8 SSD threshold.
  */
 void cluster_quant_filter_subsequent(
     ClusterConfig *config,
     ClusterState  *state,
     float          eq16_adc_cutoff,
     uint64_t       eq16_ssd_thresh,
-    uint64_t       sq16_ssd_thresh);
+    uint64_t       sq16_ssd_thresh,
+    uint64_t       sq8_ssd_thresh);
 
 #endif // CLUSTER_QUANT_FILTER_H

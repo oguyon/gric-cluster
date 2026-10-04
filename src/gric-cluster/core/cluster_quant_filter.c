@@ -24,16 +24,30 @@
  * @out_eq16_adc_cutoff: Output pointer for EQ16 Asymmetric Distance (ADC) cutoff.
  * @out_eq16_ssd_thresh: Output pointer for EQ16 Symmetric SSD cutoff.
  * @out_sq16_ssd_thresh: Output pointer for SQ16 Symmetric SSD cutoff.
+ * @out_sq8_ssd_thresh:  Output pointer for SQ8 Symmetric SSD cutoff.
  */
 void cluster_compute_quant_thresholds(
     const ClusterConfig *config,
     float               *out_eq16_adc_cutoff,
     uint64_t            *out_eq16_ssd_thresh,
-    uint64_t            *out_sq16_ssd_thresh)
+    uint64_t            *out_sq16_ssd_thresh,
+    uint64_t            *out_sq8_ssd_thresh)
 {
     float eq16_adc_cutoff = 0.0f;
     uint64_t eq16_ssd_thresh = 0;
     uint64_t sq16_ssd_thresh = 0;
+    uint64_t sq8_ssd_thresh = 0;
+
+    if (config->optim.use_sq8)
+    {
+        double raw_thresh = (config->algo.rlim +
+                             2.0 * (double)config->optim.sq8_params.err_radius) /
+                            (double)config->optim.sq8_params.scale;
+        if (raw_thresh > 0.0)
+        {
+            sq8_ssd_thresh = (uint64_t)(raw_thresh * raw_thresh);
+        }
+    }
 
     if (config->optim.use_sq16)
     {
@@ -77,6 +91,10 @@ void cluster_compute_quant_thresholds(
     {
         *out_sq16_ssd_thresh = sq16_ssd_thresh;
     }
+    if (out_sq8_ssd_thresh != NULL)
+    {
+        *out_sq8_ssd_thresh = sq8_ssd_thresh;
+    }
 }
 
 /**
@@ -106,6 +124,7 @@ static void quant_prune_candidate(
  * @eq16_adc_cutoff: Precomputed EQ16 ADC cutoff threshold.
  * @eq16_ssd_thresh: Precomputed EQ16 SSD threshold.
  * @sq16_ssd_thresh: Precomputed SQ16 SSD threshold.
+ * @sq8_ssd_thresh:  Precomputed SQ8 SSD threshold.
  *
  * Checks whether cluster @cj can be provably dismissed using precomputed quantization
  * lower bounds without requiring an exact full-dimensional distance calculation.
@@ -118,7 +137,8 @@ int cluster_candidate_is_pruned_by_quant(
     ClusterState  *state,
     float          eq16_adc_cutoff,
     uint64_t       eq16_ssd_thresh,
-    uint64_t       sq16_ssd_thresh)
+    uint64_t       sq16_ssd_thresh,
+    uint64_t       sq8_ssd_thresh)
 {
     if (config->optim.use_eq16 &&
         state->clusters[cj].anchor_eq16 != NULL &&
@@ -178,13 +198,13 @@ int cluster_candidate_is_pruned_by_quant(
              state->current_frame_sq8 != NULL)
     {
         state->telemetry.sq8_evals++;
-        double d_lb = sq8_compute_lower_bound(
+        uint64_t ssd = sq8_dist_squared_cutoff_u8(
             state->current_frame_sq8,
             state->clusters[cj].anchor_sq8,
-            &config->optim.sq8_params,
-            0.0
+            config->optim.sq8_params.dim,
+            sq8_ssd_thresh
         );
-        if (d_lb > config->algo.rlim)
+        if (ssd > sq8_ssd_thresh)
         {
             state->telemetry.sq8_pruned++;
             quant_prune_candidate(state, cj);
@@ -205,6 +225,7 @@ int cluster_candidate_is_pruned_by_quant(
  * @eq16_adc_cutoff:       Precomputed EQ16 ADC cutoff.
  * @eq16_ssd_thresh:       Precomputed EQ16 SSD threshold.
  * @sq16_ssd_thresh:       Precomputed SQ16 SSD threshold.
+ * @sq8_ssd_thresh:        Precomputed SQ8 SSD threshold.
  * @step_start:            Timestamp when Step 3a began.
  */
 void cluster_quant_filter_initial(
@@ -217,6 +238,7 @@ void cluster_quant_filter_initial(
     float           eq16_adc_cutoff,
     uint64_t        eq16_ssd_thresh,
     uint64_t        sq16_ssd_thresh,
+    uint64_t        sq8_ssd_thresh,
     struct timespec step_start)
 {
     struct timespec t_mid1, t_mid2;
@@ -596,10 +618,10 @@ void cluster_quant_filter_initial(
                     if (state->scratch.clmembflag[i])
                     {
                         const uint8_t *a_ptr = mat_sq8 + (size_t)i * (size_t)dim;
-                        double d_lb = sq8_compute_lower_bound(
-                            cur_sq8, a_ptr, &config->optim.sq8_params, 0.0
+                        uint64_t ssd = sq8_dist_squared_cutoff_u8(
+                            cur_sq8, a_ptr, dim, sq8_ssd_thresh
                         );
-                        if (d_lb > config->algo.rlim)
+                        if (ssd > sq8_ssd_thresh)
                         {
                             state->scratch.clmembflag[i] = 0;
                             state->telemetry.sq8_pruned++;
@@ -624,10 +646,10 @@ void cluster_quant_filter_initial(
                         if (a_ptr != NULL)
                         {
                             state->telemetry.sq8_evals++;
-                            double d_lb = sq8_compute_lower_bound(
-                                cur_sq8, a_ptr, &config->optim.sq8_params, 0.0
+                            uint64_t ssd = sq8_dist_squared_cutoff_u8(
+                                cur_sq8, a_ptr, dim, sq8_ssd_thresh
                             );
-                            if (d_lb > config->algo.rlim)
+                            if (ssd > sq8_ssd_thresh)
                             {
                                 state->scratch.clmembflag[i] = 0;
                                 state->telemetry.sq8_pruned++;
@@ -664,6 +686,7 @@ void cluster_quant_filter_initial(
  * @eq16_adc_cutoff: Precomputed EQ16 ADC cutoff.
  * @eq16_ssd_thresh: Precomputed EQ16 SSD threshold.
  * @sq16_ssd_thresh: Precomputed SQ16 SSD threshold.
+ * @sq8_ssd_thresh:  Precomputed SQ8 SSD threshold.
  *
  * Filters ONLY the surviving candidates in state->scratch.active_clusters using
  * EQ16/SQ16/SQ8 lower bounds, compacts the active array, and re-normalizes entropy_p_current.
@@ -673,7 +696,8 @@ void cluster_quant_filter_subsequent(
     ClusterState  *state,
     float          eq16_adc_cutoff,
     uint64_t       eq16_ssd_thresh,
-    uint64_t       sq16_ssd_thresh)
+    uint64_t       sq16_ssd_thresh,
+    uint64_t       sq8_ssd_thresh)
 {
     struct timespec t_sq_s, t_sq_e;
     clock_gettime(CLOCK_MONOTONIC, &t_sq_s);
@@ -823,10 +847,10 @@ void cluster_quant_filter_subsequent(
                 : state->clusters[c].anchor_sq8;
             if (a_ptr != NULL)
             {
-                double d_lb = sq8_compute_lower_bound(
-                    cur_sq8, a_ptr, &config->optim.sq8_params, 0.0
+                uint64_t ssd = sq8_dist_squared_cutoff_u8(
+                    cur_sq8, a_ptr, dim, sq8_ssd_thresh
                 );
-                if (d_lb > config->algo.rlim)
+                if (ssd > sq8_ssd_thresh)
                 {
                     state->scratch.clmembflag[c] = 0;
                     state->scratch.entropy_p_current[c] = 0.0;
