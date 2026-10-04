@@ -59,6 +59,7 @@ extern long stream_read_counter;
 extern int is_3d;
 extern double cumulative_wait_time_sec;
 extern int cnt2sync_enabled;
+extern int stream_can_borrow;
 #endif
 
 extern long num_frames;
