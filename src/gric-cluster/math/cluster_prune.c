@@ -206,10 +206,19 @@ void prune_candidates_te5(
     int c3 = temp_indices[temp_count - 1]; // Current cluster (newest anchor)
     double d_f_c3 = temp_dists[temp_count - 1];
 
-    for (int p = 0; p < temp_count - 2; p++)
+    int max_te5_pairs = 16;
+    int pair_count = 0;
+    long total_pruned_te5 = 0;
+
+    for (int p = 0; p < temp_count - 2 && pair_count < max_te5_pairs; p++)
     {
-        for (int q = p + 1; q < temp_count - 1; q++)
+        for (int q = p + 1; q < temp_count - 1 && pair_count < max_te5_pairs; q++)
         {
+            if (state->scratch.num_active_clusters <= 0)
+            {
+                break;
+            }
+            pair_count++;
             int c1 = temp_indices[p];
             double d_f_c1 = temp_dists[p];
             int c2 = temp_indices[q];
@@ -263,225 +272,20 @@ void prune_candidates_te5(
             }
 
             TE5Ref te5_ref;
-            calc_te5_ref_init(&te5_ref, d_f_c1, d_f_c2, d_f_c3, d_c1_c2, d_c1_c3, d_c2_c3);
+            calc_te5_ref_init(
+                &te5_ref, d_f_c1, d_f_c2, d_f_c3, d_c1_c2, d_c1_c3, d_c2_c3
+            );
 
-            int K = state->num_clusters;
-            double dcc_c1[K > 0 ? K : 1];
-            double dcc_c2[K > 0 ? K : 1];
-            double dcc_c3[K > 0 ? K : 1];
-            char   meas_c1[K > 0 ? K : 1];
-            char   meas_c2[K > 0 ? K : 1];
-            char   meas_c3[K > 0 ? K : 1];
+            int active_cnt = state->scratch.num_active_clusters;
+            int *act = state->scratch.active_clusters;
+            int idx = 0;
 
-            for (int k = 0; k < K; k++)
+            while (idx < active_cnt)
             {
-                dcc_c1[k] = dcc_get_dist(state, c1, k);
-                dcc_c2[k] = dcc_get_dist(state, c2, k);
-                dcc_c3[k] = dcc_get_dist(state, c3, k);
-                meas_c1[k] = (char)dcc_is_measured(state, c1, k);
-                meas_c2[k] = (char)dcc_is_measured(state, c2, k);
-                meas_c3[k] = (char)dcc_is_measured(state, c3, k);
-            }
-
-            const double *row_dcc_c1 = dcc_c1;
-            const double *row_dcc_c2 = dcc_c2;
-            const double *row_dcc_c3 = dcc_c3;
-            const char   *row_meas_c1 = meas_c1;
-            const char   *row_meas_c2 = meas_c2;
-            const char   *row_meas_c3 = meas_c3;
-
-            long local_pruned_te5 = 0;
-            int cl_idx = 0;
-
-#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
-            if (!config->optim.sparse_dcc_mode && gric_get_simd_level() >= GRIC_SIMD_AVX512)
-            {
-                for (; cl_idx <= state->num_clusters - 8; cl_idx += 8)
+                int kk = act[idx];
+                if (kk == c1 || kk == c2 || kk == c3)
                 {
-                    __m256i vflags8 = _mm256_loadu_si256(
-                        (const __m256i *)(const void *)&state->scratch.clmembflag[cl_idx]);
-                    if (_mm256_testz_si256(vflags8, vflags8))
-                    {
-                        continue;
-                    }
-
-                    __m256d vdcc1_lo = _mm256_loadu_pd(&row_dcc_c1[cl_idx]);
-                    __m256d vdcc1_hi = _mm256_loadu_pd(&row_dcc_c1[cl_idx + 4]);
-                    __m256d vdcc2_lo = _mm256_loadu_pd(&row_dcc_c2[cl_idx]);
-                    __m256d vdcc2_hi = _mm256_loadu_pd(&row_dcc_c2[cl_idx + 4]);
-                    __m256d vdcc3_lo = _mm256_loadu_pd(&row_dcc_c3[cl_idx]);
-                    __m256d vdcc3_hi = _mm256_loadu_pd(&row_dcc_c3[cl_idx + 4]);
-
-                    __m256d min_lo = _mm256_min_pd(_mm256_min_pd(vdcc1_lo, vdcc2_lo), vdcc3_lo);
-                    __m256d min_hi = _mm256_min_pd(_mm256_min_pd(vdcc1_hi, vdcc2_hi), vdcc3_hi);
-                    __m256d min_all = _mm256_min_pd(min_lo, min_hi);
-                    __m256d vzero = _mm256_setzero_pd();
-                    int any_missing =
-                        (_mm256_movemask_pd(_mm256_cmp_pd(min_all, vzero, _CMP_LT_OQ)) != 0);
-
-                    if (any_missing)
-                    {
-                        for (int sub = 0; sub < 8; sub++)
-                        {
-                            int kk = cl_idx + sub;
-                            if (!state->scratch.clmembflag[kk] || kk == c1 || kk == c2 || kk == c3)
-                            {
-                                continue;
-                            }
-                            double d_k_c1 = row_dcc_c1[kk];
-                            if (d_k_c1 < 0.0)
-                            {
-                                d_k_c1 = get_dist(&state->clusters[kk].anchor,
-                                                  &state->clusters[c1].anchor, -1, -1.0, -1.0,
-                                                  config, state);
-                                dcc_set_pair(state, kk, c1, d_k_c1);
-                                dcc_c1[kk] = d_k_c1;
-                            }
-                            double d_k_c2 = row_dcc_c2[kk];
-                            if (d_k_c2 < 0.0)
-                            {
-                                d_k_c2 = get_dist(&state->clusters[kk].anchor,
-                                                  &state->clusters[c2].anchor, -1, -1.0, -1.0,
-                                                  config, state);
-                                dcc_set_pair(state, kk, c2, d_k_c2);
-                                dcc_c2[kk] = d_k_c2;
-                            }
-                            double d_k_c3 = row_dcc_c3[kk];
-                            if (d_k_c3 < 0.0)
-                            {
-                                d_k_c3 = get_dist(&state->clusters[kk].anchor,
-                                                  &state->clusters[c3].anchor, -1, -1.0, -1.0,
-                                                  config, state);
-                                dcc_set_pair(state, kk, c3, d_k_c3);
-                                dcc_c3[kk] = d_k_c3;
-                            }
-                            double min_d = calc_min_dist_5pt_ref(&te5_ref, d_k_c1,
-                                                                 d_k_c2, d_k_c3);
-                            if (min_d > config->algo.rlim)
-                            {
-                                state->scratch.clmembflag[kk] = 0;
-                                local_pruned_te5++;
-                            }
-                        }
-                        continue;
-                    }
-
-                    double b_out[8];
-                    calc_min_dist_5pt_batch8_avx512(&te5_ref,
-                                                    &row_dcc_c1[cl_idx],
-                                                    &row_dcc_c2[cl_idx],
-                                                    &row_dcc_c3[cl_idx],
-                                                    b_out);
-                    for (int sub = 0; sub < 8; sub++)
-                    {
-                        int kk = cl_idx + sub;
-                        if (kk == c1 || kk == c2 || kk == c3)
-                        {
-                            continue;
-                        }
-                        if (state->scratch.clmembflag[kk] && b_out[sub] > config->algo.rlim)
-                        {
-                            state->scratch.clmembflag[kk] = 0;
-                            local_pruned_te5++;
-                        }
-                    }
-                }
-            }
-
-            if (!config->optim.sparse_dcc_mode && gric_get_simd_level() >= GRIC_SIMD_AVX2)
-            {
-                for (; cl_idx <= state->num_clusters - 4; cl_idx += 4)
-                {
-                    __m128i vflags4 = _mm_loadu_si128(
-                        (const __m128i *)(const void *)&state->scratch.clmembflag[cl_idx]);
-                    if (_mm_testz_si128(vflags4, vflags4))
-                    {
-                        continue;
-                    }
-
-                    __m256d vdcc1 = _mm256_loadu_pd(&row_dcc_c1[cl_idx]);
-                    __m256d vdcc2 = _mm256_loadu_pd(&row_dcc_c2[cl_idx]);
-                    __m256d vdcc3 = _mm256_loadu_pd(&row_dcc_c3[cl_idx]);
-                    __m256d min_dcc = _mm256_min_pd(_mm256_min_pd(vdcc1, vdcc2), vdcc3);
-                    __m256d vzero = _mm256_setzero_pd();
-                    int any_missing =
-                        (_mm256_movemask_pd(_mm256_cmp_pd(min_dcc, vzero, _CMP_LT_OQ)) != 0);
-
-                    if (any_missing)
-                    {
-                        for (int sub = 0; sub < 4; sub++)
-                        {
-                            int kk = cl_idx + sub;
-                            if (!state->scratch.clmembflag[kk] || kk == c1 || kk == c2 || kk == c3)
-                            {
-                                continue;
-                            }
-                            double d_k_c1 = row_dcc_c1[kk];
-                            if (d_k_c1 < 0.0)
-                            {
-                                d_k_c1 = get_dist(&state->clusters[kk].anchor,
-                                                  &state->clusters[c1].anchor, -1, -1.0, -1.0,
-                                                  config, state);
-                                dcc_set_pair(state, kk, c1, d_k_c1);
-                            }
-                            double d_k_c2 = row_dcc_c2[kk];
-                            if (d_k_c2 < 0.0)
-                            {
-                                d_k_c2 = get_dist(&state->clusters[kk].anchor,
-                                                  &state->clusters[c2].anchor, -1, -1.0, -1.0,
-                                                  config, state);
-                                dcc_set_pair(state, kk, c2, d_k_c2);
-                            }
-                            double d_k_c3 = row_dcc_c3[kk];
-                            if (d_k_c3 < 0.0)
-                            {
-                                d_k_c3 = get_dist(&state->clusters[kk].anchor,
-                                                  &state->clusters[c3].anchor, -1, -1.0, -1.0,
-                                                  config, state);
-                                dcc_set_pair(state, kk, c3, d_k_c3);
-                            }
-                            double min_d = calc_min_dist_5pt_ref(&te5_ref, d_k_c1,
-                                                                 d_k_c2, d_k_c3);
-                            if (min_d > config->algo.rlim)
-                            {
-                                state->scratch.clmembflag[kk] = 0;
-                                local_pruned_te5++;
-                            }
-                        }
-                        continue;
-                    }
-
-                    double b_out[4];
-                    calc_min_dist_5pt_batch4_avx2(&te5_ref,
-                                                  &row_dcc_c1[cl_idx],
-                                                  &row_dcc_c2[cl_idx],
-                                                  &row_dcc_c3[cl_idx],
-                                                  b_out);
-                    for (int sub = 0; sub < 4; sub++)
-                    {
-                        int kk = cl_idx + sub;
-                        if (kk == c1 || kk == c2 || kk == c3)
-                        {
-                            continue;
-                        }
-                        if (state->scratch.clmembflag[kk] && b_out[sub] > config->algo.rlim)
-                        {
-                            state->scratch.clmembflag[kk] = 0;
-                            local_pruned_te5++;
-                        }
-                    }
-                }
-            }
-#endif
-
-            for (; cl_idx < state->num_clusters; cl_idx++)
-            {
-                if (!state->scratch.clmembflag[cl_idx])
-                {
-                    continue;
-                }
-                if (cl_idx == c1 || cl_idx == c2 || cl_idx == c3)
-                {
+                    idx++;
                     continue;
                 }
 
@@ -491,90 +295,72 @@ void prune_candidates_te5(
 
                 if (config->optim.sparse_dcc_mode)
                 {
-                    if (!row_meas_c1[cl_idx] ||
-                        !row_meas_c2[cl_idx] ||
-                        !row_meas_c3[cl_idx])
+                    if (!dcc_is_measured(state, c1, kk) ||
+                        !dcc_is_measured(state, c2, kk) ||
+                        !dcc_is_measured(state, c3, kk))
                     {
+                        idx++;
                         continue;
                     }
-                    d_k_c1 = row_dcc_c1[cl_idx];
-                    d_k_c2 = row_dcc_c2[cl_idx];
-                    d_k_c3 = row_dcc_c3[cl_idx];
+                    d_k_c1 = dcc_get_dist(state, c1, kk);
+                    d_k_c2 = dcc_get_dist(state, c2, kk);
+                    d_k_c3 = dcc_get_dist(state, c3, kk);
                 }
                 else
                 {
-                    d_k_c1 = row_dcc_c1[cl_idx];
+                    d_k_c1 = dcc_get_dist(state, c1, kk);
                     if (d_k_c1 < 0.0)
                     {
-#ifdef _OPENMP
-#pragma omp critical(dcc_cache)
-#endif
-                        {
-                            d_k_c1 = row_dcc_c1[cl_idx];
-                            if (d_k_c1 < 0.0)
-                            {
-                                d_k_c1 = get_dist(
-                                    &state->clusters[cl_idx].anchor,
-                                    &state->clusters[c1].anchor, -1, -1.0, -1.0,
-                                    config, state);
-                                dcc_set_pair(state, cl_idx, c1, d_k_c1);
-                                dcc_c1[cl_idx] = d_k_c1;
-                            }
-                        }
+                        d_k_c1 = get_dist(
+                            &state->clusters[kk].anchor,
+                            &state->clusters[c1].anchor, -1, -1.0, -1.0,
+                            config, state
+                        );
+                        dcc_set_pair(state, kk, c1, d_k_c1);
                     }
 
-                    d_k_c2 = row_dcc_c2[cl_idx];
+                    d_k_c2 = dcc_get_dist(state, c2, kk);
                     if (d_k_c2 < 0.0)
                     {
-#ifdef _OPENMP
-#pragma omp critical(dcc_cache)
-#endif
-                        {
-                            d_k_c2 = row_dcc_c2[cl_idx];
-                            if (d_k_c2 < 0.0)
-                            {
-                                d_k_c2 = get_dist(
-                                    &state->clusters[cl_idx].anchor,
-                                    &state->clusters[c2].anchor, -1, -1.0, -1.0,
-                                    config, state);
-                                dcc_set_pair(state, cl_idx, c2, d_k_c2);
-                                dcc_c2[cl_idx] = d_k_c2;
-                            }
-                        }
+                        d_k_c2 = get_dist(
+                            &state->clusters[kk].anchor,
+                            &state->clusters[c2].anchor, -1, -1.0, -1.0,
+                            config, state
+                        );
+                        dcc_set_pair(state, kk, c2, d_k_c2);
                     }
 
-                    d_k_c3 = row_dcc_c3[cl_idx];
+                    d_k_c3 = dcc_get_dist(state, c3, kk);
                     if (d_k_c3 < 0.0)
                     {
-#ifdef _OPENMP
-#pragma omp critical(dcc_cache)
-#endif
-                        {
-                            d_k_c3 = row_dcc_c3[cl_idx];
-                            if (d_k_c3 < 0.0)
-                            {
-                                d_k_c3 = get_dist(
-                                    &state->clusters[cl_idx].anchor,
-                                    &state->clusters[c3].anchor, -1, -1.0, -1.0,
-                                    config, state);
-                                dcc_set_pair(state, cl_idx, c3, d_k_c3);
-                                dcc_c3[cl_idx] = d_k_c3;
-                            }
-                        }
+                        d_k_c3 = get_dist(
+                            &state->clusters[kk].anchor,
+                            &state->clusters[c3].anchor, -1, -1.0, -1.0,
+                            config, state
+                        );
+                        dcc_set_pair(state, kk, c3, d_k_c3);
                     }
                 }
 
                 double min_d = calc_min_dist_5pt_ref(
                     &te5_ref, d_k_c1, d_k_c2, d_k_c3
                 );
-
                 if (min_d > config->algo.rlim)
                 {
-                    state->scratch.clmembflag[cl_idx] = 0;
-                    local_pruned_te5++;
+                    state->scratch.clmembflag[kk] = 0;
+                    state->scratch.entropy_p_current[kk] = 0.0;
+                    total_pruned_te5++;
+                    active_cnt--;
+                    act[idx] = act[active_cnt];
                 }
-            } // for (int cl_idx = 0; ...)
-            state->telemetry.clusters_pruned += local_pruned_te5;
+                else
+                {
+                    idx++;
+                }
+            } // while (idx < active_cnt)
+
+            state->scratch.num_active_clusters = active_cnt;
         }
     }
+    state->telemetry.clusters_pruned += total_pruned_te5;
 }
