@@ -126,6 +126,10 @@ void initialize_initial_cluster(
     {
         state->scratch.cluster_probs[0] = 1.0;
     }
+    if (state->scratch.pred_probs != NULL)
+    {
+        state->scratch.pred_probs[0] = 1.0;
+    }
     state->num_clusters = 1;
     dcc_set_pair(state, 0, 0, 0.0);
 

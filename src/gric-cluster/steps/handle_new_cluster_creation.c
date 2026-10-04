@@ -501,6 +501,10 @@ static void assign_new_cluster_anchor(
     {
         state->scratch.cluster_probs[cl_idx] = 1.0;
     }
+    if (state->scratch.pred_probs != NULL)
+    {
+        state->scratch.pred_probs[cl_idx] = 1.0;
+    }
 }
 
 /**

@@ -524,10 +524,12 @@ void compute_priors_and_mixing(
                 }
             }
 
+            const double *fprobs = state->scratch.pred_probs;
             double sum_freq = 0.0;
             for (int i = 0; i < K; i++)
             {
-                sum_freq += state->clusters[i].prob;
+                double p = fprobs ? fprobs[i] : state->clusters[i].prob;
+                sum_freq += p;
             }
             if (sum_freq <= 0.0)
             {
@@ -537,7 +539,8 @@ void compute_priors_and_mixing(
             double sum_final = 0.0;
             for (int i = 0; i < K; i++)
             {
-                double p_freq = state->clusters[i].prob / sum_freq;
+                double p = fprobs ? fprobs[i] : state->clusters[i].prob;
+                double p_freq = p / sum_freq;
                 state->scratch.mixed_probs[i] = p_freq * p_seq[i];
                 sum_final += state->scratch.mixed_probs[i];
             }
@@ -571,9 +574,10 @@ void compute_priors_and_mixing(
                 prev_assigned_cluster * config->algo.maxnbclust + i];
         }
 
+        const double *fprobs = state->scratch.pred_probs;
         for (int i = 0; i < state->num_clusters; i++)
         {
-            double prior = state->clusters[i].prob;
+            double prior = fprobs ? fprobs[i] : state->clusters[i].prob;
             double tp = 0.0;
             if (trans_prob_sum > 0.0)
             {
