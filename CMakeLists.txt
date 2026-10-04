@@ -679,6 +679,7 @@ add_library(gric_mcp_core OBJECT
     src/gric-mcp/tools/tool_probe_shm.c
     src/gric-mcp/tools/tool_help.c
     src/gric-mcp/tools/tool_fps_ops.c
+    src/gric-mcp/tools/tool_dev_build_test.c
     ${HELP_TOPICS_GEN_C}
     ${MCP_CONTENT_GEN_C}
     src/shared/cjson/cJSON.c
@@ -1424,6 +1425,35 @@ if (IMAGESTREAMIO_FOUND)
 endif()
 add_test(NAME test_mcp_staleness COMMAND test_mcp_staleness)
 set_tests_properties(test_mcp_staleness PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_executable(test_mcp_dev_build
+    tests/test_mcp_dev_build.c
+    $<TARGET_OBJECTS:gric_mcp_core>
+)
+target_include_directories(test_mcp_dev_build PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(test_mcp_dev_build m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_mcp_dev_build OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_mcp_dev_build ${CFITSIO_LIBRARIES})
+    target_include_directories(test_mcp_dev_build PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_mcp_dev_build ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_mcp_dev_build PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_mcp_dev_build COMMAND test_mcp_dev_build)
+set_tests_properties(test_mcp_dev_build PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 add_test(NAME test_doc_flag_drift
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/check_doc_flags.py"
