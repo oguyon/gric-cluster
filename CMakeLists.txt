@@ -652,6 +652,15 @@ add_custom_command(
     COMMENT "Creating gric-cluster-probe alias symlink"
 )
 
+add_custom_target(gric_build_info ALL
+    COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GricBuildInfo.cmake
+    BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/gric_build_info.h"
+    COMMENT "Updating gric_build_info.h git metadata"
+)
+
 # gric_mcp_core shared object library
 add_library(gric_mcp_core OBJECT
     src/gric-mcp/mcp_dispatch.c
@@ -660,6 +669,7 @@ add_library(gric_mcp_core OBJECT
     src/gric-mcp/mcp_validate.c
     src/gric-mcp/mcp_tools.c
     src/gric-mcp/mcp_fps_schema.c
+    src/gric-mcp/mcp_staleness.c
     src/gric-mcp/tools/tool_audit_code_style.c
     src/gric-mcp/tools/tool_align_parameters.c
     src/gric-mcp/tools/tool_inspect_simd.c
@@ -690,6 +700,7 @@ add_library(gric_mcp_core OBJECT
     src/shared/quant/eq16_filter.c
     src/shared/sys/gric_simd.c
 )
+add_dependencies(gric_mcp_core gric_build_info)
 target_include_directories(gric_mcp_core PRIVATE
     src/gric-mcp
     src/gric-mcp/tools
@@ -698,6 +709,7 @@ target_include_directories(gric_mcp_core PRIVATE
     src/shared
     src/gric-fps
     src
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 if (OpenMP_C_FOUND)
     target_compile_options(gric_mcp_core PRIVATE ${OpenMP_C_FLAGS})
@@ -1383,6 +1395,35 @@ set_tests_properties(test_mcp_contract PROPERTIES
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     DEPENDS test_spiral_clustering
 )
+
+add_executable(test_mcp_staleness
+    tests/test_mcp_staleness.c
+    $<TARGET_OBJECTS:gric_mcp_core>
+)
+target_include_directories(test_mcp_staleness PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(test_mcp_staleness m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_mcp_staleness OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_mcp_staleness ${CFITSIO_LIBRARIES})
+    target_include_directories(test_mcp_staleness PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_mcp_staleness ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_mcp_staleness PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_mcp_staleness COMMAND test_mcp_staleness)
+set_tests_properties(test_mcp_staleness PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 add_test(NAME test_doc_flag_drift
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/check_doc_flags.py"
