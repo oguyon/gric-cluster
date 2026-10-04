@@ -4,6 +4,7 @@
  */
 
 #include "mcp_tools.h"
+#include "mcp_registry.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -124,3 +125,31 @@ int mcp_tool_verify_invariants(
 
     return 0;
 } // mcp_tool_verify_invariants
+
+const struct mcp_tool_def mcp_tooldef_verify_invariants = {
+    .name         = "gric_verify_invariants",
+    .toolset      = MCP_TS_ANALYSIS,
+    .side_effects = 0,
+    .fn           = mcp_tool_verify_invariants,
+    .description  = "Verify mathematical clustering guarantees: asserts d(frame, anchor) <= "
+                    "rlim across all frames with SIMD. Reports violations and max error.",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"run_dir\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Clustering output directory (e.g., 3Dspiral.clusterdat).\"\n"
+        "    },\n"
+        "    \"dataset\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Path to original dataset frames used during clustering.\"\n"
+        "    },\n"
+        "    \"rlim\": {\n"
+        "      \"type\": \"number\",\n"
+        "      \"description\": \"Clustering radius threshold. If omitted, parsed from log.\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"run_dir\", \"dataset\"]\n"
+        "}",
+};

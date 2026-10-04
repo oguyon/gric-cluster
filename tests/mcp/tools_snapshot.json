@@ -1,0 +1,282 @@
+[
+  {
+    "description": "Check or compute column-aligned parameter names for multi-line function prototypes per parameter-alignment.md.",
+    "inputSchema": {
+      "properties": {
+        "prototype": {
+          "description": "C function prototype or definition snippet to align.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prototype"
+      ],
+      "type": "object"
+    },
+    "name": "gric_align_parameters"
+  },
+  {
+    "description": "Audit C source files against GRIC coding standards (100-char line limit, Allman braces, Kernel-Doc, loop types, and malloc checks).",
+    "inputSchema": {
+      "properties": {
+        "file_path": {
+          "description": "Path to C source or header file to audit.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    },
+    "name": "gric_audit_code_style"
+  },
+  {
+    "description": "Launch standalone milk-fpsexec-gric-cluster streaming daemon with input/output streams and initial parameters.",
+    "inputSchema": {
+      "properties": {
+        "allow_frame_drop": {
+          "description": "Lag policy: true=jump to latest frame, false=sequential.",
+          "type": "boolean"
+        },
+        "fps_name": {
+          "description": "FPS instance name (default: gric_cluster).",
+          "type": "string"
+        },
+        "in_name": {
+          "description": "Input ImageStreamIO stream name (TRIGGER).",
+          "type": "string"
+        },
+        "out_name": {
+          "description": "Output assignment stream name (<out>_assign).",
+          "type": "string"
+        },
+        "rlim": {
+          "description": "Cluster radius threshold (default: 0.5).",
+          "type": "number"
+        },
+        "use_tmux": {
+          "description": "Run inside an isolated tmux session (default: true).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "in_name"
+      ],
+      "type": "object"
+    },
+    "name": "gric_fps_run"
+  },
+  {
+    "description": "Dynamically update an FPS parameter (e.g. .rlim, .allow_frame_drop, .reset_state) on a live streaming instance using milk-fps-set.",
+    "inputSchema": {
+      "properties": {
+        "fps_name": {
+          "description": "FPS instance name (e.g. gric_cluster).",
+          "type": "string"
+        },
+        "param": {
+          "description": "Parameter key (e.g. 'rlim', 'allow_frame_drop').",
+          "type": "string"
+        },
+        "value": {
+          "description": "New parameter value (number, boolean ON/OFF, or string)."
+        }
+      },
+      "required": [
+        "fps_name",
+        "param",
+        "value"
+      ],
+      "type": "object"
+    },
+    "name": "gric_fps_set"
+  },
+  {
+    "description": "Inspect live status, loop rate, PID, and current parameters of a Milk FPS streaming instance (e.g. gric_cluster).",
+    "inputSchema": {
+      "properties": {
+        "fps_name": {
+          "description": "FPS instance name (default: gric_cluster).",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_fps_status"
+  },
+  {
+    "description": "Gracefully stop an active Milk FPS instance (dispatching runstop and confstop to tmux ctrl window).",
+    "inputSchema": {
+      "properties": {
+        "fps_name": {
+          "description": "FPS instance name (default: gric_cluster).",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_fps_stop"
+  },
+  {
+    "description": "Retrieve step-by-step cookbook instructions for common tasks (e.g. 'milk_realtime_streaming', 'image_cube_clustering').",
+    "inputSchema": {
+      "properties": {
+        "recipe": {
+          "description": "Name of recipe, or 'list' to see available recipes.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_get_recipe"
+  },
+  {
+    "description": "Query GRIC embedded help database (95+ topics) by keyword or fuzzy search: algorithms, parameters (rlim, entropy, tiling, milk), flags.",
+    "inputSchema": {
+      "properties": {
+        "query": {
+          "description": "Optional search query to match in documentation.",
+          "type": "string"
+        },
+        "topic": {
+          "description": "Topic keyword or flag name (e.g. 'entropy', 'rlim').",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_help"
+  },
+  {
+    "description": "Inspect clustering run output (.clusterdat): extracts cluster counts, dists/frame, pruning efficiency, entropy, and execution time.",
+    "inputSchema": {
+      "properties": {
+        "run_dir": {
+          "description": "Path to clustering results directory.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_dir"
+      ],
+      "type": "object"
+    },
+    "name": "gric_inspect_run"
+  },
+  {
+    "description": "Compile a C source file or math kernel to assembly and inspect AVX2/AVX-512 SIMD vectorization, FMA ops, and stack spills.",
+    "inputSchema": {
+      "properties": {
+        "function_name": {
+          "description": "Optional target function name to isolate in assembly.",
+          "type": "string"
+        },
+        "march": {
+          "description": "Target architecture flag (default: -march=native).",
+          "type": "string"
+        },
+        "source_file": {
+          "description": "Path to C source file containing the kernel.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_file"
+      ],
+      "type": "object"
+    },
+    "name": "gric_inspect_simd"
+  },
+  {
+    "description": "List all 18+ programs in the GRIC suite with categories, summaries, and CLI usage prototypes.",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "gric_list_suite"
+  },
+  {
+    "description": "Analyze dataset geometry: estimates local intrinsic dimensionality, noise floor, recommended radii (fine/balanced), and pruning flags.",
+    "inputSchema": {
+      "properties": {
+        "dataset_path": {
+          "description": "Path to dataset coordinates or image cube.",
+          "type": "string"
+        },
+        "sample_limit": {
+          "description": "Maximum sample count for adaptive probing (0 = default).",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dataset_path"
+      ],
+      "type": "object"
+    },
+    "name": "gric_probe_dataset"
+  },
+  {
+    "description": "Inspect Milk live streams non-blockingly and decode the 8-element assignment telemetry vector (cluster ID, distance, latency, evals).",
+    "inputSchema": {
+      "properties": {
+        "out_name": {
+          "description": "Name of output stream (e.g. gric_cluster_assign).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "out_name"
+      ],
+      "type": "object"
+    },
+    "name": "gric_probe_fps_streams"
+  },
+  {
+    "description": "Non-blocking probe of ImageStreamIO shared-memory stream: checks dimensions, write index, frame count, and semaphore status.",
+    "inputSchema": {
+      "properties": {
+        "stream_name": {
+          "description": "Name of shared memory stream (e.g. imrec1).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stream_name"
+      ],
+      "type": "object"
+    },
+    "name": "gric_probe_shm"
+  },
+  {
+    "description": "Retrieve runtime status, version, active toolsets, and read-only mode of the gric-mcp server.",
+    "inputSchema": {
+      "type": "object"
+    },
+    "name": "gric_server_info"
+  },
+  {
+    "description": "Verify mathematical clustering guarantees: asserts d(frame, anchor) <= rlim across all frames with SIMD. Reports violations and max error.",
+    "inputSchema": {
+      "properties": {
+        "dataset": {
+          "description": "Path to original dataset frames used during clustering.",
+          "type": "string"
+        },
+        "rlim": {
+          "description": "Clustering radius threshold. If omitted, parsed from log.",
+          "type": "number"
+        },
+        "run_dir": {
+          "description": "Clustering output directory (e.g., 3Dspiral.clusterdat).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_dir",
+        "dataset"
+      ],
+      "type": "object"
+    },
+    "name": "gric_verify_invariants"
+  }
+]

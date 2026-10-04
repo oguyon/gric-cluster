@@ -4,6 +4,7 @@
  */
 
 #include "mcp_tools.h"
+#include "mcp_registry.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -223,3 +224,23 @@ int mcp_tool_align_parameters(
 
     return 0;
 } // mcp_tool_align_parameters
+
+const struct mcp_tool_def mcp_tooldef_align_parameters = {
+    .name         = "gric_align_parameters",
+    .toolset      = MCP_TS_DEV,
+    .side_effects = 0,
+    .fn           = mcp_tool_align_parameters,
+    .description  = "Check or compute column-aligned parameter names for multi-line "
+                    "function prototypes per parameter-alignment.md.",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"prototype\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"C function prototype or definition snippet to align.\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"prototype\"]\n"
+        "}",
+};

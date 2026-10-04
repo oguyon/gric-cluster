@@ -1,9 +1,12 @@
 /**
  * @file tool_fps_ops.c
- * @brief Milk Function Parameter Structure (FPS) operational control tools.
+ * @brief Shell-free Milk Function Parameter Structure (FPS) operational control tools.
  */
 
 #include "mcp_tools.h"
+#include "mcp_exec.h"
+#include "mcp_validate.h"
+#include "mcp_registry.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,18 +51,6 @@ static void get_fps_binary_path(
     buf[size - 1] = '\0';
 } // get_fps_binary_path
 
-/**
- * run_sys_cmd() - Execute a shell command and return its exit code.
- * @cmd: Command line to execute.
- *
- * Return: Command return status.
- */
-static int run_sys_cmd(
-    const char *cmd)
-{
-    return system(cmd);
-} // run_sys_cmd
-
 int mcp_tool_fps_status(
     const cJSON *args,
     cJSON       *res)
@@ -74,14 +65,23 @@ int mcp_tool_fps_status(
         }
     }
 
+    if (!mcp_valid_identifier(fps_name, 64))
+    {
+        cJSON_AddStringToObject(res, "error", "Invalid fps_name identifier");
+        return -1;
+    }
+
     char bin_path[1024];
     get_fps_binary_path(bin_path, sizeof(bin_path));
 
-    char cmd[2048];
-    snprintf(cmd, sizeof(cmd), "%s -procinfo fps %s 2>&1", bin_path, fps_name);
+    const char *const procinfo_argv[] = {
+        bin_path, "-procinfo", "fps", fps_name, NULL
+    };
 
-    FILE *pipe = popen(cmd, "r");
-    if (pipe == NULL)
+    char output[8192] = "";
+    int exit_status = 0;
+    int exec_ret = mcp_exec_capture(procinfo_argv, output, sizeof(output), 5000, &exit_status);
+    if (exec_ret != 0)
     {
         cJSON_AddStringToObject(res, "status", "ERROR");
         cJSON_AddStringToObject(res, "message", "Failed to query FPS status");
@@ -89,18 +89,21 @@ int mcp_tool_fps_status(
     }
 
     cJSON *params_obj = cJSON_CreateObject();
-    char line[1024];
     int in_params_table = 0;
+    char *saveptr = NULL;
+    char *line = strtok_r(output, "\r\n", &saveptr);
 
-    while (fgets(line, sizeof(line), pipe) != NULL)
+    while (line != NULL)
     {
         if (strstr(line, "CLI Keyword") != NULL)
         {
             in_params_table = 1;
+            line = strtok_r(NULL, "\r\n", &saveptr);
             continue;
         }
         if (in_params_table && strncmp(line, "---", 3) == 0)
         {
+            line = strtok_r(NULL, "\r\n", &saveptr);
             continue;
         }
 
@@ -120,25 +123,12 @@ int mcp_tool_fps_status(
                 cJSON_AddItemToObject(params_obj, key, p_entry);
             }
         }
-    } // while fgets
+        line = strtok_r(NULL, "\r\n", &saveptr);
+    } // while line != NULL
 
-    pclose(pipe);
-
-    /* Check if process is actively running via pgrep */
-    char pgrep_cmd[512];
-    snprintf(pgrep_cmd, sizeof(pgrep_cmd),
-             "pgrep -f 'milk-fpsexec-gric-cluster.*%s' | head -n 1", fps_name);
-    FILE *pp = popen(pgrep_cmd, "r");
-    long pid = -1;
-    if (pp != NULL)
-    {
-        char pid_buf[32] = "";
-        if (fgets(pid_buf, sizeof(pid_buf), pp) != NULL)
-        {
-            pid = atol(pid_buf);
-        }
-        pclose(pp);
-    }
+    /* Check if process is actively running via non-shell /proc scanner */
+    pid_t pid = -1;
+    mcp_find_process("milk-fpsexec-gric-cluster", fps_name, &pid);
 
     cJSON_AddStringToObject(res, "status", (pid > 0) ? "RUNNING" : "CONFIGURED");
     cJSON_AddStringToObject(res, "fps_name", fps_name);
@@ -168,12 +158,22 @@ int mcp_tool_fps_run(
         return -1;
     }
     const char *in_name = in_item->valuestring;
+    if (!mcp_valid_identifier(in_name, 64))
+    {
+        cJSON_AddStringToObject(res, "error", "Invalid in_name identifier");
+        return -1;
+    }
 
     const char *fps_name = "gric_cluster";
     cJSON *n_item = cJSON_GetObjectItemCaseSensitive(args, "fps_name");
     if (n_item != NULL && cJSON_IsString(n_item))
     {
         fps_name = n_item->valuestring;
+    }
+    if (!mcp_valid_identifier(fps_name, 64))
+    {
+        cJSON_AddStringToObject(res, "error", "Invalid fps_name identifier");
+        return -1;
     }
 
     char out_assign_name[128];
@@ -185,6 +185,11 @@ int mcp_tool_fps_run(
     else
     {
         snprintf(out_assign_name, sizeof(out_assign_name), "%s_assign", in_name);
+    }
+    if (!mcp_valid_identifier(out_assign_name, 64))
+    {
+        cJSON_AddStringToObject(res, "error", "Invalid out_name identifier");
+        return -1;
     }
 
     int use_tmux = 1;
@@ -198,54 +203,81 @@ int mcp_tool_fps_run(
     get_fps_binary_path(bin_path, sizeof(bin_path));
 
     /* Step 1: Initialize FPS instance */
-    char init_cmd[2048];
-    snprintf(init_cmd, sizeof(init_cmd), "%s -procinfo fpsinit %s > /dev/null 2>&1",
-             bin_path, fps_name);
-    (void)run_sys_cmd(init_cmd);
+    const char *const init_argv[] = {
+        bin_path, "-procinfo", "fpsinit", fps_name, NULL
+    };
+    int init_status = 0;
+    int err = mcp_exec_capture(init_argv, NULL, 0, 5000, &init_status);
+    if (err != 0 || init_status != 0)
+    {
+        cJSON_AddStringToObject(res, "status", "ERROR");
+        cJSON_AddStringToObject(res, "message", "fpsinit failed");
+        return -1;
+    }
 
     /* Step 2: Configure essential parameters via milk-fps-set */
-    char set_cmd[2048];
-    snprintf(set_cmd, sizeof(set_cmd), "milk-fps-set %s.in_name %s > /dev/null 2>&1",
-             fps_name, in_name);
-    (void)run_sys_cmd(set_cmd);
+    char set_in_param[128];
+    snprintf(set_in_param, sizeof(set_in_param), "%s.in_name", fps_name);
+    const char *const set_in_argv[] = { "milk-fps-set", set_in_param, in_name, NULL };
+    int set_in_status = 0;
+    mcp_exec_capture(set_in_argv, NULL, 0, 5000, &set_in_status);
 
-    snprintf(set_cmd, sizeof(set_cmd), "milk-fps-set %s.out_name %s > /dev/null 2>&1",
-             fps_name, out_assign_name);
-    (void)run_sys_cmd(set_cmd);
+    char set_out_param[128];
+    snprintf(set_out_param, sizeof(set_out_param), "%s.out_name", fps_name);
+    const char *const set_out_argv[] = { "milk-fps-set", set_out_param, out_assign_name, NULL };
+    int set_out_status = 0;
+    mcp_exec_capture(set_out_argv, NULL, 0, 5000, &set_out_status);
 
     /* Apply optional overrides */
     cJSON *rlim_item = cJSON_GetObjectItemCaseSensitive(args, "rlim");
     if (rlim_item != NULL && cJSON_IsNumber(rlim_item))
     {
-        snprintf(set_cmd, sizeof(set_cmd), "milk-fps-set %s.rlim %.6f > /dev/null 2>&1",
-                 fps_name, rlim_item->valuedouble);
-        (void)run_sys_cmd(set_cmd);
+        char rlim_buf[64];
+        snprintf(rlim_buf, sizeof(rlim_buf), "%.6f", rlim_item->valuedouble);
+        char set_rlim_param[128];
+        snprintf(set_rlim_param, sizeof(set_rlim_param), "%s.rlim", fps_name);
+        const char *const set_rlim_argv[] = { "milk-fps-set", set_rlim_param, rlim_buf, NULL };
+        int set_rlim_status = 0;
+        mcp_exec_capture(set_rlim_argv, NULL, 0, 5000, &set_rlim_status);
     }
 
     cJSON *drop_item = cJSON_GetObjectItemCaseSensitive(args, "allow_frame_drop");
     if (drop_item != NULL)
     {
         int drop = cJSON_IsTrue(drop_item);
-        snprintf(set_cmd, sizeof(set_cmd), "milk-fps-set %s.allow_frame_drop %s > /dev/null 2>&1",
-                 fps_name, drop ? "ON" : "OFF");
-        (void)run_sys_cmd(set_cmd);
+        char set_drop_param[128];
+        snprintf(set_drop_param, sizeof(set_drop_param), "%s.allow_frame_drop", fps_name);
+        const char *const set_drop_argv[] = {
+            "milk-fps-set", set_drop_param, drop ? "ON" : "OFF", NULL
+        };
+        int set_drop_status = 0;
+        mcp_exec_capture(set_drop_argv, NULL, 0, 5000, &set_drop_status);
     }
 
     /* Step 3: Launch runstart */
-    char launch_cmd[2048];
+    int launch_status = 0;
     if (use_tmux)
     {
-        snprintf(launch_cmd, sizeof(launch_cmd),
-                 "%s -tmux -procinfo -loops -n %s runstart > /dev/null 2>&1",
-                 bin_path, fps_name);
+        const char *const launch_argv[] = {
+            bin_path, "-tmux", "-procinfo", "-loops", "-n", fps_name, "runstart", NULL
+        };
+        err = mcp_exec_capture(launch_argv, NULL, 0, 10000, &launch_status);
     }
     else
     {
-        snprintf(launch_cmd, sizeof(launch_cmd),
-                 "%s -procinfo -loops -n %s runstart > /dev/null 2>&1 &",
-                 bin_path, fps_name);
+        const char *const launch_argv[] = {
+            bin_path, "-procinfo", "-loops", "-n", fps_name, "runstart", NULL
+        };
+        pid_t child_pid = 0;
+        err = mcp_exec_spawn_detached(launch_argv, NULL, &child_pid);
     }
-    (void)run_sys_cmd(launch_cmd);
+
+    if (err != 0 || launch_status != 0)
+    {
+        cJSON_AddStringToObject(res, "status", "ERROR");
+        cJSON_AddStringToObject(res, "message", "runstart failed");
+        return -1;
+    }
 
     cJSON_AddStringToObject(res, "status", "LAUNCHED");
     cJSON_AddStringToObject(res, "fps_name", fps_name);
@@ -280,6 +312,12 @@ int mcp_tool_fps_set(
     const char *fps_name = name_item->valuestring;
     const char *raw_param = param_item->valuestring;
 
+    if (!mcp_valid_identifier(fps_name, 64))
+    {
+        cJSON_AddStringToObject(res, "error", "Invalid fps_name identifier");
+        return -1;
+    }
+
     /* Normalize parameter: strip leading dot if present */
     const char *clean_param = raw_param;
     while (*clean_param == '.')
@@ -287,10 +325,23 @@ int mcp_tool_fps_set(
         clean_param++;
     }
 
+    if (!mcp_valid_identifier(clean_param, 64))
+    {
+        cJSON_AddStringToObject(res, "error", "Invalid param identifier");
+        return -1;
+    }
+
     char val_str[128];
     if (cJSON_IsString(val_item))
     {
-        strncpy(val_str, val_item->valuestring, sizeof(val_str) - 1);
+        const char *s = val_item->valuestring;
+        if (!mcp_valid_identifier(s, 120) && !mcp_valid_path(s, 120))
+        {
+            cJSON_AddStringToObject(res, "error", "Invalid value string format");
+            return -1;
+        }
+        strncpy(val_str, s, sizeof(val_str) - 1);
+        val_str[sizeof(val_str) - 1] = '\0';
     }
     else if (cJSON_IsNumber(val_item))
     {
@@ -302,29 +353,27 @@ int mcp_tool_fps_set(
     }
     else
     {
-        snprintf(val_str, sizeof(val_str), "0");
+        cJSON_AddStringToObject(res, "error", "Unsupported value type");
+        return -1;
     }
-    val_str[sizeof(val_str) - 1] = '\0';
 
-    char set_cmd[1024];
-    snprintf(set_cmd, sizeof(set_cmd), "milk-fps-set %s.%s %s 2>&1",
-             fps_name, clean_param, val_str);
+    char target[256];
+    snprintf(target, sizeof(target), "%s.%s", fps_name, clean_param);
 
-    FILE *pipe = popen(set_cmd, "r");
+    const char *const set_argv[] = {
+        "milk-fps-set", target, val_str, NULL
+    };
+
     char output[512] = "";
-    if (pipe != NULL)
-    {
-        size_t n = fread(output, 1, sizeof(output) - 1, pipe);
-        output[n] = '\0';
-        pclose(pipe);
-    }
+    int exit_status = 0;
+    int err = mcp_exec_capture(set_argv, output, sizeof(output), 5000, &exit_status);
 
-    cJSON_AddStringToObject(res, "status", "SUCCESS");
+    cJSON_AddStringToObject(res, "status", (err == 0 && exit_status == 0) ? "SUCCESS" : "ERROR");
     cJSON_AddStringToObject(res, "fps_name", fps_name);
     cJSON_AddStringToObject(res, "param", clean_param);
     cJSON_AddStringToObject(res, "value", val_str);
     cJSON_AddStringToObject(res, "output", output);
-    return 0;
+    return (err == 0 && exit_status == 0) ? 0 : -1;
 } // mcp_tool_fps_set
 
 int mcp_tool_fps_stop(
@@ -341,28 +390,41 @@ int mcp_tool_fps_stop(
         }
     }
 
+    if (!mcp_valid_identifier(fps_name, 64))
+    {
+        cJSON_AddStringToObject(res, "error", "Invalid fps_name identifier");
+        return -1;
+    }
+
     char bin_path[1024];
     get_fps_binary_path(bin_path, sizeof(bin_path));
 
-    /* 1. Dispatch stop to tmux ctrl window (per tmux dispatch rules) */
-    char tmux_cmd[512];
-    snprintf(tmux_cmd, sizeof(tmux_cmd),
-             "tmux send-keys -t %s:ctrl 'confstop' C-m 2>/dev/null", fps_name);
-    (void)run_sys_cmd(tmux_cmd);
+    /* 1. Dispatch stop to tmux ctrl window */
+    char target_ctrl[128];
+    snprintf(target_ctrl, sizeof(target_ctrl), "%s:ctrl", fps_name);
 
-    snprintf(tmux_cmd, sizeof(tmux_cmd),
-             "tmux send-keys -t %s:ctrl 'runstop' C-m 2>/dev/null", fps_name);
-    (void)run_sys_cmd(tmux_cmd);
+    const char *const tmux_conf[] = {
+        "tmux", "send-keys", "-t", target_ctrl, "confstop", "C-m", NULL
+    };
+    int tmux_status = 0;
+    mcp_exec_capture(tmux_conf, NULL, 0, 2000, &tmux_status);
+
+    const char *const tmux_run[] = {
+        "tmux", "send-keys", "-t", target_ctrl, "runstop", "C-m", NULL
+    };
+    mcp_exec_capture(tmux_run, NULL, 0, 2000, &tmux_status);
 
     /* 2. Direct standalone invocation fallback */
-    char stop_cmd[2048];
-    snprintf(stop_cmd, sizeof(stop_cmd), "%s -procinfo %s:runstop > /dev/null 2>&1",
-             bin_path, fps_name);
-    (void)run_sys_cmd(stop_cmd);
+    char runstop_arg[128], confstop_arg[128];
+    snprintf(runstop_arg, sizeof(runstop_arg), "%s:runstop", fps_name);
+    snprintf(confstop_arg, sizeof(confstop_arg), "%s:confstop", fps_name);
 
-    snprintf(stop_cmd, sizeof(stop_cmd), "%s -procinfo %s:confstop > /dev/null 2>&1",
-             bin_path, fps_name);
-    (void)run_sys_cmd(stop_cmd);
+    const char *const direct_run[] = { bin_path, "-procinfo", runstop_arg, NULL };
+    int direct_status = 0;
+    mcp_exec_capture(direct_run, NULL, 0, 3000, &direct_status);
+
+    const char *const direct_conf[] = { bin_path, "-procinfo", confstop_arg, NULL };
+    mcp_exec_capture(direct_conf, NULL, 0, 3000, &direct_status);
 
     cJSON_AddStringToObject(res, "status", "STOPPED");
     cJSON_AddStringToObject(res, "fps_name", fps_name);
@@ -392,6 +454,11 @@ int mcp_tool_probe_fps_streams(
     }
 
     const char *stream_name = s_item->valuestring;
+    if (!mcp_valid_identifier(stream_name, 64))
+    {
+        cJSON_AddStringToObject(res, "error", "Invalid stream_name identifier");
+        return -1;
+    }
 
 #ifdef USE_IMAGESTREAMIO
     IMAGE image;
@@ -439,3 +506,128 @@ int mcp_tool_probe_fps_streams(
     return -1;
 #endif
 } // mcp_tool_probe_fps_streams
+
+const struct mcp_tool_def mcp_tooldef_fps_status = {
+    .name         = "gric_fps_status",
+    .toolset      = MCP_TS_OPS,
+    .side_effects = 0,
+    .fn           = mcp_tool_fps_status,
+    .description  = "Inspect live status, loop rate, PID, and current parameters of a Milk "
+                    "FPS streaming instance (e.g. gric_cluster).",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"fps_name\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"FPS instance name (default: gric_cluster).\"\n"
+        "    }\n"
+        "  }\n"
+        "}",
+};
+
+const struct mcp_tool_def mcp_tooldef_fps_run = {
+    .name         = "gric_fps_run",
+    .toolset      = MCP_TS_OPS,
+    .side_effects = 1,
+    .fn           = mcp_tool_fps_run,
+    .description  = "Launch standalone milk-fpsexec-gric-cluster streaming daemon "
+                    "with input/output streams and initial parameters.",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"in_name\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Input ImageStreamIO stream name (TRIGGER).\"\n"
+        "    },\n"
+        "    \"out_name\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Output assignment stream name (<out>_assign).\"\n"
+        "    },\n"
+        "    \"fps_name\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"FPS instance name (default: gric_cluster).\"\n"
+        "    },\n"
+        "    \"rlim\": {\n"
+        "      \"type\": \"number\",\n"
+        "      \"description\": \"Cluster radius threshold (default: 0.5).\"\n"
+        "    },\n"
+        "    \"allow_frame_drop\": {\n"
+        "      \"type\": \"boolean\",\n"
+        "      \"description\": \"Lag policy: true=jump to latest frame, false=sequential.\"\n"
+        "    },\n"
+        "    \"use_tmux\": {\n"
+        "      \"type\": \"boolean\",\n"
+        "      \"description\": \"Run inside an isolated tmux session (default: true).\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"in_name\"]\n"
+        "}",
+};
+
+const struct mcp_tool_def mcp_tooldef_fps_set = {
+    .name         = "gric_fps_set",
+    .toolset      = MCP_TS_OPS,
+    .side_effects = 1,
+    .fn           = mcp_tool_fps_set,
+    .description  = "Dynamically update an FPS parameter (e.g. .rlim, .allow_frame_drop, "
+                    ".reset_state) on a live streaming instance using milk-fps-set.",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"fps_name\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"FPS instance name (e.g. gric_cluster).\"\n"
+        "    },\n"
+        "    \"param\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Parameter key (e.g. 'rlim', 'allow_frame_drop').\"\n"
+        "    },\n"
+        "    \"value\": {\n"
+        "      \"description\": \"New parameter value (number, boolean ON/OFF, or string).\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"fps_name\", \"param\", \"value\"]\n"
+        "}",
+};
+
+const struct mcp_tool_def mcp_tooldef_fps_stop = {
+    .name         = "gric_fps_stop",
+    .toolset      = MCP_TS_OPS,
+    .side_effects = 1,
+    .fn           = mcp_tool_fps_stop,
+    .description  = "Gracefully stop an active Milk FPS instance (dispatching runstop and "
+                    "confstop to tmux ctrl window).",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"fps_name\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"FPS instance name (default: gric_cluster).\"\n"
+        "    }\n"
+        "  }\n"
+        "}",
+};
+
+const struct mcp_tool_def mcp_tooldef_probe_fps_streams = {
+    .name         = "gric_probe_fps_streams",
+    .toolset      = MCP_TS_OPS,
+    .side_effects = 0,
+    .fn           = mcp_tool_probe_fps_streams,
+    .description  = "Inspect Milk live streams non-blockingly and decode the 8-element "
+                    "assignment telemetry vector (cluster ID, distance, latency, evals).",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"out_name\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Name of output stream (e.g. gric_cluster_assign).\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"out_name\"]\n"
+        "}",
+};

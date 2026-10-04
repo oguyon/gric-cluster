@@ -4,6 +4,7 @@
  */
 
 #include "mcp_tools.h"
+#include "mcp_registry.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -150,3 +151,23 @@ int mcp_tool_audit_code_style(
 
     return 0;
 } // mcp_tool_audit_code_style
+
+const struct mcp_tool_def mcp_tooldef_audit_code_style = {
+    .name         = "gric_audit_code_style",
+    .toolset      = MCP_TS_DEV,
+    .side_effects = 0,
+    .fn           = mcp_tool_audit_code_style,
+    .description  = "Audit C source files against GRIC coding standards (100-char line limit, "
+                    "Allman braces, Kernel-Doc, loop types, and malloc checks).",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"file_path\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Path to C source or header file to audit.\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"file_path\"]\n"
+        "}",
+};

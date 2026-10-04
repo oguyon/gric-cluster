@@ -4,6 +4,8 @@
  */
 
 #include "mcp_tools.h"
+#include "mcp_exec.h"
+#include "mcp_registry.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,39 +50,37 @@ int mcp_tool_inspect_simd(
     }
 
     char asm_output_path[256];
-    snprintf(asm_output_path, sizeof(asm_output_path), "/tmp/gric_simd_%d.s", getpid());
+    snprintf(asm_output_path, sizeof(asm_output_path), "/tmp/gric_simd_%d.s", (int)getpid());
 
-    char compile_cmd[8192];
-    snprintf(
-        compile_cmd, sizeof(compile_cmd),
-        "gcc -S -O3 %.64s -funroll-loops -fverbose-asm "
-        "-I%.256s/src -I%.256s/src/shared -I%.256s/src/shared/quant "
-        "-I%.256s/src/shared/format -I%.256s/src/shared/sys -I%.256s/src/shared/cli "
-        "-I%.256s/src/gric-cluster/core -I%.256s/src/gric-cluster/math "
-        "-I%.256s/src/gric-cluster/io -I%.256s/src/gric-knn -I%.256s/src/gric-knn/core "
-        "-I%.256s/src/gric-knn/search -I%.256s/src/gric-knn/cache "
-        "%.512s -o %.256s 2>&1",
-        march,
-        root, root, root,
-        root, root, root,
-        root, root,
-        root, root, root,
-        root, root,
-        resolved_src, asm_output_path);
+    char inc_src[512], inc_shared[512], inc_quant[512], inc_format[512];
+    char inc_sys[512], inc_cli[512], inc_core[512], inc_math[512];
+    char inc_io[512], inc_knn[512], inc_knn_core[512], inc_knn_search[512], inc_knn_cache[512];
 
-    FILE *pipe = popen(compile_cmd, "r");
-    if (pipe == NULL)
-    {
-        cJSON_AddStringToObject(res, "error", "Failed to spawn gcc for assembly inspection");
-        return -1;
-    }
+    snprintf(inc_src, sizeof(inc_src), "-I%s/src", root);
+    snprintf(inc_shared, sizeof(inc_shared), "-I%s/src/shared", root);
+    snprintf(inc_quant, sizeof(inc_quant), "-I%s/src/shared/quant", root);
+    snprintf(inc_format, sizeof(inc_format), "-I%s/src/shared/format", root);
+    snprintf(inc_sys, sizeof(inc_sys), "-I%s/src/shared/sys", root);
+    snprintf(inc_cli, sizeof(inc_cli), "-I%s/src/shared/cli", root);
+    snprintf(inc_core, sizeof(inc_core), "-I%s/src/gric-cluster/core", root);
+    snprintf(inc_math, sizeof(inc_math), "-I%s/src/gric-cluster/math", root);
+    snprintf(inc_io, sizeof(inc_io), "-I%s/src/gric-cluster/io", root);
+    snprintf(inc_knn, sizeof(inc_knn), "-I%s/src/gric-knn", root);
+    snprintf(inc_knn_core, sizeof(inc_knn_core), "-I%s/src/gric-knn/core", root);
+    snprintf(inc_knn_search, sizeof(inc_knn_search), "-I%s/src/gric-knn/search", root);
+    snprintf(inc_knn_cache, sizeof(inc_knn_cache), "-I%s/src/gric-knn/cache", root);
 
-    char err_buf[2048] = "";
-    size_t err_read = fread(err_buf, 1, sizeof(err_buf) - 1, pipe);
-    err_buf[err_read] = '\0';
-    int ret = pclose(pipe);
+    const char *const gcc_argv[] = {
+        "gcc", "-S", "-O3", march, "-funroll-loops", "-fverbose-asm",
+        inc_src, inc_shared, inc_quant, inc_format, inc_sys, inc_cli,
+        inc_core, inc_math, inc_io, inc_knn, inc_knn_core, inc_knn_search, inc_knn_cache,
+        resolved_src, "-o", asm_output_path, NULL
+    };
 
-    if (ret != 0)
+    char err_buf[4096] = "";
+    int exit_status = 0;
+    int exec_ret = mcp_exec_capture(gcc_argv, err_buf, sizeof(err_buf), 15000, &exit_status);
+    if (exec_ret != 0 || exit_status != 0)
     {
         cJSON_AddStringToObject(res, "error", "Compilation to assembly failed");
         cJSON_AddStringToObject(res, "compiler_output", err_buf);
@@ -208,3 +208,31 @@ int mcp_tool_inspect_simd(
 
     return 0;
 } // mcp_tool_inspect_simd
+
+const struct mcp_tool_def mcp_tooldef_inspect_simd = {
+    .name         = "gric_inspect_simd",
+    .toolset      = MCP_TS_DEV,
+    .side_effects = 0,
+    .fn           = mcp_tool_inspect_simd,
+    .description  = "Compile a C source file or math kernel to assembly and inspect "
+                    "AVX2/AVX-512 SIMD vectorization, FMA ops, and stack spills.",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"source_file\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Path to C source file containing the kernel.\"\n"
+        "    },\n"
+        "    \"function_name\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Optional target function name to isolate in assembly.\"\n"
+        "    },\n"
+        "    \"march\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Target architecture flag (default: -march=native).\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"source_file\"]\n"
+        "}",
+};

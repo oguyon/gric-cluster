@@ -173,6 +173,17 @@ int mcp_tool_probe_fps_streams(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_server_info() - Retrieve server runtime status, active toolsets, and flags.
+ * @args:   JSON object containing optional arguments.
+ * @res:    Output JSON object with version, toolsets, and read_only status.
+ *
+ * Return: 0 on success, -1 on error.
+ */
+int mcp_tool_server_info(
+    const cJSON *args,
+    cJSON       *res);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.
