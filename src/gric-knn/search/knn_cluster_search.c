@@ -955,17 +955,18 @@ static int knn_score_candidate_clusters(
         int    c2 = pivots[1].cluster_id;
         double d1 = pivots[0].d_anchor;
         double d2 = pivots[1].d_anchor;
-        double d12 = model->dcc_matrix[c1 * M + c2];
+        double d12 = model->dcc_matrix[(size_t)c1 * (size_t)M + (size_t)c2];
         calc_te4_ref_init(&te4_ref, d1, d2, d12);
-        d1_row = &model->dcc_matrix[c1 * M];
-        d2_row = &model->dcc_matrix[c2 * M];
+        d1_row = &model->dcc_matrix[(size_t)c1 * (size_t)M];
+        d2_row = &model->dcc_matrix[(size_t)c2 * (size_t)M];
     }
 
     if (config->use_dcc_sq16 && model->dcc_sq16 != NULL)
     {
         double inv_scale = model->dcc_sq16_inv_scale;
         double tau_thresh = current_tau / eps_factor;
-        const uint16_t *restrict home_dcc_sq16 = &model->dcc_sq16[home_cluster_id * M];
+        const uint16_t *restrict home_dcc_sq16 =
+            &model->dcc_sq16[(size_t)home_cluster_id * (size_t)M];
 
         int q_pivots_cl[MAX_MEASURED_PIVOTS];
         double p_d_anchors[MAX_MEASURED_PIVOTS];
@@ -996,7 +997,7 @@ static int knn_score_candidate_clusters(
             double dcc_val = (dcc_home_q < 65534)
                              ? ((double)dcc_home_q * inv_scale)
                              : ((model->dcc_matrix != NULL)
-                                ? model->dcc_matrix[home_cluster_id * M + q]
+                                ? model->dcc_matrix[(size_t)home_cluster_id * (size_t)M + (size_t)q]
                                 : ((double)dcc_home_q * inv_scale));
             double r_q = model->clusters[q].radius;
             double lb = fabs(dcc_val - r_home) - r_q;
@@ -1012,13 +1013,13 @@ static int knn_score_candidate_clusters(
                 for (int p = 0; p < num_p; p++)
                 {
                     int p_cl = q_pivots_cl[p];
-                    uint16_t dcc_pq = model->dcc_sq16[p_cl * M + q];
+                    uint16_t dcc_pq = model->dcc_sq16[(size_t)p_cl * (size_t)M + (size_t)q];
                     if (dcc_pq > 0)
                     {
                         double d_pq = (dcc_pq < 65534)
                                       ? ((double)dcc_pq * inv_scale)
                                       : ((model->dcc_matrix != NULL)
-                                         ? model->dcc_matrix[p_cl * M + q]
+                                         ? model->dcc_matrix[(size_t)p_cl * (size_t)M + (size_t)q]
                                          : ((double)dcc_pq * inv_scale));
                         double lb_p = fabs(d_pq - p_d_anchors[p]) - r_q;
                         if (lb_p > lb)
@@ -1058,7 +1059,7 @@ static int knn_score_candidate_clusters(
         return num_cand_clusters;
     }
 
-    const double *home_dcc = &model->dcc_matrix[home_cluster_id * M];
+    const double *home_dcc = &model->dcc_matrix[(size_t)home_cluster_id * (size_t)M];
     for (int q = 0; q < M; q++)
     {
         if (q == home_cluster_id)
@@ -1088,7 +1089,7 @@ static int knn_score_candidate_clusters(
             {
                 int    p_cl = pivots[p].cluster_id;
                 double d_qp = pivots[p].d_anchor;
-                double dcc_pq = model->dcc_matrix[p_cl * M + q];
+                double dcc_pq = model->dcc_matrix[(size_t)p_cl * (size_t)M + (size_t)q];
                 if (dcc_pq > 0.0)
                 {
                     double lb_p = fabs(dcc_pq - d_qp) - r_q;

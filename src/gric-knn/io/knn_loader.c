@@ -468,16 +468,20 @@ static int load_anchors(
             model->frame_elements = model->frame_width * model->frame_height;
 
             size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
+            model->anchor_matrix =
+                malloc((size_t)M * (size_t)model->frame_elements * elem_size);
+            if (model->anchor_matrix == NULL)
+            {
+                fits_close_file(fptr, &status);
+                return -1;
+            }
+
+            char *base = (char *)model->anchor_matrix;
             int dtype = model->is_double ? TDOUBLE : TFLOAT;
             for (int c = 0; c < M; c++)
             {
                 model->clusters[c].anchor_data =
-                    malloc((size_t)model->frame_elements * elem_size);
-                if (model->clusters[c].anchor_data == NULL)
-                {
-                    fits_close_file(fptr, &status);
-                    return -1;
-                }
+                    base + (size_t)c * (size_t)model->frame_elements * elem_size;
 
                 long fpixel[3] = {1, 1, c + 1};
                 fits_read_pix(fptr, dtype, fpixel, model->frame_elements, NULL,
@@ -528,41 +532,74 @@ static int load_anchors(
             model->frame_elements = elements_detected;
             rewind(f);
 
+            setvbuf(f, NULL, _IOFBF, 65536);
             size_t elem_size = model->is_double ? sizeof(double) : sizeof(float);
+            model->anchor_matrix =
+                malloc((size_t)M * (size_t)model->frame_elements * elem_size);
+            if (model->anchor_matrix == NULL)
+            {
+                fclose(f);
+                return -1;
+            }
+
+            char  *base = (char *)model->anchor_matrix;
+            char  *line = NULL;
+            size_t line_cap = 0;
+
             for (int c = 0; c < M; c++)
             {
-                model->clusters[c].anchor_data =
-                    malloc((size_t)model->frame_elements * elem_size);
-                if (model->clusters[c].anchor_data == NULL)
-                {
-                    fclose(f);
-                    return -1;
-                }
+                void *anchor_dest =
+                    base + (size_t)c * (size_t)model->frame_elements * elem_size;
+                model->clusters[c].anchor_data = anchor_dest;
 
-                if (model->is_double)
+                if (getline(&line, &line_cap, f) > 0)
                 {
-                    double *dptr = (double *)model->clusters[c].anchor_data;
-                    for (long k = 0; k < model->frame_elements; k++)
+                    char *ptr = line;
+                    if (model->is_double)
                     {
-                        if (fscanf(f, "%lf", &dptr[k]) != 1)
+                        double *dptr = (double *)anchor_dest;
+                        for (long k = 0; k < model->frame_elements; k++)
                         {
-                            dptr[k] = 0.0;
+                            while (*ptr != '\0' && isspace((unsigned char)*ptr))
+                            {
+                                ptr++;
+                            }
+                            if (*ptr == '\0')
+                            {
+                                dptr[k] = 0.0;
+                                continue;
+                            }
+                            char *endptr = NULL;
+                            dptr[k] = strtod(ptr, &endptr);
+                            ptr = (endptr != ptr) ? endptr : ptr + 1;
                         }
                     }
-                }
-                else
-                {
-                    float *fptr = (float *)model->clusters[c].anchor_data;
-                    for (long k = 0; k < model->frame_elements; k++)
+                    else
                     {
-                        if (fscanf(f, "%f", &fptr[k]) != 1)
+                        float *fptr = (float *)anchor_dest;
+                        for (long k = 0; k < model->frame_elements; k++)
                         {
-                            fptr[k] = 0.0f;
+                            while (*ptr != '\0' && isspace((unsigned char)*ptr))
+                            {
+                                ptr++;
+                            }
+                            if (*ptr == '\0')
+                            {
+                                fptr[k] = 0.0f;
+                                continue;
+                            }
+                            char *endptr = NULL;
+                            fptr[k] = strtof(ptr, &endptr);
+                            ptr = (endptr != ptr) ? endptr : ptr + 1;
                         }
                     }
                 }
             } // for (int c = 0; ...)
 
+            if (line != NULL)
+            {
+                free(line);
+            }
             fclose(f);
             return 0;
         }
@@ -1081,16 +1118,19 @@ int knn_model_load(
     /* Compute exact pairwise inter-cluster anchor distances if not already loaded from DCC */
     if (model->dcc_matrix == NULL || model->dcc_sq16 == NULL)
     {
+        size_t M = (size_t)model->num_clusters;
         if (model->dcc_matrix == NULL)
         {
-            model->dcc_matrix = (double *)malloc((size_t)model->num_clusters *
-                                                 (size_t)model->num_clusters * sizeof(double));
+            model->dcc_matrix = (double *)malloc(M * M * sizeof(double));
         }
         if (model->dcc_matrix != NULL)
         {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic)
+#endif
             for (int i = 0; i < model->num_clusters; i++)
             {
-                model->dcc_matrix[i * model->num_clusters + i] = 0.0;
+                model->dcc_matrix[(size_t)i * M + (size_t)i] = 0.0;
                 for (int j = i + 1; j < model->num_clusters; j++)
                 {
                     double d = calc_euclidean_dist(
@@ -1098,8 +1138,8 @@ int knn_model_load(
                         model->clusters[j].anchor_data,
                         model->frame_elements,
                         model->is_double);
-                    model->dcc_matrix[i * model->num_clusters + j] = d;
-                    model->dcc_matrix[j * model->num_clusters + i] = d;
+                    model->dcc_matrix[(size_t)i * M + (size_t)j] = d;
+                    model->dcc_matrix[(size_t)j * M + (size_t)i] = d;
                 }
             }
         }
@@ -1109,21 +1149,23 @@ int knn_model_load(
         model->dcc_sq16_inv_scale = 1.0 / s;
         if (model->dcc_sq16 == NULL)
         {
-            model->dcc_sq16 = (uint16_t *)malloc((size_t)model->num_clusters *
-                                                 (size_t)model->num_clusters * sizeof(uint16_t));
+            model->dcc_sq16 = (uint16_t *)malloc(M * M * sizeof(uint16_t));
         }
         if (model->dcc_sq16 != NULL && model->dcc_matrix != NULL)
         {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
             for (int i = 0; i < model->num_clusters; i++)
             {
-                model->dcc_sq16[i * model->num_clusters + i] = 0;
+                model->dcc_sq16[(size_t)i * M + (size_t)i] = 0;
                 for (int j = i + 1; j < model->num_clusters; j++)
                 {
-                    double d = model->dcc_matrix[i * model->num_clusters + j];
+                    double d = model->dcc_matrix[(size_t)i * M + (size_t)j];
                     uint16_t q = (d <= 0.0) ? 0 :
                         ((d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5));
-                    model->dcc_sq16[i * model->num_clusters + j] = q;
-                    model->dcc_sq16[j * model->num_clusters + i] = q;
+                    model->dcc_sq16[(size_t)i * M + (size_t)j] = q;
+                    model->dcc_sq16[(size_t)j * M + (size_t)i] = q;
                 }
             }
         }

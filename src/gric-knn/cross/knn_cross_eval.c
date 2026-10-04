@@ -278,7 +278,7 @@ void knn_cross_eval_inter_clusters(
         {
             int p = loc_res->evaluated_clusters[e];
             double d_p = loc_res->evaluated_dists[e];
-            double dcc = model->dcc_matrix[p * M + q];
+            double dcc = model->dcc_matrix[(size_t)p * (size_t)M + (size_t)q];
             double lb = fabs(dcc - d_p) - r_q;
 
             if (lb >= tau_thresh)
@@ -388,7 +388,7 @@ void knn_cross_eval_inter_clusters(
         telem->level3_annular_pruned +=
             (uint64_t)start_m + (uint64_t)(cl->num_members - end_m);
 
-        double dcc_best = model->dcc_matrix[best_c * M + q];
+        double dcc_best = model->dcc_matrix[(size_t)best_c * (size_t)M + (size_t)q];
 
         for (int m = start_m; m < end_m; m++)
         {
