@@ -287,6 +287,17 @@ typedef struct
     long             num_unique_frames;   /**< Number of unique SQ16 frames in pool */
     int             *warm_ids;            /**< [M x 8] precomputed nearest non-empty cluster IDs */
     int             *warm_cnt;            /**< [M] count of precomputed warm clusters (<= 8) */
+#ifdef USE_CUDA
+    void            *gpu_ivf_index;       /**< Cached GpuIvfIndex pointer */
+    void            *gpu_cublas_handle;   /**< Cached cublasHandle_t */
+    float           *gpu_d_anchors;       /**< Cached device anchor vectors */
+    float           *gpu_d_anchor_norms;  /**< Cached device anchor norms */
+    int              gpu_device_id;       /**< Device ID where cached resources live */
+    void            *gpu_bf_cublas_handle;/**< Cached cuBLAS handle for brute force */
+    float           *gpu_d_C;             /**< Cached device candidate matrix */
+    float           *gpu_d_C_norms;       /**< Cached device candidate norms */
+    int              gpu_bf_device_id;    /**< Device ID for brute force cache */
+#endif
 } KnnModel;
 
 /** Per-query result structure containing top-k neighbors */

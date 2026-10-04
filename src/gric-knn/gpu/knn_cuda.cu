@@ -437,20 +437,91 @@ int knn_cuda_run_search(
     size_t query_matrix_bytes = (size_t)N_query * (size_t)D * sizeof(float);
 
     cublasHandle_t cublas_handle = NULL;
-    CUBLAS_CHECK(cublasCreate(&cublas_handle));
-    cublasSetMathMode(cublas_handle, CUBLAS_TF32_TENSOR_OP_MATH);
+    KnnModel *mut_model = (KnnModel *)model;
+    int is_bf_cached = (mut_model->gpu_d_C != NULL &&
+                        mut_model->gpu_bf_device_id == config->gpu_device_id);
 
     struct timespec start_time, end_time;
     clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-    CUDA_CHECK(cudaMalloc((void **)&d_C, cand_matrix_bytes));
-    CUDA_CHECK(cudaMalloc((void **)&d_C_norms, (size_t)N_cand * sizeof(float)));
-
-    /* Load candidate data onto GPU */
-    if (model->dataset_buffer != NULL)
+    if (is_bf_cached)
     {
-        if (model->is_double)
+        cublas_handle = (cublasHandle_t)mut_model->gpu_bf_cublas_handle;
+        d_C = mut_model->gpu_d_C;
+        d_C_norms = mut_model->gpu_d_C_norms;
+    }
+    else
+    {
+        if (mut_model->gpu_bf_cublas_handle != NULL)
         {
+            cublasDestroy((cublasHandle_t)mut_model->gpu_bf_cublas_handle);
+            mut_model->gpu_bf_cublas_handle = NULL;
+        }
+        if (mut_model->gpu_d_C != NULL)
+        {
+            cudaFree(mut_model->gpu_d_C);
+            mut_model->gpu_d_C = NULL;
+        }
+        if (mut_model->gpu_d_C_norms != NULL)
+        {
+            cudaFree(mut_model->gpu_d_C_norms);
+            mut_model->gpu_d_C_norms = NULL;
+        }
+
+        CUBLAS_CHECK(cublasCreate(&cublas_handle));
+        cublasSetMathMode(cublas_handle, CUBLAS_TF32_TENSOR_OP_MATH);
+
+        CUDA_CHECK(cudaMalloc((void **)&d_C, cand_matrix_bytes));
+        CUDA_CHECK(cudaMalloc((void **)&d_C_norms, (size_t)N_cand * sizeof(float)));
+
+        /* Load candidate data onto GPU */
+        if (model->dataset_buffer != NULL)
+        {
+            if (model->is_double)
+            {
+                if (cudaMallocHost((void **)&host_cand_fp32, cand_matrix_bytes) == cudaSuccess)
+                {
+                    host_cand_is_pinned = 1;
+                }
+                else
+                {
+                    host_cand_fp32 = (float *)malloc(cand_matrix_bytes);
+                }
+                if (host_cand_fp32 == NULL)
+                {
+                    goto cleanup;
+                }
+                const double *src = (const double *)model->dataset_buffer;
+                long total_elements = N_cand * D;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+                for (long i = 0; i < total_elements; i++)
+                {
+                    host_cand_fp32[i] = (float)src[i];
+                }
+                CUDA_CHECK(cudaMemcpy(d_C, host_cand_fp32, cand_matrix_bytes,
+                                      cudaMemcpyHostToDevice));
+                if (host_cand_is_pinned)
+                {
+                    cudaFreeHost(host_cand_fp32);
+                }
+                else
+                {
+                    free(host_cand_fp32);
+                }
+                host_cand_fp32 = NULL;
+                host_cand_is_pinned = 0;
+            }
+            else
+            {
+                CUDA_CHECK(cudaMemcpy(d_C, model->dataset_buffer, cand_matrix_bytes,
+                                      cudaMemcpyHostToDevice));
+            }
+        }
+        else
+        {
+            /* Out-of-core file reading */
             if (cudaMallocHost((void **)&host_cand_fp32, cand_matrix_bytes) == cudaSuccess)
             {
                 host_cand_is_pinned = 1;
@@ -463,16 +534,35 @@ int knn_cuda_run_search(
             {
                 goto cleanup;
             }
-            const double *src = (const double *)model->dataset_buffer;
-            long total_elements = N_cand * D;
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static)
-#endif
-            for (long i = 0; i < total_elements; i++)
+            if (knn_reader_open(&cand_reader, config->input_data_path, N_cand,
+                                model->frame_width, model->frame_height, model->is_double) != 0)
             {
-                host_cand_fp32[i] = (float)src[i];
+                goto cleanup;
             }
-            CUDA_CHECK(cudaMemcpy(d_C, host_cand_fp32, cand_matrix_bytes, cudaMemcpyHostToDevice));
+            cand_reader_opened = 1;
+
+            void *frame_scratch = malloc((size_t)D * (model->is_double ? sizeof(double) :
+                                                                         sizeof(float)));
+            for (long i = 0; i < N_cand; i++)
+            {
+                knn_reader_read_frame(&cand_reader, i, frame_scratch);
+                float *dst = host_cand_fp32 + (size_t)i * (size_t)D;
+                if (model->is_double)
+                {
+                    const double *s = (const double *)frame_scratch;
+                    for (long d = 0; d < D; d++)
+                    {
+                        dst[d] = (float)s[d];
+                    }
+                }
+                else
+                {
+                    memcpy(dst, frame_scratch, (size_t)D * sizeof(float));
+                }
+            }
+            free(frame_scratch);
+            CUDA_CHECK(cudaMemcpy(d_C, host_cand_fp32, cand_matrix_bytes,
+                                  cudaMemcpyHostToDevice));
             if (host_cand_is_pinned)
             {
                 cudaFreeHost(host_cand_fp32);
@@ -484,74 +574,20 @@ int knn_cuda_run_search(
             host_cand_fp32 = NULL;
             host_cand_is_pinned = 0;
         }
-        else
-        {
-            CUDA_CHECK(cudaMemcpy(d_C, model->dataset_buffer, cand_matrix_bytes,
-                                  cudaMemcpyHostToDevice));
-        }
-    }
-    else
-    {
-        /* Out-of-core file reading */
-        if (cudaMallocHost((void **)&host_cand_fp32, cand_matrix_bytes) == cudaSuccess)
-        {
-            host_cand_is_pinned = 1;
-        }
-        else
-        {
-            host_cand_fp32 = (float *)malloc(cand_matrix_bytes);
-        }
-        if (host_cand_fp32 == NULL)
-        {
-            goto cleanup;
-        }
-        if (knn_reader_open(&cand_reader, config->input_data_path, N_cand,
-                            model->frame_width, model->frame_height, model->is_double) != 0)
-        {
-            goto cleanup;
-        }
-        cand_reader_opened = 1;
 
-        void *frame_scratch = malloc((size_t)D * (model->is_double ? sizeof(double) :
-                                                                     sizeof(float)));
-        for (long i = 0; i < N_cand; i++)
+        /* Compute candidate vector squared norms */
         {
-            knn_reader_read_frame(&cand_reader, i, frame_scratch);
-            float *dst = host_cand_fp32 + (size_t)i * (size_t)D;
-            if (model->is_double)
-            {
-                const double *s = (const double *)frame_scratch;
-                for (long d = 0; d < D; d++)
-                {
-                    dst[d] = (float)s[d];
-                }
-            }
-            else
-            {
-                memcpy(dst, frame_scratch, (size_t)D * sizeof(float));
-            }
+            int threads = 256;
+            int blocks = (int)((N_cand + (threads / 32) - 1) / (threads / 32));
+            compute_l2_norms_kernel<<<blocks, threads>>>(d_C, (int)N_cand, (int)D, d_C_norms);
+            CUDA_CHECK(cudaGetLastError());
         }
-        free(frame_scratch);
-        CUDA_CHECK(cudaMemcpy(d_C, host_cand_fp32, cand_matrix_bytes, cudaMemcpyHostToDevice));
-        if (host_cand_is_pinned)
-        {
-            cudaFreeHost(host_cand_fp32);
-        }
-        else
-        {
-            free(host_cand_fp32);
-        }
-        host_cand_fp32 = NULL;
-        host_cand_is_pinned = 0;
-    }
 
-    /* Compute candidate vector squared norms */
-    {
-        int threads = 256;
-        int blocks = (int)((N_cand + (threads / 32) - 1) / (threads / 32));
-        compute_l2_norms_kernel<<<blocks, threads>>>(d_C, (int)N_cand, (int)D, d_C_norms);
-        CUDA_CHECK(cudaGetLastError());
-    }
+        mut_model->gpu_bf_cublas_handle = (void *)cublas_handle;
+        mut_model->gpu_d_C = d_C;
+        mut_model->gpu_d_C_norms = d_C_norms;
+        mut_model->gpu_bf_device_id = config->gpu_device_id;
+    } // else (!is_bf_cached)
 
     /* Setup query vectors */
     if (!is_cross_dataset)
@@ -867,13 +903,16 @@ cleanup:
             cudaFree(d_Q);
         }
     }
-    if (d_C_norms != NULL)
+    if (mut_model->gpu_d_C == NULL)
     {
-        cudaFree(d_C_norms);
-    }
-    if (d_C != NULL)
-    {
-        cudaFree(d_C);
+        if (d_C_norms != NULL)
+        {
+            cudaFree(d_C_norms);
+        }
+        if (d_C != NULL)
+        {
+            cudaFree(d_C);
+        }
     }
     if (host_cand_fp32 != NULL)
     {
@@ -907,7 +946,11 @@ cleanup:
     }
     if (cublas_handle != NULL)
     {
-        cublasDestroy(cublas_handle);
+        cublasSetStream(cublas_handle, NULL);
+        if (mut_model->gpu_d_C == NULL)
+        {
+            cublasDestroy(cublas_handle);
+        }
     }
 
     return status;

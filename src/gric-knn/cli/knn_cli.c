@@ -1262,7 +1262,7 @@ static int knn_cli_parse_gpu_opt(
         }
         else
         {
-            config->gpu_batch_size = 64;
+            config->gpu_batch_size = 512;
         }
         return 1;
     }
