@@ -241,6 +241,17 @@ int mcp_tool_dev_golden_compare(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_dev_bench() - Deterministic micro-benchmark runner with statistical aggregation.
+ * @args:   JSON object containing tool arguments.
+ * @res:    Output JSON object containing benchmark results and comparison.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_dev_bench(
+    const cJSON *args,
+    cJSON       *res);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.

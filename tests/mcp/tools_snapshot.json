@@ -32,6 +32,47 @@
     "name": "gric_audit_code_style"
   },
   {
+    "description": "Deterministic micro-benchmark runner for SIMD kernels and clustering loops with statistical aggregation (median, IQR) and baseline regression checks.",
+    "inputSchema": {
+      "properties": {
+        "baseline_file": {
+          "description": "Path to stored baseline JSON.",
+          "type": "string"
+        },
+        "dataset": {
+          "description": "Dataset path for clustering_loop.",
+          "type": "string"
+        },
+        "regression_threshold_pct": {
+          "description": "Regression threshold % increase (default: 10.0).",
+          "type": "number"
+        },
+        "save_baseline": {
+          "description": "Save current results as new baseline (default: false).",
+          "type": "boolean"
+        },
+        "target": {
+          "description": "Benchmark target (default: clustering_loop).",
+          "enum": [
+            "simd_kernels",
+            "clustering_loop"
+          ],
+          "type": "string"
+        },
+        "trials": {
+          "description": "Number of benchmark runs (default: 5, max: 50).",
+          "type": "integer"
+        },
+        "warmup": {
+          "description": "Number of untimed warmup runs (default: 1).",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_dev_bench"
+  },
+  {
     "description": "Incremental compilation and CTest runner: compresses output into structured compiler warnings [file, line, message] and failing test list.",
     "inputSchema": {
       "properties": {
