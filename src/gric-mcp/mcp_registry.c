@@ -25,6 +25,7 @@ extern const struct mcp_tool_def mcp_tooldef_fps_set;
 extern const struct mcp_tool_def mcp_tooldef_fps_stop;
 extern const struct mcp_tool_def mcp_tooldef_probe_fps_streams;
 extern const struct mcp_tool_def mcp_tooldef_dev_build_test;
+extern const struct mcp_tool_def mcp_tooldef_dev_golden_compare;
 
 static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_help,
@@ -44,6 +45,7 @@ static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_align_parameters,
     &mcp_tooldef_inspect_simd,
     &mcp_tooldef_dev_build_test,
+    &mcp_tooldef_dev_golden_compare,
 };
 
 static const size_t g_num_tools = sizeof(g_all_tools) / sizeof(g_all_tools[0]);

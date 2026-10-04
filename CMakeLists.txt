@@ -680,6 +680,7 @@ add_library(gric_mcp_core OBJECT
     src/gric-mcp/tools/tool_help.c
     src/gric-mcp/tools/tool_fps_ops.c
     src/gric-mcp/tools/tool_dev_build_test.c
+    src/gric-mcp/tools/tool_dev_golden_compare.c
     ${HELP_TOPICS_GEN_C}
     ${MCP_CONTENT_GEN_C}
     src/shared/cjson/cJSON.c
@@ -1454,6 +1455,38 @@ if (IMAGESTREAMIO_FOUND)
 endif()
 add_test(NAME test_mcp_dev_build COMMAND test_mcp_dev_build)
 set_tests_properties(test_mcp_dev_build PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_executable(test_mcp_golden
+    tests/test_mcp_golden.c
+    $<TARGET_OBJECTS:gric_mcp_core>
+)
+target_include_directories(test_mcp_golden PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(test_mcp_golden m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_mcp_golden OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_mcp_golden ${CFITSIO_LIBRARIES})
+    target_include_directories(test_mcp_golden PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_mcp_golden ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_mcp_golden PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_mcp_golden COMMAND test_mcp_golden)
+set_tests_properties(test_mcp_golden PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS "gric-cluster;gric-mktxtseq"
+)
 
 add_test(NAME test_doc_flag_drift
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/check_doc_flags.py"
