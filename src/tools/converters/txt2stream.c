@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -437,9 +438,9 @@ int main(
         nanosleep(&delay_ts, NULL);
     }
 
-    struct timespec last_time;
-    clock_gettime(CLOCK_MONOTONIC, &last_time);
-    struct timespec stream_start = last_time;
+    struct timespec next_frame_time;
+    clock_gettime(CLOCK_MONOTONIC, &next_frame_time);
+    struct timespec stream_start = next_frame_time;
 
     while (!s_stop_requested)
     {
@@ -453,24 +454,50 @@ int main(
             /* Wait for consumer synchronization if cnt2sync is enabled */
             if (cnt2sync)
             {
+                int spin = 0;
                 while (!s_stop_requested && stream_image.md[0].cnt0 > stream_image.md[0].cnt2)
                 {
-                    usleep(10);
+                    if (spin < 100)
+                    {
+                        #if defined(__x86_64__) || defined(_M_X64)
+                        __builtin_ia32_pause();
+                        #endif
+                        spin++;
+                    }
+                    else if (spin < 200)
+                    {
+                        sched_yield();
+                        spin++;
+                    }
+                    else
+                    {
+                        usleep(10);
+                    }
                 }
             }
 
-            /* Rate pacing (enforces maximum FPS ceiling) */
+            /* Absolute-time rate pacing (enforces maximum FPS ceiling without drift) */
             if (us_per_frame > 0)
             {
+                next_frame_time.tv_nsec += (long)(us_per_frame * 1000LL);
+                while (next_frame_time.tv_nsec >= 1000000000L)
+                {
+                    next_frame_time.tv_sec += 1;
+                    next_frame_time.tv_nsec -= 1000000000L;
+                }
+
                 struct timespec now;
                 clock_gettime(CLOCK_MONOTONIC, &now);
-                long long elapsed_us = (now.tv_sec - last_time.tv_sec) * 1000000LL +
-                                       (now.tv_nsec - last_time.tv_nsec) / 1000;
-                if (elapsed_us < us_per_frame)
+                if (now.tv_sec < next_frame_time.tv_sec ||
+                    (now.tv_sec == next_frame_time.tv_sec &&
+                     now.tv_nsec < next_frame_time.tv_nsec))
                 {
-                    usleep((useconds_t)(us_per_frame - elapsed_us));
+                    clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_frame_time, NULL);
                 }
-                clock_gettime(CLOCK_MONOTONIC, &last_time);
+                else
+                {
+                    next_frame_time = now;
+                }
             }
 
             if (s_stop_requested)
