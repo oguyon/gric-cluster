@@ -12,8 +12,8 @@ endif()
 option(ENABLE_NATIVE "Optimize for host CPU (-march=native)" ON)
 
 if(ENABLE_NATIVE)
-    set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -funroll-loops -g")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -funroll-loops -g")
+    set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -funroll-loops -fno-math-errno -g")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -funroll-loops -fno-math-errno -g")
 endif()
 
 find_package(PkgConfig REQUIRED)
