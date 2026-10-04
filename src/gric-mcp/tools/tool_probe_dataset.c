@@ -4,6 +4,7 @@
  */
 
 #include "mcp_tools.h"
+#include "mcp_registry.h"
 #include "gric-probe/probe_engine.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -90,3 +91,27 @@ int mcp_tool_probe_dataset(
     probe_results_free(&results);
     return 0;
 } // mcp_tool_probe_dataset
+
+const struct mcp_tool_def mcp_tooldef_probe_dataset = {
+    .name         = "gric_probe_dataset",
+    .toolset      = MCP_TS_ANALYSIS,
+    .side_effects = 0,
+    .fn           = mcp_tool_probe_dataset,
+    .description  = "Analyze dataset geometry: estimates local intrinsic dimensionality, "
+                    "noise floor, recommended radii (fine/balanced), and pruning flags.",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"dataset_path\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Path to dataset coordinates or image cube.\"\n"
+        "    },\n"
+        "    \"sample_limit\": {\n"
+        "      \"type\": \"integer\",\n"
+        "      \"description\": \"Maximum sample count for adaptive probing (0 = default).\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"dataset_path\"]\n"
+        "}",
+};

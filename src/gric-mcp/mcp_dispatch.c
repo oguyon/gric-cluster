@@ -5,6 +5,7 @@
 
 #include "mcp_dispatch.h"
 #include "mcp_tools.h"
+#include "mcp_registry.h"
 #include "shared/cjson/cJSON.h"
 #include "shared/help_topics.h"
 #include <stdio.h>
@@ -119,7 +120,7 @@ static cJSON *handle_tools_list(
     }
 
     cJSON *result = cJSON_CreateObject();
-    cJSON_AddItemToObject(result, "tools", mcp_tools_get_list());
+    cJSON_AddItemToObject(result, "tools", mcp_registry_tools_list());
     cJSON_AddItemToObject(resp, "result", result);
 
     return resp;
@@ -148,75 +149,16 @@ static cJSON *handle_tools_call(
     }
     const char *tool_name = name_item->valuestring;
 
+    const struct mcp_tool_def *tool = mcp_registry_find(tool_name);
+    if (tool == NULL)
+    {
+        return create_error_response(id, -32601, "Unknown or disabled tool requested");
+    }
+
     cJSON *args = cJSON_GetObjectItemCaseSensitive(params, "arguments");
     cJSON *tool_result = cJSON_CreateObject();
 
-    int status = -1;
-    if (strcmp(tool_name, "gric_audit_code_style") == 0)
-    {
-        status = mcp_tool_audit_code_style(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_align_parameters") == 0)
-    {
-        status = mcp_tool_align_parameters(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_inspect_simd") == 0)
-    {
-        status = mcp_tool_inspect_simd(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_verify_invariants") == 0)
-    {
-        status = mcp_tool_verify_invariants(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_inspect_run") == 0)
-    {
-        status = mcp_tool_inspect_run(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_probe_dataset") == 0)
-    {
-        status = mcp_tool_probe_dataset(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_probe_shm") == 0)
-    {
-        status = mcp_tool_probe_shm(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_help") == 0)
-    {
-        status = mcp_tool_help(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_list_suite") == 0)
-    {
-        status = mcp_tool_list_suite(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_get_recipe") == 0)
-    {
-        status = mcp_tool_get_recipe(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_fps_status") == 0)
-    {
-        status = mcp_tool_fps_status(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_fps_run") == 0)
-    {
-        status = mcp_tool_fps_run(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_fps_set") == 0)
-    {
-        status = mcp_tool_fps_set(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_fps_stop") == 0)
-    {
-        status = mcp_tool_fps_stop(args, tool_result);
-    }
-    else if (strcmp(tool_name, "gric_probe_fps_streams") == 0)
-    {
-        status = mcp_tool_probe_fps_streams(args, tool_result);
-    }
-    else
-    {
-        cJSON_Delete(tool_result);
-        return create_error_response(id, -32601, "Unknown tool requested");
-    }
+    int status = tool->fn(args, tool_result);
 
     char *result_text = cJSON_PrintUnformatted(tool_result);
     cJSON_Delete(tool_result);

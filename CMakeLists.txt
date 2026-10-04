@@ -607,10 +607,12 @@ add_custom_command(
     COMMENT "Creating gric-cluster-probe alias symlink"
 )
 
-# gric-mcp Model Context Protocol (MCP) server
-add_executable(gric-mcp
-    src/gric-mcp/gric-mcp.c
+# gric_mcp_core shared object library
+add_library(gric_mcp_core OBJECT
     src/gric-mcp/mcp_dispatch.c
+    src/gric-mcp/mcp_registry.c
+    src/gric-mcp/mcp_exec.c
+    src/gric-mcp/mcp_validate.c
     src/gric-mcp/mcp_tools.c
     src/gric-mcp/tools/tool_audit_code_style.c
     src/gric-mcp/tools/tool_align_parameters.c
@@ -640,6 +642,30 @@ add_executable(gric-mcp
     src/shared/quant/eq16_dist.c
     src/shared/quant/eq16_filter.c
     src/shared/sys/gric_simd.c
+)
+target_include_directories(gric_mcp_core PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+)
+if (OpenMP_C_FOUND)
+    target_compile_options(gric_mcp_core PRIVATE ${OpenMP_C_FLAGS})
+endif()
+if (CFITSIO_FOUND)
+    target_include_directories(gric_mcp_core PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_include_directories(gric_mcp_core PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+    target_compile_definitions(gric_mcp_core PRIVATE USE_IMAGESTREAMIO)
+endif()
+
+# gric-mcp Model Context Protocol (MCP) server
+add_executable(gric-mcp
+    src/gric-mcp/gric-mcp.c
+    $<TARGET_OBJECTS:gric_mcp_core>
 )
 target_include_directories(gric-mcp PRIVATE
     src/gric-mcp
@@ -1215,36 +1241,7 @@ set_tests_properties(test_gric_probe PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURC
 
 add_executable(test_mcp_protocol
     tests/test_mcp_protocol.c
-    src/gric-mcp/mcp_dispatch.c
-    src/gric-mcp/mcp_tools.c
-    src/gric-mcp/tools/tool_audit_code_style.c
-    src/gric-mcp/tools/tool_align_parameters.c
-    src/gric-mcp/tools/tool_inspect_simd.c
-    src/gric-mcp/tools/tool_verify_invariants.c
-    src/gric-mcp/tools/tool_inspect_run.c
-    src/gric-mcp/tools/tool_probe_dataset.c
-    src/gric-mcp/tools/tool_probe_shm.c
-    src/gric-mcp/tools/tool_help.c
-    src/gric-mcp/tools/tool_fps_ops.c
-    ${HELP_TOPICS_GEN_C}
-    src/shared/cjson/cJSON.c
-    src/shared/cli/cli_colors.c
-    src/gric-cluster-analysis/analysis_parser.c
-    src/gric-cluster-analysis/analysis_stats.c
-    src/gric-probe/probe_engine.c
-    src/gric-probe/probe_report.c
-    src/shared/sys/gric_profile.c
-    src/shared/format/cluster_locator.c
-    src/shared/format/gric_bin_io.c
-    src/shared/quant/scalar_quant.c
-    src/shared/quant/scalar_quant_fastscan.c
-    src/shared/quant/scalar_quant_filter.c
-    src/shared/quant/residual_quant.c
-    src/shared/quant/e8_lattice.c
-    src/shared/quant/eq16_quant.c
-    src/shared/quant/eq16_dist.c
-    src/shared/quant/eq16_filter.c
-    src/shared/sys/gric_simd.c
+    $<TARGET_OBJECTS:gric_mcp_core>
 )
 target_include_directories(test_mcp_protocol PRIVATE
     src/gric-mcp
@@ -1253,6 +1250,7 @@ target_include_directories(test_mcp_protocol PRIVATE
     src/gric-cluster-analysis
     src/shared
     src
+    ${CMAKE_SOURCE_DIR}
 )
 target_link_libraries(test_mcp_protocol m)
 if (OpenMP_C_FOUND)
@@ -1268,6 +1266,18 @@ if (IMAGESTREAMIO_FOUND)
 endif()
 add_test(NAME test_mcp_protocol COMMAND test_mcp_protocol)
 set_tests_properties(test_mcp_protocol PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_test(NAME test_mcp_tools_snapshot
+    COMMAND python3 "${CMAKE_SOURCE_DIR}/tests/mcp/check_snapshot.py"
+    "$<TARGET_FILE:gric-mcp>"
+    "${CMAKE_SOURCE_DIR}/tests/mcp/tools_snapshot.json")
+
+add_custom_target(mcp-snapshot
+    COMMAND python3 "${CMAKE_SOURCE_DIR}/tests/mcp/check_snapshot.py"
+    "$<TARGET_FILE:gric-mcp>"
+    "${CMAKE_SOURCE_DIR}/tests/mcp/tools_snapshot.json"
+    --update
+    DEPENDS gric-mcp)
 
 add_executable(test_cli_opt
     tests/test_cli_opt.c

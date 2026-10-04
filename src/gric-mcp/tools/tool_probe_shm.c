@@ -4,6 +4,7 @@
  */
 
 #include "mcp_tools.h"
+#include "mcp_registry.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,3 +66,23 @@ int mcp_tool_probe_shm(
     return -1;
 #endif
 } // mcp_tool_probe_shm
+
+const struct mcp_tool_def mcp_tooldef_probe_shm = {
+    .name         = "gric_probe_shm",
+    .toolset      = MCP_TS_ANALYSIS,
+    .side_effects = 0,
+    .fn           = mcp_tool_probe_shm,
+    .description  = "Non-blocking probe of ImageStreamIO shared-memory stream: checks "
+                    "dimensions, write index, frame count, and semaphore status.",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"stream_name\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Name of shared memory stream (e.g. imrec1).\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"stream_name\"]\n"
+        "}",
+};

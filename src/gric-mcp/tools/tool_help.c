@@ -4,6 +4,7 @@
  */
 
 #include "mcp_tools.h"
+#include "mcp_registry.h"
 #include "shared/help_topics.h"
 #include <ctype.h>
 #include <stdio.h>
@@ -436,3 +437,103 @@ int mcp_tool_get_recipe(
     cJSON_AddStringToObject(res, "requested", recipe_name);
     return -1;
 } // mcp_tool_get_recipe
+
+int mcp_tool_server_info(
+    const cJSON *args,
+    cJSON       *res)
+{
+    (void)args;
+    const struct mcp_server_config *cfg = mcp_registry_get_config();
+
+    cJSON_AddStringToObject(res, "name", "gric-mcp");
+    cJSON_AddStringToObject(res, "version", "1.0.0");
+    cJSON_AddBoolToObject(res, "read_only", cfg->read_only);
+    cJSON_AddBoolToObject(res, "has_source_tree", cfg->has_source_tree);
+
+    cJSON *ts_array = cJSON_CreateArray();
+    if (cfg->toolsets & MCP_TS_KNOWLEDGE)
+    {
+        cJSON_AddItemToArray(ts_array, cJSON_CreateString("knowledge"));
+    }
+    if (cfg->toolsets & MCP_TS_ANALYSIS)
+    {
+        cJSON_AddItemToArray(ts_array, cJSON_CreateString("analysis"));
+    }
+    if (cfg->toolsets & MCP_TS_RUN)
+    {
+        cJSON_AddItemToArray(ts_array, cJSON_CreateString("run"));
+    }
+    if (cfg->toolsets & MCP_TS_OPS)
+    {
+        cJSON_AddItemToArray(ts_array, cJSON_CreateString("ops"));
+    }
+    if (cfg->toolsets & MCP_TS_DEV)
+    {
+        cJSON_AddItemToArray(ts_array, cJSON_CreateString("dev"));
+    }
+    cJSON_AddItemToObject(res, "toolsets", ts_array);
+
+    return 0;
+} // mcp_tool_server_info
+
+const struct mcp_tool_def mcp_tooldef_help = {
+    .name         = "gric_help",
+    .toolset      = MCP_TS_KNOWLEDGE,
+    .side_effects = 0,
+    .fn           = mcp_tool_help,
+    .description  = "Query GRIC embedded help database (95+ topics) by keyword or fuzzy "
+                    "search: algorithms, parameters (rlim, entropy, tiling, milk), flags.",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"topic\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Topic keyword or flag name (e.g. 'entropy', 'rlim').\"\n"
+        "    },\n"
+        "    \"query\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Optional search query to match in documentation.\"\n"
+        "    }\n"
+        "  }\n"
+        "}",
+};
+
+const struct mcp_tool_def mcp_tooldef_list_suite = {
+    .name         = "gric_list_suite",
+    .toolset      = MCP_TS_KNOWLEDGE,
+    .side_effects = 0,
+    .fn           = mcp_tool_list_suite,
+    .description  = "List all 18+ programs in the GRIC suite with categories, summaries, "
+                    "and CLI usage prototypes.",
+    .input_schema = "{\"type\": \"object\"}",
+};
+
+const struct mcp_tool_def mcp_tooldef_get_recipe = {
+    .name         = "gric_get_recipe",
+    .toolset      = MCP_TS_KNOWLEDGE,
+    .side_effects = 0,
+    .fn           = mcp_tool_get_recipe,
+    .description  = "Retrieve step-by-step cookbook instructions for common tasks (e.g. "
+                    "'milk_realtime_streaming', 'image_cube_clustering').",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"recipe\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Name of recipe, or 'list' to see available recipes.\"\n"
+        "    }\n"
+        "  }\n"
+        "}",
+};
+
+const struct mcp_tool_def mcp_tooldef_server_info = {
+    .name         = "gric_server_info",
+    .toolset      = MCP_TS_KNOWLEDGE,
+    .side_effects = 0,
+    .fn           = mcp_tool_server_info,
+    .description  = "Retrieve runtime status, version, active toolsets, and read-only mode "
+                    "of the gric-mcp server.",
+    .input_schema = "{\"type\": \"object\"}",
+};

@@ -4,6 +4,7 @@
  */
 
 #include "mcp_tools.h"
+#include "mcp_registry.h"
 #include "gric-cluster-analysis/analysis_state.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,3 +79,23 @@ int mcp_tool_inspect_run(
     free_state(&state);
     return 0;
 } // mcp_tool_inspect_run
+
+const struct mcp_tool_def mcp_tooldef_inspect_run = {
+    .name         = "gric_inspect_run",
+    .toolset      = MCP_TS_ANALYSIS,
+    .side_effects = 0,
+    .fn           = mcp_tool_inspect_run,
+    .description  = "Inspect clustering run output (.clusterdat): extracts cluster counts, "
+                    "dists/frame, pruning efficiency, entropy, and execution time.",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"run_dir\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Path to clustering results directory.\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"run_dir\"]\n"
+        "}",
+};
