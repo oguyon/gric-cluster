@@ -36,16 +36,13 @@ double measure_distance_to_cluster(
 {
     if (*temp_count < state->telemetry.max_steps_recorded && state->num_clusters > 0)
     {
-        int pruned_cnt = 0;
-        for (int pc = 0; pc < state->num_clusters; pc++)
+        int pruned_cnt = state->num_clusters - state->scratch.num_active_clusters;
+        if (pruned_cnt < 0)
         {
-            if (state->scratch.clmembflag[pc] == 0)
-            {
-                pruned_cnt++;
-            }
+            pruned_cnt = 0;
         }
         state->telemetry.pruned_fraction_sum[*temp_count] +=
-            (double)pruned_cnt / state->num_clusters;
+            (double)pruned_cnt / (double)state->num_clusters;
         state->telemetry.step_counts[*temp_count]++;
     }
 

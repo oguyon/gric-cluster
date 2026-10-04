@@ -68,40 +68,6 @@ static int compare_prune_scores(
     return (sa > sb) - (sa < sb);
 }
 
-/**
- * entropy_compute_initial_h() - Calculate current Shannon entropy of active cluster distribution.
- * @state:       Active ClusterState pointer.
- * @p_current:   Array of current posterior probabilities.
- * @meas_idx:    Measurement attempt depth (0 for first attempt).
- *
- * Return: Current Shannon entropy H in bits.
- */
-static double entropy_compute_initial_h(
-    ClusterState *state,
-    const double *p_current,
-    int           meas_idx)
-{
-    double H_current = 0.0;
-    for (int i = 0; i < state->num_clusters; i++)
-    {
-        if (p_current[i] > 1e-15)
-        {
-            H_current -= p_current[i] * fast_log2(p_current[i]);
-        }
-    }
-
-    if (meas_idx == 0)
-    {
-        state->telemetry.entropy_sum_initial += H_current;
-        state->telemetry.entropy_last_initial = H_current;
-        if (H_current > state->telemetry.entropy_max_initial)
-        {
-            state->telemetry.entropy_max_initial = H_current;
-        }
-    }
-
-    return H_current;
-}
 
 /**
  * entropy_check_early_gates() - Test adaptive entropy gate and leader shortcut thresholds.
@@ -495,11 +461,22 @@ static int select_next_measurement_target_entropy(
     /* Count active candidates and find the most probable one. Only active clusters may be
      * returned: the caller loops until a target is measured or -1 is returned, so returning an
      * inactive cluster would repeat forever. */
+    if (state->scratch.num_active_clusters <= 0)
+    {
+        return -1;
+    }
+    if (state->scratch.num_active_clusters == 1)
+    {
+        return state->scratch.active_clusters[0];
+    }
+
     double *p_current = state->scratch.entropy_p_current;
     int active_count = 0;
     int first_active = -1;
     double max_p = -1.0;
     int argmax_p = -1;
+    double H_current = 0.0;
+
     for (int i = 0; i < state->num_clusters; i++)
     {
         if (!state->scratch.clmembflag[i])
@@ -515,6 +492,10 @@ static int select_next_measurement_target_entropy(
             max_p = p_current[i];
             argmax_p = i;
         }
+        if (p_current[i] > 1e-15)
+        {
+            H_current -= p_current[i] * fast_log2(p_current[i]);
+        }
     }
 
     if (active_count <= 1)
@@ -526,7 +507,15 @@ static int select_next_measurement_target_entropy(
         argmax_p = first_active;
     }
 
-    double H_current = entropy_compute_initial_h(state, p_current, meas_idx);
+    if (meas_idx == 0)
+    {
+        state->telemetry.entropy_sum_initial += H_current;
+        state->telemetry.entropy_last_initial = H_current;
+        if (H_current > state->telemetry.entropy_max_initial)
+        {
+            state->telemetry.entropy_max_initial = H_current;
+        }
+    }
 
     int early_target = entropy_check_early_gates(
         config, state, meas_idx, H_current, max_p, argmax_p
@@ -548,13 +537,6 @@ static int select_next_measurement_target_entropy(
     int words = (N + 63) / 64;
     uint64_t active_mask[words];
     memset(active_mask, 0, words * sizeof(uint64_t));
-    for (int i = 0; i < state->num_clusters; i++)
-    {
-        if (state->scratch.clmembflag[i])
-        {
-            active_mask[i / 64] |= (1ULL << (i % 64));
-        }
-    }
 
     int limit = config->optim.entropy_max_targets;
     if (limit <= 0 || limit > state->num_clusters)
@@ -575,33 +557,22 @@ static int select_next_measurement_target_entropy(
     TargetScore *prob_scores = state->scratch.entropy_prob_scores;
     TargetScore *prune_scores = state->scratch.entropy_prune_scores;
     int *active_indices = state->scratch.entropy_active_indices;
+    double *plog2p = state->scratch.entropy_plog2p;
 
     int active_idx_count = 0;
     for (int j = 0; j < state->num_clusters; j++)
     {
         if (state->scratch.clmembflag[j])
         {
-            active_indices[active_idx_count++] = j;
+            active_mask[j / 64] |= (1ULL << (j % 64));
+            active_indices[active_idx_count] = j;
+            plog2p[j] = (p_current[j] > 1e-15) ? (p_current[j] * fast_log2(p_current[j])) : 0.0;
+            prob_scores[active_idx_count].id = j;
+            prob_scores[active_idx_count].score = p_current[j];
+            active_idx_count++;
         }
     }
-
-    double *plog2p = state->scratch.entropy_plog2p;
-    for (int idx = 0; idx < active_idx_count; idx++)
-    {
-        int k = active_indices[idx];
-        plog2p[k] = (p_current[k] > 1e-15) ? (p_current[k] * fast_log2(p_current[k])) : 0.0;
-    }
-
-    int prob_count = 0;
-    for (int i = 0; i < state->num_clusters; i++)
-    {
-        if (state->scratch.clmembflag[i])
-        {
-            prob_scores[prob_count].id = i;
-            prob_scores[prob_count].score = p_current[i];
-            prob_count++;
-        }
-    }
+    int prob_count = active_idx_count;
 
     qsort(prob_scores, prob_count, sizeof(TargetScore), compare_prob_scores);
 

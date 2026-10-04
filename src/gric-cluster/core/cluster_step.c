@@ -309,10 +309,6 @@ static int cluster_step_search_loop(
             if (need_prune_update && last_cj >= 0)
             {
                 int num_cl = state->num_clusters;
-                if (state->scratch.cluster_probs != NULL)
-                {
-                    cluster_normalize_probs(state->scratch.cluster_probs, num_cl);
-                }
                 const double *probs = state->scratch.cluster_probs;
                 state->scratch.num_active_clusters = num_cl;
                 for (int i = 0; i < num_cl; i++)
