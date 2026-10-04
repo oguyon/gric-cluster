@@ -10,6 +10,7 @@
  */
 #include "cluster_core.h"
 #include "cluster_defs.h"
+#include "cluster_dcc.h"
 #include "cluster_cli.h"
 #include "cluster_help.h"
 #include "cluster_io.h"
@@ -249,45 +250,7 @@ int main(int argc, char *argv[])
     state.scratch.dcc_sq16 = (uint16_t *)gric_alloc_large(
         cluster_pairs * sizeof(uint16_t));
     state.scratch.dcc_sq16_scale = 16384.0 / config.algo.rlim;
-
-    if (config.optim.sparse_dcc_mode)
-    {
-        for (size_t r = 0; r < max_clusters; r++)
-        {
-            for (size_t c = 0; c < max_clusters; c++)
-            {
-                size_t idx = r * max_clusters + c;
-                if (r == c)
-                {
-                    state.scratch.dcc_min[idx] = 0.0;
-                    state.scratch.dcc_max[idx] = 0.0;
-                    state.scratch.dcc_measured[idx] = 1;
-                    state.scratch.dcc_sq16[idx] = 0;
-                }
-                else
-                {
-                    state.scratch.dcc_min[idx] = 0.0;
-                    state.scratch.dcc_max[idx] = 1e19;
-                    state.scratch.dcc_measured[idx] = 0;
-                    state.scratch.dcc_sq16[idx] = DCC_SQ16_UNMEASURED;
-                }
-            }
-        }
-    }
-    else
-    {
-        for (size_t ii = 0; ii < cluster_pairs; ii++)
-        {
-            state.scratch.dcc_min[ii] = -1.0;
-            state.scratch.dcc_max[ii] = -1.0;
-            state.scratch.dcc_measured[ii] = 0;
-            state.scratch.dcc_sq16[ii] = DCC_SQ16_UNMEASURED;
-        }
-        for (size_t r = 0; r < max_clusters; r++)
-        {
-            state.scratch.dcc_sq16[r * max_clusters + r] = 0;
-        }
-    }
+    dcc_init_matrix(&state, max_clusters, config.optim.sparse_dcc_mode);
 
     state.scratch.current_gprobs = (double *)malloc(max_clusters * sizeof(double));
     state.cluster_visitors = (VisitorList *)calloc(max_clusters, sizeof(VisitorList));

@@ -9,6 +9,7 @@
 #include "cluster_steps.h"
 #include "framedistance.h"
 #include "cluster_math.h"
+#include "cluster_dcc.h"
 #include "cluster_bounds.h"
 #include "gric_bin_io.h"
 #include "gric_omp.h"
@@ -173,6 +174,7 @@ static int grow_context_capacity(
     s->dcc_min = (double *)grow_matrix(s->dcc_min, old_N, new_N, sizeof(double));
     s->dcc_max = (double *)grow_matrix(s->dcc_max, old_N, new_N, sizeof(double));
     s->dcc_measured = (char *)grow_matrix(s->dcc_measured, old_N, new_N, sizeof(char));
+    s->dcc_stride = (size_t)new_N;
 
     size_t new_mask_words = new_N * new_N * ((new_N + 63) / 64);
     uint64_t *new_mask = (uint64_t *)calloc(new_mask_words, sizeof(uint64_t));
@@ -335,6 +337,7 @@ gric_cluster_t *gric_cluster_create(
     s->dcc_min = (double *)calloc(sz_N * sz_N, sizeof(double));
     s->dcc_max = (double *)calloc(sz_N * sz_N, sizeof(double));
     s->dcc_measured = (char *)calloc(sz_N * sz_N, sizeof(char));
+    s->dcc_stride = sz_N;
 
     size_t mask_words = sz_N * sz_N * ((sz_N + 63) / 64);
     s->consistency_mask = (uint64_t *)calloc(mask_words, sizeof(uint64_t));
@@ -545,7 +548,7 @@ gric_status_t gric_cluster_get_dcc(
         {
             if (i < (size_t)N && j < (size_t)N)
             {
-                out_dcc[i * K + j] = dcc_min[i * N + j];
+                out_dcc[i * K + j] = dcc_get_dist(&ctx->state, (int)i, (int)j);
             }
             else
             {
@@ -846,12 +849,9 @@ int64_t gric_cluster_load_anchors(
     ctx->state.num_clusters = (int)K;
 
     /* Compute DCC distances between anchors */
-    int N = ctx->config.algo.maxnbclust;
     for (int i = 0; i < (int)K; i++)
     {
-        ctx->state.scratch.dcc_min[i * N + i] = 0.0;
-        ctx->state.scratch.dcc_max[i * N + i] = 0.0;
-        ctx->state.scratch.dcc_measured[i * N + i] = 1;
+        dcc_set_bounds(&ctx->state, i, i, 0.0, 0.0, 1);
         for (int j = i + 1; j < (int)K; j++)
         {
             double d = 0.0;
@@ -869,12 +869,7 @@ int64_t gric_cluster_load_anchors(
                     (const float *)ctx->state.clusters[j].anchor.data,
                     (long)ndim);
             }
-            ctx->state.scratch.dcc_min[i * N + j] = d;
-            ctx->state.scratch.dcc_min[j * N + i] = d;
-            ctx->state.scratch.dcc_max[i * N + j] = d;
-            ctx->state.scratch.dcc_max[j * N + i] = d;
-            ctx->state.scratch.dcc_measured[i * N + j] = 1;
-            ctx->state.scratch.dcc_measured[j * N + i] = 1;
+            dcc_set_pair(&ctx->state, i, j, d);
         }
     }
 
@@ -1089,13 +1084,12 @@ gric_status_t gric_cluster_save_results(
 
         if (gric_bin_write_header(fp, &hdr, "Pairwise DCC matrix") == 0)
         {
-            int maxnbc = config->algo.maxnbclust;
             for (int i = 0; i < k; i++)
             {
                 for (int j = 0; j < k; j++)
                 {
                     double d = (state->scratch.dcc_min != NULL)
-                                   ? state->scratch.dcc_min[i * maxnbc + j]
+                                   ? dcc_get_dist(state, i, j)
                                    : 0.0;
                     fwrite(&d, sizeof(double), 1, fp);
                 }

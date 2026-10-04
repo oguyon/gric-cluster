@@ -8,6 +8,7 @@
 
 #include "cluster_io_multitile.h"
 #include "cluster_io.h"
+#include "cluster_dcc.h"
 #include "tile_state.h"
 #include "frameread.h"
 
@@ -273,25 +274,14 @@ void write_results_multitile(
             if (dcc_fp)
             {
                 int ncl = ts->state.num_clusters;
-                int maxcl =
-                    ts->config.algo.maxnbclust;
                 for (int i = 0; i < ncl; i++)
                 {
                     for (int j = 0; j < ncl; j++)
                     {
-                        int idx =
-                            i * maxcl + j;
-                        double d =
-                            ts->state.scratch
-                                .dcc_min[idx];
-                        int meas =
-                            ts->state.scratch
-                                .dcc_measured[idx];
-                        if (meas && d >= 0)
+                        double d = dcc_get_dist(&ts->state, i, j);
+                        if (dcc_is_measured(&ts->state, i, j) && d >= 0)
                         {
-                            fprintf(dcc_fp,
-                                "%d %d %.6f\n",
-                                i, j, d);
+                            fprintf(dcc_fp, "%d %d %.6f\n", i, j, d);
                         }
                     }
                 } // for i

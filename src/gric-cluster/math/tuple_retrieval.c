@@ -10,6 +10,7 @@
 
 #include "tuple_retrieval.h"
 
+#include "cluster_dcc.h"
 #include "cluster_math.h"
 #include "framedistance.h"
 #include "gric_compat.h"
@@ -384,17 +385,14 @@ static inline double predict_calc_frame_dcc(
         return 0.0;
     }
 
-    int maxcl = ts->config.algo.maxnbclust;
-    int idx = cA * maxcl + cB;
     double dcc = 0.0;
-
-    if (ts->state.scratch.dcc_measured[idx])
+    if (dcc_is_measured(&ts->state, cA, cB))
     {
-        dcc = ts->state.scratch.dcc_min[idx];
+        dcc = dcc_get_dist(&ts->state, cA, cB);
     }
     else
     {
-        dcc = ts->state.scratch.dcc_max[idx];
+        dcc = dcc_get_max(&ts->state, cA, cB);
     }
 
     if (dcc < 0.0)

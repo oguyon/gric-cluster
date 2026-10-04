@@ -127,9 +127,7 @@ void initialize_initial_cluster(
         state->scratch.cluster_probs[0] = 1.0;
     }
     state->num_clusters = 1;
-    state->scratch.dcc_min[0] = 0.0;
-    state->scratch.dcc_max[0] = 0.0;
-    state->scratch.dcc_measured[0] = 1;
+    dcc_set_pair(state, 0, 0, 0.0);
 
     add_visitor(&state->cluster_visitors[0], state->telemetry.total_frames_processed);
     *assigned_cluster = 0;

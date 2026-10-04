@@ -27,14 +27,14 @@ void update_dcc_bounds(
     int            j,
     double         d_exact)
 {
-    int N = config->algo.maxnbclust;
+    (void)config;
 
-    if (!state->scratch.dcc_measured[i * N + j])
+    if (!dcc_is_measured(state, i, j))
     {
         state->telemetry.dcc_entries_populated++;
     }
 
-    set_dcc_pair(state, N, i, j, d_exact);
+    dcc_set_pair(state, i, j, d_exact);
 
     for (int k = 0; k < state->num_clusters; k++)
     {
@@ -43,60 +43,65 @@ void update_dcc_bounds(
             continue;
         }
 
+        double max_jk = dcc_get_max(state, j, k);
+        double max_ik = dcc_get_max(state, i, k);
+        double min_jk = dcc_get_min(state, j, k);
+        double min_ik = dcc_get_min(state, i, k);
+
         // Upper Bound Refinement for (i, k) using (j, k)
-        if (state->scratch.dcc_max[j * N + k] < 1e18)
+        if (max_jk < 1e18)
         {
-            double new_max = d_exact + state->scratch.dcc_max[j * N + k];
-            if (new_max < state->scratch.dcc_max[i * N + k])
+            double new_max = d_exact + max_jk;
+            if (new_max < max_ik)
             {
-                state->scratch.dcc_max[i * N + k] = new_max;
-                state->scratch.dcc_max[k * N + i] = new_max;
+                dcc_set_max_pair(state, i, k, new_max);
+                max_ik = new_max;
             }
         }
 
         // Upper Bound Refinement for (j, k) using (i, k)
-        if (state->scratch.dcc_max[i * N + k] < 1e18)
+        if (max_ik < 1e18)
         {
-            double new_max = d_exact + state->scratch.dcc_max[i * N + k];
-            if (new_max < state->scratch.dcc_max[j * N + k])
+            double new_max = d_exact + max_ik;
+            if (new_max < max_jk)
             {
-                state->scratch.dcc_max[j * N + k] = new_max;
-                state->scratch.dcc_max[k * N + j] = new_max;
+                dcc_set_max_pair(state, j, k, new_max);
+                max_jk = new_max;
             }
         }
 
         // Lower Bound Refinement for (i, k) using (j, k)
-        if (state->scratch.dcc_max[j * N + k] < 1e18)
+        if (max_jk < 1e18)
         {
-            double l1 = d_exact - state->scratch.dcc_max[j * N + k];
-            if (l1 > 0.0 && l1 > state->scratch.dcc_min[i * N + k])
+            double l1 = d_exact - max_jk;
+            if (l1 > 0.0 && l1 > min_ik)
             {
-                state->scratch.dcc_min[i * N + k] = l1;
-                state->scratch.dcc_min[k * N + i] = l1;
+                dcc_set_min_pair(state, i, k, l1);
+                min_ik = l1;
             }
         }
-        double l2 = state->scratch.dcc_min[j * N + k] - d_exact;
-        if (l2 > 0.0 && l2 > state->scratch.dcc_min[i * N + k])
+        double l2 = min_jk - d_exact;
+        if (l2 > 0.0 && l2 > min_ik)
         {
-            state->scratch.dcc_min[i * N + k] = l2;
-            state->scratch.dcc_min[k * N + i] = l2;
+            dcc_set_min_pair(state, i, k, l2);
+            min_ik = l2;
         }
 
         // Lower Bound Refinement for (j, k) using (i, k)
-        if (state->scratch.dcc_max[i * N + k] < 1e18)
+        if (max_ik < 1e18)
         {
-            double l3 = d_exact - state->scratch.dcc_max[i * N + k];
-            if (l3 > 0.0 && l3 > state->scratch.dcc_min[j * N + k])
+            double l3 = d_exact - max_ik;
+            if (l3 > 0.0 && l3 > min_jk)
             {
-                state->scratch.dcc_min[j * N + k] = l3;
-                state->scratch.dcc_min[k * N + j] = l3;
+                dcc_set_min_pair(state, j, k, l3);
+                min_jk = l3;
             }
         }
-        double l4 = state->scratch.dcc_min[i * N + k] - d_exact;
-        if (l4 > 0.0 && l4 > state->scratch.dcc_min[j * N + k])
+        double l4 = min_ik - d_exact;
+        if (l4 > 0.0 && l4 > min_jk)
         {
-            state->scratch.dcc_min[j * N + k] = l4;
-            state->scratch.dcc_min[k * N + j] = l4;
+            dcc_set_min_pair(state, j, k, l4);
+            min_jk = l4;
         }
     }
 }
@@ -113,7 +118,6 @@ void refine_sparse_bounds(
     ClusterConfig *config,
     ClusterState  *state)
 {
-    int N = config->algo.maxnbclust;
     int E = config->optim.sparse_dcc_extra_evals;
     int K = state->num_clusters;
     if (E <= 0 || K <= 1)
@@ -147,8 +151,8 @@ void refine_sparse_bounds(
 
         for (int i = 0; i < state->num_clusters; i++)
         {
-            const char   *measured_row = &state->scratch.dcc_measured[i * N];
-            const double *dcc_min_row = &state->scratch.dcc_min[i * N];
+            const char   *measured_row = dcc_row_measured(state, i);
+            const double *dcc_min_row = dcc_row_dist(state, i);
             for (int j = i + 1; j < state->num_clusters; j++)
             {
                 if (!measured_row[j])

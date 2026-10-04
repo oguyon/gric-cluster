@@ -5,6 +5,7 @@
  */
 
 #include "tile_state.h"
+#include "cluster_dcc.h"
 #include "frame_info_arena.h"
 #include "gric_mem.h"
 
@@ -167,17 +168,7 @@ MultiTileState *multitile_init(
                 mc * sizeof(double));
 
             /* Init DCC bounds */
-            for (size_t ii = 0; ii < pairs; ii++)
-            {
-                ts->state.scratch.dcc_min[ii] = -1.0;
-                ts->state.scratch.dcc_max[ii] = -1.0;
-                ts->state.scratch.dcc_measured[ii] = 0;
-                ts->state.scratch.dcc_sq16[ii] = DCC_SQ16_UNMEASURED;
-            }
-            for (size_t r = 0; r < mc; r++)
-            {
-                ts->state.scratch.dcc_sq16[r * mc + r] = 0;
-            }
+            dcc_init_matrix(&ts->state, mc, global->optim.sparse_dcc_mode);
 
             ts->state.transition_matrix = calloc(
                 pairs, sizeof(long));
