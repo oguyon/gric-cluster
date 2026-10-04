@@ -242,7 +242,7 @@ static void knn_search_extract_and_finalize(
     free(all_heaps);
 
 #ifdef _OPENMP
-    if (!is_cross_dataset)
+    if (!is_cross_dataset && bucket_locks != NULL)
     {
         for (int b = 0; b < KNN_NUM_BUCKET_LOCKS; b++)
         {
@@ -368,13 +368,15 @@ int knn_run_search(
     }
 
 #ifdef _OPENMP
-    omp_lock_t bucket_locks[KNN_NUM_BUCKET_LOCKS];
-    if (!is_cross_dataset)
+    omp_lock_t  bucket_locks[KNN_NUM_BUCKET_LOCKS];
+    omp_lock_t *locks_ptr = NULL;
+    if (!is_cross_dataset && config->use_reciprocal)
     {
         for (int b = 0; b < KNN_NUM_BUCKET_LOCKS; b++)
         {
             omp_init_lock(&bucket_locks[b]);
         }
+        locks_ptr = bucket_locks;
     }
 #endif
 
@@ -775,7 +777,7 @@ int knn_run_search(
                         i, query_buffer, model, config, &thread_cand_reader,
                         cand_buffer, scores_buf, &graph_scratch, all_heaps,
 #ifdef _OPENMP
-                        bucket_locks,
+                        locks_ptr,
 #endif
                         &visited, &thread_telem);
                 }
@@ -982,7 +984,7 @@ int knn_run_search(
     knn_search_extract_and_finalize(config, results, telemetry, all_heaps,
                                     N_query, is_cross_dataset,
 #ifdef _OPENMP
-                                    bucket_locks,
+                                    locks_ptr,
 #endif
                                     &master_cand_reader, &master_query_reader,
                                     start_time);
