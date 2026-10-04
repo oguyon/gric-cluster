@@ -61,7 +61,10 @@ double measure_distance_to_cluster(
     }
 
     add_visitor(
-        &state->cluster_visitors[cj], state->telemetry.total_frames_processed
+        &state->cluster_visitors[cj],
+        (int)state->telemetry.total_frames_processed,
+        dfc,
+        -1
     );
 
     if (state->trace)

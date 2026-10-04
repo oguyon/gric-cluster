@@ -150,12 +150,20 @@ typedef struct
     ConfigOutput    output;
 } ClusterConfig;
 
+// Visitor record with inline frame, distance, and assignment
+typedef struct
+{
+    int    frame;
+    int    assignment;
+    double dist;
+} VisitorRecord;
+
 // VisitorList structure
 typedef struct
 {
-    int *frames;
-    int count;
-    int capacity;
+    VisitorRecord *records;
+    int            count;
+    int            capacity;
 } VisitorList;
 
 // Telemetry structure

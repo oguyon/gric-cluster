@@ -19,11 +19,13 @@
 #include <string.h>
 
 /**
- * add_visitor() - Safely adds a frame index to a cluster's visitor history.
- * @list:      Pointer to the VisitorList structure.
- * @frame_idx: Index of the frame to append.
+ * add_visitor() - Safely adds a visitor record to a cluster's visitor history.
+ * @list:       Pointer to the VisitorList structure.
+ * @frame_idx:  Index of the frame to append.
+ * @dist:       Distance from frame to cluster anchor.
+ * @assignment: Assigned cluster index of the frame (-1 if not yet assigned).
  *
- * Dynamically resizes the integer list capacity as needed (doubles capacity,
+ * Dynamically resizes the record list capacity as needed (doubles capacity,
  * starting at 16). When the list exceeds VISITOR_COMPACT_THRESHOLD entries,
  * compacts to keep only the most recent VISITOR_COMPACT_KEEP entries to
  * prevent unbounded memory growth in long-running sessions.
@@ -33,7 +35,9 @@
 
 void add_visitor(
     VisitorList *list,
-    int          frame_idx)
+    int          frame_idx,
+    double       dist,
+    int          assignment)
 {
     /* Compact when the list grows too large */
     if (list->count >= VISITOR_COMPACT_THRESHOLD)
@@ -41,9 +45,9 @@ void add_visitor(
         int keep = VISITOR_COMPACT_KEEP;
         int start = list->count - keep;
         memmove(
-            list->frames,
-            list->frames + start,
-            (size_t)keep * sizeof(int)
+            list->records,
+            list->records + start,
+            (size_t)keep * sizeof(VisitorRecord)
         );
         list->count = keep;
     }
@@ -53,13 +57,13 @@ void add_visitor(
         int new_capacity =
             (list->capacity == 0)
                 ? 16 : list->capacity * 2;
-        int *new_frames = (int *)realloc(
-            list->frames,
-            (size_t)new_capacity * sizeof(int)
+        VisitorRecord *new_records = (VisitorRecord *)realloc(
+            list->records,
+            (size_t)new_capacity * sizeof(VisitorRecord)
         );
-        if (new_frames)
+        if (new_records)
         {
-            list->frames = new_frames;
+            list->records = new_records;
             list->capacity = new_capacity;
         }
         else
@@ -68,7 +72,10 @@ void add_visitor(
             return;
         }
     }
-    list->frames[list->count++] = frame_idx;
+    list->records[list->count].frame = frame_idx;
+    list->records[list->count].dist = dist;
+    list->records[list->count].assignment = assignment;
+    list->count++;
 }
 
 /**
@@ -110,7 +117,7 @@ void remove_cluster(
             fprintf(log, "# Discarded Cluster %d\n", index_to_remove);
             for (int ii = 0; ii < state->cluster_visitors[index_to_remove].count; ii++)
             {
-                fprintf(log, "%d ", state->cluster_visitors[index_to_remove].frames[ii]);
+                fprintf(log, "%d ", state->cluster_visitors[index_to_remove].records[ii].frame);
             }
             fprintf(log, "\n");
             fclose(log);
@@ -271,9 +278,9 @@ void remove_cluster(
     } // for (int cl_idx = index_to_remove; cl_idx < state->num_clusters - 1; cl_idx++)
 
     // 3. Shift Visitor Lists
-    if (state->cluster_visitors[index_to_remove].frames)
+    if (state->cluster_visitors[index_to_remove].records)
     {
-        free(state->cluster_visitors[index_to_remove].frames);
+        free(state->cluster_visitors[index_to_remove].records);
     }
     for (int cl_idx = index_to_remove; cl_idx < state->num_clusters - 1; cl_idx++)
     {
@@ -338,6 +345,35 @@ void remove_cluster(
             state->assignments[f] = a - 1;
         }
     } // for (long f = 0; f < state->telemetry.total_frames_processed; f++)
+
+    if (state->cluster_visitors != NULL)
+    {
+        for (int cl = 0; cl < state->num_clusters - 1; cl++)
+        {
+            for (int ii = 0; ii < state->cluster_visitors[cl].count; ii++)
+            {
+                int a = state->cluster_visitors[cl].records[ii].assignment;
+                if (a == index_to_remove)
+                {
+                    if (index_target == -1)
+                    {
+                        state->cluster_visitors[cl].records[ii].assignment = -1;
+                    }
+                    else
+                    {
+                        state->cluster_visitors[cl].records[ii].assignment =
+                            (index_target > index_to_remove)
+                                ? index_target - 1
+                                : index_target;
+                    }
+                }
+                else if (a > index_to_remove)
+                {
+                    state->cluster_visitors[cl].records[ii].assignment = a - 1;
+                }
+            }
+        }
+    }
 
     // 7. Decrement Num Clusters
     state->num_clusters--;

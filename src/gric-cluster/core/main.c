@@ -343,8 +343,10 @@ int main(int argc, char *argv[])
 
     for (int cl_idx = 0; cl_idx < config.algo.maxnbclust; cl_idx++)
     {
-        if (state.cluster_visitors[cl_idx].frames)
-            free(state.cluster_visitors[cl_idx].frames);
+        if (state.cluster_visitors[cl_idx].records)
+        {
+            free(state.cluster_visitors[cl_idx].records);
+        }
     }
     free(state.cluster_visitors);
     free(state.scratch.current_gprobs);

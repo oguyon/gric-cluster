@@ -129,7 +129,8 @@ void initialize_initial_cluster(
     state->num_clusters = 1;
     dcc_set_pair(state, 0, 0, 0.0);
 
-    add_visitor(&state->cluster_visitors[0], state->telemetry.total_frames_processed);
+    add_visitor(&state->cluster_visitors[0],
+                (int)state->telemetry.total_frames_processed, 0.0, 0);
     *assigned_cluster = 0;
     update_consistency_mask_for_new_cluster(config, state, 0);
 

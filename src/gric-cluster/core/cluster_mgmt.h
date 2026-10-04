@@ -4,17 +4,20 @@
 #include "cluster_defs.h"
 
 /**
- * @brief Safely adds a frame index to a cluster's visitor history.
+ * @brief Safely adds a visitor record to a cluster's visitor history.
  *
- * Dynamically resizes the integer list capacity as needed (doubles capacity, starting at 16).
- * Prints an error using `perror` if memory reallocation fails.
+ * Dynamically resizes the record list capacity as needed (doubles capacity, starting at 16).
  *
  * @param list Pointer to the VisitorList structure.
  * @param frame_idx Index of the frame to append.
+ * @param dist Distance from frame to cluster anchor.
+ * @param assignment Assigned cluster index of the frame (-1 if not yet assigned).
  */
 void add_visitor(
     VisitorList *list,
-    int          frame_idx);
+    int          frame_idx,
+    double       dist,
+    int          assignment);
 
 /**
  * @brief Deletes a cluster from state, optionally merging its history.

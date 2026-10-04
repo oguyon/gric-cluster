@@ -1086,10 +1086,10 @@ void wasm_cluster_reset(void *ptr)
     /* Free visitor list arrays */
     for (int i = 0; i < N; i++)
     {
-        if (h->state.cluster_visitors[i].frames)
+        if (h->state.cluster_visitors[i].records)
         {
             free(
-                h->state.cluster_visitors[i].frames
+                h->state.cluster_visitors[i].records
             );
         }
     }
@@ -1301,10 +1301,10 @@ void wasm_cluster_free(void *ptr)
     {
         for (int i = 0; i < N; i++)
         {
-            if (h->state.cluster_visitors[i].frames)
+            if (h->state.cluster_visitors[i].records)
             {
                 free(
-                    h->state.cluster_visitors[i].frames
+                    h->state.cluster_visitors[i].records
                 );
             }
         }
