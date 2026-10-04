@@ -197,6 +197,39 @@ int mcp_tool_server_info(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_dev_build_test() - Incremental compilation and CTest runner with diagnostic parsing.
+ * @args:   JSON object containing tool arguments.
+ * @res:    Output JSON object containing the result content or error details.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_dev_build_test(
+    const cJSON *args,
+    cJSON       *res);
+
+/**
+ * mcp_parse_compiler_diagnostics() - Parse compiler output into warning and error lists.
+ * @output:       Compiler stdout/stderr string.
+ * @warnings_arr: cJSON array to append parsed warnings to.
+ * @errors_arr:   cJSON array to append parsed errors to.
+ */
+void mcp_parse_compiler_diagnostics(
+    const char *output,
+    cJSON      *warnings_arr,
+    cJSON      *errors_arr);
+
+/**
+ * mcp_parse_ctest_output() - Parse ctest output into summary and failed test list.
+ * @output:       CTest stdout/stderr string.
+ * @summary_obj:  cJSON object to populate with test run counts and duration.
+ * @failures_arr: cJSON array to append failed test details to.
+ */
+void mcp_parse_ctest_output(
+    const char *output,
+    cJSON      *summary_obj,
+    cJSON      *failures_arr);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.

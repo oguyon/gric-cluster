@@ -32,6 +32,31 @@
     "name": "gric_audit_code_style"
   },
   {
+    "description": "Incremental compilation and CTest runner: compresses output into structured compiler warnings [file, line, message] and failing test list.",
+    "inputSchema": {
+      "properties": {
+        "clean": {
+          "description": "Clean build targets first (default: false).",
+          "type": "boolean"
+        },
+        "run_tests": {
+          "description": "Run test suite after build (default: true).",
+          "type": "boolean"
+        },
+        "target": {
+          "description": "Build target name (default: all).",
+          "type": "string"
+        },
+        "test_filter": {
+          "description": "Regex filter passed to ctest -R.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_dev_build_test"
+  },
+  {
     "description": "Launch standalone Milk streaming daemon (cluster, knn, recon) with input/output streams and initial parameters.",
     "inputSchema": {
       "properties": {
