@@ -54,13 +54,15 @@ typedef struct
 
 /**
  * gpu_ivf_index_create() - Build GPU inverted-file index from active KnnModel.
- * @model:     Pointer to active KnnModel with clusters and dataset buffer.
+ * @model:     Pointer to active KnnModel with clusters.
+ * @frames:    Resident dataset frames (model->is_double selects double or float elements).
  * @device_id: GPU device index (0 for default).
  *
- * Return: Pointer to allocated GpuIvfIndex on success, NULL on error.
+ * Return: Pointer to allocated GpuIvfIndex on success, NULL on error or if @frames is NULL.
  */
 GpuIvfIndex *gpu_ivf_index_create(
     const KnnModel *model,
+    const void     *frames,
     int             device_id);
 
 /**

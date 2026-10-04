@@ -1259,6 +1259,13 @@ if (ENABLE_CUDA)
     add_test(NAME test_knn_cuda_ivf COMMAND test_knn_cuda_ivf)
     set_tests_properties(test_knn_cuda_ivf PROPERTIES DEPENDS "gric-cluster;gric-knn")
 
+    # GPU k-NN without the cached dataset: the IVF engine must decline (it used to build an
+    # index of zero vectors and crash) and the brute-force engine must produce the results.
+    add_test(NAME test_knn_cuda_no_cache
+        COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_out -k 10 -dtmin 5
+                -gpu -no-cache -o /tmp/ctest_knn_cuda_no_cache.txt)
+    set_tests_properties(test_knn_cuda_no_cache PROPERTIES DEPENDS test_spiral_clustering)
+
     add_executable(test_cluster_cuda_pass1
         tests/test_cluster_cuda_pass1.c
         src/gpu/cuda_anchor_store.cu
