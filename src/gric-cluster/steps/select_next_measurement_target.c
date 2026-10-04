@@ -495,41 +495,38 @@ static int select_next_measurement_target_entropy(
     struct timespec start_score;
     clock_gettime(CLOCK_MONOTONIC, &start_score);
 
-    int active_count = 0;
-    for (int i = 0; i < state->num_clusters; i++)
-    {
-        if (state->scratch.clmembflag[i])
-        {
-            active_count++;
-        }
-    }
-
-    if (active_count == 0)
-    {
-        return -1;
-    }
-
-    if (active_count == 1)
-    {
-        for (int i = 0; i < state->num_clusters; i++)
-        {
-            if (state->scratch.clmembflag[i])
-            {
-                return i;
-            }
-        }
-    }
-
+    /* Count active candidates and find the most probable one. Only active clusters may be
+     * returned: the caller loops until a target is measured or -1 is returned, so returning an
+     * inactive cluster would repeat forever. */
     double *p_current = state->scratch.entropy_p_current;
+    int active_count = 0;
+    int first_active = -1;
     double max_p = -1.0;
     int argmax_p = -1;
     for (int i = 0; i < state->num_clusters; i++)
     {
+        if (!state->scratch.clmembflag[i])
+        {
+            continue;
+        }
+        if (active_count++ == 0)
+        {
+            first_active = i;
+        }
         if (p_current[i] > max_p)
         {
             max_p = p_current[i];
             argmax_p = i;
         }
+    }
+
+    if (active_count <= 1)
+    {
+        return first_active;
+    }
+    if (argmax_p < 0)
+    {
+        argmax_p = first_active;
     }
 
     double H_current = entropy_compute_initial_h(state, p_current, meas_idx);
