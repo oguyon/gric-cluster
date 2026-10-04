@@ -100,6 +100,10 @@ graph TD
 ### Level 3: Applications, Tools & Auxiliary Services
 - Executables: `gric-cluster`, `gric-knn`, `gric-knn-avg`, `gric-server`, `gric-status`,
   `gric-benchmark`, `gric-probe`, `gric-mcp`, `gric-dimdensity`, `gric-tune`, `gric-info`, etc.
+- Adapters: `libmilkgric.so`, `milk-fpsexec-gric-cluster`, `milk-fpsexec-gric-knn`,
+  `milk-fpsexec-gric-reconstruct` (`src/gric-fps/`).
+- **Inter-service Edges**:
+  - `gric-mcp` &rarr; `gric-fps` (parameter definitions `*_params.h` only, no Milk runtime).
 - **Constraints**:
   - Command-line parsing, output printing, and process management belong here.
   - No domain logic or math kernels should be implemented directly in application `main.c` files;

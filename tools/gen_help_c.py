@@ -33,21 +33,8 @@ ALIASES = {
     "milk_streams": ["streams", "telemetry_vector"],
 }
 
-def escape_c_string(text):
-    """Escape text for inclusion in C string literal with line wrapping < 90 chars."""
-    lines = text.split("\n")
-    escaped_lines = []
-    for line in lines:
-        # Wrap each line into ~70 char raw segments before escaping
-        chunk_size = 65
-        for i in range(0, max(len(line), 1), chunk_size):
-            chunk = line[i:i + chunk_size]
-            # If this is the last chunk of the line, append \n
-            if i + chunk_size >= len(line):
-                chunk += "\n"
-            esc = chunk.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-            escaped_lines.append(f'    "{esc}"')
-    return "\n".join(escaped_lines)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from c_embed import escape_c_string
 
 def main():
     if len(sys.argv) < 3:

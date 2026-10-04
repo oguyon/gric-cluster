@@ -248,3 +248,14 @@ target_link_libraries(milkgric PRIVATE
 install(TARGETS milkgric
     DESTINATION lib
 )
+
+get_property(_fps_progs GLOBAL PROPERTY GRIC_INSTALLED_PROGRAMS)
+list(APPEND _fps_progs
+    milk-fpsexec-gric-cluster
+    gric-fps-cluster
+    milk-fpsexec-gric-knn
+    gric-fps-knn
+    milk-fpsexec-gric-reconstruct
+    gric-fps-reconstruct
+)
+set_property(GLOBAL PROPERTY GRIC_INSTALLED_PROGRAMS "${_fps_progs}")

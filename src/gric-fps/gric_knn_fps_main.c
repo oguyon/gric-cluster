@@ -3,6 +3,7 @@
  * @brief Standalone FPS daemon executable for GRIC real-time streaming k-NN.
  */
 
+#include "fps.h"
 #include "gric_knn_fps_common.h"
 #include "gric_knn_fps_params.h"
 #include <errno.h>

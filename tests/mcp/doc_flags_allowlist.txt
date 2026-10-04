@@ -1,0 +1,58 @@
+# Allowlist of CLI flags currently not yet documented in docs/help/
+# Format: <flag> # <reason>
+all-queries # k-NN option pending documentation
+angular # Angular/cosine distance metric flag pending documentation
+approx # Approximate nearest neighbor search flag pending documentation
+cluster-graph # Cluster graph navigation flag pending documentation
+cpu-pass1 # CPU pass1 execution mode flag
+dtmin # Temporal min delta-time parameter
+e8-graph # E8 lattice graph index flag
+e8-quant # E8 lattice quantization flag
+ef-cluster # HNSW efConstruction parameter for clustering
+ef-search # HNSW ef parameter for search
+env # Environment variable dump flag
+eq16-approx # EQ16 approximate search flag
+eq16-load # EQ16 index loading flag
+eq16-ratio # EQ16 ratio threshold
+eq16-save # EQ16 index saving flag
+eq16-sparse # EQ16 sparse distance matrix flag
+gpu-auto-prune # GPU auto pruning parameter
+gpu-batch-size # GPU query batch size
+gpu-bf # GPU brute-force fallback flag
+gpu-gemm # GPU GEMM acceleration flag
+gpu-nprobe # GPU IVF nprobe parameter
+gpu-pass1 # GPU pass1 execution flag
+gpu-pass2 # GPU pass2 execution flag
+gpu-prune # GPU pruning parameter
+multipivot # Multi-pivot metric indexing flag
+no-cache # Disable memory cache flag
+no-mutual # Disable mutual neighbor requirement
+nthreads # Thread count override flag
+q # Quiet output shorthand flag
+quiet # Quiet output flag
+rabitq # RaBitQ quantization index flag
+rabitq-approx # RaBitQ approximate search flag
+rabitq-bits # RaBitQ bitwidth parameter
+rabitq-load # RaBitQ index loading flag
+rabitq-save # RaBitQ index saving flag
+reciprocal # Reciprocal nearest neighbor flag
+rq8 # Residual Quantization 8-bit flag
+rq8-adc # RQ8 asymmetric distance computation flag
+rq8-approx # RQ8 approximate search flag
+rq8-load # RQ8 index loading flag
+rq8-save # RQ8 index saving flag
+rq8-sparse # RQ8 sparse index flag
+sq16-approx # Scalar Quantization 16-bit approximate search flag
+sq16-load # SQ16 index loading flag
+sq16-save # SQ16 index saving flag
+sq16-sparse # SQ16 sparse index flag
+sq16-sparse-lru # SQ16 sparse LRU cache flag
+sq8-approx # Scalar Quantization 8-bit approximate search flag
+sq8-load # SQ8 index loading flag
+sq8-save # SQ8 index saving flag
+swap-remove # Dynamic anchor swap removal flag
+te4-max-anchors # TE4 maximum anchors parameter
+two-hop # Two-hop graph expansion flag
+two-hop-max # Two-hop expansion maximum neighbors
+two-hop-seeds # Two-hop expansion seed count
+warmup # Kernel warmup iterations flag

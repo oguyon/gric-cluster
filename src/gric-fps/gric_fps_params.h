@@ -6,8 +6,7 @@
 #ifndef GRIC_FPS_PARAMS_H
 #define GRIC_FPS_PARAMS_H
 
-#include "fps.h"
-
+/* Dependency-free header: consumer must include fps.h if using Milk symbols */
 /**
  * @brief GRIC Parameter Definition Macro.
  *

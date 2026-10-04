@@ -15,14 +15,14 @@ Milk FPS integration (`milk-fpsexec-gric-cluster`).
 
 ## OUTPUT ASSIGNMENT STREAM (<out_name>_assign)
 Published on every ingested frame. Allocated as a 1D [8, 1] float vector:
-- [0] cnt0: Input frame index counter.
+- [0] frame_index: Input frame index counter (cnt0).
 - [1] cluster_id: Assigned cluster ID (0 <= k < K).
 - [2] distance: Measured Euclidean distance to assigned cluster anchor.
 - [3] is_new_anchor: 1.0 if this frame spawned a new anchor, 0.0 if matched.
-- [4] cluster_count: Total active clusters currently discovered (K).
+- [4] total_clusters: Total active clusters currently discovered (K).
 - [5] latency_us: Single-frame processing latency in microseconds.
-- [6] evals: Number of metric distance calculations evaluated for this frame.
-- [7] reserved: Auxiliary telemetry / quality score.
+- [6] within_rlim: 1.0 if distance <= rlim, 0.0 if outlier.
+- [7] query_mode: 1.0 if FPS runs in query mode, 0.0 in discovery mode.
 
 ## CENTROIDS & ANCHORS STREAM (<out_name>_anchors)
 Published when .stream_anchors is ON.

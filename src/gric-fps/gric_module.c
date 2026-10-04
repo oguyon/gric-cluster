@@ -8,7 +8,7 @@
 
 #include "milk_config.h"
 #include "CLIcore.h"
-#include "COREMOD_memory/COREMOD_memory.h"
+#include "fps.h"
 #include "gric_fps_common.h"
 #include "gric_fps_params.h"
 #include <errno.h>

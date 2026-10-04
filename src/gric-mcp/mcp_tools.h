@@ -174,6 +174,19 @@ int mcp_tool_probe_fps_streams(
     cJSON       *res);
 
 /**
+ * mcp_decode_assign() - Decode assignment telemetry stream vector into cJSON object.
+ * @vec: Input float array of at least GRIC_ASSIGN_NFIELDS elements.
+ * @n:   Number of elements in vec.
+ * @out: Target cJSON object to populate with telemetry fields.
+ *
+ * Return: 0 on success, -1 on invalid arguments or insufficient length.
+ */
+int mcp_decode_assign(
+    const float *vec,
+    size_t       n,
+    cJSON       *out);
+
+/**
  * mcp_tool_server_info() - Retrieve server runtime status, active toolsets, and flags.
  * @args:   JSON object containing optional arguments.
  * @res:    Output JSON object with version, toolsets, and read_only status.

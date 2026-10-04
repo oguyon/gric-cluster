@@ -6,6 +6,7 @@
 #include "mcp_dispatch.h"
 #include "mcp_tools.h"
 #include "mcp_registry.h"
+#include "mcp_fps_schema.h"
 #include "shared/cjson/cJSON.h"
 #include "shared/help_topics.h"
 #include <stdio.h>
@@ -252,9 +253,26 @@ static cJSON *handle_resources_list(
     {
         cJSON *r = cJSON_CreateObject();
         cJSON_AddStringToObject(r, "uri", "gric://milk/fps_params");
-        cJSON_AddStringToObject(r, "name", "Milk FPS Parameters Reference");
+        cJSON_AddStringToObject(r, "name", "Milk FPS Modules Index");
         cJSON_AddStringToObject(r, "description",
-                                "Dictionary of all 16 parameters in gric_cluster FPS");
+                                "Index of all Milk FPS streaming modules");
+        cJSON_AddStringToObject(r, "mimeType", "application/json");
+        cJSON_AddItemToArray(resources, r);
+    }
+    size_t nmods = 0;
+    const struct mcp_fps_module *mods = mcp_fps_module_table(&nmods);
+    for (size_t ii = 0; ii < nmods; ii++)
+    {
+        char uri[128];
+        char desc[256];
+        snprintf(uri, sizeof(uri), "gric://milk/fps_params/%s", mods[ii].module);
+        snprintf(desc, sizeof(desc), "Parameter dictionary for %s (%s)",
+                 mods[ii].module, mods[ii].binary);
+
+        cJSON *r = cJSON_CreateObject();
+        cJSON_AddStringToObject(r, "uri", uri);
+        cJSON_AddStringToObject(r, "name", mods[ii].module);
+        cJSON_AddStringToObject(r, "description", desc);
         cJSON_AddStringToObject(r, "mimeType", "application/json");
         cJSON_AddItemToArray(resources, r);
     }
@@ -344,43 +362,53 @@ static cJSON *handle_resources_read(
     else if (strcmp(uri, "gric://milk/fps_params") == 0)
     {
         mime_type = "application/json";
-        content_text =
-            "{\n"
-            "  \"parameters\": [\n"
-            "    {\"name\": \".in_name\", \"type\": \"STREAMNAME\", "
-            "\"description\": \"Input ImageStreamIO stream\"},\n"
-            "    {\"name\": \".out_name\", \"type\": \"STRING\", "
-            "\"description\": \"Output assignment stream (<out>_assign)\"},\n"
-            "    {\"name\": \".out_anchors\", \"type\": \"STRING\", "
-            "\"description\": \"Output centroids stream\"},\n"
-            "    {\"name\": \".out_counts\", \"type\": \"STRING\", "
-            "\"description\": \"Output cluster counts stream\"},\n"
-            "    {\"name\": \".stream_anchors\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
-            "\"description\": \"Publish anchors live\"},\n"
-            "    {\"name\": \".stream_counts\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
-            "\"description\": \"Publish counts live\"},\n"
-            "    {\"name\": \".allow_frame_drop\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
-            "\"description\": \"1=jump to latest frame\"},\n"
-            "    {\"name\": \".rlim\", \"type\": \"FLOAT64\", \"default\": 0.5, "
-            "\"description\": \"Cluster radius threshold\"},\n"
-            "    {\"name\": \".deltaprob\", \"type\": \"FLOAT64\", \"default\": 0.01, "
-            "\"description\": \"Neighbor search cutoff\"},\n"
-            "    {\"name\": \".maxnbclust\", \"type\": \"UINT32\", \"default\": 256, "
-            "\"description\": \"Maximum cluster capacity\"},\n"
-            "    {\"name\": \".maxcl_strategy\", \"type\": \"INT64\", \"default\": 0, "
-            "\"description\": \"0=stop, 1=discard\"},\n"
-            "    {\"name\": \".ncpu\", \"type\": \"UINT32\", \"default\": 0, "
-            "\"description\": \"Thread count (0=auto)\"},\n"
-            "    {\"name\": \".use_double\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
-            "\"description\": \"64-bit float compute\"},\n"
-            "    {\"name\": \".use_sq16\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
-            "\"description\": \"16-bit scalar quantization\"},\n"
-            "    {\"name\": \".entropy_mode\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
-            "\"description\": \"Shannon entropy search\"},\n"
-            "    {\"name\": \".reset_state\", \"type\": \"ONOFF\", \"default\": \"OFF\", "
-            "\"description\": \"Dynamic reset trigger\"}\n"
-            "  ]\n"
-            "}";
+        size_t count = 0;
+        const struct mcp_fps_module *mods = mcp_fps_module_table(&count);
+        cJSON *root_obj = cJSON_CreateObject();
+        cJSON *mod_arr = cJSON_CreateArray();
+        for (size_t ii = 0; ii < count; ii++)
+        {
+            cJSON *m = cJSON_CreateObject();
+            cJSON_AddStringToObject(m, "module", mods[ii].module);
+            cJSON_AddStringToObject(m, "binary", mods[ii].binary);
+            cJSON_AddStringToObject(m, "default_fps_name", mods[ii].default_fps_name);
+            cJSON_AddNumberToObject(m, "param_count", (double)mods[ii].nparams);
+            char mod_uri[128];
+            snprintf(mod_uri, sizeof(mod_uri), "gric://milk/fps_params/%s", mods[ii].module);
+            cJSON_AddStringToObject(m, "uri", mod_uri);
+            cJSON_AddItemToArray(mod_arr, m);
+        }
+        cJSON_AddItemToObject(root_obj, "modules", mod_arr);
+        allocated_content = cJSON_Print(root_obj);
+        cJSON_Delete(root_obj);
+        content_text = allocated_content;
+    }
+    else if (strncmp(uri, "gric://milk/fps_params/", 23) == 0)
+    {
+        const char *mod_name = uri + 23;
+        const struct mcp_fps_module *mod = mcp_fps_module_find(mod_name);
+        if (mod != NULL)
+        {
+            mime_type = "application/json";
+            cJSON *root_obj = cJSON_CreateObject();
+            cJSON_AddStringToObject(root_obj, "module", mod->module);
+            cJSON_AddStringToObject(root_obj, "binary", mod->binary);
+            cJSON_AddStringToObject(root_obj, "default_fps_name", mod->default_fps_name);
+            cJSON *param_arr = cJSON_CreateArray();
+            for (size_t ii = 0; ii < mod->nparams; ii++)
+            {
+                cJSON *p = cJSON_CreateObject();
+                cJSON_AddStringToObject(p, "key", mod->params[ii].key);
+                cJSON_AddStringToObject(p, "type", mod->params[ii].fptype);
+                cJSON_AddStringToObject(p, "access", mod->params[ii].access);
+                cJSON_AddStringToObject(p, "description", mod->params[ii].descr);
+                cJSON_AddItemToArray(param_arr, p);
+            }
+            cJSON_AddItemToObject(root_obj, "parameters", param_arr);
+            allocated_content = cJSON_Print(root_obj);
+            cJSON_Delete(root_obj);
+            content_text = allocated_content;
+        }
     }
     else if (strncmp(uri, "gric://help/", 12) == 0)
     {

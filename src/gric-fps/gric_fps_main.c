@@ -3,6 +3,7 @@
  * @brief Standalone FPS daemon executable for GRIC real-time stream clustering.
  */
 
+#include "fps.h"
 #include "gric_fps_common.h"
 #include "gric_fps_params.h"
 #include <errno.h>
