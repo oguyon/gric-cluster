@@ -529,6 +529,11 @@ static inline uint32_t rq8_fastscan_32x_generic_scalar(
     long                    dim,
     uint64_t                ssd_cutoff)
 {
+    if (ssd_cutoff == UINT64_MAX)
+    {
+        return 0xFFFFFFFFU;
+    }
+
     uint32_t mask = 0;
 
     for (int i = 0; i < 32; i++)
@@ -655,6 +660,11 @@ static inline uint32_t rq8_fastscan_32x_generic_avx2(
     long                    dim,
     uint64_t                ssd_cutoff)
 {
+    if (ssd_cutoff == UINT64_MAX)
+    {
+        return 0xFFFFFFFFU;
+    }
+
     if (ssd_cutoff >= 0xFFFFFFFFULL)
     {
         return rq8_fastscan_32x_generic_scalar(query_res, block_coords, dim, ssd_cutoff);
@@ -849,6 +859,11 @@ static inline uint32_t rq8_fastscan_32x_generic_avx512(
     long                    dim,
     uint64_t                ssd_cutoff)
 {
+    if (ssd_cutoff == UINT64_MAX)
+    {
+        return 0xFFFFFFFFU;
+    }
+
     __m512i acc0 = _mm512_setzero_si512();
     __m512i acc1 = _mm512_setzero_si512();
     __m512i acc2 = _mm512_setzero_si512();
@@ -935,6 +950,11 @@ static inline uint32_t rq8_fastscan_32x(
     long                    dim,
     uint64_t                ssd_cutoff)
 {
+    if (ssd_cutoff == UINT64_MAX)
+    {
+        return 0xFFFFFFFFU;
+    }
+
     if (dim == 3)
     {
         return rq8_fastscan_32x_3d(

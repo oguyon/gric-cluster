@@ -1882,5 +1882,10 @@ uint32_t eq16_fastscan_32x_i16(
     long                    dim,
     uint64_t                ssd_cutoff)
 {
+    if (ssd_cutoff == UINT64_MAX)
+    {
+        return 0xFFFFFFFFU;
+    }
+
     return sq16_fastscan_32x(query_eq16, block_coords, dim, ssd_cutoff);
 }
