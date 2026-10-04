@@ -4,6 +4,7 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
+#include "fps.h"
 #include "gric_fps_common.h"
 #include "gric_fps_params.h"
 #include "cluster_shm.h"
@@ -392,15 +393,17 @@ errno_t gric_fps_process_frame(
     if (out_assign && out_assign->used == 1)
     {
         out_assign->md[0].write = 1;
-        float *assign_data = (float *)out_assign->array.raw;
-        assign_data[0] = (float)frame_index;
-        assign_data[1] = (float)assigned_cluster_id;
-        assign_data[2] = (float)last_dist;
-        assign_data[3] = is_new ? 1.0f : 0.0f;
-        assign_data[4] = (float)total_clusters;
-        assign_data[5] = (float)latency_us;
-        assign_data[6] = (last_dist <= fps_rlim) ? 1.0f : 0.0f;
-        assign_data[7] = (float)fps_query_mode;
+        struct gric_assign_sample sample = {
+            .frame_index    = (float)frame_index,
+            .cluster_id     = (float)assigned_cluster_id,
+            .distance       = (float)last_dist,
+            .is_new_anchor  = is_new ? 1.0f : 0.0f,
+            .total_clusters = (float)total_clusters,
+            .latency_us     = (float)latency_us,
+            .within_rlim    = (last_dist <= fps_rlim) ? 1.0f : 0.0f,
+            .query_mode     = (float)fps_query_mode,
+        };
+        gric_assign_pack((float *)out_assign->array.raw, &sample);
     }
 
     /* Update anchors stream if a new cluster was spawned */

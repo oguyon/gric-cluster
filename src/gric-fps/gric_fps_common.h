@@ -10,6 +10,7 @@
 #include "fps.h"
 #include "fps_procinfo_macros.h"
 #include "processinfo.h"
+#include "shared/gric_stream_layout.h"
 #include <ImageStreamIO/ImageStreamIO.h>
 #include <gric/gric.h>
 #include <stdint.h>
@@ -55,7 +56,7 @@ extern char     fps_shm_status_file[FUNCTION_PARAMETER_STRMAXLEN];
 extern char     fps_save_dir[FUNCTION_PARAMETER_STRMAXLEN];
 
 /* Telemetry packet size for <out>_assign */
-#define GRIC_ASSIGN_PACKET_ELEMS 8
+#define GRIC_ASSIGN_PACKET_ELEMS GRIC_ASSIGN_NFIELDS
 
 /**
  * @brief Validate configuration parameters and check input stream.

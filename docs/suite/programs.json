@@ -1,0 +1,221 @@
+[
+  {
+    "name": "gric-cluster",
+    "category": "Core Clustering",
+    "summary": "High-performance distance-based clustering engine (offline or streaming).",
+    "usage": "gric-cluster <rlim> <input> [options]"
+  },
+  {
+    "name": "gric-knn",
+    "category": "Nearest Neighbors",
+    "summary": "Out-of-core metric-pruned k-nearest neighbors search solver.",
+    "usage": "gric-knn <input_data> <cluster_dir> [options]"
+  },
+  {
+    "name": "gric-knn-avg",
+    "category": "Nearest Neighbors",
+    "summary": "Reconstructs frames and feature averages using k-NN graph connectivity.",
+    "usage": "gric-knn-avg <input_data> <knn_file> [options]"
+  },
+  {
+    "name": "milk-fpsexec-gric-cluster",
+    "category": "Milk Streaming",
+    "summary": "Standalone Function Parameter Structure daemon for real-time stream clustering.",
+    "usage": "milk-fpsexec-gric-cluster [options] [fpsname:]<command>",
+    "requires": "milk"
+  },
+  {
+    "name": "gric-fps-cluster",
+    "category": "Milk Streaming",
+    "summary": "Convenience symlink to milk-fpsexec-gric-cluster.",
+    "usage": "gric-fps-cluster [options] [fpsname:]<command>",
+    "requires": "milk",
+    "alias_of": "milk-fpsexec-gric-cluster"
+  },
+  {
+    "name": "milk-fpsexec-gric-knn",
+    "category": "Milk Streaming",
+    "summary": "Standalone Function Parameter Structure daemon for streaming k-NN search.",
+    "usage": "milk-fpsexec-gric-knn [options] [fpsname:]<command>",
+    "requires": "milk"
+  },
+  {
+    "name": "gric-fps-knn",
+    "category": "Milk Streaming",
+    "summary": "Convenience symlink to milk-fpsexec-gric-knn.",
+    "usage": "gric-fps-knn [options] [fpsname:]<command>",
+    "requires": "milk",
+    "alias_of": "milk-fpsexec-gric-knn"
+  },
+  {
+    "name": "milk-fpsexec-gric-reconstruct",
+    "category": "Milk Streaming",
+    "summary": "Standalone Function Parameter Structure daemon for streaming dataset reconstruction.",
+    "usage": "milk-fpsexec-gric-reconstruct [options] [fpsname:]<command>",
+    "requires": "milk"
+  },
+  {
+    "name": "gric-fps-reconstruct",
+    "category": "Milk Streaming",
+    "summary": "Convenience symlink to milk-fpsexec-gric-reconstruct.",
+    "usage": "gric-fps-reconstruct [options] [fpsname:]<command>",
+    "requires": "milk",
+    "alias_of": "milk-fpsexec-gric-reconstruct"
+  },
+  {
+    "name": "gric-probe",
+    "category": "Tuning & Diagnostics",
+    "summary": "Automated dataset geometry, noise floor, and parameter calibration probe.",
+    "usage": "gric-probe [options] <dataset_path>"
+  },
+  {
+    "name": "gric-cluster-probe",
+    "category": "Tuning & Diagnostics",
+    "summary": "Convenience symlink to gric-probe.",
+    "usage": "gric-cluster-probe [options] <dataset_path>",
+    "alias_of": "gric-probe"
+  },
+  {
+    "name": "gric-tune",
+    "category": "Tuning & Diagnostics",
+    "summary": "Parameter space exploration and hyperparameter grid tuner.",
+    "usage": "gric-tune <input_file> [options]"
+  },
+  {
+    "name": "gric-benchmark",
+    "category": "Tuning & Diagnostics",
+    "summary": "Performance benchmarking across synthetic manifolds and algorithms.",
+    "usage": "gric-benchmark [options]"
+  },
+  {
+    "name": "gric-dimdensity",
+    "category": "Tuning & Diagnostics",
+    "summary": "Local intrinsic dimensionality (LID) and density spectrum estimator.",
+    "usage": "gric-dimdensity <input_file> [options]"
+  },
+  {
+    "name": "gric-status",
+    "category": "Tuning & Diagnostics",
+    "summary": "Real-time shared memory telemetry monitor (TUI dashboard).",
+    "usage": "gric-status [shm_file]"
+  },
+  {
+    "name": "gric-simd-bench",
+    "category": "Tuning & Diagnostics",
+    "summary": "SIMD vectorization benchmark and CPU metric microbenchmark suite.",
+    "usage": "gric-simd-bench [options]"
+  },
+  {
+    "name": "gric-info",
+    "category": "Tuning & Diagnostics",
+    "summary": "Display compiled configuration, SIMD instruction sets, and architecture capabilities.",
+    "usage": "gric-info"
+  },
+  {
+    "name": "gric-help",
+    "category": "Tuning & Diagnostics",
+    "summary": "Command-line help lookup and embedded documentation browser.",
+    "usage": "gric-help [topic]"
+  },
+  {
+    "name": "gric-cluster-analysis",
+    "category": "Tuning & Diagnostics",
+    "summary": "Offline analyzer and report generator for cluster run logs.",
+    "usage": "gric-cluster-analysis [options] <cluster_dir>"
+  },
+  {
+    "name": "gric-plot",
+    "category": "Visualization & GUI",
+    "summary": "Generates SVG/PNG diagnostic and summary plots of clustering runs.",
+    "usage": "gric-plot <input_file> <run_log> <output_image>"
+  },
+  {
+    "name": "gric-server",
+    "category": "Visualization & GUI",
+    "summary": "Native C HTTP micro-server powering the browser GUI and REST API.",
+    "usage": "gric-server [options]"
+  },
+  {
+    "name": "gric-ascii2bin",
+    "category": "Format Conversion",
+    "summary": "Encodes ASCII text tables and coordinates into self-describing .bin files.",
+    "usage": "gric-ascii2bin -dim <D> <input.txt> <output.bin>"
+  },
+  {
+    "name": "gric-bin2ascii",
+    "category": "Format Conversion",
+    "summary": "Decodes and inspects self-describing .bin files to ASCII.",
+    "usage": "gric-bin2ascii <input.bin> [output.txt]"
+  },
+  {
+    "name": "gric-mktxtseq",
+    "category": "Generators & Simulation",
+    "summary": "Generates synthetic coordinate sequences (walk, spiral, clusters).",
+    "usage": "gric-mktxtseq <nframes> <outfile> <pattern>"
+  },
+  {
+    "name": "gric-gen-balls",
+    "category": "Generators & Simulation",
+    "summary": "Generates multi-body bouncing ball physics simulation FITS video cubes.",
+    "usage": "gric-gen-balls [options] <output.fits>",
+    "requires": "cfitsio"
+  },
+  {
+    "name": "gric-txt2stream",
+    "category": "Streaming I/O",
+    "summary": "Ingests ASCII coordinate streams into ImageStreamIO shared memory.",
+    "usage": "gric-txt2stream <stream_name> <dim> [options]",
+    "requires": "imagestreamio"
+  },
+  {
+    "name": "gric-stream-to-pipe",
+    "category": "Streaming I/O",
+    "summary": "Pipes raw frame data from live ImageStreamIO shared memory to stdout.",
+    "usage": "gric-stream-to-pipe <stream_name> [options]",
+    "requires": "imagestreamio"
+  },
+  {
+    "name": "gric-mcp",
+    "category": "Model Context Protocol",
+    "summary": "Native Model Context Protocol (MCP) server for developer tools and automation.",
+    "usage": "gric-mcp [options]"
+  },
+  {
+    "name": "gric-ascii-spot-2-video",
+    "category": "Format Conversion",
+    "summary": "Converts ASCII spot tracking logs to FITS/video frames.",
+    "usage": "gric-ascii-spot-2-video [options]"
+  },
+  {
+    "name": "gric-mkclusteredfile",
+    "category": "Generators & Simulation",
+    "summary": "Synthesizes clustered coordinate distributions for testing.",
+    "usage": "gric-mkclusteredfile [options] <outfile>"
+  },
+  {
+    "name": "gric-NDmodel",
+    "category": "Generators & Simulation",
+    "summary": "High-dimensional geometric manifold generator.",
+    "usage": "gric-NDmodel [options]"
+  },
+  {
+    "name": "gric-mk4dataset",
+    "category": "Generators & Simulation",
+    "summary": "Generates 4-dataset multi-manifold validation test sets.",
+    "usage": "gric-mk4dataset [options]"
+  },
+  {
+    "name": "gric-gen-asteroid",
+    "category": "Generators & Simulation",
+    "summary": "Generates synthetic 3D asteroid silhouette projection sequences.",
+    "usage": "gric-gen-asteroid [options] <output.fits>",
+    "requires": "cfitsio"
+  },
+  {
+    "name": "gric-asteroid-recon-test",
+    "category": "Generators & Simulation",
+    "summary": "Reconstruction testbench for asteroid shape estimation.",
+    "usage": "gric-asteroid-recon-test [options]",
+    "requires": "cfitsio"
+  }
+]

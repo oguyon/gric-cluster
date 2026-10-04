@@ -104,15 +104,33 @@ endif()
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
-file(GLOB_RECURSE HELP_TOPIC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/help/*.md")
+file(GLOB_RECURSE HELP_TOPIC_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/docs/help/*.md")
 set(HELP_TOPICS_GEN_C "${CMAKE_CURRENT_BINARY_DIR}/help_topics_gen.c")
 add_custom_command(
     OUTPUT "${HELP_TOPICS_GEN_C}"
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_help_c.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/docs/help"
             "${HELP_TOPICS_GEN_C}"
-    DEPENDS ${HELP_TOPIC_FILES} "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_help_c.py"
+    DEPENDS ${HELP_TOPIC_FILES}
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_help_c.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/c_embed.py"
     COMMENT "Generating embedded Markdown help topics database"
+)
+
+file(GLOB_RECURSE MCP_RECIPE_FILES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/docs/recipes/*.md")
+file(GLOB_RECURSE MCP_SUITE_FILES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/docs/suite/*.json")
+set(MCP_CONTENT_GEN_C "${CMAKE_CURRENT_BINARY_DIR}/mcp_content_gen.c")
+add_custom_command(
+    OUTPUT "${MCP_CONTENT_GEN_C}"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_mcp_content.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/docs"
+            "${MCP_CONTENT_GEN_C}"
+    DEPENDS ${MCP_RECIPE_FILES} ${MCP_SUITE_FILES}
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_mcp_content.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/c_embed.py"
+    COMMENT "Generating embedded MCP recipes and suite catalog database"
 )
 
 include_directories(
@@ -366,6 +384,33 @@ if (IMAGESTREAMIO_FOUND)
     target_link_libraries(gric-stream-to-pipe ${IMAGESTREAMIO_LIBRARIES} m)
 endif()
 
+set(GRIC_BASE_INSTALLED_PROGRAMS
+    gric-cluster
+    gric-status
+    gric-info
+    gric-help
+    gric-benchmark
+    gric-simd-bench
+    gric-tune
+    gric-cluster-analysis
+    gric-server
+    gric-knn
+    gric-knn-avg
+    gric-dimdensity
+    gric-bin2ascii
+    gric-ascii2bin
+    gric-mktxtseq
+    gric-mk4dataset
+    gric-plot
+    gric-probe
+    gric-mcp
+    gric-ascii-spot-2-video
+    gric-mkclusteredfile
+    gric-NDmodel
+    gric-cluster-probe
+)
+set_property(GLOBAL PROPERTY GRIC_INSTALLED_PROGRAMS "${GRIC_BASE_INSTALLED_PROGRAMS}")
+
 if (ENABLE_MILK AND MILK_FOUND)
     add_subdirectory(src/gric-fps)
 endif()
@@ -614,6 +659,7 @@ add_library(gric_mcp_core OBJECT
     src/gric-mcp/mcp_exec.c
     src/gric-mcp/mcp_validate.c
     src/gric-mcp/mcp_tools.c
+    src/gric-mcp/mcp_fps_schema.c
     src/gric-mcp/tools/tool_audit_code_style.c
     src/gric-mcp/tools/tool_align_parameters.c
     src/gric-mcp/tools/tool_inspect_simd.c
@@ -624,6 +670,7 @@ add_library(gric_mcp_core OBJECT
     src/gric-mcp/tools/tool_help.c
     src/gric-mcp/tools/tool_fps_ops.c
     ${HELP_TOPICS_GEN_C}
+    ${MCP_CONTENT_GEN_C}
     src/shared/cjson/cJSON.c
     src/shared/cli/cli_colors.c
     src/gric-cluster-analysis/analysis_parser.c
@@ -649,6 +696,7 @@ target_include_directories(gric_mcp_core PRIVATE
     src/gric-probe
     src/gric-cluster-analysis
     src/shared
+    src/gric-fps
     src
 )
 if (OpenMP_C_FOUND)
@@ -785,6 +833,16 @@ if (CFITSIO_FOUND)
     )
 endif()
 
+get_property(ALL_INSTALLED_PROGRAMS GLOBAL PROPERTY GRIC_INSTALLED_PROGRAMS)
+if (IMAGESTREAMIO_FOUND)
+    list(APPEND ALL_INSTALLED_PROGRAMS gric-txt2stream gric-stream-to-pipe)
+endif()
+if (CFITSIO_FOUND)
+    list(APPEND ALL_INSTALLED_PROGRAMS gric-gen-balls gric-gen-asteroid gric-asteroid-recon-test)
+endif()
+string(REPLACE ";" "\n" ALL_INSTALLED_PROGRAMS_STR "${ALL_INSTALLED_PROGRAMS}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/installed_programs.txt" "${ALL_INSTALLED_PROGRAMS_STR}\n")
+
 # ==============================================================================
 # Testing & CTest Integration
 # ==============================================================================
@@ -797,7 +855,7 @@ add_test(NAME test_sequence_generator
     COMMAND gric-mktxtseq 1000 /tmp/ctest_spiral.txt 2Dspiral)
 
 add_test(NAME test_spiral_clustering
-    COMMAND gric-cluster 0.1 /tmp/ctest_spiral.txt -maxim 1000 -outdir /tmp/ctest_spiral_out)
+    COMMAND gric-cluster 0.1 /tmp/ctest_spiral.txt -maxim 1000 -outdir /tmp/ctest_spiral_out -txt)
 
 add_test(NAME test_knn_spiral
     COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_out -k 10 -dtmin 5 -o /tmp/ctest_knn_spiral.txt)
@@ -1267,13 +1325,92 @@ endif()
 add_test(NAME test_mcp_protocol COMMAND test_mcp_protocol)
 set_tests_properties(test_mcp_protocol PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+add_executable(test_stream_layout
+    tests/test_stream_layout.c
+    $<TARGET_OBJECTS:gric_mcp_core>
+)
+target_include_directories(test_stream_layout PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+    ${CMAKE_SOURCE_DIR}
+)
+target_link_libraries(test_stream_layout m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_stream_layout OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_stream_layout ${CFITSIO_LIBRARIES})
+    target_include_directories(test_stream_layout PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_stream_layout ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_stream_layout PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_stream_layout COMMAND test_stream_layout)
+set_tests_properties(test_stream_layout PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_executable(test_mcp_contract
+    tests/test_mcp_contract.c
+    $<TARGET_OBJECTS:gric_mcp_core>
+)
+target_include_directories(test_mcp_contract PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+    ${CMAKE_SOURCE_DIR}
+)
+target_link_libraries(test_mcp_contract m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_mcp_contract OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_mcp_contract ${CFITSIO_LIBRARIES})
+    target_include_directories(test_mcp_contract PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_mcp_contract ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_mcp_contract PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_mcp_contract COMMAND test_mcp_contract)
+set_tests_properties(test_mcp_contract PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS test_spiral_clustering
+)
+
+add_test(NAME test_doc_flag_drift
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/check_doc_flags.py"
+            "${CMAKE_SOURCE_DIR}"
+            "${CMAKE_SOURCE_DIR}/docs/help"
+            "${CMAKE_SOURCE_DIR}/tests/mcp/doc_flags_allowlist.txt"
+            "${CMAKE_SOURCE_DIR}/tools/gen_help_c.py"
+)
+
+add_test(NAME test_fps_param_docs
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tests/mcp/check_fps_param_docs.py"
+            "$<TARGET_FILE:gric-mcp>"
+            "${CMAKE_SOURCE_DIR}/docs/help/milk"
+)
+
+add_test(NAME test_mcp_suite_catalog
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tests/mcp/check_suite_catalog.py"
+            "${CMAKE_SOURCE_DIR}/docs/suite/programs.json"
+            "${CMAKE_CURRENT_BINARY_DIR}/installed_programs.txt"
+)
+
 add_test(NAME test_mcp_tools_snapshot
-    COMMAND python3 "${CMAKE_SOURCE_DIR}/tests/mcp/check_snapshot.py"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tests/mcp/check_snapshot.py"
     "$<TARGET_FILE:gric-mcp>"
     "${CMAKE_SOURCE_DIR}/tests/mcp/tools_snapshot.json")
 
 add_custom_target(mcp-snapshot
-    COMMAND python3 "${CMAKE_SOURCE_DIR}/tests/mcp/check_snapshot.py"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tests/mcp/check_snapshot.py"
     "$<TARGET_FILE:gric-mcp>"
     "${CMAKE_SOURCE_DIR}/tests/mcp/tools_snapshot.json"
     --update

@@ -379,16 +379,27 @@ static void test_resources(void)
     CHECK(strstr(resp2, "Milk Framework Integration") != NULL);
     free(resp2);
 
-    /* 3. Test resources/read for gric://milk/fps_params */
+    /* 3. Test resources/read for gric://milk/fps_params (module index) */
     const char *req3 =
         "{\"jsonrpc\":\"2.0\",\"id\":17,\"method\":\"resources/read\",\"params\":{"
         "\"uri\":\"gric://milk/fps_params\""
         "}}";
     char *resp3 = mcp_dispatch_message(req3);
     CHECK(resp3 != NULL);
-    CHECK(strstr(resp3, ".in_name") != NULL);
-    CHECK(strstr(resp3, ".rlim") != NULL);
+    CHECK(strstr(resp3, "cluster") != NULL);
+    CHECK(strstr(resp3, "gric://milk/fps_params/cluster") != NULL);
     free(resp3);
+
+    /* 4. Test resources/read for gric://milk/fps_params/cluster */
+    const char *req4 =
+        "{\"jsonrpc\":\"2.0\",\"id\":18,\"method\":\"resources/read\",\"params\":{"
+        "\"uri\":\"gric://milk/fps_params/cluster\""
+        "}}";
+    char *resp4 = mcp_dispatch_message(req4);
+    CHECK(resp4 != NULL);
+    CHECK(strstr(resp4, ".in_name") != NULL);
+    CHECK(strstr(resp4, ".rlim") != NULL);
+    free(resp4);
 
     printf("PASS: test_resources\n");
 } // test_resources

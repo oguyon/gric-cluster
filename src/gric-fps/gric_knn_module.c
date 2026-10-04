@@ -5,6 +5,7 @@
 
 #include "milk_config.h"
 #include "CLIcore.h"
+#include "fps.h"
 #include "COREMOD_memory/COREMOD_memory.h"
 #include "gric_knn_fps_common.h"
 #include "gric_knn_fps_params.h"

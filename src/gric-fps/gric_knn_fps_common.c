@@ -4,6 +4,7 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
+#include "fps.h"
 #include "gric_knn_fps_common.h"
 #include "gric_knn_fps_params.h"
 #include "knn_defs.h"

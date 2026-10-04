@@ -6,8 +6,7 @@
 #ifndef GRIC_KNN_FPS_PARAMS_H
 #define GRIC_KNN_FPS_PARAMS_H
 
-#include "fps.h"
-
+/* Dependency-free header: consumer must include fps.h if using Milk symbols */
 /**
  * @brief GRIC k-NN Parameter Definition Macro.
  *

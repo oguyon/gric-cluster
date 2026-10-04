@@ -3,6 +3,7 @@
  * @brief Standalone FPS daemon executable for GRIC real-time streaming reconstruction.
  */
 
+#include "fps.h"
 #include "gric_recon_fps_common.h"
 #include "gric_recon_fps_params.h"
 #include <errno.h>

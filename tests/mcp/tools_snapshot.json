@@ -32,7 +32,7 @@
     "name": "gric_audit_code_style"
   },
   {
-    "description": "Launch standalone milk-fpsexec-gric-cluster streaming daemon with input/output streams and initial parameters.",
+    "description": "Launch standalone Milk streaming daemon (cluster, knn, recon) with input/output streams and initial parameters.",
     "inputSchema": {
       "properties": {
         "allow_frame_drop": {
@@ -40,11 +40,15 @@
           "type": "boolean"
         },
         "fps_name": {
-          "description": "FPS instance name (default: gric_cluster).",
+          "description": "FPS instance name (default depends on module).",
           "type": "string"
         },
         "in_name": {
           "description": "Input ImageStreamIO stream name (TRIGGER).",
+          "type": "string"
+        },
+        "module": {
+          "description": "FPS module: cluster (default), knn, or recon.",
           "type": "string"
         },
         "out_name": {
@@ -75,6 +79,10 @@
           "description": "FPS instance name (e.g. gric_cluster).",
           "type": "string"
         },
+        "module": {
+          "description": "FPS module: cluster (default), knn, or recon.",
+          "type": "string"
+        },
         "param": {
           "description": "Parameter key (e.g. 'rlim', 'allow_frame_drop').",
           "type": "string"
@@ -93,11 +101,15 @@
     "name": "gric_fps_set"
   },
   {
-    "description": "Inspect live status, loop rate, PID, and current parameters of a Milk FPS streaming instance (e.g. gric_cluster).",
+    "description": "Inspect live status, loop rate, PID, and current parameters of a Milk FPS streaming instance (e.g. gric_cluster, gric_knn, gric_reconstruct).",
     "inputSchema": {
       "properties": {
         "fps_name": {
-          "description": "FPS instance name (default: gric_cluster).",
+          "description": "FPS instance name (default depends on module).",
+          "type": "string"
+        },
+        "module": {
+          "description": "FPS module: cluster (default), knn, or recon.",
           "type": "string"
         }
       },
@@ -110,7 +122,11 @@
     "inputSchema": {
       "properties": {
         "fps_name": {
-          "description": "FPS instance name (default: gric_cluster).",
+          "description": "FPS instance name (default depends on module).",
+          "type": "string"
+        },
+        "module": {
+          "description": "FPS module: cluster (default), knn, or recon.",
           "type": "string"
         }
       },
@@ -216,9 +232,13 @@
     "name": "gric_probe_dataset"
   },
   {
-    "description": "Inspect Milk live streams non-blockingly and decode the 8-element assignment telemetry vector (cluster ID, distance, latency, evals).",
+    "description": "Inspect Milk live streams non-blockingly and decode the canonical assignment telemetry vector (cluster ID, distance, latency, flags).",
     "inputSchema": {
       "properties": {
+        "module": {
+          "description": "FPS module: cluster (default), knn, or recon.",
+          "type": "string"
+        },
         "out_name": {
           "description": "Name of output stream (e.g. gric_cluster_assign).",
           "type": "string"

@@ -17,4 +17,12 @@
         } \
     } while (0)
 
+#define CHECK_MSG(cond, msg) \
+    do { \
+        if (!(cond)) { \
+            fprintf(stderr, "%s:%d: CHECK failed: %s (%s)\n", __FILE__, __LINE__, #cond, msg); \
+            exit(1); \
+        } \
+    } while (0)
+
 #endif // MCP_TEST_UTIL_H

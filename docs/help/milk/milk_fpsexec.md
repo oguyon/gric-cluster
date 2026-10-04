@@ -38,15 +38,30 @@ shared memory for dynamic adjustment via milk-fps-set or milk-fpsCTRL.
 - .stream_anchors         Publish anchors stream live (ON/OFF)
 - .stream_counts          Publish counts stream live (ON/OFF)
 - .allow_frame_drop       Lag policy: 1=jump to latest frame, 0=lossless
+- .cnt2sync               Flow-control synchronization handshake toggle
+- .query_mode             Run in fixed-cluster classification query mode
+- .load_anchors           Pre-existing cluster anchor file (.bin) to load
 - .rlim                   Cluster radius threshold (Euclidean distance)
 - .deltaprob              Neighbor search probability cutoff
 - .maxnbclust             Maximum cluster allocation ceiling (default: 256)
 - .maxcl_strategy         Capacity policy: 0=stop clustering, 1=discard
+- .max_frames             Upper limit on frames to process (0 = infinite)
 - .ncpu                   OpenMP worker thread count (0 = auto-detect)
 - .use_double             Use 64-bit float precision (default: OFF, 32-bit)
 - .use_sq16               Enable 16-bit scalar quantization filter
 - .entropy_mode           Enable Shannon entropy target selection
 - .reset_state            Dynamic trigger: clears existing clusters on-the-fly
+- .shm_status_file        Bridge status SHM file path (blank = default)
+- .save_dir               Destination directory to save cluster results
+- .status.frames_processed Total frames ingested and processed
+- .status.num_clusters    Active clusters discovered
+- .status.new_clusters    Total newly created clusters
+- .status.distance_evals  Total metric distance computations
+- .status.pruning_ratio   Metric bounding pruning ratio (skipped fraction)
+- .status.latency_us      Per-frame clustering latency in microseconds
+- .status.fps             Instantaneous processing rate in frames per second
+- .status.stream_lag      Input ImageStreamIO write - read latency lag
+- .status.memory_rss_mb   Process resident set memory size in megabytes
 
 ## USAGE EXAMPLES
 Initialize FPS with ProcessInfo telemetry:
