@@ -169,17 +169,9 @@ void knn_cross_eval_intra_cluster(
                 continue;
             }
 
-            const void *cand_data = NULL;
-            if (cand_reader->memory_data != NULL)
-            {
-                size_t el_sz = model->is_double ? sizeof(double) : sizeof(float);
-                cand_data = (const char *)cand_reader->memory_data +
-                            (size_t)cand_id * (size_t)frame_elem * el_sz;
-            }
-            else if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
-            {
-                cand_data = cand_buffer;
-            }
+            const void *cand_data = knn_reader_get_frame_ptr(
+                cand_reader, cand_id, cand_buffer
+            );
             if (cand_data != NULL)
             {
                 telem->framedist_calls++;
@@ -456,29 +448,30 @@ void knn_cross_eval_inter_clusters(
                 continue;
             }
 
-            const void *cand_data = NULL;
-            if (cand_reader->memory_data != NULL)
-            {
-                size_t el_sz = model->is_double ? sizeof(double) : sizeof(float);
-                cand_data = (const char *)cand_reader->memory_data +
-                            (size_t)cand_id * (size_t)frame_elem * el_sz;
-            }
-            else if (knn_reader_read_frame(cand_reader, cand_id, cand_buffer) == 0)
-            {
-                cand_data = cand_buffer;
-            }
+            const void *cand_data = knn_reader_get_frame_ptr(
+                cand_reader, cand_id, cand_buffer
+            );
             if (cand_data != NULL)
             {
                 telem->framedist_calls++;
-                double d = compute_euclidean_distance(
-                    query_data, cand_data, frame_elem, model->is_double
+                double eps_factor = 1.0 + (double)config->epsilon;
+                double current_tau = knn_heap_peek_max_dist(heap);
+                double tau_thresh = current_tau / eps_factor;
+                if (config->rlim_cutoff > 0.0 && config->rlim_cutoff < tau_thresh)
+                {
+                    tau_thresh = config->rlim_cutoff;
+                }
+                double cutoff_sq = (heap->count >= heap->k || config->rlim_cutoff > 0.0)
+                                 ? (tau_thresh * tau_thresh) : 0.0;
+                double d = compute_euclidean_distance_cutoff(
+                    query_data, cand_data, frame_elem, model->is_double, cutoff_sq
                 );
                 if (visited != NULL && visited->rep_tags != NULL)
                 {
                     visited->rep_dists[rep_id] = (float)d;
                     visited->rep_tags[rep_id] = visited->epoch;
                 }
-                if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
+                if (cutoff_sq <= 0.0 || d <= tau_thresh)
                 {
                     knn_heap_push(heap, (int)cand_id, d);
                 }

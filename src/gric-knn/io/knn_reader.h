@@ -150,6 +150,36 @@ void knn_reader_close_thread(
 void knn_reader_close(
     KnnFrameReader *reader);
 
+/**
+ * knn_reader_get_frame_ptr() - Direct pointer access to frame if resident in memory.
+ * @reader:   Pointer to KnnFrameReader context.
+ * @frame_id: 0-based frame index.
+ * @buf:      Scratch buffer to read into if not resident in memory.
+ *
+ * Return: Pointer to frame vector data (either in memory_data or buf), or NULL on error.
+ */
+static inline const void *knn_reader_get_frame_ptr(
+    KnnFrameReader *reader,
+    long            frame_id,
+    void           *buf)
+{
+    if (reader == NULL || frame_id < 0 || frame_id >= reader->total_frames)
+    {
+        return NULL;
+    }
+    if (reader->memory_data != NULL)
+    {
+        size_t elem_size = reader->use_double ? sizeof(double) : sizeof(float);
+        return (const char *)reader->memory_data +
+               (size_t)frame_id * (size_t)reader->frame_elements * elem_size;
+    }
+    if (buf != NULL && knn_reader_read_frame(reader, frame_id, buf) == 0)
+    {
+        return buf;
+    }
+    return NULL;
+}
+
 #ifdef __cplusplus
 }
 #endif
