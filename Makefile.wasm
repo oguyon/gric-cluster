@@ -72,6 +72,7 @@ SRCS = \
 	src/gric-knn/cross/knn_cross_eval.c \
 	src/shared/format/cluster_locator.c \
 	src/shared/format/gric_bin_io.c \
+	src/shared/sys/gric_mem.c \
 	src/shared/sys/gric_simd.c \
 	src/shared/quant/scalar_quant.c \
 	src/shared/quant/scalar_quant_fastscan.c \

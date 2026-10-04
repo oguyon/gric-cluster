@@ -222,6 +222,7 @@ set(LIBGRIC_SRCS
     src/shared/quant/rabit_quant.c
     src/shared/sys/gric_profile.c
     src/shared/sys/gric_simd.c
+    src/shared/sys/gric_mem.c
     src/shared/quant/e8_lattice.c
     src/shared/quant/eq16_quant.c
     src/shared/quant/eq16_dist.c
@@ -289,6 +290,10 @@ add_test(NAME test_libgric_cpp COMMAND test_libgric_cpp)
 add_executable(test_frame_info_arena tests/test_frame_info_arena.c)
 target_link_libraries(test_frame_info_arena PRIVATE gric m)
 add_test(NAME test_frame_info_arena COMMAND test_frame_info_arena)
+
+add_executable(test_gric_mem tests/test_gric_mem.c)
+target_link_libraries(test_gric_mem PRIVATE gric m)
+add_test(NAME test_gric_mem COMMAND test_gric_mem)
 
 add_executable(gric-mktxtseq
     src/tools/generators/mktestseq.c
