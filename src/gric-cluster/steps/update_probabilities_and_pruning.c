@@ -52,7 +52,7 @@ static int select_te4_historical_anchors(
         {
             int cprev = temp_indices[p];
             if (config->optim.sparse_dcc_mode &&
-                !state->scratch.dcc_measured[cj * config->algo.maxnbclust + cprev])
+                !dcc_is_measured(state, cj, cprev))
             {
                 continue;
             }
@@ -80,7 +80,7 @@ static int select_te4_historical_anchors(
     {
         int cprev = temp_indices[p];
         if (config->optim.sparse_dcc_mode &&
-            !state->scratch.dcc_measured[cj * maxnbc + cprev])
+            !dcc_is_measured(state, cj, cprev))
         {
             continue;
         }
@@ -130,7 +130,7 @@ static int select_te4_historical_anchors(
     {
         int p = pool[i];
         int cprev = temp_indices[p];
-        double d_ci_cprev = state->scratch.dcc_min[cj * maxnbc + cprev];
+        double d_ci_cprev = dcc_get_dist(state, cj, cprev);
 
         if (d_ci_cprev < 0.0 && !config->optim.sparse_dcc_mode)
         {
@@ -218,8 +218,8 @@ void update_probabilities_and_pruning(
         while (idx < active_cnt)
         {
             int cl = act[idx];
-            double d_min = state->scratch.dcc_min[cj * maxnbc + cl];
-            double d_max = state->scratch.dcc_max[cj * maxnbc + cl];
+            double d_min = dcc_get_min(state, cj, cl);
+            double d_max = dcc_get_max(state, cj, cl);
 
             if (d_min - dfc > rlim || (d_max < 1e18 && dfc - d_max > rlim))
             {
@@ -238,10 +238,8 @@ void update_probabilities_and_pruning(
     }
     else
     {
-        const uint16_t *row_sq16 = (state->scratch.dcc_sq16 != NULL)
-            ? &state->scratch.dcc_sq16[cj * maxnbc]
-            : NULL;
-        const double *row_dcc = &state->scratch.dcc_min[cj * maxnbc];
+        const uint16_t *row_sq16 = dcc_row_sq16(state, cj);
+        const double   *row_dcc = dcc_row_dist(state, cj);
         int active_cnt = state->scratch.num_active_clusters;
         int *act = state->scratch.active_clusters;
         int idx = 0;
@@ -368,15 +366,15 @@ void update_probabilities_and_pruning(
 
             if (config->optim.sparse_dcc_mode)
             {
-                if (!state->scratch.dcc_measured[cj * config->algo.maxnbclust + cprev])
+                if (!dcc_is_measured(state, cj, cprev))
                 {
                     continue;
                 }
-                d_ci_cprev = state->scratch.dcc_min[cj * config->algo.maxnbclust + cprev];
+                d_ci_cprev = dcc_get_dist(state, cj, cprev);
             }
             else
             {
-                d_ci_cprev = state->scratch.dcc_min[cj * config->algo.maxnbclust + cprev];
+                d_ci_cprev = dcc_get_dist(state, cj, cprev);
                 if (d_ci_cprev < 0.0)
                 {
                     d_ci_cprev = get_dist(
@@ -390,13 +388,10 @@ void update_probabilities_and_pruning(
             TE4Ref te4_ref;
             calc_te4_ref_init(&te4_ref, dfc, d_m_cprev, d_ci_cprev);
 
-            const double *row_dcc_cj = &state->scratch.dcc_min[cj * config->algo.maxnbclust];
-            const double *row_dcc_cprev =
-                &state->scratch.dcc_min[cprev * config->algo.maxnbclust];
-            const char *row_meas_cj =
-                &state->scratch.dcc_measured[cj * config->algo.maxnbclust];
-            const char *row_meas_cprev =
-                &state->scratch.dcc_measured[cprev * config->algo.maxnbclust];
+            const double *row_dcc_cj = dcc_row_dist(state, cj);
+            const double *row_dcc_cprev = dcc_row_dist(state, cprev);
+            const char   *row_meas_cj = dcc_row_measured(state, cj);
+            const char   *row_meas_cprev = dcc_row_measured(state, cprev);
 
             int idx = 0;
             long local_pruned_te4 = 0;
@@ -544,7 +539,7 @@ void update_probabilities_and_pruning(
         while (idx < act_cnt)
         {
             int i = act[idx];
-            double dcc = state->scratch.dcc_min[cj * N + i];
+            double dcc = dcc_get_dist(state, cj, i);
             if (dcc < 0.0)
             {
                 dcc = get_dist(&state->clusters[cj].anchor, &state->clusters[i].anchor, -1,

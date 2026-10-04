@@ -7,6 +7,7 @@
 #define CLUSTER_STEPS_H
 
 #include "cluster_defs.h"
+#include "cluster_dcc.h"
 #include <stdio.h>
 
 /**

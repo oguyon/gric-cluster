@@ -11,6 +11,7 @@
  */
 #include "cluster_prune.h"
 #include "cluster_core.h"
+#include "cluster_dcc.h"
 #include "cluster_math.h"
 #include "cluster_locator.h"
 #include "gric_simd.h"
@@ -204,7 +205,6 @@ void prune_candidates_te5(
 
     int c3 = temp_indices[temp_count - 1]; // Current cluster (newest anchor)
     double d_f_c3 = temp_dists[temp_count - 1];
-    uint64_t maxnb = config->algo.maxnbclust;
 
     for (int p = 0; p < temp_count - 2; p++)
     {
@@ -222,52 +222,55 @@ void prune_candidates_te5(
 
             if (config->optim.sparse_dcc_mode)
             {
-                if (!state->scratch.dcc_measured[c1 * maxnb + c2] ||
-                    !state->scratch.dcc_measured[c1 * maxnb + c3] ||
-                    !state->scratch.dcc_measured[c2 * maxnb + c3])
+                if (!dcc_is_measured(state, c1, c2) ||
+                    !dcc_is_measured(state, c1, c3) ||
+                    !dcc_is_measured(state, c2, c3))
                 {
                     continue;
                 }
-                d_c1_c2 = state->scratch.dcc_min[c1 * maxnb + c2];
-                d_c1_c3 = state->scratch.dcc_min[c1 * maxnb + c3];
-                d_c2_c3 = state->scratch.dcc_min[c2 * maxnb + c3];
+                d_c1_c2 = dcc_get_dist(state, c1, c2);
+                d_c1_c3 = dcc_get_dist(state, c1, c3);
+                d_c2_c3 = dcc_get_dist(state, c2, c3);
             }
             else
             {
-                d_c1_c2 = state->scratch.dcc_min[c1 * maxnb + c2];
+                d_c1_c2 = dcc_get_dist(state, c1, c2);
                 if (d_c1_c2 < 0.0)
                 {
-                    d_c1_c2 = get_dist(&state->clusters[c1].anchor, &state->clusters[c2].anchor, -1,
-                                       -1.0, -1.0, config, state);
-                    set_dcc_pair(state, maxnb, c1, c2, d_c1_c2);
+                    d_c1_c2 = get_dist(&state->clusters[c1].anchor,
+                                       &state->clusters[c2].anchor,
+                                       -1, -1.0, -1.0, config, state);
+                    dcc_set_pair(state, c1, c2, d_c1_c2);
                 }
 
-                d_c1_c3 = state->scratch.dcc_min[c1 * maxnb + c3];
+                d_c1_c3 = dcc_get_dist(state, c1, c3);
                 if (d_c1_c3 < 0.0)
                 {
-                    d_c1_c3 = get_dist(&state->clusters[c1].anchor, &state->clusters[c3].anchor, -1,
-                                       -1.0, -1.0, config, state);
-                    set_dcc_pair(state, maxnb, c1, c3, d_c1_c3);
+                    d_c1_c3 = get_dist(&state->clusters[c1].anchor,
+                                       &state->clusters[c3].anchor,
+                                       -1, -1.0, -1.0, config, state);
+                    dcc_set_pair(state, c1, c3, d_c1_c3);
                 }
 
-                d_c2_c3 = state->scratch.dcc_min[c2 * maxnb + c3];
+                d_c2_c3 = dcc_get_dist(state, c2, c3);
                 if (d_c2_c3 < 0.0)
                 {
-                    d_c2_c3 = get_dist(&state->clusters[c2].anchor, &state->clusters[c3].anchor, -1,
-                                       -1.0, -1.0, config, state);
-                    set_dcc_pair(state, maxnb, c2, c3, d_c2_c3);
+                    d_c2_c3 = get_dist(&state->clusters[c2].anchor,
+                                       &state->clusters[c3].anchor,
+                                       -1, -1.0, -1.0, config, state);
+                    dcc_set_pair(state, c2, c3, d_c2_c3);
                 }
             }
 
             TE5Ref te5_ref;
             calc_te5_ref_init(&te5_ref, d_f_c1, d_f_c2, d_f_c3, d_c1_c2, d_c1_c3, d_c2_c3);
 
-            const double *row_dcc_c1 = &state->scratch.dcc_min[c1 * maxnb];
-            const double *row_dcc_c2 = &state->scratch.dcc_min[c2 * maxnb];
-            const double *row_dcc_c3 = &state->scratch.dcc_min[c3 * maxnb];
-            const char   *row_meas_c1 = &state->scratch.dcc_measured[c1 * maxnb];
-            const char   *row_meas_c2 = &state->scratch.dcc_measured[c2 * maxnb];
-            const char   *row_meas_c3 = &state->scratch.dcc_measured[c3 * maxnb];
+            const double *row_dcc_c1 = dcc_row_dist(state, c1);
+            const double *row_dcc_c2 = dcc_row_dist(state, c2);
+            const double *row_dcc_c3 = dcc_row_dist(state, c3);
+            const char   *row_meas_c1 = dcc_row_measured(state, c1);
+            const char   *row_meas_c2 = dcc_row_measured(state, c2);
+            const char   *row_meas_c3 = dcc_row_measured(state, c3);
 
             long local_pruned_te5 = 0;
             int cl_idx = 0;
@@ -313,7 +316,7 @@ void prune_candidates_te5(
                                 d_k_c1 = get_dist(&state->clusters[kk].anchor,
                                                   &state->clusters[c1].anchor, -1, -1.0, -1.0,
                                                   config, state);
-                                set_dcc_pair(state, maxnb, kk, c1, d_k_c1);
+                                dcc_set_pair(state, kk, c1, d_k_c1);
                             }
                             double d_k_c2 = row_dcc_c2[kk];
                             if (d_k_c2 < 0.0)
@@ -321,7 +324,7 @@ void prune_candidates_te5(
                                 d_k_c2 = get_dist(&state->clusters[kk].anchor,
                                                   &state->clusters[c2].anchor, -1, -1.0, -1.0,
                                                   config, state);
-                                set_dcc_pair(state, maxnb, kk, c2, d_k_c2);
+                                dcc_set_pair(state, kk, c2, d_k_c2);
                             }
                             double d_k_c3 = row_dcc_c3[kk];
                             if (d_k_c3 < 0.0)
@@ -329,7 +332,7 @@ void prune_candidates_te5(
                                 d_k_c3 = get_dist(&state->clusters[kk].anchor,
                                                   &state->clusters[c3].anchor, -1, -1.0, -1.0,
                                                   config, state);
-                                set_dcc_pair(state, maxnb, kk, c3, d_k_c3);
+                                dcc_set_pair(state, kk, c3, d_k_c3);
                             }
                             double min_d = calc_min_dist_5pt_ref(&te5_ref, d_k_c1,
                                                                  d_k_c2, d_k_c3);
@@ -398,7 +401,7 @@ void prune_candidates_te5(
                                 d_k_c1 = get_dist(&state->clusters[kk].anchor,
                                                   &state->clusters[c1].anchor, -1, -1.0, -1.0,
                                                   config, state);
-                                set_dcc_pair(state, maxnb, kk, c1, d_k_c1);
+                                dcc_set_pair(state, kk, c1, d_k_c1);
                             }
                             double d_k_c2 = row_dcc_c2[kk];
                             if (d_k_c2 < 0.0)
@@ -406,7 +409,7 @@ void prune_candidates_te5(
                                 d_k_c2 = get_dist(&state->clusters[kk].anchor,
                                                   &state->clusters[c2].anchor, -1, -1.0, -1.0,
                                                   config, state);
-                                set_dcc_pair(state, maxnb, kk, c2, d_k_c2);
+                                dcc_set_pair(state, kk, c2, d_k_c2);
                             }
                             double d_k_c3 = row_dcc_c3[kk];
                             if (d_k_c3 < 0.0)
@@ -414,7 +417,7 @@ void prune_candidates_te5(
                                 d_k_c3 = get_dist(&state->clusters[kk].anchor,
                                                   &state->clusters[c3].anchor, -1, -1.0, -1.0,
                                                   config, state);
-                                set_dcc_pair(state, maxnb, kk, c3, d_k_c3);
+                                dcc_set_pair(state, kk, c3, d_k_c3);
                             }
                             double min_d = calc_min_dist_5pt_ref(&te5_ref, d_k_c1,
                                                                  d_k_c2, d_k_c3);
@@ -493,7 +496,7 @@ void prune_candidates_te5(
                                     &state->clusters[cl_idx].anchor,
                                     &state->clusters[c1].anchor, -1, -1.0, -1.0,
                                     config, state);
-                                set_dcc_pair(state, maxnb, cl_idx, c1, d_k_c1);
+                                dcc_set_pair(state, cl_idx, c1, d_k_c1);
                             }
                         }
                     }
@@ -512,7 +515,7 @@ void prune_candidates_te5(
                                     &state->clusters[cl_idx].anchor,
                                     &state->clusters[c2].anchor, -1, -1.0, -1.0,
                                     config, state);
-                                set_dcc_pair(state, maxnb, cl_idx, c2, d_k_c2);
+                                dcc_set_pair(state, cl_idx, c2, d_k_c2);
                             }
                         }
                     }
@@ -531,7 +534,7 @@ void prune_candidates_te5(
                                     &state->clusters[cl_idx].anchor,
                                     &state->clusters[c3].anchor, -1, -1.0, -1.0,
                                     config, state);
-                                set_dcc_pair(state, maxnb, cl_idx, c3, d_k_c3);
+                                dcc_set_pair(state, cl_idx, c3, d_k_c3);
                             }
                         }
                     }

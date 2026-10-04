@@ -14,6 +14,7 @@
 #include "cluster_steps.h"
 #include "framedistance.h"
 #include "cluster_math.h"
+#include "cluster_dcc.h"
 #include "cluster_bounds.h"
 #include "cluster_trace.h"
 #include "knn_defs.h"

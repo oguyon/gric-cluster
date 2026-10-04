@@ -70,13 +70,13 @@ void recompute_consistency_mask(
 
             if (config->optim.sparse_dcc_mode)
             {
-                double d_min_ij = state->scratch.dcc_min[i * N + j];
-                double d_max_ij = state->scratch.dcc_max[i * N + j];
+                double d_min_ij = dcc_get_min(state, i, j);
+                double d_max_ij = dcc_get_max(state, i, j);
 
                 for (int k = 0; k < state->num_clusters; k++)
                 {
-                    double d_min_ik = state->scratch.dcc_min[i * N + k];
-                    double d_max_ik = state->scratch.dcc_max[i * N + k];
+                    double d_min_ik = dcc_get_min(state, i, k);
+                    double d_max_ik = dcc_get_max(state, i, k);
 
                     double diff1 = d_min_ik - d_max_ij;
                     double diff2 = d_min_ij - d_max_ik;
@@ -103,11 +103,11 @@ void recompute_consistency_mask(
             }
             else
             {
-                double measured_dist = state->scratch.dcc_min[i * N + j];
+                double measured_dist = dcc_get_dist(state, i, j);
                 if (measured_dist >= 0.0)
                 {
                     update_consistency_mask_range(
-                        mask, &state->scratch.dcc_min[i * N],
+                        mask, dcc_row_dist(state, i),
                         state->num_clusters, measured_dist, 2.0 * rc
                     );
                 }
@@ -172,8 +172,8 @@ void update_consistency_mask_for_new_cluster(
     }
     for (int k = 0; k <= new_cl; k++)
     {
-        d_min_new_k[k] = state->scratch.dcc_min[new_cl * N + k];
-        d_max_new_k[k] = state->scratch.dcc_max[new_cl * N + k];
+        d_min_new_k[k] = dcc_get_min(state, new_cl, k);
+        d_max_new_k[k] = dcc_get_max(state, new_cl, k);
     }
 
     // 2. Compute for target_ci = new_cl
@@ -183,8 +183,8 @@ void update_consistency_mask_for_new_cluster(
         uint64_t *mask = &state->scratch.consistency_mask[(new_cl * N + j) * words];
         if (config->optim.sparse_dcc_mode)
         {
-            double d_min_ij = state->scratch.dcc_min[new_cl * N + j];
-            double d_max_ij = state->scratch.dcc_max[new_cl * N + j];
+            double d_min_ij = d_min_new_k[j];
+            double d_max_ij = d_max_new_k[j];
 
             for (int k = 0; k <= new_cl; k++)
             {
@@ -205,7 +205,7 @@ void update_consistency_mask_for_new_cluster(
         }
         else
         {
-            double measured_dist = state->scratch.dcc_min[new_cl * N + j];
+            double measured_dist = d_min_new_k[j];
             if (measured_dist >= 0.0)
             {
                 update_consistency_mask_range(
@@ -220,8 +220,8 @@ void update_consistency_mask_for_new_cluster(
     for (int i = 0; i < new_cl; i++)
     {
         uint64_t *mask = &state->scratch.consistency_mask[(i * N + new_cl) * words];
-        double *d_min_i = &state->scratch.dcc_min[i * N];
-        double *d_max_i = &state->scratch.dcc_max[i * N];
+        const double *d_min_i = dcc_row_dist(state, i);
+        const double *d_max_i = dcc_row_max(state, i);
 
         if (config->optim.sparse_dcc_mode)
         {
@@ -264,10 +264,10 @@ void update_consistency_mask_for_new_cluster(
     #pragma omp parallel for if(new_cl >= OMP_MIN_CLUSTERS)
     for (int i = 0; i < new_cl; i++)
     {
-        double d_min_inew = state->scratch.dcc_min[i * N + new_cl];
-        double d_max_inew = state->scratch.dcc_max[i * N + new_cl];
-        double *dcc_min_i = &state->scratch.dcc_min[i * N];
-        double *dcc_max_i = &state->scratch.dcc_max[i * N];
+        double d_min_inew = dcc_get_min(state, i, new_cl);
+        double d_max_inew = dcc_get_max(state, i, new_cl);
+        const double *dcc_min_i = dcc_row_dist(state, i);
+        const double *dcc_max_i = dcc_row_max(state, i);
         uint64_t *mask_row = &state->scratch.consistency_mask[i * N * words];
 
         for (int j = 0; j < new_cl; j++)

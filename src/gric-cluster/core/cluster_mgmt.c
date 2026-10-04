@@ -12,6 +12,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_mgmt.h"
 #include "cluster_core.h"
+#include "cluster_dcc.h"
 #include "cluster_steps.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -281,47 +282,11 @@ void remove_cluster(
     // Zero out the last one (moved)
     memset(&state->cluster_visitors[state->num_clusters - 1], 0, sizeof(VisitorList));
 
-    // 4. Shift DCC Array (Rows and Cols)
-    int N = config->algo.maxnbclust; // Stride is fixed maxnbclust
+    // 4. Shift DCC Array
+    dcc_remove_cluster(state, index_to_remove, config->optim.sparse_dcc_mode);
 
-    // Shift Rows up
-    for (int r = index_to_remove; r < state->num_clusters - 1; r++)
-    {
-        memcpy(&state->scratch.dcc_min[r * N], &state->scratch.dcc_min[(r + 1) * N],
-               config->algo.maxnbclust * sizeof(double));
-        memcpy(&state->scratch.dcc_max[r * N], &state->scratch.dcc_max[(r + 1) * N],
-               config->algo.maxnbclust * sizeof(double));
-        memcpy(&state->scratch.dcc_measured[r * N], &state->scratch.dcc_measured[(r + 1) * N],
-               config->algo.maxnbclust * sizeof(char));
-        if (state->scratch.dcc_sq16 != NULL)
-        {
-            memcpy(&state->scratch.dcc_sq16[r * N], &state->scratch.dcc_sq16[(r + 1) * N],
-                   config->algo.maxnbclust * sizeof(uint16_t));
-        }
-    }
-    // Shift Columns left for ALL rows
-    for (int r = 0; r < state->num_clusters - 1; r++)
-    {
-        int dest_idx = r * N + index_to_remove;
-        int src_idx = r * N + index_to_remove + 1;
-        int count = config->algo.maxnbclust - 1 - index_to_remove;
-        if (count > 0)
-        {
-            memmove(&state->scratch.dcc_min[dest_idx], &state->scratch.dcc_min[src_idx],
-                    count * sizeof(double));
-            memmove(&state->scratch.dcc_max[dest_idx], &state->scratch.dcc_max[src_idx],
-                    count * sizeof(double));
-            memmove(&state->scratch.dcc_measured[dest_idx], &state->scratch.dcc_measured[src_idx],
-                    count * sizeof(char));
-            if (state->scratch.dcc_sq16 != NULL)
-            {
-                memmove(&state->scratch.dcc_sq16[dest_idx], &state->scratch.dcc_sq16[src_idx],
-                        count * sizeof(uint16_t));
-            }
-        }
-    } // for (int r = 0; r < state->num_clusters - 1; r++)
-
-    // 5. Shift Transition Matrix (Same logic as DCC)
+    // 5. Shift Transition Matrix
+    int N = config->algo.maxnbclust;
     // Shift Rows
     for (int r = index_to_remove; r < state->num_clusters - 1; r++)
     {
@@ -341,42 +306,12 @@ void remove_cluster(
         }
     }
 
-    // Clear the now-unused last row/col so newly created clusters don't inherit stale cache/state.
+    // Clear the now-unused last row/col in transition matrix
     int last = state->num_clusters - 1;
     for (int r = 0; r < N; r++)
     {
         state->transition_matrix[last * N + r] = 0;
         state->transition_matrix[r * N + last] = 0;
-        if (state->scratch.dcc_sq16 != NULL)
-        {
-            state->scratch.dcc_sq16[last * N + r] = DCC_SQ16_UNMEASURED;
-            state->scratch.dcc_sq16[r * N + last] = DCC_SQ16_UNMEASURED;
-        }
-        if (config->optim.sparse_dcc_mode)
-        {
-            state->scratch.dcc_min[last * N + r] = 0.0;
-            state->scratch.dcc_min[r * N + last] = 0.0;
-            state->scratch.dcc_max[last * N + r] = 1e19;
-            state->scratch.dcc_max[r * N + last] = 1e19;
-            state->scratch.dcc_measured[last * N + r] = 0;
-            state->scratch.dcc_measured[r * N + last] = 0;
-        }
-        else
-        {
-            state->scratch.dcc_min[last * N + r] = -1.0;
-            state->scratch.dcc_min[r * N + last] = -1.0;
-            state->scratch.dcc_max[last * N + r] = -1.0;
-            state->scratch.dcc_max[r * N + last] = -1.0;
-            state->scratch.dcc_measured[last * N + r] = 0;
-            state->scratch.dcc_measured[r * N + last] = 0;
-        }
-    } // for (int r = 0; r < N; r++)
-    state->scratch.dcc_min[last * N + last] = 0.0;
-    state->scratch.dcc_max[last * N + last] = 0.0;
-    state->scratch.dcc_measured[last * N + last] = 1;
-    if (state->scratch.dcc_sq16 != NULL)
-    {
-        state->scratch.dcc_sq16[last * N + last] = 0;
     }
     memset(&state->clusters[last], 0, sizeof(Cluster));
 
@@ -410,19 +345,7 @@ void remove_cluster(
     // 8. Recompute Geometric Consistency Mask and update DCC count
     recompute_consistency_mask(config, state);
 
-    uint64_t pop_count = 0;
-    for (int i = 0; i < state->num_clusters; i++)
-    {
-        const char *row = &state->scratch.dcc_measured[i * N];
-        for (int j = i + 1; j < state->num_clusters; j++)
-        {
-            if (row[j])
-            {
-                pop_count++;
-            }
-        }
-    }
-    state->telemetry.dcc_entries_populated = pop_count;
+    state->telemetry.dcc_entries_populated = dcc_count_populated_pairs(state);
     state->scratch.probsorted_count = 0;
 }
 

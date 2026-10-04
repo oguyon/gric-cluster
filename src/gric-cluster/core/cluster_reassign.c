@@ -12,6 +12,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cluster_reassign.h"
 #include "cluster_core.h"
+#include "cluster_dcc.h"
 #include "frameread.h"
 #include "common.h"
 #include "frame_info_arena.h"
@@ -186,12 +187,11 @@ long run_second_pass_clustering(
 
                     /* Calculate lower bound on distance from frame t to anchor u */
                     double lb = 0.0;
-                    size_t u_row_offset = (size_t)u * (size_t)config->algo.maxnbclust;
                     const double *dcc_row = (state->scratch.dcc_min != NULL)
-                        ? &state->scratch.dcc_min[u_row_offset]
+                        ? dcc_row_dist(state, u)
                         : NULL;
                     const char *measured_row = (state->scratch.dcc_measured != NULL)
-                        ? &state->scratch.dcc_measured[u_row_offset]
+                        ? dcc_row_measured(state, u)
                         : NULL;
 
                     if (dcc_row != NULL && measured_row != NULL)

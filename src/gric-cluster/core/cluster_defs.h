@@ -244,6 +244,7 @@ typedef struct
     char   *dcc_measured;       /**< 1 if exactly measured, 0 if unmeasured */
     uint16_t *dcc_sq16;         /**< 16-bit quantized DCC cache for L3 residency */
     double  dcc_sq16_scale;     /**< Scale factor: 16384.0 / rlim */
+    size_t  dcc_stride;         /**< Stride / dimension of flat DCC matrix */
     int    *probsortedclindex;  /**< Cluster indices sorted by descending prior probability */
     int     probsorted_count;   /**< Number of valid entries in probsortedclindex */
     double *cluster_probs;     /**< Contiguous aligned array of cluster prior probabilities */

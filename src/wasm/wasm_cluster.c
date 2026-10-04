@@ -272,6 +272,7 @@ void *wasm_cluster_init(
         s->dcc_measured =
             (char *)calloc((size_t)N * N,
                            sizeof(char));
+        s->dcc_stride = (size_t)N;
 
         size_t mask_words =
             (size_t)N * N * ((N + 63) / 64);
@@ -568,6 +569,7 @@ static int grow_capacity(WasmHandle *h)
         return -1;
     }
     s->dcc_measured = new_dcc_measured;
+    s->dcc_stride = (size_t)new_N;
 
     size_t new_mask_words = (size_t)new_N * new_N * ((new_N + 63) / 64);
     uint64_t *new_mask = (uint64_t *)calloc(new_mask_words, sizeof(uint64_t));
@@ -865,7 +867,6 @@ void wasm_cluster_get_dcc(
 
     int nc = h->state.num_clusters;
     int lim = (K < nc) ? K : nc;
-    int stride = h->config.algo.maxnbclust;
 
     /* Zero the output */
     memset(out_dcc, 0,
@@ -875,9 +876,7 @@ void wasm_cluster_get_dcc(
     {
         for (int j = 0; j < lim; j++)
         {
-            out_dcc[i * K + j] =
-                h->state.scratch.dcc_min[
-                    i * stride + j];
+            out_dcc[i * K + j] = dcc_get_dist(&h->state, i, j);
         }
     }
 }

@@ -18,6 +18,7 @@
 #endif
 
 #include "cluster_io.h"
+#include "cluster_dcc.h"
 #include "common.h"
 #include "frameread.h"
 #include "gric_bin_io.h"
@@ -72,7 +73,6 @@ static void write_dcc_results(
                 uint16_t *dcc_buf = malloc(dcc_hdr.num_elements * sizeof(uint16_t));
                 if (dcc_buf != NULL)
                 {
-                    int maxnbc = config->algo.maxnbclust;
                     for (int i = 0; i < state->num_clusters; i++)
                     {
                         for (int j = 0; j < state->num_clusters; j++)
@@ -80,11 +80,11 @@ static void write_dcc_results(
                             if (state->scratch.dcc_sq16 != NULL)
                             {
                                 dcc_buf[i * state->num_clusters + j] =
-                                    state->scratch.dcc_sq16[i * maxnbc + j];
+                                    dcc_get_sq16(state, i, j);
                             }
                             else
                             {
-                                double d = state->scratch.dcc_min[i * maxnbc + j];
+                                double d = dcc_get_dist(state, i, j);
                                 uint16_t q = (d <= 0.0) ? 0 :
                                     ((d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5));
                                 dcc_buf[i * state->num_clusters + j] = q;
@@ -109,7 +109,7 @@ static void write_dcc_results(
                     {
                         for (int j = 0; j < state->num_clusters; j++)
                         {
-                            double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                            double d = dcc_get_dist(state, i, j);
                             dcc_buf[i * state->num_clusters + j] = (d >= 0) ? d : 0.0;
                         }
                     }
@@ -131,7 +131,7 @@ static void write_dcc_results(
                     {
                         for (int j = 0; j < state->num_clusters; j++)
                         {
-                            double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                            double d = dcc_get_dist(state, i, j);
                             dcc_buf[i * state->num_clusters + j] = (d >= 0) ? (float)d : 0.0f;
                         }
                     }
@@ -156,8 +156,8 @@ static void write_dcc_results(
             {
                 for (int j = 0; j < state->num_clusters; j++)
                 {
-                    double d = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
-                    if (state->scratch.dcc_measured[i * config->algo.maxnbclust + j] && d >= 0)
+                    double d = dcc_get_dist(state, i, j);
+                    if (dcc_is_measured(state, i, j) && d >= 0)
                     {
                         fprintf(dcc_out, "%d %d %.6f\n", i, j, d);
                     }
@@ -179,7 +179,7 @@ static void write_dcc_results(
                 {
                     for (int j = 0; j < state->num_clusters; j++)
                     {
-                        double d_min = state->scratch.dcc_min[i * config->algo.maxnbclust + j];
+                        double d_min = dcc_get_min(state, i, j);
                         if (d_min > 0.0)
                         {
                             fprintf(dccmin_out, "%d %d %.6f\n", i, j, d_min);
