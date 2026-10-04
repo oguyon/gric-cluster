@@ -109,7 +109,7 @@ static void remove_cluster_swap(
             fprintf(log, "# Discarded Cluster %d\n", u);
             for (int ii = 0; ii < state->cluster_visitors[u].count; ii++)
             {
-                fprintf(log, "%d ", state->cluster_visitors[u].frames[ii]);
+                fprintf(log, "%d ", state->cluster_visitors[u].records[ii].frame);
             }
             fprintf(log, "\n");
             fclose(log);
@@ -224,9 +224,9 @@ static void remove_cluster_swap(
         }
 
         /* 3. Move Visitor Lists */
-        if (state->cluster_visitors[u].frames)
+        if (state->cluster_visitors[u].records)
         {
-            free(state->cluster_visitors[u].frames);
+            free(state->cluster_visitors[u].records);
         }
         state->cluster_visitors[u] = state->cluster_visitors[last];
         memset(&state->cluster_visitors[last], 0, sizeof(VisitorList));
@@ -282,9 +282,9 @@ static void remove_cluster_swap(
             free(state->clusters[last].anchor_sq16);
             state->clusters[last].anchor_sq16 = NULL;
         }
-        if (state->cluster_visitors[last].frames)
+        if (state->cluster_visitors[last].records)
         {
-            free(state->cluster_visitors[last].frames);
+            free(state->cluster_visitors[last].records);
         }
         memset(&state->cluster_visitors[last], 0, sizeof(VisitorList));
 
