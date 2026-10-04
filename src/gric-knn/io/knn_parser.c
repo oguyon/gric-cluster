@@ -417,7 +417,8 @@ static void propagate_triangle_lower_bounds(
         return;
     }
 
-    double *d_max = (double *)malloc((size_t)M * (size_t)M * sizeof(double));
+    size_t M_sz = (size_t)M;
+    double *d_max = (double *)malloc(M_sz * M_sz * sizeof(double));
     if (d_max == NULL)
     {
         return;
@@ -429,18 +430,18 @@ static void propagate_triangle_lower_bounds(
         {
             if (i == j)
             {
-                d_max[i * M + j] = 0.0;
+                d_max[(size_t)i * M_sz + (size_t)j] = 0.0;
             }
             else
             {
-                double measured = model->dcc_matrix[i * M + j];
+                double measured = model->dcc_matrix[(size_t)i * M_sz + (size_t)j];
                 if (measured > 0.0)
                 {
-                    d_max[i * M + j] = measured;
+                    d_max[(size_t)i * M_sz + (size_t)j] = measured;
                 }
                 else
                 {
-                    d_max[i * M + j] = 1e19;
+                    d_max[(size_t)i * M_sz + (size_t)j] = 1e19;
                 }
             }
         }
@@ -452,22 +453,22 @@ static void propagate_triangle_lower_bounds(
         #pragma omp parallel for schedule(static) if(M >= 64)
         for (int i = 0; i < M; i++)
         {
-            double d_ik = d_max[i * M + k];
+            double d_ik = d_max[(size_t)i * M_sz + (size_t)k];
             if (d_ik >= 1e18)
             {
                 continue;
             }
             for (int j = 0; j < M; j++)
             {
-                double d_kj = d_max[k * M + j];
+                double d_kj = d_max[(size_t)k * M_sz + (size_t)j];
                 if (d_kj >= 1e18)
                 {
                     continue;
                 }
                 double sum = d_ik + d_kj;
-                if (sum < d_max[i * M + j])
+                if (sum < d_max[(size_t)i * M_sz + (size_t)j])
                 {
-                    d_max[i * M + j] = sum;
+                    d_max[(size_t)i * M_sz + (size_t)j] = sum;
                 }
             }
         }
@@ -479,7 +480,7 @@ static void propagate_triangle_lower_bounds(
     {
         for (int j = i + 1; j < M; j++)
         {
-            if (model->dcc_matrix[i * M + j] > 0.0)
+            if (model->dcc_matrix[(size_t)i * M_sz + (size_t)j] > 0.0)
             {
                 continue;
             }
@@ -487,8 +488,8 @@ static void propagate_triangle_lower_bounds(
             double max_lb = 0.0;
             for (int k = 0; k < M; k++)
             {
-                double d_min_ik = model->dcc_matrix[i * M + k];
-                double d_max_kj = d_max[k * M + j];
+                double d_min_ik = model->dcc_matrix[(size_t)i * M_sz + (size_t)k];
+                double d_max_kj = d_max[(size_t)k * M_sz + (size_t)j];
                 if (d_min_ik > 0.0 && d_max_kj < 1e18)
                 {
                     double lb1 = d_min_ik - d_max_kj;
@@ -498,8 +499,8 @@ static void propagate_triangle_lower_bounds(
                     }
                 }
 
-                double d_min_jk = model->dcc_matrix[j * M + k];
-                double d_max_ki = d_max[k * M + i];
+                double d_min_jk = model->dcc_matrix[(size_t)j * M_sz + (size_t)k];
+                double d_max_ki = d_max[(size_t)k * M_sz + (size_t)i];
                 if (d_min_jk > 0.0 && d_max_ki < 1e18)
                 {
                     double lb2 = d_min_jk - d_max_ki;
@@ -510,8 +511,8 @@ static void propagate_triangle_lower_bounds(
                 }
             }
 
-            model->dcc_matrix[i * M + j] = max_lb;
-            model->dcc_matrix[j * M + i] = max_lb;
+            model->dcc_matrix[(size_t)i * M_sz + (size_t)j] = max_lb;
+            model->dcc_matrix[(size_t)j * M_sz + (size_t)i] = max_lb;
         }
     }
 
@@ -730,8 +731,8 @@ int knn_parse_dcc_file(
         {
             if (c1 >= 0 && c1 < M && c2 >= 0 && c2 < M)
             {
-                model->dcc_matrix[c1 * M + c2] = dist;
-                model->dcc_matrix[c2 * M + c1] = dist;
+                model->dcc_matrix[(size_t)c1 * (size_t)M + (size_t)c2] = dist;
+                model->dcc_matrix[(size_t)c2 * (size_t)M + (size_t)c1] = dist;
                 entries_read++;
             }
         }
@@ -739,7 +740,7 @@ int knn_parse_dcc_file(
 
     fclose(f);
 
-    long total_pairs = (long)M * (M - 1) / 2;
+    long total_pairs = (long)M * ((long)M - 1) / 2;
     if (!using_dccmin && entries_read < total_pairs && entries_read > 0)
     {
         propagate_triangle_lower_bounds(model);
