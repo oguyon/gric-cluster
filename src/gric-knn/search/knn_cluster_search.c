@@ -504,6 +504,11 @@ static int knn_warm_start_nearest_cluster(
         }
 
         const KnnCluster *warm_cl = &model->clusters[best_c];
+        if (warm_cl->num_members == 0)
+        {
+            continue;
+        }
+
         telem->total_candidates_considered += (uint64_t)warm_cl->num_members;
         telem->framedist_calls++;
 
@@ -1214,6 +1219,11 @@ static void knn_search_inter_clusters(
         }
 
         const KnnCluster *cl = &model->clusters[q];
+        if (cl->num_members == 0)
+        {
+            continue;
+        }
+
         if (num_pivots != NULL && *num_pivots >= 2)
         {
             int n_p = (*num_pivots > 3) ? 3 : *num_pivots;
@@ -1261,6 +1271,15 @@ static void knn_search_inter_clusters(
                 telem->level1_clusters_pruned++;
                 continue;
             }
+        }
+
+        if (is_cluster_pruned_by_pivots(
+                q, cl->radius, current_tau, eps_factor, model, config,
+                pivots, (num_pivots != NULL) ? *num_pivots : 0, sq16_delta))
+        {
+            telem->level1_clusters_pruned++;
+            telem->multi_pivot_pruned++;
+            continue;
         }
 
         int    anchor_is_sq16 = 0;
@@ -1324,15 +1343,6 @@ static void knn_search_inter_clusters(
         if (lb_anchor >= current_tau / eps_factor)
         {
             telem->level2_anchors_pruned++;
-            continue;
-        }
-
-        if (is_cluster_pruned_by_pivots(
-                q, cl->radius, current_tau, eps_factor, model, config,
-                pivots, (num_pivots != NULL) ? *num_pivots : 0, sq16_delta))
-        {
-            telem->level1_clusters_pruned++;
-            telem->multi_pivot_pruned++;
             continue;
         }
 
@@ -1461,7 +1471,8 @@ static void knn_search_cluster_graph(
         for (int i = 0; i < k_adj; i++)
         {
             int nbr = adj[i];
-            if (nbr < 0 || nbr >= M || scratch->enqueued_tags[nbr] == epoch)
+            if (nbr < 0 || nbr >= M || scratch->enqueued_tags[nbr] == epoch ||
+                model->clusters[nbr].num_members == 0)
             {
                 continue;
             }
@@ -1525,6 +1536,10 @@ static void knn_search_cluster_graph(
 
         double current_tau = knn_heap_peek_max_dist(heap);
         const KnnCluster *cl = &model->clusters[c];
+        if (cl->num_members == 0)
+        {
+            continue;
+        }
 
         double sq_err = 0.0;
         if (anchor_is_sq16)
@@ -1596,7 +1611,8 @@ static void knn_search_cluster_graph(
             for (int i = 0; i < k_adj; i++)
             {
                 int nbr = adj[i];
-                if (nbr < 0 || nbr >= M || scratch->enqueued_tags[nbr] == epoch)
+                if (nbr < 0 || nbr >= M || scratch->enqueued_tags[nbr] == epoch ||
+                    model->clusters[nbr].num_members == 0)
                 {
                     continue;
                 }
