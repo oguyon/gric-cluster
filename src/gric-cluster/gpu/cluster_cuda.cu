@@ -1004,14 +1004,13 @@ int cluster_cuda_run_pass1_bruteforce(
         return -1;
     }
 
-    Frame **batch_frames = (Frame **)malloc((size_t)micro_batch * sizeof(Frame *));
-    float  *batch_host_f = (float *)malloc((size_t)micro_batch * (size_t)D * sizeof(float));
-    double *batch_host_d = NULL;
-    int    *best_cl = (int *)malloc((size_t)micro_batch * sizeof(int));
-    float  *best_dist = (float *)malloc((size_t)micro_batch * sizeof(float));
+    Frame **batch_frames[2] = {NULL, NULL};
+    batch_frames[0] = (Frame **)malloc((size_t)micro_batch * sizeof(Frame *));
+    batch_frames[1] = (Frame **)malloc((size_t)micro_batch * sizeof(Frame *));
+    int batch_lens[2] = {0, 0};
+    int batch_k_counts[2] = {0, 0};
 
-    if (batch_frames == NULL || batch_host_f == NULL ||
-        best_cl == NULL || best_dist == NULL)
+    if (batch_frames[0] == NULL || batch_frames[1] == NULL)
     {
         goto cleanup;
     }
@@ -1026,15 +1025,6 @@ int cluster_cuda_run_pass1_bruteforce(
         }
 
         int is_double0 = fr0->is_double;
-        if (is_double0 && batch_host_d == NULL)
-        {
-            batch_host_d = (double *)malloc((size_t)micro_batch * (size_t)D * sizeof(double));
-            if (batch_host_d == NULL)
-            {
-                free_frame(fr0);
-                goto cleanup;
-            }
-        }
 
         memset(&state->clusters[0], 0, sizeof(Cluster));
         frame_assign_to_anchor(&state->clusters[0], fr0);
@@ -1073,176 +1063,205 @@ int cluster_cuda_run_pass1_bruteforce(
 
     {
         int prev_cl = 0;
-        int is_double = state->clusters[0].anchor.is_double;
+        int active_slot = 0;
 
-        if (is_double && batch_host_d == NULL)
+        while ((state->telemetry.total_frames_processed < actual_frames ||
+                batch_lens[active_slot] > 0) && !stop_requested)
         {
-            batch_host_d = (double *)malloc((size_t)micro_batch * (size_t)D * sizeof(double));
-            if (batch_host_d == NULL)
+            /* 1. If active_slot has an in-flight batch, wait and harvest results */
+            if (batch_lens[active_slot] > 0)
             {
-                goto cleanup;
-            }
-        }
+                const int *best_cl = NULL;
+                const float *best_dist = NULL;
+                if (gpu_anchor_store_sync_nearest(store, active_slot,
+                                                  &best_cl, &best_dist) != 0)
+                {
+                    fprintf(stderr, "Error: gpu_anchor_store_sync_nearest failed\n");
+                    for (int j = 0; j < batch_lens[active_slot]; j++)
+                    {
+                        free_frame(batch_frames[active_slot][j]);
+                    }
+                    goto cleanup;
+                }
 
-        while (state->telemetry.total_frames_processed < actual_frames && !stop_requested)
-        {
-            int cur_b = 0;
-            while (cur_b < micro_batch &&
-                   state->telemetry.total_frames_processed + cur_b < actual_frames)
-            {
-                Frame *fr = getframe();
-                if (fr == NULL)
+                int cur_b = batch_lens[active_slot];
+                int K_batch = batch_k_counts[active_slot];
+
+                state->telemetry.framedist_calls += (uint64_t)cur_b * (uint64_t)K_batch;
+                state->telemetry.framedist_calls_sample += (uint64_t)cur_b * (uint64_t)K_batch;
+
+                for (int i = 0; i < cur_b; i++)
+                {
+                    long t = state->telemetry.total_frames_processed;
+                    Frame *fr = batch_frames[active_slot][i];
+                    float cur_best_d = best_dist[i];
+                    int cur_best_c = best_cl[i];
+
+                    /* Compare against any newly spawned clusters in this micro-batch */
+                    for (int k = K_batch; k < state->num_clusters; k++)
+                    {
+                        double d = framedist(fr, &state->clusters[k].anchor);
+                        state->telemetry.framedist_calls++;
+                        state->telemetry.framedist_calls_sample++;
+                        if (d < (double)cur_best_d)
+                        {
+                            cur_best_d = (float)d;
+                            cur_best_c = k;
+                        }
+                    }
+
+                    int assigned = -1;
+                    double assigned_dist = 0.0;
+
+                    if (cur_best_d <= (float)config->algo.rlim && cur_best_c >= 0)
+                    {
+                        assigned = cur_best_c;
+                        assigned_dist = (double)cur_best_d;
+                    }
+                    else if (state->num_clusters < config->algo.maxnbclust)
+                    {
+                        int new_k = state->num_clusters;
+                        memset(&state->clusters[new_k], 0, sizeof(Cluster));
+                        frame_assign_to_anchor(&state->clusters[new_k], fr);
+                        state->clusters[new_k].id = new_k;
+                        state->clusters[new_k].prob = 1.0;
+                        state->num_clusters = new_k + 1;
+
+                        gpu_anchor_store_append_anchor(store,
+                                                       state->clusters[new_k].anchor.data,
+                                                       fr->is_double);
+
+                        assigned = new_k;
+                        assigned_dist = 0.0;
+                        state->telemetry.num_new_clusters++;
+                    }
+                    else
+                    {
+                        if (config->algo.maxcl_strategy == MAXCL_STOP)
+                        {
+                            free_frame(fr);
+                            state->telemetry.total_frames_processed++;
+                            for (int j = i + 1; j < cur_b; j++)
+                            {
+                                free_frame(batch_frames[active_slot][j]);
+                            }
+                            stop_requested = 1;
+                            break;
+                        }
+                        assigned = cur_best_c;
+                        assigned_dist = (double)cur_best_d;
+                    }
+
+                    state->assignments[t] = assigned;
+                    if (prev_cl >= 0 && assigned >= 0 && state->transition_matrix != NULL)
+                    {
+                        size_t maxcl = (size_t)config->algo.maxnbclust;
+                        state->transition_matrix[(size_t)prev_cl * maxcl + (size_t)assigned]++;
+                    }
+                    prev_cl = assigned;
+
+                    if (state->frame_infos != NULL)
+                    {
+                        state->frame_infos[t].assignment = assigned;
+                        state->frame_infos[t].assigned_dist = assigned_dist;
+                        state->frame_infos[t].num_dists = 1;
+                        state->frame_infos[t].cluster_indices = (int *)malloc(sizeof(int));
+                        state->frame_infos[t].distances = (double *)malloc(sizeof(double));
+                        if (state->frame_infos[t].cluster_indices != NULL)
+                        {
+                            state->frame_infos[t].cluster_indices[0] = assigned;
+                        }
+                        if (state->frame_infos[t].distances != NULL)
+                        {
+                            state->frame_infos[t].distances[0] = assigned_dist;
+                        }
+                    }
+
+                    if (ascii_out != NULL)
+                    {
+                        fprintf(ascii_out, "%ld %d %.6f\n", t, assigned, assigned_dist);
+                    }
+
+                    state->telemetry.total_frames_processed++;
+                    free_frame(fr);
+                } // for (int i = 0; i < cur_b; i++)
+
+                batch_lens[active_slot] = 0;
+
+                if (state->shm_ptr != NULL)
+                {
+                    struct timespec now;
+                    clock_gettime(CLOCK_MONOTONIC, &now);
+                    double elapsed = (now.tv_sec - start.tv_sec) * 1000.0 +
+                                     (now.tv_nsec - start.tv_nsec) / 1000000.0;
+                    gric_shm_update(state, GRIC_STATUS_RUNNING, elapsed);
+                }
+
+                if (config->output.progress_mode &&
+                    (state->telemetry.total_frames_processed % 100 == 0 ||
+                     state->telemetry.total_frames_processed == actual_frames))
+                {
+                    printf("\r[GPU Pass 1] Frame %ld / %ld (Clusters: %d, Dists: %ld)",
+                           state->telemetry.total_frames_processed, actual_frames,
+                           state->num_clusters, state->telemetry.framedist_calls);
+                    fflush(stdout);
+                }
+
+                if (stop_requested)
                 {
                     break;
                 }
-                batch_frames[cur_b] = fr;
-                if (is_double)
-                {
-                    memcpy(batch_host_d + (size_t)cur_b * (size_t)D,
-                           fr->data, (size_t)D * sizeof(double));
-                }
-                else
-                {
-                    memcpy(batch_host_f + (size_t)cur_b * (size_t)D,
-                           fr->data, (size_t)D * sizeof(float));
-                }
-                cur_b++;
-            }
+            } // if (batch_lens[active_slot] > 0)
 
-            if (cur_b == 0)
+            /* 2. Ingest next batch directly into active_slot pinned frame buffer */
+            long total_queued = state->telemetry.total_frames_processed +
+                                batch_lens[1 - active_slot];
+            if (total_queued < actual_frames)
             {
-                break;
-            }
+                float *pinned_f = gpu_anchor_store_get_pinned_frames(store, active_slot);
+                int cur_b = 0;
 
-            int K_batch = gpu_anchor_store_get_count(store);
-            const void *host_data = is_double ?
-                (const void *)batch_host_d : (const void *)batch_host_f;
-
-            if (gpu_anchor_store_find_nearest(store, host_data, cur_b, is_double,
-                                              best_cl, best_dist) != 0)
-            {
-                fprintf(stderr, "Error: gpu_anchor_store_find_nearest failed\n");
-                for (int j = 0; j < cur_b; j++)
+                while (cur_b < micro_batch && total_queued + cur_b < actual_frames)
                 {
-                    free_frame(batch_frames[j]);
-                }
-                goto cleanup;
-            }
-
-            state->telemetry.framedist_calls += (uint64_t)cur_b * (uint64_t)K_batch;
-            state->telemetry.framedist_calls_sample += (uint64_t)cur_b * (uint64_t)K_batch;
-
-            for (int i = 0; i < cur_b; i++)
-            {
-                long t = state->telemetry.total_frames_processed;
-                Frame *fr = batch_frames[i];
-
-                /* Compare against any newly spawned clusters in this micro-batch */
-                for (int k = K_batch; k < state->num_clusters; k++)
-                {
-                    double d = framedist(fr, &state->clusters[k].anchor);
-                    state->telemetry.framedist_calls++;
-                    state->telemetry.framedist_calls_sample++;
-                    if (d < (double)best_dist[i])
+                    Frame *fr = getframe();
+                    if (fr == NULL)
                     {
-                        best_dist[i] = (float)d;
-                        best_cl[i] = k;
-                    }
-                }
-
-                int assigned = -1;
-                double assigned_dist = 0.0;
-
-                if (best_dist[i] <= (float)config->algo.rlim && best_cl[i] >= 0)
-                {
-                    assigned = best_cl[i];
-                    assigned_dist = (double)best_dist[i];
-                }
-                else if (state->num_clusters < config->algo.maxnbclust)
-                {
-                    int new_k = state->num_clusters;
-                    memset(&state->clusters[new_k], 0, sizeof(Cluster));
-                    frame_assign_to_anchor(&state->clusters[new_k], fr);
-                    state->clusters[new_k].id = new_k;
-                    state->clusters[new_k].prob = 1.0;
-                    state->num_clusters = new_k + 1;
-
-                    gpu_anchor_store_append_anchor(store, state->clusters[new_k].anchor.data,
-                                                   is_double);
-
-                    assigned = new_k;
-                    assigned_dist = 0.0;
-                    state->telemetry.num_new_clusters++;
-                }
-                else
-                {
-                    if (config->algo.maxcl_strategy == MAXCL_STOP)
-                    {
-                        free_frame(fr);
-                        state->telemetry.total_frames_processed++;
-                        for (int j = i + 1; j < cur_b; j++)
-                        {
-                            free_frame(batch_frames[j]);
-                        }
-                        stop_requested = 1;
                         break;
                     }
-                    assigned = best_cl[i];
-                    assigned_dist = (double)best_dist[i];
-                }
-
-                state->assignments[t] = assigned;
-                if (prev_cl >= 0 && assigned >= 0 && state->transition_matrix != NULL)
-                {
-                    size_t maxcl = (size_t)config->algo.maxnbclust;
-                    state->transition_matrix[(size_t)prev_cl * maxcl + (size_t)assigned]++;
-                }
-                prev_cl = assigned;
-
-                if (state->frame_infos != NULL)
-                {
-                    state->frame_infos[t].assignment = assigned;
-                    state->frame_infos[t].assigned_dist = assigned_dist;
-                    state->frame_infos[t].num_dists = 1;
-                    state->frame_infos[t].cluster_indices = (int *)malloc(sizeof(int));
-                    state->frame_infos[t].distances = (double *)malloc(sizeof(double));
-                    if (state->frame_infos[t].cluster_indices != NULL)
+                    batch_frames[active_slot][cur_b] = fr;
+                    float *dst = pinned_f + (size_t)cur_b * (size_t)D;
+                    if (fr->is_double)
                     {
-                        state->frame_infos[t].cluster_indices[0] = assigned;
+                        const double *s = (const double *)fr->data;
+                        for (long d = 0; d < D; d++)
+                        {
+                            dst[d] = (float)s[d];
+                        }
                     }
-                    if (state->frame_infos[t].distances != NULL)
+                    else
                     {
-                        state->frame_infos[t].distances[0] = assigned_dist;
+                        memcpy(dst, fr->data, (size_t)D * sizeof(float));
+                    }
+                    cur_b++;
+                }
+
+                if (cur_b > 0)
+                {
+                    batch_lens[active_slot] = cur_b;
+                    batch_k_counts[active_slot] = gpu_anchor_store_get_count(store);
+                    if (gpu_anchor_store_async_find_nearest(store, active_slot, cur_b) != 0)
+                    {
+                        fprintf(stderr, "Error: gpu_anchor_store_async_find_nearest failed\n");
+                        for (int j = 0; j < cur_b; j++)
+                        {
+                            free_frame(batch_frames[active_slot][j]);
+                        }
+                        goto cleanup;
                     }
                 }
+            } // if (total_queued < actual_frames)
 
-                if (ascii_out != NULL)
-                {
-                    fprintf(ascii_out, "%ld %d %.6f\n", t, assigned, assigned_dist);
-                }
-
-                state->telemetry.total_frames_processed++;
-                free_frame(fr);
-            } // for (int i = 0; i < cur_b; i++)
-
-            if (state->shm_ptr != NULL)
-            {
-                struct timespec now;
-                clock_gettime(CLOCK_MONOTONIC, &now);
-                double elapsed = (now.tv_sec - start.tv_sec) * 1000.0 +
-                                 (now.tv_nsec - start.tv_nsec) / 1000000.0;
-                gric_shm_update(state, GRIC_STATUS_RUNNING, elapsed);
-            }
-
-            if (config->output.progress_mode &&
-                (state->telemetry.total_frames_processed % 100 == 0 ||
-                 state->telemetry.total_frames_processed == actual_frames))
-            {
-                printf("\r[GPU Pass 1] Frame %ld / %ld (Clusters: %d, Dists: %ld)",
-                       state->telemetry.total_frames_processed, actual_frames,
-                       state->num_clusters, state->telemetry.framedist_calls);
-                fflush(stdout);
-            }
+            active_slot = 1 - active_slot;
         } // while (...)
     }
 
@@ -1273,30 +1292,13 @@ int cluster_cuda_run_pass1_bruteforce(
         gpu_anchor_store_destroy(store);
         store = NULL;
     }
-    if (batch_frames != NULL)
+    for (int s = 0; s < 2; s++)
     {
-        free(batch_frames);
-        batch_frames = NULL;
-    }
-    if (batch_host_f != NULL)
-    {
-        free(batch_host_f);
-        batch_host_f = NULL;
-    }
-    if (batch_host_d != NULL)
-    {
-        free(batch_host_d);
-        batch_host_d = NULL;
-    }
-    if (best_cl != NULL)
-    {
-        free(best_cl);
-        best_cl = NULL;
-    }
-    if (best_dist != NULL)
-    {
-        free(best_dist);
-        best_dist = NULL;
+        if (batch_frames[s] != NULL)
+        {
+            free(batch_frames[s]);
+            batch_frames[s] = NULL;
+        }
     }
 
     return 0;
@@ -1310,25 +1312,19 @@ cleanup:
     {
         gpu_anchor_store_destroy(store);
     }
-    if (batch_frames != NULL)
+    for (int s = 0; s < 2; s++)
     {
-        free(batch_frames);
-    }
-    if (batch_host_f != NULL)
-    {
-        free(batch_host_f);
-    }
-    if (batch_host_d != NULL)
-    {
-        free(batch_host_d);
-    }
-    if (best_cl != NULL)
-    {
-        free(best_cl);
-    }
-    if (best_dist != NULL)
-    {
-        free(best_dist);
+        if (batch_frames[s] != NULL)
+        {
+            for (int j = 0; j < batch_lens[s]; j++)
+            {
+                if (batch_frames[s][j] != NULL)
+                {
+                    free_frame(batch_frames[s][j]);
+                }
+            }
+            free(batch_frames[s]);
+        }
     }
 
     return -1;

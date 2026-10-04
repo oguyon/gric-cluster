@@ -41,22 +41,29 @@ struct GpuAnchorStore
     int             max_clusters;
     int             dim;
     int             num_clusters;
+    int             num_clusters_norms;
     int             max_batch_size;
     int             device_id;
     cublasHandle_t  cublas;
 
     float          *d_anchors;
     float          *d_anchor_norms;
-    float          *d_frames;
-    float          *d_frame_norms;
-    float          *d_P;
-    int            *d_best_cl;
-    float          *d_best_dist;
+
+    cudaStream_t    streams[2];
+    float          *d_frames[2];
+    float          *d_frame_norms[2];
+    float          *d_P[2];
+    int            *d_best_cl[2];
+    float          *d_best_dist[2];
+
+    float          *h_frames_pinned[2];
+    int            *h_best_cl_pinned[2];
+    float          *h_best_dist_pinned[2];
+    float          *h_anchor_staging;
 
     int            *d_top_cl;
     float          *d_top_dist;
 
-    float          *h_frames_float;
     float           rlim;
 };
 
@@ -287,11 +294,8 @@ GpuAnchorStore *gpu_anchor_store_create(
 
     if (cudaMalloc((void **)&store->d_anchors, anc_bytes) != cudaSuccess ||
         cudaMalloc((void **)&store->d_anchor_norms, anc_norms_bytes) != cudaSuccess ||
-        cudaMalloc((void **)&store->d_frames, frames_bytes) != cudaSuccess ||
-        cudaMalloc((void **)&store->d_frame_norms, frame_norms_bytes) != cudaSuccess ||
-        cudaMalloc((void **)&store->d_P, p_bytes) != cudaSuccess ||
-        cudaMalloc((void **)&store->d_best_cl, best_cl_bytes) != cudaSuccess ||
-        cudaMalloc((void **)&store->d_best_dist, best_dist_bytes) != cudaSuccess ||
+        cudaMallocHost((void **)&store->h_anchor_staging, (size_t)store->dim * sizeof(float))
+            != cudaSuccess ||
         cudaMalloc((void **)&store->d_top_cl, (size_t)store->max_batch_size * 32 * sizeof(int))
             != cudaSuccess ||
         cudaMalloc((void **)&store->d_top_dist, (size_t)store->max_batch_size * 32 * sizeof(float))
@@ -301,11 +305,21 @@ GpuAnchorStore *gpu_anchor_store_create(
         return NULL;
     }
 
-    store->h_frames_float = (float *)malloc(frames_bytes);
-    if (store->h_frames_float == NULL)
+    for (int s = 0; s < 2; s++)
     {
-        gpu_anchor_store_destroy(store);
-        return NULL;
+        if (cudaStreamCreate(&store->streams[s]) != cudaSuccess ||
+            cudaMalloc((void **)&store->d_frames[s], frames_bytes) != cudaSuccess ||
+            cudaMalloc((void **)&store->d_frame_norms[s], frame_norms_bytes) != cudaSuccess ||
+            cudaMalloc((void **)&store->d_P[s], p_bytes) != cudaSuccess ||
+            cudaMalloc((void **)&store->d_best_cl[s], best_cl_bytes) != cudaSuccess ||
+            cudaMalloc((void **)&store->d_best_dist[s], best_dist_bytes) != cudaSuccess ||
+            cudaMallocHost((void **)&store->h_frames_pinned[s], frames_bytes) != cudaSuccess ||
+            cudaMallocHost((void **)&store->h_best_cl_pinned[s], best_cl_bytes) != cudaSuccess ||
+            cudaMallocHost((void **)&store->h_best_dist_pinned[s], best_dist_bytes) != cudaSuccess)
+        {
+            gpu_anchor_store_destroy(store);
+            return NULL;
+        }
     }
 
     return store;
@@ -327,26 +341,51 @@ void gpu_anchor_store_destroy(
     {
         cudaFree(store->d_anchor_norms);
     }
-    if (store->d_frames != NULL)
+    if (store->h_anchor_staging != NULL)
     {
-        cudaFree(store->d_frames);
+        cudaFreeHost(store->h_anchor_staging);
     }
-    if (store->d_frame_norms != NULL)
+
+    for (int s = 0; s < 2; s++)
     {
-        cudaFree(store->d_frame_norms);
+        if (store->d_frames[s] != NULL)
+        {
+            cudaFree(store->d_frames[s]);
+        }
+        if (store->d_frame_norms[s] != NULL)
+        {
+            cudaFree(store->d_frame_norms[s]);
+        }
+        if (store->d_P[s] != NULL)
+        {
+            cudaFree(store->d_P[s]);
+        }
+        if (store->d_best_cl[s] != NULL)
+        {
+            cudaFree(store->d_best_cl[s]);
+        }
+        if (store->d_best_dist[s] != NULL)
+        {
+            cudaFree(store->d_best_dist[s]);
+        }
+        if (store->h_frames_pinned[s] != NULL)
+        {
+            cudaFreeHost(store->h_frames_pinned[s]);
+        }
+        if (store->h_best_cl_pinned[s] != NULL)
+        {
+            cudaFreeHost(store->h_best_cl_pinned[s]);
+        }
+        if (store->h_best_dist_pinned[s] != NULL)
+        {
+            cudaFreeHost(store->h_best_dist_pinned[s]);
+        }
+        if (store->streams[s] != NULL)
+        {
+            cudaStreamDestroy(store->streams[s]);
+        }
     }
-    if (store->d_P != NULL)
-    {
-        cudaFree(store->d_P);
-    }
-    if (store->d_best_cl != NULL)
-    {
-        cudaFree(store->d_best_cl);
-    }
-    if (store->d_best_dist != NULL)
-    {
-        cudaFree(store->d_best_dist);
-    }
+
     if (store->d_top_cl != NULL)
     {
         cudaFree(store->d_top_cl);
@@ -359,10 +398,6 @@ void gpu_anchor_store_destroy(
     {
         cublasDestroy(store->cublas);
     }
-    if (store->h_frames_float != NULL)
-    {
-        free(store->h_frames_float);
-    }
 
     free(store);
 }
@@ -373,6 +408,7 @@ void gpu_anchor_store_reset(
     if (store != NULL)
     {
         store->num_clusters = 0;
+        store->num_clusters_norms = 0;
     }
 }
 
@@ -392,6 +428,17 @@ int gpu_anchor_store_get_count(
     return (store != NULL) ? store->num_clusters : 0;
 }
 
+float *gpu_anchor_store_get_pinned_frames(
+    GpuAnchorStore *store,
+    int             slot)
+{
+    if (store == NULL || slot < 0 || slot >= 2)
+    {
+        return NULL;
+    }
+    return store->h_frames_pinned[slot];
+}
+
 int gpu_anchor_store_append_anchor(
     GpuAnchorStore *store,
     const void     *data,
@@ -404,43 +451,144 @@ int gpu_anchor_store_append_anchor(
 
     if (store->num_clusters >= store->max_clusters)
     {
-        fprintf(stderr, "GpuAnchorStore capacity reached (%d clusters)\n", store->max_clusters);
+        fprintf(stderr, "GpuAnchorStore capacity reached (%d clusters)\n",
+                store->max_clusters);
         return -1;
     }
 
     int idx = store->num_clusters;
     int D = store->dim;
-    float *h_vec = store->h_frames_float;
+    float *h_vec = store->h_anchor_staging;
 
-    float norm_sq = 0.0f;
     if (is_double)
     {
         const double *src = (const double *)data;
         for (int d = 0; d < D; d++)
         {
-            float val = (float)src[d];
-            h_vec[d] = val;
-            norm_sq += val * val;
+            h_vec[d] = (float)src[d];
         }
     }
     else
     {
         const float *src = (const float *)data;
-        for (int d = 0; d < D; d++)
-        {
-            float val = src[d];
-            h_vec[d] = val;
-            norm_sq += val * val;
-        }
+        memcpy(h_vec, src, (size_t)D * sizeof(float));
     }
 
     float *d_dst = store->d_anchors + (size_t)idx * (size_t)D;
     CUDA_CHECK(cudaMemcpy(d_dst, h_vec, (size_t)D * sizeof(float), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(store->d_anchor_norms + idx, &norm_sq, sizeof(float),
-                          cudaMemcpyHostToDevice));
 
     store->num_clusters++;
     return idx;
+}
+
+int gpu_anchor_store_async_find_nearest(
+    GpuAnchorStore *store,
+    int             slot,
+    int             batch_size)
+{
+    if (store == NULL || slot < 0 || slot >= 2 || batch_size <= 0)
+    {
+        return -1;
+    }
+
+    int K = store->num_clusters;
+    int D = store->dim;
+    int B = batch_size;
+
+    if (K <= 0 || B > store->max_batch_size)
+    {
+        return -1;
+    }
+
+    /* Batch compute missing anchor norms on device */
+    if (store->num_clusters > store->num_clusters_norms)
+    {
+        int new_k = store->num_clusters - store->num_clusters_norms;
+        int threads = 128;
+        int blocks = (new_k + (threads / 32) - 1) / (threads / 32);
+        compute_norms_kernel<<<blocks, threads, 0, store->streams[slot]>>>(
+            store->d_anchors + (size_t)store->num_clusters_norms * (size_t)D,
+            new_k, D,
+            store->d_anchor_norms + store->num_clusters_norms);
+        CUDA_CHECK(cudaGetLastError());
+        store->num_clusters_norms = store->num_clusters;
+    }
+
+    /* Asynchronous H2D transfer */
+    CUDA_CHECK(cudaMemcpyAsync(
+        store->d_frames[slot], store->h_frames_pinned[slot],
+        (size_t)B * (size_t)D * sizeof(float),
+        cudaMemcpyHostToDevice, store->streams[slot]));
+
+    /* Compute frame norms */
+    {
+        int threads = 128;
+        int blocks = (B + (threads / 32) - 1) / (threads / 32);
+        compute_norms_kernel<<<blocks, threads, 0, store->streams[slot]>>>(
+            store->d_frames[slot], B, D, store->d_frame_norms[slot]);
+        CUDA_CHECK(cudaGetLastError());
+    }
+
+    /* GEMM: d_P[B x K] = d_frames[B x D] * (d_anchors[K x D])^T */
+    float alpha = 1.0f;
+    float beta = 0.0f;
+    CUBLAS_CHECK(cublasSetStream(store->cublas, store->streams[slot]));
+    CUBLAS_CHECK(cublasSgemm(store->cublas, CUBLAS_OP_T, CUBLAS_OP_N,
+                             K, B, D,
+                             &alpha,
+                             store->d_anchors, D,
+                             store->d_frames[slot], D,
+                             &beta,
+                             store->d_P[slot], K));
+
+    /* Argmin reduction kernel */
+    {
+        int r_threads = 128;
+        int warps_per_block = r_threads / 32;
+        int r_blocks = (B + warps_per_block - 1) / warps_per_block;
+        argmin_distance_kernel<<<r_blocks, r_threads, 0, store->streams[slot]>>>(
+            store->d_frame_norms[slot], store->d_anchor_norms, store->d_P[slot],
+            store->d_best_cl[slot], store->d_best_dist[slot],
+            B, K);
+        CUDA_CHECK(cudaGetLastError());
+    }
+
+    /* Asynchronous D2H transfer */
+    CUDA_CHECK(cudaMemcpyAsync(
+        store->h_best_cl_pinned[slot], store->d_best_cl[slot],
+        (size_t)B * sizeof(int),
+        cudaMemcpyDeviceToHost, store->streams[slot]));
+    CUDA_CHECK(cudaMemcpyAsync(
+        store->h_best_dist_pinned[slot], store->d_best_dist[slot],
+        (size_t)B * sizeof(float),
+        cudaMemcpyDeviceToHost, store->streams[slot]));
+
+    return 0;
+}
+
+int gpu_anchor_store_sync_nearest(
+    GpuAnchorStore  *store,
+    int              slot,
+    const int      **out_best_cl,
+    const float    **out_best_dist)
+{
+    if (store == NULL || slot < 0 || slot >= 2)
+    {
+        return -1;
+    }
+
+    CUDA_CHECK(cudaStreamSynchronize(store->streams[slot]));
+
+    if (out_best_cl != NULL)
+    {
+        *out_best_cl = store->h_best_cl_pinned[slot];
+    }
+    if (out_best_dist != NULL)
+    {
+        *out_best_dist = store->h_best_dist_pinned[slot];
+    }
+
+    return 0;
 }
 
 int gpu_anchor_store_find_nearest(
@@ -451,77 +599,61 @@ int gpu_anchor_store_find_nearest(
     int            *out_best_cl,
     float          *out_best_dist)
 {
-    if (store == NULL || host_frames == NULL || out_best_cl == NULL || out_best_dist == NULL)
+    if (store == NULL || out_best_cl == NULL || out_best_dist == NULL)
     {
         return -1;
     }
 
-    int K = store->num_clusters;
-    int D = store->dim;
-    int B = batch_size;
-
-    if (K <= 0 || B <= 0)
+    if (batch_size <= 0 || batch_size > store->max_batch_size)
     {
         return -1;
     }
 
-    if (B > store->max_batch_size)
+    if (store->num_clusters <= 0)
     {
-        fprintf(stderr, "GpuAnchorStore batch size %d exceeds allocated maximum %d\n",
-                B, store->max_batch_size);
         return -1;
     }
 
-    /* Prepare host float buffer */
-    float *h_f = store->h_frames_float;
-    if (is_double)
+    /* If host_frames is provided and not already in slot 0 pinned buffer, copy it */
+    if (host_frames != NULL && host_frames != store->h_frames_pinned[0])
     {
-        const double *src = (const double *)host_frames;
-        size_t total = (size_t)B * (size_t)D;
-        for (size_t i = 0; i < total; i++)
+        float *dst = store->h_frames_pinned[0];
+        int D = store->dim;
+        if (is_double)
         {
-            h_f[i] = (float)src[i];
+            const double *src = (const double *)host_frames;
+            size_t total = (size_t)batch_size * (size_t)D;
+            for (size_t i = 0; i < total; i++)
+            {
+                dst[i] = (float)src[i];
+            }
+        }
+        else
+        {
+            memcpy(dst, host_frames, (size_t)batch_size * (size_t)D * sizeof(float));
         }
     }
-    else
+
+    if (gpu_anchor_store_async_find_nearest(store, 0, batch_size) != 0)
     {
-        memcpy(h_f, host_frames, (size_t)B * (size_t)D * sizeof(float));
+        return -1;
     }
 
-    CUDA_CHECK(cudaMemcpy(store->d_frames, h_f, (size_t)B * (size_t)D * sizeof(float),
-                          cudaMemcpyHostToDevice));
+    const int *res_cl = NULL;
+    const float *res_dist = NULL;
+    if (gpu_anchor_store_sync_nearest(store, 0, &res_cl, &res_dist) != 0)
+    {
+        return -1;
+    }
 
-    /* Compute frame norms */
-    int threads = 128;
-    int blocks = (B + (threads / 32) - 1) / (threads / 32);
-    compute_norms_kernel<<<blocks, threads>>>(store->d_frames, B, D, store->d_frame_norms);
-    CUDA_CHECK(cudaGetLastError());
-
-    /* GEMM: d_P[B x K] = d_frames[B x D] * (d_anchors[K x D])^T */
-    float alpha = 1.0f;
-    float beta = 0.0f;
-    CUBLAS_CHECK(cublasSgemm(store->cublas, CUBLAS_OP_T, CUBLAS_OP_N,
-                             K, B, D,
-                             &alpha,
-                             store->d_anchors, D,
-                             store->d_frames, D,
-                             &beta,
-                             store->d_P, K));
-
-    /* Argmin reduction kernel */
-    int r_threads = 128;
-    int warps_per_block = r_threads / 32;
-    int r_blocks = (B + warps_per_block - 1) / warps_per_block;
-    argmin_distance_kernel<<<r_blocks, r_threads>>>(
-        store->d_frame_norms, store->d_anchor_norms, store->d_P,
-        store->d_best_cl, store->d_best_dist,
-        B, K);
-    CUDA_CHECK(cudaGetLastError());
-
-    CUDA_CHECK(cudaMemcpy(out_best_cl, store->d_best_cl, (size_t)B * sizeof(int),
-                          cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(out_best_dist, store->d_best_dist, (size_t)B * sizeof(float),
-                          cudaMemcpyDeviceToHost));
+    if (out_best_cl != res_cl)
+    {
+        memcpy(out_best_cl, res_cl, (size_t)batch_size * sizeof(int));
+    }
+    if (out_best_dist != res_dist)
+    {
+        memcpy(out_best_dist, res_dist, (size_t)batch_size * sizeof(float));
+    }
 
     return 0;
 }
@@ -565,7 +697,21 @@ int gpu_anchor_store_find_top_m(
         return -1;
     }
 
-    float *h_f = store->h_frames_float;
+    /* Batch compute missing anchor norms on device */
+    if (store->num_clusters > store->num_clusters_norms)
+    {
+        int new_k = store->num_clusters - store->num_clusters_norms;
+        int threads = 128;
+        int blocks = (new_k + (threads / 32) - 1) / (threads / 32);
+        compute_norms_kernel<<<blocks, threads>>>(
+            store->d_anchors + (size_t)store->num_clusters_norms * (size_t)D,
+            new_k, D,
+            store->d_anchor_norms + store->num_clusters_norms);
+        CUDA_CHECK(cudaGetLastError());
+        store->num_clusters_norms = store->num_clusters;
+    }
+
+    float *h_f = store->h_frames_pinned[0];
     if (is_double)
     {
         const double *src = (const double *)host_queries;
@@ -580,32 +726,34 @@ int gpu_anchor_store_find_top_m(
         memcpy(h_f, host_queries, (size_t)B * (size_t)D * sizeof(float));
     }
 
-    CUDA_CHECK(cudaMemcpy(store->d_frames, h_f, (size_t)B * (size_t)D * sizeof(float),
+    CUDA_CHECK(cudaMemcpy(store->d_frames[0], h_f, (size_t)B * (size_t)D * sizeof(float),
                           cudaMemcpyHostToDevice));
 
     {
         int threads = 128;
         int blocks = (B + (threads / 32) - 1) / (threads / 32);
-        compute_norms_kernel<<<blocks, threads>>>(store->d_frames, B, D, store->d_frame_norms);
+        compute_norms_kernel<<<blocks, threads>>>(store->d_frames[0], B, D,
+                                                  store->d_frame_norms[0]);
         CUDA_CHECK(cudaGetLastError());
     }
 
     float alpha = 1.0f;
     float beta = 0.0f;
+    CUBLAS_CHECK(cublasSetStream(store->cublas, NULL));
     CUBLAS_CHECK(cublasSgemm(store->cublas, CUBLAS_OP_T, CUBLAS_OP_N,
                              K, B, D,
                              &alpha,
                              store->d_anchors, D,
-                             store->d_frames, D,
+                             store->d_frames[0], D,
                              &beta,
-                             store->d_P, K));
+                             store->d_P[0], K));
 
     {
         int threads = 128;
         int warps_per_block = threads / 32;
         int blocks = (B + warps_per_block - 1) / warps_per_block;
         top_m_distance_kernel<<<blocks, threads>>>(
-            store->d_frame_norms, store->d_anchor_norms, store->d_P,
+            store->d_frame_norms[0], store->d_anchor_norms, store->d_P[0],
             store->d_top_cl, store->d_top_dist,
             B, K, m);
         CUDA_CHECK(cudaGetLastError());
