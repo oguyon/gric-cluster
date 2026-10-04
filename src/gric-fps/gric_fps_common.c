@@ -401,10 +401,6 @@ errno_t gric_fps_process_frame(
         assign_data[5] = (float)latency_us;
         assign_data[6] = (last_dist <= fps_rlim) ? 1.0f : 0.0f;
         assign_data[7] = (float)fps_query_mode;
-
-        out_assign->md[0].cnt0++;
-        out_assign->md[0].write = 0;
-        ImageStreamIO_sempost(out_assign, -1);
     }
 
     /* Update anchors stream if a new cluster was spawned */
