@@ -7,6 +7,17 @@
  */
 
 #include "cluster_defs.h"
+#include "cli_opt.h"
+
+/**
+ * @brief Retrieve declarative option definitions for gric-cluster.
+ * @param config Pointer to ClusterConfig to bind targets to (NULL for introspection).
+ * @param nopts  Output pointer receiving option count.
+ * @return Pointer to array of options.
+ */
+const struct gric_opt *cluster_get_options(
+    ClusterConfig *config,
+    size_t        *nopts);
 
 /**
  * @brief Parse a single option key/value pair and apply it to ClusterConfig.
