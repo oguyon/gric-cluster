@@ -42,6 +42,7 @@ struct gric_cluster_ctx
     int           *temp_indices;
     double        *temp_dists;
     Candidate     *sorting_candidates;
+    void          *conv_buf;
 };
 
 const char *gric_version(
@@ -364,6 +365,7 @@ gric_cluster_t *gric_cluster_create(
     ctx->temp_indices = (int *)calloc(sz_N, sizeof(int));
     ctx->temp_dists = (double *)calloc(sz_N, sizeof(double));
     ctx->sorting_candidates = (Candidate *)calloc(sz_N, sizeof(Candidate));
+    ctx->conv_buf = malloc(ndim * sizeof(double));
 
     ctx->frame.data = NULL;
     ctx->frame.is_double = 1;
@@ -391,9 +393,10 @@ gric_cluster_t *gric_cluster_create_simple(
     return gric_cluster_create(&cfg, ndim);
 }
 
-gric_status_t gric_cluster_feed_frame(
+static gric_status_t gric_cluster_feed_frame_internal(
     gric_cluster_t *ctx,
-    const double   *coords,
+    const void     *coords,
+    int             input_is_double,
     int64_t        *out_cluster_id)
 {
     if (ctx == NULL || coords == NULL || out_cluster_id == NULL)
@@ -401,8 +404,38 @@ gric_status_t gric_cluster_feed_frame(
         return GRIC_ERR_INVALID_PARAM;
     }
 
-    ctx->frame.data = (void *)coords;
-    ctx->frame.is_double = 1;
+    int session_is_double = ctx->config.algo.use_double;
+    if (input_is_double == session_is_double)
+    {
+        ctx->frame.data = (void *)coords;
+        ctx->frame.is_double = session_is_double;
+    }
+    else
+    {
+        if (session_is_double)
+        {
+            double *d_buf = (double *)ctx->conv_buf;
+            const float *f_in = (const float *)coords;
+            for (size_t ii = 0; ii < ctx->ndim; ii++)
+            {
+                d_buf[ii] = (double)f_in[ii];
+            }
+            ctx->frame.data = d_buf;
+            ctx->frame.is_double = 1;
+        }
+        else
+        {
+            float *f_buf = (float *)ctx->conv_buf;
+            const double *d_in = (const double *)coords;
+            for (size_t ii = 0; ii < ctx->ndim; ii++)
+            {
+                f_buf[ii] = (float)d_in[ii];
+            }
+            ctx->frame.data = f_buf;
+            ctx->frame.is_double = 0;
+        }
+    }
+
     ctx->frame.id = ctx->current_frame_id;
     ctx->frame.width = (int)ctx->ndim;
     ctx->frame.height = 1;
@@ -444,6 +477,22 @@ gric_status_t gric_cluster_feed_frame(
     return GRIC_SUCCESS;
 }
 
+gric_status_t gric_cluster_feed_frame(
+    gric_cluster_t *ctx,
+    const double   *coords,
+    int64_t        *out_cluster_id)
+{
+    return gric_cluster_feed_frame_internal(ctx, coords, 1, out_cluster_id);
+}
+
+gric_status_t gric_cluster_feed_frame_f32(
+    gric_cluster_t *ctx,
+    const float    *coords,
+    int64_t        *out_cluster_id)
+{
+    return gric_cluster_feed_frame_internal(ctx, coords, 0, out_cluster_id);
+}
+
 gric_status_t gric_cluster_feed_batch(
     gric_cluster_t *ctx,
     const double   *coords_flat,
@@ -459,6 +508,30 @@ gric_status_t gric_cluster_feed_batch(
     {
         const double *frame_ptr = coords_flat + (i * ctx->ndim);
         gric_status_t st = gric_cluster_feed_frame(ctx, frame_ptr, &out_cluster_ids[i]);
+        if (st != GRIC_SUCCESS)
+        {
+            return st;
+        }
+    }
+
+    return GRIC_SUCCESS;
+}
+
+gric_status_t gric_cluster_feed_batch_f32(
+    gric_cluster_t *ctx,
+    const float    *coords_flat,
+    size_t          num_frames,
+    int64_t        *out_cluster_ids)
+{
+    if (ctx == NULL || coords_flat == NULL || out_cluster_ids == NULL)
+    {
+        return GRIC_ERR_INVALID_PARAM;
+    }
+
+    for (size_t i = 0; i < num_frames; i++)
+    {
+        const float *frame_ptr = coords_flat + (i * ctx->ndim);
+        gric_status_t st = gric_cluster_feed_frame_f32(ctx, frame_ptr, &out_cluster_ids[i]);
         if (st != GRIC_SUCCESS)
         {
             return st;
@@ -1265,7 +1338,7 @@ void gric_cluster_destroy(
     free(ctx->temp_indices);
     free(ctx->temp_dists);
     free(ctx->sorting_candidates);
-
+    free(ctx->conv_buf);
 
     free(ctx);
 }

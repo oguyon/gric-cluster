@@ -119,6 +119,19 @@ GRIC_API gric_status_t gric_cluster_feed_frame(
     int64_t        *out_cluster_id);
 
 /**
+ * gric_cluster_feed_frame_f32() - Process a single incoming single-precision coordinate frame.
+ * @ctx:            Active clustering handle.
+ * @coords:         Single-precision float coordinate array [ndim].
+ * @out_cluster_id: Pointer where assigned cluster ID will be stored.
+ *
+ * Return: GRIC_SUCCESS on success, or negative error code on failure.
+ */
+GRIC_API gric_status_t gric_cluster_feed_frame_f32(
+    gric_cluster_t *ctx,
+    const float    *coords,
+    int64_t        *out_cluster_id);
+
+/**
  * gric_cluster_feed_batch() - Process a contiguous batch of coordinate frames.
  * @ctx:             Active clustering handle.
  * @coords_flat:     Contiguous coordinate buffer [num_frames * ndim].
@@ -130,6 +143,21 @@ GRIC_API gric_status_t gric_cluster_feed_frame(
 GRIC_API gric_status_t gric_cluster_feed_batch(
     gric_cluster_t *ctx,
     const double   *coords_flat,
+    size_t          num_frames,
+    int64_t        *out_cluster_ids);
+
+/**
+ * gric_cluster_feed_batch_f32() - Process a contiguous batch of single-precision coordinate frames.
+ * @ctx:             Active clustering handle.
+ * @coords_flat:     Contiguous float coordinate buffer [num_frames * ndim].
+ * @num_frames:      Number of frames in batch.
+ * @out_cluster_ids: Buffer to store assigned cluster IDs [num_frames].
+ *
+ * Return: GRIC_SUCCESS on success, or negative error code on failure.
+ */
+GRIC_API gric_status_t gric_cluster_feed_batch_f32(
+    gric_cluster_t *ctx,
+    const float    *coords_flat,
     size_t          num_frames,
     int64_t        *out_cluster_ids);
 

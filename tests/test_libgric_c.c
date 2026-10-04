@@ -101,6 +101,23 @@ int main(void)
     unlink("/tmp/test_libgric_results/cluster_radii.bin");
     rmdir("/tmp/test_libgric_results");
 
+    // Test single-precision float32 feed APIs
+    float f_single[4] = {0.08f, 0.08f, 0.0f, 0.0f};
+    int64_t c_f32 = -1;
+    status = gric_cluster_feed_frame_f32(ctx, f_single, &c_f32);
+    assert(status == GRIC_SUCCESS);
+    assert(c_f32 == 0);
+
+    float f_batch[8] = {
+        0.02f, 0.02f, 0.0f, 0.0f,
+        5.05f, 0.0f, 0.0f, 0.0f
+    };
+    int64_t batch_out_f32[2] = {-1, -1};
+    status = gric_cluster_feed_batch_f32(ctx, f_batch, 2, batch_out_f32);
+    assert(status == GRIC_SUCCESS);
+    assert(batch_out_f32[0] == 0);
+    assert(batch_out_f32[1] == 1);
+
     gric_cluster_destroy(ctx);
     printf("libgric C API test passed successfully.\n");
     return 0;

@@ -314,7 +314,13 @@ errno_t gric_fps_process_frame(
         prev_cluster_count = 0;
     }
 
-    /* Convert input pixels to coordinate buffer */
+    /* Convert input pixels to coordinate buffer or pass float slice directly */
+    int fed_f32 = 0;
+    if (datatype == _DATATYPE_FLOAT && !fps_use_double)
+    {
+        fed_f32 = 1;
+    }
+    else
     {
         switch (datatype)
         {
@@ -358,8 +364,21 @@ errno_t gric_fps_process_frame(
     /* Ingest frame through libgric clustering pipeline */
     gric_cluster_set_query_mode(cluster_ctx, (int)fps_query_mode);
     int64_t assigned_cluster_id = -1;
-    gric_status_t status = gric_cluster_feed_frame(cluster_ctx, coord_conv_buf,
-                                                   &assigned_cluster_id);
+    gric_status_t status;
+    if (fed_f32)
+    {
+        status = gric_cluster_feed_frame_f32(
+            cluster_ctx,
+            (const float *)raw_pixels,
+            &assigned_cluster_id);
+    }
+    else
+    {
+        status = gric_cluster_feed_frame(
+            cluster_ctx,
+            coord_conv_buf,
+            &assigned_cluster_id);
+    }
     if (status != GRIC_SUCCESS)
     {
         return 1;
@@ -395,9 +414,16 @@ errno_t gric_fps_process_frame(
         out_anchors->md[0].write = 1;
         float *anchor_slice = (float *)out_anchors->array.raw +
                               ((size_t)assigned_cluster_id * ndim);
-        for (uint32_t ii = 0; ii < ndim; ii++)
+        if (fed_f32)
         {
-            anchor_slice[ii] = (float)coord_conv_buf[ii];
+            memcpy(anchor_slice, raw_pixels, (size_t)ndim * sizeof(float));
+        }
+        else
+        {
+            for (uint32_t ii = 0; ii < ndim; ii++)
+            {
+                anchor_slice[ii] = (float)coord_conv_buf[ii];
+            }
         }
         out_anchors->md[0].cnt0++;
         out_anchors->md[0].write = 0;
