@@ -16,6 +16,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 /**
  * knn_search_intra_cluster() - Search members of the query's home cluster.
  * @query_id:        Index of query frame being searched.
@@ -97,6 +101,155 @@ static void knn_search_intra_cluster(
 #endif
         telem
     );
+}
+
+/**
+ * knn_model_precompute_warm_start - Precompute nearest non-empty clusters for warm-start.
+ * @model:  Pointer to KnnModel with loaded clusters and DCC matrices.
+ * @config: Pointer to KnnConfig options.
+ *
+ * Populates model->warm_ids [M x 8] and model->warm_cnt [M] in parallel over clusters.
+ */
+void knn_model_precompute_warm_start(
+    KnnModel        *model,
+    const KnnConfig *config)
+{
+    if (model == NULL || config == NULL || model->num_clusters <= 0)
+    {
+        return;
+    }
+
+    if (model->dcc_matrix == NULL && (!config->use_dcc_sq16 || model->dcc_sq16 == NULL))
+    {
+        return;
+    }
+
+    int M = model->num_clusters;
+    if (model->warm_ids == NULL)
+    {
+        model->warm_ids = (int *)malloc((size_t)M * 8 * sizeof(int));
+    }
+    if (model->warm_cnt == NULL)
+    {
+        model->warm_cnt = (int *)malloc((size_t)M * sizeof(int));
+    }
+
+    if (model->warm_ids == NULL || model->warm_cnt == NULL)
+    {
+        if (model->warm_ids != NULL)
+        {
+            free(model->warm_ids);
+            model->warm_ids = NULL;
+        }
+        if (model->warm_cnt != NULL)
+        {
+            free(model->warm_cnt);
+            model->warm_cnt = NULL;
+        }
+        return;
+    }
+
+    int use_sq16 = (config->use_dcc_sq16 && model->dcc_sq16 != NULL);
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static)
+#endif
+    for (int h = 0; h < M; h++)
+    {
+        int *visited_warm = &model->warm_ids[(size_t)h * 8];
+        int  num_warm = 0;
+
+        if (use_sq16)
+        {
+            uint16_t        warm_dcc_q[8];
+            const uint16_t *home_dcc_sq16 = &model->dcc_sq16[(size_t)h * (size_t)M];
+            for (int c = 0; c < M; c++)
+            {
+                if (c == h || model->clusters[c].num_members == 0)
+                {
+                    continue;
+                }
+
+                uint16_t dcc_q = home_dcc_sq16[c];
+                if (dcc_q == 0)
+                {
+                    continue;
+                }
+
+                if (num_warm < 8)
+                {
+                    int pos = num_warm;
+                    while (pos > 0 && warm_dcc_q[pos - 1] > dcc_q)
+                    {
+                        warm_dcc_q[pos]   = warm_dcc_q[pos - 1];
+                        visited_warm[pos] = visited_warm[pos - 1];
+                        pos--;
+                    }
+                    warm_dcc_q[pos]   = dcc_q;
+                    visited_warm[pos] = c;
+                    num_warm++;
+                }
+                else if (dcc_q < warm_dcc_q[7])
+                {
+                    int pos = 7;
+                    while (pos > 0 && warm_dcc_q[pos - 1] > dcc_q)
+                    {
+                        warm_dcc_q[pos]   = warm_dcc_q[pos - 1];
+                        visited_warm[pos] = visited_warm[pos - 1];
+                        pos--;
+                    }
+                    warm_dcc_q[pos]   = dcc_q;
+                    visited_warm[pos] = c;
+                }
+            } // for (int c = 0; c < M; c++)
+        }
+        else
+        {
+            double        warm_dcc[8];
+            const double *home_dcc = &model->dcc_matrix[(size_t)h * (size_t)M];
+            for (int c = 0; c < M; c++)
+            {
+                if (c == h || model->clusters[c].num_members == 0)
+                {
+                    continue;
+                }
+
+                double dcc = home_dcc[c];
+                if (dcc <= 0.0)
+                {
+                    continue;
+                }
+
+                if (num_warm < 8)
+                {
+                    int pos = num_warm;
+                    while (pos > 0 && warm_dcc[pos - 1] > dcc)
+                    {
+                        warm_dcc[pos]     = warm_dcc[pos - 1];
+                        visited_warm[pos] = visited_warm[pos - 1];
+                        pos--;
+                    }
+                    warm_dcc[pos]     = dcc;
+                    visited_warm[pos] = c;
+                    num_warm++;
+                }
+                else if (dcc < warm_dcc[7])
+                {
+                    int pos = 7;
+                    while (pos > 0 && warm_dcc[pos - 1] > dcc)
+                    {
+                        warm_dcc[pos]     = warm_dcc[pos - 1];
+                        visited_warm[pos] = visited_warm[pos - 1];
+                        pos--;
+                    }
+                    warm_dcc[pos]     = dcc;
+                    visited_warm[pos] = c;
+                }
+            } // for (int c = 0; c < M; c++)
+        }
+
+        model->warm_cnt[h] = num_warm;
+    } // for (int h = 0; h < M; h++)
 }
 
 /**
@@ -216,101 +369,113 @@ static int knn_warm_start_nearest_cluster(
         return -1;
     }
 
-    int M = model->num_clusters;
-    int visited_warm[8];
-    double warm_dcc[8];
-    int num_warm_found = 0;
-    int first_warm_c = -1;
-    double eps_factor = 1.0 + config->epsilon;
+    int        M = model->num_clusters;
+    int        visited_warm[8];
+    const int *warm_ptr = NULL;
+    int        num_warm_found = 0;
+    int        first_warm_c = -1;
+    double     eps_factor = 1.0 + config->epsilon;
 
-    if (config->use_dcc_sq16 && model->dcc_sq16 != NULL)
+    if (model->warm_ids != NULL && model->warm_cnt != NULL)
     {
-        uint16_t warm_dcc_q[8];
-        const uint16_t *home_dcc_sq16 = &model->dcc_sq16[home_cluster_id * M];
-        for (int c = 0; c < M; c++)
-        {
-            if (c == home_cluster_id || model->clusters[c].num_members == 0)
-            {
-                continue;
-            }
-
-            uint16_t dcc_q = home_dcc_sq16[c];
-            if (dcc_q == 0)
-            {
-                continue;
-            }
-
-            /* Maintain up to 8 closest clusters in sorted order using integer comparison */
-            if (num_warm_found < 8)
-            {
-                int pos = num_warm_found;
-                while (pos > 0 && warm_dcc_q[pos - 1] > dcc_q)
-                {
-                    warm_dcc_q[pos] = warm_dcc_q[pos - 1];
-                    visited_warm[pos] = visited_warm[pos - 1];
-                    pos--;
-                }
-                warm_dcc_q[pos] = dcc_q;
-                visited_warm[pos] = c;
-                num_warm_found++;
-            }
-            else if (dcc_q < warm_dcc_q[7])
-            {
-                int pos = 7;
-                while (pos > 0 && warm_dcc_q[pos - 1] > dcc_q)
-                {
-                    warm_dcc_q[pos] = warm_dcc_q[pos - 1];
-                    visited_warm[pos] = visited_warm[pos - 1];
-                    pos--;
-                }
-                warm_dcc_q[pos] = dcc_q;
-                visited_warm[pos] = c;
-            }
-        } // for (int c = 0; c < M; c++)
+        num_warm_found = model->warm_cnt[home_cluster_id];
+        warm_ptr       = &model->warm_ids[(size_t)home_cluster_id * 8];
     }
     else
     {
-        const double *home_dcc = &model->dcc_matrix[home_cluster_id * M];
-        for (int c = 0; c < M; c++)
+        warm_ptr = visited_warm;
+        if (config->use_dcc_sq16 && model->dcc_sq16 != NULL)
         {
-            if (c == home_cluster_id || model->clusters[c].num_members == 0)
+            uint16_t        warm_dcc_q[8];
+            const uint16_t *home_dcc_sq16 =
+                &model->dcc_sq16[(size_t)home_cluster_id * (size_t)M];
+            for (int c = 0; c < M; c++)
             {
-                continue;
-            }
-
-            double dcc = home_dcc[c];
-            if (dcc <= 0.0)
-            {
-                continue;
-            }
-
-            /* Maintain up to 8 closest clusters in sorted order */
-            if (num_warm_found < 8)
-            {
-                int pos = num_warm_found;
-                while (pos > 0 && warm_dcc[pos - 1] > dcc)
+                if (c == home_cluster_id || model->clusters[c].num_members == 0)
                 {
-                    warm_dcc[pos] = warm_dcc[pos - 1];
-                    visited_warm[pos] = visited_warm[pos - 1];
-                    pos--;
+                    continue;
                 }
-                warm_dcc[pos] = dcc;
-                visited_warm[pos] = c;
-                num_warm_found++;
-            }
-            else if (dcc < warm_dcc[7])
-            {
-                int pos = 7;
-                while (pos > 0 && warm_dcc[pos - 1] > dcc)
+
+                uint16_t dcc_q = home_dcc_sq16[c];
+                if (dcc_q == 0)
                 {
-                    warm_dcc[pos] = warm_dcc[pos - 1];
-                    visited_warm[pos] = visited_warm[pos - 1];
-                    pos--;
+                    continue;
                 }
-                warm_dcc[pos] = dcc;
-                visited_warm[pos] = c;
-            }
-        } // for (int c = 0; c < M; c++)
+
+                /* Maintain up to 8 closest clusters in sorted order using integer comparison */
+                if (num_warm_found < 8)
+                {
+                    int pos = num_warm_found;
+                    while (pos > 0 && warm_dcc_q[pos - 1] > dcc_q)
+                    {
+                        warm_dcc_q[pos]   = warm_dcc_q[pos - 1];
+                        visited_warm[pos] = visited_warm[pos - 1];
+                        pos--;
+                    }
+                    warm_dcc_q[pos]   = dcc_q;
+                    visited_warm[pos] = c;
+                    num_warm_found++;
+                }
+                else if (dcc_q < warm_dcc_q[7])
+                {
+                    int pos = 7;
+                    while (pos > 0 && warm_dcc_q[pos - 1] > dcc_q)
+                    {
+                        warm_dcc_q[pos]   = warm_dcc_q[pos - 1];
+                        visited_warm[pos] = visited_warm[pos - 1];
+                        pos--;
+                    }
+                    warm_dcc_q[pos]   = dcc_q;
+                    visited_warm[pos] = c;
+                }
+            } // for (int c = 0; c < M; c++)
+        }
+        else if (model->dcc_matrix != NULL)
+        {
+            double        warm_dcc[8];
+            const double *home_dcc =
+                &model->dcc_matrix[(size_t)home_cluster_id * (size_t)M];
+            for (int c = 0; c < M; c++)
+            {
+                if (c == home_cluster_id || model->clusters[c].num_members == 0)
+                {
+                    continue;
+                }
+
+                double dcc = home_dcc[c];
+                if (dcc <= 0.0)
+                {
+                    continue;
+                }
+
+                /* Maintain up to 8 closest clusters in sorted order */
+                if (num_warm_found < 8)
+                {
+                    int pos = num_warm_found;
+                    while (pos > 0 && warm_dcc[pos - 1] > dcc)
+                    {
+                        warm_dcc[pos]     = warm_dcc[pos - 1];
+                        visited_warm[pos] = visited_warm[pos - 1];
+                        pos--;
+                    }
+                    warm_dcc[pos]     = dcc;
+                    visited_warm[pos] = c;
+                    num_warm_found++;
+                }
+                else if (dcc < warm_dcc[7])
+                {
+                    int pos = 7;
+                    while (pos > 0 && warm_dcc[pos - 1] > dcc)
+                    {
+                        warm_dcc[pos]     = warm_dcc[pos - 1];
+                        visited_warm[pos] = visited_warm[pos - 1];
+                        pos--;
+                    }
+                    warm_dcc[pos]     = dcc;
+                    visited_warm[pos] = c;
+                }
+            } // for (int c = 0; c < M; c++)
+        }
     }
 
     for (int w = 0; w < num_warm_found; w++)
@@ -320,7 +485,7 @@ static int knn_warm_start_nearest_cluster(
             break;
         }
 
-        int best_c = visited_warm[w];
+        int best_c = warm_ptr[w];
         if (first_warm_c < 0)
         {
             first_warm_c = best_c;

@@ -48,6 +48,15 @@ void knn_search_single_frame(
     KnnVisitedTracker      *visited,
     KnnTelemetry  *restrict telem);
 
+/**
+ * knn_model_precompute_warm_start() - Precompute nearest non-empty clusters for warm-start.
+ * @model:  Pointer to KnnModel with loaded clusters and DCC matrices.
+ * @config: Pointer to KnnConfig options.
+ */
+void knn_model_precompute_warm_start(
+    KnnModel        *model,
+    const KnnConfig *config);
+
 #ifdef __cplusplus
 }
 #endif
