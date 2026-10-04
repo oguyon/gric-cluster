@@ -149,15 +149,17 @@ void refine_sparse_bounds(
             best_pairs[k].p = -1e30;
         }
 
-        for (int i = 0; i < state->num_clusters; i++)
+        for (int r = 1; r < state->num_clusters; r++)
         {
-            const char   *measured_row = dcc_row_measured(state, i);
-            const double *dcc_min_row = dcc_row_dist(state, i);
-            for (int j = i + 1; j < state->num_clusters; j++)
+            const char   *measured_row = dcc_row_measured(state, r);
+            const double *dcc_min_row = dcc_row_dist(state, r);
+            for (int c = 0; c < r; c++)
             {
-                if (!measured_row[j])
+                int is_meas = (measured_row != NULL) ? (int)measured_row[c]
+                                                     : (dcc_min_row[c] >= 0.0);
+                if (!is_meas)
                 {
-                    double dcc_val = dcc_min_row[j];
+                    double dcc_val = dcc_min_row[c];
                     double score = -dcc_val;
 
                     if (score > best_pairs[Q - 1].p)
@@ -168,7 +170,7 @@ void refine_sparse_bounds(
                             best_pairs[k + 1] = best_pairs[k];
                             k--;
                         }
-                        best_pairs[k + 1].id = (i << 16) | j;
+                        best_pairs[k + 1].id = (c << 16) | r;
                         best_pairs[k + 1].p = score;
                     }
                 }

@@ -45,6 +45,7 @@ static void init_new_cluster_distances(
     int            temp_count)
 {
     int N = config->algo.maxnbclust;
+    dcc_ensure_row(state, new_cl, config->optim.sparse_dcc_mode);
 
     if (config->optim.sparse_dcc_mode)
     {
@@ -57,8 +58,8 @@ static void init_new_cluster_distances(
         dcc_set_pair(state, new_cl, new_cl, 0.0);
 
         // 2. Populate exact distances from the search loop
-        char is_temp_index[new_cl];
-        memset(is_temp_index, 0, new_cl * sizeof(char));
+        char is_temp_index[new_cl > 0 ? new_cl : 1];
+        memset(is_temp_index, 0, (new_cl > 0 ? new_cl : 1) * sizeof(char));
 
         for (int idx = 0; idx < temp_count; idx++)
         {
@@ -72,18 +73,16 @@ static void init_new_cluster_distances(
         }
 
         // 3. Propagate bounds to unvisited clusters
-        double *dcc_max_rows[temp_count];
-        double *dcc_min_rows[temp_count];
-        double  d_new_j_arr[temp_count];
-        int     valid_count = 0;
+        int    valid_indices[temp_count];
+        double d_new_j_arr[temp_count];
+        int    valid_count = 0;
 
         for (int idx = 0; idx < temp_count; idx++)
         {
             int j = temp_indices[idx];
             if (j >= 0 && j < new_cl)
             {
-                dcc_max_rows[valid_count] = dcc_row_max_mut(state, j);
-                dcc_min_rows[valid_count] = dcc_row_dist_mut(state, j);
+                valid_indices[valid_count] = j;
                 d_new_j_arr[valid_count] = temp_dists[idx];
                 valid_count++;
             }
@@ -102,33 +101,31 @@ static void init_new_cluster_distances(
 
             for (int idx = 0; idx < valid_count; idx++)
             {
-                double  d_new_j = d_new_j_arr[idx];
-                double *max_j_row = dcc_max_rows[idx];
-                double *min_j_row = dcc_min_rows[idx];
+                int    j = valid_indices[idx];
+                double d_new_j = d_new_j_arr[idx];
+                double max_j_k = dcc_get_max(state, j, k);
+                double min_j_k = dcc_get_min(state, j, k);
 
-                if (max_j_row[k] < 1e18)
+                if (max_j_k < 1e18)
                 {
-                    double new_max = d_new_j + max_j_row[k];
+                    double new_max = d_new_j + max_j_k;
                     if (new_max < max_new_row[k])
                     {
                         max_new_row[k] = new_max;
-                        dcc_set_max_pair(state, k, new_cl, new_max);
                     }
                 }
 
-                if (max_j_row[k] < 1e18)
+                if (max_j_k < 1e18)
                 {
-                    double l1 = d_new_j - max_j_row[k];
+                    double l1 = d_new_j - max_j_k;
                     if (l1 > min_new_row[k])
                     {
                         min_new_row[k] = l1;
-                        dcc_set_min_pair(state, k, new_cl, l1);
                     }
                 }
-                if (min_j_row[k] - d_new_j > min_new_row[k])
+                if (min_j_k - d_new_j > min_new_row[k])
                 {
-                    min_new_row[k] = min_j_row[k] - d_new_j;
-                    dcc_set_min_pair(state, k, new_cl, min_new_row[k]);
+                    min_new_row[k] = min_j_k - d_new_j;
                 }
             }
         }
@@ -144,8 +141,6 @@ static void init_new_cluster_distances(
         const float *anchors_mat = state->anchor_matrix_float;
 
         double   *dcc_min_row = dcc_row_dist_mut(state, new_cl);
-        double   *dcc_max_row = dcc_row_max_mut(state, new_cl);
-        char     *dcc_meas_row = dcc_row_measured_mut(state, new_cl);
         uint16_t *dcc_sq16_row = dcc_row_sq16_mut(state, new_cl);
 
         if (new_cl > 0)
@@ -186,22 +181,18 @@ static void init_new_cluster_distances(
             }
         }
 
-        dcc_min_row[new_cl] = 0.0;
-        memcpy(dcc_max_row, dcc_min_row, (size_t)(new_cl + 1) * sizeof(double));
-        memset(dcc_meas_row, 1, (size_t)(new_cl + 1) * sizeof(char));
-
         if (dcc_sq16_row != NULL)
         {
             double s = state->scratch.dcc_sq16_scale;
             for (int k = 0; k < new_cl; k++)
             {
                 double d = dcc_min_row[k];
-                dcc_sq16_row[k] = (d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5);
+                dcc_sq16_row[k] = (d <= 0.0) ? 0 :
+                    ((d * s >= 65534.0) ? 65534 : (uint16_t)(d * s + 0.5));
             }
-            dcc_sq16_row[new_cl] = 0;
         }
 
-        /* Sequential scatter to symmetric columns */
+        /* Sequential scatter to symmetric columns is eliminated in lower-triangular layout */
         dcc_sync_symmetric_new_cluster(state, new_cl);
 
         int unvisited_count = new_cl - unique_visited;

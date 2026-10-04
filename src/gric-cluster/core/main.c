@@ -241,16 +241,9 @@ int main(int argc, char *argv[])
     size_t consistency_words = cluster_pairs * (size_t)words;
 
     state.clusters = (Cluster *)malloc(max_clusters * sizeof(Cluster));
-    state.scratch.dcc_min = (double *)gric_alloc_large(
-        cluster_pairs * sizeof(double));
-    state.scratch.dcc_max = (double *)gric_alloc_large(
-        cluster_pairs * sizeof(double));
-    state.scratch.dcc_measured = (char *)gric_alloc_large(
-        cluster_pairs * sizeof(char));
-    state.scratch.dcc_sq16 = (uint16_t *)gric_alloc_large(
-        cluster_pairs * sizeof(uint16_t));
+    int use_sq16 = config.optim.use_sq16 || config.output.dcc_sq16_output;
+    dcc_init_matrix(&state, max_clusters, config.optim.sparse_dcc_mode, use_sq16);
     state.scratch.dcc_sq16_scale = 16384.0 / config.algo.rlim;
-    dcc_init_matrix(&state, max_clusters, config.optim.sparse_dcc_mode);
 
     state.scratch.current_gprobs = (double *)malloc(max_clusters * sizeof(double));
     state.cluster_visitors = (VisitorList *)calloc(max_clusters, sizeof(VisitorList));
@@ -356,10 +349,7 @@ int main(int argc, char *argv[])
     free(state.cluster_visitors);
     free(state.scratch.current_gprobs);
 
-    gric_free_large(state.scratch.dcc_min);
-    gric_free_large(state.scratch.dcc_max);
-    gric_free_large(state.scratch.dcc_measured);
-    gric_free_large(state.scratch.dcc_sq16);
+    dcc_free_matrix(&state);
     free(state.scratch.probsortedclindex);
     if (state.scratch.cluster_probs)
     {

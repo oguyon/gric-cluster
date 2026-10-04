@@ -97,14 +97,8 @@ MultiTileState *multitile_init(
                 mc * sizeof(Cluster));
             ts->state.cluster_visitors = calloc(
                 mc, sizeof(VisitorList));
-            ts->state.scratch.dcc_min = gric_alloc_large(
-                pairs * sizeof(double));
-            ts->state.scratch.dcc_max = gric_alloc_large(
-                pairs * sizeof(double));
-            ts->state.scratch.dcc_measured = gric_alloc_large(
-                pairs * sizeof(char));
-            ts->state.scratch.dcc_sq16 = gric_alloc_large(
-                pairs * sizeof(uint16_t));
+            int use_sq16 = global->optim.use_sq16 || global->output.dcc_sq16_output;
+            dcc_init_matrix(&ts->state, mc, global->optim.sparse_dcc_mode, use_sq16);
             ts->state.scratch.dcc_sq16_scale = 16384.0 / global->algo.rlim;
             ts->state.scratch.current_gprobs = malloc(
                 mc * sizeof(double));
@@ -167,8 +161,6 @@ MultiTileState *multitile_init(
             ts->state.scratch.d_max_scratch = malloc(
                 mc * sizeof(double));
 
-            /* Init DCC bounds */
-            dcc_init_matrix(&ts->state, mc, global->optim.sparse_dcc_mode);
 
             ts->state.transition_matrix = calloc(
                 pairs, sizeof(long));
@@ -336,22 +328,7 @@ void multitile_free(MultiTileState *mts)
             {
                 free(ts->state.scratch.cluster_probs);
             }
-            if (ts->state.scratch.dcc_min)
-            {
-                gric_free_large(ts->state.scratch.dcc_min);
-            }
-            if (ts->state.scratch.dcc_max)
-            {
-                gric_free_large(ts->state.scratch.dcc_max);
-            }
-            if (ts->state.scratch.dcc_measured)
-            {
-                gric_free_large(ts->state.scratch.dcc_measured);
-            }
-            if (ts->state.scratch.dcc_sq16)
-            {
-                gric_free_large(ts->state.scratch.dcc_sq16);
-            }
+            dcc_free_matrix(&ts->state);
             frame_info_arena_destroy(&ts->state.frame_info_arena);
             if (ts->state.frame_infos != NULL)
             {

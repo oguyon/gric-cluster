@@ -18,18 +18,19 @@
  * @rc2:           Twice the cluster radius threshold (2 * rc).
  */
 static inline void update_consistency_mask_range(
-    uint64_t     *mask,
-    const double *dists,
-    int           count,
-    double        measured_dist,
-    double        rc2)
+    uint64_t           *mask,
+    const ClusterState *state,
+    int                 i,
+    int                 count,
+    double              measured_dist,
+    double              rc2)
 {
     double min_bound = measured_dist - rc2;
     double max_bound = measured_dist + rc2;
 
     for (int k = 0; k < count; k++)
     {
-        double dist = dists[k];
+        double dist = dcc_get_dist(state, i, k);
         if (dist >= 0.0 && dist >= min_bound && dist <= max_bound)
         {
             mask[k / 64] |= (1ULL << (k % 64));
@@ -107,7 +108,7 @@ void recompute_consistency_mask(
                 if (measured_dist >= 0.0)
                 {
                     update_consistency_mask_range(
-                        mask, dcc_row_dist(state, i),
+                        mask, state, i,
                         state->num_clusters, measured_dist, 2.0 * rc
                     );
                 }
@@ -209,7 +210,7 @@ void update_consistency_mask_for_new_cluster(
             if (measured_dist >= 0.0)
             {
                 update_consistency_mask_range(
-                    mask, d_min_new_k, new_cl + 1, measured_dist, 2.0 * rc
+                    mask, state, new_cl, new_cl + 1, measured_dist, 2.0 * rc
                 );
             }
         }
@@ -220,18 +221,16 @@ void update_consistency_mask_for_new_cluster(
     for (int i = 0; i < new_cl; i++)
     {
         uint64_t *mask = &state->scratch.consistency_mask[(i * N + new_cl) * words];
-        const double *d_min_i = dcc_row_dist(state, i);
-        const double *d_max_i = dcc_row_max(state, i);
 
         if (config->optim.sparse_dcc_mode)
         {
-            double d_min_inew = d_min_i[new_cl];
-            double d_max_inew = d_max_i[new_cl];
+            double d_min_inew = dcc_get_min(state, i, new_cl);
+            double d_max_inew = dcc_get_max(state, i, new_cl);
 
             for (int k = 0; k <= new_cl; k++)
             {
-                double d_min_ik = d_min_i[k];
-                double d_max_ik = d_max_i[k];
+                double d_min_ik = dcc_get_min(state, i, k);
+                double d_max_ik = dcc_get_max(state, i, k);
 
                 double diff1 = d_min_ik - d_max_inew;
                 double diff2 = d_min_inew - d_max_ik;
@@ -247,11 +246,11 @@ void update_consistency_mask_for_new_cluster(
         }
         else
         {
-            double measured_dist = d_min_i[new_cl];
+            double measured_dist = dcc_get_dist(state, i, new_cl);
             if (measured_dist >= 0.0)
             {
                 update_consistency_mask_range(
-                    mask, d_min_i, new_cl + 1, measured_dist, 2.0 * rc
+                    mask, state, i, new_cl + 1, measured_dist, 2.0 * rc
                 );
             }
         }
@@ -266,16 +265,14 @@ void update_consistency_mask_for_new_cluster(
     {
         double d_min_inew = dcc_get_min(state, i, new_cl);
         double d_max_inew = dcc_get_max(state, i, new_cl);
-        const double *dcc_min_i = dcc_row_dist(state, i);
-        const double *dcc_max_i = dcc_row_max(state, i);
         uint64_t *mask_row = &state->scratch.consistency_mask[i * N * words];
 
         for (int j = 0; j < new_cl; j++)
         {
             if (config->optim.sparse_dcc_mode)
             {
-                double d_min_ij = dcc_min_i[j];
-                double d_max_ij = dcc_max_i[j];
+                double d_min_ij = dcc_get_min(state, i, j);
+                double d_max_ij = dcc_get_max(state, i, j);
 
                 double diff1 = d_min_inew - d_max_ij;
                 double diff2 = d_min_ij - d_max_inew;
@@ -290,7 +287,7 @@ void update_consistency_mask_for_new_cluster(
             }
             else
             {
-                double measured_dist = dcc_min_i[j];
+                double measured_dist = dcc_get_dist(state, i, j);
                 if (measured_dist >= 0.0)
                 {
                     double dist_ti_new = d_min_inew;
