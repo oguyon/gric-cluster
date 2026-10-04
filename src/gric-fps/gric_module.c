@@ -160,6 +160,7 @@ static errno_t compute_function(void)
         {
             float *assign_data = (float *)out_assign.array.raw;
             assign_data[5] = (float)latency_us;
+            out_assign.md[0].write = 0;
         }
 
         processinfo_update_output_stream(processinfo, &out_assign, in_im_ptr);
