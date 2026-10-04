@@ -787,6 +787,11 @@ add_test(NAME test_spiral_clustering_double
             -outdir /tmp/ctest_spiral_double_out -double)
 set_tests_properties(test_spiral_clustering_double PROPERTIES DEPENDS test_sequence_generator)
 
+add_test(NAME test_spiral_clustering_sparse_bounds
+    COMMAND gric-cluster 0.1 /tmp/ctest_spiral.txt -maxim 1000
+            -outdir /tmp/ctest_spiral_sparse_out -sparse_dcc -sparse_dcc_extra_evals 5)
+set_tests_properties(test_spiral_clustering_sparse_bounds PROPERTIES DEPENDS test_sequence_generator)
+
 add_test(NAME test_knn_spiral_double
     COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_double_out
             -k 10 -dtmin 5 -double -o /tmp/ctest_knn_spiral_double.txt)
