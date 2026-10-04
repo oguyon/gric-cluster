@@ -256,7 +256,8 @@ int main(
     struct timespec write_start, write_end;
     clock_gettime(CLOCK_MONOTONIC, &write_start);
 
-    if (knn_write_results(&config, &model, &results) != 0)
+    int write_failed = (knn_write_results(&config, &model, &results) != 0);
+    if (write_failed)
     {
         fprintf(stderr, "Error: Failed to write results\n");
     }
@@ -424,9 +425,14 @@ int main(
     printf("  Temporal Exclusions:       %lu\n", (unsigned long)telemetry.temporal_pruned);
     printf("  Search Wall Time:          %.2f ms (%.1f fps)\n", telemetry.time_search_ms, fps);
     printf("  Output Write Time:         %.2f ms\n", write_time_ms);
-    printf("%sCompleted successfully.%s\n", ansi_bold_green, ansi_reset);
 
     knn_results_free(&results);
     knn_model_free(&model);
+    if (write_failed)
+    {
+        fprintf(stderr, "Error: search completed but results were not written\n");
+        return 1;
+    }
+    printf("%sCompleted successfully.%s\n", ansi_bold_green, ansi_reset);
     return 0;
 }

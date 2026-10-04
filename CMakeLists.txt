@@ -765,6 +765,13 @@ add_test(NAME test_knn_spiral
     COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_out -k 10 -dtmin 5 -o /tmp/ctest_knn_spiral.txt)
 set_tests_properties(test_knn_spiral PROPERTIES DEPENDS test_spiral_clustering)
 
+# gric-knn must exit non-zero when its results cannot be written.
+add_test(NAME test_knn_unwritable_output
+    COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_out -k 10 -dtmin 5
+            -o /nonexistent_gric_dir/knn.txt)
+set_tests_properties(test_knn_unwritable_output PROPERTIES
+    DEPENDS test_spiral_clustering WILL_FAIL TRUE)
+
 add_test(NAME test_spiral_clustering_double
     COMMAND gric-cluster 0.1 /tmp/ctest_spiral.txt -maxim 1000
             -outdir /tmp/ctest_spiral_double_out -double)

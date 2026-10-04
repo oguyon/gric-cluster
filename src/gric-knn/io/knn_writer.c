@@ -14,6 +14,7 @@
 #include "framedistance.h"
 #include "gric_bin_io.h"
 #include <fcntl.h>
+#include <errno.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -181,6 +182,60 @@ static inline void compute_query_mutual_dists(
 }
 
 /**
+ * write_bin_matrix() - Write one 2-D row-major array with a gric binary header.
+ * @path:      Output file path.
+ * @data_type: GRIC_BIN_DTYPE_* of the elements.
+ * @rows:      Number of rows.
+ * @cols:      Number of columns.
+ * @data:      Contiguous element array (rows * cols elements).
+ * @elem_size: Size of one element in bytes.
+ * @desc:      Header description string.
+ *
+ * Return: 0 on success, -1 if the file could not be opened, or the header or data could not be
+ * written completely (an error message naming @path is printed).
+ */
+static int write_bin_matrix(
+    const char *path,
+    uint32_t    data_type,
+    uint64_t    rows,
+    uint64_t    cols,
+    const void *data,
+    size_t      elem_size,
+    const char *desc)
+{
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL)
+    {
+        fprintf(stderr, "Error: cannot create '%s': %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    gric_bin_header_t hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.file_type = GRIC_BIN_TYPE_GENERIC;
+    hdr.data_type = data_type;
+    hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+    hdr.ndim = 2;
+    hdr.dims[0] = rows;
+    hdr.dims[1] = cols;
+    hdr.num_elements = rows * cols;
+    hdr.data_bytes = rows * cols * elem_size;
+
+    int ok = (gric_bin_write_header(fp, &hdr, desc) == 0) &&
+             (fwrite(data, elem_size, (size_t)(rows * cols), fp) == (size_t)(rows * cols));
+    if (fclose(fp) != 0)
+    {
+        ok = 0;
+    }
+    if (!ok)
+    {
+        fprintf(stderr, "Error: failed to write '%s'\n", path);
+        return -1;
+    }
+    return 0;
+}
+
+/**
  * write_bin_results() - Serialize k-NN results into binary format files
  * @out_indices_path:   Output file path for knn_indices.bin.
  * @out_distances_path: Output file path for knn_distances.bin.
@@ -206,69 +261,46 @@ static int write_bin_results(
     long N = (results->num_queries > 0) ? results->num_queries : model->total_dataset_frames;
     long k = config->k;
     uint64_t total_elems = (uint64_t)N * (uint64_t)k;
+    int status = 0;
 
     // 1. Write knn_indices.bin (UINT32 [N, k])
-    FILE *fp_idx = fopen(out_indices_path, "wb");
-    if (fp_idx != NULL)
+    if (write_bin_matrix(out_indices_path, GRIC_BIN_DTYPE_UINT32, (uint64_t)N, (uint64_t)k,
+                         results->indices, sizeof(uint32_t),
+                         "k-NN neighbor indices [N x k]") != 0)
     {
-        gric_bin_header_t hdr_idx;
-        memset(&hdr_idx, 0, sizeof(hdr_idx));
-        hdr_idx.file_type = GRIC_BIN_TYPE_GENERIC;
-        hdr_idx.data_type = GRIC_BIN_DTYPE_UINT32;
-        hdr_idx.flags = GRIC_BIN_FLAG_ROW_MAJOR;
-        hdr_idx.ndim = 2;
-        hdr_idx.dims[0] = (uint64_t)N;
-        hdr_idx.dims[1] = (uint64_t)k;
-        hdr_idx.num_elements = total_elems;
-        hdr_idx.data_bytes = total_elems * sizeof(uint32_t);
-
-        if (gric_bin_write_header(fp_idx, &hdr_idx, "k-NN neighbor indices [N x k]") == 0)
-        {
-            fwrite(results->indices, sizeof(uint32_t), total_elems, fp_idx);
-        }
-        fclose(fp_idx);
+        status = -1;
     }
 
-    // 2. Write knn_distances.bin (FLOAT32 [N, k])
-    FILE *fp_dst = fopen(out_distances_path, "wb");
-    if (fp_dst != NULL)
+    // 2. Write knn_distances.bin (FLOAT32 [N, k]); missing neighbors are stored as -1
     {
-        gric_bin_header_t hdr_dst;
-        memset(&hdr_dst, 0, sizeof(hdr_dst));
-        hdr_dst.file_type = GRIC_BIN_TYPE_GENERIC;
-        hdr_dst.data_type = GRIC_BIN_DTYPE_FLOAT32;
-        hdr_dst.flags = GRIC_BIN_FLAG_ROW_MAJOR;
-        hdr_dst.ndim = 2;
-        hdr_dst.dims[0] = (uint64_t)N;
-        hdr_dst.dims[1] = (uint64_t)k;
-        hdr_dst.num_elements = total_elems;
-        hdr_dst.data_bytes = total_elems * sizeof(float);
-
-        if (gric_bin_write_header(fp_dst, &hdr_dst, "k-NN metric distances [N x k]") == 0)
+        float *f32_dst = (float *)malloc(total_elems * sizeof(float));
+        if (f32_dst == NULL)
         {
-            float *f32_dst = (float *)malloc(total_elems * sizeof(float));
-            if (f32_dst != NULL)
-            {
+            fprintf(stderr, "Error: out of memory writing '%s'\n", out_distances_path);
+            return -1;
+        }
 #if defined(_OPENMP)
 #pragma omp parallel for schedule(static) if(total_elems >= 65536)
 #endif
-                for (uint64_t i = 0; i < total_elems; i++)
-                {
-                    double d = results->distances[i];
-                    if (results->indices[i] < 0 || d < 0.0 || isnan(d))
-                    {
-                        f32_dst[i] = -1.0f;
-                    }
-                    else
-                    {
-                        f32_dst[i] = (float)d;
-                    }
-                }
-                fwrite(f32_dst, sizeof(float), total_elems, fp_dst);
-                free(f32_dst);
+        for (uint64_t i = 0; i < total_elems; i++)
+        {
+            double d = results->distances[i];
+            if (results->indices[i] < 0 || d < 0.0 || isnan(d))
+            {
+                f32_dst[i] = -1.0f;
+            }
+            else
+            {
+                f32_dst[i] = (float)d;
             }
         }
-        fclose(fp_dst);
+        if (write_bin_matrix(out_distances_path, GRIC_BIN_DTYPE_FLOAT32, (uint64_t)N,
+                             (uint64_t)k, f32_dst, sizeof(float),
+                             "k-NN metric distances [N x k]") != 0)
+        {
+            status = -1;
+        }
+        free(f32_dst);
     }
 
     // 3. Write knn_mutual_dists.bin (FLOAT32 [N, k*(k-1)/2])
@@ -308,8 +340,15 @@ static int write_bin_results(
         if (frames != NULL)
         {
             FILE *fp_mut = fopen(out_mutual_path, "wb+");
-            if (fp_mut != NULL)
+            if (fp_mut == NULL)
             {
+                fprintf(stderr, "Error: cannot create '%s': %s\n", out_mutual_path,
+                        strerror(errno));
+                status = -1;
+            }
+            else
+            {
+                int mut_ok = 1;
                 gric_bin_header_t hdr_mut;
                 memset(&hdr_mut, 0, sizeof(hdr_mut));
                 hdr_mut.file_type = GRIC_BIN_TYPE_GENERIC;
@@ -397,15 +436,34 @@ static int write_bin_results(
                                         out_slice);
                                 } // for (long c = 0; ...)
 
-                                fwrite(chunk_buf, sizeof(float),
-                                       (size_t)cur_chunk_n * m_pairs, fp_mut);
+                                size_t n_chunk = (size_t)cur_chunk_n * m_pairs;
+                                if (fwrite(chunk_buf, sizeof(float), n_chunk, fp_mut) != n_chunk)
+                                {
+                                    mut_ok = 0;
+                                }
                             } // for (long u_base = 0; ...)
 
                             free(chunk_buf);
                         }
+                        else
+                        {
+                            mut_ok = 0;
+                        }
                     }
                 }
-                fclose(fp_mut);
+                else
+                {
+                    mut_ok = 0;
+                }
+                if (fclose(fp_mut) != 0)
+                {
+                    mut_ok = 0;
+                }
+                if (!mut_ok)
+                {
+                    fprintf(stderr, "Error: failed to write '%s'\n", out_mutual_path);
+                    status = -1;
+                }
             }
         }
 
@@ -415,7 +473,7 @@ static int write_bin_results(
         }
     }
 
-    return 0;
+    return status;
 }
 
 /**
@@ -683,13 +741,17 @@ int knn_write_results(
             printf("Writing binary outputs:\n  - %s\n  - %s\n",
                    bin_idx_path, bin_dst_path);
         }
-        write_bin_results(bin_idx_path, bin_dst_path, mut_path, config, model, results);
+        int status = write_bin_results(bin_idx_path, bin_dst_path, mut_path, config, model,
+                                       results);
 
         if (!config->no_txt)
         {
             printf("Writing ASCII output: %s\n", final_out_path);
-            return write_ascii_results(final_out_path, config, model, results);
+            if (write_ascii_results(final_out_path, config, model, results) != 0)
+            {
+                status = -1;
+            }
         }
-        return 0;
+        return status;
     }
 }
