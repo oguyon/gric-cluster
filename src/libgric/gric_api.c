@@ -1222,9 +1222,9 @@ void gric_cluster_destroy(
     {
         for (int i = 0; i < N; i++)
         {
-            if (ctx->state.cluster_visitors[i].frames)
+            if (ctx->state.cluster_visitors[i].records)
             {
-                free(ctx->state.cluster_visitors[i].frames);
+                free(ctx->state.cluster_visitors[i].records);
             }
         }
         free(ctx->state.cluster_visitors);

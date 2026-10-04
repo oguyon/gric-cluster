@@ -550,7 +550,8 @@ int handle_new_cluster_creation(
         }
 
         add_visitor(&state->cluster_visitors[state->num_clusters],
-                    state->telemetry.total_frames_processed);
+                    (int)state->telemetry.total_frames_processed, 0.0,
+                    state->num_clusters);
 
         if (*temp_count < config->algo.maxnbclust)
         {
@@ -630,7 +631,8 @@ int handle_new_cluster_creation(
                                        temp_indices, temp_dists, *temp_count);
 
             add_visitor(&state->cluster_visitors[state->num_clusters],
-                        state->telemetry.total_frames_processed);
+                        (int)state->telemetry.total_frames_processed, 0.0,
+                        state->num_clusters);
 
             if (*temp_count < config->algo.maxnbclust)
             {
@@ -715,7 +717,8 @@ int handle_new_cluster_creation(
                                        temp_indices, temp_dists, *temp_count);
 
             add_visitor(&state->cluster_visitors[state->num_clusters],
-                        state->telemetry.total_frames_processed);
+                        (int)state->telemetry.total_frames_processed, 0.0,
+                        state->num_clusters);
 
             if (*temp_count < config->algo.maxnbclust)
             {

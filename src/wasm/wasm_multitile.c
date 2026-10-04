@@ -766,11 +766,11 @@ void wasm_multitile_reset(void *ptr)
         /* Free visitor list arrays */
         for (int i = 0; i < N; i++)
         {
-            if (ts->state.cluster_visitors[i].frames)
+            if (ts->state.cluster_visitors[i].records)
             {
                 free(
                     ts->state
-                        .cluster_visitors[i].frames);
+                        .cluster_visitors[i].records);
             }
         }
         memset(ts->state.cluster_visitors, 0,

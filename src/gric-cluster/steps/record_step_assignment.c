@@ -55,6 +55,23 @@ void record_step_assignment(
         state->frame_infos[frame_idx].assigned_dist = state->telemetry.last_assignment_dist;
         state->frame_infos[frame_idx].num_dists = temp_count;
 
+        if (state->cluster_visitors != NULL && temp_count > 0)
+        {
+            for (int t = 0; t < temp_count; t++)
+            {
+                int c = temp_indices[t];
+                if (c >= 0 && c < state->num_clusters)
+                {
+                    VisitorList *vl = &state->cluster_visitors[c];
+                    if (vl->count > 0 &&
+                        vl->records[vl->count - 1].frame == (int)frame_idx)
+                    {
+                        vl->records[vl->count - 1].assignment = assigned_cluster;
+                    }
+                }
+            }
+        }
+
         if ((config->optim.gprob_mode || config->optim.pred_mode == 2 ||
              config->output.output_evals || config->algo.pass2_nearest_mode)
             && temp_count > 0)

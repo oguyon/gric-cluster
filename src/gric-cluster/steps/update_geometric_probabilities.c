@@ -45,7 +45,7 @@ void update_geometric_probabilities(
     }
     for (int i = start_idx; i < state->cluster_visitors[cj].count; i++)
     {
-        int k_idx = state->cluster_visitors[cj].frames[i];
+        int k_idx = state->cluster_visitors[cj].records[i].frame;
         if (k_idx == state->telemetry.total_frames_processed)
         {
             continue;
@@ -57,7 +57,7 @@ void update_geometric_probabilities(
             continue;
         }
 
-        int target_cl = state->frame_infos[k_idx].assignment;
+        int target_cl = state->cluster_visitors[cj].records[i].assignment;
         if (target_cl < 0 || target_cl >= state->num_clusters)
         {
             continue;
@@ -88,15 +88,7 @@ void update_geometric_probabilities(
             continue;
         }
 
-        double dist_k = -1.0;
-        for (int d_idx = 0; d_idx < state->frame_infos[k_idx].num_dists; d_idx++)
-        {
-            if (state->frame_infos[k_idx].cluster_indices[d_idx] == cj)
-            {
-                dist_k = state->frame_infos[k_idx].distances[d_idx];
-                break;
-            }
-        }
+        double dist_k = state->cluster_visitors[cj].records[i].dist;
 
         if (dist_k >= 0)
         {
