@@ -362,6 +362,11 @@ int knn_run_search(
         return -1;
     }
 
+    if (!is_cross_dataset)
+    {
+        knn_model_precompute_warm_start((KnnModel *)model, config);
+    }
+
 #ifdef _OPENMP
     omp_lock_t bucket_locks[KNN_NUM_BUCKET_LOCKS];
     if (!is_cross_dataset)

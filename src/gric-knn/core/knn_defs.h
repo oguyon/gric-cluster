@@ -285,6 +285,8 @@ typedef struct
     int              has_profile;         /**< 1 if dataset profile was loaded */
     int             *frame_to_unique_map; /**< [N] Map from dataset frame to unique SQ16 frame ID */
     long             num_unique_frames;   /**< Number of unique SQ16 frames in pool */
+    int             *warm_ids;            /**< [M x 8] precomputed nearest non-empty cluster IDs */
+    int             *warm_cnt;            /**< [M] count of precomputed warm clusters (<= 8) */
 } KnnModel;
 
 /** Per-query result structure containing top-k neighbors */

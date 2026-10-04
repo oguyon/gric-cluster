@@ -1453,5 +1453,17 @@ void knn_model_free(
         free(model->frame_to_unique_map);
         model->frame_to_unique_map = NULL;
     }
+
+    if (model->warm_ids != NULL)
+    {
+        free(model->warm_ids);
+        model->warm_ids = NULL;
+    }
+
+    if (model->warm_cnt != NULL)
+    {
+        free(model->warm_cnt);
+        model->warm_cnt = NULL;
+    }
 }
 
