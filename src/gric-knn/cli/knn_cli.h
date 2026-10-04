@@ -47,6 +47,18 @@ int knn_cli_parse(
     char     **argv,
     KnnConfig *config);
 
+struct gric_opt;
+
+/**
+ * @brief Retrieve declarative option definitions for gric-knn.
+ * @param config Pointer to KnnConfig to bind targets to (NULL for introspection).
+ * @param nopts  Output pointer receiving option count.
+ * @return Pointer to array of options.
+ */
+const struct gric_opt *knn_get_options(
+    KnnConfig *config,
+    size_t    *nopts);
+
 /**
  * knn_cli_print_banner() - Print active configuration parameters
  * @config: Pointer to active KnnConfig.

@@ -145,16 +145,15 @@ int cluster_cli_parse(
         int arg_idx = 1;
         int rlim_set = 0;
         const char *confw_filename = NULL;
-    
+        size_t nopts = 0;
+        const struct gric_opt *opts = cluster_get_options(config, &nopts);
+
         while (arg_idx < argc)
         {
             char *key = argv[arg_idx];
             char *val = (arg_idx + 1 < argc) ? argv[arg_idx + 1] : NULL;
-    
-            // Check for -conf and -confw explicitly or handle via apply_option?
-            // apply_option handles config-specific logic mostly, but -conf is meta.
-    
-            if (strcmp(key, "-conf") == 0)
+
+            if (strcmp(key, "-conf") == 0 || strcmp(key, "--conf") == 0)
             {
                 if (!val)
                 {
@@ -170,14 +169,11 @@ int cluster_cli_parse(
                         free(cmdline);
                     return 1;
                 }
-                // If config loaded rlim, we can consider it set?
-                // But we don't know for sure if it was set in config->
-                // However, our smart positional logic below handles this.
                 arg_idx += 2;
                 continue;
             }
-    
-            if (strcmp(key, "-confw") == 0)
+
+            if (strcmp(key, "-confw") == 0 || strcmp(key, "--confw") == 0)
             {
                 if (!val)
                 {
@@ -190,15 +186,24 @@ int cluster_cli_parse(
                 arg_idx += 2;
                 continue;
             }
-    
-            int res = apply_option(config, key, val);
-            if (res >= 0)
+
+            int res = gric_opt_parse_arg(argc, argv, &arg_idx, opts, nopts, config);
+            if (res == 1)
             {
-                arg_idx += (1 + res);
-                // If explicit -rlim was used, mark it
-                if (strcmp(key, "-rlim") == 0 || strcmp(key, "rlim") == 0)
+                if (strncmp(key, "-rlim", 5) == 0 || strncmp(key, "--rlim", 6) == 0 ||
+                    strncmp(key, "rlim", 4) == 0)
+                {
                     rlim_set = 1;
+                }
                 continue;
+            }
+            else if (res < 0)
+            {
+                print_usage(argv[0]);
+                if (cmdline)
+                    free(cmdline);
+                print_args_on_error(argc, argv);
+                return 1;
             }
     
             // Positional or Unknown

@@ -211,6 +211,8 @@ set(LIBGRIC_SRCS
     src/gric-cluster/steps/update_consistency_mask.c
     src/gric-cluster/trace/cluster_trace.c
     src/shared/cli/cli_colors.c
+    src/shared/cli/cli_opt.c
+    src/shared/cjson/cJSON.c
     src/shared/format/gric_bin_io.c
     src/shared/format/cluster_locator.c
     src/shared/quant/scalar_quant.c
@@ -1266,6 +1268,14 @@ if (IMAGESTREAMIO_FOUND)
 endif()
 add_test(NAME test_mcp_protocol COMMAND test_mcp_protocol)
 set_tests_properties(test_mcp_protocol PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+add_executable(test_cli_opt
+    tests/test_cli_opt.c
+    src/shared/cli/cli_opt.c
+    src/shared/cli/cli_colors.c
+    src/shared/cjson/cJSON.c)
+target_link_libraries(test_cli_opt m)
+add_test(NAME test_cli_opt COMMAND test_cli_opt)
 
 if (ENABLE_CUDA)
     add_executable(test_cluster_cuda tests/test_cluster_cuda.c)

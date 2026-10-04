@@ -1,40 +1,24 @@
 /**
  * @file knn_cli.c
  * @brief Command-line interface parser and help renderer for gric-knn.
- *
- * Implements command-line option parsing, argument validation, and terminal help
- * rendering. Functions in this file process input/output paths, distance pruning thresholds,
- * quantization modes, GPU settings, and execution parameters, validating consistency
- * and initializing KnnConfig defaults.
  */
 
 #define _POSIX_C_SOURCE 200809L
 #include "knn_cli.h"
 #include "cli_colors.h"
+#include "cli_opt.h"
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-/**
- * knn_cli_print_usage() - Print concise command-line usage
- * @progname: Name of the executable.
- *
- * Prints a one-line synopsis of required positional arguments and common flags.
- */
 void knn_cli_print_usage(
     const char *progname)
 {
     fprintf(stderr, "Usage: %s <input_data> <cluster_dir> [options]\n", progname);
 }
 
-/**
- * knn_cli_print_help() - Print detailed colored help and options
- * @progname: Name of the executable.
- *
- * Renders full documentation to standard output including arguments, pruning
- * flags, quantization presets, GPU controls, and usage examples.
- */
 void knn_cli_print_help(
     const char *progname)
 {
@@ -56,234 +40,9 @@ void knn_cli_print_help(
     printf("  Maintains a strictly bounded resident RAM footprint while pruning 95-99%%\n");
     printf("  of high-dimensional distance evaluations.\n\n");
 
-    printf("%sOPTIONS%s\n", ansi_bold_cyan, ansi_reset);
-    printf("  %s-query%s %s<path>%s         External query dataset (cross-dataset k-NN mode)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-k%s %s<int>%s              Number of nearest neighbors to find "
-           "(%sdefault:%s 10)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-o, --output%s %s<path>%s   Output file path "
-           "(default: <cluster_dir>/knn_k<K>.[fits|txt])\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-dtmin%s %s<int>%s          Min frame index separation |i - j| >= dtmin "
-           "(%sdefault:%s 1)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-past%s                 Search only among preceding frames (j < i)\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-future%s               Search only among subsequent frames (j > i)\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-eps%s %s<float>%s          (1+eps)-ANN relaxation slack factor "
-           "(%sdefault:%s 0.0)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-rlim%s %s<float>%s         Maximum distance cutoff "
-           "(ignore neighbors beyond rlim)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s--all-queries%s         Do not refuse out-of-cluster queries (exhaustive)\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-nthreads%s %s<int>%s       Number of OpenMP worker threads "
-           "(%sdefault:%s all CPU cores)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-fits%s                 Force FITS output format\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-txt%s                  Force ASCII text output format\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-multipivot%s, %s-multi_pivot%s Enable Multi-Anchor Pivot Bounding (AESA)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-angular%s, %s--angular%s       Enable Angular Cosine Directional Bounding\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-no-angular%s, %s--no-angular%s Disable Angular Cosine Directional Bounding\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-trajectory%s, %s--trajectory%s   Enable Trajectory Momentum\n"
-           "                                (for smooth trajectories)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-no-trajectory%s             Disable Trajectory Momentum (default)\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-no-reciprocal%s         Disable Symmetric Distance Reciprocal Push\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-two-hop%s, %s--two-hop%s       Enable 2-Hop Candidate Injection "
-           "(%sdefault: on%s)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-no-two-hop%s, %s--no-two-hop%s Disable 2-Hop Candidate Injection\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-two-hop-seeds%s %s<int>%s    Number of top seeds to expand (default: 2)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-two-hop-max%s %s<int>%s      Max 2-hop candidates evaluated per query "
-           "(default: 32)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-approx%s, %s--approx%s         Fast Approximate Graph Search "
-           "(10-20 evals/query)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-ef-search%s %s<L>%s       Search pool / heap size (default: 2*k in approx)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-progress%s             Display live progress bar\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-double%s, %s--double%s         Run computations in 64-bit double precision "
-           "(%sdefault:%s float)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-rq8%s, %s--rq8%s               Enable 8-bit residual vector quantization "
-           "(%sdefault:%s on)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-no-rq8%s, %s--no-rq8%s         Disable 8-bit residual quantization filtering\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-rq8-save%s %s<path>%s      Save 8-bit residual quantized dataset to sidecar\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-rq8-load%s %s<path>%s      Load 8-bit residual quantized dataset from sidecar\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-rq8-approx%s, %s--rq8-approx%s Enable approximate lower bound in RQ8\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-rq8-adc%s, %s--rq8-adc%s       Enable Asymmetric Distance Computation for RQ8 "
-           "(%sdefault:%s on)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-no-rq8-adc%s                   Disable ADC for RQ8 (use symmetric RQ8)\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-rq8-sparse%s, %s--rq8-sparse%s Enable RQ8 SparseCache Direct SIMD "
-           "(%sdefault:%s on)\n"
-           "                                (0 MB resident transposed index)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-no-rq8-sparse%s, %s-rq8-fastscan%s Disable SparseCache (pre-build index)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-rq8-e8%s, %s--rq8-e8%s, %s-e8%s  Enable E8 block lattice residual quantization\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_green, ansi_reset);
-    printf("  %s-no-rq8-e8%s, %s-no-e8%s        Disable E8 lattice (use cubic RQ8)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-e8-graph%s, %s--e8-graph%s       Enable 240-NN E8 proximity graph routing\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-pq%s, %s--pq%s                 Enable Product Quantization (PQ) FastScan\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-no-pq%s, %s--no-pq%s           Disable Product Quantization FastScan\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-pq-m%s %s<int>%s               Number of subquantizers (default: dim/4)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-pq-bits%s %s<4|8>%s            PQ codebook bits (default: 4)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-pq-save%s %s<path>%s           Save PQ codebook and codes to sidecar\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-pq-load%s %s<path>%s           Load PQ codebook and codes from sidecar\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-pq-rerank%s %s<int>%s          Top candidates to re-evaluate with exact dist\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-rabitq%s, %s--rabitq%s         Enable Randomized Bit Quantization (RaBitQ)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-no-rabitq%s, %s--no-rabitq%s   Disable RaBitQ filtering\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-rabitq-bits%s %s<1|2>%s        RaBitQ bit depth (default: 2)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-rabitq-save%s %s<path>%s       Save RaBitQ dataset to sidecar\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-rabitq-load%s %s<path>%s       Load RaBitQ dataset from sidecar\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-rabitq-approx%s                Enable approximate lower bound in RaBitQ\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-sq8%s, %s--sq8%s               Enable 8-bit scalar quantization filtering\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-no-sq8%s, %s--no-sq8%s         Disable 8-bit scalar quantization filtering\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-sq8-save%s %s<path>%s      Save quantized dataset to sidecar file\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-sq8-load%s %s<path>%s      Load quantized dataset from sidecar file\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-sq16%s, %s--sq16%s             Enable 16-bit scalar quantization filtering "
-           "(%sdefault:%s on)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-no-sq16%s, %s--no-sq16%s       Disable 16-bit scalar quantization filtering\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-sq16-save%s %s<path>%s     Save 16-bit quantized dataset to sidecar file\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-sq16-load%s %s<path>%s     Load 16-bit quantized dataset from sidecar file\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-sq16-ratio%s %s<alpha>%s   Max quantization step ratio alpha "
-           "(%sdefault:%s 0.05)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-eq16%s, %s--eq16%s             Enable 16-bit E8 lattice quantization filtering\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-no-eq16%s, %s--no-eq16%s       Disable 16-bit E8 lattice quantization\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-eq16-adc%s, %s--eq16-adc%s     Enable Asymmetric Distance Computation for EQ16 "
-           "(%sdefault:%s on)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-no-eq16-adc%s                  Disable ADC (use symmetric EQ16)\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-eq16-save%s %s<path>%s     Save 16-bit EQ16 dataset to sidecar file\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-eq16-load%s %s<path>%s     Load 16-bit EQ16 dataset from sidecar file\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-eq16-ratio%s %s<alpha>%s   Max EQ16 quantization step ratio alpha "
-           "(%sdefault:%s 0.05)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-eq16-sparse%s, %s--eq16-sparse%s Enable EQ16 SparseCache Direct SIMD "
-           "(%sdefault:%s on)\n"
-           "                                (0 MB resident transposed index)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-no-eq16-sparse%s, %s-eq16-fastscan%s Disable SparseCache "
-           "(pre-build index)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-sq16-sparse%s, %s--sq16-sparse%s Enable SQ16 SparseCache Direct SIMD "
-           "(%sdefault:%s on)\n"
-           "                                (0 MB resident transposed index)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-no-sq16-sparse%s           Disable SQ16 SparseCache Direct SIMD\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-sq16-sparse-lru%s            Enable 16-block LRU Transposed FastScan\n"
-           "                                (512 KB per thread in L2 cache)\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-memo%s, %s--memo%s             Enable quantized memoization cache\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-no-memo%s, %s--no-memo%s       Disable quantized memoization cache\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-no-batch-dist%s          Disable multi-vector SIMD batch distance\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-cluster-graph%s, %s--cluster-graph%s Enable Graph-Guided Cluster Routing "
-           "(%sdefault:%s on)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-no-cluster-graph%s, %s--no-cluster-graph%s Disable Graph-Guided Routing\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-ef-cluster%s %s<int>%s       Max clusters to evaluate in graph routing "
-           "(%sdefault:%s 0 = auto)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset,
-           ansi_color_cyan, ansi_reset);
-    printf("  %s-prof%s %s<path>%s          Explicit dataset profile file (.gricprof)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-no-prof%s, %s--no-prof%s       Disable auto-loading of .gricprof file\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-no-mutual%s, %s--no-mutual%s   Disable knn_mutual_dists.bin calculation/output\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-no-txt%s, %s--no-txt%s         Disable ASCII knn_results.txt output\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-gpu%s, %s--gpu%s               Enable CUDA GPU acceleration\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-gpu-batch-size%s %s<size>%s    Micro-batch size for GPU queries (default: auto)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-gpu-micro-batch%s %s[size]%s   Alias for -gpu-batch-size\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-cpu%s, %s--cpu%s               Force CPU execution (disable GPU)\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-gpu-device%s %s<id>%s          Select GPU device ID (default: 0)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-gpu-nprobe%s %s<int>%s         Max clusters to probe on GPU (default: adaptive)\n",
-           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-gpu-bf%s, %s--gpu-brute-force%s Force dense GEMM brute-force on GPU\n",
-           ansi_color_green, ansi_reset, ansi_color_green, ansi_reset);
-    printf("  %s-v, -vv%s               Verbosity level\n",
-           ansi_color_green, ansi_reset);
-    printf("  %s-h, --help%s            Show this help message\n\n",
-           ansi_color_green, ansi_reset);
+    size_t nopts = 0;
+    const struct gric_opt *opts = knn_get_options(NULL, &nopts);
+    gric_opt_print_help(stdout, progname, "<input_data> <cluster_dir> [options]", opts, nopts);
 
     printf("%sEXAMPLES%s\n", ansi_bold_cyan, ansi_reset);
     printf("  %s$%s %s%s%s dataset.fits cluster_out/ -k 10 -dtmin 5\n",
@@ -295,1008 +54,1059 @@ void knn_cli_print_help(
     cli_print_color_mode();
 }
 
-/**
- * knn_cli_set_defaults() - Initialize KnnConfig with default parameter values
- * @config: Pointer to KnnConfig to initialize.
- *
- * Sets default values for k (50), temporal separation (1 frame), bidirectional
- * reciprocal search, multi-pivot metric pruning, angular bounds, and output formats.
- */
 static void knn_cli_set_defaults(
     KnnConfig *config)
 {
     memset(config, 0, sizeof(KnnConfig));
     config->k = 50;
-    config->min_temporal_sep = 1;   // Exclude self-matching by default
+    config->min_temporal_sep = 1;
     config->output_format = KNN_FORMAT_AUTO;
     config->progress_mode = 0;
     config->verbose_level = 1;
-    config->use_reciprocal = 1;     // Enabled by default for bidirectional search
-    config->use_multi_pivot = 1;    // Enabled by default for multi-anchor pivot bounding
-    config->use_angular_bound = 1;  // Enabled by default for directional pruning
-    config->use_trajectory = 0;     // Disabled by default; enable for smooth trajectories
-    config->use_rq8 = 0;            // RQ8 filtering (disabled by default in Option A)
-    config->use_rq8_adc = 1;        // Default 1: Asymmetric Distance Computation for RQ8
-    config->use_rq8_sparse = 1;     // Default 1: SparseCache active (0 MB resident index)
-    config->use_e8_quant = 0;       // E8 block lattice quantization
-    config->use_e8_graph = 0;       // E8 240-NN proximity graph routing
-    config->use_sq8 = 0;            // Fallback scalar quantization
-    config->use_sq16 = -1;          // Auto-detect: 1 if D < 8 or D % 8 != 0
-    config->use_sq16_sparse = 1;    // Option A default: on-demand FastScan block transpose
-    config->use_sq16_sparse_lru = 0; // 16-block LRU Transposed FastScan
-    config->use_eq16 = -1;          // Auto-detect: 1 if D >= 8 and D % 8 == 0
-    config->use_eq16_adc = 1;      // Default enabled: Asymmetric Distance Computation
-    config->use_eq16_sparse = 1;   // Default 1: SparseCache active (0 MB resident index)
-    config->eq16_ratio = 0.05;      // Enforce scale <= alpha*rlim
-    config->use_rabitq = 0;         // RaBitQ randomized bit quantization (optional)
-    config->rabitq_bits = 2;        // Default 2-bit Extended RaBitQ
-    config->use_dcc_sq16 = 1;       // Enabled by default for 16-bit quantized DCC matrix
-    config->sq16_ratio = 0.05;      // Enforce sqrt(D)*scale <= alpha*rlim
-    config->use_memo = 1;           // Enabled by default for quantized memoization
-    config->use_batch_dist = 1;     // Enabled by default for multi-vector SIMD batching
-    config->use_cluster_graph = 1;  // Enabled by default for graph-guided cluster routing
-    config->ef_cluster = 0;         // 0 = dynamic auto-scaled cluster budget
-    config->use_two_hop = 1;        // Enabled by default for 2-hop candidate injection
-    config->two_hop_seeds = 2;      // Expand top 2 closest seeds
-    config->two_hop_max_cands = 32; // Maximum 2-hop candidate evaluations per query
-    config->no_txt = 1;             // Binary output by default (.bin); use -txt for text output
+    config->use_reciprocal = 1;
+    config->use_multi_pivot = 1;
+    config->use_angular_bound = 1;
+    config->use_trajectory = 0;
+    config->use_rq8 = 0;
+    config->use_rq8_adc = 1;
+    config->use_rq8_sparse = 1;
+    config->use_e8_quant = 0;
+    config->use_e8_graph = 0;
+    config->use_sq8 = 0;
+    config->use_sq16 = -1;
+    config->use_sq16_sparse = 1;
+    config->use_sq16_sparse_lru = 0;
+    config->use_eq16 = -1;
+    config->use_eq16_adc = 1;
+    config->use_eq16_sparse = 1;
+    config->eq16_ratio = 0.05;
+    config->use_rabitq = 0;
+    config->rabitq_bits = 2;
+    config->use_dcc_sq16 = 1;
+    config->sq16_ratio = 0.05;
+    config->use_memo = 1;
+    config->use_batch_dist = 1;
+    config->use_cluster_graph = 1;
+    config->ef_cluster = 0;
+    config->use_two_hop = 1;
+    config->two_hop_seeds = 2;
+    config->two_hop_max_cands = 32;
+    config->no_txt = 1;
 }
 
-/**
- * knn_cli_parse_io_opt() - Parse I/O, format, execution, and profiling options.
- * @argc:      Total argument count.
- * @argv:      Argument strings array.
- * @arg_idx:   Pointer to current argument index.
- * @config:    Pointer to KnnConfig.
- * @k_set:     Flag indicating -k was explicitly passed.
- * @dtmin_set: Flag indicating -dtmin was explicitly passed.
- *
- * Return: 1 if option was recognized, 0 if not, -1 on error.
- */
-static int knn_cli_parse_io_opt(
-    int        argc,
-    char     **argv,
-    int       *arg_idx,
-    KnnConfig *config,
-    int       *k_set,
-    int       *dtmin_set)
+static int is_negation_key(
+    const char *key)
 {
-    int i = *arg_idx;
+    if (key == NULL)
+    {
+        return 0;
+    }
+    while (*key == '-')
+    {
+        key++;
+    }
+    return (strncmp(key, "no-", 3) == 0 || strncmp(key, "no_", 3) == 0 ||
+            strncmp(key, "nosq", 4) == 0 || strncmp(key, "noeq", 4) == 0 ||
+            strncmp(key, "norq", 4) == 0 || strncmp(key, "nomemo", 6) == 0 ||
+            strncmp(key, "nobatch", 7) == 0 || strncmp(key, "noprof", 6) == 0 ||
+            strncmp(key, "nomutual", 8) == 0 || strncmp(key, "nocache", 7) == 0 ||
+            strncmp(key, "notrajectory", 12) == 0 || strncmp(key, "noreciprocal", 12) == 0);
+}
 
-    if (strcmp(argv[i], "-query") == 0 || strcmp(argv[i], "--query") == 0)
+static int cb_k(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
     {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -query requires a path argument\n");
-            return -1;
-        }
-        config->query_data_path = argv[++(*arg_idx)];
-        return 1;
+        return -1;
     }
-    if (strcmp(argv[i], "-k") == 0)
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
     {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -k requires an integer argument\n");
-            return -1;
-        }
-        config->k = atoi(argv[++(*arg_idx)]);
-        *k_set = 1;
-        return 1;
+        cfg->k = atoi(val);
     }
-    if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0)
+    return 1;
+}
+
+static int cb_dtmin(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
     {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -o requires a path argument\n");
-            return -1;
-        }
-        config->output_path = argv[++(*arg_idx)];
-        char *ext = strrchr(config->output_path, '.');
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->min_temporal_sep = atoi(val);
+    }
+    return 1;
+}
+
+static int cb_output(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->output_path = (char *)val;
+        char *ext = strrchr(cfg->output_path, '.');
         if (ext != NULL && strcmp(ext, ".txt") == 0)
         {
-            config->output_format = KNN_FORMAT_TXT;
-            config->no_txt = 0;
+            cfg->output_format = KNN_FORMAT_TXT;
+            cfg->no_txt = 0;
         }
-        return 1;
     }
-    if (strcmp(argv[i], "-dtmin") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -dtmin requires an integer argument\n");
-            return -1;
-        }
-        config->min_temporal_sep = atoi(argv[++(*arg_idx)]);
-        *dtmin_set = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-past") == 0)
-    {
-        config->past_only = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-future") == 0)
-    {
-        config->future_only = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-eps") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -eps requires a float argument\n");
-            return -1;
-        }
-        config->epsilon = atof(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-rlim") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -rlim requires a float argument\n");
-            return -1;
-        }
-        config->rlim_cutoff = atof(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-all-queries") == 0 || strcmp(argv[i], "--all-queries") == 0)
-    {
-        config->refuse_unclustered = -1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-nthreads") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -nthreads requires an integer argument\n");
-            return -1;
-        }
-        config->nthreads = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-fits") == 0)
-    {
-        config->output_format = KNN_FORMAT_FITS;
-        return 1;
-    }
-    if (strcmp(argv[i], "-txt") == 0 || strcmp(argv[i], "--txt") == 0)
-    {
-        config->output_format = KNN_FORMAT_TXT;
-        config->no_txt = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-progress") == 0)
-    {
-        config->progress_mode = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-double") == 0 || strcmp(argv[i], "--double") == 0)
-    {
-        config->use_double = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-prof") == 0 || strcmp(argv[i], "--prof") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -prof requires a filepath argument\n");
-            return -1;
-        }
-        config->prof_filename = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-prof") == 0 || strcmp(argv[i], "--no-prof") == 0)
-    {
-        config->no_prof = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-mem") == 0 || strcmp(argv[i], "--no-mem") == 0 ||
-        strcmp(argv[i], "-no-cache") == 0)
-    {
-        config->no_cache_dataset = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-mutual") == 0 || strcmp(argv[i], "--no-mutual") == 0 ||
-        strcmp(argv[i], "-no_mutual") == 0 || strcmp(argv[i], "-nomutual") == 0)
-    {
-        config->no_mutual = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-txt") == 0 || strcmp(argv[i], "--no-txt") == 0 ||
-        strcmp(argv[i], "-no_txt") == 0 || strcmp(argv[i], "-notxt") == 0)
-    {
-        config->no_txt = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-v") == 0)
-    {
-        config->verbose_level = 2;
-        return 1;
-    }
-    if (strcmp(argv[i], "-vv") == 0)
-    {
-        config->verbose_level = 3;
-        return 1;
-    }
-
-    return 0;
+    return 1;
 }
 
-/**
- * knn_cli_parse_pruning_opt() - Parse pruning heuristics and graph search options.
- * @argc:    Total argument count.
- * @argv:    Argument strings array.
- * @arg_idx: Pointer to current argument index.
- * @config:  Pointer to KnnConfig.
- *
- * Return: 1 if option was recognized, 0 if not, -1 on error.
- */
-static int knn_cli_parse_pruning_opt(
-    int        argc,
-    char     **argv,
-    int       *arg_idx,
-    KnnConfig *config)
+static int cb_txt(
+    const char *key,
+    const char *val,
+    void       *ctx)
 {
-    int i = *arg_idx;
-
-    if (strcmp(argv[i], "-multipivot") == 0 || strcmp(argv[i], "--multipivot") == 0 ||
-        strcmp(argv[i], "-multi_pivot") == 0 || strcmp(argv[i], "--multi-pivot") == 0)
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
     {
-        config->use_multi_pivot = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-multipivot") == 0 || strcmp(argv[i], "-no_multipivot") == 0)
-    {
-        config->use_multi_pivot = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-angular") == 0 || strcmp(argv[i], "--angular") == 0 ||
-        strcmp(argv[i], "-direction") == 0 || strcmp(argv[i], "--direction") == 0)
-    {
-        config->use_angular_bound = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-angular") == 0 || strcmp(argv[i], "--no-angular") == 0 ||
-        strcmp(argv[i], "-no-direction") == 0 || strcmp(argv[i], "--no-direction") == 0)
-    {
-        config->use_angular_bound = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-trajectory") == 0 || strcmp(argv[i], "--trajectory") == 0)
-    {
-        config->use_trajectory = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-trajectory") == 0 || strcmp(argv[i], "--no-trajectory") == 0 ||
-        strcmp(argv[i], "-notrajectory") == 0)
-    {
-        config->use_trajectory = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-reciprocal") == 0 || strcmp(argv[i], "--reciprocal") == 0)
-    {
-        config->use_reciprocal = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-reciprocal") == 0 || strcmp(argv[i], "--no-reciprocal") == 0 ||
-        strcmp(argv[i], "-noreciprocal") == 0)
-    {
-        config->use_reciprocal = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-approx") == 0 || strcmp(argv[i], "--approx") == 0 ||
-        strcmp(argv[i], "-fast") == 0 || strcmp(argv[i], "--fast") == 0)
-    {
-        config->approx_mode = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-ef-search") == 0 || strcmp(argv[i], "--ef-search") == 0 ||
-        strcmp(argv[i], "-ef") == 0)
-    {
-        if (i + 1 >= argc)
+        if (is_negation_key(key))
         {
-            fprintf(stderr, "Error: -ef-search requires an integer argument\n");
-            return -1;
-        }
-        config->ef_search = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-cluster-graph") == 0 || strcmp(argv[i], "--cluster-graph") == 0)
-    {
-        config->use_cluster_graph = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-cluster-graph") == 0 || strcmp(argv[i], "--no-cluster-graph") == 0)
-    {
-        config->use_cluster_graph = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-ef-cluster") == 0 || strcmp(argv[i], "--ef-cluster") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -ef-cluster requires an integer argument\n");
-            return -1;
-        }
-        config->ef_cluster = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-two-hop") == 0 || strcmp(argv[i], "--two-hop") == 0)
-    {
-        config->use_two_hop = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-two-hop") == 0 || strcmp(argv[i], "--no-two-hop") == 0)
-    {
-        config->use_two_hop = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-two-hop-seeds") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -two-hop-seeds requires an integer argument\n");
-            return -1;
-        }
-        config->two_hop_seeds = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-two-hop-max") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -two-hop-max requires an integer argument\n");
-            return -1;
-        }
-        config->two_hop_max_cands = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-
-    return 0;
-}
-
-/**
- * knn_cli_parse_quant_opt() - Parse quantization algorithms, sidecars, and SIMD memoization.
- * @argc:    Total argument count.
- * @argv:    Argument strings array.
- * @arg_idx: Pointer to current argument index.
- * @config:  Pointer to KnnConfig.
- *
- * Return: 1 if option was recognized, 0 if not, -1 on error.
- */
-static int knn_cli_parse_quant_opt(
-    int        argc,
-    char     **argv,
-    int       *arg_idx,
-    KnnConfig *config)
-{
-    int i = *arg_idx;
-
-    if (strcmp(argv[i], "-rq8") == 0 || strcmp(argv[i], "--rq8") == 0)
-    {
-        config->use_rq8 = 1;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq16_sparse = 0;
-        config->use_sq16_sparse_lru = 0;
-        config->use_sq8 = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-rq8") == 0 || strcmp(argv[i], "--no-rq8") == 0 ||
-        strcmp(argv[i], "-norq8") == 0)
-    {
-        config->use_rq8 = 0;
-        config->use_rq8_sparse = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-rq8-adc") == 0 || strcmp(argv[i], "--rq8-adc") == 0)
-    {
-        config->use_rq8_adc = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-rq8-adc") == 0 || strcmp(argv[i], "--no-rq8-adc") == 0)
-    {
-        config->use_rq8_adc = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-rq8-sparse") == 0 || strcmp(argv[i], "--rq8-sparse") == 0)
-    {
-        config->use_rq8 = 1;
-        config->use_rq8_sparse = 1;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq16_sparse = 0;
-        config->use_eq16_sparse = 0;
-        config->use_sq8 = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-rq8-sparse") == 0 || strcmp(argv[i], "--no-rq8-sparse") == 0 ||
-        strcmp(argv[i], "-rq8-fastscan") == 0 || strcmp(argv[i], "--rq8-fastscan") == 0)
-    {
-        config->use_rq8_sparse = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-rq8-save") == 0 || strcmp(argv[i], "--rq8-save") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -rq8-save requires a filepath argument\n");
-            return -1;
-        }
-        config->use_rq8 = 1;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->rq8_save_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-rq8-load") == 0 || strcmp(argv[i], "--rq8-load") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -rq8-load requires a filepath argument\n");
-            return -1;
-        }
-        config->use_rq8 = 1;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->rq8_load_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-rq8-approx") == 0 || strcmp(argv[i], "--rq8-approx") == 0)
-    {
-        config->use_rq8 = 1;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->use_pq = 0;
-        config->rq8_approx = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-rq8-e8") == 0 || strcmp(argv[i], "--rq8-e8") == 0 ||
-        strcmp(argv[i], "-e8") == 0 || strcmp(argv[i], "--e8") == 0 ||
-        strcmp(argv[i], "-e8-quant") == 0 || strcmp(argv[i], "--e8-quant") == 0)
-    {
-        config->use_rq8 = 1;
-        config->use_e8_quant = 1;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq16_sparse = 0;
-        config->use_sq16_sparse_lru = 0;
-        config->use_eq16_sparse = 0;
-        config->use_sq8 = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-rq8-e8") == 0 || strcmp(argv[i], "--no-rq8-e8") == 0 ||
-        strcmp(argv[i], "-no-e8") == 0 || strcmp(argv[i], "--no-e8") == 0 ||
-        strcmp(argv[i], "-no-e8-quant") == 0 || strcmp(argv[i], "--no-e8-quant") == 0)
-    {
-        config->use_e8_quant = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-e8-graph") == 0 || strcmp(argv[i], "--e8-graph") == 0)
-    {
-        config->use_e8_graph = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-pq") == 0 || strcmp(argv[i], "--pq") == 0)
-    {
-        config->use_pq = 1;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq16_sparse = 0;
-        config->use_sq16_sparse_lru = 0;
-        config->use_sq8 = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-pq") == 0 || strcmp(argv[i], "--no-pq") == 0 ||
-        strcmp(argv[i], "-nopq") == 0)
-    {
-        config->use_pq = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-pq-m") == 0 || strcmp(argv[i], "--pq-m") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -pq-m requires an integer argument\n");
-            return -1;
-        }
-        config->use_pq = 1;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->pq_m = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-pq-bits") == 0 || strcmp(argv[i], "--pq-bits") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -pq-bits requires an integer argument (4 or 8)\n");
-            return -1;
-        }
-        config->use_pq = 1;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->pq_bits = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-pq-save") == 0 || strcmp(argv[i], "--pq-save") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -pq-save requires a filepath argument\n");
-            return -1;
-        }
-        config->use_pq = 1;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->pq_save_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-pq-load") == 0 || strcmp(argv[i], "--pq-load") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -pq-load requires a filepath argument\n");
-            return -1;
-        }
-        config->use_pq = 1;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->pq_load_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-pq-rerank") == 0 || strcmp(argv[i], "--pq-rerank") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -pq-rerank requires an integer argument\n");
-            return -1;
-        }
-        config->use_pq = 1;
-        config->pq_rerank = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-rabitq") == 0 || strcmp(argv[i], "--rabitq") == 0)
-    {
-        config->use_rabitq = 1;
-        config->use_pq = 0;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq16_sparse = 0;
-        config->use_sq16_sparse_lru = 0;
-        config->use_sq8 = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-rabitq") == 0 || strcmp(argv[i], "--no-rabitq") == 0 ||
-        strcmp(argv[i], "-norabitq") == 0)
-    {
-        config->use_rabitq = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-rabitq-bits") == 0 || strcmp(argv[i], "--rabitq-bits") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -rabitq-bits requires an integer argument (1 or 2)\n");
-            return -1;
-        }
-        config->use_rabitq = 1;
-        config->use_pq = 0;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->rabitq_bits = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-rabitq-save") == 0 || strcmp(argv[i], "--rabitq-save") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -rabitq-save requires a filepath argument\n");
-            return -1;
-        }
-        config->use_rabitq = 1;
-        config->use_pq = 0;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->rabitq_save_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-rabitq-load") == 0 || strcmp(argv[i], "--rabitq-load") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -rabitq-load requires a filepath argument\n");
-            return -1;
-        }
-        config->use_rabitq = 1;
-        config->use_pq = 0;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->rabitq_load_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-rabitq-approx") == 0 || strcmp(argv[i], "--rabitq-approx") == 0)
-    {
-        config->use_rabitq = 1;
-        config->use_pq = 0;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq8 = 0;
-        config->rabitq_approx = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq8") == 0 || strcmp(argv[i], "--sq8") == 0)
-    {
-        config->use_sq8 = 1;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq16_sparse = 0;
-        config->use_sq16_sparse_lru = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-sq8") == 0 || strcmp(argv[i], "--no-sq8") == 0 ||
-        strcmp(argv[i], "-nosq8") == 0)
-    {
-        config->use_sq8 = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq8-save") == 0 || strcmp(argv[i], "--sq8-save") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -sq8-save requires a filepath argument\n");
-            return -1;
-        }
-        config->use_sq8 = 1;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq16_sparse = 0;
-        config->use_sq16_sparse_lru = 0;
-        config->sq8_save_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq8-load") == 0 || strcmp(argv[i], "--sq8-load") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -sq8-load requires a filepath argument\n");
-            return -1;
-        }
-        config->use_sq8 = 1;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq16_sparse = 0;
-        config->use_sq16_sparse_lru = 0;
-        config->sq8_load_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq8-approx") == 0 || strcmp(argv[i], "--sq8-approx") == 0)
-    {
-        config->use_sq8 = 1;
-        config->use_rq8 = 0;
-        config->use_sq16 = 0;
-        config->use_eq16 = 0;
-        config->use_sq16_sparse = 0;
-        config->use_sq16_sparse_lru = 0;
-        config->sq8_approx = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq16") == 0 || strcmp(argv[i], "--sq16") == 0)
-    {
-        config->use_sq16 = 1;
-        config->use_eq16 = 0;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-sq16") == 0 || strcmp(argv[i], "--no-sq16") == 0 ||
-        strcmp(argv[i], "-nosq16") == 0)
-    {
-        config->use_sq16 = 0;
-        config->use_sq16_sparse = 0;
-        config->use_sq16_sparse_lru = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-eq16") == 0 || strcmp(argv[i], "--eq16") == 0)
-    {
-        config->use_eq16 = 1;
-        config->use_sq16 = 0;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-eq16") == 0 || strcmp(argv[i], "--no-eq16") == 0 ||
-        strcmp(argv[i], "-noeq16") == 0)
-    {
-        config->use_eq16 = 0;
-        config->use_eq16_sparse = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-eq16-save") == 0 || strcmp(argv[i], "--eq16-save") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -eq16-save requires a filepath argument\n");
-            return -1;
-        }
-        config->use_eq16 = 1;
-        config->use_sq16 = 0;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        config->eq16_save_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-eq16-load") == 0 || strcmp(argv[i], "--eq16-load") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -eq16-load requires a filepath argument\n");
-            return -1;
-        }
-        config->use_eq16 = 1;
-        config->use_sq16 = 0;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        config->eq16_load_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-eq16-adc") == 0 || strcmp(argv[i], "--eq16-adc") == 0)
-    {
-        config->use_eq16 = 1;
-        config->use_eq16_adc = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-eq16-adc") == 0 || strcmp(argv[i], "--no-eq16-adc") == 0)
-    {
-        config->use_eq16_adc = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-eq16-approx") == 0 || strcmp(argv[i], "--eq16-approx") == 0)
-    {
-        config->use_eq16 = 1;
-        config->use_sq16 = 0;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        config->eq16_approx = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-eq16-ratio") == 0 || strcmp(argv[i], "--eq16-ratio") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -eq16-ratio requires a float argument\n");
-            return -1;
-        }
-        config->eq16_ratio = atof(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-eq16-sparse") == 0 || strcmp(argv[i], "--eq16-sparse") == 0)
-    {
-        config->use_eq16 = 1;
-        config->use_sq16 = 0;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        config->use_eq16_sparse = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-eq16-sparse") == 0 || strcmp(argv[i], "--no-eq16-sparse") == 0 ||
-        strcmp(argv[i], "-eq16-fastscan") == 0 || strcmp(argv[i], "--eq16-fastscan") == 0)
-    {
-        config->use_eq16_sparse = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq16-save") == 0 || strcmp(argv[i], "--sq16-save") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -sq16-save requires a filepath argument\n");
-            return -1;
-        }
-        config->use_sq16 = 1;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        config->sq16_save_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq16-load") == 0 || strcmp(argv[i], "--sq16-load") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -sq16-load requires a filepath argument\n");
-            return -1;
-        }
-        config->use_sq16 = 1;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        config->sq16_load_path = argv[++(*arg_idx)];
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq16-approx") == 0 || strcmp(argv[i], "--sq16-approx") == 0)
-    {
-        config->use_sq16 = 1;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        config->sq16_approx = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq16-ratio") == 0 || strcmp(argv[i], "--sq16-ratio") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -sq16-ratio requires a float argument\n");
-            return -1;
-        }
-        config->sq16_ratio = atof(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq16-sparse") == 0 || strcmp(argv[i], "--sq16-sparse") == 0)
-    {
-        config->use_sq16 = 1;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        config->use_sq16_sparse = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-sq16-sparse") == 0 || strcmp(argv[i], "--no-sq16-sparse") == 0)
-    {
-        config->use_sq16_sparse = 0;
-        config->use_sq16_sparse_lru = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-sq16-sparse-lru") == 0 || strcmp(argv[i], "--sq16-sparse-lru") == 0)
-    {
-        config->use_sq16 = 1;
-        config->use_rq8 = 0;
-        config->use_sq8 = 0;
-        config->use_sq16_sparse = 1;
-        config->use_sq16_sparse_lru = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-dcc-sq16") == 0 || strcmp(argv[i], "--dcc-sq16") == 0)
-    {
-        config->use_dcc_sq16 = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-dcc-sq16") == 0 || strcmp(argv[i], "--no-dcc-sq16") == 0)
-    {
-        config->use_dcc_sq16 = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-memo") == 0 || strcmp(argv[i], "--memo") == 0)
-    {
-        config->use_memo = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-memo") == 0 || strcmp(argv[i], "--no-memo") == 0 ||
-        strcmp(argv[i], "-nomemo") == 0)
-    {
-        config->use_memo = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-batch-dist") == 0 || strcmp(argv[i], "--batch-dist") == 0 ||
-        strcmp(argv[i], "-batchdist") == 0)
-    {
-        config->use_batch_dist = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-no-batch-dist") == 0 || strcmp(argv[i], "--no-batch-dist") == 0 ||
-        strcmp(argv[i], "-nobatchdist") == 0)
-    {
-        config->use_batch_dist = 0;
-        return 1;
-    }
-
-    return 0;
-}
-
-/**
- * knn_cli_parse_gpu_opt() - Parse CUDA and GPU acceleration options.
- * @argc:    Total argument count.
- * @argv:    Argument strings array.
- * @arg_idx: Pointer to current argument index.
- * @config:  Pointer to KnnConfig.
- *
- * Return: 1 if option was recognized, 0 if not, -1 on error.
- */
-static int knn_cli_parse_gpu_opt(
-    int        argc,
-    char     **argv,
-    int       *arg_idx,
-    KnnConfig *config)
-{
-    int i = *arg_idx;
-
-    if (strcmp(argv[i], "-gpu") == 0 || strcmp(argv[i], "--gpu") == 0)
-    {
-        config->use_gpu = 1;
-        return 1;
-    }
-    if (strcmp(argv[i], "-cpu") == 0 || strcmp(argv[i], "--cpu") == 0)
-    {
-        config->use_gpu = 0;
-        return 1;
-    }
-    if (strcmp(argv[i], "-gpu-device") == 0 || strcmp(argv[i], "--gpu-device") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: --gpu-device requires an integer argument\n");
-            return -1;
-        }
-        config->use_gpu = 1;
-        config->gpu_device_id = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-gpu-batch-size") == 0 || strcmp(argv[i], "--gpu-batch-size") == 0 ||
-        strcmp(argv[i], "-gpu-micro-batch") == 0 || strcmp(argv[i], "--gpu-micro-batch") == 0)
-    {
-        config->use_gpu = 1;
-        if (i + 1 < argc && argv[i + 1][0] != '-')
-        {
-            config->gpu_batch_size = atoi(argv[++(*arg_idx)]);
+            cfg->no_txt = 1;
         }
         else
         {
-            config->gpu_batch_size = 512;
+            cfg->output_format = KNN_FORMAT_TXT;
+            cfg->no_txt = 0;
         }
-        return 1;
     }
-    if (strcmp(argv[i], "-gpu-nprobe") == 0 || strcmp(argv[i], "--gpu-nprobe") == 0 ||
-        strcmp(argv[i], "-nprobe") == 0)
-    {
-        if (i + 1 >= argc)
-        {
-            fprintf(stderr, "Error: -gpu-nprobe requires an integer argument\n");
-            return -1;
-        }
-        config->use_gpu = 1;
-        config->gpu_nprobe = atoi(argv[++(*arg_idx)]);
-        return 1;
-    }
-    if (strcmp(argv[i], "-gpu-bf") == 0 || strcmp(argv[i], "--gpu-bf") == 0 ||
-        strcmp(argv[i], "-gpu-brute-force") == 0 || strcmp(argv[i], "--gpu-brute-force") == 0)
-    {
-        config->use_gpu = 1;
-        config->use_gpu_bruteforce = 1;
-        return 1;
-    }
-
     return 0;
 }
 
-/**
- * knn_cli_parse_positional() - Assign non-option positional arguments to KnnConfig.
- * @arg:      Positional argument string.
- * @config:   Pointer to KnnConfig.
- * @progname: Name of the program for error output.
- *
- * Return: 0 on success, 1 on error.
- */
+static int cb_fits(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->output_format = KNN_FORMAT_FITS;
+    }
+    return 0;
+}
+
+static int cb_quiet(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->verbose_level = 0;
+    }
+    return 0;
+}
+
+static int cb_veryverbose(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->verbose_level = 2;
+    }
+    return 0;
+}
+
+static int cb_all_queries(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->refuse_unclustered = -1;
+    }
+    return 0;
+}
+
+static int cb_rq8(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        if (is_negation_key(key))
+        {
+            cfg->use_rq8 = 0;
+            cfg->use_rq8_sparse = 0;
+        }
+        else
+        {
+            cfg->use_rq8 = 1;
+            cfg->use_sq16 = 0;
+            cfg->use_eq16 = 0;
+            cfg->use_sq16_sparse = 0;
+            cfg->use_sq16_sparse_lru = 0;
+            cfg->use_sq8 = 0;
+        }
+    }
+    return 0;
+}
+
+static int cb_rq8_sparse(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        if (is_negation_key(key) || strcmp(key, "-rq8-fastscan") == 0 ||
+            strcmp(key, "--rq8-fastscan") == 0)
+        {
+            cfg->use_rq8_sparse = 0;
+        }
+        else
+        {
+            cfg->use_rq8 = 1;
+            cfg->use_rq8_sparse = 1;
+            cfg->use_sq16 = 0;
+            cfg->use_eq16 = 0;
+            cfg->use_sq16_sparse = 0;
+            cfg->use_eq16_sparse = 0;
+            cfg->use_sq8 = 0;
+        }
+    }
+    return 0;
+}
+
+static int cb_rq8_save(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_rq8 = 1;
+        cfg->use_sq16 = 0;
+        cfg->use_eq16 = 0;
+        cfg->use_sq8 = 0;
+        cfg->rq8_save_path = (char *)val;
+    }
+    return 1;
+}
+
+static int cb_rq8_load(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_rq8 = 1;
+        cfg->use_sq16 = 0;
+        cfg->use_eq16 = 0;
+        cfg->use_sq8 = 0;
+        cfg->rq8_load_path = (char *)val;
+    }
+    return 1;
+}
+
+static int cb_rq8_approx(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_rq8 = 1;
+        cfg->use_sq16 = 0;
+        cfg->use_eq16 = 0;
+        cfg->use_sq8 = 0;
+        cfg->use_pq = 0;
+        cfg->rq8_approx = 1;
+    }
+    return 0;
+}
+
+static int cb_e8_quant(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_rq8 = 1;
+        cfg->use_e8_quant = 1;
+        cfg->use_sq16 = 0;
+        cfg->use_eq16 = 0;
+        cfg->use_sq16_sparse = 0;
+        cfg->use_sq16_sparse_lru = 0;
+        cfg->use_eq16_sparse = 0;
+        cfg->use_sq8 = 0;
+    }
+    return 0;
+}
+
+static int cb_e8_graph(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_rq8 = 1;
+        cfg->use_e8_quant = 1;
+        cfg->use_e8_graph = 1;
+        cfg->use_sq16 = 0;
+        cfg->use_eq16 = 0;
+        cfg->use_sq16_sparse = 0;
+        cfg->use_sq16_sparse_lru = 0;
+        cfg->use_eq16_sparse = 0;
+        cfg->use_sq8 = 0;
+    }
+    return 0;
+}
+
+static int cb_sq8(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        if (is_negation_key(key))
+        {
+            cfg->use_sq8 = 0;
+        }
+        else
+        {
+            cfg->use_sq8 = 1;
+            cfg->use_sq16 = 0;
+            cfg->use_eq16 = 0;
+            cfg->use_rq8 = 0;
+        }
+    }
+    return 0;
+}
+
+static int cb_sq8_save(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_sq8 = 1;
+        cfg->use_rq8 = 0;
+        cfg->use_sq16 = 0;
+        cfg->use_eq16 = 0;
+        cfg->sq8_save_path = (char *)val;
+    }
+    return 1;
+}
+
+static int cb_sq8_load(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_sq8 = 1;
+        cfg->use_rq8 = 0;
+        cfg->use_sq16 = 0;
+        cfg->use_eq16 = 0;
+        cfg->sq8_load_path = (char *)val;
+    }
+    return 1;
+}
+
+static int cb_sq8_approx(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->sq8_approx = 1;
+    }
+    return 0;
+}
+
+static int cb_sq16_approx(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->sq16_approx = 1;
+    }
+    return 0;
+}
+
+static int cb_eq16_approx(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->eq16_approx = 1;
+    }
+    return 0;
+}
+
+static int cb_rabitq_approx(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->rabitq_approx = 1;
+    }
+    return 0;
+}
+
+static int cb_sq16(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        if (is_negation_key(key))
+        {
+            cfg->use_sq16 = 0;
+        }
+        else
+        {
+            cfg->use_sq16 = 1;
+            cfg->use_sq8 = 0;
+            cfg->use_eq16 = 0;
+            cfg->use_rq8 = 0;
+        }
+    }
+    return 0;
+}
+
+static int cb_sq16_save(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_sq16 = 1;
+        cfg->use_sq8 = 0;
+        cfg->use_eq16 = 0;
+        cfg->use_rq8 = 0;
+        cfg->sq16_save_path = (char *)val;
+    }
+    return 1;
+}
+
+static int cb_sq16_load(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_sq16 = 1;
+        cfg->use_sq8 = 0;
+        cfg->use_eq16 = 0;
+        cfg->use_rq8 = 0;
+        cfg->sq16_load_path = (char *)val;
+    }
+    return 1;
+}
+
+static int cb_eq16(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        if (is_negation_key(key))
+        {
+            cfg->use_eq16 = 0;
+        }
+        else
+        {
+            cfg->use_eq16 = 1;
+            cfg->use_sq8 = 0;
+            cfg->use_sq16 = 0;
+            cfg->use_rq8 = 0;
+        }
+    }
+    return 0;
+}
+
+static int cb_eq16_save(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_eq16 = 1;
+        cfg->use_sq8 = 0;
+        cfg->use_sq16 = 0;
+        cfg->use_rq8 = 0;
+        cfg->eq16_save_path = (char *)val;
+    }
+    return 1;
+}
+
+static int cb_eq16_load(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_eq16 = 1;
+        cfg->use_sq8 = 0;
+        cfg->use_sq16 = 0;
+        cfg->use_rq8 = 0;
+        cfg->eq16_load_path = (char *)val;
+    }
+    return 1;
+}
+
+static int cb_rabitq(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        if (is_negation_key(key))
+        {
+            cfg->use_rabitq = 0;
+        }
+        else
+        {
+            cfg->use_rabitq = 1;
+            cfg->use_sq8 = 0;
+            cfg->use_sq16 = 0;
+            cfg->use_eq16 = 0;
+            cfg->use_rq8 = 0;
+        }
+    }
+    return 0;
+}
+
+static int cb_rabitq_save(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_rabitq = 1;
+        cfg->use_sq8 = 0;
+        cfg->use_sq16 = 0;
+        cfg->use_eq16 = 0;
+        cfg->use_rq8 = 0;
+        cfg->rabitq_save_path = (char *)val;
+    }
+    return 1;
+}
+
+static int cb_rabitq_load(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_rabitq = 1;
+        cfg->use_sq8 = 0;
+        cfg->use_sq16 = 0;
+        cfg->use_eq16 = 0;
+        cfg->use_rq8 = 0;
+        cfg->rabitq_load_path = (char *)val;
+    }
+    return 1;
+}
+
+static int cb_gpu(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_gpu = is_negation_key(key) ? 0 : 1;
+    }
+    return 0;
+}
+
+static int cb_cpu(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_gpu = 0;
+    }
+    return 0;
+}
+
+static int cb_gpu_device(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_gpu = 1;
+        cfg->gpu_device_id = atoi(val);
+    }
+    return 1;
+}
+
+static int cb_gpu_batch_size(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_gpu = 1;
+        if (val != NULL && val[0] != '-')
+        {
+            cfg->gpu_batch_size = atoi(val);
+            return 1;
+        }
+        cfg->gpu_batch_size = 512;
+    }
+    return 0;
+}
+
+static int cb_gpu_nprobe(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    if (val == NULL)
+    {
+        return -1;
+    }
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_gpu = 1;
+        cfg->gpu_nprobe = atoi(val);
+    }
+    return 1;
+}
+
+static int cb_gpu_bf(
+    const char *key,
+    const char *val,
+    void       *ctx)
+{
+    (void)key;
+    (void)val;
+    KnnConfig *cfg = (KnnConfig *)ctx;
+    if (cfg != NULL)
+    {
+        cfg->use_gpu = 1;
+        cfg->use_gpu_bruteforce = 1;
+    }
+    return 0;
+}
+
+const struct gric_opt *knn_get_options(
+    KnnConfig *config,
+    size_t    *nopts)
+{
+    static struct gric_opt opts[] = {
+        /* Core Search */
+        {"k", 'k', GRIC_OPT_CUSTOM, (void *)cb_k, 0, "50", "<int>",
+         "Number of nearest neighbors to find", "Core Search", NULL, 0},
+        {"query", '\0', GRIC_OPT_STRING, NULL, 0, "", "<path>",
+         "External query dataset (cross-dataset k-NN mode)", "Core Search", NULL, 0},
+        {"output", 'o', GRIC_OPT_CUSTOM, (void *)cb_output, 0, "", "<path>",
+         "Output file path", "Output & Format", "out", 0},
+        {"dtmin", '\0', GRIC_OPT_CUSTOM, (void *)cb_dtmin, 0, "1", "<int>",
+         "Min frame index separation |i - j| >= dtmin", "Core Search", NULL, 0},
+        {"past", '\0', GRIC_OPT_FLAG, NULL, 0, "0", NULL,
+         "Search only among preceding frames (j < i)", "Core Search", NULL, 0},
+        {"future", '\0', GRIC_OPT_FLAG, NULL, 0, "0", NULL,
+         "Search only among subsequent frames (j > i)", "Core Search", NULL, 0},
+        {"eps", '\0', GRIC_OPT_DOUBLE, NULL, 0, "0.0", "<float>",
+         "(1+eps)-ANN relaxation slack factor", "Core Search", "epsilon", 0},
+        {"rlim", '\0', GRIC_OPT_DOUBLE, NULL, 0, "0.0", "<float>",
+         "Maximum distance cutoff (ignore neighbors beyond rlim)", "Core Search", NULL, 0},
+        {"double", '\0', GRIC_OPT_FLAG, NULL, 0, "0", NULL,
+         "Force 64-bit double precision distance calculations", "Core Search", NULL, 0},
+        {"all-queries", '\0', GRIC_OPT_CUSTOM, (void *)cb_all_queries, 0, "0", NULL,
+         "Do not refuse out-of-cluster queries (exhaustive)", "Core Search", "all_queries", 0},
+
+        /* Output & Format */
+        {"fits", '\0', GRIC_OPT_CUSTOM, (void *)cb_fits, 0, "0", NULL,
+         "Force FITS output format", "Output & Format", NULL, 0},
+        {"txt", '\0', GRIC_OPT_CUSTOM, (void *)cb_txt, 0, "0", NULL,
+         "Force ASCII text output format", "Output & Format", NULL, 1},
+        {"no-txt", '\0', GRIC_OPT_CUSTOM, (void *)cb_txt, 0, "1", NULL,
+         "Disable ASCII text output", "Output & Format", "notxt,no_txt", 0},
+        {"progress", 'p', GRIC_OPT_FLAG, NULL, 0, "0", NULL,
+         "Display live console progress bar", "Output & Format", NULL, 0},
+        {"verbose", 'v', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Verbosity level", "Output & Format", NULL, 0},
+        {"veryverbose", '\0', GRIC_OPT_CUSTOM, (void *)cb_veryverbose, 0, "0", NULL,
+         "Very verbose logging", "Output & Format", "vv", 0},
+        {"quiet", 'q', GRIC_OPT_CUSTOM, (void *)cb_quiet, 0, "0", NULL,
+         "Quiet mode (disable logging)", "Output & Format", NULL, 0},
+        {"prof", '\0', GRIC_OPT_STRING, NULL, 0, "", "<path>",
+         "Explicit dataset profile file (.gricprof)", "Output & Format", "profile", 0},
+        {"no-prof", '\0', GRIC_OPT_FLAG, NULL, 0, "0", NULL,
+         "Disable auto-loading of .gricprof file", "Output & Format", "noprof,no_prof", 0},
+        {"no-mutual", '\0', GRIC_OPT_FLAG, NULL, 0, "0", NULL,
+         "Disable knn_mutual_dists.bin calculation", "Output & Format", "nomutual,no_mutual", 0},
+        {"no-cache", '\0', GRIC_OPT_FLAG, NULL, 0, "0", NULL,
+         "Disable caching of dataset in resident RAM", "Output & Format", "nocache,no_cache", 0},
+
+        /* Metric Pruning */
+        {"multipivot", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Enable Multi-Anchor Pivot Bounding (AESA)", "Metric Pruning",
+         "multi_pivot,multi-pivot", 1},
+        {"angular", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Enable Angular Cosine Directional Bounding", "Metric Pruning", "direction", 1},
+        {"trajectory", '\0', GRIC_OPT_FLAG, NULL, 0, "0", NULL,
+         "Enable Trajectory Momentum", "Metric Pruning", NULL, 1},
+        {"reciprocal", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Enable Symmetric Distance Reciprocal Push", "Metric Pruning", NULL, 1},
+        {"approx", '\0', GRIC_OPT_FLAG, NULL, 0, "0", NULL,
+         "Fast Approximate Graph Search", "Metric Pruning", "fast", 0},
+        {"ef-search", '\0', GRIC_OPT_INT, NULL, 0, "0", "<int>",
+         "Size of priority queue for approx search", "Metric Pruning", "ef", 0},
+        {"cluster-graph", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Enable Graph-Guided Cluster Routing", "Metric Pruning", NULL, 1},
+        {"ef-cluster", '\0', GRIC_OPT_INT, NULL, 0, "0", "<int>",
+         "Max clusters to evaluate in graph routing", "Metric Pruning", NULL, 0},
+        {"two-hop", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Enable 2-Hop Candidate Injection", "Metric Pruning", NULL, 1},
+        {"two-hop-seeds", '\0', GRIC_OPT_INT, NULL, 0, "2", "<int>",
+         "Number of top seeds to expand in 2-hop search", "Metric Pruning", NULL, 0},
+        {"two-hop-max", '\0', GRIC_OPT_INT, NULL, 0, "32", "<int>",
+         "Max 2-hop candidates evaluated per query", "Metric Pruning", NULL, 0},
+
+        /* Quantization & FastScan */
+        {"rq8", '\0', GRIC_OPT_CUSTOM, (void *)cb_rq8, 0, "0", NULL,
+         "Residual Quantization (8-bit)", "Quantization", NULL, 1},
+        {"rq8-adc", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Asymmetric Distance Computation for RQ8", "Quantization", NULL, 1},
+        {"rq8-sparse", '\0', GRIC_OPT_CUSTOM, (void *)cb_rq8_sparse, 0, "1", NULL,
+         "Sparse on-demand FastScan for RQ8", "Quantization", "rq8-fastscan", 1},
+        {"rq8-save", '\0', GRIC_OPT_CUSTOM, (void *)cb_rq8_save, 0, "", "<path>",
+         "Save computed RQ8 codebook and codes", "Quantization", NULL, 0},
+        {"rq8-load", '\0', GRIC_OPT_CUSTOM, (void *)cb_rq8_load, 0, "", "<path>",
+         "Load precomputed RQ8 codes", "Quantization", NULL, 0},
+        {"rq8-approx", '\0', GRIC_OPT_CUSTOM, (void *)cb_rq8_approx, 0, "0", NULL,
+         "Approximate non-bounding distance mode for RQ8", "Quantization", NULL, 0},
+        {"e8-quant", '\0', GRIC_OPT_CUSTOM, (void *)cb_e8_quant, 0, "0", NULL,
+         "E8 Gosset lattice quantization", "Quantization", "rq8-e8,e8", 0},
+        {"e8-graph", '\0', GRIC_OPT_CUSTOM, (void *)cb_e8_graph, 0, "0", NULL,
+         "E8 proximity graph routing", "Quantization", NULL, 0},
+        {"sq8", '\0', GRIC_OPT_CUSTOM, (void *)cb_sq8, 0, "0", NULL,
+         "Scalar 8-bit quantization", "Quantization", NULL, 1},
+        {"sq8-save", '\0', GRIC_OPT_CUSTOM, (void *)cb_sq8_save, 0, "", "<path>",
+         "Save SQ8 quantized codes", "Quantization", NULL, 0},
+        {"sq8-load", '\0', GRIC_OPT_CUSTOM, (void *)cb_sq8_load, 0, "", "<path>",
+         "Load precomputed SQ8 codes", "Quantization", NULL, 0},
+        {"sq8-approx", '\0', GRIC_OPT_CUSTOM, (void *)cb_sq8_approx, 0, "0", NULL,
+         "Enable approximate lower bound in SQ8", "Quantization", NULL, 0},
+        {"sq16", '\0', GRIC_OPT_CUSTOM, (void *)cb_sq16, 0, "auto", NULL,
+         "Scalar 16-bit quantization", "Quantization", NULL, 1},
+        {"sq16-sparse", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "On-demand FastScan block transpose", "Quantization", NULL, 1},
+        {"sq16-sparse-lru", '\0', GRIC_OPT_FLAG, NULL, 0, "0", NULL,
+         "LRU Transposed FastScan cache", "Quantization", NULL, 1},
+        {"sq16-save", '\0', GRIC_OPT_CUSTOM, (void *)cb_sq16_save, 0, "", "<path>",
+         "Save SQ16 quantized codes", "Quantization", NULL, 0},
+        {"sq16-load", '\0', GRIC_OPT_CUSTOM, (void *)cb_sq16_load, 0, "", "<path>",
+         "Load precomputed SQ16 codes", "Quantization", NULL, 0},
+        {"sq16-approx", '\0', GRIC_OPT_CUSTOM, (void *)cb_sq16_approx, 0, "0", NULL,
+         "Enable approximate lower bound in SQ16", "Quantization", NULL, 0},
+        {"sq16-ratio", '\0', GRIC_OPT_DOUBLE, NULL, 0, "0.05", "<ratio>",
+         "Scale ratio bound for SQ16", "Quantization", NULL, 0},
+        {"eq16", '\0', GRIC_OPT_CUSTOM, (void *)cb_eq16, 0, "auto", NULL,
+         "Exact 16-bit block lattice quantization", "Quantization", NULL, 1},
+        {"eq16-adc", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Asymmetric distance computation for EQ16", "Quantization", NULL, 1},
+        {"eq16-sparse", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "SparseCache for EQ16", "Quantization", NULL, 1},
+        {"eq16-save", '\0', GRIC_OPT_CUSTOM, (void *)cb_eq16_save, 0, "", "<path>",
+         "Save EQ16 quantized codes", "Quantization", NULL, 0},
+        {"eq16-load", '\0', GRIC_OPT_CUSTOM, (void *)cb_eq16_load, 0, "", "<path>",
+         "Load precomputed EQ16 codes", "Quantization", NULL, 0},
+        {"eq16-approx", '\0', GRIC_OPT_CUSTOM, (void *)cb_eq16_approx, 0, "0", NULL,
+         "Enable approximate lower bound in EQ16", "Quantization", NULL, 0},
+        {"eq16-ratio", '\0', GRIC_OPT_DOUBLE, NULL, 0, "0.05", "<ratio>",
+         "Scale ratio bound for EQ16", "Quantization", NULL, 0},
+        {"rabitq", '\0', GRIC_OPT_CUSTOM, (void *)cb_rabitq, 0, "0", NULL,
+         "RaBitQ randomized bit quantization", "Quantization", NULL, 1},
+        {"rabitq-bits", '\0', GRIC_OPT_INT, NULL, 0, "2", "<int>",
+         "RaBitQ bits per dimension", "Quantization", NULL, 0},
+        {"rabitq-save", '\0', GRIC_OPT_CUSTOM, (void *)cb_rabitq_save, 0, "", "<path>",
+         "Save RaBitQ quantized codes", "Quantization", NULL, 0},
+        {"rabitq-load", '\0', GRIC_OPT_CUSTOM, (void *)cb_rabitq_load, 0, "", "<path>",
+         "Load precomputed RaBitQ codes", "Quantization", NULL, 0},
+        {"rabitq-approx", '\0', GRIC_OPT_CUSTOM, (void *)cb_rabitq_approx, 0, "0", NULL,
+         "Enable approximate lower bound in RaBitQ", "Quantization", NULL, 0},
+        {"dcc-sq16", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Use 16-bit quantized DCC matrix", "Quantization", NULL, 1},
+        {"memo", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Quantized candidate memoization table", "Quantization", "use_memo,nomemo", 1},
+        {"batch-dist", '\0', GRIC_OPT_FLAG, NULL, 0, "1", NULL,
+         "Multi-vector SIMD batching", "Quantization", "batchdist,nobatchdist", 1},
+
+        /* Execution & GPU */
+        {"nthreads", '\0', GRIC_OPT_INT, NULL, 0, "0", "<int>",
+         "Number of OpenMP worker threads", "Execution & GPU", NULL, 0},
+        {"gpu", '\0', GRIC_OPT_CUSTOM, (void *)cb_gpu, 0, "0", NULL,
+         "Enable CUDA GPU acceleration", "Execution & GPU", NULL, 1},
+        {"cpu", '\0', GRIC_OPT_CUSTOM, (void *)cb_cpu, 0, "1", NULL,
+         "Force CPU execution (disable GPU)", "Execution & GPU", NULL, 0},
+        {"gpu-device", '\0', GRIC_OPT_CUSTOM, (void *)cb_gpu_device, 0, "0", "<id>",
+         "Select GPU device ID", "Execution & GPU", NULL, 0},
+        {"gpu-batch-size", '\0', GRIC_OPT_CUSTOM, (void *)cb_gpu_batch_size, 0, "auto", "<size>",
+         "Micro-batch size for GPU queries", "Execution & GPU", "gpu-micro-batch", 0},
+        {"gpu-nprobe", '\0', GRIC_OPT_CUSTOM, (void *)cb_gpu_nprobe, 0, "auto", "<int>",
+         "Max clusters to probe on GPU", "Execution & GPU", "nprobe", 0},
+        {"gpu-bf", '\0', GRIC_OPT_CUSTOM, (void *)cb_gpu_bf, 0, "0", NULL,
+         "Force dense GEMM brute-force on GPU", "Execution & GPU", "gpu-brute-force", 0}
+    };
+
+    size_t count = sizeof(opts) / sizeof(opts[0]);
+
+    if (config != NULL)
+    {
+        for (size_t ii = 0; ii < count; ii++)
+        {
+            const char *name = opts[ii].long_name;
+            if (strcmp(name, "query") == 0)
+                opts[ii].target = &config->query_data_path;
+            else if (strcmp(name, "past") == 0)
+                opts[ii].target = &config->past_only;
+            else if (strcmp(name, "future") == 0)
+                opts[ii].target = &config->future_only;
+            else if (strcmp(name, "eps") == 0)
+                opts[ii].target = &config->epsilon;
+            else if (strcmp(name, "rlim") == 0)
+                opts[ii].target = &config->rlim_cutoff;
+            else if (strcmp(name, "double") == 0)
+                opts[ii].target = &config->use_double;
+            else if (strcmp(name, "progress") == 0)
+                opts[ii].target = &config->progress_mode;
+            else if (strcmp(name, "verbose") == 0)
+                opts[ii].target = &config->verbose_level;
+            else if (strcmp(name, "prof") == 0)
+                opts[ii].target = &config->prof_filename;
+            else if (strcmp(name, "no-prof") == 0)
+                opts[ii].target = &config->no_prof;
+            else if (strcmp(name, "no-mutual") == 0)
+                opts[ii].target = &config->no_mutual;
+            else if (strcmp(name, "no-cache") == 0)
+                opts[ii].target = &config->no_cache_dataset;
+            else if (strcmp(name, "multipivot") == 0)
+                opts[ii].target = &config->use_multi_pivot;
+            else if (strcmp(name, "angular") == 0)
+                opts[ii].target = &config->use_angular_bound;
+            else if (strcmp(name, "trajectory") == 0)
+                opts[ii].target = &config->use_trajectory;
+            else if (strcmp(name, "reciprocal") == 0)
+                opts[ii].target = &config->use_reciprocal;
+            else if (strcmp(name, "approx") == 0)
+                opts[ii].target = &config->approx_mode;
+            else if (strcmp(name, "ef-search") == 0)
+                opts[ii].target = &config->ef_search;
+            else if (strcmp(name, "cluster-graph") == 0)
+                opts[ii].target = &config->use_cluster_graph;
+            else if (strcmp(name, "ef-cluster") == 0)
+                opts[ii].target = &config->ef_cluster;
+            else if (strcmp(name, "two-hop") == 0)
+                opts[ii].target = &config->use_two_hop;
+            else if (strcmp(name, "two-hop-seeds") == 0)
+                opts[ii].target = &config->two_hop_seeds;
+            else if (strcmp(name, "two-hop-max") == 0)
+                opts[ii].target = &config->two_hop_max_cands;
+            else if (strcmp(name, "rq8-adc") == 0)
+                opts[ii].target = &config->use_rq8_adc;
+            else if (strcmp(name, "sq16-sparse") == 0)
+                opts[ii].target = &config->use_sq16_sparse;
+            else if (strcmp(name, "sq16-sparse-lru") == 0)
+                opts[ii].target = &config->use_sq16_sparse_lru;
+            else if (strcmp(name, "sq16-ratio") == 0)
+                opts[ii].target = &config->sq16_ratio;
+            else if (strcmp(name, "eq16-adc") == 0)
+                opts[ii].target = &config->use_eq16_adc;
+            else if (strcmp(name, "eq16-sparse") == 0)
+                opts[ii].target = &config->use_eq16_sparse;
+            else if (strcmp(name, "eq16-ratio") == 0)
+                opts[ii].target = &config->eq16_ratio;
+            else if (strcmp(name, "rabitq-bits") == 0)
+                opts[ii].target = &config->rabitq_bits;
+            else if (strcmp(name, "dcc-sq16") == 0)
+                opts[ii].target = &config->use_dcc_sq16;
+            else if (strcmp(name, "memo") == 0)
+                opts[ii].target = &config->use_memo;
+            else if (strcmp(name, "batch-dist") == 0)
+                opts[ii].target = &config->use_batch_dist;
+            else if (strcmp(name, "nthreads") == 0)
+                opts[ii].target = &config->nthreads;
+        }
+    }
+
+    if (nopts != NULL)
+    {
+        *nopts = count;
+    }
+    return opts;
+}
+
 static int knn_cli_parse_positional(
     char       *arg,
     KnnConfig  *config,
@@ -1319,15 +1129,6 @@ static int knn_cli_parse_positional(
     return 0;
 }
 
-/**
- * knn_cli_validate() - Validate consistency of parsed parameters and apply mode adjustments.
- * @config:    Pointer to KnnConfig to validate.
- * @progname:  Name of the program for error output.
- * @k_set:     Flag indicating -k was explicitly passed.
- * @dtmin_set: Flag indicating -dtmin was explicitly passed.
- *
- * Return: 0 on success, 1 on validation error.
- */
 static int knn_cli_validate(
     KnnConfig  *config,
     const char *progname,
@@ -1351,11 +1152,11 @@ static int knn_cli_validate(
     {
         if (!k_set)
         {
-            config->k = 30; // Default k=30 for cross-dataset query mode
+            config->k = 30;
         }
         if (!dtmin_set)
         {
-            config->min_temporal_sep = 0; // Cross-dataset query has no temporal self-exclusion
+            config->min_temporal_sep = 0;
         }
         config->use_reciprocal = 0;
     }
@@ -1368,17 +1169,6 @@ static int knn_cli_validate(
     return 0;
 }
 
-/**
- * knn_cli_parse() - Parse and validate command-line arguments into KnnConfig
- * @argc:   Argument count from main().
- * @argv:   Argument vector from main().
- * @config: Pointer to KnnConfig to initialize and populate.
- *
- * Scans options, dispatches to category parsers (I/O, pruning, quantization, GPU),
- * parses positional arguments, and verifies required parameters.
- *
- * Return: 0 on success, 1 on argument error, or 2 if help was displayed.
- */
 int knn_cli_parse(
     int        argc,
     char     **argv,
@@ -1393,6 +1183,8 @@ int knn_cli_parse(
 
     int k_explicitly_set = 0;
     int dtmin_explicitly_set = 0;
+    size_t nopts = 0;
+    const struct gric_opt *opts = knn_get_options(config, &nopts);
     int arg_idx = 1;
 
     while (arg_idx < argc)
@@ -1403,52 +1195,27 @@ int knn_cli_parse(
             return 2;
         }
 
-        int res = knn_cli_parse_io_opt(argc, argv, &arg_idx, config,
-                                       &k_explicitly_set, &dtmin_explicitly_set);
-        if (res < 0)
+        const char *tok = argv[arg_idx];
+        int res = gric_opt_parse_arg(argc, argv, &arg_idx, opts, nopts, config);
+        if (res == 1)
         {
-            return 1;
-        }
-        if (res > 0)
-        {
-            arg_idx++;
+            if (strncmp(tok, "-k", 2) == 0 || strncmp(tok, "--k", 3) == 0)
+            {
+                k_explicitly_set = 1;
+            }
+            if (strncmp(tok, "-dtmin", 6) == 0 || strncmp(tok, "--dtmin", 7) == 0)
+            {
+                dtmin_explicitly_set = 1;
+            }
             continue;
         }
-
-        res = knn_cli_parse_pruning_opt(argc, argv, &arg_idx, config);
-        if (res < 0)
+        else if (res < 0)
         {
+            knn_cli_print_usage(argv[0]);
             return 1;
         }
-        if (res > 0)
-        {
-            arg_idx++;
-            continue;
-        }
 
-        res = knn_cli_parse_quant_opt(argc, argv, &arg_idx, config);
-        if (res < 0)
-        {
-            return 1;
-        }
-        if (res > 0)
-        {
-            arg_idx++;
-            continue;
-        }
-
-        res = knn_cli_parse_gpu_opt(argc, argv, &arg_idx, config);
-        if (res < 0)
-        {
-            return 1;
-        }
-        if (res > 0)
-        {
-            arg_idx++;
-            continue;
-        }
-
-        if (argv[arg_idx][0] == '-')
+        if (argv[arg_idx][0] == '-' && !isdigit(argv[arg_idx][1]))
         {
             fprintf(stderr, "Error: Unknown option '%s'\n", argv[arg_idx]);
             knn_cli_print_usage(argv[0]);
@@ -1460,18 +1227,11 @@ int knn_cli_parse(
             return 1;
         }
         arg_idx++;
-    } // while (arg_idx < argc)
+    } // while arg_idx
 
     return knn_cli_validate(config, argv[0], k_explicitly_set, dtmin_explicitly_set);
 }
 
-/**
- * knn_cli_print_banner() - Print active configuration parameters
- * @config: Pointer to active KnnConfig.
- *
- * Formats and prints a summary banner of active datasets, search options, pruning
- * bounds, and hardware configuration to standard output.
- */
 void knn_cli_print_banner(
     const KnnConfig *config)
 {
@@ -1570,5 +1330,4 @@ void knn_cli_print_banner(
         }
     }
     printf("\n");
-
 }
