@@ -86,6 +86,15 @@ uint64_t sq8_dist_squared_u8(
     long                    dim);
 
 /**
+ * @brief Compute sum of squared differences between two uint8 vectors with early cutoff.
+ */
+uint64_t sq8_dist_squared_cutoff_u8(
+    const uint8_t *restrict a,
+    const uint8_t *restrict b,
+    long                    dim,
+    uint64_t                ssd_cutoff);
+
+/**
  * @brief Compute dot product between two uint8 vectors using SIMD / AVX-VNNI.
  */
 uint64_t sq8_dot_product_u8(

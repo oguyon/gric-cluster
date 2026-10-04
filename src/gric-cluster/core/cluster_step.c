@@ -148,6 +148,7 @@ static int cluster_step_check_memo_cache(
  * @eq16_adc_cutoff:   Quantization pruning cutoff threshold for EQ16 ADC.
  * @eq16_ssd_thresh:   Quantization pruning threshold for EQ16 SSD.
  * @sq16_ssd_thresh:   Quantization pruning threshold for SQ16 SSD.
+ * @sq8_ssd_thresh:    Quantization pruning threshold for SQ8 SSD.
  * @temp_indices:      Scratch array for cluster evaluation indices.
  * @temp_dists:        Scratch array for cluster evaluation distances.
  * @temp_count:        In/out pointer to number of evaluated distances.
@@ -174,6 +175,7 @@ static int cluster_step_check_predictions(
     float          eq16_adc_cutoff,
     uint64_t       eq16_ssd_thresh,
     uint64_t       sq16_ssd_thresh,
+    uint64_t       sq8_ssd_thresh,
     int           *temp_indices,
     double        *temp_dists,
     int           *temp_count,
@@ -194,7 +196,8 @@ static int cluster_step_check_predictions(
         if (cluster_candidate_is_pruned_by_quant(cj, config, state,
                                                  eq16_adc_cutoff,
                                                  eq16_ssd_thresh,
-                                                 sq16_ssd_thresh))
+                                                 sq16_ssd_thresh,
+                                                 sq8_ssd_thresh))
         {
             continue;
         }
@@ -239,6 +242,7 @@ static int cluster_step_check_predictions(
  * @eq16_adc_cutoff:       Quantization pruning cutoff threshold for EQ16 ADC.
  * @eq16_ssd_thresh:       Quantization pruning threshold for EQ16 SSD.
  * @sq16_ssd_thresh:       Quantization pruning threshold for SQ16 SSD.
+ * @sq8_ssd_thresh:        Quantization pruning threshold for SQ8 SSD.
  * @temp_indices:          Scratch array for cluster evaluation indices.
  * @temp_dists:            Scratch array for cluster evaluation distances.
  * @temp_count:            In/out pointer to number of evaluated distances.
@@ -268,6 +272,7 @@ static int cluster_step_search_loop(
     float          eq16_adc_cutoff,
     uint64_t       eq16_ssd_thresh,
     uint64_t       sq16_ssd_thresh,
+    uint64_t       sq8_ssd_thresh,
     int           *temp_indices,
     double        *temp_dists,
     int           *temp_count,
@@ -347,14 +352,16 @@ static int cluster_step_search_loop(
                 need_prune_update = 0;
 
                 cluster_quant_filter_subsequent(config, state, eq16_adc_cutoff,
-                                                eq16_ssd_thresh, sq16_ssd_thresh);
+                                                eq16_ssd_thresh, sq16_ssd_thresh,
+                                                sq8_ssd_thresh);
             }
             else
             {
                 cluster_quant_filter_initial(config, state, sorting_candidates,
                                              prev_assigned_cluster, fast_eq16, fast_sq16,
                                              eq16_adc_cutoff, eq16_ssd_thresh,
-                                             sq16_ssd_thresh, step_start);
+                                             sq16_ssd_thresh, sq8_ssd_thresh,
+                                             step_start);
             }
 
             clock_gettime(CLOCK_MONOTONIC, &step_end);
@@ -446,7 +453,8 @@ static int cluster_step_search_loop(
         if (cluster_candidate_is_pruned_by_quant(cj, config, state,
                                                  eq16_adc_cutoff,
                                                  eq16_ssd_thresh,
-                                                 sq16_ssd_thresh))
+                                                 sq16_ssd_thresh,
+                                                 sq8_ssd_thresh))
         {
             continue;
         }
@@ -667,8 +675,10 @@ int cluster_frame(
         float    eq16_adc_cutoff = 0.0f;
         uint64_t eq16_ssd_thresh = 0;
         uint64_t sq16_ssd_thresh = 0;
+        uint64_t sq8_ssd_thresh = 0;
         cluster_compute_quant_thresholds(config, &eq16_adc_cutoff,
-                                         &eq16_ssd_thresh, &sq16_ssd_thresh);
+                                         &eq16_ssd_thresh, &sq16_ssd_thresh,
+                                         &sq8_ssd_thresh);
 
         if (((config->optim.use_eq16 && state->current_frame_eq16 != NULL) ||
              (config->optim.use_sq16 && state->current_frame_sq16 != NULL)) &&
@@ -690,6 +700,7 @@ int cluster_frame(
                                                    eq16_adc_cutoff,
                                                    eq16_ssd_thresh,
                                                    sq16_ssd_thresh,
+                                                   sq8_ssd_thresh,
                                                    temp_indices, temp_dists, &temp_count,
                                                    &meas_idx, &last_cj, &dfc,
                                                    &need_prune_update,
@@ -705,6 +716,7 @@ int cluster_frame(
                                              eq16_adc_cutoff,
                                              eq16_ssd_thresh,
                                              sq16_ssd_thresh,
+                                             sq8_ssd_thresh,
                                              temp_indices, temp_dists, &temp_count,
                                              sorting_candidates, verbose_candidates,
                                              meas_idx, last_cj, dfc, need_prune_update,
