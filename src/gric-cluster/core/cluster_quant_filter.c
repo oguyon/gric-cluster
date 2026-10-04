@@ -80,6 +80,25 @@ void cluster_compute_quant_thresholds(
 }
 
 /**
+ * quant_prune_candidate() - Remove a candidate dismissed by a quantization lower bound.
+ * @state: Pointer to clustering state.
+ * @cj:    Cluster index to remove from the active set.
+ *
+ * Clears the membership flag and the entropy-mode posterior of @cj, as every other pruning
+ * site does. Leaving entropy_p_current[cj] non-zero lets the entropy selector pick the
+ * already-pruned cluster again, which made the search loop spin forever (-entropy with
+ * SQ8/SQ16/EQ16 prefilters).
+ */
+static void quant_prune_candidate(
+    ClusterState *state,
+    int           cj)
+{
+    state->telemetry.clusters_pruned++;
+    state->scratch.clmembflag[cj] = 0;
+    state->scratch.entropy_p_current[cj] = 0.0;
+}
+
+/**
  * cluster_candidate_is_pruned_by_quant() - Fast metric lower-bound test for a candidate.
  * @cj:              Cluster index to test.
  * @config:          Pointer to clustering configuration.
@@ -132,8 +151,7 @@ int cluster_candidate_is_pruned_by_quant(
         if (is_pruned)
         {
             state->telemetry.eq16_pruned++;
-            state->telemetry.clusters_pruned++;
-            state->scratch.clmembflag[cj] = 0;
+            quant_prune_candidate(state, cj);
             return 1;
         }
     }
@@ -151,8 +169,7 @@ int cluster_candidate_is_pruned_by_quant(
         if (ssd > sq16_ssd_thresh)
         {
             state->telemetry.sq16_pruned++;
-            state->telemetry.clusters_pruned++;
-            state->scratch.clmembflag[cj] = 0;
+            quant_prune_candidate(state, cj);
             return 1;
         }
     }
@@ -170,8 +187,7 @@ int cluster_candidate_is_pruned_by_quant(
         if (d_lb > config->algo.rlim)
         {
             state->telemetry.sq8_pruned++;
-            state->telemetry.clusters_pruned++;
-            state->scratch.clmembflag[cj] = 0;
+            quant_prune_candidate(state, cj);
             return 1;
         }
     }

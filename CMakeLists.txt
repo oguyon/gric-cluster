@@ -895,6 +895,16 @@ endif()
 add_test(NAME test_benchmark_smoke
     COMMAND gric-benchmark -p 2Dspiral -n 500)
 
+# -entropy with quantized prefilters (SQ8 is on by default). This 20-frame sample used to make
+# the search loop spin forever on a cluster already dismissed by the prefilter.
+foreach(prefilter sq8 sq16 eq16)
+    add_test(NAME test_entropy_${prefilter}_terminates
+        COMMAND gric-cluster -no-prof -entropy -${prefilter}
+                -outdir /tmp/ctest_entropy_${prefilter}_out 0.02
+                "${CMAKE_SOURCE_DIR}/tests/test_entropy_spiral20.txt")
+    set_tests_properties(test_entropy_${prefilter}_terminates PROPERTIES TIMEOUT 20)
+endforeach()
+
 add_executable(test_pass2_reassign tests/test_pass2_reassign.c)
 target_link_libraries(test_pass2_reassign m)
 add_test(NAME test_pass2_reassign
