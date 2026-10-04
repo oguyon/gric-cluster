@@ -228,11 +228,14 @@ void knn_search_cross_dataset_frame(
             long seed_0 = (long)best_cl->members[mid].frame_id;
             if (!knn_visited_check_and_mark(visited, seed_0))
             {
-                if (knn_reader_read_frame(cand_reader, seed_0, cand_buffer) == 0)
+                const void *cand_data = knn_reader_get_frame_ptr(
+                    cand_reader, seed_0, cand_buffer
+                );
+                if (cand_data != NULL)
                 {
                     telem->framedist_calls++;
                     double d0 = compute_euclidean_distance(
-                        query_data, cand_buffer, frame_elem, model->is_double
+                        query_data, cand_data, frame_elem, model->is_double
                     );
                     if (config->rlim_cutoff <= 0.0 || d0 <= config->rlim_cutoff)
                     {
@@ -261,11 +264,14 @@ void knn_search_cross_dataset_frame(
         {
             long seed_0 = (long)best_cl->members[0].frame_id;
             knn_visited_check_and_mark(visited, seed_0);
-            if (knn_reader_read_frame(cand_reader, seed_0, cand_buffer) == 0)
+            const void *cand_data = knn_reader_get_frame_ptr(
+                cand_reader, seed_0, cand_buffer
+            );
+            if (cand_data != NULL)
             {
                 telem->framedist_calls++;
                 double d0 = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem, model->is_double
+                    query_data, cand_data, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d0 <= config->rlim_cutoff)
                 {
@@ -290,11 +296,14 @@ void knn_search_cross_dataset_frame(
         long prev_seed = tracker->prev_best_seed;
         if (!knn_visited_check_and_mark(visited, prev_seed))
         {
-            if (knn_reader_read_frame(cand_reader, prev_seed, cand_buffer) == 0)
+            const void *cand_data = knn_reader_get_frame_ptr(
+                cand_reader, prev_seed, cand_buffer
+            );
+            if (cand_data != NULL)
             {
                 telem->framedist_calls++;
                 double d_prev = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem, model->is_double
+                    query_data, cand_data, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d_prev <= config->rlim_cutoff)
                 {

@@ -120,12 +120,15 @@ void knn_cross_seed_frontier(
                             continue;
                         }
 
-                        if (knn_reader_read_frame(cand_reader, s_frame, cand_buffer) == 0)
+                        const void *cand_data = knn_reader_get_frame_ptr(
+                            cand_reader, s_frame, cand_buffer
+                        );
+                        if (cand_data != NULL)
                         {
                             telem->framedist_calls++;
                             telem->graph_seeds_evaluated++;
                             double d = compute_euclidean_distance(
-                                query_data, cand_buffer, frame_elem, model->is_double
+                                query_data, cand_data, frame_elem, model->is_double
                             );
                             if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                             {
@@ -337,12 +340,15 @@ void knn_greedy_route_to_basin(
 
             knn_visited_mark(visited, nb_id);
 
-            if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
+            const void *cand_data = knn_reader_get_frame_ptr(
+                cand_reader, nb_id, cand_buffer
+            );
+            if (cand_data != NULL)
             {
                 telem->framedist_calls++;
                 telem->graph_seeds_evaluated++;
                 double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem, model->is_double
+                    query_data, cand_data, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
@@ -610,12 +616,15 @@ void knn_direct_basin_expansion(
             continue;
         }
 
-        if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
+        const void *cand_data = knn_reader_get_frame_ptr(
+            cand_reader, nb_id, cand_buffer
+        );
+        if (cand_data != NULL)
         {
             telem->framedist_calls++;
             telem->graph_seeds_evaluated++;
             double d = compute_euclidean_distance(
-                query_data, cand_buffer, frame_elem, model->is_double
+                query_data, cand_data, frame_elem, model->is_double
             );
             if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
             {
@@ -898,12 +907,15 @@ void knn_direct_basin_expansion(
                     continue;
                 }
 
-                if (knn_reader_read_frame(cand_reader, nb2, cand_buffer) == 0)
+                const void *cand_data = knn_reader_get_frame_ptr(
+                    cand_reader, nb2, cand_buffer
+                );
+                if (cand_data != NULL)
                 {
                     telem->framedist_calls++;
                     telem->graph_seeds_evaluated++;
                     double d2 = compute_euclidean_distance(
-                        query_data, cand_buffer, frame_elem, model->is_double
+                        query_data, cand_data, frame_elem, model->is_double
                     );
                     if (config->rlim_cutoff <= 0.0 || d2 <= config->rlim_cutoff)
                     {
@@ -1201,12 +1213,15 @@ int knn_cross_explore_graph_frontier(
                 continue;
             }
 
-            if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
+            const void *cand_data = knn_reader_get_frame_ptr(
+                cand_reader, nb_id, cand_buffer
+            );
+            if (cand_data != NULL)
             {
                 telem->framedist_calls++;
                 telem->graph_seeds_evaluated++;
                 double d = compute_euclidean_distance(
-                    query_data, cand_buffer, frame_elem, model->is_double
+                    query_data, cand_data, frame_elem, model->is_double
                 );
                 if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                 {
@@ -1378,12 +1393,15 @@ int knn_cross_explore_graph_frontier(
                     continue;
                 }
 
-                if (knn_reader_read_frame(cand_reader, nb_id, cand_buffer) == 0)
+                const void *cand_data = knn_reader_get_frame_ptr(
+                    cand_reader, nb_id, cand_buffer
+                );
+                if (cand_data != NULL)
                 {
                     telem->framedist_calls++;
                     telem->graph_seeds_evaluated++;
                     double d = compute_euclidean_distance(
-                        query_data, cand_buffer, frame_elem, model->is_double
+                        query_data, cand_data, frame_elem, model->is_double
                     );
                     if (config->rlim_cutoff <= 0.0 || d <= config->rlim_cutoff)
                     {
