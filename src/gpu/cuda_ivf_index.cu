@@ -25,16 +25,23 @@
 
 /**
  * gpu_ivf_index_create() - Build GPU inverted-file index from active KnnModel.
- * @model:     Pointer to active KnnModel with clusters and dataset buffer.
+ * @model:     Pointer to active KnnModel with clusters.
+ * @frames:    Resident dataset frames (model->is_double selects double or float elements).
  * @device_id: GPU device index (0 for default).
  *
- * Return: Pointer to allocated GpuIvfIndex on success, NULL on error.
+ * Member vectors are copied from @frames in cluster order. Without resident frames the index
+ * cannot be built: earlier versions zero-filled the vectors, which made every exact distance
+ * on the GPU wrong while the run still reported success.
+ *
+ * Return: Pointer to allocated GpuIvfIndex on success, NULL on error or if @frames is NULL.
  */
 GpuIvfIndex *gpu_ivf_index_create(
     const KnnModel *model,
+    const void     *frames,
     int             device_id)
 {
-    if (model == NULL || model->num_clusters <= 0 || model->frame_elements <= 0)
+    if (model == NULL || frames == NULL || model->num_clusters <= 0 ||
+        model->frame_elements <= 0)
     {
         return NULL;
     }
@@ -108,27 +115,18 @@ GpuIvfIndex *gpu_ivf_index_create(
 
             float *dst = h_vectors_ivf + (size_t)(off + j) * (size_t)D;
 
-            if (model->dataset_buffer != NULL)
+            if (model->is_double)
             {
-                if (model->is_double)
+                const double *src = (const double *)frames + (size_t)fid * (size_t)D;
+                for (int d = 0; d < D; d++)
                 {
-                    const double *src = (const double *)model->dataset_buffer +
-                                        (size_t)fid * (size_t)D;
-                    for (int d = 0; d < D; d++)
-                    {
-                        dst[d] = (float)src[d];
-                    }
-                }
-                else
-                {
-                    const float *src = (const float *)model->dataset_buffer +
-                                       (size_t)fid * (size_t)D;
-                    memcpy(dst, src, (size_t)D * sizeof(float));
+                    dst[d] = (float)src[d];
                 }
             }
             else
             {
-                memset(dst, 0, (size_t)D * sizeof(float));
+                const float *src = (const float *)frames + (size_t)fid * (size_t)D;
+                memcpy(dst, src, (size_t)D * sizeof(float));
             }
         }
     } // for (int c = 0; ...)

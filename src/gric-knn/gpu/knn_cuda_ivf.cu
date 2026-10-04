@@ -938,6 +938,19 @@ int knn_cuda_run_ivf_search(
     int K = model->num_clusters;
     long D = model->frame_elements;
 
+    /* The IVF index and the self-query batches need the dataset in RAM: either the CLI cache
+     * (dataset_buffer) or an in-memory dataset supplied by the caller (memory_data, e.g. the FPS
+     * daemons). Otherwise decline; the caller falls back to the brute-force engine, which can
+     * stream frames from the input file. */
+    const void *frames = (model->dataset_buffer != NULL) ? model->dataset_buffer
+                                                         : config->memory_data;
+    if (frames == NULL)
+    {
+        fprintf(stderr, "Note: GPU IVF engine needs the dataset in memory "
+                        "(not cached: -no-mem/-no-cache or larger than 2 GB).\n");
+        return -1;
+    }
+
     /* Allocate host results if not pre-allocated */
     int allocated_results = 0;
     results->num_queries = N_query;
@@ -998,7 +1011,7 @@ int knn_cuda_run_ivf_search(
     clock_gettime(CLOCK_MONOTONIC, &start_time);
 
     /* Step 1: Build GPU Inverted Index */
-    ivf_idx = gpu_ivf_index_create(model, config->gpu_device_id);
+    ivf_idx = gpu_ivf_index_create(model, frames, config->gpu_device_id);
     if (ivf_idx == NULL)
     {
         goto cleanup;
@@ -1105,12 +1118,11 @@ int knn_cuda_run_ivf_search(
         int cur_Bq = (int)((q_start + B_q_max <= N_query) ? B_q_max : (N_query - q_start));
 
         /* Ingest query batch */
-        if (!is_cross_dataset && model->dataset_buffer != NULL)
+        if (!is_cross_dataset)
         {
             if (model->is_double)
             {
-                const double *src = (const double *)model->dataset_buffer +
-                                    (size_t)q_start * (size_t)D;
+                const double *src = (const double *)frames + (size_t)q_start * (size_t)D;
                 for (size_t i = 0; i < (size_t)cur_Bq * (size_t)D; i++)
                 {
                     host_query_batch[i] = (float)src[i];
@@ -1118,8 +1130,7 @@ int knn_cuda_run_ivf_search(
             }
             else
             {
-                const float *src = (const float *)model->dataset_buffer +
-                                   (size_t)q_start * (size_t)D;
+                const float *src = (const float *)frames + (size_t)q_start * (size_t)D;
                 memcpy(host_query_batch, src, (size_t)cur_Bq * (size_t)D * sizeof(float));
             }
         }
