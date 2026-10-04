@@ -645,7 +645,60 @@ static inline uint32_t sq16_fastscan_32x_generic_avx512(
     __m512i sum_lo = _mm512_setzero_si512();
     __m512i sum_hi = _mm512_setzero_si512();
 
-    for (long d = 0; d < dim; d++)
+    long d = 0;
+    for (; d <= dim - 2; d += 2)
+    {
+        const int16_t *cd0_ptr = block_coords + d * 32;
+        const int16_t *cd1_ptr = block_coords + (d + 1) * 32;
+
+        __m256i c0_d = _mm256_loadu_si256((const __m256i *)(const void *)cd0_ptr);
+        __m256i c0_d1 = _mm256_loadu_si256((const __m256i *)(const void *)cd1_ptr);
+        __m256i p0_lo = _mm256_unpacklo_epi16(c0_d, c0_d1);
+        __m256i p0_hi = _mm256_unpackhi_epi16(c0_d, c0_d1);
+        __m256i cand0_7 = _mm256_permute2x128_si256(p0_lo, p0_hi, 0x20);
+        __m256i cand8_15 = _mm256_permute2x128_si256(p0_lo, p0_hi, 0x31);
+        __m512i cand0_15 = _mm512_inserti64x4(
+            _mm512_castsi256_si512(cand0_7), cand8_15, 1
+        );
+
+        __m256i c1_d = _mm256_loadu_si256((const __m256i *)(const void *)(cd0_ptr + 16));
+        __m256i c1_d1 = _mm256_loadu_si256((const __m256i *)(const void *)(cd1_ptr + 16));
+        __m256i p1_lo = _mm256_unpacklo_epi16(c1_d, c1_d1);
+        __m256i p1_hi = _mm256_unpackhi_epi16(c1_d, c1_d1);
+        __m256i cand16_23 = _mm256_permute2x128_si256(p1_lo, p1_hi, 0x20);
+        __m256i cand24_31 = _mm256_permute2x128_si256(p1_lo, p1_hi, 0x31);
+        __m512i cand16_31 = _mm512_inserti64x4(
+            _mm512_castsi256_si512(cand16_23), cand24_31, 1
+        );
+
+        int32_t q_pair = (int32_t)((uint16_t)query_sq16[d] |
+                                  ((uint32_t)(uint16_t)query_sq16[d + 1] << 16));
+        __m512i v_qpair = _mm512_set1_epi32(q_pair);
+
+        __m512i diff0 = _mm512_sub_epi16(v_qpair, cand0_15);
+        __m512i diff1 = _mm512_sub_epi16(v_qpair, cand16_31);
+
+        sum_lo = _mm512_add_epi32(sum_lo, _mm512_madd_epi16(diff0, diff0));
+        sum_hi = _mm512_add_epi32(sum_hi, _mm512_madd_epi16(diff1, diff1));
+
+        if (d + 2 < dim)
+        {
+            sum_lo = _mm512_min_epu32(sum_lo, v_clamp);
+            sum_hi = _mm512_min_epu32(sum_hi, v_clamp);
+
+            if (((d + 2) & 15) == 0)
+            {
+                __mmask16 p_lo = _mm512_cmple_epu32_mask(sum_lo, v_cut_u);
+                __mmask16 p_hi = _mm512_cmple_epu32_mask(sum_hi, v_cut_u);
+                if ((p_lo | p_hi) == 0)
+                {
+                    return 0;
+                }
+            } // if (((d + 2) & 15) == 0)
+        }
+    } // for (; d <= dim - 2; d += 2)
+
+    if (d < dim)
     {
         __m512i qd = _mm512_set1_epi16(query_sq16[d]);
         __m512i cd = _mm512_loadu_si512((const void *)(block_coords + d * 32));
@@ -656,23 +709,7 @@ static inline uint32_t sq16_fastscan_32x_generic_avx512(
 
         sum_lo = _mm512_add_epi32(sum_lo, _mm512_mullo_epi32(d_lo, d_lo));
         sum_hi = _mm512_add_epi32(sum_hi, _mm512_mullo_epi32(d_hi, d_hi));
-
-        if ((d & 1) == 1 && d + 1 < dim)
-        {
-            sum_lo = _mm512_min_epu32(sum_lo, v_clamp);
-            sum_hi = _mm512_min_epu32(sum_hi, v_clamp);
-
-            if (((d + 1) & 15) == 0)
-            {
-                __mmask16 p_lo = _mm512_cmple_epu32_mask(sum_lo, v_cut_u);
-                __mmask16 p_hi = _mm512_cmple_epu32_mask(sum_hi, v_cut_u);
-                if ((p_lo | p_hi) == 0)
-                {
-                    return 0;
-                }
-            } // if (((d + 1) & 15) == 0)
-        }
-    } // for (long d = 0; d < dim; d++)
+    } // if (d < dim)
 
     __mmask16 pass_lo = _mm512_cmple_epu32_mask(sum_lo, v_cut_u);
     __mmask16 pass_hi = _mm512_cmple_epu32_mask(sum_hi, v_cut_u);

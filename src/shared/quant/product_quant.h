@@ -396,6 +396,7 @@ static inline GRIC_ATTR_PURE uint32_t pq_fastscan_32x_avx512(
     uint8_t                 cutoff_u8)
 {
     __m256i acc = _mm256_setzero_si256();
+    __m256i v_cutoff = _mm256_set1_epi8((int8_t)cutoff_u8);
 
     for (int s = 0; s < m; s++)
     {
@@ -406,9 +407,16 @@ static inline GRIC_ATTR_PURE uint32_t pq_fastscan_32x_avx512(
         );
         __m256i looked_up = _mm256_shuffle_epi8(lut256, codes);
         acc = _mm256_adds_epu8(acc, looked_up);
+
+        if (((s + 1) & 15) == 0 && s + 1 < m)
+        {
+            if (_mm256_cmple_epu8_mask(acc, v_cutoff) == 0)
+            {
+                return 0;
+            }
+        }
     } // for (int s = 0; s < m; s++)
 
-    __m256i v_cutoff = _mm256_set1_epi8((int8_t)cutoff_u8);
     __mmask32 pass = _mm256_cmple_epu8_mask(acc, v_cutoff);
     return (uint32_t)pass;
 }
@@ -430,6 +438,7 @@ static inline GRIC_ATTR_PURE uint64_t pq_fastscan_64x_avx512(
     uint8_t                 cutoff_u8)
 {
     __m512i acc = _mm512_setzero_si512();
+    __m512i v_cutoff = _mm512_set1_epi8((int8_t)cutoff_u8);
 
     for (int s = 0; s < m; s++)
     {
@@ -438,9 +447,16 @@ static inline GRIC_ATTR_PURE uint64_t pq_fastscan_64x_avx512(
         __m512i codes = _mm512_loadu_si512((const void *)(block_codes + s * 64));
         __m512i looked_up = _mm512_shuffle_epi8(lut512, codes);
         acc = _mm512_adds_epu8(acc, looked_up);
+
+        if (((s + 1) & 15) == 0 && s + 1 < m)
+        {
+            if (_mm512_cmple_epu8_mask(acc, v_cutoff) == 0)
+            {
+                return 0;
+            }
+        }
     } // for (int s = 0; s < m; s++)
 
-    __m512i v_cutoff = _mm512_set1_epi8((int8_t)cutoff_u8);
     __mmask64 pass = _mm512_cmple_epu8_mask(acc, v_cutoff);
     return (uint64_t)pass;
 }

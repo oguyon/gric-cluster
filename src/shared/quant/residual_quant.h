@@ -866,13 +866,56 @@ static inline uint32_t rq8_fastscan_32x_generic_avx512(
 
     __m512i acc0 = _mm512_setzero_si512();
     __m512i acc1 = _mm512_setzero_si512();
-    __m512i acc2 = _mm512_setzero_si512();
-    __m512i acc3 = _mm512_setzero_si512();
 
-    for (long d = 0; d < dim; d++)
+    long d = 0;
+    for (; d <= dim - 2; d += 2)
     {
-        __m128i b0 = _mm_loadu_si128((const __m128i *)(const void *)(block_coords + d * 32));
-        __m128i b1 = _mm_loadu_si128((const __m128i *)(const void *)(block_coords + d * 32 + 16));
+        __m256i v_d0 = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(block_coords + d * 32)
+        );
+        __m256i v_d1 = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(block_coords + (d + 1) * 32)
+        );
+
+        __m256i pair_lo = _mm256_unpacklo_epi8(v_d0, v_d1);
+        __m256i pair_hi = _mm256_unpackhi_epi8(v_d0, v_d1);
+
+        __m256i p0 = _mm256_permute2x128_si256(pair_lo, pair_hi, 0x20);
+        __m256i p1 = _mm256_permute2x128_si256(pair_lo, pair_hi, 0x31);
+
+        __m512i cand0_15 = _mm512_cvtepi8_epi16(p0);
+        __m512i cand16_31 = _mm512_cvtepi8_epi16(p1);
+
+        int16_t q0 = query_res[d];
+        int16_t q1 = query_res[d + 1];
+        int32_t q_pair = (int32_t)((uint16_t)q0 | ((uint32_t)(uint16_t)q1 << 16));
+        __m512i vq = _mm512_set1_epi32(q_pair);
+
+        __m512i diff0 = _mm512_sub_epi16(vq, cand0_15);
+        __m512i diff1 = _mm512_sub_epi16(vq, cand16_31);
+
+        acc0 = _mm512_add_epi32(acc0, _mm512_madd_epi16(diff0, diff0));
+        acc1 = _mm512_add_epi32(acc1, _mm512_madd_epi16(diff1, diff1));
+
+        if (d == 30 || d == 62 || d == 126 || d == 254)
+        {
+            __m512i vcut = _mm512_set1_epi32((int32_t)(uint32_t)ssd_cutoff);
+            __mmask16 m0 = _mm512_cmple_epu32_mask(acc0, vcut);
+            __mmask16 m1 = _mm512_cmple_epu32_mask(acc1, vcut);
+            if ((m0 | m1) == 0)
+            {
+                return 0;
+            }
+        }
+    } // for (; d <= dim - 2; d += 2)
+
+    if (d < dim)
+    {
+        __m256i v_d0 = _mm256_loadu_si256(
+            (const __m256i *)(const void *)(block_coords + d * 32)
+        );
+        __m128i b0 = _mm256_castsi256_si128(v_d0);
+        __m128i b1 = _mm256_extracti128_si256(v_d0, 1);
 
         __m512i c0 = _mm512_cvtepi8_epi32(b0);
         __m512i c1 = _mm512_cvtepi8_epi32(b1);
@@ -881,37 +924,15 @@ static inline uint32_t rq8_fastscan_32x_generic_avx512(
         __m512i diff0 = _mm512_sub_epi32(vq, c0);
         __m512i diff1 = _mm512_sub_epi32(vq, c1);
 
-        __m512i p0 = _mm512_mullo_epi32(diff0, diff0);
-        __m512i p1 = _mm512_mullo_epi32(diff1, diff1);
+        acc0 = _mm512_add_epi32(acc0, _mm512_mullo_epi32(diff0, diff0));
+        acc1 = _mm512_add_epi32(acc1, _mm512_mullo_epi32(diff1, diff1));
+    } // if (d < dim)
 
-        acc0 = _mm512_add_epi64(acc0, _mm512_cvtepu32_epi64(_mm512_castsi512_si256(p0)));
-        acc1 = _mm512_add_epi64(acc1,
-                                _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(p0, 1)));
-        acc2 = _mm512_add_epi64(acc2, _mm512_cvtepu32_epi64(_mm512_castsi512_si256(p1)));
-        acc3 = _mm512_add_epi64(acc3,
-                                _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(p1, 1)));
+    __m512i vcut = _mm512_set1_epi32((int32_t)(uint32_t)ssd_cutoff);
+    __mmask16 m0 = _mm512_cmple_epu32_mask(acc0, vcut);
+    __mmask16 m1 = _mm512_cmple_epu32_mask(acc1, vcut);
 
-        if (d == 31 || d == 63 || d == 127 || d == 255)
-        {
-            __m512i v_cut = _mm512_set1_epi64((int64_t)ssd_cutoff);
-            __mmask8 m0 = _mm512_cmple_epu64_mask(acc0, v_cut);
-            __mmask8 m1 = _mm512_cmple_epu64_mask(acc1, v_cut);
-            __mmask8 m2 = _mm512_cmple_epu64_mask(acc2, v_cut);
-            __mmask8 m3 = _mm512_cmple_epu64_mask(acc3, v_cut);
-            if ((m0 | m1 | m2 | m3) == 0)
-            {
-                return 0;
-            }
-        }
-    } // for (long d = 0; d < dim; d++)
-
-    __m512i v_cut = _mm512_set1_epi64((int64_t)ssd_cutoff);
-    __mmask8 m0 = _mm512_cmple_epu64_mask(acc0, v_cut);
-    __mmask8 m1 = _mm512_cmple_epu64_mask(acc1, v_cut);
-    __mmask8 m2 = _mm512_cmple_epu64_mask(acc2, v_cut);
-    __mmask8 m3 = _mm512_cmple_epu64_mask(acc3, v_cut);
-
-    return (uint32_t)m0 | ((uint32_t)m1 << 8) | ((uint32_t)m2 << 16) | ((uint32_t)m3 << 24);
+    return (uint32_t)m0 | ((uint32_t)m1 << 16);
 }
 #endif // GRIC_HAVE_AVX512_TARGET
 
