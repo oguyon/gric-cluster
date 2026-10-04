@@ -42,6 +42,7 @@ graph TD
         LIB_IO["shared/gric_bin_io & gric_bin_header (clusterdat format)"]:::l0
         LIB_LOC["shared/cluster_locator (anchor multi-probe routing)"]:::l0
         LIB_CLI["shared/cli_* (terminal, ANSI colors, themes, wrapping)"]:::l0
+        LIB_OMP["shared/sys/gric_omp (OpenMP threading & work thresholds)"]:::l0
     end
 
     Level3 --> Level2

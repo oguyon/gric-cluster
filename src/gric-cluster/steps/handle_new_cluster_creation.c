@@ -11,6 +11,7 @@
 #include "cluster_bounds.h"
 #include "cluster_gemm_dist.h"
 #include "framedistance.h"
+#include "gric_omp.h"
 #include "gric_simd.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -290,7 +291,8 @@ static void init_new_cluster_distances(
             if (gric_get_simd_level() >= GRIC_SIMD_AVX512 && !is_double)
             {
                 int b_count16 = unvisited_count / 16;
-                #pragma omp parallel for if(b_count16 >= 4) schedule(static)
+                long work16 = (long)b_count16 * 16 * frame_elem;
+                #pragma omp parallel for if(work16 >= GRIC_OMP_MIN_WORK) schedule(static)
                 for (int b = 0; b < b_count16; b++)
                 {
                     int b_idx = b * 16;
@@ -317,7 +319,8 @@ static void init_new_cluster_distances(
             }
 #endif
             int b_count8 = (unvisited_count - processed_count) / 8;
-            #pragma omp parallel for if(b_count8 >= 4) schedule(static)
+            long work8 = (long)b_count8 * 8 * frame_elem;
+            #pragma omp parallel for if(work8 >= GRIC_OMP_MIN_WORK) schedule(static)
             for (int b = 0; b < b_count8; b++)
             {
                 int b_idx = processed_count + b * 8;

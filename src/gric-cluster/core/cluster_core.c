@@ -18,6 +18,7 @@
 #include "tile_state.h"
 #include "eq16_quant.h"
 #include "frame_info_arena.h"
+#include "gric_omp.h"
 #ifdef USE_CUDA
 #include "cluster_cuda.h"
 #endif
@@ -25,10 +26,6 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
-
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 
 volatile sig_atomic_t stop_requested = 0;
 
@@ -904,12 +901,9 @@ void run_clustering(
     ClusterConfig *config,
     ClusterState  *state)
 {
-#ifdef _OPENMP
-    if (config->optim.ncpu > 1)
-    {
-        omp_set_num_threads(config->optim.ncpu);
-    }
-#endif
+    /* Apply -ncpu unconditionally: with the default of 1, skipping the call left every
+     * parallel region running on all hardware threads. */
+    gric_omp_set_threads(config->optim.ncpu);
 
     if (cluster_core_dispatch_multitile(config))
     {

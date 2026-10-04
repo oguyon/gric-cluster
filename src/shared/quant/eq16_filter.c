@@ -5,6 +5,7 @@
 
 #include "eq16_quant.h"
 #include "scalar_quant.h"
+#include "gric_omp.h"
 #include "gric_simd.h"
 #if !defined(__CUDACC__) && \
     (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
@@ -370,7 +371,7 @@ static void eq16_filter_anchor_matrix_avx2(
     const int32_t *q_pairs = (const int32_t *)cur_eq16;
 
 #if defined(_OPENMP)
-#pragma omp parallel for schedule(guided, 8) if(num_blocks >= 16)
+#pragma omp parallel for schedule(guided, 8) if((long)num_clusters * dim >= GRIC_OMP_MIN_WORK)
 #endif
     for (int b = 0; b < num_blocks; b++)
     {
@@ -629,7 +630,7 @@ static void eq16_filter_anchor_matrix_avx_vnni(
     }
 
 #if defined(_OPENMP)
-#pragma omp parallel for schedule(guided, 8) if(num_blocks >= 16)
+#pragma omp parallel for schedule(guided, 8) if((long)num_clusters * dim >= GRIC_OMP_MIN_WORK)
 #endif
     for (int b = 0; b < num_blocks; b++)
     {
