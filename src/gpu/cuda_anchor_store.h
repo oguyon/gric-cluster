@@ -139,6 +139,45 @@ int gpu_anchor_store_get_anchors_host(
     float                *out_host_anchors,
     int                   max_clusters);
 
+/**
+ * gpu_anchor_store_get_pinned_frames() - Get pointer to pinned host frame buffer for slot.
+ * @store: Pointer to active GpuAnchorStore.
+ * @slot:  Pipeline slot index (0 or 1).
+ *
+ * Return: Pointer to pinned host memory buffer [max_batch_size x dim].
+ */
+float *gpu_anchor_store_get_pinned_frames(
+    GpuAnchorStore *store,
+    int             slot);
+
+/**
+ * gpu_anchor_store_async_find_nearest() - Launch asynchronous nearest anchor search.
+ * @store:      Pointer to active GpuAnchorStore.
+ * @slot:       Pipeline slot index (0 or 1).
+ * @batch_size: Number of frames in this batch (<= max_batch_size).
+ *
+ * Return: 0 on success, -1 on error.
+ */
+int gpu_anchor_store_async_find_nearest(
+    GpuAnchorStore *store,
+    int             slot,
+    int             batch_size);
+
+/**
+ * gpu_anchor_store_sync_nearest() - Wait for slot search to complete and get results.
+ * @store:         Pointer to active GpuAnchorStore.
+ * @slot:          Pipeline slot index (0 or 1).
+ * @out_best_cl:   Pointer to receive pointer to pinned array of winning cluster IDs.
+ * @out_best_dist: Pointer to receive pointer to pinned array of winning distances.
+ *
+ * Return: 0 on success, -1 on error.
+ */
+int gpu_anchor_store_sync_nearest(
+    GpuAnchorStore  *store,
+    int              slot,
+    const int      **out_best_cl,
+    const float    **out_best_dist);
+
 #ifdef __cplusplus
 }
 #endif
