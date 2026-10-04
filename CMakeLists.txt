@@ -793,8 +793,8 @@ add_test(NAME test_spiral_clustering_sparse_bounds
 set_tests_properties(test_spiral_clustering_sparse_bounds PROPERTIES DEPENDS test_sequence_generator)
 
 add_test(NAME test_swap_remove_eviction
-    COMMAND gric-cluster 0.05 "${CMAKE_SOURCE_DIR}/benchmarks/2Drand.txt" -maxim 500
-            -maxcl 50 -maxcl_strategy discard -swap-remove -outdir /tmp/ctest_swap_remove_out)
+    COMMAND gric-cluster 0.1 "${CMAKE_SOURCE_DIR}/tests/test_strat.txt" -maxim 500
+            -maxcl 20 -maxcl_strategy discard -swap-remove -outdir /tmp/ctest_swap_remove_out)
 
 add_test(NAME test_knn_spiral_double
     COMMAND gric-knn /tmp/ctest_spiral.txt /tmp/ctest_spiral_double_out
