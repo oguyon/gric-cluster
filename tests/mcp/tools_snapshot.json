@@ -52,6 +52,27 @@
     "name": "gric_calibrate_radius"
   },
   {
+    "description": "Inspect a specific cluster in detail: member frames, temporal lifetime (birth/death), Markov transition dynamics, and centroid geometry.",
+    "inputSchema": {
+      "properties": {
+        "cluster_id": {
+          "description": "0-indexed identifier of the cluster to inspect.",
+          "type": "integer"
+        },
+        "run_dir": {
+          "description": "Clustering run output directory.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_dir",
+        "cluster_id"
+      ],
+      "type": "object"
+    },
+    "name": "gric_cluster_detail"
+  },
+  {
     "description": "Launch asynchronous gric-cluster background job. Returns job_id immediately.",
     "inputSchema": {
       "properties": {
@@ -110,6 +131,27 @@
       "type": "object"
     },
     "name": "gric_cluster_start"
+  },
+  {
+    "description": "Compare two clustering runs: evaluates Adjusted Rand Index (ARI), frame assignment agreement, cluster count deltas, and runtime speedup.",
+    "inputSchema": {
+      "properties": {
+        "run_dir_a": {
+          "description": "Baseline clustering run directory or log file.",
+          "type": "string"
+        },
+        "run_dir_b": {
+          "description": "Candidate clustering run directory or log file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_dir_a",
+        "run_dir_b"
+      ],
+      "type": "object"
+    },
+    "name": "gric_compare_runs"
   },
   {
     "description": "Deterministic micro-benchmark runner for SIMD kernels and clustering loops with statistical aggregation (median, IQR) and baseline regression checks.",
