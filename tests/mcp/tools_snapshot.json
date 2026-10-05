@@ -568,6 +568,53 @@
     "name": "gric_list_suite"
   },
   {
+    "description": "Generate diagnostic visual scatter plots, distance histograms, and cluster size distributions using gric-plot.",
+    "inputSchema": {
+      "properties": {
+        "font_size": {
+          "description": "Font size for plot labels (default: 18.0).",
+          "type": "number"
+        },
+        "format": {
+          "description": "Output image format (default: 'png').",
+          "enum": [
+            "png",
+            "svg"
+          ],
+          "type": "string"
+        },
+        "log_path": {
+          "description": "Path to clustering run log file.",
+          "type": "string"
+        },
+        "output_path": {
+          "description": "Target output image file (.png or .svg).",
+          "type": "string"
+        },
+        "plot_type": {
+          "description": "Diagnostic plot type (default: 'all').",
+          "enum": [
+            "all",
+            "distances",
+            "sizes",
+            "pruning"
+          ],
+          "type": "string"
+        },
+        "points_path": {
+          "description": "Path to input points/dataset coordinate file.",
+          "type": "string"
+        },
+        "run_dir": {
+          "description": "Run directory containing clustering results.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_plot"
+  },
+  {
     "description": "Analyze dataset geometry: estimates local intrinsic dimensionality, noise floor, recommended radii (fine/balanced), and pruning flags.",
     "inputSchema": {
       "properties": {

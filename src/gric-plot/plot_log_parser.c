@@ -183,6 +183,36 @@ int parse_input_data(
         fclose(flog);
     } // Open and parse the log file
 
+    /* Validate and adjust dcc_filename if relative to log directory */
+    if (data->dcc_filename[0] != '\0')
+    {
+        FILE *f_dcc = fopen(data->dcc_filename, "r");
+        if (f_dcc != NULL)
+        {
+            fclose(f_dcc);
+        }
+        else
+        {
+            char log_copy[4096];
+            strncpy(log_copy, log_filename, sizeof(log_copy) - 1);
+            log_copy[sizeof(log_copy) - 1] = '\0';
+            char *slash = strrchr(log_copy, '/');
+            if (slash != NULL)
+            {
+                *slash = '\0';
+                char alt_dcc[8192];
+                snprintf(alt_dcc, sizeof(alt_dcc), "%s/dcc.txt", log_copy);
+                f_dcc = fopen(alt_dcc, "r");
+                if (f_dcc != NULL)
+                {
+                    fclose(f_dcc);
+                    strncpy(data->dcc_filename, alt_dcc, sizeof(data->dcc_filename) - 1);
+                    data->dcc_filename[sizeof(data->dcc_filename) - 1] = '\0';
+                }
+            }
+        }
+    }
+
     printf("Log loaded: %ld frames, %ld clusters\n", data->total_frames, data->total_clusters);
 
     /* Construct the stats lines */
@@ -237,6 +267,34 @@ int parse_input_data(
         }
 
         FILE *f_memb = fopen(memb_filename, "r");
+        if (f_memb == NULL)
+        {
+            /* If relative path failed, try resolving relative to log_filename directory */
+            char log_copy[4096];
+            strncpy(log_copy, log_filename, sizeof(log_copy) - 1);
+            log_copy[sizeof(log_copy) - 1] = '\0';
+            char *slash = strrchr(log_copy, '/');
+            if (slash != NULL)
+            {
+                *slash = '\0';
+                char alt_memb[16384];
+                snprintf(alt_memb, sizeof(alt_memb), "%s/frame_membership.txt", log_copy);
+                f_memb = fopen(alt_memb, "r");
+                if (f_memb == NULL && data->output_dir[0] != '\0')
+                {
+                    snprintf(alt_memb, sizeof(alt_memb), "%s/%s/frame_membership.txt",
+                             log_copy, data->output_dir);
+                    f_memb = fopen(alt_memb, "r");
+                }
+                if (f_memb != NULL)
+                {
+                    strncpy(memb_filename, alt_memb, sizeof(memb_filename) - 1);
+                    memb_filename[sizeof(memb_filename) - 1] = '\0';
+                    strncpy(data->output_dir, log_copy, sizeof(data->output_dir) - 1);
+                    data->output_dir[sizeof(data->output_dir) - 1] = '\0';
+                }
+            }
+        }
         if (f_memb == NULL)
         {
             fprintf(stderr, "Error: Could not open membership file %s\n", memb_filename);

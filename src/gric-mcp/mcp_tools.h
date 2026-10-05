@@ -373,6 +373,17 @@ int mcp_tool_knn_quality(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_plot() - Generate diagnostic visual plots using gric-plot.
+ * @args:   JSON object containing run_dir, points_path, log_path, output_path, format.
+ * @res:    Output JSON object containing generated image paths and clustering summary.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_plot(
+    const cJSON *args,
+    cJSON       *res);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.
