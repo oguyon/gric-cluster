@@ -670,6 +670,7 @@ add_library(gric_mcp_core OBJECT
     src/gric-mcp/mcp_tools.c
     src/gric-mcp/mcp_fps_schema.c
     src/gric-mcp/mcp_staleness.c
+    src/gric-mcp/mcp_prompts.c
     src/gric-mcp/tools/tool_audit_code_style.c
     src/gric-mcp/tools/tool_align_parameters.c
     src/gric-mcp/tools/tool_inspect_simd.c
@@ -1808,6 +1809,37 @@ if (IMAGESTREAMIO_FOUND)
 endif()
 add_test(NAME test_mcp_sanitize COMMAND test_mcp_sanitize)
 set_tests_properties(test_mcp_sanitize PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+add_executable(test_mcp_prompts
+    tests/test_mcp_prompts.c
+    $<TARGET_OBJECTS:gric_mcp_core>
+)
+target_include_directories(test_mcp_prompts PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(test_mcp_prompts m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_mcp_prompts OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_mcp_prompts ${CFITSIO_LIBRARIES})
+    target_include_directories(test_mcp_prompts PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_mcp_prompts ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_mcp_prompts PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_mcp_prompts COMMAND test_mcp_prompts)
+set_tests_properties(test_mcp_prompts PROPERTIES
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
