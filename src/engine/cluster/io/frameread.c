@@ -465,7 +465,6 @@ int init_frameread(
     {
         return init_filelist(filename);
     }
-
 #ifdef USE_IMAGESTREAMIO
     if (stream_mode)
     {
@@ -473,6 +472,7 @@ int init_frameread(
         return init_stream(filename);
     }
 #else
+    (void)cnt2sync_mode;
     if (stream_mode)
     {
         fprintf(stderr, "Error: ImageStreamIO support is not compiled in.\n");

@@ -18,6 +18,12 @@
 
 #include "gric_simd.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
+#define NO_VECTORIZE __attribute__((optimize("no-tree-vectorize")))
+#else
+#define NO_VECTORIZE
+#endif
+
 static inline double get_time_sec(void)
 {
     struct timespec ts;
@@ -42,12 +48,11 @@ static void *bench_aligned_alloc(
     }
     return ptr;
 }
-
 /* ------------------------------------------------------------------------- */
 /* Kernel 1: Single-Vector L2 Distance (Float32)                             */
 /* ------------------------------------------------------------------------- */
 
-__attribute__((optimize("no-tree-vectorize")))
+NO_VECTORIZE
 static float l2_dist_scalar(
     const float *restrict a,
     const float *restrict b,
@@ -143,12 +148,11 @@ static float l2_dist_avx512(
     return sum;
 }
 #endif
-
 /* ------------------------------------------------------------------------- */
 /* Kernel 2: 8-Anchor Batch Distance (Float32)                               */
 /* ------------------------------------------------------------------------- */
 
-__attribute__((optimize("no-tree-vectorize")))
+NO_VECTORIZE
 static void dist8_scalar(
     const float *restrict        q,
     const float *const *restrict anchors,
@@ -244,12 +248,11 @@ static void dist8_avx512(
     }
 }
 #endif
-
 /* ------------------------------------------------------------------------- */
 /* Kernel 3: SQ8 Quantized L2 Distance (uint8)                               */
 /* ------------------------------------------------------------------------- */
 
-__attribute__((optimize("no-tree-vectorize")))
+NO_VECTORIZE
 static uint32_t sq8_dist_scalar(
     const uint8_t *restrict a,
     const uint8_t *restrict b,
@@ -338,12 +341,11 @@ static uint32_t sq8_dist_avx512(
     return sum;
 }
 #endif
-
 /* ------------------------------------------------------------------------- */
 /* Kernel 4: Single-Vector L2 Distance (Float64)                             */
 /* ------------------------------------------------------------------------- */
 
-__attribute__((optimize("no-tree-vectorize")))
+NO_VECTORIZE
 static double l2_d64_scalar(
     const double *restrict a,
     const double *restrict b,
@@ -437,12 +439,11 @@ static double l2_d64_avx512(
     return sum;
 }
 #endif
-
 /* ------------------------------------------------------------------------- */
 /* Kernel 5: 16-Anchor Batch Distance (Float32)                              */
 /* ------------------------------------------------------------------------- */
 
-__attribute__((optimize("no-tree-vectorize")))
+NO_VECTORIZE
 static void dist16_f32_scalar(
     const float *restrict        q,
     const float *const *restrict anchors,
@@ -538,12 +539,11 @@ static void dist16_f32_avx512(
     }
 }
 #endif
-
 /* ------------------------------------------------------------------------- */
 /* Kernel 6: 8-Anchor Batch Distance (Float64)                               */
 /* ------------------------------------------------------------------------- */
 
-__attribute__((optimize("no-tree-vectorize")))
+NO_VECTORIZE
 static void dist8_d64_scalar(
     const double *restrict        q,
     const double *const *restrict anchors,
@@ -642,7 +642,7 @@ static void dist8_d64_avx512(
 /* Kernel 7: SQ16 Quantized L2 Distance (int16)                              */
 /* ------------------------------------------------------------------------- */
 
-__attribute__((optimize("no-tree-vectorize")))
+NO_VECTORIZE
 static uint64_t sq16_dist_scalar(
     const int16_t *restrict a,
     const int16_t *restrict b,
@@ -725,7 +725,7 @@ static uint64_t sq16_dist_avx512(
 /* Kernel 8: PQ FastScan (32-way vs 64-way)                                  */
 /* ------------------------------------------------------------------------- */
 
-__attribute__((optimize("no-tree-vectorize")))
+NO_VECTORIZE
 static void fastscan_scalar(
     const uint8_t *restrict codes,
     const uint8_t *restrict lut,
