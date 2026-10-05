@@ -115,8 +115,8 @@ static void test_metric_lower_bound_invariance()
         {
             for (long i = 0; i < dim; i++)
             {
-                fa[i] = -50.0f + (float)rand() / (float)(RAND_MAX / 200.0f);
-                fb[i] = -50.0f + (float)rand() / (float)(RAND_MAX / 200.0f);
+                fa[i] = -50.0f + (float)((double)rand() / (double)RAND_MAX * 200.0);
+                fb[i] = -50.0f + (float)((double)rand() / (double)RAND_MAX * 200.0);
             }
 
             sq8_quantize_float(fa, qa, &params);
@@ -273,8 +273,8 @@ static void test_sq16_metric_lower_bound_invariance()
         {
             for (long i = 0; i < dim; i++)
             {
-                fa[i] = -50.0f + (float)rand() / (float)(RAND_MAX / 200.0f);
-                fb[i] = -50.0f + (float)rand() / (float)(RAND_MAX / 200.0f);
+                fa[i] = -50.0f + (float)((double)rand() / (double)RAND_MAX * 200.0);
+                fb[i] = -50.0f + (float)((double)rand() / (double)RAND_MAX * 200.0);
             }
 
             sq16_quantize_float(fa, qa, &params);

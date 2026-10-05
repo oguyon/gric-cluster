@@ -1132,7 +1132,7 @@ void eq16_filter_anchor_matrix(
         }
         return;
     }
-
+    (void)anchor_interleaved;
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 #if GRIC_HAVE_AVX512_TARGET
     if (anchor_interleaved != NULL &&
@@ -1569,7 +1569,7 @@ void eq16_filter_anchor_matrix_adc(
         }
         return;
     }
-
+    (void)anchor_adc_interleaved;
 #if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
 #if GRIC_HAVE_AVX512_TARGET
     if (anchor_adc_interleaved != NULL &&
