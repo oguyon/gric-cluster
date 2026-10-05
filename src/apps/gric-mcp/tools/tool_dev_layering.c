@@ -71,18 +71,30 @@ static int determine_source_level(
 {
     const char *rel = get_repo_relpath(path);
 
-    if (strncmp(rel, "shared/", 7) == 0 || strstr(rel, "/shared/") != NULL)
+    if (strncmp(rel, "base/", 5) == 0 ||
+        strncmp(rel, "quant/", 6) == 0 ||
+        strncmp(rel, "third_party/", 12) == 0 ||
+        strncmp(rel, "shared/", 7) == 0 ||
+        strstr(rel, "/base/") != NULL ||
+        strstr(rel, "/quant/") != NULL ||
+        strstr(rel, "/third_party/") != NULL ||
+        strstr(rel, "/shared/") != NULL)
     {
         return 0;
     }
-    if (strncmp(rel, "gric-cluster/", 13) == 0 ||
+    if (strncmp(rel, "engine/", 7) == 0 ||
+        strncmp(rel, "gric-cluster/", 13) == 0 ||
         strncmp(rel, "gric-knn/", 9) == 0 ||
+        strstr(rel, "/engine/") != NULL ||
         strstr(rel, "/gric-cluster/") != NULL ||
         strstr(rel, "/gric-knn/") != NULL)
     {
         return 2;
     }
-    if (strncmp(rel, "gpu/", 4) == 0 || strstr(rel, "/gpu/") != NULL)
+    if (strncmp(rel, "accel/", 6) == 0 ||
+        strncmp(rel, "gpu/", 4) == 0 ||
+        strstr(rel, "/accel/") != NULL ||
+        strstr(rel, "/gpu/") != NULL)
     {
         return 1;
     }
@@ -98,7 +110,10 @@ static int determine_source_level(
 static int determine_target_level(
     const char *inc)
 {
-    if (strncmp(inc, "shared/", 7) == 0 ||
+    if (strncmp(inc, "base/", 5) == 0 ||
+        strncmp(inc, "quant/", 6) == 0 ||
+        strncmp(inc, "third_party/", 12) == 0 ||
+        strncmp(inc, "shared/", 7) == 0 ||
         strcmp(inc, "gric_simd.h") == 0 ||
         strcmp(inc, "scalar_quant.h") == 0 ||
         strcmp(inc, "residual_quant.h") == 0 ||
@@ -120,7 +135,8 @@ static int determine_target_level(
         return 0;
     }
 
-    if (strncmp(inc, "gpu/", 4) == 0 ||
+    if (strncmp(inc, "accel/", 6) == 0 ||
+        strncmp(inc, "gpu/", 4) == 0 ||
         strcmp(inc, "cuda_common.h") == 0 ||
         strcmp(inc, "cuda_anchor_store.h") == 0 ||
         strcmp(inc, "cuda_ivf_index.h") == 0)
@@ -128,7 +144,8 @@ static int determine_target_level(
         return 1;
     }
 
-    if (strncmp(inc, "gric-cluster/", 13) == 0 ||
+    if (strncmp(inc, "engine/", 7) == 0 ||
+        strncmp(inc, "gric-cluster/", 13) == 0 ||
         strncmp(inc, "gric-knn/", 9) == 0 ||
         strcmp(inc, "run_clustering.h") == 0 ||
         strcmp(inc, "knn_engine.h") == 0 ||
@@ -142,7 +159,10 @@ static int determine_target_level(
         return 2;
     }
 
-    if (strncmp(inc, "gric-mcp/", 9) == 0 ||
+    if (strncmp(inc, "ui/", 3) == 0 ||
+        strncmp(inc, "apps/", 5) == 0 ||
+        strncmp(inc, "adapters/", 9) == 0 ||
+        strncmp(inc, "gric-mcp/", 9) == 0 ||
         strncmp(inc, "gric-fps/", 9) == 0 ||
         strncmp(inc, "gric-server/", 12) == 0 ||
         strncmp(inc, "tools/", 6) == 0 ||

@@ -135,9 +135,15 @@ in_fn {
 }
 AWK_EOF
 
-# List tracked C and header files, ignoring third_party / vendored code
-FILES=$(git ls-files 'src/*.[ch]' 'tools/*.[ch]' 'include/*.[ch]*' | \
-    grep -v 'src/shared/cjson' | sort)
+# List tracked C and header files, ignoring third_party / vendored code and symlinks
+RAW_FILES=$(git ls-files 'src/*.[ch]' 'tools/*.[ch]' 'include/*.[ch]*' | \
+    grep -Ev '(cjson|third_party)' | sort)
+FILES=""
+for f in $RAW_FILES; do
+    if [ ! -L "$f" ]; then
+        FILES="$FILES $f"
+    fi
+done
 
 if [ "$UPDATE_BASELINE" -eq 1 ]; then
     echo "Updating code size baseline: $BASELINE_FILE"

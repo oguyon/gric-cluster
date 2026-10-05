@@ -13,7 +13,7 @@ echo "[1/5] Checking line lengths (<= 100 columns)..."
 if git grep -n '.\{101,\}' -- \
     'src/**.[ch]' 'include/**.[ch]*' 'tests/**.[ch]*' \
     'tools/**.[ch]' 'benchmarks/**.[ch]' \
-    ':!src/gric-plot/font8x16.h' ':!src/shared/cjson/*'; then
+    ':!*font8x16.h' ':!*cjson/*' ':!src/third_party/*'; then
     echo "ERROR: Lines exceeding 100 characters found!" >&2
     ERRORS=$((ERRORS + 1))
 else
