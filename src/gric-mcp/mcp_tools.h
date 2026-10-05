@@ -329,6 +329,17 @@ int mcp_tool_calibrate_radius(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_validate_command() - Validate CLI commands and flag compatibility.
+ * @args:   JSON object containing command string or binary and args.
+ * @res:    Output JSON object containing validation results, errors, and warnings.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_validate_command(
+    const cJSON *args,
+    cJSON       *res);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.

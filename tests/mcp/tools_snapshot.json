@@ -589,6 +589,30 @@
     "name": "gric_server_info"
   },
   {
+    "description": "Pre-flight validation and linting for GRIC CLI commands (detects conflicting flags, invalid ranges, and missing arguments).",
+    "inputSchema": {
+      "properties": {
+        "args": {
+          "description": "Optional array of argument tokens.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "binary": {
+          "description": "Optional binary name (e.g. gric-cluster, gric-knn).",
+          "type": "string"
+        },
+        "command": {
+          "description": "Full CLI command string to validate.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_validate_command"
+  },
+  {
     "description": "Verify mathematical clustering guarantees: asserts d(frame, anchor) <= rlim across all frames with SIMD. Reports violations and max error.",
     "inputSchema": {
       "properties": {
