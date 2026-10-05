@@ -307,6 +307,28 @@ int mcp_tool_job_cancel(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_recommend_params() - Recommend clustering parameters based on dataset and constraints.
+ * @args:   JSON object containing dataset_path and optional parameters.
+ * @res:    Output JSON object containing recommendations and rationale.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_recommend_params(
+    const cJSON *args,
+    cJSON       *res);
+
+/**
+ * mcp_tool_calibrate_radius() - Calibrate radius thresholds from distance percentiles.
+ * @args:   JSON object containing dataset_path and optional sample_size.
+ * @res:    Output JSON object containing percentiles and radius presets.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_calibrate_radius(
+    const cJSON *args,
+    cJSON       *res);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.

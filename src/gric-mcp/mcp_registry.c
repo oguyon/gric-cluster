@@ -32,6 +32,8 @@ extern const struct mcp_tool_def mcp_tooldef_knn_start;
 extern const struct mcp_tool_def mcp_tooldef_job_status;
 extern const struct mcp_tool_def mcp_tooldef_job_result;
 extern const struct mcp_tool_def mcp_tooldef_job_cancel;
+extern const struct mcp_tool_def mcp_tooldef_recommend_params;
+extern const struct mcp_tool_def mcp_tooldef_calibrate_radius;
 
 static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_help,
@@ -40,6 +42,8 @@ static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_server_info,
     &mcp_tooldef_inspect_run,
     &mcp_tooldef_probe_dataset,
+    &mcp_tooldef_recommend_params,
+    &mcp_tooldef_calibrate_radius,
     &mcp_tooldef_verify_invariants,
     &mcp_tooldef_probe_shm,
     &mcp_tooldef_fps_status,
