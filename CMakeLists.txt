@@ -682,6 +682,8 @@ add_library(gric_mcp_core OBJECT
     src/gric-mcp/tools/tool_dev_build_test.c
     src/gric-mcp/tools/tool_dev_golden_compare.c
     src/gric-mcp/tools/tool_dev_bench.c
+    src/gric-mcp/mcp_jobs.c
+    src/gric-mcp/tools/tool_jobs.c
     ${HELP_TOPICS_GEN_C}
     ${MCP_CONTENT_GEN_C}
     src/shared/cjson/cJSON.c
@@ -1519,6 +1521,38 @@ add_test(NAME test_mcp_bench COMMAND test_mcp_bench)
 set_tests_properties(test_mcp_bench PROPERTIES
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     DEPENDS "gric-simd-bench;gric-cluster;gric-mktxtseq"
+)
+
+add_executable(test_mcp_jobs
+    tests/test_mcp_jobs.c
+    $<TARGET_OBJECTS:gric_mcp_core>
+)
+target_include_directories(test_mcp_jobs PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(test_mcp_jobs m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_mcp_jobs OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_mcp_jobs ${CFITSIO_LIBRARIES})
+    target_include_directories(test_mcp_jobs PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_mcp_jobs ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_mcp_jobs PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_mcp_jobs COMMAND test_mcp_jobs)
+set_tests_properties(test_mcp_jobs PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS "gric-cluster;gric-mktxtseq;gric-knn"
 )
 
 add_test(NAME test_doc_flag_drift

@@ -27,6 +27,11 @@ extern const struct mcp_tool_def mcp_tooldef_probe_fps_streams;
 extern const struct mcp_tool_def mcp_tooldef_dev_build_test;
 extern const struct mcp_tool_def mcp_tooldef_dev_golden_compare;
 extern const struct mcp_tool_def mcp_tooldef_dev_bench;
+extern const struct mcp_tool_def mcp_tooldef_cluster_start;
+extern const struct mcp_tool_def mcp_tooldef_knn_start;
+extern const struct mcp_tool_def mcp_tooldef_job_status;
+extern const struct mcp_tool_def mcp_tooldef_job_result;
+extern const struct mcp_tool_def mcp_tooldef_job_cancel;
 
 static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_help,
@@ -42,6 +47,11 @@ static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_fps_run,
     &mcp_tooldef_fps_set,
     &mcp_tooldef_fps_stop,
+    &mcp_tooldef_cluster_start,
+    &mcp_tooldef_knn_start,
+    &mcp_tooldef_job_status,
+    &mcp_tooldef_job_result,
+    &mcp_tooldef_job_cancel,
     &mcp_tooldef_audit_code_style,
     &mcp_tooldef_align_parameters,
     &mcp_tooldef_inspect_simd,
