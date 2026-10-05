@@ -77,6 +77,10 @@ All C code and markdown files must strictly comply with:
 5. **No Implicit Double Promotions**:
    Use single-precision float functions (`sqrtf`, `powf`) and float literals (`0.5f`)
    when working with 32-bit floats.
+6. **Code Size & Function Scope**:
+   Keep files $\le 600$ lines (hard limit $1000$) and functions $\le 60$ lines (hard limit $150$).
+   Enforced via `scripts/check_code_size.sh` and tracked in `scripts/code_size_baseline.txt`.
+   See `.agents/rules/code-size-and-intent.md`.
 
 ---
 

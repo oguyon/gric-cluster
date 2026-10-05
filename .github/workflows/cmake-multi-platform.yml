@@ -26,7 +26,7 @@ jobs:
           ! git grep -n '.\{101,\}' -- \
             'src/**.[ch]' 'include/**.[ch]*' 'tests/**.[ch]*' \
             'tools/**.[ch]' 'benchmarks/**.[ch]' \
-            ':!src/gric-plot/font8x16.h' ':!src/shared/cjson/*'
+            ':!*font8x16.h' ':!*cjson/*' ':!src/third_party/*'
 
       - name: Verify PR Invariants (Platform, Memory Alignment, Invariant Rules)
         run: |

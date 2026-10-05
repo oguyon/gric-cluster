@@ -11,6 +11,19 @@
 #include <stdint.h>
 #include "gric_bin_io.h"
 
+typedef struct
+{
+    const char           *input_path;
+    const char           *output_path;
+    char                  auto_output_path[1024];
+    const char           *type_str;
+    const char           *comment_str;
+    gric_bin_data_type_t  dtype;
+    int                   explicit_dim;
+    int                   verbose;
+    int                   has_index;
+} Ascii2BinConfig;
+
 /**
  * print_usage() - Print command-line help for gric-ascii2bin.
  * @prog: Executable name.
@@ -72,136 +85,199 @@ static size_t count_tokens_in_line(
     return count;
 }
 
-int main(
-    int   argc,
-    char *argv[])
+/**
+ * parse_cli_args() - Parse CLI options into Ascii2BinConfig.
+ * @argc: Argument count.
+ * @argv: Argument vector.
+ * @cfg:  Config structure to populate.
+ *
+ * Return: 0 on success, 1 on error, 2 if help displayed.
+ */
+static int parse_cli_args(
+    int              argc,
+    char            *argv[],
+    Ascii2BinConfig *cfg)
 {
-    if (argc < 2)
-    {
-        print_usage(argv[0]);
-        return 0;
-    }
+    memset(cfg, 0, sizeof(Ascii2BinConfig));
+    cfg->dtype = GRIC_BIN_DTYPE_FLOAT32;
+    cfg->has_index = -1;
 
-    const char *input_path = NULL;
-    const char *output_path = NULL;
-    const char *type_str = NULL;
-    const char *comment_str = NULL;
-    gric_bin_data_type_t dtype = GRIC_BIN_DTYPE_FLOAT32;
-    int explicit_dim = 0;
-    int verbose = 0;
-    int has_index = -1;
-
-    for (int i = 1; i < argc; i++)
+    for (int ii = 1; ii < argc; ii++)
     {
-        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
+        if (strcmp(argv[ii], "-h") == 0 || strcmp(argv[ii], "--help") == 0)
         {
             print_usage(argv[0]);
-            return 0;
+            return 2;
         }
-        else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0)
+        if (strcmp(argv[ii], "-v") == 0 || strcmp(argv[ii], "--verbose") == 0)
         {
-            verbose = 1;
+            cfg->verbose = 1;
         }
-        else if (strcmp(argv[i], "-has-index") == 0 || strcmp(argv[i], "--has-index") == 0)
+        else if (strcmp(argv[ii], "-has-index") == 0 || strcmp(argv[ii], "--has-index") == 0)
         {
-            has_index = 1;
+            cfg->has_index = 1;
         }
-        else if (strcmp(argv[i], "-no-index") == 0)
+        else if (strcmp(argv[ii], "-no-index") == 0)
         {
-            has_index = 0;
+            cfg->has_index = 0;
         }
-        else if (strcmp(argv[i], "-double") == 0)
+        else if (strcmp(argv[ii], "-double") == 0)
         {
-            dtype = GRIC_BIN_DTYPE_FLOAT64;
+            cfg->dtype = GRIC_BIN_DTYPE_FLOAT64;
         }
-        else if (strcmp(argv[i], "-uint32") == 0)
+        else if (strcmp(argv[ii], "-uint32") == 0)
         {
-            dtype = GRIC_BIN_DTYPE_UINT32;
+            cfg->dtype = GRIC_BIN_DTYPE_UINT32;
         }
-        else if (strcmp(argv[i], "-int32") == 0)
+        else if (strcmp(argv[ii], "-int32") == 0)
         {
-            dtype = GRIC_BIN_DTYPE_INT32;
+            cfg->dtype = GRIC_BIN_DTYPE_INT32;
         }
-        else if (strcmp(argv[i], "-uint16") == 0 || strcmp(argv[i], "-sq16") == 0)
+        else if (strcmp(argv[ii], "-uint16") == 0 || strcmp(argv[ii], "-sq16") == 0)
         {
-            dtype = GRIC_BIN_DTYPE_UINT16;
+            cfg->dtype = GRIC_BIN_DTYPE_UINT16;
         }
-        else if (strcmp(argv[i], "-int16") == 0 || strcmp(argv[i], "-eq16") == 0)
+        else if (strcmp(argv[ii], "-int16") == 0 || strcmp(argv[ii], "-eq16") == 0)
         {
-            dtype = GRIC_BIN_DTYPE_INT16;
+            cfg->dtype = GRIC_BIN_DTYPE_INT16;
         }
-        else if (strcmp(argv[i], "-type") == 0 && i + 1 < argc)
+        else if (strcmp(argv[ii], "-type") == 0 && ii + 1 < argc)
         {
-            type_str = argv[++i];
+            cfg->type_str = argv[++ii];
         }
-        else if (strcmp(argv[i], "-comment") == 0 && i + 1 < argc)
+        else if (strcmp(argv[ii], "-comment") == 0 && ii + 1 < argc)
         {
-            comment_str = argv[++i];
+            cfg->comment_str = argv[++ii];
         }
-        else if (strcmp(argv[i], "-dim") == 0 && i + 1 < argc)
+        else if (strcmp(argv[ii], "-dim") == 0 && ii + 1 < argc)
         {
-            explicit_dim = atoi(argv[++i]);
+            cfg->explicit_dim = atoi(argv[++ii]);
         }
-        else if (argv[i][0] != '-')
+        else if (argv[ii][0] != '-')
         {
-            if (input_path == NULL)
+            if (cfg->input_path == NULL)
             {
-                input_path = argv[i];
+                cfg->input_path = argv[ii];
             }
-            else if (output_path == NULL)
+            else if (cfg->output_path == NULL)
             {
-                output_path = argv[i];
+                cfg->output_path = argv[ii];
             }
         }
     }
 
-    char auto_output_path[1024];
-    if (input_path != NULL && output_path == NULL)
+    if (cfg->input_path != NULL && cfg->output_path == NULL)
     {
-        snprintf(auto_output_path, sizeof(auto_output_path), "%s", input_path);
-        char *dot = strrchr(auto_output_path, '.');
+        snprintf(cfg->auto_output_path, sizeof(cfg->auto_output_path), "%s", cfg->input_path);
+        char *dot = strrchr(cfg->auto_output_path, '.');
         if (dot != NULL)
         {
             strcpy(dot, ".bin");
         }
         else
         {
-            size_t rem = sizeof(auto_output_path) - strlen(auto_output_path) - 1;
-            strncat(auto_output_path, ".bin", rem);
+            strncat(cfg->auto_output_path, ".bin",
+                    sizeof(cfg->auto_output_path) - strlen(cfg->auto_output_path) - 1);
         }
-        output_path = auto_output_path;
+        cfg->output_path = cfg->auto_output_path;
     }
-    else if (output_path != NULL && strrchr(output_path, '.') == NULL)
+    else if (cfg->output_path != NULL && strrchr(cfg->output_path, '.') == NULL)
     {
-        snprintf(auto_output_path, sizeof(auto_output_path), "%s.bin", output_path);
-        output_path = auto_output_path;
+        snprintf(cfg->auto_output_path, sizeof(cfg->auto_output_path), "%s.bin", cfg->output_path);
+        cfg->output_path = cfg->auto_output_path;
     }
 
-    if (input_path == NULL || output_path == NULL)
+    if (cfg->input_path == NULL || cfg->output_path == NULL)
     {
         fprintf(stderr, "Error: <input.txt> is required.\n");
         return 1;
     }
+    return 0;
+}
 
-    FILE *in_fp = fopen(input_path, "r");
+/**
+ * parse_line_tokens() - Parse numeric tokens from line and append to raw_data buffer.
+ * @p:            Start of numeric text on line.
+ * @tokens_line:  Number of tokens to parse.
+ * @has_index:    Whether to skip first token.
+ * @raw_data_ptr: Pointer to allocated double array.
+ * @num_elem_ptr: Pointer to element count.
+ * @cap_elem_ptr: Pointer to buffer capacity.
+ *
+ * Return: 0 on success, -1 on allocation failure.
+ */
+static int parse_line_tokens(
+    char    *p,
+    size_t   tokens_line,
+    int      has_index,
+    double **raw_data_ptr,
+    size_t  *num_elem_ptr,
+    size_t  *cap_elem_ptr)
+{
+    char *endptr = NULL;
+    if (has_index)
+    {
+        strtod(p, &endptr);
+        p = endptr;
+    }
+
+    for (size_t cc = 0; cc < tokens_line; cc++)
+    {
+        double val = strtod(p, &endptr);
+        if (p == endptr)
+        {
+            break;
+        }
+        p = endptr;
+
+        if (*num_elem_ptr >= *cap_elem_ptr)
+        {
+            *cap_elem_ptr *= 2;
+            double *new_data = (double *)realloc(*raw_data_ptr, *cap_elem_ptr * sizeof(double));
+            if (new_data == NULL)
+            {
+                return -1;
+            }
+            *raw_data_ptr = new_data;
+        }
+
+        (*raw_data_ptr)[(*num_elem_ptr)++] = val;
+    }
+    return 0;
+}
+
+/**
+ * parse_ascii_table() - Ingest numbers from an ASCII file into a contiguous double array.
+ * @cfg:          Converter configuration.
+ * @out_data:     Pointer to store allocated double array.
+ * @out_nrows:    Pointer to store row count.
+ * @out_ncols:    Pointer to store column count.
+ * @out_nelem:    Pointer to store total element count.
+ *
+ * Return: 0 on success, -1 on failure.
+ */
+static int parse_ascii_table(
+    Ascii2BinConfig  *cfg,
+    double          **out_data,
+    size_t           *out_nrows,
+    size_t           *out_ncols,
+    size_t           *out_nelem)
+{
+    FILE *in_fp = fopen(cfg->input_path, "r");
     if (in_fp == NULL)
     {
-        fprintf(stderr, "Error: Cannot open input file '%s'\n", input_path);
-        return 1;
+        fprintf(stderr, "Error: Cannot open input file '%s'\n", cfg->input_path);
+        return -1;
     }
 
     char line_buf[65536];
-    size_t ncols = (explicit_dim > 0) ? (size_t)explicit_dim : 0;
-    size_t nrows = 0;
-    size_t cap_elements = 1024;
-    size_t num_elements = 0;
+    size_t ncols = (cfg->explicit_dim > 0) ? (size_t)cfg->explicit_dim : 0;
+    size_t nrows = 0, num_elements = 0, cap_elements = 1024;
     double *raw_data = (double *)malloc(cap_elements * sizeof(double));
-
     if (raw_data == NULL)
     {
         fclose(in_fp);
-        fprintf(stderr, "Error: Out of memory\n");
-        return 1;
+        return -1;
     }
 
     while (fgets(line_buf, sizeof(line_buf), in_fp) != NULL)
@@ -215,130 +291,217 @@ int main(
         {
             continue;
         }
-
         if (*p == '#' || (p[0] == '/' && p[1] == '/'))
         {
-            if (has_index == -1 && (strstr(p, "anchor_idx") != NULL ||
-                                    strstr(p, "cluster_idx") != NULL ||
-                                    strstr(p, "row_idx") != NULL ||
-                                    strstr(p, "sample_idx") != NULL))
+            if (cfg->has_index == -1 && (strstr(p, "anchor_idx") != NULL ||
+                                         strstr(p, "cluster_idx") != NULL ||
+                                         strstr(p, "row_idx") != NULL ||
+                                         strstr(p, "sample_idx") != NULL))
             {
-                has_index = 1;
+                cfg->has_index = 1;
             }
             continue;
         }
-
-        if (has_index == -1)
+        if (cfg->has_index == -1)
         {
-            has_index = 0;
+            cfg->has_index = 0;
         }
 
-        size_t total_tokens = count_tokens_in_line(p);
-        if (total_tokens == 0)
-        {
-            continue;
-        }
-
-        if (has_index && total_tokens <= 1)
+        size_t total = count_tokens_in_line(p);
+        if (total == 0 || (cfg->has_index && total <= 1))
         {
             continue;
         }
-
-        size_t tokens_in_line = has_index ? (total_tokens - 1) : total_tokens;
+        size_t tokens_line = cfg->has_index ? (total - 1) : total;
         if (ncols == 0)
         {
-            ncols = tokens_in_line;
+            ncols = tokens_line;
         }
 
-        char *endptr = NULL;
-        if (has_index)
+        if (parse_line_tokens(p, tokens_line, cfg->has_index, &raw_data,
+                              &num_elements, &cap_elements) != 0)
         {
-            /* Skip leading index token (anchor_idx / row_idx) */
-            strtod(p, &endptr);
-            p = endptr;
+            free(raw_data);
+            fclose(in_fp);
+            return -1;
         }
-
-        for (size_t c = 0; c < tokens_in_line; c++)
-        {
-            double val = strtod(p, &endptr);
-            if (p == endptr)
-            {
-                break;
-            }
-            p = endptr;
-
-            if (num_elements >= cap_elements)
-            {
-                cap_elements *= 2;
-                double *new_data = (double *)realloc(raw_data, cap_elements * sizeof(double));
-                if (new_data == NULL)
-                {
-                    free(raw_data);
-                    fclose(in_fp);
-                    fprintf(stderr, "Error: Reallocation failed during parse\n");
-                    return 1;
-                }
-                raw_data = new_data;
-            }
-
-            raw_data[num_elements++] = val;
-        }
-
         nrows++;
     }
-
     fclose(in_fp);
 
     if (num_elements == 0 || nrows == 0)
     {
         free(raw_data);
-        fprintf(stderr, "Error: No data records found in '%s'\n", input_path);
-        return 1;
+        return -1;
     }
-
-    // Auto-adjust ncols if single column or variable
     if (ncols == 0 || num_elements % nrows != 0)
     {
         ncols = num_elements / nrows;
     }
 
-    gric_bin_file_type_t ftype = gric_bin_file_type_from_str(type_str);
-    if (ftype == GRIC_BIN_TYPE_GENERIC)
+    *out_data = raw_data;
+    *out_nrows = nrows;
+    *out_ncols = ncols;
+    *out_nelem = num_elements;
+    return 0;
+}
+
+/**
+ * infer_file_type() - Deduce semantic file type from type argument or filename.
+ * @cfg:   Configuration options.
+ * @ncols: Detected column count.
+ *
+ * Return: Inferred gric_bin_file_type_t enum value.
+ */
+static gric_bin_file_type_t infer_file_type(
+    const Ascii2BinConfig *cfg,
+    size_t                 ncols)
+{
+    gric_bin_file_type_t ftype = gric_bin_file_type_from_str(cfg->type_str);
+    if (ftype != GRIC_BIN_TYPE_GENERIC)
     {
-        if (strstr(input_path, "dcc") != NULL)
-        {
-            ftype = GRIC_BIN_TYPE_DCC;
-        }
-        else if (strstr(input_path, "anchor") != NULL || strstr(input_path, "centroid") != NULL)
-        {
-            ftype = GRIC_BIN_TYPE_ANCHORS;
-        }
-        else if (strstr(input_path, "membership") != NULL || strstr(input_path, "assign") != NULL)
-        {
-            ftype = GRIC_BIN_TYPE_MEMBERSHIP;
-        }
-        else if (strstr(input_path, "count") != NULL)
-        {
-            ftype = GRIC_BIN_TYPE_COUNTS;
-        }
-        else if (ncols >= 2)
-        {
-            ftype = GRIC_BIN_TYPE_COORDINATES;
-        }
+        return ftype;
     }
 
+    if (strstr(cfg->input_path, "dcc") != NULL)
+    {
+        return GRIC_BIN_TYPE_DCC;
+    }
+    if (strstr(cfg->input_path, "anchor") != NULL ||
+        strstr(cfg->input_path, "centroid") != NULL)
+    {
+        return GRIC_BIN_TYPE_ANCHORS;
+    }
+    if (strstr(cfg->input_path, "membership") != NULL ||
+        strstr(cfg->input_path, "assign") != NULL)
+    {
+        return GRIC_BIN_TYPE_MEMBERSHIP;
+    }
+    if (strstr(cfg->input_path, "count") != NULL)
+    {
+        return GRIC_BIN_TYPE_COUNTS;
+    }
+    if (ncols >= 2)
+    {
+        return GRIC_BIN_TYPE_COORDINATES;
+    }
+    return GRIC_BIN_TYPE_GENERIC;
+}
+
+/**
+ * write_binary_payload() - Convert double values to target dtype and write to disk.
+ * @out_fp:       Open destination file handle.
+ * @dtype:        Target data type.
+ * @raw_data:     Input double array.
+ * @num_elements: Total number of values to write.
+ *
+ * Return: 0 on success, -1 on write failure.
+ */
+static int write_binary_payload(
+    FILE                 *out_fp,
+    gric_bin_data_type_t  dtype,
+    const double         *raw_data,
+    size_t                num_elements)
+{
+    if (dtype == GRIC_BIN_DTYPE_FLOAT64)
+    {
+        return (fwrite(raw_data, sizeof(double), num_elements, out_fp) == num_elements)
+               ? 0 : -1;
+    }
+
+    void *buf = malloc(num_elements * gric_bin_data_type_size(dtype));
+    if (buf == NULL)
+    {
+        return -1;
+    }
+
+    switch (dtype)
+    {
+        case GRIC_BIN_DTYPE_FLOAT32:
+        {
+            float *b = (float *)buf;
+            for (size_t ii = 0; ii < num_elements; ii++)
+            {
+                b[ii] = (float)raw_data[ii];
+            }
+            break;
+        }
+        case GRIC_BIN_DTYPE_UINT32:
+        {
+            uint32_t *b = (uint32_t *)buf;
+            for (size_t ii = 0; ii < num_elements; ii++)
+            {
+                b[ii] = (uint32_t)raw_data[ii];
+            }
+            break;
+        }
+        case GRIC_BIN_DTYPE_INT32:
+        {
+            int32_t *b = (int32_t *)buf;
+            for (size_t ii = 0; ii < num_elements; ii++)
+            {
+                b[ii] = (int32_t)raw_data[ii];
+            }
+            break;
+        }
+        case GRIC_BIN_DTYPE_UINT16:
+        {
+            uint16_t *b = (uint16_t *)buf;
+            for (size_t ii = 0; ii < num_elements; ii++)
+            {
+                b[ii] = (uint16_t)raw_data[ii];
+            }
+            break;
+        }
+        case GRIC_BIN_DTYPE_INT16:
+        {
+            int16_t *b = (int16_t *)buf;
+            for (size_t ii = 0; ii < num_elements; ii++)
+            {
+                b[ii] = (int16_t)raw_data[ii];
+            }
+            break;
+        }
+        default:
+            free(buf);
+            return -1;
+    }
+
+    size_t written = fwrite(buf, gric_bin_data_type_size(dtype), num_elements, out_fp);
+    free(buf);
+    return (written == num_elements) ? 0 : -1;
+}
+
+/**
+ * convert_ascii_to_bin() - Orchestrate reading ASCII table and writing self-describing binary.
+ * @cfg: Converter options.
+ *
+ * Return: 0 on success, non-zero on error.
+ */
+static int convert_ascii_to_bin(
+    Ascii2BinConfig *cfg)
+{
+    double *raw_data = NULL;
+    size_t nrows = 0, ncols = 0, num_elements = 0;
+    if (parse_ascii_table(cfg, &raw_data, &nrows, &ncols, &num_elements) != 0)
+    {
+        fprintf(stderr, "Error: Failed to parse input file '%s'\n", cfg->input_path);
+        return 1;
+    }
+
+    gric_bin_file_type_t ftype = infer_file_type(cfg, ncols);
     gric_bin_header_t hdr;
     memset(&hdr, 0, sizeof(hdr));
     memcpy(hdr.magic, GRIC_BIN_MAGIC, 4);
     hdr.version = GRIC_BIN_VERSION;
     hdr.endian = GRIC_BIN_ENDIAN_LITTLE;
-    size_t comment_len = (comment_str != NULL) ? strlen(comment_str) : 0;
+    size_t comment_len = (cfg->comment_str != NULL) ? strlen(cfg->comment_str) : 0;
     hdr.header_bytes = (uint16_t)(GRIC_BIN_HEADER_DEFAULT_SIZE + comment_len);
     hdr.file_type = (uint8_t)ftype;
-    hdr.data_type = (uint8_t)dtype;
+    hdr.data_type = (uint8_t)cfg->dtype;
     hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
     hdr.num_elements = num_elements;
-    hdr.data_bytes = num_elements * gric_bin_data_type_size(dtype);
+    hdr.data_bytes = num_elements * gric_bin_data_type_size(cfg->dtype);
 
     if (ncols == 1)
     {
@@ -352,145 +515,50 @@ int main(
         hdr.dims[1] = ncols;
     }
 
-    FILE *out_fp = fopen(output_path, "wb");
+    FILE *out_fp = fopen(cfg->output_path, "wb");
     if (out_fp == NULL)
     {
         free(raw_data);
-        fprintf(stderr, "Error: Cannot create output file '%s'\n", output_path);
+        fprintf(stderr, "Error: Cannot create output file '%s'\n", cfg->output_path);
         return 1;
     }
 
-    if (gric_bin_write_header(out_fp, &hdr, comment_str) != 0)
+    if (gric_bin_write_header(out_fp, &hdr, cfg->comment_str) != 0 ||
+        write_binary_payload(out_fp, cfg->dtype, raw_data, num_elements) != 0)
     {
         free(raw_data);
         fclose(out_fp);
-        fprintf(stderr, "Error: Failed to write binary header\n");
+        fprintf(stderr, "Error: Failed to write binary data to '%s'\n", cfg->output_path);
         return 1;
-    }
-
-    int write_ok = 1;
-    if (dtype == GRIC_BIN_DTYPE_FLOAT32)
-    {
-        float *fbuf = (float *)malloc(num_elements * sizeof(float));
-        if (fbuf != NULL)
-        {
-            for (size_t i = 0; i < num_elements; i++)
-            {
-                fbuf[i] = (float)raw_data[i];
-            }
-            if (fwrite(fbuf, sizeof(float), num_elements, out_fp) != num_elements)
-            {
-                write_ok = 0;
-            }
-            free(fbuf);
-        }
-        else
-        {
-            write_ok = 0;
-        }
-    }
-    else if (dtype == GRIC_BIN_DTYPE_FLOAT64)
-    {
-        if (fwrite(raw_data, sizeof(double), num_elements, out_fp) != num_elements)
-        {
-            write_ok = 0;
-        }
-    }
-    else if (dtype == GRIC_BIN_DTYPE_UINT32)
-    {
-        uint32_t *u32buf = (uint32_t *)malloc(num_elements * sizeof(uint32_t));
-        if (u32buf != NULL)
-        {
-            for (size_t i = 0; i < num_elements; i++)
-            {
-                u32buf[i] = (uint32_t)raw_data[i];
-            }
-            if (fwrite(u32buf, sizeof(uint32_t), num_elements, out_fp) != num_elements)
-            {
-                write_ok = 0;
-            }
-            free(u32buf);
-        }
-        else
-        {
-            write_ok = 0;
-        }
-    }
-    else if (dtype == GRIC_BIN_DTYPE_INT32)
-    {
-        int32_t *i32buf = (int32_t *)malloc(num_elements * sizeof(int32_t));
-        if (i32buf != NULL)
-        {
-            for (size_t i = 0; i < num_elements; i++)
-            {
-                i32buf[i] = (int32_t)raw_data[i];
-            }
-            if (fwrite(i32buf, sizeof(int32_t), num_elements, out_fp) != num_elements)
-            {
-                write_ok = 0;
-            }
-            free(i32buf);
-        }
-        else
-        {
-            write_ok = 0;
-        }
-    }
-    else if (dtype == GRIC_BIN_DTYPE_UINT16)
-    {
-        uint16_t *u16buf = (uint16_t *)malloc(num_elements * sizeof(uint16_t));
-        if (u16buf != NULL)
-        {
-            for (size_t i = 0; i < num_elements; i++)
-            {
-                u16buf[i] = (uint16_t)raw_data[i];
-            }
-            if (fwrite(u16buf, sizeof(uint16_t), num_elements, out_fp) != num_elements)
-            {
-                write_ok = 0;
-            }
-            free(u16buf);
-        }
-        else
-        {
-            write_ok = 0;
-        }
-    }
-    else if (dtype == GRIC_BIN_DTYPE_INT16)
-    {
-        int16_t *i16buf = (int16_t *)malloc(num_elements * sizeof(int16_t));
-        if (i16buf != NULL)
-        {
-            for (size_t i = 0; i < num_elements; i++)
-            {
-                i16buf[i] = (int16_t)raw_data[i];
-            }
-            if (fwrite(i16buf, sizeof(int16_t), num_elements, out_fp) != num_elements)
-            {
-                write_ok = 0;
-            }
-            free(i16buf);
-        }
-        else
-        {
-            write_ok = 0;
-        }
     }
 
     free(raw_data);
     fclose(out_fp);
 
-    if (!write_ok)
+    if (cfg->verbose)
     {
-        fprintf(stderr, "Error: Failed to write data payload to '%s'\n", output_path);
-        return 1;
+        printf("Successfully encoded '%s' -> '%s'\n", cfg->input_path, cfg->output_path);
+        gric_bin_print_header_info(stdout, &hdr, cfg->comment_str);
     }
-
-    if (verbose)
-    {
-        printf("Successfully encoded '%s' -> '%s'\n", input_path, output_path);
-        gric_bin_print_header_info(stdout, &hdr, comment_str);
-    }
-
     return 0;
+}
+
+int main(
+    int   argc,
+    char *argv[])
+{
+    if (argc < 2)
+    {
+        print_usage(argv[0]);
+        return 0;
+    }
+
+    Ascii2BinConfig cfg;
+    int parse_rc = parse_cli_args(argc, argv, &cfg);
+    if (parse_rc != 0)
+    {
+        return (parse_rc == 2) ? 0 : 1;
+    }
+
+    return convert_ascii_to_bin(&cfg);
 }

@@ -142,6 +142,39 @@ include_directories(
     ${IMAGESTREAMIO_INCLUDE_DIRS}
     ${CMAKE_CURRENT_BINARY_DIR}
     src
+    src/base
+    src/base/sys
+    src/base/format
+    src/third_party
+    src/third_party/cjson
+    src/quant
+    src/accel
+    src/accel/gpu
+    src/engine
+    src/engine/api
+    src/engine/cluster/core
+    src/engine/cluster/math
+    src/engine/cluster/io
+    src/engine/cluster/steps
+    src/engine/cluster/trace
+    src/engine/cluster/gpu
+    src/engine/knn
+    src/engine/knn/core
+    src/engine/knn/search
+    src/engine/knn/pruning
+    src/engine/knn/cache
+    src/engine/knn/cross
+    src/engine/knn/io
+    src/engine/knn/gpu
+    src/engine/locate
+    src/ui
+    src/ui/cli
+    src/ui/help
+    src/apps
+    src/apps/gric-cluster
+    src/apps/gric-knn
+    src/apps/gric-probe
+    src/tools/diagnostics/dimdensity
     src/shared
     src/shared/quant
     src/shared/format
@@ -165,7 +198,6 @@ include_directories(
     src/gpu
     src/gric-knn/gpu
     src/gric-cluster/gpu
-    src/tools/diagnostics/dimdensity
 )
 
 link_directories(
@@ -178,82 +210,85 @@ link_directories(
 
 # Library Sources (libgric)
 set(LIBGRIC_SRCS
-    src/libgric/gric_api.c
-    src/gric-cluster/core/cluster_core.c
-    src/gric-cluster/core/cluster_step.c
-    src/gric-cluster/core/cluster_step_prep.c
-    src/gric-cluster/core/cluster_quant_filter.c
-    src/gric-cluster/core/cluster_mgmt.c
-    src/gric-cluster/core/frame_info_arena.c
-    src/gric-cluster/core/config_utils.c
-    src/gric-cluster/core/cluster_bounds.c
-    src/gric-cluster/core/cluster_shm.c
-    src/gric-cluster/core/cluster_reassign.c
-    src/gric-cluster/core/tile_state.c
-    src/gric-cluster/core/cluster_core_multitile.c
-    src/gric-cluster/core/tile_map.c
-    src/gric-cluster/io/frame_scatter.c
-    src/gric-cluster/io/cluster_io_multitile.c
-    src/gric-cluster/math/cluster_math.c
-    src/gric-cluster/math/cluster_prune.c
-    src/gric-cluster/math/cluster_scandist.c
-    src/gric-cluster/math/framedistance.c
-    src/gric-cluster/math/framedistance_cutoff.c
-    src/gric-cluster/math/framedistance_batch.c
-    src/gric-cluster/math/framedistance_batch_float.c
-    src/gric-cluster/math/framedistance_batch_double.c
-    src/gric-cluster/math/cluster_gemm_dist.c
-    src/gric-cluster/math/tuple_retrieval.c
-    src/gric-cluster/io/cluster_io.c
-    src/gric-cluster/io/cluster_io_log.c
-    src/gric-cluster/io/cluster_io_results.c
-    src/gric-cluster/io/frameread.c
-    src/gric-cluster/io/frameread_ascii.c
-    src/gric-cluster/io/frameread_fits.c
-    src/gric-cluster/io/frameread_ffmpeg.c
-    src/gric-cluster/io/frameread_stream.c
-    src/gric-cluster/io/png_io.c
-    src/gric-cluster/help/cluster_help.c
-    src/gric-cluster/help/cluster_help_format.c
-    src/gric-cluster/help/cluster_help_content.c
-    src/gric-cluster/help/help_md_render.c
-    ${HELP_TOPICS_GEN_C}
-    src/gric-cluster/steps/initialize_initial_cluster.c
-    src/gric-cluster/steps/compute_priors_and_mixing.c
-    src/gric-cluster/steps/select_next_measurement_target.c
-    src/gric-cluster/steps/measure_distance_to_cluster.c
-    src/gric-cluster/steps/update_probabilities_and_pruning.c
-    src/gric-cluster/steps/update_geometric_probabilities.c
-    src/gric-cluster/steps/handle_new_cluster_creation.c
-    src/gric-cluster/steps/record_step_assignment.c
-    src/gric-cluster/steps/update_consistency_mask.c
-    src/gric-cluster/trace/cluster_trace.c
-    src/shared/cli/cli_colors.c
-    src/shared/cli/cli_opt.c
-    src/shared/cjson/cJSON.c
-    src/shared/format/gric_bin_io.c
-    src/shared/format/cluster_locator.c
-    src/shared/quant/scalar_quant.c
-    src/shared/quant/scalar_quant_fastscan.c
-    src/shared/quant/scalar_quant_filter.c
-    src/shared/quant/residual_quant.c
-    src/shared/quant/product_quant.c
-    src/shared/quant/quant_memo.c
-    src/shared/quant/rabit_quant.c
-    src/shared/sys/gric_profile.c
-    src/shared/sys/gric_rss.c
-    src/shared/sys/gric_simd.c
-    src/shared/sys/gric_mem.c
-    src/shared/quant/e8_lattice.c
-    src/shared/quant/eq16_quant.c
-    src/shared/quant/eq16_dist.c
-    src/shared/quant/eq16_filter.c
-    src/gric-probe/probe_engine.c
+    src/engine/api/gric_api.c
+    src/engine/cluster/core/cluster_core.c
+    src/engine/cluster/core/cluster_step.c
+    src/engine/cluster/core/cluster_step_prep.c
+    src/engine/cluster/core/cluster_quant_filter.c
+    src/engine/cluster/core/cluster_mgmt.c
+    src/engine/cluster/core/frame_info_arena.c
+    src/engine/cluster/core/cluster_bounds.c
+    src/engine/cluster/core/cluster_shm.c
+    src/engine/cluster/core/cluster_reassign.c
+    src/engine/cluster/core/tile_state.c
+    src/engine/cluster/core/cluster_core_multitile.c
+    src/engine/cluster/core/tile_map.c
+    src/engine/cluster/io/frame_scatter.c
+    src/engine/cluster/io/cluster_io_multitile.c
+    src/engine/cluster/math/cluster_math.c
+    src/engine/cluster/math/cluster_prune.c
+    src/engine/cluster/math/cluster_scandist.c
+    src/engine/cluster/math/framedistance.c
+    src/engine/cluster/math/framedistance_cutoff.c
+    src/engine/cluster/math/framedistance_batch.c
+    src/engine/cluster/math/framedistance_batch_float.c
+    src/engine/cluster/math/framedistance_batch_double.c
+    src/engine/cluster/math/cluster_gemm_dist.c
+    src/engine/cluster/math/tuple_retrieval.c
+    src/engine/cluster/io/cluster_io.c
+    src/engine/cluster/io/cluster_io_log.c
+    src/engine/cluster/io/cluster_io_results.c
+    src/engine/cluster/io/frameread.c
+    src/engine/cluster/io/frameread_ascii.c
+    src/engine/cluster/io/frameread_fits.c
+    src/engine/cluster/io/frameread_ffmpeg.c
+    src/engine/cluster/io/frameread_stream.c
+    src/engine/cluster/io/png_io.c
+    src/engine/cluster/steps/initialize_initial_cluster.c
+    src/engine/cluster/steps/compute_priors_and_mixing.c
+    src/engine/cluster/steps/select_next_measurement_target.c
+    src/engine/cluster/steps/measure_distance_to_cluster.c
+    src/engine/cluster/steps/update_probabilities_and_pruning.c
+    src/engine/cluster/steps/update_geometric_probabilities.c
+    src/engine/cluster/steps/handle_new_cluster_creation.c
+    src/engine/cluster/steps/record_step_assignment.c
+    src/engine/cluster/steps/update_consistency_mask.c
+    src/engine/cluster/trace/cluster_trace.c
+    src/base/format/gric_bin_io.c
+    src/engine/locate/cluster_locator.c
+    src/quant/scalar_quant.c
+    src/quant/scalar_quant_fastscan.c
+    src/quant/scalar_quant_filter.c
+    src/quant/residual_quant.c
+    src/quant/product_quant.c
+    src/quant/quant_memo.c
+    src/quant/rabit_quant.c
+    src/base/sys/gric_profile.c
+    src/base/sys/gric_rss.c
+    src/base/sys/gric_simd.c
+    src/base/sys/gric_mem.c
+    src/quant/e8_lattice.c
+    src/quant/eq16_quant.c
+    src/quant/eq16_dist.c
+    src/quant/eq16_filter.c
 )
 
 add_library(gric SHARED ${LIBGRIC_SRCS})
 add_library(gric_static STATIC ${LIBGRIC_SRCS})
 set_target_properties(gric_static PROPERTIES OUTPUT_NAME "gric")
+
+# UI, CLI and terminal formatting library
+add_library(gric_ui STATIC
+    src/ui/cli/cli_colors.c
+    src/ui/cli/cli_opt.c
+    src/third_party/cjson/cJSON.c
+)
+target_include_directories(gric_ui PUBLIC
+    src/ui/cli
+    src/third_party/cjson
+    src/shared
+)
+target_link_libraries(gric_ui PUBLIC m)
 
 if (OpenMP_C_FOUND)
     target_link_libraries(gric PUBLIC OpenMP::OpenMP_C)
@@ -281,24 +316,31 @@ if (PNG_FOUND)
 endif()
 if (ENABLE_CUDA)
     target_sources(gric PRIVATE
-        src/gpu/cuda_common.cu
-        src/gpu/cuda_anchor_store.cu
-        src/gric-cluster/gpu/cluster_cuda.cu
+        src/accel/gpu/cuda_common.cu
+        src/accel/gpu/cuda_anchor_store.cu
+        src/engine/cluster/gpu/cluster_cuda.cu
     )
     target_link_libraries(gric PUBLIC CUDA::cublas CUDA::cudart)
     target_sources(gric_static PRIVATE
-        src/gpu/cuda_common.cu
-        src/gpu/cuda_anchor_store.cu
-        src/gric-cluster/gpu/cluster_cuda.cu
+        src/accel/gpu/cuda_common.cu
+        src/accel/gpu/cuda_anchor_store.cu
+        src/engine/cluster/gpu/cluster_cuda.cu
     )
     target_link_libraries(gric_static PUBLIC CUDA::cublas CUDA::cudart)
 endif()
 
 add_executable(gric-cluster
-    src/gric-cluster/core/main.c
-    src/gric-cluster/core/cluster_cli.c
+    src/apps/gric-cluster/main.c
+    src/apps/gric-cluster/cluster_cli.c
+    src/apps/gric-cluster/config_utils.c
+    src/ui/help/cluster_help.c
+    src/ui/help/cluster_help_format.c
+    src/ui/help/cluster_help_content.c
+    src/ui/help/help_md_render.c
+    ${HELP_TOPICS_GEN_C}
+    src/apps/gric-probe/probe_engine.c
 )
-target_link_libraries(gric-cluster PRIVATE gric)
+target_link_libraries(gric-cluster PRIVATE gric gric_ui)
 
 add_executable(test_libgric_c tests/test_libgric_c.c)
 target_link_libraries(test_libgric_c PRIVATE gric m)
@@ -354,18 +396,18 @@ add_executable(gric-NDmodel src/tools/generators/model_nd.c src/shared/cli/cli_c
 target_link_libraries(gric-NDmodel m)
 
 if (CFITSIO_FOUND)
-    add_executable(gric-gen-balls tools/gen_bouncing_balls.c)
+    add_executable(gric-gen-balls src/tools/generators/gen_bouncing_balls.c)
     target_link_libraries(gric-gen-balls m ${CFITSIO_LIBRARIES})
     target_include_directories(gric-gen-balls PRIVATE ${CFITSIO_INCLUDE_DIRS})
 
-    add_executable(gric-gen-asteroid tools/gen_asteroid.c)
+    add_executable(gric-gen-asteroid src/tools/generators/gen_asteroid.c)
     target_link_libraries(gric-gen-asteroid m ${CFITSIO_LIBRARIES})
     target_include_directories(gric-gen-asteroid PRIVATE ${CFITSIO_INCLUDE_DIRS})
     if (OpenMP_C_FOUND)
         target_link_libraries(gric-gen-asteroid OpenMP::OpenMP_C)
     endif()
 
-    add_executable(gric-asteroid-recon-test tools/test_asteroid_recon.c)
+    add_executable(gric-asteroid-recon-test src/tools/generators/test_asteroid_recon.c)
     target_link_libraries(gric-asteroid-recon-test m ${CFITSIO_LIBRARIES})
     target_include_directories(gric-asteroid-recon-test PRIVATE ${CFITSIO_INCLUDE_DIRS})
     if (OpenMP_C_FOUND)
@@ -446,7 +488,7 @@ add_executable(gric-benchmark
 
 # gric-simd-bench tool
 add_executable(gric-simd-bench
-    tools/bench_simd_scaling.c
+    src/tools/benchmarks/bench_simd_scaling.c
     src/shared/sys/gric_simd.c
 )
 target_include_directories(gric-simd-bench PRIVATE src/shared src)
@@ -490,27 +532,29 @@ endif()
 
 # gric-knn core library
 set(KNN_CORE_SRCS
-    src/gric-knn/core/knn_heap.c
-    src/gric-knn/io/knn_loader.c
-    src/gric-knn/io/knn_parser.c
-    src/gric-knn/cache/knn_cache.c
-    src/gric-knn/cache/knn_cache_layout.c
-    src/gric-knn/search/knn_tree.c
-    src/gric-knn/io/knn_reader.c
-    src/gric-knn/core/knn_engine.c
-    src/gric-knn/pruning/knn_pruning.c
-    src/gric-knn/search/knn_member_search.c
-    src/gric-knn/search/knn_member_quant.c
-    src/gric-knn/search/knn_cluster_search.c
-    src/gric-knn/cross/knn_cross_dataset.c
-    src/gric-knn/cross/knn_cross_route.c
-    src/gric-knn/cross/knn_cross_eval.c
-    src/gric-knn/io/knn_writer.c
+    src/engine/knn/core/knn_heap.c
+    src/engine/knn/io/knn_loader.c
+    src/engine/knn/io/knn_parser.c
+    src/engine/knn/cache/knn_cache.c
+    src/engine/knn/cache/knn_cache_layout.c
+    src/engine/knn/search/knn_tree.c
+    src/engine/knn/io/knn_reader.c
+    src/engine/knn/core/knn_engine.c
+    src/engine/knn/pruning/knn_pruning.c
+    src/engine/knn/search/knn_member_search.c
+    src/engine/knn/search/knn_member_quant.c
+    src/engine/knn/search/knn_cluster_search.c
+    src/engine/knn/cross/knn_cross_dataset.c
+    src/engine/knn/cross/knn_cross_route.c
+    src/engine/knn/cross/knn_cross_eval.c
+    src/engine/knn/io/knn_writer.c
 )
 add_library(gric_knn_static STATIC ${KNN_CORE_SRCS})
 target_include_directories(gric_knn_static PUBLIC
-    src/gric-knn
-    src/gric-cluster/math
+    src/engine/knn
+    src/engine/cluster/math
+    src/quant
+    src/base
     src/shared
     src
 )
@@ -527,21 +571,21 @@ if (CFITSIO_FOUND)
 endif()
 if (ENABLE_CUDA)
     target_sources(gric_knn_static PRIVATE
-        src/gpu/cuda_common.cu
-        src/gpu/cuda_anchor_store.cu
-        src/gpu/cuda_ivf_index.cu
-        src/gric-knn/gpu/knn_cuda.cu
-        src/gric-knn/gpu/knn_cuda_ivf.cu
+        src/accel/gpu/cuda_common.cu
+        src/accel/gpu/cuda_anchor_store.cu
+        src/accel/gpu/cuda_ivf_index.cu
+        src/engine/knn/gpu/knn_cuda.cu
+        src/engine/knn/gpu/knn_cuda_ivf.cu
     )
     target_link_libraries(gric_knn_static PUBLIC CUDA::cublas CUDA::cudart)
 endif()
 
 # gric-knn tool
 add_executable(gric-knn
-    src/gric-knn/core/main.c
-    src/gric-knn/cli/knn_cli.c
+    src/apps/gric-knn/main.c
+    src/apps/gric-knn/knn_cli.c
 )
-target_link_libraries(gric-knn PRIVATE gric_knn_static gric_static m)
+target_link_libraries(gric-knn PRIVATE gric_knn_static gric_static gric_ui m)
 if (OpenMP_C_FOUND)
     target_link_libraries(gric-knn PRIVATE OpenMP::OpenMP_C)
 endif()
@@ -558,11 +602,11 @@ endif()
 
 # gric-knn-avg reconstruction tool
 add_executable(gric-knn-avg
-    src/gric-knn/io/knn_reconstruct.c
-    src/gric-knn/io/knn_reader.c
-    src/shared/cli/cli_colors.c
-    src/shared/format/gric_bin_io.c
-    src/shared/sys/gric_simd.c
+    src/apps/gric-knn/knn_reconstruct.c
+    src/engine/knn/io/knn_reader.c
+    src/ui/cli/cli_colors.c
+    src/base/format/gric_bin_io.c
+    src/base/sys/gric_simd.c
 )
 target_include_directories(gric-knn-avg PRIVATE src/gric-knn src/shared src)
 target_link_libraries(gric-knn-avg m)
@@ -613,24 +657,24 @@ target_link_libraries(gric-bin2ascii m)
 
 # gric-probe dataset characterization tool
 add_executable(gric-probe
-    src/gric-probe/main.c
-    src/gric-probe/probe_engine.c
-    src/gric-probe/probe_report.c
-    src/shared/sys/gric_profile.c
-    src/shared/format/cluster_locator.c
-    src/shared/format/gric_bin_io.c
-    src/shared/quant/scalar_quant.c
-    src/shared/quant/scalar_quant_fastscan.c
-    src/shared/quant/scalar_quant_filter.c
-    src/shared/quant/residual_quant.c
-    src/shared/quant/e8_lattice.c
-    src/shared/quant/eq16_quant.c
-    src/shared/quant/eq16_dist.c
-    src/shared/quant/eq16_filter.c
-    src/shared/cli/cli_colors.c
-    src/shared/sys/gric_simd.c
+    src/apps/gric-probe/main.c
+    src/apps/gric-probe/probe_engine.c
+    src/apps/gric-probe/probe_report.c
+    src/base/sys/gric_profile.c
+    src/engine/locate/cluster_locator.c
+    src/base/format/gric_bin_io.c
+    src/quant/scalar_quant.c
+    src/quant/scalar_quant_fastscan.c
+    src/quant/scalar_quant_filter.c
+    src/quant/residual_quant.c
+    src/quant/e8_lattice.c
+    src/quant/eq16_quant.c
+    src/quant/eq16_dist.c
+    src/quant/eq16_filter.c
+    src/ui/cli/cli_colors.c
+    src/base/sys/gric_simd.c
 )
-target_include_directories(gric-probe PRIVATE src/gric-probe src/shared src)
+target_include_directories(gric-probe PRIVATE src/apps/gric-probe src/base src/quant src/engine src/shared src)
 target_link_libraries(gric-probe m)
 if (OpenMP_C_FOUND)
     target_link_libraries(gric-probe OpenMP::OpenMP_C)
@@ -701,7 +745,7 @@ add_library(gric_mcp_core OBJECT
     src/gric-probe/probe_engine.c
     src/gric-probe/probe_report.c
     src/shared/sys/gric_profile.c
-    src/shared/format/cluster_locator.c
+    src/engine/locate/cluster_locator.c
     src/shared/format/gric_bin_io.c
     src/shared/quant/scalar_quant.c
     src/shared/quant/scalar_quant_fastscan.c
@@ -1292,7 +1336,7 @@ add_executable(test_gric_probe
     src/gric-probe/probe_engine.c
     src/gric-probe/probe_report.c
     src/shared/sys/gric_profile.c
-    src/shared/format/cluster_locator.c
+    src/engine/locate/cluster_locator.c
     src/shared/format/gric_bin_io.c
     src/shared/quant/scalar_quant.c
     src/shared/quant/scalar_quant_fastscan.c
@@ -1876,12 +1920,8 @@ add_custom_target(mcp-snapshot
     --update
     DEPENDS gric-mcp)
 
-add_executable(test_cli_opt
-    tests/test_cli_opt.c
-    src/shared/cli/cli_opt.c
-    src/shared/cli/cli_colors.c
-    src/shared/cjson/cJSON.c)
-target_link_libraries(test_cli_opt m)
+add_executable(test_cli_opt tests/test_cli_opt.c)
+target_link_libraries(test_cli_opt PRIVATE gric_ui m)
 add_test(NAME test_cli_opt COMMAND test_cli_opt)
 
 if (ENABLE_CUDA)

@@ -24,6 +24,7 @@ INCLUDES = \
 	-Isrc/gric-knn/cross \
 	-Isrc/gric-knn/io \
 	-Isrc/shared -Isrc/shared/quant -Isrc/shared/format -Isrc/shared/sys -Isrc/shared/cli \
+	-Isrc/engine/locate \
 	-Isrc/wasm
 
 SRCS = \
@@ -70,7 +71,7 @@ SRCS = \
 	src/gric-knn/cross/knn_cross_dataset.c \
 	src/gric-knn/cross/knn_cross_route.c \
 	src/gric-knn/cross/knn_cross_eval.c \
-	src/shared/format/cluster_locator.c \
+	src/engine/locate/cluster_locator.c \
 	src/shared/format/gric_bin_io.c \
 	src/shared/sys/gric_mem.c \
 	src/shared/sys/gric_simd.c \
