@@ -103,3 +103,20 @@ make -C build -j
 # Run complete test suite (must pass 100%)
 ctest --test-dir build --output-on-failure
 ```
+
+---
+
+## 6. Pre-Merge Invariants & CI Gates
+
+Never merge a PR based on local testing alone. Before merging any PR, verify:
+1. **100% Green CI Status**: Run `gh pr checks <PR_NUM>` and confirm all matrix jobs
+   pass (0 failing, 0 pending, 0 cancelled).
+2. **POSIX & macOS Compatibility**: No Linux glibc-only calls (e.g. naked `pipe2`) or
+   `/proc` assumptions without Darwin fallbacks (`_NSGetExecutablePath()`, directory crawl).
+3. **Memory Alignment Sizing**: `aligned_alloc(alignment, size)` requires `size % alignment == 0`
+   to avoid ASan aborts (`invalid-aligned-alloc-alignment`) and macOS `EINVAL`/SIGSEGV.
+4. **Pointer Lifetimes**: Never store or return pointers to local stack buffers (`char buf[...]`);
+   Clang/GCC `-O2`/`-O3` optimization passes pop and overwrite stack frames.
+5. **Dynamic Path Resolution**: Always use `mcp_find_executable()` and `mcp_get_build_dir()`
+   rather than hardcoding `./build/` paths.
+

@@ -68,11 +68,13 @@ static int check_binary_rebuilt(void)
     }
     else
     {
+#if defined(__linux__)
         len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
         if (len > 0)
         {
             buf[len] = '\0';
         }
+#endif
     }
 
     if (len > 0)

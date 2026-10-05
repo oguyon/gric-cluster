@@ -6,6 +6,9 @@
 #define _GNU_SOURCE
 #include "http_server.h"
 #include "cli_colors.h"
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 #include <libgen.h>
 #include <signal.h>
 #include <stdio.h>
@@ -67,18 +70,35 @@ int main(
     ServerConfig config;
     server_config_init(&config);
 
-    /* Detect binary directory from /proc/self/exe */
+    /* Detect binary directory portably */
     char exe_path[PATH_MAX];
+    exe_path[0] = '\0';
+#if defined(__APPLE__)
+    uint32_t bsize = (uint32_t)sizeof(exe_path);
+    if (_NSGetExecutablePath(exe_path, &bsize) == 0)
+    {
+        char resolved[PATH_MAX];
+        if (realpath(exe_path, resolved) != NULL)
+        {
+            char *dir = dirname(resolved);
+            if (dir != NULL)
+            {
+                strncpy(config.server_bin_dir, dir, sizeof(config.server_bin_dir) - 1);
+            }
+        }
+    }
+#elif defined(__linux__)
     ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
     if (len > 0)
     {
         exe_path[len] = '\0';
         char *dir = dirname(exe_path);
-        if (dir)
+        if (dir != NULL)
         {
             strncpy(config.server_bin_dir, dir, sizeof(config.server_bin_dir) - 1);
         }
     }
+#endif
 
     for (int i = 1; i < argc; i++)
     {
