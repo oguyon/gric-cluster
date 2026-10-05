@@ -407,6 +407,26 @@ int mcp_tool_dev_check_layering(
     cJSON       *res);
 
 /**
+ * mcp_parse_sanitizer_output() - Parse ASan/UBSan reports into structured error objects.
+ * @output:     Raw stdout/stderr text containing sanitizer output.
+ * @errors_arr: cJSON array to append parsed error objects to.
+ */
+void mcp_parse_sanitizer_output(
+    const char *output,
+    cJSON      *errors_arr);
+
+/**
+ * mcp_tool_dev_sanitize() - Build and test under AddressSanitizer and UBSan.
+ * @args:   JSON object containing build_dir, target, test_filter, c_flags, etc.
+ * @res:    Output JSON object containing status, errors_count, errors array.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_dev_sanitize(
+    const cJSON *args,
+    cJSON       *res);
+
+/**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.
  *
  * Return: Newly allocated cJSON array containing tool descriptors.

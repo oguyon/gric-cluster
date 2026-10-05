@@ -275,6 +275,43 @@
     "name": "gric_dev_golden_compare"
   },
   {
+    "description": "Compile and execute test suites under AddressSanitizer and UndefinedBehaviorSanitizer, parsing stack traces, bounds errors, and memory leaks.",
+    "inputSchema": {
+      "properties": {
+        "build_dir": {
+          "description": "Isolated build directory (default: 'build-asan').",
+          "type": "string"
+        },
+        "c_flags": {
+          "description": "Compiler sanitization flags.",
+          "type": "string"
+        },
+        "clean": {
+          "description": "Perform clean before compilation (default: false).",
+          "type": "boolean"
+        },
+        "run_tests": {
+          "description": "Whether to execute CTest after build (default: true).",
+          "type": "boolean"
+        },
+        "target": {
+          "description": "CMake build target (default: 'all').",
+          "type": "string"
+        },
+        "test_filter": {
+          "description": "CTest regex filter pattern (-R).",
+          "type": "string"
+        },
+        "timeout_ms": {
+          "description": "Process timeout in milliseconds (default: 300000).",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_dev_sanitize"
+  },
+  {
     "description": "Launch standalone Milk streaming daemon (cluster, knn, recon) with input/output streams and initial parameters.",
     "inputSchema": {
       "properties": {
