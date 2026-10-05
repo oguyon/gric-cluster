@@ -77,14 +77,7 @@ int mcp_tool_cluster_start(
     mcp_get_project_root(root, sizeof(root));
 
     char cluster_bin[1060];
-    if (root[0] != '\0')
-    {
-        snprintf(cluster_bin, sizeof(cluster_bin), "%s/build/gric-cluster", root);
-    }
-    else
-    {
-        snprintf(cluster_bin, sizeof(cluster_bin), "gric-cluster");
-    }
+    mcp_find_executable("gric-cluster", cluster_bin, sizeof(cluster_bin));
 
     char rlim_str[32];
     snprintf(rlim_str, sizeof(rlim_str), "%.6f", r_item->valuedouble);
@@ -257,14 +250,7 @@ int mcp_tool_knn_start(
     mcp_get_project_root(root, sizeof(root));
 
     char knn_bin[1060];
-    if (root[0] != '\0')
-    {
-        snprintf(knn_bin, sizeof(knn_bin), "%s/build/gric-knn", root);
-    }
-    else
-    {
-        snprintf(knn_bin, sizeof(knn_bin), "gric-knn");
-    }
+    mcp_find_executable("gric-knn", knn_bin, sizeof(knn_bin));
 
     const char *argv[MAX_ARGV_ITEMS];
     int idx = 0;

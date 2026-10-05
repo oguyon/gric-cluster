@@ -16,12 +16,12 @@ static void ensure_test_dataset(void)
 {
     if (access("/tmp/ctest_spiral.txt", R_OK) != 0)
     {
-        char root[1024];
-        mcp_get_project_root(root, sizeof(root));
+        char mktxt_bin[1060];
+        mcp_find_executable("gric-mktxtseq", mktxt_bin, sizeof(mktxt_bin));
         char cmd[2048];
         snprintf(
             cmd, sizeof(cmd),
-            "%s/build/gric-mktxtseq 1000 /tmp/ctest_spiral.txt 2Dspiral", root);
+            "%s 1000 /tmp/ctest_spiral.txt 2Dspiral", mktxt_bin);
         int r = system(cmd);
         (void)r;
     }
@@ -126,10 +126,12 @@ static void test_job_cancel(void)
     const char *large_ds = "/tmp/ctest_large_spiral.txt";
     if (access(large_ds, R_OK) != 0)
     {
+        char mktxt_bin[1060];
+        mcp_find_executable("gric-mktxtseq", mktxt_bin, sizeof(mktxt_bin));
         char cmd[2048];
         snprintf(
             cmd, sizeof(cmd),
-            "%s/build/gric-mktxtseq 50000 %s 2Dspiral", root, large_ds);
+            "%s 50000 %s 2Dspiral", mktxt_bin, large_ds);
         int r = system(cmd);
         (void)r;
     }

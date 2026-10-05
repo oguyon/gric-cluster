@@ -105,29 +105,8 @@ static void locate_plot_binary(
     char   *out_exe,
     size_t  out_size)
 {
-    char root[1024];
-    mcp_get_project_root(root, sizeof(root));
-
-    if (root[0] != '\0')
+    if (mcp_find_executable("gric-plot", out_exe, out_size) == 0)
     {
-        size_t rlen = strlen(root);
-        const char *suffix = "/build/gric-plot";
-        size_t slen = strlen(suffix);
-        if (rlen + slen < out_size)
-        {
-            memcpy(out_exe, root, rlen);
-            memcpy(out_exe + rlen, suffix, slen + 1);
-            if (access(out_exe, X_OK) == 0)
-            {
-                return;
-            }
-        }
-    }
-
-    if (access("./build/gric-plot", X_OK) == 0)
-    {
-        strncpy(out_exe, "./build/gric-plot", out_size - 1);
-        out_exe[out_size - 1] = '\0';
         return;
     }
 

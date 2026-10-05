@@ -74,10 +74,19 @@ int mcp_exec_capture(
     }
 
     int pipefd[2];
+#if defined(__APPLE__) || !defined(O_CLOEXEC)
+    if (pipe(pipefd) != 0)
+    {
+        return -1;
+    }
+    fcntl(pipefd[0], F_SETFD, FD_CLOEXEC);
+    fcntl(pipefd[1], F_SETFD, FD_CLOEXEC);
+#else
     if (pipe2(pipefd, O_CLOEXEC) != 0)
     {
         return -1;
     }
+#endif
 
     pid_t pid = fork();
     if (pid < 0)

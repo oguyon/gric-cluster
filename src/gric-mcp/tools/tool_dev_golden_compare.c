@@ -112,7 +112,7 @@ static int ensure_preset_dataset(
 
     if (strcmp(preset_name, "spiral") == 0)
     {
-        snprintf(exe_buf, sizeof(exe_buf), "%s/build/gric-mktxtseq", project_root);
+        mcp_find_executable("gric-mktxtseq", exe_buf, sizeof(exe_buf));
         const char *const argv[] = {
             exe_buf, "1000", dataset_path, "2Dspiral", NULL
         };
@@ -121,7 +121,7 @@ static int ensure_preset_dataset(
     }
     if (strcmp(preset_name, "balls") == 0)
     {
-        snprintf(exe_buf, sizeof(exe_buf), "%s/build/gric-gen-balls", project_root);
+        mcp_find_executable("gric-gen-balls", exe_buf, sizeof(exe_buf));
         const char *const argv[] = {
             exe_buf, "-n", "1", "-r", "5.0", "-W", "32", "-H", "32",
             "-f", "500", "-s", "42", dataset_path, NULL
@@ -131,7 +131,7 @@ static int ensure_preset_dataset(
     }
     if (strcmp(preset_name, "gaussian64") == 0)
     {
-        snprintf(exe_buf, sizeof(exe_buf), "%s/build/gric-mktxtseq", project_root);
+        mcp_find_executable("gric-mktxtseq", exe_buf, sizeof(exe_buf));
         const char *const argv[] = {
             exe_buf, "500", dataset_path, "64Drandom", NULL
         };
@@ -382,7 +382,7 @@ int mcp_tool_dev_golden_compare(
         preset_name, (int)getpid());
 
     char cluster_bin[1060];
-    snprintf(cluster_bin, sizeof(cluster_bin), "%s/build/gric-cluster", root);
+    mcp_find_executable("gric-cluster", cluster_bin, sizeof(cluster_bin));
 
     char rlim_str[32];
     snprintf(rlim_str, sizeof(rlim_str), "%.6f", rlim);

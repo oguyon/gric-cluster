@@ -308,7 +308,7 @@ int mcp_tool_dev_build_test(
     }
 
     char build_dir[1040];
-    snprintf(build_dir, sizeof(build_dir), "%s/build", root);
+    mcp_get_build_dir(build_dir, sizeof(build_dir));
 
     /* 1. Parse arguments */
     const char *target = NULL;
