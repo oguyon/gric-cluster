@@ -1,6 +1,6 @@
 # GRIC Code Size Ratchet Baseline
 # Format: 2 lines per entry: <TYPE> <MAX_LINES> followed by <TARGET>
-# Generated on 2026-10-05 10:17:32 UTC
+# Generated on 2026-10-05 10:28:23 UTC
 # Update via: ./scripts/check_code_size.sh --update-baseline
 
 # --- File Lengths (> 1000 lines) ---
@@ -94,20 +94,12 @@ FUNC 168
 src/apps/gric-cluster-analysis/analysis_stats.c:analyze_spatial_spread
 FUNC 187
 src/apps/gric-cluster-analysis/gric-cluster-analysis.c:main
-FUNC 449
-src/apps/gric-cluster/cluster_cli.c:cluster_cli_parse
 FUNC 310
 src/apps/gric-cluster/config_utils.c:cluster_get_options
 FUNC 198
 src/apps/gric-cluster/config_utils.c:write_config_file
-FUNC 350
-src/apps/gric-cluster/main.c:main
 FUNC 246
 src/apps/gric-knn/knn_cli.c:knn_get_options
-FUNC 408
-src/apps/gric-knn/knn_reconstruct.c:main
-FUNC 412
-src/apps/gric-knn/main.c:main
 FUNC 161
 src/apps/gric-mcp/gric-mcp.c:main
 FUNC 212
@@ -360,8 +352,6 @@ FUNC 908
 src/tools/benchmarks/bench_sq16_compression.c:main
 FUNC 264
 src/tools/converters/ascii-spot-2-video.c:main
-FUNC 419
-src/tools/converters/ascii2bin.c:main
 FUNC 317
 src/tools/converters/bin2ascii.c:main
 FUNC 219
