@@ -33,6 +33,11 @@ jobs:
           chmod +x scripts/check_pr_invariants.sh
           ./scripts/check_pr_invariants.sh
 
+      - name: Check Code Size & Intent Constraints
+        run: |
+          chmod +x scripts/check_code_size.sh
+          ./scripts/check_code_size.sh
+
   build-and-test:
     needs: [lint]
     runs-on: ${{ matrix.os }}
@@ -128,6 +133,7 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_BUILD_TYPE="${{ matrix.build_type }}" \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON \
             "${EXTRA_FLAGS[@]}" \
             -S "${{ github.workspace }}"
 
@@ -235,6 +241,7 @@ jobs:
             -DCMAKE_C_FLAGS_RELEASE="-O3 -mavx2 -mfma -funroll-loops -g" \
             -DCMAKE_CXX_FLAGS_RELEASE="-O3 -mavx2 -mfma -funroll-loops -g" \
             -DENABLE_MILK=ON \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=ON \
             -S .
 
       - name: Build GRIC with Milk

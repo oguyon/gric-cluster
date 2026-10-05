@@ -90,15 +90,13 @@ static void cleanup_directory(
 
 /**
  * ensure_preset_dataset() - Ensure input dataset file exists or generate it.
- * @preset_name: Name of the preset ("spiral", "balls", "gaussian64").
- * @project_root: Repository root path containing build binaries.
+ * @preset_name:  Name of the preset ("spiral", "balls", "gaussian64").
  * @dataset_path: Target path for the dataset.
  *
  * Return: 0 on success, -1 on failure.
  */
 static int ensure_preset_dataset(
     const char *preset_name,
-    const char *project_root,
     const char *dataset_path)
 {
     if (access(dataset_path, R_OK) == 0)
@@ -340,7 +338,7 @@ int mcp_tool_dev_golden_compare(
     else
     {
         snprintf(dataset_path, sizeof(dataset_path), "%s", preset->dataset_rel);
-        if (ensure_preset_dataset(preset->name, root, dataset_path) != 0)
+        if (ensure_preset_dataset(preset->name, dataset_path) != 0)
         {
             cJSON_AddStringToObject(res, "error", "Failed to generate or access preset dataset");
             return -1;

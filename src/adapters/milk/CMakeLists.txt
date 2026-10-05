@@ -14,6 +14,20 @@ if (NOT EXISTS "${MILK_COMPAT_DIR}/libprocessinfo")
     )
 endif()
 
+if (CMAKE_C_COMPILER_ID MATCHES "GNU")
+    add_compile_options(-Wno-stringop-truncation)
+endif()
+
+set(MILK_FPS_SYSTEM_INCLUDES
+    ${MILK_COMPAT_DIR}
+    ${MILK_INCLUDE_DIRS}
+    ${MILK_INCLUDE_DIRS}/libfps
+    ${MILK_INCLUDE_DIRS}/libmilkcommon
+    ${MILK_INCLUDE_DIRS}/libmilkdata
+    ${MILK_INCLUDE_DIRS}/CommandLineInterface
+    ${IMAGESTREAMIO_INCLUDE_DIRS}
+)
+
 # 1. Standalone FPS Daemon Executable: milk-fpsexec-gric-cluster
 add_executable(milk-fpsexec-gric-cluster
     gric_fps_main.c
@@ -27,16 +41,13 @@ target_compile_definitions(milk-fpsexec-gric-cluster PRIVATE
 
 target_include_directories(milk-fpsexec-gric-cluster PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${MILK_COMPAT_DIR}
-    ${MILK_INCLUDE_DIRS}
-    ${MILK_INCLUDE_DIRS}/libfps
-    ${MILK_INCLUDE_DIRS}/libmilkcommon
-    ${MILK_INCLUDE_DIRS}/libmilkdata
-    ${MILK_INCLUDE_DIRS}/CommandLineInterface
-    ${IMAGESTREAMIO_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/gric-cluster/core
+)
+
+target_include_directories(milk-fpsexec-gric-cluster SYSTEM PRIVATE
+    ${MILK_FPS_SYSTEM_INCLUDES}
 )
 
 target_link_libraries(milk-fpsexec-gric-cluster PRIVATE
@@ -87,17 +98,14 @@ target_compile_definitions(milk-fpsexec-gric-knn PRIVATE
 
 target_include_directories(milk-fpsexec-gric-knn PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${MILK_COMPAT_DIR}
-    ${MILK_INCLUDE_DIRS}
-    ${MILK_INCLUDE_DIRS}/libfps
-    ${MILK_INCLUDE_DIRS}/libmilkcommon
-    ${MILK_INCLUDE_DIRS}/libmilkdata
-    ${MILK_INCLUDE_DIRS}/CommandLineInterface
-    ${IMAGESTREAMIO_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/gric-cluster/core
     ${CMAKE_SOURCE_DIR}/src/gric-knn
+)
+
+target_include_directories(milk-fpsexec-gric-knn SYSTEM PRIVATE
+    ${MILK_FPS_SYSTEM_INCLUDES}
 )
 
 target_link_libraries(milk-fpsexec-gric-knn PRIVATE
@@ -149,17 +157,14 @@ target_compile_definitions(milk-fpsexec-gric-reconstruct PRIVATE
 
 target_include_directories(milk-fpsexec-gric-reconstruct PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${MILK_COMPAT_DIR}
-    ${MILK_INCLUDE_DIRS}
-    ${MILK_INCLUDE_DIRS}/libfps
-    ${MILK_INCLUDE_DIRS}/libmilkcommon
-    ${MILK_INCLUDE_DIRS}/libmilkdata
-    ${MILK_INCLUDE_DIRS}/CommandLineInterface
-    ${IMAGESTREAMIO_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/gric-cluster/core
     ${CMAKE_SOURCE_DIR}/src/gric-knn
+)
+
+target_include_directories(milk-fpsexec-gric-reconstruct SYSTEM PRIVATE
+    ${MILK_FPS_SYSTEM_INCLUDES}
 )
 
 target_link_libraries(milk-fpsexec-gric-reconstruct PRIVATE
@@ -215,18 +220,15 @@ set_target_properties(milkgric PROPERTIES
 
 target_include_directories(milkgric PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${MILK_COMPAT_DIR}
-    ${MILK_INCLUDE_DIRS}
-    ${MILK_INCLUDE_DIRS}/libfps
-    ${MILK_INCLUDE_DIRS}/libmilkcommon
-    ${MILK_INCLUDE_DIRS}/libmilkdata
-    ${MILK_INCLUDE_DIRS}/CommandLineInterface
-    ${MILK_INCLUDE_DIRS}/CommandLineInterface/CLIcore
-    ${IMAGESTREAMIO_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/gric-cluster/core
     ${CMAKE_SOURCE_DIR}/src/gric-knn
+)
+
+target_include_directories(milkgric SYSTEM PRIVATE
+    ${MILK_FPS_SYSTEM_INCLUDES}
+    ${MILK_INCLUDE_DIRS}/CommandLineInterface/CLIcore
 )
 
 target_link_libraries(milkgric PRIVATE

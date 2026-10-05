@@ -1656,6 +1656,9 @@ int knn_cuda_ivf_search_single_frame(
     int            *out_indices,
     float          *out_dists)
 {
+    (void)is_double;
+    (void)k;
+
     if (model == NULL || query_frame == NULL || out_indices == NULL || out_dists == NULL)
     {
         return -1;

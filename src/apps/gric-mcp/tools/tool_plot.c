@@ -85,8 +85,7 @@ static int extract_points_from_log(
             char pts[1024];
             if (sscanf(p, "%1023s %63s %1023s", exe, rlim_str, pts) == 3)
             {
-                strncpy(out_pts, pts, out_size - 1);
-                out_pts[out_size - 1] = '\0';
+                snprintf(out_pts, out_size, "%s", pts);
                 found = 0;
             }
             break;
@@ -110,8 +109,7 @@ static void locate_plot_binary(
         return;
     }
 
-    strncpy(out_exe, "gric-plot", out_size - 1);
-    out_exe[out_size - 1] = '\0';
+    snprintf(out_exe, out_size, "%s", "gric-plot");
 } // locate_plot_binary
 
 /**
@@ -259,7 +257,7 @@ int mcp_tool_plot(
         struct stat st_log;
         if (stat(temp_log, &st_log) == 0 && S_ISDIR(st_log.st_mode))
         {
-            strncpy(resolved_run_dir, temp_log, sizeof(resolved_run_dir) - 1);
+            snprintf(resolved_run_dir, sizeof(resolved_run_dir), "%s", temp_log);
             if (find_log_file(temp_log, resolved_log, sizeof(resolved_log)) != 0)
             {
                 cJSON_AddStringToObject(
@@ -270,16 +268,16 @@ int mcp_tool_plot(
         }
         else
         {
-            strncpy(resolved_log, temp_log, sizeof(resolved_log) - 1);
+            snprintf(resolved_log, sizeof(resolved_log), "%s", temp_log);
             if (resolved_run_dir[0] == '\0')
             {
                 char log_dir[2048];
-                strncpy(log_dir, temp_log, sizeof(log_dir) - 1);
+                snprintf(log_dir, sizeof(log_dir), "%s", temp_log);
                 char *slash = strrchr(log_dir, '/');
                 if (slash != NULL)
                 {
                     *slash = '\0';
-                    strncpy(resolved_run_dir, log_dir, sizeof(resolved_run_dir) - 1);
+                    snprintf(resolved_run_dir, sizeof(resolved_run_dir), "%s", log_dir);
                 }
             }
         }
@@ -293,7 +291,7 @@ int mcp_tool_plot(
     }
 
     /* Locate points file */
-    char resolved_points[2048] = {0};
+    char resolved_points[4096] = {0};
     if (points_arg != NULL)
     {
         mcp_resolve_path(points_arg, resolved_points, sizeof(resolved_points));
@@ -312,13 +310,13 @@ int mcp_tool_plot(
                 snprintf(alt_pts, sizeof(alt_pts), "%s/%s", resolved_run_dir, extracted_pts);
                 if (access(alt_pts, R_OK) == 0)
                 {
-                    strncpy(resolved_points, alt_pts, sizeof(resolved_points) - 1);
+                    snprintf(resolved_points, sizeof(resolved_points), "%s", alt_pts);
                 }
                 else
                 {
                     /* Try relative to parent directory of run_dir */
                     char run_parent[2048];
-                    strncpy(run_parent, resolved_run_dir, sizeof(run_parent) - 1);
+                    snprintf(run_parent, sizeof(run_parent), "%s", resolved_run_dir);
                     char *slash = strrchr(run_parent, '/');
                     if (slash != NULL)
                     {
@@ -326,7 +324,7 @@ int mcp_tool_plot(
                         snprintf(alt_pts, sizeof(alt_pts), "%s/%s", run_parent, extracted_pts);
                         if (access(alt_pts, R_OK) == 0)
                         {
-                            strncpy(resolved_points, alt_pts, sizeof(resolved_points) - 1);
+                            snprintf(resolved_points, sizeof(resolved_points), "%s", alt_pts);
                         }
                     }
                 }
@@ -341,14 +339,14 @@ int mcp_tool_plot(
             snprintf(def_pts, sizeof(def_pts), "%s/points.txt", resolved_run_dir);
             if (access(def_pts, R_OK) == 0)
             {
-                strncpy(resolved_points, def_pts, sizeof(resolved_points) - 1);
+                snprintf(resolved_points, sizeof(resolved_points), "%s", def_pts);
             }
             else
             {
                 snprintf(def_pts, sizeof(def_pts), "%s/input_points.txt", resolved_run_dir);
                 if (access(def_pts, R_OK) == 0)
                 {
-                    strncpy(resolved_points, def_pts, sizeof(resolved_points) - 1);
+                    snprintf(resolved_points, sizeof(resolved_points), "%s", def_pts);
                 }
             }
         }
@@ -366,7 +364,7 @@ int mcp_tool_plot(
     char resolved_output[2048] = {0};
     if (output_arg != NULL)
     {
-        strncpy(resolved_output, output_arg, sizeof(resolved_output) - 1);
+        snprintf(resolved_output, sizeof(resolved_output), "%s", output_arg);
     }
     else
     {
@@ -429,14 +427,12 @@ int mcp_tool_plot(
 
     /* Determine queries output filename */
     char queries_output[2048];
-    strncpy(queries_output, resolved_output, sizeof(queries_output) - 1);
-    queries_output[sizeof(queries_output) - 1] = '\0';
+    snprintf(queries_output, sizeof(queries_output), "%s", resolved_output);
     char *ext_dot = strrchr(queries_output, '.');
     if (ext_dot != NULL)
     {
         char ext_saved[32];
-        strncpy(ext_saved, ext_dot, sizeof(ext_saved) - 1);
-        ext_saved[sizeof(ext_saved) - 1] = '\0';
+        snprintf(ext_saved, sizeof(ext_saved), "%s", ext_dot);
         strcpy(ext_dot, ".queries");
         strncat(queries_output, ext_saved,
                 sizeof(queries_output) - strlen(queries_output) - 1);
