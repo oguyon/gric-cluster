@@ -395,6 +395,16 @@ int mcp_tool_stream_window(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_dev_check_layering() - Architectural layering and dependency hierarchy linter.
+ * @args:   JSON object containing optional src_dir and strict flags.
+ * @res:    Output JSON object containing files_scanned, violation_count, violations array.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_dev_check_layering(
+    const cJSON *args,
+    cJSON       *res);
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.

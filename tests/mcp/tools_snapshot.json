@@ -220,6 +220,23 @@
     "name": "gric_dev_build_test"
   },
   {
+    "description": "Verify architectural module hierarchy and detect forbidden cross-tier includes (Level 0 shared, Level 1 GPU, Level 2 engines, Level 3 tools).",
+    "inputSchema": {
+      "properties": {
+        "src_dir": {
+          "description": "Source directory path to scan (default: 'src').",
+          "type": "string"
+        },
+        "strict": {
+          "description": "Whether warnings are treated as errors (default: true).",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "name": "gric_dev_check_layering"
+  },
+  {
     "description": "Run rapid regression check comparing clustering outputs against golden benchmarks (spiral, balls, gaussian64) or a baseline directory.",
     "inputSchema": {
       "properties": {

@@ -682,6 +682,7 @@ add_library(gric_mcp_core OBJECT
     src/gric-mcp/tools/tool_dev_build_test.c
     src/gric-mcp/tools/tool_dev_golden_compare.c
     src/gric-mcp/tools/tool_dev_bench.c
+    src/gric-mcp/tools/tool_dev_layering.c
     src/gric-mcp/mcp_jobs.c
     src/gric-mcp/tools/tool_jobs.c
     src/gric-mcp/tools/tool_param_advisor.c
@@ -1744,6 +1745,37 @@ if (IMAGESTREAMIO_FOUND)
 endif()
 add_test(NAME test_mcp_stream_window COMMAND test_mcp_stream_window)
 set_tests_properties(test_mcp_stream_window PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+add_executable(test_mcp_layering
+    tests/test_mcp_layering.c
+    $<TARGET_OBJECTS:gric_mcp_core>
+)
+target_include_directories(test_mcp_layering PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(test_mcp_layering m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_mcp_layering OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_mcp_layering ${CFITSIO_LIBRARIES})
+    target_include_directories(test_mcp_layering PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_mcp_layering ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_mcp_layering PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_mcp_layering COMMAND test_mcp_layering)
+set_tests_properties(test_mcp_layering PROPERTIES
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 

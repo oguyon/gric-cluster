@@ -40,6 +40,7 @@ extern const struct mcp_tool_def mcp_tooldef_cluster_detail;
 extern const struct mcp_tool_def mcp_tooldef_knn_quality;
 extern const struct mcp_tool_def mcp_tooldef_plot;
 extern const struct mcp_tool_def mcp_tooldef_stream_window;
+extern const struct mcp_tool_def mcp_tooldef_dev_check_layering;
 
 static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_help,
@@ -74,6 +75,7 @@ static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_dev_build_test,
     &mcp_tooldef_dev_golden_compare,
     &mcp_tooldef_dev_bench,
+    &mcp_tooldef_dev_check_layering,
 };
 
 static const size_t g_num_tools = sizeof(g_all_tools) / sizeof(g_all_tools[0]);
