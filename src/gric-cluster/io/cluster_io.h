@@ -21,10 +21,7 @@ char *create_output_dir_name(const char *input_file);
  */
 int safe_mkdir(const char *path);
 
-/**
- * init_colors_io() - Initialize terminal color formatting for IO diagnostics.
- */
-void init_colors_io(void);
+
 
 /**
  * write_results() - Save cluster anchors, DCC matrix, and assignments to disk.

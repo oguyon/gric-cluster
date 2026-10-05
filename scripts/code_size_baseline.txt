@@ -1,0 +1,400 @@
+# GRIC Code Size Ratchet Baseline
+# Format: 2 lines per entry: <TYPE> <MAX_LINES> followed by <TARGET>
+# Generated on 2026-10-05 09:56:43 UTC
+# Update via: ./scripts/check_code_size.sh --update-baseline
+
+# --- File Lengths (> 1000 lines) ---
+FILE 1199
+src/gric-cluster/core/cluster_core.c
+FILE 1237
+src/gric-cluster/core/config_utils.c
+FILE 1325
+src/gric-cluster/io/cluster_io_results.c
+FILE 1211
+src/gric-cluster/io/frameread.c
+FILE 2533
+src/gric-cluster/math/cluster_gemm_dist.c
+FILE 1514
+src/gric-cluster/math/framedistance_batch_double.c
+FILE 2069
+src/gric-cluster/math/framedistance_batch_float.c
+FILE 1132
+src/gric-cluster/math/tuple_retrieval.c
+FILE 2214
+src/gric-knn/cache/knn_cache.c
+FILE 1203
+src/gric-knn/cache/knn_cache_layout.c
+FILE 1333
+src/gric-knn/cli/knn_cli.c
+FILE 1024
+src/gric-knn/core/knn_engine.c
+FILE 1445
+src/gric-knn/cross/knn_cross_route.c
+FILE 1518
+src/gric-knn/io/knn_loader.c
+FILE 1207
+src/gric-knn/pruning/knn_pruning.c
+FILE 1812
+src/gric-knn/search/knn_cluster_search.c
+FILE 1495
+src/gric-knn/search/knn_member_quant.c
+FILE 1210
+src/gric-mcp/tools/tool_fps_ops.c
+FILE 1046
+src/gric-plot/canvas/canvas.c
+FILE 1155
+src/gric-probe/probe_engine.c
+FILE 1344
+src/libgric/gric_api.c
+FILE 1189
+src/shared/format/cluster_locator.c
+FILE 2575
+src/shared/quant/eq16_dist.c
+FILE 1948
+src/shared/quant/eq16_filter.c
+FILE 1243
+src/shared/quant/product_quant.c
+FILE 1376
+src/shared/quant/rabit_quant.c
+FILE 1150
+src/shared/quant/residual_quant.h
+FILE 2168
+src/shared/quant/scalar_quant.c
+FILE 2060
+src/shared/quant/scalar_quant_filter.c
+FILE 1109
+src/tools/generators/mk4dataset.c
+FILE 1595
+src/wasm/wasm_cluster.c
+FILE 1490
+tools/bench_simd_scaling.c
+FILE 1245
+tools/bench_sq16_compression.c
+
+# --- Function Lengths (> 150 lines, or main > 80 lines) ---
+FUNC 189
+src/gric-benchmark/benchmark_runner.c:generate_pattern_data
+FUNC 253
+src/gric-benchmark/benchmark_runner.c:run_benchmark_suite
+FUNC 95
+src/gric-benchmark/gric-benchmark.c:main
+FUNC 246
+src/gric-cluster-analysis/analysis_report.c:write_text_report
+FUNC 168
+src/gric-cluster-analysis/analysis_stats.c:analyze_spatial_spread
+FUNC 187
+src/gric-cluster-analysis/gric-cluster-analysis.c:main
+FUNC 449
+src/gric-cluster/core/cluster_cli.c:cluster_cli_parse
+FUNC 220
+src/gric-cluster/core/cluster_core.c:cluster_core_print_diagnostics
+FUNC 273
+src/gric-cluster/core/cluster_core_multitile.c:run_clustering_multitile
+FUNC 304
+src/gric-cluster/core/cluster_mgmt.c:remove_cluster
+FUNC 227
+src/gric-cluster/core/cluster_mgmt.c:remove_cluster_swap
+FUNC 438
+src/gric-cluster/core/cluster_quant_filter.c:cluster_quant_filter_initial
+FUNC 189
+src/gric-cluster/core/cluster_quant_filter.c:cluster_quant_filter_subsequent
+FUNC 339
+src/gric-cluster/core/cluster_reassign.c:run_second_pass_clustering
+FUNC 160
+src/gric-cluster/core/cluster_step.c:cluster_frame
+FUNC 216
+src/gric-cluster/core/cluster_step.c:cluster_step_search_loop
+FUNC 376
+src/gric-cluster/core/cluster_step_prep.c:prepare_frame_quantization
+FUNC 310
+src/gric-cluster/core/config_utils.c:cluster_get_options
+FUNC 198
+src/gric-cluster/core/config_utils.c:write_config_file
+FUNC 350
+src/gric-cluster/core/main.c:main
+FUNC 200
+src/gric-cluster/core/tile_map.c:tilemap_load_fits
+FUNC 243
+src/gric-cluster/core/tile_state.c:multitile_init
+FUNC 312
+src/gric-cluster/help/cluster_help.c:print_help_raw
+FUNC 313
+src/gric-cluster/help/help_md_render.c:render_markdown_help
+FUNC 183
+src/gric-cluster/io/cluster_io_log.c:write_run_log
+FUNC 153
+src/gric-cluster/io/cluster_io_results.c:write_dcc_results
+FUNC 215
+src/gric-cluster/io/frameread.c:getframe_at
+FUNC 160
+src/gric-cluster/io/frameread.c:getframe_bin
+FUNC 244
+src/gric-cluster/io/frameread_stream.c:getframe_stream
+FUNC 278
+src/gric-cluster/math/cluster_gemm_dist.c:cluster_gemm_dist_double
+FUNC 293
+src/gric-cluster/math/cluster_gemm_dist.c:cluster_gemm_dist_float
+FUNC 184
+src/gric-cluster/math/cluster_gemm_dist.c:gemm_dist_tile_4x4_float_avx512
+FUNC 165
+src/gric-cluster/math/cluster_prune.c:prune_candidates_te5
+FUNC 161
+src/gric-cluster/math/framedistance.c:framedist_double
+FUNC 167
+src/gric-cluster/math/framedistance.c:framedist_float
+FUNC 235
+src/gric-cluster/math/framedistance_batch_double.c:__attribute__
+FUNC 171
+src/gric-cluster/math/framedistance_batch_double.c:calc_dist8_cutoff_d64_avx512
+FUNC 231
+src/gric-cluster/math/framedistance_batch_double.c:framedist_batch_cutoff_1x4_double
+FUNC 245
+src/gric-cluster/math/framedistance_batch_double.c:framedist_batch_cutoff_1x8_double
+FUNC 259
+src/gric-cluster/math/framedistance_batch_float.c:__attribute__
+FUNC 173
+src/gric-cluster/math/framedistance_batch_float.c:calc_dist8_cutoff_f32_avx512
+FUNC 196
+src/gric-cluster/math/framedistance_batch_float.c:framedist_batch_1x4_float
+FUNC 239
+src/gric-cluster/math/framedistance_batch_float.c:framedist_batch_cutoff_1x4_float
+FUNC 338
+src/gric-cluster/math/framedistance_batch_float.c:framedist_batch_cutoff_1x8_float
+FUNC 156
+src/gric-cluster/math/tuple_retrieval.c:inject_cross_tile_priors_st
+FUNC 328
+src/gric-cluster/steps/compute_priors_and_mixing.c:compute_priors_and_mixing
+FUNC 240
+src/gric-cluster/steps/handle_new_cluster_creation.c:handle_new_cluster_creation
+FUNC 338
+src/gric-cluster/steps/handle_new_cluster_creation.c:init_new_cluster_distances
+FUNC 153
+src/gric-cluster/steps/record_step_assignment.c:record_step_assignment
+FUNC 303
+src/gric-cluster/steps/select_next_measurement_target.c:select_next_measurement_target_entropy
+FUNC 181
+src/gric-cluster/steps/update_consistency_mask.c:update_consistency_mask_for_new_cluster
+FUNC 384
+src/gric-cluster/steps/update_probabilities_and_pruning.c:update_probabilities_and_pruning
+FUNC 170
+src/gric-fps/gric_knn_fps_common.c:gric_knn_fps_process_frame
+FUNC 161
+src/gric-fps/gric_module.c:compute_function
+FUNC 181
+src/gric-knn/cache/knn_cache.c:knn_model_build_or_load_eq16
+FUNC 239
+src/gric-knn/cache/knn_cache.c:knn_model_build_or_load_pq
+FUNC 221
+src/gric-knn/cache/knn_cache.c:knn_model_build_or_load_rq8
+FUNC 213
+src/gric-knn/cache/knn_cache.c:knn_model_build_or_load_sq16
+FUNC 182
+src/gric-knn/cache/knn_cache.c:knn_model_build_or_load_sq8
+FUNC 162
+src/gric-knn/cache/knn_cache_layout.c:knn_model_build_transposed_eq16
+FUNC 185
+src/gric-knn/cache/knn_cache_layout.c:knn_model_build_transposed_rq8
+FUNC 177
+src/gric-knn/cache/knn_cache_layout.c:knn_model_build_transposed_sq16
+FUNC 246
+src/gric-knn/cli/knn_cli.c:knn_get_options
+FUNC 677
+src/gric-knn/core/knn_engine.c:knn_run_search
+FUNC 166
+src/gric-knn/core/knn_heap.c:knn_heap_push
+FUNC 412
+src/gric-knn/core/main.c:main
+FUNC 392
+src/gric-knn/cross/knn_cross_dataset.c:knn_search_cross_dataset_frame
+FUNC 241
+src/gric-knn/cross/knn_cross_eval.c:knn_cross_eval_inter_clusters
+FUNC 466
+src/gric-knn/cross/knn_cross_route.c:knn_cross_explore_graph_frontier
+FUNC 491
+src/gric-knn/cross/knn_cross_route.c:knn_direct_basin_expansion
+FUNC 200
+src/gric-knn/cross/knn_cross_route.c:knn_greedy_route_to_basin
+FUNC 289
+src/gric-knn/io/knn_loader.c:knn_model_free
+FUNC 342
+src/gric-knn/io/knn_loader.c:load_anchors
+FUNC 303
+src/gric-knn/io/knn_loader.c:load_knn_graph
+FUNC 151
+src/gric-knn/io/knn_loader.c:reconstruct_anchors_from_input
+FUNC 237
+src/gric-knn/io/knn_parser.c:knn_parse_dcc_file
+FUNC 217
+src/gric-knn/io/knn_parser.c:knn_parse_membership_file
+FUNC 195
+src/gric-knn/io/knn_reader.c:knn_reader_read_frame
+FUNC 408
+src/gric-knn/io/knn_reconstruct.c:main
+FUNC 218
+src/gric-knn/io/knn_writer.c:write_bin_results
+FUNC 213
+src/gric-knn/search/knn_cluster_search.c:knn_inject_two_hop_candidates
+FUNC 188
+src/gric-knn/search/knn_cluster_search.c:knn_score_candidate_clusters
+FUNC 220
+src/gric-knn/search/knn_cluster_search.c:knn_search_cluster_graph
+FUNC 178
+src/gric-knn/search/knn_cluster_search.c:knn_search_inter_clusters
+FUNC 360
+src/gric-knn/search/knn_cluster_search.c:knn_warm_start_nearest_cluster
+FUNC 354
+src/gric-knn/search/knn_member_quant.c:knn_eval_members_eq16_blocks
+FUNC 310
+src/gric-knn/search/knn_member_quant.c:knn_eval_members_rq8_blocks
+FUNC 234
+src/gric-knn/search/knn_member_quant.c:knn_eval_members_sq16_blocks
+FUNC 181
+src/gric-knn/search/knn_member_search.c:knn_eval_cluster_members
+FUNC 248
+src/gric-knn/search/knn_member_search.c:knn_eval_members_annular
+FUNC 161
+src/gric-mcp/gric-mcp.c:main
+FUNC 212
+src/gric-mcp/mcp_dispatch.c:handle_resources_read
+FUNC 179
+src/gric-mcp/mcp_exec.c:mcp_exec_capture
+FUNC 154
+src/gric-mcp/mcp_prompts.c:mcp_prompts_get
+FUNC 234
+src/gric-mcp/tools/tool_command_linter.c:validate_cluster_command
+FUNC 350
+src/gric-mcp/tools/tool_dev_bench.c:mcp_tool_dev_bench
+FUNC 181
+src/gric-mcp/tools/tool_dev_build_test.c:mcp_tool_dev_build_test
+FUNC 303
+src/gric-mcp/tools/tool_dev_golden_compare.c:mcp_tool_dev_golden_compare
+FUNC 187
+src/gric-mcp/tools/tool_dev_sanitize.c:mcp_parse_sanitizer_output
+FUNC 250
+src/gric-mcp/tools/tool_dev_sanitize.c:mcp_tool_dev_sanitize
+FUNC 157
+src/gric-mcp/tools/tool_fps_ops.c:mcp_tool_fps_run
+FUNC 253
+src/gric-mcp/tools/tool_fps_ops.c:mcp_tool_fps_set
+FUNC 253
+src/gric-mcp/tools/tool_fps_ops.c:mcp_tool_stream_window
+FUNC 193
+src/gric-mcp/tools/tool_inspect_simd.c:mcp_tool_inspect_simd
+FUNC 153
+src/gric-mcp/tools/tool_jobs.c:mcp_tool_cluster_start
+FUNC 155
+src/gric-mcp/tools/tool_knn_quality.c:load_dataset_vectors
+FUNC 359
+src/gric-mcp/tools/tool_knn_quality.c:mcp_tool_knn_quality
+FUNC 306
+src/gric-mcp/tools/tool_param_advisor.c:mcp_tool_recommend_params
+FUNC 322
+src/gric-mcp/tools/tool_plot.c:mcp_tool_plot
+FUNC 220
+src/gric-mcp/tools/tool_run_analysis.c:mcp_tool_cluster_detail
+FUNC 172
+src/gric-mcp/tools/tool_run_analysis.c:mcp_tool_compare_runs
+FUNC 112
+src/gric-plot/plot_clusters.c:main
+FUNC 326
+src/gric-plot/plot_log_parser.c:parse_input_data
+FUNC 414
+src/gric-plot/plot_render.c:render_plots
+FUNC 121
+src/gric-probe/main.c:main
+FUNC 347
+src/gric-probe/probe_engine.c:probe_profile_pruning
+FUNC 373
+src/gric-probe/probe_engine.c:probe_run
+FUNC 243
+src/gric-probe/probe_report.c:probe_report_print_terminal
+FUNC 159
+src/gric-server/http_server.c:server_run
+FUNC 348
+src/gric-server/server_cli_runner.c:handle_api_cli_run
+FUNC 198
+src/gric-server/server_fs_api.c:handle_api_file_write
+FUNC 184
+src/gric-server/server_job_mgmt.c:handle_api_cli_status
+FUNC 108
+src/gric-server/server_main.c:main
+FUNC 175
+src/gric-status/gric-status.c:main
+FUNC 292
+src/gric-status/status_watch.c:run_status_watch
+FUNC 265
+src/libgric/gric_api.c:gric_cluster_load_anchors
+FUNC 228
+src/libgric/gric_api.c:gric_cluster_save_results
+FUNC 158
+src/shared/cli/cli_opt.c:apply_parsed_value
+FUNC 512
+src/shared/format/cluster_locator.c:cluster_locate_sample
+FUNC 178
+src/shared/quant/eq16_dist.c:eq16_dist_asym_cutoff_batch_1x8_avx2
+FUNC 194
+src/shared/quant/eq16_dist.c:eq16_dist_asym_cutoff_batch_1x8_avx512
+FUNC 174
+src/shared/quant/eq16_filter.c:eq16_filter_anchor_matrix_adc_avx2
+FUNC 216
+src/shared/quant/eq16_filter.c:eq16_filter_anchor_matrix_avx2
+FUNC 208
+src/shared/quant/eq16_filter.c:eq16_filter_anchor_matrix_avx512
+FUNC 297
+src/shared/quant/eq16_filter.c:eq16_filter_anchor_matrix_avx_vnni
+FUNC 189
+src/shared/quant/rabit_quant.c:rabitq_compute_lower_bound
+FUNC 191
+src/shared/quant/rabit_quant.c:rabitq_fastscan_32x
+FUNC 707
+src/shared/quant/scalar_quant_filter.c:sq16_filter_anchor_matrix_avx2
+FUNC 598
+src/shared/quant/scalar_quant_filter.c:sq16_filter_anchor_matrix_avx512
+FUNC 262
+src/shared/quant/scalar_quant_filter.c:sq16_filter_anchor_matrix_avx_vnni
+FUNC 178
+src/shared/sys/gric_profile.c:gric_profile_read_json
+FUNC 264
+src/tools/converters/ascii-spot-2-video.c:main
+FUNC 419
+src/tools/converters/ascii2bin.c:main
+FUNC 317
+src/tools/converters/bin2ascii.c:main
+FUNC 219
+src/tools/converters/stream_to_pipe.c:main
+FUNC 336
+src/tools/converters/txt2stream.c:main
+FUNC 154
+src/tools/diagnostics/dimdensity/dimdensity_mack.c:dimdensity_compute_mack_density
+FUNC 283
+src/tools/diagnostics/dimdensity/main.c:main
+FUNC 204
+src/tools/diagnostics/gric-tune.c:main
+FUNC 193
+src/tools/generators/mk4dataset.c:evaluate_reconstruction
+FUNC 190
+src/tools/generators/mk4dataset.c:main
+FUNC 389
+src/tools/generators/mk4dataset.c:run_parametric_sweep
+FUNC 178
+src/tools/generators/mkclusteredfile.c:main
+FUNC 343
+src/tools/generators/mktestseq.c:main
+FUNC 83
+src/tools/generators/model_nd.c:main
+FUNC 219
+src/wasm/wasm_cluster.c:wasm_cluster_init
+FUNC 306
+src/wasm/wasm_knn.c:wasm_knn_run_search
+FUNC 153
+src/wasm/wasm_multitile.c:wasm_multitile_process_frame
+FUNC 102
+tools/bench_simd_scaling.c:main
+FUNC 908
+tools/bench_sq16_compression.c:main
+FUNC 306
+tools/gen_asteroid.c:main
+FUNC 160
+tools/gen_bouncing_balls.c:main
+FUNC 305
+tools/test_asteroid_recon.c:main

@@ -91,7 +91,7 @@ static void cleanup_stale_output_files(
 
 int main(int argc, char *argv[])
 {
-    init_colors_io();
+    cli_colors_init();
     init_colors_help();
     struct timespec prog_start;
     clock_gettime(CLOCK_REALTIME, &prog_start);

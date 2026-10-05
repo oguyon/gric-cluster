@@ -75,15 +75,14 @@ graph TD
   - Must **not** depend on higher-level engines (`gric-cluster` or `gric-knn`).
   - Core acceleration logic remains opt-in via `-DUSE_CUDA`.
 
-### Level 2: Domain Engines & Computational Pipelines
+### Level 2: Domain Engines & Computational Pipelines (libgric)
 - **Engines**:
-  1. `src/gric-cluster/`:
+  1. `src/gric-cluster/` (`libgric` compute library):
      - `core/`: Main clustering coordinator, multi-tile orchestration, state management.
      - `steps/`: Isolated, single-responsibility per-frame execution steps.
      - `math/`: Distance metrics (`framedistance`), GEMM microkernels (`cluster_gemm_dist`),
        pruning, and tuple retrieval.
      - `io/`: Ingestion (ASCII, FITS, FFmpeg, ImageStreamIO) and artifact output writers.
-     - `help/`: In-app markdown help rendering.
      - `trace/`: Profiling and event logging.
   2. `src/gric-knn/`:
      - `knn_engine`: Multi-threaded query dispatching and frame iteration.
@@ -93,11 +92,14 @@ graph TD
      - `knn_pruning`: Metric pruning predicates (triangular inequalities, multi-pivot filters).
      - `knn_heap`: Fixed-capacity max-heaps with branchless sift-down operations.
 - **Constraints**:
+  - `libgric` is a pure compute library with zero UI, CLI, or JSON dependencies.
   - Shared math routines (such as `framedistance` and `cluster_gemm_dist`) belong to reusable
     compute libraries. `gric-knn` consumes them without circular entanglement.
   - Submodules within each engine interact solely through documented public header contracts.
 
 ### Level 3: Applications, Tools & Auxiliary Services
+- UI & Formatting: `gric_ui` (`cli_opt`, `cli_colors`, `cJSON` for option parsing and ANSI themes).
+- App Help: `src/gric-cluster/help/` (in-app markdown rendering and generated topic index).
 - Executables: `gric-cluster`, `gric-knn`, `gric-knn-avg`, `gric-server`, `gric-status`,
   `gric-benchmark`, `gric-probe`, `gric-mcp`, `gric-dimdensity`, `gric-tune`, `gric-info`, etc.
 - Adapters: `libmilkgric.so`, `milk-fpsexec-gric-cluster`, `milk-fpsexec-gric-knn`,

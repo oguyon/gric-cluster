@@ -140,6 +140,24 @@ int mcp_tool_audit_code_style(
 
     fclose(fp);
 
+    /* 4. File size check (> 1000 lines hard limit, > 600 lines soft limit) */
+    if (line_number > 1000)
+    {
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddNumberToObject(item, "lines", line_number);
+        cJSON_AddNumberToObject(item, "limit", 1000);
+        cJSON_AddStringToObject(
+            item, "issue", "File exceeds 1000 line limit (decompose into smaller modules)");
+        cJSON_AddItemToObject(res, "file_size_violation", item);
+        total_violations++;
+    }
+    else if (line_number > 600)
+    {
+        cJSON_AddStringToObject(
+            res, "file_size_warning",
+            "File exceeds 600 lines (soft limit; refactor into smaller modules when editing)");
+    }
+
     cJSON_AddStringToObject(res, "file_path", filepath);
     cJSON_AddNumberToObject(res, "total_lines", line_number);
     cJSON_AddNumberToObject(res, "total_issues", total_violations);

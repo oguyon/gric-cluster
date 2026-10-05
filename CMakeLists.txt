@@ -185,7 +185,6 @@ set(LIBGRIC_SRCS
     src/gric-cluster/core/cluster_quant_filter.c
     src/gric-cluster/core/cluster_mgmt.c
     src/gric-cluster/core/frame_info_arena.c
-    src/gric-cluster/core/config_utils.c
     src/gric-cluster/core/cluster_bounds.c
     src/gric-cluster/core/cluster_shm.c
     src/gric-cluster/core/cluster_reassign.c
@@ -213,11 +212,6 @@ set(LIBGRIC_SRCS
     src/gric-cluster/io/frameread_ffmpeg.c
     src/gric-cluster/io/frameread_stream.c
     src/gric-cluster/io/png_io.c
-    src/gric-cluster/help/cluster_help.c
-    src/gric-cluster/help/cluster_help_format.c
-    src/gric-cluster/help/cluster_help_content.c
-    src/gric-cluster/help/help_md_render.c
-    ${HELP_TOPICS_GEN_C}
     src/gric-cluster/steps/initialize_initial_cluster.c
     src/gric-cluster/steps/compute_priors_and_mixing.c
     src/gric-cluster/steps/select_next_measurement_target.c
@@ -228,9 +222,6 @@ set(LIBGRIC_SRCS
     src/gric-cluster/steps/record_step_assignment.c
     src/gric-cluster/steps/update_consistency_mask.c
     src/gric-cluster/trace/cluster_trace.c
-    src/shared/cli/cli_colors.c
-    src/shared/cli/cli_opt.c
-    src/shared/cjson/cJSON.c
     src/shared/format/gric_bin_io.c
     src/shared/format/cluster_locator.c
     src/shared/quant/scalar_quant.c
@@ -248,12 +239,24 @@ set(LIBGRIC_SRCS
     src/shared/quant/eq16_quant.c
     src/shared/quant/eq16_dist.c
     src/shared/quant/eq16_filter.c
-    src/gric-probe/probe_engine.c
 )
 
 add_library(gric SHARED ${LIBGRIC_SRCS})
 add_library(gric_static STATIC ${LIBGRIC_SRCS})
 set_target_properties(gric_static PROPERTIES OUTPUT_NAME "gric")
+
+# UI, CLI and terminal formatting library
+add_library(gric_ui STATIC
+    src/shared/cli/cli_colors.c
+    src/shared/cli/cli_opt.c
+    src/shared/cjson/cJSON.c
+)
+target_include_directories(gric_ui PUBLIC
+    src/shared
+    src/shared/cli
+    src/shared/cjson
+)
+target_link_libraries(gric_ui PUBLIC m)
 
 if (OpenMP_C_FOUND)
     target_link_libraries(gric PUBLIC OpenMP::OpenMP_C)
@@ -297,8 +300,15 @@ endif()
 add_executable(gric-cluster
     src/gric-cluster/core/main.c
     src/gric-cluster/core/cluster_cli.c
+    src/gric-cluster/core/config_utils.c
+    src/gric-cluster/help/cluster_help.c
+    src/gric-cluster/help/cluster_help_format.c
+    src/gric-cluster/help/cluster_help_content.c
+    src/gric-cluster/help/help_md_render.c
+    ${HELP_TOPICS_GEN_C}
+    src/gric-probe/probe_engine.c
 )
-target_link_libraries(gric-cluster PRIVATE gric)
+target_link_libraries(gric-cluster PRIVATE gric gric_ui)
 
 add_executable(test_libgric_c tests/test_libgric_c.c)
 target_link_libraries(test_libgric_c PRIVATE gric m)
@@ -541,7 +551,7 @@ add_executable(gric-knn
     src/gric-knn/core/main.c
     src/gric-knn/cli/knn_cli.c
 )
-target_link_libraries(gric-knn PRIVATE gric_knn_static gric_static m)
+target_link_libraries(gric-knn PRIVATE gric_knn_static gric_static gric_ui m)
 if (OpenMP_C_FOUND)
     target_link_libraries(gric-knn PRIVATE OpenMP::OpenMP_C)
 endif()
@@ -1876,12 +1886,8 @@ add_custom_target(mcp-snapshot
     --update
     DEPENDS gric-mcp)
 
-add_executable(test_cli_opt
-    tests/test_cli_opt.c
-    src/shared/cli/cli_opt.c
-    src/shared/cli/cli_colors.c
-    src/shared/cjson/cJSON.c)
-target_link_libraries(test_cli_opt m)
+add_executable(test_cli_opt tests/test_cli_opt.c)
+target_link_libraries(test_cli_opt PRIVATE gric_ui m)
 add_test(NAME test_cli_opt COMMAND test_cli_opt)
 
 if (ENABLE_CUDA)

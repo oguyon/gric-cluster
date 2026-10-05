@@ -10,7 +10,6 @@
 #include <sys/types.h>
 
 #include "cluster_io.h"
-#include "cli_colors.h"
 
 /**
  * create_output_dir_name() - Build output directory path from input filename.
@@ -97,12 +96,4 @@ int safe_mkdir(
     }
 
     return 0;
-}
-
-/**
- * init_colors_io() - Initialize color support by calling shared init.
- */
-void init_colors_io(void)
-{
-    cli_colors_init();
 }
