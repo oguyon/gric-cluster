@@ -35,12 +35,8 @@ static void get_fps_binary_path(
     char       *buf,
     size_t      size)
 {
-    char root[512];
-    mcp_get_project_root(root, sizeof(root));
-
-    /* 1. In-tree build binary */
-    snprintf(buf, size, "%s/build/src/gric-fps/%s", root, binary_name);
-    if (access(buf, X_OK) == 0)
+    /* 1. Try finding in build directories or executable tree */
+    if (mcp_find_executable(binary_name, buf, size) == 0)
     {
         return;
     }

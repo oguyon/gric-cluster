@@ -380,7 +380,7 @@ int mcp_tool_dev_bench(
     if (strcmp(target, "simd_kernels") == 0)
     {
         char exe_bin[1060];
-        snprintf(exe_bin, sizeof(exe_bin), "%s/build/gric-simd-bench", root);
+        mcp_find_executable("gric-simd-bench", exe_bin, sizeof(exe_bin));
         const char *const argv[] = {exe_bin, NULL};
 
         char *out_buf = malloc(MAX_BENCH_OUTPUT_BYTES);
@@ -432,7 +432,7 @@ int mcp_tool_dev_bench(
             if (access(dataset_path, R_OK) != 0)
             {
                 char gen_bin[1060];
-                snprintf(gen_bin, sizeof(gen_bin), "%s/build/gric-mktxtseq", root);
+                mcp_find_executable("gric-mktxtseq", gen_bin, sizeof(gen_bin));
                 const char *const gen_argv[] = {
                     gen_bin, "1000", dataset_path, "2Dspiral", NULL
                 };
@@ -446,7 +446,7 @@ int mcp_tool_dev_bench(
         snprintf(tmp_out, sizeof(tmp_out), "/tmp/gric_bench_%d.clusterdat", (int)getpid());
 
         char cluster_bin[1060];
-        snprintf(cluster_bin, sizeof(cluster_bin), "%s/build/gric-cluster", root);
+        mcp_find_executable("gric-cluster", cluster_bin, sizeof(cluster_bin));
 
         const char *const argv[] = {
             cluster_bin, "0.1", dataset_path, "-maxim", "1000",

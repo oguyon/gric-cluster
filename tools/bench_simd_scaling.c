@@ -25,6 +25,24 @@ static inline double get_time_sec(void)
     return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
 }
 
+static void *bench_aligned_alloc(
+    size_t alignment,
+    size_t size)
+{
+    size_t rem = size % alignment;
+    if (rem != 0)
+    {
+        size += (alignment - rem);
+    }
+    void *ptr = aligned_alloc(alignment, size);
+    if (ptr == NULL)
+    {
+        fprintf(stderr, "Error: aligned_alloc failed for size %zu\n", size);
+        exit(EXIT_FAILURE);
+    }
+    return ptr;
+}
+
 /* ------------------------------------------------------------------------- */
 /* Kernel 1: Single-Vector L2 Distance (Float32)                             */
 /* ------------------------------------------------------------------------- */
@@ -809,8 +827,8 @@ static void run_l2_bench(
     bool             can_avx512,
     SimdBenchResult *res)
 {
-    float *a = (float *)aligned_alloc(64, (size_t)dim * sizeof(float));
-    float *b = (float *)aligned_alloc(64, (size_t)dim * sizeof(float));
+    float *a = (float *)bench_aligned_alloc(64, (size_t)dim * sizeof(float));
+    float *b = (float *)bench_aligned_alloc(64, (size_t)dim * sizeof(float));
     for (int i = 0; i < dim; i++)
     {
         a[i] = (float)rand() / (float)RAND_MAX;
@@ -877,11 +895,11 @@ static void run_dist8_bench(
     bool             can_avx512,
     SimdBenchResult *res)
 {
-    float *q = (float *)aligned_alloc(64, (size_t)dim * sizeof(float));
+    float *q = (float *)bench_aligned_alloc(64, (size_t)dim * sizeof(float));
     float *anchors[8];
     for (int a = 0; a < 8; a++)
     {
-        anchors[a] = (float *)aligned_alloc(64, (size_t)dim * sizeof(float));
+        anchors[a] = (float *)bench_aligned_alloc(64, (size_t)dim * sizeof(float));
         for (int d = 0; d < dim; d++)
         {
             anchors[a][d] = (float)rand() / (float)RAND_MAX;
@@ -955,8 +973,8 @@ static void run_sq8_bench(
     bool             can_avx512,
     SimdBenchResult *res)
 {
-    uint8_t *a = (uint8_t *)aligned_alloc(64, (size_t)dim);
-    uint8_t *b = (uint8_t *)aligned_alloc(64, (size_t)dim);
+    uint8_t *a = (uint8_t *)bench_aligned_alloc(64, (size_t)dim);
+    uint8_t *b = (uint8_t *)bench_aligned_alloc(64, (size_t)dim);
     for (int i = 0; i < dim; i++)
     {
         a[i] = (uint8_t)(rand() % 256);
@@ -1020,8 +1038,8 @@ static void run_l2_d64_bench(
     bool             can_avx512,
     SimdBenchResult *res)
 {
-    double *a = (double *)aligned_alloc(64, (size_t)dim * sizeof(double));
-    double *b = (double *)aligned_alloc(64, (size_t)dim * sizeof(double));
+    double *a = (double *)bench_aligned_alloc(64, (size_t)dim * sizeof(double));
+    double *b = (double *)bench_aligned_alloc(64, (size_t)dim * sizeof(double));
     for (int i = 0; i < dim; i++)
     {
         a[i] = (double)rand() / (double)RAND_MAX;
@@ -1085,11 +1103,11 @@ static void run_dist16_f32_bench(
     bool             can_avx512,
     SimdBenchResult *res)
 {
-    float *q = (float *)aligned_alloc(64, (size_t)dim * sizeof(float));
+    float *q = (float *)bench_aligned_alloc(64, (size_t)dim * sizeof(float));
     float *anchors[16];
     for (int a = 0; a < 16; a++)
     {
-        anchors[a] = (float *)aligned_alloc(64, (size_t)dim * sizeof(float));
+        anchors[a] = (float *)bench_aligned_alloc(64, (size_t)dim * sizeof(float));
         for (int d = 0; d < dim; d++)
         {
             anchors[a][d] = (float)rand() / (float)RAND_MAX;
@@ -1160,11 +1178,11 @@ static void run_dist8_d64_bench(
     bool             can_avx512,
     SimdBenchResult *res)
 {
-    double *q = (double *)aligned_alloc(64, (size_t)dim * sizeof(double));
+    double *q = (double *)bench_aligned_alloc(64, (size_t)dim * sizeof(double));
     double *anchors[8];
     for (int a = 0; a < 8; a++)
     {
-        anchors[a] = (double *)aligned_alloc(64, (size_t)dim * sizeof(double));
+        anchors[a] = (double *)bench_aligned_alloc(64, (size_t)dim * sizeof(double));
         for (int d = 0; d < dim; d++)
         {
             anchors[a][d] = (double)rand() / (double)RAND_MAX;
@@ -1235,8 +1253,8 @@ static void run_sq16_bench(
     bool             can_avx512,
     SimdBenchResult *res)
 {
-    int16_t *a = (int16_t *)aligned_alloc(64, (size_t)dim * sizeof(int16_t));
-    int16_t *b = (int16_t *)aligned_alloc(64, (size_t)dim * sizeof(int16_t));
+    int16_t *a = (int16_t *)bench_aligned_alloc(64, (size_t)dim * sizeof(int16_t));
+    int16_t *b = (int16_t *)bench_aligned_alloc(64, (size_t)dim * sizeof(int16_t));
     for (int i = 0; i < dim; i++)
     {
         a[i] = (int16_t)((rand() % 65536) - 32768);
@@ -1301,9 +1319,9 @@ static void run_fastscan_bench(
     SimdBenchResult *res)
 {
     int num_codes = dim * 16;
-    uint8_t *codes = (uint8_t *)aligned_alloc(64, (size_t)num_codes);
-    uint8_t *lut   = (uint8_t *)aligned_alloc(64, 16);
-    uint16_t *dists = (uint16_t *)aligned_alloc(64, (size_t)num_codes * sizeof(uint16_t));
+    uint8_t *codes = (uint8_t *)bench_aligned_alloc(64, (size_t)num_codes);
+    uint8_t *lut   = (uint8_t *)bench_aligned_alloc(64, 16);
+    uint16_t *dists = (uint16_t *)bench_aligned_alloc(64, (size_t)num_codes * sizeof(uint16_t));
     for (int i = 0; i < num_codes; i++)
     {
         codes[i] = (uint8_t)(rand() % 16);

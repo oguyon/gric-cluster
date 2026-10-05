@@ -17,23 +17,27 @@ static void ensure_test_fixtures(void)
 
     if (access("/tmp/ctest_spiral.txt", F_OK) != 0)
     {
-        char cmd[1024];
+        char mktxt_bin[1060];
+        mcp_find_executable("gric-mktxtseq", mktxt_bin, sizeof(mktxt_bin));
+        char cmd[2048];
         snprintf(
             cmd, sizeof(cmd),
-            "%s/build/gric-mktxtseq 1000 /tmp/ctest_spiral.txt 2Dspiral",
-            root);
+            "%s 1000 /tmp/ctest_spiral.txt 2Dspiral",
+            mktxt_bin);
         int ret = system(cmd);
         (void)ret;
     }
 
     if (access("/tmp/ctest_spiral_out/frame_membership.txt", F_OK) != 0)
     {
-        char cmd[1024];
+        char cluster_bin[1060];
+        mcp_find_executable("gric-cluster", cluster_bin, sizeof(cluster_bin));
+        char cmd[2048];
         snprintf(
             cmd, sizeof(cmd),
-            "%s/build/gric-cluster 0.1 /tmp/ctest_spiral.txt "
+            "%s 0.1 /tmp/ctest_spiral.txt "
             "-maxim 1000 -outdir /tmp/ctest_spiral_out -txt",
-            root);
+            cluster_bin);
         int ret = system(cmd);
         (void)ret;
     }

@@ -453,4 +453,26 @@ void mcp_resolve_path(
     char       *out_buf,
     size_t      out_size);
 
+/**
+ * mcp_get_build_dir() - Retrieve the active build directory path.
+ * @buf:  Target buffer to store the build directory path.
+ * @size: Buffer capacity.
+ */
+void mcp_get_build_dir(
+    char   *buf,
+    size_t  size);
+
+/**
+ * mcp_find_executable() - Locate a build target or installed executable.
+ * @name:     Base executable filename (e.g. "gric-cluster").
+ * @out_path: Target buffer for full executable path.
+ * @out_size: Buffer capacity.
+ *
+ * Return: 0 if found and executable, -1 on failure.
+ */
+int mcp_find_executable(
+    const char *name,
+    char       *out_path,
+    size_t      out_size);
+
 #endif // MCP_TOOLS_H
