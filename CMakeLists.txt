@@ -687,6 +687,7 @@ add_library(gric_mcp_core OBJECT
     src/gric-mcp/tools/tool_param_advisor.c
     src/gric-mcp/tools/tool_command_linter.c
     src/gric-mcp/tools/tool_run_analysis.c
+    src/gric-mcp/tools/tool_knn_quality.c
     ${HELP_TOPICS_GEN_C}
     ${MCP_CONTENT_GEN_C}
     src/shared/cjson/cJSON.c
@@ -1648,6 +1649,37 @@ if (IMAGESTREAMIO_FOUND)
 endif()
 add_test(NAME test_mcp_compare COMMAND test_mcp_compare)
 set_tests_properties(test_mcp_compare PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+add_executable(test_mcp_knn_quality
+    tests/test_mcp_knn_quality.c
+    $<TARGET_OBJECTS:gric_mcp_core>
+)
+target_include_directories(test_mcp_knn_quality PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(test_mcp_knn_quality m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_mcp_knn_quality OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_mcp_knn_quality ${CFITSIO_LIBRARIES})
+    target_include_directories(test_mcp_knn_quality PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_mcp_knn_quality ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_mcp_knn_quality PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_mcp_knn_quality COMMAND test_mcp_knn_quality)
+set_tests_properties(test_mcp_knn_quality PROPERTIES
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 

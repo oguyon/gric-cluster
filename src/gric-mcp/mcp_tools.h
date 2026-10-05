@@ -362,6 +362,17 @@ int mcp_tool_cluster_detail(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_knn_quality() - Evaluate recall and distance approximation of kNN search results.
+ * @args:   JSON object containing dataset_path and knn_output.
+ * @res:    Output JSON object containing recall, MRR, distance ratios, and report.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_knn_quality(
+    const cJSON *args,
+    cJSON       *res);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.

@@ -483,6 +483,39 @@
     "name": "gric_job_status"
   },
   {
+    "description": "Evaluate recall, Mean Reciprocal Rank (MRR), and distance approximation accuracy of kNN results against exact brute-force ground truth.",
+    "inputSchema": {
+      "properties": {
+        "dataset_path": {
+          "description": "Path to dataset coordinates file (ASCII or BIN).",
+          "type": "string"
+        },
+        "dtmin": {
+          "description": "Minimum temporal frame exclusion distance (optional).",
+          "type": "integer"
+        },
+        "k": {
+          "description": "Number of top nearest neighbors to verify (default: 10).",
+          "type": "integer"
+        },
+        "knn_output": {
+          "description": "Path to gric-knn output results file.",
+          "type": "string"
+        },
+        "sample_queries": {
+          "description": "Number of sample queries to evaluate (default: 50).",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dataset_path",
+        "knn_output"
+      ],
+      "type": "object"
+    },
+    "name": "gric_knn_quality"
+  },
+  {
     "description": "Launch asynchronous gric-knn background job. Returns job_id immediately.",
     "inputSchema": {
       "properties": {
