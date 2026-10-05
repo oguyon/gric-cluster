@@ -35,6 +35,8 @@ extern const struct mcp_tool_def mcp_tooldef_job_cancel;
 extern const struct mcp_tool_def mcp_tooldef_recommend_params;
 extern const struct mcp_tool_def mcp_tooldef_calibrate_radius;
 extern const struct mcp_tool_def mcp_tooldef_validate_command;
+extern const struct mcp_tool_def mcp_tooldef_compare_runs;
+extern const struct mcp_tool_def mcp_tooldef_cluster_detail;
 
 static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_help,
@@ -42,6 +44,8 @@ static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_get_recipe,
     &mcp_tooldef_server_info,
     &mcp_tooldef_inspect_run,
+    &mcp_tooldef_compare_runs,
+    &mcp_tooldef_cluster_detail,
     &mcp_tooldef_probe_dataset,
     &mcp_tooldef_recommend_params,
     &mcp_tooldef_calibrate_radius,

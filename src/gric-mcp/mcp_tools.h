@@ -340,6 +340,28 @@ int mcp_tool_validate_command(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_compare_runs() - Compare performance and stability across two clustering runs.
+ * @args:   JSON object containing run_dir_a and run_dir_b.
+ * @res:    Output JSON object containing ARI, agreement %, cluster delta, and report.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_compare_runs(
+    const cJSON *args,
+    cJSON       *res);
+
+/**
+ * mcp_tool_cluster_detail() - Deep inspection of a specific cluster's geometry and dynamics.
+ * @args:   JSON object containing run_dir and cluster_id.
+ * @res:    Output JSON object containing member counts, lifetime, and dynamics.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_cluster_detail(
+    const cJSON *args,
+    cJSON       *res);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.
