@@ -384,6 +384,17 @@ int mcp_tool_plot(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_stream_window() - Sample and compute rolling statistics over an ImageStreamIO stream.
+ * @args:   JSON object containing stream_name, num_frames, timeout_ms.
+ * @res:    Output JSON object containing latency percentiles, anchor rates, and diagnostics.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_stream_window(
+    const cJSON *args,
+    cJSON       *res);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.

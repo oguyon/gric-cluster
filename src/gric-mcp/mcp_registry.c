@@ -39,6 +39,7 @@ extern const struct mcp_tool_def mcp_tooldef_compare_runs;
 extern const struct mcp_tool_def mcp_tooldef_cluster_detail;
 extern const struct mcp_tool_def mcp_tooldef_knn_quality;
 extern const struct mcp_tool_def mcp_tooldef_plot;
+extern const struct mcp_tool_def mcp_tooldef_stream_window;
 
 static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_help,
@@ -58,6 +59,7 @@ static const struct mcp_tool_def *const g_all_tools[] = {
     &mcp_tooldef_probe_shm,
     &mcp_tooldef_fps_status,
     &mcp_tooldef_probe_fps_streams,
+    &mcp_tooldef_stream_window,
     &mcp_tooldef_fps_run,
     &mcp_tooldef_fps_set,
     &mcp_tooldef_fps_stop,

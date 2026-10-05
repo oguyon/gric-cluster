@@ -1716,6 +1716,38 @@ set_tests_properties(test_mcp_plot PROPERTIES
     DEPENDS gric-plot
 )
 
+add_executable(test_mcp_stream_window
+    tests/test_mcp_stream_window.c
+    $<TARGET_OBJECTS:gric_mcp_core>
+)
+target_include_directories(test_mcp_stream_window PRIVATE
+    src/gric-mcp
+    src/gric-mcp/tools
+    src/gric-probe
+    src/gric-cluster-analysis
+    src/shared
+    src
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(test_mcp_stream_window m)
+if (OpenMP_C_FOUND)
+    target_link_libraries(test_mcp_stream_window OpenMP::OpenMP_C)
+endif()
+if (CFITSIO_FOUND)
+    target_link_libraries(test_mcp_stream_window ${CFITSIO_LIBRARIES})
+    target_include_directories(test_mcp_stream_window PRIVATE ${CFITSIO_INCLUDE_DIRS})
+endif()
+if (IMAGESTREAMIO_FOUND)
+    target_link_libraries(test_mcp_stream_window ${IMAGESTREAMIO_LIBRARIES})
+    target_include_directories(test_mcp_stream_window PRIVATE ${IMAGESTREAMIO_INCLUDE_DIRS})
+endif()
+add_test(NAME test_mcp_stream_window COMMAND test_mcp_stream_window)
+set_tests_properties(test_mcp_stream_window PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+
 add_test(NAME test_doc_flag_drift
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/check_doc_flags.py"
             "${CMAKE_SOURCE_DIR}"
