@@ -32,6 +32,26 @@
     "name": "gric_audit_code_style"
   },
   {
+    "description": "Subsample dataset frames, compute pairwise distance percentiles, and recommend fine, balanced, and coarse clustering radii.",
+    "inputSchema": {
+      "properties": {
+        "dataset_path": {
+          "description": "Path to dataset coordinates or image cube (FITS, BIN, ASCII).",
+          "type": "string"
+        },
+        "sample_size": {
+          "description": "Sample size for pairwise distance estimation (10-1000).",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dataset_path"
+      ],
+      "type": "object"
+    },
+    "name": "gric_calibrate_radius"
+  },
+  {
     "description": "Launch asynchronous gric-cluster background job. Returns job_id immediately.",
     "inputSchema": {
       "properties": {
@@ -527,6 +547,39 @@
       "type": "object"
     },
     "name": "gric_probe_shm"
+  },
+  {
+    "description": "Recommend optimal clustering parameters (rlim, quantization, tiling, ncpu, maxcl) based on dataset geometry, memory constraints, and speed goals.",
+    "inputSchema": {
+      "properties": {
+        "dataset_path": {
+          "description": "Path to dataset coordinates or image cube (FITS, BIN, ASCII).",
+          "type": "string"
+        },
+        "memory_budget_gb": {
+          "description": "Memory budget in GB (optional, defaults to system RAM).",
+          "type": "number"
+        },
+        "speed_preference": {
+          "description": "Performance tradeoff (default: balanced).",
+          "enum": [
+            "fast",
+            "balanced",
+            "accurate"
+          ],
+          "type": "string"
+        },
+        "target_clusters": {
+          "description": "Desired approximate number of clusters (optional).",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dataset_path"
+      ],
+      "type": "object"
+    },
+    "name": "gric_recommend_params"
   },
   {
     "description": "Retrieve runtime status, version, active toolsets, and read-only mode of the gric-mcp server.",
