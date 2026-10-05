@@ -8,6 +8,7 @@
 #include "mcp_registry.h"
 #include "mcp_fps_schema.h"
 #include "mcp_staleness.h"
+#include "mcp_prompts.h"
 #include "gric_build_info.h"
 #include "shared/cjson/cJSON.h"
 #include "shared/help_topics.h"
@@ -86,6 +87,7 @@ static cJSON *handle_initialize(
     cJSON *capabilities = cJSON_CreateObject();
     cJSON_AddItemToObject(capabilities, "tools", cJSON_CreateObject());
     cJSON_AddItemToObject(capabilities, "resources", cJSON_CreateObject());
+    cJSON_AddItemToObject(capabilities, "prompts", cJSON_CreateObject());
     cJSON_AddItemToObject(result, "capabilities", capabilities);
 
     cJSON *server_info = cJSON_CreateObject();
@@ -442,9 +444,11 @@ static cJSON *handle_resources_read(
         const char *topic_name = uri + 12;
         content_text = help_topic_lookup(topic_name);
     }
-    else if (strncmp(uri, "gric://recipes/", 15) == 0)
+    else if (strncmp(uri, "gric://recipes/", 15) == 0 ||
+             strncmp(uri, "gric://recipe/", 14) == 0)
     {
-        const char *recipe_name = uri + 15;
+        const char *recipe_name = (strncmp(uri, "gric://recipes/", 15) == 0) ?
+                                  (uri + 15) : (uri + 14);
         cJSON *r_args = cJSON_CreateObject();
         cJSON *r_res = cJSON_CreateObject();
         cJSON_AddStringToObject(r_args, "recipe", recipe_name);
@@ -458,6 +462,56 @@ static cJSON *handle_resources_read(
             content_text = allocated_content;
         }
         cJSON_Delete(r_res);
+    }
+    else if (strncmp(uri, "gric://run/", 11) == 0)
+    {
+        const char *sub = uri + 11;
+        const char *suffix = strstr(sub, "/summary");
+        if (suffix != NULL)
+        {
+            char run_path[512] = {0};
+            size_t plen = (size_t)(suffix - sub);
+            if (plen < sizeof(run_path))
+            {
+                memcpy(run_path, sub, plen);
+                run_path[plen] = '\0';
+                cJSON *r_args = cJSON_CreateObject();
+                cJSON *r_res = cJSON_CreateObject();
+                cJSON_AddStringToObject(r_args, "dir_path", run_path);
+                mcp_tool_inspect_run(r_args, r_res);
+                cJSON_Delete(r_args);
+
+                mime_type = "application/json";
+                allocated_content = cJSON_Print(r_res);
+                cJSON_Delete(r_res);
+                content_text = allocated_content;
+            }
+        }
+    }
+    else if (strncmp(uri, "gric://stream/", 14) == 0)
+    {
+        const char *sub = uri + 14;
+        const char *suffix = strstr(sub, "/stats");
+        if (suffix != NULL)
+        {
+            char st_name[256] = {0};
+            size_t nlen = (size_t)(suffix - sub);
+            if (nlen < sizeof(st_name))
+            {
+                memcpy(st_name, sub, nlen);
+                st_name[nlen] = '\0';
+                cJSON *s_args = cJSON_CreateObject();
+                cJSON *s_res = cJSON_CreateObject();
+                cJSON_AddStringToObject(s_args, "stream_name", st_name);
+                mcp_tool_probe_shm(s_args, s_res);
+                cJSON_Delete(s_args);
+
+                mime_type = "application/json";
+                allocated_content = cJSON_Print(s_res);
+                cJSON_Delete(s_res);
+                content_text = allocated_content;
+            }
+        }
     }
 
     if (content_text == NULL)
@@ -568,6 +622,18 @@ char *mcp_dispatch_message(
     else if (strcmp(method, "resources/read") == 0)
     {
         resp_obj = handle_resources_read(id_item, params_item);
+    }
+    else if (strcmp(method, "resources/templates/list") == 0)
+    {
+        resp_obj = mcp_resource_templates_list(id_item);
+    }
+    else if (strcmp(method, "prompts/list") == 0)
+    {
+        resp_obj = mcp_prompts_list(id_item);
+    }
+    else if (strcmp(method, "prompts/get") == 0)
+    {
+        resp_obj = mcp_prompts_get(id_item, params_item);
     }
     else if (strcmp(method, "ping") == 0)
     {
