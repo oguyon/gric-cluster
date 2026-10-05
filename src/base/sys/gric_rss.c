@@ -40,7 +40,6 @@
 static int      s_statm_fd       = -1;
 static uint64_t s_last_time_ns   = 0;
 static uint64_t s_cached_rss_kb  = 0;
-static long     s_page_size_kb   = 0;
 
 #if defined(__APPLE__)
 /**
@@ -130,6 +129,7 @@ static uint64_t read_statm_rss_kb(void)
     }
 
     unsigned long resident_pages = strtoul(p, NULL, 10);
+    static long   s_page_size_kb = 0;
 
     if (s_page_size_kb <= 0)
     {
