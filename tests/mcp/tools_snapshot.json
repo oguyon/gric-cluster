@@ -32,6 +32,66 @@
     "name": "gric_audit_code_style"
   },
   {
+    "description": "Launch asynchronous gric-cluster background job. Returns job_id immediately.",
+    "inputSchema": {
+      "properties": {
+        "dataset": {
+          "description": "Path to input dataset file.",
+          "type": "string"
+        },
+        "double_precision": {
+          "description": "Enable double-precision mode.",
+          "type": "boolean"
+        },
+        "entropy": {
+          "description": "Enable dynamic entropy gating.",
+          "type": "boolean"
+        },
+        "maxcl": {
+          "description": "Maximum clusters limit.",
+          "type": "integer"
+        },
+        "maxim": {
+          "description": "Maximum frames to process.",
+          "type": "integer"
+        },
+        "outdir": {
+          "description": "Custom output directory path.",
+          "type": "string"
+        },
+        "quant": {
+          "description": "Quantization mode.",
+          "enum": [
+            "sq8",
+            "sq16",
+            "eq16",
+            "rq8",
+            "rabitq"
+          ],
+          "type": "string"
+        },
+        "rlim": {
+          "description": "Clustering radius limit.",
+          "type": "number"
+        },
+        "sparse_dcc": {
+          "description": "Enable sparse inter-cluster distance matrix.",
+          "type": "boolean"
+        },
+        "threads": {
+          "description": "Number of OpenMP worker threads.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dataset",
+        "rlim"
+      ],
+      "type": "object"
+    },
+    "name": "gric_cluster_start"
+  },
+  {
     "description": "Deterministic micro-benchmark runner for SIMD kernels and clustering loops with statistical aggregation (median, IQR) and baseline regression checks.",
     "inputSchema": {
       "properties": {
@@ -307,6 +367,103 @@
       "type": "object"
     },
     "name": "gric_inspect_simd"
+  },
+  {
+    "description": "Cancel a running asynchronous job and optionally clean up partial outputs.",
+    "inputSchema": {
+      "properties": {
+        "clean_output": {
+          "description": "Clean up partial output directory if true (default: false).",
+          "type": "boolean"
+        },
+        "job_id": {
+          "description": "Identifier of the job to cancel.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "type": "object"
+    },
+    "name": "gric_job_cancel"
+  },
+  {
+    "description": "Retrieve structured execution metrics and telemetry once job has completed.",
+    "inputSchema": {
+      "properties": {
+        "job_id": {
+          "description": "Identifier of the completed job.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "type": "object"
+    },
+    "name": "gric_job_result"
+  },
+  {
+    "description": "Check asynchronous job state, runtime progress %, frame counts, and log tail.",
+    "inputSchema": {
+      "properties": {
+        "job_id": {
+          "description": "Identifier of the background job.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "type": "object"
+    },
+    "name": "gric_job_status"
+  },
+  {
+    "description": "Launch asynchronous gric-knn background job. Returns job_id immediately.",
+    "inputSchema": {
+      "properties": {
+        "cluster_dir": {
+          "description": "Path to clustered results directory.",
+          "type": "string"
+        },
+        "dataset": {
+          "description": "Path to input dataset file.",
+          "type": "string"
+        },
+        "dtmin": {
+          "description": "Minimum temporal sample exclusion delta (default: 5).",
+          "type": "integer"
+        },
+        "k": {
+          "description": "Number of nearest neighbors to find (default: 10).",
+          "type": "integer"
+        },
+        "output": {
+          "description": "Output path for k-NN result file.",
+          "type": "string"
+        },
+        "quant": {
+          "description": "Quantization mode.",
+          "enum": [
+            "sq8",
+            "sq16",
+            "eq16",
+            "rq8",
+            "rabitq"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "dataset",
+        "cluster_dir",
+        "output"
+      ],
+      "type": "object"
+    },
+    "name": "gric_knn_start"
   },
   {
     "description": "List all 18+ programs in the GRIC suite with categories, summaries, and CLI usage prototypes.",

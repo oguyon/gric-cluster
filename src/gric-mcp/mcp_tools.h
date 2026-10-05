@@ -252,6 +252,61 @@ int mcp_tool_dev_bench(
     const cJSON *args,
     cJSON       *res);
 
+/**
+ * mcp_tool_cluster_start() - Launch asynchronous gric-cluster background job.
+ * @args:   JSON object containing tool arguments.
+ * @res:    Output JSON object containing job_id and initial status.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_cluster_start(
+    const cJSON *args,
+    cJSON       *res);
+
+/**
+ * mcp_tool_knn_start() - Launch asynchronous gric-knn background job.
+ * @args:   JSON object containing tool arguments.
+ * @res:    Output JSON object containing job_id and initial status.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_knn_start(
+    const cJSON *args,
+    cJSON       *res);
+
+/**
+ * mcp_tool_job_status() - Check asynchronous job state, runtime progress %, and frame counts.
+ * @args:   JSON object containing job_id.
+ * @res:    Output JSON object containing job status and telemetry.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_job_status(
+    const cJSON *args,
+    cJSON       *res);
+
+/**
+ * mcp_tool_job_result() - Retrieve structured execution metrics and telemetry once completed.
+ * @args:   JSON object containing job_id.
+ * @res:    Output JSON object containing run metrics.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_job_result(
+    const cJSON *args,
+    cJSON       *res);
+
+/**
+ * mcp_tool_job_cancel() - Cancel a running asynchronous job and optionally clean outputs.
+ * @args:   JSON object containing job_id and optional clean_output flag.
+ * @res:    Output JSON object containing cancellation confirmation.
+ *
+ * Return: 0 on success, -1 on fatal failure.
+ */
+int mcp_tool_job_cancel(
+    const cJSON *args,
+    cJSON       *res);
+
 
 /**
  * mcp_tools_get_list() - Build the full cJSON array of all tool definitions and schemas.
