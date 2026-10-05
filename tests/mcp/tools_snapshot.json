@@ -711,6 +711,30 @@
     "name": "gric_server_info"
   },
   {
+    "description": "Sample a rolling window of frames from an active ImageStreamIO telemetry stream and compute latency (p50/p90/p99), anchor rates, and drops.",
+    "inputSchema": {
+      "properties": {
+        "num_frames": {
+          "description": "Number of frames to sample (default: 100, max: 5000).",
+          "type": "integer"
+        },
+        "stream_name": {
+          "description": "Name of output stream (e.g. 'cluster_assign').",
+          "type": "string"
+        },
+        "timeout_ms": {
+          "description": "Maximum sampling timeout in milliseconds (default: 3000).",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stream_name"
+      ],
+      "type": "object"
+    },
+    "name": "gric_stream_window"
+  },
+  {
     "description": "Pre-flight validation and linting for GRIC CLI commands (detects conflicting flags, invalid ranges, and missing arguments).",
     "inputSchema": {
       "properties": {

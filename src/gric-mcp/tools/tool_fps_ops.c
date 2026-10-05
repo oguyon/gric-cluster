@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -392,8 +393,28 @@ int mcp_tool_fps_set(
     }
     if (pdef == NULL)
     {
+        /* Check common parameter aliases */
+        if (strcmp(clean_param, "dprob") == 0)
+        {
+            pdef = mcp_fps_param_find(mod, ".deltaprob");
+        }
+        else if (strcmp(clean_param, "maxcl") == 0)
+        {
+            pdef = mcp_fps_param_find(mod, ".maxnbclust");
+        }
+        else if (strcmp(clean_param, "maxim") == 0)
+        {
+            pdef = mcp_fps_param_find(mod, ".max_frames");
+        }
+    }
+    if (pdef == NULL)
+    {
         cJSON_AddStringToObject(res, "error", "Unknown parameter key for module");
         return -1;
+    }
+    if (pdef->key[0] == '.')
+    {
+        clean_param = pdef->key + 1;
     }
 
     if (strcmp(pdef->access, "output") == 0)
@@ -434,6 +455,38 @@ int mcp_tool_fps_set(
             cJSON_AddStringToObject(res, "error", "Invalid FLOAT64 value type");
             return -1;
         }
+        if (strcmp(clean_param, "rlim") == 0 && d <= 0.0)
+        {
+            cJSON_AddStringToObject(
+                res, "error", "Parameter rlim must be strictly positive (> 0.0)");
+            return -1;
+        }
+        if ((strcmp(clean_param, "dprob") == 0 ||
+             strcmp(clean_param, "deltaprob") == 0) && (d < 0.0 || d > 1.0))
+        {
+            cJSON_AddStringToObject(
+                res, "error", "Parameter deltaprob/dprob must be within range [0.0, 1.0]");
+            return -1;
+        }
+        if ((strcmp(clean_param, "fmatcha") == 0 || strcmp(clean_param, "fmatchb") == 0) &&
+            d <= 0.0)
+        {
+            cJSON_AddStringToObject(
+                res, "error", "Match parameter must be strictly positive (> 0.0)");
+            return -1;
+        }
+        if (strcmp(clean_param, "soft_bayesian_sigma") == 0 && d <= 0.0)
+        {
+            cJSON_AddStringToObject(
+                res, "error", "Parameter soft_bayesian_sigma must be strictly positive (> 0.0)");
+            return -1;
+        }
+        if (strcmp(clean_param, "entropy_gate") == 0 && d <= 0.0)
+        {
+            cJSON_AddStringToObject(
+                res, "error", "Parameter entropy_gate must be strictly positive (> 0.0)");
+            return -1;
+        }
         snprintf(val_str, sizeof(val_str), "%g", d);
     }
     else if (strcmp(pdef->fptype, "UINT32") == 0 || strcmp(pdef->fptype, "UINT64") == 0 ||
@@ -461,7 +514,33 @@ int mcp_tool_fps_set(
         if ((strcmp(pdef->fptype, "UINT32") == 0 || strcmp(pdef->fptype, "UINT64") == 0) &&
             i64 < 0)
         {
-            cJSON_AddStringToObject(res, "error", "Unsigned parameter cannot be negative");
+            char uerr[128];
+            snprintf(uerr, sizeof(uerr), "Unsigned parameter %s cannot be negative", clean_param);
+            cJSON_AddStringToObject(res, "error", uerr);
+            return -1;
+        }
+        if ((strcmp(clean_param, "maxcl") == 0 ||
+             strcmp(clean_param, "maxnbclust") == 0) && i64 < 1)
+        {
+            cJSON_AddStringToObject(
+                res, "error", "Parameter maxnbclust/maxcl must be at least 1");
+            return -1;
+        }
+        if ((strcmp(clean_param, "maxim") == 0 ||
+             strcmp(clean_param, "max_frames") == 0) && i64 < 0)
+        {
+            cJSON_AddStringToObject(
+                res, "error", "Parameter max_frames/maxim cannot be negative");
+            return -1;
+        }
+        if (strcmp(clean_param, "k") == 0 && i64 < 1)
+        {
+            cJSON_AddStringToObject(res, "error", "Parameter k must be at least 1");
+            return -1;
+        }
+        if (strcmp(clean_param, "dtmin") == 0 && i64 < 0)
+        {
+            cJSON_AddStringToObject(res, "error", "Parameter dtmin cannot be negative");
             return -1;
         }
         snprintf(val_str, sizeof(val_str), "%lld", (long long)i64);
@@ -830,3 +909,306 @@ const struct mcp_tool_def mcp_tooldef_probe_fps_streams = {
         "  \"required\": [\"out_name\"]\n"
         "}",
 };
+
+static int float_compare(
+    const void *a,
+    const void *b)
+{
+    float fa = *(const float *)a;
+    float fb = *(const float *)b;
+    if (fa < fb)
+    {
+        return -1;
+    }
+    if (fa > fb)
+    {
+        return 1;
+    }
+    return 0;
+} // float_compare
+
+int mcp_tool_stream_window(
+    const cJSON *args,
+    cJSON       *res)
+{
+    if (args == NULL)
+    {
+        cJSON_AddStringToObject(res, "error", "Missing arguments");
+        return -1;
+    }
+
+    cJSON *s_item = cJSON_GetObjectItemCaseSensitive(args, "stream_name");
+    if (s_item == NULL || !cJSON_IsString(s_item))
+    {
+        s_item = cJSON_GetObjectItemCaseSensitive(args, "out_name");
+    }
+    if (s_item == NULL || !cJSON_IsString(s_item) || s_item->valuestring[0] == '\0')
+    {
+        cJSON_AddStringToObject(res, "error", "stream_name is required");
+        return -1;
+    }
+
+    const char *stream_name = s_item->valuestring;
+    if (!mcp_valid_identifier(stream_name, 64))
+    {
+        cJSON_AddStringToObject(res, "error", "Invalid stream_name identifier");
+        return -1;
+    }
+
+    int num_frames = 100;
+    cJSON *nf_item = cJSON_GetObjectItemCaseSensitive(args, "num_frames");
+    if (nf_item != NULL && cJSON_IsNumber(nf_item))
+    {
+        num_frames = nf_item->valueint;
+        if (num_frames < 1)
+        {
+            num_frames = 1;
+        }
+        if (num_frames > 5000)
+        {
+            num_frames = 5000;
+        }
+    }
+
+    int timeout_ms = 3000;
+    cJSON *to_item = cJSON_GetObjectItemCaseSensitive(args, "timeout_ms");
+    if (to_item != NULL && cJSON_IsNumber(to_item))
+    {
+        timeout_ms = to_item->valueint;
+        if (timeout_ms < 10)
+        {
+            timeout_ms = 10;
+        }
+        if (timeout_ms > 30000)
+        {
+            timeout_ms = 30000;
+        }
+    }
+
+#ifndef USE_IMAGESTREAMIO
+    (void)num_frames;
+    (void)timeout_ms;
+    cJSON_AddStringToObject(res, "stream_name", stream_name);
+    cJSON_AddStringToObject(res, "error", "ImageStreamIO support not compiled into this build");
+    return -1;
+#else
+    IMAGE image;
+    memset(&image, 0, sizeof(IMAGE));
+
+    if (ImageStreamIO_read_sharedmem_image_toIMAGE(stream_name, &image) != 0)
+    {
+        cJSON_AddStringToObject(res, "stream_name", stream_name);
+        cJSON_AddStringToObject(res, "status", "STREAM_NOT_FOUND");
+        cJSON_AddStringToObject(res, "error", "Could not connect to shared memory stream");
+        return -1;
+    }
+
+    if (image.md[0].size[0] < GRIC_ASSIGN_NFIELDS ||
+        image.md[0].datatype != _DATATYPE_FLOAT || image.array.raw == NULL)
+    {
+        ImageStreamIO_closeIm(&image);
+        cJSON_AddStringToObject(
+            res, "error", "Stream is not a valid GRIC assignment telemetry stream");
+        return -1;
+    }
+
+    float *latencies = (float *)malloc((size_t)num_frames * sizeof(float));
+    float *distances = (float *)malloc((size_t)num_frames * sizeof(float));
+    if (latencies == NULL || distances == NULL)
+    {
+        free(latencies);
+        free(distances);
+        ImageStreamIO_closeIm(&image);
+        cJSON_AddStringToObject(res, "error", "Memory allocation failed");
+        return -1;
+    }
+
+    /* Track rolling statistics */
+    uint64_t last_cnt0 = image.md[0].cnt0;
+    int sampled = 0;
+    int dropped_frames = 0;
+    int new_anchors = 0;
+    int within_rlim_count = 0;
+    float start_clusters = 0.0f;
+    float end_clusters = 0.0f;
+
+    struct timespec ts_start, ts_now;
+    clock_gettime(CLOCK_MONOTONIC, &ts_start);
+
+    /* Read initial frame snapshot */
+    const float *vec = (const float *)image.array.raw;
+    start_clusters = vec[GRIC_ASSIGN_TOTAL_CLUSTERS];
+
+    while (sampled < num_frames)
+    {
+        uint64_t cur_cnt0 = image.md[0].cnt0;
+        if (cur_cnt0 != last_cnt0)
+        {
+            if (last_cnt0 != 0 && cur_cnt0 > last_cnt0 + 1)
+            {
+                dropped_frames += (int)(cur_cnt0 - last_cnt0 - 1);
+            }
+            last_cnt0 = cur_cnt0;
+
+            vec = (const float *)image.array.raw;
+            latencies[sampled] = vec[GRIC_ASSIGN_LATENCY_US];
+            distances[sampled] = vec[GRIC_ASSIGN_DIST];
+            if (vec[GRIC_ASSIGN_IS_NEW] > 0.5f)
+            {
+                new_anchors++;
+            }
+            if (vec[GRIC_ASSIGN_WITHIN_RLIM] > 0.5f)
+            {
+                within_rlim_count++;
+            }
+            end_clusters = vec[GRIC_ASSIGN_TOTAL_CLUSTERS];
+            sampled++;
+        }
+        else
+        {
+            clock_gettime(CLOCK_MONOTONIC, &ts_now);
+            long elapsed_ms = (ts_now.tv_sec - ts_start.tv_sec) * 1000 +
+                              (ts_now.tv_nsec - ts_start.tv_nsec) / 1000000;
+            if (elapsed_ms >= timeout_ms)
+            {
+                break;
+            }
+            usleep(200);
+        }
+    }
+
+    /* If stream was idle and no new frames arrived during sampling, take 1 snapshot */
+    int is_idle = 0;
+    if (sampled == 0)
+    {
+        is_idle = 1;
+        vec = (const float *)image.array.raw;
+        latencies[0] = vec[GRIC_ASSIGN_LATENCY_US];
+        distances[0] = vec[GRIC_ASSIGN_DIST];
+        if (vec[GRIC_ASSIGN_IS_NEW] > 0.5f)
+        {
+            new_anchors++;
+        }
+        if (vec[GRIC_ASSIGN_WITHIN_RLIM] > 0.5f)
+        {
+            within_rlim_count++;
+        }
+        end_clusters = vec[GRIC_ASSIGN_TOTAL_CLUSTERS];
+        sampled = 1;
+    }
+
+    ImageStreamIO_closeIm(&image);
+
+    /* Compute percentiles on latencies and distances */
+    qsort(latencies, (size_t)sampled, sizeof(float), float_compare);
+
+    double sum_lat = 0.0;
+    double sum_dist = 0.0;
+    float min_dist = distances[0];
+    float max_dist = distances[0];
+
+    for (int ii = 0; ii < sampled; ii++)
+    {
+        sum_lat += (double)latencies[ii];
+        sum_dist += (double)distances[ii];
+        if (distances[ii] < min_dist)
+        {
+            min_dist = distances[ii];
+        }
+        if (distances[ii] > max_dist)
+        {
+            max_dist = distances[ii];
+        }
+    }
+
+    double mean_lat = sum_lat / (double)sampled;
+    double mean_dist = sum_dist / (double)sampled;
+    float p50_lat = latencies[sampled / 2];
+    float p90_lat = latencies[(size_t)((double)sampled * 0.90)];
+    float p99_lat = latencies[(size_t)((double)sampled * 0.99)];
+    float min_lat = latencies[0];
+    float max_lat = latencies[sampled - 1];
+    double anchor_rate_1k = ((double)new_anchors * 1000.0) / (double)sampled;
+    double within_rlim_pct = ((double)within_rlim_count * 100.0) / (double)sampled;
+
+    free(latencies);
+    free(distances);
+
+    cJSON_AddStringToObject(res, "stream_name", stream_name);
+    cJSON_AddStringToObject(res, "status", is_idle ? "STREAM_IDLE" : "STREAMING_ACTIVE");
+    cJSON_AddNumberToObject(res, "frames_sampled", (double)sampled);
+    cJSON_AddNumberToObject(res, "dropped_frames", (double)dropped_frames);
+
+    cJSON *lat_obj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(lat_obj, "min_us", (double)min_lat);
+    cJSON_AddNumberToObject(lat_obj, "mean_us", mean_lat);
+    cJSON_AddNumberToObject(lat_obj, "p50_us", (double)p50_lat);
+    cJSON_AddNumberToObject(lat_obj, "p90_us", (double)p90_lat);
+    cJSON_AddNumberToObject(lat_obj, "p99_us", (double)p99_lat);
+    cJSON_AddNumberToObject(lat_obj, "max_us", (double)max_lat);
+    cJSON_AddItemToObject(res, "latency_us", lat_obj);
+
+    cJSON *dist_obj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(dist_obj, "min", (double)min_dist);
+    cJSON_AddNumberToObject(dist_obj, "mean", mean_dist);
+    cJSON_AddNumberToObject(dist_obj, "max", (double)max_dist);
+    cJSON_AddNumberToObject(dist_obj, "within_rlim_pct", within_rlim_pct);
+    cJSON_AddItemToObject(res, "distances", dist_obj);
+
+    cJSON *cl_obj = cJSON_CreateObject();
+    cJSON_AddNumberToObject(cl_obj, "new_anchors_in_window", (double)new_anchors);
+    cJSON_AddNumberToObject(cl_obj, "anchor_rate_per_1000", anchor_rate_1k);
+    cJSON_AddNumberToObject(cl_obj, "start_clusters", (double)start_clusters);
+    cJSON_AddNumberToObject(cl_obj, "end_clusters", (double)end_clusters);
+    cJSON_AddItemToObject(res, "clustering_dynamics", cl_obj);
+
+    char summary[512];
+    if (is_idle)
+    {
+        snprintf(summary, sizeof(summary),
+                 "Stream '%s' is connected but IDLE (0 new frames during %d ms window). "
+                 "Current snapshot: latency=%.1f us, total_clusters=%.0f.",
+                 stream_name, timeout_ms, (double)min_lat, (double)end_clusters);
+    }
+    else
+    {
+        snprintf(summary, sizeof(summary),
+                 "Sampled %d frames from '%s': latency p50=%.1f us, p99=%.1f us; "
+                 "%d new anchors (%.1f/1k frames); %d dropped frames; within_rlim=%.1f%%.",
+                 sampled, stream_name, (double)p50_lat, (double)p99_lat,
+                 new_anchors, anchor_rate_1k, dropped_frames, within_rlim_pct);
+    }
+    cJSON_AddStringToObject(res, "summary", summary);
+
+    return 0;
+#endif
+} // mcp_tool_stream_window
+
+const struct mcp_tool_def mcp_tooldef_stream_window = {
+    .name         = "gric_stream_window",
+    .toolset      = MCP_TS_OPS,
+    .side_effects = 0,
+    .fn           = mcp_tool_stream_window,
+    .description  = "Sample a rolling window of frames from an active ImageStreamIO telemetry "
+                    "stream and compute latency (p50/p90/p99), anchor rates, and drops.",
+    .input_schema =
+        "{\n"
+        "  \"type\": \"object\",\n"
+        "  \"properties\": {\n"
+        "    \"stream_name\": {\n"
+        "      \"type\": \"string\",\n"
+        "      \"description\": \"Name of output stream (e.g. 'cluster_assign').\"\n"
+        "    },\n"
+        "    \"num_frames\": {\n"
+        "      \"type\": \"integer\",\n"
+        "      \"description\": \"Number of frames to sample (default: 100, max: 5000).\"\n"
+        "    },\n"
+        "    \"timeout_ms\": {\n"
+        "      \"type\": \"integer\",\n"
+        "      \"description\": \"Maximum sampling timeout in milliseconds (default: 3000).\"\n"
+        "    }\n"
+        "  },\n"
+        "  \"required\": [\"stream_name\"]\n"
+        "}",
+};
+
