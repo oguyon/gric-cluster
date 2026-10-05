@@ -21,3 +21,11 @@ Before opening a PR or merging code:
 6. **MCP synchronization:** If CLI flags, output formats, FPS parameters, stream layout,
    or installed programs changed: MCP snapshot updated, drift tests pass (`test_mcp_*`,
    `test_doc_flag_drift`, `test_fps_param_docs`, `test_mcp_suite_catalog`, `test_stream_layout`).
+7. **POSIX & Cross-Platform Invariants:** Verify no Linux-only functions (e.g. `pipe2`) or
+   `/proc` assumptions are introduced without portable Darwin/macOS fallbacks.
+8. **Memory Alignment Invariants:** Ensure all `aligned_alloc(alignment, size)` calls have
+   `size` as a multiple of `alignment` (`size % alignment == 0`).
+9. **Lifetime & Optimization Safety:** Ensure no stack buffer pointers are stored in structs
+   or returned, preventing corruption under `-O2`/`-O3` optimization flags.
+10. **Pre-Merge CI Verification:** Never merge until `gh pr checks <PR_NUM>` shows 100% green
+    (0 failing, 0 pending) across Linux (GCC/Clang/ASan), macOS Darwin, Milk Adapter, and WASM.

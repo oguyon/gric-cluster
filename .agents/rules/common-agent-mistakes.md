@@ -29,3 +29,34 @@ Consolidated checklist of pitfalls that AI agents frequently hit when generating
    Every `.c` file must include exactly the headers it uses. Do not rely on header side-effects.
 9. **Lines > 100 characters.**
    Limit line length in C source code, scripts, and documentation files to 100 characters.
+
+## Cross-Platform & OS Portability
+10. **Linux-only functions without POSIX fallbacks.**
+    Never use glibc-only APIs like `pipe2(..., O_CLOEXEC)` without a portable fallback.
+    macOS Darwin lacks `pipe2()`. Always provide standard `pipe()` + `fcntl(..., FD_CLOEXEC)`.
+11. **Assuming `/proc` exists.**
+    macOS Darwin does not have `/proc`. Never assume `/proc/self/exe` is available.
+    Use `_NSGetExecutablePath()` on Darwin and provide hierarchical directory traversal.
+
+## Memory Alignment & Invariants
+12. **`aligned_alloc(alignment, size)` sizing rule.**
+    POSIX and AddressSanitizer (ASan) mandate that `size` MUST be an integral multiple of
+    `alignment` (`size % alignment == 0`). Non-multiples abort under ASan with
+    `invalid-aligned-alloc-alignment` and return `EINVAL`/SIGSEGV on macOS. Always pad `size`
+    to a multiple of `alignment` (e.g. `bench_aligned_alloc()`).
+
+## Lifetime & Optimization Safety
+13. **Dangling pointers to stack buffers.**
+    Never assign local stack buffers (`char buf[...]`) to struct pointer fields or return them.
+    Under Clang/GCC `-O2`/`-O3` optimizations, stack frames are popped and overwritten,
+    causing corrupted data and intermittent test failures. Copy strings into struct buffers.
+14. **Hardcoded build paths.**
+    Never hardcode `./build/` or `%s/build/` when finding executables. Build directories vary
+    (`build-milk`, `build-asan`, custom prefixes). Always use `mcp_find_executable()` and
+    `mcp_get_build_dir()`.
+
+## Pre-Merge Verification
+15. **Merging before all CI checks pass green.**
+    Never merge a PR based solely on local tests. Always verify all GitHub Actions matrix jobs
+    (`gh pr checks <PR>`) are 100% successful (0 failing, 0 pending) across Linux, macOS,
+    Clang Release, ASan/UBSan Debug, GCC, and Milk Streaming Adapter.

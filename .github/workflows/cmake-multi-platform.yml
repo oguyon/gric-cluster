@@ -28,6 +28,11 @@ jobs:
             'tools/**.[ch]' 'benchmarks/**.[ch]' \
             ':!src/gric-plot/font8x16.h' ':!src/shared/cjson/*'
 
+      - name: Verify PR Invariants (Platform, Memory Alignment, Invariant Rules)
+        run: |
+          chmod +x scripts/check_pr_invariants.sh
+          ./scripts/check_pr_invariants.sh
+
   build-and-test:
     needs: [lint]
     runs-on: ${{ matrix.os }}

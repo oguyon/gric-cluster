@@ -22,3 +22,18 @@ disclose this in the PR description:
   parameter alignment).
 - **Testing**: All automated tests pass; regression checks on benchmark datasets succeed.
 - **Git History**: Clean, focused commit messages following project conventions.
+
+## 3. Pre-Merge CI Verification Gate
+Before merging ANY Pull Request:
+- **Mandatory 100% Green CI**: Run `gh pr checks <PR_NUM>` and confirm all checks are
+  completed and passing (0 failing, 0 pending, 0 cancelled).
+- **Matrix Coverage Verification**:
+  - macOS (Darwin) builds and CTest pass (verifies POSIX compliance, no naked `pipe2`).
+  - Ubuntu Clang Release (`-O2`/`-O3`) passes (verifies pointer lifetimes).
+  - Ubuntu Clang Debug with ASan/UBSan passes (verifies alignment, no `aligned_alloc` aborts).
+  - Ubuntu GCC Release passes.
+  - Milk Framework Streaming Adapter passes (verifies build dir `build-milk`).
+  - WASM Build & Verify passes.
+  - CodeQL Analysis passes.
+- **Never merge on local success alone**: Multi-platform runners catch architecture,
+  compiler-optimization, and sanitizer bugs invisible on a single local Linux host.
