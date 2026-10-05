@@ -19,7 +19,7 @@ struct TestConfig
     int         use_double;
     uint32_t    max_clusters;
     char        outdir[128];
-    const char *custom_msg;
+    char        custom_msg[128];
 };
 
 static int custom_handler(
@@ -29,7 +29,11 @@ static int custom_handler(
 {
     (void)key;
     struct TestConfig *cfg = (struct TestConfig *)ctx;
-    cfg->custom_msg = val;
+    if (val != NULL)
+    {
+        strncpy(cfg->custom_msg, val, sizeof(cfg->custom_msg) - 1);
+        cfg->custom_msg[sizeof(cfg->custom_msg) - 1] = '\0';
+    }
     return 1;
 }
 
@@ -152,7 +156,7 @@ static void test_config_file_parser(void)
     assert(cfg.rlim > 0.419 && cfg.rlim < 0.421);
     assert(cfg.k == 40);
     assert(cfg.max_clusters == 512);
-    assert(cfg.custom_msg != NULL && strcmp(cfg.custom_msg, "hello_gric") == 0);
+    assert(cfg.custom_msg[0] != '\0' && strcmp(cfg.custom_msg, "hello_gric") == 0);
 
     remove(tmp_conf);
     printf("PASS: test_config_file_parser\n");
