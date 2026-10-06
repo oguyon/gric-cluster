@@ -262,11 +262,18 @@ EOF
         exit 1
     fi
     echo "[Test 4] PASSED: Milk CLI gric.gric_knn streaming search completed cleanly."
+    echo "======================================================================"
+    echo "ALL GRIC MILK INTEGRATION TESTS PASSED (4/4)"
+    echo "======================================================================"
 else
+    if [ "${GRIC_REQUIRE_MILK_CLI:-0}" = "1" ]; then
+        echo "Error: milk-cli binary is required (GRIC_REQUIRE_MILK_CLI=1) but was not found!"
+        exit 1
+    fi
+    echo "----------------------------------------------------------------------"
     echo "[Info] milk-cli binary not found; skipping CLI interactive tests 3 and 4."
+    echo "======================================================================"
+    echo "GRIC MILK STANDALONE TESTS PASSED (2/2 standalone, 2 CLI tests skipped)"
+    echo "======================================================================"
 fi
-
-echo "======================================================================"
-echo "ALL GRIC MILK INTEGRATION TESTS PASSED (4/4)"
-echo "======================================================================"
 exit 0

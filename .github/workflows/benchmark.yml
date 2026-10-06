@@ -29,7 +29,7 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: benchmark-ubuntu-gcc-release
+          key: benchmark-ubuntu-gcc-release-v2
 
       - name: Install Dependencies
         run: |
@@ -40,7 +40,11 @@ jobs:
 
       - name: Configure and Build
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache -S .
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_NATIVE=OFF \
+            -DCMAKE_C_FLAGS_RELEASE="-O3 -mavx2 -mfma -funroll-loops -g" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O3 -mavx2 -mfma -funroll-loops -g" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -S .
           cmake --build build --parallel
 
       - name: Run SIMD Acceleration Benchmark

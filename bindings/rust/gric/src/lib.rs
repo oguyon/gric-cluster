@@ -97,6 +97,11 @@ impl Config {
         self
     }
 
+    pub fn query_mode(mut self, enabled: bool) -> Self {
+        self.0.query_mode = if enabled { 1 } else { 0 };
+        self
+    }
+
     pub fn ncpu(mut self, threads: i32) -> Self {
         self.0.ncpu = threads;
         self
@@ -210,9 +215,100 @@ impl Clusterer {
         flat.chunks(self.ndim).map(|chunk| chunk.to_vec()).collect()
     }
 
+    /// Process a single incoming coordinate frame of single-precision floats.
+    pub fn feed_f32(&mut self, coords: &[f32]) -> Result<i64, Error> {
+        if coords.len() != self.ndim {
+            return Err(Error::DimMismatch);
+        }
+        let mut out_cid: i64 = -1;
+        let st = unsafe {
+            gric_sys::gric_cluster_feed_frame_f32(self.raw, coords.as_ptr(), &mut out_cid)
+        };
+        check_status(st)?;
+        Ok(out_cid)
+    }
+
+    /// Process a batch of contiguous single-precision float frames.
+    pub fn feed_batch_f32(
+        &mut self,
+        flat_coords: &[f32],
+        num_frames: usize,
+    ) -> Result<Vec<i64>, Error> {
+        if flat_coords.len() != num_frames * self.ndim {
+            return Err(Error::DimMismatch);
+        }
+        let mut out = vec![-1i64; num_frames];
+        let st = unsafe {
+            gric_sys::gric_cluster_feed_batch_f32(
+                self.raw,
+                flat_coords.as_ptr(),
+                num_frames,
+                out.as_mut_ptr(),
+            )
+        };
+        check_status(st)?;
+        Ok(out)
+    }
+
     /// Reset internal state while retaining buffer allocations.
     pub fn reset(&mut self) -> Result<(), Error> {
         let st = unsafe { gric_sys::gric_cluster_reset(self.raw) };
         check_status(st)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version() {
+        assert_eq!(version(), "1.0.0");
+    }
+
+    #[test]
+    fn test_simple_clustering() {
+        let mut c = Clusterer::simple(4, 1.0).expect("failed to create clusterer");
+        assert_eq!(c.ndim(), 4);
+        assert_eq!(c.num_clusters(), 0);
+
+        let f0 = [0.0, 0.0, 0.0, 0.0];
+        let id0 = c.feed(&f0).expect("feed failed");
+        assert_eq!(id0, 0);
+        assert_eq!(c.num_clusters(), 1);
+
+        let f1 = [0.1, 0.1, 0.0, 0.0];
+        let id1 = c.feed(&f1).expect("feed failed");
+        assert_eq!(id1, 0);
+        assert_eq!(c.num_clusters(), 1);
+
+        let f2 = [5.0, 0.0, 0.0, 0.0];
+        let id2 = c.feed(&f2).expect("feed failed");
+        assert_eq!(id2, 1);
+        assert_eq!(c.num_clusters(), 2);
+
+        let anchors = c.anchors();
+        assert_eq!(anchors.len(), 2);
+    }
+
+    #[test]
+    fn test_feed_batch() {
+        let mut c = Clusterer::simple(2, 0.5).expect("failed to create clusterer");
+        let batch = [0.0, 0.0, 10.0, 10.0];
+        let ids = c.feed_batch(&batch, 2).expect("feed batch failed");
+        assert_eq!(ids, vec![0, 1]);
+        assert_eq!(c.num_clusters(), 2);
+    }
+
+    #[test]
+    fn test_feed_f32() {
+        let mut c = Clusterer::simple(2, 0.5).expect("failed to create clusterer");
+        let f0 = [0.0f32, 0.0f32];
+        let id0 = c.feed_f32(&f0).expect("feed_f32 failed");
+        assert_eq!(id0, 0);
+
+        let batch = [0.05f32, 0.05f32, 10.0f32, 10.0f32];
+        let ids = c.feed_batch_f32(&batch, 2).expect("feed_batch_f32 failed");
+        assert_eq!(ids, vec![0, 1]);
     }
 }
