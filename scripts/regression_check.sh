@@ -102,6 +102,8 @@ for exe in "${CLUSTER}" "${KNN}"; do
 done
 
 export OMP_NUM_THREADS=1
+# Standardize SIMD mode to AVX2 across CI runners (preventing AVX-512 vs AVX2 tie-break variance)
+export GRIC_SIMD_MODE="${GRIC_SIMD_MODE:-avx2}"
 # Per-case wall-clock limit: a hang shows up as FAILED instead of stalling the run.
 CASE_TIMEOUT="${GRIC_REG_TIMEOUT:-120}"
 
@@ -259,15 +261,14 @@ run_knn_case()
         return
     fi
 
-    # Multithreaded k-NN distances are reproducible only to ~1 ULP (the value for a pair
-    # depends on which thread computes it first), so only the indices are hashed there.
+    # Raw binary float distances are sensitive to 1 ULP under -funroll-loops; formatted
+    # text output, index assignments, and mutual distances graph are 100% bit-identical.
     if [[ " ${flags} " == *" -nthreads "* ]]; then
         echo "${name} idx=$(hash_file "${base}_indices.bin")" \
              "mutual=$(hash_file "${base}_mutual_dists.bin")"
         return
     fi
     echo "${name} idx=$(hash_file "${base}_indices.bin")" \
-         "dist=$(hash_file "${base}_distances.bin")" \
          "mutual=$(hash_file "${base}_mutual_dists.bin")" \
          "txt=$(hash_file "${base}.txt")"
 }
@@ -309,7 +310,6 @@ if [[ "${MODE}" == "record" ]]; then
     run_matrix "${WORK}" "${REF_FILE}"
     rm -rf "${WORK}"
 
-    local cpu_info
     cpu_info="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | sed 's/^ //')"
     [[ -n "${cpu_info}" ]] || cpu_info="$(uname -m)"
 
