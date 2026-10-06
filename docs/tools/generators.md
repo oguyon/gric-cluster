@@ -24,6 +24,7 @@ gric-mktxtseq <N> <output_file> <pattern> [options]
 * `-repeat <M>`: Repeat pattern $M$ consecutive cycles
 * `-noise <R>`: Add Gaussian/uniform noise with standard deviation $R$
 * `-shuffle`: Randomize point sequence order (testing non-sequential geometric solving)
+* `-seed <S>`, `-s <S>`: Set random seed for reproducible coordinate generation
 
 ---
 

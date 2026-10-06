@@ -8,6 +8,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+static uint64_t s_prng_state = 0x853c49e6748fea9bULL;
+static int      s_seeded = 0;
+
+/**
+ * gric_gen_seed() - Seed the synthetic pattern PRNG for deterministic generation.
+ * @seed: 64-bit seed value.
+ *
+ * Context: Invoked by gric-mktxtseq when the -seed flag is provided, switching
+ * rand_double() to a portable SplitMix64 generator that yields bit-identical
+ * values across platforms and compilers.
+ */
+void gric_gen_seed(
+    uint64_t seed)
+{
+    s_prng_state = (seed != 0) ? seed : 0x853c49e6748fea9bULL;
+    s_seeded = 1;
+    srand((unsigned int)(seed & 0xFFFFFFFFU));
+} // gric_gen_seed
+
 /**
  * rand_double() - Generate uniform pseudorandom double in range [0.0, 1.0).
  *
@@ -20,7 +39,16 @@
 double rand_double(
     void)
 {
-    return (double)rand() / (double)RAND_MAX;
+    if (!s_seeded)
+    {
+        return (double)rand() / (double)RAND_MAX;
+    }
+
+    s_prng_state += 0x9e3779b97f4a7c15ULL;
+    uint64_t z = s_prng_state;
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return (double)((z ^ (z >> 31)) >> 11) * (1.0 / 9007199254740992.0);
 } // rand_double
 
 /**

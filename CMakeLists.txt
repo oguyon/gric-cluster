@@ -1126,6 +1126,18 @@ if (ENABLE_MILK AND MILK_FOUND)
         DEPENDS "milk-fpsexec-gric-cluster;milk-fpsexec-gric-knn;milk-fpsexec-gric-reconstruct;milkgric;gric-cluster;gric-knn;gric-txt2stream")
 endif()
 
+option(ENABLE_REGRESSION_CHECK
+       "Enable algorithmic regression check against reference baseline" OFF)
+if (ENABLE_REGRESSION_CHECK)
+    add_test(NAME test_regression_deterministic
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/regression_check.sh check
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/regression/reference_ci.txt
+                --bin ${CMAKE_BINARY_DIR})
+    set_tests_properties(test_regression_deterministic PROPERTIES
+        DEPENDS "gric-cluster;gric-knn;gric-mktxtseq"
+        TIMEOUT 120)
+endif()
+
 add_executable(test_bin_ascii_roundtrip
     tests/test_bin_ascii_roundtrip.c
     src/shared/format/gric_bin_io.c

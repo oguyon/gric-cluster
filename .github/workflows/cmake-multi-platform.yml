@@ -126,6 +126,10 @@ jobs:
                 "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -mavx2 -mfma -funroll-loops -g"
               )
             fi
+            if [ "${{ matrix.c_compiler }}" = "gcc" ] && \
+               [ "${{ matrix.build_type }}" = "Release" ]; then
+              EXTRA_FLAGS+=("-DENABLE_REGRESSION_CHECK=ON")
+            fi
           fi
           cmake -B "${{ steps.strings.outputs.build-output-dir }}" \
             -DCMAKE_CXX_COMPILER="${{ matrix.cpp_compiler }}" \
