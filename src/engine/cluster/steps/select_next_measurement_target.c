@@ -213,6 +213,7 @@ static void entropy_rank_popcount_scores(
     }
 
     long prune_work = (long)M * sampled_count * active_words;
+    (void)prune_work;
     #pragma omp parallel for if(prune_work >= GRIC_OMP_MIN_WORK)
     for (int idx_p = 0; idx_p < M; idx_p++)
     {

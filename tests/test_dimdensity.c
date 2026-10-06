@@ -86,8 +86,10 @@ int main(void)
 
     printf("  Verified 1000 sample records from %s\n", TEST_DIMDENS_TXT);
     printf("  Mean Intrinsic Dimension: %.4f (Expected ~1.0 for 1D spiral manifold)\n", mean_dim);
+    printf("  Mean Density: %.4f\n", mean_dens);
     // For a 1D spiral manifold, estimated intrinsic dimension should be close to 1.0
     assert(mean_dim >= 0.70 && mean_dim <= 1.45);
+    assert(mean_dens > 0.0);
 
     // 6. Verify Binary results output
     FILE *fp_bin = fopen(TEST_DIMDENS_BIN, "rb");

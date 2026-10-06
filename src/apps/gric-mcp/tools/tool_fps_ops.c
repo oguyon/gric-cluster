@@ -906,7 +906,7 @@ const struct mcp_tool_def mcp_tooldef_probe_fps_streams = {
         "}",
 };
 
-static int float_compare(
+static int __attribute__((unused)) float_compare(
     const void *a,
     const void *b)
 {

@@ -202,7 +202,7 @@ void mcp_parse_sanitizer_output(
             }
             else
             {
-                strncpy(file_buf, location, sizeof(file_buf) - 1);
+                snprintf(file_buf, sizeof(file_buf), "%s", location);
             }
 
             if (cur_error != NULL)

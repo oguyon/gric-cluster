@@ -9,6 +9,10 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(-Wall -Wextra)
+endif()
+
 option(ENABLE_NATIVE "Optimize for host CPU (-march=native)" ON)
 
 if(ENABLE_NATIVE)
@@ -133,13 +137,16 @@ add_custom_command(
     COMMENT "Generating embedded MCP recipes and suite catalog database"
 )
 
-include_directories(
-    include
-    src/libgric
+include_directories(SYSTEM
     ${CFITSIO_INCLUDE_DIRS}
     ${PNG_INCLUDE_DIRS}
     ${FFMPEG_INCLUDE_DIRS}
     ${IMAGESTREAMIO_INCLUDE_DIRS}
+)
+
+include_directories(
+    include
+    src/libgric
     ${CMAKE_CURRENT_BINARY_DIR}
     src
     src/base

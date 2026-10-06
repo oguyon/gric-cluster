@@ -26,7 +26,6 @@ static bool is_in_e8(
     bool all_int = true;
     bool all_half = true;
     int int_sum = 0;
-    int minus_count = 0;
 
     for (int i = 0; i < 8; i++)
     {
@@ -44,13 +43,6 @@ static bool is_in_e8(
         if (diff_half > 1e-5)
         {
             all_half = false;
-        }
-        else
-        {
-            if (v[i] < 0.0)
-            {
-                minus_count++;
-            }
         }
     }
 

@@ -284,7 +284,7 @@ int sq16_save_sidecar(
 /**
  * sq16_fastscan_32x_3d_scalar() - Scalar fallback for 32 3D candidate evaluation.
  */
-static inline uint32_t sq16_fastscan_32x_3d_scalar(
+static inline __attribute__((unused)) uint32_t sq16_fastscan_32x_3d_scalar(
     const int16_t *restrict query_sq16,
     const int16_t *restrict block_x,
     const int16_t *restrict block_y,
@@ -314,7 +314,7 @@ static inline uint32_t sq16_fastscan_32x_3d_scalar(
 /**
  * sq16_fastscan_32x_generic_scalar() - Scalar fallback for 32 D-dim candidate evaluation.
  */
-static inline uint32_t sq16_fastscan_32x_generic_scalar(
+static inline __attribute__((unused)) uint32_t sq16_fastscan_32x_generic_scalar(
     const int16_t *restrict query_sq16,
     const int16_t *restrict block_coords,
     long                    dim,

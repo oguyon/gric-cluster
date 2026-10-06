@@ -94,6 +94,7 @@ static double gauss_noise(
     return stddev * sqrt(-2.0 * log(u)) * cos(2.0 * 3.14159265358979323846 * v);
 }
 
+#ifdef USE_IMAGESTREAMIO
 /**
  * compute_centroid_float() - Calculate centroid (xc, yc) and total flux from float buffer.
  * @buffer: Single-precision pixel buffer [size * size].
@@ -132,6 +133,7 @@ static void compute_centroid_float(
     }
     *flux = sum_val;
 }
+#endif // USE_IMAGESTREAMIO
 
 /**
  * compute_centroid_u8() - Calculate centroid (xc, yc) and total flux from RGB u8 buffer.
@@ -172,6 +174,7 @@ static void compute_centroid_u8(
     *flux = sum_val;
 }
 
+#ifdef USE_IMAGESTREAMIO
 /**
  * render_gaussian_spot_float() - Render a Gaussian spot into a single-precision float buffer.
  * @buffer:      Output float buffer [size * size].
@@ -241,6 +244,7 @@ static void render_gaussian_spot_float(
         }
     }
 }
+#endif // USE_IMAGESTREAMIO
 
 /**
  * render_gaussian_spot_rgb() - Render a Gaussian spot into an RGB24 unsigned char buffer.

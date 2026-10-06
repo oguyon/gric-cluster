@@ -18,7 +18,7 @@
 
 struct layering_violation
 {
-    char file_path[512];
+    char file_path[1024];
     int  line_num;
     char include_str[256];
     int  source_level;
@@ -288,15 +288,12 @@ static void check_file_layering(
         if (has_violation && ctx->violation_count < MAX_LAYERING_VIOLATIONS)
         {
             struct layering_violation *v = &ctx->violations[ctx->violation_count++];
-            strncpy(v->file_path, file_path, sizeof(v->file_path) - 1);
-            v->file_path[sizeof(v->file_path) - 1] = '\0';
+            snprintf(v->file_path, sizeof(v->file_path), "%s", file_path);
             v->line_num = line_num;
-            strncpy(v->include_str, inc_buf, sizeof(v->include_str) - 1);
-            v->include_str[sizeof(v->include_str) - 1] = '\0';
+            snprintf(v->include_str, sizeof(v->include_str), "%s", inc_buf);
             v->source_level = source_level;
             v->target_level = target_level;
-            strncpy(v->reason, reason, sizeof(v->reason) - 1);
-            v->reason[sizeof(v->reason) - 1] = '\0';
+            snprintf(v->reason, sizeof(v->reason), "%s", reason);
         }
     } // while reading lines
 
@@ -381,8 +378,7 @@ int mcp_tool_dev_check_layering(
     char target_path[2048];
     if (sub_dir[0] == '/')
     {
-        strncpy(target_path, sub_dir, sizeof(target_path) - 1);
-        target_path[sizeof(target_path) - 1] = '\0';
+        snprintf(target_path, sizeof(target_path), "%s", sub_dir);
     }
     else
     {

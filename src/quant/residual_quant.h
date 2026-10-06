@@ -378,10 +378,8 @@ static inline void rq8_dist_asym_cutoff_batch_1x4(
     float                        cutoff_f,
     float                        out_dist_sq[4])
 {
-    out_dist_sq[0] = 0.0f;
-    out_dist_sq[1] = 0.0f;
-    out_dist_sq[2] = 0.0f;
-    out_dist_sq[3] = 0.0f;
+    out_dist_sq[0] = out_dist_sq[1] = out_dist_sq[2] = out_dist_sq[3] = 0.0f;
+    (void)cutoff_f;
 
     long i = 0;
 
