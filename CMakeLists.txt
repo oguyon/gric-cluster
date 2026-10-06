@@ -377,6 +377,8 @@ if(CARGO_EXECUTABLE)
         COMMAND ${CMAKE_COMMAND} -E env
             GRIC_BUILD_DIR=${CMAKE_BINARY_DIR}
             LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{LD_LIBRARY_PATH}
+            DYLD_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{DYLD_LIBRARY_PATH}
+            DYLD_FALLBACK_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{DYLD_FALLBACK_LIBRARY_PATH}
             ${CARGO_EXECUTABLE} test
                 --manifest-path ${CMAKE_SOURCE_DIR}/bindings/rust/Cargo.toml
     )
@@ -388,7 +390,10 @@ if(JULIA_EXECUTABLE)
     add_test(
         NAME test_bindings_julia
         COMMAND ${CMAKE_COMMAND} -E env
-            LIBGRIC_PATH=${CMAKE_BINARY_DIR}/libgric.so
+            LIBGRIC_PATH=${CMAKE_BINARY_DIR}
+            LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{LD_LIBRARY_PATH}
+            DYLD_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{DYLD_LIBRARY_PATH}
+            DYLD_FALLBACK_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{DYLD_FALLBACK_LIBRARY_PATH}
             ${JULIA_EXECUTABLE} --project=${CMAKE_SOURCE_DIR}/bindings/julia
             ${CMAKE_SOURCE_DIR}/bindings/julia/test/runtests.jl
     )

@@ -39,6 +39,7 @@ pub struct gric_cluster_ctx {
     _unused: [u8; 0],
 }
 
+#[allow(non_camel_case_types)]
 pub type gric_cluster_t = gric_cluster_ctx;
 
 extern "C" {

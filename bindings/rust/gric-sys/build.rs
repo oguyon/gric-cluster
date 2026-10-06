@@ -3,10 +3,12 @@ use std::path::PathBuf;
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let mut search_dirs = Vec::new();
+
     if let Ok(dir) = env::var("GRIC_BUILD_DIR") {
-        println!("cargo:rustc-link-search=native={}", dir);
+        search_dirs.push(PathBuf::from(dir));
     } else if let Ok(dir) = env::var("GRIC_LIB_DIR") {
-        println!("cargo:rustc-link-search=native={}", dir);
+        search_dirs.push(PathBuf::from(dir));
     } else {
         let candidates = [
             manifest_dir.join("../../../build"),
@@ -15,9 +17,14 @@ fn main() {
         ];
         for dir in &candidates {
             if dir.exists() {
-                println!("cargo:rustc-link-search=native={}", dir.display());
+                search_dirs.push(dir.clone());
             }
         }
+    }
+
+    for dir in &search_dirs {
+        println!("cargo:rustc-link-search=native={}", dir.display());
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dir.display());
     }
 
     println!("cargo:rustc-link-lib=gric");
