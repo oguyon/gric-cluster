@@ -4,6 +4,7 @@
  */
 
 #include "gric/gric.h"
+#include "gric_api_internal.h"
 #include "cluster_defs.h"
 #include "cluster_step.h"
 #include "cluster_steps.h"
@@ -25,25 +26,6 @@
 
 #define DEFAULT_MAX_CLUSTERS 256
 #define DEFAULT_MAX_FRAMES   100000
-
-/**
- * struct gric_cluster_ctx - Concrete clustering session state.
- */
-struct gric_cluster_ctx
-{
-    ClusterConfig  config;
-    ClusterState   state;
-    Frame          frame;
-    size_t         ndim;
-    size_t         maxnbfr;
-    int            current_frame_id;
-    int            prev_assigned;
-    int            user_maxcl;
-    int           *temp_indices;
-    double        *temp_dists;
-    Candidate     *sorting_candidates;
-    void          *conv_buf;
-};
 
 const char *gric_version(
     void)
@@ -83,174 +65,6 @@ gric_status_t gric_cluster_config_default(
 
     return GRIC_SUCCESS;
 }
-
-static void *grow_matrix(
-    void   *old,
-    size_t  old_n,
-    size_t  new_n,
-    size_t  elem_size)
-{
-    if (new_n == 0 || elem_size == 0)
-    {
-        return NULL;
-    }
-
-    void *new_buf = calloc(new_n * new_n, elem_size);
-    if (!new_buf)
-    {
-        return NULL;
-    }
-
-    if (old)
-    {
-        for (size_t i = 0; i < old_n; i++)
-        {
-            memcpy(
-                (char *)new_buf + (i * new_n * elem_size),
-                (char *)old + (i * old_n * elem_size),
-                old_n * elem_size
-            );
-        }
-        free(old);
-    }
-    return new_buf;
-}
-
-static int grow_context_capacity(
-    gric_cluster_t *ctx)
-{
-    size_t old_N = (size_t)ctx->config.algo.maxnbclust;
-    size_t new_N = old_N * 2;
-    if (new_N < 16)
-    {
-        new_N = 16;
-    }
-
-    Cluster *new_clusters = (Cluster *)realloc(
-        ctx->state.clusters, new_N * sizeof(Cluster)
-    );
-    if (!new_clusters)
-    {
-        return -1;
-    }
-    ctx->state.clusters = new_clusters;
-    memset(&ctx->state.clusters[old_N], 0, (new_N - old_N) * sizeof(Cluster));
-
-    VisitorList *new_visitors = (VisitorList *)realloc(
-        ctx->state.cluster_visitors, new_N * sizeof(VisitorList)
-    );
-    if (!new_visitors)
-    {
-        return -1;
-    }
-    ctx->state.cluster_visitors = new_visitors;
-    memset(&ctx->state.cluster_visitors[old_N], 0, (new_N - old_N) * sizeof(VisitorList));
-
-    long *new_tm = (long *)grow_matrix(ctx->state.transition_matrix, old_N, new_N, sizeof(long));
-    if (!new_tm)
-    {
-        return -1;
-    }
-    ctx->state.transition_matrix = new_tm;
-
-    ClusterScratch *s = &ctx->state.scratch;
-    s->mixed_probs = (double *)realloc(s->mixed_probs, new_N * sizeof(double));
-    s->clmembflag = (int *)realloc(s->clmembflag, new_N * sizeof(int));
-    s->active_clusters = (int *)realloc(s->active_clusters, new_N * sizeof(int));
-    s->probsortedclindex = (int *)realloc(s->probsortedclindex, new_N * sizeof(int));
-
-    double *new_cp = NULL;
-    if (posix_memalign((void **)&new_cp, 64, new_N * sizeof(double)) == 0)
-    {
-        memset(new_cp, 0, new_N * sizeof(double));
-        if (s->cluster_probs)
-        {
-            memcpy(new_cp, s->cluster_probs, old_N * sizeof(double));
-            free(s->cluster_probs);
-        }
-        s->cluster_probs = new_cp;
-    }
-    s->current_gprobs = (double *)realloc(s->current_gprobs, new_N * sizeof(double));
-
-    if (dcc_grow_capacity(&ctx->state, new_N, ctx->config.optim.sparse_dcc_mode) != 0)
-    {
-        return -1;
-    }
-
-    size_t new_mask_words = new_N * new_N * ((new_N + 63) / 64);
-    uint64_t *new_mask = (uint64_t *)calloc(new_mask_words, sizeof(uint64_t));
-    if (new_mask)
-    {
-        free(s->consistency_mask);
-        s->consistency_mask = new_mask;
-    }
-
-    ctx->temp_indices = (int *)realloc(ctx->temp_indices, new_N * sizeof(int));
-    ctx->temp_dists = (double *)realloc(ctx->temp_dists, new_N * sizeof(double));
-    ctx->sorting_candidates = (Candidate *)realloc(
-        ctx->sorting_candidates, new_N * sizeof(Candidate)
-    );
-
-    s->entropy_p_current = (double *)realloc(s->entropy_p_current, new_N * sizeof(double));
-    s->entropy_candidates = (Candidate *)realloc(
-        s->entropy_candidates, new_N * sizeof(Candidate));
-    s->entropy_prob_scores = (TargetScore *)realloc(
-        s->entropy_prob_scores, new_N * sizeof(TargetScore));
-    s->entropy_prune_scores = (TargetScore *)realloc(
-        s->entropy_prune_scores, new_N * sizeof(TargetScore));
-    s->entropy_active_indices = (int *)realloc(s->entropy_active_indices, new_N * sizeof(int));
-    s->entropy_plog2p = (double *)realloc(s->entropy_plog2p, new_N * sizeof(double));
-    s->entropy_visited = (uint8_t *)realloc(s->entropy_visited, new_N * sizeof(uint8_t));
-    s->refine_queue = (Candidate *)realloc(s->refine_queue, new_N * sizeof(Candidate));
-    s->refine_queue_capacity = (int)new_N;
-    s->tuple_pred_candidates = (int *)realloc(s->tuple_pred_candidates, new_N * sizeof(int));
-    s->pred_candidates = (int *)realloc(s->pred_candidates, new_N * sizeof(int));
-    s->local_candidates = (int *)realloc(s->local_candidates, new_N * sizeof(int));
-
-    ClusterTelemetry *t = &ctx->state.telemetry;
-    t->pruned_fraction_sum = (double *)realloc(t->pruned_fraction_sum, new_N * sizeof(double));
-    t->step_counts = (long *)realloc(t->step_counts, new_N * sizeof(long));
-    t->dist_counts = (long *)realloc(
-        t->dist_counts, (new_N + 1) * sizeof(long));
-    t->pruned_counts_by_dist = (long *)realloc(
-        t->pruned_counts_by_dist, (new_N + 1) * sizeof(long));
-    t->cluster_query_counts = (long *)realloc(t->cluster_query_counts, new_N * sizeof(long));
-
-    memset(&s->clmembflag[old_N], 0, (new_N - old_N) * sizeof(int));
-    memset(&s->mixed_probs[old_N], 0, (new_N - old_N) * sizeof(double));
-    memset(&s->current_gprobs[old_N], 0, (new_N - old_N) * sizeof(double));
-    memset(&s->probsortedclindex[old_N], 0, (new_N - old_N) * sizeof(int));
-    if (s->entropy_visited)
-    {
-        memset(&s->entropy_visited[old_N], 0, (new_N - old_N) * sizeof(uint8_t));
-    }
-    if (t->pruned_fraction_sum)
-    {
-        memset(&t->pruned_fraction_sum[old_N], 0, (new_N - old_N) * sizeof(double));
-    }
-    if (t->step_counts)
-    {
-        memset(&t->step_counts[old_N], 0, (new_N - old_N) * sizeof(long));
-    }
-    if (t->dist_counts)
-    {
-        memset(&t->dist_counts[old_N + 1], 0, (new_N - old_N) * sizeof(long));
-    }
-    if (t->pruned_counts_by_dist)
-    {
-        memset(&t->pruned_counts_by_dist[old_N + 1], 0, (new_N - old_N) * sizeof(long));
-    }
-    if (t->cluster_query_counts)
-    {
-        memset(&t->cluster_query_counts[old_N], 0, (new_N - old_N) * sizeof(long));
-    }
-
-    ctx->config.algo.maxnbclust = (int)new_N;
-    ctx->state.telemetry.max_steps_recorded = (int)new_N;
-
-    return 0;
-}
-
 
 gric_cluster_t *gric_cluster_create(
     const gric_cluster_config_t *cfg,
@@ -318,7 +132,10 @@ gric_cluster_t *gric_cluster_create(
     ctx->state.cluster_visitors = (VisitorList *)calloc(sz_N, sizeof(VisitorList));
     ctx->state.assignments = (int *)malloc((size_t)maxfr * sizeof(int));
     ctx->state.frame_infos = (FrameInfo *)calloc((size_t)maxfr, sizeof(FrameInfo));
-    ctx->state.transition_matrix = (long *)calloc(sz_N * sz_N, sizeof(long));
+    int tm_needed = (cfg->tm_mixing_coeff > 0.0) || cfg->pred_mode;
+    ctx->state.transition_matrix = tm_needed
+        ? (long *)calloc(sz_N * sz_N, sizeof(long))
+        : NULL;
 
     ClusterScratch *s = &ctx->state.scratch;
     s->mixed_probs = (double *)calloc(sz_N, sizeof(double));
@@ -338,8 +155,15 @@ gric_cluster_t *gric_cluster_create(
     dcc_init_matrix(&ctx->state, sz_N, cfg->sparse_dcc_mode, cfg->use_sq16);
     s->dcc_sq16_scale = 16384.0 / cfg->rlim;
 
-    size_t mask_words = sz_N * sz_N * ((sz_N + 63) / 64);
-    s->consistency_mask = (uint64_t *)calloc(mask_words, sizeof(uint64_t));
+    if (cfg->entropy_mode || cfg->gprob_mode)
+    {
+        size_t mask_words = sz_N * sz_N * ((sz_N + 63) / 64);
+        s->consistency_mask = (uint64_t *)calloc(mask_words, sizeof(uint64_t));
+    }
+    else
+    {
+        s->consistency_mask = NULL;
+    }
 
     s->entropy_p_current = (double *)calloc(sz_N, sizeof(double));
     s->entropy_candidates = (Candidate *)calloc(sz_N, sizeof(Candidate));
@@ -658,8 +482,15 @@ gric_status_t gric_cluster_reset(
     {
         ctx->state.assignments[i] = -1;
     }
-    memset(ctx->state.frame_infos, 0, ctx->maxnbfr * sizeof(FrameInfo));
-    memset(ctx->state.transition_matrix, 0, sz_N * sz_N * sizeof(long));
+    if (ctx->state.transition_matrix != NULL)
+    {
+        memset(ctx->state.transition_matrix, 0, sz_N * sz_N * sizeof(long));
+    }
+    if (ctx->state.scratch.consistency_mask != NULL)
+    {
+        size_t mw = sz_N * sz_N * ((sz_N + 63) / 64);
+        memset(ctx->state.scratch.consistency_mask, 0, mw * sizeof(uint64_t));
+    }
     dcc_reset_matrix(&ctx->state, ctx->config.optim.sparse_dcc_mode);
 
     return GRIC_SUCCESS;
@@ -1305,7 +1136,11 @@ void gric_cluster_destroy(
 
     free(ctx->state.assignments);
     free(ctx->state.frame_infos);
-    free(ctx->state.transition_matrix);
+    if (ctx->state.transition_matrix != NULL)
+    {
+        free(ctx->state.transition_matrix);
+        ctx->state.transition_matrix = NULL;
+    }
 
     ClusterScratch *s = &ctx->state.scratch;
     free(s->mixed_probs);
@@ -1315,7 +1150,11 @@ void gric_cluster_destroy(
     free(s->cluster_probs);
     free(s->current_gprobs);
     dcc_free_matrix(&ctx->state);
-    free(s->consistency_mask);
+    if (s->consistency_mask != NULL)
+    {
+        free(s->consistency_mask);
+        s->consistency_mask = NULL;
+    }
     free(s->entropy_p_current);
     free(s->entropy_candidates);
     free(s->entropy_prob_scores);
@@ -1339,6 +1178,55 @@ void gric_cluster_destroy(
     free(ctx->temp_dists);
     free(ctx->sorting_candidates);
     free(ctx->conv_buf);
+
+    if (ctx->state.anchor_matrix_float != NULL)
+    {
+        free(ctx->state.anchor_matrix_float);
+    }
+    if (ctx->state.anchor_norms_float != NULL)
+    {
+        free(ctx->state.anchor_norms_float);
+    }
+    if (ctx->state.anchor_matrix_sq8 != NULL)
+    {
+        free(ctx->state.anchor_matrix_sq8);
+    }
+    if (ctx->state.anchor_matrix_sq16 != NULL)
+    {
+        free(ctx->state.anchor_matrix_sq16);
+    }
+    if (ctx->state.anchor_matrix_sq16_interleaved != NULL)
+    {
+        free(ctx->state.anchor_matrix_sq16_interleaved);
+    }
+    if (ctx->state.anchor_matrix_eq16 != NULL)
+    {
+        free(ctx->state.anchor_matrix_eq16);
+    }
+    if (ctx->state.anchor_matrix_eq16_interleaved != NULL)
+    {
+        free(ctx->state.anchor_matrix_eq16_interleaved);
+    }
+    if (ctx->state.anchor_matrix_adc_interleaved != NULL)
+    {
+        free(ctx->state.anchor_matrix_adc_interleaved);
+    }
+    if (ctx->state.current_frame_sq8 != NULL)
+    {
+        free(ctx->state.current_frame_sq8);
+    }
+    if (ctx->state.current_frame_sq16 != NULL)
+    {
+        free(ctx->state.current_frame_sq16);
+    }
+    if (ctx->state.current_frame_eq16 != NULL)
+    {
+        free(ctx->state.current_frame_eq16);
+    }
+    if (ctx->state.current_frame_eq16_adc != NULL)
+    {
+        free(ctx->state.current_frame_eq16_adc);
+    }
 
     free(ctx);
 }

@@ -218,6 +218,7 @@ link_directories(
 # Library Sources (libgric)
 set(LIBGRIC_SRCS
     src/engine/api/gric_api.c
+    src/engine/api/gric_api_grow.c
     src/engine/cluster/core/cluster_core.c
     src/engine/cluster/core/cluster_step.c
     src/engine/cluster/core/cluster_step_prep.c

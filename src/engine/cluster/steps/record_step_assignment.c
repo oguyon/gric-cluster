@@ -36,7 +36,7 @@ void record_step_assignment(
     long           start_pruned_val)
 {
     if (state->telemetry.total_frames_processed > 0 && *prev_assigned_cluster != -1 &&
-        assigned_cluster != -1)
+        assigned_cluster != -1 && state->transition_matrix != NULL)
     {
         state->transition_matrix[*prev_assigned_cluster * config->algo.maxnbclust +
                                  assigned_cluster]++;

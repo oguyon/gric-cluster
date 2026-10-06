@@ -303,16 +303,15 @@ static int cluster_core_allocate_state(
     state->telemetry.step_counts =
         (long *)calloc(state->telemetry.max_steps_recorded, sizeof(long));
 
-    state->transition_matrix =
-        (long *)calloc(config->algo.maxnbclust * config->algo.maxnbclust, sizeof(long));
+    int tm_needed = config->output.output_tm || (config->algo.tm_mixing_coeff > 0.0);
+    size_t tm_sz = (size_t)config->algo.maxnbclust * config->algo.maxnbclust;
+    state->transition_matrix = tm_needed ? (long *)calloc(tm_sz, sizeof(long)) : NULL;
     state->scratch.mixed_probs = (double *)calloc(config->algo.maxnbclust, sizeof(double));
 
-    state->telemetry.dist_counts =
-        (long *)calloc(config->algo.maxnbclust + 1, sizeof(long));
+    state->telemetry.dist_counts = (long *)calloc(config->algo.maxnbclust + 1, sizeof(long));
     state->telemetry.pruned_counts_by_dist =
         (long *)calloc(config->algo.maxnbclust + 1, sizeof(long));
-    state->telemetry.cluster_query_counts =
-        (long *)calloc(config->algo.maxnbclust, sizeof(long));
+    state->telemetry.cluster_query_counts = (long *)calloc(config->algo.maxnbclust, sizeof(long));
 
     if (config->optim.use_sq16 && config->optim.use_memo)
     {
