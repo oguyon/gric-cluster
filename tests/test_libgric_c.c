@@ -8,7 +8,11 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
+#include <string.h>
 #include <unistd.h>
+
+static void test_dynamic_autogrow(
+    void);
 
 int main(void)
 {
@@ -119,6 +123,60 @@ int main(void)
     assert(batch_out_f32[1] == 1);
 
     gric_cluster_destroy(ctx);
+
+    test_dynamic_autogrow();
+
     printf("libgric C API test passed successfully.\n");
     return 0;
+}
+
+static void test_dynamic_autogrow(
+    void)
+{
+    printf("Testing dynamic auto-grow past default capacity (256 -> 512)...\n");
+
+    gric_cluster_config_t cfg;
+    gric_status_t status = gric_cluster_config_default(&cfg);
+    assert(status == GRIC_SUCCESS);
+
+    cfg.rlim = 0.5;
+    cfg.maxnbclust = 0;
+    cfg.use_double = 0;
+    cfg.use_sq16 = 0;
+    cfg.use_eq16 = 0;
+
+    const size_t ndim = 16;
+    gric_cluster_t *ctx = gric_cluster_create(&cfg, ndim);
+    assert(ctx != NULL);
+
+    /* Feed 300 distant frames along axis 0 to trigger growth from 256 to 512 */
+    float frame[16];
+    memset(frame, 0, sizeof(frame));
+    for (int i = 0; i < 300; i++)
+    {
+        frame[0] = (float)(i * 2.0);
+        int64_t cl_id = -1;
+        status = gric_cluster_feed_frame_f32(ctx, frame, &cl_id);
+        assert(status == GRIC_SUCCESS);
+        assert(cl_id == i);
+    }
+
+    assert(gric_cluster_get_num_clusters(ctx) == 300);
+
+    /* Match cluster 0 */
+    frame[0] = 0.05f;
+    int64_t cl_match = -1;
+    status = gric_cluster_feed_frame_f32(ctx, frame, &cl_match);
+    assert(status == GRIC_SUCCESS);
+    assert(cl_match == 0);
+
+    /* Match cluster 299 */
+    frame[0] = (float)(299 * 2.0 + 0.05);
+    cl_match = -1;
+    status = gric_cluster_feed_frame_f32(ctx, frame, &cl_match);
+    assert(status == GRIC_SUCCESS);
+    assert(cl_match == 299);
+
+    gric_cluster_destroy(ctx);
+    printf("Dynamic auto-grow test passed successfully.\n");
 }

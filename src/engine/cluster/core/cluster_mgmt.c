@@ -79,6 +79,84 @@ void add_visitor(
 }
 
 /**
+ * transition_matrix_swap() - Swap row and column of removed cluster with the last cluster.
+ * @tm:           Transition matrix array.
+ * @N:            Cluster capacity dimension.
+ * @u:            Index of removed cluster.
+ * @last:         Index of the last active cluster.
+ * @num_clusters: Current number of active clusters.
+ */
+static void transition_matrix_swap(
+    long *tm,
+    int   N,
+    int   u,
+    int   last,
+    int   num_clusters)
+{
+    if (tm == NULL)
+    {
+        return;
+    }
+
+    if (u != last)
+    {
+        memcpy(&tm[u * N], &tm[last * N], (size_t)N * sizeof(long));
+        for (int r = 0; r < num_clusters; r++)
+        {
+            tm[r * N + u] = tm[r * N + last];
+        }
+    }
+
+    memset(&tm[last * N], 0, (size_t)N * sizeof(long));
+    for (int r = 0; r < N; r++)
+    {
+        tm[r * N + last] = 0;
+    }
+}
+
+/**
+ * transition_matrix_shift() - Shift rows and columns to compact transition matrix.
+ * @tm:              Transition matrix array.
+ * @N:               Cluster capacity dimension.
+ * @index_to_remove: Index of the cluster being removed.
+ * @num_clusters:    Current number of active clusters before removal.
+ */
+static void transition_matrix_shift(
+    long *tm,
+    int   N,
+    int   index_to_remove,
+    int   num_clusters)
+{
+    if (tm == NULL)
+    {
+        return;
+    }
+
+    int last = num_clusters - 1;
+    for (int r = index_to_remove; r < last; r++)
+    {
+        memcpy(&tm[r * N], &tm[(r + 1) * N], (size_t)N * sizeof(long));
+    }
+
+    int count = N - 1 - index_to_remove;
+    if (count > 0)
+    {
+        for (int r = 0; r < last; r++)
+        {
+            int dest_idx = r * N + index_to_remove;
+            int src_idx = r * N + index_to_remove + 1;
+            memmove(&tm[dest_idx], &tm[src_idx], (size_t)count * sizeof(long));
+        }
+    }
+
+    for (int r = 0; r < N; r++)
+    {
+        tm[last * N + r] = 0;
+        tm[r * N + last] = 0;
+    }
+}
+
+/**
  * remove_cluster_swap() - Evict a cluster using O(1) swap-remove with the last cluster.
  * @state:           Pointer to the active ClusterState.
  * @config:          Pointer to the active ClusterConfig.
@@ -235,19 +313,8 @@ static void remove_cluster_swap(
         dcc_remove_cluster_swap(state, u);
 
         /* 5. Swap Transition Matrix */
-        int N = config->algo.maxnbclust;
-        memcpy(&state->transition_matrix[u * N],
-               &state->transition_matrix[last * N],
-               (size_t)N * sizeof(long));
-        for (int r = 0; r < state->num_clusters; r++)
-        {
-            state->transition_matrix[r * N + u] = state->transition_matrix[r * N + last];
-        }
-        memset(&state->transition_matrix[last * N], 0, (size_t)N * sizeof(long));
-        for (int r = 0; r < N; r++)
-        {
-            state->transition_matrix[r * N + last] = 0;
-        }
+        transition_matrix_swap(state->transition_matrix, config->algo.maxnbclust,
+                               u, last, state->num_clusters);
 
         /* 6. Correct Assignments: only frames with a == u or a == last need updating */
         int target_adj = (index_target == last) ? u : index_target;
@@ -290,12 +357,8 @@ static void remove_cluster_swap(
 
         dcc_remove_cluster_swap(state, last);
 
-        int N = config->algo.maxnbclust;
-        memset(&state->transition_matrix[last * N], 0, (size_t)N * sizeof(long));
-        for (int r = 0; r < N; r++)
-        {
-            state->transition_matrix[r * N + last] = 0;
-        }
+        transition_matrix_swap(state->transition_matrix, config->algo.maxnbclust,
+                               last, last, state->num_clusters);
 
         for (long f = 0; f < state->telemetry.total_frames_processed; f++)
         {
@@ -550,34 +613,10 @@ void remove_cluster(
     // 4. Shift DCC Array
     dcc_remove_cluster(state, index_to_remove, config->optim.sparse_dcc_mode);
 
-    // 5. Shift Transition Matrix
-    int N = config->algo.maxnbclust;
-    // Shift Rows
-    for (int r = index_to_remove; r < state->num_clusters - 1; r++)
-    {
-        memcpy(&state->transition_matrix[r * N], &state->transition_matrix[(r + 1) * N],
-               config->algo.maxnbclust * sizeof(long));
-    }
-    // Shift Cols
-    for (int r = 0; r < state->num_clusters - 1; r++)
-    {
-        int dest_idx = r * N + index_to_remove;
-        int src_idx = r * N + index_to_remove + 1;
-        int count = config->algo.maxnbclust - 1 - index_to_remove;
-        if (count > 0)
-        {
-            memmove(&state->transition_matrix[dest_idx], &state->transition_matrix[src_idx],
-                    count * sizeof(long));
-        }
-    }
-
-    // Clear the now-unused last row/col in transition matrix
     int last = state->num_clusters - 1;
-    for (int r = 0; r < N; r++)
-    {
-        state->transition_matrix[last * N + r] = 0;
-        state->transition_matrix[r * N + last] = 0;
-    }
+    // 5. Shift Transition Matrix
+    transition_matrix_shift(state->transition_matrix, config->algo.maxnbclust,
+                            index_to_remove, state->num_clusters);
     memset(&state->clusters[last], 0, sizeof(Cluster));
 
     // 6. Correct Assignments Update Loop
