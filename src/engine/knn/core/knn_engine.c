@@ -395,18 +395,11 @@ int knn_run_search(
         return -1;
     }
 
-    int nthreads = config->nthreads;
 #ifdef _OPENMP
-    if (nthreads > 0)
+    if (config->nthreads > 0)
     {
-        omp_set_num_threads(nthreads);
+        omp_set_num_threads(config->nthreads);
     }
-    else
-    {
-        nthreads = omp_get_max_threads();
-    }
-#else
-    nthreads = 1;
 #endif
 
     struct timespec start_time;

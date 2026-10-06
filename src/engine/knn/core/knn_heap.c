@@ -34,7 +34,7 @@
  * comparison bitmask, maintaining invariant mapping between candidates and distances.
  */
 GRIC_TARGET_AVX512
-static inline void simd_bitonic_cas_avx512(
+static inline __attribute__((unused)) void simd_bitonic_cas_avx512(
     __m512  *restrict dist_a,
     __m512  *restrict dist_b,
     __m512i *restrict id_a,
@@ -163,7 +163,7 @@ static inline int knn_heap_push_simd_avx512(
  * Permutes corresponding integer neighbor IDs (id_a and id_b) using the exact same
  * comparison bitmask, maintaining invariant mapping between candidates and distances.
  */
-static inline void simd_bitonic_cas(
+static inline __attribute__((unused)) void simd_bitonic_cas(
     __m256  *restrict dist_a,
     __m256  *restrict dist_b,
     __m256i *restrict id_a,
