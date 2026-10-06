@@ -187,7 +187,8 @@ static int load_bin_distances(
     data->distances = (double *)malloc(total * sizeof(double));
     if (data->distances == NULL)
     {
-        fprintf(stderr, "Error: Memory allocation failure for %lu distances\n", total);
+        fprintf(stderr, "Error: Memory allocation failure for %lu distances\n",
+                (unsigned long)total);
         fclose(fp);
         return -1;
     }
@@ -207,7 +208,7 @@ static int load_bin_distances(
         if (nread != total)
         {
             fprintf(stderr, "Error: Truncated binary read (expected %lu, got %zu)\n",
-                    total, nread);
+                    (unsigned long)total, nread);
             free(f32_buf);
             free(data->distances);
             data->distances = NULL;
@@ -227,7 +228,7 @@ static int load_bin_distances(
         if (nread != total)
         {
             fprintf(stderr, "Error: Truncated binary read (expected %lu, got %zu)\n",
-                    total, nread);
+                    (unsigned long)total, nread);
             free(data->distances);
             data->distances = NULL;
             fclose(fp);
@@ -321,7 +322,8 @@ static int load_fits_distances(
 
     if (verbose >= 2)
     {
-        printf("  Loaded FITS: %lu samples, %d neighbors per sample\n", n, k);
+        printf("  Loaded FITS: %lu samples, %d neighbors per sample\n",
+               (unsigned long)n, k);
     }
 
     sort_distance_rows(data);
@@ -472,7 +474,7 @@ static int load_ascii_distances(
     if (verbose >= 2)
     {
         printf("  Loaded ASCII: %lu samples, %d neighbors per sample\n",
-               data->num_samples, data->k_available);
+               (unsigned long)data->num_samples, data->k_available);
     }
 
     sort_distance_rows(data);

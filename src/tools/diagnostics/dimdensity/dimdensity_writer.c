@@ -119,7 +119,8 @@ static int write_ascii_file(
 
     fprintf(fp, "# gric-dimdensity results\n");
     fprintf(fp, "# Samples: %lu, Target k: %d, Kernel: %s\n",
-            results->num_samples, results->k_used, kernel_name(config->kernel_type));
+            (unsigned long)results->num_samples, results->k_used,
+            kernel_name(config->kernel_type));
     fprintf(fp, "# Intrinsic Dimension (Median-Unbiased, k-4/3): "
             "Mean = %.4f +/- %.4f [Median = %.4f]\n",
             stats->dim_mean, stats->dim_std, stats->dim_pct.p50);
@@ -314,7 +315,8 @@ int dimdensity_write_json_report(
     fprintf(stream, "  \"tool\": \"gric-dimdensity\",\n");
     fprintf(stream, "  \"input_file\": \"%s\",\n",
             (dist_data && dist_data->resolved_path) ? dist_data->resolved_path : "unknown");
-    fprintf(stream, "  \"num_samples\": %lu,\n", results->num_samples);
+    fprintf(stream, "  \"num_samples\": %lu,\n",
+            (unsigned long)results->num_samples);
     fprintf(stream, "  \"target_k\": %d,\n", results->k_used);
     fprintf(stream, "  \"kernel\": \"%s\",\n", kernel_name(config->kernel_type));
     fprintf(stream, "  \"multi_range\": {\n");
@@ -433,7 +435,7 @@ void dimdensity_print_dashboard(
     printf("  %sInput Source:%s        %s\n", ansi_color_grey, ansi_reset,
            dist_data->resolved_path ? dist_data->resolved_path : "in-memory");
     printf("  %sTotal Samples:%s       %lu query points\n", ansi_color_grey, ansi_reset,
-           results->num_samples);
+           (unsigned long)results->num_samples);
     printf("  %sTarget k Neighbors:%s  %d (available: %d)\n", ansi_color_grey, ansi_reset,
            results->k_used, dist_data->k_available);
     if (config->use_range_avg)
