@@ -370,6 +370,31 @@ add_executable(test_gric_rss tests/test_gric_rss.c)
 target_link_libraries(test_gric_rss PRIVATE gric m)
 add_test(NAME test_gric_rss COMMAND test_gric_rss)
 
+find_program(CARGO_EXECUTABLE cargo)
+if(CARGO_EXECUTABLE)
+    add_test(
+        NAME test_bindings_rust
+        COMMAND ${CMAKE_COMMAND} -E env
+            GRIC_BUILD_DIR=${CMAKE_BINARY_DIR}
+            LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}:$ENV{LD_LIBRARY_PATH}
+            ${CARGO_EXECUTABLE} test
+                --manifest-path ${CMAKE_SOURCE_DIR}/bindings/rust/Cargo.toml
+    )
+    set_tests_properties(test_bindings_rust PROPERTIES DEPENDS gric)
+endif()
+
+find_program(JULIA_EXECUTABLE julia)
+if(JULIA_EXECUTABLE)
+    add_test(
+        NAME test_bindings_julia
+        COMMAND ${CMAKE_COMMAND} -E env
+            LIBGRIC_PATH=${CMAKE_BINARY_DIR}/libgric.so
+            ${JULIA_EXECUTABLE} --project=${CMAKE_SOURCE_DIR}/bindings/julia
+            ${CMAKE_SOURCE_DIR}/bindings/julia/test/runtests.jl
+    )
+    set_tests_properties(test_bindings_julia PROPERTIES DEPENDS gric)
+endif()
+
 add_executable(gric-mktxtseq
     src/tools/generators/mktestseq.c
     src/shared/format/gric_gen_patterns.c

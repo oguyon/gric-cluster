@@ -30,6 +30,7 @@ pub struct gric_cluster_config_t {
     pub sparse_dcc_extra_evals: c_int,
     pub maxcl_strategy: c_int,
     pub discard_fraction: c_double,
+    pub query_mode: c_int,
     pub ncpu: c_int,
 }
 
@@ -58,9 +59,22 @@ extern "C" {
         out_cluster_id: *mut i64,
     ) -> c_int;
 
+    pub fn gric_cluster_feed_frame_f32(
+        ctx: *mut gric_cluster_t,
+        coords: *const f32,
+        out_cluster_id: *mut i64,
+    ) -> c_int;
+
     pub fn gric_cluster_feed_batch(
         ctx: *mut gric_cluster_t,
         coords_flat: *const c_double,
+        num_frames: usize,
+        out_cluster_ids: *mut i64,
+    ) -> c_int;
+
+    pub fn gric_cluster_feed_batch_f32(
+        ctx: *mut gric_cluster_t,
+        coords_flat: *const f32,
         num_frames: usize,
         out_cluster_ids: *mut i64,
     ) -> c_int;
