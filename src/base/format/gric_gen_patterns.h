@@ -6,6 +6,8 @@
 #ifndef GRIC_GEN_PATTERNS_H
 #define GRIC_GEN_PATTERNS_H
 
+#include <stdint.h>
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -30,6 +32,12 @@ typedef struct
     int     dim;
     double  param;
 } GeneratorConfig;
+
+/**
+ * @brief Seed the synthetic pattern generator for deterministic sequences.
+ */
+void gric_gen_seed(
+    uint64_t seed);
 
 /**
  * @brief Generate a uniform random double in [0, 1].

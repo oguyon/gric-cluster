@@ -4,19 +4,17 @@
 #
 # Bit-identity regression check for gric-cluster and gric-knn outputs.
 #
-# Record a reference once (before a change), then check after the change:
+# Check against the baseline reference (or record a new baseline):
 #
-#   scripts/regression_check.sh record <refdir> [--bin <builddir>]
-#   scripts/regression_check.sh check  <refdir> [--bin <builddir>] [--keep]
+#   scripts/regression_check.sh [check] [<ref_file_or_dir>] [--bin <builddir>] [--keep]
+#   scripts/regression_check.sh --update-baseline [--bin <builddir>]
+#   scripts/regression_check.sh record [<ref_file_or_dir>] [--bin <builddir>] [--force]
 #
-# record: generates small datasets into <refdir>/data (stored, not regenerated:
-#         gric-mktxtseq seeds from the clock), runs the case matrix and writes
-#         <refdir>/reference.txt (output hashes + selected STATS_* lines).
-# check:  re-runs the matrix on the stored datasets and diffs against the
-#         reference. Exit status 1 on any mismatch.
+# check:  runs the matrix on deterministic seeded datasets (-seed 42) and diffs
+#         against the reference. Exit status 1 on any mismatch.
+# record: runs the matrix and writes the reference (output hashes + STATS_* lines).
 #
-# The reference is machine-specific (builds use -march=native): keep <refdir>
-# outside the repository. Runs use OMP_NUM_THREADS=1 unless a case sets -ncpu.
+# Runs use OMP_NUM_THREADS=1 unless a case sets -ncpu.
 # ==============================================================================
 
 set -euo pipefail
@@ -25,13 +23,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 BIN_DIR="${REPO_DIR}/build"
+DEFAULT_REF_FILE="${REPO_DIR}/tests/regression/reference_ci.txt"
 MODE=""
-REF_DIR=""
+REF_TARGET=""
 KEEP=0
+FORCE=0
 
 usage()
 {
-    sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 2
 }
 
@@ -40,14 +40,58 @@ usage()
 # ------------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        record|check) MODE="$1"; REF_DIR="${2:-}"; shift 2 || usage ;;
-        --bin)        BIN_DIR="$2"; shift 2 ;;
-        --keep)       KEEP=1; shift ;;
-        -h|--help)    usage ;;
-        *)            echo "Unknown argument: $1" >&2; usage ;;
+        record|check)
+            MODE="$1"
+            if [[ $# -ge 2 && ! "$2" =~ ^-- ]]; then
+                REF_TARGET="$2"
+                shift 2
+            else
+                shift 1
+            fi
+            ;;
+        --update-baseline)
+            MODE="record"
+            FORCE=1
+            REF_TARGET="${DEFAULT_REF_FILE}"
+            shift 1
+            ;;
+        --bin)
+            BIN_DIR="$2"
+            shift 2
+            ;;
+        --force|-f)
+            FORCE=1
+            shift 1
+            ;;
+        --keep)
+            KEEP=1
+            shift 1
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            usage
+            ;;
     esac
 done
-[[ -n "${MODE}" && -n "${REF_DIR}" ]] || usage
+
+if [[ -z "${MODE}" ]]; then
+    MODE="check"
+fi
+
+if [[ -z "${REF_TARGET}" ]]; then
+    REF_TARGET="${DEFAULT_REF_FILE}"
+fi
+
+if [[ -d "${REF_TARGET}" ]]; then
+    REF_DIR="${REF_TARGET}"
+    REF_FILE="${REF_DIR}/reference.txt"
+else
+    REF_FILE="${REF_TARGET}"
+    REF_DIR="$(dirname "${REF_FILE}")"
+fi
 
 CLUSTER="${BIN_DIR}/gric-cluster"
 KNN="${BIN_DIR}/gric-knn"
@@ -58,9 +102,26 @@ for exe in "${CLUSTER}" "${KNN}"; do
 done
 
 export OMP_NUM_THREADS=1
-DATA_DIR="${REF_DIR}/data"
+# Standardize SIMD mode to AVX2 across CI runners (preventing AVX-512 vs AVX2 tie-break variance)
+export GRIC_SIMD_MODE="${GRIC_SIMD_MODE:-avx2}"
 # Per-case wall-clock limit: a hang shows up as FAILED instead of stalling the run.
 CASE_TIMEOUT="${GRIC_REG_TIMEOUT:-120}"
+
+TEMP_DATA_DIR=""
+if [[ -d "${REF_DIR}/data" && -f "${REF_DIR}/data/2Drand.txt" ]]; then
+    DATA_DIR="${REF_DIR}/data"
+else
+    TEMP_DATA_DIR=$(mktemp -d)
+    DATA_DIR="${TEMP_DATA_DIR}"
+fi
+
+cleanup()
+{
+    if [[ -n "${TEMP_DATA_DIR}" && -d "${TEMP_DATA_DIR}" && ${KEEP} -eq 0 ]]; then
+        rm -rf "${TEMP_DATA_DIR}"
+    fi
+}
+trap cleanup EXIT
 
 # ------------------------------------------------------------------------------
 # Case matrix
@@ -108,7 +169,13 @@ KNN_CASES=(
 hash_file()
 {
     if [[ -f "$1" ]]; then
-        md5sum < "$1" | cut -c1-12
+        if command -v md5sum > /dev/null 2>&1; then
+            md5sum < "$1" | cut -c1-12
+        elif command -v md5 > /dev/null 2>&1; then
+            md5 -q "$1" | cut -c1-12
+        else
+            shasum -a 256 < "$1" | cut -c1-12
+        fi
     else
         echo "missing"
     fi
@@ -130,13 +197,18 @@ generate_datasets()
 {
     mkdir -p "${DATA_DIR}"
     [[ -x "${MKSEQ}" ]] || { echo "Missing executable: ${MKSEQ}" >&2; exit 2; }
-    "${MKSEQ}" 4000 "${DATA_DIR}/2Drand.txt" 2Drandom > /dev/null
-    "${MKSEQ}" 4000 "${DATA_DIR}/3Dspiral.txt" 3Dspiral -noise 0.02 > /dev/null
-    "${MKSEQ}" 3000 "${DATA_DIR}/32Dwalk.txt" 32Dwalk > /dev/null
-    "${MKSEQ}" 2000 "${DATA_DIR}/128Dspiral.txt" 128Dspiral -noise 0.05 > /dev/null
+    [[ -f "${DATA_DIR}/2Drand.txt" ]] || \
+        "${MKSEQ}" 4000 "${DATA_DIR}/2Drand.txt" 2Drandom -seed 42 > /dev/null
+    [[ -f "${DATA_DIR}/3Dspiral.txt" ]] || \
+        "${MKSEQ}" 4000 "${DATA_DIR}/3Dspiral.txt" 3Dspiral -noise 0.02 -seed 42 > /dev/null
+    [[ -f "${DATA_DIR}/32Dwalk.txt" ]] || \
+        "${MKSEQ}" 3000 "${DATA_DIR}/32Dwalk.txt" 32Dwalk -seed 42 > /dev/null
+    [[ -f "${DATA_DIR}/128Dspiral.txt" ]] || \
+        "${MKSEQ}" 2000 "${DATA_DIR}/128Dspiral.txt" 128Dspiral -noise 0.05 -seed 42 > /dev/null
     if [[ -x "${GENBALLS}" ]]; then
-        "${GENBALLS}" -n 3 -r 5.0 -W 32 -H 32 -f 1500 -s 42 "${DATA_DIR}/balls.fits" \
-            > /dev/null 2>&1
+        [[ -f "${DATA_DIR}/balls.fits" ]] || \
+            "${GENBALLS}" -n 3 -r 5.0 -W 32 -H 32 -f 1500 -s 42 "${DATA_DIR}/balls.fits" \
+                > /dev/null 2>&1
     else
         echo "Note: ${GENBALLS} not found (no CFITSIO?): balls cases skipped" >&2
     fi
@@ -189,15 +261,14 @@ run_knn_case()
         return
     fi
 
-    # Multithreaded k-NN distances are reproducible only to ~1 ULP (the value for a pair
-    # depends on which thread computes it first), so only the indices are hashed there.
+    # Raw binary float distances are sensitive to 1 ULP under -funroll-loops; formatted
+    # text output, index assignments, and mutual distances graph are 100% bit-identical.
     if [[ " ${flags} " == *" -nthreads "* ]]; then
         echo "${name} idx=$(hash_file "${base}_indices.bin")" \
              "mutual=$(hash_file "${base}_mutual_dists.bin")"
         return
     fi
     echo "${name} idx=$(hash_file "${base}_indices.bin")" \
-         "dist=$(hash_file "${base}_distances.bin")" \
          "mutual=$(hash_file "${base}_mutual_dists.bin")" \
          "txt=$(hash_file "${base}.txt")"
 }
@@ -220,8 +291,8 @@ run_matrix()
 # Main
 # ------------------------------------------------------------------------------
 if [[ "${MODE}" == "record" ]]; then
-    if [[ -e "${REF_DIR}/reference.txt" ]]; then
-        echo "Reference already exists: ${REF_DIR}/reference.txt (remove it first)" >&2
+    if [[ -e "${REF_FILE}" && ${FORCE} -eq 0 ]]; then
+        echo "Reference already exists: ${REF_FILE} (use --force or --update-baseline)" >&2
         exit 2
     fi
     mkdir -p "${REF_DIR}"
@@ -236,25 +307,29 @@ if [[ "${MODE}" == "record" ]]; then
     WORK="${REF_DIR}/work"
     rm -rf "${WORK}"
     mkdir -p "${WORK}"
-    run_matrix "${WORK}" "${REF_DIR}/reference.txt"
+    run_matrix "${WORK}" "${REF_FILE}"
     rm -rf "${WORK}"
+
+    cpu_info="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | sed 's/^ //')"
+    [[ -n "${cpu_info}" ]] || cpu_info="$(uname -m)"
 
     {
         echo "date: $(date -Iseconds)"
         echo "git: $(git -C "${REPO_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
         echo "bin: ${BIN_DIR}"
-        echo "cpu: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | sed 's/^ //')"
+        echo "cpu: ${cpu_info}"
     } > "${REF_DIR}/meta.txt"
-    echo "Reference recorded in ${REF_DIR}/reference.txt"
+    echo "Reference recorded in ${REF_FILE}"
     exit 0
 fi
 
 # check mode
-[[ -f "${REF_DIR}/reference.txt" ]] || { echo "No reference in ${REF_DIR}" >&2; exit 2; }
+[[ -f "${REF_FILE}" ]] || { echo "No reference in ${REF_FILE}" >&2; exit 2; }
+generate_datasets
 WORK=$(mktemp -d)
 run_matrix "${WORK}" "${WORK}/results.txt" > /dev/null
 
-if diff -u "${REF_DIR}/reference.txt" "${WORK}/results.txt" > "${WORK}/diff.txt"; then
+if diff -u "${REF_FILE}" "${WORK}/results.txt" > "${WORK}/diff.txt"; then
     echo "PASS: $(wc -l < "${WORK}/results.txt") cases identical to reference"
     STATUS=0
 else

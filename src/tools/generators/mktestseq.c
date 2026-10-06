@@ -54,8 +54,10 @@ static void print_help(
            ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  %s-noise%s %s<R>%s           Add random noise with radius R to each point\n",
            ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
-    printf("  %s-shuffle%s             Shuffle the order of generated points\n\n",
+    printf("  %s-shuffle%s             Shuffle the order of generated points\n",
            ansi_color_green, ansi_reset);
+    printf("  %s-seed%s %s<S>%s            Random seed for reproducible sequences\n\n",
+           ansi_color_green, ansi_reset, ansi_color_magenta, ansi_reset);
     printf("  Patterns:\n");
     printf("    %s[ND]random%s         Uniform random in hypercube (%sdefault:%s%s 2D%s)\n",
            ansi_color_green, ansi_reset, ansi_color_cyan, ansi_reset, ansi_color_cyan, ansi_reset);
@@ -75,6 +77,69 @@ static void print_help(
            ansi_bold_green, progname, ansi_reset);
     cli_print_color_mode();
 } // print_help
+
+/**
+ * write_sequence_output() - Write generated coordinates to binary or ASCII file.
+ * @f:            Open file pointer.
+ * @final_buffer: Array of generated coordinate values.
+ * @total_points: Total number of frames / points.
+ * @dim:          Dimensionality of points.
+ * @is_bin_out:   Non-zero if binary format (.bin), zero for plain text.
+ *
+ * Return: 0 on success, non-zero on failure.
+ */
+static int write_sequence_output(
+    FILE         *f,
+    const double *final_buffer,
+    long          total_points,
+    int           dim,
+    int           is_bin_out)
+{
+    if (is_bin_out)
+    {
+        gric_bin_header_t hdr;
+        memset(&hdr, 0, sizeof(hdr));
+        hdr.file_type = GRIC_BIN_TYPE_COORDINATES;
+        hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
+        hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
+        hdr.ndim = 2;
+        hdr.dims[0] = (uint64_t)total_points;
+        hdr.dims[1] = (uint64_t)dim;
+        hdr.num_elements = (uint64_t)total_points * (uint64_t)dim;
+        hdr.data_bytes = hdr.num_elements * sizeof(float);
+
+        if (gric_bin_write_header(f, &hdr, "Generated synthetic sequence") != 0)
+        {
+            fprintf(stderr, "Error: Failed to write GRIC binary header\n");
+            return 1;
+        }
+
+        float *fbuf = (float *)malloc(hdr.num_elements * sizeof(float));
+        if (fbuf != NULL)
+        {
+            for (long i = 0; i < total_points * dim; i++)
+            {
+                fbuf[i] = (float)final_buffer[i];
+            }
+            fwrite(fbuf, sizeof(float), hdr.num_elements, f);
+            free(fbuf);
+        }
+    }
+    else
+    {
+        for (long i = 0; i < total_points; i++)
+        {
+            for (int d = 0; d < dim; d++)
+            {
+                fprintf(f, "%.6f%s", final_buffer[i * dim + d],
+                        (d == dim - 1) ? "" : " ");
+            }
+            fprintf(f, "\n");
+        }
+    }
+
+    return 0;
+} // write_sequence_output
 
 int main(
     int   argc,
@@ -104,9 +169,11 @@ int main(
     char *filename = argv[2];
     char *pattern_str = "2Drandom";
 
-    long repeats = 1;
+    long   repeats = 1;
     double noise_radius = 0.0;
-    int shuffle = 0;
+    int    shuffle = 0;
+    unsigned int seed = 0;
+    int    seed_specified = 0;
 
     // Parse arguments
     for (int i = 3; i < argc; i++)
@@ -122,6 +189,16 @@ int main(
         else if (strcmp(argv[i], "-shuffle") == 0)
         {
             shuffle = 1;
+        }
+        else if (strcmp(argv[i], "-seed") == 0 || strcmp(argv[i], "-s") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                fprintf(stderr, "Error: %s requires an integer seed\n", argv[i]);
+                return 1;
+            }
+            seed = (unsigned int)strtoul(argv[++i], NULL, 10);
+            seed_specified = 1;
         }
         else if (argv[i][0] == '-')
         {
@@ -291,7 +368,14 @@ int main(
         return 1;
     }
 
-    srand((unsigned int)time(NULL));
+    if (seed_specified)
+    {
+        gric_gen_seed((uint64_t)seed);
+    }
+    else
+    {
+        srand((unsigned int)time(NULL));
+    }
 
     long total_points = n_points * repeats;
 
@@ -373,52 +457,9 @@ int main(
         }
     }
 
-    if (is_bin_out)
-    {
-        gric_bin_header_t hdr;
-        memset(&hdr, 0, sizeof(hdr));
-        hdr.file_type = GRIC_BIN_TYPE_COORDINATES;
-        hdr.data_type = GRIC_BIN_DTYPE_FLOAT32;
-        hdr.flags = GRIC_BIN_FLAG_ROW_MAJOR;
-        hdr.ndim = 2;
-        hdr.dims[0] = (uint64_t)total_points;
-        hdr.dims[1] = (uint64_t)config.dim;
-        hdr.num_elements = (uint64_t)total_points * (uint64_t)config.dim;
-        hdr.data_bytes = hdr.num_elements * sizeof(float);
-
-        if (gric_bin_write_header(f, &hdr, "Generated synthetic sequence") != 0)
-        {
-            fprintf(stderr, "Error: Failed to write GRIC binary header\n");
-            free(final_buffer);
-            fclose(f);
-            return 1;
-        }
-
-        float *fbuf = (float *)malloc(hdr.num_elements * sizeof(float));
-        if (fbuf != NULL)
-        {
-            for (long i = 0; i < total_points * config.dim; i++)
-            {
-                fbuf[i] = (float)final_buffer[i];
-            }
-            fwrite(fbuf, sizeof(float), hdr.num_elements, f);
-            free(fbuf);
-        }
-    }
-    else
-    {
-        for (long i = 0; i < total_points; i++)
-        {
-            for (int d = 0; d < config.dim; d++)
-            {
-                fprintf(f, "%.6f%s", final_buffer[i * config.dim + d],
-                        (d == config.dim - 1) ? "" : " ");
-            }
-            fprintf(f, "\n");
-        }
-    }
-
+    int write_status = write_sequence_output(
+        f, final_buffer, total_points, config.dim, is_bin_out);
     free(final_buffer);
     fclose(f);
-    return 0;
+    return write_status;
 }
