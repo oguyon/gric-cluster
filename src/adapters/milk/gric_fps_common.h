@@ -6,10 +6,7 @@
 #ifndef GRIC_FPS_COMMON_H
 #define GRIC_FPS_COMMON_H
 
-#include <libmilkcommon/milk_compiler.h>
-#include "fps.h"
-#include "fps_procinfo_macros.h"
-#include "processinfo.h"
+#include "milk_runnable.h"
 #include "shared/gric_stream_layout.h"
 #include <ImageStreamIO/ImageStreamIO.h>
 #include <gric/gric.h>
@@ -20,16 +17,18 @@
 extern "C" {
 #endif
 
+extern const MILK_RUNNABLE runnable_gric_cluster;
+
 /* Global parameter variables mapped by FPS */
 extern char     fps_in_name[FUNCTION_PARAMETER_STRMAXLEN];
 extern char     fps_out_assign_name[FUNCTION_PARAMETER_STRMAXLEN];
 extern char     fps_out_anchors_name[FUNCTION_PARAMETER_STRMAXLEN];
 extern char     fps_out_counts_name[FUNCTION_PARAMETER_STRMAXLEN];
-extern uint64_t fps_stream_anchors;
-extern uint64_t fps_stream_counts;
-extern uint64_t fps_allow_frame_drop;
-extern uint64_t fps_cnt2sync;
-extern uint64_t fps_query_mode;
+extern int32_t  fps_stream_anchors;
+extern int32_t  fps_stream_counts;
+extern int32_t  fps_allow_frame_drop;
+extern int32_t  fps_cnt2sync;
+extern int32_t  fps_query_mode;
 extern char     fps_load_anchors[FUNCTION_PARAMETER_STRMAXLEN];
 extern double   fps_rlim;
 extern double   fps_deltaprob;
@@ -37,10 +36,10 @@ extern uint32_t fps_maxnbclust;
 extern int64_t  fps_maxcl_strategy;
 extern uint64_t fps_max_frames;
 extern uint32_t fps_ncpu;
-extern uint64_t fps_use_double;
-extern uint64_t fps_use_sq16;
-extern uint64_t fps_entropy_mode;
-extern uint64_t fps_reset_state;
+extern int32_t  fps_use_double;
+extern int32_t  fps_use_sq16;
+extern int32_t  fps_entropy_mode;
+extern int32_t  fps_reset_state;
 
 /* Status and telemetry parameter variables */
 extern uint64_t fps_status_frames_processed;

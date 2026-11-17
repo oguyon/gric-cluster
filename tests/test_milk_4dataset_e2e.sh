@@ -30,62 +30,73 @@ GRIC_GEN4="$BUILD_DIR/gric-mk4dataset"
 
 # Locate milk-cli binary
 MILK_CLI=""
-if command -v milk >/dev/null 2>&1; then
-    MILK_CLI="$(command -v milk)"
-elif [ -x "/usr/local/bin/milk" ]; then
-    MILK_CLI="/usr/local/bin/milk"
+if command -v milk-cli >/dev/null 2>&1; then
+    MILK_CLI="$(command -v milk-cli)"
+elif [ -n "${MILK_ROOT:-}" ] && [ -x "${MILK_ROOT}/bin/milk-cli" ]; then
+    MILK_CLI="${MILK_ROOT}/bin/milk-cli"
 elif [ -x "/usr/local/milk/bin/milk-cli" ]; then
     MILK_CLI="/usr/local/milk/bin/milk-cli"
-elif [ -x "/usr/local/milk/bin/milk" ]; then
-    MILK_CLI="/usr/local/milk/bin/milk"
+elif [ -x "/usr/local/bin/milk-cli" ]; then
+    MILK_CLI="/usr/local/bin/milk-cli"
+elif command -v milk >/dev/null 2>&1; then
+    MILK_CLI="$(command -v milk)"
 fi
 
 # Locate milk-fps-set
 MILK_FPS_SET=""
 if command -v milk-fps-set >/dev/null 2>&1; then
     MILK_FPS_SET="$(command -v milk-fps-set)"
-elif [ -x "/usr/local/bin/milk-fps-set" ]; then
-    MILK_FPS_SET="/usr/local/bin/milk-fps-set"
+elif [ -n "${MILK_ROOT:-}" ] && [ -x "${MILK_ROOT}/bin/milk-fps-set" ]; then
+    MILK_FPS_SET="${MILK_ROOT}/bin/milk-fps-set"
 elif [ -x "/usr/local/milk/bin/milk-fps-set" ]; then
     MILK_FPS_SET="/usr/local/milk/bin/milk-fps-set"
+elif [ -x "/usr/local/bin/milk-fps-set" ]; then
+    MILK_FPS_SET="/usr/local/bin/milk-fps-set"
 fi
 
 echo "======================================================================"
 echo "GRIC Milk Framework Integration Test Suite (4-Dataset Reconstruction)"
 echo "======================================================================"
 
-for bin in "$FPS_CLUSTER" "$FPS_KNN" "$FPS_RECON" "$MILK_SO" "$GRIC_CLUSTER" "$GRIC_KNN"; do
+for bin in "$FPS_CLUSTER" "$FPS_KNN" "$FPS_RECON" "$MILK_SO" \
+           "$GRIC_CLUSTER" "$GRIC_KNN"; do
     if [ ! -f "$bin" ]; then
         echo "Error: Required binary not found: $bin"
         exit 1
     fi
 done
+for mod in "$FPS_RECON" "$MILK_SO"; do
+    if ldd "$mod" | grep -q "libCLIcore"; then
+        echo "Error: $mod must not link libCLIcore!"
+        exit 1
+    fi
+done
+
+TEST_SHM="$(mktemp -d /dev/shm/gric_milk_4d_shm_XXXXXX)"
+export MILK_SHM_DIR="$TEST_SHM"
+TMPDIR="$(mktemp -d /tmp/gric_milk_4d_e2e_XXXXXX)"
 
 check_stream_exists() {
     local stream="$1"
-    for dir in "${MILK_SHM_DIR:-}" "/milk/shm" "/dev/shm" "/tmp"; do
-        if [ -n "$dir" ] && [ -f "$dir/${stream}.im.shm" ]; then
+    [ -f "$TEST_SHM/${stream}.im.shm" ]
+}
+
+wait_for_stream() {
+    local stream="$1"
+    for _ in $(seq 1 50); do
+        if check_stream_exists "$stream"; then
             return 0
         fi
+        sleep 0.1
     done
     return 1
 }
 
-clean_e2e_shm() {
-    local prefix="$1"
-    for dir in "${MILK_SHM_DIR:-}" "/milk/shm" "/dev/shm" "/tmp"; do
-        if [ -n "$dir" ] && [ -d "$dir" ]; then
-            rm -f "$dir/${prefix}"*.im.shm 2>/dev/null || true
-            rm -f "$dir/gric_knn.fps.shm" "$dir/gric_reconstruct.fps.shm" 2>/dev/null || true
-        fi
-    done
-}
-
-TMPDIR="$(mktemp -d /tmp/gric_milk_4d_e2e_XXXXXX)"
 cleanup() {
+    "$FPS_RECON" runstop >/dev/null 2>&1 || true
+    "$FPS_KNN" runstop >/dev/null 2>&1 || true
     pkill -f "milk-fpsexec-gric" 2>/dev/null || true
-    rm -rf "$TMPDIR"
-    clean_e2e_shm "e2e_4d_"
+    rm -rf "$TMPDIR" "$TEST_SHM"
 }
 trap cleanup EXIT
 
@@ -111,7 +122,7 @@ elif command -v python3 >/dev/null 2>&1; then
         --noise-a 0.02 \
         --noise-b 0.1 >/dev/null
 else
-    echo "Error: Neither gric-mk4dataset nor python3 available to generate datasets."
+    echo "Error: Neither gric-mk4dataset nor python3 available."
     exit 1
 fi
 
@@ -125,11 +136,15 @@ DATA_C="$TMPDIR/dataset_C.txt"
 echo "[Setup] Clustering and indexing datasets A and B..."
 mkdir -p "$TMPDIR/a_cluster.dat" "$TMPDIR/b_cluster.dat"
 
-"$GRIC_CLUSTER" 0.35 "$DATA_A" -outdir "$TMPDIR/a_cluster.dat" -maxim 500 >/dev/null 2>&1
-"$GRIC_KNN" "$DATA_A" "$TMPDIR/a_cluster.dat" -k 10 -dtmin 1 >/dev/null 2>&1
+"$GRIC_CLUSTER" 0.35 "$DATA_A" \
+    -outdir "$TMPDIR/a_cluster.dat" -maxim 500 >/dev/null 2>&1
+"$GRIC_KNN" "$DATA_A" "$TMPDIR/a_cluster.dat" \
+    -k 10 -dtmin 1 >/dev/null 2>&1
 
-"$GRIC_CLUSTER" 0.35 "$DATA_B" -outdir "$TMPDIR/b_cluster.dat" -maxim 500 >/dev/null 2>&1
-"$GRIC_KNN" "$DATA_B" "$TMPDIR/b_cluster.dat" -k 10 -dtmin 1 >/dev/null 2>&1
+"$GRIC_CLUSTER" 0.35 "$DATA_B" \
+    -outdir "$TMPDIR/b_cluster.dat" -maxim 500 >/dev/null 2>&1
+"$GRIC_KNN" "$DATA_B" "$TMPDIR/b_cluster.dat" \
+    -k 10 -dtmin 1 >/dev/null 2>&1
 
 # ------------------------------------------------------------------------------
 # Test 1: Standalone milk-fpsexec-gric-reconstruct
@@ -137,7 +152,6 @@ mkdir -p "$TMPDIR/a_cluster.dat" "$TMPDIR/b_cluster.dat"
 echo "----------------------------------------------------------------------"
 echo "[Test 1] Standalone milk-fpsexec-gric-reconstruct (Pipeline Inference)"
 echo "----------------------------------------------------------------------"
-clean_e2e_shm "e2e_4d_st_"
 
 "$FPS_KNN" fpsinit >/dev/null 2>&1
 if [ -n "$MILK_FPS_SET" ]; then
@@ -162,26 +176,27 @@ fi
 # 1. Start streaming Query C
 "$GRIC_TXT2STREAM" "$DATA_C" e2e_4d_st_in -fps 200 -loop >/dev/null 2>&1 &
 P1_PID=$!
-sleep 0.2
+wait_for_stream "e2e_4d_st_in"
 
 # 2. Start k-NN search daemon
-"$FPS_KNN" -loops runstart >/dev/null 2>&1 &
-P2_PID=$!
-sleep 0.4
+"$FPS_KNN" -loops runstart >/dev/null 2>&1
+wait_for_stream "e2e_4d_st_matches"
 
 # 3. Start Reconstructor daemon
-"$FPS_RECON" -loops runstart >/dev/null 2>&1 &
-P3_PID=$!
-sleep 0.8
+"$FPS_RECON" -loops runstart >/dev/null 2>&1
+wait_for_stream "e2e_4d_st_recon" || true
+sleep 0.5
 
-kill -9 "$P1_PID" "$P2_PID" "$P3_PID" 2>/dev/null || true
-wait "$P1_PID" "$P2_PID" "$P3_PID" 2>/dev/null || true
+"$FPS_RECON" runstop >/dev/null 2>&1 || true
+"$FPS_KNN" runstop >/dev/null 2>&1 || true
+kill -9 "$P1_PID" 2>/dev/null || true
+wait "$P1_PID" 2>/dev/null || true
 
 if ! check_stream_exists "e2e_4d_st_recon"; then
-    echo "Error: Test 1 output stream e2e_4d_st_recon not found in shm"
+    echo "Error: Test 1 output stream e2e_4d_st_recon not found in $TEST_SHM"
     exit 1
 fi
-echo "[Test 1] PASSED: Standalone 4-dataset inference reconstructed frames cleanly."
+echo "[Test 1] PASSED: Standalone 4-dataset inference reconstructed frames."
 
 # ------------------------------------------------------------------------------
 # Test 2: Milk CLI Module: gric.gric_reconstruct
@@ -190,7 +205,6 @@ if [ -n "$MILK_CLI" ] && [ -x "$MILK_CLI" ]; then
     echo "----------------------------------------------------------------------"
     echo "[Test 2] Milk CLI Module: gric.gric_reconstruct"
     echo "----------------------------------------------------------------------"
-    clean_e2e_shm "e2e_4d_cli_"
 
     "$FPS_KNN" fpsinit >/dev/null 2>&1
     if [ -n "$MILK_FPS_SET" ]; then
@@ -204,36 +218,28 @@ if [ -n "$MILK_CLI" ] && [ -x "$MILK_CLI" ]; then
 
     "$GRIC_TXT2STREAM" "$DATA_C" e2e_4d_cli_in -fps 200 -loop >/dev/null 2>&1 &
     P4_PID=$!
-    sleep 0.2
+    wait_for_stream "e2e_4d_cli_in"
 
-    "$FPS_KNN" -loops runstart >/dev/null 2>&1 &
-    P5_PID=$!
-    sleep 0.4
+    "$FPS_KNN" -loops runstart >/dev/null 2>&1
+    wait_for_stream "e2e_4d_cli_matches"
 
-    cat << EOF > "$TMPDIR/cmd_recon.txt"
-gric.gric_reconstruct .in_name e2e_4d_cli_matches
-gric.gric_reconstruct .out_name e2e_4d_cli_recon
-gric.gric_reconstruct .target_data $DATA_B
-gric.gric_reconstruct .weight_mode idw
-gric.gric_reconstruct .k 10
-gric.gric_reconstruct .max_frames 20
-gric.gric_reconstruct
-exitCLI
-EOF
+    CMD_RECON="@module load $MILK_SO;"
+    CMD_RECON="$CMD_RECON gric.gric_reconstruct .in_name=e2e_4d_cli_matches"
+    CMD_RECON="$CMD_RECON .out_name=e2e_4d_cli_recon .target_data=$DATA_B"
+    CMD_RECON="$CMD_RECON .weight_mode=idw .k=10 .max_frames=20"
+    "$MILK_CLI" -q -c "$CMD_RECON" > "$TMPDIR/cli.log" 2>&1 || true
 
-    MILKCLI_ADD_LIBS="$MILK_SO" "$MILK_CLI" \
-        < "$TMPDIR/cmd_recon.txt" > "$TMPDIR/cli.log" 2>&1 || true
-
-    kill -9 "$P4_PID" "$P5_PID" 2>/dev/null || true
-    wait "$P4_PID" "$P5_PID" 2>/dev/null || true
+    "$FPS_KNN" runstop >/dev/null 2>&1 || true
+    kill -9 "$P4_PID" 2>/dev/null || true
+    wait "$P4_PID" 2>/dev/null || true
 
     if ! check_stream_exists "e2e_4d_cli_recon"; then
-        echo "Error: Test 2 output stream e2e_4d_cli_recon not found in shm"
+        echo "Error: Test 2 output stream e2e_4d_cli_recon not found in $TEST_SHM"
         echo "=== CLI LOG ==="
         cat "$TMPDIR/cli.log"
         exit 1
     fi
-    echo "[Test 2] PASSED: Milk CLI gric.gric_reconstruct processed matches cleanly."
+    echo "[Test 2] PASSED: Milk CLI gric.gric_reconstruct processed matches."
 fi
 
 echo "======================================================================"

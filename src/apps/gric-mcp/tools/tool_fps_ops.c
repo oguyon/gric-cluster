@@ -41,14 +41,29 @@ static void get_fps_binary_path(
         return;
     }
 
-    /* 2. System Milk installation */
+    /* 2. Configured Milk environment (MILK_ROOT / MILK_INSTALLDIR) */
+    const char *milk_root = getenv("MILK_ROOT");
+    if (milk_root == NULL || milk_root[0] == '\0')
+    {
+        milk_root = getenv("MILK_INSTALLDIR");
+    }
+    if (milk_root != NULL && milk_root[0] != '\0')
+    {
+        snprintf(buf, size, "%s/bin/%s", milk_root, binary_name);
+        if (access(buf, X_OK) == 0)
+        {
+            return;
+        }
+    }
+
+    /* 3. System Milk installation */
     snprintf(buf, size, "/usr/local/milk/bin/%s", binary_name);
     if (access(buf, X_OK) == 0)
     {
         return;
     }
 
-    /* 3. Fallback to command name in PATH */
+    /* 4. Fallback to command name in PATH */
     strncpy(buf, binary_name, size - 1);
     buf[size - 1] = '\0';
 } // get_fps_binary_path
@@ -94,7 +109,7 @@ int mcp_tool_fps_status(
     get_fps_binary_path(mod->binary, bin_path, sizeof(bin_path));
 
     const char *const procinfo_argv[] = {
-        bin_path, "-procinfo", "fps", fps_name, NULL
+        bin_path, "-n", fps_name, "fps", NULL
     };
 
     char output[8192] = "";
@@ -238,7 +253,7 @@ int mcp_tool_fps_run(
 
     /* Step 1: Initialize FPS instance */
     const char *const init_argv[] = {
-        bin_path, "-procinfo", "fpsinit", fps_name, NULL
+        bin_path, "-n", fps_name, "fpsinit", NULL
     };
     int init_status = 0;
     int err = mcp_exec_capture(init_argv, NULL, 0, 5000, &init_status);
@@ -288,23 +303,13 @@ int mcp_tool_fps_run(
         mcp_exec_capture(set_drop_argv, NULL, 0, 5000, &set_drop_status);
     }
 
-    /* Step 3: Launch runstart */
+    /* Step 3: Launch runstart (feat/bash-engine daemonizes natively) */
+    (void)use_tmux;
     int launch_status = 0;
-    if (use_tmux)
-    {
-        const char *const launch_argv[] = {
-            bin_path, "-tmux", "-procinfo", "-loops", "-n", fps_name, "runstart", NULL
-        };
-        err = mcp_exec_capture(launch_argv, NULL, 0, 10000, &launch_status);
-    }
-    else
-    {
-        const char *const launch_argv[] = {
-            bin_path, "-procinfo", "-loops", "-n", fps_name, "runstart", NULL
-        };
-        pid_t child_pid = 0;
-        err = mcp_exec_spawn_detached(launch_argv, NULL, &child_pid);
-    }
+    const char *const launch_argv[] = {
+        bin_path, "-loops", "-n", fps_name, "runstart", NULL
+    };
+    err = mcp_exec_capture(launch_argv, NULL, 0, 10000, &launch_status);
 
     if (err != 0 || launch_status != 0)
     {
@@ -318,7 +323,7 @@ int mcp_tool_fps_run(
     cJSON_AddStringToObject(res, "fps_name", fps_name);
     cJSON_AddStringToObject(res, "in_name", in_name);
     cJSON_AddStringToObject(res, "out_name", out_assign_name);
-    cJSON_AddBoolToObject(res, "tmux_enabled", use_tmux);
+    cJSON_AddBoolToObject(res, "tmux_enabled", 0);
     return 0;
 } // mcp_tool_fps_run
 
@@ -619,31 +624,12 @@ int mcp_tool_fps_stop(
     char bin_path[1024];
     get_fps_binary_path(mod->binary, bin_path, sizeof(bin_path));
 
-    /* 1. Dispatch stop to tmux ctrl window */
-    char target_ctrl[128];
-    snprintf(target_ctrl, sizeof(target_ctrl), "%s:ctrl", fps_name);
-
-    const char *const tmux_conf[] = {
-        "tmux", "send-keys", "-t", target_ctrl, "confstop", "C-m", NULL
-    };
-    int tmux_status = 0;
-    mcp_exec_capture(tmux_conf, NULL, 0, 2000, &tmux_status);
-
-    const char *const tmux_run[] = {
-        "tmux", "send-keys", "-t", target_ctrl, "runstop", "C-m", NULL
-    };
-    mcp_exec_capture(tmux_run, NULL, 0, 2000, &tmux_status);
-
-    /* 2. Direct standalone invocation fallback */
-    char runstop_arg[128], confstop_arg[128];
-    snprintf(runstop_arg, sizeof(runstop_arg), "%s:runstop", fps_name);
-    snprintf(confstop_arg, sizeof(confstop_arg), "%s:confstop", fps_name);
-
-    const char *const direct_run[] = { bin_path, "-procinfo", runstop_arg, NULL };
+    /* Dispatch native runstop / confstop to FPS daemon */
+    const char *const direct_run[] = { bin_path, "-n", fps_name, "runstop", NULL };
     int direct_status = 0;
     mcp_exec_capture(direct_run, NULL, 0, 3000, &direct_status);
 
-    const char *const direct_conf[] = { bin_path, "-procinfo", confstop_arg, NULL };
+    const char *const direct_conf[] = { bin_path, "-n", fps_name, "confstop", NULL };
     mcp_exec_capture(direct_conf, NULL, 0, 3000, &direct_status);
 
     cJSON_AddStringToObject(res, "status", "STOPPED");

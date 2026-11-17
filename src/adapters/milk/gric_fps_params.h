@@ -25,70 +25,70 @@
       FPFLAG_DEFAULT_TRIGGER_STREAM, "Input ImageStreamIO stream") \
     X(".out_name", fps_out_assign_name, FPTYPE_STRING, 1, \
       FPFLAG_DEFAULT_INPUT, "Output assignment stream name") \
-    X(".out_anchors", fps_out_anchors_name, FPTYPE_STRING, 1, \
+    X(".out_anchors", fps_out_anchors_name, FPTYPE_STRING, 0, \
       FPFLAG_DEFAULT_INPUT, "Output anchors stream name") \
-    X(".out_counts", fps_out_counts_name, FPTYPE_STRING, 1, \
+    X(".out_counts", fps_out_counts_name, FPTYPE_STRING, 0, \
       FPFLAG_DEFAULT_INPUT, "Output counts stream name") \
     /* Stream toggles & lag policy */ \
-    X(".stream_anchors", &fps_stream_anchors, FPTYPE_ONOFF, 1, \
+    X(".stream_anchors", &fps_stream_anchors, FPTYPE_ONOFF, 0, \
       FPFLAG_DEFAULT_INPUT, "Publish anchors stream live") \
-    X(".stream_counts", &fps_stream_counts, FPTYPE_ONOFF, 1, \
+    X(".stream_counts", &fps_stream_counts, FPTYPE_ONOFF, 0, \
       FPFLAG_DEFAULT_INPUT, "Publish counts stream live") \
-    X(".allow_frame_drop", &fps_allow_frame_drop, FPTYPE_ONOFF, 1, \
+    X(".allow_frame_drop", &fps_allow_frame_drop, FPTYPE_ONOFF, 0, \
       FPFLAG_DEFAULT_INPUT, "Drop frames if lagging (1=latest)") \
-    X(".cnt2sync", &fps_cnt2sync, FPTYPE_ONOFF, 1, \
+    X(".cnt2sync", &fps_cnt2sync, FPTYPE_ONOFF, 0, \
       FPFLAG_DEFAULT_INPUT, "Enable cnt2 flow-control handshaking") \
     /* Clustering parameters */ \
-    X(".query_mode", &fps_query_mode, FPTYPE_ONOFF, 1, \
+    X(".query_mode", &fps_query_mode, FPTYPE_ONOFF, 0, \
       FPFLAG_DEFAULT_INPUT, "Run in fixed-cluster query/classification mode") \
-    X(".load_anchors", fps_load_anchors, FPTYPE_FILENAME, 1, \
+    X(".load_anchors", fps_load_anchors, FPTYPE_FILENAME, 0, \
       FPFLAG_DEFAULT_INPUT, "Path to pre-existing anchors.bin or cluster dir") \
-    X(".rlim", &fps_rlim, FPTYPE_FLOAT64, 1, \
+    X(".rlim", &fps_rlim, FPTYPE_FLOAT64, 0, \
       FPFLAG_DEFAULT_INPUT, "Cluster radius limit threshold") \
-    X(".deltaprob", &fps_deltaprob, FPTYPE_FLOAT64, 1, \
+    X(".deltaprob", &fps_deltaprob, FPTYPE_FLOAT64, 0, \
       FPFLAG_DEFAULT_INPUT, "Neighbor search probability cutoff") \
-    X(".maxnbclust", &fps_maxnbclust, FPTYPE_UINT32, 1, \
+    X(".maxnbclust", &fps_maxnbclust, FPTYPE_UINT32, 0, \
       FPFLAG_DEFAULT_INPUT, "Maximum cluster capacity") \
-    X(".maxcl_strategy", &fps_maxcl_strategy, FPTYPE_INT64, 1, \
+    X(".maxcl_strategy", &fps_maxcl_strategy, FPTYPE_INT64, 0, \
       FPFLAG_DEFAULT_INPUT, "Capacity strategy (0=stop, 1=discard)") \
-    X(".max_frames", &fps_max_frames, FPTYPE_UINT64, 1, \
+    X(".max_frames", &fps_max_frames, FPTYPE_UINT64, 0, \
       FPFLAG_DEFAULT_INPUT, "Maximum frames to cluster (0=unbounded)") \
     /* Compute & Acceleration */ \
-    X(".ncpu", &fps_ncpu, FPTYPE_UINT32, 1, \
+    X(".ncpu", &fps_ncpu, FPTYPE_UINT32, 0, \
       FPFLAG_DEFAULT_INPUT, "OpenMP thread count") \
-    X(".use_double", &fps_use_double, FPTYPE_ONOFF, 1, \
+    X(".use_double", &fps_use_double, FPTYPE_ONOFF, 0, \
       FPFLAG_DEFAULT_INPUT, "Use double precision compute") \
-    X(".use_sq16", &fps_use_sq16, FPTYPE_ONOFF, 1, \
+    X(".use_sq16", &fps_use_sq16, FPTYPE_ONOFF, 0, \
       FPFLAG_DEFAULT_INPUT, "16-bit scalar quantization filter") \
-    X(".entropy_mode", &fps_entropy_mode, FPTYPE_ONOFF, 1, \
+    X(".entropy_mode", &fps_entropy_mode, FPTYPE_ONOFF, 0, \
       FPFLAG_DEFAULT_INPUT, "Shannon entropy target selection") \
     /* Dynamic Triggers */ \
-    X(".reset_state", &fps_reset_state, FPTYPE_ONOFF, 1, \
+    X(".reset_state", &fps_reset_state, FPTYPE_ONOFF, 0, \
       FPFLAG_DEFAULT_INPUT, "Dynamic trigger: reset clusters") \
     /* Status & Telemetry outputs (read-only in FPS) */ \
-    X(".status.frames_processed", &fps_status_frames_processed, FPTYPE_UINT64, 1, \
+    X(".status.frames_processed", &fps_status_frames_processed, FPTYPE_UINT64, 0, \
       FPFLAG_DEFAULT_OUTPUT, "Total frames processed") \
-    X(".status.num_clusters", &fps_status_num_clusters, FPTYPE_UINT32, 1, \
+    X(".status.num_clusters", &fps_status_num_clusters, FPTYPE_UINT32, 0, \
       FPFLAG_DEFAULT_OUTPUT, "Active clusters discovered") \
-    X(".status.new_clusters", &fps_status_new_clusters, FPTYPE_UINT64, 1, \
+    X(".status.new_clusters", &fps_status_new_clusters, FPTYPE_UINT64, 0, \
       FPFLAG_DEFAULT_OUTPUT, "Total newly created clusters") \
-    X(".status.distance_evals", &fps_status_distance_evals, FPTYPE_UINT64, 1, \
+    X(".status.distance_evals", &fps_status_distance_evals, FPTYPE_UINT64, 0, \
       FPFLAG_DEFAULT_OUTPUT, "Total distance evaluations") \
-    X(".status.pruning_ratio", &fps_status_pruning_ratio, FPTYPE_FLOAT64, 1, \
+    X(".status.pruning_ratio", &fps_status_pruning_ratio, FPTYPE_FLOAT64, 0, \
       FPFLAG_DEFAULT_OUTPUT, "Pruning ratio (fraction skipped)") \
-    X(".status.latency_us", &fps_status_latency_us, FPTYPE_FLOAT64, 1, \
+    X(".status.latency_us", &fps_status_latency_us, FPTYPE_FLOAT64, 0, \
       FPFLAG_DEFAULT_OUTPUT, "Per-frame clustering latency (us)") \
-    X(".status.fps", &fps_status_fps, FPTYPE_FLOAT64, 1, \
+    X(".status.fps", &fps_status_fps, FPTYPE_FLOAT64, 0, \
       FPFLAG_DEFAULT_OUTPUT, "Instantaneous processing rate (FPS)") \
-    X(".status.stream_lag", &fps_status_stream_lag, FPTYPE_INT64, 1, \
+    X(".status.stream_lag", &fps_status_stream_lag, FPTYPE_INT64, 0, \
       FPFLAG_DEFAULT_OUTPUT, "Input stream lag (write - read)") \
-    X(".status.memory_rss_mb", &fps_status_memory_rss_mb, FPTYPE_FLOAT64, 1, \
+    X(".status.memory_rss_mb", &fps_status_memory_rss_mb, FPTYPE_FLOAT64, 0, \
       FPFLAG_DEFAULT_OUTPUT, "Process RSS memory consumption (MB)") \
     /* Shared memory telemetry bridge configuration */ \
-    X(".shm_status_file", fps_shm_status_file, FPTYPE_STRING, 1, \
+    X(".shm_status_file", fps_shm_status_file, FPTYPE_STRING, 0, \
       FPFLAG_DEFAULT_INPUT, "Bridge status SHM file path (blank=default)") \
     /* Results persistence configuration */ \
-    X(".save_dir", fps_save_dir, FPTYPE_DIRNAME, 1, \
+    X(".save_dir", fps_save_dir, FPTYPE_DIRNAME, 0, \
       FPFLAG_DEFAULT_INPUT, "Directory to save clustering results (.bin)")
 
 #endif /* GRIC_FPS_PARAMS_H */

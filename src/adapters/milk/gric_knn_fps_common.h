@@ -6,10 +6,7 @@
 #ifndef GRIC_KNN_FPS_COMMON_H
 #define GRIC_KNN_FPS_COMMON_H
 
-#include <libmilkcommon/milk_compiler.h>
-#include "fps.h"
-#include "fps_procinfo_macros.h"
-#include "processinfo.h"
+#include "milk_runnable.h"
 #include <ImageStreamIO/ImageStreamIO.h>
 #include <stdint.h>
 #include <time.h>
@@ -18,11 +15,13 @@
 extern "C" {
 #endif
 
+extern const MILK_RUNNABLE runnable_gric_knn;
+
 /* Global parameter variables mapped by FPS */
 extern char     fps_knn_in_name[FUNCTION_PARAMETER_STRMAXLEN];
 extern char     fps_knn_out_name[FUNCTION_PARAMETER_STRMAXLEN];
-extern uint64_t fps_knn_cnt2sync;
-extern uint64_t fps_knn_allow_frame_drop;
+extern int32_t  fps_knn_cnt2sync;
+extern int32_t  fps_knn_allow_frame_drop;
 extern char     fps_knn_cluster_dir[FUNCTION_PARAMETER_STRMAXLEN];
 extern char     fps_knn_ref_data[FUNCTION_PARAMETER_STRMAXLEN];
 extern uint32_t fps_knn_k;
@@ -30,13 +29,13 @@ extern double   fps_knn_rlim;
 extern double   fps_knn_eps;
 extern uint64_t fps_knn_max_frames;
 extern uint32_t fps_knn_ncpu;
-extern uint64_t fps_knn_use_double;
-extern uint64_t fps_knn_use_sq8;
-extern uint64_t fps_knn_use_sq16;
-extern uint64_t fps_knn_use_eq16;
-extern uint64_t fps_knn_use_rq8;
-extern uint64_t fps_knn_approx_mode;
-extern uint64_t fps_knn_use_cluster_graph;
+extern int32_t  fps_knn_use_double;
+extern int32_t  fps_knn_use_sq8;
+extern int32_t  fps_knn_use_sq16;
+extern int32_t  fps_knn_use_eq16;
+extern int32_t  fps_knn_use_rq8;
+extern int32_t  fps_knn_approx_mode;
+extern int32_t  fps_knn_use_cluster_graph;
 
 /* Status and telemetry parameter variables */
 extern uint64_t fps_knn_status_queries;

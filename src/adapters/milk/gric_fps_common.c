@@ -4,7 +4,6 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
-#include "fps.h"
 #include "gric_fps_common.h"
 #include "gric_fps_params.h"
 #include "cluster_shm.h"
@@ -24,11 +23,11 @@ char     fps_in_name[FUNCTION_PARAMETER_STRMAXLEN]          = "";
 char     fps_out_assign_name[FUNCTION_PARAMETER_STRMAXLEN]  = "";
 char     fps_out_anchors_name[FUNCTION_PARAMETER_STRMAXLEN] = "";
 char     fps_out_counts_name[FUNCTION_PARAMETER_STRMAXLEN]  = "";
-uint64_t fps_stream_anchors   = 0;
-uint64_t fps_stream_counts    = 0;
-uint64_t fps_allow_frame_drop = 0;
-uint64_t fps_cnt2sync         = 0;
-uint64_t fps_query_mode       = 0;
+int32_t  fps_stream_anchors   = 0;
+int32_t  fps_stream_counts    = 0;
+int32_t  fps_allow_frame_drop = 0;
+int32_t  fps_cnt2sync         = 0;
+int32_t  fps_query_mode       = 0;
 char     fps_load_anchors[FUNCTION_PARAMETER_STRMAXLEN] = "";
 double   fps_rlim             = 0.5;
 double   fps_deltaprob        = 0.01;
@@ -36,10 +35,10 @@ uint32_t fps_maxnbclust       = 256;
 int64_t  fps_maxcl_strategy   = 0;
 uint64_t fps_max_frames        = 0;
 uint32_t fps_ncpu             = 0;
-uint64_t fps_use_double       = 0;
-uint64_t fps_use_sq16         = 0;
-uint64_t fps_entropy_mode     = 0;
-uint64_t fps_reset_state      = 0;
+int32_t  fps_use_double       = 0;
+int32_t  fps_use_sq16         = 0;
+int32_t  fps_entropy_mode     = 0;
+int32_t  fps_reset_state      = 0;
 
 uint64_t fps_status_frames_processed                   = 0;
 uint32_t fps_status_num_clusters                       = 0;

@@ -4,7 +4,6 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
-#include "fps.h"
 #include "gric_recon_fps_common.h"
 #include "gric_recon_fps_params.h"
 #include "knn_defs.h"
@@ -29,8 +28,8 @@
 
 char     fps_recon_in_name[FUNCTION_PARAMETER_STRMAXLEN]     = "";
 char     fps_recon_out_name[FUNCTION_PARAMETER_STRMAXLEN]    = "recon_D";
-uint64_t fps_recon_cnt2sync                                  = 0;
-uint64_t fps_recon_allow_frame_drop                          = 0;
+int32_t  fps_recon_cnt2sync                                  = 0;
+int32_t  fps_recon_allow_frame_drop                          = 0;
 char     fps_recon_target_data[FUNCTION_PARAMETER_STRMAXLEN] = "";
 char     fps_recon_weight_mode[FUNCTION_PARAMETER_STRMAXLEN] = "uniform";
 double   fps_recon_alpha                                     = 1.0;

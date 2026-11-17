@@ -4,7 +4,6 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
-#include "fps.h"
 #include "gric_knn_fps_common.h"
 #include "gric_knn_fps_params.h"
 #include "knn_defs.h"
@@ -28,8 +27,8 @@
 
 char     fps_knn_in_name[FUNCTION_PARAMETER_STRMAXLEN]      = "";
 char     fps_knn_out_name[FUNCTION_PARAMETER_STRMAXLEN]     = "gric_knn";
-uint64_t fps_knn_cnt2sync                                   = 0;
-uint64_t fps_knn_allow_frame_drop                           = 0;
+int32_t  fps_knn_cnt2sync                                   = 0;
+int32_t  fps_knn_allow_frame_drop                           = 0;
 char     fps_knn_cluster_dir[FUNCTION_PARAMETER_STRMAXLEN]  = "";
 char     fps_knn_ref_data[FUNCTION_PARAMETER_STRMAXLEN]     = "";
 uint32_t fps_knn_k                                          = 10;
@@ -37,13 +36,13 @@ double   fps_knn_rlim                                       = 0.0;
 double   fps_knn_eps                                        = 0.0;
 uint64_t fps_knn_max_frames                                 = 0;
 uint32_t fps_knn_ncpu                                       = 1;
-uint64_t fps_knn_use_double                                 = 0;
-uint64_t fps_knn_use_sq8                                    = 0;
-uint64_t fps_knn_use_sq16                                   = 0;
-uint64_t fps_knn_use_eq16                                   = 0;
-uint64_t fps_knn_use_rq8                                    = 0;
-uint64_t fps_knn_approx_mode                                = 0;
-uint64_t fps_knn_use_cluster_graph                          = 1;
+int32_t  fps_knn_use_double                                 = 0;
+int32_t  fps_knn_use_sq8                                    = 0;
+int32_t  fps_knn_use_sq16                                   = 0;
+int32_t  fps_knn_use_eq16                                   = 0;
+int32_t  fps_knn_use_rq8                                    = 0;
+int32_t  fps_knn_approx_mode                                = 0;
+int32_t  fps_knn_use_cluster_graph                          = 1;
 
 uint64_t fps_knn_status_queries                             = 0;
 uint32_t fps_knn_status_k                                   = 0;

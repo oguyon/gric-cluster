@@ -251,6 +251,7 @@ static void check_file_layering(
 
         int target_level = determine_target_level(inc_buf);
         int is_milk_header = (strcmp(inc_buf, "fps.h") == 0 ||
+                              strcmp(inc_buf, "milk_runnable.h") == 0 ||
                               strstr(inc_buf, "ImageStreamIO") != NULL);
 
         int has_violation = 0;

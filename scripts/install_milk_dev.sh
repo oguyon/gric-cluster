@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# install_milk_dev.sh - Automated installer for Milk framework (framework-dev)
+# install_milk_dev.sh - Automated installer for Milk framework (feat/bash-engine)
 # ==============================================================================
 # Clones, compiles, and installs the Milk framework required for GRIC's FPS
-# streaming daemon (milk-fpsexec-gric-cluster) and Milk CLI module (milkgric).
+# streaming daemons (milk-fpsexec-gric-*) and Milk CLI module (libmilkgric.so).
 # ==============================================================================
 set -euo pipefail
 
 PREFIX="/usr/local"
-BRANCH="framework-dev"
+BRANCH="feat/bash-engine"
 SRC_DIR="${HOME}/src/milk"
 INSTALL_DEPS=false
 USE_SUDO=true
@@ -18,11 +18,11 @@ print_usage()
     cat << 'EOF'
 Usage: install_milk_dev.sh [OPTIONS]
 
-Automated installer for the Milk framework (framework-dev branch).
+Automated installer for the Milk framework (feat/bash-engine branch).
 
 Options:
   -p, --prefix <DIR>     Installation prefix (default: /usr/local)
-  -b, --branch <BRANCH>  Git branch to clone (default: framework-dev)
+  -b, --branch <BRANCH>  Git branch to clone (default: feat/bash-engine)
   -s, --src-dir <DIR>    Directory to clone Milk source (default: ~/src/milk)
       --no-sudo          Do not use sudo for installation / ldconfig
   -d, --deps             Install required Debian/Ubuntu apt packages
@@ -82,7 +82,7 @@ if [ "$INSTALL_DEPS" = true ]; then
     $SUDO apt-get update
     $SUDO apt-get install -y \
         build-essential cmake pkg-config git \
-        libcfitsio-dev libreadline-dev libncurses-dev \
+        libcfitsio-dev libreadline-dev \
         libgsl-dev libomp-dev libfftw3-dev bison flex
 fi
 
